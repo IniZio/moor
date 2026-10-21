@@ -18,8 +18,6 @@ use crate::ops::common::proxy::{box_env, origin, plan};
 pub(crate) struct BoxProxy {
     /// The Proxy's address and credentials inside the Box.
     pub(crate) addr: ProxyAddr,
-    /// The git origin URL of the worktree, when it has one.
-    pub(crate) origin: Option<String>,
     /// The non-secret env of the tool rules, which wins over the repo `env`.
     pub(crate) rule_env: Vec<(String, String)>,
 }
@@ -49,8 +47,7 @@ pub(crate) fn proxy(
 ) -> Result<BoxProxy, String> {
     let user = requester(cx, box_id)?;
     let vault_key = cx.vault_key().map_err(|e| e.error.to_string())?;
-    let origin = origin(cx, worktree);
-    let plan = plan(cx, origin.as_deref())?;
+    let plan = plan(cx, origin(cx, worktree).as_deref())?;
     let repo_env: Vec<(String, String)> = cfg.env.clone().into_iter().collect();
     let spec = ProxySpec {
         box_id,
@@ -81,11 +78,7 @@ pub(crate) fn proxy(
         forge,
         direct: cfg.direct.clone(),
     };
-    Ok(BoxProxy {
-        addr,
-        origin,
-        rule_env,
-    })
+    Ok(BoxProxy { addr, rule_env })
 }
 
 /// The user the Box acts for, read from its row.
@@ -141,7 +134,6 @@ pub(crate) fn prepare(
             ca_pem: &p.addr.ca_pem,
             direct: &p.addr.direct,
         }),
-        origin: proxy.and_then(|p| p.origin.as_deref()),
         workdir: site.workdir,
         strip: &strip,
     };

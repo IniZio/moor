@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::domain::run::SyncMode;
 use moor_core::name::BoxName;
 use moor_core::seam::driver::{
     AcquireReq, BoxStep, Driver, DriverError, ExecOutcome, ExecSpec, Released, SleepOutcome,
@@ -59,7 +58,6 @@ fn spec(argv: &[&str]) -> ExecSpec {
         argv: argv.iter().map(|a| (*a).to_owned()).collect(),
         env: vec![("K".to_owned(), "V".to_owned())],
         cwd: Some(BoxPath::under("/work", "box-1").unwrap()),
-        sync: SyncMode::Full,
         output: None,
         host_cwd: None,
         class: None,
@@ -121,10 +119,9 @@ fn exec_on_unknown_handle_is_not_found_but_recorded() {
 }
 
 #[test]
-fn exec_records_sync_output_host_cwd_and_class() {
+fn exec_records_output_host_cwd_and_class() {
     let (fake, h) = fake_with_box();
     let mut s = spec(&["x"]);
-    s.sync = SyncMode::None;
     s.output = Some(Output::Log(PathBuf::from("/log/x")));
     s.host_cwd = Some(PathBuf::from("/host"));
     s.class = Some("big".to_owned());

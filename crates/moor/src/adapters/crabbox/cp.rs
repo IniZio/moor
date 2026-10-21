@@ -14,7 +14,7 @@ const COPY_OUT_DEADLINE: Duration = Duration::from_mins(5);
 
 /// Copies `from` in the Box behind `handle` to the host path `to`.
 ///
-/// `crabbox cp` moves only the named path, so the worktree is never synced.
+/// `crabbox cp` moves only the named path.
 /// The command runs in `host_cwd`.
 pub(super) fn copy_out(
     cb: &Crabbox,

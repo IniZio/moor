@@ -7,7 +7,6 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use crate::domain::run::SyncMode;
 use crate::name::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 use crate::seam::proc::{Deadline, Output};
 
@@ -97,8 +96,6 @@ pub struct ExecSpec {
     pub env: Vec<(String, String)>,
     /// Directory to run in; the Box workdir when unset.
     pub cwd: Option<BoxPath>,
-    /// Whether to sync the worktree before running.
-    pub sync: SyncMode,
     /// Where to stream output; captured when unset.
     pub output: Option<Output>,
     /// Host directory (the Box worktree) the driver process runs from.

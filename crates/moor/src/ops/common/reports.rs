@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use moor_core::boxscript::quote;
 use moor_core::domain::boxes::BoxState;
-use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, ExecSpec, StepDone};
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxPath, Warning};
@@ -173,7 +172,6 @@ fn run(
         argv: vec!["sh".to_owned(), "-c".to_owned(), INDEX_SCRIPT.to_owned()],
         env: Vec::new(),
         cwd: Some(workdir.clone()),
-        sync: SyncMode::None,
         output: None,
         host_cwd: Some(host.to_path_buf()),
         class: None,

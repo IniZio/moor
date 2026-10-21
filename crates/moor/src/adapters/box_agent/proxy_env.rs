@@ -19,7 +19,6 @@ fn is_identifier(name: &str) -> bool {
 pub(super) fn exec_env(
     proxy: Option<&ProxyAddr>,
     strip: &[String],
-    origin: Option<&str>,
     workdir: &BoxPath,
 ) -> Result<ExecEnv, String> {
     exec_env::build(
@@ -31,7 +30,6 @@ pub(super) fn exec_env(
                 ca_pem: &p.ca_pem,
                 direct: &p.direct,
             }),
-            origin,
             workdir: Some(workdir),
         },
         Purpose::Agent,
@@ -40,11 +38,7 @@ pub(super) fn exec_env(
 
 /// Shell lines run just before the agent starts: the builder's prelude, then the profile's `env`
 /// exports.
-pub(super) fn script_lines(
-    proxy: &ProxyAddr,
-    env: &[EnvVar],
-    origin: Option<&str>,
-) -> Result<Vec<String>, String> {
+pub(super) fn script_lines(proxy: &ProxyAddr, env: &[EnvVar]) -> Result<Vec<String>, String> {
     let mut lines = exec_env::build(
         &BoxCtx {
             env: &proxy.box_env,
@@ -54,7 +48,6 @@ pub(super) fn script_lines(
                 ca_pem: &proxy.ca_pem,
                 direct: &proxy.direct,
             }),
-            origin,
             workdir: None,
         },
         Purpose::Agent,

@@ -1,4 +1,4 @@
-//! Tests for a start whose checkout sync failed, and for the start that retries it in the kept Box.
+//! Tests for a start whose clone failed, and for the start that retries it in the kept Box.
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -10,7 +10,7 @@ use moor_core::{BoxId, ErrorKind, StartReq};
 use super::moor_yaml::script_base_yaml;
 use super::setup::{exit, kinds, setup_execs, start_req};
 use super::state::working;
-use super::{hold, world_at, World};
+use super::{hold, on_github, world_at, World};
 use crate::adapters::clock::SystemClock;
 use crate::ops::start::run;
 use crate::store::Store;
@@ -28,7 +28,7 @@ fn world_with_setup(
     let repo = tempfile::tempdir().unwrap();
     std::fs::write(repo.path().join(".moor.yaml"), YAML).unwrap();
     let driver = FakeDriver::new().exec_results(results);
-    let mut w = world_at(driver, repo.path());
+    let mut w = on_github(world_at(driver, repo.path()));
     let engine = Arc::new(FakeEngine::new());
     w.cx = w.cx.with_engine(engine.clone());
     (w, engine)
@@ -67,18 +67,18 @@ fn box_state(w: &World) -> Option<BoxState> {
 }
 
 #[test]
-fn a_failed_sync_keeps_the_box_and_says_how_to_debug_retry_and_close_it() {
+fn a_failed_clone_keeps_the_box_and_says_how_to_debug_retry_and_close_it() {
     let (w, engine) = world_with_setup([Ok(exit(1))]);
     let err = start(&w).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
     assert!(err
         .error
         .to_string()
-        .starts_with("syncing the checkout into the Box failed: exit 1"));
+        .starts_with("cloning the repo into the Box failed: exit 1"));
     assert_eq!(
         err.hints,
         [
-            "the sync step failed; Box box-1 is kept for debugging and the agent did not start",
+            "the clone step failed; Box box-1 is kept for debugging and the agent did not start",
             "`moor start demo` again retries on this Box",
             "`moor close demo` closes it; add --force to discard unpushed work in the Box",
         ]
@@ -90,11 +90,11 @@ fn a_failed_sync_keeps_the_box_and_says_how_to_debug_retry_and_close_it() {
 }
 
 #[test]
-fn a_failed_sync_names_the_step_the_tail_and_the_box_in_the_error_value() {
+fn a_failed_clone_names_the_step_the_tail_and_the_box_in_the_error_value() {
     let (w, _) = world_with_setup([Ok(exit(1))]);
     let err = start(&w).unwrap_err();
     let value = err.value.unwrap();
-    assert_eq!(field(&value, "failed_step"), "sync");
+    assert_eq!(field(&value, "failed_step"), "clone");
     assert_eq!(field(&value, "handle"), "box-1");
     assert!(value.get("log_tail").is_none());
     let boxed = value.get("box").unwrap();
@@ -102,7 +102,7 @@ fn a_failed_sync_names_the_step_the_tail_and_the_box_in_the_error_value() {
 }
 
 #[test]
-fn a_failed_sync_shows_the_message_and_every_hint_in_text_and_the_fields_in_json() {
+fn a_failed_clone_shows_the_message_and_every_hint_in_text_and_the_fields_in_json() {
     let (w, _) = world_with_setup([Ok(exit(1))]);
     let err = start(&w).unwrap_err();
     let resp = err.into_response("start", Vec::new());
@@ -110,9 +110,8 @@ fn a_failed_sync_shows_the_message_and_every_hint_in_text_and_the_fields_in_json
     assert_eq!(shown.stdout, "");
     assert_eq!(
         shown.stderr,
-        "moor: syncing the checkout into the Box failed: exit 1; the sync failed or left no git \
-         checkout (with submodules, push HEAD to origin first)\n\
-         hint: the sync step failed; Box box-1 is kept for debugging and the agent did not start\n\
+        "moor: cloning the repo into the Box failed: exit 1\n\
+         hint: the clone step failed; Box box-1 is kept for debugging and the agent did not start\n\
          hint: `moor start demo` again retries on this Box\n\
          hint: `moor close demo` closes it; add --force to discard unpushed work in the Box\n"
     );
@@ -122,13 +121,13 @@ fn a_failed_sync_shows_the_message_and_every_hint_in_text_and_the_fields_in_json
     };
     let json: serde_json::Value =
         serde_json::from_str(&crate::cli::render(&resp, &opts).stdout).unwrap();
-    assert_eq!(json.pointer("/value/failed_step"), Some(&"sync".into()));
+    assert_eq!(json.pointer("/value/failed_step"), Some(&"clone".into()));
     assert_eq!(json.pointer("/value/handle"), Some(&"box-1".into()));
     assert!(json.pointer("/value/log_tail").is_none());
 }
 
 #[test]
-fn start_after_a_failed_sync_retries_in_the_same_box_and_launches() {
+fn start_after_a_failed_clone_retries_in_the_same_box_and_launches() {
     let (w, engine) = world_with_setup([Ok(exit(1)), Ok(exit(0)), Ok(exit(0))]);
     start(&w).unwrap_err();
     checked_out(&w);
@@ -146,12 +145,12 @@ fn start_after_a_failed_sync_retries_in_the_same_box_and_launches() {
 }
 
 #[test]
-fn a_retry_that_fails_to_sync_again_keeps_the_box_and_stays_setup_failed() {
+fn a_retry_that_fails_to_clone_again_keeps_the_box_and_stays_setup_failed() {
     let (w, engine) = world_with_setup([Ok(exit(1)), Ok(exit(2))]);
     start(&w).unwrap_err();
     let err = start(&w).unwrap_err();
     assert!(err.error.to_string().contains("exit 2"), "{err:?}");
-    assert_eq!(field(&err.value.unwrap(), "failed_step"), "sync");
+    assert_eq!(field(&err.value.unwrap(), "failed_step"), "clone");
     assert!(engine.launches().is_empty());
     let row = row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);

@@ -8,7 +8,6 @@ use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
-use moor_core::domain::run::SyncMode;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Acquired, DriverError, Released};
 use moor_core::seam::rng::Rng;
@@ -25,13 +24,13 @@ use crate::ops::common::view::box_view;
 use crate::store::lease::LeaseKind;
 use crate::store::{BoxRow, Store};
 
+use self::clone::{clone_with_proxy, SetupProxy};
 pub(crate) use self::lease::hold_root;
 use self::lease::hold_workdir;
 use self::outcome::dotfiles_warned;
 pub(crate) use self::outcome::Provisioned;
 use self::rerun::note_setup_not_rerun;
 use self::retry::{kept_box_retry, retry_in_box};
-use self::sync::{sync_with_proxy, SetupProxy};
 
 /// Re-reads a Box row that must exist.
 ///
@@ -255,7 +254,6 @@ fn run_through_proxy(
             target.workdir,
             target.worktree,
             cfg,
-            SyncMode::None,
             proxy.as_ref(),
         ),
         // Dotfiles report their own Proxy failure; no setup line was meant to run.
@@ -279,8 +277,10 @@ fn run_and_record(
     target: &SetupTarget<'_>,
     cfg: &BoxSettings,
 ) -> Result<Provisioned, CommandError> {
-    let (ms, proxy) = sync_with_proxy(cx, store, id, advance, target, cfg)?;
-    store.apply(Decision::new(id).event(ExtraEvent::Synced { ms }))?;
+    let (cloned, proxy) = clone_with_proxy(cx, store, id, advance, target, cfg)?;
+    if let Some(ms) = cloned {
+        store.apply(Decision::new(id).event(ExtraEvent::Cloned { ms }))?;
+    }
     let run = run_through_proxy(cx, store, id, target, cfg, &proxy);
     let dotfiles = match dotfiles::apply(cx, target.handle, id, target.worktree, cfg, &proxy) {
         Ok(d) => d,
@@ -366,11 +366,11 @@ fn failed(
     }
 }
 
+mod clone;
 mod lease;
 pub(crate) mod moor_yaml;
 mod outcome;
 mod rerun;
 mod retry;
-mod sync;
 #[cfg(test)]
 mod tests;

@@ -39,14 +39,13 @@ pub(super) fn render(b: &BriefInput) -> String {
          project needs is missing, do not try to install it: say which tool is missing and that \
          it belongs in the repo's setup commands, then continue with what is available. \
          Do not guess paths.\n\n\
-         HEAD is detached on the machine. Commit your work with git, following the repo's \
+         The checkout is on branch `{branch}`. Commit your work with git, following the repo's \
          commit-msg hook and conventions. Push with \
-         `git push moor HEAD:refs/heads/{branch}` when the repo's push guard \
-         allows it, not after each commit. If `git remote get-url moor` fails, commit \
-         only, do not push, and say so. The checkout may be shallow \
-         (`git rev-parse --is-shallow-repository`). If you need more history, for example to \
-         rebase, fetch it through the proxy with `git fetch --deepen=50 moor` or \
-         `git fetch --unshallow moor`. Push to the branch named in the Goal if it names one, else \
+         `git push origin HEAD:refs/heads/{branch}` when the repo's push guard \
+         allows it, not after each commit. If `git remote get-url origin` fails, commit \
+         only, do not push, and say so. The checkout is a partial clone with full history: \
+         git fetches file contents through the proxy when a command first needs them. \
+         Push to the branch named in the Goal if it names one, else \
          to `{branch}`. Do not switch branches. Do not add Co-Authored-By trailers to \
          commits.\n\n\
          You may receive follow-up messages (steers) typed into this session.\n\n\
@@ -126,8 +125,10 @@ mod tests {
     #[test]
     fn states_the_box_contract() {
         let out = render(&input(Some("g"), None));
-        assert!(out.contains("git push moor HEAD:refs/heads/moor/t1"));
-        assert!(out.contains("HEAD is detached"));
+        assert!(out.contains("git push origin HEAD:refs/heads/moor/t1"));
+        assert!(out.contains("on branch `moor/t1`"));
+        assert!(out.contains("partial clone"));
+        assert!(!out.contains("moor HEAD"), "{out}");
         assert!(out.contains("Do not add Co-Authored-By trailers"));
         assert!(out.contains("follow-up messages (steers)"));
     }
@@ -141,11 +142,10 @@ mod tests {
     }
 
     #[test]
-    fn says_history_may_be_shallow_and_how_to_deepen_it() {
+    fn names_no_moor_remote_and_no_shallow_history() {
         let out = render(&input(Some("g"), None));
-        assert!(out.contains("may be shallow"));
-        assert!(out.contains("git fetch --deepen=50 moor"));
-        assert!(out.contains("git fetch --unshallow moor"));
+        assert!(!out.contains("shallow"), "{out}");
+        assert!(!out.contains(" moor`"), "{out}");
     }
 
     #[test]

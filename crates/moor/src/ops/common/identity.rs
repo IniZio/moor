@@ -10,7 +10,7 @@ use crate::cx::Cx;
 
 /// The global git `user.name` and `user.email` a Box gets from the author of the host worktree.
 ///
-/// Only those two values leave the host. The keys are set inside the checkout sync exec, so
+/// Only those two values leave the host. The keys are set inside the clone exec, so
 /// setting them costs no round trip of its own.
 pub(crate) struct Identity {
     /// Each key with its value, `user.name` first.

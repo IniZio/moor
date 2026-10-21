@@ -6,7 +6,6 @@ use std::time::Duration;
 use crate::boxscript::quote;
 use crate::name::BoxPath;
 use crate::name::DirectHost;
-use crate::seam::forge::ForgeRepo;
 use crate::seam::proc::Deadline;
 
 /// The Box directory the prelude writes the public Proxy CA into, as shell text that expands on the Box.
@@ -24,8 +23,6 @@ const SYSTEM_BUNDLES: &str =
 /// Where an image can record the `PATH` its Dockerfile `ENV` sets; non-interactive ssh execs do
 /// not inherit that `ENV`.
 const IMAGE_ENV_FILE: &str = "/etc/environment";
-/// The fetch refspec of the `moor` remote; a push records `refs/remotes/moor/<branch>` through it.
-const MOOR_FETCH: &str = "+refs/heads/*:refs/remotes/moor/*";
 
 /// Wall-clock allowance for one setup line.
 pub const SETUP_LINE_DEADLINE: Duration = Duration::from_mins(30);
@@ -42,6 +39,8 @@ pub enum Purpose {
         /// Number of setup lines; the deadline scales with it.
         lines: usize,
     },
+    /// The clone of the Box's repo.
+    Clone,
     /// The teardown script.
     Teardown,
     /// A `moor run` command.
@@ -69,8 +68,6 @@ pub struct BoxCtx<'a> {
     pub env: &'a [(String, String)],
     /// The Proxy, when the Box reaches the network through it.
     pub proxy: Option<ProxyCtx<'a>>,
-    /// The git origin URL; drives the `moor` push remote lines.
-    pub origin: Option<&'a str>,
     /// The directory commands run in; none keeps the driver's default directory.
     pub workdir: Option<&'a BoxPath>,
     /// Provider variable names removed from the Box environment.
@@ -118,7 +115,6 @@ pub fn build(b: &BoxCtx<'_>, purpose: Purpose) -> Result<ExecEnv, String> {
         prelude.extend(proxy_lines(p));
     }
     if b.proxy.is_some() {
-        prelude.extend(git_remote_lines(b.origin));
         prelude.push(format!(
             "unset moor_bundle moor_sys moor_mark moor_f {}",
             java::JAVA_SHELL_VARS
@@ -141,6 +137,7 @@ pub fn build(b: &BoxCtx<'_>, purpose: Purpose) -> Result<ExecEnv, String> {
             let n = u32::try_from(lines).unwrap_or(u32::MAX);
             (Some(SETUP_LINE_DEADLINE.saturating_mul(n)), false)
         }
+        Purpose::Clone => (Some(SETUP_LINE_DEADLINE), false),
         Purpose::Teardown => (Some(TEARDOWN_DEADLINE), false),
         Purpose::Run => (Some(RUN_DEADLINE), false),
         Purpose::Agent => (None, true),
@@ -198,32 +195,6 @@ pub fn wrap_argv(env: &ExecEnv, argv: Vec<String>) -> Vec<String> {
     ];
     out.extend(argv);
     out
-}
-
-/// `https://github.com/<owner>/<name>.git` for a GitHub origin (`https://github.com/o/n(.git)`,
-/// `ssh://git@github.com/o/n(.git)`, `git@github.com:o/n(.git)`); none for any other host or shape.
-#[must_use]
-pub fn push_url(origin: &str) -> Option<String> {
-    let path = [
-        "https://github.com/",
-        "ssh://git@github.com/",
-        "git@github.com:",
-    ]
-    .iter()
-    .find_map(|p| origin.strip_prefix(p))?;
-    let path = path.strip_suffix('/').unwrap_or(path);
-    let (owner, name) = path.split_once('/')?;
-    let name = name.strip_suffix(".git").unwrap_or(name);
-    let plain = |s: &str| {
-        !s.is_empty()
-            && s.chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
-    };
-    let repo = (plain(owner) && plain(name)).then(|| ForgeRepo::new(owner, name))?;
-    Some(format!(
-        "https://github.com/{}/{}.git",
-        repo.owner, repo.name
-    ))
 }
 
 /// True when `name` is a shell identifier.
@@ -341,22 +312,6 @@ fn yarn_lines(box_port: u16) -> Vec<String> {
         .map(str::to_owned),
     );
     lines
-}
-
-/// Shell lines that point the `moor` git remote at the push URL for `origin`, or clear the git config env.
-fn git_remote_lines(origin: Option<&str>) -> Vec<String> {
-    origin.and_then(push_url).map_or_else(
-        || vec!["unset GIT_CONFIG_COUNT".to_owned()],
-        |url| {
-            vec![
-                "export GIT_CONFIG_COUNT=2".to_owned(),
-                "export GIT_CONFIG_KEY_0=remote.moor.url".to_owned(),
-                format!("export GIT_CONFIG_VALUE_0={}", quote(&url)),
-                "export GIT_CONFIG_KEY_1=remote.moor.fetch".to_owned(),
-                format!("export GIT_CONFIG_VALUE_1={}", quote(MOOR_FETCH)),
-            ]
-        },
-    )
 }
 
 mod java;

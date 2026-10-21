@@ -1,4 +1,4 @@
-//! How long the checkout sync takes is recorded on the Box.
+//! How long the clone takes is recorded on the Box.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -10,7 +10,7 @@ use moor_core::BoxId;
 use serde_json::json;
 
 use super::setup::start_req;
-use super::{world_at, World};
+use super::{on_github, world_at, World};
 use crate::ops::start::run;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
@@ -21,7 +21,7 @@ fn timed_world(steps: Vec<Duration>) -> (World, tempfile::TempDir) {
     let repo = tempfile::tempdir().unwrap();
     std::fs::write(repo.path().join(".moor.yaml"), "setup: [a]\n").unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    let mut w = world_at(FakeDriver::new(), repo.path());
+    let mut w = on_github(world_at(FakeDriver::new(), repo.path()));
     w.cx = w.cx.with_clock(clock.clone());
     let ok = |v: &str| Reply::Ok(format!("{v}\n"));
     w.proc
@@ -38,14 +38,14 @@ fn timed_world(steps: Vec<Duration>) -> (World, tempfile::TempDir) {
 }
 
 #[test]
-fn synced_records_the_sync_milliseconds() {
+fn cloned_records_the_clone_milliseconds() {
     let (w, _repo) = timed_world(vec![Duration::from_secs(7), Duration::from_secs(2)]);
     run(&w.cx, &start_req()).unwrap();
     let events = w.cx.store().unwrap().events(BoxId::new(1), 50).unwrap();
-    let synced: Vec<_> = events
+    let cloned: Vec<_> = events
         .iter()
-        .filter(|e| e.kind == "synced")
+        .filter(|e| e.kind == "cloned")
         .map(|e| e.payload.clone())
         .collect();
-    assert_eq!(synced, [json!({"ms": 7_000})]);
+    assert_eq!(cloned, [json!({"ms": 7_000})]);
 }

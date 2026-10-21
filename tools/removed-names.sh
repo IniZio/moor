@@ -16,6 +16,8 @@ names=(
   open_boxes_by_repo open_box_by_path
   ResyncGates rerun_sync sync_name resync_skipped resync_failed no_sync
   will_launch agent_live
+  SyncMode sync_checkout sync_with_proxy sync_failed seed_source CRABBOX_SYNC_GIT_SEED_SOURCE
+  push_url git_remote_lines MOOR_FETCH remote.moor
 )
 args=()
 for n in "${names[@]}"; do args+=(-e "$n"); done

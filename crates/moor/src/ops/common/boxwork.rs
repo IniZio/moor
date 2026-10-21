@@ -18,14 +18,14 @@ use crate::store::{BoxRow, DriverRow};
 /// Wall-clock allowance for the probe script.
 pub(crate) const BOXWORK_DEADLINE: Duration = Duration::from_secs(60);
 
-/// What a Box holds that the host does not.
+/// What a Box holds that is not pushed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum BoxWork {
-    /// Every commit is on the host and the working tree is clean.
+    /// Every commit is pushed or in the base, and the working tree is clean.
     Clean,
-    /// Commits the host lacks, or files changed since the last commit.
+    /// Unpushed commits, or files changed since the last commit.
     Unsaved {
-        /// Commits in the Box that the host does not have.
+        /// Commits on no remote-tracking ref and not in the base.
         ahead: u32,
         /// Changed or untracked paths in the Box checkout.
         dirty: u32,
@@ -91,16 +91,13 @@ pub(crate) fn probe(cx: &Cx, row: &BoxRow, boxed: &DriverRow) -> BoxWork {
 pub(crate) fn plan(cx: &Cx, row: &BoxRow, boxed: &DriverRow) -> Result<ProbePlan, BoxWork> {
     let handle = boxed.handle.as_ref().ok_or("the box has no handle")?;
     let worktree = Path::new(row.worktree.as_deref().ok_or("the Box has no worktree")?);
-    let head = cx
-        .git()
-        .head(worktree)
-        .map_err(|e| format!("cannot read the host HEAD: {e}"))?;
-    if !is_full_sha(&head) {
-        return Err("the host HEAD is not a full commit id".into());
-    }
-    // A base that names a branch is skipped: its commits are reachable from the host HEAD.
-    let mut saved = vec![head.as_str()];
-    saved.extend(row.base.as_deref().filter(|b| is_full_sha(b)));
+    // Commits on a remote-tracking ref count as saved too; the clone fetched every branch.
+    let saved: Vec<&str> = row
+        .base
+        .as_deref()
+        .filter(|b| is_full_sha(b))
+        .into_iter()
+        .collect();
     let script = boxwork_script(&saved).ok_or("cannot build the probe script")?;
     let workdir = match boxed.workdir.as_deref().and_then(recorded_workdir) {
         Some(w) => w,

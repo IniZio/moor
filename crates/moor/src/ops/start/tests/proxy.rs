@@ -36,11 +36,6 @@ fn host_world(fake: FakeProxyHost) -> (World, Arc<FakeEngine>, FakeProxyHost) {
     (w, engine, fake)
 }
 
-fn engine_world() -> (World, Arc<FakeEngine>) {
-    let (w, engine, _) = host_world(FakeProxyHost::new());
-    (w, engine)
-}
-
 fn failure_step(w: &World, id: BoxId) -> (String, String, Option<String>) {
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     let f = row.launch_failure.unwrap();
@@ -61,27 +56,6 @@ fn the_first_launch_ensures_the_proxy_once_and_hands_the_agent_its_address() {
     let launches = engine.launches();
     let addr = launches.first().unwrap().proxy.as_ref().unwrap();
     assert_eq!(addr.box_port, FAKE_BOX_PORT);
-}
-
-#[test]
-fn the_launch_carries_the_repo_origin_when_there_is_one() {
-    let (w, engine) = engine_world();
-    w.proc.on(
-        Tool::Git,
-        &["remote", "get-url", "origin"],
-        Reply::Ok("git@github.com:o/r.git\n".into()),
-    );
-    run(&w.cx, &goal_req()).unwrap();
-    let launches = engine.launches();
-    let origin = launches.first().unwrap().origin.as_deref();
-    assert_eq!(origin, Some("git@github.com:o/r.git"));
-}
-
-#[test]
-fn the_launch_has_no_origin_without_a_remote() {
-    let (w, engine) = engine_world();
-    run(&w.cx, &goal_req()).unwrap();
-    assert_eq!(engine.launches().first().unwrap().origin, None);
 }
 
 #[test]

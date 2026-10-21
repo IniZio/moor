@@ -43,8 +43,7 @@ impl Scratch {
 
     pub(super) fn proxy_lines(&self) -> Vec<String> {
         let env = Claude.env(&self.proxy_ctx());
-        let origin = Some("git@github.com:o/n.git");
-        proxy_env::script_lines(&proxy_addr(), &env, origin).unwrap()
+        proxy_env::script_lines(&proxy_addr(), &env).unwrap()
     }
 
     pub(super) fn script_with(&self, hook_step: &str, proxy: &[String]) -> String {

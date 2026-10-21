@@ -80,8 +80,6 @@ pub struct LaunchReq {
     pub nonce: String,
     /// The Proxy the agent reaches GitHub and its model through; none means no Proxy env and no bypass.
     pub proxy: Option<Arc<ProxyAddr>>,
-    /// The box repo's git origin URL; GitHub push and `gh` routing apply only when it names a GitHub repo.
-    pub origin: Option<String>,
     /// Env var names removed from the agent's environment before hooks and the agent run.
     pub strip_env: Vec<String>,
     /// The first prompt the agent starts with.
@@ -127,7 +125,6 @@ impl PartialEq for LaunchReq {
             && self.model == other.model
             && self.nonce == other.nonce
             && proxy(&self.proxy) == proxy(&other.proxy)
-            && self.origin == other.origin
             && self.strip_env == other.strip_env
             && self.prompt == other.prompt
     }

@@ -59,7 +59,6 @@ fn req(s: &FakeSurface) -> LaunchReq {
         model: Some("haiku".to_owned()),
         nonce: "abc123".to_owned(),
         proxy: None,
-        origin: None,
         strip_env: Vec::new(),
         prompt: LaunchPrompt::Brief,
     }

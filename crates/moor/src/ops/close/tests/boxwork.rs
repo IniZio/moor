@@ -118,9 +118,10 @@ fn close_refuses_a_box_with_an_unpushed_commit_when_the_host_worktree_is_clean()
     let f = fx_probe(Some("ahead=1 dirty=0"));
     let t = text(&refused(&f));
     assert!(t.contains("the Box holds work"), "{t}");
-    assert!(t.contains("not on the host"), "{t}");
+    assert!(t.contains("not pushed"), "{t}");
     assert!(t.contains("1 unpushed commit"), "{t}");
     for cmd in [
+        "moor run t -- git push origin HEAD:refs/heads/",
         "moor run t -- git bundle create .moor/rescue.bundle HEAD --not --remotes",
         "moor cp t .moor/rescue.bundle .",
         "git fetch ./rescue.bundle HEAD:",
@@ -137,7 +138,10 @@ fn close_refuses_a_box_with_only_uncommitted_changes() {
     let t = text(&refused(&f));
     assert!(t.contains("the Box holds work"), "{t}");
     assert!(t.contains("3 uncommitted file"), "{t}");
-    assert!(t.contains("git push moor HEAD:refs/heads/"), "{t}");
+    assert!(
+        t.contains("moor run t -- git push origin HEAD:refs/heads/"),
+        "{t}"
+    );
     assert!(!t.contains("bundle"), "{t}");
 }
 

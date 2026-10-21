@@ -10,7 +10,6 @@ use moor_core::config::{BoxSettings, Flags};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::Decision;
-use moor_core::domain::run::SyncMode;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::exec_env::Purpose;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
@@ -130,7 +129,6 @@ fn launch(
         argv: exec.argv(argv),
         env: exec.vars(),
         cwd: exec.cwd(),
-        sync: SyncMode::None,
         output: Some(output),
         host_cwd: Some(target.worktree.clone()),
         class: Some(cfg.size.value.as_str().to_owned()),

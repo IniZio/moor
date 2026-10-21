@@ -49,7 +49,6 @@ fn ctx<'a>(
             ca_pem,
             direct: &[],
         }),
-        origin: Some("https://github.com/o/n.git"),
         workdir,
         strip: &[],
     }
@@ -113,7 +112,7 @@ fn every_proxy_variable_is_the_box_port_with_no_userinfo() {
     assert!(!text.contains('@'), "{text}");
     assert!(text.contains("export SSL_CERT_FILE="));
     assert!(text.contains("export NODE_EXTRA_CA_CERTS=\"$HOME/.moor-proxy/ca.pem\""));
-    assert!(text.contains("GIT_CONFIG_VALUE_0='https://github.com/o/n.git'"));
+    assert!(!text.contains("GIT_CONFIG"), "{text}");
     for name in PASS_VARS {
         assert!(text.contains(&format!("export {name}=")), "{name}");
     }
@@ -313,39 +312,6 @@ fn merged_env_lets_rules_win() {
             ("A".to_owned(), "9".to_owned())
         ]
     );
-}
-
-#[test]
-fn github_origins_map_to_one_push_url() {
-    let want = Some("https://github.com/o/n.git".to_owned());
-    for origin in [
-        "https://github.com/o/n",
-        "https://github.com/o/n.git",
-        "https://github.com/o/n/",
-        "ssh://git@github.com/o/n.git",
-        "ssh://git@github.com/o/n",
-        "git@github.com:o/n.git",
-        "git@github.com:o/n",
-    ] {
-        assert_eq!(push_url(origin), want, "{origin}");
-    }
-}
-
-#[test]
-fn other_origins_are_not_github() {
-    for origin in [
-        "https://gitlab.com/o/n.git",
-        "git@gitlab.com:o/n.git",
-        "ssh://git@example.com/o/n.git",
-        "/srv/git/o/n.git",
-        "https://github.com/o",
-        "https://github.com/o/",
-        "https://github.com/o/n/extra",
-        "https://github.com/o/n/extra.git",
-        "",
-    ] {
-        assert_eq!(push_url(origin), None, "{origin}");
-    }
 }
 
 #[test]

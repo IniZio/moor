@@ -73,7 +73,6 @@ fn req(s: &FakeSurface, proxy: bool) -> LaunchReq {
                 direct: Vec::new(),
             })
         }),
-        origin: proxy.then(|| "git@github.com:o/n.git".to_owned()),
         strip_env: Vec::new(),
         prompt: LaunchPrompt::Brief,
     }

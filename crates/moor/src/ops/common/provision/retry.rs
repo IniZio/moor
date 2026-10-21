@@ -28,7 +28,7 @@ pub(super) fn kept_box_retry(row: &BoxRow) -> bool {
     kept_box(row).is_some()
 }
 
-/// Runs sync, setup and dotfiles in the kept Box under the setup intent, then marks it ready.
+/// Runs the clone, setup and dotfiles in the kept Box under the setup intent, then marks it ready.
 ///
 /// The caller holds the Box lock and passes the row read under it. No Box is acquired. The
 /// intent is cleared on success and by the failure record, so a crash mid-run leaves it for

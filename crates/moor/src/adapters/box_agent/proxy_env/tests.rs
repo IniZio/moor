@@ -39,8 +39,7 @@ fn the_agent_gets_the_same_box_environment_as_run() {
     let mut p = proxy();
     p.box_env = vec![("QUOTED".to_owned(), "it's".to_owned())];
     let strip = ["PLATFORM_TOKEN".to_owned(), "PLATFORM_TOKEN".to_owned()];
-    let origin = Some("git@github.com:o/n.git");
-    let agent = super::exec_env(Some(&p), &strip, origin, &w).unwrap();
+    let agent = super::exec_env(Some(&p), &strip, &w).unwrap();
     let run = exec_env::build(
         &BoxCtx {
             env: &p.box_env,
@@ -50,7 +49,6 @@ fn the_agent_gets_the_same_box_environment_as_run() {
                 ca_pem: &p.ca_pem,
                 direct: &[],
             }),
-            origin,
             workdir: Some(&w),
         },
         Purpose::Run,
@@ -61,31 +59,31 @@ fn the_agent_gets_the_same_box_environment_as_run() {
     assert_eq!(agent.unset, ["PLATFORM_TOKEN"]);
     assert_eq!(agent.unset, run.unset);
     assert_eq!(agent.cwd, run.cwd);
-    assert_eq!(script_lines(&p, &[], origin).unwrap(), run.prelude);
+    assert_eq!(script_lines(&p, &[]).unwrap(), run.prelude);
 }
 
 #[test]
 fn without_a_proxy_the_environment_only_strips_names() {
     let w = workdir();
     let strip = ["PLATFORM_TOKEN".to_owned()];
-    let exec = super::exec_env(None, &strip, None, &w).unwrap();
+    let exec = super::exec_env(None, &strip, &w).unwrap();
     assert_eq!(exec.unset, strip);
     assert!(exec.vars.is_empty());
     assert!(exec.prelude.iter().all(|l| !l.contains("PROXY")));
 }
 
-fn lines_for(origin: Option<&str>) -> Vec<String> {
+fn lines() -> Vec<String> {
     let mut p = proxy();
     p.box_env = vec![
         ("GH_TOKEN".to_owned(), "gho_moor-proxy".to_owned()),
         ("QUOTED".to_owned(), "it's".to_owned()),
     ];
-    script_lines(&p, &placeholder_env(), origin).unwrap()
+    script_lines(&p, &placeholder_env()).unwrap()
 }
 
 #[test]
 fn the_lines_carry_the_exports() {
-    let lines = lines_for(Some("git@github.com:o/n.git"));
+    let lines = lines();
     let text = lines.join("\n");
     for want in [
         "unset GH_TOKEN GITHUB_TOKEN",
@@ -105,38 +103,26 @@ fn the_lines_carry_the_exports() {
         "export npm_config_cache=\"$HOME/.cache/npm\"",
         "export NODE_USE_ENV_PROXY=1",
         "export CLAUDE_CODE_OAUTH_TOKEN='moor-proxy'",
-        "export GIT_CONFIG_COUNT=2",
-        "export GIT_CONFIG_KEY_0=remote.moor.url",
-        "export GIT_CONFIG_VALUE_0='https://github.com/o/n.git'",
-        "export GIT_CONFIG_KEY_1=remote.moor.fetch",
-        "export GIT_CONFIG_VALUE_1='+refs/heads/*:refs/remotes/moor/*'",
         "unset moor_bundle moor_sys moor_mark moor_f moor_g moor_p moor_ts moor_jh",
     ] {
         assert!(lines.iter().any(|l| l == want), "missing {want}\n{text}");
     }
     assert!(text.contains("export JAVA_TOOL_OPTIONS="), "{text}");
-    for gone in ["insteadOf", "/t/", "MOOR_"] {
+    for gone in ["insteadOf", "/t/", "MOOR_", "GIT_CONFIG"] {
         assert!(!text.contains(gone), "{gone}\n{text}");
     }
 }
 
 #[test]
-fn no_origin_unsets_the_git_config() {
-    let text = lines_for(None).join("\n");
-    assert!(text.contains("unset GIT_CONFIG_COUNT"), "{text}");
-    assert!(!text.contains("GIT_CONFIG_KEY"), "{text}");
-}
-
-#[test]
 fn the_profile_env_comes_after_the_proxy_env() {
-    let lines = lines_for(None);
+    let lines = lines();
     let at = |w: &str| lines.iter().position(|l| l.contains(w)).unwrap();
     assert!(at("NODE_USE_ENV_PROXY") < at("CLAUDE_CODE_OAUTH_TOKEN"));
 }
 
 #[test]
 fn rule_and_repo_env_is_left_to_the_launch_script() {
-    let text = lines_for(None).join("\n");
+    let text = lines().join("\n");
     assert!(!text.contains("QUOTED"), "{text}");
     assert!(!text.contains("export GH_TOKEN="), "{text}");
 }
@@ -147,12 +133,12 @@ fn a_bad_name_or_value_is_refused() {
         name: "A B".to_owned(),
         value: Secret::new(b"x".to_vec()),
     }];
-    assert!(script_lines(&proxy(), &bad, None).is_err());
+    assert!(script_lines(&proxy(), &bad).is_err());
     let binary = [EnvVar {
         name: "A".to_owned(),
         value: Secret::new(vec![0xff]),
     }];
-    assert!(script_lines(&proxy(), &binary, None).is_err());
+    assert!(script_lines(&proxy(), &binary).is_err());
 }
 
 #[test]
@@ -161,7 +147,7 @@ fn the_script_runs_and_builds_the_environment() {
     let home = dir.path().join("home");
     std::fs::create_dir(&home).unwrap();
     let fake = fake_sudo(dir.path());
-    let lines = script_lines(&proxy(), &placeholder_env(), Some("https://github.com/o/n")).unwrap();
+    let lines = script_lines(&proxy(), &placeholder_env()).unwrap();
     let script = format!("{}\nenv", lines.join("\n"));
     let script_path = dir.path().join("launch.sh");
     std::fs::write(&script_path, &script).unwrap();
@@ -194,7 +180,6 @@ fn the_script_runs_and_builds_the_environment() {
     assert_yarn_vars(&env, &home);
     assert_ca_vars(&env, &home);
     is(&env, "CLAUDE_CODE_OAUTH_TOKEN", "moor-proxy");
-    is(&env, "GIT_CONFIG_VALUE_0", "https://github.com/o/n.git");
     is(&env, "NODE_USE_ENV_PROXY", "1");
     is(&env, "f", "keep");
     assert!(
@@ -262,7 +247,7 @@ fn run_launch(with_keytool: bool) -> Launch {
         "org.gradle.jvmargs=-Xmx2560m\n",
     )
     .unwrap();
-    let lines = script_lines(&proxy(), &placeholder_env(), None).unwrap();
+    let lines = script_lines(&proxy(), &placeholder_env()).unwrap();
     let script = format!("{}\nenv", lines.join("\n"));
     let script_path = dir.path().join("launch.sh");
     std::fs::write(&script_path, &script).unwrap();

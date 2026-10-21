@@ -20,6 +20,11 @@ pub(crate) use script::PutCall;
 use script::{layout, write_bytes, PeekCall};
 pub(crate) use tunnel::TunnelReply;
 
+/// Whether `spec` is the provisioning clone exec, the one exec that streams into the clone log.
+pub(crate) fn is_clone_exec(spec: &ExecSpec) -> bool {
+    matches!(&spec.output, Some(Output::Log(p)) if p.parent().is_some_and(|d| d.ends_with("clone")))
+}
+
 #[derive(Default)]
 struct State {
     next: u32,

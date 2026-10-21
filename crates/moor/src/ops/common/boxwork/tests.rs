@@ -6,7 +6,6 @@ use std::time::Duration;
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
-use moor_core::domain::run::SyncMode;
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome, ExecSpec};
@@ -17,10 +16,9 @@ use super::{probe, BoxWork};
 use crate::cx::Cx;
 use crate::store::{BoxRow, DriverRow};
 use crate::testing::driver::FakeDriver;
-use crate::testing::proc::{Reply, ScriptedProc};
+use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
 
-const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
 const OTHER: &str = "fedcba9876543210fedcba9876543210fedcba98";
 /// The handle the fake driver gives its first Box.
 const FIRST_HANDLE: &str = "box-1";
@@ -59,19 +57,13 @@ fn rig(dir: &Path, driver: FakeDriver) -> Rig {
         })
         .unwrap();
     let (row, boxed) = rows(dir, got.handle);
-    let r = Rig {
+    Rig {
         cx,
         driver,
         proc,
         row,
         boxed,
-    };
-    r.proc.on(
-        Tool::Git,
-        &["rev-parse", "HEAD"],
-        Reply::Ok(format!("{HEAD}\n")),
-    );
-    r
+    }
 }
 
 fn rows(dir: &Path, handle: BoxHandle) -> (BoxRow, DriverRow) {
@@ -138,11 +130,12 @@ fn clean_box_is_clean_and_the_probe_is_shaped_right() {
     assert_eq!(run(&r), BoxWork::Clean);
     assert_eq!(r.driver.execs().len(), 1);
     let spec = first_exec(&r);
-    assert_eq!(spec.sync, SyncMode::None);
     assert_eq!(spec.cwd, None);
     let mut argv = spec.argv.iter().map(String::as_str);
     assert_eq!((argv.next(), argv.next()), (Some("sh"), Some("-c")));
-    assert!(argv.next().is_some_and(|script| script.contains(HEAD)));
+    assert!(argv
+        .next()
+        .is_some_and(|script| script.contains(".moor/boxwork")));
     let peeks = r.driver.peeks();
     assert_eq!(peeks.len(), 1);
     assert!(peeks
@@ -234,39 +227,18 @@ fn missing_worktree_is_unknown() {
     assert!(r.driver.execs().is_empty());
 }
 
-fn with_head_reply(dir: &Path, reply: Reply) -> (Rig, Cx) {
-    let r = rig(dir, FakeDriver::new());
-    let proc = Arc::new(ScriptedProc::new());
-    proc.on(Tool::Git, &["rev-parse", "HEAD"], reply);
-    let cx = Cx::fake(
-        dir,
-        dir,
-        Arc::clone(&r.driver) as Arc<_>,
-        Arc::new(FakeSurface::new(dir)),
-        proc as Arc<_>,
-    );
-    (r, cx)
-}
-
 #[test]
-fn host_git_failure_is_unknown() {
+fn the_probe_reads_nothing_from_the_host_checkout() {
     let d = tempfile::tempdir().unwrap();
-    let reply = Reply::Fail {
-        code: 128,
-        stdout: String::new(),
-        stderr: "fatal: not a git repository".to_owned(),
-    };
-    let (r, cx) = with_head_reply(d.path(), reply);
-    assert!(is_unknown(&probe(&cx, &r.row, &r.boxed)));
-    assert!(r.driver.execs().is_empty());
-}
-
-#[test]
-fn host_head_that_is_not_a_full_sha_is_unknown() {
-    let d = tempfile::tempdir().unwrap();
-    let (r, cx) = with_head_reply(d.path(), Reply::Ok("HEAD\n".to_owned()));
-    assert!(is_unknown(&probe(&cx, &r.row, &r.boxed)));
-    assert!(r.driver.execs().is_empty());
+    let r = with_result(d.path(), "ahead=0 dirty=0");
+    assert_eq!(run(&r), BoxWork::Clean);
+    let git: Vec<_> = r
+        .proc
+        .calls()
+        .into_iter()
+        .filter(|c| c.tool == Tool::Git)
+        .collect();
+    assert!(git.is_empty(), "{git:?}");
 }
 
 #[test]
@@ -276,7 +248,6 @@ fn branch_name_base_is_skipped() {
     r.row.base = Some("origin/main".to_owned());
     let _ = run(&r);
     let script = first_exec(&r).argv.concat();
-    assert!(script.contains(HEAD));
     assert!(!script.contains("origin/main"));
 }
 
@@ -287,7 +258,6 @@ fn sha_base_is_saved_too() {
     r.row.base = Some(OTHER.to_owned());
     let _ = run(&r);
     let script = first_exec(&r).argv.concat();
-    assert!(script.contains(HEAD));
     assert!(script.contains(OTHER));
 }
 

@@ -1,6 +1,5 @@
 //! The tail of a passing setup's output, which `moor start` shows.
 
-use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::DriverError;
 
 use super::{cfg, exits, only, rig, run_setup, SetupRun};
@@ -21,14 +20,7 @@ fn a_passing_setup_returns_the_tail_of_its_log() {
     let d = tempfile::tempdir().unwrap();
     let log = (1..=30).fold(String::new(), |acc, i| acc + &format!("line {i}\n"));
     let r = rig(d.path(), FakeDriver::new().copy_text(log));
-    let got = run_setup(
-        &r.cx,
-        &r.handle,
-        &r.workdir,
-        d.path(),
-        &cfg(&["a"], &[]),
-        SyncMode::Full,
-    );
+    let got = run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["a"], &[]));
     let tail = tail_of(&got);
     assert_eq!(tail.len(), 20);
     assert_eq!(tail.first().map(String::as_str), Some("line 11"));
@@ -41,14 +33,7 @@ fn the_host_copy_of_the_setup_log_equals_the_box_log() {
     let d = tempfile::tempdir().unwrap();
     let log = b"moor setup: $ a\n\x1b[31mred\x1b[0m token=abc \xff\n".to_vec();
     let r = rig(d.path(), FakeDriver::new().copy_text(&log));
-    run_setup(
-        &r.cx,
-        &r.handle,
-        &r.workdir,
-        d.path(),
-        &cfg(&["a"], &[]),
-        SyncMode::Full,
-    );
+    run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["a"], &[]));
     assert_eq!(
         std::fs::read(d.path().join(".moor/setup.log")).unwrap(),
         log
@@ -59,14 +44,7 @@ fn the_host_copy_of_the_setup_log_equals_the_box_log() {
 fn a_log_that_cannot_be_copied_leaves_the_tail_empty() {
     let d = tempfile::tempdir().unwrap();
     let r = rig(d.path(), FakeDriver::new());
-    let got = run_setup(
-        &r.cx,
-        &r.handle,
-        &r.workdir,
-        d.path(),
-        &cfg(&["a"], &[]),
-        SyncMode::Full,
-    );
+    let got = run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["a"], &[]));
     assert!(tail_of(&got).is_empty());
 }
 
@@ -77,14 +55,7 @@ fn the_tail_drops_control_characters() {
         d.path(),
         FakeDriver::new().copy_text("\u{1b}[32mgreen\u{1b}[0m\n"),
     );
-    let got = run_setup(
-        &r.cx,
-        &r.handle,
-        &r.workdir,
-        d.path(),
-        &cfg(&["a"], &[]),
-        SyncMode::Full,
-    );
+    let got = run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["a"], &[]));
     assert_eq!(tail_of(&got).first().map(String::as_str), Some("green"));
 }
 
@@ -100,14 +71,7 @@ fn a_symlink_left_as_the_log_is_removed_and_its_target_untouched() {
             .exec_results(exits(&[1]))
             .copy_symlink(&target),
     );
-    run_setup(
-        &r.cx,
-        &r.handle,
-        &r.workdir,
-        d.path(),
-        &cfg(&["a"], &[]),
-        SyncMode::Full,
-    );
+    run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["a"], &[]));
     assert_eq!(std::fs::read_to_string(&target).unwrap(), "keep");
     assert!(std::fs::symlink_metadata(d.path().join(".moor/setup.log")).is_err());
     let w = only(r.cx.take_warnings());
@@ -126,13 +90,6 @@ fn a_failed_copy_leaves_no_partial_log_on_the_host() {
             .exec_results(exits(&[1]))
             .fail_copy_out(DriverError::Quota("q".into())),
     );
-    run_setup(
-        &r.cx,
-        &r.handle,
-        &r.workdir,
-        d.path(),
-        &cfg(&["a"], &[]),
-        SyncMode::Full,
-    );
+    run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["a"], &[]));
     assert!(std::fs::symlink_metadata(d.path().join(".moor/setup.log")).is_err());
 }

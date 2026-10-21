@@ -3,7 +3,6 @@ use std::path::Path;
 use moor_core::boxscript::quote;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
-use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::ExecSpec;
 use moor_core::BoxId;
 
@@ -11,50 +10,57 @@ use super::moor_yaml::script_base_yaml;
 use super::setup::{argvs, script_argv, start_as, start_req, start_with};
 use super::World;
 use crate::ops::start::run;
-use crate::testing::driver::FakeDriver;
+use crate::testing::driver::{is_clone_exec, FakeDriver};
 
-/// The checkout sync execs, in order.
-fn syncs(w: &World) -> Vec<ExecSpec> {
+/// The clone execs, in order.
+fn clones(w: &World) -> Vec<ExecSpec> {
     (w.driver.execs().into_iter())
         .map(|e| e.1)
-        .filter(|s| s.sync == SyncMode::Full)
+        .filter(is_clone_exec)
         .collect()
 }
 
-/// The script the sync exec runs for the test author.
-fn sync_script(name: &str, email: &str) -> String {
+/// The identity lines the clone exec runs first for the test author.
+fn identity_lines(name: &str, email: &str) -> String {
     format!(
         "git config --global user.name {}; echo user.name=$?; \
-         git config --global user.email {}; echo user.email=$?; \
-         exec git rev-parse --git-dir",
+         git config --global user.email {}; echo user.email=$?; ",
         quote(name),
         quote(email)
     )
 }
 
+/// The shell script of the first clone exec.
+fn first_script(w: &World) -> String {
+    clones(w).first().map(script).expect("a clone exec")
+}
+
+/// The shell script of a clone exec, its Proxy wrapper peeled.
+fn script(spec: &ExecSpec) -> String {
+    spec.argv.last().cloned().unwrap_or_default()
+}
+
 #[test]
-fn identity_is_set_inside_the_sync_exec_before_its_check() {
+fn identity_is_set_inside_the_clone_exec_before_the_clone() {
     let (w, v) = start_as(("Ann Dev", "a@x.io"), "setup: [a, b]\n", FakeDriver::new());
     assert!(v.setup.ran && v.setup.ok);
-    let syncs = syncs(&w);
-    assert_eq!(syncs.len(), 1);
-    let sync = syncs.first().unwrap();
-    let want = ["sh", "-c", &sync_script("Ann Dev", "a@x.io")].map(str::to_owned);
-    assert_eq!(sync.argv, want);
-    assert!(sync.output.is_some());
+    assert_eq!(clones(&w).len(), 1);
+    let text = first_script(&w);
+    let (identity, clone) = text.split_at(identity_lines("Ann Dev", "a@x.io").len());
+    assert_eq!(identity, identity_lines("Ann Dev", "a@x.io"));
+    assert!(
+        clone.starts_with("export GIT_TERMINAL_PROMPT=0\n"),
+        "{clone}"
+    );
     assert_eq!(argvs(&w), [script_argv(&["a", "b"])]);
 }
 
 #[test]
-fn without_an_author_the_sync_exec_only_checks_the_checkout() {
+fn without_an_author_the_clone_exec_only_clones() {
     let (w, _) = start_with("setup: [a]\n", FakeDriver::new());
-    let syncs = syncs(&w);
-    let sync = syncs.first().unwrap();
-    assert_eq!(
-        sync.argv,
-        ["git", "rev-parse", "--git-dir"].map(str::to_owned)
-    );
-    assert!(sync.output.is_some());
+    let text = first_script(&w);
+    assert!(text.starts_with("export GIT_TERMINAL_PROMPT=0\n"), "{text}");
+    assert!(!text.contains("git config --global"), "{text}");
 }
 
 #[test]
@@ -70,13 +76,9 @@ fn identity_is_set_again_when_the_box_is_re_provisioned() {
         .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
         .unwrap();
     run(&w.cx, &start_req()).unwrap();
-    let with_identity = syncs(&w)
+    let with_identity = clones(&w)
         .iter()
-        .filter(|s| {
-            s.argv
-                .last()
-                .is_some_and(|a| a.contains("git config --global"))
-        })
+        .filter(|s| script(s).contains("git config --global"))
         .count();
     assert_eq!(with_identity, 2);
 }
@@ -84,7 +86,7 @@ fn identity_is_set_again_when_the_box_is_re_provisioned() {
 #[test]
 fn only_global_user_name_and_email_are_written_besides_setup_lines() {
     let (w, _) = start_as(("Ann Dev", "a@x.io"), "setup: [a]\n", FakeDriver::new());
-    let script = syncs(&w).remove(0).argv.remove(2);
+    let script = first_script(&w);
     assert_eq!(script.matches("git config").count(), 2);
     assert_eq!(script.matches("--global").count(), 2);
     let joined = argvs(&w).concat().join(" ") + &script;
@@ -100,10 +102,10 @@ fn identity_adds_no_box_call_to_a_fresh_start() {
 }
 
 #[test]
-fn the_sync_output_log_is_removed_after_it_is_read() {
+fn the_clone_output_log_is_removed_after_it_is_read() {
     let driver = FakeDriver::new().exec_stdout(["user.name=0\nuser.email=0\n"]);
     let (w, _) = start_as(("Ann Dev", "a@x.io"), "setup: [a]\n", driver);
-    let log = w.dir.path().join("sync").join("1.log");
+    let log = w.dir.path().join("clone").join("1.log");
     assert!(log.parent().unwrap().is_dir());
     assert!(!log.exists());
     assert!(w

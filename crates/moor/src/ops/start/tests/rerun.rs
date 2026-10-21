@@ -1,9 +1,8 @@
-//! Only provisioning copies the host checkout into a Box: an attaching start, a run and a close's
-//! teardown run every exec with no sync.
+//! Only provisioning clones the repo in a Box: an attaching start, a run and a close's teardown
+//! run no clone exec.
 
 use std::path::Path;
 
-use moor_core::domain::run::SyncMode;
 use moor_core::seam::proc::Tool;
 use moor_core::{BoxId, BoxTarget, CloseReq, RunReq};
 
@@ -12,7 +11,7 @@ use super::setup::{start_req, start_with};
 use super::World;
 use crate::error::CommandError;
 use crate::ops::start::run;
-use crate::testing::driver::FakeDriver;
+use crate::testing::driver::{is_clone_exec, FakeDriver};
 use crate::testing::proc::Reply;
 
 const YAML: &str = "teardown: [echo bye]\n";
@@ -20,14 +19,14 @@ const YAML: &str = "teardown: [echo bye]\n";
 /// An op under test, and whether it must reach the Box.
 type Op<'a> = (&'a str, &'a dyn Fn() -> Result<(), CommandError>, bool);
 
-/// The sync mode and argv of every exec the fake Driver received from `from` on.
-fn syncs_since(w: &World, from: usize) -> Vec<(SyncMode, Vec<String>)> {
+/// Whether each exec the fake Driver received from `from` on is the clone, with its argv.
+fn clones_since(w: &World, from: usize) -> Vec<(bool, Vec<String>)> {
     let execs = w.driver.execs();
     execs
         .get(from..)
         .unwrap_or_default()
         .iter()
-        .map(|(_, spec, _)| (spec.sync, spec.argv.clone()))
+        .map(|(_, spec, _)| (is_clone_exec(spec), spec.argv.clone()))
         .collect()
 }
 
@@ -41,12 +40,12 @@ fn keep_teardown(w: &World, id: BoxId) {
 }
 
 #[test]
-fn only_provisioning_syncs_the_checkout_into_the_box() {
+fn only_provisioning_clones_the_repo_in_the_box() {
     let (w, v) = start_with(YAML, FakeDriver::new());
     let id = BoxId::new(v.boxed.id);
-    let provisioned = syncs_since(&w, 0);
+    let provisioned = clones_since(&w, 0);
     assert!(
-        provisioned.iter().any(|(sync, _)| *sync == SyncMode::Full),
+        provisioned.iter().any(|(clone, _)| *clone),
         "{provisioned:?}"
     );
     let name = start_req().name;
@@ -85,10 +84,10 @@ fn only_provisioning_syncs_the_checkout_into_the_box() {
         let from = w.driver.execs().len();
         let done = step();
         assert!(done.is_ok(), "{op}: {done:?}");
-        let got = syncs_since(&w, from);
+        let got = clones_since(&w, from);
         assert_eq!(!got.is_empty(), execs, "{op}: {got:?}");
-        for (sync, argv) in &got {
-            assert_eq!(*sync, SyncMode::None, "{op} synced for {:?}", argv.last());
+        for (clone, argv) in &got {
+            assert!(!clone, "{op} cloned for {:?}", argv.last());
         }
     }
 }

@@ -6,12 +6,14 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::DriverError;
+use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proc::Tool;
 use moor_core::{BoxId, BoxPath, ErrorKind, StartReq};
 
 use super::run;
 use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
+use crate::testing::forge::FakeForge;
 use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
 use crate::testing::{box_name, driver::FakeDriver};
@@ -20,6 +22,9 @@ mod activity;
 mod base;
 mod branch_owner;
 mod capacity;
+mod clone_proxy;
+mod clone_retry;
+mod clone_timing;
 mod dead_agent;
 mod dotfiles;
 mod exclude;
@@ -49,9 +54,6 @@ mod settle_busy;
 mod setup;
 mod setup_rerun;
 mod state;
-mod sync_proxy;
-mod sync_retry;
-mod sync_timing;
 mod transcript;
 mod workdir;
 
@@ -121,6 +123,21 @@ fn world_with(driver: FakeDriver, repo: &Path, config: UserConfig) -> World {
     }
 }
 
+/// The GitHub origin [`on_github`] gives the world's repo.
+const ORIGIN: &str = "https://github.com/o/n.git";
+
+/// Gives the world's repo a GitHub origin, so a start clones it in the Box.
+fn on_github(mut w: World) -> World {
+    w.proc.on(
+        Tool::Git,
+        &["remote", "get-url", "origin"],
+        Reply::Ok(format!("{ORIGIN}\n")),
+    );
+    let forge = FakeForge::new().with_repo(ORIGIN, ForgeRepo::new("o", "n"));
+    w.cx = w.cx.with_forge(Arc::new(forge));
+    w
+}
+
 /// A start request for `name`.
 fn req(name: &str) -> StartReq {
     StartReq {
@@ -165,7 +182,7 @@ fn happy_path_calls_seams_in_order_and_clears_intent() {
         w.surface.calls(),
         ["create_worktree demo", "ensure_workspace moor:demo"]
     );
-    assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);
+    assert_eq!(w.driver.calls(), ["acquire"]);
 }
 
 #[test]
@@ -247,7 +264,7 @@ fn open_name_attaches_without_touching_the_box() {
     let again = run(&w.cx, &req("demo")).unwrap();
     assert!(again.attached);
     assert_eq!(again.boxed.id, first.boxed.id);
-    assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);
+    assert_eq!(w.driver.calls(), ["acquire"]);
     assert_eq!(w.surface.calls().len(), 2);
 }
 
@@ -283,10 +300,7 @@ fn start_after_acquire_failure_gets_a_new_box() {
     );
     let row = w.cx.store().unwrap().box_row(BoxId::new(again.boxed.id));
     assert_eq!(row.unwrap().unwrap().boxed.unwrap().state, BoxState::Ready);
-    assert_eq!(
-        w.driver.calls(),
-        ["acquire", "release box-1", "acquire", "exec box-1"]
-    );
+    assert_eq!(w.driver.calls(), ["acquire", "release box-1", "acquire"]);
     assert_eq!(w.surface.calls().len(), 2);
 }
 
@@ -307,10 +321,7 @@ fn start_on_a_gone_box_acquires_again_and_keeps_the_box_working() {
     let b = store.box_row(id).unwrap().unwrap().boxed.unwrap();
     assert_eq!(b.state, BoxState::Ready);
     assert_ne!(b.handle.unwrap().as_str(), "box-1");
-    assert_eq!(
-        w.driver.calls(),
-        ["acquire", "exec box-1", "acquire", "exec box-2"]
-    );
+    assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
 }
 
 #[test]
@@ -403,7 +414,7 @@ fn refused_start_provisions_when_retried_after_the_lock_is_released() {
     );
     let row = w.cx.store().unwrap().box_row(BoxId::new(again.boxed.id));
     assert_eq!(row.unwrap().unwrap().boxed.unwrap().state, BoxState::Ready);
-    assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);
+    assert_eq!(w.driver.calls(), ["acquire"]);
 }
 
 #[test]
@@ -419,7 +430,7 @@ fn start_on_a_lost_box_is_refused_while_another_op_holds_the_lock() {
     let err = run(&w.cx, &req("demo")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
     assert_eq!(err.error.to_string(), "box busy: close in progress");
-    assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);
+    assert_eq!(w.driver.calls(), ["acquire"]);
 }
 
 #[test]
@@ -433,17 +444,11 @@ fn reprovision_skips_when_another_start_already_gave_the_box_back() {
         .unwrap();
     let stale = store.box_row(id).unwrap().unwrap();
     run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(
-        w.driver.calls(),
-        ["acquire", "exec box-1", "acquire", "exec box-2"]
-    );
+    assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
     let run =
         crate::ops::common::provision::reprovision(&w.cx, store, &stale, "start", false).unwrap();
     assert!(run.is_none());
-    assert_eq!(
-        w.driver.calls(),
-        ["acquire", "exec box-1", "acquire", "exec box-2"]
-    );
+    assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
 }
 
 /// Starts `demo`, then leaves it as a provisioning that lost its Box handle.

@@ -79,31 +79,19 @@ pub enum Refusal {
         /// Whether the host worktree is dirty.
         dirty: bool,
     },
-    /// The Box holds work that is not on the host.
+    /// The Box holds work that is not pushed.
     #[error(
-        "the Box holds work that is not on the host ({ahead} unpushed commit(s), \
+        "the Box holds work that is not pushed ({ahead} unpushed commit(s), \
          {dirty} uncommitted file(s)); to keep it {}; \
          or run `moor close {name} --force` to discard it",
-        if *ahead == 0 {
-            format!(
-                "commit it in the Box and, if the Box has the moor remote, run \
-                 `git push moor HEAD:refs/heads/{branch}` there \
-                 (inspect it first with `moor run {name} -- git status`)"
-            )
-        } else {
-            format!(
-                "run `moor run {name} -- git bundle create .moor/rescue.bundle HEAD --not --remotes`, \
-                 then `moor cp {name} .moor/rescue.bundle .`, \
-                 then `git fetch ./rescue.bundle HEAD:{branch}`; or push from the Box"
-            )
-        }
+        keep_hint(name, branch, *ahead)
     )]
     UnsavedInBox {
         /// The box name.
         name: String,
         /// The box branch, or a placeholder when unknown.
         branch: String,
-        /// Commits not pushed or reachable from the host.
+        /// Commits not reachable from any remote-tracking ref or the base.
         ahead: u32,
         /// Uncommitted files.
         dirty: u32,
@@ -117,6 +105,23 @@ pub enum Refusal {
         /// Why the check failed.
         reason: String,
     },
+}
+
+/// How to keep the unsaved work of Box `name`, which has `ahead` unpushed commits on `branch`.
+fn keep_hint(name: &str, branch: &str, ahead: u32) -> String {
+    let push = format!("`moor run {name} -- git push origin HEAD:refs/heads/{branch}`");
+    if ahead == 0 {
+        format!(
+            "commit it in the Box, then run {push} \
+             (inspect it first with `moor run {name} -- git status`)"
+        )
+    } else {
+        format!(
+            "run {push}; or run `moor run {name} -- git bundle create .moor/rescue.bundle HEAD --not --remotes`, \
+             then `moor cp {name} .moor/rescue.bundle .`, \
+             then `git fetch ./rescue.bundle HEAD:{branch}`"
+        )
+    }
 }
 
 /// What the Driver said to a release request, without its text.

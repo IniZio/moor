@@ -32,11 +32,11 @@ impl Provisioned {
     }
 }
 
-/// Records a failed checkout sync and returns the error, carrying the Box row, to report.
+/// Records a failed clone and returns the error, carrying the Box row, to report.
 ///
 /// The Box is kept and the agent does not start. `advance` moves the Box to setup-failed; a
 /// Box already working gets a `setup_failed` event instead.
-pub(super) fn sync_failed(
+pub(super) fn clone_failed(
     cx: &Cx,
     store: &Store,
     id: BoxId,
@@ -64,14 +64,14 @@ pub(super) fn sync_failed(
     if let Err(write) = store.apply(done) {
         return write.into();
     }
-    sync_step_failed(cx, store, id, handle, reason)
+    clone_step_failed(cx, store, id, handle, reason)
 }
 
-/// The error for a failed sync step in a Box that is kept for debugging.
+/// The error for a failed clone step in a Box that is kept for debugging.
 ///
 /// The message is the reason, which carries the
 /// output tail when there is one; the hints say where the Box is, how to retry and how to close.
-fn sync_step_failed(
+fn clone_step_failed(
     cx: &Cx,
     store: &Store,
     id: BoxId,
@@ -84,7 +84,7 @@ fn sync_step_failed(
     };
     let name = row.name.as_str().to_owned();
     out.with_hint(format!(
-        "the sync step failed; Box {} is kept for debugging and the agent did not start",
+        "the clone step failed; Box {} is kept for debugging and the agent did not start",
         handle.as_str()
     ))
     .with_hint(format!("`moor start {name}` again retries on this Box"))
@@ -93,7 +93,7 @@ fn sync_step_failed(
     ))
     .with_value(serde_json::json!({
         "box": box_view(&row, cx.config()),
-        "failed_step": "sync",
+        "failed_step": "clone",
         "handle": handle.as_str(),
     }))
 }

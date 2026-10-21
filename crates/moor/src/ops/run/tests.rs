@@ -9,7 +9,6 @@ use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange};
-use moor_core::domain::run::SyncMode;
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::seam::proc::{Output, Tool};
@@ -209,7 +208,6 @@ fn a_plain_run_syncs_nothing_stores_no_sha_and_takes_its_class_and_directories_f
     let row = f.cx.store().unwrap().last_run(f.id).unwrap().unwrap();
     assert_eq!(row.sha, None);
     let (_, spec, _) = f.driver.execs().remove(0);
-    assert_eq!(spec.sync, SyncMode::None);
     assert_eq!(spec.host_cwd.as_deref(), Some(f.dir.path()));
     assert_eq!(spec.cwd.unwrap().as_str(), "/work/cbx_1/repo");
     assert_eq!(spec.class.as_deref(), Some("small"));

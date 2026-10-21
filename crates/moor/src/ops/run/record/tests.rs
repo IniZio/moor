@@ -2,7 +2,6 @@
 
 use moor_core::boxscript::record::{head_script, record_script, HEAD_FILE, HEAD_MOVED, MOVED_FILE};
 use moor_core::boxscript::{command_line, quote};
-use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::{BoxPath, ErrorKind, GateReq, RunReq};
 
@@ -150,7 +149,6 @@ fn record_run_wraps_the_command_in_the_record_script() {
         command(&spec.argv),
         ["sh", "-c", &record_script(&[], &line, BOX_SHA)]
     );
-    assert_eq!(spec.sync, SyncMode::None);
     let row = f.cx.store().unwrap().last_run(f.id).unwrap().unwrap();
     assert_eq!(row.record.as_deref(), Some("ci"));
     assert_eq!(row.argv, argv);

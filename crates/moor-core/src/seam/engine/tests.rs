@@ -38,7 +38,6 @@ fn req() -> LaunchReq {
         model: None,
         nonce: "abc".to_owned(),
         proxy: None,
-        origin: None,
         strip_env: Vec::new(),
         prompt: LaunchPrompt::Brief,
     }
