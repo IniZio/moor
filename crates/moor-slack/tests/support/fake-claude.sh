@@ -31,6 +31,7 @@ case "$token" in
     ;;
   *-hang-*)
     init
+    : > "$out/waiting"
     sleep 60
     ;;
   *-channel-*)
