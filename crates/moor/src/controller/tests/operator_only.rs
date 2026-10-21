@@ -1,0 +1,210 @@
+//! What only the operator may do, and what a front must assert, over the controller and front
+//! sockets.
+#![allow(
+    clippy::indexing_slicing,
+    reason = "test assertions index decoded frames"
+)]
+
+use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::{BoxId, BoxName};
+use serde_json::{json, Value};
+
+use super::authz::{
+    acting, every_kind, naming, not_yours, response_line, Names, World, A, A_BOX, B_BOX,
+    MISSING_SESSION,
+};
+use super::fronts::{ask, refused};
+
+/// A request of `kind` for a kind that names no Box; `None` for a kind this test does not know.
+fn nameless(kind: &str) -> Option<Value> {
+    Some(match kind {
+        "start-needs" | "env" | "repos" | "whoami" | "enroll" | "secret-names" | "link-code"
+        | "version" => json!({"cmd": kind}),
+        "session-binding" => json!({"cmd": kind, "front": "slack", "key": "k"}),
+        "gate" => json!({"cmd": kind, "sha": "abcd123", "name": "test"}),
+        "secret-set" => json!({"cmd": kind, "name": "n", "value": "v"}),
+        "secret-delete" => json!({"cmd": kind, "name": "n"}),
+        "link-redeem" => json!({"cmd": kind, "code": "c"}),
+        "in" => json!({"cmd": kind, "dir": "/w", "request": {"cmd": "show"}}),
+        _ => return None,
+    })
+}
+
+#[test]
+fn every_front_request_but_version_must_assert_an_identity() {
+    let world = World::new();
+    let slack = world.slack();
+    let mut unknown = Vec::new();
+    for kind in every_kind().iter().filter(|k| *k != "as") {
+        let request = match naming(kind, B_BOX, world.b_session) {
+            Names::Box(request) => request,
+            Names::Nothing | Names::Unknown => {
+                let Some(request) = nameless(kind) else {
+                    unknown.push(kind.clone());
+                    continue;
+                };
+                request
+            }
+        };
+        let got = ask(&slack, &request);
+        if kind == "version" {
+            assert_eq!(got["class"], "ok", "{got}");
+        } else {
+            refused(&got, "the slack front socket must assert an identity");
+        }
+    }
+    assert!(
+        unknown.is_empty(),
+        "say how to send these new request kinds: {unknown:?}"
+    );
+}
+
+#[test]
+fn a_start_with_a_worktree_is_the_operators_only() {
+    let world = World::new();
+    for name in ["new-box", A_BOX] {
+        let start = json!({"cmd": "start", "name": name, "worktree": "/home/op/wt"});
+        refused(
+            &ask(&world.slack(), &acting(A, &start)),
+            "--worktree names a host checkout, which is operator-only",
+        );
+    }
+}
+
+#[test]
+fn env_and_repos_are_the_operators_only() {
+    let world = World::new();
+    let slack = world.slack();
+    refused(
+        &ask(&slack, &acting(A, &json!({"cmd": "env", "repo": "/etc"}))),
+        "env reads the host's configs, which is operator-only",
+    );
+    refused(
+        &ask(&slack, &acting(A, &json!({"cmd": "repos"}))),
+        "repos is operator-only",
+    );
+    let repos = ask(&world.served.main, &json!({"cmd": "repos"}));
+    assert_eq!(repos["value"], json!({"repos": []}), "{repos}");
+}
+
+/// The ids of the Sessions a `sessions` reply lists.
+fn session_ids(envelope: &Value) -> Vec<i64> {
+    envelope["value"]["sessions"]
+        .as_array()
+        .expect("a list of Sessions")
+        .iter()
+        .map(|s| s["session"].as_i64().expect("id"))
+        .collect()
+}
+
+#[test]
+fn host_sessions_are_the_operators_only() {
+    let world = World::new();
+    let (slack, main) = (world.slack(), &world.served.main);
+    let opened = ask(
+        main,
+        &json!({"cmd": "open-host-session", "workdir": "/home/op/w"}),
+    );
+    let host = opened["value"]["session"].as_i64().expect("host Session");
+    let bind = json!({"cmd": "bind-session", "front": "slack", "key": "thread",
+        "session": host, "owner": "o"});
+    assert_eq!(ask(main, &bind)["class"], "ok");
+    for kind in [
+        "show-session",
+        "update-host-session",
+        "end-host-session",
+        "bind-session",
+        "sessions",
+        "open-host-session",
+        "open-session",
+        "start",
+    ] {
+        let (on_host, on_missing) = (on_session(kind, host), on_session(kind, MISSING_SESSION));
+        not_yours(&ask(&slack, &acting(A, &on_host)));
+        assert_eq!(
+            response_line(&slack, &acting(A, &on_host)),
+            response_line(&slack, &acting(A, &on_missing)),
+            "{kind}"
+        );
+    }
+    refused(
+        &ask(
+            &slack,
+            &acting(A, &json!({"cmd": "open-host-session", "workdir": "/w"})),
+        ),
+        "host Sessions are operator-only",
+    );
+    let listed = ask(&slack, &acting(A, &json!({"cmd": "sessions"})));
+    assert!(!session_ids(&listed).contains(&host), "{listed}");
+    let lookup = json!({"cmd": "session-binding", "front": "slack", "key": "thread"});
+    assert_eq!(ask(&slack, &acting(A, &lookup))["value"], Value::Null);
+    assert_eq!(ask(main, &lookup)["value"]["session"], host);
+    assert!(session_ids(&ask(main, &json!({"cmd": "sessions"}))).contains(&host));
+    let shown = ask(main, &json!({"cmd": "show-session", "session": host}));
+    assert_eq!(shown["value"]["workdir"], "/home/op/w", "{shown}");
+}
+
+/// A request of `kind` that names Session `session`, as its parent for the kinds that name a
+/// Session only that way.
+fn on_session(kind: &str, session: i64) -> Value {
+    let named = match naming(kind, A_BOX, session) {
+        Names::Box(request) => Some(request),
+        Names::Nothing | Names::Unknown => None,
+    };
+    let mut request = named.expect("the kind names a Session");
+    if matches!(kind, "start" | "open-session") {
+        request["parent"] = json!(session);
+    }
+    request
+}
+
+#[test]
+fn a_start_under_another_users_session_is_refused() {
+    let world = World::new();
+    let start = json!({"cmd": "start", "name": "new-box", "parent": world.b_session});
+    not_yours(&ask(&world.slack(), &acting(A, &start)));
+}
+
+#[test]
+fn a_session_opened_under_another_users_session_is_refused() {
+    let world = World::new();
+    let open =
+        json!({"cmd": "open-session", "box": A_BOX, "seed": "go", "parent": world.b_session});
+    not_yours(&ask(&world.slack(), &acting(A, &open)));
+}
+
+#[test]
+fn show_session_lists_only_the_children_the_caller_may_see() {
+    let world = World::new();
+    let a_box = BoxId::new(1);
+    let user_of = |id: BoxId| {
+        let row = world.store.box_row(id).expect("read").expect("row");
+        row.user.expect("a user")
+    };
+    let parent = world.store.box_sessions(a_box).expect("sessions")[0].id;
+    for (name, owner) in [("a-child", a_box), ("b-child", world.b_box)] {
+        let new = NewBox {
+            name: BoxName::parse_allow_bare(name).expect("name"),
+            repo: "r".into(),
+        };
+        let child = Decision::insert(new)
+            .parent_session(Some(parent))
+            .requester(user_of(owner));
+        world.store.apply(child).expect("child Box");
+    }
+    let children = |envelope: Value| -> Vec<String> {
+        let kids = envelope["value"]["children"].as_array().expect("children");
+        kids.iter()
+            .map(|c| c["box"].as_str().expect("box").to_owned())
+            .collect()
+    };
+    let show = json!({"cmd": "show-session", "session": parent});
+    assert_eq!(
+        children(ask(&world.slack(), &acting(A, &show))),
+        ["a-child"]
+    );
+    assert_eq!(
+        children(ask(&world.served.main, &show)),
+        ["a-child", "b-child"]
+    );
+}

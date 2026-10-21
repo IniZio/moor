@@ -5,6 +5,7 @@ use moor_core::{ErrorKind, GateReq};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::authz;
 use crate::ops::common::view::rfc3339;
 use crate::store::RunRow;
 
@@ -38,10 +39,16 @@ impl From<GateVerdict> for GateView {
     }
 }
 
-/// Run `gate`; needs only the store, so it works from any directory.
+/// Run `gate` over the recorded runs of the Boxes the caller may see; needs only the store, so
+/// it works from any directory.
 pub(crate) fn run(cx: &Cx, req: &GateReq) -> Result<GateView, CommandError> {
-    let rows = cx.store()?.recorded_runs(&req.sha)?;
-    let runs: Vec<GateRun> = rows.iter().filter_map(gate_run).collect();
+    let store = cx.store()?;
+    let mut runs = Vec::new();
+    for row in store.recorded_runs(&req.sha)? {
+        if authz::may_see(cx, store, row.box_id)? {
+            runs.extend(gate_run(&row));
+        }
+    }
     let query = GateQuery {
         sha: &req.sha,
         name: &req.name,

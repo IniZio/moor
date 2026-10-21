@@ -4,6 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::user::{Identity, Viewer};
 use moor_core::{BoxId, BoxName, ErrorKind, GateReq, Sha};
 
 use super::run;
@@ -181,4 +182,36 @@ fn command_filter_matches_exact_text() {
     assert_eq!(field(&e.value.unwrap(), "command"), "make lint");
     let e = err(&cx, &req(SHA, Some("make")));
     assert_eq!(field(&e.value.unwrap(), "command"), serde_json::Value::Null);
+}
+
+#[test]
+fn a_gate_reads_only_the_runs_of_boxes_its_caller_may_see() {
+    let dir = tempfile::tempdir().unwrap();
+    let cx = cx(dir.path());
+    let store = cx.store().unwrap();
+    let (mine, _) = store.enroll(&Identity::local(2000)).unwrap();
+    let (theirs, _) = store.enroll(&Identity::local(3000)).unwrap();
+    let nt = NewBox {
+        name: BoxName::parse_allow_bare("theirs").unwrap(),
+        repo: "r".into(),
+    };
+    let id = store
+        .apply(Decision::insert(nt).requester(theirs))
+        .unwrap()
+        .box_id;
+    record(&cx, id, "test", SHA, "make test", 0);
+    let as_viewer = |viewer: Viewer| cx_viewing(dir.path(), viewer);
+    let e = run(&as_viewer(Viewer::User(mine)), &req(SHA, None)).unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Failed, "{e:?}");
+    assert!(
+        run(&as_viewer(Viewer::User(theirs)), &req(SHA, None))
+            .unwrap()
+            .ok
+    );
+    assert!(run(&cx, &req(SHA, None)).unwrap().ok);
+}
+
+/// [`cx`] over the same state, seeing only the Boxes of `viewer`.
+fn cx_viewing(dir: &Path, viewer: Viewer) -> Cx {
+    cx(dir).with_viewer(viewer)
 }
