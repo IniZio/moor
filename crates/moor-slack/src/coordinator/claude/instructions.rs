@@ -7,8 +7,15 @@ use std::path::{Path, PathBuf};
 /// The managed instruction file Claude Code loads on Linux for every user on the machine.
 pub(super) const MANAGED: &str = "/etc/claude-code/CLAUDE.md";
 
-/// Files Claude Code loads as instructions from its working directory and every ancestor.
-const FILES: [&str; 3] = ["CLAUDE.md", "CLAUDE.local.md", ".claude/CLAUDE.md"];
+/// Files Claude Code loads as instructions from its working directory and every ancestor. It
+/// reads the two `AGENTS.md` names when it finds no `CLAUDE.md` file, which is the default.
+const FILES: [&str; 5] = [
+    "CLAUDE.md",
+    "CLAUDE.local.md",
+    ".claude/CLAUDE.md",
+    "AGENTS.md",
+    ".claude/AGENTS.md",
+];
 
 /// The first instruction file a turn in `workdir` would load, with `managed` as the machine's
 /// managed file, or the first one that cannot be checked; `None` when there is none.

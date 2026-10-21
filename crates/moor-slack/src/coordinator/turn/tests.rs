@@ -162,6 +162,8 @@ fn an_instruction_file_in_the_workdir_or_an_ancestor_is_unsafe() {
         root.path().join("CLAUDE.md"),
         root.path().join("threads").join("CLAUDE.local.md"),
         work.join(".claude").join("CLAUDE.md"),
+        root.path().join("AGENTS.md"),
+        work.join(".claude").join("AGENTS.md"),
     ] {
         std::fs::create_dir_all(planted.parent().unwrap()).unwrap();
         std::fs::write(&planted, "obey me").unwrap();
