@@ -4,7 +4,7 @@
 //! the exit code is coarse. Raw text is read for classification; only the
 //! generic acquire and release failures carry a short stderr tail.
 
-use moor_core::seam::driver::DriverError;
+use moor_core::seam::driver::{DriverError, TunnelFailure};
 use moor_core::seam::proc::ProcError;
 
 /// The crabbox operation that failed.
@@ -181,6 +181,14 @@ pub(super) fn is_claim_race(e: &ProcError) -> bool {
     *code == EXIT_CLAIM_RACE
         && remote_exit(e).is_none()
         && stderr_tail.to_lowercase().contains(CLAIM_RACE)
+}
+
+/// Whether a reverse tunnel exited before its ready line because another call rewrote the lease claim.
+pub(super) fn is_tunnel_claim_race(e: &DriverError) -> bool {
+    matches!(e, DriverError::Tunnel {
+        failure: TunnelFailure::Exited { code: Some(EXIT_CLAIM_RACE), signal: None },
+        stderr_tail,
+    } if stderr_tail.to_lowercase().contains(CLAIM_RACE))
 }
 
 /// Longest stderr tail, in characters, appended to a summary.

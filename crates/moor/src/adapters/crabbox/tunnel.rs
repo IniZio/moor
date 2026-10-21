@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use moor_core::name::BoxHandle;
 use moor_core::seam::driver::{DriverError, TunnelFailure, TunnelHandle};
-use moor_core::seam::proc::{ChildHandle, Deadline, FirstLineError};
+use moor_core::seam::proc::{ChildHandle, Deadline, FirstLineError, ProcSpec};
 use serde::Deserialize;
 
 use super::{static_env, target_args, Crabbox};
@@ -76,9 +76,19 @@ pub(super) fn reverse_tunnel(
             .cwd(host_cwd),
         handle,
     );
+    cb.retry_claim_race(|| open(cb, &spec, box_port, socket))
+}
+
+/// Spawns the tunnel child once and waits for its ready line.
+fn open(
+    cb: &Crabbox,
+    spec: &ProcSpec,
+    box_port: u16,
+    socket: &Path,
+) -> Result<Box<dyn TunnelHandle>, DriverError> {
     let mut child = cb
         .proc
-        .spawn_child(&spec)
+        .spawn_child(spec)
         .map_err(|_| DriverError::Unavailable("crabbox could not be started".to_owned()))?;
     match child.first_line(Deadline(TUNNEL_READY_DEADLINE)) {
         Ok(line) => match serde_json::from_str::<Ready>(&line) {
