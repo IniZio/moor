@@ -2,8 +2,8 @@
 //! `coordinator.idle_minutes` and none of its Boxes is busy, and the next message opens a new
 //! one in the same workdir. A crash between a host Session request and its record in
 //! `slack.db` leaves one live host Session for the thread, which a rerun adopts and a turn that
-//! does not run again ends. A host Session ended outside the front is replaced before a turn.
-//! The sweep tests backdate the thread's last turn and restart the front, whose scheduler
+//! does not run again ends. A host Session ended outside the front is replaced before a turn;
+//! a check that fails any other way keeps it. The sweep tests backdate the thread's last turn and restart the front, whose scheduler
 //! sweeps once at start.
 
 #![allow(clippy::indexing_slicing, reason = "test code")]
@@ -20,36 +20,49 @@ use super::support::{Rig, BOX_NAME, CHANNEL, TS, USER};
 use super::turn::{ask, workdir, GOOD};
 
 /// The daemon's `slack.db`.
-fn db(rig: &Rig) -> rusqlite::Connection {
+pub(super) fn db(rig: &Rig) -> rusqlite::Connection {
     let db = rusqlite::Connection::open(rig.path("state-slack/slack.db")).unwrap();
     db.busy_timeout(Duration::from_secs(5)).unwrap();
     db
 }
 
 /// The thread's recorded host Session.
-fn root_session(rig: &Rig) -> Option<i64> {
+pub(super) fn root_session(rig: &Rig) -> Option<i64> {
+    thread_session(rig, TS)
+}
+
+/// The recorded host Session of thread `ts`.
+pub(super) fn thread_session(rig: &Rig, ts: &str) -> Option<i64> {
     db(rig)
         .query_row(
             "SELECT root_session FROM slack_threads WHERE channel = ?1 AND thread_ts = ?2",
-            [CHANNEL, TS],
+            [CHANNEL, ts],
             |r| r.get(0),
         )
         .unwrap()
 }
 
 /// Polls until the thread's recorded host Session is `want`; fails after ten seconds.
-fn wait_root_session(rig: &Rig, want: Option<i64>) {
+pub(super) fn wait_root_session(rig: &Rig, want: Option<i64>) {
+    wait_thread_session(rig, TS, want);
+}
+
+/// Polls until thread `ts`'s recorded host Session is `want`; fails after ten seconds.
+pub(super) fn wait_thread_session(rig: &Rig, ts: &str, want: Option<i64>) {
     for _ in 0..500 {
-        if root_session(rig) == want {
+        if thread_session(rig, ts) == want {
             return;
         }
         std::thread::sleep(Duration::from_millis(20));
     }
-    panic!("the thread's host Session stayed {:?}", root_session(rig));
+    panic!(
+        "thread {ts}'s host Session stayed {:?}",
+        thread_session(rig, ts)
+    );
 }
 
 /// Polls until `n` turns have their line posted; fails after ten seconds.
-fn wait_posted(rig: &Rig, n: i64) {
+pub(super) fn wait_posted(rig: &Rig, n: i64) {
     let posted = || {
         db(rig)
             .query_row(
@@ -69,7 +82,7 @@ fn wait_posted(rig: &Rig, n: i64) {
 }
 
 /// Moves the thread's last turn a day back, past any idle limit.
-fn backdate(rig: &Rig) {
+pub(super) fn backdate(rig: &Rig) {
     db(rig)
         .execute(
             "UPDATE slack_threads SET last_turn_at = last_turn_at - 86400",
@@ -78,8 +91,18 @@ fn backdate(rig: &Rig) {
         .unwrap();
 }
 
+/// Moves thread `ts`'s last turn `secs` seconds back.
+pub(super) fn backdate_by(rig: &Rig, ts: &str, secs: i64) {
+    db(rig)
+        .execute(
+            "UPDATE slack_threads SET last_turn_at = last_turn_at - ?1 WHERE thread_ts = ?2",
+            rusqlite::params![secs, ts],
+        )
+        .unwrap();
+}
+
 /// Kills the daemon and starts it again; its scheduler sweeps for quiet threads at start.
-fn restart(rig: &mut Rig) {
+pub(super) fn restart(rig: &mut Rig) {
     rig.kill_daemon();
     rig.spawn_daemon();
     rig.slack.wait_connected();
@@ -97,7 +120,7 @@ fn opens(controller: &FakeController) -> Vec<String> {
 }
 
 /// The Session of each `end-host-session` the controller was sent.
-fn ends(controller: &FakeController) -> Vec<i64> {
+pub(super) fn ends(controller: &FakeController) -> Vec<i64> {
     controller.seen(|seen| {
         let end = |r: &Request| match r {
             Request::EndHostSession(end) => Some(end.session.get()),
@@ -167,7 +190,7 @@ fn a_thread_that_spoke_within_the_idle_minutes_keeps_its_host_session() {
 
 /// A thread whose turn started Box [`BOX_NAME`], made quiet, with `show` answered by
 /// `answer`, then the front restarted so it sweeps.
-fn quiet_thread_with_a_box(answer: Scripted) -> (Rig, FakeController) {
+pub(super) fn quiet_thread_with_a_box(answer: Scripted) -> (Rig, FakeController) {
     let (mut rig, controller, _bin) = Rig::start_boxes();
     rig.open_thread_with_a_box();
     wait_posted(&rig, 1);
@@ -178,7 +201,7 @@ fn quiet_thread_with_a_box(answer: Scripted) -> (Rig, FakeController) {
 }
 
 /// A `show` reply for [`BOX_NAME`] whose agent is in `state`.
-fn shown(state: &str) -> Scripted {
+pub(super) fn shown(state: &str) -> Scripted {
     let value = json!({"box": {"name": BOX_NAME, "lifecycle": "ready", "agent": {"state": state}}});
     Scripted::Reply(moor_core::response::Response::ok("show", Some(value)))
 }
@@ -334,6 +357,41 @@ fn a_host_session_refused_again_after_the_reopen_ends_the_turn_with_its_refusal(
     assert_eq!(touches(&controller), [100, 100, 101]);
     assert_eq!(root_session(&rig), None);
     assert!(!bin.join("run-1").exists(), "the turn did not run");
+}
+
+/// A thread that ran one turn on host Session 100, whose check before the next turn the
+/// controller answers twice with `answer`; the next message is then sent.
+fn check_answered(answer: impl Fn() -> Scripted) -> (Rig, FakeController, std::path::PathBuf) {
+    let (rig, controller, bin) = Rig::start_coordinated(Some(GOOD));
+    ask(&rig, "hello there");
+    wait_posted(&rig, 1);
+    controller.script("update-host-session", answer());
+    controller.script("update-host-session", answer());
+    reply(&rig, 2, USER, "and now?");
+    (rig, controller, bin)
+}
+
+/// The turn after [`check_answered`] ran on host Session 100, which stays recorded.
+fn ran_on_the_recorded_session(rig: &Rig, controller: &FakeController, bin: &Path) {
+    assert_eq!(rig.slack.wait_updates(2)[1].text, "OK");
+    let dir = workdir(rig).display().to_string();
+    assert_eq!(opens(controller), [dir], "no second host Session");
+    assert_eq!(touches(controller), [100, 100]);
+    assert_eq!(root_session(rig), Some(100));
+    assert!(bin.join("run-1").exists(), "the turn ran");
+}
+
+#[test]
+fn a_check_the_controller_fails_without_refusing_keeps_the_host_session() {
+    let busy = || Scripted::Reply(failed("update-host-session", "the store is busy"));
+    let (rig, controller, bin) = check_answered(busy);
+    ran_on_the_recorded_session(&rig, &controller, &bin);
+}
+
+#[test]
+fn a_check_cut_off_by_the_controller_keeps_the_host_session() {
+    let (rig, controller, bin) = check_answered(|| Scripted::Hangup);
+    ran_on_the_recorded_session(&rig, &controller, &bin);
 }
 
 #[test]
