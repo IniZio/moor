@@ -85,8 +85,13 @@ impl<'de> Visitor<'de> for TargetVisitor {
             }
             id = Some(map.next_value::<i64>()?);
         }
-        id.map(|v| BoxTarget::Id(BoxId::new(v)))
-            .ok_or_else(|| de::Error::missing_field("id"))
+        match id {
+            None => Err(de::Error::missing_field("id")),
+            Some(v) if v < 1 => Err(de::Error::custom(format!(
+                "a Box id must be positive, got {v}"
+            ))),
+            Some(v) => Ok(BoxTarget::Id(BoxId::new(v))),
+        }
     }
 }
 
