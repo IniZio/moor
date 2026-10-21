@@ -33,9 +33,12 @@ file means every key takes its default.
 
 ### `box_credentials`
 
-A list of secret names the Box uses. A `.moor.yaml` can list names too. Each
-name is a secret of the Box's user and matches `[a-z][a-z0-9_-]*`. A `start`
-whose user lacks one of them is rejected.
+A list of secret names that a `start` checks. A `.moor.yaml` can list names
+too. Each name is a secret of the Box's user and matches `[a-z][a-z0-9_-]*`. A
+`start` whose user lacks one of them is rejected.
+
+moor does not put these secrets into the Box. A secret reaches a Box's requests
+only through a Proxy rule whose `credential` names it.
 
 ### `mcp_servers`
 
@@ -111,7 +114,7 @@ A repo's `.moor.yaml` configures its Boxes.
 | `env` | map | Plain environment variables for the Box. `PATH` is reserved. moor does not pass names that look like credentials, or names that moor sets, to the agent. |
 | `compose.project_prefix` | string | A prefix for compose project names. |
 | `box.size` | `small`, `medium`, `large`, or `xlarge` | The Box size. It wins over the user's `box.size`. |
-| `box_credentials` | list of names | Secrets of the Box's user that the Box uses. |
+| `box_credentials` | list of names | Secrets that the Box's user must hold for a `start`. moor does not put them into the Box. |
 | `proxy.direct` | list of host names | Hosts that the Box reaches without the Proxy. A repo cannot add or change a Proxy rule. |
 
 If a Box's `.moor.yaml` differs from the copy in its base commit, moor refuses
@@ -170,11 +173,25 @@ A front acts for one of its people by wrapping a request in `as`:
 {"cmd": "as", "identity": "slack:T1:U1", "request": {"cmd": "steer", "box": "demo", "text": "go"}}
 ```
 
+The controller never reads its own working directory. The CLI makes a
+relative `--worktree`, `cp` destination or `env` repo absolute before it sends
+the request. It wraps a `start`, `start-needs` or `env` that names no repo in
+`in`, with its own directory:
+
+```json
+{"cmd": "in", "dir": "/home/me/app", "request": {"cmd": "start", "name": "demo"}}
+```
+
+Only the operator may send `in`. A `start` with no repo and no `in` gets
+`no repo`.
+
 ### Who may act on a Box
 
 A Box acts for the user who started it. Only that user and the local operator
 may act on the Box, for example to run, steer, show, close, sleep or wake it,
-copy files into it, or read its artifacts. The local operator is a peer on the
+or read its artifacts. Only the operator may copy files out of it, because `cp`
+writes on the controller host. A front gets `cp to the host is operator-only`.
+The local operator is a peer on the
 controller socket with the controller's own uid. A front socket is never the
 operator, whatever identity it asserts. A Box with no user is the operator's
 alone.
