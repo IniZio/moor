@@ -4,7 +4,7 @@
 
 use moor_core::name::BoxName;
 use rusqlite::types::Type;
-use rusqlite::{params, Row};
+use rusqlite::{params, OptionalExtension, Row};
 
 use super::Db;
 
@@ -103,6 +103,37 @@ impl Db {
         Ok(())
     }
 
+    /// The prompt whose message is `message_ts` in `channel`, if any.
+    pub(crate) fn prompt_by_message(
+        &self,
+        channel: &str,
+        message_ts: &str,
+    ) -> rusqlite::Result<Option<Prompt>> {
+        let sql = format!("SELECT {PROMPT_COLUMNS} WHERE b.channel = ?1 AND p.message_ts = ?2");
+        self.conn
+            .query_row(&sql, params![channel, message_ts], prompt_row)
+            .optional()
+    }
+
+    /// The prompt with id `id`, if any.
+    pub(crate) fn prompt(&self, id: i64) -> rusqlite::Result<Option<Prompt>> {
+        let sql = format!("SELECT {PROMPT_COLUMNS} WHERE p.id = ?1");
+        self.conn.query_row(&sql, [id], prompt_row).optional()
+    }
+
+    /// The open prompts of a thread's Boxes, oldest first.
+    pub(crate) fn open_prompts(
+        &self,
+        channel: &str,
+        thread_ts: &str,
+    ) -> rusqlite::Result<Vec<Prompt>> {
+        self.prompts(
+            "b.channel = ?1 AND b.thread_ts = ?2 AND p.answer IS NULL \
+             AND p.closed_reason IS NULL",
+            params![channel, thread_ts],
+        )
+    }
+
     /// The open prompts of Box `name`, oldest first.
     pub(crate) fn open_box_prompts(&self, name: &BoxName) -> rusqlite::Result<Vec<Prompt>> {
         self.prompts(
@@ -117,6 +148,17 @@ impl Db {
             "p.box_name = ?1 AND p.answer IS NOT NULL AND p.shown_at IS NULL",
             params![name.as_str()],
         )
+    }
+
+    /// Records that `by` answered open prompt `id` with `label`; false when it was no longer
+    /// open.
+    pub(crate) fn answer_prompt(&self, id: i64, label: &str, by: &str) -> rusqlite::Result<bool> {
+        let changed = self.conn.execute(
+            "UPDATE slack_prompts SET answer = ?2, answered_by = ?3 \
+             WHERE id = ?1 AND answer IS NULL AND closed_reason IS NULL",
+            params![id, label, by],
+        )?;
+        Ok(changed == 1)
     }
 
     /// Closes open prompt `id` because its Box is now `reason`.

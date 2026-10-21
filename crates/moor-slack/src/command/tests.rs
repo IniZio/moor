@@ -101,3 +101,12 @@ fn notices_are_fixed_templates_marked_as_the_fronts() {
         ]
     );
 }
+
+#[test]
+fn a_bare_number_is_one_positive_number_beside_mentions_only() {
+    assert_eq!(bare_number("2"), Some(2));
+    assert_eq!(bare_number(" <@UBOT> 12 "), Some(12));
+    for text in ["0", "-1", "2 please", "two", "1.5", "", "<@UBOT>"] {
+        assert_eq!(bare_number(text), None, "{text:?}");
+    }
+}

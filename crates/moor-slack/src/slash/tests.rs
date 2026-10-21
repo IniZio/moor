@@ -183,10 +183,12 @@ fn checked(
     let mut say = |c: &str, t: &str| said.borrow_mut().push((c.to_owned(), t.to_owned()));
     let log = |line: &str| logged.borrow_mut().push(line.to_owned());
     let mut check_token = |_| panic!("the check checks no token");
+    let mut ephemeral = |_: &str, _: &str, _: &str, _: &str| panic!("the check shows no one");
     let mut fx = Fx {
         call: &mut call,
         reply: &mut reply,
         say: &mut say,
+        ephemeral: &mut ephemeral,
         check_token: &mut check_token,
         log: &log,
     };

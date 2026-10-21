@@ -255,8 +255,7 @@ struct Recorder {
 }
 
 impl Intake for Recorder {
-    /// Keeps a mention, a command or a login submission; a click needs nothing kept until
-    /// prompts take answers.
+    /// Keeps a mention, a button press on a prompt, a command or a login submission.
     fn take(&self, item: Inbound) -> Result<Kept, NotKept> {
         let allow = Allow {
             channels: &self.channels,
@@ -282,7 +281,9 @@ impl Intake for Recorder {
                     )
                 })
             }
-            Inbound::Click(_) => return Ok(Kept::default()),
+            Inbound::Click(click) => {
+                worker::click(&click, &self.db, now).map(|job| (Kept::default(), job))
+            }
         };
         match kept {
             Ok((kept, Some(job))) => self
@@ -349,6 +350,12 @@ impl Worker {
                 (self.log)(&format!("slack: post failed: {e}"));
             }
         };
+        let mut ephemeral = |channel: &str, user: &str, thread: &str, text: &str| {
+            let api = &self.api;
+            if let Err(e) = api.post_ephemeral(&self.bot_token, channel, user, thread, text) {
+                (self.log)(&format!("slack: ephemeral failed: {e}"));
+            }
+        };
         let mut check_token = |check: TokenCheck| {
             let checker = self.coordinator.as_ref();
             let checker = checker
@@ -365,6 +372,7 @@ impl Worker {
             call: &mut call,
             reply: &mut reply,
             say: &mut say,
+            ephemeral: &mut ephemeral,
             check_token: &mut check_token,
             log: &*self.log,
         };

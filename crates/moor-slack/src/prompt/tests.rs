@@ -64,6 +64,22 @@ fn an_answer_that_holds_markup_is_escaped() {
 }
 
 #[test]
+fn answer_label_handles_range() {
+    let o = opts(&["a"]);
+    assert_eq!(answer_label(&o, 1), "1. a");
+    assert_eq!(answer_label(&o, 0), "0");
+    assert_eq!(answer_label(&o, 5), "5");
+}
+
+#[test]
+fn offered_takes_only_the_numbers_of_the_options() {
+    let o = opts(&["a", "b"]);
+    assert!(offered(&o, 1) && offered(&o, 2));
+    assert!(!offered(&o, 0) && !offered(&o, 3));
+    assert!(!offered(&[], 1));
+}
+
+#[test]
 fn a_question_that_escaping_grows_still_fits_a_section_and_splits_no_entity() {
     let question = "<".repeat(3000);
     let fallback = text("t", "U1", &question);

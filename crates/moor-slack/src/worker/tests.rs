@@ -159,10 +159,12 @@ fn with_hooks(
             .push((c.to_owned(), String::new(), text.to_owned()));
     };
     let mut check_token = |_| {};
+    let mut ephemeral = |_: &str, _: &str, _: &str, _: &str| {};
     let mut fx = Fx {
         call: &mut call,
         reply: &mut reply,
         say: &mut say,
+        ephemeral: &mut ephemeral,
         check_token: &mut check_token,
         log,
     };
