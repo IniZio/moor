@@ -22,7 +22,7 @@ use std::time::Duration;
 use moor_core::controller::PROTOCOL;
 
 use controller::FakeController;
-use real::RealController;
+pub(crate) use real::RealController;
 use slack_fake::{FakeSlack, Mention, APP_TOKEN, BOT_TOKEN};
 
 /// Channel the daemon is configured to answer in.
@@ -31,8 +31,12 @@ pub(crate) const CHANNEL: &str = "C0ALLOWED";
 pub(crate) const USER: &str = "U0ALLOWED";
 /// Ts of the first mention in most tests.
 pub(crate) const TS: &str = "1730000000.000100";
-/// Box name the first mention maps to.
-pub(crate) const BOX_NAME: &str = "slack-1730000000-000100";
+/// Name of the first Box `start_box` starts in thread [`TS`].
+pub(crate) const BOX_NAME: &str = "slack-1730000000-000100-1";
+/// A token the fake `claude` answers with the tool calls the test wrote.
+pub(crate) const MCP: &str = "sk-ant-oat01-mcp-5ea7";
+/// The repo the rigs mark as the channel's default.
+pub(crate) const REPO: &str = "demo";
 /// Pause that lets a wrongly emitted second reply arrive before the test counts replies.
 pub(crate) const QUIET: Duration = Duration::from_millis(600);
 
@@ -212,6 +216,38 @@ impl Rig {
         rig.spawn_daemon();
         rig.slack.wait_connected();
         (rig, controller, bin)
+    }
+
+    /// A scripted controller that keeps Boxes, and a daemon whose fake `claude` calls
+    /// `start_box` with goal `fix the thing` in its first turn, connected to Slack with
+    /// [`REPO`] as the channel's default. Later turns call what the test writes.
+    pub(crate) fn start_boxes() -> (Self, FakeController, PathBuf) {
+        let (rig, controller, bin) = Self::start_coordinated(Some(MCP));
+        controller.keep_boxes();
+        rig.set_default_repo(REPO);
+        let goal = serde_json::json!({"goal": "fix the thing"});
+        Self::tool_calls(&bin, Some(0), &[("start_box", goal)]);
+        Self::tool_calls(&bin, None, &[]);
+        (rig, controller, bin)
+    }
+
+    /// Opens thread [`TS`] with a mention and waits until its first Box is bound.
+    pub(crate) fn open_thread_with_a_box(&self) {
+        self.mention(1, USER, "<@UBOT> fix the thing", TS, None);
+        self.wait_post(&format!("Started Box `{BOX_NAME}`."));
+        self.wait_box_state(BOX_NAME, "bound");
+    }
+
+    /// Adds `repo` to the allowed channel as its default, as `/moor repo` does.
+    pub(crate) fn set_default_repo(&self, repo: &str) {
+        let db = rusqlite::Connection::open(self.path("state-slack/slack.db")).unwrap();
+        db.busy_timeout(Duration::from_secs(5)).unwrap();
+        db.execute(
+            "INSERT INTO slack_channel_repos (channel, repo, added_by, added_at, is_default) \
+             VALUES (?1, ?2, ?3, 0, 1)",
+            [CHANNEL, repo, USER],
+        )
+        .unwrap();
     }
 
     /// A scripted controller and the daemon, with the daemon connected to Slack.

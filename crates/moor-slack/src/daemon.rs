@@ -64,8 +64,8 @@ struct Loaded {
     /// Boxes an earlier run left `starting` or `closing`, read before any new mention is
     /// recorded.
     left: Vec<SlackBox>,
-    /// The coordinator's turns, when the config has a coordinator.
-    turns: Option<Turns>,
+    /// The coordinator's turns.
+    turns: Turns,
 }
 
 /// Runs the daemon until its Socket Mode thread ends.
@@ -91,7 +91,6 @@ pub fn run(settings: &Settings, log: Log) -> Result<(), String> {
     let (feed_tx, feed_rx) = mpsc::channel();
     let (wake_tx, wake_rx) = mpsc::channel();
     let recorder = Recorder {
-        coordinated: turns.is_some(),
         db,
         channels: cfg.channels,
         users: cfg.users,
@@ -116,9 +115,7 @@ pub fn run(settings: &Settings, log: Log) -> Result<(), String> {
         log: Arc::clone(&log),
     };
     thread::spawn(move || worker.run(&jobs_rx, left));
-    if let Some(turns) = turns {
-        thread::spawn(move || Arc::new(turns).run());
-    }
+    thread::spawn(move || Arc::new(turns).run());
     thread::spawn(move || dial::read_events(&client, &feed_tx, &*log, &thread::sleep));
     thread::spawn(move || feed(&feed_rx, &wake_tx));
     thread::spawn(move || post(&wake_rx));
@@ -154,7 +151,8 @@ fn load(settings: &Settings, log: &Log) -> Result<Loaded, String> {
     let program = std::env::current_exe().map_err(|e| format!("find this binary: {e}"))?;
     let socket = std::path::absolute(&settings.socket)
         .map_err(|e| format!("{}: {e}", settings.socket.display()))?;
-    let turns = cfg.coordinator.as_ref().map(|c| Turns {
+    let c = &cfg.coordinator;
+    let turns = Turns {
         db_path: db_path.clone(),
         state_dir: settings.state_dir.clone(),
         agent: coordinator.clone(),
@@ -165,9 +163,10 @@ fn load(settings: &Settings, log: &Log) -> Result<Loaded, String> {
         client: Client::new(&settings.socket),
         socket,
         program,
+        max_open_boxes: c.max_open_boxes,
         log: Arc::clone(log),
         clock: settings.clock,
-    });
+    };
     Ok(Loaded {
         cfg,
         api,
@@ -187,11 +186,12 @@ fn probe(cfg: &Config, settings: &Settings, log: &Log) -> Result<Arc<dyn Agent>,
         home: settings.home.clone(),
         user: settings.user.clone(),
     };
-    let coordinator: Result<Arc<dyn Agent>, String> = cfg.coordinator.as_ref().map_or_else(
-        || Err("the config has no coordinator.binary".to_owned()),
-        |c| match c.agent {
+    let c = &cfg.coordinator;
+    let coordinator: Result<Arc<dyn Agent>, String> = c.binary.as_ref().map_or_else(
+        || Err("the config names no coordinator.binary".to_owned()),
+        |binary| match c.agent {
             CoordinatorAgent::Claude => {
-                Claude::probe(&c.binary, host).map(|a| Arc::new(a) as Arc<dyn Agent>)
+                Claude::probe(binary, host).map(|a| Arc::new(a) as Arc<dyn Agent>)
             }
         },
     );
@@ -228,9 +228,6 @@ fn expand_home(path: &Path, home: Option<&Path>) -> PathBuf {
 /// The Socket Mode thread's intake: records each mention and command in `slack.db`, then
 /// queues its job, all before Slack gets the ack.
 struct Recorder {
-    /// True when the config has a coordinator, so a mention that is not a start command
-    /// opens a coordinator thread.
-    coordinated: bool,
     /// The Socket Mode thread's own `slack.db` connection.
     db: Db,
     /// Channel ids where mentions are answered.
@@ -262,8 +259,7 @@ impl Intake for Recorder {
         let now = (self.clock)();
         let kept = match item {
             Inbound::Mention(mention) => {
-                worker::record(&mention, &self.db, &allow, self.coordinated, now)
-                    .map(|job| (Kept::default(), job))
+                worker::record(&mention, &self.db, &allow, now).map(|job| (Kept::default(), job))
             }
             Inbound::Slash(slash) => {
                 let state = &self.state_dir;

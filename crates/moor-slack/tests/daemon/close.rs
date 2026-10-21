@@ -8,17 +8,13 @@
 
 use std::path::{Path, PathBuf};
 
-use moor_core::controller::PROTOCOL;
 use moor_core::request::Request;
 use moor_core::response::Response;
 use serde_json::json;
 
 use super::inbox::reply;
 use super::support::controller::{failed, FakeController, Scripted};
-use super::support::{Rig, BOX_NAME, QUIET, TS, USER};
-
-/// A token the fake answers with its tool calls for.
-const MCP: &str = "sk-ant-oat01-mcp-c105e";
+use super::support::{Rig, BOX_NAME, QUIET, USER};
 
 /// The controller's refusal of a close that would lose unpushed work.
 const UNPUSHED: &str = "the host worktree has work that is not saved (2 unpushed commit(s), \
@@ -32,15 +28,12 @@ fn closed() -> Scripted {
     ))
 }
 
-/// A coordinated daemon whose thread [`TS`] runs Box [`BOX_NAME`], started by the start
-/// command, with the fake `claude` set to call `close_box` on it in every turn.
+/// A coordinated daemon whose thread runs Box [`BOX_NAME`], started by `start_box`, with the
+/// fake `claude` set to call `close_box` on it in every later turn.
 fn running_box() -> (Rig, FakeController, PathBuf) {
-    let (rig, controller, bin) = Rig::start_coordinated(Some(MCP));
-    controller.keep_boxes();
+    let (rig, controller, bin) = Rig::start_boxes();
     Rig::tool_calls(&bin, None, &[("close_box", json!({"box": BOX_NAME}))]);
-    rig.mention(1, USER, "<@UBOT> start demo fix the thing", TS, None);
-    rig.wait_post(&format!("Started Box `{BOX_NAME}`."));
-    rig.wait_box_state(BOX_NAME, "bound");
+    rig.open_thread_with_a_box();
     (rig, controller, bin)
 }
 
@@ -81,18 +74,18 @@ fn close_box_in_the_requesters_turn_closes_the_box_without_force() {
     reply(&rig, 2, USER, "we are done, close it");
     rig.wait_post(&format!("Closed Box `{BOX_NAME}`."));
     let said = format!("Box `{BOX_NAME}` is closing. The thread will say when it has closed.");
-    assert_eq!(results(&bin, 0), [(said, false)]);
+    assert_eq!(results(&bin, 1), [(said, false)]);
     assert_eq!(
         closes_and_shows(&controller),
         [("close", BOX_NAME.to_owned(), false)]
     );
     Rig::tool_calls(&bin, None, &[]);
     reply(&rig, 3, USER, "thanks");
-    rig.slack.wait_updates(2);
-    let stdin = std::fs::read_to_string(bin.join("run-1/stdin")).unwrap();
+    rig.slack.wait_updates(3);
+    let stdin = std::fs::read_to_string(bin.join("run-2/stdin")).unwrap();
     let journal = format!(
-        "## Actions this thread took\nTurn 1, <@{USER}> asked. close_box Box `{BOX_NAME}`. \
-         Result: Box `{BOX_NAME}` is closing.\n"
+        "Turn 2, <@{USER}> asked. close_box Box `{BOX_NAME}`. Result: Box `{BOX_NAME}` is \
+         closing.\n"
     );
     assert!(stdin.contains(&journal), "{stdin}");
     assert!(
@@ -160,18 +153,11 @@ fn a_box_left_closing_by_a_stopped_daemon_is_closed_at_startup() {
 
 #[test]
 fn a_reply_reading_close_reaches_the_coordinator_as_text_and_closes_nothing() {
-    let mut rig = Rig::new();
-    let bin = rig.use_fake_claude(None);
-    rig.link_token(USER, "sk-ant-oat01-good-c105e");
-    let controller = rig.serve(PROTOCOL);
-    controller.keep_boxes();
-    rig.spawn_daemon();
-    rig.slack.wait_connected();
-    rig.mention(1, USER, "<@UBOT> start demo fix the thing", TS, None);
-    rig.wait_post(&format!("Started Box `{BOX_NAME}`."));
+    let (rig, controller, bin) = Rig::start_boxes();
+    rig.open_thread_with_a_box();
     reply(&rig, 2, USER, "close");
-    rig.slack.wait_updates(1);
-    let stdin = std::fs::read_to_string(bin.join("run-0/stdin")).unwrap();
+    rig.slack.wait_updates(2);
+    let stdin = std::fs::read_to_string(bin.join("run-1/stdin")).unwrap();
     assert!(
         stdin.ends_with(&format!("## New\n[<@{USER}>] close\n")),
         "{stdin}"

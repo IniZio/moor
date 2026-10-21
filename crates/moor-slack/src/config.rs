@@ -20,9 +20,9 @@ pub struct Config {
     /// Slack Web API base URL without a trailing `/`; `https://` or loopback `http://` only.
     #[serde(default = "default_api_base")]
     pub api_base: String,
-    /// The coordinator agent; without it the front checks no Claude token.
+    /// The coordinator agent; a missing section means every default.
     #[serde(default)]
-    pub coordinator: Option<Coordinator>,
+    pub coordinator: Coordinator,
 }
 
 /// The `coordinator` section.
@@ -33,13 +33,30 @@ pub struct Coordinator {
     #[serde(default)]
     pub agent: CoordinatorAgent,
     /// Absolute path of the agent's binary; for `claude`, Claude Code 2.1.304 or newer.
-    pub binary: PathBuf,
+    /// Without it the coordinator is unavailable and no Box can start.
+    #[serde(default)]
+    pub binary: Option<PathBuf>,
     /// The model each turn runs on.
     #[serde(default = "default_model")]
     pub model: String,
     /// Most KiB of context a turn gets; earlier messages fill what the rest leaves.
     #[serde(default = "default_context_kib")]
     pub context_kib: u32,
+    /// Most Boxes a thread has open at once.
+    #[serde(default = "default_max_open_boxes")]
+    pub max_open_boxes: u32,
+}
+
+impl Default for Coordinator {
+    fn default() -> Self {
+        Self {
+            agent: CoordinatorAgent::default(),
+            binary: None,
+            model: default_model(),
+            context_kib: default_context_kib(),
+            max_open_boxes: default_max_open_boxes(),
+        }
+    }
 }
 
 /// The agents that can coordinate a thread.
@@ -59,6 +76,11 @@ fn default_model() -> String {
 /// The context budget in KiB unless the config names one.
 const fn default_context_kib() -> u32 {
     32
+}
+
+/// The open-Box limit of a thread unless the config names one.
+const fn default_max_open_boxes() -> u32 {
+    1
 }
 
 /// The public Slack Web API.
@@ -108,20 +130,18 @@ fn validate(cfg: &Config) -> Result<(), (&'static str, &'static str)> {
     if base.ends_with('/') {
         return Err(("api_base", "must not end with /"));
     }
-    if cfg
-        .coordinator
-        .as_ref()
-        .is_some_and(|c| !c.binary.is_absolute())
-    {
+    let c = &cfg.coordinator;
+    if c.binary.as_ref().is_some_and(|b| !b.is_absolute()) {
         return Err(("coordinator.binary", "must be an absolute path"));
     }
-    if let Some(c) = &cfg.coordinator {
-        if c.model.trim().is_empty() {
-            return Err(("coordinator.model", "must not be empty"));
-        }
-        if c.context_kib == 0 {
-            return Err(("coordinator.context_kib", "must be at least 1"));
-        }
+    if c.model.trim().is_empty() {
+        return Err(("coordinator.model", "must not be empty"));
+    }
+    if c.context_kib == 0 {
+        return Err(("coordinator.context_kib", "must be at least 1"));
+    }
+    if c.max_open_boxes == 0 {
+        return Err(("coordinator.max_open_boxes", "must be at least 1"));
     }
     Ok(())
 }

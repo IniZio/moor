@@ -17,11 +17,8 @@ use super::support::{Rig, BOX_NAME, CHANNEL, TS, USER};
 
 /// A daemon whose thread [`TS`] runs Box [`BOX_NAME`], so `slack.db` holds it.
 fn thread_with_a_box() -> (Rig, FakeController) {
-    let (rig, controller) = Rig::start();
-    controller.keep_boxes();
-    rig.mention(1, USER, "<@UBOT> start demo fix the thing", TS, None);
-    rig.wait_post(&format!("Started Box `{BOX_NAME}`."));
-    rig.wait_box_state(BOX_NAME, "bound");
+    let (rig, controller, _bin) = Rig::start_boxes();
+    rig.open_thread_with_a_box();
     (rig, controller)
 }
 
@@ -85,7 +82,7 @@ fn the_tool_server_answers_mcp_over_stdin_and_stdout() {
         .iter()
         .map(|t| t["name"].as_str().unwrap().to_owned())
         .collect();
-    assert_eq!(names, ["list_boxes", "steer_box", "close_box"]);
+    assert_eq!(names, ["list_boxes", "start_box", "steer_box", "close_box"]);
     drop(stdin);
     assert!(
         child.wait().unwrap().success(),
@@ -156,21 +153,19 @@ fn a_state_dir_without_slack_db_is_refused_and_left_as_found() {
 
 #[test]
 fn a_turn_starts_the_tool_server_named_in_its_mcp_json_and_lists_the_threads_boxes() {
-    let (rig, controller, bin) = Rig::start_coordinated(Some("sk-ant-oat01-mcp-115t"));
-    controller.keep_boxes();
+    let (rig, _controller, bin) = Rig::start_boxes();
     Rig::tool_calls(&bin, None, &[("list_boxes", json!({}))]);
-    rig.mention(1, USER, "<@UBOT> start demo fix the thing", TS, None);
-    rig.wait_box_state(BOX_NAME, "bound");
+    rig.open_thread_with_a_box();
     super::inbox::reply(&rig, 2, USER, "what runs?");
-    rig.slack.wait_updates(1);
-    let results = Rig::tool_results(&bin, 0);
+    rig.slack.wait_updates(2);
+    let results = Rig::tool_results(&bin, 1);
     let want = format!("- Box `{BOX_NAME}` on demo, asked for by <@{USER}>: lifecycle unknown");
     assert_eq!(results.len(), 1, "{results:?}");
     assert!(results[0].0.starts_with(&want), "{results:?}");
     let args = std::fs::read_to_string(bin.join("run-0/server-args")).unwrap();
     let state = std::path::absolute(rig.path("state-slack")).unwrap();
     let want = format!(
-        "mcp\n--state-dir\n{}\n--socket\n{}\n--thread\n{CHANNEL}/{TS}\n",
+        "mcp\n--state-dir\n{}\n--socket\n{}\n--thread\n{CHANNEL}/{TS}\n--max-open-boxes\n1\n",
         state.display(),
         rig.socket().display()
     );
@@ -182,8 +177,7 @@ fn a_turn_starts_the_tool_server_named_in_its_mcp_json_and_lists_the_threads_box
 
 #[test]
 fn a_steer_in_the_requesters_turn_reaches_the_box_and_the_next_turn_reads_it_as_done() {
-    let (rig, controller, bin) = Rig::start_coordinated(Some("sk-ant-oat01-mcp-57ee4"));
-    controller.keep_boxes();
+    let (rig, controller, bin) = Rig::start_boxes();
     controller.script(
         "steer",
         super::support::controller::Scripted::Reply(moor_core::response::Response::ok(
@@ -191,13 +185,12 @@ fn a_steer_in_the_requesters_turn_reaches_the_box_and_the_next_turn_reads_it_as_
         )),
     );
     let steer = json!({"box": BOX_NAME, "text": "use tokio"});
-    Rig::tool_calls(&bin, Some(0), &[("steer_box", steer)]);
-    rig.mention(1, USER, "<@UBOT> start demo fix the thing", TS, None);
-    rig.wait_box_state(BOX_NAME, "bound");
+    Rig::tool_calls(&bin, Some(1), &[("steer_box", steer)]);
+    rig.open_thread_with_a_box();
     super::inbox::reply(&rig, 2, USER, "tell it to use tokio");
-    rig.slack.wait_updates(1);
+    rig.slack.wait_updates(2);
     let sent = format!("Sent to Box `{BOX_NAME}`.");
-    assert_eq!(Rig::tool_results(&bin, 0), [(sent, false)]);
+    assert_eq!(Rig::tool_results(&bin, 1), [(sent, false)]);
     let steered = controller.seen(|seen| {
         let steer = |r: &moor_core::request::Request| match r {
             moor_core::request::Request::Steer(s) => Some((s.target.to_string(), s.text.clone())),
@@ -210,10 +203,10 @@ fn a_steer_in_the_requesters_turn_reaches_the_box_and_the_next_turn_reads_it_as_
         [(BOX_NAME.to_owned(), Some("use tokio".to_owned()))]
     );
     super::inbox::reply(&rig, 3, USER, "did it?");
-    rig.slack.wait_updates(2);
-    let stdin = std::fs::read_to_string(bin.join("run-1/stdin")).unwrap();
+    rig.slack.wait_updates(3);
+    let stdin = std::fs::read_to_string(bin.join("run-2/stdin")).unwrap();
     let journal = format!(
-        "## Actions this thread took\nTurn 1, <@{USER}> asked. steer_box Box `{BOX_NAME}`: \
+        "Turn 2, <@{USER}> asked. steer_box Box `{BOX_NAME}`: \
          use tokio. Result: sent to Box `{BOX_NAME}`.\n"
     );
     assert!(stdin.contains(&journal), "{stdin}");

@@ -6,73 +6,23 @@
 use moor_client::ClientError;
 use moor_core::request::{Request, ShowReq, SteerReq};
 use moor_core::response::{ExitClass, Response};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::context::{action_line, Action};
 use crate::db::{BoxState, Db, OpenTurn, SlackBox};
-
-/// What a tool does, for the agent's tool list.
-pub(crate) struct Spec {
-    /// The tool's name.
-    pub(crate) name: &'static str,
-    /// What it does.
-    pub(crate) description: &'static str,
-    /// Its parameters as a JSON schema, each with a one-line description.
-    pub(crate) input: fn() -> Value,
-}
-
-/// Every tool the coordinator gets.
-pub(crate) const SPECS: [Spec; 3] = [
-    Spec {
-        name: "list_boxes",
-        description: "List this thread's Boxes: name, repo, requester and state as the \
-                      controller reports it now.",
-        input: || json!({"type": "object", "properties": {}, "additionalProperties": false}),
-    },
-    Spec {
-        name: "steer_box",
-        description: "Send text to the coding agent of one of this thread's Boxes. Works only \
-                      when the person who asked for the Box wrote in this turn.",
-        input: || {
-            json!({
-                "type": "object",
-                "properties": {
-                    "box": {"type": "string", "description": "The Box's name, as list_boxes shows it."},
-                    "text": {"type": "string", "description": "What to tell the Box's agent."}
-                },
-                "required": ["box", "text"],
-                "additionalProperties": false
-            })
-        },
-    },
-    Spec {
-        name: "close_box",
-        description: "Close one of this thread's Boxes. The thread is told when it has closed, \
-                      or why the controller refused. Works only when the person who asked for \
-                      the Box wrote in this turn.",
-        input: || {
-            json!({
-                "type": "object",
-                "properties": {
-                    "box": {"type": "string", "description": "The Box's name, as list_boxes shows it."}
-                },
-                "required": ["box"],
-                "additionalProperties": false
-            })
-        },
-    },
-];
-
-/// The names of every tool the coordinator gets.
-pub(crate) fn names() -> Vec<&'static str> {
-    SPECS.iter().map(|s| s.name).collect()
-}
 
 /// One tool call, parsed from its name and arguments.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Call {
     /// `list_boxes`.
     ListBoxes,
+    /// `start_box`.
+    StartBox {
+        /// What the Box should do.
+        goal: String,
+        /// The repo as given, when given.
+        repo: Option<String>,
+    },
     /// `steer_box`.
     SteerBox {
         /// The Box's name as given.
@@ -100,6 +50,10 @@ impl Call {
         };
         match name {
             "list_boxes" => Ok(Self::ListBoxes),
+            "start_box" => Ok(Self::StartBox {
+                goal: text("goal")?,
+                repo: text("repo").ok(),
+            }),
             "steer_box" => Ok(Self::SteerBox {
                 box_name: text("box")?,
                 text: text("text")?,
@@ -154,12 +108,15 @@ pub(crate) struct Scope<'a> {
     pub(crate) call: Controller<'a>,
     /// The current time in unix seconds.
     pub(crate) clock: fn() -> i64,
+    /// Most Boxes the thread has open at once.
+    pub(crate) max_open_boxes: u32,
 }
 
 /// Runs `call` in `thread`.
 pub(crate) fn run(scope: &mut Scope<'_>, call: &Call) -> Reply {
     let ran = match call {
         Call::ListBoxes => list(scope),
+        Call::StartBox { goal, repo } => start(scope, goal, repo.as_deref()),
         Call::SteerBox { box_name, text } => steer(scope, box_name, text),
         Call::CloseBox { box_name } => close(scope, box_name),
     };
@@ -373,6 +330,12 @@ fn error_text(reply: Response) -> String {
         .error
         .map_or_else(|| format!("{} failed", reply.cmd), |e| e.message)
 }
+
+mod spec;
+pub(crate) use spec::{names, SPECS};
+
+mod start;
+use start::start;
 
 #[cfg(test)]
 mod tests;

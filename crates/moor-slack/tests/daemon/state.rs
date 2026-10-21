@@ -83,5 +83,5 @@ fn a_claude_code_older_than_2_1_304_leaves_the_coordinator_unavailable() {
 fn no_coordinator_in_the_config_leaves_it_unavailable() {
     let mut rig = Rig::new();
     rig.spawn_daemon();
-    rig.wait_stderr("coordinator unavailable: the config has no coordinator.binary");
+    rig.wait_stderr("coordinator unavailable: the config names no coordinator.binary");
 }

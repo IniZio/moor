@@ -66,12 +66,11 @@ fn slack_unknown_key_is_rejected() {
 #[test]
 fn coordinator_binary_is_optional_and_must_be_absolute() {
     let s = parse_config("s.yaml", &slack_with("")).unwrap_or_else(|e| panic!("{e}"));
-    assert_eq!(s.coordinator, None);
+    assert_eq!(s.coordinator.binary, None);
     let text = slack_with("coordinator:\n  binary: /opt/claude/bin/claude\n");
     let s = parse_config("s.yaml", &text).unwrap_or_else(|e| panic!("{e}"));
-    let binary = s.coordinator.map(|c| c.binary);
     assert_eq!(
-        binary,
+        s.coordinator.binary,
         Some(std::path::PathBuf::from("/opt/claude/bin/claude"))
     );
     let e = err(&slack_with("coordinator:\n  binary: claude\n"));
@@ -81,16 +80,24 @@ fn coordinator_binary_is_optional_and_must_be_absolute() {
 }
 
 #[test]
-fn coordinator_defaults_to_claude_on_sonnet_with_32_kib() {
-    let text = slack_with("coordinator:\n  binary: /c\n");
-    let c = parse_config("s.yaml", &text).unwrap().coordinator.unwrap();
-    assert_eq!(c.agent, CoordinatorAgent::Claude);
-    assert_eq!((c.model.as_str(), c.context_kib), ("sonnet", 32));
+fn coordinator_defaults_to_claude_on_sonnet_with_32_kib_and_one_open_box() {
+    for text in [slack_with(""), slack_with("coordinator:\n  binary: /c\n")] {
+        let c = parse_config("s.yaml", &text).unwrap().coordinator;
+        assert_eq!(c.agent, CoordinatorAgent::Claude);
+        let defaults = (c.model.as_str(), c.context_kib, c.max_open_boxes);
+        assert_eq!(defaults, ("sonnet", 32, 1), "{text}");
+    }
     let text = slack_with(
-        "coordinator:\n  agent: claude\n  binary: /c\n  model: opus\n  context_kib: 8\n",
+        "coordinator:\n  agent: claude\n  binary: /c\n  model: opus\n  context_kib: 8\n  \
+         max_open_boxes: 2\n",
     );
-    let c = parse_config("s.yaml", &text).unwrap().coordinator.unwrap();
-    assert_eq!((c.model.as_str(), c.context_kib), ("opus", 8));
+    let c = parse_config("s.yaml", &text).unwrap().coordinator;
+    assert_eq!(
+        (c.model.as_str(), c.context_kib, c.max_open_boxes),
+        ("opus", 8, 2)
+    );
+    let e = err(&slack_with("coordinator:\n  max_open_boxes: 0\n"));
+    assert_eq!(e.path, "coordinator.max_open_boxes");
 }
 
 #[test]

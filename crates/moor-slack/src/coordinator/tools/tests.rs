@@ -27,7 +27,6 @@ fn two_authors(dir: &Path) -> Db {
     let thread = SlackThread {
         channel: "C1".into(),
         thread_ts: "1.0".into(),
-        repo: "acme/api".into(),
         owner: "U1".into(),
     };
     db.insert_thread(&thread, 1).unwrap();
@@ -39,6 +38,7 @@ fn two_authors(dir: &Path) -> Db {
             repo: "acme/api".into(),
             goal: format!("goal of {name}"),
             requested_by: by.into(),
+            parent: None,
             state: BoxState::Starting,
         };
         db.insert_starting(&boxed, 1).unwrap();
@@ -99,6 +99,7 @@ impl Controller {
             thread_ts: "1.0",
             call: &mut send,
             clock: || 50,
+            max_open_boxes: 1,
         };
         run(&mut scope, call)
     }
@@ -298,7 +299,6 @@ fn close_of_a_box_still_starting_closing_or_closed_changes_nothing() {
     let thread = SlackThread {
         channel: "C1".into(),
         thread_ts: "1.0".into(),
-        repo: "acme/api".into(),
         owner: "U1".into(),
     };
     db.insert_thread(&thread, 1).unwrap();
@@ -309,6 +309,7 @@ fn close_of_a_box_still_starting_closing_or_closed_changes_nothing() {
         repo: "acme/api".into(),
         goal: "g".into(),
         requested_by: "U1".into(),
+        parent: None,
         state: BoxState::Starting,
     };
     db.insert_starting(&starting, 1).unwrap();
@@ -381,7 +382,6 @@ fn two_boxes(dir: &Path) -> Db {
     let thread = SlackThread {
         channel: "C1".into(),
         thread_ts: "1.0".into(),
-        repo: "acme/api".into(),
         owner: "U1".into(),
     };
     db.insert_thread(&thread, 1).unwrap();
@@ -393,6 +393,7 @@ fn two_boxes(dir: &Path) -> Db {
             repo: "acme/api".into(),
             goal: format!("goal of {name}"),
             requested_by: by.into(),
+            parent: None,
             state: BoxState::Starting,
         };
         db.insert_starting(&boxed, 1).unwrap();
@@ -421,6 +422,7 @@ fn listed_with(
         thread_ts: "1.0",
         call: &mut send,
         clock: || 50,
+        max_open_boxes: 1,
     };
     let reply = run(&mut scope, call);
     (reply, requests)
@@ -468,6 +470,7 @@ fn list_boxes_says_when_the_controller_did_not_answer() {
         thread_ts: "1.0",
         call: &mut send,
         clock: || 50,
+        max_open_boxes: 1,
     };
     let reply = run(&mut scope, &Call::ListBoxes);
     assert!(
@@ -490,9 +493,12 @@ fn list_boxes_in_a_thread_with_no_box_says_so() {
         thread_ts: "9.9",
         call: &mut send,
         clock: || 50,
+        max_open_boxes: 1,
     };
     assert_eq!(
         run(&mut scope, &Call::ListBoxes),
         Reply::done("This thread has no Box.")
     );
 }
+
+mod start;

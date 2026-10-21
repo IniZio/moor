@@ -55,13 +55,13 @@ fn crash_between_the_started_post_and_the_bind_posts_again_without_a_second_star
     });
     drop(first);
     let (db, after) = restart(dir.path(), &mut |req| match req {
-        Request::Show(_) => named("show", "slack-10-5"),
-        _ => refused("start", "Box slack-10-5 started twice"),
+        Request::Show(_) => named("show", "slack-10-5-1"),
+        _ => refused("start", "Box slack-10-5-1 started twice"),
     });
-    assert_eq!(cmds(&after), [("show", "slack-10-5".into())]);
+    assert_eq!(cmds(&after), [("show", "slack-10-5-1".into())]);
     assert_eq!(before.replies.len(), 1);
     assert_eq!(after.replies, before.replies);
-    assert_eq!(state(&db, "C1", "10.5"), bound_to_7("slack-10-5"));
+    assert_eq!(state(&db, "C1", "10.5"), bound_to_7("slack-10-5-1"));
 }
 
 #[test]
@@ -71,7 +71,7 @@ fn crash_between_the_failure_post_and_the_delete_posts_again() {
     let row = recorded_start(&first);
     let mut unknown_repo = |req: &Request| match req {
         Request::Start(_) => refused("start", "unknown repo"),
-        _ => refused("show", "no Box slack-10-5"),
+        _ => refused("show", "no Box slack-10-5-1"),
     };
     let before = crash_after_post(&first, &row, &mut unknown_repo);
     drop(first);
@@ -90,7 +90,7 @@ fn serve_with_failing_write(
     answer: &mut dyn FnMut(&Request) -> Answer,
 ) -> (Db, Seen, Option<BoxState>) {
     let db = db(dir);
-    let row = recorded_start(&db);
+    recorded_start(&db);
     let other = rusqlite::Connection::open(dir.join("slack.db")).unwrap();
     other
         .execute_batch(&format!(
@@ -106,10 +106,10 @@ fn serve_with_failing_write(
             other.execute_batch("DROP TRIGGER IF EXISTS fail;").unwrap();
         }
     };
-    let (tx, jobs) = mpsc::channel();
+    let (tx, jobs) = mpsc::channel::<Job>();
     let feeder = std::thread::spawn(move || {
-        tx.send(Job::Start(row)).unwrap();
         std::thread::sleep(Duration::from_secs(1));
+        drop(tx);
     });
     let seen = RefCell::default();
     with_hooks(&seen, answer, &|| {}, &log, |fx| {
@@ -133,12 +133,12 @@ fn failed_bind_leaves_the_row_starting_and_the_next_retry_binds_it() {
     assert_eq!(
         cmds(&seen),
         [
-            ("start", "slack-10-5".into()),
-            ("show", "slack-10-5".into())
+            ("start", "slack-10-5-1".into()),
+            ("show", "slack-10-5-1".into())
         ]
     );
     assert_eq!(seen.replies.len(), 2);
-    assert_eq!(state(&db, "C1", "10.5"), bound_to_7("slack-10-5"));
+    assert_eq!(state(&db, "C1", "10.5"), bound_to_7("slack-10-5-1"));
 }
 
 #[test]
@@ -147,15 +147,15 @@ fn failed_delete_leaves_the_row_starting_and_the_next_retry_deletes_it() {
     let (db, seen, at_failure) =
         serve_with_failing_write(dir.path(), "BEFORE DELETE", &mut |req| match req {
             Request::Start(_) => refused("start", "unknown repo"),
-            _ => refused("show", "no Box slack-10-5"),
+            _ => refused("show", "no Box slack-10-5-1"),
         });
     assert_eq!(at_failure, Some(BoxState::Starting));
     assert_eq!(
         cmds(&seen),
         [
-            ("start", "slack-10-5".into()),
-            ("show", "slack-10-5".into()),
-            ("start", "slack-10-5".into()),
+            ("start", "slack-10-5-1".into()),
+            ("show", "slack-10-5-1".into()),
+            ("start", "slack-10-5-1".into()),
         ]
     );
     assert!(seen.replies.iter().all(|r| r.2.contains("unknown repo")));
