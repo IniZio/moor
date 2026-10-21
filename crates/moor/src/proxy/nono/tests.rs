@@ -2,6 +2,7 @@
 
 mod chain;
 mod e2e;
+mod failure;
 mod handshake;
 mod passthrough;
 mod streaming;

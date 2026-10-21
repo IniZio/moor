@@ -75,12 +75,12 @@ impl Rig {
     }
 
     /// A client through the running proxy trusting the Box CA.
-    fn client(&self) -> Agent {
+    pub(super) fn client(&self) -> Agent {
         client(self.proxy().port(), self.ca.cert_pem())
     }
 
     /// `https://localhost:<header upstream port><path>`.
-    fn url(&self, path: &str) -> String {
+    pub(super) fn url(&self, path: &str) -> String {
         format!("https://localhost:{}{path}", self.up.port)
     }
 
@@ -213,7 +213,7 @@ fn client(proxy_port: u16, ca_pem: &str) -> Agent {
 }
 
 /// GETs `url` with the placeholder credential; status or error text.
-fn get(agent: &Agent, url: &str) -> Result<u16, String> {
+pub(super) fn get(agent: &Agent, url: &str) -> Result<u16, String> {
     agent
         .get(url)
         .header("Authorization", PLACEHOLDER)
@@ -284,7 +284,7 @@ fn settle(rig: &Rig, sink: &Recorder, done: impl Fn(&[String]) -> bool) -> Vec<S
 }
 
 /// Event kinds of a Box.
-fn kinds(store: &Store, box_id: BoxId) -> Vec<String> {
+pub(super) fn kinds(store: &Store, box_id: BoxId) -> Vec<String> {
     store
         .events(box_id, 100)
         .unwrap()

@@ -36,6 +36,8 @@ enum Answer {
     Echo,
     /// Reply 407 and close.
     Deny,
+    /// Read the head and never answer.
+    Hang,
 }
 
 fn fake(answer: Answer) -> Fake {
@@ -63,6 +65,10 @@ fn serve_fake(conn: &mut TcpStream, answer: Answer, tx: &mpsc::Sender<Vec<u8>>) 
     }
     tx.send(head).unwrap();
     match answer {
+        Answer::Hang => {
+            let mut buf = [0_u8; 256];
+            while conn.read(&mut buf).unwrap_or(0) > 0 {}
+        }
         Answer::Deny => {
             let _ = conn.write_all(
                 b"HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n",
@@ -468,4 +474,19 @@ fn a_file_left_at_the_socket_path_is_replaced() {
         FORWARDED_HEAD.as_bytes()
     );
     front.stop();
+}
+
+#[test]
+fn a_nono_that_never_answers_gets_the_client_a_bounded_refusal() {
+    let nono = fake(Answer::Hang);
+    let (_dir, front) = start(nono.addr);
+    let mut client = dial(&front);
+    client.write_all(connect_head().as_bytes()).unwrap();
+    let reply = read_all(&mut client);
+    assert!(reply.starts_with("HTTP/1.1 403"), "{reply}");
+    assert!(reply.ends_with(super::REFUSAL_BODY), "{reply}");
+    assert_eq!(
+        nono.seen.recv_timeout(WAIT).unwrap(),
+        FORWARDED_HEAD.as_bytes()
+    );
 }
