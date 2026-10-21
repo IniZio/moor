@@ -13,6 +13,8 @@ mod support;
 mod close;
 #[path = "daemon/connect.rs"]
 mod connect;
+#[path = "daemon/feed.rs"]
+mod feed;
 #[path = "daemon/idle.rs"]
 mod idle;
 #[path = "daemon/inbox.rs"]

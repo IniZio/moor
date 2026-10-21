@@ -237,7 +237,7 @@ fn create_if_empty(conn: &mut Connection) -> rusqlite::Result<()> {
 mod actions;
 
 mod boxes;
-pub(crate) use boxes::{BoxState, SlackBox};
+pub(crate) use boxes::{BoxState, FedBox, SlackBox};
 
 mod channel_repos;
 pub(crate) use channel_repos::ChannelRepo;

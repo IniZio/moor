@@ -4,12 +4,11 @@ use std::ffi::OsString;
 use std::fs::DirBuilder;
 use std::os::unix::fs::DirBuilderExt as _;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
 
-use moor_client::{Client, WatchItem};
+use moor_client::Client;
 use moor_core::secret::Secret;
 
 use crate::api::Api;
@@ -19,15 +18,13 @@ use crate::coordinator::claude::{Claude, HostEnv};
 use crate::coordinator::Agent;
 use crate::credentials::CredentialCheck;
 use crate::db::{Db, SlackBox};
+use crate::feed::Feed;
 use crate::login::{self, TokenCheck};
 use crate::secret_file::read_secret;
 use crate::socket::{self, AfterAck, Inbound, Intake, Kept, NotKept};
 use crate::turns::Turns;
 use crate::worker::{self, Fx, Job};
 use crate::{dial, slash, Log};
-
-/// Longest the feed waits for a watch item before it wakes anyway.
-const FEED_TICK: Duration = Duration::from_millis(500);
 
 /// What the daemon needs from its command line and environment.
 #[derive(Debug, Clone)]
@@ -93,7 +90,7 @@ pub fn run(settings: &Settings, log: Log) -> Result<(), String> {
     let client = Client::new(&settings.socket);
     let (jobs_tx, jobs_rx) = mpsc::channel();
     let (feed_tx, feed_rx) = mpsc::channel();
-    let (wake_tx, wake_rx) = mpsc::channel();
+    let (_wake_tx, wake_rx) = mpsc::channel();
     let recorder = Recorder {
         db,
         channels: cfg.channels,
@@ -109,6 +106,12 @@ pub fn run(settings: &Settings, log: Log) -> Result<(), String> {
     let socket = thread::spawn(move || {
         socket::run(&socket_api, &app_token, &recorder, &thread::sleep);
     });
+    let feed = Feed {
+        db_path: db_path.clone(),
+        api: Arc::clone(&api),
+        bot_token: Arc::clone(&bot_token),
+        log: Arc::clone(&log),
+    };
     let worker = Worker {
         db_path,
         state_dir: settings.state_dir.clone(),
@@ -121,7 +124,7 @@ pub fn run(settings: &Settings, log: Log) -> Result<(), String> {
     thread::spawn(move || worker.run(&jobs_rx, left));
     thread::spawn(move || Arc::new(turns).run());
     thread::spawn(move || dial::read_events(&client, &feed_tx, &*log, &thread::sleep));
-    thread::spawn(move || feed(&feed_rx, &wake_tx));
+    thread::spawn(move || feed.run(&feed_rx));
     thread::spawn(move || post(&wake_rx));
     socket
         .join()
@@ -365,16 +368,6 @@ impl Worker {
             log: &*self.log,
         };
         worker::serve(jobs, &db, left, &mut fx);
-    }
-}
-
-/// The feed thread: takes watch items as they arrive and wakes at least every [`FEED_TICK`].
-fn feed(items: &Receiver<WatchItem>, _wake_poster: &Sender<()>) {
-    loop {
-        match items.recv_timeout(FEED_TICK) {
-            Ok(_) | Err(RecvTimeoutError::Timeout) => {}
-            Err(RecvTimeoutError::Disconnected) => return,
-        }
     }
 }
 
