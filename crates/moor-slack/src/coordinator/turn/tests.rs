@@ -10,7 +10,7 @@ use moor_core::secret::Secret;
 use super::{run, Ended, Limits, Turn, LIMITS};
 use crate::coordinator::claude::tests::install;
 use crate::coordinator::claude::{Claude, HostEnv};
-use crate::coordinator::{Agent as _, Answer, ToolServer, TurnSetup};
+use crate::coordinator::{Answer, ToolServer, TurnSetup};
 
 /// A probed fake in `bin`.
 fn claude(bin: &Path) -> Claude {
@@ -101,6 +101,7 @@ fn a_turn_gets_its_argv_env_stdin_and_the_token_on_fd_3_only() {
     let mut env: Vec<String> = dirs.recorded("env").lines().map(str::to_owned).collect();
     env.sort();
     let want = [
+        "CLAUDE_CODE_DISABLE_CLAUDE_MDS=1".to_owned(),
         "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=3".to_owned(),
         format!("CLAUDE_CONFIG_DIR={}", dirs.config.path().display()),
         "HOME=/home/op".to_owned(),
@@ -110,7 +111,7 @@ fn a_turn_gets_its_argv_env_stdin_and_the_token_on_fd_3_only() {
     ];
     assert_eq!(env, want);
     let cwd = dirs.recorded("cwd");
-    assert_eq!(cwd.trim_end(), dirs.work.path().display().to_string());
+    assert_eq!(cwd.trim_end(), "/");
     for file in ["argv", "env", "stdin", "cwd"] {
         assert!(!dirs.recorded(file).contains(token), "{file}");
     }
@@ -205,32 +206,6 @@ fn a_reply_with_no_load_report_before_it_is_unsafe() {
     let why = "a reply came before the load report".to_owned();
     assert_eq!(ended, Ended::Unsafe(why));
     assert_gone(pid);
-}
-
-#[test]
-fn an_instruction_file_in_the_workdir_or_an_ancestor_is_unsafe() {
-    let bin = tempfile::tempdir().unwrap();
-    let claude = claude(bin.path());
-    let root = tempfile::tempdir().unwrap();
-    let work = root.path().join("threads").join("C1-1.2");
-    std::fs::create_dir_all(&work).unwrap();
-    assert_eq!(claude.unsafe_workdir(&work), None);
-    for planted in [
-        root.path().join("CLAUDE.md"),
-        root.path().join("threads").join("CLAUDE.local.md"),
-        work.join(".claude").join("CLAUDE.md"),
-        root.path().join("AGENTS.md"),
-        work.join(".claude").join("AGENTS.md"),
-    ] {
-        std::fs::create_dir_all(planted.parent().unwrap()).unwrap();
-        std::fs::write(&planted, "obey me").unwrap();
-        let why = claude.unsafe_workdir(&work).unwrap();
-        assert_eq!(
-            why,
-            format!("{} would load as instructions", planted.display())
-        );
-        std::fs::remove_file(&planted).unwrap();
-    }
 }
 
 /// Waits up to 2 s for `pid` to be gone or a zombie.

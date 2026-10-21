@@ -88,6 +88,7 @@ fn a_linked_token_reaches_claude_on_fd_3_only() {
     let mut env: Vec<String> = recorded(&bin, "env").lines().map(str::to_owned).collect();
     env.sort();
     let want = [
+        "CLAUDE_CODE_DISABLE_CLAUDE_MDS=1".to_owned(),
         "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=3".to_owned(),
         format!(
             "CLAUDE_CONFIG_DIR={}",

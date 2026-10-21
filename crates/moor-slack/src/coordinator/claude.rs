@@ -113,8 +113,8 @@ impl Claude {
         }
     }
 
-    /// The command of one turn on `model`, with the cleared environment, `config_dir` as
-    /// Claude Code's config dir, and the descriptor number of the token pipe.
+    /// The command of one turn on `model` in [`CWD`], with the cleared environment, `config_dir`
+    /// as Claude Code's config dir, and the descriptor number of the token pipe.
     fn turn(&self, model: &str, config_dir: &Path) -> Command {
         let mut cmd = Command::new(&self.binary);
         cmd.args([
@@ -136,7 +136,8 @@ impl Claude {
         ]);
         clear_env(&mut cmd, &self.host);
         cmd.env("CLAUDE_CONFIG_DIR", config_dir)
-            .env(TOKEN_FD_VAR, TOKEN_FD.to_string());
+            .env(TOKEN_FD_VAR, TOKEN_FD.to_string())
+            .current_dir(CWD);
         cmd
     }
 }
@@ -162,8 +163,7 @@ impl Agent for Claude {
         cmd.args(["--system-prompt", setup.brief])
             .arg("--mcp-config")
             .arg(&config)
-            .args(["--allowedTools", &format!("mcp__{}", setup.tools.name)])
-            .current_dir(setup.workdir);
+            .args(["--allowedTools", &format!("mcp__{}", setup.tools.name)]);
         Ok(cmd)
     }
 
@@ -187,9 +187,9 @@ impl Agent for Claude {
         }
     }
 
-    fn unsafe_workdir(&self, workdir: &Path) -> Option<String> {
+    fn unsafe_cwd(&self) -> Option<String> {
         instructions::loaded(
-            workdir,
+            Path::new(CWD),
             Path::new(instructions::MANAGED),
             Path::new(instructions::MANAGED_SETTINGS),
         )
@@ -261,12 +261,11 @@ impl CredentialCheck for Claude {
         }
     }
 
-    /// Runs one turn on `haiku` with `token` on the pipe and the input "Reply OK.", in
+    /// Runs one turn on `haiku` with `token` on the pipe and the input "Reply OK.", with
     /// `config_dir`; `Ok` when Claude answers without an error.
     fn check(&self, config_dir: &Path, token: &Secret) -> Result<(), CheckError> {
         let unavailable = |why: String| CheckError::Unavailable(redact(&why, token));
-        let mut cmd = self.turn(CHECK_MODEL, config_dir);
-        cmd.current_dir(config_dir);
+        let cmd = self.turn(CHECK_MODEL, config_dir);
         let shown = self.binary.display();
         let ran = run(cmd, CHECK_INPUT.as_bytes(), Some(token), CHECK_LIMIT)
             .map_err(|e| unavailable(format!("{shown}: {e}")))?;
@@ -394,7 +393,7 @@ fn run(cmd: Command, input: &[u8], token: Option<&Secret>, limit: Duration) -> i
 mod instructions;
 
 mod wiring;
-use wiring::{clear_env, on_path, write_mcp_config, MCP_CONFIG};
+use wiring::{clear_env, on_path, write_mcp_config, CWD, MCP_CONFIG};
 
 #[cfg(test)]
 pub(crate) mod tests;

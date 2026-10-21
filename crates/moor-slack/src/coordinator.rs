@@ -33,7 +33,8 @@ pub(crate) struct TurnSetup<'a> {
     pub(crate) model: &'a str,
     /// The agent's own config dir for the person who pays for the turn.
     pub(crate) config_dir: &'a Path,
-    /// The thread's workdir, where the process runs.
+    /// The thread's workdir, which holds what the agent is started with. The process runs
+    /// elsewhere, in a directory the agent picks.
     pub(crate) workdir: &'a Path,
     /// The standing instructions of every turn.
     pub(crate) brief: &'a str,
@@ -112,7 +113,7 @@ pub(crate) trait Agent: CredentialCheck + Send + Sync {
     /// What one line of the turn's output says.
     fn event(&self, line: &str) -> Event;
 
-    /// Why the agent must not run in `workdir`, such as an instruction file that it would load
-    /// from the directory or one of its ancestors. An error reading the tree is a reason too.
-    fn unsafe_workdir(&self, workdir: &Path) -> Option<String>;
+    /// Why the agent must not run, such as an instruction file that it would load from its
+    /// working directory or the machine's managed config. An error reading one is a reason too.
+    fn unsafe_cwd(&self) -> Option<String>;
 }

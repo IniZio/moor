@@ -303,11 +303,14 @@ fn claude_checks_a_setup_token_in_the_users_own_config_dir() {
     );
     let path = credential_path(state.path(), CLAUDE, &user("U1"));
     assert_eq!(std::fs::read(path).unwrap(), token.as_bytes());
-    let cwd = std::fs::read_to_string(bin.path().join("run-1/cwd")).unwrap();
-    assert_eq!(
-        cwd.trim_end(),
-        state.path().join("claude/U1").to_str().unwrap()
+    let env = std::fs::read_to_string(bin.path().join("run-1/env")).unwrap();
+    let want = format!(
+        "CLAUDE_CONFIG_DIR={}",
+        state.path().join("claude/U1").display()
     );
+    assert!(env.lines().any(|l| l == want), "{env}");
+    let cwd = std::fs::read_to_string(bin.path().join("run-1/cwd")).unwrap();
+    assert_eq!(cwd.trim_end(), "/");
     let text = check(&token_check(""), Ok(&claude), state.path());
     let want = "Claude refused this token: it is not a token that `claude setup-token` \
                 prints. Nothing was stored.";
