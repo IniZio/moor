@@ -1,4 +1,4 @@
-//! A TLS client that ends the handshake with the intercepting proxy, and the reason recorded.
+//! A TLS client that ends the handshake with the intercepting proxy, and the event recorded.
 
 use std::io::{Read as _, Write as _};
 use std::net::TcpStream;
@@ -30,8 +30,8 @@ fn connect_then(rig: &Rig, client: impl FnOnce(TcpStream)) {
     client(sock);
 }
 
-/// The `reason` of the one `egress_refused` event a handshake that `client` ends records.
-fn handshake_reason(client: impl FnOnce(TcpStream)) -> Option<String> {
+/// The kind and payload of the first handshake event a handshake that `client` ends records.
+fn handshake_event(client: impl FnOnce(TcpStream)) -> (String, serde_json::Value) {
     let rig = rig();
     connect_then(&rig, client);
     let (store, box_id, log) = rig.store();
@@ -40,7 +40,7 @@ fn handshake_reason(client: impl FnOnce(TcpStream)) -> Option<String> {
         store: &store,
         box_id,
     };
-    let mut refused = None;
+    let mut found = None;
     for _ in 0..100 {
         audit::apply(
             &rig.proxy().drain_audit(),
@@ -49,36 +49,32 @@ fn handshake_reason(client: impl FnOnce(TcpStream)) -> Option<String> {
             &sink,
         );
         let events = store.events(box_id, 100).unwrap();
-        refused = events.into_iter().find(|e| e.kind == "egress_refused");
-        if refused.is_some() {
+        found = events
+            .into_iter()
+            .find(|e| e.kind == "egress_refused" || e.kind == "egress_aborted");
+        if found.is_some() {
             break;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    let payload = refused.expect("no egress_refused event").payload;
-    assert_eq!(
-        payload.get("category").and_then(|c| c.as_str()),
-        Some("intercept_handshake_failed")
-    );
-    payload
-        .get("reason")
-        .and_then(|r| r.as_str())
-        .map(str::to_owned)
+    let event = found.expect("no handshake event");
+    (event.kind, event.payload)
 }
 
 #[test]
-fn client_hanging_up_mid_handshake_is_recorded_as_client_closed() {
-    let reason = handshake_reason(|mut sock| {
+fn client_hanging_up_mid_handshake_is_recorded_as_aborted() {
+    let (kind, payload) = handshake_event(|mut sock| {
         sock.write_all(&[0x16, 0x03, 0x01, 0x00, 0x20, 0x01])
             .unwrap();
         drop(sock);
     });
-    assert_eq!(reason.as_deref(), Some("client_closed"));
+    assert_eq!(kind, "egress_aborted", "{payload}");
+    assert!(payload.get("reason").is_none(), "{payload}");
 }
 
 #[test]
-fn client_rejecting_the_box_ca_is_recorded_as_an_unknown_ca_alert() {
-    let reason = handshake_reason(|mut sock| {
+fn client_rejecting_the_box_ca_is_refused_as_an_unknown_ca_alert() {
+    let (kind, payload) = handshake_event(|mut sock| {
         let config = rustls::ClientConfig::builder_with_provider(Arc::new(
             rustls::crypto::ring::default_provider(),
         ))
@@ -94,5 +90,8 @@ fn client_rejecting_the_box_ca_is_recorded_as_an_unknown_ca_alert() {
             conn.write_tls(&mut sock).unwrap();
         }
     });
-    assert_eq!(reason.as_deref(), Some("unknown_ca_alert"));
+    assert_eq!(kind, "egress_refused", "{payload}");
+    let field = |name: &str| payload.get(name).and_then(|v| v.as_str());
+    assert_eq!(field("category"), Some("intercept_handshake_failed"));
+    assert_eq!(field("reason"), Some("unknown_ca_alert"));
 }

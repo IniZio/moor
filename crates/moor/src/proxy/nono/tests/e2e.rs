@@ -253,6 +253,10 @@ impl EgressSink for Recorder {
         self.push(format!("refused({}, {:?})", r.host, r.rule));
     }
 
+    fn aborted(&self, host: &str, rule: Option<&str>) {
+        self.push(format!("aborted({host}, {rule:?})"));
+    }
+
     fn credential_failed(&self, rule: &str) {
         self.push(format!("credential_failed({rule})"));
     }

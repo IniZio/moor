@@ -267,10 +267,18 @@ pub enum Event {
         method: Option<String>,
         /// Why the Proxy refused the connection, as the Proxy names it.
         category: Option<String>,
-        /// What ended an intercepted TLS handshake: `client_closed`,
-        /// `unknown_ca_alert`, `other_alert:<name>` or `other`.
+        /// What ended an intercepted TLS handshake: `unknown_ca_alert`,
+        /// `other_alert:<name>` or `other`.
         #[serde(skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
+    },
+    /// A client in the Box hung up during an intercepted TLS handshake without
+    /// sending an alert; the Proxy refused nothing.
+    EgressAborted {
+        /// The host the connection was for.
+        host: String,
+        /// The tool rule the host belongs to, when it belongs to one.
+        rule: Option<String>,
     },
     /// The Proxy forwarded a request to a credential host without the credential.
     CredentialWithheld {

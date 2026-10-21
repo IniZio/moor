@@ -7,6 +7,9 @@
 /// Prefix of the text rustls gives for an alert the client sent.
 const ALERT: &str = "received fatal alert: ";
 
+/// The value for a client that hung up without sending an alert.
+pub(super) const CLIENT_CLOSED: &str = "client_closed";
+
 /// The value recorded for a handshake that ended with `reason`.
 ///
 /// One of `client_closed`, `unknown_ca_alert`, `other_alert:<name>` or `other`.
@@ -34,7 +37,7 @@ pub(super) fn reason(reason: &str) -> String {
         "broken pipe",
         "close_notify",
     ]) {
-        "client_closed".to_owned()
+        CLIENT_CLOSED.to_owned()
     } else {
         "other".to_owned()
     }
