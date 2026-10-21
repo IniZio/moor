@@ -68,6 +68,26 @@ fn an_added_repo_is_recorded_before_the_ack_and_a_known_one_posts_nothing() {
     assert!(rig.slack.posts().is_empty(), "{:?}", rig.slack.posts());
 }
 
+/// The unknown add that follows is checked after the first, so its line proves the first check
+/// ran and posted nothing.
+#[test]
+fn an_owner_name_repo_a_real_controller_knows_posts_nothing() {
+    let mut rig = Rig::new();
+    let _controller = rig.real_controller_with(
+        "repos:\n  IniZio/moor:\n    url: https://github.com/IniZio/moor.git\n",
+    );
+    rig.spawn_daemon();
+    rig.slack.wait_connected();
+    let text = run(&rig, "env-1", USER, "repo add IniZio/moor");
+    assert_eq!(text, "Recorded. This channel works on `IniZio/moor`.");
+    run(&rig, "env-2", USER, "repo add acme/app");
+    let posts = rig.slack.wait_posts(1);
+    let line = "The controller does not know `acme/app`. Known repos: `IniZio/moor`.";
+    assert_eq!(posts[0].text, line);
+    std::thread::sleep(QUIET);
+    assert_eq!(rig.slack.posts().len(), 1, "{:?}", rig.slack.posts());
+}
+
 #[test]
 fn an_unknown_repo_gets_one_channel_line_naming_the_known_repos() {
     let (rig, controller) = Rig::start();

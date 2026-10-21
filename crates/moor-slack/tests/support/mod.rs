@@ -297,7 +297,12 @@ impl Rig {
 
     /// Starts a real controller with no repos on the rig's socket.
     pub(crate) fn real_controller(&self) -> RealController {
-        RealController::start(self.root.path(), &self.socket())
+        self.real_controller_with("")
+    }
+
+    /// Starts a real controller on the rig's socket with `repos`, a YAML block, in its config.
+    pub(crate) fn real_controller_with(&self, repos: &str) -> RealController {
+        RealController::start(self.root.path(), &self.socket(), repos)
     }
 
     /// Spawns the daemon with its state dir in the rig's root.

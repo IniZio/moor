@@ -1,4 +1,4 @@
-//! A real `moor controller serve` with no repos and no provider, for the smoke tests.
+//! A real `moor controller serve` with no provider, for the smoke and repo tests.
 
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -36,14 +36,15 @@ fn moor_bin() -> &'static Path {
 pub(crate) struct RealController(Child);
 
 impl RealController {
-    /// Starts the controller on `socket` with its state under `root`, and waits until it listens.
-    pub(crate) fn start(root: &Path, socket: &Path) -> Self {
+    /// Starts the controller on `socket` with its state under `root` and `repos` (a YAML block,
+    /// or empty) in its config, and waits until it listens.
+    pub(crate) fn start(root: &Path, socket: &Path, repos: &str) -> Self {
         let config = root.join("c.yaml");
         let state = root.join("state");
         std::fs::write(
             &config,
             format!(
-                "socket: {}\nstate_dir: {}\n",
+                "socket: {}\nstate_dir: {}\n{repos}",
                 socket.display(),
                 state.display()
             ),
