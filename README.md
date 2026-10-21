@@ -36,7 +36,7 @@ This guide starts one Box from a git repo on your machine. You need:
 - crabbox 0.79.1-moor.1 or a newer `-moor` build of
   [IniZio/crabbox](https://github.com/IniZio/crabbox) on `PATH`, set up for
   the `local-container` provider
-- `gh`, logged in, because moor reads your GitHub token with `gh auth token`
+- a GitHub token, for a repo on GitHub, such as the one `gh auth token` prints
 - a Claude Code token from `claude setup-token`
 
 1. Build the CLI and check that it runs:
@@ -53,21 +53,7 @@ This guide starts one Box from a git repo on your machine. You need:
    moor 0.2.0 986432dbfeb4fb9b15471793c1f607ea34108f47 schema=1
    ```
 
-2. Tell moor where your Claude token is. Create
-   `~/.config/moor/config.yaml` with this content:
-
-   ```yaml
-   credentials:
-     CLAUDE_CODE_OAUTH_TOKEN: {env: CLAUDE_CODE_OAUTH_TOKEN}
-   ```
-
-   Then set that variable in the shell that runs moor:
-
-   ```sh
-   export CLAUDE_CODE_OAUTH_TOKEN='<the token>'
-   ```
-
-3. Run a controller, and point the CLI at it. A Box acts for the moor user
+2. Run a controller, and point the CLI at it. A Box acts for the moor user
    of whoever starts it, so `moor start` runs only through a controller. Keep
    the controller config outside the state directory, because the controller
    keeps its vault key beside the config:
@@ -79,13 +65,20 @@ This guide starts one Box from a git repo on your machine. You need:
    export MOOR_CONTROLLER=~/.local/state/moor/controller.sock
    ```
 
-4. Create your moor user. The CLI acts as your `local:<uid>` identity:
+3. Create your moor user, and store your tokens as its secrets. The CLI acts
+   as your `local:<uid>` identity, and each command reads the value from
+   stdin. The `github` secret is needed only for a repo on GitHub:
 
    ```sh
    moor user enroll
+   printf '%s' '<the Claude token>' | moor user secret set claude
+   gh auth token | moor user secret set github
    ```
 
-5. In your repo, preview the settings a Box would get:
+   A Box's Proxy adds these secrets to the agent's requests. Nothing comes
+   from your shell or your user config.
+
+4. In your repo, preview the settings a Box would get:
 
    ```sh
    cd ~/src/your-repo
@@ -95,7 +88,7 @@ This guide starts one Box from a git repo on your machine. You need:
    Each line names a setting and the layer it came from, such as
    `box provider  [default]  local-container`.
 
-6. Start a Box with a goal for the agent:
+5. Start a Box with a goal for the agent:
 
    ```sh
    moor start fix-typo --goal "Fix the typo in the README"
@@ -104,7 +97,7 @@ This guide starts one Box from a git repo on your machine. You need:
    moor creates the worktree, the herdr workspace, and the machine, and then
    starts the agent.
 
-7. Follow the Box, and close it when the agent is done:
+6. Follow the Box, and close it when the agent is done:
 
    ```sh
    moor show fix-typo

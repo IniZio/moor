@@ -1,6 +1,6 @@
 //! Test context builder.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -10,18 +10,21 @@ use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::proc::Proc;
 use moor_core::seam::surface::Surface;
-use moor_core::user::{Identity, UserId};
+use moor_core::user::{Identity, SecretName, UserId};
 use moor_core::BoxName;
+use moor_core::Secret;
 
 use crate::adapters::creds::Creds;
 use crate::adapters::git::Git;
 use crate::cx::{Cx, CxParts};
 use crate::env::Env;
+use crate::store::Store;
 use crate::testing::clock::FakeClock;
 use crate::testing::engine::FakeEngine;
 use crate::testing::forge::FakeForge;
 use crate::testing::proxy_host::FakeProxyHost;
 use crate::testing::rng::FakeRng;
+use crate::vault::Vault;
 
 /// User config of the test context: only the credential the default Claude rule names.
 pub(crate) fn fake_config() -> UserConfig {
@@ -134,14 +137,38 @@ pub(crate) fn requester() -> Identity {
     Identity::local(1000)
 }
 
-/// `cx` acting as [`requester`], enrolled in its store, with a vault key path in the state
-/// dir. Nothing reads the key, since the test Proxy host is a fake.
+/// The secrets the test requester holds: every one the default Proxy rules inject.
+pub(crate) const REQUESTER_SECRETS: [&str; 2] = ["claude", "github"];
+
+/// `cx` acting as [`requester`], enrolled in its store with [`REQUESTER_SECRETS`] sealed by a
+/// vault key in the state dir.
 fn with_requester(cx: Cx, state_dir: &Path) -> Cx {
-    if let Ok(store) = cx.store() {
-        store
+    let key = state_dir.join("vault.key");
+    if let (Ok(store), Ok(vault)) = (cx.store(), Vault::load_or_create(&key)) {
+        let (user, _) = store
             .enroll(&requester())
             .expect("enroll the test requester");
+        for name in REQUESTER_SECRETS {
+            put_secret(store, &vault, user, name, &format!("{name}-test-value"));
+        }
     }
-    cx.with_requester(requester())
-        .with_vault_key(state_dir.join("vault.key"))
+    cx.with_requester(requester()).with_vault_key(key)
+}
+
+/// Stores `value` as `user`'s secret `name`, sealed with `vault`.
+pub(crate) fn put_secret(store: &Store, vault: &Vault, user: UserId, name: &str, value: &str) {
+    let name = SecretName::parse(name).expect("secret name");
+    let sealed = vault
+        .seal(user, &name, &Secret::new(value.as_bytes().to_vec()))
+        .expect("seal");
+    store
+        .set_user_secret(user, &name, &sealed)
+        .expect("store the secret");
+}
+
+/// A fresh vault key at `dir/vault.key`, for a Proxy spec to name; returns its path.
+pub(crate) fn test_vault_key(dir: &Path) -> PathBuf {
+    let path = dir.join("vault.key");
+    Vault::load_or_create(&path).expect("test vault key");
+    path
 }

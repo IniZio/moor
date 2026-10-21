@@ -250,8 +250,6 @@ struct Rig {
     up: Up,
     /// PEM of the Box CA the client trusts.
     ca_pem: String,
-    /// How many times the filter asked for the cached credential to be dropped.
-    evictions: Arc<AtomicUsize>,
 }
 
 /// The repo every test scopes the Box to.
@@ -270,7 +268,6 @@ fn rig_with(f: Responder, guard: Guard) -> Rig {
     let ca_pem = ca.cert_pem().to_owned();
     let up = Up::start(f);
     let upstream = Upstream::new("api.github.com", 443, Some(up.addr), Some(&up.ca)).unwrap();
-    let evictions = Arc::new(AtomicUsize::new(0));
     let filter = GraphqlFilter::start(FilterSpec {
         ca,
         repo: Some(box_repo()),
@@ -278,24 +275,11 @@ fn rig_with(f: Responder, guard: Guard) -> Rig {
         port: 443,
         rule: RULE.to_owned(),
         credential_headers: vec!["X-Gh-Auth".to_owned()],
-        on_credentialed_401: {
-            let evictions = Arc::clone(&evictions);
-            Box::new(move |head| {
-                if head.header("authorization") == Some(&format!("token {TOKEN}")) {
-                    evictions.fetch_add(1, Ordering::SeqCst);
-                }
-            })
-        },
         upstream,
         guard,
     })
     .unwrap();
-    Rig {
-        filter,
-        up,
-        ca_pem,
-        evictions,
-    }
+    Rig { filter, up, ca_pem }
 }
 
 impl Rig {

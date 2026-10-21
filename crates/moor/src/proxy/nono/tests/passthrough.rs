@@ -4,14 +4,12 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use moor_core::config::proxy::{EndpointRule, ResolvedInject, ResolvedRule};
-use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, Secret};
 use tempfile::TempDir;
 
 use super::upstream;
 use crate::proxy::nono::capture::{MoorCapture, RuleSource};
 use crate::proxy::nono::{build_config, ca, NonoProxy, NonoSpec};
-use crate::testing::clock::FakeClock;
 
 const SECRET: &str = "s3cr3t-credential-value-7f3a";
 const TOKEN: &str = "token_AbCdEf-0123456789";
@@ -21,7 +19,6 @@ const BOX_ID: BoxId = BoxId::new(7);
 fn fetch(path: &str) -> (Result<u16, String>, Vec<upstream::Seen>) {
     let dir = TempDir::new().unwrap();
     let up = upstream::start(dir.path());
-    let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
     let rules = vec![ResolvedRule {
         name: "hdr".to_owned(),
         hosts: vec![format!("localhost:{}", up.port)],
@@ -41,10 +38,10 @@ fn fetch(path: &str) -> (Result<u16, String>, Vec<upstream::Seen>) {
         fetch: Arc::new(|| Ok(Secret::new(SECRET.as_bytes().to_vec()))),
         basic_user: None,
     };
-    let capture = Arc::new(MoorCapture::new(
-        BTreeMap::from([("hdr".to_owned(), source)]),
-        clock,
-    ));
+    let capture = Arc::new(MoorCapture::new(BTreeMap::from([(
+        "hdr".to_owned(),
+        source,
+    )])));
     let state = dir.path().join("state");
     let ca = ca::load_or_create(&state, BOX_ID).unwrap();
     let token = Secret::new(TOKEN.as_bytes().to_vec());

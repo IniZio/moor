@@ -5,8 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::config::proxy::{resolve_rules, ProxyConfig, ResolvedRule};
-use moor_core::config::{CredentialSource, Identity};
-use moor_core::seam::clock::Ts;
+use moor_core::config::Identity;
 use moor_core::{BoxId, Secret};
 use tempfile::TempDir;
 
@@ -15,7 +14,6 @@ use super::upstream::{self, Seen};
 use crate::proxy::nono::audit::{self, Withheld};
 use crate::proxy::nono::capture::{MoorCapture, RuleSource};
 use crate::proxy::nono::{build_config, ca, NonoProxy, NonoSpec};
-use crate::testing::clock::FakeClock;
 
 const SECRET: &str = "gho_r3al-forge-token-9c1e";
 const TOKEN: &str = "token_AbCdEf-0123456789";
@@ -24,20 +22,7 @@ const BOX_ID: BoxId = BoxId::new(7);
 
 /// The resolved default `github-uploads` rule with its host set to `host`.
 pub(super) fn uploads_rule(host: String) -> ResolvedRule {
-    let creds = BTreeMap::from([(
-        "CLAUDE_CODE_OAUTH_TOKEN".to_owned(),
-        CredentialSource {
-            env: Some("X".into()),
-            ..Default::default()
-        },
-    )]);
-    let rules = resolve_rules(
-        &ProxyConfig::default(),
-        &creds,
-        Some(("o", "r")),
-        Identity::You,
-    )
-    .unwrap();
+    let rules = resolve_rules(&ProxyConfig::default(), Some(("o", "r")), Identity::You).unwrap();
     let mut rule = rules
         .into_iter()
         .find(|r| r.name == "github-uploads")
@@ -58,11 +43,7 @@ fn send(method: &str, path: &str) -> (Vec<Seen>, Vec<String>) {
         fetch: Arc::new(|| Ok(Secret::new(SECRET.as_bytes().to_vec()))),
         basic_user: None,
     };
-    let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
-    let capture = MoorCapture::new(
-        BTreeMap::from([("github-uploads".to_owned(), source)]),
-        clock,
-    );
+    let capture = MoorCapture::new(BTreeMap::from([("github-uploads".to_owned(), source)]));
     let state = dir.path().join("state");
     let ca = ca::load_or_create(&state, BOX_ID).unwrap();
     let token = Secret::new(TOKEN.as_bytes().to_vec());
@@ -94,7 +75,7 @@ fn send(method: &str, path: &str) -> (Vec<Seen>, Vec<String>) {
     assert_eq!(status.ok(), Some(200), "{method} {path}");
     let (withheld, sink) = (Withheld::new(&rules, None), Recorder::default());
     for _ in 0..100 {
-        audit::apply(&proxy.drain_audit(), &capture, &withheld, &sink);
+        audit::apply(&proxy.drain_audit(), &withheld, &sink);
         if sink
             .calls()
             .iter()

@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use moor_core::config::proxy::{check_direct, ResolvedRule, FORGE_CREDENTIAL};
+use moor_core::config::proxy::{check_direct, ResolvedRule, GITHUB_SECRET};
 use moor_core::config::BoxSettings;
 use moor_core::exec_env::{self, BoxCtx, ExecEnv, ProxyCtx, Purpose, RUN_DEADLINE};
 use moor_core::seam::agent_profile::ProxyAddr;
@@ -99,9 +99,9 @@ fn requester(cx: &Cx, box_id: BoxId) -> Result<UserId, String> {
         .ok_or_else(|| format!("Box {} acts for no user", box_id.get()))
 }
 
-/// Whether a rule sends GitHub through the Proxy with the Box's forge token.
+/// Whether a rule sends GitHub through the Proxy with the user's GitHub secret.
 fn forge_routed(rules: &[ResolvedRule]) -> bool {
-    rules.iter().any(|r| r.credential == FORGE_CREDENTIAL)
+    rules.iter().any(|r| r.credential == GITHUB_SECRET)
 }
 
 /// The variable names the `provider`'s platform puts in the Box that moor removes.

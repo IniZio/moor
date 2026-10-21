@@ -54,10 +54,6 @@ pub(crate) struct FilterSpec {
     /// Header names the proxy injects the credential into; removed, together
     /// with `Authorization`, from requests forwarded without it.
     pub(crate) credential_headers: Vec<String>,
-    /// Called with the request head when upstream answers it 401, so the
-    /// cached credential can be dropped if the head carried it. Never called
-    /// for requests forwarded without credential.
-    pub(crate) on_credentialed_401: Box<dyn Fn(&http::Head) + Send + Sync>,
     /// Connections to the real upstream.
     pub(crate) upstream: Upstream,
     /// Vets every other tunnel destination.
@@ -100,8 +96,6 @@ pub(super) struct Shared {
     pub(super) rule: String,
     /// Header names stripped from requests forwarded without credential.
     pub(super) credential_headers: Vec<String>,
-    /// Called with the request head when upstream answers a credentialed forward 401.
-    pub(super) on_credentialed_401: Box<dyn Fn(&http::Head) + Send + Sync>,
     /// Methods of requests forwarded without credential, not yet drained.
     withheld: Mutex<VecDeque<String>>,
     /// 401 and 403 statuses that say nothing about the credential, not yet
@@ -206,7 +200,6 @@ impl GraphqlFilter {
             port: spec.port,
             rule: spec.rule,
             credential_headers: spec.credential_headers,
-            on_credentialed_401: spec.on_credentialed_401,
             withheld: Mutex::new(VecDeque::new()),
             excused: Mutex::new(VecDeque::new()),
             upstream: spec.upstream,

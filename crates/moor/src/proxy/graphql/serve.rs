@@ -336,10 +336,8 @@ fn relay(
         }
         break resp;
     };
-    match (anonymous, resp.status) {
-        (false, 401) => (shared.on_credentialed_401)(head),
-        (true, 401 | 403) => shared.excuse(resp.status),
-        _ => {}
+    if anonymous && matches!(resp.status, 401 | 403) {
+        shared.excuse(resp.status);
     }
     *sent = true;
     let Ok(framing) = response_framing(&resp, &head.method) else {

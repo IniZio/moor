@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::config::proxy::{ResolvedInject, ResolvedRule, FORGE_CREDENTIAL};
+use moor_core::config::proxy::{ResolvedInject, ResolvedRule, GITHUB_SECRET};
 use moor_core::config::{parse_user, BoxSettings, Flags, UserConfig};
 use moor_core::exec_env::Purpose;
 use moor_core::seam::agent_profile::ProxyAddr;
@@ -241,7 +241,7 @@ fn rule_with(credential: &str) -> ResolvedRule {
 
 #[test]
 fn a_forge_rule_marks_the_proxy_as_forge_routed() {
-    let rules = [rule_with("other"), rule_with(FORGE_CREDENTIAL)];
+    let rules = [rule_with("other"), rule_with(GITHUB_SECRET)];
     assert!(forge_routed(&rules));
 }
 

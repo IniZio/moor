@@ -1,6 +1,6 @@
 claude:
   hosts: [api.anthropic.com]
-  credential: CLAUDE_CODE_OAUTH_TOKEN
+  credential: claude
   inject:
     header: Authorization
     form: "Bearer {secret}"
@@ -9,7 +9,7 @@ claude:
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
 github-api:
   hosts: [api.github.com]
-  credential: forge
+  credential: github
   inject:
     header: Authorization
     form: "token {secret}"
@@ -41,7 +41,7 @@ github-api:
     GH_TELEMETRY: disabled
 github-git:
   hosts: [github.com]
-  credential: forge
+  credential: github
   inject:
     basic_user: x-access-token
   allow:
@@ -50,7 +50,7 @@ github-git:
     - "POST /{repo}.git/git-receive-pack"
 github-uploads:
   hosts: [uploads.github.com]
-  credential: forge
+  credential: github
   # The allow path cannot name the repo (the proxy strips query strings), so
   # a Box with no repo gets no upload rule.
   requires_repo: true

@@ -40,22 +40,6 @@ impl Creds {
         self.read(src).map(drop)
     }
 
-    /// The non-blank credential value as a Secret.
-    ///
-    /// One trailing newline from a command or file is dropped.
-    ///
-    /// # Errors
-    /// A moor-worded reason; never contains the value.
-    pub(crate) fn secret(&self, src: &CredentialSource) -> Result<moor_core::Secret, String> {
-        let raw = self.read(src)?;
-        let mut bytes = raw.as_slice();
-        if src.cmd.is_some() || src.file.is_some() {
-            bytes = bytes.strip_suffix(b"\n").unwrap_or(bytes);
-            bytes = bytes.strip_suffix(b"\r").unwrap_or(bytes);
-        }
-        Ok(moor_core::Secret::new(bytes.to_vec()))
-    }
-
     /// The non-blank credential bytes, wiped on drop.
     fn read(&self, src: &CredentialSource) -> Result<Zeroizing<Vec<u8>>, String> {
         let raw = self.fetch(src)?;

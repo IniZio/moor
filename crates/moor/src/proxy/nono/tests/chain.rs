@@ -10,7 +10,6 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, Secret};
 use nono_proxy::config::{EndpointRule, ExternalProxyConfig, InjectMode, RouteConfig};
 use nono_proxy::tls_intercept::{build_server_config, CertCache, EphemeralCa};
@@ -22,7 +21,6 @@ use zeroize::Zeroizing;
 use super::upstream;
 use crate::proxy::nono::capture::{MoorCapture, RuleSource};
 use crate::proxy::nono::{ca, route_prefix};
-use crate::testing::clock::FakeClock;
 
 /// The credential the route injects.
 const SECRET: &str = "fake-chain-credential-5d1e";
@@ -192,11 +190,10 @@ fn capture() -> Arc<MoorCapture> {
         fetch: Arc::new(|| Ok(Secret::new(SECRET.as_bytes().to_vec()))),
         basic_user: None,
     };
-    let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
-    Arc::new(MoorCapture::new(
-        BTreeMap::from([("gh".to_owned(), source)]),
-        clock,
-    ))
+    Arc::new(MoorCapture::new(BTreeMap::from([(
+        "gh".to_owned(),
+        source,
+    )])))
 }
 
 #[test]

@@ -11,7 +11,6 @@ use moor_core::activity::PaneStatus;
 use moor_core::name::{BoxHandle, BoxName, BoxPath};
 use moor_core::request::SessionsReq;
 use moor_core::seam::clock::Ts;
-use moor_core::seam::forge::{Forge, ForgeRepo};
 use moor_core::seam::proc::Tool;
 use moor_core::seam::surface::{PaneRef, ResumeReg};
 use moor_core::Request;
@@ -41,26 +40,6 @@ fn the_herdr_adapter_numbers_its_reports_from_the_clock() {
         let seq: u64 = c.args.get(i + 1).unwrap().parse().unwrap();
         assert!(seq >= 7_000_000, "{seq}");
     }
-}
-
-#[test]
-fn the_github_forge_defaults_to_gh_auth_token_and_passes_set_variables() {
-    let proc = Arc::new(ScriptedProc::new());
-    proc.on(Tool::Sh, &["-c"], Reply::Ok("tok\n".to_owned()));
-    let mut config = UserConfig::default();
-    config.github.pass_env = vec!["SET_ME".to_owned(), "UNSET_ME".to_owned()];
-    let env = Env::from_pairs([("SET_ME", "v")]);
-    let g = github(&(proc.clone() as Arc<dyn Proc>), &config, &env);
-    g.repo_token(&ForgeRepo::new("o", "n")).unwrap();
-    let calls = proc.calls();
-    let [call] = calls.as_slice() else {
-        return assert_eq!(calls.len(), 1);
-    };
-    assert_eq!(
-        call.args.get(3..),
-        Some(&["gh", "auth", "token"].map(str::to_owned)[..])
-    );
-    assert_eq!(call.env, [("SET_ME".to_owned(), "v".to_owned())]);
 }
 
 #[test]

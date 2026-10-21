@@ -11,7 +11,6 @@ fn only_a_failed_handshake_denial_records_a_reason() {
         store: &store,
         box_id,
     };
-    let (capture, _) = counting_capture();
     let text = "tls handshake failed: received fatal alert: UnknownCA";
     let events = [
         event(
@@ -23,7 +22,7 @@ fn only_a_failed_handshake_denial_records_a_reason() {
             &json!({"denial_category": "intercept_handshake_failed", "target": "b.test", "reason": text}),
         ),
     ];
-    apply(&events, &capture, &Withheld::default(), &sink);
+    apply(&events, &Withheld::default(), &sink);
 
     let rows = store.events(box_id, 100).unwrap();
     let payload = |host: &str| {
@@ -45,7 +44,6 @@ fn a_handshake_the_client_hangs_up_on_is_aborted_and_an_alert_is_refused() {
         store: &store,
         box_id,
     };
-    let (capture, _) = counting_capture();
     let failed = |host: &str, reason: &str| {
         event(
             "deny",
@@ -64,7 +62,7 @@ fn a_handshake_the_client_hangs_up_on_is_aborted_and_an_alert_is_refused() {
             "tls handshake failed: received fatal alert: UnknownCA",
         ),
     ];
-    apply(&events, &capture, &Withheld::default(), &sink);
+    apply(&events, &Withheld::default(), &sink);
 
     let rows: Vec<_> = store
         .events(box_id, 100)
@@ -105,7 +103,6 @@ fn another_alert_or_an_unknown_ending_is_still_refused() {
         store: &store,
         box_id,
     };
-    let (capture, _) = counting_capture();
     let failed = |host: &str, reason: &str| {
         event(
             "deny",
@@ -119,7 +116,7 @@ fn another_alert_or_an_unknown_ending_is_still_refused() {
         ),
         failed("other.test", "tls handshake failed: something new"),
     ];
-    apply(&events, &capture, &Withheld::default(), &sink);
+    apply(&events, &Withheld::default(), &sink);
 
     let rows: Vec<_> = store
         .events(box_id, 100)

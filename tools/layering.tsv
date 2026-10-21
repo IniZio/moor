@@ -30,8 +30,8 @@ moor::adapters::box_agent
 moor::adapters::github	moor::adapters::proc
 moor::adapters::creds	moor::adapters::proc,moor::env
 moor::config_load	moor::env,moor::error
-moor::testing	moor::adapters::clock,moor::adapters::git,moor::adapters::creds,moor::cx,moor::env
-moor::proxy	moor::store,moor::adapters::clock,moor::adapters::sockets,moor::env
+moor::testing	moor::adapters::clock,moor::adapters::git,moor::adapters::creds,moor::cx,moor::env,moor::store,moor::vault
+moor::proxy	moor::store,moor::adapters::clock,moor::adapters::sockets,moor::env,moor::vault
 moor::cli	moor::error
 moor::client	moor::cli,moor::config_load,moor::env,moor::error
 moor::controller	moor::Moor,moor::env,moor::error,moor::vault

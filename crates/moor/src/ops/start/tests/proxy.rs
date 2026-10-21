@@ -127,25 +127,6 @@ fn a_proxy_that_cannot_be_ensured_fails_the_launch_at_the_proxy_step() {
 }
 
 #[test]
-fn a_missing_default_credential_fails_the_proxy_step_naming_the_key() {
-    let mut w = super::world_with(
-        FakeDriver::new(),
-        std::path::Path::new("/repo"),
-        moor_core::config::UserConfig::default(),
-    );
-    w.cx = w.cx.with_proxy_host(Arc::new(FakeProxyHost::new()));
-    let v = run(&w.cx, &goal_req()).unwrap();
-    let (step, message, _) = failure_step(&w, BoxId::new(v.boxed.id));
-    assert_eq!(step, "proxy");
-    assert!(
-        message.contains(
-            "the default claude rule needs credentials.CLAUDE_CODE_OAUTH_TOKEN; add it under credentials:"
-        ),
-        "{message}"
-    );
-}
-
-#[test]
 fn only_the_last_lines_of_a_long_proxy_failure_are_kept() {
     let mut text = String::from("boom");
     text.extend((1..=25).map(|n| format!("\nline {n}")));
@@ -433,7 +414,7 @@ fn a_repo_direct_host_that_a_user_rule_serves_fails_the_proxy_step() {
     )
     .unwrap();
     let config = config_with_proxy(
-        "proxy: {rules: {gitlab: {hosts: [gitlab.com], credential: forge, inject: {form: 'Bearer {secret}'}}}}",
+        "proxy: {rules: {gitlab: {hosts: [gitlab.com], credential: github, inject: {form: 'Bearer {secret}'}}}}",
     );
     let mut w = super::world_with(FakeDriver::new(), repo.path(), config);
     w.cx = w.cx.with_proxy_host(Arc::new(FakeProxyHost::new()));

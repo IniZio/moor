@@ -36,7 +36,7 @@ use crate::env::Env;
 use crate::error::CommandError;
 use crate::proxy::adopt;
 use crate::proxy::detached::DetachedSupervisor;
-use crate::proxy::nono::capture::CredsFn;
+use crate::proxy::nono::capture::SecretsFn;
 use crate::proxy::{serve, Deps, Sink};
 use crate::store::{Store, STORE_FILE};
 
@@ -177,7 +177,7 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
         surface,
         engine: Arc::new(engine),
         proc: Arc::clone(&proc),
-        forge: Arc::new(github(&proc, &config, env)),
+        forge: Arc::new(GitHub),
         proxy_host,
         git: Git::new(Arc::clone(&proc)),
         config,
@@ -210,7 +210,6 @@ pub fn serve_proxy(env: &Env, box_id: BoxId, stderr: impl Write + Send + 'static
 fn run_proxy(env: &Env, box_id: BoxId, sink: &Sink) -> Result<u8, String> {
     let sockets = socket_dir();
     let (parts, _) = parts(env, sockets.clone()).map_err(|e| e.error.to_string())?;
-    let forge = Arc::clone(&parts.forge);
     let clock = Arc::clone(&parts.clock);
     let proc = Arc::clone(&parts.proc);
     let cx = Cx::new(parts);
@@ -220,21 +219,20 @@ fn run_proxy(env: &Env, box_id: BoxId, sink: &Sink) -> Result<u8, String> {
     for sig in [SIGTERM, SIGINT] {
         signal_hook::flag::register(sig, Arc::clone(&stop)).map_err(|e| e.to_string())?;
     }
-    let sources = cx.config().credentials.clone();
-    let reader = Creds::new(env.clone(), Arc::clone(&proc));
-    let creds: CredsFn = Arc::new(move |name: &str| {
-        sources.get(name).map_or_else(
-            || Err(format!("credential {name} is not configured")),
-            |src| reader.secret(src),
-        )
+    let shared = Arc::new(
+        Store::open(&state_dir.join(STORE_FILE), Arc::clone(&clock)).map_err(|e| e.to_string())?,
+    );
+    let secrets: SecretsFn = Arc::new(move |vault, user, name| {
+        shared
+            .user_secret(vault, user, name)
+            .map_err(|e| e.to_string())
     });
     let deps = Deps {
         store,
         driver: cx.driver(),
-        forge,
         clock,
         rng: cx.rng(),
-        creds,
+        secrets,
         upstream_ca: None,
         upstream_dial: None,
         guard_exempt: Vec::new(),
@@ -246,17 +244,6 @@ fn run_proxy(env: &Env, box_id: BoxId, sink: &Sink) -> Result<u8, String> {
         stderr: Arc::clone(sink),
     };
     Ok(serve(&deps, box_id))
-}
-
-/// The GitHub forge; `pass_env` names unset in `env` are skipped.
-fn github(proc: &Arc<dyn Proc>, config: &UserConfig, env: &Env) -> GitHub {
-    let gh = &config.github;
-    let pairs = gh
-        .pass_env
-        .iter()
-        .filter_map(|k| Some((k.clone(), env.get(k)?.to_owned())))
-        .collect();
-    GitHub::new(Arc::clone(proc), gh.token_cmd(), pairs)
 }
 
 /// The environment variable that sets the first-run prompt watch window, in milliseconds.

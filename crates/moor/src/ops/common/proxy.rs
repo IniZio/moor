@@ -63,7 +63,6 @@ pub(crate) fn plan(cx: &Cx, origin: Option<&str>) -> Result<ProxyPlan, String> {
     let cfg = cx.config();
     let rules = resolve_rules(
         &cfg.proxy,
-        &cfg.credentials,
         repo.as_ref().map(|r| (r.owner.as_str(), r.name.as_str())),
         cfg.github.identity,
     )

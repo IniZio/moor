@@ -1,8 +1,8 @@
 //! Tests for proxy rule parsing, validation and resolution.
 
 use super::*;
+use crate::config::Identity;
 use crate::config::{parse_user, UserConfig};
-use crate::config::{CredentialSource, Identity};
 
 fn err(doc: &str) -> ConfigError {
     parse_user("u.yaml", doc).expect_err(doc)
@@ -15,12 +15,11 @@ fn user(doc: &str) -> UserConfig {
 }
 
 const GOOD: &str = "
-credentials: {tok: {env: X}}
 proxy:
   rules:
     gitlab:
       hosts: [gitlab.com]
-      credential: tok
+      credential: gitlab
       inject: {header: PRIVATE-TOKEN, form: '{secret}'}
       allow: ['GET|POST /api/v4/projects/{repo:urlenc}/merge_requests/**']
       box_env: {GL_REPO: '{repo}'}
@@ -28,39 +27,6 @@ proxy:
 
 fn repo() -> (&'static str, &'static str) {
     ("acme", "widgets")
-}
-
-fn creds() -> BTreeMap<String, CredentialSource> {
-    let src = CredentialSource {
-        env: Some("X".into()),
-        ..CredentialSource::default()
-    };
-    BTreeMap::from([("CLAUDE_CODE_OAUTH_TOKEN".to_owned(), src)])
-}
-
-#[test]
-fn default_rule_without_its_credential_errors_on_resolve() {
-    let e = resolve_rules(
-        &ProxyConfig::default(),
-        &BTreeMap::new(),
-        None,
-        Identity::You,
-    )
-    .expect_err("missing");
-    assert_eq!(e.path, "credentials");
-    assert_eq!(
-        e.reason,
-        "the default claude rule needs credentials.CLAUDE_CODE_OAUTH_TOKEN; add it under credentials:"
-    );
-}
-
-#[test]
-fn user_rule_without_its_credential_keeps_the_rule_path() {
-    let e = err(
-        "proxy:\n  rules:\n    mine:\n      hosts: [api.example.com]\n      credential: MINE\n      inject: {form: 'Bearer {secret}'}\n",
-    );
-    assert_eq!(e.path, "proxy.rules.mine.credential");
-    assert!(e.reason.starts_with("unknown credential \"MINE\""), "{e}");
 }
 
 #[test]
@@ -100,13 +66,6 @@ fn default_rule_bad_allow_reports_user_index() {
 }
 
 #[test]
-fn extended_default_rule_missing_credential_uses_default_wording() {
-    let e = err("proxy:\n  rules:\n    claude:\n      box_env: {A: b}\n");
-    assert_eq!(e.path, "credentials");
-    assert!(e.reason.starts_with("the default claude rule needs"), "{e}");
-}
-
-#[test]
 fn user_rule_parses() {
     let cfg = user(GOOD);
     let rule = cfg.proxy.rules.get("gitlab").expect("gitlab");
@@ -124,10 +83,10 @@ fn unknown_key_names_its_path() {
 
 #[test]
 fn empty_hosts_rejected() {
-    let e = err("proxy: {rules: {x: {credential: forge, inject: {basic_user: u}}}}");
+    let e = err("proxy: {rules: {x: {credential: github, inject: {basic_user: u}}}}");
     assert_eq!(e.path, "proxy.rules.x.hosts");
     let e = err(
-        "proxy: {rules: {x: {hosts: ['*.a.com'], credential: forge, inject: {basic_user: u}}}}",
+        "proxy: {rules: {x: {hosts: ['*.a.com'], credential: github, inject: {basic_user: u}}}}",
     );
     assert_eq!(e.path, "proxy.rules.x.hosts[0]");
 }
@@ -151,7 +110,7 @@ fn unknown_slots_rejected_everywhere() {
         ),
     ] {
         let e = err(&format!(
-            "proxy: {{rules: {{x: {{hosts: [a.com], credential: forge, {frag}}}}}}}"
+            "proxy: {{rules: {{x: {{hosts: [a.com], credential: github, {frag}}}}}}}"
         ));
         assert_eq!(e.path, format!("proxy.rules.x.{path}"), "{frag}: {e}");
     }
@@ -167,7 +126,7 @@ fn inject_shapes() {
         "inject: {header: 'bad name', form: '{secret}'}",
     ] {
         let e = err(&format!(
-            "proxy: {{rules: {{x: {{hosts: [a.com], credential: forge, {frag}}}}}}}"
+            "proxy: {{rules: {{x: {{hosts: [a.com], credential: github, {frag}}}}}}}"
         ));
         assert!(e.path.starts_with("proxy.rules.x.inject"), "{frag}: {e}");
     }
@@ -176,7 +135,7 @@ fn inject_shapes() {
 #[test]
 fn allow_syntax() {
     let base =
-        "proxy: {rules: {x: {hosts: [a.com], credential: forge, inject: {basic_user: u}, allow: ";
+        "proxy: {rules: {x: {hosts: [a.com], credential: github, inject: {basic_user: u}, allow: ";
     for bad in ["['get /a']", "['GET a']", "['GET']", "['*', 'GET /a']"] {
         assert!(
             parse_user("u", &format!("{base}{bad}}}}}}}")).is_err(),
@@ -192,10 +151,11 @@ fn allow_syntax() {
 }
 
 #[test]
-fn unknown_credential_rejected_forge_allowed() {
-    let e = err("proxy: {rules: {x: {hosts: [a.com], credential: nope, inject: {basic_user: u}}}}");
+fn a_credential_must_be_a_secret_name() {
+    let e = err("proxy: {rules: {x: {hosts: [a.com], credential: NOPE, inject: {basic_user: u}}}}");
     assert_eq!(e.path, "proxy.rules.x.credential");
-    user("proxy: {rules: {x: {hosts: [a.com], credential: forge, inject: {basic_user: u}}}}");
+    assert!(e.reason.contains("secret name"), "{e}");
+    user("proxy: {rules: {x: {hosts: [a.com], credential: npm-token, inject: {basic_user: u}}}}");
 }
 
 #[test]
@@ -215,13 +175,8 @@ fn defaults_are_valid_and_complete() {
 
 #[test]
 fn resolve_fills_repo() {
-    let rules = resolve_rules(
-        &ProxyConfig::default(),
-        &creds(),
-        Some(repo()),
-        Identity::You,
-    )
-    .expect("resolves");
+    let rules =
+        resolve_rules(&ProxyConfig::default(), Some(repo()), Identity::You).expect("resolves");
     let get = |n: &str| rules.iter().find(|r| r.name == n).expect(n);
     let git = get("github-git");
     assert_eq!(
@@ -263,12 +218,10 @@ fn resolve_fills_repo() {
 
 #[test]
 fn user_rule_overrides_default_inject_and_adds() {
-    let doc = GOOD.replace("{tok:", "{CLAUDE_CODE_OAUTH_TOKEN: {env: Y}, tok:");
     let cfg = user(&format!(
-        "{doc}\n    claude: {{inject: {{header: X-Key, form: '{{secret}}'}}}}"
+        "{GOOD}\n    claude: {{inject: {{header: X-Key, form: '{{secret}}'}}}}"
     ));
-    let rules =
-        resolve_rules(&cfg.proxy, &cfg.credentials, Some(repo()), Identity::You).expect("resolves");
+    let rules = resolve_rules(&cfg.proxy, Some(repo()), Identity::You).expect("resolves");
     let claude = rules.iter().find(|r| r.name == "claude").expect("claude");
     assert_eq!(claude.hosts, ["api.anthropic.com"]);
     assert_eq!(
@@ -297,10 +250,10 @@ fn github_api_paths(allow: Option<&str>) -> Vec<String> {
         format!("proxy:\n  rules:\n    github-api:\n      allow: ['{a}']\n")
     });
     let cfg = user(&doc);
-    let rules = resolve_rules(&cfg.proxy, &creds(), Some(repo()), Identity::You).expect("resolves");
+    let rules = resolve_rules(&cfg.proxy, Some(repo()), Identity::You).expect("resolves");
     let gh = rules.iter().find(|r| r.name == "github-api").expect("gh");
     assert_eq!(gh.hosts, ["api.github.com"]);
-    assert_eq!(gh.credential, "forge");
+    assert_eq!(gh.credential, "github");
     gh.endpoint_rules
         .iter()
         .map(|r| format!("{} {}", r.method, r.path))
@@ -323,7 +276,7 @@ fn user_allow_extends_default_rule() {
 fn user_box_env_overrides_default_var() {
     let doc = "proxy:\n  rules:\n    github-api:\n      box_env: {GH_REPO: fixed, MORE: x}\n";
     let cfg = user(doc);
-    let rules = resolve_rules(&cfg.proxy, &creds(), Some(repo()), Identity::You).expect("resolves");
+    let rules = resolve_rules(&cfg.proxy, Some(repo()), Identity::You).expect("resolves");
     let gh = rules.iter().find(|r| r.name == "github-api").expect("gh");
     assert_eq!(gh.box_env.get("GH_REPO").map(String::as_str), Some("fixed"));
     assert_eq!(gh.box_env.get("MORE").map(String::as_str), Some("x"));
@@ -334,20 +287,15 @@ fn user_box_env_overrides_default_var() {
 }
 
 #[test]
-fn github_uploads_rule_injects_forge_and_allows_only_the_asset_post() {
-    let rules = resolve_rules(
-        &ProxyConfig::default(),
-        &creds(),
-        Some(("o", "w")),
-        Identity::You,
-    )
-    .expect("resolves");
+fn github_uploads_rule_injects_github_and_allows_only_the_asset_post() {
+    let rules =
+        resolve_rules(&ProxyConfig::default(), Some(("o", "w")), Identity::You).expect("resolves");
     let up = rules
         .iter()
         .find(|r| r.name == "github-uploads")
         .expect("uploads");
     assert_eq!(up.hosts, ["uploads.github.com"]);
-    assert_eq!(up.credential, "forge");
+    assert_eq!(up.credential, "github");
     assert_eq!(
         up.inject,
         ResolvedInject::Header {
@@ -372,19 +320,16 @@ fn duplicate_user_allow_collapses() {
 #[test]
 fn new_name_rule_stays_whole() {
     let cfg = user(GOOD);
-    let mut all = creds();
-    all.extend(cfg.credentials.clone());
-    let rules = resolve_rules(&cfg.proxy, &all, Some(repo()), Identity::You).expect("resolves");
+    let rules = resolve_rules(&cfg.proxy, Some(repo()), Identity::You).expect("resolves");
     let gl = rules.iter().find(|r| r.name == "gitlab").expect("gitlab");
     assert_eq!(gl.hosts, ["gitlab.com"]);
-    assert_eq!(gl.credential, "tok");
+    assert_eq!(gl.credential, "gitlab");
     assert_eq!(gl.endpoint_rules.len(), 2);
 }
 
 #[test]
 fn no_repo_drops_repo_rules() {
-    let rules =
-        resolve_rules(&ProxyConfig::default(), &creds(), None, Identity::You).expect("resolves");
+    let rules = resolve_rules(&ProxyConfig::default(), None, Identity::You).expect("resolves");
     let names: Vec<_> = rules.iter().map(|r| r.name.as_str()).collect();
     assert_eq!(names, ["claude"]);
 }
@@ -403,13 +348,8 @@ fn unsafe_repo_parts_rejected() {
         ("ac\u{fc}", "w"),
         ("a", "w{repo}"),
     ] {
-        let e = resolve_rules(
-            &ProxyConfig::default(),
-            &creds(),
-            Some((owner, name)),
-            Identity::You,
-        )
-        .expect_err(owner);
+        let e = resolve_rules(&ProxyConfig::default(), Some((owner, name)), Identity::You)
+            .expect_err(owner);
         assert!(
             e.reason.contains(&format!("{owner:?}")) || e.reason.contains(&format!("{name:?}")),
             "{owner}/{name}: {e}"
@@ -433,13 +373,8 @@ fn path_matches(glob: &str, path: &str) -> bool {
 }
 
 fn github_api_allows(method: &str, path: &str) -> bool {
-    let rules = resolve_rules(
-        &ProxyConfig::default(),
-        &creds(),
-        Some(repo()),
-        Identity::You,
-    )
-    .expect("resolves");
+    let rules =
+        resolve_rules(&ProxyConfig::default(), Some(repo()), Identity::You).expect("resolves");
     let api = rules.iter().find(|r| r.name == "github-api").expect("api");
     api.endpoint_rules
         .iter()

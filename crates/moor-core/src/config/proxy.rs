@@ -11,15 +11,16 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
-use super::{check, parse_strict, ConfigError, CredentialSource};
+use super::{check, parse_strict, ConfigError};
 use crate::name::DirectHost;
+use crate::user::SecretName;
 pub use direct::check_direct;
 pub use resolve::{default_rules, resolve_rules, EndpointRule, ResolvedInject, ResolvedRule};
 pub use shape::request_shape;
 use template::{check_slots, FORM_SLOTS, REPO_SLOTS};
 
-/// Credential name that means the Box's forge token rather than a `credentials:` entry.
-pub const FORGE_CREDENTIAL: &str = "forge";
+/// The user secret the GitHub rules inject.
+pub const GITHUB_SECRET: &str = "github";
 
 /// Header carrying the credential when `inject.header` is unset.
 const DEFAULT_HEADER: &str = "Authorization";
@@ -90,7 +91,7 @@ impl Inject {
 pub struct ToolRule {
     /// Exact domains the rule serves.
     pub hosts: Vec<String>,
-    /// `credentials:` entry name, or `forge`.
+    /// The name of the Box user's secret the rule injects.
     pub credential: String,
     /// How the credential is added.
     pub inject: Inject,
@@ -115,24 +116,6 @@ impl ToolRule {
         self.requires_repo
             || self.allow.iter().any(|a| template::uses_repo(a))
             || self.box_env.values().any(|v| template::uses_repo(v))
-    }
-
-    /// The credential is `forge` or a `credentials:` entry.
-    pub(super) fn check_credential(
-        &self,
-        at: &str,
-        credentials: &BTreeMap<String, CredentialSource>,
-    ) -> Result<(), ConfigError> {
-        if self.credential == FORGE_CREDENTIAL || credentials.contains_key(&self.credential) {
-            return Ok(());
-        }
-        Err(ConfigError::new(
-            format!("{at}.credential"),
-            format!(
-                "unknown credential {:?}: not under credentials: and not {FORGE_CREDENTIAL:?}",
-                self.credential
-            ),
-        ))
     }
 
     /// This user rule laid over the default rule of the same name.
@@ -200,24 +183,6 @@ impl ToolRule {
         Ok(())
     }
 
-    /// Like [`Self::check_credential`] for a default rule the user did not write.
-    pub(super) fn check_default_credential(
-        &self,
-        name: &str,
-        credentials: &BTreeMap<String, CredentialSource>,
-    ) -> Result<(), ConfigError> {
-        if self.credential == FORGE_CREDENTIAL || credentials.contains_key(&self.credential) {
-            return Ok(());
-        }
-        Err(ConfigError::new(
-            "credentials",
-            format!(
-                "the default {name} rule needs credentials.{}; add it under credentials:",
-                self.credential
-            ),
-        ))
-    }
-
     /// Checks everything the types cannot except cross-references.
     fn validate(&self, at: &str) -> Result<(), ConfigError> {
         if self.hosts.is_empty() {
@@ -235,7 +200,7 @@ impl ToolRule {
                 })
                 .map_err(|w| ConfigError::new(format!("{at}.hosts[{i}]"), w))?;
         }
-        check::credential_name(&self.credential)
+        SecretName::parse(&self.credential)
             .map_err(|w| ConfigError::new(format!("{at}.credential"), w))?;
         self.inject.validate(&format!("{at}.inject"))?;
         resolve::validate_allow(&self.allow, at)?;
@@ -281,11 +246,8 @@ impl ProxyConfig {
         merged
     }
 
-    /// Checks each rule and its credential against `credentials`.
-    pub(super) fn validate(
-        &self,
-        credentials: &BTreeMap<String, CredentialSource>,
-    ) -> Result<(), ConfigError> {
+    /// Checks each rule.
+    pub(super) fn validate(&self) -> Result<(), ConfigError> {
         let defaults = default_rules();
         let served = self.merged_rules();
         for name in self.rules.keys() {
@@ -296,12 +258,8 @@ impl ProxyConfig {
             check::credential_name(name).map_err(|w| ConfigError::new(at.clone(), w))?;
             if let (Some(default), Some(user_rule)) = (defaults.get(name), self.rules.get(name)) {
                 user_rule.check_extends(default, name)?;
-                rule.validate(&at)?;
-                rule.check_default_credential(name, credentials)?;
-            } else {
-                rule.validate(&at)?;
-                rule.check_credential(&at, credentials)?;
             }
+            rule.validate(&at)?;
         }
         check_direct(
             &self.direct,

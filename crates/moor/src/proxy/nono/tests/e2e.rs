@@ -9,14 +9,14 @@ use std::time::Duration;
 
 use moor_core::config::proxy::{EndpointRule, ResolvedInject, ResolvedRule};
 use moor_core::domain::decision::{Decision, NewBox};
-use moor_core::seam::clock::{Clock, Ts};
+use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName, Secret};
 use tempfile::TempDir;
 use ureq::Agent;
 
 use super::upstream::{self, Upstream};
 use crate::proxy::nono::audit::{self, BoxSink, EgressSink, Refusal, Withheld};
-use crate::proxy::nono::capture::{MoorCapture, RuleSource, CACHE_TTL};
+use crate::proxy::nono::capture::{MoorCapture, RuleSource};
 use crate::proxy::nono::{build_config, ca, NonoProxy, NonoSpec};
 use crate::proxy::ProxyLog;
 use crate::store::Store;
@@ -190,7 +190,7 @@ pub(super) fn rig() -> Rig {
             source(&fetches.basic, &fetches.fail, Some("x-access-token")),
         ),
     ]);
-    let capture = Arc::new(MoorCapture::new(sources, clock.clone()));
+    let capture = Arc::new(MoorCapture::new(sources));
     let ca = ca::load_or_create(&dir.path().join("state"), BOX_ID).unwrap();
     let token = Secret::new(TOKEN.as_bytes().to_vec());
     let proxy = start_proxy(dir.path(), &token, &ca, [&up, &up2], &capture);
@@ -273,12 +273,7 @@ impl EgressSink for Recorder {
 /// Drains and applies audit events until `done` holds for the recorded calls.
 fn settle(rig: &Rig, sink: &Recorder, done: impl Fn(&[String]) -> bool) -> Vec<String> {
     for _ in 0..100 {
-        audit::apply(
-            &rig.proxy().drain_audit(),
-            &rig.capture,
-            &Withheld::default(),
-            sink,
-        );
+        audit::apply(&rig.proxy().drain_audit(), &Withheld::default(), sink);
         if done(&sink.calls()) {
             break;
         }
@@ -370,12 +365,7 @@ fn unlisted_host_is_refused_and_reaches_the_sinks() {
     let again = rig.client();
     assert!(get(&again, "https://example.invalid/anything").is_err());
     for _ in 0..100 {
-        audit::apply(
-            &rig.proxy().drain_audit(),
-            &rig.capture,
-            &Withheld::default(),
-            &box_sink,
-        );
+        audit::apply(&rig.proxy().drain_audit(), &Withheld::default(), &box_sink);
         if kinds(&store, box_id).iter().any(|k| k == "egress_refused") {
             break;
         }
@@ -409,36 +399,13 @@ fn box_ca_is_reused_across_restart_and_key_is_private() {
 }
 
 #[test]
-fn credential_is_cached_until_upstream_401_evicts_it() {
+fn credential_is_read_again_for_every_request() {
     let rig = rig();
     let agent = rig.client();
-    assert_eq!(get(&agent, &rig.url("/ok")), Ok(200));
-    assert_eq!(rig.fetches.header.load(Ordering::SeqCst), 1);
-    assert_eq!(get(&agent, &rig.url("/ok")), Ok(200));
-    assert_eq!(
-        rig.fetches.header.load(Ordering::SeqCst),
-        1,
-        "TTL cache hit"
-    );
-
-    assert_eq!(get(&agent, &rig.url("/expired")), Ok(401));
-    assert_eq!(rig.fetches.header.load(Ordering::SeqCst), 1);
-    let sink = Recorder::default();
-    let is_401 = |l: &String| l.contains("hdr") && l.ends_with(", 401)");
-    let calls = settle(&rig, &sink, |c| c.iter().any(is_401));
-    assert!(calls.iter().any(is_401), "{calls:?}");
-    assert_eq!(get(&agent, &rig.url("/ok")), Ok(200));
-    assert_eq!(rig.fetches.header.load(Ordering::SeqCst), 2, "evicted");
-}
-
-#[test]
-fn credential_is_refetched_after_ttl() {
-    let rig = rig();
-    let agent = rig.client();
-    assert_eq!(get(&agent, &rig.url("/ok")), Ok(200));
-    rig.clock.sleep(CACHE_TTL + Duration::from_secs(1));
-    assert_eq!(get(&agent, &rig.url("/ok")), Ok(200));
-    assert_eq!(rig.fetches.header.load(Ordering::SeqCst), 2);
+    for n in 1..=3 {
+        assert_eq!(get(&agent, &rig.url("/ok")), Ok(200));
+        assert_eq!(rig.fetches.header.load(Ordering::SeqCst), n);
+    }
 }
 
 #[test]
@@ -497,16 +464,10 @@ fn secret_bytes_never_appear_in_logs_debug_or_errors() {
     assert_eq!(get(&agent, &rig.url("/ok")), Ok(200));
     texts.push(format!("{:?}", get(&agent, "https://example.invalid/x")));
     rig.fetches.fail.store(true, Ordering::SeqCst);
-    rig.capture.evict("hdr");
     texts.push(format!("{:?}", get(&agent, &rig.url("/ok"))));
 
     for _ in 0..40 {
-        audit::apply(
-            &rig.proxy().drain_audit(),
-            &rig.capture,
-            &Withheld::default(),
-            &sink,
-        );
+        audit::apply(&rig.proxy().drain_audit(), &Withheld::default(), &sink);
         std::thread::sleep(Duration::from_millis(25));
     }
     let log_path = rig

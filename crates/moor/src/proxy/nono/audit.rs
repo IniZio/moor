@@ -15,7 +15,6 @@ use nono::undo::{NetworkAuditDecision, NetworkAuditDenialCategory, NetworkAuditE
 use serde_json::Value;
 
 use self::limits::Limits;
-use super::capture::MoorCapture;
 use super::rule_of_route;
 use crate::proxy::ProxyLog;
 use crate::store::Store;
@@ -251,23 +250,17 @@ impl EgressSink for BoxSink<'_> {
 
 /// Applies one drained batch of audit events.
 ///
-/// An allowed request becomes a log line, and an upstream 401 also evicts the
-/// rule's cached credential unless the request was a passthrough. A denial caused by an unavailable credential
+/// An allowed request becomes a log line. A denial caused by an unavailable credential
 /// becomes a credential failure, and an intercepted handshake the client hung up on without an
 /// alert becomes an aborted egress; any other denial becomes a refused egress.
 /// Approval-flow decisions are ignored. A request forwarded without a
 /// credential to a credential host is also reported through `withheld`. An
 /// excused answer noted before this drain is matched in it or the next one.
-pub(crate) fn apply(
-    events: &[NetworkAuditEvent],
-    capture: &MoorCapture,
-    withheld: &Withheld,
-    sink: &dyn EgressSink,
-) {
+pub(crate) fn apply(events: &[NetworkAuditEvent], withheld: &Withheld, sink: &dyn EgressSink) {
     for event in events {
         match event.decision {
             NetworkAuditDecision::Allow => {
-                allow(event, capture, sink);
+                allow(event, sink);
                 withheld.limits.observe(event, sink);
                 withheld.report(event, sink);
             }
@@ -284,7 +277,7 @@ fn rule(event: &NetworkAuditEvent) -> Option<&str> {
 }
 
 /// Handles an allowed event.
-fn allow(event: &NetworkAuditEvent, capture: &MoorCapture, sink: &dyn EgressSink) {
+fn allow(event: &NetworkAuditEvent, sink: &dyn EgressSink) {
     // Credential-capture bookkeeping and pre-request policy decisions carry no
     // response; the response event that follows is the request's log line.
     if event.credential_capture_action.is_some()
@@ -298,12 +291,6 @@ fn allow(event: &NetworkAuditEvent, capture: &MoorCapture, sink: &dyn EgressSink
         rule.unwrap_or(&event.target),
         event.status.unwrap_or(0),
     );
-    // A passthrough carries no managed credential, so its 401 says nothing about the cache.
-    if event.status == Some(401) && event.managed_credential_active != Some(false) {
-        if let Some(rule) = rule {
-            capture.evict_audited(rule);
-        }
-    }
 }
 
 /// Handles a denied event.

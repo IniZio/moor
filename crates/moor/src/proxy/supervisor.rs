@@ -20,11 +20,10 @@ use std::time::Duration;
 
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
-use moor_core::seam::forge::Forge;
 use moor_core::seam::rng::Rng;
 use moor_core::BoxId;
 
-use super::nono::capture::CredsFn;
+use super::nono::capture::SecretsFn;
 use crate::store::Store;
 use run::{Running, Stop};
 
@@ -42,14 +41,12 @@ pub(crate) struct Deps<'a> {
     pub(crate) store: &'a Store,
     /// Opens the reverse tunnel into the Box.
     pub(crate) driver: &'a dyn Driver,
-    /// Forge the Box repo lives on.
-    pub(crate) forge: Arc<dyn Forge>,
     /// Source of time and sleeping.
     pub(crate) clock: Arc<dyn Clock>,
     /// Source of the lease owner token.
     pub(crate) rng: &'a dyn Rng,
-    /// Yields the secret behind a named credential.
-    pub(crate) creds: CredsFn,
+    /// Reads a user's secret from the store, on every request that needs one.
+    pub(crate) secrets: SecretsFn,
     /// Extra upstream root PEM the proxy trusts; `None` in production.
     pub(crate) upstream_ca: Option<PathBuf>,
     /// Address the GraphQL filter dials instead of resolving the GitHub API host; `None` in production.
