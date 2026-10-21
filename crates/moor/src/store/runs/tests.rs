@@ -38,7 +38,6 @@ fn begin(store: &Store, box_id: BoxId, record: Option<&str>, sha: Option<&str>, 
             argv: vec!["cargo".into(), "test".into()],
             record: record.map(str::to_owned),
             sha: sha.map(|s| Sha::parse(s).unwrap()),
-            sync: "tree".into(),
             pid,
         })
         .unwrap()

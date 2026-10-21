@@ -67,7 +67,7 @@ pub(super) fn teardown(
         argv: exec.argv(script.to_vec()),
         env: exec.vars(),
         cwd: exec.cwd(),
-        sync: SyncMode::Full,
+        sync: SyncMode::None,
         output: None,
         host_cwd: row.worktree.as_ref().map(Into::into),
         class: Some(cfg.size.value.as_str().to_owned()),

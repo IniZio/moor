@@ -30,8 +30,6 @@ fn with_args() -> Vec<Request> {
         }),
         Request::Run(RunReq {
             box_name: n("a"),
-            no_sync: false,
-            sync: false,
             record: None,
             argv: vec!["ls".into()],
             trust_moor_yaml: false,
@@ -206,8 +204,6 @@ fn defaults_and_renames() {
         r,
         Request::Run(RunReq {
             box_name: n("a"),
-            no_sync: false,
-            sync: false,
             record: None,
             argv: vec![],
             trust_moor_yaml: false,
@@ -236,14 +232,12 @@ fn none_fields_omitted() {
 
 #[test]
 fn run_argv_roundtrips() {
-    let v = json!({"cmd":"run","box":"a","no_sync":false,"sync":false,"argv":["ls","-la"],"trust_moor_yaml":false});
+    let v = json!({"cmd":"run","box":"a","argv":["ls","-la"],"trust_moor_yaml":false});
     let r: Request = serde_json::from_value(v.clone()).unwrap();
     assert_eq!(
         r,
         Request::Run(RunReq {
             box_name: n("a"),
-            no_sync: false,
-            sync: false,
             record: None,
             argv: vec!["ls".into(), "-la".into()],
             trust_moor_yaml: false,
@@ -259,8 +253,6 @@ fn run_inherit_output_is_not_settable_from_json() {
     assert!(serde_json::from_value::<Request>(v).is_err());
     let r = RunReq {
         box_name: n("a"),
-        no_sync: false,
-        sync: false,
         record: None,
         argv: vec![],
         trust_moor_yaml: false,
@@ -292,32 +284,14 @@ fn gate_command_is_optional_on_the_wire() {
 }
 
 #[test]
-fn run_sync_flag_parses_and_defaults_off() {
-    let with: Request =
-        serde_json::from_str(r#"{"cmd":"run","box":"a","sync":true,"argv":["ls"]}"#).unwrap();
-    assert_eq!(
-        with,
-        Request::Run(RunReq {
-            box_name: n("a"),
-            no_sync: false,
-            sync: true,
-            record: None,
-            argv: vec!["ls".into()],
-            trust_moor_yaml: false,
-            inherit_output: false,
-        })
-    );
-    let without: Request = serde_json::from_str(r#"{"cmd":"run","box":"a"}"#).unwrap();
-    let want = Request::Run(RunReq {
-        box_name: n("a"),
-        no_sync: false,
-        sync: false,
-        record: None,
-        argv: vec![],
-        trust_moor_yaml: false,
-        inherit_output: false,
-    });
-    assert_eq!(without, want);
+fn a_run_naming_a_sync_is_an_unknown_field() {
+    for field in ["sync", "no_sync"] {
+        let text = format!(r#"{{"cmd":"run","box":"a","argv":["ls"],"{field}":true}}"#);
+        let err = serde_json::from_str::<Request>(&text)
+            .expect_err(field)
+            .to_string();
+        assert!(err.contains(&format!("unknown field `{field}`")), "{err}");
+    }
 }
 
 #[test]

@@ -1,17 +1,18 @@
 //! Tests for `run --record`.
 
-use moor_core::boxscript::{command_line, record::record_script};
-use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::boxscript::command_line;
+use moor_core::boxscript::record::{head_script, record_script, HEAD_FILE};
 use moor_core::domain::run::SyncMode;
-use moor_core::seam::driver::ExecOutcome;
-use moor_core::seam::proc::Tool;
-use moor_core::{ErrorKind, GateReq, RunReq};
+use moor_core::seam::driver::{ExecOutcome, ExecSpec};
+use moor_core::{BoxPath, ErrorKind, GateReq, RunReq};
 
 use crate::error::CommandError;
 use crate::ops::run::run;
-use crate::ops::run::tests::{command, ran_events, ready, ready_with, req, Fx, SHA};
+use crate::ops::run::tests::{command, ran_events, ready_with, req, Fx, SHA};
 use crate::testing::driver::FakeDriver;
-use crate::testing::proc::Reply;
+
+/// The Box HEAD, which differs from the host HEAD the fixture's git answers.
+const BOX_SHA: &str = "fedcba9876543210fedcba9876543210fedcba98";
 
 fn record_req(argv: &[&str]) -> RunReq {
     let mut r = req(argv);
@@ -19,30 +20,45 @@ fn record_req(argv: &[&str]) -> RunReq {
     r
 }
 
-/// A Ready Box whose worktree is clean.
-fn clean() -> Fx {
-    clean_with(FakeDriver::new())
-}
-
-fn clean_with(driver: FakeDriver) -> Fx {
+/// A Ready Box whose probe writes `result` to the head file; the probe exits 0, then the run
+/// gets `outcomes`.
+fn probed(result: Option<&str>, outcomes: Vec<ExecOutcome>) -> Fx {
+    let probe = std::iter::once(Ok(ExecOutcome::Exited { code: 0 }));
+    let driver = FakeDriver::new().exec_results(probe.chain(outcomes.into_iter().map(Ok)));
     let f = ready_with(driver);
-    f.proc.on(Tool::Git, &["status"], Reply::Ok(String::new()));
+    if let Some(text) = result {
+        let path = BoxPath::under("/work/cbx_1/repo", HEAD_FILE).unwrap();
+        f.driver.set_peek_text("box-1", &path, text);
+    }
     f
 }
 
-/// The refusal message; nothing ran and nothing was recorded.
-fn refused(f: &Fx, r: &RunReq, kind: ErrorKind) -> String {
-    let e = run(&f.cx, r).unwrap_err();
+/// A Ready Box whose checkout is clean at [`BOX_SHA`].
+fn clean() -> Fx {
+    clean_then(vec![])
+}
+
+fn clean_then(outcomes: Vec<ExecOutcome>) -> Fx {
+    probed(Some(&format!("head={BOX_SHA} dirty=0\n")), outcomes)
+}
+
+/// The refusal message; only the head probe ran and nothing was recorded.
+fn refused(f: &Fx, kind: ErrorKind) -> String {
+    let e = run(&f.cx, &record_req(&["true"])).unwrap_err();
     assert_eq!(e.kind, kind, "{e:?}");
-    assert!(f.driver.execs().is_empty());
-    assert!(f.driver.calls().iter().all(|c| !c.starts_with("exec")));
+    let execs = f.driver.execs();
+    assert_eq!(execs.len(), 1, "only the head probe runs: {execs:?}");
+    let probe = |(_, spec, _): &(_, ExecSpec, _)| {
+        spec.argv.last().is_some_and(|s| s.contains(&head_script()))
+    };
+    assert!(execs.iter().all(probe), "{execs:?}");
     assert!(f.cx.store().unwrap().last_run(f.id).unwrap().is_none());
     e.error.to_string()
 }
 
-fn gate(f: &Fx) -> Result<crate::ops::gate::GateView, CommandError> {
+fn gate(f: &Fx, sha: &str) -> Result<crate::ops::gate::GateView, CommandError> {
     let r = GateReq {
-        sha: SHA.into(),
+        sha: sha.into(),
         name: "ci".into(),
         command: None,
     };
@@ -50,46 +66,32 @@ fn gate(f: &Fx) -> Result<crate::ops::gate::GateView, CommandError> {
 }
 
 #[test]
-fn record_with_no_sync_is_usage() {
+fn a_record_run_is_stored_under_the_box_head() {
     let f = clean();
-    let mut r = record_req(&["true"]);
-    r.no_sync = true;
-    let msg = refused(&f, &r, ErrorKind::Usage);
-    assert_eq!(msg, "--record cannot be used with --no-sync");
+    let v = run(&f.cx, &record_req(&["true"])).unwrap();
+    assert_eq!(v.sha.as_deref(), Some(BOX_SHA));
+    let row = f.cx.store().unwrap().last_run(f.id).unwrap().unwrap();
+    assert_eq!(row.sha.as_ref().map(moor_core::Sha::as_str), Some(BOX_SHA));
+    assert_ne!(BOX_SHA, SHA);
 }
 
 #[test]
-fn missing_worktree_is_refused() {
-    let f = clean();
-    let gone = f.dir.path().join("gone");
-    let fields = Fields {
-        worktree: Field::Set(gone.display().to_string()),
-        ..Fields::default()
-    };
-    f.cx.store()
-        .unwrap()
-        .apply(Decision::new(f.id).set(fields))
-        .unwrap();
-    let msg = refused(&f, &record_req(&["true"]), ErrorKind::Failed);
-    assert_eq!(msg, format!("worktree {} is missing", gone.display()));
+fn a_dirty_box_checkout_is_refused_and_stores_no_run() {
+    let f = probed(Some(&format!("head={BOX_SHA} dirty=2\n")), vec![]);
+    let msg = refused(&f, ErrorKind::Refused);
+    assert_eq!(
+        msg,
+        "the Box checkout has uncommitted changes; commit them first"
+    );
 }
 
 #[test]
-fn untracked_files_are_refused() {
-    let f = ready();
-    f.proc
-        .on(Tool::Git, &["status"], Reply::Ok("?? new.txt\n".into()));
-    let msg = refused(&f, &record_req(&["true"]), ErrorKind::Refused);
-    assert!(msg.contains("uncommitted changes"), "{msg}");
-}
-
-#[test]
-fn modified_files_are_refused() {
-    let f = ready();
-    f.proc
-        .on(Tool::Git, &["status"], Reply::Ok(" M a.rs\n".into()));
-    let msg = refused(&f, &record_req(&["true"]), ErrorKind::Refused);
-    assert!(msg.contains("uncommitted changes"), "{msg}");
+fn a_box_head_that_cannot_be_read_fails_and_stores_no_run() {
+    for result in [None, Some("head=nope dirty=0\n")] {
+        let f = probed(result, vec![]);
+        let msg = refused(&f, ErrorKind::Failed);
+        assert!(msg.starts_with("cannot read the Box HEAD"), "{msg}");
+    }
 }
 
 #[test]
@@ -98,15 +100,14 @@ fn record_run_wraps_the_command_in_the_record_script() {
     let argv = ["make", "test"];
     let v = run(&f.cx, &record_req(&argv)).unwrap();
     assert_eq!(v.exit, Some(0));
-    let (_, spec, _) = f.driver.execs().remove(0);
+    let (_, spec, _) = f.driver.execs().remove(1);
     let line = command_line(&argv.map(str::to_owned));
     assert_eq!(
         command(&spec.argv),
         ["sh", "-c", &record_script(&[], &line)]
     );
-    assert_eq!(spec.sync, SyncMode::Full);
+    assert_eq!(spec.sync, SyncMode::None);
     let row = f.cx.store().unwrap().last_run(f.id).unwrap().unwrap();
-    assert_eq!(row.sha.as_ref().map(moor_core::Sha::as_str), Some(SHA));
     assert_eq!(row.record.as_deref(), Some("ci"));
     assert_eq!(row.argv, argv);
     assert_eq!(row.exit, Some(0));
@@ -117,15 +118,18 @@ fn record_run_wraps_the_command_in_the_record_script() {
 fn repo_setup_lines_precede_the_command() {
     let f = clean();
     std::fs::write(f.dir.path().join(".moor.yaml"), "setup: ['make deps']\n").unwrap();
-    f.proc
-        .before(Tool::Git, &["ls-tree"], Reply::Ok(".moor.yaml\n".into()));
     f.proc.before(
-        Tool::Git,
+        moor_core::seam::proc::Tool::Git,
+        &["ls-tree"],
+        crate::testing::proc::Reply::Ok(".moor.yaml\n".into()),
+    );
+    f.proc.before(
+        moor_core::seam::proc::Tool::Git,
         &["show"],
-        Reply::Ok("setup: ['make deps']\n".into()),
+        crate::testing::proc::Reply::Ok("setup: ['make deps']\n".into()),
     );
     run(&f.cx, &record_req(&["make", "test"])).unwrap();
-    let (_, spec, _) = f.driver.execs().remove(0);
+    let (_, spec, _) = f.driver.execs().remove(1);
     let line = command_line(&["make".to_owned(), "test".to_owned()]);
     let setup = ["make deps".to_owned()];
     assert_eq!(
@@ -136,7 +140,7 @@ fn repo_setup_lines_precede_the_command() {
 
 #[test]
 fn failed_prep_is_recorded_with_its_exit() {
-    let f = clean_with(FakeDriver::new().exec_results([Ok(ExecOutcome::Exited { code: 3 })]));
+    let f = clean_then(vec![ExecOutcome::Exited { code: 3 }]);
     let v = run(&f.cx, &record_req(&["true"])).unwrap();
     assert_eq!(v.exit, Some(3));
     let row = f.cx.store().unwrap().last_run(f.id).unwrap().unwrap();
@@ -147,7 +151,7 @@ fn failed_prep_is_recorded_with_its_exit() {
 
 #[test]
 fn interrupted_record_run_has_no_exit() {
-    let f = clean_with(FakeDriver::new().exec_results([Ok(ExecOutcome::Interrupted)]));
+    let f = clean_then(vec![ExecOutcome::Interrupted]);
     let v = run(&f.cx, &record_req(&["sleep", "9"])).unwrap();
     assert!(v.interrupted && v.ran);
     assert_eq!(v.exit, None);
@@ -157,17 +161,18 @@ fn interrupted_record_run_has_no_exit() {
 }
 
 #[test]
-fn passing_record_run_passes_the_gate() {
+fn passing_record_run_passes_the_gate_at_the_box_head() {
     let f = clean();
     run(&f.cx, &record_req(&["true"])).unwrap();
-    assert!(gate(&f).is_ok());
+    assert!(gate(&f, BOX_SHA).is_ok());
+    assert!(gate(&f, SHA).is_err());
 }
 
 #[test]
 fn failing_record_run_fails_the_gate() {
-    let f = clean_with(FakeDriver::new().exec_results([Ok(ExecOutcome::Exited { code: 1 })]));
+    let f = clean_then(vec![ExecOutcome::Exited { code: 1 }]);
     run(&f.cx, &record_req(&["false"])).unwrap();
-    let e = gate(&f).unwrap_err();
+    let e = gate(&f, BOX_SHA).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
     assert!(e.error.to_string().contains("gate `ci` has no passing run"));
 }

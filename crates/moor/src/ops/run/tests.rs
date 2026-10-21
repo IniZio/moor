@@ -25,7 +25,6 @@ use crate::testing::surface::FakeSurface;
 mod env;
 mod moor_yaml;
 mod setup_parity;
-mod sync;
 mod transport;
 
 pub(in crate::ops::run) const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -41,8 +40,6 @@ pub(crate) struct Fx {
 pub(crate) fn req(argv: &[&str]) -> RunReq {
     RunReq {
         box_name: BoxName::parse_allow_bare("t").unwrap(),
-        no_sync: false,
-        sync: false,
         record: None,
         argv: argv.iter().map(|s| (*s).to_owned()).collect(),
         inherit_output: false,
@@ -191,10 +188,7 @@ fn plain_run_launches_through_sh_and_stores_the_users_argv() {
 #[test]
 fn json_output_goes_to_a_run_log_under_the_state_dir() {
     let f = ready();
-    f.proc.on(Tool::Git, &["status"], Reply::Ok(String::new()));
-    let mut r = req(&["true"]);
-    r.record = Some("ci".into());
-    let v = run(&f.cx, &r).unwrap();
+    let v = run(&f.cx, &req(&["true"])).unwrap();
     let id = v.run.unwrap();
     let want = f.dir.path().join("runs").join(format!("{}.log", id.get()));
     assert_eq!(v.log, want.display().to_string());
@@ -203,26 +197,22 @@ fn json_output_goes_to_a_run_log_under_the_state_dir() {
     assert_eq!(handle.as_str(), "box-1");
     assert_eq!(spec.output, Some(Output::Log(want)));
     assert_eq!(v.exit, Some(0));
-    assert_eq!(v.sha.as_deref(), Some(SHA));
-    assert_eq!(v.record.as_deref(), Some("ci"));
-    assert_eq!(v.sync, SyncMode::Full);
+    assert_eq!(v.record, None);
     assert_eq!(ran_events(&f), 1);
 }
 
 #[test]
-fn sync_class_and_directories_come_from_the_box() {
+fn a_plain_run_syncs_nothing_stores_no_sha_and_takes_its_class_and_directories_from_the_box() {
     let f = ready();
-    let mut r = req(&["true"]);
-    r.no_sync = true;
-    let v = run(&f.cx, &r).unwrap();
-    assert_eq!(v.sync, SyncMode::None);
+    let v = run(&f.cx, &req(&["true"])).unwrap();
+    assert_eq!(v.sha, None);
+    let row = f.cx.store().unwrap().last_run(f.id).unwrap().unwrap();
+    assert_eq!(row.sha, None);
     let (_, spec, _) = f.driver.execs().remove(0);
     assert_eq!(spec.sync, SyncMode::None);
     assert_eq!(spec.host_cwd.as_deref(), Some(f.dir.path()));
     assert_eq!(spec.cwd.unwrap().as_str(), "/work/cbx_1/repo");
     assert_eq!(spec.class.as_deref(), Some("small"));
-    let v = run(&f.cx, &req(&["true"])).unwrap();
-    assert_eq!(v.sync, SyncMode::Full);
 }
 
 /// The user's command inside the exec prelude wrapper; the argv itself when unwrapped.

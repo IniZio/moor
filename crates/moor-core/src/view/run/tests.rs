@@ -4,7 +4,6 @@ use serde_json::json;
 
 use super::{CpValue, RunValue, WaitRunView, WaitValue};
 use crate::domain::box_state::BoxLifecycle;
-use crate::domain::run::SyncMode;
 use crate::domain::session_state::SessionState;
 use crate::name::RunId;
 use crate::request::WaitFor;
@@ -40,14 +39,13 @@ fn run_value_shape() {
         exit: Some(0),
         interrupted: false,
         sha: Some("abcd".into()),
-        sync: SyncMode::Full,
         record: None,
         log: "/l".into(),
     };
     assert_eq!(
         serde_json::to_value(&v).unwrap(),
         json!({"ran": true, "run": 7, "exit": 0, "interrupted": false, "sha": "abcd",
-               "sync": "full", "record": null, "log": "/l"})
+               "record": null, "log": "/l"})
     );
 }
 
@@ -59,14 +57,13 @@ fn refused_run_value_has_null_run_and_exit() {
         exit: None,
         interrupted: false,
         sha: Some("abcd".into()),
-        sync: SyncMode::None,
         record: Some("rec".into()),
         log: "/l".into(),
     };
     assert_eq!(
         serde_json::to_value(&v).unwrap(),
         json!({"ran": false, "run": null, "exit": null, "interrupted": false, "sha": "abcd",
-               "sync": "none", "record": "rec", "log": "/l"})
+               "record": "rec", "log": "/l"})
     );
 }
 
@@ -134,7 +131,6 @@ fn run_value_without_a_sha_serializes_null() {
         exit: Some(0),
         interrupted: false,
         sha: None,
-        sync: SyncMode::Full,
         record: None,
         log: "/l".into(),
     };

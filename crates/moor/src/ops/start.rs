@@ -22,9 +22,7 @@ use super::common::autosleep;
 use super::common::boxlock::{self, BoxLock};
 use super::common::facts::{provider_caps, require_reverse_tunnel, resolved};
 use super::common::host_path::caller_dir;
-use super::common::provision::{
-    moor_yaml, provision, reprovision, reread, Entry, Provisioned, ResyncGates,
-};
+use super::common::provision::{moor_yaml, provision, reprovision, reread, Entry, Provisioned};
 use super::common::provisioning::dead_provisioning;
 use super::host_session::refuse_invalid;
 use crate::cx::Cx;
@@ -199,13 +197,7 @@ fn attach(
             message: format!("could not hide scratch dirs from git: {e}"),
         });
     }
-    let launching = || relaunch::will_launch(cx, store, req, row);
-    let agent_live = || relaunch::agent_live(cx, store, row);
-    let gates = ResyncGates {
-        launching: &launching,
-        agent_live: &agent_live,
-    };
-    let reprovisioned = reprovision(cx, store, row, "start", req.trust_moor_yaml, &gates)?;
+    let reprovisioned = reprovision(cx, store, row, "start", req.trust_moor_yaml)?;
     store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
     let setup_exit = reprovisioned.as_ref().and_then(|p| p.setup.exit());
     let settings = || {

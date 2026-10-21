@@ -1,4 +1,4 @@
-//! Tests for how a start re-syncs after a failed or interrupted setup.
+//! Tests for what a start does after a failed or interrupted setup.
 
 use std::path::Path;
 
@@ -55,7 +55,7 @@ fn start_after_a_failed_setup_does_not_re_run_setup_and_warns() {
 }
 
 #[test]
-fn start_after_a_failed_setup_re_syncs_the_checkout_in_the_same_box() {
+fn start_after_a_failed_setup_execs_nothing_more_in_the_same_box() {
     let (w, _) = failed_setup_then(
         "setup: [a]\n",
         [Ok(exit(0)), Ok(exit(1)), Ok(exit(0)), Ok(exit(0))],
@@ -63,7 +63,7 @@ fn start_after_a_failed_setup_re_syncs_the_checkout_in_the_same_box() {
     run(&w.cx, &start_req()).unwrap();
     let handles: Vec<_> = w.driver.execs().into_iter().map(|e| e.0).collect();
     let box_1 = BoxHandle::new("box-1");
-    assert_eq!(handles, [box_1.clone(), box_1.clone(), box_1]);
+    assert_eq!(handles, [box_1.clone(), box_1]);
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn start_does_not_re_run_setup_when_the_setup_owner_is_dead() {
 }
 
 #[test]
-fn start_after_an_interrupted_setup_re_syncs_the_checkout_in_the_same_box() {
+fn start_after_an_interrupted_setup_does_not_sync_the_checkout_again() {
     let (w, _) = interrupted_setup(4242);
     w.proc.dead(4242);
     drop(warning_codes(&w));
@@ -130,9 +130,7 @@ fn start_after_an_interrupted_setup_re_syncs_the_checkout_in_the_same_box() {
     let again = run(&w.cx, &start_req()).unwrap();
     assert!(!again.setup.ran);
     assert_eq!(argvs(&w), [script_argv(&["a"])]);
-    let after = syncs(&w);
-    assert_eq!(after.len(), before + 1);
-    assert_eq!(after.last(), Some(&BoxHandle::new("box-1")));
+    assert_eq!(syncs(&w).len(), before);
     let [message] = not_rerun_warning(&w).try_into().unwrap();
     assert!(message.starts_with("setup was interrupted; "));
 }

@@ -29,13 +29,13 @@ fn fx_yaml(driver: FakeDriver, yaml: &str) -> Fx {
     f
 }
 
-/// Teardown runs; the unsynced unsaved-work probe is not counted.
+/// Teardown runs; the unsaved-work probe and the collection are not counted.
 fn teardown_execs(f: &Fx) -> Vec<ExecSpec> {
     f.driver
         .execs()
         .into_iter()
         .map(|(_, spec, _)| spec)
-        .filter(|spec| spec.sync == SyncMode::Full)
+        .filter(|spec| spec.argv.iter().any(|a| a.contains(".moor/teardown.log")))
         .collect()
 }
 
@@ -51,14 +51,14 @@ fn only_exec(f: &Fx) -> ExecSpec {
 }
 
 #[test]
-fn teardown_runs_as_one_synced_script_before_release() {
+fn teardown_runs_as_one_unsynced_script_before_release() {
     let f = fx_yaml(FakeDriver::new(), YAML);
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(v.box_deleted);
     let spec = only_exec(&f);
     assert!(matches!(spec.argv.as_slice(), [.., sh, c, script]
         if sh == "sh" && c == "-c" && script.contains("echo bye") && script.contains("rm -rf cache")));
-    assert_eq!(spec.sync, SyncMode::Full);
+    assert_eq!(spec.sync, SyncMode::None);
     assert_eq!(spec.host_cwd.as_deref(), Some(f.dir.path()));
     assert_eq!(spec.class.as_deref(), Some("large"));
     assert_eq!(spec.env.first(), Some(&("K".to_owned(), "v".to_owned())));

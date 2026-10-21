@@ -131,7 +131,6 @@ fn a_run_while_the_agent_waits_keeps_one_episode() {
             argv: vec!["make".into()],
             record: None,
             sha: None,
-            sync: "none".into(),
             pid: 4242,
         };
         let run = store.begin_run(new).unwrap();

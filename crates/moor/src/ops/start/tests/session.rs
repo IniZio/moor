@@ -474,9 +474,8 @@ fn attaching_to_a_live_session_does_not_watch_its_pane() {
     let again = run(&w.cx, &goal_req("demo")).unwrap();
     assert!(again.attached);
     assert!(!again.agent.launched);
-    // The extra reads are the liveness checks of the session, before the re-sync and before the
-    // attach; the watch adds none.
-    assert_eq!(pane_reads(&w), before + 2);
+    // The extra read is the liveness check of the session before the attach; the watch adds none.
+    assert_eq!(pane_reads(&w), before + 1);
 }
 
 #[test]

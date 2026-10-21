@@ -1,64 +1,76 @@
-//! The extra steps of `run --record`: refuse a checkout that cannot be reproduced, and wrap the
-//! command so the Box runs it from a clean checkout of HEAD.
+//! The extra steps of `run --record`: read the Box HEAD, refuse a dirty Box checkout, and wrap
+//! the command so the Box runs it from a clean checkout of HEAD.
 
-use std::path::Path;
+use std::time::Duration;
 
 use moor_core::boxscript::command_line;
-use moor_core::boxscript::record::record_script;
-use moor_core::{ErrorKind, RunReq, Sha};
+use moor_core::boxscript::quote;
+use moor_core::boxscript::record::{head_script, parse_head, record_script, HEAD_FILE};
+use moor_core::seam::driver::{BoxStep, ExecOutcome, StepDone};
+use moor_core::seam::proc::Deadline;
+use moor_core::{BoxPath, ErrorKind, Sha};
 
+use super::ready::Target;
 use crate::cx::Cx;
 use crate::error::CommandError;
 
-/// Refuses option combinations a record run cannot honour.
-///
-/// # Errors
-/// [`CommandError`] of kind `Usage` when `--record` is combined with `--no-sync`.
-pub(super) fn usage(req: &RunReq) -> Result<(), CommandError> {
-    if req.record.is_some() && req.no_sync {
-        return Err(CommandError::new(
-            ErrorKind::Usage,
-            "--record cannot be used with --no-sync",
-        ));
-    }
-    Ok(())
-}
+/// Wall-clock allowance for reading the Box HEAD.
+const HEAD_DEADLINE: Duration = Duration::from_secs(60);
 
-/// Checks the worktree can back a record run and returns the HEAD sha the run is stored under.
+/// Reads the Box checkout's HEAD in one batch and returns it as the sha the run is stored under.
 ///
-/// The Box receives the working tree, so any uncommitted change is refused to keep the stored sha
-/// true to what ran.
+/// The record script cleans untracked files before the command, so a checkout with uncommitted
+/// changes is refused rather than losing them and storing a sha that is not what ran.
 ///
 /// # Errors
-/// [`CommandError`] when the worktree is missing, has uncommitted changes, or HEAD cannot be read.
-pub(super) fn checkout(cx: &Cx, worktree: &Path) -> Result<Sha, CommandError> {
-    let shown = worktree.display();
-    if !worktree.is_dir() {
-        return Err(CommandError::new(
+/// [`CommandError`] when the checkout has uncommitted changes or its HEAD cannot be read.
+pub(super) fn checkout(cx: &Cx, target: &Target) -> Result<Sha, CommandError> {
+    let failed = |why: String| {
+        CommandError::new(
             ErrorKind::Failed,
-            format!("worktree {shown} is missing"),
-        ));
-    }
-    let dirty = cx
-        .git()
-        .dirty(worktree)
-        .map_err(|e| CommandError::new(ErrorKind::Failed, e.to_string()))?;
-    if dirty {
+            format!("cannot read the Box HEAD: {why}"),
+        )
+    };
+    let workdir = match &target.workdir {
+        Some(w) => w.clone(),
+        None => cx
+            .driver()
+            .workdir(&target.handle, &target.worktree)
+            .map_err(|e| failed(e.to_string()))?,
+    };
+    let path = BoxPath::under(workdir.as_str(), HEAD_FILE).map_err(|e| failed(e.to_string()))?;
+    let script = format!(
+        "cd {} || exit 1\n{}",
+        quote(workdir.as_str()),
+        head_script()
+    );
+    let steps = [BoxStep::Run(script), BoxStep::Peek(path)];
+    let done = cx.driver().batch(
+        &target.handle,
+        &[],
+        &steps,
+        &target.worktree,
+        Deadline(HEAD_DEADLINE),
+    );
+    let text = match done.as_slice() {
+        [Ok(StepDone::Ran {
+            outcome: ExecOutcome::Exited { code: 0 },
+            ..
+        }), Ok(StepDone::Peeked(Some(text)))] => text,
+        [Ok(StepDone::Ran { outcome, .. })] => {
+            return Err(failed(format!("the probe ended {outcome:?}")));
+        }
+        [.., Err(e)] => return Err(failed(e.to_string())),
+        _ => return Err(failed("the probe left no result".to_owned())),
+    };
+    let (head, dirty) = parse_head(text).ok_or_else(|| failed("unreadable result".to_owned()))?;
+    if dirty > 0 {
         return Err(CommandError::new(
             ErrorKind::Refused,
-            format!("worktree {shown} has uncommitted changes; commit first"),
+            "the Box checkout has uncommitted changes; commit them first",
         ));
     }
-    cx.git()
-        .head(worktree)
-        .map_err(|e| e.to_string())
-        .and_then(|head| Sha::parse(&head).map_err(|e| e.to_string()))
-        .map_err(|e| {
-            CommandError::new(
-                ErrorKind::Failed,
-                format!("cannot read HEAD of {shown}: {e}"),
-            )
-        })
+    Sha::parse(&head).map_err(|e| failed(e.to_string()))
 }
 
 /// The argv a record run executes: the repo setup lines, then the command, in one script.

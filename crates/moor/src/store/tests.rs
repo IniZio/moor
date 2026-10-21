@@ -94,7 +94,7 @@ fn open_creates_wal_file_with_schema_version() {
             r.get(0)
         })
         .unwrap();
-    assert_eq!(v, "8");
+    assert_eq!(v, "9");
     drop(raw);
     let (store, _) = open(dir.path());
     assert!(store.open_boxes().unwrap().is_empty());
@@ -481,7 +481,6 @@ fn intent_set_clear_and_run_lifecycle() {
             argv: vec!["ls".into()],
             record: None,
             sha: None,
-            sync: "tree".into(),
             pid: 9,
         })
         .unwrap();

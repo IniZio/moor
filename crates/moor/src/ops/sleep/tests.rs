@@ -177,7 +177,6 @@ fn begin_run(f: &Fx) {
             argv: vec!["make".into()],
             record: None,
             sha: None,
-            sync: "none".into(),
             pid: 4242,
         })
         .unwrap();

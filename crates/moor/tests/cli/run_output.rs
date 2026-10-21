@@ -42,7 +42,7 @@ fn serve_once(
         script(&mut stream, &id);
         let value = json!({
             "ran": true, "run": 1, "exit": EXIT, "interrupted": false,
-            "sync": "full", "log": "/state/runs/1.log",
+            "log": "/state/runs/1.log",
         });
         let envelope = Response::ok("run", Some(value));
         let answer = ServerFrame::Response { id, envelope };
