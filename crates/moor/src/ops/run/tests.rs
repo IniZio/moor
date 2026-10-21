@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::boxscript::command_line;
+use moor_core::boxscript::{command_line, shell_argv};
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
@@ -170,17 +170,17 @@ fn inherited_output_is_streamed_to_moor() {
     assert!(v.ran && !v.interrupted);
     let (_, spec, _) = f.driver.execs().remove(0);
     assert_eq!(spec.output, Some(Output::Inherit));
-    assert_eq!(command(&spec.argv), ["sh", "-c", "'make' 'test'"]);
+    assert_eq!(command(&spec.argv), shell_argv("'make' 'test'"));
 }
 
 #[test]
-fn plain_run_launches_through_sh_and_stores_the_users_argv() {
+fn plain_run_launches_shell_text_and_stores_the_users_argv() {
     let (f, multi) = (ready(), req(&["echo", "a b"]));
     run(&f.cx, &req(&["echo one; echo TWO"])).unwrap();
     run(&f.cx, &multi).unwrap();
     let launched = |i| command(&f.driver.execs().remove(i).1.argv).to_vec();
-    assert_eq!(launched(0), ["sh", "-c", "echo one; echo TWO"]);
-    assert_eq!(launched(1), ["sh", "-c", &command_line(&multi.argv)]);
+    assert_eq!(launched(0), shell_argv("echo one; echo TWO"));
+    assert_eq!(launched(1), shell_argv(&command_line(&multi.argv)));
     let stored = f.cx.store().unwrap().last_run(f.id).unwrap().unwrap().argv;
     assert_eq!(stored, multi.argv);
 }
