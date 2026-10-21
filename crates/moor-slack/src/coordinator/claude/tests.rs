@@ -322,6 +322,39 @@ fn a_rules_markdown_file_in_an_ancestor_refuses_the_workdir() {
 }
 
 #[test]
+fn a_symlinked_rules_markdown_file_refuses_the_workdir() {
+    let (root, work, rules) = rules_tree();
+    let managed = root.path().join("none");
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("elsewhere.md"), "x").unwrap();
+    std::fs::create_dir_all(&rules).unwrap();
+    std::os::unix::fs::symlink(outside.path().join("elsewhere.md"), rules.join("x.md")).unwrap();
+    let want = format!(
+        "{} would load as instructions",
+        rules.join("x.md").display()
+    );
+    assert_eq!(
+        instructions::loaded(&work, &managed, &no_settings(root.path())),
+        Some(want)
+    );
+}
+
+#[test]
+fn a_dangling_claude_md_symlink_refuses_the_workdir() {
+    let (root, work, _) = rules_tree();
+    let managed = root.path().join("none");
+    std::os::unix::fs::symlink(root.path().join("missing.md"), work.join("CLAUDE.md")).unwrap();
+    let want = format!(
+        "{} would load as instructions",
+        work.join("CLAUDE.md").display()
+    );
+    assert_eq!(
+        instructions::loaded(&work, &managed, &no_settings(root.path())),
+        Some(want)
+    );
+}
+
+#[test]
 fn a_rules_directory_without_markdown_does_not_refuse() {
     let (root, work, rules) = rules_tree();
     let managed = root.path().join("none");
