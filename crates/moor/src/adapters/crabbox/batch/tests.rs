@@ -39,7 +39,6 @@ fn batch(p: &Arc<ScriptedProc>, connect: &[String], steps: &[BoxStep]) -> Result
         &BoxHandle::new("p/box"),
         connect,
         steps,
-        Path::new("/host/cwd"),
         Deadline(Duration::from_secs(60)),
     )
 }

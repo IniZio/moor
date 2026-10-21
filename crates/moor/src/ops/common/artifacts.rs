@@ -16,7 +16,7 @@ use moor_core::{BoxHandle, BoxPath, Warning};
 use self::fetch::Fetch;
 use super::boxlock::BoxLock;
 use super::provision::recorded_workdir;
-use super::reports::{host_of, target};
+use super::reports::target;
 use crate::cx::Cx;
 use crate::store::{BoxRow, Store};
 
@@ -95,10 +95,9 @@ pub(crate) fn collect(cx: &Cx, store: &Store, row: &BoxRow) -> usize {
     let Some((b, handle)) = target(row) else {
         return 0;
     };
-    let host = host_of(row);
     let workdir = match b.workdir.as_deref().and_then(recorded_workdir) {
         Some(w) => w,
-        None => match cx.driver().workdir(handle, host) {
+        None => match cx.driver().workdir(handle) {
             Ok(w) => w,
             Err(_) => return 0,
         },
@@ -145,7 +144,7 @@ fn stage_and_store(
     let steps = [BoxStep::Run(script)];
     let done = cx
         .driver()
-        .batch(handle, &[], &steps, host_of(row), Deadline(INDEX_DEADLINE));
+        .batch(handle, &[], &steps, Deadline(INDEX_DEADLINE));
     let text = match done.into_iter().next() {
         Some(Ok(StepDone::Ran {
             outcome: ExecOutcome::Exited { code: 0 },

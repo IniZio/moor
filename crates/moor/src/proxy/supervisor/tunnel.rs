@@ -40,7 +40,6 @@ impl Running<'_> {
                 (self.box_id, &self.owner),
                 &self.handle,
                 (self.box_port, self.live.socket()),
-                &self.worktree,
                 false,
             ) {
                 Ok(tunnel) => {

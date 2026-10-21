@@ -1,6 +1,5 @@
 //! The one read of a Box's agent: probe once, decide, keep the hook cache.
 
-use std::path::PathBuf;
 use std::time::Duration;
 
 use moor_core::activity::{
@@ -355,7 +354,6 @@ pub(crate) fn session_ref(row: &BoxRow, id: String, pane: Option<String>) -> Opt
         id,
         handle: b.handle.clone()?,
         workdir: recorded_workdir(b.workdir.as_deref()?)?,
-        worktree: PathBuf::from(row.worktree.as_deref()?),
         pane: pane.map(PaneRef::new),
         warnings: Vec::new(),
     })

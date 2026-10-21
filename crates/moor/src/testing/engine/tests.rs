@@ -1,6 +1,5 @@
 //! Self-tests for the Engine fake.
 
-use std::path::PathBuf;
 use std::time::Duration;
 
 use moor_core::activity::{HookRead, PaneRead, Probes};
@@ -19,7 +18,6 @@ fn session(id: &str) -> SessionRef {
         id: id.to_owned(),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work/box-1", "x").unwrap(),
-        worktree: PathBuf::from("/host/wt"),
         pane: None,
         warnings: Vec::new(),
     }
@@ -82,7 +80,6 @@ fn launch_req() -> LaunchReq {
         id: BoxId::new(1),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work/box-1", "x").unwrap(),
-        worktree: PathBuf::from("/host/wt"),
         workspace: WorkspaceRef::new("ws-1"),
         box_name: BoxName::parse_allow_bare("t1").unwrap(),
         branch: "moor/t1".to_owned(),

@@ -54,7 +54,6 @@ fn rig_on(dir: &Path, driver: FakeDriver, clock: Arc<FakeClock>) -> Rig {
             name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
             nonce: "n".to_owned(),
-            worktree: None,
         })
         .unwrap();
     Rig {
@@ -176,14 +175,13 @@ fn failing_line_comes_from_the_log_and_warns() {
         }
     );
     assert_eq!(r.driver.execs().len(), 1);
-    let (h, from, to, host_cwd) = only(r.driver.copies());
+    let (h, from, to) = only(r.driver.copies());
     assert_eq!(h, r.handle);
     assert_eq!(
         from.as_str(),
         format!("{}/.moor/setup.log", r.workdir.as_str())
     );
     assert_eq!(to, d.path().join(".moor/setup.log"));
-    assert_eq!(host_cwd, d.path());
     let w = only(r.cx.take_warnings());
     assert_eq!(w.code, "setup_failed");
     assert!(w.message.contains("bad"), "{}", w.message);

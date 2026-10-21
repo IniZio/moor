@@ -176,7 +176,6 @@ pub(crate) fn provision(
         name: started.name,
         class: Some(cfg.size.value.as_str().to_owned()),
         nonce: nonce(cx.rng()),
-        worktree: started.worktree.as_deref().map(PathBuf::from),
     };
     // The record exists before the Box does; a failed acquire leaves it `planned`.
     let planned = cx.driver().planned_handle(&req);
@@ -282,7 +281,7 @@ fn run_and_record(
         store.apply(Decision::new(id).event(ExtraEvent::Cloned { ms }))?;
     }
     let run = run_through_proxy(cx, store, id, target, cfg, &proxy);
-    let dotfiles = match dotfiles::apply(cx, target.handle, id, target.worktree, cfg, &proxy) {
+    let dotfiles = match dotfiles::apply(cx, target.handle, id, cfg, &proxy) {
         Ok(d) => d,
         Err(f) => dotfiles_warned(cx, f),
     };
@@ -353,7 +352,7 @@ fn failed(
     if let Err(write) = store.apply(lost) {
         return write.into();
     }
-    if cx.driver().release(&attempted, req.worktree.as_deref()) == Ok(Released::AlreadyGone) {
+    if cx.driver().release(&attempted) == Ok(Released::AlreadyGone) {
         let gone = Decision::new(id).box_input(BoxInput::DriverMissing);
         if let Err(write) = store.apply(gone) {
             return write.into();

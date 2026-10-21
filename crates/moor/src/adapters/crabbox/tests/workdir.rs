@@ -1,7 +1,5 @@
 //! Tests for learning a Box's working directory from the in-box probe.
 
-use std::path::{Path, PathBuf};
-
 use moor_core::name::BoxHandle;
 use moor_core::seam::driver::{Driver, DriverError};
 use moor_core::seam::proc::Tool;
@@ -39,8 +37,7 @@ fn handle() -> BoxHandle {
 fn probe_with(reply: Reply) -> Result<String, DriverError> {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["run"], reply);
-    c.workdir(&handle(), Path::new("/wt/app"))
-        .map(|d| d.as_str().to_owned())
+    c.workdir(&handle()).map(|d| d.as_str().to_owned())
 }
 
 #[test]
@@ -52,9 +49,7 @@ fn acquire_learns_the_workdir_from_the_probe() {
         &["run"],
         Reply::Ok("MOOR_WORKDIR=/w/cbx_X/app\n".to_owned()),
     );
-    let mut r = req("sprites", None);
-    r.worktree = Some(PathBuf::from("/wt/app"));
-    let got = c.acquire(&r).unwrap();
+    let got = c.acquire(&req("sprites", None)).unwrap();
     assert_eq!(got.workdir.as_str(), "/w/cbx_X/app");
     assert_ne!(got.workdir.as_str(), "/w/moor-t7-ab12cd");
     let calls = p.calls();
@@ -75,7 +70,6 @@ fn acquire_learns_the_workdir_from_the_probe() {
     assert!(probe.args.iter().any(|a| a == "--no-sync"));
     let id_at = probe.args.iter().position(|a| a == "--id").unwrap();
     assert_eq!(probe.args.get(id_at + 1).unwrap(), "moor-7-ab12cd");
-    assert_eq!(probe.cwd.as_deref(), Some(Path::new("/wt/app")));
 }
 
 #[test]
@@ -86,15 +80,11 @@ fn workdir_after_wake_learns_the_path_from_the_probe() {
         &["run"],
         Reply::Ok("MOOR_WORKDIR=/w/cbx_Y/app".to_owned()),
     );
-    let got = c.workdir(&handle(), Path::new("/wt/app")).unwrap();
+    let got = c.workdir(&handle()).unwrap();
     assert_eq!(got.as_str(), "/w/cbx_Y/app");
     let calls = p.calls();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls.first().unwrap().args, probe_argv());
-    assert_eq!(
-        calls.first().unwrap().cwd.as_deref(),
-        Some(Path::new("/wt/app"))
-    );
 }
 
 #[test]
@@ -130,8 +120,6 @@ fn acquire_fails_when_the_probe_fails() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["warmup"], Reply::Ok(LEASE_OUT.to_owned()));
     p.on(Tool::Crabbox, &["run"], fail(1, "boom"));
-    let mut r = req("sprites", None);
-    r.worktree = Some(PathBuf::from("/wt/app"));
-    let err = c.acquire(&r).unwrap_err();
+    let err = c.acquire(&req("sprites", None)).unwrap_err();
     assert!(matches!(err, DriverError::Failed { .. }), "{err:?}");
 }

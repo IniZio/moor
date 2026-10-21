@@ -124,7 +124,6 @@ pub(crate) fn ready_with(driver: FakeDriver) -> Fx {
             name: BoxName::parse_allow_bare("t").unwrap(),
             class: None,
             nonce: "n".to_owned(),
-            worktree: None,
         })
         .unwrap();
     let environ = BoxPath::restore("/proc/self/environ").unwrap();
@@ -208,7 +207,6 @@ fn a_plain_run_syncs_nothing_stores_no_sha_and_takes_its_class_and_directories_f
     let row = f.cx.store().unwrap().last_run(f.id).unwrap().unwrap();
     assert_eq!(row.sha, None);
     let (_, spec, _) = f.driver.execs().remove(0);
-    assert_eq!(spec.host_cwd.as_deref(), Some(f.dir.path()));
     assert_eq!(spec.cwd.unwrap().as_str(), "/work/cbx_1/repo");
     assert_eq!(spec.class.as_deref(), Some("small"));
 }

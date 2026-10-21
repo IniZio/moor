@@ -238,33 +238,28 @@ impl Driver for Slow<'_> {
         self.inner.planned_handle(req)
     }
 
-    fn release(&self, h: &BoxHandle, w: Option<&Path>) -> Result<Released, DriverError> {
-        self.inner.release(h, w)
+    fn release(&self, h: &BoxHandle) -> Result<Released, DriverError> {
+        self.inner.release(h)
     }
 
     fn list(&self, p: &ProviderId) -> Result<Vec<BoxListing>, DriverError> {
         self.inner.list(p)
     }
 
-    fn workdir(&self, h: &BoxHandle, w: &Path) -> Result<BoxPath, DriverError> {
-        self.inner.workdir(h, w)
+    fn workdir(&self, h: &BoxHandle) -> Result<BoxPath, DriverError> {
+        self.inner.workdir(h)
     }
 
     fn exec(&self, h: &BoxHandle, s: &ExecSpec, d: Deadline) -> Result<ExecOutcome, DriverError> {
         self.inner.exec(h, s, d)
     }
 
-    fn copy_out(&self, h: &BoxHandle, f: &BoxPath, t: &Path, c: &Path) -> Result<(), DriverError> {
-        self.inner.copy_out(h, f, t, c)
+    fn copy_out(&self, h: &BoxHandle, f: &BoxPath, t: &Path) -> Result<(), DriverError> {
+        self.inner.copy_out(h, f, t)
     }
 
-    fn peek_file(
-        &self,
-        h: &BoxHandle,
-        p: &BoxPath,
-        c: &Path,
-    ) -> Result<Option<String>, DriverError> {
-        self.inner.peek_file(h, p, c)
+    fn peek_file(&self, h: &BoxHandle, p: &BoxPath) -> Result<Option<String>, DriverError> {
+        self.inner.peek_file(h, p)
     }
 
     fn put_file(
@@ -273,13 +268,12 @@ impl Driver for Slow<'_> {
         path: &BoxPath,
         bytes: &[u8],
         mode: u32,
-        cwd: &Path,
     ) -> Result<(), DriverError> {
-        self.inner.put_file(h, path, bytes, mode, cwd)
+        self.inner.put_file(h, path, bytes, mode)
     }
 
-    fn connect_argv(&self, h: &BoxHandle, c: &Path) -> Result<Vec<String>, DriverError> {
-        self.inner.connect_argv(h, c)
+    fn connect_argv(&self, h: &BoxHandle) -> Result<Vec<String>, DriverError> {
+        self.inner.connect_argv(h)
     }
 
     fn reverse_tunnel(
@@ -287,19 +281,18 @@ impl Driver for Slow<'_> {
         h: &BoxHandle,
         bp: u16,
         socket: &Path,
-        c: &Path,
     ) -> Result<Box<dyn TunnelHandle>, DriverError> {
         self.clock.sleep(self.took);
         (self.after)();
-        self.inner.reverse_tunnel(h, bp, socket, c)
+        self.inner.reverse_tunnel(h, bp, socket)
     }
 
-    fn sleep(&self, h: &BoxHandle, w: Option<&Path>) -> Result<SleepOutcome, DriverError> {
-        self.inner.sleep(h, w)
+    fn sleep(&self, h: &BoxHandle) -> Result<SleepOutcome, DriverError> {
+        self.inner.sleep(h)
     }
 
-    fn wake(&self, h: &BoxHandle, w: Option<&Path>) -> Result<(), DriverError> {
-        self.inner.wake(h, w)
+    fn wake(&self, h: &BoxHandle) -> Result<(), DriverError> {
+        self.inner.wake(h)
     }
 }
 

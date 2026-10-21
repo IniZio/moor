@@ -169,7 +169,7 @@ fn happy_path_makes_a_working_box_with_a_ready_box() {
     let b = row.unwrap().unwrap().boxed.unwrap();
     assert_eq!(b.state, BoxState::Ready);
     assert_eq!(b.handle.unwrap().as_str(), "box-1");
-    assert_eq!(b.workdir.as_deref(), Some("/work/cbx_1/demo"));
+    assert_eq!(b.workdir.as_deref(), Some("/work/cbx_1/repo"));
 }
 
 #[test]

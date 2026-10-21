@@ -30,8 +30,6 @@ pub(crate) struct Site<'a> {
     pub(crate) provider: &'a str,
     /// The directory commands run in; `None` keeps the driver's default.
     pub(crate) workdir: Option<&'a BoxPath>,
-    /// The host worktree of the Box.
-    pub(crate) worktree: &'a Path,
 }
 
 /// Starts or reuses the Box's Proxy for `cfg`'s egress, acting for the user in the Box's row.
@@ -52,7 +50,6 @@ pub(crate) fn proxy(
     let spec = ProxySpec {
         box_id,
         box_handle: handle,
-        host_cwd: worktree.to_path_buf(),
         box_repo: plan.repo,
         rules: plan.rules,
         user,

@@ -1,7 +1,5 @@
 //! `steer` on a Box whose machine cold-boots on wake and loses the agent process.
 
-use std::path::PathBuf;
-
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::seam::engine::{SessionRef, Steer};
 use moor_core::seam::surface::{PaneRef, SurfaceError};
@@ -15,7 +13,6 @@ fn relaunched(pane: &str, id: &str) -> SessionRef {
         id: id.into(),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
-        worktree: PathBuf::from("/wt"),
         pane: Some(PaneRef::new(pane)),
         warnings: Vec::new(),
     }

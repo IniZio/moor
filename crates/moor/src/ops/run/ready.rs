@@ -17,7 +17,7 @@ pub(super) struct Target {
     pub(super) handle: BoxHandle,
     /// Working directory in the Box; the driver's default when unrecorded.
     pub(super) workdir: Option<BoxPath>,
-    /// The Box's worktree on the host.
+    /// The host checkout the Proxy plan reads the repo's origin from.
     pub(super) worktree: PathBuf,
 }
 

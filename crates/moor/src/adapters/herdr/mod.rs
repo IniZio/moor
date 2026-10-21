@@ -257,7 +257,6 @@ impl Surface for Herdr {
                 summary: "open pane: empty command".to_owned(),
             });
         }
-        let cwd = cmd.cwd.as_deref().map(Path::to_string_lossy);
         let envs: Vec<String> = cmd.env.iter().map(|(k, v)| format!("{k}={v}")).collect();
         let mut args = vec![
             "tab",
@@ -267,9 +266,6 @@ impl Surface for Herdr {
             "--label",
             &cmd.label,
         ];
-        if let Some(c) = &cwd {
-            args.extend(["--cwd", c]);
-        }
         for e in &envs {
             args.extend(["--env", e]);
         }

@@ -137,7 +137,6 @@ fn acquire_holder(driver: &FakeDriver) -> BoxHandle {
             name: BoxName::parse_allow_bare("holder").unwrap(),
             class: None,
             nonce: "n".to_owned(),
-            worktree: None,
         })
         .unwrap();
     assert_eq!(got.handle.as_str(), HOLDER_BOX);

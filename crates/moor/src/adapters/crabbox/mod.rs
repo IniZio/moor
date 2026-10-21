@@ -6,6 +6,7 @@ mod connect;
 mod cp;
 mod errors;
 mod exec;
+mod lease;
 mod link;
 mod parse;
 mod peek;
@@ -62,10 +63,15 @@ pub(crate) struct Crabbox {
     version_ok: OnceLock<()>,
     /// Lookup deadlines that replace the built-in ones, keyed by provider id.
     lookup_deadlines: BTreeMap<String, Duration>,
-    /// Resolved ssh words per (lease handle, host cwd), kept for this driver's lifetime.
-    targets: Mutex<HashMap<(String, PathBuf), Vec<String>>>,
+    /// Resolved ssh words per lease handle, kept for this driver's lifetime.
+    targets: Mutex<HashMap<String, Vec<String>>>,
     /// Where each Box's shared ssh connection lives; none when moor keeps no state.
     links: Option<link::Dirs>,
+    /// `<state>/leases`, which holds each lease's dir; none when moor keeps no state.
+    leases: Option<PathBuf>,
+    /// Keeps a test driver's state dir alive.
+    #[cfg(test)]
+    scratch: Option<Arc<tempfile::TempDir>>,
 }
 
 impl Crabbox {
@@ -79,6 +85,9 @@ impl Crabbox {
             lookup_deadlines: BTreeMap::new(),
             targets: Mutex::new(HashMap::new()),
             links: None,
+            leases: None,
+            #[cfg(test)]
+            scratch: None,
         }
     }
 
@@ -86,7 +95,7 @@ impl Crabbox {
     /// address may change.
     pub(super) fn forget_targets(&self, handle: &BoxHandle) {
         if let Ok(mut map) = self.targets.lock() {
-            map.retain(|(h, _), _| h != handle.as_str());
+            map.remove(handle.as_str());
         }
         link::close(self, handle);
     }
@@ -133,7 +142,16 @@ impl Crabbox {
         use crate::testing::{clock::FakeClock, rng::FakeRng};
         use moor_core::seam::clock::Ts;
         let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
-        Self::new(proc, clock, Arc::new(FakeRng::default()))
+        Self::new(proc, clock, Arc::new(FakeRng::default())).with_scratch_leases()
+    }
+
+    /// Runs lease calls from dirs under a fresh temporary state dir.
+    #[cfg(test)]
+    pub(crate) fn with_scratch_leases(mut self) -> Self {
+        let dir = Arc::new(tempfile::tempdir().expect("temp state dir"));
+        self.leases = Some(dir.path().join("leases"));
+        self.scratch = Some(dir);
+        self
     }
 
     /// Runs one crabbox call, mapping failure through `op`.
@@ -221,19 +239,17 @@ impl Driver for Crabbox {
         let provider = req.provider.as_str();
         let name = slug(req);
         let class = size_of(req.class.as_deref())?;
-        let mut spec = Self::spec(ACQUIRE_DEADLINE).args(["warmup", "--provider", provider]);
-        if let Some(dir) = &req.worktree {
-            spec = spec.cwd(dir);
-        }
-        spec = spec.args(["--slug", &name, "--class", class]);
+        let spec = Self::spec(ACQUIRE_DEADLINE)
+            .args(["warmup", "--provider", provider])
+            .args(["--slug", &name, "--class", class]);
         let handle = handle_of(provider, &name);
-        let spec = static_env(spec, &handle);
+        let spec = self.at_lease(spec, &handle)?;
         self.forget_targets(&handle);
         let out = self.call(Op::Acquire, Some(provider), &spec)?;
         let warm = parse::parse_warmup(&out.stdout).ok_or_else(|| unreadable("acquire"))?;
         let workdir = match warm.workdir.as_deref().map(BoxPath::restore) {
             Some(Ok(dir)) => dir,
-            _ => workdir::probe(self, &handle, req.worktree.as_deref())?,
+            _ => workdir::probe(self, &handle)?,
         };
         Ok(Acquired { handle, workdir })
     }
@@ -242,27 +258,26 @@ impl Driver for Crabbox {
         handle_of(req.provider.as_str(), &slug(req))
     }
 
-    fn release(
-        &self,
-        handle: &BoxHandle,
-        worktree: Option<&Path>,
-    ) -> Result<Released, DriverError> {
+    fn release(&self, handle: &BoxHandle) -> Result<Released, DriverError> {
         self.require_version()?;
-        let mut spec = Self::spec(QUICK_DEADLINE)
+        let spec = Self::spec(QUICK_DEADLINE)
             .arg("stop")
             .args(target_args(handle))
             .arg("--delete");
-        if let Some(dir) = worktree {
-            spec = spec.cwd(dir);
-        }
-        let spec = static_env(spec, handle);
+        let spec = self.at_lease(spec, handle)?;
         let result = self.call(Op::Release, split_handle(handle).0, &spec);
         self.forget_targets(handle);
-        match result {
-            Ok(_) => Ok(Released::Deleted),
-            Err(DriverError::NotFound) => Ok(Released::AlreadyGone),
-            Err(e) => Err(e),
-        }
+        let released = match result {
+            Ok(_) => Released::Deleted,
+            Err(DriverError::NotFound) => Released::AlreadyGone,
+            Err(e) => return Err(e),
+        };
+        self.drop_lease_dir(handle);
+        Ok(released)
+    }
+
+    fn manual_release(&self, handle: &BoxHandle) -> Option<String> {
+        self.stop_by_hand(handle)
     }
 
     fn list(&self, provider: &ProviderId) -> Result<Vec<BoxListing>, DriverError> {
@@ -284,9 +299,9 @@ impl Driver for Crabbox {
             .collect())
     }
 
-    fn workdir(&self, handle: &BoxHandle, worktree: &Path) -> Result<BoxPath, DriverError> {
+    fn workdir(&self, handle: &BoxHandle) -> Result<BoxPath, DriverError> {
         self.require_version()?;
-        workdir::probe(self, handle, Some(worktree))
+        workdir::probe(self, handle)
     }
 
     fn exec(
@@ -299,15 +314,9 @@ impl Driver for Crabbox {
         exec::run(self, handle, spec, deadline)
     }
 
-    fn copy_out(
-        &self,
-        handle: &BoxHandle,
-        from: &BoxPath,
-        to: &Path,
-        host_cwd: &Path,
-    ) -> Result<(), DriverError> {
+    fn copy_out(&self, handle: &BoxHandle, from: &BoxPath, to: &Path) -> Result<(), DriverError> {
         self.require_version()?;
-        cp::copy_out(self, handle, from, to, host_cwd)
+        cp::copy_out(self, handle, from, to)
     }
 
     fn stream_files(
@@ -315,22 +324,16 @@ impl Driver for Crabbox {
         handle: &BoxHandle,
         dir: &BoxPath,
         names: &[String],
-        host_cwd: &Path,
         deadline: Deadline,
         sink: &mut dyn FnMut(&str, Option<&mut dyn std::io::Read>),
     ) -> Result<(), DriverError> {
         self.require_version()?;
-        stream::stream_files(self, handle, dir, names, host_cwd, deadline, sink)
+        stream::stream_files(self, handle, dir, names, deadline, sink)
     }
 
-    fn peek_file(
-        &self,
-        handle: &BoxHandle,
-        path: &BoxPath,
-        host_cwd: &Path,
-    ) -> Result<Option<String>, DriverError> {
+    fn peek_file(&self, handle: &BoxHandle, path: &BoxPath) -> Result<Option<String>, DriverError> {
         self.require_version()?;
-        peek::peek_file(self, handle, path, host_cwd)
+        peek::peek_file(self, handle, path)
     }
 
     fn put_file(
@@ -339,10 +342,9 @@ impl Driver for Crabbox {
         path: &BoxPath,
         bytes: &[u8],
         mode: u32,
-        host_cwd: &Path,
     ) -> Result<(), DriverError> {
         self.require_version()?;
-        put::put_file(self, handle, path, bytes, mode, host_cwd)
+        put::put_file(self, handle, path, bytes, mode)
     }
 
     fn batch(
@@ -350,36 +352,27 @@ impl Driver for Crabbox {
         handle: &BoxHandle,
         connect: &[String],
         steps: &[BoxStep],
-        host_cwd: &Path,
         deadline: Deadline,
     ) -> Vec<Result<StepDone, DriverError>> {
         if let Err(e) = self.require_version() {
             return vec![Err(e)];
         }
-        batch::run(self, handle, connect, steps, host_cwd, deadline)
+        batch::run(self, handle, connect, steps, deadline)
     }
 
-    fn connect_argv(
-        &self,
-        handle: &BoxHandle,
-        host_cwd: &Path,
-    ) -> Result<Vec<String>, DriverError> {
+    fn connect_argv(&self, handle: &BoxHandle) -> Result<Vec<String>, DriverError> {
         self.require_version()?;
-        connect::connect_argv(self, handle, host_cwd)
+        connect::connect_argv(self, handle)
     }
 
-    fn sleep(
-        &self,
-        handle: &BoxHandle,
-        worktree: Option<&Path>,
-    ) -> Result<SleepOutcome, DriverError> {
-        let result = sleep::sleep(self, handle, worktree);
+    fn sleep(&self, handle: &BoxHandle) -> Result<SleepOutcome, DriverError> {
+        let result = sleep::sleep(self, handle);
         self.forget_targets(handle);
         result
     }
 
-    fn wake(&self, handle: &BoxHandle, worktree: Option<&Path>) -> Result<(), DriverError> {
-        let result = sleep::wake(self, handle, worktree);
+    fn wake(&self, handle: &BoxHandle) -> Result<(), DriverError> {
+        let result = sleep::wake(self, handle);
         self.forget_targets(handle);
         result
     }
@@ -389,9 +382,8 @@ impl Driver for Crabbox {
         handle: &BoxHandle,
         box_port: u16,
         socket: &Path,
-        host_cwd: &Path,
     ) -> Result<Box<dyn TunnelHandle>, DriverError> {
         self.require_version()?;
-        tunnel::reverse_tunnel(self, handle, box_port, socket, host_cwd)
+        tunnel::reverse_tunnel(self, handle, box_port, socket)
     }
 }

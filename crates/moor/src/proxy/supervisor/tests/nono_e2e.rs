@@ -78,7 +78,6 @@ fn box_with_machine(store: &Store, driver: &FakeDriver) -> (BoxId, BoxHandle) {
             name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
             nonce: "abc123".into(),
-            worktree: None,
         })
         .unwrap();
     let d = Decision::new(id)
@@ -218,7 +217,6 @@ fn serve_injects_the_credential_audits_requests_and_stops() {
     let spec = ProxySpec {
         box_id: id,
         box_handle: Some(handle),
-        host_cwd: "/wt".into(),
         box_repo: None,
         rules: vec![rule(up.port)],
         user: moor_core::user::UserId::new(1),

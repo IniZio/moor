@@ -73,7 +73,6 @@ fn fx_with(driver: FakeDriver, ready: bool) -> Fx {
                 name,
                 class: None,
                 nonce: "n".to_owned(),
-                worktree: Some(PathBuf::from(WORKTREE)),
             })
             .unwrap();
         let d = Decision::new(id)
@@ -117,7 +116,7 @@ fn dest(f: &Fx) -> String {
 }
 
 /// The first `copy_out` the Driver saw.
-fn first_copy(f: &Fx) -> (BoxHandle, BoxPath, PathBuf, PathBuf) {
+fn first_copy(f: &Fx) -> (BoxHandle, BoxPath, PathBuf) {
     f.driver.copies().into_iter().next().unwrap()
 }
 
@@ -130,7 +129,7 @@ fn relative_source_resolves_against_the_box_workdir() {
     let f = fx();
     run(&f.cx, &req("out/a.txt", "a.txt")).unwrap();
     assert_eq!(f.driver.copies().len(), 1);
-    assert_eq!(first_copy(&f).1.as_str(), "/work/cbx_1/t/out/a.txt");
+    assert_eq!(first_copy(&f).1.as_str(), "/work/cbx_1/repo/out/a.txt");
 }
 
 #[test]
@@ -175,12 +174,10 @@ fn a_relative_destination_is_usage_without_a_copy() {
 }
 
 #[test]
-fn copy_runs_from_the_box_worktree_while_the_destination_stays_under_the_callers_cwd() {
+fn destination_stays_under_the_callers_cwd() {
     let f = fx();
     run(&f.cx, &req("a", "out/a.txt")).unwrap();
-    let (_, _, to, host_cwd) = first_copy(&f);
-    assert_eq!(host_cwd, Path::new(WORKTREE));
-    assert_ne!(host_cwd, Path::new(CWD));
+    let (_, _, to) = first_copy(&f);
     assert!(to.starts_with(CWD));
     assert!(!to.starts_with(WORKTREE));
 }
@@ -398,14 +395,14 @@ fn size_does_not_follow_directory_links() {
 fn leading_current_dir_is_dropped_from_the_source() {
     let f = fx();
     run(&f.cx, &req("./rel.txt", "rel.txt")).unwrap();
-    assert_eq!(first_copy(&f).1.as_str(), "/work/cbx_1/t/rel.txt");
+    assert_eq!(first_copy(&f).1.as_str(), "/work/cbx_1/repo/rel.txt");
 }
 
 #[test]
 fn interior_current_dir_is_dropped_from_the_source() {
     let f = fx();
     run(&f.cx, &req("./a/./b.txt", "b.txt")).unwrap();
-    assert_eq!(first_copy(&f).1.as_str(), "/work/cbx_1/t/a/b.txt");
+    assert_eq!(first_copy(&f).1.as_str(), "/work/cbx_1/repo/a/b.txt");
 }
 
 #[test]

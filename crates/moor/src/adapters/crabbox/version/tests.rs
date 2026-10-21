@@ -123,22 +123,18 @@ fn ops() -> Vec<(&'static str, Op)> {
                 name: BoxName::parse_allow_bare("t7").unwrap(),
                 class: None,
                 nonce: "ab12cd".to_owned(),
-                worktree: None,
             };
             c.acquire(&req).is_err()
         }),
-        ("release", |c| c.release(&handle(), None).is_err()),
+        ("release", |c| c.release(&handle()).is_err()),
         ("list", |c| c.list(&ProviderId::new("sprites")).is_err()),
-        ("workdir", |c| {
-            c.workdir(&handle(), Path::new("/wt")).is_err()
-        }),
+        ("workdir", |c| c.workdir(&handle()).is_err()),
         ("exec", |c| {
             let spec = ExecSpec {
                 argv: vec!["true".to_owned()],
                 env: Vec::new(),
                 cwd: None,
                 output: None,
-                host_cwd: None,
                 class: None,
             };
             c.exec(
@@ -149,25 +145,18 @@ fn ops() -> Vec<(&'static str, Op)> {
             .is_err()
         }),
         ("copy_out", |c| {
-            c.copy_out(&handle(), &path(), Path::new("/o"), Path::new("/wt"))
-                .is_err()
+            c.copy_out(&handle(), &path(), Path::new("/o")).is_err()
         }),
-        ("peek_file", |c| {
-            c.peek_file(&handle(), &path(), Path::new("/wt")).is_err()
-        }),
+        ("peek_file", |c| c.peek_file(&handle(), &path()).is_err()),
         ("put_file", |c| {
-            c.put_file(&handle(), &path(), b"x", 0o600, Path::new("/wt"))
-                .is_err()
+            c.put_file(&handle(), &path(), b"x", 0o600).is_err()
         }),
-        ("connect_argv", |c| {
-            c.connect_argv(&handle(), Path::new("/wt")).is_err()
-        }),
+        ("connect_argv", |c| c.connect_argv(&handle()).is_err()),
         ("reverse_tunnel", |c| {
-            c.reverse_tunnel(&handle(), 1, Path::new("/s"), Path::new("/wt"))
-                .is_err()
+            c.reverse_tunnel(&handle(), 1, Path::new("/s")).is_err()
         }),
-        ("sleep", |c| c.sleep(&handle(), None).is_err()),
-        ("wake", |c| c.wake(&handle(), None).is_err()),
+        ("sleep", |c| c.sleep(&handle()).is_err()),
+        ("wake", |c| c.wake(&handle()).is_err()),
     ]
 }
 

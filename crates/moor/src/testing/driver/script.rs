@@ -1,6 +1,6 @@
 //! Scripted failures and recorded calls for the Driver fake.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::seam::driver::{
@@ -11,25 +11,18 @@ use moor_core::{BoxHandle, BoxPath};
 
 use super::{FakeDriver, State};
 
-/// One `peek_file` call: handle, path and host cwd.
-pub(super) type PeekCall = (BoxHandle, BoxPath, PathBuf);
+/// One `peek_file` call: handle and path.
+pub(super) type PeekCall = (BoxHandle, BoxPath);
 
-/// One `put_file` call: handle, path, content, mode and host cwd.
-pub(crate) type PutCall = (BoxHandle, BoxPath, Vec<u8>, u32, PathBuf);
+/// One `put_file` call: handle, path, content and mode.
+pub(crate) type PutCall = (BoxHandle, BoxPath, Vec<u8>, u32);
 
-/// Where the fake runs a Box's commands: `<root>/<lease id>/<repo name>`.
+/// Where the fake runs a Box's commands: `<root>/<lease id>/repo`.
 /// The lease id (`box-N` becomes `cbx_N`) differs from the handle, so a path
 /// rebuilt from the handle is caught.
-pub(super) fn layout(
-    root: Option<&str>,
-    handle: &str,
-    worktree: Option<&Path>,
-) -> Result<BoxPath, DriverError> {
+pub(super) fn layout(root: Option<&str>, handle: &str) -> Result<BoxPath, DriverError> {
     let lease = format!("cbx_{}", handle.strip_prefix("box-").unwrap_or(handle));
-    let repo = worktree
-        .and_then(Path::file_name)
-        .map_or_else(|| "repo".into(), |n| n.to_string_lossy());
-    BoxPath::under(root.unwrap_or("/work"), &format!("{lease}/{repo}")).map_err(|e| {
+    BoxPath::under(root.unwrap_or("/work"), &format!("{lease}/repo")).map_err(|e| {
         DriverError::Failed {
             summary: e.to_string(),
         }
@@ -80,7 +73,7 @@ impl FakeDriver {
         self
     }
 
-    /// Every `peek_file` so far: handle, path and host cwd, in call order.
+    /// Every `peek_file` so far: handle and path, in call order.
     pub(crate) fn peeks(&self) -> Vec<PeekCall> {
         self.st().peeks.clone()
     }
@@ -198,7 +191,6 @@ impl FakeDriver {
         handle: &BoxHandle,
         connect: &[String],
         steps: &[BoxStep],
-        host_cwd: &Path,
         deadline: Deadline,
     ) -> Vec<Result<StepDone, DriverError>> {
         {
@@ -210,7 +202,7 @@ impl FakeDriver {
         }
         let mut out = Vec::new();
         for step in steps {
-            let done = self.run_step(handle, step, host_cwd, deadline);
+            let done = self.run_step(handle, step, deadline);
             let stop = match &done {
                 Err(_) => true,
                 Ok(StepDone::Ran { outcome, .. }) => *outcome != ExecOutcome::Exited { code: 0 },
@@ -229,13 +221,12 @@ impl FakeDriver {
         &self,
         handle: &BoxHandle,
         step: &BoxStep,
-        host_cwd: &Path,
         deadline: Deadline,
     ) -> Result<StepDone, DriverError> {
         match step {
-            BoxStep::Peek(path) => self.peek_file(handle, path, host_cwd).map(StepDone::Peeked),
+            BoxStep::Peek(path) => self.peek_file(handle, path).map(StepDone::Peeked),
             BoxStep::Put { path, bytes, mode } => self
-                .put_file(handle, path, bytes, *mode, host_cwd)
+                .put_file(handle, path, bytes, *mode)
                 .map(|()| StepDone::Put),
             BoxStep::Run(script) => {
                 let spec = ExecSpec {
@@ -243,7 +234,6 @@ impl FakeDriver {
                     env: vec![],
                     cwd: None,
                     output: None,
-                    host_cwd: Some(host_cwd.to_path_buf()),
                     class: None,
                 };
                 let outcome = self.exec(handle, &spec, deadline)?;

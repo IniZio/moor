@@ -125,7 +125,6 @@ pub(crate) fn run_setup(
         handle,
         provider,
         workdir: Some(workdir),
-        worktree,
     };
     let started = cx.clock().instant();
     let result = exec_script(cx, &site, cfg, proxy);
@@ -177,7 +176,6 @@ fn exec_script(
         env: exec.vars(),
         cwd: exec.cwd(),
         output: None,
-        host_cwd: Some(site.worktree.to_path_buf()),
         class: Some(cfg.size.value.as_str().to_owned()),
     };
     cx.driver()
@@ -281,7 +279,7 @@ fn fetch_log(cx: &Cx, handle: &BoxHandle, workdir: &BoxPath, worktree: &Path) ->
     let made = to
         .parent()
         .is_some_and(|dir| std::fs::create_dir_all(dir).is_ok());
-    if !made || cx.driver().copy_out(handle, &from, &to, worktree).is_err() {
+    if !made || cx.driver().copy_out(handle, &from, &to).is_err() {
         discard(&to);
         return String::new();
     }

@@ -1,6 +1,5 @@
 //! Tests for the crabbox adapter.
 
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -36,7 +35,6 @@ fn req(provider: &str, class: Option<&str>) -> AcquireReq {
         name: BoxName::parse_allow_bare("t7").unwrap(),
         class: class.map(str::to_owned),
         nonce: "ab12cd".to_owned(),
-        worktree: None,
     }
 }
 
@@ -117,7 +115,6 @@ fn acquire_runs_warmup_and_builds_handle() {
             "standard"
         ]
     );
-    assert!(calls.first().unwrap().env.is_empty());
     assert_eq!(c.planned_handle(&req("sprites", None)), got.handle);
 }
 
@@ -130,7 +127,6 @@ fn acquire_maps_sizes_and_rejects_unknown() {
     let calls = p.calls();
     let first = calls.first().unwrap();
     assert!(first.args.contains(&"large".to_owned()));
-    assert!(first.env.is_empty());
     assert!(c.acquire(&req("sprites", Some("huge"))).is_err());
 }
 
@@ -142,7 +138,7 @@ fn ssh_calls_carry_static_env() {
     probe(&p);
     c.acquire(&req("ssh", None)).unwrap();
     let handle = BoxHandle::new("ssh/moor-7-ab12cd");
-    c.release(&handle, None).unwrap();
+    c.release(&handle).unwrap();
     for call in p.calls() {
         assert!(
             call.env
@@ -227,19 +223,6 @@ fn acquire_unreadable_output_fails() {
 }
 
 #[test]
-fn acquire_runs_warmup_in_worktree() {
-    let (p, c) = fixture();
-    p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
-    probe(&p);
-    let mut r = req("sprites", None);
-    r.worktree = Some("/wt".into());
-    c.acquire(&r).unwrap();
-    let calls = p.calls();
-    let first = calls.first().expect("one call recorded");
-    assert_eq!(first.cwd.as_deref(), Some(std::path::Path::new("/wt")));
-}
-
-#[test]
 fn acquire_failure_maps_through_errors() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["warmup"], fail(1, "boom"));
@@ -250,7 +233,7 @@ fn acquire_failure_maps_through_errors() {
 fn release_stops_by_provider_and_name() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["stop"], Reply::Ok(String::new()));
-    let got = c.release(&BoxHandle::new("sprites/moor-t7"), None).unwrap();
+    let got = c.release(&BoxHandle::new("sprites/moor-t7")).unwrap();
     assert_eq!(got, Released::Deleted);
     let calls = p.calls();
     let call = calls.first().unwrap();
@@ -272,7 +255,7 @@ fn release_stops_by_provider_and_name() {
 fn release_not_found_is_already_gone() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["stop"], fail(4, "lease not found\n"));
-    let got = c.release(&BoxHandle::new("sprites/moor-t7"), None).unwrap();
+    let got = c.release(&BoxHandle::new("sprites/moor-t7")).unwrap();
     assert_eq!(got, Released::AlreadyGone);
 }
 
@@ -280,7 +263,7 @@ fn release_not_found_is_already_gone() {
 fn release_bare_name_omits_provider() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["stop"], Reply::Ok(String::new()));
-    c.release(&BoxHandle::new("moor-t7"), None).unwrap();
+    c.release(&BoxHandle::new("moor-t7")).unwrap();
     let calls = p.calls();
     assert_eq!(
         calls.first().unwrap().args,
@@ -292,7 +275,7 @@ fn release_bare_name_omits_provider() {
 fn release_other_failure_is_error() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["stop"], fail(1, "boom"));
-    assert!(c.release(&BoxHandle::new("sprites/x"), None).is_err());
+    assert!(c.release(&BoxHandle::new("sprites/x")).is_err());
 }
 
 #[test]
@@ -350,9 +333,7 @@ fn workdir_runs_the_pwd_probe() {
         &["run"],
         Reply::Ok("noise\nMOOR_WORKDIR=/w/cbx_9f/app\n".into()),
     );
-    let got = c
-        .workdir(&BoxHandle::new("ssh/moor-t7"), Path::new("/wt/app"))
-        .unwrap();
+    let got = c.workdir(&BoxHandle::new("ssh/moor-t7")).unwrap();
     assert_eq!(got.as_str(), "/w/cbx_9f/app");
     let calls = p.calls();
     let first = calls.first().unwrap();
@@ -372,16 +353,13 @@ fn workdir_runs_the_pwd_probe() {
             r#"printf "MOOR_WORKDIR=%s\n" "$(pwd)""#
         ]
     );
-    assert_eq!(first.cwd.as_deref(), Some(Path::new("/wt/app")));
 }
 
 #[test]
 fn workdir_missing_box_is_not_found() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["run"], fail(4, "not found"));
-    let err = c
-        .workdir(&BoxHandle::new("ssh/x"), Path::new("/wt/app"))
-        .unwrap_err();
+    let err = c.workdir(&BoxHandle::new("ssh/x")).unwrap_err();
     assert_eq!(err, DriverError::NotFound);
 }
 
@@ -401,7 +379,6 @@ fn exec_spec(argv: &[&str]) -> ExecSpec {
         env: Vec::new(),
         cwd: None,
         output: None,
-        host_cwd: None,
         class: None,
     }
 }
@@ -458,7 +435,6 @@ fn exec_runs_without_sync_on_the_target() {
             "test"
         ]
     );
-    assert!(call.cwd.is_none());
 }
 
 #[test]

@@ -104,7 +104,6 @@ fn ready(cx: &Cx, n: &str) -> BoxId {
             name: name(n),
             class: None,
             nonce: "abc123".into(),
-            worktree: None,
         })
         .unwrap();
     let store = cx.store().unwrap();

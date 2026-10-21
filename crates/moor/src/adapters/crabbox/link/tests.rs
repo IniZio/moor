@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::fs::Permissions;
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -190,8 +190,7 @@ impl Lab {
 
     fn read(&self, name: &str) -> Result<Option<String>, DriverError> {
         let path = BoxPath::under("/work", &format!(".moor/{name}")).unwrap();
-        self.driver()
-            .peek_file(&handle(), &path, Path::new("/host/wt"))
+        self.driver().peek_file(&handle(), &path)
     }
 
     fn stream(&self) -> Result<(), DriverError> {
@@ -199,7 +198,6 @@ impl Lab {
             &handle(),
             &BoxPath::restore("/work").unwrap(),
             &["a".to_owned()],
-            Path::new("/host/wt"),
             Deadline(Duration::from_secs(5)),
             &mut |_, _| {},
         )
@@ -208,9 +206,7 @@ impl Lab {
     fn batch(&self) -> Result<(), DriverError> {
         let steps = [BoxStep::Run("true".to_owned())];
         let deadline = Deadline(Duration::from_secs(5));
-        let done = self
-            .driver()
-            .batch(&handle(), &[], &steps, Path::new("/host/wt"), deadline);
+        let done = self.driver().batch(&handle(), &[], &steps, deadline);
         done.into_iter().next().unwrap().map(drop)
     }
 
@@ -271,7 +267,6 @@ fn every_short_call_shares_the_connection() {
         &BoxPath::restore("/work/f").unwrap(),
         b"x",
         0o600,
-        Path::new("/host/wt"),
     );
     put.unwrap();
     let _ = lab.batch();
@@ -367,7 +362,7 @@ fn release_ends_the_master_and_removes_its_socket() {
     let lab = lab();
     lab.probe_tick().unwrap();
     assert!(!lab.link_files().is_empty());
-    lab.driver().release(&handle(), None).unwrap();
+    lab.driver().release(&handle()).unwrap();
     assert!(
         lab.ssh.lock().unwrap().masters.is_empty(),
         "master still up"
@@ -380,7 +375,7 @@ fn release_removes_the_socket_of_a_dead_master() {
     let lab = lab();
     lab.probe_tick().unwrap();
     lab.ssh.lock().unwrap().masters.clear();
-    lab.driver().release(&handle(), None).unwrap();
+    lab.driver().release(&handle()).unwrap();
     assert_eq!(lab.link_files(), Vec::<PathBuf>::new());
 }
 
@@ -402,9 +397,7 @@ fn two_state_dirs_never_share_a_master() {
     lab.probe_tick().unwrap();
     let other = lab.driver_in(lab.state.with_file_name("other"));
     let path = BoxPath::under("/work", ".moor/agent-state.json").unwrap();
-    other
-        .peek_file(&handle(), &path, Path::new("/host/wt"))
-        .unwrap();
+    other.peek_file(&handle(), &path).unwrap();
     assert_eq!(lab.connects(), 2, "one master per state dir");
 }
 
@@ -419,7 +412,7 @@ fn assert_unshared(lab: &Lab, driver: &Crabbox) {
     );
     let path = BoxPath::under("/work", ".moor/agent-state.json").unwrap();
     for _ in 0..2 {
-        let read = driver.peek_file(&handle(), &path, Path::new("/host/wt"));
+        let read = driver.peek_file(&handle(), &path);
         assert_eq!(read.unwrap().as_deref(), Some(HOOK));
     }
     assert_eq!(lab.connects(), 2, "one connection per call");
@@ -456,10 +449,7 @@ fn a_symlinked_socket_dir_is_a_warning_and_calls_connect_on_their_own() {
 fn the_agent_pane_keeps_its_own_connection() {
     let lab = lab();
     lab.probe_tick().unwrap();
-    let argv = lab
-        .driver()
-        .connect_argv(&handle(), Path::new("/host/wt"))
-        .unwrap();
+    let argv = lab.driver().connect_argv(&handle()).unwrap();
     assert_eq!(option(&argv, "ControlPath").as_deref(), Some("none"));
 }
 

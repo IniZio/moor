@@ -144,7 +144,6 @@ fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> BoxId {
             name: BoxName::parse_allow_bare("t").unwrap(),
             class: None,
             nonce: "n".to_owned(),
-            worktree: None,
         })
         .unwrap();
     let d = Decision::new(id)
@@ -219,6 +218,16 @@ fn release_error_on_a_ready_box_keeps_the_box_open() {
     assert!(
         e.error.to_string().contains(RAW),
         "the adapter summary is surfaced"
+    );
+    let h = row(&f).boxed.unwrap().handle.unwrap();
+    let by_hand = format!(
+        "release the Box by hand: stop it from /leases/{}",
+        h.as_str()
+    );
+    assert!(
+        e.hints.iter().any(|x| x.contains(&by_hand)),
+        "{:?}",
+        e.hints
     );
     assert!(is_working(&row(&f)));
     assert_eq!(box_state(&f), BoxState::Ready);

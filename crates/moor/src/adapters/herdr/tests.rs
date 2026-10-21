@@ -307,7 +307,6 @@ fn open_pane_closes_the_empty_tab_when_the_run_fails() {
     let cmd = PaneCmd {
         label: "agent:fix".to_owned(),
         argv: vec!["claude".to_owned()],
-        cwd: None,
         env: Vec::new(),
     };
     assert!(h.open_pane(&WorkspaceRef::new("w1"), &cmd).is_err());
@@ -323,7 +322,6 @@ fn open_pane_creates_tab_then_runs_quoted_command() {
     let cmd = PaneCmd {
         label: "agent:fix".to_owned(),
         argv: vec!["claude".to_owned(), "hi there".to_owned()],
-        cwd: Some(PathBuf::from("/r/wt")),
         env: vec![("K".to_owned(), "v".to_owned())],
     };
     let pane = h.open_pane(&WorkspaceRef::new("w1"), &cmd).expect("opened");
@@ -338,8 +336,6 @@ fn open_pane_creates_tab_then_runs_quoted_command() {
             "w1",
             "--label",
             "agent:fix",
-            "--cwd",
-            "/r/wt",
             "--env",
             "K=v",
             "--no-focus"

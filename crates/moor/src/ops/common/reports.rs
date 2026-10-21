@@ -1,6 +1,5 @@
 //! Copies the agent's Reports out of a Box into the local store before teardown.
 
-use std::path::Path;
 use std::time::Duration;
 
 use moor_core::boxscript::quote;
@@ -84,11 +83,6 @@ pub(super) fn target(row: &BoxRow) -> Option<(&DriverRow, &BoxHandle)> {
         .and_then(|b| b.handle.as_ref().map(|h| (b, h)))
 }
 
-/// The host directory the driver runs from.
-pub(super) fn host_of(row: &BoxRow) -> &Path {
-    Path::new(row.worktree.as_deref().unwrap_or(&row.repo))
-}
-
 /// The steps that index a Box's Reports, to run in a batch with other steps.
 pub(crate) struct IndexPlan {
     /// The Box workdir the Reports live under.
@@ -103,7 +97,7 @@ pub(crate) fn index_plan(cx: &Cx, row: &BoxRow) -> Option<IndexPlan> {
     let (b, handle) = target(row)?;
     let workdir = match b.workdir.as_deref().and_then(recorded_workdir) {
         Some(w) => w,
-        None => cx.driver().workdir(handle, host_of(row)).ok()?,
+        None => cx.driver().workdir(handle).ok()?,
     };
     let index = BoxPath::under(workdir.as_str(), INDEX_FILE).ok()?;
     // A batched `Run` has no working directory, so the script changes into the workdir itself.
@@ -160,12 +154,11 @@ fn run(
     handle: &BoxHandle,
     stored: &mut usize,
 ) -> Result<(), String> {
-    let host = host_of(row);
     let workdir = match recorded.and_then(recorded_workdir) {
         Some(w) => w,
         None => cx
             .driver()
-            .workdir(handle, host)
+            .workdir(handle)
             .map_err(|e| format!("cannot find the box workdir: {e}"))?,
     };
     let spec = ExecSpec {
@@ -173,7 +166,6 @@ fn run(
         env: Vec::new(),
         cwd: Some(workdir.clone()),
         output: None,
-        host_cwd: Some(host.to_path_buf()),
         class: None,
     };
     match cx.driver().exec(handle, &spec, Deadline(INDEX_DEADLINE)) {
@@ -182,7 +174,7 @@ fn run(
         Ok(ExecOutcome::Interrupted) => return Err("the index script was interrupted".into()),
         Err(e) => return Err(format!("the index script could not run: {e}")),
     }
-    let index = peek(cx, handle, &workdir, INDEX_FILE, host)?;
+    let index = peek(cx, handle, &workdir, INDEX_FILE)?;
     read_reports(cx, store, row, (handle, &workdir), index, stored)
 }
 
@@ -223,7 +215,6 @@ fn read_reports(
     index: Option<String>,
     stored: &mut usize,
 ) -> Result<(), String> {
-    let host = host_of(row);
     let Some(index) = index else {
         return Ok(());
     };
@@ -240,7 +231,7 @@ fn read_reports(
         let Some(kind) = kind_of(&entry.name) else {
             continue;
         };
-        let text = match peek(cx, handle, workdir, &rel, host) {
+        let text = match peek(cx, handle, workdir, &rel) {
             Ok(Some(text)) => text,
             Ok(None) => continue,
             Err(_) => {
@@ -267,11 +258,10 @@ fn peek(
     handle: &BoxHandle,
     workdir: &BoxPath,
     rel: &str,
-    host: &Path,
 ) -> Result<Option<String>, String> {
     let path = BoxPath::under(workdir.as_str(), rel).map_err(|e| format!("bad path: {e}"))?;
     cx.driver()
-        .peek_file(handle, &path, host)
+        .peek_file(handle, &path)
         .map_err(|e| format!("cannot read a report file: {e}"))
 }
 

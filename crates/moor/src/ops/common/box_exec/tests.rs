@@ -52,7 +52,6 @@ fn rig_driver(dir: &Path, config: UserConfig, driver: FakeDriver) -> Rig {
             name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
             nonce: "n".to_owned(),
-            worktree: None,
         })
         .unwrap();
     Rig {
@@ -64,12 +63,11 @@ fn rig_driver(dir: &Path, config: UserConfig, driver: FakeDriver) -> Rig {
 }
 
 impl Rig {
-    fn site<'a>(&'a self, workdir: Option<&'a BoxPath>, worktree: &'a Path) -> Site<'a> {
+    fn site<'a>(&'a self, workdir: Option<&'a BoxPath>) -> Site<'a> {
         Site {
             handle: &self.handle,
             provider: "p",
             workdir,
-            worktree,
         }
     }
 }
@@ -101,7 +99,7 @@ fn a_proxy_runs_no_box_step_and_the_prelude_writes_the_ca_and_exports_the_proxy(
     let p = boxed_proxy();
     let e = prepare(
         &r.cx,
-        &r.site(Some(&r.workdir), dir.path()),
+        &r.site(Some(&r.workdir)),
         Some(&p),
         &cfg(),
         Purpose::Run,
@@ -134,14 +132,7 @@ fn a_proxy_keeps_credential_like_and_reserved_repo_env_without_warning() {
     c.env.insert("STRIPE_TEST_KEY".to_owned(), "sk".to_owned());
     c.env.insert("NODE_OPTIONS".to_owned(), "--x".to_owned());
     let p = boxed_proxy();
-    let e = prepare(
-        &r.cx,
-        &r.site(Some(&r.workdir), dir.path()),
-        Some(&p),
-        &c,
-        Purpose::Run,
-    )
-    .unwrap();
+    let e = prepare(&r.cx, &r.site(Some(&r.workdir)), Some(&p), &c, Purpose::Run).unwrap();
     let vars = e.vars();
     for name in ["STRIPE_TEST_KEY", "NODE_OPTIONS", "REPO", "RULE"] {
         assert!(vars.iter().any(|(k, _)| k == name), "{name} in {vars:?}");
@@ -157,14 +148,7 @@ fn a_proxy_keeps_credential_like_and_reserved_repo_env_without_warning() {
 fn no_proxy_gives_the_repo_env_and_no_proxy_variables() {
     let dir = tempfile::tempdir().unwrap();
     let r = rig(dir.path());
-    let e = prepare(
-        &r.cx,
-        &r.site(Some(&r.workdir), dir.path()),
-        None,
-        &cfg(),
-        Purpose::Run,
-    )
-    .unwrap();
+    let e = prepare(&r.cx, &r.site(Some(&r.workdir)), None, &cfg(), Purpose::Run).unwrap();
     assert_eq!(e.vars(), vec![("REPO".to_owned(), "1".to_owned())]);
     assert!(r.driver.execs().is_empty());
 }
@@ -173,14 +157,7 @@ fn no_proxy_gives_the_repo_env_and_no_proxy_variables() {
 fn no_proxy_wraps_the_argv_with_only_the_image_path_line() {
     let dir = tempfile::tempdir().unwrap();
     let r = rig(dir.path());
-    let e = prepare(
-        &r.cx,
-        &r.site(Some(&r.workdir), dir.path()),
-        None,
-        &cfg(),
-        Purpose::Run,
-    )
-    .unwrap();
+    let e = prepare(&r.cx, &r.site(Some(&r.workdir)), None, &cfg(), Purpose::Run).unwrap();
     let argv = e.argv(vec!["true".to_owned()]);
     assert_eq!(argv.get(..2).unwrap(), ["sh", "-c"]);
     assert!(argv.get(2).unwrap().contains("/etc/environment"));
@@ -192,7 +169,7 @@ fn no_proxy_wraps_the_argv_with_only_the_image_path_line() {
 fn no_recorded_workdir_keeps_the_driver_default_cwd() {
     let dir = tempfile::tempdir().unwrap();
     let r = rig(dir.path());
-    let e = prepare(&r.cx, &r.site(None, dir.path()), None, &cfg(), Purpose::Run).unwrap();
+    let e = prepare(&r.cx, &r.site(None), None, &cfg(), Purpose::Run).unwrap();
     assert_eq!(e.cwd(), None);
 }
 
@@ -201,14 +178,7 @@ fn the_providers_strip_env_is_unset_first_and_absent_from_the_vars() {
     let dir = tempfile::tempdir().unwrap();
     let yaml = "drivers: {p: {strip_env: [REPO]}}";
     let r = rig_with(dir.path(), parse_user("config.yaml", yaml).unwrap());
-    let e = prepare(
-        &r.cx,
-        &r.site(Some(&r.workdir), dir.path()),
-        None,
-        &cfg(),
-        Purpose::Run,
-    )
-    .unwrap();
+    let e = prepare(&r.cx, &r.site(Some(&r.workdir)), None, &cfg(), Purpose::Run).unwrap();
     assert_eq!(e.env.unset, ["REPO"]);
     assert!(e.vars().iter().all(|(n, _)| n != "REPO"));
     let argv = e.argv(vec!["true".to_owned()]);
@@ -223,7 +193,7 @@ fn another_providers_strip_env_is_not_applied() {
     let dir = tempfile::tempdir().unwrap();
     let yaml = "drivers: {other: {strip_env: [REPO]}}";
     let r = rig_with(dir.path(), parse_user("config.yaml", yaml).unwrap());
-    let e = prepare(&r.cx, &r.site(None, dir.path()), None, &cfg(), Purpose::Run).unwrap();
+    let e = prepare(&r.cx, &r.site(None), None, &cfg(), Purpose::Run).unwrap();
     assert!(e.env.unset.is_empty());
     assert_eq!(e.vars(), vec![("REPO".to_owned(), "1".to_owned())]);
 }

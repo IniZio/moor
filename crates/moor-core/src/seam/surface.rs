@@ -58,8 +58,6 @@ pub struct PaneCmd {
     pub label: String,
     /// Program and arguments.
     pub argv: Vec<String>,
-    /// Working directory; the Workspace's when `None`.
-    pub cwd: Option<PathBuf>,
     /// Extra environment variables.
     pub env: Vec<(String, String)>,
 }

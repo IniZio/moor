@@ -1,7 +1,6 @@
 //! Tests for streaming Box files as one tar archive over a single ssh process.
 
 use std::io::{self, Cursor, Read};
-use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -58,7 +57,6 @@ fn stream(c: &Crabbox, wanted: &[&str]) -> (Result<(), DriverError>, Got) {
         &BoxHandle::new("p/box"),
         &BoxPath::under("/work", "out").unwrap(),
         &names(wanted),
-        Path::new("/host/cwd"),
         Deadline(Duration::from_secs(60)),
         &mut sink,
     );
@@ -246,7 +244,6 @@ fn large_entry_streams_without_being_buffered() {
         &BoxHandle::new("p/box"),
         &BoxPath::under("/work", "out").unwrap(),
         &names(&["big.bin"]),
-        Path::new("/host/cwd"),
         Deadline(Duration::from_secs(60)),
         &mut sink,
     )

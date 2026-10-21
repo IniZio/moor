@@ -57,7 +57,7 @@ pub(super) fn launch(
     release: &GhRelease,
 ) -> Result<SessionRef, EngineError> {
     let connect = driver
-        .connect_argv(&req.handle, &req.worktree)
+        .connect_argv(&req.handle)
         .map_err(|e| failed(fail("connect", &e)))?;
     let ((home, root), platform) = open_box(driver, req, &connect).map_err(failed)?;
     let ctx = LaunchCtx {
@@ -90,7 +90,6 @@ pub(super) fn launch(
             id: String::new(),
             handle: req.handle.clone(),
             workdir: req.workdir.clone(),
-            worktree: req.worktree.clone(),
             pane: Some(pane),
             warnings,
         }),
@@ -119,7 +118,7 @@ fn dirs_in(home: &BoxPath, req: &LaunchReq) -> Result<(BoxPath, BoxPath), Failur
 /// The credential and tmp directories a launch of `req` creates on its Box.
 pub(super) fn dirs(d: &dyn Driver, req: &LaunchReq) -> Result<(BoxPath, BoxPath), EngineError> {
     let environ = BoxPath::restore("/proc/self/environ").map_err(|e| failed(fail("home", &e)))?;
-    let text = match d.peek_file(&req.handle, &environ, &req.worktree) {
+    let text = match d.peek_file(&req.handle, &environ) {
         Ok(Some(text)) => text,
         Ok(None) => return Err(failed(fail("home", &"the Box has no process environment"))),
         Err(e) => return Err(failed(fail("home", &e))),
@@ -165,7 +164,7 @@ fn open_box(
     }
     let deadline = Deadline(INSTALL_DEADLINE);
     let mut done = driver
-        .batch(&req.handle, connect, &steps, &req.worktree, deadline)
+        .batch(&req.handle, connect, &steps, deadline)
         .into_iter();
     let user = box_user(done.next())?;
     let platform = forge.then(|| install::parse_platform(done.next()));
@@ -256,7 +255,6 @@ impl Launch<'_> {
                 &PaneCmd {
                     label: format!("agent:{}", req.box_name.as_str()),
                     argv: vec!["sh".to_owned(), "-c".to_owned(), line],
-                    cwd: Some(req.worktree.clone()),
                     env: Vec::new(),
                 },
             )
@@ -350,7 +348,6 @@ fn remove_cred(
         env: Vec::new(),
         cwd: None,
         output: None,
-        host_cwd: Some(req.worktree.clone()),
         class: None,
     };
     match driver.exec(&req.handle, &spec, Deadline(CLEANUP_DEADLINE)) {

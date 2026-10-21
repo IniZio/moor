@@ -55,7 +55,6 @@ impl Fetch<'_> {
         let names: Vec<String> = files.iter().map(|f| f.name.clone()).collect();
         let mut pending = files;
         let mut stored = 0;
-        let host = super::host_of(self.row);
         let result = {
             let mut sink = |name: &str, reader: Option<&mut dyn Read>| {
                 let Some(i) = pending.iter().position(|f| f.name == name) else {
@@ -70,7 +69,6 @@ impl Fetch<'_> {
                 self.handle,
                 &from,
                 &names,
-                host,
                 Deadline(STREAM_DEADLINE),
                 &mut sink,
             )
@@ -146,8 +144,7 @@ impl Fetch<'_> {
         };
         let staged = self.staging.join(name);
         discard(&staged);
-        let host = super::host_of(self.row);
-        if let Err(e) = self.cx.driver().copy_out(self.handle, &from, &staged, host) {
+        if let Err(e) = self.cx.driver().copy_out(self.handle, &from, &staged) {
             skipped(
                 self.cx,
                 &format!("artifact {name} could not be copied: {e}; it will be tried next time"),

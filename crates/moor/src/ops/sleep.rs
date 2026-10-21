@@ -13,7 +13,7 @@ use moor_core::{BoxReq, ErrorKind};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::autosleep::{box_dir, refuse, sleep_handle, sleep_parked};
+use crate::ops::common::autosleep::{refuse, sleep_handle, sleep_parked};
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::view::{box_view, hide_unsupported_box_sleep};
 use crate::store::BoxRow;
@@ -59,7 +59,7 @@ fn sleep_box(cx: &Cx, row: &BoxRow) -> Result<(), CommandError> {
         return Err(refuse(format!("the Box is {}", row.lifecycle.as_str())));
     }
     let handle = sleep_handle(cx, row)?;
-    match sleep_parked(cx, store, row.id, &handle, box_dir(row))? {
+    match sleep_parked(cx, store, row.id, &handle)? {
         SleepOutcome::Slept | SleepOutcome::Native => {
             let fields = Fields {
                 box_sleep_reason: Field::Clear,

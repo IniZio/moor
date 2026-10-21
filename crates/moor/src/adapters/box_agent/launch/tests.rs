@@ -38,7 +38,6 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
         name: box_name("t1"),
         class: None,
         nonce: "n0".to_owned(),
-        worktree: None,
     })
     .unwrap();
     d
@@ -55,7 +54,6 @@ fn req(s: &FakeSurface) -> LaunchReq {
         id: BoxId::new(1),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
-        worktree: wt.path.clone(),
         workspace: s.ensure_workspace(&wt, "moor:t1").unwrap(),
         box_name: box_name("t1"),
         branch: "moor/t1".to_owned(),
@@ -102,15 +100,14 @@ fn pane_line(s: &FakeSurface) -> String {
 }
 
 #[test]
-fn delivers_the_brief_under_the_box_home_with_the_worktree_as_host_cwd() {
-    let (d, s, out) = launch(FakeDriver::new(), FakeSurface::new("/r"));
+fn delivers_the_brief_under_the_box_home() {
+    let (d, _, out) = launch(FakeDriver::new(), FakeSurface::new("/r"));
     assert_eq!(out.unwrap(), "p-2");
-    let (handle, path, bytes, mode, cwd) = d.puts().into_iter().next().unwrap();
+    let (handle, path, bytes, mode) = d.puts().into_iter().next().unwrap();
     assert_eq!(handle, BoxHandle::new("box-1"));
     assert_eq!(path.as_str(), format!("{CRED}/brief.md"));
     assert!(String::from_utf8_lossy(&bytes).contains("Goal: fix x"));
     assert_eq!(mode, 0o600);
-    assert_eq!(Some(cwd), s.opened().remove(0).cwd);
 }
 
 #[test]
@@ -129,12 +126,11 @@ fn delivers_the_hook_writer_files() {
 }
 
 #[test]
-fn opens_an_unfocused_agent_tab_in_the_host_worktree() {
+fn opens_an_unfocused_agent_tab() {
     let (_, s, out) = launch(FakeDriver::new(), FakeSurface::new("/r"));
     out.unwrap();
     let cmd = s.opened().remove(0);
     assert_eq!(cmd.label, "agent:t1");
-    assert_eq!(cmd.cwd, Some(PathBuf::from("/r/wt/t1")));
     assert!(cmd.env.is_empty());
     assert!(!s.calls().iter().any(|c| c.starts_with("focus")));
 }
@@ -301,7 +297,6 @@ fn a_box_without_a_home_fails_before_delivering() {
         name: box_name("t1"),
         class: None,
         nonce: "n0".to_owned(),
-        worktree: None,
     })
     .unwrap();
     let s = surface(FakeSurface::new("/r"));

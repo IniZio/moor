@@ -1,7 +1,6 @@
 //! Ordered Box steps run as one batch.
 
 use std::fmt;
-use std::path::Path;
 
 use crate::name::{BoxHandle, BoxPath};
 use crate::seam::proc::Deadline;
@@ -67,22 +66,18 @@ pub fn run_each<D: Driver + ?Sized>(
     driver: &D,
     handle: &BoxHandle,
     steps: &[BoxStep],
-    host_cwd: &Path,
     deadline: Deadline,
 ) -> Vec<Result<StepDone, DriverError>> {
     let mut done = Vec::with_capacity(steps.len());
     for step in steps {
         let result = match step {
-            BoxStep::Peek(path) => driver
-                .peek_file(handle, path, host_cwd)
-                .map(StepDone::Peeked),
+            BoxStep::Peek(path) => driver.peek_file(handle, path).map(StepDone::Peeked),
             BoxStep::Run(script) => {
                 let spec = ExecSpec {
                     argv: vec!["sh".into(), "-c".into(), script.clone()],
                     env: vec![],
                     cwd: None,
                     output: None,
-                    host_cwd: Some(host_cwd.to_path_buf()),
                     class: None,
                 };
                 driver
@@ -93,7 +88,7 @@ pub fn run_each<D: Driver + ?Sized>(
                     })
             }
             BoxStep::Put { path, bytes, mode } => driver
-                .put_file(handle, path, bytes, *mode, host_cwd)
+                .put_file(handle, path, bytes, *mode)
                 .map(|()| StepDone::Put),
         };
         let stop = match &result {

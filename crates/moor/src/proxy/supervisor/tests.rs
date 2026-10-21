@@ -81,7 +81,6 @@ impl World {
         let mut spec = ProxySpec {
             box_id: id,
             box_handle: None,
-            host_cwd: PathBuf::from(WORKTREE),
             box_repo: Some(ForgeRepo::new("o", "n")),
             rules: Vec::new(),
             user: moor_core::user::UserId::new(1),
@@ -195,7 +194,6 @@ fn working_box(store: &Store, driver: &FakeDriver, name: &str) -> BoxId {
             name: BoxName::parse_allow_bare(name).unwrap(),
             class: None,
             nonce: "abc123".into(),
-            worktree: None,
         })
         .unwrap();
     let d = Decision::new(id)

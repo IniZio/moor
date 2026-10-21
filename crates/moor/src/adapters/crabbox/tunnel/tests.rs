@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -23,12 +23,7 @@ fn open(
     c: &Crabbox,
     handle: &str,
 ) -> Result<Box<dyn moor_core::seam::driver::TunnelHandle>, DriverError> {
-    c.reverse_tunnel(
-        &BoxHandle::new(handle),
-        8080,
-        Path::new(SOCKET),
-        Path::new("/work/tree"),
-    )
+    c.reverse_tunnel(&BoxHandle::new(handle), 8080, Path::new(SOCKET))
 }
 
 const SOCKET: &str = "/tmp/moor-1000/px-0123456789abcdef";
@@ -38,7 +33,7 @@ fn ready() -> ChildReply {
 }
 
 #[test]
-fn argv_cwd_and_env_are_recorded() {
+fn argv_and_env_are_recorded() {
     let (p, c) = fixture(ready());
     let _t = open(&c, "sprites/moor-t7").unwrap();
     let calls = p.calls();
@@ -57,8 +52,7 @@ fn argv_cwd_and_env_are_recorded() {
             "--json"
         ]
     );
-    assert_eq!(call.cwd, Some(PathBuf::from("/work/tree")));
-    assert!(call.env.is_empty());
+    assert!(call.env.iter().all(|(k, _)| k == "GIT_CEILING_DIRECTORIES"));
 }
 
 #[test]
@@ -183,7 +177,8 @@ fn timed(p: &Arc<ScriptedProc>) -> (Crabbox, Arc<FakeClock>) {
         Reply::Ok("crabbox 0.79.1-moor.1\n".into()),
     );
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
-    let c = Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default()));
+    let c =
+        Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default())).with_scratch_leases();
     (c, clock)
 }
 

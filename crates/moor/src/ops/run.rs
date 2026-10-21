@@ -130,7 +130,6 @@ fn launch(
         env: exec.vars(),
         cwd: exec.cwd(),
         output: Some(output),
-        host_cwd: Some(target.worktree.clone()),
         class: Some(cfg.size.value.as_str().to_owned()),
     };
     let outcome = follow::during(spec.output.as_ref(), sink, || {
@@ -167,7 +166,6 @@ fn site<'a>(row: &'a BoxRow, target: &'a ready::Target) -> Site<'a> {
         handle: &target.handle,
         provider: row.boxed.as_ref().map_or("", |b| b.provider.as_str()),
         workdir: target.workdir.as_ref(),
-        worktree: &target.worktree,
     }
 }
 

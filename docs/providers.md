@@ -10,6 +10,19 @@ moor needs crabbox 0.79.1-moor.1 or a newer `-moor` build of
 build and any upstream crabbox release, because only the `-moor` builds have
 the flags that moor uses.
 
+## Where crabbox runs
+
+moor runs every crabbox call for a Box from that Box's lease directory,
+`<state dir>/leases/<slug>`, which only moor's user can read. crabbox claims a
+Box for the directory it runs from, so the claim never names your checkout.
+moor sets `GIT_CEILING_DIRECTORIES` to `<state dir>/leases`, so a state
+directory inside a git repo does not leak that repo into the claim. moor
+removes the directory once crabbox has deleted the Box or reports it gone.
+
+When a release fails, the directory stays and `moor close` names it. To
+release the Box by hand, run `crabbox stop --provider PROVIDER --id SLUG
+--delete` from that directory, or pass `--reclaim`.
+
 ## Choose the provider
 
 To use an external provider, set `box.provider` and cap its live Boxes with

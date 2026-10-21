@@ -3,7 +3,6 @@
 //! Runs only where activity already settles Working and Idle. It never waits for the Box
 //! lock and never fails the caller.
 
-use std::path::Path;
 use std::time::Duration;
 
 use moor_core::decide::sleep::{sleep_due, SleepFacts, SleepVerdict};
@@ -67,7 +66,7 @@ fn try_sleep(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
         return Ok(());
     }
     let handle = sleep_handle(cx, &row)?;
-    let decision = match sleep_parked(cx, store, id, &handle, box_dir(&row))? {
+    let decision = match sleep_parked(cx, store, id, &handle)? {
         SleepOutcome::Slept | SleepOutcome::Native => Decision::new(id)
             .lifecycle(BoxLifecycleInput::Sleep { auto: true })
             .box_input(BoxInput::Sleep)
@@ -99,14 +98,13 @@ pub(crate) fn sleep_parked(
     store: &Store,
     id: BoxId,
     handle: &BoxHandle,
-    worktree: &Path,
 ) -> Result<SleepOutcome, CommandError> {
     park_tunnel(cx, store, id)?;
     if let Err(e) = close_agent_pane(cx, store, id) {
         let _ = restore_tunnel(cx, store, id, true);
         return Err(e);
     }
-    let slept = cx.driver().sleep(handle, Some(worktree));
+    let slept = cx.driver().sleep(handle);
     if !matches!(slept, Ok(SleepOutcome::Slept | SleepOutcome::Native)) {
         let _ = restore_tunnel(cx, store, id, true);
         if let Err(e) = revive_after_wake(cx, store, id) {
@@ -134,11 +132,6 @@ fn close_agent_pane(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandErro
             format!("could not close the agent pane: {e}; the Box stays awake"),
         )),
     }
-}
-
-/// The directory crabbox runs from for the Box: its worktree, else its repo.
-pub(crate) fn box_dir(row: &BoxRow) -> &Path {
-    Path::new(row.worktree.as_deref().unwrap_or(&row.repo))
 }
 
 /// A refusal with `why`.

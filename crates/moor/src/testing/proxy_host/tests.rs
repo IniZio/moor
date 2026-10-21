@@ -1,7 +1,5 @@
 //! Tests for the proxy host fake.
 
-use std::path::PathBuf;
-
 use moor_core::seam::proxy_host::{ProxyHost, ProxyHostError, ProxySpec, ProxyStatus};
 use moor_core::BoxId;
 
@@ -11,7 +9,6 @@ fn spec(id: i64) -> ProxySpec {
     ProxySpec {
         box_id: BoxId::new(id),
         box_handle: None,
-        host_cwd: PathBuf::from("/work"),
         box_repo: None,
         rules: Vec::new(),
         user: moor_core::user::UserId::new(1),

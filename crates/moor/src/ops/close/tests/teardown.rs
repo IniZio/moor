@@ -57,7 +57,6 @@ fn teardown_runs_as_one_unsynced_script_before_release() {
     let spec = only_exec(&f);
     assert!(matches!(spec.argv.as_slice(), [.., sh, c, script]
         if sh == "sh" && c == "-c" && script.contains("echo bye") && script.contains("rm -rf cache")));
-    assert_eq!(spec.host_cwd.as_deref(), Some(f.dir.path()));
     assert_eq!(spec.class.as_deref(), Some("large"));
     assert_eq!(spec.env.first(), Some(&("K".to_owned(), "v".to_owned())));
     assert!(f.cx.take_warnings().is_empty());

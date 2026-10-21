@@ -84,7 +84,6 @@ fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> BoxId {
             name,
             class: None,
             nonce: "n".to_owned(),
-            worktree: None,
         })
         .unwrap();
     let d = Decision::new(id)

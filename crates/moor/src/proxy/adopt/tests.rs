@@ -1,6 +1,5 @@
 //! Adopting or restarting recorded Proxy supervisors when the controller starts.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -86,7 +85,6 @@ impl Fx {
         ProxySpec {
             box_id: self.id,
             box_handle: None,
-            host_cwd: PathBuf::from("/work"),
             box_repo: None,
             rules: Vec::new(),
             user: moor_core::user::UserId::new(1),

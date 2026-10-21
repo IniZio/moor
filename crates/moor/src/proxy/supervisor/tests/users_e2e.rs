@@ -66,7 +66,6 @@ fn box_for(store: &Store, driver: &FakeDriver, name: &str, user: UserId) -> (Box
             name: BoxName::parse_allow_bare(name).unwrap(),
             class: None,
             nonce: format!("n-{name}"),
-            worktree: None,
         })
         .unwrap();
     let admitted = Decision::new(id)
@@ -157,7 +156,6 @@ fn two() -> Two {
             let spec = ProxySpec {
                 box_id: id,
                 box_handle: Some(handle.clone()),
-                host_cwd: "/wt".into(),
                 box_repo: None,
                 rules: vec![claude_rule(up.port)],
                 user,

@@ -95,7 +95,7 @@ fn started(w: &World) -> StartView {
 fn assert_archive_put(w: &World) -> String {
     let puts = w.driver.puts();
     assert_eq!(puts.len(), 1);
-    let (handle, path, bytes, mode, _) = puts.first().unwrap();
+    let (handle, path, bytes, mode) = puts.first().unwrap();
     assert_eq!(handle.as_str(), "box-1");
     let hex = path
         .as_str()

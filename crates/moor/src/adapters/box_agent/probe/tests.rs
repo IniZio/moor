@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -100,7 +99,6 @@ fn session(pane: Option<&str>) -> SessionRef {
         id: "s1".to_owned(),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
-        worktree: PathBuf::from("/host/wt"),
         pane: pane.map(PaneRef::new),
         warnings: Vec::new(),
     }
@@ -114,7 +112,6 @@ fn live_driver(driver: FakeDriver) -> Arc<FakeDriver> {
         name: BoxName::parse_allow_bare("t1").unwrap(),
         class: None,
         nonce: "n0".to_owned(),
-        worktree: None,
     })
     .unwrap();
     d
@@ -135,20 +132,13 @@ fn surface_with(obs: Result<PaneObs, SurfaceError>) -> Arc<FakeSurface> {
 }
 
 #[test]
-fn reads_the_hook_file_once_under_the_workdir_with_the_worktree_as_host_cwd() {
+fn reads_the_hook_file_once_under_the_workdir() {
     let d = live_driver(FakeDriver::new().peek_text("box-1", &hook_path(), "busy"));
     let s = surface_with(Ok(obs()));
     agent(&d, &s)
         .probe(&session(Some("p-1")), DEADLINE)
         .unwrap();
-    assert_eq!(
-        d.peeks(),
-        [(
-            BoxHandle::new("box-1"),
-            hook_path(),
-            PathBuf::from("/host/wt")
-        )]
-    );
+    assert_eq!(d.peeks(), [(BoxHandle::new("box-1"), hook_path())]);
 }
 
 #[test]

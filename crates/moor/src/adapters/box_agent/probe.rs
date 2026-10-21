@@ -38,10 +38,7 @@ fn read_hook(
         })
     })?;
     let read = [BoxStep::Peek(path)];
-    match driver
-        .batch(&s.handle, &[], &read, &s.worktree, deadline)
-        .pop()
-    {
+    match driver.batch(&s.handle, &[], &read, deadline).pop() {
         Some(Ok(StepDone::Peeked(Some(text)))) => Ok(profile
             .parse_hook(text.as_bytes())
             .map_or(HookRead::Absent, HookRead::Fresh)),

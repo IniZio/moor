@@ -2,7 +2,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::fmt::Arguments;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::PoisonError;
 
 use moor_core::domain::box_state::BoxLifecycle;
@@ -53,8 +53,6 @@ pub(super) struct Running<'d> {
     pub(super) handle: BoxHandle,
     /// The Box port the tunnel exposes.
     pub(super) box_port: u16,
-    /// Host working directory for the tunnel process.
-    pub(super) worktree: PathBuf,
 }
 
 /// Writes one `moor proxy: ` line to `sink`, ignoring write errors and a poisoned lock.
@@ -159,7 +157,7 @@ fn asleep(row: &BoxRow) -> bool {
 /// Opens the first tunnel into the Box, reporting a failure.
 fn open_tunnel(
     deps: &Deps<'_>,
-    (handle, box_port, socket, worktree): (&BoxHandle, u16, &Path, &Path),
+    (handle, box_port, socket): (&BoxHandle, u16, &Path),
     (box_id, owner): (BoxId, &str),
 ) -> Option<Box<dyn TunnelHandle>> {
     // A Box that never had a tunnel has no stale listener to clear. A failed read counts as "had one".
@@ -171,14 +169,7 @@ fn open_tunnel(
             format_args!("cannot record the tunnel open: {err}"),
         );
     }
-    match bind::open(
-        deps,
-        (box_id, owner),
-        handle,
-        (box_port, socket),
-        worktree,
-        fresh,
-    ) {
+    match bind::open(deps, (box_id, owner), handle, (box_port, socket), fresh) {
         Ok(tunnel) => Some(tunnel),
         Err(err) => {
             say(
@@ -205,7 +196,6 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, box_id: BoxId) -> Result<Running<'d>
             return Err(code);
         }
     };
-    let worktree = PathBuf::from(box_row.worktree.as_deref().unwrap_or(&box_row.repo));
     let live = match listen(deps, box_id, &spec) {
         Ok(live) => live,
         Err(msg) => {
@@ -222,7 +212,7 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, box_id: BoxId) -> Result<Running<'d>
     let tunnel = if parked {
         parked_tunnel()
     } else {
-        let ends = (&handle, box_port, live.socket(), worktree.as_path());
+        let ends = (&handle, box_port, live.socket());
         let Some(tunnel) = open_tunnel(deps, ends, (box_id, &owner)) else {
             live.stop();
             give_up(deps, box_id, &owner);
@@ -244,7 +234,6 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, box_id: BoxId) -> Result<Running<'d>
         parked: Cell::new(parked),
         handle,
         box_port,
-        worktree,
     };
     if parked {
         // Answers a pending request: Parked is acked, Up reopens the tunnel.
