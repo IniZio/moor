@@ -21,6 +21,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
 rustix = { version = "1", features = ["process"] }
+sha2 = "0.10"
 thiserror = "2"
 webpki-roots = "1"
 ureq = { version = "3", default-features = false, features = [

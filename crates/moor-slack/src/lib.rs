@@ -19,6 +19,8 @@ mod login;
 mod secret_file;
 mod slash;
 mod socket;
+#[expect(dead_code, reason = "the poster that uploads each version comes next")]
+mod upload;
 mod worker;
 
 pub use daemon::{run, Settings};

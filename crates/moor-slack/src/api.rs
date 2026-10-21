@@ -1,15 +1,29 @@
 //! Slack Web API calls made with the controller's tokens.
 
+use std::fmt::Write as _;
+use std::io::Read;
 use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::secret::Secret;
 use serde_json::{json, Value};
 use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
-use ureq::Agent;
+use ureq::{Agent, SendBody};
 
 /// Largest response body read from Slack.
 const MAX_BODY: u64 = 1024 * 1024;
+/// Time limit of a JSON call, and the base time limit of a file upload.
+const CALL_TIMEOUT: Duration = Duration::from_secs(30);
+/// Slowest transfer rate a file upload may run at, in bytes per second, before it times out.
+const UPLOAD_FLOOR_RATE: u64 = 1024 * 1024;
+
+/// Where Slack takes one file's bytes, and the id that later shares the file.
+pub(super) struct UploadUrl {
+    /// URL the raw bytes go to.
+    url: String,
+    /// Slack's id for the file.
+    file_id: String,
+}
 
 /// Why a Web API call failed; never carries a token.
 #[derive(Debug, thiserror::Error)]
@@ -47,7 +61,7 @@ impl Api {
         let config = Agent::config_builder()
             .tls_config(tls)
             .http_status_as_error(false)
-            .timeout_global(Some(Duration::from_secs(30)))
+            .timeout_global(Some(CALL_TIMEOUT))
             .build();
         Ok(Self {
             base: base.trim_end_matches('/').to_owned(),
@@ -168,6 +182,81 @@ impl Api {
         self.call(bot_token, "views.update", &body).map(|_| ())
     }
 
+    /// Asks Slack where to send a file named `name` of `len` bytes.
+    pub(super) fn upload_url(
+        &self,
+        bot_token: &Secret,
+        name: &str,
+        len: u64,
+    ) -> Result<UploadUrl, ApiError> {
+        let url = format!("{}/files.getUploadURLExternal", self.base);
+        let form = format!("filename={}&length={len}", form_encode(name));
+        let request = self
+            .agent
+            .post(&url)
+            .header("Authorization", bearer(bot_token)?)
+            .header("Content-Type", "application/x-www-form-urlencoded");
+        let reply = read_reply(request.send(form))?;
+        let field = |name: &str| {
+            reply
+                .get(name)
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .ok_or_else(|| ApiError::Transport(format!("reply has no {name}")))
+        };
+        Ok(UploadUrl {
+            url: field("upload_url")?,
+            file_id: field("file_id")?,
+        })
+    }
+
+    /// POSTs exactly `len` bytes read from `body` to `to`, without the bot token. The time
+    /// limit grows with `len`.
+    pub(super) fn send_file(
+        &self,
+        to: &UploadUrl,
+        len: u64,
+        body: &mut dyn Read,
+    ) -> Result<(), ApiError> {
+        let sent = self
+            .agent
+            .post(&to.url)
+            .config()
+            .timeout_global(Some(
+                CALL_TIMEOUT + Duration::from_secs(len / UPLOAD_FLOOR_RATE),
+            ))
+            .build()
+            .header("Content-Type", "application/octet-stream")
+            .header("Content-Length", len)
+            .send(SendBody::from_reader(body))
+            .map_err(|e| ApiError::Transport(e.to_string()))?;
+        let status = sent.status();
+        if !status.is_success() {
+            return Err(ApiError::Transport(format!(
+                "file upload refused (HTTP {status})"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Shares the sent file `to` as `title` in thread `thread_ts` of `channel`.
+    pub(super) fn complete_upload(
+        &self,
+        bot_token: &Secret,
+        channel: &str,
+        thread_ts: &str,
+        to: &UploadUrl,
+        title: &str,
+    ) -> Result<(), ApiError> {
+        let body = json!({
+            "files": [{"id": to.file_id, "title": title}],
+            "channel_id": channel,
+            "thread_ts": thread_ts,
+        });
+        self.call(bot_token, "files.completeUploadExternal", &body)
+            .map(|_| ())
+    }
+
     /// Sends the JSON `body` to Web API `method` with the bot token.
     fn call(&self, bot_token: &Secret, method: &str, body: &Value) -> Result<Value, ApiError> {
         let url = format!("{}/{method}", self.base);
@@ -178,6 +267,19 @@ impl Api {
             .header("Content-Type", "application/json; charset=utf-8");
         read_reply(request.send(body.to_string()))
     }
+}
+
+/// Percent-encodes `text` for an `application/x-www-form-urlencoded` value.
+fn form_encode(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for byte in text.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            out.push(char::from(byte));
+        } else {
+            let _ = write!(out, "%{byte:02X}");
+        }
+    }
+    out
 }
 
 /// The message `ts` in a posting reply.
