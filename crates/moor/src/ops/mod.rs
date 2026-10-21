@@ -43,6 +43,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
     match req {
         Request::Version {} => version_value(),
         Request::Start(r) => to_value(&start::run(cx, &r)?),
+        Request::StartNeeds(r) => to_value(&start::needs(cx, &r)?),
         Request::Show(r) => to_value(&show::run(cx, &r)?),
         Request::ShowSession(r) => to_value(&show_session::run(cx, &r)?),
         Request::Artifacts(r) => to_value(&artifacts::list(cx, &r)?),

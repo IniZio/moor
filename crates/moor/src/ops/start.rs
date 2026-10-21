@@ -34,6 +34,7 @@ mod base;
 mod known_repo;
 mod launch;
 mod leftover;
+mod needs;
 mod preflight;
 mod relaunch;
 mod reopen;
@@ -43,6 +44,7 @@ mod watch;
 use response::{queued_view, set_agent, set_provisioned, view, with_provider};
 
 pub(crate) use launch::begin_seeded;
+pub(crate) use needs::run as needs;
 pub(crate) use relaunch::revive_after_wake;
 pub(crate) use watch::run as watch_launch;
 
@@ -72,7 +74,7 @@ struct Placed {
 /// [`CommandError`] when a read, a seam call or a store write fails.
 pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     let store = cx.store()?;
-    let user = cx.requester()?;
+    let user = needs::require(cx, req.repo.as_deref())?;
     let (repo, bound, req) = locate(cx, req)?;
     let req = &req;
     if let Some(parent) = req.parent {

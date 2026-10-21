@@ -4,7 +4,7 @@
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
-use moor_core::config::find_repo;
+use moor_core::config::{find_repo, RepoEntry};
 use moor_core::{ErrorKind, StartReq};
 
 use crate::cx::Cx;
@@ -28,19 +28,7 @@ pub(super) fn prepare(
             "--worktree names a path on the client and cannot be combined with --repo",
         ));
     }
-    let repos = cx.known_repos();
-    let Some((name, entry)) = find_repo(repos, key) else {
-        let known: Vec<&str> = repos.keys().map(String::as_str).collect();
-        let tail = if known.is_empty() {
-            "no repos are configured".to_owned()
-        } else {
-            format!("known repos: {}", known.join(", "))
-        };
-        return Err(CommandError::new(
-            ErrorKind::Refused,
-            format!("repo {key} is not known to the controller; {tail}"),
-        ));
-    };
+    let (name, entry) = find(cx, key)?;
     let dest = cx.repo_cache(name)?;
     // Concurrent starts on one controller must not race the clone; held until return.
     let _lock = lock_repo(&dest)?;
@@ -69,6 +57,26 @@ pub(super) fn prepare(
         eff.base = Some(sha);
     }
     Ok((dest, eff))
+}
+
+/// The known repo `key` names, by name or url, with its name.
+///
+/// # Errors
+/// Refused for a repo the controller does not know.
+pub(super) fn find<'a>(cx: &'a Cx, key: &str) -> Result<(&'a str, &'a RepoEntry), CommandError> {
+    let repos = cx.known_repos();
+    find_repo(repos, key).ok_or_else(|| {
+        let known: Vec<&str> = repos.keys().map(String::as_str).collect();
+        let tail = if known.is_empty() {
+            "no repos are configured".to_owned()
+        } else {
+            format!("known repos: {}", known.join(", "))
+        };
+        CommandError::new(
+            ErrorKind::Refused,
+            format!("repo {key} is not known to the controller; {tail}"),
+        )
+    })
 }
 
 /// Exclusive flock on `<dest>.lock`, blocking until any other holder is done.

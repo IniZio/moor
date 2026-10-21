@@ -3,16 +3,23 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use moor_core::user::Identity;
+use moor_core::request::StartNeedsReq;
+use moor_core::seam::forge::ForgeRepo;
+use moor_core::seam::proc::Tool;
+use moor_core::user::{Identity, SecretName};
 use moor_core::{ErrorKind, SessionId, StartReq};
+use serde_json::json;
 
 use super::{req, world, World};
 use crate::cx::Cx;
-use crate::ops::start::run;
-use crate::testing::cx::REQUESTER_USER;
+use crate::ops::start::{needs, run};
+use crate::testing::cx::{put_secret, REQUESTER_USER};
 use crate::testing::driver::FakeDriver;
+use crate::testing::forge::FakeForge;
+use crate::testing::proc::Reply;
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
 use crate::testing::surface::FakeSurface;
+use crate::vault::Vault;
 
 /// The `user` column of every Session of the Box `id`, in order.
 fn session_users(w: &World, id: i64) -> Vec<Option<i64>> {
@@ -132,7 +139,10 @@ fn starting_another_users_open_box_is_refused() {
     let w = world(FakeDriver::new());
     run(&w.cx, &req("demo")).unwrap();
     let other = Identity::parse("local:2000").unwrap();
-    w.cx.store().unwrap().enroll(&other).unwrap();
+    let store = w.cx.store().unwrap();
+    let (user, _) = store.enroll(&other).unwrap();
+    let vault = Vault::load_or_create(w.cx.vault_key().unwrap()).unwrap();
+    put_secret(store, &vault, user, "claude", "theirs");
     let w = acting_as(w, "local:2000");
     let err = run(&w.cx, &req("demo")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
@@ -140,4 +150,81 @@ fn starting_another_users_open_box_is_refused() {
         err.error.to_string().contains("acts for another user"),
         "{err:?}"
     );
+}
+
+/// `w` whose worktree's origin is a GitHub repo, so the GitHub rules apply.
+fn on_github(mut w: World) -> World {
+    let url = "git@github.com:o/r.git";
+    w.proc.on(
+        Tool::Git,
+        &["remote", "get-url", "origin"],
+        Reply::Ok(format!("{url}\n")),
+    );
+    let forge = FakeForge::new().with_repo(url, ForgeRepo::new("o", "r"));
+    w.cx = w.cx.with_forge(Arc::new(forge));
+    w
+}
+
+/// `w` acting as `local:2000`, enrolled with no secrets.
+fn enrolled_without_secrets(w: World) -> World {
+    let other = Identity::parse("local:2000").unwrap();
+    w.cx.store().unwrap().enroll(&other).unwrap();
+    acting_as(w, "local:2000")
+}
+
+#[test]
+fn a_start_missing_secrets_is_refused_naming_every_one_and_creates_nothing() {
+    let w = enrolled_without_secrets(on_github(world(FakeDriver::new())));
+    let err = run(&w.cx, &req("demo")).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused);
+    assert_eq!(
+        err.error.to_string(),
+        "log in first: moor user secret set claude, then moor user secret set github"
+    );
+    let value = err.value.unwrap();
+    let both = json!(["claude", "github"]);
+    assert_eq!(value.get("missing"), Some(&both), "{value}");
+    assert_eq!(value.get("needs"), Some(&both), "{value}");
+    assert_eq!(box_rows(&w), 0);
+    assert!(w.driver.calls().is_empty());
+    assert!(w.surface.calls().is_empty());
+}
+
+#[test]
+fn start_needs_answers_for_a_caller_with_no_user_and_starts_nothing() {
+    let w = acting_as(on_github(world(FakeDriver::new())), "local:2000");
+    let req = StartNeedsReq {
+        identity: None,
+        repo: None,
+    };
+    let v = needs(&w.cx, &req).unwrap();
+    assert_eq!(v.identity.to_string(), "local:2000");
+    assert_eq!(v.user, None);
+    assert_eq!(names(&v.needs), ["claude", "github"]);
+    assert_eq!(names(&v.missing), ["claude", "github"]);
+    assert_eq!(box_rows(&w), 0);
+    assert!(w.driver.calls().is_empty());
+}
+
+#[test]
+fn a_user_rule_adds_its_secret_to_what_a_start_needs() {
+    let config = moor_core::config::parse_user(
+        "test",
+        "proxy: {rules: {gitlab: {hosts: [gitlab.com], credential: gitlab, inject: {form: 'Bearer {secret}'}}}}\n",
+    )
+    .unwrap();
+    let w = super::world_with(FakeDriver::new(), std::path::Path::new("/repo"), config);
+    let req = StartNeedsReq {
+        identity: None,
+        repo: None,
+    };
+    let v = needs(&w.cx, &req).unwrap();
+    assert_eq!(names(&v.needs), ["claude", "gitlab"]);
+    assert_eq!(names(&v.missing), ["gitlab"]);
+    assert_eq!(v.user, Some(REQUESTER_USER));
+}
+
+/// The names in `list`, as text.
+fn names(list: &[SecretName]) -> Vec<&str> {
+    list.iter().map(SecretName::as_str).collect()
 }

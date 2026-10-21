@@ -194,6 +194,17 @@ every request and keeps no copy, so a changed secret counts from the next
 request. After `moor user secret rm`, the next request that needs the secret
 fails, and the Box records `proxy_credential_failed`.
 
+The secret names come from the rules that apply to the Box. A Box on GitHub
+needs `claude` and `github`, and a rule you add under `proxy.rules` adds its
+own name. `moor start` refuses, before it creates anything, when the user
+lacks one of them. The refusal names every missing secret at once, in its
+`value.missing`. A front can ask first with `start-needs`, which answers with
+`needs` and `missing` for the caller and starts nothing:
+
+```json
+{"cmd": "start-needs", "identity": "slack:T1:U1", "repo": "demo"}
+```
+
 `spec.json`, the file the controller writes for each Proxy, names the user and
 the path of `vault.key`. It never holds a secret or the key itself. The Proxy
 loads the key with the same checks as the controller and never creates one.

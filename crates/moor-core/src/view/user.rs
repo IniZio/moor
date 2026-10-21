@@ -57,3 +57,16 @@ pub struct LinkedValue {
     /// The identity that was linked.
     pub identity: Identity,
 }
+
+/// Value of `start-needs`, and of a `start` refused for missing secrets.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StartNeedsValue {
+    /// The identity the request acted as.
+    pub identity: Identity,
+    /// Its user; none until it enrolls or links.
+    pub user: Option<UserId>,
+    /// Every secret the Box's Proxy rules inject, in order.
+    pub needs: Vec<SecretName>,
+    /// The ones the user lacks, all of them at once, in order.
+    pub missing: Vec<SecretName>,
+}

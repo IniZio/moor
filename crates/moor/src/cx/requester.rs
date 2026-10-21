@@ -31,22 +31,16 @@ impl Cx {
             .ok_or_else(|| controller_only("a Box's Proxy reads its user's secrets"))
     }
 
-    /// The user of the identity this request acts as.
+    /// The identity this request acts as, and its user when it has one.
     ///
     /// # Errors
-    /// A usage error outside a controller socket, and a refusal for an identity with no user.
-    pub(crate) fn requester(&self) -> Result<UserId, CommandError> {
+    /// A usage error outside a controller socket, or the store's failure.
+    pub(crate) fn requester(&self) -> Result<(&Identity, Option<UserId>), CommandError> {
         let who = self
             .requester
             .as_ref()
             .ok_or_else(|| controller_only("a Box acts as the user of its caller"))?;
-        self.store()?.user_of(who)?.ok_or_else(|| {
-            CommandError::new(
-                ErrorKind::Refused,
-                format!("log in first: {who} has no moor user"),
-            )
-            .with_hint("run `moor user enroll`, then `moor user secret set claude`")
-        })
+        Ok((who, self.store()?.user_of(who)?))
     }
 }
 
