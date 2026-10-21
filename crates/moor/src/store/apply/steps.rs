@@ -85,7 +85,7 @@ fn read_others(tx: &Transaction<'_>, id: BoxId) -> Result<Vec<SessionState>, Sto
 
 /// Insert a fresh Box row for `requester` with its primary Session under `parent_session`. A
 /// primary Session with no parent is a root Session and records the requester too.
-pub(in crate::store) fn insert_box(
+fn insert_box(
     tx: &Transaction<'_>,
     new: &NewBox,
     lifecycle: BoxLifecycle,

@@ -16,18 +16,12 @@ use crate::error::CommandError;
 /// The clone uses the host's own git credentials.
 ///
 /// # Errors
-/// Usage with `--worktree`; Refused for an unknown repo; Failed when the clone or fetch fails.
+/// Refused for an unknown repo; Failed when the clone or fetch fails.
 pub(super) fn prepare(
     cx: &Cx,
     req: &StartReq,
     key: &str,
 ) -> Result<(PathBuf, StartReq), CommandError> {
-    if req.worktree.is_some() {
-        return Err(CommandError::new(
-            ErrorKind::Usage,
-            "--worktree names a path on the client and cannot be combined with --repo",
-        ));
-    }
     let (name, entry) = find(cx, key)?;
     let dest = cx.repo_cache(name)?;
     // Concurrent starts on one controller must not race the clone; held until return.

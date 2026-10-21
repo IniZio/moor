@@ -1,8 +1,4 @@
-use std::path::Path;
-
 use moor_core::seam::proc::Tool;
-use moor_core::seam::surface::Surface;
-use moor_core::BoxName;
 
 use super::moor_yaml::script_base_yaml;
 use super::setup::{is_setup_line, setup_execs};
@@ -179,30 +175,4 @@ fn an_unreadable_base_copy_fails_the_start_before_any_box_work() {
         "{err:?}"
     );
     assert!(w.driver.execs().is_empty());
-}
-
-#[test]
-fn a_bound_worktree_keeps_its_own_file_over_a_different_base_copy() {
-    let w = world(FakeDriver::new());
-    let made = w
-        .surface
-        .create_worktree(
-            Path::new("/repo"),
-            &BoxName::parse("repo/pre").unwrap(),
-            None,
-        )
-        .unwrap();
-    std::fs::create_dir_all(&made.path).unwrap();
-    std::fs::write(made.path.join(".moor.yaml"), "setup: [worktree-line]\n").unwrap();
-    script_base_yaml(&w, Some("setup: [base-line]\n"));
-    let mut r = req("demo");
-    r.worktree = Some(made.path.display().to_string());
-    run(&w.cx, &r).unwrap();
-    let lines = setup_lines(&w);
-    assert!(
-        lines.iter().any(|l| l.contains("worktree-line")),
-        "{lines:?}"
-    );
-    assert!(!lines.iter().any(|l| l.contains("base-line")), "{lines:?}");
-    assert!(!differs_warned(&w));
 }

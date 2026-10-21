@@ -7,7 +7,6 @@ use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange}
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::Tool;
-use moor_core::seam::surface::Surface;
 use moor_core::{BoxId, BoxPath, ErrorKind, StartReq};
 
 use super::run;
@@ -128,7 +127,6 @@ fn req(name: &str) -> StartReq {
         name: box_name(name),
         goal: None,
         issue: None,
-        worktree: None,
         base: None,
         model: None,
         no_agent: false,
@@ -272,37 +270,6 @@ fn attach_writes_exactly_one_attached_event() {
 }
 
 #[test]
-fn open_name_with_another_worktree_is_refused() {
-    let w = world(FakeDriver::new());
-    run(&w.cx, &req("demo")).unwrap();
-    let mut other = req("demo");
-    other.worktree = Some("/elsewhere".into());
-    let err = run(&w.cx, &other).unwrap_err();
-    assert_eq!(err.kind, ErrorKind::Refused);
-}
-
-#[test]
-fn bound_worktree_skips_create_worktree() {
-    let w = world(FakeDriver::new());
-    let made = w
-        .surface
-        .create_worktree(Path::new("/repo"), &box_name("pre"), None)
-        .unwrap();
-    let mut r = req("demo");
-    r.worktree = Some(made.path.display().to_string());
-    let v = run(&w.cx, &r).unwrap();
-    let wt = made.path.display().to_string();
-    assert_eq!(v.boxed.worktree.as_deref(), Some(wt.as_str()));
-    assert_eq!(w.surface.calls().len(), 2);
-    assert!(!w
-        .surface
-        .calls()
-        .iter()
-        .any(|c| c == "create_worktree demo"));
-    assert_eq!((v.boxed.lifecycle, v.boxed.session_state), state::WORKING);
-}
-
-#[test]
 fn start_after_acquire_failure_gets_a_new_box() {
     let w = world(FakeDriver::new().fail_acquire(DriverError::Failed {
         summary: "boom".into(),
@@ -344,17 +311,6 @@ fn start_on_a_gone_box_acquires_again_and_keeps_the_box_working() {
         w.driver.calls(),
         ["acquire", "exec box-1", "acquire", "exec box-2"]
     );
-}
-
-#[test]
-fn main_worktree_is_refused_before_any_effect() {
-    let w = world(FakeDriver::new());
-    let mut r = req("demo");
-    r.worktree = Some("/repo".into());
-    let err = run(&w.cx, &r).unwrap_err();
-    assert_eq!(err.kind, ErrorKind::Usage);
-    assert!(w.surface.calls().is_empty());
-    assert!(w.driver.calls().is_empty());
 }
 
 #[test]

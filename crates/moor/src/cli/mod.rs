@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 use clap::error::ErrorKind as ClapKind;
 use moor_core::request::InReq;
-use moor_core::{CpReq, EnvReq, ErrorKind, ErrorView, Request, Response, RunReq, StartReq};
+use moor_core::{CpReq, EnvReq, ErrorKind, ErrorView, Request, Response, RunReq};
 
 use args::Action;
 
@@ -160,8 +160,7 @@ pub fn secret_set(name: moor_core::user::SecretName, mut stdin: Vec<u8>) -> Requ
 /// `request` resolved against `cwd`, the caller's directory.
 ///
 /// The controller never reads a directory of its own. A `start`, `start-needs` or `env` with no
-/// repo runs `in` `cwd`, and a relative `--worktree`, `cp` destination or `env` repo becomes
-/// absolute.
+/// repo runs `in` `cwd`, and a relative `cp` destination or `env` repo becomes absolute.
 #[must_use]
 pub fn in_cwd(request: Request, cwd: &Path) -> Request {
     let abs = |p: String| cwd.join(p).display().to_string();
@@ -172,18 +171,7 @@ pub fn in_cwd(request: Request, cwd: &Path) -> Request {
         })
     };
     match request {
-        Request::Start(r) => {
-            let no_repo = r.repo.is_none();
-            let r = Request::Start(StartReq {
-                worktree: r.worktree.map(abs),
-                ..r
-            });
-            if no_repo {
-                inside(r)
-            } else {
-                r
-            }
-        }
+        Request::Start(r) if r.repo.is_none() => inside(Request::Start(r)),
         Request::StartNeeds(r) if r.repo.is_none() => inside(Request::StartNeeds(r)),
         Request::Env(EnvReq { repo: None }) => inside(Request::Env(EnvReq { repo: None })),
         Request::Env(EnvReq { repo: Some(r) }) => Request::Env(EnvReq { repo: Some(abs(r)) }),

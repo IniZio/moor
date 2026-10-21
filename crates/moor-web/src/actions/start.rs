@@ -261,7 +261,6 @@ fn start(
             name: box_name,
             goal,
             issue: None,
-            worktree: None,
             base: None,
             model: None,
             no_agent: false,

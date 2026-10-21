@@ -35,8 +35,6 @@ pub struct Fields {
     pub branch: Field<String>,
     /// Worktree path.
     pub worktree: Field<String>,
-    /// Whether the worktree is bound.
-    pub bound: Field<bool>,
     /// Surface workspace id.
     pub workspace_id: Field<String>,
     /// Agent session id.

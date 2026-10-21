@@ -95,7 +95,6 @@ fn rows(dir: &Path, handle: BoxHandle) -> (BoxRow, DriverRow) {
         base: None,
         branch: None,
         worktree: Some(dir.display().to_string()),
-        bound: false,
         workspace_id: None,
         agent_session_id: None,
         lifecycle: BoxLifecycle::Ready,

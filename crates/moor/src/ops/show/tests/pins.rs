@@ -72,7 +72,6 @@ fn the_check_pins_the_open_box_a_start_attaches_to() {
         name: name("a"),
         goal: None,
         issue: None,
-        worktree: None,
         base: None,
         model: None,
         no_agent: false,

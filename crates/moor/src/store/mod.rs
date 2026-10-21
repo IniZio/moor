@@ -34,7 +34,6 @@ mod proxy;
 pub(super) mod reads;
 mod reports;
 mod runs;
-mod seq;
 mod sessions;
 #[cfg(test)]
 mod tests;
@@ -47,13 +46,13 @@ pub(crate) use proxy::{TunnelAck, TunnelRequest, TunnelWant};
 pub(crate) use runs::{NewRun, RunOutcome, RunRow};
 
 /// Schema version this build reads and writes.
-pub(crate) const SCHEMA_VERSION: &str = "7";
+pub(crate) const SCHEMA_VERSION: &str = "8";
 /// Full schema, applied once when the file has no `meta` table.
 const SCHEMA_SQL: &str = include_str!("schema.sql");
 /// How long a connection waits on a lock before `SQLITE_BUSY`.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// Column list shared by the box reads; session columns come from the current session.
-const BOX_SELECT: &str = "SELECT b.id, b.name, b.repo, b.issue, b.goal, b.base, b.branch, b.worktree, b.bound, \
+const BOX_SELECT: &str = "SELECT b.id, b.name, b.repo, b.issue, b.goal, b.base, b.branch, b.worktree, \
     s.workspace_id, s.agent_session_id, b.state, b.state_reason, b.intent_kind, b.intent_pid, b.intent_run, \
     b.intent_at, b.setup_failed_at, b.created_at, b.updated_at, b.provider, b.handle, b.driver_state, \
     b.attempted_handle, b.workdir, b.egress, b.sleep_reason, b.driver_updated_at, b.idle_since, b.launch_failure, \
@@ -158,8 +157,6 @@ pub(crate) struct BoxRow {
     pub(crate) branch: Option<String>,
     /// Worktree path.
     pub(crate) worktree: Option<String>,
-    /// Worktree was supplied by the user and is never removed.
-    pub(crate) bound: bool,
     /// Surface workspace id.
     pub(crate) workspace_id: Option<String>,
     /// The agent's own session id.
@@ -327,27 +324,27 @@ fn intent_from(
 
 /// Map the joined box columns (offset 20..=27) to a `DriverRow`, if the box exists.
 fn driver_from_row(row: &Row<'_>) -> Result<Option<DriverRow>, StoreError> {
-    let Some(provider) = row.get::<_, Option<String>>(20)? else {
+    let Some(provider) = row.get::<_, Option<String>>(19)? else {
         return Ok(None);
     };
-    let state: String = row.get(22)?;
+    let state: String = row.get(21)?;
     Ok(Some(DriverRow {
         provider: ProviderId::new(provider),
-        handle: row.get::<_, Option<String>>(21)?.map(BoxHandle::new),
+        handle: row.get::<_, Option<String>>(20)?.map(BoxHandle::new),
         state: parsed_opt("box state", &state, BoxState::parse)?,
-        attempted_handle: row.get::<_, Option<String>>(23)?.map(BoxHandle::new),
-        workdir: row.get(24)?,
-        egress: row.get(25)?,
-        sleep_reason: row.get(26)?,
-        updated_at: Ts::from_millis(row.get(27)?),
+        attempted_handle: row.get::<_, Option<String>>(22)?.map(BoxHandle::new),
+        workdir: row.get(23)?,
+        egress: row.get(24)?,
+        sleep_reason: row.get(25)?,
+        updated_at: Ts::from_millis(row.get(26)?),
     }))
 }
 
 /// Map a `BOX_SELECT` row to a `BoxRow`.
 fn box_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
     let name: String = row.get(1)?;
-    let lifecycle: String = row.get(11)?;
-    let session: Option<String> = row.get(30)?;
+    let lifecycle: String = row.get(10)?;
+    let session: Option<String> = row.get(29)?;
     let session = match session {
         Some(raw) => parsed_opt("session state", &raw, SessionState::parse)?,
         None => SessionState::Starting,
@@ -357,26 +354,25 @@ fn box_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
         id: BoxId::new(row.get(0)?),
         name: parsed("box name", &name, BoxName::parse_allow_bare)?,
         repo: row.get(2)?,
-        user: row.get::<_, Option<i64>>(31)?.map(UserId::new),
+        user: row.get::<_, Option<i64>>(30)?.map(UserId::new),
         issue: row.get(3)?,
         goal: row.get(4)?,
         base: row.get(5)?,
         branch: row.get(6)?,
         worktree: row.get(7)?,
-        bound: row.get::<_, i64>(8)? != 0,
-        workspace_id: row.get(9)?,
-        agent_session_id: row.get(10)?,
+        workspace_id: row.get(8)?,
+        agent_session_id: row.get(9)?,
         lifecycle,
         session,
-        state_reason: row.get(12)?,
-        intent: intent_from(row.get(13)?, row.get(14)?, row.get(15)?)?,
-        intent_at: row.get::<_, Option<i64>>(16)?.map(Ts::from_millis),
-        setup_failed_at: row.get::<_, Option<i64>>(17)?.map(Ts::from_millis),
-        created_at: Ts::from_millis(row.get(18)?),
-        updated_at: Ts::from_millis(row.get(19)?),
-        idle_since: row.get::<_, Option<i64>>(28)?.map(Ts::from_millis),
+        state_reason: row.get(11)?,
+        intent: intent_from(row.get(12)?, row.get(13)?, row.get(14)?)?,
+        intent_at: row.get::<_, Option<i64>>(15)?.map(Ts::from_millis),
+        setup_failed_at: row.get::<_, Option<i64>>(16)?.map(Ts::from_millis),
+        created_at: Ts::from_millis(row.get(17)?),
+        updated_at: Ts::from_millis(row.get(18)?),
+        idle_since: row.get::<_, Option<i64>>(27)?.map(Ts::from_millis),
         launch_failure: row
-            .get::<_, Option<String>>(29)?
+            .get::<_, Option<String>>(28)?
             .map(|j| serde_json::from_str(&j))
             .transpose()?,
         boxed: driver_from_row(row)?,

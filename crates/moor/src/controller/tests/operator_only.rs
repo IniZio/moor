@@ -60,18 +60,6 @@ fn every_front_request_but_version_must_assert_an_identity() {
 }
 
 #[test]
-fn a_start_with_a_worktree_is_the_operators_only() {
-    let world = World::new();
-    for name in ["new-box", A_BOX] {
-        let start = json!({"cmd": "start", "name": name, "worktree": "/home/op/wt"});
-        refused(
-            &ask(&world.slack(), &acting(A, &start)),
-            "--worktree names a host checkout, which is operator-only",
-        );
-    }
-}
-
-#[test]
 fn env_and_repos_are_the_operators_only() {
     let world = World::new();
     let slack = world.slack();

@@ -20,8 +20,8 @@ use moor_core::{BoxId, ErrorKind, SessionId, StartReq, Warning};
 use super::common::activity;
 use super::common::autosleep;
 use super::common::boxlock::{self, BoxLock};
-use super::common::facts::{provider_caps, require_reverse_tunnel, resolved, settings};
-use super::common::host_path::{absolute, caller_dir};
+use super::common::facts::{provider_caps, require_reverse_tunnel, resolved};
+use super::common::host_path::caller_dir;
 use super::common::provision::{
     moor_yaml, provision, reprovision, reread, Entry, Provisioned, ResyncGates,
 };
@@ -53,8 +53,6 @@ pub(crate) use watch::run as watch_launch;
 struct Facts {
     /// Repo root of the invocation directory.
     repo: PathBuf,
-    /// The user's worktree, when `--worktree` names one.
-    bound: Option<PathBuf>,
     /// Base ref or the HEAD commit it starts from.
     base: String,
     /// Ref the new worktree branches from; `None` leaves it to the Surface.
@@ -76,7 +74,7 @@ struct Placed {
 pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     let store = cx.store()?;
     let user = needs::require(cx, req.repo.as_deref())?;
-    let (repo, bound, req) = locate(cx, req)?;
+    let (repo, req) = locate(cx, req)?;
     let req = &req;
     if let Some(parent) = req.parent {
         store.check_parent(parent.get()).map_err(refuse_invalid)?;
@@ -88,19 +86,14 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     if req.resume {
         return Err(relaunch::nothing_to_resume());
     }
-    preflight::check_unbound(store, bound.as_deref())?;
-    let facts = gather(cx, req, repo, bound)?;
+    let facts = gather(cx, req, repo)?;
     let flags = Flags {
         model: req.model.clone(),
     };
-    let cfg = match facts.bound.as_deref() {
-        Some(worktree) => settings(cx, worktree, &flags)?,
-        None => base::settings_at_base(cx, &facts.repo, &facts.base, &flags)?,
-    };
+    let cfg = base::settings_at_base(cx, &facts.repo, &facts.base, &flags)?;
     let caps = provider_caps(cx, &cfg)?;
     require_reverse_tunnel(&cfg, caps)?;
-    let worktree = facts.bound.as_deref().unwrap_or(&facts.repo);
-    if let Some(reason) = preflight::rejection(cx, &cfg, worktree, user)? {
+    if let Some(reason) = preflight::rejection(cx, &cfg, &facts.repo, user)? {
         return reject(cx, store, (req, user), &facts, &reason);
     }
     let placed = match place(cx, req, &facts) {
@@ -147,7 +140,6 @@ fn reject(
         issue: set_some(req.issue.clone()),
         goal: set_some(req.goal.clone()),
         base: Field::Set(facts.base.clone()),
-        bound: Field::Set(facts.bound.is_some()),
         ..Fields::default()
     };
     let new = NewBox {
@@ -196,7 +188,6 @@ fn attach(
     user: UserId,
 ) -> Result<StartView, CommandError> {
     preflight::check_owner(row, user)?;
-    preflight::check_bound(req, row)?;
     relaunch::check_resume(req, row)?;
     dead_provisioning(cx, row)?;
     if let Err(e) = cx
@@ -283,70 +274,31 @@ fn settle_one(cx: &Cx, store: &Store, row: &BoxRow) {
     }
 }
 
-/// The `--worktree` path, which must be absolute.
-fn worktree_path(path: &str) -> Result<PathBuf, CommandError> {
-    absolute("the worktree", path)
-}
-
-/// The repo root, the bound worktree and the effective request; refuses bad input before any change.
-fn locate(cx: &Cx, req: &StartReq) -> Result<(PathBuf, Option<PathBuf>, StartReq), CommandError> {
+/// The repo root and the effective request; refuses bad input before any change.
+fn locate(cx: &Cx, req: &StartReq) -> Result<(PathBuf, StartReq), CommandError> {
     if let Some(key) = &req.repo {
-        let (repo, eff) = known_repo::prepare(cx, req, key)?;
-        return Ok((repo, None, eff));
+        return known_repo::prepare(cx, req, key);
     }
     let git = |e: crate::adapters::git::GitError| CommandError::new(ErrorKind::Failed, e);
     let repo = cx.git().toplevel(caller_dir(cx)?).map_err(git)?;
-    let bound = req.worktree.as_deref().map(worktree_path).transpose()?;
-    if let Some(wt) = &bound {
-        if preflight::same_path(wt, &repo) {
-            return Err(CommandError::new(
-                ErrorKind::Usage,
-                format!("{} is the main worktree, not a linked one", wt.display()),
-            ));
-        }
-        cx.git().head(wt).map_err(|_| {
-            CommandError::new(
-                ErrorKind::Usage,
-                format!("{} is not a git worktree", wt.display()),
-            )
-        })?;
-    }
-    Ok((repo, bound, req.clone()))
+    Ok((repo, req.clone()))
 }
 
 /// Reads the base the Box starts from; changes nothing.
-fn gather(
-    cx: &Cx,
-    req: &StartReq,
-    repo: PathBuf,
-    bound: Option<PathBuf>,
-) -> Result<Facts, CommandError> {
-    let (base, from) = base::resolve(cx, req, &repo, bound.as_deref())?;
-    Ok(Facts {
-        repo,
-        bound,
-        base,
-        from,
-    })
+fn gather(cx: &Cx, req: &StartReq, repo: PathBuf) -> Result<Facts, CommandError> {
+    let (base, from) = base::resolve(cx, req, &repo)?;
+    Ok(Facts { repo, base, from })
 }
 
-/// Hides scratch dirs from git, creates the worktree unless one is bound, then ensures the
-/// Workspace.
+/// Hides scratch dirs from git, creates the worktree, then ensures the Workspace.
 ///
-/// The exclude file lives in the common git dir, so hiding from a bound worktree or the repo covers
-/// every worktree.
+/// The exclude file lives in the common git dir, so hiding from the repo covers every worktree.
 /// Doing it first means a failure leaves no worktree without a Box row.
 fn place(cx: &Cx, req: &StartReq, facts: &Facts) -> Result<Placed, CommandError> {
     cx.git()
-        .exclude_scratch(facts.bound.as_deref().unwrap_or(&facts.repo))
+        .exclude_scratch(&facts.repo)
         .map_err(|e| CommandError::new(ErrorKind::Failed, e))?;
-    let wt = match &facts.bound {
-        Some(path) => Worktree {
-            path: path.clone(),
-            branch: String::new(),
-        },
-        None => leftover::create_worktree(cx, req, facts)?,
-    };
+    let wt = leftover::create_worktree(cx, req, facts)?;
     let ws = cx
         .surface()
         .ensure_workspace(&wt, &workspace_label(&req.name))?;
@@ -369,14 +321,12 @@ fn insert(
     placed: &Placed,
     checked: Vec<CheckedCred>,
 ) -> Result<BoxId, StoreError> {
-    let branch = Some(placed.wt.branch.clone()).filter(|b| !b.is_empty());
     let set = Fields {
         issue: set_some(req.issue.clone()),
         goal: set_some(req.goal.clone()),
         base: Field::Set(facts.base.clone()),
-        branch: set_some(branch),
+        branch: Field::Set(placed.wt.branch.clone()),
         worktree: Field::Set(placed.wt.path.display().to_string()),
-        bound: Field::Set(facts.bound.is_some()),
         workspace_id: Field::Set(placed.workspace.clone()),
         ..Fields::default()
     };

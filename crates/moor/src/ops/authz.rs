@@ -3,7 +3,7 @@
 
 use moor_core::request::{Grant, Named, Pins};
 use moor_core::user::{Caller, Identity, Viewer};
-use moor_core::{BoxId, BoxName, BoxTarget, ErrorKind, Request, StartReq};
+use moor_core::{BoxId, BoxName, BoxTarget, ErrorKind, Request};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -19,10 +19,6 @@ pub(crate) const CP_OPERATOR_ONLY: &str = "cp to the host is operator-only";
 /// The refusal for an `in` from anyone but the operator: it names a directory on the
 /// controller host.
 pub(crate) const IN_OPERATOR_ONLY: &str = "in names a host directory, which is operator-only";
-
-/// The refusal for a `start --worktree` from anyone but the operator: it binds a host checkout.
-pub(crate) const WORKTREE_OPERATOR_ONLY: &str =
-    "--worktree names a host checkout, which is operator-only";
 
 /// The refusal for an `env` from anyone but the operator: it reads host configs.
 pub(crate) const ENV_OPERATOR_ONLY: &str = "env reads the host's configs, which is operator-only";
@@ -89,9 +85,6 @@ const fn host_only(request: &Request) -> Option<&'static str> {
     match request {
         Request::Cp(_) => Some(CP_OPERATOR_ONLY),
         Request::In(_) => Some(IN_OPERATOR_ONLY),
-        Request::Start(StartReq {
-            worktree: Some(_), ..
-        }) => Some(WORKTREE_OPERATOR_ONLY),
         Request::Env(_) => Some(ENV_OPERATOR_ONLY),
         Request::Repos(_) => Some(REPOS_OPERATOR_ONLY),
         Request::OpenHostSession(_) => Some(HOST_SESSION_OPERATOR_ONLY),

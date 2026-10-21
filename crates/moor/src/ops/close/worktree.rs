@@ -50,7 +50,7 @@ pub(super) fn sync_branch(cx: &Cx, row: &BoxRow) -> bool {
 ///
 /// Returns whether the worktree is gone.
 pub(super) fn remove_worktree(cx: &Cx, row: &BoxRow, synced: bool) -> bool {
-    let Some(wt) = row.worktree.as_deref().filter(|_| !row.bound) else {
+    let Some(wt) = row.worktree.as_deref() else {
         return false;
     };
     let wt = Path::new(wt);
