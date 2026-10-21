@@ -148,6 +148,7 @@ fn all_events() -> Vec<Event> {
             rule: Some(s("r")),
             method: None,
             category: None,
+            reason: None,
         },
         Event::CredentialWithheld {
             host: s("h"),

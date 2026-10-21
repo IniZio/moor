@@ -26,7 +26,7 @@ pub(crate) trait EgressSink {
     fn allowed(&self, method: &str, route: &str, status: u16);
     /// Records a refused egress attempt to `host`, with the rule, request
     /// method and denial category when known.
-    fn refused(&self, host: &str, rule: Option<&str>, method: Option<&str>, category: Option<&str>);
+    fn refused(&self, refusal: &Refusal<'_>);
     /// Records that the credential for `rule` could not be obtained.
     fn credential_failed(&self, rule: &str);
     /// Records a request to a credential host that was forwarded without
@@ -40,6 +40,21 @@ pub(crate) trait EgressSink {
     }
     /// Records a rate limit, rejection or recovery of a credential rule.
     fn limit(&self, _event: &Event) {}
+}
+
+/// One refused egress attempt.
+#[derive(Default)]
+pub(crate) struct Refusal<'a> {
+    /// The host the connection was for.
+    pub(crate) host: &'a str,
+    /// The rule the host belongs to, when known.
+    pub(crate) rule: Option<&'a str>,
+    /// The request method, when one was seen.
+    pub(crate) method: Option<&'a str>,
+    /// The Proxy's denial category.
+    pub(crate) category: Option<&'a str>,
+    /// What ended an intercepted TLS handshake.
+    pub(crate) reason: Option<&'a str>,
 }
 
 /// Distinct withheld requests reported per Box before reporting stops.
@@ -179,20 +194,15 @@ impl EgressSink for BoxSink<'_> {
         self.log.record(method, route, status);
     }
 
-    fn refused(
-        &self,
-        host: &str,
-        rule: Option<&str>,
-        method: Option<&str>,
-        category: Option<&str>,
-    ) {
+    fn refused(&self, r: &Refusal<'_>) {
         self.log
-            .record(method.unwrap_or("-"), rule.unwrap_or(host), 403);
+            .record(r.method.unwrap_or("-"), r.rule.unwrap_or(r.host), 403);
         let event = Event::EgressRefused {
-            host: host.to_owned(),
-            rule: rule.map(str::to_owned),
-            method: method.map(str::to_owned),
-            category: category.map(str::to_owned),
+            host: r.host.to_owned(),
+            rule: r.rule.map(str::to_owned),
+            method: r.method.map(str::to_owned),
+            category: r.category.map(str::to_owned),
+            reason: r.reason.map(str::to_owned),
         };
         // Draining must not fail; a lost event is not worth stopping the proxy.
         let _ = self.store.record_proxy_event(self.box_id, &event);
@@ -303,16 +313,20 @@ fn deny(event: &NetworkAuditEvent, sink: &dyn EgressSink) {
             return;
         }
     }
-    sink.refused(
-        &event.target,
-        rule(event),
-        event.method.as_deref(),
-        event
+    let reason = (event.denial_category
+        == Some(NetworkAuditDenialCategory::InterceptHandshakeFailed))
+    .then(|| handshake::reason(event.reason.as_deref().unwrap_or_default()));
+    sink.refused(&Refusal {
+        host: &event.target,
+        rule: rule(event),
+        method: event.method.as_deref(),
+        category: event
             .denial_category
             .as_ref()
             .and_then(category_name)
             .as_deref(),
-    );
+        reason: reason.as_deref(),
+    });
 }
 
 /// The `snake_case` name nono gives a denial category.
@@ -323,6 +337,7 @@ fn category_name(category: &NetworkAuditDenialCategory) -> Option<String> {
     }
 }
 
+mod handshake;
 mod limits;
 
 #[cfg(test)]

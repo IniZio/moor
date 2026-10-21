@@ -2,6 +2,7 @@
 
 mod chain;
 mod e2e;
+mod handshake;
 mod passthrough;
 mod streaming;
 mod uploads;

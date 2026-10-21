@@ -15,7 +15,7 @@ struct LimitSink {
 
 impl EgressSink for LimitSink {
     fn allowed(&self, _: &str, _: &str, _: u16) {}
-    fn refused(&self, _: &str, _: Option<&str>, _: Option<&str>, _: Option<&str>) {}
+    fn refused(&self, _: &Refusal<'_>) {}
     fn credential_failed(&self, _: &str) {}
     fn withheld(&self, _: &str, _: &str, _: &str, _: Option<&str>) {}
     fn withheld_overflow(&self) {}

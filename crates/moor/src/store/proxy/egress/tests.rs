@@ -32,6 +32,7 @@ fn egress_refused_is_appended() {
         rule: Some("gh".into()),
         method: None,
         category: None,
+        reason: None,
     };
     store.record_proxy_event(id, &e).unwrap();
     let rows = store.events(id, 100).unwrap();

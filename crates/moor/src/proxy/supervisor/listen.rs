@@ -17,7 +17,7 @@ use crate::proxy::graphql::http::Head;
 use crate::proxy::graphql::upstream::Upstream;
 use crate::proxy::graphql::{FilterSpec, GraphqlFilter};
 use crate::proxy::guard::Guard;
-use crate::proxy::nono::audit::{apply, BoxSink, EgressSink, Withheld};
+use crate::proxy::nono::audit::{apply, BoxSink, EgressSink, Refusal, Withheld};
 use crate::proxy::nono::capture::{sources_for, MoorCapture};
 use crate::proxy::nono::{build_config, ca, Chain, NonoProxy, NonoSpec, GITHUB_API_HOST};
 use crate::proxy::ProxyLog;
@@ -274,7 +274,13 @@ impl Live {
                 .note(GITHUB_API_HOST, &method, "/graphql", sink);
         }
         for r in self.graphql.iter().flat_map(GraphqlFilter::drain_refusals) {
-            sink.refused(&r.host, Some(&r.rule), Some(&r.method), Some(r.category));
+            sink.refused(&Refusal {
+                host: &r.host,
+                rule: Some(&r.rule),
+                method: Some(&r.method),
+                category: Some(r.category),
+                reason: None,
+            });
         }
     }
 
