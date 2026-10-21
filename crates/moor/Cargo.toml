@@ -21,7 +21,7 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 thiserror = "2"
 webpki-roots = "1"
 time = { version = "0.3", features = ["formatting", "parsing"] }
-rustix = { version = "1", features = ["event", "net", "process"] }
+rustix = { version = "1", features = ["event", "fs", "net", "process"] }
 zeroize = "1"
 sha2 = "0.10"
 flate2 = "1"

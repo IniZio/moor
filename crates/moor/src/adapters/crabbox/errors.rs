@@ -207,7 +207,7 @@ fn stderr_suffix(op: Op, stderr: &str, remote_ran: bool) -> String {
 }
 
 /// The end of `stderr` as one line: trimmed non-empty lines joined by `; `, cut from the front to `TAIL_MAX`.
-fn one_line(stderr: &str) -> String {
+pub(super) fn one_line(stderr: &str) -> String {
     let lines: Vec<&str> = stderr
         .lines()
         .map(str::trim)

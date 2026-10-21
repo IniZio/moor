@@ -38,6 +38,8 @@ struct OpenSsh {
     refuse: bool,
     /// The next shared call loses its master mid-call.
     drop_next: bool,
+    /// What the master logs to the `-E` file when it loses its master.
+    master_log: String,
 }
 
 #[derive(Clone, Copy)]
@@ -72,6 +74,9 @@ impl OpenSsh {
             Some(Master::Up) if self.drop_next => {
                 self.drop_next = false;
                 self.masters.clear();
+                if let Some(log) = flag(args, "-E") {
+                    std::fs::write(log, &self.master_log).unwrap();
+                }
                 return fail("");
             }
             Some(Master::Up) => return remote(args),
@@ -108,6 +113,14 @@ fn remote(args: &[String]) -> Reply {
 fn option(args: &[String], name: &str) -> Option<String> {
     args.windows(2).find_map(|w| match w {
         [o, v] if o == "-o" => v.strip_prefix(name)?.strip_prefix('=').map(str::to_owned),
+        _ => None,
+    })
+}
+
+/// The value after `name` in `args`.
+fn flag(args: &[String], name: &str) -> Option<String> {
+    args.windows(2).find_map(|w| match w {
+        [f, v] if f == name => Some(v.clone()),
         _ => None,
     })
 }
@@ -210,6 +223,20 @@ impl Lab {
         calls
             .filter(|c| c.tool == Tool::Crabbox && c.args.first().is_some_and(|a| a == "ssh"))
             .count()
+    }
+
+    /// The sockets dir entries that are not logs.
+    fn sockets_only(&self) -> Vec<PathBuf> {
+        let all = std::fs::read_dir(&self.sockets).unwrap();
+        let paths = all.map(|e| e.unwrap().path());
+        paths.filter(|p| p.extension().is_none()).collect()
+    }
+
+    /// The log file of the Box's master.
+    fn log(&self) -> PathBuf {
+        let all = std::fs::read_dir(&self.sockets).unwrap();
+        let mut paths = all.map(|e| e.unwrap().path());
+        paths.find(|p| p.extension().is_some()).unwrap()
     }
 
     fn link_files(&self) -> Vec<PathBuf> {
@@ -434,4 +461,111 @@ fn the_agent_pane_keeps_its_own_connection() {
         .connect_argv(&handle(), Path::new("/host/wt"))
         .unwrap();
     assert_eq!(option(&argv, "ControlPath").as_deref(), Some("none"));
+}
+
+#[test]
+fn a_shared_call_logs_the_masters_errors_to_a_private_file() {
+    let lab = lab();
+    lab.probe_tick().unwrap();
+    let call = lab
+        .proc
+        .calls()
+        .into_iter()
+        .find(|c| c.tool == Tool::Ssh)
+        .unwrap();
+    assert_eq!(option(&call.args, "LogLevel").as_deref(), Some("ERROR"));
+    let log = PathBuf::from(flag(&call.args, "-E").expect("an -E log"));
+    assert_eq!(log.parent(), Some(lab.sockets.as_path()));
+    let mode = std::fs::metadata(&log).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o600, "log mode");
+}
+
+#[test]
+fn a_lost_connection_carries_what_the_master_logged() {
+    let lab = lab();
+    lab.probe_tick().unwrap();
+    {
+        let mut ssh = lab.ssh.lock().unwrap();
+        ssh.drop_next = true;
+        ssh.master_log = "Connection closed by UNKNOWN port 65535\n".to_owned();
+    }
+    let err = lab.batch().unwrap_err();
+    assert!(
+        err.to_string()
+            .ends_with("Connection closed by UNKNOWN port 65535"),
+        "{err}"
+    );
+}
+
+#[test]
+fn the_logged_tail_is_capped() {
+    let lab = lab();
+    lab.probe_tick().unwrap();
+    {
+        let mut ssh = lab.ssh.lock().unwrap();
+        ssh.drop_next = true;
+        ssh.master_log = format!("{}\nlast line\n", "x".repeat(5_000));
+    }
+    let err = lab.batch().unwrap_err();
+    let lost = "moor lost the ssh connection to the Box: ";
+    let stderr_tail = err.to_string().strip_prefix(lost).unwrap().to_owned();
+    assert!(stderr_tail.ends_with("last line"), "{stderr_tail}");
+    assert!(stderr_tail.chars().count() <= 300, "{}", stderr_tail.len());
+}
+
+#[test]
+fn a_new_master_starts_an_empty_log() {
+    let lab = lab();
+    lab.probe_tick().unwrap();
+    let log = lab.log();
+    std::fs::write(&log, "old master error\n").unwrap();
+    for socket in lab.sockets_only() {
+        std::fs::remove_file(socket).unwrap();
+    }
+    lab.ssh.lock().unwrap().masters.clear();
+    lab.probe_tick().unwrap();
+    assert_eq!(std::fs::read_to_string(&log).unwrap(), "");
+}
+
+#[test]
+fn an_oversized_log_is_emptied_before_the_next_call() {
+    let lab = lab();
+    lab.probe_tick().unwrap();
+    let log = lab.log();
+    std::fs::write(&log, "x".repeat(40_000)).unwrap();
+    lab.probe_tick().unwrap();
+    assert_eq!(std::fs::metadata(&log).unwrap().len(), 0);
+}
+
+fn silent_loss() -> moor_core::seam::proc::ProcError {
+    moor_core::seam::proc::ProcError::NonZero {
+        code: 255,
+        stdout: String::new(),
+        stderr_tail: String::new(),
+    }
+}
+
+#[test]
+fn a_lost_connection_in_an_unshared_dir_does_not_read_its_log() {
+    let lab = lab();
+    std::fs::create_dir(&lab.sockets).unwrap();
+    std::fs::set_permissions(&lab.sockets, Permissions::from_mode(0o755)).unwrap();
+    let driver = lab.driver();
+    let log = driver.link(&handle()).unwrap().log;
+    std::fs::write(&log, "PLANTED-MARKER").unwrap();
+    let err = super::lost(&driver, &handle(), &silent_loss()).unwrap();
+    assert!(!err.to_string().contains("PLANTED-MARKER"), "{err}");
+}
+
+#[test]
+fn a_symlinked_log_is_not_read() {
+    let lab = lab();
+    lab.probe_tick().unwrap();
+    let secret = lab.sockets.with_file_name("secret");
+    std::fs::write(&secret, "SECRET-MARKER").unwrap();
+    let log = lab.log();
+    std::fs::remove_file(&log).unwrap();
+    std::os::unix::fs::symlink(&secret, &log).unwrap();
+    let err = super::lost(&lab.driver(), &handle(), &silent_loss()).unwrap();
+    assert!(!err.to_string().contains("SECRET-MARKER"), "{err}");
 }
