@@ -13,6 +13,10 @@ use moor_core::request::Request;
 use moor_core::response::Response;
 use moor_core::SessionId;
 
+pub use stream::ByteStream;
+
+mod stream;
+
 /// Id the client puts on its single request per connection.
 const REQUEST_ID: &str = "1";
 
@@ -201,6 +205,20 @@ impl Client {
                 other => return Err(unexpected(other, "bytes or response")),
             }
         }
+    }
+
+    /// Runs one request whose answer streams raw bytes, and returns a reader over those bytes.
+    /// Call [`ByteStream::finish`] after the last byte for the controller's response.
+    ///
+    /// # Errors
+    /// Returns [`ClientError`] when the connection, handshake or request write fails.
+    pub fn read_stream(&self, request: Request) -> Result<ByteStream, ClientError> {
+        let mut conn = self.open()?;
+        conn.send(&ClientFrame::Request {
+            id: REQUEST_ID.to_owned(),
+            request: Box::new(request),
+        })?;
+        Ok(ByteStream::new(conn))
     }
 
     /// Streams stored events after cursor `since`; `follow` keeps the stream open.

@@ -472,3 +472,91 @@ fn a_bytes_frame_cut_short_is_an_error() {
     assert!(matches!(err, ClientError::Io(_)), "{err}");
     server.join().unwrap();
 }
+
+fn failed_line(message: &str) -> Vec<u8> {
+    let error = moor_core::response::ErrorView {
+        kind: moor_core::response::ErrorKind::Failed,
+        message: message.to_owned(),
+        hints: Vec::new(),
+        context: Vec::new(),
+    };
+    let envelope = serde_json::to_string(&Response::err("artifact-read", error)).unwrap();
+    format!("{{\"frame\":\"response\",\"id\":\"1\",\"envelope\":{envelope}}}\n").into_bytes()
+}
+
+#[test]
+fn read_stream_yields_raw_bytes_across_frames_then_the_response() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("c.sock");
+    let reply = [
+        bytes_frame(b"\x00\n\xff"),
+        bytes_frame(b"\xc3("),
+        response_line(),
+    ]
+    .concat();
+    let server = answer_raw(&sock, reply);
+    let mut stream = Client::new(&sock).read_stream(show()).unwrap();
+    let (mut got, mut buf) = (Vec::new(), [0_u8; 2]);
+    loop {
+        let n = stream.read(&mut buf).unwrap();
+        if n == 0 {
+            break;
+        }
+        got.extend_from_slice(&buf[..n]);
+    }
+    assert_eq!(got, b"\x00\n\xff\xc3(");
+    assert_eq!(stream.finish().unwrap(), Response::ok("show", None));
+    server.join().unwrap();
+}
+
+#[test]
+fn read_stream_fails_on_an_error_response_after_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("c.sock");
+    let reply = [bytes_frame(b"abc"), failed_line("disk gone")].concat();
+    let server = answer_raw(&sock, reply);
+    let mut stream = Client::new(&sock).read_stream(show()).unwrap();
+    let mut got = Vec::new();
+    let err = stream.read_to_end(&mut got).unwrap_err();
+    assert!(err.to_string().contains("disk gone"), "{err}");
+    let reply = stream.finish().unwrap();
+    assert_eq!(reply.error.map(|e| e.message).as_deref(), Some("disk gone"));
+    server.join().unwrap();
+}
+
+#[test]
+fn read_stream_fails_when_the_connection_drops_mid_frame() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("c.sock");
+    let mut reply = bytes_frame(b"0123456789");
+    reply.truncate(reply.len() - 7);
+    let server = answer_raw(&sock, reply);
+    let mut stream = Client::new(&sock).read_stream(show()).unwrap();
+    assert!(stream.read_to_end(&mut Vec::new()).is_err());
+    assert!(matches!(stream.finish(), Err(ClientError::Io(_))));
+    server.join().unwrap();
+}
+
+#[test]
+fn read_stream_finish_refuses_unread_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("c.sock");
+    let reply = [bytes_frame(b"abcd"), response_line()].concat();
+    let server = answer_raw(&sock, reply);
+    let mut stream = Client::new(&sock).read_stream(show()).unwrap();
+    stream.read_exact(&mut [0_u8; 2]).unwrap();
+    assert!(matches!(stream.finish(), Err(ClientError::Protocol(_))));
+    server.join().unwrap();
+}
+
+#[test]
+fn read_stream_refuses_a_bytes_frame_over_the_cap() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("c.sock");
+    let reply = [bytes_frame(&vec![1; BYTES_MAX + 1]), response_line()].concat();
+    let server = answer_raw(&sock, reply);
+    let mut stream = Client::new(&sock).read_stream(show()).unwrap();
+    assert!(stream.read(&mut [0_u8; 8]).is_err());
+    assert!(matches!(stream.finish(), Err(ClientError::Protocol(_))));
+    server.join().unwrap();
+}
