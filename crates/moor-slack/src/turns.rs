@@ -293,13 +293,15 @@ impl Turns {
         let rows = db.thread_boxes(&row.channel, &row.thread_ts)?;
         let mut call = |request| self.client.request(request, |_| {});
         let boxes = box_lines(&rows, &mut call);
+        let actions = db.thread_actions(&row.channel, &row.thread_ts)?;
+        let rerun = row.rerun_of.map(|lost| db.turn_actions(lost)).transpose()?;
         let parts = Parts {
             first_request: first.as_ref().map(|(_, text)| text.as_str()),
-            actions: &[],
+            actions: &actions,
             boxes: &boxes,
             earlier: &earlier,
             new: &new,
-            rerun: row.rerun_of.map(|_| &[][..]),
+            rerun: rerun.as_deref(),
         };
         Ok(context::render(&parts, self.budget))
     }

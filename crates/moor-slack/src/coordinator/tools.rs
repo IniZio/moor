@@ -1,11 +1,15 @@
-//! The coordinator's tools. Each acts only on the Boxes `slack.db` records for its thread.
+//! The coordinator's tools. Each acts only on the Boxes `slack.db` records for its thread. A
+//! tool that changes a Box works only in a turn that holds a message from the person who
+//! asked for that Box, writes a journal row before it acts, and refuses in a rerun to repeat
+//! what the cut-off turn's journal holds.
 
 use moor_client::ClientError;
-use moor_core::request::{Request, ShowReq};
+use moor_core::request::{Request, ShowReq, SteerReq};
 use moor_core::response::{ExitClass, Response};
 use serde_json::{json, Value};
 
-use crate::db::{BoxState, Db, SlackBox};
+use super::context::{action_line, Action};
+use crate::db::{BoxState, Db, OpenTurn, SlackBox};
 
 /// What a tool does, for the agent's tool list.
 pub(crate) struct Spec {
@@ -18,12 +22,30 @@ pub(crate) struct Spec {
 }
 
 /// Every tool the coordinator gets.
-pub(crate) const SPECS: [Spec; 1] = [Spec {
-    name: "list_boxes",
-    description: "List this thread's Boxes: name, repo, requester and state as the controller \
-                  reports it now.",
-    input: || json!({"type": "object", "properties": {}, "additionalProperties": false}),
-}];
+pub(crate) const SPECS: [Spec; 2] = [
+    Spec {
+        name: "list_boxes",
+        description: "List this thread's Boxes: name, repo, requester and state as the \
+                      controller reports it now.",
+        input: || json!({"type": "object", "properties": {}, "additionalProperties": false}),
+    },
+    Spec {
+        name: "steer_box",
+        description: "Send text to the coding agent of one of this thread's Boxes. Works only \
+                      when the person who asked for the Box wrote in this turn.",
+        input: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "box": {"type": "string", "description": "The Box's name, as list_boxes shows it."},
+                    "text": {"type": "string", "description": "What to tell the Box's agent."}
+                },
+                "required": ["box", "text"],
+                "additionalProperties": false
+            })
+        },
+    },
+];
 
 /// The names of every tool the coordinator gets.
 pub(crate) fn names() -> Vec<&'static str> {
@@ -35,13 +57,32 @@ pub(crate) fn names() -> Vec<&'static str> {
 pub(crate) enum Call {
     /// `list_boxes`.
     ListBoxes,
+    /// `steer_box`.
+    SteerBox {
+        /// The Box's name as given.
+        box_name: String,
+        /// What to send.
+        text: String,
+    },
 }
 
 impl Call {
-    /// The call `name`, or why it is not one.
-    pub(crate) fn parse(name: &str, _args: &Value) -> Result<Self, String> {
+    /// The call `name` with `args`, or why it is not one.
+    pub(crate) fn parse(name: &str, args: &Value) -> Result<Self, String> {
+        let text = |key: &str| {
+            args.get(key)
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .map(str::to_owned)
+                .ok_or_else(|| format!("{name} needs a non-empty `{key}`."))
+        };
         match name {
             "list_boxes" => Ok(Self::ListBoxes),
+            "steer_box" => Ok(Self::SteerBox {
+                box_name: text("box")?,
+                text: text("text")?,
+            }),
             other => Err(format!("There is no tool `{other}`.")),
         }
     }
@@ -87,12 +128,15 @@ pub(crate) struct Scope<'a> {
     pub(crate) thread_ts: &'a str,
     /// The controller.
     pub(crate) call: Controller<'a>,
+    /// The current time in unix seconds.
+    pub(crate) clock: fn() -> i64,
 }
 
 /// Runs `call` in `scope`.
 pub(crate) fn run(scope: &mut Scope<'_>, call: &Call) -> Reply {
     let ran = match call {
         Call::ListBoxes => list(scope),
+        Call::SteerBox { box_name, text } => steer(scope, box_name, text),
     };
     ran.unwrap_or_else(|e| Reply::refused(format!("The front could not read slack.db: {e}")))
 }
@@ -156,6 +200,122 @@ fn shown(b: &SlackBox, call: Controller<'_>) -> String {
         field(&["box", "agent", "state"]),
         field(&["box", "branch"])
     )
+}
+
+/// `steer_box`: the journal row, then `steer`, then its outcome.
+fn steer(scope: &mut Scope<'_>, box_name: &str, text: &str) -> rusqlite::Result<Reply> {
+    let target = match changeable(scope, "steer_box", box_name, text)? {
+        Ok(target) => target,
+        Err(refusal) => return Ok(refusal),
+    };
+    let name = target.boxed.box_name.as_str().to_owned();
+    if let Some(refusal) = not_running(&target.boxed, "steer") {
+        return Ok(refusal);
+    }
+    let seq = scope
+        .db
+        .begin_action(target.turn.id, &target.action, (scope.clock)())?;
+    let request = Request::Steer(SteerReq {
+        target: target.boxed.box_name.clone().into(),
+        text: Some(text.to_owned()),
+        menu: None,
+    });
+    let (outcome, reply) = match (scope.call)(request) {
+        Ok(r) if r.class == ExitClass::Ok => (
+            format!("sent to Box `{name}`"),
+            Reply::done(format!("Sent to Box `{name}`.")),
+        ),
+        Ok(r) => {
+            let why = error_text(r);
+            let reply = Reply::refused(format!("Not sent: {why}"));
+            (format!("the controller refused: {why}"), reply)
+        }
+        Err(e) => {
+            let said = format!("the controller did not answer: {e}");
+            let reply = Reply::refused(format!("Maybe not sent: {said}"));
+            (said, reply)
+        }
+    };
+    scope
+        .db
+        .end_action(target.turn.id, seq, &outcome, (scope.clock)())?;
+    Ok(reply)
+}
+
+/// A Box a tool may change in this turn, with the turn and the journal row to write.
+struct Target {
+    /// The turn that runs now.
+    turn: OpenTurn,
+    /// The Box.
+    boxed: SlackBox,
+    /// The journal row for the call.
+    action: Action,
+}
+
+/// The Box `box_name` names, when `tool` may change it now: a turn runs, the Box is one of
+/// this thread's, its requester wrote in this turn, and a rerun's cut-off turn did not
+/// already do the same. Otherwise the refusal.
+fn changeable(
+    scope: &Scope<'_>,
+    tool: &str,
+    box_name: &str,
+    args: &str,
+) -> rusqlite::Result<Result<Target, Reply>> {
+    let db = scope.db;
+    let Some(turn) = db.open_turn(scope.channel, scope.thread_ts)? else {
+        return Ok(Err(Reply::refused("No turn of this thread is running.")));
+    };
+    let wanted = box_name.trim().trim_matches('`');
+    let rows = db.thread_boxes(scope.channel, scope.thread_ts)?;
+    let Some(boxed) = rows.into_iter().find(|b| b.box_name.as_str() == wanted) else {
+        return Ok(Err(Reply::refused(format!(
+            "This thread has no Box `{wanted}`. Call list_boxes for its Boxes."
+        ))));
+    };
+    let by = boxed.requested_by.clone();
+    if !turn.authors.contains(&by) {
+        return Ok(Err(Reply::refused(format!(
+            "Only <@{by}> can change Box `{wanted}`, and <@{by}> wrote nothing in this turn."
+        ))));
+    }
+    let action = Action {
+        turn: turn.id,
+        requested_by: by,
+        tool: tool.to_owned(),
+        box_name: boxed.box_name.as_str().to_owned(),
+        args: args.to_owned(),
+        outcome: None,
+    };
+    if let Some(lost) = turn.rerun_of {
+        let done = db.turn_actions(lost)?;
+        let same = |a: &&Action| {
+            a.tool == action.tool && a.box_name == action.box_name && a.args == action.args
+        };
+        if let Some(earlier) = done.iter().find(same) {
+            return Ok(Err(Reply::refused(format!(
+                "Your last turn already did this, so it is not done again. {}",
+                action_line(earlier)
+            ))));
+        }
+    }
+    Ok(Ok(Target {
+        turn,
+        boxed,
+        action,
+    }))
+}
+
+/// The refusal of `verb` on a Box that does not run.
+fn not_running(boxed: &SlackBox, verb: &str) -> Option<Reply> {
+    let name = boxed.box_name.as_str();
+    match boxed.state {
+        BoxState::Bound { .. } => None,
+        BoxState::Starting => Some(Reply::refused(format!(
+            "Box `{name}` is still starting. Try to {verb} it once it has started."
+        ))),
+        BoxState::Closing { .. } => Some(Reply::refused(format!("Box `{name}` is closing."))),
+        BoxState::Gone { .. } => Some(Reply::refused(format!("Box `{name}` is closed."))),
+    }
 }
 
 /// The error text of a failed reply.

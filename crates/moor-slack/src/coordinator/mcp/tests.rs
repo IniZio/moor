@@ -36,12 +36,16 @@ fn a_bad_call_is_a_result_with_is_error_and_runs_nothing() {
             is_error: false,
         }
     };
-    let call = request(7, "tools/call", &json!({"name": "rm_rf", "arguments": {}}));
+    let call = request(
+        7,
+        "tools/call",
+        &json!({"name": "steer_box", "arguments": {"box": "b"}}),
+    );
     let answers = exchange(&[call], &mut answer);
     assert_eq!(answers[0]["result"]["isError"], true);
     assert_eq!(
         answers[0]["result"]["content"][0]["text"],
-        "There is no tool `rm_rf`."
+        "steer_box needs a non-empty `text`."
     );
     assert!(!ran);
 }
@@ -75,4 +79,23 @@ fn an_unknown_protocol_version_gets_the_newest_one_spoken() {
         &mut answer,
     );
     assert_eq!(answers[0]["result"]["protocolVersion"], "2025-06-18");
+}
+
+#[test]
+fn each_tool_parameter_has_a_one_line_description() {
+    let mut answer = |_: &Call| unreachable!("no tool runs");
+    let answers = exchange(&[request(1, "tools/list", &json!({}))], &mut answer);
+    let tools = answers[0]["result"]["tools"].as_array().unwrap();
+    let described: Vec<(String, bool)> = tools
+        .iter()
+        .flat_map(|tool| {
+            let properties = tool["inputSchema"]["properties"].as_object().unwrap();
+            properties.iter().map(|(param, schema)| {
+                let said = schema["description"].as_str().unwrap_or_default();
+                (param.clone(), !said.is_empty() && !said.contains('\n'))
+            })
+        })
+        .collect();
+    assert!(!described.is_empty());
+    assert!(described.iter().all(|(_, ok)| *ok), "{described:?}");
 }
