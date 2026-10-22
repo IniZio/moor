@@ -2,13 +2,16 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::name::BoxPath;
 use moor_core::seam::driver::{BoxStep, Driver, DriverError, ExecOutcome, ExecSpec, StepDone};
-use moor_core::seam::proc::{Deadline, Output, ProcError};
+use moor_core::seam::proc::{Deadline, Output, ProcError, Tool};
 
 use crate::adapters::crabbox::tests::fake_ssh::{driver, handle, lab, tools, Lab};
+use crate::adapters::crabbox::Crabbox;
+use crate::testing::proc::{Reply, ScriptedProc};
 
 impl Lab {
     fn exec(&self, spec: &ExecSpec) -> Result<ExecOutcome, DriverError> {
@@ -54,7 +57,7 @@ fn commands_ride_the_box_master_with_crabbox_host_key_pinning_and_spawn_crabbox_
 }
 
 #[test]
-fn a_fresh_driver_reuses_the_saved_target_and_spawns_no_crabbox_for_exec_or_the_workdir_probe() {
+fn a_fresh_driver_reuses_the_saved_target_and_spawns_no_crabbox_for_exec_or_a_workdir_lookup() {
     let lab = lab();
     assert_eq!(lab.exec(&sh("true")), Ok(ExecOutcome::Exited { code: 0 }));
     let fresh = driver(lab.dir.path(), &tools(&lab.bin()));
@@ -64,10 +67,9 @@ fn a_fresh_driver_reuses_the_saved_target_and_spawns_no_crabbox_for_exec_or_the_
         fresh.exec(&handle(), &spec, deadline),
         Ok(ExecOutcome::Exited { code: 0 })
     );
-    fs::write(lab.bin().join("drop"), "").unwrap();
     assert!(matches!(
         fresh.workdir(&handle()),
-        Err(DriverError::Transport { .. })
+        Err(DriverError::Failed { .. })
     ));
     assert_eq!(
         lab.argvs("crabbox").len(),
@@ -75,7 +77,7 @@ fn a_fresh_driver_reuses_the_saved_target_and_spawns_no_crabbox_for_exec_or_the_
         "the first driver's lookup only"
     );
     let ssh = lab.argvs("ssh");
-    assert_eq!(ssh.len(), 3, "exec, exec, probe");
+    assert_eq!(ssh.len(), 2, "exec, exec, and no workdir search");
     for argv in &ssh {
         lab.assert_on_the_master_and_pinned(argv);
     }
@@ -183,4 +185,166 @@ fn a_wrapper_failure_before_the_command_is_not_its_exit() {
         matches!(&got, Err(DriverError::Failed { summary }) if summary.contains("did not load")),
         "{got:?}"
     );
+}
+
+/// Runs the real wrapper under dash, as a Box's `sh` does, with `env` on stdin and `TMPDIR`
+/// in `tmp`, and returns its exit code and stderr.
+fn wrapper_under_dash(tmp: &Path, env: &str, argv: &[&str]) -> (Option<i32>, String) {
+    use std::io::Write as _;
+    use std::process::{Command, Stdio};
+    let mut child = Command::new("dash")
+        .args(["-c", super::WRAPPER, "sh", "B", "E", "X", ""])
+        .args(argv)
+        .env("TMPDIR", tmp)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(env.as_bytes())
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    (
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+fn entries(dir: &Path) -> Vec<PathBuf> {
+    fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect()
+}
+
+#[test]
+fn a_truncated_env_stream_ends_the_wrapper_and_still_removes_the_env_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ran = tmp.path().join("ran");
+    let touch = format!("touch {}", ran.display());
+    let (code, stderr) =
+        wrapper_under_dash(tmp.path(), "export A='cut off", &["/bin/sh", "-c", &touch]);
+    assert_ne!(code, Some(0), "{stderr}");
+    assert!(!ran.exists(), "the command never starts");
+    assert_eq!(entries(tmp.path()), Vec::<PathBuf>::new(), "{stderr}");
+}
+
+#[test]
+fn an_env_that_replaces_path_still_removes_the_env_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (code, stderr) = wrapper_under_dash(
+        tmp.path(),
+        "export PATH='/nonexistent'\n",
+        &["/bin/sh", "-c", "exit 3"],
+    );
+    assert_eq!(code, Some(3), "{stderr}");
+    assert!(stderr.contains("X 3"), "{stderr}");
+    assert_eq!(entries(tmp.path()), Vec::<PathBuf>::new(), "{stderr}");
+}
+
+#[test]
+fn an_env_that_replaces_path_runs_the_command_after_the_env_file_is_gone() {
+    let lab = lab();
+    let mut spec = streamed(
+        &lab,
+        r#"set -- "$TMPDIR"/*; test -e "$1" && echo "env file left: $1"; echo ran"#,
+    );
+    spec.argv.splice(..1, ["/bin/sh".to_owned()]);
+    spec.env = vec![("PATH".to_owned(), "/nonexistent".to_owned())];
+    assert_eq!(lab.exec(&spec), Ok(ExecOutcome::Exited { code: 0 }));
+    assert_eq!(fs::read_to_string(lab.log()).unwrap(), "ran\n");
+    assert_eq!(entries(&lab.bin().join("boxtmp")), Vec::<PathBuf>::new());
+}
+
+#[test]
+fn stderr_without_a_trailing_newline_still_closes_the_gate() {
+    let lab = lab();
+    let spec = streamed(&lab, "printf 'no newline' >&2");
+    assert_eq!(lab.exec(&spec), Ok(ExecOutcome::Exited { code: 0 }));
+    assert_eq!(fs::read_to_string(lab.log()).unwrap(), "no newline\n");
+}
+
+#[test]
+fn a_command_killed_by_a_signal_reports_128_plus_the_signal() {
+    let lab = lab();
+    for spec in [sh("kill -TERM $$"), streamed(&lab, "kill -TERM $$")] {
+        assert_eq!(lab.exec(&spec), Ok(ExecOutcome::Exited { code: 143 }));
+    }
+}
+
+#[test]
+fn an_empty_command_is_refused_before_ssh() {
+    let lab = lab();
+    let mut spec = sh("true");
+    spec.argv.clear();
+    assert!(matches!(lab.exec(&spec), Err(DriverError::Failed { .. })));
+    assert!(lab.argvs("ssh").is_empty());
+    assert!(lab.argvs("crabbox").is_empty());
+}
+
+#[test]
+fn ssh_that_cannot_start_is_unavailable() {
+    let lab = lab();
+    let mut paths = tools(&lab.bin());
+    paths.ssh = Some(lab.bin().join("missing-ssh"));
+    let cb = driver(lab.dir.path(), &paths);
+    let got = cb.exec(&handle(), &sh("true"), Deadline(Duration::from_secs(20)));
+    assert!(matches!(got, Err(DriverError::Unavailable(_))), "{got:?}");
+}
+
+/// The exec result when ssh itself ends with `reply`.
+fn exec_ending(reply: Reply) -> Result<ExecOutcome, DriverError> {
+    let p = Arc::new(ScriptedProc::new());
+    p.on(
+        Tool::Crabbox,
+        &["ssh"],
+        Reply::Ok("ssh -o StrictHostKeyChecking=yes u@h\n".to_owned()),
+    );
+    p.on(Tool::Ssh, &[], reply);
+    Crabbox::fake(p).exec(&handle(), &sh("true"), Deadline(Duration::from_secs(20)))
+}
+
+#[test]
+fn a_timeout_is_a_timeout_and_an_interrupt_or_signal_is_interrupted() {
+    assert!(matches!(
+        exec_ending(Reply::Timeout),
+        Err(DriverError::Timeout(_))
+    ));
+    assert_eq!(
+        exec_ending(Reply::Interrupted),
+        Ok(ExecOutcome::Interrupted)
+    );
+    assert_eq!(
+        exec_ending(Reply::Signalled(9)),
+        Ok(ExecOutcome::Interrupted)
+    );
+}
+
+#[test]
+fn a_lost_connection_forgets_the_saved_target_so_the_next_driver_looks_it_up_again() {
+    let lab = lab();
+    assert_eq!(lab.exec(&sh("true")), Ok(ExecOutcome::Exited { code: 0 }));
+    fs::write(lab.bin().join("drop"), "").unwrap();
+    assert!(matches!(
+        lab.exec(&sh("true")),
+        Err(DriverError::Transport { .. })
+    ));
+    fs::remove_file(lab.bin().join("drop")).unwrap();
+    let fresh = driver(lab.dir.path(), &tools(&lab.bin()));
+    let deadline = Deadline(Duration::from_secs(20));
+    assert_eq!(
+        fresh.exec(&handle(), &sh("true"), deadline),
+        Ok(ExecOutcome::Exited { code: 0 })
+    );
+    assert_eq!(lab.argvs("crabbox").len(), 2, "looked up again");
+}
+
+#[test]
+fn the_last_exit_line_wins() {
+    let stderr = "gate-0-exit 1\ncommand output\ngate-0-exit 7\n";
+    assert_eq!(super::reported_exit(stderr, "gate-0-exit"), Some(7));
 }

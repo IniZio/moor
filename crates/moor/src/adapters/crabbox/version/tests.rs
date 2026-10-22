@@ -128,7 +128,6 @@ fn ops() -> Vec<(&'static str, Op)> {
         }),
         ("release", |c| c.release(&handle()).is_err()),
         ("list", |c| c.list(&ProviderId::new("sprites")).is_err()),
-        ("workdir", |c| c.workdir(&handle()).is_err()),
         ("exec", |c| {
             let spec = ExecSpec {
                 argv: vec!["true".to_owned()],

@@ -1,7 +1,6 @@
 //! A Box reached through a fake ssh that runs the remote command on this host.
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -32,12 +31,13 @@ TMPDIR="$d/boxtmp" exec sh -c "$last"
 "#;
 
 /// Records its argv in `crabbox.<n>`; answers `ssh` with the words crabbox prints for a pinned
-/// lease, and fails anything else.
+/// lease, or with the contents of a `words` file, and fails anything else.
 const FAKE_CRABBOX: &str = r#"#!/bin/sh
 d=$(dirname "$0")
 n=$(ls "$d" | grep -c '^crabbox\.')
 printf '%s\0' "$@" > "$d/crabbox.$n"
 test "$1" = ssh || exit 99
+if test -f "$d/words"; then exec cat "$d/words"; fi
 echo "ssh -o 'ControlMaster=no' -o 'ControlPath=none' -o 'StrictHostKeyChecking=yes' -o 'UserKnownHostsFile=/lease/known_hosts' -o 'GlobalKnownHostsFile=none' -o 'HostKeyAlias=crabbox-lease-1f2e' 'u@box'"
 "#;
 
@@ -59,9 +59,7 @@ pub(in crate::adapters::crabbox) fn lab() -> Lab {
     let bin = dir.path().join("bin");
     fs::create_dir_all(bin.join("boxtmp")).unwrap();
     for (name, text) in [("ssh", FAKE_SSH), ("crabbox", FAKE_CRABBOX)] {
-        let path = bin.join(name);
-        fs::write(&path, text).unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        moor_testkit::write_executable(&bin.join(name), text).unwrap();
     }
     let cb = driver(dir.path(), &tools(&bin));
     Lab { dir, cb }

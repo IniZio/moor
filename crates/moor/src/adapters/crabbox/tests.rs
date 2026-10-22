@@ -12,21 +12,9 @@ use super::Crabbox;
 use crate::testing::proc::{Reply, ScriptedProc};
 
 pub(super) mod fake_ssh;
+mod pinned;
 mod slug;
 mod workdir;
-
-const PROBE_DIR: &str = "/root/crabbox/cbx_1/app";
-
-/// Answers the workdir probe: the ssh target lookup, then the probe's one batch frame.
-fn probe(p: &ScriptedProc) {
-    p.on(Tool::Crabbox, &["ssh"], Reply::Ok("ssh u@h\n".to_owned()));
-    let body = format!("MOOR_WORKDIR={PROBE_DIR}\n");
-    p.on(
-        Tool::Ssh,
-        &[],
-        Reply::Ok(format!("R 0 {}\n{body}\n", body.len())),
-    );
-}
 
 const WARMUP_OUT: &str = "leased cbx_1 slug=moor-t7 provider=sprites server=1 type=t ip=1.2.3.4\n\
 ready ssh=u@h:22 network=public workroot=/root/crabbox\n";
@@ -100,7 +88,6 @@ fn list_empty_and_garbage() {
 fn acquire_runs_warmup_and_builds_handle() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
-    probe(&p);
     let got = c.acquire(&req("sprites", Some("small"))).unwrap();
     assert_eq!(got.handle.as_str(), "sprites/moor-7-ab12cd");
     assert_eq!(got.workdir.as_str(), "/root/crabbox/cbx_1/moor-7-ab12cd");
@@ -125,7 +112,6 @@ fn acquire_runs_warmup_and_builds_handle() {
 fn acquire_maps_sizes_and_rejects_unknown() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
-    probe(&p);
     c.acquire(&req("sprites", Some("large"))).unwrap();
     let calls = p.calls();
     let first = calls.first().unwrap();
@@ -138,7 +124,6 @@ fn ssh_calls_carry_static_env() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
     p.on(Tool::Crabbox, &["stop"], Reply::Ok(String::new()));
-    probe(&p);
     c.acquire(&req("ssh", None)).unwrap();
     let handle = BoxHandle::new("ssh/moor-7-ab12cd");
     c.release(&handle).unwrap();
@@ -160,24 +145,7 @@ fn list_matches_top_level_slug_and_lease_label() {
     assert_eq!(names, ["a", "b"]);
 }
 
-#[test]
-fn acquire_without_workroot_still_gets_workdir_from_probe() {
-    let (p, c) = fixture();
-    p.on(
-        Tool::Crabbox,
-        &["warmup"],
-        Reply::Ok("leased cbx_1 slug=-\n".into()),
-    );
-    probe(&p);
-    let got = c.acquire(&req("ssh", None)).unwrap();
-    assert_eq!(got.workdir.as_str(), PROBE_DIR);
-    assert!(p
-        .calls()
-        .iter()
-        .all(|call| call.args.first().map(String::as_str) != Some("inspect")));
-}
-
-fn probe_calls(p: &ScriptedProc) -> usize {
+fn ssh_calls(p: &ScriptedProc) -> usize {
     p.calls().iter().filter(|c| c.tool == Tool::Ssh).count()
 }
 
@@ -188,32 +156,40 @@ fn acquire_with_ready(ready: &str) -> (Arc<ScriptedProc>, BoxPath) {
         &["warmup"],
         Reply::Ok(format!("leased cbx_1 slug=-\n{ready}\n")),
     );
-    probe(&p);
     let got = c.acquire(&req("ssh", None)).unwrap();
     (p, got.workdir)
 }
 
 #[test]
-fn acquire_uses_workdir_from_warmup_without_probing() {
+fn acquire_uses_workdir_from_warmup() {
     let (p, dir) =
         acquire_with_ready("ready ssh=u@h:22 workroot=/root/crabbox workdir=/root/crabbox/w/app");
     assert_eq!(dir.as_str(), "/root/crabbox/w/app");
-    assert_eq!(probe_calls(&p), 0);
+    assert_eq!(ssh_calls(&p), 0);
 }
 
 #[test]
 fn acquire_derives_the_workdir_from_the_workroot_like_crabbox() {
     let (p, dir) = acquire_with_ready("ready ssh=u@h:22 workroot=/r/ workdir=app");
     assert_eq!(dir.as_str(), "/r/cbx_1/moor-7-ab12cd");
-    assert_eq!(probe_calls(&p), 0);
+    assert_eq!(ssh_calls(&p), 0);
 }
 
 #[test]
-fn acquire_probes_when_warmup_names_no_usable_dir() {
+fn acquire_fails_closed_when_warmup_names_no_usable_dir() {
     for ready in ["ready ssh=u@h:22 workdir=app", "ready ssh=u@h:22 workdir="] {
-        let (p, dir) = acquire_with_ready(ready);
-        assert_eq!(dir.as_str(), PROBE_DIR, "{ready}");
-        assert_eq!(probe_calls(&p), 1, "{ready}");
+        let (p, c) = fixture();
+        p.on(
+            Tool::Crabbox,
+            &["warmup"],
+            Reply::Ok(format!("leased cbx_1 slug=-\n{ready}\n")),
+        );
+        let err = c.acquire(&req("ssh", None)).unwrap_err();
+        assert!(
+            err.to_string().contains("neither a workdir nor a workroot"),
+            "{ready}: {err:?}"
+        );
+        assert_eq!(ssh_calls(&p), 0, "{ready}");
     }
 }
 

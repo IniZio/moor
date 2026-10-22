@@ -9,7 +9,7 @@ use zeroize::Zeroizing;
 use crate::adapters::crabbox::Crabbox;
 use crate::testing::proc::{Call, Reply, ScriptedProc};
 
-const SSH_LINE: &str = "ssh -i '/k/id' -o 'BatchMode=yes' -p '22' -o 'ProxyCommand=nc -x '\\''h p'\\'' %h' 'u@10.0.0.1'\n";
+const SSH_LINE: &str = "ssh -i '/k/id' -o 'StrictHostKeyChecking=yes' -o 'BatchMode=yes' -p '22' -o 'ProxyCommand=nc -x '\\''h p'\\'' %h' 'u@10.0.0.1'\n";
 
 fn fixture() -> (Arc<ScriptedProc>, Crabbox) {
     let p = Arc::new(ScriptedProc::new());
@@ -54,6 +54,8 @@ fn ssh_gets_the_target_words_then_one_quoted_remote_command() {
         [
             "-i",
             "/k/id",
+            "-o",
+            "StrictHostKeyChecking=yes",
             "-o",
             "BatchMode=yes",
             "-p",

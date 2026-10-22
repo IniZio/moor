@@ -22,7 +22,7 @@ use moor_core::Warning;
 use serde::{Deserialize, Serialize};
 
 use super::errors::{one_line, transport_loss, EXIT_SSH};
-use super::Crabbox;
+use super::{pin, Crabbox};
 use crate::adapters::sockets::{private_dir, short_hash};
 
 /// Seconds a master stays up after its last call: long enough to bridge probe ticks and
@@ -217,9 +217,14 @@ impl Link {
 
 /// The ssh arguments for a short call to the Box: the shared-connection options, then
 /// `target`. Without a usable link the call connects on its own. ssh does not create the
-/// socket dir, so this makes it first.
-pub(super) fn args(cb: &Crabbox, handle: &BoxHandle, target: Vec<String>) -> Vec<String> {
-    match cb.link(handle).filter(|_| cb.unshared().is_none()) {
+/// socket dir, so this makes it first. Arguments that do not pin the Box's host key are
+/// refused.
+pub(super) fn args(
+    cb: &Crabbox,
+    handle: &BoxHandle,
+    target: Vec<String>,
+) -> Result<Vec<String>, DriverError> {
+    let args = match cb.link(handle).filter(|_| cb.unshared().is_none()) {
         Some(link) => {
             link.prepare_log();
             let mut args = link.options();
@@ -227,7 +232,9 @@ pub(super) fn args(cb: &Crabbox, handle: &BoxHandle, target: Vec<String>) -> Vec
             args
         }
         None => target,
-    }
+    };
+    pin::check(&args)?;
+    Ok(args)
 }
 
 /// Runs `spec`, a short call to the Box, and handles a failure as [`failed`] does.

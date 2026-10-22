@@ -12,7 +12,7 @@ use moor_core::seam::proc::{Deadline, Tool};
 use crate::adapters::crabbox::Crabbox;
 use crate::testing::proc::{Reply, ScriptedProc};
 
-const SSH_LINE: &str = "ssh -p 2222 user@1.2.3.4\n";
+const SSH_LINE: &str = "ssh -o StrictHostKeyChecking=yes -p 2222 user@1.2.3.4\n";
 const BINARY: [u8; 5] = [0xff, 0xfe, 0x00, 0x80, 0x0a];
 const BIG: u64 = 50 * 1024 * 1024;
 

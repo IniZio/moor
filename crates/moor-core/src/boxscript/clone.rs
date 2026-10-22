@@ -57,8 +57,10 @@ impl CloneStep {
 ///
 /// crabbox writes `.crabbox/` into the workdir before the script runs, and `git clone` needs an
 /// empty directory, so a workdir with no `.git` is cloned into a temp dir under `.moor/` whose
-/// `.git` then moves into the workdir; the rename stays on one filesystem. `.moor/` and
-/// `.crabbox/` are excluded so moor's and crabbox's files never show as changes.
+/// `.git` then moves into the workdir; the rename stays on one filesystem. When another run's
+/// `.git` appeared first, `mv` moves this clone's into it instead, so that nested copy is removed
+/// and the script stops at the clone step. `.moor/` and `.crabbox/` are excluded so moor's and
+/// crabbox's files never show as changes.
 #[must_use]
 pub fn clone_script(c: &Checkout<'_>) -> String {
     let (url, base, branch) = (quote(c.url), quote(c.base), quote(c.branch));
@@ -77,9 +79,10 @@ if [ "$(git symbolic-ref -q --short HEAD 2>/dev/null)" != {branch} ]; then
   if [ ! -d .git ]; then
     tmp=.moor/clone.$$
     rm -rf -- "$tmp" && mkdir -p -- "$tmp" || exit {clone}
-    git clone -q --filter=blob:none --no-checkout -- {url} "$tmp" && mv -- "$tmp/.git" .git
+    git clone -q --filter=blob:none --no-checkout -- {url} "$tmp" && mv -- "$tmp/.git" .git &&
+      [ ! -e .git/.git ]
     cloned=$?
-    rm -rf -- "$tmp"
+    rm -rf -- "$tmp" .git/.git
     [ "$cloned" -eq 0 ] || exit {clone}
   fi
   if git rev-parse -q --verify {local} >/dev/null; then

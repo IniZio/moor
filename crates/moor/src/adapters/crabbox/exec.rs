@@ -18,13 +18,22 @@ use super::{link, Crabbox};
 /// command. The env arrives on stdin, goes into a private temp file, is sourced and the file
 /// removed before the command starts; the command reads `/dev/null`. The exit line is how moor
 /// tells the command's own exit 255 from ssh losing the connection.
+///
+/// An EXIT trap holding the file's path also removes it, with an absolute `rm`, since a broken
+/// env stream ends sh mid-source and an env may replace `PATH`. The path goes into the trap and
+/// the positional words, never a variable the env could overwrite. The end marker starts with
+/// a newline so it is a line of its own after stderr with no trailing newline.
 pub(super) const WRAPPER: &str = r#"b=$1 e=$2 x=$3 d=$4; shift 4
-f=$(mktemp) && cat >"$f" && . "$f"; r=$?; rm -f -- "$f"
+f=$(mktemp) || exit 1
+case $f in *"'"*) /bin/rm -f -- "$f"; exit 1;; esac
+trap "/bin/rm -f -- '$f'" EXIT
+set -- "$f" "$@"
+cat >"$1" && . "$1"; r=$?; /bin/rm -f -- "$1"; shift
 test "$r" -eq 0 || { echo "moor: the command env did not load" >&2; exit 1; }
 printf '%s\n' "$b" >&2
 if test -n "$d"; then mkdir -p -- "$d" && cd -- "$d" && "$@"; else "$@"; fi </dev/null
 c=$?
-printf '%s\n%s %s\n' "$e" "$x" "$c" >&2
+printf '\n%s\n%s %s\n' "$e" "$x" "$c" >&2
 exit "$c""#;
 
 /// Runs `spec` in the Box behind `handle`.
@@ -37,8 +46,13 @@ pub(super) fn run(
     spec: &ExecSpec,
     deadline: Deadline,
 ) -> Result<ExecOutcome, DriverError> {
+    if spec.argv.is_empty() {
+        return Err(DriverError::Failed {
+            summary: "the box command is empty".to_owned(),
+        });
+    }
     let env = env_file(&spec.env)?;
-    let words = link::args(cb, handle, ssh_target(cb, handle)?);
+    let words = link::args(cb, handle, ssh_target(cb, handle)?)?;
     let token = format!("gate-{:08x}{:08x}", cb.rng.u32(), cb.rng.u32());
     let gate = StderrGate {
         begin: format!("{token}-begin"),

@@ -130,6 +130,22 @@ fn relative_source_resolves_against_the_box_workdir() {
 }
 
 #[test]
+fn relative_source_resolves_against_the_recorded_workdir_without_asking_the_driver() {
+    let f = fx();
+    let fields = Fields {
+        box_workdir: Field::Set("/w/cbx_9/moor-1-n".to_owned()),
+        ..Fields::default()
+    };
+    f.cx.store()
+        .unwrap()
+        .apply(Decision::new(f.id).set(fields))
+        .unwrap();
+    run(&f.cx, &req("out/a.txt", "a.txt")).unwrap();
+    assert_eq!(first_copy(&f).1.as_str(), "/w/cbx_9/moor-1-n/out/a.txt");
+    assert!(!f.driver.calls().iter().any(|c| c.starts_with("workdir")));
+}
+
+#[test]
 fn absolute_source_is_used_as_given() {
     let f = fx();
     run(&f.cx, &req("/var/log/x", "x")).unwrap();

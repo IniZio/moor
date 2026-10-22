@@ -27,7 +27,7 @@ pub(super) const BOX: &str = "ann-box";
 const FAKE_CRABBOX: &str = "#!/bin/sh\n\
     case \"$1\" in\n\
     --version) echo 'crabbox 0.79.1-moor.1' ;;\n\
-    ssh) echo 'ssh u@box' ;;\n\
+    ssh) echo 'ssh -o StrictHostKeyChecking=yes u@box' ;;\n\
     *) exit 1 ;;\n\
     esac\n";
 

@@ -150,6 +150,10 @@ enum Phase {
 }
 
 /// Line filter that forwards only what lies between two marker lines.
+///
+/// The writer puts a newline before the end marker so the marker gets a line of its own after
+/// output with no trailing newline. An empty line is therefore held until the next line: it is
+/// dropped when the end marker follows it.
 struct Gate {
     /// The marker lines, matched whole.
     markers: StderrGate,
@@ -157,6 +161,8 @@ struct Gate {
     phase: Phase,
     /// Bytes of the line being read.
     line: Vec<u8>,
+    /// An empty line held back, as read.
+    held: Vec<u8>,
 }
 
 impl Gate {
@@ -166,6 +172,7 @@ impl Gate {
             markers,
             phase: Phase::Before,
             line: Vec::new(),
+            held: Vec::new(),
         }
     }
 
@@ -187,6 +194,7 @@ impl Gate {
         if !self.line.is_empty() {
             self.finish_line(&mut out);
         }
+        out.append(&mut self.held);
         out
     }
 
@@ -197,8 +205,18 @@ impl Gate {
         let text = text.strip_suffix(b"\r").unwrap_or(text);
         match self.phase {
             Phase::Before if text == self.markers.begin.as_bytes() => self.phase = Phase::Open,
-            Phase::Open if text == self.markers.end.as_bytes() => self.phase = Phase::After,
-            Phase::Open => out.extend_from_slice(&line),
+            Phase::Open if text == self.markers.end.as_bytes() => {
+                self.held.clear();
+                self.phase = Phase::After;
+            }
+            Phase::Open => {
+                out.append(&mut self.held);
+                if text.is_empty() && line.ends_with(b"\n") {
+                    self.held = line;
+                } else {
+                    out.extend_from_slice(&line);
+                }
+            }
             Phase::Before | Phase::After => {}
         }
     }

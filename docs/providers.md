@@ -24,7 +24,14 @@ through crabbox.
 moor runs them over one ssh connection per Box, opened with the ssh options
 `crabbox ssh` prints for the lease, so host-key checking stays as strict as
 crabbox's own: the lease's `known_hosts` file and `StrictHostKeyChecking=yes`.
+moor refuses to run any ssh to a Box, including the agent pane's, when those
+options lack `StrictHostKeyChecking=yes`, set `UserKnownHostsFile=/dev/null`, or
+put a weaker `StrictHostKeyChecking` before the `yes`. The command then fails
+with an error that says so; moor never falls back to an unchecked connection.
 A command's environment travels on ssh's stdin, never in its arguments.
+A Box's working directory is the one crabbox reports when it leases the Box,
+or `<workroot>/<lease id>/<slug>`; when crabbox reports neither, the start
+fails.
 
 When a release fails, the directory stays and `moor close` names it. To
 release the Box by hand, run `crabbox stop --provider PROVIDER --id SLUG

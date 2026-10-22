@@ -14,7 +14,7 @@ use crate::adapters::crabbox::Crabbox;
 use crate::testing::proc::{ChildReply, Reply, ScriptedProc};
 
 const PROVIDERS: &str = r#"[{"provider":"pauser","features":["pause-resume"]}]"#;
-const SSH_LINE: &str = "ssh -p 2222 user@1.2.3.4\n";
+const SSH_LINE: &str = "ssh -o StrictHostKeyChecking=yes -p 2222 user@1.2.3.4\n";
 const WARMUP_OUT: &str = "leased cbx_1 slug=moor-7-ab12cd provider=pauser server=1 type=t \
 ip=1.2.3.4\nready ssh=u@h:22 network=public workroot=/root/crabbox\n";
 const SLUG: &str = "moor-7-ab12cd";
@@ -73,10 +73,9 @@ fn exec_spec() -> ExecSpec {
 type Call = fn(&Crabbox);
 
 /// Every Driver method that names a lease, as one call each.
-const CALLS: [(&str, Call); 13] = [
+const CALLS: [(&str, Call); 12] = [
     ("acquire", |c| drop(c.acquire(&req()))),
     ("release", |c| drop(c.release(&handle()))),
-    ("workdir", |c| drop(c.workdir(&handle()))),
     ("exec", |c| {
         drop(c.exec(&handle(), &exec_spec(), Deadline(Duration::from_secs(1))));
     }),
