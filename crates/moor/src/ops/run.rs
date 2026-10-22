@@ -176,19 +176,13 @@ fn box_env(
     target: &ready::Target,
     cfg: &BoxSettings,
 ) -> Result<BoxExec, CommandError> {
-    let proxy = box_exec::proxy(
-        cx,
-        row.id,
-        Some(target.handle.clone()),
-        &target.worktree,
-        cfg,
-    )
-    .map_err(|e| {
-        CommandError::new(
-            ErrorKind::Failed,
-            format!("the Proxy could not start: {e}; retry `moor run` once it starts"),
-        )
-    })?;
+    let proxy = box_exec::proxy(cx, row.id, Some(target.handle.clone()), &target.repo, cfg)
+        .map_err(|e| {
+            CommandError::new(
+                ErrorKind::Failed,
+                format!("the Proxy could not start: {e}; retry `moor run` once it starts"),
+            )
+        })?;
     box_exec::prepare(cx, &site(row, target), Some(&proxy), cfg, Purpose::Run)
         .map_err(|m| CommandError::new(ErrorKind::Failed, m))
 }

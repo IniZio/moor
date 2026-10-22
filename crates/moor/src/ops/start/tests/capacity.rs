@@ -55,7 +55,7 @@ fn world(config: UserConfig) -> World {
     );
     proc.on(Tool::Git, &["ls-tree"], Reply::Ok(String::new()));
     let driver = Arc::new(FakeDriver::new());
-    let surface = Arc::new(FakeSurface::new(dir.path()));
+    let surface = Arc::new(FakeSurface::new());
     let cx = Cx::fake_with(
         dir.path(),
         repo,
@@ -175,7 +175,7 @@ fn queued_start_records_no_session() {
 }
 
 #[test]
-fn queued_start_records_the_limit_and_keeps_worktree_and_workspace() {
+fn queued_start_records_the_limit_and_keeps_the_workspace() {
     let (w, _) = with_live_box(box_limit(1));
     let v = run(&w.cx, &req("waiter")).unwrap();
     let events =
@@ -189,7 +189,6 @@ fn queued_start_records_the_limit_and_keeps_worktree_and_workspace() {
         .expect("waiting_for_box event");
     assert_eq!(ev.payload.get("max_boxes"), Some(&json!(1)));
     let calls = w.surface.calls();
-    assert!(calls.contains(&"create_worktree waiter".to_owned()));
     assert!(calls.contains(&"ensure_workspace moor:waiter".to_owned()));
     assert_eq!(w.driver.calls(), ["acquire"]);
 }

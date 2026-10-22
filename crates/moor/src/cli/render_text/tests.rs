@@ -399,7 +399,7 @@ fn start_shows_a_launch_step_failure_as_a_warning() {
 fn close_prints_name_and_box_outcome() {
     let v = json!({
         "box": lifecycle_box("alpha", "closed", None),
-        "box_deleted": true, "worktree_kept": true, "promoted": []
+        "box_deleted": true, "promoted": []
     });
     let (out, _) = render(&Response::ok("close", Some(v)), false);
     assert_eq!(out, "closed alpha (#7), box deleted\n");

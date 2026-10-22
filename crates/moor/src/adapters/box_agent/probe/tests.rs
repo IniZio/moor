@@ -128,7 +128,7 @@ fn agent(d: &Arc<FakeDriver>, s: &Arc<FakeSurface>) -> BoxAgent {
 }
 
 fn surface_with(obs: Result<PaneObs, SurfaceError>) -> Arc<FakeSurface> {
-    Arc::new(FakeSurface::new("/r").script_pane_obs("p-1", obs))
+    Arc::new(FakeSurface::new().script_pane_obs("p-1", obs))
 }
 
 #[test]

@@ -18,7 +18,7 @@ use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use moor_core::domain::box_state::BoxLifecycle;
 
-/// Starts `demo` with a failing first setup, then points its worktree at `yaml`.
+/// Starts `demo` with a failing first setup, then points its host repo at `yaml`.
 fn failed_setup_then(yaml: &str, results: [Result<ExecOutcome, DriverError>; 4]) -> (World, BoxId) {
     failed_setup_with(yaml, FakeDriver::new().exec_results(results))
 }
@@ -90,8 +90,7 @@ fn start_after_a_failed_setup_in_a_replaced_box_runs_setup_in_the_new_box() {
 fn interrupted_setup(pid: u32) -> (World, moor_core::view::StartView) {
     let (w, v) = start_with("setup: [a]\n", FakeDriver::new());
     let id = BoxId::new(v.boxed.id);
-    let wt = w.cx.store().unwrap().box_row(id).unwrap().unwrap().worktree;
-    let wt = wt.unwrap();
+    let wt = w.cx.store().unwrap().box_row(id).unwrap().unwrap().repo;
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [b]\n").unwrap();
     script_base_yaml(&w, Some("setup: [b]\n"));

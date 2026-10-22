@@ -1,6 +1,6 @@
 //! Tests for waking an Asleep Box and machine.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::activity::{PaneObs, PaneStatus};
@@ -76,7 +76,7 @@ fn git_proc() -> Arc<ScriptedProc> {
 fn fx_with(driver: FakeDriver) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(driver);
-    let surface = Arc::new(FakeSurface::new(PathBuf::from("/s")));
+    let surface = Arc::new(FakeSurface::new());
     let engine = Arc::new(FakeEngine::new().launch_result(Ok(session("p-2"))));
     let proc = git_proc();
     let cx = Cx::fake(
@@ -96,7 +96,6 @@ fn fx_with(driver: FakeDriver) -> Fx {
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
-        worktree: Field::Set("/home/me/wt/t".to_owned()),
         ..Fields::default()
     };
     store

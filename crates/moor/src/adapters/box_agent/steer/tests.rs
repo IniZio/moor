@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -7,7 +6,7 @@ use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::engine::{Engine, EngineError, SessionRef, Steer, SteerOutcome};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneCmd, Surface, SurfaceError};
-use moor_core::{BoxHandle, BoxName, BoxPath};
+use moor_core::{BoxHandle, BoxPath};
 
 use crate::adapters::box_agent::claude::Claude;
 use crate::adapters::box_agent::gh_release::fake::offline_release;
@@ -29,15 +28,8 @@ fn obs(tail: &str) -> PaneObs {
 
 /// A surface with an open pane `p-2` that reads as `reads` in turn.
 fn surface(reads: Vec<Result<PaneObs, SurfaceError>>) -> (Arc<FakeSurface>, SessionRef) {
-    let s = FakeSurface::new("/r");
-    let wt = s
-        .create_worktree(
-            Path::new("/r"),
-            &BoxName::parse_allow_bare("t1").unwrap(),
-            None,
-        )
-        .unwrap();
-    let ws = s.ensure_workspace(&wt, "moor:t1").unwrap();
+    let s = FakeSurface::new();
+    let ws = s.ensure_workspace("moor:t1").unwrap();
     let pane = s.open_pane(&ws, &PaneCmd::default()).unwrap();
     let s = reads
         .into_iter()

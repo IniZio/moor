@@ -63,7 +63,7 @@ pub(super) fn clone_with_proxy(
     let wants = plan.is_some() || !cfg.setup.is_empty() || cfg.dotfiles.is_some();
     let was_up = wants && matches!(cx.proxy_host().status(id), Ok(ProxyStatus::Ready { .. }));
     let proxy = wants
-        .then(|| box_exec::proxy(cx, id, Some(target.handle.clone()), target.worktree, cfg))
+        .then(|| box_exec::proxy(cx, id, Some(target.handle.clone()), target.repo, cfg))
         .transpose();
     let job = Job::new(cx, id, target, plan.as_ref());
     let result = match (&plan, &proxy) {
@@ -96,7 +96,7 @@ fn plan(
     id: BoxId,
     target: &SetupTarget<'_>,
 ) -> Result<Option<Plan>, CommandError> {
-    let Some(url) = origin(cx, target.worktree) else {
+    let Some(url) = origin(cx, target.repo) else {
         return Ok(None);
     };
     let Some(repo) = cx.forge().repo_of(&url) else {
@@ -129,9 +129,9 @@ struct Job<'a> {
 }
 
 impl<'a> Job<'a> {
-    /// The job for Box `id`, with the host author of the target's worktree.
+    /// The job for Box `id`, with the host author of the target's repo.
     fn new(cx: &Cx, id: BoxId, target: &SetupTarget<'_>, plan: Option<&'a Plan>) -> Self {
-        let identity = Identity::of(cx, target.worktree);
+        let identity = Identity::of(cx, target.repo);
         Self { id, plan, identity }
     }
 

@@ -1,4 +1,4 @@
-//! Tests for refusing a Box setup when the worktree `.moor.yaml` differs from the base.
+//! Tests for refusing a Box setup when the host `.moor.yaml` differs from the base.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -10,7 +10,7 @@ use moor_core::seam::proc::Tool;
 use moor_core::{BoxId, BoxName, BoxPath, ErrorKind, StartReq};
 
 use super::setup::{is_setup_line, start_req, warning_codes};
-use super::{world_at, World};
+use super::{world_on_disk, World};
 use crate::cx::Cx;
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
@@ -37,26 +37,25 @@ pub(super) fn script_base_yaml(w: &World, yaml: Option<&str>) {
 }
 
 /// Starts `demo` on a base holding `base` with the Box acquire failing, then leaves
-/// `worktree_yaml` in its worktree.
+/// `repo_yaml` in its host repo.
 ///
 /// The Box is left `SetupFailed` with a lost machine, so the next start provisions a new one.
-/// `None` removes the worktree's `.moor.yaml`.
-fn lost_box_on_base(base: &str, worktree_yaml: Option<&str>) -> World {
-    let repo = tempfile::tempdir().unwrap();
-    std::fs::write(repo.path().join(".moor.yaml"), base).unwrap();
+/// `None` removes the repo's `.moor.yaml`.
+fn lost_box_on_base(base: &str, repo_yaml: Option<&str>) -> World {
     let driver = FakeDriver::new().fail_acquire(DriverError::Failed {
         summary: "boom".into(),
     });
-    let w = world_at(driver, repo.path());
+    let w = world_on_disk(driver);
+    std::fs::write(w.dir.path().join("repo/.moor.yaml"), base).unwrap();
     script_base_yaml(&w, Some(base));
     let err = run(&w.cx, &start_req()).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
     let name = BoxName::parse_allow_bare("demo").unwrap();
     let row = w.cx.store().unwrap().open_box_by_name(&name).unwrap();
-    let wt = row.unwrap().worktree.unwrap();
+    let wt = row.unwrap().repo;
     std::fs::create_dir_all(&wt).unwrap();
     let file = Path::new(&wt).join(".moor.yaml");
-    match worktree_yaml {
+    match repo_yaml {
         Some(text) => std::fs::write(file, text).unwrap(),
         None => {
             let _ = std::fs::remove_file(file);
@@ -76,9 +75,9 @@ fn setup_execs(w: &World) -> usize {
         .count()
 }
 
-/// A lost Box, with `worktree_yaml` in the worktree over a `BASE` base.
-fn failed_with(worktree_yaml: Option<&str>) -> World {
-    let w = lost_box_on_base(BASE, worktree_yaml);
+/// A lost Box, with `repo_yaml` in its host repo over a `BASE` base.
+fn failed_with(repo_yaml: Option<&str>) -> World {
+    let w = lost_box_on_base(BASE, repo_yaml);
     script_base_yaml(&w, Some(BASE));
     w
 }
@@ -150,9 +149,7 @@ fn the_base_copy_is_read_by_host_git_in_the_main_checkout() {
             .unwrap()
             .unwrap();
     let base = row.base.clone().unwrap();
-    let wt = std::path::PathBuf::from(row.worktree.unwrap());
     let repo = std::path::PathBuf::from(&row.repo);
-    assert_ne!(repo, wt);
     let want = format!("{base}:.moor.yaml");
     let calls = w.proc.calls();
     for sub in ["ls-tree", "show"] {
@@ -176,28 +173,6 @@ fn the_base_copy_is_read_by_host_git_in_the_main_checkout() {
         .find(|c| c.args.iter().any(|a| a == "show"))
         .unwrap();
     assert!(show.args.contains(&want), "{:?}", show.args);
-}
-
-#[test]
-fn a_replacement_box_starts_when_the_worktree_copy_equals_the_base_but_the_main_checkout_differs() {
-    let repo = tempfile::tempdir().unwrap();
-    std::fs::write(repo.path().join(".moor.yaml"), BASE).unwrap();
-    let driver = FakeDriver::new().fail_acquire(DriverError::Failed {
-        summary: "boom".into(),
-    });
-    let w = world_at(driver, repo.path());
-    script_base_yaml(&w, Some(BASE));
-    run(&w.cx, &start_req()).unwrap_err();
-    let name = BoxName::parse_allow_bare("demo").unwrap();
-    let row = w.cx.store().unwrap().open_box_by_name(&name).unwrap();
-    let wt = row.unwrap().worktree.unwrap();
-    std::fs::create_dir_all(&wt).unwrap();
-    std::fs::write(Path::new(&wt).join(".moor.yaml"), BASE).unwrap();
-    std::fs::write(repo.path().join(".moor.yaml"), "setup: [evil]\n").unwrap();
-    script_base_yaml(&w, Some(BASE));
-    let again = run(&w.cx, &start_req()).unwrap();
-    assert!(again.setup.ran && again.setup.ok);
-    assert!(!warning_codes(&w).contains(&"moor_yaml_trusted".to_owned()));
 }
 
 const OVERLAY: &str = "setup: [from-overlay]\n";
@@ -233,7 +208,7 @@ fn overlay_world(driver: FakeDriver, repo_file: Option<&str>) -> World {
     let driver = Arc::new((1..=4).fold(driver, |d, n| {
         d.peek_text(&format!("box-{n}"), &environ, "HOME=/home/box\0")
     }));
-    let surface = Arc::new(FakeSurface::new(dir.path()));
+    let surface = Arc::new(FakeSurface::new());
     let table = BTreeMap::from([(
         "demo".to_owned(),
         RepoEntry {
@@ -279,7 +254,7 @@ fn an_overlay_supplies_setup_without_trust_when_the_repo_has_no_moor_yaml() {
 }
 
 #[test]
-fn a_worktree_moor_yaml_added_over_an_overlay_is_refused_without_trust() {
+fn a_repo_moor_yaml_added_over_an_overlay_is_refused_without_trust() {
     let driver = FakeDriver::new().fail_acquire(DriverError::Failed {
         summary: "boom".into(),
     });
@@ -289,7 +264,7 @@ fn a_worktree_moor_yaml_added_over_an_overlay_is_refused_without_trust() {
     assert_eq!(err.kind, ErrorKind::Failed);
     let name = BoxName::parse_allow_bare("demo").unwrap();
     let row = w.cx.store().unwrap().open_box_by_name(&name).unwrap();
-    let wt = row.unwrap().worktree.unwrap();
+    let wt = row.unwrap().repo;
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [curl evil]\n").unwrap();
     drop(warning_codes(&w));

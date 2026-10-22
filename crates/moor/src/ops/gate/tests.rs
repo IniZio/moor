@@ -24,7 +24,7 @@ fn cx(dir: &Path) -> Cx {
         dir,
         Path::new("/not/a/checkout"),
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new(dir)),
+        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     )
 }

@@ -20,7 +20,7 @@ pub(crate) fn run(cx: &Cx, _req: &ReposReq) -> ReposValue {
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
     use std::sync::Arc;
 
     use moor_core::config::{RepoEntry, RepoTable};
@@ -49,7 +49,7 @@ mod tests {
             dir,
             Path::new("/home/me/proj"),
             Arc::new(FakeDriver::new()),
-            Arc::new(FakeSurface::new(PathBuf::from("/s"))),
+            Arc::new(FakeSurface::new()),
             Arc::new(ScriptedProc::new()),
         )
         .with_repos(table)

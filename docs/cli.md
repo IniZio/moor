@@ -37,7 +37,7 @@ The state directory holds `moor.db`. It is the first of `--state-dir`,
 
 | Command | What it does |
 | --- | --- |
-| `moor start NAME` | Creates a Box with its worktree, herdr workspace, and machine, or attaches to the open Box of that name. The agent starts when you give `--goal` or `--resume`. The Box acts for the moor user of whoever started it, so `start` runs only through a controller, and refuses an open Box of another user. It also refuses when the user lacks a secret the Box needs, naming every missing one. See [Secrets a Box uses](config.md#secrets-a-box-uses). |
+| `moor start NAME` | Creates a Box on the branch `moor/NAME` with its herdr workspace and machine, or attaches to the open Box of that name. The agent starts when you give `--goal` or `--resume`. The Box acts for the moor user of whoever started it, so `start` runs only through a controller, and refuses an open Box of another user. It also refuses when the user lacks a secret the Box needs, naming every missing one. See [Secrets a Box uses](config.md#secrets-a-box-uses). |
 | `moor show [NAME]` | Shows all open Boxes, or one Box in detail. `list` is an alias. |
 | `moor run NAME -- CMD...` | Runs a command on the Box's machine. |
 | `moor wait NAME` | Waits until the Box reaches a state. |
@@ -97,7 +97,7 @@ The command runs under bash when the Box has bash, else under sh. One `CMD`
 argument is shell text, so `moor run NAME -- 'make lint | tee log'` works.
 
 `moor run` runs the command in the Box checkout as it is. moor never copies
-the host worktree into a Box.
+a host checkout into a Box.
 
 | Flag | Effect |
 | --- | --- |
@@ -125,11 +125,11 @@ the host worktree into a Box.
 | Flag | Effect |
 | --- | --- |
 | `--force` | Close even when the Box has unsaved work: commits that are on no branch on GitHub, or uncommitted files. You lose that work. Without it, `moor close` refuses and says how to push the work with `moor run NAME -- git push origin HEAD:refs/heads/BRANCH`. |
-| `--trust-moor-yaml` | Run the teardown from the worktree's `.moor.yaml` when it differs from the base commit. Without this flag, the teardown uses the base commit's copy and prints a warning. |
+| `--trust-moor-yaml` | Run the teardown from the host checkout's `.moor.yaml` when it differs from the base commit. Without this flag, the teardown uses the base commit's copy and prints a warning. |
 
-`moor close` removes the worktree that moor created only when the worktree's
-branch is synced from the remote and the worktree has no unpushed or
-uncommitted work. Otherwise moor keeps the worktree and prints a warning.
+moor creates no host worktree for a Box, so `moor close` checks only the
+Box checkout for unsaved work. To get the Box's work on your host, run
+`git fetch origin BRANCH` in your own checkout after the Box pushed it.
 
 ### `moor cp` paths
 

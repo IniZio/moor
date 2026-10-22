@@ -16,7 +16,7 @@ fn cx(dir: &Path) -> Cx {
         dir,
         Path::new("/w"),
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new("/s")),
+        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     )
 }
@@ -58,7 +58,7 @@ fn store_opens_lazily_at_moor_db() {
         dir.path(),
         Path::new("/w"),
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new("/s")),
+        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     );
     assert!(!dir.path().join("moor.db").exists());

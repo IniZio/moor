@@ -1,4 +1,4 @@
-//! The base a new Box worktree branches from.
+//! The base commit a new Box starts from.
 
 use std::path::Path;
 
@@ -46,28 +46,24 @@ pub(super) fn settings_at_base(
     Ok(resolved(cx, Some(&repo_cfg), flags))
 }
 
-/// The base recorded for the Box and the ref its worktree branches from.
+/// The base commit recorded for the Box.
 ///
 /// An explicit base is resolved to its commit, so a branch that moves later cannot change the Box's base.
 ///
 /// Without an explicit base the remote default branch is fetched first and its commit is the
 /// base, so the Box branch tracks nothing. A failed fetch warns and leaves the local HEAD commit
 /// as the base.
-pub(super) fn resolve(
-    cx: &Cx,
-    req: &StartReq,
-    repo: &Path,
-) -> Result<(String, Option<String>), CommandError> {
+pub(super) fn resolve(cx: &Cx, req: &StartReq, repo: &Path) -> Result<String, CommandError> {
     if let Some(b) = &req.base {
         let sha = cx
             .git()
             .commit_of(repo, b)
             .map_err(|e| CommandError::new(ErrorKind::Usage, format!("unknown base {b}: {e}")))?;
-        return Ok((sha.clone(), Some(sha)));
+        return Ok(sha);
     }
     let fetched = cx.git().fetch_default(repo);
     if let Ok(Some((_, sha))) = fetched {
-        return Ok((sha.clone(), Some(sha)));
+        return Ok(sha);
     }
     let head = cx
         .git()
@@ -82,5 +78,5 @@ pub(super) fn resolve(
             ),
         });
     }
-    Ok((head, None))
+    Ok(head)
 }

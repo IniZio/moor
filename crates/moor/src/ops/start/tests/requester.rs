@@ -123,7 +123,7 @@ fn a_start_outside_a_controller_socket_acts_as_no_one_and_is_refused() {
         dir.path(),
         &PathBuf::from("/repo"),
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new(dir.path())),
+        Arc::new(FakeSurface::new()),
         Arc::new(crate::testing::proc::ScriptedProc::new()),
     );
     let err = run(&cx, &req("demo")).unwrap_err();
@@ -149,7 +149,7 @@ fn starting_another_users_open_box_is_refused() {
     assert!(err.error.to_string() == "not your Box", "{err:?}");
 }
 
-/// `w` whose worktree's origin is a GitHub repo, so the GitHub rules apply.
+/// `w` whose repo's origin is a GitHub repo, so the GitHub rules apply.
 fn on_github(mut w: World) -> World {
     let url = "git@github.com:o/r.git";
     w.proc.on(

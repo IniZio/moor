@@ -49,7 +49,7 @@ fn cx_full(top: &Path, config: UserConfig, proc: ScriptedProc, driver: FakeDrive
         clock: Arc::new(FakeClock::new(Ts::from_millis(1000))),
         rng: Arc::new(FakeRng::default()),
         driver: Arc::new(driver),
-        surface: Arc::new(FakeSurface::new(top)),
+        surface: Arc::new(FakeSurface::new()),
         engine: Arc::new(FakeEngine::new()),
         forge: Arc::new(crate::testing::forge::FakeForge::new()),
         git: Git::new(Arc::clone(&proc)),
@@ -87,7 +87,7 @@ fn outside_a_repo_fails() {
         d.path(),
         d.path(),
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new(d.path())),
+        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     );
     let err = run(&cx, &EnvReq { repo: None }).expect_err("fails");

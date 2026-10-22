@@ -1,14 +1,13 @@
 use std::fs;
-use std::path::Path;
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::surface::{PaneCmd, Surface, SurfaceError};
-use moor_core::{BoxName, ErrorKind};
+use moor_core::ErrorKind;
 
 use super::teardown::{exec_calls, YAML};
-use super::{box_state, fx_with, is_working, req, row, run, Fx};
+use super::{box_state, fx_box, fx_with, is_working, req, row, run, Fx};
 use crate::testing::driver::FakeDriver;
 use crate::testing::surface::FakeSurface;
 
@@ -25,15 +24,7 @@ fn open_pane(f: &Fx) -> String {
         argv: vec!["sh".into()],
         env: Vec::new(),
     };
-    let wt = f
-        .surface
-        .create_worktree(
-            Path::new("r"),
-            &BoxName::parse_allow_bare("t").unwrap(),
-            None,
-        )
-        .unwrap();
-    let ws = f.surface.ensure_workspace(&wt, "t").unwrap();
+    let ws = f.surface.ensure_workspace("t").unwrap();
     let pane = f.surface.open_pane(&ws, &cmd).unwrap();
     pane.as_str().to_owned()
 }
@@ -48,7 +39,7 @@ fn index(calls: &[String], prefix: &str) -> usize {
 
 #[test]
 fn close_stops_the_agent_before_anything_else() {
-    let f = fx_with(FakeDriver::new(), FakeSurface::new("/s"), 0);
+    let f = fx_with(FakeDriver::new(), FakeSurface::new());
     let pane = open_pane(&f);
     live(&f, &pane);
     let v = run(&f.cx, &req(false)).unwrap();
@@ -62,7 +53,7 @@ fn close_stops_the_agent_before_anything_else() {
 
 #[test]
 fn a_pane_already_gone_still_ends_the_session() {
-    let f = fx_with(FakeDriver::new(), FakeSurface::new("/s"), 0);
+    let f = fx_with(FakeDriver::new(), FakeSurface::new());
     live(&f, "p-gone");
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(v.agent_stopped);
@@ -76,8 +67,7 @@ fn a_release_error_keeps_the_box_open_with_the_session_ended() {
         FakeDriver::new().fail_release_always(DriverError::Failed {
             summary: "x".into(),
         }),
-        FakeSurface::new("/s"),
-        0,
+        FakeSurface::new(),
     );
     let pane = open_pane(&f);
     live(&f, &pane);
@@ -95,7 +85,7 @@ fn a_release_error_keeps_the_box_open_with_the_session_ended() {
 
 #[test]
 fn a_box_with_no_session_closes_as_before() {
-    let f = fx_with(FakeDriver::new(), FakeSurface::new("/s"), 0);
+    let f = fx_with(FakeDriver::new(), FakeSurface::new());
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(!v.agent_stopped);
     assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
@@ -110,8 +100,7 @@ fn a_box_with_no_session_closes_as_before() {
 fn a_pane_close_failure_keeps_the_session_and_the_box() {
     let f = fx_with(
         FakeDriver::new(),
-        FakeSurface::new("/s").fail_close_pane(SurfaceError::Timeout),
-        0,
+        FakeSurface::new().fail_close_pane(SurfaceError::Timeout),
     );
     live(&f, "p-1");
     let e = run(&f.cx, &req(false)).unwrap_err();
@@ -123,7 +112,11 @@ fn a_pane_close_failure_keeps_the_session_and_the_box() {
 
 #[test]
 fn a_refused_gate_leaves_the_agent_running() {
-    let f = fx_with(FakeDriver::new(), FakeSurface::new("/s"), 2);
+    let f = fx_box(
+        FakeDriver::new(),
+        FakeSurface::new(),
+        Some("ahead=2 dirty=0"),
+    );
     let pane = open_pane(&f);
     live(&f, &pane);
     let e = run(&f.cx, &req(false)).unwrap_err();
@@ -140,8 +133,7 @@ fn a_refused_gate_leaves_the_agent_running() {
 fn a_failed_pane_close_runs_no_teardown() {
     let f = fx_with(
         FakeDriver::new(),
-        FakeSurface::new("/s").fail_close_pane(SurfaceError::Timeout),
-        0,
+        FakeSurface::new().fail_close_pane(SurfaceError::Timeout),
     );
     fs::write(f.dir.path().join(".moor.yaml"), YAML).unwrap();
     live(&f, "p-1");
@@ -151,7 +143,7 @@ fn a_failed_pane_close_runs_no_teardown() {
 
 #[test]
 fn a_session_without_a_pane_is_ended_without_closing_one() {
-    let f = fx_with(FakeDriver::new(), FakeSurface::new("/s"), 0);
+    let f = fx_with(FakeDriver::new(), FakeSurface::new());
     f.cx.store()
         .unwrap()
         .begin_session(f.id, "s-1", None)
@@ -168,7 +160,7 @@ fn a_session_without_a_pane_is_ended_without_closing_one() {
 
 #[test]
 fn ending_a_session_records_a_sessions_stopped_event() {
-    let f = fx_with(FakeDriver::new(), FakeSurface::new("/s"), 0);
+    let f = fx_with(FakeDriver::new(), FakeSurface::new());
     live(&f, "p-gone");
     run(&f.cx, &req(false)).unwrap();
     let events = f.cx.store().unwrap().events(f.id, 50).unwrap();

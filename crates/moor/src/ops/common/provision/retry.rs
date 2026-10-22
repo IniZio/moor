@@ -11,6 +11,7 @@ use moor_core::{BoxHandle, BoxPath, ErrorKind};
 use super::{recorded_workdir, run_and_record, Provisioned, SetupTarget};
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::setup;
 use crate::store::{BoxRow, Store};
 
 /// The kept Box's handle and workdir, when the Box failed setup on a machine that is still ready.
@@ -48,10 +49,12 @@ pub(super) fn retry_in_box(
             pid: std::process::id(),
         }));
     store.apply(begin)?;
+    let log_dir = setup::log_dir(cx.state_dir()?, row.id);
     let target = SetupTarget {
         handle,
         workdir: &workdir,
-        worktree: Path::new(row.worktree.as_deref().unwrap_or(&row.repo)),
+        repo: Path::new(&row.repo),
+        log_dir: &log_dir,
     };
     run_and_record(cx, store, row.id, true, &target, cfg)
 }

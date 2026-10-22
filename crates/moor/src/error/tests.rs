@@ -134,13 +134,15 @@ mod store_close {
     }
 
     #[test]
-    fn unpushed_work_is_refused_with_hint() {
-        let e = CommandError::from(Refusal::UnpushedWork {
-            unpushed: 2,
-            dirty: true,
+    fn unsaved_box_work_is_refused_and_names_force() {
+        let e = CommandError::from(Refusal::UnsavedInBox {
+            name: "t".to_owned(),
+            branch: "moor/t".to_owned(),
+            ahead: 2,
+            dirty: 1,
         });
         assert_eq!(e.kind, ErrorKind::Refused);
-        assert_eq!(e.hints, vec!["commit and push, or pass --force".to_owned()]);
+        assert!(e.error.to_string().contains("--force"), "{}", e.error);
     }
 
     #[test]

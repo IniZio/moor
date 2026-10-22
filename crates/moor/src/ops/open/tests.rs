@@ -1,6 +1,6 @@
 //! Tests for `open`.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -34,7 +34,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
 }
 
 fn fx_placed(driver: FakeDriver, workspace: Option<&str>) -> Fx {
-    fx_surfaced(driver, FakeSurface::new(PathBuf::from("/s")), workspace)
+    fx_surfaced(driver, FakeSurface::new(), workspace)
 }
 
 fn fx_surfaced(driver: FakeDriver, surface: FakeSurface, workspace: Option<&str>) -> Fx {
@@ -255,7 +255,7 @@ fn open_refuses_while_another_op_holds_the_box_lock() {
 
 #[test]
 fn failed_focus_after_a_wake_leaves_the_box_awake() {
-    let surface = FakeSurface::new(PathBuf::from("/s")).fail_focus_workspace(SurfaceError::Timeout);
+    let surface = FakeSurface::new().fail_focus_workspace(SurfaceError::Timeout);
     let f = fx_surfaced(FakeDriver::new(), surface, Some("ws-9"));
     asleep(&f);
     run(&f.cx, &req()).unwrap_err();

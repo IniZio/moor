@@ -40,7 +40,7 @@ struct Run {
 
 fn run(d: FakeDriver, release: Arc<GhRelease>, forge: Option<bool>) -> Run {
     let d = driver(d);
-    let s = Arc::new(FakeSurface::new("/r"));
+    let s = Arc::new(FakeSurface::new());
     let r = forge.map_or_else(|| req(&s, false), |forge| forge_req(&s, forge));
     let out = agent(&d, &s, release).launch(&r);
     Run { d, s, out }
@@ -123,7 +123,7 @@ fn a_failed_gh_upload_is_a_warning_and_the_agent_launches() {
 
 fn run_failing_gh_put(d: FakeDriver, release: Arc<GhRelease>) -> Run {
     let d = driver(d);
-    let s = Arc::new(FakeSurface::new("/r"));
+    let s = Arc::new(FakeSurface::new());
     let (hook_d, seen) = (d.clone(), AtomicUsize::new(0));
     d.on_exec(move || {
         // The third exec is the gh check; the next put is then the gh upload.

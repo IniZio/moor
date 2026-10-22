@@ -9,7 +9,7 @@ use moor_core::seam::proc::Tool;
 use moor_core::seam::proxy_host::ProxyHostError;
 use moor_core::{BoxPath, CloseReq, ErrorKind};
 
-use super::{admit, box_state, fx_with, proc, req, row, run, Fx};
+use super::{admit, box_state, fx_box, fx_with, proc, req, row, run, Fx};
 use crate::cx::Cx;
 use crate::ops::common::boxlock::{BoxLock, WAIT};
 use crate::testing::driver::FakeDriver;
@@ -22,7 +22,7 @@ pub(super) const YAML: &str =
 
 /// The Box user's HOME, which a Proxy-backed teardown stages its credentials under.
 fn fx_yaml(driver: FakeDriver, yaml: &str) -> Fx {
-    let f = fx_with(driver, FakeSurface::new("/s"), 0);
+    let f = fx_with(driver, FakeSurface::new());
     fs::write(f.dir.path().join(".moor.yaml"), yaml).unwrap();
     base_has(&f, yaml);
     f
@@ -207,7 +207,11 @@ fn gone_box_skips_teardown() {
 
 #[test]
 fn refused_close_runs_no_teardown() {
-    let f = fx_with(FakeDriver::new(), FakeSurface::new("/s"), 2);
+    let f = fx_box(
+        FakeDriver::new(),
+        FakeSurface::new(),
+        Some("ahead=2 dirty=0"),
+    );
     fs::write(f.dir.path().join(".moor.yaml"), YAML).unwrap();
     assert_eq!(
         run(&f.cx, &req(false)).unwrap_err().kind,
@@ -245,16 +249,16 @@ fn close_leaves_the_box_lock_free() {
     assert!(again.is_ok());
 }
 
-/// A Ready Box in a worktree named `repo`, so a woken Box (which the fake driver
+/// A Ready Box of a repo dir named `repo`, so a woken Box (which the fake driver
 /// places at `/work/cbx_1/repo`) probes clean.
 fn fx_woken_yaml(yaml: &str) -> Fx {
     let dir = tempfile::tempdir().unwrap();
-    let worktree = dir.path().join("repo");
-    fs::create_dir(&worktree).unwrap();
+    let repo = dir.path().join("repo");
+    fs::create_dir(&repo).unwrap();
     let path = BoxPath::under("/work/cbx_1/repo", ".moor/boxwork").unwrap();
     let driver = Arc::new(FakeDriver::new().peek_text("box-1", &path, "ahead=0 dirty=0"));
-    let surface = Arc::new(FakeSurface::new("/s"));
-    let proc = proc(0);
+    let surface = Arc::new(FakeSurface::new());
+    let proc = proc();
     let cx = Cx::fake(
         dir.path(),
         dir.path(),
@@ -262,7 +266,7 @@ fn fx_woken_yaml(yaml: &str) -> Fx {
         surface.clone(),
         proc.clone(),
     );
-    let id = admit(&cx, &driver, &worktree);
+    let id = admit(&cx, &driver, &repo);
     cx.store()
         .unwrap()
         .apply(Decision::new(id).set(Fields {
@@ -270,7 +274,7 @@ fn fx_woken_yaml(yaml: &str) -> Fx {
             ..Fields::default()
         }))
         .unwrap();
-    fs::write(worktree.join(".moor.yaml"), yaml).unwrap();
+    fs::write(repo.join(".moor.yaml"), yaml).unwrap();
     let f = Fx {
         dir,
         cx,
@@ -351,7 +355,7 @@ fn changed_moor_yaml_tears_down_with_the_base_copy_and_warns() {
 }
 
 #[test]
-fn trusted_changed_moor_yaml_tears_down_with_the_worktree_copy_and_warns() {
+fn trusted_changed_moor_yaml_tears_down_with_the_host_copy_and_warns() {
     let f = fx_yaml(FakeDriver::new(), YAML);
     base_has(&f, BASE_YAML);
     let trusting = CloseReq {

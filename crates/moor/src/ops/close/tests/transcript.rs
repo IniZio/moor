@@ -15,7 +15,7 @@ const SHA_ABCD: &str = "88d4266fd4e6338d13b845fcf289579d209c897823b9217da3e16193
 const SHA_ABC: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
 
 fn with_engine(engine: &Arc<FakeEngine>, surface: FakeSurface) -> Fx {
-    let f = fx_with(FakeDriver::new(), surface, 0);
+    let f = fx_with(FakeDriver::new(), surface);
     Fx {
         cx: f.cx.with_engine(engine.clone()),
         ..f
@@ -42,7 +42,7 @@ fn ended_digest(f: &Fx) -> Option<String> {
 
 #[test]
 fn close_saves_before_stopping_the_agent_and_records_it() {
-    let surface = Arc::new(FakeSurface::new("/s"));
+    let surface = Arc::new(FakeSurface::new());
     let engine = Arc::new(FakeEngine::new().transcript_text("abc"));
     let stopped_first = Arc::new(AtomicBool::new(false));
     {
@@ -52,7 +52,7 @@ fn close_saves_before_stopping_the_agent_and_records_it() {
             flag.store(closed, Ordering::SeqCst);
         });
     }
-    let f = fx_with(FakeDriver::new(), FakeSurface::new("/s"), 0);
+    let f = fx_with(FakeDriver::new(), FakeSurface::new());
     let f = Fx {
         cx: f.cx.with_engine(engine.clone()),
         surface,
@@ -79,7 +79,7 @@ fn a_failed_save_records_the_failure_and_close_still_succeeds() {
     let engine = Arc::new(
         FakeEngine::new().fail_transcript(EngineError::Transcript("archive: exit 3".into())),
     );
-    let f = with_engine(&engine, FakeSurface::new("/s"));
+    let f = with_engine(&engine, FakeSurface::new());
     let store = f.cx.store().unwrap();
     let sid = store.begin_session(f.id, "s-1", Some("p-1")).unwrap();
     store.set_registered_session(sid, "agent-1").unwrap();
@@ -93,7 +93,7 @@ fn a_failed_save_records_the_failure_and_close_still_succeeds() {
 #[test]
 fn no_session_means_no_save() {
     let engine = Arc::new(FakeEngine::new().transcript_text("abc"));
-    let f = with_engine(&engine, FakeSurface::new("/s"));
+    let f = with_engine(&engine, FakeSurface::new());
     let v = run(&f.cx, &req(false)).unwrap();
     assert_eq!(v.transcript, None);
     assert!(engine.transcripts().is_empty());
@@ -112,7 +112,7 @@ fn exit_saved_engine() -> Arc<FakeEngine> {
 #[test]
 fn a_close_after_an_exit_save_of_the_same_transcript_writes_nothing_more() {
     let engine = exit_saved_engine();
-    let f = with_engine(&engine, FakeSurface::new("/s"));
+    let f = with_engine(&engine, FakeSurface::new());
     let store = f.cx.store().unwrap();
     let sid = store.begin_session(f.id, "s-1", Some("p-1")).unwrap();
     store.set_registered_session(sid, "agent-1").unwrap();
@@ -134,7 +134,7 @@ fn a_close_after_the_transcript_changed_saves_again() {
             .then_transcript_text("abc")
             .then_transcript_text("abcd"),
     );
-    let f = with_engine(&engine, FakeSurface::new("/s"));
+    let f = with_engine(&engine, FakeSurface::new());
     let store = f.cx.store().unwrap();
     let sid = store.begin_session(f.id, "s-1", Some("p-1")).unwrap();
     store.set_registered_session(sid, "agent-1").unwrap();
@@ -159,7 +159,7 @@ fn a_close_after_the_transcript_changed_saves_again() {
 #[test]
 fn a_failed_close_save_keeps_the_exit_digest() {
     let engine = exit_saved_engine();
-    let f = with_engine(&engine, FakeSurface::new("/s"));
+    let f = with_engine(&engine, FakeSurface::new());
     let store = f.cx.store().unwrap();
     let sid = store.begin_session(f.id, "s-1", Some("p-1")).unwrap();
     store.set_registered_session(sid, "agent-1").unwrap();

@@ -35,7 +35,7 @@ fn the_host_copy_of_the_setup_log_equals_the_box_log() {
     let r = rig(d.path(), FakeDriver::new().copy_text(&log));
     run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["a"], &[]));
     assert_eq!(
-        std::fs::read(d.path().join(".moor/setup.log")).unwrap(),
+        std::fs::read(d.path().join("logs/1/setup.log")).unwrap(),
         log
     );
 }
@@ -73,7 +73,7 @@ fn a_symlink_left_as_the_log_is_removed_and_its_target_untouched() {
     );
     run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["a"], &[]));
     assert_eq!(std::fs::read_to_string(&target).unwrap(), "keep");
-    assert!(std::fs::symlink_metadata(d.path().join(".moor/setup.log")).is_err());
+    assert!(std::fs::symlink_metadata(d.path().join("logs/1/setup.log")).is_err());
     let w = only(r.cx.take_warnings());
     assert!(!w.message.contains("keep"), "{}", w.message);
     assert!(!w.message.contains("last"), "{}", w.message);
@@ -82,8 +82,8 @@ fn a_symlink_left_as_the_log_is_removed_and_its_target_untouched() {
 #[test]
 fn a_failed_copy_leaves_no_partial_log_on_the_host() {
     let d = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(d.path().join(".moor")).unwrap();
-    std::fs::write(d.path().join(".moor/setup.log"), "partial s3cret-value").unwrap();
+    std::fs::create_dir_all(d.path().join("logs/1")).unwrap();
+    std::fs::write(d.path().join("logs/1/setup.log"), "partial s3cret-value").unwrap();
     let r = rig(
         d.path(),
         FakeDriver::new()
@@ -91,5 +91,5 @@ fn a_failed_copy_leaves_no_partial_log_on_the_host() {
             .fail_copy_out(DriverError::Quota("q".into())),
     );
     run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["a"], &[]));
-    assert!(std::fs::symlink_metadata(d.path().join(".moor/setup.log")).is_err());
+    assert!(std::fs::symlink_metadata(d.path().join("logs/1/setup.log")).is_err());
 }

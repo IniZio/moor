@@ -274,7 +274,6 @@ fn box_field_sets(s: &Fields) -> Sets {
         ("goal", text(&s.goal)),
         ("base", text(&s.base)),
         ("branch", text(&s.branch)),
-        ("worktree", text(&s.worktree)),
         ("state_reason", text(&s.state_reason)),
         (
             "setup_failed_at",

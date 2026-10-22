@@ -85,9 +85,13 @@ scripts run under `sh` and use `git` for the checkout.
 
 When the repo has `setup` commands, the setup script checks for these tools
 first. For each tool that is missing, it prints a warning that names the
-tool, writes the warning to `.moor/setup.log`, and continues. A missing tool does
+tool, writes the warning to `.moor/setup.log` in the Box, and continues. A missing tool does
 not fail the setup. A repo with no `setup` commands runs no setup script, so
 nothing checks the tools.
+
+After setup, moor copies the Box's `.moor/setup.log` to
+`<state dir>/logs/<box id>/setup.log` on the host. Only moor's user can read
+that directory and file.
 
 The image's sshd must not set `GatewayPorts yes`. With `yes`, the Box's Proxy
 port listens on the Box's network, and other machines on that network can

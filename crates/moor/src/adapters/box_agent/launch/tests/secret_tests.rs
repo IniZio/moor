@@ -10,7 +10,7 @@ fn names() -> Vec<String> {
 }
 
 fn launch_script(req: impl FnOnce(&FakeSurface) -> LaunchReq) -> String {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new("/r")));
+    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
     agent(&d, &s).launch(&req(&s)).unwrap();
     script_of(&pane_line(&s))
 }

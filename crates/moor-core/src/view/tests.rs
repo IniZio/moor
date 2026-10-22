@@ -16,7 +16,6 @@ fn sample_box() -> BoxView {
         state_reason: None,
         base: None,
         branch: Some("b".into()),
-        worktree: None,
         workspace: None,
         driver: Some(DriverView {
             state: BoxState::Ready,
@@ -41,7 +40,7 @@ fn box_json() -> Value {
     json!({
         "id": 7, "name": "t", "repo": "r", "issue": null, "goal": "g",
         "lifecycle": "ready", "session_state": "working", "state_reason": null, "base": null, "branch": "b",
-        "worktree": null, "workspace": null,
+        "workspace": null,
         "driver": {"state": "ready", "provider": "p", "handle": "h",
                 "workdir": "/work/repo", "egress": "enforced", "asleep_since": null,
                 "sleep": {"after": null, "reason": null}},
@@ -216,14 +215,13 @@ fn close_view_keys_match_wire_shape() {
         workspace_closed: false,
         agent_stopped: true,
         transcript: None,
-        worktree_kept: true,
         promoted: vec![],
     };
     assert_eq!(
         serde_json::to_value(v).ok(),
         Some(json!({
             "box": box_json(), "box_deleted": true, "workspace_closed": false,
-            "agent_stopped": true, "transcript": null, "worktree_kept": true, "promoted": []
+            "agent_stopped": true, "transcript": null, "promoted": []
         }))
     );
 }

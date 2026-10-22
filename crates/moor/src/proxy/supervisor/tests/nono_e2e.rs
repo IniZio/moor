@@ -97,7 +97,6 @@ fn box_with_machine(store: &Store, driver: &FakeDriver) -> (BoxId, BoxHandle) {
             handle: got.handle.clone(),
         })
         .set(Fields {
-            worktree: Field::Set("/wt".into()),
             box_workdir: Field::Set("/work".into()),
             ..Fields::default()
         });

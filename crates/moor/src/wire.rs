@@ -48,14 +48,19 @@ const HERDR_PASSTHROUGH: [&str; 5] = [
     "TERM",
 ];
 
-/// The herdr adapter, numbering its reports from `clock`.
+/// The herdr adapter, numbering its reports from `clock` and opening Workspaces in `state_dir`.
 fn herdr(
     proc: &Arc<dyn Proc>,
     session: &str,
     extra_env: Vec<(String, String)>,
     clock: Arc<dyn Clock>,
+    state_dir: Option<PathBuf>,
 ) -> Herdr {
-    Herdr::new(Arc::clone(proc), session.to_owned(), extra_env).with_clock(clock)
+    let h = Herdr::new(Arc::clone(proc), session.to_owned(), extra_env).with_clock(clock);
+    match state_dir {
+        Some(dir) => h.with_workspace_dir(dir),
+        None => h,
+    }
 }
 
 /// Per-provider lookup deadlines for the providers that configure one.
@@ -133,14 +138,15 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
         .filter_map(|k| Some(((*k).to_owned(), env.get(k)?.to_owned())))
         .collect();
     let clock = Arc::new(clock);
+    let state_dir = env.state_dir();
     let surface: Arc<dyn Surface> = Arc::new(herdr(
         &proc,
         config.herdr_session(),
         extra_env,
         Arc::clone(&clock) as Arc<dyn Clock>,
+        state_dir.clone(),
     ));
     let rng: Arc<dyn Rng> = Arc::new(SystemRng);
-    let state_dir = env.state_dir();
     let crabbox = Crabbox::new(
         Arc::clone(&proc),
         Arc::clone(&clock) as Arc<dyn Clock>,

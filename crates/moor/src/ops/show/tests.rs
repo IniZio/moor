@@ -46,7 +46,7 @@ fn cx(dir: &Path, driver: &Arc<FakeDriver>) -> Cx {
         dir,
         dir,
         driver.clone(),
-        Arc::new(FakeSurface::new(dir)),
+        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     )
 }
@@ -246,7 +246,7 @@ fn engine_cx(dir: &Path, driver: &Arc<FakeDriver>, engine: &Arc<FakeEngine>) -> 
         dir,
         dir,
         driver.clone(),
-        Arc::new(FakeSurface::new(dir)),
+        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     )
     .with_engine(engine.clone())
@@ -281,7 +281,6 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: Option<&str>) -> B
         .session(SessionInput::Started)
         .box_input(BoxInput::Acquired { handle: got.handle })
         .set(Fields {
-            worktree: Field::Set("/wt".into()),
             box_workdir: Field::Set("/work".into()),
             ..Fields::default()
         });
@@ -507,7 +506,7 @@ fn start_cx(dir: &Path, driver: &Arc<FakeDriver>) -> Cx {
         dir,
         Path::new("/repo"),
         driver.clone(),
-        Arc::new(FakeSurface::new(dir)),
+        Arc::new(FakeSurface::new()),
         proc,
     )
     .with_engine(Arc::new(FakeEngine::new()))

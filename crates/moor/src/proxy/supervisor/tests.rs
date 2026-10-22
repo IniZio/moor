@@ -34,7 +34,6 @@ use crate::testing::driver::{FakeDriver, TunnelReply};
 use crate::testing::rng::FakeRng;
 
 const BOOT: &str = "boot-1";
-const WORKTREE: &str = "/wt";
 pub(super) const FIRST_TUNNEL_PID: u32 = 50_000;
 
 /// Everything a supervisor run needs, owned in one place.
@@ -62,7 +61,7 @@ pub(super) struct World {
 }
 
 impl World {
-    /// A working Box with a live machine, a worktree and a reserved proxy row.
+    /// A working Box with a live machine and a reserved proxy row.
     pub(super) fn new(replies: impl IntoIterator<Item = TunnelReply>) -> Self {
         Self::with_spec(replies, |_| {})
     }
@@ -180,7 +179,7 @@ pub(super) fn no_secrets() -> SecretsFn {
     Arc::new(|_, _, _| Ok(None))
 }
 
-/// Insert a Box named `name`, give it a live machine from `driver` and a worktree.
+/// Insert a Box named `name` and give it a live machine from `driver`.
 fn working_box(store: &Store, driver: &FakeDriver, name: &str) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
@@ -211,7 +210,6 @@ fn working_box(store: &Store, driver: &FakeDriver, name: &str) -> BoxId {
         .session(SessionInput::Started)
         .box_input(BoxInput::Acquired { handle: got.handle })
         .set(Fields {
-            worktree: Field::Set(WORKTREE.into()),
             box_workdir: Field::Set("/work".into()),
             ..Fields::default()
         });

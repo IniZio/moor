@@ -169,7 +169,7 @@ pub(crate) fn provision(
     } else {
         store.apply(requested)?;
     }
-    let worktree = PathBuf::from(started.worktree.as_deref().unwrap_or(&started.repo));
+    let repo = PathBuf::from(started.repo.as_str());
     let req = AcquireReq {
         provider,
         box_id: id,
@@ -185,7 +185,8 @@ pub(crate) fn provision(
             hold_root(store, id, root, &planned, &got)?;
             record_acquired(store, id, &got)?;
             hold_workdir(store, id, &got)?;
-            let target = SetupTarget::new(&got, &worktree);
+            let log_dir = setup::log_dir(cx.state_dir()?, id);
+            let target = SetupTarget::new(&got, &repo, &log_dir);
             run_and_record(cx, store, id, entry.begin().is_some(), &target, cfg)
         }
         Err(e) => Err(failed(cx, store, id, entry, &req, e)),
@@ -215,23 +216,27 @@ fn record_acquired(store: &Store, id: BoxId, got: &Acquired) -> Result<(), Comma
     Ok(())
 }
 
-/// Where setup runs: the freshly acquired Box, and the worktree whose author the Box commits as.
+/// Where setup runs: the freshly acquired Box, the host repo whose origin and author it clones
+/// with, and where its setup log is kept.
 struct SetupTarget<'a> {
     /// The Box setup runs in.
     handle: &'a BoxHandle,
     /// Working directory in the Box.
     workdir: &'a BoxPath,
-    /// Worktree on the host the Box works in.
-    worktree: &'a Path,
+    /// The Box's repo on the host, read only.
+    repo: &'a Path,
+    /// Host directory for the Box's setup log.
+    log_dir: &'a Path,
 }
 
 impl<'a> SetupTarget<'a> {
     /// The target for a freshly acquired Box.
-    const fn new(got: &'a Acquired, worktree: &'a Path) -> Self {
+    const fn new(got: &'a Acquired, repo: &'a Path, log_dir: &'a Path) -> Self {
         Self {
             handle: &got.handle,
             workdir: &got.workdir,
-            worktree,
+            repo,
+            log_dir,
         }
     }
 }
@@ -251,7 +256,7 @@ fn run_through_proxy(
             target.handle,
             &cfg.provider.value,
             target.workdir,
-            target.worktree,
+            target.log_dir,
             cfg,
             proxy.as_ref(),
         ),

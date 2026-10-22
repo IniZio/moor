@@ -85,7 +85,6 @@ fn box_for(store: &Store, driver: &FakeDriver, name: &str, user: UserId) -> (Box
             handle: got.handle.clone(),
         })
         .set(Fields {
-            worktree: Field::Set("/wt".into()),
             box_workdir: Field::Set("/work".into()),
             ..Fields::default()
         });

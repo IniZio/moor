@@ -31,7 +31,7 @@ pub(super) fn with_provider(
     if row.lifecycle != BoxLifecycle::WaitingForBox {
         return Ok(view(cx, row, attached));
     }
-    let at = row.worktree.as_deref().unwrap_or(&row.repo);
+    let at = row.repo.as_str();
     let cfg = settings(cx, Path::new(at), &Flags::default())?;
     Ok(queued_view(cx, row, attached, &cfg.provider.value))
 }

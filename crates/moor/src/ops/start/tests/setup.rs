@@ -253,20 +253,20 @@ fn setup_fails_like_a_failing_line_when_the_proxy_cannot_start() {
 }
 
 #[test]
-fn a_failed_setup_copies_its_log_out_of_the_box_into_the_worktree() {
-    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]);
+fn a_failed_setup_copies_its_log_into_an_owner_only_dir_under_the_state_dir() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let driver = FakeDriver::new()
+        .exec_results([Ok(exit(0)), Ok(exit(1))])
+        .copy_text("moor setup: $ a\n");
     let (w, v) = start_with("setup: [a]\n", driver);
-    let wt =
-        w.cx.store()
-            .unwrap()
-            .box_row(BoxId::new(v.boxed.id))
-            .unwrap()
-            .unwrap()
-            .worktree;
-    let wt = std::path::PathBuf::from(wt.unwrap());
+    let dir = w.dir.path().join("logs").join(v.boxed.id.to_string());
     let (_, from, to) = w.driver.copies().remove(0);
     assert_eq!(from.as_str(), "/work/cbx_1/repo/.moor/setup.log");
-    assert_eq!(to, wt.join(".moor/setup.log"));
+    assert_eq!(to, dir.join("setup.log"));
+    let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(&dir), 0o700);
+    assert_eq!(mode(dir.parent().unwrap()), 0o700);
+    assert_eq!(mode(&to), 0o600);
 }
 
 #[test]
@@ -277,8 +277,7 @@ fn a_failing_setup_marks_the_box_and_a_later_clean_setup_clears_it() {
     assert!(failed_at_set(&w, &v));
     let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
-    // A re-provision reads `.moor.yaml` from the worktree, not the invocation repo.
-    let wt = store.box_row(id).unwrap().unwrap().worktree.unwrap();
+    let wt = store.box_row(id).unwrap().unwrap().repo;
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [a]\n").unwrap();
     let gone = Decision::new(id).box_input(BoxInput::DriverMissing);
@@ -334,7 +333,7 @@ fn a_failing_setup_on_a_re_provisioned_working_box_records_the_failing_line() {
     let (w, v) = start_with("setup: [a]\n", driver);
     let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
-    let wt = store.box_row(id).unwrap().unwrap().worktree.unwrap();
+    let wt = store.box_row(id).unwrap().unwrap().repo;
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [a]\n").unwrap();
     script_base_yaml(&w, Some("setup: [a]\n"));
@@ -377,8 +376,7 @@ fn setup_holds_the_setup_intent_and_clears_it_after() {
 pub(super) fn failed_setup_with(yaml: &str, driver: FakeDriver) -> (World, BoxId) {
     let (w, v) = start_with("setup: [a]\n", driver);
     let id = BoxId::new(v.boxed.id);
-    let wt = w.cx.store().unwrap().box_row(id).unwrap().unwrap().worktree;
-    let wt = wt.unwrap();
+    let wt = w.cx.store().unwrap().box_row(id).unwrap().unwrap().repo;
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(Path::new(&wt).join(".moor.yaml"), yaml).unwrap();
     script_base_yaml(&w, Some(yaml));

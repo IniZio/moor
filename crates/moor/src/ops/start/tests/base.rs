@@ -37,7 +37,6 @@ fn a_fetched_default_branch_is_the_base() {
         .on(Tool::Git, &["rev-parse", "origin/main"], ok("c643cc8a"));
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(fetched(&w));
-    assert_eq!(w.surface.bases(), [Some("c643cc8a".to_owned())]);
     assert_eq!(v.boxed.base.as_deref(), Some("c643cc8a"));
     assert!(w.cx.take_warnings().is_empty());
 }
@@ -56,7 +55,6 @@ fn a_failed_fetch_falls_back_to_the_local_branch_with_a_warning() {
         },
     );
     let v = run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(w.surface.bases(), [None]);
     assert_eq!(v.boxed.base.as_deref(), Some("abc123"));
     let warnings = w.cx.take_warnings();
     let warning = warnings.iter().find(|x| x.code == "fetch_failed");
@@ -78,7 +76,6 @@ fn an_explicit_base_is_not_fetched() {
     r.base = Some("release".into());
     let v = run(&w.cx, &r).unwrap();
     assert!(!fetched(&w));
-    assert_eq!(w.surface.bases(), [Some(SHA.to_owned())]);
     assert_eq!(v.boxed.base.as_deref(), Some(SHA));
 }
 
@@ -87,7 +84,6 @@ fn a_repo_without_a_remote_default_is_not_fetched() {
     let w = world(FakeDriver::new());
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(!fetched(&w));
-    assert_eq!(w.surface.bases(), [None]);
     assert_eq!(v.boxed.base.as_deref(), Some("abc123"));
     assert!(w.cx.take_warnings().is_empty());
 }

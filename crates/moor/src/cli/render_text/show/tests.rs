@@ -8,7 +8,7 @@ use super::super::render;
 fn row(name: &str, with_box: bool) -> Value {
     json!({
         "id": 1, "name": name, "repo": "/r", "lifecycle": "ready", "session_state": "idle",
-        "branch": "moor/x", "worktree": "/w/x",
+        "branch": "moor/x",
         "driver": if with_box { json!({
             "state": "running", "provider": "local", "workdir": "/work",
             "egress": "none", "sleep": {}
@@ -47,7 +47,7 @@ fn detail_with_box() {
     let out = show(json!({"box": row("alpha", true)}));
     assert_eq!(
         out,
-        "name:     alpha\nlifecycle: ready\nsession:   idle\nrepo:     /r\nworktree: /w/x\nbranch:   moor/x\n\
+        "name:     alpha\nlifecycle: ready\nsession:   idle\nrepo:     /r\nbranch:   moor/x\n\
          box:      local running workdir=/work egress=none\nagent:    working pane=live\n"
     );
 }

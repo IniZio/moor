@@ -135,8 +135,6 @@ pub struct BoxView {
     pub base: Option<String>,
     /// Branch name.
     pub branch: Option<String>,
-    /// Worktree path.
-    pub worktree: Option<String>,
     /// Workspace id.
     pub workspace: Option<String>,
     /// The Box, when one exists.
@@ -326,8 +324,6 @@ pub struct CloseView {
     pub agent_stopped: bool,
     /// Transcript path.
     pub transcript: Option<String>,
-    /// Worktree was kept.
-    pub worktree_kept: bool,
     /// Names promoted from the queue.
     pub promoted: Vec<String>,
 }

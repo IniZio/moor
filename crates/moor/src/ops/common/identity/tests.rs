@@ -29,7 +29,7 @@ fn cx(dir: &Path, name: Option<&str>, email: Option<&str>) -> Cx {
         dir,
         dir,
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new(dir)),
+        Arc::new(FakeSurface::new()),
         proc,
     )
 }
@@ -78,7 +78,7 @@ fn not_a_repo_is_no_identity() {
         d.path(),
         d.path(),
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new(d.path())),
+        Arc::new(FakeSurface::new()),
         proc,
     );
     assert!(Identity::of(&cx, d.path()).is_none());

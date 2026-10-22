@@ -108,7 +108,7 @@ pub(crate) fn begin_seeded(
     let Some(mut launch) = launch_req(cx, &working, None) else {
         return Ok(AgentLaunchView::default());
     };
-    let at = row.worktree.as_deref().unwrap_or(&row.repo);
+    let at = row.repo.as_str();
     let cfg = settings(cx, Path::new(at), &Flags::default())?;
     launch.model = cfg.model.clone().map(|m| m.value);
     launch.prompt = LaunchPrompt::Text(seed);
@@ -127,7 +127,7 @@ pub(super) fn begin(
 ) -> Result<AgentLaunchView, CommandError> {
     let id = row.id;
     let handle = row.boxed.as_ref().and_then(|b| b.handle.clone());
-    let origin_at = row.worktree.as_deref().unwrap_or(&row.repo);
+    let origin_at = row.repo.as_str();
     let mut proxy = match box_exec::proxy(cx, id, handle, Path::new(origin_at), cfg) {
         Ok(p) => p,
         Err(message) => {

@@ -19,6 +19,9 @@ names=(
   SyncMode sync_checkout sync_with_proxy sync_failed seed_source CRABBOX_SYNC_GIT_SEED_SOURCE
   push_url git_remote_lines MOOR_FETCH remote.moor
   host_cwd host_of 'box_dir(row' 'box_dir(&row'
+  create_worktree remove_worktree list_worktrees existing_worktree WorktreeEntry worktree_created
+  'Worktree {' 'surface::Worktree' Leftover exclude_scratch SCRATCH_DIRS
+  UnpushedWork worktree_kept sync_branch BranchSync 'worktree TEXT' 'row.worktree'
 )
 args=()
 for n in "${names[@]}"; do args+=(-e "$n"); done

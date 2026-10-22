@@ -8,10 +8,6 @@ use moor_core::seam::surface::SurfaceError;
 pub(super) enum HerdrFailure {
     /// No herdr server runs for this session; the caller may start one.
     ServerNotRunning,
-    /// The target already exists (herdr exit 255 or an `*already_exists` code).
-    AlreadyExists(SurfaceError),
-    /// herdr could not create a worktree, which a leftover worktree on the branch can cause.
-    CreateFailed(SurfaceError),
     /// Any other failure, already in Surface terms.
     Surface(SurfaceError),
 }
@@ -40,7 +36,7 @@ fn parse_body(text: &str) -> Option<ErrorBody> {
     })
 }
 
-/// Whether a herdr error code names a missing pane, workspace or worktree.
+/// Whether a herdr error code names a missing pane or workspace.
 fn is_not_found(code: &str) -> bool {
     code == "not_found" || code.ends_with("_not_found")
 }
@@ -54,16 +50,6 @@ fn map_body(body: &ErrorBody) -> HerdrFailure {
         return HerdrFailure::Surface(SurfaceError::Unavailable(
             "herdr does not support this request; restart the moor herdr session".to_owned(),
         ));
-    }
-    if body.code == "worktree_create_failed" {
-        return HerdrFailure::CreateFailed(SurfaceError::Failed {
-            summary: format!("herdr {}", body.code),
-        });
-    }
-    if body.code == "already_exists" || body.code.ends_with("_already_exists") {
-        return HerdrFailure::AlreadyExists(SurfaceError::Failed {
-            summary: format!("herdr {}", body.code),
-        });
     }
     if is_not_found(&body.code) {
         return HerdrFailure::Surface(SurfaceError::NotFound);
@@ -94,14 +80,9 @@ pub(super) fn map_error(e: &ProcError) -> HerdrFailure {
             .or_else(|| parse_body(stdout))
             .map_or_else(
                 || {
-                    let err = SurfaceError::Failed {
+                    HerdrFailure::Surface(SurfaceError::Failed {
                         summary: format!("herdr exited with code {code}"),
-                    };
-                    if *code == 255 {
-                        HerdrFailure::AlreadyExists(err)
-                    } else {
-                        HerdrFailure::Surface(err)
-                    }
+                    })
                 },
                 |body| map_body(&body),
             ),

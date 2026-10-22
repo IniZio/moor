@@ -1,6 +1,5 @@
 //! Tests for `run`.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -64,7 +63,7 @@ fn context(dir: &std::path::Path, driver: &Arc<FakeDriver>) -> (Cx, Arc<Scripted
         dir,
         dir,
         driver.clone(),
-        Arc::new(FakeSurface::new(PathBuf::from("/s"))),
+        Arc::new(FakeSurface::new()),
         proc.clone(),
     );
     (cx, proc)
@@ -78,8 +77,9 @@ fn bare_with(driver: FakeDriver) -> Fx {
     let id = cx
         .store()
         .unwrap()
-        .apply(crate::testing::cx::new_box(
+        .apply(crate::testing::cx::new_box_in(
             BoxName::parse_allow_bare("t").unwrap(),
+            dir.path(),
         ))
         .unwrap()
         .box_id;
@@ -107,7 +107,6 @@ pub(crate) fn ready_with(driver: FakeDriver) -> Fx {
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
-        worktree: Field::Set(f.dir.path().display().to_string()),
         base: Field::Set(SHA.to_owned()),
         ..Fields::default()
     };
@@ -417,7 +416,7 @@ fn run_is_recorded_in_flight_while_the_command_runs() {
             &cx_dir,
             &cx_dir,
             Arc::new(FakeDriver::new()),
-            Arc::new(FakeSurface::new(PathBuf::from("/s"))),
+            Arc::new(FakeSurface::new()),
             Arc::new(ScriptedProc::new()),
         );
         let row = probe.store().unwrap().last_run(id).unwrap();
@@ -505,7 +504,7 @@ fn unreadable_head_records_and_reports_no_sha() {
         f.dir.path(),
         f.dir.path(),
         f.driver.clone(),
-        Arc::new(FakeSurface::new(PathBuf::from("/s"))),
+        Arc::new(FakeSurface::new()),
         proc,
     );
     let v = run(&cx, &req(&["true"])).unwrap();

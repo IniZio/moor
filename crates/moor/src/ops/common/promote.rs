@@ -55,7 +55,7 @@ fn promote_into(
     };
     let mut cfgs: HashMap<BoxId, (BoxName, Option<UserId>, BoxSettings)> = HashMap::new();
     for row in store.waiting_boxes()? {
-        let at = row.worktree.as_deref().unwrap_or(&row.repo);
+        let at = row.repo.as_str();
         match settings(cx, Path::new(at), &Flags::default()) {
             Ok(cfg) if cfg.provider.value == provider.as_str() => {
                 cfgs.insert(row.id, (row.name.clone(), row.user, cfg));

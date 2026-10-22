@@ -43,7 +43,7 @@ fn rig(dir: &Path, driver: FakeDriver) -> Rig {
         dir,
         dir,
         Arc::clone(&driver) as Arc<_>,
-        Arc::new(FakeSurface::new(dir)),
+        Arc::new(FakeSurface::new()),
         Arc::clone(&proc) as Arc<_>,
     );
     let got = driver
@@ -85,7 +85,6 @@ fn rows(dir: &Path, handle: BoxHandle) -> (BoxRow, DriverRow) {
         goal: None,
         base: None,
         branch: None,
-        worktree: Some(dir.display().to_string()),
         workspace_id: None,
         agent_session_id: None,
         lifecycle: BoxLifecycle::Ready,
@@ -215,14 +214,6 @@ fn missing_handle_is_unknown() {
     r.boxed.handle = None;
     assert!(is_unknown(&run(&r)));
     assert!(r.driver.execs().is_empty());
-}
-
-#[test]
-fn a_box_without_a_host_worktree_is_still_probed() {
-    let d = tempfile::tempdir().unwrap();
-    let mut r = with_result(d.path(), "ahead=0 dirty=0");
-    r.row.worktree = None;
-    assert_eq!(run(&r), BoxWork::Clean);
 }
 
 #[test]

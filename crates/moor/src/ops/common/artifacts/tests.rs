@@ -41,7 +41,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
         dir.path(),
         dir.path(),
         driver.clone(),
-        Arc::new(FakeSurface::new("/s")),
+        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     );
     let id = admit(&cx, &driver, dir.path());
@@ -60,14 +60,13 @@ fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> BoxId {
     let id = store
         .apply(Decision::insert(NewBox {
             name: name.clone(),
-            repo: "r".into(),
+            repo: dir.display().to_string(),
         }))
         .unwrap()
         .box_id;
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
-        worktree: Field::Set(dir.display().to_string()),
         workspace_id: Field::Set("ws-1".into()),
         box_workdir: Field::Set("/work/box-1".into()),
         ..Fields::default()

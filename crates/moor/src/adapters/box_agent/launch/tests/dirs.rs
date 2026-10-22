@@ -1,6 +1,5 @@
 //! The directories `launch_dirs` reports are the ones `launch` creates and removes.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -37,17 +36,11 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
 }
 
 fn req(s: &FakeSurface) -> LaunchReq {
-    let wt = s.create_worktree(
-        &PathBuf::from("/r"),
-        &BoxName::parse_allow_bare("t1").unwrap(),
-        None,
-    );
-    let wt = wt.unwrap();
     LaunchReq {
         id: BoxId::new(1),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
-        workspace: s.ensure_workspace(&wt, "moor:t1").unwrap(),
+        workspace: s.ensure_workspace("moor:t1").unwrap(),
         box_name: BoxName::parse_allow_bare("t1").unwrap(),
         branch: "moor/t1".to_owned(),
         goal: Some("fix x".to_owned()),
@@ -88,7 +81,7 @@ fn script_of(line: &str) -> String {
 
 #[test]
 fn launch_dirs_names_the_dirs_the_launch_creates() {
-    let (d, s) = (driver(FakeDriver::new()), Arc::new(FakeSurface::new("/r")));
+    let (d, s) = (driver(FakeDriver::new()), Arc::new(FakeSurface::new()));
     let (r, agent) = (req(&s), agent(&d, &s));
     let (cred, tmp) = agent.launch_dirs(&r).unwrap().unwrap();
     agent.launch(&r).unwrap();
@@ -108,7 +101,7 @@ fn launch_dirs_names_the_dirs_the_launch_creates() {
 #[test]
 fn launch_dirs_fails_at_the_home_step_when_the_home_cannot_be_read() {
     let d = driver(FakeDriver::new().fail_peek(DriverError::Timeout(Duration::from_secs(1))));
-    let s = Arc::new(FakeSurface::new("/r"));
+    let s = Arc::new(FakeSurface::new());
     let err = agent(&d, &s).launch_dirs(&req(&s)).unwrap_err();
     assert!(
         matches!(err, EngineError::Failed { step: "home", .. }),

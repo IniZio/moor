@@ -15,7 +15,7 @@ fn cx() -> Cx {
         p,
         p,
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new(p)),
+        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     )
 }

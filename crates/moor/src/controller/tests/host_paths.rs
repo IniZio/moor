@@ -62,17 +62,16 @@ fn enroll_ann(served: &Served) -> UserId {
     UserId::new(got["value"]["user"].as_i64().expect("user"))
 }
 
-/// Inserts a Box of `user` whose machine is ready, working in `worktree`.
-pub(super) fn ready_box(store: &Store, user: UserId, worktree: &Path) -> BoxId {
+/// Inserts a Box of `user` whose machine is ready, on the repo at `repo`.
+pub(super) fn ready_box(store: &Store, user: UserId, repo: &Path) -> BoxId {
     let new = Decision::insert(NewBox {
         name: BoxName::parse_allow_bare(BOX).expect("name"),
-        repo: "r".into(),
+        repo: repo.display().to_string(),
     })
     .requester(user);
     let id = store.apply(new).expect("box").box_id;
     let fields = Fields {
         box_provider: Field::Set(ProviderId::new("p")),
-        worktree: Field::Set(worktree.display().to_string()),
         ..Fields::default()
     };
     let admitted = Decision::new(id)
