@@ -53,6 +53,35 @@ pub(super) fn run(
     spec: &ExecSpec,
     deadline: Deadline,
 ) -> Result<ExecOutcome, DriverError> {
+    let Wrapped {
+        proc,
+        gate,
+        exit_tag,
+    } = wrapped(cb, handle, spec, deadline)?;
+    let result = touching_lease(cb, handle, || match &spec.output {
+        Some(out) => cb.proc.run_streamed(&proc.stderr_gate(gate), out),
+        None => cb.proc.run(&proc).map(|_| ()),
+    });
+    outcome(cb, handle, result, &exit_tag)
+}
+
+/// An ssh call that runs a command inside [`WRAPPER`].
+pub(super) struct Wrapped {
+    /// The ssh call, with the env on its stdin.
+    pub(super) proc: ProcSpec,
+    /// The markers around the command's own stderr.
+    pub(super) gate: StderrGate,
+    /// The tag of the line that reports the command's exit.
+    pub(super) exit_tag: String,
+}
+
+/// The ssh call on the Box's shared connection that runs `spec.argv` inside [`WRAPPER`].
+pub(super) fn wrapped(
+    cb: &Crabbox,
+    handle: &BoxHandle,
+    spec: &ExecSpec,
+    deadline: Deadline,
+) -> Result<Wrapped, DriverError> {
     if spec.argv.is_empty() {
         return Err(DriverError::Failed {
             summary: "the box command is empty".to_owned(),
@@ -79,11 +108,11 @@ pub(super) fn run(
         .args(words)
         .arg(remote)
         .stdin(Stdin::Bytes(env));
-    let result = touching_lease(cb, handle, || match &spec.output {
-        Some(out) => cb.proc.run_streamed(&proc.stderr_gate(gate), out),
-        None => cb.proc.run(&proc).map(|_| ()),
-    });
-    outcome(cb, handle, result, &exit_tag)
+    Ok(Wrapped {
+        proc,
+        gate,
+        exit_tag,
+    })
 }
 
 impl Crabbox {
@@ -98,7 +127,11 @@ impl Crabbox {
 /// Runs `command`, and while it runs touches the lease of the Box behind `handle` every
 /// `cb.touch_every` with a fresh lookup, so crabbox does not reap a Box that is busy with a
 /// long command. A failed touch is left to the next one.
-fn touching_lease<T>(cb: &Crabbox, handle: &BoxHandle, command: impl FnOnce() -> T) -> T {
+pub(super) fn touching_lease<T>(
+    cb: &Crabbox,
+    handle: &BoxHandle,
+    command: impl FnOnce() -> T,
+) -> T {
     let (ended, wait) = mpsc::channel::<()>();
     thread::scope(|s| {
         s.spawn(move || {
@@ -133,7 +166,7 @@ fn env_file(env: &[(String, String)]) -> Result<Vec<u8>, DriverError> {
 
 /// How the exec ended, from ssh's result and the exit line tagged `exit_tag`. A failure that is
 /// not the command's own exit goes to [`link::failed`].
-fn outcome(
+pub(super) fn outcome(
     cb: &Crabbox,
     handle: &BoxHandle,
     result: Result<(), ProcError>,

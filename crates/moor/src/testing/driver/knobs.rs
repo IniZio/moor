@@ -1,9 +1,10 @@
-//! Setup knobs for the Driver fake: where boxes live and which calls fail.
+//! Setup knobs for the Driver fake: where boxes live and which calls fail, and the calls it saw.
 
 use moor_core::seam::driver::{DriverError, ExecSpec};
-use moor_core::seam::proc::Output;
+use moor_core::seam::proc::{Deadline, Output};
+use moor_core::BoxHandle;
 
-use super::{FakeDriver, State};
+use super::{CopyCall, FakeDriver, State};
 
 impl State {
     /// The text an `exec` writes to its log. An artifact index exec takes the next artifact
@@ -26,6 +27,15 @@ fn is_artifact_index(spec: &ExecSpec) -> bool {
 }
 
 impl FakeDriver {
+    /// Every `exec` so far: handle, spec and deadline, in call order.
+    pub(crate) fn execs(&self) -> Vec<(BoxHandle, ExecSpec, Deadline)> {
+        self.st().execs.clone()
+    }
+
+    /// Every `copy_out` so far: handle, source and destination.
+    pub(crate) fn copies(&self) -> Vec<CopyCall> {
+        self.st().copies.clone()
+    }
     /// Puts every box workdir under `root` instead of `/work`.
     pub(crate) fn work_root(self, root: &str) -> Self {
         self.st().work_root = Some(root.to_owned());

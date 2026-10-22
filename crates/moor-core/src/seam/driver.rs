@@ -3,7 +3,6 @@
 //! Provisioning, exec, copy-out, file peek and put, connect argv, reverse tunnel, sleep
 //! and wake. A reverse tunnel is a long-lived child that the caller owns and drops to stop.
 
-use std::fmt;
 use std::path::Path;
 use std::time::Duration;
 
@@ -11,10 +10,12 @@ use crate::name::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 use crate::seam::proc::{Deadline, Output};
 
 mod batch;
+mod display;
+mod run;
 mod tunnel;
 
 pub use batch::{run_each, BoxStep, StepDone};
-use tunnel::fmt_tunnel;
+pub use run::{Cancelled, FollowEnd, Followed, Launched, RunEnd, RunOutcome};
 pub use tunnel::{TunnelFailure, TunnelHandle};
 
 /// How a provider keeps an idle Box cheap.
@@ -160,47 +161,6 @@ pub enum DriverError {
         /// Moor-worded summary.
         summary: String,
     },
-}
-
-impl fmt::Display for DriverError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NotFound => write!(f, "box not found"),
-            Self::Capacity { limit, holder } => fmt_capacity(f, *limit, holder.as_deref()),
-            Self::Quota(m) => write!(f, "provider quota reached: {m}"),
-            Self::Auth(m) => write!(f, "provider authentication failed: {m}"),
-            Self::Timeout(d) => write!(f, "box operation timed out after {}s", d.as_secs()),
-            Self::Unavailable(m) => write!(f, "box provider unavailable: {m}"),
-            Self::Unsupported(what) => write!(f, "not supported by this provider: {what}"),
-            Self::Tunnel {
-                failure,
-                stderr_tail,
-            } => fmt_tunnel(f, *failure, stderr_tail),
-            Self::Transport { stderr_tail } if stderr_tail.is_empty() => {
-                f.write_str("moor lost the ssh connection to the Box")
-            }
-            Self::Transport { stderr_tail } => {
-                write!(f, "moor lost the ssh connection to the Box: {stderr_tail}")
-            }
-            Self::Failed { summary } => f.write_str(summary),
-        }
-    }
-}
-
-/// Writes the capacity message, naming limit and holder when known.
-fn fmt_capacity(
-    f: &mut fmt::Formatter<'_>,
-    limit: Option<u32>,
-    holder: Option<&str>,
-) -> fmt::Result {
-    write!(f, "box capacity reached")?;
-    if let Some(n) = limit {
-        write!(f, " (limit {n})")?;
-    }
-    if let Some(h) = holder {
-        write!(f, ", held by {h}")?;
-    }
-    Ok(())
 }
 
 impl std::error::Error for DriverError {}
@@ -349,6 +309,66 @@ pub trait Driver: Send + Sync {
     ) -> Vec<Result<StepDone, DriverError>> {
         let _ = connect;
         run_each(self, handle, steps, deadline)
+    }
+
+    /// Starts `spec` as run `run`, detached so it outlives moor and the connection to the Box.
+    /// `spec.env` and `spec.cwd` apply as for [`Driver::exec`]; `spec.output` is unused.
+    ///
+    /// # Errors
+    /// A [`DriverError`] when the run did not start, or when whether it started is unknown.
+    fn launch_run(
+        &self,
+        handle: &BoxHandle,
+        run: i64,
+        spec: &ExecSpec,
+    ) -> Result<Launched, DriverError> {
+        let _ = (handle, run, spec);
+        Err(DriverError::Unsupported("detached runs"))
+    }
+
+    /// Writes run `run`'s log to `out` from byte `from` as it grows, until the run ends, its
+    /// process is lost, or the channel is cut or outlives `deadline`.
+    ///
+    /// # Errors
+    /// A [`DriverError`] when the follow cannot start or `out` refuses a write.
+    fn follow_run(
+        &self,
+        handle: &BoxHandle,
+        run: i64,
+        from: u64,
+        out: &mut dyn std::io::Write,
+        deadline: Deadline,
+    ) -> Result<Followed, DriverError> {
+        let _ = (handle, run, from, out, deadline);
+        Err(DriverError::Unsupported("detached runs"))
+    }
+
+    /// Where run `run` stands; `workdir` is the Box workdir it was launched in.
+    ///
+    /// # Errors
+    /// A [`DriverError`] when the Box cannot be asked.
+    fn end_run(
+        &self,
+        handle: &BoxHandle,
+        run: i64,
+        workdir: &BoxPath,
+    ) -> Result<RunEnd, DriverError> {
+        let _ = (handle, run, workdir);
+        Err(DriverError::Unsupported("detached runs"))
+    }
+
+    /// Marks run `run` cancelled and stops its process group: TERM, then KILL after `grace_secs`.
+    ///
+    /// # Errors
+    /// A [`DriverError`] when the Box cannot be asked or the signal fails with the group alive.
+    fn cancel_run(
+        &self,
+        handle: &BoxHandle,
+        run: i64,
+        grace_secs: u32,
+    ) -> Result<Cancelled, DriverError> {
+        let _ = (handle, run, grace_secs);
+        Err(DriverError::Unsupported("detached runs"))
     }
 
     /// Puts the Box to sleep when its provider lets the Driver do so.

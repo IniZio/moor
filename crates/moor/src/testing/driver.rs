@@ -10,12 +10,13 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::seam::driver::{
-    AcquireReq, Acquired, BoxListing, BoxStep, Driver, DriverCaps, DriverError, ExecOutcome,
-    ExecSpec, Released, SleepKind, SleepOutcome, StepDone,
+    AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Driver, DriverCaps, DriverError,
+    ExecOutcome, ExecSpec, Followed, Released, RunEnd, SleepKind, SleepOutcome, StepDone,
 };
 use moor_core::seam::proc::{Deadline, Output};
 use moor_core::{BoxHandle, BoxPath, ProviderId};
 
+pub(crate) use runs::{eventually, live_in_group, reaped_pid};
 pub(crate) use script::PutCall;
 use script::{layout, write_bytes, PeekCall};
 pub(crate) use tunnel::TunnelReply;
@@ -61,10 +62,11 @@ struct State {
     fail_workdir: Option<DriverError>,
     tunnel: tunnel::TunnelState,
     sleep_kind: Option<SleepKind>,
+    local: Option<runs::LocalBox>,
 }
 
 /// One `copy_out` call: handle, source and destination.
-type CopyCall = (BoxHandle, BoxPath, PathBuf);
+pub(super) type CopyCall = (BoxHandle, BoxPath, PathBuf);
 
 /// Runs inside every `exec`, before its result is served.
 type ExecHook = dyn Fn() + Send + Sync;
@@ -116,16 +118,6 @@ impl FakeDriver {
     /// Calls so far, like `acquire`, `release box-1` or `exec box-1`.
     pub(crate) fn calls(&self) -> Vec<String> {
         self.st().calls.clone()
-    }
-
-    /// Every `exec` so far: handle, spec and deadline, in call order.
-    pub(crate) fn execs(&self) -> Vec<(BoxHandle, ExecSpec, Deadline)> {
-        self.st().execs.clone()
-    }
-
-    /// Every `copy_out` so far: handle, source and destination.
-    pub(crate) fn copies(&self) -> Vec<CopyCall> {
-        self.st().copies.clone()
     }
 }
 
@@ -339,6 +331,29 @@ impl Driver for FakeDriver {
         self.run_stream(handle, dir, names, sink)
     }
 
+    fn launch_run(&self, h: &BoxHandle, run: i64, spec: &ExecSpec) -> runs::Launch {
+        self.local_launch(h, run, spec)
+    }
+
+    fn follow_run(
+        &self,
+        h: &BoxHandle,
+        run: i64,
+        from: u64,
+        out: &mut dyn std::io::Write,
+        _: Deadline,
+    ) -> Result<Followed, DriverError> {
+        self.local_follow(h, run, from, out)
+    }
+
+    fn end_run(&self, h: &BoxHandle, run: i64, _: &BoxPath) -> Result<RunEnd, DriverError> {
+        self.local_end(h, run)
+    }
+
+    fn cancel_run(&self, h: &BoxHandle, run: i64, grace: u32) -> Result<Cancelled, DriverError> {
+        self.local_cancel(h, run, grace)
+    }
+
     fn sleep(&self, handle: &BoxHandle) -> Result<SleepOutcome, DriverError> {
         let mut s = self.st();
         s.note(format!("sleep {}", handle.as_str()));
@@ -375,6 +390,7 @@ impl Driver for FakeDriver {
 }
 
 mod knobs;
+mod runs;
 mod script;
 #[cfg(test)]
 mod tests;

@@ -13,6 +13,7 @@ mod peek;
 mod pin;
 mod put;
 mod retry;
+mod runbox;
 mod sleep;
 mod stream;
 #[cfg(test)]
@@ -29,12 +30,14 @@ use std::time::Duration;
 use moor_core::box_key::BoxKey;
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::driver::{
-    AcquireReq, Acquired, BoxListing, BoxStep, Driver, DriverCaps, DriverError, ExecOutcome,
-    ExecSpec, Released, SleepOutcome, StepDone, TunnelHandle,
+    AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Driver, DriverCaps, DriverError,
+    ExecOutcome, ExecSpec, Followed, Launched, Released, RunEnd, SleepOutcome, StepDone,
+    TunnelHandle,
 };
 use moor_core::seam::proc::{Deadline, Proc, ProcOutput, ProcSpec, Tool};
 use moor_core::seam::{clock::Clock, rng::Rng};
 
+use caps::size_of;
 use errors::{map_error, Op};
 
 /// Time allowed for a warmup.
@@ -174,19 +177,6 @@ fn static_env(spec: ProcSpec, handle: &BoxHandle) -> ProcSpec {
     }
 }
 
-/// Maps a moor size to crabbox's machine class.
-fn size_of(size: Option<&str>) -> Result<&'static str, DriverError> {
-    match size.unwrap_or("small") {
-        "small" => Ok("standard"),
-        "medium" => Ok("fast"),
-        "large" => Ok("large"),
-        "xlarge" => Ok("beast"),
-        other => Err(DriverError::Failed {
-            summary: format!("unknown box size {other:?}"),
-        }),
-    }
-}
-
 /// Splits a handle into optional provider and Box name.
 fn split_handle(handle: &BoxHandle) -> (Option<&str>, &str) {
     match handle.as_str().split_once('/') {
@@ -316,6 +306,38 @@ impl Driver for Crabbox {
     ) -> Result<(), DriverError> {
         self.require_version()?;
         stream::stream_files(self, handle, dir, names, deadline, sink)
+    }
+
+    fn launch_run(
+        &self,
+        h: &BoxHandle,
+        run: i64,
+        spec: &ExecSpec,
+    ) -> Result<Launched, DriverError> {
+        self.require_version()?;
+        runbox::launch(self, h, run, spec)
+    }
+
+    fn follow_run(
+        &self,
+        handle: &BoxHandle,
+        run: i64,
+        from: u64,
+        out: &mut dyn std::io::Write,
+        deadline: Deadline,
+    ) -> Result<Followed, DriverError> {
+        self.require_version()?;
+        runbox::follow(self, handle, run, from, out, deadline)
+    }
+
+    fn end_run(&self, h: &BoxHandle, run: i64, workdir: &BoxPath) -> Result<RunEnd, DriverError> {
+        self.require_version()?;
+        runbox::end(self, h, run, workdir)
+    }
+
+    fn cancel_run(&self, h: &BoxHandle, run: i64, grace: u32) -> Result<Cancelled, DriverError> {
+        self.require_version()?;
+        runbox::cancel(self, h, run, grace)
     }
 
     fn peek_file(&self, handle: &BoxHandle, path: &BoxPath) -> Result<Option<String>, DriverError> {

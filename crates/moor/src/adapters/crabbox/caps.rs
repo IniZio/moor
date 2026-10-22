@@ -1,4 +1,5 @@
-//! Provider facts: derived from the feature tokens in `crabbox providers --json --configured`.
+//! Provider facts, derived from the feature tokens in `crabbox providers --json --configured`,
+//! and the machine class each moor size asks for.
 
 use moor_core::name::ProviderId;
 use moor_core::seam::driver::{DriverCaps, DriverError, SleepKind};
@@ -70,6 +71,19 @@ pub(super) fn caps_from(providers_json: &str, id: &ProviderId) -> Result<DriverC
         .find(|e| e.answers_to(id.as_str()))
         .map(derive)
         .ok_or(DriverError::Unsupported("unknown box provider"))
+}
+
+/// Maps a moor size to crabbox's machine class.
+pub(super) fn size_of(size: Option<&str>) -> Result<&'static str, DriverError> {
+    match size.unwrap_or("small") {
+        "small" => Ok("standard"),
+        "medium" => Ok("fast"),
+        "large" => Ok("large"),
+        "xlarge" => Ok("beast"),
+        other => Err(DriverError::Failed {
+            summary: format!("unknown box size {other:?}"),
+        }),
+    }
 }
 
 #[cfg(test)]
