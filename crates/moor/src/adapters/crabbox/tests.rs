@@ -11,6 +11,7 @@ use super::parse::{parse_list, parse_warmup};
 use super::Crabbox;
 use crate::testing::proc::{Reply, ScriptedProc};
 
+pub(super) mod fake_ssh;
 mod slug;
 mod workdir;
 

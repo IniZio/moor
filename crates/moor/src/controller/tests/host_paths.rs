@@ -23,23 +23,30 @@ use crate::testing::clock::FakeClock;
 const ANN: &str = "slack:T1:ANN";
 pub(super) const BOX: &str = "ann-box";
 
-/// A crabbox that reports a supported version and copies by writing `copied` to the last
-/// argument.
+/// A crabbox that reports a supported version and the ssh target of every Box.
 const FAKE_CRABBOX: &str = "#!/bin/sh\n\
     case \"$1\" in\n\
     --version) echo 'crabbox 0.79.1-moor.1' ;;\n\
-    cp) for a; do last=$a; done; printf copied > \"$last\" ;;\n\
+    ssh) echo 'ssh u@box' ;;\n\
     *) exit 1 ;;\n\
     esac\n";
 
-/// A controller whose crabbox is [`FAKE_CRABBOX`], and its store.
+/// An ssh that runs the remote command, its last argument, on this host.
+const FAKE_SSH: &str = "#!/bin/sh\nfor last; do :; done\nexec sh -c \"$last\"\n";
+
+/// A controller whose crabbox is [`FAKE_CRABBOX`] and ssh [`FAKE_SSH`], and its store.
 fn served() -> (Served, Store) {
     let dir = tempfile::tempdir().expect("tmp");
     let crabbox = dir.path().join("crabbox");
     moor_testkit::write_executable(&crabbox, FAKE_CRABBOX).expect("fake crabbox");
+    let ssh = dir.path().join("ssh");
+    moor_testkit::write_executable(&ssh, FAKE_SSH).expect("fake ssh");
     let served = Served::start_in(
         dir,
-        &[("MOOR_CRABBOX_BIN", crabbox.to_str().expect("utf8"))],
+        &[
+            ("MOOR_CRABBOX_BIN", crabbox.to_str().expect("utf8")),
+            ("MOOR_SSH_BIN", ssh.to_str().expect("utf8")),
+        ],
     );
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
     let db = served.dir.path().join("state").join("moor.db");
@@ -100,8 +107,10 @@ fn a_front_cp_to_the_host_is_refused_and_the_operators_cp_still_copies() {
     let (served, store) = served();
     let user = enroll_ann(&served);
     let id = ready_box(&store, user);
+    let src = served.dir.path().join("in-box.txt");
+    std::fs::write(&src, "copied").expect("box file");
     let dest = served.dir.path().join("out.txt");
-    let cp = json!({"cmd": "cp", "box": BOX, "src": "/x", "dest": dest});
+    let cp = json!({"cmd": "cp", "box": BOX, "src": src, "dest": dest});
     let got = ask(&served.front("slack"), &acting(ANN, &cp));
     refused(&got, "cp to the host is operator-only");
     assert!(!dest.exists(), "the refused cp wrote {}", dest.display());
