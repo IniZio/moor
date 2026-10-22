@@ -261,7 +261,8 @@ pub trait Driver: Send + Sync {
         deadline: Deadline,
     ) -> Result<ExecOutcome, DriverError>;
 
-    /// Copies a file or directory out of the Box to the host.
+    /// Copies a file or directory out of the Box to the host path `to`, or into `to` when it is
+    /// a directory. A failed copy leaves nothing at the destination.
     ///
     /// # Errors
     /// Returns a [`DriverError`] when the copy fails.

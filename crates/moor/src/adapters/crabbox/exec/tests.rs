@@ -1,105 +1,16 @@
 //! Box commands over a fake ssh that runs the remote command on this host.
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::name::{BoxHandle, BoxPath};
+use moor_core::name::BoxPath;
 use moor_core::seam::driver::{BoxStep, Driver, DriverError, ExecOutcome, ExecSpec, StepDone};
 use moor_core::seam::proc::{Deadline, Output, ProcError};
-use tempfile::TempDir;
 
-use crate::adapters::crabbox::Crabbox;
-use crate::adapters::proc::{SystemProc, ToolPaths};
-use crate::env::Env;
-use crate::testing::clock::FakeClock;
-use crate::testing::rng::FakeRng;
-
-/// Records its argv NUL-separated in `ssh.<n>`, then runs its last word, the remote command,
-/// under sh with stdin passed through. A `drop` file makes it lose the connection: it exits 255
-/// and prints nothing, as a call does whose shared master lost the network.
-const FAKE_SSH: &str = r#"#!/bin/sh
-d=$(dirname "$0")
-n=$(ls "$d" | grep -c '^ssh\.')
-printf '%s\0' "$@" > "$d/ssh.$n"
-if test -f "$d/drop"; then cat >/dev/null; exit 255; fi
-for last; do :; done
-TMPDIR="$d/boxtmp" exec sh -c "$last"
-"#;
-
-/// Records its argv in `crabbox.<n>`; answers `ssh` with the words crabbox prints for a pinned
-/// lease, and fails anything else.
-const FAKE_CRABBOX: &str = r#"#!/bin/sh
-d=$(dirname "$0")
-n=$(ls "$d" | grep -c '^crabbox\.')
-printf '%s\0' "$@" > "$d/crabbox.$n"
-test "$1" = ssh || exit 99
-echo "ssh -o 'ControlMaster=no' -o 'ControlPath=none' -o 'StrictHostKeyChecking=yes' -o 'UserKnownHostsFile=/lease/known_hosts' -o 'GlobalKnownHostsFile=none' -o 'HostKeyAlias=crabbox-lease-1f2e' 'u@box'"
-"#;
-
-/// The host-key words every ssh call must carry.
-const PINNED: [&str; 4] = [
-    "StrictHostKeyChecking=yes",
-    "UserKnownHostsFile=/lease/known_hosts",
-    "GlobalKnownHostsFile=none",
-    "HostKeyAlias=crabbox-lease-1f2e",
-];
-
-struct Lab {
-    dir: TempDir,
-    cb: Crabbox,
-}
-
-fn lab() -> Lab {
-    let dir = tempfile::tempdir().unwrap();
-    let bin = dir.path().join("bin");
-    fs::create_dir_all(bin.join("boxtmp")).unwrap();
-    for (name, text) in [("ssh", FAKE_SSH), ("crabbox", FAKE_CRABBOX)] {
-        let path = bin.join(name);
-        fs::write(&path, text).unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
-    }
-    let tools = ToolPaths {
-        ssh: Some(bin.join("ssh")),
-        crabbox: Some(bin.join("crabbox")),
-        ..ToolPaths::default()
-    };
-    let cb = driver(dir.path(), &tools);
-    Lab { dir, cb }
-}
-
-/// A driver over real processes keeping its state and sockets under `dir`.
-fn driver(dir: &Path, tools: &ToolPaths) -> Crabbox {
-    let proc = Arc::new(SystemProc::new(
-        &Env::from_pairs([("PATH", "/usr/bin:/bin")]),
-        tools,
-    ));
-    let clock = Arc::new(FakeClock::new(moor_core::seam::clock::Ts::from_millis(0)));
-    let cb = Crabbox::new(proc, clock, Arc::new(FakeRng::default()))
-        .with_state_dir(Some(dir.join("state")), dir.join("s"));
-    let _ = cb.version_ok.set(());
-    cb
-}
+use crate::adapters::crabbox::tests::fake_ssh::{driver, handle, lab, tools, Lab};
 
 impl Lab {
-    fn bin(&self) -> PathBuf {
-        self.dir.path().join("bin")
-    }
-
-    /// Every recorded argv of `tool`, in call order.
-    fn argvs(&self, tool: &str) -> Vec<Vec<String>> {
-        (0..100)
-            .map(|n| self.bin().join(format!("{tool}.{n}")))
-            .take_while(|p| p.exists())
-            .map(|p| {
-                let raw = fs::read_to_string(p).unwrap();
-                raw.split_terminator('\0').map(str::to_owned).collect()
-            })
-            .collect()
-    }
-
     fn exec(&self, spec: &ExecSpec) -> Result<ExecOutcome, DriverError> {
         self.cb
             .exec(&handle(), spec, Deadline(Duration::from_secs(20)))
@@ -108,10 +19,6 @@ impl Lab {
     fn log(&self) -> PathBuf {
         self.dir.path().join("out.log")
     }
-}
-
-fn handle() -> BoxHandle {
-    BoxHandle::new("external/moor-7-ab12cd")
 }
 
 fn sh(script: &str) -> ExecSpec {
@@ -142,7 +49,7 @@ fn commands_ride_the_box_master_with_crabbox_host_key_pinning_and_spawn_crabbox_
     let ssh = lab.argvs("ssh");
     assert_eq!(ssh.len(), 3);
     for argv in &ssh {
-        assert_on_the_master_and_pinned(&lab, argv);
+        lab.assert_on_the_master_and_pinned(argv);
     }
 }
 
@@ -150,12 +57,7 @@ fn commands_ride_the_box_master_with_crabbox_host_key_pinning_and_spawn_crabbox_
 fn a_fresh_driver_reuses_the_saved_target_and_spawns_no_crabbox_for_exec_or_the_workdir_probe() {
     let lab = lab();
     assert_eq!(lab.exec(&sh("true")), Ok(ExecOutcome::Exited { code: 0 }));
-    let tools = ToolPaths {
-        ssh: Some(lab.bin().join("ssh")),
-        crabbox: Some(lab.bin().join("crabbox")),
-        ..ToolPaths::default()
-    };
-    let fresh = driver(lab.dir.path(), &tools);
+    let fresh = driver(lab.dir.path(), &tools(&lab.bin()));
     let spec = sh("true");
     let deadline = Deadline(Duration::from_secs(20));
     assert_eq!(
@@ -175,18 +77,7 @@ fn a_fresh_driver_reuses_the_saved_target_and_spawns_no_crabbox_for_exec_or_the_
     let ssh = lab.argvs("ssh");
     assert_eq!(ssh.len(), 3, "exec, exec, probe");
     for argv in &ssh {
-        assert_on_the_master_and_pinned(&lab, argv);
-    }
-}
-
-/// `argv` opens or joins the Box's master in moor's socket dir, and keeps crabbox's pinning.
-fn assert_on_the_master_and_pinned(lab: &Lab, argv: &[String]) {
-    let socket = format!("ControlPath={}", lab.dir.path().join("s").display());
-    let first_path = argv.iter().find(|a| a.starts_with("ControlPath=")).unwrap();
-    assert!(first_path.starts_with(&socket), "{argv:?}");
-    assert!(argv.iter().any(|a| a == "ControlMaster=auto"), "{argv:?}");
-    for word in PINNED {
-        assert!(argv.iter().any(|a| a == word), "{word} missing: {argv:?}");
+        lab.assert_on_the_master_and_pinned(argv);
     }
 }
 

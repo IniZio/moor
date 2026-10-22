@@ -150,6 +150,12 @@ Box checkout for unsaved work. To get the Box's work on your host, run
 workdir. A relative `SRC` must not contain `..`. `DEST` is a path on the host, relative to the
 current directory.
 
+When `DEST` is a directory, the copy lands inside it. A copied file is readable
+by you only (mode 0600) and a copied directory is 0700. A copied file replaces
+a file already at the destination; nothing replaces a directory there. moor refuses a `SRC`
+that is or holds a symlink or a special file, and a `DEST` that is a symlink.
+A failed copy leaves nothing at the destination.
+
 ## Session commands
 
 | Command | What it does |

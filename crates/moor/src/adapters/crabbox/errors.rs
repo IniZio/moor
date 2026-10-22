@@ -18,8 +18,6 @@ pub(super) enum Op {
     List,
     /// Reading provider facts.
     Caps,
-    /// Copying a file out of a Box.
-    CopyOut,
     /// Looking up a Box's ssh target.
     Target,
     /// Suspending a Box.
@@ -36,7 +34,6 @@ impl Op {
             Self::Release => "box release",
             Self::List => "box list",
             Self::Caps => "provider lookup",
-            Self::CopyOut => "box copy out",
             Self::Target => "box ssh target lookup",
             Self::Sleep => "box sleep",
             Self::Wake => "box wake",
