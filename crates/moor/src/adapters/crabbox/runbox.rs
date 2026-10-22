@@ -144,18 +144,17 @@ fn copy(r: &mut dyn std::io::Read, out: &mut dyn Write, offset: &mut u64) -> std
     }
 }
 
-/// Where run `run` stands, read in `workdir`.
+/// Where run `run` stands, read in `workdir`, or in the login directory without one.
 pub(super) fn end(
     cb: &Crabbox,
     handle: &BoxHandle,
     run: i64,
-    workdir: &BoxPath,
+    workdir: Option<&BoxPath>,
 ) -> Result<RunEnd, DriverError> {
-    let script = format!(
-        "cd -- {} || exit 1\n{}",
-        quote(workdir.as_str()),
-        end_script(run)
-    );
+    let cd = workdir.map_or_else(String::new, |w| {
+        format!("cd -- {} || exit 1\n", quote(w.as_str()))
+    });
+    let script = format!("{cd}{}", end_script(run));
     let spec = short(cb, handle, &script, SHORT)?;
     let out =
         link::run(cb, handle, &spec).map_err(|e| box_error(cb, handle, &e, "the run end read"))?;

@@ -9,19 +9,21 @@ use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange};
 use moor_core::domain::session_state::{SessionInput, SessionState};
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
-use moor_core::seam::proc::Output;
-use moor_core::{BoxId, BoxName, BoxPath, ErrorKind, ProviderId, RunReq};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
+use moor_core::{BoxId, BoxName, BoxPath, ErrorKind, ProviderId, RunId, RunReq};
 
 use super::{locked, run};
 use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
+use crate::testing::proxy_host::FakeProxyHost;
 use crate::testing::surface::FakeSurface;
+use moor_testkit::FakeEgress;
 
 mod detached;
 mod env;
+mod in_flight;
 mod setup_parity;
 mod transport;
 
@@ -29,10 +31,39 @@ pub(in crate::ops::run) const SHA: &str = "0123456789abcdef0123456789abcdef01234
 
 pub(crate) struct Fx {
     pub(crate) dir: tempfile::TempDir,
+    /// The Box's `HOME` (`home`) and workdir (`work`), where its runs play out on this host.
+    pub(crate) box_dir: tempfile::TempDir,
+    /// The egress proxy the Box's runs find in `$HOME/bin`.
+    pub(crate) egress: FakeEgress,
     pub(crate) cx: Cx,
     pub(crate) driver: Arc<FakeDriver>,
     pub(in crate::ops::run) proc: Arc<ScriptedProc>,
     pub(in crate::ops::run) id: BoxId,
+}
+
+/// A command that kills its run's group leader in the Box, so the run leaves no exit code. The
+/// fixture's first run is run 1.
+pub(in crate::ops::run) const LEADER_KILLED: &str =
+    r#"echo before; kill -s KILL "$(cat "$HOME/.moor/runs/1/pid")"; sleep 5"#;
+
+/// Makes the fixture Box's workdir a git checkout with one commit of `tracked`; returns its sha.
+pub(in crate::ops::run) fn git_checkout(f: &Fx) -> String {
+    let work = f.box_dir.path().join("work");
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git")
+            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+            .args(args)
+            .current_dir(&work)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{out:?}");
+        String::from_utf8(out.stdout).unwrap()
+    };
+    git(&["init", "-q"]);
+    std::fs::write(work.join("tracked"), "one\n").unwrap();
+    git(&["add", "tracked"]);
+    git(&["commit", "-qm", "one"]);
+    git(&["rev-parse", "HEAD"]).trim().to_owned()
 }
 
 pub(crate) fn req(argv: &[&str]) -> RunReq {
@@ -44,23 +75,35 @@ pub(crate) fn req(argv: &[&str]) -> RunReq {
     }
 }
 
-/// A context over `dir` whose host processes answer no tool.
-fn context(dir: &std::path::Path, driver: &Arc<FakeDriver>) -> (Cx, Arc<ScriptedProc>) {
+/// A context over `dir` whose host processes answer no tool and whose Proxy names `egress_port`.
+fn context(
+    dir: &std::path::Path,
+    driver: &Arc<FakeDriver>,
+    egress_port: u16,
+) -> (Cx, Arc<ScriptedProc>) {
     let proc = Arc::new(ScriptedProc::new());
     let cx = Cx::fake(
         dir,
         driver.clone(),
         Arc::new(FakeSurface::new()),
         proc.clone(),
-    );
+    )
+    .with_proxy_host(Arc::new(FakeProxyHost::new().egress_port(egress_port)));
     (cx, proc)
 }
 
-/// A Box `t` of repo `o/n` with no machine yet; `yaml` is its stored `.moor.yaml`.
+/// A Box `t` of repo `o/n` with no machine yet; `yaml` is its stored `.moor.yaml`. Its runs play
+/// out with the local sh under `box_dir`, with a fake egress proxy.
 fn bare_with(driver: FakeDriver, yaml: Option<&str>) -> Fx {
     let dir = tempfile::tempdir().unwrap();
-    let driver = Arc::new(driver);
-    let (cx, proc) = context(dir.path(), &driver);
+    let box_dir = tempfile::tempdir().unwrap();
+    let (home, work) = (box_dir.path().join("home"), box_dir.path().join("work"));
+    std::fs::create_dir_all(&work).unwrap();
+    let bin = home.join("bin");
+    moor_testkit::write_host_guards(&bin).unwrap();
+    let egress = FakeEgress::start(&home, &bin).unwrap();
+    let driver = Arc::new(driver.local_runs(&home, &work));
+    let (cx, proc) = context(dir.path(), &driver, egress.port());
     let id = cx
         .store()
         .unwrap()
@@ -72,10 +115,29 @@ fn bare_with(driver: FakeDriver, yaml: Option<&str>) -> Fx {
         .box_id;
     Fx {
         dir,
+        box_dir,
+        egress,
         cx,
         driver,
         proc,
         id,
+    }
+}
+
+impl Fx {
+    /// The Box's run dir of run `id`.
+    pub(crate) fn box_run_dir(&self, id: i64) -> std::path::PathBuf {
+        self.box_dir.path().join(format!("home/.moor/runs/{id}"))
+    }
+
+    /// The host log of run `id`.
+    pub(crate) fn host_log(&self, id: RunId) -> Vec<u8> {
+        std::fs::read(self.dir.path().join(format!("runs/{}.log", id.get()))).unwrap()
+    }
+
+    /// The Box log of run `id`.
+    pub(crate) fn box_log(&self, id: RunId) -> Vec<u8> {
+        std::fs::read(self.box_run_dir(id.get()).join("log")).unwrap()
     }
 }
 
@@ -156,15 +218,16 @@ pub(in crate::ops::run) fn ran_events(f: &Fx) -> usize {
 
 #[test]
 fn inherited_output_is_streamed_to_moor() {
-    let f = ready_with(FakeDriver::new().exec_results([Ok(ExecOutcome::Exited { code: 3 })]));
-    let mut r = req(&["make", "test"]);
+    let f = ready();
+    let mut r = req(&["sh", "-c", "exit 3"]);
     r.inherit_output = true;
     let v = run(&f.cx, &r).unwrap();
     assert_eq!(v.exit, Some(3));
     assert!(v.ran && !v.interrupted);
-    let (_, spec, _) = f.driver.execs().remove(0);
-    assert_eq!(spec.output, Some(Output::Inherit));
-    assert_eq!(command(&spec.argv), shell_argv("'make' 'test'"));
+    assert_eq!(v.log, "");
+    assert!(!f.dir.path().join("runs/1.log").exists(), "no host log");
+    let (_, spec) = f.driver.launches().remove(0);
+    assert_eq!(command(&spec.argv), shell_argv("'sh' '-c' 'exit 3'"));
 }
 
 #[test]
@@ -172,7 +235,7 @@ fn plain_run_launches_shell_text_and_stores_the_users_argv() {
     let (f, multi) = (ready(), req(&["echo", "a b"]));
     run(&f.cx, &req(&["echo one; echo TWO"])).unwrap();
     run(&f.cx, &multi).unwrap();
-    let launched = |i| command(&f.driver.execs().remove(i).1.argv).to_vec();
+    let launched = |i| command(&f.driver.launches().remove(i).1.argv).to_vec();
     assert_eq!(launched(0), shell_argv("echo one; echo TWO"));
     assert_eq!(launched(1), shell_argv(&command_line(&multi.argv)));
     let stored = f.cx.store().unwrap().last_run(f.id).unwrap().unwrap().argv;
@@ -182,14 +245,13 @@ fn plain_run_launches_shell_text_and_stores_the_users_argv() {
 #[test]
 fn json_output_goes_to_a_run_log_under_the_state_dir() {
     let f = ready();
-    let v = run(&f.cx, &req(&["true"])).unwrap();
+    let v = run(&f.cx, &req(&["echo hi"])).unwrap();
     let id = v.run.unwrap();
     let want = f.dir.path().join("runs").join(format!("{}.log", id.get()));
     assert_eq!(v.log, want.display().to_string());
-    assert!(want.parent().unwrap().is_dir());
-    let (handle, spec, _) = f.driver.execs().remove(0);
+    assert_eq!(std::fs::read(&want).unwrap(), b"hi\n");
+    let (handle, _) = f.driver.launches().remove(0);
     assert_eq!(handle.as_str(), "box-1");
-    assert_eq!(spec.output, Some(Output::Log(want)));
     assert_eq!(v.exit, Some(0));
     assert_eq!(v.record, None);
     assert_eq!(ran_events(&f), 1);
@@ -202,7 +264,7 @@ fn a_plain_run_syncs_nothing_stores_no_sha_and_takes_its_directories_from_the_bo
     assert_eq!(v.sha, None);
     let row = f.cx.store().unwrap().last_run(f.id).unwrap().unwrap();
     assert_eq!(row.sha, None);
-    let (_, spec, _) = f.driver.execs().remove(0);
+    let (_, spec) = f.driver.launches().remove(0);
     assert_eq!(spec.cwd.unwrap().as_str(), "/work/cbx_1/repo");
 }
 
@@ -235,7 +297,7 @@ fn unknown_box_is_refused() {
 fn stored_workdir_with_dot_dot_is_the_command_cwd() {
     let f = ready_with(FakeDriver::new().work_root("/p/bin/../box/work"));
     run(&f.cx, &req(&["true"])).unwrap();
-    let (_, spec, _) = f.driver.execs().remove(0);
+    let (_, spec) = f.driver.launches().remove(0);
     assert_eq!(spec.cwd.unwrap().as_str(), "/p/bin/../box/work/cbx_1/repo");
 }
 
@@ -319,7 +381,7 @@ fn asleep_box_is_woken_before_the_command_runs() {
     let v = run(&f.cx, &req(&["true"])).unwrap();
     assert!(v.ran);
     assert_eq!(wake_calls(&f), 1);
-    assert_eq!(f.driver.execs().len(), 1);
+    assert_eq!(f.driver.launches().len(), 1);
     assert_eq!(box_state(&f), BoxState::Ready);
     assert!(kinds(&f).contains(&"woke".to_owned()));
 }
@@ -401,83 +463,10 @@ fn busy_box_is_refused() {
 }
 
 #[test]
-fn run_is_recorded_in_flight_while_the_command_runs() {
-    let f = ready();
-    let cx_dir = f.dir.path().to_path_buf();
-    let seen = Arc::new(std::sync::Mutex::new(None));
-    let slot = seen.clone();
-    let id = f.id;
-    f.driver.on_exec(move || {
-        let probe = Cx::fake(
-            &cx_dir,
-            Arc::new(FakeDriver::new()),
-            Arc::new(FakeSurface::new()),
-            Arc::new(ScriptedProc::new()),
-        );
-        let row = probe.store().unwrap().last_run(id).unwrap();
-        *slot.lock().unwrap() = row.map(|r| (r.argv, r.finished_at.is_none()));
-    });
-    run(&f.cx, &req(&["sleep", "1"])).unwrap();
-    let got = seen.lock().unwrap().clone().unwrap();
-    assert_eq!(got, (vec!["sleep".to_owned(), "1".to_owned()], true));
-    let row = f.cx.store().unwrap().last_run(f.id).unwrap().unwrap();
-    assert!(row.finished_at.is_some());
-    assert_eq!(row.exit, Some(0));
-}
-
-#[test]
-fn the_follow_claim_lives_exactly_as_long_as_the_run() {
-    let f = ready();
-    let cx_dir = f.dir.path().to_path_buf();
-    let seen = Arc::new(std::sync::Mutex::new(None));
-    let slot = seen.clone();
-    let id = f.id;
-    f.driver.on_exec(move || {
-        let probe = Cx::fake(
-            &cx_dir,
-            Arc::new(FakeDriver::new()),
-            Arc::new(FakeSurface::new()),
-            Arc::new(ScriptedProc::new()),
-        );
-        let live = probe.store().unwrap().in_flight_run(id).unwrap();
-        *slot.lock().unwrap() = live.map(|r| r.id);
-    });
-    let v = run(&f.cx, &req(&["true"])).unwrap();
-    let run_id = v.run.unwrap();
-    assert_eq!(
-        *seen.lock().unwrap(),
-        Some(run_id),
-        "in flight while it runs"
-    );
-    let follow = f
-        .dir
-        .path()
-        .join("runs")
-        .join(format!("{}.follow", run_id.get()));
-    assert!(!follow.exists(), "the claim is released when the run ends");
-    let store = f.cx.store().unwrap();
-    assert!(store.in_flight_run(f.id).unwrap().is_none());
-    let row = store.last_run(f.id).unwrap().unwrap();
-    assert_eq!((row.exit, row.interrupted), (Some(0), false));
-}
-
-#[test]
-fn interrupted_command_is_recorded_without_an_exit() {
-    let f = ready_with(FakeDriver::new().exec_results([Ok(ExecOutcome::Interrupted)]));
-    let v = run(&f.cx, &req(&["sleep", "9"])).unwrap();
-    assert!(v.interrupted && v.ran);
-    assert_eq!(v.exit, None);
-    let row = f.cx.store().unwrap().last_run(f.id).unwrap().unwrap();
-    assert!(row.interrupted);
-    assert_eq!(row.exit, None);
-    assert_eq!(ran_events(&f), 1);
-}
-
-#[test]
 fn driver_failure_finishes_the_run_and_returns_the_error() {
-    let f = ready_with(FakeDriver::new().exec_results([Err(DriverError::Failed {
+    let f = ready_with(FakeDriver::new().fail_launch(DriverError::Failed {
         summary: "sync failed".into(),
-    })]));
+    }));
     let e = run(&f.cx, &req(&["true"])).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
     assert_eq!(e.error.to_string(), "sync failed");
@@ -489,9 +478,9 @@ fn driver_failure_finishes_the_run_and_returns_the_error() {
 
 #[test]
 fn driver_failure_is_kept_on_the_ran_event() {
-    let f = ready_with(FakeDriver::new().exec_results([Err(DriverError::Failed {
+    let f = ready_with(FakeDriver::new().fail_launch(DriverError::Failed {
         summary: "the Box lease was busy; try again".into(),
-    })]));
+    }));
     run(&f.cx, &req(&["true"])).unwrap_err();
     let events = f.cx.store().unwrap().events(f.id, 1000).unwrap();
     let ran = events.iter().find(|e| e.kind == "ran").unwrap();

@@ -1,5 +1,5 @@
 //! Only provisioning clones the repo in a Box: an attaching start, a run and a close's teardown
-//! run no clone exec.
+//! send the Box no clone.
 
 use moor_core::{BoxTarget, CloseReq, RunReq};
 
@@ -14,21 +14,29 @@ const YAML: &str = "teardown: [echo bye]\n";
 /// An op under test, and whether it must reach the Box.
 type Op<'a> = (&'a str, &'a dyn Fn() -> Result<(), CommandError>, bool);
 
-/// Whether each exec the fake Driver received from `from` on is the clone, with its argv.
-fn clones_since(w: &World, from: usize) -> Vec<(bool, Vec<String>)> {
-    let execs = w.driver.execs();
-    execs
-        .get(from..)
-        .unwrap_or_default()
-        .iter()
-        .map(|(_, spec, _)| (is_clone_exec(spec), spec.argv.clone()))
+/// How many execs and run launches the fake Driver has received.
+fn sent(w: &World) -> (usize, usize) {
+    (w.driver.execs().len(), w.driver.launches().len())
+}
+
+/// Whether each exec and run launch the fake Driver received since `from` is the clone, with
+/// its argv.
+fn clones_since(w: &World, (execs, launches): (usize, usize)) -> Vec<(bool, Vec<String>)> {
+    let e = w.driver.execs();
+    let l = w.driver.launches();
+    let from_execs = e.get(execs..).unwrap_or_default().iter().map(|(_, s, _)| s);
+    let from_launches = l.get(launches..).unwrap_or_default().iter().map(|(_, s)| s);
+    from_execs
+        .chain(from_launches)
+        .map(|spec| (is_clone_exec(spec), spec.argv.clone()))
         .collect()
 }
 
 #[test]
 fn only_provisioning_clones_the_repo_in_the_box() {
-    let (w, _) = start_with(YAML, FakeDriver::new());
-    let provisioned = clones_since(&w, 0);
+    let box_dir = tempfile::tempdir().unwrap();
+    let (w, _) = start_with(YAML, FakeDriver::new().local_box(box_dir.path()));
+    let provisioned = clones_since(&w, (0, 0));
     assert!(
         provisioned.iter().any(|(clone, _)| *clone),
         "{provisioned:?}"
@@ -57,7 +65,7 @@ fn only_provisioning_clones_the_repo_in_the_box() {
         ("close", &close, true),
     ];
     for (op, step, execs) in ops {
-        let from = w.driver.execs().len();
+        let from = sent(&w);
         let done = step();
         assert!(done.is_ok(), "{op}: {done:?}");
         let got = clones_since(&w, from);
