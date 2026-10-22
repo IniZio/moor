@@ -22,7 +22,7 @@ use crate::store::Store;
 use crate::testing::clock::FakeClock;
 
 const ANN: &str = "slack:T1:ANN";
-const BOX: &str = "ann-box";
+pub(super) const BOX: &str = "ann-box";
 
 /// A crabbox that reports a supported version and copies by writing `copied` to the last
 /// argument.
@@ -63,7 +63,7 @@ fn enroll_ann(served: &Served) -> UserId {
 }
 
 /// Inserts a Box of `user` whose machine is ready, working in `worktree`.
-fn ready_box(store: &Store, user: UserId, worktree: &Path) -> BoxId {
+pub(super) fn ready_box(store: &Store, user: UserId, worktree: &Path) -> BoxId {
     let new = Decision::insert(NewBox {
         name: BoxName::parse_allow_bare(BOX).expect("name"),
         repo: "r".into(),

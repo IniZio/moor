@@ -4,6 +4,7 @@ use moor_core::domain::session_state::SessionInput;
 use moor_core::{BoxId, StartReq};
 use std::path::Path;
 
+use super::relaunch::{gone, started};
 use super::state::idle as is_idle;
 use super::{req, world, World};
 use crate::ops::common::facts::settings;
@@ -70,4 +71,18 @@ fn a_held_or_agentless_start_that_does_not_launch_stays_silent() {
     }
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert!(row.launch_failure.is_none());
+}
+
+#[test]
+fn no_agent_beats_a_goal_on_a_gone_pane() {
+    let (w, engine, _id) = started();
+    gone(&w);
+    let r = StartReq {
+        goal: Some("ship it".into()),
+        no_agent: true,
+        ..req("demo")
+    };
+    let v = run(&w.cx, &r).unwrap();
+    assert!(!v.agent.launched);
+    assert_eq!(engine.launches().len(), 1);
 }

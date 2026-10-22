@@ -155,6 +155,56 @@ fn an_interrupted_run_asks_the_controller_to_stop_and_exits_130() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+#[test]
+fn a_second_interrupt_exits_130_before_the_controller_answers() {
+    let (root, socket) = socket();
+    let listener = UnixListener::bind(&socket).unwrap();
+    let (progress, step) = mpsc::channel();
+    let (release, hold) = mpsc::channel::<()>();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        let mut line = String::new();
+        reader.read_line(&mut line).unwrap();
+        let hello = ServerFrame::Hello { protocol: PROTOCOL };
+        stream.write_all(hello.to_line().as_bytes()).unwrap();
+        reader.read_line(&mut line).unwrap();
+        progress.send("asked").unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        line.clear();
+        if matches!(reader.read_line(&mut line), Ok(0)) {
+            progress.send("stopped").unwrap();
+        }
+        let _ = hold.recv_timeout(Duration::from_secs(10));
+    });
+    let mut child = moor(&socket, &["run", "foo", "--", "sleep", "600"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let pid = rustix::process::Pid::from_raw(i32::try_from(child.id()).unwrap()).unwrap();
+    let interrupt = || rustix::process::kill_process(pid, rustix::process::Signal::INT).unwrap();
+    assert_eq!(step.recv_timeout(Duration::from_secs(10)), Ok("asked"));
+    interrupt();
+    assert_eq!(step.recv_timeout(Duration::from_secs(10)), Ok("stopped"));
+    interrupt();
+    let status = (0..500).find_map(|_| {
+        let status = child.try_wait().unwrap();
+        thread::sleep(Duration::from_millis(20));
+        status
+    });
+    if status.is_none() {
+        child.kill().unwrap();
+        child.wait().unwrap();
+    }
+    let _ = release.send(());
+    server.join().unwrap();
+    assert_eq!(status.and_then(|s| s.code()), Some(130), "{status:?}");
+    let _ = std::fs::remove_dir_all(root);
+}
+
 /// Output large enough that a client holding it would show in its peak memory.
 const BIG: usize = 64 * 1024 * 1024;
 

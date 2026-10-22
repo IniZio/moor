@@ -1,30 +1,48 @@
 //! A `run` whose client is killed mid-run is cancelled and recorded interrupted.
+#![allow(
+    clippy::indexing_slicing,
+    reason = "test assertions index decoded frames"
+)]
+
 use std::io::{BufRead, BufReader, Write};
 use std::os::fd::OwnedFd;
-use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::net::UnixStream;
+use std::path::Path;
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
 use moor_core::controller::{ClientFrame, PROTOCOL};
-use moor_core::seam::driver::ExecOutcome;
-use moor_core::{Request, Response};
+use moor_core::user::UserId;
+use moor_core::{BoxId, BoxName, Request, RunReq};
+use serde_json::json;
 
-use super::super::conn::serve;
-use super::super::hangup::Hangup;
-use super::super::progress::report_while;
-use crate::env::Cancel;
-use crate::ops::run_fixture::{ready_with, req};
-use crate::testing::driver::FakeDriver;
-use crate::Moor;
+use super::fronts::{ask, Served};
+use super::host_paths::{ready_box, BOX};
+use crate::adapters::clock::SystemClock;
+use crate::ops::run_fixture::req;
+use crate::proxy::supervisor::LEASE;
+use crate::store::{Fenced, Lease, ReadyProc, Reserve, Store};
+use crate::testing::rng::FakeRng;
 
-const WAIT: Duration = Duration::from_secs(10);
+/// Polls of [`POLL`] a test waits before it gives up, 10 s in all.
+const POLLS: u32 = 500;
+
+/// Pause between two polls.
+const POLL: Duration = Duration::from_millis(20);
+
+/// A crabbox whose `run` marks `started` beside itself and then outlasts the test.
+const FAKE_CRABBOX: &str = "#!/bin/sh\n\
+    PATH=/usr/bin:/bin\n\
+    case \"$1\" in\n\
+    --version) echo 'crabbox 0.79.1-moor.1' ;;\n\
+    run) touch \"$(dirname \"$0\")/started\"; exec sleep 60 ;;\n\
+    *) exit 1 ;;\n\
+    esac\n";
 
 /// A client process holding the only end of a connection that asked for `request`.
-fn client_process(socket: &std::path::Path, request: &Request) -> std::process::Child {
+fn client_process(socket: &Path, request: &Request) -> std::process::Child {
     let mut stream = UnixStream::connect(socket).unwrap();
     let hello = ClientFrame::Hello { protocol: PROTOCOL };
     stream.write_all(hello.to_line().as_bytes()).unwrap();
@@ -42,77 +60,91 @@ fn client_process(socket: &std::path::Path, request: &Request) -> std::process::
     holder.spawn().unwrap()
 }
 
-/// Serves one connection on `listener`, running its `run` over `cx` until the client hangs up
-/// and passing the response to `answered`.
-fn serve_one(
-    listener: &UnixListener,
-    cx: crate::cx::Cx,
-    cancel: &Cancel,
-    answered: &mpsc::Sender<Response>,
-) {
-    let (stream, _) = listener.accept().unwrap();
-    let hangup = Hangup::of(&stream).unwrap();
-    let reader = BufReader::new(stream.try_clone().unwrap());
-    let cx = Mutex::new(Some(cx));
-    serve(
-        reader,
-        stream,
-        |id, request, out| match request {
-            Request::Run(run) => {
-                let cx = cx.lock().unwrap().take().unwrap();
-                let response = hangup.cancels(cancel, || {
-                    report_while("run", id, WAIT, out, move |sink| {
-                        Moor::from_cx(cx).run_streamed(&run, sink)
-                    })
-                });
-                answered.send(response.clone()).unwrap();
-                response
-            }
-            other => Response::ok(other.cmd(), None),
-        },
-        |_, _, _, _| {},
+/// Makes `dir` a git repository with one commit.
+fn git_repo(dir: &Path) {
+    for args in [
+        &["init", "-q"][..],
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "one",
+        ],
+    ] {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {args:?}");
+    }
+}
+
+/// Records a ready Proxy for Box `id` whose supervisor holds a fresh lease, so a run reuses it.
+fn proxy_ready(store: &Store, id: BoxId) {
+    let reserved = store.reserve(id, &FakeRng::default(), LEASE).unwrap();
+    assert!(matches!(reserved, Reserve::Reserved(_)), "{reserved:?}");
+    assert_eq!(
+        store.claim_lease(id, "test", LEASE).unwrap(),
+        Lease::Claimed
     );
+    let proc = ReadyProc {
+        pid: std::process::id(),
+        handle: "h",
+        boot_id: None,
+    };
+    let marked = store.mark_ready(id, "test", 2000, proc).unwrap();
+    assert_eq!(marked, Fenced::Applied);
+}
+
+/// Polls `done` until it holds or [`POLLS`] polls pass.
+fn within_wait(mut done: impl FnMut() -> bool) -> bool {
+    (0..POLLS).any(|_| {
+        done() || {
+            thread::sleep(POLL);
+            false
+        }
+    })
 }
 
 #[test]
 fn a_run_whose_client_is_killed_is_cancelled_and_recorded_interrupted() {
-    let f = ready_with(FakeDriver::new().exec_results([Ok(ExecOutcome::Interrupted)]));
-    let cancel = Cancel::default();
-    let (started, running) = mpsc::channel();
-    let saw_cancel = Arc::new(AtomicBool::new(false));
-    let (until, seen) = (cancel.clone(), Arc::clone(&saw_cancel));
-    let started = Mutex::new(started);
-    f.driver.on_exec(move || {
-        started.lock().unwrap().send(()).ok();
-        for _ in 0..1000 {
-            if until.is_cancelled() {
-                break;
-            }
-            thread::sleep(Duration::from_millis(10));
-        }
-        seen.store(until.is_cancelled(), Ordering::SeqCst);
-    });
-    let sock = f.dir.path().join("c.sock");
-    let listener = UnixListener::bind(&sock).unwrap();
-    let (answered, answer) = mpsc::channel();
-    let server = thread::spawn(move || serve_one(&listener, f.cx, &cancel, &answered));
-    let mut client = client_process(&sock, &Request::Run(req(&["sleep", "600"])));
-    running.recv_timeout(WAIT).expect("the command started");
+    let dir = tempfile::tempdir().unwrap();
+    let crabbox = dir.path().join("crabbox");
+    moor_testkit::write_executable(&crabbox, FAKE_CRABBOX).unwrap();
+    let served = Served::start_in(dir, &[("MOOR_CRABBOX_BIN", crabbox.to_str().unwrap())]);
+    let db = served.dir.path().join("state").join("moor.db");
+    let store = Store::open(&db, Arc::new(SystemClock::real())).unwrap();
+    let operator = ask(&served.main, &json!({"cmd": "enroll"}))["value"]["user"]
+        .as_i64()
+        .unwrap();
+    let worktree = served.dir.path().join("wt");
+    std::fs::create_dir(&worktree).unwrap();
+    git_repo(&worktree);
+    let id = ready_box(&store, UserId::new(operator), &worktree);
+    let run = RunReq {
+        box_name: BoxName::parse_allow_bare(BOX).unwrap(),
+        ..req(&["sleep", "600"])
+    };
+    proxy_ready(&store, id);
+    let mut client = client_process(&served.main, &Request::Run(run));
+    let started = served.dir.path().join("started");
+    assert!(within_wait(|| started.exists()), "the command started");
     client.kill().unwrap();
     client.wait().unwrap();
-    let response = answer.recv_timeout(WAIT).expect("the run ended");
-    server.join().unwrap();
-    assert!(saw_cancel.load(Ordering::SeqCst), "the run was cancelled");
-    let value = response.value.expect("a run value");
-    assert_eq!(value.get("interrupted"), Some(&true.into()), "{value}");
-    let store = crate::store::Store::open(
-        &f.dir.path().join(crate::store::STORE_FILE),
-        Arc::new(crate::testing::clock::FakeClock::new(
-            moor_core::seam::clock::Ts::from_millis(0),
-        )),
-    )
-    .unwrap();
-    let name = moor_core::BoxName::parse_allow_bare("t").unwrap();
-    let id = store.latest_box_by_name(&name).unwrap().unwrap().id;
-    assert!(store.last_run(id).unwrap().unwrap().interrupted);
+    let interrupted = within_wait(|| {
+        store
+            .last_run(id)
+            .unwrap()
+            .is_some_and(|run| run.interrupted)
+    });
+    assert!(
+        interrupted,
+        "the run was cancelled and recorded interrupted"
+    );
 }
