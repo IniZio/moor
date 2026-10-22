@@ -1,9 +1,13 @@
 //! Scripts for a run detached in the Box: launch, follow, end and cancel.
 //!
 //! A run keeps its files in `$HOME/.moor/runs/<id>/`, outside the workdir so a `git clean` in
-//! the command cannot delete them: `log`, `pid` (the run's process group), `exit` and
+//! the command cannot delete them: `log`, `start`, `pid` (the run's process group), `exit` and
 //! `cancelled`. `run` is the run's id. Each script is POSIX sh text run with `sh -c` in the Box
 //! workdir.
+//!
+//! A pid alone can name an unrelated process after a Box reboot or pid wraparound, so `start`
+//! holds the boot id and the group leader's start time, and a pid counts as the run's only while
+//! both still match. Both come from Linux `/proc`, which every Box has.
 
 use super::{quote, record::MOVED_FILE};
 
@@ -14,11 +18,27 @@ pub const REFUSED: i32 = 3;
 /// Exit code of [`follow_script`] when the run's process is gone and left no exit code.
 pub const LOST: i32 = 4;
 
-/// Defines `__moor_alive`, true while the run's group leader is alive.
+/// Defines `__moor_ident PID`, which prints the boot id and the start time of process `PID`.
+/// The start time is field 22 of `/proc/PID/stat`, counted after the last `)` because the
+/// command name before it may hold spaces and `)`.
+const IDENT_FN: &str = r#"__moor_ident() {
+  __moor_boot=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null) || return 1
+  __moor_stat=$(cat "/proc/$1/stat" 2>/dev/null) || return 1
+  set -- ${__moor_stat##*)}
+  [ -n "${20}" ] || return 1
+  printf '%s %s\n' "$__moor_boot" "${20}"
+}
+"#;
+
+/// Defines `__moor_alive`, true while the process `pid` names is the run's group leader: it
+/// exists and its boot id and start time match `start`. Sets `__moor_pid`.
 const ALIVE_FN: &str = r#"__moor_alive() {
   __moor_pid=$(cat "$__moor_dir/pid" 2>/dev/null) || return 1
   case "$__moor_pid" in ''|*[!0-9]*) return 1 ;; esac
-  [ "$__moor_pid" -gt 1 ] && kill -s 0 "$__moor_pid" 2>/dev/null
+  [ "$__moor_pid" -gt 1 ] || return 1
+  __moor_want=$(cat "$__moor_dir/start" 2>/dev/null) || return 1
+  __moor_have=$(__moor_ident "$__moor_pid") || return 1
+  [ -n "$__moor_want" ] && [ "$__moor_have" = "$__moor_want" ]
 }
 "#;
 
@@ -35,9 +55,11 @@ fn dir_line(run: i64) -> String {
 #[must_use]
 pub fn launch_script(run: i64, command: &str) -> String {
     // The detached shell writes its own pid, so `pid` names the group only once setsid is done.
+    // `start` lands before `pid`, so a reader that sees `pid` can always check it.
     let inner = format!(
-        r#"__moor_dir=$1
+        r#"{IDENT_FN}__moor_dir=$1
 shift
+__moor_ident "$$" > "$__moor_dir/start.tmp" && mv -f "$__moor_dir/start.tmp" "$__moor_dir/start" || exit 1
 printf '%s\n' "$$" > "$__moor_dir/pid.tmp" && mv -f "$__moor_dir/pid.tmp" "$__moor_dir/pid" || exit 1
 (
 {command}
@@ -75,7 +97,7 @@ cat "$__moor_dir/pid"
 pub fn follow_script(run: i64, offset: u64) -> String {
     // Liveness and `exit` are read before the log size, so the last pass prints everything.
     format!(
-        r#"{dir}{ALIVE_FN}__moor_off={offset}
+        r#"{dir}{IDENT_FN}{ALIVE_FN}__moor_off={offset}
 while :; do
   __moor_end=
   __moor_alive || __moor_end=lost
@@ -102,7 +124,7 @@ done
 #[must_use]
 pub fn end_script(run: i64) -> String {
     format!(
-        r#"{dir}{ALIVE_FN}__moor_exit=lost
+        r#"{dir}{IDENT_FN}{ALIVE_FN}__moor_exit=lost
 __moor_alive && __moor_exit=running
 if [ -e "$__moor_dir/exit" ]; then
   __moor_exit=$(cat "$__moor_dir/exit")
@@ -122,16 +144,18 @@ printf 'exit=%s cancelled=%s moved=%s\n' "$__moor_exit" "$__moor_cancelled" "$__
 /// once `grace_secs` pass with the group still alive.
 ///
 /// Exits [`REFUSED`] without a signal when `pid` is missing, not a number, or 1 or less, since
-/// `kill -- -1` would reach every process the Box user runs. Exits 0 when the group is gone.
+/// `kill -- -1` would reach every process the Box user runs, and when the process it names is
+/// not the run's group leader by `start`. Exits 0 when the group is gone.
 #[must_use]
 pub fn cancel_script(run: i64, grace_secs: u32) -> String {
     // dash rejects `kill -TERM -- -PID` as an illegal number, so the signal goes by `-s`.
     format!(
-        r#"{dir}__moor_pid=$(cat "$__moor_dir/pid" 2>/dev/null)
+        r#"{dir}{IDENT_FN}{ALIVE_FN}__moor_pid=$(cat "$__moor_dir/pid" 2>/dev/null)
 case "$__moor_pid" in
   ''|*[!0-9]*) echo "moor: run {run} has no pid to signal" >&2; exit {REFUSED} ;;
 esac
 [ "$__moor_pid" -gt 1 ] || {{ echo "moor: run {run} has pid $__moor_pid, refusing to signal" >&2; exit {REFUSED}; }}
+__moor_alive || {{ echo "moor: pid $__moor_pid is not run {run}'s process, refusing to signal" >&2; exit {REFUSED}; }}
 : > "$__moor_dir/cancelled" || exit 1
 if ! kill -s TERM -- "-$__moor_pid"; then
   kill -s 0 -- "-$__moor_pid" 2>/dev/null || exit 0

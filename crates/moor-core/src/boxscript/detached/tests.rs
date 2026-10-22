@@ -5,7 +5,7 @@ use std::fs;
 use std::io::Read;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::PathBuf;
-use std::process::{Command, Output, Stdio};
+use std::process::{Child, Command, ExitStatus, Output, Stdio};
 use std::sync::mpsc;
 use std::thread::sleep;
 use std::time::Duration;
@@ -128,6 +128,28 @@ fn live_in_group(pgid: i32) -> usize {
             state != Some("Z") && pgrp == Some(pgid)
         })
         .count()
+}
+
+/// The boot id and the start time of `pid`, as `start` holds them.
+fn ident(pid: u32) -> (String, String) {
+    let boot = fs::read_to_string("/proc/sys/kernel/random/boot_id").unwrap();
+    let proc_stat = fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
+    let (_, rest) = proc_stat.rsplit_once(')').unwrap();
+    let start = rest.split_whitespace().nth(19).unwrap().to_owned();
+    (boot.trim().to_owned(), start)
+}
+
+/// Waits up to `secs` for `child`, then kills it; `None` when it had to be killed.
+fn wait_bounded(child: &mut Child, secs: u64) -> Option<ExitStatus> {
+    for _ in 0..secs * 20 {
+        if let Some(status) = child.try_wait().unwrap() {
+            return Some(status);
+        }
+        sleep(Duration::from_millis(50));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    None
 }
 
 /// A pid that belonged to a process that has exited and been reaped.
@@ -285,6 +307,101 @@ fn cancel_refuses_a_pid_it_must_not_signal() {
         assert_eq!(out.status.code(), Some(REFUSED), "pid {pid:?}: {out:?}");
         assert!(sb.file("cancelled").is_none(), "pid {pid:?}");
     }
+}
+
+#[test]
+fn a_pid_reused_by_an_unrelated_group_leader_is_not_the_run() {
+    let mut stranger = Command::new("sleep")
+        .arg("30")
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    let (boot, start) = ident(stranger.id());
+    for (label, recorded) in [
+        ("another start time", format!("{boot} 1{start}\n")),
+        (
+            "another boot",
+            format!("00000000-0000-0000-0000-000000000000 {start}\n"),
+        ),
+    ] {
+        let sb = Scratch::new("reused");
+        fs::create_dir_all(sb.run_dir()).unwrap();
+        fs::write(sb.run_dir().join("start"), recorded).unwrap();
+        fs::write(sb.run_dir().join("pid"), format!("{}\n", stranger.id())).unwrap();
+        fs::write(sb.run_dir().join("log"), b"partial").unwrap();
+
+        assert_eq!(sb.end().outcome, Outcome::Lost, "{label}");
+        let mut follow = sb
+            .sh(&follow_script(RUN, 0))
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        assert_eq!(
+            wait_bounded(&mut follow, 5).and_then(|s| s.code()),
+            Some(LOST),
+            "{label}: follow ends as lost"
+        );
+        let out = sb.run(&cancel_script(RUN, 1));
+        assert_eq!(out.status.code(), Some(REFUSED), "{label}: {out:?}");
+        assert!(sb.file("cancelled").is_none(), "{label}");
+        sleep(Duration::from_millis(200));
+        assert!(
+            stranger.try_wait().unwrap().is_none(),
+            "{label}: the unrelated process survives cancel"
+        );
+        fs::remove_file(sb.run_dir().join("pid")).unwrap();
+    }
+    stranger.kill().unwrap();
+    stranger.wait().unwrap();
+}
+
+#[test]
+fn launch_records_the_leader_it_started() {
+    let sb = Scratch::new("ident");
+    let pid = sb.launch("sleep 30");
+    let (boot, start) = ident(u32::try_from(pid).unwrap());
+    assert_eq!(
+        sb.file("start").unwrap(),
+        format!("{boot} {start}\n").into_bytes()
+    );
+    assert_eq!(sb.end().outcome, Outcome::Running);
+}
+
+#[test]
+fn a_reader_never_sees_a_partial_exit_file() {
+    // A `mv` shim pauses the run at the step that publishes its exit code and has `end` read
+    // the run there, so the check does not depend on timing.
+    let sb = Scratch::new("atomic");
+    let bin = sb.root.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let real_mv = String::from_utf8(sb.run("command -v mv").stdout).unwrap();
+    let shim = format!(
+        "#!/bin/sh\nfor __last; do :; done\ncase \"$__last\" in */exit) sh -c \"$MOOR_TEST_END\" >> \"$HOME/seen\" ;; esac\nexec {} \"$@\"\n",
+        real_mv.trim()
+    );
+    fs::write(bin.join("mv"), shim).unwrap();
+    fs::set_permissions(
+        bin.join("mv"),
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+    let out = sb
+        .sh(&launch_script(RUN, "printf out; exit 7"))
+        .env("PATH", &path)
+        .env("MOOR_TEST_END", end_script(RUN))
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "launch: {out:?}");
+    sb.wait_exit();
+    let seen = fs::read_to_string(sb.root.join("home/seen")).unwrap_or_default();
+    assert_eq!(
+        seen.lines().collect::<Vec<_>>(),
+        ["exit=running cancelled=0 moved=0"],
+        "just before the exit code lands, end reads the run as running"
+    );
+    assert_eq!(sb.file("exit").unwrap(), b"7\n");
+    assert_eq!(sb.end().outcome, Outcome::Exited(7));
 }
 
 #[test]
