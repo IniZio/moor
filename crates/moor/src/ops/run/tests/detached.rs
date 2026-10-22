@@ -250,6 +250,10 @@ fn the_egress_proxy_a_run_started_outlives_the_runs_cancel() {
     let leader_pid = thread::scope(|s| {
         let gone = s.spawn(|| {
             let pid = leader(&dir);
+            assert!(
+                eventually(|| pid_file.exists()),
+                "the run's prelude started the egress proxy"
+            );
             cancel.cancel();
             pid
         });
