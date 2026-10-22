@@ -21,7 +21,7 @@ use moor_core::seam::proc::{Deadline, Output, Proc, ProcSpec, Tool};
 use moor_core::{Request, Response};
 use serde_json::{json, Value};
 
-use super::{on_sigterm, serve_until, Drain, Handler};
+use super::{on_sigterm, serve_until, Admitted, Drain, Handler};
 use crate::adapters::proc::{SystemProc, ToolPaths};
 use crate::controller::conn::serve;
 use crate::controller::progress::{report_while, wait_unless_draining};
@@ -38,14 +38,14 @@ type Answer = Arc<dyn Fn(&str, Request, &mut dyn Write, &Drain) -> Option<Respon
 
 /// A handler that serves frames with `answer` and no watch.
 fn handler(answer: Answer) -> Handler {
-    Arc::new(move |stream: UnixStream, drain: &Arc<Drain>| {
+    Arc::new(move |stream: UnixStream, conn: Admitted| {
         let reader = BufReader::new(stream.try_clone().expect("clone"));
         let answer = Arc::clone(&answer);
         serve(
             reader,
             stream,
-            drain,
-            |id, r, out| answer(id, r, out, drain),
+            &conn,
+            |id, r, out| answer(id, r, out, conn.drain()),
             |_, _, _, _| {},
         );
     })

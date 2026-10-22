@@ -10,7 +10,7 @@ use moor_core::request::{Grant, UserCmd};
 use moor_core::user::{Caller, Identity, Viewer};
 use moor_core::{ArtifactReadReq, ErrorKind, Request, Response, RunReq};
 
-use super::drain::Drain;
+use super::drain::Admitted;
 use super::hangup::Hangup;
 use super::progress::{respond_with_progress, wait_unless_draining, Sink, INTERVAL};
 use super::watch;
@@ -19,8 +19,8 @@ use crate::error::CommandError;
 use crate::vault::Vault;
 use crate::Moor;
 
-/// Whom one connection speaks for, the vault key its user requests use, and the drain that
-/// ends it.
+/// Whom one connection speaks for, the vault key its user requests use, and its place in the
+/// drain that ends it.
 pub(crate) struct Peer {
     /// Whom the connection speaks for, or why that is unknown.
     pub(crate) caller: Result<Caller, String>,
@@ -28,8 +28,8 @@ pub(crate) struct Peer {
     pub(crate) vault: Arc<Vault>,
     /// Tells when the client goes away, which cancels its run; none when it cannot be watched.
     pub(crate) hangup: Option<Hangup>,
-    /// The controller's drain.
-    pub(crate) drain: Arc<Drain>,
+    /// The connection as the controller's drain sees it.
+    pub(crate) conn: Admitted,
 }
 
 #[cfg(test)]
@@ -42,7 +42,7 @@ impl Peer {
             caller: Ok(Caller::Operator(1000)),
             vault: Arc::new(vault),
             hangup: None,
-            drain: Arc::new(Drain::default()),
+            conn: Admitted::unwatched(),
         }
     }
 }
@@ -54,7 +54,7 @@ pub(crate) fn handle(reader: impl BufRead, writer: impl Write, env: &Env, peer: 
     serve(
         reader,
         writer,
-        &peer.drain,
+        &peer.conn,
         |id, request, out| {
             let cmd = request.cmd();
             match request.split_identity() {
@@ -71,7 +71,13 @@ pub(crate) fn handle(reader: impl BufRead, writer: impl Write, env: &Env, peer: 
                 follow,
                 viewer: Moor::from_env(env).map_or(Viewer::Nobody, |m| m.watcher(&peer.caller)),
             };
-            watch::stream_draining(writer, env, ask, watch::Limits::default(), &peer.drain);
+            watch::stream_draining(
+                writer,
+                env,
+                ask,
+                watch::Limits::default(),
+                peer.conn.drain(),
+            );
         },
     );
 }
@@ -123,7 +129,7 @@ fn respond_unless_draining(
     match request {
         request @ (Request::Wait(_) | Request::WaitEvents(_)) => {
             let (cmd, env) = (request.cmd(), env.clone());
-            wait_unless_draining(cmd, id, INTERVAL, out, &peer.drain, move || {
+            wait_unless_draining(cmd, id, INTERVAL, out, peer.conn.drain(), move || {
                 respond(&env, acting, request)
             })
         }
@@ -142,11 +148,13 @@ fn respond_unless_draining(
 /// [`handle`] with the engine behind `answer` and the event stream behind `watch`,
 /// so tests can serve over fakes. `answer` may write frames for the request before its
 /// response, and returns `None` when `drain` began before it could finish; the client then
-/// gets a `restarting` frame. Once `drain` has begun no further request is read.
+/// gets a `restarting` frame, as does a request read once the drain of `conn` has begun. A
+/// request being answered keeps `conn` readable through the drain; once the drain has begun
+/// no further request is read.
 pub(super) fn serve<W: Write>(
     reader: impl BufRead,
     mut writer: W,
-    drain: &Drain,
+    conn: &Admitted,
     answer: impl Fn(&str, Request, &mut dyn Write) -> Option<Response>,
     watch: impl Fn(&mut W, i64, &WatchFilter, bool),
 ) {
@@ -186,7 +194,10 @@ pub(super) fn serve<W: Write>(
                 id: Some(id),
                 kind: FrameErrorKind::HelloRequired,
             },
-            Ok(ClientFrame::Request { id, request }) => match answer(&id, *request, &mut writer) {
+            Ok(ClientFrame::Request { id, request }) => match conn
+                .answering()
+                .and_then(|_answering| answer(&id, *request, &mut writer))
+            {
                 Some(envelope) => ServerFrame::Response { id, envelope },
                 None => ServerFrame::Error {
                     id: Some(id),
@@ -197,7 +208,7 @@ pub(super) fn serve<W: Write>(
                 },
             },
         };
-        if !send(&mut writer, &reply) || drain.begun() {
+        if !send(&mut writer, &reply) || conn.drain().begun() {
             return;
         }
     }

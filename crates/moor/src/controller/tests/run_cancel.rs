@@ -1,4 +1,4 @@
-//! A `run` whose client is killed mid-run is cancelled and recorded interrupted.
+//! A `run` is cancelled only when its client leaves: a killed client cancels it, a drain does not.
 #![allow(
     clippy::indexing_slicing,
     reason = "test assertions index decoded frames"
@@ -9,7 +9,7 @@ use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -119,4 +119,93 @@ fn a_run_whose_client_is_killed_is_cancelled_and_recorded_interrupted() {
         interrupted,
         "the run was cancelled and recorded interrupted"
     );
+}
+
+/// A crabbox whose `run` marks `started` beside itself, outlasts the start of a drain, and
+/// exits 7.
+const SLOW_CRABBOX: &str = "#!/bin/sh\n\
+    PATH=/usr/bin:/bin\n\
+    case \"$1\" in\n\
+    --version) echo 'crabbox 0.79.1-moor.1' ;;\n\
+    run) touch \"$(dirname \"$0\")/started\"; sleep 1; echo 'remote command exited 7' >&2; exit 7 ;;\n\
+    *) exit 1 ;;\n\
+    esac\n";
+
+/// A connection to `socket` that has said hello.
+fn greeted(socket: &Path) -> (UnixStream, BufReader<UnixStream>) {
+    let mut stream = UnixStream::connect(socket).unwrap();
+    let hello = ClientFrame::Hello { protocol: PROTOCOL };
+    stream.write_all(hello.to_line().as_bytes()).unwrap();
+    let mut read = BufReader::new(stream.try_clone().unwrap());
+    let mut line = String::new();
+    read.read_line(&mut line).unwrap();
+    (stream, read)
+}
+
+/// The next frame `read` gets.
+fn frame(read: &mut BufReader<UnixStream>) -> serde_json::Value {
+    let mut line = String::new();
+    read.read_line(&mut line).unwrap();
+    serde_json::from_str(&line).unwrap()
+}
+
+#[test]
+fn a_drain_lets_a_run_in_flight_finish_and_closes_idle_connections() {
+    let dir = tempfile::tempdir().unwrap();
+    let crabbox = dir.path().join("crabbox");
+    moor_testkit::write_executable(&crabbox, SLOW_CRABBOX).unwrap();
+    let env = super::env_with(
+        dir.path(),
+        &[("MOOR_CRABBOX_BIN", crabbox.to_str().unwrap())],
+    );
+    let cfg = super::config(dir.path(), "drain_timeout_secs: 10\n");
+    let running = crate::controller::start(&env, &cfg).unwrap();
+    let socket = running.socket.clone();
+    let log = super::Buf::default();
+    let (mut signal, serving) = running.serve_until_signalled(Arc::new(Mutex::new(log.clone())));
+    let store = Store::open(
+        &dir.path().join("state").join("moor.db"),
+        Arc::new(SystemClock::real()),
+    )
+    .unwrap();
+    let operator = ask(&socket, &json!({"cmd": "enroll"}))["value"]["user"]
+        .as_i64()
+        .unwrap();
+    let id = ready_box(&store, UserId::new(operator));
+    proxy_ready(&store, id);
+    let (_idle, mut idle_read) = greeted(&socket);
+    let (mut busy, mut busy_read) = greeted(&socket);
+    let run = RunReq {
+        box_name: BoxName::parse_allow_bare(BOX).unwrap(),
+        ..req(&["sleep", "1"])
+    };
+    let ask_run = ClientFrame::Request {
+        id: "r".to_owned(),
+        request: Box::new(Request::Run(run)),
+    };
+    busy.write_all(ask_run.to_line().as_bytes()).unwrap();
+    let started = dir.path().join("started");
+    assert!(within_wait(|| started.exists()), "the command started");
+    signal.write_all(b"x").unwrap();
+    let mut rest = String::new();
+    idle_read.read_line(&mut rest).unwrap();
+    assert_eq!(rest, "", "the idle connection was closed by the drain");
+    let reply = loop {
+        let next = frame(&mut busy_read);
+        if next["frame"] != "progress" && next["frame"] != "output" {
+            break next;
+        }
+    };
+    assert_eq!(reply["frame"], "response", "{reply}");
+    let last = store.last_run(id).unwrap().unwrap();
+    assert_eq!(
+        (last.exit, last.interrupted),
+        (Some(7), false),
+        "the run ended with its own exit: {reply}"
+    );
+    let (tx, exited) = std::sync::mpsc::channel();
+    thread::spawn(move || tx.send(serving.join().is_ok()).ok());
+    let exited = exited.recv_timeout(Duration::from_secs(10));
+    assert_eq!(exited, Ok(true), "the controller exited after its drain");
+    assert!(log.text().contains("drained; exiting"), "{}", log.text());
 }

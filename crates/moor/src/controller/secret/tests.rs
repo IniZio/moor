@@ -11,7 +11,7 @@ use moor_core::{BoxName, Request, ShowReq, StartReq, SteerReq};
 use serde_json::{json, Value};
 
 use super::serve;
-use crate::controller::drain::Drain;
+use crate::controller::drain::Admitted;
 use crate::cx::Cx;
 use crate::testing::cx::{put_secret, REQUESTER_USER};
 use crate::testing::driver::FakeDriver;
@@ -75,7 +75,7 @@ fn exchange(cx: Cx, requests: &[Request]) -> (String, String, Vec<Value>) {
     serve(
         Cursor::new(input.clone().into_bytes()),
         &mut out,
-        &Drain::default(),
+        &Admitted::unwatched(),
         |_, r, _| Some(moor.call(r)),
         |_, _, _, _| {},
     );
