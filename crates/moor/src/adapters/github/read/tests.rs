@@ -458,6 +458,7 @@ fn unusable_profile_name_falls_back_to_the_login() {
         "   ".to_owned(),
         "\u{3000}".to_owned(),
         "x".repeat(256),
+        "\u{e9}".repeat(128),
         "Octo\nCat".to_owned(),
         "Octo\u{7f}".to_owned(),
         "Octo\u{85}Cat".to_owned(),

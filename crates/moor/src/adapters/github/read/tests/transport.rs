@@ -61,7 +61,7 @@ fn unreachable_api_error_does_not_carry_the_token() {
 
 #[test]
 fn token_that_is_not_printable_ascii_is_rejected_unsent() {
-    let bad: [&[u8]; 7] = [
+    let bad: [&[u8]; 9] = [
         b"",
         b"ghp_a b",
         "ghp_\u{e9}".as_bytes(),
@@ -69,6 +69,8 @@ fn token_that_is_not_printable_ascii_is_rejected_unsent() {
         b"ghp_a\x00b",
         b"ghp_a\tb",
         b"ghp_a\r\nX-Injected: 1",
+        b"ghp_a\rb",
+        b"ghp_a\nb",
     ];
     for raw in bad {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
