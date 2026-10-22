@@ -11,22 +11,24 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+use rustix::process::{kill_process, Pid, Signal};
 use socket2::{Domain, Socket, Type};
 
 use crate::write_executable;
 
 /// A fake `tinyproxy` that records each start.
 ///
-/// It logs its argv to `$HOME/fake.log`, runs a placeholder process named `tinyproxy`, as the real
-/// daemon is, writes that pid to the config's `PidFile`, and records the start in
-/// `$HOME/fake-starts`.
+/// It logs its argv to `$HOME/fake.log`, runs a placeholder process named `tinyproxy` in a session
+/// of its own, as the real daemon detaches, writes that pid to the config's `PidFile`, and records
+/// the start in `$HOME/fake-starts`.
 pub const FAKE_TINYPROXY: &str = r#"#!/bin/sh
 echo "tinyproxy $*" >>"$HOME/fake.log"
 pid=$(sed -n 's/^PidFile "\(.*\)"$/\1/p' "$2")
 daemon="$HOME/.fake-tinyproxy/tinyproxy"
 [ -x "$daemon" ] || { mkdir -p "$HOME/.fake-tinyproxy" && cp "$(command -v sleep)" "$daemon"; }
-"$daemon" 30 >/dev/null 2>&1 &
-echo $! >"$pid"
+rm -f "$pid"
+setsid sh -c 'echo $$ >"$1.tmp" && mv -f "$1.tmp" "$1" && exec "$2" 30' sh "$pid" "$daemon" </dev/null >/dev/null 2>&1 &
+while [ ! -s "$pid" ]; do sleep 0.01; done
 echo start >>"$HOME/fake-starts"
 "#;
 
@@ -175,10 +177,35 @@ impl Drop for FakeEgress {
         if let Some(w) = self.watcher.take() {
             let _ = w.join();
         }
-        if let Ok(pid) = std::fs::read_to_string(self.home.join(".moor/egress.pid")) {
-            let _ = std::process::Command::new("kill").arg(pid.trim()).status();
+        if let Some(pid) = self.daemon() {
+            let _ = kill_process(pid, Signal::KILL);
+            for _ in 0..200 {
+                if !running(pid) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
         }
     }
+}
+
+impl FakeEgress {
+    /// The fake daemon the last start left running, by the pid it wrote.
+    fn daemon(&self) -> Option<Pid> {
+        let text = std::fs::read_to_string(self.home.join(".moor/egress.pid")).ok()?;
+        let pid = Pid::from_raw(text.trim().parse().ok()?)?;
+        let comm = std::fs::read_to_string(format!("/proc/{}/comm", pid.as_raw_nonzero())).ok()?;
+        (comm.trim() == "tinyproxy" && running(pid)).then_some(pid)
+    }
+}
+
+/// Whether `pid` exists and has not exited; a zombie its parent has not reaped counts as gone.
+fn running(pid: Pid) -> bool {
+    std::fs::read_to_string(format!("/proc/{}/stat", pid.as_raw_nonzero())).is_ok_and(|stat| {
+        stat.rsplit_once(')')
+            .and_then(|(_, rest)| rest.split_whitespace().next())
+            .is_some_and(|state| state != "Z" && state != "X")
+    })
 }
 
 #[cfg(test)]
@@ -187,7 +214,7 @@ mod tests {
 
     use socket2::{Domain, Socket, Type};
 
-    use super::FakeEgress;
+    use super::{running, FakeEgress, Pid};
 
     /// Binds a socket without `SO_REUSEADDR` to `port`, as another process on the host would.
     fn bind_elsewhere(port: u16) -> std::io::Result<Socket> {
@@ -214,5 +241,34 @@ mod tests {
             bind_elsewhere(port).is_err(),
             "another socket bound port {port}"
         );
+    }
+
+    #[test]
+    fn the_daemon_leaves_the_starting_group_and_dies_with_the_fake() {
+        let dir = tempfile::tempdir().unwrap();
+        let (home, bin) = (dir.path().join("home"), dir.path().join("bin"));
+        std::fs::create_dir_all(home.join(".moor")).unwrap();
+        std::fs::create_dir_all(&bin).unwrap();
+        let egress = FakeEgress::start(&home, &bin).unwrap();
+        let conf = dir.path().join("tinyproxy.conf");
+        let pid_file = home.join(".moor/egress.pid");
+        std::fs::write(&conf, format!("PidFile \"{}\"\n", pid_file.display())).unwrap();
+        let status = std::process::Command::new(bin.join("tinyproxy"))
+            .arg("-c")
+            .arg(&conf)
+            .env("HOME", &home)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let pid: i32 = std::fs::read_to_string(&pid_file)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        let pid = Pid::from_raw(pid).unwrap();
+        let group = rustix::process::getpgid(Some(pid)).unwrap();
+        assert_eq!(group, pid, "the daemon leads a group of its own");
+        drop(egress);
+        assert!(!running(pid), "the daemon died with the fake");
     }
 }
