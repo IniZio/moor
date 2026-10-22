@@ -200,6 +200,11 @@ pub enum Event {
         /// The pane line that showed it.
         line: String,
     },
+    /// The agent's last message, recorded just before the `idled` it ends.
+    AgentSaid {
+        /// The message, cut to its end when long.
+        text: String,
+    },
     /// The agent stopped to ask the user something; one per waiting episode.
     NeedsInput {
         /// The question, when the agent showed one.

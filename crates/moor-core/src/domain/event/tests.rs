@@ -188,6 +188,7 @@ fn all_events() -> Vec<Event> {
             rule: None,
         },
         Event::Cloned { ms: 7 },
+        Event::AgentSaid { text: s("done") },
     ]
 }
 
@@ -254,6 +255,7 @@ const fn event_index(e: &Event) -> usize {
         Event::ArtifactPublished { .. } => 47,
         Event::EgressAborted { .. } => 48,
         Event::Cloned { .. } => 49,
+        Event::AgentSaid { .. } => 50,
     }
 }
 
@@ -261,7 +263,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 50);
+    assert_eq!(all.len(), 51);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

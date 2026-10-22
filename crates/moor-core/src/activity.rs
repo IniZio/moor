@@ -117,7 +117,7 @@ pub struct HookRecord {
     pub kind: HookKind,
     /// The agent session it came from.
     pub session_id: Option<String>,
-    /// The text the agent attached, such as the question it waits on.
+    /// The text the agent attached: the question it waits on, or its last message when idle.
     pub message: Option<String>,
     /// The choices the agent offered with its question, in order; empty when it named none.
     pub options: Vec<String>,

@@ -95,6 +95,11 @@ pub enum ExtraEvent {
         /// The pane line that showed it.
         line: String,
     },
+    /// The agent's last message before it went quiet.
+    AgentSaid {
+        /// The message, cut to its end when long.
+        text: String,
+    },
     /// The agent stopped to ask the user something.
     NeedsInput {
         /// The question, when the agent showed one.
@@ -206,6 +211,7 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::AgentPromptBlocked { pane, prompt, line } => {
                 Self::AgentPromptBlocked { pane, prompt, line }
             }
+            ExtraEvent::AgentSaid { text } => Self::AgentSaid { text },
             ExtraEvent::NeedsInput { question, options } => Self::NeedsInput { question, options },
             ExtraEvent::AgentPromptCheckFailed { pane, error } => {
                 Self::AgentPromptCheckFailed { pane, error }
@@ -294,6 +300,7 @@ impl TryFrom<Event> for ExtraEvent {
             Event::AgentPromptBlocked { pane, prompt, line } => {
                 Ok(Self::AgentPromptBlocked { pane, prompt, line })
             }
+            Event::AgentSaid { text } => Ok(Self::AgentSaid { text }),
             Event::NeedsInput { question, options } => Ok(Self::NeedsInput { question, options }),
             Event::AgentPromptCheckFailed { pane, error } => {
                 Ok(Self::AgentPromptCheckFailed { pane, error })

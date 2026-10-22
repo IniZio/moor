@@ -72,6 +72,8 @@ pub(crate) struct Reading {
     agent_session: Option<String>,
     /// The pane text this reading observed; none when the pane gave no observation.
     pub(crate) pane_text: Option<String>,
+    /// The agent's last message, when a hook reported it idle with one.
+    said: Option<String>,
 }
 
 impl Reading {
@@ -91,6 +93,7 @@ impl Reading {
             launch_failure: None,
             agent_session: None,
             pane_text: None,
+            said: None,
         }
     }
 
@@ -105,6 +108,7 @@ impl Reading {
             launch_failure: Some(failure),
             agent_session: None,
             pane_text: None,
+            said: None,
         }
     }
 }
@@ -170,6 +174,7 @@ pub(crate) fn read(
         PaneRead::Fresh(obs) => Some(obs.tail.clone()),
         _ => None,
     };
+    let said = said::said(&activity, &probes.hook, cache.as_ref());
     Ok(Reading {
         pane: liveness(&probes.pane, &activity),
         activity: Some(activity),
@@ -179,6 +184,7 @@ pub(crate) fn read(
         launch_failure: None,
         agent_session,
         pane_text,
+        said,
     })
 }
 
@@ -239,6 +245,10 @@ pub(crate) fn settle(
     };
     if row.intent.is_some() {
         return Ok(());
+    }
+    if let (SessionInput::AgentQuiet, Some(text)) = (&input, &reading.said) {
+        let text = text.clone();
+        store.apply(Decision::new(row.id).event(ExtraEvent::AgentSaid { text }))?;
     }
     match store.apply(Decision::new(row.id).session(input)) {
         Ok(_) | Err(StoreError::Illegal(_)) => Ok(()),
@@ -374,6 +384,7 @@ const fn liveness(pane: &PaneRead, activity: &Activity) -> PaneLiveness {
     }
 }
 
+mod said;
 mod turn;
 
 #[cfg(test)]

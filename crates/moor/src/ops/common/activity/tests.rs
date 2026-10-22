@@ -46,6 +46,7 @@ impl Reading {
             launch_failure: None,
             agent_session: None,
             pane_text: None,
+            said: None,
         }
     }
 }
@@ -569,4 +570,5 @@ fn a_new_hook_session_id_is_stored_once() {
 
 mod exit;
 mod needs_input;
+mod said;
 mod turn;
