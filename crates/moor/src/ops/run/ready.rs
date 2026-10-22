@@ -18,10 +18,10 @@ pub(super) struct Target {
     /// Working directory in the Box; the driver's default when unrecorded.
     pub(super) workdir: Option<BoxPath>,
     /// The host checkout the Proxy plan reads the repo's origin from.
-    pub(super) worktree: PathBuf,
+    pub(super) repo: PathBuf,
 }
 
-/// The Box and worktree a run uses, or the reason none can.
+/// The Box and host checkout a run uses, or the reason none can.
 ///
 /// A Box the driver no longer knows is also recorded as a refused run.
 pub(super) fn target(store: &Store, row: &BoxRow) -> Result<Target, CommandError> {
@@ -54,10 +54,9 @@ pub(super) fn target(store: &Store, row: &BoxRow) -> Result<Target, CommandError
         .clone()
         .ok_or_else(|| failed(format!("box of {name} has no handle")))?;
     let workdir = boxed.workdir.as_deref().and_then(recorded_workdir);
-    let worktree = PathBuf::from(row.worktree.as_deref().unwrap_or(&row.repo));
     Ok(Target {
         handle,
         workdir,
-        worktree,
+        repo: PathBuf::from(&row.repo),
     })
 }

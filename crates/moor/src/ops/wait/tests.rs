@@ -43,7 +43,7 @@ fn cx_with(dir: &Path, driver: FakeDriver) -> (Cx, Arc<ScriptedProc>) {
         dir,
         dir,
         Arc::new(driver),
-        Arc::new(FakeSurface::new(dir)),
+        Arc::new(FakeSurface::new()),
         proc.clone(),
     );
     (cx, proc)
@@ -263,7 +263,6 @@ fn add_boxed(cx: &Cx) -> BoxId {
         .session(SessionInput::Started)
         .box_input(BoxInput::Acquired { handle: got.handle })
         .set(Fields {
-            worktree: Field::Set("/wt".into()),
             box_workdir: Field::Set("/work".into()),
             ..Fields::default()
         });

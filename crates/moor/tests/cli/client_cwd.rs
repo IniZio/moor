@@ -74,7 +74,11 @@ fn a_cli_start_with_no_repo_starts_from_the_callers_checkout_not_the_controllers
     let asked = work.join("herdr.log");
     let herdr = work.join("herdr");
     let record = format!(
-        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\nexit 1\n",
+        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\n\
+         case \"$1 $2\" in\n\
+         'workspace list') echo '{{\"result\":{{\"workspaces\":[]}}}}' ;;\n\
+         'workspace create') echo '{{\"result\":{{\"workspace\":{{\"workspace_id\":\"w1\"}}}}}}' ;;\n\
+         esac\n",
         asked.display()
     );
     moor_testkit::write_executable(&herdr, record).unwrap();
@@ -90,9 +94,11 @@ fn a_cli_start_with_no_repo_starts_from_the_callers_checkout_not_the_controllers
         assert!(set.status.success(), "{set:?}");
     }
     let started = client(&["start", "demo"], "");
+    let reply = String::from_utf8_lossy(&started.stdout);
+    let from_b = format!("\"repo\":\"{}\"", b.display());
+    assert!(reply.contains(&from_b), "{reply}\n{started:?}");
+    assert!(!reply.contains(&a.display().to_string()), "{reply}");
     let log = std::fs::read_to_string(&asked).unwrap_or_default();
-    let from_b = format!("worktree create --cwd {}", b.display());
-    assert!(log.contains(&from_b), "{log}\n{started:?}");
     assert!(!log.contains(&a.display().to_string()), "{log}");
     let _ = std::fs::remove_dir_all(&work);
 }

@@ -115,7 +115,7 @@ fn world_failing(
         dir.path(),
         repo,
         driver.clone(),
-        Arc::new(FakeSurface::new(dir.path())),
+        Arc::new(FakeSurface::new()),
         Arc::new(proc),
         config,
     );
@@ -143,18 +143,17 @@ fn acquire_holder(driver: &FakeDriver) -> BoxHandle {
     got.handle
 }
 
-fn insert_holder(cx: &Cx, handle: BoxHandle, worktree: &Path) -> BoxId {
+fn insert_holder(cx: &Cx, handle: BoxHandle, repo: &Path) -> BoxId {
     let store = cx.store().unwrap();
     let id = store
         .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("holder").unwrap(),
-            repo: "/repo".into(),
+            repo: repo.display().to_string(),
         }))
         .unwrap()
         .box_id;
     let fields = Fields {
         box_provider: Field::Set(ProviderId::new(PROVIDER)),
-        worktree: Field::Set(worktree.display().to_string()),
         box_workdir: Field::Set(HOLDER_WORKDIR.into()),
         ..Fields::default()
     };

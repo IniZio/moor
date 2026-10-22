@@ -54,7 +54,7 @@ fn world(host: FakeProxyHost) -> (Cx, World) {
         format!("{}/exclude\n", dir.path().display()),
     );
     let driver = Arc::new(FakeDriver::new());
-    let surface = Arc::new(FakeSurface::new(dir.path()));
+    let surface = Arc::new(FakeSurface::new());
     let engine = Arc::new(FakeEngine::new());
     let cx = Cx::fake_with(
         dir.path(),

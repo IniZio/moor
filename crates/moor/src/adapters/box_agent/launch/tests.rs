@@ -48,13 +48,11 @@ fn surface(s: FakeSurface) -> Arc<FakeSurface> {
 }
 
 fn req(s: &FakeSurface) -> LaunchReq {
-    let wt = s.create_worktree(&PathBuf::from("/r"), &box_name("t1"), None);
-    let wt = wt.unwrap();
     LaunchReq {
         id: BoxId::new(1),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
-        workspace: s.ensure_workspace(&wt, "moor:t1").unwrap(),
+        workspace: s.ensure_workspace("moor:t1").unwrap(),
         box_name: box_name("t1"),
         branch: "moor/t1".to_owned(),
         goal: Some("fix x".to_owned()),
@@ -101,7 +99,7 @@ fn pane_line(s: &FakeSurface) -> String {
 
 #[test]
 fn delivers_the_brief_under_the_box_home() {
-    let (d, _, out) = launch(FakeDriver::new(), FakeSurface::new("/r"));
+    let (d, _, out) = launch(FakeDriver::new(), FakeSurface::new());
     assert_eq!(out.unwrap(), "p-2");
     let (handle, path, bytes, mode) = d.puts().into_iter().next().unwrap();
     assert_eq!(handle, BoxHandle::new("box-1"));
@@ -112,7 +110,7 @@ fn delivers_the_brief_under_the_box_home() {
 
 #[test]
 fn delivers_the_hook_writer_files() {
-    let (d, _, out) = launch(FakeDriver::new(), FakeSurface::new("/r"));
+    let (d, _, out) = launch(FakeDriver::new(), FakeSurface::new());
     out.unwrap();
     let paths: Vec<_> = d.puts().iter().map(|p| p.1.as_str().to_owned()).collect();
     assert_eq!(
@@ -127,7 +125,7 @@ fn delivers_the_hook_writer_files() {
 
 #[test]
 fn opens_an_unfocused_agent_tab() {
-    let (_, s, out) = launch(FakeDriver::new(), FakeSurface::new("/r"));
+    let (_, s, out) = launch(FakeDriver::new(), FakeSurface::new());
     out.unwrap();
     let cmd = s.opened().remove(0);
     assert_eq!(cmd.label, "agent:t1");
@@ -137,7 +135,7 @@ fn opens_an_unfocused_agent_tab() {
 
 #[test]
 fn the_pane_line_runs_the_script_without_exec_and_reports_the_exit() {
-    let (_, s, out) = launch(FakeDriver::new(), FakeSurface::new("/r"));
+    let (_, s, out) = launch(FakeDriver::new(), FakeSurface::new());
     out.unwrap();
     let line = pane_line(&s);
     assert!(line.starts_with("'ssh' '-t' 'box-1' '"), "{line}");
@@ -147,7 +145,7 @@ fn the_pane_line_runs_the_script_without_exec_and_reports_the_exit() {
 
 #[test]
 fn a_resume_runs_the_agent_with_the_stored_session_instead_of_the_prompt() {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new("/r")));
+    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
     let r = LaunchReq {
         resume: Some("sess-9".to_owned()),
         ..req(&s)
@@ -163,7 +161,7 @@ fn a_resume_runs_the_agent_with_the_stored_session_instead_of_the_prompt() {
 
 #[test]
 fn the_script_cleans_up_installs_the_brief_and_starts_the_agent() {
-    let (_, s, out) = launch(FakeDriver::new(), FakeSurface::new("/r"));
+    let (_, s, out) = launch(FakeDriver::new(), FakeSurface::new());
     out.unwrap();
     let line = pane_line(&s);
     let script = script_of(&line);
@@ -204,14 +202,14 @@ fn script_of(line: &str) -> String {
 
 #[test]
 fn the_box_runs_the_script_under_sh_not_the_login_shell() {
-    let (_, s, out) = launch(FakeDriver::new(), FakeSurface::new("/r"));
+    let (_, s, out) = launch(FakeDriver::new(), FakeSurface::new());
     out.unwrap();
     assert!(remote_of(&pane_line(&s)).starts_with("sh -c '"));
 }
 
 #[test]
 fn the_script_is_valid_shell() {
-    let (_, s, out) = launch(FakeDriver::new(), FakeSurface::new("/r"));
+    let (_, s, out) = launch(FakeDriver::new(), FakeSurface::new());
     out.unwrap();
     let mut sh = Command::new("sh")
         .arg("-n")
@@ -230,7 +228,7 @@ fn the_script_is_valid_shell() {
 fn a_failed_connect_lookup_opens_no_pane_and_delivers_nothing() {
     let (d, s, out) = launch(
         FakeDriver::new().fail_connect(DriverError::NotFound),
-        FakeSurface::new("/r"),
+        FakeSurface::new(),
     );
     assert!(matches!(
         out,
@@ -248,7 +246,7 @@ fn a_failed_connect_lookup_opens_no_pane_and_delivers_nothing() {
 fn a_failed_brief_write_removes_the_cred_dir() {
     let (d, s, out) = launch(
         FakeDriver::new().fail_put(DriverError::Timeout(std::time::Duration::from_secs(30))),
-        FakeSurface::new("/r"),
+        FakeSurface::new(),
     );
     assert!(matches!(
         out,
@@ -267,7 +265,7 @@ fn a_failed_brief_write_removes_the_cred_dir() {
 fn a_failed_pane_open_removes_the_cred_dir() {
     let (d, _, out) = launch(
         FakeDriver::new(),
-        FakeSurface::new("/r").fail_open_pane(SurfaceError::Timeout),
+        FakeSurface::new().fail_open_pane(SurfaceError::Timeout),
     );
     assert!(matches!(out, Err(EngineError::Failed { step: "pane", .. })));
     assert_eq!(d.execs().pop().unwrap().1.argv, ["rm", "-rf", CRED, TMP]);
@@ -279,7 +277,7 @@ fn a_failed_cleanup_is_named_in_the_error() {
         FakeDriver::new()
             .fail_put(DriverError::NotFound)
             .exec_results([0, 1].map(|code| Ok(ExecOutcome::Exited { code }))),
-        FakeSurface::new("/r"),
+        FakeSurface::new(),
     );
     let message = format!("{out:?}");
     assert!(
@@ -299,7 +297,7 @@ fn a_box_without_a_home_fails_before_delivering() {
         nonce: "n0".to_owned(),
     })
     .unwrap();
-    let s = surface(FakeSurface::new("/r"));
+    let s = surface(FakeSurface::new());
     let r = req(&s);
     let out = agent(&d, &s).launch(&r);
     assert!(matches!(out, Err(EngineError::Failed { step: "home", .. })));
@@ -325,7 +323,7 @@ fn req_with_proxy(s: &FakeSurface) -> LaunchReq {
 }
 
 fn launch_with_proxy() -> (Arc<FakeDriver>, Arc<FakeSurface>) {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new("/r")));
+    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
     agent(&d, &s).launch(&req_with_proxy(&s)).unwrap();
     (d, s)
 }

@@ -21,8 +21,6 @@ fn facts() -> CloseFacts {
         has_handle: true,
         name: "fix-bug".to_owned(),
         branch: Some("moor/fix-bug".to_owned()),
-        unpushed: 0,
-        dirty: false,
         box_check: BoxCheck::Clean,
     }
 }
@@ -137,22 +135,6 @@ fn missing_branch_uses_a_placeholder() {
 }
 
 #[test]
-fn host_unpushed_is_checked_before_the_box() {
-    let f = CloseFacts {
-        unpushed: 1,
-        box_check: BoxCheck::Unsaved { ahead: 5, dirty: 5 },
-        ..facts()
-    };
-    assert_eq!(
-        close_gate(&f, false).err(),
-        Some(Refusal::UnpushedWork {
-            unpushed: 1,
-            dirty: false
-        })
-    );
-}
-
-#[test]
 fn clean_ready_box_is_released_and_closed() {
     let plan = close_gate(&facts(), false).ok();
     let plan = plan.expect("plan");
@@ -166,15 +148,14 @@ fn clean_ready_box_is_released_and_closed() {
 
 #[test]
 fn unsaved_work_is_refused_without_force() {
-    for (unpushed, dirty) in [(1, false), (0, true), (3, true)] {
+    for (ahead, dirty) in [(1, 0), (0, 1), (3, 2)] {
         let f = CloseFacts {
-            unpushed,
-            dirty,
+            box_check: BoxCheck::Unsaved { ahead, dirty },
             ..facts()
         };
-        assert_eq!(
-            close_gate(&f, false).err(),
-            Some(Refusal::UnpushedWork { unpushed, dirty })
+        assert!(
+            matches!(close_gate(&f, false), Err(Refusal::UnsavedInBox { .. })),
+            "{ahead} {dirty}"
         );
         assert!(close_gate(&f, true).is_ok());
     }
@@ -182,9 +163,11 @@ fn unsaved_work_is_refused_without_force() {
 
 #[test]
 fn refusal_text_suggests_force_and_names_no_driver() {
-    let text = Refusal::UnpushedWork {
-        unpushed: 2,
-        dirty: true,
+    let text = Refusal::UnsavedInBox {
+        name: "fix-bug".to_owned(),
+        branch: "moor/fix-bug".to_owned(),
+        ahead: 2,
+        dirty: 1,
     }
     .to_string();
     assert!(text.contains("--force") && text.contains('2'), "{text}");

@@ -19,24 +19,24 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::surface::FakeSurface;
 
 fn surface() -> FakeSurface {
-    FakeSurface::new("/s")
+    FakeSurface::new()
 }
 
 /// A Ready Box whose probe answers `text`; `None` leaves the answer unreadable.
 fn fx_probe(text: Option<&str>) -> Fx {
-    fx_box(FakeDriver::new(), surface(), 0, text)
+    fx_box(FakeDriver::new(), surface(), text)
 }
 
-/// A Ready Box in a worktree named `repo`, so a woken Box (which the fake driver
+/// A Ready Box of a repo dir named `repo`, so a woken Box (which the fake driver
 /// places at `/work/cbx_1/repo`) reads `text` from its probe result.
 pub(super) fn fx_woken(text: &str) -> Fx {
     let dir = tempfile::tempdir().unwrap();
-    let worktree = dir.path().join("repo");
-    std::fs::create_dir(&worktree).unwrap();
+    let repo = dir.path().join("repo");
+    std::fs::create_dir(&repo).unwrap();
     let path = BoxPath::under("/work/cbx_1/repo", ".moor/boxwork").unwrap();
     let driver = Arc::new(FakeDriver::new().peek_text("box-1", &path, text));
     let surface = Arc::new(surface());
-    let proc = proc(0);
+    let proc = proc();
     let cx = Cx::fake(
         dir.path(),
         dir.path(),
@@ -44,7 +44,7 @@ pub(super) fn fx_woken(text: &str) -> Fx {
         surface.clone(),
         proc.clone(),
     );
-    let id = admit(&cx, &driver, &worktree);
+    let id = admit(&cx, &driver, &repo);
     cx.store()
         .unwrap()
         .apply(Decision::new(id).set(Fields {
@@ -112,7 +112,7 @@ fn refused(f: &Fx) -> CommandError {
 }
 
 #[test]
-fn close_refuses_a_box_with_an_unpushed_commit_when_the_host_worktree_is_clean() {
+fn close_refuses_a_box_with_an_unpushed_commit() {
     let f = fx_probe(Some("ahead=1 dirty=0"));
     let t = text(&refused(&f));
     assert!(t.contains("the Box holds work"), "{t}");
@@ -191,7 +191,7 @@ fn close_refuses_and_leaves_the_box_asleep_when_it_cannot_be_woken() {
     let driver = FakeDriver::new().fail_wake(DriverError::Failed {
         summary: "boom".into(),
     });
-    let f = fx_box(driver, surface(), 0, Some("ahead=0 dirty=0"));
+    let f = fx_box(driver, surface(), Some("ahead=0 dirty=0"));
     put_to_sleep(&f);
     let t = text(&refused(&f));
     assert!(t.contains("could not wake the Box"), "{t}");
@@ -211,7 +211,7 @@ fn close_proceeds_when_the_driver_no_longer_has_the_box_on_probe() {
 #[test]
 fn close_proceeds_when_the_driver_no_longer_has_the_box_on_wake() {
     let driver = FakeDriver::new().fail_wake(DriverError::NotFound);
-    let f = fx_box(driver, surface(), 0, Some("ahead=0 dirty=0"));
+    let f = fx_box(driver, surface(), Some("ahead=0 dirty=0"));
     put_to_sleep(&f);
     let v = run(&f.cx, &req(false)).unwrap();
     assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
@@ -348,7 +348,7 @@ const NO_CHECKOUT: ExecOutcome = ExecOutcome::Exited {
 #[test]
 fn close_refuses_a_box_with_no_git_checkout_like_an_unreadable_probe() {
     let driver = FakeDriver::new().exec_results([Ok(NO_CHECKOUT)]);
-    let f = fx_box(driver, surface(), 0, Some("ahead=0 dirty=0"));
+    let f = fx_box(driver, surface(), Some("ahead=0 dirty=0"));
     let t = text(&refused(&f));
     assert!(
         t.contains("could not check the Box for unsaved work"),
@@ -360,7 +360,7 @@ fn close_refuses_a_box_with_no_git_checkout_like_an_unreadable_probe() {
 fn close_refuses_when_the_recheck_finds_no_git_checkout() {
     let ok = Ok(ExecOutcome::Exited { code: 0 });
     let driver = FakeDriver::new().exec_results([ok, Ok(NO_CHECKOUT)]);
-    let f = fx_box(driver, surface(), 0, Some("ahead=0 dirty=0"));
+    let f = fx_box(driver, surface(), Some("ahead=0 dirty=0"));
     let e = run(&f.cx, &req(false)).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Refused);
     let t = text(&e);

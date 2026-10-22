@@ -4,7 +4,7 @@ use super::*;
 
 /// The script a launch of `req` runs, on a Box whose login environment is `environ`.
 fn script_for(environ: &str, req: impl FnOnce(&FakeSurface) -> LaunchReq) -> String {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new("/r")));
+    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
     d.set_peek_text("box-1", &environ_path(), environ);
     agent(&d, &s).launch(&req(&s)).unwrap();
     script_of(&pane_line(&s))
@@ -31,7 +31,7 @@ fn the_launch_script_never_runs_nono() {
 
 #[test]
 fn a_launch_puts_no_sandbox_tool_or_profile_on_the_box() {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new("/r")));
+    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
     agent(&d, &s).launch(&req_with_proxy(&s)).unwrap();
     for put in d.puts() {
         assert!(!put.1.as_str().contains("nono"), "{}", put.1.as_str());

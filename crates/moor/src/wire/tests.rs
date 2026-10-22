@@ -25,7 +25,13 @@ fn the_herdr_adapter_numbers_its_reports_from_the_clock() {
     let proc = Arc::new(ScriptedProc::new());
     proc.on(Tool::Herdr, &["pane"], Reply::Ok(String::new()));
     let clock = Arc::new(FakeClock::new(Ts::from_millis(7_000)));
-    let h = herdr(&(proc.clone() as Arc<dyn Proc>), "s", Vec::new(), clock);
+    let h = herdr(
+        &(proc.clone() as Arc<dyn Proc>),
+        "s",
+        Vec::new(),
+        clock,
+        None,
+    );
     let reg = ResumeReg {
         agent: "claude".to_owned(),
         state: PaneStatus::Idle,

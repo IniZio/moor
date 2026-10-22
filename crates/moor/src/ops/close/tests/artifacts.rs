@@ -12,7 +12,7 @@ use crate::testing::surface::FakeSurface;
 const BODY: &[u8] = b"hello";
 
 fn fx(driver: FakeDriver) -> Fx {
-    fx_with(driver, FakeSurface::new("/s"), 0)
+    fx_with(driver, FakeSurface::new())
 }
 
 fn listing() -> String {

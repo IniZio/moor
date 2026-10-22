@@ -115,9 +115,14 @@ pub(crate) const REQUESTER_USER: UserId = UserId::new(1);
 
 /// Inserts Box `name` of repo `r`, acting for [`REQUESTER_USER`].
 pub(crate) fn new_box(name: BoxName) -> Decision {
+    new_box_in(name, Path::new("r"))
+}
+
+/// Inserts Box `name` of the repo at `repo`, acting for [`REQUESTER_USER`].
+pub(crate) fn new_box_in(name: BoxName, repo: &Path) -> Decision {
     Decision::insert(NewBox {
         name,
-        repo: "r".into(),
+        repo: repo.display().to_string(),
     })
     .requester(REQUESTER_USER)
 }

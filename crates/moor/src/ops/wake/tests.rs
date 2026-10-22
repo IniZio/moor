@@ -1,6 +1,6 @@
 //! Tests for `wake`.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -34,7 +34,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
         dir.path(),
         Path::new("/home/me/proj"),
         driver.clone(),
-        Arc::new(FakeSurface::new(PathBuf::from("/s"))),
+        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     );
     let store = cx.store().unwrap();

@@ -1,6 +1,6 @@
 //! `cp`: copy a file or directory out of a Box's machine to the host.
 //!
-//! Holds the Box lock for the copy and never syncs the worktree.
+//! Holds the Box lock for the copy and never syncs a checkout.
 
 use std::fs;
 use std::path::Path;

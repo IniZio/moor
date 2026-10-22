@@ -34,9 +34,9 @@ fn world_with_setup(
     (w, engine)
 }
 
-/// Puts the repo's `.moor.yaml` into the Box's worktree, as a checked-out repo has it.
+/// Puts the repo's `.moor.yaml` into the Box's host repo, as a checked-out repo has it.
 fn checked_out(w: &World) {
-    let wt = row(w).worktree.unwrap();
+    let wt = row(w).repo;
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(Path::new(&wt).join(".moor.yaml"), YAML).unwrap();
     script_base_yaml(w, Some(YAML));

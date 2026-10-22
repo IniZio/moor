@@ -24,10 +24,6 @@ pub struct CloseFacts {
     pub name: String,
     /// The box branch; `None` when it is not known.
     pub branch: Option<String>,
-    /// Commits in the host worktree not pushed anywhere.
-    pub unpushed: u32,
-    /// Uncommitted changes in the host worktree.
-    pub dirty: bool,
     /// What the Box itself holds.
     pub box_check: BoxCheck,
 }
@@ -37,11 +33,11 @@ pub struct CloseFacts {
 pub enum BoxCheck {
     /// Not checked: forced, or no reachable Box that could hold work.
     Skipped,
-    /// The Box holds nothing that is not on the host.
+    /// The Box holds nothing that is not pushed.
     Clean,
-    /// Commits not pushed or reachable from the host, and uncommitted files.
+    /// Commits not reachable from any remote-tracking ref or the base, and uncommitted files.
     Unsaved {
-        /// Commits not pushed or reachable from the host.
+        /// Commits not reachable from any remote-tracking ref or the base.
         ahead: u32,
         /// Uncommitted files.
         dirty: u32,
@@ -67,18 +63,6 @@ pub enum Refusal {
     /// The box is already closed or was rejected.
     #[error("Box is already closed")]
     AlreadyClosed,
-    /// Work would be lost.
-    #[error(
-        "the host worktree has work that is not saved ({unpushed} unpushed commit(s), {}); \
-         push it, or pass --force to close anyway",
-        if *dirty { "uncommitted changes" } else { "no uncommitted changes" }
-    )]
-    UnpushedWork {
-        /// Unpushed commits in the host worktree.
-        unpushed: u32,
-        /// Whether the host worktree is dirty.
-        dirty: bool,
-    },
     /// The Box holds work that is not pushed.
     #[error(
         "the Box holds work that is not pushed ({ahead} unpushed commit(s), \
@@ -150,20 +134,13 @@ pub struct ReleaseVerdict {
 ///
 /// # Errors
 /// [`Refusal::AlreadyClosed`] for a closed box; when `force` is false,
-/// [`Refusal::UnpushedWork`] for unsaved host work, [`Refusal::UnsavedInBox`]
-/// for work only in the Box, and [`Refusal::BoxUnchecked`] when the Box could
+/// [`Refusal::UnsavedInBox`] for work only in the Box, and [`Refusal::BoxUnchecked`] when the Box could
 /// not be checked.
 pub fn close_gate(f: &CloseFacts, force: bool) -> Result<ClosePlan, Refusal> {
     if !f.lifecycle.is_live() {
         return Err(Refusal::AlreadyClosed);
     }
     if !force {
-        if f.unpushed > 0 || f.dirty {
-            return Err(Refusal::UnpushedWork {
-                unpushed: f.unpushed,
-                dirty: f.dirty,
-            });
-        }
         match &f.box_check {
             BoxCheck::Unsaved { ahead, dirty } if *ahead > 0 || *dirty > 0 => {
                 return Err(Refusal::UnsavedInBox {

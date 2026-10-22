@@ -1,6 +1,6 @@
 //! Tests for `open-session`.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::activity::{PaneObs, PaneStatus};
@@ -35,7 +35,7 @@ fn fx(engine: FakeEngine, live: bool) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
     let engine = Arc::new(engine);
-    let surface = Arc::new(FakeSurface::new(PathBuf::from("/s")));
+    let surface = Arc::new(FakeSurface::new());
     let proc = Arc::new(ScriptedProc::new());
     proc.on(
         moor_core::seam::proc::Tool::Git,
@@ -77,7 +77,6 @@ fn ready_box(cx: &Cx, driver: &FakeDriver) -> BoxId {
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
-        worktree: Field::Set("/home/me/wt/t".to_owned()),
         workspace_id: Field::Set("w-1".to_owned()),
         ..Fields::default()
     };

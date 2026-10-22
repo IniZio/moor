@@ -1,7 +1,5 @@
 //! `moor close`: gate, save the agent's transcript, stop the agent, tear down and release the Box, then close the Workspace.
 
-use std::path::Path;
-
 use moor_core::decide::close::{
     close_gate, release_outcome, BoxCheck, CloseFacts, ClosePlan, ReleaseResult,
 };
@@ -30,9 +28,8 @@ use crate::store::{BoxRow, DriverRow, Store};
 /// Closes a Box: gate, transcript save, agent stop, machine teardown and release, Workspace close.
 ///
 /// The Box lock is held from the gate to the Workspace close and dropped before promotion, which
-/// takes the locks of the waiting Boxes. The machine is released before the Workspace closes. The
-/// worktree goes too, before the Workspace, but only when moor created it and its work is pushed
-/// and clean. The agent stops first, so the session stays ended when the release fails and the
+/// takes the locks of the waiting Boxes. The machine is released before the Workspace closes.
+/// The agent stops first, so the session stays ended when the release fails and the
 /// Box stays open. The Box's proxy supervisor stops after the lock is dropped: the wait can take
 /// seconds and a closed Box cannot get a new proxy row. Waiting Boxes are then promoted.
 pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
@@ -49,7 +46,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     let mut row = store.box_row(first.id)?.unwrap_or(first);
     let box_check = box_check(cx, store, &mut row, req.force)?;
     let probed_clean = matches!(box_check, BoxCheck::Clean);
-    let plan = close_gate(&facts(cx, &row, box_check)?, req.force)?;
+    let plan = close_gate(&facts(&row, box_check), req.force)?;
     let saved = save_transcript(cx, store, &row)?;
     let digest = saved.as_ref().map(|t| t.digest.as_str());
     let agent_stopped = agent_stop::stop_agent(cx, store, &row, digest)?;
@@ -66,8 +63,6 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
         store.apply(plan.decision_close.clone())?;
         false
     };
-    let synced = worktree::sync_branch(cx, &row);
-    let worktree_removed = worktree::remove_worktree(cx, &row, synced);
     let workspace_closed = close_workspace(cx, &row, &plan);
     drop(lock);
     if let Err(e) = cx.proxy_host().stop(row.id) {
@@ -92,7 +87,6 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
         workspace_closed,
         agent_stopped,
         transcript: saved.map(|t| t.path),
-        worktree_kept: !worktree_removed,
         promoted,
     })
 }
@@ -189,7 +183,7 @@ fn recheck_and_collect(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), Comma
         }
         (Ok(_), _, _) => boxwork::probe(cx, row, b),
     };
-    recheck_verdict(cx, row, work)?;
+    recheck_verdict(row, work)?;
     index.as_ref().map_or_else(
         || reports::collect(cx, store, row),
         |i| reports::collect_from(cx, store, row, i, &mut done),
@@ -226,14 +220,14 @@ fn cursor_warning(reason: &str) -> Warning {
 }
 
 /// Refuses when the second probe found unsaved work or could not tell.
-fn recheck_verdict(cx: &Cx, row: &BoxRow, work: BoxWork) -> Result<(), CommandError> {
+fn recheck_verdict(row: &BoxRow, work: BoxWork) -> Result<(), CommandError> {
     let check = match work {
         BoxWork::Clean | BoxWork::Gone => return Ok(()),
         BoxWork::Unsaved { ahead, dirty } => BoxCheck::Unsaved { ahead, dirty },
         BoxWork::Unknown(why) => BoxCheck::Unknown(why),
         BoxWork::NoCheckout => BoxCheck::Unknown("the Box has no git checkout".into()),
     };
-    match close_gate(&facts(cx, row, check)?, false) {
+    match close_gate(&facts(row, check), false) {
         Ok(_) => Ok(()),
         Err(refusal) => Err(CommandError::from(refusal).with_hint(format!(
             "the agent was stopped; `moor start {} --resume` continues it",
@@ -242,15 +236,9 @@ fn recheck_verdict(cx: &Cx, row: &BoxRow, work: BoxWork) -> Result<(), CommandEr
     }
 }
 
-/// Reads the unsaved-work facts the gate decides on.
-fn facts(cx: &Cx, row: &BoxRow, box_check: BoxCheck) -> Result<CloseFacts, CommandError> {
-    let (mut unpushed, mut dirty) = (0, false);
-    if let Some(wt) = row.worktree.as_deref().map(Path::new) {
-        let failed = |e| CommandError::new(ErrorKind::Failed, e);
-        unpushed = cx.git().unpushed(wt, row.base.as_deref()).map_err(failed)?;
-        dirty = cx.git().dirty(wt).map_err(failed)?;
-    }
-    Ok(CloseFacts {
+/// The facts the gate decides on; only the Box's own probe speaks for unsaved work.
+fn facts(row: &BoxRow, box_check: BoxCheck) -> CloseFacts {
+    CloseFacts {
         box_id: row.id,
         name: row.name.as_str().to_owned(),
         branch: row.branch.clone(),
@@ -258,10 +246,8 @@ fn facts(cx: &Cx, row: &BoxRow, box_check: BoxCheck) -> Result<CloseFacts, Comma
         session: row.session,
         box_state: row.boxed.as_ref().map(|b| b.state),
         has_handle: row.boxed.as_ref().is_some_and(|b| held(b).is_some()),
-        unpushed,
-        dirty,
         box_check,
-    })
+    }
 }
 
 /// Asks the Driver to release the Box and records the verdict.
@@ -322,7 +308,6 @@ fn close_workspace(cx: &Cx, row: &BoxRow, plan: &ClosePlan) -> bool {
 }
 
 mod teardown;
-mod worktree;
 
 #[cfg(test)]
 mod tests;

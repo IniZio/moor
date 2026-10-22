@@ -1,4 +1,4 @@
-//! Tests for refusing an agent relaunch when the worktree `.moor.yaml` differs from the base.
+//! Tests for refusing an agent relaunch when the host `.moor.yaml` differs from the base.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -8,7 +8,7 @@ use moor_core::{BoxId, ErrorKind, StartReq};
 use super::moor_yaml::script_base_yaml;
 use super::relaunch::{gone, session, started};
 use super::setup::{exit, start_req};
-use super::{req, world, world_at, World};
+use super::{req, world_at, world_on_disk, World};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
@@ -16,19 +16,18 @@ use crate::testing::engine::FakeEngine;
 const BASE: &str = "setup: [a]\nenv:\n  A: \"1\"\n";
 const CHANGED: &str = "setup: [a]\nenv:\n  A: \"2\"\n";
 
-/// Leaves `yaml` as the `.moor.yaml` in the worktree of Box `id`.
-fn write_worktree_yaml(w: &World, id: BoxId, yaml: &str) {
-    let wt = w.cx.store().unwrap().box_row(id).unwrap().unwrap().worktree;
-    let wt = wt.unwrap();
+/// Leaves `yaml` as the `.moor.yaml` in the host repo of Box `id`.
+fn write_repo_yaml(w: &World, id: BoxId, yaml: &str) {
+    let wt = w.cx.store().unwrap().box_row(id).unwrap().unwrap().repo;
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(Path::new(&wt).join(".moor.yaml"), yaml).unwrap();
 }
 
-/// A started Box whose agent is gone, over a base holding `BASE`, with `yaml` in its worktree.
+/// A started Box whose agent is gone, over a base holding `BASE`, with `yaml` in its host repo.
 fn gone_with(yaml: &str) -> (World, Arc<FakeEngine>, BoxId) {
     let (w, engine, id) = started();
     script_base_yaml(&w, Some(BASE));
-    write_worktree_yaml(&w, id, yaml);
+    write_repo_yaml(&w, id, yaml);
     gone(&w);
     (w, engine, id)
 }
@@ -108,7 +107,7 @@ fn a_relaunch_after_a_failed_setup_warns_once_each_for_setup_and_moor_yaml() {
     assert!(first.setup.ran && !first.setup.ok);
     assert_eq!(engine.launches().len(), 1);
     gone(&w);
-    write_worktree_yaml(&w, BoxId::new(first.boxed.id), CHANGED);
+    write_repo_yaml(&w, BoxId::new(first.boxed.id), CHANGED);
     script_base_yaml(&w, Some(BASE));
     drop(w.cx.take_warnings());
     let again = run(&w.cx, &trusted()).unwrap();
@@ -122,10 +121,10 @@ fn a_relaunch_after_a_failed_setup_warns_once_each_for_setup_and_moor_yaml() {
 }
 
 /// A Box with a finished setup, no session ever launched and no goal, over a `BASE` base,
-/// with `yaml` in its worktree.
+/// with `yaml` in its host repo.
 fn idle_with(yaml: &str) -> (World, Arc<FakeEngine>, BoxId) {
     let engine = Arc::new(FakeEngine::new().launch_result(Ok(session("p-1"))));
-    let mut w = world(FakeDriver::new());
+    let mut w = world_on_disk(FakeDriver::new());
     w.cx = w.cx.with_engine(engine.clone());
     let first = run(
         &w.cx,
@@ -137,7 +136,7 @@ fn idle_with(yaml: &str) -> (World, Arc<FakeEngine>, BoxId) {
     .unwrap();
     let id = BoxId::new(first.boxed.id);
     script_base_yaml(&w, Some(BASE));
-    write_worktree_yaml(&w, id, yaml);
+    write_repo_yaml(&w, id, yaml);
     (w, engine, id)
 }
 

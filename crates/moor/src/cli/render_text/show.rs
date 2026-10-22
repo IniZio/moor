@@ -145,7 +145,6 @@ fn detail(view: &Value, value: &Value) -> Option<String> {
     let _ = writeln!(out, "lifecycle: {}", field(view, "lifecycle"));
     let _ = writeln!(out, "session:   {}", field(view, "session_state"));
     let _ = writeln!(out, "repo:     {}", field(view, "repo"));
-    let _ = writeln!(out, "worktree: {}", field(view, "worktree"));
     let _ = writeln!(out, "branch:   {}", field(view, "branch"));
     match view.get("driver").filter(|b| !b.is_null()) {
         Some(b) => {

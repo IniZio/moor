@@ -6,7 +6,7 @@ file means every key takes its default.
 | File | Who writes it | Where it is |
 | --- | --- | --- |
 | [User config](#user-config) | You | `$MOOR_CONFIG`, else `$XDG_CONFIG_HOME/moor/config.yaml`, else `$HOME/.config/moor/config.yaml` |
-| [`.moor.yaml`](#mooryaml) | The repo | The Box worktree, else the repo's main checkout |
+| [`.moor.yaml`](#mooryaml) | The repo | The checkout `moor start` ran in, else the repo's main checkout |
 | [Controller config](#controller-config) | Whoever runs the controller | The path given to `moor controller serve --config` |
 
 ## User config
@@ -120,7 +120,8 @@ A repo's `.moor.yaml` configures its Boxes.
 | `box_credentials` | list of names | Secrets that the Box's user must hold for a `start`. moor does not put them into the Box. |
 | `proxy.direct` | list of host names | Hosts that the Box reaches without the Proxy. A repo cannot add or change a Proxy rule. |
 
-If a Box's `.moor.yaml` differs from the copy in its base commit, moor refuses
+If the `.moor.yaml` in the checkout a Box started from differs from the copy in
+its base commit, moor refuses
 to run setup again, start the agent, or run `moor run`. Review the change, then
 repeat the command with `--trust-moor-yaml`.
 

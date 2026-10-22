@@ -1,10 +1,10 @@
-//! `start` (minimal): check credentials, create the Box, its worktree and Workspace, acquire the machine.
+//! `start` (minimal): check credentials, create the Box and its Workspace, acquire the machine.
 //!
 //! It queues the Box when the machine limit for its provider is reached. On a new machine it runs the repo
 //! setup, then the dotfiles, before the agent launches.
 //! It launches the agent for a Working Box with a goal.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use moor_core::config::Flags;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
@@ -12,7 +12,7 @@ use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewBox};
 use moor_core::domain::event::CheckedCred;
 use moor_core::domain::session_state::SessionInput;
-use moor_core::seam::surface::{workspace_label, Worktree};
+use moor_core::seam::surface::workspace_label;
 use moor_core::user::UserId;
 use moor_core::view::StartView;
 use moor_core::{BoxId, ErrorKind, SessionId, StartReq, Warning};
@@ -32,7 +32,6 @@ use crate::store::{BoxRow, Store, StoreError};
 mod base;
 mod known_repo;
 mod launch;
-mod leftover;
 mod needs;
 mod preflight;
 mod relaunch;
@@ -53,14 +52,12 @@ struct Facts {
     repo: PathBuf,
     /// Base ref or the HEAD commit it starts from.
     base: String,
-    /// Ref the new worktree branches from; `None` leaves it to the Surface.
-    from: Option<String>,
 }
 
 /// Where the Box works.
 struct Placed {
-    /// Worktree and its branch.
-    wt: Worktree,
+    /// The branch the Box works on.
+    branch: String,
     /// Workspace id.
     workspace: String,
 }
@@ -94,7 +91,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     if let Some(reason) = preflight::rejection(cx, &cfg, &facts.repo, user)? {
         return reject(cx, store, (req, user), &facts, &reason);
     }
-    let placed = match place(cx, req, &facts) {
+    let placed = match place(cx, req) {
         Ok(placed) => placed,
         Err(e) => return raced(cx, store, (req, user), e),
     };
@@ -126,7 +123,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     Ok(v)
 }
 
-/// Records a rejected Box, with no worktree or Workspace, and fails with the outcome.
+/// Records a rejected Box, with no Workspace, and fails with the outcome.
 fn reject(
     cx: &Cx,
     store: &Store,
@@ -188,15 +185,6 @@ fn attach(
     preflight::check_owner(row, user)?;
     relaunch::check_resume(req, row)?;
     dead_provisioning(cx, row)?;
-    if let Err(e) = cx
-        .git()
-        .exclude_scratch(Path::new(row.worktree.as_deref().unwrap_or(&row.repo)))
-    {
-        cx.warn(Warning {
-            code: "exclude_failed".to_owned(),
-            message: format!("could not hide scratch dirs from git: {e}"),
-        });
-    }
     let reprovisioned = reprovision(cx, store, row, "start", req.trust_moor_yaml)?;
     store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
     let setup_exit = reprovisioned.as_ref().and_then(|p| p.setup.exit());
@@ -278,24 +266,31 @@ fn locate(cx: &Cx, req: &StartReq) -> Result<(PathBuf, StartReq), CommandError> 
 
 /// Reads the base the Box starts from; changes nothing.
 fn gather(cx: &Cx, req: &StartReq, repo: PathBuf) -> Result<Facts, CommandError> {
-    let (base, from) = base::resolve(cx, req, &repo)?;
-    Ok(Facts { repo, base, from })
+    let base = base::resolve(cx, req, &repo)?;
+    Ok(Facts { repo, base })
 }
 
-/// Hides scratch dirs from git, creates the worktree, then ensures the Workspace.
-///
-/// The exclude file lives in the common git dir, so hiding from the repo covers every worktree.
-/// Doing it first means a failure leaves no worktree without a Box row.
-fn place(cx: &Cx, req: &StartReq, facts: &Facts) -> Result<Placed, CommandError> {
-    cx.git()
-        .exclude_scratch(&facts.repo)
-        .map_err(|e| CommandError::new(ErrorKind::Failed, e))?;
-    let wt = leftover::create_worktree(cx, req, facts)?;
-    let ws = cx
-        .surface()
-        .ensure_workspace(&wt, &workspace_label(&req.name))?;
+/// Names the Box's branch, refusing one an open Box already works on, then ensures the Workspace.
+fn place(cx: &Cx, req: &StartReq) -> Result<Placed, CommandError> {
+    let branch = moor_core::box_key::branch(&req.name);
+    let owner = cx
+        .store()?
+        .open_boxes()?
+        .into_iter()
+        .find(|t| t.branch.as_deref() == Some(&branch));
+    if let Some(t) = owner {
+        return Err(CommandError::new(
+            ErrorKind::Failed,
+            format!(
+                "the branch {branch} belongs to open Box {}",
+                t.name.as_str()
+            ),
+        )
+        .with_hint("pick another Box name"));
+    }
+    let ws = cx.surface().ensure_workspace(&workspace_label(&req.name))?;
     Ok(Placed {
-        wt,
+        branch,
         workspace: ws.as_str().to_owned(),
     })
 }
@@ -317,8 +312,7 @@ fn insert(
         issue: set_some(req.issue.clone()),
         goal: set_some(req.goal.clone()),
         base: Field::Set(facts.base.clone()),
-        branch: Field::Set(placed.wt.branch.clone()),
-        worktree: Field::Set(placed.wt.path.display().to_string()),
+        branch: Field::Set(placed.branch.clone()),
         workspace_id: Field::Set(placed.workspace.clone()),
         ..Fields::default()
     };

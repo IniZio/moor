@@ -1,6 +1,6 @@
 //! Tests for auto-sleep.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -40,7 +40,7 @@ fn working_with(driver: FakeDriver) -> Fx {
         dir.path(),
         Path::new("/home/me/proj"),
         driver.clone(),
-        Arc::new(FakeSurface::new(PathBuf::from("/s"))),
+        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     );
     let store = cx.store().unwrap();
@@ -55,7 +55,6 @@ fn working_with(driver: FakeDriver) -> Fx {
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
-        worktree: Field::Set("/home/me/wt/t".to_owned()),
         ..Fields::default()
     };
     let d = Decision::new(id)

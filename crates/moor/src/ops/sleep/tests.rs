@@ -1,6 +1,6 @@
 //! Tests for `sleep`.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -35,7 +35,7 @@ struct Fx {
 fn fx_with(driver: FakeDriver) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(driver);
-    let surface = Arc::new(FakeSurface::new(PathBuf::from("/s")));
+    let surface = Arc::new(FakeSurface::new());
     let cx = Cx::fake(
         dir.path(),
         Path::new("/home/me/proj"),
@@ -55,7 +55,6 @@ fn fx_with(driver: FakeDriver) -> Fx {
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
-        worktree: Field::Set("/home/me/wt/t".to_owned()),
         ..Fields::default()
     };
     let d = Decision::new(id)
@@ -319,7 +318,7 @@ fn an_asleep_box_is_left_alone() {
 fn starting() -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
-    let surface = Arc::new(FakeSurface::new(PathBuf::from("/s")));
+    let surface = Arc::new(FakeSurface::new());
     let cx = Cx::fake(
         dir.path(),
         Path::new("/home/me/proj"),

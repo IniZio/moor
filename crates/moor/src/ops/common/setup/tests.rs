@@ -42,7 +42,7 @@ fn rig_on(dir: &Path, driver: FakeDriver, clock: Arc<FakeClock>) -> Rig {
         dir,
         dir,
         Arc::clone(&driver) as Arc<_>,
-        Arc::new(FakeSurface::new(dir)),
+        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
         UserConfig::default(),
         clock,
@@ -74,15 +74,16 @@ fn cfg(setup: &[&str], env: &[(&str, &str)]) -> BoxSettings {
     c
 }
 
-/// Runs setup in the rig's Box without a Proxy.
+/// Runs setup in the rig's Box without a Proxy, keeping its log under the state dir `state`.
 fn run_setup(
     cx: &Cx,
     handle: &BoxHandle,
     workdir: &BoxPath,
-    worktree: &Path,
+    state: &Path,
     cfg: &BoxSettings,
 ) -> SetupRun {
-    run_setup_with(cx, handle, "p", workdir, worktree, cfg, None)
+    let logs = super::log_dir(state, BoxId::new(1));
+    run_setup_with(cx, handle, "p", workdir, &logs, cfg, None)
 }
 
 fn exits(codes: &[i32]) -> Vec<Result<ExecOutcome, DriverError>> {
@@ -181,7 +182,7 @@ fn failing_line_comes_from_the_log_and_warns() {
         from.as_str(),
         format!("{}/.moor/setup.log", r.workdir.as_str())
     );
-    assert_eq!(to, d.path().join(".moor/setup.log"));
+    assert_eq!(to, d.path().join("logs/1/setup.log"));
     let w = only(r.cx.take_warnings());
     assert_eq!(w.code, "setup_failed");
     assert!(w.message.contains("bad"), "{}", w.message);
@@ -364,7 +365,7 @@ fn failed_is_true_only_for_failed() {
 }
 
 #[test]
-fn exec_is_synced_from_the_worktree_at_the_resolved_size() {
+fn exec_runs_at_the_resolved_size() {
     let d = tempfile::tempdir().unwrap();
     let r = rig(d.path(), FakeDriver::new());
     let c = cfg(&["a"], &[]);

@@ -21,7 +21,6 @@ use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
 
 const CWD: &str = "/home/me/proj";
-const WORKTREE: &str = "/home/me/wt/t";
 
 struct Fx {
     dir: tempfile::TempDir,
@@ -38,7 +37,7 @@ fn fx_with(driver: FakeDriver, ready: bool) -> Fx {
         dir.path(),
         Path::new(CWD),
         driver.clone(),
-        Arc::new(FakeSurface::new(PathBuf::from("/s"))),
+        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     );
     let store = cx.store().unwrap();
@@ -54,7 +53,6 @@ fn fx_with(driver: FakeDriver, ready: bool) -> Fx {
     let d = if ready {
         let fields = Fields {
             box_provider: Field::Set(provider.clone()),
-            worktree: Field::Set(WORKTREE.to_owned()),
             ..Fields::default()
         };
         Decision::new(id)
@@ -179,7 +177,6 @@ fn destination_stays_under_the_callers_cwd() {
     run(&f.cx, &req("a", "out/a.txt")).unwrap();
     let (_, _, to) = first_copy(&f);
     assert!(to.starts_with(CWD));
-    assert!(!to.starts_with(WORKTREE));
 }
 
 #[test]

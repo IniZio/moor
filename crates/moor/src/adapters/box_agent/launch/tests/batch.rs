@@ -1,6 +1,5 @@
 //! A launch without a missing `gh` costs two Box calls after the connect lookup.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use moor_core::seam::agent_profile::ProxyAddr;
@@ -46,14 +45,11 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
 
 fn req(s: &FakeSurface, proxy: bool) -> LaunchReq {
     let name = BoxName::parse_allow_bare("t1").unwrap();
-    let wt = s
-        .create_worktree(&PathBuf::from("/r"), &name, None)
-        .unwrap();
     LaunchReq {
         id: BoxId::new(1),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
-        workspace: s.ensure_workspace(&wt, "moor:t1").unwrap(),
+        workspace: s.ensure_workspace("moor:t1").unwrap(),
         box_name: name,
         branch: "moor/t1".to_owned(),
         goal: Some("fix x".to_owned()),
@@ -94,7 +90,7 @@ struct Run {
 
 fn launch(proxy: bool, check_codes: &[i32], release: Arc<GhRelease>) -> Run {
     let d = driver(FakeDriver::new().exec_results(exited(check_codes)));
-    let s = Arc::new(FakeSurface::new("/r"));
+    let s = Arc::new(FakeSurface::new());
     let out = agent(&d, &s, release).launch(&req(&s, proxy)).map(|_| ());
     Run { d, s, out }
 }
@@ -190,7 +186,7 @@ fn a_launch_with_no_environ_reports_the_home_step() {
         nonce: "n0".to_owned(),
     })
     .unwrap();
-    let s = Arc::new(FakeSurface::new("/r"));
+    let s = Arc::new(FakeSurface::new());
     let out = agent(&d, &s, ready_release()).launch(&req(&s, true));
     let got = match out {
         Err(EngineError::Failed { step, message }) => format!("{step}: {message}"),

@@ -32,7 +32,7 @@ fn cx_with(dir: &Path, engine: &Arc<FakeEngine>) -> Cx {
         dir,
         dir,
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new(dir)),
+        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     )
     .with_engine(engine.clone())
@@ -122,7 +122,6 @@ fn ready(cx: &Cx, n: &str) -> BoxId {
         .session(SessionInput::Started)
         .box_input(BoxInput::Acquired { handle: got.handle })
         .set(Fields {
-            worktree: Field::Set("/wt".into()),
             box_workdir: Field::Set("/work".into()),
             ..Fields::default()
         });

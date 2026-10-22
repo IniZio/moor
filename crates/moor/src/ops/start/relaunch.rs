@@ -280,7 +280,7 @@ pub(crate) fn revive_after_wake(cx: &Cx, store: &Store, id: BoxId) -> Result<(),
         identity: None,
     };
     let settings = || {
-        let at = row.worktree.as_deref().unwrap_or(&row.repo);
+        let at = row.repo.as_str();
         settings(cx, Path::new(at), &Flags::default())
     };
     let view = match &ended_pane {

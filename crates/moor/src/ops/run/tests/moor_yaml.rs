@@ -1,4 +1,4 @@
-//! Tests for refusing a run when the worktree `.moor.yaml` differs from the base.
+//! Tests for refusing a run when the host `.moor.yaml` differs from the base.
 
 use moor_core::seam::proc::Tool;
 use moor_core::ErrorKind;
@@ -10,7 +10,7 @@ use crate::testing::proc::Reply;
 const BASE: &str = "setup: [a]\n";
 const CHANGED: &str = "setup: [a, b]\n";
 
-/// A Ready Box whose base commit holds `base` as its `.moor.yaml`, and whose worktree holds `now`.
+/// A Ready Box whose base commit holds `base` as its `.moor.yaml`, and whose host repo holds `now`.
 fn with_yaml(base: Option<&str>, now: &str) -> Fx {
     let f = ready();
     if let Some(text) = base {
@@ -67,7 +67,7 @@ fn trusting_a_changed_moor_yaml_runs_and_warns_once() {
 }
 
 #[test]
-fn moor_yaml_added_to_the_worktree_is_refused() {
+fn moor_yaml_added_to_the_repo_is_refused() {
     let f = with_yaml(None, CHANGED);
     f.proc
         .before(Tool::Git, &["ls-tree"], Reply::Ok(String::new()));

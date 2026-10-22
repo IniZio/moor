@@ -2,7 +2,6 @@
 
 mod errors;
 mod pane;
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in wire.rs"))]
 mod parse;
 mod resume;
 #[cfg(test)]
@@ -15,12 +14,10 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use moor_core::activity::PaneObs;
-use moor_core::name::BoxName;
 use moor_core::seam::clock::Clock;
 use moor_core::seam::proc::{Deadline, Proc, ProcSpec, Tool};
 use moor_core::seam::surface::{
-    workspace_label, Key, PaneCmd, PaneRef, ResumeOutcome, ResumeReg, Surface, SurfaceError,
-    WorkspaceRef, Worktree,
+    Key, PaneCmd, PaneRef, ResumeOutcome, ResumeReg, Surface, SurfaceError, WorkspaceRef,
 };
 
 use self::errors::{map_error, HerdrFailure};
@@ -46,6 +43,8 @@ pub(crate) struct Herdr {
     seq: AtomicU64,
     /// Where sequence numbers start from, when set.
     clock: Option<Arc<dyn Clock>>,
+    /// Working directory of new Workspaces; herdr's own when unset.
+    workspace_dir: Option<PathBuf>,
 }
 
 /// Quotes `s` for a POSIX shell when it needs it.
@@ -73,7 +72,14 @@ impl Herdr {
             extra_env,
             seq: AtomicU64::new(0),
             clock: None,
+            workspace_dir: None,
         }
+    }
+
+    /// Opens new Workspaces in `dir`.
+    pub(crate) fn with_workspace_dir(mut self, dir: PathBuf) -> Self {
+        self.workspace_dir = Some(dir);
+        self
     }
 
     /// Builds a herdr spec carrying the session and host env.
@@ -103,11 +109,7 @@ impl Herdr {
     fn call(&self, args: &[&str]) -> Result<String, SurfaceError> {
         match self.run_once(args) {
             Ok(out) => Ok(out),
-            Err(
-                HerdrFailure::Surface(e)
-                | HerdrFailure::AlreadyExists(e)
-                | HerdrFailure::CreateFailed(e),
-            ) => Err(e),
+            Err(HerdrFailure::Surface(e)) => Err(e),
             Err(HerdrFailure::ServerNotRunning) => self.start_and_retry(args),
         }
     }
@@ -121,39 +123,13 @@ impl Herdr {
             sleep(delay);
             match self.run_once(args) {
                 Ok(out) => return Ok(out),
-                Err(
-                    HerdrFailure::Surface(e)
-                    | HerdrFailure::AlreadyExists(e)
-                    | HerdrFailure::CreateFailed(e),
-                ) => return Err(e),
+                Err(HerdrFailure::Surface(e)) => return Err(e),
                 Err(HerdrFailure::ServerNotRunning) => {}
             }
         }
         Err(SurfaceError::Unavailable(
             "herdr server did not start".to_owned(),
         ))
-    }
-
-    /// Lists the worktrees of the repository containing `dir`.
-    fn list_worktrees(&self, dir: &str) -> Result<Vec<parse::WorktreeEntry>, SurfaceError> {
-        parse::worktree_list(&self.call(&["worktree", "list", "--cwd", dir])?)
-    }
-
-    /// The worktree already on `branch`, when herdr lists one that is neither
-    /// flagged as the main checkout nor the checkout at `dir` itself.
-    fn existing_worktree(&self, dir: &str, branch: &str) -> Option<Worktree> {
-        let root = std::fs::canonicalize(dir).unwrap_or_else(|_| PathBuf::from(dir));
-        let found = self.list_worktrees(dir).ok()?.into_iter().find(|e| {
-            e.branch.as_deref() == Some(branch)
-                && e.is_linked_worktree != Some(false)
-                && e.path.as_deref().is_some_and(|p| {
-                    std::fs::canonicalize(p).unwrap_or_else(|_| p.to_owned()) != root
-                })
-        })?;
-        Some(Worktree {
-            path: found.path?,
-            branch: branch.to_owned(),
-        })
     }
 
     /// Gives `ws` the label `label`.
@@ -163,90 +139,21 @@ impl Herdr {
 }
 
 impl Surface for Herdr {
-    fn create_worktree(
-        &self,
-        repo: &Path,
-        name: &BoxName,
-        base: Option<&str>,
-    ) -> Result<Worktree, SurfaceError> {
-        let cwd = repo.to_string_lossy();
-        let branch = moor_core::box_key::branch(name);
-        let label = workspace_label(name);
-        let mut args = vec![
-            "worktree",
-            "create",
-            "--cwd",
-            &cwd,
-            "--branch",
-            &branch,
-            "--label",
-            &label,
-            "--no-focus",
-        ];
-        if let Some(b) = base {
-            args.extend(["--base", b]);
+    fn ensure_workspace(&self, label: &str) -> Result<WorkspaceRef, SurfaceError> {
+        let listed = parse::workspace_list(&self.call(&["workspace", "list"])?)?;
+        if let Some(found) = listed
+            .into_iter()
+            .find(|w| w.label.as_deref() == Some(label))
+        {
+            return Ok(WorkspaceRef::new(found.workspace_id));
         }
-        let out = match self.run_once(&args) {
-            Ok(out) => out,
-            Err(HerdrFailure::AlreadyExists(e)) => {
-                return self.existing_worktree(&cwd, &branch).ok_or(e)
-            }
-            Err(HerdrFailure::CreateFailed(e)) => {
-                return Err(self
-                    .existing_worktree(&cwd, &branch)
-                    .map_or(e, |w| SurfaceError::Leftover { path: w.path }))
-            }
-            Err(HerdrFailure::Surface(e)) => return Err(e),
-            Err(HerdrFailure::ServerNotRunning) => self.start_and_retry(&args)?,
-        };
-        let created = parse::worktree_created(&out)?;
-        let path = created.entry.path.ok_or_else(|| SurfaceError::Failed {
-            summary: "worktree create: missing path".to_owned(),
-        })?;
-        Ok(Worktree {
-            path,
-            branch: created.entry.branch.unwrap_or(branch),
-        })
-    }
-
-    fn remove_worktree(&self, wt: &Path) -> Result<(), SurfaceError> {
-        let dir = wt.to_string_lossy();
-        let entry = self
-            .list_worktrees(&dir)?
-            .into_iter()
-            .find(|e| e.path.as_deref() == Some(wt))
-            .ok_or(SurfaceError::NotFound)?;
-        let ws = match entry.open_workspace_id {
-            Some(id) => id,
-            None => parse::workspace_created(&self.call(&[
-                "workspace",
-                "create",
-                "--cwd",
-                &dir,
-                "--no-focus",
-            ])?)?,
-        };
-        self.call(&["worktree", "remove", "--workspace", &ws, "--force"])
-            .map(drop)
-    }
-
-    fn ensure_workspace(&self, wt: &Worktree, label: &str) -> Result<WorkspaceRef, SurfaceError> {
-        let dir = wt.path.to_string_lossy();
-        let open = self
-            .list_worktrees(&dir)?
-            .into_iter()
-            .find(|e| e.path.as_ref() == Some(&wt.path))
-            .and_then(|e| e.open_workspace_id);
-        let id = match open {
-            Some(id) => id,
-            None => parse::workspace_created(&self.call(&[
-                "workspace",
-                "create",
-                "--cwd",
-                &dir,
-                "--no-focus",
-            ])?)?,
-        };
+        let dir = self.workspace_dir.as_deref().map(Path::to_string_lossy);
+        let mut args = vec!["workspace", "create"];
+        if let Some(dir) = &dir {
+            args.extend(["--cwd", dir]);
+        }
+        args.push("--no-focus");
+        let id = parse::workspace_created(&self.call(&args)?)?;
         self.rename(&id, label)?;
         Ok(WorkspaceRef::new(id))
     }

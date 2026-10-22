@@ -41,7 +41,7 @@ fn rig_driver(dir: &Path, config: UserConfig, driver: FakeDriver) -> Rig {
         dir,
         dir,
         Arc::clone(&driver) as Arc<_>,
-        Arc::new(FakeSurface::new(dir)),
+        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
         config,
     );

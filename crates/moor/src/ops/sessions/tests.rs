@@ -1,7 +1,7 @@
 //! Tests for `sessions`.
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::domain::decision::{Decision, NewBox};
@@ -21,7 +21,7 @@ fn cx(dir: &Path, driver: &Arc<FakeDriver>) -> Cx {
         dir,
         Path::new("/home/me/proj"),
         driver.clone(),
-        Arc::new(FakeSurface::new(PathBuf::from("/s"))),
+        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     )
 }

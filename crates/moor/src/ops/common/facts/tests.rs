@@ -22,7 +22,7 @@ fn cx(dir: &Path, main: &Path) -> Cx {
         dir,
         dir,
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new(dir)),
+        Arc::new(FakeSurface::new()),
         Arc::new(proc),
     )
 }

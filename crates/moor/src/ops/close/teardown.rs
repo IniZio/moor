@@ -20,7 +20,7 @@ use crate::store::BoxRow;
 /// Runs the repo `teardown:` lines as one script in a ready Box.
 ///
 /// Nothing runs without lines or a live Box; a failure only warns, except a Proxy that will not
-/// start, which fails the close unless `force` is set, when it warns like the rest. A worktree `.moor.yaml` that
+/// start, which fails the close unless `force` is set, when it warns like the rest. A host `.moor.yaml` that
 /// differs from the base commit is not used unless `trusted`. The env is the agent's Box env.
 pub(super) fn teardown(
     cx: &Cx,
@@ -43,9 +43,9 @@ pub(super) fn teardown(
     if cfg.teardown.is_empty() {
         return Ok(());
     }
-    let worktree = Path::new(row.worktree.as_deref().unwrap_or(&row.repo));
+    let repo = Path::new(&row.repo);
     let workdir = b.workdir.as_deref().and_then(recorded_workdir);
-    let Some(proxy) = teardown_proxy(cx, row, handle, worktree, &cfg, force)? else {
+    let Some(proxy) = teardown_proxy(cx, row, handle, repo, &cfg, force)? else {
         return Ok(());
     };
     let site = Site {
@@ -84,11 +84,11 @@ fn teardown_proxy(
     cx: &Cx,
     row: &BoxRow,
     handle: &BoxHandle,
-    worktree: &Path,
+    repo: &Path,
     cfg: &BoxSettings,
     force: bool,
 ) -> Result<Option<BoxProxy>, CommandError> {
-    match box_exec::proxy(cx, row.id, Some(handle.clone()), worktree, cfg) {
+    match box_exec::proxy(cx, row.id, Some(handle.clone()), repo, cfg) {
         Ok(proxy) => Ok(Some(proxy)),
         Err(e) if force => {
             warn_teardown(cx, &format!("the Proxy could not start: {e}"));

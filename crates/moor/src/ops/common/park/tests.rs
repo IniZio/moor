@@ -1,6 +1,6 @@
 //! Tests for parking and restoring the Box's Proxy tunnel.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -33,7 +33,7 @@ fn fx() -> Fx {
         dir.path(),
         Path::new("/home/me/proj"),
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new(PathBuf::from("/s"))),
+        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
         moor_core::config::UserConfig::default(),
         clock.clone(),

@@ -43,7 +43,7 @@ fn session() -> SessionRef {
 fn run(d: &Arc<FakeDriver>, dest: &Path) -> Result<(), EngineError> {
     BoxAgent::new(
         d.clone(),
-        Arc::new(FakeSurface::new("/r")),
+        Arc::new(FakeSurface::new()),
         Arc::new(Claude),
         Arc::new(FakeClock::new(Ts::from_millis(0))),
         offline_release(),

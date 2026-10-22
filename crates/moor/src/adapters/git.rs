@@ -1,4 +1,4 @@
-//! Git over `Proc`: repo root and the facts the close gate needs.
+//! Git over `Proc`: repo root, base commit, repo files and author reads on the host.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -18,9 +18,6 @@ const CLONE_DEADLINE: Deadline = Deadline(Duration::from_secs(600));
 /// The remote moor bases new Boxes on.
 const REMOTE: &str = "origin";
 
-/// Scratch directories kept out of a Box worktree's status.
-const SCRATCH_DIRS: [&str; 2] = [".crabbox/", ".moor/"];
-
 /// Why a git query failed.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum GitError {
@@ -39,23 +36,6 @@ pub(crate) struct GitAuthor {
     pub(crate) name: Option<String>,
     /// `user.email`.
     pub(crate) email: Option<String>,
-}
-
-/// What [`Git::sync_branch`] did to the local Box branch.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum BranchSync {
-    /// The branch and its worktree moved forward to the remote tip.
-    FastForwarded,
-    /// The local branch already contains the remote tip.
-    UpToDate,
-    /// The local and remote branches each have commits the other lacks; nothing changed.
-    Diverged,
-    /// The worktree has uncommitted changes; nothing changed.
-    Dirty,
-    /// The worktree has another branch checked out; nothing changed.
-    OffBranch,
-    /// The remote has no such branch, so there is nothing to sync.
-    NotPushed,
 }
 
 /// Concrete git client; real git runs through the `Proc` seam.
@@ -196,131 +176,6 @@ impl Git {
         self.exec(repo, &args, FETCH_DEADLINE)
             .map_err(|e| Self::failure(&args, e))?;
         Ok(self.run(repo, &["rev-parse", &tracking])?.trim().to_owned())
-    }
-
-    /// Commits reachable from HEAD that neither `base` nor any remote-tracking
-    /// ref contains.
-    ///
-    /// A missing worktree counts as zero. Without a `base` and without remote
-    /// refs, every commit on HEAD is unpushed.
-    ///
-    /// # Errors
-    /// [`GitError::Failed`] when git cannot answer.
-    pub(crate) fn unpushed(&self, worktree: &Path, base: Option<&str>) -> Result<u32, GitError> {
-        if !worktree.is_dir() {
-            return Ok(0);
-        }
-        let mut args = vec!["rev-list", "--count", "HEAD", "--not"];
-        args.extend(base);
-        args.push("--remotes");
-        let out = self.run(worktree, &args)?;
-        out.trim().parse().map_err(|_| {
-            GitError::Failed(format!("git printed an unexpected count: {}", out.trim()))
-        })
-    }
-
-    /// Whether the worktree has uncommitted changes (untracked files included).
-    ///
-    /// A missing worktree is clean.
-    ///
-    /// # Errors
-    /// [`GitError::Failed`] when git cannot answer.
-    pub(crate) fn dirty(&self, worktree: &Path) -> Result<bool, GitError> {
-        if !worktree.is_dir() {
-            return Ok(false);
-        }
-        let out = self.run(worktree, &["status", "--porcelain"])?;
-        Ok(out.lines().any(|l| !l.trim().is_empty()))
-    }
-
-    /// Fetches `branch` from `origin`, if the remote has it, and fast-forwards the worktree's checked-out `branch` to it.
-    ///
-    /// Only a remote tip that descends from the local tip moves the branch; local commits
-    /// and uncommitted changes are never rewritten or discarded.
-    ///
-    /// # Errors
-    /// [`GitError::Failed`] when the fetch or any git query fails.
-    pub(crate) fn sync_branch(
-        &self,
-        worktree: &Path,
-        branch: &str,
-    ) -> Result<BranchSync, GitError> {
-        let head_ref = format!("refs/heads/{branch}");
-        let probe = ["ls-remote", "--exit-code", "origin", &head_ref];
-        match self.exec(worktree, &probe, DEADLINE) {
-            Ok(_) => {}
-            Err(ProcError::NonZero { code: 2, .. }) => return Ok(BranchSync::NotPushed),
-            Err(e) => return Err(Self::failure(&probe, e)),
-        }
-        let tracking = format!("refs/remotes/origin/{branch}");
-        let refspec = format!("+refs/heads/{branch}:{tracking}");
-        self.run(worktree, &["fetch", "origin", &refspec])?;
-        let current = self.run(worktree, &["symbolic-ref", "--short", "HEAD"])?;
-        if current.trim() != branch {
-            return Ok(BranchSync::OffBranch);
-        }
-        let local = self.head(worktree)?;
-        let remote = self.run(worktree, &["rev-parse", &tracking])?;
-        let (local, remote) = (local.trim(), remote.trim());
-        if self.is_ancestor(worktree, remote, local)? {
-            return Ok(BranchSync::UpToDate);
-        }
-        if !self.is_ancestor(worktree, local, remote)? {
-            return Ok(BranchSync::Diverged);
-        }
-        if self.dirty(worktree)? {
-            return Ok(BranchSync::Dirty);
-        }
-        self.run(worktree, &["merge", "--ff-only", &tracking])?;
-        Ok(BranchSync::FastForwarded)
-    }
-
-    /// Whether commit `old` is `new` or one of its ancestors; git exits 1 when it is not.
-    fn is_ancestor(&self, cwd: &Path, old: &str, new: &str) -> Result<bool, GitError> {
-        let args = ["merge-base", "--is-ancestor", old, new];
-        match self.exec(cwd, &args, DEADLINE) {
-            Ok(_) => Ok(true),
-            Err(ProcError::NonZero { code: 1, .. }) => Ok(false),
-            Err(e) => Err(Self::failure(&args, e)),
-        }
-    }
-
-    /// Hides crabbox and moor scratch directories from `git status` in `worktree`.
-    ///
-    /// Appends `.crabbox/` and `.moor/` to the repository's `info/exclude`,
-    /// skipping lines already there. Linked worktrees share that file.
-    ///
-    /// # Errors
-    /// [`GitError::Failed`] when git cannot answer or the file cannot be written.
-    pub(crate) fn exclude_scratch(&self, worktree: &Path) -> Result<(), GitError> {
-        let out = self.run(worktree, &["rev-parse", "--git-path", "info/exclude"])?;
-        let path = worktree.join(out.trim());
-        let io =
-            |e: std::io::Error| GitError::Failed(format!("cannot update {}: {e}", path.display()));
-        let mut text = match std::fs::read_to_string(&path) {
-            Ok(t) => t,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-            Err(e) => return Err(io(e)),
-        };
-        let mut changed = false;
-        for line in SCRATCH_DIRS {
-            if text.lines().any(|l| l == line) {
-                continue;
-            }
-            if !text.is_empty() && !text.ends_with('\n') {
-                text.push('\n');
-            }
-            text.push_str(line);
-            text.push('\n');
-            changed = true;
-        }
-        if !changed {
-            return Ok(());
-        }
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(io)?;
-        }
-        std::fs::write(&path, text).map_err(io)
     }
 
     /// Effective git author of `worktree`, as git resolves it.

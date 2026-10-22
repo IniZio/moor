@@ -30,10 +30,10 @@ fn clones_since(w: &World, from: usize) -> Vec<(bool, Vec<String>)> {
         .collect()
 }
 
-/// Leaves the teardown config in the Box's worktree and on its base commit.
+/// Leaves the teardown config in the Box's host repo and on its base commit.
 fn keep_teardown(w: &World, id: BoxId) {
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
-    let wt = row.worktree.unwrap();
+    let wt = row.repo;
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(Path::new(&wt).join(".moor.yaml"), YAML).unwrap();
     script_base_yaml(w, Some(YAML));

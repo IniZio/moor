@@ -27,7 +27,7 @@ fn engine_cx(dir: &Path, driver: &Arc<FakeDriver>, engine: &Arc<FakeEngine>) -> 
         dir,
         dir,
         driver.clone(),
-        Arc::new(FakeSurface::new(dir)),
+        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     )
     .with_engine(engine.clone())
@@ -65,7 +65,6 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: &str) -> BoxId {
         .session(SessionInput::Started)
         .box_input(BoxInput::Acquired { handle: got.handle })
         .set(Fields {
-            worktree: Field::Set("/wt".into()),
             box_workdir: Field::Set("/work".into()),
             ..Fields::default()
         });

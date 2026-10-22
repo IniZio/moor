@@ -2,7 +2,7 @@ CREATE TABLE meta   (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE TABLE boxes  (
   id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, repo TEXT NOT NULL, user INTEGER REFERENCES users(id),
   issue TEXT, goal TEXT, base TEXT,
-  branch TEXT, worktree TEXT,
+  branch TEXT,
   state TEXT NOT NULL, state_reason TEXT,
   intent_kind TEXT, intent_pid INTEGER, intent_run INTEGER, intent_at INTEGER, setup_failed_at INTEGER,
   idle_since INTEGER, launch_failure TEXT,
@@ -40,4 +40,4 @@ CREATE TABLE link_codes (code TEXT PRIMARY KEY, user INTEGER NOT NULL REFERENCES
   expires_at INTEGER NOT NULL);
 CREATE TABLE user_secrets (user INTEGER NOT NULL REFERENCES users(id), name TEXT NOT NULL, value BLOB NOT NULL,
   updated_at INTEGER NOT NULL, PRIMARY KEY (user, name));
-INSERT INTO meta (k, v) VALUES ('schema_version', '10');
+INSERT INTO meta (k, v) VALUES ('schema_version', '11');

@@ -6,28 +6,22 @@
 )]
 
 use std::collections::{HashMap, VecDeque};
-use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{
-    Key, PaneCmd, PaneRef, ResumeOutcome, ResumeReg, Surface, SurfaceError, WorkspaceRef, Worktree,
+    Key, PaneCmd, PaneRef, ResumeOutcome, ResumeReg, Surface, SurfaceError, WorkspaceRef,
 };
-use moor_core::BoxName;
 
 #[derive(Default)]
 struct State {
     n: u32,
-    worktrees: Vec<PathBuf>,
     workspaces: Vec<String>,
     panes: Vec<String>,
     calls: Vec<String>,
-    bases: Vec<Option<String>>,
     obs: HashMap<String, VecDeque<Result<PaneObs, SurfaceError>>>,
     opens: Vec<PaneCmd>,
-    fail_create: Option<SurfaceError>,
-    next_worktree: Option<Worktree>,
     fail_ensure: Option<SurfaceError>,
     fail_open_pane: Option<SurfaceError>,
     fail_close_pane: Option<SurfaceError>,
@@ -37,38 +31,21 @@ struct State {
     on_pane_obs: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
-/// Scripted Surface: worktrees at `<root>/wt/<name>`, workspaces `ws-N`, panes `p-N`.
+/// Scripted Surface: workspaces `ws-N`, panes `p-N`.
 pub(crate) struct FakeSurface {
-    root: PathBuf,
     state: Mutex<State>,
 }
 
 impl FakeSurface {
-    /// A Surface whose worktrees live under `root`; nothing touches disk.
-    pub(crate) fn new(root: impl Into<PathBuf>) -> Self {
+    /// A Surface with no Workspaces yet; nothing touches disk.
+    pub(crate) fn new() -> Self {
         Self {
-            root: root.into(),
             state: Mutex::new(State::default()),
         }
     }
 
     fn st(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// Registers a worktree already at `path`.
-    pub(crate) fn add_worktree(&self, path: &Path) {
-        self.st().worktrees.push(path.to_path_buf());
-    }
-
-    /// The next `create_worktree` fails once with `e`.
-    pub(crate) fn set_fail_create(&self, e: SurfaceError) {
-        self.st().fail_create = Some(e);
-    }
-
-    /// The next `create_worktree` returns `wt` instead of a fresh one.
-    pub(crate) fn set_next_worktree(&self, wt: Worktree) {
-        self.st().next_worktree = Some(wt);
     }
 
     /// The next `ensure_workspace` fails once with `e`.
@@ -148,61 +125,18 @@ impl FakeSurface {
         self.st().on_pane_obs = Some(Arc::new(hook));
     }
 
-    /// The base each `create_worktree` was given.
-    pub(crate) fn bases(&self) -> Vec<Option<String>> {
-        self.st().bases.clone()
-    }
-
-    /// Calls so far, like `create_worktree a` or `close_pane p-1`.
+    /// Calls so far, like `ensure_workspace moor:a` or `close_pane p-1`.
     pub(crate) fn calls(&self) -> Vec<String> {
         self.st().calls.clone()
     }
 }
 
 impl Surface for FakeSurface {
-    fn create_worktree(
-        &self,
-        _repo: &Path,
-        name: &BoxName,
-        base: Option<&str>,
-    ) -> Result<Worktree, SurfaceError> {
-        let mut s = self.st();
-        s.calls.push(format!("create_worktree {}", name.as_str()));
-        s.bases.push(base.map(str::to_owned));
-        if let Some(e) = s.fail_create.take() {
-            return Err(e);
-        }
-        if let Some(wt) = s.next_worktree.take() {
-            return Ok(wt);
-        }
-        let path = self.root.join("wt").join(name.as_str());
-        s.worktrees.push(path.clone());
-        Ok(Worktree {
-            path,
-            branch: name.as_str().to_owned(),
-        })
-    }
-
-    fn remove_worktree(&self, wt: &Path) -> Result<(), SurfaceError> {
-        let mut s = self.st();
-        s.calls.push(format!("remove_worktree {}", wt.display()));
-        let before = s.worktrees.len();
-        s.worktrees.retain(|p| p != wt);
-        if s.worktrees.len() < before {
-            Ok(())
-        } else {
-            Err(SurfaceError::NotFound)
-        }
-    }
-
-    fn ensure_workspace(&self, wt: &Worktree, label: &str) -> Result<WorkspaceRef, SurfaceError> {
+    fn ensure_workspace(&self, label: &str) -> Result<WorkspaceRef, SurfaceError> {
         let mut s = self.st();
         s.calls.push(format!("ensure_workspace {label}"));
         if let Some(e) = s.fail_ensure.take() {
             return Err(e);
-        }
-        if !s.worktrees.contains(&wt.path) {
-            return Err(SurfaceError::NotFound);
         }
         s.n += 1;
         let id = format!("ws-{}", s.n);
@@ -348,7 +282,7 @@ mod tests {
 
     #[test]
     fn serves_scripted_observations_in_order_and_records_calls() {
-        let s = FakeSurface::new("/r")
+        let s = FakeSurface::new()
             .script_pane_obs("p-1", Ok(obs("a")))
             .script_pane_obs("p-1", Err(SurfaceError::Timeout));
         let p = PaneRef::new("p-1");
@@ -364,15 +298,8 @@ mod tests {
 
     #[test]
     fn records_sends_and_reports_a_missing_pane() {
-        let s = FakeSurface::new("/r");
-        let wt = s
-            .create_worktree(
-                Path::new("/repo"),
-                &BoxName::parse_allow_bare("a").unwrap(),
-                None,
-            )
-            .unwrap();
-        let ws = s.ensure_workspace(&wt, "moor:a").unwrap();
+        let s = FakeSurface::new();
+        let ws = s.ensure_workspace("moor:a").unwrap();
         let pane = s.open_pane(&ws, &PaneCmd::default()).unwrap();
         assert_eq!(s.send_text(&pane, "hi"), Ok(()));
         assert_eq!(s.send_keys(&pane, &[Key::CtrlU, Key::Digit(3)]), Ok(()));
@@ -382,7 +309,7 @@ mod tests {
             s.send_keys(&gone, &[Key::CtrlM]),
             Err(SurfaceError::NotFound)
         );
-        let sent: Vec<String> = s.calls().into_iter().skip(3).collect();
+        let sent: Vec<String> = s.calls().into_iter().skip(2).collect();
         assert_eq!(
             sent,
             [

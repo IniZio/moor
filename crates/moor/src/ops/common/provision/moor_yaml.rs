@@ -16,20 +16,20 @@ use crate::store::BoxRow;
 /// File name of the repo config.
 const REPO_FILE: &str = ".moor.yaml";
 
-/// The worktree copy and the base-commit copy of the repo config, as read once.
+/// The host copy and the base-commit copy of the repo config, as read once.
 struct Copies<'a> {
-    /// Directory holding the worktree copy.
+    /// Host checkout holding the host copy.
     at: &'a str,
     /// Base commit, or a placeholder when the Box has none.
     rev: &'a str,
-    /// Worktree text; `None` when the file is absent.
+    /// Host checkout text; `None` when the file is absent.
     current: Option<String>,
     /// Text at the base commit; `None` when the commit has no such file.
     base: Option<String>,
 }
 
 impl Copies<'_> {
-    /// Whether the worktree copy matches the base copy byte for byte.
+    /// Whether the host copy matches the base copy byte for byte.
     fn same(&self) -> bool {
         self.current == self.base
     }
@@ -40,7 +40,7 @@ impl Copies<'_> {
     }
 }
 
-/// Lets setup, relaunch and run use the worktree's `.moor.yaml` only when it matches the base commit.
+/// Lets setup, relaunch and run use the host checkout's `.moor.yaml` only when it matches the base commit.
 ///
 /// The agent can edit that file, and these commands run what it says outside the agent. A
 /// difference is refused unless the owner confirmed it with `trusted`, which warns once instead.
@@ -73,7 +73,7 @@ pub(crate) fn guard(
 
 /// Like [`guard`] for close's teardown, which must not be blocked by an edited `.moor.yaml`.
 ///
-/// A difference the owner confirmed uses the worktree copy. Otherwise it uses the base-commit copy
+/// A difference the owner confirmed uses the host copy. Otherwise it uses the base-commit copy
 /// and warns once.
 ///
 /// # Errors
@@ -95,16 +95,16 @@ pub(crate) fn for_teardown(
     cx.warn_once(Warning {
         code: "moor_yaml_untrusted".to_owned(),
         message: format!(
-            "{}/{REPO_FILE} differs from base commit {}: {what}; using the copy at the base commit (repeat with --trust-moor-yaml to use the worktree's)",
+            "{}/{REPO_FILE} differs from base commit {}: {what}; using the copy at the base commit (repeat with --trust-moor-yaml to use the host checkout's)",
             copies.at, copies.rev
         ),
     });
     config_of(cx, &copies, copies.base.as_deref())
 }
 
-/// Reads the worktree copy and the base-commit copy once.
+/// Reads the host copy and the base-commit copy once.
 fn read_copies<'a>(cx: &Cx, row: &'a BoxRow) -> Result<Copies<'a>, CommandError> {
-    let at = row.worktree.as_deref().unwrap_or(&row.repo);
+    let at = row.repo.as_str();
     let path = Path::new(at).join(REPO_FILE);
     let current = match std::fs::read_to_string(&path) {
         Ok(text) => Some(text),
@@ -149,7 +149,7 @@ fn config_of(
     cx.main_repo_config(Path::new(copies.at))
 }
 
-/// Warns once that the worktree copy is used because the owner confirmed it.
+/// Warns once that the host copy is used because the owner confirmed it.
 fn warn_trusted(cx: &Cx, copies: &Copies<'_>, what: &str) {
     cx.warn_once(Warning {
         code: "moor_yaml_trusted".to_owned(),
@@ -160,7 +160,7 @@ fn warn_trusted(cx: &Cx, copies: &Copies<'_>, what: &str) {
     });
 }
 
-/// What differs between the worktree copy and the base copy, in words.
+/// What differs between the host copy and the base copy, in words.
 fn describe(at: &str, current: Option<&str>, base: Option<&str>) -> String {
     match (current, base) {
         (Some(now), Some(then)) => {

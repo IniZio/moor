@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::domain::box_state::SetupOutcome;
@@ -20,7 +20,6 @@ use crate::testing::surface::FakeSurface;
 mod agent;
 mod artifacts;
 mod boxwork;
-mod branch;
 mod promote;
 mod proxy;
 mod reports;
@@ -28,7 +27,6 @@ mod target;
 mod teardown;
 mod transcript;
 mod wake;
-mod worktree;
 
 const RAW: &str = "RAWDRIVER-7731";
 /// The host commit id the probe compares against.
@@ -51,11 +49,9 @@ pub(super) fn req(force: bool) -> CloseReq {
     }
 }
 
-/// Git answers: `unpushed` commits and a clean tree.
-pub(super) fn proc(unpushed: u32) -> Arc<ScriptedProc> {
+/// Git answers for the host repo reads close still makes.
+pub(super) fn proc() -> Arc<ScriptedProc> {
     let p = ScriptedProc::new();
-    p.on(Tool::Git, &["rev-list"], Reply::Ok(format!("{unpushed}\n")));
-    p.on(Tool::Git, &["status"], Reply::Ok(String::new()));
     p.on(Tool::Git, &["ls-tree"], Reply::Ok(String::new()));
     p.on(
         Tool::Git,
@@ -71,20 +67,15 @@ pub(super) fn proc(unpushed: u32) -> Arc<ScriptedProc> {
 }
 
 /// A Ready Box with a machine from `driver` that probes clean.
-pub(super) fn fx_with(driver: FakeDriver, surface: FakeSurface, unpushed: u32) -> Fx {
-    fx_box(driver, surface, unpushed, Some("ahead=0 dirty=0"))
+pub(super) fn fx_with(driver: FakeDriver, surface: FakeSurface) -> Fx {
+    fx_box(driver, surface, Some("ahead=0 dirty=0"))
 }
 
-/// A Ready Box with a machine from `driver`; the worktree is a real directory.
+/// A Ready Box with a machine from `driver`; its repo is a real directory.
 ///
 /// `boxwork` is what the probe reads back from the first Box's recorded workdir
 /// (`/work/box-1`); `None` leaves it unscripted, so the probe cannot tell.
-pub(super) fn fx_box(
-    driver: FakeDriver,
-    surface: FakeSurface,
-    unpushed: u32,
-    boxwork: Option<&str>,
-) -> Fx {
+pub(super) fn fx_box(driver: FakeDriver, surface: FakeSurface, boxwork: Option<&str>) -> Fx {
     let driver = match boxwork {
         Some(text) => driver.peek_text(
             "box-1",
@@ -96,7 +87,7 @@ pub(super) fn fx_box(
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(driver);
     let surface = Arc::new(surface);
-    let proc = proc(unpushed);
+    let proc = proc();
     let cx = Cx::fake(
         dir.path(),
         dir.path(),
@@ -115,19 +106,19 @@ pub(super) fn fx_box(
     }
 }
 
-/// Admits Box `t` with a Ready machine acquired from `driver`.
+/// Admits Box `t` of the repo at `dir` with a Ready machine acquired from `driver`.
 fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> BoxId {
     let store = cx.store().unwrap();
     let id = store
-        .apply(crate::testing::cx::new_box(
+        .apply(crate::testing::cx::new_box_in(
             BoxName::parse_allow_bare("t").unwrap(),
+            dir,
         ))
         .unwrap()
         .box_id;
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
-        worktree: Field::Set(dir.display().to_string()),
         workspace_id: Field::Set("ws-1".into()),
         box_workdir: Field::Set("/work/box-1".into()),
         ..Fields::default()
@@ -157,7 +148,7 @@ fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> BoxId {
 }
 
 pub(super) fn fx() -> Fx {
-    fx_with(FakeDriver::new(), FakeSurface::new(PathBuf::from("/s")), 0)
+    fx_with(FakeDriver::new(), FakeSurface::new())
 }
 
 pub(super) fn row(f: &Fx) -> crate::store::BoxRow {
@@ -177,15 +168,39 @@ fn clean_close_deletes_the_box_and_closes() {
     let f = fx();
     let v = run(&f.cx, &req(false)).unwrap();
     assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
-    assert!(v.box_deleted && v.workspace_closed && !v.worktree_kept);
+    assert!(v.box_deleted && v.workspace_closed);
     assert_eq!(box_state(&f), BoxState::Deleted);
     assert!(f.driver.calls().iter().any(|c| c.starts_with("release")));
     assert!(f.dir.path().is_dir());
 }
 
 #[test]
-fn unpushed_work_is_refused_without_force() {
-    let f = fx_with(FakeDriver::new(), FakeSurface::new("/s"), 2);
+fn a_clean_close_asks_host_git_nothing_about_unsaved_work() {
+    let f = fx();
+    run(&f.cx, &req(false)).unwrap();
+    // Until the repo config comes from the forge, teardown still looks up `.moor.yaml`.
+    let config_lookup = |args: &[String]| {
+        args.first().map(String::as_str) == Some("ls-tree")
+            || args.first().map(String::as_str) == Some("show")
+            || args == ["rev-parse", "--path-format=absolute", "--git-common-dir"]
+    };
+    let git: Vec<_> = f
+        .proc
+        .calls()
+        .into_iter()
+        .filter(|c| c.tool == Tool::Git && !config_lookup(&c.args))
+        .map(|c| c.args)
+        .collect();
+    assert!(git.is_empty(), "{git:?}");
+}
+
+#[test]
+fn unpushed_work_in_the_box_is_refused_without_force() {
+    let f = fx_box(
+        FakeDriver::new(),
+        FakeSurface::new(),
+        Some("ahead=2 dirty=0"),
+    );
     let e = run(&f.cx, &req(false)).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Refused);
     assert!(is_working(&row(&f)));
@@ -210,8 +225,7 @@ fn release_error_on_a_ready_box_keeps_the_box_open() {
         FakeDriver::new().fail_release_always(DriverError::Failed {
             summary: RAW.into(),
         }),
-        FakeSurface::new("/s"),
-        0,
+        FakeSurface::new(),
     );
     let e = run(&f.cx, &req(false)).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
@@ -239,8 +253,7 @@ fn release_error_on_a_failed_box_warns_and_closes() {
         FakeDriver::new().fail_release_always(DriverError::Failed {
             summary: RAW.into(),
         }),
-        FakeSurface::new("/s"),
-        0,
+        FakeSurface::new(),
     );
     let store = f.cx.store().unwrap();
     store
@@ -259,8 +272,7 @@ fn release_error_on_a_failed_box_warns_and_closes() {
 fn missing_workspace_is_tolerated() {
     let f = fx_with(
         FakeDriver::new(),
-        FakeSurface::new("/s").fail_close_workspace(SurfaceError::NotFound),
-        0,
+        FakeSurface::new().fail_close_workspace(SurfaceError::NotFound),
     );
     let v = run(&f.cx, &req(false)).unwrap();
     assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);

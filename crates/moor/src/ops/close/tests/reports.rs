@@ -42,7 +42,7 @@ fn driver_with(files: &[(&str, &str)]) -> FakeDriver {
 }
 
 fn fx(driver: FakeDriver) -> Fx {
-    fx_with(driver, FakeSurface::new("/s"), 0)
+    fx_with(driver, FakeSurface::new())
 }
 
 fn kinds(f: &Fx) -> Vec<(String, i64)> {

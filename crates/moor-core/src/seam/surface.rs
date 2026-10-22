@@ -1,19 +1,8 @@
-//! Surface seam: worktrees, workspaces and panes behind a terminal multiplexer.
-
-use std::path::{Path, PathBuf};
+//! Surface seam: workspaces and panes behind a terminal multiplexer.
 
 use crate::activity::{PaneObs, PaneStatus};
 use crate::name::BoxName;
 use crate::seam::proc::Deadline;
-
-/// A checked-out worktree and its branch.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Worktree {
-    /// Absolute path of the worktree.
-    pub path: PathBuf,
-    /// Branch checked out in the worktree.
-    pub branch: String,
-}
 
 /// An opaque handle to a Workspace.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -110,7 +99,7 @@ impl Key {
 /// A Surface failure.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SurfaceError {
-    /// The worktree, workspace or pane does not exist.
+    /// The workspace or pane does not exist.
     #[error("not found")]
     NotFound,
     /// The call missed its deadline.
@@ -119,12 +108,6 @@ pub enum SurfaceError {
     /// The surface backend cannot be reached.
     #[error("surface unavailable: {0}")]
     Unavailable(String),
-    /// Creating the worktree failed because one is left on the Box's branch.
-    #[error("a worktree is left at {}", path.display())]
-    Leftover {
-        /// Where the leftover worktree is.
-        path: PathBuf,
-    },
     /// The backend refused or failed the call.
     #[error("surface call failed: {summary}")]
     Failed {
@@ -139,30 +122,13 @@ pub fn workspace_label(name: &BoxName) -> String {
     format!("moor:{}", name.as_str())
 }
 
-/// Worktrees, Workspaces and panes.
+/// Workspaces and panes.
 pub trait Surface: Send + Sync {
-    /// Creates a worktree for `name` in `repo`, branching from `base` when given.
-    ///
-    /// # Errors
-    /// Returns a [`SurfaceError`] when the worktree cannot be created.
-    fn create_worktree(
-        &self,
-        repo: &Path,
-        name: &BoxName,
-        base: Option<&str>,
-    ) -> Result<Worktree, SurfaceError>;
-
-    /// Removes the worktree at `wt`.
-    ///
-    /// # Errors
-    /// Returns a [`SurfaceError`] when the worktree cannot be removed.
-    fn remove_worktree(&self, wt: &Path) -> Result<(), SurfaceError>;
-
-    /// Returns the Workspace labelled `label` for `wt`, creating it when absent.
+    /// Returns a Workspace labelled `label`, creating it when none is.
     ///
     /// # Errors
     /// Returns a [`SurfaceError`] when the Workspace cannot be ensured.
-    fn ensure_workspace(&self, wt: &Worktree, label: &str) -> Result<WorkspaceRef, SurfaceError>;
+    fn ensure_workspace(&self, label: &str) -> Result<WorkspaceRef, SurfaceError>;
 
     /// Brings the Workspace to the front.
     ///

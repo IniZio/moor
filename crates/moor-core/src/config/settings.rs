@@ -26,7 +26,7 @@ pub enum Layer {
     Default,
     /// The agent profile.
     Agent,
-    /// Read from git itself (the effective config for the Box worktree).
+    /// Read from git itself (the effective config of the host checkout).
     Git,
 }
 

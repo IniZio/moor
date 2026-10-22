@@ -27,7 +27,6 @@ mod clone_retry;
 mod clone_timing;
 mod dead_agent;
 mod dotfiles;
-mod exclude;
 mod exited_start;
 mod hold;
 mod identity;
@@ -37,7 +36,6 @@ mod launch_warnings;
 mod lease;
 mod lease_dirs;
 mod lease_handle;
-mod leftover;
 mod moor_yaml;
 mod others;
 mod parent;
@@ -69,6 +67,22 @@ struct World {
 /// Builds a world whose driver is `driver`.
 fn world(driver: FakeDriver) -> World {
     world_at(driver, Path::new("/repo"))
+}
+
+/// Builds a world whose repo is a real directory inside the world's temp dir.
+fn world_on_disk(driver: FakeDriver) -> World {
+    let w = world(driver);
+    let repo = w.dir.path().join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    let at = |suffix: &str| Reply::Ok(format!("{}{suffix}\n", repo.display()));
+    w.proc
+        .before(Tool::Git, &["rev-parse", "--show-toplevel"], at(""));
+    w.proc.before(
+        Tool::Git,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        at("/.git"),
+    );
+    w
 }
 
 /// Builds a world over the repo at `repo`.
@@ -105,7 +119,7 @@ fn world_with(driver: FakeDriver, repo: &Path, config: UserConfig) -> World {
     let driver = Arc::new((1..=4).fold(driver, |d, n| {
         d.peek_text(&format!("box-{n}"), &environ, "HOME=/home/box\0")
     }));
-    let surface = Arc::new(FakeSurface::new(dir.path()));
+    let surface = Arc::new(FakeSurface::new());
     let cx = Cx::fake_with(
         dir.path(),
         repo,
@@ -164,7 +178,7 @@ fn happy_path_makes_a_working_box_with_a_ready_box() {
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), state::WORKING);
     assert_eq!(v.boxed.base.as_deref(), Some("abc123"));
     assert_eq!(v.boxed.workspace.as_deref(), Some("ws-1"));
-    assert_eq!(v.boxed.branch.as_deref(), Some("demo"));
+    assert_eq!(v.boxed.branch.as_deref(), Some("moor/demo"));
     let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
     let b = row.unwrap().unwrap().boxed.unwrap();
     assert_eq!(b.state, BoxState::Ready);
@@ -178,10 +192,7 @@ fn happy_path_calls_seams_in_order_and_clears_intent() {
     let v = run(&w.cx, &req("demo")).unwrap();
     let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
     assert!(row.unwrap().unwrap().intent.is_none());
-    assert_eq!(
-        w.surface.calls(),
-        ["create_worktree demo", "ensure_workspace moor:demo"]
-    );
+    assert_eq!(w.surface.calls(), ["ensure_workspace moor:demo"]);
     assert_eq!(w.driver.calls(), ["acquire"]);
 }
 
@@ -265,7 +276,7 @@ fn open_name_attaches_without_touching_the_box() {
     assert!(again.attached);
     assert_eq!(again.boxed.id, first.boxed.id);
     assert_eq!(w.driver.calls(), ["acquire"]);
-    assert_eq!(w.surface.calls().len(), 2);
+    assert_eq!(w.surface.calls().len(), 1);
 }
 
 #[test]
@@ -301,7 +312,7 @@ fn start_after_acquire_failure_gets_a_new_box() {
     let row = w.cx.store().unwrap().box_row(BoxId::new(again.boxed.id));
     assert_eq!(row.unwrap().unwrap().boxed.unwrap().state, BoxState::Ready);
     assert_eq!(w.driver.calls(), ["acquire", "release box-1", "acquire"]);
-    assert_eq!(w.surface.calls().len(), 2);
+    assert_eq!(w.surface.calls().len(), 1);
 }
 
 #[test]

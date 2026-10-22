@@ -26,7 +26,7 @@ fn fx(engine: FakeEngine) -> (tempfile::TempDir, Cx) {
         dir.path(),
         dir.path(),
         Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new("/s")),
+        Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     )
     .with_engine(Arc::new(engine));
@@ -46,13 +46,12 @@ fn unregistered(cx: &Cx, dir: &std::path::Path) -> (BoxRow, SessionRow) {
     let id = store
         .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("t").unwrap(),
-            repo: "r".into(),
+            repo: dir.display().to_string(),
         }))
         .unwrap()
         .box_id;
     let fields = Fields {
         box_provider: Field::Set(ProviderId::new("p")),
-        worktree: Field::Set(dir.display().to_string()),
         box_workdir: Field::Set("/work/box-1".into()),
         ..Fields::default()
     };

@@ -8,7 +8,7 @@ use moor_core::Warning;
 
 use crate::cx::Cx;
 
-/// The global git `user.name` and `user.email` a Box gets from the author of the host worktree.
+/// The global git `user.name` and `user.email` a Box gets from the author of the host checkout.
 ///
 /// Only those two values leave the host. The keys are set inside the clone exec, so
 /// setting them costs no round trip of its own.

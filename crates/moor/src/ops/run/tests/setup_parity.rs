@@ -17,7 +17,7 @@ use crate::ops::run::run;
 
 const YAML: &str = "setup: [make deps]\nenv:\n  B: \"2\"\n  A: \"1\"\n";
 
-/// A Ready Box whose worktree and base commit both hold `.moor.yaml` as `YAML`.
+/// A Ready Box whose host repo and base commit both hold `.moor.yaml` as `YAML`.
 fn with_env_yaml() -> Fx {
     let f = ready();
     std::fs::write(f.dir.path().join(".moor.yaml"), YAML).unwrap();

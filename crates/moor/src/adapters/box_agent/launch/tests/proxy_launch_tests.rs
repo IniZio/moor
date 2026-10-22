@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn a_launch_without_a_proxy_installs_nothing() {
-    let (d, _, out) = launch(FakeDriver::new(), FakeSurface::new("/r"));
+    let (d, _, out) = launch(FakeDriver::new(), FakeSurface::new());
     out.unwrap();
     let execs = d.execs();
     assert_eq!(execs.len(), 1);
@@ -17,7 +17,7 @@ fn a_launch_without_a_proxy_installs_nothing() {
 fn a_failed_put_removes_the_cred_dir() {
     let (d, s) = (
         driver(FakeDriver::new().fail_put(DriverError::NotFound)),
-        surface(FakeSurface::new("/r")),
+        surface(FakeSurface::new()),
     );
     let out = agent(&d, &s).launch(&req_with_proxy(&s));
     assert!(matches!(out, Err(EngineError::Failed { .. })));
@@ -51,7 +51,7 @@ fn a_failed_script_step_removes_the_temp_dir() {
 
 #[test]
 fn a_repo_env_value_is_quoted_so_it_cannot_run_in_the_script() {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new("/r")));
+    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
     let addr = ProxyAddr {
         box_env: vec![("APP_NOTE".to_owned(), "it's\n$(id) `id`".to_owned())],
         ..proxy_addr()
@@ -70,7 +70,7 @@ fn a_repo_env_value_is_quoted_so_it_cannot_run_in_the_script() {
 
 #[test]
 fn a_repo_env_value_cannot_replace_the_root_signal() {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new("/r")));
+    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
     d.set_peek_text("box-1", &environ_path(), "HOME=/home/box\0USER=root\0");
     let addr = ProxyAddr {
         box_env: vec![("IS_SANDBOX".to_owned(), "0".to_owned())],
@@ -93,7 +93,7 @@ fn a_repo_env_value_cannot_replace_the_root_signal() {
 
 #[test]
 fn the_agent_script_sends_direct_hosts_around_the_proxy() {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new("/r")));
+    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
     let user = moor_core::config::parse_user("u.yaml", "proxy: {direct: [dl.google.com]}").unwrap();
     let addr = ProxyAddr {
         direct: user.proxy.direct,
