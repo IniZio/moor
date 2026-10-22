@@ -1,7 +1,7 @@
 //! The proxy environment the agent starts with.
 
 use moor_core::boxscript::quote;
-use moor_core::exec_env::{self, BoxCtx, ExecEnv, Purpose};
+use moor_core::exec_env::{self, BoxCtx, ExecEnv, ProxyCtx, Purpose};
 use moor_core::seam::agent_profile::{EnvVar, ProxyAddr};
 use moor_core::BoxPath;
 
@@ -25,7 +25,7 @@ pub(super) fn exec_env(
         &BoxCtx {
             env: proxy.map_or(&[], |p| &p.box_env),
             strip,
-            proxy: proxy.map(ProxyAddr::ctx),
+            proxy: proxy.map(ProxyCtx::of),
             workdir: Some(workdir),
         },
         Purpose::Agent,
@@ -39,7 +39,7 @@ pub(super) fn script_lines(proxy: &ProxyAddr, env: &[EnvVar]) -> Result<Vec<Stri
         &BoxCtx {
             env: &proxy.box_env,
             strip: &[],
-            proxy: Some(proxy.ctx()),
+            proxy: Some(ProxyCtx::of(proxy)),
             workdir: None,
         },
         Purpose::Agent,

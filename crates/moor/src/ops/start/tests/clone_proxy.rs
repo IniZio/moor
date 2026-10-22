@@ -68,8 +68,7 @@ fn the_proxy_is_ready_before_the_clone_exec_and_its_env_is_on_it() {
     let script = spec.argv.get(2).cloned().unwrap_or_default();
     assert!(
         script.contains(&format!(
-            "export HTTPS_PROXY=\"http://127.0.0.1:{}\"",
-            FAKE_EGRESS_PORT
+            "export HTTPS_PROXY=\"http://127.0.0.1:{FAKE_EGRESS_PORT}\""
         )),
         "{script}"
     );
@@ -130,7 +129,7 @@ fn an_egress_proxy_that_cannot_start_fails_the_setup_with_its_reason() {
             .exec_results([Ok(exit(1))])
             .exec_stdout([reason]),
     );
-    w.cx = w.cx.with_proxy_host(Arc::new(host.clone()));
+    w.cx = w.cx.with_proxy_host(Arc::new(host));
     script_base_yaml(&w, Some(YAML));
     let err = run(&w.cx, &start_req()).unwrap_err();
     assert!(err.error.to_string().contains(reason), "{err:?}");

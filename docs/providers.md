@@ -144,6 +144,12 @@ every other host. `HTTPS_PROXY`, `HTTP_PROXY`, their lowercase forms, the Yarn
 variables and the Java and Gradle proxy settings name the tinyproxy port.
 `NO_PROXY` holds only the loopback names.
 
+Each Box keeps one tinyproxy port for its life. moor picks it from 10000 to
+19999 when it first starts the Box's Proxy, and no two Boxes share it. When
+another process in the Box already listens on that port, the command stops
+with `port <n> is taken by another process`. When two commands start at once,
+only one of them installs and starts tinyproxy. The other waits for it.
+
 When tinyproxy is not installed, moor installs the `tinyproxy-bin` package
 with `apt-get`, as root or through `sudo -n`, and without the proxy
 variables. moor supports only apt. On a Box image with no `apt-get`, install

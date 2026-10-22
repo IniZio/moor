@@ -3,7 +3,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use moor_core::exec_env::{self, BoxCtx, Purpose};
+use moor_core::exec_env::{self, BoxCtx, ProxyCtx, Purpose};
 use moor_core::seam::agent_profile::{EnvVar, ProxyAddr};
 use moor_core::{BoxPath, Secret};
 
@@ -46,7 +46,7 @@ fn the_agent_gets_the_same_box_environment_as_run() {
         &BoxCtx {
             env: &p.box_env,
             strip: &strip,
-            proxy: Some(p.ctx()),
+            proxy: Some(ProxyCtx::of(&p)),
             workdir: Some(&w),
         },
         Purpose::Run,
@@ -101,7 +101,7 @@ fn the_lines_carry_the_exports() {
         "export npm_config_cache=\"$HOME/.cache/npm\"",
         "export NODE_USE_ENV_PROXY=1",
         "export CLAUDE_CODE_OAUTH_TOKEN='moor-proxy'",
-        "unset moor_bundle moor_sys moor_mark moor_f moor_g moor_p moor_ts moor_jh moor_su moor_apt moor_conf moor_new moor_n",
+        "unset moor_bundle moor_sys moor_mark moor_f moor_g moor_p moor_ts moor_jh moor_su moor_apt moor_conf moor_new moor_n moor_pid moor_ours",
     ] {
         assert!(lines.iter().any(|l| l == want), "missing {want}\n{text}");
     }
@@ -145,7 +145,6 @@ fn the_script_runs_and_builds_the_environment() {
     let home = dir.path().join("home");
     std::fs::create_dir(&home).unwrap();
     let fake = fake_sudo(dir.path());
-    moor_testkit::write_host_guards(&fake).unwrap();
     let egress = moor_testkit::FakeEgress::start(&home, &fake).unwrap();
     let addr = ProxyAddr {
         egress_port: egress.port(),
@@ -330,6 +329,7 @@ fn fake_sudo(dir: &Path) -> PathBuf {
     std::fs::create_dir(&fake).unwrap();
     let sudo = fake.join("sudo");
     moor_testkit::write_executable(&sudo, "#!/bin/sh\nexit 1\n").unwrap();
+    moor_testkit::write_host_guards(&fake).unwrap();
     fake
 }
 

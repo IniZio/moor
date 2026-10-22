@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use crate::boxscript::quote;
 use crate::name::BoxPath;
+use crate::seam::agent_profile::ProxyAddr;
 use crate::seam::proc::Deadline;
 
 pub use egress::EGRESS_FAILED;
@@ -73,6 +74,19 @@ pub struct ProxyCtx<'a> {
     pub ca_pem: &'a str,
     /// The hosts the credential rules serve; only these go through the Proxy.
     pub hosts: &'a [String],
+}
+
+impl<'a> ProxyCtx<'a> {
+    /// What the exec environment builder needs from the Proxy at `addr`.
+    #[must_use]
+    pub fn of(addr: &'a ProxyAddr) -> Self {
+        Self {
+            box_port: addr.box_port,
+            egress_port: addr.egress_port,
+            ca_pem: &addr.ca_pem,
+            hosts: &addr.hosts,
+        }
+    }
 }
 
 /// What the environment is built from. Per-Box home, xcconfig and Box tag variables for Mac Boxes

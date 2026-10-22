@@ -156,8 +156,11 @@ impl Drop for FakeBox {
 /// Whether process `pid` runs. An exited process that no one reaped yet does not: the test
 /// namespace's init never reaps the orphans the fake tinyproxy leaves.
 fn running(pid: &str) -> bool {
-    std::fs::read_to_string(format!("/proc/{pid}/stat"))
-        .is_ok_and(|stat| stat.rsplit(") ").next().is_some_and(|rest| !rest.starts_with('Z')))
+    std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
+        stat.rsplit(") ")
+            .next()
+            .is_some_and(|rest| !rest.starts_with('Z'))
+    })
 }
 
 fn failure(reason: &str) -> String {
@@ -204,9 +207,10 @@ fn a_root_box_installs_tinyproxy_with_apt_without_sudo_or_proxy_variables() {
     assert!(!log.contains("sudo"), "{log}");
     let apt: Vec<&str> = log.lines().filter(|l| l.starts_with("apt-get")).collect();
     assert_eq!(apt.len(), 1, "{log}");
-    assert!(apt[0].contains("install tinyproxy-bin"), "{log}");
+    let install = apt.first().copied().unwrap_or_default();
+    assert!(install.contains("install tinyproxy-bin"), "{log}");
     assert!(
-        apt[0].ends_with("proxy="),
+        install.ends_with("proxy="),
         "apt saw a proxy variable: {log}"
     );
     assert_eq!(b.starts(), 1, "{log}");

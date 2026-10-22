@@ -23,19 +23,6 @@ pub struct ProxyAddr {
     pub hosts: Vec<String>,
 }
 
-impl ProxyAddr {
-    /// What the exec environment builder needs from this Proxy.
-    #[must_use]
-    pub fn ctx(&self) -> crate::exec_env::ProxyCtx<'_> {
-        crate::exec_env::ProxyCtx {
-            box_port: self.box_port,
-            egress_port: self.egress_port,
-            ca_pem: &self.ca_pem,
-            hosts: &self.hosts,
-        }
-    }
-}
-
 impl fmt::Debug for ProxyAddr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProxyAddr")

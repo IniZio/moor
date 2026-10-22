@@ -10,9 +10,11 @@ use std::time::Duration;
 
 use crate::write_executable;
 
-/// A fake `tinyproxy`: logs its argv to `$HOME/fake.log`, runs a placeholder process named
-/// `tinyproxy`, as the real daemon is, whose pid it writes to the config's `PidFile`, and records
-/// the start in `$HOME/fake-starts`.
+/// A fake `tinyproxy` that records each start.
+///
+/// It logs its argv to `$HOME/fake.log`, runs a placeholder process named `tinyproxy`, as the real
+/// daemon is, writes that pid to the config's `PidFile`, and records the start in
+/// `$HOME/fake-starts`.
 pub const FAKE_TINYPROXY: &str = r#"#!/bin/sh
 echo "tinyproxy $*" >>"$HOME/fake.log"
 pid=$(sed -n 's/^PidFile "\(.*\)"$/\1/p' "$2")
@@ -29,9 +31,10 @@ pub const HOST_GUARD: &str = "#!/bin/sh\n\
     echo \"a test ran $(basename \"$0\") $*; the host's own is never run\" >&2\n\
     exit 97\n";
 
-/// Writes [`HOST_GUARD`] as `sudo` and `apt-get` into `bin`. A test that runs a Box script with
-/// the host's `PATH` after its own `bin` calls this, so the script never reaches the host's tools.
-/// A fake the test already wrote under either name is kept.
+/// Writes [`HOST_GUARD`] as `sudo` and `apt-get` into `bin`.
+///
+/// A test that runs a Box script with the host's `PATH` after its own `bin` calls this, so the
+/// script never reaches the host's tools. A fake the test already wrote under either name is kept.
 pub fn write_host_guards(bin: &Path) -> io::Result<()> {
     std::fs::create_dir_all(bin)?;
     for name in ["sudo", "apt-get"] {

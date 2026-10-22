@@ -1,6 +1,8 @@
 //! Prelude lines that keep tinyproxy running on the Box loopback as the Box's egress proxy. It
 //! sends each credential host to the Proxy tunnel and dials every other host direct.
 
+use std::fmt::Write as _;
+
 /// The start of the line, after `moor: `, that the prelude prints to stderr when it stops the exec
 /// because the egress proxy could not be installed or started.
 pub const EGRESS_FAILED: &str = "the egress proxy could not start";
@@ -9,12 +11,18 @@ pub const EGRESS_FAILED: &str = "the egress proxy could not start";
 pub(super) const EGRESS_SHELL_VARS: &str =
     "moor_su moor_apt moor_conf moor_new moor_n moor_pid moor_ours";
 
-/// Box files under the Box user's home, as shell text that expands on the Box.
+/// The Box directory, under the Box user's home, that holds the files below; each is shell text
+/// that expands on the Box.
 const DIR: &str = "$HOME/.moor";
+/// The tinyproxy config.
 const CONF: &str = "$HOME/.moor/egress.conf";
+/// The pid file tinyproxy writes.
 const PID: &str = "$HOME/.moor/egress.pid";
+/// The file whose `flock` lets one command at a time install, configure and start tinyproxy.
 const LOCK: &str = "$HOME/.moor/egress.lock";
+/// The apt output of the last install.
 const INSTALL_LOG: &str = "$HOME/.moor/egress-install.log";
+/// What tinyproxy printed when it last started.
 const START_LOG: &str = "$HOME/.moor/egress-start.log";
 
 /// Proxy variables apt must not see, so the install goes direct.
@@ -46,7 +54,7 @@ pub(super) fn config(listen: u16, upstream: u16, hosts: &[String]) -> String {
     let mut out =
         format!("Port {listen}\nListen 127.0.0.1\nDisableViaHeader Yes\nLogLevel Critical\n");
     for host in hosts {
-        out.push_str(&format!("upstream http 127.0.0.1:{upstream} \"{host}\"\n"));
+        let _ = writeln!(out, "upstream http 127.0.0.1:{upstream} \"{host}\"");
     }
     out
 }
@@ -64,7 +72,10 @@ fn stop(reason: &str) -> String {
 /// start together never start two tinyproxies. The listener is ours only while the pid file names
 /// a live `tinyproxy`; a port held by anything else stops the exec.
 pub(super) fn lines(listen: u16, upstream: u16, hosts: &[String]) -> Vec<String> {
-    let unset: String = PROXY_VARS.iter().map(|v| format!(" -u {v}")).collect();
+    let unset = PROXY_VARS.iter().fold(String::new(), |mut out, v| {
+        let _ = write!(out, " -u {v}");
+        out
+    });
     let up = format!("grep -q ' 0100007F:{listen:04X} 00000000:0000 0A' /proc/net/tcp 2>/dev/null");
     let install = format!(
         "command -v tinyproxy >/dev/null 2>&1 || {{ command -v apt-get >/dev/null 2>&1 || {}; if [ \"$(id -u)\" = 0 ]; then moor_su=; else moor_su=\"sudo -n\"; fi; moor_apt=\"$moor_su env{unset} DEBIAN_FRONTEND=noninteractive apt-get -q -y -o DPkg::Lock::Timeout=300\"; {{ $moor_apt install tinyproxy-bin || {{ $moor_apt update && $moor_apt install tinyproxy-bin; }}; }} >\"{INSTALL_LOG}\" 2>&1 || {}; }}",

@@ -182,7 +182,7 @@ pub(crate) fn run_setup(
 }
 
 /// The exit code `result` carries, when the script exited.
-fn exit_code(result: &Result<ExecOutcome, Failure>) -> Option<i32> {
+const fn exit_code(result: &Result<ExecOutcome, Failure>) -> Option<i32> {
     match result {
         Ok(ExecOutcome::Exited { code }) => Some(*code),
         _ => None,

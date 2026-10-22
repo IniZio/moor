@@ -147,6 +147,14 @@ const SLOW_SSH: &str = "#!/bin/sh\n\
     case \"$*\" in *gate-*) touch \"$(dirname \"$0\")/started\"; sleep 1 ;; esac\n\
     for last; do :; done\nexec sh -c \"$last\"\n";
 
+/// The fake egress proxy on the port the store reserved for `id`, with the host guards beside it
+/// in the `bin` that [`SLOW_SSH`] puts first on the Box `PATH`.
+fn fake_egress(dir: &Path, store: &Store, id: BoxId) -> moor_testkit::FakeEgress {
+    let port = store.proxy(id).unwrap().unwrap().egress_port;
+    moor_testkit::write_host_guards(&dir.join("bin")).unwrap();
+    moor_testkit::FakeEgress::start_on(dir, &dir.join("bin"), port).unwrap()
+}
+
 /// A connection to `socket` that has said hello.
 fn greeted(socket: &Path) -> (UnixStream, BufReader<UnixStream>) {
     let mut stream = UnixStream::connect(socket).unwrap();
@@ -207,11 +215,7 @@ fn a_drain_lets_a_run_in_flight_finish_and_closes_idle_connections() {
         .unwrap();
     let id = ready_box(&store, UserId::new(operator));
     proxy_ready(&store, id);
-    let egress_port = store.proxy(id).unwrap().unwrap().egress_port;
-    moor_testkit::write_host_guards(&dir.path().join("bin")).unwrap();
-    let _egress =
-        moor_testkit::FakeEgress::start_on(dir.path(), &dir.path().join("bin"), egress_port)
-            .unwrap();
+    let _egress = fake_egress(dir.path(), &store, id);
     let (_idle, mut idle_read) = greeted(&socket);
     let (mut busy, mut busy_read) = greeted(&socket);
     let run = RunReq {

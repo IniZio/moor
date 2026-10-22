@@ -2,7 +2,7 @@
 
 use moor_core::config::proxy::{ResolvedRule, GITHUB_SECRET};
 use moor_core::config::BoxSettings;
-use moor_core::exec_env::{self, BoxCtx, ExecEnv, Purpose, RUN_DEADLINE};
+use moor_core::exec_env::{self, BoxCtx, ExecEnv, ProxyCtx, Purpose, RUN_DEADLINE};
 use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proc::Deadline;
@@ -117,7 +117,7 @@ pub(crate) fn prepare(
     let env = exec_env::merged_env(repo_env, rule_env);
     let ctx = BoxCtx {
         env: &env,
-        proxy: proxy.map(|p| p.addr.ctx()),
+        proxy: proxy.map(|p| ProxyCtx::of(&p.addr)),
         workdir: site.workdir,
         strip: &strip,
     };
