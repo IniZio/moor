@@ -14,14 +14,14 @@ use crate::testing::clock::FakeClock;
 use crate::testing::rng::FakeRng;
 
 /// Exports a `PATH` whose `hostguard` entry shadows the host's `sudo` and `apt-get`, as a real
-/// ssh session exports the Box's `PATH`. Hands an `ssh -G` read to the real ssh, recording its argv in `opts.<n>`. Records any other
+/// ssh session exports the Box's `PATH`, and a `HOME` of `home`. Hands an `ssh -G` read to the real ssh, recording its argv in `opts.<n>`. Records any other
 /// argv NUL-separated in `ssh.<n>`, then runs its last word, the remote command, under sh with
 /// stdin passed through. A `drop` file makes it lose the connection: it exits 255
 /// and prints nothing, as a call does whose shared master lost the network. A `cut` file holding
 /// a byte count makes it lose the connection after that much stdout.
 const FAKE_SSH: &str = r#"#!/bin/sh
 d=$(dirname "$0")
-export PATH="$d/hostguard:/usr/bin:/bin"
+export PATH="$d/hostguard:/usr/bin:/bin" HOME="$d/home"
 if test "$1" = -G; then
   printf '%s\0' "$@" > "$d/opts.$(ls "$d" | grep -c '^opts\.')"
   exec /usr/bin/ssh "$@"
@@ -75,6 +75,7 @@ pub(in crate::adapters::crabbox) fn lab() -> Lab {
     let dir = tempfile::tempdir().unwrap();
     let bin = dir.path().join("bin");
     fs::create_dir_all(bin.join("boxtmp")).unwrap();
+    fs::create_dir_all(bin.join("home")).unwrap();
     moor_testkit::write_host_guards(&bin.join("hostguard")).unwrap();
     for (name, text) in [("ssh", FAKE_SSH), ("crabbox", FAKE_CRABBOX)] {
         moor_testkit::write_executable(&bin.join(name), text).unwrap();
