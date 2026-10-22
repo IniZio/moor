@@ -198,8 +198,8 @@ fn settle_start(db: &Db, fx: &mut Fx<'_>, row: &SlackBox, attempt: Attempt) -> b
     }
 }
 
-/// Sends at most one `show` and one `start` for `row`, so each attempt ends within the
-/// client's timeouts.
+/// Sends at most one `show` and one `start` for `row`. Each call may redial a restarting
+/// controller for up to the client's redial budget.
 fn ask(fx: &mut Fx<'_>, row: &SlackBox, attempt: Attempt) -> Outcome {
     if matches!(attempt, Attempt::Again) {
         match (fx.call)(show_request(row)).map(|reply| shown(reply, &row.box_name)) {

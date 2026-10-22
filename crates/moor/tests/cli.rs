@@ -15,6 +15,8 @@ mod controller;
 mod events;
 #[path = "cli/inherited.rs"]
 mod inherited;
+#[path = "cli/redial_e2e.rs"]
+mod redial_e2e;
 #[path = "cli/run_output.rs"]
 mod run_output;
 #[path = "cli/ssh_controller.rs"]

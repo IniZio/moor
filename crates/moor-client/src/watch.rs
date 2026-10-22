@@ -8,7 +8,7 @@ use std::time::Duration;
 use moor_core::controller::{ClientFrame, FrameErrorKind, ServerFrame, WatchFilter};
 use moor_core::{BoxId, SessionId};
 
-use super::{redial, unexpected, Attempt, Client, ClientError, Conn};
+use super::{redial, unexpected, Attempt, Client, ClientError, Conn, WallClock};
 
 /// One stored event delivered by a watch.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,9 +71,12 @@ impl Watch {
         filter: WatchFilter,
         follow: bool,
     ) -> Result<Self, ClientError> {
-        let conn = match dial(&client, since, &filter, follow) {
+        let dialed = client
+            .connect()
+            .and_then(|stream| dial(&client, stream, since, &filter, follow));
+        let conn = match dialed {
             Attempt::Done(conn) => conn,
-            Attempt::Unrun(e) | Attempt::Failed(e) => return Err(e),
+            Attempt::Refused(e) | Attempt::Unrun(e) | Attempt::Failed(e) => return Err(e),
         };
         let stop = WatchStop::new(conn.writer.try_clone()?);
         Ok(Self {
@@ -94,7 +97,9 @@ impl Watch {
         self.stop.clone()
     }
 
-    /// Replaces the connection after `restarting`; `Ok(false)` when stopped meanwhile.
+    /// Replaces the connection after `restarting`; `Ok(false)` when stopped meanwhile. Each
+    /// new connection is handed to the stop handle before its hello, so a stop also ends a
+    /// dial that waits on a held socket.
     fn resume(&mut self, restarting: ClientError) -> Result<bool, ClientError> {
         let mut first = Some(restarting);
         let (client, filter, follow, cursor, stop) = (
@@ -106,21 +111,22 @@ impl Watch {
         );
         let redialed = redial(
             &client.redial,
+            &WallClock,
             || {
-                first
-                    .take()
-                    .map_or_else(|| dial(client, cursor, filter, follow), Attempt::Unrun)
+                let Some(restarting) = first.take() else {
+                    return client
+                        .connect()
+                        .and_then(|stream| stop.admit(stream))
+                        .and_then(|stream| dial(client, stream, cursor, filter, follow));
+                };
+                Attempt::Unrun(restarting)
             },
             |pause, _| stop.sleep(pause),
         );
         if stop.stopped() {
             return Ok(false);
         }
-        let conn = redialed?;
-        if !stop.swap(&conn)? {
-            return Ok(false);
-        }
-        self.conn = conn;
+        self.conn = redialed?;
         Ok(true)
     }
 
@@ -202,30 +208,29 @@ impl Iterator for Watch {
     }
 }
 
-/// Opens a connection and sends the watch on it.
+/// Completes the hello on `stream` and sends the watch on it.
 fn dial(
     client: &Client,
+    stream: UnixStream,
     since: i64,
     filter: &WatchFilter,
     follow: bool,
 ) -> Attempt<Conn, ClientError> {
-    let mut conn = match client.open() {
-        Attempt::Done(conn) => conn,
-        other => return other,
-    };
-    let frame = ClientFrame::Watch {
-        since,
-        boxes: filter.boxes.clone(),
-        kinds: filter.kinds.clone(),
-        follow,
-    };
-    match conn
-        .send(&frame)
-        .and_then(|()| Ok(conn.writer.set_read_timeout(None)?))
-    {
-        Ok(()) => Attempt::Done(conn),
-        Err(e) => Attempt::Failed(e),
-    }
+    client.hello(stream).and_then(|mut conn| {
+        let frame = ClientFrame::Watch {
+            since,
+            boxes: filter.boxes.clone(),
+            kinds: filter.kinds.clone(),
+            follow,
+        };
+        match conn
+            .send(&frame)
+            .and_then(|()| Ok(conn.writer.set_read_timeout(None)?))
+        {
+            Ok(()) => Attempt::Done(conn),
+            Err(e) => Attempt::Failed(e),
+        }
+    })
 }
 
 /// Ends a [`Watch`] from another thread, including one between connections.
@@ -276,29 +281,31 @@ impl WatchStop {
         self.lock().stopped
     }
 
-    /// Sleeps `pause` unless stopped first; true when not stopped.
-    fn sleep(&self, pause: Duration) -> bool {
-        let (state, _) = self
+    /// Sleeps `pause`, or less when stopped meanwhile.
+    fn sleep(&self, pause: Duration) {
+        let _ = self
             .shared
             .1
             .wait_timeout_while(self.lock(), pause, |s| !s.stopped)
             .unwrap_or_else(PoisonError::into_inner);
-        let stopped = state.stopped;
-        drop(state);
-        !stopped
     }
 
-    /// Points the handle at `conn`; false, with `conn` shut, when stopped already.
-    fn swap(&self, conn: &Conn) -> Result<bool, ClientError> {
-        let stream = conn.writer.try_clone()?;
+    /// Points the handle at `stream` and hands it back; once stopped, shuts it and fails the
+    /// dial. This is the one check that ends a resume, so a stop that lands during a pause
+    /// or a dial is never missed.
+    fn admit(&self, stream: UnixStream) -> Attempt<UnixStream, ClientError> {
+        let handle = match stream.try_clone() {
+            Ok(handle) => handle,
+            Err(e) => return Attempt::Failed(e.into()),
+        };
         let mut state = self.lock();
         if state.stopped {
             drop(state);
-            let _ = conn.writer.shutdown(Shutdown::Both);
-            return Ok(false);
+            let _ = stream.shutdown(Shutdown::Both);
+            return Attempt::Failed(ClientError::Protocol("the watch was stopped".to_owned()));
         }
-        state.stream = stream;
+        state.stream = handle;
         drop(state);
-        Ok(true)
+        Attempt::Done(stream)
     }
 }

@@ -358,6 +358,45 @@ fn a_passed_socket_that_is_not_a_listening_stream_stops_the_start() {
     assert!(stderr.contains("not a listening stream socket"), "{stderr}");
 }
 
+/// An owner-only socket of `kind` bound at `path`, listening when `listening` is set.
+fn bound(path: &Path, kind: rustix::net::SocketType, listening: bool) -> OwnedFd {
+    use rustix::net::{bind, listen, socket_with, AddressFamily, SocketAddrUnix, SocketFlags};
+    // Close-on-exec, as std makes its sockets, so a controller another test spawns meanwhile
+    // does not inherit it.
+    let fd = socket_with(AddressFamily::UNIX, kind, SocketFlags::CLOEXEC, None).unwrap();
+    bind(&fd, &SocketAddrUnix::new(path).unwrap()).unwrap();
+    if listening {
+        listen(&fd, 8).unwrap();
+    }
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+    fd
+}
+
+#[test]
+fn a_passed_listening_seqpacket_socket_or_a_stream_that_does_not_listen_stops_the_start() {
+    use rustix::net::SocketType;
+    for (kind, listening) in [(SocketType::SEQPACKET, true), (SocketType::STREAM, false)] {
+        let mut holder = Holder::new();
+        fs::remove_file(&holder.socket).unwrap();
+        *holder.listeners.first_mut().unwrap() = bound(&holder.socket, kind, listening);
+        let stderr = refused(&holder, None, "2", NAMES);
+        assert!(
+            stderr.contains("not a listening stream socket"),
+            "{kind:?} listening={listening}: {stderr}"
+        );
+    }
+}
+
+#[test]
+fn listen_fdnames_naming_more_sockets_than_listen_fds_stops_the_start() {
+    let holder = Holder::new();
+    let stderr = refused(&holder, None, "1", NAMES);
+    assert!(
+        stderr.contains("LISTEN_FDNAMES names 2 sockets but LISTEN_FDS passes 1"),
+        "{stderr}"
+    );
+}
+
 #[test]
 fn sockets_passed_to_another_pid_are_ignored_and_the_controller_binds_its_own() {
     let holder = Holder::new();

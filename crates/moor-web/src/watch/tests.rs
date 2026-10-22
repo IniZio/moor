@@ -31,6 +31,8 @@ struct Fake {
     watches: Arc<Mutex<Vec<ClientFrame>>>,
     /// Cursor after which the next connection is dropped, taken once.
     cut: Arc<Mutex<Option<i64>>>,
+    /// Cursor after which the next connection ends with `restarting`, taken once.
+    restart: Arc<Mutex<Option<i64>>>,
     /// Connections the browser side has closed, seen as EOF.
     closed: Arc<AtomicUsize>,
 }
@@ -80,6 +82,7 @@ fn converse(fake: &Fake, stream: UnixStream) {
     };
     fake.watches.lock().unwrap().push(frame);
     let cut = fake.cut.lock().unwrap().take();
+    let restart = fake.restart.lock().unwrap().take();
     let gone = Arc::new(AtomicBool::new(false));
     let (flag, closed) = (Arc::clone(&gone), Arc::clone(&fake.closed));
     std::thread::spawn(move || {
@@ -94,7 +97,13 @@ fn converse(fake: &Fake, stream: UnixStream) {
             if *cursor > since && writeln!(writer, "{line}").is_err() {
                 return;
             }
-            if cut.is_some_and(|c| *cursor >= c) {
+            if restart.is_some_and(|c| *cursor >= c) {
+                let _ = writeln!(
+                    writer,
+                    r#"{{"frame":"error","kind":"restarting","message":"draining"}}"#
+                );
+            }
+            if cut.or(restart).is_some_and(|c| *cursor >= c) {
                 let _ = writer.shutdown(std::net::Shutdown::Both);
                 return;
             }
@@ -341,6 +350,37 @@ fn stream_resumes_after_the_controller_drops() {
     assert_eq!(read_until(&mut r, "id:"), "id: 2\n");
     fake.push_event(3);
     assert_eq!(read_until(&mut r, "id:"), "id: 3\n");
+    let watches = fake.watches.lock().unwrap().clone();
+    assert_eq!(watches.len(), 2);
+    assert!(matches!(watches[1], ClientFrame::Watch { since: 2, .. }));
+}
+
+#[test]
+fn stream_crosses_a_restarting_controller_with_no_error_or_repeat() {
+    let dir = tempfile::tempdir().unwrap();
+    let (fake, client) = fake_client(&dir);
+    fake.push_event(1);
+    fake.push_event(2);
+    *fake.restart.lock().unwrap() = Some(2);
+    let web = web(&dir, client, LONG);
+    let mut r = open(&web, "/events", &[]);
+    assert_eq!(read_until(&mut r, "id:"), "id: 1\n");
+    assert_eq!(read_until(&mut r, "id:"), "id: 2\n");
+    fake.push_event(3);
+    let mut between = Vec::new();
+    loop {
+        let mut line = String::new();
+        assert_ne!(r.read_line(&mut line).unwrap(), 0, "stream ended");
+        if line.starts_with("id:") {
+            assert_eq!(line, "id: 3\n");
+            break;
+        }
+        between.push(line);
+    }
+    assert!(
+        !between.iter().any(|l| l.starts_with("event: error")),
+        "{between:?}"
+    );
     let watches = fake.watches.lock().unwrap().clone();
     assert_eq!(watches.len(), 2);
     assert!(matches!(watches[1], ClientFrame::Watch { since: 2, .. }));

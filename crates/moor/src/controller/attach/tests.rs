@@ -74,3 +74,21 @@ fn server_sees_eof_after_input_ends() {
     assert_eq!(code, 0);
     assert_eq!(server.join().unwrap(), b"abc\n");
 }
+
+#[test]
+fn a_refused_connect_exits_with_the_code_a_client_dials_again_on() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("stale.sock");
+    drop(UnixListener::bind(&sock).unwrap());
+    let mut err = Vec::new();
+    let code = attach(
+        &env(),
+        Some(&sock),
+        Cursor::new(Vec::new()),
+        Vec::new(),
+        &mut err,
+    );
+    assert_eq!(code, ATTACH_REFUSED_EXIT);
+    let text = String::from_utf8(err).unwrap();
+    assert!(text.contains("is unreachable"), "{text}");
+}

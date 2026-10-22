@@ -1,6 +1,6 @@
 //! The CLI routes every verb through the controller when one is configured.
 
-use std::os::unix::net::UnixStream;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
@@ -207,9 +207,10 @@ fn exit_codes_match_local_mode() {
 }
 
 #[test]
-fn a_request_sent_before_the_controller_listens_is_answered_once_it_does() {
+fn a_request_sent_to_a_stale_socket_is_answered_once_a_controller_binds_it() {
     let root = fresh_dir("via-late");
     let socket = root.join("c.sock");
+    drop(UnixListener::bind(&socket).unwrap());
     let client = Command::new(env!("CARGO_BIN_EXE_moor"))
         .env_clear()
         .env("PATH", "/usr/bin:/bin")
