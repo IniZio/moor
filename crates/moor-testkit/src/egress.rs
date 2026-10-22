@@ -1,7 +1,10 @@
 //! A fake egress proxy for tests that run the Box prelude under a real `sh`.
 
+use std::collections::hash_map::RandomState;
+use std::hash::{BuildHasher as _, Hasher as _};
 use std::io;
 use std::net::{Ipv4Addr, SocketAddr, TcpListener};
+use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -61,6 +64,9 @@ pub struct FakeEgress {
     port: u16,
     /// Holds `port` against other binds and outgoing connections for as long as this lives.
     _held: Socket,
+    /// Claims `port` among the fakes that [`FakeEgress::start_in`] places, for as long as this lives.
+    #[allow(dead_code, reason = "held for its lifetime, never read")]
+    claim: Option<Socket>,
     /// The listener while the port is open.
     open: Arc<Mutex<Option<TcpListener>>>,
     /// Tells the watcher to stop.
@@ -106,10 +112,40 @@ impl FakeEgress {
             home: home.to_path_buf(),
             port,
             _held: held,
+            claim: None,
             open,
             done,
             watcher: Some(watcher),
         })
+    }
+
+    /// [`Self::start_on`] on a port of `ports` that no other fake on the host holds.
+    ///
+    /// Each fake claims its port on `127.0.0.2`, without `SO_REUSEADDR`, so two test processes that
+    /// start together never take the same one.
+    pub fn start_in(home: &Path, bin: &Path, ports: RangeInclusive<u16>) -> io::Result<Self> {
+        let (first, last) = (u32::from(*ports.start()), u32::from(*ports.end()));
+        let span = last - first + 1;
+        let from = RandomState::new().build_hasher().finish() % u64::from(span);
+        for step in 0..span {
+            let port = u16::try_from(first + (u32::try_from(from).unwrap_or(0) + step) % span)
+                .unwrap_or_else(|_| *ports.start());
+            let claim = Socket::new(Domain::IPV4, Type::STREAM, None)?;
+            if claim
+                .bind(&SocketAddr::from((Ipv4Addr::new(127, 0, 0, 2), port)).into())
+                .is_err()
+            {
+                continue;
+            }
+            if let Ok(mut fake) = Self::start_on(home, bin, port) {
+                fake.claim = Some(claim);
+                return Ok(fake);
+            }
+        }
+        Err(io::Error::new(
+            io::ErrorKind::AddrInUse,
+            "no free port in the range",
+        ))
     }
 
     /// The loopback port the prelude must name as the egress port.
@@ -158,6 +194,15 @@ mod tests {
         let other = Socket::new(Domain::IPV4, Type::STREAM, None)?;
         other.bind(&SocketAddr::from((Ipv4Addr::LOCALHOST, port)).into())?;
         Ok(other)
+    }
+
+    #[test]
+    fn two_fakes_started_in_one_range_hold_different_ports() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = FakeEgress::start_in(dir.path(), dir.path(), 41000..=41001).unwrap();
+        let b = FakeEgress::start_in(dir.path(), dir.path(), 41000..=41001).unwrap();
+        assert_ne!(a.port(), b.port());
+        assert!(FakeEgress::start_in(dir.path(), dir.path(), 41000..=41001).is_err());
     }
 
     #[test]
