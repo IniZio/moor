@@ -14,9 +14,9 @@ use moor_core::secret::Secret;
 use serde_json::json;
 use tungstenite::Message;
 
+use super::parse::parse_mention;
 use super::{
-    next_delay, parse_mention, run, session, session_tracked, Inbound, Intake, Kept, Mention,
-    NotKept, SocketError,
+    next_delay, run, session, session_tracked, Inbound, Intake, Kept, Mention, NotKept, SocketError,
 };
 use super::{AfterAck, Click, Slash, TokenSubmission};
 use crate::api::Api;

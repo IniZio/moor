@@ -4,11 +4,10 @@ use std::ffi::OsString;
 use std::fs::DirBuilder;
 use std::os::unix::fs::DirBuilderExt as _;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
-use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::thread;
 
 use moor_client::Client;
 use moor_core::secret::Secret;
@@ -27,6 +26,9 @@ use crate::socket::{self, AfterAck, Inbound, Intake, Kept, NotKept};
 use crate::turns::Turns;
 use crate::worker::{self, Fx, Job};
 use crate::{dial, slash, Log};
+
+mod stop;
+use stop::{finish, sleep_until_stopped};
 
 /// What the daemon needs from its command line and environment.
 #[derive(Debug, Clone)]
@@ -136,34 +138,6 @@ pub fn run(settings: &Settings, log: Log) -> Result<(), String> {
     thread::spawn(move || feed.run(&feed_rx));
     thread::spawn(move || post(&wake_rx));
     finish(&settings.stop, socket, worker_thread)
-}
-
-/// Waits for the Socket Mode thread to end. When that was a stop, waits for the worker to
-/// finish its queue and returns `Ok`; otherwise the worker stopped taking mentions.
-fn finish(
-    stopping: &AtomicBool,
-    intake: JoinHandle<()>,
-    jobs: JoinHandle<()>,
-) -> Result<(), String> {
-    intake
-        .join()
-        .map_err(|_| "the Socket Mode thread panicked".to_owned())?;
-    if !stopping.load(Ordering::SeqCst) {
-        return Err("the worker stopped taking mentions".to_owned());
-    }
-    jobs.join()
-        .map_err(|_| "the worker thread panicked".to_owned())
-}
-
-/// Sleeps for `total`, or until `stop` is set.
-fn sleep_until_stopped(stop: &AtomicBool, total: Duration) {
-    const SLICE: Duration = Duration::from_millis(100);
-    let mut left = total;
-    while !left.is_zero() && !stop.load(Ordering::SeqCst) {
-        let nap = left.min(SLICE);
-        thread::sleep(nap);
-        left -= nap;
-    }
 }
 
 /// Reads the config and both token files, and opens `slack.db`, so a bad file stops startup.

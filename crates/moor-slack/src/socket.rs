@@ -10,16 +10,16 @@ use std::time::Duration;
 use moor_core::secret::Secret;
 use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, ClientConnection, RootCertStore, StreamOwned};
-use serde_json::{json, Value};
 use tungstenite::http::Uri;
 use tungstenite::{client, Message, WebSocket};
 
 use super::api::Api;
 
+mod envelope;
 mod items;
 mod parse;
+use envelope::{handle_envelope, Flow};
 pub(super) use items::{AfterAck, Kept, Slash, TokenSubmission};
-use parse::{parse_click, parse_mention, parse_slash, parse_submission};
 
 /// First wait after a failed or finished connection.
 const MIN_BACKOFF: Duration = Duration::from_secs(1);
@@ -166,18 +166,6 @@ impl Write for Stream {
     }
 }
 
-/// What one envelope asks the read loop to do next.
-enum Flow {
-    /// Keep reading.
-    Continue,
-    /// Slack greeted us; the connection is healthy.
-    Hello,
-    /// Slack asked us to reconnect.
-    Disconnect,
-    /// The daemon is stopping; the envelope was kept but not acked.
-    Stop,
-}
-
 /// Reads envelopes from one connection until Slack disconnects or the socket closes.
 #[cfg(test)]
 pub(super) fn session(url: &str, intake: &dyn Intake) -> Result<(), SocketError> {
@@ -270,70 +258,6 @@ fn flush(ws: &mut WebSocket<Stream>) -> Result<(), SocketError> {
         Ok(()) | Err(tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed) => {
             Ok(())
         }
-        Err(tungstenite::Error::Io(e)) if is_timeout(&e) => Ok(()),
-        Err(e) => Err(SocketError::Io(e.to_string())),
-    }
-}
-
-/// Hands a mention or click in one JSON envelope to `intake`, then acknowledges the envelope.
-/// An item the intake could not keep gets no ack, so Slack sends it again; neither does one
-/// that was kept after `stop` was set.
-fn handle_envelope(
-    text: &str,
-    ws: &mut WebSocket<Stream>,
-    intake: &dyn Intake,
-    stop: &AtomicBool,
-) -> Result<Flow, SocketError> {
-    let Ok(envelope) = serde_json::from_str::<Value>(text) else {
-        return Ok(Flow::Continue);
-    };
-    let (flow, item) = match envelope.get("type").and_then(Value::as_str) {
-        Some("hello") => (Flow::Hello, None),
-        Some("disconnect") => (Flow::Disconnect, None),
-        Some("events_api") => (
-            Flow::Continue,
-            parse_mention(&envelope).map(Inbound::Mention),
-        ),
-        Some("interactive") => (
-            Flow::Continue,
-            parse_click(&envelope)
-                .map(Inbound::Click)
-                .or_else(|| parse_submission(&envelope).map(Inbound::Submission)),
-        ),
-        Some("slash_commands") => (Flow::Continue, parse_slash(&envelope).map(Inbound::Slash)),
-        _ => (Flow::Continue, None),
-    };
-    match item.map_or_else(|| Ok(Kept::default()), |item| intake.take(item)) {
-        Ok(_) if stop.load(Ordering::SeqCst) => Ok(Flow::Stop),
-        Ok(kept) => {
-            ack(ws, &envelope, kept.ack)?;
-            if let Some(then) = kept.then {
-                flush(ws)?;
-                intake.after_ack(then);
-            }
-            Ok(flow)
-        }
-        Err(NotKept::Failed) => Ok(flow),
-        Err(NotKept::Gone) => Err(SocketError::ReceiverGone),
-    }
-}
-
-/// Sends the ack for `envelope`, with `payload` when there is one, when it carries an
-/// envelope id.
-fn ack(
-    ws: &mut WebSocket<Stream>,
-    envelope: &Value,
-    payload: Option<Value>,
-) -> Result<(), SocketError> {
-    let Some(id) = envelope.get("envelope_id").and_then(Value::as_str) else {
-        return Ok(());
-    };
-    let frame = payload.map_or_else(
-        || json!({"envelope_id": id}),
-        |payload| json!({"envelope_id": id, "payload": payload}),
-    );
-    match ws.send(Message::text(frame.to_string())) {
-        Ok(()) => Ok(()),
         Err(tungstenite::Error::Io(e)) if is_timeout(&e) => Ok(()),
         Err(e) => Err(SocketError::Io(e.to_string())),
     }
