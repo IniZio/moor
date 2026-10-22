@@ -104,7 +104,7 @@ fn client_gets_a_reply_to_hello() {
     let running = start(&env(tmp.path()), &cfg).expect("start");
     let socket = running.socket.clone();
     let sink: super::Sink = Arc::new(std::sync::Mutex::new(Buf::default()));
-    std::thread::spawn(move || running.accept_loop(&sink));
+    running.serve_in_background(sink);
     let mut stream = UnixStream::connect(&socket).expect("connect");
     stream
         .write_all(b"{\"frame\":\"hello\",\"protocol\":1}\n")

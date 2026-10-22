@@ -61,6 +61,16 @@ fn settle_interval_parses_and_defaults_to_five_seconds() {
 }
 
 #[test]
+fn drain_timeout_parses_and_defaults_to_ten_minutes() {
+    let c = parse_controller("c.yaml", "drain_timeout_secs: 0\n").unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(c.drain_timeout(), std::time::Duration::ZERO);
+    assert_eq!(
+        ControllerConfig::default().drain_timeout(),
+        std::time::Duration::from_secs(600)
+    );
+}
+
+#[test]
 fn zero_settle_interval_names_key() {
     let e = err("settle_every_secs: 0\n");
     assert_eq!(e.path, "settle_every_secs");

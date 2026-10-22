@@ -135,9 +135,27 @@ next Box after it is pushed.
 | `socket` | path | `<state dir>/controller.sock` | The controller socket. `~` is allowed. |
 | `state_dir` | path | the same state directory as the CLI | The state directory. `~` is allowed. |
 | `settle_every_secs` | integer, above 0 | 5 | Seconds between passes that update each open Box's agent state. |
+| `drain_timeout_secs` | integer | 600 | Seconds a SIGTERM waits for in-flight requests. See [Stopping the controller](#stopping-the-controller). |
 | `fronts` | map | empty | Fronts that each get their own socket. |
 
 The controller refuses a config that has a `web`, `slack` or `repos` key.
+
+### Stopping the controller
+
+SIGTERM drains the controller, then it exits 0:
+
+1. It stops accepting connections. A client that connects now waits in the
+   socket's backlog and fails when the controller exits.
+2. A connection that is waiting for its next request is closed.
+3. A `wait`, `wait-events` or `watch` gets an error frame of kind
+   `restarting` and is closed. Send it again once a controller listens.
+4. Any other request in flight, such as a `start`, `close` or `run`, runs
+   to its end. The controller waits up to `drain_timeout_secs` for them,
+   then exits anyway. A `start` cut off this way leaves its Box to `moor close`.
+
+A command that `moor run` streams keeps running through the drain. SIGINT
+does not drain: it stops the controller at once. Under a service manager,
+set the stop timeout above `drain_timeout_secs`.
 
 ### `fronts`
 

@@ -39,7 +39,7 @@ impl Served {
         let main = running.socket.clone();
         let log = Buf::default();
         let sink: Sink = Arc::new(Mutex::new(log.clone()));
-        std::thread::spawn(move || running.accept_loop(&sink));
+        running.serve_in_background(sink);
         Self { dir, main, log }
     }
 

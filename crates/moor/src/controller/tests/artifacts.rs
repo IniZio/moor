@@ -88,7 +88,7 @@ fn fixture() -> Fixture {
     let running = start(&env, &cfg).expect("start");
     let socket = running.socket.clone();
     let sink: Sink = Arc::new(Mutex::new(Quiet));
-    std::thread::spawn(move || running.accept_loop(&sink));
+    running.serve_in_background(sink);
     let mut write = UnixStream::connect(&socket).expect("connect");
     let hello = json!({"frame": "hello", "protocol": PROTOCOL});
     writeln!(write, "{hello}").expect("hello");

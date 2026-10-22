@@ -2,6 +2,7 @@
 
 pub mod attach;
 mod conn;
+mod drain;
 mod hangup;
 mod local;
 mod peer;
@@ -14,14 +15,15 @@ pub use local::watch_local;
 use std::fs::{self, File, TryLockError};
 use std::io::{BufReader, Write};
 use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
-use std::os::unix::net::UnixListener;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::thread;
 use std::time::Duration;
 
 use moor_core::config::parse_controller;
 use moor_core::ErrorKind;
+
+use drain::{Drain, Handler};
 
 use crate::env::{Env, CONTROLLER_LOCK};
 use crate::vault::{Vault, VAULT_KEY};
@@ -36,26 +38,34 @@ const USAGE: u8 = 2;
 /// Exit code for a state dir at another schema version, as for a refused CLI command.
 const REFUSED: u8 = 3;
 
-/// Serves the controller until killed; returns the process exit code.
+/// Serves the controller until SIGTERM, then drains; returns the process exit code.
 ///
-/// Setup failures and the "already running" notice go to `stderr`.
+/// The drain stops accepting, gives in-flight requests up to `drain_timeout_secs` to finish,
+/// answers waits and watches with a `restarting` frame, and exits 0. Setup failures and the
+/// "already running" notice go to `stderr`.
 pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u8 {
     let sink: Sink = Arc::new(Mutex::new(stderr));
-    match start(env, config) {
-        Ok(running) => {
-            log(&sink, &format!("listening on {}", running.socket.display()));
-            for line in Moor::reconcile_proxies(&running.env) {
-                log(&sink, &format!("proxy: {line}"));
-            }
-            settle::spawn(&running.env, running.settle_every, &sink);
-            running.accept_loop(&sink);
-            0
-        }
+    let running = match start(env, config) {
+        Ok(running) => running,
         Err(stop) => {
             log(&sink, &stop.message);
-            stop.code
+            return stop.code;
         }
+    };
+    let wake = match drain::on_sigterm() {
+        Ok(wake) => wake,
+        Err(e) => {
+            log(&sink, &format!("cannot handle SIGTERM: {e}"));
+            return 1;
+        }
+    };
+    log(&sink, &format!("listening on {}", running.socket.display()));
+    for line in Moor::reconcile_proxies(&running.env) {
+        log(&sink, &format!("proxy: {line}"));
     }
+    settle::spawn(&running.env, running.settle_every, &sink);
+    running.serve_until(&wake, &sink);
+    0
 }
 
 /// Why the controller did not start.
@@ -85,6 +95,8 @@ struct Running {
     env: Arc<Env>,
     /// Time between settle passes.
     settle_every: Duration,
+    /// How long a drain waits for in-flight requests.
+    drain_timeout: Duration,
 }
 
 /// Loads `config`, takes the instance lock and binds the socket.
@@ -137,6 +149,7 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         _state_lock: state_lock,
         env: Arc::new(env),
         settle_every: cfg.settle_every(),
+        drain_timeout: cfg.drain_timeout(),
     })
 }
 
@@ -234,68 +247,55 @@ fn bind(socket: &Path) -> std::io::Result<UnixListener> {
 }
 
 impl Running {
-    /// Serves each connection on its own thread, each front socket on its own accept thread;
-    /// never returns.
-    fn accept_loop(&self, sink: &Sink) {
-        for (ns, listener) in &self.fronts {
-            let Ok(listener) = listener.try_clone() else {
-                log(sink, &format!("front {ns}: cannot share its socket"));
-                continue;
-            };
-            let this = self.serving(Some(ns.clone()));
-            let sink = Arc::clone(sink);
-            thread::spawn(move || this.accept(&listener, &sink));
+    /// Serves the controller socket and each front socket until `wake` turns readable, then
+    /// drains; the locks are held until it returns.
+    fn serve_until(self, wake: &UnixStream, sink: &Sink) {
+        let mut listeners = vec![(self.listener, handler(&self.env, &self.vault, None, sink))];
+        for (ns, listener) in self.fronts {
+            let handler = handler(&self.env, &self.vault, Some(ns), sink);
+            listeners.push((listener, handler));
         }
-        self.serving(None).accept(&self.listener, sink);
-    }
-
-    /// What one listener's connections share; `front` names the front whose socket it is.
-    fn serving(&self, front: Option<String>) -> Serving {
-        Serving {
-            env: Arc::clone(&self.env),
-            vault: Arc::clone(&self.vault),
-            front,
+        let drain = Arc::new(Drain::default());
+        match drain::serve_until(&listeners, wake, &drain, self.drain_timeout, sink) {
+            0 => log(sink, "drained; exiting"),
+            left => log(
+                sink,
+                &format!("drain timed out; exiting with {left} connections still in flight"),
+            ),
         }
     }
 }
 
-/// What every connection on one listener shares.
-struct Serving {
-    /// Environment shared by every connection.
-    env: Arc<Env>,
-    /// The vault key.
-    vault: Arc<Vault>,
-    /// The front whose socket this is; none for the controller socket.
-    front: Option<String>,
+#[cfg(test)]
+impl Running {
+    /// Serves on a thread that never drains.
+    fn serve_in_background(self, sink: Sink) {
+        std::thread::spawn(move || {
+            let (wake, _never) = UnixStream::pair().expect("wake pair");
+            self.serve_until(&wake, &sink);
+        });
+    }
 }
 
-impl Serving {
-    /// Serves each connection on `listener` on its own thread; never returns.
-    fn accept(&self, listener: &UnixListener, sink: &Sink) {
-        for stream in listener.incoming() {
-            let stream = match stream {
-                Ok(s) => s,
-                Err(e) => {
-                    log(sink, &format!("accept failed: {e}"));
-                    continue;
-                }
-            };
-            let peer = conn::Peer {
-                caller: self.front.clone().map_or_else(
-                    || peer::local_caller(&stream, rustix::process::geteuid().as_raw()),
-                    |ns| Ok(moor_core::user::Caller::Front(ns)),
-                ),
-                vault: Arc::clone(&self.vault),
-                hangup: hangup::Hangup::of(&stream).ok(),
-            };
-            let env = Arc::clone(&self.env);
-            let sink = Arc::clone(sink);
-            thread::spawn(move || match stream.try_clone() {
-                Ok(read) => conn::handle(BufReader::new(read), stream, &env, &peer),
-                Err(e) => log(&sink, &format!("connection setup failed: {e}")),
-            });
+/// Serves one connection on a listener; `front` names the front whose socket it is, none for
+/// the controller socket.
+fn handler(env: &Arc<Env>, vault: &Arc<Vault>, front: Option<String>, sink: &Sink) -> Handler {
+    let (env, vault, sink) = (Arc::clone(env), Arc::clone(vault), Arc::clone(sink));
+    Arc::new(move |stream: UnixStream, drain: &Arc<Drain>| {
+        let peer = conn::Peer {
+            caller: front.clone().map_or_else(
+                || peer::local_caller(&stream, rustix::process::geteuid().as_raw()),
+                |ns| Ok(moor_core::user::Caller::Front(ns)),
+            ),
+            vault: Arc::clone(&vault),
+            hangup: hangup::Hangup::of(&stream).ok(),
+            drain: Arc::clone(drain),
+        };
+        match stream.try_clone() {
+            Ok(read) => conn::handle(BufReader::new(read), stream, &env, &peer),
+            Err(e) => log(&sink, &format!("connection setup failed: {e}")),
         }
-    }
+    })
 }
 
 /// Writes one `moor controller: <msg>` line; a failed write has nowhere to go.
