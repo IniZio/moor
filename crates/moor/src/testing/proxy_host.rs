@@ -12,6 +12,9 @@ use moor_core::BoxId;
 /// Box port returned by an unscripted `ensure`.
 pub(crate) const FAKE_BOX_PORT: u16 = 40123;
 
+/// Egress port returned by an unscripted `ensure`.
+pub(crate) const FAKE_EGRESS_PORT: u16 = 14123;
+
 /// A recorded `ProxyHost` call.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ProxyHostCall {
@@ -107,6 +110,7 @@ impl ProxyHost for FakeProxyHost {
         }
         Ok(ProxyEndpoint {
             box_port: s.box_port,
+            egress_port: FAKE_EGRESS_PORT,
             ca_pem: String::new(),
         })
     }

@@ -32,6 +32,7 @@ CREATE TABLE reports(id INTEGER PRIMARY KEY, box INTEGER NOT NULL, session INTEG
   version INTEGER NOT NULL, path TEXT NOT NULL, title TEXT, created_at INTEGER NOT NULL, UNIQUE (box, kind, version));
 CREATE TABLE hook_cache (session INTEGER PRIMARY KEY REFERENCES sessions(id), record TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE TABLE proxy  (box INTEGER PRIMARY KEY REFERENCES boxes(id), box_port INTEGER NOT NULL UNIQUE,
+  egress_port INTEGER NOT NULL UNIQUE,
   pid INTEGER, handle TEXT, ready INTEGER NOT NULL DEFAULT 0, lease_owner TEXT, lease_heartbeat INTEGER,
   boot_id TEXT, updated_at INTEGER NOT NULL);
 CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at INTEGER NOT NULL);
@@ -42,4 +43,4 @@ CREATE TABLE link_codes (code TEXT PRIMARY KEY, user INTEGER NOT NULL REFERENCES
   expires_at INTEGER NOT NULL);
 CREATE TABLE user_secrets (user INTEGER NOT NULL REFERENCES users(id), name TEXT NOT NULL, value BLOB NOT NULL,
   updated_at INTEGER NOT NULL, PRIMARY KEY (user, name));
-INSERT INTO meta (k, v) VALUES ('schema_version', '13');
+INSERT INTO meta (k, v) VALUES ('schema_version', '14');
