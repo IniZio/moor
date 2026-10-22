@@ -68,6 +68,15 @@ RS
 removed_names removed-names-allowed-mixed fail <<'RS'
 // the background task and a Task
 RS
+removed_names removed-names-inside-longer-ident pass <<'RS'
+fn builtin_direct() {}
+RS
+removed_names removed-names-bare-ident fail <<'RS'
+fn f(in_dir: u8) {}
+RS
+removed_names removed-names-punctuated fail <<'RS'
+fn f() { let _ = Worktree { a: 1 }; }
+RS
 removed_names removed-names-clean pass <<'RS'
 fn f(job: u8) {}
 RS
