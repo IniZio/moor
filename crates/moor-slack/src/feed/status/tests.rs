@@ -59,7 +59,7 @@ fn needs_input_shows_question() {
             json!({"question": "Which db?", "options": []}),
         ),
     ]);
-    assert!(render("fix-bug", &v, "", None).contains("needs input: Which db?"));
+    assert!(render("fix-bug", &v).contains("needs input: Which db?"));
     let v = folded(&[
         ("needs_input", json!({"question": "x"})),
         ("busy", json!({})),
@@ -75,7 +75,7 @@ fn closed_and_box_states_fold() {
         ("box_asleep", json!({})),
         ("closed", json!({"from": "idle"})),
     ]);
-    let text = render("fix-bug", &v, "", None);
+    let text = render("fix-bug", &v);
     assert!(text.contains("closed"), "{text}");
     assert!(text.contains("Box: asleep"), "{text}");
     assert_eq!(
@@ -87,14 +87,14 @@ fn closed_and_box_states_fold() {
 #[test]
 fn question_cannot_ping() {
     let v = folded(&[("needs_input", json!({"question": "<!channel> hi"}))]);
-    assert!(!render("t", &v, "", None).contains("<!channel>"));
+    assert!(!render("t", &v).contains("<!channel>"));
 }
 
 #[test]
 fn a_question_is_cut_after_300_characters() {
     let render_question = |q: &str| {
         let v = folded(&[("needs_input", json!({ "question": q }))]);
-        render("t", &v, "", None)
+        render("t", &v)
     };
     let fits = "é".repeat(300);
     assert_eq!(render_question(&fits), format!("*t*: needs input: {fits}"));
@@ -106,7 +106,7 @@ fn a_question_is_cut_after_300_characters() {
 }
 
 #[test]
-fn the_reason_the_setup_line_and_the_branch_cannot_ping() {
+fn the_reason_and_the_setup_line_cannot_ping() {
     let raw = "<!channel> & <@U1>";
     let shown = "&lt;!channel&gt; &amp; &lt;@U1&gt;";
     for (kind, key, head) in [
@@ -114,27 +114,14 @@ fn the_reason_the_setup_line_and_the_branch_cannot_ping() {
         ("setup_failed", "line", "setup failed"),
     ] {
         let v = folded(&[(kind, json!({ key: raw }))]);
-        assert_eq!(render("t", &v, "", None), format!("*t*: {head}: {shown}"));
+        assert_eq!(render("t", &v), format!("*t*: {head}: {shown}"));
     }
-    let text = render("t", &View::default(), "acme/app", Some(raw));
-    assert!(text.ends_with(&format!("|{shown}>")), "{text}");
 }
 
 #[test]
-fn the_status_links_pull_requests_from_its_branch_only_for_an_owner_and_name_repo() {
-    let v = View::default();
-    let text = render("fix-bug", &v, "acme/app", Some("moor/fix bug"));
-    assert!(
-        text.ends_with(
-            "\nPull request: <https://github.com/acme/app/pulls?q=is%3Apr+head%3Amoor/fix%20bug|moor/fix bug>"
-        ),
-        "{text}"
-    );
-    for repo in ["demo", "acme/app/x", "acme/<!here>", "/app"] {
-        let text = render("fix-bug", &v, repo, Some("moor/fix-bug"));
-        assert!(!text.contains("Pull request"), "{repo}: {text}");
-    }
-    assert!(!render("fix-bug", &v, "acme/app", None).contains("Pull request"));
+fn the_status_names_no_pull_request() {
+    let text = render("fix-bug", &View::default());
+    assert_eq!(text, "*fix-bug*: starting");
 }
 
 #[test]

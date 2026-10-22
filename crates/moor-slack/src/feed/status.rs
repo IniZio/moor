@@ -95,9 +95,8 @@ impl View {
     }
 }
 
-/// The status message of Box `name` on `repo`, with a link to its branch's pull requests
-/// when the repo is `owner/name` and the branch is known.
-pub(super) fn render(name: &str, view: &View, repo: &str, branch: Option<&str>) -> String {
+/// The status message of Box `name`.
+pub(super) fn render(name: &str, view: &View) -> String {
     let state = match &view.state {
         State::Starting => "starting".to_owned(),
         State::Working => "working".to_owned(),
@@ -125,34 +124,7 @@ pub(super) fn render(name: &str, view: &View, repo: &str, branch: Option<&str>) 
         };
         let _ = write!(text, "\nBox: {m}");
     }
-    if let Some((branch, url)) = branch.and_then(|b| Some((b, pulls_url(repo, b)?))) {
-        let _ = write!(text, "\nPull request: <{url}|{}>", escape(branch));
-    }
     text
-}
-
-/// GitHub's list of pull requests from `branch` in `repo`, when `repo` reads `owner/name`.
-fn pulls_url(repo: &str, branch: &str) -> Option<String> {
-    let plain = |s: &str| {
-        !s.is_empty()
-            && s.bytes()
-                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
-    };
-    let (owner, name) = repo.split_once('/')?;
-    if !plain(owner) || !plain(name) {
-        return None;
-    }
-    let mut head = String::new();
-    for b in branch.bytes() {
-        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'/') {
-            head.push(char::from(b));
-        } else {
-            let _ = write!(head, "%{b:02X}");
-        }
-    }
-    Some(format!(
-        "https://github.com/{owner}/{name}/pulls?q=is%3Apr+head%3A{head}"
-    ))
 }
 
 /// One status send the planner wants made.
@@ -190,12 +162,12 @@ impl Planner {
         let mut steps = Vec::new();
         for fed in boxes {
             let b = &fed.boxed;
-            let (box_id, branch, gone) = match &b.state {
+            let (box_id, gone) = match &b.state {
                 RowState::Starting => continue,
-                RowState::Bound { box_id, branch } | RowState::Closing { box_id, branch } => {
-                    (*box_id, branch, false)
+                RowState::Bound { box_id, .. } | RowState::Closing { box_id, .. } => {
+                    (*box_id, false)
                 }
-                RowState::Gone { box_id, branch } => (*box_id, branch, true),
+                RowState::Gone { box_id, .. } => (*box_id, true),
             };
             if gone && fed.status_ts.is_none() {
                 continue;
@@ -205,7 +177,7 @@ impl Planner {
                 view.state = State::Closed;
             }
             let name = b.box_name.as_str();
-            let text = render(name, &view, &b.repo, branch.as_deref());
+            let text = render(name, &view);
             if fed.status_ts.is_some() && fed.status_text.as_ref() == Some(&text) {
                 continue;
             }

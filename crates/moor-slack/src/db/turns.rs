@@ -96,9 +96,9 @@ fn turn_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TurnRow> {
 }
 
 impl Db {
-    /// Takes the next turn at `now`: the oldest thread with a waiting message and no open
-    /// turn gets a turn row, and every waiting message and notice of that thread is marked
-    /// as taken by it. `None` when no thread waits.
+    /// Takes the next turn at `now`: the oldest thread with a waiting message or report and
+    /// no open turn gets a turn row, and every waiting item of that thread is marked as taken
+    /// by it. `None` when no thread waits.
     pub(crate) fn take_turn(&self, now: i64) -> rusqlite::Result<Option<TurnRow>> {
         self.atomically(|| {
             let waiting = self
@@ -106,7 +106,7 @@ impl Db {
                 .query_row(
                     "SELECT i.channel, i.thread_ts, t.owner FROM slack_inbox i \
                      JOIN slack_threads t ON t.channel = i.channel AND t.thread_ts = i.thread_ts \
-                     WHERE i.kind = 'message' AND i.turn_id IS NULL AND i.done_at IS NULL \
+                     WHERE i.kind IN ('message', 'report') AND i.turn_id IS NULL AND i.done_at IS NULL \
                      AND NOT EXISTS (SELECT 1 FROM slack_turns u WHERE u.channel = i.channel \
                          AND u.thread_ts = i.thread_ts AND u.ended_at IS NULL) \
                      ORDER BY i.id LIMIT 1",
@@ -125,7 +125,7 @@ impl Db {
             let id = self.conn.last_insert_rowid();
             self.conn.execute(
                 "UPDATE slack_inbox SET turn_id = ?1 WHERE channel = ?2 AND thread_ts = ?3 \
-                 AND kind IN ('message', 'notice') AND turn_id IS NULL AND done_at IS NULL",
+                 AND kind IN ('message', 'notice', 'report') AND turn_id IS NULL AND done_at IS NULL",
                 params![id, channel, thread_ts],
             )?;
             Ok(Some(TurnRow {
@@ -304,11 +304,11 @@ impl Db {
             .optional()
     }
 
-    /// The messages and notices turn `id` takes, in the order they were recorded.
+    /// The items turn `id` takes, in the order they were recorded.
     pub(crate) fn turn_items(&self, id: i64) -> rusqlite::Result<Vec<(i64, Said)>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, author, text FROM slack_inbox WHERE turn_id = ?1 \
-             AND kind IN ('message', 'notice') ORDER BY id",
+             AND kind IN ('message', 'notice', 'report') ORDER BY id",
         )?;
         let rows = stmt.query_map(params![id], |r| Ok((r.get(0)?, said(r.get(1)?, r.get(2)?))))?;
         rows.collect()
@@ -325,7 +325,7 @@ impl Db {
         let mut stmt = self.conn.prepare(
             "SELECT turn_id, 0, id, author, text FROM slack_inbox \
              WHERE channel = ?1 AND thread_ts = ?2 AND turn_id < ?3 \
-             AND kind IN ('message', 'notice') \
+             AND kind IN ('message', 'notice', 'report') \
              UNION ALL SELECT id, 1, 0, NULL, reply_text FROM slack_turns \
              WHERE channel = ?1 AND thread_ts = ?2 AND id < ?3 AND end = 'replied' \
              ORDER BY 1, 2, 3",

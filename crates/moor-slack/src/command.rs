@@ -97,6 +97,21 @@ impl BoxEvent {
     }
 }
 
+/// The report that starts a coordinator turn when Box `name`'s agent finishes its turn, with
+/// the agent's last message in a Box quote when it left one.
+pub(crate) fn report(name: &BoxName, said: Option<&str>) -> String {
+    let head = BoxEvent::Finished.notice(name);
+    let Some(said) = said.filter(|s| !s.trim().is_empty()) else {
+        return head;
+    };
+    let mut text = format!("{head} Its last message, in a Box quote:");
+    for line in said.lines() {
+        text.push_str("\n> ");
+        text.push_str(line);
+    }
+    text
+}
+
 /// The line the front posts when a Box's agent finishes its turn.
 pub(crate) fn finished(name: &BoxName) -> String {
     format!("Box `{}` finished its turn.", name.as_str())
