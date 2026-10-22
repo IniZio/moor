@@ -142,7 +142,8 @@ with the config `~/.moor/egress.conf` and the pid file `~/.moor/egress.pid`.
 The config sends each rule host to the Proxy tunnel and lets tinyproxy dial
 every other host. `HTTPS_PROXY`, `HTTP_PROXY`, their lowercase forms, the Yarn
 variables and the Java and Gradle proxy settings name the tinyproxy port.
-`NO_PROXY` holds only the loopback names.
+`NO_PROXY` starts with the loopback names and keeps any value the Box already
+sets after them.
 
 Each Box keeps one tinyproxy port for its life. moor picks it from 10000 to
 19999 when it first starts the Box's Proxy, and no two Boxes share it. When
