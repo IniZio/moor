@@ -190,7 +190,13 @@ fn a_wrapper_failure_before_the_command_is_not_its_exit() {
 /// Runs the real wrapper under dash, as a Box's `sh` does, with `env` on stdin and `TMPDIR`
 /// in `tmp`, and returns its exit code and stderr.
 fn wrapper_under_dash(tmp: &Path, env: &str, argv: &[&str]) -> (Option<i32>, String) {
-    use std::io::Write as _;
+    run_wrapper(tmp, env, argv, false)
+}
+
+/// As [`wrapper_under_dash`]. With `ended_first` the env is written only after the wrapper has
+/// exited, the way a wrapper that ends early meets a late writer.
+fn run_wrapper(tmp: &Path, env: &str, argv: &[&str], ended_first: bool) -> (Option<i32>, String) {
+    use std::io::{ErrorKind, Write as _};
     use std::process::{Command, Stdio};
     let mut child = Command::new("dash")
         .args(["-c", super::WRAPPER, "sh", "B", "E", "X", ""])
@@ -201,12 +207,16 @@ fn wrapper_under_dash(tmp: &Path, env: &str, argv: &[&str]) -> (Option<i32>, Str
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(env.as_bytes())
-        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    if ended_first {
+        child.wait().unwrap();
+    }
+    // The wrapper may end before it reads the env, which closes the pipe under the writer.
+    match stdin.write_all(env.as_bytes()) {
+        Err(e) if e.kind() == ErrorKind::BrokenPipe => {}
+        written => written.unwrap(),
+    }
+    drop(stdin);
     let out = child.wait_with_output().unwrap();
     (
         out.status.code(),
@@ -252,7 +262,7 @@ fn a_temp_path_holding_a_quote_ends_the_wrapper_before_the_env_loads() {
     fs::create_dir(&quoted).unwrap();
     let ran = tmp.path().join("ran");
     let touch = format!("touch {}", ran.display());
-    let (code, stderr) = wrapper_under_dash(&quoted, "export A=1\n", &["/bin/sh", "-c", &touch]);
+    let (code, stderr) = run_wrapper(&quoted, "export A=1\n", &["/bin/sh", "-c", &touch], true);
     assert_eq!(code, Some(1), "{stderr}");
     assert!(!ran.exists(), "the command never starts");
     assert_eq!(entries(&quoted), Vec::<PathBuf>::new(), "{stderr}");
