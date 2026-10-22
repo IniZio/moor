@@ -1,10 +1,13 @@
 //! Entry point of the moor web front daemon.
 
+use std::ffi::OsString;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 use clap::Parser;
 use moor_client::Client;
@@ -24,9 +27,9 @@ use moor_web::watch::{self, RelayConfig};
     about = "Web front for the moor controller"
 )]
 struct Args {
-    /// Controller socket to dial.
+    /// Controller socket to dial; defaults to `$MOOR_FRONT_SOCKET`.
     #[arg(long, env = "MOOR_WEB_SOCKET")]
-    socket: PathBuf,
+    socket: Option<PathBuf>,
     /// Loopback port to listen on; 0 picks a free one.
     #[arg(long, default_value_t = 0)]
     port: u16,
@@ -55,6 +58,17 @@ fn state_dir(given: Option<PathBuf>) -> Result<PathBuf, String> {
         .ok_or_else(|| "set --state-dir, XDG_STATE_HOME or HOME".to_owned())
 }
 
+/// How long a stopping daemon waits for requests in flight before it exits anyway.
+const GRACE: Duration = Duration::from_secs(10);
+
+/// The socket to dial: the one given, else `MOOR_FRONT_SOCKET`, which the controller sets
+/// when it starts the front.
+fn dial_path(given: Option<PathBuf>, front: Option<OsString>) -> Result<PathBuf, String> {
+    given
+        .or_else(|| front.filter(|v| !v.is_empty()).map(PathBuf::from))
+        .ok_or_else(|| "set --socket or MOOR_FRONT_SOCKET".to_owned())
+}
+
 /// Current time in unix seconds.
 #[allow(
     clippy::disallowed_methods,
@@ -68,14 +82,18 @@ fn unix_now() -> i64 {
         .unwrap_or(0)
 }
 
-/// Starts the daemon and parks the main thread.
+/// Serves until SIGTERM, then finishes the requests in flight.
 fn run(args: Args) -> Result<(), String> {
+    let socket = dial_path(args.socket, std::env::var_os("MOOR_FRONT_SOCKET"))?;
+    let stop = Arc::new(AtomicBool::new(false));
+    signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&stop))
+        .map_err(|e| format!("handle SIGTERM: {e}"))?;
     let token = read_token(&args.token_file)?;
     let dir = state_dir(args.state_dir)?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
     let db = Db::open(&dir.join("web.db")).map_err(|e| e.to_string())?;
     let db = Arc::new(Mutex::new(db));
-    let client = Client::new(args.socket);
+    let client = Client::new(socket);
     let jobs = Jobs::new();
     let ctx = StartCtx {
         client: client.clone(),
@@ -100,9 +118,11 @@ fn run(args: Args) -> Result<(), String> {
     ));
     let server = start(args.port, token, handler).map_err(|e| format!("listen: {e}"))?;
     writeln!(io::stdout(), "{}", server.url()).map_err(|e| e.to_string())?;
-    loop {
-        thread::park();
+    while !stop.load(Ordering::SeqCst) {
+        thread::sleep(Duration::from_millis(100));
     }
+    server.shutdown(GRACE);
+    Ok(())
 }
 
 fn main() -> ExitCode {

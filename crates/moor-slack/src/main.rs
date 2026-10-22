@@ -1,8 +1,10 @@
 //! Entry point of the moor Slack front daemon.
 
+use std::ffi::OsString;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use clap::Parser;
@@ -16,9 +18,9 @@ use moor_slack::{Log, Settings, ToolSettings};
     about = "Slack front for the moor controller"
 )]
 struct Args {
-    /// Controller socket to dial.
+    /// Controller socket to dial; defaults to `$MOOR_FRONT_SOCKET`.
     #[arg(long, env = "MOOR_SLACK_SOCKET")]
-    socket: PathBuf,
+    socket: Option<PathBuf>,
     /// The front's config file: Slack token files, channels and users.
     #[arg(long, env = "MOOR_SLACK_CONFIG")]
     config: PathBuf,
@@ -65,6 +67,14 @@ fn state_dir(given: Option<PathBuf>) -> Result<PathBuf, String> {
         .ok_or_else(|| "set --state-dir, XDG_STATE_HOME or HOME".to_owned())
 }
 
+/// The socket to dial: the one given, else `MOOR_FRONT_SOCKET`, which the controller sets
+/// when it starts the front.
+fn dial_path(given: Option<PathBuf>, front: Option<OsString>) -> Result<PathBuf, String> {
+    given
+        .or_else(|| front.filter(|v| !v.is_empty()).map(PathBuf::from))
+        .ok_or_else(|| "set --socket or MOOR_FRONT_SOCKET".to_owned())
+}
+
 /// Current time in unix seconds.
 #[allow(
     clippy::disallowed_methods,
@@ -106,15 +116,20 @@ fn main() -> ExitCode {
     let log: Log = Arc::new(|line| {
         let _ = writeln!(io::stderr(), "moor-slack: {line}");
     });
+    let stop = Arc::new(AtomicBool::new(false));
     let result = state_dir(args.state_dir).and_then(|state_dir| {
+        let socket = dial_path(args.socket, std::env::var_os("MOOR_FRONT_SOCKET"))?;
+        signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&stop))
+            .map_err(|e| format!("handle SIGTERM: {e}"))?;
         let settings = Settings {
-            socket: args.socket,
+            socket,
             config: args.config,
             state_dir,
             home: std::env::var_os("HOME").map(PathBuf::from),
             user: std::env::var("USER").ok(),
             path: std::env::var_os("PATH"),
             clock: unix_now,
+            stop,
         };
         moor_slack::run(&settings, log)
     });

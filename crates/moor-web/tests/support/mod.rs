@@ -64,6 +64,8 @@ pub struct Stack {
     socket: PathBuf,
     /// Port the web daemon listens on.
     port: u16,
+    /// A `MOOR_FRONT_SOCKET` to set next to `--socket`, to show the flag wins.
+    front_socket: Option<String>,
     /// Access token the daemon expects.
     token: String,
 }
@@ -109,6 +111,7 @@ impl Stack {
             web: Command::new("true").spawn().unwrap(),
             socket,
             port: 0,
+            front_socket: None,
             token: format!(
                 "tok-{}-{}-{:x}",
                 std::process::id(),
@@ -117,7 +120,7 @@ impl Stack {
             ),
         };
         stack.wait_controller();
-        stack.start_web();
+        stack.start_web(false);
         stack
     }
 
@@ -132,27 +135,82 @@ impl Stack {
         panic!("controller never listened\n{}", self.diagnostics());
     }
 
+    /// Stops the web daemon with SIGKILL and starts it again, leaving its socket to
+    /// `MOOR_FRONT_SOCKET` when `via_env` is set.
+    pub fn restart_web(&mut self, via_env: bool) {
+        let _ = self.web.kill();
+        let _ = self.web.wait();
+        self.start_web(via_env);
+    }
+
+    /// Restarts the web daemon with `--socket` and a different `MOOR_FRONT_SOCKET`.
+    pub fn restart_web_with_front_socket(&mut self, front: &str) {
+        let _ = self.web.kill();
+        let _ = self.web.wait();
+        self.front_socket = Some(front.to_owned());
+        self.start_web(false);
+    }
+
+    /// Sends SIGTERM to the web daemon's exact pid.
+    pub fn terminate_web(&self) {
+        let pid = i32::try_from(self.web.id()).unwrap();
+        let pid = rustix::process::Pid::from_raw(pid).unwrap();
+        rustix::process::kill_process(pid, rustix::process::Signal::TERM).unwrap();
+    }
+
+    /// The web daemon's exit status, waiting up to `limit` for it to exit.
+    pub fn wait_web_exit(&mut self, limit: Duration) -> Option<std::process::ExitStatus> {
+        let mut waited = Duration::ZERO;
+        while waited < limit {
+            if let Some(status) = self.web.try_wait().unwrap() {
+                return Some(status);
+            }
+            std::thread::sleep(Duration::from_millis(20));
+            waited += Duration::from_millis(20);
+        }
+        None
+    }
+
+    /// A connection to the web daemon, for requests the test sends in pieces.
+    pub fn connect_web(&self) -> TcpStream {
+        let stream = TcpStream::connect(("127.0.0.1", self.port)).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        stream
+    }
+
+    /// The access token the daemon expects.
+    pub fn token(&self) -> &str {
+        &self.token
+    }
+
     /// Spawns the web daemon and reads its URL line.
-    fn start_web(&mut self) {
+    fn start_web(&mut self, via_env: bool) {
         let dir = self.root.path().to_path_buf();
         let token_file = dir.join("token");
         std::fs::write(&token_file, &self.token).unwrap();
         std::fs::set_permissions(&token_file, std::fs::Permissions::from_mode(0o600)).unwrap();
-        let mut web = Command::new(env!("CARGO_BIN_EXE_moor-web"))
-            .env_clear()
+        let mut web = Command::new(env!("CARGO_BIN_EXE_moor-web"));
+        web.env_clear()
             .env("PATH", "/usr/bin:/bin")
             .env("HOME", dir.join("home"))
-            .arg("--socket")
-            .arg(&self.socket)
             .args(["--port", "0", "--token-file"])
             .arg(&token_file)
             .arg("--state-dir")
             .arg(dir.join("web"))
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(std::fs::File::create(dir.join("web.err")).unwrap())
-            .spawn()
-            .unwrap();
+            .stderr(std::fs::File::create(dir.join("web.err")).unwrap());
+        if via_env {
+            web.env("MOOR_FRONT_SOCKET", &self.socket);
+        } else {
+            web.arg("--socket").arg(&self.socket);
+            if let Some(front) = &self.front_socket {
+                web.env("MOOR_FRONT_SOCKET", front);
+            }
+        }
+        let mut web = web.spawn().unwrap();
         let stdout = web.stdout.take().unwrap();
         self.web = web;
         let (tx, rx) = mpsc::channel();

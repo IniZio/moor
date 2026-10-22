@@ -152,6 +152,7 @@ fn the_sweep_runs_again_a_minute_after_the_first() {
         user: None,
         path: Some("/usr/bin:/bin".into()),
         clock: now,
+        stop: Arc::default(),
     };
     // `run` never returns; its threads outlive the test and only touch this rig.
     std::thread::spawn(move || moor_slack::run(&settings, Arc::new(|_: &str| {})));

@@ -392,13 +392,17 @@ fn a_restart_that_fails_leaves_the_old_config_so_the_next_command_retries() {
         let (ok, out, err) = b.run_with(&changed);
         assert!(!ok, "attempt {attempt} reported success: {out}{err}");
         assert!(
-            err.contains(&failure(&format!("the old tinyproxy {old} did not exit after TERM"))),
+            err.contains(&failure(&format!(
+                "the old tinyproxy {old} did not exit after TERM"
+            ))),
             "attempt {attempt}: {err}"
         );
         assert_eq!(b.conf(), old_conf, "attempt {attempt} replaced the config");
         assert_eq!(b.starts(), 1, "{}", b.log());
     }
-    let _ = std::process::Command::new("kill").args(["-KILL", &old]).status();
+    let _ = std::process::Command::new("kill")
+        .args(["-KILL", &old])
+        .status();
     b.port.close();
     let (ok, out, err) = b.run_with(&changed);
     assert!(ok, "{out}{err}");

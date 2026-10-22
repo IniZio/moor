@@ -3,6 +3,7 @@
 
 use std::io::{self, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -173,22 +174,30 @@ enum Flow {
     Hello,
     /// Slack asked us to reconnect.
     Disconnect,
+    /// The daemon is stopping; the envelope was kept but not acked.
+    Stop,
 }
 
 /// Reads envelopes from one connection until Slack disconnects or the socket closes.
 #[cfg(test)]
 pub(super) fn session(url: &str, intake: &dyn Intake) -> Result<(), SocketError> {
-    session_tracked(url, intake, &mut false)
+    session_tracked(url, intake, &mut false, &AtomicBool::new(false))
 }
 
-/// Runs forever, reconnecting with backoff; returns when `intake` is gone.
-pub(super) fn run(api: &Api, app_token: &Secret, intake: &dyn Intake, sleep: &dyn Fn(Duration)) {
+/// Runs, reconnecting with backoff, until `intake` is gone or `stop` is set.
+pub(super) fn run(
+    api: &Api,
+    app_token: &Secret,
+    intake: &dyn Intake,
+    stop: &AtomicBool,
+    sleep: &dyn Fn(Duration),
+) {
     let mut delay = MIN_BACKOFF;
-    loop {
+    while !stop.load(Ordering::SeqCst) {
         if let Ok(url) = api.open_connection(app_token) {
             let mut healthy = false;
             if matches!(
-                session_tracked(&url, intake, &mut healthy),
+                session_tracked(&url, intake, &mut healthy, stop),
                 Err(SocketError::ReceiverGone)
             ) {
                 return;
@@ -207,18 +216,27 @@ fn next_delay(delay: Duration) -> Duration {
     delay.saturating_mul(2).min(MAX_BACKOFF)
 }
 
-/// Reads envelopes from one connection, setting `healthy` once Slack's hello arrives.
-fn session_tracked(url: &str, intake: &dyn Intake, healthy: &mut bool) -> Result<(), SocketError> {
+/// Reads envelopes from one connection, setting `healthy` once Slack's hello arrives, until
+/// the connection ends or `stop` is set.
+fn session_tracked(
+    url: &str,
+    intake: &dyn Intake,
+    healthy: &mut bool,
+    stop: &AtomicBool,
+) -> Result<(), SocketError> {
     let mut ws = connect(url)?;
     let mut silent_ticks = 0_u32;
     loop {
+        if stop.load(Ordering::SeqCst) {
+            return Ok(());
+        }
         match ws.read() {
             Ok(Message::Text(text)) => {
                 silent_ticks = 0;
-                match handle_envelope(&text, &mut ws, intake)? {
+                match handle_envelope(&text, &mut ws, intake, stop)? {
                     Flow::Continue => {}
                     Flow::Hello => *healthy = true,
-                    Flow::Disconnect => return Ok(()),
+                    Flow::Disconnect | Flow::Stop => return Ok(()),
                 }
             }
             Ok(Message::Close(_)) => return Ok(()),
@@ -258,11 +276,13 @@ fn flush(ws: &mut WebSocket<Stream>) -> Result<(), SocketError> {
 }
 
 /// Hands a mention or click in one JSON envelope to `intake`, then acknowledges the envelope.
-/// An item the intake could not keep gets no ack, so Slack sends it again.
+/// An item the intake could not keep gets no ack, so Slack sends it again; neither does one
+/// that was kept after `stop` was set.
 fn handle_envelope(
     text: &str,
     ws: &mut WebSocket<Stream>,
     intake: &dyn Intake,
+    stop: &AtomicBool,
 ) -> Result<Flow, SocketError> {
     let Ok(envelope) = serde_json::from_str::<Value>(text) else {
         return Ok(Flow::Continue);
@@ -284,6 +304,7 @@ fn handle_envelope(
         _ => (Flow::Continue, None),
     };
     match item.map_or_else(|| Ok(Kept::default()), |item| intake.take(item)) {
+        Ok(_) if stop.load(Ordering::SeqCst) => Ok(Flow::Stop),
         Ok(kept) => {
             ack(ws, &envelope, kept.ack)?;
             if let Some(then) = kept.then {

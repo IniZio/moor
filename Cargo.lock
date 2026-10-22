@@ -2545,6 +2545,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "signal-hook",
  "tempfile",
  "thiserror 2.0.21",
  "tungstenite",
@@ -2568,9 +2569,11 @@ dependencies = [
  "moor-client",
  "moor-core",
  "rusqlite",
+ "rustix",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "signal-hook",
  "tempfile",
 ]
 
