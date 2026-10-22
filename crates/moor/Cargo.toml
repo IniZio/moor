@@ -41,12 +41,14 @@ rustls = { version = "0.23", default-features = false, features = [
 ] }
 nono-proxy = { version = "=0.80.0", default-features = false }
 nono = { version = "=0.80.0", default-features = false }
+nix = { version = "0.31", default-features = false }
 tokio = { version = "1", default-features = false, features = [
   "rt-multi-thread",
 ] }
 
 [dev-dependencies]
 tempfile = "3"
+command-fds = "0.3"
 moor-testkit = { path = "../moor-testkit" }
 rcgen = { version = "0.14", default-features = false, features = [
   "pem",

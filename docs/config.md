@@ -145,7 +145,9 @@ The controller refuses a config that has a `web`, `slack` or `repos` key.
 SIGTERM drains the controller, then it exits 0:
 
 1. It stops accepting connections. A client that connects now waits in the
-   socket's backlog and fails when the controller exits.
+   socket's backlog and fails when the controller exits. Under systemd socket
+   units, the next controller answers it instead. See
+   [Deploy the controller with systemd](deploy.md).
 2. A connection that is waiting for its next request is closed.
 3. A `wait`, `wait-events` or `watch` gets an error frame of kind
    `restarting` and is closed. Send it again once a controller listens.
@@ -167,7 +169,8 @@ fronts:
 ```
 
 For each entry the controller listens on `<state dir>/fronts/<namespace>.sock`,
-mode 0600 in a 0700 directory. A namespace matches `[a-z][a-z0-9-]*` and is
+mode 0600 in a 0700 directory. Under systemd, the controller takes the socket
+that systemd passes as `front-<namespace>` instead of binding it. A namespace matches `[a-z][a-z0-9-]*` and is
 not `local`.
 
 A moor user owns secrets, such as a Claude or GitHub token. An identity names

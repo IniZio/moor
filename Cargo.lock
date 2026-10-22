@@ -2476,10 +2476,12 @@ version = "0.2.0"
 dependencies = [
  "age",
  "clap",
+ "command-fds",
  "flate2",
  "getrandom 0.4.3",
  "moor-core",
  "moor-testkit",
+ "nix",
  "nono",
  "nono-proxy",
  "rcgen",
