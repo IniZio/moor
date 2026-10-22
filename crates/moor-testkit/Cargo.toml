@@ -5,6 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
+rustix = { version = "1", features = ["process"] }
 socket2 = "0.6"
 
 [dev-dependencies]

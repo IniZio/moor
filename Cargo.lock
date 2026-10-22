@@ -2556,6 +2556,7 @@ dependencies = [
 name = "moor-testkit"
 version = "0.2.0"
 dependencies = [
+ "rustix",
  "socket2",
  "tempfile",
 ]
