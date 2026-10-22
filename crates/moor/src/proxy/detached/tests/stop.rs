@@ -61,6 +61,30 @@ fn a_supervisor_that_exits_on_the_signal_ends_the_wait_early() {
 }
 
 #[test]
+fn a_supervisor_that_releases_its_lease_on_the_signal_ends_the_wait_early() {
+    let f = fx();
+    with_proxy(&f);
+    let db = f.dir.path().join(crate::store::STORE_FILE);
+    let id = f.id.get();
+    f.proc.on_signal(move |_, _| {
+        rusqlite::Connection::open(&db)
+            .unwrap()
+            .execute(
+                "UPDATE proxy SET lease_owner = NULL, lease_heartbeat = NULL WHERE box = ?",
+                [id],
+            )
+            .unwrap();
+    });
+    let start = f.clock.instant();
+
+    assert_eq!(f.sup.stop(f.id), Ok(()));
+
+    assert!(!f.has_row());
+    let waited = f.clock.instant().saturating_duration_since(start);
+    assert!(waited < Duration::from_secs(1), "waited {waited:?}");
+}
+
+#[test]
 fn stale_lease_sends_no_signal_and_removes_the_row() {
     let f = fx();
     with_proxy(&f);

@@ -123,11 +123,13 @@ impl DetachedSupervisor {
         }
     }
 
-    /// Poll until the row is gone; false when it outlasts [`STOP_WAIT`].
+    /// Poll until the row is gone or its lease is given up; false when it outlasts [`STOP_WAIT`].
+    ///
+    /// A supervisor stopped by a signal keeps its row and releases its lease as it exits.
     fn wait_gone(&self, store: &Store, box_id: BoxId) -> bool {
         let start = self.clock.instant();
         loop {
-            if !matches!(store.proxy(box_id), Ok(Some(_))) {
+            if !matches!(store.proxy(box_id), Ok(Some(row)) if row.lease_owner.is_some()) {
                 return true;
             }
             if self.clock.instant().saturating_duration_since(start) >= STOP_WAIT {
