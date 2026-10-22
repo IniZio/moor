@@ -12,6 +12,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use moor_client::Redial;
 use moor_core::controller::{parse_frame, ClientFrame, PROTOCOL};
 
 use super::*;
@@ -252,7 +253,7 @@ fn relay_writes_an_error_frame_when_the_controller_errors() {
 #[test]
 fn relay_writes_an_error_frame_when_the_controller_is_unreachable() {
     let dir = tempfile::tempdir().unwrap();
-    let client = Client::new(dir.path().join("missing.sock"));
+    let client = Client::new(dir.path().join("missing.sock")).with_redial(Redial::NEVER);
     let got = Arc::default();
     let mut out = Limited {
         got: Arc::clone(&got),

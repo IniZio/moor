@@ -23,7 +23,7 @@ use sha2::{Digest, Sha256};
 use super::handler;
 use crate::db::{Db, RequestRow};
 use crate::http::{start, HttpResponse, Server};
-use moor_client::Client;
+use moor_client::{Client, Redial};
 
 pub(super) const TOKEN: &str = "t0ken";
 
@@ -389,7 +389,7 @@ fn refused_envelope_is_502_with_the_envelope() {
 fn unreachable_controller_is_502() {
     let dir = tempfile::tempdir().unwrap();
     let db = Db::open(&dir.path().join("web.db")).unwrap();
-    let client = Client::new(dir.path().join("missing.sock"));
+    let client = Client::new(dir.path().join("missing.sock")).with_redial(Redial::NEVER);
     let h = handler(client, Arc::new(Mutex::new(db)), fallback());
     let web = start(0, TOKEN.to_owned(), h).unwrap();
     for path in ["/tree", "/boxes/x"] {

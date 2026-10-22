@@ -133,7 +133,9 @@ fn refused(e: ApiError) -> NotUploaded {
 /// The reason for a controller read failure; it names no host path.
 fn unreadable(e: &ClientError) -> NotUploaded {
     let why = match e {
-        ClientError::Connect { .. } => "cannot reach the controller".to_owned(),
+        ClientError::Connect { .. } | ClientError::GaveUp { .. } => {
+            "cannot reach the controller".to_owned()
+        }
         ClientError::Frame { message, .. } => message.clone(),
         e => e.to_string(),
     };

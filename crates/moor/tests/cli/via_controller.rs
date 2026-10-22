@@ -23,7 +23,11 @@ impl Daemon {
 
     /// [`Self::start`], after `configure` adjusts the daemon's command.
     pub(crate) fn start_with(configure: impl FnOnce(&mut Command)) -> Self {
-        let root = fresh_dir("via");
+        Self::start_in(fresh_dir("via"), configure)
+    }
+
+    /// [`Self::start_with`] in `root`, so a client can be pointed at the socket first.
+    fn start_in(root: PathBuf, configure: impl FnOnce(&mut Command)) -> Self {
         // Kept short: Unix socket paths are limited to about 104 bytes.
         let socket = root.join("c.sock");
         let config = root.join("c.yaml");
@@ -161,7 +165,10 @@ fn config_socket_routes_show_to_the_daemon() {
 fn unreachable_controller_fails_without_local_fallback() {
     let root = fresh_dir("via-down");
     let missing = root.join("missing.sock");
-    let envs = [("MOOR_CONTROLLER", missing.as_path())];
+    let envs = [
+        ("MOOR_CONTROLLER", missing.as_path()),
+        ("MOOR_CONTROLLER_REDIAL_SECS", Path::new("0")),
+    ];
     for verb in ["version", "show"] {
         let out = moor(&root, &envs, &["--json", verb]);
         assert_eq!(out.code, 1, "{verb}: {}", out.stdout);
@@ -197,4 +204,29 @@ fn exit_codes_match_local_mode() {
             "{args:?}"
         );
     }
+}
+
+#[test]
+fn a_request_sent_before_the_controller_listens_is_answered_once_it_does() {
+    let root = fresh_dir("via-late");
+    let socket = root.join("c.sock");
+    let client = Command::new(env!("CARGO_BIN_EXE_moor"))
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("HOME", root.join("client-home"))
+        .env("MOOR_CONTROLLER", &socket)
+        .args(["--json", "show"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::thread::sleep(Duration::from_secs(2));
+    let _daemon = Daemon::start_in(root, |_| {});
+    let out = client.wait_with_output().unwrap();
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert_eq!(out.status.code(), Some(0), "{stdout}{stderr}");
+    let v: Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(class(&v), "ok");
 }

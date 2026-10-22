@@ -14,6 +14,7 @@ path = "src/main.rs"
 
 [dependencies]
 moor-core = { path = "../moor-core" }
+moor-client = { path = "../moor-client" }
 clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }

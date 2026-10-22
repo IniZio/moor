@@ -125,8 +125,17 @@ On the restart, systemd sends SIGTERM and the controller drains, as
 2. A `wait`, `wait-events` or `watch` gets an error frame of kind
    `restarting` and is closed.
 3. Any other request in flight, such as a `start`, runs to its end, for up to
-   `drain_timeout_secs`. So does a settle pass already running.
+   `drain_timeout_secs`. So does a settle pass already running. A settle
+   pass that outlives `drain_timeout_secs` is cut without rollback.
 4. Every connection ends with an error frame of kind `restarting`, which
    answers any request the controller did not run.
 5. The controller exits 0. systemd starts the new controller on the same
    sockets, and it answers the connects that waited in the backlog.
+
+The CLI and the fronts dial again, for up to 60 s, only when a request
+provably did not run: no controller listened, the connection dropped before
+the request was sent, or the controller answered `restarting` before any
+response. A `wait` is sent again and a `watch` resumes after the last cursor
+it delivered. A request whose connection drops after it was sent is reported
+as an error and never sent again, because it may have run. For the CLI,
+`MOOR_CONTROLLER_REDIAL_SECS` sets the 60 s; `0` turns redialing off.
