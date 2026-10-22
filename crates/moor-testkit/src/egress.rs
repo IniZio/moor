@@ -20,6 +20,22 @@ echo $! >"$pid"
 echo start >>"$HOME/fake-starts"
 "#;
 
+/// Stands in for `sudo` and `apt-get` so a Box script that a test runs on this host never runs
+/// the host's own: each names itself on stderr and fails with exit 97.
+pub const HOST_GUARD: &str = "#!/bin/sh\n\
+    echo \"a test ran $(basename \"$0\") $*; the host's own is never run\" >&2\n\
+    exit 97\n";
+
+/// Writes [`HOST_GUARD`] as `sudo` and `apt-get` into `bin`, which a fake ssh puts first on the
+/// `PATH` it exports to the Box command.
+pub fn write_host_guards(bin: &Path) -> io::Result<()> {
+    std::fs::create_dir_all(bin)?;
+    for name in ["sudo", "apt-get"] {
+        write_executable(&bin.join(name), HOST_GUARD)?;
+    }
+    Ok(())
+}
+
 /// The fake `tinyproxy` in a `bin` directory and the loopback port it "listens" on: the port opens
 /// each time the fake records a start, and closes on [`FakeEgress::close`].
 pub struct FakeEgress {
@@ -44,6 +60,7 @@ impl FakeEgress {
 
     /// [`Self::start`] on `port`, for a test whose egress port moor derives.
     pub fn start_on(home: &Path, bin: &Path, port: u16) -> io::Result<Self> {
+        write_host_guards(bin)?;
         write_executable(&bin.join("tinyproxy"), FAKE_TINYPROXY)?;
         let open: Arc<Mutex<Option<TcpListener>>> = Arc::new(Mutex::new(None));
         let done = Arc::new(AtomicBool::new(false));

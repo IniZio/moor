@@ -41,9 +41,10 @@ const FAKE_CRABBOX: &str = "#!/bin/sh\n\
     esac\n";
 
 /// An ssh that answers `ssh -G` as crabbox's pinned words do; a Box command marks `started`
-/// beside itself and then outlasts the test, and any other remote command runs on this host.
+/// beside itself and then outlasts the test, and any other remote command runs on this host with
+/// the host guards of `bin` beside it first on the `PATH` it exports, as sshd exports one.
 const FAKE_SSH: &str = "#!/bin/sh\n\
-    PATH=/usr/bin:/bin\n\
+    export PATH=\"$(dirname \"$0\")/bin:/usr/bin:/bin\"\n\
     test \"$1\" = -G && { echo 'stricthostkeychecking true'; echo 'userknownhostsfile /k'; exit; }\n\
     case \"$*\" in *gate-*) touch \"$(dirname \"$0\")/started\"; exec sleep 60 ;; esac\n\
     for last; do :; done\nexec sh -c \"$last\"\n";
@@ -101,6 +102,7 @@ fn a_run_whose_client_is_killed_is_cancelled_and_recorded_interrupted() {
     moor_testkit::write_executable(&crabbox, FAKE_CRABBOX).unwrap();
     let ssh = dir.path().join("ssh");
     moor_testkit::write_executable(&ssh, FAKE_SSH).unwrap();
+    moor_testkit::write_host_guards(&dir.path().join("bin")).unwrap();
     let served = Served::start_in(
         dir,
         &[
@@ -139,7 +141,7 @@ fn a_run_whose_client_is_killed_is_cancelled_and_recorded_interrupted() {
 /// [`FAKE_SSH`] whose Box command marks `started` and outlasts the start of a drain before it
 /// runs on this host, with a home beside itself for the Proxy CA.
 const SLOW_SSH: &str = "#!/bin/sh\n\
-    PATH=\"$(dirname \"$0\")/bin:/usr/bin:/bin\"\n\
+    export PATH=\"$(dirname \"$0\")/bin:/usr/bin:/bin\"\n\
     export HOME=\"$(dirname \"$0\")\"\n\
     test \"$1\" = -G && { echo 'stricthostkeychecking true'; echo 'userknownhostsfile /k'; exit; }\n\
     case \"$*\" in *gate-*) touch \"$(dirname \"$0\")/started\"; sleep 1 ;; esac\n\

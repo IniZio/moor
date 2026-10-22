@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 
 mod egress;
 
-pub use egress::{FakeEgress, FAKE_TINYPROXY};
+pub use egress::{write_host_guards, FakeEgress, FAKE_TINYPROXY, HOST_GUARD};
 
 /// Writes `contents` to `path` as an executable that can be run at once.
 ///
