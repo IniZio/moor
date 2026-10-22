@@ -362,3 +362,46 @@ fn setting_up_after_admission_records_checking_as_from() {
         "{trail:?}"
     );
 }
+
+/// Sets Box `id`'s branch to `branch`.
+fn on_branch(id: moor_core::BoxId, branch: &str) -> Decision {
+    Decision::new(id).set(Fields {
+        branch: Field::Set(branch.to_owned()),
+        ..Fields::default()
+    })
+}
+
+#[test]
+fn two_open_boxes_cannot_share_a_branch() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let a = store.apply(insert("a")).unwrap().box_id;
+    store.apply(on_branch(a, "moor/x")).unwrap();
+    let b = store.apply(insert("b")).unwrap().box_id;
+    let err = store.apply(on_branch(b, "moor/x")).unwrap_err();
+    assert!(matches!(&err, StoreError::BranchTaken(x) if x == "moor/x"), "{err:?}");
+    let raced = insert("c").set(Fields {
+        branch: Field::Set("moor/x".to_owned()),
+        ..Fields::default()
+    });
+    let err = store.apply(raced).unwrap_err();
+    assert!(matches!(err, StoreError::BranchTaken(_)), "{err:?}");
+    assert!(store.open_box_by_name(&BoxName::parse_allow_bare("c").unwrap()).unwrap().is_none());
+}
+
+#[test]
+fn a_closed_boxs_branch_can_be_taken_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let a = store.apply(insert("a")).unwrap().box_id;
+    store.apply(on_branch(a, "moor/x")).unwrap();
+    store
+        .apply(
+            Decision::new(a)
+                .lifecycle(BoxLifecycleInput::Close)
+                .session(SessionInput::End),
+        )
+        .unwrap();
+    let b = store.apply(insert("b")).unwrap().box_id;
+    store.apply(on_branch(b, "moor/x")).unwrap();
+}

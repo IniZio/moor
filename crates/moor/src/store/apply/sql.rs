@@ -53,6 +53,19 @@ pub(in crate::store) fn update(
 /// Extended result code for a UNIQUE constraint failure.
 const SQLITE_CONSTRAINT_UNIQUE: i32 = 2067;
 
+/// A UNIQUE failure on the open-branch index is a taken branch; other errors pass through.
+pub(super) fn branch_taken(e: StoreError, branch: &Field<String>) -> StoreError {
+    match (&e, branch) {
+        (StoreError::Sqlite(rusqlite::Error::SqliteFailure(f, msg)), Field::Set(branch))
+            if f.extended_code == SQLITE_CONSTRAINT_UNIQUE
+                && msg.as_deref().is_some_and(|m| m.contains("boxes.branch")) =>
+        {
+            StoreError::BranchTaken(branch.clone())
+        }
+        _ => e,
+    }
+}
+
 /// A UNIQUE failure on the open-name index is a taken name; other errors pass through.
 pub(super) fn name_taken(e: rusqlite::Error, new: &NewBox) -> StoreError {
     match &e {
