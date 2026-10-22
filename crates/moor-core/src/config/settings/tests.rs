@@ -139,18 +139,3 @@ fn layer_names() {
         assert_eq!(l.as_str(), n);
     }
 }
-
-#[test]
-fn direct_hosts_are_the_users_then_the_repos_new_ones() {
-    let s = resolve(
-        "proxy: {direct: [pub.dev, dl.google.com]}",
-        Some("proxy: {direct: [.gradle.org, pub.dev]}"),
-        &Flags::default(),
-    );
-    let forms: Vec<String> = s
-        .direct
-        .iter()
-        .map(crate::name::DirectHost::no_proxy)
-        .collect();
-    assert_eq!(forms, ["pub.dev", "dl.google.com", ".gradle.org"]);
-}

@@ -129,25 +129,25 @@ other users' processes and other Boxes, can send requests through that Box's
 Proxy and get the credentials it adds. moor does not refuse such a Box. Keep
 the `bridge` network unless you trust everything that runs on the host.
 
-## Direct hosts
+## Which traffic goes through the Proxy
 
-`proxy.direct` lists hosts that the Box reaches without the Proxy, such as
-public package mirrors. Both `.moor.yaml` and your user config can set it.
-moor uses your entries first, then each repo entry that is not already
-listed.
+Only the hosts that a Proxy rule serves go through the Proxy. These are the
+hosts that need your credentials, such as `api.anthropic.com` and
+`github.com`, plus the hosts of your own rules. Every other host, such as a
+package registry, is reached direct from the Box.
 
-```yaml
-proxy:
-  direct: [dl.google.com, repo.maven.apache.org, .gradle.org, pub.dev]
-```
+moor runs tinyproxy on the Box loopback to make this split. Before each
+command, moor checks that tinyproxy listens. When it does not, moor starts it
+with the config `~/.moor/egress.conf` and the pid file `~/.moor/egress.pid`.
+The config sends each rule host to the Proxy tunnel and lets tinyproxy dial
+every other host. `HTTPS_PROXY`, `HTTP_PROXY`, their lowercase forms, the Yarn
+variables and the Java and Gradle proxy settings name the tinyproxy port.
+`NO_PROXY` holds only the loopback names.
 
-An entry is a host name, or `.domain` for every name under the domain. moor
-lowercases each entry and adds it to `NO_PROXY` and `no_proxy`, after the
-loopback entries `127.0.0.1,localhost,::1`. In the Java and Gradle
-`nonProxyHosts` that moor writes, `.domain` becomes `*.domain`.
-
-A host that a credential rule serves can never go direct. moor refuses an
-entry that covers one, and the error names the entry and the host. An entry
-covers its own name and every name under it, in either form, because curl
-and Go read a bare `NO_PROXY` name that way. For example, moor refuses `.github.com`,
-`anthropic.com`, and `api.github.com`.
+When tinyproxy is not installed, moor installs the `tinyproxy-bin` package
+with `apt-get`, as root or through `sudo -n`, and without the proxy
+variables. moor supports only apt. On a Box image with no `apt-get`, install
+`tinyproxy` in the image. When moor cannot install or start tinyproxy, the
+command stops before it runs, and the reason starts with `the egress proxy
+could not start`. A Box setup that stops this way fails with that reason.
+moor never sends all Box traffic through the Proxy instead.

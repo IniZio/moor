@@ -68,7 +68,8 @@ fn the_proxy_is_ready_before_the_clone_exec_and_its_env_is_on_it() {
     let script = spec.argv.get(2).cloned().unwrap_or_default();
     assert!(
         script.contains(&format!(
-            "export HTTPS_PROXY=\"http://127.0.0.1:{FAKE_BOX_PORT}\""
+            "export HTTPS_PROXY=\"http://127.0.0.1:{}\"",
+            crate::store::egress_port(FAKE_BOX_PORT)
         )),
         "{script}"
     );
@@ -117,6 +118,33 @@ fn a_failed_clone_ends_the_start_with_its_step_and_stops_the_proxy_it_started() 
     assert_eq!(ensured_stopped(&host), (true, true));
     assert_eq!(lifecycle(&w), BoxLifecycle::SetupFailed);
     assert_eq!(w.driver.execs().len(), 1, "setup does not run");
+}
+
+#[test]
+fn an_egress_proxy_that_cannot_start_fails_the_setup_with_its_reason() {
+    let host = FakeProxyHost::new();
+    let reason = "moor: the egress proxy could not start: tinyproxy is not installed and the Box \
+                  has no apt-get; moor installs it only with apt";
+    let mut w = super::world(
+        FakeDriver::new()
+            .exec_results([Ok(exit(1))])
+            .exec_stdout([reason]),
+    );
+    w.cx = w.cx.with_proxy_host(Arc::new(host.clone()));
+    script_base_yaml(&w, Some(YAML));
+    let err = run(&w.cx, &start_req()).unwrap_err();
+    assert!(err.error.to_string().contains(reason), "{err:?}");
+    assert_eq!(lifecycle(&w), BoxLifecycle::SetupFailed);
+    let events = w.cx.store().unwrap().events(BoxId::new(1), 50).unwrap();
+    let failed = events.iter().find(|e| e.kind == "setup_failed").unwrap();
+    assert!(
+        failed.payload.to_string().contains("the egress proxy could not start"),
+        "{:?}",
+        failed.payload
+    );
+    assert_eq!(w.driver.execs().len(), 1, "nothing runs after the failed egress proxy");
+    let clone = clone_exec(&w).argv.join(" ");
+    assert!(clone.contains("tinyproxy -c"), "the clone exec starts the egress proxy first");
 }
 
 #[test]

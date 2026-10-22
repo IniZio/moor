@@ -1,8 +1,8 @@
 //! The Box exec environment of the ops: the Proxy and the environment for one exec.
 
-use moor_core::config::proxy::{check_direct, ResolvedRule, GITHUB_SECRET};
+use moor_core::config::proxy::{ResolvedRule, GITHUB_SECRET};
 use moor_core::config::BoxSettings;
-use moor_core::exec_env::{self, BoxCtx, ExecEnv, ProxyCtx, Purpose, RUN_DEADLINE};
+use moor_core::exec_env::{self, BoxCtx, ExecEnv, Purpose, RUN_DEADLINE};
 use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proc::Deadline;
@@ -12,6 +12,7 @@ use moor_core::{BoxHandle, BoxId, BoxPath};
 
 use crate::cx::Cx;
 use crate::ops::common::proxy::{box_env, plan};
+use crate::store::egress_port;
 
 /// The Box's running Proxy, as a Box exec needs it.
 pub(crate) struct BoxProxy {
@@ -54,25 +55,17 @@ pub(crate) fn proxy(
         user,
         vault_key: vault_key.to_path_buf(),
     };
-    check_direct(
-        &cfg.direct,
-        "proxy.direct",
-        &spec
-            .rules
-            .iter()
-            .flat_map(|r| r.hosts.iter().map(String::as_str))
-            .collect::<Vec<_>>(),
-    )
-    .map_err(|e| e.to_string())?;
     let rule_env = box_env(&spec.rules);
     let forge = forge_routed(&spec.rules);
+    let hosts = spec.rules.iter().flat_map(|r| r.hosts.clone()).collect();
     let ep = cx.proxy_host().ensure(&spec).map_err(|e| e.to_string())?;
     let addr = ProxyAddr {
         box_port: ep.box_port,
+        egress_port: egress_port(ep.box_port),
         ca_pem: ep.ca_pem,
         box_env: exec_env::merged_env(repo_env, rule_env.clone()),
         forge,
-        direct: cfg.direct.clone(),
+        hosts,
     };
     Ok(BoxProxy { addr, rule_env })
 }
@@ -125,11 +118,7 @@ pub(crate) fn prepare(
     let env = exec_env::merged_env(repo_env, rule_env);
     let ctx = BoxCtx {
         env: &env,
-        proxy: proxy.map(|p| ProxyCtx {
-            box_port: p.addr.box_port,
-            ca_pem: &p.addr.ca_pem,
-            direct: &p.addr.direct,
-        }),
+        proxy: proxy.map(|p| p.addr.ctx()),
         workdir: site.workdir,
         strip: &strip,
     };

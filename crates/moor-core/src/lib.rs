@@ -21,7 +21,7 @@ pub mod user;
 pub mod view;
 
 pub use name::{
-    BoxHandle, BoxId, BoxName, BoxPath, DirectHost, NameError, ProviderId, RunId, SessionId, Sha,
+    BoxHandle, BoxId, BoxName, BoxPath, NameError, ProviderId, RunId, SessionId, Sha,
 };
 pub use request::{
     ArtifactReadReq, ArtifactsReq, BoxReq, BoxTarget, CloseReq, CpReq, EnvReq, GateReq, Request,

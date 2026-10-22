@@ -43,7 +43,7 @@ mod turns;
 mod users;
 
 pub(crate) use agent::SessionRow;
-pub(crate) use proxy::{Fenced, Lease, ProxyRow, ReadyProc, Reserve};
+pub(crate) use proxy::{egress_port, Fenced, Lease, ProxyRow, ReadyProc, Reserve};
 pub(crate) use proxy::{TunnelAck, TunnelRequest, TunnelWant};
 pub(crate) use runs::{NewRun, RunOutcome, RunRow};
 

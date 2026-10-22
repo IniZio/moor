@@ -4,6 +4,10 @@ use std::io::{self, Write as _};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+mod egress;
+
+pub use egress::{FakeEgress, FAKE_TINYPROXY};
+
 /// Writes `contents` to `path` as an executable that can be run at once.
 ///
 /// The bytes are written by a short-lived child process instead of this one. A file this

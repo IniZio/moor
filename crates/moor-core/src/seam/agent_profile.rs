@@ -3,23 +3,37 @@
 use std::fmt;
 
 use crate::activity::HookRecord;
-use crate::name::DirectHost;
 use crate::name::{BoxPath, NameError};
 use crate::seam::engine::LaunchPrompt;
 use crate::secret::Secret;
 
 /// The Proxy's address as the Box sees it.
 pub struct ProxyAddr {
-    /// The Proxy's port as seen inside the Box.
+    /// The Proxy tunnel's port as seen inside the Box.
     pub box_port: u16,
+    /// The loopback port of the egress proxy, which sends only `hosts` through the tunnel.
+    pub egress_port: u16,
     /// The public Box CA certificate in PEM form; not secret.
     pub ca_pem: String,
     /// Non-secret environment pairs from the tool rules, already resolved.
     pub box_env: Vec<(String, String)>,
     /// Whether a forge rule routes GitHub through the Proxy, so the agent gets `gh`.
     pub forge: bool,
-    /// Hosts the Box reaches without the Proxy.
-    pub direct: Vec<DirectHost>,
+    /// The hosts the credential rules serve; every other host is dialed direct.
+    pub hosts: Vec<String>,
+}
+
+impl ProxyAddr {
+    /// What the exec environment builder needs from this Proxy.
+    #[must_use]
+    pub fn ctx(&self) -> crate::exec_env::ProxyCtx<'_> {
+        crate::exec_env::ProxyCtx {
+            box_port: self.box_port,
+            egress_port: self.egress_port,
+            ca_pem: &self.ca_pem,
+            hosts: &self.hosts,
+        }
+    }
 }
 
 impl fmt::Debug for ProxyAddr {
@@ -28,7 +42,8 @@ impl fmt::Debug for ProxyAddr {
             .field("box_port", &self.box_port)
             .field("box_env", &self.box_env)
             .field("forge", &self.forge)
-            .field("direct", &self.direct)
+            .field("egress_port", &self.egress_port)
+            .field("hosts", &self.hosts)
             .finish_non_exhaustive()
     }
 }

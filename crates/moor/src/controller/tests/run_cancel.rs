@@ -139,7 +139,7 @@ fn a_run_whose_client_is_killed_is_cancelled_and_recorded_interrupted() {
 /// [`FAKE_SSH`] whose Box command marks `started` and outlasts the start of a drain before it
 /// runs on this host, with a home beside itself for the Proxy CA.
 const SLOW_SSH: &str = "#!/bin/sh\n\
-    PATH=/usr/bin:/bin\n\
+    PATH=\"$(dirname \"$0\")/bin:/usr/bin:/bin\"\n\
     export HOME=\"$(dirname \"$0\")\"\n\
     test \"$1\" = -G && { echo 'stricthostkeychecking true'; echo 'userknownhostsfile /k'; exit; }\n\
     case \"$*\" in *gate-*) touch \"$(dirname \"$0\")/started\"; sleep 1 ;; esac\n\
@@ -183,6 +183,11 @@ fn a_drain_lets_a_run_in_flight_finish_and_closes_idle_connections() {
     let (crabbox, ssh) = (dir.path().join("crabbox"), dir.path().join("ssh"));
     moor_testkit::write_executable(&crabbox, FAKE_CRABBOX).unwrap();
     moor_testkit::write_executable(&ssh, SLOW_SSH).unwrap();
+    let bin = dir.path().join("bin");
+    std::fs::create_dir(&bin).unwrap();
+    let _egress =
+        moor_testkit::FakeEgress::start_on(dir.path(), &bin, crate::store::egress_port(2000))
+            .unwrap();
     let env = super::env_with(
         dir.path(),
         &[

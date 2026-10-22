@@ -1,6 +1,4 @@
-//! Prelude lines that point Java and Gradle at the Proxy and its CA.
-
-use crate::name::DirectHost;
+//! Prelude lines that point Java and Gradle at the egress proxy and the Proxy CA.
 
 /// Shell variables `java_lines` sets; the prelude unsets them at its end.
 pub(super) const JAVA_SHELL_VARS: &str = "moor_g moor_p moor_ts moor_jh";
@@ -13,15 +11,12 @@ const END: &str = "# moor proxy: end";
 /// Hosts the JVM always reaches directly, not through the Proxy.
 const NON_PROXY: &str = "127.0.0.1|localhost";
 
-/// Lines that give the JVM the Proxy and a trust store holding its CA.
+/// Lines that give the JVM the egress proxy on `port` and a trust store holding the Proxy CA.
 ///
 /// `gradle.properties` is rewritten under `umask 077`, since it may hold the user's own
 /// secrets. Without `keytool`, or if any step fails, no Java variable is set.
-pub(super) fn java_lines(box_port: u16, ca: &str, direct: &[DirectHost]) -> Vec<String> {
-    let non_proxy: String = std::iter::once(NON_PROXY.to_owned())
-        .chain(direct.iter().map(DirectHost::java))
-        .collect::<Vec<_>>()
-        .join("|");
+pub(super) fn java_lines(port: u16, ca: &str) -> Vec<String> {
+    let non_proxy = NON_PROXY;
     let mut lines = vec![
         "if command -v keytool >/dev/null 2>&1; then".to_owned(),
         "moor_g=\"${GRADLE_USER_HOME:-$HOME/.gradle}\"; moor_p=\"$moor_g/gradle.properties\"; moor_ts=\"$moor_g/moor-proxy-truststore.p12\"".to_owned(),
@@ -37,7 +32,7 @@ pub(super) fn java_lines(box_port: u16, ca: &str, direct: &[DirectHost]) -> Vec<
     ];
     for scheme in ["http", "https"] {
         lines.push(format!(
-            "printf '%s\\n' 'systemProp.{scheme}.proxyHost=127.0.0.1' 'systemProp.{scheme}.proxyPort={box_port}'"
+            "printf '%s\\n' 'systemProp.{scheme}.proxyHost=127.0.0.1' 'systemProp.{scheme}.proxyPort={port}'"
         ));
     }
     lines.extend(
@@ -46,7 +41,7 @@ pub(super) fn java_lines(box_port: u16, ca: &str, direct: &[DirectHost]) -> Vec<
             "} >\"$moor_p.$$\" ) &&".to_owned(),
             "mv -f \"$moor_p.$$\" \"$moor_p\"; then".to_owned(),
             format!(
-                "export JAVA_TOOL_OPTIONS=\"${{JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS }}-Djavax.net.ssl.trustStore=$moor_ts -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12 -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort={box_port} -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort={box_port} -Dhttp.nonProxyHosts={non_proxy} -Dhttps.nonProxyHosts={non_proxy}\""
+                "export JAVA_TOOL_OPTIONS=\"${{JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS }}-Djavax.net.ssl.trustStore=$moor_ts -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12 -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort={port} -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort={port} -Dhttp.nonProxyHosts={non_proxy} -Dhttps.nonProxyHosts={non_proxy}\""
             ),
             "else rm -f \"$moor_ts.$$\" \"$moor_p.$$\"; fi".to_owned(),
             "fi".to_owned(),

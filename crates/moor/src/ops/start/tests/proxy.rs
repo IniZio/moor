@@ -281,26 +281,7 @@ fn config_with_proxy(yaml: &str) -> moor_core::config::UserConfig {
 }
 
 #[test]
-fn user_direct_hosts_reach_the_agent_proxy_address() {
-    let config = config_with_proxy("proxy: {direct: [dl.google.com, .gradle.org]}");
-    let engine = Arc::new(FakeEngine::new());
-    let mut w = super::world_with(FakeDriver::new(), config);
-    w.cx =
-        w.cx.with_engine(engine.clone())
-            .with_proxy_host(Arc::new(FakeProxyHost::new()));
-    run(&w.cx, &goal_req()).unwrap();
-    let launches = engine.launches();
-    let addr = launches.first().unwrap().proxy.as_ref().unwrap();
-    let direct: Vec<String> = addr
-        .direct
-        .iter()
-        .map(moor_core::DirectHost::no_proxy)
-        .collect();
-    assert_eq!(direct, ["dl.google.com", ".gradle.org"]);
-}
-
-#[test]
-fn a_repo_direct_host_that_a_user_rule_serves_fails_the_start_at_the_clone() {
+fn the_agent_proxy_sends_only_the_credential_hosts_to_the_egress_tunnel() {
     let config = config_with_proxy(
         "proxy: {rules: {gitlab: {hosts: [gitlab.com], credential: github, inject: {form: 'Bearer {secret}'}}}}",
     );
@@ -309,15 +290,11 @@ fn a_repo_direct_host_that_a_user_rule_serves_fails_the_start_at_the_clone() {
     w.cx =
         w.cx.with_engine(engine.clone())
             .with_proxy_host(Arc::new(FakeProxyHost::new()));
-    script_base_yaml(&w, Some("proxy: {direct: [pub.dev, .gitlab.com]}\n"));
-    let err = run(&w.cx, &goal_repo_req()).unwrap_err();
-    let message = err.error.to_string();
-    assert!(
-        message.contains("proxy.direct[1]: .gitlab.com covers gitlab.com,"),
-        "{message}"
-    );
-    let value = err.value.unwrap();
-    assert_eq!(value.get("failed_step"), Some(&"clone".into()));
-    assert!(w.driver.execs().is_empty());
-    assert!(engine.launches().is_empty());
+    run(&w.cx, &goal_req()).unwrap();
+    let launches = engine.launches();
+    let addr = launches.first().unwrap().proxy.as_ref().unwrap();
+    let mut hosts = addr.hosts.clone();
+    hosts.sort();
+    assert_eq!(hosts, ["api.anthropic.com", "gitlab.com"]);
+    assert_eq!(addr.egress_port, addr.box_port + 20000);
 }

@@ -92,11 +92,10 @@ fn a_repo_env_value_cannot_replace_the_root_signal() {
 }
 
 #[test]
-fn the_agent_script_sends_direct_hosts_around_the_proxy() {
+fn the_agent_script_points_the_proxy_variables_at_the_egress_proxy() {
     let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
-    let user = moor_core::config::parse_user("u.yaml", "proxy: {direct: [dl.google.com]}").unwrap();
     let addr = ProxyAddr {
-        direct: user.proxy.direct,
+        hosts: vec!["api.anthropic.com".to_owned()],
         ..proxy_addr()
     };
     let req = LaunchReq {
@@ -106,9 +105,11 @@ fn the_agent_script_sends_direct_hosts_around_the_proxy() {
     agent(&d, &s).launch(&req).unwrap();
     let script = script_of(&pane_line(&s));
     assert!(
-        script.contains(
-            "export NO_PROXY=\"127.0.0.1,localhost,::1,dl.google.com${NO_PROXY:+,$NO_PROXY}\""
-        ),
+        script.contains("export HTTPS_PROXY=\"http://127.0.0.1:4568\""),
+        "{script}"
+    );
+    assert!(
+        script.contains("upstream http 127.0.0.1:4567 \"api.anthropic.com\""),
         "{script}"
     );
 }

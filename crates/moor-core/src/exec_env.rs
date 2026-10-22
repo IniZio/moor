@@ -5,8 +5,9 @@ use std::time::Duration;
 
 use crate::boxscript::quote;
 use crate::name::BoxPath;
-use crate::name::DirectHost;
 use crate::seam::proc::Deadline;
+
+pub use egress::EGRESS_FAILED;
 
 /// The Box directory the prelude writes the public Proxy CA into, as shell text that expands on the Box.
 const PROXY_DIR: &str = "$HOME/.moor-proxy";
@@ -49,15 +50,18 @@ pub enum Purpose {
     Agent,
 }
 
-/// The Proxy CA the prelude writes and the port the Box reaches the Proxy on.
+/// The Proxy CA the prelude writes, the Proxy tunnel port, and the egress proxy that sends only
+/// the credential hosts through that tunnel.
 #[derive(Debug, Clone, Copy)]
 pub struct ProxyCtx<'a> {
-    /// The Proxy port inside the Box.
+    /// The Proxy tunnel port inside the Box.
     pub box_port: u16,
+    /// The loopback port of the egress proxy, which the proxy variables name.
+    pub egress_port: u16,
     /// The public Proxy CA certificate in PEM form.
     pub ca_pem: &'a str,
-    /// Hosts the Box reaches without the Proxy.
-    pub direct: &'a [DirectHost],
+    /// The hosts the credential rules serve; only these go through the Proxy.
+    pub hosts: &'a [String],
 }
 
 /// What the environment is built from. Per-Box home, xcconfig and Box tag variables for Mac Boxes
@@ -116,8 +120,9 @@ pub fn build(b: &BoxCtx<'_>, purpose: Purpose) -> Result<ExecEnv, String> {
     }
     if b.proxy.is_some() {
         prelude.push(format!(
-            "unset moor_bundle moor_sys moor_mark moor_f {}",
-            java::JAVA_SHELL_VARS
+            "unset moor_bundle moor_sys moor_mark moor_f {} {}",
+            java::JAVA_SHELL_VARS,
+            egress::EGRESS_SHELL_VARS
         ));
         // The agent launch script exports the repo env, these included, just before the agent starts.
         if !matches!(purpose, Purpose::Agent) {
@@ -224,8 +229,9 @@ fn or_stop(line: &str, file: &str) -> String {
     format!("{line} || {{ echo \"moor: {CA_WRITE_FAILED} {file}\" >&2; exit 1; }}")
 }
 
-/// Lines that write the CA, trust it and export the Proxy variables. When the CA or the bundle
-/// cannot be written, the exec stops before the command with a message naming the file.
+/// Lines that write the CA, trust it, keep the egress proxy running and export the proxy
+/// variables. When the CA or the bundle cannot be written, or the egress proxy cannot start, the
+/// exec stops before the command with a message naming the cause.
 fn proxy_lines(p: &ProxyCtx<'_>) -> Vec<String> {
     let ca_file = format!("{PROXY_DIR}/{CA_FILE}");
     let ca = format!("\"{ca_file}\"");
@@ -255,6 +261,7 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Vec<String> {
             )
         ),
     ];
+    lines.extend(egress::lines(p.egress_port, p.box_port, p.hosts));
     for name in [
         "SSL_CERT_FILE",
         "CURL_CA_BUNDLE",
@@ -265,21 +272,16 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Vec<String> {
     }
     lines.push(format!("export NODE_EXTRA_CA_CERTS={ca}"));
     for name in ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"] {
-        lines.push(format!("export {name}=\"http://127.0.0.1:{}\"", p.box_port));
+        lines.push(format!("export {name}=\"http://127.0.0.1:{}\"", p.egress_port));
     }
-    lines.extend(yarn_lines(p.box_port));
-    let direct: String = p
-        .direct
-        .iter()
-        .map(|h| [",", &h.no_proxy()].concat())
-        .collect();
+    lines.extend(yarn_lines(p.egress_port));
     for name in ["NO_PROXY", "no_proxy"] {
         lines.push(format!(
-            "export {name}=\"127.0.0.1,localhost,::1{direct}${{{name}:+,${name}}}\""
+            "export {name}=\"127.0.0.1,localhost,::1${{{name}:+,${name}}}\""
         ));
     }
     lines.push("export NODE_USE_ENV_PROXY=1".to_owned());
-    lines.extend(java::java_lines(p.box_port, &ca, p.direct));
+    lines.extend(java::java_lines(p.egress_port, &ca));
     lines
 }
 
@@ -297,11 +299,11 @@ fn image_path_line_for(file: &str) -> String {
     )
 }
 
-/// Shell lines that point Yarn and npm at the proxy and a cache the agent can write.
-fn yarn_lines(box_port: u16) -> Vec<String> {
+/// Shell lines that point Yarn and npm at the egress proxy and a cache the agent can write.
+fn yarn_lines(port: u16) -> Vec<String> {
     let mut lines: Vec<String> = ["YARN_HTTPS_PROXY", "YARN_HTTP_PROXY"]
         .iter()
-        .map(|name| format!("export {name}=\"http://127.0.0.1:{box_port}\""))
+        .map(|name| format!("export {name}=\"http://127.0.0.1:{port}\""))
         .collect();
     lines.extend(
         [
@@ -314,6 +316,7 @@ fn yarn_lines(box_port: u16) -> Vec<String> {
     lines
 }
 
+mod egress;
 mod java;
 
 #[cfg(test)]

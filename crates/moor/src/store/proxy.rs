@@ -17,6 +17,15 @@ use super::{load_box, to_u32, Store, StoreError};
 pub(crate) const BOX_PORT_MIN: u16 = 20000;
 /// Highest box port a proxy may be given (inclusive).
 pub(crate) const BOX_PORT_MAX: u16 = 39999;
+/// How far above its box port a Box's egress proxy listens. Box ports are unique, so egress
+/// ports are too, and the two ranges never meet.
+const EGRESS_OFFSET: u16 = 20000;
+const _: () = assert!(BOX_PORT_MAX.checked_add(EGRESS_OFFSET).is_some());
+
+/// The loopback port the egress proxy of the Box with `box_port` listens on.
+pub(crate) const fn egress_port(box_port: u16) -> u16 {
+    box_port.saturating_add(EGRESS_OFFSET)
+}
 
 /// Number of random draws before falling back to a linear scan.
 const DRAWS: u32 = 64;

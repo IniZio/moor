@@ -56,10 +56,11 @@ fn proxied(box_port: u16, ca_pem: &str) -> LaunchReq {
     LaunchReq {
         proxy: Some(Arc::new(ProxyAddr {
             box_port,
+            egress_port: box_port,
             ca_pem: ca_pem.to_owned(),
             box_env: Vec::new(),
             forge: false,
-            direct: Vec::new(),
+            hosts: Vec::new(),
         })),
         ..req()
     }
