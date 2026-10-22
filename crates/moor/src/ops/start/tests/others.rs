@@ -3,7 +3,7 @@
 use moor_core::user::{Identity, UserId, Viewer};
 use moor_core::BoxId;
 
-use super::{req, world};
+use super::{repo_req, req, script_base_yaml, world};
 use crate::cx::Cx;
 use crate::ops::start::run;
 use crate::testing::cx::put_secret;
@@ -65,4 +65,16 @@ fn a_start_shows_the_settle_warning_of_its_callers_own_box() {
     run(&w.cx, &req("next")).unwrap();
     let codes: Vec<_> = w.cx.take_warnings().into_iter().map(|x| x.code).collect();
     assert!(codes.contains(&"settle_failed".to_owned()), "{codes:?}");
+}
+
+#[test]
+fn each_users_start_reads_the_repo_with_that_users_own_token() {
+    let mut w = world(FakeDriver::new());
+    script_base_yaml(&w, None);
+    run(&w.cx, &repo_req("first")).unwrap();
+    let (cx, user) = second_user(w.cx);
+    w.cx = cx.with_viewer(Viewer::User(user));
+    run(&w.cx, &repo_req("second")).unwrap();
+    let tokens: Vec<_> = w.forge.reads().into_iter().map(|r| r.token).collect();
+    assert_eq!(tokens, ["github-test-value", "github-of-2000"]);
 }

@@ -22,21 +22,24 @@ impl ForgeRepo {
         }
     }
 
-    /// Parses `OWNER/NAME`: one `/`, each segment `[A-Za-z0-9._-]+` and neither `.` nor `..`.
+    /// Parses `OWNER/NAME`: one `/`, each segment `[A-Za-z0-9._-]+` and neither `.` nor `..`,
+    /// the owner at most 39 bytes and the name at most 100, as GitHub allows.
     ///
     /// # Errors
     /// [`RepoNameError`] for any other text.
     pub fn parse(s: &str) -> Result<Self, RepoNameError> {
-        let segment = |p: &str| {
-            !p.is_empty()
+        let segment = |p: &str, max: usize| {
+            (1..=max).contains(&p.len())
                 && p != "."
                 && p != ".."
                 && p.bytes()
                     .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
         };
         match s.split_once('/') {
-            Some((owner, name)) if segment(owner) && segment(name) => Ok(Self::new(owner, name)),
-            _ => Err(RepoNameError(s.to_owned())),
+            Some((owner, name)) if segment(owner, OWNER_CAP) && segment(name, NAME_CAP) => {
+                Ok(Self::new(owner, name))
+            }
+            _ => Err(RepoNameError),
         }
     }
 
@@ -62,10 +65,16 @@ impl fmt::Display for ForgeRepo {
     }
 }
 
-/// Text that is not `OWNER/NAME`.
+/// Longest GitHub account or organisation name.
+const OWNER_CAP: usize = 39;
+
+/// Longest GitHub repo name.
+const NAME_CAP: usize = 100;
+
+/// Text that is not `OWNER/NAME`; the text is never shown, as it may be a URL with a token.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("repo `{0}` is not OWNER/NAME")]
-pub struct RepoNameError(String);
+#[error("a repo must be OWNER/NAME")]
+pub struct RepoNameError;
 
 impl TryFrom<String> for ForgeRepo {
     type Error = RepoNameError;

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use moor_core::seam::proc::Tool;
 use serde_json::{json, Value};
 
-use super::{resolve, Resolved, NOT_GITHUB};
+use super::{resolve, Resolved, NOT_GITHUB, REPO_ARG};
 use crate::adapters::git::Git;
 use crate::cli::tests::argv;
 use crate::cli::{parse, Parsed};
@@ -95,6 +95,22 @@ fn a_named_repo_skips_the_checkout() {
         assert_eq!(serde_json::to_value(r.request).unwrap()["repo"], want);
     }
     assert!(proc.calls().is_empty(), "{:?}", proc.calls());
+}
+
+#[test]
+fn a_refused_repo_flag_never_echoes_its_value() {
+    for args in [
+        &["start", "demo", "--repo", "https://u:tok3n@gitlab.com/o/n.git"][..],
+        &["env", "https://u:tok3n@gitlab.com/o/n.git"],
+    ] {
+        let Parsed::Done(out) = parse(argv(args)) else {
+            unreachable!("{args:?} parsed")
+        };
+        assert_ne!(out.code, 0, "{args:?}");
+        let shown = format!("{}{}", out.stdout, out.stderr);
+        assert!(shown.contains(REPO_ARG), "{shown}");
+        assert!(!shown.contains("tok3n"), "{shown}");
+    }
 }
 
 #[test]

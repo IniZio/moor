@@ -193,6 +193,18 @@ pub fn render(resp: &Response, opts: &GlobalOpts) -> Output {
     }
 }
 
+/// A refused value's message without the value, which may be a URL that carries a token.
+fn unquoted_value_error(err: &clap::Error) -> Option<String> {
+    if err.kind() != ClapKind::ValueValidation {
+        return None;
+    }
+    let why = std::error::Error::source(err)?;
+    Some(match err.get(clap::error::ContextKind::InvalidArg) {
+        Some(arg) => format!("invalid value for '{arg}': {why}"),
+        None => format!("invalid value: {why}"),
+    })
+}
+
 /// Maps a clap error to help output or a usage envelope.
 fn clap_output(err: &clap::Error, cmd: String, opts: &GlobalOpts) -> Output {
     let text = err.render().to_string();
@@ -223,7 +235,8 @@ fn clap_output(err: &clap::Error, cmd: String, opts: &GlobalOpts) -> Output {
         _ => {
             let mut lines = text.lines();
             let first = lines.next().unwrap_or_default();
-            let message = first.strip_prefix("error: ").unwrap_or(first).to_owned();
+            let message = unquoted_value_error(err)
+                .unwrap_or_else(|| first.strip_prefix("error: ").unwrap_or(first).to_owned());
             let hints = lines
                 .filter(|l| !l.trim().is_empty())
                 .map(str::to_owned)

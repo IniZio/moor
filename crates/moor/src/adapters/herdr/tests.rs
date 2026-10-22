@@ -65,6 +65,21 @@ fn ensure_workspace_reuses_the_workspace_found_by_label() {
 }
 
 #[test]
+fn ensure_workspace_matches_a_label_exactly_not_by_prefix() {
+    for (wanted, listed) in [("moor:a", "moor:ab"), ("moor:ab", "moor:a")] {
+        let (p, h) = fixture();
+        let list = format!(
+            r#"{{"id":"cli:workspace:list","result":{{"workspaces":[{{"label":"{listed}","workspace_id":"w9"}}]}}}}"#
+        );
+        p.on(Tool::Herdr, &["workspace", "list"], ok(&list));
+        p.on(Tool::Herdr, &["workspace", "create"], ok(WS_CREATE));
+        p.on(Tool::Herdr, &["workspace", "rename"], ok(""));
+        let ws = h.ensure_workspace(wanted).expect("ensured");
+        assert_eq!(ws.as_str(), "w1", "{wanted} matched {listed}");
+    }
+}
+
+#[test]
 fn ensure_workspace_creates_and_labels_one_in_its_dir_when_none_matches() {
     let (p, h) = fixture();
     let h = h.with_workspace_dir(PathBuf::from("/state"));

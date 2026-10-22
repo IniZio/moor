@@ -81,3 +81,14 @@ fn local_changes_sees_edits_and_unpushed_commits_only() {
     assert!(git.local_changes(&work), "ahead of origin/main");
     assert!(!git.local_changes(dir.path()), "not a checkout");
 }
+
+#[test]
+fn a_branch_with_no_upstream_counts_as_local_changes() {
+    let dir = tempfile::tempdir().unwrap();
+    let work = pushed(dir.path());
+    let git = real_git();
+    git_in(&work, &["switch", "-q", "-c", "topic"]);
+    assert!(git.local_changes(&work), "no upstream");
+    git_in(&work, &["switch", "-q", "--detach", "main"]);
+    assert!(git.local_changes(&work), "detached HEAD");
+}
