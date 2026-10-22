@@ -168,6 +168,25 @@ impl Crabbox {
     fn spec(deadline: Duration) -> ProcSpec {
         ProcSpec::new(Tool::Crabbox, Deadline(deadline))
     }
+
+    /// Runs the warmup `spec` for `handle` and reads where its workdir is.
+    fn warm_up(
+        &self,
+        provider: &str,
+        handle: &BoxHandle,
+        spec: &ProcSpec,
+    ) -> Result<Acquired, DriverError> {
+        let out = self.call(Op::Acquire, Some(provider), spec)?;
+        let warm = parse::parse_warmup(&out.stdout).ok_or_else(|| unreadable("acquire"))?;
+        let workdir = match warm.workdir.as_deref().map(BoxPath::restore) {
+            Some(Ok(dir)) => dir,
+            _ => workdir::probe(self, handle)?,
+        };
+        Ok(Acquired {
+            handle: handle.clone(),
+            workdir,
+        })
+    }
 }
 
 /// Per-Box crabbox slug, `moor-{id}-{nonce}`; the Box name never enters it.
@@ -243,15 +262,14 @@ impl Driver for Crabbox {
             .args(["warmup", "--provider", provider])
             .args(["--slug", &name, "--class", class]);
         let handle = handle_of(provider, &name);
+        let existed = self.lease_dir(&handle)?.exists();
         let spec = self.at_lease(spec, &handle)?;
         self.forget_targets(&handle);
-        let out = self.call(Op::Acquire, Some(provider), &spec)?;
-        let warm = parse::parse_warmup(&out.stdout).ok_or_else(|| unreadable("acquire"))?;
-        let workdir = match warm.workdir.as_deref().map(BoxPath::restore) {
-            Some(Ok(dir)) => dir,
-            _ => workdir::probe(self, &handle)?,
-        };
-        Ok(Acquired { handle, workdir })
+        let acquired = self.warm_up(provider, &handle, &spec);
+        if acquired.is_err() && !existed {
+            self.drop_lease_dir(&handle);
+        }
+        acquired
     }
 
     fn planned_handle(&self, req: &AcquireReq) -> BoxHandle {

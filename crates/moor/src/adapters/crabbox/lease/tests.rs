@@ -258,3 +258,56 @@ fn without_a_state_dir_lease_calls_are_refused() {
         .iter()
         .all(|k| k.args.first().is_none_or(|a| a != "stop")));
 }
+
+#[test]
+fn a_state_dir_behind_a_symlink_inside_a_git_repo_never_becomes_the_claim_root() {
+    let top = tempfile::tempdir().unwrap();
+    let repo = top.path().join("repo");
+    fs::create_dir_all(repo.join("state")).unwrap();
+    let init = Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(&repo)
+        .status()
+        .unwrap();
+    assert!(init.success());
+    let link = top.path().join("state-link");
+    std::os::unix::fs::symlink(repo.join("state"), &link).unwrap();
+    let c = Crabbox::fake(scripted()).with_state_dir(Some(link), top.path().join("s"));
+    let spec = ProcSpec::new(Tool::Crabbox, Deadline(Duration::from_secs(1)));
+    let spec = c.at_lease(spec, &handle()).unwrap();
+    let cwd = spec.cwd.clone().unwrap();
+    assert_eq!(cwd, fs::canonicalize(&cwd).unwrap(), "a walk that reads paths as text");
+    let ceiling = spec.env.extra.iter().find(|(k, _)| k == CEILING).unwrap();
+    assert_eq!(Some(Path::new(&ceiling.1)), cwd.parent());
+    let out = toplevel(&spec);
+    assert!(
+        !out.status.success(),
+        "git found {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+}
+
+#[test]
+fn a_failed_acquire_removes_the_lease_dir_it_made() {
+    let p = Arc::new(ScriptedProc::new());
+    p.on(Tool::Crabbox, &["providers"], Reply::Ok(PROVIDERS.to_owned()));
+    p.on(Tool::Crabbox, &["warmup"], stop_fails(1, "no capacity"));
+    p.on(Tool::Crabbox, &[], Reply::Ok(String::new()));
+    let c = Crabbox::fake(p);
+    assert!(c.acquire(&req()).is_err());
+    let dir = c.lease_dir(&handle()).unwrap();
+    assert!(!dir.exists(), "{} kept", dir.display());
+    assert!(c.leases.as_ref().unwrap().exists());
+}
+
+#[test]
+fn a_failed_acquire_keeps_a_lease_dir_that_was_already_there() {
+    let p = Arc::new(ScriptedProc::new());
+    p.on(Tool::Crabbox, &["providers"], Reply::Ok(PROVIDERS.to_owned()));
+    p.on(Tool::Crabbox, &["warmup"], stop_fails(1, "no capacity"));
+    p.on(Tool::Crabbox, &[], Reply::Ok(String::new()));
+    let c = Crabbox::fake(p);
+    let dir = leases_dir_made(&c);
+    assert!(c.acquire(&req()).is_err());
+    assert!(dir.exists(), "{} removed", dir.display());
+}
