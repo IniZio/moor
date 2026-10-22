@@ -355,7 +355,7 @@ fn recheck_probe_and_report_index_share_one_batch() {
     let after_acquire: Vec<&str> = calls.iter().skip(1).map(String::as_str).collect();
     assert_eq!(
         after_acquire,
-        ["list", "batch", "batch", "peek_file", "batch", "release"],
+        ["batch", "batch", "peek_file", "batch", "release"],
         "{calls:?}"
     );
 }
