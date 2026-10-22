@@ -13,6 +13,8 @@ mod client_cwd;
 mod controller;
 #[path = "cli/events.rs"]
 mod events;
+#[path = "cli/fronts.rs"]
+mod fronts;
 #[path = "cli/inherited.rs"]
 mod inherited;
 #[path = "cli/redial_e2e.rs"]

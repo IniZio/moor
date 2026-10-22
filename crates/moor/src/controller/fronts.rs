@@ -1,11 +1,14 @@
 //! Runs each front that has a command as a child of the controller, restarting it when it exits.
+//! Each runs under `moor front-shim`, which keeps the controller's own files out of its reach.
 
+use std::ffi::OsString;
 use std::fs;
 use std::io::{self, BufRead as _, BufReader};
 use std::os::unix::net::UnixListener;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -65,6 +68,56 @@ impl Front {
     }
 }
 
+/// Runs each front under `moor front-shim`, hiding what a front must not reach.
+pub(super) struct Shim {
+    /// The program that runs `moor front-shim`, and its first arguments.
+    program: (OsString, Vec<OsString>),
+    /// `--cover` the state dir, `--mask` the operator socket and the vault key.
+    hide: Vec<OsString>,
+}
+
+impl Shim {
+    /// Runs `program` as the shim, hiding `state_dir`, `socket` and `vault_key` from each front.
+    pub(super) fn new(
+        program: (OsString, Vec<OsString>),
+        state_dir: Option<&Path>,
+        socket: &Path,
+        vault_key: Option<&Path>,
+    ) -> Self {
+        let cover = state_dir.into_iter().map(|dir| ("--cover", dir));
+        let mask = [Some(socket), vault_key]
+            .into_iter()
+            .flatten()
+            .map(|file| ("--mask", file));
+        let hide = cover
+            .chain(mask)
+            .flat_map(|(flag, path)| [OsString::from(flag), path.as_os_str().to_owned()])
+            .collect();
+        Self { program, hide }
+    }
+
+    /// The command that runs the shim, without its own arguments.
+    fn command(&self) -> Command {
+        let mut command = Command::new(&self.program.0);
+        command.args(&self.program.1);
+        command
+    }
+
+    /// Whether this host lets the shim create the namespaces each front runs in.
+    fn check(&self) -> Result<(), String> {
+        let out = self
+            .command()
+            .arg("--check")
+            .stdin(Stdio::null())
+            .output()
+            .map_err(|e| e.to_string())?;
+        if out.status.success() {
+            return Ok(());
+        }
+        Err(String::from_utf8_lossy(&out.stderr).trim().to_owned())
+    }
+}
+
 /// The running supervisors; dropping it kills each front and waits for its supervisor to end.
 pub(super) struct Supervised {
     /// Dropping a sender tells its supervisor to stop.
@@ -82,16 +135,29 @@ impl Drop for Supervised {
     }
 }
 
-/// Starts one supervisor thread per front.
-pub(super) fn supervise(fronts: Vec<Front>, sink: &Sink) -> Supervised {
+/// Starts one supervisor thread per front, unless the host forbids the namespaces each front
+/// runs in; then it starts none and logs which sysctls allow them.
+pub(super) fn supervise(mut fronts: Vec<Front>, shim: Shim, sink: &Sink) -> Supervised {
+    let shim = Arc::new(shim);
+    if let Some(Err(e)) = (!fronts.is_empty()).then(|| shim.check()) {
+        log(
+            sink,
+            &format!(
+                "fronts not started: they need unprivileged user namespaces \
+                 (sysctl kernel.unprivileged_userns_clone=1, user.max_user_namespaces above 0, \
+                 kernel.apparmor_restrict_unprivileged_userns=0): {e}"
+            ),
+        );
+        fronts.clear();
+    }
     let (stops, threads) = fronts
         .into_iter()
         .map(|front| {
             let (stop, stopped) = mpsc::channel();
-            let sink = sink.clone();
+            let (sink, shim) = (sink.clone(), Arc::clone(&shim));
             (
                 stop,
-                thread::spawn(move || keep_running(&front, &stopped, &sink)),
+                thread::spawn(move || keep_running(&front, &shim, &stopped, &sink)),
             )
         })
         .unzip();
@@ -103,12 +169,12 @@ pub(super) fn supervise(fronts: Vec<Front>, sink: &Sink) -> Supervised {
     clippy::disallowed_methods,
     reason = "times how long a child ran to pick its restart backoff, not domain time"
 )]
-fn keep_running(front: &Front, stop: &Receiver<()>, sink: &Sink) {
+fn keep_running(front: &Front, shim: &Shim, stop: &Receiver<()>, sink: &Sink) {
     let ns = &front.ns;
     let mut backoff = FIRST_BACKOFF;
     loop {
         let started = Instant::now();
-        let exited = match spawn(front, sink) {
+        let exited = match spawn(front, shim, sink) {
             Ok(mut child) => {
                 let status = watch(&mut child, stop);
                 let _ = fs::remove_file(front.pid_file());
@@ -145,18 +211,16 @@ fn watch(child: &mut Child, stop: &Receiver<()>) -> Option<ExitStatus> {
     }
 }
 
-/// Starts `front` with its socket on fd 3, relays its stderr lines to `sink` and records its
-/// pid.
-fn spawn(front: &Front, sink: &Sink) -> io::Result<Child> {
+/// Starts `front` under `shim` with its socket on fd 3, relays its stderr lines to `sink` and
+/// records the shim's pid.
+fn spawn(front: &Front, shim: &Shim, sink: &Sink) -> io::Result<Child> {
     let ns = &front.ns;
     let socket = rustix::fs::open(&front.socket, OFlags::PATH | OFlags::CLOEXEC, Mode::empty())?;
-    let (program, args) = front
-        .command
-        .split_first()
-        .ok_or_else(|| io::Error::other("empty command"))?;
-    let mut command = Command::new(program);
+    let mut command = shim.command();
     command
-        .args(args)
+        .args(&shim.hide)
+        .arg("--")
+        .args(&front.command)
         .env("MOOR_FRONT_SOCKET", format!("/proc/self/fd/{SOCKET_FD}"))
         .stdin(Stdio::null())
         .stderr(Stdio::piped());
