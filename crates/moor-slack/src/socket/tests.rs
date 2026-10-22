@@ -15,7 +15,8 @@ use serde_json::json;
 use tungstenite::Message;
 
 use super::{
-    next_delay, parse_mention, run, session, Inbound, Intake, Kept, Mention, NotKept, SocketError,
+    next_delay, parse_mention, run, session, session_tracked, Inbound, Intake, Kept, Mention,
+    NotKept, SocketError,
 };
 use super::{AfterAck, Click, Slash, TokenSubmission};
 use crate::api::Api;
@@ -225,7 +226,8 @@ fn run_returns_once_the_receiver_is_gone() {
     let (tx, rx) = mpsc::channel();
     drop(rx);
     let slept = RefCell::new(Vec::new());
-    run(&api, &Secret::new(b"xapp-1".to_vec()), &tx, &|d| {
+    let stop = AtomicBool::new(false);
+    run(&api, &Secret::new(b"xapp-1".to_vec()), &tx, &stop, &|d| {
         slept.borrow_mut().push(d);
     });
     http.join().expect("http");
@@ -491,4 +493,52 @@ fn the_login_modal_opens_after_the_ack() {
         agent: AgentKind::Claude,
     };
     assert_eq!(intake.1.into_inner(), vec![want]);
+}
+
+/// An intake that keeps every item and counts them, as SIGTERM arrives while it works.
+struct Stopping {
+    /// Set when the stop signal arrives.
+    stop: Arc<AtomicBool>,
+    /// Items kept.
+    kept: RefCell<u32>,
+}
+
+impl Intake for Stopping {
+    fn take(&self, _item: Inbound) -> Result<Kept, NotKept> {
+        *self.kept.borrow_mut() += 1;
+        self.stop.store(true, Ordering::SeqCst);
+        Ok(Kept::default())
+    }
+}
+
+#[test]
+fn a_stop_during_the_intake_keeps_the_event_but_leaves_it_unacked() {
+    let mention = json!({"type":"app_mention","user":"U1","text":"t","ts":"1.1","channel":"C1"});
+    let (url, server) = fake_slack(move |ws| {
+        send(ws, &json!({"type":"hello"}));
+        send(ws, &events_api("env-1", "Ev1", &mention));
+        send(ws, &events_api("env-2", "Ev2", &mention));
+    });
+    let stop = Arc::new(AtomicBool::new(false));
+    let intake = Stopping {
+        stop: Arc::clone(&stop),
+        kept: RefCell::new(0),
+    };
+    session_tracked(&url, &intake, &mut false, &stop).expect("session ends cleanly");
+    assert_eq!(*intake.kept.borrow(), 1, "the event in flight was kept");
+    assert_eq!(server.join().expect("server"), Vec::<String>::new());
+}
+
+#[test]
+fn a_stop_that_came_first_reads_nothing_more() {
+    let mention = json!({"type":"app_mention","user":"U1","text":"t","ts":"1.1","channel":"C1"});
+    let (url, server) = fake_slack(move |ws| send(ws, &events_api("env-1", "Ev1", &mention)));
+    let stop = Arc::new(AtomicBool::new(true));
+    let intake = Stopping {
+        stop: Arc::clone(&stop),
+        kept: RefCell::new(0),
+    };
+    session_tracked(&url, &intake, &mut false, &stop).expect("session ends cleanly");
+    assert_eq!(*intake.kept.borrow(), 0);
+    assert_eq!(server.join().expect("server"), Vec::<String>::new());
 }

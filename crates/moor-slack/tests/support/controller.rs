@@ -34,6 +34,8 @@ pub(crate) enum Scripted {
     Hangup,
     /// Keep the connection open and never answer.
     Hold,
+    /// Answer with this envelope after the pause.
+    Slow(Duration, Response),
     /// Act on the request as an unscripted one, then never answer, as a controller whose
     /// reply the front never read.
     Lost,
@@ -223,8 +225,13 @@ fn serve(stream: UnixStream, inner: &Mutex<Inner>) {
         let mut guard = inner.lock().unwrap();
         let next = answer(line.trim_end(), &mut guard);
         line.clear();
+        let mut pause = Duration::ZERO;
         let frame = match next {
             Next::Send(frame) => frame,
+            Next::Later(wait, frame) => {
+                pause = wait;
+                frame
+            }
             Next::Backlog(since) => {
                 let (parts, pause) = backlog(&guard, since);
                 drop(guard);
@@ -243,6 +250,7 @@ fn serve(stream: UnixStream, inner: &Mutex<Inner>) {
             Next::Close => return,
         };
         drop(guard);
+        thread::sleep(pause);
         if writer.write_all(frame.to_line().as_bytes()).is_err() {
             return;
         }
@@ -263,6 +271,8 @@ enum Next {
     Backlog(i64),
     /// Send every event after this cursor, then keep the connection for later events.
     Follow(i64),
+    /// Send this frame after the pause.
+    Later(Duration, ServerFrame),
     /// Send nothing and keep the connection.
     Wait,
     /// Close the connection.
@@ -310,6 +320,9 @@ fn answer(line: &str, inner: &mut Inner) -> Next {
             let next = match inner.scripts.get_mut(&cmd).and_then(VecDeque::pop_front) {
                 Some(Scripted::Reply(envelope)) => {
                     Next::Send(ServerFrame::Response { id, envelope })
+                }
+                Some(Scripted::Slow(pause, envelope)) => {
+                    Next::Later(pause, ServerFrame::Response { id, envelope })
                 }
                 Some(Scripted::Hangup) => Next::Close,
                 Some(Scripted::Hold) => Next::Wait,

@@ -80,6 +80,14 @@ impl Gate {
         Some(Guard(Arc::clone(&self.0)))
     }
 
+    /// Waits until no connection is being served, or `grace` has passed.
+    pub(super) fn wait_idle(&self, grace: Duration) {
+        let end = now() + grace;
+        while self.0.load(Ordering::Acquire) > 0 && now() < end {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
     /// Takes a slot for `stream`, or answers it 503 when `max` are held.
     pub(super) fn admit(&self, stream: &mut TcpStream, max: usize) -> Option<Guard> {
         let slot = self.try_acquire(max);

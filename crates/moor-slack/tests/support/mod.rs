@@ -301,13 +301,20 @@ impl Rig {
     /// Spawns the daemon with a clean environment, then the arguments and variables that
     /// `extra` adds; its stderr goes to a file.
     pub(crate) fn spawn_daemon_with(&mut self, extra: impl FnOnce(&mut Command)) {
+        let socket = self.socket();
+        self.spawn_daemon_without_socket(|daemon| {
+            daemon.arg("--socket").arg(socket);
+            extra(daemon);
+        });
+    }
+
+    /// Like [`Self::spawn_daemon_with`], but `--socket` is left to `extra`.
+    pub(crate) fn spawn_daemon_without_socket(&mut self, extra: impl FnOnce(&mut Command)) {
         let mut daemon = Command::new(env!("CARGO_BIN_EXE_moor-slack"));
         daemon
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
             .env("HOME", self.path("home"))
-            .arg("--socket")
-            .arg(self.socket())
             .arg("--config")
             .arg(self.path("slack.yaml"))
             .stdin(Stdio::null())
@@ -315,6 +322,13 @@ impl Rig {
             .stderr(std::fs::File::create(self.path("slack.err")).unwrap());
         extra(&mut daemon);
         self.daemon = Some(daemon.spawn().unwrap());
+    }
+
+    /// Sends SIGTERM to the daemon's exact pid.
+    pub(crate) fn terminate_daemon(&self) {
+        let pid = self.daemon.as_ref().unwrap().id();
+        let pid = rustix::process::Pid::from_raw(i32::try_from(pid).unwrap()).unwrap();
+        rustix::process::kill_process(pid, rustix::process::Signal::TERM).unwrap();
     }
 
     /// Kills the daemon and waits for it to exit.

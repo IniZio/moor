@@ -15,6 +15,8 @@ mod close;
 mod connect;
 #[path = "daemon/feed.rs"]
 mod feed;
+#[path = "daemon/front.rs"]
+mod front;
 #[path = "daemon/idle.rs"]
 mod idle;
 #[path = "daemon/inbox.rs"]

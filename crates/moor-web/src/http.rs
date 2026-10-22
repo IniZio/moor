@@ -3,8 +3,9 @@
 use std::borrow::Cow;
 use std::io::{self, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::thread;
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use crate::auth::{self, Credentials, CsrfHeaders, Via};
@@ -17,6 +18,8 @@ pub use limits::Limits;
 #[cfg(test)]
 mod limit_tests;
 mod parse;
+#[cfg(test)]
+mod shutdown_tests;
 #[cfg(test)]
 mod tests;
 
@@ -126,6 +129,12 @@ pub type Handler = Arc<dyn Fn(&HttpRequest) -> Reply + Send + Sync>;
 pub struct Server {
     /// Address the listener is bound to.
     addr: SocketAddr,
+    /// Set to make the accept loop stop.
+    stop: Arc<AtomicBool>,
+    /// The accept loop.
+    accept: JoinHandle<()>,
+    /// Counts the connections being served.
+    gate: limits::Gate,
 }
 
 impl Server {
@@ -133,6 +142,16 @@ impl Server {
     #[must_use]
     pub const fn addr(&self) -> SocketAddr {
         self.addr
+    }
+
+    /// Stops accepting connections, then waits up to `grace` for the ones being served to
+    /// finish. A request still running after `grace`, such as an open event stream, is left
+    /// to die with the process.
+    pub fn shutdown(self, grace: Duration) {
+        self.stop.store(true, Ordering::SeqCst);
+        let _ = TcpStream::connect(self.addr);
+        let _ = self.accept.join();
+        self.gate.wait_idle(grace);
     }
 
     /// The URL of the page root.
@@ -176,10 +195,16 @@ pub fn start_with(
     let addr = listener.local_addr()?;
     let token = Arc::new(token);
     let gate = limits::Gate::default();
-    thread::Builder::new()
+    let stop = Arc::new(AtomicBool::new(false));
+    let (accept_stop, accept_gate) = (Arc::clone(&stop), gate.clone());
+    let accept = thread::Builder::new()
         .name("moor-web".into())
         .spawn(move || {
+            let gate = accept_gate;
             for mut stream in listener.incoming().flatten() {
+                if accept_stop.load(Ordering::SeqCst) {
+                    break;
+                }
                 let Some(slot) = gate.admit(&mut stream, limits.max_connections) else {
                     continue;
                 };
@@ -192,7 +217,12 @@ pub fn start_with(
                     });
             }
         })?;
-    Ok(Server { addr })
+    Ok(Server {
+        addr,
+        stop,
+        accept,
+        gate,
+    })
 }
 
 /// Handles one connection.

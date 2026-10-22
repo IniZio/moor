@@ -4,9 +4,11 @@ use std::ffi::OsString;
 use std::fs::DirBuilder;
 use std::os::unix::fs::DirBuilderExt as _;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
-use std::thread;
+use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
 use moor_client::Client;
 use moor_core::secret::Secret;
@@ -44,6 +46,9 @@ pub struct Settings {
     pub path: Option<OsString>,
     /// The current time in unix seconds.
     pub clock: fn() -> i64,
+    /// Set when the daemon is asked to stop: it stops acking events, finishes the request in
+    /// flight and returns `Ok`.
+    pub stop: Arc<AtomicBool>,
 }
 
 /// The config, Slack tokens and `slack.db`, read and checked before any thread starts.
@@ -69,7 +74,8 @@ struct Loaded {
     turns: Turns,
 }
 
-/// Runs the daemon until its Socket Mode thread ends.
+/// Runs the daemon until its Socket Mode thread ends, or until `settings.stop` is set and the
+/// worker has finished the request in flight.
 ///
 /// # Errors
 /// Returns why startup failed: an unreadable or invalid config, a token file that is
@@ -103,8 +109,10 @@ pub fn run(settings: &Settings, log: Log) -> Result<(), String> {
         clock: settings.clock,
     };
     let socket_api = Arc::clone(&api);
+    let stop = Arc::clone(&settings.stop);
     let socket = thread::spawn(move || {
-        socket::run(&socket_api, &app_token, &recorder, &thread::sleep);
+        let sleep = |d| sleep_until_stopped(&stop, d);
+        socket::run(&socket_api, &app_token, &recorder, &stop, &sleep);
     });
     let feed = Feed {
         db_path: db_path.clone(),
@@ -122,15 +130,40 @@ pub fn run(settings: &Settings, log: Log) -> Result<(), String> {
         client: client.clone(),
         log: Arc::clone(&log),
     };
-    thread::spawn(move || worker.run(&jobs_rx, left));
+    let worker_thread = thread::spawn(move || worker.run(&jobs_rx, left));
     thread::spawn(move || Arc::new(turns).run());
     thread::spawn(move || dial::read_events(&client, &feed_tx, &*log, &thread::sleep));
     thread::spawn(move || feed.run(&feed_rx));
     thread::spawn(move || post(&wake_rx));
-    socket
+    finish(&settings.stop, socket, worker_thread)
+}
+
+/// Waits for the Socket Mode thread to end. When that was a stop, waits for the worker to
+/// finish its queue and returns `Ok`; otherwise the worker stopped taking mentions.
+fn finish(
+    stopping: &AtomicBool,
+    intake: JoinHandle<()>,
+    jobs: JoinHandle<()>,
+) -> Result<(), String> {
+    intake
         .join()
         .map_err(|_| "the Socket Mode thread panicked".to_owned())?;
-    Err("the worker stopped taking mentions".to_owned())
+    if !stopping.load(Ordering::SeqCst) {
+        return Err("the worker stopped taking mentions".to_owned());
+    }
+    jobs.join()
+        .map_err(|_| "the worker thread panicked".to_owned())
+}
+
+/// Sleeps for `total`, or until `stop` is set.
+fn sleep_until_stopped(stop: &AtomicBool, total: Duration) {
+    const SLICE: Duration = Duration::from_millis(100);
+    let mut left = total;
+    while !left.is_zero() && !stop.load(Ordering::SeqCst) {
+        let nap = left.min(SLICE);
+        thread::sleep(nap);
+        left -= nap;
+    }
 }
 
 /// Reads the config and both token files, and opens `slack.db`, so a bad file stops startup.
