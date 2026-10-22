@@ -336,6 +336,30 @@ fn a_changed_credential_host_list_restarts_the_egress_proxy() {
     assert!(!running(pid.trim()), "the old tinyproxy was not stopped");
 }
 
+/// The real tinyproxy removes its pid file as it exits, a moment after TERM. When the port it
+/// held is already free, as after a change of egress port, the restart must still wait for it.
+#[test]
+fn a_restart_keeps_the_new_pid_file_when_the_old_tinyproxy_exits_late() {
+    let b = FakeBox::new(0, Apt::Missing, true);
+    std::fs::create_dir_all(b.home.join(".fake-tinyproxy")).unwrap();
+    moor_testkit::write_executable(
+        &b.home.join(".fake-tinyproxy/tinyproxy"),
+        "#!/bin/sh\ntrap 'sleep 0.5; rm -f \"$HOME/.moor/egress.pid\"; exit 0' TERM\nsleep \"$1\" & wait $!\n",
+    )
+    .unwrap();
+    assert!(b.run().0);
+    let old = std::fs::read_to_string(b.home.join(".moor/egress.pid")).unwrap();
+    b.port.close();
+    let changed = hosts(&["api.anthropic.com", "github.com", "gitlab.com"]);
+    let (ok, out, err) = b.run_with(&changed);
+    assert!(ok, "{out}{err}");
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    assert!(!running(old.trim()), "the old tinyproxy was not stopped");
+    let (ok, out, err) = b.run_with(&changed);
+    assert!(ok, "{out}{err}");
+    assert_eq!(b.starts(), 2, "{}", b.log());
+}
+
 #[test]
 fn a_port_held_by_another_process_stops_the_exec_and_starts_nothing() {
     let b = FakeBox::new(0, Apt::Missing, true);
