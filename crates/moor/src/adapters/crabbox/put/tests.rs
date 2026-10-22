@@ -8,7 +8,7 @@ use moor_core::seam::proc::Tool;
 use crate::adapters::crabbox::Crabbox;
 use crate::testing::proc::{Call, Reply, ScriptedProc};
 
-const SSH_LINE: &str = "ssh -i '/k/id' -p '22' 'u@10.0.0.1'\n";
+const SSH_LINE: &str = "ssh -i '/k/id' -o 'StrictHostKeyChecking=yes' -p '22' 'u@10.0.0.1'\n";
 const SECRET: &[u8] = b"token-123 it's $(x)\n";
 
 fn put(p: &Arc<ScriptedProc>, path: &str) -> Result<(), DriverError> {
@@ -41,6 +41,8 @@ fn remote_command_makes_the_dir_writes_stdin_then_sets_mode() {
         [
             "-i",
             "/k/id",
+            "-o",
+            "StrictHostKeyChecking=yes",
             "-p",
             "22",
             "u@10.0.0.1",

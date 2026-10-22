@@ -25,12 +25,12 @@ pub(super) fn run(
     if steps.is_empty() {
         return Vec::new();
     }
-    let words = match target_words(cb, handle, connect) {
+    let words = match target_words(cb, handle, connect).and_then(|w| link::args(cb, handle, w)) {
         Ok(w) => w,
         Err(e) => return vec![Err(e)],
     };
     let spec = ProcSpec::new(Tool::Ssh, deadline)
-        .args(link::args(cb, handle, words))
+        .args(words)
         .arg(format!("sh -c {}", quote(&script(steps))))
         .stdin(Stdin::Bytes(stdin_bytes(steps)));
     let (stdout, failure) = match link::run(cb, handle, &spec) {

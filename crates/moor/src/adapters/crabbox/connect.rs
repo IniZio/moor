@@ -4,12 +4,15 @@ use moor_core::name::BoxHandle;
 use moor_core::seam::driver::DriverError;
 
 use super::peek::ssh_target;
-use super::Crabbox;
+use super::{pin, Crabbox};
 
-/// `ssh -t <target>` for the Box behind `handle`. The lookup takes no lease lock.
+/// `ssh -t <target>` for the Box behind `handle`, refused when the target does not pin the
+/// Box's host key. The lookup takes no lease lock.
 pub(super) fn connect_argv(cb: &Crabbox, handle: &BoxHandle) -> Result<Vec<String>, DriverError> {
+    let target = ssh_target(cb, handle)?;
+    pin::check(&target)?;
     let mut argv = vec!["ssh".to_owned(), "-t".to_owned()];
-    argv.extend(ssh_target(cb, handle)?);
+    argv.extend(target);
     Ok(argv)
 }
 

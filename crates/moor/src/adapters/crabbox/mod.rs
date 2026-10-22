@@ -10,6 +10,7 @@ mod lease;
 mod link;
 mod parse;
 mod peek;
+mod pin;
 mod put;
 mod retry;
 mod sleep;
@@ -298,9 +299,13 @@ impl Driver for Crabbox {
             .collect())
     }
 
-    fn workdir(&self, handle: &BoxHandle) -> Result<BoxPath, DriverError> {
-        self.require_version()?;
-        workdir::probe(self, handle)
+    /// Refused: only crabbox's warmup reports where a Box's workdir is, and moor never
+    /// searches the Box for one by name.
+    fn workdir(&self, _handle: &BoxHandle) -> Result<BoxPath, DriverError> {
+        Err(DriverError::Failed {
+            summary: "moor has no recorded workdir for the Box and does not search the Box for one"
+                .to_owned(),
+        })
     }
 
     fn exec(

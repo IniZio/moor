@@ -7,13 +7,12 @@ use moor_core::name::{BoxHandle, BoxId, BoxName, ProviderId};
 use moor_core::seam::driver::Driver;
 use moor_core::seam::proc::Tool;
 
-use super::{fixture, probe, req, Reply, WARMUP_OUT};
+use super::{fixture, req, Reply, WARMUP_OUT};
 
 #[test]
 fn slug_of_longest_name_fits_crabbox_cap() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
-    probe(&p);
     let mut r = req("sprites", None);
     r.name = BoxName::parse_allow_bare(&format!("{}/{}", "r".repeat(40), "l".repeat(40))).unwrap();
     let got = c.acquire(&r).unwrap();
@@ -31,7 +30,6 @@ fn slug_of_longest_name_fits_crabbox_cap() {
 fn static_id_of_slashed_name_has_no_slash() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
-    probe(&p);
     let mut r = req("ssh", None);
     r.name = BoxName::parse_allow_bare("web/fix-bug").unwrap();
     c.acquire(&r).unwrap();
@@ -52,7 +50,6 @@ fn static_id_of_slashed_name_has_no_slash() {
 fn slash_named_box_stays_live_through_list_and_reconcile() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
-    probe(&p);
     let mut r = req("sprites", None);
     r.name = BoxName::parse_allow_bare("web/fix-bug").unwrap();
     let handle = c.acquire(&r).unwrap().handle;

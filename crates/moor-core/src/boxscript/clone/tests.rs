@@ -402,3 +402,80 @@ fn values_are_quoted() {
     assert!(script.contains("'$(touch x)'"), "{script}");
     assert!(script.contains(r"'b'\''; rm -rf /; '\'''"), "{script}");
 }
+
+/// Runs the clone script with a `git` on `PATH` that records where `git clone` writes and, when
+/// `race` is set, has another run's `.git` appear in the workdir before this run moves its own.
+fn run_beside_another_clone(r: &Remote, race: bool) -> (Output, PathBuf) {
+    let path = std::env::var("PATH").unwrap();
+    let real = std::env::split_paths(&path)
+        .map(|d| d.join("git"))
+        .find(|g| g.is_file())
+        .unwrap();
+    let bin = r.path("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let fake = format!(
+        "#!/bin/sh\n\
+         if [ \"$1\" = clone ]; then\n\
+         \x20 for last; do :; done\n\
+         \x20 printf '%s' \"$last\" > {log}\n\
+         \x20 {real} \"$@\" || exit\n\
+         \x20 {race}\n\
+         \x20 exit 0\n\
+         fi\n\
+         exec {real} \"$@\"\n",
+        log = r.path("clone-into").display(),
+        real = real.display(),
+        race = if race {
+            format!("{} init -q .", real.display())
+        } else {
+            ":".to_owned()
+        },
+    );
+    moor_testkit::write_executable(&bin.join("git"), fake).unwrap();
+    let url = r.url();
+    let script = clone_script(&Checkout {
+        url: &url,
+        base: &r.base,
+        branch: BRANCH,
+    });
+    let out = Command::new("sh")
+        .args(["-c", &script])
+        .current_dir(r.path("box"))
+        .env("HOME", r.dir.path())
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("PATH", format!("{}:{path}", bin.display()))
+        .output()
+        .unwrap();
+    let into = std::fs::read_to_string(r.path("clone-into")).unwrap();
+    (out, r.path("box").join(into))
+}
+
+#[test]
+fn the_clone_goes_into_a_temp_dir_under_the_workdir_so_the_rename_stays_on_one_filesystem() {
+    let r = Remote::new("samefs");
+    r.crabbox_files();
+    let (out, into) = run_beside_another_clone(&r, false);
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    assert!(
+        into.starts_with(r.path("box").join(".moor")),
+        "cloned into {}",
+        into.display()
+    );
+    assert_eq!(r.state().branch, BRANCH);
+}
+
+#[test]
+fn a_git_dir_that_appears_while_cloning_is_never_nested_and_stops_at_the_clone_step() {
+    let r = Remote::new("race");
+    r.crabbox_files();
+    let (out, _) = run_beside_another_clone(&r, true);
+    assert_eq!(
+        out.status.code().and_then(CloneStep::of_exit),
+        Some(CloneStep::Clone),
+        "{out:?}"
+    );
+    let b = r.path("box");
+    assert!(!b.join(".git/.git").exists(), "nested .git");
+    assert!(b.join(".git/HEAD").is_file(), "the other run's .git stays");
+    assert_eq!(r.moor_dir(), Vec::<String>::new(), "no temp dir is left");
+}

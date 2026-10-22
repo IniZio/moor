@@ -35,7 +35,7 @@ pub(super) fn stream_files(
     if names.is_empty() {
         return Ok(());
     }
-    let words = link::args(cb, handle, ssh_target(cb, handle)?);
+    let words = link::args(cb, handle, ssh_target(cb, handle)?)?;
     let quoted: Vec<String> = names.iter().map(|n| quote(n)).collect();
     let remote = format!(
         "command -v tar >/dev/null 2>&1 || exit {NO_TAR}; cd -- {} || exit 1; exec tar -cf - -- {}",

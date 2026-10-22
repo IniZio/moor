@@ -203,7 +203,7 @@ fn a_symlink_destination_is_refused() {
     assert!(listing(&aimed).is_empty());
 }
 
-const SSH_LINE: &str = "ssh -p 2222 user@1.2.3.4\n";
+const SSH_LINE: &str = "ssh -o StrictHostKeyChecking=yes -p 2222 user@1.2.3.4\n";
 const BIG: u64 = 64 * 1024 * 1024;
 const CHECK_EVERY: u64 = 4 * 1024 * 1024;
 

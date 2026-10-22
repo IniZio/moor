@@ -7,7 +7,7 @@ use moor_core::seam::proc::Tool;
 use crate::adapters::crabbox::Crabbox;
 use crate::testing::proc::{Reply, ScriptedProc};
 
-const SSH_LINE: &str = "ssh -i '/k/id' -p '22' 'u@10.0.0.1'\n";
+const SSH_LINE: &str = "ssh -i '/k/id' -o 'StrictHostKeyChecking=yes' -p '22' 'u@10.0.0.1'\n";
 
 fn connect(p: &Arc<ScriptedProc>) -> Result<Vec<String>, DriverError> {
     Crabbox::fake(p.clone()).connect_argv(&BoxHandle::new("p/box"))
@@ -19,7 +19,17 @@ fn argv_is_ssh_with_a_tty_then_the_looked_up_target() {
     p.on(Tool::Crabbox, &["ssh"], Reply::Ok(SSH_LINE.to_owned()));
     assert_eq!(
         connect(&p).unwrap(),
-        ["ssh", "-t", "-i", "/k/id", "-p", "22", "u@10.0.0.1"]
+        [
+            "ssh",
+            "-t",
+            "-i",
+            "/k/id",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-p",
+            "22",
+            "u@10.0.0.1"
+        ]
     );
 }
 

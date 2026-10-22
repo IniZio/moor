@@ -17,9 +17,19 @@ type Results = Vec<Result<StepDone, DriverError>>;
 const SECRET: &[u8] = b"s3cret-value";
 
 fn connect() -> Vec<String> {
-    ["ssh", "-t", "-i", "/k/id", "-p", "22", "u@10.0.0.1"]
-        .map(str::to_owned)
-        .to_vec()
+    [
+        "ssh",
+        "-t",
+        "-i",
+        "/k/id",
+        "-o",
+        "StrictHostKeyChecking=yes",
+        "-p",
+        "22",
+        "u@10.0.0.1",
+    ]
+    .map(str::to_owned)
+    .to_vec()
 }
 
 fn path(p: &str) -> BoxPath {
@@ -70,10 +80,19 @@ fn one_ssh_process_with_the_connect_target_and_no_tty_flag() {
     assert_eq!(out, [Ok(StepDone::Peeked(None)), Ok(StepDone::Put)]);
     let [call] = p.calls().try_into().unwrap();
     assert_eq!(call.tool, Tool::Ssh);
-    let [i, k, port, n, target, remote] = call.args.try_into().unwrap();
+    let mut words = call.args;
+    let remote = words.pop().unwrap();
     assert_eq!(
-        [i, k, port, n, target],
-        ["-i", "/k/id", "-p", "22", "u@10.0.0.1"]
+        words,
+        [
+            "-i",
+            "/k/id",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-p",
+            "22",
+            "u@10.0.0.1"
+        ]
     );
     assert!(remote.starts_with("sh -c '"), "{remote}");
 }
@@ -84,7 +103,7 @@ fn connect_without_ssh_falls_back_to_one_lookup() {
     p.on(
         Tool::Crabbox,
         &["ssh"],
-        Reply::Ok("ssh -i '/k/id' 'u@10.0.0.1'\n".to_owned()),
+        Reply::Ok("ssh -i '/k/id' -o 'StrictHostKeyChecking=yes' 'u@10.0.0.1'\n".to_owned()),
     );
     batch(&p, &[], &[BoxStep::Peek(path("/w/a"))]);
     let [lookup, ssh] = p.calls().try_into().unwrap();

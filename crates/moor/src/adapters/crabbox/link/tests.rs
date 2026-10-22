@@ -19,7 +19,7 @@ use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::rng::FakeRng;
 
 /// What crabbox prints for an agent37 Box, with connection sharing turned off.
-const SSH_LINE: &str = "ssh -o 'ControlMaster=no' -o 'ControlPath=none' -o 'ControlPersist=no' -o 'ProxyCommand=tunnel 7' 'u@box'\n";
+const SSH_LINE: &str = "ssh -o 'ControlMaster=no' -o 'ControlPath=none' -o 'ControlPersist=no' -o 'StrictHostKeyChecking=yes' -o 'ProxyCommand=tunnel 7' 'u@box'\n";
 const HOOK: &str = r#"{"state":"idle"}"#;
 /// Longest `ControlPath` OpenSSH binds on macOS: 103 bytes less its 17-byte temporary suffix.
 const SSH_MAX_PATH: usize = 103 - 17;

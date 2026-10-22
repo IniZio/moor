@@ -90,7 +90,7 @@ fn fetch(
     leaf: &str,
     stage: &Path,
 ) -> Result<(), DriverError> {
-    let words = link::args(cb, handle, ssh_target(cb, handle)?);
+    let words = link::args(cb, handle, ssh_target(cb, handle)?)?;
     let src = quote(from.as_str());
     let remote = format!(
         "test -e {src} || test -L {src} || exit {MISSING}; \

@@ -470,3 +470,22 @@ fn gate_cuts_a_line_without_newline_at_the_cap() {
     assert!(closed.feed(&vec![b'x'; 20000]).is_empty());
     assert!(closed.line.len() < 8192, "dropped, not buffered");
 }
+
+#[test]
+fn gate_drops_only_the_blank_line_the_writer_puts_before_the_end_marker() {
+    let shown = |input: &[u8]| {
+        let mut g = super::Gate::new(gate());
+        let mut out = g.feed(input);
+        out.extend(g.finish());
+        String::from_utf8(out).unwrap()
+    };
+    assert_eq!(shown(b"moor-b\npartial\nmoor-e\n"), "partial\n");
+    assert_eq!(shown(b"moor-b\nline\n\nmoor-e\n"), "line\n");
+    assert_eq!(shown(b"moor-b\nline\n\n\nmoor-e\n"), "line\n\n");
+    assert_eq!(shown(b"moor-b\n\nmid\n\nmoor-e\n"), "\nmid\n");
+    assert_eq!(
+        shown(b"moor-b\nline\n\n"),
+        "line\n\n",
+        "kept when no end marker comes"
+    );
+}

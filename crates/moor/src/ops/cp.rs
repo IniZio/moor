@@ -16,6 +16,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::host_path::absolute;
+use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::wake::wake_and_revive;
 use crate::store::BoxRow;
 
@@ -52,7 +53,7 @@ pub(crate) fn run(cx: &Cx, req: &CpReq) -> Result<CpValue, CommandError> {
         row = reload()?;
     }
     let handle = usable_handle(&row)?;
-    let from = source(cx, &handle, &req.src)?;
+    let from = source(cx, &row, &handle, &req.src)?;
     let copied = cx.driver().copy_out(&handle, &from, &to);
     let event = ExtraEvent::Copied {
         from: from.as_str().to_owned(),
@@ -94,13 +95,17 @@ fn usable_handle(row: &BoxRow) -> Result<BoxHandle, CommandError> {
         .ok_or_else(|| refuse("the Box has not been acquired"))
 }
 
-/// The source in the Box: an absolute path as given, else under the Box workdir.
-fn source(cx: &Cx, handle: &BoxHandle, src: &str) -> Result<BoxPath, CommandError> {
+/// The source in the Box: an absolute path as given, else under the Box's recorded workdir.
+fn source(cx: &Cx, row: &BoxRow, handle: &BoxHandle, src: &str) -> Result<BoxPath, CommandError> {
     let usage = |e: moor_core::name::NameError| CommandError::new(ErrorKind::Usage, e);
     if let Some(rel) = src.strip_prefix('/') {
         return BoxPath::under("/", &without_cur_dir(rel)).map_err(usage);
     }
-    let workdir = cx.driver().workdir(handle)?;
+    let recorded = row.boxed.as_ref().and_then(|b| b.workdir.as_deref());
+    let workdir = match recorded.and_then(recorded_workdir) {
+        Some(w) => w,
+        None => cx.driver().workdir(handle)?,
+    };
     BoxPath::under(workdir.as_str(), &without_cur_dir(src)).map_err(usage)
 }
 

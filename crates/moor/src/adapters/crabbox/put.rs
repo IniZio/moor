@@ -39,7 +39,7 @@ pub(super) fn put_file(
     let remote = format!("umask 077 && mkdir -p {dir} && cat > {file} && chmod {mode:o} {file}");
     let mut retries = 0;
     loop {
-        let words = link::args(cb, handle, ssh_target(cb, handle)?);
+        let words = link::args(cb, handle, ssh_target(cb, handle)?)?;
         let write = ProcSpec::new(Tool::Ssh, Deadline(WRITE_DEADLINE))
             .args(words)
             .arg(remote.clone())

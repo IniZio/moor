@@ -25,7 +25,7 @@ pub(super) fn peek_file(
     handle: &BoxHandle,
     path: &BoxPath,
 ) -> Result<Option<String>, DriverError> {
-    let words = link::args(cb, handle, ssh_target(cb, handle)?);
+    let words = link::args(cb, handle, ssh_target(cb, handle)?)?;
     let p = quote(path.as_str());
     let remote = format!("test -e {p} || exit {MISSING}; cat -- {p}");
     let read = ProcSpec::new(Tool::Ssh, Deadline(READ_DEADLINE))
