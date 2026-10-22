@@ -358,7 +358,13 @@ fn a_pid_reused_by_an_unrelated_group_leader_is_not_the_run() {
 /// The state letter of `pid` in `/proc/PID/stat`.
 fn proc_state(pid: u32) -> Option<String> {
     let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-    Some(stat.rsplit_once(')')?.1.split_whitespace().next()?.to_owned())
+    Some(
+        stat.rsplit_once(')')?
+            .1
+            .split_whitespace()
+            .next()?
+            .to_owned(),
+    )
 }
 
 #[test]
