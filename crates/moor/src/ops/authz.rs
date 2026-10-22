@@ -73,13 +73,45 @@ pub(crate) fn authorize(
     Ok(Grant { viewer, pins })
 }
 
-/// Why only the operator may send `request`, when it touches the controller host.
+/// Why only the operator may send `request`, when it touches the controller host. Every kind is
+/// listed, so a new kind must declare its host reach here before it compiles.
 const fn host_only(request: &Request) -> Option<&'static str> {
     match request {
         Request::Cp(_) => Some(CP_OPERATOR_ONLY),
         Request::Env(_) => Some(ENV_OPERATOR_ONLY),
         Request::OpenHostSession(_) => Some(HOST_SESSION_OPERATOR_ONLY),
-        _ => None,
+        Request::Start(_)
+        | Request::StartNeeds(_)
+        | Request::Run(_)
+        | Request::Wait(_)
+        | Request::WaitEvents(_)
+        | Request::Steer(_)
+        | Request::EndSession(_)
+        | Request::OpenSession(_)
+        | Request::UpdateHostSession(_)
+        | Request::EndHostSession(_)
+        | Request::BindSession(_)
+        | Request::SessionBinding(_)
+        | Request::ShowSession(_)
+        | Request::Sessions(_)
+        | Request::Show(_)
+        | Request::Close(_)
+        | Request::Open(_)
+        | Request::Sleep(_)
+        | Request::Wake(_)
+        | Request::Connect(_)
+        | Request::Gate(_)
+        | Request::Artifacts(_)
+        | Request::ArtifactRead(_)
+        | Request::Whoami(_)
+        | Request::Enroll(_)
+        | Request::SecretSet(_)
+        | Request::SecretDelete(_)
+        | Request::SecretNames(_)
+        | Request::LinkCode(_)
+        | Request::LinkRedeem(_)
+        | Request::As(_)
+        | Request::Version {} => None,
     }
 }
 

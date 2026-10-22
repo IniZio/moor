@@ -41,10 +41,11 @@ if [ -n "$hits" ]; then
 fi
 
 texts=()
-for t in crates docs README.md; do [ -e "$t" ] && texts+=("$t"); done
+for t in crates docs ./*.md; do [ -e "$t" ] && texts+=("${t#./}"); done
+# crabbox's own --no-sync flag is still passed by the crabbox adapter.
 flag_hits=$(grep -rnIF -e '--no-sync' -e '--sync' -e '--trust-moor-yaml' \
-  --exclude-dir=target --exclude-dir=crabbox \
-  "${texts[@]}" || true)
+  --exclude-dir=target "${texts[@]}" \
+  | grep -v '^crates/moor/src/adapters/crabbox/' || true)
 if [ -n "$flag_hits" ]; then
   echo "removed-names: removed run flags found"
   echo "$flag_hits"

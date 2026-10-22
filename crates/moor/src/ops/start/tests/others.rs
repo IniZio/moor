@@ -48,3 +48,21 @@ fn a_start_hides_the_settle_warning_of_a_box_its_caller_may_not_see() {
     let codes: Vec<_> = w.cx.take_warnings().into_iter().map(|x| x.code).collect();
     assert!(codes.contains(&"settle_failed".to_owned()), "{codes:?}");
 }
+
+#[test]
+fn a_start_shows_the_settle_warning_of_its_callers_own_box() {
+    let mut w = world(FakeDriver::new());
+    let (cx, user) = second_user(w.cx);
+    w.cx = cx.with_viewer(Viewer::User(user));
+    let mine = BoxId::new(run(&w.cx, &req("mine")).unwrap().boxed.id);
+    let raw = rusqlite::Connection::open(w.cx.state_dir().unwrap().join("moor.db")).unwrap();
+    raw.execute(
+        "INSERT INTO runs (box, argv, pid, started_at) VALUES (?, 'not json', 1, 1)",
+        [mine.get()],
+    )
+    .unwrap();
+    w.cx.take_warnings();
+    run(&w.cx, &req("next")).unwrap();
+    let codes: Vec<_> = w.cx.take_warnings().into_iter().map(|x| x.code).collect();
+    assert!(codes.contains(&"settle_failed".to_owned()), "{codes:?}");
+}
