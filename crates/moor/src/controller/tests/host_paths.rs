@@ -31,8 +31,11 @@ const FAKE_CRABBOX: &str = "#!/bin/sh\n\
     *) exit 1 ;;\n\
     esac\n";
 
-/// An ssh that runs the remote command, its last argument, on this host.
-const FAKE_SSH: &str = "#!/bin/sh\nfor last; do :; done\nexec sh -c \"$last\"\n";
+/// An ssh that answers `ssh -G` as crabbox's pinned words do and runs any other remote
+/// command, its last argument, on this host.
+const FAKE_SSH: &str = "#!/bin/sh\n\
+    test \"$1\" = -G && { echo 'stricthostkeychecking true'; echo 'userknownhostsfile /k'; exit; }\n\
+    for last; do :; done\nexec sh -c \"$last\"\n";
 
 /// A controller whose crabbox is [`FAKE_CRABBOX`] and ssh [`FAKE_SSH`], and its store.
 fn served() -> (Served, Store) {

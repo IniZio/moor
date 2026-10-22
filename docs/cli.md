@@ -152,9 +152,12 @@ current directory.
 
 When `DEST` is a directory, the copy lands inside it. A copied file is readable
 by you only (mode 0600) and a copied directory is 0700. A copied file replaces
-a file already at the destination; nothing replaces a directory there. moor refuses a `SRC`
+a file already at the destination. Nothing replaces a directory there, and a
+copied directory replaces nothing, not even an empty directory. moor refuses a `SRC`
 that is or holds a symlink or a special file, and a `DEST` that is a symlink.
-A failed copy leaves nothing at the destination.
+A failed copy leaves nothing at the destination. A moor killed mid-copy can
+leave a `.moor-cp-*` directory beside the destination; the next copy there
+removes any such directory older than an hour.
 
 ## Session commands
 

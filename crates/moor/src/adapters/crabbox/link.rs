@@ -248,7 +248,7 @@ pub(super) fn args(
         }
         None => target,
     };
-    pin::check(&args)?;
+    pin::check(cb, &args)?;
     Ok(args)
 }
 

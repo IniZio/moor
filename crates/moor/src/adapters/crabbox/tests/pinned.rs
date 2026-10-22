@@ -9,10 +9,12 @@ use moor_core::seam::proc::Deadline;
 
 use super::fake_ssh::{handle, lab, Lab};
 
-const UNPINNED: [&str; 4] = [
+const UNPINNED: [&str; 6] = [
     "ssh -o 'StrictHostKeyChecking=accept-new' -o 'StrictHostKeyChecking=yes' 'u@box'",
     "ssh -o 'StrictHostKeyChecking=no' 'u@box'",
+    "ssh -vo 'StrictHostKeyChecking=no' -o 'StrictHostKeyChecking=yes' 'u@box'",
     "ssh -o 'StrictHostKeyChecking=yes' -o 'UserKnownHostsFile=/dev/null' 'u@box'",
+    "ssh -o 'StrictHostKeyChecking=yes' -o 'UserKnownHostsFile=/dev/./null' 'u@box'",
     "ssh 'u@box'",
 ];
 
@@ -76,6 +78,7 @@ fn every_box_ssh_refuses_words_that_do_not_pin_the_host_key_and_runs_no_ssh() {
             "{words}: {:?}",
             lab.argvs("ssh")
         );
+        assert!(!lab.argvs("opts").is_empty(), "{words}: ssh -G was asked");
     }
 }
 

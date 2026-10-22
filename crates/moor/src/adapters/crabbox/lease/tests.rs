@@ -80,7 +80,8 @@ const CALLS: [(&str, Call); 12] = [
         drop(c.exec(&handle(), &exec_spec(), Deadline(Duration::from_secs(1))));
     }),
     ("copy_out", |c| {
-        drop(c.copy_out(&handle(), &path(), Path::new("/tmp/x")));
+        let scratch = c.leases.as_ref().unwrap().with_file_name("copied");
+        drop(c.copy_out(&handle(), &path(), &scratch));
     }),
     ("stream_files", |c| {
         let names = ["f".to_owned()];

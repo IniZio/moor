@@ -178,7 +178,8 @@ impl Lab {
     fn driver_in(&self, state: PathBuf) -> Crabbox {
         let clock: Arc<dyn Clock> = self.clock.clone();
         let driver = Crabbox::new(self.proc.clone(), clock, Arc::new(FakeRng::default()))
-            .with_state_dir(Some(state), self.sockets.clone());
+            .with_state_dir(Some(state), self.sockets.clone())
+            .with_pinned_options();
         driver.version_ok.set(()).unwrap();
         driver.no_probe.set(false).unwrap();
         driver
