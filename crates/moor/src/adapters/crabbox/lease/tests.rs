@@ -276,7 +276,11 @@ fn a_state_dir_behind_a_symlink_inside_a_git_repo_never_becomes_the_claim_root()
     let spec = ProcSpec::new(Tool::Crabbox, Deadline(Duration::from_secs(1)));
     let spec = c.at_lease(spec, &handle()).unwrap();
     let cwd = spec.cwd.clone().unwrap();
-    assert_eq!(cwd, fs::canonicalize(&cwd).unwrap(), "a walk that reads paths as text");
+    assert_eq!(
+        cwd,
+        fs::canonicalize(&cwd).unwrap(),
+        "a walk that reads paths as text"
+    );
     let ceiling = spec.env.extra.iter().find(|(k, _)| k == CEILING).unwrap();
     assert_eq!(Some(Path::new(&ceiling.1)), cwd.parent());
     let out = toplevel(&spec);
@@ -290,7 +294,11 @@ fn a_state_dir_behind_a_symlink_inside_a_git_repo_never_becomes_the_claim_root()
 #[test]
 fn a_failed_acquire_removes_the_lease_dir_it_made() {
     let p = Arc::new(ScriptedProc::new());
-    p.on(Tool::Crabbox, &["providers"], Reply::Ok(PROVIDERS.to_owned()));
+    p.on(
+        Tool::Crabbox,
+        &["providers"],
+        Reply::Ok(PROVIDERS.to_owned()),
+    );
     p.on(Tool::Crabbox, &["warmup"], stop_fails(1, "no capacity"));
     p.on(Tool::Crabbox, &[], Reply::Ok(String::new()));
     let c = Crabbox::fake(p);
@@ -303,7 +311,11 @@ fn a_failed_acquire_removes_the_lease_dir_it_made() {
 #[test]
 fn a_failed_acquire_keeps_a_lease_dir_that_was_already_there() {
     let p = Arc::new(ScriptedProc::new());
-    p.on(Tool::Crabbox, &["providers"], Reply::Ok(PROVIDERS.to_owned()));
+    p.on(
+        Tool::Crabbox,
+        &["providers"],
+        Reply::Ok(PROVIDERS.to_owned()),
+    );
     p.on(Tool::Crabbox, &["warmup"], stop_fails(1, "no capacity"));
     p.on(Tool::Crabbox, &[], Reply::Ok(String::new()));
     let c = Crabbox::fake(p);

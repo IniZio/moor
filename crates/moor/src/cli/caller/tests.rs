@@ -100,7 +100,12 @@ fn a_named_repo_skips_the_checkout() {
 #[test]
 fn a_refused_repo_flag_never_echoes_its_value() {
     for args in [
-        &["start", "demo", "--repo", "https://u:tok3n@gitlab.com/o/n.git"][..],
+        &[
+            "start",
+            "demo",
+            "--repo",
+            "https://u:tok3n@gitlab.com/o/n.git",
+        ][..],
         &["env", "https://u:tok3n@gitlab.com/o/n.git"],
     ] {
         let Parsed::Done(out) = parse(argv(args)) else {

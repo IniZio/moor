@@ -486,13 +486,18 @@ fn exec_on(w: &World, sql: &str, id: i64) {
 /// Queues `first` from a repo whose stored `.moor.yaml` no longer parses.
 fn queue_unparseable(w: &World) -> BoxId {
     let repo = ForgeRepo::new("o", "n");
-    w.forge.answer(repo.clone(), Ok(repo_at("abc123", Some("setup: []\n"))));
+    w.forge
+        .answer(repo.clone(), Ok(repo_at("abc123", Some("setup: []\n"))));
     let req = StartReq {
         repo: Some(repo),
         ..start_req("first")
     };
     let id = queue_req(w, &req);
-    exec_on(w, "UPDATE boxes SET repo_config = 'setup: [' WHERE id = ?", id.get());
+    exec_on(
+        w,
+        "UPDATE boxes SET repo_config = 'setup: [' WHERE id = ?",
+        id.get(),
+    );
     id
 }
 
@@ -520,7 +525,11 @@ fn the_owner_of_a_waiter_sees_its_settings_error() {
     let mut w = world(limit(1), FakeDriver::new());
     let id = queue_unparseable(&w);
     let owner = bystander(&w);
-    exec_on(&w, &format!("UPDATE boxes SET user = {} WHERE id = ?", owner.get()), id.get());
+    exec_on(
+        &w,
+        &format!("UPDATE boxes SET user = {} WHERE id = ?", owner.get()),
+        id.get(),
+    );
     w.cx = w.cx.with_viewer(Viewer::User(owner));
     close_holder(&w);
     let skipped = skipped_first(&w);
@@ -532,7 +541,11 @@ fn the_owner_of_a_waiter_sees_its_promote_warning() {
     let mut w = world(limit(1), FakeDriver::new());
     let id = queue(&w, "first");
     let owner = bystander(&w);
-    exec_on(&w, &format!("UPDATE boxes SET user = {} WHERE id = ?", owner.get()), id.get());
+    exec_on(
+        &w,
+        &format!("UPDATE boxes SET user = {} WHERE id = ?", owner.get()),
+        id.get(),
+    );
     let _held =
         BoxLock::acquire(w.cx.clock(), w.cx.state_dir().unwrap(), id, "start", WAIT).unwrap();
     w.cx = w.cx.with_viewer(Viewer::User(owner));
