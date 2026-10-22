@@ -18,6 +18,17 @@ const BUNDLE_FILE: &str = "ca-bundle.pem";
 /// The start of the line, after `moor: ` and before the path, that the prelude prints to stderr
 /// when it stops the exec because the CA or the bundle could not be written.
 pub const CA_WRITE_FAILED: &str = "the Proxy CA could not be written to";
+/// The message, after `moor: `, of the last line in `output` where the prelude stopped the exec
+/// because the Proxy CA could not be written or the egress proxy could not start.
+#[must_use]
+pub fn prelude_stop(output: &str) -> Option<&str> {
+    output.lines().rev().find_map(|l| {
+        l.trim()
+            .strip_prefix("moor: ")
+            .filter(|m| m.starts_with(CA_WRITE_FAILED) || m.starts_with(EGRESS_FAILED))
+    })
+}
+
 /// System CA bundles, first existing one wins.
 const SYSTEM_BUNDLES: &str =
     "/etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/cert.pem";

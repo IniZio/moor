@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use moor_core::domain::decision::{Decision, ExtraEvent, Field};
-use moor_core::exec_env::{CA_WRITE_FAILED, EGRESS_FAILED};
+use moor_core::exec_env::prelude_stop;
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::view::{AgentLaunchView, LaunchFailure};
@@ -54,12 +54,7 @@ pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId, agent: AgentLaunchView) -> 
 /// stopped, because the Proxy CA could not be written or the egress proxy could not start,
 /// carries the prelude's message.
 fn exited(cx: &Cx, code: i32, tail: &str) -> LaunchFailure {
-    let ca = tail.lines().rev().find_map(|l| {
-        l.trim()
-            .strip_prefix("moor: ")
-            .filter(|m| m.starts_with(CA_WRITE_FAILED) || m.starts_with(EGRESS_FAILED))
-    });
-    let message = match ca {
+    let message = match prelude_stop(tail) {
         Some(m) => m.to_owned(),
         None if code == 127 => {
             "the agent exited 127: its command was not found on the Box".to_owned()
