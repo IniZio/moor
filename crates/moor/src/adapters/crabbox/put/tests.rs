@@ -179,8 +179,9 @@ fn slept_during_put(p: &Arc<ScriptedProc>) -> (Result<(), DriverError>, Duration
     use crate::testing::{clock::FakeClock, rng::FakeRng};
     use moor_core::seam::clock::{Clock as _, Ts};
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
-    let driver =
-        Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default())).with_scratch_leases();
+    let driver = Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default()))
+        .with_scratch_leases()
+        .with_pinned_options();
     driver.version_ok.set(()).unwrap();
     let put = driver.put_file(
         &BoxHandle::new("p/box"),

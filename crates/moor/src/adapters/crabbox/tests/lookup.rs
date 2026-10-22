@@ -79,6 +79,34 @@ fn a_crabbox_without_no_probe_is_looked_up_as_before() {
 }
 
 #[test]
+fn a_failed_help_means_no_no_probe_and_the_next_start_asks_again() {
+    let lab = lab();
+    lab.knows_no_probe();
+    fs::write(lab.bin().join("help-fails"), "").unwrap();
+    lookup(&lab.cb, &handle()).unwrap();
+    fs::remove_file(lab.bin().join("help-fails")).unwrap();
+    let restarted = driver(lab.dir.path(), &tools(&lab.bin())).sharing_no_probe(Arc::default());
+    lookup(&restarted, &handle()).unwrap();
+    let lookups = lab.argvs("crabbox");
+    let [failed, asked_again] = lookups.as_slice() else {
+        unreachable!("{lookups:?}");
+    };
+    assert!(
+        !no_probe(failed),
+        "a failed help is not read as --no-probe: {failed:?}"
+    );
+    assert!(no_probe(asked_again), "{asked_again:?}");
+    assert_eq!(lab.helps(), 2);
+}
+
+#[test]
+fn a_running_command_touches_its_lease_every_ten_minutes() {
+    // crabbox reaps a lease idle for its default 30 min, so a touch every 10 min leaves two
+    // spare before a busy Box is lost.
+    assert_eq!(lab().cb.touch_every, Duration::from_mins(10));
+}
+
+#[test]
 fn a_shared_call_keeps_its_master_up_for_ten_minutes() {
     let lab = lab();
     let path = BoxPath::restore(&lab.dir.path().join("absent").display().to_string()).unwrap();

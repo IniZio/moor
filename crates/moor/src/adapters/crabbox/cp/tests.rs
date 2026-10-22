@@ -7,6 +7,7 @@ use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, UNIX_EPOCH};
 
 use moor_core::name::{BoxHandle, BoxPath};
 use moor_core::seam::driver::{Driver, DriverError};
@@ -311,4 +312,170 @@ fn a_failure_hides_the_box_stderr() {
     assert!(matches!(got, Err(DriverError::Failed { .. })), "{got:?}");
     assert!(!format!("{got:?}").contains("secret raw text"), "{got:?}");
     assert!(listing(host.path()).is_empty());
+}
+
+#[test]
+fn a_directory_copy_never_replaces_a_directory_empty_or_not() {
+    let lab = lab();
+    let dir = lab.boxdir().join("out");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("new.txt"), "new").unwrap();
+    let there = lab.host().join("out");
+    fs::create_dir(&there).unwrap();
+    let got = lab.copy(&dir, &lab.host());
+    assert!(
+        matches!(got, Err(DriverError::Failed { .. })),
+        "empty: {got:?}"
+    );
+    assert!(listing(&there).is_empty());
+    fs::write(there.join("old.txt"), "old").unwrap();
+    let got = lab.copy(&dir, &lab.host());
+    assert!(
+        matches!(got, Err(DriverError::Failed { .. })),
+        "full: {got:?}"
+    );
+    assert_eq!(listing(&there), ["old.txt"]);
+    assert_eq!(listing(&lab.host()), ["out"]);
+}
+
+#[test]
+fn a_source_with_a_trailing_slash_copies_as_its_last_component() {
+    let lab = lab();
+    let dir = lab.boxdir().join("out");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("a.txt"), "a").unwrap();
+    let from = BoxPath::restore(&format!("{}/", dir.display())).unwrap();
+    lab.cb.copy_out(&handle(), &from, &lab.host()).unwrap();
+    assert_eq!(
+        fs::read_to_string(lab.host().join("out/a.txt")).unwrap(),
+        "a"
+    );
+}
+
+#[test]
+fn staging_dirs_left_over_an_hour_go_at_the_next_copy_beside_them() {
+    let lab = lab();
+    lab.cb.clock.sleep(Duration::from_hours(3));
+    let host = lab.host();
+    let aged = |name: &str, secs: u64| {
+        let d = host.join(name);
+        fs::create_dir(&d).unwrap();
+        fs::write(d.join("part"), "x").unwrap();
+        let at = UNIX_EPOCH + Duration::from_secs(secs);
+        fs::File::open(&d).unwrap().set_modified(at).unwrap();
+    };
+    aged(".moor-cp-0000000100000001", 3600);
+    aged(".moor-cp-0000000200000002", 2 * 3600 + 1800);
+    aged("kept-old", 0);
+    let src = lab.boxdir().join("a.txt");
+    fs::write(&src, "alpha").unwrap();
+    lab.copy(&src, &host.join("a.txt")).unwrap();
+    assert_eq!(
+        listing(&host),
+        [".moor-cp-0000000200000002", "a.txt", "kept-old"]
+    );
+}
+
+/// An archive entry: a name, and a body or `None` for a directory.
+type Entry<'a> = (&'a str, Option<&'a [u8]>);
+
+/// A tar archive of `entries`, with the names written raw so `..` and absolute names arrive as
+/// a hostile Box would send them.
+fn archive(entries: &[Entry<'_>]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for (name, body) in entries {
+        let mut h = tar::Header::new_old();
+        assert!(name.len() < 100, "{name}");
+        let field = h.as_old_mut().name.get_mut(..name.len()).unwrap();
+        field.copy_from_slice(name.as_bytes());
+        let (kind, bytes) = body.map_or_else(
+            || (tar::EntryType::Directory, &[][..]),
+            |b| (tar::EntryType::Regular, b),
+        );
+        h.set_entry_type(kind);
+        h.set_size(bytes.len() as u64);
+        h.set_mode(0o644);
+        h.set_cksum();
+        out.extend_from_slice(h.as_bytes());
+        out.extend_from_slice(bytes);
+        out.resize(out.len().next_multiple_of(512), 0);
+    }
+    out.extend([0u8; 1024]);
+    out
+}
+
+/// Copies `from` out of a scripted Box whose ssh sends `bytes`, into a fresh host dir.
+fn copy_archive(from: &str, bytes: Vec<u8>, host: &Path) -> Result<(), DriverError> {
+    let (p, c) = scripted();
+    p.on(Tool::Ssh, &[], Reply::Bytes(bytes));
+    c.copy_out(
+        &BoxHandle::new("p/box"),
+        &BoxPath::restore(from).unwrap(),
+        host,
+    )
+}
+
+fn refused_with(got: &Result<(), DriverError>, why: &str) -> bool {
+    matches!(got, Err(DriverError::Failed { summary }) if summary.contains(why))
+}
+
+#[test]
+fn an_archive_naming_a_path_outside_the_source_is_refused_and_writes_nothing_outside() {
+    let host = tempfile::tempdir().unwrap();
+    let to = host.path().join("to");
+    fs::create_dir(&to).unwrap();
+    let absolute = format!("{}/abs", host.path().display());
+    let cases: [&[Entry<'_>]; 4] = [
+        &[("out", None), ("out/../../dotdot", Some(b"x"))],
+        &[("out", None), ("out/a", Some(b"a")), ("sneaky", Some(b"x"))],
+        &[("out", None), (&absolute, Some(b"x"))],
+        &[("../up", Some(b"x"))],
+    ];
+    for entries in cases {
+        let got = copy_archive("/work/out", archive(entries), &to);
+        assert!(
+            refused_with(&got, "outside the source"),
+            "{entries:?}: {got:?}"
+        );
+        assert_eq!(listing(host.path()), ["to"], "{entries:?}");
+        assert!(listing(&to).is_empty(), "{entries:?}");
+    }
+}
+
+#[test]
+fn an_archive_naming_one_file_twice_is_refused() {
+    let host = tempfile::tempdir().unwrap();
+    let entries: &[Entry<'_>] = &[("a.txt", Some(b"one")), ("a.txt", Some(b"two"))];
+    let got = copy_archive("/work/a.txt", archive(entries), host.path());
+    assert!(refused_with(&got, "cannot write the copy"), "{got:?}");
+    assert!(listing(host.path()).is_empty());
+}
+
+#[test]
+fn an_empty_archive_is_refused() {
+    let host = tempfile::tempdir().unwrap();
+    let got = copy_archive("/work/a.txt", archive(&[]), &host.path().join("a.txt"));
+    assert!(refused_with(&got, "arrived empty"), "{got:?}");
+    assert!(listing(host.path()).is_empty());
+}
+
+#[test]
+fn a_box_without_tar_is_unsupported() {
+    let (p, c) = scripted();
+    p.on(
+        Tool::Ssh,
+        &[],
+        Reply::Fail {
+            code: 45,
+            stdout: String::new(),
+            stderr: String::new(),
+        },
+    );
+    let host = tempfile::tempdir().unwrap();
+    let got = c.copy_out(
+        &BoxHandle::new("p/box"),
+        &BoxPath::restore("/work/a.txt").unwrap(),
+        &host.path().join("a.txt"),
+    );
+    assert_eq!(got, Err(DriverError::Unsupported("tar on the Box")));
 }

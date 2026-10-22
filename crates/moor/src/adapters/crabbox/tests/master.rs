@@ -83,9 +83,13 @@ fn connects(lab: &Lab) -> usize {
 }
 
 #[test]
+#[expect(
+    clippy::print_stderr,
+    reason = "the skip notice says why the test did not run"
+)]
 fn a_call_inside_the_idle_window_reuses_the_master_and_one_after_it_reconnects() {
-    // A host without an OpenSSH server cannot run this test.
     if !Path::new(SSHD).exists() {
+        eprintln!("skipped: {SSHD} is missing, so no OpenSSH server can stand in for the Box");
         return;
     }
     let lab = lab();

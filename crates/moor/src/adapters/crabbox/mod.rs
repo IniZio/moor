@@ -56,6 +56,8 @@ const DEFAULT_SSH_PORT: u16 = 22;
 pub(crate) struct Crabbox {
     /// Spawner for every crabbox call.
     proc: Arc<dyn Proc>,
+    /// Spawner of the host-key check's `ssh -G` reads: `proc`, unless a test scripts ssh.
+    options: Arc<dyn Proc>,
     /// Source of the waits between claim race retries.
     clock: Arc<dyn Clock>,
     /// Source of the per-exec stderr markers.
@@ -83,6 +85,7 @@ impl Crabbox {
     /// Wraps a spawner, a clock and a marker source.
     pub(crate) fn new(proc: Arc<dyn Proc>, clock: Arc<dyn Clock>, rng: Arc<dyn Rng>) -> Self {
         Self {
+            options: Arc::clone(&proc),
             proc,
             clock,
             rng,
@@ -133,33 +136,6 @@ impl Crabbox {
         version::check(&out.stdout)?;
         let _ = self.version_ok.set(());
         Ok(())
-    }
-
-    /// A driver on a fake clock that passed the version check and lacks `ssh --no-probe`.
-    #[cfg(test)]
-    pub(crate) fn fake(proc: Arc<dyn Proc>) -> Self {
-        let driver = Self::fake_unchecked(proc);
-        let _ = driver.version_ok.set(());
-        let _ = driver.no_probe.set(false);
-        driver
-    }
-
-    /// Like [`Self::fake`], but still asks crabbox for its version.
-    #[cfg(test)]
-    pub(crate) fn fake_unchecked(proc: Arc<dyn Proc>) -> Self {
-        use crate::testing::{clock::FakeClock, rng::FakeRng};
-        use moor_core::seam::clock::Ts;
-        let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
-        Self::new(proc, clock, Arc::new(FakeRng::default())).with_scratch_leases()
-    }
-
-    /// Runs lease calls from dirs under a fresh temporary state dir.
-    #[cfg(test)]
-    pub(crate) fn with_scratch_leases(mut self) -> Self {
-        let dir = Arc::new(tempfile::tempdir().expect("temp state dir"));
-        self.leases = Some(dir.path().join("leases"));
-        self.scratch = Some(dir);
-        self
     }
 
     /// Runs one crabbox call, mapping failure through `op`.

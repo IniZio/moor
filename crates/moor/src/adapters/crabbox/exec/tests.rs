@@ -234,6 +234,31 @@ fn a_truncated_env_stream_ends_the_wrapper_and_still_removes_the_env_file() {
 }
 
 #[test]
+fn a_truncated_env_stream_that_replaced_path_still_removes_the_env_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ran = tmp.path().join("ran");
+    let touch = format!("touch {}", ran.display());
+    let env = "export PATH='/nonexistent'\nexport A='cut off";
+    let (code, stderr) = wrapper_under_dash(tmp.path(), env, &["/bin/sh", "-c", &touch]);
+    assert_ne!(code, Some(0), "{stderr}");
+    assert!(!ran.exists(), "the command never starts");
+    assert_eq!(entries(tmp.path()), Vec::<PathBuf>::new(), "{stderr}");
+}
+
+#[test]
+fn a_temp_path_holding_a_quote_ends_the_wrapper_before_the_env_loads() {
+    let tmp = tempfile::tempdir().unwrap();
+    let quoted = tmp.path().join("it's");
+    fs::create_dir(&quoted).unwrap();
+    let ran = tmp.path().join("ran");
+    let touch = format!("touch {}", ran.display());
+    let (code, stderr) = wrapper_under_dash(&quoted, "export A=1\n", &["/bin/sh", "-c", &touch]);
+    assert_eq!(code, Some(1), "{stderr}");
+    assert!(!ran.exists(), "the command never starts");
+    assert_eq!(entries(&quoted), Vec::<PathBuf>::new(), "{stderr}");
+}
+
+#[test]
 fn an_env_that_replaces_path_still_removes_the_env_file() {
     let tmp = tempfile::tempdir().unwrap();
     let (code, stderr) = wrapper_under_dash(

@@ -13,12 +13,17 @@ use crate::env::Env;
 use crate::testing::clock::FakeClock;
 use crate::testing::rng::FakeRng;
 
-/// Records its argv NUL-separated in `ssh.<n>`, then runs its last word, the remote command,
-/// under sh with stdin passed through. A `drop` file makes it lose the connection: it exits 255
+/// Hands an `ssh -G` read to the real ssh, recording its argv in `opts.<n>`. Records any other
+/// argv NUL-separated in `ssh.<n>`, then runs its last word, the remote command, under sh with
+/// stdin passed through. A `drop` file makes it lose the connection: it exits 255
 /// and prints nothing, as a call does whose shared master lost the network. A `cut` file holding
 /// a byte count makes it lose the connection after that much stdout.
 const FAKE_SSH: &str = r#"#!/bin/sh
 d=$(dirname "$0")
+if test "$1" = -G; then
+  printf '%s\0' "$@" > "$d/opts.$(ls "$d" | grep -c '^opts\.')"
+  exec /usr/bin/ssh "$@"
+fi
 n=$(ls "$d" | grep -c '^ssh\.')
 printf '%s\0' "$@" > "$d/ssh.$n"
 if test -f "$d/drop"; then cat >/dev/null; exit 255; fi
@@ -33,7 +38,7 @@ TMPDIR="$d/boxtmp" exec sh -c "$last"
 /// Records its argv in `crabbox.<n>`; answers `ssh` with the words crabbox prints for a pinned
 /// lease, or with the contents of a `words` file, and fails anything else. `ssh --help` is
 /// recorded in `help.<n>` instead and lists `-no-probe` only when a `no-probe` file exists, as
-/// the IniZio/crabbox builds with that flag do.
+/// the IniZio/crabbox builds with that flag do, and exits 2 when a `help-fails` file exists.
 const FAKE_CRABBOX: &str = r#"#!/bin/sh
 d=$(dirname "$0")
 if test "$1 $2" = "ssh --help"; then
@@ -41,6 +46,7 @@ if test "$1 $2" = "ssh --help"; then
   echo "Usage of ssh:" >&2
   echo "  -id string" >&2
   if test -f "$d/no-probe"; then echo "  -no-probe" >&2; fi
+  if test -f "$d/help-fails"; then exit 2; fi
   exit 0
 fi
 n=$(ls "$d" | grep -c '^crabbox\.')

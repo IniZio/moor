@@ -123,8 +123,11 @@ fn script(path: &Path, body: &str) {
     moor_testkit::write_executable(path, format!("#!/bin/sh\n{body}\n")).unwrap();
 }
 
+/// The shell line of a fake ssh that answers `ssh -G` as crabbox's pinned words do.
+const PINNED_G: &str = "test \"$1\" = -G && { echo 'stricthostkeychecking true'; echo 'userknownhostsfile /k'; exit; }";
+
 /// An environment with its state dir at `state`, whose crabbox names one ssh target and whose
-/// ssh appends its arguments to `<dir>/ssh.log`.
+/// ssh appends the arguments of each Box call to `<dir>/ssh.log`.
 fn fake_tools(dir: &Path, state: &Path) -> Env {
     let crabbox = dir.join("crabbox");
     script(
@@ -135,7 +138,7 @@ fn fake_tools(dir: &Path, state: &Path) -> Env {
     let log = dir.join("ssh.log");
     script(
         &ssh,
-        &format!("echo \"$@\" >> '{}'\nprintf x", log.display()),
+        &format!("{PINNED_G}\necho \"$@\" >> '{}'\nprintf x", log.display()),
     );
     let root = dir.display().to_string();
     Env::from_pairs([
@@ -188,4 +191,34 @@ fn a_command_response_says_when_ssh_calls_cannot_share_a_connection() {
     let resp = moor.call(Request::Sessions(SessionsReq { parent: None }));
     let codes: Vec<&str> = resp.warnings.iter().map(|w| w.code.as_str()).collect();
     assert_eq!(codes, ["ssh_not_shared"], "{resp:?}");
+}
+
+#[test]
+fn freshly_wired_drivers_share_one_answer_to_crabbox_ssh_help() {
+    let dir = tempfile::tempdir().unwrap();
+    let handle = BoxHandle::new("external/moor-1-abc123");
+    let path = BoxPath::under("/work", "f").unwrap();
+    let helps = dir.path().join("helps");
+    for n in 0..2 {
+        let env = fake_tools(dir.path(), &dir.path().join(format!("state{n}")));
+        script(
+            &dir.path().join("crabbox"),
+            &format!(
+                "test \"$1 $2\" = 'ssh --help' && {{ echo >> '{}'; exit 0; }}\n\
+                 case \"$1\" in --version) echo 'crabbox 0.79.1-moor.1';; \
+                 *) echo \"ssh -o StrictHostKeyChecking=yes 'u@box'\";; esac",
+                helps.display()
+            ),
+        );
+        build(&env)
+            .unwrap()
+            .driver()
+            .peek_file(&handle, &path)
+            .unwrap();
+    }
+    let asked = std::fs::read_to_string(&helps).map_or(0, |s| s.lines().count());
+    assert!(
+        asked <= 1,
+        "two wired drivers, each with its own lookup, asked `crabbox ssh --help` {asked} times"
+    );
 }

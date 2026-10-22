@@ -4,12 +4,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::name::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
+use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, Released};
-use moor_core::seam::proc::Tool;
+use moor_core::seam::proc::{Proc, Tool};
 
 use super::parse::{parse_list, parse_warmup};
 use super::Crabbox;
+use crate::testing::clock::FakeClock;
 use crate::testing::proc::{Reply, ScriptedProc};
+use crate::testing::rng::FakeRng;
 
 pub(super) mod fake_ssh;
 mod lookup;
@@ -28,6 +31,47 @@ fn req(provider: &str, class: Option<&str>) -> AcquireReq {
         name: BoxName::parse_allow_bare("t7").unwrap(),
         class: class.map(str::to_owned),
         nonce: "ab12cd".to_owned(),
+    }
+}
+
+impl Crabbox {
+    /// A driver on a fake clock that passed the version check and lacks `ssh --no-probe`.
+    pub(crate) fn fake(proc: Arc<dyn Proc>) -> Self {
+        let driver = Self::fake_unchecked(proc);
+        let _ = driver.version_ok.set(());
+        let _ = driver.no_probe.set(false);
+        driver
+    }
+
+    /// Like [`Self::fake`], but still asks crabbox for its version.
+    pub(crate) fn fake_unchecked(proc: Arc<dyn Proc>) -> Self {
+        let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
+        Self::new(proc, clock, Arc::new(FakeRng::default()))
+            .with_scratch_leases()
+            .with_pinned_options()
+    }
+
+    /// Answers every `ssh -G` read as crabbox's pinned words do, for a driver whose ssh is
+    /// scripted.
+    pub(crate) fn with_pinned_options(mut self) -> Self {
+        let options = ScriptedProc::new();
+        options.on(
+            Tool::Ssh,
+            &["-G"],
+            Reply::Ok(
+                "stricthostkeychecking true\nuserknownhostsfile /lease/known_hosts\n".to_owned(),
+            ),
+        );
+        self.options = Arc::new(options);
+        self
+    }
+
+    /// Runs lease calls from dirs under a fresh temporary state dir.
+    pub(crate) fn with_scratch_leases(mut self) -> Self {
+        let dir = Arc::new(tempfile::tempdir().expect("temp state dir"));
+        self.leases = Some(dir.path().join("leases"));
+        self.scratch = Some(dir);
+        self
     }
 }
 

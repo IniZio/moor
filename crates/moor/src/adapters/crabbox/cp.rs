@@ -10,12 +10,13 @@ use std::fs::{self, DirBuilder, OpenOptions};
 use std::io::{self, Read};
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Component, Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
 
 use moor_core::boxscript::quote;
 use moor_core::name::{BoxHandle, BoxPath};
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::{Deadline, ProcError, ProcSpec, Tool};
+use rustix::fs::{renameat_with, RenameFlags, CWD};
 use tar::EntryType;
 
 use super::peek::ssh_target;
@@ -26,10 +27,15 @@ use super::{link, Crabbox};
 const COPY_OUT_DEADLINE: Duration = Duration::from_mins(5);
 /// Remote exit code that means the source does not exist.
 const MISSING: i32 = 44;
+/// Name prefix of the staging directories beside a destination.
+const STAGE_PREFIX: &str = ".moor-cp-";
+/// Age in milliseconds past which a staging directory is left over from a killed copy.
+const STALE_AFTER_MS: i64 = 60 * 60 * 1000;
 
 /// Copies `from` in the Box behind `handle` to the host path `to`, or into `to` when it is a
 /// directory. Files arrive owner-only (0600) and directories 0700. A copied file replaces a file
-/// already at the target; nothing replaces a directory there.
+/// already at the target; nothing replaces a directory there, and a copied directory replaces
+/// nothing.
 pub(super) fn copy_out(
     cb: &Crabbox,
     handle: &BoxHandle,
@@ -68,17 +74,49 @@ fn target(to: &Path, leaf: &str) -> Result<PathBuf, DriverError> {
 }
 
 /// A new private directory next to `target`, on the same filesystem so the copy can be renamed.
+/// Staging dirs there older than an hour, left by a moor killed mid-copy, go first.
 fn stage_beside(cb: &Crabbox, target: &Path) -> Result<PathBuf, DriverError> {
     let parent = match target.parent() {
         Some(p) if !p.as_os_str().is_empty() => p,
         _ => Path::new("."),
     };
-    let stage = parent.join(format!(".moor-cp-{:08x}{:08x}", cb.rng.u32(), cb.rng.u32()));
+    remove_stale(cb, parent);
+    let stage = parent.join(format!(
+        "{STAGE_PREFIX}{:08x}{:08x}",
+        cb.rng.u32(),
+        cb.rng.u32()
+    ));
     DirBuilder::new()
         .mode(0o700)
         .create(&stage)
         .map_err(|e| local("cannot stage the copy", &e))?;
     Ok(stage)
+}
+
+/// Removes the staging directories in `dir` last changed over an hour ago. No copy runs past
+/// its 5 min deadline, so such a directory belongs to none.
+fn remove_stale(cb: &Crabbox, dir: &Path) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    let now = cb.clock.now().as_millis();
+    for entry in entries.flatten() {
+        let staged = entry
+            .file_name()
+            .to_str()
+            .is_some_and(|n| n.starts_with(STAGE_PREFIX));
+        let changed = entry
+            .metadata()
+            .ok()
+            .filter(fs::Metadata::is_dir)
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .and_then(|d| i64::try_from(d.as_millis()).ok());
+        let stale = changed.is_some_and(|at| now.saturating_sub(at) > STALE_AFTER_MS);
+        if staged && stale {
+            let _ = fs::remove_dir_all(entry.path());
+        }
+    }
 }
 
 /// Streams `leaf` of the Box directory `parent` into `stage`.
@@ -159,12 +197,18 @@ fn unpack(reader: &mut dyn Read, leaf: &str, stage: &Path) -> Result<(), DriverE
     Ok(())
 }
 
-/// Moves the finished copy at `staged` to `target`.
+/// Moves the finished copy at `staged` to `target`. A file replaces a file there; a directory
+/// replaces nothing, not even an empty directory.
 fn publish(staged: &Path, target: &Path) -> Result<(), DriverError> {
-    if fs::symlink_metadata(staged).is_err() {
+    let Ok(meta) = fs::symlink_metadata(staged) else {
         return Err(failed("the copy arrived empty"));
-    }
-    fs::rename(staged, target).map_err(|e| local("cannot place the copy", &e))
+    };
+    let placed = if meta.is_dir() {
+        renameat_with(CWD, staged, CWD, target, RenameFlags::NOREPLACE).map_err(io::Error::from)
+    } else {
+        fs::rename(staged, target)
+    };
+    placed.map_err(|e| local("cannot place the copy", &e))
 }
 
 /// A copy failure saying `why`.
