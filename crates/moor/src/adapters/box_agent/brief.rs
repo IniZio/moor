@@ -48,7 +48,7 @@ pub(super) fn render(b: &BriefInput) -> String {
          git fetches file contents through the proxy when a command first needs them. \
          Push to the branch named in the Goal if it names one, else \
          to `{branch}`. Do not switch branches. Do not add Co-Authored-By trailers to \
-         commits.\n\n\
+         commits. When you opened a pull request, end your final message with its URL.\n\n\
          You may receive follow-up messages (steers) typed into this session.\n\n\
          Decide on your own when you reasonably can, and ask a question only when the \
          choice is the owner's.\n\n"
@@ -132,6 +132,15 @@ mod tests {
         assert!(!out.contains("moor HEAD"), "{out}");
         assert!(out.contains("Do not add Co-Authored-By trailers"));
         assert!(out.contains("follow-up messages (steers)"));
+    }
+
+    #[test]
+    fn asks_for_the_pull_request_url_at_the_end_of_the_final_message() {
+        let out = render(&input(Some("g"), None));
+        assert!(
+            out.contains("When you opened a pull request, end your final message with its URL."),
+            "{out}"
+        );
     }
 
     #[test]
