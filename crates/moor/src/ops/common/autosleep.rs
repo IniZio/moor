@@ -154,11 +154,7 @@ pub(crate) fn sleep_handle(cx: &Cx, row: &BoxRow) -> Result<BoxHandle, CommandEr
         .handle
         .clone()
         .ok_or_else(|| refuse("the Box has not been acquired".to_owned()))?;
-    if cx
-        .store()?
-        .in_flight_run(row.id, &|pid| cx.proc().alive(pid))?
-        .is_some()
-    {
+    if cx.store()?.in_flight_run(row.id)?.is_some() {
         return Err(refuse("a run is in flight".to_owned()));
     }
     Ok(handle)

@@ -133,7 +133,7 @@ fn a_run_while_the_agent_waits_keeps_one_episode() {
             sha: None,
             pid: 4242,
         };
-        let run = store.begin_run(new).unwrap();
+        let (run, _claim) = store.begin_run(new).unwrap();
         store
             .apply(Decision::new(id).session(SessionInput::RunStarted))
             .unwrap();

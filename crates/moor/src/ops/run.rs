@@ -1,6 +1,7 @@
 //! `run`: execute a command on the Box's machine, keep a run record, report how it ended.
 //!
-//! The Box lock is held from the run row's creation to its completion.
+//! The Box lock is held from the run row's creation to its completion. So is the run's follow
+//! claim, which is what marks the row in flight to every other reader.
 
 use std::path::PathBuf;
 
@@ -103,7 +104,7 @@ fn launch(
 ) -> Result<RunValue, CommandError> {
     let cfg = settings_of(cx, row, &Flags::default())?;
     let (sha, argv) = plan(cx, req, target, &cfg.setup)?;
-    let id = store.begin_run(NewRun {
+    let (id, _claim) = store.begin_run(NewRun {
         box_id: row.id,
         argv: req.argv.clone(),
         record: req.record.clone(),

@@ -61,7 +61,7 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
                 return Err(failed(cx, &row, &reading, first.message(), attention)?);
             }
         }
-        let in_flight = store.in_flight_run(id, &|pid| cx.proc().alive(pid))?;
+        let in_flight = store.in_flight_run(id)?;
         let facts = WaitFacts {
             agent_active: reading.busy(),
             run_in_flight: in_flight.is_some(),

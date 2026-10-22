@@ -489,7 +489,7 @@ fn intent_set_clear_and_run_lifecycle() {
         .unwrap();
     assert_eq!(store.box_row(id).unwrap().unwrap().intent, None);
 
-    let run = store
+    let (run, _claim) = store
         .begin_run(NewRun {
             box_id: id,
             argv: vec!["ls".into()],

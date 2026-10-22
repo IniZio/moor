@@ -27,6 +27,9 @@ mod apply;
 pub(crate) mod artifacts;
 mod bindings;
 pub(crate) use bindings::Binding;
+mod follow;
+#[cfg(test)]
+pub(crate) use follow::FollowClaim;
 mod host;
 mod init;
 pub(crate) mod lease;

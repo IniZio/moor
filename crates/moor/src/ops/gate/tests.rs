@@ -44,7 +44,7 @@ fn new_box(cx: &Cx, name: &str) -> BoxId {
 /// Record a finished run of `command` named `name` on `sha` with `exit`.
 fn record(cx: &Cx, box_id: BoxId, name: &str, sha: &str, command: &str, exit: i32) {
     let store = cx.store().unwrap();
-    let id = store
+    let (id, _claim) = store
         .begin_run(NewRun {
             box_id,
             argv: command.split(' ').map(str::to_owned).collect(),
