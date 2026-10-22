@@ -28,7 +28,12 @@ daemon="$HOME/.fake-tinyproxy/tinyproxy"
 [ -x "$daemon" ] || { mkdir -p "$HOME/.fake-tinyproxy" && cp "$(command -v sleep)" "$daemon"; }
 rm -f "$pid"
 setsid sh -c 'echo $$ >"$1.tmp" && mv -f "$1.tmp" "$1" && exec "$2" 30' sh "$pid" "$daemon" </dev/null >/dev/null 2>&1 &
-while [ ! -s "$pid" ]; do sleep 0.01; done
+n=0
+while [ ! -s "$pid" ]; do
+  n=$((n + 1))
+  [ "$n" -le 500 ] || exit 1
+  sleep 0.01
+done
 echo start >>"$HOME/fake-starts"
 "#;
 
