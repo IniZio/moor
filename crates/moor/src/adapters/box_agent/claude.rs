@@ -38,10 +38,12 @@ impl AgentProfile for Claude {
         let question = asked
             .and_then(|q| q.get("question"))
             .and_then(Value::as_str);
-        let message = blocked
-            .then(|| question.or_else(|| text("message")))
-            .flatten()
-            .map(str::to_owned);
+        let message = match kind {
+            HookKind::Blocked => question.or_else(|| text("message")),
+            HookKind::Idle => text("last_assistant_message"),
+            HookKind::Starting | HookKind::Busy => None,
+        }
+        .map(str::to_owned);
         let options = asked
             .and_then(|q| q.get("options"))
             .and_then(Value::as_array)

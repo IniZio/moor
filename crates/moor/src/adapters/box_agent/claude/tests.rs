@@ -48,6 +48,14 @@ fn waiting_input_without_message_has_none() {
 }
 
 #[test]
+fn idle_carries_the_last_message_and_never_the_nudge_text() {
+    let rec = parse(r#"{"state":"idle","last_assistant_message":"Done.","ts":1}"#).unwrap();
+    assert_eq!(rec.message.as_deref(), Some("Done."));
+    let raw = r#"{"state":"idle","notification_type":"idle_prompt","message":"waiting","ts":1}"#;
+    assert_eq!(parse(raw).unwrap().message, None);
+}
+
+#[test]
 fn session_id_is_kept_when_a_string() {
     let rec = parse(r#"{"state":"idle","session_id":"s-1","ts":1}"#).unwrap();
     assert_eq!(rec.session_id.as_deref(), Some("s-1"));

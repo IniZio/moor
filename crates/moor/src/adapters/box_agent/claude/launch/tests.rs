@@ -20,6 +20,7 @@ use super::super::Claude;
 
 mod ask;
 mod bypass;
+mod last_message;
 mod prompt;
 
 fn ctx(dir: &Path) -> LaunchCtx {

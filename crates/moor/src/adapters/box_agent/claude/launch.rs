@@ -38,25 +38,38 @@ except ValueError:
 if not isinstance(d, dict):
     d = {}
 o = {"state": sys.argv[1], "event": sys.argv[2], "ts": int(time.time())}
-for k in ("session_id", "message", "notification_type"):
+for k in ("session_id", "message", "notification_type", "last_assistant_message"):
     if isinstance(d.get(k), str):
         o[k] = d[k]
+if sys.argv[2] == "Notification" and "last_assistant_message" not in o:
+    try:
+        p = json.load(open(sys.argv[3] + "/agent-state.json"))
+        if p.get("state") == "idle" and isinstance(p.get("last_assistant_message"), str):
+            o["last_assistant_message"] = p["last_assistant_message"]
+    except (OSError, ValueError, AttributeError):
+        pass
 ti = d.get("tool_input")
 if isinstance(ti, dict) and isinstance(ti.get("questions"), list):
     o["questions"] = ti["questions"]
-print(json.dumps(o))' "$1" "$2"
+print(json.dumps(o))' "$1" "$2" "$d"
 elif command -v node >/dev/null 2>&1; then
   MOOR_HOOK_IN=$in node -e '
 let d = {};
 try { d = JSON.parse(process.env.MOOR_HOOK_IN || ""); } catch (e) {}
 if (d === null || typeof d !== "object" || Array.isArray(d)) d = {};
 const o = { state: process.argv[1], event: process.argv[2], ts: Math.floor(Date.now() / 1000) };
-for (const k of ["session_id", "message", "notification_type"]) {
+for (const k of ["session_id", "message", "notification_type", "last_assistant_message"]) {
   if (typeof d[k] === "string") o[k] = d[k];
+}
+if (process.argv[2] === "Notification" && !("last_assistant_message" in o)) {
+  try {
+    const p = JSON.parse(require("fs").readFileSync(process.argv[3] + "/agent-state.json", "utf8"));
+    if (p.state === "idle" && typeof p.last_assistant_message === "string") o.last_assistant_message = p.last_assistant_message;
+  } catch (e) {}
 }
 const ti = d.tool_input;
 if (ti && typeof ti === "object" && Array.isArray(ti.questions)) o.questions = ti.questions;
-console.log(JSON.stringify(o));' "$1" "$2"
+console.log(JSON.stringify(o));' "$1" "$2" "$d"
 else
   printf '{"state":"%s","event":"%s","ts":%s}\n' "$1" "$2" "$(date +%s)"
 fi > "$t" 2>/dev/null && mv -f "$t" "$d/agent-state.json" || rm -f "$t"

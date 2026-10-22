@@ -40,6 +40,7 @@ impl Event {
             Self::Attached => "attached",
             Self::SessionsStopped { .. } => "sessions_stopped",
             Self::AgentPromptBlocked { .. } => "agent_prompt_blocked",
+            Self::AgentSaid { .. } => "agent_said",
             Self::NeedsInput { .. } => "needs_input",
             Self::AgentPromptCheckFailed { .. } => "agent_prompt_check_failed",
             Self::TranscriptSaved { .. } => "transcript_saved",
