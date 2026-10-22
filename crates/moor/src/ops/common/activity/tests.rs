@@ -20,7 +20,7 @@ use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
 use super::{read, settle, PaneLiveness, Reading, PROBE_DEADLINE};
 use crate::cx::Cx;
-use crate::store::{BoxRow, NewRun};
+use crate::store::{BoxRow, FollowClaim, NewRun};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::ScriptedProc;
@@ -97,8 +97,8 @@ fn working_box(cx: &Cx, session: bool) -> BoxId {
     id
 }
 
-/// Begin a run of `id` owned by pid 4242.
-fn begin(cx: &Cx, id: BoxId) {
+/// Begin a run of `id` owned by pid 4242; it stays in flight while the claim lives.
+fn begin(cx: &Cx, id: BoxId) -> FollowClaim {
     cx.store()
         .unwrap()
         .begin_run(NewRun {
@@ -108,7 +108,8 @@ fn begin(cx: &Cx, id: BoxId) {
             sha: None,
             pid: 4242,
         })
-        .unwrap();
+        .unwrap()
+        .1
 }
 
 fn row(cx: &Cx, id: BoxId) -> BoxRow {
@@ -174,7 +175,7 @@ fn run_in_flight_without_a_session_is_busy_and_not_quiet() {
     let engine = Arc::new(FakeEngine::new());
     let (cx, _) = cx(dir.path(), &engine);
     let id = working_box(&cx, false);
-    begin(&cx, id);
+    let _claim = begin(&cx, id);
     let r = run_once(&cx, id);
     assert_eq!(r.activity, None);
     assert!(r.busy());
@@ -202,7 +203,7 @@ fn run_in_flight_forces_working() {
     let engine = Arc::new(FakeEngine::new().probes(SESSION, hook(HookKind::Idle)));
     let (cx, _) = cx(dir.path(), &engine);
     let id = working_box(&cx, true);
-    begin(&cx, id);
+    let _claim = begin(&cx, id);
     let r = run_once(&cx, id);
     assert_eq!(state(&r).0, AgentState::Working);
     assert!(r.busy());
@@ -220,7 +221,7 @@ fn run_in_flight_with_a_gone_pane_is_busy_and_not_quiet() {
     let engine = Arc::new(FakeEngine::new().probes(SESSION, gone));
     let (cx, _) = cx(dir.path(), &engine);
     let id = working_box(&cx, true);
-    begin(&cx, id);
+    let _claim = begin(&cx, id);
     let r = run_once(&cx, id);
     assert!(r.busy());
     assert!(!r.may_quiet);
@@ -247,7 +248,7 @@ fn run_in_flight_with_an_unreachable_box_is_busy_and_not_quiet() {
         });
     store.apply(d).unwrap();
     store.begin_session(id, SESSION, None).unwrap();
-    begin(&cx, id);
+    let _claim = begin(&cx, id);
     let r = run_once(&cx, id);
     assert_eq!(r.activity, None);
     assert!(r.busy());
@@ -256,13 +257,12 @@ fn run_in_flight_with_an_unreachable_box_is_busy_and_not_quiet() {
 }
 
 #[test]
-fn run_with_a_dead_runner_does_not_force_working() {
+fn run_with_a_gone_follower_does_not_force_working() {
     let dir = tempfile::tempdir().unwrap();
     let engine = Arc::new(FakeEngine::new().probes(SESSION, hook(HookKind::Idle)));
-    let (cx, proc) = cx(dir.path(), &engine);
-    proc.dead(4242);
+    let (cx, _) = cx(dir.path(), &engine);
     let id = working_box(&cx, true);
-    begin(&cx, id);
+    drop(begin(&cx, id));
     assert_eq!(state(&run_once(&cx, id)).0, AgentState::Idle);
 }
 

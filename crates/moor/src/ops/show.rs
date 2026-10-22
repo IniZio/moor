@@ -65,7 +65,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
             activity::settle(cx, store, &row, &reading)?;
             autosleep::run(cx, store, row.id);
             row = store.box_row(row.id)?.unwrap_or(row);
-            let in_flight = store.in_flight_run(row.id, &|pid| cx.proc().alive(pid))?;
+            let in_flight = store.in_flight_run(row.id)?;
             let mut view = box_view_with_run(&row, in_flight.as_ref(), cx.config());
             view.agent = agent_view(&reading);
             view.attention = attention(store, row.id)?;
@@ -83,7 +83,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     };
     let row = target::resolve(store, target, Rule::Latest)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {target}")))?;
-    let in_flight = store.in_flight_run(row.id, &|pid| cx.proc().alive(pid))?;
+    let in_flight = store.in_flight_run(row.id)?;
     let reading = activity::read(cx, store, &row, now, activity::PROBE_DEADLINE)?;
     let (agent, pane) = (agent_view(&reading), pane_view(&reading));
     let mut detail = box_view_with_run(&row, in_flight.as_ref(), cx.config());

@@ -126,9 +126,7 @@ pub(crate) fn read(
     now: Ts,
     deadline: Deadline,
 ) -> Result<Reading, CommandError> {
-    let in_flight = store
-        .in_flight_run(row.id, &|pid| cx.proc().alive(pid))?
-        .is_some();
+    let in_flight = store.in_flight_run(row.id)?.is_some();
     let Some(session) = store.live_session(row.id)? else {
         return Ok(row.launch_failure.clone().map_or_else(
             || Reading::none(in_flight),

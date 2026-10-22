@@ -1,7 +1,10 @@
 //! Tests for in-flight run detection, ghost-run healing and recorded-run lookups.
 
 use std::path::Path;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 
 use moor_core::domain::decision::{Decision, Intent, NewBox};
 use moor_core::seam::clock::Ts;
@@ -10,7 +13,7 @@ use moor_core::{BoxId, BoxName, RunId, Sha};
 use crate::testing::clock::FakeClock;
 
 use super::{NewRun, RunOutcome};
-use crate::store::Store;
+use crate::store::{FollowClaim, Store};
 
 const SHA_A: &str = "abcdef1234567890abcdef1234567890abcdef12";
 const SHA_B: &str = "abcd00001234567890abcdef1234567890abcdef";
@@ -30,8 +33,14 @@ fn add(store: &Store, name: &str) -> BoxId {
     store.apply(Decision::insert(nt)).unwrap().box_id
 }
 
-/// Begin a run on `box_id` owned by `pid`.
-fn begin(store: &Store, box_id: BoxId, record: Option<&str>, sha: Option<&str>, pid: u32) -> RunId {
+/// Begin a run on `box_id` owned by `pid`, holding its follow claim.
+fn follow(
+    store: &Store,
+    box_id: BoxId,
+    record: Option<&str>,
+    sha: Option<&str>,
+    pid: u32,
+) -> (RunId, FollowClaim) {
     store
         .begin_run(NewRun {
             box_id,
@@ -41,6 +50,11 @@ fn begin(store: &Store, box_id: BoxId, record: Option<&str>, sha: Option<&str>, 
             pid,
         })
         .unwrap()
+}
+
+/// Begin a run on `box_id` owned by `pid` whose follower is already gone.
+fn begin(store: &Store, box_id: BoxId, record: Option<&str>, sha: Option<&str>, pid: u32) -> RunId {
+    follow(store, box_id, record, sha, pid).0
 }
 
 /// Finish a run with an exit code.
@@ -60,33 +74,100 @@ fn ran_events(store: &Store, box_id: BoxId) -> usize {
 }
 
 #[test]
-fn in_flight_run_is_returned_while_pid_is_alive() {
+fn in_flight_run_is_returned_while_its_claim_is_held() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let box_id = add(&store, "t");
-    assert!(store.in_flight_run(box_id, &|_| true).unwrap().is_none());
+    assert!(store.in_flight_run(box_id).unwrap().is_none());
 
-    let run = begin(&store, box_id, None, None, 42);
-    let seen = store
-        .in_flight_run(box_id, &|pid| pid == 42)
-        .unwrap()
-        .unwrap();
+    let (run, claim) = follow(&store, box_id, None, None, 42);
+    let seen = store.in_flight_run(box_id).unwrap().unwrap();
     assert_eq!((seen.id, seen.box_id, seen.pid), (run, box_id, 42));
     assert_eq!(seen.finished_at, None);
     assert_eq!(ran_events(&store, box_id), 0);
 
     finish(&store, run, 0);
-    assert!(store.in_flight_run(box_id, &|_| true).unwrap().is_none());
+    drop(claim);
+    assert!(store.in_flight_run(box_id).unwrap().is_none());
+    assert_eq!(ran_events(&store, box_id), 1);
 }
 
 #[test]
-fn dead_pid_run_is_interrupted_once() {
+fn a_live_pid_without_a_claim_is_not_in_flight() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let box_id = add(&store, "t");
+    let run = begin(&store, box_id, None, None, std::process::id());
+
+    assert!(store.in_flight_run(box_id).unwrap().is_none());
+    let row = store.last_run(box_id).unwrap().unwrap();
+    assert_eq!(row.id, run);
+    assert!(row.finished_at.is_some() && row.interrupted);
+}
+
+/// Names the state dir and Box a child process follows a new run of, until it is killed.
+const HOLDER: &str = "MOOR_TEST_FOLLOW_HOLDER";
+
+#[test]
+fn follow_until_killed() {
+    let Some(spec) = std::env::var_os(HOLDER) else {
+        return;
+    };
+    let spec = spec.into_string().unwrap();
+    let (dir, box_id) = spec.rsplit_once(':').unwrap();
+    let store = open(Path::new(dir));
+    let box_id = BoxId::new(box_id.parse().unwrap());
+    let _claim = follow(&store, box_id, None, None, std::process::id());
+    loop {
+        thread::sleep(Duration::from_secs(60));
+    }
+}
+
+#[test]
+fn a_killed_follower_leaves_its_run_interrupted() {
+    if std::env::var_os(HOLDER).is_some() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let box_id = add(&store, "t");
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "store::runs::tests::follow_until_killed"])
+        .env(HOLDER, format!("{}:{}", dir.path().display(), box_id.get()))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    let begun = (0..1000).find_map(|_| {
+        thread::sleep(Duration::from_millis(10));
+        store.last_run(box_id).unwrap()
+    });
+    if begun.is_none() {
+        child.kill().ok();
+    }
+    let begun = begun.expect("the child began its run");
+    let seen = store.in_flight_run(box_id).unwrap().map(|r| r.id);
+    assert_eq!(seen, Some(begun.id), "a held claim is in flight");
+
+    let pid = rustix::process::Pid::from_child(&child);
+    rustix::process::kill_process(pid, rustix::process::Signal::KILL).unwrap();
+    child.wait().unwrap();
+
+    assert!(store.in_flight_run(box_id).unwrap().is_none());
+    let row = store.last_run(box_id).unwrap().unwrap();
+    assert_eq!(row.id, begun.id);
+    assert!(row.finished_at.is_some() && row.interrupted, "{row:?}");
+    assert_eq!(ran_events(&store, box_id), 1);
+}
+
+#[test]
+fn unclaimed_run_is_interrupted_once() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let box_id = add(&store, "t");
     let run = begin(&store, box_id, Some("lint"), Some(SHA_A), 42);
 
-    assert!(store.in_flight_run(box_id, &|_| false).unwrap().is_none());
+    assert!(store.in_flight_run(box_id).unwrap().is_none());
     assert_eq!(ran_events(&store, box_id), 1);
     assert_eq!(store.box_row(box_id).unwrap().unwrap().intent, None);
     let events = store.events(box_id, 100).unwrap();
@@ -95,7 +176,7 @@ fn dead_pid_run_is_interrupted_once() {
         serde_json::json!({"run": run.get(), "exit": null, "interrupted": true})
     );
 
-    assert!(store.in_flight_run(box_id, &|_| false).unwrap().is_none());
+    assert!(store.in_flight_run(box_id).unwrap().is_none());
     assert_eq!(ran_events(&store, box_id), 1);
 
     let rows = store.recorded_runs("abcdef").unwrap();
@@ -114,7 +195,7 @@ fn finishing_a_finished_run_changes_nothing() {
     finish(&store, run, 3);
 
     finish(&store, run, 9);
-    assert!(store.in_flight_run(box_id, &|_| false).unwrap().is_none());
+    assert!(store.in_flight_run(box_id).unwrap().is_none());
     assert_eq!(ran_events(&store, box_id), 1);
     let rows = store.recorded_runs("abcdef").unwrap();
     let row = rows.first().unwrap();
@@ -137,12 +218,9 @@ fn healing_keeps_a_running_intent_of_another_run() {
     let store = open(dir.path());
     let box_id = add(&store, "t");
     let old = begin(&store, box_id, None, None, 1);
-    let new = begin(&store, box_id, None, None, 2);
+    let (new, _claim) = follow(&store, box_id, None, None, 2);
 
-    let seen = store
-        .in_flight_run(box_id, &|pid| pid == 2)
-        .unwrap()
-        .unwrap();
+    let seen = store.in_flight_run(box_id).unwrap().unwrap();
     assert_eq!(seen.id, new);
     assert_eq!(ran_events(&store, box_id), 1);
     assert_eq!(
@@ -224,9 +302,9 @@ fn refused_run_leaves_an_in_flight_run_alone() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let box_id = add(&store, "t");
-    let run = begin(&store, box_id, None, None, 7);
+    let (run, _claim) = follow(&store, box_id, None, None, 7);
     store.refused_run(box_id).unwrap();
-    let live = store.in_flight_run(box_id, &|_| true).unwrap().unwrap();
+    let live = store.in_flight_run(box_id).unwrap().unwrap();
     assert_eq!(live.id, run);
     assert_eq!(live.finished_at, None);
     assert_eq!(

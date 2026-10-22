@@ -221,16 +221,17 @@ fn a_held_box_lock_skips_the_sleep_silently() {
 #[test]
 fn a_run_in_flight_skips_the_sleep() {
     let f = idle();
-    f.cx.store()
-        .unwrap()
-        .begin_run(NewRun {
-            box_id: f.id,
-            argv: vec!["make".into()],
-            record: None,
-            sha: None,
-            pid: 4242,
-        })
-        .unwrap();
+    let _claim =
+        f.cx.store()
+            .unwrap()
+            .begin_run(NewRun {
+                box_id: f.id,
+                argv: vec!["make".into()],
+                record: None,
+                sha: None,
+                pid: 4242,
+            })
+            .unwrap();
     pass(&f, LONG);
     auto_sleep(&f);
     assert_eq!(states(&f).2, BoxState::Ready);

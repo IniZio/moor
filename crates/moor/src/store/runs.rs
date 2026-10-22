@@ -8,6 +8,7 @@ use rusqlite::types::Value;
 use rusqlite::{params, OptionalExtension, Row, TransactionBehavior};
 
 use super::apply::{insert_event, intent_sets, update};
+use super::follow::{self, FollowClaim};
 use super::{load_box, Store, StoreError};
 
 /// A run to record.
@@ -101,7 +102,10 @@ fn run_from_row(row: &Row<'_>) -> Result<RunRow, StoreError> {
 
 impl Store {
     /// Record a run start: run row, `Running` intent and `run_started` event.
-    pub(crate) fn begin_run(&self, r: NewRun) -> Result<RunId, StoreError> {
+    ///
+    /// The returned claim keeps the row in flight until it drops. It is taken before the row
+    /// commits, so no reader ever sees the new row unclaimed.
+    pub(crate) fn begin_run(&self, r: NewRun) -> Result<(RunId, FollowClaim), StoreError> {
         let NewRun {
             box_id,
             argv,
@@ -134,9 +138,10 @@ impl Store {
         sets.push(("updated_at", Value::Integer(now.as_millis())));
         update(&tx, "boxes", "id = ?", &[box_id.get()], &sets)?;
         insert_event(&tx, box_id, &Event::RunStarted { run }, now)?;
+        let claim = FollowClaim::take(self.follow_path(run))?;
         tx.commit()?;
         drop(conn);
-        Ok(run)
+        Ok((run, claim))
     }
 
     /// Record a run end: finish the row, clear its intent, emit `ran`.
@@ -202,16 +207,12 @@ impl Store {
         Ok(())
     }
 
-    /// The box's run still in flight, judged by `alive` on the runner pid.
+    /// The box's run still in flight: an open row whose follow claim someone holds.
     ///
-    /// Open runs of the box whose runner is gone are finished as interrupted, so callers never
-    /// see them. Older open runs are finished the same way even when their pid is alive: only one
-    /// run can be live under the per-Box lock, so a live pid on an older row is a reused pid.
-    pub(crate) fn in_flight_run(
-        &self,
-        box_id: BoxId,
-        alive: &dyn Fn(u32) -> bool,
-    ) -> Result<Option<RunRow>, StoreError> {
+    /// Open runs of the box whose claim is free are finished as interrupted, so callers never
+    /// see them. Older open runs are finished the same way even when claimed: only one run can be
+    /// live under the per-Box lock.
+    pub(crate) fn in_flight_run(&self, box_id: BoxId) -> Result<Option<RunRow>, StoreError> {
         let open = {
             let conn = self.reader()?;
             let mut stmt = conn.prepare(&format!(
@@ -222,13 +223,20 @@ impl Store {
         };
         let mut found = None;
         for run in open {
-            if found.is_none() && alive(run.pid) {
+            if found.is_none() && follow::held(&self.follow_path(run.id))? {
                 found = Some(run);
                 continue;
             }
             self.finish_run(run.id, RunOutcome::ended(None, true))?;
         }
         Ok(found)
+    }
+
+    /// Where the follow claim of `run` lives: `<state>/runs/<id>.follow`.
+    fn follow_path(&self, run: RunId) -> std::path::PathBuf {
+        self.path
+            .with_file_name("runs")
+            .join(format!("{}.follow", run.get()))
     }
 
     /// The box's most recent run, in flight or finished.

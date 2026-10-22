@@ -21,7 +21,7 @@ use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, ShowReq, WaitFor, WaitReq
 use super::run;
 use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
-use crate::store::NewRun;
+use crate::store::{FollowClaim, NewRun};
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
@@ -61,8 +61,8 @@ fn add(cx: &Cx) -> BoxId {
         .box_id
 }
 
-/// Begin a run of `demo` owned by `PID`.
-fn begin(cx: &Cx, box_id: BoxId) {
+/// Begin a run of `demo` owned by `PID`; it stays in flight while the claim lives.
+fn begin(cx: &Cx, box_id: BoxId) -> FollowClaim {
     cx.store()
         .unwrap()
         .begin_run(NewRun {
@@ -72,7 +72,8 @@ fn begin(cx: &Cx, box_id: BoxId) {
             sha: None,
             pid: PID,
         })
-        .unwrap();
+        .unwrap()
+        .1
 }
 
 /// A `wait` request for `demo`.
@@ -101,7 +102,7 @@ fn times_out_while_a_run_is_in_flight() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path());
     let id = add(&cx);
-    begin(&cx, id);
+    let _claim = begin(&cx, id);
     let before = cx.clock().now();
     let v = run(&cx, &req(None, Some(3))).unwrap();
     assert!(v.timed_out);
@@ -114,7 +115,7 @@ fn a_short_timeout_caps_the_total_sleep() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path());
     let id = add(&cx);
-    begin(&cx, id);
+    let _claim = begin(&cx, id);
     let before = cx.clock().now();
     let v = run(&cx, &req(None, Some(1))).unwrap();
     assert!(v.timed_out);
@@ -127,7 +128,7 @@ fn reports_the_in_flight_run_with_its_argv() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path());
     let id = add(&cx);
-    begin(&cx, id);
+    let _claim = begin(&cx, id);
     let v = run(&cx, &req(None, Some(1))).unwrap();
     let r = v.run.unwrap();
     assert!(r.in_flight);
@@ -136,12 +137,12 @@ fn reports_the_in_flight_run_with_its_argv() {
 }
 
 #[test]
-fn a_run_whose_process_is_gone_reports_interrupted() {
+fn a_run_whose_follower_is_gone_reports_interrupted() {
     let dir = tempfile::tempdir().unwrap();
-    let (cx, proc) = cx(dir.path());
+    let (cx, _) = cx(dir.path());
     let id = add(&cx);
-    begin(&cx, id);
-    proc.dead(PID);
+    let claim = begin(&cx, id);
+    drop(claim);
     let v = run(&cx, &req(None, Some(5))).unwrap();
     assert!(!v.timed_out);
     let r = v.run.unwrap();
@@ -156,7 +157,7 @@ fn done_behaves_like_idle() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path());
     let id = add(&cx);
-    begin(&cx, id);
+    let _claim = begin(&cx, id);
     let v = run(&cx, &req(Some(WaitFor::Done), Some(1))).unwrap();
     assert!(v.timed_out);
     assert_eq!(v.wait_for, WaitFor::Done);
@@ -165,14 +166,14 @@ fn done_behaves_like_idle() {
 #[test]
 fn run_waits_only_for_the_run() {
     let dir = tempfile::tempdir().unwrap();
-    let (cx, proc) = cx(dir.path());
+    let (cx, _) = cx(dir.path());
     let id = add(&cx);
     let v = run(&cx, &req(Some(WaitFor::Run), None)).unwrap();
     assert!(!v.timed_out);
-    begin(&cx, id);
+    let claim = begin(&cx, id);
     let v = run(&cx, &req(Some(WaitFor::Run), Some(1))).unwrap();
     assert!(v.timed_out);
-    proc.dead(PID);
+    drop(claim);
     let v = run(&cx, &req(Some(WaitFor::Run), Some(1))).unwrap();
     assert!(!v.timed_out);
 }
@@ -189,7 +190,7 @@ fn unknown_box_fails_like_show() {
 #[test]
 fn never_takes_the_box_lock() {
     let dir = tempfile::tempdir().unwrap();
-    let (cx, proc) = cx(dir.path());
+    let (cx, _) = cx(dir.path());
     let id = add(&cx);
     let _held = BoxLock::acquire(
         cx.clock(),
@@ -210,9 +211,9 @@ fn never_takes_the_box_lock() {
     let began = cx.clock().now();
     crate::ops::show::run(&cx, &show).unwrap();
     run(&cx, &req(None, None)).unwrap();
-    begin(&cx, id);
+    let claim = begin(&cx, id);
     run(&cx, &req(None, Some(1))).unwrap();
-    proc.dead(PID);
+    drop(claim);
     assert!(cx.clock().now().as_millis() - began.as_millis() < 8000);
 }
 

@@ -221,7 +221,8 @@ fn box_shows_its_in_flight_run() {
     let id = add(&cx, "a");
     let before = run(&cx, &req(Some("a"), None)).unwrap();
     assert!(before.boxed.unwrap().run.is_none());
-    cx.store()
+    let _claim = cx
+        .store()
         .unwrap()
         .begin_run(NewRun {
             box_id: id,

@@ -425,6 +425,42 @@ fn run_is_recorded_in_flight_while_the_command_runs() {
 }
 
 #[test]
+fn the_follow_claim_lives_exactly_as_long_as_the_run() {
+    let f = ready();
+    let cx_dir = f.dir.path().to_path_buf();
+    let seen = Arc::new(std::sync::Mutex::new(None));
+    let slot = seen.clone();
+    let id = f.id;
+    f.driver.on_exec(move || {
+        let probe = Cx::fake(
+            &cx_dir,
+            Arc::new(FakeDriver::new()),
+            Arc::new(FakeSurface::new()),
+            Arc::new(ScriptedProc::new()),
+        );
+        let live = probe.store().unwrap().in_flight_run(id).unwrap();
+        *slot.lock().unwrap() = live.map(|r| r.id);
+    });
+    let v = run(&f.cx, &req(&["true"])).unwrap();
+    let run_id = v.run.unwrap();
+    assert_eq!(
+        *seen.lock().unwrap(),
+        Some(run_id),
+        "in flight while it runs"
+    );
+    let follow = f
+        .dir
+        .path()
+        .join("runs")
+        .join(format!("{}.follow", run_id.get()));
+    assert!(!follow.exists(), "the claim is released when the run ends");
+    let store = f.cx.store().unwrap();
+    assert!(store.in_flight_run(f.id).unwrap().is_none());
+    let row = store.last_run(f.id).unwrap().unwrap();
+    assert_eq!((row.exit, row.interrupted), (Some(0), false));
+}
+
+#[test]
 fn interrupted_command_is_recorded_without_an_exit() {
     let f = ready_with(FakeDriver::new().exec_results([Ok(ExecOutcome::Interrupted)]));
     let v = run(&f.cx, &req(&["sleep", "9"])).unwrap();

@@ -16,7 +16,9 @@ use super::run;
 use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::view::box_view;
-use crate::store::{Fenced, NewRun, ReadyProc, Reserve, TunnelAck, TunnelRequest, TunnelWant};
+use crate::store::{
+    Fenced, FollowClaim, NewRun, ReadyProc, Reserve, TunnelAck, TunnelRequest, TunnelWant,
+};
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::rng::FakeRng;
@@ -164,8 +166,8 @@ fn tunnel_request(f: &Fx) -> Option<TunnelRequest> {
     f.cx.store().unwrap().tunnel_request(f.id).unwrap()
 }
 
-/// Begin a run owned by a live pid.
-fn begin_run(f: &Fx) {
+/// Begin a run that stays in flight while the claim lives.
+fn begin_run(f: &Fx) -> FollowClaim {
     f.cx.store()
         .unwrap()
         .begin_run(NewRun {
@@ -175,7 +177,8 @@ fn begin_run(f: &Fx) {
             sha: None,
             pid: 4242,
         })
-        .unwrap();
+        .unwrap()
+        .1
 }
 
 #[test]
@@ -204,7 +207,7 @@ fn sleeps_a_working_box_without_a_run() {
 #[test]
 fn refuses_while_a_run_is_in_flight() {
     let f = fx();
-    begin_run(&f);
+    let _claim = begin_run(&f);
     let err = run(&f.cx, &req()).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
     assert!(
