@@ -476,3 +476,67 @@ fn a_close_hides_the_promote_warning_of_a_box_its_caller_may_not_see() {
         "{warnings:?}"
     );
 }
+
+/// Runs `sql` with `?` bound to `id` against the world's store.
+fn exec_on(w: &World, sql: &str, id: i64) {
+    let db = rusqlite::Connection::open(w.cx.state_dir().unwrap().join("moor.db")).unwrap();
+    db.execute(sql, [id]).unwrap();
+}
+
+/// Queues `first` from a repo whose stored `.moor.yaml` no longer parses.
+fn queue_unparseable(w: &World) -> BoxId {
+    let repo = ForgeRepo::new("o", "n");
+    w.forge.answer(repo.clone(), Ok(repo_at("abc123", Some("setup: []\n"))));
+    let req = StartReq {
+        repo: Some(repo),
+        ..start_req("first")
+    };
+    let id = queue_req(w, &req);
+    exec_on(w, "UPDATE boxes SET repo_config = 'setup: [' WHERE id = ?", id.get());
+    id
+}
+
+/// The `promote_skipped` messages naming `first`.
+fn skipped_first(w: &World) -> Vec<String> {
+    w.cx.take_warnings()
+        .into_iter()
+        .filter(|x| x.code == "promote_skipped" && x.message.contains("first"))
+        .map(|x| x.message)
+        .collect()
+}
+
+#[test]
+fn a_close_hides_the_settings_error_of_a_waiter_its_caller_may_not_see() {
+    let mut w = world(limit(1), FakeDriver::new());
+    queue_unparseable(&w);
+    let user = bystander(&w);
+    w.cx = w.cx.with_viewer(Viewer::User(user));
+    close_holder(&w);
+    assert_eq!(skipped_first(&w), Vec::<String>::new());
+}
+
+#[test]
+fn the_owner_of_a_waiter_sees_its_settings_error() {
+    let mut w = world(limit(1), FakeDriver::new());
+    let id = queue_unparseable(&w);
+    let owner = bystander(&w);
+    exec_on(&w, &format!("UPDATE boxes SET user = {} WHERE id = ?", owner.get()), id.get());
+    w.cx = w.cx.with_viewer(Viewer::User(owner));
+    close_holder(&w);
+    let skipped = skipped_first(&w);
+    assert_eq!(skipped.len(), 1, "{skipped:?}");
+}
+
+#[test]
+fn the_owner_of_a_waiter_sees_its_promote_warning() {
+    let mut w = world(limit(1), FakeDriver::new());
+    let id = queue(&w, "first");
+    let owner = bystander(&w);
+    exec_on(&w, &format!("UPDATE boxes SET user = {} WHERE id = ?", owner.get()), id.get());
+    let _held =
+        BoxLock::acquire(w.cx.clock(), w.cx.state_dir().unwrap(), id, "start", WAIT).unwrap();
+    w.cx = w.cx.with_viewer(Viewer::User(owner));
+    close_holder(&w);
+    let skipped = skipped_first(&w);
+    assert_eq!(skipped.len(), 1, "{skipped:?}");
+}

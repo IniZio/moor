@@ -113,6 +113,17 @@ fn capture_bookkeeping_and_policy_allows_are_not_logged() {
 }
 
 #[test]
+fn a_capture_miss_is_bookkeeping_whether_allowed_or_denied() {
+    let miss = json!({"route_id": "gh__0", "credential_capture_action": "miss", "status": 200});
+    let denied_miss = json!({
+        "route_id": "gh__0",
+        "denial_category": "managed_credential_unavailable",
+        "credential_capture_action": "miss",
+    });
+    assert!(run(&[event("allow", &miss), event("deny", &denied_miss)]).is_empty());
+}
+
+#[test]
 fn host_denied_is_refused_without_rule() {
     let e = event("deny", &json!({"denial_category": "host_denied"}));
     assert_eq!(

@@ -42,11 +42,11 @@ exec_env() {
   echo "lint-selftest: $1 ok"
 }
 
-# removed_names <case> <expect: pass|fail> ; fake .rs source on stdin, scanned by tools/removed-names.sh
+# removed_names <case> <expect: pass|fail> [path, default crates/fake.rs] ; source on stdin
 removed_names() {
-  local d="$dir/removed-names-case"
-  rm -rf "$d"; mkdir -p "$d/crates"
-  cat > "$d/crates/fake.rs"
+  local d="$dir/removed-names-case" f="${3:-crates/fake.rs}"
+  rm -rf "$d"; mkdir -p "$d/crates" "$(dirname "$d/$f")"
+  cat > "$d/$f"
   local rc=0 out
   out="$(MOOR_SCAN_ROOT="$d" "$root/tools/removed-names.sh" 2>&1)" || rc=$?
   if { [ "$2" = pass ] && [ "$rc" -ne 0 ]; } || { [ "$2" = fail ] && [ "$rc" -eq 0 ]; }; then
@@ -70,6 +70,18 @@ removed_names removed-names-allowed-mixed fail <<'RS'
 RS
 removed_names removed-names-clean pass <<'RS'
 fn f(job: u8) {}
+RS
+removed_names removed-names-flag-docs fail docs/run.md <<'MD'
+moor run demo --sync -- make
+MD
+removed_names removed-names-flag-root-md fail NOTES.md <<'MD'
+moor run demo --trust-moor-yaml
+MD
+removed_names removed-names-flag-crabbox-adapter pass crates/moor/src/adapters/crabbox/exec.rs <<'RS'
+fn f(c: &mut Command) { c.arg("--no-sync"); }
+RS
+removed_names removed-names-flag-other-crabbox-dir fail crates/moor/src/ops/crabbox/run.rs <<'RS'
+fn f(c: &mut Command) { c.arg("--no-sync"); }
 RS
 
 exec_env exec-env-shorthand fail <<'RS'

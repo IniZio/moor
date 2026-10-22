@@ -83,4 +83,12 @@ mod tests {
         assert_eq!(local_caller(&stream, controller), Ok(Caller::Local(me)));
         assert_eq!(local_caller(&stream, me), Ok(Caller::Operator(me)));
     }
+
+    #[test]
+    fn a_peer_with_a_uid_above_the_controllers_is_not_the_operator() {
+        let (stream, _other) = UnixStream::pair().expect("socket pair");
+        let me = rustix::process::geteuid().as_raw();
+        let controller = me.checked_sub(1).expect("tests run as a uid above 0");
+        assert_eq!(local_caller(&stream, controller), Ok(Caller::Local(me)));
+    }
 }
