@@ -139,7 +139,7 @@ next Box after it is pushed.
 | `state_dir` | path | the same state directory as the CLI | The state directory. `~` is allowed. |
 | `settle_every_secs` | integer, above 0 | 5 | Seconds between passes that update each open Box's agent state. |
 | `drain_timeout_secs` | integer | 600 | Seconds a SIGTERM waits for in-flight requests. See [Stopping the controller](#stopping-the-controller). |
-| `fronts` | map | empty | Fronts that each get their own socket. |
+| `fronts` | map | empty | Fronts that each get their own socket, and that the controller runs when they have a `command`. |
 
 The controller refuses a config that has a `web`, `slack` or `repos` key.
 
@@ -170,17 +170,34 @@ set the stop timeout above `drain_timeout_secs`.
 
 ### `fronts`
 
-`fronts.<namespace>` gives one front its own socket. An entry has no settings:
+`fronts.<namespace>` gives one front its own socket:
 
 ```yaml
 fronts:
+  web:
+    command: [moor-web, --port, "8080"]
   slack: {}
 ```
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `command` | list of strings, not empty | none | The program and arguments the controller runs as this front. Without it, start the front yourself. |
 
 For each entry the controller listens on `<state dir>/fronts/<namespace>.sock`,
 mode 0600 in a 0700 directory. Under systemd, the controller takes the socket
 that systemd passes as `front-<namespace>` instead of binding it. A namespace matches `[a-z][a-z0-9-]*` and is
 not `local`.
+
+When an entry has a `command`, the controller starts it at startup. The front
+gets an `O_PATH` file descriptor to its own socket as fd 3, and
+`MOOR_FRONT_SOCKET=/proc/self/fd/3` names it, so the front connects to that
+path. The front's stdin is empty and its stdout is the controller's. Each
+line it writes to stderr goes to the controller log as `front <namespace>:
+<line>`. While it runs, `<state dir>/fronts/<namespace>.pid` holds its pid on
+the first line and its start time from `/proc/<pid>/stat` on the second. When
+the front exits, the controller starts it again after 0.5 s. The wait doubles
+each time, up to 30 s, and goes back to 0.5 s after a run that lasted 60 s.
+When the controller exits, it kills its fronts.
 
 A moor user owns secrets, such as a Claude or GitHub token. An identity names
 a person on one front, as `<namespace>:<rest>`, and a user can link several

@@ -139,3 +139,24 @@ fn a_reserved_or_malformed_front_namespace_is_refused() {
     let e = err("fronts:\n  slack: {bogus: 1}\n");
     assert!(e.to_string().contains("bogus"), "{e}");
 }
+
+#[test]
+fn a_front_command_is_an_argv() {
+    let c = parse_controller(
+        "c.yaml",
+        "fronts:\n  web:\n    command: [moor-web, --port, '8080']\n  slack: {}\n",
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(
+        c.fronts.get("web").and_then(|f| f.command.as_deref()),
+        Some(["moor-web", "--port", "8080"].map(String::from).as_slice())
+    );
+    assert_eq!(c.fronts.get("slack").map(|f| f.command.clone()), Some(None));
+}
+
+#[test]
+fn an_empty_front_command_is_refused() {
+    let e = err("fronts:\n  web:\n    command: []\n");
+    assert_eq!(e.path, "fronts.web.command", "{e}");
+    assert!(e.to_string().contains("must name a program"), "{e}");
+}

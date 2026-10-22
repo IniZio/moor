@@ -3,6 +3,7 @@
 pub mod attach;
 mod conn;
 mod drain;
+mod fronts;
 mod hangup;
 mod inherit;
 mod local;
@@ -48,7 +49,7 @@ const REFUSED: u8 = 3;
 /// "already running" notice go to `stderr`.
 pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u8 {
     let sink: Sink = Arc::new(Mutex::new(stderr));
-    let running = match start(env, config) {
+    let mut running = match start(env, config) {
         Ok(running) => running,
         Err(stop) => {
             log(&sink, &stop.message);
@@ -66,6 +67,7 @@ pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u
     for line in Moor::reconcile_proxies(&running.env) {
         log(&sink, &format!("proxy: {line}"));
     }
+    let _fronts = running.supervise_fronts(&sink);
     let drain = Arc::new(Drain::default());
     settle::spawn(&running.env, running.settle_every, &drain, &sink);
     running.serve_until(&wake, &drain, &sink);
@@ -89,6 +91,8 @@ struct Running {
     listener: UnixListener,
     /// Each front's socket, by namespace.
     fronts: Vec<(String, UnixListener)>,
+    /// The fronts that have a command, not yet started.
+    commands: Vec<fronts::Front>,
     /// The vault key, for the user requests.
     vault: Arc<Vault>,
     /// Holds the single-instance flock until the process exits.
@@ -143,11 +147,20 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
     let lock = take_lock(Path::new(&socket_lock), &socket)?;
     let listener = sockets.listen("controller", &socket).map_err(refused)?;
     let fronts = peer::bind_fronts(&env, &mut sockets, &cfg.fronts.keys().collect::<Vec<_>>())?;
+    let commands = fronts
+        .iter()
+        .filter_map(|(ns, listener)| {
+            let command = cfg.fronts.get(ns)?.command.clone()?;
+            Some(fronts::Front::new(ns, listener, command))
+        })
+        .collect::<Result<_, _>>()
+        .map_err(refused)?;
     sockets.finish().map_err(refused)?;
     Ok(Running {
         socket,
         listener,
         fronts,
+        commands,
         vault,
         _lock: lock,
         _state_lock: state_lock,
@@ -251,6 +264,11 @@ fn bind(socket: &Path) -> std::io::Result<UnixListener> {
 }
 
 impl Running {
+    /// Starts the fronts that have a command; dropping the result stops them.
+    fn supervise_fronts(&mut self, sink: &Sink) -> fronts::Supervised {
+        fronts::supervise(std::mem::take(&mut self.commands), sink)
+    }
+
     /// Serves the controller socket and each front socket until `wake` turns readable, then
     /// drains `drain`; the locks are held until it returns.
     fn serve_until(self, wake: &UnixStream, drain: &Arc<Drain>, sink: &Sink) {

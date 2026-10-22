@@ -38,17 +38,18 @@ pub struct ControllerConfig {
     )]
     slack: Option<Option<serde_json::Value>>,
     /// Fronts that each get a socket bound to their namespace, keyed by that namespace.
-    #[allow(
-        clippy::zero_sized_map_values,
-        reason = "`fronts: {slack: {}}` is the config shape; entries gain settings later"
-    )]
     pub fronts: BTreeMap<String, FrontEntry>,
 }
 
-/// One front's entry under `fronts:`; it has no settings yet.
+/// One front's entry under `fronts:`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct FrontEntry {}
+pub struct FrontEntry {
+    /// The argv the controller runs and keeps running as this front; none leaves the front to
+    /// be started by hand.
+    #[serde(default)]
+    pub command: Option<Vec<String>>,
+}
 
 /// Wraps whatever follows the key in `Some`, so a null value stays distinguishable from a missing key.
 #[allow(
@@ -117,6 +118,15 @@ pub fn parse_controller(file: &str, text: &str) -> Result<ControllerConfig, Conf
             "namespace must match [a-z][a-z0-9-]* and not be `local`",
         )
         .in_file(file));
+    }
+    if let Some((ns, _)) = cfg
+        .fronts
+        .iter()
+        .find(|(_, f)| f.command.as_ref().is_some_and(Vec::is_empty))
+    {
+        return Err(
+            ConfigError::new(format!("fronts.{ns}.command"), "must name a program").in_file(file),
+        );
     }
     Ok(cfg)
 }
