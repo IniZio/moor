@@ -4,122 +4,112 @@ use moor_core::name::BoxHandle;
 use moor_core::seam::driver::{Driver, DriverError};
 use moor_core::seam::proc::Tool;
 
-use super::{fail, fixture, req, Reply};
-
-const LEASE_OUT: &str =
-    "leased cbx_X slug=moor-t7-ab12cd provider=sprites server=1 type=t ip=1.2.3.4\n\
-ready ssh=u@h:22 network=public workroot=/w\n";
-
-const PROBE_SCRIPT: &str = r#"printf "MOOR_WORKDIR=%s\n" "$(pwd)""#;
-
-fn probe_argv() -> Vec<String> {
-    [
-        "run",
-        "--provider",
-        "sprites",
-        "--id",
-        "moor-t7-ab12cd",
-        "--no-hydrate",
-        "--no-sync",
-        "--",
-        "sh",
-        "-c",
-        PROBE_SCRIPT,
-    ]
-    .map(str::to_owned)
-    .to_vec()
-}
+use super::{fixture, req, Reply};
+use crate::testing::proc::ScriptedProc;
 
 fn handle() -> BoxHandle {
     BoxHandle::new("sprites/moor-t7-ab12cd")
 }
 
-fn probe_with(reply: Reply) -> Result<String, DriverError> {
+/// The batch frame of one Run that exited `code` and printed `body`.
+fn frame(code: i32, body: &str) -> Reply {
+    Reply::Ok(format!("R {code} {}\n{body}\n", body.len()))
+}
+
+fn probe_with(reply: Reply) -> (Result<String, DriverError>, std::sync::Arc<ScriptedProc>) {
     let (p, c) = fixture();
-    p.on(Tool::Crabbox, &["run"], reply);
-    c.workdir(&handle()).map(|d| d.as_str().to_owned())
+    p.on(Tool::Crabbox, &["ssh"], Reply::Ok("ssh u@h\n".to_owned()));
+    p.on(Tool::Ssh, &[], reply);
+    let got = c.workdir(&handle()).map(|d| d.as_str().to_owned());
+    (got, p)
 }
 
 #[test]
-fn acquire_learns_the_workdir_from_the_probe() {
+fn the_probe_runs_over_ssh_and_looks_for_the_box_named_dir() {
+    let (got, p) = probe_with(frame(0, "MOOR_WORKDIR=/w/cbx_Y/moor-t7-ab12cd\n"));
+    assert_eq!(got.unwrap(), "/w/cbx_Y/moor-t7-ab12cd");
+    let calls = p.calls();
+    let crabbox: Vec<_> = calls.iter().filter(|c| c.tool == Tool::Crabbox).collect();
+    assert_eq!(crabbox.len(), 1, "only the target lookup");
+    assert_eq!(crabbox.first().unwrap().args.first().unwrap(), "ssh");
+    let ssh: Vec<_> = calls.iter().filter(|c| c.tool == Tool::Ssh).collect();
+    assert_eq!(ssh.len(), 1);
+    let remote = ssh.first().unwrap().args.last().unwrap();
+    assert!(
+        remote.contains("find ") && remote.contains("moor-t7-ab12cd"),
+        "{remote}"
+    );
+}
+
+#[test]
+fn acquire_without_a_ready_line_learns_the_workdir_from_the_probe() {
     let (p, c) = fixture();
-    p.on(Tool::Crabbox, &["warmup"], Reply::Ok(LEASE_OUT.to_owned()));
     p.on(
         Tool::Crabbox,
-        &["run"],
-        Reply::Ok("MOOR_WORKDIR=/w/cbx_X/app\n".to_owned()),
+        &["warmup"],
+        Reply::Ok("leased cbx_X slug=moor-t7-ab12cd\n".to_owned()),
     );
+    p.on(Tool::Crabbox, &["ssh"], Reply::Ok("ssh u@h\n".to_owned()));
+    p.on(Tool::Ssh, &[], frame(0, "MOOR_WORKDIR=/w/cbx_X/app\n"));
     let got = c.acquire(&req("sprites", None)).unwrap();
     assert_eq!(got.workdir.as_str(), "/w/cbx_X/app");
-    assert_ne!(got.workdir.as_str(), "/w/moor-t7-ab12cd");
-    let calls = p.calls();
-    assert_eq!(calls.len(), 2);
-    let probe = calls.get(1).unwrap();
-    let want: Vec<String> = probe_argv()
-        .into_iter()
-        .map(|a| {
-            if a == "moor-t7-ab12cd" {
-                "moor-7-ab12cd".into()
-            } else {
-                a
-            }
-        })
-        .collect();
-    assert_eq!(probe.args, want);
-    assert!(probe.args.iter().any(|a| a == "run"));
-    assert!(probe.args.iter().any(|a| a == "--no-sync"));
-    let id_at = probe.args.iter().position(|a| a == "--id").unwrap();
-    assert_eq!(probe.args.get(id_at + 1).unwrap(), "moor-7-ab12cd");
-}
-
-#[test]
-fn workdir_after_wake_learns_the_path_from_the_probe() {
-    let (p, c) = fixture();
-    p.on(
-        Tool::Crabbox,
-        &["run"],
-        Reply::Ok("MOOR_WORKDIR=/w/cbx_Y/app".to_owned()),
-    );
-    let got = c.workdir(&handle()).unwrap();
-    assert_eq!(got.as_str(), "/w/cbx_Y/app");
-    let calls = p.calls();
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls.first().unwrap().args, probe_argv());
+    assert!(p.calls().iter().all(|c| c.args.first().unwrap() != "run"));
 }
 
 #[test]
 fn last_marker_line_wins() {
-    let got = probe_with(Reply::Ok(
-        "MOOR_WORKDIR=/old\nMOOR_WORKDIR=/w/cbx_Y/app\r\n".to_owned(),
-    ))
-    .unwrap();
-    assert_eq!(got, "/w/cbx_Y/app");
+    let (got, _) = probe_with(frame(0, "MOOR_WORKDIR=/old\nMOOR_WORKDIR=/w/cbx_Y/app\r\n"));
+    assert_eq!(got.unwrap(), "/w/cbx_Y/app");
 }
 
 #[test]
-fn probe_nonzero_exit_fails() {
-    let err = probe_with(fail(1, "boom")).unwrap_err();
-    assert!(matches!(err, DriverError::Failed { .. }), "{err:?}");
+fn a_probe_that_finds_no_single_dir_fails() {
+    let (got, _) = probe_with(frame(1, ""));
+    let err = got.unwrap_err();
+    assert!(err.to_string().contains("no single workdir"), "{err:?}");
 }
 
 #[test]
 fn probe_without_marker_fails() {
-    let err = probe_with(Reply::Ok("hello\n".to_owned())).unwrap_err();
-    assert!(matches!(err, DriverError::Failed { .. }), "{err:?}");
+    let (got, _) = probe_with(frame(0, "hello\n"));
+    let err = got.unwrap_err();
     assert!(format!("{err:?}").contains("MOOR_WORKDIR"), "{err:?}");
 }
 
 #[test]
 fn probe_with_relative_path_fails() {
-    let err = probe_with(Reply::Ok("MOOR_WORKDIR=w/app\n".to_owned())).unwrap_err();
-    assert!(matches!(err, DriverError::Failed { .. }), "{err:?}");
+    let (got, _) = probe_with(frame(0, "MOOR_WORKDIR=w/app\n"));
+    assert!(matches!(got, Err(DriverError::Failed { .. })), "{got:?}");
 }
 
 #[test]
-fn acquire_fails_when_the_probe_fails() {
-    let (p, c) = fixture();
-    p.on(Tool::Crabbox, &["warmup"], Reply::Ok(LEASE_OUT.to_owned()));
-    p.on(Tool::Crabbox, &["run"], fail(1, "boom"));
-    let err = c.acquire(&req("sprites", None)).unwrap_err();
-    assert!(matches!(err, DriverError::Failed { .. }), "{err:?}");
+fn a_lost_connection_during_the_probe_is_a_transport_error() {
+    let (got, _) = probe_with(Reply::Fail {
+        code: 255,
+        stdout: String::new(),
+        stderr: String::new(),
+    });
+    assert!(matches!(got, Err(DriverError::Transport { .. })), "{got:?}");
+}
+
+#[test]
+fn the_probe_script_finds_exactly_one_dir_named_after_the_box() {
+    let root = tempfile::tempdir().unwrap();
+    let script = super::super::workdir::find_script(root.path().to_str().unwrap(), "moor-7-x");
+    let run = || {
+        let out = std::process::Command::new("sh")
+            .args(["-c", &script])
+            .output()
+            .unwrap();
+        (out.status.code(), String::from_utf8(out.stdout).unwrap())
+    };
+    assert_eq!(run().0, Some(1), "none yet");
+    let dir = root.path().join("work/crabbox/cbx_1/moor-7-x");
+    std::fs::create_dir_all(&dir).unwrap();
+    assert_eq!(
+        run(),
+        (Some(0), format!("MOOR_WORKDIR={}\n", dir.display()))
+    );
+    std::fs::create_dir_all(root.path().join("other/cbx_2/moor-7-x")).unwrap();
+    assert_eq!(run().0, Some(1), "two matches");
 }

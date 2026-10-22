@@ -135,7 +135,6 @@ fn ops() -> Vec<(&'static str, Op)> {
                 env: Vec::new(),
                 cwd: None,
                 output: None,
-                class: None,
             };
             c.exec(
                 &handle(),

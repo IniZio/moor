@@ -1,33 +1,43 @@
 //! Learns a Box's workdir by asking the Box.
 
+use moor_core::boxscript::quote;
 use moor_core::name::{BoxHandle, BoxPath};
-use moor_core::seam::driver::{Acquired, DriverError};
-use moor_core::seam::proc::ProcSpec;
+use moor_core::seam::driver::{Acquired, BoxStep, DriverError, ExecOutcome, StepDone};
+use moor_core::seam::proc::{Deadline, ProcSpec};
 
-use super::errors::{map_error, Op};
-use super::{parse, split_handle, target_args, unreadable, Crabbox, QUICK_DEADLINE};
+use super::errors::Op;
+use super::{batch, parse, split_handle, unreadable, Crabbox, QUICK_DEADLINE};
 
-/// Prints the directory crabbox starts commands in.
-const PROBE: &str = r#"printf "MOOR_WORKDIR=%s\n" "$(pwd)""#;
 /// Prefix of the line that carries the directory.
 const MARKER: &str = "MOOR_WORKDIR=";
 
-/// Probes the workdir, because crabbox derives it from its lease id and the repo name.
+/// Finds the Box workdir over the Box's shared ssh connection.
+///
+/// crabbox puts it at `<workroot>/<lease id>/<repo>`, and the repo is the lease dir moor runs
+/// crabbox from, named after the Box. Neither the workroot nor the lease id is known here, so
+/// the probe asks the Box for the one directory with that name, at most five levels deep.
 pub(super) fn probe(cb: &Crabbox, handle: &BoxHandle) -> Result<BoxPath, DriverError> {
-    let spec = Crabbox::spec(QUICK_DEADLINE)
-        .arg("run")
-        .args(target_args(handle))
-        .arg("--no-hydrate")
-        .arg("--no-sync");
-    let spec = cb
-        .at_lease(spec, handle)?
-        .arg("--")
-        .args(["sh", "-c", PROBE]);
-    let out = cb
-        .retry_claim_race(|| cb.proc.run(&spec))
-        .map_err(|e| map_error(Op::Workdir, split_handle(handle).0, &e))?;
-    let path = out
-        .stdout
+    let script = find_script("/", split_handle(handle).1);
+    let ran = batch::run(
+        cb,
+        handle,
+        &[],
+        &[BoxStep::Run(script)],
+        Deadline(QUICK_DEADLINE),
+    );
+    let stdout = match ran.into_iter().next() {
+        Some(Ok(StepDone::Ran {
+            outcome: ExecOutcome::Exited { code: 0 },
+            stdout,
+        })) => stdout,
+        Some(Err(e)) => return Err(e),
+        _ => {
+            return Err(DriverError::Failed {
+                summary: "box workdir probe found no single workdir for the Box".into(),
+            })
+        }
+    };
+    let path = stdout
         .lines()
         .rev()
         .find_map(|l| l.strip_prefix(MARKER))
@@ -45,7 +55,21 @@ pub(super) fn probe(cb: &Crabbox, handle: &BoxHandle) -> Result<BoxPath, DriverE
     })
 }
 
-/// Runs the warmup `spec` for `handle` and reads where its workdir is.
+/// The sh script that prints [`MARKER`] and the one directory named `name` at most five levels
+/// under `root`, and exits 1 when there is none or more than one.
+pub(super) fn find_script(root: &str, name: &str) -> String {
+    format!(
+        "d=$(find {} -maxdepth 5 \\( -path /proc -o -path /sys -o -path /dev \\) -prune -o \
+         -type d -name {} -print 2>/dev/null | head -n 2)\n\
+         test -n \"$d\" && test \"$(printf '%s\\n' \"$d\" | wc -l)\" -eq 1 || exit 1\n\
+         printf '{MARKER}%s\\n' \"$d\"\n",
+        quote(root),
+        quote(name)
+    )
+}
+
+/// Runs the warmup `spec` for `handle` and reads where its workdir is: the ready line's
+/// `workdir`, else crabbox's own `<workroot>/<lease id>/<repo>`, else the probe.
 pub(super) fn warm_up(
     cb: &Crabbox,
     provider: &str,
@@ -54,7 +78,15 @@ pub(super) fn warm_up(
 ) -> Result<Acquired, DriverError> {
     let out = cb.call(Op::Acquire, Some(provider), spec)?;
     let warm = parse::parse_warmup(&out.stdout).ok_or_else(|| unreadable("acquire"))?;
-    let workdir = match warm.workdir.as_deref().map(BoxPath::restore) {
+    let derived = warm.workroot.as_deref().map(|root| {
+        format!(
+            "{}/{}/{}",
+            root.trim_end_matches('/'),
+            warm.id,
+            split_handle(handle).1
+        )
+    });
+    let workdir = match warm.workdir.or(derived).as_deref().map(BoxPath::restore) {
         Some(Ok(dir)) => dir,
         _ => probe(cb, handle)?,
     };

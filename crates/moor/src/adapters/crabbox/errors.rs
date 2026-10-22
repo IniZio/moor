@@ -16,12 +16,8 @@ pub(super) enum Op {
     Release,
     /// Listing Boxes.
     List,
-    /// Reading a Box's working directory.
-    Workdir,
     /// Reading provider facts.
     Caps,
-    /// Running a command in a Box.
-    Exec,
     /// Copying a file out of a Box.
     CopyOut,
     /// Looking up a Box's ssh target.
@@ -39,9 +35,7 @@ impl Op {
             Self::Acquire => "box acquire",
             Self::Release => "box release",
             Self::List => "box list",
-            Self::Workdir => "box workdir lookup",
             Self::Caps => "provider lookup",
-            Self::Exec => "box command",
             Self::CopyOut => "box copy out",
             Self::Target => "box ssh target lookup",
             Self::Sleep => "box sleep",
@@ -195,15 +189,8 @@ pub(super) fn is_tunnel_claim_race(e: &DriverError) -> bool {
 const TAIL_MAX: usize = 300;
 
 /// The stderr tail appended to a summary of `op`, or nothing.
-///
-/// An exec shows its tail only when crabbox itself failed; once the remote command ran, its output is not crabbox's to repeat.
-fn stderr_suffix(op: Op, stderr: &str, remote_ran: bool) -> String {
-    let shown = match op {
-        Op::Acquire | Op::Release | Op::Caps => true,
-        Op::Exec => !remote_ran,
-        _ => false,
-    };
-    if !shown {
+fn stderr_suffix(op: Op, stderr: &str) -> String {
+    if !matches!(op, Op::Acquire | Op::Release | Op::Caps) {
         return String::new();
     }
     let line = one_line(stderr);
@@ -245,7 +232,7 @@ pub(super) fn map_error(op: Op, provider: Option<&str>, e: &ProcError) -> Driver
         ProcError::NonZero {
             code, stderr_tail, ..
         } => classify_text(*code, &stderr_tail.to_lowercase()).unwrap_or_else(|| {
-            let tail = stderr_suffix(op, stderr_tail, remote_exit(e).is_some());
+            let tail = stderr_suffix(op, stderr_tail);
             let summary = match *code {
                 EXIT_CONFIG => format!("{what} failed (crabbox configuration problem){tail}"),
                 EXIT_LOST => format!("{what} failed (box lost during warmup)"),

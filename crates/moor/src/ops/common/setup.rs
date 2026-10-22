@@ -183,7 +183,6 @@ fn exec_script(
         env: exec.vars(),
         cwd: exec.cwd(),
         output: None,
-        class: Some(cfg.size.value.as_str().to_owned()),
     };
     cx.driver()
         .exec(site.handle, &spec, exec.deadline())

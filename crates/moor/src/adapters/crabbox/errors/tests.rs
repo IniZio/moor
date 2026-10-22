@@ -93,10 +93,6 @@ fn op_names_the_summary() {
         failed("box list failed (crabbox exit 1)")
     );
     assert_eq!(
-        map_error(Op::Workdir, None, &e),
-        failed("box workdir lookup failed (crabbox exit 1)")
-    );
-    assert_eq!(
         map_error(Op::Caps, None, &e),
         failed("provider lookup failed (crabbox exit 1): x")
     );
@@ -154,26 +150,6 @@ fn other_ops_carry_no_tail() {
 }
 
 #[test]
-fn exec_failure_before_the_box_shows_the_reason() {
-    let reason = "prepare offline local Git metadata: local Git seed uncompressed object byte limit exceeded";
-    let e = map_error(Op::Exec, Some("ssh"), &nz(6, reason));
-    assert_eq!(
-        e.to_string(),
-        format!("box command failed on provider ssh (exit 6): {reason}")
-    );
-}
-
-#[test]
-fn exec_remote_failure_carries_no_crabbox_noise() {
-    let e = map_error(
-        Op::Exec,
-        Some("ssh"),
-        &nz(6, "make: *** [all] Error 1\nremote command exited 6\n"),
-    );
-    assert_eq!(e.to_string(), "box command failed on provider ssh (exit 6)");
-}
-
-#[test]
 fn raw_stderr_never_leaks() {
     let token = "SECRETTOKEN123";
     let texts = [
@@ -199,7 +175,7 @@ fn raw_stderr_never_leaks() {
 fn claim_race_is_a_clear_message() {
     assert_eq!(
         map_error(
-            Op::Exec,
+            Op::Acquire,
             Some("p"),
             &nz(2, "lease cbx_1 claim changed; retry")
         ),
@@ -210,7 +186,7 @@ fn claim_race_is_a_clear_message() {
 #[test]
 fn shallow_host_checkout_says_how_to_deepen_it() {
     let e = map_error(
-        Op::Exec,
+        Op::Acquire,
         Some("p"),
         &nz(1, "local Git seed rev-list failed: exit status 128"),
     );

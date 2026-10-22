@@ -166,7 +166,6 @@ fn run(
         env: Vec::new(),
         cwd: Some(workdir.clone()),
         output: None,
-        class: None,
     };
     match cx.driver().exec(handle, &spec, Deadline(INDEX_DEADLINE)) {
         Ok(ExecOutcome::Exited { code: 0 }) => {}

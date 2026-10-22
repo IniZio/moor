@@ -239,7 +239,6 @@ impl FakeDriver {
                     env: vec![],
                     cwd: None,
                     output: None,
-                    class: None,
                 };
                 let outcome = self.exec(handle, &spec, deadline)?;
                 let mut s = self.st();

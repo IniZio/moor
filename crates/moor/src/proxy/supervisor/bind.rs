@@ -15,8 +15,8 @@ use moor_core::{BoxHandle, BoxId};
 use super::run::say;
 use super::{Deps, TICK};
 
-/// Time allowed for the Box-side cleanup; a `crabbox run` on the external provider costs about 20 s
-/// before the script starts.
+/// Time allowed for the Box-side cleanup; a cold call first looks up the Box and opens its ssh
+/// connection, which is slow on the external provider.
 const CLEAR_DEADLINE: Duration = Duration::from_secs(45);
 
 /// Shell run in the Box with the port as `$1`.
@@ -90,7 +90,6 @@ fn clear(deps: &Deps<'_>, handle: &BoxHandle, box_port: u16) {
         env: Vec::new(),
         cwd: None,
         output: None,
-        class: None,
     };
     let outcome = match deps.driver.exec(handle, &spec, Deadline(CLEAR_DEADLINE)) {
         Ok(done) => format!("freed port {box_port} in the box: {done:?}"),

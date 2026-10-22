@@ -92,12 +92,10 @@ pub struct ExecSpec {
     pub argv: Vec<String>,
     /// Extra environment for the command.
     pub env: Vec<(String, String)>,
-    /// Directory to run in; the Box workdir when unset.
+    /// Directory to run in, made when missing; the Box's login directory when unset.
     pub cwd: Option<BoxPath>,
     /// Where to stream output; captured when unset.
     pub output: Option<Output>,
-    /// Box size (`small`, `medium`, `large`, `xlarge`); none is passed when unset.
-    pub class: Option<String>,
 }
 
 /// How a command inside a Box ended; a non-zero code is not an error.

@@ -58,7 +58,6 @@ fn spec(argv: &[&str]) -> ExecSpec {
         env: vec![("K".to_owned(), "V".to_owned())],
         cwd: Some(BoxPath::under("/work", "box-1").unwrap()),
         output: None,
-        class: None,
     }
 }
 
@@ -117,11 +116,10 @@ fn exec_on_unknown_handle_is_not_found_but_recorded() {
 }
 
 #[test]
-fn exec_records_output_and_class() {
+fn exec_records_output() {
     let (fake, h) = fake_with_box();
     let mut s = spec(&["x"]);
     s.output = Some(Output::Log(PathBuf::from("/log/x")));
-    s.class = Some("big".to_owned());
     fake.exec(&h, &s, DL).unwrap();
     assert_eq!(fake.execs(), [(h, s, DL)]);
 }

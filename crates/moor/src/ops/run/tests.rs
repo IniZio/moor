@@ -195,7 +195,7 @@ fn json_output_goes_to_a_run_log_under_the_state_dir() {
 }
 
 #[test]
-fn a_plain_run_syncs_nothing_stores_no_sha_and_takes_its_class_and_directories_from_the_box() {
+fn a_plain_run_syncs_nothing_stores_no_sha_and_takes_its_directories_from_the_box() {
     let f = ready();
     let v = run(&f.cx, &req(&["true"])).unwrap();
     assert_eq!(v.sha, None);
@@ -203,7 +203,6 @@ fn a_plain_run_syncs_nothing_stores_no_sha_and_takes_its_class_and_directories_f
     assert_eq!(row.sha, None);
     let (_, spec, _) = f.driver.execs().remove(0);
     assert_eq!(spec.cwd.unwrap().as_str(), "/work/cbx_1/repo");
-    assert_eq!(spec.class.as_deref(), Some("small"));
 }
 
 /// The user's command inside the exec prelude wrapper; the argv itself when unwrapped.

@@ -1,360 +1,295 @@
-use std::path::PathBuf;
+//! Box commands over a fake ssh that runs the remote command on this host.
+
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::name::BoxHandle;
-use moor_core::seam::clock::{Clock, Ts};
-use moor_core::seam::driver::{Driver, DriverError, ExecOutcome, ExecSpec};
-use moor_core::seam::proc::{Deadline, Output, Tool};
+use moor_core::name::{BoxHandle, BoxPath};
+use moor_core::seam::driver::{BoxStep, Driver, DriverError, ExecOutcome, ExecSpec, StepDone};
+use moor_core::seam::proc::{Deadline, Output, ProcError};
+use tempfile::TempDir;
 
 use crate::adapters::crabbox::Crabbox;
+use crate::adapters::proc::{SystemProc, ToolPaths};
+use crate::env::Env;
 use crate::testing::clock::FakeClock;
-use crate::testing::proc::{Call, Reply, ScriptedProc};
 use crate::testing::rng::FakeRng;
 
-fn spec() -> ExecSpec {
+/// Records its argv NUL-separated in `ssh.<n>`, then runs its last word, the remote command,
+/// under sh with stdin passed through. A `drop` file makes it lose the connection: it exits 255
+/// and prints nothing, as a call does whose shared master lost the network.
+const FAKE_SSH: &str = r#"#!/bin/sh
+d=$(dirname "$0")
+n=$(ls "$d" | grep -c '^ssh\.')
+printf '%s\0' "$@" > "$d/ssh.$n"
+if test -f "$d/drop"; then cat >/dev/null; exit 255; fi
+for last; do :; done
+TMPDIR="$d/boxtmp" exec sh -c "$last"
+"#;
+
+/// Records its argv in `crabbox.<n>`; answers `ssh` with the words crabbox prints for a pinned
+/// lease, and fails anything else.
+const FAKE_CRABBOX: &str = r#"#!/bin/sh
+d=$(dirname "$0")
+n=$(ls "$d" | grep -c '^crabbox\.')
+printf '%s\0' "$@" > "$d/crabbox.$n"
+test "$1" = ssh || exit 99
+echo "ssh -o 'ControlMaster=no' -o 'ControlPath=none' -o 'StrictHostKeyChecking=yes' -o 'UserKnownHostsFile=/lease/known_hosts' -o 'GlobalKnownHostsFile=none' -o 'HostKeyAlias=crabbox-lease-1f2e' 'u@box'"
+"#;
+
+/// The host-key words every ssh call must carry.
+const PINNED: [&str; 4] = [
+    "StrictHostKeyChecking=yes",
+    "UserKnownHostsFile=/lease/known_hosts",
+    "GlobalKnownHostsFile=none",
+    "HostKeyAlias=crabbox-lease-1f2e",
+];
+
+struct Lab {
+    dir: TempDir,
+    cb: Crabbox,
+}
+
+fn lab() -> Lab {
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join("bin");
+    fs::create_dir_all(bin.join("boxtmp")).unwrap();
+    for (name, text) in [("ssh", FAKE_SSH), ("crabbox", FAKE_CRABBOX)] {
+        let path = bin.join(name);
+        fs::write(&path, text).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let tools = ToolPaths {
+        ssh: Some(bin.join("ssh")),
+        crabbox: Some(bin.join("crabbox")),
+        ..ToolPaths::default()
+    };
+    let cb = driver(dir.path(), &tools);
+    Lab { dir, cb }
+}
+
+/// A driver over real processes keeping its state and sockets under `dir`.
+fn driver(dir: &Path, tools: &ToolPaths) -> Crabbox {
+    let proc = Arc::new(SystemProc::new(
+        &Env::from_pairs([("PATH", "/usr/bin:/bin")]),
+        tools,
+    ));
+    let clock = Arc::new(FakeClock::new(moor_core::seam::clock::Ts::from_millis(0)));
+    let cb = Crabbox::new(proc, clock, Arc::new(FakeRng::default()))
+        .with_state_dir(Some(dir.join("state")), dir.join("s"));
+    let _ = cb.version_ok.set(());
+    cb
+}
+
+impl Lab {
+    fn bin(&self) -> PathBuf {
+        self.dir.path().join("bin")
+    }
+
+    /// Every recorded argv of `tool`, in call order.
+    fn argvs(&self, tool: &str) -> Vec<Vec<String>> {
+        (0..100)
+            .map(|n| self.bin().join(format!("{tool}.{n}")))
+            .take_while(|p| p.exists())
+            .map(|p| {
+                let raw = fs::read_to_string(p).unwrap();
+                raw.split_terminator('\0').map(str::to_owned).collect()
+            })
+            .collect()
+    }
+
+    fn exec(&self, spec: &ExecSpec) -> Result<ExecOutcome, DriverError> {
+        self.cb
+            .exec(&handle(), spec, Deadline(Duration::from_secs(20)))
+    }
+
+    fn log(&self) -> PathBuf {
+        self.dir.path().join("out.log")
+    }
+}
+
+fn handle() -> BoxHandle {
+    BoxHandle::new("external/moor-7-ab12cd")
+}
+
+fn sh(script: &str) -> ExecSpec {
     ExecSpec {
-        argv: vec!["true".to_owned()],
+        argv: vec!["sh".to_owned(), "-c".to_owned(), script.to_owned()],
         env: Vec::new(),
         cwd: None,
         output: None,
-        class: None,
     }
 }
 
-fn run_with(
-    spec: &ExecSpec,
-    reply: Reply,
-) -> (
-    Result<ExecOutcome, moor_core::seam::driver::DriverError>,
-    Call,
-) {
-    let p = Arc::new(ScriptedProc::new());
-    p.on(Tool::Crabbox, &["run"], reply);
-    let c = Crabbox::fake(p.clone());
-    let out = c.exec(
-        &BoxHandle::new("sprites/moor-t7-ab12cd"),
-        spec,
-        Deadline(Duration::from_secs(90)),
+fn streamed(lab: &Lab, script: &str) -> ExecSpec {
+    ExecSpec {
+        output: Some(Output::Log(lab.log())),
+        ..sh(script)
+    }
+}
+
+#[test]
+fn commands_ride_the_box_master_with_crabbox_host_key_pinning_and_spawn_crabbox_once() {
+    let lab = lab();
+    for _ in 0..3 {
+        assert_eq!(lab.exec(&sh("true")), Ok(ExecOutcome::Exited { code: 0 }));
+    }
+    let crabbox = lab.argvs("crabbox");
+    assert_eq!(crabbox.len(), 1, "only the target lookup: {crabbox:?}");
+    assert_eq!(crabbox.first().unwrap().first().unwrap(), "ssh");
+    let ssh = lab.argvs("ssh");
+    assert_eq!(ssh.len(), 3);
+    for argv in &ssh {
+        assert_on_the_master_and_pinned(&lab, argv);
+    }
+}
+
+#[test]
+fn a_fresh_driver_reuses_the_saved_target_and_spawns_no_crabbox_for_exec_or_the_workdir_probe() {
+    let lab = lab();
+    assert_eq!(lab.exec(&sh("true")), Ok(ExecOutcome::Exited { code: 0 }));
+    let tools = ToolPaths {
+        ssh: Some(lab.bin().join("ssh")),
+        crabbox: Some(lab.bin().join("crabbox")),
+        ..ToolPaths::default()
+    };
+    let fresh = driver(lab.dir.path(), &tools);
+    let spec = sh("true");
+    let deadline = Deadline(Duration::from_secs(20));
+    assert_eq!(
+        fresh.exec(&handle(), &spec, deadline),
+        Ok(ExecOutcome::Exited { code: 0 })
     );
-    let call = p.calls().into_iter().next().unwrap();
-    (out, call)
+    fs::write(lab.bin().join("drop"), "").unwrap();
+    assert!(matches!(
+        fresh.workdir(&handle()),
+        Err(DriverError::Transport { .. })
+    ));
+    assert_eq!(
+        lab.argvs("crabbox").len(),
+        1,
+        "the first driver's lookup only"
+    );
+    let ssh = lab.argvs("ssh");
+    assert_eq!(ssh.len(), 3, "exec, exec, probe");
+    for argv in &ssh {
+        assert_on_the_master_and_pinned(&lab, argv);
+    }
 }
 
-fn ok() -> Reply {
-    Reply::Ok(String::new())
-}
-
-fn has(call: &Call, flag: &str) -> bool {
-    call.args.iter().any(|a| a == flag)
-}
-
-fn class_of(call: &Call) -> Option<&str> {
-    let pos = call.args.iter().position(|a| a == "--class")?;
-    call.args.get(pos + 1).map(String::as_str)
-}
-
-#[test]
-fn every_exec_skips_the_sync_and_the_hydrate_and_names_no_seed() {
-    let mut streamed = spec();
-    streamed.output = Some(Output::Log(PathBuf::from("/tmp/log")));
-    for s in [spec(), streamed] {
-        let (_, call) = run_with(&s, ok());
-        assert!(has(&call, "--no-sync"), "{:?}", call.args);
-        assert!(has(&call, "--no-hydrate"), "{:?}", call.args);
-        assert!(
-            call.env.iter().all(|(k, _)| !k.starts_with("CRABBOX_SYNC")),
-            "{:?}",
-            call.env
-        );
+/// `argv` opens or joins the Box's master in moor's socket dir, and keeps crabbox's pinning.
+fn assert_on_the_master_and_pinned(lab: &Lab, argv: &[String]) {
+    let socket = format!("ControlPath={}", lab.dir.path().join("s").display());
+    let first_path = argv.iter().find(|a| a.starts_with("ControlPath=")).unwrap();
+    assert!(first_path.starts_with(&socket), "{argv:?}");
+    assert!(argv.iter().any(|a| a == "ControlMaster=auto"), "{argv:?}");
+    for word in PINNED {
+        assert!(argv.iter().any(|a| a == word), "{word} missing: {argv:?}");
     }
 }
 
 #[test]
-fn class_maps_to_crabbox_class() {
-    for (size, class) in [("small", "standard"), ("large", "large")] {
-        let mut s = spec();
-        s.class = Some(size.to_owned());
-        let (_, call) = run_with(&s, ok());
-        assert_eq!(class_of(&call), Some(class));
+fn env_reaches_the_command_through_stdin_and_never_through_argv() {
+    let lab = lab();
+    let value = "placeholder-7Hq2 with 'quotes' and $dollars";
+    let mut spec = streamed(&lab, r#"printf '%s|' "$TOKEN"; ls -A "$TMPDIR""#);
+    spec.env = vec![("TOKEN".to_owned(), value.to_owned())];
+    assert_eq!(lab.exec(&spec), Ok(ExecOutcome::Exited { code: 0 }));
+    assert_eq!(fs::read_to_string(lab.log()).unwrap(), format!("{value}|"));
+    for argv in lab.argvs("ssh").iter().chain(&lab.argvs("crabbox")) {
+        assert!(argv.iter().all(|a| !a.contains("7Hq2")), "{argv:?}");
     }
 }
 
 #[test]
-fn no_class_flag_without_a_class() {
-    let (_, call) = run_with(&spec(), ok());
-    assert!(!has(&call, "--class"));
-}
-
-fn streamed(reply: impl Fn() -> Reply) -> Vec<Result<ExecOutcome, DriverError>> {
-    [Output::Inherit, Output::Log("/dev/null".into())]
-        .into_iter()
-        .map(|output| {
-            let mut s = spec();
-            s.output = Some(output);
-            run_with(&s, reply()).0
-        })
-        .collect()
-}
-
-fn fail(code: i32, stderr: &str) -> Reply {
-    Reply::Fail {
-        code,
-        stdout: String::new(),
-        stderr: stderr.to_owned(),
-    }
+fn an_env_name_that_is_not_a_shell_name_is_refused_before_ssh() {
+    let lab = lab();
+    let mut spec = sh("true");
+    spec.env = vec![("A;rm".to_owned(), "v".to_owned())];
+    assert!(matches!(lab.exec(&spec), Err(DriverError::Failed { .. })));
+    assert!(lab.argvs("ssh").is_empty());
 }
 
 #[test]
-fn streamed_remote_exit_is_exited() {
-    for out in streamed(|| fail(3, "sync done\nremote command exited 3\n")) {
-        assert_eq!(out, Ok(ExecOutcome::Exited { code: 3 }));
-    }
-}
-
-#[test]
-fn streamed_success_is_exit_zero() {
-    for out in streamed(ok) {
-        assert_eq!(out, Ok(ExecOutcome::Exited { code: 0 }));
-    }
-}
-
-#[test]
-fn streamed_crabbox_config_failure_is_an_error() {
-    for out in streamed(|| fail(3, "bad config")) {
-        assert!(
-            matches!(&out, Err(DriverError::Failed { summary }) if summary.contains("configuration problem")),
-            "{out:?}"
-        );
-    }
-}
-
-#[test]
-fn streamed_box_not_found_is_not_found() {
-    for out in streamed(|| fail(4, "Error: box not found")) {
-        assert_eq!(out, Err(DriverError::NotFound));
-    }
-}
-
-#[test]
-fn streamed_sync_failure_and_lost_box_are_errors() {
-    for out in streamed(|| fail(5, "box lost during warmup")) {
-        assert!(
-            matches!(&out, Err(DriverError::Failed { summary }) if summary.contains("box lost during warmup")),
-            "{out:?}"
-        );
-    }
-    for out in streamed(|| fail(1, "rsync failed")) {
-        assert!(matches!(out, Err(DriverError::Failed { .. })), "{out:?}");
-    }
-}
-
-#[test]
-fn interrupt_and_signal_are_interrupted() {
-    for output in [None, Some(Output::Inherit)] {
-        for reply in [Reply::Interrupted, Reply::Signalled(15)] {
-            let mut s = spec();
-            s.output = output.clone();
-            let (out, _) = run_with(&s, reply);
-            assert_eq!(out, Ok(ExecOutcome::Interrupted));
+fn the_command_exit_code_survives_even_when_it_is_255() {
+    let lab = lab();
+    for code in [3, 255] {
+        for spec in [
+            sh(&format!("exit {code}")),
+            streamed(&lab, &format!("exit {code}")),
+        ] {
+            assert_eq!(lab.exec(&spec), Ok(ExecOutcome::Exited { code }));
         }
     }
 }
 
-const RACE: &str = "lease cbx_1 claim changed; retry";
+#[test]
+fn a_lost_connection_is_a_transport_error() {
+    let lab = lab();
+    assert_eq!(lab.exec(&sh("true")), Ok(ExecOutcome::Exited { code: 0 }));
+    fs::write(lab.bin().join("drop"), "").unwrap();
+    for spec in [sh("exit 255"), streamed(&lab, "exit 255")] {
+        let got = lab.exec(&spec);
+        assert!(matches!(got, Err(DriverError::Transport { .. })), "{got:?}");
+    }
+}
 
-fn race() -> Reply {
-    Reply::Fail {
-        code: 2,
+#[test]
+fn streamed_output_arrives_in_order_without_the_wrapper_lines() {
+    let lab = lab();
+    let spec = streamed(&lab, "echo a; sleep 0.2; echo b >&2; sleep 0.2; echo c");
+    assert_eq!(lab.exec(&spec), Ok(ExecOutcome::Exited { code: 0 }));
+    assert_eq!(fs::read_to_string(lab.log()).unwrap(), "a\nb\nc\n");
+}
+
+#[test]
+fn the_cwd_is_made_and_entered() {
+    let lab = lab();
+    let dir = lab.dir.path().join("work/repo");
+    let mut spec = streamed(&lab, "pwd");
+    spec.cwd = Some(BoxPath::restore(dir.to_str().unwrap()).unwrap());
+    assert_eq!(lab.exec(&spec), Ok(ExecOutcome::Exited { code: 0 }));
+    let printed = fs::read_to_string(lab.log()).unwrap();
+    assert_eq!(
+        Path::new(printed.trim_end()),
+        fs::canonicalize(&dir).unwrap()
+    );
+}
+
+#[test]
+fn a_batch_stops_after_a_failing_run() {
+    let lab = lab();
+    let marker = lab.dir.path().join("ran");
+    let steps = [
+        BoxStep::Run("echo one; exit 4".to_owned()),
+        BoxStep::Run(format!("touch {}", marker.display())),
+    ];
+    let done = lab
+        .cb
+        .batch(&handle(), &[], &steps, Deadline(Duration::from_secs(20)));
+    assert_eq!(
+        done,
+        [Ok(StepDone::Ran {
+            outcome: ExecOutcome::Exited { code: 4 },
+            stdout: "one\n".to_owned(),
+        })]
+    );
+    assert!(!marker.exists());
+}
+
+#[test]
+fn a_wrapper_failure_before_the_command_is_not_its_exit() {
+    let err = ProcError::NonZero {
+        code: 1,
         stdout: String::new(),
-        stderr: RACE.to_owned(),
-    }
-}
-
-fn run_calls(p: &ScriptedProc) -> usize {
-    p.calls()
-        .iter()
-        .filter(|c| c.args.first().is_some_and(|a| a == "run"))
-        .count()
-}
-
-fn exec_once(c: &Crabbox) -> Result<ExecOutcome, DriverError> {
-    c.exec(
-        &BoxHandle::new("sprites/moor-t7-ab12cd"),
-        &spec(),
-        Deadline(Duration::from_secs(90)),
-    )
-}
-
-#[test]
-fn claim_race_is_retried_until_the_call_succeeds() {
-    let p = Arc::new(ScriptedProc::new());
-    p.once(Tool::Crabbox, &["run"], race());
-    p.on(Tool::Crabbox, &["run"], ok());
-    let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
-    p.on(
-        Tool::Crabbox,
-        &["--version"],
-        Reply::Ok("crabbox 0.79.1-moor.1\n".into()),
+        stderr_tail: "moor: the command env did not load\n".to_owned(),
+    };
+    let lab = lab();
+    let got = super::outcome(&lab.cb, &handle(), Err(err), "gate-0-exit");
+    assert!(
+        matches!(&got, Err(DriverError::Failed { summary }) if summary.contains("did not load")),
+        "{got:?}"
     );
-    let c =
-        Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default())).with_scratch_leases();
-    assert_eq!(exec_once(&c), Ok(ExecOutcome::Exited { code: 0 }));
-    assert_eq!(run_calls(&p), 2);
-    assert_eq!(clock.now(), Ts::from_millis(1000));
-}
-
-#[test]
-fn claim_race_is_retried_through_a_long_tunnel_restart() {
-    let p = Arc::new(ScriptedProc::new());
-    for _ in 0..12 {
-        p.once(Tool::Crabbox, &["run"], race());
-    }
-    p.on(Tool::Crabbox, &["run"], ok());
-    let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
-    p.on(
-        Tool::Crabbox,
-        &["--version"],
-        Reply::Ok("crabbox 0.79.1-moor.1\n".into()),
-    );
-    let c =
-        Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default())).with_scratch_leases();
-    assert_eq!(exec_once(&c), Ok(ExecOutcome::Exited { code: 0 }));
-    assert_eq!(run_calls(&p), 13);
-    assert_eq!(clock.now(), Ts::from_millis(12_000));
-}
-
-#[test]
-fn claim_race_gives_up_after_the_budget() {
-    let p = Arc::new(ScriptedProc::new());
-    p.on(Tool::Crabbox, &["run"], race());
-    let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
-    p.on(
-        Tool::Crabbox,
-        &["--version"],
-        Reply::Ok("crabbox 0.79.1-moor.1\n".into()),
-    );
-    let c =
-        Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default())).with_scratch_leases();
-    let err = exec_once(&c).unwrap_err();
-    assert_eq!(run_calls(&p), 16);
-    assert_eq!(clock.now(), Ts::from_millis(15_000));
-    assert_eq!(err.to_string(), "the Box lease was busy; try again");
-}
-
-#[test]
-fn other_failures_are_not_retried() {
-    let p = Arc::new(ScriptedProc::new());
-    p.on(
-        Tool::Crabbox,
-        &["run"],
-        Reply::Fail {
-            code: 2,
-            stdout: String::new(),
-            stderr: "claim changed\nremote command exited 2\n".to_owned(),
-        },
-    );
-    let c = Crabbox::fake(p.clone());
-    assert_eq!(exec_once(&c), Ok(ExecOutcome::Exited { code: 2 }));
-    assert_eq!(run_calls(&p), 1);
-}
-
-#[test]
-fn cd_wrapper_enters_directory_and_keeps_arguments() {
-    let out = std::process::Command::new("sh")
-        .args([
-            "-c",
-            super::CD_THEN_EXEC,
-            "sh",
-            "/",
-            "sh",
-            "-c",
-            r#"pwd; printf '[%s]' "$1" "$2""#,
-            "sh",
-            "a b  c",
-            "it's \"q\" $HOME",
-        ])
-        .output()
-        .unwrap();
-    let text = String::from_utf8(out.stdout).unwrap();
-    assert!(text.starts_with("/\n"), "{text}");
-    assert!(text.ends_with(r#"[a b  c][it's "q" $HOME]"#), "{text}");
-}
-
-fn after_dashes(call: &Call) -> &[String] {
-    let pos = call.args.iter().position(|a| a == "--").unwrap();
-    call.args.get(pos + 1..).unwrap()
-}
-
-#[test]
-fn streamed_exec_wraps_the_command_in_the_stderr_gate() {
-    let mut s = spec();
-    s.output = Some(Output::Inherit);
-    let (_, call) = run_with(&s, ok());
-    let gate = call.stderr_gate.clone().expect("streamed exec sets a gate");
-    assert_ne!(gate.begin, gate.end);
-    assert_eq!(
-        after_dashes(&call),
-        [
-            "sh",
-            "-c",
-            super::STDERR_GATE,
-            "sh",
-            &gate.begin,
-            &gate.end,
-            "true"
-        ]
-    );
-}
-
-#[test]
-fn streamed_exec_with_cwd_runs_the_cd_wrapper_inside_the_gate() {
-    let mut s = spec();
-    s.output = Some(Output::Inherit);
-    s.cwd = Some(moor_core::name::BoxPath::under("/w", "d").unwrap());
-    let (_, call) = run_with(&s, ok());
-    assert_eq!(
-        after_dashes(&call).get(6..).unwrap(),
-        ["sh", "-c", super::CD_THEN_EXEC, "sh", "/w/d", "true"]
-    );
-}
-
-#[test]
-fn captured_exec_has_no_gate_and_no_wrapper() {
-    let (_, call) = run_with(&spec(), ok());
-    assert_eq!(call.stderr_gate, None);
-    assert_eq!(after_dashes(&call), ["true"]);
-}
-
-#[test]
-fn gate_brackets_stderr_and_keeps_stdout_and_exit_code() {
-    let out = std::process::Command::new("sh")
-        .args(["-c", super::STDERR_GATE, "sh", "B", "E"])
-        .args(["sh", "-c", "echo out; echo err >&2; exit 3"])
-        .output()
-        .unwrap();
-    assert_eq!(String::from_utf8(out.stderr).unwrap(), "B\nerr\nE\n");
-    assert_eq!(String::from_utf8(out.stdout).unwrap(), "out\n");
-    assert_eq!(out.status.code(), Some(3));
-}
-
-const SSH_DROP: &str = "Connection to 10.0.0.7 closed by remote host.\nremote command exited 255\n";
-
-#[test]
-fn ssh_transport_loss_is_not_the_command_exit() {
-    let (out, _) = run_with(&spec(), fail(255, SSH_DROP));
-    let err = out.unwrap_err();
-    assert_eq!(
-        err.to_string(),
-        "moor lost the ssh connection to the Box: Connection to 10.0.0.7 closed by remote host."
-    );
-}
-
-#[test]
-fn a_command_that_exits_255_without_ssh_text_keeps_its_exit() {
-    let (out, _) = run_with(
-        &spec(),
-        fail(255, "no such table\nremote command exited 255\n"),
-    );
-    assert_eq!(out, Ok(ExecOutcome::Exited { code: 255 }));
 }

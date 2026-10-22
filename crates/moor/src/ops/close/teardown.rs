@@ -57,7 +57,6 @@ pub(super) fn teardown(cx: &Cx, row: &BoxRow, force: bool) -> Result<(), Command
         env: exec.vars(),
         cwd: exec.cwd(),
         output: None,
-        class: Some(cfg.size.value.as_str().to_owned()),
     };
     let result = cx.driver().exec(handle, &spec, exec.deadline());
     let reason = match result {
