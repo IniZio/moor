@@ -7,7 +7,7 @@ use std::io::Cursor;
 use serde_json::{json, Value};
 
 use super::{handle, operator, respond, serve};
-use crate::controller::drain::Drain;
+use crate::controller::drain::Admitted;
 use crate::env::Env;
 use crate::Moor;
 use moor_core::controller::{WatchFilter, PROTOCOL};
@@ -173,7 +173,7 @@ fn watch_frame_filter_and_follow_reach_the_stream() {
     serve(
         Cursor::new(input.into_bytes()),
         Vec::new(),
-        &Drain::default(),
+        &Admitted::unwatched(),
         |_, _, _| Some(Moor::version()),
         |_, since, filter: &WatchFilter, follow| {
             *seen.borrow_mut() = Some((since, filter.clone(), follow));

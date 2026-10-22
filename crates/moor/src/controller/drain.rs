@@ -29,13 +29,14 @@ pub(crate) struct Drain {
     ended: Condvar,
 }
 
-/// The connections being served, each with a handle that ends its reads.
+/// The connections being served, each with a handle that ends its reads while it is idle.
 #[derive(Debug, Default)]
 struct Live {
     /// Number for the next admitted connection.
     next: u64,
-    /// Admitted connections by number.
-    streams: Vec<(u64, UnixStream)>,
+    /// Admitted connections by number; the handle is out while the connection answers a
+    /// request, so the drain leaves its reads alone.
+    streams: Vec<(u64, Option<UnixStream>)>,
 }
 
 impl Drain {
@@ -53,7 +54,7 @@ impl Drain {
         }
         let id = live.next;
         live.next += 1;
-        live.streams.push((id, handle));
+        live.streams.push((id, Some(handle)));
         drop(live);
         Ok(Some(Admitted {
             drain: Arc::clone(self),
@@ -62,11 +63,12 @@ impl Drain {
     }
 
     /// Begins the drain. A connection waiting for its next request reads EOF; one in the
-    /// middle of a request finishes it first.
+    /// middle of a request keeps reading, so its client still counts as present, and ends
+    /// once its reply is written.
     pub(crate) fn begin(&self) {
         let live = self.live();
         self.begun.store(true, Ordering::Release);
-        for (_, stream) in &live.streams {
+        for stream in live.streams.iter().filter_map(|(_, s)| s.as_ref()) {
             stream.shutdown(Shutdown::Read).ok();
         }
     }
@@ -88,11 +90,61 @@ impl Drain {
 }
 
 /// One admitted connection; its end wakes [`Drain::settle`].
-struct Admitted {
+pub(crate) struct Admitted {
     /// The drain that admitted it.
     drain: Arc<Drain>,
     /// Its number in the live set.
     id: u64,
+}
+
+impl Admitted {
+    /// The drain that admitted this connection.
+    pub(crate) const fn drain(&self) -> &Arc<Drain> {
+        &self.drain
+    }
+
+    /// Marks the connection as answering a request until the guard drops, or `None` once the
+    /// drain has begun: a request read after that does not run.
+    pub(crate) fn answering(&self) -> Option<Answering<'_>> {
+        let mut live = self.drain.live();
+        if self.drain.begun() {
+            return None;
+        }
+        let handle = live
+            .streams
+            .iter_mut()
+            .find(|(id, _)| *id == self.id)
+            .and_then(|(_, s)| s.take());
+        drop(live);
+        Some(Answering { of: self, handle })
+    }
+
+    /// A connection no drain waits for, for tests that serve one by hand.
+    #[cfg(test)]
+    pub(crate) fn unwatched() -> Self {
+        Self {
+            drain: Arc::new(Drain::default()),
+            id: u64::MAX,
+        }
+    }
+}
+
+/// A request one connection is answering; the drain leaves the connection's reads alone
+/// until it drops.
+pub(crate) struct Answering<'a> {
+    /// The connection answering it.
+    of: &'a Admitted,
+    /// The connection's read handle, held back from the drain.
+    handle: Option<UnixStream>,
+}
+
+impl Drop for Answering<'_> {
+    fn drop(&mut self) {
+        let mut live = self.of.drain.live();
+        if let Some(slot) = live.streams.iter_mut().find(|(id, _)| *id == self.of.id) {
+            slot.1 = self.handle.take();
+        }
+    }
 }
 
 impl Drop for Admitted {
@@ -103,7 +155,7 @@ impl Drop for Admitted {
 }
 
 /// Serves one accepted connection to its end.
-pub(super) type Handler = Arc<dyn Fn(UnixStream, &Arc<Drain>) + Send + Sync>;
+pub(super) type Handler = Arc<dyn Fn(UnixStream, Admitted) + Send + Sync>;
 
 /// Takes SIGTERM for the controller: the returned socket turns readable once it arrives.
 /// From here on a streamed command never sees SIGINT or SIGTERM.
@@ -181,11 +233,8 @@ fn accept(
                 continue;
             }
         };
-        let (handler, drain) = (Arc::clone(handler), Arc::clone(drain));
-        thread::spawn(move || {
-            handler(stream, &drain);
-            drop(admitted);
-        });
+        let handler = Arc::clone(handler);
+        thread::spawn(move || handler(stream, admitted));
     }
 }
 

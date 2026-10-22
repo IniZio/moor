@@ -23,7 +23,7 @@ use std::time::Duration;
 use moor_core::config::parse_controller;
 use moor_core::ErrorKind;
 
-use drain::{Drain, Handler};
+use drain::{Admitted, Drain, Handler};
 
 use crate::env::{Env, CONTROLLER_LOCK};
 use crate::vault::{Vault, VAULT_KEY};
@@ -275,13 +275,21 @@ impl Running {
             self.serve_until(&wake, &sink);
         });
     }
+
+    /// Serves on a thread until a byte is written to the returned socket, then drains; the
+    /// thread ends when the controller would exit.
+    fn serve_until_signalled(self, sink: Sink) -> (UnixStream, std::thread::JoinHandle<()>) {
+        let (wake, signal) = UnixStream::pair().expect("wake pair");
+        let serving = std::thread::spawn(move || self.serve_until(&wake, &sink));
+        (signal, serving)
+    }
 }
 
 /// Serves one connection on a listener; `front` names the front whose socket it is, none for
 /// the controller socket.
 fn handler(env: &Arc<Env>, vault: &Arc<Vault>, front: Option<String>, sink: &Sink) -> Handler {
     let (env, vault, sink) = (Arc::clone(env), Arc::clone(vault), Arc::clone(sink));
-    Arc::new(move |stream: UnixStream, drain: &Arc<Drain>| {
+    Arc::new(move |stream: UnixStream, conn: Admitted| {
         let peer = conn::Peer {
             caller: front.clone().map_or_else(
                 || peer::local_caller(&stream, rustix::process::geteuid().as_raw()),
@@ -289,7 +297,7 @@ fn handler(env: &Arc<Env>, vault: &Arc<Vault>, front: Option<String>, sink: &Sin
             ),
             vault: Arc::clone(&vault),
             hangup: hangup::Hangup::of(&stream).ok(),
-            drain: Arc::clone(drain),
+            conn,
         };
         match stream.try_clone() {
             Ok(read) => conn::handle(BufReader::new(read), stream, &env, &peer),
