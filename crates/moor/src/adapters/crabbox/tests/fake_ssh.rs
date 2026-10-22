@@ -31,9 +31,18 @@ TMPDIR="$d/boxtmp" exec sh -c "$last"
 "#;
 
 /// Records its argv in `crabbox.<n>`; answers `ssh` with the words crabbox prints for a pinned
-/// lease, or with the contents of a `words` file, and fails anything else.
+/// lease, or with the contents of a `words` file, and fails anything else. `ssh --help` is
+/// recorded in `help.<n>` instead and lists `-no-probe` only when a `no-probe` file exists, as
+/// the IniZio/crabbox builds with that flag do.
 const FAKE_CRABBOX: &str = r#"#!/bin/sh
 d=$(dirname "$0")
+if test "$1 $2" = "ssh --help"; then
+  touch "$d/help.$(ls "$d" | grep -c '^help\.')"
+  echo "Usage of ssh:" >&2
+  echo "  -id string" >&2
+  if test -f "$d/no-probe"; then echo "  -no-probe" >&2; fi
+  exit 0
+fi
 n=$(ls "$d" | grep -c '^crabbox\.')
 printf '%s\0' "$@" > "$d/crabbox.$n"
 test "$1" = ssh || exit 99

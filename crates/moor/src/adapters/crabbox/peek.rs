@@ -4,6 +4,7 @@
 //! issued through it would wait for a running command. `crabbox ssh` only
 //! prints the ssh command line for the Box, so the read goes straight to ssh.
 
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use moor_core::boxscript::quote;
@@ -12,7 +13,7 @@ use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::{Deadline, ProcError, ProcSpec, Tool};
 
 use super::errors::{map_error, Op};
-use super::{link, split_handle, target_args, Crabbox};
+use super::{link, split_handle, target_args, Crabbox, LOOKUP_DEADLINE};
 
 /// Time allowed for the read.
 const READ_DEADLINE: Duration = Duration::from_secs(5);
@@ -48,47 +49,71 @@ pub(super) fn peek_file(
 
 /// The ssh arguments that reach the Box behind `handle`, without the leading `ssh`.
 pub(super) fn ssh_target(cb: &Crabbox, handle: &BoxHandle) -> Result<Vec<String>, DriverError> {
-    // `crabbox ssh` touches the lease, so a lookup also resets crabbox's idle timer;
-    // lookups are reused within one command and, for a while, through the Box's link, and
-    // idle Boxes are slept by moor's `sleep_after`, not by that timer.
+    // Lookups are reused within one command and, for a while, through the Box's link, and
+    // idle Boxes are slept by moor's `sleep_after`, not by crabbox's idle timer.
     let key = handle.as_str().to_owned();
     if let Some(words) = cb.targets.lock().ok().and_then(|m| m.get(&key).cloned()) {
         return Ok(words);
     }
-    let shared = cb.link(handle);
-    if let Some(words) = shared.as_ref().and_then(|l| l.saved(cb.clock.now())) {
+    if let Some(words) = cb.link(handle).and_then(|l| l.saved(cb.clock.now())) {
         if let Ok(mut map) = cb.targets.lock() {
             map.insert(key, words.clone());
         }
         return Ok(words);
     }
+    lookup(cb, handle)
+}
+
+/// Asks crabbox for the ssh arguments of `handle` and keeps them for later calls. A lookup
+/// also touches the Box's lease, which resets crabbox's idle timer.
+pub(super) fn lookup(cb: &Crabbox, handle: &BoxHandle) -> Result<Vec<String>, DriverError> {
     // Secret-token providers need --show-secret, not yet passed.
     let (provider, _) = split_handle(handle);
-    let lookup = cb.at_lease(
-        Crabbox::spec(cb.lookup_deadline(provider.unwrap_or_default()))
-            .arg("ssh")
-            .args(target_args(handle)),
-        handle,
-    )?;
+    let mut spec = Crabbox::spec(cb.lookup_deadline(provider.unwrap_or_default())).arg("ssh");
+    if cb.ssh_skips_probe() {
+        spec = spec.arg("--no-probe");
+    }
+    let lookup = cb.at_lease(spec.args(target_args(handle)), handle)?;
     // Another crabbox call on the same lease can rewrite its claim mid-lookup.
     let line = cb
         .retry_claim_race(|| cb.proc.run(&lookup))
-        .map_err(|e| map_error(Op::Target, split_handle(handle).0, &e))?
+        .map_err(|e| map_error(Op::Target, provider, &e))?
         .stdout;
     match split_words(&line) {
         Some(words) if words.first().is_some_and(|w| w == "ssh") => {
             let words: Vec<String> = words.into_iter().skip(1).collect();
             if let Ok(mut map) = cb.targets.lock() {
-                map.insert(key, words.clone());
+                map.insert(handle.as_str().to_owned(), words.clone());
             }
-            if let Some(shared) = shared {
-                shared.save(&words, cb.clock.now());
+            if let Some(link) = cb.link(handle) {
+                link.save(&words, cb.clock.now());
             }
             Ok(words)
         }
         _ => Err(DriverError::Failed {
             summary: "unreadable box provider output for ssh target".to_owned(),
         }),
+    }
+}
+
+impl Crabbox {
+    /// Keeps whether `crabbox ssh` takes `--no-probe` in `known`, so every driver sharing it asks
+    /// crabbox once.
+    pub(crate) fn sharing_no_probe(mut self, known: Arc<OnceLock<bool>>) -> Self {
+        self.no_probe = known;
+        self
+    }
+
+    /// Whether `crabbox ssh` takes `--no-probe`, which skips the ssh probes it runs before
+    /// printing the words; asked once. A crabbox that does not say so, or cannot be asked, is
+    /// looked up without the flag.
+    fn ssh_skips_probe(&self) -> bool {
+        *self.no_probe.get_or_init(|| {
+            let spec = Self::spec(LOOKUP_DEADLINE).args(["ssh", "--help"]);
+            self.proc.run(&spec).is_ok_and(|out| {
+                out.stderr.contains("-no-probe") || out.stdout.contains("-no-probe")
+            })
+        })
     }
 }
 

@@ -1,6 +1,9 @@
 //! Runs one command in a Box over the Box's shared ssh connection, never through `crabbox run`.
 
 use std::fmt::Write as _;
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::thread;
+use std::time::Duration;
 
 use moor_core::boxscript::quote;
 use moor_core::name::BoxHandle;
@@ -8,8 +11,12 @@ use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, ProcError, ProcSpec, StderrGate, Stdin, Tool};
 
 use super::errors::{one_line, EXIT_SSH};
-use super::peek::ssh_target;
+use super::peek::{lookup, ssh_target};
 use super::{link, Crabbox};
+
+/// How often a running Box command touches the Box's lease: crabbox renews a lease only
+/// while one of its own commands runs, and moor's commands run over ssh instead.
+pub(super) const TOUCH_EVERY: Duration = Duration::from_mins(10);
 
 /// Shell wrapper the Box runs around the command.
 ///
@@ -72,11 +79,37 @@ pub(super) fn run(
         .args(words)
         .arg(remote)
         .stdin(Stdin::Bytes(env));
-    let result = match &spec.output {
+    let result = touching_lease(cb, handle, || match &spec.output {
         Some(out) => cb.proc.run_streamed(&proc.stderr_gate(gate), out),
         None => cb.proc.run(&proc).map(|_| ()),
-    };
+    });
     outcome(cb, handle, result, &exit_tag)
+}
+
+impl Crabbox {
+    /// Touches the lease of a Box running a command every `every`, in place of [`TOUCH_EVERY`].
+    #[cfg(test)]
+    pub(crate) const fn with_touch_every(mut self, every: Duration) -> Self {
+        self.touch_every = every;
+        self
+    }
+}
+
+/// Runs `command`, and while it runs touches the lease of the Box behind `handle` every
+/// `cb.touch_every` with a fresh lookup, so crabbox does not reap a Box that is busy with a
+/// long command. A failed touch is left to the next one.
+fn touching_lease<T>(cb: &Crabbox, handle: &BoxHandle, command: impl FnOnce() -> T) -> T {
+    let (ended, wait) = mpsc::channel::<()>();
+    thread::scope(|s| {
+        s.spawn(move || {
+            while wait.recv_timeout(cb.touch_every) == Err(RecvTimeoutError::Timeout) {
+                let _ = lookup(cb, handle);
+            }
+        });
+        let out = command();
+        drop(ended);
+        out
+    })
 }
 
 /// The env as sh `export` lines, refused when a name is not a shell name.
