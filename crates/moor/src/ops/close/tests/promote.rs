@@ -484,7 +484,7 @@ fn exec_on(w: &World, sql: &str, id: i64) {
 }
 
 /// Queues `first` from a repo whose stored `.moor.yaml` no longer parses.
-fn queue_unparseable(w: &World) -> BoxId {
+fn queue_unparsable(w: &World) -> BoxId {
     let repo = ForgeRepo::new("o", "n");
     w.forge
         .answer(repo.clone(), Ok(repo_at("abc123", Some("setup: []\n"))));
@@ -513,7 +513,7 @@ fn skipped_first(w: &World) -> Vec<String> {
 #[test]
 fn a_close_hides_the_settings_error_of_a_waiter_its_caller_may_not_see() {
     let mut w = world(limit(1), FakeDriver::new());
-    queue_unparseable(&w);
+    queue_unparsable(&w);
     let user = bystander(&w);
     w.cx = w.cx.with_viewer(Viewer::User(user));
     close_holder(&w);
@@ -523,7 +523,7 @@ fn a_close_hides_the_settings_error_of_a_waiter_its_caller_may_not_see() {
 #[test]
 fn the_owner_of_a_waiter_sees_its_settings_error() {
     let mut w = world(limit(1), FakeDriver::new());
-    let id = queue_unparseable(&w);
+    let id = queue_unparsable(&w);
     let owner = bystander(&w);
     exec_on(
         &w,

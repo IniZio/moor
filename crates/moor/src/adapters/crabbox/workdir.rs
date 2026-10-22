@@ -1,10 +1,11 @@
 //! Learns a Box's workdir by asking the Box.
 
 use moor_core::name::{BoxHandle, BoxPath};
-use moor_core::seam::driver::DriverError;
+use moor_core::seam::driver::{Acquired, DriverError};
+use moor_core::seam::proc::ProcSpec;
 
 use super::errors::{map_error, Op};
-use super::{split_handle, target_args, Crabbox, QUICK_DEADLINE};
+use super::{parse, split_handle, target_args, unreadable, Crabbox, QUICK_DEADLINE};
 
 /// Prints the directory crabbox starts commands in.
 const PROBE: &str = r#"printf "MOOR_WORKDIR=%s\n" "$(pwd)""#;
@@ -41,5 +42,24 @@ pub(super) fn probe(cb: &Crabbox, handle: &BoxHandle) -> Result<BoxPath, DriverE
     }
     BoxPath::restore(path).map_err(|_| DriverError::Failed {
         summary: "box workdir probe reported an unusable path".into(),
+    })
+}
+
+/// Runs the warmup `spec` for `handle` and reads where its workdir is.
+pub(super) fn warm_up(
+    cb: &Crabbox,
+    provider: &str,
+    handle: &BoxHandle,
+    spec: &ProcSpec,
+) -> Result<Acquired, DriverError> {
+    let out = cb.call(Op::Acquire, Some(provider), spec)?;
+    let warm = parse::parse_warmup(&out.stdout).ok_or_else(|| unreadable("acquire"))?;
+    let workdir = match warm.workdir.as_deref().map(BoxPath::restore) {
+        Some(Ok(dir)) => dir,
+        _ => probe(cb, handle)?,
+    };
+    Ok(Acquired {
+        handle: handle.clone(),
+        workdir,
     })
 }

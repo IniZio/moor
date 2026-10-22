@@ -199,10 +199,10 @@ fn unquoted_value_error(err: &clap::Error) -> Option<String> {
         return None;
     }
     let why = std::error::Error::source(err)?;
-    Some(match err.get(clap::error::ContextKind::InvalidArg) {
-        Some(arg) => format!("invalid value for '{arg}': {why}"),
-        None => format!("invalid value: {why}"),
-    })
+    Some(err.get(clap::error::ContextKind::InvalidArg).map_or_else(
+        || format!("invalid value: {why}"),
+        |arg| format!("invalid value for '{arg}': {why}"),
+    ))
 }
 
 /// Maps a clap error to help output or a usage envelope.
