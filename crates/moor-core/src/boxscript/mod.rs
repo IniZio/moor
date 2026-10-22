@@ -2,6 +2,7 @@
 
 pub mod boxwork;
 pub mod clone;
+pub mod detached;
 pub mod record;
 pub mod setup;
 pub mod teardown;
