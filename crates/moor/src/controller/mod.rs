@@ -4,6 +4,7 @@ pub mod attach;
 mod conn;
 mod drain;
 mod hangup;
+mod inherit;
 mod local;
 mod peer;
 mod progress;
@@ -24,6 +25,7 @@ use moor_core::config::parse_controller;
 use moor_core::ErrorKind;
 
 use drain::{Admitted, Drain, Handler};
+use inherit::Sockets;
 
 use crate::env::{Env, CONTROLLER_LOCK};
 use crate::vault::{Vault, VAULT_KEY};
@@ -99,8 +101,10 @@ struct Running {
     drain_timeout: Duration,
 }
 
-/// Loads `config`, takes the instance lock and binds the socket.
+/// Loads `config`, takes the instance lock and the sockets passed in, binding any not passed.
 fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
+    let refused = |message: String| Stop { code: 1, message };
+    let mut sockets = Sockets::from_env(env).map_err(refused)?;
     let failed = |message: String| Stop {
         code: USAGE,
         message,
@@ -135,11 +139,9 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
     let mut socket_lock = socket.as_os_str().to_owned();
     socket_lock.push(".lock");
     let lock = take_lock(Path::new(&socket_lock), &socket)?;
-    let listener = bind(&socket).map_err(|e| Stop {
-        code: 1,
-        message: format!("cannot bind {}: {e}", socket.display()),
-    })?;
-    let fronts = peer::bind_fronts(&env, &cfg.fronts.keys().collect::<Vec<_>>())?;
+    let listener = sockets.listen("controller", &socket).map_err(refused)?;
+    let fronts = peer::bind_fronts(&env, &mut sockets, &cfg.fronts.keys().collect::<Vec<_>>())?;
+    sockets.finish().map_err(refused)?;
     Ok(Running {
         socket,
         listener,

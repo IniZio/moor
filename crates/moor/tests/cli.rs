@@ -13,6 +13,8 @@ mod client_cwd;
 mod controller;
 #[path = "cli/events.rs"]
 mod events;
+#[path = "cli/inherited.rs"]
+mod inherited;
 #[path = "cli/run_output.rs"]
 mod run_output;
 #[path = "cli/ssh_controller.rs"]

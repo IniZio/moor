@@ -8,12 +8,15 @@ use std::os::unix::net::{UnixListener, UnixStream};
 
 use moor_core::user::Caller;
 
-use super::{bind, mkdir, Stop, USAGE};
+use super::inherit::Sockets;
+use super::{mkdir, Stop, USAGE};
 use crate::env::Env;
 
-/// Binds `<state>/fronts/<namespace>.sock` for each front: each socket 0600 in a 0700 dir.
+/// Listens on `<state>/fronts/<namespace>.sock` for each front, taking the socket passed in as
+/// `front-<namespace>` when sockets were passed: each socket 0600 in a 0700 dir.
 pub(super) fn bind_fronts(
     env: &Env,
+    sockets: &mut Sockets,
     fronts: &[&String],
 ) -> Result<Vec<(String, UnixListener)>, Stop> {
     if fronts.is_empty() {
@@ -34,9 +37,10 @@ pub(super) fn bind_fronts(
         .iter()
         .map(|ns| {
             let socket = dir.join(format!("{ns}.sock"));
-            bind(&socket)
+            sockets
+                .listen(&format!("front-{ns}"), &socket)
                 .map(|listener| ((*ns).clone(), listener))
-                .map_err(|e| failed(format!("cannot bind {}: {e}", socket.display())))
+                .map_err(failed)
         })
         .collect()
 }
