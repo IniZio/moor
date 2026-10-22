@@ -6,7 +6,7 @@ file means every key takes its default.
 | File | Who writes it | Where it is |
 | --- | --- | --- |
 | [User config](#user-config) | You | `$MOOR_CONFIG`, else `$XDG_CONFIG_HOME/moor/config.yaml`, else `$HOME/.config/moor/config.yaml` |
-| [`.moor.yaml`](#mooryaml) | The repo | The checkout `moor start` ran in, else the repo's main checkout |
+| [`.moor.yaml`](#mooryaml) | The repo | The repo's base commit, read through GitHub when the Box starts |
 | [Controller config](#controller-config) | Whoever runs the controller | The path given to `moor controller serve --config` |
 
 ## User config

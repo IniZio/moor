@@ -16,6 +16,9 @@ pub struct Resolved {
     pub warning: Option<Warning>,
 }
 
+/// Refusal for a `--repo` value; the value is never quoted, as it may carry a token.
+pub(super) const REPO_ARG: &str = "--repo takes OWNER/NAME or a github.com repo URL";
+
 /// Refusal for an origin moor cannot clone; the URL is never quoted, as it may carry a token.
 const NOT_GITHUB: &str =
     "the origin remote is not a github.com repo; name one with --repo OWNER/NAME";
@@ -84,7 +87,7 @@ pub(super) fn repo_arg(s: &str) -> Result<ForgeRepo, String> {
     ForgeRepo::parse(s)
         .ok()
         .or_else(|| ForgeRepo::from_github_url(s))
-        .ok_or_else(|| format!("`{s}` is neither OWNER/NAME nor a github.com repo URL"))
+        .ok_or_else(|| REPO_ARG.to_owned())
 }
 
 #[cfg(test)]

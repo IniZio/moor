@@ -38,16 +38,16 @@ impl Checkout for Git {
         (!url.is_empty()).then(|| url.to_owned())
     }
 
-    /// A failed read counts as none.
+    /// A branch with no upstream counts as unpushed; a failed read counts as none.
     fn local_changes(&self, dir: &Path) -> bool {
         let Some(out) = self.run(dir, &["status", "--porcelain=v1", "--branch"]) else {
             return false;
         };
         let mut lines = out.lines();
-        let ahead = lines
+        let unpushed = lines
             .next()
-            .is_some_and(|branch| branch.contains("[ahead "));
-        ahead || lines.any(|l| !l.trim().is_empty())
+            .is_some_and(|branch| !branch.contains("...") || branch.contains("[ahead "));
+        unpushed || lines.any(|l| !l.trim().is_empty())
     }
 }
 

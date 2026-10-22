@@ -81,7 +81,9 @@ push gets a warning. Commits in the Box use the account's profile name, or its
 login, and its GitHub noreply address.
 
 The start works from what is on GitHub. Uncommitted or unpushed changes in
-your checkout are not in the Box; the CLI says so in a warning.
+your checkout are not in the Box; the CLI says so in a warning. A branch with
+no upstream counts as unpushed, since without `--base` the Box starts from the
+default branch.
 
 The Box clones its repo itself, through its Proxy, from
 `https://github.com/OWNER/NAME.git`. The clone is partial

@@ -100,6 +100,23 @@ fn a_box_branch_already_on_the_forge_is_refused_unless_base_names_it() {
 }
 
 #[test]
+fn only_a_base_of_exactly_the_box_branch_continues_a_taken_branch() {
+    for base in ["refs/heads/moor/demo", "origin/moor/demo", "moor/demo~0", "moor/demo/", "Moor/demo"] {
+        let w = world(FakeDriver::new());
+        let taken = RepoAt {
+            branch_tip: Some(moor_core::Sha::parse("def456").unwrap()),
+            ..repo_at(BASE, None)
+        };
+        w.forge.answer(repo(), Ok(taken));
+        let mut req = repo_req("demo");
+        req.base = Some(base.into());
+        let err = run(&w.cx, &req).unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Refused, "{base}");
+        assert!(w.driver.calls().is_empty(), "{base}");
+    }
+}
+
+#[test]
 fn an_account_that_cannot_push_starts_with_a_warning() {
     let w = world(FakeDriver::new());
     let read_only = RepoAt {
@@ -120,9 +137,17 @@ fn an_unknown_base_is_a_usage_error() {
     let w = world(FakeDriver::new());
     w.forge
         .answer(repo(), Err(ForgeError::UnknownBase("nope".into())));
-    let err = run(&w.cx, &repo_req("demo")).unwrap_err();
+    let mut req = repo_req("demo");
+    req.base = Some("nope".into());
+    let err = run(&w.cx, &req).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Usage);
     assert!(w.driver.calls().is_empty());
+    assert!(w.surface.calls().is_empty());
+    let rows: i64 = rusqlite::Connection::open(w.cx.state_dir().unwrap().join("moor.db"))
+        .unwrap()
+        .query_row("SELECT count(*) FROM boxes", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(rows, 0);
 }
 
 #[test]

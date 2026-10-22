@@ -137,6 +137,8 @@ fn github(vars: &Value, permission: &str) -> (u16, String) {
         repo["object"] = match vars["base"].as_str() {
             Some("v1") => json!({"__typename": "Tag", "oid": "dd".repeat(20), "target": tagged}),
             Some("main") => default,
+            Some("refs/heads/moor/t") => commit(BRANCH_SHA, &[]),
+            Some("moor/t") => json!({"__typename": "Tag", "oid": "ee".repeat(20), "target": tagged}),
             _ => Value::Null,
         };
     } else {
@@ -201,6 +203,14 @@ fn base_names_the_requested_ref() {
         read_via(&api, Some("main"), "moor/t").unwrap().base,
         sha(DEFAULT_SHA)
     );
+}
+
+#[test]
+fn a_base_naming_the_box_branch_reads_the_branch_not_a_tag_of_that_name() {
+    let api = FakeApi::start(|v| github(v, "WRITE"));
+    let at = read_via(&api, Some("moor/t"), "moor/t").unwrap();
+    assert_eq!(at.base, sha(BRANCH_SHA));
+    assert_eq!(at.branch_tip, Some(sha(BRANCH_SHA)));
 }
 
 #[test]

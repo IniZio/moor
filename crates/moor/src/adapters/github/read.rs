@@ -77,7 +77,10 @@ pub(super) fn read(
             "owner": repo.owner,
             "name": repo.name,
             "branch": format!("refs/heads/{branch}"),
-            "base": base.unwrap_or_default(),
+            "base": match base {
+                Some(b) if b == branch => format!("refs/heads/{b}"),
+                b => b.unwrap_or_default().to_owned(),
+            },
             "hasBase": base.is_some(),
         },
     });
