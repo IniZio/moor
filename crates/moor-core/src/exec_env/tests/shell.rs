@@ -15,6 +15,7 @@ impl TempHome {
         std::fs::create_dir_all(dir.join("bin")).unwrap();
         let sudo = dir.join("bin/sudo");
         moor_testkit::write_executable(&sudo, "#!/bin/sh\nexit 1\n").unwrap();
+        moor_testkit::write_host_guards(&dir.join("bin")).unwrap();
         let egress = moor_testkit::FakeEgress::start(&dir, &dir.join("bin")).unwrap();
         Self(dir, egress)
     }

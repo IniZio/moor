@@ -13,7 +13,7 @@ use super::setup::{exit, start_req};
 use super::{req, script_base_yaml, World};
 use crate::ops::start::run;
 use crate::testing::driver::{is_clone_exec, FakeDriver};
-use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall, FAKE_BOX_PORT};
+use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall, FAKE_EGRESS_PORT};
 
 const YAML: &str = "setup: [a]\n";
 
@@ -69,7 +69,7 @@ fn the_proxy_is_ready_before_the_clone_exec_and_its_env_is_on_it() {
     assert!(
         script.contains(&format!(
             "export HTTPS_PROXY=\"http://127.0.0.1:{}\"",
-            crate::store::egress_port(FAKE_BOX_PORT)
+            FAKE_EGRESS_PORT
         )),
         "{script}"
     );
@@ -138,13 +138,23 @@ fn an_egress_proxy_that_cannot_start_fails_the_setup_with_its_reason() {
     let events = w.cx.store().unwrap().events(BoxId::new(1), 50).unwrap();
     let failed = events.iter().find(|e| e.kind == "setup_failed").unwrap();
     assert!(
-        failed.payload.to_string().contains("the egress proxy could not start"),
+        failed
+            .payload
+            .to_string()
+            .contains("the egress proxy could not start"),
         "{:?}",
         failed.payload
     );
-    assert_eq!(w.driver.execs().len(), 1, "nothing runs after the failed egress proxy");
+    assert_eq!(
+        w.driver.execs().len(),
+        1,
+        "nothing runs after the failed egress proxy"
+    );
     let clone = clone_exec(&w).argv.join(" ");
-    assert!(clone.contains("tinyproxy -c"), "the clone exec starts the egress proxy first");
+    assert!(
+        clone.contains("tinyproxy -c"),
+        "the clone exec starts the egress proxy first"
+    );
 }
 
 #[test]

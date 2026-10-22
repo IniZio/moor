@@ -10,12 +10,15 @@ use std::time::Duration;
 
 use crate::write_executable;
 
-/// A fake `tinyproxy`: logs its argv to `$HOME/fake.log`, runs a placeholder process whose pid it
-/// writes to the config's `PidFile`, and records the start in `$HOME/fake-starts`.
+/// A fake `tinyproxy`: logs its argv to `$HOME/fake.log`, runs a placeholder process named
+/// `tinyproxy`, as the real daemon is, whose pid it writes to the config's `PidFile`, and records
+/// the start in `$HOME/fake-starts`.
 pub const FAKE_TINYPROXY: &str = r#"#!/bin/sh
 echo "tinyproxy $*" >>"$HOME/fake.log"
 pid=$(sed -n 's/^PidFile "\(.*\)"$/\1/p' "$2")
-sleep 30 >/dev/null 2>&1 &
+daemon="$HOME/.fake-tinyproxy/tinyproxy"
+[ -x "$daemon" ] || { mkdir -p "$HOME/.fake-tinyproxy" && cp "$(command -v sleep)" "$daemon"; }
+"$daemon" 30 >/dev/null 2>&1 &
 echo $! >"$pid"
 echo start >>"$HOME/fake-starts"
 "#;
@@ -26,12 +29,16 @@ pub const HOST_GUARD: &str = "#!/bin/sh\n\
     echo \"a test ran $(basename \"$0\") $*; the host's own is never run\" >&2\n\
     exit 97\n";
 
-/// Writes [`HOST_GUARD`] as `sudo` and `apt-get` into `bin`, which a fake ssh puts first on the
-/// `PATH` it exports to the Box command.
+/// Writes [`HOST_GUARD`] as `sudo` and `apt-get` into `bin`. A test that runs a Box script with
+/// the host's `PATH` after its own `bin` calls this, so the script never reaches the host's tools.
+/// A fake the test already wrote under either name is kept.
 pub fn write_host_guards(bin: &Path) -> io::Result<()> {
     std::fs::create_dir_all(bin)?;
     for name in ["sudo", "apt-get"] {
-        write_executable(&bin.join(name), HOST_GUARD)?;
+        let path = bin.join(name);
+        if !path.exists() {
+            write_executable(&path, HOST_GUARD)?;
+        }
     }
     Ok(())
 }
@@ -60,7 +67,6 @@ impl FakeEgress {
 
     /// [`Self::start`] on `port`, for a test whose egress port moor derives.
     pub fn start_on(home: &Path, bin: &Path, port: u16) -> io::Result<Self> {
-        write_host_guards(bin)?;
         write_executable(&bin.join("tinyproxy"), FAKE_TINYPROXY)?;
         let open: Arc<Mutex<Option<TcpListener>>> = Arc::new(Mutex::new(None));
         let done = Arc::new(AtomicBool::new(false));
@@ -92,6 +98,13 @@ impl FakeEgress {
     #[must_use]
     pub const fn port(&self) -> u16 {
         self.port
+    }
+
+    /// Opens the port with no start recorded, as another process in the Box that holds it.
+    pub fn occupy(&self) {
+        if let Ok(mut slot) = self.open.lock() {
+            *slot = TcpListener::bind(("127.0.0.1", self.port)).ok();
+        }
     }
 
     /// Closes the port, as a tinyproxy that died leaves it.

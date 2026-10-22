@@ -43,12 +43,12 @@ mod turns;
 mod users;
 
 pub(crate) use agent::SessionRow;
-pub(crate) use proxy::{egress_port, Fenced, Lease, ProxyRow, ReadyProc, Reserve};
+pub(crate) use proxy::{Fenced, Lease, ProxyRow, ReadyProc, Reserve};
 pub(crate) use proxy::{TunnelAck, TunnelRequest, TunnelWant};
 pub(crate) use runs::{NewRun, RunOutcome, RunRow};
 
 /// Schema version this build reads and writes.
-pub(crate) const SCHEMA_VERSION: &str = "13";
+pub(crate) const SCHEMA_VERSION: &str = "14";
 /// Full schema, applied once when the file has no `meta` table.
 const SCHEMA_SQL: &str = include_str!("schema.sql");
 /// How long a connection waits on a lock before `SQLITE_BUSY`.

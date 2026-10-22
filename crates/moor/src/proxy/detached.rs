@@ -167,6 +167,7 @@ fn spec_failed(e: &io::Error, log: &Path) -> ProxyHostError {
 fn endpoint(row: &ProxyRow, ca_pem: &str) -> ProxyEndpoint {
     ProxyEndpoint {
         box_port: row.box_port,
+        egress_port: row.egress_port,
         ca_pem: ca_pem.to_owned(),
     }
 }

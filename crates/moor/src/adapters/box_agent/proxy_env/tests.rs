@@ -145,6 +145,7 @@ fn the_script_runs_and_builds_the_environment() {
     let home = dir.path().join("home");
     std::fs::create_dir(&home).unwrap();
     let fake = fake_sudo(dir.path());
+    moor_testkit::write_host_guards(&fake).unwrap();
     let egress = moor_testkit::FakeEgress::start(&home, &fake).unwrap();
     let addr = ProxyAddr {
         egress_port: egress.port(),
@@ -315,7 +316,11 @@ fn without_keytool_the_java_setup_changes_nothing() {
     let text = std::fs::read_to_string(l.dir.path().join("gradle/gradle.properties")).unwrap();
     assert_eq!(text, "org.gradle.jvmargs=-Xmx2560m\n");
     assert!(!l.dir.path().join("home/.gradle").exists());
-    is(&l.env, "HTTPS_PROXY", &format!("http://127.0.0.1:{}", l.egress.port()));
+    is(
+        &l.env,
+        "HTTPS_PROXY",
+        &format!("http://127.0.0.1:{}", l.egress.port()),
+    );
     assert_ca_vars(&l.env, &l.dir.path().join("home"));
 }
 

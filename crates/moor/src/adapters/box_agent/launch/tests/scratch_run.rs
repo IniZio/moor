@@ -12,6 +12,7 @@ impl Scratch {
         for d in ["home", "work", "bin", "home/.moor-cred-t1-x"] {
             std::fs::create_dir_all(dir.path().join(d)).unwrap();
         }
+        moor_testkit::write_host_guards(&dir.path().join("bin")).unwrap();
         let egress =
             moor_testkit::FakeEgress::start(&dir.path().join("home"), &dir.path().join("bin"))
                 .unwrap();

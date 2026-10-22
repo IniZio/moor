@@ -11,6 +11,7 @@ use super::super::egress::{config, lines, EGRESS_FAILED};
 /// Tools the egress lines call that the fake Box takes from the host.
 const HOST_TOOLS: &[&str] = &[
     "sh", "cmp", "mkdir", "mv", "rm", "grep", "sed", "sleep", "cat", "tail", "env", "cp", "chmod",
+    "flock",
 ];
 
 /// Whether the fake Box has apt and what an install does.
@@ -91,17 +92,24 @@ impl FakeBox {
     /// The egress lines for `hosts`, then `echo ran`, under `sh` with the proxy variables set as a
     /// Box image might set them.
     fn run_with(&self, hosts: &[String]) -> (bool, String, String) {
+        Self::outcome(&self.command(hosts).output().unwrap())
+    }
+
+    /// The `sh` that runs the egress lines for `hosts`, then `echo ran`.
+    fn command(&self, hosts: &[String]) -> std::process::Command {
         let mut script = lines(self.port.port(), UPSTREAM, hosts).join("\n");
         script.push_str("\necho ran\n");
-        let out = std::process::Command::new(self.bin.join("sh"))
-            .args(["-c", &script])
+        let mut cmd = std::process::Command::new(self.bin.join("sh"));
+        cmd.args(["-c", &script])
             .env_clear()
             .env("HOME", &self.home)
             .env("PATH", &self.bin)
             .env("HTTPS_PROXY", "http://image-proxy:1")
-            .env("http_proxy", "http://image-proxy:1")
-            .output()
-            .unwrap();
+            .env("http_proxy", "http://image-proxy:1");
+        cmd
+    }
+
+    fn outcome(out: &std::process::Output) -> (bool, String, String) {
         (
             out.status.success() && String::from_utf8_lossy(&out.stdout).contains("ran"),
             String::from_utf8_lossy(&out.stdout).into_owned(),
@@ -118,7 +126,10 @@ impl FakeBox {
     }
 
     fn starts(&self) -> usize {
-        self.log().lines().filter(|l| l.starts_with("tinyproxy ")).count()
+        self.log()
+            .lines()
+            .filter(|l| l.starts_with("tinyproxy "))
+            .count()
     }
 
     fn conf(&self) -> String {
@@ -128,9 +139,7 @@ impl FakeBox {
     /// Kills the placeholder process and closes the port, as a Box that slept and lost tinyproxy.
     fn kill(&self) {
         let pid = std::fs::read_to_string(self.home.join(".moor/egress.pid")).unwrap();
-        let _ = std::process::Command::new("kill")
-            .arg(pid.trim())
-            .status();
+        let _ = std::process::Command::new("kill").arg(pid.trim()).status();
         self.port.close();
     }
 }
@@ -142,6 +151,13 @@ impl Drop for FakeBox {
         }
         let _ = std::fs::remove_dir_all(&self.home);
     }
+}
+
+/// Whether process `pid` runs. An exited process that no one reaped yet does not: the test
+/// namespace's init never reaps the orphans the fake tinyproxy leaves.
+fn running(pid: &str) -> bool {
+    std::fs::read_to_string(format!("/proc/{pid}/stat"))
+        .is_ok_and(|stat| stat.rsplit(") ").next().is_some_and(|rest| !rest.starts_with('Z')))
 }
 
 fn failure(reason: &str) -> String {
@@ -189,7 +205,10 @@ fn a_root_box_installs_tinyproxy_with_apt_without_sudo_or_proxy_variables() {
     let apt: Vec<&str> = log.lines().filter(|l| l.starts_with("apt-get")).collect();
     assert_eq!(apt.len(), 1, "{log}");
     assert!(apt[0].contains("install tinyproxy-bin"), "{log}");
-    assert!(apt[0].ends_with("proxy="), "apt saw a proxy variable: {log}");
+    assert!(
+        apt[0].ends_with("proxy="),
+        "apt saw a proxy variable: {log}"
+    );
     assert_eq!(b.starts(), 1, "{log}");
 }
 
@@ -201,7 +220,12 @@ fn a_non_root_box_installs_tinyproxy_through_sudo() {
     let log = b.log();
     let first: Vec<&str> = log.lines().take(2).collect();
     assert_eq!(first.first(), Some(&"sudo"), "{log}");
-    assert!(first.get(1).is_some_and(|l| l.starts_with("apt-get") && l.ends_with("proxy=")), "{log}");
+    assert!(
+        first
+            .get(1)
+            .is_some_and(|l| l.starts_with("apt-get") && l.ends_with("proxy=")),
+        "{log}"
+    );
 }
 
 #[test]
@@ -232,7 +256,10 @@ fn a_failed_install_stops_the_exec_with_the_last_apt_line() {
         "{err}"
     );
     let updates = b.log().lines().filter(|l| l.contains(" update")).count();
-    assert_eq!(updates, 1, "a failed install retries once after apt-get update");
+    assert_eq!(
+        updates, 1,
+        "a failed install retries once after apt-get update"
+    );
 }
 
 #[test]
@@ -259,8 +286,11 @@ fn tinyproxy_starts_from_the_config_with_its_pid_file_under_dot_moor() {
         b.log()
     );
     let pid_file = b.home.join(".moor/egress.pid");
-    let expected = config(b.port.port(), UPSTREAM, &hosts(&["api.anthropic.com", "github.com"]))
-        + &format!("PidFile \"{}\"\n", pid_file.display());
+    let expected = config(
+        b.port.port(),
+        UPSTREAM,
+        &hosts(&["api.anthropic.com", "github.com"]),
+    ) + &format!("PidFile \"{}\"\n", pid_file.display());
     assert_eq!(b.conf(), expected);
     assert!(pid_file.exists());
 }
@@ -294,10 +324,60 @@ fn a_changed_credential_host_list_restarts_the_egress_proxy() {
     assert!(ok, "{out}{err}");
     assert_eq!(b.starts(), 2, "{}", b.log());
     assert!(b.conf().contains("\"gitlab.com\""));
-    let alive = std::process::Command::new("kill")
-        .args(["-0", pid.trim()])
-        .status()
-        .unwrap()
-        .success();
-    assert!(!alive, "the old tinyproxy was not stopped");
+    assert!(!running(pid.trim()), "the old tinyproxy was not stopped");
+}
+
+#[test]
+fn a_port_held_by_another_process_stops_the_exec_and_starts_nothing() {
+    let b = FakeBox::new(0, Apt::Missing, true);
+    b.port.occupy();
+    let (ok, out, err) = b.run();
+    assert!(!ok);
+    assert!(!out.contains("ran"), "{out}");
+    let reason = format!("port {} is taken by another process", b.port.port());
+    assert!(err.contains(&failure(&reason)), "{err}");
+    assert_eq!(b.starts(), 0, "{}", b.log());
+}
+
+#[test]
+fn a_pid_file_naming_a_process_that_is_not_tinyproxy_does_not_claim_the_port() {
+    let b = FakeBox::new(0, Apt::Missing, true);
+    let mut other = std::process::Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .unwrap();
+    std::fs::create_dir_all(b.home.join(".moor")).unwrap();
+    std::fs::write(b.home.join(".moor/egress.pid"), format!("{}\n", other.id())).unwrap();
+    b.port.occupy();
+    let (ok, _, err) = b.run();
+    let alive = other.try_wait().unwrap().is_none();
+    let _ = other.kill();
+    let _ = other.wait();
+    assert!(!ok);
+    let reason = format!("port {} is taken by another process", b.port.port());
+    assert!(err.contains(&failure(&reason)), "{err}");
+    assert!(alive, "the process the pid file named was left running");
+}
+
+#[test]
+fn two_commands_that_start_together_start_one_tinyproxy() {
+    let b = FakeBox::new(0, Apt::Missing, true);
+    let list = hosts(&["api.anthropic.com", "github.com"]);
+    let first = b
+        .command(&list)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let second = b
+        .command(&list)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    for child in [first, second] {
+        let (ok, out, err) = FakeBox::outcome(&child.wait_with_output().unwrap());
+        assert!(ok, "{out}{err}");
+    }
+    assert_eq!(b.starts(), 1, "{}", b.log());
 }

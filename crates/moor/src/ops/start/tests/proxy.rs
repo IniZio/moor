@@ -12,7 +12,7 @@ use crate::ops::common::proxy::TAIL_LINES;
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
-use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall, FAKE_BOX_PORT};
+use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall, FAKE_BOX_PORT, FAKE_EGRESS_PORT};
 
 fn goal_req() -> StartReq {
     StartReq {
@@ -296,5 +296,5 @@ fn the_agent_proxy_sends_only_the_credential_hosts_to_the_egress_tunnel() {
     let mut hosts = addr.hosts.clone();
     hosts.sort();
     assert_eq!(hosts, ["api.anthropic.com", "gitlab.com"]);
-    assert_eq!(addr.egress_port, addr.box_port + 20000);
+    assert_eq!(addr.egress_port, FAKE_EGRESS_PORT);
 }

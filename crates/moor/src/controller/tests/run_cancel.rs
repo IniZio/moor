@@ -185,11 +185,6 @@ fn a_drain_lets_a_run_in_flight_finish_and_closes_idle_connections() {
     let (crabbox, ssh) = (dir.path().join("crabbox"), dir.path().join("ssh"));
     moor_testkit::write_executable(&crabbox, FAKE_CRABBOX).unwrap();
     moor_testkit::write_executable(&ssh, SLOW_SSH).unwrap();
-    let bin = dir.path().join("bin");
-    std::fs::create_dir(&bin).unwrap();
-    let _egress =
-        moor_testkit::FakeEgress::start_on(dir.path(), &bin, crate::store::egress_port(2000))
-            .unwrap();
     let env = super::env_with(
         dir.path(),
         &[
@@ -212,6 +207,11 @@ fn a_drain_lets_a_run_in_flight_finish_and_closes_idle_connections() {
         .unwrap();
     let id = ready_box(&store, UserId::new(operator));
     proxy_ready(&store, id);
+    let egress_port = store.proxy(id).unwrap().unwrap().egress_port;
+    moor_testkit::write_host_guards(&dir.path().join("bin")).unwrap();
+    let _egress =
+        moor_testkit::FakeEgress::start_on(dir.path(), &dir.path().join("bin"), egress_port)
+            .unwrap();
     let (_idle, mut idle_read) = greeted(&socket);
     let (mut busy, mut busy_read) = greeted(&socket);
     let run = RunReq {

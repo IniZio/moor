@@ -272,7 +272,10 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Vec<String> {
     }
     lines.push(format!("export NODE_EXTRA_CA_CERTS={ca}"));
     for name in ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"] {
-        lines.push(format!("export {name}=\"http://127.0.0.1:{}\"", p.egress_port));
+        lines.push(format!(
+            "export {name}=\"http://127.0.0.1:{}\"",
+            p.egress_port
+        ));
     }
     lines.extend(yarn_lines(p.egress_port));
     for name in ["NO_PROXY", "no_proxy"] {

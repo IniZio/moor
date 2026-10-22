@@ -10,7 +10,9 @@ use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::rng::Rng;
 use moor_core::{BoxId, BoxName};
 
-use super::{Fenced, Lease, ReadyProc, Reserve, BOX_PORT_MAX, BOX_PORT_MIN};
+use super::{
+    Fenced, Lease, ReadyProc, Reserve, BOX_PORT_MAX, BOX_PORT_MIN, EGRESS_PORT_MAX, EGRESS_PORT_MIN,
+};
 use crate::store::{Store, StoreError};
 use crate::testing::clock::FakeClock;
 use crate::testing::rng::FakeRng;
@@ -129,6 +131,37 @@ fn rereserve_keeps_port_and_resets_the_row() {
     assert!(!row.ready);
     assert_eq!((row.pid, row.handle), (None, None));
     assert_eq!((row.lease_owner, row.lease_heartbeat), (None, None));
+}
+
+#[test]
+fn reserve_gives_each_box_its_own_egress_port_outside_the_box_ports() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let a = add(&store, "a");
+    let b = add(&store, "b");
+    let _ = store.reserve(a, &Scripted::new(&[7]), LEASE).unwrap();
+    let _ = store.reserve(b, &Scripted::new(&[7, 8]), LEASE).unwrap();
+    let (ra, rb) = (
+        store.proxy(a).unwrap().unwrap(),
+        store.proxy(b).unwrap().unwrap(),
+    );
+    for row in [&ra, &rb] {
+        assert!(
+            (EGRESS_PORT_MIN..=EGRESS_PORT_MAX).contains(&row.egress_port),
+            "{row:?}"
+        );
+    }
+    assert_ne!(ra.egress_port, rb.egress_port);
+}
+
+#[test]
+fn rereserve_keeps_the_egress_port() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, clock, id) = reserved(dir.path());
+    let first = store.proxy(id).unwrap().unwrap().egress_port;
+    clock.sleep(LEASE);
+    let _ = store.reserve(id, &Scripted::new(&[999]), LEASE).unwrap();
+    assert_eq!(store.proxy(id).unwrap().unwrap().egress_port, first);
 }
 
 #[test]

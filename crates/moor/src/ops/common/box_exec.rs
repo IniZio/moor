@@ -12,7 +12,6 @@ use moor_core::{BoxHandle, BoxId, BoxPath};
 
 use crate::cx::Cx;
 use crate::ops::common::proxy::{box_env, plan};
-use crate::store::egress_port;
 
 /// The Box's running Proxy, as a Box exec needs it.
 pub(crate) struct BoxProxy {
@@ -61,7 +60,7 @@ pub(crate) fn proxy(
     let ep = cx.proxy_host().ensure(&spec).map_err(|e| e.to_string())?;
     let addr = ProxyAddr {
         box_port: ep.box_port,
-        egress_port: egress_port(ep.box_port),
+        egress_port: ep.egress_port,
         ca_pem: ep.ca_pem,
         box_env: exec_env::merged_env(repo_env, rule_env.clone()),
         forge,
