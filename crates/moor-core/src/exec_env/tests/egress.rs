@@ -10,7 +10,7 @@ use super::super::egress::{config, lines, EGRESS_FAILED};
 /// Tools the egress lines call that the fake Box takes from the host.
 const HOST_TOOLS: &[&str] = &[
     "sh", "cmp", "mkdir", "mv", "rm", "grep", "sed", "sleep", "cat", "tail", "env", "cp", "chmod",
-    "flock",
+    "flock", "setsid",
 ];
 
 /// Whether the fake Box has apt and what an install does.
