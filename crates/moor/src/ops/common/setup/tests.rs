@@ -364,17 +364,6 @@ fn failed_is_true_only_for_failed() {
 }
 
 #[test]
-fn exec_runs_at_the_resolved_size() {
-    let d = tempfile::tempdir().unwrap();
-    let r = rig(d.path(), FakeDriver::new());
-    let c = cfg(&["a"], &[]);
-    run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &c);
-    let (_, spec, _) = only(r.driver.execs());
-    assert!(spec.output.is_none());
-    assert_eq!(spec.class.as_deref(), Some(c.size.value.as_str()));
-}
-
-#[test]
 fn interrupted_line_fails_and_stops_the_run() {
     let d = tempfile::tempdir().unwrap();
     let driver = FakeDriver::new()

@@ -78,7 +78,6 @@ pub fn run_each<D: Driver + ?Sized>(
                     env: vec![],
                     cwd: None,
                     output: None,
-                    class: None,
                 };
                 driver
                     .exec(handle, &spec, deadline)

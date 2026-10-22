@@ -128,7 +128,6 @@ fn launch(
         env: exec.vars(),
         cwd: exec.cwd(),
         output: Some(output),
-        class: Some(cfg.size.value.as_str().to_owned()),
     };
     let outcome = follow::during(spec.output.as_ref(), sink, || {
         cx.driver().exec(&target.handle, &spec, exec.deadline())

@@ -129,7 +129,6 @@ fn install(
         env: env.vars(),
         cwd: None,
         output: Some(Output::Log(log.to_path_buf())),
-        class: Some(cfg.size.value.as_str().to_owned()),
     };
     cx.driver()
         .exec(site.handle, &exec, Deadline(DOTFILES_DEADLINE))

@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use moor_core::seam::proc::{
     ChildHandle, Deadline, ExitInfo, FirstLineError, Output, Proc, ProcError, ProcOutput, ProcSpec,
-    Signal, StderrGate, Tool,
+    Signal, Tool,
 };
 use zeroize::Zeroizing;
 
@@ -68,7 +68,6 @@ pub(crate) struct Call {
     pub cwd: Option<PathBuf>,
     pub deadline: Deadline,
     pub stdin: Vec<u8>,
-    pub stderr_gate: Option<StderrGate>,
 }
 
 struct Rule {

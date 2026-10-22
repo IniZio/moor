@@ -348,7 +348,6 @@ fn remove_cred(
         env: Vec::new(),
         cwd: None,
         output: None,
-        class: None,
     };
     match driver.exec(&req.handle, &spec, Deadline(CLEANUP_DEADLINE)) {
         Ok(ExecOutcome::Exited { code: 0 }) => Ok(()),

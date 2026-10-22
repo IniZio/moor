@@ -19,6 +19,12 @@ moor sets `GIT_CEILING_DIRECTORIES` to `<state dir>/leases`, so a state
 directory inside a git repo does not leak that repo into the claim. moor
 removes the directory once crabbox has deleted the Box or reports it gone.
 
+Commands and single-file reads and writes in a Box do not go through crabbox.
+moor runs them over one ssh connection per Box, opened with the ssh options
+`crabbox ssh` prints for the lease, so host-key checking stays as strict as
+crabbox's own: the lease's `known_hosts` file and `StrictHostKeyChecking=yes`.
+A command's environment travels on ssh's stdin, never in its arguments.
+
 When a release fails, the directory stays and `moor close` names it. To
 release the Box by hand, run `crabbox stop --provider PROVIDER --id SLUG
 --delete` from that directory, or pass `--reclaim`.

@@ -176,7 +176,6 @@ fn clone(
         env: exec.vars(),
         cwd: exec.cwd(),
         output: log.clone().map(Output::Log),
-        class: Some(cfg.size.value.as_str().to_owned()),
     };
     let clock = cx.clock();
     let started = clock.instant();

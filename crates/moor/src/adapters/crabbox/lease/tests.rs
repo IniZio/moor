@@ -41,11 +41,6 @@ fn scripted() -> Arc<ScriptedProc> {
         Reply::Ok(PROVIDERS.to_owned()),
     );
     p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
-    p.on(
-        Tool::Crabbox,
-        &["run"],
-        Reply::Ok("MOOR_WORKDIR=/root/crabbox/cbx_1/x\n".to_owned()),
-    );
     p.on(Tool::Crabbox, &["ssh"], Reply::Ok(SSH_LINE.to_owned()));
     p.on(Tool::Crabbox, &["tunnel"], Reply::Ok(String::new()));
     p.on_child(
@@ -72,7 +67,6 @@ fn exec_spec() -> ExecSpec {
         env: Vec::new(),
         cwd: None,
         output: None,
-        class: None,
     }
 }
 

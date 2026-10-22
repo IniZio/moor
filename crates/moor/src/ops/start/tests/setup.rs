@@ -150,10 +150,9 @@ fn setup_runs_under_one_allowance_per_line() {
 
 #[test]
 fn the_repo_clones_in_its_own_exec_before_setup() {
-    let (w, _) = start_with("setup: [a, b]\nbox: {size: large}\n", FakeDriver::new());
+    let (w, _) = start_with("setup: [a, b]\n", FakeDriver::new());
     let mut execs = w.driver.execs();
     assert_eq!(execs.len(), 2, "a clone exec and one setup exec");
-    let (_, setup, _) = execs.remove(1);
     let (_, clone, _) = execs.remove(0);
     assert!(is_clone_exec(&clone));
     assert!(
@@ -161,8 +160,6 @@ fn the_repo_clones_in_its_own_exec_before_setup() {
         "{:?}",
         clone.argv
     );
-    assert_eq!(clone.class.as_deref(), Some("large"));
-    assert_eq!(setup.class.as_deref(), Some("large"));
 }
 
 #[test]

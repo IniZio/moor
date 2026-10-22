@@ -4,7 +4,7 @@
     reason = "test assertions index decoded frames"
 )]
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -32,14 +32,21 @@ const POLLS: u32 = 500;
 /// Pause between two polls.
 const POLL: Duration = Duration::from_millis(20);
 
-/// A crabbox whose `run` marks `started` beside itself and then outlasts the test.
+/// A crabbox that reports a supported version and the ssh target of every Box.
 const FAKE_CRABBOX: &str = "#!/bin/sh\n\
-    PATH=/usr/bin:/bin\n\
     case \"$1\" in\n\
     --version) echo 'crabbox 0.79.1-moor.1' ;;\n\
-    run) touch \"$(dirname \"$0\")/started\"; exec sleep 60 ;;\n\
+    ssh) echo 'ssh -o StrictHostKeyChecking=yes u@box' ;;\n\
     *) exit 1 ;;\n\
     esac\n";
+
+/// An ssh that answers `ssh -G` as crabbox's pinned words do; a Box command marks `started`
+/// beside itself and then outlasts the test, and any other remote command runs on this host.
+const FAKE_SSH: &str = "#!/bin/sh\n\
+    PATH=/usr/bin:/bin\n\
+    test \"$1\" = -G && { echo 'stricthostkeychecking true'; echo 'userknownhostsfile /k'; exit; }\n\
+    case \"$*\" in *gate-*) touch \"$(dirname \"$0\")/started\"; exec sleep 60 ;; esac\n\
+    for last; do :; done\nexec sh -c \"$last\"\n";
 
 /// A client process holding the only end of a connection that asked for `request`.
 fn client_process(socket: &Path, request: &Request) -> std::process::Child {
@@ -92,7 +99,15 @@ fn a_run_whose_client_is_killed_is_cancelled_and_recorded_interrupted() {
     let dir = tempfile::tempdir().unwrap();
     let crabbox = dir.path().join("crabbox");
     moor_testkit::write_executable(&crabbox, FAKE_CRABBOX).unwrap();
-    let served = Served::start_in(dir, &[("MOOR_CRABBOX_BIN", crabbox.to_str().unwrap())]);
+    let ssh = dir.path().join("ssh");
+    moor_testkit::write_executable(&ssh, FAKE_SSH).unwrap();
+    let served = Served::start_in(
+        dir,
+        &[
+            ("MOOR_CRABBOX_BIN", crabbox.to_str().unwrap()),
+            ("MOOR_SSH_BIN", ssh.to_str().unwrap()),
+        ],
+    );
     let db = served.dir.path().join("state").join("moor.db");
     let store = Store::open(&db, Arc::new(SystemClock::real())).unwrap();
     let operator = ask(&served.main, &json!({"cmd": "enroll"}))["value"]["user"]
@@ -121,15 +136,14 @@ fn a_run_whose_client_is_killed_is_cancelled_and_recorded_interrupted() {
     );
 }
 
-/// A crabbox whose `run` marks `started` beside itself, outlasts the start of a drain, and
-/// exits 7.
-const SLOW_CRABBOX: &str = "#!/bin/sh\n\
+/// [`FAKE_SSH`] whose Box command marks `started` and outlasts the start of a drain before it
+/// runs on this host, with a home beside itself for the Proxy CA.
+const SLOW_SSH: &str = "#!/bin/sh\n\
     PATH=/usr/bin:/bin\n\
-    case \"$1\" in\n\
-    --version) echo 'crabbox 0.79.1-moor.1' ;;\n\
-    run) touch \"$(dirname \"$0\")/started\"; sleep 1; echo 'remote command exited 7' >&2; exit 7 ;;\n\
-    *) exit 1 ;;\n\
-    esac\n";
+    export HOME=\"$(dirname \"$0\")\"\n\
+    test \"$1\" = -G && { echo 'stricthostkeychecking true'; echo 'userknownhostsfile /k'; exit; }\n\
+    case \"$*\" in *gate-*) touch \"$(dirname \"$0\")/started\"; sleep 1 ;; esac\n\
+    for last; do :; done\nexec sh -c \"$last\"\n";
 
 /// A connection to `socket` that has said hello.
 fn greeted(socket: &Path) -> (UnixStream, BufReader<UnixStream>) {
@@ -149,14 +163,32 @@ fn frame(read: &mut BufReader<UnixStream>) -> serde_json::Value {
     serde_json::from_str(&line).unwrap()
 }
 
+/// The response or error frame that ends a request on `read`, past its progress and output.
+fn reply(read: &mut BufReader<UnixStream>) -> serde_json::Value {
+    loop {
+        let next = frame(read);
+        if next["frame"] == "response" || next["frame"] == "error" {
+            return next;
+        }
+        if let Some(len) = next["len"].as_u64() {
+            let mut payload = vec![0; usize::try_from(len).unwrap()];
+            read.read_exact(&mut payload).unwrap();
+        }
+    }
+}
+
 #[test]
 fn a_drain_lets_a_run_in_flight_finish_and_closes_idle_connections() {
     let dir = tempfile::tempdir().unwrap();
-    let crabbox = dir.path().join("crabbox");
-    moor_testkit::write_executable(&crabbox, SLOW_CRABBOX).unwrap();
+    let (crabbox, ssh) = (dir.path().join("crabbox"), dir.path().join("ssh"));
+    moor_testkit::write_executable(&crabbox, FAKE_CRABBOX).unwrap();
+    moor_testkit::write_executable(&ssh, SLOW_SSH).unwrap();
     let env = super::env_with(
         dir.path(),
-        &[("MOOR_CRABBOX_BIN", crabbox.to_str().unwrap())],
+        &[
+            ("MOOR_CRABBOX_BIN", crabbox.to_str().unwrap()),
+            ("MOOR_SSH_BIN", ssh.to_str().unwrap()),
+        ],
     );
     let cfg = super::config(dir.path(), "drain_timeout_secs: 10\n");
     let running = crate::controller::start(&env, &cfg).unwrap();
@@ -177,7 +209,7 @@ fn a_drain_lets_a_run_in_flight_finish_and_closes_idle_connections() {
     let (mut busy, mut busy_read) = greeted(&socket);
     let run = RunReq {
         box_name: BoxName::parse_allow_bare(BOX).unwrap(),
-        ..req(&["sleep", "1"])
+        ..req(&["sh", "-c", "exit 7"])
     };
     let ask_run = ClientFrame::Request {
         id: "r".to_owned(),
@@ -192,12 +224,7 @@ fn a_drain_lets_a_run_in_flight_finish_and_closes_idle_connections() {
     let mut rest = String::new();
     idle_read.read_line(&mut rest).unwrap();
     assert_eq!(rest, "", "the idle connection was closed by the drain");
-    let reply = loop {
-        let next = frame(&mut busy_read);
-        if next["frame"] != "progress" && next["frame"] != "output" {
-            break next;
-        }
-    };
+    let reply = reply(&mut busy_read);
     assert_eq!(reply["frame"], "response", "{reply}");
     let last = store.last_run(id).unwrap().unwrap();
     assert_eq!(
