@@ -2357,6 +2357,7 @@ version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "syn 3.0.7",
+ "tempfile",
 ]
 
 [[package]]
@@ -2523,6 +2524,7 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "sha2 0.10.9",
+ "tempfile",
  "thiserror 2.0.21",
  "zeroize",
 ]

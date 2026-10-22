@@ -1,7 +1,7 @@
 //! Tests for the Box work probe; the script tests run the generated text under `sh` in a scratch repo.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Output};
 
 use super::{
@@ -95,14 +95,19 @@ fn parse_rejects_everything_else() {
 /// Scratch git repo, removed on drop.
 struct Repo {
     root: PathBuf,
+    _dir: tempfile::TempDir,
 }
 
 impl Repo {
     fn new(name: &str) -> Self {
-        let root = std::env::temp_dir().join(format!("moor-boxwork-{}-{name}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).unwrap();
-        let repo = Self { root };
+        let dir = tempfile::Builder::new()
+            .prefix(&format!("moor-boxwork-{name}-"))
+            .tempdir()
+            .unwrap();
+        let repo = Self {
+            root: dir.path().to_path_buf(),
+            _dir: dir,
+        };
         repo.git(&["init", "-q"]);
         repo
     }
@@ -150,12 +155,6 @@ impl Repo {
 
     fn result(&self) -> Option<BoxworkCounts> {
         parse_boxwork(&fs::read_to_string(self.root.join(BOXWORK_FILE)).ok()?)
-    }
-}
-
-impl Drop for Repo {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(Path::new(&self.root));
     }
 }
 

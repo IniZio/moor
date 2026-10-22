@@ -74,5 +74,4 @@ fn ssh_failure_exits_one_and_names_the_host() {
     let (code, text) = run_show(&dir, &ssh);
     assert_eq!(code, 1, "{text}");
     assert!(text.contains("remotehost"), "{text}");
-    let _ = std::fs::remove_dir_all(dir);
 }

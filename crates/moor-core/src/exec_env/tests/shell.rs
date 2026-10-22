@@ -4,24 +4,25 @@ use super::*;
 
 /// A fresh directory under the system temp dir, removed when dropped, with a fake tinyproxy whose
 /// start opens `port`.
-struct TempHome(std::path::PathBuf, moor_testkit::FakeEgress);
+struct TempHome(tempfile::TempDir, moor_testkit::FakeEgress);
 
 impl TempHome {
     fn new() -> Self {
-        static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!("moor-home-{}-{n}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let tmp = tempfile::Builder::new()
+            .prefix("moor-home-")
+            .tempdir()
+            .unwrap();
+        let dir = tmp.path().to_path_buf();
         std::fs::create_dir_all(dir.join("bin")).unwrap();
         let sudo = dir.join("bin/sudo");
         moor_testkit::write_executable(&sudo, "#!/bin/sh\nexit 1\n").unwrap();
         moor_testkit::write_host_guards(&dir.join("bin")).unwrap();
         let egress = moor_testkit::FakeEgress::start(&dir, &dir.join("bin")).unwrap();
-        Self(dir, egress)
+        Self(tmp, egress)
     }
 
     fn proxy_dir(&self) -> std::path::PathBuf {
-        self.0.join(".moor-proxy")
+        self.0.path().join(".moor-proxy")
     }
 
     /// The prelude lines that write the CA and build the bundle, run under `sh` with this `HOME`,
@@ -47,12 +48,12 @@ impl TempHome {
         script.push_str("\nprintf '%s' \"$moor_bundle\"");
         let path = format!(
             "{}:{}",
-            self.0.join("bin").display(),
+            self.0.path().join("bin").display(),
             std::env::var("PATH").unwrap_or_default()
         );
         std::process::Command::new("sh")
             .args(["-c", &script])
-            .env("HOME", &self.0)
+            .env("HOME", self.0.path())
             .env("PATH", path)
             .stdout(std::process::Stdio::piped())
             .spawn()
@@ -70,12 +71,12 @@ impl TempHome {
         let argv = wrap_argv(&got, argv);
         let path = format!(
             "{}:{}",
-            self.0.join("bin").display(),
+            self.0.path().join("bin").display(),
             std::env::var("PATH").unwrap_or_default()
         );
         std::process::Command::new(argv.first().unwrap())
             .args(argv.get(1..).unwrap())
-            .env("HOME", &self.0)
+            .env("HOME", self.0.path())
             .env("PATH", path)
             .output()
             .unwrap()
@@ -118,9 +119,10 @@ impl TempHome {
 
 impl Drop for TempHome {
     fn drop(&mut self) {
-        let _ =
-            std::fs::set_permissions(&self.0, std::os::unix::fs::PermissionsExt::from_mode(0o755));
-        let _ = std::fs::remove_dir_all(&self.0);
+        let _ = std::fs::set_permissions(
+            self.0.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+        );
     }
 }
 
@@ -188,7 +190,7 @@ fn an_unwritable_home_or_proxy_dir_stops_the_exec_before_the_command_and_names_t
             std::fs::create_dir(home.proxy_dir()).unwrap();
             home.proxy_dir()
         } else {
-            home.0.clone()
+            home.0.path().to_path_buf()
         };
         std::fs::set_permissions(&locked, std::os::unix::fs::PermissionsExt::from_mode(0o555))
             .unwrap();
@@ -238,7 +240,7 @@ fn a_directory_or_symlink_at_the_ca_or_bundle_stops_the_exec_and_is_left_alone()
         for plant in ["dir", "link to file", "link to dir"] {
             let home = TempHome::new();
             std::fs::create_dir_all(home.proxy_dir()).unwrap();
-            let outside = home.0.join("outside");
+            let outside = home.0.path().join("outside");
             let at = home.proxy_dir().join(name);
             match plant {
                 "dir" => std::fs::create_dir(&at).unwrap(),
@@ -281,7 +283,7 @@ fn a_bundle_that_cannot_be_written_stops_the_exec_before_the_command() {
 #[test]
 fn a_bundle_write_that_fails_part_way_stops_the_exec_and_leaves_no_temp_file() {
     let home = TempHome::new();
-    let cat = home.0.join("bin/cat");
+    let cat = home.0.path().join("bin/cat");
     moor_testkit::write_executable(&cat, "#!/bin/sh\nprintf partial\nexit 1\n").unwrap();
     assert_stopped_naming(&home, "ca-bundle.pem");
     assert_eq!(home.names(), ["ca.pem"]);
@@ -355,7 +357,7 @@ fn a_reader_never_sees_a_partial_ca_while_preludes_alternate_two_cas() {
 #[test]
 fn keytool_imports_the_ca_the_prelude_just_wrote() {
     let home = TempHome::new();
-    let keytool = home.0.join("bin/keytool");
+    let keytool = home.0.path().join("bin/keytool");
     moor_testkit::write_executable(
         &keytool,
         "#!/bin/sh\nwhile [ $# -gt 0 ]; do\n  case \"$1\" in\n    -file) cat \"$2\" > \"$HOME/imported.pem\";;\n    -keystore|-destkeystore) : >> \"$2\";;\n  esac\n  shift\ndone\n",
@@ -364,7 +366,7 @@ fn keytool_imports_the_ca_the_prelude_just_wrote() {
     let (code, stdout, stderr) = echo_in(&home);
     assert_eq!(code, Some(0), "{stdout}{stderr}");
     assert_eq!(
-        std::fs::read_to_string(home.0.join("imported.pem")).unwrap(),
+        std::fs::read_to_string(home.0.path().join("imported.pem")).unwrap(),
         PEM
     );
 }

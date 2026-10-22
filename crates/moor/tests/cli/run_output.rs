@@ -56,7 +56,7 @@ fn moor(socket: &Path, args: &[&str]) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_moor"));
     cmd.env_clear()
         .env("PATH", "/usr/bin:/bin")
-        .env("HOME", fresh_dir("run-out-home"))
+        .env("HOME", socket.parent().unwrap())
         .env("MOOR_CONTROLLER", socket)
         .args(args)
         .stdin(Stdio::null());
@@ -64,7 +64,7 @@ fn moor(socket: &Path, args: &[&str]) -> Command {
 }
 
 /// A fresh directory and the controller socket path inside it.
-fn socket() -> (PathBuf, PathBuf) {
+fn socket() -> (super::Dir, PathBuf) {
     let root = fresh_dir("run-out");
     let socket = root.join("c.sock");
     (root, socket)
@@ -76,7 +76,7 @@ fn send_output(text: &'static [u8]) -> impl FnOnce(&mut UnixStream, &str) + Send
 
 #[test]
 fn run_output_goes_to_stdout_and_the_command_status_is_the_exit_code() {
-    let (root, socket) = socket();
+    let (_root, socket) = socket();
     let server = serve_once(&socket, send_output(b"built\nwarning: x\n"));
     let out = moor(&socket, &["run", "foo", "--", "make", "test"])
         .output()
@@ -86,12 +86,11 @@ fn run_output_goes_to_stdout_and_the_command_status_is_the_exit_code() {
     assert_eq!(request["box"], "foo");
     assert_eq!(String::from_utf8_lossy(&out.stdout), "built\nwarning: x\n");
     assert_eq!(out.status.code(), Some(EXIT));
-    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
 fn json_run_prints_output_to_stderr_and_one_envelope_to_stdout() {
-    let (root, socket) = socket();
+    let (_root, socket) = socket();
     let server = serve_once(&socket, send_output(b"built\n"));
     let out = moor(&socket, &["--json", "run", "foo", "--", "make"])
         .output()
@@ -103,12 +102,11 @@ fn json_run_prints_output_to_stderr_and_one_envelope_to_stdout() {
     assert_eq!(envelope["value"]["exit"], EXIT);
     assert_eq!(String::from_utf8_lossy(&out.stderr), "built\n");
     assert_eq!(out.status.code(), Some(EXIT));
-    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
 fn an_interrupted_run_asks_the_controller_to_stop_and_exits_130() {
-    let (root, socket) = socket();
+    let (_root, socket) = socket();
     let listener = UnixListener::bind(&socket).unwrap();
     let (asked, request) = mpsc::channel();
     let server = thread::spawn(move || {
@@ -152,12 +150,11 @@ fn an_interrupted_run_asks_the_controller_to_stop_and_exits_130() {
     let status = child.wait().unwrap();
     assert!(server.join().unwrap(), "the client shut its sending side");
     assert_eq!(status.code(), Some(130), "{status:?}");
-    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
 fn a_second_interrupt_exits_130_before_the_controller_answers() {
-    let (root, socket) = socket();
+    let (_root, socket) = socket();
     let listener = UnixListener::bind(&socket).unwrap();
     let (progress, step) = mpsc::channel();
     let (release, hold) = mpsc::channel::<()>();
@@ -202,7 +199,6 @@ fn a_second_interrupt_exits_130_before_the_controller_answers() {
     let _ = release.send(());
     server.join().unwrap();
     assert_eq!(status.and_then(|s| s.code()), Some(130), "{status:?}");
-    let _ = std::fs::remove_dir_all(root);
 }
 
 /// Output large enough that a client holding it would show in its peak memory.
@@ -233,7 +229,7 @@ struct BeforeAnswer {
 
 #[test]
 fn large_run_output_streams_with_bounded_client_memory() {
-    let (root, socket) = socket();
+    let (_root, socket) = socket();
     let (pid_tx, pid_rx) = mpsc::channel::<u32>();
     let (printed_tx, printed_rx) = mpsc::channel::<()>();
     let (seen_tx, seen_rx) = mpsc::channel::<BeforeAnswer>();
@@ -292,5 +288,4 @@ fn large_run_output_streams_with_bounded_client_memory() {
     assert_eq!(child.wait().unwrap().code(), Some(EXIT));
     server.join().unwrap();
     assert_eq!(reader.join().unwrap(), (BIG, None));
-    let _ = std::fs::remove_dir_all(root);
 }

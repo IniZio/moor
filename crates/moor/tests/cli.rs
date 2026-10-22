@@ -27,9 +27,8 @@ mod user;
 mod via_controller;
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::Path;
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicU32, Ordering};
 
 use serde_json::Value;
 
@@ -43,15 +42,35 @@ struct Run {
     stderr: String,
 }
 
-/// Counter making temp dir names unique within this process.
-static SEQ: AtomicU32 = AtomicU32::new(0);
+/// A temp dir removed on drop that borrows as its path.
+struct Dir(tempfile::TempDir);
+
+impl std::ops::Deref for Dir {
+    type Target = Path;
+
+    fn deref(&self) -> &Path {
+        self.0.path()
+    }
+}
+
+impl AsRef<Path> for Dir {
+    fn as_ref(&self) -> &Path {
+        self.0.path()
+    }
+}
+
+impl AsRef<std::ffi::OsStr> for Dir {
+    fn as_ref(&self) -> &std::ffi::OsStr {
+        self.0.path().as_os_str()
+    }
+}
 
 /// Creates a fresh temp dir.
-fn fresh_dir(tag: &str) -> PathBuf {
-    let n = SEQ.fetch_add(1, Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!("moor-cli-{}-{tag}-{n}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+fn fresh_dir(tag: &str) -> Dir {
+    Dir(tempfile::Builder::new()
+        .prefix(&format!("moor-cli-{tag}-"))
+        .tempdir()
+        .unwrap())
 }
 
 /// Runs the binary hermetically with optional stdin.
@@ -85,8 +104,6 @@ fn run_with_config(args: &[&str], stdin: Option<&str>, config: Option<&str>) -> 
     }
     drop(pipe);
     let out = child.wait_with_output().unwrap();
-    let _ = std::fs::remove_dir_all(home);
-    let _ = std::fs::remove_dir_all(state);
     Run {
         code: out.status.code().unwrap(),
         stdout: String::from_utf8(out.stdout).unwrap(),

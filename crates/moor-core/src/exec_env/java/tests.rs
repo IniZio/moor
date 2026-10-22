@@ -15,12 +15,16 @@ const TOOLS: [&str; 10] = [
 /// A scratch directory with a `bin` holding only the tools the lines need.
 struct Scratch {
     root: PathBuf,
+    _dir: tempfile::TempDir,
 }
 
 impl Scratch {
     fn new(name: &str) -> Self {
-        let root = std::env::temp_dir().join(format!("moor-java-{}-{name}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
+        let dir = tempfile::Builder::new()
+            .prefix(&format!("moor-java-{name}-"))
+            .tempdir()
+            .unwrap();
+        let root = dir.path().to_path_buf();
         fs::create_dir_all(root.join("bin")).unwrap();
         fs::create_dir_all(root.join("home")).unwrap();
         for tool in TOOLS {
@@ -32,7 +36,7 @@ impl Scratch {
                 .unwrap();
             symlink(found, root.join("bin").join(tool)).unwrap();
         }
-        Self { root }
+        Self { root, _dir: dir }
     }
 
     fn home(&self) -> PathBuf {
@@ -89,12 +93,6 @@ impl Scratch {
             .filter_map(|l| l.split_once('='))
             .map(|(k, v)| (k.to_owned(), v.to_owned()))
             .collect()
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

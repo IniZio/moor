@@ -18,7 +18,7 @@ use super::fresh_dir;
 
 /// Holds the controller socket and the `web` front's socket across controller runs.
 struct Holder {
-    root: PathBuf,
+    root: super::Dir,
     config: PathBuf,
     socket: PathBuf,
     front: PathBuf,
@@ -113,12 +113,6 @@ impl Holder {
 
     fn stderr(&self) -> String {
         fs::read_to_string(self.root.join("stderr")).unwrap()
-    }
-}
-
-impl Drop for Holder {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

@@ -12,6 +12,7 @@ use super::fresh_dir;
 /// A running controller and the paths a client needs, torn down on drop.
 pub(crate) struct Daemon {
     pub(crate) root: PathBuf,
+    _dir: super::Dir,
     pub(crate) socket: PathBuf,
     child: Child,
 }
@@ -27,8 +28,9 @@ impl Daemon {
     }
 
     /// [`Self::start_with`] in `root`, so a client can be pointed at the socket first.
-    fn start_in(root: PathBuf, configure: impl FnOnce(&mut Command)) -> Self {
+    fn start_in(dir: super::Dir, configure: impl FnOnce(&mut Command)) -> Self {
         // Kept short: Unix socket paths are limited to about 104 bytes.
+        let root = dir.to_path_buf();
         let socket = root.join("c.sock");
         let config = root.join("c.yaml");
         std::fs::write(
@@ -54,6 +56,7 @@ impl Daemon {
         let child = cmd.spawn().unwrap();
         let this = Self {
             root,
+            _dir: dir,
             socket,
             child,
         };
@@ -72,7 +75,6 @@ impl Drop for Daemon {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
-        let _ = std::fs::remove_dir_all(&self.root);
     }
 }
 
@@ -181,7 +183,6 @@ fn unreachable_controller_fails_without_local_fallback() {
             .to_string();
         assert!(hints.contains("moor controller serve"), "{hints}");
     }
-    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]

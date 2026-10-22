@@ -89,7 +89,6 @@ fn a_cli_cp_sends_its_destination_absolute_against_the_callers_directory() {
     let sent = server.join().unwrap();
     assert_eq!(sent["cmd"], "cp", "{sent}");
     assert_eq!(sent["dest"], b.join("out/a.txt").display().to_string());
-    let _ = std::fs::remove_dir_all(&work);
 }
 
 #[test]
@@ -106,7 +105,6 @@ fn a_cli_start_sends_the_owner_and_name_of_its_callers_origin() {
         !sent.to_string().contains(&b.display().to_string()),
         "{sent}"
     );
-    let _ = std::fs::remove_dir_all(&work);
 }
 
 #[test]
@@ -117,5 +115,4 @@ fn a_cli_start_in_a_checkout_of_another_forge_is_refused_before_sending() {
     let reply = String::from_utf8_lossy(&out.stdout);
     assert!(reply.contains("not a github.com repo"), "{reply}");
     assert!(!reply.contains("tok3n"), "{reply}");
-    let _ = std::fs::remove_dir_all(&work);
 }

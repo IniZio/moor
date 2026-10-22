@@ -1,19 +1,20 @@
 //! Tests for the teardown script, run under `sh` in a scratch directory.
 
 use std::fs;
-use std::path::PathBuf;
 use std::process::Command;
 
 use super::teardown_script;
 
-struct Scratch(PathBuf);
+struct Scratch(tempfile::TempDir);
 
 impl Scratch {
     fn new(name: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!("moor-teardown-{}-{name}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        Self(dir)
+        Self(
+            tempfile::Builder::new()
+                .prefix(&format!("moor-teardown-{name}-"))
+                .tempdir()
+                .unwrap(),
+        )
     }
 
     fn run(&self, steps: &[&str]) -> Option<i32> {
@@ -21,7 +22,7 @@ impl Scratch {
         Command::new("sh")
             .arg("-c")
             .arg(teardown_script(&steps))
-            .current_dir(&self.0)
+            .current_dir(self.0.path())
             .output()
             .unwrap()
             .status
@@ -29,13 +30,7 @@ impl Scratch {
     }
 
     fn read(&self, rel: &str) -> String {
-        fs::read_to_string(self.0.join(rel)).unwrap_or_default()
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
+        fs::read_to_string(self.0.path().join(rel)).unwrap_or_default()
     }
 }
 
@@ -73,8 +68,8 @@ fn log_holds_announcements_output_and_the_failing_step() {
 #[test]
 fn setup_files_are_left_alone() {
     let s = Scratch::new("apart");
-    fs::create_dir_all(s.0.join(".moor")).unwrap();
-    fs::write(s.0.join(".moor/setup.log"), "kept").unwrap();
+    fs::create_dir_all(s.0.path().join(".moor")).unwrap();
+    fs::write(s.0.path().join(".moor/setup.log"), "kept").unwrap();
     s.run(&["true"]);
     assert_eq!(s.read(".moor/setup.log"), "kept");
 }

@@ -24,7 +24,7 @@ use moor_core::request::Request;
 use super::fresh_dir;
 
 struct Held {
-    root: PathBuf,
+    root: super::Dir,
     config: PathBuf,
     socket: PathBuf,
     state: PathBuf,
@@ -90,12 +90,6 @@ impl Held {
 
     fn stderr(&self) -> String {
         fs::read_to_string(self.root.join("stderr")).unwrap_or_default()
-    }
-}
-
-impl Drop for Held {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 
@@ -247,7 +241,6 @@ fn show_fails_within_a_second_when_the_socket_path_is_missing() {
             socket.display()
         )
     );
-    let _ = fs::remove_dir_all(&root);
 }
 
 #[test]
@@ -265,5 +258,4 @@ fn show_stops_redialing_a_stale_socket_after_about_five_seconds() {
         message.contains("not back after 5s") && message.contains("refused"),
         "{message}"
     );
-    let _ = fs::remove_dir_all(&root);
 }
