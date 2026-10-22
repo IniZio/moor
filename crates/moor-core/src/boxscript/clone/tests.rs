@@ -135,6 +135,25 @@ impl Remote {
         self.git(&b, &["rev-parse", "HEAD"])
     }
 
+    /// Writes what crabbox leaves in the workdir before any command runs.
+    fn crabbox_files(&self) {
+        let b = self.path("box");
+        std::fs::create_dir_all(b.join(".crabbox/env-x")).unwrap();
+        std::fs::write(b.join(".crabbox/env-x/values.sh"), "T=placeholder\n").unwrap();
+        std::fs::write(b.join(".crabbox/lease"), "x\n").unwrap();
+    }
+
+    /// Entries the clone script left under `.moor/` in the Box.
+    fn moor_dir(&self) -> Vec<String> {
+        std::fs::read_dir(self.path("box").join(".moor")).map_or_else(
+            |_| Vec::new(),
+            |d| {
+                d.map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+                    .collect()
+            },
+        )
+    }
+
     /// What a rerun must leave alone.
     fn state(&self) -> State {
         let b = self.path("box");
@@ -189,6 +208,46 @@ fn a_second_run_changes_nothing() {
 }
 
 #[test]
+fn a_workdir_holding_crabbox_files_is_cloned_and_they_stay_untracked() {
+    let r = Remote::new("crabbox");
+    r.crabbox_files();
+    assert_eq!(r.run(&r.base), 0);
+    let b = r.path("box");
+    let first = r.state();
+    assert_eq!(first.branch, BRANCH);
+    assert_eq!(first.head, r.base);
+    assert_eq!(first.status, "", ".crabbox/ is excluded");
+    r.git(&b, &["check-ignore", "-q", ".crabbox/env-x/values.sh"]);
+    assert_eq!(
+        std::fs::read_to_string(b.join(".crabbox/env-x/values.sh")).unwrap(),
+        "T=placeholder\n"
+    );
+    assert_eq!(r.moor_dir(), Vec::<String>::new(), "no temp dir is left");
+    assert_eq!(r.run(&r.base), 0);
+    assert_eq!(r.state(), first);
+}
+
+#[test]
+fn a_failed_clone_beside_crabbox_files_leaves_no_temp_dir() {
+    let r = Remote::new("cleanup");
+    r.crabbox_files();
+    let url = format!("file://{}", r.path("missing.git").display());
+    let out = r.run_with(&Checkout {
+        url: &url,
+        base: &r.base,
+        branch: BRANCH,
+    });
+    assert_eq!(
+        out.status.code().and_then(CloneStep::of_exit),
+        Some(CloneStep::Clone),
+        "{out:?}"
+    );
+    assert_eq!(r.moor_dir(), Vec::<String>::new());
+    assert!(!r.path("box").join(".git").exists());
+    assert_eq!(r.run(&r.base), 0, "a retry with the right URL clones");
+}
+
+#[test]
 fn a_branch_on_the_remote_is_checked_out_instead_of_the_base() {
     let r = Remote::new("branch");
     let tip = r.push_branch();
@@ -213,6 +272,7 @@ fn a_clone_stopped_before_its_checkout_carries_on() {
 #[test]
 fn a_rerun_after_head_left_the_box_branch_keeps_its_commits() {
     let r = Remote::new("kept");
+    r.crabbox_files();
     assert_eq!(r.run(&r.base), 0);
     let b = r.path("box");
     let agent = r.commit_in_box();

@@ -153,11 +153,10 @@ fn box_check(
         return Ok(BoxCheck::Skipped);
     };
     Ok(match probe(cx, row, b) {
-        BoxWork::Clean => BoxCheck::Clean,
+        BoxWork::Clean | BoxWork::NoCheckout => BoxCheck::Clean,
         BoxWork::Unsaved { ahead, dirty } => BoxCheck::Unsaved { ahead, dirty },
         BoxWork::Gone => BoxCheck::Skipped,
         BoxWork::Unknown(why) => BoxCheck::Unknown(why),
-        BoxWork::NoCheckout => BoxCheck::Unknown("the Box has no git checkout".into()),
     })
 }
 
@@ -222,10 +221,9 @@ fn cursor_warning(reason: &str) -> Warning {
 /// Refuses when the second probe found unsaved work or could not tell.
 fn recheck_verdict(row: &BoxRow, work: BoxWork) -> Result<(), CommandError> {
     let check = match work {
-        BoxWork::Clean | BoxWork::Gone => return Ok(()),
+        BoxWork::Clean | BoxWork::NoCheckout | BoxWork::Gone => return Ok(()),
         BoxWork::Unsaved { ahead, dirty } => BoxCheck::Unsaved { ahead, dirty },
         BoxWork::Unknown(why) => BoxCheck::Unknown(why),
-        BoxWork::NoCheckout => BoxCheck::Unknown("the Box has no git checkout".into()),
     };
     match close_gate(&facts(row, check), false) {
         Ok(_) => Ok(()),
