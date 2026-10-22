@@ -100,7 +100,7 @@ impl Ended {
 pub(super) fn follow(
     cx: &Cx,
     target: &Target,
-    workdir: &BoxPath,
+    workdir: Option<&BoxPath>,
     id: RunId,
     until: Ts,
     (from, out): (u64, &mut dyn Write),

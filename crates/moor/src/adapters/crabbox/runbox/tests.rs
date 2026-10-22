@@ -39,7 +39,7 @@ impl Lab {
 
     fn end(&self, run: i64) -> Result<RunEnd, DriverError> {
         let work = BoxPath::restore(self.work().to_str().unwrap()).unwrap();
-        self.cb.end_run(&handle(), run, &work)
+        self.cb.end_run(&handle(), run, Some(&work))
     }
 
     /// Every ssh call rode the master with pinning, no env value reached an argv, and crabbox

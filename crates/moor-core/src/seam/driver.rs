@@ -343,7 +343,8 @@ pub trait Driver: Send + Sync {
         Err(DriverError::Unsupported("detached runs"))
     }
 
-    /// Where run `run` stands; `workdir` is the Box workdir it was launched in.
+    /// Where run `run` stands; `workdir` is the Box workdir it was launched in, where the moved
+    /// marker is looked for, or `None` for the Box user's login directory.
     ///
     /// # Errors
     /// A [`DriverError`] when the Box cannot be asked.
@@ -351,7 +352,7 @@ pub trait Driver: Send + Sync {
         &self,
         handle: &BoxHandle,
         run: i64,
-        workdir: &BoxPath,
+        workdir: Option<&BoxPath>,
     ) -> Result<RunEnd, DriverError> {
         let _ = (handle, run, workdir);
         Err(DriverError::Unsupported("detached runs"))

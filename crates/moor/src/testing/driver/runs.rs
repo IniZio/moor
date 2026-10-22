@@ -1,8 +1,7 @@
 //! Detached-run half of the Driver fake: runs the Box's run scripts with the local `/bin/sh`.
 //!
 //! A test that signals a run's process group runs inside a pid namespace, whose pid 1 does not
-//! reap orphans: a killed run leader would stay a zombie there, and the scripts read a zombie as
-//! alive. So the fake makes this process the leader's reaper, as a Box's init is.
+//! reap orphans: a killed run leader stays a zombie there, and the scripts read it as alive.
 
 use std::io::{Read as _, Write};
 use std::path::{Path, PathBuf};
@@ -59,12 +58,30 @@ impl FakeDriver {
     /// Runs detached runs with the local `/bin/sh`: `home` stands for the Box's `HOME`, and
     /// every run starts in `workdir` whatever its spec's cwd. Without this they are unsupported.
     pub(crate) fn local_runs(self, home: &Path, workdir: &Path) -> Self {
-        rustix::process::set_child_subreaper(Some(rustix::process::getpid()))
-            .expect("this process reaps the run leaders");
         self.st().local = Some(LocalBox {
             home: home.to_path_buf(),
             workdir: workdir.to_path_buf(),
         });
+        self
+    }
+
+    /// [`Self::local_runs`] with the Box's `home` and `work` under `dir`, and guards in
+    /// `$HOME/bin` that refuse `sudo` and `apt-get`.
+    pub(crate) fn local_box(self, dir: &Path) -> Self {
+        let (home, work) = (dir.join("home"), dir.join("work"));
+        moor_testkit::write_host_guards(&home.join("bin")).expect("the Box home is writable");
+        std::fs::create_dir_all(&work).expect("the Box workdir is writable");
+        self.local_runs(&home, &work)
+    }
+
+    /// Every `launch_run` so far: handle and spec, in call order.
+    pub(crate) fn launches(&self) -> Vec<(BoxHandle, ExecSpec)> {
+        self.st().launches.clone()
+    }
+
+    /// The next `launch_run` fails once with `e`, starting nothing.
+    pub(crate) fn fail_launch(self, e: DriverError) -> Self {
+        self.st().fail_launch = Some(e);
         self
     }
 
@@ -87,7 +104,12 @@ impl FakeDriver {
         run: i64,
         spec: &ExecSpec,
     ) -> Result<Launched, DriverError> {
+        self.st().launches.push((h.clone(), spec.clone()));
         let b = self.local(format!("launch_run {} {run}", h.as_str()))?;
+        let fail = self.st().fail_launch.take();
+        if let Some(e) = fail {
+            return Err(e);
+        }
         let command: Vec<String> = spec.argv.iter().map(|a| quote(a)).collect();
         let out = b
             .sh(&launch_script(run, &command.join(" ")))
@@ -98,10 +120,7 @@ impl FakeDriver {
             Some(0) => String::from_utf8_lossy(&out.stdout)
                 .trim()
                 .parse()
-                .map(|pid| {
-                    reap(pid);
-                    Launched::Started { pid }
-                })
+                .map(|pid| Launched::Started { pid })
                 .map_err(|_| failed("the launch printed no pid")),
             Some(REFUSED) => Ok(Launched::AlreadyLaunched),
             _ => Err(failed(&String::from_utf8_lossy(&out.stderr))),
@@ -169,19 +188,6 @@ impl FakeDriver {
             _ => Err(failed(&String::from_utf8_lossy(&out.stderr))),
         }
     }
-}
-
-/// Reaps run leader `pid` once it exits; it is this process's child once its launcher exits.
-fn reap(pid: u32) {
-    let Some(pid) = i32::try_from(pid)
-        .ok()
-        .and_then(rustix::process::Pid::from_raw)
-    else {
-        return;
-    };
-    std::thread::spawn(move || {
-        let _ = rustix::process::waitpid(Some(pid), rustix::process::WaitOptions::empty());
-    });
 }
 
 fn failed(summary: &str) -> DriverError {

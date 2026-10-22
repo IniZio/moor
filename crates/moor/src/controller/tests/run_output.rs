@@ -1,15 +1,12 @@
 //! A `run` through the controller socket: the client gets the command's output while it
 //! runs, then the command's exit status.
-use std::io::{BufReader, Write};
+use std::io::BufReader;
 use std::os::unix::net::UnixListener;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
-use moor_core::seam::driver::ExecOutcome;
 use moor_core::{Request, Response};
 
 use super::super::conn::serve;
@@ -24,23 +21,9 @@ use crate::Moor;
 
 const WAIT: Duration = Duration::from_secs(10);
 
-/// Appends `text` to `log` once the command has written it, after `release` fires.
-fn hold_then_append(log: PathBuf, release: Receiver<()>, text: &'static str) -> impl Fn() {
-    let release = Mutex::new(release);
-    let once = AtomicBool::new(false);
-    move || {
-        if !log.exists() || once.swap(true, Ordering::SeqCst) {
-            return;
-        }
-        release
-            .lock()
-            .unwrap()
-            .recv_timeout(WAIT)
-            .expect("the test released the command");
-        let mut file = std::fs::OpenOptions::new().append(true).open(&log).unwrap();
-        file.write_all(text.as_bytes()).unwrap();
-    }
-}
+/// Prints `first`, waits in the Box until `$HOME/release` exists, prints `second`, exits 3.
+const COMMAND: &str =
+    r#"echo first; until [ -e "$HOME/release" ]; do sleep 0.1; done; echo second; exit 3"#;
 
 /// Collects pieces from `got` until they spell `want`.
 fn expect_output(got: &Receiver<Vec<u8>>, want: &str) {
@@ -54,15 +37,9 @@ fn expect_output(got: &Receiver<Vec<u8>>, want: &str) {
 
 #[test]
 fn run_output_reaches_the_client_while_the_command_runs() {
-    let f = ready_with(
-        FakeDriver::new()
-            .exec_results([Ok(ExecOutcome::Exited { code: 3 })])
-            .exec_stdout(["first\n"]),
-    );
-    let (release, held) = mpsc::channel();
+    let f = ready_with(FakeDriver::new());
     let log = f.dir.path().join("runs").join("1.log");
-    f.driver
-        .after_exec(hold_then_append(log.clone(), held, "second\n"));
+    let release = f.box_dir.path().join("home/release");
     let sock = f.dir.path().join("c.sock");
     let listener = UnixListener::bind(&sock).unwrap();
     let cx = Mutex::new(Some(f.cx));
@@ -91,13 +68,13 @@ fn run_output_reaches_the_client_while_the_command_runs() {
         call(
             &Env::default(),
             &Target::Socket(sock),
-            &Request::Run(req(&["make", "test"])),
+            &Request::Run(req(&[COMMAND])),
             |_| {},
             |data| piece.send(data.to_vec()).unwrap(),
         )
     });
     expect_output(&got, "first\n");
-    release.send(()).unwrap();
+    std::fs::write(&release, "").unwrap();
     expect_output(&got, "second\n");
     let response = client.join().unwrap().unwrap();
     assert_eq!(render(&response, &GlobalOpts::default()).code, 3);

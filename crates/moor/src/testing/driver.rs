@@ -64,6 +64,8 @@ struct State {
     sleep_kind: Option<SleepKind>,
     local: Option<runs::LocalBox>,
     cut_follow: Option<u64>,
+    launches: Vec<(BoxHandle, ExecSpec)>,
+    fail_launch: Option<DriverError>,
 }
 
 /// One `copy_out` call: handle, source and destination.
@@ -347,7 +349,7 @@ impl Driver for FakeDriver {
         self.local_follow(h, run, from, out)
     }
 
-    fn end_run(&self, h: &BoxHandle, run: i64, _: &BoxPath) -> Result<RunEnd, DriverError> {
+    fn end_run(&self, h: &BoxHandle, run: i64, _: Option<&BoxPath>) -> Result<RunEnd, DriverError> {
         self.local_end(h, run)
     }
 

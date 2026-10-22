@@ -52,7 +52,7 @@ impl Local {
 
     fn end(&self, run: i64) -> Result<RunEnd, DriverError> {
         let work = BoxPath::restore("/work/cbx_1/repo").unwrap();
-        self.driver.end_run(&h(), run, &work)
+        self.driver.end_run(&h(), run, Some(&work))
     }
 }
 

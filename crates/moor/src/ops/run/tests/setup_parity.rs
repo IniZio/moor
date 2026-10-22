@@ -59,7 +59,7 @@ fn run_of_a_setup_line_has_the_env_and_cwd_setup_has() {
     let f = with_env_yaml();
     let setup = setup_spec(&f);
     run(&f.cx, &req(&["make deps"])).unwrap();
-    let (_, spec, _) = f.driver.execs().remove(1);
+    let (_, spec) = f.driver.launches().remove(0);
     assert_eq!(command(&spec.argv), shell_argv("make deps"));
     assert_eq!(repo_vars(&spec), [("A", "1"), ("B", "2")]);
     assert_eq!(spec.env, setup.env);
@@ -76,7 +76,7 @@ fn recorded_run_has_the_repo_env_too() {
     let mut r = req(&["true"]);
     r.record = Some("ci".into());
     run(&f.cx, &r).unwrap();
-    let (_, spec, _) = f.driver.execs().remove(1);
+    let (_, spec) = f.driver.launches().remove(0);
     assert_eq!(repo_vars(&spec), [("A", "1"), ("B", "2")]);
 }
 
@@ -91,6 +91,6 @@ fn box_without_a_recorded_workdir_keeps_the_driver_default_cwd() {
         }))
         .unwrap();
     run(&f.cx, &req(&["true"])).unwrap();
-    let (_, spec, _) = f.driver.execs().remove(0);
+    let (_, spec) = f.driver.launches().remove(0);
     assert_eq!(spec.cwd, None);
 }

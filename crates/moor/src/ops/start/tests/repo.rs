@@ -205,7 +205,10 @@ fn walk(dir: &std::path::Path) -> String {
 
 #[test]
 fn a_start_a_run_and_a_close_spawn_no_host_git() {
-    let (w, _) = started();
+    let box_dir = tempfile::tempdir().unwrap();
+    let w = world(FakeDriver::new().local_box(box_dir.path()));
+    script_base_yaml(&w, Some(YAML));
+    run(&w.cx, &repo_req("demo")).unwrap();
     let name = repo_req("demo").name;
     let ran = RunReq {
         box_name: name.clone(),

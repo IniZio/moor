@@ -25,7 +25,7 @@ use crate::adapters::clock::SystemClock;
 use crate::ops::run_fixture::req;
 use crate::proxy::supervisor::LEASE;
 use crate::store::{Fenced, Lease, ReadyProc, Reserve, Store, EGRESS_PORT_MAX, EGRESS_PORT_MIN};
-use crate::testing::rng::FakeRng;
+use crate::testing::driver::live_in_group;
 
 /// Polls of [`POLL`] a test waits before it gives up, 10 s in all.
 const POLLS: u32 = 500;
@@ -41,14 +41,24 @@ const FAKE_CRABBOX: &str = "#!/bin/sh\n\
     *) exit 1 ;;\n\
     esac\n";
 
-/// An ssh that answers `ssh -G` as crabbox's pinned words do; a Box command marks `started`
-/// beside itself and then outlasts the test, and any other remote command runs on this host with
-/// the host guards of `bin` beside it first on the `PATH` it exports, as sshd exports one.
+/// An ssh that answers `ssh -G` as crabbox's pinned words do and runs every remote command on
+/// this host, as the Box: its `HOME` is the directory beside it, and the host guards of `bin`
+/// beside it come first on the `PATH` it exports, as sshd exports one.
 const FAKE_SSH: &str = "#!/bin/sh\n\
     export PATH=\"$(dirname \"$0\")/bin:/usr/bin:/bin\"\n\
+    export HOME=\"$(dirname \"$0\")\"\n\
     test \"$1\" = -G && { echo 'stricthostkeychecking true'; echo 'userknownhostsfile /k'; exit; }\n\
-    case \"$*\" in *gate-*) touch \"$(dirname \"$0\")/started\"; exec sleep 60 ;; esac\n\
     for last; do :; done\nexec sh -c \"$last\"\n";
+
+/// The pid of the leader of run 1's process group in the Box whose `HOME` is `home`, once
+/// it has started.
+fn run_leader(home: &Path) -> Option<u32> {
+    let pid = home.join(".moor/runs/1/pid");
+    if !within_wait(|| pid.exists()) {
+        return None;
+    }
+    std::fs::read_to_string(pid).ok()?.trim().parse().ok()
+}
 
 /// A client process holding the only end of a connection that asked for `request`.
 fn client_process(socket: &Path, request: &Request) -> std::process::Child {
@@ -112,7 +122,6 @@ fn a_run_whose_client_is_killed_is_cancelled_and_recorded_interrupted() {
     moor_testkit::write_executable(&crabbox, FAKE_CRABBOX).unwrap();
     let ssh = dir.path().join("ssh");
     moor_testkit::write_executable(&ssh, FAKE_SSH).unwrap();
-    moor_testkit::write_host_guards(&dir.path().join("bin")).unwrap();
     let served = Served::start_in(
         dir,
         &[
@@ -130,10 +139,9 @@ fn a_run_whose_client_is_killed_is_cancelled_and_recorded_interrupted() {
         box_name: BoxName::parse_allow_bare(BOX).unwrap(),
         ..req(&["sleep", "600"])
     };
-    proxy_ready(&store, id, &FakeRng::default());
+    let _egress = fake_egress(served.dir.path(), &store, id);
     let mut client = client_process(&served.main, &Request::Run(run));
-    let started = served.dir.path().join("started");
-    assert!(within_wait(|| started.exists()), "the command started");
+    let pid = run_leader(served.dir.path()).expect("the command started in the Box");
     client.kill().unwrap();
     client.wait().unwrap();
     let interrupted = within_wait(|| {
@@ -146,19 +154,16 @@ fn a_run_whose_client_is_killed_is_cancelled_and_recorded_interrupted() {
         interrupted,
         "the run was cancelled and recorded interrupted"
     );
+    let cancelled = served.dir.path().join(".moor/runs/1/cancelled");
+    assert!(cancelled.exists(), "the run was cancelled in the Box");
+    assert!(
+        within_wait(|| live_in_group(pid) == 0),
+        "the run's group in the Box is gone"
+    );
 }
 
-/// [`FAKE_SSH`] whose Box command marks `started` and outlasts the start of a drain before it
-/// runs on this host, with a home beside itself for the Proxy CA.
-const SLOW_SSH: &str = "#!/bin/sh\n\
-    export PATH=\"$(dirname \"$0\")/bin:/usr/bin:/bin\"\n\
-    export HOME=\"$(dirname \"$0\")\"\n\
-    test \"$1\" = -G && { echo 'stricthostkeychecking true'; echo 'userknownhostsfile /k'; exit; }\n\
-    case \"$*\" in *gate-*) touch \"$(dirname \"$0\")/started\"; sleep 1 ;; esac\n\
-    for last; do :; done\nexec sh -c \"$last\"\n";
-
 /// The fake egress proxy on a port no other suite on this host holds, which the store reserves for
-/// `id`, with the host guards beside it in the `bin` that [`SLOW_SSH`] puts first on the Box `PATH`.
+/// `id`, with the host guards beside it in the `bin` that [`FAKE_SSH`] puts first on the Box `PATH`.
 fn fake_egress(dir: &Path, store: &Store, id: BoxId) -> moor_testkit::FakeEgress {
     moor_testkit::write_host_guards(&dir.join("bin")).unwrap();
     let egress = moor_testkit::FakeEgress::start_in(
@@ -208,7 +213,7 @@ fn a_drain_lets_a_run_in_flight_finish_and_closes_idle_connections() {
     let dir = tempfile::tempdir().unwrap();
     let (crabbox, ssh) = (dir.path().join("crabbox"), dir.path().join("ssh"));
     moor_testkit::write_executable(&crabbox, FAKE_CRABBOX).unwrap();
-    moor_testkit::write_executable(&ssh, SLOW_SSH).unwrap();
+    moor_testkit::write_executable(&ssh, FAKE_SSH).unwrap();
     let env = super::env_with(
         dir.path(),
         &[
@@ -235,15 +240,14 @@ fn a_drain_lets_a_run_in_flight_finish_and_closes_idle_connections() {
     let (mut busy, mut busy_read) = greeted(&socket);
     let run = RunReq {
         box_name: BoxName::parse_allow_bare(BOX).unwrap(),
-        ..req(&["sh", "-c", "exit 7"])
+        ..req(&["sleep 1; exit 7"])
     };
     let ask_run = ClientFrame::Request {
         id: "r".to_owned(),
         request: Box::new(Request::Run(run)),
     };
     busy.write_all(ask_run.to_line().as_bytes()).unwrap();
-    let started = dir.path().join("started");
-    assert!(within_wait(|| started.exists()), "the command started");
+    assert!(run_leader(dir.path()).is_some(), "the command started");
     signal.write_all(b"x").unwrap();
     let ended = frame(&mut idle_read);
     assert_eq!(ended["kind"], "restarting", "{ended}");

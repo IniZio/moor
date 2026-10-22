@@ -330,9 +330,9 @@ impl Driver for Crabbox {
         runbox::follow(self, handle, run, from, out, deadline)
     }
 
-    fn end_run(&self, h: &BoxHandle, run: i64, workdir: &BoxPath) -> Result<RunEnd, DriverError> {
+    fn end_run(&self, h: &BoxHandle, run: i64, w: Option<&BoxPath>) -> Result<RunEnd, DriverError> {
         self.require_version()?;
-        runbox::end(self, h, run, workdir)
+        runbox::end(self, h, run, w)
     }
 
     fn cancel_run(&self, h: &BoxHandle, run: i64, grace: u32) -> Result<Cancelled, DriverError> {

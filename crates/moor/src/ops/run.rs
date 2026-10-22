@@ -114,17 +114,8 @@ fn launch(
         sha: sha.clone(),
         pid: std::process::id(),
     })?;
-    if let Err(e) = mark_working(store, row) {
-        finish(store, id, None);
-        return Err(e);
-    }
-    let (output, log) = match output(cx, req, id) {
-        Ok(got) => got,
-        Err(e) => {
-            finish(store, id, None);
-            return Err(e);
-        }
-    };
+    mark_working(store, row).inspect_err(|_| finish(store, id, None))?;
+    let (output, log) = output(cx, req, id).inspect_err(|_| finish(store, id, None))?;
     let exec = box_env(cx, row, target, &cfg)
         .inspect_err(|e| finish(store, id, Some(e.error.to_string())))?;
     let spec = ExecSpec {
@@ -133,10 +124,17 @@ fn launch(
         cwd: exec.cwd(),
         output: None,
     };
-    let (workdir, until) = start(cx, store, target, id, &spec, exec.deadline())
-        .inspect_err(|e| finish(store, id, Some(e.error.to_string())))?;
+    let (workdir, until) = start(
+        cx,
+        store,
+        target,
+        (id, sha.is_some()),
+        &spec,
+        exec.deadline(),
+    )
+    .inspect_err(|e| finish(store, id, Some(e.error.to_string())))?;
     let followed = follow::during(Some(&output), sink, || {
-        follow_into(cx, target, &workdir, id, until, &output)
+        follow_into(cx, target, workdir.as_ref(), id, until, &output)
     })
     .inspect_err(|e| finish(store, id, Some(e.error.to_string())))?;
     let (exit, interrupted) = followed.exit();
@@ -161,18 +159,22 @@ fn launch(
     })
 }
 
-/// Starts run `id` detached in the Box and records its Box pid; returns the Box workdir the run
-/// reports its end in, and when its deadline passes.
+/// Starts run `id` detached in the Box and records its Box pid. Returns the Box workdir its end
+/// looks for the moved marker in, which a record run must know, and when its deadline passes.
 fn start(
     cx: &Cx,
     store: &Store,
     target: &ready::Target,
-    id: RunId,
+    (id, record): (RunId, bool),
     spec: &ExecSpec,
     deadline: Deadline,
-) -> Result<(BoxPath, Ts), CommandError> {
+) -> Result<(Option<BoxPath>, Ts), CommandError> {
     let failed = |m: String| CommandError::new(ErrorKind::Failed, m);
-    let workdir = record::workdir(cx, target).map_err(failed)?;
+    let workdir = if record {
+        Some(record::workdir(cx, target).map_err(failed)?)
+    } else {
+        target.workdir.clone()
+    };
     let started = store
         .run(id)?
         .ok_or_else(|| failed(format!("run {} has no row", id.get())))?
@@ -190,11 +192,12 @@ fn start(
     Ok((workdir, started.saturating_add(deadline.0)))
 }
 
-/// Follows run `id` into the host side of `output` until it ends.
+/// Follows run `id` into the host side of `output` until it ends; `workdir` is where its end
+/// looks for the moved marker.
 fn follow_into(
     cx: &Cx,
     target: &ready::Target,
-    workdir: &BoxPath,
+    workdir: Option<&BoxPath>,
     id: RunId,
     until: Ts,
     output: &Output,
