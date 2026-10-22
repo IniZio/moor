@@ -3,6 +3,7 @@
 pub mod attach;
 mod conn;
 mod drain;
+pub mod front_shim;
 mod fronts;
 mod hangup;
 mod inherit;
@@ -14,6 +15,7 @@ mod watch;
 
 pub use local::watch_local;
 
+use std::ffi::OsString;
 use std::fs::{self, File, TryLockError};
 use std::io::{BufReader, Write};
 use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
@@ -67,7 +69,8 @@ pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u
     for line in Moor::reconcile_proxies(&running.env) {
         log(&sink, &format!("proxy: {line}"));
     }
-    let _fronts = running.supervise_fronts(&sink);
+    let shim = std::env::current_exe().map_or_else(|_| "/proc/self/exe".into(), OsString::from);
+    let _fronts = running.supervise_fronts((shim, vec!["front-shim".into()]), &sink);
     let drain = Arc::new(Drain::default());
     settle::spawn(&running.env, running.settle_every, &drain, &sink);
     running.serve_until(&wake, &drain, &sink);
@@ -264,9 +267,20 @@ fn bind(socket: &Path) -> std::io::Result<UnixListener> {
 }
 
 impl Running {
-    /// Starts the fronts that have a command; dropping the result stops them.
-    fn supervise_fronts(&mut self, sink: &Sink) -> fronts::Supervised {
-        fronts::supervise(std::mem::take(&mut self.commands), sink)
+    /// Starts the fronts that have a command under the shim `program`; dropping the result
+    /// stops them.
+    fn supervise_fronts(
+        &mut self,
+        program: (OsString, Vec<OsString>),
+        sink: &Sink,
+    ) -> fronts::Supervised {
+        let shim = fronts::Shim::new(
+            program,
+            self.env.state_dir().as_deref(),
+            &self.socket,
+            self.env.vault_key(),
+        );
+        fronts::supervise(std::mem::take(&mut self.commands), shim, sink)
     }
 
     /// Serves the controller socket and each front socket until `wake` turns readable, then

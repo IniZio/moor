@@ -193,7 +193,22 @@ gets an `O_PATH` file descriptor to its own socket as fd 3, and
 `MOOR_FRONT_SOCKET=/proc/self/fd/3` names it, so the front connects to that
 path. The front's stdin is empty and its stdout is the controller's. Each
 line it writes to stderr goes to the controller log as `front <namespace>:
-<line>`. While it runs, `<state dir>/fronts/<namespace>.pid` holds its pid on
+<line>`.
+
+Each front runs under `moor front-shim`, in its own user, mount and PID
+namespaces, with the controller's uid and gid and no capabilities. There the
+state dir is an empty read-only tmpfs, the controller socket and the vault key
+read as `/dev/null`, and `/proc` shows only the front's own processes, so fd 3
+is the front's only way to the controller. The shim is pid 1 of that
+namespace: it reaps orphans, passes SIGTERM and SIGINT to the front, and exits
+with the front's status. If the controller's shim dies, the kernel kills every
+process in the namespace. Fronts need unprivileged user namespaces. When the
+host forbids them (`kernel.unprivileged_userns_clone=0`,
+`user.max_user_namespaces=0`, or `kernel.apparmor_restrict_unprivileged_userns=1`),
+the controller logs `fronts not started` with the reason, starts none, and
+keeps serving.
+
+While a front runs, `<state dir>/fronts/<namespace>.pid` holds the shim's pid on
 the first line and its start time from `/proc/<pid>/stat` on the second. When
 the front exits, the controller starts it again after 0.5 s. The wait doubles
 each time, up to 30 s, and goes back to 0.5 s after a run that lasted 60 s.

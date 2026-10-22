@@ -12,10 +12,29 @@ use moor::moor_core::controller::WatchFilter;
 use moor::moor_core::{Request, Response};
 use moor::Moor;
 
+/// Runs `moor front-shim`, the controller's wrapper around each front; not a user command.
+fn front_shim(args: &[std::ffi::OsString]) -> Option<ExitCode> {
+    let [_, verb, args @ ..] = args else {
+        return None;
+    };
+    (verb == "front-shim").then(|| {
+        ExitCode::from(
+            moor::controller::front_shim::main(args).unwrap_or_else(|e| {
+                let _ = writeln!(std::io::stderr(), "front-shim: {e}");
+                125
+            }),
+        )
+    })
+}
+
 /// Parse argv, run the request, print the rendered output, return its exit code.
 fn main() -> ExitCode {
+    let args = Env::args();
+    if let Some(code) = front_shim(&args) {
+        return code;
+    }
     let env = Env::capture();
-    let output = match cli::parse(Env::args()) {
+    let output = match cli::parse(args) {
         Parsed::Done(out) => out,
         Parsed::Request(inv) => run(env, inv),
         Parsed::CallStdin(opts) => run_call(env, opts),

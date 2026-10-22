@@ -4,6 +4,7 @@
     reason = "tests wait on real child processes with deadlines"
 )]
 
+use std::ffi::OsString;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -31,6 +32,19 @@ for line in s.makefile():
 time.sleep(600)
 "#;
 
+/// Stands in for `moor front-shim` without namespaces: runs the command after `--`.
+static PASS_THROUGH_SHIM: std::sync::LazyLock<(OsString, Vec<OsString>)> =
+    std::sync::LazyLock::new(|| {
+        let script = r#"case "$1" in --check) exit 0;; esac
+while [ "$1" != -- ]; do shift; done
+shift
+exec "$@""#;
+        (
+            "sh".into(),
+            vec!["-c".into(), script.into(), "front-shim".into()],
+        )
+    });
+
 /// A served controller whose `web` front runs [`FAKE_FRONT`] and whose `slack` front has no
 /// command. Dropping it stops the fronts before the state dir goes.
 struct Fronts {
@@ -52,7 +66,7 @@ impl Fronts {
         let mut running = start(&env(dir.path()), &cfg).expect("start");
         let log = Buf::default();
         let sink: Sink = Arc::new(Mutex::new(log.clone()));
-        let supervised = Some(running.supervise_fronts(&sink));
+        let supervised = Some(running.supervise_fronts(PASS_THROUGH_SHIM.clone(), &sink));
         running.serve_in_background(sink);
         Self {
             supervised,

@@ -22,7 +22,14 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 thiserror = "2"
 webpki-roots = "1"
 time = { version = "0.3", features = ["formatting", "parsing"] }
-rustix = { version = "1", features = ["event", "fs", "net", "process"] }
+rustix = { version = "1", features = [
+  "event",
+  "fs",
+  "mount",
+  "net",
+  "process",
+  "thread",
+] }
 zeroize = "1"
 age = { version = "0.12", default-features = false }
 sha2 = "0.10"
@@ -43,7 +50,7 @@ rustls = { version = "0.23", default-features = false, features = [
 ] }
 nono-proxy = { version = "=0.80.0", default-features = false }
 nono = { version = "=0.80.0", default-features = false }
-nix = { version = "0.31", default-features = false }
+nix = { version = "0.31", default-features = false, features = ["sched"] }
 tokio = { version = "1", default-features = false, features = [
   "rt-multi-thread",
 ] }
