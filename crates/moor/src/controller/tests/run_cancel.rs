@@ -14,6 +14,7 @@ use std::thread;
 use std::time::Duration;
 
 use moor_core::controller::{ClientFrame, PROTOCOL};
+use moor_core::seam::rng::Rng;
 use moor_core::user::UserId;
 use moor_core::{BoxId, BoxName, Request, RunReq};
 use serde_json::json;
@@ -23,7 +24,7 @@ use super::host_paths::{ready_box, BOX};
 use crate::adapters::clock::SystemClock;
 use crate::ops::run_fixture::req;
 use crate::proxy::supervisor::LEASE;
-use crate::store::{Fenced, Lease, ReadyProc, Reserve, Store};
+use crate::store::{Fenced, Lease, ReadyProc, Reserve, Store, EGRESS_PORT_MAX, EGRESS_PORT_MIN};
 use crate::testing::rng::FakeRng;
 
 /// Polls of [`POLL`] a test waits before it gives up, 10 s in all.
@@ -68,9 +69,18 @@ fn client_process(socket: &Path, request: &Request) -> std::process::Child {
     holder.spawn().unwrap()
 }
 
+/// An [`Rng`] that always draws `0`: the store takes the port at that offset of each range.
+struct Draw(u32);
+
+impl Rng for Draw {
+    fn u32(&self) -> u32 {
+        self.0
+    }
+}
+
 /// Records a ready Proxy for Box `id` whose supervisor holds a fresh lease, so a run reuses it.
-fn proxy_ready(store: &Store, id: BoxId) {
-    let reserved = store.reserve(id, &FakeRng::default(), LEASE).unwrap();
+fn proxy_ready(store: &Store, id: BoxId, rng: &dyn Rng) {
+    let reserved = store.reserve(id, rng, LEASE).unwrap();
     assert!(matches!(reserved, Reserve::Reserved(_)), "{reserved:?}");
     assert_eq!(
         store.claim_lease(id, "test", LEASE).unwrap(),
@@ -120,7 +130,7 @@ fn a_run_whose_client_is_killed_is_cancelled_and_recorded_interrupted() {
         box_name: BoxName::parse_allow_bare(BOX).unwrap(),
         ..req(&["sleep", "600"])
     };
-    proxy_ready(&store, id);
+    proxy_ready(&store, id, &FakeRng::default());
     let mut client = client_process(&served.main, &Request::Run(run));
     let started = served.dir.path().join("started");
     assert!(within_wait(|| started.exists()), "the command started");
@@ -147,12 +157,18 @@ const SLOW_SSH: &str = "#!/bin/sh\n\
     case \"$*\" in *gate-*) touch \"$(dirname \"$0\")/started\"; sleep 1 ;; esac\n\
     for last; do :; done\nexec sh -c \"$last\"\n";
 
-/// The fake egress proxy on the port the store reserved for `id`, with the host guards beside it
-/// in the `bin` that [`SLOW_SSH`] puts first on the Box `PATH`.
+/// The fake egress proxy on a port no other suite on this host holds, which the store reserves for
+/// `id`, with the host guards beside it in the `bin` that [`SLOW_SSH`] puts first on the Box `PATH`.
 fn fake_egress(dir: &Path, store: &Store, id: BoxId) -> moor_testkit::FakeEgress {
-    let port = store.proxy(id).unwrap().unwrap().egress_port;
     moor_testkit::write_host_guards(&dir.join("bin")).unwrap();
-    moor_testkit::FakeEgress::start_on(dir, &dir.join("bin"), port).unwrap()
+    let egress = moor_testkit::FakeEgress::start_in(
+        dir,
+        &dir.join("bin"),
+        EGRESS_PORT_MIN..=EGRESS_PORT_MAX,
+    )
+    .unwrap();
+    proxy_ready(store, id, &Draw(u32::from(egress.port() - EGRESS_PORT_MIN)));
+    egress
 }
 
 /// A connection to `socket` that has said hello.
@@ -214,7 +230,6 @@ fn a_drain_lets_a_run_in_flight_finish_and_closes_idle_connections() {
         .as_i64()
         .unwrap();
     let id = ready_box(&store, UserId::new(operator));
-    proxy_ready(&store, id);
     let _egress = fake_egress(dir.path(), &store, id);
     let (_idle, mut idle_read) = greeted(&socket);
     let (mut busy, mut busy_read) = greeted(&socket);
