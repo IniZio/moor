@@ -1,6 +1,6 @@
 //! The Box exec environment of the ops: the Proxy and the environment for one exec.
 
-use moor_core::config::proxy::{check_direct, ResolvedRule, GITHUB_SECRET};
+use moor_core::config::proxy::{ResolvedRule, GITHUB_SECRET};
 use moor_core::config::BoxSettings;
 use moor_core::exec_env::{self, BoxCtx, ExecEnv, ProxyCtx, Purpose, RUN_DEADLINE};
 use moor_core::seam::agent_profile::ProxyAddr;
@@ -54,16 +54,6 @@ pub(crate) fn proxy(
         user,
         vault_key: vault_key.to_path_buf(),
     };
-    check_direct(
-        &cfg.direct,
-        "proxy.direct",
-        &spec
-            .rules
-            .iter()
-            .flat_map(|r| r.hosts.iter().map(String::as_str))
-            .collect::<Vec<_>>(),
-    )
-    .map_err(|e| e.to_string())?;
     let rule_env = box_env(&spec.rules);
     let forge = forge_routed(&spec.rules);
     let ep = cx.proxy_host().ensure(&spec).map_err(|e| e.to_string())?;
@@ -72,7 +62,6 @@ pub(crate) fn proxy(
         ca_pem: ep.ca_pem,
         box_env: exec_env::merged_env(repo_env, rule_env.clone()),
         forge,
-        direct: cfg.direct.clone(),
     };
     Ok(BoxProxy { addr, rule_env })
 }
@@ -128,7 +117,6 @@ pub(crate) fn prepare(
         proxy: proxy.map(|p| ProxyCtx {
             box_port: p.addr.box_port,
             ca_pem: &p.addr.ca_pem,
-            direct: &p.addr.direct,
         }),
         workdir: site.workdir,
         strip: &strip,

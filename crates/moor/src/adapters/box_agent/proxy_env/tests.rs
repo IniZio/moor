@@ -18,7 +18,6 @@ fn proxy() -> ProxyAddr {
         ca_pem: CA.to_owned(),
         box_env: Vec::new(),
         forge: false,
-        direct: Vec::new(),
     }
 }
 
@@ -47,7 +46,6 @@ fn the_agent_gets_the_same_box_environment_as_run() {
             proxy: Some(ProxyCtx {
                 box_port: PORT,
                 ca_pem: &p.ca_pem,
-                direct: &[],
             }),
             workdir: Some(&w),
         },

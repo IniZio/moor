@@ -28,7 +28,6 @@ pub(super) fn exec_env(
             proxy: proxy.map(|p| ProxyCtx {
                 box_port: p.box_port,
                 ca_pem: &p.ca_pem,
-                direct: &p.direct,
             }),
             workdir: Some(workdir),
         },
@@ -46,7 +45,6 @@ pub(super) fn script_lines(proxy: &ProxyAddr, env: &[EnvVar]) -> Result<Vec<Stri
             proxy: Some(ProxyCtx {
                 box_port: proxy.box_port,
                 ca_pem: &proxy.ca_pem,
-                direct: &proxy.direct,
             }),
             workdir: None,
         },

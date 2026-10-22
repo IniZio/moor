@@ -47,7 +47,6 @@ fn ctx<'a>(
         proxy: ca_pem.map(|ca_pem| ProxyCtx {
             box_port: 4321,
             ca_pem,
-            direct: &[],
         }),
         workdir,
         strip: &[],
@@ -119,10 +118,9 @@ fn every_proxy_variable_is_the_box_port_with_no_userinfo() {
 }
 
 /// `NO_PROXY` and `no_proxy` after the prelude's exports, starting from `start` for both.
-fn no_proxy_after(direct: &[crate::name::DirectHost], start: &str) -> String {
+fn no_proxy_after(start: &str) -> String {
     let (wd, e) = (path("/work"), env());
-    let mut b = ctx(&e, Some(PEM), Some(&wd));
-    b.proxy = b.proxy.map(|p| ProxyCtx { direct, ..p });
+    let b = ctx(&e, Some(PEM), Some(&wd));
     let got = build(&b, Purpose::Run).unwrap();
     let exports: Vec<&String> = got
         .prelude
@@ -148,23 +146,15 @@ fn no_proxy_after(direct: &[crate::name::DirectHost], start: &str) -> String {
 }
 
 #[test]
-fn direct_hosts_join_no_proxy_before_the_existing_value() {
-    let direct =
-        crate::config::parse_repo("m.yaml", "proxy: {direct: [dl.google.com, .gradle.org]}")
-            .unwrap()
-            .proxy
-            .direct;
-    let want = "127.0.0.1,localhost,::1,dl.google.com,.gradle.org,corp.example";
-    assert_eq!(
-        no_proxy_after(&direct, "corp.example"),
-        format!("{want} {want}")
-    );
+fn no_proxy_keeps_loopback_before_the_existing_value() {
+    let want = "127.0.0.1,localhost,::1,corp.example";
+    assert_eq!(no_proxy_after("corp.example"), format!("{want} {want}"));
 }
 
 #[test]
-fn without_direct_hosts_no_proxy_holds_only_loopback() {
+fn without_an_existing_value_no_proxy_holds_only_loopback() {
     assert_eq!(
-        no_proxy_after(&[], ""),
+        no_proxy_after(""),
         "127.0.0.1,localhost,::1 127.0.0.1,localhost,::1"
     );
 }

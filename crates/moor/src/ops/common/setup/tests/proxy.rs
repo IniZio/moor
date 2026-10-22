@@ -38,7 +38,6 @@ fn setup_gets_the_proxy_and_ca_variables_the_agent_gets() {
             ca_pem: "-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----\n".to_owned(),
             forge: false,
             box_env: vec![("A".to_owned(), "1".to_owned())],
-            direct: Vec::new(),
         },
         rule_env: Vec::new(),
     };
@@ -98,7 +97,6 @@ fn proxy() -> BoxProxy {
             ca_pem: "-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----\n".to_owned(),
             forge: false,
             box_env: Vec::new(),
-            direct: Vec::new(),
         },
         rule_env: Vec::new(),
     }

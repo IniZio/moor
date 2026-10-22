@@ -299,8 +299,6 @@ impl Sha {
     }
 }
 
-mod direct_host;
-pub use direct_host::DirectHost;
 mod forge;
 pub use forge::{ForgeRepo, GitAuthor, RepoNameError};
 

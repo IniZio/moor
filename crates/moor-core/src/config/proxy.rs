@@ -2,7 +2,6 @@
 //!
 //! Pure data and validation; the proxy turns [`ResolvedRule`]s into routes.
 
-mod direct;
 mod resolve;
 mod shape;
 mod template;
@@ -12,9 +11,7 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 
 use super::{check, parse_strict, ConfigError};
-use crate::name::DirectHost;
 use crate::user::SecretName;
-pub use direct::check_direct;
 pub use resolve::{default_rules, resolve_rules, EndpointRule, ResolvedInject, ResolvedRule};
 pub use shape::request_shape;
 use template::{check_slots, FORM_SLOTS, REPO_SLOTS};
@@ -218,16 +215,6 @@ impl ToolRule {
 pub struct ProxyConfig {
     /// Rules by name; a rule named like a default extends it.
     pub rules: BTreeMap<String, ToolRule>,
-    /// Hosts the Box reaches without the Proxy.
-    pub direct: Vec<DirectHost>,
-}
-
-/// The `proxy:` section of a repo config: only `direct`, so a repo cannot add or widen a rule.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub struct RepoProxy {
-    /// Hosts the Box reaches without the Proxy.
-    pub direct: Vec<DirectHost>,
 }
 
 /// Each secret a rule in `rules` injects, mapped to the first rule that injects it.
@@ -268,14 +255,7 @@ impl ProxyConfig {
             }
             rule.validate(&at)?;
         }
-        check_direct(
-            &self.direct,
-            "proxy.direct",
-            &served
-                .values()
-                .flat_map(|r| r.hosts.iter().map(String::as_str))
-                .collect::<Vec<_>>(),
-        )
+        Ok(())
     }
 }
 

@@ -84,14 +84,14 @@ The default rules are `claude` for `api.anthropic.com`, which injects the
 rule that extends a default cannot set `hosts` or `credential`. Its `allow`
 entries come after the default's, and its `box_env` values win.
 
-`proxy.direct` lists hosts that the Box reaches without the Proxy. See
-[Direct hosts](providers.md#direct-hosts).
-
 ### Removed keys
 
 moor refuses a user config that has a `credentials` or `github` key. Each
 moor user stores their own secrets with `moor user secret set NAME`, and the
 `github-uploads` rule applies to every Box with a repo.
+
+moor also refuses `proxy.direct` in a user config and a `proxy` key in
+`.moor.yaml`.
 
 ### Other keys
 
@@ -118,7 +118,6 @@ A repo's `.moor.yaml` configures its Boxes.
 | `compose.project_prefix` | string | A prefix for compose project names. |
 | `box.size` | `small`, `medium`, `large`, or `xlarge` | The Box size. It wins over the user's `box.size`. |
 | `box_credentials` | list of names | Secrets that the Box's user must hold for a `start`. moor does not put them into the Box. |
-| `proxy.direct` | list of host names | Hosts that the Box reaches without the Proxy. A repo cannot add or change a Proxy rule. |
 
 moor reads `.moor.yaml` from GitHub at the Box's base commit when the Box
 starts, and keeps that copy for the Box's life. Setup, the agent, `moor run`

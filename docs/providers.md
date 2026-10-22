@@ -128,26 +128,3 @@ Proxy port is on the host's loopback. Any process on the host, including
 other users' processes and other Boxes, can send requests through that Box's
 Proxy and get the credentials it adds. moor does not refuse such a Box. Keep
 the `bridge` network unless you trust everything that runs on the host.
-
-## Direct hosts
-
-`proxy.direct` lists hosts that the Box reaches without the Proxy, such as
-public package mirrors. Both `.moor.yaml` and your user config can set it.
-moor uses your entries first, then each repo entry that is not already
-listed.
-
-```yaml
-proxy:
-  direct: [dl.google.com, repo.maven.apache.org, .gradle.org, pub.dev]
-```
-
-An entry is a host name, or `.domain` for every name under the domain. moor
-lowercases each entry and adds it to `NO_PROXY` and `no_proxy`, after the
-loopback entries `127.0.0.1,localhost,::1`. In the Java and Gradle
-`nonProxyHosts` that moor writes, `.domain` becomes `*.domain`.
-
-A host that a credential rule serves can never go direct. moor refuses an
-entry that covers one, and the error names the entry and the host. An entry
-covers its own name and every name under it, in either form, because curl
-and Go read a bare `NO_PROXY` name that way. For example, moor refuses `.github.com`,
-`anthropic.com`, and `api.github.com`.

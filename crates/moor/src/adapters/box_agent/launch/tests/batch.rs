@@ -64,7 +64,6 @@ fn req(s: &FakeSurface, proxy: bool) -> LaunchReq {
                 ca_pem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n".to_owned(),
                 box_env: Vec::new(),
                 forge: false,
-                direct: Vec::new(),
             })
         }),
         strip_env: Vec::new(),
