@@ -77,14 +77,16 @@ fn shell_text_runs_under_bash_when_the_box_has_it() {
 
 #[test]
 fn shell_text_falls_back_to_sh_without_bash() {
-    let dir = std::env::temp_dir().join(format!("moor-core-sh-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
+    let tmp = tempfile::Builder::new()
+        .prefix("moor-core-sh-")
+        .tempdir()
+        .unwrap();
+    let dir = tmp.path();
     let sh = std::fs::canonicalize(which_sh()).unwrap();
     let link = dir.join("sh");
     std::fs::remove_file(&link).ok();
     std::os::unix::fs::symlink(sh, &link).unwrap();
     let out = shell_out("echo \"${BASH_VERSION:-none} $0\"", dir.as_os_str());
-    std::fs::remove_dir_all(&dir).unwrap();
     assert_eq!(out, "none sh\n");
 }
 

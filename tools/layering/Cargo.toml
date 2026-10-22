@@ -8,6 +8,9 @@ publish = false
 proc-macro2 = { version = "1", features = ["span-locations"] }
 syn = { version = "3", features = ["full", "visit"] }
 
+[dev-dependencies]
+tempfile = "3"
+
 [lints]
 workspace = true
 

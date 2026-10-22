@@ -47,17 +47,20 @@ mod tests {
 
     /// Exit code of the check script for `sha256`, with `gh` holding `body` under a fresh home.
     fn run(tag: &str, body: Option<&[u8]>, sha256: &str) -> Option<i32> {
-        let home = std::env::temp_dir().join(format!("moor-gh-check-{tag}-{}", std::process::id()));
+        let dir = tempfile::Builder::new()
+            .prefix(&format!("moor-gh-check-{tag}-"))
+            .tempdir()
+            .unwrap();
+        let home = dir.path();
         std::fs::create_dir_all(home.join(".local/bin")).unwrap();
         if let Some(body) = body {
             std::fs::write(home.join(GH_PATH), body).unwrap();
         }
         let out = Command::new("sh")
             .args(["-c", &check_script(sha256)])
-            .env("HOME", &home)
+            .env("HOME", home)
             .output()
             .unwrap();
-        std::fs::remove_dir_all(&home).unwrap();
         out.status.code()
     }
 

@@ -15,7 +15,7 @@ use super::fresh_dir;
 /// A hermetic environment shared by the controller and every `moor call`.
 struct Sandbox {
     /// Root holding home, state and the socket.
-    root: PathBuf,
+    root: super::Dir,
     /// Controller config file.
     config: PathBuf,
     /// Controller socket path.
@@ -80,12 +80,6 @@ impl Sandbox {
             .unwrap();
         let out = child.wait_with_output().unwrap();
         serde_json::from_slice(&out.stdout).unwrap()
-    }
-}
-
-impl Drop for Sandbox {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.root);
     }
 }
 

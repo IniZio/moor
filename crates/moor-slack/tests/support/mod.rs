@@ -16,7 +16,6 @@ use std::io::Write as _;
 use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use moor_core::controller::PROTOCOL;
@@ -48,17 +47,6 @@ pub(crate) fn started_line(name: &str) -> String {
 /// The fake `claude`: it records what it got next to the path it runs as, and answers by
 /// the token it read on fd 3.
 const FAKE_CLAUDE: &str = include_str!("fake-claude.sh");
-
-/// The fake `claude`, written once for this test binary; each rig links to this one file.
-fn shared_fake_claude() -> &'static Path {
-    static PATH: OnceLock<PathBuf> = OnceLock::new();
-    PATH.get_or_init(|| {
-        let path = Path::new(env!("CARGO_TARGET_TMPDIR"))
-            .join(format!("fake-claude-{}", std::process::id()));
-        moor_testkit::write_executable(&path, FAKE_CLAUDE).unwrap();
-        path
-    })
-}
 
 /// A private root with token files, a config and a fake Slack; the daemon runs once spawned.
 pub(crate) struct Rig {
@@ -143,7 +131,9 @@ impl Rig {
     pub(crate) fn link_fake_claude(&self) -> PathBuf {
         let dir = self.path("claude-bin");
         std::fs::create_dir(&dir).unwrap();
-        std::os::unix::fs::symlink(shared_fake_claude(), dir.join("claude")).unwrap();
+        let script = self.path("fake-claude");
+        moor_testkit::write_executable(&script, FAKE_CLAUDE).unwrap();
+        std::os::unix::fs::symlink(&script, dir.join("claude")).unwrap();
         dir
     }
 

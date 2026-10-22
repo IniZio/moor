@@ -214,10 +214,11 @@ fn wrap_argv_runs_the_prelude_first() {
 
 /// `PATH` after the image-path line reads `file`, starting from `start`.
 fn path_after(file: Option<&str>, start: &str) -> String {
-    static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let target = std::env::temp_dir().join(format!("moor-env-{}-{n}", std::process::id()));
-    let _ = std::fs::remove_file(&target);
+    let dir = tempfile::Builder::new()
+        .prefix("moor-env-")
+        .tempdir()
+        .unwrap();
+    let target = dir.path().join("image-path");
     if let Some(text) = file {
         std::fs::write(&target, text).unwrap();
     }
@@ -229,7 +230,6 @@ fn path_after(file: Option<&str>, start: &str) -> String {
         ])
         .output()
         .unwrap();
-    let _ = std::fs::remove_file(&target);
     assert!(out.status.success());
     String::from_utf8(out.stdout).unwrap().trim_end().to_owned()
 }

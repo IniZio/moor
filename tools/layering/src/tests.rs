@@ -143,14 +143,17 @@ fn bad_column_count_is_rejected() {
 
 #[test]
 fn crate_dir_matches_hyphen_and_underscore() {
-    let root = std::env::temp_dir().join(format!("layering-crate-dir-{}", std::process::id()));
+    let tmp = tempfile::Builder::new()
+        .prefix("layering-crate-dir-")
+        .tempdir()
+        .unwrap();
+    let root = tmp.path().to_path_buf();
     let dir = root.join("crates").join("moor-core");
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("Cargo.toml"), "[package]\nname = \"moor-core\"\n").unwrap();
     assert_eq!(crate_dir(&root, "moor_core"), Some(dir.clone()));
     assert_eq!(crate_dir(&root, "moor-core"), Some(dir));
     assert_eq!(crate_dir(&root, "other"), None);
-    fs::remove_dir_all(&root).unwrap();
 }
 
 fn bad_with(src: &str, file_mod: &str, rule: &Rule) -> Vec<Vec<String>> {
@@ -219,14 +222,17 @@ fn cfg_not_test_and_any_test_still_count() {
 fn tests_rs_and_tests_dir_are_skipped() {
     assert!(is_test_path(Path::new("/c/src/store/tests.rs")));
     assert!(!is_test_path(Path::new("/c/src/store/mod.rs")));
-    let root = std::env::temp_dir().join(format!("layering-tests-skip-{}", std::process::id()));
+    let tmp = tempfile::Builder::new()
+        .prefix("layering-tests-skip-")
+        .tempdir()
+        .unwrap();
+    let root = tmp.path().to_path_buf();
     fs::create_dir_all(root.join("tests")).unwrap();
     for f in ["a.rs", "tests.rs", "tests/b.rs"] {
         fs::write(root.join(f), "").unwrap();
     }
     let mut got = BTreeSet::new();
     rs_files(&root, &mut got).unwrap();
-    fs::remove_dir_all(&root).unwrap();
     assert_eq!(got, BTreeSet::from([root.join("a.rs")]));
 }
 

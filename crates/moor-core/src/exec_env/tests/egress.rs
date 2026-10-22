@@ -2,7 +2,6 @@
 //! `tinyproxy`, and a loopback port that opens when the fake tinyproxy starts.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering;
 
 use moor_testkit::{FakeEgress, FAKE_TINYPROXY};
 
@@ -30,6 +29,7 @@ struct FakeBox {
     home: PathBuf,
     bin: PathBuf,
     port: FakeEgress,
+    _dir: tempfile::TempDir,
 }
 
 const UPSTREAM: u16 = 23456;
@@ -40,10 +40,11 @@ fn hosts(list: &[&str]) -> Vec<String> {
 
 impl FakeBox {
     fn new(uid: u32, apt: Apt, installed: bool) -> Self {
-        static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-        let n = N.fetch_add(1, Ordering::Relaxed);
-        let home = std::env::temp_dir().join(format!("moor-egress-{}-{n}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&home);
+        let dir = tempfile::Builder::new()
+            .prefix("moor-egress-")
+            .tempdir()
+            .unwrap();
+        let home = dir.path().to_path_buf();
         let bin = home.join("bin");
         std::fs::create_dir_all(&bin).unwrap();
         for tool in HOST_TOOLS {
@@ -86,7 +87,12 @@ impl FakeBox {
         if !installed {
             std::fs::remove_file(bin.join("tinyproxy")).unwrap();
         }
-        Self { home, bin, port }
+        Self {
+            home,
+            bin,
+            port,
+            _dir: dir,
+        }
     }
 
     /// The egress lines for `hosts`, then `echo ran`, under `sh` with the proxy variables set as a
@@ -149,7 +155,6 @@ impl Drop for FakeBox {
         if let Ok(pid) = std::fs::read_to_string(self.home.join(".moor/egress.pid")) {
             let _ = std::process::Command::new("kill").arg(pid.trim()).status();
         }
-        let _ = std::fs::remove_dir_all(&self.home);
     }
 }
 

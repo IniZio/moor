@@ -21,14 +21,19 @@ struct Out {
 /// Scratch directory, removed on drop.
 struct Sandbox {
     root: PathBuf,
+    _dir: tempfile::TempDir,
 }
 
 impl Sandbox {
     fn new(name: &str, git: bool) -> Self {
-        let root = std::env::temp_dir().join(format!("moor-record-{}-{name}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).unwrap();
-        let sb = Self { root };
+        let dir = tempfile::Builder::new()
+            .prefix(&format!("moor-record-{name}-"))
+            .tempdir()
+            .unwrap();
+        let sb = Self {
+            root: dir.path().to_path_buf(),
+            _dir: dir,
+        };
         if git {
             sb.git(&["init", "-q"]);
             sb.git(&["config", "user.name", "t"]);
@@ -116,12 +121,6 @@ impl Sandbox {
         assert_eq!(first.code, 0);
         assert_eq!(self.run(&[], "true").code, 0);
         self.exists(&format!("{dir}/f"))
-    }
-}
-
-impl Drop for Sandbox {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

@@ -8,24 +8,20 @@ use super::{clone_script, Checkout, CloneStep};
 const BRANCH: &str = "moor/demo";
 
 /// A scratch dir, removed on drop.
-struct Scratch(PathBuf);
+struct Scratch(tempfile::TempDir);
 
 impl Scratch {
     fn new(name: &str) -> Self {
-        let root = std::env::temp_dir().join(format!("moor-clone-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
-        Self(root)
+        Self(
+            tempfile::Builder::new()
+                .prefix(&format!("moor-clone-{name}-"))
+                .tempdir()
+                .unwrap(),
+        )
     }
 
     fn path(&self) -> &Path {
-        &self.0
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+        self.0.path()
     }
 }
 

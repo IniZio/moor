@@ -6,14 +6,16 @@ use std::process::Command;
 
 use super::{setup_script, BOX_TOOLS};
 
-struct Scratch(PathBuf);
+struct Scratch(tempfile::TempDir);
 
 impl Scratch {
     fn new(name: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!("moor-setup-{}-{name}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        Self(dir)
+        Self(
+            tempfile::Builder::new()
+                .prefix(&format!("moor-setup-{name}-"))
+                .tempdir()
+                .unwrap(),
+        )
     }
 
     fn run(&self, steps: &[&str]) -> Option<i32> {
@@ -21,7 +23,7 @@ impl Scratch {
         Command::new("sh")
             .arg("-c")
             .arg(setup_script(&steps))
-            .current_dir(&self.0)
+            .current_dir(self.0.path())
             .output()
             .unwrap()
             .status
@@ -29,13 +31,7 @@ impl Scratch {
     }
 
     fn read(&self, rel: &str) -> String {
-        fs::read_to_string(self.0.join(rel)).unwrap_or_default()
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
+        fs::read_to_string(self.0.path().join(rel)).unwrap_or_default()
     }
 }
 
@@ -73,7 +69,7 @@ fn failed_and_list_still_stops_later_steps() {
     let s = Scratch::new("andlist");
     let code = s.run(&["false && true", "touch reached"]);
     assert_eq!(code, Some(1));
-    assert!(!s.0.join("reached").exists());
+    assert!(!s.0.path().join("reached").exists());
 }
 
 #[test]
@@ -97,7 +93,7 @@ fn unbalanced_step_cannot_escape_logging() {
     let s = Scratch::new("escape");
     let code = s.run(&[") ; touch escaped ; (", "true"]);
     assert_ne!(code, Some(0));
-    assert!(!s.0.join("escaped").exists());
+    assert!(!s.0.path().join("escaped").exists());
     let rc = s.read(".moor/setup.rc");
     assert_ne!(rc.trim(), "0");
     assert!(s
@@ -175,7 +171,7 @@ fn script_checks_each_box_tool_without_failing() {
 #[test]
 fn missing_tools_warn_in_log_and_stderr_without_changing_rc() {
     let s = Scratch::new("tools");
-    let bin = s.0.join("bin");
+    let bin = s.0.path().join("bin");
     fs::create_dir_all(&bin).unwrap();
     for tool in ["sh", "mkdir", "tee", "cat"] {
         let src = ["/bin", "/usr/bin"]
