@@ -99,6 +99,21 @@ fn a_launch_stopped_by_an_unwritable_proxy_ca_fails_with_the_ca_message() {
 }
 
 #[test]
+fn a_launch_stopped_by_the_egress_proxy_fails_with_its_reason_and_no_fallback() {
+    let reason = "the egress proxy could not start: tinyproxy is not installed and the Box has \
+                  no apt-get; moor installs it only with apt";
+    let w = launching();
+    w.surface.push_pane_obs(
+        "p-1",
+        Ok(exited(1, &format!("moor: {reason}\nmoor: agent exited 1"))),
+    );
+    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    assert!(!v.agent.launched);
+    let f = v.agent.reason.unwrap();
+    assert_eq!((f.step.as_str(), f.message.as_str()), ("launch", reason));
+}
+
+#[test]
 fn a_relaunch_stopped_by_an_unwritable_proxy_ca_fails_with_the_ca_message() {
     let (w, _engine, id) = started();
     gone(&w);

@@ -10,6 +10,7 @@ use moor_core::{BoxPath, Secret};
 use super::script_lines;
 
 const PORT: u16 = 4321;
+const EGRESS: u16 = 24321;
 const CA: &str = "-----BEGIN CERTIFICATE-----\nQUJDREVGRw==\n-----END CERTIFICATE-----\n";
 
 fn proxy() -> ProxyAddr {
@@ -18,6 +19,8 @@ fn proxy() -> ProxyAddr {
         ca_pem: CA.to_owned(),
         box_env: Vec::new(),
         forge: false,
+        egress_port: EGRESS,
+        hosts: Vec::new(),
     }
 }
 
@@ -43,10 +46,7 @@ fn the_agent_gets_the_same_box_environment_as_run() {
         &BoxCtx {
             env: &p.box_env,
             strip: &strip,
-            proxy: Some(ProxyCtx {
-                box_port: PORT,
-                ca_pem: &p.ca_pem,
-            }),
+            proxy: Some(ProxyCtx::of(&p)),
             workdir: Some(&w),
         },
         Purpose::Run,
@@ -90,18 +90,18 @@ fn the_lines_carry_the_exports() {
         "export REQUESTS_CA_BUNDLE=\"$moor_bundle\"",
         "export GIT_SSL_CAINFO=\"$moor_bundle\"",
         "export NODE_EXTRA_CA_CERTS=\"$HOME/.moor-proxy/ca.pem\"",
-        "export HTTPS_PROXY=\"http://127.0.0.1:4321\"",
-        "export HTTP_PROXY=\"http://127.0.0.1:4321\"",
-        "export https_proxy=\"http://127.0.0.1:4321\"",
-        "export http_proxy=\"http://127.0.0.1:4321\"",
-        "export YARN_HTTPS_PROXY=\"http://127.0.0.1:4321\"",
-        "export YARN_HTTP_PROXY=\"http://127.0.0.1:4321\"",
+        "export HTTPS_PROXY=\"http://127.0.0.1:24321\"",
+        "export HTTP_PROXY=\"http://127.0.0.1:24321\"",
+        "export https_proxy=\"http://127.0.0.1:24321\"",
+        "export http_proxy=\"http://127.0.0.1:24321\"",
+        "export YARN_HTTPS_PROXY=\"http://127.0.0.1:24321\"",
+        "export YARN_HTTP_PROXY=\"http://127.0.0.1:24321\"",
         "export YARN_CACHE_FOLDER=\"$HOME/.cache/yarn\"",
         "export YARN_GLOBAL_FOLDER=\"$HOME/.cache/yarn/berry\"",
         "export npm_config_cache=\"$HOME/.cache/npm\"",
         "export NODE_USE_ENV_PROXY=1",
         "export CLAUDE_CODE_OAUTH_TOKEN='moor-proxy'",
-        "unset moor_bundle moor_sys moor_mark moor_f moor_g moor_p moor_ts moor_jh",
+        "unset moor_bundle moor_sys moor_mark moor_f moor_g moor_p moor_ts moor_jh moor_su moor_apt moor_conf moor_new moor_n moor_pid moor_ours",
     ] {
         assert!(lines.iter().any(|l| l == want), "missing {want}\n{text}");
     }
@@ -145,7 +145,12 @@ fn the_script_runs_and_builds_the_environment() {
     let home = dir.path().join("home");
     std::fs::create_dir(&home).unwrap();
     let fake = fake_sudo(dir.path());
-    let lines = script_lines(&proxy(), &placeholder_env()).unwrap();
+    let egress = moor_testkit::FakeEgress::start(&home, &fake).unwrap();
+    let addr = ProxyAddr {
+        egress_port: egress.port(),
+        ..proxy()
+    };
+    let lines = script_lines(&addr, &placeholder_env()).unwrap();
     let script = format!("{}\nenv", lines.join("\n"));
     let script_path = dir.path().join("launch.sh");
     std::fs::write(&script_path, &script).unwrap();
@@ -175,7 +180,7 @@ fn the_script_runs_and_builds_the_environment() {
         String::from_utf8_lossy(&out.stderr)
     );
     let env = parse_env(&out.stdout);
-    assert_yarn_vars(&env, &home);
+    assert_yarn_vars(&env, &home, egress.port());
     assert_ca_vars(&env, &home);
     is(&env, "CLAUDE_CODE_OAUTH_TOKEN", "moor-proxy");
     is(&env, "NODE_USE_ENV_PROXY", "1");
@@ -200,15 +205,17 @@ fn the_script_runs_and_builds_the_environment() {
 
 /// The result of running the whole launch script in a real `sh` with a controlled PATH.
 struct Launch {
+    egress: moor_testkit::FakeEgress,
     dir: tempfile::TempDir,
     env: HashMap<String, String>,
     keytool_log: PathBuf,
 }
 
 /// Host tools the launch script may call, linked into the test PATH so a host JDK never leaks in.
-const HOST_TOOLS: [&str; 25] = [
+const HOST_TOOLS: [&str; 26] = [
     "sh", "cat", "rm", "mkdir", "chmod", "grep", "sed", "awk", "mv", "cp", "mktemp", "cut", "tr",
     "head", "tail", "env", "id", "dirname", "basename", "touch", "ls", "sort", "ln", "wc", "cmp",
+    "sleep",
 ];
 
 fn which(tool: &str) -> Option<PathBuf> {
@@ -245,7 +252,12 @@ fn run_launch(with_keytool: bool) -> Launch {
         "org.gradle.jvmargs=-Xmx2560m\n",
     )
     .unwrap();
-    let lines = script_lines(&proxy(), &placeholder_env()).unwrap();
+    let egress = moor_testkit::FakeEgress::start(&home, &bin).unwrap();
+    let addr = ProxyAddr {
+        egress_port: egress.port(),
+        ..proxy()
+    };
+    let lines = script_lines(&addr, &placeholder_env()).unwrap();
     let script = format!("{}\nenv", lines.join("\n"));
     let script_path = dir.path().join("launch.sh");
     std::fs::write(&script_path, &script).unwrap();
@@ -263,6 +275,7 @@ fn run_launch(with_keytool: bool) -> Launch {
         String::from_utf8_lossy(&out.stderr)
     );
     Launch {
+        egress,
         env: parse_env(&out.stdout),
         dir,
         keytool_log,
@@ -275,7 +288,7 @@ fn java_builds_get_the_proxy_and_gradle_holds_no_proxy_login() {
     let opts = l.env.get("JAVA_TOOL_OPTIONS").expect("JAVA_TOOL_OPTIONS");
     assert!(opts.contains("-Djavax.net.ssl.trustStore="), "{opts}");
     assert!(
-        opts.contains(&format!("-Dhttps.proxyPort={PORT}")),
+        opts.contains(&format!("-Dhttps.proxyPort={}", l.egress.port())),
         "{opts}"
     );
     let log = std::fs::read_to_string(&l.keytool_log).unwrap();
@@ -287,7 +300,7 @@ fn java_builds_get_the_proxy_and_gradle_holds_no_proxy_login() {
     let text = std::fs::read_to_string(&props).unwrap();
     assert!(text.contains("org.gradle.jvmargs=-Xmx2560m"), "{text}");
     assert!(
-        text.contains(&format!("systemProp.https.proxyPort={PORT}")),
+        text.contains(&format!("systemProp.https.proxyPort={}", l.egress.port())),
         "{text}"
     );
     for login in ["proxyUser", "proxyPassword"] {
@@ -302,7 +315,11 @@ fn without_keytool_the_java_setup_changes_nothing() {
     let text = std::fs::read_to_string(l.dir.path().join("gradle/gradle.properties")).unwrap();
     assert_eq!(text, "org.gradle.jvmargs=-Xmx2560m\n");
     assert!(!l.dir.path().join("home/.gradle").exists());
-    is(&l.env, "HTTPS_PROXY", &format!("http://127.0.0.1:{PORT}"));
+    is(
+        &l.env,
+        "HTTPS_PROXY",
+        &format!("http://127.0.0.1:{}", l.egress.port()),
+    );
     assert_ca_vars(&l.env, &l.dir.path().join("home"));
 }
 
@@ -312,6 +329,7 @@ fn fake_sudo(dir: &Path) -> PathBuf {
     std::fs::create_dir(&fake).unwrap();
     let sudo = fake.join("sudo");
     moor_testkit::write_executable(&sudo, "#!/bin/sh\nexit 1\n").unwrap();
+    moor_testkit::write_host_guards(&fake).unwrap();
     fake
 }
 
@@ -350,8 +368,8 @@ fn is(env: &HashMap<String, String>, k: &str, v: &str) {
 }
 
 /// Asserts the proxy URL reaches the usual and Yarn variables, and Yarn gets no CA setting of its own and a cache under `$HOME/.cache`.
-fn assert_yarn_vars(env: &HashMap<String, String>, home: &Path) {
-    let proxy_url = format!("http://127.0.0.1:{PORT}");
+fn assert_yarn_vars(env: &HashMap<String, String>, home: &Path, port: u16) {
+    let proxy_url = format!("http://127.0.0.1:{port}");
     for name in ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"] {
         is(env, name, &proxy_url);
     }

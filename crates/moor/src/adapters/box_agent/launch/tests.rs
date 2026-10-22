@@ -311,6 +311,8 @@ fn proxy_addr() -> ProxyAddr {
         ca_pem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n".to_owned(),
         box_env: Vec::new(),
         forge: false,
+        egress_port: 4568,
+        hosts: Vec::new(),
     }
 }
 
@@ -377,7 +379,10 @@ fn the_agent_gets_the_proxy_env_and_the_ca_after_the_cred_dir_is_gone() {
     let line = |name: &str| env.lines().find(|l| l.starts_with(name)).unwrap_or("");
     assert_eq!(
         line("HTTPS_PROXY="),
-        "HTTPS_PROXY=http://127.0.0.1:4567",
+        format!(
+            "HTTPS_PROXY=http://127.0.0.1:{}",
+            b.proxy_addr().egress_port
+        ),
         "{env}"
     );
     assert!(!env.contains("GH_TOKEN"), "{env}");

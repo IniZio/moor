@@ -25,10 +25,7 @@ pub(super) fn exec_env(
         &BoxCtx {
             env: proxy.map_or(&[], |p| &p.box_env),
             strip,
-            proxy: proxy.map(|p| ProxyCtx {
-                box_port: p.box_port,
-                ca_pem: &p.ca_pem,
-            }),
+            proxy: proxy.map(ProxyCtx::of),
             workdir: Some(workdir),
         },
         Purpose::Agent,
@@ -42,10 +39,7 @@ pub(super) fn script_lines(proxy: &ProxyAddr, env: &[EnvVar]) -> Result<Vec<Stri
         &BoxCtx {
             env: &proxy.box_env,
             strip: &[],
-            proxy: Some(ProxyCtx {
-                box_port: proxy.box_port,
-                ca_pem: &proxy.ca_pem,
-            }),
+            proxy: Some(ProxyCtx::of(proxy)),
             workdir: None,
         },
         Purpose::Agent,

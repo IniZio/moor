@@ -92,6 +92,29 @@ fn a_repo_env_value_cannot_replace_the_root_signal() {
 }
 
 #[test]
+fn the_agent_script_points_the_proxy_variables_at_the_egress_proxy() {
+    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
+    let addr = ProxyAddr {
+        hosts: vec!["api.anthropic.com".to_owned()],
+        ..proxy_addr()
+    };
+    let req = LaunchReq {
+        proxy: Some(Arc::new(addr)),
+        ..req_with_proxy(&s)
+    };
+    agent(&d, &s).launch(&req).unwrap();
+    let script = script_of(&pane_line(&s));
+    assert!(
+        script.contains("export HTTPS_PROXY=\"http://127.0.0.1:4568\""),
+        "{script}"
+    );
+    assert!(
+        script.contains("upstream http 127.0.0.1:4567 \"api.anthropic.com\""),
+        "{script}"
+    );
+}
+
+#[test]
 fn a_ca_that_cannot_be_written_stops_the_launch_before_the_agent_with_the_ca_message() {
     let b = Scratch::new();
     b.stub("sudo", "exit 1");

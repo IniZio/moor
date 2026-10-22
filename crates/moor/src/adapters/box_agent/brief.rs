@@ -31,8 +31,9 @@ pub(super) fn render(b: &BriefInput) -> String {
         "You are running inside the machine, in the project working directory. Run builds, \
          tests and project tooling directly here.\n\n\
          Report the command's real exit code. Do not pipe its output through `tail` or `head`.\n\n\
-         Do not use sudo. The network is open. When HTTPS_PROXY is set, traffic goes through \
-         the preset proxy; do not unset or bypass it. GitHub access works for this Box's \
+         Do not use sudo. The network is open. When HTTPS_PROXY is set, it is a local proxy \
+         that sends only the hosts that need moor's credentials through the moor Proxy and \
+         every other host direct; do not unset or bypass it. GitHub access works for this Box's \
          repo through gh and git as configured. Requests outside what the proxy rules allow go \
          out without credentials, so expect 401 or 404; the owner can add a rule. \
          Write only in the working directory and your own tool state. If a tool the \

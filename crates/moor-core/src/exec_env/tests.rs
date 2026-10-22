@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use super::*;
 
+mod egress;
 mod shell;
 
 /// Every proxy and CA variable name the prelude may export.
@@ -46,7 +47,9 @@ fn ctx<'a>(
         env,
         proxy: ca_pem.map(|ca_pem| ProxyCtx {
             box_port: 4321,
+            egress_port: 4322,
             ca_pem,
+            hosts: &[],
         }),
         workdir,
         strip: &[],
@@ -83,7 +86,7 @@ fn every_purpose_shares_vars_prelude_and_cwd() {
 }
 
 #[test]
-fn every_proxy_variable_is_the_box_port_with_no_userinfo() {
+fn every_proxy_variable_is_the_egress_port_with_no_userinfo() {
     let (wd, e) = (path("/work"), env());
     let got = build(&ctx(&e, Some(PEM), Some(&wd)), Purpose::Run).unwrap();
     let names = [
@@ -103,7 +106,7 @@ fn every_proxy_variable_is_the_box_port_with_no_userinfo() {
             .collect();
         assert_eq!(
             lines,
-            [&format!("{export}\"http://127.0.0.1:4321\"")],
+            [&format!("{export}\"http://127.0.0.1:4322\"")],
             "{name}"
         );
     }
@@ -344,8 +347,8 @@ fn prelude_exports_yarn_after_the_proxy_and_before_no_proxy() {
     let got = build(&ctx(&e, Some(PEM), Some(&wd)), Purpose::Agent).unwrap();
     let at = |needle: &str| got.prelude.iter().position(|l| l.contains(needle)).unwrap();
     let yarn = [
-        "export YARN_HTTPS_PROXY=\"http://127.0.0.1:4321\"",
-        "export YARN_HTTP_PROXY=\"http://127.0.0.1:4321\"",
+        "export YARN_HTTPS_PROXY=\"http://127.0.0.1:4322\"",
+        "export YARN_HTTP_PROXY=\"http://127.0.0.1:4322\"",
         "export YARN_CACHE_FOLDER=\"$HOME/.cache/yarn\"",
         "export YARN_GLOBAL_FOLDER=\"$HOME/.cache/yarn/berry\"",
         "export npm_config_cache=\"$HOME/.cache/npm\"",

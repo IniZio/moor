@@ -2,16 +2,21 @@ use super::*;
 
 /// A scratch Box: home, workdir, a credential dir holding a brief, and a stub agent.
 pub(super) struct Scratch {
+    egress: moor_testkit::FakeEgress,
     dir: tempfile::TempDir,
 }
 
 impl Scratch {
     pub(super) fn new() -> Self {
         let dir = tempfile::TempDir::new().unwrap();
-        let s = Self { dir };
         for d in ["home", "work", "bin", "home/.moor-cred-t1-x"] {
-            std::fs::create_dir_all(s.path(d)).unwrap();
+            std::fs::create_dir_all(dir.path().join(d)).unwrap();
         }
+        moor_testkit::write_host_guards(&dir.path().join("bin")).unwrap();
+        let egress =
+            moor_testkit::FakeEgress::start(&dir.path().join("home"), &dir.path().join("bin"))
+                .unwrap();
+        let s = Self { egress, dir };
         std::fs::write(s.path("home/.moor-cred-t1-x/brief.md"), "brief").unwrap();
         s.stub("claude", "touch \"$MARKER\"");
         s
@@ -35,15 +40,23 @@ impl Scratch {
         LaunchCtx {
             model: None,
             workdir: BoxPath::under(root, "work").unwrap(),
-            proxy: Some(proxy_addr()),
+            proxy: Some(self.proxy_addr()),
             home: BoxPath::under(root, "home").unwrap(),
             prompt: LaunchPrompt::Brief,
         }
     }
 
+    /// The Proxy address whose egress port the fake tinyproxy opens.
+    pub(super) fn proxy_addr(&self) -> ProxyAddr {
+        ProxyAddr {
+            egress_port: self.egress.port(),
+            ..proxy_addr()
+        }
+    }
+
     pub(super) fn proxy_lines(&self) -> Vec<String> {
         let env = Claude.env(&self.proxy_ctx());
-        proxy_env::script_lines(&proxy_addr(), &env).unwrap()
+        proxy_env::script_lines(&self.proxy_addr(), &env).unwrap()
     }
 
     pub(super) fn script_with(&self, hook_step: &str, proxy: &[String]) -> String {

@@ -2,8 +2,9 @@
 
 use super::*;
 
-/// A fresh directory under the system temp dir, removed when dropped.
-struct TempHome(std::path::PathBuf);
+/// A fresh directory under the system temp dir, removed when dropped, with a fake tinyproxy whose
+/// start opens `port`.
+struct TempHome(std::path::PathBuf, moor_testkit::FakeEgress);
 
 impl TempHome {
     fn new() -> Self {
@@ -14,7 +15,9 @@ impl TempHome {
         std::fs::create_dir_all(dir.join("bin")).unwrap();
         let sudo = dir.join("bin/sudo");
         moor_testkit::write_executable(&sudo, "#!/bin/sh\nexit 1\n").unwrap();
-        Self(dir)
+        moor_testkit::write_host_guards(&dir.join("bin")).unwrap();
+        let egress = moor_testkit::FakeEgress::start(&dir, &dir.join("bin")).unwrap();
+        Self(dir, egress)
     }
 
     fn proxy_dir(&self) -> std::path::PathBuf {
@@ -58,7 +61,12 @@ impl TempHome {
 
     /// The whole wrapped exec of `argv`, run with this `HOME` and a `sudo` that always fails.
     fn exec(&self, argv: Vec<String>) -> std::process::Output {
-        let got = build(&ctx(&[], Some(PEM), None), Purpose::Run).unwrap();
+        let mut b = ctx(&[], Some(PEM), None);
+        b.proxy = b.proxy.map(|p| ProxyCtx {
+            egress_port: self.1.port(),
+            ..p
+        });
+        let got = build(&b, Purpose::Run).unwrap();
         let argv = wrap_argv(&got, argv);
         let path = format!(
             "{}:{}",
