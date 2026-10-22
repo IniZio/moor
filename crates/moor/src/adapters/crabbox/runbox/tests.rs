@@ -178,6 +178,37 @@ fn a_run_whose_process_is_gone_with_no_exit_follows_to_lost() {
 }
 
 #[test]
+fn end_looks_for_the_moved_marker_in_the_workdir_it_is_given() {
+    let lab = lab();
+    lab.launch(8, "mkdir -p .moor && : > .moor/record-moved")
+        .unwrap();
+    assert!(eventually(|| lab
+        .end(8)
+        .is_ok_and(|e| e.outcome == RunOutcome::Exited(0))));
+    assert!(lab.end(8).unwrap().moved, "read in the workdir");
+    let in_login = lab.cb.end_run(&handle(), 8, None).unwrap();
+    assert!(!in_login.moved, "read in the login dir");
+    let remotes: Vec<String> = lab
+        .argvs("ssh")
+        .into_iter()
+        .filter_map(|a| a.last().cloned())
+        .filter(|r| r.contains("cancelled=%s"))
+        .collect();
+    let cd = format!(
+        "sh -c 'cd -- '\\''{}'\\'' || exit 1\n",
+        lab.work().display()
+    );
+    assert!(
+        remotes.first().is_some_and(|r| r.starts_with(&cd)),
+        "{remotes:?}"
+    );
+    assert!(
+        remotes.last().is_some_and(|r| !r.contains("cd -- ")),
+        "{remotes:?}"
+    );
+}
+
+#[test]
 fn a_dropped_connection_is_a_transport_error_for_end_and_cancel_and_a_cut_for_follow() {
     let lab = lab();
     fs::write(lab.bin().join("drop"), "").unwrap();
