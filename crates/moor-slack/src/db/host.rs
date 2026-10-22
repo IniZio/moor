@@ -52,7 +52,7 @@ impl Db {
              WHERE t.root_session IS NOT NULL \
              AND coalesce(t.last_turn_at, t.created_at) <= ?1 \
              AND NOT EXISTS (SELECT 1 FROM slack_inbox i WHERE i.channel = t.channel \
-                 AND i.thread_ts = t.thread_ts AND i.kind = 'message' AND i.done_at IS NULL) \
+                 AND i.thread_ts = t.thread_ts AND i.kind IN ('message', 'report') AND i.done_at IS NULL) \
              AND NOT EXISTS (SELECT 1 FROM slack_boxes b WHERE b.channel = t.channel \
                  AND b.thread_ts = t.thread_ts AND b.state IN ('starting', 'closing')) \
              ORDER BY t.channel, t.thread_ts",

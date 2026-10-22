@@ -31,8 +31,11 @@ const FEED_TICK: Duration = Duration::from_millis(500);
 struct Fold {
     /// Each Box's status, by Box id.
     views: HashMap<BoxId, View>,
-    /// Cursors of each Box's finished turns whose line is not yet known to be posted.
-    finished: HashMap<BoxId, Vec<i64>>,
+    /// Each Box's finished turns, by cursor with the agent's last message, whose line is not
+    /// yet known to be posted.
+    finished: HashMap<BoxId, Vec<(i64, Option<String>)>>,
+    /// The last message each Box's agent left in its current turn.
+    said: HashMap<BoxId, String>,
     /// Boxes that closed and whose closed line is not yet known to be posted.
     closed: HashSet<BoxId>,
     /// The question each Box waits on.
@@ -58,7 +61,21 @@ impl Fold {
             .fold(&event.kind, &event.payload);
         prompts::fold(self, id, &event.kind, event.cursor, &event.payload);
         match event.kind.as_str() {
-            "idled" => self.finished.entry(id).or_default().push(event.cursor),
+            "agent_said" => {
+                let text = event
+                    .payload
+                    .get("text")
+                    .and_then(serde_json::Value::as_str);
+                self.said.insert(id, text.unwrap_or_default().to_owned());
+            }
+            "working" | "busy" | "woke" => drop(self.said.remove(&id)),
+            "idled" => {
+                let said = self.said.remove(&id);
+                self.finished
+                    .entry(id)
+                    .or_default()
+                    .push((event.cursor, said));
+            }
             "closed" => drop(self.closed.insert(id)),
             _ => {}
         }
@@ -170,16 +187,19 @@ impl Feed {
             return true;
         };
         let name = &boxed.box_name;
-        if let Some(cursors) = fold.finished.get_mut(&box_id) {
-            while let Some(&cursor) = cursors.first() {
-                if !self.line(db, boxed, BoxEvent::Finished, Some(cursor), &finished(name)) {
+        if let Some(turns) = fold.finished.get_mut(&box_id) {
+            while let Some((cursor, said)) = turns.first() {
+                let queue = || db.report(boxed, *cursor, said.as_deref());
+                let key = (BoxEvent::Finished, Some(*cursor));
+                if !self.line(db, boxed, key, &finished(name), queue) {
                     return false;
                 }
-                cursors.remove(0);
+                turns.remove(0);
             }
         }
         if fold.closed.contains(&box_id) && !matches!(boxed.state, BoxState::Closing { .. }) {
-            if !self.line(db, boxed, BoxEvent::Closed, None, &closed(name)) {
+            let queue = || db.notice(boxed, BoxEvent::Closed, None);
+            if !self.line(db, boxed, (BoxEvent::Closed, None), &closed(name), queue) {
                 return false;
             }
             fold.closed.remove(&box_id);
@@ -187,16 +207,16 @@ impl Feed {
         true
     }
 
-    /// Posts `text` in the thread of `boxed` and then queues the notice of `event`, unless
-    /// the notice is already queued. Posting first means a crash in between posts the line
-    /// again instead of losing it. Returns whether the notice is queued.
+    /// Posts `text` in the thread of `boxed` and then queues the item of `event` at `cursor`
+    /// with `queue`, unless it is already queued. Posting first means a crash in between posts the
+    /// line again instead of losing it. Returns whether the item is queued.
     fn line(
         &self,
         db: &Db,
         boxed: &SlackBox,
-        event: BoxEvent,
-        cursor: Option<i64>,
+        (event, cursor): (BoxEvent, Option<i64>),
         text: &str,
+        queue: impl FnOnce() -> rusqlite::Result<bool>,
     ) -> bool {
         let failed = |why: String| {
             (self.log)(&why);
@@ -214,7 +234,7 @@ impl Feed {
         {
             return failed(format!("slack: line failed: {e}"));
         }
-        match db.notice(boxed, event, cursor) {
+        match queue() {
             Ok(_) => true,
             Err(e) => failed(format!("slack.db: {e}")),
         }

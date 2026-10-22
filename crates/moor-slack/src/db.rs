@@ -14,7 +14,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The schema version this build writes and reads. A schema change edits [`SCHEMA`] in place
 /// and raises this number; there are no migrations, so a file at any other version is refused.
-const SCHEMA_VERSION: i64 = 11;
+const SCHEMA_VERSION: i64 = 12;
 
 /// The whole schema, created in an empty file.
 const SCHEMA: &str = "
@@ -51,8 +51,8 @@ const SCHEMA: &str = "
         id INTEGER PRIMARY KEY,
         channel TEXT NOT NULL,
         thread_ts TEXT NOT NULL,
-        kind TEXT NOT NULL CHECK (kind IN ('message', 'notice')),
-        author TEXT CHECK (kind = 'notice' OR author IS NOT NULL),
+        kind TEXT NOT NULL CHECK (kind IN ('message', 'notice', 'report')),
+        author TEXT CHECK (kind != 'message' OR author IS NOT NULL),
         text TEXT NOT NULL,
         source TEXT NOT NULL UNIQUE,
         created_at INTEGER NOT NULL,

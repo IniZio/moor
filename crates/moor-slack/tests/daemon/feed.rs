@@ -1,7 +1,8 @@
 //! The feed: each Box keeps one status message in its thread, edited in place as the
-//! controller's events arrive by Box id, and a finished turn or a close posts a fixed line
-//! and queues a notice that waits for the starter's next message. A refold after a dropped
-//! watch or a restart writes nothing twice.
+//! controller's events arrive by Box id, and a finished turn or a close posts a fixed line.
+//! A close queues a notice that waits for the starter's next message; a finished turn queues
+//! a report that starts a coordinator turn on its own. A refold after a dropped watch or a
+//! restart writes nothing twice.
 
 #![allow(clippy::indexing_slicing, reason = "test code")]
 
@@ -25,10 +26,9 @@ fn status(state: &str) -> String {
     status_of_box(BOX_NAME, state)
 }
 
-/// The text of box `name`'s status message in `state`, with its pull request link.
+/// The text of box `name`'s status message in `state`.
 fn status_of_box(name: &str, state: &str) -> String {
-    let pulls = format!("https://github.com/acme/demo/pulls?q=is%3Apr+head%3Amoor/{name}");
-    format!("*{name}*: {state}\nPull request: <{pulls}|moor/{name}>")
+    format!("*{name}*: {state}")
 }
 
 /// The line the front posts when the first Box's agent finishes its turn.
@@ -90,7 +90,7 @@ fn notices(rig: &Rig) -> Vec<String> {
     let db = rusqlite::Connection::open(rig.path("state-slack/slack.db")).unwrap();
     db.busy_timeout(Duration::from_secs(5)).unwrap();
     let mut stmt = db
-        .prepare("SELECT text FROM slack_inbox WHERE kind = 'notice' ORDER BY id")
+        .prepare("SELECT text FROM slack_inbox WHERE kind IN ('notice', 'report') ORDER BY id")
         .unwrap();
     let rows = stmt.query_map([], |r| r.get(0)).unwrap();
     rows.collect::<Result<_, _>>().unwrap()
@@ -232,28 +232,69 @@ fn a_box_closed_elsewhere_gets_its_final_status_a_closed_line_and_a_notice() {
     assert_eq!(last, Some(format!("[moor] Box `{BOX_NAME}` closed.")));
 }
 
+/// How many coordinator turns the front has taken; the mention that opened the thread is
+/// the first.
+fn turns(rig: &Rig) -> i64 {
+    let db = rusqlite::Connection::open(rig.path("state-slack/slack.db")).unwrap();
+    db.busy_timeout(Duration::from_secs(5)).unwrap();
+    db.query_row("SELECT COUNT(*) FROM slack_turns", [], |r| r.get(0))
+        .unwrap()
+}
+
 #[test]
-fn a_finished_turn_posts_a_line_and_a_notice_that_waits_for_the_starters_next_message() {
-    let (rig, controller, bin, _post) = thread_with_status();
+fn an_idle_starts_one_turn_on_its_own_with_the_agents_last_message() {
+    let (mut rig, controller, bin, _post) = thread_with_status();
+    let said = "Fixed the parser.\nhttps://github.com/acme/demo/pull/7";
+    controller.emit(BOX_ID, BOX_NAME, "working", json!({}));
+    controller.emit(BOX_ID, BOX_NAME, "agent_said", json!({ "text": said }));
     controller.emit(BOX_ID, BOX_NAME, "idled", json!({}));
     rig.wait_post(&finished_line());
-    std::thread::sleep(QUIET);
-    assert!(!bin.join("run-1").exists(), "a notice starts no turn");
-    assert_eq!(
-        notices(&rig),
-        [
-            format!("[moor] Box `{BOX_NAME}` started."),
-            format!("[moor] Box `{BOX_NAME}` finished its turn."),
-        ]
-    );
-    reply(&rig, 2, USER, "what now");
-    rig.slack.wait_updates(2);
+    rig.slack
+        .wait_until("the summary turn", |_, _| turns(&rig) == 2);
+    wait_turns_posted(&rig);
     let stdin = std::fs::read_to_string(bin.join("run-1/stdin")).unwrap();
-    let new = format!(
-        "## New\n[moor] Box `{BOX_NAME}` started.\n[moor] Box `{BOX_NAME}` finished its turn.\n\
-         [<@{USER}>] what now\n"
+    let report = format!(
+        "[moor] Box `{BOX_NAME}` finished its turn. Its last message, in a Box quote:\n\
+         > Fixed the parser.\n> https://github.com/acme/demo/pull/7\n"
     );
-    assert!(stdin.ends_with(&new), "{stdin}");
+    assert!(stdin.contains(&report), "{stdin}");
+
+    let n = watches(&controller);
+    controller.drop_watches();
+    wait_refolded(&controller, n);
+    let n = watches(&controller);
+    rig.kill_daemon();
+    rig.spawn_daemon();
+    wait_refolded(&controller, n);
+    assert_eq!(
+        turns(&rig),
+        2,
+        "a refold or a restart starts no second turn"
+    );
+    assert!(!bin.join("run-2").exists());
+}
+
+#[test]
+fn an_idle_without_a_message_still_starts_a_turn_and_an_older_message_is_not_reused() {
+    let (rig, controller, bin, _post) = thread_with_status();
+    controller.emit(
+        BOX_ID,
+        BOX_NAME,
+        "agent_said",
+        json!({ "text": "old news" }),
+    );
+    controller.emit(BOX_ID, BOX_NAME, "idled", json!({}));
+    rig.slack
+        .wait_until("the first summary", |_, _| turns(&rig) == 2);
+    wait_turns_posted(&rig);
+    controller.emit(BOX_ID, BOX_NAME, "busy", json!({}));
+    controller.emit(BOX_ID, BOX_NAME, "idled", json!({}));
+    rig.slack
+        .wait_until("the second summary", |_, _| turns(&rig) == 3);
+    wait_turns_posted(&rig);
+    let stdin = std::fs::read_to_string(bin.join("run-2/stdin")).unwrap();
+    let new = stdin.rsplit("## New\n").next().unwrap();
+    assert_eq!(new, format!("[moor] Box `{BOX_NAME}` finished its turn.\n"));
 }
 
 #[test]

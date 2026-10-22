@@ -82,8 +82,28 @@ fn a_finished_turn_and_a_close_are_owed_lines_until_posted() {
     fold.take(event(1, Some(ID), "idled"));
     fold.take(event(2, Some(ID), "idled"));
     fold.take(event(3, Some(ID), "closed"));
-    assert_eq!(fold.finished.get(&ID), Some(&vec![1, 2]));
+    assert_eq!(fold.finished.get(&ID), Some(&vec![(1, None), (2, None)]));
     assert!(fold.closed.contains(&ID));
+}
+
+fn said(cursor: i64, text: &str) -> Watched {
+    let Watched::Item(WatchItem::Event(mut e)) = event(cursor, Some(ID), "agent_said") else {
+        unreachable!()
+    };
+    e.payload = json!({ "text": text });
+    Watched::Item(WatchItem::Event(e))
+}
+
+#[test]
+fn a_finished_turn_carries_the_message_its_agent_left_in_that_turn_only() {
+    let mut fold = Fold::default();
+    fold.take(said(1, "first"));
+    fold.take(event(2, Some(ID), "idled"));
+    fold.take(said(3, "dropped"));
+    fold.take(event(4, Some(ID), "busy"));
+    fold.take(event(5, Some(ID), "idled"));
+    let want = vec![(2, Some("first".to_owned())), (5, None)];
+    assert_eq!(fold.finished.get(&ID), Some(&want));
 }
 
 #[test]
@@ -113,6 +133,6 @@ fn a_line_that_cannot_be_posted_queues_no_notice_and_is_tried_again() {
     let mut fold = Fold::default();
     fold.take(event(1, Some(ID), "idled"));
     assert!(!feed.lines(&db, &mut fold, &row));
-    assert_eq!(fold.finished.get(&ID), Some(&vec![1]), "still owed");
+    assert_eq!(fold.finished.get(&ID), Some(&vec![(1, None)]), "still owed");
     assert!(!db.has_notice(&row, BoxEvent::Finished, Some(1)).unwrap());
 }

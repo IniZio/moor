@@ -4,7 +4,7 @@
 use rusqlite::params;
 
 use super::{Db, SlackBox};
-use crate::command::BoxEvent;
+use crate::command::{report, BoxEvent};
 
 /// What an inbox item is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,6 +76,30 @@ impl Db {
                 boxed.thread_ts,
                 event.notice(&boxed.box_name),
                 notice_source(boxed, event, cursor)
+            ],
+        )?;
+        Ok(added == 1)
+    }
+
+    /// Queues the report of the finished turn of `boxed` at `cursor`, which starts a turn of
+    /// its thread on its own; `said` is the agent's last message. Once per Box and cursor, so
+    /// a refold, a restart or a redelivered event queues it once. Returns whether this call
+    /// wrote it.
+    pub(crate) fn report(
+        &self,
+        boxed: &SlackBox,
+        cursor: i64,
+        said: Option<&str>,
+    ) -> rusqlite::Result<bool> {
+        let added = self.conn.execute(
+            "INSERT OR IGNORE INTO slack_inbox \
+             (channel, thread_ts, kind, text, source, created_at) \
+             VALUES (?1, ?2, 'report', ?3, ?4, unixepoch())",
+            params![
+                boxed.channel,
+                boxed.thread_ts,
+                report(&boxed.box_name, said),
+                notice_source(boxed, BoxEvent::Finished, Some(cursor))
             ],
         )?;
         Ok(added == 1)
