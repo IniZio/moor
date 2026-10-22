@@ -367,3 +367,15 @@ fn close_refuses_when_the_recheck_finds_no_git_checkout() {
     assert_eq!(count(&f, "release"), 0);
     assert_ne!(row(&f).lifecycle, BoxLifecycle::Closed);
 }
+
+#[test]
+fn an_unreadable_first_probe_refuses_before_the_agent_is_stopped() {
+    let f = fx_probe(None);
+    f.cx.store()
+        .unwrap()
+        .begin_session(f.id, "s-1", Some("p-live"))
+        .unwrap();
+    let t = text(&refused(&f));
+    assert!(!t.contains("the agent was stopped"), "{t}");
+    assert!(f.cx.store().unwrap().live_session(f.id).unwrap().is_some());
+}

@@ -234,6 +234,34 @@ fn a_failed_setup_copies_its_log_into_an_owner_only_dir_under_the_state_dir() {
     assert_eq!(mode(&to), 0o600);
 }
 
+/// Every file under `dir`, relative to it.
+fn files_under(dir: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(dir).unwrap().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            out.extend(files_under(&path).into_iter().map(|f| {
+                format!("{}/{f}", entry.file_name().to_string_lossy())
+            }));
+        } else {
+            out.push(entry.file_name().to_string_lossy().into_owned());
+        }
+    }
+    out
+}
+
+#[test]
+fn setup_writes_only_its_log_under_the_state_logs_dir() {
+    for second in [Ok(exit(0)), Ok(exit(1))] {
+        let driver = FakeDriver::new()
+            .exec_results([Ok(exit(0)), second])
+            .copy_text("moor setup: $ a\n");
+        let (w, v) = start_with("setup: [a]\n", driver);
+        let logs = w.dir.path().join("logs");
+        assert_eq!(files_under(&logs), [format!("{}/setup.log", v.boxed.id)]);
+    }
+}
+
 #[test]
 fn a_failing_setup_marks_the_box_and_a_later_clean_setup_clears_it() {
     let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]);
