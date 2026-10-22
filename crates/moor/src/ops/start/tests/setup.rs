@@ -240,9 +240,11 @@ fn files_under(dir: &Path) -> Vec<String> {
     for entry in std::fs::read_dir(dir).unwrap().flatten() {
         let path = entry.path();
         if path.is_dir() {
-            out.extend(files_under(&path).into_iter().map(|f| {
-                format!("{}/{f}", entry.file_name().to_string_lossy())
-            }));
+            out.extend(
+                files_under(&path)
+                    .into_iter()
+                    .map(|f| format!("{}/{f}", entry.file_name().to_string_lossy())),
+            );
         } else {
             out.push(entry.file_name().to_string_lossy().into_owned());
         }

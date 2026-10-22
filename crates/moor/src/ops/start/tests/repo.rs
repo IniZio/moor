@@ -101,7 +101,13 @@ fn a_box_branch_already_on_the_forge_is_refused_unless_base_names_it() {
 
 #[test]
 fn only_a_base_of_exactly_the_box_branch_continues_a_taken_branch() {
-    for base in ["refs/heads/moor/demo", "origin/moor/demo", "moor/demo~0", "moor/demo/", "Moor/demo"] {
+    for base in [
+        "refs/heads/moor/demo",
+        "origin/moor/demo",
+        "moor/demo~0",
+        "moor/demo/",
+        "Moor/demo",
+    ] {
         let w = world(FakeDriver::new());
         let taken = RepoAt {
             branch_tip: Some(moor_core::Sha::parse("def456").unwrap()),

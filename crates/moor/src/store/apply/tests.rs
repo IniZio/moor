@@ -379,14 +379,20 @@ fn two_open_boxes_cannot_share_a_branch() {
     store.apply(on_branch(a, "moor/x")).unwrap();
     let b = store.apply(insert("b")).unwrap().box_id;
     let err = store.apply(on_branch(b, "moor/x")).unwrap_err();
-    assert!(matches!(&err, StoreError::BranchTaken(x) if x == "moor/x"), "{err:?}");
+    assert!(
+        matches!(&err, StoreError::BranchTaken(x) if x == "moor/x"),
+        "{err:?}"
+    );
     let raced = insert("c").set(Fields {
         branch: Field::Set("moor/x".to_owned()),
         ..Fields::default()
     });
     let err = store.apply(raced).unwrap_err();
     assert!(matches!(err, StoreError::BranchTaken(_)), "{err:?}");
-    assert!(store.open_box_by_name(&BoxName::parse_allow_bare("c").unwrap()).unwrap().is_none());
+    assert!(store
+        .open_box_by_name(&BoxName::parse_allow_bare("c").unwrap())
+        .unwrap()
+        .is_none());
 }
 
 #[test]

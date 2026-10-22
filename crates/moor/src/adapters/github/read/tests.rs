@@ -138,7 +138,9 @@ fn github(vars: &Value, permission: &str) -> (u16, String) {
             Some("v1") => json!({"__typename": "Tag", "oid": "dd".repeat(20), "target": tagged}),
             Some("main") => default,
             Some("refs/heads/moor/t") => commit(BRANCH_SHA, &[]),
-            Some("moor/t") => json!({"__typename": "Tag", "oid": "ee".repeat(20), "target": tagged}),
+            Some("moor/t") => {
+                json!({"__typename": "Tag", "oid": "ee".repeat(20), "target": tagged})
+            }
             _ => Value::Null,
         };
     } else {

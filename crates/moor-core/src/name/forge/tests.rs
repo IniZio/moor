@@ -59,7 +59,9 @@ fn parse_origin_table() {
 #[test]
 fn parse_caps_the_owner_at_39_and_the_name_at_100_bytes() {
     use super::ForgeRepo;
-    let at = |owner: usize, name: usize| ForgeRepo::parse(&format!("{}/{}", "o".repeat(owner), "n".repeat(name)));
+    let at = |owner: usize, name: usize| {
+        ForgeRepo::parse(&format!("{}/{}", "o".repeat(owner), "n".repeat(name)))
+    };
     assert!(at(39, 100).is_ok());
     assert!(at(40, 1).is_err());
     assert!(at(1, 101).is_err());
@@ -67,6 +69,8 @@ fn parse_caps_the_owner_at_39_and_the_name_at_100_bytes() {
 
 #[test]
 fn a_refused_repo_is_never_echoed() {
-    let shown = super::ForgeRepo::parse("https://u:tok3n@gitlab.com/o/n").unwrap_err().to_string();
+    let shown = super::ForgeRepo::parse("https://u:tok3n@gitlab.com/o/n")
+        .unwrap_err()
+        .to_string();
     assert!(!shown.contains("tok3n"), "{shown}");
 }
