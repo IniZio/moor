@@ -20,10 +20,18 @@ fn run(
     server: &[String],
     follow: bool,
     out: &mut impl Write,
-) -> (Result<(), SessionError>, String) {
+) -> (Result<Option<String>, SessionError>, String) {
     let input = format!("{}\n", server.join("\n"));
     let mut sent = Vec::new();
-    let result = watch_session(Cursor::new(input), &mut sent, 7, &filter(), follow, out);
+    let mut since = 7;
+    let result = watch_session(
+        Cursor::new(input),
+        &mut sent,
+        &mut since,
+        &filter(),
+        follow,
+        out,
+    );
     (result, String::from_utf8(sent).unwrap())
 }
 

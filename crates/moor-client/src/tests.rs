@@ -6,14 +6,13 @@
 )]
 
 use std::io::{BufRead, BufReader, Write};
-use std::net::Shutdown;
 use std::os::unix::net::UnixListener;
 use std::path::Path;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
 use moor_core::request::ShowReq;
-use moor_core::BoxName;
+use moor_core::{BoxId, BoxName, SessionId};
 
 use super::*;
 
@@ -167,6 +166,7 @@ fn malformed_frame_is_a_protocol_error() {
 fn missing_socket_is_a_connect_error() {
     let dir = tempfile::tempdir().unwrap();
     let err = Client::new(dir.path().join("none.sock"))
+        .with_redial(Redial::NEVER)
         .request(show(), |_| {})
         .unwrap_err();
     assert!(matches!(err, ClientError::Connect { .. }), "{err}");
@@ -361,15 +361,15 @@ fn oversize_frame_is_a_protocol_error() {
 }
 
 #[test]
-fn shutdown_handle_unblocks_a_quiet_watch() {
+fn stopper_unblocks_a_quiet_watch() {
     let dir = tempfile::tempdir().unwrap();
     let sock = dir.path().join("c.sock");
     let server = quiet(&sock);
     let mut watch = fast(&sock).watch(0, WatchFilter::default(), true).unwrap();
-    let handle = watch.shutdown_handle().unwrap();
+    let stop = watch.stopper();
     let closer = std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(500));
-        handle.shutdown(Shutdown::Both).unwrap();
+        stop.stop();
     });
     assert!(watch.next().is_none());
     closer.join().unwrap();
@@ -562,3 +562,5 @@ fn read_stream_refuses_a_bytes_frame_over_the_cap() {
     assert!(matches!(stream.finish(), Err(ClientError::Protocol(_))));
     server.join().unwrap();
 }
+
+mod redial;

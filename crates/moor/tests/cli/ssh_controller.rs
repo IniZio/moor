@@ -25,6 +25,7 @@ fn run_show(dir: &Path, ssh: &Path) -> (i32, String) {
         .env("HOME", dir.join("client-home"))
         .env("MOOR_CONFIG", &config)
         .env("MOOR_SSH_BIN", ssh)
+        .env("MOOR_CONTROLLER_REDIAL_SECS", "0")
         .args(["--json", "show"])
         .stdin(Stdio::null())
         .output()

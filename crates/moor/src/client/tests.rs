@@ -89,7 +89,7 @@ fn unreachable_socket_maps_to_failed_with_hint() {
     let dir = tempfile::tempdir().unwrap();
     let sock = dir.path().join("missing.sock");
     let err = call(
-        &Env::default(),
+        &Env::from_pairs([("MOOR_CONTROLLER_REDIAL_SECS", "0")]),
         &Target::Socket(sock),
         &show(),
         |_| {},
@@ -215,7 +215,10 @@ fn unloadable_config_yields_none() {
 fn fake_ssh(dir: &Path, body: &str) -> Env {
     let bin = dir.join("ssh");
     moor_testkit::write_executable(&bin, format!("#!/bin/sh\n{body}\n")).unwrap();
-    Env::from_pairs([("MOOR_SSH_BIN", bin.to_str().unwrap())])
+    Env::from_pairs([
+        ("MOOR_SSH_BIN", bin.to_str().unwrap()),
+        ("MOOR_CONTROLLER_REDIAL_SECS", "0"),
+    ])
 }
 
 const ARGS_CHECK: &str = r#"[ "$*" = "-T dev@box moor controller attach" ] || exit 64"#;
@@ -307,3 +310,5 @@ fn ssh_in_config_yields_ssh_target_and_env_still_wins() {
         Some(Target::Socket(PathBuf::from("/run/e.sock")))
     );
 }
+
+mod redial;

@@ -20,7 +20,7 @@ use serde_json::{json, Value};
 
 use super::handler;
 use crate::http::{start, HttpResponse, Server};
-use moor_client::Client;
+use moor_client::{Client, Redial};
 
 const TOKEN: &str = "t0ken";
 
@@ -200,7 +200,7 @@ fn malformed_body_is_400_without_a_socket_request() {
 #[test]
 fn unreachable_controller_is_502() {
     let dir = tempfile::tempdir().unwrap();
-    let client = Client::new(dir.path().join("missing.sock"));
+    let client = Client::new(dir.path().join("missing.sock")).with_redial(Redial::NEVER);
     let web = start(0, TOKEN.to_owned(), handler(client, fallback())).unwrap();
     let resp = post(&web, "/close", &json!({"box": "t"}));
     assert!(resp.starts_with("HTTP/1.1 502"), "{resp}");

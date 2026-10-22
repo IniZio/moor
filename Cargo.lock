@@ -2479,6 +2479,7 @@ dependencies = [
  "command-fds",
  "flate2",
  "getrandom 0.4.3",
+ "moor-client",
  "moor-core",
  "moor-testkit",
  "nix",

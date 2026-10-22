@@ -1,6 +1,10 @@
 //! Client for the moor controller socket: one-shot requests and event watches.
+//!
+//! A call dials again, within its [`Redial`] budget, while the request provably did not run:
+//! no controller listened, the connection failed before the request was written, or the
+//! controller answered `restarting`. A connection cut after the request was written is an
+//! error and is never sent again, because the request may have run.
 
-use std::fmt;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
@@ -11,11 +15,16 @@ use moor_core::controller::{
 };
 use moor_core::request::Request;
 use moor_core::response::Response;
-use moor_core::{BoxId, SessionId};
 
+pub use error::ClientError;
+pub use redial::{redial, Attempt, GaveUp, Redial};
 pub use stream::ByteStream;
+pub use watch::{EventRecord, Watch, WatchItem, WatchStop};
 
+mod error;
+mod redial;
 mod stream;
+mod watch;
 
 /// Id the client puts on its single request per connection.
 const REQUEST_ID: &str = "1";
@@ -41,94 +50,6 @@ impl Default for Timeouts {
     }
 }
 
-/// Why a controller call failed.
-#[derive(Debug)]
-pub enum ClientError {
-    /// The socket could not be opened.
-    Connect {
-        /// Socket path dialed.
-        socket: PathBuf,
-        /// The OS error.
-        source: io::Error,
-    },
-    /// Reading or writing the connection failed.
-    Io(io::Error),
-    /// The controller did not read or send within the configured timeout.
-    Timeout,
-    /// The controller sent an unexpected or malformed frame, or speaks another protocol.
-    Protocol(String),
-    /// The controller answered with an error frame.
-    Frame {
-        /// What the controller rejected.
-        kind: FrameErrorKind,
-        /// Human-readable detail.
-        message: String,
-    },
-}
-
-impl fmt::Display for ClientError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Connect { socket, source } => {
-                write!(f, "connect to {}: {source}", socket.display())
-            }
-            Self::Io(e) => write!(f, "controller connection: {e}"),
-            Self::Timeout => f.write_str("controller connection: timed out waiting on the socket"),
-            Self::Protocol(m) => write!(f, "controller protocol: {m}"),
-            Self::Frame { kind, message } => write!(f, "controller error ({kind:?}): {message}"),
-        }
-    }
-}
-
-impl std::error::Error for ClientError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Connect { source, .. } | Self::Io(source) => Some(source),
-            Self::Timeout | Self::Protocol(_) | Self::Frame { .. } => None,
-        }
-    }
-}
-
-impl From<io::Error> for ClientError {
-    fn from(e: io::Error) -> Self {
-        match e.kind() {
-            io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => Self::Timeout,
-            _ => Self::Io(e),
-        }
-    }
-}
-
-/// One stored event delivered by a watch.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EventRecord {
-    /// The event's store id.
-    pub cursor: i64,
-    /// Box the event belongs to, when it has one.
-    pub box_name: Option<String>,
-    /// Id of the Box the event belongs to, when it has one.
-    pub box_id: Option<BoxId>,
-    /// Session the event belongs to, when known.
-    pub session: Option<SessionId>,
-    /// Event kind.
-    pub kind: String,
-    /// Kind-specific data.
-    pub payload: serde_json::Value,
-    /// Event timestamp.
-    pub ts: i64,
-}
-
-/// One item of a watch stream.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WatchItem {
-    /// A stored event.
-    Event(EventRecord),
-    /// The backlog is delivered; resume from `cursor`.
-    CaughtUp {
-        /// Last event id scanned.
-        cursor: i64,
-    },
-}
-
 /// Dials the controller socket.
 #[derive(Debug, Clone)]
 pub struct Client {
@@ -136,14 +57,17 @@ pub struct Client {
     socket: PathBuf,
     /// Socket timeouts applied to each call.
     timeouts: Timeouts,
+    /// When a call whose request did not run dials again.
+    redial: Redial,
 }
 
 impl Client {
-    /// A client for the controller listening on `socket`.
+    /// A client for the controller listening on `socket`, with the default [`Redial`].
     pub fn new(socket: impl Into<PathBuf>) -> Self {
         Self {
             socket: socket.into(),
             timeouts: Timeouts::default(),
+            redial: Redial::default(),
         }
     }
 
@@ -154,76 +78,115 @@ impl Client {
         self
     }
 
+    /// Replaces the default redial budget and pauses.
+    #[must_use]
+    pub const fn with_redial(mut self, redial: Redial) -> Self {
+        self.redial = redial;
+        self
+    }
+
     /// Runs one request, passing each progress note to `on_progress`.
     ///
     /// # Errors
     /// Returns [`ClientError`] when the connection, handshake or exchange fails.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "callers hand the request over; each dial sends a copy"
+    )]
     pub fn request(
         &self,
         request: Request,
         mut on_progress: impl FnMut(&str),
     ) -> Result<Response, ClientError> {
-        let mut conn = self.open()?;
-        conn.send(&ClientFrame::Request {
-            id: REQUEST_ID.to_owned(),
-            request: Box::new(request),
-        })?;
-        loop {
-            match conn.next_frame()? {
-                ServerFrame::Progress { id, message } if id == REQUEST_ID => on_progress(&message),
-                ServerFrame::Response { id, envelope } if id == REQUEST_ID => return Ok(envelope),
-                other => return Err(unexpected(other, "progress or response")),
+        self.redialing(|| {
+            let mut conn = match self.sent(&request) {
+                Attempt::Done(conn) => conn,
+                Attempt::Unrun(e) => return Attempt::Unrun(e),
+                Attempt::Failed(e) => return Attempt::Failed(e),
+            };
+            loop {
+                match conn.next_frame() {
+                    Ok(ServerFrame::Progress { id, message }) if id == REQUEST_ID => {
+                        on_progress(&message);
+                    }
+                    Ok(ServerFrame::Response { id, envelope }) if id == REQUEST_ID => {
+                        return Attempt::Done(envelope)
+                    }
+                    Ok(other) => return refused(unexpected(other, "progress or response")),
+                    Err(e) => return Attempt::Failed(e),
+                }
             }
-        }
+        })
     }
 
     /// Runs one request whose answer streams raw bytes, passing each bytes frame to `on_bytes`
-    /// in order. Holds one frame at a time.
+    /// in order. Holds one frame at a time. Once a byte was passed on, the request is never
+    /// sent again.
     ///
     /// # Errors
     /// Returns [`ClientError`] when the exchange fails, a frame claims more than [`BYTES_MAX`]
     /// bytes, or `on_bytes` fails.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "callers hand the request over; each dial sends a copy"
+    )]
     pub fn read(
         &self,
         request: Request,
         mut on_bytes: impl FnMut(&[u8]) -> io::Result<()>,
     ) -> Result<Response, ClientError> {
-        let mut conn = self.open()?;
-        conn.send(&ClientFrame::Request {
-            id: REQUEST_ID.to_owned(),
-            request: Box::new(request),
-        })?;
         let mut buf = vec![0; BYTES_MAX];
-        loop {
-            match conn.next_frame()? {
-                ServerFrame::Bytes { id, len } if id == REQUEST_ID => {
-                    let data = buf.get_mut(..len).ok_or_else(|| {
-                        ClientError::Protocol(format!("bytes frame of {len} exceeds {BYTES_MAX}"))
-                    })?;
-                    conn.reader.read_exact(data)?;
-                    on_bytes(data)?;
+        self.redialing(|| {
+            let mut conn = match self.sent(&request) {
+                Attempt::Done(conn) => conn,
+                Attempt::Unrun(e) => return Attempt::Unrun(e),
+                Attempt::Failed(e) => return Attempt::Failed(e),
+            };
+            let mut passed = false;
+            loop {
+                match conn.next_frame() {
+                    Ok(ServerFrame::Bytes { id, len }) if id == REQUEST_ID => {
+                        passed = true;
+                        let Some(data) = buf.get_mut(..len) else {
+                            return Attempt::Failed(ClientError::Protocol(format!(
+                                "bytes frame of {len} exceeds {BYTES_MAX}"
+                            )));
+                        };
+                        if let Err(e) = conn.reader.read_exact(data).and_then(|()| on_bytes(data)) {
+                            return Attempt::Failed(e.into());
+                        }
+                    }
+                    Ok(ServerFrame::Response { id, envelope }) if id == REQUEST_ID => {
+                        return Attempt::Done(envelope)
+                    }
+                    Ok(other) if passed => {
+                        return Attempt::Failed(unexpected(other, "bytes or response"))
+                    }
+                    Ok(other) => return refused(unexpected(other, "bytes or response")),
+                    Err(e) => return Attempt::Failed(e),
                 }
-                ServerFrame::Response { id, envelope } if id == REQUEST_ID => return Ok(envelope),
-                other => return Err(unexpected(other, "bytes or response")),
             }
-        }
+        })
     }
 
     /// Runs one request whose answer streams raw bytes, and returns a reader over those bytes.
-    /// Call [`ByteStream::finish`] after the last byte for the controller's response.
+    /// Call [`ByteStream::finish`] after the last byte for the controller's response. Only
+    /// the dial and the request write are retried.
     ///
     /// # Errors
     /// Returns [`ClientError`] when the connection, handshake or request write fails.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "callers hand the request over; each dial sends a copy"
+    )]
     pub fn read_stream(&self, request: Request) -> Result<ByteStream, ClientError> {
-        let mut conn = self.open()?;
-        conn.send(&ClientFrame::Request {
-            id: REQUEST_ID.to_owned(),
-            request: Box::new(request),
-        })?;
-        Ok(ByteStream::new(conn))
+        self.redialing(|| self.sent(&request)).map(ByteStream::new)
     }
 
-    /// Streams stored events after cursor `since`; `follow` keeps the stream open.
+    /// Streams stored events after cursor `since`; `follow` keeps the stream open. The first
+    /// dial is tried once, so a front's own reconnect loop sees and logs the failure. A stream
+    /// the controller ends with `restarting` redials and resumes from the last cursor it
+    /// delivered.
     ///
     /// # Errors
     /// Returns [`ClientError`] when the connection or handshake fails.
@@ -233,103 +196,79 @@ impl Client {
         filter: WatchFilter,
         follow: bool,
     ) -> Result<Watch, ClientError> {
-        let mut conn = self.open()?;
-        conn.send(&ClientFrame::Watch {
-            since,
-            boxes: filter.boxes,
-            kinds: filter.kinds,
-            follow,
-        })?;
-        conn.writer.set_read_timeout(None)?;
-        Ok(Watch { conn, done: false })
+        Watch::open(self.clone(), since, filter, follow)
     }
 
-    /// Connects and completes the hello exchange.
-    fn open(&self) -> Result<Conn, ClientError> {
-        let stream = UnixStream::connect(&self.socket).map_err(|source| ClientError::Connect {
-            socket: self.socket.clone(),
-            source,
-        })?;
+    /// Runs `attempt` under this client's redial policy.
+    fn redialing<T>(
+        &self,
+        attempt: impl FnMut() -> Attempt<T, ClientError>,
+    ) -> Result<T, ClientError> {
+        redial(&self.redial, attempt, |pause, _| {
+            std::thread::sleep(pause);
+            true
+        })
+        .map_err(ClientError::from)
+    }
+
+    /// Opens a connection and writes `request` on it. A failed write is not retried: the
+    /// controller may have read the whole line.
+    fn sent(&self, request: &Request) -> Attempt<Conn, ClientError> {
+        let mut conn = match self.open() {
+            Attempt::Done(conn) => conn,
+            other => return other,
+        };
+        let frame = ClientFrame::Request {
+            id: REQUEST_ID.to_owned(),
+            request: Box::new(request.clone()),
+        };
+        match conn.send(&frame) {
+            Ok(()) => Attempt::Done(conn),
+            Err(e) => Attempt::Failed(e),
+        }
+    }
+
+    /// Connects and completes the hello exchange. Nothing has been asked yet, so a refused
+    /// connect, a dropped connection or a `restarting` answer leaves nothing run.
+    fn open(&self) -> Attempt<Conn, ClientError> {
+        let stream = match UnixStream::connect(&self.socket) {
+            Ok(stream) => stream,
+            Err(source) => {
+                return Attempt::Unrun(ClientError::Connect {
+                    socket: self.socket.clone(),
+                    source,
+                })
+            }
+        };
+        let mut conn = match self.conn(stream) {
+            Ok(conn) => conn,
+            Err(e) => return Attempt::Failed(e),
+        };
+        let hello = conn
+            .send(&ClientFrame::Hello { protocol: PROTOCOL })
+            .and_then(|()| conn.read_frame());
+        match hello {
+            Ok(Some(ServerFrame::Hello { protocol })) if protocol == PROTOCOL => {
+                Attempt::Done(conn)
+            }
+            Ok(Some(ServerFrame::Hello { protocol })) => Attempt::Failed(ClientError::Protocol(
+                format!("controller speaks protocol {protocol}, this client speaks {PROTOCOL}"),
+            )),
+            Ok(Some(other)) => refused(unexpected(other, "hello")),
+            Ok(None) => Attempt::Unrun(closed()),
+            Err(e @ ClientError::Io(_)) => Attempt::Unrun(e),
+            Err(e) => Attempt::Failed(e),
+        }
+    }
+
+    /// Wraps a connected stream with this client's timeouts.
+    fn conn(&self, stream: UnixStream) -> Result<Conn, ClientError> {
         stream.set_read_timeout(Some(self.timeouts.read))?;
         stream.set_write_timeout(Some(self.timeouts.write))?;
-        let reader = BufReader::new(stream.try_clone()?);
-        let mut conn = Conn {
-            reader,
+        Ok(Conn {
+            reader: BufReader::new(stream.try_clone()?),
             writer: stream,
-        };
-        conn.send(&ClientFrame::Hello { protocol: PROTOCOL })?;
-        match conn.next_frame()? {
-            ServerFrame::Hello { protocol } if protocol == PROTOCOL => Ok(conn),
-            ServerFrame::Hello { protocol } => Err(ClientError::Protocol(format!(
-                "controller speaks protocol {protocol}, this client speaks {PROTOCOL}"
-            ))),
-            other => Err(unexpected(other, "hello")),
-        }
-    }
-}
-
-/// A live watch; iterates events until the controller closes the stream.
-#[derive(Debug)]
-pub struct Watch {
-    /// The open connection.
-    conn: Conn,
-    /// Set after an error or EOF so iteration ends; caught-up frames do not stop it.
-    done: bool,
-}
-
-impl Watch {
-    /// A second handle on the watch socket. Calling `shutdown(Shutdown::Both)` on it from
-    /// another thread makes a blocked `next()` return `None` (EOF).
-    ///
-    /// # Errors
-    /// Returns the OS error when the socket cannot be cloned.
-    pub fn shutdown_handle(&self) -> io::Result<UnixStream> {
-        self.conn.writer.try_clone()
-    }
-}
-
-impl Iterator for Watch {
-    type Item = Result<WatchItem, ClientError>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.done {
-            return None;
-        }
-        let frame = match self.conn.read_frame() {
-            Ok(Some(frame)) => frame,
-            Ok(None) => {
-                self.done = true;
-                return None;
-            }
-            Err(e) => {
-                self.done = true;
-                return Some(Err(e));
-            }
-        };
-        match frame {
-            ServerFrame::Event {
-                cursor,
-                r#box,
-                box_id,
-                session,
-                kind,
-                payload,
-                ts,
-            } => Some(Ok(WatchItem::Event(EventRecord {
-                cursor,
-                box_name: r#box,
-                box_id,
-                session,
-                kind,
-                payload,
-                ts,
-            }))),
-            ServerFrame::CaughtUp { cursor } => Some(Ok(WatchItem::CaughtUp { cursor })),
-            other => {
-                self.done = true;
-                Some(Err(unexpected(other, "event or caught-up")))
-            }
-        }
+        })
     }
 }
 
@@ -373,10 +312,13 @@ impl Conn {
 
     /// Reads the next frame; EOF is a protocol error.
     fn next_frame(&mut self) -> Result<ServerFrame, ClientError> {
-        self.read_frame()?.ok_or_else(|| {
-            ClientError::Protocol("controller closed the connection before answering".to_owned())
-        })
+        self.read_frame()?.ok_or_else(closed)
     }
+}
+
+/// The error for a connection the controller closed before answering.
+fn closed() -> ClientError {
+    ClientError::Protocol("controller closed the connection before answering".to_owned())
 }
 
 /// Error for a frame that does not fit the exchange; an error frame keeps its kind.
@@ -384,6 +326,21 @@ fn unexpected(frame: ServerFrame, wanted: &str) -> ClientError {
     match frame {
         ServerFrame::Error { kind, message, .. } => ClientError::Frame { kind, message },
         _ => ClientError::Protocol(format!("expected {wanted} frame, got another")),
+    }
+}
+
+/// A `restarting` answer leaves the request unrun; any other refusal fails the call.
+const fn refused<T>(e: ClientError) -> Attempt<T, ClientError> {
+    if matches!(
+        e,
+        ClientError::Frame {
+            kind: FrameErrorKind::Restarting,
+            ..
+        }
+    ) {
+        Attempt::Unrun(e)
+    } else {
+        Attempt::Failed(e)
     }
 }
 

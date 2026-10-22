@@ -1,6 +1,11 @@
 //! Client for the controller: runs one request through a configured daemon, reached over its
 //! socket or through `ssh <host> moor controller attach`.
+//!
+//! A request that provably did not run (the transport failed before the hello reply, or the
+//! controller answered `restarting`) is sent again within the redial budget. A session cut
+//! after the request was written is an error, because the request may have run.
 
+use std::cell::RefCell;
 use std::fmt;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
@@ -8,7 +13,10 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
-use moor_core::controller::{parse_server_frame, ClientFrame, ServerFrame, BYTES_MAX, PROTOCOL};
+use moor_client::Attempt;
+use moor_core::controller::{
+    parse_server_frame, ClientFrame, FrameErrorKind, ServerFrame, BYTES_MAX, PROTOCOL,
+};
 use moor_core::seam::proc::Tool;
 use moor_core::{ErrorKind, Request, Response};
 
@@ -17,8 +25,11 @@ use crate::env::Env;
 use crate::error::CommandError;
 
 mod interrupt;
+mod redial;
 pub mod remote;
 pub mod watch;
+
+use redial::redialing;
 
 pub use watch::watch;
 
@@ -77,6 +88,8 @@ impl std::error::Error for ClientError {}
 enum SessionError {
     /// The transport failed before the controller's hello reply.
     LostBeforeHello(String),
+    /// The controller answered `restarting` before it ran the request.
+    Restarting(String),
     /// Any other failure.
     Client(ClientError),
 }
@@ -119,11 +132,15 @@ pub fn call(
     target: &Target,
     request: &Request,
     on_progress: impl FnMut(&str),
-    on_output: impl FnMut(&[u8]),
+    mut on_output: impl FnMut(&[u8]),
 ) -> Result<Response, ClientError> {
     let forward = matches!(request, Request::Run(_));
-    with_transport(env, target, forward, |reader, mut writer| {
-        session(reader, &mut writer, request, on_progress, on_output)
+    let on_progress = RefCell::new(on_progress);
+    let progress = |msg: &str| (on_progress.borrow_mut())(msg);
+    redialing(env, target, progress, || {
+        with_transport(env, target, forward, |reader, mut writer| {
+            session(reader, &mut writer, request, progress, &mut on_output)
+        })
     })
 }
 
@@ -134,22 +151,32 @@ fn with_transport<T>(
     target: &Target,
     forward: bool,
     exchange: impl FnOnce(&mut dyn BufRead, &mut dyn Write) -> Result<T, SessionError>,
-) -> Result<T, ClientError> {
+) -> Attempt<T, ClientError> {
     match target {
         Target::Socket(socket) => {
-            let unreachable = |e: std::io::Error| ClientError::Unreachable {
-                target: target.clone(),
-                detail: e.to_string(),
+            let stream = match UnixStream::connect(socket) {
+                Ok(stream) => stream,
+                Err(e) => {
+                    return Attempt::Unrun(ClientError::Unreachable {
+                        target: target.clone(),
+                        detail: e.to_string(),
+                    })
+                }
             };
-            let stream = UnixStream::connect(socket).map_err(unreachable)?;
             let _forward = forward.then(|| interrupt::forward(&stream));
-            let mut writer = stream
-                .try_clone()
-                .map_err(|e| ClientError::Protocol(format!("clone socket: {e}")))?;
-            exchange(&mut BufReader::new(stream), &mut writer).map_err(|e| match e {
-                SessionError::LostBeforeHello(msg) => ClientError::Protocol(msg),
-                SessionError::Client(e) => e,
-            })
+            let mut writer = match stream.try_clone() {
+                Ok(writer) => writer,
+                Err(e) => {
+                    return Attempt::Failed(ClientError::Protocol(format!("clone socket: {e}")))
+                }
+            };
+            match exchange(&mut BufReader::new(stream), &mut writer) {
+                Ok(value) => Attempt::Done(value),
+                Err(SessionError::LostBeforeHello(msg) | SessionError::Restarting(msg)) => {
+                    Attempt::Unrun(ClientError::Protocol(msg))
+                }
+                Err(SessionError::Client(e)) => Attempt::Failed(e),
+            }
         }
         Target::Ssh(host) => call_ssh(env, target, host, exchange),
     }
@@ -161,30 +188,35 @@ fn call_ssh<T>(
     target: &Target,
     host: &str,
     exchange: impl FnOnce(&mut dyn BufRead, &mut dyn Write) -> Result<T, SessionError>,
-) -> Result<T, ClientError> {
+) -> Attempt<T, ClientError> {
     let unreachable = |detail: String| ClientError::Unreachable {
         target: target.clone(),
         detail,
     };
-    let mut child = Command::new(ssh_program(env))
+    let spawned = Command::new(ssh_program(env))
         .args(["-T", host, "moor", "controller", "attach"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .spawn()
-        .map_err(|e| unreachable(format!("cannot run ssh: {e}")))?;
+        .spawn();
+    let mut child = match spawned {
+        Ok(child) => child,
+        Err(e) => return Attempt::Failed(unreachable(format!("cannot run ssh: {e}"))),
+    };
     let (Some(mut stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
         let _ = child.kill();
         let _ = child.wait();
-        return Err(ClientError::Protocol("ssh pipes unavailable".to_owned()));
+        return Attempt::Failed(ClientError::Protocol("ssh pipes unavailable".to_owned()));
     };
     let result = exchange(&mut BufReader::new(stdout), &mut stdin);
     drop(stdin);
-    let result = result.map_err(|e| match e {
-        SessionError::LostBeforeHello(msg) => {
-            unreachable(format!("{msg}{}", exit_note(&mut child)))
+    let result = match result {
+        Ok(value) => Attempt::Done(value),
+        Err(SessionError::LostBeforeHello(msg)) => {
+            Attempt::Unrun(unreachable(format!("{msg}{}", exit_note(&mut child))))
         }
-        SessionError::Client(e) => e,
-    });
+        Err(SessionError::Restarting(msg)) => Attempt::Unrun(ClientError::Protocol(msg)),
+        Err(SessionError::Client(e)) => Attempt::Failed(e),
+    };
     let _ = child.kill();
     let _ = child.wait();
     result
@@ -223,13 +255,14 @@ fn handshake(reader: &mut impl BufRead, writer: &mut impl Write) -> Result<(), S
             "controller speaks protocol {protocol}, this client speaks {PROTOCOL}"
         ))
         .into()),
-        other => Err(unexpected(&other, "hello").into()),
+        other => Err(refused(&other, "hello")),
     }
 }
 
 /// The hello, request, progress and bytes exchange over an open transport.
 ///
-/// Holds one bytes frame at a time.
+/// Holds one bytes frame at a time. A `restarting` answer before any output leaves the request
+/// unrun; after output it is an error, because the output may not come again.
 fn session(
     mut reader: impl BufRead,
     writer: &mut impl Write,
@@ -248,6 +281,7 @@ fn session(
     )
     .map_err(ClientError::Protocol)?;
     let mut buf = Vec::new();
+    let mut output = false;
     loop {
         match next_frame(&mut reader)? {
             ServerFrame::Progress { id, message } if id == REQUEST_ID => on_progress(&message),
@@ -262,10 +296,12 @@ fn session(
                 reader
                     .read_exact(&mut buf)
                     .map_err(|e| ClientError::Protocol(format!("read from controller: {e}")))?;
+                output = true;
                 on_output(&buf);
             }
             ServerFrame::Response { id, envelope } if id == REQUEST_ID => return Ok(envelope),
-            other => return Err(unexpected(&other, "progress, bytes or response").into()),
+            other if output => return Err(unexpected(&other, "progress, bytes or response").into()),
+            other => return Err(refused(&other, "progress, bytes or response")),
         }
     }
 }
@@ -319,6 +355,18 @@ fn parse_frame(line: &str) -> Result<ServerFrame, ClientError> {
 /// Read and parse the next frame; EOF is a protocol error.
 fn next_frame(reader: &mut impl BufRead) -> Result<ServerFrame, ClientError> {
     parse_frame(&read_line(reader).map_err(ClientError::Protocol)?)
+}
+
+/// [`unexpected`], except that a `restarting` frame means the request did not run.
+fn refused(frame: &ServerFrame, wanted: &str) -> SessionError {
+    match frame {
+        ServerFrame::Error {
+            kind: FrameErrorKind::Restarting,
+            message,
+            ..
+        } => SessionError::Restarting(message.clone()),
+        other => unexpected(other, wanted).into(),
+    }
 }
 
 /// Error for a frame that does not fit the exchange; surfaces a controller error frame.

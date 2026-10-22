@@ -1,7 +1,6 @@
 //! Relays controller events to a browser as a Server-Sent Events stream.
 
 use std::io::{self, Write};
-use std::net::Shutdown;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
@@ -59,10 +58,7 @@ impl Relay<'_> {
             Ok(watch) => watch,
             Err(e) => return Ok(Some(e.to_string())),
         };
-        let handle = match watch.shutdown_handle() {
-            Ok(handle) => handle,
-            Err(e) => return Ok(Some(e.to_string())),
-        };
+        let stop = watch.stopper();
         let (tx, rx) = mpsc::sync_channel(self.config.channel_bound);
         let reader = thread::spawn(move || {
             for item in watch {
@@ -73,7 +69,7 @@ impl Relay<'_> {
         });
         let ended = self.pump(&rx);
         drop(rx);
-        let _ = handle.shutdown(Shutdown::Both);
+        stop.stop();
         let _ = reader.join();
         ended
     }
