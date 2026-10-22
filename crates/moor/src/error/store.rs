@@ -12,6 +12,7 @@ impl From<StoreError> for CommandError {
         match e {
             StoreError::Illegal(_) => Self::new(ErrorKind::Internal, e),
             StoreError::NameTaken(_)
+            | StoreError::BranchTaken(_)
             | StoreError::Schema { .. }
             | StoreError::SleepBlocked { .. } => Self::new(ErrorKind::Refused, e),
             other => Self::new(ErrorKind::Failed, format!("state store error: {other}")),

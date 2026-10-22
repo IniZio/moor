@@ -48,7 +48,7 @@ pub(crate) use proxy::{TunnelAck, TunnelRequest, TunnelWant};
 pub(crate) use runs::{NewRun, RunOutcome, RunRow};
 
 /// Schema version this build reads and writes.
-pub(crate) const SCHEMA_VERSION: &str = "12";
+pub(crate) const SCHEMA_VERSION: &str = "13";
 /// Full schema, applied once when the file has no `meta` table.
 const SCHEMA_SQL: &str = include_str!("schema.sql");
 /// How long a connection waits on a lock before `SQLITE_BUSY`.
@@ -109,6 +109,9 @@ pub(crate) enum StoreError {
     /// An open box already has this name.
     #[error("name `{}` is taken by an open box", .0.as_str())]
     NameTaken(BoxName),
+    /// An open box already works on this branch.
+    #[error("branch `{0}` belongs to another open box")]
+    BranchTaken(String),
     /// The writer mutex was poisoned.
     #[error("store writer poisoned")]
     Poisoned,

@@ -14,7 +14,7 @@ mod sql;
 mod steps;
 
 pub(super) use self::sql::update;
-use self::sql::{field_value, text, Sets};
+use self::sql::{branch_taken, field_value, text, Sets};
 use self::steps::{step_box, Parts};
 use super::reads::live_holders_in;
 use super::{BoxRow, DriverRow, Store, StoreError};
@@ -77,8 +77,14 @@ impl Store {
     }
 }
 
-/// The body of `apply`, inside its transaction.
+/// The body of `apply`, inside its transaction; a branch an open Box works on is refused.
 fn apply_in(tx: &Transaction<'_>, now: Ts, d: Decision) -> Result<Applied, StoreError> {
+    let branch = d.set.branch.clone();
+    apply_steps(tx, now, d).map_err(|e| branch_taken(e, &branch))
+}
+
+/// Every write of `d`, inside its transaction.
+fn apply_steps(tx: &Transaction<'_>, now: Ts, d: Decision) -> Result<Applied, StoreError> {
     let steps::Stepped {
         id,
         existing,
