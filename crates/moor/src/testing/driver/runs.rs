@@ -1,7 +1,8 @@
 //! Detached-run half of the Driver fake: runs the Box's run scripts with the local `/bin/sh`.
 //!
 //! A test that signals a run's process group runs inside a pid namespace, whose pid 1 does not
-//! reap orphans: a killed run leader stays a zombie there, and the scripts read it as alive.
+//! reap orphans: a killed run leader would stay a zombie there, and the scripts read a zombie as
+//! alive. So the fake makes this process the leader's reaper, as a Box's init is.
 
 use std::io::{Read as _, Write};
 use std::path::{Path, PathBuf};
@@ -33,14 +34,17 @@ pub(super) struct LocalBox {
 }
 
 impl LocalBox {
-    /// `sh -c script` in the workdir, with `HOME` the Box's and nothing else from this host.
+    /// `sh -c script` in the workdir, with `HOME` the Box's, `$HOME/bin` first on `PATH`, and
+    /// nothing else from this host.
     fn sh(&self, script: &str) -> Command {
+        let mut path = self.home.join("bin").into_os_string();
+        path.push(":/usr/bin:/bin");
         let mut cmd = Command::new("/bin/sh");
         cmd.arg("-c")
             .arg(script)
             .env_clear()
             .env("HOME", &self.home)
-            .env("PATH", "/usr/bin:/bin")
+            .env("PATH", path)
             .current_dir(&self.workdir)
             .stdin(Stdio::null());
         cmd
@@ -55,11 +59,18 @@ impl FakeDriver {
     /// Runs detached runs with the local `/bin/sh`: `home` stands for the Box's `HOME`, and
     /// every run starts in `workdir` whatever its spec's cwd. Without this they are unsupported.
     pub(crate) fn local_runs(self, home: &Path, workdir: &Path) -> Self {
+        rustix::process::set_child_subreaper(Some(rustix::process::getpid()))
+            .expect("this process reaps the run leaders");
         self.st().local = Some(LocalBox {
             home: home.to_path_buf(),
             workdir: workdir.to_path_buf(),
         });
         self
+    }
+
+    /// The next `follow_run` stops once it has written `after` bytes and reports the channel cut.
+    pub(crate) fn cut_next_follow(&self, after: u64) {
+        self.st().cut_follow = Some(after);
     }
 
     fn local(&self, what: String) -> Result<LocalBox, DriverError> {
@@ -87,7 +98,10 @@ impl FakeDriver {
             Some(0) => String::from_utf8_lossy(&out.stdout)
                 .trim()
                 .parse()
-                .map(|pid| Launched::Started { pid })
+                .map(|pid| {
+                    reap(pid);
+                    Launched::Started { pid }
+                })
                 .map_err(|_| failed("the launch printed no pid")),
             Some(REFUSED) => Ok(Launched::AlreadyLaunched),
             _ => Err(failed(&String::from_utf8_lossy(&out.stderr))),
@@ -102,6 +116,7 @@ impl FakeDriver {
         out: &mut dyn Write,
     ) -> Result<Followed, DriverError> {
         let b = self.local(format!("follow_run {} {run} {from}", h.as_str()))?;
+        let cut = self.st().cut_follow.take();
         let mut child = b
             .sh(&follow_script(run, from))
             .stdout(Stdio::piped())
@@ -111,9 +126,19 @@ impl FakeDriver {
         let mut buf = [0u8; 8192];
         if let Some(mut r) = child.stdout.take() {
             while let Ok(n @ 1..) = r.read(&mut buf) {
+                let room = cut.map_or(n as u64, |c| (from + c).saturating_sub(offset));
+                let n = usize::try_from(room.min(n as u64)).unwrap_or(n);
                 out.write_all(buf.get(..n).unwrap_or_default())
                     .map_err(|e| failed(&e.to_string()))?;
                 offset += n as u64;
+                if cut.is_some_and(|c| offset >= from + c) {
+                    child.kill().map_err(|e| failed(&e.to_string()))?;
+                    child.wait().map_err(|e| failed(&e.to_string()))?;
+                    return Ok(Followed {
+                        offset,
+                        end: FollowEnd::Cut,
+                    });
+                }
             }
         }
         let end = match child.wait().map_err(|e| failed(&e.to_string()))?.code() {
@@ -144,6 +169,19 @@ impl FakeDriver {
             _ => Err(failed(&String::from_utf8_lossy(&out.stderr))),
         }
     }
+}
+
+/// Reaps run leader `pid` once it exits; it is this process's child once its launcher exits.
+fn reap(pid: u32) {
+    let Some(pid) = i32::try_from(pid)
+        .ok()
+        .and_then(rustix::process::Pid::from_raw)
+    else {
+        return;
+    };
+    std::thread::spawn(move || {
+        let _ = rustix::process::waitpid(Some(pid), rustix::process::WaitOptions::empty());
+    });
 }
 
 fn failed(summary: &str) -> DriverError {

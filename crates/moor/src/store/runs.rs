@@ -243,6 +243,31 @@ impl Store {
             .join(format!("{}.follow", run.get()))
     }
 
+    /// Records `pid` as the process of run `id` and of its Box's running intent.
+    pub(crate) fn set_run_pid(&self, id: RunId, pid: u32) -> Result<(), StoreError> {
+        let mut conn = self.writer()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute(
+            "UPDATE runs SET pid = ? WHERE id = ?",
+            params![pid, id.get()],
+        )?;
+        tx.execute(
+            "UPDATE boxes SET intent_pid = ? WHERE intent_kind = 'running' AND intent_run = ?",
+            params![pid, id.get()],
+        )?;
+        tx.commit()?;
+        drop(conn);
+        Ok(())
+    }
+
+    /// Run `id`, in flight or finished.
+    pub(crate) fn run(&self, id: RunId) -> Result<Option<RunRow>, StoreError> {
+        let conn = self.reader()?;
+        let mut stmt = conn.prepare(&format!("{RUN_SELECT} WHERE id = ?"))?;
+        let mut rows = stmt.query_and_then([id.get()], run_from_row)?;
+        rows.next().transpose()
+    }
+
     /// The box's most recent run, in flight or finished.
     pub(crate) fn last_run(&self, box_id: BoxId) -> Result<Option<RunRow>, StoreError> {
         let conn = self.reader()?;

@@ -20,6 +20,7 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
 
+mod detached;
 mod env;
 mod setup_parity;
 mod transport;
