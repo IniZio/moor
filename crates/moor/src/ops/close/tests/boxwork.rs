@@ -342,30 +342,23 @@ const NO_CHECKOUT: ExecOutcome = ExecOutcome::Exited {
 };
 
 #[test]
-fn close_refuses_a_box_with_no_git_checkout_like_an_unreadable_probe() {
-    let driver = FakeDriver::new().exec_results([Ok(NO_CHECKOUT)]);
+fn close_proceeds_without_force_when_the_box_has_no_git_checkout() {
+    let driver = FakeDriver::new().exec_results([Ok(NO_CHECKOUT), Ok(NO_CHECKOUT)]);
     let f = fx_box(driver, surface(), Some("ahead=0 dirty=0"));
-    let t = text(&refused(&f));
-    assert!(
-        t.contains("could not check the Box for unsaved work"),
-        "{t}"
-    );
+    let v = run(&f.cx, &req(false)).unwrap();
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(box_state(&f), BoxState::Deleted);
+    assert_eq!(probes(&f), 2, "the probe ran before and after the stop");
 }
 
 #[test]
-fn close_refuses_when_the_recheck_finds_no_git_checkout() {
+fn close_proceeds_when_the_recheck_finds_no_git_checkout() {
     let ok = Ok(ExecOutcome::Exited { code: 0 });
     let driver = FakeDriver::new().exec_results([ok, Ok(NO_CHECKOUT)]);
     let f = fx_box(driver, surface(), Some("ahead=0 dirty=0"));
-    let e = run(&f.cx, &req(false)).unwrap_err();
-    assert_eq!(e.kind, ErrorKind::Refused);
-    let t = text(&e);
-    assert!(
-        t.contains("could not check the Box for unsaved work"),
-        "{t}"
-    );
-    assert_eq!(count(&f, "release"), 0);
-    assert_ne!(row(&f).lifecycle, BoxLifecycle::Closed);
+    let v = run(&f.cx, &req(false)).unwrap();
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(box_state(&f), BoxState::Deleted);
 }
 
 #[test]

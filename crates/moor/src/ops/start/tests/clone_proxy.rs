@@ -75,7 +75,7 @@ fn the_proxy_is_ready_before_the_clone_exec_and_its_env_is_on_it() {
     let clone = spec.argv.last().unwrap();
     assert!(
         clone.contains(
-            "git clone -q --filter=blob:none --no-checkout -- 'https://github.com/o/n.git' ."
+            "git clone -q --filter=blob:none --no-checkout -- 'https://github.com/o/n.git' \"$tmp\""
         ),
         "{clone}"
     );

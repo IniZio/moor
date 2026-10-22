@@ -53,7 +53,12 @@ impl CloneStep {
 /// before its checkout carries on, and a branch that already exists is checked out where it is, so
 /// commits made on it are never lost. A new branch starts from `origin/<branch>` when the remote
 /// has it, else from the base. A URL, base or branch that starts with `-` is refused so git never
-/// reads it as an option. `.moor/` is excluded so moor's own files never show as changes.
+/// reads it as an option.
+///
+/// crabbox writes `.crabbox/` into the workdir before the script runs, and `git clone` needs an
+/// empty directory, so a workdir with no `.git` is cloned into a temp dir under `.moor/` whose
+/// `.git` then moves into the workdir; the rename stays on one filesystem. `.moor/` and
+/// `.crabbox/` are excluded so moor's and crabbox's files never show as changes.
 #[must_use]
 pub fn clone_script(c: &Checkout<'_>) -> String {
     let (url, base, branch) = (quote(c.url), quote(c.base), quote(c.branch));
@@ -70,7 +75,12 @@ case {base} in -*) echo 'the base starts with -' >&2; exit {fetch};; esac
 case {branch} in -*) echo 'the branch starts with -' >&2; exit {checkout};; esac
 if [ "$(git symbolic-ref -q --short HEAD 2>/dev/null)" != {branch} ]; then
   if [ ! -d .git ]; then
-    git clone -q --filter=blob:none --no-checkout -- {url} . || exit {clone}
+    tmp=.moor/clone.$$
+    rm -rf -- "$tmp" && mkdir -p -- "$tmp" || exit {clone}
+    git clone -q --filter=blob:none --no-checkout -- {url} "$tmp" && mv -- "$tmp/.git" .git
+    cloned=$?
+    rm -rf -- "$tmp"
+    [ "$cloned" -eq 0 ] || exit {clone}
   fi
   if git rev-parse -q --verify {local} >/dev/null; then
     git checkout -q {branch} -- || exit {checkout}
@@ -84,7 +94,9 @@ if [ "$(git symbolic-ref -q --short HEAD 2>/dev/null)" != {branch} ]; then
     git checkout -q --no-track -b {branch} "$from" -- || exit {checkout}
   fi
 fi
-grep -qx '.moor/' .git/info/exclude 2>/dev/null || printf '.moor/\n' >> .git/info/exclude
+for p in .moor/ .crabbox/; do
+  grep -qxF -- "$p" .git/info/exclude 2>/dev/null || printf '%s\n' "$p" >> .git/info/exclude
+done
 "#
     )
 }
