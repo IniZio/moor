@@ -24,16 +24,15 @@ none, and a module with no row has no limit.
 | Target | What it runs |
 | --- | --- |
 | `make build` | `cargo build --workspace --release`. |
-| `make format-check` | `cargo fmt --check` and `taplo fmt --check`. |
-| `make lint` | Clippy with `-D warnings`, the 400-line cap on Rust files, the removed-name, Box-key, and Box-environment checks, the layering check, the lint self-tests, `typos`, and `cargo doc` with warnings denied. |
+| `make lint` | `cargo fmt --check` and `taplo fmt --check`, Clippy with `-D warnings`, the 400-line cap on Rust files, the removed-name, Box-key, and Box-environment checks, the layering check, the lint self-tests, `typos`, and `cargo doc` with warnings denied. |
 | `make audit` | `cargo deny check` and `cargo machete`. |
 | `make unit` | The unit tests, the `moor` CLI test, the `moor-slack` daemon test, the `moor-web` tests, and the doc tests. |
 | `make test` | The same as `make unit`. |
-| `make ci` | `audit`, `lint`, `format-check`, then `test`. |
+| `make ci` | `audit`, `lint`, then `test`. |
 | `make overlap BASE=<ref> [HEAD=<ref>] [FILES="glob ..."]` | Lists open pull requests that touch the same files and are not yet in `BASE`. |
 
 Run `make overlap` before you branch new work and before you rebase a stack,
 then base the new branch on the pull requests that it lists.
 
-CI runs `format-check`, `lint`, `audit`, and `unit` in
+CI runs `lint`, `audit`, and `unit` in
 [ci.yaml](../.github/workflows/ci.yaml).
