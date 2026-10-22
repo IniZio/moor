@@ -31,10 +31,18 @@ pub(super) fn during<T>(
     let done = AtomicBool::new(false);
     thread::scope(|scope| {
         scope.spawn(|| follow(path, &done, sink));
-        let result = work();
-        done.store(true, Ordering::SeqCst);
-        result
+        let _done = SetOnDrop(&done);
+        work()
     })
+}
+
+/// Sets its flag when dropped, so a thread waiting on the flag ends even if the work panics.
+pub(super) struct SetOnDrop<'a>(pub(super) &'a AtomicBool);
+
+impl Drop for SetOnDrop<'_> {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
 }
 
 /// Copies `path` to `sink` as it grows, until `done` is set and no bytes remain.
