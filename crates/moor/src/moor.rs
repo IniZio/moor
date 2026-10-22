@@ -52,6 +52,12 @@ impl Moor {
         wire::reconcile_proxies(env)
     }
 
+    /// Leaves SIGINT and SIGTERM to the controller for the life of the process, so a streamed
+    /// command ends only on its own or at its deadline. False when a stream already took them.
+    pub(crate) fn leave_signals_to_controller() -> bool {
+        wire::leave_signals_to_controller()
+    }
+
     /// The `version` envelope; independent of config and state.
     #[must_use]
     pub fn version() -> Response {

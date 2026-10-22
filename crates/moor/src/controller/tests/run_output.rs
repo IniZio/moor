@@ -13,6 +13,7 @@ use moor_core::seam::driver::ExecOutcome;
 use moor_core::{Request, Response};
 
 use super::super::conn::serve;
+use super::super::drain::Drain;
 use super::super::progress::report_while;
 use crate::cli::{render, GlobalOpts};
 use crate::client::{call, Target};
@@ -71,14 +72,15 @@ fn run_output_reaches_the_client_while_the_command_runs() {
         serve(
             reader,
             stream,
+            &Drain::default(),
             |id, request, out| match request {
                 Request::Run(run) => {
                     let cx = cx.lock().unwrap().take().unwrap();
-                    report_while("run", id, WAIT, out, move |sink| {
+                    Some(report_while("run", id, WAIT, out, move |sink| {
                         Moor::from_cx(cx).run_streamed(&run, sink)
-                    })
+                    }))
                 }
-                other => Response::ok(other.cmd(), None),
+                other => Some(Response::ok(other.cmd(), None)),
             },
             |_, _, _, _| {},
         );

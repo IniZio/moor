@@ -166,7 +166,7 @@ phase_timed() { phase_lines "$1" timed --name "$1" --took-ms "$2" --budget "$3";
 assert_rc() { if [ "$2" -eq 0 ]; then phase_pass "$1"; else phase_fail "$1" "$3"; fi; }
 
 # Runs a command on the Box; the command sees the Box workdir as cwd.
-box_run() { mo 180 run "$name" --no-sync -- "$@"; }
+box_run() { mo 180 run "$name" -- "$@"; }
 agent_up() { box_run sh -c "pgrep -f '[c]laude' >/dev/null"; }
 # agent_check PHASE KIND [AFTER_ID] [REF_MS]: the agent process runs, the proxy log shows a model POST within 60 s
 # of the newest KIND event (or of REF_MS, when given), and the Box has a registered agent session. A FAIL names
@@ -275,7 +275,7 @@ if [ "$dry" = 1 ]; then
   done
   echo "+ poll for a tunnel --reverse process (assert.tunnel_seen)"
   echo "+ assert.agent_start: pgrep claude on the Box, then poll <= 60s after session_started for a POST claude 2xx in <state>/proxy/<box id>.log and a registered agent session in moor.db (read-only); on FAIL print moor show --pane tail"
-  echo "+ moor run $name --no-sync -- test -e .git"
+  echo "+ moor run $name -- test -e .git"
   for ((n = 1; n <= cycles; n++)); do
     echo "+ cycle $n: moor sleep $name (<= ${b_sleep}s); poll for the tunnel --reverse process to vanish; sleep$n.other_tunnels is informational (<= ${b_tunnels}s)"
     echo "+ cycle $n: e2e-budget last-id; moor wake $name; poll relaunched (<= ${b_wake_total}s); e2e-budget wake --cycle $n"

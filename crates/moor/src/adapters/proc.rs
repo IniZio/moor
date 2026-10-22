@@ -22,6 +22,7 @@ use env::{resolve, Snapshot};
 use grace::{terminate, GRACE};
 use signal::{is_group_leader, send_group, signal_group, to_pid};
 use stdin::stdin_for;
+pub(crate) use stream::leave_signals_to_controller;
 use trace::Trace;
 
 /// Poll interval while waiting for a child.

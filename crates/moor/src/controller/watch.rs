@@ -12,6 +12,7 @@ use moor_core::controller::{FrameErrorKind, ServerFrame, WatchFilter};
 use moor_core::user::Viewer;
 use moor_core::BoxId;
 
+use super::drain::Drain;
 use crate::env::Env;
 use crate::Moor;
 
@@ -49,6 +50,10 @@ struct Shared {
     scanned: AtomicI64,
     /// Why the poller could not open or read the store, if that is why it stopped.
     failure: Mutex<Option<String>>,
+    /// The controller's drain; the poller stops once it begins.
+    drain: Option<Arc<Drain>>,
+    /// The poller stopped because the drain began.
+    restarting: AtomicBool,
 }
 
 impl Shared {
@@ -57,6 +62,16 @@ impl Shared {
         if let Ok(mut slot) = self.failure.lock() {
             *slot = Some(reason);
         }
+    }
+
+    /// Whether the poller must stop: the connection closed, or the drain began, which the
+    /// stream then reports.
+    fn stopping(&self) -> bool {
+        if self.drain.as_ref().is_some_and(|d| d.begun()) {
+            self.restarting.store(true, Ordering::Release);
+            return true;
+        }
+        self.closed.load(Ordering::Acquire)
     }
 
     /// Take the recorded store failure.
@@ -96,6 +111,21 @@ pub(crate) fn stream(writer: &mut impl Write, env: &Env, ask: Ask, limits: Limit
     run(writer, env, ask, limits, &Arc::new(Shared::default()));
 }
 
+/// [`stream`] that ends with a `restarting` error frame once `drain` begins.
+pub(crate) fn stream_draining(
+    writer: &mut impl Write,
+    env: &Env,
+    ask: Ask,
+    limits: Limits,
+    drain: &Arc<Drain>,
+) {
+    let shared = Shared {
+        drain: Some(Arc::clone(drain)),
+        ..Shared::default()
+    };
+    run(writer, env, ask, limits, &Arc::new(shared));
+}
+
 /// [`stream`] with the shared flags supplied by the caller.
 fn run(writer: &mut impl Write, env: &Env, ask: Ask, limits: Limits, shared: &Arc<Shared>) {
     let _close = CloseOnDrop(Arc::clone(shared));
@@ -128,6 +158,15 @@ fn run(writer: &mut impl Write, env: &Env, ask: Ask, limits: Limits, shared: &Ar
             message: format!("event store unavailable ({reason}); last delivered cursor {last}, reconnect with it"),
         };
         let _ = send(writer, &unavailable);
+    } else if shared.restarting.load(Ordering::Acquire) {
+        let restarting = ServerFrame::Error {
+            id: None,
+            kind: FrameErrorKind::Restarting,
+            message: format!(
+                "the controller is restarting; last delivered cursor {last}, reconnect with it"
+            ),
+        };
+        let _ = send(writer, &restarting);
     } else if shared.caught_up.load(Ordering::Acquire) {
         let cursor = shared.scanned.load(Ordering::Acquire).max(last);
         let _ = send(writer, &ServerFrame::CaughtUp { cursor });
@@ -159,7 +198,7 @@ fn poll(env: &Env, ask: &Ask, limits: Limits, tx: &SyncSender<ServerFrame>, shar
     let follow = ask.follow;
     let mut cursor = ask.since;
     shared.scanned.store(cursor, Ordering::Release);
-    while !shared.closed.load(Ordering::Acquire) {
+    while !shared.stopping() {
         let batch = match moor.events_after(cursor, limits.batch) {
             Ok(batch) => batch,
             Err(reason) => return shared.fail(reason),

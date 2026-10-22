@@ -173,6 +173,9 @@ pub enum FrameErrorKind {
     /// The controller could not read its event store; the stream closed, so retry with
     /// the last cursor.
     StoreUnavailable,
+    /// The controller is shutting down. A wait sent on this connection did not finish, and a
+    /// watch closed; send it again once a controller listens.
+    Restarting,
 }
 
 /// Parses one line.

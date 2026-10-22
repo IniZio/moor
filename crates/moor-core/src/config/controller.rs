@@ -19,6 +19,9 @@ pub struct ControllerConfig {
     /// Seconds between passes that settle every open Box's agent state; must be above 0.
     /// None means 5.
     pub settle_every_secs: Option<u64>,
+    /// Seconds a SIGTERM waits for in-flight requests before the controller exits anyway.
+    /// None means 600.
+    pub drain_timeout_secs: Option<u64>,
     /// Removed key, kept only so a stale config gets a pointed error.
     /// Double option so a present-but-null `web:` still counts as present.
     #[serde(default, deserialize_with = "present_key")]
@@ -62,11 +65,20 @@ where
 /// Seconds between settle passes when the config does not say.
 const DEFAULT_SETTLE_SECS: u64 = 5;
 
+/// Seconds a drain waits when the config does not say: long enough for a `start` to finish.
+const DEFAULT_DRAIN_SECS: u64 = 600;
+
 impl ControllerConfig {
     /// The time between settle passes.
     #[must_use]
     pub fn settle_every(&self) -> Duration {
         Duration::from_secs(self.settle_every_secs.unwrap_or(DEFAULT_SETTLE_SECS))
+    }
+
+    /// How long a SIGTERM waits for in-flight requests.
+    #[must_use]
+    pub fn drain_timeout(&self) -> Duration {
+        Duration::from_secs(self.drain_timeout_secs.unwrap_or(DEFAULT_DRAIN_SECS))
     }
 }
 

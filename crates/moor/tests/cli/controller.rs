@@ -358,3 +358,28 @@ fn frame_errors_keep_the_connection_open() {
 fn field<'a>(frame: &'a Value, key: &str) -> &'a Value {
     frame.get(key).unwrap()
 }
+
+#[test]
+fn sigterm_ends_a_watch_with_restarting_and_exits_zero() {
+    let sandbox = Sandbox::new();
+    let mut controller = Controller::start(&sandbox);
+    let mut client = Client::connect(&sandbox.socket);
+    client.hello();
+    writeln!(client.writer, r#"{{"frame":"watch","since":0}}"#).unwrap();
+    let mut idle = Client::connect(&sandbox.socket);
+    idle.hello();
+    // The poller reads the store every 200ms; give it one pass before the signal.
+    std::thread::sleep(Duration::from_millis(300));
+    let pid = rustix::process::Pid::from_child(&controller.child);
+    rustix::process::kill_process(pid, rustix::process::Signal::TERM).unwrap();
+    let last = loop {
+        let frame = client.next_frame();
+        if field(&frame, "frame") == "error" {
+            break frame;
+        }
+    };
+    assert_eq!(field(&last, "kind"), "restarting", "{last}");
+    assert_eq!(exit_within_five_seconds(&mut controller.child), Some(0));
+    let mut rest = String::new();
+    assert_eq!(idle.reader.read_line(&mut rest).unwrap(), 0, "{rest:?}");
+}

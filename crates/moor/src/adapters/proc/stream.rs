@@ -26,8 +26,24 @@ struct Signals {
     active: Mutex<usize>,
 }
 
-/// The one installation; `None` when a handler could not be registered.
-static SIGNALS: OnceLock<Option<Signals>> = OnceLock::new();
+/// Who answers SIGINT and SIGTERM in this process, decided once.
+enum Owner {
+    /// The CLI: a signal interrupts the streamed children, or acts as default when none runs.
+    Cli(Signals),
+    /// A handler could not be registered.
+    Unavailable,
+    /// The controller handles the signals itself; a streamed child never sees them.
+    Controller,
+}
+
+/// The one decision.
+static SIGNALS: OnceLock<Owner> = OnceLock::new();
+
+/// Leaves SIGINT and SIGTERM to the controller for the life of the process, so a streamed
+/// child ends only on its own or at its deadline. Returns false when a stream already took them.
+pub(crate) fn leave_signals_to_controller() -> bool {
+    matches!(SIGNALS.get_or_init(|| Owner::Controller), Owner::Controller)
+}
 
 impl Signals {
     /// Registers the handlers for SIGINT and SIGTERM.
@@ -226,16 +242,22 @@ fn tee(mut src: impl Read, mut sink: impl Write, tail: &Mutex<Vec<u8>>, mut gate
 }
 
 impl SystemProc {
-    /// Runs with output streamed, treating SIGINT and SIGTERM sent to moor, or a cancel of
-    /// the request, as an interrupt for the duration of the child; outside it the signals
-    /// keep their default action.
+    /// Runs with output streamed. In the CLI, SIGINT and SIGTERM sent to moor interrupt the
+    /// child while it runs and keep their default action outside it; in the controller they
+    /// never reach the child. A cancel of the request interrupts it in both.
     pub(super) fn stream_forwarding(&self, spec: &ProcSpec, out: &Output) -> Result<(), ProcError> {
-        let sig = SIGNALS
-            .get_or_init(|| Signals::install().ok())
-            .as_ref()
-            .ok_or_else(|| ProcError::Spawn(io::Error::other("signal handlers unavailable")))?;
-        let _active = sig.enter();
-        self.stream(spec, out, &sig.interrupted)
+        let owner =
+            SIGNALS.get_or_init(|| Signals::install().map_or(Owner::Unavailable, Owner::Cli));
+        match owner {
+            Owner::Cli(sig) => {
+                let _active = sig.enter();
+                self.stream(spec, out, &sig.interrupted)
+            }
+            Owner::Controller => self.stream(spec, out, &Arc::new(AtomicBool::new(false))),
+            Owner::Unavailable => Err(ProcError::Spawn(io::Error::other(
+                "signal handlers unavailable",
+            ))),
+        }
     }
 
     /// Spawns the child, then waits for exit, the deadline or `interrupted`.

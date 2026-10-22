@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use moor_core::user::Viewer;
 use serde_json::{json, Value};
 
-use super::{run, stream, Ask, Limits, Shared};
+use super::{run, stream, stream_draining, Ask, Limits, Shared};
 use crate::controller::conn::handle;
 use crate::env::Env;
 use crate::store::{Store, STORE_FILE};
@@ -432,4 +432,45 @@ fn empty_store_catches_up_at_the_requested_cursor() {
     let nothing = read_once(&dir, 0, &only_kinds(&["nothing"]));
     assert_eq!(nothing.len(), 1);
     assert_eq!(nothing[0]["frame"], "caught-up");
+}
+
+#[test]
+fn a_following_watch_ends_with_restarting_once_the_drain_begins() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = open(dir.path());
+    let id = add(&store, "alpha");
+    append(&store, id, 1);
+    let last = *ids(&store).last().expect("an event");
+    let drain = Arc::new(crate::controller::drain::Drain::default());
+    let (mut probe, out) = Probe::new(usize::MAX);
+    let env = env(&dir);
+    let streaming = Arc::clone(&drain);
+    let (done, ended) = channel();
+    thread::spawn(move || {
+        stream_draining(
+            &mut probe,
+            &env,
+            ask(0, everything(), true),
+            fast(16),
+            &streaming,
+        );
+        done.send(()).ok();
+    });
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(
+        ended.try_recv().is_err(),
+        "the watch ended before the drain"
+    );
+    drain.begin();
+    ended
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the watch kept following after the drain began");
+    let got = frames(&out);
+    let tail = got.last().expect("frames");
+    assert_eq!(tail["frame"], "error", "{got:?}");
+    assert_eq!(tail["kind"], "restarting", "{got:?}");
+    assert!(tail["message"]
+        .as_str()
+        .expect("message")
+        .contains(&format!("cursor {last}")));
 }

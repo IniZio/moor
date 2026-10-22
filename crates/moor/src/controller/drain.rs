@@ -1,0 +1,204 @@
+//! Draining on SIGTERM: stop accepting, let what is in flight finish, then return.
+//!
+//! A connect that arrives once the drain has begun is not accepted. It waits in the listen
+//! backlog and fails when the controller exits and the listener closes.
+
+use std::io;
+use std::net::Shutdown;
+use std::os::unix::net::{UnixListener, UnixStream};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
+use std::thread;
+use std::time::Duration;
+
+use rustix::event::{poll, PollFd, PollFlags};
+use rustix::io::Errno;
+use signal_hook::consts::SIGTERM;
+
+use super::{log, Sink};
+use crate::Moor;
+
+/// The connections one controller serves, and whether it has begun to drain.
+#[derive(Debug, Default)]
+pub(crate) struct Drain {
+    /// Set once the drain begins; never cleared.
+    begun: AtomicBool,
+    /// Each connection being served.
+    live: Mutex<Live>,
+    /// Notified each time a connection ends.
+    ended: Condvar,
+}
+
+/// The connections being served, each with a handle that ends its reads.
+#[derive(Debug, Default)]
+struct Live {
+    /// Number for the next admitted connection.
+    next: u64,
+    /// Admitted connections by number.
+    streams: Vec<(u64, UnixStream)>,
+}
+
+impl Drain {
+    /// Whether the drain has begun.
+    pub(crate) fn begun(&self) -> bool {
+        self.begun.load(Ordering::Acquire)
+    }
+
+    /// Admits `stream` for serving, or `None` once the drain has begun.
+    fn admit(self: &Arc<Self>, stream: &UnixStream) -> io::Result<Option<Admitted>> {
+        let handle = stream.try_clone()?;
+        let mut live = self.live();
+        if self.begun() {
+            return Ok(None);
+        }
+        let id = live.next;
+        live.next += 1;
+        live.streams.push((id, handle));
+        drop(live);
+        Ok(Some(Admitted {
+            drain: Arc::clone(self),
+            id,
+        }))
+    }
+
+    /// Begins the drain. A connection waiting for its next request reads EOF; one in the
+    /// middle of a request finishes it first.
+    pub(crate) fn begin(&self) {
+        let live = self.live();
+        self.begun.store(true, Ordering::Release);
+        for (_, stream) in &live.streams {
+            stream.shutdown(Shutdown::Read).ok();
+        }
+    }
+
+    /// Waits up to `timeout` for every admitted connection to end; returns how many remain.
+    fn settle(&self, timeout: Duration) -> usize {
+        self.ended
+            .wait_timeout_while(self.live(), timeout, |l| !l.streams.is_empty())
+            .unwrap_or_else(PoisonError::into_inner)
+            .0
+            .streams
+            .len()
+    }
+
+    /// The live set, locked.
+    fn live(&self) -> MutexGuard<'_, Live> {
+        self.live.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// One admitted connection; its end wakes [`Drain::settle`].
+struct Admitted {
+    /// The drain that admitted it.
+    drain: Arc<Drain>,
+    /// Its number in the live set.
+    id: u64,
+}
+
+impl Drop for Admitted {
+    fn drop(&mut self) {
+        self.drain.live().streams.retain(|(id, _)| *id != self.id);
+        self.drain.ended.notify_all();
+    }
+}
+
+/// Serves one accepted connection to its end.
+pub(super) type Handler = Arc<dyn Fn(UnixStream, &Arc<Drain>) + Send + Sync>;
+
+/// Takes SIGTERM for the controller: the returned socket turns readable once it arrives.
+/// From here on a streamed command never sees SIGINT or SIGTERM.
+pub(super) fn on_sigterm() -> io::Result<UnixStream> {
+    if !Moor::leave_signals_to_controller() {
+        return Err(io::Error::other(
+            "a streamed command already took the signals",
+        ));
+    }
+    let (wake, signalled) = UnixStream::pair()?;
+    signal_hook::low_level::pipe::register(SIGTERM, signalled)?;
+    Ok(wake)
+}
+
+/// Serves every listener until `wake` turns readable, then drains: nothing more is accepted,
+/// and the admitted connections get up to `timeout` to end. Returns how many were cut off.
+pub(super) fn serve_until(
+    listeners: &[(UnixListener, Handler)],
+    wake: &UnixStream,
+    drain: &Arc<Drain>,
+    timeout: Duration,
+    sink: &Sink,
+) -> usize {
+    thread::scope(|scope| {
+        for (listener, handler) in listeners {
+            scope.spawn(move || accept(listener, handler, wake, drain, sink));
+        }
+        readable(wake);
+        drain.begin();
+        log(sink, "draining: no new connections");
+    });
+    drain.settle(timeout)
+}
+
+/// Accepts on `listener` until `wake` turns readable, serving each connection on its own thread.
+fn accept(
+    listener: &UnixListener,
+    handler: &Handler,
+    wake: &UnixStream,
+    drain: &Arc<Drain>,
+    sink: &Sink,
+) {
+    loop {
+        let mut fds = [
+            PollFd::new(wake, PollFlags::IN),
+            PollFd::new(listener, PollFlags::IN),
+        ];
+        match poll(&mut fds, None) {
+            Ok(_) => {}
+            Err(Errno::INTR) => continue,
+            Err(e) => {
+                log(sink, &format!("cannot wait for connections: {e}"));
+                return;
+            }
+        }
+        let [woken, ready] = &fds;
+        if !woken.revents().is_empty() {
+            return;
+        }
+        if ready.revents().is_empty() {
+            continue;
+        }
+        let stream = match listener.accept() {
+            Ok((stream, _)) => stream,
+            Err(e) => {
+                log(sink, &format!("accept failed: {e}"));
+                continue;
+            }
+        };
+        let admitted = match drain.admit(&stream) {
+            Ok(Some(admitted)) => admitted,
+            Ok(None) => return,
+            Err(e) => {
+                log(sink, &format!("connection setup failed: {e}"));
+                continue;
+            }
+        };
+        let (handler, drain) = (Arc::clone(handler), Arc::clone(drain));
+        thread::spawn(move || {
+            handler(stream, &drain);
+            drop(admitted);
+        });
+    }
+}
+
+/// Blocks until `wake` turns readable.
+fn readable(wake: &UnixStream) {
+    loop {
+        let mut fds = [PollFd::new(wake, PollFlags::IN)];
+        match poll(&mut fds, None) {
+            Err(Errno::INTR) => {}
+            Ok(_) | Err(_) => return,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;

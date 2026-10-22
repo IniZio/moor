@@ -10,6 +10,7 @@ use moor_core::controller::{write_bytes, ServerFrame};
 use moor_core::{Request, Response};
 
 use super::conn::{self, Acting};
+use super::drain::Drain;
 use super::hangup::Hangup;
 use crate::env::{Cancel, Env};
 
@@ -23,9 +24,13 @@ pub(crate) const INTERVAL: Duration = Duration::from_secs(5);
 /// many, so the controller never buffers more of the output than this.
 const PENDING: usize = 4;
 
+/// How often a wait checks whether the controller began draining.
+const TICK: Duration = Duration::from_millis(100);
+
 /// Answer `request` acting as `acting`, writing its frames to `out` while a long verb runs.
 ///
-/// A `run` is cancelled once `hangup` sees its client go away.
+/// A `run` is cancelled once `hangup` sees its client go away. A wait goes to
+/// [`wait_unless_draining`] instead.
 #[allow(
     clippy::too_many_arguments,
     reason = "the request, whom it acts as, and the connection it answers on"
@@ -54,13 +59,53 @@ pub(crate) fn respond_with_progress(
                 None => run(),
             }
         }
-        request @ (Request::Start(_)
-        | Request::Wait(_)
-        | Request::WaitEvents(_)
-        | Request::Close(_)) => report_while(cmd, id, interval, out, |_| {
-            conn::respond(env, acting, request)
-        }),
+        request @ (Request::Start(_) | Request::Close(_)) => {
+            report_while(cmd, id, interval, out, |_| {
+                conn::respond(env, acting, request)
+            })
+        }
         request => conn::respond(env, acting, request),
+    }
+}
+
+/// Answer a wait that `work` runs on its own thread, with a progress frame about each `interval`.
+/// `None` once `drain` begins first: a wait changes nothing, so it is left to end with the
+/// process.
+pub(super) fn wait_unless_draining(
+    cmd: &str,
+    id: &str,
+    interval: Duration,
+    out: &mut dyn Write,
+    drain: &Drain,
+    work: impl FnOnce() -> Response + Send + 'static,
+) -> Option<Response> {
+    let (done, answered) = mpsc::channel();
+    let worker = thread::spawn(move || done.send(work()).ok());
+    let every = (interval.as_millis() / TICK.as_millis()).max(1);
+    let mut listening = true;
+    let mut ticks = 0_u128;
+    loop {
+        match answered.recv_timeout(TICK) {
+            Ok(response) => return Some(response),
+            Err(RecvTimeoutError::Disconnected) => {
+                return worker
+                    .join()
+                    .map_or_else(|p| std::panic::resume_unwind(p), |_| None)
+            }
+            Err(RecvTimeoutError::Timeout) if drain.begun() => return None,
+            Err(RecvTimeoutError::Timeout) => {
+                ticks += 1;
+                if listening && ticks.is_multiple_of(every) {
+                    let secs =
+                        interval.as_secs() * u64::try_from(ticks / every).unwrap_or(u64::MAX);
+                    let frame = ServerFrame::Progress {
+                        id: id.to_owned(),
+                        message: format!("{cmd}: still running ({secs}s)"),
+                    };
+                    listening = conn::send(out, &frame);
+                }
+            }
+        }
     }
 }
 

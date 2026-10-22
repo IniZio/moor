@@ -289,6 +289,19 @@ fn store_unavailable_kind_serializes() {
 }
 
 #[test]
+fn restarting_kind_round_trips() {
+    let line = r#"{"frame":"error","id":"7","kind":"restarting","message":"m"}"#;
+    let got = parse_server_frame(line).unwrap_or_else(|e| panic!("{e}"));
+    let want = ServerFrame::Error {
+        id: Some("7".to_owned()),
+        kind: FrameErrorKind::Restarting,
+        message: "m".to_owned(),
+    };
+    assert_eq!(got, want);
+    assert_eq!(want.to_line().trim_end(), line);
+}
+
+#[test]
 fn client_frames_round_trip_through_parse_frame() {
     let hello = ClientFrame::Hello { protocol: PROTOCOL };
     assert_eq!(parse_frame(&hello.to_line()), Ok(hello));
