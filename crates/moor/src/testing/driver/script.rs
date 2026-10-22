@@ -110,6 +110,11 @@ impl FakeDriver {
         self.st().on_wake = Some(Arc::new(f));
     }
 
+    /// Runs `f` inside every later `sleep` that succeeds, outside the Driver's lock.
+    pub(crate) fn on_sleep(&self, f: impl Fn() + Send + Sync + 'static) {
+        self.st().on_sleep = Some(Arc::new(f));
+    }
+
     /// Makes every `sleep` report `outcome` instead of `Slept`.
     pub(crate) fn sleep_outcome(self, outcome: SleepOutcome) -> Self {
         self.st().sleep_outcome = Some(outcome);

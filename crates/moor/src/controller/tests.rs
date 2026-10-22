@@ -184,3 +184,32 @@ fn a_config_inside_the_state_dir_is_refused_for_the_vault_key() {
     );
     assert!(!state.join("vault.key").exists());
 }
+
+#[test]
+fn the_configured_drain_timeout_bounds_the_live_drain() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let cfg = config(tmp.path(), "drain_timeout_secs: 1\n");
+    let running = start(&env(tmp.path()), &cfg).expect("start");
+    let drain = Arc::new(super::Drain::default());
+    let _in_flight = drain.hold().expect("held");
+    let (wake, signal) = UnixStream::pair().expect("pair");
+    let out = Buf::default();
+    let sink: super::Sink = Arc::new(std::sync::Mutex::new(out.clone()));
+    let (done, returned) = std::sync::mpsc::channel();
+    let serving = Arc::clone(&drain);
+    std::thread::spawn(move || {
+        running.serve_until(&wake, &serving, &sink);
+        done.send(()).ok();
+    });
+    (&signal).write_all(&[1]).expect("wake");
+    assert!(
+        returned
+            .recv_timeout(std::time::Duration::from_millis(500))
+            .is_err(),
+        "the drain returned before drain_timeout_secs"
+    );
+    returned
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("the drain outlived drain_timeout_secs");
+    assert!(out.text().contains("exiting with 1 "), "{}", out.text());
+}

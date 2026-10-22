@@ -380,6 +380,31 @@ fn sigterm_ends_a_watch_with_restarting_and_exits_zero() {
     };
     assert_eq!(field(&last, "kind"), "restarting", "{last}");
     assert_eq!(exit_within_five_seconds(&mut controller.child), Some(0));
+    let ended = idle.next_frame();
+    assert_eq!(field(&ended, "kind"), "restarting", "{ended}");
+    let mut rest = String::new();
+    assert_eq!(idle.reader.read_line(&mut rest).unwrap(), 0, "{rest:?}");
+}
+
+#[test]
+fn sigint_stops_the_controller_at_once_without_a_drain() {
+    use std::os::unix::process::ExitStatusExt as _;
+    let sandbox = Sandbox::new();
+    let mut controller = Controller::start(&sandbox);
+    let mut idle = Client::connect(&sandbox.socket);
+    idle.hello();
+    let pid = rustix::process::Pid::from_child(&controller.child);
+    rustix::process::kill_process(pid, rustix::process::Signal::INT).unwrap();
+    // 500 polls of 10ms bound the wait at about five seconds.
+    let status = (0..500).find_map(|_| {
+        let done = controller.child.try_wait().unwrap();
+        if done.is_none() {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        done
+    });
+    let status = status.expect("the controller kept running after SIGINT");
+    assert_eq!(status.signal(), Some(2), "SIGINT drained: {status:?}");
     let mut rest = String::new();
     assert_eq!(idle.reader.read_line(&mut rest).unwrap(), 0, "{rest:?}");
 }

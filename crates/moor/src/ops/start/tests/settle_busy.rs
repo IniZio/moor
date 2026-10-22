@@ -42,10 +42,10 @@ fn settle_leaves_a_box_while_an_op_holds_its_box() {
         Duration::ZERO,
     )
     .unwrap();
-    settle_all(&w.cx, w.cx.store().unwrap()).unwrap();
+    settle_all(&w.cx, w.cx.store().unwrap(), &|| false).unwrap();
     assert!(working(&row(&w, id)));
     drop(held);
-    settle_all(&w.cx, w.cx.store().unwrap()).unwrap();
+    settle_all(&w.cx, w.cx.store().unwrap(), &|| false).unwrap();
     assert!(idle(&row(&w, id)));
 }
 
@@ -111,7 +111,7 @@ fn a_start_with_settles_running_during_setup_still_launches() {
             moor_core::config::UserConfig::default(),
         );
         other.clock().sleep(Duration::from_secs(60));
-        settle_all(&other, other.store().unwrap()).unwrap();
+        settle_all(&other, other.store().unwrap(), &|| false).unwrap();
     });
     let start = StartReq {
         goal: Some("ship it".into()),

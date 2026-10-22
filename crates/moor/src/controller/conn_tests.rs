@@ -6,7 +6,7 @@ use std::io::Cursor;
 
 use serde_json::{json, Value};
 
-use super::{handle, operator, respond, serve};
+use super::{handle, operator, respond, respond_unless_draining, serve};
 use crate::controller::drain::Admitted;
 use crate::env::Env;
 use crate::Moor;
@@ -184,4 +184,24 @@ fn watch_frame_filter_and_follow_reach_the_stream() {
         kinds: Some(vec!["idled".to_owned()]),
     };
     assert_eq!(seen.into_inner(), Some((5, filter, false)));
+}
+
+#[test]
+fn a_wait_or_wait_events_once_the_drain_began_gets_restarting() {
+    let dir = tempfile::tempdir().expect("tmp");
+    let env = env(&dir);
+    let peer = super::Peer::local_in(&dir.path().join("vault"));
+    peer.conn.drain().begin();
+    let answer = |request: Value| {
+        let request: Request = serde_json::from_value(request).expect("request");
+        respond_unless_draining(&env, operator(), "r", request, &mut Vec::new(), &peer)
+    };
+    for wait in [
+        json!({"cmd": "wait", "box": "demo", "timeout_secs": 0}),
+        json!({"cmd": "wait-events", "boxes": ["demo"], "timeout_secs": 0}),
+    ] {
+        assert!(answer(wait.clone()).is_none(), "{wait} ran after the drain");
+    }
+    let shown = answer(serde_json::to_value(show(None)).expect("show"));
+    assert!(shown.is_some(), "a show did not run to its end");
 }

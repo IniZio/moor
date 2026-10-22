@@ -56,6 +56,7 @@ struct State {
     on_exec: Option<Arc<ExecHook>>,
     after_exec: Option<Arc<ExecHook>>,
     on_wake: Option<Arc<ExecHook>>,
+    on_sleep: Option<Arc<ExecHook>>,
     work_root: Option<String>,
     fail_workdir: Option<DriverError>,
     tunnel: tunnel::TunnelState,
@@ -347,7 +348,12 @@ impl Driver for FakeDriver {
         if let Some(e) = s.fail_sleep.take() {
             return Err(e);
         }
-        Ok(s.sleep_outcome.clone().unwrap_or(SleepOutcome::Slept))
+        let (hook, outcome) = (s.on_sleep.clone(), s.sleep_outcome.clone());
+        drop(s);
+        if let Some(hook) = hook {
+            hook();
+        }
+        Ok(outcome.unwrap_or(SleepOutcome::Slept))
     }
 
     fn wake(&self, handle: &BoxHandle) -> Result<(), DriverError> {

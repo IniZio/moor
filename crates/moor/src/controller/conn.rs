@@ -148,9 +148,10 @@ fn respond_unless_draining(
 /// [`handle`] with the engine behind `answer` and the event stream behind `watch`,
 /// so tests can serve over fakes. `answer` may write frames for the request before its
 /// response, and returns `None` when `drain` began before it could finish; the client then
-/// gets a `restarting` frame, as does a request read once the drain of `conn` has begun. A
-/// request being answered keeps `conn` readable through the drain; once the drain has begun
-/// no further request is read.
+/// gets a `restarting` frame. A request being answered keeps `conn` readable through the
+/// drain until its answer is ready. Once the drain of `conn` has begun no further line is
+/// answered: the connection ends with a `restarting` frame that names no request, which also
+/// answers a request half read, unread, or written after the read side shut.
 pub(super) fn serve<W: Write>(
     reader: impl BufRead,
     mut writer: W,
@@ -160,7 +161,10 @@ pub(super) fn serve<W: Write>(
 ) {
     let mut handshaken = false;
     for line in reader.lines() {
-        let Ok(line) = line else { return };
+        let Ok(line) = line else { break };
+        if conn.drain().begun() {
+            break;
+        }
         if line.trim().is_empty() {
             continue;
         }
@@ -208,9 +212,21 @@ pub(super) fn serve<W: Write>(
                 },
             },
         };
-        if !send(&mut writer, &reply) || conn.drain().begun() {
+        if !send(&mut writer, &reply) {
             return;
         }
+    }
+    if conn.drain().begun() {
+        send(&mut writer, &restarting());
+    }
+}
+
+/// The frame that ends a connection the drain closed: no request it did not answer ran.
+pub(super) fn restarting() -> ServerFrame {
+    ServerFrame::Error {
+        id: None,
+        kind: FrameErrorKind::Restarting,
+        message: "the controller is restarting; send any unanswered request again".to_owned(),
     }
 }
 

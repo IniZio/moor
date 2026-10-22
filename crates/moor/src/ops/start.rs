@@ -73,7 +73,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     if let Some(parent) = req.parent {
         store.check_parent(parent.get()).map_err(refuse_invalid)?;
     }
-    settle_all(cx, store)?;
+    settle_all(cx, store, &|| false)?;
     if let Some(row) = store.open_box_by_name(&req.name)? {
         return attach(cx, store, req, &row, user);
     }
@@ -228,11 +228,18 @@ fn wake_idle(store: &Store, id: BoxId) -> Result<(), CommandError> {
     }
 }
 
-/// Moves each open Box with a ready machine between Working and Idle.
+/// Moves each open Box with a ready machine between Working and Idle, until `draining`.
 ///
 /// Runs before the start, which may then leave the Box it starts in another state.
-pub(crate) fn settle_all(cx: &Cx, store: &Store) -> Result<(), CommandError> {
+pub(crate) fn settle_all(
+    cx: &Cx,
+    store: &Store,
+    draining: &dyn Fn() -> bool,
+) -> Result<(), CommandError> {
     for row in &store.open_boxes()? {
+        if draining() {
+            break;
+        }
         if row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready) {
             cx.for_box(row.user, || settle_one(cx, store, row));
         }

@@ -147,13 +147,19 @@ SIGTERM drains the controller, then it exits 0:
 1. It stops accepting connections. A client that connects now waits in the
    socket's backlog and fails when the controller exits. Under systemd socket
    units, the next controller answers it instead. See
-   [Deploy the controller with systemd](deploy.md).
-2. A connection that is waiting for its next request is closed.
-3. A `wait`, `wait-events` or `watch` gets an error frame of kind
+   [Deploy the controller with systemd](deploy.md). One accepted at the
+   moment the drain began gets an error frame of kind `restarting`.
+2. A `wait`, `wait-events` or `watch` gets an error frame of kind
    `restarting` and is closed. Send it again once a controller listens.
-4. Any other request in flight, such as a `start`, `close` or `run`, runs
+3. Any other request in flight, such as a `start`, `close` or `run`, runs
    to its end. The controller waits up to `drain_timeout_secs` for them,
    then exits anyway. A `start` cut off this way leaves its Box to `moor close`.
+4. No request is run once the drain began. Each connection ends with an
+   error frame of kind `restarting` that names no request, so a request
+   half sent, sent behind another, or sent just after the signal can be sent
+   again.
+5. No new settle pass starts. One already running finishes the Box it is on,
+   such as an auto-sleep, then stops, and the drain waits for it.
 
 A command that `moor run` streams keeps running through the drain. SIGINT
 does not drain: it stops the controller at once. Under a service manager,
