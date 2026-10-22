@@ -4,6 +4,9 @@ version = "0.2.0"
 edition = "2021"
 publish = false
 
+[dependencies]
+socket2 = "0.6"
+
 [dev-dependencies]
 tempfile = "3"
 

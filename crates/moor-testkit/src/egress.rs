@@ -1,12 +1,14 @@
 //! A fake egress proxy for tests that run the Box prelude under a real `sh`.
 
 use std::io;
-use std::net::TcpListener;
+use std::net::{Ipv4Addr, SocketAddr, TcpListener};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
+
+use socket2::{Domain, Socket, Type};
 
 use crate::write_executable;
 
@@ -48,11 +50,17 @@ pub fn write_host_guards(bin: &Path) -> io::Result<()> {
 
 /// The fake `tinyproxy` in a `bin` directory and the loopback port it "listens" on: the port opens
 /// each time the fake records a start, and closes on [`FakeEgress::close`].
+///
+/// A socket that never listens holds the port for the fake's whole life. The prelude reads the
+/// port as free until a start opens it, and no other socket on the host gets the port: the tests
+/// share the host's ports with every other test process.
 pub struct FakeEgress {
     /// The `HOME` the prelude runs with.
     home: PathBuf,
     /// The port the egress proxy listens on.
     port: u16,
+    /// Holds `port` against other binds and outgoing connections for as long as this lives.
+    _held: Socket,
     /// The listener while the port is open.
     open: Arc<Mutex<Option<TcpListener>>>,
     /// Tells the watcher to stop.
@@ -64,12 +72,18 @@ pub struct FakeEgress {
 impl FakeEgress {
     /// Writes the fake `tinyproxy` into `bin` and watches `home` for its starts, on a free port.
     pub fn start(home: &Path, bin: &Path) -> io::Result<Self> {
-        let port = TcpListener::bind("127.0.0.1:0")?.local_addr()?.port();
-        Self::start_on(home, bin, port)
+        Self::start_on(home, bin, 0)
     }
 
     /// [`Self::start`] on `port`, for a test whose egress port moor derives.
     pub fn start_on(home: &Path, bin: &Path, port: u16) -> io::Result<Self> {
+        let held = Socket::new(Domain::IPV4, Type::STREAM, None)?;
+        held.set_reuse_address(true)?;
+        held.bind(&SocketAddr::from((Ipv4Addr::LOCALHOST, port)).into())?;
+        let port = held
+            .local_addr()?
+            .as_socket()
+            .map_or(port, |addr| addr.port());
         write_executable(&bin.join("tinyproxy"), FAKE_TINYPROXY)?;
         let open: Arc<Mutex<Option<TcpListener>>> = Arc::new(Mutex::new(None));
         let done = Arc::new(AtomicBool::new(false));
@@ -91,6 +105,7 @@ impl FakeEgress {
         Ok(Self {
             home: home.to_path_buf(),
             port,
+            _held: held,
             open,
             done,
             watcher: Some(watcher),
@@ -127,5 +142,32 @@ impl Drop for FakeEgress {
         if let Ok(pid) = std::fs::read_to_string(self.home.join(".moor/egress.pid")) {
             let _ = std::process::Command::new("kill").arg(pid.trim()).status();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::{Ipv4Addr, SocketAddr};
+
+    use socket2::{Domain, Socket, Type};
+
+    use super::FakeEgress;
+
+    /// Binds a socket without `SO_REUSEADDR` to `port`, as another process on the host would.
+    fn bind_elsewhere(port: u16) -> std::io::Result<Socket> {
+        let other = Socket::new(Domain::IPV4, Type::STREAM, None)?;
+        other.bind(&SocketAddr::from((Ipv4Addr::LOCALHOST, port)).into())?;
+        Ok(other)
+    }
+
+    #[test]
+    fn no_other_socket_takes_the_port_while_the_fake_lives() {
+        let dir = tempfile::tempdir().unwrap();
+        let egress = FakeEgress::start(dir.path(), dir.path()).unwrap();
+        let port = egress.port();
+        assert!(
+            bind_elsewhere(port).is_err(),
+            "another socket bound port {port}"
+        );
     }
 }
