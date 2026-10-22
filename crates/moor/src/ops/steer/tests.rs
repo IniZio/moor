@@ -1,6 +1,5 @@
 //! Tests for `steer`.
 
-use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneRead, Probes};
@@ -46,14 +45,8 @@ fn fx_with(engine: FakeEngine, session: bool) -> Fx {
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
         Reply::Ok("/home/me/proj/.git\n".into()),
     );
-    let cx = Cx::fake(
-        dir.path(),
-        Path::new("/home/me/proj"),
-        driver.clone(),
-        surface.clone(),
-        proc,
-    )
-    .with_engine(engine.clone());
+    let cx =
+        Cx::fake(dir.path(), driver.clone(), surface.clone(), proc).with_engine(engine.clone());
     let id = ready_box(&cx, &driver);
     if session {
         cx.store()

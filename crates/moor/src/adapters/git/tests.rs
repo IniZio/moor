@@ -1,118 +1,30 @@
-//! Git adapter tests: scripted replies plus one real-git scenario.
+//! Git adapter tests over real git in a temp checkout.
 
 use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
 
-use moor_core::seam::proc::Tool;
+use moor_core::seam::checkout::Checkout;
 
-use super::{Git, GitAuthor, GitError};
+use super::Git;
 use crate::adapters::proc::{SystemProc, ToolPaths};
 use crate::env::Env;
-use crate::testing::proc::{Reply, ScriptedProc};
-
-fn scripted() -> (Arc<ScriptedProc>, Git) {
-    let p = Arc::new(ScriptedProc::new());
-    (Arc::clone(&p), Git::new(p))
-}
-
-fn ok(s: &str) -> Reply {
-    Reply::Ok(s.to_owned())
-}
-
-#[test]
-fn toplevel_trims_output_and_runs_in_cwd() {
-    let (p, g) = scripted();
-    p.on(
-        Tool::Git,
-        &["rev-parse", "--show-toplevel"],
-        ok("/r/repo\n"),
-    );
-    let root = g.toplevel(Path::new("/r/repo/sub")).unwrap();
-    assert_eq!(root, Path::new("/r/repo"));
-    let calls = p.calls();
-    let first = calls.first().map(|c| c.cwd.as_deref());
-    assert_eq!(first, Some(Some(Path::new("/r/repo/sub"))));
-}
-
-#[test]
-fn main_checkout_is_parent_of_common_dir() {
-    let (p, g) = scripted();
-    p.on(
-        Tool::Git,
-        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-        ok("/r/main/.git\n"),
-    );
-    assert_eq!(
-        g.main_checkout(Path::new("/r/wt")).unwrap(),
-        Path::new("/r/main")
-    );
-}
-
-#[test]
-fn toplevel_outside_repo_is_not_a_repo() {
-    let (p, g) = scripted();
-    p.on(
-        Tool::Git,
-        &["rev-parse"],
-        Reply::Fail {
-            code: 128,
-            stdout: String::new(),
-            stderr: "fatal: not a git repository (or any parent)".to_owned(),
-        },
-    );
-    assert!(matches!(
-        g.toplevel(Path::new("/x")),
-        Err(GitError::NotARepo)
-    ));
-}
-
-#[test]
-fn other_failure_is_moor_worded() {
-    let (p, g) = scripted();
-    p.on(
-        Tool::Git,
-        &["rev-parse"],
-        Reply::Fail {
-            code: 1,
-            stdout: String::new(),
-            stderr: "boom\n".to_owned(),
-        },
-    );
-    assert!(matches!(
-        g.toplevel(Path::new("/x")),
-        Err(GitError::Failed(m)) if m == "git rev-parse failed (exit 1): boom"
-    ));
-}
-
-#[test]
-fn timeout_is_failed() {
-    let (p, g) = scripted();
-    p.on(Tool::Git, &["rev-parse"], Reply::Timeout);
-    assert!(matches!(
-        g.toplevel(Path::new("/x")),
-        Err(GitError::Failed(_))
-    ));
-}
 
 fn real_git() -> Git {
     let env = Env::from_pairs([
         ("PATH", std::env::var("PATH").unwrap_or_default()),
         ("HOME", std::env::var("HOME").unwrap_or_default()),
+        ("GIT_CONFIG_GLOBAL", "/dev/null".to_owned()),
+        ("GIT_CONFIG_NOSYSTEM", "1".to_owned()),
     ]);
     Git::new(Arc::new(SystemProc::new(&env, &ToolPaths::default())))
 }
 
 fn git_in(dir: &Path, args: &[&str]) {
     let st = Command::new("git")
-        .args([
-            "-c",
-            "user.name=t",
-            "-c",
-            "user.email=t@t",
-            "-c",
-            "commit.gpgsign=false",
-        ])
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .args(["-c", "user.name=t", "-c", "user.email=t@t"])
         .args(args)
         .current_dir(dir)
         .status()
@@ -120,213 +32,52 @@ fn git_in(dir: &Path, args: &[&str]) {
     assert!(st.success(), "git {args:?}");
 }
 
-#[test]
-fn author_reads_name_and_email_in_the_worktree() {
-    let (p, g) = scripted();
-    p.on(
-        Tool::Git,
-        &["config", "--get", "user.name"],
-        ok("Ann Dev\n"),
-    );
-    p.on(
-        Tool::Git,
-        &["config", "--get", "user.email"],
-        ok("a@x.io\n"),
-    );
-    let a = g.author(Path::new("/r/wt")).unwrap();
-    assert_eq!(a.name.as_deref(), Some("Ann Dev"));
-    assert_eq!(a.email.as_deref(), Some("a@x.io"));
-    let calls = p.calls();
-    assert_eq!(
-        calls.first().map(|c| c.cwd.as_deref()),
-        Some(Some(Path::new("/r/wt")))
-    );
+/// A checkout with one commit pushed to a local bare `origin`, tracking `origin/main`.
+fn pushed(root: &Path) -> std::path::PathBuf {
+    let bare = root.join("origin.git");
+    let work = root.join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    git_in(root, &["init", "-q", "--bare", "-b", "main", "origin.git"]);
+    git_in(&work, &["init", "-q", "-b", "main"]);
+    git_in(&work, &["commit", "-q", "--allow-empty", "-m", "one"]);
+    git_in(&work, &["remote", "add", "origin", bare.to_str().unwrap()]);
+    git_in(&work, &["push", "-q", "-u", "origin", "main"]);
+    work
 }
 
 #[test]
-fn author_missing_keys_are_none() {
-    let (p, g) = scripted();
-    p.on(
-        Tool::Git,
-        &["config", "--get"],
-        Reply::Fail {
-            code: 1,
-            stdout: String::new(),
-            stderr: String::new(),
-        },
-    );
-    assert_eq!(g.author(Path::new("/r/wt")).unwrap(), GitAuthor::default());
-}
-
-#[test]
-fn author_blank_value_is_none() {
-    let (p, g) = scripted();
-    p.on(Tool::Git, &["config", "--get", "user.name"], ok("  \n"));
-    p.on(Tool::Git, &["config", "--get", "user.email"], ok("a@x.io"));
-    let a = g.author(Path::new("/r/wt")).unwrap();
-    assert_eq!(a.name, None);
-    assert_eq!(a.email.as_deref(), Some("a@x.io"));
-}
-
-#[test]
-fn author_outside_repo_is_not_a_repo() {
-    let (p, g) = scripted();
-    p.on(
-        Tool::Git,
-        &["config", "--get"],
-        Reply::Fail {
-            code: 128,
-            stdout: String::new(),
-            stderr: "fatal: not a git repository".to_owned(),
-        },
-    );
-    assert!(matches!(g.author(Path::new("/x")), Err(GitError::NotARepo)));
-}
-
-#[test]
-fn real_git_author_reads_repo_config() {
-    if Command::new("git").arg("--version").output().is_err() {
-        return;
-    }
+fn origin_url_reads_the_origin_remote() {
     let dir = tempfile::tempdir().unwrap();
-    let d = dir.path();
-    git_in(d, &["init", "-q"]);
-    git_in(d, &["config", "user.name", "Ann Dev"]);
-    git_in(d, &["config", "user.email", "a@x.io"]);
-    let a = real_git().author(d).unwrap();
-    assert_eq!(a.name.as_deref(), Some("Ann Dev"));
-    assert_eq!(a.email.as_deref(), Some("a@x.io"));
-}
-
-#[test]
-fn file_at_returns_the_committed_text_verbatim() {
-    let (p, g) = scripted();
-    p.on(
-        Tool::Git,
-        &["ls-tree", "--name-only", "abc", "--", ".moor.yaml"],
-        ok(".moor.yaml\n"),
+    let work = dir.path().join("w");
+    std::fs::create_dir_all(&work).unwrap();
+    git_in(&work, &["init", "-q"]);
+    assert_eq!(real_git().origin_url(&work), None);
+    git_in(
+        &work,
+        &["remote", "add", "origin", "git@github.com:o/n.git"],
     );
-    p.on(Tool::Git, &["show", "abc:.moor.yaml"], ok("setup: x\n"));
-    let text = g.file_at(Path::new("/r"), "abc", ".moor.yaml").unwrap();
-    assert_eq!(text.as_deref(), Some("setup: x\n"));
-}
-
-#[test]
-fn file_at_is_none_without_showing_when_the_path_is_absent() {
-    let (p, g) = scripted();
-    p.on(
-        Tool::Git,
-        &["ls-tree", "--name-only", "abc", "--", ".moor.yaml"],
-        ok("\n"),
-    );
-    let text = g.file_at(Path::new("/r"), "abc", ".moor.yaml").unwrap();
-    assert_eq!(text, None);
-    assert!(p
-        .calls()
-        .iter()
-        .all(|c| c.args.first().map(String::as_str) != Some("show")));
-}
-
-#[test]
-fn file_at_propagates_git_failure() {
-    let (p, g) = scripted();
-    p.on(
-        Tool::Git,
-        &["ls-tree"],
-        Reply::Fail {
-            code: 128,
-            stdout: String::new(),
-            stderr: "fatal: not a valid object name abc".to_owned(),
-        },
-    );
-    assert!(g.file_at(Path::new("/r"), "abc", ".moor.yaml").is_err());
-}
-
-#[test]
-fn commit_of_returns_the_trimmed_sha() {
-    let (p, g) = scripted();
-    p.on(Tool::Git, &["rev-parse", "--verify"], ok("abc123\n"));
-    assert_eq!(g.commit_of(Path::new("/r"), "main").unwrap(), "abc123");
-}
-
-#[test]
-fn commit_of_ends_options_and_peels_to_a_commit() {
-    let (p, g) = scripted();
-    p.on(Tool::Git, &["rev-parse", "--verify"], ok("abc123\n"));
-    g.commit_of(Path::new("/r"), "-x").unwrap();
-    let calls = p.calls();
-    let call = calls.first().unwrap();
     assert_eq!(
-        call.args,
-        ["rev-parse", "--verify", "--end-of-options", "-x^{commit}"]
+        real_git().origin_url(&work).as_deref(),
+        Some("git@github.com:o/n.git")
     );
-    assert_eq!(call.cwd.as_deref(), Some(Path::new("/r")));
 }
 
 #[test]
-fn commit_of_propagates_git_failure() {
-    let (p, g) = scripted();
-    p.on(
-        Tool::Git,
-        &["rev-parse", "--verify"],
-        Reply::Fail {
-            code: 128,
-            stdout: String::new(),
-            stderr: "fatal: Needed a single revision".to_owned(),
-        },
-    );
-    assert!(g.commit_of(Path::new("/r"), "nope").is_err());
-}
-
-#[test]
-fn clone_repo_puts_dashes_before_the_url_and_runs_in_the_parent() {
-    let (p, g) = scripted();
-    p.on(Tool::Git, &["clone"], ok(""));
-    g.clone_repo("-uploadpack", Path::new("/c/repos/a"))
-        .unwrap();
-    let calls = p.calls();
-    let call = calls.first().unwrap();
-    assert_eq!(call.args, ["clone", "--", "-uploadpack", "/c/repos/a"]);
-    assert_eq!(call.cwd.as_deref(), Some(Path::new("/c/repos")));
-}
-
-#[test]
-fn clone_repo_failure_is_moor_worded() {
-    let (p, g) = scripted();
-    p.on(
-        Tool::Git,
-        &["clone"],
-        Reply::Fail {
-            code: 128,
-            stdout: String::new(),
-            stderr: "fatal: repository not found\n".to_owned(),
-        },
-    );
-    let err = g.clone_repo("u", Path::new("/c/a")).unwrap_err();
-    assert!(err.to_string().contains("repository not found"), "{err}");
-}
-
-#[test]
-fn real_git_clone_then_fetch_branch_returns_the_tip() {
-    if Command::new("git").arg("--version").output().is_err() {
-        return;
-    }
+fn origin_url_outside_a_checkout_is_none() {
     let dir = tempfile::tempdir().unwrap();
-    let origin = dir.path().join("origin");
-    std::fs::create_dir(&origin).unwrap();
-    git_in(&origin, &["init", "-q", "-b", "main"]);
-    std::fs::write(origin.join("a.txt"), "a").unwrap();
-    git_in(&origin, &["add", "a.txt"]);
-    git_in(&origin, &["commit", "-q", "-m", "one"]);
-    let g = real_git();
-    let dest = dir.path().join("cache").join("r");
-    std::fs::create_dir(dest.parent().unwrap()).unwrap();
-    g.clone_repo(origin.to_str().unwrap(), &dest).unwrap();
-    assert!(dest.join(".git").is_dir());
-    std::fs::write(origin.join("b.txt"), "b").unwrap();
-    git_in(&origin, &["add", "b.txt"]);
-    git_in(&origin, &["commit", "-q", "-m", "two"]);
-    let tip = g.head(&origin).unwrap();
-    assert_eq!(g.fetch_branch(&dest, "main").unwrap(), tip);
-    assert!(g.fetch_branch(&dest, "nope").is_err());
+    assert_eq!(real_git().origin_url(dir.path()), None);
+}
+
+#[test]
+fn local_changes_sees_edits_and_unpushed_commits_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let work = pushed(dir.path());
+    let git = real_git();
+    assert!(!git.local_changes(&work), "clean and pushed");
+    std::fs::write(work.join("new.txt"), "x").unwrap();
+    assert!(git.local_changes(&work), "untracked file");
+    std::fs::remove_file(work.join("new.txt")).unwrap();
+    git_in(&work, &["commit", "-q", "--allow-empty", "-m", "two"]);
+    assert!(git.local_changes(&work), "ahead of origin/main");
+    assert!(!git.local_changes(dir.path()), "not a checkout");
 }

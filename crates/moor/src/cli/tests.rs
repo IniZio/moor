@@ -6,10 +6,8 @@ use moor_core::{Request, Response};
 
 use super::{inherit_run_output, parse, parse_call, render, GlobalOpts, Parsed};
 
-mod in_cwd;
-
 /// Builds argv with a program name.
-fn argv(a: &[&str]) -> Vec<OsString> {
+pub(super) fn argv(a: &[&str]) -> Vec<OsString> {
     std::iter::once("moor")
         .chain(a.iter().copied())
         .map(OsString::from)

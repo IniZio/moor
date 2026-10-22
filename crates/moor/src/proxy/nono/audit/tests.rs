@@ -210,7 +210,7 @@ fn box_sink_parts(dir: &Path) -> (Store, ProxyLog, BoxId) {
     let store = Store::open(&dir.join("moor.db"), clock.clone()).unwrap();
     let new = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     let box_id = store.apply(Decision::insert(new)).unwrap().box_id;
     let log = ProxyLog::open(dir, box_id, clock).unwrap();

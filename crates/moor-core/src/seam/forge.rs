@@ -1,42 +1,8 @@
 //! Forge seam: the code host that names repos.
 
-use std::fmt;
-
 use crate::name::Sha;
+pub use crate::name::{ForgeRepo, GitAuthor, RepoNameError};
 use crate::secret::Secret;
-
-/// A repository on a forge, named by owner and repo name.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct ForgeRepo {
-    /// Account or organisation that owns the repo.
-    pub owner: String,
-    /// Repo name, without the owner.
-    pub name: String,
-}
-
-impl ForgeRepo {
-    /// Builds a repo reference from an owner and a name.
-    #[must_use]
-    pub fn new(owner: impl Into<String>, name: impl Into<String>) -> Self {
-        Self {
-            owner: owner.into(),
-            name: name.into(),
-        }
-    }
-
-    /// `https://github.com/OWNER/NAME.git`, the URL a Box clones and pushes; the Proxy's
-    /// `github-git` rule allows this `.git` path.
-    #[must_use]
-    pub fn clone_url(&self) -> String {
-        format!("https://github.com/{}/{}.git", self.owner, self.name)
-    }
-}
-
-impl fmt::Display for ForgeRepo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}/{}", self.owner, self.name)
-    }
-}
 
 /// What the forge says about a repo at the commit a Box starts from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,15 +28,6 @@ pub struct RepoFiles {
     pub mcp_json: Option<String>,
     /// `.claude/settings.json`.
     pub claude_settings: Option<String>,
-}
-
-/// The name and email commits are made with.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GitAuthor {
-    /// Display name.
-    pub name: String,
-    /// Email address.
-    pub email: String,
 }
 
 /// Why a forge read failed; the text never carries the token.
@@ -133,10 +90,39 @@ mod tests {
     }
 
     #[test]
-    fn forge_repo_serde_shape() {
+    fn forge_repo_is_owner_slash_name_on_the_wire() {
         let repo = ForgeRepo::new("acme", "widgets");
         let json = serde_json::to_string(&repo).unwrap();
-        assert_eq!(json, r#"{"owner":"acme","name":"widgets"}"#);
+        assert_eq!(json, r#""acme/widgets""#);
         assert_eq!(serde_json::from_str::<ForgeRepo>(&json).unwrap(), repo);
+    }
+
+    #[test]
+    fn parse_takes_owner_slash_name_only() {
+        assert_eq!(
+            ForgeRepo::parse("a-b.c/d_e.git").unwrap(),
+            ForgeRepo::new("a-b.c", "d_e.git")
+        );
+        for bad in [
+            "",
+            "o",
+            "o/",
+            "/n",
+            "o/n/x",
+            "./n",
+            "o/..",
+            "o n/x",
+            "o/n\n",
+            "o/n\0",
+            "ö/n",
+            "https://github.com/o/n",
+            "o:n",
+        ] {
+            assert!(ForgeRepo::parse(bad).is_err(), "{bad:?}");
+            assert!(
+                serde_json::from_value::<ForgeRepo>(bad.into()).is_err(),
+                "{bad:?}"
+            );
+        }
     }
 }

@@ -14,13 +14,6 @@ pub(crate) enum Job {
         /// What to post.
         text: String,
     },
-    /// Warn in `channel` when the controller does not know `repo`, which a user just added.
-    CheckRepo {
-        /// Channel id the repo was added to.
-        channel: String,
-        /// The repo as the user typed it.
-        repo: String,
-    },
     /// Check a pasted Claude token and store it when Claude takes it.
     CheckToken(TokenCheck),
     /// Show `text` to `user` only, in a thread.

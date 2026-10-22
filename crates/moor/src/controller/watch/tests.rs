@@ -62,7 +62,7 @@ fn open(dir: &Path) -> Store {
 fn add(store: &Store, name: &str) -> BoxId {
     let new = NewBox {
         name: BoxName::parse_allow_bare(name).expect("name"),
-        repo: "r".into(),
+        repo: None,
     };
     store.apply(Decision::insert(new)).expect("insert").box_id
 }

@@ -9,16 +9,13 @@ use moor_core::seam::proc::Deadline;
 use moor_core::seam::proxy_host::ProxyHostError;
 use moor_core::ErrorKind;
 
-use super::{command, ready, req, run};
+use super::{command, ready, ready_yaml, req, run};
 use crate::testing::proxy_host::FakeProxyHost;
 
 #[test]
 fn run_gets_the_repo_env_and_proxy_variables() {
-    let f = ready();
-    std::fs::write(f.dir.path().join(".moor.yaml"), "env: {K: v}\n").unwrap();
-    let mut r = req(&["echo hi"]);
-    r.trust_moor_yaml = true;
-    run(&f.cx, &r).unwrap();
+    let f = ready_yaml("env: {K: v}\n");
+    run(&f.cx, &req(&["echo hi"])).unwrap();
     let (_, spec, deadline) = f.driver.execs().remove(0);
     assert_eq!(spec.env.first(), Some(&("K".to_owned(), "v".to_owned())));
     assert_eq!(spec.cwd.unwrap().as_str(), "/work/cbx_1/repo");
@@ -60,11 +57,8 @@ fn assert_full_repo_env(env: &[(String, String)]) {
 
 #[test]
 fn run_with_a_proxy_gets_reserved_and_credential_like_repo_env() {
-    let f = ready();
-    std::fs::write(f.dir.path().join(".moor.yaml"), REPO_ENV).unwrap();
-    let mut r = req(&["echo hi"]);
-    r.trust_moor_yaml = true;
-    run(&f.cx, &r).unwrap();
+    let f = ready_yaml(REPO_ENV);
+    run(&f.cx, &req(&["echo hi"])).unwrap();
     let (_, spec, _) = f.driver.execs().remove(0);
     assert!(spec.argv.get(2).unwrap().contains("export HTTPS_PROXY="));
     assert_full_repo_env(&spec.env);

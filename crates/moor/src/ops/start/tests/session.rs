@@ -14,7 +14,7 @@ use moor_core::{BoxId, BoxName, ErrorKind, ShowReq, StartReq, WaitFor, WaitReq};
 
 use super::state::idle;
 use super::state::WORKING;
-use super::{req, world, world_at, World};
+use super::{repo, req, script_base_yaml, world, World};
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::start::run;
 use crate::testing::clock::FakeClock;
@@ -266,13 +266,19 @@ fn no_agent_and_no_goal_launch_nothing() {
 
 #[test]
 fn a_failed_setup_still_launches_with_its_exit_code() {
-    let repo = tempfile::tempdir().unwrap();
-    std::fs::write(repo.path().join(".moor.yaml"), "setup: [bad]\n").unwrap();
-    let driver = FakeDriver::new().exec_results([Ok(ExecOutcome::Exited { code: 3 })]);
+    let driver = FakeDriver::new().exec_results([
+        Ok(ExecOutcome::Exited { code: 0 }),
+        Ok(ExecOutcome::Exited { code: 3 }),
+    ]);
     let engine = Arc::new(FakeEngine::new());
-    let mut w = world_at(driver, repo.path());
+    let mut w = world(driver);
     w.cx = w.cx.with_engine(engine.clone());
-    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    script_base_yaml(&w, Some("setup: [bad]\n"));
+    let of_repo = StartReq {
+        repo: Some(repo()),
+        ..goal_req("demo")
+    };
+    let v = run(&w.cx, &of_repo).unwrap();
     assert!(!v.setup.ok);
     assert!(v.agent.launched);
     assert_eq!(engine.launches().first().unwrap().setup_exit, Some(3));

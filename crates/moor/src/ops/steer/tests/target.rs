@@ -27,7 +27,7 @@ fn close_and_reuse_the_name(f: &Fx) -> BoxId {
     store
         .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("t").unwrap(),
-            repo: "r".into(),
+            repo: None,
         }))
         .unwrap()
         .box_id

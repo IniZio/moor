@@ -1,25 +1,49 @@
 //! Facts every Box op needs, built once per command.
 
-use std::path::Path;
-
-use moor_core::config::{BoxSettings, Flags, RepoConfig};
+use moor_core::config::{parse_repo, BoxSettings, Flags, RepoConfig};
+use moor_core::domain::decision::BoxRepo;
 use moor_core::seam::driver::DriverCaps;
 use moor_core::ProviderId;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::store::BoxRow;
 use moor_core::ErrorKind;
 
-/// Settings for one command: user config from Cx, repo config worktree-first, flags.
+/// Settings for one command on `row`: user config from Cx, the `.moor.yaml` stored when the Box
+/// started, then flags.
 ///
 /// # Errors
-/// A bad repo config or an unresolvable setting, as a failed command.
-pub(crate) fn settings(
+/// A stored repo config that no longer parses.
+pub(crate) fn settings_of(
     cx: &Cx,
-    worktree: &Path,
+    row: &BoxRow,
     flags: &Flags,
 ) -> Result<BoxSettings, CommandError> {
-    Ok(resolved(cx, cx.repo_config(worktree)?.as_ref(), flags))
+    Ok(resolved(cx, repo_config(row)?.as_ref(), flags))
+}
+
+/// The `.moor.yaml` stored with `row`, parsed; `None` for a Box whose base has none.
+///
+/// # Errors
+/// A stored text that does not parse.
+pub(crate) fn repo_config(row: &BoxRow) -> Result<Option<RepoConfig>, CommandError> {
+    repo_config_of(row.repo.as_ref(), row.base.as_deref())
+}
+
+/// The `.moor.yaml` of `repo` read at `base`, parsed; named `OWNER/NAME@BASE:.moor.yaml` in errors.
+///
+/// # Errors
+/// A text that does not parse.
+pub(crate) fn repo_config_of(
+    repo: Option<&BoxRepo>,
+    base: Option<&str>,
+) -> Result<Option<RepoConfig>, CommandError> {
+    let Some((repo, text)) = repo.and_then(|r| Some((&r.repo, r.moor_yaml.as_deref()?))) else {
+        return Ok(None);
+    };
+    let file = format!("{repo}@{}:.moor.yaml", base.unwrap_or("base"));
+    Ok(Some(parse_repo(&file, text)?))
 }
 
 /// Settings for one command from an already-read repo config, user config from Cx, and flags.

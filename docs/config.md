@@ -120,10 +120,11 @@ A repo's `.moor.yaml` configures its Boxes.
 | `box_credentials` | list of names | Secrets that the Box's user must hold for a `start`. moor does not put them into the Box. |
 | `proxy.direct` | list of host names | Hosts that the Box reaches without the Proxy. A repo cannot add or change a Proxy rule. |
 
-If the `.moor.yaml` in the checkout a Box started from differs from the copy in
-its base commit, moor refuses
-to run setup again, start the agent, or run `moor run`. Review the change, then
-repeat the command with `--trust-moor-yaml`.
+moor reads `.moor.yaml` from GitHub at the Box's base commit when the Box
+starts, and keeps that copy for the Box's life. Setup, the agent, `moor run`
+and the teardown all use it, so a change the agent makes to the file in the
+Box never changes what moor runs. A changed `.moor.yaml` takes effect in the
+next Box after it is pushed.
 
 ## Controller config
 
@@ -134,22 +135,9 @@ repeat the command with `--trust-moor-yaml`.
 | `socket` | path | `<state dir>/controller.sock` | The controller socket. `~` is allowed. |
 | `state_dir` | path | the same state directory as the CLI | The state directory. `~` is allowed. |
 | `settle_every_secs` | integer, above 0 | 5 | Seconds between passes that update each open Box's agent state. |
-| `repos` | map | empty | Repos the controller can clone on its own host. |
 | `fronts` | map | empty | Fronts that each get their own socket. |
 
-The controller refuses a config that has a `web` or `slack` key.
-
-### `repos`
-
-`repos.<name>` names a repo for `moor start --repo`. The name matches
-`[A-Za-z0-9][A-Za-z0-9._-]*`.
-
-| Key | Type | Meaning |
-| --- | --- | --- |
-| `url` | string | The clone URL, for the host's own `git clone`. It must not hold a password or token. |
-| `default_branch` | string | The branch new Boxes start from. The default is the repo's default branch. |
-| `moor_yaml.path` | path | A `.moor.yaml` on the controller host to use when the repo has none. moor resolves a relative path from the config file's directory. |
-| `moor_yaml.inline` | string | The `.moor.yaml` text itself, used when the repo has none. |
+The controller refuses a config that has a `web`, `slack` or `repos` key.
 
 ### `fronts`
 
@@ -211,7 +199,7 @@ frame asserts no identity, so a watch on a front socket carries no events.
 Some requests read or change the controller host, so only the operator may
 send them:
 
-- `env` and `repos`.
+- `env`.
 - Host Sessions. Anyone else gets `not your Box` for a host Session, as for a
   Session that does not exist, and a list leaves host Sessions out.
 
@@ -231,7 +219,7 @@ lacks one of them. The refusal names every missing secret at once, in its
 `needs` and `missing` for the caller and starts nothing:
 
 ```json
-{"cmd": "start-needs", "identity": "slack:T1:U1", "repo": "demo"}
+{"cmd": "start-needs", "identity": "slack:T1:U1", "repo": "acme/demo"}
 ```
 
 `spec.json`, the file the controller writes for each Proxy, names the user and

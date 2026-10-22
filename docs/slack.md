@@ -9,8 +9,8 @@ starts and steers Boxes for the person who started the thread.
 
 You need:
 
-- a running controller (`moor controller serve`) that lists each repo for
-  Slack under `repos` in its [config](config.md#repos)
+- a running controller (`moor controller serve`), and for each person a
+  `github` secret that can read the channel's repos
 - Claude Code 2.1.304 or newer on the controller host
 - a Slack workspace where you can create an app
 
@@ -69,8 +69,7 @@ thread that says why.
 1. Each person links their own Claude token. Run `/moor login` in any
    channel. Run `claude setup-token` on your own machine and paste the token
    it prints into the form.
-2. In an allowed channel, add a repo by its name from the controller config:
-   `/moor repo add NAME`.
+2. In an allowed channel, add a GitHub repo: `/moor repo add OWNER/NAME`.
 3. Mention the bot at the top level of the channel and describe the work. The
    coordinator replies in a thread and starts Boxes when you ask for work.
 
@@ -147,7 +146,7 @@ The front rejects unknown keys.
 | Command | Who | Where | What it does |
 | --- | --- | --- | --- |
 | `/moor repo` | `users` | `channels` | Lists the channel's repos and marks the default. |
-| `/moor repo add NAME` | `users` | `channels` | Adds a repo. If the controller does not know `NAME`, the front posts one line that lists the repos it knows. |
+| `/moor repo add OWNER/NAME` | `users` | `channels` | Adds a GitHub repo. A name that is not `OWNER/NAME` is refused. A start of a repo the person's GitHub account cannot read is refused by the controller. |
 | `/moor repo remove NAME` | `users` | `channels` | Removes a repo. |
 | `/moor repo default NAME` | `users` | `channels` | Makes `NAME` the channel's default repo. |
 | `/moor login [AGENT]` | `users` | any channel | Stores your Claude token after one test call to Claude on `haiku`. |

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::config::{RepoConfig, RepoTable, UserConfig};
+use moor_core::config::UserConfig;
 use moor_core::request::Pins;
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
@@ -18,8 +18,6 @@ use moor_core::seam::surface::Surface;
 use moor_core::user::{Identity, UserId, Viewer};
 use moor_core::{ErrorKind, Warning};
 
-use crate::adapters::git::Git;
-use crate::config_load::load_repo;
 use crate::env::Env;
 use crate::error::CommandError;
 use crate::store::{Store, STORE_FILE};
@@ -46,20 +44,14 @@ pub(crate) struct Cx {
     forge: Arc<dyn Forge>,
     /// Credential proxy host.
     proxy_host: Arc<dyn ProxyHost>,
-    /// Git adapter.
-    git: Git,
     /// User configuration.
     config: UserConfig,
     /// Host environment snapshot.
     env: Env,
-    /// The caller's directory, as its `in` request names it; `None` for a request without one.
-    dir: Option<PathBuf>,
     /// How long a fresh agent pane is watched for first-run prompts.
     prompt_window: Duration,
     /// State store, opened on first use.
     store: OnceCell<Store>,
-    /// Repos the controller knows.
-    repos: Arc<RepoTable>,
     /// The controller's vault key file; `None` outside a controller.
     vault_key: Option<PathBuf>,
     /// The identity a socket request acts as, already checked against its socket.
@@ -90,8 +82,6 @@ pub(crate) struct CxParts {
     pub forge: Arc<dyn Forge>,
     /// Credential proxy host.
     pub proxy_host: Arc<dyn ProxyHost>,
-    /// Git adapter.
-    pub git: Git,
     /// User configuration.
     pub config: UserConfig,
     /// Host environment snapshot.
@@ -114,13 +104,10 @@ impl Cx {
             proc: p.proc,
             forge: p.forge,
             proxy_host: p.proxy_host,
-            git: p.git,
             config: p.config,
             env: p.env,
-            dir: None,
             prompt_window: p.prompt_window,
             store: OnceCell::new(),
-            repos: Arc::new(RepoTable::new()),
             vault_key: None,
             requester: None,
             viewer: Viewer::Operator,
@@ -212,11 +199,6 @@ impl Cx {
         self
     }
 
-    /// Git adapter.
-    pub(crate) const fn git(&self) -> &Git {
-        &self.git
-    }
-
     /// User configuration.
     pub(crate) const fn config(&self) -> &UserConfig {
         &self.config
@@ -225,39 +207,6 @@ impl Cx {
     /// Host environment snapshot.
     pub(crate) const fn env(&self) -> &Env {
         &self.env
-    }
-
-    /// Repo config for `worktree`: its own `.moor.yaml`, else the main checkout's.
-    pub(crate) fn repo_config(&self, worktree: &Path) -> Result<Option<RepoConfig>, CommandError> {
-        let main = self
-            .git
-            .main_checkout(worktree)
-            .map_err(|e| CommandError::new(ErrorKind::Failed, e.to_string()))?;
-        load_repo(worktree, &main)?.map_or_else(|| self.overlay_config(&main), |c| Ok(Some(c)))
-    }
-
-    /// Repo config of the main checkout `worktree` belongs to, ignoring the worktree's own file.
-    pub(crate) fn main_repo_config(
-        &self,
-        worktree: &Path,
-    ) -> Result<Option<RepoConfig>, CommandError> {
-        let main = self
-            .git
-            .main_checkout(worktree)
-            .map_err(|e| CommandError::new(ErrorKind::Failed, e.to_string()))?;
-        load_repo(&main, &main)?.map_or_else(|| self.overlay_config(&main), |c| Ok(Some(c)))
-    }
-
-    /// The caller's directory, as its `in` request names it.
-    pub(crate) fn dir(&self) -> Option<&Path> {
-        self.dir.as_deref()
-    }
-
-    /// This context for a request on the caller's directory `dir`.
-    #[must_use]
-    pub(crate) fn with_dir(mut self, dir: Option<PathBuf>) -> Self {
-        self.dir = dir;
-        self
     }
 
     /// Time source for this run.
@@ -282,14 +231,6 @@ impl Cx {
         self.warnings.borrow_mut().push(w);
     }
 
-    /// Records `w` unless a warning with the same code is already recorded.
-    pub(crate) fn warn_once(&self, w: Warning) {
-        let mut warnings = self.warnings.borrow_mut();
-        if !warnings.iter().any(|x| x.code == w.code) {
-            warnings.push(w);
-        }
-    }
-
     /// Runs `f` for a Box that acts for `owner`, keeping the warnings it records only when the
     /// caller may see that Box, so a reply never names a Box hidden from its caller.
     pub(crate) fn for_box<T>(&self, owner: Option<UserId>, f: impl FnOnce() -> T) -> T {
@@ -308,7 +249,6 @@ impl Cx {
     }
 }
 
-mod repos;
 mod requester;
 #[cfg(test)]
 mod tests;

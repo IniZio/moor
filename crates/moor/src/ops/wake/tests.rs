@@ -1,6 +1,5 @@
 //! Tests for `wake`.
 
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -32,7 +31,6 @@ fn fx_with(driver: FakeDriver) -> Fx {
     let driver = Arc::new(driver);
     let cx = Cx::fake(
         dir.path(),
-        Path::new("/home/me/proj"),
         driver.clone(),
         Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
@@ -42,7 +40,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
     let id = store
         .apply(Decision::insert(NewBox {
             name: name.clone(),
-            repo: "r".into(),
+            repo: None,
         }))
         .unwrap()
         .box_id;

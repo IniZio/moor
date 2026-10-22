@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::Duration;
 
-use moor_core::config::{parse_controller, parse_repo, MoorYamlSource, RepoTable};
+use moor_core::config::parse_controller;
 use moor_core::ErrorKind;
 
 use crate::env::{Env, CONTROLLER_LOCK};
@@ -101,8 +101,6 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         || env.clone(),
         |dir| env.clone().with_state_dir(&env.expand_home(Path::new(dir))),
     );
-    let repos = resolve_repos(&env, config, cfg.repos.clone())?;
-    let env = env.with_repos(repos);
     let socket = match &cfg.socket {
         Some(s) => env.expand_home(Path::new(s)),
         None => state_socket(&env)
@@ -140,29 +138,6 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         env: Arc::new(env),
         settle_every: cfg.settle_every(),
     })
-}
-
-/// Makes each repo `moor_yaml` path absolute and checks the file reads and parses.
-fn resolve_repos(env: &Env, config: &Path, mut repos: RepoTable) -> Result<RepoTable, Stop> {
-    let base = config.parent().unwrap_or_else(|| Path::new(""));
-    for (name, entry) in &mut repos {
-        let Some(MoorYamlSource::Path(p)) = &mut entry.moor_yaml else {
-            continue;
-        };
-        let path = base.join(env.expand_home(Path::new(p.as_str())));
-        let shown = path.display();
-        let key = format!("repos.{name}.moor_yaml");
-        let text = fs::read_to_string(&path).map_err(|e| Stop {
-            code: USAGE,
-            message: format!("{key}: cannot read {shown}: {e}"),
-        })?;
-        parse_repo(&shown.to_string(), &text).map_err(|e| Stop {
-            code: USAGE,
-            message: format!("{key}: {shown}: {e}"),
-        })?;
-        *p = path.to_string_lossy().into_owned();
-    }
-    Ok(repos)
 }
 
 /// Loads the vault key beside `config`, creating it on first start, and returns it with its

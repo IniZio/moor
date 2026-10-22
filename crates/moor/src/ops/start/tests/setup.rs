@@ -7,20 +7,18 @@ use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Intent};
 use moor_core::exec_env::SETUP_LINE_DEADLINE;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
-use moor_core::seam::proc::{Deadline, Tool};
-use moor_core::seam::proxy_host::ProxyHostError;
+use moor_core::seam::forge::{GitAuthor, RepoAt};
+use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxId, ErrorKind, StartReq};
 
-use super::moor_yaml::script_base_yaml;
 use super::state::WORKING;
-use super::{on_github, req, world_at, World};
+use super::{repo, repo_req, script_base_yaml, world, World, BASE};
 use crate::adapters::clock::SystemClock;
 use crate::ops::start::run;
 use crate::store::Store;
 use crate::testing::driver::{is_clone_exec, FakeDriver};
 use crate::testing::engine::FakeEngine;
-use crate::testing::proc::Reply;
-use crate::testing::proxy_host::FakeProxyHost;
+use crate::testing::forge::repo_at;
 use moor_core::domain::box_state::BoxLifecycle;
 
 const LINE_DEADLINE: Duration = SETUP_LINE_DEADLINE;
@@ -29,30 +27,32 @@ pub(super) fn exit(code: i32) -> ExecOutcome {
     ExecOutcome::Exited { code }
 }
 
-/// Starts `demo` in a repo whose `.moor.yaml` is `yaml`.
+/// Starts `demo` of a repo whose `.moor.yaml` is `yaml`.
 pub(super) fn start_with(yaml: &str, driver: FakeDriver) -> (World, moor_core::view::StartView) {
-    let repo = tempfile::tempdir().unwrap();
-    std::fs::write(repo.path().join(".moor.yaml"), yaml).unwrap();
-    let w = on_github(world_at(driver, repo.path()));
+    let w = world(driver);
     script_base_yaml(&w, Some(yaml));
     let v = run(&w.cx, &start_req()).unwrap();
     (w, v)
 }
 
-/// Starts `demo` like [`start_with`] with `git config` answering the given author.
+/// Starts `demo` like [`start_with`] with the forge reporting the given author.
 pub(super) fn start_as(
     author: (&str, &str),
     yaml: &str,
     driver: FakeDriver,
 ) -> (World, moor_core::view::StartView) {
-    let repo = tempfile::tempdir().unwrap();
-    std::fs::write(repo.path().join(".moor.yaml"), yaml).unwrap();
-    let w = on_github(world_at(driver, repo.path()));
-    let ok = |v: &str| Reply::Ok(format!("{v}\n"));
-    w.proc
-        .on(Tool::Git, &["config", "--get", "user.name"], ok(author.0));
-    w.proc
-        .on(Tool::Git, &["config", "--get", "user.email"], ok(author.1));
+    let w = world(driver);
+    let author = GitAuthor {
+        name: author.0.to_owned(),
+        email: author.1.to_owned(),
+    };
+    w.forge.answer(
+        repo(),
+        Ok(RepoAt {
+            author,
+            ..repo_at(BASE, Some(yaml))
+        }),
+    );
     let v = run(&w.cx, &start_req()).unwrap();
     (w, v)
 }
@@ -93,7 +93,7 @@ pub(super) fn is_setup_line(argv: &[String]) -> bool {
 }
 
 pub(super) fn start_req() -> StartReq {
-    req("demo")
+    repo_req("demo")
 }
 
 /// The argv that runs `steps` as the setup script.
@@ -218,41 +218,6 @@ fn a_clean_setup_names_no_failed_step() {
 }
 
 #[test]
-fn setup_fails_like_a_failing_line_when_the_proxy_cannot_start() {
-    let repo = tempfile::tempdir().unwrap();
-    std::fs::write(repo.path().join(".moor.yaml"), "setup: [a, b]\n").unwrap();
-    let mut w = world_at(FakeDriver::new().exec_results([Ok(exit(0))]), repo.path());
-    w.cx = w.cx.with_proxy_host(Arc::new(
-        FakeProxyHost::new().with_ensure_error(ProxyHostError::Failed("boom".into())),
-    ));
-    script_base_yaml(&w, Some("setup: [a, b]\n"));
-    let v = run(&w.cx, &start_req()).unwrap();
-    assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
-    assert!(v.setup.ran && !v.setup.ok);
-    assert!(failed_at_set(&w, &v));
-    assert!(setup_execs(&w).is_empty());
-    let warnings = w.cx.take_warnings();
-    let msg = &warnings
-        .iter()
-        .find(|x| x.code == "setup_failed")
-        .unwrap()
-        .message;
-    assert!(msg.contains("the Proxy could not start: boom"), "{msg}");
-    assert!(
-        msg.contains("run each `setup:` line by hand with `moor run"),
-        "{msg}"
-    );
-    assert_eq!(v.setup.line.as_deref(), Some("the Proxy could not start"));
-    let id = BoxId::new(v.boxed.id);
-    let events = w.cx.store().unwrap().events(id, 50).unwrap();
-    let failed = events.iter().find(|e| e.kind == "setup_failed").unwrap();
-    assert_eq!(
-        failed.payload.get("line"),
-        Some(&serde_json::json!("the Proxy could not start"))
-    );
-}
-
-#[test]
 fn a_failed_setup_copies_its_log_into_an_owner_only_dir_under_the_state_dir() {
     use std::os::unix::fs::PermissionsExt as _;
     let driver = FakeDriver::new()
@@ -277,9 +242,6 @@ fn a_failing_setup_marks_the_box_and_a_later_clean_setup_clears_it() {
     assert!(failed_at_set(&w, &v));
     let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
-    let wt = store.box_row(id).unwrap().unwrap().repo;
-    std::fs::create_dir_all(&wt).unwrap();
-    std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [a]\n").unwrap();
     let gone = Decision::new(id).box_input(BoxInput::DriverMissing);
     store.apply(gone).unwrap();
     let again = run(&w.cx, &start_req()).unwrap();
@@ -333,10 +295,6 @@ fn a_failing_setup_on_a_re_provisioned_working_box_records_the_failing_line() {
     let (w, v) = start_with("setup: [a]\n", driver);
     let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
-    let wt = store.box_row(id).unwrap().unwrap().repo;
-    std::fs::create_dir_all(&wt).unwrap();
-    std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [a]\n").unwrap();
-    script_base_yaml(&w, Some("setup: [a]\n"));
     store
         .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
         .unwrap();
@@ -354,9 +312,8 @@ fn a_failing_setup_on_a_re_provisioned_working_box_records_the_failing_line() {
 
 #[test]
 fn setup_holds_the_setup_intent_and_clears_it_after() {
-    let repo = tempfile::tempdir().unwrap();
-    std::fs::write(repo.path().join(".moor.yaml"), "setup: [a]\n").unwrap();
-    let w = on_github(world_at(FakeDriver::new(), repo.path()));
+    let w = world(FakeDriver::new());
+    script_base_yaml(&w, Some("setup: [a]\n"));
     let seen = Arc::new(Mutex::new(Vec::new()));
     let (sink, path) = (Arc::clone(&seen), w.dir.path().join("moor.db"));
     w.driver.on_exec(move || {
@@ -372,23 +329,20 @@ fn setup_holds_the_setup_intent_and_clears_it_after() {
     assert_eq!(row.unwrap().unwrap().intent, None);
 }
 
-/// Like [`failed_setup_then`] with the first setup run on `driver`.
+/// Starts `demo` like [`start_with`] and gives back its Box id; `driver`'s results decide
+/// how its first setup ends.
 pub(super) fn failed_setup_with(yaml: &str, driver: FakeDriver) -> (World, BoxId) {
-    let (w, v) = start_with("setup: [a]\n", driver);
-    let id = BoxId::new(v.boxed.id);
-    let wt = w.cx.store().unwrap().box_row(id).unwrap().unwrap().repo;
-    std::fs::create_dir_all(&wt).unwrap();
-    std::fs::write(Path::new(&wt).join(".moor.yaml"), yaml).unwrap();
-    script_base_yaml(&w, Some(yaml));
-    (w, id)
+    let (w, v) = start_with(yaml, driver);
+    (w, BoxId::new(v.boxed.id))
 }
 
 #[test]
 fn an_unset_author_runs_setup_without_touching_git_config() {
-    let (w, v) = start_with("setup: [a, b]\n", FakeDriver::new());
+    let (w, v) = start_as(("", ""), "setup: [a, b]\n", FakeDriver::new());
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert!(v.setup.ran && v.setup.ok);
     assert_eq!(argvs(&w), [script_argv(&["a", "b"])]);
+    assert!(setup_execs(&w).iter().all(|e| !is_identity(&e.1.argv)));
 }
 
 #[test]
@@ -439,12 +393,8 @@ fn start_recording_launches(
     Arc<FakeEngine>,
     Result<moor_core::view::StartView, crate::error::CommandError>,
 ) {
-    let repo = tempfile::tempdir().unwrap();
-    std::fs::write(repo.path().join(".moor.yaml"), yaml).unwrap();
-    let mut w = on_github(world_at(
-        FakeDriver::new().exec_results(results),
-        repo.path(),
-    ));
+    let mut w = world(FakeDriver::new().exec_results(results));
+    script_base_yaml(&w, Some(yaml));
     let engine = Arc::new(FakeEngine::new());
     w.cx = w.cx.with_engine(engine.clone());
     let with_goal = StartReq {

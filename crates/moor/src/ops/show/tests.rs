@@ -44,7 +44,6 @@ fn parts(row: &BoxRow) -> Parts {
 fn cx(dir: &Path, driver: &Arc<FakeDriver>) -> Cx {
     Cx::fake(
         dir,
-        dir,
         driver.clone(),
         Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
@@ -67,7 +66,7 @@ fn req(box_name: Option<&str>, events: Option<u32>) -> ShowReq {
 fn add(cx: &Cx, name: &str) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     cx.store()
         .unwrap()
@@ -243,7 +242,6 @@ fn box_shows_its_in_flight_run() {
 /// Context over `driver` with a scripted engine.
 fn engine_cx(dir: &Path, driver: &Arc<FakeDriver>, engine: &Arc<FakeEngine>) -> Cx {
     Cx::fake(
-        dir,
         dir,
         driver.clone(),
         Arc::new(FakeSurface::new()),
@@ -502,14 +500,8 @@ fn start_cx(dir: &Path, driver: &Arc<FakeDriver>) -> Cx {
         &["rev-parse", "--git-path", "info/exclude"],
         Reply::Ok(format!("{}/exclude\n", dir.display())),
     );
-    Cx::fake(
-        dir,
-        Path::new("/repo"),
-        driver.clone(),
-        Arc::new(FakeSurface::new()),
-        proc,
-    )
-    .with_engine(Arc::new(FakeEngine::new()))
+    Cx::fake(dir, driver.clone(), Arc::new(FakeSurface::new()), proc)
+        .with_engine(Arc::new(FakeEngine::new()))
 }
 
 #[test]

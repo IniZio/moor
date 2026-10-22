@@ -10,14 +10,6 @@ impl ScriptedProc {
         self.push_rule(tool, prefix, reply, true)
     }
 
-    /// Like [`Self::on`], but takes precedence over every rule registered so far.
-    pub(crate) fn before(&self, tool: Tool, prefix: &[&str], reply: Reply) -> &Self {
-        if let Ok(mut r) = self.rules.lock() {
-            r.insert(0, rule(tool, prefix, reply, false));
-        }
-        self
-    }
-
     pub(super) fn push_rule(&self, tool: Tool, prefix: &[&str], reply: Reply, once: bool) -> &Self {
         if let Ok(mut r) = self.rules.lock() {
             r.push(rule(tool, prefix, reply, once));

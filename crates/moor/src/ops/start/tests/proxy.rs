@@ -2,26 +2,30 @@
 
 use std::sync::Arc;
 
-use moor_core::seam::forge::ForgeRepo;
-use moor_core::seam::proc::Tool;
 use moor_core::seam::proxy_host::ProxyHostError;
 use moor_core::{BoxHandle, BoxId, StartReq};
 
 use super::relaunch::{gone, session};
 use super::state::WORKING;
-use super::{req, world, World};
+use super::{repo, repo_req, req, script_base_yaml, world, World};
 use crate::ops::common::proxy::TAIL_LINES;
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
-use crate::testing::forge::FakeForge;
-use crate::testing::proc::Reply;
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall, FAKE_BOX_PORT};
 
 fn goal_req() -> StartReq {
     StartReq {
         goal: Some("ship it".into()),
         ..req("demo")
+    }
+}
+
+/// [`goal_req`] for a Box of [`repo`].
+fn goal_repo_req() -> StartReq {
+    StartReq {
+        goal: Some("ship it".into()),
+        ..repo_req("demo")
     }
 }
 
@@ -126,50 +130,32 @@ fn env_of<'a>(env: &'a [(String, String)], key: &str) -> Option<&'a str> {
 
 #[test]
 fn the_spec_carries_the_box_repo_and_resolved_rules() {
-    let (mut w, engine, fake) = host_world(FakeProxyHost::new());
-    w.cx = w.cx.with_forge(Arc::new(
-        FakeForge::new().with_repo("git@github.com:o/r.git", ForgeRepo::new("o", "r")),
-    ));
-    w.proc.on(
-        Tool::Git,
-        &["remote", "get-url", "origin"],
-        Reply::Ok("git@github.com:o/r.git\n".into()),
-    );
-    run(&w.cx, &goal_req()).unwrap();
+    let (w, engine, fake) = host_world(FakeProxyHost::new());
+    script_base_yaml(&w, None);
+    run(&w.cx, &goal_repo_req()).unwrap();
     let spec = spec_of(&fake);
-    assert_eq!(spec.box_repo, Some(ForgeRepo::new("o", "r")));
+    assert_eq!(spec.box_repo, Some(repo()));
     let names: Vec<&str> = spec.rules.iter().map(|r| r.name.as_str()).collect();
     assert_eq!(
         names,
         ["claude", "github-api", "github-git", "github-uploads"]
     );
     let api = spec.rules.iter().find(|r| r.name == "github-api").unwrap();
-    assert_eq!(api.box_env.get("GH_REPO").map(String::as_str), Some("o/r"));
+    assert_eq!(api.box_env.get("GH_REPO").map(String::as_str), Some("o/n"));
     let launches = engine.launches();
     let addr = launches.first().unwrap().proxy.as_ref().unwrap();
-    assert_eq!(env_of(&addr.box_env, "GH_REPO"), Some("o/r"));
+    assert_eq!(env_of(&addr.box_env, "GH_REPO"), Some("o/n"));
     assert_eq!(
         env_of(&addr.box_env, "CLAUDE_CODE_OAUTH_TOKEN"),
         Some("moor-proxy")
     );
 }
 
-/// Rule names the proxy gets for a Box whose origin is a GitHub repo.
+/// Rule names the proxy gets for a Box of a GitHub repo.
 fn rule_names_with_a_repo() -> Vec<String> {
-    let fake = FakeProxyHost::new();
-    let mut w = super::world(FakeDriver::new());
-    w.cx =
-        w.cx.with_engine(Arc::new(FakeEngine::new()))
-            .with_proxy_host(Arc::new(fake.clone()))
-            .with_forge(Arc::new(
-                FakeForge::new().with_repo("git@github.com:o/r.git", ForgeRepo::new("o", "r")),
-            ));
-    w.proc.on(
-        Tool::Git,
-        &["remote", "get-url", "origin"],
-        Reply::Ok("git@github.com:o/r.git\n".into()),
-    );
-    run(&w.cx, &goal_req()).unwrap();
+    let (w, _, fake) = host_world(FakeProxyHost::new());
+    script_base_yaml(&w, None);
+    run(&w.cx, &goal_repo_req()).unwrap();
     spec_of(&fake).rules.into_iter().map(|r| r.name).collect()
 }
 
@@ -182,7 +168,7 @@ fn a_box_with_a_repo_always_gets_the_upload_rule() {
 }
 
 #[test]
-fn without_an_origin_only_the_rules_that_need_no_repo_remain() {
+fn without_a_repo_only_the_rules_that_need_no_repo_remain() {
     let (w, engine, fake) = host_world(FakeProxyHost::new());
     run(&w.cx, &goal_req()).unwrap();
     let spec = spec_of(&fake);
@@ -199,25 +185,14 @@ fn without_an_origin_only_the_rules_that_need_no_repo_remain() {
     );
 }
 
-/// Starts `demo` in a repo whose `.moor.yaml` is `yaml`, with the origin `o/r`; returns the first launch's env.
+/// Starts `demo` of [`repo`] whose `.moor.yaml` is `yaml`; returns the world and the first
+/// launch's env.
 fn repo_env_launch(yaml: &str) -> (World, Vec<(String, String)>) {
-    let repo = tempfile::tempdir().unwrap();
-    std::fs::write(repo.path().join(".moor.yaml"), yaml).unwrap();
     let engine = Arc::new(FakeEngine::new());
-    let mut w = super::world_with(
-        FakeDriver::new(),
-        repo.path(),
-        moor_core::config::UserConfig::default(),
-    );
-    w.cx = w.cx.with_engine(engine.clone()).with_forge(Arc::new(
-        FakeForge::new().with_repo("git@github.com:o/r.git", ForgeRepo::new("o", "r")),
-    ));
-    w.proc.on(
-        Tool::Git,
-        &["remote", "get-url", "origin"],
-        Reply::Ok("git@github.com:o/r.git\n".into()),
-    );
-    run(&w.cx, &goal_req()).unwrap();
+    let mut w = world(FakeDriver::new());
+    w.cx = w.cx.with_engine(engine.clone());
+    script_base_yaml(&w, Some(yaml));
+    run(&w.cx, &goal_repo_req()).unwrap();
     let env = engine
         .launches()
         .first()
@@ -233,7 +208,7 @@ fn repo_env_launch(yaml: &str) -> (World, Vec<(String, String)>) {
 #[test]
 fn a_rule_env_value_wins_over_the_repo_env_of_the_same_name() {
     let (_w, env) = repo_env_launch("env:\n  GH_REPO: other/repo\n");
-    assert_eq!(env_of(&env, "GH_REPO"), Some("o/r"));
+    assert_eq!(env_of(&env, "GH_REPO"), Some("o/n"));
     assert_eq!(env.iter().filter(|(k, _)| k == "GH_REPO").count(), 1);
 }
 
@@ -261,25 +236,11 @@ fn repo_env_never_sets_proxy_managed_or_loader_names() {
 
 #[test]
 fn repo_env_reaches_the_agent_and_credential_looking_names_are_dropped() {
-    let repo = tempfile::tempdir().unwrap();
-    std::fs::write(
-        repo.path().join(".moor.yaml"),
-        "env:\n  APP_MODE: dev\n  DEPLOY_TOKEN: real\n  api_key: real\n",
-    )
-    .unwrap();
-    let engine = Arc::new(FakeEngine::new());
-    let mut w = super::world_with(
-        FakeDriver::new(),
-        repo.path(),
-        moor_core::config::UserConfig::default(),
-    );
-    w.cx = w.cx.with_engine(engine.clone());
-    run(&w.cx, &goal_req()).unwrap();
-    let launches = engine.launches();
-    let addr = launches.first().unwrap().proxy.as_ref().unwrap();
-    assert_eq!(env_of(&addr.box_env, "APP_MODE"), Some("dev"));
-    assert_eq!(env_of(&addr.box_env, "DEPLOY_TOKEN"), None);
-    assert_eq!(env_of(&addr.box_env, "api_key"), None);
+    let (w, env) =
+        repo_env_launch("env:\n  APP_MODE: dev\n  DEPLOY_TOKEN: real\n  api_key: real\n");
+    assert_eq!(env_of(&env, "APP_MODE"), Some("dev"));
+    assert_eq!(env_of(&env, "DEPLOY_TOKEN"), None);
+    assert_eq!(env_of(&env, "api_key"), None);
     let dropped =
         w.cx.take_warnings()
             .iter()
@@ -288,37 +249,12 @@ fn repo_env_reaches_the_agent_and_credential_looking_names_are_dropped() {
     assert_eq!(dropped, 2);
 }
 
-/// Starts `demo` with setup lines and the repo env `yaml`; returns the world and the agent launch env.
-fn setup_env_launch(yaml: &str) -> (World, Vec<(String, String)>) {
-    let repo = tempfile::tempdir().unwrap();
-    std::fs::write(repo.path().join(".moor.yaml"), yaml).unwrap();
-    let engine = Arc::new(FakeEngine::new());
-    let mut w = super::world_with(
-        FakeDriver::new(),
-        repo.path(),
-        moor_core::config::UserConfig::default(),
-    );
-    w.cx = w.cx.with_engine(engine.clone());
-    super::moor_yaml::script_base_yaml(&w, Some(yaml));
-    run(&w.cx, &goal_req()).unwrap();
-    let env = engine
-        .launches()
-        .first()
-        .unwrap()
-        .proxy
-        .as_ref()
-        .unwrap()
-        .box_env
-        .clone();
-    (w, env)
-}
-
 const SETUP_ENV_YAML: &str =
     "setup: [a, b]\nenv:\n  A: a\n  STRIPE_TEST_KEY: sk\n  NODE_OPTIONS: --x\n";
 
 #[test]
 fn a_start_with_setup_warns_once_per_dropped_env_name() {
-    let (w, _env) = setup_env_launch(SETUP_ENV_YAML);
+    let (w, _env) = repo_env_launch(SETUP_ENV_YAML);
     let warnings = w.cx.take_warnings();
     let count = |name: &str| {
         (warnings.iter())
@@ -331,7 +267,7 @@ fn a_start_with_setup_warns_once_per_dropped_env_name() {
 
 #[test]
 fn the_agent_launch_env_drops_reserved_and_credential_names_but_keeps_the_rest() {
-    let (_w, env) = setup_env_launch(SETUP_ENV_YAML);
+    let (_w, env) = repo_env_launch(SETUP_ENV_YAML);
     assert_eq!(env_of(&env, "A"), Some("a"));
     assert_eq!(env_of(&env, "NODE_OPTIONS"), None);
     assert_eq!(env_of(&env, "STRIPE_TEST_KEY"), None);
@@ -348,7 +284,7 @@ fn config_with_proxy(yaml: &str) -> moor_core::config::UserConfig {
 fn user_direct_hosts_reach_the_agent_proxy_address() {
     let config = config_with_proxy("proxy: {direct: [dl.google.com, .gradle.org]}");
     let engine = Arc::new(FakeEngine::new());
-    let mut w = super::world_with(FakeDriver::new(), std::path::Path::new("/repo"), config);
+    let mut w = super::world_with(FakeDriver::new(), config);
     w.cx =
         w.cx.with_engine(engine.clone())
             .with_proxy_host(Arc::new(FakeProxyHost::new()));
@@ -364,23 +300,24 @@ fn user_direct_hosts_reach_the_agent_proxy_address() {
 }
 
 #[test]
-fn a_repo_direct_host_that_a_user_rule_serves_fails_the_proxy_step() {
-    let repo = tempfile::tempdir().unwrap();
-    std::fs::write(
-        repo.path().join(".moor.yaml"),
-        "proxy: {direct: [pub.dev, .gitlab.com]}\n",
-    )
-    .unwrap();
+fn a_repo_direct_host_that_a_user_rule_serves_fails_the_start_at_the_clone() {
     let config = config_with_proxy(
         "proxy: {rules: {gitlab: {hosts: [gitlab.com], credential: github, inject: {form: 'Bearer {secret}'}}}}",
     );
-    let mut w = super::world_with(FakeDriver::new(), repo.path(), config);
-    w.cx = w.cx.with_proxy_host(Arc::new(FakeProxyHost::new()));
-    let v = run(&w.cx, &goal_req()).unwrap();
-    let (step, message, _) = failure_step(&w, BoxId::new(v.boxed.id));
-    assert_eq!(step, "proxy");
+    let engine = Arc::new(FakeEngine::new());
+    let mut w = super::world_with(FakeDriver::new(), config);
+    w.cx =
+        w.cx.with_engine(engine.clone())
+            .with_proxy_host(Arc::new(FakeProxyHost::new()));
+    script_base_yaml(&w, Some("proxy: {direct: [pub.dev, .gitlab.com]}\n"));
+    let err = run(&w.cx, &goal_repo_req()).unwrap_err();
+    let message = err.error.to_string();
     assert!(
         message.contains("proxy.direct[1]: .gitlab.com covers gitlab.com,"),
         "{message}"
     );
+    let value = err.value.unwrap();
+    assert_eq!(value.get("failed_step"), Some(&"clone".into()));
+    assert!(w.driver.execs().is_empty());
+    assert!(engine.launches().is_empty());
 }

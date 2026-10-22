@@ -11,7 +11,6 @@ use moor_core::seam::proxy_host::ProxyStatus;
 use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::view::AgentLaunchView;
 use moor_core::{BoxId, ErrorKind, SessionId, StartReq, Warning};
-use std::path::Path;
 use std::time::Duration;
 
 use super::launch;
@@ -20,7 +19,7 @@ use super::watch;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
-use crate::ops::common::facts::settings;
+use crate::ops::common::facts::settings_of;
 use crate::ops::common::provision::reread;
 use crate::ops::common::resume;
 use crate::ops::common::transcript;
@@ -273,16 +272,12 @@ pub(crate) fn revive_after_wake(cx: &Cx, store: &Store, id: BoxId) -> Result<(),
         model: None,
         no_agent: false,
         resume: false,
-        trust_moor_yaml: false,
         repo: None,
         hold: false,
         parent: None,
         identity: None,
     };
-    let settings = || {
-        let at = row.repo.as_str();
-        settings(cx, Path::new(at), &Flags::default())
-    };
+    let settings = || settings_of(cx, &row, &Flags::default());
     let view = match &ended_pane {
         None => launch::run(cx, store, &req, id, None, &settings)?,
         Some((old, end)) => relaunch(

@@ -19,7 +19,6 @@ use crate::testing::surface::FakeSurface;
 fn cx(dir: &Path, driver: &Arc<FakeDriver>) -> Cx {
     Cx::fake(
         dir,
-        Path::new("/home/me/proj"),
         driver.clone(),
         Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
@@ -136,7 +135,7 @@ fn dispatch_returns_the_wire_shape_and_touches_no_box() {
 fn box_child(cx: &Cx, dir: &Path, name: &str, parent: i64) -> i64 {
     let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     cx.store().unwrap().apply(Decision::insert(nt)).unwrap();
     let id: i64 = db(dir)

@@ -3,6 +3,7 @@
 mod args;
 mod args_admin;
 mod args_probe;
+mod caller;
 mod exit;
 mod render_json;
 mod render_text;
@@ -10,13 +11,13 @@ mod render_text;
 mod tests;
 
 use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use clap::error::ErrorKind as ClapKind;
-use moor_core::request::InReq;
-use moor_core::{CpReq, EnvReq, ErrorKind, ErrorView, Request, Response, RunReq};
+use moor_core::{ErrorKind, ErrorView, Request, Response, RunReq};
 
 use args::Action;
+pub use caller::{resolve, Resolved};
 
 /// Options shared by every command.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -155,32 +156,6 @@ pub fn secret_set(name: moor_core::user::SecretName, mut stdin: Vec<u8>) -> Requ
         name,
         value: moor_core::request::SecretValue::new(stdin),
     })
-}
-
-/// `request` resolved against `cwd`, the caller's directory.
-///
-/// The controller never reads a directory of its own. A `start`, `start-needs` or `env` with no
-/// repo runs `in` `cwd`, and a relative `cp` destination or `env` repo becomes absolute.
-#[must_use]
-pub fn in_cwd(request: Request, cwd: &Path) -> Request {
-    let abs = |p: String| cwd.join(p).display().to_string();
-    let inside = |request: Request| {
-        Request::In(InReq {
-            dir: cwd.display().to_string(),
-            request: Box::new(request),
-        })
-    };
-    match request {
-        Request::Start(r) if r.repo.is_none() => inside(Request::Start(r)),
-        Request::StartNeeds(r) if r.repo.is_none() => inside(Request::StartNeeds(r)),
-        Request::Env(EnvReq { repo: None }) => inside(Request::Env(EnvReq { repo: None })),
-        Request::Env(EnvReq { repo: Some(r) }) => Request::Env(EnvReq { repo: Some(abs(r)) }),
-        Request::Cp(r) => Request::Cp(CpReq {
-            dest: abs(r.dest),
-            ..r
-        }),
-        other => other,
-    }
 }
 
 /// Marks a text-mode `run` request to stream program output to the terminal.

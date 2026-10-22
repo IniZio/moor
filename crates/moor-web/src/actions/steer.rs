@@ -71,7 +71,6 @@ pub(crate) fn build(path: &str, body: &[u8]) -> Result<Request, String> {
             Ok(Request::Close(CloseReq {
                 target: name(&b.box_name)?.into(),
                 force: false,
-                trust_moor_yaml: false,
             }))
         }
         _ => Err("unknown action".into()),

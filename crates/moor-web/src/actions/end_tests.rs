@@ -241,7 +241,6 @@ fn close(box_name: &str) -> Request {
     Request::Close(CloseReq {
         target: BoxName::parse_allow_bare(box_name).unwrap().into(),
         force: false,
-        trust_moor_yaml: false,
     })
 }
 

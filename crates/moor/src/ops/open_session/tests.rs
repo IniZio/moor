@@ -1,6 +1,5 @@
 //! Tests for `open-session`.
 
-use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::activity::{PaneObs, PaneStatus};
@@ -42,14 +41,8 @@ fn fx(engine: FakeEngine, live: bool) -> Fx {
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
         Reply::Ok("/home/me/proj/.git\n".into()),
     );
-    let cx = Cx::fake(
-        dir.path(),
-        Path::new("/home/me/proj"),
-        driver.clone(),
-        surface.clone(),
-        proc,
-    )
-    .with_engine(engine.clone());
+    let cx =
+        Cx::fake(dir.path(), driver.clone(), surface.clone(), proc).with_engine(engine.clone());
     let id = ready_box(&cx, &driver);
     let store = cx.store().unwrap();
     store.begin_session(id, "s-1", Some("p-0")).unwrap();

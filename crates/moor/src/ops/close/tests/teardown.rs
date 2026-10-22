@@ -1,31 +1,30 @@
-use moor_core::domain::box_state::BoxLifecycle;
-use std::fs;
 use std::sync::Arc;
 
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::decision::Decision;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
-use moor_core::seam::proc::Tool;
 use moor_core::seam::proxy_host::ProxyHostError;
-use moor_core::{BoxPath, CloseReq, ErrorKind};
+use moor_core::ErrorKind;
 
-use super::{admit, box_state, fx_box, fx_with, proc, req, row, run, Fx};
-use crate::cx::Cx;
+use super::boxwork::fx_woken_with;
+use super::{box_state, fx_repo, req, row, run, Fx};
 use crate::ops::common::boxlock::{BoxLock, WAIT};
 use crate::testing::driver::FakeDriver;
-use crate::testing::proc::Reply;
 use crate::testing::proxy_host::FakeProxyHost;
 use crate::testing::surface::FakeSurface;
 
 pub(super) const YAML: &str =
     "teardown: ['echo bye', 'rm -rf cache']\nenv: {K: v}\nbox: {size: large}\n";
 
-/// The Box user's HOME, which a Proxy-backed teardown stages its credentials under.
-fn fx_yaml(driver: FakeDriver, yaml: &str) -> Fx {
-    let f = fx_with(driver, FakeSurface::new());
-    fs::write(f.dir.path().join(".moor.yaml"), yaml).unwrap();
-    base_has(&f, yaml);
-    f
+/// A Ready Box that probes clean, with `yaml` as the `.moor.yaml` stored for its base.
+pub(super) fn fx_yaml(driver: FakeDriver, yaml: &str) -> Fx {
+    fx_repo(
+        driver,
+        FakeSurface::new(),
+        Some("ahead=0 dirty=0"),
+        Some(yaml),
+    )
 }
 
 /// Teardown runs; the unsaved-work probe and the collection are not counted.
@@ -207,12 +206,12 @@ fn gone_box_skips_teardown() {
 
 #[test]
 fn refused_close_runs_no_teardown() {
-    let f = fx_box(
+    let f = fx_repo(
         FakeDriver::new(),
         FakeSurface::new(),
         Some("ahead=2 dirty=0"),
+        Some(YAML),
     );
-    fs::write(f.dir.path().join(".moor.yaml"), YAML).unwrap();
     assert_eq!(
         run(&f.cx, &req(false)).unwrap_err().kind,
         ErrorKind::Refused
@@ -249,47 +248,9 @@ fn close_leaves_the_box_lock_free() {
     assert!(again.is_ok());
 }
 
-/// A Ready Box of a repo dir named `repo`, so a woken Box (which the fake driver
-/// places at `/work/cbx_1/repo`) probes clean.
-fn fx_woken_yaml(yaml: &str) -> Fx {
-    let dir = tempfile::tempdir().unwrap();
-    let repo = dir.path().join("repo");
-    fs::create_dir(&repo).unwrap();
-    let path = BoxPath::under("/work/cbx_1/repo", ".moor/boxwork").unwrap();
-    let driver = Arc::new(FakeDriver::new().peek_text("box-1", &path, "ahead=0 dirty=0"));
-    let surface = Arc::new(FakeSurface::new());
-    let proc = proc();
-    let cx = Cx::fake(
-        dir.path(),
-        dir.path(),
-        driver.clone(),
-        surface.clone(),
-        proc.clone(),
-    );
-    let id = admit(&cx, &driver, &repo);
-    cx.store()
-        .unwrap()
-        .apply(Decision::new(id).set(Fields {
-            box_workdir: Field::Set("/work/cbx_1/repo".to_owned()),
-            ..Fields::default()
-        }))
-        .unwrap();
-    fs::write(repo.join(".moor.yaml"), yaml).unwrap();
-    let f = Fx {
-        dir,
-        cx,
-        driver,
-        surface,
-        proc,
-        id,
-    };
-    base_has(&f, yaml);
-    f
-}
-
 #[test]
 fn asleep_box_is_woken_probed_and_released() {
-    let f = fx_woken_yaml(YAML);
+    let f = fx_woken_with("ahead=0 dirty=0", Some(YAML));
     f.cx.store()
         .unwrap()
         .apply(Decision::new(f.id).box_input(BoxInput::Sleep))
@@ -314,76 +275,4 @@ fn invalid_repo_config_warns_and_still_closes_without_teardown() {
         .take_warnings()
         .iter()
         .any(|w| w.code == "teardown_failed"));
-}
-
-const BASE_YAML: &str = "teardown: ['echo base']\n";
-
-/// The Box has a base commit holding `base` as its `.moor.yaml`.
-pub(super) fn base_has(f: &Fx, base: &str) {
-    let fields = Fields {
-        base: Field::Set("abc".into()),
-        ..Fields::default()
-    };
-    f.cx.store()
-        .unwrap()
-        .apply(Decision::new(f.id).set(fields))
-        .unwrap();
-    f.proc
-        .before(Tool::Git, &["ls-tree"], Reply::Ok(".moor.yaml\n".into()));
-    f.proc.before(Tool::Git, &["show"], Reply::Ok(base.into()));
-}
-
-fn script_of(spec: &ExecSpec) -> &str {
-    spec.argv.last().map_or("", String::as_str)
-}
-
-#[test]
-fn changed_moor_yaml_tears_down_with_the_base_copy_and_warns() {
-    let f = fx_yaml(FakeDriver::new(), YAML);
-    base_has(&f, BASE_YAML);
-    let v = run(&f.cx, &req(false)).unwrap();
-    assert!(v.box_deleted);
-    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
-    let spec = only_exec(&f);
-    assert!(script_of(&spec).contains("echo base"));
-    assert!(!script_of(&spec).contains("rm -rf cache"));
-    assert!(f
-        .cx
-        .take_warnings()
-        .iter()
-        .any(|w| w.code == "moor_yaml_untrusted"));
-}
-
-#[test]
-fn trusted_changed_moor_yaml_tears_down_with_the_host_copy_and_warns() {
-    let f = fx_yaml(FakeDriver::new(), YAML);
-    base_has(&f, BASE_YAML);
-    let trusting = CloseReq {
-        trust_moor_yaml: true,
-        ..req(false)
-    };
-    let v = run(&f.cx, &trusting).unwrap();
-    assert!(v.box_deleted);
-    let spec = only_exec(&f);
-    assert!(script_of(&spec).contains("rm -rf cache"));
-    assert!(!script_of(&spec).contains("echo base"));
-    assert!(f
-        .cx
-        .take_warnings()
-        .iter()
-        .any(|w| w.code == "moor_yaml_trusted"));
-}
-
-#[test]
-fn unchanged_moor_yaml_tears_down_without_a_moor_yaml_warning() {
-    let f = fx_yaml(FakeDriver::new(), YAML);
-    base_has(&f, YAML);
-    run(&f.cx, &req(false)).unwrap();
-    let spec = only_exec(&f);
-    assert!(script_of(&spec).contains("rm -rf cache"));
-    assert!(f
-        .cx
-        .take_warnings()
-        .iter()
-        .all(|w| !w.code.starts_with("moor_yaml_")));
 }

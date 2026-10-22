@@ -18,7 +18,7 @@ use crate::error::CommandError;
 use crate::ops::common::box_exec::{self, BoxProxy, Site};
 use crate::ops::common::dotfiles;
 use crate::ops::common::identity::Identity;
-use crate::ops::common::proxy::{origin, TAIL_LINES};
+use crate::ops::common::proxy::TAIL_LINES;
 use crate::store::Store;
 
 /// The Proxy setup and dotfiles run through, or why it could not start; `None` when nothing needs it.
@@ -59,13 +59,21 @@ pub(super) fn clone_with_proxy(
     target: &SetupTarget<'_>,
     cfg: &BoxSettings,
 ) -> Result<(Option<u64>, SetupProxy), CommandError> {
-    let plan = plan(cx, store, id, target)?;
+    let plan = plan(store, id, target)?;
     let wants = plan.is_some() || !cfg.setup.is_empty() || cfg.dotfiles.is_some();
     let was_up = wants && matches!(cx.proxy_host().status(id), Ok(ProxyStatus::Ready { .. }));
     let proxy = wants
-        .then(|| box_exec::proxy(cx, id, Some(target.handle.clone()), target.repo, cfg))
+        .then(|| {
+            box_exec::proxy(
+                cx,
+                id,
+                Some(target.handle.clone()),
+                target.repo.map(|r| &r.repo),
+                cfg,
+            )
+        })
         .transpose();
-    let job = Job::new(cx, id, target, plan.as_ref());
+    let job = Job::new(id, target, plan.as_ref());
     let result = match (&plan, &proxy) {
         (Some(_), Err(reason)) => Err(format!("the Proxy could not start: {reason}")),
         _ if job.is_empty() => return Ok((None, proxy)),
@@ -88,37 +96,22 @@ pub(super) fn clone_with_proxy(
     }
 }
 
-/// What the Box clones: the GitHub repo the host checkout's `origin` names, at the Box's base and
-/// on its branch. None when the origin is missing or not on github.com.
-fn plan(
-    cx: &Cx,
-    store: &Store,
-    id: BoxId,
-    target: &SetupTarget<'_>,
-) -> Result<Option<Plan>, CommandError> {
-    let Some(url) = origin(cx, target.repo) else {
-        return Ok(None);
-    };
-    let Some(repo) = cx.forge().repo_of(&url) else {
-        cx.warn(Warning {
-            code: "no_clone".to_owned(),
-            message: "the repo's origin is not a github.com repo, so the Box starts with an \
-                      empty workdir"
-                .to_owned(),
-        });
+/// What the Box clones: its repo at the Box's base and on its branch; none for a Box with no repo.
+fn plan(store: &Store, id: BoxId, target: &SetupTarget<'_>) -> Result<Option<Plan>, CommandError> {
+    let Some(repo) = target.repo else {
         return Ok(None);
     };
     let Some(row) = store.box_row(id)? else {
         return Ok(None);
     };
     Ok(Some(Plan {
-        url: repo.clone_url(),
+        url: repo.repo.clone_url(),
         base: row.base.unwrap_or_else(|| "HEAD".to_owned()),
         branch: row.branch.unwrap_or_else(|| box_key::branch(&row.name)),
     }))
 }
 
-/// What the clone exec runs for Box `id`: the clone and the host author's identity lines.
+/// What the clone exec runs for Box `id`: the clone and the identity lines of the repo's author.
 struct Job<'a> {
     /// The Box.
     id: BoxId,
@@ -129,9 +122,9 @@ struct Job<'a> {
 }
 
 impl<'a> Job<'a> {
-    /// The job for Box `id`, with the host author of the target's repo.
-    fn new(cx: &Cx, id: BoxId, target: &SetupTarget<'_>, plan: Option<&'a Plan>) -> Self {
-        let identity = Identity::of(cx, target.repo);
+    /// The job for Box `id`, with the author stored with the target's repo.
+    fn new(id: BoxId, target: &SetupTarget<'_>, plan: Option<&'a Plan>) -> Self {
+        let identity = target.repo.and_then(|r| Identity::of(&r.author));
         Self { id, plan, identity }
     }
 

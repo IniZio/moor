@@ -206,9 +206,9 @@ struct StartArgs {
     /// Base ref.
     #[arg(long)]
     base: Option<String>,
-    /// Repo known to the controller, by name or url; resolved on the controller host instead of the current directory.
-    #[arg(long, value_name = "NAME|URL")]
-    repo: Option<String>,
+    /// Repo to clone, as OWNER/NAME or a github.com URL; the current checkout's origin when absent.
+    #[arg(long, value_name = "OWNER/NAME|URL", value_parser = super::caller::repo_arg)]
+    repo: Option<moor_core::seam::forge::ForgeRepo>,
     /// Agent model.
     #[arg(long)]
     model: Option<String>,
@@ -221,9 +221,6 @@ struct StartArgs {
     /// Resume the agent's stored session.
     #[arg(long)]
     resume: bool,
-    /// Launch the agent with the Box's .moor.yaml even when it differs from its base commit.
-    #[arg(long)]
-    trust_moor_yaml: bool,
     /// Parent Session id; defaults to the `MOOR_SESSION` of the calling agent.
     #[arg(long, value_name = "ID", env = "MOOR_SESSION")]
     parent: Option<i64>,
@@ -241,7 +238,6 @@ impl From<StartArgs> for StartReq {
             no_agent: a.no_agent,
             hold: a.hold,
             resume: a.resume,
-            trust_moor_yaml: a.trust_moor_yaml,
             parent: a.parent.map(SessionId::new),
             identity: None,
         }
@@ -257,9 +253,6 @@ struct RunArgs {
     /// Record the run under this name.
     #[arg(long, value_name = "NAME")]
     record: Option<String>,
-    /// Run even when the Box's .moor.yaml differs from its base commit.
-    #[arg(long)]
-    trust_moor_yaml: bool,
     /// Command and its arguments.
     #[arg(required = true, trailing_var_arg = true, allow_hyphen_values = true)]
     cmd: Vec<String>,
@@ -271,7 +264,6 @@ impl From<RunArgs> for RunReq {
             box_name: a.name,
             record: a.record,
             argv: a.cmd,
-            trust_moor_yaml: a.trust_moor_yaml,
             inherit_output: false,
         }
     }

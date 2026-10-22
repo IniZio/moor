@@ -2,7 +2,6 @@
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
 use std::fs;
-use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
@@ -39,12 +38,11 @@ fn fx_with(driver: FakeDriver) -> Fx {
     let driver = Arc::new(driver);
     let cx = Cx::fake(
         dir.path(),
-        dir.path(),
         driver.clone(),
         Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
     );
-    let id = admit(&cx, &driver, dir.path());
+    let id = admit(&cx, &driver);
     Fx {
         dir,
         cx,
@@ -54,13 +52,13 @@ fn fx_with(driver: FakeDriver) -> Fx {
 }
 
 /// Admits Box `t` and makes it Ready with recorded workdir `/work/box-1`.
-fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> BoxId {
+fn admit(cx: &Cx, driver: &FakeDriver) -> BoxId {
     let store = cx.store().unwrap();
     let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store
         .apply(Decision::insert(NewBox {
             name: name.clone(),
-            repo: dir.display().to_string(),
+            repo: None,
         }))
         .unwrap()
         .box_id;

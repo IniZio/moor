@@ -1,6 +1,5 @@
 //! GitHub forge adapter: repo naming comes from origin URL parsing, repo reads from GraphQL.
 
-mod origin;
 mod read;
 #[cfg(test)]
 mod tests;
@@ -39,7 +38,7 @@ impl GitHub {
 
 impl Forge for GitHub {
     fn repo_of(&self, origin: &str) -> Option<ForgeRepo> {
-        origin::parse_origin(origin)
+        ForgeRepo::from_github_url(origin)
     }
 
     fn read(

@@ -7,6 +7,7 @@ use crate::ops;
 use crate::vault::Vault;
 use crate::wire;
 use moor_core::request::{Grant, UserCmd};
+use moor_core::seam::checkout::Checkout;
 use moor_core::user::{Caller, Identity, Viewer};
 use moor_core::{ArtifactReadReq, BoxId, ErrorKind, Request, Response, RunReq};
 
@@ -23,6 +24,12 @@ impl Moor {
         Ok(Self {
             cx: wire::build(env)?,
         })
+    }
+
+    /// The caller's git checkout, read with the host's git, for the CLI to resolve its repo.
+    #[must_use]
+    pub fn host_checkout(env: &Env) -> impl Checkout {
+        wire::host_checkout(env)
     }
 
     /// Wrap an already built context, as tests do over fakes.
@@ -59,14 +66,6 @@ impl Moor {
     pub(crate) fn acting_as(self, who: Identity) -> Self {
         Self {
             cx: self.cx.with_requester(who),
-        }
-    }
-
-    /// This engine running a request on the caller's directory `dir`, as an `in` request names.
-    #[must_use]
-    pub fn in_dir(self, dir: Option<std::path::PathBuf>) -> Self {
-        Self {
-            cx: self.cx.with_dir(dir),
         }
     }
 

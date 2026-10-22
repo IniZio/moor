@@ -24,7 +24,6 @@ fn fx(engine: FakeEngine) -> (tempfile::TempDir, Cx) {
     let dir = tempfile::tempdir().unwrap();
     let cx = Cx::fake(
         dir.path(),
-        dir.path(),
         Arc::new(FakeDriver::new()),
         Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
@@ -33,20 +32,20 @@ fn fx(engine: FakeEngine) -> (tempfile::TempDir, Cx) {
     (dir, cx)
 }
 
-fn ready(cx: &Cx, dir: &std::path::Path) -> (BoxRow, SessionRow) {
-    let (row, session) = unregistered(cx, dir);
+fn ready(cx: &Cx) -> (BoxRow, SessionRow) {
+    let (row, session) = unregistered(cx);
     let store = cx.store().unwrap();
     store.set_registered_session(session.id, "agent-1").unwrap();
     let session = store.live_session(row.id).unwrap().unwrap();
     (row, session)
 }
 
-fn unregistered(cx: &Cx, dir: &std::path::Path) -> (BoxRow, SessionRow) {
+fn unregistered(cx: &Cx) -> (BoxRow, SessionRow) {
     let store = cx.store().unwrap();
     let id = store
         .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("t").unwrap(),
-            repo: dir.display().to_string(),
+            repo: None,
         }))
         .unwrap()
         .box_id;
@@ -79,7 +78,7 @@ fn unregistered(cx: &Cx, dir: &std::path::Path) -> (BoxRow, SessionRow) {
 #[test]
 fn saves_mode_0600_and_records_the_path_and_digest() {
     let (dir, cx) = fx(FakeEngine::new().transcript_text("abc"));
-    let (row, session) = ready(&cx, dir.path());
+    let (row, session) = ready(&cx);
     let saved = save(&cx, cx.store().unwrap(), &row, &session, Trigger::Close).unwrap();
     let want = dir
         .path()
@@ -109,8 +108,8 @@ fn saves_mode_0600_and_records_the_path_and_digest() {
 
 #[test]
 fn a_second_save_takes_the_next_number() {
-    let (dir, cx) = fx(FakeEngine::new().transcript_text("abc"));
-    let (row, session) = ready(&cx, dir.path());
+    let (_dir, cx) = fx(FakeEngine::new().transcript_text("abc"));
+    let (row, session) = ready(&cx);
     let store = cx.store().unwrap();
     save(&cx, store, &row, &session, Trigger::Relaunch).unwrap();
     let again = save(&cx, store, &row, &session, Trigger::Close).unwrap();
@@ -121,8 +120,8 @@ fn a_second_save_takes_the_next_number() {
 fn a_failure_records_the_error_and_saves_nothing() {
     let engine =
         FakeEngine::new().fail_transcript(EngineError::Transcript("archive: exit 3".into()));
-    let (dir, cx) = fx(engine);
-    let (row, session) = ready(&cx, dir.path());
+    let (_dir, cx) = fx(engine);
+    let (row, session) = ready(&cx);
     let got = save(&cx, cx.store().unwrap(), &row, &session, Trigger::Relaunch);
     assert!(got.is_none());
     let ev = cx.store().unwrap().events(row.id, 100).unwrap();
@@ -137,8 +136,8 @@ fn a_failure_records_the_error_and_saves_nothing() {
 
 #[test]
 fn a_box_that_is_not_ready_is_skipped() {
-    let (dir, cx) = fx(FakeEngine::new().transcript_text("abc"));
-    let (mut row, session) = ready(&cx, dir.path());
+    let (_dir, cx) = fx(FakeEngine::new().transcript_text("abc"));
+    let (mut row, session) = ready(&cx);
     row.boxed.as_mut().unwrap().state = BoxState::Asleep;
     assert!(save(&cx, cx.store().unwrap(), &row, &session, Trigger::Close).is_none());
     assert!(cx
@@ -153,8 +152,8 @@ fn a_box_that_is_not_ready_is_skipped() {
 #[test]
 fn nothing_to_archive_records_a_skip_not_a_failure() {
     let engine = FakeEngine::new().fail_transcript(EngineError::NothingToArchive);
-    let (dir, cx) = fx(engine);
-    let (row, session) = ready(&cx, dir.path());
+    let (_dir, cx) = fx(engine);
+    let (row, session) = ready(&cx);
     assert!(save(&cx, cx.store().unwrap(), &row, &session, Trigger::Relaunch).is_none());
     let ev = cx.store().unwrap().events(row.id, 100).unwrap();
     let last = ev.last().unwrap();
@@ -170,9 +169,9 @@ fn nothing_to_archive_records_a_skip_not_a_failure() {
 #[test]
 fn a_session_without_a_registered_agent_session_is_skipped_without_asking_the_engine() {
     let engine = Arc::new(FakeEngine::new().transcript_text("abc"));
-    let (dir, cx) = fx(FakeEngine::new());
+    let (_dir, cx) = fx(FakeEngine::new());
     let cx = cx.with_engine(engine.clone());
-    let (row, session) = unregistered(&cx, dir.path());
+    let (row, session) = unregistered(&cx);
     assert!(save(&cx, cx.store().unwrap(), &row, &session, Trigger::Close).is_none());
     assert!(engine.transcripts().is_empty());
     let ev = cx.store().unwrap().events(row.id, 100).unwrap();
@@ -188,9 +187,9 @@ fn a_session_without_a_registered_agent_session_is_skipped_without_asking_the_en
 #[test]
 fn a_session_unregistered_but_known_to_the_box_is_archived() {
     let engine = Arc::new(FakeEngine::new().transcript_text("abc"));
-    let (dir, cx) = fx(FakeEngine::new());
+    let (_dir, cx) = fx(FakeEngine::new());
     let cx = cx.with_engine(engine.clone());
-    let (row, session) = unregistered(&cx, dir.path());
+    let (row, session) = unregistered(&cx);
     let store = cx.store().unwrap();
     let set = Fields {
         agent_session_id: Field::Set("agent-1".into()),

@@ -4,76 +4,66 @@ use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::config::{Layer, UserConfig};
-use moor_core::seam::clock::Ts;
-use moor_core::seam::proc::{Proc, Tool};
+use moor_core::seam::forge::{ForgeError, ForgeRepo, RepoAt, RepoFiles};
 use moor_core::view::env::{EnvKind, EnvView};
 use moor_core::{EnvReq, ErrorKind};
 
 use super::run;
-use crate::adapters::git::Git;
-use crate::cx::{Cx, CxParts};
-use crate::env::Env;
-use crate::testing::clock::FakeClock;
+use crate::cx::Cx;
 use crate::testing::driver::FakeDriver;
-use crate::testing::engine::FakeEngine;
-use crate::testing::proc::{Reply, ScriptedProc};
-use crate::testing::proxy_host::FakeProxyHost;
-use crate::testing::rng::FakeRng;
+use crate::testing::forge::{repo_at, FakeForge};
+use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
 
-/// Context whose repo root and main checkout are `top`, with user config `config`.
-fn cx_with(top: &Path, config: UserConfig) -> Cx {
-    cx_proc(top, config, ScriptedProc::new())
-}
-
-/// Like `cx_with`, over a caller-prepared scripted proc.
-fn cx_proc(top: &Path, config: UserConfig, proc: ScriptedProc) -> Cx {
-    cx_full(top, config, proc, FakeDriver::new())
-}
-
-/// Like `cx_proc`, over a caller-prepared driver.
-fn cx_full(top: &Path, config: UserConfig, proc: ScriptedProc, driver: FakeDriver) -> Cx {
-    proc.on(
-        Tool::Git,
-        &["rev-parse", "--show-toplevel"],
-        Reply::Ok(format!("{}\n", top.display())),
-    );
-    proc.on(
-        Tool::Git,
-        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-        Reply::Ok(format!("{}/.git\n", top.display())),
-    );
-    let proc: Arc<dyn Proc> = Arc::new(proc);
-    Cx::new(CxParts {
-        state_dir: Some(top.to_path_buf()),
-        clock: Arc::new(FakeClock::new(Ts::from_millis(1000))),
-        rng: Arc::new(FakeRng::default()),
-        driver: Arc::new(driver),
-        surface: Arc::new(FakeSurface::new()),
-        engine: Arc::new(FakeEngine::new()),
-        forge: Arc::new(crate::testing::forge::FakeForge::new()),
-        git: Git::new(Arc::clone(&proc)),
-        proc: Arc::clone(&proc),
-        proxy_host: Arc::new(FakeProxyHost::new()),
+/// Context acting as the test requester, with user config `config`, over `forge`.
+fn cx_over(dir: &Path, config: UserConfig, forge: FakeForge) -> Cx {
+    Cx::fake_with(
+        dir,
+        Arc::new(FakeDriver::new()),
+        Arc::new(FakeSurface::new()),
+        Arc::new(ScriptedProc::new()),
         config,
-        env: Env::default(),
-        prompt_window: std::time::Duration::from_secs(8),
-    })
-    .with_dir(Some(top.to_path_buf()))
+    )
+    .with_forge(Arc::new(forge))
 }
 
 /// Context with default user config.
-fn cx(top: &Path) -> Cx {
-    cx_with(top, UserConfig::default())
+fn cx(dir: &Path) -> Cx {
+    cx_over(dir, UserConfig::default(), FakeForge::new())
 }
 
-/// Run `env` in a repo holding `.moor.yaml` text `yaml`.
-fn env_with(yaml: &str) -> (tempfile::TempDir, Cx, EnvView) {
+fn on() -> ForgeRepo {
+    ForgeRepo::new("o", "n")
+}
+
+/// `env` of `o/n` whose forge answers `at`.
+fn env_of(at: RepoAt) -> (tempfile::TempDir, EnvView) {
     let d = tempfile::tempdir().unwrap();
-    std::fs::write(d.path().join(".moor.yaml"), yaml).unwrap();
-    let cx = cx(d.path());
-    let v = run(&cx, &EnvReq { repo: None }).expect("env ok");
-    (d, cx, v)
+    let cx = cx_over(
+        d.path(),
+        UserConfig::default(),
+        FakeForge::new().with_read(on(), Ok(at)),
+    );
+    let req = EnvReq {
+        repo: Some(on()),
+        base: None,
+    };
+    let v = run(&cx, &req).expect("env ok");
+    (d, v)
+}
+
+/// `env` of `o/n` holding `.moor.yaml` text `yaml` at its base.
+fn env_with(yaml: &str) -> (tempfile::TempDir, EnvView) {
+    env_of(repo_at("abc123", Some(yaml)))
+}
+
+/// `env` of `o/n` holding `files` at its base.
+fn env_files(files: RepoFiles) -> EnvView {
+    env_of(RepoAt {
+        files,
+        ..repo_at("abc123", None)
+    })
+    .1
 }
 
 fn kinds(v: &EnvView) -> Vec<EnvKind> {
@@ -81,22 +71,59 @@ fn kinds(v: &EnvView) -> Vec<EnvKind> {
 }
 
 #[test]
-fn outside_a_repo_fails() {
+fn no_repo_shows_the_user_layer_and_reads_no_forge() {
     let d = tempfile::tempdir().unwrap();
-    let cx = Cx::fake(
-        d.path(),
-        d.path(),
-        Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new()),
-        Arc::new(ScriptedProc::new()),
+    let forge = Arc::new(FakeForge::new());
+    let cx = cx(d.path()).with_forge(forge.clone());
+    let v = run(
+        &cx,
+        &EnvReq {
+            repo: None,
+            base: None,
+        },
+    )
+    .unwrap();
+    assert!(v.rows.iter().any(|r| r.name == "provider"));
+    assert!(forge.reads().is_empty());
+}
+
+#[test]
+fn a_repo_is_read_at_the_base_with_the_requesters_token() {
+    let d = tempfile::tempdir().unwrap();
+    let forge = Arc::new(FakeForge::new().with_read(on(), Ok(repo_at("abc123", None))));
+    let cx = cx(d.path()).with_forge(forge.clone());
+    let req = EnvReq {
+        repo: Some(on()),
+        base: Some("v1".into()),
+    };
+    run(&cx, &req).unwrap();
+    let reads = forge.reads();
+    assert_eq!(reads.len(), 1);
+    let read = reads.first().unwrap();
+    assert_eq!(read.base.as_deref(), Some("v1"));
+    assert_eq!(read.token, "github-test-value");
+}
+
+#[test]
+fn a_repo_the_account_cannot_see_is_refused() {
+    let d = tempfile::tempdir().unwrap();
+    let forge = FakeForge::new().with_read(on(), Err(ForgeError::NotVisible));
+    let cx = cx_over(d.path(), UserConfig::default(), forge);
+    let req = EnvReq {
+        repo: Some(on()),
+        base: None,
+    };
+    let err = run(&cx, &req).expect_err("refused");
+    assert_eq!(err.kind, ErrorKind::Refused);
+    assert!(
+        err.error.to_string().contains("o/n is not visible"),
+        "{err:?}"
     );
-    let err = run(&cx, &EnvReq { repo: None }).expect_err("fails");
-    assert_eq!(err.kind, ErrorKind::Failed);
 }
 
 #[test]
 fn item_order_is_fixed() {
-    let (_d, _cx, v) = env_with("setup: [make]\n");
+    let (_d, v) = env_with("setup: [make]\n");
     let k = kinds(&v);
     let pos = |kind| k.iter().position(|x| *x == kind).unwrap();
     assert!(pos(EnvKind::Setup) < pos(EnvKind::Box));
@@ -111,7 +138,7 @@ fn item_order_is_fixed() {
 
 #[test]
 fn a_repo_credential_is_listed_and_left_for_start_to_check() {
-    let (_d, _cx, v) = env_with("box_credentials: [token]\n");
+    let (_d, v) = env_with("box_credentials: [token]\n");
     let row = v
         .rows
         .iter()
@@ -124,19 +151,11 @@ fn a_repo_credential_is_listed_and_left_for_start_to_check() {
 
 #[test]
 fn repo_mcp_needs_approval() {
-    let d = tempfile::tempdir().unwrap();
-    std::fs::write(
-        d.path().join(".mcp.json"),
-        r#"{"mcpServers":{"a":{},"b":{}}}"#,
-    )
-    .unwrap();
-    std::fs::create_dir(d.path().join(".claude")).unwrap();
-    std::fs::write(
-        d.path().join(".claude/settings.local.json"),
-        r#"{"enabledMcpjsonServers":["a"]}"#,
-    )
-    .unwrap();
-    let v = run(&cx(d.path()), &EnvReq { repo: None }).unwrap();
+    let v = env_files(RepoFiles {
+        mcp_json: Some(r#"{"mcpServers":{"a":{},"b":{}}}"#.into()),
+        claude_settings: Some(r#"{"enabledMcpjsonServers":["a"]}"#.into()),
+        moor_yaml: None,
+    });
     let bad: Vec<_> = v
         .credentials
         .iter()
@@ -148,9 +167,10 @@ fn repo_mcp_needs_approval() {
 
 #[test]
 fn invalid_mcp_json_is_one_failed_item() {
-    let d = tempfile::tempdir().unwrap();
-    std::fs::write(d.path().join(".mcp.json"), "{").unwrap();
-    let v = run(&cx(d.path()), &EnvReq { repo: None }).unwrap();
+    let v = env_files(RepoFiles {
+        mcp_json: Some("{".into()),
+        ..RepoFiles::default()
+    });
     let m: Vec<_> = v
         .credentials
         .iter()
@@ -170,46 +190,27 @@ fn identity(v: &EnvView) -> Vec<(&str, &str, Layer)> {
 }
 
 #[test]
-fn identity_rows_come_from_git() {
-    let d = tempfile::tempdir().unwrap();
-    let proc = ScriptedProc::new();
-    proc.on(
-        Tool::Git,
-        &["config", "--get", "user.name"],
-        Reply::Ok("Ada\n".into()),
-    );
-    proc.on(
-        Tool::Git,
-        &["config", "--get", "user.email"],
-        Reply::Ok("ada@example.com\n".into()),
-    );
-    let cx = cx_proc(d.path(), UserConfig::default(), proc);
-    let v = run(&cx, &EnvReq { repo: None }).unwrap();
+fn identity_rows_come_from_the_forge_account() {
+    let (_d, v) = env_of(repo_at("abc123", None));
     assert_eq!(
         identity(&v),
         [
-            ("user.name", "Ada", Layer::Git),
-            ("user.email", "ada@example.com", Layer::Git)
+            ("user.name", "Ann Dev", Layer::Forge),
+            ("user.email", "1+ann@users.noreply.github.com", Layer::Forge)
         ]
     );
 }
 
 #[test]
-fn missing_git_identity_adds_no_rows() {
+fn no_repo_adds_no_identity_rows() {
     let d = tempfile::tempdir().unwrap();
-    let proc = ScriptedProc::new();
-    for key in ["user.name", "user.email"] {
-        proc.on(
-            Tool::Git,
-            &["config", "--get", key],
-            Reply::Fail {
-                code: 1,
-                stdout: String::new(),
-                stderr: String::new(),
-            },
-        );
-    }
-    let cx = cx_proc(d.path(), UserConfig::default(), proc);
-    let v = run(&cx, &EnvReq { repo: None }).unwrap();
+    let v = run(
+        &cx(d.path()),
+        &EnvReq {
+            repo: None,
+            base: None,
+        },
+    )
+    .unwrap();
     assert!(identity(&v).is_empty());
 }

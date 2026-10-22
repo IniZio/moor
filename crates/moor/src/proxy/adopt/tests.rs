@@ -38,7 +38,7 @@ fn fx() -> Fx {
     let id = store
         .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("t").unwrap(),
-            repo: "r".into(),
+            repo: None,
         }))
         .unwrap()
         .box_id;

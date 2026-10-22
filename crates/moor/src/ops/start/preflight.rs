@@ -1,10 +1,10 @@
 //! The credential preflight of `start`: runs before any side effect.
 
 use std::collections::BTreeSet;
-use std::path::Path;
 
 use moor_core::config::BoxSettings;
 use moor_core::domain::event::CheckedCred;
+use moor_core::seam::forge::RepoFiles;
 use moor_core::user::UserId;
 use moor_core::ErrorKind;
 
@@ -22,11 +22,11 @@ use crate::store::BoxRow;
 pub(super) fn rejection(
     cx: &Cx,
     settings: &BoxSettings,
-    worktree: &Path,
+    files: &RepoFiles,
     user: UserId,
 ) -> Result<Option<String>, CommandError> {
     let have: BTreeSet<_> = cx.store()?.user_secret_names(user)?.into_iter().collect();
-    let failing = unresolved(settings, worktree, &have);
+    let failing = unresolved(settings, files, &have);
     if failing.is_empty() {
         return Ok(None);
     }

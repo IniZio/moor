@@ -12,9 +12,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use moor_core::request::{
-    BindSessionReq, EndHostSessionReq, OpenHostSessionReq, ReposReq, Request, StartReq,
+    BindSessionReq, EndHostSessionReq, OpenHostSessionReq, Request, StartReq,
 };
 use moor_core::response::ExitClass;
+use moor_core::seam::forge::ForgeRepo;
 use moor_core::{BoxName, SessionId};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -94,6 +95,9 @@ fn create(ctx: &StartCtx, body: &[u8]) -> HttpResponse {
         Ok(box_name) => box_name,
         Err(msg) => return bad(msg),
     };
+    if let Err(e) = ForgeRepo::parse(&b.repo) {
+        return bad(e.to_string());
+    }
     let key = new_key();
     let (ctx2, key2) = (ctx.clone(), key.clone());
     let goal = goal(b.goal);
@@ -136,36 +140,7 @@ fn add_worker(ctx: &StartCtx, key: &str, body: &[u8]) -> HttpResponse {
     accepted(key, &job)
 }
 
-/// Fails with step `repo` unless the controller knows `repo` by name or url.
-fn check_repo(ctx: &StartCtx, h: &JobHandle, repo: &str) -> Result<(), JobFailure> {
-    let listed = call(
-        &ctx.client,
-        h,
-        ("repo", "checking the repo"),
-        Request::Repos(ReposReq {}),
-    )?;
-    let repos = listed
-        .get("repos")
-        .and_then(Value::as_array)
-        .map_or(&[][..], Vec::as_slice);
-    let field = |r: &Value, k: &str| r.get(k).and_then(Value::as_str).map(str::to_owned);
-    if repos.iter().any(|r| {
-        field(r, "name").as_deref() == Some(repo) || field(r, "url").as_deref() == Some(repo)
-    }) {
-        return Ok(());
-    }
-    let none = if repos.is_empty() {
-        "; no repos are configured"
-    } else {
-        ""
-    };
-    Err(fail(
-        "repo",
-        format!("repo {repo} is not known to the controller{none}"),
-    ))
-}
-
-/// Checks the repo, then creates the workdir, opens and binds the root Session and
+/// Creates the workdir, opens and binds the root Session and
 /// records the request. A root opened but not recorded is ended again.
 fn open_root(
     ctx: &StartCtx,
@@ -173,7 +148,6 @@ fn open_root(
     key: &str,
     repo: &str,
 ) -> Result<SessionId, JobFailure> {
-    check_repo(ctx, h, repo)?;
     h.progress("creating the request workdir");
     let dir = ctx.state_dir.join("requests").join(key);
     let mut builder = DirBuilder::new();
@@ -253,6 +227,7 @@ fn start(
     box_name: BoxName,
     goal: Option<String>,
 ) -> Result<Value, JobFailure> {
+    let repo = ForgeRepo::parse(repo).map_err(|e| fail("repo", e.to_string()))?;
     call(
         client,
         h,
@@ -266,8 +241,7 @@ fn start(
             no_agent: false,
             hold: false,
             resume: false,
-            trust_moor_yaml: false,
-            repo: Some(repo.to_owned()),
+            repo: Some(repo),
             parent: Some(root),
             identity: None,
         }),

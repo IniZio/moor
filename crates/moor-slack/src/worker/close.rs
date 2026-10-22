@@ -73,7 +73,6 @@ fn send(fx: &mut Fx<'_>, row: &SlackBox, attempt: Attempt) -> Closed {
     let request = Request::Close(CloseReq {
         target: row.box_name.clone().into(),
         force: false,
-        trust_moor_yaml: false,
     });
     match (fx.call)(request) {
         Ok(reply) if reply.class == ExitClass::Ok => Closed::Done,

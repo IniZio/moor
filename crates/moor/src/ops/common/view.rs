@@ -116,7 +116,7 @@ pub(crate) fn box_view_with_run(
     BoxView {
         id: row.id.get(),
         name: row.name.as_str().to_owned(),
-        repo: row.repo.clone(),
+        repo: row.repo.as_ref().map(|r| r.repo.clone()),
         issue: row.issue.clone(),
         goal: row.goal.clone(),
         lifecycle: row.lifecycle,

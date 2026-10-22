@@ -23,7 +23,7 @@ fn new_is_empty() {
 fn insert_sets_input() {
     let new = NewBox {
         name: BoxName::parse_allow_bare("a").unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     let d = Decision::insert(new.clone());
     assert_eq!(d.target, BoxTarget::New(new));

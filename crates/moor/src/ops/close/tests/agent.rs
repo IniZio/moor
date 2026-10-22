@@ -1,5 +1,3 @@
-use std::fs;
-
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::seam::driver::DriverError;
@@ -7,7 +5,7 @@ use moor_core::seam::surface::{PaneCmd, Surface, SurfaceError};
 use moor_core::ErrorKind;
 
 use super::teardown::{exec_calls, YAML};
-use super::{box_state, fx_box, fx_with, is_working, req, row, run, Fx};
+use super::{box_state, fx_box, fx_repo, fx_with, is_working, req, row, run, Fx};
 use crate::testing::driver::FakeDriver;
 use crate::testing::surface::FakeSurface;
 
@@ -131,11 +129,12 @@ fn a_refused_gate_leaves_the_agent_running() {
 
 #[test]
 fn a_failed_pane_close_runs_no_teardown() {
-    let f = fx_with(
+    let f = fx_repo(
         FakeDriver::new(),
         FakeSurface::new().fail_close_pane(SurfaceError::Timeout),
+        Some("ahead=0 dirty=0"),
+        Some(YAML),
     );
-    fs::write(f.dir.path().join(".moor.yaml"), YAML).unwrap();
     live(&f, "p-1");
     run(&f.cx, &req(false)).unwrap_err();
     assert_eq!(exec_calls(&f), 0);

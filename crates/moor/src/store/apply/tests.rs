@@ -12,7 +12,7 @@ use crate::store::StoreError;
 fn insert(name: &str) -> Decision {
     Decision::insert(NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
-        repo: "r".into(),
+        repo: None,
     })
 }
 

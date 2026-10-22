@@ -5,7 +5,7 @@ use moor_core::request::{WaitEventsReq, WaitMode};
 use moor_core::{BoxId, BoxName, ShowReq, StartReq};
 
 use super::state::{idle, working};
-use super::{req, world, world_at, World};
+use super::{repo_req, req, script_base_yaml, world, World};
 use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::start::{run, settle_all};
@@ -96,17 +96,15 @@ fn wait_events_leaves_a_box_while_an_op_holds_its_box() {
 /// Happy path only: settles run during setup, before the Box is ready, and the agent launches.
 #[test]
 fn a_start_with_settles_running_during_setup_still_launches() {
-    let repo = tempfile::tempdir().unwrap();
-    std::fs::write(repo.path().join(".moor.yaml"), "setup: [a]\n").unwrap();
-    let mut w = world_at(FakeDriver::new(), repo.path());
+    let mut w = world(FakeDriver::new());
+    script_base_yaml(&w, Some("setup: [a]\n"));
     let engine = Arc::new(FakeEngine::new());
     w.cx = w.cx.with_engine(engine.clone());
-    let (dir, cwd) = (w.dir.path().to_path_buf(), repo.path().to_path_buf());
+    let dir = w.dir.path().to_path_buf();
     let (driver, surface, proc) = (w.driver.clone(), w.surface.clone(), w.proc.clone());
     w.driver.after_exec(move || {
         let other = Cx::fake_with(
             &dir,
-            &cwd,
             driver.clone(),
             surface.clone(),
             proc.clone(),
@@ -117,7 +115,7 @@ fn a_start_with_settles_running_during_setup_still_launches() {
     });
     let start = StartReq {
         goal: Some("ship it".into()),
-        ..req("demo")
+        ..repo_req("demo")
     };
     let v = run(&w.cx, &start).unwrap();
     assert!(v.agent.launched);

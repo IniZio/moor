@@ -20,7 +20,7 @@ fn open(dir: &Path) -> Store {
 fn ready(store: &Store, name: &str) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     store

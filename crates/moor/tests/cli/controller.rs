@@ -46,7 +46,7 @@ impl Sandbox {
 
     fn command(&self) -> Command {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_moor"));
-        // Outside any git checkout, so `start` never fetches a live origin.
+        // Outside any git checkout, so a CLI start sends no repo.
         cmd.current_dir(&self.root)
             .env_clear()
             .env("PATH", "/usr/bin:/bin")

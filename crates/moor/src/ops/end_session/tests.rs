@@ -1,6 +1,5 @@
 //! Tests for `end-session`.
 
-use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::domain::box_state::SetupOutcome;
@@ -41,14 +40,7 @@ fn fx_with(session: bool) -> Fx {
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
         Reply::Ok("/home/me/proj/.git\n".into()),
     );
-    let cx = Cx::fake(
-        dir.path(),
-        Path::new("/home/me/proj"),
-        driver.clone(),
-        surface.clone(),
-        proc,
-    )
-    .with_engine(engine);
+    let cx = Cx::fake(dir.path(), driver.clone(), surface.clone(), proc).with_engine(engine);
     let id = ready_box(&cx, &driver);
     if session {
         let store = cx.store().unwrap();
@@ -72,7 +64,7 @@ fn ready_box(cx: &Cx, driver: &FakeDriver) -> BoxId {
     let id = store
         .apply(Decision::insert(NewBox {
             name: name.clone(),
-            repo: "r".into(),
+            repo: None,
         }))
         .unwrap()
         .box_id;

@@ -133,7 +133,7 @@ fn layer_names() {
         (Layer::Repo, "repo"),
         (Layer::User, "user"),
         (Layer::Default, "default"),
-        (Layer::Git, "git"),
+        (Layer::Forge, "forge"),
     ];
     for (l, n) in all {
         assert_eq!(l.as_str(), n);

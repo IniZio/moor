@@ -16,9 +16,10 @@ use std::time::Duration;
 
 use moor_core::controller::{parse_frame, ClientFrame, PROTOCOL};
 use moor_core::request::{
-    BindSessionReq, EndHostSessionReq, OpenHostSessionReq, ReposReq, Request, StartReq,
+    BindSessionReq, EndHostSessionReq, OpenHostSessionReq, Request, StartReq,
 };
 use moor_core::response::{ErrorKind, ErrorView, Response};
+use moor_core::seam::forge::ForgeRepo;
 use moor_core::{BoxName, SessionId};
 use serde_json::{json, Value};
 
@@ -36,8 +37,6 @@ type Seen = Arc<Mutex<Vec<Request>>>;
 /// What the fake controller answers to the steps that can go wrong.
 #[derive(Clone)]
 struct Script {
-    /// Answer to `repos`.
-    repos: Response,
     /// Answer to `bind-session`.
     bind: Response,
     /// Answer to `start`.
@@ -46,21 +45,12 @@ struct Script {
 
 fn script() -> Script {
     Script {
-        repos: repos(&[("r", "https://example.com/r.git")]),
         bind: Response::ok(
             "bind-session",
             Some(json!({"created": true, "binding": {}})),
         ),
         start: Response::ok("start", Some(json!({"name": "t"}))),
     }
-}
-
-fn repos(list: &[(&str, &str)]) -> Response {
-    let repos: Vec<Value> = list
-        .iter()
-        .map(|(name, url)| json!({"name": name, "url": url}))
-        .collect();
-    Response::ok("repos", Some(json!({ "repos": repos })))
 }
 
 fn refused(cmd: &str, message: &str) -> Response {
@@ -108,7 +98,6 @@ fn converse(seen: &Seen, script: &Script, stream: UnixStream) {
                 "open-host-session",
                 Some(json!({"session": 7, "workdir": "/w", "state": "open"})),
             ),
-            Request::Repos(_) => script.repos.clone(),
             Request::BindSession(_) => script.bind.clone(),
             Request::EndHostSession(_) => Response::ok("end-host-session", Some(json!({}))),
             _ => {
@@ -222,15 +211,14 @@ fn start_req(box_name: &str, goal: Option<&str>, repo: &str, parent: i64) -> Req
         no_agent: false,
         hold: false,
         resume: false,
-        trust_moor_yaml: false,
-        repo: Some(repo.to_owned()),
+        repo: Some(ForgeRepo::parse(repo).unwrap()),
         parent: Some(SessionId::new(parent)),
         identity: None,
     })
 }
 
 fn payload() -> Value {
-    json!({"repo": "r", "name": "t", "goal": "ship it"})
+    json!({"repo": "o/r", "name": "t", "goal": "ship it"})
 }
 
 #[test]
@@ -244,7 +232,6 @@ fn new_request_opens_binds_and_starts_under_the_root() {
     assert_eq!(
         seen,
         vec![
-            Request::Repos(ReposReq {}),
             Request::OpenHostSession(OpenHostSessionReq {
                 workdir: workdir.to_str().unwrap().to_owned(),
                 agent: None,
@@ -257,7 +244,7 @@ fn new_request_opens_binds_and_starts_under_the_root() {
                 session: SessionId::new(7),
                 owner: "web".into(),
             }),
-            start_req("t", Some("ship it"), "r", 7),
+            start_req("t", Some("ship it"), "o/r", 7),
         ]
     );
     assert!(workdir.is_absolute());
@@ -278,7 +265,7 @@ fn new_request_records_the_request() {
         RequestRow {
             key,
             root_session: SessionId::new(7),
-            repo: "r".into(),
+            repo: "o/r".into(),
             created_at: 1_700_000_000,
             ended_at: None,
         }
@@ -288,10 +275,10 @@ fn new_request_records_the_request() {
 #[test]
 fn empty_goal_sends_none() {
     let f = front(&script());
-    let (_, job) = new_request(&f, &json!({"repo": "r", "name": "t", "goal": ""}));
+    let (_, job) = new_request(&f, &json!({"repo": "o/r", "name": "t", "goal": ""}));
     assert_eq!(job["state"], "done", "{job}");
     let seen = f.seen.lock().unwrap().clone();
-    assert_eq!(seen.last().unwrap(), &start_req("t", None, "r", 7));
+    assert_eq!(seen.last().unwrap(), &start_req("t", None, "o/r", 7));
 }
 
 #[test]
@@ -313,8 +300,8 @@ fn refused_bind_fails_the_job_and_sends_no_start() {
     assert_eq!(job["failure"]["step"], "bind-session");
     assert_eq!(job["failure"]["message"], "key taken");
     let seen = f.seen.lock().unwrap().clone();
-    assert_eq!(seen.len(), 4, "{seen:?}");
-    assert_eq!(seen[3], end_root());
+    assert_eq!(seen.len(), 3, "{seen:?}");
+    assert_eq!(seen[2], end_root());
     assert!(!seen.iter().any(|r| matches!(r, Request::Start(_))));
     assert!(f.db.lock().unwrap().request(&key).unwrap().is_none());
 }
@@ -339,43 +326,6 @@ fn failed_save_ends_the_root_and_sends_no_start() {
 }
 
 #[test]
-fn unknown_repo_fails_before_anything_is_opened() {
-    let f = front(&script());
-    let (key, job) = new_request(&f, &json!({"repo": "x", "name": "t", "goal": ""}));
-    assert_eq!(job["state"], "failed", "{job}");
-    assert_eq!(job["failure"]["step"], "repo");
-    assert_eq!(
-        job["failure"]["message"],
-        "repo x is not known to the controller"
-    );
-    let seen = f.seen.lock().unwrap().clone();
-    assert_eq!(seen, vec![Request::Repos(ReposReq {})]);
-    assert!(!f.dir.path().join("requests").join(key).exists());
-}
-
-#[test]
-fn empty_repo_list_says_none_are_configured() {
-    let f = front(&Script {
-        repos: repos(&[]),
-        ..script()
-    });
-    let (_, job) = new_request(&f, &payload());
-    assert_eq!(job["failure"]["step"], "repo", "{job}");
-    assert_eq!(
-        job["failure"]["message"],
-        "repo r is not known to the controller; no repos are configured"
-    );
-}
-
-#[test]
-fn repo_matching_a_url_is_accepted() {
-    let f = front(&script());
-    let url = "https://example.com/r.git";
-    let (_, job) = new_request(&f, &json!({"repo": url, "name": "t", "goal": ""}));
-    assert_eq!(job["state"], "done", "{job}");
-}
-
-#[test]
 fn failed_start_keeps_the_request_open_for_more_workers() {
     let f = front(&Script {
         start: refused("start", "no such repo"),
@@ -395,7 +345,7 @@ fn failed_start_keeps_the_request_open_for_more_workers() {
     assert!(resp.starts_with("HTTP/1.1 202"), "{resp}");
     finished(&f, body(&resp)["job"].as_str().unwrap());
     let seen = f.seen.lock().unwrap().clone();
-    assert_eq!(seen.last().unwrap(), &start_req("w2", None, "r", 7));
+    assert_eq!(seen.last().unwrap(), &start_req("w2", None, "o/r", 7));
 }
 
 #[test]
@@ -436,7 +386,7 @@ fn added_worker_sends_one_start_under_the_root() {
     let job = finished(&f, accepted["job"].as_str().unwrap());
     assert_eq!(job["state"], "done", "{job}");
     let seen = f.seen.lock().unwrap().clone();
-    assert_eq!(seen[before..], [start_req("w2", None, "r", 7)]);
+    assert_eq!(seen[before..], [start_req("w2", None, "o/r", 7)]);
 }
 
 #[test]
@@ -465,9 +415,14 @@ fn bad_bodies_are_400_without_a_socket_request() {
     let f = front(&script());
     for (path, raw) in [
         ("/requests", "not json"),
-        ("/requests", r#"{"repo":"r","name":"t"}"#),
-        ("/requests", r#"{"repo":"r","name":"t","goal":"","x":1}"#),
-        ("/requests", r#"{"repo":"r","name":"Bad Name!","goal":""}"#),
+        ("/requests", r#"{"repo":"o/r","name":"t"}"#),
+        ("/requests", r#"{"repo":"o/r","name":"t","goal":"","x":1}"#),
+        (
+            "/requests",
+            r#"{"repo":"o/r","name":"Bad Name!","goal":""}"#,
+        ),
+        ("/requests", r#"{"repo":"r","name":"t","goal":""}"#),
+        ("/requests", r#"{"repo":"o/r/x","name":"t","goal":""}"#),
     ] {
         let resp = send(&f.web, "POST", path, raw);
         assert!(resp.starts_with("HTTP/1.1 400"), "{path} {raw}: {resp}");

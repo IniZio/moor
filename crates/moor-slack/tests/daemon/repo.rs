@@ -1,23 +1,8 @@
-//! `/moor repo` against the daemon: the ack, the rows in `slack.db` and the repo check.
+//! `/moor repo` against the daemon: the ack and the rows in `slack.db`.
 
 #![allow(clippy::indexing_slicing, reason = "test code")]
 
-use moor_core::request::Request;
-use moor_core::response::Response;
-use serde_json::json;
-
-use super::support::controller::{FakeController, Scripted};
 use super::support::{Rig, CHANNEL, QUIET, USER};
-
-/// Scripts one `repos` answer that lists `names`.
-fn script_repos(controller: &FakeController, names: &[&str]) {
-    let repos: Vec<_> = names
-        .iter()
-        .map(|n| json!({"name": n, "url": format!("https://git.example/{n}.git")}))
-        .collect();
-    let value = json!({ "repos": repos });
-    controller.script("repos", Scripted::Reply(Response::ok("repos", Some(value))));
-}
 
 /// Runs `/moor <text>` as `user` in the allowed channel and returns the ack's text.
 fn run(rig: &Rig, envelope_id: &str, user: &str, text: &str) -> String {
@@ -41,19 +26,9 @@ fn rows(rig: &Rig) -> Vec<(String, String, String, bool)> {
     rows.map(Result::unwrap).collect()
 }
 
-fn repos_requests(controller: &FakeController) -> usize {
-    controller.seen(|seen| {
-        seen.requests
-            .iter()
-            .filter(|r| matches!(r, Request::Repos(_)))
-            .count()
-    })
-}
-
 #[test]
-fn an_added_repo_is_recorded_before_the_ack_and_a_known_one_posts_nothing() {
-    let (rig, controller) = Rig::start();
-    script_repos(&controller, &["acme/api"]);
+fn an_added_repo_is_recorded_before_the_ack_and_posts_nothing() {
+    let (rig, _controller) = Rig::start();
     let text = run(&rig, "env-1", USER, "repo add acme/api");
     assert_eq!(text, "Recorded. This channel works on `acme/api`.");
     let want = (
@@ -63,31 +38,24 @@ fn an_added_repo_is_recorded_before_the_ack_and_a_known_one_posts_nothing() {
         false,
     );
     assert_eq!(rows(&rig), [want]);
-    controller.wait_until("the repo check", |seen| !seen.requests.is_empty());
     std::thread::sleep(QUIET);
     assert!(rig.slack.posts().is_empty(), "{:?}", rig.slack.posts());
 }
 
 #[test]
-fn an_unknown_repo_gets_one_channel_line_naming_the_known_repos() {
-    let (rig, controller) = Rig::start();
-    script_repos(&controller, &["acme/api", "acme/web"]);
-    run(&rig, "env-1", USER, "repo add acme/app");
-    let posts = rig.slack.wait_posts(1);
-    assert_eq!(posts[0].channel, CHANNEL);
-    assert_eq!(posts[0].thread_ts, "", "posted at the top level");
-    let line = "The controller does not know `acme/app`. Known repos: `acme/api`, `acme/web`.";
-    assert_eq!(posts[0].text, line);
-    assert_eq!(rows(&rig).len(), 1, "the repo stays recorded");
-    std::thread::sleep(QUIET);
-    assert_eq!(rig.slack.posts().len(), 1);
+fn a_repo_that_is_not_owner_name_is_refused_and_not_recorded() {
+    let (rig, _controller) = Rig::start();
+    let text = run(&rig, "env-1", USER, "repo add acme");
+    assert_eq!(
+        text,
+        "`acme` is not a GitHub repo name. Use `/moor repo add <owner/name>`."
+    );
+    assert!(rows(&rig).is_empty());
 }
 
 #[test]
 fn a_channel_works_on_several_repos_with_one_default() {
-    let (rig, controller) = Rig::start();
-    script_repos(&controller, &["acme/api", "acme/web"]);
-    script_repos(&controller, &["acme/api", "acme/web"]);
+    let (rig, _controller) = Rig::start();
     run(&rig, "env-1", USER, "repo add acme/api");
     run(&rig, "env-2", USER, "repo add acme/web");
     run(&rig, "env-3", USER, "repo default acme/api");
@@ -112,7 +80,7 @@ fn a_channel_works_on_several_repos_with_one_default() {
 
 #[test]
 fn a_user_off_the_list_is_refused_and_nothing_is_recorded() {
-    let (rig, controller) = Rig::start();
+    let (rig, _controller) = Rig::start();
     let text = run(&rig, "env-1", "U0OTHER", "repo add acme/api");
     assert_eq!(
         text,
@@ -120,14 +88,12 @@ fn a_user_off_the_list_is_refused_and_nothing_is_recorded() {
     );
     std::thread::sleep(QUIET);
     assert!(rows(&rig).is_empty());
-    assert_eq!(repos_requests(&controller), 0);
     assert!(rig.slack.posts().is_empty());
 }
 
 #[test]
 fn an_add_that_slack_db_cannot_record_gets_no_ack_until_it_can() {
-    let (rig, controller) = Rig::start();
-    script_repos(&controller, &["acme/api"]);
+    let (rig, _controller) = Rig::start();
     let db = rusqlite::Connection::open(rig.path("state-slack/slack.db")).unwrap();
     db.execute_batch("ALTER TABLE slack_channel_repos RENAME TO hidden")
         .unwrap();
@@ -141,18 +107,4 @@ fn an_add_that_slack_db_cannot_record_gets_no_ack_until_it_can() {
     let text = run(&rig, "env-1", USER, "repo add acme/api");
     assert_eq!(text, "Recorded. This channel works on `acme/api`.");
     assert_eq!(rows(&rig).len(), 1);
-}
-
-#[test]
-fn a_redelivered_add_is_checked_once() {
-    let (rig, controller) = Rig::start();
-    script_repos(&controller, &[]);
-    run(&rig, "env-1", USER, "repo add acme/app");
-    rig.slack.wait_posts(1);
-    rig.slack
-        .send_slash("env-1", CHANNEL, USER, "repo add acme/app");
-    rig.slack.wait_acks(2);
-    std::thread::sleep(QUIET);
-    assert_eq!(rig.slack.posts().len(), 1);
-    assert_eq!(repos_requests(&controller), 1);
 }

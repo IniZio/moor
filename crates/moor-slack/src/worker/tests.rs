@@ -75,7 +75,7 @@ fn started(db: &Db, event_id: &str, thread: &str) -> SlackBox {
         thread_ts: thread.into(),
         box_name: BoxName::parse_allow_bare(&format!("slack-{}-1", thread.replace('.', "-")))
             .unwrap(),
-        repo: "api".into(),
+        repo: "acme/api".into(),
         goal: "fix the flaky test".into(),
         requested_by: "U1".into(),
         parent: Some(SessionId::new(100)),
@@ -153,17 +153,11 @@ fn with_hooks(
             .push((c.to_owned(), t.to_owned(), text.to_owned()));
         after_post();
     };
-    let mut say = |c: &str, text: &str| {
-        seen.borrow_mut()
-            .replies
-            .push((c.to_owned(), String::new(), text.to_owned()));
-    };
     let mut check_token = |_| {};
     let mut ephemeral = |_: &str, _: &str, _: &str, _: &str| {};
     let mut fx = Fx {
         call: &mut call,
         reply: &mut reply,
-        say: &mut say,
         ephemeral: &mut ephemeral,
         check_token: &mut check_token,
         log,
@@ -280,7 +274,10 @@ fn allowed_mention_starts_binds_and_replies() {
     };
     assert_eq!(seen.calls.len(), 1);
     assert_eq!(req.name.as_str(), "slack-10-5-1");
-    assert_eq!(req.repo.as_deref(), Some("api"));
+    assert_eq!(
+        req.repo.as_ref().map(ToString::to_string).as_deref(),
+        Some("acme/api")
+    );
     assert_eq!(req.goal.as_deref(), Some("fix the flaky test"));
     assert_eq!(
         req.parent,

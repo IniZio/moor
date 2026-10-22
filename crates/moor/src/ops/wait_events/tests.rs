@@ -30,7 +30,6 @@ fn cx(dir: &Path) -> Cx {
 fn cx_with(dir: &Path, engine: &Arc<FakeEngine>) -> Cx {
     Cx::fake(
         dir,
-        dir,
         Arc::new(FakeDriver::new()),
         Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
@@ -45,7 +44,7 @@ fn name(n: &str) -> BoxName {
 fn add(cx: &Cx, n: &str) -> BoxId {
     let nt = NewBox {
         name: name(n),
-        repo: "r".into(),
+        repo: None,
     };
     cx.store()
         .unwrap()

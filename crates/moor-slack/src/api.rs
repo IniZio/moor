@@ -97,17 +97,6 @@ impl Api {
         reply_ts(&self.call(bot_token, "chat.postMessage", &body)?)
     }
 
-    /// Posts `text` at the top level of `channel`; returns the new message `ts`.
-    pub(super) fn post_in_channel(
-        &self,
-        bot_token: &Secret,
-        channel: &str,
-        text: &str,
-    ) -> Result<String, ApiError> {
-        let body = json!({"channel": channel, "text": text});
-        reply_ts(&self.call(bot_token, "chat.postMessage", &body)?)
-    }
-
     /// Replaces the text of the message `ts` in `channel`.
     pub(super) fn update_message(
         &self,

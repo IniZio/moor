@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::domain::box_state::SetupOutcome;
@@ -14,7 +13,7 @@ use moor_core::{BoxId, BoxName, BoxPath, CloseReq, ErrorKind, ProviderId};
 use super::run;
 use crate::cx::Cx;
 use crate::testing::driver::FakeDriver;
-use crate::testing::proc::{Reply, ScriptedProc};
+use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
 
 mod agent;
@@ -29,8 +28,6 @@ mod transcript;
 mod wake;
 
 const RAW: &str = "RAWDRIVER-7731";
-/// The host commit id the probe compares against.
-const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
 
 pub(super) struct Fx {
     pub(super) dir: tempfile::TempDir,
@@ -45,25 +42,12 @@ pub(super) fn req(force: bool) -> CloseReq {
     CloseReq {
         target: BoxName::parse_allow_bare("t").unwrap().into(),
         force,
-        trust_moor_yaml: false,
     }
 }
 
-/// Git answers for the host repo reads close still makes.
+/// A host process table that answers no tool.
 pub(super) fn proc() -> Arc<ScriptedProc> {
-    let p = ScriptedProc::new();
-    p.on(Tool::Git, &["ls-tree"], Reply::Ok(String::new()));
-    p.on(
-        Tool::Git,
-        &["rev-parse", "HEAD"],
-        Reply::Ok(format!("{HEAD}\n")),
-    );
-    p.on(
-        Tool::Git,
-        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-        Reply::Ok("/main/.git\n".to_owned()),
-    );
-    Arc::new(p)
+    Arc::new(ScriptedProc::new())
 }
 
 /// A Ready Box with a machine from `driver` that probes clean.
@@ -71,11 +55,21 @@ pub(super) fn fx_with(driver: FakeDriver, surface: FakeSurface) -> Fx {
     fx_box(driver, surface, Some("ahead=0 dirty=0"))
 }
 
-/// A Ready Box with a machine from `driver`; its repo is a real directory.
+/// A Ready Box of repo `o/n` with no `.moor.yaml`, with a machine from `driver`.
 ///
 /// `boxwork` is what the probe reads back from the first Box's recorded workdir
 /// (`/work/box-1`); `None` leaves it unscripted, so the probe cannot tell.
 pub(super) fn fx_box(driver: FakeDriver, surface: FakeSurface, boxwork: Option<&str>) -> Fx {
+    fx_repo(driver, surface, boxwork, None)
+}
+
+/// Like [`fx_box`], with `yaml` as the `.moor.yaml` stored for the Box's base.
+pub(super) fn fx_repo(
+    driver: FakeDriver,
+    surface: FakeSurface,
+    boxwork: Option<&str>,
+    yaml: Option<&str>,
+) -> Fx {
     let driver = match boxwork {
         Some(text) => driver.peek_text(
             "box-1",
@@ -88,14 +82,8 @@ pub(super) fn fx_box(driver: FakeDriver, surface: FakeSurface, boxwork: Option<&
     let driver = Arc::new(driver);
     let surface = Arc::new(surface);
     let proc = proc();
-    let cx = Cx::fake(
-        dir.path(),
-        dir.path(),
-        driver.clone(),
-        surface.clone(),
-        proc.clone(),
-    );
-    let id = admit(&cx, &driver, dir.path());
+    let cx = Cx::fake(dir.path(), driver.clone(), surface.clone(), proc.clone());
+    let id = admit(&cx, &driver, yaml);
     Fx {
         dir,
         cx,
@@ -106,13 +94,14 @@ pub(super) fn fx_box(driver: FakeDriver, surface: FakeSurface, boxwork: Option<&
     }
 }
 
-/// Admits Box `t` of the repo at `dir` with a Ready machine acquired from `driver`.
-fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> BoxId {
+/// Admits Box `t` of repo `o/n` holding `yaml` as its `.moor.yaml`, with a Ready machine
+/// acquired from `driver`.
+fn admit(cx: &Cx, driver: &FakeDriver, yaml: Option<&str>) -> BoxId {
     let store = cx.store().unwrap();
     let id = store
-        .apply(crate::testing::cx::new_box_in(
+        .apply(crate::testing::cx::new_box_of(
             BoxName::parse_allow_bare("t").unwrap(),
-            dir,
+            crate::testing::cx::box_repo(yaml),
         ))
         .unwrap()
         .box_id;
@@ -178,17 +167,11 @@ fn clean_close_deletes_the_box_and_closes() {
 fn a_clean_close_asks_host_git_nothing_about_unsaved_work() {
     let f = fx();
     run(&f.cx, &req(false)).unwrap();
-    // Until the repo config comes from the forge, teardown still looks up `.moor.yaml`.
-    let config_lookup = |args: &[String]| {
-        args.first().map(String::as_str) == Some("ls-tree")
-            || args.first().map(String::as_str) == Some("show")
-            || args == ["rev-parse", "--path-format=absolute", "--git-common-dir"]
-    };
     let git: Vec<_> = f
         .proc
         .calls()
         .into_iter()
-        .filter(|c| c.tool == Tool::Git && !config_lookup(&c.args))
+        .filter(|c| c.tool == Tool::Git)
         .map(|c| c.args)
         .collect();
     assert!(git.is_empty(), "{git:?}");

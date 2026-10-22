@@ -143,7 +143,6 @@ fn each_action_makes_one_request_and_returns_the_envelope() {
             Request::Close(CloseReq {
                 target: name("t").into(),
                 force: false,
-                trust_moor_yaml: false,
             }),
         ),
     ];

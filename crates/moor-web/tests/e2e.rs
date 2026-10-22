@@ -33,14 +33,11 @@ fn root_for(stack: &Stack, key: &str) -> Option<Value> {
         .cloned()
 }
 
-/// Controller config naming one repo, so the repo check passes; the clone then fails offline.
-const DEMO_REPO: &str = "repos:\n  demo:\n    url: /nonexistent/moor-e2e/demo.git\n";
-
 /// Posts a new request and returns its key after checking the job failed only at `start`.
 fn create_request(stack: &Stack) -> String {
     let (status, body) = stack.post(
         "/requests",
-        &json!({"repo": "demo", "name": "t1", "goal": "g"}),
+        &json!({"repo": "o/demo", "name": "t1", "goal": "g"}),
     );
     assert_eq!(
         status,
@@ -52,7 +49,7 @@ fn create_request(stack: &Stack) -> String {
     let key = accepted["key"].as_str().expect("key").to_owned();
     let job = accepted["job"].as_str().expect("job").to_owned();
 
-    // The repo is known, so only the worker start can fail.
+    // Nothing before the worker start can fail.
     let snap = stack.wait_job(&job);
     let diag = stack.diagnostics();
     assert_eq!(snap["state"], "failed", "job: {snap}\n{diag}");
@@ -78,7 +75,7 @@ fn check_open_root(stack: &Stack, key: &str) -> i64 {
     let root = root_for(stack, key).unwrap_or_else(|| panic!("no root for key\n{diag}"));
     let id = root["session"].as_i64().expect("root session id");
     assert_eq!(root["name"], Value::Null, "root has a Box: {root}");
-    assert_eq!(root["request"]["repo"], "demo");
+    assert_eq!(root["request"]["repo"], "o/demo");
     assert_eq!(root["request"]["ended_at"], Value::Null);
     assert_ne!(root["state"], "gone", "root: {root}");
 
@@ -130,7 +127,7 @@ fn end_request(stack: &Stack, key: &str, id: i64) {
 
 #[test]
 fn request_lifecycle_against_a_real_controller() {
-    let stack = Stack::start_with(DEMO_REPO);
+    let stack = Stack::start();
     let (status, page) = stack.get("/");
     assert_eq!(status, 200, "GET /\n{}", stack.diagnostics());
     assert!(page.contains("/app.js"), "index lacks /app.js");
@@ -141,39 +138,21 @@ fn request_lifecycle_against_a_real_controller() {
 }
 
 #[test]
-fn unknown_repo_fails_before_any_root_is_opened() {
+fn a_repo_that_is_not_owner_name_is_refused_before_any_root_is_opened() {
     let stack = Stack::start();
     let (status, body) = stack.post(
         "/requests",
         &json!({"repo": "demo", "name": "t1", "goal": "g"}),
     );
-    assert_eq!(status, 202, "POST /requests: {body}");
-    let accepted = parse(&body);
-    let key = accepted["key"].as_str().expect("key").to_owned();
-    let job = accepted["job"].as_str().expect("job").to_owned();
-
-    let snap = stack.wait_job(&job);
-    let diag = stack.diagnostics();
-    assert_eq!(snap["state"], "failed", "job: {snap}\n{diag}");
-    assert_eq!(snap["failure"]["step"], "repo", "job: {snap}\n{diag}");
-    assert_eq!(
-        snap["failure"]["message"],
-        "repo demo is not known to the controller; no repos are configured",
-        "job: {snap}\n{diag}"
-    );
+    assert_eq!(status, 400, "POST /requests: {body}");
 
     let listed = stack.controller(json!({"cmd": "sessions"}));
     let sessions = listed["value"]["sessions"].as_array().expect("sessions");
-    assert!(sessions.is_empty(), "sessions: {listed}\n{diag}");
-
-    let bound = stack.controller(json!({"cmd": "session-binding", "front": "web", "key": key}));
-    assert_eq!(
-        bound["value"],
-        Value::Null,
-        "binding exists: {bound}\n{diag}"
+    assert!(
+        sessions.is_empty(),
+        "sessions: {listed}\n{}",
+        stack.diagnostics()
     );
-
-    assert!(root_for(&stack, &key).is_none(), "root exists\n{diag}");
 }
 
 /// Size of the large artifact.
@@ -207,7 +186,7 @@ fn publish_pattern(stack: &Stack, block: &[u8], size: u64) {
     let db = rusqlite::Connection::open(state.join("moor.db")).unwrap();
     db.execute(
         "INSERT INTO boxes (name, repo, state, created_at, updated_at) \
-         VALUES ('big', 'demo', 'ready', 0, 0)",
+         VALUES ('big', 'o/demo', 'ready', 0, 0)",
         [],
     )
     .unwrap();

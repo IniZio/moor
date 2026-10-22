@@ -60,19 +60,17 @@ fn every_front_request_but_version_must_assert_an_identity() {
 }
 
 #[test]
-fn env_and_repos_are_the_operators_only() {
+fn env_is_the_operators_only_and_repos_is_no_command() {
     let world = World::new();
     let slack = world.slack();
     refused(
-        &ask(&slack, &acting(A, &json!({"cmd": "env", "repo": "/etc"}))),
+        &ask(&slack, &acting(A, &json!({"cmd": "env", "repo": "o/n"}))),
         "env reads the host's configs, which is operator-only",
     );
-    refused(
-        &ask(&slack, &acting(A, &json!({"cmd": "repos"}))),
-        "repos is operator-only",
-    );
-    let repos = ask(&world.served.main, &json!({"cmd": "repos"}));
-    assert_eq!(repos["value"], json!({"repos": []}), "{repos}");
+    for socket in [&slack, &world.served.main] {
+        let got = ask(socket, &json!({"cmd": "repos"}));
+        assert_eq!(got["frame"], "error", "{got}");
+    }
 }
 
 /// The ids of the Sessions a `sessions` reply lists.
@@ -173,7 +171,7 @@ fn show_session_lists_only_the_children_the_caller_may_see() {
     for (name, owner) in [("a-child", a_box), ("b-child", world.b_box)] {
         let new = NewBox {
             name: BoxName::parse_allow_bare(name).expect("name"),
-            repo: "r".into(),
+            repo: None,
         };
         let child = Decision::insert(new)
             .parent_session(Some(parent))

@@ -6,6 +6,7 @@ use super::box_state::BoxLifecycleInput;
 use super::boxes::BoxInput;
 use super::session_state::SessionInput;
 use crate::name::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
+use crate::name::{ForgeRepo, GitAuthor};
 use crate::user::UserId;
 
 pub use extra::ExtraEvent;
@@ -123,8 +124,21 @@ pub enum IntentChange {
 pub struct NewBox {
     /// Box name.
     pub name: BoxName,
-    /// Repo the Box works on.
-    pub repo: String,
+    /// The repo the Box clones; `None` for a Box with an empty workdir.
+    pub repo: Option<BoxRepo>,
+}
+
+/// A Box's repo with what the forge said about it at the base, before the machine existed.
+///
+/// The agent controls the Box, so moor never reads these back from it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoxRepo {
+    /// The repo on github.com.
+    pub repo: ForgeRepo,
+    /// The exact `.moor.yaml` text at the base; `None` when the base has no such file.
+    pub moor_yaml: Option<String>,
+    /// The commit identity the clone sets in the Box.
+    pub author: GitAuthor,
 }
 
 /// The Box a decision applies to.

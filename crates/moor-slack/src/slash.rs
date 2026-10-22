@@ -1,20 +1,16 @@
 //! The `/moor` slash command. `/moor repo` lists and changes the repos a channel works on,
-//! recorded before the ack; the worker then warns in the channel about a repo the
-//! controller does not know. `/moor login` and `/moor logout` go to [`crate::login`].
+//! recorded before the ack. `/moor login` and `/moor logout` go to [`crate::login`].
 
 use std::path::Path;
 
-use moor_core::config::{find_repo, RepoEntry, RepoTable};
-use moor_core::request::{ReposReq, Request};
-use moor_core::response::ExitClass;
-use moor_core::view::repos::ReposValue;
+use moor_core::seam::forge::ForgeRepo;
 use serde_json::{json, Value};
 
 use crate::command::Allow;
 use crate::db::{ChannelRepo, Db};
 use crate::login;
 use crate::socket::{Kept, Slash};
-use crate::worker::{Fx, Job};
+use crate::worker::Job;
 
 /// Reply for text that is not a well-formed `/moor` command.
 const USAGE: &str = "Usage: `/moor repo` lists this channel's repos. \
@@ -55,68 +51,56 @@ pub(crate) fn record(
     if verb.eq_ignore_ascii_case("logout") {
         return Ok((login::logout(slash, state_dir, log), None));
     }
-    let (ack, job) = record_repo(slash, db, allow, now)?;
+    let ack = record_repo(slash, db, allow, now)?;
     let kept = Kept {
         ack: Some(ack),
         then: None,
     };
-    Ok((kept, job))
+    Ok((kept, None))
 }
 
 /// Records one `/moor repo` command in a single transaction with its envelope id. Returns
-/// the ack's payload and, for a repo newly added by a first delivery, the repo check.
-fn record_repo(
-    slash: &Slash,
-    db: &Db,
-    allow: &Allow<'_>,
-    now: i64,
-) -> rusqlite::Result<(Value, Option<Job>)> {
+/// the ack's payload.
+fn record_repo(slash: &Slash, db: &Db, allow: &Allow<'_>, now: i64) -> rusqlite::Result<Value> {
     db.atomically(|| {
-        let first = db.event_once(&slash.envelope_id, now)?;
-        let (text, added) = answer(slash, db, allow, now)?;
-        let job = added.filter(|_| first).map(|repo| Job::CheckRepo {
-            channel: slash.channel.clone(),
-            repo,
-        });
-        Ok((json!({ "text": text }), job))
+        db.event_once(&slash.envelope_id, now)?;
+        let text = answer(slash, db, allow, now)?;
+        Ok(json!({ "text": text }))
     })
 }
 
-/// Applies the command; returns the text the user sees and the repo it newly added.
-fn answer(
-    slash: &Slash,
-    db: &Db,
-    allow: &Allow<'_>,
-    now: i64,
-) -> rusqlite::Result<(String, Option<String>)> {
+/// Applies the command; returns the text the user sees.
+fn answer(slash: &Slash, db: &Db, allow: &Allow<'_>, now: i64) -> rusqlite::Result<String> {
     let Some(cmd) = parse(&slash.text) else {
-        return Ok((USAGE.to_owned(), None));
+        return Ok(USAGE.to_owned());
     };
     if !allow.channels.contains(&slash.channel) {
-        return Ok(("moor does not work in this channel.".to_owned(), None));
+        return Ok("moor does not work in this channel.".to_owned());
     }
     if !allow.users.contains(&slash.user) {
         let user = &slash.user;
-        let text = format!("<@{user}> is not allowed to change this channel's repos.");
-        return Ok((text, None));
+        return Ok(format!(
+            "<@{user}> is not allowed to change this channel's repos."
+        ));
     }
     let channel = slash.channel.as_str();
     let not_here = |repo: &str| format!("`{repo}` is not one of this channel's repos.");
     Ok(match cmd {
-        RepoCmd::List => (listing(&db.channel_repos(channel)?), None),
-        RepoCmd::Add(repo) if db.add_channel_repo(channel, repo, &slash.user, now)? => (
-            format!("Recorded. This channel works on `{repo}`."),
-            Some(repo.to_owned()),
-        ),
-        RepoCmd::Add(repo) => (format!("This channel already works on `{repo}`."), None),
-        RepoCmd::Remove(repo) if db.remove_channel_repo(channel, repo)? => {
-            (format!("Removed `{repo}` from this channel."), None)
+        RepoCmd::List => listing(&db.channel_repos(channel)?),
+        RepoCmd::Add(repo) if ForgeRepo::parse(repo).is_err() => {
+            format!("`{repo}` is not a GitHub repo name. Use `/moor repo add <owner/name>`.")
         }
-        RepoCmd::Default(repo) if db.set_default_channel_repo(channel, repo)? => (
-            format!("Recorded. `{repo}` is this channel's default repo."),
-            None,
-        ),
-        RepoCmd::Remove(repo) | RepoCmd::Default(repo) => (not_here(repo), None),
+        RepoCmd::Add(repo) if db.add_channel_repo(channel, repo, &slash.user, now)? => {
+            format!("Recorded. This channel works on `{repo}`.")
+        }
+        RepoCmd::Add(repo) => format!("This channel already works on `{repo}`."),
+        RepoCmd::Remove(repo) if db.remove_channel_repo(channel, repo)? => {
+            format!("Removed `{repo}` from this channel.")
+        }
+        RepoCmd::Default(repo) if db.set_default_channel_repo(channel, repo)? => {
+            format!("Recorded. `{repo}` is this channel's default repo.")
+        }
+        RepoCmd::Remove(repo) | RepoCmd::Default(repo) => not_here(repo),
     })
 }
 
@@ -163,48 +147,6 @@ fn listing(repos: &[ChannelRepo]) -> String {
         })
         .collect();
     format!("This channel works on {}.", names.join(", "))
-}
-
-/// Asks the controller for its repos and posts one line in `channel` when `repo` is not
-/// one of them, by name or clone URL. A failed request is logged; the repo stays recorded.
-pub(crate) fn check_repo(fx: &mut Fx<'_>, channel: &str, repo: &str) {
-    let known = match (fx.call)(Request::Repos(ReposReq {})) {
-        Ok(reply) if reply.class == ExitClass::Ok => reply
-            .value
-            .and_then(|v| serde_json::from_value::<ReposValue>(v).ok())
-            .ok_or_else(|| "the repos reply is not a repo list".to_owned()),
-        Ok(reply) => Err(reply
-            .error
-            .map_or_else(|| "repos failed".to_owned(), |e| e.message)),
-        Err(e) => Err(e.to_string()),
-    };
-    let known = match known {
-        Ok(known) => known,
-        Err(why) => return (fx.log)(&format!("repo check of {repo}: {why}")),
-    };
-    let table: RepoTable = known
-        .repos
-        .iter()
-        .map(|r| {
-            let entry = RepoEntry {
-                url: r.url.clone(),
-                default_branch: None,
-                moor_yaml: None,
-            };
-            (r.name.clone(), entry)
-        })
-        .collect();
-    if find_repo(&table, repo).is_some() {
-        return;
-    }
-    let names: Vec<String> = table.keys().map(|n| format!("`{n}`")).collect();
-    let known = if names.is_empty() {
-        "It knows no repos.".to_owned()
-    } else {
-        format!("Known repos: {}.", names.join(", "))
-    };
-    let text = format!("The controller does not know `{repo}`. {known}");
-    (fx.say)(channel, &text);
 }
 
 #[cfg(test)]

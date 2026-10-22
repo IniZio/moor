@@ -4,14 +4,13 @@
 //! setup, then the dotfiles, before the agent launches.
 //! It launches the agent for a Working Box with a goal.
 
-use std::path::PathBuf;
-
 use moor_core::config::Flags;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxState;
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewBox};
+use moor_core::domain::decision::{BoxRepo, Decision, ExtraEvent, Field, Fields, NewBox};
 use moor_core::domain::event::CheckedCred;
 use moor_core::domain::session_state::SessionInput;
+use moor_core::seam::forge::RepoFiles;
 use moor_core::seam::surface::workspace_label;
 use moor_core::user::UserId;
 use moor_core::view::StartView;
@@ -20,22 +19,22 @@ use moor_core::{BoxId, ErrorKind, SessionId, StartReq, Warning};
 use super::common::activity;
 use super::common::autosleep;
 use super::common::boxlock::{self, BoxLock};
-use super::common::facts::{provider_caps, require_reverse_tunnel, resolved};
-use super::common::host_path::caller_dir;
-use super::common::provision::{moor_yaml, provision, reprovision, reread, Entry, Provisioned};
+use super::common::facts::{
+    provider_caps, repo_config_of, require_reverse_tunnel, resolved, settings_of,
+};
+use super::common::provision::{provision, reprovision, reread, Entry, Provisioned};
 use super::common::provisioning::dead_provisioning;
 use super::host_session::refuse_invalid;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{BoxRow, Store, StoreError};
 
-mod base;
-mod known_repo;
 mod launch;
 mod needs;
 mod preflight;
 mod relaunch;
 mod reopen;
+pub(crate) mod repo;
 mod response;
 mod watch;
 
@@ -48,10 +47,12 @@ pub(crate) use watch::run as watch_launch;
 
 /// What `start` learns before it changes anything.
 struct Facts {
-    /// Repo root of the invocation directory.
-    repo: PathBuf,
-    /// Base ref or the HEAD commit it starts from.
-    base: String,
+    /// The repo the Box clones, with its config and author at the base; `None` for no repo.
+    repo: Option<BoxRepo>,
+    /// The full sha the Box starts from; `None` for a Box with no repo.
+    base: Option<String>,
+    /// The repo's MCP and Claude settings files at the base.
+    files: RepoFiles,
 }
 
 /// Where the Box works.
@@ -68,9 +69,7 @@ struct Placed {
 /// [`CommandError`] when a read, a seam call or a store write fails.
 pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     let store = cx.store()?;
-    let user = needs::require(cx, req.repo.as_deref())?;
-    let (repo, req) = locate(cx, req)?;
-    let req = &req;
+    let user = needs::require(cx, req.repo.as_ref())?;
     if let Some(parent) = req.parent {
         store.check_parent(parent.get()).map_err(refuse_invalid)?;
     }
@@ -81,14 +80,15 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     if req.resume {
         return Err(relaunch::nothing_to_resume());
     }
-    let facts = gather(cx, req, repo)?;
+    let facts = gather(cx, req, user)?;
     let flags = Flags {
         model: req.model.clone(),
     };
-    let cfg = base::settings_at_base(cx, &facts.repo, &facts.base, &flags)?;
+    let repo_cfg = repo_config_of(facts.repo.as_ref(), facts.base.as_deref())?;
+    let cfg = resolved(cx, repo_cfg.as_ref(), &flags);
     let caps = provider_caps(cx, &cfg)?;
     require_reverse_tunnel(&cfg, caps)?;
-    if let Some(reason) = preflight::rejection(cx, &cfg, &facts.repo, user)? {
+    if let Some(reason) = preflight::rejection(cx, &cfg, &facts.files, user)? {
         return reject(cx, store, (req, user), &facts, &reason);
     }
     let placed = match place(cx, req) {
@@ -134,12 +134,12 @@ fn reject(
     let set = Fields {
         issue: set_some(req.issue.clone()),
         goal: set_some(req.goal.clone()),
-        base: Field::Set(facts.base.clone()),
+        base: set_some(facts.base.clone()),
         ..Fields::default()
     };
     let new = NewBox {
         name: req.name.clone(),
-        repo: facts.repo.display().to_string(),
+        repo: facts.repo.clone(),
     };
     let id = store
         .apply(
@@ -185,18 +185,17 @@ fn attach(
     preflight::check_owner(row, user)?;
     relaunch::check_resume(req, row)?;
     dead_provisioning(cx, row)?;
-    let reprovisioned = reprovision(cx, store, row, "start", req.trust_moor_yaml)?;
+    let reprovisioned = reprovision(cx, store, row, "start")?;
     store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
     let setup_exit = reprovisioned.as_ref().and_then(|p| p.setup.exit());
     let settings = || {
-        let repo = moor_yaml::guard(cx, row, req.trust_moor_yaml)?;
-        Ok(resolved(
+        settings_of(
             cx,
-            repo.as_ref(),
+            row,
             &Flags {
                 model: req.model.clone(),
             },
-        ))
+        )
     };
     let recreated = matches!(
         row.boxed.as_ref().map(|b| b.state),
@@ -254,20 +253,26 @@ fn settle_one(cx: &Cx, store: &Store, row: &BoxRow) {
     }
 }
 
-/// The repo root and the effective request; refuses bad input before any change.
-fn locate(cx: &Cx, req: &StartReq) -> Result<(PathBuf, StartReq), CommandError> {
-    if let Some(key) = &req.repo {
-        return known_repo::prepare(cx, req, key);
-    }
-    let git = |e: crate::adapters::git::GitError| CommandError::new(ErrorKind::Failed, e);
-    let repo = cx.git().toplevel(caller_dir(cx)?).map_err(git)?;
-    Ok((repo, req.clone()))
-}
-
-/// Reads the base the Box starts from; changes nothing.
-fn gather(cx: &Cx, req: &StartReq, repo: PathBuf) -> Result<Facts, CommandError> {
-    let base = base::resolve(cx, req, &repo)?;
-    Ok(Facts { repo, base })
+/// Reads the repo the Box starts from through the forge; changes nothing.
+fn gather(cx: &Cx, req: &StartReq, user: UserId) -> Result<Facts, CommandError> {
+    let Some(repo) = &req.repo else {
+        return Ok(Facts {
+            repo: None,
+            base: None,
+            files: RepoFiles::default(),
+        });
+    };
+    let branch = moor_core::box_key::branch(&req.name);
+    let at = repo::read(cx, user, repo, req.base.as_deref(), &branch)?;
+    Ok(Facts {
+        repo: Some(BoxRepo {
+            repo: repo.clone(),
+            moor_yaml: at.files.moor_yaml.clone(),
+            author: at.author,
+        }),
+        base: Some(at.base.as_str().to_owned()),
+        files: at.files,
+    })
 }
 
 /// Names the Box's branch, refusing one an open Box already works on, then ensures the Workspace.
@@ -311,14 +316,14 @@ fn insert(
     let set = Fields {
         issue: set_some(req.issue.clone()),
         goal: set_some(req.goal.clone()),
-        base: Field::Set(facts.base.clone()),
+        base: set_some(facts.base.clone()),
         branch: Field::Set(placed.branch.clone()),
         workspace_id: Field::Set(placed.workspace.clone()),
         ..Fields::default()
     };
     let new = NewBox {
         name: req.name.clone(),
-        repo: facts.repo.display().to_string(),
+        repo: facts.repo.clone(),
     };
     let mut decision = Decision::insert(new)
         .set(set)

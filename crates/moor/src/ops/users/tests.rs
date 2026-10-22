@@ -1,7 +1,6 @@
 //! Tests for the user requests run as a checked identity.
 #![allow(clippy::indexing_slicing, reason = "test assertions index JSON values")]
 
-use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::request::{AsReq, SecretValue, UserCmd};
@@ -27,7 +26,6 @@ pub(super) fn fixture() -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let cx = Cx::fake(
         dir.path(),
-        Path::new("/home/me/proj"),
         Arc::new(FakeDriver::new()),
         Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),

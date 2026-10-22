@@ -6,13 +6,14 @@ use std::time::Duration;
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
-use moor_core::domain::decision::Intent;
+use moor_core::domain::decision::{BoxRepo, Intent};
 use moor_core::domain::session_state::SessionState;
 use moor_core::request::Pins;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::user::UserId;
 use moor_core::view::LaunchFailure;
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
+use repo::repo_from_row;
 use rusqlite::{Connection, OpenFlags, Row};
 
 use init::{parsed, parsed_opt};
@@ -32,6 +33,7 @@ pub(crate) mod lease;
 mod open;
 mod proxy;
 pub(super) mod reads;
+mod repo;
 mod reports;
 mod runs;
 mod sessions;
@@ -46,7 +48,7 @@ pub(crate) use proxy::{TunnelAck, TunnelRequest, TunnelWant};
 pub(crate) use runs::{NewRun, RunOutcome, RunRow};
 
 /// Schema version this build reads and writes.
-pub(crate) const SCHEMA_VERSION: &str = "11";
+pub(crate) const SCHEMA_VERSION: &str = "12";
 /// Full schema, applied once when the file has no `meta` table.
 const SCHEMA_SQL: &str = include_str!("schema.sql");
 /// How long a connection waits on a lock before `SQLITE_BUSY`.
@@ -56,7 +58,7 @@ const BOX_SELECT: &str = "SELECT b.id, b.name, b.repo, b.issue, b.goal, b.base, 
     s.workspace_id, s.agent_session_id, b.state, b.state_reason, b.intent_kind, b.intent_pid, b.intent_run, \
     b.intent_at, b.setup_failed_at, b.created_at, b.updated_at, b.provider, b.handle, b.driver_state, \
     b.attempted_handle, b.workdir, b.egress, b.sleep_reason, b.driver_updated_at, b.idle_since, b.launch_failure, \
-    s.state, b.user FROM boxes b LEFT JOIN sessions s ON s.box = b.id \
+    s.state, b.user, b.repo_config, b.author_name, b.author_email FROM boxes b LEFT JOIN sessions s ON s.box = b.id \
     AND s.ordinal = (SELECT MAX(ordinal) FROM sessions WHERE box = b.id)";
 
 /// Store failure.
@@ -143,8 +145,8 @@ pub(crate) struct BoxRow {
     pub(crate) id: BoxId,
     /// Box name.
     pub(crate) name: BoxName,
-    /// Repo the box works on.
-    pub(crate) repo: String,
+    /// The repo the Box clones, with its config and author at the base; `None` for no repo.
+    pub(crate) repo: Option<BoxRepo>,
     /// The user the Box acts for; every Box `start` makes has one.
     pub(crate) user: Option<UserId>,
     /// Issue reference.
@@ -351,7 +353,7 @@ fn box_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
     Ok(BoxRow {
         id: BoxId::new(row.get(0)?),
         name: parsed("box name", &name, BoxName::parse_allow_bare)?,
-        repo: row.get(2)?,
+        repo: repo_from_row(row)?,
         user: row.get::<_, Option<i64>>(29)?.map(UserId::new),
         issue: row.get(3)?,
         goal: row.get(4)?,

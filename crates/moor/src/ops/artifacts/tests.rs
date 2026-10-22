@@ -23,7 +23,6 @@ use crate::testing::surface::FakeSurface;
 fn cx(dir: &Path) -> Cx {
     Cx::fake(
         dir,
-        Path::new("/home/me/proj"),
         Arc::new(FakeDriver::new()),
         Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
@@ -37,7 +36,7 @@ fn name(s: &str) -> BoxName {
 fn new_box(cx: &Cx, n: &str) -> BoxId {
     let nt = NewBox {
         name: name(n),
-        repo: "r".into(),
+        repo: None,
     };
     cx.store()
         .unwrap()

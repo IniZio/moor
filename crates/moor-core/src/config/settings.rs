@@ -26,8 +26,8 @@ pub enum Layer {
     Default,
     /// The agent profile.
     Agent,
-    /// Read from git itself (the effective config of the host checkout).
-    Git,
+    /// Read from the forge: the account of the requester's GitHub token.
+    Forge,
 }
 
 impl Layer {
@@ -40,7 +40,7 @@ impl Layer {
             Self::User => "user",
             Self::Default => "default",
             Self::Agent => "agent",
-            Self::Git => "git",
+            Self::Forge => "forge",
         }
     }
 }

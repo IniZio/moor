@@ -462,6 +462,14 @@ fn unusable_profile_name_falls_back_to_the_login() {
         "Octo\u{7f}".to_owned(),
         "Octo\u{85}Cat".to_owned(),
         "\u{1b}[31mOcto".to_owned(),
+        "Octo\u{202e}taC".to_owned(),
+        "Octo\u{200b}".to_owned(),
+        "\u{feff}Octo".to_owned(),
+        "Octo\u{2028}Cat".to_owned(),
+        "Octo\u{2029}Cat".to_owned(),
+        "Octo\u{2066}".to_owned(),
+        "Octo\u{ad}".to_owned(),
+        "Octo\u{e0041}".to_owned(),
     ] {
         assert_eq!(
             author_of("octo", &json!(name)).unwrap().name,

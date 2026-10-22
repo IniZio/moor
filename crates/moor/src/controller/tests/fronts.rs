@@ -68,6 +68,9 @@ pub(super) fn ask(socket: &Path, request: &Value) -> Value {
         if got["frame"] == "response" {
             return got["envelope"].clone();
         }
+        if got["frame"] == "error" {
+            return got;
+        }
     }
 }
 

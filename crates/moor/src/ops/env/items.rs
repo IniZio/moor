@@ -1,27 +1,29 @@
 //! Item assembly for `env`, in a fixed order.
 
-use std::path::Path;
-
 use moor_core::config::{BoxSettings, DotfilesConfig, Layer};
+use moor_core::seam::forge::{GitAuthor, RepoFiles};
 use moor_core::view::env::{EnvItem, EnvKind};
 
 use crate::cx::Cx;
 use crate::ops::common::creds::{checked, plain, Checked};
 
 /// All items in display order.
-pub(crate) fn assemble(cx: &Cx, s: &BoxSettings, worktree: &Path) -> Vec<EnvItem> {
+pub(crate) fn assemble(
+    cx: &Cx,
+    s: &BoxSettings,
+    author: Option<&GitAuthor>,
+    files: &RepoFiles,
+) -> Vec<EnvItem> {
     let mut items = Vec::new();
-    if let Ok(author) = cx.git().author(worktree) {
-        for (name, val) in [("user.name", author.name), ("user.email", author.email)] {
-            if let Some(v) = val {
-                items.push(EnvItem {
-                    source: Layer::Git,
-                    ..plain(EnvKind::Identity, name, &v)
-                });
-            }
+    if let Some(author) = author {
+        for (name, v) in [("user.name", &author.name), ("user.email", &author.email)] {
+            items.push(EnvItem {
+                source: Layer::Forge,
+                ..plain(EnvKind::Identity, name, v)
+            });
         }
     }
-    let Checked { credentials, mcp } = checked(s, worktree);
+    let Checked { credentials, mcp } = checked(s, files);
     items.extend(credentials);
     items.extend(s.setup.iter().map(|t| plain(EnvKind::Setup, t, t)));
     items.extend(mcp);

@@ -1,6 +1,5 @@
 //! Tests for `open`.
 
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -43,7 +42,6 @@ fn fx_surfaced(driver: FakeDriver, surface: FakeSurface, workspace: Option<&str>
     let surface = Arc::new(surface);
     let cx = Cx::fake(
         dir.path(),
-        Path::new("/home/me/proj"),
         driver.clone(),
         surface.clone(),
         Arc::new(ScriptedProc::new()),
@@ -53,7 +51,7 @@ fn fx_surfaced(driver: FakeDriver, surface: FakeSurface, workspace: Option<&str>
     let id = store
         .apply(Decision::insert(NewBox {
             name: name.clone(),
-            repo: "r".into(),
+            repo: None,
         }))
         .unwrap()
         .box_id;

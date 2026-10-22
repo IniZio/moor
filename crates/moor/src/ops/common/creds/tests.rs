@@ -3,6 +3,7 @@
 use std::collections::BTreeSet;
 
 use moor_core::config::{parse_user, BoxSettings, Flags};
+use moor_core::seam::forge::RepoFiles;
 use moor_core::user::SecretName;
 
 use super::{checked, unresolved};
@@ -29,8 +30,7 @@ mcp_servers:
 
 #[test]
 fn rows_resolve_only_for_secrets_the_user_holds() {
-    let d = tempfile::tempdir().unwrap();
-    let failing = unresolved(&settings(SHARED), d.path(), &held(&["b"]));
+    let failing = unresolved(&settings(SHARED), &RepoFiles::default(), &held(&["b"]));
     let names: Vec<&str> = failing.iter().map(|i| i.name.as_str()).collect();
     assert_eq!(names, ["a", "m"]);
     let a = failing.first().unwrap();
@@ -38,13 +38,12 @@ fn rows_resolve_only_for_secrets_the_user_holds() {
         a.error.as_deref(),
         Some("log in first: moor user secret set a")
     );
-    assert!(unresolved(&settings(SHARED), d.path(), &held(&["a", "b"])).is_empty());
+    assert!(unresolved(&settings(SHARED), &RepoFiles::default(), &held(&["a", "b"])).is_empty());
 }
 
 #[test]
 fn env_rows_leave_resolution_open() {
-    let d = tempfile::tempdir().unwrap();
-    let out = checked(&settings(SHARED), d.path());
+    let out = checked(&settings(SHARED), &RepoFiles::default());
     assert_eq!(out.credentials.len(), 2);
     assert!(out.credentials.iter().all(|i| i.resolves.is_none()));
     assert!(out.mcp.iter().all(|i| i.resolves.is_none()));
@@ -52,8 +51,7 @@ fn env_rows_leave_resolution_open() {
 
 #[test]
 fn a_box_credential_row_says_only_its_name_is_checked() {
-    let d = tempfile::tempdir().unwrap();
-    let out = checked(&settings(SHARED), d.path());
+    let out = checked(&settings(SHARED), &RepoFiles::default());
     for row in &out.credentials {
         assert_eq!(
             row.delivery.as_deref(),
@@ -62,4 +60,22 @@ fn a_box_credential_row_says_only_its_name_is_checked() {
             row.name
         );
     }
+}
+
+#[test]
+fn only_the_committed_claude_settings_approve_a_repo_server() {
+    let files = |settings: &str| RepoFiles {
+        mcp_json: Some(r#"{"mcpServers":{"a":{}}}"#.into()),
+        claude_settings: Some(settings.into()),
+        moor_yaml: None,
+    };
+    let approved = files(r#"{"enabledMcpjsonServers":["a"]}"#);
+    assert!(unresolved(&settings(""), &approved, &held(&[])).is_empty());
+    let other = files(r#"{"enabledMcpjsonServers":["b"]}"#);
+    let failing = unresolved(&settings(""), &other, &held(&[]));
+    let error = failing.first().and_then(|i| i.error.as_deref()).unwrap();
+    assert!(
+        error.contains(".claude/settings.json and push it"),
+        "{error}"
+    );
 }

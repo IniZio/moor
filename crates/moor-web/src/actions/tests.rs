@@ -49,7 +49,6 @@ fn close_sends_a_plain_close() {
         Ok(Request::Close(CloseReq {
             target: parsed("t").into(),
             force: false,
-            trust_moor_yaml: false,
         }))
     );
 }

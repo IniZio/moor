@@ -112,7 +112,7 @@ fn session(id: i64, parent: Option<i64>, bx: Option<&str>, ordinal: i64) -> Valu
 
 fn box_view(name: &str, state: &str, question: Option<&str>) -> Value {
     json!({
-        "name": name, "repo": "app", "branch": format!("moor/{name}"), "lifecycle": "ready", "session_state": "working",
+        "name": name, "repo": "o/app", "branch": format!("moor/{name}"), "lifecycle": "ready", "session_state": "working",
         "goal": format!("goal of {name}"),
         "driver": {"state": state},
         "agent": {"state": if question.is_some() { "needs_input" } else { "working" },
@@ -131,11 +131,9 @@ pub(super) fn answers() -> Answers {
         "box": box_view("app/1", "awake", None),
         "events": [{"id": 1, "kind": "note", "payload": {}, "ts": 5}],
     });
-    let repos = json!({"repos": [{"name": "app", "url": "https://example.test/app.git"}]});
     Arc::new(HashMap::from([
         ("sessions", Response::ok("sessions", Some(sessions))),
         ("show", Response::ok("show", Some(show))),
-        ("repos", Response::ok("repos", Some(repos))),
         (
             "artifacts",
             Response::ok(
@@ -170,7 +168,7 @@ fn row(key: &str, session: i64, ended: Option<i64>) -> RequestRow {
     RequestRow {
         key: key.to_owned(),
         root_session: SessionId::new(session),
-        repo: "app".to_owned(),
+        repo: "o/app".to_owned(),
         created_at: 10,
         ended_at: ended,
     }
@@ -264,7 +262,7 @@ fn child_carries_box_and_agent_question() {
     assert_eq!(second["workdir"], "/w/app/2");
     assert_eq!(
         second["box"],
-        json!({"name": "app/2", "repo": "app", "repo_url": "https://example.test/app.git",
+        json!({"name": "app/2", "repo": "o/app", "repo_url": "https://github.com/o/app",
                "branch": "moor/app/2", "lifecycle": "ready", "session_state": "working", "goal": "goal of app/2",
                "box_state": "asleep"})
     );
@@ -291,7 +289,7 @@ fn request_row_attaches_to_its_root() {
     let roots = body(&get(&web, "/tree"))["roots"].clone();
     assert_eq!(
         roots[0]["request"],
-        json!({"key": "k1", "repo": "app", "created_at": 10, "ended_at": null})
+        json!({"key": "k1", "repo": "o/app", "created_at": 10, "ended_at": null})
     );
     assert_eq!(roots[0]["children"][0]["request"], Value::Null);
 }
@@ -335,7 +333,6 @@ fn reads_send_only_commands_that_do_not_wake() {
     let (web, seen) = front(&dir, answers(), &[]);
     let paths = [
         "/tree",
-        "/repos",
         "/boxes/x",
         "/boxes/app/1/artifacts",
         "/boxes/app/1/artifacts/note.txt",
@@ -344,12 +341,11 @@ fn reads_send_only_commands_that_do_not_wake() {
         assert!(get(&web, path).starts_with("HTTP/1.1 200"), "{path}");
     }
     let seen = seen.lock().unwrap().clone();
-    assert!(seen.len() >= 7, "{seen:?}");
+    assert!(seen.len() >= 6, "{seen:?}");
     assert!(seen.iter().any(|c| c == "artifact-read"), "{seen:?}");
     let allowed = [
         "sessions",
         "show",
-        "repos",
         "show-session",
         "artifacts",
         "artifact-read",
@@ -357,17 +353,6 @@ fn reads_send_only_commands_that_do_not_wake() {
     assert!(
         seen.iter().all(|c| allowed.contains(&c.as_str())),
         "{seen:?}"
-    );
-}
-
-#[test]
-fn repos_are_listed() {
-    let dir = tempfile::tempdir().unwrap();
-    let (web, _) = front(&dir, answers(), &[]);
-    let resp = get(&web, "/repos");
-    assert_eq!(
-        body(&resp),
-        json!({"repos": [{"name": "app", "url": "https://example.test/app.git"}]})
     );
 }
 
@@ -407,7 +392,7 @@ fn unreachable_controller_is_502() {
     let client = Client::new(dir.path().join("missing.sock"));
     let h = handler(client, Arc::new(Mutex::new(db)), fallback());
     let web = start(0, TOKEN.to_owned(), h).unwrap();
-    for path in ["/tree", "/repos", "/boxes/x"] {
+    for path in ["/tree", "/boxes/x"] {
         assert!(get(&web, path).starts_with("HTTP/1.1 502"), "{path}");
     }
 }

@@ -17,7 +17,7 @@ fn setup(dir: &std::path::Path) -> (Store, BoxId) {
     let store = Store::open(&dir.join("moor.db"), clock).unwrap();
     let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     (store, id)

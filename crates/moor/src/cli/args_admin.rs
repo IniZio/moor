@@ -27,8 +27,12 @@ pub(super) enum AdminCmd {
 /// Arguments of `env`.
 #[derive(Debug, Args)]
 pub(super) struct EnvArgs {
-    /// Repo to preview; the current one when absent.
-    repo: Option<String>,
+    /// Repo to preview, as OWNER/NAME or a github.com URL; the current checkout's when absent.
+    #[arg(value_parser = super::caller::repo_arg, value_name = "OWNER/NAME|URL")]
+    repo: Option<moor_core::seam::forge::ForgeRepo>,
+    /// Commit or ref to read the repo at; the default branch when absent.
+    #[arg(long)]
+    base: Option<String>,
 }
 
 /// Subcommands of `proxy`.
@@ -75,7 +79,10 @@ impl AdminCmd {
     /// Convert the parsed admin verb into an action.
     pub(super) fn into_action(self) -> Action {
         match self {
-            Self::Env(a) => Action::Request(Request::Env(EnvReq { repo: a.repo })),
+            Self::Env(a) => Action::Request(Request::Env(EnvReq {
+                repo: a.repo,
+                base: a.base,
+            })),
             Self::Proxy(ProxyCmd::Serve(a)) => Action::ProxyServe(BoxId::new(a.box_id)),
             Self::Controller(ControllerCmd::Serve(a)) => Action::ControllerServe(a.config),
             Self::Controller(ControllerCmd::Attach(a)) => Action::ControllerAttach(a.socket),

@@ -22,6 +22,11 @@ names=(
   create_worktree remove_worktree list_worktrees existing_worktree WorktreeEntry worktree_created
   'Worktree {' 'surface::Worktree' Leftover exclude_scratch SCRATCH_DIRS
   UnpushedWork worktree_kept sync_branch BranchSync 'worktree TEXT' 'row.worktree'
+  InReq split_dir in_dir with_dir caller_dir IN_OPERATOR_ONLY ReposReq ReposValue RepoView
+  REPOS_OPERATOR_ONLY RepoEntry RepoTable MoorYamlSource find_repo resolve_repos known_repos
+  repo_cache repo_overlay overlay_config known_repo trust_moor_yaml settings_at_base load_repo
+  main_repo_config main_checkout fetch_default fetch_branch clone_repo commit_of file_at
+  'Identity::of(cx' 'Layer::Git' 'proxy::origin'
 )
 args=()
 for n in "${names[@]}"; do args+=(-e "$n"); done
@@ -37,7 +42,7 @@ fi
 
 texts=()
 for t in crates docs README.md; do [ -e "$t" ] && texts+=("$t"); done
-flag_hits=$(grep -rnIF -e '--no-sync' -e '--sync' \
+flag_hits=$(grep -rnIF -e '--no-sync' -e '--sync' -e '--trust-moor-yaml' \
   --exclude-dir=target --exclude-dir=crabbox \
   "${texts[@]}" || true)
 if [ -n "$flag_hits" ]; then

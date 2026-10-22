@@ -39,7 +39,7 @@ pub(super) fn open(dir: &Path) -> (Store, Arc<FakeClock>) {
 fn insert(name: &str) -> Decision {
     Decision::insert(NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
-        repo: "r".into(),
+        repo: None,
     })
 }
 
@@ -94,7 +94,7 @@ fn open_creates_wal_file_with_schema_version() {
             r.get(0)
         })
         .unwrap();
-    assert_eq!(v, "11");
+    assert_eq!(v, "12");
     drop(raw);
     let (store, _) = open(dir.path());
     assert!(store.open_boxes().unwrap().is_empty());
@@ -285,7 +285,7 @@ fn readers_are_not_blocked_by_an_open_writer() {
     let raw = rusqlite::Connection::open(&path).unwrap();
     raw.execute_batch(
         "BEGIN EXCLUSIVE; UPDATE boxes SET goal = 'dirty'; \
-         INSERT INTO boxes (name, repo, state, created_at, updated_at) VALUES ('x', 'r', 'checking', 0, 0); \
+         INSERT INTO boxes (name, repo, state, created_at, updated_at) VALUES ('x', 'o/r', 'checking', 0, 0); \
          INSERT INTO sessions (box, ordinal, state, started_at) \
          VALUES (last_insert_rowid(), 1, 'starting', 0); \
          INSERT INTO events (box, kind, payload, ts) VALUES (1, 'busy', '{}', 0);",

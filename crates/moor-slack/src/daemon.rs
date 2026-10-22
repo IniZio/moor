@@ -353,11 +353,6 @@ impl Worker {
                 (self.log)(&format!("slack: reply failed: {e}"));
             }
         };
-        let mut say = |channel: &str, text: &str| {
-            if let Err(e) = self.api.post_in_channel(&self.bot_token, channel, text) {
-                (self.log)(&format!("slack: post failed: {e}"));
-            }
-        };
         let mut ephemeral = |channel: &str, user: &str, thread: &str, text: &str| {
             let api = &self.api;
             if let Err(e) = api.post_ephemeral(&self.bot_token, channel, user, thread, text) {
@@ -379,7 +374,6 @@ impl Worker {
         let mut fx = Fx {
             call: &mut call,
             reply: &mut reply,
-            say: &mut say,
             ephemeral: &mut ephemeral,
             check_token: &mut check_token,
             log: &*self.log,

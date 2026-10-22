@@ -4,9 +4,9 @@
 //! secret. `env` acts for no user, so its rows leave resolution open.
 
 use std::collections::BTreeSet;
-use std::path::Path;
 
 use moor_core::config::{BoxSettings, CredPlan, Layer};
+use moor_core::seam::forge::RepoFiles;
 use moor_core::user::SecretName;
 use moor_core::view::env::{EnvItem, EnvKind};
 
@@ -32,14 +32,14 @@ pub(crate) fn plain(kind: EnvKind, name: &str, detail: &str) -> EnvItem {
 }
 
 /// Every credential row, then user MCP rows, then repo MCP rows, for no user in particular.
-pub(crate) fn checked(s: &BoxSettings, worktree: &Path) -> Checked {
+pub(crate) fn checked(s: &BoxSettings, files: &RepoFiles) -> Checked {
     let credentials = s
         .credentials
         .iter()
         .map(|c| credential_item(c, None))
         .collect();
     let mut mcp = user_mcp_items(s, None);
-    mcp.extend(repo_mcp_items(worktree));
+    mcp.extend(repo_mcp_items(files));
     Checked { credentials, mcp }
 }
 
@@ -47,14 +47,14 @@ pub(crate) fn checked(s: &BoxSettings, worktree: &Path) -> Checked {
 /// Empty means the preflight passes.
 pub(crate) fn unresolved(
     s: &BoxSettings,
-    worktree: &Path,
+    files: &RepoFiles,
     have: &BTreeSet<SecretName>,
 ) -> Vec<EnvItem> {
     s.credentials
         .iter()
         .map(|c| credential_item(c, Some(have)))
         .chain(user_mcp_items(s, Some(have)))
-        .chain(repo_mcp_items(worktree))
+        .chain(repo_mcp_items(files))
         .filter(|i| i.resolves == Some(false))
         .collect()
 }
@@ -123,16 +123,15 @@ struct McpApproval {
     all: bool,
 }
 
-/// Read approvals from `.claude/settings{,.local}.json`; moor never writes them.
-fn mcp_approval(repo: &Path) -> McpApproval {
+/// Approvals in the committed `.claude/settings.json`; a local settings file is never pushed, so
+/// it never counts.
+fn mcp_approval(files: &RepoFiles) -> McpApproval {
     let mut a = McpApproval::default();
-    for f in ["settings.json", "settings.local.json"] {
-        let Ok(text) = std::fs::read_to_string(repo.join(".claude").join(f)) else {
-            continue;
-        };
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
-            continue;
-        };
+    if let Some(v) = files
+        .claude_settings
+        .as_deref()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(text).ok())
+    {
         let names = |key: &str| -> Vec<String> {
             v.get(key)
                 .and_then(serde_json::Value::as_array)
@@ -154,23 +153,23 @@ fn mcp_approval(repo: &Path) -> McpApproval {
 }
 
 /// Repo `.mcp.json` servers; each resolves iff approved.
-fn repo_mcp_items(repo: &Path) -> Vec<EnvItem> {
+fn repo_mcp_items(files: &RepoFiles) -> Vec<EnvItem> {
     let item = |name: &str, resolves: bool, error: Option<String>| EnvItem {
         resolves: Some(resolves),
         error,
         ..plain(EnvKind::Mcp, name, ".mcp.json")
     };
-    let Ok(text) = std::fs::read_to_string(repo.join(".mcp.json")) else {
+    let Some(text) = files.mcp_json.as_deref() else {
         return Vec::new();
     };
-    let v = match serde_json::from_str::<serde_json::Value>(&text) {
+    let v = match serde_json::from_str::<serde_json::Value>(text) {
         Ok(v) => v,
         Err(e) => return vec![item(".mcp.json", false, Some(format!("invalid JSON: {e}")))],
     };
     let Some(servers) = v.get("mcpServers").and_then(serde_json::Value::as_object) else {
         return Vec::new();
     };
-    let ap = mcp_approval(repo);
+    let ap = mcp_approval(files);
     servers
         .keys()
         .map(|name| {
@@ -182,7 +181,7 @@ fn repo_mcp_items(repo: &Path) -> Vec<EnvItem> {
                 item(
                     name,
                     false,
-                    Some("needs approval: a dispatched agent blocks on Claude's project MCP prompt; add it to enabledMcpjsonServers in .claude/settings.local.json".to_owned()),
+                    Some("needs approval: a dispatched agent blocks on Claude's project MCP prompt; add it to enabledMcpjsonServers in .claude/settings.json and push it".to_owned()),
                 )
             }
         })

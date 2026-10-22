@@ -54,7 +54,6 @@ fn cx(dir: &Path, engine: &Arc<FakeEngine>) -> (Cx, Arc<ScriptedProc>) {
     let proc = Arc::new(ScriptedProc::new());
     let cx = Cx::fake(
         dir,
-        dir,
         Arc::new(FakeDriver::new()),
         Arc::new(FakeSurface::new()),
         proc.clone(),
@@ -68,7 +67,7 @@ fn working_box(cx: &Cx, session: bool) -> BoxId {
     let store = cx.store().unwrap();
     let nt = NewBox {
         name: BoxName::parse_allow_bare("demo").unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let d = Decision::new(id)
@@ -236,7 +235,7 @@ fn run_in_flight_with_an_unreachable_box_is_busy_and_not_quiet() {
     let store = cx.store().unwrap();
     let nt = NewBox {
         name: BoxName::parse_allow_bare("demo").unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let d = Decision::new(id)

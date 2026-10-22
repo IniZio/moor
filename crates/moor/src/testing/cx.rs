@@ -5,16 +5,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::config::UserConfig;
-use moor_core::domain::decision::{Decision, NewBox};
+use moor_core::domain::decision::{BoxRepo, Decision, NewBox};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::Driver;
+use moor_core::seam::forge::{ForgeRepo, GitAuthor};
 use moor_core::seam::proc::Proc;
 use moor_core::seam::surface::Surface;
 use moor_core::user::{Identity, SecretName, UserId};
 use moor_core::BoxName;
 use moor_core::Secret;
 
-use crate::adapters::git::Git;
 use crate::cx::{Cx, CxParts};
 use crate::env::Env;
 use crate::store::Store;
@@ -29,46 +29,42 @@ impl Cx {
     /// Test context: fake clock, a fake engine, one default credential, git over `proc`.
     pub(crate) fn fake(
         state_dir: &Path,
-        cwd: &Path,
         driver: Arc<dyn Driver>,
         surface: Arc<dyn Surface>,
         proc: Arc<dyn Proc>,
     ) -> Self {
-        Self::fake_with(state_dir, cwd, driver, surface, proc, UserConfig::default())
+        Self::fake_with(state_dir, driver, surface, proc, UserConfig::default())
     }
 
     /// Test context like [`Cx::fake`] with user config `config`.
     pub(crate) fn fake_with(
         state_dir: &Path,
-        cwd: &Path,
         driver: Arc<dyn Driver>,
         surface: Arc<dyn Surface>,
         proc: Arc<dyn Proc>,
         config: UserConfig,
     ) -> Self {
         let clock = Arc::new(FakeClock::new(Ts::from_millis(1000)));
-        Self::fake_with_clock(state_dir, cwd, driver, surface, proc, config, clock)
+        Self::fake_with_clock(state_dir, driver, surface, proc, config, clock)
     }
 
     /// Test context like [`Cx::fake_with`] on a clock the caller also holds.
     #[allow(clippy::too_many_arguments, reason = "fake_with plus the clock")]
     pub(crate) fn fake_with_clock(
         state_dir: &Path,
-        cwd: &Path,
         driver: Arc<dyn Driver>,
         surface: Arc<dyn Surface>,
         proc: Arc<dyn Proc>,
         config: UserConfig,
         clock: Arc<FakeClock>,
     ) -> Self {
-        let cx = Self::bare(state_dir, cwd, (driver, surface, proc), config, clock);
+        let cx = Self::bare(state_dir, (driver, surface, proc), config, clock);
         with_requester(cx, state_dir)
     }
 
     /// Test context like [`Cx::fake`] that acts as no one and has not opened its store.
     pub(crate) fn fake_bare(
         state_dir: &Path,
-        cwd: &Path,
         driver: Arc<dyn Driver>,
         surface: Arc<dyn Surface>,
         proc: Arc<dyn Proc>,
@@ -76,7 +72,6 @@ impl Cx {
         let clock = Arc::new(FakeClock::new(Ts::from_millis(1000)));
         Self::bare(
             state_dir,
-            cwd,
             (driver, surface, proc),
             UserConfig::default(),
             clock,
@@ -86,7 +81,6 @@ impl Cx {
     /// The context over fakes, before it acts as anyone.
     fn bare(
         state_dir: &Path,
-        cwd: &Path,
         (driver, surface, proc): (Arc<dyn Driver>, Arc<dyn Surface>, Arc<dyn Proc>),
         config: UserConfig,
         clock: Arc<FakeClock>,
@@ -100,31 +94,41 @@ impl Cx {
             engine: Arc::new(FakeEngine::new()),
             forge: Arc::new(FakeForge::new()),
             proxy_host: Arc::new(FakeProxyHost::new()),
-            git: Git::new(Arc::clone(&proc)),
-            proc: Arc::clone(&proc),
+            proc,
             config,
             env: Env::default(),
             prompt_window: Duration::from_secs(8),
         })
-        .with_dir(Some(cwd.to_path_buf()))
     }
 }
 
 /// The user [`requester`] is enrolled as: the first in a fresh test store.
 pub(crate) const REQUESTER_USER: UserId = UserId::new(1);
 
-/// Inserts Box `name` of repo `r`, acting for [`REQUESTER_USER`].
+/// Inserts Box `name` with no repo, acting for [`REQUESTER_USER`].
 pub(crate) fn new_box(name: BoxName) -> Decision {
-    new_box_in(name, Path::new("r"))
+    Decision::insert(NewBox { name, repo: None }).requester(REQUESTER_USER)
 }
 
-/// Inserts Box `name` of the repo at `repo`, acting for [`REQUESTER_USER`].
-pub(crate) fn new_box_in(name: BoxName, repo: &Path) -> Decision {
+/// Inserts Box `name` of `repo`, acting for [`REQUESTER_USER`].
+pub(crate) fn new_box_of(name: BoxName, repo: BoxRepo) -> Decision {
     Decision::insert(NewBox {
         name,
-        repo: repo.display().to_string(),
+        repo: Some(repo),
     })
     .requester(REQUESTER_USER)
+}
+
+/// Repo `o/n` with `moor_yaml` at its base, authored by the test requester's account.
+pub(crate) fn box_repo(moor_yaml: Option<&str>) -> BoxRepo {
+    BoxRepo {
+        repo: ForgeRepo::new("o", "n"),
+        moor_yaml: moor_yaml.map(str::to_owned),
+        author: GitAuthor {
+            name: "Ann Dev".to_owned(),
+            email: "1+ann@users.noreply.github.com".to_owned(),
+        },
+    }
 }
 
 /// The identity a test context's requests act as.

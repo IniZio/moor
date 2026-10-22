@@ -1,16 +1,17 @@
 //! Gives a Box the user's git author name and email.
 
 use std::fmt::Write;
-use std::path::Path;
 
 use moor_core::boxscript::quote;
+use moor_core::seam::forge::GitAuthor;
 use moor_core::Warning;
 
 use crate::cx::Cx;
 
-/// The global git `user.name` and `user.email` a Box gets from the author of the host checkout.
+/// The global git `user.name` and `user.email` a Box gets from the account of the requester's
+/// GitHub token, as the forge read them when the Box started.
 ///
-/// Only those two values leave the host. The keys are set inside the clone exec, so
+/// The keys are set inside the clone exec, so
 /// setting them costs no round trip of its own.
 pub(crate) struct Identity {
     /// Each key with its value, `user.name` first.
@@ -18,12 +19,12 @@ pub(crate) struct Identity {
 }
 
 impl Identity {
-    /// The author of `worktree`; `None` when it has neither a name nor an email.
-    pub(crate) fn of(cx: &Cx, worktree: &Path) -> Option<Self> {
-        let author = cx.git().author(worktree).ok()?;
-        let keys: Vec<_> = [("user.name", author.name), ("user.email", author.email)]
+    /// The identity of `author`; `None` when it has neither a name nor an email.
+    pub(crate) fn of(author: &GitAuthor) -> Option<Self> {
+        let keys: Vec<_> = [("user.name", &author.name), ("user.email", &author.email)]
             .into_iter()
-            .filter_map(|(key, value)| value.map(|v| (key, v)))
+            .filter(|(_, value)| !value.is_empty())
+            .map(|(key, value)| (key, value.clone()))
             .collect();
         (!keys.is_empty()).then_some(Self { keys })
     }

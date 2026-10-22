@@ -14,7 +14,6 @@ use std::time::Duration;
 fn cx(dir: &Path) -> Cx {
     Cx::fake(
         dir,
-        Path::new("/w"),
         Arc::new(FakeDriver::new()),
         Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
@@ -41,22 +40,10 @@ fn warnings_drain_in_order() {
 }
 
 #[test]
-fn warn_once_keeps_first_warning_per_code() {
-    let cx = cx(Path::new("/nonexistent"));
-    cx.warn_once(w("a"));
-    cx.warn_once(w("a"));
-    cx.warn_once(w("b"));
-    let got = cx.take_warnings();
-    assert_eq!(got.len(), 2);
-    assert_eq!(got.get(1).map(|x| x.code.as_str()), Some("b"));
-}
-
-#[test]
 fn store_opens_lazily_at_moor_db() {
     let dir = tempfile::tempdir().expect("tempdir");
     let cx = Cx::fake_bare(
         dir.path(),
-        Path::new("/w"),
         Arc::new(FakeDriver::new()),
         Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
@@ -70,7 +57,6 @@ fn store_opens_lazily_at_moor_db() {
 #[test]
 fn accessors_return_injected_values() {
     let cx = cx(Path::new("/nonexistent"));
-    assert_eq!(cx.dir(), Some(Path::new("/w")));
     assert_eq!(cx.config().herdr_session(), "moor");
 }
 

@@ -1,23 +1,11 @@
-//! Tests for `/moor repo`: what it records before the ack and what the repo check posts.
-#![allow(
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::unnecessary_wraps,
-    reason = "test code; helpers build controller answers"
-)]
+//! Tests for `/moor repo`: what it records before the ack.
+#![allow(clippy::panic, clippy::indexing_slicing, reason = "test code")]
 
-use std::cell::RefCell;
-
-use moor_client::ClientError;
-use moor_core::request::Request;
-use moor_core::response::Response;
-use serde_json::json;
-
-use super::{check_repo, parse, record, RepoCmd};
+use super::{parse, record, RepoCmd};
 use crate::command::Allow;
 use crate::db::Db;
 use crate::socket::Slash;
-use crate::worker::{Fx, Job};
+use crate::worker::Job;
 
 fn slash(envelope_id: &str, user: &str, channel: &str, text: &str) -> Slash {
     Slash {
@@ -83,11 +71,7 @@ fn add_records_the_repo_and_its_adder_before_the_ack() {
     let db = db(dir.path());
     let (text, job) = run(&db, &slash("e1", "U1", "C1", "repo add acme/api"));
     assert_eq!(text, "Recorded. This channel works on `acme/api`.");
-    let want = Job::CheckRepo {
-        channel: "C1".into(),
-        repo: "acme/api".into(),
-    };
-    assert_eq!(job, Some(want));
+    assert_eq!(job, None);
     let rows = db.channel_repos("C1").unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(
@@ -97,13 +81,20 @@ fn add_records_the_repo_and_its_adder_before_the_ack() {
 }
 
 #[test]
-fn a_redelivered_add_queues_no_second_check() {
+fn a_repo_that_is_not_owner_name_is_refused_and_not_recorded() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
-    run(&db, &slash("e1", "U1", "C1", "repo add acme/api"));
-    db.remove_channel_repo("C1", "acme/api").unwrap();
-    let (_, job) = run(&db, &slash("e1", "U1", "C1", "repo add acme/api"));
-    assert_eq!(job, None);
+    for (n, repo) in ["api", "a/b/c", "..", "a/.."].into_iter().enumerate() {
+        let (text, _) = run(
+            &db,
+            &slash(&format!("e{n}"), "U1", "C1", &format!("repo add {repo}")),
+        );
+        assert_eq!(
+            text,
+            format!("`{repo}` is not a GitHub repo name. Use `/moor repo add <owner/name>`.")
+        );
+    }
+    assert!(db.channel_repos("C1").unwrap().is_empty());
 }
 
 #[test]
@@ -164,73 +155,4 @@ fn a_user_or_channel_off_the_lists_changes_nothing() {
     assert_eq!(job, None);
     assert!(db.channel_repos("C1").unwrap().is_empty());
     assert!(db.channel_repos("C9").unwrap().is_empty());
-}
-
-/// Runs the repo check of `repo` against a controller that answers `repos` with `answer`;
-/// returns the channel lines and the log lines.
-fn checked(
-    repo: &str,
-    answer: Result<Response, ClientError>,
-) -> (Vec<(String, String)>, Vec<String>) {
-    let said = RefCell::new(Vec::new());
-    let logged = RefCell::new(Vec::new());
-    let mut answer = Some(answer);
-    let mut call = |req: Request| {
-        assert!(matches!(req, Request::Repos(_)), "{req:?}");
-        answer.take().unwrap()
-    };
-    let mut reply = |_: &str, _: &str, _: &str| panic!("the check posts no thread reply");
-    let mut say = |c: &str, t: &str| said.borrow_mut().push((c.to_owned(), t.to_owned()));
-    let log = |line: &str| logged.borrow_mut().push(line.to_owned());
-    let mut check_token = |_| panic!("the check checks no token");
-    let mut ephemeral = |_: &str, _: &str, _: &str, _: &str| panic!("the check shows no one");
-    let mut fx = Fx {
-        call: &mut call,
-        reply: &mut reply,
-        say: &mut say,
-        ephemeral: &mut ephemeral,
-        check_token: &mut check_token,
-        log: &log,
-    };
-    check_repo(&mut fx, "C1", repo);
-    (said.into_inner(), logged.into_inner())
-}
-
-fn listed(names: &[(&str, &str)]) -> Result<Response, ClientError> {
-    let repos: Vec<_> = names
-        .iter()
-        .map(|(name, url)| json!({"name": name, "url": url}))
-        .collect();
-    Ok(Response::ok("repos", Some(json!({ "repos": repos }))))
-}
-
-#[test]
-fn a_repo_the_controller_knows_by_name_or_url_posts_nothing() {
-    let known = [("acme/api", "https://git.example/acme/api.git")];
-    for repo in ["acme/api", "https://git.example/acme/api"] {
-        assert_eq!(checked(repo, listed(&known)), (vec![], vec![]), "{repo}");
-    }
-}
-
-#[test]
-fn an_unknown_repo_gets_one_line_naming_the_known_ones() {
-    let known = [("acme/api", "u1"), ("acme/web", "u2")];
-    let (said, _) = checked("acme/app", listed(&known));
-    let line = "The controller does not know `acme/app`. Known repos: `acme/api`, `acme/web`.";
-    assert_eq!(said, [("C1".to_owned(), line.to_owned())]);
-    let (said, _) = checked("acme/app", listed(&[]));
-    let line = "The controller does not know `acme/app`. It knows no repos.";
-    assert_eq!(said, [("C1".to_owned(), line.to_owned())]);
-}
-
-#[test]
-fn a_controller_that_cannot_answer_is_logged_and_nothing_is_posted() {
-    let hung_up = Err(ClientError::Io(std::io::ErrorKind::ConnectionReset.into()));
-    let (said, logged) = checked("acme/app", hung_up);
-    assert!(said.is_empty());
-    assert_eq!(logged.len(), 1);
-    assert!(
-        logged[0].starts_with("repo check of acme/app: "),
-        "{logged:?}"
-    );
 }

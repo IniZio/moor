@@ -1,13 +1,10 @@
-use std::path::Path;
-
 use moor_core::boxscript::quote;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
 use moor_core::seam::driver::ExecSpec;
 use moor_core::BoxId;
 
-use super::moor_yaml::script_base_yaml;
-use super::setup::{argvs, script_argv, start_as, start_req, start_with};
+use super::setup::{argvs, script_argv, start_as, start_req};
 use super::World;
 use crate::ops::start::run;
 use crate::testing::driver::{is_clone_exec, FakeDriver};
@@ -57,7 +54,7 @@ fn identity_is_set_inside_the_clone_exec_before_the_clone() {
 
 #[test]
 fn without_an_author_the_clone_exec_only_clones() {
-    let (w, _) = start_with("setup: [a]\n", FakeDriver::new());
+    let (w, _) = start_as(("", ""), "setup: [a]\n", FakeDriver::new());
     let text = first_script(&w);
     assert!(text.starts_with("export GIT_TERMINAL_PROMPT=0\n"), "{text}");
     assert!(!text.contains("git config --global"), "{text}");
@@ -68,10 +65,6 @@ fn identity_is_set_again_when_the_box_is_re_provisioned() {
     let (w, v) = start_as(("Ann Dev", "a@x.io"), "setup: [a]\n", FakeDriver::new());
     let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
-    let wt = store.box_row(id).unwrap().unwrap().repo;
-    std::fs::create_dir_all(&wt).unwrap();
-    std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [a]\n").unwrap();
-    script_base_yaml(&w, Some("setup: [a]\n"));
     store
         .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
         .unwrap();
@@ -95,7 +88,7 @@ fn only_global_user_name_and_email_are_written_besides_setup_lines() {
 
 #[test]
 fn identity_adds_no_box_call_to_a_fresh_start() {
-    let (without, _) = start_with("setup: [a]\n", FakeDriver::new());
+    let (without, _) = start_as(("", ""), "setup: [a]\n", FakeDriver::new());
     let (with, _) = start_as(("Ann Dev", "a@x.io"), "setup: [a]\n", FakeDriver::new());
     assert_eq!(with.driver.box_calls(), without.driver.box_calls());
     assert_eq!(with.driver.execs().len(), without.driver.execs().len());

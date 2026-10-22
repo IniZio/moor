@@ -6,8 +6,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use moor_core::config::RepoTable;
-
 /// File name, inside the state directory, of the lock that a running controller holds.
 pub(crate) const CONTROLLER_LOCK: &str = "controller.lock";
 
@@ -16,8 +14,6 @@ pub(crate) const CONTROLLER_LOCK: &str = "controller.lock";
 pub struct Env {
     /// Variable name to value.
     vars: BTreeMap<String, String>,
-    /// Repos the controller knows, by name.
-    repos: Arc<RepoTable>,
     /// The controller's vault key file, when a controller runs this.
     vault_key: Option<PathBuf>,
     /// Set when whoever asked for the request is gone; its streamed children then stop.
@@ -97,19 +93,6 @@ impl Env {
             dir.to_string_lossy().into_owned(),
         );
         self
-    }
-
-    /// Set the repos the controller knows.
-    #[must_use]
-    pub fn with_repos(mut self, repos: RepoTable) -> Self {
-        self.repos = Arc::new(repos);
-        self
-    }
-
-    /// Repos the controller knows, by name.
-    #[must_use]
-    pub fn repos(&self) -> &RepoTable {
-        &self.repos
     }
 
     /// Set the controller's vault key file.

@@ -35,7 +35,7 @@ fn box_view_maps_row_without_box() {
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
-        repo: "r".into(),
+        repo: Some(crate::testing::cx::box_repo(None)),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let fields = Fields {
@@ -45,8 +45,12 @@ fn box_view_maps_row_without_box() {
     store.apply(Decision::new(id).set(fields)).unwrap();
     let v = box_view(&store.box_row(id).unwrap().unwrap(), &UserConfig::default());
     assert_eq!(
-        (v.id, v.name.as_str(), v.repo.as_str()),
-        (id.get(), "t", "r")
+        (
+            v.id,
+            v.name.as_str(),
+            v.repo.as_ref().map(ToString::to_string)
+        ),
+        (id.get(), "t", Some("o/n".to_owned()))
     );
     assert_eq!(v.goal.as_deref(), Some("g"));
     assert!(v.driver.is_none() && v.agent.is_none() && v.run.is_none());
@@ -64,7 +68,7 @@ fn box_view_maps_box() {
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let fields = Fields {
@@ -96,7 +100,7 @@ fn box_view_maps_sleep_reason() {
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let fields = Fields {
@@ -132,7 +136,7 @@ fn box_view_shows_configured_sleep_after() {
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let fields = Fields {
@@ -156,7 +160,7 @@ fn box_view_with_run_fills_run() {
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let row = store.box_row(id).unwrap().unwrap();

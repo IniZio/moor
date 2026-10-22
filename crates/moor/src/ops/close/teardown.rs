@@ -1,7 +1,5 @@
 //! Runs the repo `teardown:` script in the Box before it is released.
 
-use std::path::Path;
-
 use moor_core::boxscript::teardown::teardown_script;
 use moor_core::config::{BoxSettings, Flags};
 use moor_core::domain::boxes::BoxState;
@@ -13,39 +11,32 @@ use super::held;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::box_exec::{self, BoxProxy, Site};
-use crate::ops::common::facts::resolved;
-use crate::ops::common::provision::{moor_yaml::for_teardown, recorded_workdir};
+use crate::ops::common::facts::settings_of;
+use crate::ops::common::provision::recorded_workdir;
 use crate::store::BoxRow;
 
 /// Runs the repo `teardown:` lines as one script in a ready Box.
 ///
 /// Nothing runs without lines or a live Box; a failure only warns, except a Proxy that will not
-/// start, which fails the close unless `force` is set, when it warns like the rest. A host `.moor.yaml` that
-/// differs from the base commit is not used unless `trusted`. The env is the agent's Box env.
-pub(super) fn teardown(
-    cx: &Cx,
-    row: &BoxRow,
-    trusted: bool,
-    force: bool,
-) -> Result<(), CommandError> {
+/// start, which fails the close unless `force` is set, when it warns like the rest. The lines
+/// come from the `.moor.yaml` stored when the Box started. The env is the agent's Box env.
+pub(super) fn teardown(cx: &Cx, row: &BoxRow, force: bool) -> Result<(), CommandError> {
     let ready = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready);
     let Some((b, handle)) = ready.and_then(|b| Some((b, held(b)?))) else {
         return Ok(());
     };
-    let repo = match for_teardown(cx, row, trusted) {
-        Ok(repo) => repo,
+    let cfg = match settings_of(cx, row, &Flags::default()) {
+        Ok(cfg) => cfg,
         Err(e) => {
             warn_teardown(cx, &e.error.to_string());
             return Ok(());
         }
     };
-    let cfg = resolved(cx, repo.as_ref(), &Flags::default());
     if cfg.teardown.is_empty() {
         return Ok(());
     }
-    let repo = Path::new(&row.repo);
     let workdir = b.workdir.as_deref().and_then(recorded_workdir);
-    let Some(proxy) = teardown_proxy(cx, row, handle, repo, &cfg, force)? else {
+    let Some(proxy) = teardown_proxy(cx, row, handle, &cfg, force)? else {
         return Ok(());
     };
     let site = Site {
@@ -84,11 +75,16 @@ fn teardown_proxy(
     cx: &Cx,
     row: &BoxRow,
     handle: &BoxHandle,
-    repo: &Path,
     cfg: &BoxSettings,
     force: bool,
 ) -> Result<Option<BoxProxy>, CommandError> {
-    match box_exec::proxy(cx, row.id, Some(handle.clone()), repo, cfg) {
+    match box_exec::proxy(
+        cx,
+        row.id,
+        Some(handle.clone()),
+        row.repo.as_ref().map(|r| &r.repo),
+        cfg,
+    ) {
         Ok(proxy) => Ok(Some(proxy)),
         Err(e) if force => {
             warn_teardown(cx, &format!("the Proxy could not start: {e}"));
