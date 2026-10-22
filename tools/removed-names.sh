@@ -28,12 +28,16 @@ names=(
   main_repo_config main_checkout fetch_default fetch_branch clone_repo commit_of file_at
   'Identity::of(cx' 'Layer::Git' 'proxy::origin'
 )
-args=()
-for n in "${names[@]}"; do args+=(-e "$n"); done
-hits=$(grep -rnF "${args[@]}" \
-  --include='*.rs' --include='*.sh' \
-  --exclude='tests.rs' --exclude-dir=tests --exclude-dir=target \
-  crates/ || true)
+# Plain identifiers match as whole words, so `in_dir` does not hit `builtin_direct`.
+# Entries holding punctuation or spaces cannot be whole words; they stay fixed substrings.
+word_args=(); sub_args=()
+for n in "${names[@]}"; do
+  if [[ "$n" =~ [^A-Za-z0-9_] ]]; then sub_args+=(-e "$n"); else word_args+=(-e "$n"); fi
+done
+scan=(-rn --include='*.rs' --include='*.sh'
+  --exclude='tests.rs' --exclude-dir=tests --exclude-dir=target)
+hits=$( { grep "${scan[@]}" -wF "${word_args[@]}" crates/ || true
+          grep "${scan[@]}" -F "${sub_args[@]}" crates/ || true; } | sort -u )
 if [ -n "$hits" ]; then
   echo "removed-names: removed names found"
   echo "$hits"
