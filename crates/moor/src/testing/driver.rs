@@ -63,6 +63,7 @@ struct State {
     tunnel: tunnel::TunnelState,
     sleep_kind: Option<SleepKind>,
     local: Option<runs::LocalBox>,
+    cut_follow: Option<u64>,
 }
 
 /// One `copy_out` call: handle, source and destination.

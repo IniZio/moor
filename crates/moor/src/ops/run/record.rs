@@ -1,11 +1,11 @@
 //! The extra steps of `run --record`: read the Box HEAD, refuse a dirty Box checkout, wrap the
-//! command so the Box runs it from a clean checkout of HEAD, and tell whether the checkout moved.
+//! command so the Box runs it from a clean checkout of HEAD.
 
 use std::time::Duration;
 
 use moor_core::boxscript::command_line;
 use moor_core::boxscript::quote;
-use moor_core::boxscript::record::{head_script, parse_head, record_script, HEAD_FILE, MOVED_FILE};
+use moor_core::boxscript::record::{head_script, parse_head, record_script, HEAD_FILE};
 use moor_core::seam::driver::{BoxStep, ExecOutcome, StepDone};
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxPath, ErrorKind, Sha};
@@ -73,21 +73,8 @@ pub(super) fn wrap(setup: &[String], argv: &[String], head: &Sha) -> Vec<String>
     ]
 }
 
-/// True when the record script left its moved-checkout file; a read failure counts as not moved,
-/// since the script already failed the run.
-pub(super) fn moved(cx: &Cx, target: &Target) -> bool {
-    workdir(cx, target)
-        .and_then(|w| BoxPath::under(w.as_str(), MOVED_FILE).map_err(|e| e.to_string()))
-        .and_then(|path| {
-            cx.driver()
-                .peek_file(&target.handle, &path)
-                .map_err(|e| e.to_string())
-        })
-        .is_ok_and(|text| text.is_some())
-}
-
 /// The Box workdir, as stored or else as the driver names it.
-fn workdir(cx: &Cx, target: &Target) -> Result<BoxPath, String> {
+pub(super) fn workdir(cx: &Cx, target: &Target) -> Result<BoxPath, String> {
     target.workdir.as_ref().map_or_else(
         || {
             cx.driver()

@@ -25,6 +25,7 @@ pub(crate) enum ProxyHostCall {
 
 struct State {
     box_port: u16,
+    egress_port: u16,
     ensure_error: Option<ProxyHostError>,
     status: Result<ProxyStatus, ProxyHostError>,
     upcoming: VecDeque<ProxyStatus>,
@@ -44,6 +45,7 @@ impl FakeProxyHost {
         Self {
             state: Arc::new(Mutex::new(State {
                 box_port: FAKE_BOX_PORT,
+                egress_port: FAKE_EGRESS_PORT,
                 ensure_error: None,
                 status: Ok(ProxyStatus::Absent),
                 upcoming: VecDeque::new(),
@@ -51,6 +53,11 @@ impl FakeProxyHost {
                 calls: Vec::new(),
             })),
         }
+    }
+
+    /// Every `ensure` returns egress port `port`.
+    pub(crate) fn egress_port(self, port: u16) -> Self {
+        self.with_state(|s| s.egress_port = port)
     }
 
     fn with_state(self, f: impl FnOnce(&mut State)) -> Self {
@@ -110,7 +117,7 @@ impl ProxyHost for FakeProxyHost {
         }
         Ok(ProxyEndpoint {
             box_port: s.box_port,
-            egress_port: FAKE_EGRESS_PORT,
+            egress_port: s.egress_port,
             ca_pem: String::new(),
         })
     }

@@ -13,10 +13,12 @@ use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::exec_env::Purpose;
-use moor_core::seam::driver::{ExecOutcome, ExecSpec};
+use moor_core::seam::clock::Ts;
+use moor_core::seam::driver::{ExecSpec, Launched};
+use moor_core::seam::proc::Deadline;
 use moor_core::seam::proc::Output;
 use moor_core::view::run::RunValue;
-use moor_core::{ErrorKind, RunId, RunReq, Sha};
+use moor_core::{BoxPath, ErrorKind, RunId, RunReq, Sha};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -27,6 +29,7 @@ use crate::ops::common::provisioning::dead_provisioning;
 use crate::ops::common::wake::wake_and_revive;
 use crate::store::{BoxRow, NewRun, RunOutcome, Store, StoreError};
 
+mod detached;
 mod follow;
 mod ready;
 mod record;
@@ -128,24 +131,24 @@ fn launch(
         argv: exec.argv(argv),
         env: exec.vars(),
         cwd: exec.cwd(),
-        output: Some(output),
+        output: None,
     };
-    let outcome = follow::during(spec.output.as_ref(), sink, || {
-        cx.driver().exec(&target.handle, &spec, exec.deadline())
-    });
-    let outcome = match outcome {
-        Ok(outcome) => outcome,
-        Err(e) => {
-            let message = e.to_string();
-            finish(store, id, Some(message.clone()));
-            return Err(CommandError::new(ErrorKind::Failed, message));
-        }
-    };
-    let (exit, interrupted) = match outcome {
-        ExecOutcome::Exited { code } => (Some(code), false),
-        ExecOutcome::Interrupted => (None, true),
-    };
-    let moved = sha.is_some() && exit.is_some_and(|c| c != 0) && record::moved(cx, target);
+    let (workdir, until) = start(cx, store, target, id, &spec, exec.deadline())
+        .inspect_err(|e| finish(store, id, Some(e.error.to_string())))?;
+    let followed = follow::during(Some(&output), sink, || {
+        follow_into(cx, target, &workdir, id, until, &output)
+    })
+    .inspect_err(|e| finish(store, id, Some(e.error.to_string())))?;
+    let (exit, interrupted) = followed.exit();
+    if let Some(error) = followed.error() {
+        let out = RunOutcome {
+            error: Some(error.clone()),
+            ..RunOutcome::ended(exit, interrupted)
+        };
+        store.finish_run(id, out)?;
+        return Err(CommandError::new(ErrorKind::Failed, error));
+    }
+    let moved = sha.is_some() && exit.is_some_and(|c| c != 0) && followed.moved();
     store.finish_run(id, ended(exit, interrupted, moved))?;
     Ok(RunValue {
         ran: true,
@@ -156,6 +159,76 @@ fn launch(
         record: req.record.clone(),
         log,
     })
+}
+
+/// Starts run `id` detached in the Box and records its Box pid; returns the Box workdir the run
+/// reports its end in, and when its deadline passes.
+fn start(
+    cx: &Cx,
+    store: &Store,
+    target: &ready::Target,
+    id: RunId,
+    spec: &ExecSpec,
+    deadline: Deadline,
+) -> Result<(BoxPath, Ts), CommandError> {
+    let failed = |m: String| CommandError::new(ErrorKind::Failed, m);
+    let workdir = record::workdir(cx, target).map_err(failed)?;
+    let started = store
+        .run(id)?
+        .ok_or_else(|| failed(format!("run {} has no row", id.get())))?
+        .started_at;
+    match cx.driver().launch_run(&target.handle, id.get(), spec) {
+        Ok(Launched::Started { pid }) => store.set_run_pid(id, pid)?,
+        Ok(Launched::AlreadyLaunched) => {
+            return Err(failed(format!(
+                "the Box already holds a run {}; use a fresh state dir or a fresh Box",
+                id.get()
+            )))
+        }
+        Err(e) => return Err(failed(e.to_string())),
+    }
+    Ok((workdir, started.saturating_add(deadline.0)))
+}
+
+/// Follows run `id` into the host side of `output` until it ends.
+fn follow_into(
+    cx: &Cx,
+    target: &ready::Target,
+    workdir: &BoxPath,
+    id: RunId,
+    until: Ts,
+    output: &Output,
+) -> Result<detached::Ended, CommandError> {
+    let Output::Log(path) = output else {
+        let mut out = std::io::stdout();
+        return Ok(detached::follow(
+            cx,
+            target,
+            workdir,
+            id,
+            until,
+            (0, &mut out),
+        ));
+    };
+    let opened = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .and_then(|f| Ok((f.metadata()?.len(), f)));
+    let (from, mut file) = opened.map_err(|e| {
+        CommandError::new(
+            ErrorKind::Failed,
+            format!("cannot open {}: {e}", path.display()),
+        )
+    })?;
+    Ok(detached::follow(
+        cx,
+        target,
+        workdir,
+        id,
+        until,
+        (from, &mut file),
+    ))
 }
 
 /// Where in the machine the Box's commands run.

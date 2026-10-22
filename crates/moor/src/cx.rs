@@ -156,6 +156,14 @@ impl Cx {
         self.prompt_window
     }
 
+    /// This context answering a request that the returned flag stops.
+    #[cfg(test)]
+    pub(crate) fn cancellable(mut self) -> (Self, crate::env::Cancel) {
+        let cancel = crate::env::Cancel::default();
+        let env = std::mem::take(&mut self.env).with_cancel(cancel.clone());
+        (Self { env, ..self }, cancel)
+    }
+
     /// This context watching for first-run prompts for `window`.
     #[cfg(test)]
     pub(crate) const fn with_prompt_window(mut self, window: Duration) -> Self {
