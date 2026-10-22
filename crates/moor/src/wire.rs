@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
 use moor_core::BoxId;
@@ -134,6 +134,10 @@ pub(crate) fn reconcile_proxies(env: &Env) -> Vec<String> {
     adopt::reconcile(&host, proc.as_ref(), clock, &state_dir)
 }
 
+/// Whether the installed crabbox's `ssh` takes `--no-probe`. The controller wires a driver per
+/// request and tick, so the answer is kept for the whole process: crabbox is asked once.
+static NO_PROBE: LazyLock<Arc<OnceLock<bool>>> = LazyLock::new(Arc::default);
+
 /// Real adapters from the environment, not yet assembled into a context, and the warning
 /// when calls to a Box cannot share an ssh connection through control sockets in `sockets`.
 fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), CommandError> {
@@ -160,7 +164,8 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
         Arc::clone(&rng),
     )
     .with_lookup_deadlines(lookup_deadlines(&config.drivers))
-    .with_state_dir(state_dir.clone(), sockets);
+    .with_state_dir(state_dir.clone(), sockets)
+    .sharing_no_probe(Arc::clone(&NO_PROBE));
     let link_warning = crabbox.link_warning();
     let driver: Arc<dyn Driver> = Arc::new(crabbox);
     let engine = BoxAgent::new(

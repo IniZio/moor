@@ -180,6 +180,7 @@ impl Lab {
         let driver = Crabbox::new(self.proc.clone(), clock, Arc::new(FakeRng::default()))
             .with_state_dir(Some(state), self.sockets.clone());
         driver.version_ok.set(()).unwrap();
+        driver.no_probe.set(false).unwrap();
         driver
     }
 

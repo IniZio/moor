@@ -12,6 +12,8 @@ use super::Crabbox;
 use crate::testing::proc::{Reply, ScriptedProc};
 
 pub(super) mod fake_ssh;
+mod lookup;
+mod master;
 mod pinned;
 mod slug;
 mod workdir;

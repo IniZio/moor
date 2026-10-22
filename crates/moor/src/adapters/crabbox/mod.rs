@@ -62,6 +62,10 @@ pub(crate) struct Crabbox {
     rng: Arc<dyn Rng>,
     /// Set once crabbox has passed the version check.
     version_ok: OnceLock<()>,
+    /// Whether `crabbox ssh` takes `--no-probe`, asked on the first lookup; may be shared.
+    no_probe: Arc<OnceLock<bool>>,
+    /// How often a running Box command touches the Box's lease.
+    touch_every: Duration,
     /// Lookup deadlines that replace the built-in ones, keyed by provider id.
     lookup_deadlines: BTreeMap<String, Duration>,
     /// Resolved ssh words per lease handle, kept for this driver's lifetime.
@@ -83,6 +87,8 @@ impl Crabbox {
             clock,
             rng,
             version_ok: OnceLock::new(),
+            no_probe: Arc::default(),
+            touch_every: exec::TOUCH_EVERY,
             lookup_deadlines: BTreeMap::new(),
             targets: Mutex::new(HashMap::new()),
             links: None,
@@ -129,11 +135,12 @@ impl Crabbox {
         Ok(())
     }
 
-    /// A driver whose waits advance a fake clock and whose version check is already passed.
+    /// A driver on a fake clock that passed the version check and lacks `ssh --no-probe`.
     #[cfg(test)]
     pub(crate) fn fake(proc: Arc<dyn Proc>) -> Self {
         let driver = Self::fake_unchecked(proc);
         let _ = driver.version_ok.set(());
+        let _ = driver.no_probe.set(false);
         driver
     }
 

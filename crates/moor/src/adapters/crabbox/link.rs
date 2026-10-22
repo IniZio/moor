@@ -25,9 +25,9 @@ use super::errors::{one_line, transport_loss, EXIT_SSH};
 use super::{pin, Crabbox};
 use crate::adapters::sockets::{private_dir, short_hash};
 
-/// Seconds a master stays up after its last call: long enough to bridge probe ticks and
-/// back-to-back commands, short enough that a stopped moor leaves no connection open for long.
-const PERSIST_SECS: u32 = 120;
+/// Seconds a master stays up after its last call: as long as a saved target lives, so a Box
+/// used within that time pays for no connect, and the master and its target expire together.
+const PERSIST_SECS: u32 = 600;
 /// Milliseconds a saved target stands in for a lookup. A lookup also touches the Box's lease,
 /// so a busy Box still gets one well inside crabbox's 30 min default idle timeout.
 const TARGET_TTL_MS: i64 = 10 * 60 * 1000;
@@ -46,6 +46,8 @@ pub(super) struct Dirs {
     sockets: PathBuf,
     /// The uid that must own `sockets`: the uid moor runs as.
     owner: u32,
+    /// Seconds a master stays up after its last call.
+    persist: u32,
 }
 
 /// Where the shared connection of one Box lives.
@@ -56,6 +58,8 @@ pub(super) struct Link {
     target: PathBuf,
     /// Where the master writes its errors: ssh sends a persisted master's stderr to /dev/null.
     log: PathBuf,
+    /// Seconds the master stays up after its last call.
+    persist: u32,
 }
 
 /// The target words the master connects with, and when they were looked up.
@@ -77,7 +81,17 @@ impl Crabbox {
             state,
             sockets,
             owner,
+            persist: PERSIST_SECS,
         });
+        self
+    }
+
+    /// Keeps each master up for `secs` after its last call, in place of [`PERSIST_SECS`].
+    #[cfg(test)]
+    pub(super) const fn with_persist(mut self, secs: u32) -> Self {
+        if let Some(dirs) = self.links.as_mut() {
+            dirs.persist = secs;
+        }
         self
     }
 
@@ -109,6 +123,7 @@ impl Crabbox {
             log: dirs.sockets.join(format!("{scoped}.log")),
             socket: dirs.sockets.join(scoped),
             target: dirs.state.join("ssh").join(format!("{name}.target")),
+            persist: dirs.persist,
         })
     }
 }
@@ -159,7 +174,7 @@ impl Link {
             "-o".to_owned(),
             "ControlMaster=auto".to_owned(),
             "-o".to_owned(),
-            format!("ControlPersist={PERSIST_SECS}"),
+            format!("ControlPersist={}", self.persist),
             "-o".to_owned(),
             format!("ControlPath={}", self.socket.display()),
             "-E".to_owned(),
