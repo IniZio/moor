@@ -18,13 +18,15 @@ pub const REFUSED: i32 = 3;
 /// Exit code of [`follow_script`] when the run's process is gone and left no exit code.
 pub const LOST: i32 = 4;
 
-/// Defines `__moor_ident PID`, which prints the boot id and the start time of process `PID`.
-/// The start time is field 22 of `/proc/PID/stat`, counted after the last `)` because the
-/// command name before it may hold spaces and `)`.
+/// Defines `__moor_ident PID`, which prints the boot id and the start time of process `PID`,
+/// and fails once it has exited, even while its parent has not reaped it. The state and the
+/// start time are fields 3 and 22 of `/proc/PID/stat`, counted after the last `)` because the
+/// command name before them may hold spaces and `)`.
 const IDENT_FN: &str = r#"__moor_ident() {
   __moor_boot=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null) || return 1
   __moor_stat=$(cat "/proc/$1/stat" 2>/dev/null) || return 1
   set -- ${__moor_stat##*)}
+  case "$1" in Z|X) return 1 ;; esac
   [ -n "${20}" ] || return 1
   printf '%s %s\n' "$__moor_boot" "${20}"
 }

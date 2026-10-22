@@ -355,6 +355,42 @@ fn a_pid_reused_by_an_unrelated_group_leader_is_not_the_run() {
     stranger.wait().unwrap();
 }
 
+/// The state letter of `pid` in `/proc/PID/stat`.
+fn proc_state(pid: u32) -> Option<String> {
+    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    Some(stat.rsplit_once(')')?.1.split_whitespace().next()?.to_owned())
+}
+
+#[test]
+fn a_leader_left_a_zombie_reads_as_gone() {
+    // This test is the zombie's parent and reaps it only at the end, as a slow Box init would.
+    let mut leader = Command::new("true").process_group(0).spawn().unwrap();
+    assert!(
+        eventually(|| proc_state(leader.id()).as_deref() == Some("Z")),
+        "the leader never became a zombie"
+    );
+    let (boot, start) = ident(leader.id());
+    let sb = Scratch::new("zombie");
+    fs::create_dir_all(sb.run_dir()).unwrap();
+    fs::write(sb.run_dir().join("start"), format!("{boot} {start}\n")).unwrap();
+    fs::write(sb.run_dir().join("pid"), format!("{}\n", leader.id())).unwrap();
+    fs::write(sb.run_dir().join("log"), b"partial").unwrap();
+
+    assert_eq!(sb.end().outcome, Outcome::Lost);
+    let mut follow = sb
+        .sh(&follow_script(RUN, 0))
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    assert_eq!(
+        wait_bounded(&mut follow, 5).and_then(|s| s.code()),
+        Some(LOST),
+        "follow ends as lost"
+    );
+    fs::remove_file(sb.run_dir().join("pid")).unwrap();
+    leader.wait().unwrap();
+}
+
 #[test]
 fn launch_records_the_leader_it_started() {
     let sb = Scratch::new("ident");
