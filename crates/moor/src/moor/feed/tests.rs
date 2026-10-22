@@ -172,7 +172,7 @@ fn events_after_maps_rows_to_frames_strictly_after_the_cursor() {
 fn settle_open_stores_an_idled_event_for_a_quiet_agent() {
     let dir = tempfile::tempdir().unwrap();
     let moor = Moor::from_cx(quiet_agent(dir.path()));
-    let msgs = moor.settle_open();
+    let msgs = moor.settle_open(&|| false);
     assert!(msgs.is_empty(), "{msgs:?}");
     let frames = moor.events_after(0, 100).unwrap();
     assert!(

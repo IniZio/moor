@@ -1,9 +1,13 @@
 //! Tests for the controller's settle pass.
 
 use std::io::{self, Write};
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{mpsc, Arc};
+use std::thread;
 use std::time::Duration;
+
+use moor_core::config::UserConfig;
 
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes};
 use moor_core::controller::WatchFilter;
@@ -13,13 +17,16 @@ use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::ExtraEvent;
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::{SessionInput, SessionState};
-use moor_core::seam::clock::Ts;
+use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::driver::{AcquireReq, Driver, ExecOutcome};
 use moor_core::user::Viewer;
 use moor_core::{BoxId, BoxName, ProviderId, ShowReq};
 use sha2::{Digest, Sha256};
 
+use super::passes;
+use crate::controller::drain::{serve_until, Drain, Handler};
 use crate::controller::watch::{stream, Ask, Limits};
+use crate::controller::Sink;
 use crate::cx::Cx;
 use crate::env::Env;
 use crate::ops::common::boxlock::BoxLock;
@@ -155,7 +162,7 @@ impl Write for StopAtIdled {
 fn pass_settles_a_quiet_agent_without_any_client() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, id) = quiet_agent(dir.path());
-    let messages = Moor::from_cx(cx).settle_open();
+    let messages = Moor::from_cx(cx).settle_open(&|| false);
     assert!(messages.is_empty(), "{messages:?}");
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.path().join(STORE_FILE), clock).unwrap();
@@ -177,7 +184,7 @@ fn pass_settles_a_quiet_agent_without_any_client() {
 fn stream_delivers_idle_without_any_show() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = quiet_agent(dir.path());
-    Moor::from_cx(cx).settle_open();
+    Moor::from_cx(cx).settle_open(&|| false);
     let env = Env::from_pairs([
         ("MOOR_STATE_DIR", dir.path().to_str().unwrap()),
         ("MOOR_CONFIG", "/nonexistent/moor.yaml"),
@@ -235,7 +242,7 @@ fn an_agent_that_idles_has_its_artifacts_collected() {
             .copy_text(BODY),
     );
     let (cx, id) = quiet_agent_on(dir.path(), &driver);
-    let messages = Moor::from_cx(cx).settle_open();
+    let messages = Moor::from_cx(cx).settle_open(&|| false);
     assert!(messages.is_empty(), "{messages:?}");
     let cx = view(dir.path(), &driver);
     let kinds = kinds(&cx, id);
@@ -281,11 +288,11 @@ fn a_held_box_lock_skips_the_collection() {
     );
     let moor = Moor::from_cx(cx);
     let held = held_lock(&reader, id);
-    assert!(moor.settle_open().is_empty());
+    assert!(moor.settle_open(&|| false).is_empty());
     assert_eq!(artifact_execs(&driver), 0);
     assert_eq!(stored(&reader, id), 0);
     drop(held);
-    assert!(moor.settle_open().is_empty());
+    assert!(moor.settle_open(&|| false).is_empty());
     assert_eq!(artifact_execs(&driver), 1);
     assert_eq!(stored(&reader, id), 1);
 }
@@ -314,7 +321,7 @@ fn an_idle_written_by_show_is_collected_by_the_next_pass() {
         (BoxLifecycle::Ready, SessionState::Idle)
     );
     assert_eq!(artifact_execs(&driver), 0);
-    let messages = Moor::from_cx(cx).settle_open();
+    let messages = Moor::from_cx(cx).settle_open(&|| false);
     assert!(messages.is_empty(), "{messages:?}");
     let cx = view(dir.path(), &driver);
     assert!(kinds(&cx, id).iter().any(|k| k == "artifact_published"));
@@ -331,10 +338,10 @@ fn a_pass_with_no_new_idle_reads_no_artifacts() {
     );
     let (cx, id) = quiet_agent_on(dir.path(), &driver);
     let moor = Moor::from_cx(cx);
-    assert!(moor.settle_open().is_empty());
+    assert!(moor.settle_open(&|| false).is_empty());
     assert_eq!(artifact_execs(&driver), 1);
-    assert!(moor.settle_open().is_empty());
-    assert!(moor.settle_open().is_empty());
+    assert!(moor.settle_open(&|| false).is_empty());
+    assert!(moor.settle_open(&|| false).is_empty());
     assert_eq!(artifact_execs(&driver), 1);
     assert_eq!(stored(&view(dir.path(), &driver), id), 1);
 }
@@ -347,7 +354,7 @@ fn a_steered_turn_on_an_idle_box_ends_and_collects_in_one_pass() {
     let (cx, id) = agent_with_hook(dir.path(), &driver, later);
     let moor = Moor::from_cx(cx);
     let cx = view(dir.path(), &driver);
-    assert!(moor.settle_open().is_empty());
+    assert!(moor.settle_open(&|| false).is_empty());
     let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(
         (row.lifecycle, row.session),
@@ -364,7 +371,7 @@ fn a_steered_turn_on_an_idle_box_ends_and_collects_in_one_pass() {
         .apply(Decision::new(id).event(steered))
         .unwrap();
     driver.push_artifact_index(listing());
-    let messages = moor.settle_open();
+    let messages = moor.settle_open(&|| false);
     assert!(messages.is_empty(), "{messages:?}");
     let kinds = kinds(&cx, id);
     let at = |kind: &str| kinds.iter().position(|k| k == kind);
@@ -379,7 +386,7 @@ fn a_failed_index_warns_and_the_box_still_idles() {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new().exec_results([Ok(ExecOutcome::Exited { code: 1 })]));
     let (cx, id) = quiet_agent_on(dir.path(), &driver);
-    let messages = Moor::from_cx(cx).settle_open();
+    let messages = Moor::from_cx(cx).settle_open(&|| false);
     assert!(
         messages.iter().any(|m| m.contains("index script exited 1")),
         "{messages:?}"
@@ -391,4 +398,151 @@ fn a_failed_index_warns_and_the_box_still_idles() {
         (BoxLifecycle::Ready, SessionState::Idle)
     );
     assert_eq!(stored(&cx, id), 0);
+}
+
+/// Time enough to pass the default `box.sleep_after`.
+const LONG: Duration = Duration::from_mins(31);
+
+const WAIT: Duration = Duration::from_secs(10);
+
+/// Builds a fresh context over one state dir, clock and driver, as each pass wires one.
+type Wire = Arc<dyn Fn() -> Cx + Send + Sync>;
+
+/// Boxes `a` and `b` idle past `box.sleep_after`, with the wiring that settles them.
+fn two_due(dir: &Path, driver: &Arc<FakeDriver>) -> Wire {
+    let seed = engine_cx(dir, driver, &Arc::new(FakeEngine::new()));
+    working(&seed, driver, "a", "s-a");
+    working(&seed, driver, "b", "s-b");
+    let hook = idle_hook(&seed);
+    let engine = Arc::new(
+        FakeEngine::new()
+            .probes("s-a", hook.clone())
+            .probes("s-b", hook),
+    );
+    let clock = Arc::new(FakeClock::new(seed.clock().now()));
+    let (dir, driver, at) = (dir.to_owned(), Arc::clone(driver), Arc::clone(&clock));
+    let wire: Wire = Arc::new(move || {
+        Cx::fake_with_clock(
+            &dir,
+            driver.clone(),
+            Arc::new(FakeSurface::new()),
+            Arc::new(ScriptedProc::new()),
+            UserConfig::default(),
+            Arc::clone(&at),
+        )
+        .with_engine(engine.clone())
+    });
+    let idled = Moor::from_cx(wire()).settle_open(&|| false);
+    assert!(idled.is_empty(), "{idled:?}");
+    clock.sleep(LONG);
+    wire
+}
+
+fn quiet() -> Sink {
+    Arc::new(std::sync::Mutex::new(io::sink()))
+}
+
+fn sleeps(driver: &FakeDriver) -> usize {
+    driver
+        .calls()
+        .iter()
+        .filter(|c| c.starts_with("sleep "))
+        .count()
+}
+
+#[test]
+fn the_drain_waits_for_an_auto_sleep_in_flight_and_no_other_box_sleeps() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new().exec_stdout(["", ""]));
+    let wire = two_due(dir.path(), &driver);
+    let (sleeping, asleep) = mpsc::channel();
+    let (release, released) = mpsc::channel::<()>();
+    let released = std::sync::Mutex::new(released);
+    driver.on_sleep(move || {
+        sleeping.send(()).ok();
+        released.lock().unwrap().recv_timeout(WAIT).ok();
+    });
+    let drain = Arc::new(Drain::default());
+    let pass = Arc::clone(&wire);
+    passes(
+        Duration::from_millis(10),
+        &drain,
+        &quiet(),
+        move |draining| Moor::from_cx(pass()).settle_open(draining),
+    );
+    asleep
+        .recv_timeout(WAIT)
+        .expect("a pass began an auto-sleep");
+    let (wake, signal) = UnixStream::pair().unwrap();
+    let (done, returned) = mpsc::channel();
+    let serving = Arc::clone(&drain);
+    thread::spawn(move || {
+        let none: [(UnixListener, Handler); 0] = [];
+        done.send(serve_until(&none, &wake, &serving, WAIT, &quiet()))
+            .ok();
+    });
+    (&signal).write_all(&[1]).unwrap();
+    while !drain.begun() {
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        returned.recv_timeout(Duration::from_millis(300)).is_err(),
+        "the drain returned while an auto-sleep was mid-flight"
+    );
+    release.send(()).unwrap();
+    assert_eq!(returned.recv_timeout(WAIT).expect("drained"), 0);
+    let store = wire();
+    let mut lifecycles: Vec<BoxLifecycle> = store
+        .store()
+        .unwrap()
+        .open_boxes()
+        .unwrap()
+        .iter()
+        .map(|row| row.lifecycle)
+        .collect();
+    lifecycles.sort_by_key(|l| format!("{l:?}"));
+    assert_eq!(lifecycles, [BoxLifecycle::Asleep, BoxLifecycle::Ready]);
+    thread::sleep(Duration::from_millis(100));
+    assert_eq!(
+        sleeps(&driver),
+        1,
+        "a Box began to sleep after the drain began"
+    );
+}
+
+#[test]
+fn no_settle_pass_starts_once_the_drain_began() {
+    let drain = Arc::new(Drain::default());
+    drain.begin();
+    let (ran, seen) = mpsc::channel();
+    passes(Duration::from_millis(10), &drain, &quiet(), move |_| {
+        ran.send(()).ok();
+        Vec::new()
+    });
+    assert!(
+        seen.recv_timeout(Duration::from_millis(300)).is_err(),
+        "a settle pass ran after the drain began"
+    );
+}
+
+#[test]
+fn a_drain_that_begins_after_the_settle_skips_the_artifact_collection() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(
+        FakeDriver::new()
+            .artifact_index([listing()])
+            .copy_text(BODY),
+    );
+    let (cx, id) = quiet_agent_on(dir.path(), &driver);
+    let asked = std::sync::atomic::AtomicUsize::new(0);
+    let draining = || asked.fetch_add(1, std::sync::atomic::Ordering::SeqCst) > 0;
+    Moor::from_cx(cx).settle_open(&draining);
+    let cx = view(dir.path(), &driver);
+    let kinds = kinds(&cx, id);
+    assert!(kinds.iter().any(|k| k == "idled"), "{kinds:?}");
+    assert_eq!(
+        artifact_execs(&driver),
+        0,
+        "artifacts were read after the drain"
+    );
 }

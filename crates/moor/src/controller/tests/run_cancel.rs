@@ -187,6 +187,8 @@ fn a_drain_lets_a_run_in_flight_finish_and_closes_idle_connections() {
     let started = dir.path().join("started");
     assert!(within_wait(|| started.exists()), "the command started");
     signal.write_all(b"x").unwrap();
+    let ended = frame(&mut idle_read);
+    assert_eq!(ended["kind"], "restarting", "{ended}");
     let mut rest = String::new();
     idle_read.read_line(&mut rest).unwrap();
     assert_eq!(rest, "", "the idle connection was closed by the drain");

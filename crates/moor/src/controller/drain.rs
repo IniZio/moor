@@ -1,7 +1,8 @@
 //! Draining on SIGTERM: stop accepting, let what is in flight finish, then return.
 //!
 //! A connect that arrives once the drain has begun is not accepted. It waits in the listen
-//! backlog and fails when the controller exits and the listener closes.
+//! backlog and fails when the controller exits and the listener closes. One accepted in the
+//! instant the drain began gets a `restarting` frame.
 
 use std::io;
 use std::net::Shutdown;
@@ -15,27 +16,29 @@ use rustix::event::{poll, PollFd, PollFlags};
 use rustix::io::Errno;
 use signal_hook::consts::SIGTERM;
 
-use super::{log, Sink};
+use super::{conn, log, Sink};
 use crate::Moor;
 
-/// The connections one controller serves, and whether it has begun to drain.
+/// The connections one controller serves and the settle pass it runs, and whether it has
+/// begun to drain.
 #[derive(Debug, Default)]
 pub(crate) struct Drain {
     /// Set once the drain begins; never cleared.
     begun: AtomicBool,
-    /// Each connection being served.
+    /// Each connection being served and each settle pass running.
     live: Mutex<Live>,
-    /// Notified each time a connection ends.
+    /// Notified each time one ends.
     ended: Condvar,
 }
 
-/// The connections being served, each with a handle that ends its reads while it is idle.
+/// The work the drain waits for: each connection with a handle that ends its reads while it
+/// is idle, and each settle pass with none.
 #[derive(Debug, Default)]
 struct Live {
-    /// Number for the next admitted connection.
+    /// Number for the next one admitted.
     next: u64,
-    /// Admitted connections by number; the handle is out while the connection answers a
-    /// request, so the drain leaves its reads alone.
+    /// Admitted work by number; a connection's handle is out while it answers a request, so
+    /// the drain leaves its reads alone.
     streams: Vec<(u64, Option<UnixStream>)>,
 }
 
@@ -47,24 +50,33 @@ impl Drain {
 
     /// Admits `stream` for serving, or `None` once the drain has begun.
     fn admit(self: &Arc<Self>, stream: &UnixStream) -> io::Result<Option<Admitted>> {
-        let handle = stream.try_clone()?;
+        Ok(self.enter(Some(stream.try_clone()?)))
+    }
+
+    /// Admits one settle pass, or `None` once the drain has begun; the drain waits for it.
+    pub(crate) fn hold(self: &Arc<Self>) -> Option<Admitted> {
+        self.enter(None)
+    }
+
+    /// Admits work the drain waits for, or `None` once the drain has begun.
+    fn enter(self: &Arc<Self>, stream: Option<UnixStream>) -> Option<Admitted> {
         let mut live = self.live();
         if self.begun() {
-            return Ok(None);
+            return None;
         }
         let id = live.next;
         live.next += 1;
-        live.streams.push((id, Some(handle)));
+        live.streams.push((id, stream));
         drop(live);
-        Ok(Some(Admitted {
+        Some(Admitted {
             drain: Arc::clone(self),
             id,
-        }))
+        })
     }
 
     /// Begins the drain. A connection waiting for its next request reads EOF; one in the
-    /// middle of a request keeps reading, so its client still counts as present, and ends
-    /// once its reply is written.
+    /// middle of a request keeps reading, so its client still counts as present, until its
+    /// answer is ready.
     pub(crate) fn begin(&self) {
         let live = self.live();
         self.begun.store(true, Ordering::Release);
@@ -73,7 +85,7 @@ impl Drain {
         }
     }
 
-    /// Waits up to `timeout` for every admitted connection to end; returns how many remain.
+    /// Waits up to `timeout` for all admitted work to end; returns how much remains.
     fn settle(&self, timeout: Duration) -> usize {
         self.ended
             .wait_timeout_while(self.live(), timeout, |l| !l.streams.is_empty())
@@ -89,7 +101,7 @@ impl Drain {
     }
 }
 
-/// One admitted connection; its end wakes [`Drain::settle`].
+/// One admitted connection or settle pass; its end wakes [`Drain::settle`].
 pub(crate) struct Admitted {
     /// The drain that admitted it.
     drain: Arc<Drain>,
@@ -130,7 +142,7 @@ impl Admitted {
 }
 
 /// A request one connection is answering; the drain leaves the connection's reads alone
-/// until it drops.
+/// until it drops, and ends them then if it began meanwhile.
 pub(crate) struct Answering<'a> {
     /// The connection answering it.
     of: &'a Admitted,
@@ -141,6 +153,11 @@ pub(crate) struct Answering<'a> {
 impl Drop for Answering<'_> {
     fn drop(&mut self) {
         let mut live = self.of.drain.live();
+        if self.of.drain.begun() {
+            if let Some(handle) = &self.handle {
+                handle.shutdown(Shutdown::Read).ok();
+            }
+        }
         if let Some(slot) = live.streams.iter_mut().find(|(id, _)| *id == self.of.id) {
             slot.1 = self.handle.take();
         }
@@ -171,7 +188,7 @@ pub(super) fn on_sigterm() -> io::Result<UnixStream> {
 }
 
 /// Serves every listener until `wake` turns readable, then drains: nothing more is accepted,
-/// and the admitted connections get up to `timeout` to end. Returns how many were cut off.
+/// and the admitted work gets up to `timeout` to end. Returns how much was cut off.
 pub(super) fn serve_until(
     listeners: &[(UnixListener, Handler)],
     wake: &UnixStream,
@@ -227,7 +244,10 @@ fn accept(
         };
         let admitted = match drain.admit(&stream) {
             Ok(Some(admitted)) => admitted,
-            Ok(None) => return,
+            Ok(None) => {
+                conn::send(&mut &stream, &conn::restarting());
+                return;
+            }
             Err(e) => {
                 log(sink, &format!("connection setup failed: {e}"));
                 continue;

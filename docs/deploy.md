@@ -13,7 +13,9 @@ controller serve` binds its own sockets.
 The units below assume the binaries are in `~/.local/bin`, the controller
 config is `~/.config/moor/controller.yaml`, and the state directory is the
 default `~/.local/state/moor`. In a user unit, `%S` is that state base,
-`$XDG_STATE_HOME` or `~/.local/state`.
+`$XDG_STATE_HOME` or `~/.local/state`. Set `XDG_STATE_HOME` the same way in
+your login shell and in the systemd user manager (or in neither), or the
+CLI dials a socket path the units never bound.
 
 1. Write `~/.config/systemd/user/moor.socket`:
 
@@ -120,10 +122,11 @@ On the restart, systemd sends SIGTERM and the controller drains, as
 
 1. The controller stops accepting connections. New connects wait in the
    backlog that the socket unit holds.
-2. A connection that waits for its next request is closed.
-3. A `wait`, `wait-events` or `watch` gets an error frame of kind
+2. A `wait`, `wait-events` or `watch` gets an error frame of kind
    `restarting` and is closed.
-4. Any other request in flight, such as a `start`, runs to its end, for up to
-   `drain_timeout_secs`.
+3. Any other request in flight, such as a `start`, runs to its end, for up to
+   `drain_timeout_secs`. So does a settle pass already running.
+4. Every connection ends with an error frame of kind `restarting`, which
+   answers any request the controller did not run.
 5. The controller exits 0. systemd starts the new controller on the same
    sockets, and it answers the connects that waited in the backlog.

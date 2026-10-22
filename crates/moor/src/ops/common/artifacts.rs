@@ -45,7 +45,7 @@ done
 ///
 /// A Box whose lock an operation holds is skipped and stays due for the next pass. The cursor
 /// moves only after a collect. Never errors; a failure warns.
-pub(crate) fn collect_due(cx: &Cx, store: &Store) {
+pub(crate) fn collect_due(cx: &Cx, store: &Store, draining: &dyn Fn() -> bool) {
     let Ok(state_dir) = cx.state_dir() else {
         return;
     };
@@ -54,6 +54,9 @@ pub(crate) fn collect_due(cx: &Cx, store: &Store) {
         Err(e) => return failed(cx, &e.to_string()),
     };
     for (id, newest) in due {
+        if draining() {
+            break;
+        }
         let Ok(_lock) = BoxLock::acquire(cx.clock(), state_dir, id, "artifacts", Duration::ZERO)
         else {
             continue;

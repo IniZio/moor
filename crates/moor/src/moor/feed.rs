@@ -22,15 +22,16 @@ impl Moor {
 
     /// Settle every open Box once, as `start` does; returns failure and warning messages to log.
     ///
-    /// Autosleep runs with it, so an agent idle past its limit sleeps without a client.
-    pub(crate) fn settle_open(&self) -> Vec<String> {
+    /// Autosleep runs with it, so an agent idle past its limit sleeps without a client. Each
+    /// Box is skipped once `draining` returns true; one already begun finishes first.
+    pub(crate) fn settle_open(&self, draining: &dyn Fn() -> bool) -> Vec<String> {
         let mut out = Vec::new();
         match self.cx.store() {
             Ok(store) => {
-                if let Err(e) = ops::settle_all(&self.cx, store) {
+                if let Err(e) = ops::settle_all(&self.cx, store, draining) {
                     out.push(e.error.to_string());
                 }
-                ops::common::artifacts::collect_due(&self.cx, store);
+                ops::common::artifacts::collect_due(&self.cx, store, draining);
             }
             Err(e) => out.push(e.error.to_string()),
         }

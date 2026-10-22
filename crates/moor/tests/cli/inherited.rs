@@ -5,7 +5,7 @@ use std::fs::{self, File};
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::fd::OwnedFd;
 use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
-use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::net::{UnixDatagram, UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
@@ -22,7 +22,7 @@ struct Holder {
     config: PathBuf,
     socket: PathBuf,
     front: PathBuf,
-    listeners: Vec<UnixListener>,
+    listeners: Vec<OwnedFd>,
 }
 
 impl Holder {
@@ -57,17 +57,48 @@ impl Holder {
     /// Starts the controller with every held socket passed in under `names`, the way systemd
     /// does: `LISTEN_PID` is the controller's own pid.
     fn serve(&self, names: &str) -> Child {
-        let mut cmd = self.command("/bin/sh");
-        cmd.args(["-c", r#"export LISTEN_PID=$$; exec "$0" "$@""#])
-            .arg(env!("CARGO_BIN_EXE_moor"));
-        self.serve_with(cmd, names)
+        self.serve_as(None, &self.listeners.len().to_string(), names)
     }
 
     /// Starts the controller with the sockets passed in, but `LISTEN_PID` naming another process.
     fn serve_for_another_pid(&self, names: &str) -> Child {
-        let mut cmd = self.command(env!("CARGO_BIN_EXE_moor"));
-        cmd.env("LISTEN_PID", std::process::id().to_string());
-        self.serve_with(cmd, names)
+        let count = self.listeners.len().to_string();
+        self.serve_as(Some(&std::process::id().to_string()), &count, names)
+    }
+
+    /// Starts the controller with every held socket passed in, `LISTEN_PID` set to `pid` (the
+    /// controller's own when `None`), `LISTEN_FDS` to `count` and `LISTEN_FDNAMES` to `names`.
+    fn serve_as(&self, pid: Option<&str>, count: &str, names: &str) -> Child {
+        let mut cmd = pid.map_or_else(
+            || {
+                let mut cmd = self.command("/bin/sh");
+                cmd.args(["-c", r#"export LISTEN_PID=$$; exec "$0" "$@""#])
+                    .arg(env!("CARGO_BIN_EXE_moor"));
+                cmd
+            },
+            |pid| {
+                let mut cmd = self.command(env!("CARGO_BIN_EXE_moor"));
+                cmd.env("LISTEN_PID", pid);
+                cmd
+            },
+        );
+        let mappings = (3..)
+            .zip(&self.listeners)
+            .map(|(child_fd, l)| FdMapping {
+                parent_fd: l.try_clone().unwrap(),
+                child_fd,
+            })
+            .collect();
+        cmd.fd_mappings(mappings).unwrap();
+        cmd.args(["controller", "serve", "--config"])
+            .arg(&self.config)
+            .env("LISTEN_FDS", count)
+            .env("LISTEN_FDNAMES", names)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(File::create(self.root.join("stderr")).unwrap())
+            .spawn()
+            .unwrap()
     }
 
     /// `program` in the root with a clean environment.
@@ -78,26 +109,6 @@ impl Holder {
             .env("PATH", "/usr/bin:/bin")
             .env("HOME", self.root.join("home"));
         cmd
-    }
-
-    fn serve_with(&self, mut cmd: Command, names: &str) -> Child {
-        let mappings = (3..)
-            .zip(&self.listeners)
-            .map(|(child_fd, l)| FdMapping {
-                parent_fd: OwnedFd::from(l.try_clone().unwrap()),
-                child_fd,
-            })
-            .collect();
-        cmd.fd_mappings(mappings).unwrap();
-        cmd.args(["controller", "serve", "--config"])
-            .arg(&self.config)
-            .env("LISTEN_FDS", self.listeners.len().to_string())
-            .env("LISTEN_FDNAMES", names)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(File::create(self.root.join("stderr")).unwrap())
-            .spawn()
-            .unwrap()
     }
 
     fn stderr(&self) -> String {
@@ -114,10 +125,10 @@ impl Drop for Holder {
 const NAMES: &str = "controller:front-web";
 
 /// An owner-only listener at `path`, as `SocketMode=0600` makes it.
-fn listen(path: &Path) -> UnixListener {
+fn listen(path: &Path) -> OwnedFd {
     let listener = UnixListener::bind(path).unwrap();
     fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
-    listener
+    listener.into()
 }
 
 fn inode(path: &Path) -> u64 {
@@ -269,13 +280,82 @@ fn sockets_passed_under_swapped_names_stop_the_start() {
 }
 
 #[test]
-fn a_passed_socket_open_to_other_users_stops_the_start() {
-    let holder = Holder::new();
-    fs::set_permissions(&holder.front, fs::Permissions::from_mode(0o660)).unwrap();
-    let mut controller = holder.serve(NAMES);
-    assert_eq!(exit_code(&mut controller), Some(1));
+fn a_passed_socket_open_to_its_group_or_to_everyone_stops_the_start() {
+    for mode in [0o660, 0o606] {
+        let holder = Holder::new();
+        fs::set_permissions(&holder.front, fs::Permissions::from_mode(mode)).unwrap();
+        let mut controller = holder.serve(NAMES);
+        assert_eq!(exit_code(&mut controller), Some(1), "mode {mode:o}");
+        let stderr = holder.stderr();
+        assert!(
+            stderr.contains("SocketMode=0600"),
+            "mode {mode:o}: {stderr}"
+        );
+    }
+}
+
+/// Starts the controller from `holder` with `LISTEN_PID`, `LISTEN_FDS` and `LISTEN_FDNAMES`
+/// as given, and returns its stderr once it has stopped with exit 1.
+fn refused(holder: &Holder, pid: Option<&str>, count: &str, names: &str) -> String {
+    let mut controller = holder.serve_as(pid, count, names);
+    let code = exit_code(&mut controller);
     let stderr = holder.stderr();
-    assert!(stderr.contains("SocketMode=0600"), "{stderr}");
+    assert_eq!(code, Some(1), "{stderr}");
+    stderr
+}
+
+#[test]
+fn a_needed_socket_not_passed_stops_the_start_without_binding_it() {
+    let mut holder = Holder::new();
+    let held = inode(&holder.front);
+    holder.listeners.truncate(1);
+    let stderr = refused(&holder, None, "1", "controller");
+    assert!(stderr.contains("no socket named front-web"), "{stderr}");
+    assert_eq!(
+        inode(&holder.front),
+        held,
+        "the front's path was bound again"
+    );
+}
+
+#[test]
+fn a_malformed_listen_pid_or_listen_fds_stops_the_start() {
+    let holder = Holder::new();
+    let stderr = refused(&holder, Some("me"), "2", NAMES);
+    assert!(stderr.contains("LISTEN_PID is not a pid"), "{stderr}");
+    let stderr = refused(&holder, None, "two", NAMES);
+    assert!(stderr.contains("LISTEN_FDS is not a count"), "{stderr}");
+}
+
+#[test]
+fn listen_fdnames_naming_a_different_count_stops_the_start() {
+    let holder = Holder::new();
+    let stderr = refused(&holder, None, "2", "controller");
+    assert!(
+        stderr.contains("LISTEN_FDNAMES names 1 sockets"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn a_name_passed_twice_stops_the_start() {
+    let holder = Holder::new();
+    let stderr = refused(&holder, None, "2", "controller:controller");
+    assert!(
+        stderr.contains("socket controller is passed twice"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn a_passed_socket_that_is_not_a_listening_stream_stops_the_start() {
+    let mut holder = Holder::new();
+    fs::remove_file(&holder.socket).unwrap();
+    let datagram = UnixDatagram::bind(&holder.socket).unwrap();
+    fs::set_permissions(&holder.socket, fs::Permissions::from_mode(0o600)).unwrap();
+    *holder.listeners.first_mut().unwrap() = datagram.into();
+    let stderr = refused(&holder, None, "2", NAMES);
+    assert!(stderr.contains("not a listening stream socket"), "{stderr}");
 }
 
 #[test]

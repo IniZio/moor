@@ -70,7 +70,7 @@ pub(crate) fn respond_with_progress(
 
 /// Answer a wait that `work` runs on its own thread, with a progress frame about each `interval`.
 /// `None` once `drain` begins first: a wait changes nothing, so it is left to end with the
-/// process.
+/// process, and one the drain began before is never started.
 pub(super) fn wait_unless_draining(
     cmd: &str,
     id: &str,
@@ -79,6 +79,9 @@ pub(super) fn wait_unless_draining(
     drain: &Drain,
     work: impl FnOnce() -> Response + Send + 'static,
 ) -> Option<Response> {
+    if drain.begun() {
+        return None;
+    }
     let (done, answered) = mpsc::channel();
     let worker = thread::spawn(move || done.send(work()).ok());
     let every = (interval.as_millis() / TICK.as_millis()).max(1);

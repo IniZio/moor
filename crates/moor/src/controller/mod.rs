@@ -42,8 +42,9 @@ const REFUSED: u8 = 3;
 
 /// Serves the controller until SIGTERM, then drains; returns the process exit code.
 ///
-/// The drain stops accepting, gives in-flight requests up to `drain_timeout_secs` to finish,
-/// answers waits and watches with a `restarting` frame, and exits 0. Setup failures and the
+/// The drain stops accepting and starts no settle pass, gives in-flight requests and a running
+/// settle pass up to `drain_timeout_secs` to finish, answers waits, watches and requests it
+/// did not run with a `restarting` frame, and exits 0. Setup failures and the
 /// "already running" notice go to `stderr`.
 pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u8 {
     let sink: Sink = Arc::new(Mutex::new(stderr));
@@ -65,8 +66,9 @@ pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u
     for line in Moor::reconcile_proxies(&running.env) {
         log(&sink, &format!("proxy: {line}"));
     }
-    settle::spawn(&running.env, running.settle_every, &sink);
-    running.serve_until(&wake, &sink);
+    let drain = Arc::new(Drain::default());
+    settle::spawn(&running.env, running.settle_every, &drain, &sink);
+    running.serve_until(&wake, &drain, &sink);
     0
 }
 
@@ -250,19 +252,20 @@ fn bind(socket: &Path) -> std::io::Result<UnixListener> {
 
 impl Running {
     /// Serves the controller socket and each front socket until `wake` turns readable, then
-    /// drains; the locks are held until it returns.
-    fn serve_until(self, wake: &UnixStream, sink: &Sink) {
+    /// drains `drain`; the locks are held until it returns.
+    fn serve_until(self, wake: &UnixStream, drain: &Arc<Drain>, sink: &Sink) {
         let mut listeners = vec![(self.listener, handler(&self.env, &self.vault, None, sink))];
         for (ns, listener) in self.fronts {
             let handler = handler(&self.env, &self.vault, Some(ns), sink);
             listeners.push((listener, handler));
         }
-        let drain = Arc::new(Drain::default());
-        match drain::serve_until(&listeners, wake, &drain, self.drain_timeout, sink) {
+        match drain::serve_until(&listeners, wake, drain, self.drain_timeout, sink) {
             0 => log(sink, "drained; exiting"),
             left => log(
                 sink,
-                &format!("drain timed out; exiting with {left} connections still in flight"),
+                &format!(
+                    "drain timed out; exiting with {left} connections or settle passes in flight"
+                ),
             ),
         }
     }
@@ -274,7 +277,7 @@ impl Running {
     fn serve_in_background(self, sink: Sink) {
         std::thread::spawn(move || {
             let (wake, _never) = UnixStream::pair().expect("wake pair");
-            self.serve_until(&wake, &sink);
+            self.serve_until(&wake, &Arc::new(Drain::default()), &sink);
         });
     }
 
@@ -282,7 +285,8 @@ impl Running {
     /// thread ends when the controller would exit.
     fn serve_until_signalled(self, sink: Sink) -> (UnixStream, std::thread::JoinHandle<()>) {
         let (wake, signal) = UnixStream::pair().expect("wake pair");
-        let serving = std::thread::spawn(move || self.serve_until(&wake, &sink));
+        let serving =
+            std::thread::spawn(move || self.serve_until(&wake, &Arc::new(Drain::default()), &sink));
         (signal, serving)
     }
 }

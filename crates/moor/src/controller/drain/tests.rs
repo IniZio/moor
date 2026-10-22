@@ -21,7 +21,7 @@ use moor_core::seam::proc::{Deadline, Output, Proc, ProcSpec, Tool};
 use moor_core::{Request, Response};
 use serde_json::{json, Value};
 
-use super::{on_sigterm, serve_until, Admitted, Drain, Handler};
+use super::{accept, on_sigterm, serve_until, Admitted, Drain, Handler};
 use crate::adapters::proc::{SystemProc, ToolPaths};
 use crate::controller::conn::serve;
 use crate::controller::progress::{report_while, wait_unless_draining};
@@ -142,6 +142,18 @@ impl Client {
         }
     }
 
+    /// Whether the controller ended the connection with a `restarting` frame naming no
+    /// request, then closed it.
+    fn ended_restarting(&mut self) -> bool {
+        let last = self.frame();
+        assert_eq!(
+            (&last["frame"], &last["kind"], &last["id"]),
+            (&json!("error"), &json!("restarting"), &Value::Null),
+            "{last}"
+        );
+        self.closed()
+    }
+
     /// Whether the controller closed the connection.
     fn closed(&mut self) -> bool {
         let mut line = String::new();
@@ -205,7 +217,10 @@ fn requests_in_flight_are_answered_before_the_drain_returns() {
         assert_eq!(reply["frame"], "response", "{reply}");
         assert_eq!(reply["envelope"]["cmd"], cmd);
         assert_eq!(reply["envelope"]["class"], "ok");
-        assert!(client.closed(), "{id} stayed open after the drain");
+        assert!(
+            client.ended_restarting(),
+            "{id} stayed open after the drain"
+        );
     }
 }
 
@@ -232,7 +247,7 @@ fn a_wait_in_flight_gets_restarting_and_the_connection_closes() {
     assert_eq!(reply["frame"], "error", "{reply}");
     assert_eq!(reply["kind"], "restarting", "{reply}");
     assert!(
-        client.closed(),
+        client.ended_restarting(),
         "the connection stayed open after restarting"
     );
     assert_eq!(served.returned.recv_timeout(WAIT).expect("drained"), 0);
@@ -254,7 +269,7 @@ fn an_idle_connection_does_not_hold_the_drain_open() {
             .expect("the drain waited on an idle connection"),
         0
     );
-    assert!(idle.closed(), "the idle connection stayed open");
+    assert!(idle.ended_restarting(), "the idle connection stayed open");
 }
 
 #[test]
@@ -307,6 +322,91 @@ fn the_drain_returns_at_its_timeout_with_the_requests_still_in_flight() {
     started.recv_timeout(WAIT).expect("began");
     served.sigterm();
     assert_eq!(served.returned.recv_timeout(WAIT).expect("drained"), 1);
+}
+
+#[test]
+fn a_request_half_read_when_the_drain_began_gets_restarting() {
+    let dir = tempfile::tempdir().expect("tmp");
+    let (began, started) = mpsc::channel();
+    let (_release, released) = mpsc::channel();
+    let mut served = Served::start(dir.path(), held(began, released), WAIT);
+    let mut client = Client::connect(&served.socket);
+    write!(client.writer, r#"{{"frame":"request","id":"h","requ"#).expect("send");
+    thread::sleep(Duration::from_millis(100));
+    served.sigterm();
+    assert!(
+        client.ended_restarting(),
+        "the half-read request stayed open"
+    );
+    assert!(started.try_recv().is_err(), "the half-read request ran");
+    assert_eq!(served.returned.recv_timeout(WAIT).expect("drained"), 0);
+}
+
+#[test]
+fn a_request_queued_behind_one_in_flight_is_not_run_and_gets_restarting() {
+    let dir = tempfile::tempdir().expect("tmp");
+    let (began, started) = mpsc::channel();
+    let (release, released) = mpsc::channel();
+    let mut served = Served::start(dir.path(), held(began, released), WAIT);
+    let mut client = Client::connect(&served.socket);
+    client.request("s", &start_request());
+    started.recv_timeout(WAIT).expect("began");
+    client.request("q", &json!({"cmd": "show"}));
+    served.sigterm();
+    release.send(()).expect("release");
+    assert_eq!(client.reply("s")["frame"], "response");
+    assert!(client.ended_restarting(), "the connection stayed open");
+    assert!(
+        started.try_recv().is_err(),
+        "a request read after the drain began ran"
+    );
+    assert_eq!(served.returned.recv_timeout(WAIT).expect("drained"), 0);
+}
+
+#[test]
+fn a_request_written_just_after_the_drain_began_gets_restarting() {
+    let dir = tempfile::tempdir().expect("tmp");
+    let (began, started) = mpsc::channel();
+    let (_release, released) = mpsc::channel();
+    let mut served = Served::start(dir.path(), held(began, released), WAIT);
+    let mut client = Client::connect(&served.socket);
+    served.sigterm();
+    let late = json!({"frame": "request", "id": "late", "request": {"cmd": "show"}});
+    writeln!(client.writer, "{late}").ok();
+    assert!(client.ended_restarting(), "the connection stayed open");
+    assert!(started.try_recv().is_err(), "the late request ran");
+}
+
+#[test]
+fn a_connection_accepted_as_the_drain_began_gets_restarting() {
+    let dir = tempfile::tempdir().expect("tmp");
+    let socket = dir.path().join("c.sock");
+    let listener = UnixListener::bind(&socket).expect("bind");
+    let (wake, _never) = UnixStream::pair().expect("pair");
+    let drain = Arc::new(Drain::default());
+    drain.begin();
+    let client = UnixStream::connect(&socket).expect("connect");
+    client
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .expect("timeout");
+    let (began, started) = mpsc::channel();
+    let (_release, released) = mpsc::channel();
+    let serve = handler(held(began, released));
+    let (done, returned) = mpsc::channel();
+    let accepting = Arc::clone(&drain);
+    thread::spawn(move || {
+        accept(&listener, &serve, &wake, &accepting, &quiet());
+        done.send(()).ok();
+    });
+    let mut client = Client {
+        writer: client.try_clone().expect("clone"),
+        reader: BufReader::new(client),
+    };
+    assert!(client.ended_restarting(), "the connection stayed open");
+    returned
+        .recv_timeout(WAIT)
+        .expect("accepting went on after the drain began");
+    assert!(started.try_recv().is_err(), "the connection was served");
 }
 
 /// Set in the child process the SIGTERM test starts; names its working dir.
