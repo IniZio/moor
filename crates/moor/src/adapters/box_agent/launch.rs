@@ -65,9 +65,11 @@ pub(super) fn launch(
         workdir: req.workdir.clone(),
         proxy: req.proxy.as_deref().map(|p| ProxyAddr {
             box_port: p.box_port,
+            egress_port: p.egress_port,
             ca_pem: p.ca_pem.clone(),
             box_env: p.box_env.clone(),
             forge: p.forge,
+            hosts: p.hosts.clone(),
         }),
         home,
         prompt: req.prompt.clone(),

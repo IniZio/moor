@@ -84,6 +84,10 @@ The default rules are `claude` for `api.anthropic.com`, which injects the
 rule that extends a default cannot set `hosts` or `credential`. Its `allow`
 entries come after the default's, and its `box_env` values win.
 
+Only the hosts of these rules go through the Proxy. The Box reaches every
+other host direct. See
+[Which traffic goes through the Proxy](providers.md#which-traffic-goes-through-the-proxy).
+
 ### Removed keys
 
 moor refuses a user config that has a `credentials` or `github` key. Each
@@ -91,7 +95,7 @@ moor user stores their own secrets with `moor user secret set NAME`, and the
 `github-uploads` rule applies to every Box with a repo.
 
 moor also refuses `proxy.direct` in a user config and a `proxy` key in
-`.moor.yaml`.
+`.moor.yaml`. Every host that no rule serves is direct already.
 
 ### Other keys
 

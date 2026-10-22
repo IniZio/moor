@@ -84,6 +84,8 @@ fn boxed_proxy() -> BoxProxy {
             ca_pem: "CA-PEM".to_owned(),
             box_env: vec![("RULE".to_owned(), "x".to_owned())],
             forge: false,
+            egress_port: 4001,
+            hosts: Vec::new(),
         },
         rule_env: vec![("RULE".to_owned(), "x".to_owned())],
     }
@@ -113,7 +115,7 @@ fn a_proxy_runs_no_box_step_and_the_prelude_writes_the_ca_and_exports_the_proxy(
     );
     let script = e.argv(vec!["true".to_owned()]).join(" ");
     assert!(
-        script.contains("HTTPS_PROXY=\"http://127.0.0.1:4000\""),
+        script.contains("HTTPS_PROXY=\"http://127.0.0.1:4001\""),
         "{script}"
     );
     assert!(

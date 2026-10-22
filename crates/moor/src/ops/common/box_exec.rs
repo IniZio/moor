@@ -56,12 +56,15 @@ pub(crate) fn proxy(
     };
     let rule_env = box_env(&spec.rules);
     let forge = forge_routed(&spec.rules);
+    let hosts = spec.rules.iter().flat_map(|r| r.hosts.clone()).collect();
     let ep = cx.proxy_host().ensure(&spec).map_err(|e| e.to_string())?;
     let addr = ProxyAddr {
         box_port: ep.box_port,
+        egress_port: ep.egress_port,
         ca_pem: ep.ca_pem,
         box_env: exec_env::merged_env(repo_env, rule_env.clone()),
         forge,
+        hosts,
     };
     Ok(BoxProxy { addr, rule_env })
 }
@@ -114,10 +117,7 @@ pub(crate) fn prepare(
     let env = exec_env::merged_env(repo_env, rule_env);
     let ctx = BoxCtx {
         env: &env,
-        proxy: proxy.map(|p| ProxyCtx {
-            box_port: p.addr.box_port,
-            ca_pem: &p.addr.ca_pem,
-        }),
+        proxy: proxy.map(|p| ProxyCtx::of(&p.addr)),
         workdir: site.workdir,
         strip: &strip,
     };

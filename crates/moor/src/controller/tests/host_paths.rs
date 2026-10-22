@@ -32,8 +32,10 @@ const FAKE_CRABBOX: &str = "#!/bin/sh\n\
     esac\n";
 
 /// An ssh that answers `ssh -G` as crabbox's pinned words do and runs any other remote
-/// command, its last argument, on this host.
+/// command, its last argument, on this host, with the host guards of `bin` beside it first on
+/// the exported `PATH`.
 const FAKE_SSH: &str = "#!/bin/sh\n\
+    export PATH=\"$(dirname \"$0\")/bin:/usr/bin:/bin\"\n\
     test \"$1\" = -G && { echo 'stricthostkeychecking true'; echo 'userknownhostsfile /k'; exit; }\n\
     for last; do :; done\nexec sh -c \"$last\"\n";
 
@@ -44,6 +46,7 @@ fn served() -> (Served, Store) {
     moor_testkit::write_executable(&crabbox, FAKE_CRABBOX).expect("fake crabbox");
     let ssh = dir.path().join("ssh");
     moor_testkit::write_executable(&ssh, FAKE_SSH).expect("fake ssh");
+    moor_testkit::write_host_guards(&dir.path().join("bin")).expect("host guards");
     let served = Served::start_in(
         dir,
         &[

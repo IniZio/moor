@@ -5,7 +5,10 @@ use std::time::Duration;
 
 use crate::boxscript::quote;
 use crate::name::BoxPath;
+use crate::seam::agent_profile::ProxyAddr;
 use crate::seam::proc::Deadline;
+
+pub use egress::EGRESS_FAILED;
 
 /// The Box directory the prelude writes the public Proxy CA into, as shell text that expands on the Box.
 const PROXY_DIR: &str = "$HOME/.moor-proxy";
@@ -16,6 +19,17 @@ const BUNDLE_FILE: &str = "ca-bundle.pem";
 /// The start of the line, after `moor: ` and before the path, that the prelude prints to stderr
 /// when it stops the exec because the CA or the bundle could not be written.
 pub const CA_WRITE_FAILED: &str = "the Proxy CA could not be written to";
+/// The message, after `moor: `, of the last line in `output` where the prelude stopped the exec
+/// because the Proxy CA could not be written or the egress proxy could not start.
+#[must_use]
+pub fn prelude_stop(output: &str) -> Option<&str> {
+    output.lines().rev().find_map(|l| {
+        l.trim()
+            .strip_prefix("moor: ")
+            .filter(|m| m.starts_with(CA_WRITE_FAILED) || m.starts_with(EGRESS_FAILED))
+    })
+}
+
 /// System CA bundles, first existing one wins.
 const SYSTEM_BUNDLES: &str =
     "/etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/cert.pem";
@@ -48,13 +62,31 @@ pub enum Purpose {
     Agent,
 }
 
-/// The Proxy CA the prelude writes and the port the Box reaches the Proxy on.
+/// The Proxy CA the prelude writes, the Proxy tunnel port, and the egress proxy that sends only
+/// the credential hosts through that tunnel.
 #[derive(Debug, Clone, Copy)]
 pub struct ProxyCtx<'a> {
-    /// The Proxy port inside the Box.
+    /// The Proxy tunnel port inside the Box.
     pub box_port: u16,
+    /// The loopback port of the egress proxy, which the proxy variables name.
+    pub egress_port: u16,
     /// The public Proxy CA certificate in PEM form.
     pub ca_pem: &'a str,
+    /// The hosts the credential rules serve; only these go through the Proxy.
+    pub hosts: &'a [String],
+}
+
+impl<'a> ProxyCtx<'a> {
+    /// What the exec environment builder needs from the Proxy at `addr`.
+    #[must_use]
+    pub fn of(addr: &'a ProxyAddr) -> Self {
+        Self {
+            box_port: addr.box_port,
+            egress_port: addr.egress_port,
+            ca_pem: &addr.ca_pem,
+            hosts: &addr.hosts,
+        }
+    }
 }
 
 /// What the environment is built from. Per-Box home, xcconfig and Box tag variables for Mac Boxes
@@ -113,8 +145,9 @@ pub fn build(b: &BoxCtx<'_>, purpose: Purpose) -> Result<ExecEnv, String> {
     }
     if b.proxy.is_some() {
         prelude.push(format!(
-            "unset moor_bundle moor_sys moor_mark moor_f {}",
-            java::JAVA_SHELL_VARS
+            "unset moor_bundle moor_sys moor_mark moor_f {} {}",
+            java::JAVA_SHELL_VARS,
+            egress::EGRESS_SHELL_VARS
         ));
         // The agent launch script exports the repo env, these included, just before the agent starts.
         if !matches!(purpose, Purpose::Agent) {
@@ -221,8 +254,9 @@ fn or_stop(line: &str, file: &str) -> String {
     format!("{line} || {{ echo \"moor: {CA_WRITE_FAILED} {file}\" >&2; exit 1; }}")
 }
 
-/// Lines that write the CA, trust it and export the Proxy variables. When the CA or the bundle
-/// cannot be written, the exec stops before the command with a message naming the file.
+/// Lines that write the CA, trust it, keep the egress proxy running and export the proxy
+/// variables. When the CA or the bundle cannot be written, or the egress proxy cannot start, the
+/// exec stops before the command with a message naming the cause.
 fn proxy_lines(p: &ProxyCtx<'_>) -> Vec<String> {
     let ca_file = format!("{PROXY_DIR}/{CA_FILE}");
     let ca = format!("\"{ca_file}\"");
@@ -252,6 +286,7 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Vec<String> {
             )
         ),
     ];
+    lines.extend(egress::lines(p.egress_port, p.box_port, p.hosts));
     for name in [
         "SSL_CERT_FILE",
         "CURL_CA_BUNDLE",
@@ -262,16 +297,19 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Vec<String> {
     }
     lines.push(format!("export NODE_EXTRA_CA_CERTS={ca}"));
     for name in ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"] {
-        lines.push(format!("export {name}=\"http://127.0.0.1:{}\"", p.box_port));
+        lines.push(format!(
+            "export {name}=\"http://127.0.0.1:{}\"",
+            p.egress_port
+        ));
     }
-    lines.extend(yarn_lines(p.box_port));
+    lines.extend(yarn_lines(p.egress_port));
     for name in ["NO_PROXY", "no_proxy"] {
         lines.push(format!(
             "export {name}=\"127.0.0.1,localhost,::1${{{name}:+,${name}}}\""
         ));
     }
     lines.push("export NODE_USE_ENV_PROXY=1".to_owned());
-    lines.extend(java::java_lines(p.box_port, &ca));
+    lines.extend(java::java_lines(p.egress_port, &ca));
     lines
 }
 
@@ -289,11 +327,11 @@ fn image_path_line_for(file: &str) -> String {
     )
 }
 
-/// Shell lines that point Yarn and npm at the proxy and a cache the agent can write.
-fn yarn_lines(box_port: u16) -> Vec<String> {
+/// Shell lines that point Yarn and npm at the egress proxy and a cache the agent can write.
+fn yarn_lines(port: u16) -> Vec<String> {
     let mut lines: Vec<String> = ["YARN_HTTPS_PROXY", "YARN_HTTP_PROXY"]
         .iter()
-        .map(|name| format!("export {name}=\"http://127.0.0.1:{box_port}\""))
+        .map(|name| format!("export {name}=\"http://127.0.0.1:{port}\""))
         .collect();
     lines.extend(
         [
@@ -306,6 +344,7 @@ fn yarn_lines(box_port: u16) -> Vec<String> {
     lines
 }
 
+mod egress;
 mod java;
 
 #[cfg(test)]

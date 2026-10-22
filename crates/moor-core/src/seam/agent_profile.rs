@@ -9,14 +9,18 @@ use crate::secret::Secret;
 
 /// The Proxy's address as the Box sees it.
 pub struct ProxyAddr {
-    /// The Proxy's port as seen inside the Box.
+    /// The Proxy tunnel's port as seen inside the Box.
     pub box_port: u16,
+    /// The loopback port of the egress proxy, which sends only `hosts` through the tunnel.
+    pub egress_port: u16,
     /// The public Box CA certificate in PEM form; not secret.
     pub ca_pem: String,
     /// Non-secret environment pairs from the tool rules, already resolved.
     pub box_env: Vec<(String, String)>,
     /// Whether a forge rule routes GitHub through the Proxy, so the agent gets `gh`.
     pub forge: bool,
+    /// The hosts the credential rules serve; every other host is dialed direct.
+    pub hosts: Vec<String>,
 }
 
 impl fmt::Debug for ProxyAddr {
@@ -25,6 +29,8 @@ impl fmt::Debug for ProxyAddr {
             .field("box_port", &self.box_port)
             .field("box_env", &self.box_env)
             .field("forge", &self.forge)
+            .field("egress_port", &self.egress_port)
+            .field("hosts", &self.hosts)
             .finish_non_exhaustive()
     }
 }

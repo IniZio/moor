@@ -128,3 +128,32 @@ Proxy port is on the host's loopback. Any process on the host, including
 other users' processes and other Boxes, can send requests through that Box's
 Proxy and get the credentials it adds. moor does not refuse such a Box. Keep
 the `bridge` network unless you trust everything that runs on the host.
+
+## Which traffic goes through the Proxy
+
+Only the hosts that a Proxy rule serves go through the Proxy. These are the
+hosts that need your credentials, such as `api.anthropic.com` and
+`github.com`, plus the hosts of your own rules. Every other host, such as a
+package registry, is reached direct from the Box.
+
+moor runs tinyproxy on the Box loopback to make this split. Before each
+command, moor checks that tinyproxy listens. When it does not, moor starts it
+with the config `~/.moor/egress.conf` and the pid file `~/.moor/egress.pid`.
+The config sends each rule host to the Proxy tunnel and lets tinyproxy dial
+every other host. `HTTPS_PROXY`, `HTTP_PROXY`, their lowercase forms, the Yarn
+variables and the Java and Gradle proxy settings name the tinyproxy port.
+`NO_PROXY` holds only the loopback names.
+
+Each Box keeps one tinyproxy port for its life. moor picks it from 10000 to
+19999 when it first starts the Box's Proxy, and no two Boxes share it. When
+another process in the Box already listens on that port, the command stops
+with `port <n> is taken by another process`. When two commands start at once,
+only one of them installs and starts tinyproxy. The other waits for it.
+
+When tinyproxy is not installed, moor installs the `tinyproxy-bin` package
+with `apt-get`, as root or through `sudo -n`, and without the proxy
+variables. moor supports only apt. On a Box image with no `apt-get`, install
+`tinyproxy` in the image. When moor cannot install or start tinyproxy, the
+command stops before it runs, and the reason starts with `the egress proxy
+could not start`. A Box setup that stops this way fails with that reason.
+moor never sends all Box traffic through the Proxy instead.

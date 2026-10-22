@@ -8,8 +8,9 @@ use std::path::{Path, PathBuf};
 use moor_core::boxscript::setup::setup_script;
 use moor_core::config::BoxSettings;
 use moor_core::domain::box_state::SetupOutcome;
-use moor_core::exec_env::Purpose;
+use moor_core::exec_env::{prelude_stop, Purpose};
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
+use moor_core::seam::proc::Output;
 use moor_core::view::SetupView;
 use moor_core::{BoxHandle, BoxId, BoxPath, Warning};
 
@@ -21,6 +22,10 @@ const LOG_TAIL_LINES: usize = 20;
 
 /// Longest tail line kept, in characters; progress bars can emit huge ones.
 const LOG_LINE_CHARS: usize = 300;
+
+/// The host file in the log dir that receives the setup exec's own output, which holds the
+/// prelude's reason when it stops the exec before the script runs.
+const OUTPUT_FILE: &str = "setup-exec.log";
 
 /// Where the setup script writes its log, relative to the Box workdir.
 const LOG_REL: &str = ".moor/setup.log";
@@ -134,9 +139,22 @@ pub(crate) fn run_setup(
         workdir: Some(workdir),
     };
     let started = cx.clock().instant();
-    let result = exec_script(cx, &site, cfg, proxy);
+    let output = log_dir.join(OUTPUT_FILE);
+    let result = exec_script(cx, &site, cfg, proxy, &output);
     let elapsed = cx.clock().instant().saturating_duration_since(started);
     let ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
+    if let Some(stop) = read_stop(&output) {
+        cx.warn(Warning {
+            code: "setup_failed".to_owned(),
+            message: format!("setup did not run: {stop}"),
+        });
+        return SetupRun::Failed {
+            line: stop,
+            exit: exit_code(&result),
+            ms,
+            tail: String::new(),
+        };
+    }
     let log = fetch_log(cx, handle, workdir, log_dir);
     let tail = tail_lines(&log).join("\n");
     let (reason, exit) = match result {
@@ -163,17 +181,35 @@ pub(crate) fn run_setup(
     }
 }
 
-/// Builds the setup environment and runs the script once.
+/// The exit code `result` carries, when the script exited.
+const fn exit_code(result: &Result<ExecOutcome, Failure>) -> Option<i32> {
+    match result {
+        Ok(ExecOutcome::Exited { code }) => Some(*code),
+        _ => None,
+    }
+}
+
+/// Where the prelude stopped the exec before any setup line ran, read from the exec's `output`.
+fn read_stop(output: &Path) -> Option<String> {
+    let text = String::from_utf8_lossy(&std::fs::read(output).ok()?).into_owned();
+    prelude_stop(&text).map(str::to_owned)
+}
+
+/// Builds the setup environment and runs the script once, its output into `output`.
 fn exec_script(
     cx: &Cx,
     site: &Site<'_>,
     cfg: &BoxSettings,
     proxy: Option<&BoxProxy>,
+    output: &Path,
 ) -> Result<ExecOutcome, Failure> {
     let purpose = Purpose::Setup {
         lines: cfg.setup.len(),
     };
     let exec = box_exec::prepare(cx, site, proxy, cfg, purpose).map_err(Failure::Prepare)?;
+    if let Some(dir) = output.parent() {
+        private_dir(dir).map_err(|e| Failure::Prepare(format!("{}: {e}", dir.display())))?;
+    }
     let spec = ExecSpec {
         argv: exec.argv(vec![
             "sh".to_owned(),
@@ -182,7 +218,7 @@ fn exec_script(
         ]),
         env: exec.vars(),
         cwd: exec.cwd(),
-        output: None,
+        output: Some(Output::Log(output.to_path_buf())),
     };
     cx.driver()
         .exec(site.handle, &spec, exec.deadline())
