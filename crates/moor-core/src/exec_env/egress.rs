@@ -68,6 +68,9 @@ fn stop(reason: &str) -> String {
 /// Lines that install tinyproxy when it is missing, write its config, and start it when it is not
 /// listening on `listen` or its config changed. Every failure stops the exec with the reason.
 ///
+/// A changed config goes to a temp file and replaces `~/.moor/egress.conf` only once the new
+/// tinyproxy listens, so a failed restart leaves the old config and the next command retries.
+///
 /// One command at a time does this, under `flock` on a file in `~/.moor`, so two commands that
 /// start together never start two tinyproxies. The listener is ours only while the pid file names
 /// a live `tinyproxy`; a port held by anything else stops the exec.
@@ -83,7 +86,7 @@ pub(super) fn lines(listen: u16, upstream: u16, hosts: &[String]) -> Vec<String>
         stop(&format!("apt-get could not install tinyproxy-bin: $(tail -n 1 \"{INSTALL_LOG}\")")),
     );
     let config = format!(
-        "moor_conf={}\"PidFile \\\"{PID}\\\"\"; moor_new=; if ! printf '%s\\n' \"$moor_conf\" | cmp -s - \"{CONF}\" 2>/dev/null; then {{ printf '%s\\n' \"$moor_conf\" >\"{CONF}.$$\" && mv -f \"{CONF}.$$\" \"{CONF}\"; }} || {{ rm -f \"{CONF}.$$\"; {}; }}; moor_new=1; fi",
+        "moor_conf={}\"PidFile \\\"{PID}\\\"\"; moor_new=; if ! printf '%s\\n' \"$moor_conf\" | cmp -s - \"{CONF}\" 2>/dev/null; then printf '%s\\n' \"$moor_conf\" >\"{CONF}.new\" || {{ rm -f \"{CONF}.new\"; {}; }}; moor_new=1; fi",
         crate::boxscript::quote(&config(listen, upstream, hosts)),
         stop(&format!("its config could not be written to {CONF}")),
     );
@@ -94,12 +97,13 @@ pub(super) fn lines(listen: u16, upstream: u16, hosts: &[String]) -> Vec<String>
     // is gone; a zombie counts as gone.
     let old_runs = "moor_st=$(sed -n 's/.*) \\(.\\) .*/\\1/p' \"/proc/$moor_pid/stat\" 2>/dev/null) && [ -n \"$moor_st\" ] && [ \"$moor_st\" != Z ]";
     let start = format!(
-        "if {up} && [ -z \"$moor_ours\" ]; then {}; fi; if [ -n \"$moor_new\" ] || ! {up}; then if [ -n \"$moor_ours\" ]; then kill \"$moor_pid\" 2>/dev/null; moor_n=0; while {old_runs}; do moor_n=$((moor_n+1)); [ $moor_n -le {POLLS} ] || {}; sleep 0.1; done; fi; moor_n=0; while {up}; do moor_n=$((moor_n+1)); [ $moor_n -le {POLLS} ] || {}; sleep 0.1; done; tinyproxy -c \"{CONF}\" </dev/null >/dev/null 2>\"{START_LOG}\" 9>&- || {}; moor_n=0; until {up}; do moor_n=$((moor_n+1)); [ $moor_n -le {POLLS} ] || {}; sleep 0.1; done; fi",
+        "if {up} && [ -z \"$moor_ours\" ]; then {}; fi; if [ -n \"$moor_new\" ] || ! {up}; then if [ -n \"$moor_ours\" ]; then kill \"$moor_pid\" 2>/dev/null; moor_n=0; while {old_runs}; do moor_n=$((moor_n+1)); [ $moor_n -le {POLLS} ] || {}; sleep 0.1; done; fi; moor_n=0; while {up}; do moor_n=$((moor_n+1)); [ $moor_n -le {POLLS} ] || {}; sleep 0.1; done; if [ -n \"$moor_new\" ]; then moor_cfg=\"{CONF}.new\"; else moor_cfg=\"{CONF}\"; fi; tinyproxy -c \"$moor_cfg\" </dev/null >/dev/null 2>\"{START_LOG}\" 9>&- || {}; moor_n=0; until {up}; do moor_n=$((moor_n+1)); [ $moor_n -le {POLLS} ] || {}; sleep 0.1; done; if [ -n \"$moor_new\" ]; then mv -f \"{CONF}.new\" \"{CONF}\" || {}; fi; fi",
         stop(&format!("port {listen} is taken by another process")),
         stop("the old tinyproxy $moor_pid did not exit after TERM"),
         stop(&format!("port {listen} stays held after tinyproxy was stopped")),
         stop(&format!("tinyproxy exited: $(tail -n 1 \"{START_LOG}\")")),
         stop(&format!("tinyproxy is not listening on 127.0.0.1:{listen}")),
+        stop(&format!("its config could not be moved to {CONF}")),
     );
     vec![
         format!(
