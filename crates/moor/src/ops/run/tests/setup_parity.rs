@@ -7,43 +7,31 @@ use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::seam::driver::ExecSpec;
 use moor_core::{BoxHandle, BoxPath};
 
-use super::{command, ready, req, Fx, SHA};
+use super::{command, ready, ready_yaml, req, Fx, SHA};
 use crate::ops::common::box_exec;
-use crate::ops::common::facts::resolved;
-use crate::ops::common::provision::moor_yaml;
+use crate::ops::common::facts::{repo_config, resolved};
 use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::setup::run_setup;
 use crate::ops::run::run;
 
 const YAML: &str = "setup: [make deps]\nenv:\n  B: \"2\"\n  A: \"1\"\n";
 
-/// A Ready Box whose host repo and base commit both hold `.moor.yaml` as `YAML`.
+/// A Ready Box whose stored `.moor.yaml` is `YAML`.
 fn with_env_yaml() -> Fx {
-    let f = ready();
-    std::fs::write(f.dir.path().join(".moor.yaml"), YAML).unwrap();
-    f.proc.before(
-        moor_core::seam::proc::Tool::Git,
-        &["ls-tree"],
-        crate::testing::proc::Reply::Ok(".moor.yaml\n".into()),
-    );
-    f.proc.before(
-        moor_core::seam::proc::Tool::Git,
-        &["show"],
-        crate::testing::proc::Reply::Ok(YAML.into()),
-    );
-    f
+    ready_yaml(YAML)
 }
 
 /// The spec setup would exec for this Box's machine.
 fn setup_spec(f: &Fx) -> ExecSpec {
     let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
-    let repo = moor_yaml::guard(&f.cx, &row, false).unwrap();
+    let repo = repo_config(&row).unwrap();
     let cfg = resolved(&f.cx, repo.as_ref(), &Flags::default());
     let boxed = row.boxed.unwrap();
     let workdir = recorded_workdir(boxed.workdir.as_deref().unwrap()).unwrap();
     let handle: BoxHandle = boxed.handle.unwrap();
     let before = f.driver.execs().len();
-    let proxy = box_exec::proxy(&f.cx, f.id, Some(handle.clone()), f.dir.path(), &cfg).ok();
+    let forge_repo = row.repo.as_ref().map(|r| &r.repo);
+    let proxy = box_exec::proxy(&f.cx, f.id, Some(handle.clone()), forge_repo, &cfg).ok();
     let provider = boxed.provider.as_str();
     run_setup(
         &f.cx,

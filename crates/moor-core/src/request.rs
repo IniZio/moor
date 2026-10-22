@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::name::ForgeRepo;
 use crate::name::{BoxName, SessionId};
 use crate::user::Identity;
 
@@ -9,12 +10,8 @@ mod artifacts;
 pub use artifacts::{ArtifactReadReq, ArtifactsReq};
 mod binding;
 pub use binding::{BindSessionReq, SessionBindingReq};
-mod dir;
-pub use dir::InReq;
 mod names;
 pub use names::{Grant, Named, Pins};
-mod repos;
-pub use repos::ReposReq;
 mod session;
 mod target;
 pub use session::{EndSessionReq, OpenSessionReq, SessionsReq, ShowSessionReq};
@@ -79,8 +76,6 @@ pub enum Request {
     Gate(GateReq),
     /// Show the layered environment.
     Env(EnvReq),
-    /// List the repos the controller knows.
-    Repos(ReposReq),
     /// List a box's artifacts.
     Artifacts(ArtifactsReq),
     /// Read a byte range of one artifact.
@@ -101,8 +96,6 @@ pub enum Request {
     LinkRedeem(LinkRedeemReq),
     /// Run another request as an identity a front asserts.
     As(ActAsReq),
-    /// Run another request on the caller's directory.
-    In(InReq),
     /// Print version information.
     Version {},
 }
@@ -136,7 +129,6 @@ impl Request {
             Self::Connect(_) => "connect",
             Self::Gate(_) => "gate",
             Self::Env(_) => "env",
-            Self::Repos(_) => "repos",
             Self::Artifacts(_) => "artifacts",
             Self::ArtifactRead(_) => "artifact-read",
             Self::Whoami(_) => "whoami",
@@ -147,7 +139,6 @@ impl Request {
             Self::LinkCode(_) => "link-code",
             Self::LinkRedeem(_) => "link-redeem",
             Self::As(_) => "as",
-            Self::In(_) => "in",
             Self::Version {} => "version",
         }
     }
@@ -184,13 +175,9 @@ pub struct StartReq {
     /// Resume the agent's stored session instead of starting a fresh one.
     #[serde(default)]
     pub resume: bool,
-    /// Launch the agent with the Box's `.moor.yaml` even when it differs from its base commit.
-    #[serde(default)]
-    pub trust_moor_yaml: bool,
-    /// Repo known to the controller, by name or url; when absent, the repo of the directory an
-    /// `in` request names, and no repo without one.
+    /// The repo the Box clones; a Box with no repo starts with an empty workdir.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub repo: Option<String>,
+    pub repo: Option<ForgeRepo>,
     /// Parent Session of the Session this request opens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<SessionId>,
@@ -216,9 +203,6 @@ pub struct RunReq {
     /// Command and arguments.
     #[serde(default)]
     pub argv: Vec<String>,
-    /// Run even when the Box's `.moor.yaml` differs from its base commit.
-    #[serde(default)]
-    pub trust_moor_yaml: bool,
     /// Program output goes to moor's own stdout and stderr instead of the run log.
     /// Never read from or written to JSON.
     #[serde(skip)]
@@ -318,9 +302,6 @@ pub struct CloseReq {
     /// Close despite unfinished work.
     #[serde(default)]
     pub force: bool,
-    /// Run teardown with the host checkout's `.moor.yaml` even when it differs from the base commit.
-    #[serde(default)]
-    pub trust_moor_yaml: bool,
 }
 
 /// Arguments of `cp`.
@@ -362,9 +343,12 @@ pub struct GateReq {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EnvReq {
-    /// Repository whose layer to show, by absolute path.
+    /// Repo whose layer to show, read through the forge like a start.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub repo: Option<String>,
+    pub repo: Option<ForgeRepo>,
+    /// Commit or ref to read the repo at; the default branch when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<String>,
 }
 
 #[cfg(test)]

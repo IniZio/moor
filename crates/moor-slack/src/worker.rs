@@ -11,13 +11,13 @@ use moor_client::ClientError;
 use moor_core::name::{BoxId, BoxName};
 use moor_core::request::{Request, ShowReq, StartReq};
 use moor_core::response::{ExitClass, Response};
+use moor_core::seam::forge::ForgeRepo;
 use serde_json::Value;
 
 use crate::command::{failed, started, BoxEvent};
 use crate::db::{BoxState, Db, SlackBox};
 use crate::dial::Backoff;
 use crate::login::TokenCheck;
-use crate::slash::check_repo;
 
 /// How often the worker reads `slack.db` for Boxes to start or close.
 const POLL: Duration = Duration::from_millis(500);
@@ -28,8 +28,6 @@ pub(crate) struct Fx<'a> {
     pub(crate) call: &'a mut dyn FnMut(Request) -> Result<Response, ClientError>,
     /// Posts `(channel, thread, text)` in a thread.
     pub(crate) reply: &'a mut dyn FnMut(&str, &str, &str),
-    /// Posts `(channel, text)` at the top level of a channel.
-    pub(crate) say: &'a mut dyn FnMut(&str, &str),
     /// Shows `(channel, user, thread, text)` to that user only, in the thread.
     pub(crate) ephemeral: &'a mut dyn FnMut(&str, &str, &str, &str),
     /// Checks a pasted Claude token, stores it when Claude takes it, and updates the modal.
@@ -62,7 +60,6 @@ pub(crate) fn serve(jobs: &Receiver<Job>, db: &Db, left: Vec<SlackBox>, fx: &mut
                 thread,
                 text,
             }) => (fx.reply)(&channel, &thread, &text),
-            Ok(Job::CheckRepo { channel, repo }) => check_repo(fx, &channel, &repo),
             Ok(Job::CheckToken(check)) => (fx.check_token)(check),
             Ok(Job::Ephemeral {
                 channel,
@@ -211,7 +208,11 @@ fn ask(fx: &mut Fx<'_>, row: &SlackBox, attempt: Attempt) -> Outcome {
             Err(e) => return Outcome::Unsure(e.to_string()),
         }
     }
-    match (fx.call)(start_request(row)) {
+    let repo = match ForgeRepo::parse(&row.repo) {
+        Ok(repo) => repo,
+        Err(e) => return Outcome::Refused(e.to_string()),
+    };
+    match (fx.call)(start_request(row, repo)) {
         Ok(reply) => start_outcome(reply),
         Err(e) if matches!(attempt, Attempt::First) && !lost(&e) => Outcome::Refused(e.to_string()),
         Err(e) => Outcome::Unsure(e.to_string()),
@@ -219,7 +220,7 @@ fn ask(fx: &mut Fx<'_>, row: &SlackBox, attempt: Attempt) -> Outcome {
 }
 
 /// The `start` request for `row`.
-fn start_request(row: &SlackBox) -> Request {
+fn start_request(row: &SlackBox, repo: ForgeRepo) -> Request {
     Request::Start(StartReq {
         name: row.box_name.clone(),
         goal: Some(row.goal.clone()),
@@ -229,8 +230,7 @@ fn start_request(row: &SlackBox) -> Request {
         no_agent: false,
         hold: false,
         resume: false,
-        trust_moor_yaml: false,
-        repo: Some(row.repo.clone()),
+        repo: Some(repo),
         parent: row.parent,
         identity: None,
     })

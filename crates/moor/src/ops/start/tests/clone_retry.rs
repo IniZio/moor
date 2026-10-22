@@ -1,16 +1,14 @@
 //! Tests for a start whose clone failed, and for the start that retries it in the kept Box.
 
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::Intent;
 use moor_core::{BoxId, ErrorKind, StartReq};
 
-use super::moor_yaml::script_base_yaml;
 use super::setup::{exit, kinds, setup_execs, start_req};
 use super::state::working;
-use super::{hold, on_github, world_at, World};
+use super::{hold, script_base_yaml, world, World};
 use crate::adapters::clock::SystemClock;
 use crate::ops::start::run;
 use crate::store::Store;
@@ -25,21 +23,11 @@ const YAML: &str = "setup: [a]\n";
 fn world_with_setup(
     results: impl IntoIterator<Item = Result<ExecOutcome, DriverError>>,
 ) -> (World, Arc<FakeEngine>) {
-    let repo = tempfile::tempdir().unwrap();
-    std::fs::write(repo.path().join(".moor.yaml"), YAML).unwrap();
-    let driver = FakeDriver::new().exec_results(results);
-    let mut w = on_github(world_at(driver, repo.path()));
+    let mut w = world(FakeDriver::new().exec_results(results));
+    script_base_yaml(&w, Some(YAML));
     let engine = Arc::new(FakeEngine::new());
     w.cx = w.cx.with_engine(engine.clone());
     (w, engine)
-}
-
-/// Puts the repo's `.moor.yaml` into the Box's host repo, as a checked-out repo has it.
-fn checked_out(w: &World) {
-    let wt = row(w).repo;
-    std::fs::create_dir_all(&wt).unwrap();
-    std::fs::write(Path::new(&wt).join(".moor.yaml"), YAML).unwrap();
-    script_base_yaml(w, Some(YAML));
 }
 
 fn start(w: &World) -> Result<moor_core::view::StartView, crate::error::CommandError> {
@@ -130,7 +118,6 @@ fn a_failed_clone_shows_the_message_and_every_hint_in_text_and_the_fields_in_jso
 fn start_after_a_failed_clone_retries_in_the_same_box_and_launches() {
     let (w, engine) = world_with_setup([Ok(exit(1)), Ok(exit(0)), Ok(exit(0))]);
     start(&w).unwrap_err();
-    checked_out(&w);
     let again = start(&w).unwrap();
     assert!(again.setup.ran && again.setup.ok);
     let acquires = w.driver.calls().iter().filter(|c| *c == "acquire").count();
@@ -165,7 +152,6 @@ fn a_retry_that_fails_to_clone_again_keeps_the_box_and_stays_setup_failed() {
 fn a_retry_in_the_kept_box_holds_the_setup_intent_while_it_runs() {
     let (w, _) = world_with_setup([Ok(exit(1))]);
     start(&w).unwrap_err();
-    checked_out(&w);
     let seen = Arc::new(Mutex::new(Vec::new()));
     let (sink, path) = (Arc::clone(&seen), w.dir.path().join("moor.db"));
     w.driver.on_exec(move || {

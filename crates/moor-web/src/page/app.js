@@ -403,37 +403,12 @@ function connect() {
 
 /* ---- static controls ---- */
 
-async function loadRepos() {
-  const sel = $('new-repo');
-  try {
-    const res = await api('/repos');
-    for (const r of (res.json && res.json.repos) || []) {
-      const o = h('option', r.name);
-      o.value = r.name;
-      sel.appendChild(o);
-    }
-  } catch (_) { /* leave empty */ }
-  if (!sel.children.length) {
-    const o = h('option', 'no repos configured');
-    o.value = '';
-    sel.appendChild(o);
-  }
-  syncStart();
-}
-
-function syncStart() {
-  $('new-start').disabled = !$('new-repo').value;
-}
-
-$('new-repo').addEventListener('change', syncStart);
-
 $('new-start').addEventListener('click', () => {
   const out = $('new-out');
-  const repo = $('new-repo').value;
-  if (!repo) { show(out, 'No repo selected.', 'bad'); return; }
+  const repo = $('new-repo').value.trim();
   const name = $('new-name').value.trim();
   const goal = $('new-goal').value.trim();
-  if (!repo || !name || !goal) { show(out, 'Pick a repo and fill in Box name and goal.', 'bad'); return; }
+  if (!repo || !name || !goal) { show(out, 'Fill in owner/name, Box name and goal.', 'bad'); return; }
   startJob('/requests', { repo, name, goal }, out, () => { $('new-name').value = ''; $('new-goal').value = ''; });
 });
 
@@ -445,6 +420,5 @@ $('confirm').addEventListener('close', () => {
   if (fn && $('confirm').returnValue === 'yes') fn();
 });
 
-loadRepos();
 refreshTree();
 connect();

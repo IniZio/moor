@@ -16,7 +16,6 @@ use crate::testing::surface::FakeSurface;
 fn cx(dir: &Path) -> Cx {
     Cx::fake(
         dir,
-        Path::new("/home/me/proj"),
         Arc::new(FakeDriver::new()),
         Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),

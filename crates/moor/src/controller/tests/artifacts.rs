@@ -60,10 +60,7 @@ fn seed(dir: &Path) -> Vec<u8> {
     let store = Store::open(&dir.join("moor.db"), clock).expect("store");
     let name = BoxName::parse_allow_bare(BOX_NAME).expect("name");
     let id = store
-        .apply(Decision::insert(NewBox {
-            name,
-            repo: "r".into(),
-        }))
+        .apply(Decision::insert(NewBox { name, repo: None }))
         .expect("box")
         .box_id;
     let root = dir.join("artifacts");

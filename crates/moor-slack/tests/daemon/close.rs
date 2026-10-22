@@ -17,7 +17,7 @@ use super::support::controller::{failed, FakeController, Scripted};
 use super::support::{Rig, BOX_NAME, QUIET, USER};
 
 /// The controller's refusal of a close that would lose unpushed work.
-const UNPUSHED: &str = "the host worktree has work that is not saved (2 unpushed commit(s), \
+const UNPUSHED: &str = "the Box has work that is not saved (2 unpushed commit(s), \
      no uncommitted changes); push it, or pass --force to close anyway";
 
 /// A `close` reply for the Box.
@@ -90,7 +90,7 @@ fn close_box_in_the_requesters_turn_closes_the_box_without_force() {
     assert!(stdin.contains(&journal), "{stdin}");
     assert!(
         stdin.contains(&format!(
-            "- Box `{BOX_NAME}` on demo, asked for by <@{USER}>: closed"
+            "- Box `{BOX_NAME}` on acme/demo, asked for by <@{USER}>: closed"
         )),
         "{stdin}"
     );

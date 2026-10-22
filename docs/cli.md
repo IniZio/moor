@@ -56,27 +56,40 @@ The state directory holds `moor.db`. It is the first of `--state-dir`,
 | --- | --- |
 | `--goal TEXT` | The agent's first prompt. |
 | `--issue REF` | An issue reference for the Box. |
-| `--base REF` | The ref the Box branch starts from. |
-| `--repo NAME\|URL` | A repo from the controller config, cloned on the controller host, instead of the current directory. |
+| `--base REF` | The ref on GitHub the Box branch starts from. The default is the repo's default branch. |
+| `--repo OWNER/NAME\|URL` | The GitHub repo the Box clones, as `OWNER/NAME` or a github.com URL, instead of the current checkout's `origin`. |
 | `--model MODEL` | The agent model. |
 | `--no-agent` | Do not start an agent. |
 | `--hold` | Start the agent with no first prompt. |
 | `--resume` | Resume the agent's stored session. |
-| `--trust-moor-yaml` | Start the agent even when the Box's `.moor.yaml` differs from its base commit. |
 | `--parent ID` | The parent Session. The default is `$MOOR_SESSION`. |
 
+Without `--repo`, the CLI reads `git remote get-url origin` in its own
+directory and sends that repo as `OWNER/NAME`. It refuses an `origin` that is
+not a github.com repo. Outside a checkout it sends no repo, and the Box starts
+with an empty workdir. The controller never reads a directory on its host for
+a start.
+
+Before any machine exists, the controller reads the repo through the GitHub
+API with the requester's own `github` secret: the commit `--base` names (or
+the default branch), the `.moor.yaml`, `.mcp.json` and `.claude/settings.json`
+at that commit, and the token account's name. moor keeps that `.moor.yaml` in
+the Box's row and every later command uses that copy. A repo the account
+cannot read is refused, and a Box whose branch `moor/NAME` already exists on
+GitHub is refused unless `--base moor/NAME` names it. An account that cannot
+push gets a warning. Commits in the Box use the account's profile name, or its
+login, and its GitHub noreply address.
+
+The start works from what is on GitHub. Uncommitted or unpushed changes in
+your checkout are not in the Box; the CLI says so in a warning.
+
 The Box clones its repo itself, through its Proxy, from
-`https://github.com/OWNER/NAME.git`, the GitHub repo the host checkout's
-`origin` names. The clone is partial (`--filter=blob:none`): it has the full
-history and fetches file contents when a command first needs them. The Box
-branch starts from the base commit, which must already be on GitHub. When the
-branch already exists on GitHub, the Box continues from it. A retried setup
-keeps the Box branch where it is, so commits made in the Box are never reset.
-Without `--base`, when the default branch cannot be fetched, the base is the
-host checkout's HEAD, which must be on GitHub too. A checkout whose
-`origin` is not a github.com repo starts with an empty workdir. Submodules and
-Git LFS objects from other private repos are not supported, because the Proxy
-places the user's token only for the Box's own repo.
+`https://github.com/OWNER/NAME.git`. The clone is partial
+(`--filter=blob:none`): it has the full history and fetches file contents when
+a command first needs them. A retried setup keeps the Box branch where it is,
+so commits made in the Box are never reset. Submodules and Git LFS objects from
+other private repos are not supported, because the Proxy places the user's
+token only for the Box's own repo.
 
 Work leaves the Box when the agent runs `git push origin HEAD:refs/heads/BRANCH`.
 To get it into your own checkout, run `git fetch origin BRANCH` there.
@@ -102,7 +115,6 @@ a host checkout into a Box.
 | Flag | Effect |
 | --- | --- |
 | `--record NAME` | Record the run as the gate `NAME`, for `moor gate check`. moor reads the Box checkout's HEAD first and records the run under it. It refuses a Box checkout with uncommitted changes. If the command moves HEAD or changes a tracked file, the run fails with "the Box HEAD moved during the record run". New untracked files do not fail it. |
-| `--trust-moor-yaml` | Run even when the Box's `.moor.yaml` differs from its base commit. |
 
 ### `moor wait` flags
 
@@ -125,7 +137,6 @@ a host checkout into a Box.
 | Flag | Effect |
 | --- | --- |
 | `--force` | Close even when the Box has unsaved work: commits that are on no branch on GitHub, or uncommitted files. You lose that work. Without it, `moor close` refuses and says how to push the work with `moor run NAME -- git push origin HEAD:refs/heads/BRANCH`. |
-| `--trust-moor-yaml` | Run the teardown from the host checkout's `.moor.yaml` when it differs from the base commit. Without this flag, the teardown uses the base commit's copy and prints a warning. |
 
 moor creates no host worktree for a Box, so `moor close` checks only the
 Box checkout for unsaved work. To get the Box's work on your host, run
@@ -168,7 +179,7 @@ controller.
 | Command | What it does |
 | --- | --- |
 | `moor version` | Prints the version, the git commit, and the envelope schema version. |
-| `moor env [REPO]` | Previews the settings and credentials a Box in `REPO` would get. The default is the current repo. Only the operator may run it. |
+| `moor env [OWNER/NAME] [--base REF]` | Previews the settings and credentials a Box of that GitHub repo would get, read through GitHub like a start. The default is the current checkout's `origin`. Only the operator may run it. |
 | `moor gate check SHA NAME` | Exits 0 when a run recorded with `moor run --record NAME` passed on commit `SHA`, and 1 when none did. `--command TEXT` counts only runs of exactly that command text. It reads only the runs of Boxes that you may act on. It does not check that `SHA` exists on origin. |
 | `moor events` | Prints stored events as JSON lines. Takes `--since ID`, `--box NAME`, `--kind KIND`, and `--follow`. |
 | `moor call` | Reads one JSON request from stdin and runs it. The output is always a JSON envelope. |

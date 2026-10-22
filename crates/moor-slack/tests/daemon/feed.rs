@@ -22,7 +22,13 @@ const PAST_WINDOW: Duration = Duration::from_millis(2600);
 
 /// The status message text of the first Box in state `state`.
 fn status(state: &str) -> String {
-    format!("*{BOX_NAME}*: {state}")
+    status_of_box(BOX_NAME, state)
+}
+
+/// The text of box `name`'s status message in `state`, with its pull request link.
+fn status_of_box(name: &str, state: &str) -> String {
+    let pulls = format!("https://github.com/acme/demo/pulls?q=is%3Apr+head%3Amoor/{name}");
+    format!("*{name}*: {state}\nPull request: <{pulls}|moor/{name}>")
 }
 
 /// The line the front posts when the first Box's agent finishes its turn.
@@ -314,7 +320,7 @@ fn two_bound_boxes_in_one_thread_each_keep_their_own_status_and_lines() {
     controller.emit(BOX_ID + 1, &second, "idled", json!({}));
     controller.emit(BOX_ID, BOX_NAME, "working", json!({}));
     rig.wait_post(&format!("Box `{second}` finished its turn."));
-    wait_status(&rig, &second_ts, &format!("*{second}*: idle"));
+    wait_status(&rig, &second_ts, &status_of_box(&second, "idle"));
     wait_status(&rig, &first_ts, &status("working"));
     std::thread::sleep(QUIET);
     let posts = rig.slack.posts();

@@ -41,7 +41,6 @@ fn rig(dir: &Path, driver: FakeDriver) -> Rig {
     let proc = Arc::new(ScriptedProc::new());
     let cx = Cx::fake(
         dir,
-        dir,
         Arc::clone(&driver) as Arc<_>,
         Arc::new(FakeSurface::new()),
         Arc::clone(&proc) as Arc<_>,
@@ -55,7 +54,7 @@ fn rig(dir: &Path, driver: FakeDriver) -> Rig {
             nonce: "n".to_owned(),
         })
         .unwrap();
-    let (row, boxed) = rows(dir, got.handle);
+    let (row, boxed) = rows(got.handle);
     Rig {
         cx,
         driver,
@@ -65,7 +64,7 @@ fn rig(dir: &Path, driver: FakeDriver) -> Rig {
     }
 }
 
-fn rows(dir: &Path, handle: BoxHandle) -> (BoxRow, DriverRow) {
+fn rows(handle: BoxHandle) -> (BoxRow, DriverRow) {
     let boxed = DriverRow {
         provider: ProviderId::new("p"),
         handle: Some(handle),
@@ -79,7 +78,7 @@ fn rows(dir: &Path, handle: BoxHandle) -> (BoxRow, DriverRow) {
     let row = BoxRow {
         id: BoxId::new(1),
         name: BoxName::parse_allow_bare("demo").unwrap(),
-        repo: dir.display().to_string(),
+        repo: None,
         user: None,
         issue: None,
         goal: None,

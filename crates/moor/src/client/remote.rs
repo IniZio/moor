@@ -8,16 +8,16 @@ use moor_core::seam::proc::Tool;
 use moor_core::{ErrorKind, ErrorView, Request, Response};
 
 use super::Target;
-use crate::cli::{render, GlobalOpts, Output};
+use crate::cli::GlobalOpts;
 use crate::env::Env;
 
-/// Sends `request` to the controller at `target` and renders its answer.
+/// Sends `request` to the controller at `target` and returns its answer.
 ///
 /// Text mode prints progress frames to stderr and a `run` command's output to stdout as they
 /// arrive. `--json` drops progress and prints the command's output to stderr, so stdout stays
 /// one envelope.
 #[must_use]
-pub fn run(env: &Env, target: &Target, request: Request, opts: &GlobalOpts) -> Output {
+pub fn run(env: &Env, target: &Target, request: Request, opts: &GlobalOpts) -> Response {
     let interactive = matches!(request, Request::Open(_));
     let request = match request {
         Request::Open(t) => Request::Connect(t),
@@ -40,12 +40,11 @@ pub fn run(env: &Env, target: &Target, request: Request, opts: &GlobalOpts) -> O
         let _ = sink.flush();
     };
     let result = super::call(env, target, &request, progress, output);
-    let resp = match result {
+    match result {
         Ok(resp) if interactive => attach(env, resp),
         Ok(resp) => resp,
         Err(e) => super::failure_response(request.cmd(), &e),
-    };
-    render(&resp, opts)
+    }
 }
 
 /// Runs the connect command the controller returned and reports it as `open`.

@@ -2,12 +2,11 @@ use moor_core::config::Flags;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::{BoxId, StartReq};
-use std::path::Path;
 
 use super::relaunch::{gone, started};
 use super::state::idle as is_idle;
 use super::{req, world, World};
-use crate::ops::common::facts::settings;
+use crate::ops::common::facts::settings_of;
 use crate::ops::start::launch;
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
@@ -27,7 +26,8 @@ fn idle() -> (World, BoxId) {
 }
 
 fn launch_with(w: &World, id: BoxId, start: &StartReq) -> moor_core::view::AgentLaunchView {
-    let cfg = settings(&w.cx, Path::new("/repo"), &Flags::default()).unwrap();
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
+    let cfg = settings_of(&w.cx, &row, &Flags::default()).unwrap();
     launch::run(&w.cx, w.cx.store().unwrap(), start, id, None, &|| {
         Ok(cfg.clone())
     })

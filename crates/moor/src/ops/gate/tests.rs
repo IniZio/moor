@@ -22,7 +22,6 @@ const OTHER: &str = "abcdef9999999999999999999999999999999999";
 fn cx(dir: &Path) -> Cx {
     Cx::fake(
         dir,
-        Path::new("/not/a/checkout"),
         Arc::new(FakeDriver::new()),
         Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
@@ -33,7 +32,7 @@ fn cx(dir: &Path) -> Cx {
 fn new_box(cx: &Cx, name: &str) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     cx.store()
         .unwrap()
@@ -192,7 +191,7 @@ fn a_gate_reads_only_the_runs_of_boxes_its_caller_may_see() {
     let (theirs, _) = store.enroll(&Identity::local(3000)).unwrap();
     let nt = NewBox {
         name: BoxName::parse_allow_bare("theirs").unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     let id = store
         .apply(Decision::insert(nt).requester(theirs))

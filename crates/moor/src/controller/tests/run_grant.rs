@@ -30,7 +30,7 @@ fn a_streamed_run_acts_on_the_box_its_grant_pinned() {
         let (user, _) = store.enroll(&Identity::local(who)).unwrap();
         let new = NewBox {
             name: name.clone(),
-            repo: "r".into(),
+            repo: None,
         };
         let id = store
             .apply(Decision::insert(new).requester(user))
@@ -58,14 +58,12 @@ fn a_streamed_run_acts_on_the_box_its_grant_pinned() {
             viewer: Viewer::User(mine),
             pins: [(name.clone(), checked)].into(),
         },
-        dir: None,
     };
     let run = Request::Run(RunReq {
         box_name: name,
         record: None,
         argv: vec!["true".into()],
         inherit_output: false,
-        trust_moor_yaml: false,
     });
     let mut wire = Vec::new();
     let response = respond_with_progress(&env, acting, None, "1", run, INTERVAL, &mut wire);

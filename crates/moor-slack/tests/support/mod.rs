@@ -36,7 +36,7 @@ pub(crate) const BOX_NAME: &str = "slack-1730000000-000100-1";
 /// A token the fake `claude` answers with the tool calls the test wrote.
 pub(crate) const MCP: &str = "sk-ant-oat01-mcp-5ea7";
 /// The repo the rigs mark as the channel's default.
-pub(crate) const REPO: &str = "demo";
+pub(crate) const REPO: &str = "acme/demo";
 /// Pause that lets a wrongly emitted second reply arrive before the test counts replies.
 pub(crate) const QUIET: Duration = Duration::from_millis(600);
 

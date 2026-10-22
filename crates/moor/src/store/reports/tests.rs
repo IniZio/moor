@@ -21,7 +21,7 @@ fn open(dir: &Path) -> Store {
 fn add(store: &Store, name: &str) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     store.apply(Decision::insert(nt)).unwrap().box_id
 }

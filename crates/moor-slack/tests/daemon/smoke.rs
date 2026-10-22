@@ -7,10 +7,10 @@ use serde_json::json;
 
 use super::support::{Rig, BOX_NAME, MCP, TS, USER};
 
-/// The refusal the controller gives for any repo when none are configured.
-const UNKNOWN: &str = "repo nosuch is not known to the controller; no repos are configured";
+/// The refusal the controller gives a person with no moor user, before it reads any repo.
+const UNKNOWN: &str = "log in first: moor user enroll, then moor user secret set claude, then moor user secret set github";
 
-/// A daemon on a real controller whose channel's default repo is `nosuch`.
+/// A daemon on a real controller whose channel's default repo is `o/nosuch`.
 fn rig_on_a_real_controller() -> (Rig, super::support::RealController) {
     let mut rig = Rig::new();
     let bin = rig.use_fake_claude(None);
@@ -23,7 +23,7 @@ fn rig_on_a_real_controller() -> (Rig, super::support::RealController) {
     let controller = rig.real_controller();
     rig.spawn_daemon();
     rig.slack.wait_connected();
-    rig.set_default_repo("nosuch");
+    rig.set_default_repo("o/nosuch");
     (rig, controller)
 }
 

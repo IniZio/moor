@@ -14,7 +14,7 @@ use moor_core::{BoxId, StartReq};
 
 use super::setup::unwrapped;
 use super::state::WORKING;
-use super::{req, world_with, World};
+use super::{repo_req, req, script_base_yaml, world_with, World};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
@@ -30,7 +30,7 @@ fn exit(code: i32) -> ExecOutcome {
 fn goal_req() -> StartReq {
     StartReq {
         goal: Some("ship it".into()),
-        ..req("demo")
+        ..repo_req("demo")
     }
 }
 
@@ -55,9 +55,7 @@ fn dotfiles_world(
     dir: Option<&Path>,
     install: Option<&str>,
     driver: FakeDriver,
-) -> (World, Arc<FakeEngine>, tempfile::TempDir) {
-    let repo = tempfile::tempdir().unwrap();
-    std::fs::write(repo.path().join(".moor.yaml"), yaml).unwrap();
+) -> (World, Arc<FakeEngine>) {
     let config = UserConfig {
         dotfiles: dir.map(|d| DotfilesConfig {
             path: d.to_path_buf(),
@@ -65,7 +63,8 @@ fn dotfiles_world(
         }),
         ..UserConfig::default()
     };
-    let mut w = world_with(driver, repo.path(), config);
+    let mut w = world_with(driver, config);
+    script_base_yaml(&w, Some(yaml));
     w.proc.on(
         Tool::Sh,
         &["-c", TAR_SCRIPT],
@@ -73,7 +72,7 @@ fn dotfiles_world(
     );
     let engine = Arc::new(FakeEngine::new());
     w.cx = w.cx.with_engine(engine.clone());
-    (w, engine, repo)
+    (w, engine)
 }
 
 /// Execs that were the dotfiles step.
@@ -111,11 +110,11 @@ fn assert_archive_put(w: &World) -> String {
     path.as_str().to_owned()
 }
 
-/// The last exec (after setup) is the dotfiles script.
+/// The last exec (after the clone and setup) is the dotfiles script.
 fn assert_dotfiles_exec(w: &World, archive: &str) {
     let want = ["sh", "-c", &script(archive, DEFAULT_INSTALL)].map(str::to_owned);
     let execs = w.driver.execs();
-    assert_eq!(execs.len(), 2);
+    assert_eq!(execs.len(), 3);
     let (_, spec, deadline) = execs.last().unwrap();
     assert!(spec
         .argv
@@ -146,8 +145,7 @@ fn assert_tar_call(w: &World, dir: &Path) {
 #[test]
 fn dotfiles_run_after_setup_and_before_the_agent_launches() {
     let src = tempfile::tempdir().unwrap();
-    let (w, engine, _repo) =
-        dotfiles_world("setup: [a]\n", Some(src.path()), None, FakeDriver::new());
+    let (w, engine) = dotfiles_world("setup: [a]\n", Some(src.path()), None, FakeDriver::new());
     let v = started(&w);
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert!(v.agent.launched);
@@ -163,6 +161,7 @@ fn dotfiles_run_after_setup_and_before_the_agent_launches() {
         [
             "acquire",
             "exec box-1",
+            "exec box-1",
             "copy_out box-1",
             "put_file box-1",
             "exec box-1"
@@ -175,7 +174,7 @@ fn dotfiles_run_after_setup_and_before_the_agent_launches() {
 #[test]
 fn a_configured_install_script_with_a_space_is_quoted_and_guarded() {
     let src = tempfile::tempdir().unwrap();
-    let (w, _, _repo) = dotfiles_world(
+    let (w, _) = dotfiles_world(
         "env: {A: a}\n",
         Some(src.path()),
         Some("my setup.sh"),
@@ -202,13 +201,13 @@ fn log_writer(w: &World) {
     });
 }
 
-/// A started `demo` whose dotfiles exec failed (setup passes first).
-fn failed_start() -> (World, Arc<FakeEngine>, tempfile::TempDir, tempfile::TempDir) {
+/// A started `demo` whose dotfiles exec failed (the clone and setup pass first).
+fn failed_start() -> (World, Arc<FakeEngine>, tempfile::TempDir) {
     let src = tempfile::tempdir().unwrap();
-    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]);
-    let (w, engine, repo) = dotfiles_world("setup: [a]\n", Some(src.path()), None, driver);
+    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1))]);
+    let (w, engine) = dotfiles_world("setup: [a]\n", Some(src.path()), None, driver);
     log_writer(&w);
-    (w, engine, repo, src)
+    (w, engine, src)
 }
 
 /// The dotfiles warning carries the last 20 log lines.
@@ -226,7 +225,7 @@ fn assert_warned_with_tail(w: &World) {
 
 #[test]
 fn a_failing_install_does_not_stop_start_and_warns_with_the_log_tail() {
-    let (w, engine, _repo, _src) = failed_start();
+    let (w, engine, _src) = failed_start();
     let v = run(&w.cx, &goal_req()).unwrap();
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert!(v.dotfiles.ran && !v.dotfiles.ok);
@@ -251,7 +250,7 @@ fn a_failing_install_does_not_stop_start_and_warns_with_the_log_tail() {
 
 #[test]
 fn without_dotfiles_config_nothing_is_packed_uploaded_or_run() {
-    let (w, _, _repo) = dotfiles_world("setup: [a]\n", None, None, FakeDriver::new());
+    let (w, _) = dotfiles_world("setup: [a]\n", None, None, FakeDriver::new());
     let v = started(&w);
     assert_eq!(v.dotfiles, DotfilesView::default());
     assert!(w.proc.calls().iter().all(|c| c.tool != Tool::Sh));
@@ -262,13 +261,13 @@ fn without_dotfiles_config_nothing_is_packed_uploaded_or_run() {
 #[test]
 fn dotfiles_still_run_when_a_setup_line_fails() {
     let src = tempfile::tempdir().unwrap();
-    let driver = FakeDriver::new().exec_results([Ok(exit(1)), Ok(exit(0))]);
-    let (w, engine, _repo) = dotfiles_world("setup: [a]\n", Some(src.path()), None, driver);
+    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1)), Ok(exit(0))]);
+    let (w, engine) = dotfiles_world("setup: [a]\n", Some(src.path()), None, driver);
     let v = started(&w);
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert!(v.setup.ran && !v.setup.ok);
     assert!(v.dotfiles.ran && v.dotfiles.ok);
-    assert_eq!(w.driver.execs().len(), 2);
+    assert_eq!(w.driver.execs().len(), 3);
     assert_eq!(dotfiles_execs(&w).len(), 1);
     assert_eq!(engine.launches().len(), 1);
 }
@@ -276,7 +275,7 @@ fn dotfiles_still_run_when_a_setup_line_fails() {
 #[test]
 fn the_host_log_and_its_directory_are_owner_only() {
     use std::os::unix::fs::PermissionsExt;
-    let (w, _, _repo, _src) = failed_start();
+    let (w, _, _src) = failed_start();
     run(&w.cx, &goal_req()).unwrap();
     let dir = w.dir.path().join("dotfiles");
     let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
@@ -287,8 +286,8 @@ fn the_host_log_and_its_directory_are_owner_only() {
 #[test]
 fn a_failed_setup_line_still_fails_setup_when_the_dotfiles_fail_too() {
     let src = tempfile::tempdir().unwrap();
-    let driver = FakeDriver::new().exec_results([Ok(exit(1)), Ok(exit(1))]);
-    let (w, engine, _repo) = dotfiles_world("setup: [make-it]\n", Some(src.path()), None, driver);
+    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1)), Ok(exit(1))]);
+    let (w, engine) = dotfiles_world("setup: [make-it]\n", Some(src.path()), None, driver);
     log_writer(&w);
     let v = run(&w.cx, &goal_req()).unwrap();
     assert!(v.setup.ran && !v.setup.ok);
@@ -301,8 +300,7 @@ fn a_failed_setup_line_still_fails_setup_when_the_dotfiles_fail_too() {
 #[test]
 fn dotfiles_install_gets_the_repo_env_and_the_proxy_without_any_setup_lines() {
     let src = tempfile::tempdir().unwrap();
-    let (w, _, _repo) =
-        dotfiles_world("env: {ZED: z}\n", Some(src.path()), None, FakeDriver::new());
+    let (w, _) = dotfiles_world("env: {ZED: z}\n", Some(src.path()), None, FakeDriver::new());
     let v = started(&w);
     assert!(v.dotfiles.ran && v.dotfiles.ok);
     let execs = w.driver.execs();
@@ -322,12 +320,16 @@ fn dotfiles_install_gets_the_repo_env_and_the_proxy_without_any_setup_lines() {
 #[test]
 fn dotfiles_fail_when_the_proxy_cannot_start() {
     let src = tempfile::tempdir().unwrap();
-    let (mut w, engine, _repo) =
+    let (mut w, engine) =
         dotfiles_world("env: {A: a}\n", Some(src.path()), None, FakeDriver::new());
     w.cx = w.cx.with_proxy_host(Arc::new(
         FakeProxyHost::new().with_ensure_error(ProxyHostError::Failed("boom".into())),
     ));
-    let v = run(&w.cx, &goal_req()).unwrap();
+    let no_repo = StartReq {
+        goal: Some("ship it".into()),
+        ..req("demo")
+    };
+    let v = run(&w.cx, &no_repo).unwrap();
     assert!(v.dotfiles.ran && !v.dotfiles.ok);
     assert!(!v.setup.ran);
     let warnings = w.cx.take_warnings();

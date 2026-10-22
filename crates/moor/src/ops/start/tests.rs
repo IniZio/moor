@@ -1,4 +1,4 @@
-use std::{path::Path, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use moor_core::config::UserConfig;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
@@ -7,19 +7,17 @@ use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange}
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::forge::ForgeRepo;
-use moor_core::seam::proc::Tool;
 use moor_core::{BoxId, BoxPath, ErrorKind, StartReq};
 
 use super::run;
 use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
-use crate::testing::forge::FakeForge;
-use crate::testing::proc::{Reply, ScriptedProc};
+use crate::testing::forge::{repo_at, FakeForge};
+use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
 use crate::testing::{box_name, driver::FakeDriver};
 
 mod activity;
-mod base;
 mod branch_owner;
 mod capacity;
 mod clone_proxy;
@@ -30,20 +28,18 @@ mod dotfiles;
 mod exited_start;
 mod hold;
 mod identity;
-mod known_repo;
 mod launch_skipped;
 mod launch_warnings;
 mod lease;
 mod lease_dirs;
 mod lease_handle;
-mod moor_yaml;
 mod others;
 mod parent;
 mod provider_caps;
 mod proxy;
 mod relaunch;
 mod relaunch_sessions;
-mod relaunch_yaml;
+mod repo;
 mod requester;
 mod rerun;
 mod revive;
@@ -61,98 +57,63 @@ struct World {
     driver: Arc<FakeDriver>,
     surface: Arc<FakeSurface>,
     proc: Arc<ScriptedProc>,
+    forge: Arc<FakeForge>,
     dir: tempfile::TempDir,
 }
 
 /// Builds a world whose driver is `driver`.
 fn world(driver: FakeDriver) -> World {
-    world_at(driver, Path::new("/repo"))
+    world_with(driver, UserConfig::default())
 }
 
-/// Builds a world whose repo is a real directory inside the world's temp dir.
-fn world_on_disk(driver: FakeDriver) -> World {
-    let w = world(driver);
-    let repo = w.dir.path().join("repo");
-    std::fs::create_dir_all(&repo).unwrap();
-    let at = |suffix: &str| Reply::Ok(format!("{}{suffix}\n", repo.display()));
-    w.proc
-        .before(Tool::Git, &["rev-parse", "--show-toplevel"], at(""));
-    w.proc.before(
-        Tool::Git,
-        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-        at("/.git"),
-    );
-    w
-}
-
-/// Builds a world over the repo at `repo`.
-fn world_at(driver: FakeDriver, repo: &Path) -> World {
-    world_with(driver, repo, UserConfig::default())
-}
-
-/// Builds a world over the repo at `repo` with user config `config`.
-fn world_with(driver: FakeDriver, repo: &Path, config: UserConfig) -> World {
+/// Builds a world with user config `config`.
+fn world_with(driver: FakeDriver, config: UserConfig) -> World {
     let dir = tempfile::tempdir().unwrap();
     let proc = Arc::new(ScriptedProc::new());
-    proc.on(
-        Tool::Git,
-        &["rev-parse", "--show-toplevel"],
-        Reply::Ok(format!("{}\n", repo.display())),
-    );
-    proc.on(Tool::Git, &["ls-tree"], Reply::Ok(String::new()));
-    proc.on(
-        Tool::Git,
-        &["rev-parse", "HEAD"],
-        Reply::Ok("abc123\n".into()),
-    );
-    proc.on(
-        Tool::Git,
-        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-        Reply::Ok(format!("{}/.git\n", repo.display())),
-    );
-    proc.on(
-        Tool::Git,
-        &["rev-parse", "--git-path", "info/exclude"],
-        Reply::Ok(format!("{}/exclude\n", dir.path().display())),
-    );
     let environ = BoxPath::restore("/proc/self/environ").unwrap();
     let driver = Arc::new((1..=4).fold(driver, |d, n| {
         d.peek_text(&format!("box-{n}"), &environ, "HOME=/home/box\0")
     }));
     let surface = Arc::new(FakeSurface::new());
+    let forge = Arc::new(FakeForge::new());
     let cx = Cx::fake_with(
         dir.path(),
-        repo,
         driver.clone(),
         surface.clone(),
         proc.clone(),
         config,
-    );
+    )
+    .with_forge(forge.clone());
     World {
         cx,
         driver,
         surface,
         proc,
+        forge,
         dir,
     }
 }
 
-/// The GitHub origin [`on_github`] gives the world's repo.
-const ORIGIN: &str = "https://github.com/o/n.git";
+/// The base commit the world's forge reports for [`repo`].
+const BASE: &str = "abc123";
 
-/// Gives the world's repo a GitHub origin, so a start clones it in the Box.
-fn on_github(mut w: World) -> World {
-    w.proc.on(
-        Tool::Git,
-        &["remote", "get-url", "origin"],
-        Reply::Ok(format!("{ORIGIN}\n")),
-    );
-    let forge = FakeForge::new().with_repo(ORIGIN, ForgeRepo::new("o", "n"));
-    w.cx = w.cx.with_forge(Arc::new(forge));
+/// The repo [`repo_req`] names.
+fn repo() -> ForgeRepo {
+    ForgeRepo::new("o", "n")
+}
+
+/// Makes the world's forge answer [`repo`] at [`BASE`] with `.moor.yaml` text `yaml`.
+fn script_base_yaml(w: &World, yaml: Option<&str>) {
+    w.forge.answer(repo(), Ok(repo_at(BASE, yaml)));
+}
+
+/// Makes the world's forge answer [`repo`] with no `.moor.yaml`, so a start of it clones it.
+fn on_github(w: World) -> World {
+    script_base_yaml(&w, None);
     w
 }
 
-/// A start request for `name`.
+/// A start request for `name`, with no repo.
 fn req(name: &str) -> StartReq {
     StartReq {
         name: box_name(name),
@@ -163,10 +124,17 @@ fn req(name: &str) -> StartReq {
         no_agent: false,
         hold: false,
         resume: false,
-        trust_moor_yaml: false,
         repo: None,
         parent: None,
         identity: None,
+    }
+}
+
+/// A start request for `name` of [`repo`].
+fn repo_req(name: &str) -> StartReq {
+    StartReq {
+        repo: Some(repo()),
+        ..req(name)
     }
 }
 
@@ -176,7 +144,7 @@ fn happy_path_makes_a_working_box_with_a_ready_box() {
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(!v.attached);
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), state::WORKING);
-    assert_eq!(v.boxed.base.as_deref(), Some("abc123"));
+    assert_eq!(v.boxed.base, None);
     assert_eq!(v.boxed.workspace.as_deref(), Some("ws-1"));
     assert_eq!(v.boxed.branch.as_deref(), Some("moor/demo"));
     let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
@@ -351,14 +319,9 @@ fn nonces_at_the_same_clock_instant_differ_and_come_from_the_rng() {
 
 #[test]
 fn unresolved_credential_rejects_before_any_side_effect() {
-    let repo = tempfile::tempdir().unwrap();
-    std::fs::write(
-        repo.path().join(".moor.yaml"),
-        "box_credentials: [missing]\n",
-    )
-    .unwrap();
-    let w = world_at(FakeDriver::new(), repo.path());
-    let err = run(&w.cx, &req("demo")).unwrap_err();
+    let w = world(FakeDriver::new());
+    script_base_yaml(&w, Some("box_credentials: [missing]\n"));
+    let err = run(&w.cx, &repo_req("demo")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
     assert!(
         err.error
@@ -456,8 +419,7 @@ fn reprovision_skips_when_another_start_already_gave_the_box_back() {
     let stale = store.box_row(id).unwrap().unwrap();
     run(&w.cx, &req("demo")).unwrap();
     assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
-    let run =
-        crate::ops::common::provision::reprovision(&w.cx, store, &stale, "start", false).unwrap();
+    let run = crate::ops::common::provision::reprovision(&w.cx, store, &stale, "start").unwrap();
     assert!(run.is_none());
     assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
 }

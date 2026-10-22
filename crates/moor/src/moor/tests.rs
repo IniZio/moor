@@ -31,7 +31,6 @@ fn unimplemented_command_fails_with_its_cmd() {
             .unwrap()
             .into(),
         force: false,
-        trust_moor_yaml: false,
     });
     let (_dir, moor) = moor();
     let resp = moor.call(req);

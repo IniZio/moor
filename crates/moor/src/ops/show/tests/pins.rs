@@ -26,7 +26,7 @@ fn add_for(cx: &Cx, n: &str, who: &Identity) -> BoxId {
     let (user, _) = store.enroll(who).unwrap();
     let new = NewBox {
         name: name(n),
-        repo: "r".into(),
+        repo: None,
     };
     store
         .apply(Decision::insert(new).requester(user))
@@ -77,7 +77,6 @@ fn the_check_pins_the_open_box_a_start_attaches_to() {
         no_agent: false,
         hold: false,
         resume: false,
-        trust_moor_yaml: false,
         repo: None,
         parent: None,
         identity: None,

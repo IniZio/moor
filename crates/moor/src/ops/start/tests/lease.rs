@@ -5,7 +5,7 @@ use moor_core::seam::driver::DriverError;
 use moor_core::{BoxId, BoxName};
 
 use super::setup::{exit, start_req};
-use super::{req, world, world_at};
+use super::{req, script_base_yaml, world};
 use crate::ops::start::run;
 use crate::store::lease::{LeaseKind, LeaseState};
 use crate::store::{Store, STORE_FILE};
@@ -66,12 +66,11 @@ fn leases_survive_reopening_the_store() {
 
 #[test]
 fn a_failed_setup_leaves_the_workdir_held() {
-    let repo = tempfile::tempdir().unwrap();
-    std::fs::write(repo.path().join(".moor.yaml"), "setup: [a]\n").unwrap();
-    let driver = FakeDriver::new().exec_results([Ok(exit(1))]);
-    let w = world_at(driver, repo.path());
+    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]);
+    let w = world(driver);
+    script_base_yaml(&w, Some("setup: [a]\n"));
     // Read the workdir lease from a second connection while each exec runs, so a
-    // crash mid-setup would find it already held.
+    // crash mid-clone or mid-setup would find it already held.
     let seen = Arc::new(Mutex::new(Vec::new()));
     let (sink, path) = (Arc::clone(&seen), w.dir.path().join(STORE_FILE));
     w.driver.on_exec(move || {
@@ -87,7 +86,7 @@ fn a_failed_setup_leaves_the_workdir_held() {
     });
     let v = run(&w.cx, &start_req()).unwrap();
     assert!(!v.setup.ok);
-    assert_eq!(*seen.lock().unwrap(), vec![vec![LeaseState::Held]; 1]);
+    assert_eq!(*seen.lock().unwrap(), vec![vec![LeaseState::Held]; 2]);
     let rows =
         w.cx.store()
             .unwrap()

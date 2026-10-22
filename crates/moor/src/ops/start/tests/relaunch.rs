@@ -7,7 +7,7 @@ use moor_core::seam::engine::{EngineError, LaunchReq, SessionRef};
 use moor_core::seam::surface::{PaneRef, ResumeOutcome, SurfaceError};
 use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, SessionId, StartReq};
 
-use super::{req, world, world_on_disk, World};
+use super::{req, world, World};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
@@ -48,7 +48,7 @@ pub(super) fn started() -> (World, Arc<FakeEngine>, BoxId) {
             .launch_result(Ok(session("p-1")))
             .launch_result(Ok(session("p-2"))),
     );
-    let mut w = world_on_disk(FakeDriver::new());
+    let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine.clone());
     let first = run(&w.cx, &goal_req("ship it")).unwrap();
     (w, engine, BoxId::new(first.boxed.id))

@@ -25,7 +25,6 @@ use crate::testing::surface::FakeSurface;
 fn engine_cx(dir: &Path, driver: &Arc<FakeDriver>, engine: &Arc<FakeEngine>) -> Cx {
     Cx::fake(
         dir,
-        dir,
         driver.clone(),
         Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
@@ -37,7 +36,7 @@ fn engine_cx(dir: &Path, driver: &Arc<FakeDriver>, engine: &Arc<FakeEngine>) -> 
 fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: &str) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     let store = cx.store().unwrap();
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;

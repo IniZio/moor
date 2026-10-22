@@ -1,6 +1,5 @@
 //! Tests for parking and restoring the Box's Proxy tunnel.
 
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -31,7 +30,6 @@ fn fx() -> Fx {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let cx = Cx::fake_with_clock(
         dir.path(),
-        Path::new("/home/me/proj"),
         Arc::new(FakeDriver::new()),
         Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
@@ -43,7 +41,7 @@ fn fx() -> Fx {
         .unwrap()
         .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("t").unwrap(),
-            repo: "r".into(),
+            repo: None,
         }))
         .unwrap()
         .box_id;

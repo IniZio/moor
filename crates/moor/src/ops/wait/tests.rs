@@ -41,7 +41,6 @@ fn cx_with(dir: &Path, driver: FakeDriver) -> (Cx, Arc<ScriptedProc>) {
     let proc = Arc::new(ScriptedProc::new());
     let cx = Cx::fake(
         dir,
-        dir,
         Arc::new(driver),
         Arc::new(FakeSurface::new()),
         proc.clone(),
@@ -53,7 +52,7 @@ fn cx_with(dir: &Path, driver: FakeDriver) -> (Cx, Arc<ScriptedProc>) {
 fn add(cx: &Cx) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare("demo").unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     cx.store()
         .unwrap()

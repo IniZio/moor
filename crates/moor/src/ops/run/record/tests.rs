@@ -7,10 +7,10 @@ use moor_core::{BoxPath, ErrorKind, GateReq, RunReq};
 
 use crate::error::CommandError;
 use crate::ops::run::run;
-use crate::ops::run::tests::{command, ran_events, ready_with, req, Fx, SHA};
+use crate::ops::run::tests::{command, ran_events, ready_repo, req, Fx, SHA};
 use crate::testing::driver::FakeDriver;
 
-/// The Box HEAD, which differs from the host HEAD the fixture's git answers.
+/// The Box HEAD, which differs from the base the fixture Box started at.
 const BOX_SHA: &str = "fedcba9876543210fedcba9876543210fedcba98";
 
 fn record_req(argv: &[&str]) -> RunReq {
@@ -29,9 +29,19 @@ fn probed(result: Option<&str>, outcomes: Vec<ExecOutcome>) -> Fx {
 }
 
 fn probed_ending(probe: ExecOutcome, result: Option<&str>, outcomes: Vec<ExecOutcome>) -> Fx {
+    probed_in(probe, result, outcomes, None)
+}
+
+/// Like [`probed_ending`], for a Box whose stored `.moor.yaml` is `yaml`.
+fn probed_in(
+    probe: ExecOutcome,
+    result: Option<&str>,
+    outcomes: Vec<ExecOutcome>,
+    yaml: Option<&str>,
+) -> Fx {
     let probe = std::iter::once(Ok(probe));
     let driver = FakeDriver::new().exec_results(probe.chain(outcomes.into_iter().map(Ok)));
-    let f = ready_with(driver);
+    let f = ready_repo(driver, yaml);
     if let Some(text) = result {
         put(&f, HEAD_FILE, text);
     }
@@ -158,17 +168,11 @@ fn record_run_wraps_the_command_in_the_record_script() {
 
 #[test]
 fn repo_setup_lines_precede_the_command() {
-    let f = clean();
-    std::fs::write(f.dir.path().join(".moor.yaml"), "setup: ['make deps']\n").unwrap();
-    f.proc.before(
-        moor_core::seam::proc::Tool::Git,
-        &["ls-tree"],
-        crate::testing::proc::Reply::Ok(".moor.yaml\n".into()),
-    );
-    f.proc.before(
-        moor_core::seam::proc::Tool::Git,
-        &["show"],
-        crate::testing::proc::Reply::Ok("setup: ['make deps']\n".into()),
+    let f = probed_in(
+        ExecOutcome::Exited { code: 0 },
+        Some(&format!("head={BOX_SHA} dirty=0\n")),
+        vec![],
+        Some("setup: ['make deps']\n"),
     );
     run(&f.cx, &record_req(&["make", "test"])).unwrap();
     let (_, spec, _) = f.driver.execs().remove(1);

@@ -1,24 +1,21 @@
 //! Tests for what a start does after a failed or interrupted setup.
 
-use std::path::Path;
-
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::{BoxHandle, BoxId};
 
-use super::moor_yaml::script_base_yaml;
 use super::setup::{
     argvs, exit, failed_at_set, failed_setup_with, kinds, script_argv, setup_execs, start_req,
     start_with, warning_codes,
 };
 use super::state::working;
-use super::{world_at, World};
+use super::{script_base_yaml, world, World};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use moor_core::domain::box_state::BoxLifecycle;
 
-/// Starts `demo` with a failing first setup, then points its host repo at `yaml`.
+/// Starts `demo` of a repo whose `.moor.yaml` is `yaml`, on execs giving `results`.
 fn failed_setup_then(yaml: &str, results: [Result<ExecOutcome, DriverError>; 4]) -> (World, BoxId) {
     failed_setup_with(yaml, FakeDriver::new().exec_results(results))
 }
@@ -90,10 +87,6 @@ fn start_after_a_failed_setup_in_a_replaced_box_runs_setup_in_the_new_box() {
 fn interrupted_setup(pid: u32) -> (World, moor_core::view::StartView) {
     let (w, v) = start_with("setup: [a]\n", FakeDriver::new());
     let id = BoxId::new(v.boxed.id);
-    let wt = w.cx.store().unwrap().box_row(id).unwrap().unwrap().repo;
-    std::fs::create_dir_all(&wt).unwrap();
-    std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [b]\n").unwrap();
-    script_base_yaml(&w, Some("setup: [b]\n"));
     let held = Decision::new(id).intent(IntentChange::Set(Intent::Setup { pid }));
     w.cx.store().unwrap().apply(held).unwrap();
     (w, v)
@@ -149,9 +142,8 @@ fn start_leaves_setup_alone_when_the_setup_owner_is_alive() {
 
 #[test]
 fn start_on_a_setting_up_box_with_a_live_setup_owner_records_no_session() {
-    let repo = tempfile::tempdir().unwrap();
-    std::fs::write(repo.path().join(".moor.yaml"), "setup: [a]\n").unwrap();
-    let w = world_at(FakeDriver::new(), repo.path());
+    let w = world(FakeDriver::new());
+    script_base_yaml(&w, Some("setup: [a]\n"));
     w.driver
         .on_exec(|| std::panic::resume_unwind(Box::new("process died mid-setup")));
     let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -169,9 +161,8 @@ fn start_on_a_setting_up_box_with_a_live_setup_owner_records_no_session() {
 
 #[test]
 fn start_does_not_re_run_setup_for_a_setting_up_box_whose_setup_owner_died() {
-    let repo = tempfile::tempdir().unwrap();
-    std::fs::write(repo.path().join(".moor.yaml"), "setup: [a]\n").unwrap();
-    let w = world_at(FakeDriver::new(), repo.path());
+    let w = world(FakeDriver::new());
+    script_base_yaml(&w, Some("setup: [a]\n"));
     w.driver
         .on_exec(|| std::panic::resume_unwind(Box::new("process died mid-setup")));
     let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

@@ -39,7 +39,7 @@ fn starts(controller: &FakeController) -> Vec<Start> {
             .filter_map(|r| match r {
                 Request::Start(s) => Some((
                     s.name.as_str().to_owned(),
-                    s.repo.clone(),
+                    s.repo.as_ref().map(ToString::to_string),
                     s.goal.clone(),
                     s.parent.map(moor_core::name::SessionId::get),
                 )),

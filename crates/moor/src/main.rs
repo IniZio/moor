@@ -9,7 +9,7 @@ use std::process::ExitCode;
 use moor::cli::{self, GlobalOpts, Invocation, Output, Parsed};
 use moor::env::Env;
 use moor::moor_core::controller::WatchFilter;
-use moor::moor_core::Request;
+use moor::moor_core::{Request, Response};
 use moor::Moor;
 
 /// Parse argv, run the request, print the rendered output, return its exit code.
@@ -110,33 +110,41 @@ fn run(env: Env, inv: Invocation) -> Output {
         Some(dir) => env.with_state_dir(dir),
         None => env,
     };
+    let cmd = request.cmd();
     // The client's own directory; an unreadable one leaves relative paths for the controller
     // to refuse.
-    let request = match std::env::current_dir() {
-        Ok(cwd) => cli::in_cwd(request, &cwd),
-        Err(_) => request,
+    let resolved = match std::env::current_dir() {
+        Ok(cwd) => cli::resolve(request, &cwd, &Moor::host_checkout(&env)),
+        Err(_) => Ok(cli::Resolved {
+            request,
+            warning: None,
+        }),
     };
-    if let Some(target) = moor::client::configured_target(&env) {
-        return moor::client::remote::run(&env, &target, request, &opts);
-    }
-    let request = cli::inherit_run_output(request, &opts);
-    render_call(&env, request, &opts)
-}
-
-/// Run `request` against a fresh engine and render the response with `opts`.
-fn render_call(env: &Env, request: Request, opts: &GlobalOpts) -> Output {
-    let cmd = request.cmd();
-    let resp = if matches!(request, Request::Version {}) {
-        Moor::version()
-    } else {
-        match (Moor::from_env(env), request.split_dir()) {
-            (Ok(moor), Ok((dir, request))) => moor.in_dir(dir).call(request),
-            (Err(e), _) => e.into_response(cmd, vec![]),
-            (_, Err(why)) => moor::error::CommandError::new(moor::moor_core::ErrorKind::Usage, why)
-                .into_response(cmd, vec![]),
+    let cli::Resolved { request, warning } = match resolved {
+        Ok(r) => r,
+        Err(why) => {
+            let resp = moor::error::CommandError::new(moor::moor_core::ErrorKind::Usage, why)
+                .into_response(cmd, vec![]);
+            return cli::render(&resp, &opts);
         }
     };
-    cli::render(&resp, opts)
+    let mut resp = match moor::client::configured_target(&env) {
+        Some(target) => moor::client::remote::run(&env, &target, request, &opts),
+        None => call(&env, cli::inherit_run_output(request, &opts)),
+    };
+    resp.warnings.extend(warning);
+    cli::render(&resp, &opts)
+}
+
+/// Run `request` against a fresh engine.
+fn call(env: &Env, request: Request) -> Response {
+    if matches!(request, Request::Version {}) {
+        return Moor::version();
+    }
+    match Moor::from_env(env) {
+        Ok(moor) => moor.call(request),
+        Err(e) => e.into_response(request.cmd(), vec![]),
+    }
 }
 
 /// Write stdout then stderr (write errors ignored) and map the code.

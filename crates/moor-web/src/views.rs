@@ -1,12 +1,13 @@
-//! Read endpoints for the browser page: the request tree, the repo list and one Box.
+//! Read endpoints for the browser page: the request tree and one Box.
 //!
-//! Only requests that never wake a Box are sent: `sessions`, `show`, `repos`, `show-session`.
+//! Only requests that never wake a Box are sent: `sessions`, `show`, `show-session`.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use moor_core::request::{ReposReq, Request, SessionsReq, ShowReq, ShowSessionReq};
+use moor_core::request::{Request, SessionsReq, ShowReq, ShowSessionReq};
 use moor_core::response::{ErrorKind, ExitClass, Response};
+use moor_core::seam::forge::ForgeRepo;
 use moor_core::BoxName;
 use serde_json::{json, Map, Value};
 
@@ -21,7 +22,7 @@ mod tests;
 /// Number of events returned with one Box.
 const BOX_EVENTS: u32 = 50;
 
-/// Serves `GET /tree`, `/repos` and `/boxes/{name}`; everything else goes to `fallback`.
+/// Serves `GET /tree` and `/boxes/{name}`; everything else goes to `fallback`.
 ///
 /// A request row whose root Session is no longer live is listed as a root with state `gone`.
 pub fn handler(client: Client, db: Arc<Mutex<Db>>, fallback: Handler) -> Handler {
@@ -31,7 +32,6 @@ pub fn handler(client: Client, db: Arc<Mutex<Db>>, fallback: Handler) -> Handler
         }
         let resp = match req.path.as_str() {
             "/tree" => tree(&client, &db),
-            "/repos" => repos(&client),
             path => match path.strip_prefix("/boxes/") {
                 Some(rest) => return route_box(&client, req, rest),
                 None => return fallback(req),
@@ -111,14 +111,6 @@ fn text<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
     v.get(key).and_then(Value::as_str)
 }
 
-/// `GET /repos`.
-fn repos(client: &Client) -> HttpResponse {
-    match call(client, Request::Repos(ReposReq {})) {
-        Ok(value) => json_ok(&value),
-        Err(resp) => resp,
-    }
-}
-
 /// `GET /boxes/{name}`.
 fn detail(client: &Client, name: &str) -> HttpResponse {
     let Ok(box_name) = BoxName::parse_allow_bare(name) else {
@@ -146,8 +138,6 @@ struct Source<'a> {
     live: HashSet<i64>,
     /// Box views by Box name.
     boxes: HashMap<&'a str, &'a Value>,
-    /// Repo urls by name.
-    urls: HashMap<&'a str, &'a str>,
     /// Request rows by root Session id.
     requests: HashMap<i64, &'a RequestRow>,
 }
@@ -189,7 +179,7 @@ impl Source<'_> {
             "workdir": field(session, "workdir"),
             "ordinal": field(session, "ordinal"),
             "request": self.requests.get(&id).map(|r| request_json(r)),
-            "box": view.map(|t| self.box_summary(t)),
+            "box": view.map(Self::box_summary),
             "agent": view.and_then(|t| t.get("agent")).map(|a| json!({
                 "state": field(a, "state"),
                 "question": field(a, "question"),
@@ -200,9 +190,10 @@ impl Source<'_> {
     }
 
     /// The Box summary the page shows.
-    fn box_summary(&self, t: &Value) -> Value {
-        let repo = text(t, "repo");
-        let url = repo.and_then(|r| self.urls.get(r).copied());
+    fn box_summary(t: &Value) -> Value {
+        let url = text(t, "repo")
+            .and_then(|r| ForgeRepo::parse(r).ok())
+            .map(|r| format!("https://github.com/{r}"));
         json!({
             "name": field(t, "name"),
             "repo": field(t, "repo"),
@@ -219,20 +210,18 @@ impl Source<'_> {
 /// `GET /tree`.
 fn tree(client: &Client, db: &Mutex<Db>) -> HttpResponse {
     let sessions = call(client, Request::Sessions(SessionsReq { parent: None }));
-    let show = sessions
-        .and_then(|s| {
-            let req = Request::Show(ShowReq {
-                target: None,
-                events: None,
-                agent: true,
-                reports: false,
-                artifacts: false,
-                pane: false,
-            });
-            Ok((s, call(client, req)?))
-        })
-        .and_then(|(s, t)| Ok((s, t, call(client, Request::Repos(ReposReq {}))?)));
-    let (sessions, boxes, repos) = match show {
+    let show = sessions.and_then(|s| {
+        let req = Request::Show(ShowReq {
+            target: None,
+            events: None,
+            agent: true,
+            reports: false,
+            artifacts: false,
+            pane: false,
+        });
+        Ok((s, call(client, req)?))
+    });
+    let (sessions, boxes) = match show {
         Ok(all) => all,
         Err(resp) => return resp,
     };
@@ -242,7 +231,7 @@ fn tree(client: &Client, db: &Mutex<Db>) -> HttpResponse {
         Err(e) => return HttpResponse::text("500 Internal Server Error", e.to_string()),
     };
     let stranded = stranded(client, &sessions, &boxes, &rows);
-    json_ok(&json!({"roots": roots(&sessions, &boxes, &repos, &rows, &stranded)}))
+    json_ok(&json!({"roots": roots(&sessions, &boxes, &rows, &stranded)}))
 }
 
 /// Whether a Box view is for a Box that is still open.
@@ -295,13 +284,7 @@ fn stranded(client: &Client, sessions: &Value, boxes: &Value, rows: &[RequestRow
 }
 
 /// The root nodes: live roots, then request rows that are no longer live.
-fn roots(
-    sessions: &Value,
-    boxes: &Value,
-    repos: &Value,
-    rows: &[RequestRow],
-    stranded: &[Value],
-) -> Vec<Value> {
+fn roots(sessions: &Value, boxes: &Value, rows: &[RequestRow], stranded: &[Value]) -> Vec<Value> {
     let all = items(sessions, "sessions");
     let live: HashSet<i64> = all.iter().map(id_of).collect();
     let mut children: HashMap<i64, Vec<&Value>> = HashMap::new();
@@ -324,10 +307,6 @@ fn roots(
             .iter()
             .filter(|t| is_open(t))
             .filter_map(|t| Some((text(t, "name")?, t)))
-            .collect(),
-        urls: items(repos, "repos")
-            .iter()
-            .filter_map(|r| Some((text(r, "name")?, text(r, "url")?)))
             .collect(),
         requests: rows.iter().map(|r| (r.root_session.get(), r)).collect(),
     };

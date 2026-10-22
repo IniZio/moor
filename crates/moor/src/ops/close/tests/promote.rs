@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
-use std::path::Path;
 use std::sync::Arc;
 
 use super::is_working;
@@ -13,7 +12,7 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
-use moor_core::seam::proc::Tool;
+use moor_core::seam::forge::ForgeRepo;
 use moor_core::user::{Identity, UserId, Viewer};
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, CloseReq, ProviderId, ShowReq, StartReq};
 
@@ -24,18 +23,18 @@ use crate::ops::common::promote::PROMOTE_WAIT;
 use crate::ops::show;
 use crate::ops::start;
 use crate::testing::driver::FakeDriver;
-use crate::testing::proc::{Reply, ScriptedProc};
+use crate::testing::forge::{repo_at, FakeForge};
+use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
 
 const PROVIDER: &str = "local-container";
 const HOLDER_BOX: &str = "box-1";
 const HOLDER_WORKDIR: &str = "/work/box-1";
-/// The host commit id the close probe compares against.
-const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
 
 struct World {
     cx: Cx,
     driver: Arc<FakeDriver>,
+    forge: Arc<FakeForge>,
     holder: BoxId,
     _dir: tempfile::TempDir,
 }
@@ -66,63 +65,38 @@ fn driver_limit(n: u32) -> UserConfig {
 
 /// A live machine held by Box `holder`, bound to `config` and `driver`.
 fn world(config: UserConfig, driver: FakeDriver) -> World {
-    world_at(config, driver, Path::new("/repo"))
+    world_failing(config, driver, None)
 }
 
-/// Like [`world`], over the repo checked out at `repo`.
-fn world_at(config: UserConfig, driver: FakeDriver, repo: &Path) -> World {
-    world_failing(config, driver, None, repo)
-}
-
-/// Like [`world_at`]; the next acquire after the holder's fails with `acquire_err`.
+/// Like [`world`]; the next acquire after the holder's fails with `acquire_err`.
 fn world_failing(
     config: UserConfig,
     driver: FakeDriver,
     acquire_err: Option<DriverError>,
-    repo: &Path,
 ) -> World {
     let dir = tempfile::tempdir().unwrap();
     // The holder is the driver's first Box, so close probes `box-1` at its recorded workdir.
     let probe = BoxPath::under(HOLDER_WORKDIR, ".moor/boxwork").unwrap();
     let driver = driver.peek_text(HOLDER_BOX, &probe, "ahead=0 dirty=0");
-    let proc = ScriptedProc::new();
-    let repo_out = |s: &str| Reply::Ok(format!("{}{s}\n", repo.display()));
-    proc.on(Tool::Git, &["rev-parse", "--show-toplevel"], repo_out(""));
-    proc.on(
-        Tool::Git,
-        &["rev-parse", "HEAD"],
-        Reply::Ok(format!("{HEAD}\n")),
-    );
-    proc.on(
-        Tool::Git,
-        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-        repo_out("/.git"),
-    );
-    proc.on(
-        Tool::Git,
-        &["rev-parse", "--git-path", "info/exclude"],
-        Reply::Ok(format!("{}/exclude\n", dir.path().display())),
-    );
-    proc.on(Tool::Git, &["rev-list"], Reply::Ok("0\n".into()));
-    proc.on(Tool::Git, &["status"], Reply::Ok(String::new()));
-    proc.on(Tool::Git, &["ls-tree"], Reply::Ok(String::new()));
     let handle = acquire_holder(&driver);
     let driver = Arc::new(match acquire_err {
         Some(e) => driver.fail_acquire(e),
         None => driver,
     });
+    let forge = Arc::new(FakeForge::new());
     let cx = Cx::fake_with(
         dir.path(),
-        repo,
         driver.clone(),
         Arc::new(FakeSurface::new()),
-        Arc::new(proc),
+        Arc::new(ScriptedProc::new()),
         config,
-    );
-    let holder = insert_holder(&cx, handle, dir.path());
+    )
+    .with_forge(forge.clone());
+    let holder = insert_holder(&cx, handle);
     World {
         cx,
         driver,
+        forge,
         holder,
         _dir: dir,
     }
@@ -143,12 +117,12 @@ fn acquire_holder(driver: &FakeDriver) -> BoxHandle {
     got.handle
 }
 
-fn insert_holder(cx: &Cx, handle: BoxHandle, repo: &Path) -> BoxId {
+fn insert_holder(cx: &Cx, handle: BoxHandle) -> BoxId {
     let store = cx.store().unwrap();
     let id = store
         .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("holder").unwrap(),
-            repo: repo.display().to_string(),
+            repo: None,
         }))
         .unwrap()
         .box_id;
@@ -182,7 +156,6 @@ fn start_req(name: &str) -> StartReq {
         no_agent: false,
         hold: false,
         resume: false,
-        trust_moor_yaml: false,
         repo: None,
         parent: None,
         identity: None,
@@ -191,8 +164,13 @@ fn start_req(name: &str) -> StartReq {
 
 /// Queues `name` through `start` at the limit.
 fn queue(w: &World, name: &str) -> BoxId {
-    let v = start::run(&w.cx, &start_req(name)).unwrap();
-    assert!(v.queued, "{name} should queue");
+    queue_req(w, &start_req(name))
+}
+
+/// Queues `req` through `start` at the limit.
+fn queue_req(w: &World, req: &StartReq) -> BoxId {
+    let v = start::run(&w.cx, req).unwrap();
+    assert!(v.queued, "{} should queue", req.name.as_str());
     BoxId::new(v.boxed.id)
 }
 
@@ -202,7 +180,7 @@ fn waiting_directly(w: &World, name: &str) -> BoxId {
     let id = store
         .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare(name).unwrap(),
-            repo: "/repo".into(),
+            repo: None,
         }))
         .unwrap()
         .box_id;
@@ -215,7 +193,6 @@ fn close_holder(w: &World) -> moor_core::view::CloseView {
     let req = CloseReq {
         target: BoxName::parse_allow_bare("holder").unwrap().into(),
         force: false,
-        trust_moor_yaml: false,
     };
     close(&w.cx, &req).unwrap()
 }
@@ -321,12 +298,7 @@ fn failed_acquire_of_the_promoted_box_does_not_fail_the_close() {
     let failure = DriverError::Failed {
         summary: "no capacity".into(),
     };
-    let w = world_failing(
-        limit(1),
-        FakeDriver::new(),
-        Some(failure),
-        Path::new("/repo"),
-    );
+    let w = world_failing(limit(1), FakeDriver::new(), Some(failure));
     let id = queue(&w, "first");
     let v = close_holder(&w);
     assert!(v.box_deleted);
@@ -434,17 +406,21 @@ fn a_store_read_error_during_promotion_is_a_warning_not_a_failed_close() {
 
 #[test]
 fn promoted_box_runs_the_repo_setup_commands_in_its_new_box() {
-    let repo = tempfile::tempdir().unwrap();
-    std::fs::write(
-        repo.path().join(".moor.yaml"),
-        "setup: [\"echo one\", \"echo two\"]\n",
-    )
-    .unwrap();
     // Setup runs through the Proxy, which stages its credentials under the Box user's HOME.
     let environ = BoxPath::restore("/proc/self/environ").unwrap();
     let driver = FakeDriver::new().peek_text("box-2", &environ, "HOME=/home/box\0");
-    let w = world_at(limit(1), driver, repo.path());
-    let id = queue(&w, "first");
+    let w = world(limit(1), driver);
+    let repo = ForgeRepo::new("o", "n");
+    let yaml = "setup: [\"echo one\", \"echo two\"]\n";
+    w.forge
+        .answer(repo.clone(), Ok(repo_at("abc123", Some(yaml))));
+    let id = queue_req(
+        &w,
+        &StartReq {
+            repo: Some(repo),
+            ..start_req("first")
+        },
+    );
     close_holder(&w);
     assert!(is_working(&row_of(&w, id)));
     let handle = w.cx.store().unwrap().box_row(id).unwrap().unwrap();

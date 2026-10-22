@@ -1,22 +1,17 @@
 //! A Box acts for the user of the identity that started it, and only that user.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use moor_core::request::StartNeedsReq;
-use moor_core::seam::forge::ForgeRepo;
-use moor_core::seam::proc::Tool;
 use moor_core::user::{Identity, SecretName};
 use moor_core::{ErrorKind, SessionId, StartReq};
 use serde_json::json;
 
-use super::{req, world, World};
+use super::{on_github, repo, repo_req, req, world, World};
 use crate::cx::Cx;
 use crate::ops::start::{needs, run};
 use crate::testing::cx::{put_secret, REQUESTER_USER};
 use crate::testing::driver::FakeDriver;
-use crate::testing::forge::FakeForge;
-use crate::testing::proc::Reply;
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
 use crate::testing::surface::FakeSurface;
 use crate::vault::Vault;
@@ -121,7 +116,6 @@ fn a_start_outside_a_controller_socket_acts_as_no_one_and_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     let cx = Cx::fake_bare(
         dir.path(),
-        &PathBuf::from("/repo"),
         Arc::new(FakeDriver::new()),
         Arc::new(FakeSurface::new()),
         Arc::new(crate::testing::proc::ScriptedProc::new()),
@@ -149,19 +143,6 @@ fn starting_another_users_open_box_is_refused() {
     assert!(err.error.to_string() == "not your Box", "{err:?}");
 }
 
-/// `w` whose repo's origin is a GitHub repo, so the GitHub rules apply.
-fn on_github(mut w: World) -> World {
-    let url = "git@github.com:o/r.git";
-    w.proc.on(
-        Tool::Git,
-        &["remote", "get-url", "origin"],
-        Reply::Ok(format!("{url}\n")),
-    );
-    let forge = FakeForge::new().with_repo(url, ForgeRepo::new("o", "r"));
-    w.cx = w.cx.with_forge(Arc::new(forge));
-    w
-}
-
 /// `w` acting as `local:2000`, enrolled with no secrets.
 fn enrolled_without_secrets(w: World) -> World {
     let other = Identity::parse("local:2000").unwrap();
@@ -172,7 +153,7 @@ fn enrolled_without_secrets(w: World) -> World {
 #[test]
 fn a_start_missing_secrets_is_refused_naming_every_one_and_creates_nothing() {
     let w = enrolled_without_secrets(on_github(world(FakeDriver::new())));
-    let err = run(&w.cx, &req("demo")).unwrap_err();
+    let err = run(&w.cx, &repo_req("demo")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
     assert_eq!(
         err.error.to_string(),
@@ -192,7 +173,7 @@ fn start_needs_answers_for_a_caller_with_no_user_and_starts_nothing() {
     let w = acting_as(on_github(world(FakeDriver::new())), "local:2000");
     let req = StartNeedsReq {
         identity: None,
-        repo: None,
+        repo: Some(repo()),
     };
     let v = needs(&w.cx, &req).unwrap();
     assert_eq!(v.identity.to_string(), "local:2000");
@@ -210,7 +191,7 @@ fn a_user_rule_adds_its_secret_to_what_a_start_needs() {
         "proxy: {rules: {gitlab: {hosts: [gitlab.com], credential: gitlab, inject: {form: 'Bearer {secret}'}}}}\n",
     )
     .unwrap();
-    let w = super::world_with(FakeDriver::new(), std::path::Path::new("/repo"), config);
+    let w = super::world_with(FakeDriver::new(), config);
     let req = StartNeedsReq {
         identity: None,
         repo: None,

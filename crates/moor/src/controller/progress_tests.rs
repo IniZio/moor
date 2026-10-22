@@ -150,7 +150,6 @@ fn close_reports_progress_and_show_does_not() {
     let close = Request::Close(CloseReq {
         target: target.clone().into(),
         force: false,
-        trust_moor_yaml: false,
     });
     assert!(progress(close) > 0);
     let show = Request::Show(ShowReq {

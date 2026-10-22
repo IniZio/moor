@@ -85,7 +85,7 @@ impl World {
 fn insert(store: &Store, name: &str, user: Option<UserId>) -> BoxId {
     let new = Decision::insert(NewBox {
         name: BoxName::parse_allow_bare(name).expect("name"),
-        repo: "r".into(),
+        repo: None,
     });
     let new = match user {
         Some(user) => new.requester(user),

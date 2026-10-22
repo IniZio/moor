@@ -1,6 +1,5 @@
 //! Tests for waking an Asleep Box and machine.
 
-use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::activity::{PaneObs, PaneStatus};
@@ -79,14 +78,8 @@ fn fx_with(driver: FakeDriver) -> Fx {
     let surface = Arc::new(FakeSurface::new());
     let engine = Arc::new(FakeEngine::new().launch_result(Ok(session("p-2"))));
     let proc = git_proc();
-    let cx = Cx::fake(
-        dir.path(),
-        Path::new("/home/me/proj"),
-        driver.clone(),
-        surface.clone(),
-        proc,
-    )
-    .with_engine(engine.clone());
+    let cx =
+        Cx::fake(dir.path(), driver.clone(), surface.clone(), proc).with_engine(engine.clone());
     let store = cx.store().unwrap();
     let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store

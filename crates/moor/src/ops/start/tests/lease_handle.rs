@@ -22,7 +22,7 @@ fn state_after_hold(got: &str, key: &str) -> Option<LeaseState> {
     let id: BoxId = store
         .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("demo").unwrap(),
-            repo: "r".into(),
+            repo: None,
         }))
         .unwrap()
         .box_id;

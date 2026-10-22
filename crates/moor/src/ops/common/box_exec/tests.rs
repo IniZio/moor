@@ -39,7 +39,6 @@ fn rig_driver(dir: &Path, config: UserConfig, driver: FakeDriver) -> Rig {
     let driver = Arc::new(driver);
     let cx = Cx::fake_with(
         dir,
-        dir,
         Arc::clone(&driver) as Arc<_>,
         Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
@@ -234,13 +233,13 @@ fn ensure_plans_the_proxy_for_the_user_of_the_box() {
     assert_ne!(second.get(), 1, "the Box's user is not the first user");
     let new = NewBox {
         name: BoxName::parse_allow_bare("second-users-box").unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     let id = store
         .apply(Decision::insert(new).requester(second))
         .unwrap()
         .box_id;
-    super::proxy(&r.cx, id, Some(BoxHandle::new("h")), dir.path(), &cfg()).unwrap();
+    super::proxy(&r.cx, id, Some(BoxHandle::new("h")), None, &cfg()).unwrap();
     let users: Vec<UserId> = fake
         .calls()
         .into_iter()

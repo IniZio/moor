@@ -85,12 +85,10 @@ impl Request {
             Self::EndHostSession(r) => session(r.session),
             Self::BindSession(r) => session(r.session),
             Self::As(r) => r.request.names(),
-            Self::In(r) => r.request.names(),
             Self::StartNeeds(_)
             | Self::SessionBinding(_)
             | Self::Gate(_)
             | Self::Env(_)
-            | Self::Repos(_)
             | Self::Whoami(_)
             | Self::Enroll(_)
             | Self::SecretSet(_)

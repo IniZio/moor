@@ -1,8 +1,8 @@
 # moor
 
 moor runs coding agents in Boxes. A Box is one piece of work. It has a
-git worktree and branch on your host, a herdr workspace that shows the agent's
-terminal, and a machine from crabbox where the agent runs. The agent does
+branch of a GitHub repo, a herdr workspace that shows the agent's terminal,
+and a machine from crabbox where the agent runs and clones the repo. The agent does
 not get your Claude or GitHub token. A Proxy on your host adds each token to
 the agent's requests.
 
@@ -94,8 +94,9 @@ This guide starts one Box from a git repo on your machine. You need:
    moor start fix-typo --goal "Fix the typo in the README"
    ```
 
-   moor creates the worktree, the herdr workspace, and the machine, and then
-   starts the agent.
+   Run it inside a checkout of a GitHub repo, or name one with
+   `--repo OWNER/NAME`. moor creates the herdr workspace and the machine, the
+   machine clones the repo, and then the agent starts.
 
 6. Follow the Box, and close it when the agent is done:
 

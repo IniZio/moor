@@ -2,7 +2,6 @@
 
 pub mod binding;
 pub mod env;
-pub mod repos;
 pub mod run;
 pub mod session;
 pub mod sleep;
@@ -119,8 +118,8 @@ pub struct BoxView {
     pub id: i64,
     /// Box name.
     pub name: String,
-    /// Repo path or alias.
-    pub repo: String,
+    /// The repo the Box clones, as `OWNER/NAME`; `None` for a Box with no repo.
+    pub repo: Option<crate::name::ForgeRepo>,
     /// Issue reference.
     pub issue: Option<String>,
     /// Goal text.

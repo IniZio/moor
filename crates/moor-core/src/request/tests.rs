@@ -23,7 +23,6 @@ fn with_args() -> Vec<Request> {
             no_agent: true,
             hold: false,
             resume: false,
-            trust_moor_yaml: false,
             repo: None,
             parent: None,
             identity: None,
@@ -32,7 +31,6 @@ fn with_args() -> Vec<Request> {
             box_name: n("a"),
             record: None,
             argv: vec!["ls".into()],
-            trust_moor_yaml: false,
             inherit_output: false,
         }),
         Request::Wait(WaitReq {
@@ -63,7 +61,6 @@ fn with_args() -> Vec<Request> {
         Request::Close(CloseReq {
             target: n("a").into(),
             force: true,
-            trust_moor_yaml: true,
         }),
         Request::Cp(CpReq {
             box_name: n("a"),
@@ -86,8 +83,10 @@ fn all() -> Vec<Request> {
             name: "n".into(),
             command: None,
         }),
-        Request::Env(EnvReq { repo: None }),
-        Request::Repos(ReposReq {}),
+        Request::Env(EnvReq {
+            repo: None,
+            base: None,
+        }),
         Request::Version {},
     ]);
     v
@@ -96,7 +95,7 @@ fn all() -> Vec<Request> {
 #[test]
 fn cmd_equals_serde_tag_and_roundtrips() {
     let reqs = all();
-    assert_eq!(reqs.len(), 17);
+    assert_eq!(reqs.len(), 16);
     for r in reqs {
         let text = serde_json::to_string(&r).unwrap();
         assert!(
@@ -118,31 +117,19 @@ fn close_roundtrips_from_json() {
         Request::Close(CloseReq {
             target: n("a").into(),
             force: true,
-            trust_moor_yaml: false
         })
     );
     assert_eq!(
         serde_json::to_value(&r).unwrap(),
-        json!({"cmd":"close","box":"a","force":true,"trust_moor_yaml":false})
+        json!({"cmd":"close","box":"a","force":true})
     );
-}
-
-#[test]
-fn close_trust_moor_yaml_defaults_false_and_roundtrips() {
-    let r: Request = serde_json::from_str(r#"{"cmd":"close","box":"a"}"#).unwrap();
-    assert!(matches!(&r, Request::Close(c) if !c.trust_moor_yaml));
-    let r: Request =
-        serde_json::from_str(r#"{"cmd":"close","box":"a","trust_moor_yaml":true}"#).unwrap();
-    assert!(matches!(&r, Request::Close(c) if c.trust_moor_yaml));
-    let back: Request = serde_json::from_str(&serde_json::to_string(&r).unwrap()).unwrap();
-    assert_eq!(back, r);
 }
 
 #[test]
 fn start_repo_roundtrips_and_defaults_none() {
     let r: Request =
-        serde_json::from_str(r#"{"cmd":"start","name":"a","repo":"doorlock-app"}"#).unwrap();
-    assert!(matches!(&r, Request::Start(s) if s.repo.as_deref() == Some("doorlock-app")));
+        serde_json::from_str(r#"{"cmd":"start","name":"a","repo":"o/doorlock-app"}"#).unwrap();
+    assert!(matches!(&r, Request::Start(s) if s.repo == Some(ForgeRepo::new("o", "doorlock-app"))));
     let back: Request = serde_json::from_str(&serde_json::to_string(&r).unwrap()).unwrap();
     assert_eq!(back, r);
     let r: Request = serde_json::from_str(r#"{"cmd":"start","name":"a"}"#).unwrap();
@@ -206,33 +193,57 @@ fn defaults_and_renames() {
             box_name: n("a"),
             record: None,
             argv: vec![],
-            trust_moor_yaml: false,
             inherit_output: false,
         })
     );
 }
 
 #[test]
-fn start_trust_moor_yaml_defaults_false_and_roundtrips() {
-    let r: Request = serde_json::from_str(r#"{"cmd":"start","name":"a"}"#).unwrap();
-    assert!(matches!(r, Request::Start(ref s) if !s.trust_moor_yaml));
+fn a_request_naming_a_trust_flag_is_an_unknown_field() {
+    for cmd in [
+        r#""cmd":"start","name":"a""#,
+        r#""cmd":"run","box":"a""#,
+        r#""cmd":"close","box":"a""#,
+    ] {
+        let text = format!(r#"{{{cmd},"trust_moor_yaml":true}}"#);
+        let err = serde_json::from_str::<Request>(&text)
+            .expect_err(cmd)
+            .to_string();
+        assert!(err.contains("unknown field `trust_moor_yaml`"), "{err}");
+    }
+}
 
-    let r: Request =
-        serde_json::from_str(r#"{"cmd":"start","name":"a","trust_moor_yaml":true}"#).unwrap();
-    assert!(matches!(r, Request::Start(ref s) if s.trust_moor_yaml));
-    let back: Request = serde_json::from_value(serde_json::to_value(&r).unwrap()).unwrap();
-    assert_eq!(back, r);
+#[test]
+fn start_repo_is_owner_slash_name() {
+    for bad in ["/home/me/app", "moor", "https://github.com/o/n"] {
+        let text = format!(r#"{{"cmd":"start","name":"a","repo":"{bad}"}}"#);
+        assert!(serde_json::from_str::<Request>(&text).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn in_and_repos_are_unknown_commands() {
+    for text in [
+        r#"{"cmd":"repos"}"#,
+        r#"{"cmd":"in","dir":"/d","request":{"cmd":"version"}}"#,
+    ] {
+        assert!(serde_json::from_str::<Request>(text).is_err(), "{text}");
+    }
 }
 
 #[test]
 fn none_fields_omitted() {
-    let v = serde_json::to_value(Request::Env(EnvReq { repo: None })).unwrap();
+    let v = serde_json::to_value(Request::Env(EnvReq {
+        repo: None,
+        base: None,
+    }))
+    .unwrap();
     assert_eq!(v, json!({"cmd":"env"}));
 }
 
 #[test]
 fn run_argv_roundtrips() {
-    let v = json!({"cmd":"run","box":"a","argv":["ls","-la"],"trust_moor_yaml":false});
+    let v = json!({"cmd":"run","box":"a","argv":["ls","-la"]});
     let r: Request = serde_json::from_value(v.clone()).unwrap();
     assert_eq!(
         r,
@@ -240,7 +251,6 @@ fn run_argv_roundtrips() {
             box_name: n("a"),
             record: None,
             argv: vec!["ls".into(), "-la".into()],
-            trust_moor_yaml: false,
             inherit_output: false,
         })
     );
@@ -255,7 +265,6 @@ fn run_inherit_output_is_not_settable_from_json() {
         box_name: n("a"),
         record: None,
         argv: vec![],
-        trust_moor_yaml: false,
         inherit_output: true,
     };
     let v = serde_json::to_value(Request::Run(r)).unwrap();
@@ -292,18 +301,6 @@ fn a_run_naming_a_sync_is_an_unknown_field() {
             .to_string();
         assert!(err.contains(&format!("unknown field `{field}`")), "{err}");
     }
-}
-
-#[test]
-fn run_trust_moor_yaml_defaults_false_and_roundtrips() {
-    let r: Request = serde_json::from_str(r#"{"cmd":"run","box":"a"}"#).unwrap();
-    assert!(matches!(r, Request::Run(ref s) if !s.trust_moor_yaml));
-
-    let r: Request =
-        serde_json::from_str(r#"{"cmd":"run","box":"a","trust_moor_yaml":true}"#).unwrap();
-    assert!(matches!(r, Request::Run(ref s) if s.trust_moor_yaml));
-    let back: Request = serde_json::from_value(serde_json::to_value(&r).unwrap()).unwrap();
-    assert_eq!(back, r);
 }
 
 #[test]
@@ -429,7 +426,6 @@ fn parent_is_omitted_when_none() {
         no_agent: false,
         hold: false,
         resume: false,
-        trust_moor_yaml: false,
         repo: None,
         parent: None,
         identity: None,

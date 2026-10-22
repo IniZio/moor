@@ -4,6 +4,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use moor_core::request::{EndSessionReq, OpenHostSessionReq, OpenSessionReq};
+use moor_core::seam::forge::ForgeRepo;
 use moor_core::{
     BoxId, BoxName, BoxReq, CloseReq, CpReq, EnvReq, GateReq, Request, RunReq, ShowReq, StartReq,
     SteerReq, WaitFor, WaitReq,
@@ -71,24 +72,11 @@ fn start_with_all_flags() {
             no_agent: true,
             hold: false,
             resume: true,
-            trust_moor_yaml: false,
             repo: None,
             parent: None,
             identity: None,
         })
     );
-}
-
-#[test]
-fn start_trust_moor_yaml_flag() {
-    assert!(matches!(
-        req(&["start", "demo", "--trust-moor-yaml"]),
-        Request::Start(s) if s.trust_moor_yaml
-    ));
-    assert!(matches!(
-        req(&["start", "demo"]),
-        Request::Start(s) if !s.trust_moor_yaml
-    ));
 }
 
 #[test]
@@ -107,8 +95,8 @@ fn start_hold_flag() {
 #[test]
 fn start_repo_flag() {
     assert!(matches!(
-        req(&["start", "t", "--repo", "doorlock-app"]),
-        Request::Start(s) if s.repo.as_deref() == Some("doorlock-app")
+        req(&["start", "t", "--repo", "o/doorlock-app"]),
+        Request::Start(s) if s.repo == Some(ForgeRepo::new("o", "doorlock-app"))
     ));
 }
 
@@ -121,7 +109,6 @@ fn run_with_trailing_command() {
             box_name: n("t1"),
             record: None,
             argv: vec!["ls".into(), "-la".into()],
-            trust_moor_yaml: false,
             inherit_output: false,
         })
     );
@@ -132,29 +119,10 @@ fn run_with_trailing_command() {
             box_name: n("t1"),
             record: Some("r".into()),
             argv: vec!["make".into()],
-            trust_moor_yaml: false,
             inherit_output: false,
         })
     );
     assert!(run(&["run", "t1"]).is_err());
-}
-
-#[test]
-fn run_trust_moor_yaml_flag() {
-    assert!(matches!(
-        req(&["run", "demo", "--trust-moor-yaml", "--", "make", "test"]),
-        Request::Run(RunReq {
-            trust_moor_yaml: true,
-            ..
-        })
-    ));
-    assert!(matches!(
-        req(&["run", "demo", "--", "make", "test"]),
-        Request::Run(RunReq {
-            trust_moor_yaml: false,
-            ..
-        })
-    ));
 }
 
 #[test]
@@ -317,15 +285,6 @@ fn close_cp() {
         Request::Close(CloseReq {
             target: n("t1").into(),
             force: true,
-            trust_moor_yaml: false
-        })
-    );
-    assert_eq!(
-        req(&["close", "demo", "--trust-moor-yaml"]),
-        Request::Close(CloseReq {
-            target: n("demo").into(),
-            force: false,
-            trust_moor_yaml: true
         })
     );
     assert_eq!(
@@ -333,7 +292,6 @@ fn close_cp() {
         Request::Close(CloseReq {
             target: n("demo").into(),
             force: false,
-            trust_moor_yaml: false
         })
     );
     assert_eq!(
@@ -405,11 +363,18 @@ fn gate_check() {
 
 #[test]
 fn admin_verbs() {
-    assert_eq!(req(&["env"]), Request::Env(EnvReq { repo: None }));
     assert_eq!(
-        req(&["env", "web-app"]),
+        req(&["env"]),
         Request::Env(EnvReq {
-            repo: Some("web-app".into())
+            repo: None,
+            base: None
+        })
+    );
+    assert_eq!(
+        req(&["env", "o/web-app", "--base", "v1"]),
+        Request::Env(EnvReq {
+            repo: Some(ForgeRepo::new("o", "web-app")),
+            base: Some("v1".into())
         })
     );
     assert_eq!(req(&["version"]), Request::Version {});

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use moor_core::config::UserConfig;
 use moor_core::ErrorKind;
 
-use super::{load_repo, load_user, user_path};
+use super::{load_user, user_path};
 use crate::env::Env;
 
 type Case<'a> = (&'a [(&'a str, &'a str)], Option<&'a str>);
@@ -72,17 +72,4 @@ fn bad_yaml_is_failed_with_file_label() {
     let e = load_user(&env(&[("MOOR_CONFIG", p.to_str().unwrap())])).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
     assert!(e.error.to_string().starts_with(p.to_str().unwrap()));
-}
-
-#[test]
-fn repo_worktree_first_then_main_then_none() {
-    let wt = tempfile::tempdir().unwrap();
-    let main = tempfile::tempdir().unwrap();
-    assert!(load_repo(wt.path(), main.path()).unwrap().is_none());
-    std::fs::write(main.path().join(".moor.yaml"), "{}\n").unwrap();
-    let from_main = load_repo(wt.path(), main.path()).unwrap();
-    assert!(from_main.is_some());
-    std::fs::write(wt.path().join(".moor.yaml"), "bogus_key: 1\n").unwrap();
-    let e = load_repo(wt.path(), main.path()).unwrap_err();
-    assert!(e.error.to_string().starts_with(wt.path().to_str().unwrap()));
 }

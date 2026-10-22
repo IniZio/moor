@@ -4,11 +4,9 @@
     reason = "test assertions index decoded frames"
 )]
 use std::io::Cursor;
-use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::config::parse_user;
-use moor_core::seam::proc::Tool;
 use moor_core::{BoxName, Request, ShowReq, StartReq, SteerReq};
 use serde_json::{json, Value};
 
@@ -17,7 +15,7 @@ use crate::cx::Cx;
 use crate::testing::cx::{put_secret, REQUESTER_USER};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
-use crate::testing::proc::{Reply, ScriptedProc};
+use crate::testing::proc::ScriptedProc;
 use crate::testing::proxy_host::FakeProxyHost;
 use crate::testing::surface::FakeSurface;
 use crate::vault::Vault;
@@ -37,31 +35,15 @@ struct World {
 
 fn world(host: FakeProxyHost) -> (Cx, World) {
     let dir = tempfile::tempdir().expect("tempdir");
-    let repo = Path::new("/repo");
     let proc = Arc::new(ScriptedProc::new());
-    let git = |args: &[&str], out: String| {
-        proc.on(Tool::Git, args, Reply::Ok(out));
-    };
-    git(&["rev-parse", "--show-toplevel"], "/repo\n".to_owned());
-    git(&["ls-tree"], String::new());
-    git(&["rev-parse", "HEAD"], "abc123\n".to_owned());
-    git(
-        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-        "/repo/.git\n".to_owned(),
-    );
-    git(
-        &["rev-parse", "--git-path", "info/exclude"],
-        format!("{}/exclude\n", dir.path().display()),
-    );
     let driver = Arc::new(FakeDriver::new());
     let surface = Arc::new(FakeSurface::new());
     let engine = Arc::new(FakeEngine::new());
     let cx = Cx::fake_with(
         dir.path(),
-        repo,
         driver.clone(),
         surface.clone(),
-        proc.clone(),
+        proc,
         parse_user("test", CONFIG).expect("config"),
     )
     .with_engine(engine.clone())
@@ -113,7 +95,6 @@ fn start() -> Request {
         no_agent: false,
         hold: false,
         resume: false,
-        trust_moor_yaml: false,
         repo: None,
         parent: None,
         identity: None,

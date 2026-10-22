@@ -1,4 +1,4 @@
-//! The CLI acts on its caller's directory, never on the controller's.
+//! The CLI resolves its caller's checkout itself and sends only what it found.
 
 #![allow(clippy::indexing_slicing, reason = "test code")]
 
@@ -13,18 +13,9 @@ use moor_core::Response;
 use serde_json::Value;
 
 use super::fresh_dir;
-use super::via_controller::Daemon;
 
-/// A crabbox that reports a supported version and one provider that carries the reverse tunnel.
-const FAKE_CRABBOX: &str = "#!/bin/sh\n\
-    case \"$1\" in\n\
-    --version) echo 'crabbox 0.79.1-moor.1' ;;\n\
-    providers) echo '[{\"provider\": \"local-container\", \"features\": [\"ssh\"]}]' ;;\n\
-    *) exit 1 ;;\n\
-    esac\n";
-
-/// A git repo with one commit at `dir`, by its canonical path.
-fn repo(dir: &Path) -> PathBuf {
+/// A git repo at `dir` whose `origin` is `origin`, with one commit pushed nowhere.
+fn repo(dir: &Path, origin: &str) -> PathBuf {
     std::fs::create_dir_all(dir).unwrap();
     let git = |args: &[&str]| {
         let out = Command::new("git")
@@ -39,6 +30,7 @@ fn repo(dir: &Path) -> PathBuf {
     };
     git(&["init", "-q"]);
     git(&["commit", "-q", "--allow-empty", "-m", "first"]);
+    git(&["remote", "add", "origin", origin]);
     dir.canonicalize().unwrap()
 }
 
@@ -65,45 +57,7 @@ fn moor_in(cwd: &Path, socket: &Path, args: &[&str], input: &str) -> Output {
     child.wait_with_output().unwrap()
 }
 
-#[test]
-fn a_cli_start_with_no_repo_starts_from_the_callers_checkout_not_the_controllers() {
-    let work = fresh_dir("cwd");
-    let (a, b) = (repo(&work.join("a")), repo(&work.join("b")));
-    let crabbox = work.join("crabbox");
-    moor_testkit::write_executable(&crabbox, FAKE_CRABBOX).unwrap();
-    let asked = work.join("herdr.log");
-    let herdr = work.join("herdr");
-    let record = format!(
-        "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\n\
-         case \"$1 $2\" in\n\
-         'workspace list') echo '{{\"result\":{{\"workspaces\":[]}}}}' ;;\n\
-         'workspace create') echo '{{\"result\":{{\"workspace\":{{\"workspace_id\":\"w1\"}}}}}}' ;;\n\
-         esac\n",
-        asked.display()
-    );
-    moor_testkit::write_executable(&herdr, record).unwrap();
-    let daemon = Daemon::start_with(|cmd| {
-        cmd.current_dir(&a)
-            .env("MOOR_CRABBOX_BIN", &crabbox)
-            .env("MOOR_HERDR_BIN", &herdr);
-    });
-    let client = |args: &[&str], input: &str| moor_in(&b, &daemon.socket, args, input);
-    client(&["user", "enroll"], "");
-    for name in ["claude", "github"] {
-        let set = client(&["user", "secret", "set", name], "not-a-token");
-        assert!(set.status.success(), "{set:?}");
-    }
-    let started = client(&["start", "demo"], "");
-    let reply = String::from_utf8_lossy(&started.stdout);
-    let from_b = format!("\"repo\":\"{}\"", b.display());
-    assert!(reply.contains(&from_b), "{reply}\n{started:?}");
-    assert!(!reply.contains(&a.display().to_string()), "{reply}");
-    let log = std::fs::read_to_string(&asked).unwrap_or_default();
-    assert!(!log.contains(&a.display().to_string()), "{log}");
-    let _ = std::fs::remove_dir_all(&work);
-}
-
-/// Answers one request on a fresh socket with a failure, and returns the request it got.
+/// Answers one request on a fresh socket with an ok reply, and returns the request it got.
 fn capture_one(socket: &Path) -> thread::JoinHandle<Value> {
     let listener = UnixListener::bind(socket).unwrap();
     thread::spawn(move || {
@@ -135,5 +89,33 @@ fn a_cli_cp_sends_its_destination_absolute_against_the_callers_directory() {
     let sent = server.join().unwrap();
     assert_eq!(sent["cmd"], "cp", "{sent}");
     assert_eq!(sent["dest"], b.join("out/a.txt").display().to_string());
+    let _ = std::fs::remove_dir_all(&work);
+}
+
+#[test]
+fn a_cli_start_sends_the_owner_and_name_of_its_callers_origin() {
+    let work = fresh_dir("start");
+    let b = repo(&work.join("b"), "git@github.com:o/n.git");
+    let socket = work.join("c.sock");
+    let server = capture_one(&socket);
+    moor_in(&b, &socket, &["start", "n/1"], "");
+    let sent = server.join().unwrap();
+    assert_eq!(sent["cmd"], "start", "{sent}");
+    assert_eq!(sent["repo"], "o/n", "{sent}");
+    assert!(
+        !sent.to_string().contains(&b.display().to_string()),
+        "{sent}"
+    );
+    let _ = std::fs::remove_dir_all(&work);
+}
+
+#[test]
+fn a_cli_start_in_a_checkout_of_another_forge_is_refused_before_sending() {
+    let work = fresh_dir("gitlab");
+    let b = repo(&work.join("b"), "https://u:tok3n@gitlab.com/o/n.git");
+    let out = moor_in(&b, &work.join("none.sock"), &["start", "n/1"], "");
+    let reply = String::from_utf8_lossy(&out.stdout);
+    assert!(reply.contains("not a github.com repo"), "{reply}");
+    assert!(!reply.contains("tok3n"), "{reply}");
     let _ = std::fs::remove_dir_all(&work);
 }

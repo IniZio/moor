@@ -1,7 +1,5 @@
 //! What `run` checks before it touches the machine: the Box must hold a usable machine.
 
-use std::path::PathBuf;
-
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::name::{BoxHandle, BoxPath};
@@ -17,11 +15,9 @@ pub(super) struct Target {
     pub(super) handle: BoxHandle,
     /// Working directory in the Box; the driver's default when unrecorded.
     pub(super) workdir: Option<BoxPath>,
-    /// The host checkout the Proxy plan reads the repo's origin from.
-    pub(super) repo: PathBuf,
 }
 
-/// The Box and host checkout a run uses, or the reason none can.
+/// The Box a run uses, or the reason none can.
 ///
 /// A Box the driver no longer knows is also recorded as a refused run.
 pub(super) fn target(store: &Store, row: &BoxRow) -> Result<Target, CommandError> {
@@ -54,9 +50,5 @@ pub(super) fn target(store: &Store, row: &BoxRow) -> Result<Target, CommandError
         .clone()
         .ok_or_else(|| failed(format!("box of {name} has no handle")))?;
     let workdir = boxed.workdir.as_deref().and_then(recorded_workdir);
-    Ok(Target {
-        handle,
-        workdir,
-        repo: PathBuf::from(&row.repo),
-    })
+    Ok(Target { handle, workdir })
 }

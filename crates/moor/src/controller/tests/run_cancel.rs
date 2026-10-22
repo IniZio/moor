@@ -60,31 +60,6 @@ fn client_process(socket: &Path, request: &Request) -> std::process::Child {
     holder.spawn().unwrap()
 }
 
-/// Makes `dir` a git repository with one commit.
-fn git_repo(dir: &Path) {
-    for args in [
-        &["init", "-q"][..],
-        &[
-            "-c",
-            "user.name=t",
-            "-c",
-            "user.email=t@t",
-            "commit",
-            "-q",
-            "--allow-empty",
-            "-m",
-            "one",
-        ],
-    ] {
-        let status = Command::new("git")
-            .args(args)
-            .current_dir(dir)
-            .status()
-            .unwrap();
-        assert!(status.success(), "git {args:?}");
-    }
-}
-
 /// Records a ready Proxy for Box `id` whose supervisor holds a fresh lease, so a run reuses it.
 fn proxy_ready(store: &Store, id: BoxId) {
     let reserved = store.reserve(id, &FakeRng::default(), LEASE).unwrap();
@@ -123,10 +98,7 @@ fn a_run_whose_client_is_killed_is_cancelled_and_recorded_interrupted() {
     let operator = ask(&served.main, &json!({"cmd": "enroll"}))["value"]["user"]
         .as_i64()
         .unwrap();
-    let worktree = served.dir.path().join("wt");
-    std::fs::create_dir(&worktree).unwrap();
-    git_repo(&worktree);
-    let id = ready_box(&store, UserId::new(operator), &worktree);
+    let id = ready_box(&store, UserId::new(operator));
     let run = RunReq {
         box_name: BoxName::parse_allow_bare(BOX).unwrap(),
         ..req(&["sleep", "600"])

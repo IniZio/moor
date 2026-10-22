@@ -1,7 +1,5 @@
 //! Re-runs the steps that never finished on a ready Box whose last start ended in setup-failed.
 
-use std::path::Path;
-
 use moor_core::config::BoxSettings;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxState;
@@ -53,7 +51,7 @@ pub(super) fn retry_in_box(
     let target = SetupTarget {
         handle,
         workdir: &workdir,
-        repo: Path::new(&row.repo),
+        repo: row.repo.as_ref(),
         log_dir: &log_dir,
     };
     run_and_record(cx, store, row.id, true, &target, cfg)

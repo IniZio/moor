@@ -183,7 +183,7 @@ pub(super) fn no_secrets() -> SecretsFn {
 fn working_box(store: &Store, driver: &FakeDriver, name: &str) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let got = driver
@@ -451,7 +451,7 @@ fn box_without_a_box_handle_is_refused_with_a_stderr_line() {
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let nt = NewBox {
         name: BoxName::parse_allow_bare("bare").unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     drop(store.reserve(id, &FakeRng::default(), LEASE).unwrap());

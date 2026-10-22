@@ -40,7 +40,6 @@ fn rig_on(dir: &Path, driver: FakeDriver, clock: Arc<FakeClock>) -> Rig {
     let driver = Arc::new(driver);
     let cx = Cx::fake_with_clock(
         dir,
-        dir,
         Arc::clone(&driver) as Arc<_>,
         Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),

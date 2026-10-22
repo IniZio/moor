@@ -1,26 +1,17 @@
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
-use moor_core::seam::proc::Tool;
 use moor_core::BoxId;
 
-use super::setup::{exit, failed_setup_with, is_identity, is_setup_line, setup_execs, start_req};
-use super::{req, world_at, World};
+use super::setup::{
+    exit, failed_setup_with, is_identity, is_setup_line, setup_execs, start_as, start_req,
+};
+use super::World;
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
-use crate::testing::proc::Reply;
 
 /// Starts `demo` with one setup line and a git author, so identity runs too.
 fn start(driver: FakeDriver) -> (World, moor_core::view::StartView) {
-    let repo = tempfile::tempdir().unwrap();
-    std::fs::write(repo.path().join(".moor.yaml"), "setup: [a]\n").unwrap();
-    let w = world_at(driver, repo.path());
-    let ok = |v: &str| Reply::Ok(format!("{v}\n"));
-    w.proc
-        .on(Tool::Git, &["config", "--get", "user.name"], ok("Ann"));
-    w.proc
-        .on(Tool::Git, &["config", "--get", "user.email"], ok("a@x.io"));
-    let v = run(&w.cx, &req("demo")).unwrap();
-    (w, v)
+    start_as(("Ann", "a@x.io"), "setup: [a]\n", driver)
 }
 
 /// The stored workdir and the cwd of every setup and identity exec.

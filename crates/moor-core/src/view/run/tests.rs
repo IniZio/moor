@@ -13,7 +13,7 @@ fn sample_box() -> BoxView {
     BoxView {
         id: 1,
         name: "t".into(),
-        repo: "r".into(),
+        repo: Some(crate::seam::forge::ForgeRepo::new("o", "r")),
         issue: None,
         goal: None,
         lifecycle: BoxLifecycle::Ready,

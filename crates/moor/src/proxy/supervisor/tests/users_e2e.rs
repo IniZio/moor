@@ -52,7 +52,7 @@ impl Drop for StopOnDrop {
 fn box_for(store: &Store, driver: &FakeDriver, name: &str, user: UserId) -> (BoxId, BoxHandle) {
     let new = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     let id = store
         .apply(Decision::insert(new).requester(user))

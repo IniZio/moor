@@ -27,24 +27,21 @@ fn fx_probe(text: Option<&str>) -> Fx {
     fx_box(FakeDriver::new(), surface(), text)
 }
 
-/// A Ready Box of a repo dir named `repo`, so a woken Box (which the fake driver
-/// places at `/work/cbx_1/repo`) reads `text` from its probe result.
+/// A Ready Box whose workdir is where the fake driver places a woken Box
+/// (`/work/cbx_1/repo`), so it reads `text` from its probe result.
 pub(super) fn fx_woken(text: &str) -> Fx {
+    fx_woken_with(text, None)
+}
+
+/// Like [`fx_woken`], with `yaml` as the `.moor.yaml` stored for the Box's base.
+pub(super) fn fx_woken_with(text: &str, yaml: Option<&str>) -> Fx {
     let dir = tempfile::tempdir().unwrap();
-    let repo = dir.path().join("repo");
-    std::fs::create_dir(&repo).unwrap();
     let path = BoxPath::under("/work/cbx_1/repo", ".moor/boxwork").unwrap();
     let driver = Arc::new(FakeDriver::new().peek_text("box-1", &path, text));
     let surface = Arc::new(surface());
     let proc = proc();
-    let cx = Cx::fake(
-        dir.path(),
-        dir.path(),
-        driver.clone(),
-        surface.clone(),
-        proc.clone(),
-    );
-    let id = admit(&cx, &driver, &repo);
+    let cx = Cx::fake(dir.path(), driver.clone(), surface.clone(), proc.clone());
+    let id = admit(&cx, &driver, yaml);
     cx.store()
         .unwrap()
         .apply(Decision::new(id).set(Fields {
@@ -257,7 +254,7 @@ fn close_skips_the_probe_for_a_box_that_never_got_a_handle() {
     let id = store
         .apply(Decision::insert(NewBox {
             name: name.clone(),
-            repo: "r".into(),
+            repo: None,
         }))
         .unwrap()
         .box_id;
@@ -292,7 +289,6 @@ fn close_skips_the_probe_for_a_box_that_never_got_a_handle() {
         &CloseReq {
             target: name.into(),
             force: false,
-            trust_moor_yaml: false,
         },
     )
     .unwrap();

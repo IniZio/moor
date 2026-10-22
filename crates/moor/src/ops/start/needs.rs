@@ -3,23 +3,22 @@
 use std::collections::BTreeSet;
 
 use moor_core::request::StartNeedsReq;
+use moor_core::seam::forge::ForgeRepo;
 use moor_core::user::{SecretName, UserId};
 use moor_core::view::user::StartNeedsValue;
 use moor_core::ErrorKind;
 
-use super::known_repo;
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::proxy::{origin, plan};
+use crate::ops::common::proxy::plan;
 
 /// `start-needs`: what a start of `req.repo` would need from the caller's user, starting nothing.
 ///
 /// # Errors
-/// Usage outside a controller socket; Refused for an unknown repo; Failed when the rules do not
-/// resolve.
+/// Usage outside a controller socket; Failed when the rules do not resolve.
 pub(crate) fn run(cx: &Cx, req: &StartNeedsReq) -> Result<StartNeedsValue, CommandError> {
     let (who, user) = cx.requester()?;
-    let needs = needs(cx, req.repo.as_deref())?;
+    let needs = needs(cx, req.repo.as_ref())?;
     let have: BTreeSet<SecretName> = match user {
         Some(user) => cx.store()?.user_secret_names(user)?.into_iter().collect(),
         None => BTreeSet::new(),
@@ -42,10 +41,10 @@ pub(crate) fn run(cx: &Cx, req: &StartNeedsReq) -> Result<StartNeedsValue, Comma
 ///
 /// # Errors
 /// As [`run`], and Refused when the user is missing or lacks a secret.
-pub(super) fn require(cx: &Cx, repo: Option<&str>) -> Result<UserId, CommandError> {
+pub(super) fn require(cx: &Cx, repo: Option<&ForgeRepo>) -> Result<UserId, CommandError> {
     let req = StartNeedsReq {
         identity: None,
-        repo: repo.map(str::to_owned),
+        repo: repo.cloned(),
     };
     let value = run(cx, &req)?;
     if let (Some(user), true) = (value.user, value.missing.is_empty()) {
@@ -72,12 +71,8 @@ pub(super) fn require(cx: &Cx, repo: Option<&str>) -> Result<UserId, CommandErro
 }
 
 /// Every secret the Proxy rules inject for a Box of `repo`, sorted.
-fn needs(cx: &Cx, repo: Option<&str>) -> Result<Vec<SecretName>, CommandError> {
-    let origin = match repo {
-        Some(key) => Some(known_repo::find(cx, key)?.1.url.clone()),
-        None => cx.dir().and_then(|dir| origin(cx, dir)),
-    };
-    let rules = plan(cx, origin.as_deref())
+fn needs(cx: &Cx, repo: Option<&ForgeRepo>) -> Result<Vec<SecretName>, CommandError> {
+    let rules = plan(cx, repo)
         .map_err(|e| CommandError::new(ErrorKind::Failed, e))?
         .rules;
     let names: BTreeSet<SecretName> = rules

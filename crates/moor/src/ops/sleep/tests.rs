@@ -1,6 +1,5 @@
 //! Tests for `sleep`.
 
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -38,7 +37,6 @@ fn fx_with(driver: FakeDriver) -> Fx {
     let surface = Arc::new(FakeSurface::new());
     let cx = Cx::fake(
         dir.path(),
-        Path::new("/home/me/proj"),
         driver.clone(),
         surface.clone(),
         Arc::new(ScriptedProc::new()),
@@ -48,7 +46,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
     let id = store
         .apply(Decision::insert(NewBox {
             name: name.clone(),
-            repo: "r".into(),
+            repo: None,
         }))
         .unwrap()
         .box_id;
@@ -321,7 +319,6 @@ fn starting() -> Fx {
     let surface = Arc::new(FakeSurface::new());
     let cx = Cx::fake(
         dir.path(),
-        Path::new("/home/me/proj"),
         driver.clone(),
         surface.clone(),
         Arc::new(ScriptedProc::new()),
@@ -330,7 +327,7 @@ fn starting() -> Fx {
     let id = store
         .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("t").unwrap(),
-            repo: "r".into(),
+            repo: None,
         }))
         .unwrap()
         .box_id;

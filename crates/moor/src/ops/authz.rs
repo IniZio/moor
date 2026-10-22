@@ -16,15 +16,8 @@ pub(crate) const NOT_YOURS: &str = "not your Box";
 /// The refusal for a `cp` from anyone but the operator: it writes on the controller host.
 pub(crate) const CP_OPERATOR_ONLY: &str = "cp to the host is operator-only";
 
-/// The refusal for an `in` from anyone but the operator: it names a directory on the
-/// controller host.
-pub(crate) const IN_OPERATOR_ONLY: &str = "in names a host directory, which is operator-only";
-
 /// The refusal for an `env` from anyone but the operator: it reads host configs.
 pub(crate) const ENV_OPERATOR_ONLY: &str = "env reads the host's configs, which is operator-only";
-
-/// The refusal for a `repos` from anyone but the operator.
-pub(crate) const REPOS_OPERATOR_ONLY: &str = "repos is operator-only";
 
 /// The refusal for an `open-host-session` from anyone but the operator: host Sessions are the
 /// operator's only.
@@ -84,9 +77,7 @@ pub(crate) fn authorize(
 const fn host_only(request: &Request) -> Option<&'static str> {
     match request {
         Request::Cp(_) => Some(CP_OPERATOR_ONLY),
-        Request::In(_) => Some(IN_OPERATOR_ONLY),
         Request::Env(_) => Some(ENV_OPERATOR_ONLY),
-        Request::Repos(_) => Some(REPOS_OPERATOR_ONLY),
         Request::OpenHostSession(_) => Some(HOST_SESSION_OPERATOR_ONLY),
         _ => None,
     }

@@ -16,7 +16,7 @@ fn prints_stored_events_then_caught_up_and_returns() {
     let store = Store::open(&dir.path().join(STORE_FILE), clock).unwrap();
     let new = NewBox {
         name: BoxName::parse_allow_bare("a").unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     let id = store.apply(Decision::insert(new)).unwrap().box_id;
     for i in 0..2 {

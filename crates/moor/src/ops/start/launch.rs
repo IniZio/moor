@@ -1,6 +1,5 @@
 //! Launches the agent of a Working Box and records how that ended.
 
-use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::activity::PaneStatus;
@@ -19,7 +18,7 @@ use moor_core::{BoxId, StartReq, Warning};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::box_exec;
-use crate::ops::common::facts::settings;
+use crate::ops::common::facts::settings_of;
 use crate::ops::common::provision::{nonce, recorded_workdir, reread};
 use crate::ops::common::resume;
 use crate::ops::common::view::rfc3339;
@@ -108,8 +107,7 @@ pub(crate) fn begin_seeded(
     let Some(mut launch) = launch_req(cx, &working, None) else {
         return Ok(AgentLaunchView::default());
     };
-    let at = row.repo.as_str();
-    let cfg = settings(cx, Path::new(at), &Flags::default())?;
+    let cfg = settings_of(cx, row, &Flags::default())?;
     launch.model = cfg.model.clone().map(|m| m.value);
     launch.prompt = LaunchPrompt::Text(seed);
     begin(cx, store, &working, &launch, &cfg)
@@ -127,8 +125,8 @@ pub(super) fn begin(
 ) -> Result<AgentLaunchView, CommandError> {
     let id = row.id;
     let handle = row.boxed.as_ref().and_then(|b| b.handle.clone());
-    let origin_at = row.repo.as_str();
-    let mut proxy = match box_exec::proxy(cx, id, handle, Path::new(origin_at), cfg) {
+    let repo = row.repo.as_ref().map(|r| &r.repo);
+    let mut proxy = match box_exec::proxy(cx, id, handle, repo, cfg) {
         Ok(p) => p,
         Err(message) => {
             let e = EngineError::Failed {

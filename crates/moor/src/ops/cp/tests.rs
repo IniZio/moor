@@ -35,7 +35,6 @@ fn fx_with(driver: FakeDriver, ready: bool) -> Fx {
     let driver = Arc::new(driver);
     let cx = Cx::fake(
         dir.path(),
-        Path::new(CWD),
         driver.clone(),
         Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
@@ -45,7 +44,7 @@ fn fx_with(driver: FakeDriver, ready: bool) -> Fx {
     let id = store
         .apply(Decision::insert(NewBox {
             name: name.clone(),
-            repo: "r".into(),
+            repo: None,
         }))
         .unwrap()
         .box_id;

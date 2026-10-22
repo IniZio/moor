@@ -10,18 +10,17 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
-use moor_core::seam::proc::{Output, Tool};
+use moor_core::seam::proc::Output;
 use moor_core::{BoxId, BoxName, BoxPath, ErrorKind, ProviderId, RunReq};
 
 use super::{locked, run};
 use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
 use crate::testing::driver::FakeDriver;
-use crate::testing::proc::{Reply, ScriptedProc};
+use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
 
 mod env;
-mod moor_yaml;
 mod setup_parity;
 mod transport;
 
@@ -41,26 +40,13 @@ pub(crate) fn req(argv: &[&str]) -> RunReq {
         record: None,
         argv: argv.iter().map(|s| (*s).to_owned()).collect(),
         inherit_output: false,
-        trust_moor_yaml: false,
     }
 }
 
-/// A context over `dir` with git answering a fixed HEAD.
+/// A context over `dir` whose host processes answer no tool.
 fn context(dir: &std::path::Path, driver: &Arc<FakeDriver>) -> (Cx, Arc<ScriptedProc>) {
     let proc = Arc::new(ScriptedProc::new());
-    proc.on(
-        Tool::Git,
-        &["rev-parse", "HEAD"],
-        Reply::Ok(format!("{SHA}\n")),
-    );
-    proc.on(Tool::Git, &["ls-tree"], Reply::Ok(String::new()));
-    proc.on(
-        Tool::Git,
-        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-        Reply::Ok(format!("{}/.git\n", dir.display())),
-    );
     let cx = Cx::fake(
-        dir,
         dir,
         driver.clone(),
         Arc::new(FakeSurface::new()),
@@ -69,17 +55,17 @@ fn context(dir: &std::path::Path, driver: &Arc<FakeDriver>) -> (Cx, Arc<Scripted
     (cx, proc)
 }
 
-/// A Box `t` with no machine yet.
-fn bare_with(driver: FakeDriver) -> Fx {
+/// A Box `t` of repo `o/n` with no machine yet; `yaml` is its stored `.moor.yaml`.
+fn bare_with(driver: FakeDriver, yaml: Option<&str>) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(driver);
     let (cx, proc) = context(dir.path(), &driver);
     let id = cx
         .store()
         .unwrap()
-        .apply(crate::testing::cx::new_box_in(
+        .apply(crate::testing::cx::new_box_of(
             BoxName::parse_allow_bare("t").unwrap(),
-            dir.path(),
+            crate::testing::cx::box_repo(yaml),
         ))
         .unwrap()
         .box_id;
@@ -93,7 +79,7 @@ fn bare_with(driver: FakeDriver) -> Fx {
 }
 
 fn bare() -> Fx {
-    bare_with(FakeDriver::new())
+    bare_with(FakeDriver::new(), None)
 }
 
 pub(in crate::ops::run) fn ready() -> Fx {
@@ -102,7 +88,17 @@ pub(in crate::ops::run) fn ready() -> Fx {
 
 /// A Ready Box `t` with a machine from `driver`.
 pub(crate) fn ready_with(driver: FakeDriver) -> Fx {
-    let f = bare_with(driver);
+    ready_repo(driver, None)
+}
+
+/// A Ready Box `t` whose stored `.moor.yaml` is `yaml`.
+pub(in crate::ops::run) fn ready_yaml(yaml: &str) -> Fx {
+    ready_repo(FakeDriver::new(), Some(yaml))
+}
+
+/// A Ready Box `t` with a machine from `driver`; `yaml` is its stored `.moor.yaml`.
+pub(in crate::ops::run) fn ready_repo(driver: FakeDriver, yaml: Option<&str>) -> Fx {
+    let f = bare_with(driver, yaml);
     let store = f.cx.store().unwrap();
     let provider = ProviderId::new("p");
     let fields = Fields {
@@ -414,7 +410,6 @@ fn run_is_recorded_in_flight_while_the_command_runs() {
     f.driver.on_exec(move || {
         let probe = Cx::fake(
             &cx_dir,
-            &cx_dir,
             Arc::new(FakeDriver::new()),
             Arc::new(FakeSurface::new()),
             Arc::new(ScriptedProc::new()),
@@ -477,40 +472,12 @@ fn driver_failure_is_kept_on_the_ran_event() {
 
 #[test]
 fn unusable_repo_config_leaves_no_run_row() {
-    let f = ready();
-    let text = "box_credentials: [\n";
-    std::fs::write(f.dir.path().join(".moor.yaml"), text).unwrap();
-    f.proc
-        .before(Tool::Git, &["ls-tree"], Reply::Ok(".moor.yaml\n".into()));
-    f.proc.before(Tool::Git, &["show"], Reply::Ok(text.into()));
+    let f = ready_yaml("box_credentials: [\n");
     let before = f.driver.calls().len();
     refused(&f, &req(&["true"]), ErrorKind::Failed);
     assert_eq!(f.driver.calls().len(), before);
     assert!(f.cx.store().unwrap().last_run(f.id).unwrap().is_none());
     assert_eq!(ran_events(&f), 0);
-}
-
-#[test]
-fn unreadable_head_records_and_reports_no_sha() {
-    let f = ready();
-    let proc = Arc::new(ScriptedProc::new());
-    proc.on(Tool::Git, &["ls-tree"], Reply::Ok(String::new()));
-    proc.on(
-        Tool::Git,
-        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-        Reply::Ok(format!("{}/.git\n", f.dir.path().display())),
-    );
-    let cx = Cx::fake(
-        f.dir.path(),
-        f.dir.path(),
-        f.driver.clone(),
-        Arc::new(FakeSurface::new()),
-        proc,
-    );
-    let v = run(&cx, &req(&["true"])).unwrap();
-    assert_eq!(v.sha, None);
-    let row = cx.store().unwrap().last_run(f.id).unwrap().unwrap();
-    assert_eq!(row.sha, None);
 }
 
 /// The Box's `idle_since` column, read over a second connection.

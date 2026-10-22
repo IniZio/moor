@@ -308,7 +308,7 @@ pub(super) fn rig_with(extra: Vec<ResolvedRule>) -> Rig {
     let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
     let nt = NewBox {
         name: BoxName::parse_allow_bare("demo").unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     let box_id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let spec = ProxySpec {

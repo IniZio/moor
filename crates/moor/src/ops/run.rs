@@ -21,8 +21,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::box_exec::{self, BoxExec, Site};
 use crate::ops::common::boxlock::{self, BoxLock};
-use crate::ops::common::facts::resolved;
-use crate::ops::common::provision::moor_yaml;
+use crate::ops::common::facts::settings_of;
 use crate::ops::common::provisioning::dead_provisioning;
 use crate::ops::common::wake::wake_and_revive;
 use crate::store::{BoxRow, NewRun, RunOutcome, Store, StoreError};
@@ -102,8 +101,7 @@ fn launch(
     target: &ready::Target,
     sink: Option<Sink<'_>>,
 ) -> Result<RunValue, CommandError> {
-    let repo = moor_yaml::guard(cx, row, req.trust_moor_yaml)?;
-    let cfg = resolved(cx, repo.as_ref(), &Flags::default());
+    let cfg = settings_of(cx, row, &Flags::default())?;
     let (sha, argv) = plan(cx, req, target, &cfg.setup)?;
     let id = store.begin_run(NewRun {
         box_id: row.id,
@@ -176,13 +174,19 @@ fn box_env(
     target: &ready::Target,
     cfg: &BoxSettings,
 ) -> Result<BoxExec, CommandError> {
-    let proxy = box_exec::proxy(cx, row.id, Some(target.handle.clone()), &target.repo, cfg)
-        .map_err(|e| {
-            CommandError::new(
-                ErrorKind::Failed,
-                format!("the Proxy could not start: {e}; retry `moor run` once it starts"),
-            )
-        })?;
+    let proxy = box_exec::proxy(
+        cx,
+        row.id,
+        Some(target.handle.clone()),
+        row.repo.as_ref().map(|r| &r.repo),
+        cfg,
+    )
+    .map_err(|e| {
+        CommandError::new(
+            ErrorKind::Failed,
+            format!("the Proxy could not start: {e}; retry `moor run` once it starts"),
+        )
+    })?;
     box_exec::prepare(cx, &site(row, target), Some(&proxy), cfg, Purpose::Run)
         .map_err(|m| CommandError::new(ErrorKind::Failed, m))
 }

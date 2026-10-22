@@ -11,6 +11,7 @@ use moor_core::BoxId;
 use signal_hook::consts::{SIGINT, SIGTERM};
 
 use moor_core::config::{DriverConfig, UserConfig};
+use moor_core::seam::checkout::Checkout;
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::proc::Proc;
@@ -84,7 +85,7 @@ pub(crate) fn build(env: &Env) -> Result<Cx, CommandError> {
 /// [`build`], with each Box's ssh control socket in `sockets`.
 fn build_with_sockets(env: &Env, sockets: PathBuf) -> Result<Cx, CommandError> {
     let (parts, warning) = parts(env, sockets)?;
-    let mut cx = Cx::new(parts).with_repos(env.repos().clone());
+    let mut cx = Cx::new(parts);
     if let Some(key) = env.vault_key() {
         cx = cx.with_vault_key(key.to_path_buf());
     }
@@ -92,6 +93,11 @@ fn build_with_sockets(env: &Env, sockets: PathBuf) -> Result<Cx, CommandError> {
         cx.warn(w);
     }
     Ok(cx)
+}
+
+/// The caller's checkout as the CLI reads it, with host git on `PATH`.
+pub(crate) fn host_checkout(env: &Env) -> impl Checkout {
+    Git::new(Arc::new(SystemProc::new(env, &ToolPaths::default())))
 }
 
 /// Opens the state store once, so a store that every command would refuse fails here.
@@ -182,7 +188,6 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
         proc: Arc::clone(&proc),
         forge: Arc::new(GitHub::new()),
         proxy_host,
-        git: Git::new(Arc::clone(&proc)),
         config,
         env: env.clone(),
         prompt_window: prompt_window(env),

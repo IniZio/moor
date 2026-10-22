@@ -56,14 +56,7 @@ fn world(config: UserConfig) -> World {
     proc.on(Tool::Git, &["ls-tree"], Reply::Ok(String::new()));
     let driver = Arc::new(FakeDriver::new());
     let surface = Arc::new(FakeSurface::new());
-    let cx = Cx::fake_with(
-        dir.path(),
-        repo,
-        driver.clone(),
-        surface.clone(),
-        proc,
-        config,
-    );
+    let cx = Cx::fake_with(dir.path(), driver.clone(), surface.clone(), proc, config);
     World {
         cx,
         driver,
@@ -107,7 +100,6 @@ fn req(name: &str) -> StartReq {
         no_agent: false,
         hold: false,
         resume: false,
-        trust_moor_yaml: false,
         repo: None,
         parent: None,
         identity: None,

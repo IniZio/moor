@@ -13,7 +13,6 @@ fn cx() -> Cx {
     let p = std::path::Path::new("/nonexistent");
     Cx::fake(
         p,
-        p,
         Arc::new(FakeDriver::new()),
         Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),

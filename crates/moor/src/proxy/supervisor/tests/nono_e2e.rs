@@ -67,7 +67,7 @@ impl Drop for StopOnDrop {
 fn box_with_machine(store: &Store, driver: &FakeDriver) -> (BoxId, BoxHandle) {
     let nt = NewBox {
         name: BoxName::parse_allow_bare("demo").unwrap(),
-        repo: "r".into(),
+        repo: None,
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let provider = ProviderId::new("p");

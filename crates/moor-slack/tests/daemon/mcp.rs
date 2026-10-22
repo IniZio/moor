@@ -108,7 +108,8 @@ fn the_tool_server_answers_tool_calls_from_slack_db_and_the_controller() {
         "params": {"name": "list_boxes", "arguments": {}}});
     let answer = send(&mut stdin, &mut stdout, &call).unwrap();
     let text = answer["result"]["content"][0]["text"].as_str().unwrap();
-    let want = format!("- Box `{BOX_NAME}` on demo, asked for by <@{USER}>: lifecycle unknown");
+    let want =
+        format!("- Box `{BOX_NAME}` on acme/demo, asked for by <@{USER}>: lifecycle unknown");
     assert!(text.starts_with(&want), "{text}");
     let call = json!({"jsonrpc": "2.0", "id": 4, "method": "tools/call",
         "params": {"name": "steer_box", "arguments": {"box": BOX_NAME, "text": "go on"}}});
@@ -169,7 +170,8 @@ fn a_turn_starts_the_tool_server_named_in_its_mcp_json_and_lists_the_threads_box
     super::inbox::reply(&rig, 2, USER, "what runs?");
     rig.slack.wait_updates(2);
     let results = Rig::tool_results(&bin, 1);
-    let want = format!("- Box `{BOX_NAME}` on demo, asked for by <@{USER}>: lifecycle unknown");
+    let want =
+        format!("- Box `{BOX_NAME}` on acme/demo, asked for by <@{USER}>: lifecycle unknown");
     assert_eq!(results.len(), 1, "{results:?}");
     assert!(results[0].0.starts_with(&want), "{results:?}");
     let args = std::fs::read_to_string(bin.join("run-0/server-args")).unwrap();

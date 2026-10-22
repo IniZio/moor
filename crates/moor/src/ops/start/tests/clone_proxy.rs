@@ -6,18 +6,13 @@ use std::sync::{Arc, Mutex};
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
-use moor_core::seam::forge::ForgeRepo;
-use moor_core::seam::proc::Tool;
 use moor_core::seam::proxy_host::{ProxyHostError, ProxyStatus};
 use moor_core::BoxId;
 
-use super::moor_yaml::script_base_yaml;
 use super::setup::{exit, start_req};
-use super::{on_github, world_at, World};
+use super::{req, script_base_yaml, World};
 use crate::ops::start::run;
 use crate::testing::driver::{is_clone_exec, FakeDriver};
-use crate::testing::forge::FakeForge;
-use crate::testing::proc::Reply;
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall, FAKE_BOX_PORT};
 
 const YAML: &str = "setup: [a]\n";
@@ -27,22 +22,17 @@ fn world_with(
     yaml: &str,
     results: impl IntoIterator<Item = Result<ExecOutcome, DriverError>>,
     host: &FakeProxyHost,
-) -> (World, tempfile::TempDir) {
-    let repo = tempfile::tempdir().unwrap();
-    std::fs::write(repo.path().join(".moor.yaml"), yaml).unwrap();
-    let mut w = on_github(world_at(
-        FakeDriver::new().exec_results(results),
-        repo.path(),
-    ));
+) -> World {
+    let mut w = super::world(FakeDriver::new().exec_results(results));
     w.cx = w.cx.with_proxy_host(Arc::new(host.clone()));
     script_base_yaml(&w, Some(yaml));
-    (w, repo)
+    w
 }
 
 fn world(
     results: impl IntoIterator<Item = Result<ExecOutcome, DriverError>>,
     host: &FakeProxyHost,
-) -> (World, tempfile::TempDir) {
+) -> World {
     world_with(YAML, results, host)
 }
 
@@ -67,7 +57,7 @@ fn clone_exec(w: &World) -> ExecSpec {
 #[test]
 fn the_proxy_is_ready_before_the_clone_exec_and_its_env_is_on_it() {
     let host = FakeProxyHost::new();
-    let (w, _repo) = world_with("", [], &host);
+    let w = world_with("", [], &host);
     let seen = Arc::new(Mutex::new(Vec::new()));
     let (watch, record) = (host.clone(), Arc::clone(&seen));
     w.driver
@@ -102,12 +92,11 @@ fn the_proxy_is_ready_before_the_clone_exec_and_its_env_is_on_it() {
 }
 
 #[test]
-fn a_box_with_no_github_repo_starts_no_proxy_and_runs_no_clone() {
+fn a_box_with_no_repo_starts_no_proxy_and_runs_no_clone() {
     let host = FakeProxyHost::new();
-    let repo = tempfile::tempdir().unwrap();
-    let mut w = world_at(FakeDriver::new(), repo.path());
+    let mut w = super::world(FakeDriver::new());
     w.cx = w.cx.with_proxy_host(Arc::new(host.clone()));
-    run(&w.cx, &start_req()).unwrap();
+    run(&w.cx, &req("demo")).unwrap();
     assert_eq!(ensured_stopped(&host), (false, false));
     assert!(w.driver.execs().is_empty(), "{:?}", w.driver.execs());
     let kinds = super::setup::kinds(&w, BoxId::new(1));
@@ -115,65 +104,9 @@ fn a_box_with_no_github_repo_starts_no_proxy_and_runs_no_clone() {
 }
 
 #[test]
-fn the_no_clone_warning_for_another_host_never_quotes_its_origin() {
-    const ORIGIN: &str = "https://deploy:hunter2@git.example.com/o/n.git";
-    let repo = tempfile::tempdir().unwrap();
-    let mut w = world_at(FakeDriver::new(), repo.path());
-    w.proc.on(
-        Tool::Git,
-        &["remote", "get-url", "origin"],
-        Reply::Ok(format!("{ORIGIN}\n")),
-    );
-    w.cx = w.cx.with_proxy_host(Arc::new(FakeProxyHost::new()));
-    run(&w.cx, &start_req()).unwrap();
-    let warnings = w.cx.take_warnings();
-    let warning = warnings.iter().find(|x| x.code == "no_clone");
-    let message = &warning.expect("a no_clone warning").message;
-    for part in ["hunter2", "deploy", "git.example.com"] {
-        assert!(!message.contains(part), "{message}");
-    }
-}
-
-#[test]
-fn a_credential_in_the_host_origin_never_reaches_the_box() {
-    const SECRET: &str = "ghs_s3cr3tvalue";
-    let repo = tempfile::tempdir().unwrap();
-    std::fs::write(repo.path().join(".moor.yaml"), YAML).unwrap();
-    let mut w = world_at(FakeDriver::new(), repo.path());
-    let origin = format!("https://x-access-token:{SECRET}@github.com/o/n.git");
-    w.proc.on(
-        Tool::Git,
-        &["remote", "get-url", "origin"],
-        Reply::Ok(format!("{origin}\n")),
-    );
-    let forge = FakeForge::new().with_repo(&origin, ForgeRepo::new("o", "n"));
-    w.cx =
-        w.cx.with_forge(Arc::new(forge))
-            .with_proxy_host(Arc::new(FakeProxyHost::new()));
-    script_base_yaml(&w, Some(YAML));
-    run(&w.cx, &start_req()).unwrap();
-    assert!(clone_exec(&w)
-        .argv
-        .last()
-        .unwrap()
-        .contains("'https://github.com/o/n.git'"));
-    for (_, spec, _) in w.driver.execs() {
-        let env = spec.env.iter().map(|(k, v)| format!("{k}={v}"));
-        for word in spec.argv.iter().cloned().chain(env) {
-            assert!(!word.contains(SECRET), "{word}");
-        }
-    }
-    let warnings = w.cx.take_warnings();
-    assert!(
-        warnings.iter().all(|x| !x.message.contains(SECRET)),
-        "{warnings:?}"
-    );
-}
-
-#[test]
 fn a_failed_clone_ends_the_start_with_its_step_and_stops_the_proxy_it_started() {
     let host = FakeProxyHost::new();
-    let (w, _repo) = world([Ok(exit(71))], &host);
+    let w = world([Ok(exit(71))], &host);
     let err = run(&w.cx, &start_req()).unwrap_err();
     assert!(
         err.error.to_string().starts_with(
@@ -189,7 +122,7 @@ fn a_failed_clone_ends_the_start_with_its_step_and_stops_the_proxy_it_started() 
 #[test]
 fn an_interrupted_clone_stops_the_proxy_it_started() {
     let host = FakeProxyHost::new();
-    let (w, _repo) = world([Ok(ExecOutcome::Interrupted)], &host);
+    let w = world([Ok(ExecOutcome::Interrupted)], &host);
     let err = run(&w.cx, &start_req()).unwrap_err();
     assert!(
         err.error
@@ -207,7 +140,7 @@ fn an_interrupted_clone_stops_the_proxy_it_started() {
 #[test]
 fn a_failed_clone_leaves_a_proxy_that_was_already_up() {
     let host = FakeProxyHost::new().with_status(ProxyStatus::Ready { box_port: 1 });
-    let (w, _repo) = world([Ok(exit(1))], &host);
+    let w = world([Ok(exit(1))], &host);
     run(&w.cx, &start_req()).unwrap_err();
     assert_eq!(ensured_stopped(&host), (true, false));
 }
@@ -215,7 +148,7 @@ fn a_failed_clone_leaves_a_proxy_that_was_already_up() {
 #[test]
 fn a_proxy_that_cannot_start_fails_the_clone_before_any_exec() {
     let host = FakeProxyHost::new().with_ensure_error(ProxyHostError::Failed("boom".into()));
-    let (w, _repo) = world([], &host);
+    let w = world([], &host);
     let err = run(&w.cx, &start_req()).unwrap_err();
     let text = err.error.to_string();
     assert!(
@@ -230,7 +163,7 @@ fn a_proxy_that_cannot_start_fails_the_clone_before_any_exec() {
 #[test]
 fn a_failed_proxy_stop_after_a_failed_clone_is_a_warning() {
     let host = FakeProxyHost::new().with_stop_error(ProxyHostError::Incomplete("stuck".into()));
-    let (w, _repo) = world([Ok(exit(1))], &host);
+    let w = world([Ok(exit(1))], &host);
     let err = run(&w.cx, &start_req()).unwrap_err();
     assert!(err.error.to_string().starts_with("cloning the repo"));
     let warnings = w.cx.take_warnings();
@@ -245,7 +178,7 @@ fn a_failed_proxy_stop_after_a_failed_clone_is_a_warning() {
 #[test]
 fn the_clone_log_is_owner_only_and_removed_when_the_clone_fails() {
     let host = FakeProxyHost::new();
-    let (w, _repo) = world([Ok(exit(1))], &host);
+    let w = world([Ok(exit(1))], &host);
     let log = w.dir.path().join("clone").join("1.log");
     let (modes, path) = (Arc::new(Mutex::new(Vec::new())), log.clone());
     let seen = Arc::clone(&modes);

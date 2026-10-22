@@ -11,7 +11,7 @@ use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::BoxPath;
 
-use super::teardown::{base_has, YAML};
+use super::teardown::{fx_yaml, YAML};
 use super::{box_state, fx_with, req, row, run, Fx};
 use crate::testing::driver::FakeDriver;
 use crate::testing::surface::FakeSurface;
@@ -227,9 +227,7 @@ fn bad_name_is_skipped() {
 
 #[test]
 fn collection_runs_before_teardown_and_release() {
-    let f = fx(driver_with(&[("result.md", "R")]));
-    fs::write(f.dir.path().join(".moor.yaml"), YAML).unwrap();
-    base_has(&f, YAML);
+    let f = fx_yaml(driver_with(&[("result.md", "R")]), YAML);
     run(&f.cx, &req(false)).unwrap();
     let calls = f.driver.calls();
     let execs = exec_at(&f);

@@ -11,7 +11,6 @@ fn close(target: BoxTarget) -> CloseReq {
     CloseReq {
         target,
         force: false,
-        trust_moor_yaml: false,
     }
 }
 
@@ -25,7 +24,7 @@ fn newer_t(f: &Fx) -> BoxId {
         .unwrap()
         .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("t").unwrap(),
-            repo: "r".into(),
+            repo: None,
         }))
         .unwrap()
         .box_id

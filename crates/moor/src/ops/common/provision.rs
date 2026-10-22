@@ -1,13 +1,15 @@
 //! Box provisioning shared by the Box ops: acquire a machine for a new Box, or again for a lost one.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use moor_core::config::{BoxSettings, Flags};
 
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
+use moor_core::domain::decision::{
+    BoxRepo, Decision, ExtraEvent, Field, Fields, Intent, IntentChange,
+};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Acquired, DriverError, Released};
 use moor_core::seam::rng::Rng;
@@ -18,7 +20,7 @@ use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::capacity;
 use crate::ops::common::dotfiles::{self, DotfilesRun};
-use crate::ops::common::facts::{provider_caps, require_reverse_tunnel, resolved};
+use crate::ops::common::facts::{provider_caps, require_reverse_tunnel, settings_of};
 use crate::ops::common::setup;
 use crate::ops::common::view::box_view;
 use crate::store::lease::LeaseKind;
@@ -73,15 +75,13 @@ impl Entry {
 /// provisioning and the row is read again under it; another op holding it is
 /// refused as busy.
 ///
-/// A `.moor.yaml` that differs from the base commit is refused unless `trusted`, before any
-/// setup or Box work starts. Nothing is copied into a ready Box, and its setup never runs again;
-/// a failed or interrupted setup is only warned about.
+/// Settings come from the `.moor.yaml` stored when the Box started. Nothing is copied into a
+/// ready Box, and its setup never runs again; a failed or interrupted setup is only warned about.
 pub(crate) fn reprovision(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
     op: &str,
-    trusted: bool,
 ) -> Result<Option<Provisioned>, CommandError> {
     let ready = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready);
     if entry_for(row).is_none() && !kept_box_retry(row) && !ready {
@@ -91,8 +91,7 @@ pub(crate) fn reprovision(
     let row = reread(store, row.id)?;
     let entry = entry_for(&row);
     if kept_box_retry(&row) {
-        let repo = moor_yaml::guard(cx, &row, trusted)?;
-        let cfg = resolved(cx, repo.as_ref(), &Flags::default());
+        let cfg = settings_of(cx, &row, &Flags::default())?;
         return retry_in_box(cx, store, &row, &cfg).map(Some);
     }
     let Some(entry) = entry else {
@@ -101,8 +100,7 @@ pub(crate) fn reprovision(
         }
         return Ok(None);
     };
-    let repo = moor_yaml::guard(cx, &row, trusted)?;
-    let cfg = resolved(cx, repo.as_ref(), &Flags::default());
+    let cfg = settings_of(cx, &row, &Flags::default())?;
     provision(cx, store, row.id, entry, &cfg).map(Some)
 }
 
@@ -169,7 +167,6 @@ pub(crate) fn provision(
     } else {
         store.apply(requested)?;
     }
-    let repo = PathBuf::from(started.repo.as_str());
     let req = AcquireReq {
         provider,
         box_id: id,
@@ -186,7 +183,7 @@ pub(crate) fn provision(
             record_acquired(store, id, &got)?;
             hold_workdir(store, id, &got)?;
             let log_dir = setup::log_dir(cx.state_dir()?, id);
-            let target = SetupTarget::new(&got, &repo, &log_dir);
+            let target = SetupTarget::new(&got, started.repo.as_ref(), &log_dir);
             run_and_record(cx, store, id, entry.begin().is_some(), &target, cfg)
         }
         Err(e) => Err(failed(cx, store, id, entry, &req, e)),
@@ -216,22 +213,21 @@ fn record_acquired(store: &Store, id: BoxId, got: &Acquired) -> Result<(), Comma
     Ok(())
 }
 
-/// Where setup runs: the freshly acquired Box, the host repo whose origin and author it clones
-/// with, and where its setup log is kept.
+/// Where setup runs: the freshly acquired Box, the repo it clones and where its setup log is kept.
 struct SetupTarget<'a> {
     /// The Box setup runs in.
     handle: &'a BoxHandle,
     /// Working directory in the Box.
     workdir: &'a BoxPath,
-    /// The Box's repo on the host, read only.
-    repo: &'a Path,
+    /// The repo the Box clones, with the author it commits as; `None` for an empty workdir.
+    repo: Option<&'a BoxRepo>,
     /// Host directory for the Box's setup log.
     log_dir: &'a Path,
 }
 
 impl<'a> SetupTarget<'a> {
     /// The target for a freshly acquired Box.
-    const fn new(got: &'a Acquired, repo: &'a Path, log_dir: &'a Path) -> Self {
+    const fn new(got: &'a Acquired, repo: Option<&'a BoxRepo>, log_dir: &'a Path) -> Self {
         Self {
             handle: &got.handle,
             workdir: &got.workdir,
@@ -372,7 +368,6 @@ fn failed(
 
 mod clone;
 mod lease;
-pub(crate) mod moor_yaml;
 mod outcome;
 mod rerun;
 mod retry;

@@ -193,7 +193,6 @@ fn close_all(client: &Client, h: &JobHandle, items: &[Item], open: &HashSet<i64>
                         Request::Close(CloseReq {
                             target: box_name.into(),
                             force: false,
-                            trust_moor_yaml: false,
                         })
                     })
                     .map_err(|e| e.to_string())

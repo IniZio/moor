@@ -1,7 +1,5 @@
 //! Builds the response a start returns, from the Box row and the launch outcome.
 
-use std::path::Path;
-
 use moor_core::config::Flags;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::view::{AgentLaunchView, DotfilesView, SetupView, StartView};
@@ -9,7 +7,7 @@ use moor_core::view::{AgentLaunchView, DotfilesView, SetupView, StartView};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::capacity;
-use crate::ops::common::facts::settings;
+use crate::ops::common::facts::settings_of;
 use crate::ops::common::provision::Provisioned;
 use crate::ops::common::view::{box_view, hide_unsupported_sleep};
 use crate::store::BoxRow;
@@ -31,8 +29,7 @@ pub(super) fn with_provider(
     if row.lifecycle != BoxLifecycle::WaitingForBox {
         return Ok(view(cx, row, attached));
     }
-    let at = row.repo.as_str();
-    let cfg = settings(cx, Path::new(at), &Flags::default())?;
+    let cfg = settings_of(cx, row, &Flags::default())?;
     Ok(queued_view(cx, row, attached, &cfg.provider.value))
 }
 

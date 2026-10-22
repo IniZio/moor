@@ -1,11 +1,10 @@
-//! Requests that name a path on the controller host: only the operator sends them, and the
-//! controller never fills one in from its own working directory.
+//! Requests that name a path on the controller host: only the operator sends them, and no request
+//! names a directory for the controller to read.
 #![allow(
     clippy::indexing_slicing,
     reason = "test assertions index decoded frames"
 )]
 
-use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
@@ -62,11 +61,11 @@ fn enroll_ann(served: &Served) -> UserId {
     UserId::new(got["value"]["user"].as_i64().expect("user"))
 }
 
-/// Inserts a Box of `user` whose machine is ready, on the repo at `repo`.
-pub(super) fn ready_box(store: &Store, user: UserId, repo: &Path) -> BoxId {
+/// Inserts a Box of `user` whose machine is ready.
+pub(super) fn ready_box(store: &Store, user: UserId) -> BoxId {
     let new = Decision::insert(NewBox {
         name: BoxName::parse_allow_bare(BOX).expect("name"),
-        repo: repo.display().to_string(),
+        repo: None,
     })
     .requester(user);
     let id = store.apply(new).expect("box").box_id;
@@ -100,7 +99,7 @@ fn copies(store: &Store, id: BoxId) -> usize {
 fn a_front_cp_to_the_host_is_refused_and_the_operators_cp_still_copies() {
     let (served, store) = served();
     let user = enroll_ann(&served);
-    let id = ready_box(&store, user, served.dir.path());
+    let id = ready_box(&store, user);
     let dest = served.dir.path().join("out.txt");
     let cp = json!({"cmd": "cp", "box": BOX, "src": "/x", "dest": dest});
     let got = ask(&served.front("slack"), &acting(ANN, &cp));
@@ -114,32 +113,14 @@ fn a_front_cp_to_the_host_is_refused_and_the_operators_cp_still_copies() {
 }
 
 #[test]
-fn a_front_cannot_name_a_host_directory() {
+fn no_request_names_a_host_directory_for_the_controller_to_read() {
     let (served, _store) = served();
     enroll_ann(&served);
     let inside = json!({"cmd": "in", "dir": "/", "request": {"cmd": "env"}});
-    let got = ask(&served.front("slack"), &acting(ANN, &inside));
-    refused(&got, "in names a host directory, which is operator-only");
-}
-
-/// The test process runs inside this crate's checkout, which a start from the controller's own
-/// directory would use.
-#[test]
-fn a_start_with_no_repo_and_no_dir_starts_nothing() {
-    let (served, store) = served();
-    enroll_ann(&served);
-    let operator = json!({"cmd": "secret-set", "name": "claude", "value": "x"});
-    ask(&served.main, &json!({"cmd": "enroll"}));
-    assert_eq!(ask(&served.main, &operator)["class"], "ok");
-    let start = json!({"cmd": "start", "name": "demo"});
     for got in [
-        ask(&served.front("slack"), &acting(ANN, &start)),
-        ask(&served.main, &start),
+        ask(&served.front("slack"), &acting(ANN, &inside)),
+        ask(&served.main, &inside),
     ] {
-        assert_eq!(got["error"]["kind"], "usage", "{got}");
-        let message = got["error"]["message"].as_str().unwrap_or_default();
-        assert!(message.starts_with("no repo"), "{got}");
+        assert_eq!(got["frame"], "error", "{got}");
     }
-    let demo = BoxName::parse_allow_bare("demo").expect("name");
-    assert!(store.latest_box_by_name(&demo).expect("read").is_none());
 }

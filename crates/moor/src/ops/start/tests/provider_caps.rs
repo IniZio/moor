@@ -7,8 +7,7 @@ use crate::testing::driver::FakeDriver;
 #[test]
 fn the_box_egress_is_left_unrecorded_and_never_warned_about() {
     let config = parse_user("config.yaml", "box: {provider: p}").unwrap();
-    let repo = tempfile::tempdir().unwrap();
-    let w = world_with(FakeDriver::new(), repo.path(), config);
+    let w = world_with(FakeDriver::new(), config);
     let v = crate::ops::start::run(&w.cx, &req("demo")).unwrap();
     let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
     let egress = row.unwrap().unwrap().boxed.unwrap().egress;
@@ -23,12 +22,7 @@ fn the_box_egress_is_left_unrecorded_and_never_warned_about() {
 #[test]
 fn a_provider_without_reverse_tunnel_is_refused_before_any_acquire() {
     let config = parse_user("config.yaml", "box: {provider: p}").unwrap();
-    let repo = tempfile::tempdir().unwrap();
-    let w = world_with(
-        FakeDriver::new().without_reverse_tunnel_cap(),
-        repo.path(),
-        config,
-    );
+    let w = world_with(FakeDriver::new().without_reverse_tunnel_cap(), config);
     let e = crate::ops::start::run(&w.cx, &req("demo")).unwrap_err();
     assert_eq!(e.kind, moor_core::ErrorKind::Refused);
     let msg = e.error.to_string();
@@ -42,8 +36,7 @@ fn a_provider_without_reverse_tunnel_is_refused_before_any_acquire() {
 
 fn launch_strip_env(config_yaml: &str) -> Vec<String> {
     let config = parse_user("config.yaml", config_yaml).unwrap();
-    let repo = tempfile::tempdir().unwrap();
-    let w = world_with(FakeDriver::new(), repo.path(), config);
+    let w = world_with(FakeDriver::new(), config);
     let v = crate::ops::start::run(&w.cx, &req("demo")).unwrap();
     let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
     let row = row.unwrap().unwrap();
