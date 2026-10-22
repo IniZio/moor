@@ -264,5 +264,5 @@ fn serve_injects_the_credential_audits_requests_and_stops() {
         code
     });
     assert_eq!(code, 0);
-    assert!(store.proxy(id).unwrap().is_none());
+    assert!(store.proxy(id).unwrap().is_some());
 }

@@ -21,7 +21,7 @@ use crate::store::{BoxRow, Fenced, Lease, ReadyProc};
 /// Why the supervisor stops.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Stop {
-    /// A signal asked it to.
+    /// A signal asked it to. The row and its ports stay so the Proxy restarts on them.
     Signal,
     /// The Box closed or went away.
     Closed,
@@ -359,15 +359,13 @@ impl Running<'_> {
         if stop != Stop::LostLease {
             give_up(deps, box_id, &owner);
         }
-        if matches!(stop, Stop::Closed | Stop::Signal) {
+        if stop == Stop::Closed {
             if let Err(err) = deps.store.remove_proxy(box_id) {
                 say(
                     &deps.stderr,
                     format_args!("cannot remove the proxy row: {err}"),
                 );
             }
-        }
-        if stop == Stop::Closed {
             Live::forget(deps, box_id);
         }
         u8::from(!matches!(stop, Stop::Closed | Stop::Signal))

@@ -332,14 +332,14 @@ fn healthy_tick_keeps_running_and_extends_the_lease() {
 }
 
 #[test]
-fn serve_with_the_stop_flag_set_exits_zero_and_removes_the_row() {
+fn serve_with_the_stop_flag_set_exits_zero_and_keeps_the_row() {
     let w = World::new([]);
     w.stop.store(true, Ordering::SeqCst);
     let deps = w.deps();
 
     assert_eq!(serve(&deps, w.id), 0);
 
-    assert!(w.store.proxy(w.id).unwrap().is_none());
+    assert!(w.store.proxy(w.id).unwrap().is_some());
     assert!(w.driver.dropped_tunnels().contains(&FIRST_TUNNEL_PID));
 }
 
@@ -360,7 +360,7 @@ fn serve_sleeps_one_tick_between_ticks_until_stopped() {
     let tick = i64::try_from(TICK.as_millis()).unwrap();
     assert!(slept >= 3 * tick, "slept {slept}ms");
     assert_eq!(slept % tick, 0);
-    assert!(w.store.proxy(w.id).unwrap().is_none());
+    assert!(w.store.proxy(w.id).unwrap().is_some());
 }
 
 #[test]
@@ -517,6 +517,33 @@ fn signal_keeps_the_ca_and_spec() {
 
     assert!(ca_dir(w.dir.path(), w.id).exists());
     assert!(read_spec(w.dir.path(), w.id).is_ok());
+}
+
+#[test]
+fn signal_keeps_the_proxy_row_and_both_ports() {
+    let w = World::new([]);
+    let deps = w.deps();
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+    let before = w.store.proxy(w.id).unwrap().unwrap();
+
+    assert_eq!(run.finish(Stop::Signal), 0);
+
+    let after = w.store.proxy(w.id).unwrap().expect("row survives a signal");
+    assert_eq!(after.box_port, before.box_port);
+    assert_eq!(after.egress_port, before.egress_port);
+}
+
+#[test]
+fn closed_removes_the_proxy_row() {
+    let w = World::new([]);
+    let deps = w.deps();
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+
+    w.close_box();
+    assert!(matches!(run.tick(), Some(Stop::Closed)));
+    assert_eq!(run.finish(Stop::Closed), 0);
+
+    assert!(w.store.proxy(w.id).unwrap().is_none());
 }
 
 #[test]
