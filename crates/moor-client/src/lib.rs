@@ -1,9 +1,10 @@
 //! Client for the moor controller socket: one-shot requests and event watches.
 //!
 //! A call dials again, within its [`Redial`] budget, while the request provably did not run:
-//! no controller listened, the connection failed before the request was written, or the
-//! controller answered `restarting`. A connection cut after the request was written is an
-//! error and is never sent again, because the request may have run.
+//! the connect was refused on an existing socket path, the connection failed before the
+//! request was written, or the controller answered `restarting` before any output. A missing
+//! socket path fails at once. A connection cut after the request was written is an error and
+//! is never sent again, because the request may have run.
 
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
@@ -17,7 +18,7 @@ use moor_core::request::Request;
 use moor_core::response::Response;
 
 pub use error::ClientError;
-pub use redial::{redial, Attempt, GaveUp, Redial};
+pub use redial::{redial, Attempt, GaveUp, Redial, WallClock, ATTACH_REFUSED_EXIT};
 pub use stream::ByteStream;
 pub use watch::{EventRecord, Watch, WatchItem, WatchStop};
 
@@ -85,7 +86,8 @@ impl Client {
         self
     }
 
-    /// Runs one request, passing each progress note to `on_progress`.
+    /// Runs one request, passing each progress note to `on_progress`. Once a note was passed
+    /// on, the request is never sent again, unless it [changes nothing](changes_nothing).
     ///
     /// # Errors
     /// Returns [`ClientError`] when the connection, handshake or exchange fails.
@@ -99,23 +101,25 @@ impl Client {
         mut on_progress: impl FnMut(&str),
     ) -> Result<Response, ClientError> {
         self.redialing(|| {
-            let mut conn = match self.sent(&request) {
-                Attempt::Done(conn) => conn,
-                Attempt::Unrun(e) => return Attempt::Unrun(e),
-                Attempt::Failed(e) => return Attempt::Failed(e),
-            };
-            loop {
-                match conn.next_frame() {
-                    Ok(ServerFrame::Progress { id, message }) if id == REQUEST_ID => {
-                        on_progress(&message);
+            self.sent(&request).and_then(|mut conn| {
+                let mut progressed = false;
+                loop {
+                    match conn.next_frame() {
+                        Ok(ServerFrame::Progress { id, message }) if id == REQUEST_ID => {
+                            progressed = true;
+                            on_progress(&message);
+                        }
+                        Ok(ServerFrame::Response { id, envelope }) if id == REQUEST_ID => {
+                            return Attempt::Done(envelope)
+                        }
+                        Ok(other) if progressed && !changes_nothing(&request) => {
+                            return Attempt::Failed(unexpected(other, "progress or response"))
+                        }
+                        Ok(other) => return refused(unexpected(other, "progress or response")),
+                        Err(e) => return Attempt::Failed(e),
                     }
-                    Ok(ServerFrame::Response { id, envelope }) if id == REQUEST_ID => {
-                        return Attempt::Done(envelope)
-                    }
-                    Ok(other) => return refused(unexpected(other, "progress or response")),
-                    Err(e) => return Attempt::Failed(e),
                 }
-            }
+            })
         })
     }
 
@@ -137,35 +141,33 @@ impl Client {
     ) -> Result<Response, ClientError> {
         let mut buf = vec![0; BYTES_MAX];
         self.redialing(|| {
-            let mut conn = match self.sent(&request) {
-                Attempt::Done(conn) => conn,
-                Attempt::Unrun(e) => return Attempt::Unrun(e),
-                Attempt::Failed(e) => return Attempt::Failed(e),
-            };
-            let mut passed = false;
-            loop {
-                match conn.next_frame() {
-                    Ok(ServerFrame::Bytes { id, len }) if id == REQUEST_ID => {
-                        passed = true;
-                        let Some(data) = buf.get_mut(..len) else {
-                            return Attempt::Failed(ClientError::Protocol(format!(
-                                "bytes frame of {len} exceeds {BYTES_MAX}"
-                            )));
-                        };
-                        if let Err(e) = conn.reader.read_exact(data).and_then(|()| on_bytes(data)) {
-                            return Attempt::Failed(e.into());
+            self.sent(&request).and_then(|mut conn| {
+                let mut passed = false;
+                loop {
+                    match conn.next_frame() {
+                        Ok(ServerFrame::Bytes { id, len }) if id == REQUEST_ID => {
+                            passed = true;
+                            let Some(data) = buf.get_mut(..len) else {
+                                return Attempt::Failed(ClientError::Protocol(format!(
+                                    "bytes frame of {len} exceeds {BYTES_MAX}"
+                                )));
+                            };
+                            let read = conn.reader.read_exact(data);
+                            if let Err(e) = read.and_then(|()| on_bytes(data)) {
+                                return Attempt::Failed(e.into());
+                            }
                         }
+                        Ok(ServerFrame::Response { id, envelope }) if id == REQUEST_ID => {
+                            return Attempt::Done(envelope)
+                        }
+                        Ok(other) if passed => {
+                            return Attempt::Failed(unexpected(other, "bytes or response"))
+                        }
+                        Ok(other) => return refused(unexpected(other, "bytes or response")),
+                        Err(e) => return Attempt::Failed(e),
                     }
-                    Ok(ServerFrame::Response { id, envelope }) if id == REQUEST_ID => {
-                        return Attempt::Done(envelope)
-                    }
-                    Ok(other) if passed => {
-                        return Attempt::Failed(unexpected(other, "bytes or response"))
-                    }
-                    Ok(other) => return refused(unexpected(other, "bytes or response")),
-                    Err(e) => return Attempt::Failed(e),
                 }
-            }
+            })
         })
     }
 
@@ -204,9 +206,8 @@ impl Client {
         &self,
         attempt: impl FnMut() -> Attempt<T, ClientError>,
     ) -> Result<T, ClientError> {
-        redial(&self.redial, attempt, |pause, _| {
+        redial(&self.redial, &WallClock, attempt, |pause, _| {
             std::thread::sleep(pause);
-            true
         })
         .map_err(ClientError::from)
     }
@@ -214,32 +215,38 @@ impl Client {
     /// Opens a connection and writes `request` on it. A failed write is not retried: the
     /// controller may have read the whole line.
     fn sent(&self, request: &Request) -> Attempt<Conn, ClientError> {
-        let mut conn = match self.open() {
-            Attempt::Done(conn) => conn,
-            other => return other,
-        };
-        let frame = ClientFrame::Request {
-            id: REQUEST_ID.to_owned(),
-            request: Box::new(request.clone()),
-        };
-        match conn.send(&frame) {
-            Ok(()) => Attempt::Done(conn),
-            Err(e) => Attempt::Failed(e),
+        self.connect()
+            .and_then(|stream| self.hello(stream))
+            .and_then(|mut conn| {
+                let frame = ClientFrame::Request {
+                    id: REQUEST_ID.to_owned(),
+                    request: Box::new(request.clone()),
+                };
+                match conn.send(&frame) {
+                    Ok(()) => Attempt::Done(conn),
+                    Err(e) => Attempt::Failed(e),
+                }
+            })
+    }
+
+    /// Connects to the socket.
+    fn connect(&self) -> Attempt<UnixStream, ClientError> {
+        match UnixStream::connect(&self.socket) {
+            Ok(stream) => Attempt::Done(stream),
+            Err(source) => {
+                let kind = source.kind();
+                let e = ClientError::Connect {
+                    socket: self.socket.clone(),
+                    source,
+                };
+                Attempt::connect_failed(kind, e)
+            }
         }
     }
 
-    /// Connects and completes the hello exchange. Nothing has been asked yet, so a refused
-    /// connect, a dropped connection or a `restarting` answer leaves nothing run.
-    fn open(&self) -> Attempt<Conn, ClientError> {
-        let stream = match UnixStream::connect(&self.socket) {
-            Ok(stream) => stream,
-            Err(source) => {
-                return Attempt::Unrun(ClientError::Connect {
-                    socket: self.socket.clone(),
-                    source,
-                })
-            }
-        };
+    /// Completes the hello exchange on a connected stream. Nothing has been asked yet, so a
+    /// dropped connection or a `restarting` answer leaves nothing run.
+    fn hello(&self, stream: UnixStream) -> Attempt<Conn, ClientError> {
         let mut conn = match self.conn(stream) {
             Ok(conn) => conn,
             Err(e) => return Attempt::Failed(e),
@@ -326,6 +333,17 @@ fn unexpected(frame: ServerFrame, wanted: &str) -> ClientError {
     match frame {
         ServerFrame::Error { kind, message, .. } => ClientError::Frame { kind, message },
         _ => ClientError::Protocol(format!("expected {wanted} frame, got another")),
+    }
+}
+
+/// True for a request that changes nothing, so it may be sent again after it showed
+/// progress: `wait` and `wait-events`, also when run as another identity.
+#[must_use]
+pub fn changes_nothing(request: &Request) -> bool {
+    match request {
+        Request::Wait(_) | Request::WaitEvents(_) => true,
+        Request::As(act) => changes_nothing(&act.request),
+        _ => false,
     }
 }
 

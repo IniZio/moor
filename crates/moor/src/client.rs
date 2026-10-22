@@ -1,23 +1,23 @@
 //! Client for the controller: runs one request through a configured daemon, reached over its
 //! socket or through `ssh <host> moor controller attach`.
 //!
-//! A request that provably did not run (the transport failed before the hello reply, or the
-//! controller answered `restarting`) is sent again within the redial budget. A session cut
-//! after the request was written is an error, because the request may have run.
+//! A request that provably did not run is sent again within the redial budget: a refused
+//! connect on an existing socket path, a transport failure before the hello reply, or a
+//! `restarting` answer before any output. A missing socket path fails at once, and a session
+//! cut after the request was written is an error, because the request may have run. Over ssh,
+//! the remote attach's exit code tells these apart: 0 (closed before the hello) and
+//! [`moor_client::ATTACH_REFUSED_EXIT`] are retried; any other, ssh's own 255 included, is not.
 
 use std::cell::RefCell;
 use std::fmt;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
-use std::time::Duration;
 
-use moor_client::Attempt;
+use moor_client::{changes_nothing, Attempt};
 use moor_core::controller::{
     parse_server_frame, ClientFrame, FrameErrorKind, ServerFrame, BYTES_MAX, PROTOCOL,
 };
-use moor_core::seam::proc::Tool;
 use moor_core::{ErrorKind, Request, Response};
 
 use crate::config_load::load_user;
@@ -27,6 +27,7 @@ use crate::error::CommandError;
 mod interrupt;
 mod redial;
 pub mod remote;
+mod ssh;
 pub mod watch;
 
 use redial::redialing;
@@ -35,11 +36,6 @@ pub use watch::watch;
 
 /// Id carried by the single request of a session.
 const REQUEST_ID: &str = "1";
-
-/// Polls of a failed ssh for its exit status, [`EXIT_POLL`] apart.
-const EXIT_POLLS: u32 = 50;
-/// Pause between exit status polls.
-const EXIT_POLL: Duration = Duration::from_millis(10);
 
 /// Where the controller is reached.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -71,6 +67,8 @@ pub enum ClientError {
     },
     /// The controller broke the protocol or refused the session.
     Protocol(String),
+    /// The client's own settings are malformed.
+    Usage(String),
 }
 
 impl fmt::Display for ClientError {
@@ -78,6 +76,7 @@ impl fmt::Display for ClientError {
         match self {
             Self::Unreachable { target, detail } => write!(f, "{target} is unreachable: {detail}"),
             Self::Protocol(msg) => write!(f, "controller protocol error: {msg}"),
+            Self::Usage(msg) => f.write_str(msg),
         }
     }
 }
@@ -126,7 +125,8 @@ pub fn configured_target(env: &Env) -> Option<Target> {
 ///
 /// # Errors
 /// [`ClientError::Unreachable`] when the transport cannot be opened (or, over ssh, dies before
-/// the controller's hello reply), [`ClientError::Protocol`] for any other failure.
+/// the controller's hello reply), [`ClientError::Usage`] for a malformed redial setting,
+/// [`ClientError::Protocol`] for any other failure.
 pub fn call(
     env: &Env,
     target: &Target,
@@ -157,10 +157,11 @@ fn with_transport<T>(
             let stream = match UnixStream::connect(socket) {
                 Ok(stream) => stream,
                 Err(e) => {
-                    return Attempt::Unrun(ClientError::Unreachable {
+                    let unreachable = ClientError::Unreachable {
                         target: target.clone(),
                         detail: e.to_string(),
-                    })
+                    };
+                    return Attempt::connect_failed(e.kind(), unreachable);
                 }
             };
             let _forward = forward.then(|| interrupt::forward(&stream));
@@ -178,70 +179,8 @@ fn with_transport<T>(
                 Err(SessionError::Client(e)) => Attempt::Failed(e),
             }
         }
-        Target::Ssh(host) => call_ssh(env, target, host, exchange),
+        Target::Ssh(host) => ssh::call_ssh(env, target, host, exchange),
     }
-}
-
-/// Transport over `ssh -T <host> moor controller attach`.
-fn call_ssh<T>(
-    env: &Env,
-    target: &Target,
-    host: &str,
-    exchange: impl FnOnce(&mut dyn BufRead, &mut dyn Write) -> Result<T, SessionError>,
-) -> Attempt<T, ClientError> {
-    let unreachable = |detail: String| ClientError::Unreachable {
-        target: target.clone(),
-        detail,
-    };
-    let spawned = Command::new(ssh_program(env))
-        .args(["-T", host, "moor", "controller", "attach"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn();
-    let mut child = match spawned {
-        Ok(child) => child,
-        Err(e) => return Attempt::Failed(unreachable(format!("cannot run ssh: {e}"))),
-    };
-    let (Some(mut stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Attempt::Failed(ClientError::Protocol("ssh pipes unavailable".to_owned()));
-    };
-    let result = exchange(&mut BufReader::new(stdout), &mut stdin);
-    drop(stdin);
-    let result = match result {
-        Ok(value) => Attempt::Done(value),
-        Err(SessionError::LostBeforeHello(msg)) => {
-            Attempt::Unrun(unreachable(format!("{msg}{}", exit_note(&mut child))))
-        }
-        Err(SessionError::Restarting(msg)) => Attempt::Unrun(ClientError::Protocol(msg)),
-        Err(SessionError::Client(e)) => Attempt::Failed(e),
-    };
-    let _ = child.kill();
-    let _ = child.wait();
-    result
-}
-
-/// ssh program: `MOOR_SSH_BIN`, then `tools.ssh` of the user config, then `ssh` on `PATH`.
-fn ssh_program(env: &Env) -> PathBuf {
-    if let Some(v) = env.get(Tool::Ssh.bin_var()).filter(|v| !v.is_empty()) {
-        return v.into();
-    }
-    load_user(env)
-        .ok()
-        .and_then(|c| c.tools.ssh)
-        .unwrap_or_else(|| Tool::Ssh.program().into())
-}
-
-/// `" (ssh <status>)"` once `child` has exited, else empty.
-fn exit_note(child: &mut Child) -> String {
-    for _ in 0..EXIT_POLLS {
-        if let Ok(Some(status)) = child.try_wait() {
-            return format!(" (ssh {status})");
-        }
-        std::thread::sleep(EXIT_POLL);
-    }
-    String::new()
 }
 
 /// Send the hello and check the controller's reply.
@@ -262,7 +201,8 @@ fn handshake(reader: &mut impl BufRead, writer: &mut impl Write) -> Result<(), S
 /// The hello, request, progress and bytes exchange over an open transport.
 ///
 /// Holds one bytes frame at a time. A `restarting` answer before any output leaves the request
-/// unrun; after output it is an error, because the output may not come again.
+/// unrun; after output it is an error, because the output may not come again. A progress note
+/// counts as output, except for a request that [changes nothing](changes_nothing).
 fn session(
     mut reader: impl BufRead,
     writer: &mut impl Write,
@@ -284,7 +224,10 @@ fn session(
     let mut output = false;
     loop {
         match next_frame(&mut reader)? {
-            ServerFrame::Progress { id, message } if id == REQUEST_ID => on_progress(&message),
+            ServerFrame::Progress { id, message } if id == REQUEST_ID => {
+                output |= !changes_nothing(request);
+                on_progress(&message);
+            }
             ServerFrame::Bytes { id, len } if id == REQUEST_ID => {
                 if len > BYTES_MAX {
                     return Err(ClientError::Protocol(format!(
@@ -309,7 +252,11 @@ fn session(
 /// Failure envelope (exit class 1) for a request the controller could not answer.
 #[must_use]
 pub fn failure_response(cmd: &str, err: &ClientError) -> Response {
-    let mut e = CommandError::new(ErrorKind::Failed, err.to_string());
+    let kind = match err {
+        ClientError::Usage(_) => ErrorKind::Usage,
+        ClientError::Unreachable { .. } | ClientError::Protocol(_) => ErrorKind::Failed,
+    };
+    let mut e = CommandError::new(kind, err.to_string());
     if let ClientError::Unreachable { target, .. } = err {
         e = e.with_hint(match target {
             Target::Socket(_) => {

@@ -6,12 +6,15 @@ use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::thread;
 
+use moor_client::ATTACH_REFUSED_EXIT;
+
 use crate::env::Env;
 
 #[cfg(test)]
 mod tests;
 
-/// Bridge `input`/`output` to the controller socket until either side closes. Returns exit code.
+/// Bridge `input`/`output` to the controller socket until either side closes. Returns exit
+/// code: 0 once the bridge ends, [`ATTACH_REFUSED_EXIT`] for a refused connect, else 1.
 pub fn attach(
     env: &Env,
     socket: Option<&Path>,
@@ -39,7 +42,11 @@ pub fn attach(
                 "moor: controller at {} is unreachable: {e}",
                 path.display()
             );
-            return 1;
+            return if e.kind() == std::io::ErrorKind::ConnectionRefused {
+                ATTACH_REFUSED_EXIT
+            } else {
+                1
+            };
         }
     };
     match bridge(stream, input, output) {

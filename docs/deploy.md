@@ -132,10 +132,26 @@ On the restart, systemd sends SIGTERM and the controller drains, as
 5. The controller exits 0. systemd starts the new controller on the same
    sockets, and it answers the connects that waited in the backlog.
 
-The CLI and the fronts dial again, for up to 60 s, only when a request
-provably did not run: no controller listened, the connection dropped before
-the request was sent, or the controller answered `restarting` before any
-response. A `wait` is sent again and a `watch` resumes after the last cursor
-it delivered. A request whose connection drops after it was sent is reported
-as an error and never sent again, because it may have run. For the CLI,
-`MOOR_CONTROLLER_REDIAL_SECS` sets the 60 s; `0` turns redialing off.
+The CLI and the fronts dial again only when a request provably did not run:
+
+- The connection dropped before the controller's hello, or the controller
+  answered `restarting` before any progress or output. Both prove a restart,
+  so the client dials again for up to 60 s of wall time.
+- The socket path exists but refuses the connect: a stale socket left by a
+  controller that died, or a controller between unlink and bind. The client
+  dials again for at most 5 s.
+- A socket path that does not exist fails at once, with the unreachable
+  message.
+
+A `wait` or `wait-events` is sent again even after progress, because it
+changes nothing. A `watch` resumes after the last cursor it delivered. A
+request whose write failed, whose connection dropped after it was sent, or
+that already showed progress or output is reported as an error and never sent
+again, because it may have run. For the CLI, `MOOR_CONTROLLER_REDIAL_SECS`
+sets the 60 s; `0` turns redialing off, and a value that is not a whole number
+of seconds is a usage error.
+
+Over ssh, `moor controller attach` applies the same rules on the remote side.
+It exits 75 when the remote socket refuses the connect, and the CLI dials
+again for at most 5 s. A missing remote socket (exit 1) or an ssh that could
+not connect (exit 255) fails at once.
