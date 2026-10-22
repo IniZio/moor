@@ -313,3 +313,16 @@ fn refused_run_leaves_an_in_flight_run_alone() {
     );
     assert_eq!(ran_events(&store, box_id), 1);
 }
+
+#[test]
+fn an_interrupted_run_leaves_no_follow_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let box_id = add(&store, "t");
+    let run = begin(&store, box_id, None, None, 42);
+    let stale = dir.path().join(format!("runs/{}.follow", run.get()));
+    std::fs::write(&stale, b"").unwrap();
+
+    assert!(store.in_flight_run(box_id).unwrap().is_none());
+    assert!(!stale.exists(), "the dead follower's file is cleaned up");
+}

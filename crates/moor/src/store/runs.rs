@@ -223,11 +223,15 @@ impl Store {
         };
         let mut found = None;
         for run in open {
-            if found.is_none() && follow::held(&self.follow_path(run.id))? {
+            let path = self.follow_path(run.id);
+            if found.is_none() && follow::held(&path)? {
                 found = Some(run);
                 continue;
             }
             self.finish_run(run.id, RunOutcome::ended(None, true))?;
+            // A dead follower left its file behind; a claim taken and dropped removes it, and
+            // fails harmlessly while someone still holds it.
+            drop(FollowClaim::take(path));
         }
         Ok(found)
     }
