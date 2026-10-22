@@ -1,11 +1,12 @@
 //! Detached-run half of the Driver fake: runs the Box's run scripts with the local `/bin/sh`.
 //!
 //! A test that signals a run's process group runs inside a pid namespace, whose pid 1 does not
-//! reap orphans: a killed run leader stays a zombie there, and the scripts read it as alive.
+//! reap orphans: a killed run leader stays a zombie there, which the scripts read as gone.
 
 use std::io::{Read as _, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -18,10 +19,29 @@ use moor_core::seam::driver::{
 };
 use moor_core::BoxHandle;
 
-use super::FakeDriver;
+use super::{ExecHook, FakeDriver};
 
 /// What `launch_run` returns.
 pub(super) type Launch = Result<Launched, DriverError>;
+
+/// The detached-run half of the fake's state.
+#[derive(Default)]
+pub(super) struct RunState {
+    /// Where runs play out; `None` leaves detached runs unsupported.
+    local: Option<LocalBox>,
+    /// Bytes after which the next follow is cut.
+    cut_follow: Option<u64>,
+    /// Bytes after which every follow is cut.
+    cut_every_follow: Option<u64>,
+    /// Runs in each follow once it ended.
+    after_follow: Option<Arc<ExecHook>>,
+    /// Runs in each cancel before it reaches the run.
+    before_cancel: Option<Arc<ExecHook>>,
+    /// Every launch: handle and spec.
+    launches: Vec<(BoxHandle, ExecSpec)>,
+    /// The error the next launch fails with.
+    fail_launch: Option<DriverError>,
+}
 
 /// A local stand-in for a Box: its `HOME` and its workdir.
 #[derive(Clone)]
@@ -58,7 +78,7 @@ impl FakeDriver {
     /// Runs detached runs with the local `/bin/sh`: `home` stands for the Box's `HOME`, and
     /// every run starts in `workdir` whatever its spec's cwd. Without this they are unsupported.
     pub(crate) fn local_runs(self, home: &Path, workdir: &Path) -> Self {
-        self.st().local = Some(LocalBox {
+        self.st().runs.local = Some(LocalBox {
             home: home.to_path_buf(),
             workdir: workdir.to_path_buf(),
         });
@@ -76,24 +96,41 @@ impl FakeDriver {
 
     /// Every `launch_run` so far: handle and spec, in call order.
     pub(crate) fn launches(&self) -> Vec<(BoxHandle, ExecSpec)> {
-        self.st().launches.clone()
+        self.st().runs.launches.clone()
     }
 
     /// The next `launch_run` fails once with `e`, starting nothing.
     pub(crate) fn fail_launch(self, e: DriverError) -> Self {
-        self.st().fail_launch = Some(e);
+        self.st().runs.fail_launch = Some(e);
         self
     }
 
     /// The next `follow_run` stops once it has written `after` bytes and reports the channel cut.
     pub(crate) fn cut_next_follow(&self, after: u64) {
-        self.st().cut_follow = Some(after);
+        self.st().runs.cut_follow = Some(after);
+    }
+
+    /// Every `follow_run` from now on stops once it has written `after` bytes, as
+    /// [`Self::cut_next_follow`].
+    pub(crate) fn cut_every_follow(&self, after: u64) {
+        self.st().runs.cut_every_follow = Some(after);
+    }
+
+    /// Runs `f` in each `follow_run` once its follow has ended, before it returns.
+    pub(crate) fn after_follow(&self, f: impl Fn() + Send + Sync + 'static) {
+        self.st().runs.after_follow = Some(Arc::new(f));
+    }
+
+    /// Runs `f` in each `cancel_run` before the cancel reaches the run.
+    pub(crate) fn before_cancel(&self, f: impl Fn() + Send + Sync + 'static) {
+        self.st().runs.before_cancel = Some(Arc::new(f));
     }
 
     fn local(&self, what: String) -> Result<LocalBox, DriverError> {
         let mut s = self.st();
         s.note(what);
-        s.local
+        s.runs
+            .local
             .clone()
             .ok_or(DriverError::Unsupported("detached runs"))
     }
@@ -104,9 +141,9 @@ impl FakeDriver {
         run: i64,
         spec: &ExecSpec,
     ) -> Result<Launched, DriverError> {
-        self.st().launches.push((h.clone(), spec.clone()));
+        self.st().runs.launches.push((h.clone(), spec.clone()));
         let b = self.local(format!("launch_run {} {run}", h.as_str()))?;
-        let fail = self.st().fail_launch.take();
+        let fail = self.st().runs.fail_launch.take();
         if let Some(e) = fail {
             return Err(e);
         }
@@ -135,7 +172,10 @@ impl FakeDriver {
         out: &mut dyn Write,
     ) -> Result<Followed, DriverError> {
         let b = self.local(format!("follow_run {} {run} {from}", h.as_str()))?;
-        let cut = self.st().cut_follow.take();
+        let cut = {
+            let mut s = self.st();
+            s.runs.cut_follow.take().or(s.runs.cut_every_follow)
+        };
         let mut child = b
             .sh(&follow_script(run, from))
             .stdout(Stdio::piped())
@@ -165,6 +205,10 @@ impl FakeDriver {
             Some(LOST) => FollowEnd::Lost,
             code => return Err(failed(&format!("follow exited {code:?}"))),
         };
+        let hook = self.st().runs.after_follow.clone();
+        if let Some(hook) = hook {
+            hook();
+        }
         Ok(Followed { offset, end })
     }
 
@@ -181,6 +225,10 @@ impl FakeDriver {
         grace: u32,
     ) -> Result<Cancelled, DriverError> {
         let b = self.local(format!("cancel_run {} {run}", h.as_str()))?;
+        let hook = self.st().runs.before_cancel.clone();
+        if let Some(hook) = hook {
+            hook();
+        }
         let out = b.output(&cancel_script(run, grace))?;
         match out.status.code() {
             Some(0) => Ok(Cancelled::Signalled),

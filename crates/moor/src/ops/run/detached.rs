@@ -11,6 +11,7 @@ use moor_core::seam::driver::{Cancelled, Driver, DriverError, FollowEnd, RunEnd,
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxPath, RunId};
 
+use super::follow::SetOnDrop;
 use super::ready::Target;
 use crate::cx::Cx;
 
@@ -117,8 +118,10 @@ pub(super) fn follow(
     let done = AtomicBool::new(false);
     let (lost_follow, stop) = thread::scope(|s| {
         let watcher = s.spawn(|| run.watch(&done));
-        let copied = run.copy(from, out);
-        done.store(true, Ordering::SeqCst);
+        let copied = {
+            let _done = SetOnDrop(&done);
+            run.copy(from, out)
+        };
         let stop = watcher.join().unwrap_or(None);
         let lost = match copied {
             Copied::Ended => None,
@@ -139,11 +142,25 @@ pub(super) fn follow(
         .driver
         .end_run(run.handle, run.id, workdir)
         .map_err(|e| e.to_string());
+    // A run that exited before the cancel reached it keeps its own exit.
+    let stop = stop.filter(|_| !exited_uncancelled(&end));
     Ended {
         end,
         stop,
         lost_follow,
     }
+}
+
+/// Whether `end` is a run that exited with no cancel asked of it.
+const fn exited_uncancelled<E>(end: &Result<RunEnd, E>) -> bool {
+    matches!(
+        end,
+        Ok(RunEnd {
+            outcome: RunOutcome::Exited(_),
+            cancelled: false,
+            ..
+        })
+    )
 }
 
 /// Where the copy of the log stopped.
@@ -210,6 +227,10 @@ impl Run<'_> {
         loop {
             // Checked before `done`, so a follow that ended because of a stop still cancels.
             if let Some(stop) = self.stopping() {
+                let end = self.driver.end_run(self.handle, self.id, None);
+                if exited_uncancelled(&end) {
+                    return None;
+                }
                 return Some((stop, self.cancel_in_box().err().map(|e| e.to_string())));
             }
             if done.load(Ordering::SeqCst) {
