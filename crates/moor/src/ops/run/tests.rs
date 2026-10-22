@@ -216,10 +216,38 @@ pub(in crate::ops::run) fn ran_events(f: &Fx) -> usize {
     kinds(f).iter().filter(|k| *k == "ran").count()
 }
 
+/// What the inherited-output run prints, split so this source never holds it whole.
+const INHERITED: [&str; 2] = ["streamed-", "to-moor"];
+
 #[test]
 fn inherited_output_is_streamed_to_moor() {
+    let name = module_path!()
+        .split_once("::")
+        .map_or("", |(_, path)| path)
+        .to_owned()
+        + "::inherited_output_child";
+    let out = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--ignored", "--exact", "--test-threads=1", &name])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success() && stdout.contains("1 passed"),
+        "{stdout}{stderr}"
+    );
+    let want = format!("{}{}\n", INHERITED[0], INHERITED[1]);
+    assert_eq!(stdout.matches(&want).count(), 1, "{stdout}");
+}
+
+/// Runs with inherited output in a child of [`inherited_output_is_streamed_to_moor`], whose
+/// stdout is this process's own.
+#[test]
+#[ignore = "run as a child by inherited_output_is_streamed_to_moor"]
+fn inherited_output_child() {
     let f = ready();
-    let mut r = req(&["sh", "-c", "exit 3"]);
+    let text = format!("printf '%s%s\\n' {} {}; exit 3", INHERITED[0], INHERITED[1]);
+    let mut r = req(&["sh", "-c", &text]);
     r.inherit_output = true;
     let v = run(&f.cx, &r).unwrap();
     assert_eq!(v.exit, Some(3));
@@ -227,7 +255,7 @@ fn inherited_output_is_streamed_to_moor() {
     assert_eq!(v.log, "");
     assert!(!f.dir.path().join("runs/1.log").exists(), "no host log");
     let (_, spec) = f.driver.launches().remove(0);
-    assert_eq!(command(&spec.argv), shell_argv("'sh' '-c' 'exit 3'"));
+    assert_eq!(command(&spec.argv), shell_argv(&command_line(&r.argv)));
 }
 
 #[test]
