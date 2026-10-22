@@ -7,7 +7,8 @@ use std::time::Duration;
 use super::Hangup;
 use crate::env::Cancel;
 
-const WAIT: Duration = Duration::from_secs(5);
+/// Longer than the work in [`cancelled_after`] waits for a cancel.
+const STAY: Duration = Duration::from_millis(1500);
 
 /// Whether `cancel` gets set while work runs on the controller end of a connection after
 /// `client` acts on its end.
@@ -38,7 +39,14 @@ fn a_client_that_closes_its_socket_cancels_the_work() {
 fn a_client_that_shuts_its_sending_side_cancels_the_work() {
     assert!(cancelled_after(|peer| {
         peer.shutdown(Shutdown::Write).unwrap();
-        thread::sleep(WAIT / 5);
+        thread::sleep(STAY);
+    }));
+}
+
+#[test]
+fn a_client_that_closes_its_socket_behind_unread_bytes_cancels_the_work() {
+    assert!(cancelled_after(|mut peer| {
+        peer.write_all(b"next request\n").unwrap();
     }));
 }
 
@@ -46,6 +54,6 @@ fn a_client_that_shuts_its_sending_side_cancels_the_work() {
 fn a_connected_client_with_unread_bytes_cancels_nothing() {
     assert!(!cancelled_after(|mut peer| {
         peer.write_all(b"next request\n").unwrap();
-        thread::sleep(Duration::from_millis(1500));
+        thread::sleep(STAY);
     }));
 }
