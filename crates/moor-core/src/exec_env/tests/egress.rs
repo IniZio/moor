@@ -153,7 +153,16 @@ impl FakeBox {
 impl Drop for FakeBox {
     fn drop(&mut self) {
         if let Ok(pid) = std::fs::read_to_string(self.home.join(".moor/egress.pid")) {
-            let _ = std::process::Command::new("kill").arg(pid.trim()).status();
+            let pid = pid.trim();
+            let _ = std::process::Command::new("kill")
+                .args(["-KILL", pid])
+                .status();
+            for _ in 0..100 {
+                if !running(pid) {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
         }
     }
 }
@@ -358,6 +367,43 @@ fn a_restart_keeps_the_new_pid_file_when_the_old_tinyproxy_exits_late() {
     let (ok, out, err) = b.run_with(&changed);
     assert!(ok, "{out}{err}");
     assert_eq!(b.starts(), 2, "{}", b.log());
+}
+
+/// An old tinyproxy that ignores TERM keeps serving the old host list on the same port. The
+/// config on disk must stay the old one, so each command retries the restart and none reports
+/// success while the old list is served.
+#[test]
+fn a_restart_that_fails_leaves_the_old_config_so_the_next_command_retries() {
+    let b = FakeBox::new(0, Apt::Missing, true);
+    std::fs::create_dir_all(b.home.join(".fake-tinyproxy")).unwrap();
+    moor_testkit::write_executable(
+        &b.home.join(".fake-tinyproxy/tinyproxy"),
+        "#!/bin/sh\ntrap : TERM\nwhile :; do sleep 0.1; done\n",
+    )
+    .unwrap();
+    assert!(b.run().0);
+    let old_conf = b.conf();
+    let old = std::fs::read_to_string(b.home.join(".moor/egress.pid"))
+        .unwrap()
+        .trim()
+        .to_owned();
+    let changed = hosts(&["api.anthropic.com", "github.com", "gitlab.com"]);
+    for attempt in 1..=2 {
+        let (ok, out, err) = b.run_with(&changed);
+        assert!(!ok, "attempt {attempt} reported success: {out}{err}");
+        assert!(
+            err.contains(&failure(&format!("the old tinyproxy {old} did not exit after TERM"))),
+            "attempt {attempt}: {err}"
+        );
+        assert_eq!(b.conf(), old_conf, "attempt {attempt} replaced the config");
+        assert_eq!(b.starts(), 1, "{}", b.log());
+    }
+    let _ = std::process::Command::new("kill").args(["-KILL", &old]).status();
+    b.port.close();
+    let (ok, out, err) = b.run_with(&changed);
+    assert!(ok, "{out}{err}");
+    assert_eq!(b.starts(), 2, "{}", b.log());
+    assert!(b.conf().contains("\"gitlab.com\""));
 }
 
 #[test]
