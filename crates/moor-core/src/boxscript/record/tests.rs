@@ -598,3 +598,10 @@ fn ignored_output_of_the_record_run_does_not_fail_it() {
     assert_eq!(out.code, 0, "{}", out.stderr);
     assert!(!sb.exists(MOVED_FILE));
 }
+
+#[test]
+fn a_git_failure_after_the_record_run_fails_it_as_moved() {
+    let sb = probe_sandbox("m-index");
+    let head = sb.head();
+    assert_moved(&sb, "printf 'not an index' > .git/index", &head);
+}
