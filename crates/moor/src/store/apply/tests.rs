@@ -396,7 +396,7 @@ fn two_open_boxes_cannot_share_a_branch() {
 }
 
 #[test]
-fn a_closed_boxs_branch_can_be_taken_again() {
+fn the_branch_of_a_closed_box_can_be_taken_again() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let a = store.apply(insert("a")).unwrap().box_id;
