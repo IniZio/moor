@@ -149,7 +149,7 @@ fn direct(u: &str, r: Option<&str>) -> Vec<String> {
         .collect()
 }
 
-const BUILTIN: [&str; 18] = [
+const BUILTIN: [&str; 19] = [
     "registry.npmjs.org",
     "registry.yarnpkg.com",
     "pypi.org",
@@ -168,6 +168,7 @@ const BUILTIN: [&str; 18] = [
     "archive.ubuntu.com",
     "security.ubuntu.com",
     "dl.google.com",
+    "downloads.claude.ai",
 ];
 
 /// A user rule that sends registry.npmjs.org through the Proxy with a credential.

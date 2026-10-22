@@ -98,7 +98,7 @@ the `bridge` network unless you trust everything that runs on the host.
 ## Direct hosts
 
 The Proxy adds about a second to each new connection, so by default the Box
-reaches these public package registries without it:
+reaches these public registries and downloads without it:
 
 - npm and Yarn: `registry.npmjs.org`, `registry.yarnpkg.com`
 - PyPI: `pypi.org`, `files.pythonhosted.org`
@@ -110,6 +110,7 @@ reaches these public package registries without it:
 - Debian and Ubuntu: `deb.debian.org`, `security.debian.org`,
   `archive.ubuntu.com`, `security.ubuntu.com`
 - Google: `dl.google.com`
+- Claude Code installer download: `downloads.claude.ai`
 
 Hosts that commonly carry a credential, such as `ghcr.io`, `github.com`, and
 `gitlab.com`, are not on the list. If one of your credential rules serves a

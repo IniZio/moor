@@ -3,10 +3,10 @@
 use crate::config::ConfigError;
 use crate::name::DirectHost;
 
-/// Public package registries the Box reaches without the Proxy unless the user turns them off.
+/// Public registries and downloads the Box reaches without the Proxy unless the user turns them off.
 ///
 /// None of them commonly carries a credential, so ghcr.io, github.com and gitlab.com stay out.
-pub const BUILTIN_DIRECT: [&str; 18] = [
+pub const BUILTIN_DIRECT: [&str; 19] = [
     "registry.npmjs.org",
     "registry.yarnpkg.com",
     "pypi.org",
@@ -25,6 +25,7 @@ pub const BUILTIN_DIRECT: [&str; 18] = [
     "archive.ubuntu.com",
     "security.ubuntu.com",
     "dl.google.com",
+    "downloads.claude.ai",
 ];
 
 /// The built-in direct hosts, without any that covers one of `rule_hosts`, so those stay proxied.
