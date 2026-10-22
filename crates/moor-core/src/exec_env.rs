@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use crate::boxscript::quote;
 use crate::name::BoxPath;
-use crate::name::DirectHost;
 use crate::seam::proc::Deadline;
 
 /// The Box directory the prelude writes the public Proxy CA into, as shell text that expands on the Box.
@@ -56,8 +55,6 @@ pub struct ProxyCtx<'a> {
     pub box_port: u16,
     /// The public Proxy CA certificate in PEM form.
     pub ca_pem: &'a str,
-    /// Hosts the Box reaches without the Proxy.
-    pub direct: &'a [DirectHost],
 }
 
 /// What the environment is built from. Per-Box home, xcconfig and Box tag variables for Mac Boxes
@@ -268,18 +265,13 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Vec<String> {
         lines.push(format!("export {name}=\"http://127.0.0.1:{}\"", p.box_port));
     }
     lines.extend(yarn_lines(p.box_port));
-    let direct: String = p
-        .direct
-        .iter()
-        .map(|h| [",", &h.no_proxy()].concat())
-        .collect();
     for name in ["NO_PROXY", "no_proxy"] {
         lines.push(format!(
-            "export {name}=\"127.0.0.1,localhost,::1{direct}${{{name}:+,${name}}}\""
+            "export {name}=\"127.0.0.1,localhost,::1${{{name}:+,${name}}}\""
         ));
     }
     lines.push("export NODE_USE_ENV_PROXY=1".to_owned());
-    lines.extend(java::java_lines(p.box_port, &ca, p.direct));
+    lines.extend(java::java_lines(p.box_port, &ca));
     lines
 }
 

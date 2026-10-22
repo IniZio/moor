@@ -7,7 +7,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{BoxSize, DotfilesConfig, McpServer, RepoConfig, ToolsConfig, UserConfig};
-use crate::name::DirectHost;
 
 /// Provider when the user config names none.
 const DEFAULT_PROVIDER: &str = "local-container";
@@ -106,8 +105,6 @@ pub struct BoxSettings {
     pub compose_prefix: Option<String>,
     /// User tool path overrides.
     pub tool_paths: ToolsConfig,
-    /// Hosts the Box reaches without the Proxy: the user's, then the repo's not already listed.
-    pub direct: Vec<DirectHost>,
 }
 
 /// Builds the sorted credential plan from box credentials and MCP refs.
@@ -134,17 +131,6 @@ fn plan_credentials(uc: &UserConfig, repo: &RepoConfig) -> Vec<CredPlan> {
             boxed: boxed.contains(name),
         })
         .collect()
-}
-
-/// The user's `proxy.direct` entries, then the repo's not already listed.
-fn direct_hosts(user: &UserConfig, repo: &RepoConfig) -> Vec<DirectHost> {
-    let mut out = user.proxy.direct.clone();
-    for host in &repo.proxy.direct {
-        if !out.contains(host) {
-            out.push(host.clone());
-        }
-    }
-    out
 }
 
 impl BoxSettings {
@@ -182,7 +168,6 @@ impl BoxSettings {
             env: r.env.clone(),
             compose_prefix: r.compose.project_prefix.clone(),
             tool_paths: user.tools.clone(),
-            direct: direct_hosts(user, r),
         }
     }
 }

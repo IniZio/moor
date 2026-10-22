@@ -1,7 +1,5 @@
 //! Prelude lines that point Java and Gradle at the Proxy and its CA.
 
-use crate::name::DirectHost;
-
 /// Shell variables `java_lines` sets; the prelude unsets them at its end.
 pub(super) const JAVA_SHELL_VARS: &str = "moor_g moor_p moor_ts moor_jh";
 
@@ -17,11 +15,8 @@ const NON_PROXY: &str = "127.0.0.1|localhost";
 ///
 /// `gradle.properties` is rewritten under `umask 077`, since it may hold the user's own
 /// secrets. Without `keytool`, or if any step fails, no Java variable is set.
-pub(super) fn java_lines(box_port: u16, ca: &str, direct: &[DirectHost]) -> Vec<String> {
-    let non_proxy: String = std::iter::once(NON_PROXY.to_owned())
-        .chain(direct.iter().map(DirectHost::java))
-        .collect::<Vec<_>>()
-        .join("|");
+pub(super) fn java_lines(box_port: u16, ca: &str) -> Vec<String> {
+    let non_proxy = NON_PROXY;
     let mut lines = vec![
         "if command -v keytool >/dev/null 2>&1; then".to_owned(),
         "moor_g=\"${GRADLE_USER_HOME:-$HOME/.gradle}\"; moor_p=\"$moor_g/gradle.properties\"; moor_ts=\"$moor_g/moor-proxy-truststore.p12\"".to_owned(),

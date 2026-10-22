@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
-use super::proxy::{check_direct, default_rules, injected, RepoProxy};
+use super::proxy::{default_rules, injected};
 use super::{check, parse_strict, BoxSize, ConfigError};
 
 /// `compose:` section.
@@ -40,8 +40,6 @@ pub struct RepoConfig {
     pub box_: RepoBox,
     /// Names of user credentials exposed on the Box.
     pub box_credentials: Vec<String>,
-    /// `proxy:` section.
-    pub proxy: RepoProxy,
 }
 
 /// Parses and validates a `.moor.yaml` document.
@@ -69,7 +67,6 @@ impl RepoConfig {
                 "box_credentials",
                 self.box_credentials != other.box_credentials,
             ),
-            ("proxy", self.proxy != other.proxy),
         ]
         .into_iter()
         .filter_map(|(key, changed)| changed.then_some(key))
@@ -87,15 +84,7 @@ impl RepoConfig {
                 .and_then(|()| check::not_reserved_env(name))
                 .map_err(|r| ConfigError::new(path, r))?;
         }
-        let defaults = default_rules();
-        check_direct(
-            &self.proxy.direct,
-            "proxy.direct",
-            &defaults
-                .values()
-                .flat_map(|r| r.hosts.iter().map(String::as_str))
-                .collect::<Vec<_>>(),
-        )
+        Ok(())
     }
 
     /// Checks each `box_credentials` name against the default rules, which alone a repo
