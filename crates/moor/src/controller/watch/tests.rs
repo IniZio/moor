@@ -582,3 +582,26 @@ fn parent_filter_keeps_the_viewers_own_boxes_only() {
     assert!(!boxes.is_empty());
     assert!(boxes.iter().all(|b| b == "mine"), "{boxes:?}");
 }
+
+#[test]
+fn an_event_with_no_session_never_matches_a_parent_filter() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let moor = crate::Moor::from_env(&env(&dir)).expect("moor");
+    let asked = ask(0, only_parent(1), false);
+    let mut passes = super::Passes {
+        moor: &moor,
+        ask: &asked,
+        seen: std::collections::HashMap::new(),
+        parents: std::collections::HashMap::new(),
+    };
+    let frame = moor_core::controller::ServerFrame::Event {
+        cursor: 1,
+        r#box: None,
+        box_id: None,
+        session: None,
+        kind: "copied".to_owned(),
+        payload: json!({}),
+        ts: 1,
+    };
+    assert_eq!(passes.check(&frame), Ok(false));
+}
