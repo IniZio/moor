@@ -65,3 +65,16 @@ fn sigterm_lets_a_request_in_flight_finish_before_exit_0() {
     let status = stack.wait_web_exit(LIMIT).expect("the daemon exits");
     assert!(status.success(), "{status:?}\n{}", stack.diagnostics());
 }
+
+#[test]
+fn run_by_the_controller_it_reaches_its_socket_and_keeps_its_db_in_its_own_state_dir() {
+    let stack = Stack::start_as_front();
+    let (status, body) = stack.get("/tree");
+    let answered = status == 200 || body.contains("the web front socket must assert an identity");
+    assert!(answered, "{status} {body}\n{}", stack.diagnostics());
+    assert!(
+        stack.path("web").join("web.db").exists(),
+        "{}",
+        stack.diagnostics()
+    );
+}

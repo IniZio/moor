@@ -2,8 +2,9 @@
 //! Each runs under `moor front-shim`, which keeps the controller's own files out of its reach.
 
 use std::ffi::OsString;
-use std::fs;
+use std::fs::{self, DirBuilder};
 use std::io;
+use std::os::unix::fs::DirBuilderExt as _;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::{self, Child, Command, ExitStatus, Stdio};
@@ -13,6 +14,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use command_fds::{CommandFdExt as _, FdMapping};
+use moor_core::config::FrontEntry;
 use rustix::fs::{Mode, OFlags};
 use rustix::process::{kill_process, Pid, Signal};
 
@@ -47,25 +49,30 @@ pub(super) struct Front {
     socket: PathBuf,
     /// Its argv, not empty.
     command: Vec<String>,
+    /// The one directory it may write.
+    state_dir: Option<PathBuf>,
 }
 
 impl Front {
-    /// The front `ns` listening on `listener`, run as `command`.
+    /// The front `ns` listening on `listener`, run as `entry` says; none when `entry` has no
+    /// command.
     pub(super) fn new(
         ns: &str,
         listener: &UnixListener,
-        command: Vec<String>,
-    ) -> Result<Self, String> {
+        entry: &FrontEntry,
+    ) -> Option<Result<Self, String>> {
+        let command = entry.command.clone()?;
         let socket = listener
             .local_addr()
             .ok()
             .and_then(|a| a.as_pathname().map(PathBuf::from))
-            .ok_or_else(|| format!("front {ns}: its socket has no path"))?;
-        Ok(Self {
+            .ok_or_else(|| format!("front {ns}: its socket has no path"));
+        Some(socket.map(|socket| Self {
             ns: ns.to_owned(),
             socket,
             command,
-        })
+            state_dir: entry.state_dir.clone(),
+        }))
     }
 
     /// `<state>/fronts/<ns>.pid`: the running front's pid and its start time from `/proc`.
@@ -186,19 +193,12 @@ impl Drop for Supervised {
     }
 }
 
-/// Starts one supervisor thread per front, unless the host forbids the namespaces each front
-/// runs in; then it starts none and logs which sysctls allow them.
+/// Starts one supervisor thread per front, unless the host forbids the namespaces or the
+/// sandbox each front runs in; then it starts none and logs why.
 pub(super) fn supervise(mut fronts: Vec<Front>, shim: Shim, sink: &Sink) -> Supervised {
     let shim = Arc::new(shim);
     if let Some(Err(e)) = (!fronts.is_empty()).then(|| shim.check()) {
-        log(
-            sink,
-            &format!(
-                "fronts not started: they need unprivileged user namespaces \
-                 (sysctl kernel.unprivileged_userns_clone=1, user.max_user_namespaces above 0, \
-                 kernel.apparmor_restrict_unprivileged_userns=0): {e}"
-            ),
-        );
+        log(sink, &format!("fronts not started: {e}"));
         fronts.clear();
     }
     let (stops, threads) = fronts
@@ -300,14 +300,26 @@ fn kill(child: &mut Child) -> Outcome {
 }
 
 /// Starts `front` under `shim` in `/`, with its socket on fd 3, relays its stdout and stderr
-/// lines to `sink` and records the shim's pid. The shim exits with this controller.
+/// lines to `sink` and records the shim's pid. The shim exits with this controller. A front
+/// with a state dir may write it, finds it in `MOOR_FRONT_STATE_DIR` and keeps its temporary
+/// files in its `tmp`.
 fn spawn(front: &Front, shim: &Shim, sink: &Sink) -> io::Result<Child> {
     let ns = &front.ns;
     let socket = rustix::fs::open(&front.socket, OFlags::PATH | OFlags::CLOEXEC, Mode::empty())?;
     let mut command = shim.command();
     command
         .args(["--parent", &process::id().to_string()])
-        .args(&shim.hide)
+        .args(&shim.hide);
+    if let Some(dir) = &front.state_dir {
+        let tmp = dir.join("tmp");
+        DirBuilder::new().recursive(true).mode(0o700).create(&tmp)?;
+        command
+            .arg("--writable")
+            .arg(dir)
+            .env("MOOR_FRONT_STATE_DIR", dir)
+            .env("TMPDIR", tmp);
+    }
+    command
         .arg("--")
         .args(&front.command)
         .env("MOOR_FRONT_SOCKET", format!("/proc/self/fd/{SOCKET_FD}"))

@@ -44,12 +44,21 @@ pub(crate) struct RealController(Child);
 impl RealController {
     /// Starts the controller on `socket` with its state under `root`, and waits until it listens.
     pub(crate) fn start(root: &Path, socket: &Path) -> Self {
+        Self::start_with(root, socket, "{}")
+    }
+
+    /// Like [`Self::start`], with `slack` as the `slack` front's config entry.
+    pub(crate) fn start_with(root: &Path, socket: &Path, slack: &str) -> Self {
         let config = root.join("c.yaml");
         let state = root.join("state");
         std::fs::write(
             &config,
             format!(
-                "socket: {}\nstate_dir: {}\nfronts:\n  slack: {{}}\n",
+                "socket: {}
+state_dir: {}
+fronts:
+  slack: {slack}
+",
                 socket.display(),
                 state.display()
             ),

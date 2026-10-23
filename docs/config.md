@@ -176,12 +176,14 @@ set the stop timeout above `drain_timeout_secs`.
 fronts:
   web:
     command: [moor-web, --port, "8080"]
+    state_dir: /home/me/.local/state/moor-web
   slack: {}
 ```
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `command` | list of strings, not empty | none | The program and arguments the controller runs as this front. Without it, start the front yourself. |
+| `state_dir` | absolute path | none | The one directory the front may write. Without it, the front writes nothing but `/dev/null`. |
 
 For each entry the controller listens on `<state dir>/fronts/<namespace>.sock`,
 mode 0600 in a 0700 directory. Under systemd, the controller takes the socket
@@ -202,11 +204,21 @@ read as `/dev/null`, and `/proc` shows only the front's own processes, so fd 3
 is the front's only way to the controller. The shim is pid 1 of that
 namespace: it reaps orphans, passes SIGTERM and SIGINT to the front, and exits
 with the front's status. If the controller's shim dies, the kernel kills every
-process in the namespace. Fronts need unprivileged user namespaces. When the
-host forbids them (`kernel.unprivileged_userns_clone=0`,
-`user.max_user_namespaces=0`, or `kernel.apparmor_restrict_unprivileged_userns=1`),
-the controller logs `fronts not started` with the reason, starts none, and
-keeps serving.
+process in the namespace.
+
+The front and every process it starts can read and run any file it could read
+before, but write only its `state_dir` and `/dev/null`. The controller creates
+the `state_dir` and its `tmp` subdirectory, mode 0700, and sets
+`MOOR_FRONT_STATE_DIR` to the `state_dir` and `TMPDIR` to its `tmp`. moor-web
+and moor-slack keep their state in `MOOR_FRONT_STATE_DIR` when `--state-dir`
+is not given. The shim enforces this with Landlock on Linux. Outbound
+network is not restricted.
+
+Fronts need unprivileged user namespaces and Landlock. When the host forbids
+user namespaces (`kernel.unprivileged_userns_clone=0`,
+`user.max_user_namespaces=0`, or `kernel.apparmor_restrict_unprivileged_userns=1`)
+or lacks Landlock, the controller logs `fronts not started` with the reason,
+starts none, and keeps serving.
 
 While a front runs, `<state dir>/fronts/<namespace>.pid` holds the shim's pid on
 the first line and its start time from `/proc/<pid>/stat` on the second. When

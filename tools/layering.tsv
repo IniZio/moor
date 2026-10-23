@@ -40,6 +40,6 @@ moor::cx	moor::config_load,moor::store,moor::adapters::git,moor::adapters::creds
 moor::ops	moor::vault,moor::cx,moor::store,moor::error,moor::adapters::git,moor::adapters::creds
 moor::moor	moor::vault,moor::cx,moor::wire,moor::ops,moor::store,moor::adapters::clock,moor::error,moor::env
 extern:nono_proxy	moor::proxy
-extern:nono	moor::proxy
+extern:nono	moor::proxy, moor::controller::front_shim
 extern:tokio	moor::proxy
 extern:webpki_roots	moor::proxy

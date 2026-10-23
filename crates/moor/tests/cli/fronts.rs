@@ -22,11 +22,15 @@ use serde_json::Value;
 
 use super::{fresh_dir, Dir};
 
+#[path = "fronts/sandbox.rs"]
+mod sandbox;
+
 /// Tries each way a front could reach the controller and prints what each got. Its argv is the
-/// protocol and the test root; it waits for `ctl.pid` there, the controller's pid.
+/// protocol, the test root and the moor binary; it waits for `ctl.pid` in the root, the
+/// controller's pid.
 const PROBE: &str = r#"
 import ctypes, json, os, socket, stat, sys, time
-protocol, root = int(sys.argv[1]), sys.argv[2]
+protocol, root, moor = int(sys.argv[1]), sys.argv[2], sys.argv[3]
 def dial(path):
     try:
         s = socket.socket(socket.AF_UNIX)
@@ -46,9 +50,9 @@ def read(path):
         return len(open(path, "rb").read())
     except OSError as e:
         return type(e).__name__
-def write(path):
+def write(path, mode="w"):
     try:
-        open(path, "w").close()
+        open(path, mode).close()
         return "writable"
     except OSError as e:
         return e.strerror
@@ -74,6 +78,13 @@ got = {
     "controller_root": dial(f"/proc/{ctl}/root{root}/c.sock"),
     "unmount": "allowed" if unmounted else os.strerror(ctypes.get_errno()),
     "cover_write": write(f"{root}/state/planted"),
+    "own_dir": write(f"{os.environ.get('MOOR_FRONT_STATE_DIR')}/planted"),
+    "tmp": write(f"{os.environ.get('TMPDIR')}/planted"),
+    "dev_null": write("/dev/null"),
+    "config": write(f"{root}/c.yaml", "a"),
+    "home": write(f"{root}/home/planted"),
+    "root": write(f"{root}/planted"),
+    "moor_dir": write(f"{os.path.dirname(moor)}/planted-{os.path.basename(root)}"),
     "cwd": os.getcwd(),
     "init_cwd": os.readlink("/proc/1/cwd"),
     "stdout": kind(1),
@@ -144,8 +155,8 @@ const NO_USER_NAMESPACES: [&str; 6] = [
 ];
 
 /// A served controller, run from inside its state dir and logging its stdout to a file there,
-/// whose operator socket sits outside its state dir, with a `probe` front
-/// that runs a Python script and a `slack` front without a command. Dropping it drains the
+/// whose operator socket sits outside its state dir, with a `probe` front that runs a Python
+/// script and may write `front`, and a `slack` front without a command. Dropping it drains the
 /// controller and waits for it to exit.
 struct Controller {
     root: Dir,
@@ -158,18 +169,21 @@ impl Controller {
     fn start(script: &str, wrap: &[&str]) -> Self {
         let root = fresh_dir("front");
         fs::create_dir(root.join("state")).unwrap();
+        fs::create_dir(root.join("home")).unwrap();
         let config = root.join("c.yaml");
-        let command = serde_json::json!(["python3", "-c", script, PROTOCOL.to_string(), &*root]);
+        let moor = env!("CARGO_BIN_EXE_moor");
+        let command =
+            serde_json::json!(["python3", "-c", script, PROTOCOL.to_string(), &*root, moor]);
         fs::write(
             &config,
             format!(
-                "socket: {}\nstate_dir: {}\nfronts:\n  probe:\n    command: {command}\n  slack: {{}}\n",
+                "socket: {}\nstate_dir: {}\nfronts:\n  probe:\n    command: {command}\n    state_dir: {}\n  slack: {{}}\n",
                 root.join("c.sock").display(),
                 root.join("state").display(),
+                root.join("front").display(),
             ),
         )
         .unwrap();
-        let moor = env!("CARGO_BIN_EXE_moor");
         let argv: Vec<&str> = wrap.iter().copied().chain([moor]).collect();
         let child = Command::new(argv[0])
             .args(&argv[1..])
@@ -449,10 +463,35 @@ fn a_shim_whose_controller_is_gone_exits_without_running_the_front() {
     let mut gone = Command::new("true").spawn().unwrap();
     let gone_pid = gone.id().to_string();
     gone.wait().unwrap();
-    let out = shim(&dir, &["--parent", &gone_pid, "--", "sh", "-c", &touch]);
+    let writable = dir.display().to_string();
+    let out = shim(
+        &dir,
+        &[
+            "--parent",
+            &gone_pid,
+            "--writable",
+            &writable,
+            "--",
+            "sh",
+            "-c",
+            &touch,
+        ],
+    );
     assert!(!out.status.success());
     assert!(!mark.exists(), "{}", String::from_utf8_lossy(&out.stderr));
-    let out = shim(&dir, &["--parent", &me, "--", "sh", "-c", &touch]);
+    let out = shim(
+        &dir,
+        &[
+            "--parent",
+            &me,
+            "--writable",
+            &writable,
+            "--",
+            "sh",
+            "-c",
+            &touch,
+        ],
+    );
     assert!(
         out.status.success(),
         "{}",
@@ -477,7 +516,9 @@ fn pid_1_exits_when_the_outer_shim_died_before_it_started() {
                 "--",
             ])
             .arg(env!("CARGO_BIN_EXE_moor"))
-            .args(["front-shim", "--init", "--", "sh", "-c", &touch])
+            .args(["front-shim", "--init", "--writable"])
+            .arg(&dir)
+            .args(["--", "sh", "-c", &touch])
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
             .stdin(stdin)

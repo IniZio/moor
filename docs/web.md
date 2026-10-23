@@ -32,4 +32,4 @@ To reach the page from another machine, forward the port over ssh.
 | `--socket PATH` | `MOOR_WEB_SOCKET` | required | The controller socket. |
 | `--token-file PATH` | `MOOR_WEB_TOKEN_FILE` | required | The file that holds the access token. It must be mode 0600 and not empty. |
 | `--port PORT` | none | 0, a free port | The loopback port. |
-| `--state-dir DIR` | `MOOR_WEB_STATE_DIR` | `$XDG_STATE_HOME/moor-web`, else `$HOME/.local/state/moor-web` | The front's own state, including `web.db`. |
+| `--state-dir DIR` | `MOOR_WEB_STATE_DIR` | `$MOOR_FRONT_STATE_DIR`, set by the controller that runs it, else `$XDG_STATE_HOME/moor-web`, else `$HOME/.local/state/moor-web` | The front's own state, including `web.db`. |

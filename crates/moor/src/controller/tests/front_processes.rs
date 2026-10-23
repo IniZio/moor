@@ -53,8 +53,21 @@ struct Fronts {
     dir: tempfile::TempDir,
 }
 
+/// Stands in for `moor front-shim` on a host without the sandbox: `--check` fails.
+fn refusing_shim() -> (OsString, Vec<OsString>) {
+    let script = r#"echo "they need nono's sandbox, which this linux host lacks" >&2; exit 1"#;
+    (
+        "sh".into(),
+        vec!["-c".into(), script.into(), "front-shim".into()],
+    )
+}
+
 impl Fronts {
     fn start() -> Self {
+        Self::start_with(PASS_THROUGH_SHIM.clone())
+    }
+
+    fn start_with(shim: (OsString, Vec<OsString>)) -> Self {
         let dir = tempfile::tempdir().expect("tmp");
         let cfg = config(
             dir.path(),
@@ -66,7 +79,7 @@ impl Fronts {
         let mut running = start(&env(dir.path()), &cfg).expect("start");
         let log = Buf::default();
         let sink: Sink = Arc::new(Mutex::new(log.clone()));
-        let supervised = Some(running.supervise_fronts(PASS_THROUGH_SHIM.clone(), &sink));
+        let supervised = Some(running.supervise_fronts(shim, &sink));
         running.serve_in_background(sink);
         Self {
             supervised,
@@ -178,4 +191,15 @@ fn stopping_the_supervision_ends_the_front() {
     drop(fronts.supervised.take());
     assert_eq!(start_time(pid), None, "front {pid} outlived its supervisor");
     assert!(!fronts.pid_file("web").exists());
+}
+
+#[test]
+fn a_host_the_shim_check_refuses_starts_no_front_and_says_why() {
+    let fronts = Fronts::start_with(refusing_shim());
+    let log = wait_for("the refusal", || {
+        Some(fronts.log.text()).filter(|l| l.contains("fronts not started"))
+    });
+    assert!(log.contains("nono's sandbox"), "{log}");
+    assert!(!fronts.pid_file("web").exists());
+    assert!(!log.contains("front web"), "{log}");
 }

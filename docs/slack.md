@@ -92,7 +92,7 @@ thread that says why.
 | --- | --- | --- | --- |
 | `--socket PATH` | `MOOR_SLACK_SOCKET`, else `MOOR_FRONT_SOCKET` | required | The controller's `slack` front socket. |
 | `--config PATH` | `MOOR_SLACK_CONFIG` | required | The front's config file. |
-| `--state-dir DIR` | `MOOR_SLACK_STATE_DIR` | `$XDG_STATE_HOME/moor-slack`, else `$HOME/.local/state/moor-slack` | The front's own state, including `slack.db`. |
+| `--state-dir DIR` | `MOOR_SLACK_STATE_DIR` | `$MOOR_FRONT_STATE_DIR`, set by the controller that runs it, else `$XDG_STATE_HOME/moor-slack`, else `$HOME/.local/state/moor-slack` | The front's own state, including `slack.db`. |
 
 The front refuses a `slack.db` that another build wrote at a different
 schema. Move it aside and start again with a fresh one.

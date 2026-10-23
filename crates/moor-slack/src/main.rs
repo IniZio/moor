@@ -25,8 +25,9 @@ struct Args {
     /// The front's config file: Slack token files and channels.
     #[arg(long, env = "MOOR_SLACK_CONFIG")]
     config: PathBuf,
-    /// Directory for the front's own state; defaults to `$XDG_STATE_HOME/moor-slack`
-    /// or `$HOME/.local/state/moor-slack`.
+    /// Directory for the front's own state; defaults to `MOOR_FRONT_STATE_DIR`, which the
+    /// controller sets when it starts the front, else `$XDG_STATE_HOME/moor-slack` or
+    /// `$HOME/.local/state/moor-slack`.
     #[arg(long, env = "MOOR_SLACK_STATE_DIR")]
     state_dir: Option<PathBuf>,
 }
@@ -55,16 +56,17 @@ struct McpArgs {
     inherited_closed: bool,
 }
 
-/// The state directory given, or the default under the user's state home.
+/// The state directory given, else the one the controller gave the front, else the default
+/// under the user's state home.
 fn state_dir(given: Option<PathBuf>) -> Result<PathBuf, String> {
-    if let Some(dir) = given {
-        return Ok(dir);
-    }
     let var = |k: &str| {
         std::env::var_os(k)
             .filter(|v| !v.is_empty())
             .map(PathBuf::from)
     };
+    if let Some(dir) = given.or_else(|| var("MOOR_FRONT_STATE_DIR")) {
+        return Ok(dir);
+    }
     var("XDG_STATE_HOME")
         .or_else(|| var("HOME").map(|h| h.join(".local").join("state")))
         .map(|base| base.join("moor-slack"))

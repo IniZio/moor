@@ -1,15 +1,17 @@
 //! `moor front-shim`: runs a front in new user, mount and PID namespaces, where the controller's
 //! state dir, operator socket and vault key are out of reach.
 //!
-//! The controller runs `moor front-shim --parent PID [--cover DIR | --mask FILE]... -- COMMAND...`.
+//! The controller runs
+//! `moor front-shim --parent PID [--cover DIR | --mask FILE | --writable DIR]... -- COMMAND...`.
 //! That process dies with the controller `PID` (it exits at once if `PID` is not its parent),
 //! enters the namespaces, covers each DIR with an empty tmpfs and each FILE with `/dev/null`,
-//! then runs `moor front-shim --init -- COMMAND...` as pid 1 of the new PID namespace. pid 1
-//! mounts a fresh `/proc`, so no controller pid is visible, moves to `/`, so no cwd reaches
-//! the covered paths, and runs the front without capabilities, so the front cannot unmount what
-//! hides those paths. Both shims pass SIGTERM and SIGINT on, reap every child and exit with the
-//! front's status. `--check` only enters the namespaces, so the controller can refuse fronts on
-//! a host that forbids them.
+//! then runs `moor front-shim --init [--writable DIR]... -- COMMAND...` as pid 1 of the new PID
+//! namespace. pid 1 mounts a fresh `/proc`, so no controller pid is visible, moves to `/`, so
+//! no cwd reaches the covered paths, confines itself with nono's sandbox so that nothing but
+//! each writable DIR and `/dev/null` can be written, and runs the front without capabilities,
+//! so the front cannot unmount what hides those paths. Both shims pass SIGTERM and SIGINT on,
+//! reap every child and exit with the front's status. `--check` only enters the namespaces and
+//! the sandbox, so the controller can refuse fronts on a host that forbids either.
 
 use std::ffi::OsString;
 use std::fs;
@@ -20,6 +22,7 @@ use std::thread;
 use std::time::Duration;
 
 use nix::sched::{unshare, CloneFlags};
+use nono::{AccessMode, Sandbox, SupportInfo};
 use rustix::event::{poll, PollFd, PollFlags, Timespec};
 use rustix::mount::{mount, mount_bind, mount_change, MountFlags, MountPropagationFlags};
 use rustix::process::{
@@ -45,13 +48,14 @@ pub fn main(args: &[OsString]) -> Result<u8, String> {
     let flags = parts.next().unwrap_or_default();
     let command = parts.next().unwrap_or_default();
     match flags {
-        [flag] if flag == "--check" => isolate(&[], &[]).map(|()| 0),
-        [flag] if flag == "--init" => init(command),
+        [flag] if flag == "--check" => isolate(&[], &[]).and_then(|()| confine(&[])).map(|()| 0),
+        [flag, writable @ ..] if flag == "--init" => init(&Hidden::writable(writable)?, command),
         _ => {
             let Hidden {
                 parent,
                 cover,
                 mask,
+                writable,
             } = Hidden::parse(flags)?;
             die_with(parent)?;
             let exe = std::env::current_exe().map_err(|e| format!("no own executable: {e}"))?;
@@ -64,7 +68,13 @@ pub fn main(args: &[OsString]) -> Result<u8, String> {
             let (alive, _held) = std::io::pipe().map_err(|e| format!("pipe: {e}"))?;
             relay(
                 Command::new(exe)
-                    .args(["front-shim", "--init", "--"])
+                    .args(["front-shim", "--init"])
+                    .args(
+                        writable
+                            .iter()
+                            .flat_map(|dir| [OsString::from("--writable"), dir.into()]),
+                    )
+                    .arg("--")
                     .args(command)
                     .stdin(alive),
             )
@@ -94,12 +104,26 @@ struct Hidden {
     cover: Vec<PathBuf>,
     /// Files to replace with `/dev/null`.
     mask: Vec<PathBuf>,
+    /// Dirs the front may write.
+    writable: Vec<PathBuf>,
 }
 
 impl Hidden {
-    /// Reads `--parent PID`, `--cover DIR` and `--mask FILE` flags.
+    /// Reads the `--writable DIR` flags pid 1 gets.
+    fn writable(flags: &[OsString]) -> Result<Vec<PathBuf>, String> {
+        flags
+            .chunks(2)
+            .map(|pair| match pair {
+                [flag, dir] if flag == "--writable" => Ok(PathBuf::from(dir)),
+                _ => Err(format!("pid 1 takes only --writable DIR, not {pair:?}")),
+            })
+            .collect()
+    }
+
+    /// Reads `--parent PID`, `--cover DIR`, `--mask FILE` and `--writable DIR` flags.
     fn parse(flags: &[OsString]) -> Result<Self, String> {
-        let (mut parent, mut cover, mut mask) = (None, Vec::new(), Vec::new());
+        let (mut parent, mut cover, mut mask, mut writable) =
+            (None, Vec::new(), Vec::new(), Vec::new());
         let mut flags = flags.iter();
         while let Some(flag) = flags.next() {
             let word = flags
@@ -117,6 +141,7 @@ impl Hidden {
                 }
                 Some("--cover") => cover.push(PathBuf::from(word)),
                 Some("--mask") => mask.push(PathBuf::from(word)),
+                Some("--writable") => writable.push(PathBuf::from(word)),
                 _ => return Err(format!("unknown flag {}", flag.display())),
             }
         }
@@ -125,6 +150,7 @@ impl Hidden {
             parent,
             cover,
             mask,
+            writable,
         })
     }
 }
@@ -135,7 +161,13 @@ impl Hidden {
 fn isolate(cover: &[PathBuf], mask: &[PathBuf]) -> Result<(), String> {
     let (uid, gid) = (getuid().as_raw(), getgid().as_raw());
     unshare(CloneFlags::CLONE_NEWUSER | CloneFlags::CLONE_NEWNS | CloneFlags::CLONE_NEWPID)
-        .map_err(|e| format!("cannot create user, mount and PID namespaces: {e}"))?;
+        .map_err(|e| {
+            format!(
+                "they need unprivileged user namespaces (sysctl kernel.unprivileged_userns_clone=1, \
+                 user.max_user_namespaces above 0, kernel.apparmor_restrict_unprivileged_userns=0): \
+                 cannot create user, mount and PID namespaces: {e}"
+            )
+        })?;
     for (file, text) in [
         ("setgroups", "deny".to_owned()),
         ("uid_map", format!("{uid} {uid} 1")),
@@ -161,11 +193,40 @@ fn isolate(cover: &[PathBuf], mask: &[PathBuf]) -> Result<(), String> {
     Ok(())
 }
 
-/// pid 1 of the front's PID namespace: mounts its `/proc`, moves to `/`, drops every capability
-/// and runs `command`. The kernel kills the namespace if the outer shim dies. The outer shim
-/// holds the only write end of stdin, so a readable stdin means it died before the death signal
-/// was set, and pid 1 exits.
-fn init(command: &[OsString]) -> Result<u8, String> {
+/// Confines this process and every process it starts: each may read and run anything, but
+/// write only `writable` and `/dev/null`.
+fn confine(writable: &[PathBuf]) -> Result<(), String> {
+    supported(&Sandbox::support_info())?;
+    let mut caps = nono::CapabilitySet::new()
+        .allow_path("/", AccessMode::Read)
+        .and_then(|caps| caps.allow_file("/dev/null", AccessMode::ReadWrite))
+        .map_err(|e| format!("cannot build the sandbox: {e}"))?;
+    for dir in writable {
+        caps = caps
+            .allow_path(dir, AccessMode::ReadWrite)
+            .map_err(|e| format!("cannot let the front write {}: {e}", dir.display()))?;
+    }
+    Sandbox::apply_auto(&caps)
+        .map(drop)
+        .map_err(|e| format!("cannot apply the sandbox: {e}"))
+}
+
+/// Refuses a host where nono cannot sandbox a front.
+fn supported(info: &SupportInfo) -> Result<(), String> {
+    if info.is_supported {
+        return Ok(());
+    }
+    Err(format!(
+        "they need nono's sandbox, which this {} host lacks: {}",
+        info.platform, info.details
+    ))
+}
+
+/// pid 1 of the front's PID namespace: mounts its `/proc`, moves to `/`, confines itself to
+/// writing `writable`, drops every capability and runs `command`. The kernel kills the
+/// namespace if the outer shim dies. The outer shim holds the only write end of stdin, so a
+/// readable stdin means it died before the death signal was set, and pid 1 exits.
+fn init(writable: &[PathBuf], command: &[OsString]) -> Result<u8, String> {
     set_parent_process_death_signal(Some(Signal::KILL))
         .map_err(|e| format!("cannot set the parent death signal: {e}"))?;
     let held = io::stdin();
@@ -179,6 +240,7 @@ fn init(command: &[OsString]) -> Result<u8, String> {
     }
     let flags = MountFlags::NOSUID | MountFlags::NODEV | MountFlags::NOEXEC;
     mount("proc", "/proc", "proc", flags, None).map_err(|e| format!("cannot mount /proc: {e}"))?;
+    confine(writable)?;
     let none = CapabilitySet::empty();
     set_capabilities(
         None,
@@ -227,4 +289,28 @@ fn code(status: WaitStatus) -> u8 {
         .or_else(|| status.terminating_signal().map(|s| 128 + s))
         .unwrap_or(1);
     u8::try_from(code).unwrap_or(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use nono::SupportInfo;
+
+    use super::supported;
+
+    #[test]
+    fn a_host_without_the_sandbox_is_refused_with_why() {
+        let info = SupportInfo {
+            is_supported: false,
+            platform: "linux",
+            details: "Landlock not available".to_owned(),
+        };
+        let e = supported(&info).unwrap_err();
+        assert!(e.contains("nono's sandbox"), "{e}");
+        assert!(e.contains("Landlock not available"), "{e}");
+        let info = SupportInfo {
+            is_supported: true,
+            ..info
+        };
+        assert_eq!(supported(&info), Ok(()));
+    }
 }

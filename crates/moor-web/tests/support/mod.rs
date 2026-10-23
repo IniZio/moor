@@ -78,6 +78,51 @@ impl Stack {
 
     /// Like `start`, appending `extra` to the controller config.
     pub fn start_with(extra: &str) -> Self {
+        let mut stack = Self::controller_with(|_| extra.to_owned());
+        stack.start_web(false);
+        stack
+    }
+
+    /// Starts the controller with the web daemon as its `web` front, writing only `web/`
+    /// in the stack's root, and waits for the daemon's URL in the controller log.
+    pub fn start_as_front() -> Self {
+        let mut stack = Self::controller_with(|dir| {
+            let command = json!([
+                env!("CARGO_BIN_EXE_moor-web"),
+                "--port",
+                "0",
+                "--token-file",
+                dir.join("token"),
+            ]);
+            format!(
+                "fronts:\n  web:\n    command: {command}\n    state_dir: {}\n",
+                dir.join("web").display()
+            )
+        });
+        let mut waited = Duration::ZERO;
+        let port = loop {
+            let log = std::fs::read_to_string(stack.root.path().join("controller.err")).unwrap();
+            let url = log.lines().find_map(|l| l.split_once("front web: http://"));
+            if let Some(port) =
+                url.and_then(|(_, url)| url.trim_end_matches('/').rsplit(':').next())
+            {
+                break port.parse().unwrap();
+            }
+            assert!(
+                waited < Duration::from_secs(20),
+                "the front printed no URL\n{}",
+                stack.diagnostics()
+            );
+            std::thread::sleep(Duration::from_millis(50));
+            waited += Duration::from_millis(50);
+        };
+        stack.port = port;
+        stack
+    }
+
+    /// Starts the controller, with `extra(root)` appended to its config, and waits for it; the
+    /// token file is written first.
+    fn controller_with(extra: impl FnOnce(&Path) -> String) -> Self {
         // Kept short: Unix socket paths are limited to about 104 bytes.
         let root = tempfile::Builder::new().prefix("mw").tempdir().unwrap();
         let dir = root.path().to_path_buf();
@@ -86,12 +131,22 @@ impl Stack {
         std::fs::write(
             &config,
             format!(
-                "socket: {}\nstate_dir: {}\n{extra}",
+                "socket: {}\nstate_dir: {}\n{}",
                 socket.display(),
-                dir.join("state").display()
+                dir.join("state").display(),
+                extra(&dir)
             ),
         )
         .unwrap();
+        let token = format!(
+            "tok-{}-{}-{:x}",
+            std::process::id(),
+            SEQ.fetch_add(1, Ordering::Relaxed),
+            dir.as_os_str().len() * 7919
+        );
+        std::fs::write(dir.join("token"), &token).unwrap();
+        std::fs::set_permissions(dir.join("token"), std::fs::Permissions::from_mode(0o600))
+            .unwrap();
         let controller = Command::new(moor_bin())
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
@@ -104,7 +159,7 @@ impl Stack {
             .stderr(std::fs::File::create(dir.join("controller.err")).unwrap())
             .spawn()
             .unwrap();
-        let mut stack = Self {
+        let stack = Self {
             root,
             controller,
             // Replaced below; a placeholder keeps Drop safe if startup panics.
@@ -112,15 +167,9 @@ impl Stack {
             socket,
             port: 0,
             front_socket: None,
-            token: format!(
-                "tok-{}-{}-{:x}",
-                std::process::id(),
-                SEQ.fetch_add(1, Ordering::Relaxed),
-                dir.as_os_str().len() * 7919
-            ),
+            token,
         };
         stack.wait_controller();
-        stack.start_web(false);
         stack
     }
 
@@ -295,6 +344,11 @@ impl Stack {
     /// Process ids of the controller and the web daemon.
     pub fn pids(&self) -> (u32, u32) {
         (self.controller.id(), self.web.id())
+    }
+
+    /// `name` in the stack's root.
+    pub fn path(&self, name: &str) -> PathBuf {
+        self.root.path().join(name)
     }
 
     /// The controller's state directory.
