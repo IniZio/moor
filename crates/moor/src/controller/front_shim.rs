@@ -32,28 +32,21 @@ use std::time::Duration;
 
 #[cfg(target_os = "linux")]
 use command_fds::{CommandFdExt as _, FdMapping};
-#[cfg(target_os = "linux")]
-use nix::sched::{unshare, CloneFlags};
 use nono::SupportInfo;
 #[cfg(target_os = "linux")]
 use nono::{AccessMode, Sandbox};
 #[cfg(target_os = "linux")]
 use rustix::event::{poll, PollFd, PollFlags, Timespec};
 #[cfg(target_os = "linux")]
-use rustix::mount::{mount_change, MountPropagationFlags};
-#[cfg(target_os = "linux")]
 use rustix::process::Pid;
 use rustix::process::WaitStatus;
 #[cfg(target_os = "linux")]
 use rustix::process::{
-    getgid, getppid, getuid, kill_process, set_dumpable_behavior, set_parent_process_death_signal,
-    waitpid, DumpableBehavior, Signal, WaitOptions,
+    kill_process, set_dumpable_behavior, set_parent_process_death_signal, waitpid,
+    DumpableBehavior, Signal, WaitOptions,
 };
 #[cfg(target_os = "linux")]
-use rustix::thread::{
-    capabilities, configure_capability_in_ambient_set, set_capabilities, CapabilitySet,
-    CapabilitySets,
-};
+use rustix::thread::{set_capabilities, CapabilitySet, CapabilitySets};
 #[cfg(target_os = "linux")]
 use signal_hook::consts::{SIGINT, SIGTERM};
 #[cfg(target_os = "linux")]
@@ -66,6 +59,8 @@ mod bridge;
 mod denied;
 #[cfg(target_os = "linux")]
 mod egress;
+#[cfg(target_os = "linux")]
+mod enter;
 #[cfg(target_os = "linux")]
 mod net;
 #[cfg(target_os = "linux")]
@@ -95,9 +90,9 @@ pub fn main(args: &[OsString]) -> Result<u8, String> {
     let command = parts.next().unwrap_or_default();
     match flags {
         [flag] if flag == "--check" => {
-            isolate()?;
-            enter_pid_namespace()?;
-            pass_sys_admin()?;
+            enter::isolate()?;
+            enter::enter_pid_namespace()?;
+            enter::pass_sys_admin()?;
             relay(
                 Command::new("/proc/self/exe")
                     .args(["front-shim", "--check-root"])
@@ -132,12 +127,12 @@ fn outer(flags: &[OsString], command: &[OsString]) -> Result<u8, String> {
         ports,
         ..
     } = Asked::parse(flags, true)?;
-    die_with(parent.ok_or("--parent is required")?)?;
+    enter::die_with(parent.ok_or("--parent is required")?)?;
     let outside = net::Outside::prepare(&ports)?;
-    isolate()?;
+    enter::isolate()?;
     let egress_port = outside.serve()?.to_string();
-    enter_pid_namespace()?;
-    pass_sys_admin()?;
+    enter::enter_pid_namespace()?;
+    enter::pass_sys_admin()?;
     let (alive, _held) = std::io::pipe().map_err(|e| format!("pipe: {e}"))?;
     let proxy = proxy
         .iter()
@@ -159,32 +154,6 @@ fn outer(flags: &[OsString], command: &[OsString]) -> Result<u8, String> {
     )
 }
 
-/// Keeps `CAP_SYS_ADMIN` in the namespaces for the next program this process runs, pid 1,
-/// which mounts the front's root.
-#[cfg(target_os = "linux")]
-fn pass_sys_admin() -> Result<(), String> {
-    let mut caps = capabilities(None).map_err(|e| format!("capget: {e}"))?;
-    caps.inheritable |= CapabilitySet::SYS_ADMIN;
-    set_capabilities(None, caps).map_err(|e| format!("capset: {e}"))?;
-    configure_capability_in_ambient_set(CapabilitySet::SYS_ADMIN, true)
-        .map_err(|e| format!("cannot pass CAP_SYS_ADMIN to pid 1: {e}"))
-}
-
-/// Makes this process die with `parent`, the controller that started it: the kernel kills it
-/// when the controller exits, and it exits now if the controller already did.
-#[cfg(target_os = "linux")]
-fn die_with(parent: Pid) -> Result<(), String> {
-    set_parent_process_death_signal(Some(Signal::KILL))
-        .map_err(|e| format!("cannot set the parent death signal: {e}"))?;
-    if getppid() != Some(parent) {
-        return Err(format!(
-            "the controller (pid {}) is gone",
-            parent.as_raw_nonzero()
-        ));
-    }
-    Ok(())
-}
-
 /// What the front may reach beyond the system paths.
 #[derive(Default)]
 struct Layout {
@@ -192,47 +161,6 @@ struct Layout {
     writable: Option<PathBuf>,
     /// Files and dirs the front may read.
     read_only: Vec<PathBuf>,
-}
-
-/// Why a host refuses the namespaces, with each sysctl that allows them.
-#[cfg(target_os = "linux")]
-fn refused(e: nix::errno::Errno) -> String {
-    format!(
-        "they need unprivileged user namespaces (sysctl kernel.unprivileged_userns_clone=1, \
-         user.max_user_namespaces above 0, kernel.apparmor_restrict_unprivileged_userns=0): \
-         cannot create user, mount, PID and network namespaces: {e}"
-    )
-}
-
-/// Enters new user, mount and network namespaces as the same uid and gid, with mounts that
-/// no longer reach the host's and a network with only its loopback, which it brings up. The
-/// PID namespace comes after, in [`enter_pid_namespace`], because a process that has unshared
-/// one can start no thread, and the outer shim starts its network threads in between.
-#[cfg(target_os = "linux")]
-fn isolate() -> Result<(), String> {
-    let (uid, gid) = (getuid().as_raw(), getgid().as_raw());
-    unshare(CloneFlags::CLONE_NEWUSER | CloneFlags::CLONE_NEWNS | CloneFlags::CLONE_NEWNET)
-        .map_err(refused)?;
-    for (file, text) in [
-        ("setgroups", "deny".to_owned()),
-        ("uid_map", format!("{uid} {uid} 1")),
-        ("gid_map", format!("{gid} {gid} 1")),
-    ] {
-        fs::write(format!("/proc/self/{file}"), text)
-            .map_err(|e| format!("cannot write /proc/self/{file}: {e}"))?;
-    }
-    mount_change(
-        "/",
-        MountPropagationFlags::PRIVATE | MountPropagationFlags::REC,
-    )
-    .map_err(|e| format!("cannot make mounts private: {e}"))?;
-    net::loopback_up()
-}
-
-/// Enters a new PID namespace, whose pid 1 is the next child.
-#[cfg(target_os = "linux")]
-fn enter_pid_namespace() -> Result<(), String> {
-    unshare(CloneFlags::CLONE_NEWPID).map_err(refused)
 }
 
 /// Fails unless the sandbox now in force refuses a write it would refuse a front: opening
