@@ -177,6 +177,7 @@ fronts:
   web:
     command: [moor-web, --port, "8080"]
     state_dir: /home/me/.local/state/moor-web
+    ports: [8080]
   slack: {}
 ```
 
@@ -184,6 +185,7 @@ fronts:
 | --- | --- | --- | --- |
 | `command` | list of strings, not empty | none | The program and arguments the controller runs as this front. Without it, start the front yourself. |
 | `state_dir` | absolute path, not under `/tmp` | none | The one directory the front may write. Without it, the front writes nothing but `/dev/null`. |
+| `ports` | list of TCP ports, 1 to 65535 | empty | Ports a client on the host reaches the front on at `127.0.0.1`. The front listens on the same port inside its own network namespace. Each is forwarded from the host's `127.0.0.1` only, never its other addresses, and nothing else reaches the front from outside. The controller does not guess them from `command`. On macOS the front shares the host's network, so the key changes nothing there. |
 | `read_only` | list of absolute real paths | empty | Files or dirs outside the system dirs that the front may read, such as a config or token file under `HOME`. |
 | `proxy_rules` | list of rule names | empty | The rules the front Proxy serves to this front. `claude` is the one rule: it injects the user's `claude` secret on `POST /v1/messages`, `GET /api/claude_code/settings` and `GET /api/claude_code/policy_limits` at `api.anthropic.com`. |
 
@@ -224,8 +226,8 @@ path. The front's stdin is empty and its stdout is the controller's. Each
 line it writes to stderr goes to the controller log as `front <namespace>:
 <line>`.
 
-Each front runs under `moor front-shim`, in its own user, mount and PID
-namespaces, with the controller's uid and gid and no capabilities. There the
+Each front runs under `moor front-shim`, in its own user, mount, PID and
+network namespaces, with the controller's uid and gid and no capabilities. There the
 state dir is an empty read-only tmpfs, the controller socket and the vault key
 read as `/dev/null`, and `/proc` shows only the front's own processes, so fd 3
 is the front's only way to the controller. The shim is pid 1 of that
@@ -249,8 +251,28 @@ the D-Bus session bus, Docker's or LXD's, cannot be reached:
   chown, utimes and xattr changes fail with `Read-only file system`, even
   through a file descriptor, including the front's own socket on fd 3.
   Landlock also refuses writes outside them.
-- **Network.** Outbound TCP is not restricted, and that includes listeners on
-  the host's loopback.
+- **Network.** The front has a network namespace of its own with nothing but
+  its loopback, so it has no route out. Everything outbound goes through the
+  front's egress proxy, which the shim runs in the host's network and names in
+  `HTTPS_PROXY`, `HTTP_PROXY` and their lowercase forms, with `NO_PROXY` set to
+  the front's own loopback. The proxy takes only `CONNECT` to port 443 or 80.
+  It resolves the host once and answers 403 when any address it resolves to
+  lies in `0.0.0.0/8`, `10.0.0.0/8`, `100.64.0.0/10`, `127.0.0.0/8`,
+  `169.254.0.0/16`, `172.16.0.0/12`, `192.0.0.0/24`, `192.168.0.0/16`,
+  `198.18.0.0/15`, `224.0.0.0/4`, `240.0.0.0/4`, `::/128`, `::1/128`,
+  `fc00::/7`, `fe80::/10` or `ff00::/8`, or is an address of a host interface
+  (public ones included). Otherwise it connects to the addresses it checked,
+  without resolving again, so a second DNS answer cannot point it elsewhere.
+  It holds at most 64 tunnels per front, answers 429 past that, and logs one
+  `egress:` line per decision with the host, port, address, decision and
+  reason. That keeps the front off the host's loopback, its other interfaces
+  (such as docker0, tailscale0 or an LXD bridge), the LAN and other fronts.
+  The host's addresses are read when the front starts, so an address the host
+  gains later is not denied to that front until it restarts. Only the `ports`
+  the entry lists reach the front from outside, from the host's `127.0.0.1`.
+  Because loopback is the front's own, a front's config cannot point at a
+  service on the host's loopback: for moor-slack, an `api_base` of
+  `http://127.0.0.1:...` does not work when the controller runs it.
 
 A `read_only` path must be a real path: one with a symlink or `..` in it is
 refused. So is one that is `/tmp` or lies under it, because the front's own
@@ -265,13 +287,15 @@ and sets `MOOR_FRONT_STATE_DIR` to the `state_dir` and `TMPDIR` to its `tmp`.
 moor-web and moor-slack keep their state in `MOOR_FRONT_STATE_DIR` when
 `--state-dir` is not given.
 
-Fronts need unprivileged user namespaces and Landlock. When the host forbids
-user namespaces (`kernel.unprivileged_userns_clone=0`,
-`user.max_user_namespaces=0`, or `kernel.apparmor_restrict_unprivileged_userns=1`)
-or lacks Landlock, the controller logs `fronts not started` with the reason,
+Fronts need unprivileged user namespaces and Landlock, and no program on the
+host beyond moor. When the host forbids user namespaces
+(`kernel.unprivileged_userns_clone=0`, `user.max_user_namespaces=0`, or
+`kernel.apparmor_restrict_unprivileged_userns=1`) or lacks Landlock, the
+controller logs `fronts not started` with the reason,
 starts none, and keeps serving. `moor front-shim --check` makes that call: it
-enters the namespaces and the front's root, applies the sandbox and confirms a
-write outside the allow-list is refused.
+enters the namespaces, brings the front's loopback up, enters the front's
+root, applies the sandbox and confirms a write outside the allow-list is
+refused.
 
 On macOS the shim has no namespaces. It applies nono's Seatbelt profile, which
 denies by default, to itself and the front. The front may read `/usr`, `/bin`,

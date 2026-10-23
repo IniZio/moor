@@ -25,6 +25,26 @@ controller. It listens only on `127.0.0.1` and asks for an access token.
 
 To reach the page from another machine, forward the port over ssh.
 
+## Run it from the controller
+
+The controller can run `moor-web` as a front instead. On Linux the front has a
+network namespace of its own, so give it a fixed `--port` and list the same
+port in `ports`. The controller then forwards that port from the host's
+`127.0.0.1` to the front:
+
+```yaml
+fronts:
+  web:
+    command: [moor-web, --port, "8080", --token-file, /home/me/.config/moor-web-token]
+    state_dir: /home/me/.local/state/moor-web
+    read_only: [/home/me/.config/moor-web-token]
+    ports: [8080]
+```
+
+Without `ports`, nothing on the host reaches the page. With `--port 0`, the
+port changes on each start and no listed port matches it. See
+[fronts](config.md#fronts).
+
 ## Command line
 
 | Flag | Environment variable | Default | Meaning |

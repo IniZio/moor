@@ -196,7 +196,7 @@ The front rejects unknown keys.
 | --- | --- | --- | --- |
 | `app_token_file` | path | required | The file that holds the `xapp-` token. It must be mode 0600 and not empty. `~` is allowed. |
 | `bot_token_file` | path | required | The file that holds the `xoxb-` token. It must be mode 0600 and not empty. `~` is allowed. |
-| `api_base` | URL | `https://slack.com/api` | The Slack Web API base. It must start with `https://`, `http://127.0.0.1:`, or `http://localhost:`. |
+| `api_base` | URL | `https://slack.com/api` | The Slack Web API base. It must start with `https://`, `http://127.0.0.1:`, or `http://localhost:`. A loopback base works only when you run moor-slack yourself: a front the controller runs on Linux has a loopback of its own. |
 | `github_api_base` | URL | `https://api.github.com` | The GitHub API base where a pasted `gh auth token` is checked with `GET /user`. The same URL rules as `api_base`. |
 | `coordinator.binary` | absolute path | `claude` on `PATH` | The Claude Code binary. |
 | `coordinator.agent` | `claude` | `claude` | The coordinator agent. |

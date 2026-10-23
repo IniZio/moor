@@ -5,7 +5,7 @@
 
 use std::fs;
 use std::os::fd::{AsRawFd as _, OwnedFd};
-use std::os::unix::fs::symlink;
+use std::os::unix::fs::{symlink, FileTypeExt as _};
 use std::path::{Path, PathBuf};
 
 use rustix::fs::{open, Mode, OFlags};
@@ -38,14 +38,16 @@ struct Shown {
 }
 
 /// Builds the front's root from `layout`, mounts a fresh `/proc` in it, pivots into it and
-/// detaches the host's root. When fd 3 is open, returns its socket reopened through a read-only
+/// detaches the host's root. When fd 3 is a socket, returns it reopened through a read-only
 /// mount, so the front cannot chmod the socket through it; the socket is opened again by path
 /// because a mount of the controller's namespace cannot be bound into this one.
 pub(super) fn enter(layout: &Layout) -> Result<Option<OwnedFd>, String> {
     let shown = sources(layout)?;
     let own_tmp = layout.writable.as_deref().map(own_tmp).transpose()?;
-    let socket = fs::read_link("/proc/self/fd/3")
-        .ok()
+    let socket = fs::metadata("/proc/self/fd/3")
+        .is_ok_and(|meta| meta.file_type().is_socket())
+        .then(|| fs::read_link("/proc/self/fd/3").ok())
+        .flatten()
         .and_then(|path| open(&path, OFlags::PATH | OFlags::CLOEXEC, Mode::empty()).ok());
     let stage = Path::new(STAGE);
     let flags = MountFlags::NOSUID | MountFlags::NODEV;

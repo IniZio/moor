@@ -28,6 +28,9 @@ pub(in crate::controller) struct Front {
     pub(super) read_only: Vec<PathBuf>,
     /// How it reaches its Proxy; none without a Proxy.
     pub(super) proxy: Option<Access>,
+    /// The TCP ports the host reaches it on at `127.0.0.1`.
+    #[cfg(target_os = "linux")]
+    pub(super) ports: Vec<u16>,
 }
 
 impl Front {
@@ -67,6 +70,8 @@ impl Front {
                         state_dir: entry.state_dir.clone(),
                         read_only,
                         proxy: access,
+                        #[cfg(target_os = "linux")]
+                        ports: entry.ports.clone(),
                     })
                 },
             ),

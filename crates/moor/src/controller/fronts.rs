@@ -338,6 +338,10 @@ fn what_it_reaches(front: &Front, command: &mut Command) -> io::Result<()> {
     for path in &front.read_only {
         command.arg("--read-only").arg(path);
     }
+    #[cfg(target_os = "linux")]
+    for port in &front.ports {
+        command.arg("--port").arg(port.to_string());
+    }
     if let Some(proxy) = &front.proxy {
         command
             .arg("--proxy")

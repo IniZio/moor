@@ -23,6 +23,10 @@ use serde_json::Value;
 
 use super::{fresh_dir, fresh_dir_outside_tmp, Dir};
 
+#[path = "fronts/egress.rs"]
+mod egress;
+#[path = "fronts/network.rs"]
+mod network;
 #[path = "fronts/sandbox.rs"]
 mod sandbox;
 

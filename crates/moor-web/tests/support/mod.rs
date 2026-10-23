@@ -84,26 +84,31 @@ impl Stack {
         stack
     }
 
-    /// Starts the controller with the web daemon as its `web` front, writing only `web/`
-    /// in the stack's root, and waits for the daemon's URL in the controller log. The token
-    /// file is copied into `web/`, as the front sees nothing else of the stack's root. The root is
-    /// outside /tmp, which the front sees as its own tmp dir.
+    /// Starts the controller with the web daemon as its `web` front, writing only `web/` in
+    /// the stack's root and listening on a free port its `ports` lists, and waits for the
+    /// daemon's URL in the controller log. The token file is copied into `web/`, as the front
+    /// sees nothing else of the stack's root. The root is outside /tmp, which the front sees as
+    /// its own tmp dir.
     pub fn start_as_front() -> Self {
         let root = tempfile::Builder::new()
             .prefix("mw")
             .tempdir_in(env!("CARGO_TARGET_TMPDIR"))
             .unwrap();
+        let listed = std::net::TcpListener::bind("127.0.0.1:0")
+            .and_then(|l| l.local_addr())
+            .unwrap()
+            .port();
         let mut stack = Self::controller_with(root, |dir| {
             std::fs::create_dir(dir.join("web")).unwrap();
             let command = json!([
                 env!("CARGO_BIN_EXE_moor-web"),
                 "--port",
-                "0",
+                listed.to_string(),
                 "--token-file",
                 dir.join("web").join("token"),
             ]);
             format!(
-                "fronts:\n  web:\n    command: {command}\n    state_dir: {}\n",
+                "fronts:\n  web:\n    command: {command}\n    state_dir: {}\n    ports: [{listed}]\n",
                 dir.join("web").display()
             )
         });
