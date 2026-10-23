@@ -44,25 +44,44 @@ pub(crate) enum Sent {
     Failed(String),
 }
 
+/// Which try at an upload this is, and so what a failure shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Attempt {
+    /// A failure posts its reason.
+    First,
+    /// The thread already shows a reason; a failure posts nothing.
+    Retry,
+    /// The last try; a failure posts that the front gave up, with the reason.
+    Last,
+}
+
 /// Shows version `v` of Box `box_name` in `thread`: uploads the file, or posts one text line in
-/// its place. A failed upload posts its reason unless `told` says the thread already shows
-/// one. Errors only when a line it had to post did not reach the thread.
+/// its place. What a failed upload posts depends on `attempt`. Errors only when a line it had to post did not reach the thread.
 pub(crate) fn post_version(
     thread: &Thread<'_>,
     client: &Client,
     box_name: &BoxName,
     v: &ArtifactView,
-    told: bool,
+    attempt: Attempt,
 ) -> Result<Sent, ApiError> {
     let name = escape(&v.name);
     let (text, sent) = match upload(thread, client, box_name, v) {
         Ok(()) => return Ok(Sent::Shown),
         Err(NotUploaded::MissingScope) => (format!("{name} ({})", size_text(v.size)), Sent::Shown),
-        Err(NotUploaded::Failed(why)) if told => return Ok(Sent::Failed(why)),
-        Err(NotUploaded::Failed(why)) => (
-            format!("{name} could not be uploaded: {}", escape(&why)),
-            Sent::Failed(why),
-        ),
+        Err(NotUploaded::Failed(why)) => match attempt {
+            Attempt::Retry => return Ok(Sent::Failed(why)),
+            Attempt::First => (
+                format!("{name} could not be uploaded: {}", escape(&why)),
+                Sent::Failed(why),
+            ),
+            Attempt::Last => (
+                format!(
+                    "{name} could not be uploaded and the front gave up trying: {}",
+                    escape(&why)
+                ),
+                Sent::Failed(why),
+            ),
+        },
     };
     thread
         .api

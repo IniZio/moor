@@ -11,10 +11,19 @@ use super::Db;
 pub(crate) enum ArtifactShown {
     /// Nothing yet.
     Nothing,
-    /// Why its upload failed; the version is still owed.
-    Failure,
+    /// An upload failed and the thread shows why; the version is still owed.
+    Failure {
+        /// Unix seconds of the first failure.
+        since: i64,
+        /// Unix seconds of the latest attempt.
+        tried_at: i64,
+        /// Attempts so far.
+        tries: u32,
+    },
     /// The version itself, or its name and size when the file cannot go up.
     Version,
+    /// The front stopped trying and the thread says so. Never tried again.
+    GaveUp,
 }
 
 impl Db {
@@ -25,23 +34,36 @@ impl Db {
         name: &str,
         version: u32,
     ) -> rusqlite::Result<ArtifactShown> {
-        let posted: Option<bool> = self
+        let row = self
             .conn
             .query_row(
-                "SELECT posted_at IS NOT NULL FROM slack_artifacts \
-                 WHERE box_name = ?1 AND name = ?2 AND version = ?3",
+                "SELECT posted_at IS NOT NULL, gave_up_at IS NOT NULL, failed_at, tried_at, tries \
+                 FROM slack_artifacts WHERE box_name = ?1 AND name = ?2 AND version = ?3",
                 params![box_name.as_str(), name, version],
-                |r| r.get(0),
+                |r| {
+                    Ok((
+                        r.get::<_, bool>(0)?,
+                        r.get::<_, bool>(1)?,
+                        r.get::<_, Option<i64>>(2)?,
+                        r.get::<_, Option<i64>>(3)?,
+                        r.get::<_, u32>(4)?,
+                    ))
+                },
             )
             .optional()?;
-        Ok(match posted {
+        Ok(match row {
             None => ArtifactShown::Nothing,
-            Some(false) => ArtifactShown::Failure,
-            Some(true) => ArtifactShown::Version,
+            Some((true, ..)) => ArtifactShown::Version,
+            Some((_, true, ..)) => ArtifactShown::GaveUp,
+            Some((_, _, since, tried_at, tries)) => ArtifactShown::Failure {
+                since: since.unwrap_or_default(),
+                tried_at: tried_at.unwrap_or_default(),
+                tries,
+            },
         })
     }
 
-    /// Records at `now` that the thread shows why `version` of `name` failed to go up.
+    /// Records that an upload of `version` of `name` failed at `now`.
     pub(crate) fn artifact_failed(
         &self,
         box_name: &BoxName,
@@ -50,8 +72,27 @@ impl Db {
         now: i64,
     ) -> rusqlite::Result<()> {
         self.conn.execute(
-            "INSERT OR IGNORE INTO slack_artifacts (box_name, name, version, failed_at) \
-             VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO slack_artifacts (box_name, name, version, failed_at, tried_at, tries) \
+             VALUES (?1, ?2, ?3, ?4, ?4, 1) \
+             ON CONFLICT (box_name, name, version) \
+             DO UPDATE SET tried_at = excluded.tried_at, tries = tries + 1",
+            params![box_name.as_str(), name, version, now],
+        )?;
+        Ok(())
+    }
+
+    /// Records at `now` that the front gave up on `version` of `name` for good.
+    pub(crate) fn artifact_gave_up(
+        &self,
+        box_name: &BoxName,
+        name: &str,
+        version: u32,
+        now: i64,
+    ) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT INTO slack_artifacts (box_name, name, version, failed_at, tried_at, tries, gave_up_at) \
+             VALUES (?1, ?2, ?3, ?4, ?4, 1, ?4) \
+             ON CONFLICT (box_name, name, version) DO UPDATE SET gave_up_at = excluded.gave_up_at",
             params![box_name.as_str(), name, version, now],
         )?;
         Ok(())

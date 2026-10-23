@@ -306,7 +306,7 @@ fn post(base: &str, sock: &Path, v: &ArtifactView) -> Result<(), ApiError> {
         ts: "10.5",
     };
     let box_name = BoxName::parse_allow_bare("t1").unwrap();
-    post_version(&thread, &Client::new(sock), &box_name, v, false).map(drop)
+    post_version(&thread, &Client::new(sock), &box_name, v, Attempt::First).map(drop)
 }
 
 #[test]

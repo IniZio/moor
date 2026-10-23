@@ -1,7 +1,9 @@
 //! Each artifact version a Box publishes, in the Box's thread: the file once per version, or
 //! one name and size line when the bot cannot upload files. `slack.db` keys each version by
 //! its Box, name and version, so a refold or a restart shows none twice. A version whose
-//! upload fails shows the reason once and is tried again on a later feed tick.
+//! upload fails shows the reason once and is tried again with a growing wait, for ten minutes
+//! from its first failure. Then the thread says the front gave up and the version is never tried
+//! again, not even after a restart.
 
 use moor_core::name::{BoxId, BoxName};
 use moor_core::view::ArtifactView;
@@ -11,7 +13,7 @@ use serde_json::Value;
 use super::prompts::box_id;
 use super::{Feed, Fold};
 use crate::db::{ArtifactShown, Db, SlackBox};
-use crate::upload::{post_version, Sent, Thread};
+use crate::upload::{post_version, Attempt, Sent, Thread};
 
 /// The payload of an `artifact_published` event.
 #[derive(Deserialize)]
@@ -69,29 +71,41 @@ impl Feed {
     }
 
     /// Shows `v` in `thread` unless it already does, and records what it shows. Returns
-    /// whether the thread shows the version. Uploading first means a crash before the record
-    /// uploads the version again instead of losing it.
+    /// whether the version is settled: shown, or given up on. Uploading first means a crash
+    /// before the record uploads the version again instead of losing it.
     fn show(&self, db: &Db, thread: &Thread<'_>, box_name: &BoxName, v: &ArtifactView) -> bool {
-        let shown = match db.artifact_shown(box_name, &v.name, v.version) {
-            Ok(ArtifactShown::Version) => return true,
-            Ok(shown) => shown,
+        let now = (self.clock)();
+        let attempt = match db.artifact_shown(box_name, &v.name, v.version) {
+            Ok(ArtifactShown::Version | ArtifactShown::GaveUp) => return true,
+            Ok(ArtifactShown::Nothing) => Attempt::First,
+            Ok(ArtifactShown::Failure {
+                since,
+                tried_at,
+                tries,
+            }) => {
+                if now < tried_at.saturating_add(backoff(tries)) {
+                    return false;
+                }
+                if now.saturating_sub(since) >= GIVE_UP_AFTER {
+                    Attempt::Last
+                } else {
+                    Attempt::Retry
+                }
+            }
             Err(e) => {
                 (self.log)(&format!("slack.db: {e}"));
                 return false;
             }
         };
-        let told = shown == ArtifactShown::Failure;
-        let (done, recorded) = match post_version(thread, &self.client, box_name, v, told) {
-            Ok(Sent::Shown) => (
-                true,
-                db.artifact_posted(box_name, &v.name, v.version, (self.clock)()),
-            ),
+        let (done, recorded) = match post_version(thread, &self.client, box_name, v, attempt) {
+            Ok(Sent::Shown) => (true, db.artifact_posted(box_name, &v.name, v.version, now)),
             Ok(Sent::Failed(why)) => {
                 (self.log)(&format!("slack: {} not uploaded: {why}", v.name));
-                (
-                    false,
-                    db.artifact_failed(box_name, &v.name, v.version, (self.clock)()),
-                )
+                if attempt == Attempt::Last {
+                    (true, db.artifact_gave_up(box_name, &v.name, v.version, now))
+                } else {
+                    (false, db.artifact_failed(box_name, &v.name, v.version, now))
+                }
             }
             Err(e) => {
                 (self.log)(&format!("slack: artifact line failed: {e}"));
@@ -106,6 +120,14 @@ impl Feed {
             }
         }
     }
+}
+
+/// Seconds after its first failure at which the front stops trying to upload a version.
+const GIVE_UP_AFTER: i64 = 600;
+
+/// Seconds to wait after the `tries`th failed attempt: 2, 4, 8, ... up to 64.
+fn backoff(tries: u32) -> i64 {
+    1_i64 << tries.clamp(1, 6)
 }
 
 #[cfg(test)]
