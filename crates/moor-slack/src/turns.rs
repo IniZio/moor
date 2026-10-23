@@ -1,7 +1,7 @@
 //! The coordinator's turns: the scheduler takes the starter's waiting messages as one turn per
-//! thread, at most [`MAX_TURNS`] at once, and each turn posts a placeholder, runs the agent
-//! through the front Proxy on a lease of the starter's credential, stores its line and then
-//! posts it.
+//! thread, at most [`MAX_TURNS`] at once, and each turn shows a reaction on the thread's first
+//! message, runs the agent through the front Proxy on a lease of the starter's credential,
+//! stores its line, posts it and takes the reaction off.
 
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -28,6 +28,7 @@ mod host;
 mod idle;
 mod lines;
 mod proxy;
+mod react;
 mod restart;
 mod server_args;
 mod workdir;
@@ -41,9 +42,6 @@ const TICK: Duration = Duration::from_millis(500);
 /// Seconds between the scheduler's sweeps for quiet threads.
 const SWEEP_SECS: i64 = 60;
 
-/// What the placeholder says while a turn runs.
-const PLACEHOLDER: &str = "…";
-
 /// Waits before each new try of a line Slack did not take for a reason it may get over.
 const BACKOFF: [Duration; 3] = [
     Duration::from_millis(500),
@@ -53,9 +51,6 @@ const BACKOFF: [Duration; 3] = [
 
 /// Longest wait between tries, whatever `Retry-After` asks.
 const MAX_WAIT: Duration = Duration::from_secs(30);
-
-/// Slack's answers that the placeholder cannot be edited; the line is posted new instead.
-const EDIT_REFUSED: [&str; 2] = ["message_not_found", "cant_update_message"];
 
 pub(crate) use proxy::FrontProxy;
 
@@ -144,16 +139,7 @@ impl Turns {
             Ok(db) => db,
             Err(e) => return (self.log)(&format!("turn {}: open slack.db: {e}", row.id)),
         };
-        let placeholder = row.placeholder.clone().or_else(|| {
-            let posted =
-                self.api
-                    .post_message(&self.bot_token, &row.channel, &row.thread_ts, PLACEHOLDER);
-            let ts = posted
-                .inspect_err(|e| (self.log)(&format!("slack: placeholder failed: {e}")))
-                .ok()?;
-            self.written(db.set_placeholder(row.id, &ts));
-            Some(ts)
-        });
+        self.show_working(row);
         let closing = self.outcome(&db, row);
         let stored = db.store_reply(
             row.id,
@@ -163,36 +149,26 @@ impl Turns {
             closing.cost,
         );
         self.written(stored);
-        if self.post(row, placeholder.as_deref(), &closing.line) {
+        if self.post(row, &closing.line) {
             self.written(db.mark_posted(row.id, (self.clock)()));
         }
+        self.hide_working(row);
     }
 
-    /// Edits the placeholder into `line`, or posts `line` when there is no placeholder or Slack
-    /// says it cannot be edited. A failure Slack may get over is tried again after a wait.
+    /// Posts `line` in the thread. A failure Slack may get over is tried again after a wait.
     /// True once the line landed.
-    pub(super) fn post(&self, row: &TurnRow, placeholder: Option<&str>, line: &str) -> bool {
+    pub(super) fn post(&self, row: &TurnRow, line: &str) -> bool {
         let token = &self.bot_token;
-        let (mut target, mut waits) = (placeholder, BACKOFF.into_iter());
+        let mut waits = BACKOFF.into_iter();
         loop {
-            let sent = target.map_or_else(
-                || {
-                    let posted = self
-                        .api
-                        .post_message(token, &row.channel, &row.thread_ts, line);
-                    posted.map(drop)
-                },
-                |ts| self.api.update_message(token, &row.channel, ts, line),
-            );
-            let Err(error) = sent else {
+            let posted = self
+                .api
+                .post_message(token, &row.channel, &row.thread_ts, line);
+            let Err(error) = posted else {
                 return true;
             };
             (self.log)(&format!("slack: turn reply failed: {error}"));
             let wait = match &error {
-                ApiError::Slack(code) if target.is_some() && EDIT_REFUSED.contains(&&**code) => {
-                    target = None;
-                    continue;
-                }
                 ApiError::Slack(_) => None,
                 ApiError::RateLimited(asked) => waits.next().map(|w| asked.unwrap_or(w)),
                 ApiError::Transport(_) => waits.next(),

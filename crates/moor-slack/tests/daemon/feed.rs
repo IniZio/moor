@@ -50,7 +50,7 @@ fn thread_with_status() -> (Rig, FakeController, std::path::PathBuf, Post) {
         !status_posts(posts).is_empty()
     });
     let post = status_posts(&posts)[0].clone();
-    assert_eq!(post.text, status("starting"));
+    assert_eq!(post.text, status("starting (<1m)"));
     (rig, controller, bin, post)
 }
 
@@ -114,12 +114,24 @@ fn wait_refolded(controller: &FakeController, n: usize) {
 fn each_box_keeps_one_status_message_edited_in_place_and_never_posted_twice() {
     let (rig, controller, _bin, post) = thread_with_status();
     controller.emit(BOX_ID, BOX_NAME, "working", json!({}));
-    wait_status(&rig, &post.ts, &status("working"));
+    wait_status(&rig, &post.ts, &status("working (<1m)"));
     let question = json!({"question": "Which db?", "options": ["pg", "sqlite"]});
     controller.emit(BOX_ID, BOX_NAME, "needs_input", question);
-    let want = status("needs input: Which db?");
+    let want = status("waiting on a question (<1m): Which db?");
     wait_status(&rig, &post.ts, &want);
     assert_eq!(status_posts(&rig.slack.posts()).len(), 1, "posted once");
+    wait_recorded(&rig, &post.ts, &want);
+}
+
+#[test]
+fn a_working_box_silent_for_ten_minutes_has_a_stall_hint_in_its_status_edit() {
+    let (rig, controller, _bin, post) = thread_with_status();
+    controller.emit_ago(11 * 60, (BOX_ID, BOX_NAME, "working"), json!({}));
+    let want = format!(
+        "{}\nNo event for 11m. It may be stuck.",
+        status("working (11m)")
+    );
+    wait_status(&rig, &post.ts, &want);
     wait_recorded(&rig, &post.ts, &want);
 }
 
@@ -129,7 +141,7 @@ fn a_refold_after_a_dropped_watch_or_a_restart_writes_no_second_line_status_or_n
     controller.emit(BOX_ID, BOX_NAME, "working", json!({}));
     controller.emit(BOX_ID, BOX_NAME, "idled", json!({}));
     rig.wait_post(&finished_line());
-    wait_status(&rig, &post.ts, &status("idle"));
+    wait_status(&rig, &post.ts, &status("idle (<1m)"));
     std::thread::sleep(QUIET);
     let before = (
         rig.slack.posts().len(),
@@ -164,7 +176,7 @@ fn a_backlog_read_in_parts_after_a_dropped_watch_is_acted_on_only_once_caught_up
     let (rig, controller, _bin, post) = thread_with_status();
     controller.emit(BOX_ID, BOX_NAME, "working", json!({}));
     controller.emit(BOX_ID, BOX_NAME, "idled", json!({}));
-    wait_status(&rig, &post.ts, &status("idle"));
+    wait_status(&rig, &post.ts, &status("idle (<1m)"));
     std::thread::sleep(PAST_WINDOW);
     let before = rig.slack.updates().len();
 
@@ -197,7 +209,7 @@ fn a_status_edit_slack_refuses_is_sent_again_after_the_window() {
     let refused = json!({"ok": false, "error": "internal_error"});
     rig.slack.answer_updates(&[(200, refused)]);
     controller.emit(BOX_ID, BOX_NAME, "working", json!({}));
-    let want = status("working");
+    let want = status("working (<1m)");
     rig.slack.wait_until("the edit sent again", |_, updates| {
         let tries = updates.iter().filter(|u| u.ts == post.ts && u.text == want);
         tries.count() == 2
@@ -219,7 +231,7 @@ fn events_reach_a_box_by_its_id_and_its_name_is_only_for_display() {
     let posts = rig.slack.posts();
     assert!(posts.iter().all(|p| p.text != finished_line()), "{posts:?}");
     controller.emit(BOX_ID, "another-name", "needs_input", json!({}));
-    wait_status(&rig, &post.ts, &status("needs input"));
+    wait_status(&rig, &post.ts, &status("waiting on a question (<1m)"));
 }
 
 #[test]
@@ -318,7 +330,7 @@ fn a_refold_after_a_turn_used_the_notices_posts_no_second_line() {
     controller.emit(BOX_ID, BOX_NAME, "idled", json!({}));
     rig.wait_post(&finished_line());
     reply(&rig, 2, USER, "what now");
-    rig.slack.wait_updates(2);
+    rig.wait_replies(2);
     wait_turns_posted(&rig);
 
     let n = watches(&controller);
@@ -361,8 +373,8 @@ fn two_bound_boxes_in_one_thread_each_keep_their_own_status_and_lines() {
     controller.emit(BOX_ID + 1, &second, "idled", json!({}));
     controller.emit(BOX_ID, BOX_NAME, "working", json!({}));
     rig.wait_post(&format!("Box `{second}` finished its turn."));
-    wait_status(&rig, &second_ts, &status_of_box(&second, "idle"));
-    wait_status(&rig, &first_ts, &status("working"));
+    wait_status(&rig, &second_ts, &status_of_box(&second, "idle (<1m)"));
+    wait_status(&rig, &first_ts, &status("working (<1m)"));
     std::thread::sleep(QUIET);
     let posts = rig.slack.posts();
     assert!(posts.iter().all(|p| p.text != finished_line()), "{posts:?}");

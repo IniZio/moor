@@ -94,11 +94,11 @@ fn moved_on(
     }
     Some(match view.map(|v| &v.state) {
         None | Some(State::Working) => "working",
-        Some(State::Starting) => "starting",
+        Some(State::Starting | State::SettingUp) => "starting",
         Some(State::Idle) => "idle",
         Some(State::Asleep) => "asleep",
         Some(State::NeedsInput(_)) => "waiting on a newer question",
-        Some(State::Closed) => "closed",
+        Some(State::Closing | State::Closed) => "closed",
         Some(State::Rejected(_)) => "rejected",
         Some(State::SetupFailed(_)) => "failed setup",
     })

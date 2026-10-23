@@ -75,7 +75,7 @@ fn folded(events: &[(i64, &str)]) -> Fold {
     for (cursor, kind) in events {
         let payload = json!({"question": format!("q{cursor}"), "options": ["a"]});
         super::fold(&mut fold, ID, kind, *cursor, &payload);
-        fold.views.entry(ID).or_default().fold(kind, &payload);
+        fold.views.entry(ID).or_default().fold(kind, &payload, 0);
     }
     fold
 }

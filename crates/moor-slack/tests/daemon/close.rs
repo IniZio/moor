@@ -81,7 +81,7 @@ fn close_box_in_the_requesters_turn_closes_the_box_without_force() {
     );
     Rig::tool_calls(&bin, None, &[]);
     reply(&rig, 3, USER, "thanks");
-    rig.slack.wait_updates(3);
+    rig.wait_replies(3);
     let stdin = std::fs::read_to_string(bin.join("run-2/stdin")).unwrap();
     let journal = format!(
         "Turn 2, <@{USER}> asked. close_box Box `{BOX_NAME}`. Result: Box `{BOX_NAME}` is \
@@ -156,7 +156,7 @@ fn a_reply_reading_close_reaches_the_coordinator_as_text_and_closes_nothing() {
     let (rig, controller, bin) = Rig::start_boxes();
     rig.open_thread_with_a_box();
     reply(&rig, 2, USER, "close");
-    rig.slack.wait_updates(2);
+    rig.wait_replies(2);
     let stdin = std::fs::read_to_string(bin.join("run-1/stdin")).unwrap();
     assert!(
         stdin.ends_with(&format!(

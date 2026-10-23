@@ -15,6 +15,7 @@ use tungstenite::Message;
 use request::read_request;
 
 mod commands;
+mod reactions;
 mod request;
 
 /// App-level token the fake accepts for opening a connection.
@@ -158,11 +159,18 @@ struct State {
     posted: usize,
     /// HTTP status and body of the next `chat.update` answers, before the fake takes edits.
     update_answers: VecDeque<(u16, Value)>,
+    /// HTTP status and body of the next `chat.postMessage` answers without blocks, before the
+    /// fake takes posts.
+    post_answers: VecDeque<(u16, Value)>,
     /// How many of the next `chat.postMessage` calls with blocks Slack refuses, and the
     /// error code it refuses them with.
     refused_block_posts: (usize, &'static str),
     /// The `error` code `auth.test` answers with instead of the team, once set.
     auth_test_error: Option<&'static str>,
+    /// The `error` code `reactions.add` and `reactions.remove` answer with, once set.
+    reaction_error: Option<&'static str>,
+    /// The reactions now on messages, as `(channel, ts, name)`.
+    reactions: Vec<(String, String, String)>,
 }
 
 /// The fake Slack: a Web API on one port and a Socket Mode endpoint on another.
@@ -208,10 +216,22 @@ impl FakeSlack {
         self.lock().update_answers.extend(answers.iter().cloned());
     }
 
+    /// Answers the next `chat.postMessage` calls that carry no blocks with `answers`, each an
+    /// HTTP status and a JSON body. Later calls succeed.
+    pub(crate) fn answer_posts(&self, answers: &[(u16, Value)]) {
+        self.lock().post_answers.extend(answers.iter().cloned());
+    }
+
     /// Answers every later `auth.test` with `ok: false` and this error code.
     pub(crate) fn refuse_auth_test(&self, code: &'static str) {
         self.lock().auth_test_error = Some(code);
     }
+    /// Answers every later `reactions.add` and `reactions.remove` with `ok: false` and this
+    /// error code.
+    pub(crate) fn refuse_reactions(&self, code: &'static str) {
+        self.lock().reaction_error = Some(code);
+    }
+
     /// Refuses the next `n` `chat.postMessage` calls that carry blocks with error `code`, in
     /// place of any count set before.
     pub(crate) fn refuse_block_posts(&self, n: usize, code: &'static str) {
@@ -515,23 +535,19 @@ fn serve_http(mut stream: TcpStream, state: &Mutex<State>, ws_port: u16) {
             json!({"ok": true, "team_id": TEAM}),
             |code| json!({"ok": false, "error": code}),
         ),
-        "/chat.postMessage"
-            if auth == format!("Bearer {BOT_TOKEN}")
-                && !body["blocks"].is_null()
-                && guard.refused_block_posts.0 > 0 =>
-        {
-            guard.refused_block_posts.0 -= 1;
-            json!({"ok": false, "error": guard.refused_block_posts.1})
-        }
         "/chat.postMessage" if auth == format!("Bearer {BOT_TOKEN}") => {
-            guard.posted += 1;
-            json!({"ok": true, "ts": message_ts(guard.posted)})
+            let (code, reply) = guard.post(&body);
+            status = code;
+            reply
         }
         "/chat.update" if auth == format!("Bearer {BOT_TOKEN}") => {
             let ok = json!({"ok": true, "channel": body["channel"], "ts": body["ts"]});
             let (code, reply) = guard.update_answers.pop_front().unwrap_or((200, ok));
             status = code;
             reply
+        }
+        "/reactions.add" | "/reactions.remove" if auth == format!("Bearer {BOT_TOKEN}") => {
+            guard.react(path.ends_with("add"), &body)
         }
         path if path.starts_with("/respond/") => json!({"ok": true}),
         "/chat.postEphemeral" if auth == format!("Bearer {BOT_TOKEN}") => {

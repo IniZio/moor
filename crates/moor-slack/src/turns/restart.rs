@@ -1,6 +1,7 @@
 //! What the front does with turns an earlier run left behind, before it takes new ones: it
 //! kills their processes, posts each stored line not yet posted, and runs a cut-off turn once
-//! more when it is recent, or says it stopped and ends its thread's host Session.
+//! more when it is recent, or says it stopped and ends its thread's host Session. A turn that
+//! posts its line here also loses the working reaction it left on its thread.
 
 use std::fs;
 use std::os::unix::fs::MetadataExt as _;
@@ -30,9 +31,10 @@ impl Turns {
             Vec::new()
         });
         for (row, line) in unposted {
-            if self.post(&row, row.placeholder.as_deref(), &line) {
+            if self.post(&row, &line) {
                 self.written(db.mark_posted(row.id, now));
             }
+            self.hide_working(&row);
         }
         let mut reruns = Vec::new();
         for cut in unended {
@@ -46,9 +48,10 @@ impl Turns {
             }
             let line = lines::RESTARTED;
             self.written(db.store_reply(row.id, End::Lost, line, None, None));
-            if self.post(row, row.placeholder.as_deref(), line) {
+            if self.post(row, line) {
                 self.written(db.mark_posted(row.id, now));
             }
+            self.hide_working(row);
             self.end_left(db, row);
         }
         reruns

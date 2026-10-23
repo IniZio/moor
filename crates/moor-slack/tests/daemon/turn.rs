@@ -1,7 +1,7 @@
 //! Coordinator turns: a mention that is not a start command opens a thread, and each of the
 //! starter's messages runs the fake `claude` through the front Proxy on a lease of the
-//! starter's credential, then edits the placeholder into the reply or the line that says why
-//! there is none.
+//! starter's credential, then posts the reply or the line that says why there is none. A
+//! reaction on the thread's first message shows the turn runs.
 
 #![allow(clippy::indexing_slicing, reason = "test code")]
 
@@ -63,17 +63,16 @@ fn turn_rows(rig: &Rig) -> Vec<TurnRow> {
     rows.map(Result::unwrap).collect()
 }
 
-/// Opens a coordinator thread at [`TS`] with `text` and waits for the placeholder's edit.
+/// Opens a coordinator thread at [`TS`] with `text` and waits for the turn's line.
 pub(super) fn ask(rig: &Rig, text: &str) -> String {
     rig.mention(1, USER, &format!("<@UBOT> {text}"), TS, None);
     let posts = rig.slack.wait_posts(1);
-    assert_eq!(
-        (posts[0].thread_ts.as_str(), posts[0].text.as_str()),
-        (TS, "…")
+    assert_eq!(posts[0].thread_ts, TS, "the line is posted in the thread");
+    assert!(
+        rig.slack.updates().is_empty(),
+        "no message is edited into the line"
     );
-    let updates = rig.slack.wait_updates(1);
-    assert_eq!(updates[0].ts, posts[0].ts, "the placeholder is edited");
-    updates[0].text.clone()
+    posts[0].text.clone()
 }
 
 /// The thread's workdir in the rig's state dir.
@@ -141,12 +140,7 @@ fn a_message_runs_a_turn_on_a_lease_of_the_front_proxy_and_releases_it() {
 fn a_bare_mention_opens_a_thread_and_runs_a_turn_like_any_mention() {
     let (rig, _controller, bin) = Rig::start_coordinated(Some(GOOD));
     rig.mention(1, USER, "<@UBOT>", TS, None);
-    let posts = rig.slack.wait_posts(1);
-    assert_eq!(
-        (posts[0].thread_ts.as_str(), posts[0].text.as_str()),
-        (TS, "…")
-    );
-    assert_eq!(rig.slack.wait_updates(1)[0].text, "OK");
+    assert_eq!(rig.slack.wait_posts(1)[0].text, "OK");
     let stdin = recorded(&bin, 0, "stdin");
     let want = format!("## New\n[<@{USER}>] \n");
     assert!(stdin.ends_with(&want), "{stdin}");
@@ -190,7 +184,7 @@ fn the_next_message_answers_from_the_rebuilt_context_in_the_same_host_session() 
     let (rig, controller, bin) = Rig::start_coordinated(Some(GOOD));
     ask(&rig, "hello there");
     reply(&rig, 2, USER, "and then?");
-    rig.slack.wait_updates(2);
+    rig.slack.wait_posts(2);
     let stdin = recorded(&bin, 1, "stdin");
     let want = format!("## Earlier in the thread\n[you] OK\n\n## New\n[<@{USER}>] and then?\n");
     assert!(stdin.ends_with(&want), "{stdin}");
@@ -281,11 +275,11 @@ fn posted_end(rig: &Rig) -> String {
     panic!("the turn's line was never marked posted");
 }
 
-/// How many `chat.update` calls Slack took.
-fn landed_updates(rig: &Rig) -> usize {
+/// How many `chat.postMessage` calls Slack took.
+fn landed_posts(rig: &Rig) -> usize {
     let requests = rig.slack.requests();
     let took = |r: &&super::support::slack_fake::Recorded| {
-        r.path == "/chat.update" && r.reply["ok"] == true
+        r.path == "/chat.postMessage" && r.reply["ok"] == true
     };
     requests.iter().filter(took).count()
 }
@@ -295,38 +289,81 @@ fn a_reply_slack_could_not_take_is_tried_again_and_lands_once() {
     let (rig, _controller, _bin) = Rig::start_coordinated(Some(GOOD));
     let failed = json!({"ok": false, "error": "internal_error"});
     let limited = json!({"ok": false, "error": "ratelimited"});
-    rig.slack.answer_updates(&[(500, failed), (429, limited)]);
+    rig.slack.answer_posts(&[(500, failed), (429, limited)]);
     rig.mention(1, USER, "<@UBOT> hello", TS, None);
     assert_eq!(posted_end(&rig), "replied");
-    let tries: Vec<String> = rig.slack.updates().into_iter().map(|u| u.text).collect();
+    let tries: Vec<String> = rig.slack.posts().into_iter().map(|p| p.text).collect();
     assert_eq!(tries, ["OK", "OK", "OK"]);
-    assert_eq!(landed_updates(&rig), 1);
-    assert_eq!(
-        rig.slack.posts().len(),
-        1,
-        "only the placeholder was posted"
-    );
+    assert_eq!(landed_posts(&rig), 1);
+}
+
+/// The Web API methods the fake saw, in order, without the ones that do not matter here.
+fn calls(rig: &Rig) -> Vec<String> {
+    let ours = ["/reactions.add", "/reactions.remove", "/chat.postMessage"];
+    let seen = rig.slack.requests().into_iter().map(|r| r.path);
+    seen.filter(|p| ours.contains(&p.as_str())).collect()
+}
+
+/// The reaction calls as `(verb, ts, emoji)`.
+fn reaction_calls(rig: &Rig) -> Vec<(&'static str, String, String)> {
+    let verb = |added| if added { "add" } else { "remove" };
+    let calls = rig.slack.reaction_calls();
+    calls
+        .into_iter()
+        .map(|c| (verb(c.added), c.ts, c.name))
+        .collect()
 }
 
 #[test]
-fn a_placeholder_slack_cannot_find_gets_the_reply_as_a_new_message() {
+fn a_turn_reacts_to_the_first_message_while_it_runs_and_takes_the_reaction_off_after_its_reply() {
     let (rig, _controller, _bin) = Rig::start_coordinated(Some(GOOD));
-    let gone = json!({"ok": false, "error": "message_not_found"});
-    rig.slack.answer_updates(&[(200, gone)]);
-    rig.mention(1, USER, "<@UBOT> hello", TS, None);
-    assert_eq!(posted_end(&rig), "replied");
-    let posts: Vec<(String, String)> = rig
-        .slack
-        .posts()
-        .into_iter()
-        .map(|p| (p.thread_ts, p.text))
-        .collect();
+    assert_eq!(ask(&rig, "hello"), "OK");
+    rig.slack.wait_reactions(2);
+    let emoji = "hourglass_flowing_sand".to_owned();
     let want = [
-        (TS.to_owned(), "…".to_owned()),
-        (TS.to_owned(), "OK".to_owned()),
+        ("add", TS.to_owned(), emoji.clone()),
+        ("remove", TS.to_owned(), emoji),
     ];
-    assert_eq!(posts, want);
-    assert_eq!(landed_updates(&rig), 0);
+    assert_eq!(reaction_calls(&rig), want);
+    let order = ["/reactions.add", "/chat.postMessage", "/reactions.remove"];
+    assert_eq!(calls(&rig), order, "the reply posts between the two");
+    assert_eq!(rig.slack.reactions_now(), []);
+}
+
+#[test]
+fn a_turn_that_fails_posts_its_line_and_takes_the_reaction_off() {
+    let (rig, _controller, _bin) = Rig::start_coordinated(Some("sk-ant-oat01-made-up"));
+    ask(&rig, "hello");
+    rig.slack.wait_reactions(2);
+    let order = ["/reactions.add", "/chat.postMessage", "/reactions.remove"];
+    assert_eq!(calls(&rig), order);
+    assert_eq!(rig.slack.reactions_now(), []);
+}
+
+#[test]
+fn a_missing_reactions_scope_never_drops_the_reply_and_is_logged_once() {
+    let (rig, _controller, _bin) = Rig::start_coordinated(Some(GOOD));
+    rig.slack.refuse_reactions("missing_scope");
+    assert_eq!(ask(&rig, "hello"), "OK");
+    posted_end(&rig);
+    reply(&rig, 2, USER, "again");
+    rig.slack.wait_posts(2);
+    rig.slack.wait_reactions(4);
+    let stderr = rig.stderr();
+    let logged = stderr.matches("lacks reactions:write").count();
+    assert_eq!(logged, 1, "{stderr}");
+    assert_eq!(rig.slack.posts().len(), 2);
+}
+
+#[test]
+fn a_reaction_call_that_fails_some_other_way_never_drops_the_reply() {
+    let (rig, _controller, _bin) = Rig::start_coordinated(Some(GOOD));
+    rig.slack.refuse_reactions("internal_error");
+    assert_eq!(ask(&rig, "hello"), "OK");
+    rig.slack.wait_reactions(2);
+    let stderr = rig.stderr();
+    assert!(stderr.contains("reaction add failed"), "{stderr}");
+    assert_eq!(turns(&rig)[0].0, "replied");
 }
 
 /// Each turn once `n` turns have their line marked posted; fails after three minutes.
