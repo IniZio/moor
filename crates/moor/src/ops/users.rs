@@ -59,6 +59,9 @@ pub(crate) fn run(
                 expires_in_secs: LINK_CODE_TTL.as_secs(),
             })
         }
+        UserCmd::ProxyLease => super::front_proxy::lease(cx, store, who),
+        UserCmd::ProxyRelease { token } => super::front_proxy::release(cx, store, who, token),
+        UserCmd::ProxyStatus => super::front_proxy::status(cx, who),
         UserCmd::LinkRedeem { code } => {
             let user = store.redeem_link_code(code, who).map_err(refuse_invalid)?;
             to_value(&LinkedValue {

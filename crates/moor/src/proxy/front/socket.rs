@@ -1,4 +1,5 @@
-//! The Unix socket a front listens on: one per Box, in moor's private socket directory.
+//! The Unix socket a front listens on: one per Box and one per front Proxy, in moor's private
+//! socket directory.
 //!
 //! Only moor's user can enter that directory, and the socket itself is 0600, so no other host
 //! user can open it. The Box reaches it only through its reverse tunnel, which opens the path
@@ -69,6 +70,16 @@ impl FrontSocket {
             dir: dir.to_path_buf(),
             owner,
             path: dir.join(format!("px-{hash}")),
+        }
+    }
+
+    /// The socket of the Proxy that front `ns` of `state_dir` reaches, in `dir`.
+    pub(crate) fn of_front(dir: &Path, owner: u32, state_dir: &Path, ns: &str) -> Self {
+        let hash = short_hash(&[state_dir.as_os_str().as_bytes(), b"front", ns.as_bytes()]);
+        Self {
+            dir: dir.to_path_buf(),
+            owner,
+            path: dir.join(format!("pf-{hash}")),
         }
     }
 

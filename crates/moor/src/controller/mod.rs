@@ -15,6 +15,7 @@ mod watch;
 
 pub use local::watch_local;
 
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs::{self, File, TryLockError};
 use std::io::{BufReader, Write};
@@ -24,7 +25,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use moor_core::config::parse_controller;
+use moor_core::config::{parse_controller, FrontEntry};
 use moor_core::ErrorKind;
 
 use drain::{Admitted, Drain, Handler};
@@ -143,7 +144,9 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         message: e.error.to_string(),
     })?;
     let (vault, key) = open_vault(&env, config)?;
-    let (vault, env) = (Arc::new(vault), env.with_vault_key(key));
+    let env = env
+        .with_vault_key(key)
+        .with_front_proxies(proxied(&cfg.fronts));
     let state_lock = env
         .state_dir()
         .map(|dir| take_lock(&dir.join(CONTROLLER_LOCK), &socket))
@@ -166,13 +169,23 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         listener,
         fronts,
         commands,
-        vault,
+        vault: Arc::new(vault),
         _lock: lock,
         _state_lock: state_lock,
         env: Arc::new(env),
         settle_every: cfg.settle_every(),
         drain_timeout: cfg.drain_timeout(),
     })
+}
+
+/// The rules each front's Proxy serves, by namespace: every entry of `fronts` that lists
+/// `proxy_rules`.
+fn proxied(fronts: &BTreeMap<String, FrontEntry>) -> BTreeMap<String, Vec<String>> {
+    fronts
+        .iter()
+        .filter(|(_, front)| !front.proxy_rules.is_empty())
+        .map(|(ns, front)| (ns.clone(), front.proxy_rules.clone()))
+        .collect()
 }
 
 /// Loads the vault key beside `config`, creating it on first start, and returns it with its

@@ -18,8 +18,8 @@ pub use session::{EndSessionReq, OpenSessionReq, SessionsReq, ShowSessionReq};
 pub use target::BoxTarget;
 mod user;
 pub use user::{
-    ActAsReq, AsReq, LinkRedeemReq, SecretDeleteReq, SecretSetReq, SecretValue, StartNeedsReq,
-    UserCmd,
+    ActAsReq, AsReq, LinkRedeemReq, ProxyReleaseReq, SecretDeleteReq, SecretSetReq, SecretValue,
+    StartNeedsReq, UserCmd,
 };
 mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
@@ -94,6 +94,12 @@ pub enum Request {
     LinkCode(AsReq),
     /// Link the caller's identity to the user that minted a code.
     LinkRedeem(LinkRedeemReq),
+    /// Lease the front Proxy for the caller's user until the lease is released or expires.
+    ProxyLease(AsReq),
+    /// End a lease `proxy-lease` granted.
+    ProxyRelease(ProxyReleaseReq),
+    /// Whether the front Proxy is running.
+    ProxyStatus(AsReq),
     /// Run another request as an identity a front asserts.
     As(ActAsReq),
     /// Print version information.
@@ -138,6 +144,9 @@ impl Request {
             Self::SecretNames(_) => "secret-names",
             Self::LinkCode(_) => "link-code",
             Self::LinkRedeem(_) => "link-redeem",
+            Self::ProxyLease(_) => "proxy-lease",
+            Self::ProxyRelease(_) => "proxy-release",
+            Self::ProxyStatus(_) => "proxy-status",
             Self::As(_) => "as",
             Self::Version {} => "version",
         }

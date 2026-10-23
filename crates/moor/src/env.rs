@@ -18,6 +18,8 @@ pub struct Env {
     vault_key: Option<PathBuf>,
     /// Set when whoever asked for the request is gone; its streamed children then stop.
     cancel: Cancel,
+    /// The rules each front's Proxy serves, by namespace, when a controller runs this.
+    front_proxies: Arc<BTreeMap<String, Vec<String>>>,
 }
 
 /// A request's stop flag, shared by everyone who holds a clone.
@@ -106,6 +108,18 @@ impl Env {
     #[must_use]
     pub fn vault_key(&self) -> Option<&Path> {
         self.vault_key.as_deref()
+    }
+
+    /// Set the rules each front's Proxy serves, by namespace.
+    #[must_use]
+    pub fn with_front_proxies(mut self, proxies: BTreeMap<String, Vec<String>>) -> Self {
+        self.front_proxies = Arc::new(proxies);
+        self
+    }
+
+    /// The names of the rules front `ns`'s Proxy serves; none when it has no Proxy.
+    pub(crate) fn front_proxy_rules(&self, ns: &str) -> &[String] {
+        self.front_proxies.get(ns).map_or(&[], Vec::as_slice)
     }
 
     /// This environment for one request that stops when `cancel` is set.

@@ -14,6 +14,7 @@ use moor_core::seam::proxy_host::{
 use moor_core::seam::rng::Rng;
 use moor_core::BoxId;
 
+use crate::adapters::sockets::socket_dir;
 use crate::proxy::nono::ca::load_or_create;
 use crate::store::{ProxyRow, Reserve, Store, StoreError, STORE_FILE};
 
@@ -175,6 +176,12 @@ fn endpoint(row: &ProxyRow, ca_pem: &str) -> ProxyEndpoint {
 }
 
 impl ProxyHost for DetachedSupervisor {
+    fn front_running(&self, front: &str) -> bool {
+        self.state_dir
+            .as_ref()
+            .is_some_and(|dir| super::fronts::running(&socket_dir(), dir, front))
+    }
+
     /// Make sure the Box's proxy supervisor is running and ready; return its endpoint.
     ///
     /// A ready supervisor with a live lease is reused. Otherwise the box port is reserved and a

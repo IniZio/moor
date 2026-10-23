@@ -106,6 +106,9 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         | Request::SecretNames(_)
         | Request::LinkCode(_)
         | Request::LinkRedeem(_)
+        | Request::ProxyLease(_)
+        | Request::ProxyRelease(_)
+        | Request::ProxyStatus(_)
         | Request::As(_)
         | Request::Version {} => None,
     }

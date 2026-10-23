@@ -1,0 +1,10 @@
+claude:
+  hosts: [api.anthropic.com]
+  credential: claude
+  inject:
+    header: Authorization
+    form: "Bearer {secret}"
+  allow:
+    - "POST /v1/messages"
+    - "GET /api/claude_code/settings"
+    - "GET /api/claude_code/policy_limits"

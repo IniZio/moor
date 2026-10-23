@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
+use super::proxy::front_rules;
 use super::{parse_strict, ConfigError};
 use crate::user::valid_front_namespace;
 
@@ -57,6 +58,9 @@ pub struct FrontEntry {
     /// Absolute paths the front may read even where the controller hides the host from it.
     #[serde(default)]
     pub read_only: Vec<PathBuf>,
+    /// Names of the rules the front's Proxy serves to the users it leases for, such as `claude`.
+    #[serde(default)]
+    pub proxy_rules: Vec<String>,
 }
 
 /// Wraps whatever follows the key in `Some`, so a null value stays distinguishable from a missing key.
@@ -70,6 +74,9 @@ where
 {
     Option::<serde_json::Value>::deserialize(d).map(Some)
 }
+
+/// The name the controller's log gives the front Proxy, which no front may take.
+const PROXY_LOG_NAME: &str = "proxy";
 
 /// Seconds between settle passes when the config does not say.
 const DEFAULT_SETTLE_SECS: u64 = 5;
@@ -127,6 +134,13 @@ pub fn parse_controller(file: &str, text: &str) -> Result<ControllerConfig, Conf
         )
         .in_file(file));
     }
+    if cfg.fronts.contains_key(PROXY_LOG_NAME) {
+        return Err(ConfigError::new(
+            format!("fronts.{PROXY_LOG_NAME}"),
+            "is reserved: the controller logs the front Proxy as `front proxy`",
+        )
+        .in_file(file));
+    }
     for (ns, front) in &cfg.fronts {
         front_entry(front).map_err(|(key, why)| {
             ConfigError::new(format!("fronts.{ns}.{key}"), why).in_file(file)
@@ -139,6 +153,17 @@ pub fn parse_controller(file: &str, text: &str) -> Result<ControllerConfig, Conf
 fn front_entry(front: &FrontEntry) -> Result<(), (&'static str, &'static str)> {
     if front.command.as_ref().is_some_and(Vec::is_empty) {
         return Err(("command", "must name a program"));
+    }
+    let known = front_rules();
+    if !front
+        .proxy_rules
+        .iter()
+        .all(|r| known.iter().any(|k| k.name == *r))
+    {
+        return Err((
+            "proxy_rules",
+            "must name rules a front Proxy serves, such as claude",
+        ));
     }
     if front.read_only.iter().any(|p| !p.is_absolute()) {
         return Err(("read_only", "must hold absolute paths"));
