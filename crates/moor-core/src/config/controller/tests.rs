@@ -160,3 +160,16 @@ fn an_empty_front_command_is_refused() {
     assert_eq!(e.path, "fronts.web.command", "{e}");
     assert!(e.to_string().contains("must name a program"), "{e}");
 }
+
+#[test]
+fn a_front_state_dir_is_an_absolute_path() {
+    let c = parse_controller("c.yaml", "fronts:\n  web:\n    state_dir: /srv/web\n")
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(
+        c.fronts.get("web").and_then(|f| f.state_dir.as_deref()),
+        Some(std::path::Path::new("/srv/web"))
+    );
+    let e = err("fronts:\n  web:\n    state_dir: srv/web\n");
+    assert_eq!(e.path, "fronts.web.state_dir", "{e}");
+    assert!(e.to_string().contains("must be an absolute path"), "{e}");
+}

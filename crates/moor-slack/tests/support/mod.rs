@@ -314,6 +314,18 @@ impl Rig {
         });
     }
 
+    /// Starts a real controller that runs the daemon as its `slack` front, writing only
+    /// `state-slack`.
+    pub(crate) fn real_controller_running_the_daemon(&self) -> RealController {
+        let command = serde_json::json!([
+            env!("CARGO_BIN_EXE_moor-slack"),
+            "--config",
+            self.path("slack.yaml"),
+        ]);
+        let entry = serde_json::json!({"command": command, "state_dir": self.path("state-slack")});
+        RealController::start_with(self.root.path(), &self.socket(), &entry.to_string())
+    }
+
     /// Spawns the daemon with its state dir in the rig's root.
     pub(crate) fn spawn_daemon(&mut self) {
         let state = self.path("state-slack");

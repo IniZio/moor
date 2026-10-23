@@ -1,6 +1,7 @@
 //! The controller process config file: strict parse plus validation, no IO.
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -49,6 +50,10 @@ pub struct FrontEntry {
     /// be started by hand.
     #[serde(default)]
     pub command: Option<Vec<String>>,
+    /// The one directory the front may write, an absolute path; without it the front writes
+    /// nothing.
+    #[serde(default)]
+    pub state_dir: Option<PathBuf>,
 }
 
 /// Wraps whatever follows the key in `Some`, so a null value stays distinguishable from a missing key.
@@ -126,6 +131,16 @@ pub fn parse_controller(file: &str, text: &str) -> Result<ControllerConfig, Conf
     {
         return Err(
             ConfigError::new(format!("fronts.{ns}.command"), "must name a program").in_file(file),
+        );
+    }
+    if let Some((ns, _)) = cfg
+        .fronts
+        .iter()
+        .find(|(_, f)| f.state_dir.as_ref().is_some_and(|d| !d.is_absolute()))
+    {
+        return Err(
+            ConfigError::new(format!("fronts.{ns}.state_dir"), "must be an absolute path")
+                .in_file(file),
         );
     }
     Ok(cfg)

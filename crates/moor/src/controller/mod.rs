@@ -155,10 +155,7 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
     let fronts = peer::bind_fronts(&env, &mut sockets, &cfg.fronts.keys().collect::<Vec<_>>())?;
     let commands = fronts
         .iter()
-        .filter_map(|(ns, listener)| {
-            let command = cfg.fronts.get(ns)?.command.clone()?;
-            Some(fronts::Front::new(ns, listener, command))
-        })
+        .filter_map(|(ns, listener)| fronts::Front::new(ns, listener, cfg.fronts.get(ns)?))
         .collect::<Result<_, _>>()
         .map_err(refused)?;
     sockets.finish().map_err(refused)?;

@@ -95,3 +95,11 @@ fn sigterm_lets_the_request_in_flight_finish_before_exit_0() {
     assert!(status.success(), "{status:?}\n{}", rig.stderr());
     rig.wait_post(&started_line(BOX_NAME));
 }
+
+#[test]
+fn run_by_the_controller_it_connects_and_keeps_slack_db_in_its_own_state_dir() {
+    let rig = Rig::new();
+    let _controller = rig.real_controller_running_the_daemon();
+    rig.slack.wait_connected();
+    assert!(rig.path("state-slack").join("slack.db").exists());
+}

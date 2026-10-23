@@ -83,7 +83,7 @@ open(sys.argv[1], "w").write("up")
 time.sleep(600)
 "#;
 
-/// A state dir and config with some fronts that each run a script.
+/// A state dir and config with some fronts that each run a script and may write `marks`.
 struct Setup {
     root: Dir,
 }
@@ -98,9 +98,14 @@ impl Setup {
             root.join("c.sock").display(),
             root.join("state").display(),
         );
+        let marks = root.join("marks");
         for (name, script) in fronts {
-            let command = serde_json::json!(["python3", "-c", script, &*root, name]);
-            let _ = writeln!(config, "  {name}:\n    command: {command}");
+            let command = serde_json::json!(["python3", "-c", script, &*marks, name]);
+            let _ = writeln!(
+                config,
+                "  {name}:\n    command: {command}\n    state_dir: {}",
+                marks.display()
+            );
         }
         fs::write(root.join("c.yaml"), config).unwrap();
         Self { root }
@@ -132,7 +137,8 @@ impl Setup {
 
     /// How many times `name` started.
     fn starts(&self, name: &str) -> usize {
-        fs::read_to_string(self.root.join(format!("{name}.up"))).map_or(0, |s| s.len())
+        fs::read_to_string(self.root.join("marks").join(format!("{name}.up")))
+            .map_or(0, |s| s.len())
     }
 
     fn pid_file(&self, name: &str) -> PathBuf {
@@ -229,7 +235,7 @@ fn the_drain_terminates_each_front_and_the_controller_exits_after_they_are_reape
     let status = exit_within(&mut ctl, Duration::from_secs(20)).expect("the controller exited");
     assert!(status.success(), "{status}: {}", setup.log());
     assert!(
-        setup.root.join("slow.term").exists(),
+        setup.root.join("marks").join("slow.term").exists(),
         "the controller left before the front finished: {}",
         setup.log()
     );
@@ -357,7 +363,7 @@ fn prepare_state(setup: &Setup, names: &[&str]) {
     kill_process(pid_of(&first), Signal::TERM).unwrap();
     assert!(exit_within(&mut first, Duration::from_secs(20)).is_some());
     for name in names {
-        let _ = fs::remove_file(setup.root.join(format!("{name}.up")));
+        let _ = fs::remove_file(setup.root.join("marks").join(format!("{name}.up")));
     }
 }
 
