@@ -40,7 +40,7 @@ use signal_hook::iterator::Signals;
 mod root;
 
 use root::Layout;
-pub(super) use root::SYSTEM;
+pub(super) use root::{refuse_under_tmp, SYSTEM};
 
 /// How often a shim checks for exited children and signals to pass on.
 const POLL: Duration = Duration::from_millis(50);

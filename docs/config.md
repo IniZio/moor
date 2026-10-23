@@ -227,7 +227,9 @@ the D-Bus session bus, Docker's or LXD's, cannot be reached:
   the host's loopback.
 
 A `read_only` path must be a real path: one with a symlink or `..` in it is
-refused. So is one that equals, holds or lies inside the controller's state
+refused. So is one that is `/tmp` or lies under it, because `/tmp` is the
+front's own tmp dir and would hide it (and the controller refuses to start
+fronts when `/etc/resolv.conf` resolves under `/tmp`). So is one that equals, holds or lies inside the controller's state
 dir, the dir of its config file (which holds the vault key), the vault key or
 the controller socket. When a system dir above holds one of those, the
 controller refuses to start, as every front could read it.

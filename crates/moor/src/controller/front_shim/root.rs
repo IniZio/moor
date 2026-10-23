@@ -96,16 +96,23 @@ pub(super) fn enter(layout: &Layout) -> Result<Option<OwnedFd>, String> {
 
 /// Opens `dir`'s `tmp`, the front's `/tmp`, made when it is missing.
 fn own_tmp(dir: &Path) -> Result<OwnedFd, String> {
-    if dir.starts_with(STAGE) {
-        return Err(format!(
-            "the front's state dir {} lies under /tmp, which is the front's own tmp dir",
-            dir.display()
-        ));
-    }
+    refuse_under_tmp("the front's state dir", dir)?;
     let tmp = dir.join("tmp");
     fs::create_dir_all(&tmp).map_err(|e| format!("cannot make {}: {e}", tmp.display()))?;
     open(&tmp, OFlags::PATH | OFlags::CLOEXEC, Mode::empty())
         .map_err(|e| format!("cannot open {}: {e}", tmp.display()))
+}
+
+/// Fails when `path` is `/tmp` or lies under it: the front's `/tmp` is its own tmp dir, bound
+/// over the stage after every other path, so it hides `path`.
+pub(in crate::controller) fn refuse_under_tmp(what: &str, path: &Path) -> Result<(), String> {
+    if path.starts_with(STAGE) {
+        return Err(format!(
+            "{what} {} is or lies under /tmp, which is the front's own tmp dir",
+            path.display()
+        ));
+    }
+    Ok(())
 }
 
 /// Opens each path of `layout` outside the [`SYSTEM`] dirs, which show it already, and the
@@ -114,6 +121,9 @@ fn sources(layout: &Layout) -> Result<Vec<Shown>, String> {
     let resolv = fs::canonicalize("/etc/resolv.conf")
         .ok()
         .filter(|real| !SYSTEM.iter().any(|dir| real.starts_with(dir)));
+    for path in layout.read_only.iter().chain(&resolv) {
+        refuse_under_tmp("the front's read_only path", path)?;
+    }
     let read_only = layout
         .read_only
         .iter()
@@ -293,7 +303,7 @@ mod tests {
 
     use rustix::mount::MountFlags;
 
-    use super::{kept_flags, unescape};
+    use super::{kept_flags, sources, unescape, Layout};
 
     #[test]
     fn a_remount_keeps_the_locked_flags_and_the_atime_mode() {
@@ -308,5 +318,18 @@ mod tests {
     #[test]
     fn mountinfo_escapes_are_decoded() {
         assert_eq!(unescape(r"/a\040b\134c"), PathBuf::from(r"/a b\c"));
+    }
+
+    #[test]
+    fn a_read_only_path_under_tmp_is_refused_before_it_is_opened() {
+        for path in ["/tmp", "/tmp/claude/config.yaml"] {
+            let layout = Layout {
+                writable: None,
+                read_only: vec![PathBuf::from(path)],
+            };
+            let e = sources(&layout).err().expect("refused");
+            assert!(e.contains(path), "{e}");
+            assert!(e.contains("which is the front's own tmp dir"), "{e}");
+        }
     }
 }

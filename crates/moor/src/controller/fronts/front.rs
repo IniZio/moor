@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use moor_core::config::FrontEntry;
 
-use crate::controller::front_shim::SYSTEM;
+use crate::controller::front_shim::{refuse_under_tmp, SYSTEM};
 use crate::env::Env;
 
 /// A front the controller runs.
@@ -37,27 +37,30 @@ impl Front {
         operator: &Path,
     ) -> Option<Result<Self, String>> {
         let mut command = entry.command.clone()?;
+        let resolv = fs::canonicalize("/etc/resolv.conf").ok();
         Some(
-            refuse_read_only(ns, &entry.read_only, env, operator).and_then(|()| {
-                let socket = listener
-                    .local_addr()
-                    .ok()
-                    .and_then(|a| a.as_pathname().map(PathBuf::from))
-                    .ok_or_else(|| format!("front {ns}: its socket has no path"))?;
-                let mut read_only = entry.read_only.clone();
-                let program = command.first_mut().map(|p| (resolve(p), p));
-                if let Some((Some(found), word)) = program {
-                    *word = found.display().to_string();
-                    read_only.push(found);
-                }
-                Ok(Self {
-                    ns: ns.to_owned(),
-                    socket,
-                    command,
-                    state_dir: entry.state_dir.clone(),
-                    read_only,
-                })
-            }),
+            refuse_read_only(ns, &entry.read_only, env, operator, resolv.as_deref()).and_then(
+                |()| {
+                    let socket = listener
+                        .local_addr()
+                        .ok()
+                        .and_then(|a| a.as_pathname().map(PathBuf::from))
+                        .ok_or_else(|| format!("front {ns}: its socket has no path"))?;
+                    let mut read_only = entry.read_only.clone();
+                    let program = command.first_mut().map(|p| (resolve(p), p));
+                    if let Some((Some(found), word)) = program {
+                        *word = found.display().to_string();
+                        read_only.push(found);
+                    }
+                    Ok(Self {
+                        ns: ns.to_owned(),
+                        socket,
+                        command,
+                        state_dir: entry.state_dir.clone(),
+                        read_only,
+                    })
+                },
+            ),
         )
     }
 
@@ -75,6 +78,7 @@ fn refuse_read_only(
     read_only: &[PathBuf],
     env: &Env,
     operator: &Path,
+    resolv: Option<&Path>,
 ) -> Result<(), String> {
     let config_dir = env.vault_key().and_then(Path::parent).map(Path::to_owned);
     let guarded: Vec<PathBuf> = [
@@ -96,6 +100,9 @@ fn refuse_read_only(
                 dir.display()
             ));
         }
+    }
+    if let Some(real) = resolv {
+        refuse_under_tmp(&format!("fronts.{ns}: /etc/resolv.conf resolves to"), real)?;
     }
     for path in read_only {
         let real = fs::canonicalize(path)
@@ -144,7 +151,26 @@ mod tests {
     #[test]
     fn a_controller_state_dir_in_a_system_dir_starts_no_front() {
         let env = Env::from_pairs([("MOOR_STATE_DIR", "/etc/moor-front-test")]);
-        let e = refuse_read_only("web", &[], &env, Path::new("/nonexistent/c.sock")).unwrap_err();
+        let e =
+            refuse_read_only("web", &[], &env, Path::new("/nonexistent/c.sock"), None).unwrap_err();
         assert!(e.contains("/etc/moor-front-test lies in /etc"), "{e}");
+    }
+
+    #[test]
+    fn a_resolv_conf_under_tmp_starts_no_front() {
+        let env = Env::from_pairs([("MOOR_STATE_DIR", "/var/moor-front-test")]);
+        let operator = Path::new("/nonexistent/c.sock");
+        let under = Some(Path::new("/tmp/run/resolv.conf"));
+        let e = refuse_read_only("web", &[], &env, operator, under).unwrap_err();
+        assert!(
+            e.contains("/etc/resolv.conf resolves to /tmp/run/resolv.conf"),
+            "{e}"
+        );
+        assert!(e.contains("front's own tmp dir"), "{e}");
+        let elsewhere = Some(Path::new("/run/resolv.conf"));
+        assert_eq!(
+            refuse_read_only("web", &[], &env, operator, elsewhere),
+            Ok(())
+        );
     }
 }
