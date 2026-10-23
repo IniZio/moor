@@ -53,6 +53,9 @@ impl Served {
     /// Stands in for a running Proxy of the slack front.
     fn proxy_up(&self) -> UnixListener {
         let path = Moor::front_proxy_socket(&self.dir.path().join("state"), "slack");
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).expect("socket dir");
+        }
         let _ = std::fs::remove_file(&path);
         UnixListener::bind(path).expect("bind")
     }
