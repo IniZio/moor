@@ -10,8 +10,8 @@ starts and steers Boxes for the person who started the thread.
 You need:
 
 - a running controller (`moor controller serve`) with a `slack` entry under
-  `fronts`, and for each person a `github` secret that can read the channel's
-  repos
+  `fronts` that lists `proxy_rules: [claude]`, and for each person a `github`
+  secret that can read the channel's repos
 - Claude Code 2.1.304 or newer on the controller host
 - a Slack workspace where you can create an app
 
@@ -63,7 +63,9 @@ moor-slack --socket ~/.local/state/moor/fronts/slack.sock \
 ```
 
 A `command` under `fronts.slack` lets the controller start the front itself.
-It then sets `MOOR_FRONT_SOCKET`, and `--socket` is not needed.
+It then sets `MOOR_FRONT_SOCKET`, and `--socket` is not needed. Coordinator
+turns need this: only a front the controller runs gets the loopback port of
+the front Proxy in `MOOR_FRONT_PROXY_PORT`.
 
 The front reads the workspace's team id from Slack once at startup, with
 `auth.test`, and stops with an error if Slack does not answer. It acts for each
@@ -137,18 +139,31 @@ schema. Move it aside and start again with a fresh one.
   accepts the token, the front sends the controller `enroll` and then
   `secret-set`, each as the person who pasted it, and the controller keeps the
   secret in its vault under the name `claude` or `github`.
-- A coordinator turn still reads the token from
-  `credentials/claude/<Slack user id>` in the state directory, mode 0600,
-  which the operator writes. `/moor login claude` does not write that file.
-- A turn gets the token on a pipe at file descriptor 3, never in its
-  arguments, its environment, `slack.db`, or the log.
+- The `/moor login claude` check gets the pasted token on a pipe at file
+  descriptor 3, never in its arguments, its environment, `slack.db`, or the
+  log. The front stores the token only when the check passes.
+- A coordinator turn never holds a token. Before the turn starts, the front
+  sends the controller `proxy-lease` as the starter, and the controller grants
+  a lease of the front Proxy for the starter's moor user. The turn's
+  `HTTPS_PROXY` carries the lease as the proxy password, and the Proxy puts the
+  starter's `claude` secret on each request to `api.anthropic.com`. The front
+  sends `proxy-release` when the turn ends. A lease ends by itself after 15
+  minutes and when the controller restarts.
+- The front needs `proxy_rules: [claude]` in its controller `fronts` entry; see
+  [config.md](config.md#fronts). Without it every turn says the controller gave
+  this front no Proxy.
+- A starter with no `claude` secret is asked to run `/moor login`. When the
+  Proxy is down at the start of a turn, or when a turn fails and the controller
+  says the Proxy is down, the thread says that the Proxy is not running and
+  that moor is restarting it.
 - A turn runs in `/` with a cleared environment and no built-in tools. It gets
   its own Claude config directory per Slack user, and
   `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1`. A turn refuses to start when `/` holds a
   `CLAUDE.md`, an `AGENTS.md`, or a `.claude/rules/` file, or when
   `/etc/claude-code` would load instructions.
 - The tool server, `moor-slack mcp`, reads the thread's rows in `slack.db` and
-  asks the controller. It never sees a Slack or Claude token.
+  asks the controller. It never sees a Slack or Claude token. Claude Code
+  passes it the turn's `HTTPS_PROXY`, so it sees the turn's lease.
 
 ## Config reference
 

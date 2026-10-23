@@ -7,7 +7,7 @@ use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Write};
 use std::net::Shutdown;
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::Duration;
@@ -78,6 +78,11 @@ struct Inner {
     live: Vec<(Option<String>, UnixStream)>,
     /// How many events a backlog sends before it pauses, and for how long, once set.
     split: Option<(usize, Duration)>,
+    /// Holds a file per Slack user with the lease `proxy-lease` grants that user; a user with
+    /// none has no secret.
+    leases: PathBuf,
+    /// Whether `proxy-lease` and `proxy-status` find the front Proxy running.
+    proxy_up: bool,
 }
 
 /// A running scripted controller; it serves until the test process exits.
@@ -100,6 +105,8 @@ impl FakeController {
             events: Vec::new(),
             live: Vec::new(),
             split: None,
+            leases: socket.parent().unwrap().join("leases"),
+            proxy_up: true,
         }));
         let shared = Arc::clone(&inner);
         thread::spawn(move || {
@@ -118,6 +125,11 @@ impl FakeController {
             .entry(cmd.to_owned())
             .or_default()
             .push_back(answer);
+    }
+
+    /// Answers `proxy-lease` and `proxy-status` as a controller whose front Proxy is down.
+    pub(crate) fn proxy_down(&self) {
+        self.lock().proxy_up = false;
     }
 
     /// Answers every later watch with a store error.
@@ -373,7 +385,8 @@ fn scripted(id: String, request: Request, inner: &mut Inner) -> Next {
         }
         None => Next::Send(ServerFrame::Response {
             id,
-            envelope: unscripted(&request, inner),
+            envelope: proxy_cmd(&request, acting.as_deref(), inner)
+                .unwrap_or_else(|| unscripted(&request, inner)),
         }),
     };
     inner.seen.requests.push(request);
@@ -433,6 +446,31 @@ fn unscripted(request: &Request, inner: &mut Inner) -> Response {
             let cmd = command(request);
             failed(&cmd, &format!("no script for {cmd}"))
         })
+}
+
+/// The answer to `proxy-lease`, `proxy-release` or `proxy-status` as `acting`; `None` for any
+/// other request. A lease is granted only to a Slack user with a file in [`Inner::leases`], and
+/// its token is what that file holds.
+fn proxy_cmd(request: &Request, acting: Option<&str>, inner: &Inner) -> Option<Response> {
+    let (cmd, value) = match request {
+        Request::ProxyLease(_) if !inner.proxy_up => {
+            ("proxy-lease", json!({"lease": "proxy_down"}))
+        }
+        Request::ProxyLease(_) => {
+            let user = acting
+                .and_then(|a| a.rsplit('/').next())
+                .unwrap_or_default();
+            let value = std::fs::read_to_string(inner.leases.join(user)).map_or_else(
+                |_| json!({"lease": "no_secret", "name": "claude"}),
+                |token| json!({"lease": "granted", "token": token.trim(), "expires_in_secs": 900}),
+            );
+            ("proxy-lease", value)
+        }
+        Request::ProxyRelease(_) => ("proxy-release", json!({"released": true})),
+        Request::ProxyStatus(_) => ("proxy-status", json!({"running": inner.proxy_up})),
+        _ => return None,
+    };
+    Some(Response::ok(cmd, Some(value)))
 }
 
 /// The answer to `enroll`, `secret-set`, `secret-delete` or `secret-names`; `None` for any

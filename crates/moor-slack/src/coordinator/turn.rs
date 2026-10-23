@@ -1,11 +1,9 @@
-//! One coordinator turn: the agent's process with the context on stdin and the credential on
-//! its pipe, the check of what it loaded, and the time limits. Every agent runs through here.
+//! One coordinator turn: the agent's process with the context on stdin, the check of what it
+//! loaded, and the time limits. Every agent runs through here; none holds a credential.
 
 use std::time::Duration;
 
-use moor_core::secret::Secret;
-
-use super::process::{now, supervise, Credential, Left, Lines, Next};
+use super::process::{now, supervise, Left, Lines, Next};
 use super::{Agent, Answer, Event, Loaded, TurnSetup};
 
 /// How long a turn may run.
@@ -49,8 +47,6 @@ pub(crate) struct Turn<'a> {
     pub(crate) setup: TurnSetup<'a>,
     /// The context, written to stdin.
     pub(crate) input: &'a str,
-    /// The credential of the person who pays, written to the agent's pipe.
-    pub(crate) credential: &'a Secret,
     /// How long the turn may run.
     pub(crate) limits: Limits,
 }
@@ -63,10 +59,6 @@ pub(crate) fn run(
     spawned: &mut dyn FnMut(u32),
     log: &dyn Fn(&str),
 ) -> Ended {
-    let credential = Credential {
-        secret: turn.credential,
-        fd: agent.credential_fd(),
-    };
     let cmd = match agent.turn_command(&turn.setup) {
         Ok(cmd) => cmd,
         Err(why) => return Ended::Answered(Answer::Unavailable(why)),
@@ -81,7 +73,7 @@ pub(crate) fn run(
             .collect(),
     };
     let limits = turn.limits;
-    let ran = supervise(cmd, turn.input.as_bytes(), Some(credential), |lines| {
+    let ran = supervise(cmd, turn.input.as_bytes(), None, |lines| {
         spawned(lines.pid);
         watch(agent, lines, &allowed, limits, log)
     });

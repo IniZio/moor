@@ -1,6 +1,6 @@
 //! What a Claude Code turn is started with beyond its argv: the binary found on `PATH` when
-//! the config names none, the working directory, the cleared environment, and the `mcp.json`
-//! that names the front's tool server.
+//! the config names none, the working directory, the cleared environment, the way to the
+//! front Proxy, and the `mcp.json` that names the front's tool server.
 
 use std::ffi::OsStr;
 use std::fs::OpenOptions;
@@ -12,7 +12,7 @@ use std::process::Command;
 use serde_json::json;
 
 use super::HostEnv;
-use crate::coordinator::ToolServer;
+use crate::coordinator::{ProxyAccess, ToolServer};
 
 /// The file in a turn's workdir that names the front's tool server.
 pub(super) const MCP_CONFIG: &str = "mcp.json";
@@ -20,6 +20,9 @@ pub(super) const MCP_CONFIG: &str = "mcp.json";
 /// The working directory of every turn and of the token check, so that no `CLAUDE.md` above
 /// the state dir, such as `~/.claude/CLAUDE.md`, is a project file of the turn.
 pub(super) const CWD: &str = "/";
+
+/// What a turn's `CLAUDE_CODE_OAUTH_TOKEN` holds; the Proxy injects the real token in its place.
+const OAUTH_PLACEHOLDER: &str = "moor-proxy";
 
 /// `PATH` in a turn's cleared environment.
 const PATH: &str = "/usr/local/bin:/usr/bin:/bin";
@@ -77,4 +80,19 @@ pub(super) fn clear_env(cmd: &mut Command, host: &HostEnv) {
     if let Some(user) = &host.user {
         cmd.env("USER", user);
     }
+}
+
+/// Sends `cmd`'s Claude traffic to the front Proxy as `proxy` says. The OAuth variable holds a
+/// placeholder the Proxy replaces, the lease is the proxy password, and only the requests a
+/// turn needs are made, each retried at most twice, so a Proxy that is down ends the turn soon.
+pub(super) fn proxied(cmd: &mut Command, proxy: &ProxyAccess<'_>) {
+    let lease = String::from_utf8_lossy(proxy.lease.expose());
+    cmd.env(
+        "HTTPS_PROXY",
+        format!("http://lease:{lease}@127.0.0.1:{}", proxy.port),
+    )
+    .env("NODE_EXTRA_CA_CERTS", proxy.ca)
+    .env("CLAUDE_CODE_OAUTH_TOKEN", OAUTH_PLACEHOLDER)
+    .env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
+    .env("CLAUDE_CODE_MAX_RETRIES", "2");
 }

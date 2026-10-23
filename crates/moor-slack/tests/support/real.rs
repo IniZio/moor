@@ -44,7 +44,7 @@ pub(crate) struct RealController(Child);
 impl RealController {
     /// Starts the controller on `socket` with its state under `root`, and waits until it listens.
     pub(crate) fn start(root: &Path, socket: &Path) -> Self {
-        Self::start_with(root, socket, "{}")
+        Self::start_with(root, socket, r#"{"proxy_rules": ["claude"]}"#)
     }
 
     /// Like [`Self::start`], with `slack` as the `slack` front's config entry.

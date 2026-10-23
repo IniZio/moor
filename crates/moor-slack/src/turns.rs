@@ -1,8 +1,9 @@
 //! The coordinator's turns: the scheduler takes the starter's waiting messages as one turn per
-//! thread, at most [`MAX_TURNS`] at once, and each turn posts a placeholder, runs the agent on
-//! the starter's credential, stores its line and then posts it.
+//! thread, at most [`MAX_TURNS`] at once, and each turn posts a placeholder, runs the agent
+//! through the front Proxy on a lease of the starter's credential, stores its line and then
+//! posts it.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread;
@@ -17,8 +18,8 @@ use crate::coordinator::brief::BRIEF;
 use crate::coordinator::context::{self, Parts, Said};
 use crate::coordinator::tools::{self, box_lines};
 use crate::coordinator::turn::{self, Ended, Turn, LIMITS};
-use crate::coordinator::{Agent, Answer, ToolServer, TurnSetup};
-use crate::credentials::{self, daemon_uid, private_dir, SlackUser};
+use crate::coordinator::{Agent, Answer, ProxyAccess, ToolServer, TurnSetup};
+use crate::credentials::{self, SlackUser};
 use crate::db::{Db, End, TurnRow};
 use crate::identity::Link;
 use crate::Log;
@@ -26,8 +27,10 @@ use crate::Log;
 mod host;
 mod idle;
 mod lines;
+mod proxy;
 mod restart;
 mod server_args;
+mod workdir;
 
 /// Most turns that run at once.
 const MAX_TURNS: usize = 4;
@@ -54,6 +57,8 @@ const MAX_WAIT: Duration = Duration::from_secs(30);
 /// Slack's answers that the placeholder cannot be edited; the line is posted new instead.
 const EDIT_REFUSED: [&str; 2] = ["message_not_found", "cant_update_message"];
 
+pub(crate) use proxy::FrontProxy;
+
 /// Everything a turn needs, shared by the scheduler and the turns it runs.
 pub(crate) struct Turns {
     /// Path of `slack.db`; the scheduler and each turn open their own connection.
@@ -62,6 +67,8 @@ pub(crate) struct Turns {
     pub(crate) state_dir: PathBuf,
     /// The checked coordinator agent, or why it cannot run.
     pub(crate) agent: Result<Arc<dyn Agent>, String>,
+    /// Where the agent reaches the front Proxy; none when the controller gave this front none.
+    pub(crate) proxy: Option<FrontProxy>,
     /// The model each turn runs on.
     pub(crate) model: String,
     /// Most bytes of context a turn gets.
@@ -214,7 +221,7 @@ impl Turns {
             Ok(ready) => ready,
             Err(closing) => return closing,
         };
-        let (credential, workdir) = (&ready.credential, &ready.workdir);
+        let workdir = &ready.workdir;
         let client = self.link.client_as(ready.identity.clone());
         let shown = workdir.display().to_string();
         if let Err(e) = host::ensure(&client, db, row, &shown, agent.kind().name()) {
@@ -226,6 +233,10 @@ impl Turns {
             Err(e) => {
                 return Closing::of(End::Failed, lines::unavailable(&format!("slack.db: {e}")))
             }
+        };
+        let lease = match proxy::lease(&client, &row.owner) {
+            Ok(lease) => lease,
+            Err(closing) => return closing,
         };
         let server = ToolServer {
             name: "moor",
@@ -240,51 +251,59 @@ impl Turns {
                 workdir,
                 brief: BRIEF,
                 tools: &server,
+                proxy: &ProxyAccess {
+                    port: ready.proxy.port,
+                    ca: &ready.proxy.ca,
+                    lease: &lease,
+                },
             },
             input: &input,
-            credential,
             limits: LIMITS,
         };
         let mut spawned = |pid| self.written(db.set_pid(row.id, pid, restart::start_time(pid)));
         let ended = turn::run(&*agent, &turn, &mut spawned, &*self.log);
-        let mut closing = self.closing(ended, row, agent.kind().label(), credential);
+        proxy::release(&client, &lease);
+        let mut closing = if proxy::failed_while_down(&client, &ended) {
+            Closing::of(End::Failed, lines::PROXY_DOWN.to_owned())
+        } else {
+            self.closing(ended, row, agent.kind().label(), &lease)
+        };
         closing.bytes = Some(input.len());
         closing
     }
 
-    /// What the turn of `row` runs with: the owner's credential and directories, and the
+    /// What the turn of `row` runs with: the front Proxy, the owner's directories, and the
     /// identity the controller knows them by. The turn ends here when any of it is missing.
     fn ready(&self, row: &TurnRow, agent: &dyn Agent) -> Result<Ready, Closing> {
         let unavailable = |why: &str| Closing::of(End::Failed, lines::unavailable(why));
+        let proxy = self
+            .proxy
+            .clone()
+            .ok_or_else(|| unavailable(lines::NO_PROXY))?;
         let user = SlackUser::parse(&row.owner)
             .ok_or_else(|| unavailable("the starter has no Slack user id"))?;
         let identity = self
             .link
             .identity(&row.owner)
             .map_err(|e| unavailable(&e))?;
-        let credential = match credentials::load(&self.state_dir, agent.kind(), &user) {
-            Ok(Some(credential)) => credential,
-            Ok(None) => return Err(Closing::of(End::NoToken, lines::no_token(&row.owner))),
-            Err(e) => return Err(unavailable(&e)),
-        };
         let config_dir = credentials::config_dir(&self.state_dir, agent.kind(), &user)
             .map_err(|e| unavailable(&e))?;
-        let workdir = workdir(&self.state_dir, row).map_err(|e| unavailable(&e))?;
+        let workdir = workdir::workdir(&self.state_dir, row).map_err(|e| unavailable(&e))?;
         if let Some(why) = agent.unsafe_cwd() {
             (self.log)(&format!("turn {}: {why}", row.id));
             return Err(Closing::of(End::Unsafe, lines::UNSAFE.to_owned()));
         }
         Ok(Ready {
-            credential,
+            proxy,
             config_dir,
             workdir,
             identity,
         })
     }
 
-    /// The end and line of a turn that ran.
-    fn closing(&self, ended: Ended, row: &TurnRow, label: &str, credential: &Secret) -> Closing {
-        let hide = |text: &str| lines::redact(text, credential);
+    /// The end and line of a turn that ran on `lease`, which no line shows.
+    fn closing(&self, ended: Ended, row: &TurnRow, label: &str, lease: &Secret) -> Closing {
+        let hide = |text: &str| lines::redact(text, lease);
         match ended {
             Ended::Answered(Answer::Reply { text, cost_usd }) => Closing {
                 cost: cost_usd,
@@ -342,8 +361,8 @@ impl Turns {
 
 /// What a turn needs before it runs.
 struct Ready {
-    /// The starter's credential for the agent.
-    credential: Secret,
+    /// Where the agent reaches the front Proxy.
+    proxy: FrontProxy,
     /// The agent's config dir for the starter.
     config_dir: PathBuf,
     /// The thread's workdir.
@@ -374,27 +393,4 @@ impl Closing {
             cost: None,
         }
     }
-}
-
-/// The thread's workdir, `<state dir>/threads/<channel>-<thread ts>`, created mode 0700 in a
-/// private parent. A channel or ts that is not safe as a path component is refused.
-fn workdir(state_dir: &Path, row: &TurnRow) -> Result<PathBuf, String> {
-    let dir = workdir_path(state_dir, row)?;
-    let parent = dir.parent().unwrap_or(&dir);
-    for d in [parent, &dir] {
-        private_dir(d, daemon_uid()).map_err(|e| format!("{}: {e}", d.display()))?;
-    }
-    Ok(dir)
-}
-
-/// The path of the thread's workdir, without creating it.
-fn workdir_path(state_dir: &Path, row: &TurnRow) -> Result<PathBuf, String> {
-    let safe = |s: &str, extra: char| {
-        !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == extra)
-    };
-    if !safe(&row.channel, '_') || !safe(&row.thread_ts, '.') {
-        return Err("the thread id is not safe as a directory name".to_owned());
-    }
-    let parent = std::path::absolute(state_dir.join("threads")).map_err(|e| e.to_string())?;
-    Ok(parent.join(format!("{}-{}", row.channel, row.thread_ts)))
 }

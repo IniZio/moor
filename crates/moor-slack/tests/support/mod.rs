@@ -209,10 +209,10 @@ impl Rig {
         panic!("Box {name} never reached {state}");
     }
 
-    /// Writes `token` as `user`'s linked Claude token in the daemon's state dir, as
-    /// `/moor login` stores it.
+    /// Has the scripted controller lease its front Proxy to `user` with `token` as the lease,
+    /// as it does once `/moor login` stored a Claude token; the fake `claude` answers by it.
     pub(crate) fn link_token(&self, user: &str, token: &str) {
-        let dir = self.path("state-slack/credentials/claude");
+        let dir = self.path("leases");
         std::fs::DirBuilder::new()
             .recursive(true)
             .mode(0o700)
@@ -356,7 +356,8 @@ impl Rig {
             "--config",
             state.join("slack.yaml"),
         ]);
-        let entry = serde_json::json!({"command": command, "state_dir": state});
+        let entry =
+            serde_json::json!({"command": command, "state_dir": state, "proxy_rules": ["claude"]});
         let controller =
             RealController::start_with(self.root.path(), &self.socket(), &entry.to_string());
         (controller, dir)
@@ -408,6 +409,8 @@ impl Rig {
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
             .env("HOME", self.path("home"))
+            .env("MOOR_FRONT_PROXY_PORT", "1")
+            .env("MOOR_FRONT_PROXY_CA", self.path("proxy-ca.pem"))
             .arg("--config")
             .arg(self.path("slack.yaml"))
             .stdin(Stdio::null())

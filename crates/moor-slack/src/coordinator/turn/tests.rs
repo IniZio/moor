@@ -1,5 +1,5 @@
 //! Tests for one coordinator turn against the fake `claude` script, which records what it got
-//! and answers by the token it read on fd 3.
+//! and answers by the lease it found in `HTTPS_PROXY`.
 #![allow(clippy::panic, reason = "test assertions")]
 
 use std::path::{Path, PathBuf};
@@ -10,7 +10,7 @@ use moor_core::secret::Secret;
 use super::{run, Ended, Limits, Turn, LIMITS};
 use crate::coordinator::claude::tests::install;
 use crate::coordinator::claude::{Claude, HostEnv};
-use crate::coordinator::{Answer, ToolServer, TurnSetup};
+use crate::coordinator::{Answer, ProxyAccess, ToolServer, TurnSetup};
 
 /// A probed fake in `bin`.
 fn claude(bin: &Path) -> Claude {
@@ -37,10 +37,15 @@ impl Dirs {
         }
     }
 
-    /// Runs one turn with `token` within `limits`; returns how it ended and its pid.
+    /// Runs one turn on lease `token` within `limits`; returns how it ended and its pid.
     fn turn(&self, token: &str, limits: Limits) -> (Ended, u32) {
         let claude = claude(self.bin.path());
         let token = Secret::new(token.into());
+        let proxy = ProxyAccess {
+            port: 4433,
+            ca: Path::new("/srv/moor/proxy-ca.pem"),
+            lease: &token,
+        };
         let args = ["mcp".to_owned(), "--thread".to_owned(), "C1/1.0".to_owned()];
         let server = ToolServer {
             name: "moor",
@@ -55,9 +60,9 @@ impl Dirs {
                 workdir: self.work.path(),
                 brief: "Be brief.",
                 tools: &server,
+                proxy: &proxy,
             },
             input: "## New\nhello",
-            credential: &token,
             limits,
         };
         let mut pid = 0;
@@ -77,16 +82,20 @@ const SHORT: Limits = Limits {
 };
 
 #[test]
-fn a_turn_gets_its_argv_env_stdin_and_the_token_on_fd_3_only() {
+fn a_turn_gets_its_argv_stdin_and_the_proxy_in_its_env_and_no_token() {
     let dirs = Dirs::new();
-    let token = "sk-ant-oat01-good-51d0";
+    let token = "lease-good-51d0";
     let (ended, _) = dirs.turn(token, LIMITS);
     let want = Answer::Reply {
         text: "OK".to_owned(),
         cost_usd: Some(0.0125),
     };
     assert_eq!(ended, Ended::Answered(want));
-    assert_eq!(dirs.recorded("fd3"), token);
+    let fds = dirs.recorded("fds");
+    assert!(
+        !fds.lines().any(|l| l.contains(" 3 -> ")),
+        "no pipe on fd 3: {fds}"
+    );
     let argv = dirs.recorded("argv");
     let config = dirs.work.path().join("mcp.json");
     let want = format!(
@@ -102,17 +111,21 @@ fn a_turn_gets_its_argv_env_stdin_and_the_token_on_fd_3_only() {
     env.sort();
     let want = [
         "CLAUDE_CODE_DISABLE_CLAUDE_MDS=1".to_owned(),
-        "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=3".to_owned(),
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1".to_owned(),
+        "CLAUDE_CODE_MAX_RETRIES=2".to_owned(),
+        "CLAUDE_CODE_OAUTH_TOKEN=moor-proxy".to_owned(),
         format!("CLAUDE_CONFIG_DIR={}", dirs.config.path().display()),
         "HOME=/home/op".to_owned(),
+        format!("HTTPS_PROXY=http://lease:{token}@127.0.0.1:4433"),
         "LANG=C.UTF-8".to_owned(),
+        "NODE_EXTRA_CA_CERTS=/srv/moor/proxy-ca.pem".to_owned(),
         "PATH=/usr/local/bin:/usr/bin:/bin".to_owned(),
         "USER=op".to_owned(),
     ];
     assert_eq!(env, want);
     let cwd = dirs.recorded("cwd");
     assert_eq!(cwd.trim_end(), "/");
-    for file in ["argv", "env", "stdin", "cwd"] {
+    for file in ["argv", "stdin", "cwd"] {
         assert!(!dirs.recorded(file).contains(token), "{file}");
     }
 }
@@ -195,7 +208,7 @@ fn a_401_is_a_refused_credential_and_no_login_is_an_unread_pipe() {
     assert_eq!(ended, Ended::Answered(Answer::Refused));
     let dirs = Dirs::new();
     let (ended, _) = dirs.turn("", LIMITS);
-    let why = "Claude Code 2.1.304 did not read the token pipe".to_owned();
+    let why = "Claude Code 2.1.304 did not take the Proxy's placeholder login".to_owned();
     assert_eq!(ended, Ended::Answered(Answer::Unavailable(why)));
 }
 

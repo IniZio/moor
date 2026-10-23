@@ -18,6 +18,10 @@ ls -l /proc/$$/fd > "$out/fds" 2>&1
 cat > "$out/stdin"
 cat <&3 > "$out/fd3" 2>/dev/null
 token=$(cat "$out/fd3")
+if [ -z "$token" ]; then
+  token=$(printf '%s' "$HTTPS_PROXY" | sed -n 's|^http://lease:\([^@]*\)@.*|\1|p')
+fi
+if [ -f "$dir/mode" ]; then token=$(cat "$dir/mode"); fi
 init() {
   echo "{\"type\":\"system\",\"subtype\":\"init\",\"tools\":[$1],\"mcp_servers\":[],\"skills\":[],\"slash_commands\":[],\"plugins\":[{\"name\":\"cc-plugin-telemetry\"}]}"
 }

@@ -16,6 +16,14 @@ pub(super) const UNSAFE: &str = "The coordinator did not start safely.";
 /// The line for a turn a restart cut off that does not run again.
 pub(super) const RESTARTED: &str = "Stopped: the front restarted. Send your message again.";
 
+/// The line for a turn that the front Proxy, which carries Claude's requests, could not serve.
+pub(super) const PROXY_DOWN: &str =
+    "The coordinator is unavailable: the Proxy that carries Claude's requests is not running, and moor is restarting it. Send your message again in a moment.";
+
+/// Why a turn cannot run on a front the controller gave no Proxy.
+pub(super) const NO_PROXY: &str =
+    "the controller gave this front no Proxy; list `proxy_rules: [claude]` under its `fronts` entry";
+
 /// The line for a turn killed at its limit.
 pub(super) const KILLED: &str = "Stopped after 10 minutes.";
 
