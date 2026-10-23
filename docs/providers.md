@@ -29,7 +29,7 @@ Before any ssh to a Box, including the agent pane's, moor runs `ssh -G` with
 those options. `ssh -G` prints the options ssh would use, after it reads every
 flag and config file, and it opens no connection. moor refuses the options
 unless `StrictHostKeyChecking` comes out as `yes` or `accept-new` and no `UserKnownHostsFile`
-comes out as `/dev/null`, another device, `none` or empty. moor also refuses
+comes out as `/dev/null`, another device, `none` or empty. With `accept-new`, moor also refuses a first known-hosts file that ssh cannot add to: one that is not writable, or a missing one in a directory that is not writable. moor also refuses
 them when `ssh -G` fails. The command then fails
 with an error that says so; moor never falls back to an unchecked connection.
 A command's environment travels on ssh's stdin, never in its arguments.

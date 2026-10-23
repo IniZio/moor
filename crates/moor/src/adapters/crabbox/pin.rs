@@ -11,6 +11,8 @@ use std::fs;
 use std::os::unix::fs::FileTypeExt;
 use std::time::Duration;
 
+use rustix::fs::{access, Access};
+
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::{Deadline, ProcError, ProcSpec, Tool};
 
@@ -40,12 +42,33 @@ pub(super) fn check(cb: &Crabbox, words: &[String]) -> Result<(), DriverError> {
     if !matches!(strict, Some("true" | "yes" | "accept-new")) {
         return Err(refused("they turn host key checking off"));
     }
-    match files {
-        Some(files) if !files.split(' ').any(holds_no_keys) => Ok(()),
-        _ => Err(refused(
-            "they name /dev/null or no file for UserKnownHostsFile",
-        )),
+    let files = match files {
+        Some(files) if !files.split(' ').any(holds_no_keys) => files,
+        _ => {
+            return Err(refused(
+                "they name /dev/null or no file for UserKnownHostsFile",
+            ))
+        }
+    };
+    let first = files.split(' ').next().unwrap_or_default();
+    if strict == Some("accept-new") && !can_add_to(first) {
+        return Err(refused(&format!(
+            "accept-new cannot record a new key in {first}, which is not writable"
+        )));
     }
+    Ok(())
+}
+
+/// Whether ssh can add a host key to the known-hosts file `file`: the file is writable, or it is
+/// missing and its directory is writable. Checks permissions only and writes nothing.
+fn can_add_to(file: &str) -> bool {
+    let path = std::path::Path::new(file);
+    let writable = |p: &std::path::Path| access(p, Access::WRITE_OK).is_ok();
+    if path.exists() {
+        return writable(path);
+    }
+    let dir = path.parent().filter(|d| !d.as_os_str().is_empty());
+    writable(dir.unwrap_or_else(|| std::path::Path::new(".")))
 }
 
 /// Whether the known-hosts file ssh printed as `file` can hold no host key. A device such as
