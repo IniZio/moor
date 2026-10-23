@@ -7,27 +7,28 @@ use crate::escape::escape;
 use crate::login::{vault, TokenCheck, LINKED};
 
 /// Checks each pasted token, stores the ones its account takes, and shows every outcome in the
-/// one modal. A failed token does not stop the others. With several tokens each line starts
-/// with its account. No token is in the log line or in any text.
+/// one modal. A failed token does not stop the others. When the form took both accounts, each
+/// line names its account. No token is in the log line or in any text.
 pub(super) fn link(fx: &mut Fx<'_>, checks: &[TokenCheck]) {
     let lines: Vec<String> = checks
         .iter()
         .map(|check| {
-            let text = match (fx.check_token)(check) {
-                Err(text) => text,
-                Ok(()) => match vault::store(
+            let label = check.account.label();
+            let stored = match (fx.check_token)(check) {
+                Err(text) => Err(text),
+                Ok(()) => vault::store(
                     &mut *fx.call,
                     check.user.as_str(),
                     check.account,
                     &check.token,
-                ) {
-                    Ok(()) => LINKED.to_owned(),
-                    Err(why) => format!("Could not store your token: {why}. Nothing was stored."),
-                },
+                )
+                .map_err(|why| format!("Could not store your token: {why}. Nothing was stored.")),
             };
-            match checks.len() {
-                1 => text,
-                _ => format!("{}: {text}", check.account.label()),
+            match (stored, check.named) {
+                (Ok(()), false) => LINKED.to_owned(),
+                (Ok(()), true) => format!("Linked {label}."),
+                (Err(text), true) if !text.starts_with(label) => format!("{label}: {text}"),
+                (Err(text), _) => text,
             }
         })
         .collect();

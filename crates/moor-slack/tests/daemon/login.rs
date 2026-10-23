@@ -307,7 +307,7 @@ fn link_both(rig: &Rig, fields: &[(&str, &str)]) -> (Value, Option<String>) {
 fn the_bare_login_links_both_accounts_in_one_modal() {
     let (rig, _bin, controller) = start(None);
     let (_, text) = link_both(&rig, &[("claude", GOOD), ("github", GH_GOOD)]);
-    assert_eq!(text.unwrap(), "Claude: Linked.\nGitHub: Linked.");
+    assert_eq!(text.unwrap(), "Linked Claude.\nLinked GitHub.");
     let mut set = secrets_set(&controller);
     set.sort();
     let want = [("claude", GOOD), ("github", GH_GOOD)];
@@ -318,7 +318,7 @@ fn the_bare_login_links_both_accounts_in_one_modal() {
 fn a_blank_field_keeps_its_account_and_only_the_filled_one_is_stored() {
     let (rig, _bin, controller) = start(None);
     let (_, text) = link_both(&rig, &[("claude", ""), ("github", GH_GOOD)]);
-    assert_eq!(text.unwrap(), "Linked.");
+    assert_eq!(text.unwrap(), "Linked GitHub.");
     assert_eq!(
         secrets_set(&controller),
         [("github".to_owned(), GH_GOOD.to_owned())]
@@ -330,7 +330,7 @@ fn one_valid_and_one_refused_token_store_only_the_valid_one_and_name_the_failed(
     let (rig, _bin, controller) = start(None);
     rig.github.answer(401);
     let (_, text) = link_both(&rig, &[("claude", GOOD), ("github", GH_GOOD)]);
-    let want = "Claude: Linked.\nGitHub: GitHub refused this token: GitHub answered HTTP 401 \
+    let want = "Linked Claude.\nGitHub refused this token: GitHub answered HTTP 401 \
                 for it. Nothing was stored.";
     assert_eq!(text.unwrap(), want);
     assert_eq!(

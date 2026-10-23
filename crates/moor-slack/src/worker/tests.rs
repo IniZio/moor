@@ -525,22 +525,25 @@ fn one_valid_and_one_refused_token_store_only_the_valid_one_and_name_the_failed(
         respond: &mut respond,
         log: &|_| {},
     };
-    let check = |account| TokenCheck {
+    let check = |account, named| TokenCheck {
         user: SlackUser::parse("U1").unwrap(),
         account,
         view_id: "V1".into(),
         token: Secret::new(b"tok".to_vec()),
+        named,
     };
-    let both = [check(Account::GitHub), check(Account::Claude)];
+    let both = [check(Account::GitHub, true), check(Account::Claude, true)];
     super::login::link(&mut fx, &both);
     super::login::link(&mut fx, &both[1..]);
-    assert_eq!(stored.into_inner(), ["claude", "claude"]);
-    let want = "GitHub: GitHub refused this token: 401. Nothing was stored.\nClaude: Linked.";
+    super::login::link(&mut fx, &[check(Account::Claude, false)]);
+    assert_eq!(stored.into_inner(), ["claude", "claude", "claude"]);
+    let want = "GitHub refused this token: 401. Nothing was stored.\nLinked Claude.";
     assert_eq!(
         shown.into_inner(),
         [
             ("V1".to_owned(), want.to_owned()),
-            ("V1".to_owned(), "Linked.".to_owned())
+            ("V1".to_owned(), "Linked Claude.".to_owned()),
+            ("V1".to_owned(), "Linked.".to_owned()),
         ]
     );
 }
