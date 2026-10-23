@@ -194,8 +194,11 @@ as a child and starts it again with backoff whenever it exits. It listens on a
 socket per front in moor's private socket directory. The front's shim binds a
 loopback port in the front's network namespace and passes each connection to
 that socket, and the front finds the port in `MOOR_FRONT_PROXY_PORT`. The
-Proxy signs with a CA kept in `<state dir>/proxy/fronts`; the front reads its
-certificate at the path in `MOOR_FRONT_PROXY_CA`.
+Proxy signs with a CA kept in `<state dir>/proxy/fronts`. The front gets its
+certificate as PEM text in `MOOR_FRONT_PROXY_CA_PEM`, so no controller path is
+shown to it. Each front's Proxy socket sits alone in a directory of its own,
+and the shim's pid 1, which holds that directory open, is not dumpable, so the
+front cannot reach it through `/proc/1/fd`.
 
 A front asks for a lease with `proxy-lease`, as an identity of its own
 namespace. The controller grants it only when that identity's user holds

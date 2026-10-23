@@ -1,5 +1,6 @@
 //! A front whose config lists `proxy_rules` reaches the front Proxy through its shim's loopback
-//! port, with a lease it got on its own socket, and trusts the CA the controller shows it. The
+//! port, with a lease it got on its own socket, and trusts the CA the controller hands it; it
+//! cannot reach the Proxy socket through what pid 1 holds open. The
 //! controller restarts a killed Proxy, and the same lease works again.
 #![expect(
     clippy::disallowed_methods,
@@ -122,6 +123,12 @@ fn a_front_reaches_its_proxy_with_a_lease_and_a_killed_proxy_comes_back() {
         served.said("connect").iter().any(|c| c == "tls ok")
     });
     assert_eq!(served.said("stranger"), ["status 403"], "{}", served.log());
+    assert_eq!(
+        served.said("pid1"),
+        ["PermissionError none"],
+        "pid 1's open socket dir is out of the front's reach: {}",
+        served.log()
+    );
     let first = served.proxy_pids();
     assert_eq!(first.len(), 1, "{}", served.log());
     let pid = first.first().copied().and_then(Pid::from_raw).unwrap();

@@ -42,8 +42,8 @@ use rustix::event::{poll, PollFd, PollFlags, Timespec};
 use rustix::mount::{mount_change, MountPropagationFlags};
 #[cfg(target_os = "linux")]
 use rustix::process::{
-    getgid, getppid, getuid, kill_process, set_parent_process_death_signal, waitpid, Signal,
-    WaitOptions,
+    getgid, getppid, getuid, kill_process, set_dumpable_behavior, set_parent_process_death_signal,
+    waitpid, DumpableBehavior, Signal, WaitOptions,
 };
 use rustix::process::{Pid, WaitStatus};
 #[cfg(target_os = "linux")]
@@ -289,10 +289,11 @@ fn supported(info: &SupportInfo) -> Result<(), String> {
 }
 
 /// pid 1 of the front's PID namespace: moves into the front's root as `layout` describes,
-/// confines itself to writing the writable dir and `/tmp`, drops every capability and runs
-/// `command` with its socket on fd 3, and with `proxy` bridged to a loopback port. The kernel kills the namespace if the outer shim dies. The
-/// outer shim holds the only write end of stdin, so a readable stdin means it died before the
-/// death signal was set, and pid 1 exits.
+/// confines itself to writing the writable dir and `/tmp`, drops every capability, turns
+/// undumpable so the front cannot reach what pid 1 holds open through `/proc/1/fd`, and runs
+/// `command` with its socket on fd 3 and `proxy` bridged to a loopback port. The kernel kills
+/// the namespace if the outer shim dies. The outer shim holds the only write end of stdin, so
+/// a readable stdin means it died before the death signal was set, and pid 1 exits.
 #[cfg(target_os = "linux")]
 fn init(layout: &Layout, proxy: Option<&Path>, command: &[OsString]) -> Result<u8, String> {
     set_parent_process_death_signal(Some(Signal::KILL))
@@ -326,6 +327,8 @@ fn init(layout: &Layout, proxy: Option<&Path>, command: &[OsString]) -> Result<u
         },
     )
     .map_err(|e| format!("cannot drop capabilities: {e}"))?;
+    set_dumpable_behavior(DumpableBehavior::NotDumpable)
+        .map_err(|e| format!("cannot make pid 1 undumpable: {e}"))?;
     let (program, args) = command.split_first().ok_or("no front command")?;
     let mut front = Command::new(program);
     front.args(args).stdin(Stdio::null());

@@ -35,9 +35,11 @@ pub(super) type Handler = Arc<dyn Fn(UnixStream) + Send + Sync>;
 pub(crate) struct FrontSocket {
     /// moor's private socket directory.
     dir: PathBuf,
+    /// A directory of its own inside `dir`, for a front Proxy's socket; none for a Box's.
+    own: Option<PathBuf>,
     /// The uid that must own `dir`: the uid moor runs as.
     owner: u32,
-    /// `px-<hash>` inside `dir`.
+    /// `px-<hash>` inside `dir`, or `s` inside `own`.
     path: PathBuf,
 }
 
@@ -68,18 +70,22 @@ impl FrontSocket {
         let hash = short_hash(&[state_dir.as_os_str().as_bytes(), id.as_bytes()]);
         Self {
             dir: dir.to_path_buf(),
+            own: None,
             owner,
             path: dir.join(format!("px-{hash}")),
         }
     }
 
-    /// The socket of the Proxy that front `ns` of `state_dir` reaches, in `dir`.
+    /// The socket of the Proxy that front `ns` of `state_dir` reaches, alone in a `pf-<hash>`
+    /// directory of `dir`, so whoever holds that directory open reaches no other socket.
     pub(crate) fn of_front(dir: &Path, owner: u32, state_dir: &Path, ns: &str) -> Self {
         let hash = short_hash(&[state_dir.as_os_str().as_bytes(), b"front", ns.as_bytes()]);
+        let own = dir.join(format!("pf-{hash}"));
         Self {
             dir: dir.to_path_buf(),
+            path: own.join("s"),
+            own: Some(own),
             owner,
-            path: dir.join(format!("pf-{hash}")),
         }
     }
 
@@ -92,6 +98,9 @@ impl FrontSocket {
     /// `handler`. With `replace`, a file left at the path is removed first.
     pub(super) fn listen(&self, replace: bool, handler: &Handler) -> Result<Listening, String> {
         private_dir(&self.dir, self.owner)?;
+        if let Some(own) = &self.own {
+            private_dir(own, self.owner)?;
+        }
         let fail = |e: io::Error| format!("cannot listen on {}: {e}", self.path.display());
         if replace {
             match fs::remove_file(&self.path) {

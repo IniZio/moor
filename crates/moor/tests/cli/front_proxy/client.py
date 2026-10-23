@@ -18,7 +18,27 @@ lease = ask({"cmd": "proxy-lease", "identity": who})["value"]
 print("lease", lease["lease"], flush=True)
 token = lease.get("token", "")
 port = int(os.environ["MOOR_FRONT_PROXY_PORT"])
-ca = os.environ["MOOR_FRONT_PROXY_CA"]
+ca = os.environ["MOOR_FRONT_PROXY_CA_PEM"]
+def through_pid1():
+    reached = []
+    for n in range(64):
+        s = socket.socket(socket.AF_UNIX)
+        try:
+            s.connect(f"/proc/1/fd/{n}/s")
+            reached.append(str(n))
+        except PermissionError:
+            pass
+        except OSError as e:
+            reached.append(f"{n}:{type(e).__name__}") if e.errno not in (2, 13, 20) else None
+        finally:
+            s.close()
+    try:
+        os.listdir("/proc/1/fd")
+        listed = "listed"
+    except PermissionError:
+        listed = "PermissionError"
+    return f"{listed} {','.join(reached) or 'none'}"
+print("pid1", through_pid1(), flush=True)
 def connect(password):
     try:
         s = socket.create_connection(("127.0.0.1", port), timeout=5)
@@ -33,7 +53,7 @@ def connect(password):
         status = head.split(b" ")[1].decode()
         if status != "200":
             return "status " + status
-        tls = ssl.create_default_context(cafile=ca).wrap_socket(s, server_hostname="api.anthropic.com")
+        tls = ssl.create_default_context(cadata=ca).wrap_socket(s, server_hostname="api.anthropic.com")
         tls.close()
         return "tls ok"
     except Exception as e:
