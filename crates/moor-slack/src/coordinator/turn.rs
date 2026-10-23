@@ -121,6 +121,7 @@ fn watch(
                     return unsafe_turn(why);
                 }
                 if let Some(plugin) = loaded.plugins.iter().find(|p| !p.builtin) {
+                    log(&format!("turn refused the plugin {}", plugin.name));
                     let ended = Ended::Plugin(plugin.name.clone());
                     return (Seen::Ended(ended), Left::Stopped);
                 }
