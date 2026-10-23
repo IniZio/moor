@@ -54,24 +54,15 @@ fn front_in_a_host() -> (Value, Value) {
 #[test]
 fn a_front_reaches_the_public_internet_through_its_proxy_and_nothing_private() {
     let (got, front) = front_in_a_host();
-    for host in [
-        "172.17.0.1",
-        "100.64.0.156",
-        "10.235.225.1",
-        "fc00::1",
-        "203.0.113.5",
-    ] {
-        assert_eq!(
-            got["control"][host], "host",
-            "the host reaches {host}: {got}"
-        );
-    }
-    for remote in ["198.51.100.7", "192.168.77.7", "100.64.9.9"] {
-        assert_eq!(
-            got["control"][remote], "remote",
-            "the host reaches {remote}: {got}"
-        );
-    }
+    let controls = json!({
+        "172.17.0.1": "host", "100.64.0.156": "host", "10.235.225.1": "host", "fc00::1": "host",
+        "203.0.113.5": "host", "198.51.100.7": "remote", "192.168.77.7": "remote",
+        "100.64.9.9": "remote",
+    });
+    assert_eq!(
+        got["control"], controls,
+        "the host reaches each listener: {got}"
+    );
     for target in [
         "172.17.0.1:443",
         "192.168.77.7:443",
