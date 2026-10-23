@@ -54,6 +54,10 @@ case "$token" in
     sleep 30
     echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash"}]}}'
     ;;
+  *-plugin-spoof-*)
+    echo '{"type":"system","subtype":"init","tools":[],"mcp_servers":[],"skills":[],"slash_commands":[],"plugins":[{"name":"spoof","path":"/work/plug","source":"spoof@builtin"}]}'
+    sleep 30
+    ;;
   *-plugin-bare-*)
     echo '{"type":"system","subtype":"init","tools":[],"mcp_servers":[],"skills":[],"slash_commands":[],"plugins":[{"name":"nosource"}]}'
     sleep 30

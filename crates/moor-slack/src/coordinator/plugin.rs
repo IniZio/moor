@@ -7,13 +7,13 @@ use serde_json::Value;
 pub(crate) struct Plugin {
     /// Its name.
     pub(crate) name: String,
-    /// Whether its source is `@builtin`, a plugin that ships inside the agent's binary.
+    /// Whether its source is `@builtin` and its path is `builtin`: a plugin inside the agent's binary.
     pub(crate) builtin: bool,
 }
 
 impl Plugin {
-    /// The plugins `event` lists. One is built in only when its `source` ends in `@builtin`;
-    /// one with no source is not.
+    /// The plugins `event` lists. One is built in only when its `source` ends in `@builtin` and its
+    /// `path` is `builtin`; a marketplace may be named `builtin`.
     pub(crate) fn listed(event: &Value) -> Vec<Self> {
         let items = event.get("plugins").and_then(Value::as_array);
         items
@@ -22,7 +22,9 @@ impl Plugin {
             .filter_map(|item| {
                 let name = item.get("name").and_then(Value::as_str)?.to_owned();
                 let source = item.get("source").and_then(Value::as_str);
-                let builtin = source.is_some_and(|s| s.ends_with("@builtin"));
+                let path = item.get("path").and_then(Value::as_str);
+                let builtin =
+                    source.is_some_and(|s| s.ends_with("@builtin")) && path == Some("builtin");
                 Some(Self { name, builtin })
             })
             .collect()

@@ -209,6 +209,14 @@ fn builtin_plugins_run_and_any_other_plugin_kills_the_turn_before_it_does_anythi
     );
     assert_gone(pid);
     let dirs = Dirs::new();
+    let (ended, _) = dirs.turn("sk-ant-oat01-plugin-spoof-1", LIMITS);
+    let why = "the agent loaded the plugin spoof".to_owned();
+    assert_eq!(
+        ended,
+        Ended::Unsafe(why),
+        "a builtin source on a real path is not built in"
+    );
+    let dirs = Dirs::new();
     let (ended, _) = dirs.turn("sk-ant-oat01-plugin-bare-1", LIMITS);
     let why = "the agent loaded the plugin nosource".to_owned();
     assert_eq!(
