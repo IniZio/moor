@@ -3,10 +3,10 @@
 
 use std::ffi::OsString;
 use std::fs;
-use std::io::{self, BufRead as _, BufReader};
+use std::io::{self, BufRead as _, BufReader, Read};
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus, Stdio};
+use std::process::{self, Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -211,18 +211,21 @@ fn watch(child: &mut Child, stop: &Receiver<()>) -> Option<ExitStatus> {
     }
 }
 
-/// Starts `front` under `shim` with its socket on fd 3, relays its stderr lines to `sink` and
-/// records the shim's pid.
+/// Starts `front` under `shim` in `/`, with its socket on fd 3, relays its stdout and stderr
+/// lines to `sink` and records the shim's pid. The shim exits with this controller.
 fn spawn(front: &Front, shim: &Shim, sink: &Sink) -> io::Result<Child> {
     let ns = &front.ns;
     let socket = rustix::fs::open(&front.socket, OFlags::PATH | OFlags::CLOEXEC, Mode::empty())?;
     let mut command = shim.command();
     command
+        .args(["--parent", &process::id().to_string()])
         .args(&shim.hide)
         .arg("--")
         .args(&front.command)
         .env("MOOR_FRONT_SOCKET", format!("/proc/self/fd/{SOCKET_FD}"))
+        .current_dir("/")
         .stdin(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     command
         .fd_mappings(vec![FdMapping {
@@ -231,13 +234,11 @@ fn spawn(front: &Front, shim: &Shim, sink: &Sink) -> io::Result<Child> {
         }])
         .map_err(io::Error::other)?;
     let mut child = command.spawn()?;
+    if let Some(stdout) = child.stdout.take() {
+        relay_lines(stdout, ns, sink);
+    }
     if let Some(stderr) = child.stderr.take() {
-        let (sink, ns) = (sink.clone(), ns.clone());
-        thread::spawn(move || {
-            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-                log(&sink, &format!("front {ns}: {line}"));
-            }
-        });
+        relay_lines(stderr, ns, sink);
     }
     let pid = child.id();
     match write_pid_file(front, pid) {
@@ -248,6 +249,16 @@ fn spawn(front: &Front, shim: &Shim, sink: &Sink) -> io::Result<Child> {
         ),
     }
     Ok(child)
+}
+
+/// Logs each line of `stream`, a front's output, to `sink` until the front closes it.
+fn relay_lines(stream: impl Read + Send + 'static, ns: &str, sink: &Sink) {
+    let (sink, ns) = (sink.clone(), ns.to_owned());
+    thread::spawn(move || {
+        for line in BufReader::new(stream).lines().map_while(Result::ok) {
+            log(&sink, &format!("front {ns}: {line}"));
+        }
+    });
 }
 
 /// Replaces the pid file of `front` with `pid` and its start time.
