@@ -535,4 +535,5 @@ fn an_exited_agent_has_its_transcript_saved_before_the_session_ends() {
 }
 
 mod cold_boot;
+mod relaunch;
 mod target;

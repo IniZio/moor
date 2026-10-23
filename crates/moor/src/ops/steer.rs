@@ -28,65 +28,165 @@ const STEER_DEADLINE: Duration = Duration::from_secs(30);
 
 /// Run `steer`.
 ///
+/// An awake Box whose agent exited gets the agent relaunched once, resuming its stored agent
+/// session, and the steer goes to the relaunched agent.
+///
 /// # Errors
-/// [`CommandError`] when the Box is unknown or has no live agent, the agent ended, the choice
-/// does not fit what the agent shows, or the send failed.
+/// [`CommandError`] when the Box is unknown or has no live agent, the agent ended and could not
+/// be relaunched or ended again, the choice does not fit what the agent shows, or the send failed.
 pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
     let store = cx.store()?;
     let found = target::resolve(store, &req.target, Rule::Open)?.ok_or_else(|| {
         CommandError::new(ErrorKind::Failed, format!("no open Box {}", req.target))
     })?;
-    let (id, name) = (found.id, found.name.as_str());
-    let no_agent = || {
-        CommandError::new(
-            ErrorKind::Refused,
-            format!(
-                "no live agent session for Box {name}; start it with {}",
-                relaunch(name)
-            ),
-        )
-    };
-    let reload = || {
-        store
-            .box_row(id)?
-            .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {name}")))
-    };
-    if store.live_session(id)?.is_none() {
-        return Err(no_agent());
+    let target = (found.id, found.name.as_str());
+    let row = reload(store, target)?;
+    if store.live_session(target.0)?.is_none() && asleep(&row) {
+        return Err(no_agent(target.1));
     }
-    if asleep(&reload()?) {
-        let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "steer", boxlock::WAIT)?;
-        wake_and_revive(cx, store, &reload()?)?;
+    if asleep(&row) {
+        let _held = BoxLock::acquire(
+            cx.clock(),
+            cx.state_dir()?,
+            target.0,
+            "steer",
+            boxlock::WAIT,
+        )?;
+        wake_and_revive(cx, store, &reload(store, target)?)?;
     }
-    let row = reload()?;
-    let session = store.live_session(id)?.ok_or_else(no_agent)?;
+    let gone = match attempt(cx, store, req, target)? {
+        Attempt::Sent(v) => return Ok(v),
+        Attempt::Gone(gone) => gone,
+    };
+    relaunch::once(cx, store, target, gone)?;
+    match attempt(cx, store, req, target)? {
+        Attempt::Sent(v) => Ok(v),
+        Attempt::Gone(again) => Err(relaunch::ended_again(cx, store, target, &again)?),
+    }
+}
+
+/// The refusal for a Box with no agent to steer.
+fn no_agent(name: &str) -> CommandError {
+    CommandError::new(
+        ErrorKind::Refused,
+        format!(
+            "no live agent session for Box {name}; start it with {}",
+            relaunch_hint(name)
+        ),
+    )
+}
+
+/// The Box row of `id`.
+fn reload(store: &Store, (id, name): (BoxId, &str)) -> Result<BoxRow, CommandError> {
+    store
+        .box_row(id)?
+        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {name}")))
+}
+
+/// What one try at the send came to.
+enum Attempt {
+    /// The agent took the steer.
+    Sent(SteerValue),
+    /// The agent is gone; nothing was sent.
+    Gone(Gone),
+}
+
+/// An agent found gone, with the refusal a steer gives when it is not relaunched.
+pub(super) struct Gone {
+    /// The launch the agent ran in, when it has not ended yet.
+    pub(super) launch: Option<SessionRow>,
+    /// The exit code the agent left, when known.
+    pub(super) code: Option<i32>,
+    /// Why the steer was not sent.
+    pub(super) error: CommandError,
+}
+
+impl Gone {
+    /// The agent of `name` gone from `launch`, having left `code`.
+    fn new(name: &str, launch: Option<SessionRow>, code: Option<i32>) -> Self {
+        let error = match (&launch, code) {
+            (None, _) => no_agent(name),
+            (Some(_), None) => gone_refusal(name, "the agent's pane is gone"),
+            (Some(_), Some(c)) => gone_refusal(name, &format!("agent exited {c}")),
+        };
+        Self {
+            launch,
+            code,
+            error,
+        }
+    }
+
+    /// Saves the transcript of the gone agent, ends its launch and ends the Session.
+    pub(super) fn finish(&self, cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
+        let live = store.live_session(id)?;
+        let launch = self
+            .launch
+            .as_ref()
+            .filter(|l| live.is_some_and(|v| v.id == l.id));
+        if let (Some(launch), Some(row)) = (launch, store.box_row(id)?) {
+            let saved = transcript::save(cx, store, &row, launch, Trigger::Exit);
+            store.end_session(
+                launch.id,
+                self.code,
+                saved.as_ref().map(|t| t.digest.as_str()),
+            )?;
+        }
+        store.end_current_session(id, "exited", self.code)?;
+        Ok(())
+    }
+}
+
+/// The refusal for an agent that `ended`.
+fn gone_refusal(name: &str, ended: &str) -> CommandError {
+    CommandError::new(
+        ErrorKind::Refused,
+        format!("{ended}; relaunch with {}", relaunch_hint(name)),
+    )
+}
+
+/// Sends `req` to the live agent of `target`, or says the agent is gone.
+fn attempt(
+    cx: &Cx,
+    store: &Store,
+    req: &SteerReq,
+    (id, name): (BoxId, &str),
+) -> Result<Attempt, CommandError> {
+    let row = reload(store, (id, name))?;
+    let Some(session) = store.live_session(id)? else {
+        return Ok(Attempt::Gone(Gone::new(name, None, None)));
+    };
     let sref = session_ref(&row, session.session_ref.clone(), session.pane.clone())
-        .ok_or_else(no_agent)?;
+        .ok_or_else(|| no_agent(name))?;
     let before = state_of(cx, store, &row)?;
+    if let (Some(AgentState::Exited { code }), false) = (&before, is_exit_req(req)) {
+        return Ok(Attempt::Gone(Gone::new(name, Some(session), Some(*code))));
+    }
     let steer = choose(req, name, before.as_ref())?;
     let sent = match &steer {
         Steer::Text(t) => t.clone(),
         Steer::Menu(n) => n.to_string(),
     };
-    let Some(outcome) = send(
-        cx,
-        store,
-        &row,
-        (name, &session, &sref),
-        &steer,
-        before.as_ref(),
-    )?
-    else {
-        return exited(cx, store, (id, name), &session, sent);
+    let Some(outcome) = send(cx, name, &sref, &steer)? else {
+        let code = if let Some(AgentState::Exited { code }) = before {
+            Some(code)
+        } else {
+            None
+        };
+        let gone = Gone::new(name, Some(session.clone()), code);
+        if !is_exit(&steer) {
+            return Ok(Attempt::Gone(gone));
+        }
+        gone.finish(cx, store, id)?;
+        return exited(cx, store, (id, name), &session, sent).map(Attempt::Sent);
     };
     let steer_id = record(store, id, &session, &sent, outcome.submit_retried)?;
     let answered_menu = answered(cx, store, &row, &steer, outcome)?;
-    Ok(SteerValue {
+    Ok(Attempt::Sent(SteerValue {
         box_name: name.to_owned(),
         sent,
         answered_menu,
         steer: steer_id,
-    })
+    }))
 }
 
 /// The result of an exit steer whose pane was already gone: recorded, with a warning.
@@ -120,7 +220,7 @@ fn asleep(row: &BoxRow) -> bool {
 }
 
 /// The command that starts the agent again.
-fn relaunch(name: &str) -> String {
+fn relaunch_hint(name: &str) -> String {
     format!("`moor start {name} --goal \"...\"`")
 }
 
@@ -135,40 +235,27 @@ fn is_exit(steer: &Steer) -> bool {
     matches!(steer, Steer::Text(t) if t.trim() == "/exit")
 }
 
-/// Sends `steer`; a pane that ended has its transcript saved and its session stopped, then an
-/// exit steer yields `None` and any other steer refuses.
+/// Whether `req` is the text that asks the agent to exit.
+fn is_exit_req(req: &SteerReq) -> bool {
+    req.menu.is_none() && req.text.as_deref().is_some_and(|t| t.trim() == "/exit")
+}
+
+/// Sends `steer`; `None` when the agent's pane is gone.
 fn send(
     cx: &Cx,
-    store: &Store,
-    row: &BoxRow,
-    (name, session, sref): (&str, &SessionRow, &SessionRef),
+    name: &str,
+    sref: &SessionRef,
     steer: &Steer,
-    before: Option<&AgentState>,
 ) -> Result<Option<SteerOutcome>, CommandError> {
     match cx.engine().steer(sref, steer, Deadline(STEER_DEADLINE)) {
         Ok(o) => Ok(Some(o)),
-        Err(EngineError::PaneGone) => {
-            let code = match before {
-                Some(AgentState::Exited { code }) => Some(*code),
-                _ => None,
-            };
-            let saved = transcript::save(cx, store, row, session, Trigger::Exit);
-            store.end_session(session.id, code, saved.as_ref().map(|t| t.digest.as_str()))?;
-            if is_exit(steer) {
-                return Ok(None);
-            }
-            let ended = code.map_or_else(
-                || "the agent's pane is gone".to_owned(),
-                |c| format!("agent exited {c}"),
-            );
-            Err(CommandError::new(
-                ErrorKind::Refused,
-                format!("{ended}; relaunch with {}", relaunch(name)),
-            ))
-        }
+        Err(EngineError::PaneGone) => Ok(None),
         Err(EngineError::NoSession) => Err(CommandError::new(
             ErrorKind::Refused,
-            format!("the agent has no pane; relaunch with {}", relaunch(name)),
+            format!(
+                "the agent has no pane; relaunch with {}",
+                relaunch_hint(name)
+            ),
         )),
         Err(e) => Err(CommandError::new(ErrorKind::Failed, e.to_string())),
     }
@@ -277,6 +364,8 @@ fn record(
         .copied()
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, "the steered event was not recorded"))
 }
+
+mod relaunch;
 
 #[cfg(test)]
 mod tests;
