@@ -51,8 +51,8 @@ pub struct Settings {
     pub path: Option<OsString>,
     /// The loopback port of the front Proxy, which the front's shim bridges.
     pub proxy_port: Option<u16>,
-    /// The CA the front Proxy signs with.
-    pub proxy_ca: Option<PathBuf>,
+    /// The PEM certificate of the CA the front Proxy signs with.
+    pub proxy_ca_pem: Option<String>,
     /// The current time in unix seconds.
     pub clock: fn() -> i64,
     /// Set when the daemon is asked to stop: it stops acking events, finishes the request in
@@ -181,10 +181,7 @@ fn load(settings: &Settings, log: &Log) -> Result<Loaded, String> {
         db_path: db_path.clone(),
         state_dir: settings.state_dir.clone(),
         agent: coordinator.clone(),
-        proxy: settings
-            .proxy_port
-            .zip(settings.proxy_ca.clone())
-            .map(|(port, ca)| FrontProxy { port, ca }),
+        proxy: FrontProxy::written(dir, settings.proxy_port, settings.proxy_ca_pem.as_deref())?,
         model: c.model.clone(),
         budget: usize::try_from(c.context_kib).map_or(usize::MAX, |kib| kib.saturating_mul(1024)),
         api: Arc::clone(&api),

@@ -139,7 +139,7 @@ fn main() -> ExitCode {
             proxy_port: std::env::var("MOOR_FRONT_PROXY_PORT")
                 .ok()
                 .and_then(|port| port.parse().ok()),
-            proxy_ca: std::env::var_os("MOOR_FRONT_PROXY_CA").map(PathBuf::from),
+            proxy_ca_pem: std::env::var("MOOR_FRONT_PROXY_CA_PEM").ok(),
             clock: unix_now,
             stop,
         };

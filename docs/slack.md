@@ -65,7 +65,9 @@ moor-slack --socket ~/.local/state/moor/fronts/slack.sock \
 A `command` under `fronts.slack` lets the controller start the front itself.
 It then sets `MOOR_FRONT_SOCKET`, and `--socket` is not needed. Coordinator
 turns need this: only a front the controller runs gets the loopback port of
-the front Proxy in `MOOR_FRONT_PROXY_PORT`.
+the front Proxy in `MOOR_FRONT_PROXY_PORT`, and its CA in
+`MOOR_FRONT_PROXY_CA_PEM`, which the front writes to `proxy-ca.pem` in its
+state directory.
 
 The front reads the workspace's team id from Slack once at startup, with
 `auth.test`, and stops with an error if Slack does not answer. It acts for each

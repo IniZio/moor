@@ -92,7 +92,9 @@ fn reached_the_proxy_on(rig: &Rig, bin: &Path, lease: &str) {
     );
     let env = recorded(bin, 0, "env");
     let proxy = format!("HTTPS_PROXY=http://lease:{lease}@127.0.0.1:1");
-    let ca = format!("NODE_EXTRA_CA_CERTS={}", rig.path("proxy-ca.pem").display());
+    let pem = rig.path("state-slack").join("proxy-ca.pem");
+    assert_eq!(std::fs::read_to_string(&pem).unwrap(), "fake pem");
+    let ca = format!("NODE_EXTRA_CA_CERTS={}", pem.display());
     for want in [proxy, ca] {
         assert!(env.lines().any(|l| l == want), "{want}: {env}");
     }

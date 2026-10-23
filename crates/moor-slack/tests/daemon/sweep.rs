@@ -164,7 +164,7 @@ fn the_sweep_runs_again_a_minute_after_the_first() {
         user: None,
         path: Some("/usr/bin:/bin".into()),
         proxy_port: Some(1),
-        proxy_ca: Some(rig.path("proxy-ca.pem")),
+        proxy_ca_pem: Some("fake pem".to_owned()),
         clock: now,
         stop: Arc::default(),
     };
