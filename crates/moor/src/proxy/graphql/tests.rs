@@ -389,6 +389,11 @@ impl Client {
 
     /// Whether the peer has closed the stream.
     fn closed(&mut self) -> bool {
+        let _ = self
+            .io
+            .get_ref()
+            .sock
+            .set_read_timeout(Some(Duration::from_millis(300)));
         match self.io.fill_buf() {
             Ok(buf) => buf.is_empty(),
             Err(e) => !matches!(
