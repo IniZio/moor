@@ -189,6 +189,36 @@ fn an_init_that_lists_another_tool_server_or_a_tool_the_front_did_not_give_kills
 }
 
 #[test]
+fn builtin_plugins_run_and_any_other_plugin_kills_the_turn_before_it_does_anything() {
+    let dirs = Dirs::new();
+    let (ended, _) = dirs.turn("sk-ant-oat01-plugin-builtin-1", LIMITS);
+    assert!(
+        matches!(ended, Ended::Answered(Answer::Reply { .. })),
+        "{ended:?}"
+    );
+    let dirs = Dirs::new();
+    let started = now();
+    let (ended, pid) = dirs.turn("sk-ant-oat01-plugin-local-1", LIMITS);
+    assert_eq!(
+        ended,
+        Ended::Unsafe("the agent loaded the plugin locplug".to_owned())
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(10),
+        "the turn ran on"
+    );
+    assert_gone(pid);
+    let dirs = Dirs::new();
+    let (ended, _) = dirs.turn("sk-ant-oat01-plugin-bare-1", LIMITS);
+    let why = "the agent loaded the plugin nosource".to_owned();
+    assert_eq!(
+        ended,
+        Ended::Unsafe(why),
+        "a plugin with no source is not built in"
+    );
+}
+
+#[test]
 fn the_cap_kills_a_turn_with_its_group() {
     let dirs = Dirs::new();
     let started = now();

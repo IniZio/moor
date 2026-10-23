@@ -22,8 +22,9 @@ if [ -z "$token" ]; then
   token=$(printf '%s' "$HTTPS_PROXY" | sed -n 's|^http://lease:\([^@]*\)@.*|\1|p')
 fi
 if [ -f "$dir/mode" ]; then token=$(cat "$dir/mode"); fi
+BUILTIN='{"name":"cc-plugin-agents-md","path":"builtin","source":"cc-plugin-agents-md@builtin"},{"name":"cc-plugin-telemetry","path":"builtin","source":"cc-plugin-telemetry@builtin"}'
 init() {
-  echo "{\"type\":\"system\",\"subtype\":\"init\",\"tools\":[$1],\"mcp_servers\":[],\"skills\":[],\"slash_commands\":[],\"plugins\":[{\"name\":\"cc-plugin-telemetry\"}]}"
+  echo "{\"type\":\"system\",\"subtype\":\"init\",\"tools\":[$1],\"mcp_servers\":[],\"skills\":[],\"slash_commands\":[],\"plugins\":[$BUILTIN]}"
 }
 case "$token" in
   *-good-*)
@@ -43,6 +44,19 @@ case "$token" in
   *-listed-*)
     echo '{"type":"system","subtype":"init","tools":["mcp__moor__list_boxes"],"mcp_servers":[{"name":"moor","status":"connected"}],"skills":[],"slash_commands":[],"plugins":[]}'
     echo '{"type":"result","subtype":"success","is_error":false,"result":"OK"}'
+    ;;
+  *-plugin-builtin-*)
+    init
+    echo '{"type":"result","subtype":"success","is_error":false,"result":"OK"}'
+    ;;
+  *-plugin-local-*)
+    echo "{\"type\":\"system\",\"subtype\":\"init\",\"tools\":[],\"mcp_servers\":[],\"skills\":[],\"slash_commands\":[],\"plugins\":[{\"name\":\"locplug\",\"path\":\"/work/plug\",\"source\":\"locplug@inline\"},$BUILTIN]}"
+    sleep 30
+    echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash"}]}}'
+    ;;
+  *-plugin-bare-*)
+    echo '{"type":"system","subtype":"init","tools":[],"mcp_servers":[],"skills":[],"slash_commands":[],"plugins":[{"name":"nosource"}]}'
+    sleep 30
     ;;
   *-server-*)
     echo '{"type":"system","subtype":"init","tools":[],"mcp_servers":[{"name":"github","status":"connected"}],"skills":[],"slash_commands":[],"plugins":[]}'

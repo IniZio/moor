@@ -13,7 +13,7 @@ use moor_core::secret::Secret;
 use serde_json::Value;
 
 use super::process::{now, supervise, Credential, Left, Next};
-use super::{Agent, Answer, Event, Loaded, TurnSetup};
+use super::{Agent, Answer, Event, Loaded, Plugin, TurnSetup};
 use crate::credentials::{AgentKind, CheckError, CredentialCheck};
 
 /// Oldest Claude Code that reads a login check's token from the descriptor [`TOKEN_FD_VAR`]
@@ -238,7 +238,7 @@ fn loaded(event: &Value) -> Loaded {
         servers: names("mcp_servers"),
         skills: names("skills"),
         commands: names("slash_commands"),
-        plugins: names("plugins"),
+        plugins: Plugin::listed(event),
     }
 }
 

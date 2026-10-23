@@ -10,6 +10,8 @@ use crate::credentials::{AgentKind, CredentialCheck};
 
 pub(crate) mod brief;
 pub(crate) mod claude;
+mod plugin;
+pub(crate) use plugin::Plugin;
 pub(crate) mod context;
 pub(crate) mod mcp;
 mod process;
@@ -67,8 +69,9 @@ pub(crate) struct Loaded {
     pub(crate) skills: Vec<String>,
     /// Slash commands it loaded.
     pub(crate) commands: Vec<String>,
-    /// Plugins it loaded; logged, never checked, because no flag removes the built-in ones.
-    pub(crate) plugins: Vec<String>,
+    /// Plugins it loaded. The built-in ones are logged and accepted, since no flag removes
+    /// them; any other plugin refuses the turn.
+    pub(crate) plugins: Vec<Plugin>,
 }
 
 /// How the agent said a turn ended.

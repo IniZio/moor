@@ -119,10 +119,8 @@ fn watch(
                     return unsafe_turn(why);
                 }
                 if !loaded.plugins.is_empty() {
-                    log(&format!(
-                        "turn loaded plugins: {}",
-                        loaded.plugins.join(", ")
-                    ));
+                    let names: Vec<&str> = loaded.plugins.iter().map(|p| p.name.as_str()).collect();
+                    log(&format!("turn loaded plugins: {}", names.join(", ")));
                 }
             }
             Event::Answer(Answer::Reply { .. }) => {
@@ -154,7 +152,7 @@ fn watch(
 }
 
 /// Why a turn that loaded `loaded` must not run: a tool or tool server beyond `allowed`, or
-/// any skill or slash command, since the front gives the coordinator none.
+/// any skill, slash command or non-built-in plugin, since the front gives the coordinator none.
 fn refused(loaded: &Loaded, allowed: &Allowed<'_>) -> Option<String> {
     let tools = loaded.tools.iter().filter(|t| !allowed.tools.contains(t));
     let servers = loaded.servers.iter().filter(|s| *s != allowed.server);
@@ -163,6 +161,15 @@ fn refused(loaded: &Loaded, allowed: &Allowed<'_>) -> Option<String> {
         ("tool server", servers.collect()),
         ("skill", loaded.skills.iter().collect()),
         ("slash command", loaded.commands.iter().collect()),
+        (
+            "plugin",
+            loaded
+                .plugins
+                .iter()
+                .filter(|p| !p.builtin)
+                .map(|p| &p.name)
+                .collect(),
+        ),
     ];
     extra.into_iter().find_map(|(what, names)| {
         names
