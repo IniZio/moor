@@ -113,11 +113,11 @@ impl Store {
             user: None,
             key: None,
         })
-        .map(|(id, _)| id)
+        .map(|(id, _, _)| id)
     }
 
     /// Register a Session that runs on the host in `workdir`, with no Box, under `parent` when
-    /// given; returns its id.
+    /// given; returns its id, its workdir, and whether this call created it.
     ///
     /// The Session is Working at once and records no events, since events belong to a Box. The
     /// parent is checked in the same transaction as the insert.
@@ -129,7 +129,7 @@ impl Store {
     pub(crate) fn open_child_host_session(
         &self,
         new: &NewHost<'_>,
-    ) -> Result<(i64, String), StoreError> {
+    ) -> Result<(i64, String, bool), StoreError> {
         let NewHost {
             workdir,
             agent,
@@ -155,12 +155,12 @@ impl Store {
             check_parent(&tx, p)?;
         }
         let user_id = user.map(UserId::get);
-        if let Some(live) = key
+        if let Some((id, dir)) = key
             .map(|k| live_keyed(&tx, user_id, k))
             .transpose()?
             .flatten()
         {
-            return Ok(live);
+            return Ok((id, dir, false));
         }
         tx.execute(
             "INSERT INTO sessions (box, ordinal, state, started_at, workdir, agent, agent_session_id, parent_session, user, host_key) \
@@ -178,7 +178,7 @@ impl Store {
         };
         tx.commit()?;
         drop(conn);
-        Ok((id, workdir))
+        Ok((id, workdir, true))
     }
 
     /// Read the host Session `id`; `None` when no host Session has that id.
