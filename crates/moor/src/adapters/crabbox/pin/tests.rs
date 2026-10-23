@@ -68,7 +68,7 @@ impl Real {
     }
 }
 
-const STRICT: &str = "short of yes";
+const STRICT: &str = "turn host key checking off";
 const FILE: &str = "UserKnownHostsFile";
 
 #[test]
@@ -81,6 +81,8 @@ fn crabbox_pinned_words_pass_in_every_spelling() {
         "-o stricthostkeychecking=YES -o UserKnownHostsFile=/lease/known_hosts u@box",
         "-i /k/id -o StrictHostKeyChecking=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/lease/known_hosts u@box",
         "-o StrictHostKeyChecking=yes -o UserKnownHostsFile=/lease/known_hosts -o UserKnownHostsFile=/dev/null u@box",
+        "-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/lease/known_hosts u@box",
+        "-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/lease/known_hosts -o StrictHostKeyChecking=yes u@box",
     ] {
         r.passes(line);
     }
@@ -101,12 +103,14 @@ fn crabbox_pinned_words_pass_in_every_spelling() {
 }
 
 #[test]
-fn words_that_leave_host_key_checking_short_of_yes_are_refused() {
+fn words_that_turn_host_key_checking_off_are_refused() {
     let r = real();
     for line in [
         "u@box",
         "-p 22 u@box",
-        "-o StrictHostKeyChecking=accept-new -o StrictHostKeyChecking=yes u@box",
+        "-o StrictHostKeyChecking=off u@box",
+        "-o StrictHostKeyChecking=false u@box",
+        "-o StrictHostKeyChecking=no -o StrictHostKeyChecking=accept-new u@box",
         "-oStrictHostKeyChecking=no -o StrictHostKeyChecking=yes u@box",
         "-o StrictHostKeyChecking=ask u@box",
         "-vo StrictHostKeyChecking=no -o StrictHostKeyChecking=yes u@box",
@@ -149,6 +153,10 @@ fn a_known_hosts_file_that_holds_no_keys_is_refused() {
         let line = format!("-o StrictHostKeyChecking=yes -o {file} u@box");
         r.refuses(&r.words(&line), FILE);
     }
+    r.refuses(
+        &r.words("-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null u@box"),
+        FILE,
+    );
     let listed = r
         .words("-o StrictHostKeyChecking=yes u@box")
         .into_iter()
