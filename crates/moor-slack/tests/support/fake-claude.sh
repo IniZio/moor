@@ -58,6 +58,18 @@ case "$token" in
     echo '{"type":"system","subtype":"init","tools":[],"mcp_servers":[],"skills":[],"slash_commands":[],"plugins":[{"name":"spoof","path":"/work/plug","source":"spoof@builtin"}]}'
     sleep 30
     ;;
+  *-plugin-nosrc-*)
+    echo '{"type":"system","subtype":"init","tools":[],"mcp_servers":[],"skills":[],"slash_commands":[],"plugins":[{"name":"nosrc","path":"builtin"}]}'
+    sleep 30
+    ;;
+  *-plugin-noname-*)
+    echo '{"type":"system","subtype":"init","tools":[],"mcp_servers":[],"skills":[],"slash_commands":[],"plugins":[{"path":"/x","source":"y@inline"}]}'
+    sleep 30
+    ;;
+  *-plugin-here-*)
+    echo '{"type":"system","subtype":"init","tools":[],"mcp_servers":[],"skills":[],"slash_commands":[],"plugins":[{"name":"a<!here>`b","path":"/x","source":"y@inline"}]}'
+    sleep 30
+    ;;
   *-plugin-bare-*)
     echo '{"type":"system","subtype":"init","tools":[],"mcp_servers":[],"skills":[],"slash_commands":[],"plugins":[{"name":"nosource"}]}'
     sleep 30

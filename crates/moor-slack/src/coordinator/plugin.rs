@@ -19,13 +19,14 @@ impl Plugin {
         items
             .into_iter()
             .flatten()
-            .filter_map(|item| {
-                let name = item.get("name").and_then(Value::as_str)?.to_owned();
+            .map(|item| {
+                let name = item.get("name").and_then(Value::as_str);
+                let name = name.unwrap_or("(unnamed)").to_owned();
                 let source = item.get("source").and_then(Value::as_str);
                 let path = item.get("path").and_then(Value::as_str);
                 let builtin =
                     source.is_some_and(|s| s.ends_with("@builtin")) && path == Some("builtin");
-                Some(Self { name, builtin })
+                Self { name, builtin }
             })
             .collect()
     }

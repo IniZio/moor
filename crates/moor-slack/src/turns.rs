@@ -322,6 +322,13 @@ impl Turns {
                 (self.log)(&format!("turn {}: {}", row.id, hide(&why)));
                 Closing::of(End::Unsafe, lines::UNSAFE.to_owned())
             }
+            Ended::Plugin(name) => {
+                (self.log)(&format!(
+                    "turn {}: the agent loaded the plugin {name}",
+                    row.id
+                ));
+                Closing::of(End::Unsafe, lines::plugin(&name))
+            }
             Ended::Killed => Closing::of(End::Killed, lines::KILLED.to_owned()),
         }
     }

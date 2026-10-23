@@ -199,10 +199,7 @@ fn builtin_plugins_run_and_any_other_plugin_kills_the_turn_before_it_does_anythi
     let dirs = Dirs::new();
     let started = now();
     let (ended, pid) = dirs.turn("sk-ant-oat01-plugin-local-1", LIMITS);
-    assert_eq!(
-        ended,
-        Ended::Unsafe("the agent loaded the plugin locplug".to_owned())
-    );
+    assert_eq!(ended, Ended::Plugin("locplug".to_owned()));
     assert!(
         started.elapsed() < Duration::from_secs(10),
         "the turn ran on"
@@ -210,18 +207,24 @@ fn builtin_plugins_run_and_any_other_plugin_kills_the_turn_before_it_does_anythi
     assert_gone(pid);
     let dirs = Dirs::new();
     let (ended, _) = dirs.turn("sk-ant-oat01-plugin-spoof-1", LIMITS);
-    let why = "the agent loaded the plugin spoof".to_owned();
     assert_eq!(
         ended,
-        Ended::Unsafe(why),
+        Ended::Plugin("spoof".to_owned()),
         "a builtin source on a real path is not built in"
     );
+    for (token, name) in [
+        ("sk-ant-oat01-plugin-nosrc-1", "nosrc"),
+        ("sk-ant-oat01-plugin-noname-1", "(unnamed)"),
+    ] {
+        let dirs = Dirs::new();
+        let (ended, _) = dirs.turn(token, LIMITS);
+        assert_eq!(ended, Ended::Plugin(name.to_owned()), "{token}");
+    }
     let dirs = Dirs::new();
     let (ended, _) = dirs.turn("sk-ant-oat01-plugin-bare-1", LIMITS);
-    let why = "the agent loaded the plugin nosource".to_owned();
     assert_eq!(
         ended,
-        Ended::Unsafe(why),
+        Ended::Plugin("nosource".to_owned()),
         "a plugin with no source is not built in"
     );
 }

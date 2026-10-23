@@ -29,6 +29,8 @@ pub(crate) enum Ended {
     /// The agent loaded more than the front gave it, or did not say what it loaded in time;
     /// the turn was killed. The text says why, for the log.
     Unsafe(String),
+    /// The agent loaded a plugin that is not built in; the turn was killed. Holds its name.
+    Plugin(String),
     /// The turn ran past [`Limits::turn`] and was killed.
     Killed,
 }
@@ -118,6 +120,10 @@ fn watch(
                 if let Some(why) = refused(&loaded, allowed) {
                     return unsafe_turn(why);
                 }
+                if let Some(plugin) = loaded.plugins.iter().find(|p| !p.builtin) {
+                    let ended = Ended::Plugin(plugin.name.clone());
+                    return (Seen::Ended(ended), Left::Stopped);
+                }
                 if !loaded.plugins.is_empty() {
                     let names: Vec<&str> = loaded.plugins.iter().map(|p| p.name.as_str()).collect();
                     log(&format!("turn loaded plugins: {}", names.join(", ")));
@@ -152,7 +158,7 @@ fn watch(
 }
 
 /// Why a turn that loaded `loaded` must not run: a tool or tool server beyond `allowed`, or
-/// any skill, slash command or non-built-in plugin, since the front gives the coordinator none.
+/// any skill or slash command, since the front gives the coordinator none.
 fn refused(loaded: &Loaded, allowed: &Allowed<'_>) -> Option<String> {
     let tools = loaded.tools.iter().filter(|t| !allowed.tools.contains(t));
     let servers = loaded.servers.iter().filter(|s| *s != allowed.server);
@@ -161,15 +167,6 @@ fn refused(loaded: &Loaded, allowed: &Allowed<'_>) -> Option<String> {
         ("tool server", servers.collect()),
         ("skill", loaded.skills.iter().collect()),
         ("slash command", loaded.commands.iter().collect()),
-        (
-            "plugin",
-            loaded
-                .plugins
-                .iter()
-                .filter(|p| !p.builtin)
-                .map(|p| &p.name)
-                .collect(),
-        ),
     ];
     extra.into_iter().find_map(|(what, names)| {
         names

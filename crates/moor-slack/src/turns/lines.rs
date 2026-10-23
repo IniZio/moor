@@ -10,6 +10,18 @@ const MAX_REPLY: usize = 4000;
 /// What follows a reply that was cut.
 const CUT_MARKER: &str = "… (cut)";
 
+/// Longest plugin name shown, in characters.
+const MAX_PLUGIN_NAME: usize = 80;
+
+/// The line for a turn whose agent loaded the plugin `name`, which is not built in. The name
+/// comes from the agent, so it is cut, escaped and shown without a backtick, which Slack cannot
+/// escape inside a code span.
+pub(super) fn plugin(name: &str) -> String {
+    let name: String = name.chars().take(MAX_PLUGIN_NAME).collect();
+    let name = escape(&name).replace('`', "'");
+    format!("The coordinator did not start: Claude Code loaded the plugin `{name}`, which is not built in.")
+}
+
 /// The line for a turn that loaded more than the front gave it.
 pub(super) const UNSAFE: &str = "The coordinator did not start safely.";
 

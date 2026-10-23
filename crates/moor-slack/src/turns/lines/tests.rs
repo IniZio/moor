@@ -2,7 +2,7 @@
 
 use moor_core::secret::Secret;
 
-use super::{redact, reply, stopped};
+use super::{plugin, redact, reply, stopped};
 
 #[test]
 fn a_reply_escapes_broadcasts_mentions_and_links() {
@@ -29,4 +29,15 @@ fn a_reason_hides_the_credential() {
         redact("bad sk-ant-oat01-s3cr3t here", &token),
         "bad [token] here"
     );
+}
+
+#[test]
+fn the_plugin_line_names_the_plugin_without_letting_markup_through() {
+    let line = plugin("a<!here>`b&");
+    assert_eq!(
+        line,
+        "The coordinator did not start: Claude Code loaded the plugin `a&lt;!here&gt;'b&amp;`, which is not built in."
+    );
+    let long = plugin(&"x".repeat(200));
+    assert!(long.contains(&format!("`{}`", "x".repeat(80))), "{long}");
 }

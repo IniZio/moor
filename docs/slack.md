@@ -79,6 +79,11 @@ The front logs the Claude Code version it found. If it finds no `claude`, or
 one older than 2.1.304, the coordinator is unavailable, and the front posts one line in each
 thread that says why.
 
+A coordinator turn refuses to run when Claude Code's init event lists a plugin
+that is not built in, and the thread gets one line naming it. A plugin's
+`SessionStart` hook runs before moor can see the init event, so the refusal
+stops tool calls, not hook code. Moor never adds plugins to a turn's config dir.
+
 ## Start work from Slack
 
 1. Each person links their own accounts. Run `/moor login` in any channel and
