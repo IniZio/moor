@@ -187,13 +187,18 @@ pub(super) fn serve<W: Write>(
                 since,
                 boxes,
                 kinds,
+                parent,
                 follow,
                 identity,
             }) => {
                 watch(
                     &mut writer,
                     since,
-                    &WatchFilter { boxes, kinds },
+                    &WatchFilter {
+                        boxes,
+                        kinds,
+                        parent,
+                    },
                     follow,
                     identity.as_ref(),
                 );

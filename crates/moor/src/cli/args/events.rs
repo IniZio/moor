@@ -2,7 +2,7 @@
 
 use clap::Args;
 use moor_core::controller::WatchFilter;
-use moor_core::BoxName;
+use moor_core::{BoxName, SessionId};
 
 use super::box_name;
 
@@ -18,6 +18,9 @@ pub(super) struct EventsArgs {
     /// Only this event kind; repeatable.
     #[arg(long = "kind", value_name = "KIND")]
     kinds: Vec<String>,
+    /// Only events of this Session's child Sessions.
+    #[arg(long, value_name = "SESSION")]
+    parent: Option<i64>,
     /// Keep streaming new events.
     #[arg(long)]
     follow: bool,
@@ -29,6 +32,7 @@ impl EventsArgs {
         let filter = WatchFilter {
             boxes: (!self.boxes.is_empty()).then_some(self.boxes),
             kinds: (!self.kinds.is_empty()).then_some(self.kinds),
+            parent: self.parent.map(SessionId::new),
         };
         (self.since, filter, self.follow)
     }

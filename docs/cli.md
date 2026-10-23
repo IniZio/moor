@@ -192,7 +192,7 @@ controller.
 | `moor version` | Prints the version, the git commit, and the envelope schema version. |
 | `moor env [OWNER/NAME] [--base REF]` | Previews the settings and credentials a Box of that GitHub repo would get, read through GitHub like a start. The default is the current checkout's `origin`. Only the operator may run it. |
 | `moor gate check SHA NAME` | Exits 0 when a run recorded with `moor run --record NAME` passed on commit `SHA`, and 1 when none did. `--command TEXT` counts only runs of exactly that command text. It reads only the runs of Boxes that you may act on. It does not check that `SHA` exists on origin. |
-| `moor events` | Prints stored events as JSON lines. Takes `--since ID`, `--box NAME`, `--kind KIND`, and `--follow`. |
+| `moor events` | Prints stored events as JSON lines. Takes `--since ID`, `--box NAME`, `--kind KIND`, `--parent SESSION` (only events of that Session's child Sessions), and `--follow`. |
 | `moor call` | Reads one JSON request from stdin and runs it. The output is always a JSON envelope. |
 | `moor controller serve --config FILE` | Runs the controller. See [the controller config](config.md#controller-config). |
 | `moor controller attach` | Connects stdin and stdout to the controller socket. `--socket PATH` overrides the socket. |

@@ -12,7 +12,7 @@ use crate::response::Response;
 use crate::user::Identity;
 
 /// Protocol revision a client announces in its hello frame.
-pub const PROTOCOL: u32 = 12;
+pub const PROTOCOL: u32 = 13;
 
 /// Most raw bytes one bytes frame carries; a reader refuses a larger `len`.
 pub const BYTES_MAX: usize = 64 * 1024;
@@ -46,6 +46,9 @@ pub enum ClientFrame {
         /// Only these event kinds; all when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         kinds: Option<Vec<String>>,
+        /// Only events of this Session's child Sessions; all when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent: Option<SessionId>,
         /// Keep streaming new events; false sends a caught-up frame, then closes the stream.
         #[serde(default = "follow_default", skip_serializing_if = "is_true")]
         follow: bool,
@@ -77,6 +80,8 @@ pub struct WatchFilter {
     pub boxes: Option<Vec<BoxName>>,
     /// Only these event kinds.
     pub kinds: Option<Vec<String>>,
+    /// Only events of the child Sessions of this Session.
+    pub parent: Option<SessionId>,
 }
 
 impl WatchFilter {

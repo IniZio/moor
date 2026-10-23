@@ -221,6 +221,7 @@ fn dial(
             since,
             boxes: filter.boxes.clone(),
             kinds: filter.kinds.clone(),
+            parent: filter.parent,
             follow,
             identity: client.identity.clone(),
         };

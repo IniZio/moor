@@ -181,6 +181,7 @@ fn watch_sends_since_filter_and_follow() {
     let filter = WatchFilter {
         boxes: Some(vec![BoxName::parse("repo/one").unwrap()]),
         kinds: Some(vec!["box_ready".to_owned()]),
+        parent: Some(moor_core::SessionId::new(9)),
     };
     let watch = Client::new(&sock).watch(42, filter, false).unwrap();
     assert!(collect(watch).is_empty());
@@ -193,6 +194,7 @@ fn watch_sends_since_filter_and_follow() {
             "since": 42,
             "boxes": ["repo/one"],
             "kinds": ["box_ready"],
+            "parent": 9,
             "follow": false,
         })
     );

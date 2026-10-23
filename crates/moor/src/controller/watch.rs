@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use moor_core::controller::{FrameErrorKind, ServerFrame, WatchFilter};
 use moor_core::user::Viewer;
-use moor_core::BoxId;
+use moor_core::{BoxId, SessionId};
 
 use super::drain::Drain;
 use crate::env::Env;
@@ -194,6 +194,7 @@ fn poll(env: &Env, ask: &Ask, limits: Limits, tx: &SyncSender<ServerFrame>, shar
         moor: &moor,
         ask,
         seen: HashMap::new(),
+        parents: HashMap::new(),
     };
     let follow = ask.follow;
     let mut cursor = ask.since;
@@ -254,6 +255,8 @@ struct Passes<'a> {
     ask: &'a Ask,
     /// Whether the viewer may see each Box met so far; a Box's user never changes.
     seen: HashMap<BoxId, bool>,
+    /// The parent of each Session met so far; a Session's parent never changes.
+    parents: HashMap<SessionId, Option<SessionId>>,
 }
 
 impl Passes<'_> {
@@ -262,6 +265,7 @@ impl Passes<'_> {
         let ServerFrame::Event {
             r#box,
             box_id,
+            session,
             kind,
             ..
         } = frame
@@ -270,6 +274,11 @@ impl Passes<'_> {
         };
         if !self.ask.filter.matches(r#box.as_deref(), kind) {
             return Ok(false);
+        }
+        if let Some(parent) = self.ask.filter.parent {
+            if self.parent_of(*session)? != Some(parent) {
+                return Ok(false);
+            }
         }
         let Some(id) = *box_id else {
             return Ok(self.ask.viewer.may_act_on(None));
@@ -280,6 +289,17 @@ impl Passes<'_> {
         let visible = self.moor.may_see(id)?;
         self.seen.insert(id, visible);
         Ok(visible)
+    }
+
+    /// The parent of `session`; none for an event with no Session.
+    fn parent_of(&mut self, session: Option<SessionId>) -> Result<Option<SessionId>, String> {
+        let Some(id) = session else { return Ok(None) };
+        if let Some(&parent) = self.parents.get(&id) {
+            return Ok(parent);
+        }
+        let parent = self.moor.session_parent(id)?;
+        self.parents.insert(id, parent);
+        Ok(parent)
     }
 }
 

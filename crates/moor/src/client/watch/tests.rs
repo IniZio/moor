@@ -13,6 +13,7 @@ fn filter() -> WatchFilter {
     WatchFilter {
         boxes: Some(vec![BoxName::parse_allow_bare("a").unwrap()]),
         kinds: Some(vec!["copied".to_owned()]),
+        parent: Some(moor_core::SessionId::new(4)),
     }
 }
 
@@ -50,6 +51,7 @@ fn sends_hello_then_watch_with_filter_and_follow() {
         since: 7,
         boxes: filter().boxes,
         kinds: filter().kinds,
+        parent: filter().parent,
         follow: true,
         identity: None,
     };
