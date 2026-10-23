@@ -59,7 +59,7 @@ fn run_output_reaches_the_client_while_the_command_runs() {
                 }
                 other => Some(Response::ok(other.cmd(), None)),
             },
-            |_, _, _, _| {},
+            |_, _, _, _, _| {},
         );
     });
 

@@ -377,9 +377,17 @@ fn watched(world: &World, viewer: Viewer) -> Vec<String> {
 
 /// The Box names of the events a watch over `socket` delivers until it catches up.
 fn watched_over(socket: &Path) -> Vec<String> {
+    watched_as(socket, None)
+}
+
+/// [`watched_over`] for a watch that asserts `identity`.
+fn watched_as(socket: &Path, identity: Option<&str>) -> Vec<String> {
     let mut write = UnixStream::connect(socket).expect("connect");
     let hello = json!({"frame": "hello", "protocol": PROTOCOL});
-    let watch = json!({"frame": "watch", "since": 0, "follow": false});
+    let mut watch = json!({"frame": "watch", "since": 0, "follow": false});
+    if let Some(identity) = identity {
+        watch["identity"] = json!(identity);
+    }
     writeln!(write, "{hello}\n{watch}").expect("send");
     let mut names = Vec::new();
     for line in BufReader::new(write).lines() {
@@ -403,6 +411,58 @@ fn a_watch_on_a_front_socket_carries_no_events_and_the_operator_sees_all() {
         watched_over(&world.served.main),
         [A_BOX, B_BOX, NO_USER_BOX, OPERATOR_BOX]
     );
+}
+
+#[test]
+fn a_watch_on_a_front_socket_carries_the_boxes_of_the_user_it_asserts() {
+    let world = World::new();
+    let slack = world.slack();
+    assert_eq!(watched_as(&slack, Some(A)), [A_BOX]);
+    assert_eq!(watched_as(&slack, Some(B)), [B_BOX]);
+    assert_eq!(watched_as(&slack, Some(OPERATOR_ON_SLACK)), [OPERATOR_BOX]);
+    assert_eq!(
+        watched_as(&slack, Some("slack:T1:NOBODY")),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn a_watch_asserting_an_identity_its_socket_may_not_assert_carries_nothing() {
+    let world = World::new();
+    assert_eq!(
+        watched_as(&world.slack(), Some("web:A")),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        watched_as(&world.served.main, Some(A)),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn a_client_acting_as_a_user_watches_and_acts_only_on_that_users_boxes() {
+    let world = World::new();
+    let identity = moor_core::user::Identity::parse(A).expect("identity");
+    let client = moor_client::Client::new(world.slack()).acting_as(identity);
+    let watch = client
+        .watch(0, WatchFilter::default(), false)
+        .expect("watch");
+    let mut names: Vec<String> = watch
+        .filter_map(|item| match item.expect("item") {
+            moor_client::WatchItem::Event(event) => event.box_name,
+            moor_client::WatchItem::CaughtUp { .. } => None,
+        })
+        .collect();
+    names.dedup();
+    assert_eq!(names, [A_BOX]);
+    let show = |name: &str| {
+        let request = json!({"cmd": "show", "box": name});
+        let request: Request = serde_json::from_value(request).expect("request");
+        client.request(request, |_| {}).expect("reply")
+    };
+    assert!(show(A_BOX).error.is_none(), "{:?}", show(A_BOX));
+    let other = show(B_BOX).error.expect("B's Box is refused");
+    assert_eq!(other.message, "not your Box");
 }
 
 #[test]

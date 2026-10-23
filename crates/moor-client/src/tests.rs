@@ -12,6 +12,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use moor_core::request::ShowReq;
+use moor_core::user::Identity;
 use moor_core::{BoxId, BoxName, SessionId};
 
 use super::*;
@@ -209,6 +210,35 @@ fn watch_follow_omits_defaults() {
     let seen = server.join().unwrap();
     let sent: serde_json::Value = serde_json::from_str(&seen[1]).unwrap();
     assert_eq!(sent, serde_json::json!({"frame": "watch", "since": 0}));
+}
+
+#[test]
+fn an_acting_client_asserts_its_identity_on_requests_and_watches() {
+    let identity = Identity::parse("slack:T1/U1").unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("c.sock");
+    let answer = format!(
+        r#"{{"frame":"response","id":"1","envelope":{}}}"#,
+        ok_envelope()
+    );
+    let server = serve(&sock, vec![vec![hello()], vec![answer]]);
+    let acting = Client::new(&sock).acting_as(identity);
+    acting.request(show(), |_| {}).unwrap();
+    let seen = server.join().unwrap();
+    let sent: serde_json::Value = serde_json::from_str(&seen[1]).unwrap();
+    assert_eq!(sent["request"]["cmd"], "as");
+    assert_eq!(sent["request"]["identity"], "slack:T1/U1");
+    assert_eq!(sent["request"]["request"]["cmd"], "show");
+    std::fs::remove_file(&sock).unwrap();
+    let server = serve(&sock, vec![vec![hello()], vec![]]);
+    let watch = acting.watch(0, WatchFilter::default(), true).unwrap();
+    assert!(collect(watch).is_empty());
+    let seen = server.join().unwrap();
+    let sent: serde_json::Value = serde_json::from_str(&seen[1]).unwrap();
+    assert_eq!(
+        sent,
+        serde_json::json!({"frame": "watch", "since": 0, "identity": "slack:T1/U1"})
+    );
 }
 
 #[test]
