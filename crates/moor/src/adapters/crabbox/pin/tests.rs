@@ -81,8 +81,6 @@ fn crabbox_pinned_words_pass_in_every_spelling() {
         "-o stricthostkeychecking=YES -o UserKnownHostsFile=/lease/known_hosts u@box",
         "-i /k/id -o StrictHostKeyChecking=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/lease/known_hosts u@box",
         "-o StrictHostKeyChecking=yes -o UserKnownHostsFile=/lease/known_hosts -o UserKnownHostsFile=/dev/null u@box",
-        "-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/lease/known_hosts u@box",
-        "-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/lease/known_hosts -o StrictHostKeyChecking=yes u@box",
     ] {
         r.passes(line);
     }
@@ -222,4 +220,44 @@ fn an_answer_without_a_known_hosts_file_is_refused() {
         r.cb.options = Arc::new(options);
         r.refuses(&r.words("u@box"), FILE);
     }
+}
+
+fn accept_new(file: &std::path::Path) -> String {
+    format!(
+        "-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile={} u@box",
+        file.display()
+    )
+}
+
+#[test]
+fn accept_new_needs_a_known_hosts_file_ssh_can_add_to() {
+    let r = real();
+    r.refuses(
+        &r.words(&accept_new(std::path::Path::new("/proc/version"))),
+        "not writable",
+    );
+    let locked = r.path("locked");
+    fs::write(&locked, "").unwrap();
+    fs::set_permissions(&locked, std::os::unix::fs::PermissionsExt::from_mode(0o400)).unwrap();
+    let words = r.words(&accept_new(&locked));
+    if rustix::process::geteuid().is_root() {
+        return;
+    }
+    r.refuses(&words, "not writable");
+    r.refuses(&words, locked.to_str().unwrap());
+    let roomy = r.path("roomy");
+    fs::write(&roomy, "").unwrap();
+    r.passes(&accept_new(&roomy));
+    r.passes(&accept_new(&r.path("missing")));
+    let ro_dir = r.path("rodir");
+    fs::create_dir(&ro_dir).unwrap();
+    fs::set_permissions(&ro_dir, std::os::unix::fs::PermissionsExt::from_mode(0o500)).unwrap();
+    r.refuses(&r.words(&accept_new(&ro_dir.join("kh"))), "not writable");
+    fs::set_permissions(&ro_dir, std::os::unix::fs::PermissionsExt::from_mode(0o700)).unwrap();
+}
+
+#[test]
+fn yes_does_not_need_a_writable_known_hosts_file() {
+    let r = real();
+    r.passes("-o StrictHostKeyChecking=yes -o UserKnownHostsFile=/proc/version u@box");
 }
