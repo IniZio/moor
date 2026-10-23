@@ -108,11 +108,14 @@ fn default_github_api_base() -> String {
 /// Returns [`ConfigError`] (with `file` set) for bad YAML, unknown keys, mistyped values,
 /// empty token paths and an unusable API base; the error path names the key.
 pub fn parse_config(file: &str, text: &str) -> Result<Config, ConfigError> {
-    let cfg: Config = parse_strict(file, text).map_err(|mut e| {
+    let cfg: Config = parse_strict(file, text).map_err(|e| {
         if e.path == "channels" {
-            e.reason = "this key was removed: the bot answers in every channel it is invited to, \
-                        so delete `channels` from the config"
-                .to_owned();
+            return ConfigError::new(
+                "channels",
+                "this key was removed: the bot answers in every channel it is invited to, \
+                 so delete `channels` from the config",
+            )
+            .in_file(file);
         }
         e
     })?;
