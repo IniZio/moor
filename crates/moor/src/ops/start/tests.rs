@@ -36,6 +36,7 @@ mod lease_handle;
 mod others;
 mod parent;
 mod provider_caps;
+mod provider_unset;
 mod proxy;
 mod relaunch;
 mod relaunch_sessions;
@@ -64,6 +65,19 @@ struct World {
 /// Builds a world whose driver is `driver`.
 fn world(driver: FakeDriver) -> World {
     world_with(driver, UserConfig::default())
+}
+
+/// Builds a world whose user config names no `box.provider`.
+fn world_without_provider(driver: FakeDriver) -> World {
+    let mut w = world_with(driver, UserConfig::default());
+    w.cx = Cx::fake_without_provider(
+        w.dir.path(),
+        w.driver.clone(),
+        w.surface.clone(),
+        w.proc.clone(),
+    )
+    .with_forge(w.forge.clone());
+    w
 }
 
 /// Builds a world with user config `config`.

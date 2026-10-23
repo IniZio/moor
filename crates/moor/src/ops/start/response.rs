@@ -7,7 +7,7 @@ use moor_core::view::{AgentLaunchView, DotfilesView, SetupView, StartView};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::capacity;
-use crate::ops::common::facts::settings_of;
+use crate::ops::common::facts::{provider_of, settings_of};
 use crate::ops::common::provision::Provisioned;
 use crate::ops::common::view::{box_view, hide_unsupported_sleep};
 use crate::store::BoxRow;
@@ -30,14 +30,19 @@ pub(super) fn with_provider(
         return Ok(view(cx, row, attached));
     }
     let cfg = settings_of(cx, row, &Flags::default())?;
-    Ok(queued_view(cx, row, attached, &cfg.provider.value))
+    Ok(queued_view(cx, row, attached, provider_of(&cfg).ok()))
 }
 
 /// The response for `row`, with the limit that queued it named in a warning.
-pub(super) fn queued_view(cx: &Cx, row: &BoxRow, attached: bool, provider: &str) -> StartView {
+pub(super) fn queued_view(
+    cx: &Cx,
+    row: &BoxRow,
+    attached: bool,
+    provider: Option<&str>,
+) -> StartView {
     let mut v = view(cx, row, attached);
     if v.queued {
-        if let Some(lim) = capacity::limit(cx.config(), provider) {
+        if let Some(lim) = provider.and_then(|p| capacity::limit(cx.config(), p)) {
             v.warnings_inline.push(format!(
                 "waiting for a free box: {} allows {} at a time",
                 lim.key, lim.max

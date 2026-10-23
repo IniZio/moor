@@ -59,12 +59,9 @@ fn model_precedence() {
 #[test]
 fn provider_never_from_repo() {
     let s = resolve("{}", Some("{}"), &Flags::default());
-    assert_eq!(
-        s.provider,
-        Sourced::new("local-container".to_string(), Layer::Default)
-    );
+    assert_eq!(s.provider, None);
     let s = resolve("box: {provider: p}", None, &Flags::default());
-    assert_eq!(s.provider, Sourced::new("p".to_string(), Layer::User));
+    assert_eq!(s.provider, Some(Sourced::new("p".to_string(), Layer::User)));
 }
 
 #[test]
@@ -93,7 +90,7 @@ fn size_decision_58() {
         &Flags::default(),
     );
     assert_eq!(s.size, Sourced::new(BoxSize::Large, Layer::Repo));
-    assert_eq!(s.provider, Sourced::new("p".to_string(), Layer::User));
+    assert_eq!(s.provider, Some(Sourced::new("p".to_string(), Layer::User)));
 }
 
 #[test]

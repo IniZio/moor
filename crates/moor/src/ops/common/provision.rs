@@ -20,7 +20,7 @@ use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::capacity;
 use crate::ops::common::dotfiles::{self, DotfilesRun};
-use crate::ops::common::facts::{provider_caps, require_reverse_tunnel, settings_of};
+use crate::ops::common::facts::{provider_caps, provider_of, require_reverse_tunnel, settings_of};
 use crate::ops::common::setup;
 use crate::ops::common::view::box_view;
 use crate::store::lease::LeaseKind;
@@ -133,8 +133,11 @@ pub(crate) fn provision(
     cfg: &BoxSettings,
 ) -> Result<Provisioned, CommandError> {
     let started = reread(store, id)?;
-    let provider = ProviderId::new(cfg.provider.value.clone());
-    require_reverse_tunnel(cfg, provider_caps(cx, cfg)?)?;
+    let provider = match started.boxed.as_ref() {
+        Some(held) => held.provider.clone(),
+        None => ProviderId::new(provider_of(cfg)?),
+    };
+    require_reverse_tunnel(provider.as_str(), provider_caps(cx, provider.as_str())?)?;
     let mut requested = Decision::new(id);
     requested.lifecycle_input = entry.begin();
     let requested = requested
@@ -183,7 +186,8 @@ pub(crate) fn provision(
             record_acquired(store, id, &got)?;
             hold_workdir(store, id, &got)?;
             let log_dir = setup::log_dir(cx.state_dir()?, id);
-            let target = SetupTarget::new(&got, started.repo.as_ref(), &log_dir);
+            let target =
+                SetupTarget::new(&got, req.provider.as_str(), started.repo.as_ref(), &log_dir);
             run_and_record(cx, store, id, entry.begin().is_some(), &target, cfg)
         }
         Err(e) => Err(failed(cx, store, id, entry, &req, e)),
@@ -217,6 +221,8 @@ fn record_acquired(store: &Store, id: BoxId, got: &Acquired) -> Result<(), Comma
 struct SetupTarget<'a> {
     /// The Box setup runs in.
     handle: &'a BoxHandle,
+    /// The provider that holds the Box.
+    provider: &'a str,
     /// Working directory in the Box.
     workdir: &'a BoxPath,
     /// The repo the Box clones, with the author it commits as; `None` for an empty workdir.
@@ -227,9 +233,15 @@ struct SetupTarget<'a> {
 
 impl<'a> SetupTarget<'a> {
     /// The target for a freshly acquired Box.
-    const fn new(got: &'a Acquired, repo: Option<&'a BoxRepo>, log_dir: &'a Path) -> Self {
+    const fn new(
+        got: &'a Acquired,
+        provider: &'a str,
+        repo: Option<&'a BoxRepo>,
+        log_dir: &'a Path,
+    ) -> Self {
         Self {
             handle: &got.handle,
+            provider,
             workdir: &got.workdir,
             repo,
             log_dir,
@@ -250,7 +262,7 @@ fn run_through_proxy(
         Ok(proxy) => setup::run_setup(
             cx,
             target.handle,
-            &cfg.provider.value,
+            target.provider,
             target.workdir,
             target.log_dir,
             cfg,
@@ -282,7 +294,7 @@ fn run_and_record(
         store.apply(Decision::new(id).event(ExtraEvent::Cloned { ms }))?;
     }
     let run = run_through_proxy(cx, store, id, target, cfg, &proxy);
-    let dotfiles = match dotfiles::apply(cx, target.handle, id, cfg, &proxy) {
+    let dotfiles = match dotfiles::apply(cx, (target.handle, target.provider), id, cfg, &proxy) {
         Ok(d) => d,
         Err(f) => dotfiles_warned(cx, f),
     };

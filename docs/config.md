@@ -1,7 +1,7 @@
 # Configuration reference
 
 moor reads three YAML files. moor rejects unknown keys in each file. An empty
-file means every key takes its default.
+file means every key takes its default, except `box.provider`, which has none.
 
 | File | Who writes it | Where it is |
 | --- | --- | --- |
@@ -15,7 +15,7 @@ file means every key takes its default.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `box.provider` | string | `local-container` | The crabbox provider for new Boxes. A repo cannot set it. |
+| `box.provider` | string | none | The crabbox provider for new Boxes. Required to start a Box: `moor start` of a new Box fails until it is set. Existing Boxes keep the provider they started on. A repo cannot set it. |
 | `box.size` | `small`, `medium`, `large`, or `xlarge` | `small` | The Box size. A `.moor.yaml` value wins over this one. |
 | `box.max_boxes` | integer, at least 1 | none | The most live Boxes at once. |
 | `box.sleep_after` | duration such as `30s`, `45m`, `2h`, or `1d` | `30m` | How long a Box stays idle before moor puts it to sleep. |

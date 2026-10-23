@@ -20,7 +20,7 @@ use super::common::activity;
 use super::common::autosleep;
 use super::common::boxlock::{self, BoxLock};
 use super::common::facts::{
-    provider_caps, repo_config_of, require_reverse_tunnel, resolved, settings_of,
+    provider_caps, provider_of, repo_config_of, require_reverse_tunnel, resolved, settings_of,
 };
 use super::common::provision::{provision, reprovision, reread, Entry, Provisioned};
 use super::common::provisioning::dead_provisioning;
@@ -86,8 +86,8 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     };
     let repo_cfg = repo_config_of(facts.repo.as_ref(), facts.base.as_deref())?;
     let cfg = resolved(cx, repo_cfg.as_ref(), &flags);
-    let caps = provider_caps(cx, &cfg)?;
-    require_reverse_tunnel(&cfg, caps)?;
+    let provider = provider_of(&cfg)?;
+    require_reverse_tunnel(provider, provider_caps(cx, provider)?)?;
     if let Some(reason) = preflight::rejection(cx, &cfg, &facts.files, user)? {
         return reject(cx, store, (req, user), &facts, &reason);
     }
@@ -117,7 +117,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     };
     let agent = watch::run(cx, store, id, agent);
     let row = reread(store, id)?;
-    let mut v = queued_view(cx, &row, false, &cfg.provider.value);
+    let mut v = queued_view(cx, &row, false, provider_of(&cfg).ok());
     set_provisioned(&mut v, &done);
     set_agent(&mut v, agent);
     Ok(v)

@@ -13,7 +13,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::capacity;
-use crate::ops::common::facts::settings_of;
+use crate::ops::common::facts::{provider_of, settings_of};
 use crate::ops::common::provision::{provision, reread, Entry};
 use crate::store::Store;
 
@@ -55,7 +55,7 @@ fn promote_into(
     let mut cfgs: HashMap<BoxId, (BoxName, Option<UserId>, BoxSettings)> = HashMap::new();
     for row in store.waiting_boxes()? {
         match settings_of(cx, &row, &Flags::default()) {
-            Ok(cfg) if cfg.provider.value == provider.as_str() => {
+            Ok(cfg) if provider_of(&cfg).is_ok_and(|p| p == provider.as_str()) => {
                 cfgs.insert(row.id, (row.name.clone(), row.user, cfg));
             }
             Ok(_) => {}

@@ -100,8 +100,8 @@ pub struct EnvRow {
 /// Box provider and size.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EnvProvider {
-    /// Provider name.
-    pub name: String,
+    /// Provider name; `None` when the user config names none.
+    pub name: Option<String>,
     /// Layer of the provider.
     pub source: Layer,
     /// Box size.
@@ -146,8 +146,11 @@ impl EnvView {
             model: settings.model.as_ref().map(|m| m.value.clone()),
         };
         let provider = EnvProvider {
-            name: settings.provider.value.clone(),
-            source: settings.provider.source,
+            name: settings.provider.as_ref().map(|p| p.value.clone()),
+            source: settings
+                .provider
+                .as_ref()
+                .map_or(Layer::Default, |p| p.source),
             size: settings.size.value.as_str().to_owned(),
             size_source: settings.size.source,
         };

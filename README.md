@@ -78,7 +78,15 @@ This guide starts one Box from a git repo on your machine. You need:
    A Box's Proxy adds these secrets to the agent's requests. Nothing comes
    from your shell or your user config.
 
-4. In your repo, preview the settings a Box would get:
+4. Name the provider for new Boxes in your user config. moor has no default
+   provider, and `moor start` refuses until `box.provider` is set:
+
+   ```sh
+   mkdir -p ~/.config/moor
+   printf 'box:\n  provider: local-container\n' > ~/.config/moor/config.yaml
+   ```
+
+5. In your repo, preview the settings a Box would get:
 
    ```sh
    cd ~/src/your-repo
@@ -86,9 +94,9 @@ This guide starts one Box from a git repo on your machine. You need:
    ```
 
    Each line names a setting and the layer it came from, such as
-   `box provider  [default]  local-container`.
+   `box provider  [user]  local-container`.
 
-5. Start a Box with a goal for the agent:
+6. Start a Box with a goal for the agent:
 
    ```sh
    moor start fix-typo --goal "Fix the typo in the README"
@@ -98,7 +106,7 @@ This guide starts one Box from a git repo on your machine. You need:
    `--repo OWNER/NAME`. moor creates the herdr workspace and the machine, the
    machine clones the repo, and then the agent starts.
 
-6. Follow the Box, and close it when the agent is done:
+7. Follow the Box, and close it when the agent is done:
 
    ```sh
    moor show fix-typo

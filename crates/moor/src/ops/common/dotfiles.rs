@@ -145,7 +145,7 @@ fn install(
 /// the Proxy went; an `Err` fails the step before anything is packed.
 pub(crate) fn apply(
     cx: &Cx,
-    handle: &BoxHandle,
+    (handle, provider): (&BoxHandle, &str),
     id: BoxId,
     cfg: &BoxSettings,
     proxy: &Result<Option<BoxProxy>, String>,
@@ -183,7 +183,7 @@ pub(crate) fn apply(
     let script = box_script(&stage, archive.as_str(), d.install.as_deref());
     let site = Site {
         handle,
-        provider: &cfg.provider.value,
+        provider,
         workdir: None,
     };
     let reason = match install(cx, &site, cfg, proxy.as_ref(), script, &log) {
