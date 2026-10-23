@@ -69,6 +69,7 @@ fn watch_session(
             boxes: filter.boxes.clone(),
             kinds: filter.kinds.clone(),
             follow,
+            identity: None,
         },
     )
     .map_err(ClientError::Protocol)?;

@@ -9,9 +9,10 @@ use serde::{Deserialize, Serialize};
 use crate::name::{BoxId, BoxName, SessionId};
 use crate::request::Request;
 use crate::response::Response;
+use crate::user::Identity;
 
 /// Protocol revision a client announces in its hello frame.
-pub const PROTOCOL: u32 = 11;
+pub const PROTOCOL: u32 = 12;
 
 /// Most raw bytes one bytes frame carries; a reader refuses a larger `len`.
 pub const BYTES_MAX: usize = 64 * 1024;
@@ -48,6 +49,10 @@ pub enum ClientFrame {
         /// Keep streaming new events; false sends a caught-up frame, then closes the stream.
         #[serde(default = "follow_default", skip_serializing_if = "is_true")]
         follow: bool,
+        /// The identity whose Boxes the stream carries, checked against the socket the watch
+        /// arrived on as a request's would be; the controller socket's own peer when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        identity: Option<Identity>,
     },
 }
 

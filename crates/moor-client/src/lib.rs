@@ -14,8 +14,9 @@ use std::time::Duration;
 use moor_core::controller::{
     parse_server_frame, ClientFrame, FrameErrorKind, ServerFrame, WatchFilter, BYTES_MAX, PROTOCOL,
 };
-use moor_core::request::Request;
+use moor_core::request::{ActAsReq, Request};
 use moor_core::response::Response;
+use moor_core::user::Identity;
 
 pub use error::ClientError;
 pub use redial::{redial, Attempt, GaveUp, Redial, WallClock, ATTACH_REFUSED_EXIT};
@@ -60,6 +61,8 @@ pub struct Client {
     timeouts: Timeouts,
     /// When a call whose request did not run dials again.
     redial: Redial,
+    /// The identity every request and watch asserts; none speaks as the socket's own peer.
+    identity: Option<Identity>,
 }
 
 impl Client {
@@ -69,7 +72,16 @@ impl Client {
             socket: socket.into(),
             timeouts: Timeouts::default(),
             redial: Redial::default(),
+            identity: None,
         }
+    }
+
+    /// This client, asserting `identity` on every request (inside `as`) and every watch. A
+    /// front socket refuses a request that asserts no identity, or one outside its namespace.
+    #[must_use]
+    pub fn acting_as(mut self, identity: Identity) -> Self {
+        self.identity = Some(identity);
+        self
     }
 
     /// Replaces the default socket timeouts.
@@ -201,6 +213,17 @@ impl Client {
         Watch::open(self.clone(), since, filter, follow)
     }
 
+    /// `request` as this client sends it: inside `as` when it acts as an identity.
+    fn asserting(&self, request: &Request) -> Request {
+        let Some(identity) = self.identity.clone() else {
+            return request.clone();
+        };
+        Request::As(ActAsReq {
+            identity,
+            request: Box::new(request.clone()),
+        })
+    }
+
     /// Runs `attempt` under this client's redial policy.
     fn redialing<T>(
         &self,
@@ -220,7 +243,7 @@ impl Client {
             .and_then(|mut conn| {
                 let frame = ClientFrame::Request {
                     id: REQUEST_ID.to_owned(),
-                    request: Box::new(request.clone()),
+                    request: Box::new(self.asserting(request)),
                 };
                 match conn.send(&frame) {
                     Ok(()) => Attempt::Done(conn),

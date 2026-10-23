@@ -51,6 +51,7 @@ fn sends_hello_then_watch_with_filter_and_follow() {
         boxes: filter().boxes,
         kinds: filter().kinds,
         follow: true,
+        identity: None,
     };
     let hello = ClientFrame::Hello { protocol: PROTOCOL };
     assert_eq!(sent, format!("{}{}", hello.to_line(), watch.to_line()));

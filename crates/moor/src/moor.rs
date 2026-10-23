@@ -105,10 +105,14 @@ impl Moor {
         ops::authz::authorize(&self.cx, caller, asserted, request)
     }
 
-    /// Whose Boxes `caller` may see when it asserts no identity, as a watch does; no Box when
-    /// that cannot be told.
-    pub(crate) fn watcher(&self, caller: &Result<Caller, String>) -> Viewer {
-        ops::authz::viewer(&self.cx, caller, None).unwrap_or(Viewer::Nobody)
+    /// Whose Boxes a watch from `caller` asserting `asserted` may see; no Box when `caller` may
+    /// not assert it or that cannot be told.
+    pub(crate) fn watcher(
+        &self,
+        caller: &Result<Caller, String>,
+        asserted: Option<&Identity>,
+    ) -> Viewer {
+        ops::authz::viewer(&self.cx, caller, asserted).unwrap_or(Viewer::Nobody)
     }
 
     /// Whether this engine's viewer may see Box `id`.

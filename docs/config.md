@@ -263,7 +263,9 @@ that an open Box uses from a free one. A list, such as `moor show` with no Box
 or `sessions`, shows only the caller's Boxes. `gate` reads only the recorded
 runs of those Boxes. A warning in a reply never names a Box that the caller
 may not see. A watch carries only the events of the caller's Boxes. A watch
-frame asserts no identity, so a watch on a front socket carries no events.
+frame may assert an `identity`, checked like a request's. A front's watch
+carries the Boxes of the user it asserts. A watch on a front socket that
+asserts no identity, or one the socket may not assert, carries no events.
 
 Some requests read or change the controller host, so only the operator may
 send them:

@@ -12,6 +12,7 @@ use crate::env::Env;
 use crate::Moor;
 use moor_core::controller::{WatchFilter, PROTOCOL};
 use moor_core::name::BoxName;
+use moor_core::user::Identity;
 use moor_core::{Request, ShowReq};
 
 fn env(dir: &tempfile::TempDir) -> Env {
@@ -167,7 +168,8 @@ fn watch_frame_filter_and_follow_reach_the_stream() {
     let input = format!(
         "{}\n{}\n",
         hello(),
-        json!({"frame": "watch", "since": 5, "boxes": ["a"], "kinds": ["idled"], "follow": false})
+        json!({"frame": "watch", "since": 5, "boxes": ["a"], "kinds": ["idled"], "follow": false,
+            "identity": "slack:T1/U1"})
     );
     let seen = std::cell::RefCell::new(None);
     serve(
@@ -175,15 +177,16 @@ fn watch_frame_filter_and_follow_reach_the_stream() {
         Vec::new(),
         &Admitted::unwatched(),
         |_, _, _| Some(Moor::version()),
-        |_, since, filter: &WatchFilter, follow| {
-            *seen.borrow_mut() = Some((since, filter.clone(), follow));
+        |_, since, filter: &WatchFilter, follow, identity: Option<&Identity>| {
+            *seen.borrow_mut() = Some((since, filter.clone(), follow, identity.cloned()));
         },
     );
     let filter = WatchFilter {
         boxes: Some(vec![BoxName::parse_allow_bare("a").expect("name")]),
         kinds: Some(vec!["idled".to_owned()]),
     };
-    assert_eq!(seen.into_inner(), Some((5, filter, false)));
+    let identity = Identity::parse("slack:T1/U1").expect("identity");
+    assert_eq!(seen.into_inner(), Some((5, filter, false, Some(identity))));
 }
 
 #[test]

@@ -64,12 +64,13 @@ pub(crate) fn handle(reader: impl BufRead, writer: impl Write, env: &Env, peer: 
                 }
             }
         },
-        |writer, since, filter, follow| {
+        |writer, since, filter, follow, asserted| {
             let ask = watch::Ask {
                 since,
                 filter: filter.clone(),
                 follow,
-                viewer: Moor::from_env(env).map_or(Viewer::Nobody, |m| m.watcher(&peer.caller)),
+                viewer: Moor::from_env(env)
+                    .map_or(Viewer::Nobody, |m| m.watcher(&peer.caller, asserted)),
             };
             watch::stream_draining(
                 writer,
@@ -157,7 +158,7 @@ pub(super) fn serve<W: Write>(
     mut writer: W,
     conn: &Admitted,
     answer: impl Fn(&str, Request, &mut dyn Write) -> Option<Response>,
-    watch: impl Fn(&mut W, i64, &WatchFilter, bool),
+    watch: impl Fn(&mut W, i64, &WatchFilter, bool, Option<&Identity>),
 ) {
     let mut handshaken = false;
     for line in reader.lines() {
@@ -179,25 +180,25 @@ pub(super) fn serve<W: Write>(
                 kind: FrameErrorKind::UnsupportedProtocol,
                 message: format!("client speaks protocol {protocol}, controller speaks {PROTOCOL}"),
             },
-            Ok(ClientFrame::Watch { .. }) if !handshaken => ServerFrame::Error {
-                id: None,
-                kind: FrameErrorKind::HelloRequired,
-                message: "watch arrived before hello".to_owned(),
-            },
+            Ok(frame) if !handshaken && !matches!(frame, ClientFrame::Hello { .. }) => {
+                hello_required(frame)
+            }
             Ok(ClientFrame::Watch {
                 since,
                 boxes,
                 kinds,
                 follow,
+                identity,
             }) => {
-                watch(&mut writer, since, &WatchFilter { boxes, kinds }, follow);
+                watch(
+                    &mut writer,
+                    since,
+                    &WatchFilter { boxes, kinds },
+                    follow,
+                    identity.as_ref(),
+                );
                 return;
             }
-            Ok(ClientFrame::Request { id, .. }) if !handshaken => ServerFrame::Error {
-                message: format!("request {id} arrived before hello"),
-                id: Some(id),
-                kind: FrameErrorKind::HelloRequired,
-            },
             Ok(ClientFrame::Request { id, request }) => match conn
                 .answering()
                 .and_then(|_answering| answer(&id, *request, &mut writer))
@@ -218,6 +219,22 @@ pub(super) fn serve<W: Write>(
     }
     if conn.drain().begun() {
         send(&mut writer, &restarting());
+    }
+}
+
+/// The error for `frame`, a watch or a request, sent before the hello.
+fn hello_required(frame: ClientFrame) -> ServerFrame {
+    let (id, message) = match frame {
+        ClientFrame::Request { id, .. } => (
+            Some(id.clone()),
+            format!("request {id} arrived before hello"),
+        ),
+        _ => (None, "watch arrived before hello".to_owned()),
+    };
+    ServerFrame::Error {
+        id,
+        kind: FrameErrorKind::HelloRequired,
+        message,
     }
 }
 

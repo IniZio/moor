@@ -222,6 +222,7 @@ fn dial(
             boxes: filter.boxes.clone(),
             kinds: filter.kinds.clone(),
             follow,
+            identity: client.identity.clone(),
         };
         match conn
             .send(&frame)

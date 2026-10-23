@@ -86,6 +86,7 @@ fn parses_watch() {
             boxes: None,
             kinds: None,
             follow: true,
+            identity: None,
         })
     );
 }
@@ -97,6 +98,7 @@ fn watch_with_filter_and_no_follow_round_trips() {
         boxes: Some(vec![BoxName::parse_allow_bare("fix-login").expect("name")]),
         kinds: Some(vec!["idled".to_owned()]),
         follow: false,
+        identity: None,
     };
     let line = watch.to_line();
     assert!(line.contains(r#""boxes":["fix-login"]"#), "{line}");
@@ -111,8 +113,24 @@ fn default_watch_omits_filter_and_follow() {
         boxes: None,
         kinds: None,
         follow: true,
+        identity: None,
     };
     assert_eq!(watch.to_line(), "{\"frame\":\"watch\",\"since\":3}\n");
+}
+
+#[test]
+fn a_watch_carries_the_identity_it_asserts() {
+    let identity = Identity::parse("slack:T1/U1").expect("identity");
+    let watch = ClientFrame::Watch {
+        since: 0,
+        boxes: None,
+        kinds: None,
+        follow: true,
+        identity: Some(identity),
+    };
+    let line = watch.to_line();
+    assert!(line.contains(r#""identity":"slack:T1/U1""#), "{line}");
+    assert_eq!(parse_frame(&line), Ok(watch));
 }
 
 #[test]
@@ -269,8 +287,8 @@ fn event_frame_golden_without_box_or_session() {
 }
 
 #[test]
-fn protocol_is_eleven_and_old_hello_still_parses() {
-    assert_eq!(PROTOCOL, 11);
+fn protocol_is_twelve_and_old_hello_still_parses() {
+    assert_eq!(PROTOCOL, 12);
     let got = parse_frame(r#"{"frame":"hello","protocol":1}"#);
     assert_eq!(got, Ok(ClientFrame::Hello { protocol: 1 }));
 }
@@ -315,6 +333,7 @@ fn client_frames_round_trip_through_parse_frame() {
         boxes: None,
         kinds: None,
         follow: true,
+        identity: None,
     };
     assert_eq!(parse_frame(&watch.to_line()), Ok(watch));
 }

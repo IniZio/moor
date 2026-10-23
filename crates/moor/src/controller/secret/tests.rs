@@ -77,7 +77,7 @@ fn exchange(cx: Cx, requests: &[Request]) -> (String, String, Vec<Value>) {
         &mut out,
         &Admitted::unwatched(),
         |_, r, _| Some(moor.call(r)),
-        |_, _, _, _| {},
+        |_, _, _, _, _| {},
     );
     let out = String::from_utf8(out).expect("utf8");
     let frames = out
