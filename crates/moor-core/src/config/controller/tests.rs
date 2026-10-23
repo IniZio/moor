@@ -196,3 +196,16 @@ fn a_front_state_dir_under_tmp_is_refused() {
     assert_eq!(e.path, "fronts.web.state_dir", "{e}");
     assert!(e.to_string().contains("must not lie under /tmp"), "{e}");
 }
+
+#[test]
+fn a_front_read_only_path_under_tmp_is_refused() {
+    for path in ["/tmp", "/tmp/x"] {
+        let e = err(&format!("fronts:\n  web:\n    read_only: [{path}]\n"));
+        assert_eq!(e.path, "fronts.web.read_only", "{e}");
+        assert!(
+            e.to_string().contains("must not be or lie under /tmp"),
+            "{e}"
+        );
+    }
+    parse_controller("c.yaml", "fronts:\n  web:\n    read_only: [/tmpfs/x]\n").expect("ok");
+}

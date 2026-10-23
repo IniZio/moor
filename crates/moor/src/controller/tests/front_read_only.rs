@@ -3,6 +3,11 @@
 use super::{config, env};
 use crate::controller::start;
 
+/// A fresh dir outside `/tmp`, which a front sees as its own tmp dir and so refuses to read.
+fn outside_tmp() -> tempfile::TempDir {
+    tempfile::tempdir_in(env!("CARGO_MANIFEST_DIR")).expect("tmp")
+}
+
 /// The refusal `start` gives for a front that may read `paths`, with its config in `cfg/` and
 /// its socket in `sock/`.
 fn refusal(paths: &[&str]) -> Option<String> {
@@ -11,7 +16,7 @@ fn refusal(paths: &[&str]) -> Option<String> {
 
 /// Like [`refusal`], with the controller's state dir at `state`.
 fn refusal_with_state(paths: &[&str], state: &str) -> Option<String> {
-    let dir = tempfile::tempdir().expect("tmp");
+    let dir = outside_tmp();
     std::fs::create_dir(dir.path().join("sock")).expect("sock dir");
     let root = dir.path().display().to_string();
     let paths: Vec<String> = paths.iter().map(|p| p.replace("ROOT", &root)).collect();
@@ -49,7 +54,7 @@ fn a_read_only_path_elsewhere_is_accepted() {
 
 #[test]
 fn a_read_only_path_that_is_not_real_is_refused() {
-    let dir = tempfile::tempdir().expect("tmp");
+    let dir = outside_tmp();
     let link = dir.path().join("link");
     std::os::unix::fs::symlink("/usr/share", &link).expect("link");
     let link = link.display().to_string();
@@ -63,4 +68,18 @@ fn a_read_only_path_that_is_not_real_is_refused() {
 fn a_read_only_parent_of_the_state_dir_is_refused() {
     let e = refusal_with_state(&["ROOT/deep"], "ROOT/deep/state").expect("refused");
     assert!(e.contains("would show the controller's"), "{e}");
+}
+
+#[test]
+fn a_read_only_path_under_tmp_is_refused_at_start() {
+    let tmp = tempfile::tempdir_in("/tmp").expect("tmp");
+    let inside = tmp.path().display().to_string();
+    for path in ["/tmp", inside.as_str()] {
+        let e = refusal(&[path]).expect("refused");
+        assert!(e.contains("fronts.web.read_only"), "{path}: {e}");
+        assert!(
+            e.contains("which is the front's own tmp dir"),
+            "{path}: {e}"
+        );
+    }
 }

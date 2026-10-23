@@ -143,6 +143,12 @@ fn front_entry(front: &FrontEntry) -> Result<(), (&'static str, &'static str)> {
     if front.read_only.iter().any(|p| !p.is_absolute()) {
         return Err(("read_only", "must hold absolute paths"));
     }
+    if front.read_only.iter().any(|p| p.starts_with("/tmp")) {
+        return Err((
+            "read_only",
+            "must not be or lie under /tmp, which is the front's own tmp dir",
+        ));
+    }
     match &front.state_dir {
         Some(dir) if !dir.is_absolute() => Err(("state_dir", "must be an absolute path")),
         Some(dir) if dir.starts_with("/tmp") => Err((
