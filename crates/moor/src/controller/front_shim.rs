@@ -17,6 +17,7 @@
 //! macOS has none of these namespaces: there the shim confines itself and the front with
 //! nono's Seatbelt profile instead (see the `seatbelt` module), and no front gets a Proxy.
 
+#[cfg(target_os = "linux")]
 use std::ffi::OsString;
 use std::fs;
 use std::io;
@@ -41,11 +42,13 @@ use rustix::event::{poll, PollFd, PollFlags, Timespec};
 #[cfg(target_os = "linux")]
 use rustix::mount::{mount_change, MountPropagationFlags};
 #[cfg(target_os = "linux")]
+use rustix::process::Pid;
+use rustix::process::WaitStatus;
+#[cfg(target_os = "linux")]
 use rustix::process::{
     getgid, getppid, getuid, kill_process, set_dumpable_behavior, set_parent_process_death_signal,
     waitpid, DumpableBehavior, Signal, WaitOptions,
 };
-use rustix::process::{Pid, WaitStatus};
 #[cfg(target_os = "linux")]
 use rustix::thread::{
     capabilities, configure_capability_in_ambient_set, set_capabilities, CapabilitySet,
