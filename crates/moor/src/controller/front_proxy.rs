@@ -68,6 +68,9 @@ impl Plan {
             .vault_key()
             .ok_or("a front Proxy needs the vault key")?
             .to_owned();
+        for ns in fronts.keys() {
+            Moor::prepare_front_proxy_socket(&state_dir, ns)?;
+        }
         let ca_pem = Moor::front_proxy_ca(&state_dir)
             .and_then(std::fs::read_to_string)
             .map_err(|e| format!("cannot make the front Proxy CA: {e}"))?;

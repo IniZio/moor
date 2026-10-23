@@ -62,6 +62,14 @@ impl Moor {
         wire::front_proxy_socket(state_dir, ns)
     }
 
+    /// Creates the directory of front `ns`'s Proxy socket, which its shim opens at start.
+    ///
+    /// # Errors
+    /// Why the directory could not be made or is not private.
+    pub(crate) fn prepare_front_proxy_socket(state_dir: &Path, ns: &str) -> Result<(), String> {
+        wire::prepare_front_proxy_socket(state_dir, ns)
+    }
+
     /// The CA certificate the front Proxy signs with, made when missing.
     ///
     /// # Errors
