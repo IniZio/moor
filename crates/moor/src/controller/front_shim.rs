@@ -24,7 +24,7 @@ use std::time::Duration;
 use nix::sched::{unshare, CloneFlags};
 use nono::{AccessMode, Sandbox, SupportInfo};
 use rustix::event::{poll, PollFd, PollFlags, Timespec};
-use rustix::mount::{mount, mount_bind, mount_change, MountFlags, MountPropagationFlags};
+use rustix::mount::{mount, mount_change, MountFlags, MountPropagationFlags};
 use rustix::process::{
     getgid, getppid, getuid, kill_process, set_parent_process_death_signal, waitpid, Pid, Signal,
     WaitOptions, WaitStatus,
@@ -35,6 +35,8 @@ use rustix::thread::{
 };
 use signal_hook::consts::{SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
+
+mod mounts;
 
 /// How often a shim checks for exited children and signals to pass on.
 const POLL: Duration = Duration::from_millis(50);
@@ -48,7 +50,14 @@ pub fn main(args: &[OsString]) -> Result<u8, String> {
     let flags = parts.next().unwrap_or_default();
     let command = parts.next().unwrap_or_default();
     match flags {
-        [flag] if flag == "--check" => isolate(&[], &[]).and_then(|()| confine(&[])).map(|()| 0),
+        [flag] if flag == "--check" => isolate(&[], &[], &[])
+            .and_then(|()| confine(&[]))
+            .and_then(|()| enforced())
+            .map(|()| {
+                let said = "sandbox enforced: a write outside the allow-list was refused\n";
+                let _ = io::Write::write_all(&mut io::stdout(), said.as_bytes());
+                0
+            }),
         [flag, writable @ ..] if flag == "--init" => init(&Hidden::writable(writable)?, command),
         _ => {
             let Hidden {
@@ -58,8 +67,7 @@ pub fn main(args: &[OsString]) -> Result<u8, String> {
                 writable,
             } = Hidden::parse(flags)?;
             die_with(parent)?;
-            let exe = std::env::current_exe().map_err(|e| format!("no own executable: {e}"))?;
-            isolate(&cover, &mask)?;
+            isolate(&cover, &mask, &writable)?;
             let mut caps = capabilities(None).map_err(|e| format!("capget: {e}"))?;
             caps.inheritable |= CapabilitySet::SYS_ADMIN;
             set_capabilities(None, caps).map_err(|e| format!("capset: {e}"))?;
@@ -67,7 +75,7 @@ pub fn main(args: &[OsString]) -> Result<u8, String> {
                 .map_err(|e| format!("cannot pass CAP_SYS_ADMIN to pid 1: {e}"))?;
             let (alive, _held) = std::io::pipe().map_err(|e| format!("pipe: {e}"))?;
             relay(
-                Command::new(exe)
+                Command::new("/proc/self/exe")
                     .args(["front-shim", "--init"])
                     .args(
                         writable
@@ -156,9 +164,10 @@ impl Hidden {
 }
 
 /// Enters new user, mount and PID namespaces as the same uid and gid, then hides `cover` under
-/// empty read-only tmpfs mounts and `mask` under `/dev/null`. The PID namespace applies to the
-/// next child, which becomes its pid 1.
-fn isolate(cover: &[PathBuf], mask: &[PathBuf]) -> Result<(), String> {
+/// empty tmpfs mounts and `mask` under `/dev/null`, makes every mount read-only and binds each
+/// of `writable` back read-write. The PID namespace applies to the next child, which becomes its
+/// pid 1.
+fn isolate(cover: &[PathBuf], mask: &[PathBuf], writable: &[PathBuf]) -> Result<(), String> {
     let (uid, gid) = (getuid().as_raw(), getgid().as_raw());
     unshare(CloneFlags::CLONE_NEWUSER | CloneFlags::CLONE_NEWNS | CloneFlags::CLONE_NEWPID)
         .map_err(|e| {
@@ -181,16 +190,17 @@ fn isolate(cover: &[PathBuf], mask: &[PathBuf]) -> Result<(), String> {
         MountPropagationFlags::PRIVATE | MountPropagationFlags::REC,
     )
     .map_err(|e| format!("cannot make mounts private: {e}"))?;
-    for file in mask {
-        mount_bind("/dev/null", file)
-            .map_err(|e| format!("cannot mask {}: {e}", file.display()))?;
+    mounts::arrange(cover, mask, writable)
+}
+
+/// Fails unless the sandbox now in force refuses a write it would refuse a front: opening
+/// `/dev/zero` for writing, which a read-only mount alone allows.
+fn enforced() -> Result<(), String> {
+    match fs::OpenOptions::new().write(true).open("/dev/zero") {
+        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => Ok(()),
+        Err(e) => Err(format!("the sandbox check failed: {e}")),
+        Ok(_) => Err("the sandbox did not take effect".to_owned()),
     }
-    let flags = MountFlags::RDONLY | MountFlags::NOSUID | MountFlags::NODEV | MountFlags::NOEXEC;
-    for dir in cover {
-        mount("tmpfs", dir, "tmpfs", flags, None)
-            .map_err(|e| format!("cannot cover {}: {e}", dir.display()))?;
-    }
-    Ok(())
 }
 
 /// Confines this process and every process it starts: each may read and run anything, but

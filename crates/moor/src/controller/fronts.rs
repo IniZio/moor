@@ -81,6 +81,10 @@ impl Front {
     }
 }
 
+/// Dirs hidden from every front because host services keep their Unix sockets there, such as
+/// the user's D-Bus session and Docker's socket under `/run`.
+const SOCKET_ROOTS: [&str; 3] = ["/run", "/tmp", "/dev/shm"];
+
 /// Runs each front under `moor front-shim`, hiding what a front must not reach.
 pub(super) struct Shim {
     /// The program that runs `moor front-shim`, and its first arguments.
@@ -90,14 +94,24 @@ pub(super) struct Shim {
 }
 
 impl Shim {
-    /// Runs `program` as the shim, hiding `state_dir`, `socket` and `vault_key` from each front.
+    /// Runs `program` as the shim, hiding `state_dir`, `socket` and `vault_key` from each front,
+    /// and `home` with [`SOCKET_ROOTS`], where the host keeps the Unix sockets of its services.
     pub(super) fn new(
         program: (OsString, Vec<OsString>),
         state_dir: Option<&Path>,
         socket: &Path,
         vault_key: Option<&Path>,
+        home: Option<&Path>,
     ) -> Self {
-        let cover = state_dir.into_iter().map(|dir| ("--cover", dir));
+        let roots = SOCKET_ROOTS
+            .iter()
+            .map(Path::new)
+            .filter(|dir| dir.is_dir());
+        let cover = state_dir
+            .into_iter()
+            .chain(home)
+            .chain(roots)
+            .map(|dir| ("--cover", dir));
         let mask = [Some(socket), vault_key]
             .into_iter()
             .flatten()
