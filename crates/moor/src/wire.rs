@@ -101,14 +101,21 @@ pub(crate) fn host_checkout(env: &Env) -> impl Checkout {
     Git::new(Arc::new(SystemProc::new(env, &ToolPaths::default())))
 }
 
-/// Opens the state store once, so a store that every command would refuse fails here.
+/// Opens the state store once, so a store that every command would refuse fails here, and
+/// ends every front Proxy lease: a controller that starts restarts every front that held one.
 pub(crate) fn open_store(env: &Env) -> Result<(), CommandError> {
     let Some(state_dir) = env.state_dir() else {
         return Ok(());
     };
     let clock = SystemClock::from_env(env).map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
-    Store::open(&state_dir.join(STORE_FILE), Arc::new(clock))?;
+    Store::open(&state_dir.join(STORE_FILE), Arc::new(clock))?.purge_front_leases()?;
     Ok(())
+}
+
+/// The socket of front `ns`'s Proxy for `state_dir`.
+#[cfg(test)]
+pub(crate) fn front_proxy_socket(state_dir: &std::path::Path, ns: &str) -> PathBuf {
+    crate::proxy::fronts::socket_path(&socket_dir(), state_dir, ns)
 }
 
 /// Settles the Proxy supervisors recorded in the state store; one line per failure.

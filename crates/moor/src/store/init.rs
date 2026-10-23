@@ -5,7 +5,7 @@ use std::path::Path;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior};
 
 use super::open::sibling;
-use super::{artifacts, bindings, lease, StoreError, SCHEMA_SQL, SCHEMA_VERSION};
+use super::{artifacts, bindings, lease, users, StoreError, SCHEMA_SQL, SCHEMA_VERSION};
 
 /// Refuse an existing db at another schema version without writing to it or its directory.
 ///
@@ -41,6 +41,7 @@ pub(super) fn init_schema(conn: &mut Connection, db: &Path) -> Result<(), StoreE
     tx.execute_batch(bindings::BINDINGS_SQL)?;
     tx.execute_batch(lease::LEASE_SQL)?;
     tx.execute_batch(artifacts::ARTIFACTS_SQL)?;
+    tx.execute_batch(users::front_leases::FRONT_LEASES_SQL)?;
     tx.commit()?;
     Ok(())
 }

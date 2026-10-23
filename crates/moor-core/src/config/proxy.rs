@@ -12,7 +12,9 @@ use serde::Deserialize;
 
 use super::{check, parse_strict, ConfigError};
 use crate::user::SecretName;
-pub use resolve::{default_rules, resolve_rules, EndpointRule, ResolvedInject, ResolvedRule};
+pub use resolve::{
+    default_rules, front_rules, resolve_rules, EndpointRule, ResolvedInject, ResolvedRule,
+};
 pub use shape::request_shape;
 use template::{check_slots, FORM_SLOTS, REPO_SLOTS};
 

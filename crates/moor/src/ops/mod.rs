@@ -13,6 +13,7 @@ pub(crate) mod common;
 mod cp;
 mod end_session;
 pub(crate) mod env;
+mod front_proxy;
 mod gate;
 pub(crate) mod host_session;
 mod open;
@@ -57,7 +58,10 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         | Request::SecretDelete(_)
         | Request::SecretNames(_)
         | Request::LinkCode(_)
-        | Request::LinkRedeem(_) => Err(CommandError::new(
+        | Request::LinkRedeem(_)
+        | Request::ProxyLease(_)
+        | Request::ProxyRelease(_)
+        | Request::ProxyStatus(_) => Err(CommandError::new(
             ErrorKind::Usage,
             "user requests act as the caller of a socket, so only the controller socket serves them",
         )),

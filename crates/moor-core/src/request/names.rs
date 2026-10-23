@@ -96,6 +96,9 @@ impl Request {
             | Self::SecretNames(_)
             | Self::LinkCode(_)
             | Self::LinkRedeem(_)
+            | Self::ProxyLease(_)
+            | Self::ProxyRelease(_)
+            | Self::ProxyStatus(_)
             | Self::Version {} => Vec::new(),
         }
     }

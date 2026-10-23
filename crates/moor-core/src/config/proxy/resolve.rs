@@ -11,6 +11,9 @@ use crate::config::ConfigError;
 /// The embedded default rules.
 const DEFAULTS: &str = include_str!("defaults.yaml");
 
+/// The embedded rules a front's Proxy may serve; never part of a Box's rules.
+const FRONT_DEFAULTS: &str = include_str!("fronts.yaml");
+
 /// A method and path glob the proxy lets through.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EndpointRule {
@@ -58,6 +61,16 @@ pub struct ResolvedRule {
 #[must_use]
 pub fn default_rules() -> BTreeMap<String, ToolRule> {
     parse_rules("defaults.yaml", DEFAULTS).unwrap_or_default()
+}
+
+/// The rules a front's Proxy may serve, resolved and sorted by name.
+#[must_use]
+pub fn front_rules() -> Vec<ResolvedRule> {
+    let rules = parse_rules("fronts.yaml", FRONT_DEFAULTS).unwrap_or_default();
+    rules
+        .into_iter()
+        .filter_map(|(name, rule)| resolve_one(name, &rule, None).ok())
+        .collect()
 }
 
 /// One parsed `allow` entry.

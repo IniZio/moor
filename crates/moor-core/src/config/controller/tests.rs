@@ -208,4 +208,18 @@ fn a_front_read_only_path_under_tmp_is_refused() {
         );
     }
     parse_controller("c.yaml", "fronts:\n  web:\n    read_only: [/tmpfs/x]\n").expect("ok");
+
+fn a_front_may_name_the_claude_rule_and_no_unknown_one() {
+    let c = parse_controller("c.yaml", "fronts:\n  slack:\n    proxy_rules: [claude]\n")
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(c.fronts.get("slack").unwrap().proxy_rules, ["claude"]);
+    let e = err("fronts:\n  slack:\n    proxy_rules: [github-api]\n");
+    assert_eq!(e.path, "fronts.slack.proxy_rules");
+}
+
+#[test]
+fn no_front_may_be_named_proxy() {
+    let e = err("fronts:\n  proxy: {}\n");
+    assert_eq!(e.path, "fronts.proxy");
+    assert!(e.to_string().contains("reserved"), "{e}");
 }

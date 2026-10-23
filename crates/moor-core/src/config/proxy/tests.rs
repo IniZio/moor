@@ -464,3 +464,31 @@ fn each_default_rule_injects_its_own_secret() {
         ]
     );
 }
+
+#[test]
+fn the_front_claude_rule_allows_only_what_a_turn_calls() {
+    let rules = front_rules();
+    let claude = rules
+        .iter()
+        .find(|r| r.name == "claude")
+        .expect("front claude rule");
+    assert_eq!(claude.hosts, ["api.anthropic.com"]);
+    assert_eq!(claude.credential, "claude");
+    let allowed: Vec<(&str, &str)> = claude
+        .endpoint_rules
+        .iter()
+        .map(|r| (r.method.as_str(), r.path.as_str()))
+        .collect();
+    assert_eq!(
+        allowed,
+        [
+            ("POST", "/v1/messages"),
+            ("GET", "/api/claude_code/settings"),
+            ("GET", "/api/claude_code/policy_limits"),
+        ]
+    );
+    assert!(
+        default_rules().get("claude").unwrap().allow.is_empty(),
+        "the Box claude rule keeps no path list"
+    );
+}

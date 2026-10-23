@@ -8,6 +8,8 @@ use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use super::{parsed, Store, StoreError};
 use crate::vault::Vault;
 
+pub(super) mod front_leases;
+
 /// The user `identity` is linked to, on any connection.
 fn user_of_in(conn: &Connection, identity: &Identity) -> Result<Option<UserId>, StoreError> {
     let id: Option<i64> = conn
