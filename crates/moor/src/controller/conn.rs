@@ -171,15 +171,10 @@ pub(super) fn serve<W: Write>(
         }
         let reply = match parse_frame(&line) {
             Err(error) => error,
-            Ok(ClientFrame::Hello { protocol }) if protocol == PROTOCOL => {
-                handshaken = true;
-                ServerFrame::Hello { protocol: PROTOCOL }
+            Ok(ClientFrame::Hello { protocol }) => {
+                handshaken |= protocol == PROTOCOL;
+                hello_reply(protocol)
             }
-            Ok(ClientFrame::Hello { protocol }) => ServerFrame::Error {
-                id: None,
-                kind: FrameErrorKind::UnsupportedProtocol,
-                message: format!("client speaks protocol {protocol}, controller speaks {PROTOCOL}"),
-            },
             Ok(frame) if !handshaken && !matches!(frame, ClientFrame::Hello { .. }) => {
                 hello_required(frame)
             }
@@ -224,6 +219,18 @@ pub(super) fn serve<W: Write>(
     }
     if conn.drain().begun() {
         send(&mut writer, &restarting());
+    }
+}
+
+/// The controller's answer to a client hello of `protocol`.
+fn hello_reply(protocol: u32) -> ServerFrame {
+    if protocol == PROTOCOL {
+        return ServerFrame::Hello { protocol: PROTOCOL };
+    }
+    ServerFrame::Error {
+        id: None,
+        kind: FrameErrorKind::UnsupportedProtocol,
+        message: format!("client speaks protocol {protocol}, controller speaks {PROTOCOL}"),
     }
 }
 
