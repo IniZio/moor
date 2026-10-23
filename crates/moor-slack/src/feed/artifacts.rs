@@ -52,7 +52,9 @@ pub(super) fn fold(fold: &mut Fold, id: BoxId, kind: &str, payload: &Value) {
 }
 
 impl Feed {
-    /// Shows each version owed to the thread of `boxed`. Returns false when one is still owed.
+    /// Shows each version owed to the thread of `boxed`. Returns false only when `slack.db`
+    /// could not be read or written. A version waiting out its retry delay, or whose upload
+    /// failed, is recorded with its delay and holds back nothing else.
     pub(super) fn artifacts(&self, db: &Db, fold: &mut Fold, boxed: &SlackBox) -> bool {
         let Some(id) = box_id(&boxed.state) else {
             return true;
@@ -66,60 +68,98 @@ impl Feed {
             channel: &boxed.channel,
             ts: &boxed.thread_ts,
         };
-        owed.retain(|v| !self.show(db, &thread, &boxed.box_name, v));
-        owed.is_empty()
+        let mut stuck = false;
+        owed.retain(|v| match self.show(db, &thread, &boxed.box_name, v) {
+            Shown::Settled => false,
+            Shown::Owed => true,
+            Shown::Stuck => {
+                stuck = true;
+                true
+            }
+        });
+        !stuck
     }
 
-    /// Shows `v` in `thread` unless it already does, and records what it shows. Returns
-    /// whether the version is settled: shown, or given up on. Uploading first means a crash
-    /// before the record uploads the version again instead of losing it.
-    fn show(&self, db: &Db, thread: &Thread<'_>, box_name: &BoxName, v: &ArtifactView) -> bool {
+    /// Shows `v` in `thread` unless it already does, and records what it shows. Uploading
+    /// first means a crash before the record uploads the version again instead of losing it.
+    fn show(&self, db: &Db, thread: &Thread<'_>, box_name: &BoxName, v: &ArtifactView) -> Shown {
         let now = (self.clock)();
         let attempt = match db.artifact_shown(box_name, &v.name, v.version) {
-            Ok(ArtifactShown::Version | ArtifactShown::GaveUp) => return true,
+            Ok(ArtifactShown::Version | ArtifactShown::GaveUp) => return Shown::Settled,
             Ok(ArtifactShown::Nothing) => Attempt::First,
             Ok(ArtifactShown::Failure {
                 since,
                 tried_at,
                 tries,
+                told,
             }) => {
                 if now < tried_at.saturating_add(backoff(tries)) {
-                    return false;
+                    return Shown::Owed;
                 }
                 if now.saturating_sub(since) >= GIVE_UP_AFTER {
                     Attempt::Last
-                } else {
+                } else if told {
                     Attempt::Retry
+                } else {
+                    Attempt::First
                 }
             }
             Err(e) => {
                 (self.log)(&format!("slack.db: {e}"));
-                return false;
+                return Shown::Stuck;
             }
         };
-        let (done, recorded) = match post_version(thread, &self.client, box_name, v, attempt) {
+        let (settled, recorded) = match post_version(thread, &self.client, box_name, v, attempt) {
             Ok(Sent::Shown) => (true, db.artifact_posted(box_name, &v.name, v.version, now)),
             Ok(Sent::Failed(why)) => {
                 (self.log)(&format!("slack: {} not uploaded: {why}", v.name));
-                if attempt == Attempt::Last {
-                    (true, db.artifact_gave_up(box_name, &v.name, v.version, now))
-                } else {
-                    (false, db.artifact_failed(box_name, &v.name, v.version, now))
-                }
+                Self::record_failure(db, box_name, v, attempt, now, true)
             }
             Err(e) => {
                 (self.log)(&format!("slack: artifact line failed: {e}"));
-                return false;
+                Self::record_failure(db, box_name, v, attempt, now, false)
             }
         };
         match recorded {
-            Ok(()) => done,
+            Ok(()) if settled => Shown::Settled,
+            Ok(()) => Shown::Owed,
             Err(e) => {
                 (self.log)(&format!("slack.db: {e}"));
-                false
+                Shown::Stuck
             }
         }
     }
+
+    /// Records a failed try at `now`: the last try gives up for good, any other schedules the
+    /// next one. `told` says whether the thread now shows a line about it. Returns whether the
+    /// version is settled, with the record's result.
+    fn record_failure(
+        db: &Db,
+        box_name: &BoxName,
+        v: &ArtifactView,
+        attempt: Attempt,
+        now: i64,
+        told: bool,
+    ) -> (bool, rusqlite::Result<()>) {
+        if attempt == Attempt::Last {
+            (true, db.artifact_gave_up(box_name, &v.name, v.version, now))
+        } else {
+            (
+                false,
+                db.artifact_failed(box_name, &v.name, v.version, now, told),
+            )
+        }
+    }
+}
+
+/// What one pass over a version left.
+enum Shown {
+    /// Shown, or given up on.
+    Settled,
+    /// Still owed, with its next try recorded.
+    Owed,
+    /// `slack.db` failed, so nothing is recorded.
+    Stuck,
 }
 
 /// Seconds after its first failure at which the front stops trying to upload a version.

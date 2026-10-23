@@ -124,6 +124,7 @@ const SCHEMA: &str = "
         failed_at INTEGER,
         tried_at INTEGER,
         tries INTEGER NOT NULL DEFAULT 0,
+        told INTEGER NOT NULL DEFAULT 0,
         posted_at INTEGER CHECK (posted_at IS NOT NULL OR failed_at IS NOT NULL),
         gave_up_at INTEGER CHECK (gave_up_at IS NULL OR (failed_at IS NOT NULL AND posted_at IS NULL)),
         PRIMARY KEY (box_name, name, version)
