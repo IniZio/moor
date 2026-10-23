@@ -184,6 +184,7 @@ fronts:
 | --- | --- | --- | --- |
 | `command` | list of strings, not empty | none | The program and arguments the controller runs as this front. Without it, start the front yourself. |
 | `state_dir` | absolute path | none | The one directory the front may write. Without it, the front writes nothing but `/dev/null`. |
+| `read_only` | list of absolute paths | empty | Files or dirs the front may read even where the controller hides the host from it, such as a config or token file under `HOME`. A path inside the controller's state dir, or one that holds the controller socket or vault key, is refused at startup. |
 
 For each entry the controller listens on `<state dir>/fronts/<namespace>.sock`,
 mode 0600 in a 0700 directory. Under systemd, the controller takes the socket
@@ -215,8 +216,11 @@ On Linux, a front and every process it starts reach the host as follows:
 - **Hidden.** `/run` (and so `/var/run`), `/tmp`, `/dev/shm` and the
   controller's `HOME` are empty tmpfs mounts. The Unix sockets of host services
   live there, such as the D-Bus session bus, `systemd --user` and Docker's
-  socket, so a front cannot reach them. A front's own files, such as a token
-  or config file, must not be there either: put them in its `state_dir`.
+  socket, so a front cannot reach them. A front's own files there, such as a
+  token or config file, need a `read_only` entry, or can live in its
+  `state_dir`. The front's program shows through as well: the controller
+  resolves `command`'s first word on its `PATH` to a real path, runs that
+  path, and shows it read-only.
 - **Read and run.** Every other file the controller's user can read.
 - **Network.** Outbound TCP is not restricted, and that includes listeners
   on the host's loopback.

@@ -11,6 +11,7 @@
 
 use std::fs;
 use std::io::{BufRead as _, BufReader, Write as _};
+use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -115,8 +116,9 @@ impl Controller {
         let config = root.join("c.yaml");
         let moor = env!("CARGO_BIN_EXE_moor");
         let listeners = host_listeners(&root.file_name().unwrap().to_string_lossy());
+        let program = hidden_program_and_note(&root);
         let command = serde_json::json!([
-            "python3",
+            program,
             "-c",
             script,
             PROTOCOL.to_string(),
@@ -128,10 +130,11 @@ impl Controller {
         fs::write(
             &config,
             format!(
-                "socket: {}\nstate_dir: {}\nfronts:\n  probe:\n    command: {command}\n    state_dir: {}\n  slack: {{}}\n",
+                "socket: {}\nstate_dir: {}\nfronts:\n  probe:\n    command: {command}\n    state_dir: {}\n    read_only: [{}]\n  slack: {{}}\n",
                 root.join("c.sock").display(),
                 root.join("state").display(),
                 root.join("front").display(),
+                root.join("home").join("shared").display(),
             ),
         )
         .unwrap();
@@ -232,6 +235,18 @@ impl Drop for Controller {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+/// Writes a program the front runs and a note it may read, both under `root/home`, which the
+/// controller hides; returns the program, which runs `python3` with its arguments.
+fn hidden_program_and_note(root: &std::path::Path) -> PathBuf {
+    let program = root.join("home").join("bin").join("front");
+    fs::create_dir_all(root.join("home").join("bin")).unwrap();
+    fs::write(&program, "#!/bin/sh\nexec python3 \"$@\"\n").unwrap();
+    fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::create_dir_all(root.join("home").join("shared")).unwrap();
+    fs::write(root.join("home").join("shared").join("note"), "shared").unwrap();
+    program
 }
 
 /// Unix sockets named for `tag` listening on the host, in `/tmp` and the user's runtime dir.

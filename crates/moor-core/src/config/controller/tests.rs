@@ -173,3 +173,19 @@ fn a_front_state_dir_is_an_absolute_path() {
     assert_eq!(e.path, "fronts.web.state_dir", "{e}");
     assert!(e.to_string().contains("must be an absolute path"), "{e}");
 }
+
+#[test]
+fn a_front_read_only_list_holds_absolute_paths() {
+    let c = parse_controller(
+        "c.yaml",
+        "fronts:\n  web:\n    read_only: [/etc/moor-web]\n",
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(
+        c.fronts.get("web").map(|f| f.read_only.clone()),
+        Some(vec![std::path::PathBuf::from("/etc/moor-web")])
+    );
+    let e = err("fronts:\n  web:\n    read_only: [etc/moor-web]\n");
+    assert_eq!(e.path, "fronts.web.read_only", "{e}");
+    assert!(e.to_string().contains("must hold absolute paths"), "{e}");
+}
