@@ -180,3 +180,50 @@ fn a_retry_in_the_kept_box_is_refused_while_another_op_holds_the_lock() {
     assert_eq!(w.driver.execs().len(), execs);
     assert_eq!(row(&w).lifecycle, BoxLifecycle::SetupFailed);
 }
+
+#[test]
+fn the_retry_in_the_kept_box_uses_the_providers_the_box_is_on_not_the_configs() {
+    let yaml = |provider: &str| {
+        let text = format!(
+            "box: {{provider: {provider}}}\ndrivers: {{a: {{strip_env: [TOKEN_OF_A]}}, b: {{strip_env: [TOKEN_OF_B]}}}}"
+        );
+        moor_core::config::parse_user("config.yaml", &text).unwrap()
+    };
+    let mut w = super::world_with(
+        FakeDriver::new().exec_results([Ok(exit(1)), Ok(exit(0)), Ok(exit(0))]),
+        yaml("a"),
+    );
+    script_base_yaml(&w, Some(YAML));
+    w.cx = w.cx.with_engine(Arc::new(FakeEngine::new()));
+    start(&w).unwrap_err();
+    let execs_before = w.driver.execs().len();
+
+    let later = crate::cx::Cx::fake_with(
+        w.dir.path(),
+        w.driver.clone(),
+        w.surface.clone(),
+        w.proc.clone(),
+        yaml("b"),
+    )
+    .with_forge(w.forge.clone())
+    .with_engine(Arc::new(FakeEngine::new()));
+    let again = run(
+        &later,
+        &StartReq {
+            goal: Some("ship it".into()),
+            ..start_req()
+        },
+    )
+    .unwrap();
+    assert!(again.setup.ran && again.setup.ok);
+    let retried: Vec<String> = w
+        .driver
+        .execs()
+        .iter()
+        .skip(execs_before)
+        .flat_map(|e| e.1.argv.clone())
+        .collect();
+    let text = retried.join("\n");
+    assert!(text.contains("TOKEN_OF_A"), "{text}");
+    assert!(!text.contains("TOKEN_OF_B"), "{text}");
+}
