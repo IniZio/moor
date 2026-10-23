@@ -247,8 +247,20 @@ starts none, and keeps serving. `moor front-shim --check` makes that call: it
 enters the namespaces and the front's root, applies the sandbox and confirms a
 write outside the allow-list is refused.
 
-macOS has no front sandbox. The shim needs Linux namespaces, and nono's
-Seatbelt backend is not wired into moor. None of this has been tried on a Mac.
+On macOS the shim has no namespaces. It applies nono's Seatbelt profile, which
+denies by default, to itself and the front. The front may read `/usr`, `/bin`,
+`/etc` (and `/var/run/resolv.conf`), its program and each `read_only` path. It
+may write only its `state_dir` and `/dev/null`. It may connect to no Unix
+socket but its own and the DNS resolver's. Outbound TCP is not restricted.
+`MOOR_FRONT_SOCKET` holds the socket's path, because macOS cannot pass it on
+fd 3. The front shares the shim's process group. The shim kills that group
+when the front exits or the controller goes away, and the controller kills it
+when the drain timeout ends. There is no pid file on macOS.
+
+Known limit on macOS: a process the front starts that calls `setsid` or
+`setpgid` leaves the group. The group kill misses it, so it outlives the front
+and the controller, still under the Seatbelt profile. Linux has no such gap,
+because the front's PID namespace ends with it.
 
 While a front runs, `<state dir>/fronts/<namespace>.pid` holds the shim's pid on
 the first line and its start time from `/proc/<pid>/stat` on the second. When

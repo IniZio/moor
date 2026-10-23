@@ -365,7 +365,8 @@ fn a_front_that_ignores_sigterm_is_killed_after_the_grace() {
 fn a_front_that_exits_leaves_no_process_it_forked() {
     let ctl = Controller::probe_running(FORKING);
     let sleeper = i32::try_from(ctl.probed()["pid"].as_i64().unwrap()).unwrap();
-    wait_for("the front's exit", || ctl.line("probe", "exited with "));
+    let exited = wait_for("the front's exit", || ctl.line("probe", "exited with "));
+    assert!(exited.starts_with("exit status: 0"), "{}", ctl.log());
     wait_for("the sleeper to die", || (!alive(sleeper)).then_some(()));
 }
 
