@@ -51,6 +51,8 @@ pub(crate) struct TurnRow {
     pub(crate) thread_ts: String,
     /// Slack user id of the thread's starter, who pays for the turn.
     pub(crate) owner: String,
+    /// The message the working reaction sits on: the latest message the turn holds.
+    pub(crate) reacted_ts: String,
     /// The turn a restart cut off that this turn runs again.
     pub(crate) rerun_of: Option<i64>,
 }
@@ -79,7 +81,8 @@ pub(crate) struct OpenTurn {
 }
 
 /// The columns [`turn_row`] reads.
-const TURN_COLUMNS: &str = "u.id, u.channel, u.thread_ts, u.paid_by, u.rerun_of";
+const TURN_COLUMNS: &str = "u.id, u.channel, u.thread_ts, u.paid_by, \
+     coalesce(u.reacted_ts, u.thread_ts), u.rerun_of";
 
 /// A [`TurnRow`] from [`TURN_COLUMNS`].
 fn turn_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TurnRow> {
@@ -88,7 +91,8 @@ fn turn_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TurnRow> {
         channel: r.get(1)?,
         thread_ts: r.get(2)?,
         owner: r.get(3)?,
-        rerun_of: r.get(4)?,
+        reacted_ts: r.get(4)?,
+        rerun_of: r.get(5)?,
     })
 }
 
@@ -125,11 +129,22 @@ impl Db {
                  AND kind IN ('message', 'notice', 'report') AND turn_id IS NULL AND done_at IS NULL",
                 params![id, channel, thread_ts],
             )?;
+            let reacted_ts: String = self.conn.query_row(
+                "SELECT coalesce((SELECT message_ts FROM slack_inbox WHERE turn_id = ?1 \
+                 AND message_ts IS NOT NULL ORDER BY id DESC LIMIT 1), ?2)",
+                params![id, thread_ts],
+                |r| r.get(0),
+            )?;
+            self.conn.execute(
+                "UPDATE slack_turns SET reacted_ts = ?2 WHERE id = ?1",
+                params![id, reacted_ts],
+            )?;
             Ok(Some(TurnRow {
                 id,
                 channel,
                 thread_ts,
                 owner,
+                reacted_ts,
                 rerun_of: None,
             }))
         })
@@ -189,7 +204,7 @@ impl Db {
              AND u.posted_at IS NULL ORDER BY u.id"
         );
         let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map([], |r| Ok((turn_row(r)?, r.get(5)?)))?;
+        let rows = stmt.query_map([], |r| Ok((turn_row(r)?, r.get(6)?)))?;
         rows.collect()
     }
 
@@ -204,8 +219,8 @@ impl Db {
         let rows = stmt.query_map([], |r| {
             Ok(Unended {
                 row: turn_row(r)?,
-                started_at: r.get(5)?,
-                process: r.get::<_, Option<u32>>(6)?.zip(r.get(7)?),
+                started_at: r.get(6)?,
+                process: r.get::<_, Option<u32>>(7)?.zip(r.get(8)?),
             })
         })?;
         rows.collect()
@@ -221,9 +236,16 @@ impl Db {
             )?;
             self.conn.execute(
                 "INSERT INTO slack_turns \
-                 (channel, thread_ts, paid_by, rerun_of, started_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![lost.channel, lost.thread_ts, lost.owner, lost.id, now],
+                 (channel, thread_ts, paid_by, rerun_of, started_at, reacted_ts) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    lost.channel,
+                    lost.thread_ts,
+                    lost.owner,
+                    lost.id,
+                    now,
+                    lost.reacted_ts
+                ],
             )?;
             let id = self.conn.last_insert_rowid();
             self.conn.execute(

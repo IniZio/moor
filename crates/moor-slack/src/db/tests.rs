@@ -261,6 +261,7 @@ fn message(db: &Db, thread_ts: &str, source: &str) {
         kind: ItemKind::Message,
         author: "U1".into(),
         text: "hi".into(),
+        message_ts: None,
         source: source.into(),
     };
     db.queue(&item, 0).unwrap();

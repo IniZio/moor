@@ -18,17 +18,44 @@ fn thread() -> (tempfile::TempDir, Db) {
     (dir, db)
 }
 
-/// Queues a `kind` item from `U1` with `text`, keyed by `source`.
-fn queue(db: &Db, kind: ItemKind, text: &str, source: &str) {
+/// Queues a `kind` item from `U1` with `text`, keyed by `source`, from Slack message `ts`.
+fn queue_at(db: &Db, kind: ItemKind, text: &str, (source, ts): (&str, Option<&str>)) {
     let item = InboxItem {
         channel: "C1".into(),
         thread_ts: "1.0".into(),
         kind,
         author: "U1".into(),
         text: text.into(),
+        message_ts: ts.map(str::to_owned),
         source: source.into(),
     };
     db.queue(&item, 2).unwrap();
+}
+
+/// Queues a `kind` item from `U1` with `text`, keyed by `source`, from no Slack message.
+fn queue(db: &Db, kind: ItemKind, text: &str, source: &str) {
+    queue_at(db, kind, text, (source, None));
+}
+
+#[test]
+fn a_turn_reacts_on_the_latest_message_it_holds() {
+    let (_dir, db) = thread();
+    queue_at(&db, ItemKind::Message, "one", ("Ev1", Some("5.1")));
+    queue_at(&db, ItemKind::Message, "two", ("Ev2", Some("5.2")));
+    queue(&db, ItemKind::Message, "no ts", "Ev3");
+    let turn = db.take_turn(5).unwrap().unwrap();
+    assert_eq!(turn.reacted_ts, "5.2");
+    let unended = db.unended().unwrap();
+    assert_eq!(unended[0].row.reacted_ts, "5.2", "stored on the turn row");
+    let rerun = db.rerun(&turn, 9).unwrap();
+    assert_eq!(rerun.reacted_ts, "5.2");
+}
+
+#[test]
+fn a_turn_with_no_message_reacts_on_the_thread_root() {
+    let (_dir, db) = thread();
+    queue(&db, ItemKind::Message, "no ts", "Ev1");
+    assert_eq!(db.take_turn(5).unwrap().unwrap().reacted_ts, "1.0");
 }
 
 fn said(text: &str) -> Said {

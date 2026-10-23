@@ -1,6 +1,6 @@
 //! The coordinator's turns: the scheduler takes the starter's waiting messages as one turn per
-//! thread, at most [`MAX_TURNS`] at once, and each turn shows a reaction on the thread's first
-//! message, runs the agent through the front Proxy on a lease of the starter's credential,
+//! thread, at most [`MAX_TURNS`] at once, and each turn shows a reaction on the message that
+//! started it, runs the agent through the front Proxy on a lease of the starter's credential,
 //! stores its line, posts it and takes the reaction off.
 
 use std::path::PathBuf;

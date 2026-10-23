@@ -122,8 +122,9 @@ schema. Move it aside and start again with a fresh one.
   Box's name is `slack-<thread ts>-<n>`, with each `.` in the thread
   timestamp replaced by `-`.
 - While a turn runs, the front puts an :hourglass_flowing_sand: reaction on
-  the thread's first message, and takes it off when it posts the reply or the
-  line that says why there is none. After a restart it takes off the reaction
+  the message that started the turn (the latest one when a turn holds several),
+  and takes it off when it posts the reply or the line that says why there is
+  none. After a restart it takes off the reaction
   of a turn that will not finish. Without the `reactions:write` scope the
   thread shows no reaction and the replies still post; the front logs the
   missing scope once.

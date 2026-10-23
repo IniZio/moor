@@ -1,7 +1,7 @@
 //! Coordinator turns: a mention that is not a start command opens a thread, and each of the
 //! starter's messages runs the fake `claude` through the front Proxy on a lease of the
 //! starter's credential, then posts the reply or the line that says why there is none. A
-//! reaction on the thread's first message shows the turn runs.
+//! reaction on the message that started the turn shows it runs.
 
 #![allow(clippy::indexing_slicing, reason = "test code")]
 
@@ -315,7 +315,7 @@ fn reaction_calls(rig: &Rig) -> Vec<(&'static str, String, String)> {
 }
 
 #[test]
-fn a_turn_reacts_to_the_first_message_while_it_runs_and_takes_the_reaction_off_after_its_reply() {
+fn a_turn_reacts_to_its_message_while_it_runs_and_takes_the_reaction_off_after_its_reply() {
     let (rig, _controller, _bin) = Rig::start_coordinated(Some(GOOD));
     assert_eq!(ask(&rig, "hello"), "OK");
     rig.slack.wait_reactions(2);
@@ -327,6 +327,19 @@ fn a_turn_reacts_to_the_first_message_while_it_runs_and_takes_the_reaction_off_a
     assert_eq!(reaction_calls(&rig), want);
     let order = ["/reactions.add", "/chat.postMessage", "/reactions.remove"];
     assert_eq!(calls(&rig), order, "the reply posts between the two");
+    assert_eq!(rig.slack.reactions_now(), []);
+}
+
+#[test]
+fn a_reply_in_the_thread_gets_the_reaction_on_the_reply_not_the_root() {
+    let (rig, _controller, _bin) = Rig::start_coordinated(Some(GOOD));
+    ask(&rig, "hello");
+    rig.slack.wait_reactions(2);
+    reply(&rig, 2, USER, "and then?");
+    rig.slack.wait_reactions(4);
+    let ts: Vec<String> = reaction_calls(&rig).into_iter().map(|c| c.1).collect();
+    let second = "1730000100.000002";
+    assert_eq!(ts, [TS, TS, second, second]);
     assert_eq!(rig.slack.reactions_now(), []);
 }
 

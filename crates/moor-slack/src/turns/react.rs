@@ -1,4 +1,4 @@
-//! The reaction that shows a turn is running: added to the thread's first message when the
+//! The reaction that shows a turn is running: added to the message that started the turn when the
 //! turn starts and removed when its line is posted. A reaction Slack will not take never
 //! stops a turn.
 
@@ -10,19 +10,19 @@ use crate::db::TurnRow;
 const WORKING: &str = "hourglass_flowing_sand";
 
 impl Turns {
-    /// Puts the working reaction on the thread's first message.
+    /// Puts the working reaction on the message that started the turn.
     pub(super) fn show_working(&self, row: &TurnRow) {
         let added = self
             .api
-            .add_reaction(&self.bot_token, &row.channel, &row.thread_ts, WORKING);
+            .add_reaction(&self.bot_token, &row.channel, &row.reacted_ts, WORKING);
         self.reacted(added, "add");
     }
 
-    /// Takes the working reaction off the thread's first message.
+    /// Takes the working reaction off the message that started the turn.
     pub(super) fn hide_working(&self, row: &TurnRow) {
         let removed =
             self.api
-                .remove_reaction(&self.bot_token, &row.channel, &row.thread_ts, WORKING);
+                .remove_reaction(&self.bot_token, &row.channel, &row.reacted_ts, WORKING);
         self.reacted(removed, "remove");
     }
 
