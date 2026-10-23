@@ -481,7 +481,7 @@ fn moor_slack_starts_under_the_sandbox() {
         fs::write(
             &config,
             format!(
-                "app_token_file: {}\nbot_token_file: {}\nchannels: [C0TEST]\napi_base: http://127.0.0.1:{port}\n",
+                "app_token_file: {}\nbot_token_file: {}\napi_base: http://127.0.0.1:{port}\n",
                 cfg.join("app").display(),
                 cfg.join("bot").display(),
             ),

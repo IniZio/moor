@@ -6,7 +6,6 @@ use moor_core::config::ConfigError;
 
 const SLACK: &str = "app_token_file: /x/app
 bot_token_file: /x/bot
-channels: [C0123ABC]
 ";
 
 fn slack_with(extra: &str) -> String {
@@ -25,7 +24,6 @@ fn slack_section_parses_with_default_api_base() {
     let s = parse_config("s.yaml", &slack_with("")).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(s.app_token_file, std::path::PathBuf::from("/x/app"));
     assert_eq!(s.bot_token_file, std::path::PathBuf::from("/x/bot"));
-    assert_eq!(s.channels, ["C0123ABC"]);
     assert_eq!(s.api_base, "https://slack.com/api");
     assert_eq!(s.github_api_base, "https://api.github.com");
     let s = parse_config("s.yaml", &slack_with("api_base: http://127.0.0.1:9000\n"))
@@ -34,11 +32,12 @@ fn slack_section_parses_with_default_api_base() {
 }
 
 #[test]
-fn slack_empty_channels_are_rejected() {
-    let e = err(&SLACK.replace("[C0123ABC]", "[]"));
+fn a_config_with_a_channels_list_is_refused_and_says_the_key_was_removed() {
+    let e = err(&slack_with("channels: [C0123ABC]\n"));
     assert_eq!(e.path, "channels");
-    let e = err(&SLACK.replace("[C0123ABC]", "[\"\"]"));
-    assert_eq!(e.path, "channels");
+    let shown = e.to_string();
+    assert!(shown.contains("removed"), "{shown}");
+    assert!(shown.contains("every channel it is invited to"), "{shown}");
 }
 
 #[test]

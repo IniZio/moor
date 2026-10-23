@@ -2,7 +2,7 @@
 
 `moor-slack` is a separate daemon that answers Slack over Socket Mode and
 sends requests to the moor controller over its socket. A mention in an
-allowed channel opens a thread with a coordinator agent, and the coordinator
+channel the bot is in opens a thread with a coordinator agent, and the coordinator
 starts and steers Boxes for the person who started the thread.
 
 ## Before you start
@@ -46,12 +46,13 @@ You need:
    ```yaml
    app_token_file: ~/.config/moor-slack/app-token
    bot_token_file: ~/.config/moor-slack/bot-token
-   channels: [C0123456789]
    ```
 
-   `channels` takes Slack ids, not names. Anyone in the workspace can mention the
-   bot in one of those channels and run `/moor login`. The channel list is the
-   only gate on where the front answers.
+   There is no channel list. Invite the bot to a channel with `/invite @moor`
+   and it answers there. Slack's own channel membership is the only gate on
+   where the front answers. Anyone in a channel the bot is in can mention it
+   and run `/moor login`. A config that still has a `channels` key is
+   refused.
 
 ## Run the front
 
@@ -91,7 +92,7 @@ thread that says why.
    `/moor login github` open a form with that one field. The first link makes
    you a moor user, and each token goes into the controller's vault under your
    name.
-2. In an allowed channel, add a GitHub repo: `/moor repo add OWNER/NAME`.
+2. In a channel the bot is in, add a GitHub repo: `/moor repo add OWNER/NAME`.
 3. Mention the bot at the top level of the channel and describe the work. The
    coordinator replies in a thread and starts Boxes when you ask for work.
 
@@ -108,6 +109,9 @@ schema. Move it aside and start again with a fresh one.
 
 ## How a thread behaves
 
+- The bot answers in any channel it has been invited to: a mention opens a
+  thread, replies in the thread reach it, and `/moor repo` commands work in
+  that channel.
 - Only the person who started the thread directs the coordinator. Anyone else
   who writes in the thread gets one line that says so.
 - Each message from the starter becomes one turn. A turn is one `claude -p`
@@ -192,7 +196,6 @@ The front rejects unknown keys.
 | --- | --- | --- | --- |
 | `app_token_file` | path | required | The file that holds the `xapp-` token. It must be mode 0600 and not empty. `~` is allowed. |
 | `bot_token_file` | path | required | The file that holds the `xoxb-` token. It must be mode 0600 and not empty. `~` is allowed. |
-| `channels` | list of channel ids | required, at least one | Channels that may start Boxes and use `/moor repo`. |
 | `api_base` | URL | `https://slack.com/api` | The Slack Web API base. It must start with `https://`, `http://127.0.0.1:`, or `http://localhost:`. |
 | `github_api_base` | URL | `https://api.github.com` | The GitHub API base where a pasted `gh auth token` is checked with `GET /user`. The same URL rules as `api_base`. |
 | `coordinator.binary` | absolute path | `claude` on `PATH` | The Claude Code binary. |
@@ -206,9 +209,9 @@ The front rejects unknown keys.
 
 | Command | Who | Where | What it does |
 | --- | --- | --- | --- |
-| `/moor repo` | anyone | `channels` | Lists the channel's repos and marks the default. |
-| `/moor repo add OWNER/NAME` | anyone | `channels` | Adds a GitHub repo. A name that is not `OWNER/NAME` is refused. A start of a repo the person's GitHub account cannot read is refused by the controller. |
-| `/moor repo remove NAME` | anyone | `channels` | Removes a repo. |
-| `/moor repo default NAME` | anyone | `channels` | Makes `NAME` the channel's default repo. |
+| `/moor repo` | anyone | any channel the bot is in | Lists the channel's repos and marks the default. |
+| `/moor repo add OWNER/NAME` | anyone | any channel the bot is in | Adds a GitHub repo. A name that is not `OWNER/NAME` is refused. A start of a repo the person's GitHub account cannot read is refused by the controller. |
+| `/moor repo remove NAME` | anyone | any channel the bot is in | Removes a repo. |
+| `/moor repo default NAME` | anyone | any channel the bot is in | Makes `NAME` the channel's default repo. |
 | `/moor login [claude\|github]` | anyone | any channel | Opens a form for the tokens: both optional fields with no word, one field with `claude` or `github`. The front checks a Claude token with one test call to Claude on `haiku`, and a GitHub token with `GET /user`, which must answer 200. It then stores the token in the controller's vault as you. A 401 or 403 stores nothing. |
 | `/moor logout [claude\|github]` | anyone | any channel | Deletes that secret from the vault and tells you whether one was there. Claude is the default. |

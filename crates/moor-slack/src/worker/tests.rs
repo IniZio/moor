@@ -44,13 +44,12 @@ fn mention(event_id: &str, user: &str, channel: &str, ts: &str, thread: Option<&
     }
 }
 
-/// Records `m` with channel `C1` allowed.
+/// Records `m`.
 fn try_record(db: &Db, m: &Mention) -> rusqlite::Result<Option<Job>> {
-    let channels = vec!["C1".to_owned()];
-    record(m, db, &channels, 1_000)
+    record(m, db, 1_000)
 }
 
-/// Records `m` with channel `C1` allowed; the write must succeed.
+/// Records `m`; the write must succeed.
 fn record_one(db: &Db, m: &Mention) -> Option<Job> {
     try_record(db, m).unwrap()
 }
@@ -239,7 +238,7 @@ fn failed_record_keeps_nothing_so_the_resent_mention_opens_the_thread() {
 }
 
 #[test]
-fn any_user_in_an_allowed_channel_opens_a_thread() {
+fn any_user_in_any_channel_opens_a_thread() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
     let job = record_one(&db, &mention("Ev1", "U9", "C1", "10.5", None));
@@ -248,14 +247,14 @@ fn any_user_in_an_allowed_channel_opens_a_thread() {
 }
 
 #[test]
-fn disallowed_channel_is_ignored() {
+fn a_mention_in_a_channel_nobody_configured_opens_a_thread() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
     assert_eq!(
         record_one(&db, &mention("Ev1", "U1", "C9", "10.5", None)),
         None
     );
-    assert_eq!(state(&db, "C9", "10.5"), None);
+    assert_eq!(db.thread("C9", "10.5").unwrap().unwrap().owner, "U1");
 }
 
 #[test]

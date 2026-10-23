@@ -34,12 +34,7 @@ enum RepoCmd<'a> {
 
 /// Handles one `/moor` command before its ack. Returns what the ack carries and the
 /// worker's job, if any.
-pub(crate) fn record(
-    slash: &Slash,
-    db: &Db,
-    channels: &[String],
-    now: i64,
-) -> rusqlite::Result<(Kept, Option<Job>)> {
+pub(crate) fn record(slash: &Slash, db: &Db, now: i64) -> rusqlite::Result<(Kept, Option<Job>)> {
     let verb = slash.text.split_whitespace().next().unwrap_or_default();
     if verb.eq_ignore_ascii_case("login") {
         return login::login(slash, db, now).map(|kept| (kept, None));
@@ -47,7 +42,7 @@ pub(crate) fn record(
     if verb.eq_ignore_ascii_case("logout") {
         return login::logout(slash, db, now);
     }
-    let ack = record_repo(slash, db, channels, now)?;
+    let ack = record_repo(slash, db, now)?;
     let kept = Kept {
         ack: Some(ack),
         then: None,
@@ -57,22 +52,19 @@ pub(crate) fn record(
 
 /// Records one `/moor repo` command in a single transaction with its envelope id. Returns
 /// the ack's payload.
-fn record_repo(slash: &Slash, db: &Db, channels: &[String], now: i64) -> rusqlite::Result<Value> {
+fn record_repo(slash: &Slash, db: &Db, now: i64) -> rusqlite::Result<Value> {
     db.atomically(|| {
         db.event_once(&slash.envelope_id, now)?;
-        let text = answer(slash, db, channels, now)?;
+        let text = answer(slash, db, now)?;
         Ok(json!({ "text": text }))
     })
 }
 
 /// Applies the command; returns the text the user sees.
-fn answer(slash: &Slash, db: &Db, channels: &[String], now: i64) -> rusqlite::Result<String> {
+fn answer(slash: &Slash, db: &Db, now: i64) -> rusqlite::Result<String> {
     let Some(cmd) = parse(&slash.text) else {
         return Ok(USAGE.to_owned());
     };
-    if !channels.contains(&slash.channel) {
-        return Ok("moor does not work in this channel.".to_owned());
-    }
     let channel = slash.channel.as_str();
     let not_here = |repo: &str| format!("`{repo}` is not one of this channel's repos.");
     Ok(match cmd {

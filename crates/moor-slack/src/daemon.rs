@@ -109,7 +109,6 @@ pub fn run(settings: &Settings, log: &Log) -> Result<(), String> {
     let (_wake_tx, wake_rx) = mpsc::channel();
     let recorder = Recorder {
         db,
-        channels: cfg.channels,
         api: Arc::clone(&api),
         bot_token: Arc::clone(&bot_token),
         jobs: jobs_tx,

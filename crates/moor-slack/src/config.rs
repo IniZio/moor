@@ -13,8 +13,6 @@ pub struct Config {
     pub app_token_file: PathBuf,
     /// File holding the bot token (`xoxb-`); the file must be mode 0600.
     pub bot_token_file: PathBuf,
-    /// Channel ids that may start Boxes, such as `C0123ABC`; must not be empty.
-    pub channels: Vec<String>,
     /// Slack Web API base URL without a trailing `/`; `https://` or loopback `http://` only.
     #[serde(default = "default_api_base")]
     pub api_base: String,
@@ -108,9 +106,16 @@ fn default_github_api_base() -> String {
 ///
 /// # Errors
 /// Returns [`ConfigError`] (with `file` set) for bad YAML, unknown keys, mistyped values,
-/// empty token paths or id lists, and an unusable API base; the error path names the key.
+/// empty token paths and an unusable API base; the error path names the key.
 pub fn parse_config(file: &str, text: &str) -> Result<Config, ConfigError> {
-    let cfg: Config = parse_strict(file, text)?;
+    let cfg: Config = parse_strict(file, text).map_err(|mut e| {
+        if e.path == "channels" {
+            e.reason = "this key was removed: the bot answers in every channel it is invited to, \
+                        so delete `channels` from the config"
+                .to_owned();
+        }
+        e
+    })?;
     validate(&cfg).map_err(|(key, reason)| ConfigError::new(key, reason).in_file(file))?;
     Ok(cfg)
 }
@@ -124,12 +129,6 @@ fn validate(cfg: &Config) -> Result<(), (&'static str, &'static str)> {
         if path.as_os_str().is_empty() {
             return Err((key, "must not be empty"));
         }
-    }
-    if cfg.channels.is_empty() {
-        return Err(("channels", "must list at least one id"));
-    }
-    if cfg.channels.iter().any(|id| id.trim().is_empty()) {
-        return Err(("channels", "ids must not be empty"));
     }
     base_ok("api_base", &cfg.api_base)?;
     base_ok("github_api_base", &cfg.github_api_base)?;

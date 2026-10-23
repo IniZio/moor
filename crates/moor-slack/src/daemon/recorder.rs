@@ -16,8 +16,6 @@ use crate::{login, slash, Log};
 pub(super) struct Recorder {
     /// The Socket Mode thread's own `slack.db` connection.
     pub(super) db: Db,
-    /// Channel ids where mentions are answered.
-    pub(super) channels: Vec<String>,
     /// Web API client, for the login modal.
     pub(super) api: Arc<Api>,
     /// Bot token for opening the login modal.
@@ -35,9 +33,10 @@ impl Intake for Recorder {
     fn take(&self, item: Inbound) -> Result<Kept, NotKept> {
         let now = (self.clock)();
         let kept = match item {
-            Inbound::Mention(mention) => worker::record(&mention, &self.db, &self.channels, now)
-                .map(|job| (Kept::default(), job)),
-            Inbound::Slash(slash) => slash::record(&slash, &self.db, &self.channels, now),
+            Inbound::Mention(mention) => {
+                worker::record(&mention, &self.db, now).map(|job| (Kept::default(), job))
+            }
+            Inbound::Slash(slash) => slash::record(&slash, &self.db, now),
             Inbound::Submission(sub) => login::submission(sub, &self.db, now).map(|(ack, job)| {
                 (
                     Kept {
