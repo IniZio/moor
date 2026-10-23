@@ -1,25 +1,29 @@
 //! `moor front-shim`: runs a front in new user, mount and PID namespaces, where the controller's
 //! state dir, operator socket and vault key are out of reach.
 //!
-//! The controller runs `moor front-shim [--cover DIR | --mask FILE]... -- COMMAND...`. That
-//! process enters the namespaces, covers each DIR with an empty tmpfs and each FILE with
-//! `/dev/null`, then runs `moor front-shim --init -- COMMAND...` as pid 1 of the new PID
-//! namespace. pid 1 mounts a fresh `/proc`, so no controller pid is visible, and runs the front
-//! without capabilities, so the front cannot unmount what hides those paths. Both shims pass
-//! SIGTERM and SIGINT on, reap every child and exit with the front's status. `--check` only
-//! enters the namespaces, so the controller can refuse fronts on a host that forbids them.
+//! The controller runs `moor front-shim --parent PID [--cover DIR | --mask FILE]... -- COMMAND...`.
+//! That process dies with the controller `PID` (it exits at once if `PID` is not its parent),
+//! enters the namespaces, covers each DIR with an empty tmpfs and each FILE with `/dev/null`,
+//! then runs `moor front-shim --init -- COMMAND...` as pid 1 of the new PID namespace. pid 1
+//! mounts a fresh `/proc`, so no controller pid is visible, moves to `/`, so no cwd reaches
+//! the covered paths, and runs the front without capabilities, so the front cannot unmount what
+//! hides those paths. Both shims pass SIGTERM and SIGINT on, reap every child and exit with the
+//! front's status. `--check` only enters the namespaces, so the controller can refuse fronts on
+//! a host that forbids them.
 
 use std::ffi::OsString;
 use std::fs;
+use std::io;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::thread;
 use std::time::Duration;
 
 use nix::sched::{unshare, CloneFlags};
+use rustix::event::{poll, PollFd, PollFlags, Timespec};
 use rustix::mount::{mount, mount_bind, mount_change, MountFlags, MountPropagationFlags};
 use rustix::process::{
-    getgid, getuid, kill_process, set_parent_process_death_signal, waitpid, Pid, Signal,
+    getgid, getppid, getuid, kill_process, set_parent_process_death_signal, waitpid, Pid, Signal,
     WaitOptions, WaitStatus,
 };
 use rustix::thread::{
@@ -44,7 +48,12 @@ pub fn main(args: &[OsString]) -> Result<u8, String> {
         [flag] if flag == "--check" => isolate(&[], &[]).map(|()| 0),
         [flag] if flag == "--init" => init(command),
         _ => {
-            let (cover, mask) = hidden(flags)?;
+            let Hidden {
+                parent,
+                cover,
+                mask,
+            } = Hidden::parse(flags)?;
+            die_with(parent)?;
             let exe = std::env::current_exe().map_err(|e| format!("no own executable: {e}"))?;
             isolate(&cover, &mask)?;
             let mut caps = capabilities(None).map_err(|e| format!("capget: {e}"))?;
@@ -52,31 +61,72 @@ pub fn main(args: &[OsString]) -> Result<u8, String> {
             set_capabilities(None, caps).map_err(|e| format!("capset: {e}"))?;
             configure_capability_in_ambient_set(CapabilitySet::SYS_ADMIN, true)
                 .map_err(|e| format!("cannot pass CAP_SYS_ADMIN to pid 1: {e}"))?;
+            let (alive, _held) = std::io::pipe().map_err(|e| format!("pipe: {e}"))?;
             relay(
                 Command::new(exe)
                     .args(["front-shim", "--init", "--"])
-                    .args(command),
+                    .args(command)
+                    .stdin(alive),
             )
         }
     }
 }
 
-/// Splits `--cover DIR` and `--mask FILE` flags into the dirs and the files to hide.
-fn hidden(flags: &[OsString]) -> Result<(Vec<PathBuf>, Vec<PathBuf>), String> {
-    let (mut cover, mut mask) = (Vec::new(), Vec::new());
-    let mut flags = flags.iter();
-    while let Some(flag) = flags.next() {
-        let into = match flag.to_str() {
-            Some("--cover") => &mut cover,
-            Some("--mask") => &mut mask,
-            _ => return Err(format!("unknown flag {}", flag.display())),
-        };
-        let path = flags
-            .next()
-            .ok_or_else(|| format!("{} needs a path", flag.display()))?;
-        into.push(PathBuf::from(path));
+/// Makes this process die with `parent`, the controller that started it: the kernel kills it
+/// when the controller exits, and it exits now if the controller already did.
+fn die_with(parent: Pid) -> Result<(), String> {
+    set_parent_process_death_signal(Some(Signal::KILL))
+        .map_err(|e| format!("cannot set the parent death signal: {e}"))?;
+    if getppid() != Some(parent) {
+        return Err(format!(
+            "the controller (pid {}) is gone",
+            parent.as_raw_nonzero()
+        ));
     }
-    Ok((cover, mask))
+    Ok(())
+}
+
+/// What `moor front-shim` was asked to keep a front away from, and the controller it serves.
+struct Hidden {
+    /// The controller that started this shim.
+    parent: Pid,
+    /// Dirs to cover with an empty tmpfs.
+    cover: Vec<PathBuf>,
+    /// Files to replace with `/dev/null`.
+    mask: Vec<PathBuf>,
+}
+
+impl Hidden {
+    /// Reads `--parent PID`, `--cover DIR` and `--mask FILE` flags.
+    fn parse(flags: &[OsString]) -> Result<Self, String> {
+        let (mut parent, mut cover, mut mask) = (None, Vec::new(), Vec::new());
+        let mut flags = flags.iter();
+        while let Some(flag) = flags.next() {
+            let word = flags
+                .next()
+                .ok_or_else(|| format!("{} needs a value", flag.display()))?;
+            match flag.to_str() {
+                Some("--parent") => {
+                    parent = word
+                        .to_str()
+                        .and_then(|w| w.parse().ok())
+                        .and_then(Pid::from_raw);
+                    if parent.is_none() {
+                        return Err(format!("--parent {} is not a pid", word.display()));
+                    }
+                }
+                Some("--cover") => cover.push(PathBuf::from(word)),
+                Some("--mask") => mask.push(PathBuf::from(word)),
+                _ => return Err(format!("unknown flag {}", flag.display())),
+            }
+        }
+        let parent = parent.ok_or("--parent is required")?;
+        Ok(Self {
+            parent,
+            cover,
+            mask,
+        })
+    }
 }
 
 /// Enters new user, mount and PID namespaces as the same uid and gid, then hides `cover` under
@@ -111,11 +161,22 @@ fn isolate(cover: &[PathBuf], mask: &[PathBuf]) -> Result<(), String> {
     Ok(())
 }
 
-/// pid 1 of the front's PID namespace: mounts its `/proc`, drops every capability and runs
-/// `command`. The kernel kills the namespace if the outer shim dies.
+/// pid 1 of the front's PID namespace: mounts its `/proc`, moves to `/`, drops every capability
+/// and runs `command`. The kernel kills the namespace if the outer shim dies. The outer shim
+/// holds the only write end of stdin, so a readable stdin means it died before the death signal
+/// was set, and pid 1 exits.
 fn init(command: &[OsString]) -> Result<u8, String> {
     set_parent_process_death_signal(Some(Signal::KILL))
         .map_err(|e| format!("cannot set the parent death signal: {e}"))?;
+    let held = io::stdin();
+    let mut outer = [PollFd::new(&held, PollFlags::IN)];
+    let idle = Timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    if poll(&mut outer, Some(&idle)).map_err(|e| format!("poll: {e}"))? > 0 {
+        return Err("the outer shim exited before pid 1 started".to_owned());
+    }
     let flags = MountFlags::NOSUID | MountFlags::NODEV | MountFlags::NOEXEC;
     mount("proc", "/proc", "proc", flags, None).map_err(|e| format!("cannot mount /proc: {e}"))?;
     let none = CapabilitySet::empty();
@@ -128,8 +189,9 @@ fn init(command: &[OsString]) -> Result<u8, String> {
         },
     )
     .map_err(|e| format!("cannot drop capabilities: {e}"))?;
+    std::env::set_current_dir("/").map_err(|e| format!("cannot move to /: {e}"))?;
     let (program, args) = command.split_first().ok_or("no front command")?;
-    relay(Command::new(program).args(args))
+    relay(Command::new(program).args(args).stdin(Stdio::null()))
 }
 
 /// Runs `command`, passes SIGTERM and SIGINT to it and reaps every child that exits; returns

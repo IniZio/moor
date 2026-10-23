@@ -25,7 +25,7 @@ use super::{fresh_dir, Dir};
 /// Tries each way a front could reach the controller and prints what each got. Its argv is the
 /// protocol and the test root; it waits for `ctl.pid` there, the controller's pid.
 const PROBE: &str = r#"
-import ctypes, json, os, socket, sys, time
+import ctypes, json, os, socket, stat, sys, time
 protocol, root = int(sys.argv[1]), sys.argv[2]
 def dial(path):
     try:
@@ -46,6 +46,15 @@ def read(path):
         return len(open(path, "rb").read())
     except OSError as e:
         return type(e).__name__
+def write(path):
+    try:
+        open(path, "w").close()
+        return "writable"
+    except OSError as e:
+        return e.strerror
+def kind(fd):
+    mode = os.fstat(fd).st_mode
+    return "pipe" if stat.S_ISFIFO(mode) else "file" if stat.S_ISREG(mode) else "other"
 def listdir(path):
     try:
         return len(os.listdir(path))
@@ -64,7 +73,13 @@ got = {
     "controller_fds": listdir(f"/proc/{ctl}/fd"),
     "controller_root": dial(f"/proc/{ctl}/root{root}/c.sock"),
     "unmount": "allowed" if unmounted else os.strerror(ctypes.get_errno()),
+    "cover_write": write(f"{root}/state/planted"),
+    "cwd": os.getcwd(),
+    "init_cwd": os.readlink("/proc/1/cwd"),
+    "stdout": kind(1),
+    "stderr": kind(2),
 }
+print("front says hello", flush=True)
 print("probe", json.dumps(got), file=sys.stderr, flush=True)
 time.sleep(600)
 "#;
@@ -99,6 +114,25 @@ while True:
     time.sleep(1)
 "#;
 
+/// Ignores SIGTERM, so only SIGKILL ends it, and says when it is ready.
+const STUBBORN: &str = r#"
+import signal, sys, time
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+print("ready", file=sys.stderr, flush=True)
+time.sleep(600)
+"#;
+
+/// Exits 9 on SIGINT, and says when it is ready.
+const INTERRUPTIBLE: &str = r#"
+import signal, sys, time
+def interrupted(*_):
+    print("front got INT", file=sys.stderr, flush=True)
+    sys.exit(9)
+signal.signal(signal.SIGINT, interrupted)
+print("ready", file=sys.stderr, flush=True)
+time.sleep(600)
+"#;
+
 /// Runs a moor binary in a user namespace where no further user namespace can be created.
 const NO_USER_NAMESPACES: [&str; 6] = [
     "unshare",
@@ -109,7 +143,8 @@ const NO_USER_NAMESPACES: [&str; 6] = [
     r#"echo 0 > /proc/sys/user/max_user_namespaces && exec "$0" "$@""#,
 ];
 
-/// A served controller whose operator socket sits outside its state dir, with a `probe` front
+/// A served controller, run from inside its state dir and logging its stdout to a file there,
+/// whose operator socket sits outside its state dir, with a `probe` front
 /// that runs a Python script and a `slack` front without a command. Dropping it drains the
 /// controller and waits for it to exit.
 struct Controller {
@@ -122,6 +157,7 @@ impl Controller {
     /// `wrap`.
     fn start(script: &str, wrap: &[&str]) -> Self {
         let root = fresh_dir("front");
+        fs::create_dir(root.join("state")).unwrap();
         let config = root.join("c.yaml");
         let command = serde_json::json!(["python3", "-c", script, PROTOCOL.to_string(), &*root]);
         fs::write(
@@ -142,8 +178,9 @@ impl Controller {
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
             .env("HOME", root.join("home"))
+            .current_dir(root.join("state"))
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
+            .stdout(fs::File::create(root.join("state").join("controller.out")).unwrap())
             .stderr(fs::File::create(root.join("log")).unwrap())
             .spawn()
             .unwrap();
@@ -184,10 +221,35 @@ impl Controller {
     fn pid_file(&self) -> PathBuf {
         self.root.join("state").join("fronts").join("probe.pid")
     }
+
+    /// The pid of the probe front's outer shim, from its pid file.
+    fn shim_pid(&self) -> i32 {
+        wait_for("the pid file", || fs::read_to_string(self.pid_file()).ok())
+            .lines()
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap()
+    }
+
+    /// Waits for the front to be ready and returns every process of it: the outer shim, pid 1
+    /// and the front.
+    fn processes(&self) -> Vec<String> {
+        wait_for("the front", || self.line("ready"));
+        let marker = self.root.display().to_string();
+        let own = self.child.id().to_string();
+        processes_naming(&marker)
+            .into_iter()
+            .filter(|p| *p != own)
+            .collect()
+    }
 }
 
 impl Drop for Controller {
     fn drop(&mut self) {
+        if matches!(self.child.try_wait(), Ok(Some(_))) {
+            return;
+        }
         let pid = Pid::from_raw(i32::try_from(self.child.id()).unwrap()).unwrap();
         let _ = kill_process(pid, Signal::TERM);
         let deadline = Instant::now() + Duration::from_secs(15);
@@ -223,6 +285,27 @@ fn processes_naming(marker: &str) -> Vec<String> {
                 .then_some(name)
         })
         .collect()
+}
+
+/// Whether `pid` is a running process, not a zombie.
+fn alive(pid: &str) -> bool {
+    fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
+        stat.rsplit_once(')')
+            .is_some_and(|(_, rest)| !rest.trim_start().starts_with('Z'))
+    })
+}
+
+/// Runs `moor front-shim` with `args` in `cwd`, as a child of this test process.
+fn shim(cwd: &std::path::Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_moor"))
+        .arg("front-shim")
+        .args(args)
+        .current_dir(cwd)
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap()
 }
 
 #[test]
@@ -279,4 +362,153 @@ fn without_user_namespaces_no_front_starts_and_the_controller_serves() {
     assert!(!log.contains("front probe"), "{log}");
     assert!(!ctl.pid_file().exists());
     assert_eq!(ctl.version(), Some(()));
+}
+
+#[test]
+fn a_front_starts_in_root_with_only_pipes_for_output_and_a_read_only_cover() {
+    let ctl = Controller::start(PROBE, &[]);
+    let got = wait_for("the probe", || ctl.line("probe "));
+    let got: Value = serde_json::from_str(&got).unwrap();
+    assert_eq!(got["cwd"], "/", "{got}");
+    assert_eq!(got["init_cwd"], "/", "{got}");
+    assert_eq!(got["stdout"], "pipe", "{got}");
+    assert_eq!(got["stderr"], "pipe", "{got}");
+    assert_eq!(got["cover_write"], "Read-only file system", "{got}");
+    assert!(ctl.line("front says hello").is_some(), "{}", ctl.log());
+    let state = ctl.root.join("state");
+    let shim_cwd = fs::read_link(format!("/proc/{}/cwd", ctl.shim_pid())).unwrap();
+    assert_eq!(
+        shim_cwd,
+        PathBuf::from("/"),
+        "the outer shim started in {state:?}"
+    );
+}
+
+#[test]
+fn a_shim_started_in_a_covered_dir_runs_its_front_in_root() {
+    let covered = fresh_dir("cwd");
+    fs::write(covered.join("secret"), "x").unwrap();
+    let dir = covered.display().to_string();
+    let parent = std::process::id().to_string();
+    let script =
+        "import os; print(os.getcwd(), os.readlink('/proc/1/cwd'), os.listdir('/proc/1/cwd'))";
+    let out = shim(
+        &covered,
+        &[
+            "--parent", &parent, "--cover", &dir, "--", "python3", "-c", script,
+        ],
+    );
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        said.starts_with("/ / ["),
+        "{said} {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!said.contains("secret"), "{said}");
+}
+
+#[test]
+fn the_shim_passes_sigint_to_the_front() {
+    let ctl = Controller::start(INTERRUPTIBLE, &[]);
+    wait_for("the front", || ctl.line("ready"));
+    kill_process(Pid::from_raw(ctl.shim_pid()).unwrap(), Signal::INT).unwrap();
+    wait_for("the front's INT", || ctl.line("front got INT"));
+    let exited = wait_for("the front's exit", || ctl.line("exited with "));
+    assert!(exited.starts_with("exit status: 9;"), "{}", ctl.log());
+}
+
+#[test]
+fn a_killed_controller_leaves_no_front_process() {
+    let mut ctl = Controller::start(STUBBORN, &[]);
+    let before = ctl.processes();
+    assert!(before.len() >= 3, "{before:?}");
+    ctl.child.kill().unwrap();
+    ctl.child.wait().unwrap();
+    wait_for("every front process to die", || {
+        before.iter().all(|p| !alive(p)).then_some(())
+    });
+}
+
+#[test]
+fn a_killed_outer_shim_takes_pid_1_and_the_front_with_it() {
+    let ctl = Controller::start(STUBBORN, &[]);
+    let before = ctl.processes();
+    let shim = ctl.shim_pid();
+    kill_process(Pid::from_raw(shim).unwrap(), Signal::KILL).unwrap();
+    wait_for("every front process to die", || {
+        before.iter().all(|p| !alive(p)).then_some(())
+    });
+}
+
+#[test]
+fn a_shim_whose_controller_is_gone_exits_without_running_the_front() {
+    let dir = fresh_dir("orphan");
+    let mark = dir.join("ran");
+    let touch = format!("touch {}", mark.display());
+    let me = std::process::id().to_string();
+    let out = shim(&dir, &["--parent", "1", "--", "sh", "-c", &touch]);
+    assert!(!out.status.success());
+    assert!(!mark.exists(), "{}", String::from_utf8_lossy(&out.stderr));
+    let out = shim(&dir, &["--parent", &me, "--", "sh", "-c", &touch]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(mark.exists());
+}
+
+#[test]
+fn pid_1_exits_when_the_outer_shim_died_before_it_started() {
+    let dir = fresh_dir("pid1");
+    let mark = dir.join("ran");
+    let touch = format!("touch {}", mark.display());
+    let run = |stdin: Stdio| {
+        Command::new("unshare")
+            .args([
+                "--user",
+                "--map-root-user",
+                "--pid",
+                "--fork",
+                "--mount",
+                "--",
+            ])
+            .arg(env!("CARGO_BIN_EXE_moor"))
+            .args(["front-shim", "--init", "--", "sh", "-c", &touch])
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .stdin(stdin)
+            .output()
+            .unwrap()
+    };
+    let (alive, held) = std::io::pipe().unwrap();
+    let out = run(alive.into());
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(mark.exists());
+    drop(held);
+    fs::remove_file(&mark).unwrap();
+    let (gone, held) = std::io::pipe().unwrap();
+    drop(held);
+    let out = run(gone.into());
+    assert!(!out.status.success());
+    assert!(!mark.exists(), "{}", String::from_utf8_lossy(&out.stderr));
+}
+
+#[test]
+fn the_refusal_names_every_sysctl_that_allows_user_namespaces() {
+    let ctl = Controller::start(PROBE, &NO_USER_NAMESPACES);
+    let log = wait_for("the refusal", || {
+        Some(ctl.log()).filter(|l| l.contains("fronts not started"))
+    });
+    for sysctl in [
+        "kernel.unprivileged_userns_clone",
+        "user.max_user_namespaces",
+        "kernel.apparmor_restrict_unprivileged_userns",
+    ] {
+        assert!(log.contains(sysctl), "{log}");
+    }
 }
