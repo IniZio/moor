@@ -145,3 +145,13 @@ fn a_host_session_ends_after_30_quiet_minutes_unless_the_config_says_otherwise()
     let e = err(&slack_with("coordinator:\n  idle_minutes: 0\n"));
     assert_eq!(e.path, "coordinator.idle_minutes");
 }
+
+#[test]
+fn status_edits_wait_2_seconds_unless_the_config_says_otherwise() {
+    let c = parse_config("s.yaml", &slack_with("")).unwrap();
+    assert_eq!(c.update_millis, 2000);
+    let c = parse_config("s.yaml", &slack_with("update_millis: 250\n")).unwrap();
+    assert_eq!(c.update_millis, 250);
+    let e = err(&slack_with("update_millis: 0\n"));
+    assert_eq!(e.path, "update_millis");
+}

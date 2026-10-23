@@ -47,6 +47,8 @@ pub(super) struct Front {
     socket: PathBuf,
     /// Its argv, not empty.
     command: Vec<String>,
+    /// How long a leftover of this front gets to exit after a signal.
+    leftover_grace: Duration,
 }
 
 impl Front {
@@ -55,6 +57,7 @@ impl Front {
         ns: &str,
         listener: &UnixListener,
         command: Vec<String>,
+        leftover_grace: Duration,
     ) -> Result<Self, String> {
         let socket = listener
             .local_addr()
@@ -65,6 +68,7 @@ impl Front {
             ns: ns.to_owned(),
             socket,
             command,
+            leftover_grace,
         })
     }
 

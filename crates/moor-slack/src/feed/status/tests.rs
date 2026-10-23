@@ -214,3 +214,18 @@ fn each_box_follows_only_the_events_of_its_own_id() {
     let (_, text) = one(&steps);
     assert!(text.starts_with("*fix-bug*: starting"), "{text}");
 }
+
+#[test]
+fn a_configured_window_decides_when_a_refused_status_is_sent_again() {
+    let every = Duration::from_millis(300);
+    let t0 = crate::feed::now();
+    let mut p = Planner::every(every);
+    let vs = views(View::default());
+    let rows = [bound(None, None)];
+    let steps = p.plan(&rows, &vs, t0);
+    p.record(steps.first().unwrap(), t0);
+    assert!(p
+        .plan(&rows, &vs, t0 + Duration::from_millis(299))
+        .is_empty());
+    assert_eq!(p.plan(&rows, &vs, t0 + every).len(), 1);
+}

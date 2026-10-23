@@ -37,8 +37,8 @@ const PROXY_VARS: [&str; 8] = [
     "no_proxy",
 ];
 
-/// Polls of 0.1 s each while waiting for the port to open or close.
-const POLLS: u32 = 50;
+/// Polls of 0.1 s each while waiting for the port to open or close; a Box gets 5 s.
+pub(super) const POLLS: u32 = 50;
 
 /// Seconds a command waits for another command's install or start to finish.
 const LOCK_WAIT: u32 = 300;
@@ -75,6 +75,16 @@ fn stop(reason: &str) -> String {
 /// start together never start two tinyproxies. The listener is ours only while the pid file names
 /// a live `tinyproxy`; a port held by anything else stops the exec.
 pub(super) fn lines(listen: u16, upstream: u16, hosts: &[String]) -> Vec<String> {
+    lines_polling(listen, upstream, hosts, POLLS)
+}
+
+/// [`lines`] with `polls` polls of 0.1 s in each wait, in place of [`POLLS`].
+pub(super) fn lines_polling(
+    listen: u16,
+    upstream: u16,
+    hosts: &[String],
+    polls: u32,
+) -> Vec<String> {
     let unset = PROXY_VARS.iter().fold(String::new(), |mut out, v| {
         let _ = write!(out, " -u {v}");
         out
@@ -97,7 +107,7 @@ pub(super) fn lines(listen: u16, upstream: u16, hosts: &[String]) -> Vec<String>
     // is gone; a zombie counts as gone.
     let old_runs = "moor_st=$(sed -n 's/.*) \\(.\\) .*/\\1/p' \"/proc/$moor_pid/stat\" 2>/dev/null) && [ -n \"$moor_st\" ] && [ \"$moor_st\" != Z ]";
     let start = format!(
-        "if {up} && [ -z \"$moor_ours\" ]; then {}; fi; if [ -n \"$moor_new\" ] || ! {up}; then if [ -n \"$moor_ours\" ]; then kill \"$moor_pid\" 2>/dev/null; moor_n=0; while {old_runs}; do moor_n=$((moor_n+1)); [ $moor_n -le {POLLS} ] || {}; sleep 0.1; done; fi; moor_n=0; while {up}; do moor_n=$((moor_n+1)); [ $moor_n -le {POLLS} ] || {}; sleep 0.1; done; if [ -n \"$moor_new\" ]; then moor_cfg=\"{CONF}.new\"; else moor_cfg=\"{CONF}\"; fi; tinyproxy -c \"$moor_cfg\" </dev/null >/dev/null 2>\"{START_LOG}\" 9>&- || {}; moor_n=0; until {up}; do moor_n=$((moor_n+1)); [ $moor_n -le {POLLS} ] || {}; sleep 0.1; done; if [ -n \"$moor_new\" ]; then mv -f \"{CONF}.new\" \"{CONF}\" || {}; fi; fi",
+        "if {up} && [ -z \"$moor_ours\" ]; then {}; fi; if [ -n \"$moor_new\" ] || ! {up}; then if [ -n \"$moor_ours\" ]; then kill \"$moor_pid\" 2>/dev/null; moor_n=0; while {old_runs}; do moor_n=$((moor_n+1)); [ $moor_n -le {polls} ] || {}; sleep 0.1; done; fi; moor_n=0; while {up}; do moor_n=$((moor_n+1)); [ $moor_n -le {polls} ] || {}; sleep 0.1; done; if [ -n \"$moor_new\" ]; then moor_cfg=\"{CONF}.new\"; else moor_cfg=\"{CONF}\"; fi; tinyproxy -c \"$moor_cfg\" </dev/null >/dev/null 2>\"{START_LOG}\" 9>&- || {}; moor_n=0; until {up}; do moor_n=$((moor_n+1)); [ $moor_n -le {polls} ] || {}; sleep 0.1; done; if [ -n \"$moor_new\" ]; then mv -f \"{CONF}.new\" \"{CONF}\" || {}; fi; fi",
         stop(&format!("port {listen} is taken by another process")),
         stop("the old tinyproxy $moor_pid did not exit after TERM"),
         stop(&format!("port {listen} stays held after tinyproxy was stopped")),

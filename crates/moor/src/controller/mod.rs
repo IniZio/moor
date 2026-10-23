@@ -153,11 +153,12 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
     let lock = take_lock(Path::new(&socket_lock), &socket)?;
     let listener = sockets.listen("controller", &socket).map_err(refused)?;
     let fronts = peer::bind_fronts(&env, &mut sockets, &cfg.fronts.keys().collect::<Vec<_>>())?;
+    let grace = cfg.front_stop_grace();
     let commands = fronts
         .iter()
         .filter_map(|(ns, listener)| {
             let command = cfg.fronts.get(ns)?.command.clone()?;
-            Some(fronts::Front::new(ns, listener, command))
+            Some(fronts::Front::new(ns, listener, command, grace))
         })
         .collect::<Result<_, _>>()
         .map_err(refused)?;

@@ -139,6 +139,7 @@ next Box after it is pushed.
 | `state_dir` | path | the same state directory as the CLI | The state directory. `~` is allowed. |
 | `settle_every_secs` | integer, above 0 | 5 | Seconds between passes that update each open Box's agent state. |
 | `drain_timeout_secs` | integer | 600 | Seconds a SIGTERM waits for in-flight requests. See [Stopping the controller](#stopping-the-controller). |
+| `front_stop_grace_millis` | integer, above 0 | 5000 | Milliseconds a front left over from a crashed controller gets to exit after each signal. Tests shorten it. |
 | `fronts` | map | empty | Fronts that each get their own socket, and that the controller runs when they have a `command`. |
 
 The controller refuses a config that has a `web`, `slack` or `repos` key.

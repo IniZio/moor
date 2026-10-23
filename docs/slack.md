@@ -161,6 +161,7 @@ The front rejects unknown keys.
 | `channels` | list of channel ids | required, at least one | Channels that may start Boxes and use `/moor repo`. |
 | `api_base` | URL | `https://slack.com/api` | The Slack Web API base. It must start with `https://`, `http://127.0.0.1:`, or `http://localhost:`. |
 | `github_api_base` | URL | `https://api.github.com` | The GitHub API base where a pasted `gh auth token` is checked with `GET /user`. The same URL rules as `api_base`. |
+| `update_millis` | integer, at least 1 | 2000 | Milliseconds a Box's status message waits between edits, and a refused line waits before it is sent again. Tests shorten it. |
 | `coordinator.binary` | absolute path | `claude` on `PATH` | The Claude Code binary. |
 | `coordinator.agent` | `claude` | `claude` | The coordinator agent. |
 | `coordinator.model` | string | `sonnet` | The model for each turn. |

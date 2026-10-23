@@ -18,6 +18,7 @@ fn feed(dir: &std::path::Path) -> Feed {
         api: Arc::new(Api::new("http://127.0.0.1:9").unwrap()),
         bot_token: Arc::new(Secret::new(b"xoxb-test".to_vec())),
         log: Arc::new(|_| {}),
+        update_every: super::status::UPDATE_EVERY,
         clock: || 9,
     }
 }

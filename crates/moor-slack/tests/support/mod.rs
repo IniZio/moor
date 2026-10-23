@@ -68,6 +68,9 @@ fn secret_file(path: &Path, text: &str) {
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
 }
 
+/// The wait between a Box's status edits that the tests configure, in place of 2000.
+pub(crate) const UPDATE_MILLIS: u64 = 250;
+
 impl Rig {
     /// Writes both token files and the config; nothing runs yet.
     pub(crate) fn new() -> Self {
@@ -94,7 +97,7 @@ impl Rig {
         std::fs::write(
             self.path("slack.yaml"),
             format!(
-                "app_token_file: {app_token_file}\nbot_token_file: {bot_token_file}\nchannels: [{CHANNEL}]\napi_base: {}\ngithub_api_base: {}\n",
+                "app_token_file: {app_token_file}\nbot_token_file: {bot_token_file}\nchannels: [{CHANNEL}]\napi_base: {}\ngithub_api_base: {}\nupdate_millis: {UPDATE_MILLIS}\n",
                 self.slack.api_base(),
                 self.github.api_base(),
             ),

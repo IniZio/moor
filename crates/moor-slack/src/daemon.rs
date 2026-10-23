@@ -8,6 +8,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{self, Receiver};
 use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
 
 use moor_client::Client;
 use moor_core::secret::Secret;
@@ -124,6 +125,7 @@ pub fn run(settings: &Settings, log: &Log) -> Result<(), String> {
         api: Arc::clone(&api),
         bot_token: Arc::clone(&bot_token),
         log: Arc::clone(log),
+        update_every: Duration::from_millis(cfg.update_millis),
         clock: settings.clock,
     };
     let worker = Worker {

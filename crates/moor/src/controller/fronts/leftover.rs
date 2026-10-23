@@ -10,9 +10,6 @@ use rustix::process::{pidfd_open, pidfd_send_signal, Pid, PidfdFlags, Signal};
 use super::{log, Front};
 use crate::controller::Sink;
 
-/// How long a leftover front gets to exit after each signal.
-const GRACE: Duration = Duration::from_secs(5);
-
 /// How often a leftover is checked for having exited.
 const POLL: Duration = Duration::from_millis(50);
 
@@ -56,7 +53,7 @@ pub(super) fn stop(front: &Front, sink: &Sink) {
     );
     for signal in [Signal::TERM, Signal::KILL] {
         target.signal(signal);
-        if gone_within(raw, started) {
+        if gone_within(raw, started, front.leftover_grace) {
             return;
         }
     }
@@ -80,13 +77,13 @@ impl Target {
     }
 }
 
-/// Whether the process is gone within the grace.
+/// Whether the process is gone within `grace`.
 #[expect(
     clippy::disallowed_methods,
     reason = "times a grace period for a process, not domain time"
 )]
-fn gone_within(pid: i32, started: &str) -> bool {
-    let deadline = Instant::now() + GRACE;
+fn gone_within(pid: i32, started: &str, grace: Duration) -> bool {
+    let deadline = Instant::now() + grace;
     while running(pid, started) {
         if Instant::now() >= deadline {
             return false;

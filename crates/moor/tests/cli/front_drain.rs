@@ -71,17 +71,20 @@ while True:
     time.sleep(1)
 "#;
 
-/// Takes two seconds to finish after SIGTERM, writes its second argument; its first argument is written once the handler is set.
+/// Takes half a second to finish after SIGTERM, writes its second argument; its first argument is written once the handler is set.
 const LEFTOVER_SLOW_TO_TERM: &str = r#"
 import signal, sys, time
 def term(*_):
-    time.sleep(2)
+    time.sleep(0.5)
     open(sys.argv[2], "w").write("done")
     sys.exit(0)
 signal.signal(signal.SIGTERM, term)
 open(sys.argv[1], "w").write("up")
 time.sleep(600)
 "#;
+
+/// The wait the config gives a leftover front after each signal, in place of 5 seconds.
+const GRACE_MILLIS: u64 = 1500;
 
 /// A state dir and config with some fronts that each run a script.
 struct Setup {
@@ -94,7 +97,7 @@ impl Setup {
     fn new(drain_secs: u32, fronts: &[(&str, &str)]) -> Self {
         let root = fresh_dir("frontdrain");
         let mut config = format!(
-            "socket: {}\nstate_dir: {}\ndrain_timeout_secs: {drain_secs}\nfronts:\n",
+            "socket: {}\nstate_dir: {}\ndrain_timeout_secs: {drain_secs}\nfront_stop_grace_millis: {GRACE_MILLIS}\nfronts:\n",
             root.join("c.sock").display(),
             root.join("state").display(),
         );
@@ -373,8 +376,8 @@ fn a_leftover_that_ignores_sigterm_is_killed_after_the_grace() {
     });
     let took = began.elapsed();
     assert!(
-        took >= Duration::from_secs(4),
-        "{took:?} is under the grace"
+        took >= Duration::from_millis(GRACE_MILLIS) && took < Duration::from_secs(4),
+        "{took:?} is not the configured grace of {GRACE_MILLIS} ms"
     );
     wait_for("the next front", || {
         (setup.starts("slow") == 1).then_some(())

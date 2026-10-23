@@ -143,13 +143,28 @@ pub(super) struct Step {
 }
 
 /// Decides which Boxes need a status send now, honoring the per-Box rate limit.
-#[derive(Default)]
 pub(super) struct Planner {
+    /// The wait between sends for one Box.
+    every: Duration,
     /// When a send was last tried, by Box name.
     tried: HashMap<String, Instant>,
 }
 
+impl Default for Planner {
+    fn default() -> Self {
+        Self::every(UPDATE_EVERY)
+    }
+}
+
 impl Planner {
+    /// A planner that sends for one Box at most once per `every`.
+    pub(super) fn every(every: Duration) -> Self {
+        Self {
+            every,
+            tried: HashMap::new(),
+        }
+    }
+
     /// Sends due at `now`: a post for a Box with no status message yet, an edit for a Box
     /// whose text changed. A Box that is gone gets its final text in the message it has, and
     /// a gone Box with no message gets none.
@@ -184,7 +199,7 @@ impl Planner {
             if self
                 .tried
                 .get(name)
-                .is_some_and(|at| now.duration_since(*at) < UPDATE_EVERY)
+                .is_some_and(|at| now.duration_since(*at) < self.every)
             {
                 continue;
             }

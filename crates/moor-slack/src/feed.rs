@@ -25,7 +25,7 @@ use crate::identity::Link;
 use crate::watchers::Watchers;
 use crate::Log;
 
-use status::{Planner, Step, View, UPDATE_EVERY};
+use status::{Planner, Step, View};
 
 /// Longest the feed waits for a watch item before it acts anyway, which sends the status
 /// edits the per-Box window held back.
@@ -118,6 +118,8 @@ pub(crate) struct Feed {
     pub(crate) bot_token: Arc<Secret>,
     /// Daemon log.
     pub(crate) log: Log,
+    /// The wait between a Box's status edits, and before a refused line is sent again.
+    pub(crate) update_every: Duration,
     /// The current time in unix seconds.
     pub(crate) clock: fn() -> i64,
 }
@@ -133,7 +135,7 @@ impl Feed {
         let (events, items) = mpsc::channel();
         let mut watchers = Watchers::new(self.link.clone(), events, Arc::clone(&self.log));
         let mut folds = Folds::default();
-        let mut planner = Planner::default();
+        let mut planner = Planner::every(self.update_every);
         let mut lines_due = now();
         loop {
             match db.thread_owners() {
@@ -156,7 +158,7 @@ impl Feed {
 
     /// For each user whose watch is caught up: sends the status messages that are due, closes
     /// the prompts whose Box moved on, then sends the lines and prompts not yet posted. A line
-    /// or prompt that fails holds back every line and prompt for [`UPDATE_EVERY`].
+    /// or prompt that fails holds back every line and prompt for `update_every`.
     fn act(&self, db: &Db, folds: &mut Folds, planner: &mut Planner, lines_due: &mut Instant) {
         let boxes = match db.fed_boxes() {
             Ok(boxes) => boxes,
@@ -188,7 +190,7 @@ impl Feed {
                     || !self.prompts(db, fold, &fed.boxed)
                     || !self.artifacts(db, fold, &fed.boxed)
                 {
-                    *lines_due = at + UPDATE_EVERY;
+                    *lines_due = at + self.update_every;
                     return;
                 }
             }

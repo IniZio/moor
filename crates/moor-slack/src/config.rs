@@ -22,6 +22,10 @@ pub struct Config {
     /// `https://` or loopback `http://` only.
     #[serde(default = "default_github_api_base")]
     pub github_api_base: String,
+    /// Milliseconds a Box's status message waits between edits, and a refused line or prompt
+    /// waits before it is sent again.
+    #[serde(default = "default_update_millis")]
+    pub update_millis: u64,
     /// The coordinator agent; a missing section means every default.
     #[serde(default)]
     pub coordinator: Coordinator,
@@ -94,6 +98,11 @@ const fn default_idle_minutes() -> u32 {
     30
 }
 
+/// The milliseconds between status edits unless the config names them.
+const fn default_update_millis() -> u64 {
+    2000
+}
+
 /// The public Slack Web API.
 fn default_api_base() -> String {
     "https://slack.com/api".to_owned()
@@ -130,6 +139,9 @@ fn validate(cfg: &Config) -> Result<(), (&'static str, &'static str)> {
     }
     if cfg.channels.iter().any(|id| id.trim().is_empty()) {
         return Err(("channels", "ids must not be empty"));
+    }
+    if cfg.update_millis == 0 {
+        return Err(("update_millis", "must be at least 1"));
     }
     base_ok("api_base", &cfg.api_base)?;
     base_ok("github_api_base", &cfg.github_api_base)?;

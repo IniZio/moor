@@ -22,6 +22,9 @@ pub struct ControllerConfig {
     /// Seconds a SIGTERM waits for in-flight requests before the controller exits anyway.
     /// None means 600.
     pub drain_timeout_secs: Option<u64>,
+    /// Milliseconds a front left over from a crashed controller gets to exit after SIGTERM,
+    /// and again after SIGKILL is next in line; must be above 0. None means 5000.
+    pub front_stop_grace_millis: Option<u64>,
     /// Removed key, kept only so a stale config gets a pointed error.
     /// Double option so a present-but-null `web:` still counts as present.
     #[serde(default, deserialize_with = "present_key")]
@@ -66,6 +69,9 @@ where
 /// Seconds between settle passes when the config does not say.
 const DEFAULT_SETTLE_SECS: u64 = 5;
 
+/// Milliseconds a leftover front gets after each signal when the config does not say.
+const DEFAULT_FRONT_STOP_GRACE_MILLIS: u64 = 5000;
+
 /// Seconds a drain waits when the config does not say: long enough for a `start` to finish.
 const DEFAULT_DRAIN_SECS: u64 = 600;
 
@@ -74,6 +80,15 @@ impl ControllerConfig {
     #[must_use]
     pub fn settle_every(&self) -> Duration {
         Duration::from_secs(self.settle_every_secs.unwrap_or(DEFAULT_SETTLE_SECS))
+    }
+
+    /// How long a leftover front gets to exit after SIGTERM before it is killed.
+    #[must_use]
+    pub fn front_stop_grace(&self) -> Duration {
+        Duration::from_millis(
+            self.front_stop_grace_millis
+                .unwrap_or(DEFAULT_FRONT_STOP_GRACE_MILLIS),
+        )
     }
 
     /// How long a SIGTERM waits for in-flight requests.
@@ -97,6 +112,9 @@ pub fn parse_controller(file: &str, text: &str) -> Result<ControllerConfig, Conf
     }
     if cfg.settle_every_secs == Some(0) {
         return Err(ConfigError::new("settle_every_secs", "must be above 0").in_file(file));
+    }
+    if cfg.front_stop_grace_millis == Some(0) {
+        return Err(ConfigError::new("front_stop_grace_millis", "must be above 0").in_file(file));
     }
     if cfg.web.is_some() {
         return Err(ConfigError::new(

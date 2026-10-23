@@ -69,6 +69,7 @@ fn feed_logging(dir: &Path, slack: &Fake, sock: &Path, log: crate::Log) -> Feed 
         bot_token: Arc::new(Secret::new(b"xoxb-test".to_vec())),
         link: Link::new(Client::new(sock), Team::parse("T1").unwrap()),
         log,
+        update_every: super::super::status::UPDATE_EVERY,
         clock,
     }
 }

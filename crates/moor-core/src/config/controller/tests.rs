@@ -71,6 +71,19 @@ fn drain_timeout_parses_and_defaults_to_ten_minutes() {
 }
 
 #[test]
+fn a_leftover_front_gets_five_seconds_after_each_signal_unless_the_config_says_otherwise() {
+    let c = parse_controller("c.yaml", "front_stop_grace_millis: 1500\n")
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(c.front_stop_grace(), std::time::Duration::from_millis(1500));
+    assert_eq!(
+        ControllerConfig::default().front_stop_grace(),
+        std::time::Duration::from_secs(5)
+    );
+    let e = err("front_stop_grace_millis: 0\n");
+    assert_eq!(e.path, "front_stop_grace_millis");
+}
+
+#[test]
 fn zero_settle_interval_names_key() {
     let e = err("settle_every_secs: 0\n");
     assert_eq!(e.path, "settle_every_secs");

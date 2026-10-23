@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use moor_testkit::{FakeEgress, FAKE_TINYPROXY};
 
-use super::super::egress::{config, lines, EGRESS_FAILED};
+use super::super::egress::{config, lines, lines_polling, EGRESS_FAILED, POLLS};
 
 /// Tools the egress lines call that the fake Box takes from the host.
 const HOST_TOOLS: &[&str] = &[
@@ -25,6 +25,9 @@ enum Apt {
 }
 
 /// A fake Box: a temp `HOME` whose `bin` is the whole `PATH`.
+/// Polls of 0.1 s that the tests give each wait, in place of the 50 a Box gets.
+const TEST_POLLS: u32 = 8;
+
 struct FakeBox {
     home: PathBuf,
     bin: PathBuf,
@@ -103,7 +106,7 @@ impl FakeBox {
 
     /// The `sh` that runs the egress lines for `hosts`, then `echo ran`.
     fn command(&self, hosts: &[String]) -> std::process::Command {
-        let mut script = lines(self.port.port(), UPSTREAM, hosts).join("\n");
+        let mut script = lines_polling(self.port.port(), UPSTREAM, hosts, TEST_POLLS).join("\n");
         script.push_str("\necho ran\n");
         let mut cmd = std::process::Command::new(self.bin.join("sh"));
         cmd.args(["-c", &script])
@@ -463,4 +466,18 @@ fn two_commands_that_start_together_start_one_tinyproxy() {
         assert!(ok, "{out}{err}");
     }
     assert_eq!(b.starts(), 1, "{}", b.log());
+}
+
+#[test]
+fn each_wait_polls_for_five_seconds_unless_a_caller_sets_the_polls() {
+    let hosts = hosts(&["github.com"]);
+    let default = lines(1, 2, &hosts).join("\n");
+    assert_eq!(
+        default.matches(&format!("-le {POLLS} ]")).count(),
+        3,
+        "{default}"
+    );
+    let short = lines_polling(1, 2, &hosts, 7).join("\n");
+    assert_eq!(short.matches("-le 7 ]").count(), 3, "{short}");
+    assert_eq!(short.matches(&format!("-le {POLLS} ]")).count(), 0);
 }

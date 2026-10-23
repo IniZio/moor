@@ -4,7 +4,11 @@
 //! a report that starts a coordinator turn on its own. A refold after a dropped watch or a
 //! restart writes nothing twice.
 
-#![allow(clippy::indexing_slicing, reason = "test code")]
+#![allow(
+    clippy::indexing_slicing,
+    clippy::disallowed_methods,
+    reason = "test code; one test times the front's real wait with the wall clock"
+)]
 
 use std::time::Duration;
 
@@ -14,12 +18,12 @@ use serde_json::json;
 use super::inbox::reply;
 use super::support::controller::{FakeController, Scripted};
 use super::support::slack_fake::{Post, Update};
-use super::support::{Rig, BOX_NAME, QUIET, USER};
+use super::support::{Rig, BOX_NAME, QUIET, UPDATE_MILLIS, USER};
 
 /// The id the scripted controller gives the first Box it starts.
 const BOX_ID: i64 = 1;
-/// Longer than the 2 s the front waits between two edits of one status message.
-const PAST_WINDOW: Duration = Duration::from_millis(2600);
+/// Longer than the wait the config gives the front between two edits of one status message.
+const PAST_WINDOW: Duration = Duration::from_millis(UPDATE_MILLIS + 600);
 
 /// The status message text of the first Box in state `state`.
 fn status(state: &str) -> String {
@@ -196,12 +200,18 @@ fn a_status_edit_slack_refuses_is_sent_again_after_the_window() {
     wait_turns_posted(&rig);
     let refused = json!({"ok": false, "error": "internal_error"});
     rig.slack.answer_updates(&[(200, refused)]);
+    let began = std::time::Instant::now();
     controller.emit(BOX_ID, BOX_NAME, "working", json!({}));
     let want = status("working");
     rig.slack.wait_until("the edit sent again", |_, updates| {
         let tries = updates.iter().filter(|u| u.ts == post.ts && u.text == want);
         tries.count() == 2
     });
+    let took = began.elapsed();
+    assert!(
+        took >= Duration::from_millis(UPDATE_MILLIS) && took < Duration::from_millis(1900),
+        "{took:?} is not the configured window of {UPDATE_MILLIS} ms"
+    );
     wait_recorded(&rig, &post.ts, &want);
 }
 
