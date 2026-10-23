@@ -65,10 +65,10 @@ fn peer_uid(stream: &UnixStream) -> io::Result<u32> {
     Ok(rustix::net::sockopt::socket_peercred(stream)?.uid.as_raw())
 }
 
-/// The uid of the process at the other end of `stream`; read only on Linux.
-#[cfg(not(target_os = "linux"))]
-fn peer_uid(_stream: &UnixStream) -> io::Result<u32> {
-    Err(io::ErrorKind::Unsupported.into())
+/// The uid of the process at the other end of `stream`.
+#[cfg(target_os = "macos")]
+fn peer_uid(stream: &UnixStream) -> io::Result<u32> {
+    Ok(nix::unistd::getpeereid(stream)?.0.as_raw())
 }
 
 #[cfg(test)]

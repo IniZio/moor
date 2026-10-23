@@ -12,35 +12,58 @@
 //! child and exit with the front's status. `--check` enters the namespaces, then as pid 1
 //! (`--check-root`) the root and the sandbox, so the controller can refuse fronts on a host
 //! that forbids any of them.
+//!
+//! macOS has none of these namespaces: there the shim confines itself and the front with
+//! nono's Seatbelt profile instead (see the `seatbelt` module).
 
 use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
+#[cfg(target_os = "linux")]
 use std::process::{Command, Stdio};
+#[cfg(target_os = "linux")]
 use std::thread;
 use std::time::Duration;
 
+#[cfg(target_os = "linux")]
 use command_fds::{CommandFdExt as _, FdMapping};
+#[cfg(target_os = "linux")]
 use nix::sched::{unshare, CloneFlags};
-use nono::{AccessMode, Sandbox, SupportInfo};
+use nono::SupportInfo;
+#[cfg(target_os = "linux")]
+use nono::{AccessMode, Sandbox};
+#[cfg(target_os = "linux")]
 use rustix::event::{poll, PollFd, PollFlags, Timespec};
+#[cfg(target_os = "linux")]
 use rustix::mount::{mount_change, MountPropagationFlags};
+#[cfg(target_os = "linux")]
 use rustix::process::{
-    getgid, getppid, getuid, kill_process, set_parent_process_death_signal, waitpid, Pid, Signal,
-    WaitOptions, WaitStatus,
+    getgid, getppid, getuid, kill_process, set_parent_process_death_signal, waitpid, Signal,
+    WaitOptions,
 };
+use rustix::process::{Pid, WaitStatus};
+#[cfg(target_os = "linux")]
 use rustix::thread::{
     capabilities, configure_capability_in_ambient_set, set_capabilities, CapabilitySet,
     CapabilitySets,
 };
+#[cfg(target_os = "linux")]
 use signal_hook::consts::{SIGINT, SIGTERM};
+#[cfg(target_os = "linux")]
 use signal_hook::iterator::Signals;
 
+#[cfg(target_os = "linux")]
 mod root;
+#[cfg(target_os = "macos")]
+mod seatbelt;
 
-use root::Layout;
+#[cfg(target_os = "linux")]
 pub(super) use root::{refuse_under_tmp, SYSTEM};
+#[cfg(target_os = "macos")]
+pub use seatbelt::main;
+#[cfg(target_os = "macos")]
+pub(super) use seatbelt::SYSTEM;
 
 /// How often a shim checks for exited children and signals to pass on.
 const POLL: Duration = Duration::from_millis(50);
@@ -49,6 +72,7 @@ const POLL: Duration = Duration::from_millis(50);
 ///
 /// # Errors
 /// Returns why the front could not be isolated or started.
+#[cfg(target_os = "linux")]
 pub fn main(args: &[OsString]) -> Result<u8, String> {
     let mut parts = args.splitn(2, |a| a == "--");
     let flags = parts.next().unwrap_or_default();
@@ -100,6 +124,7 @@ pub fn main(args: &[OsString]) -> Result<u8, String> {
 
 /// Keeps `CAP_SYS_ADMIN` in the namespaces for the next program this process runs, pid 1,
 /// which mounts the front's root.
+#[cfg(target_os = "linux")]
 fn pass_sys_admin() -> Result<(), String> {
     let mut caps = capabilities(None).map_err(|e| format!("capget: {e}"))?;
     caps.inheritable |= CapabilitySet::SYS_ADMIN;
@@ -110,6 +135,7 @@ fn pass_sys_admin() -> Result<(), String> {
 
 /// Makes this process die with `parent`, the controller that started it: the kernel kills it
 /// when the controller exits, and it exits now if the controller already did.
+#[cfg(target_os = "linux")]
 fn die_with(parent: Pid) -> Result<(), String> {
     set_parent_process_death_signal(Some(Signal::KILL))
         .map_err(|e| format!("cannot set the parent death signal: {e}"))?;
@@ -120,6 +146,15 @@ fn die_with(parent: Pid) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+/// What the front may reach beyond the system paths.
+#[derive(Default)]
+struct Layout {
+    /// The dir the front may write; on Linux its `tmp` becomes the front's `/tmp`.
+    writable: Option<PathBuf>,
+    /// Files and dirs the front may read.
+    read_only: Vec<PathBuf>,
 }
 
 /// What `moor front-shim` was asked: the controller it serves and the front's root.
@@ -167,6 +202,7 @@ impl Asked {
 /// Enters new user, mount and PID namespaces as the same uid and gid, with mounts that no
 /// longer reach the host's. The PID namespace applies to the next child, which becomes its
 /// pid 1.
+#[cfg(target_os = "linux")]
 fn isolate() -> Result<(), String> {
     let (uid, gid) = (getuid().as_raw(), getgid().as_raw());
     unshare(CloneFlags::CLONE_NEWUSER | CloneFlags::CLONE_NEWNS | CloneFlags::CLONE_NEWPID)
@@ -204,6 +240,7 @@ fn enforced() -> Result<(), String> {
 
 /// Confines this process and every process it starts: each may read and run anything, but
 /// write only `writable` and `/dev/null`.
+#[cfg(target_os = "linux")]
 fn confine(writable: &[PathBuf]) -> Result<(), String> {
     supported(&Sandbox::support_info())?;
     let mut caps = nono::CapabilitySet::new()
@@ -236,6 +273,7 @@ fn supported(info: &SupportInfo) -> Result<(), String> {
 /// `command` with its socket on fd 3. The kernel kills the namespace if the outer shim dies. The
 /// outer shim holds the only write end of stdin, so a readable stdin means it died before the
 /// death signal was set, and pid 1 exits.
+#[cfg(target_os = "linux")]
 fn init(layout: &Layout, command: &[OsString]) -> Result<u8, String> {
     set_parent_process_death_signal(Some(Signal::KILL))
         .map_err(|e| format!("cannot set the parent death signal: {e}"))?;
@@ -283,6 +321,7 @@ fn init(layout: &Layout, command: &[OsString]) -> Result<u8, String> {
 
 /// Runs `command`, passes SIGTERM and SIGINT to it and reaps every child that exits; returns
 /// the command's exit code once it exits, or 128 plus the signal that ended it.
+#[cfg(target_os = "linux")]
 fn relay(command: &mut Command) -> Result<u8, String> {
     let mut signals = Signals::new([SIGTERM, SIGINT]).map_err(|e| format!("signals: {e}"))?;
     let child = command

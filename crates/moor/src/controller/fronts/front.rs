@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 
 use moor_core::config::FrontEntry;
 
-use crate::controller::front_shim::{refuse_under_tmp, SYSTEM};
+#[cfg(target_os = "linux")]
+use crate::controller::front_shim::refuse_under_tmp;
+use crate::controller::front_shim::SYSTEM;
 use crate::env::Env;
 
 /// A front the controller runs.
@@ -103,9 +105,12 @@ fn refuse_read_only(
             ));
         }
     }
+    #[cfg(target_os = "linux")]
     if let Some(real) = resolv {
         refuse_under_tmp(&format!("fronts.{ns}: /etc/resolv.conf resolves to"), real)?;
     }
+    #[cfg(not(target_os = "linux"))]
+    let _ = resolv;
     for path in read_only {
         let real = fs::canonicalize(path)
             .map_err(|e| format!("fronts.{ns}.read_only: {}: {e}", path.display()))?;
@@ -169,6 +174,7 @@ mod tests {
         assert!(e.contains("/etc/moor-front-test lies in /etc"), "{e}");
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn a_resolv_conf_under_tmp_starts_no_front() {
         let env = Env::from_pairs([("MOOR_STATE_DIR", "/var/moor-front-test")]);

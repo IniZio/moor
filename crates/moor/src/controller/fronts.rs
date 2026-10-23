@@ -11,13 +11,16 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+#[cfg(target_os = "linux")]
 use command_fds::{CommandFdExt as _, FdMapping};
+#[cfg(target_os = "linux")]
 use rustix::fs::{Mode, OFlags};
 use rustix::process::{kill_process, Pid, Signal};
 
 use super::{log, Sink};
 
 mod front;
+#[cfg(target_os = "linux")]
 mod leftover;
 mod relay;
 
@@ -25,6 +28,7 @@ pub(super) use front::Front;
 use relay::relay_lines;
 
 /// The fd a front finds its own socket on.
+#[cfg(target_os = "linux")]
 const SOCKET_FD: i32 = 3;
 
 /// Wait before restarting a front that exited; it doubles while the front keeps exiting soon
@@ -165,6 +169,7 @@ pub(super) fn supervise(mut fronts: Vec<Front>, shim: Shim, sink: &Sink) -> Supe
 )]
 fn keep_running(front: &Front, shim: &Shim, stop: &Receiver<Stop>, sink: &Sink) {
     let ns = &front.ns;
+    #[cfg(target_os = "linux")]
     leftover::stop(front, sink);
     if !matches!(stop.try_recv(), Err(mpsc::TryRecvError::Empty)) {
         return;
@@ -235,20 +240,23 @@ fn watch(child: &mut Child, stop: &Receiver<Stop>) -> Outcome {
     }
 }
 
-/// Kills and reaps `child`.
+/// Kills and reaps `child`. On macOS the shim leads a process group that holds its front, and
+/// the whole group is killed.
 fn kill(child: &mut Child) -> Outcome {
+    #[cfg(target_os = "macos")]
+    let _ = rustix::process::kill_process_group(Pid::from_child(child), Signal::KILL);
     let _ = child.kill();
     let _ = child.wait();
     Outcome::Stopped
 }
 
-/// Starts `front` under `shim` in `/`, with its socket on fd 3, relays its stdout and stderr
-/// lines to `sink` and records the shim's pid. The shim exits with this controller. A front
-/// with a state dir may write it, finds it in `MOOR_FRONT_STATE_DIR` and keeps its temporary
-/// files in its `tmp`.
+/// Starts `front` under `shim` in `/`, with its socket in `MOOR_FRONT_SOCKET`, and relays its
+/// stdout and stderr lines to `sink`. The shim exits with this controller. A front with a
+/// state dir may write it, finds it in `MOOR_FRONT_STATE_DIR` and keeps its temporary files in
+/// its `tmp`. On Linux the socket is on fd 3 and the shim's pid is recorded; macOS has no
+/// `O_PATH`, so there the front dials the socket's path, and the shim leads a process group.
 fn spawn(front: &Front, shim: &Shim, sink: &Sink) -> io::Result<Child> {
     let ns = &front.ns;
-    let socket = rustix::fs::open(&front.socket, OFlags::PATH | OFlags::CLOEXEC, Mode::empty())?;
     let mut command = shim.command();
     command.args(["--parent", &process::id().to_string()]);
     if let Some(dir) = &front.state_dir {
@@ -266,17 +274,29 @@ fn spawn(front: &Front, shim: &Shim, sink: &Sink) -> io::Result<Child> {
     command
         .arg("--")
         .args(&front.command)
-        .env("MOOR_FRONT_SOCKET", format!("/proc/self/fd/{SOCKET_FD}"))
         .current_dir("/")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    command
-        .fd_mappings(vec![FdMapping {
-            parent_fd: socket,
-            child_fd: SOCKET_FD,
-        }])
-        .map_err(io::Error::other)?;
+    #[cfg(target_os = "linux")]
+    {
+        let socket =
+            rustix::fs::open(&front.socket, OFlags::PATH | OFlags::CLOEXEC, Mode::empty())?;
+        command
+            .env("MOOR_FRONT_SOCKET", format!("/proc/self/fd/{SOCKET_FD}"))
+            .fd_mappings(vec![FdMapping {
+                parent_fd: socket,
+                child_fd: SOCKET_FD,
+            }])
+            .map_err(io::Error::other)?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::unix::process::CommandExt as _;
+        command
+            .env("MOOR_FRONT_SOCKET", &front.socket)
+            .process_group(0);
+    }
     let mut child = command.spawn()?;
     if let Some(stdout) = child.stdout.take() {
         relay_lines(stdout, ns, sink);
@@ -285,6 +305,9 @@ fn spawn(front: &Front, shim: &Shim, sink: &Sink) -> io::Result<Child> {
         relay_lines(stderr, ns, sink);
     }
     let pid = child.id();
+    #[cfg(target_os = "macos")]
+    log(sink, &format!("front {ns}: started pid {pid}"));
+    #[cfg(target_os = "linux")]
     match write_pid_file(front, pid) {
         Ok(()) => log(sink, &format!("front {ns}: started pid {pid}")),
         Err(e) => log(
@@ -296,6 +319,7 @@ fn spawn(front: &Front, shim: &Shim, sink: &Sink) -> io::Result<Child> {
 }
 
 /// Replaces the pid file of `front` with `pid` and its start time.
+#[cfg(target_os = "linux")]
 fn write_pid_file(front: &Front, pid: u32) -> io::Result<()> {
     let stat = fs::read_to_string(format!("/proc/{pid}/stat"))?;
     let started = stat
