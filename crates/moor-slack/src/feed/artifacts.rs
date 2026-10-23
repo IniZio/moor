@@ -67,6 +67,7 @@ impl Feed {
             bot: &self.bot_token,
             channel: &boxed.channel,
             ts: &boxed.thread_ts,
+            log: &*self.log,
         };
         let mut stuck = false;
         owed.retain(|v| match self.show(db, &thread, &boxed.box_name, v) {
