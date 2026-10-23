@@ -57,6 +57,7 @@ pub(super) fn open_coordinated(
         kind: ItemKind::Message,
         author: thread.owner,
         text,
+        message_ts: Some(mention.ts.clone()),
         source: mention.event_id.clone(),
     };
     db.queue(&item, now)
@@ -85,6 +86,7 @@ pub(super) fn in_thread(
         kind: ItemKind::Message,
         author: mention.user.clone(),
         text,
+        message_ts: Some(mention.ts.clone()),
         source: mention.event_id.clone(),
     };
     Ok(

@@ -35,6 +35,8 @@ pub(crate) struct InboxItem {
     pub(crate) author: String,
     /// The text, without leading mentions.
     pub(crate) text: String,
+    /// Timestamp of the Slack message it came from.
+    pub(crate) message_ts: Option<String>,
     /// The Slack event id it came from, so a redelivery is recorded once.
     pub(crate) source: String,
 }
@@ -43,8 +45,8 @@ impl Db {
     /// Records `item` at `now`; an item from a source already recorded is an error.
     pub(crate) fn queue(&self, item: &InboxItem, now: i64) -> rusqlite::Result<()> {
         self.conn.execute(
-            "INSERT INTO slack_inbox (channel, thread_ts, kind, author, text, source, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO slack_inbox (channel, thread_ts, kind, author, text, source, created_at, message_ts) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 item.channel,
                 item.thread_ts,
@@ -52,7 +54,8 @@ impl Db {
                 item.author,
                 item.text,
                 item.source,
-                now
+                now,
+                item.message_ts
             ],
         )?;
         Ok(())
@@ -133,6 +136,7 @@ impl Db {
                 kind: ItemKind::Message,
                 author: r.get(2)?,
                 text: r.get(3)?,
+                message_ts: None,
                 source: r.get(4)?,
             })
         })?;

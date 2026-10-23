@@ -57,6 +57,7 @@ fn item(kind: ItemKind, author: &str, text: &str, source: &str) -> InboxItem {
         kind,
         author: author.into(),
         text: text.into(),
+        message_ts: None,
         source: source.into(),
     }
 }

@@ -56,6 +56,7 @@ fn turn_of(db: &Db, author: &str, source: &str) -> i64 {
         kind: ItemKind::Message,
         author: author.into(),
         text: "please".into(),
+        message_ts: None,
         source: source.into(),
     };
     db.queue(&item, 2).unwrap();

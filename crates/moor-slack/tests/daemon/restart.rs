@@ -206,8 +206,15 @@ fn a_line_stored_before_a_restart_is_posted_once_after_it() {
             [],
         )
         .unwrap();
+    db(&rig)
+        .execute(
+            "UPDATE slack_turns SET reacted_ts = '1730000100.000009'",
+            [],
+        )
+        .unwrap();
+    let emoji = "hourglass_flowing_sand";
     rig.slack
-        .leave_reaction(CHANNEL, TS, "hourglass_flowing_sand");
+        .leave_reaction(CHANNEL, "1730000100.000009", emoji);
     rig.spawn_daemon();
     rig.slack.wait_connected();
     let posts = rig.slack.wait_posts(2);
