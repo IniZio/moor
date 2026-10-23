@@ -29,6 +29,8 @@ mod login;
 mod mcp;
 #[path = "daemon/prompt.rs"]
 mod prompt;
+#[path = "daemon/proxy.rs"]
+mod proxy;
 #[path = "daemon/repo.rs"]
 mod repo;
 #[path = "daemon/restart.rs"]

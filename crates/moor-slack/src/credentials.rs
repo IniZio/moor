@@ -1,6 +1,6 @@
-//! Each person's agent credential: one owner-only file per agent and Slack user under the
-//! state dir, and each user's own config dir for that agent. What a credential looks like
-//! and how to check it belongs to the agent, behind [`CredentialCheck`].
+//! Each person's agent credential: what it looks like and how to check it before the front
+//! stores it in the vault belongs to the agent, behind [`CredentialCheck`]. Each user also has
+//! their own config dir for that agent under the state dir.
 
 use std::fs::{self, DirBuilder};
 use std::io;
@@ -72,97 +72,6 @@ impl SlackUser {
     }
 }
 
-/// The directory that holds every user's credential for `agent`.
-fn agent_dir(state_dir: &Path, agent: AgentKind) -> PathBuf {
-    state_dir.join("credentials").join(agent.name())
-}
-
-/// The file that holds `user`'s credential for `agent`.
-pub(crate) fn credential_path(state_dir: &Path, agent: AgentKind, user: &SlackUser) -> PathBuf {
-    agent_dir(state_dir, agent).join(user.as_str())
-}
-
-/// Writes `credential` as `user`'s file for `agent`, mode 0600 in 0700 directories. It
-/// writes a temp file beside it and renames it over the old one, so a reader sees the old
-/// credential or the new one, never part of one.
-#[cfg(test)]
-pub(crate) fn store(
-    state_dir: &Path,
-    agent: AgentKind,
-    user: &SlackUser,
-    credential: &Secret,
-) -> Result<(), String> {
-    use std::fs::OpenOptions;
-    use std::io::Write as _;
-    use std::os::unix::fs::OpenOptionsExt as _;
-
-    let path = credential_path(state_dir, agent, user);
-    let dir = agent_dir(state_dir, agent);
-    let parent = state_dir.join("credentials");
-    private_dir(&parent, daemon_uid()).map_err(|e| format!("{}: {e}", parent.display()))?;
-    private_dir(&dir, daemon_uid()).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let temp = dir.join(format!(".{}.tmp", user.as_str()));
-    let write = || -> io::Result<()> {
-        remove_if_present(&temp)?;
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&temp)?;
-        file.write_all(credential.expose())?;
-        file.sync_all()?;
-        fs::rename(&temp, &path)
-    };
-    write().map_err(|e| {
-        let _ = remove_if_present(&temp);
-        format!("{}: {e}", path.display())
-    })
-}
-
-/// Reads `user`'s credential for `agent`; `None` when the user linked none. The directories
-/// and the file must be this user's own: no symlink, no other owner, and no group or other
-/// bit on the file. Anything else is an error, so a planted file is never read.
-pub(crate) fn load(
-    state_dir: &Path,
-    agent: AgentKind,
-    user: &SlackUser,
-) -> Result<Option<Secret>, String> {
-    let path = credential_path(state_dir, agent, user);
-    let shown = |p: &Path, e: &dyn std::fmt::Display| format!("{}: {e}", p.display());
-    let owner = daemon_uid();
-    for dir in [state_dir.join("credentials"), agent_dir(state_dir, agent)] {
-        match owned(&dir, owner, true) {
-            Ok(true) => {}
-            Ok(false) => return Ok(None),
-            Err(e) => return Err(shown(&dir, &e)),
-        }
-    }
-    match owned(&path, owner, false) {
-        Ok(true) => {}
-        Ok(false) => return Ok(None),
-        Err(e) => return Err(shown(&path, &e)),
-    }
-    let bytes = fs::read(&path).map_err(|e| shown(&path, &e))?;
-    let text = String::from_utf8_lossy(&bytes);
-    Ok(Some(Secret::new(text.trim().as_bytes().to_vec())))
-}
-
-/// Whether `path` is there; an error when it is a symlink, the wrong kind, not owned by
-/// `owner`, or, for a file, open to group or others.
-fn owned(path: &Path, owner: u32, dir: bool) -> io::Result<bool> {
-    let meta = match fs::symlink_metadata(path) {
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
-        other => other?,
-    };
-    let kind_ok = if dir { meta.is_dir() } else { meta.is_file() };
-    let shared = !dir && meta.mode() & 0o077 != 0;
-    if kind_ok && !shared && meta.uid() == owner {
-        return Ok(true);
-    }
-    let why = "not a private file or directory that this user owns";
-    Err(io::Error::new(io::ErrorKind::PermissionDenied, why))
-}
-
 /// `user`'s own config dir for `agent`, created mode 0700 when missing.
 pub(crate) fn config_dir(
     state_dir: &Path,
@@ -195,15 +104,6 @@ pub(crate) fn private_dir(dir: &Path, owner: u32) -> io::Result<()> {
         return Err(io::Error::new(io::ErrorKind::PermissionDenied, why));
     }
     fs::set_permissions(dir, fs::Permissions::from_mode(0o700))
-}
-
-/// Deletes `path`; a missing file is not an error.
-#[cfg(test)]
-fn remove_if_present(path: &Path) -> io::Result<()> {
-    match fs::remove_file(path) {
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
-        other => other,
-    }
 }
 
 #[cfg(test)]

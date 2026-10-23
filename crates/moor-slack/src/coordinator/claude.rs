@@ -1,6 +1,7 @@
 //! Everything that knows Claude Code: the version gate, the argv and cleared environment of a
-//! turn, the token on a pipe at fd 3, the `mcp.json` that names the front's tool server, the
-//! `stream-json` events of its output, and the instruction files it would load.
+//! turn, the front Proxy it reaches through `HTTPS_PROXY`, the pasted token a login check reads
+//! on a pipe at fd 3, the `mcp.json` that names the front's tool server, the `stream-json`
+//! events of its output, and the instruction files it would load.
 
 use std::ffi::OsStr;
 use std::io;
@@ -15,10 +16,11 @@ use super::process::{now, supervise, Credential, Left, Next};
 use super::{Agent, Answer, Event, Loaded, TurnSetup};
 use crate::credentials::{AgentKind, CheckError, CredentialCheck};
 
-/// Oldest Claude Code that reads its token from the descriptor [`TOKEN_FD_VAR`] names.
+/// Oldest Claude Code that reads a login check's token from the descriptor [`TOKEN_FD_VAR`]
+/// names.
 const MIN_VERSION: [u32; 3] = [2, 1, 304];
 
-/// The variable that names the token pipe's descriptor; it holds the number, never the token.
+/// The variable that names a login check's token pipe; it holds the number, never the token.
 const TOKEN_FD_VAR: &str = "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR";
 
 /// The token pipe's descriptor in the child.
@@ -113,9 +115,9 @@ impl Claude {
         }
     }
 
-    /// The command of one turn on `model` in [`CWD`], with the cleared environment, `config_dir`
-    /// as Claude Code's config dir, and the descriptor number of the token pipe.
-    fn turn(&self, model: &str, config_dir: &Path) -> Command {
+    /// The command of one run on `model` in [`CWD`], with the cleared environment and
+    /// `config_dir` as Claude Code's config dir.
+    fn base(&self, model: &str, config_dir: &Path) -> Command {
         let mut cmd = Command::new(&self.binary);
         cmd.args([
             "-p",
@@ -135,9 +137,7 @@ impl Claude {
             "none",
         ]);
         clear_env(&mut cmd, &self.host);
-        cmd.env("CLAUDE_CONFIG_DIR", config_dir)
-            .env(TOKEN_FD_VAR, TOKEN_FD.to_string())
-            .current_dir(CWD);
+        cmd.env("CLAUDE_CONFIG_DIR", config_dir).current_dir(CWD);
         cmd
     }
 }
@@ -159,7 +159,8 @@ impl Agent for Claude {
         let config = setup.workdir.join(MCP_CONFIG);
         write_mcp_config(&config, setup.tools)
             .map_err(|e| format!("write {}: {e}", config.display()))?;
-        let mut cmd = self.turn(setup.model, setup.config_dir);
+        let mut cmd = self.base(setup.model, setup.config_dir);
+        proxied(&mut cmd, setup.proxy);
         cmd.args(["--system-prompt", setup.brief])
             .arg("--mcp-config")
             .arg(&config)
@@ -169,10 +170,6 @@ impl Agent for Claude {
 
     fn tool_name(&self, server: &str, tool: &str) -> String {
         format!("mcp__{server}__{tool}")
-    }
-
-    fn credential_fd(&self) -> i32 {
-        TOKEN_FD
     }
 
     fn event(&self, line: &str) -> Event {
@@ -213,7 +210,7 @@ impl Claude {
         if result.text.contains("Not logged in") {
             let version = &self.version;
             return Answer::Unavailable(format!(
-                "Claude Code {version} did not read the token pipe"
+                "Claude Code {version} did not take the Proxy's placeholder login"
             ));
         }
         let status = result.api_error_status.map(|s| format!("API error {s}"));
@@ -265,7 +262,8 @@ impl CredentialCheck for Claude {
     /// `config_dir`; `Ok` when Claude answers without an error.
     fn check(&self, config_dir: &Path, token: &Secret) -> Result<(), CheckError> {
         let unavailable = |why: String| CheckError::Unavailable(redact(&why, token));
-        let cmd = self.turn(CHECK_MODEL, config_dir);
+        let mut cmd = self.base(CHECK_MODEL, config_dir);
+        cmd.env(TOKEN_FD_VAR, TOKEN_FD.to_string());
         let shown = self.binary.display();
         let ran = run(cmd, CHECK_INPUT.as_bytes(), Some(token), CHECK_LIMIT)
             .map_err(|e| unavailable(format!("{shown}: {e}")))?;
@@ -393,7 +391,7 @@ fn run(cmd: Command, input: &[u8], token: Option<&Secret>, limit: Duration) -> i
 mod instructions;
 
 mod wiring;
-use wiring::{clear_env, on_path, write_mcp_config, CWD, MCP_CONFIG};
+use wiring::{clear_env, on_path, proxied, write_mcp_config, CWD, MCP_CONFIG};
 
 #[cfg(test)]
 pub(crate) mod tests;

@@ -7,23 +7,25 @@ use std::path::Path;
 
 use moor_client::Client;
 use moor_core::name::{BoxName, SessionId};
-use moor_core::request::{AsReq, Request, SessionsReq, ShowReq, UpdateHostSessionReq};
+use moor_core::request::{
+    AsReq, Request, SecretSetReq, SecretValue, SessionsReq, ShowReq, UpdateHostSessionReq,
+};
 use moor_core::response::{ExitClass, Response};
-use moor_core::user::Identity;
+use moor_core::user::{Identity, SecretName};
 use serde_json::json;
 use std::time::Duration;
 
 use super::support::slack_fake::TEAM;
 use super::support::{Rig, BOX_NAME, MCP, TS, USER};
 
-/// The refusal the controller gives an enrolled person with no secrets, before it reads any repo.
-const UNKNOWN: &str = "log in first: moor user secret set claude, then moor user secret set github";
+/// The refusal the controller gives an enrolled person with only a Claude secret, before it
+/// reads any repo.
+const UNKNOWN: &str = "log in first: moor user secret set github";
 
 /// A daemon on a real controller whose channel's default repo is `o/nosuch`.
 fn rig_on_a_real_controller() -> (Rig, super::support::RealController) {
     let mut rig = Rig::new();
     let bin = rig.use_fake_claude(None);
-    rig.link_token(USER, MCP);
     Rig::tool_calls(
         &bin,
         None,
@@ -31,6 +33,7 @@ fn rig_on_a_real_controller() -> (Rig, super::support::RealController) {
     );
     let controller = rig.real_controller();
     enroll(&rig.front_socket(), USER);
+    log_in_claude(&rig.front_socket(), USER, &bin);
     rig.spawn_daemon_on_front();
     rig.slack.wait_connected();
     rig.set_default_repo("o/nosuch");
@@ -72,6 +75,19 @@ fn enroll(front: &Path, user: &str) {
     });
     let reply = Client::new(front).request(enroll, |_| {}).unwrap();
     assert_eq!(reply.class, ExitClass::Ok, "{reply:?}");
+}
+
+/// Stores a Claude secret for `user` through the front socket, as `/moor login claude` does,
+/// and has the fake `claude` in `bin` answer whatever lease the controller grants as [`MCP`].
+fn log_in_claude(front: &Path, user: &str, bin: &Path) {
+    let set = Request::SecretSet(SecretSetReq {
+        identity: None,
+        name: SecretName::parse("claude").unwrap(),
+        value: SecretValue::new(b"sk-ant-oat01-smoke".to_vec()),
+    });
+    let reply = ask_as(front, user, set);
+    assert_eq!(reply.class, ExitClass::Ok, "{reply:?}");
+    std::fs::write(bin.join("mode"), MCP).unwrap();
 }
 
 /// The reply to `request` from the controller socket `socket`, sent as Slack user `user`.
@@ -134,7 +150,6 @@ fn on_the_front_socket_the_front_acts_for_one_slack_user_and_no_other_sees_it() 
 fn on_the_operator_socket_the_same_request_path_is_refused() {
     let mut rig = Rig::new();
     let bin = rig.use_fake_claude(None);
-    rig.link_token(USER, MCP);
     Rig::tool_calls(
         &bin,
         None,

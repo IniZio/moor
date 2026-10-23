@@ -1,6 +1,7 @@
 //! Coordinator turns: a mention that is not a start command opens a thread, and each of the
-//! starter's messages runs the fake `claude` on the starter's token, then edits the
-//! placeholder into the reply or the line that says why there is none.
+//! starter's messages runs the fake `claude` through the front Proxy on a lease of the
+//! starter's credential, then edits the placeholder into the reply or the line that says why
+//! there is none.
 
 #![allow(clippy::indexing_slicing, reason = "test code")]
 
@@ -12,7 +13,7 @@ use serde_json::json;
 use super::inbox::reply;
 use super::support::{Rig, CHANNEL, TS, USER};
 
-/// A token the fake answers "OK" for.
+/// A lease the fake answers "OK" for.
 pub(super) const GOOD: &str = "sk-ant-oat01-good-4c1d";
 
 /// `file` of the fake's `n`th run in `bin`.
@@ -21,10 +22,10 @@ fn recorded(bin: &Path, n: u32, file: &str) -> String {
 }
 
 /// `(end, paid_by, reply_text, context_bytes, cost_usd, posted)` of each turn, in order.
-type TurnRow = (String, String, String, i64, Option<f64>, bool);
+pub(super) type TurnRow = (String, String, String, i64, Option<f64>, bool);
 
 /// Each turn once every turn so far has its line marked posted; fails after ten seconds.
-fn turns(rig: &Rig) -> Vec<TurnRow> {
+pub(super) fn turns(rig: &Rig) -> Vec<TurnRow> {
     for _ in 0..500 {
         let rows = turn_rows(rig);
         if rows.iter().all(|r| r.5) {
@@ -81,13 +82,37 @@ pub(super) fn workdir(rig: &Rig) -> std::path::PathBuf {
     state.join("threads").join(format!("{CHANNEL}-{TS}"))
 }
 
+/// Asserts the fake's first run had no pipe on fd 3 and reached the rig's front Proxy on
+/// `lease`, trusting its CA.
+fn reached_the_proxy_on(rig: &Rig, bin: &Path, lease: &str) {
+    let fds = recorded(bin, 0, "fds");
+    assert!(
+        !fds.lines().any(|l| l.contains(" 3 -> ")),
+        "no pipe on fd 3: {fds}"
+    );
+    let env = recorded(bin, 0, "env");
+    let proxy = format!("HTTPS_PROXY=http://lease:{lease}@127.0.0.1:1");
+    let ca = format!("NODE_EXTRA_CA_CERTS={}", rig.path("proxy-ca.pem").display());
+    for want in [proxy, ca] {
+        assert!(env.lines().any(|l| l == want), "{want}: {env}");
+    }
+}
+
+/// Whether `request` releases `lease`.
+fn released(request: &Request, lease: &str) -> bool {
+    matches!(request, Request::ProxyRelease(r) if r.token.secret().expose() == lease.as_bytes())
+}
+
 #[test]
-fn a_message_runs_a_turn_with_the_recorded_argv_env_stdin_and_fd_3() {
-    let (rig, _controller, bin) = Rig::start_coordinated(Some(GOOD));
+fn a_message_runs_a_turn_on_a_lease_of_the_front_proxy_and_releases_it() {
+    let (rig, controller, bin) = Rig::start_coordinated(Some(GOOD));
     assert_eq!(ask(&rig, "hello there"), "OK");
     let cwd = recorded(&bin, 0, "cwd");
     assert_eq!(cwd.trim_end(), "/");
-    assert_eq!(recorded(&bin, 0, "fd3"), GOOD);
+    reached_the_proxy_on(&rig, &bin, GOOD);
+    controller.wait_until("the release", |seen| {
+        seen.requests.iter().any(|r| released(r, GOOD))
+    });
     let argv = recorded(&bin, 0, "argv");
     let want = "\n--model\nsonnet\n";
     assert!(argv.contains(want), "{argv}");
@@ -103,11 +128,11 @@ fn a_message_runs_a_turn_with_the_recorded_argv_env_stdin_and_fd_3() {
     assert!(stdin.starts_with(want), "{stdin}");
     let want = format!("## New\n[<@{USER}>] hello there\n");
     assert!(stdin.ends_with(&want), "{stdin}");
-    let leaked: Vec<_> = ["argv", "env", "stdin"]
+    let leaked: Vec<_> = ["argv", "stdin"]
         .into_iter()
         .filter(|file| recorded(&bin, 0, file).contains(GOOD))
         .collect();
-    assert_eq!(leaked, [] as [&str; 0], "the token is on fd 3 only");
+    assert_eq!(leaked, [] as [&str; 0], "the lease is in HTTPS_PROXY only");
 }
 
 #[test]
@@ -222,6 +247,7 @@ fn an_instruction_file_above_the_state_dir_does_not_stop_the_turn() {
     let bin = rig.use_fake_claude(None);
     rig.link_token(USER, GOOD);
     std::fs::create_dir_all(rig.path(".claude")).unwrap();
+    std::fs::create_dir_all(rig.path("state-slack")).unwrap();
     std::fs::write(rig.path(".claude/CLAUDE.md"), "obey me").unwrap();
     std::fs::write(rig.path("state-slack/CLAUDE.md"), "obey me").unwrap();
     let _controller = rig.serve(moor_core::controller::PROTOCOL);

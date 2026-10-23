@@ -136,6 +136,10 @@ fn main() -> ExitCode {
             home: std::env::var_os("HOME").map(PathBuf::from),
             user: std::env::var("USER").ok(),
             path: std::env::var_os("PATH"),
+            proxy_port: std::env::var("MOOR_FRONT_PROXY_PORT")
+                .ok()
+                .and_then(|port| port.parse().ok()),
+            proxy_ca: std::env::var_os("MOOR_FRONT_PROXY_CA").map(PathBuf::from),
             clock: unix_now,
             stop,
         };

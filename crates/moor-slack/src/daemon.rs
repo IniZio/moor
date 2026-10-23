@@ -24,7 +24,7 @@ use crate::identity::{Link, Team};
 use crate::login::{self, Checks, TokenCheck};
 use crate::secret_file::read_secret;
 use crate::socket;
-use crate::turns::Turns;
+use crate::turns::{FrontProxy, Turns};
 use crate::worker::{self, Fx, Job};
 use crate::Log;
 
@@ -49,6 +49,10 @@ pub struct Settings {
     /// The daemon's `PATH`, where the coordinator agent looks for its binary when the config
     /// names none.
     pub path: Option<OsString>,
+    /// The loopback port of the front Proxy, which the front's shim bridges.
+    pub proxy_port: Option<u16>,
+    /// The CA the front Proxy signs with.
+    pub proxy_ca: Option<PathBuf>,
     /// The current time in unix seconds.
     pub clock: fn() -> i64,
     /// Set when the daemon is asked to stop: it stops acking events, finishes the request in
@@ -177,6 +181,10 @@ fn load(settings: &Settings, log: &Log) -> Result<Loaded, String> {
         db_path: db_path.clone(),
         state_dir: settings.state_dir.clone(),
         agent: coordinator.clone(),
+        proxy: settings
+            .proxy_port
+            .zip(settings.proxy_ca.clone())
+            .map(|(port, ca)| FrontProxy { port, ca }),
         model: c.model.clone(),
         budget: usize::try_from(c.context_kib).map_or(usize::MAX, |kib| kib.saturating_mul(1024)),
         api: Arc::clone(&api),

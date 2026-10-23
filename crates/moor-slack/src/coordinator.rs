@@ -4,6 +4,8 @@
 use std::path::Path;
 use std::process::Command;
 
+use moor_core::secret::Secret;
+
 use crate::credentials::{AgentKind, CredentialCheck};
 
 pub(crate) mod brief;
@@ -40,6 +42,18 @@ pub(crate) struct TurnSetup<'a> {
     pub(crate) brief: &'a str,
     /// The only tool server the agent may load.
     pub(crate) tools: &'a ToolServer<'a>,
+    /// How the agent reaches the front Proxy, which holds the credential of who pays.
+    pub(crate) proxy: &'a ProxyAccess<'a>,
+}
+
+/// How a turn's agent reaches the front Proxy.
+pub(crate) struct ProxyAccess<'a> {
+    /// The loopback port the front's shim bridges to the Proxy.
+    pub(crate) port: u16,
+    /// The CA the Proxy signs with.
+    pub(crate) ca: &'a Path,
+    /// The turn's lease, the proxy password; it stands in for the credential.
+    pub(crate) lease: &'a Secret,
 }
 
 /// What the agent loaded, as its first output line reports it.
@@ -87,7 +101,7 @@ pub(crate) enum Event {
 }
 
 /// What is specific to one kind of coordinator agent: the command of a turn with its cleared
-/// environment, where the credential goes, how the output reads, and what makes a workdir
+/// environment and its way to the front Proxy, how the output reads, and what makes a workdir
 /// unsafe for it.
 pub(crate) trait Agent: CredentialCheck + Send + Sync {
     /// Which agent this is.
@@ -106,9 +120,6 @@ pub(crate) trait Agent: CredentialCheck + Send + Sync {
 
     /// How the agent's load report names `tool` of tool server `server`.
     fn tool_name(&self, server: &str, tool: &str) -> String;
-
-    /// The descriptor the turn reads its credential on, from a pipe.
-    fn credential_fd(&self) -> i32;
 
     /// What one line of the turn's output says.
     fn event(&self, line: &str) -> Event;

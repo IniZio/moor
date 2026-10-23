@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 
 use super::support::controller::FakeController;
 use super::support::slack_fake::{APP_TOKEN, BOT_TOKEN, TEAM};
-use super::support::{Rig, BOX_NAME, CHANNEL, MCP, TS, USER};
+use super::support::{Rig, BOX_NAME, CHANNEL, TS, USER};
 
 /// A daemon whose thread [`TS`] runs Box [`BOX_NAME`], so `slack.db` holds it.
 fn thread_with_a_box() -> (Rig, FakeController) {
@@ -198,14 +198,14 @@ fn a_turn_starts_the_tool_server_named_in_its_mcp_json_and_lists_the_threads_box
     );
     let env = std::fs::read_to_string(bin.join("run-0/server-env")).unwrap();
     assert!(env.lines().any(|l| l.starts_with("PATH=")), "{env}");
-    let leaked: Vec<_> = [MCP, APP_TOKEN, BOT_TOKEN]
+    let leaked: Vec<_> = [APP_TOKEN, BOT_TOKEN]
         .into_iter()
         .filter(|token| env.contains(token))
         .collect();
     assert_eq!(
         leaked,
         [] as [&str; 0],
-        "the server's environment holds no token"
+        "the server's environment holds no Slack token"
     );
 }
 
