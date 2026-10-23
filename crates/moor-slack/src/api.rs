@@ -2,6 +2,7 @@
 
 use std::fmt::Write as _;
 use std::io::Read;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -46,6 +47,8 @@ pub(super) struct Api {
     base: String,
     /// HTTP client shared by every call.
     agent: Agent,
+    /// Whether the missing `files:read` scope was already reported.
+    files_read_reported: AtomicBool,
 }
 
 impl Api {
@@ -67,7 +70,13 @@ impl Api {
         Ok(Self {
             base: base.trim_end_matches('/').to_owned(),
             agent: Agent::new_with_config(config),
+            files_read_reported: AtomicBool::new(false),
         })
+    }
+
+    /// Whether this is the first report of the missing `files:read` scope.
+    pub(super) fn first_missing_files_read(&self) -> bool {
+        !self.files_read_reported.swap(true, Ordering::Relaxed)
     }
 
     /// Asks Slack for a one-shot Socket Mode WebSocket URL.

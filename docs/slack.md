@@ -19,7 +19,7 @@ You need:
 1. Create a Slack app and turn on Socket Mode.
 2. Create an app-level token with the `connections:write` scope.
 3. Give the bot token these scopes: `app_mentions:read`, `channels:history`,
-   `chat:write`, `commands`, and `files:write`.
+   `chat:write`, `commands`, `files:read`, and `files:write`.
 4. Add a `/moor` slash command.
 5. Subscribe to the `app_mention` and `message.channels` bot events. Without
    `message.channels`, the front never sees a reply in a thread.
@@ -105,7 +105,7 @@ schema. Move it aside and start again with a fresh one.
   option, up to 25. Only the person who asked for the Box can answer.
 - Each file version a Box publishes is uploaded into the thread, normally once.
   A crash between Slack sharing the file and the front recording it can upload
-  that version a second time. Without the `files:write` scope, the thread shows
+  that version a second time. Without `files:read`, the front cannot check a lost upload completion and may upload that file again; it logs this once. Without the `files:write` scope, the thread shows
   the file's name and size instead. When an upload fails, the front posts the
   reason (if that post is refused, it posts it on a later try) and tries again
   with a growing wait of 2 seconds up to 64. A retry waits on its own and holds

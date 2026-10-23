@@ -56,12 +56,17 @@ fn seen(ctl: std::thread::JoinHandle<Vec<Value>>) -> Vec<Value> {
 
 /// A feed that posts to `slack` and reads artifacts from the controller at `sock`.
 fn feed(dir: &Path, slack: &Fake, sock: &Path) -> Feed {
+    feed_logging(dir, slack, sock, Arc::new(|_| {}))
+}
+
+/// Like [`feed`], writing its log to `log`.
+fn feed_logging(dir: &Path, slack: &Fake, sock: &Path, log: crate::Log) -> Feed {
     Feed {
         db_path: dir.join("slack.db"),
         api: Arc::new(Api::new(&slack.base).unwrap()),
         bot_token: Arc::new(Secret::new(b"xoxb-test".to_vec())),
         client: Client::new(sock),
-        log: Arc::new(|_| {}),
+        log,
         clock,
     }
 }
@@ -444,4 +449,59 @@ fn a_file_that_a_lost_completion_did_not_share_is_a_failed_upload() {
 fn the_wait_between_tries_stops_growing_at_64_seconds() {
     let waits: Vec<i64> = [1, 2, 3, 4, 5, 6, 7, 40].into_iter().map(backoff).collect();
     assert_eq!(waits, [2, 4, 8, 16, 32, 64, 64, 64]);
+}
+
+#[test]
+fn a_failed_share_check_counts_as_not_shared_and_the_upload_is_tried_again() {
+    for mode in [2, 3] {
+        let (dir, slack) = (tempfile::tempdir().unwrap(), fake());
+        slack.complete_lost.store(true, Ordering::SeqCst);
+        slack.info_mode.store(mode, Ordering::SeqCst);
+        let sock = dir.path().join("c.sock");
+        let ctl = controller(&sock, vec![Stored::of(b"hello"), Stored::of(b"hello")]);
+        let feed = feed(dir.path(), &slack, &sock);
+        let db = Db::open(&feed.db_path).unwrap();
+        bound_box(&db);
+        let mut fold = replay(&[1], b"hello");
+        for t in [100, 101, 103] {
+            at(t);
+            tick(&feed, &db, &mut fold);
+        }
+        assert_eq!(
+            reads(&seen(ctl)),
+            [1, 1],
+            "mode {mode}: tried again after its wait"
+        );
+        assert_eq!(
+            failures(&slack).len(),
+            1,
+            "mode {mode}: {:?}",
+            slack.texts()
+        );
+    }
+}
+
+#[test]
+fn a_missing_files_read_scope_is_logged_once_and_the_version_is_retried() {
+    let (dir, slack) = (tempfile::tempdir().unwrap(), fake());
+    slack.complete_lost.store(true, Ordering::SeqCst);
+    slack.info_mode.store(1, Ordering::SeqCst);
+    let sock = dir.path().join("c.sock");
+    let ctl = controller(&sock, vec![Stored::of(b"hello"), Stored::of(b"hello")]);
+    let lines = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let sink = Arc::clone(&lines);
+    let log: crate::Log = Arc::new(move |l| sink.lock().unwrap().push(l.to_owned()));
+    let feed = feed_logging(dir.path(), &slack, &sock, log);
+    let db = Db::open(&feed.db_path).unwrap();
+    bound_box(&db);
+    let mut fold = replay(&[1], b"hello");
+    for t in [100, 103] {
+        at(t);
+        tick(&feed, &db, &mut fold);
+    }
+    assert_eq!(reads(&seen(ctl)), [1, 1]);
+    let logged = lines.lock().unwrap();
+    let scope = logged.iter().filter(|l| l.contains("files:read")).count();
+    assert_eq!(scope, 1, "{logged:?}");
+    drop(logged);
 }

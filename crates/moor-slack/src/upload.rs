@@ -25,6 +25,8 @@ pub(crate) struct Thread<'a> {
     pub(crate) channel: &'a str,
     /// Thread root `ts`.
     pub(crate) ts: &'a str,
+    /// Daemon log.
+    pub(crate) log: &'a (dyn Fn(&str) + Send + Sync),
 }
 
 /// Why a version did not go up.
@@ -150,20 +152,26 @@ fn upload(
 
 /// Shares the sent file in the thread. When the call fails without a Slack answer, Slack may
 /// still have shared the file, so the file's shares decide before the caller uploads it again.
+/// A check that fails counts as not shared, and a missing `files:read` scope is logged once.
 fn complete(thread: &Thread<'_>, to: &UploadUrl, title: &str) -> Result<(), NotUploaded> {
     let shared = thread
         .api
         .complete_upload(thread.bot, thread.channel, thread.ts, to, title);
-    match shared {
-        Err(ApiError::Transport(_))
-            if thread
-                .api
-                .file_shared(thread.bot, &to.file_id, thread.channel, thread.ts)
-                .unwrap_or(false) =>
+    if !matches!(shared, Err(ApiError::Transport(_))) {
+        return shared.map_err(refused);
+    }
+    let checked = thread
+        .api
+        .file_shared(thread.bot, &to.file_id, thread.channel, thread.ts);
+    match checked {
+        Ok(true) => Ok(()),
+        Err(ApiError::Slack(code))
+            if code == MISSING_SCOPE && thread.api.first_missing_files_read() =>
         {
-            Ok(())
+            (thread.log)("slack: the bot token lacks the files:read scope, so a lost upload completion cannot be checked and the file may be uploaded again");
+            shared.map_err(refused)
         }
-        shared => shared.map_err(refused),
+        _ => shared.map_err(refused),
     }
 }
 

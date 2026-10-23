@@ -8,7 +8,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -51,6 +51,8 @@ pub(crate) struct Fake {
     pub(crate) complete_lost: AtomicBool,
     /// While set, `files.info` reports the file as shared nowhere.
     pub(crate) hide_shares: AtomicBool,
+    /// How `files.info` answers: 0 as asked, 1 `missing_scope`, 2 `ok: false`, 3 HTTP 429.
+    pub(crate) info_mode: AtomicU8,
     /// When set, the upload URL `files.getUploadURLExternal` hands out.
     upload_to: Mutex<Option<String>>,
 }
@@ -93,6 +95,42 @@ fn read_request(conn: &TcpStream) -> Option<Seen> {
     })
 }
 
+/// The fake's answer to `files.info`.
+fn info_reply(fake: &Fake) -> (&'static str, String) {
+    let on = |flag: &AtomicBool| flag.load(Ordering::SeqCst);
+    match fake.info_mode.load(Ordering::SeqCst) {
+        1 => {
+            return (
+                "200 OK",
+                json!({"ok": false, "error": "missing_scope", "needed": "files:read"}).to_string(),
+            )
+        }
+        2 => {
+            return (
+                "200 OK",
+                json!({"ok": false, "error": "fatal_error"}).to_string(),
+            )
+        }
+        3 => return ("429 Too Many Requests", String::new()),
+        _ => {}
+    }
+    let done = fake
+        .seen
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|s| s.path.ends_with("completeuploadexternal"));
+    let shares = if done && !on(&fake.hide_shares) {
+        json!({"public": {"C1": [{"ts": "5.5", "thread_ts": "1.0"}]}})
+    } else {
+        json!({})
+    };
+    (
+        "200 OK",
+        json!({"ok": true, "file": {"id": "F1", "shares": shares}}).to_string(),
+    )
+}
+
 /// The fake's status and reply for `path`.
 fn reply(fake: &Fake, host: &str, path: &str) -> (&'static str, String) {
     let on = |flag: &AtomicBool| flag.load(Ordering::SeqCst);
@@ -122,21 +160,7 @@ fn reply(fake: &Fake, host: &str, path: &str) -> (&'static str, String) {
         return ("500 Internal Server Error", "lost".to_owned());
     }
     if path.ends_with("files.info") {
-        let done = fake
-            .seen
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|s| s.path.ends_with("completeuploadexternal"));
-        let shares = if done && !on(&fake.hide_shares) {
-            json!({"public": {"C1": [{"ts": "5.5", "thread_ts": "1.0"}]}})
-        } else {
-            json!({})
-        };
-        return (
-            "200 OK",
-            json!({"ok": true, "file": {"id": "F1", "shares": shares}}).to_string(),
-        );
+        return info_reply(fake);
     }
     if path.ends_with("chat.postmessage") && on(&fake.post_down) {
         return (
@@ -159,6 +183,7 @@ pub(crate) fn fake() -> Arc<Fake> {
         post_down: AtomicBool::default(),
         complete_lost: AtomicBool::default(),
         hide_shares: AtomicBool::default(),
+        info_mode: AtomicU8::default(),
         upload_to: Mutex::default(),
     });
     let served = Arc::clone(&fake);
@@ -232,6 +257,7 @@ fn post(base: &str, sock: &Path, v: &ArtifactView) -> Result<(), ApiError> {
         bot: &bot,
         channel: "C1",
         ts: "10.5",
+        log: &|_| {},
     };
     let box_name = BoxName::parse_allow_bare("t1").unwrap();
     post_version(&thread, &Client::new(sock), &box_name, v, Attempt::First).map(drop)
