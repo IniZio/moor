@@ -8,9 +8,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::{BoxSize, DotfilesConfig, McpServer, RepoConfig, ToolsConfig, UserConfig};
 
-/// Provider when the user config names none.
-const DEFAULT_PROVIDER: &str = "local-container";
-
 /// The layer a resolved value came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -83,8 +80,8 @@ pub struct CredPlan {
 pub struct BoxSettings {
     /// Agent model: flag > user.
     pub model: Option<Sourced<String>>,
-    /// Box provider: user > default; never the repo.
-    pub provider: Sourced<String>,
+    /// Box provider: the user config only, never the repo; `None` when it names none.
+    pub provider: Option<Sourced<String>>,
     /// Box size: repo > user > default `small`.
     pub size: Sourced<BoxSize>,
     /// Sorted union of box credential names and MCP refs.
@@ -145,10 +142,11 @@ impl BoxSettings {
             (None, Some(m)) => Some(Sourced::new(m.clone(), Layer::User)),
             (None, None) => None,
         };
-        let provider = user.box_.provider.as_ref().map_or_else(
-            || Sourced::new(DEFAULT_PROVIDER.to_string(), Layer::Default),
-            |p| Sourced::new(p.clone(), Layer::User),
-        );
+        let provider = user
+            .box_
+            .provider
+            .as_ref()
+            .map(|p| Sourced::new(p.clone(), Layer::User));
         let size = match (r.box_.size, user.box_.size) {
             (Some(s), _) => Sourced::new(s, Layer::Repo),
             (None, Some(s)) => Sourced::new(s, Layer::User),

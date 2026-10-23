@@ -38,7 +38,7 @@ pub(super) fn retry_in_box(
     row: &BoxRow,
     cfg: &BoxSettings,
 ) -> Result<Provisioned, CommandError> {
-    let Some((handle, workdir)) = kept_box(row) else {
+    let (Some((handle, workdir)), Some(held)) = (kept_box(row), row.boxed.as_ref()) else {
         return Err(CommandError::new(ErrorKind::Internal, "kept Box vanished"));
     };
     let begin = Decision::new(row.id)
@@ -50,6 +50,7 @@ pub(super) fn retry_in_box(
     let log_dir = setup::log_dir(cx.state_dir()?, row.id);
     let target = SetupTarget {
         handle,
+        provider: held.provider.as_str(),
         workdir: &workdir,
         repo: row.repo.as_ref(),
         log_dir: &log_dir,

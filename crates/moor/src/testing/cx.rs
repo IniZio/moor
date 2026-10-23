@@ -78,8 +78,39 @@ impl Cx {
         )
     }
 
-    /// The context over fakes, before it acts as anyone.
+    /// Test context like [`Cx::fake`] over a user config that names no `box.provider`.
+    pub(crate) fn fake_without_provider(
+        state_dir: &Path,
+        driver: Arc<dyn Driver>,
+        surface: Arc<dyn Surface>,
+        proc: Arc<dyn Proc>,
+    ) -> Self {
+        let clock = Arc::new(FakeClock::new(Ts::from_millis(1000)));
+        let cx = Self::over_fakes(
+            state_dir,
+            (driver, surface, proc),
+            UserConfig::default(),
+            clock,
+        );
+        with_requester(cx, state_dir)
+    }
+
+    /// The context over fakes, before it acts as anyone. A config that names no provider gets
+    /// `local-container`, so tests need not repeat it.
     fn bare(
+        state_dir: &Path,
+        fakes: (Arc<dyn Driver>, Arc<dyn Surface>, Arc<dyn Proc>),
+        mut config: UserConfig,
+        clock: Arc<FakeClock>,
+    ) -> Self {
+        config
+            .box_
+            .provider
+            .get_or_insert_with(|| "local-container".to_owned());
+        Self::over_fakes(state_dir, fakes, config, clock)
+    }
+
+    fn over_fakes(
         state_dir: &Path,
         (driver, surface, proc): (Arc<dyn Driver>, Arc<dyn Surface>, Arc<dyn Proc>),
         config: UserConfig,

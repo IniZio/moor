@@ -137,7 +137,7 @@ fn env_view(rows: Vec<EnvRow>, credentials: Vec<EnvCredential>) -> Response {
         agent: EnvAgent { model: None },
         rows,
         provider: EnvProvider {
-            name: "local".into(),
+            name: Some("local".into()),
             source: Layer::Default,
             size: "small".into(),
             size_source: Layer::Default,

@@ -164,7 +164,7 @@ fn clone(
     }
     let site = Site {
         handle: target.handle,
-        provider: &cfg.provider.value,
+        provider: target.provider,
         workdir: Some(target.workdir),
     };
     let proxy = proxy.as_ref().ok().and_then(Option::as_ref);

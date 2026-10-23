@@ -214,3 +214,25 @@ fn no_repo_adds_no_identity_rows() {
     .unwrap();
     assert!(identity(&v).is_empty());
 }
+
+#[test]
+fn a_config_naming_no_provider_shows_the_provider_as_unset() {
+    let d = tempfile::tempdir().unwrap();
+    let cx = Cx::fake_without_provider(
+        d.path(),
+        Arc::new(FakeDriver::new()),
+        Arc::new(FakeSurface::new()),
+        Arc::new(ScriptedProc::new()),
+    );
+    let v = run(
+        &cx,
+        &EnvReq {
+            repo: None,
+            base: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(v.provider.name, None);
+    let row = v.rows.iter().find(|r| r.name == "provider").unwrap();
+    assert_eq!(row.note, "unset");
+}

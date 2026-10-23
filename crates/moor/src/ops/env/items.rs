@@ -28,9 +28,12 @@ pub(crate) fn assemble(
     items.extend(s.setup.iter().map(|t| plain(EnvKind::Setup, t, t)));
     items.extend(mcp);
 
-    let provider = s.provider.value.as_str();
+    let (provider, source) = s
+        .provider
+        .as_ref()
+        .map_or(("unset", Layer::Default), |p| (p.value.as_str(), p.source));
     items.push(EnvItem {
-        source: s.provider.source,
+        source,
         ..plain(EnvKind::Box, "provider", provider)
     });
     items.push(EnvItem {
