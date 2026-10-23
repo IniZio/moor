@@ -96,10 +96,7 @@ impl Sockets {
 
 /// Checks `listener` is a listening stream socket bound at `path`, owner-only.
 fn check(listener: &UnixListener, path: &Path) -> Result<(), String> {
-    use rustix::net::sockopt::{socket_acceptconn, socket_type};
-    let stream =
-        socket_type(listener).map_err(|e| e.to_string())? == rustix::net::SocketType::STREAM;
-    if !(stream && socket_acceptconn(listener).map_err(|e| e.to_string())?) {
+    if !listening_stream(listener)? {
         return Err("not a listening stream socket".into());
     }
     let addr = listener.local_addr().map_err(|e| e.to_string())?;
@@ -123,6 +120,21 @@ fn check(listener: &UnixListener, path: &Path) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+/// Whether `listener` is a stream socket that accepts connections.
+#[cfg(target_os = "linux")]
+fn listening_stream(listener: &UnixListener) -> Result<bool, String> {
+    use rustix::net::sockopt::{socket_acceptconn, socket_type};
+    let stream =
+        socket_type(listener).map_err(|e| e.to_string())? == rustix::net::SocketType::STREAM;
+    Ok(stream && socket_acceptconn(listener).map_err(|e| e.to_string())?)
+}
+
+/// Passed sockets are taken only on Linux, so none is checked elsewhere.
+#[cfg(not(target_os = "linux"))]
+fn listening_stream(_listener: &UnixListener) -> Result<bool, String> {
+    Err("passed sockets are taken only on Linux".into())
 }
 
 /// Takes ownership of the passed fd number `fd`: a close-on-exec duplicate replaces it, so

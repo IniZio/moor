@@ -45,3 +45,30 @@ jobs:
       - name: Allow unprivileged user namespaces for the front tests
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: make unit
+
+  macos-fronts:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install toolchain from rust-toolchain.toml
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: target
+          key: cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: |
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
+            cargo-target-${{ runner.os }}-${{ runner.arch }}-
+
+      - run: cargo clippy -p moor --all-targets --locked -- -D warnings
+      - run: cargo build -p moor-web -p moor-slack --locked
+      - run: cargo test -p moor --locked --lib front_shim
+      - run: cargo test -p moor --locked --test cli fronts_macos
+      - name: Show what the sandbox refused
+        if: always()
+        run: log show --last 20m --style compact --predicate 'eventMessage CONTAINS "deny("' | grep -E 'python|moor|sh\(' | sed -E 's/^[^ ]+ [^ ]+ +//' | sort | uniq -c | sort -rn | head -200

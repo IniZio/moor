@@ -15,8 +15,13 @@ mod controller;
 mod events;
 #[path = "cli/front_drain.rs"]
 mod front_drain;
+#[cfg(target_os = "linux")]
 #[path = "cli/fronts.rs"]
 mod fronts;
+#[cfg(target_os = "macos")]
+#[path = "cli/fronts_macos.rs"]
+mod fronts_macos;
+#[cfg(target_os = "linux")]
 #[path = "cli/inherited.rs"]
 mod inherited;
 #[path = "cli/redial_e2e.rs"]

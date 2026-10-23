@@ -13,6 +13,8 @@ use rustix::io::Errno;
 use rustix::mount::{mount, mount_bind, mount_remount, unmount, MountFlags, UnmountFlags};
 use rustix::process::pivot_root;
 
+use super::Layout;
+
 /// The host dirs every front sees, read-only, where they exist: the programs, libraries and
 /// configuration a front runs with.
 pub(in crate::controller) const SYSTEM: [&str; 6] =
@@ -24,15 +26,6 @@ const DEVICES: [&str; 6] = ["null", "zero", "full", "random", "urandom", "tty"];
 /// Where the new root is assembled before `pivot_root`; a tmpfs there hides nothing the front
 /// sees, since every source is opened first.
 const STAGE: &str = "/tmp";
-
-/// What the front's root holds beyond the system dirs.
-#[derive(Default)]
-pub(super) struct Layout {
-    /// The dir the front may write; its `tmp` becomes the front's `/tmp`.
-    pub(super) writable: Option<PathBuf>,
-    /// Files and dirs the front may read.
-    pub(super) read_only: Vec<PathBuf>,
-}
 
 /// A host path the new root shows at the same path, opened before the stage hid it.
 struct Shown {
