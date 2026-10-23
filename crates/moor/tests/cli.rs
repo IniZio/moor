@@ -13,6 +13,8 @@ mod client_cwd;
 mod controller;
 #[path = "cli/events.rs"]
 mod events;
+#[path = "cli/front_drain.rs"]
+mod front_drain;
 #[path = "cli/fronts.rs"]
 mod fronts;
 #[path = "cli/inherited.rs"]

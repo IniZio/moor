@@ -14,8 +14,11 @@ use std::time::{Duration, Instant};
 
 use command_fds::{CommandFdExt as _, FdMapping};
 use rustix::fs::{Mode, OFlags};
+use rustix::process::{kill_process, Pid, Signal};
 
 use super::{log, Sink};
+
+mod leftover;
 
 /// The fd a front finds its own socket on.
 const SOCKET_FD: i32 = 3;
@@ -118,20 +121,65 @@ impl Shim {
     }
 }
 
+/// What a supervisor is told to do with its front.
+#[derive(Clone, Copy, Debug)]
+enum Stop {
+    /// Send it SIGTERM, restart it no more, and kill it if it is still running after the grace.
+    Term(Duration),
+    /// Kill it now.
+    Kill,
+}
+
+/// Tells every supervisor to stop its front, once the controller begins to drain.
+#[derive(Clone, Debug)]
+pub(super) struct Terminator {
+    /// One per supervisor.
+    stops: Vec<Sender<Stop>>,
+    /// How long a front gets to exit after SIGTERM.
+    grace: Duration,
+}
+
+impl Terminator {
+    /// Sends SIGTERM to each front; each is killed if still running after the grace.
+    pub(super) fn terminate(&self) {
+        for stop in &self.stops {
+            let _ = stop.send(Stop::Term(self.grace));
+        }
+    }
+}
+
 /// The running supervisors; dropping it kills each front and waits for its supervisor to end.
 pub(super) struct Supervised {
-    /// Dropping a sender tells its supervisor to stop.
-    stops: Vec<Sender<()>>,
+    /// One per supervisor.
+    stops: Vec<Sender<Stop>>,
     /// One supervisor per front.
     threads: Vec<JoinHandle<()>>,
 }
 
-impl Drop for Supervised {
-    fn drop(&mut self) {
-        self.stops.clear();
+impl Supervised {
+    /// A [`Terminator`] that gives each front `grace` to exit.
+    pub(super) fn terminator(&self, grace: Duration) -> Terminator {
+        Terminator {
+            stops: self.stops.clone(),
+            grace,
+        }
+    }
+
+    /// Waits until every supervisor has ended; with a [`Terminator`] fired, that is within its
+    /// grace.
+    pub(super) fn wait(&mut self) {
         for thread in self.threads.drain(..) {
             let _ = thread.join();
         }
+    }
+}
+
+impl Drop for Supervised {
+    fn drop(&mut self) {
+        for stop in &self.stops {
+            let _ = stop.send(Stop::Kill);
+        }
+        self.wait();
     }
 }
 
@@ -164,21 +212,24 @@ pub(super) fn supervise(mut fronts: Vec<Front>, shim: Shim, sink: &Sink) -> Supe
     Supervised { stops, threads }
 }
 
-/// Runs `front` until `stop` disconnects, restarting it with backoff whenever it exits.
+/// Runs `front` until told to stop, restarting it with backoff whenever it exits.
 #[expect(
     clippy::disallowed_methods,
     reason = "times how long a child ran to pick its restart backoff, not domain time"
 )]
-fn keep_running(front: &Front, shim: &Shim, stop: &Receiver<()>, sink: &Sink) {
+fn keep_running(front: &Front, shim: &Shim, stop: &Receiver<Stop>, sink: &Sink) {
     let ns = &front.ns;
+    leftover::stop(front, sink);
     let mut backoff = FIRST_BACKOFF;
     loop {
         let started = Instant::now();
         let exited = match spawn(front, shim, sink) {
             Ok(mut child) => {
-                let status = watch(&mut child, stop);
+                let outcome = watch(&mut child, stop);
                 let _ = fs::remove_file(front.pid_file());
-                let Some(status) = status else { return };
+                let Outcome::Exited(status) = outcome else {
+                    return;
+                };
                 format!("exited with {status}")
             }
             Err(e) => format!("cannot start: {e}"),
@@ -197,18 +248,49 @@ fn keep_running(front: &Front, shim: &Shim, stop: &Receiver<()>, sink: &Sink) {
     }
 }
 
-/// Waits for `child` to exit; kills it and returns `None` once `stop` disconnects.
-fn watch(child: &mut Child, stop: &Receiver<()>) -> Option<ExitStatus> {
+/// How a watched front ended.
+enum Outcome {
+    /// It exited on its own.
+    Exited(ExitStatus),
+    /// It was told to stop, and is gone.
+    Stopped,
+}
+
+/// Waits for `child` to exit. On [`Stop::Term`] it sends SIGTERM and keeps waiting, killing the
+/// child once the grace is over; on [`Stop::Kill`] it kills the child at once.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "times a grace period for a child, not domain time"
+)]
+fn watch(child: &mut Child, stop: &Receiver<Stop>) -> Outcome {
+    let mut kill_at: Option<Instant> = None;
     loop {
         if let Ok(Some(status)) = child.try_wait() {
-            return Some(status);
+            return if kill_at.is_some() {
+                Outcome::Stopped
+            } else {
+                Outcome::Exited(status)
+            };
         }
-        if !matches!(stop.recv_timeout(POLL), Err(RecvTimeoutError::Timeout)) {
-            let _ = child.kill();
-            let _ = child.wait();
-            return None;
+        if kill_at.is_some_and(|at| Instant::now() >= at) {
+            return kill(child);
+        }
+        match stop.recv_timeout(POLL) {
+            Ok(Stop::Term(grace)) if kill_at.is_none() => {
+                let _ = kill_process(Pid::from_child(child), Signal::TERM);
+                kill_at = Some(Instant::now() + grace);
+            }
+            Ok(Stop::Term(_)) | Err(RecvTimeoutError::Timeout) => {}
+            Ok(Stop::Kill) | Err(RecvTimeoutError::Disconnected) => return kill(child),
         }
     }
+}
+
+/// Kills and reaps `child`.
+fn kill(child: &mut Child) -> Outcome {
+    let _ = child.kill();
+    let _ = child.wait();
+    Outcome::Stopped
 }
 
 /// Starts `front` under `shim` in `/`, with its socket on fd 3, relays its stdout and stderr
