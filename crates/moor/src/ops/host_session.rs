@@ -44,7 +44,7 @@ pub(crate) fn open(cx: &Cx, req: &OpenHostSessionReq) -> Result<HostSessionValue
         (Some(base), _) => HostWorkdir::Under(base),
         (None, dir) => HostWorkdir::At(dir.unwrap_or_default()),
     };
-    let (session, workdir) = cx
+    let (session, workdir, created) = cx
         .store()?
         .open_child_host_session(&NewHost {
             workdir,
@@ -55,8 +55,8 @@ pub(crate) fn open(cx: &Cx, req: &OpenHostSessionReq) -> Result<HostSessionValue
             key: req.key.as_deref(),
         })
         .map_err(refuse_invalid)?;
-    if base.is_some() {
-        if let Err(e) = owner_only_dir(Path::new(&workdir)) {
+    if base.is_some() && created {
+        if let Err(e) = own_dir::create(cx.state_dir()?, Path::new(&workdir)) {
             let _ended = cx.store()?.end_host_session(session);
             return Err(CommandError::new(
                 ErrorKind::Failed,
@@ -103,15 +103,6 @@ fn placement(
             ))
         }
     })
-}
-
-/// Creates `dir` and any missing parent, each mode 0700.
-fn owner_only_dir(dir: &Path) -> std::io::Result<()> {
-    use std::os::unix::fs::DirBuilderExt as _;
-    std::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(dir)
 }
 
 /// Run `update-host-session`.
@@ -168,6 +159,8 @@ fn value(session: SessionId, workdir: String, state: SessionState) -> HostSessio
         state: state.as_str().to_owned(),
     }
 }
+
+mod own_dir;
 
 #[cfg(test)]
 mod tests;

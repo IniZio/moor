@@ -132,3 +132,87 @@ fn a_key_out_of_bounds_is_refused() {
         assert_eq!(got["class"], "usage", "{got}");
     }
 }
+
+/// The error message of opening a host Session as `identity` with no workdir.
+fn open_fails(world: &World, identity: &str) -> String {
+    let opened = ask(
+        &world.slack(),
+        &acting(identity, &json!({"cmd": "open-host-session"})),
+    );
+    let message = opened["error"]["message"].as_str().unwrap_or_default();
+    assert!(!message.is_empty(), "{opened}");
+    message.to_owned()
+}
+
+/// The ids of `identity`'s live host Sessions.
+fn live_hosts(world: &World, identity: &str) -> Vec<i64> {
+    let listed = ask(
+        &world.slack(),
+        &acting(identity, &json!({"cmd": "sessions"})),
+    );
+    listed["value"]["sessions"]
+        .as_array()
+        .expect("sessions")
+        .iter()
+        .filter(|s| s["box"].is_null())
+        .map(|s| s["session"].as_i64().expect("id"))
+        .collect()
+}
+
+/// `<state>/users/<user of identity>`.
+fn user_dir(world: &World, identity: &str) -> PathBuf {
+    let users = world.served.dir.path().join("state").join("users");
+    users.join(user_of(world, identity).to_string())
+}
+
+#[test]
+fn a_session_whose_dir_cannot_be_made_is_ended() {
+    let world = World::new();
+    let users = world.served.dir.path().join("state").join("users");
+    std::fs::write(&users, b"not a dir").expect("file");
+    let message = open_fails(&world, A);
+    assert!(message.contains("not a real directory"), "{message}");
+    assert_eq!(live_hosts(&world, A), Vec::<i64>::new());
+}
+
+#[test]
+fn reopening_a_live_keyed_session_never_ends_it_whatever_the_dirs() {
+    let world = World::new();
+    let first = keyed(&world, A, "C1/1.0");
+    let mine = user_dir(&world, A);
+    let moved = world.served.dir.path().join("moved");
+    std::fs::rename(&mine, &moved).expect("move");
+    std::os::unix::fs::symlink(&moved, &mine).expect("symlink");
+    assert_eq!(keyed(&world, A, "C1/1.0"), first);
+    assert_eq!(live_hosts(&world, A), [first]);
+}
+
+#[test]
+fn a_symlink_under_the_users_dir_is_refused_and_not_followed() {
+    let world = World::new();
+    let mine = user_dir(&world, A);
+    let elsewhere = world.served.dir.path().join("elsewhere");
+    std::fs::create_dir(&elsewhere).expect("dir");
+    std::fs::create_dir_all(mine.parent().expect("users")).expect("users");
+    std::os::unix::fs::symlink(&elsewhere, &mine).expect("symlink");
+    let message = open_fails(&world, A);
+    assert!(message.contains("not a real directory"), "{message}");
+    let made: Vec<_> = std::fs::read_dir(&elsewhere).expect("read").collect();
+    assert!(made.is_empty(), "nothing was made through the symlink");
+}
+
+#[test]
+fn a_session_dir_that_already_exists_is_used_only_when_owner_only() {
+    let world = World::new();
+    let (n, _) = opened_by(&world, A);
+    let sessions = user_dir(&world, A).join("sessions");
+    let loose = sessions.join((n + 1).to_string());
+    std::fs::create_dir(&loose).expect("dir");
+    std::fs::set_permissions(&loose, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    let message = open_fails(&world, A);
+    assert!(message.contains("not mode 0700"), "{message}");
+    let tight = sessions.join((n + 2).to_string());
+    std::fs::create_dir(&tight).expect("dir");
+    std::fs::set_permissions(&tight, std::fs::Permissions::from_mode(0o700)).expect("chmod");
+    assert_eq!(opened_by(&world, A), (n + 2, tight));
+}
