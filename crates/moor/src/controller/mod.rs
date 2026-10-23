@@ -276,13 +276,7 @@ impl Running {
         program: (OsString, Vec<OsString>),
         sink: &Sink,
     ) -> fronts::Supervised {
-        let shim = fronts::Shim::new(
-            program,
-            self.env.state_dir().as_deref(),
-            &self.socket,
-            self.env.vault_key(),
-            self.env.get("HOME").map(Path::new),
-        );
+        let shim = fronts::Shim::new(program);
         fronts::supervise(std::mem::take(&mut self.commands), shim, sink)
     }
 

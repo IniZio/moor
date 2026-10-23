@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use rustix::process::{kill_process, Pid, Signal};
 
-use super::{fresh_dir, Dir};
+use super::{fresh_dir_outside_tmp, Dir};
 
 /// Takes SIGTERM, takes a second to finish, writes `<name>.term`, exits 0.
 const SLOW_TO_TERM: &str = r#"
@@ -92,7 +92,7 @@ impl Setup {
     /// Fronts named by the pairs, each running its script with the root and its name; the drain
     /// gets `drain_secs`.
     fn new(drain_secs: u32, fronts: &[(&str, &str)]) -> Self {
-        let root = fresh_dir("frontdrain");
+        let root = fresh_dir_outside_tmp("frontdrain");
         let mut config = format!(
             "socket: {}\nstate_dir: {}\ndrain_timeout_secs: {drain_secs}\nfronts:\n",
             root.join("c.sock").display(),

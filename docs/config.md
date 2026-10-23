@@ -183,8 +183,8 @@ fronts:
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `command` | list of strings, not empty | none | The program and arguments the controller runs as this front. Without it, start the front yourself. |
-| `state_dir` | absolute path | none | The one directory the front may write. Without it, the front writes nothing but `/dev/null`. |
-| `read_only` | list of absolute paths | empty | Files or dirs the front may read even where the controller hides the host from it, such as a config or token file under `HOME`. A path inside the controller's state dir, or one that holds the controller socket or vault key, is refused at startup. |
+| `state_dir` | absolute path, not under `/tmp` | none | The one directory the front may write. Without it, the front writes nothing but `/dev/null`. |
+| `read_only` | list of absolute real paths | empty | Files or dirs outside the system dirs that the front may read, such as a config or token file under `HOME`. |
 
 For each entry the controller listens on `<state dir>/fronts/<namespace>.sock`,
 mode 0600 in a 0700 directory. Under systemd, the controller takes the socket
@@ -207,23 +207,30 @@ namespace: it reaps orphans, passes SIGTERM and SIGINT to the front, and exits
 with the front's status. If the controller's shim dies, the kernel kills every
 process in the namespace.
 
-On Linux, a front and every process it starts reach the host as follows:
+On Linux, each front runs in a root of its own, built from an allow-list.
+Nothing else of the host exists there, so a Unix socket elsewhere, such as
+the D-Bus session bus, Docker's or LXD's, cannot be reached:
 
-- **Write.** Only its `state_dir` and `/dev/null`. Every other mount is
-  read-only, so writes, chmod, chown, utimes and xattr changes elsewhere fail
-  with `Read-only file system`, even through a file descriptor. Landlock also
-  refuses writes outside the `state_dir`, such as to other devices.
-- **Hidden.** `/run` (and so `/var/run`), `/tmp`, `/dev/shm` and the
-  controller's `HOME` are empty tmpfs mounts. The Unix sockets of host services
-  live there, such as the D-Bus session bus, `systemd --user` and Docker's
-  socket, so a front cannot reach them. A front's own files there, such as a
-  token or config file, need a `read_only` entry, or can live in its
-  `state_dir`. The front's program shows through as well: the controller
-  resolves `command`'s first word on its `PATH` to a real path, runs that
-  path, and shows it read-only.
-- **Read and run.** Every other file the controller's user can read.
-- **Network.** Outbound TCP is not restricted, and that includes listeners
-  on the host's loopback.
+- **Read and run.** `/usr`, `/lib`, `/lib64`, `/bin`, `/sbin` and `/etc` where
+  they exist, and the file `/etc/resolv.conf` points to. The front's program:
+  the controller resolves `command`'s first word on its `PATH` to a real path
+  and runs that path. Each `read_only` path.
+- **Devices.** `/dev/null`, `zero`, `full`, `random`, `urandom` and `tty`, and
+  the `fd`, `stdin`, `stdout` and `stderr` links.
+- **Processes.** A fresh `/proc` that shows only the front's own processes.
+- **Write.** Only the `state_dir`, its `tmp` subdirectory, which is the
+  front's `/tmp`, and `/dev/null`. Every other mount is read-only, so chmod,
+  chown, utimes and xattr changes fail with `Read-only file system`, even
+  through a file descriptor, including the front's own socket on fd 3.
+  Landlock also refuses writes outside them.
+- **Network.** Outbound TCP is not restricted, and that includes listeners on
+  the host's loopback.
+
+A `read_only` path must be a real path: one with a symlink or `..` in it is
+refused. So is one that equals, holds or lies inside the controller's state
+dir, the dir of its config file (which holds the vault key), the vault key or
+the controller socket. When a system dir above holds one of those, the
+controller refuses to start, as every front could read it.
 
 The controller creates the `state_dir` and its `tmp` subdirectory, mode 0700,
 and sets `MOOR_FRONT_STATE_DIR` to the `state_dir` and `TMPDIR` to its `tmp`.
@@ -235,8 +242,8 @@ user namespaces (`kernel.unprivileged_userns_clone=0`,
 `user.max_user_namespaces=0`, or `kernel.apparmor_restrict_unprivileged_userns=1`)
 or lacks Landlock, the controller logs `fronts not started` with the reason,
 starts none, and keeps serving. `moor front-shim --check` makes that call: it
-enters the namespaces, applies the sandbox and confirms a write outside the
-allow-list is refused.
+enters the namespaces and the front's root, applies the sandbox and confirms a
+write outside the allow-list is refused.
 
 macOS has no front sandbox. The shim needs Linux namespaces, and nono's
 Seatbelt backend is not wired into moor. None of this has been tried on a Mac.

@@ -127,36 +127,30 @@ pub fn parse_controller(file: &str, text: &str) -> Result<ControllerConfig, Conf
         )
         .in_file(file));
     }
-    if let Some((ns, _)) = cfg
-        .fronts
-        .iter()
-        .find(|(_, f)| f.command.as_ref().is_some_and(Vec::is_empty))
-    {
-        return Err(
-            ConfigError::new(format!("fronts.{ns}.command"), "must name a program").in_file(file),
-        );
-    }
-    if let Some((ns, _)) = cfg
-        .fronts
-        .iter()
-        .find(|(_, f)| f.read_only.iter().any(|p| !p.is_absolute()))
-    {
-        return Err(
-            ConfigError::new(format!("fronts.{ns}.read_only"), "must hold absolute paths")
-                .in_file(file),
-        );
-    }
-    if let Some((ns, _)) = cfg
-        .fronts
-        .iter()
-        .find(|(_, f)| f.state_dir.as_ref().is_some_and(|d| !d.is_absolute()))
-    {
-        return Err(
-            ConfigError::new(format!("fronts.{ns}.state_dir"), "must be an absolute path")
-                .in_file(file),
-        );
+    for (ns, front) in &cfg.fronts {
+        front_entry(front).map_err(|(key, why)| {
+            ConfigError::new(format!("fronts.{ns}.{key}"), why).in_file(file)
+        })?;
     }
     Ok(cfg)
+}
+
+/// Checks one `fronts` entry; an error names the key and what is wrong with it.
+fn front_entry(front: &FrontEntry) -> Result<(), (&'static str, &'static str)> {
+    if front.command.as_ref().is_some_and(Vec::is_empty) {
+        return Err(("command", "must name a program"));
+    }
+    if front.read_only.iter().any(|p| !p.is_absolute()) {
+        return Err(("read_only", "must hold absolute paths"));
+    }
+    match &front.state_dir {
+        Some(dir) if !dir.is_absolute() => Err(("state_dir", "must be an absolute path")),
+        Some(dir) if dir.starts_with("/tmp") => Err((
+            "state_dir",
+            "must not lie under /tmp, which is the front's own tmp dir",
+        )),
+        _ => Ok(()),
+    }
 }
 
 #[cfg(test)]

@@ -78,16 +78,22 @@ impl Stack {
 
     /// Like `start`, appending `extra` to the controller config.
     pub fn start_with(extra: &str) -> Self {
-        let mut stack = Self::controller_with(|_| extra.to_owned());
+        let root = tempfile::Builder::new().prefix("mw").tempdir().unwrap();
+        let mut stack = Self::controller_with(root, |_| extra.to_owned());
         stack.start_web(false);
         stack
     }
 
     /// Starts the controller with the web daemon as its `web` front, writing only `web/`
     /// in the stack's root, and waits for the daemon's URL in the controller log. The token
-    /// file is copied into `web/`: the front cannot see the stack's root, which is under /tmp.
+    /// file is copied into `web/`, as the front sees nothing else of the stack's root. The root is
+    /// outside /tmp, which the front sees as its own tmp dir.
     pub fn start_as_front() -> Self {
-        let mut stack = Self::controller_with(|dir| {
+        let root = tempfile::Builder::new()
+            .prefix("mw")
+            .tempdir_in(env!("CARGO_TARGET_TMPDIR"))
+            .unwrap();
+        let mut stack = Self::controller_with(root, |dir| {
             std::fs::create_dir(dir.join("web")).unwrap();
             let command = json!([
                 env!("CARGO_BIN_EXE_moor-web"),
@@ -124,9 +130,7 @@ impl Stack {
 
     /// Starts the controller, with `extra(root)` appended to its config, and waits for it; the
     /// token file is written first.
-    fn controller_with(extra: impl FnOnce(&Path) -> String) -> Self {
-        // Kept short: Unix socket paths are limited to about 104 bytes.
-        let root = tempfile::Builder::new().prefix("mw").tempdir().unwrap();
+    fn controller_with(root: tempfile::TempDir, extra: impl FnOnce(&Path) -> String) -> Self {
         let dir = root.path().to_path_buf();
         let socket = dir.join("c.sock");
         let config = dir.join("c.yaml");

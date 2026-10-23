@@ -21,7 +21,7 @@ use moor::moor_core::controller::PROTOCOL;
 use rustix::process::{kill_process, Pid, Signal};
 use serde_json::Value;
 
-use super::{fresh_dir, Dir};
+use super::{fresh_dir, fresh_dir_outside_tmp, Dir};
 
 #[path = "fronts/sandbox.rs"]
 mod sandbox;
@@ -105,17 +105,15 @@ impl Controller {
     /// Serves the controller with `script` as the probe front, prefixing the moor command with
     /// `wrap`.
     fn start(script: &str, wrap: &[&str]) -> Self {
-        let root = Dir(tempfile::Builder::new()
-            .prefix("front-")
-            .tempdir_in(env!("CARGO_TARGET_TMPDIR"))
-            .unwrap());
+        let root = fresh_dir_outside_tmp("front");
         fs::create_dir(root.join("state")).unwrap();
         fs::create_dir(root.join("home")).unwrap();
         fs::create_dir(root.join("front")).unwrap();
         fs::write(root.join("home").join("secret"), "x").unwrap();
-        let config = root.join("c.yaml");
+        fs::create_dir(root.join("cfg")).unwrap();
+        let config = root.join("cfg").join("c.yaml");
         let moor = env!("CARGO_BIN_EXE_moor");
-        let listeners = host_listeners(&root.file_name().unwrap().to_string_lossy());
+        let listeners = host_listeners(&root.file_name().unwrap().to_string_lossy(), &root);
         let program = hidden_program_and_note(&root);
         let command = serde_json::json!([
             program,
@@ -249,12 +247,16 @@ fn hidden_program_and_note(root: &std::path::Path) -> PathBuf {
     program
 }
 
-/// Unix sockets named for `tag` listening on the host, in `/tmp` and the user's runtime dir.
-fn host_listeners(tag: &str) -> Vec<(PathBuf, UnixListener)> {
+/// Unix sockets listening on the host: named for `tag` in `/tmp` and the user's runtime dir, and
+/// one like LXD's under `root/var/lib/x`.
+fn host_listeners(tag: &str, root: &std::path::Path) -> Vec<(PathBuf, UnixListener)> {
     let runtime = PathBuf::from(format!("/run/user/{}", rustix::process::getuid().as_raw()));
+    let lxd = root.join("var/lib/x");
+    fs::create_dir_all(&lxd).unwrap();
     [std::env::temp_dir(), runtime]
         .into_iter()
         .map(|dir| dir.join(format!("moor-{tag}.sock")))
+        .chain([lxd.join("unix.socket")])
         .map(|path| {
             let listener = UnixListener::bind(&path).unwrap();
             (path, listener)
@@ -315,12 +317,12 @@ fn a_front_reaches_its_own_socket_and_nothing_else_of_the_controller() {
     let got = wait_for("the probe", || ctl.line("probe "));
     let got: Value = serde_json::from_str(&got).unwrap();
     assert_eq!(got["own"], "answers", "{got}");
-    assert_eq!(got["operator"], "ConnectionRefusedError", "{got}");
+    assert_eq!(got["operator"], "FileNotFoundError", "{got}");
     assert_eq!(got["other_front"], "FileNotFoundError", "{got}");
-    assert_eq!(got["vault_key"], 0, "{got}");
+    assert_eq!(got["vault_key"], "FileNotFoundError", "{got}");
     assert_eq!(got["controller_fds"], "FileNotFoundError", "{got}");
     assert_eq!(got["controller_root"], "FileNotFoundError", "{got}");
-    assert_eq!(got["unmount"], "Operation not permitted", "{got}");
+    assert_eq!(got["unmount"], "No such file or directory", "{got}");
 }
 
 #[test]
@@ -366,7 +368,7 @@ fn without_user_namespaces_no_front_starts_and_the_controller_serves() {
 }
 
 #[test]
-fn a_front_starts_in_root_with_only_pipes_for_output_and_a_read_only_cover() {
+fn a_front_starts_in_root_with_only_pipes_for_output() {
     let ctl = Controller::start(PROBE, &[]);
     let got = wait_for("the probe", || ctl.line("probe "));
     let got: Value = serde_json::from_str(&got).unwrap();
@@ -374,7 +376,7 @@ fn a_front_starts_in_root_with_only_pipes_for_output_and_a_read_only_cover() {
     assert_eq!(got["init_cwd"], "/", "{got}");
     assert_eq!(got["stdout"], "pipe", "{got}");
     assert_eq!(got["stderr"], "pipe", "{got}");
-    assert_eq!(got["cover_write"], "Read-only file system", "{got}");
+    assert_eq!(got["cover_write"], "No such file or directory", "{got}");
     assert!(ctl.line("front says hello").is_some(), "{}", ctl.log());
     let state = ctl.root.join("state");
     let shim_cwd = fs::read_link(format!("/proc/{}/cwd", ctl.shim_pid())).unwrap();
@@ -386,18 +388,15 @@ fn a_front_starts_in_root_with_only_pipes_for_output_and_a_read_only_cover() {
 }
 
 #[test]
-fn a_shim_started_in_a_covered_dir_runs_its_front_in_root() {
+fn a_shim_started_in_a_hidden_dir_runs_its_front_in_root() {
     let covered = fresh_dir("cwd");
     fs::write(covered.join("secret"), "x").unwrap();
-    let dir = covered.display().to_string();
     let parent = std::process::id().to_string();
     let script =
         "import os; print(os.getcwd(), os.readlink('/proc/1/cwd'), os.listdir('/proc/1/cwd'))";
     let out = shim(
         &covered,
-        &[
-            "--parent", &parent, "--cover", &dir, "--", "python3", "-c", script,
-        ],
+        &["--parent", &parent, "--", "python3", "-c", script],
     );
     let said = String::from_utf8_lossy(&out.stdout);
     assert!(
@@ -443,7 +442,7 @@ fn a_killed_outer_shim_takes_pid_1_and_the_front_with_it() {
 
 #[test]
 fn a_shim_whose_controller_is_gone_exits_without_running_the_front() {
-    let dir = fresh_dir("orphan");
+    let dir = fresh_dir_outside_tmp("orphan");
     let mark = dir.join("ran");
     let touch = format!("touch {}", mark.display());
     let me = std::process::id().to_string();
@@ -489,7 +488,7 @@ fn a_shim_whose_controller_is_gone_exits_without_running_the_front() {
 
 #[test]
 fn pid_1_exits_when_the_outer_shim_died_before_it_started() {
-    let dir = fresh_dir("pid1");
+    let dir = fresh_dir_outside_tmp("pid1");
     let mark = dir.join("ran");
     let touch = format!("touch {}", mark.display());
     let run = |stdin: Stdio| {

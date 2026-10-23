@@ -33,6 +33,10 @@ def touch(act):
     except OSError as e:
         return e.strerror
 def metadata(path):
+    try:
+        os.stat(path)
+    except OSError as e:
+        return e.strerror
     def fchmod():
         fd = os.open(path, os.O_RDONLY)
         try:
@@ -65,7 +69,7 @@ got = {
     "own": dial("/proc/self/fd/3"),
     "operator": dial(f"{root}/c.sock"),
     "other_front": dial(f"{root}/state/fronts/slack.sock"),
-    "vault_key": read(f"{root}/vault.key"),
+    "vault_key": read(f"{root}/cfg/vault.key"),
     "controller_fds": listdir(f"/proc/{ctl}/fd"),
     "controller_root": dial(f"/proc/{ctl}/root{root}/c.sock"),
     "unmount": "allowed" if unmounted else os.strerror(ctypes.get_errno()),
@@ -74,12 +78,11 @@ got = {
     "tmp": write(f"{os.environ.get('TMPDIR')}/planted"),
     "dev_null": write("/dev/null"),
     "dev_zero": write("/dev/zero", "a"),
-    "config": write(f"{root}/c.yaml", "a"),
+    "config": write(f"{root}/cfg/c.yaml", "a"),
     "home": write(f"{root}/home/planted"),
     "home_secret": read(f"{root}/home/secret"),
     "shared_read": read(f"{root}/home/shared/note"),
     "shared_write": write(f"{root}/home/shared/planted"),
-    "program": open("/proc/self/cmdline", "rb").read().split(b"\0")[0].decode(),
     "root": write(f"{root}/planted"),
     "moor_dir": write(f"{os.path.dirname(moor)}/planted-{os.path.basename(root)}"),
     "tmp_sock": dial(tmp_sock),
@@ -87,8 +90,13 @@ got = {
     "bus": dial(f"/run/user/{os.getuid()}/bus"),
     "docker": dial("/var/run/docker.sock"),
     "shm": write("/dev/shm/planted"),
-    "config_meta": metadata(f"{root}/c.yaml"),
-    "moor_meta": metadata(moor),
+    "shared_meta": metadata(f"{root}/home/shared/note"),
+    "program_meta": metadata(f"{root}/home/bin/front"),
+    "fd3_chmod": touch(lambda: os.chmod("/proc/self/fd/3", 0o600)),
+    "lxd": dial(f"{root}/var/lib/x/unix.socket"),
+    "resolv": read("/etc/resolv.conf"),
+    "ca": len(__import__("ssl").create_default_context().get_ca_certs()) > 0 or bool(__import__("ssl").create_default_context().cert_store_stats()["x509_ca"]),
+    "dns": touch(lambda: socket.getaddrinfo("localhost", 80)),
     "own_meta": metadata(f"{own}/mine"),
     "rw_mounts": sorted({l.split(" ")[4] for l in open("/proc/self/mountinfo") if l.split(" ")[5].split(",")[0] == "rw"}),
     "cwd": os.getcwd(),
