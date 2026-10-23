@@ -1,27 +1,29 @@
-//! Tests for `/moor login`, `/moor logout`, the submitted modal and the credential check.
-#![allow(clippy::indexing_slicing, reason = "test code reads JSON by key")]
+//! Tests for `/moor login`, `/moor logout`, the submitted modal, the token checks and what
+//! the worker asks of the controller.
+#![allow(
+    clippy::indexing_slicing,
+    clippy::panic,
+    reason = "test code reads JSON by key and fails on a wrong request"
+)]
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::path::Path;
 
+use moor_client::ClientError;
+use moor_core::request::Request;
+use moor_core::response::Response;
 use moor_core::secret::Secret;
-use serde_json::Value;
+use serde_json::{json, Value};
 
-use super::{check, form, login, logout, submission, TokenCheck, CHECKING, LINKED};
+use super::{form, login, logout, submission, vault, Checks, TokenCheck, CHECKING};
+use crate::account::Account;
 use crate::coordinator::claude::tests::install;
 use crate::coordinator::claude::{Claude, HostEnv};
-use crate::credentials::{
-    credential_path, store, AgentKind, CheckError, CredentialCheck, SlackUser,
-};
+use crate::credentials::{CheckError, CredentialCheck, SlackUser};
 use crate::db::Db;
+use crate::github::GitHub;
 use crate::socket::{AfterAck, Kept, Slash, TokenSubmission};
 use crate::worker::Job;
-
-const CLAUDE: AgentKind = AgentKind::Claude;
-
-fn users() -> Vec<String> {
-    vec!["U1".to_owned(), "bad id".to_owned()]
-}
 
 fn db(dir: &Path) -> Db {
     Db::open(&dir.join("slack.db")).unwrap()
@@ -34,15 +36,16 @@ fn slash(envelope_id: &str, user: &str, text: &str) -> Slash {
         user: user.into(),
         text: text.into(),
         trigger_id: Some(format!("trig-{envelope_id}")),
+        response_url: Some(format!("https://hooks.example/{envelope_id}")),
     }
 }
 
-fn submitted(envelope_id: &str, user: &str, agent: &str, token: &str) -> TokenSubmission {
+fn submitted(envelope_id: &str, user: &str, account: &str, token: &str) -> TokenSubmission {
     TokenSubmission {
         envelope_id: envelope_id.into(),
         user: user.into(),
         view_id: "V1".into(),
-        agent: agent.into(),
+        account: account.into(),
         token: Secret::new(token.into()),
     }
 }
@@ -61,94 +64,94 @@ fn user(id: &str) -> SlackUser {
 }
 
 #[test]
-fn login_opens_the_modal_for_the_default_agent_once_after_an_empty_ack() {
+fn login_opens_the_modal_for_the_named_account_once_after_an_empty_ack() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
-    for (n, text) in ["login", "login claude"].into_iter().enumerate() {
+    let cases = [
+        ("login", Account::Claude),
+        ("login claude", Account::Claude),
+        ("login github", Account::GitHub),
+    ];
+    for (n, (text, account)) in cases.into_iter().enumerate() {
         let id = format!("e{n}");
-        let kept = login(&slash(&id, "U1", text), &db, &users(), 1).unwrap();
+        let kept = login(&slash(&id, "U1", text), &db, 1).unwrap();
         assert_eq!(kept.ack, None);
         let open = AfterAck::OpenLogin {
             trigger_id: format!("trig-{id}"),
-            agent: CLAUDE,
+            account,
         };
         assert_eq!(kept.then, Some(open), "{text}");
     }
-    let again = login(&slash("e0", "U1", "login"), &db, &users(), 2).unwrap();
+    let again = login(&slash("e0", "U1", "login"), &db, 2).unwrap();
     assert_eq!(
         again.then, None,
         "a redelivered command opens no second modal"
     );
-    let modal = form(CLAUDE);
+    let modal = form(Account::Claude);
     assert_eq!(modal["private_metadata"], "claude");
     let prompt = "Paste the token that `claude setup-token` printed on your machine.";
+    assert_eq!(modal["blocks"][0]["label"]["text"], prompt);
+    let modal = form(Account::GitHub);
+    assert_eq!(modal["private_metadata"], "github");
+    let prompt = "Paste the output of `gh auth token` from your machine.";
     assert_eq!(modal["blocks"][0]["label"]["text"], prompt);
 }
 
 #[test]
-fn login_refuses_an_unknown_agent_a_user_off_the_list_or_a_bad_id() {
+fn login_refuses_an_unknown_account_extra_words_or_a_bad_id_and_asks_no_list() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
     let cases = [
         (
             "U1",
             "login codex",
-            "moor knows no agent called that. It knows `claude`.",
+            "moor cannot link that. It can link `claude` and `github`.",
         ),
         (
             "U1",
             "login claude extra",
-            "Usage: `/moor login [agent]` or `/moor logout [agent]`.",
+            "Usage: `/moor login [claude|github]` or `/moor logout [claude|github]`.",
         ),
-        ("U9", "login", "<@U9> is not allowed to link a token here."),
         (
             "bad id",
             "login",
-            "Your Slack user id cannot name a token file, so nothing was changed.",
+            "Your Slack user id is not one moor can act for, so nothing was changed.",
         ),
     ];
     for (n, (who, text, want)) in cases.into_iter().enumerate() {
-        let kept = login(&slash(&format!("e{n}"), who, text), &db, &users(), 1).unwrap();
+        let kept = login(&slash(&format!("e{n}"), who, text), &db, 1).unwrap();
         assert_eq!(ack_text(&kept), want, "{text}");
         assert_eq!(kept.then, None);
     }
+    let anyone = login(&slash("e9", "U777", "login github"), &db, 1).unwrap();
+    assert!(anyone.then.is_some(), "no user list gates a login");
 }
 
 #[test]
-fn logout_deletes_only_the_users_credential_for_the_agent() {
-    let state = tempfile::tempdir().unwrap();
-    for id in ["U1", "U2"] {
-        store(state.path(), CLAUDE, &user(id), &Secret::new(b"t".to_vec())).unwrap();
-    }
-    let kept = logout(&slash("e1", "U1", "logout"), state.path(), &|_| {});
-    assert_eq!(ack_text(&kept), "Unlinked.");
-    assert!(!credential_path(state.path(), CLAUDE, &user("U1")).exists());
-    assert!(credential_path(state.path(), CLAUDE, &user("U2")).exists());
-    let kept = logout(&slash("e2", "U1", "logout claude"), state.path(), &|_| {});
-    assert_eq!(ack_text(&kept), "Unlinked.");
-    let kept = logout(&slash("e3", "U2", "logout codex"), state.path(), &|_| {});
+fn logout_queues_one_unlink_of_the_named_account_and_acks_at_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db(dir.path());
+    let (kept, job) = logout(&slash("e1", "U1", "logout github"), &db, 1).unwrap();
+    assert_eq!(ack_text(&kept), "Unlinking your GitHub token…");
+    let want = Job::Unlink {
+        user: "U1".into(),
+        account: Account::GitHub,
+        response_url: Some("https://hooks.example/e1".into()),
+    };
+    assert_eq!(job, Some(want));
+    let (_, job) = logout(&slash("e2", "U2", "logout"), &db, 1).unwrap();
+    let Some(Job::Unlink { account, .. }) = job else {
+        panic!("no unlink: {job:?}");
+    };
+    assert_eq!(account, Account::Claude);
+    let (_, job) = logout(&slash("e1", "U1", "logout github"), &db, 2).unwrap();
+    assert_eq!(job, None, "a redelivered command unlinks nothing twice");
+    let (kept, job) = logout(&slash("e3", "U2", "logout codex"), &db, 1).unwrap();
     assert_eq!(
         ack_text(&kept),
-        "moor knows no agent called that. It knows `claude`."
+        "moor cannot link that. It can link `claude` and `github`."
     );
-    assert!(credential_path(state.path(), CLAUDE, &user("U2")).exists());
-}
-
-#[test]
-fn a_logout_that_cannot_delete_the_file_says_so_and_logs_why() {
-    let state = tempfile::tempdir().unwrap();
-    let path = credential_path(state.path(), CLAUDE, &user("U1"));
-    std::fs::create_dir_all(path.join("blocker")).unwrap();
-    let logged = std::cell::RefCell::new(Vec::new());
-    let log = |line: &str| logged.borrow_mut().push(line.to_owned());
-    let kept = logout(&slash("e1", "U1", "logout"), state.path(), &log);
-    assert_eq!(
-        ack_text(&kept),
-        "Could not delete your token file. The operator's log says why."
-    );
-    let logged = logged.into_inner();
-    assert_eq!(logged.len(), 1);
-    assert!(logged[0].starts_with("logout of U1: "), "{logged:?}");
+    assert_eq!(job, None);
 }
 
 #[test]
@@ -157,16 +160,16 @@ fn a_submission_queues_one_check_and_keeps_only_its_envelope_id() {
     let db = db(dir.path());
     let token = "sk-ant-oat01-good-61d0e2";
     let sub = || submitted("e1", "U1", "claude", token);
-    let (ack, job) = submission(sub(), &db, &users(), 1).unwrap();
+    let (ack, job) = submission(sub(), &db, 1).unwrap();
     assert_eq!(modal_text(&ack), CHECKING);
     let want = TokenCheck {
         user: user("U1"),
-        agent: CLAUDE,
+        account: Account::Claude,
         view_id: "V1".into(),
         token: Secret::new(token.into()),
     };
     assert_eq!(job, Some(Job::CheckToken(want)));
-    let (ack, job) = submission(sub(), &db, &users(), 2).unwrap();
+    let (ack, job) = submission(sub(), &db, 2).unwrap();
     assert_eq!(modal_text(&ack), CHECKING);
     assert_eq!(job, None, "a redelivered submission checks nothing");
     drop(db);
@@ -178,36 +181,36 @@ fn a_submission_queues_one_check_and_keeps_only_its_envelope_id() {
 }
 
 #[test]
-fn a_submission_from_a_user_off_the_list_or_for_an_unknown_agent_checks_nothing() {
+fn a_submission_for_an_unknown_account_or_from_a_bad_id_checks_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
     let cases = [
         (
             "e1",
-            "U9",
-            "claude",
-            "You are not allowed to link a token here. Nothing was stored.",
+            "U1",
+            "codex",
+            "This form names no account moor knows. Nothing was stored.",
         ),
         (
             "e2",
-            "U1",
-            "codex",
-            "This form names no agent moor knows. Nothing was stored.",
+            "bad id",
+            "claude",
+            "Your Slack user id is not one moor can act for, so nothing was changed. \
+             Nothing was stored.",
         ),
     ];
-    for (id, who, agent, want) in cases {
-        let sub = submitted(id, who, agent, "sk-ant-oat01-good-x");
-        let (ack, job) = submission(sub, &db, &users(), 1).unwrap();
+    for (id, who, account, want) in cases {
+        let sub = submitted(id, who, account, "sk-ant-oat01-good-x");
+        let (ack, job) = submission(sub, &db, 1).unwrap();
         assert_eq!(modal_text(&ack), want);
         assert_eq!(job, None);
     }
 }
 
-/// A check for `U1` of `token` for Claude.
-fn token_check(token: &str) -> TokenCheck {
+fn token_check(account: Account, token: &str) -> TokenCheck {
     TokenCheck {
         user: user("U1"),
-        agent: CLAUDE,
+        account,
         view_id: "V1".into(),
         token: Secret::new(token.into()),
     }
@@ -236,51 +239,37 @@ impl CredentialCheck for FakeCheck {
 }
 
 #[test]
-fn only_a_credential_the_agent_takes_is_stored() {
+fn only_a_claude_token_the_agent_takes_passes() {
     let state = tempfile::tempdir().unwrap();
     let fake = FakeCheck {
         accept: "fmt-yes",
         calls: Cell::new(0),
     };
-    let path = credential_path(state.path(), CLAUDE, &user("U1"));
-    let text = check(&token_check("nope"), Ok(&fake), state.path());
+    let github = GitHub::new("http://127.0.0.1:9");
+    let checks = |claude| Checks {
+        claude,
+        github: &github,
+        state_dir: state.path(),
+    };
+    let run = |claude, token| checks(claude).run(&token_check(Account::Claude, token));
     assert_eq!(
-        text,
-        "Claude refused this token: bad shape. Nothing was stored."
+        run(Ok(&fake), "nope"),
+        Err("Claude refused this token: bad shape. Nothing was stored.".to_owned())
     );
     assert_eq!(fake.calls.get(), 0, "a bad shape asks the agent nothing");
-    let text = check(&token_check("fmt-no"), Ok(&fake), state.path());
-    assert_eq!(text, "Claude refused this token: no. Nothing was stored.");
-    assert!(!path.exists());
     assert_eq!(
-        check(&token_check("fmt-yes"), Ok(&fake), state.path()),
-        LINKED
+        run(Ok(&fake), "fmt-no"),
+        Err("Claude refused this token: no. Nothing was stored.".to_owned())
     );
-    assert_eq!(std::fs::read(&path).unwrap(), b"fmt-yes");
-    let text = check(&token_check("fmt-yes"), Err("no binary"), state.path());
+    assert_eq!(run(Ok(&fake), "fmt-yes"), Ok(()));
     assert_eq!(
-        text,
-        "The coordinator is unavailable: no binary. Nothing was stored."
+        run(Err("no binary"), "fmt-yes"),
+        Err("The coordinator is unavailable: no binary. Nothing was stored.".to_owned())
     );
-}
-
-#[test]
-fn a_token_the_agent_takes_but_the_file_cannot_hold_is_reported_not_linked() {
-    let state = tempfile::tempdir().unwrap();
-    let parent = state.path().join("credentials");
-    std::fs::write(&parent, "a file, not a dir").unwrap();
-    let fake = FakeCheck {
-        accept: "fmt-yes",
-        calls: Cell::new(0),
-    };
-    let text = check(&token_check("fmt-yes"), Ok(&fake), state.path());
-    let want = format!(
-        "Could not store your token: {}: not a directory that this user owns. \
-         Nothing was stored.",
-        parent.display()
+    assert!(
+        !state.path().join("credentials").exists(),
+        "a check writes no credential file"
     );
-    assert_eq!(text, want);
-    assert_eq!(fake.calls.get(), 1);
 }
 
 #[test]
@@ -288,21 +277,17 @@ fn claude_checks_a_setup_token_in_the_users_own_config_dir() {
     let bin = tempfile::tempdir().unwrap();
     let state = tempfile::tempdir().unwrap();
     let claude = Claude::probe(&install(bin.path(), None), HostEnv::default()).unwrap();
-    let text = check(
-        &token_check("sk-ant-oat01-made-up"),
-        Ok(&claude),
-        state.path(),
-    );
+    let github = GitHub::new("http://127.0.0.1:9");
+    let checks = Checks {
+        claude: Ok(&claude),
+        github: &github,
+        state_dir: state.path(),
+    };
+    let run = |token| checks.run(&token_check(Account::Claude, token));
     let want = "Claude refused this token: Failed to authenticate. API Error: 401 OAuth \
                 access token is invalid. Nothing was stored.";
-    assert_eq!(text, want);
-    let token = "sk-ant-oat01-good-1";
-    assert_eq!(
-        check(&token_check(token), Ok(&claude), state.path()),
-        LINKED
-    );
-    let path = credential_path(state.path(), CLAUDE, &user("U1"));
-    assert_eq!(std::fs::read(path).unwrap(), token.as_bytes());
+    assert_eq!(run("sk-ant-oat01-made-up"), Err(want.to_owned()));
+    assert_eq!(run("sk-ant-oat01-good-1"), Ok(()));
     let env = std::fs::read_to_string(bin.path().join("run-1/env")).unwrap();
     let want = format!(
         "CLAUDE_CONFIG_DIR={}",
@@ -311,12 +296,86 @@ fn claude_checks_a_setup_token_in_the_users_own_config_dir() {
     assert!(env.lines().any(|l| l == want), "{env}");
     let cwd = std::fs::read_to_string(bin.path().join("run-1/cwd")).unwrap();
     assert_eq!(cwd.trim_end(), "/");
-    let text = check(&token_check(""), Ok(&claude), state.path());
     let want = "Claude refused this token: it is not a token that `claude setup-token` \
                 prints. Nothing was stored.";
-    assert_eq!(text, want);
+    assert_eq!(run(""), Err(want.to_owned()));
     assert!(
         !bin.path().join("run-2").exists(),
         "an empty token runs nothing"
     );
+    assert!(
+        !state.path().join("credentials").exists(),
+        "a check writes no credential file"
+    );
+}
+
+/// What the controller was asked, as `(user, command)`, and what it answers.
+fn scripted<'a>(
+    seen: &'a RefCell<Vec<(String, Request)>>,
+    answer: impl Fn(&Request) -> Result<Response, ClientError> + 'a,
+) -> impl FnMut(&str, Request) -> Result<Response, ClientError> + 'a {
+    move |user, request| {
+        let reply = answer(&request);
+        seen.borrow_mut().push((user.to_owned(), request));
+        reply
+    }
+}
+
+#[test]
+fn storing_enrolls_the_user_first_and_then_sets_the_named_secret() {
+    let seen = RefCell::default();
+    let mut call = scripted(&seen, |r| Ok(Response::ok(r.cmd(), Some(json!({})))));
+    let token = Secret::new(b"gho_fake".to_vec());
+    vault::store(&mut call, "U1", Account::GitHub, &token).unwrap();
+    let seen = seen.take();
+    let cmds: Vec<_> = seen.iter().map(|(u, r)| (u.as_str(), r.cmd())).collect();
+    assert_eq!(cmds, [("U1", "enroll"), ("U1", "secret-set")]);
+    let Request::SecretSet(set) = &seen[1].1 else {
+        panic!("{:?}", seen[1]);
+    };
+    assert_eq!(set.name.as_str(), "github");
+    assert_eq!(set.value.secret().expose(), b"gho_fake");
+}
+
+#[test]
+fn a_failed_enroll_stops_before_the_secret_and_names_the_controllers_reason() {
+    let seen = RefCell::default();
+    let refuse = |r: &Request| {
+        let error = moor_core::response::ErrorView {
+            kind: moor_core::response::ErrorKind::Refused,
+            message: "the vault is sealed".to_owned(),
+            hints: Vec::new(),
+            context: Vec::new(),
+        };
+        Ok(Response::err(r.cmd(), error))
+    };
+    let mut call = scripted(&seen, refuse);
+    let token = Secret::new(b"gho_fake".to_vec());
+    let why = vault::store(&mut call, "U1", Account::Claude, &token).unwrap_err();
+    assert_eq!(why, "the vault is sealed");
+    assert_eq!(
+        seen.borrow().len(),
+        1,
+        "no secret-set after a failed enroll"
+    );
+}
+
+#[test]
+fn deleting_names_the_account_secret_and_says_whether_one_was_there() {
+    for (changed, want) in [(true, true), (false, false)] {
+        let seen = RefCell::default();
+        let mut call = scripted(&seen, |r| {
+            Ok(Response::ok(
+                r.cmd(),
+                Some(json!({"name": "github", "changed": changed})),
+            ))
+        });
+        assert_eq!(vault::delete(&mut call, "U2", Account::GitHub), Ok(want));
+        let seen = seen.take();
+        let Request::SecretDelete(delete) = &seen[0].1 else {
+            panic!("{:?}", seen[0]);
+        };
+        assert_eq!((seen[0].0.as_str(), delete.name.as_str()), ("U2", "github"));
+        assert_eq!(seen.len(), 1);
+    }
 }

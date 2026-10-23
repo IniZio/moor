@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+mod account;
 #[expect(
     dead_code,
     reason = "edits, blocks and ephemeral posts come with status messages and prompts"
@@ -17,6 +18,7 @@ mod db;
 mod dial;
 mod escape;
 mod feed;
+mod github;
 mod identity;
 mod login;
 mod prompt;

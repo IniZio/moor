@@ -41,6 +41,22 @@ pub(super) enum ApiError {
     RateLimited(Option<Duration>),
 }
 
+/// An HTTP client for JSON calls: platform roots, no error on a non-2xx status, and the
+/// call timeout.
+pub(crate) fn http_agent() -> Agent {
+    let tls = TlsConfig::builder()
+        .provider(TlsProvider::Rustls)
+        .root_certs(RootCerts::PlatformVerifier)
+        .unversioned_rustls_crypto_provider(Arc::new(rustls::crypto::ring::default_provider()))
+        .build();
+    let config = Agent::config_builder()
+        .tls_config(tls)
+        .http_status_as_error(false)
+        .timeout_global(Some(CALL_TIMEOUT))
+        .build();
+    Agent::new_with_config(config)
+}
+
 /// A Slack Web API client rooted at one base URL.
 pub(super) struct Api {
     /// Base URL without a trailing slash.
@@ -57,19 +73,9 @@ impl Api {
         if !(base.starts_with("https://") || base.starts_with("http://")) {
             return Err(ApiError::Transport("base URL must be http or https".into()));
         }
-        let tls = TlsConfig::builder()
-            .provider(TlsProvider::Rustls)
-            .root_certs(RootCerts::PlatformVerifier)
-            .unversioned_rustls_crypto_provider(Arc::new(rustls::crypto::ring::default_provider()))
-            .build();
-        let config = Agent::config_builder()
-            .tls_config(tls)
-            .http_status_as_error(false)
-            .timeout_global(Some(CALL_TIMEOUT))
-            .build();
         Ok(Self {
             base: base.trim_end_matches('/').to_owned(),
-            agent: Agent::new_with_config(config),
+            agent: http_agent(),
             files_read_reported: AtomicBool::new(false),
         })
     }
@@ -365,6 +371,8 @@ fn read_reply(
         |code| ApiError::Slack(code.to_owned()),
     ))
 }
+
+mod respond;
 
 #[cfg(test)]
 mod tests;

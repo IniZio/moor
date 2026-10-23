@@ -2,7 +2,6 @@
 #![allow(clippy::panic, clippy::indexing_slicing, reason = "test code")]
 
 use super::{parse, record, RepoCmd};
-use crate::command::Allow;
 use crate::db::Db;
 use crate::socket::Slash;
 use crate::worker::Job;
@@ -14,19 +13,14 @@ fn slash(envelope_id: &str, user: &str, channel: &str, text: &str) -> Slash {
         user: user.into(),
         text: text.into(),
         trigger_id: None,
+        response_url: None,
     }
 }
 
-/// Records `s` with user `U1` and channel `C1` allowed; returns the ack text and the job.
+/// Records `s` with channel `C1` allowed; returns the ack text and the job.
 fn run(db: &Db, s: &Slash) -> (String, Option<Job>) {
     let channels = vec!["C1".to_owned()];
-    let users = vec!["U1".to_owned()];
-    let allow = Allow {
-        channels: &channels,
-        users: &users,
-    };
-    let state = std::path::Path::new("/nonexistent");
-    let (kept, job) = record(s, db, &allow, state, 1_000, &|_| {}).unwrap();
+    let (kept, job) = record(s, db, &channels, 1_000).unwrap();
     assert_eq!(kept.then, None);
     let ack = kept.ack.unwrap();
     (ack["text"].as_str().unwrap().to_owned(), job)
@@ -144,15 +138,20 @@ fn a_repo_the_channel_lacks_is_named_and_nothing_changes() {
 }
 
 #[test]
-fn a_user_or_channel_off_the_lists_changes_nothing() {
+fn a_channel_off_the_list_changes_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
-    let (text, job) = run(&db, &slash("e1", "U9", "C1", "repo add acme/api"));
-    assert_eq!(text, "<@U9> is not allowed to change this channel's repos.");
-    assert_eq!(job, None);
     let (text, job) = run(&db, &slash("e2", "U1", "C9", "repo add acme/api"));
     assert_eq!(text, "moor does not work in this channel.");
     assert_eq!(job, None);
-    assert!(db.channel_repos("C1").unwrap().is_empty());
     assert!(db.channel_repos("C9").unwrap().is_empty());
+}
+
+#[test]
+fn anyone_in_an_allowed_channel_changes_its_repos() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db(dir.path());
+    let (text, _) = run(&db, &slash("e1", "U9", "C1", "repo add acme/api"));
+    assert_eq!(text, "Recorded. This channel works on `acme/api`.");
+    assert_eq!(db.channel_repos("C1").unwrap().len(), 1);
 }

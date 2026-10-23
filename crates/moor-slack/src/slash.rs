@@ -1,12 +1,9 @@
 //! The `/moor` slash command. `/moor repo` lists and changes the repos a channel works on,
 //! recorded before the ack. `/moor login` and `/moor logout` go to [`crate::login`].
 
-use std::path::Path;
-
 use moor_core::seam::forge::ForgeRepo;
 use serde_json::{json, Value};
 
-use crate::command::Allow;
 use crate::db::{ChannelRepo, Db};
 use crate::login;
 use crate::socket::{Kept, Slash};
@@ -16,7 +13,8 @@ use crate::worker::Job;
 const USAGE: &str = "Usage: `/moor repo` lists this channel's repos. \
     `/moor repo add <owner/name>`, `/moor repo remove <owner/name>` and \
     `/moor repo default <owner/name>` change them. \
-    `/moor login` links your Claude token and `/moor logout` unlinks it.";
+    `/moor login [claude|github]` links a token of yours and \
+    `/moor logout [claude|github]` unlinks it.";
 
 /// Longest repo name taken.
 const MAX_REPO: usize = 200;
@@ -39,19 +37,17 @@ enum RepoCmd<'a> {
 pub(crate) fn record(
     slash: &Slash,
     db: &Db,
-    allow: &Allow<'_>,
-    state_dir: &Path,
+    channels: &[String],
     now: i64,
-    log: &dyn Fn(&str),
 ) -> rusqlite::Result<(Kept, Option<Job>)> {
     let verb = slash.text.split_whitespace().next().unwrap_or_default();
     if verb.eq_ignore_ascii_case("login") {
-        return login::login(slash, db, allow.users, now).map(|kept| (kept, None));
+        return login::login(slash, db, now).map(|kept| (kept, None));
     }
     if verb.eq_ignore_ascii_case("logout") {
-        return Ok((login::logout(slash, state_dir, log), None));
+        return login::logout(slash, db, now);
     }
-    let ack = record_repo(slash, db, allow, now)?;
+    let ack = record_repo(slash, db, channels, now)?;
     let kept = Kept {
         ack: Some(ack),
         then: None,
@@ -61,27 +57,21 @@ pub(crate) fn record(
 
 /// Records one `/moor repo` command in a single transaction with its envelope id. Returns
 /// the ack's payload.
-fn record_repo(slash: &Slash, db: &Db, allow: &Allow<'_>, now: i64) -> rusqlite::Result<Value> {
+fn record_repo(slash: &Slash, db: &Db, channels: &[String], now: i64) -> rusqlite::Result<Value> {
     db.atomically(|| {
         db.event_once(&slash.envelope_id, now)?;
-        let text = answer(slash, db, allow, now)?;
+        let text = answer(slash, db, channels, now)?;
         Ok(json!({ "text": text }))
     })
 }
 
 /// Applies the command; returns the text the user sees.
-fn answer(slash: &Slash, db: &Db, allow: &Allow<'_>, now: i64) -> rusqlite::Result<String> {
+fn answer(slash: &Slash, db: &Db, channels: &[String], now: i64) -> rusqlite::Result<String> {
     let Some(cmd) = parse(&slash.text) else {
         return Ok(USAGE.to_owned());
     };
-    if !allow.channels.contains(&slash.channel) {
+    if !channels.contains(&slash.channel) {
         return Ok("moor does not work in this channel.".to_owned());
-    }
-    if !allow.users.contains(&slash.user) {
-        let user = &slash.user;
-        return Ok(format!(
-            "<@{user}> is not allowed to change this channel's repos."
-        ));
     }
     let channel = slash.channel.as_str();
     let not_here = |repo: &str| format!("`{repo}` is not one of this channel's repos.");

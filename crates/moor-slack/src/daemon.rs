@@ -19,8 +19,9 @@ use crate::coordinator::Agent;
 use crate::credentials::CredentialCheck;
 use crate::db::{Db, SlackBox};
 use crate::feed::Feed;
+use crate::github::GitHub;
 use crate::identity::{Link, Team};
-use crate::login::{self, TokenCheck};
+use crate::login::{self, Checks, TokenCheck};
 use crate::secret_file::read_secret;
 use crate::socket;
 use crate::turns::Turns;
@@ -105,8 +106,6 @@ pub fn run(settings: &Settings, log: &Log) -> Result<(), String> {
     let recorder = Recorder {
         db,
         channels: cfg.channels,
-        users: cfg.users,
-        state_dir: settings.state_dir.clone(),
         api: Arc::clone(&api),
         bot_token: Arc::clone(&bot_token),
         jobs: jobs_tx,
@@ -133,6 +132,7 @@ pub fn run(settings: &Settings, log: &Log) -> Result<(), String> {
         api,
         bot_token,
         coordinator,
+        github: GitHub::new(&cfg.github_api_base),
         link,
         log: Arc::clone(log),
     };
@@ -278,6 +278,8 @@ struct Worker {
     bot_token: Arc<Secret>,
     /// The checked coordinator agent, or why it cannot run.
     coordinator: Result<Arc<dyn Agent>, String>,
+    /// GitHub, which checks a pasted token.
+    github: GitHub,
     /// The controller; each request opens its own connection and speaks for one Slack user.
     link: Link,
     /// Daemon log.
@@ -307,16 +309,27 @@ impl Worker {
                 (self.log)(&format!("slack: ephemeral failed: {e}"));
             }
         };
-        let mut check_token = |check: TokenCheck| {
-            let checker = self.coordinator.as_ref();
-            let checker = checker
+        let mut check_token = |check: &TokenCheck| {
+            let claude = self.coordinator.as_ref();
+            let claude = claude
                 .map(|c| &**c as &dyn CredentialCheck)
                 .map_err(String::as_str);
-            let text = login::check(&check, checker, &self.state_dir);
-            (self.log)(&format!("login of {}: {text}", check.user.as_str()));
-            let view = login::notice(&text);
-            if let Err(e) = self.api.update_view(&self.bot_token, &check.view_id, &view) {
+            let checks = Checks {
+                claude,
+                github: &self.github,
+                state_dir: &self.state_dir,
+            };
+            checks.run(check)
+        };
+        let mut modal = |view_id: &str, text: &str| {
+            let view = login::notice(text);
+            if let Err(e) = self.api.update_view(&self.bot_token, view_id, &view) {
                 (self.log)(&format!("slack: login modal update failed: {e}"));
+            }
+        };
+        let mut respond = |url: &str, text: &str| {
+            if let Err(e) = self.api.respond(url, text) {
+                (self.log)(&format!("slack: command answer failed: {e}"));
             }
         };
         let mut fx = Fx {
@@ -324,6 +337,8 @@ impl Worker {
             reply: &mut reply,
             ephemeral: &mut ephemeral,
             check_token: &mut check_token,
+            modal: &mut modal,
+            respond: &mut respond,
             log: &*self.log,
         };
         worker::serve(jobs, &db, left, &mut fx);

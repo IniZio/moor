@@ -98,7 +98,7 @@ fn start_refused(scope: &Scope<'_>, turn: &OpenTurn, by: &str) -> rusqlite::Resu
 fn pick_repo(repos: &[ChannelRepo], asked: Option<&str>) -> Result<String, String> {
     let names: Vec<&str> = repos.iter().map(|r| r.repo.as_str()).collect();
     let known = if names.is_empty() {
-        "This channel has no repo. Someone on the users list adds one with `/moor repo add`."
+        "This channel has no repo. Someone in this channel adds one with `/moor repo add`."
             .to_owned()
     } else {
         format!("This channel's repos: {}.", names.join(", "))

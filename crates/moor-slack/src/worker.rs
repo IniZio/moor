@@ -2,7 +2,7 @@
 //! close the front owes, which the coordinator's tool server writes from its own process. The
 //! worker reads those rows every [`POLL`] and turns each into a started or closed Box over the
 //! controller socket. The worker also posts replies, sends the answers people give to prompts,
-//! checks each repo a user adds to a channel, and checks each Claude token a user pastes.
+//! checks each repo a user adds to a channel, and checks each token a user pastes and keeps it in the vault.
 
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
@@ -30,8 +30,12 @@ pub(crate) struct Fx<'a> {
     pub(crate) reply: &'a mut dyn FnMut(&str, &str, &str),
     /// Shows `(channel, user, thread, text)` to that user only, in the thread.
     pub(crate) ephemeral: &'a mut dyn FnMut(&str, &str, &str, &str),
-    /// Checks a pasted Claude token, stores it when Claude takes it, and updates the modal.
-    pub(crate) check_token: &'a mut dyn FnMut(TokenCheck),
+    /// Checks a pasted token with its account; `Err` is the modal text that says why not.
+    pub(crate) check_token: &'a mut dyn FnMut(&TokenCheck) -> Result<(), String>,
+    /// Replaces the login modal `(view id)` with a notice of `(text)`.
+    pub(crate) modal: &'a mut dyn FnMut(&str, &str),
+    /// Answers a slash command through its `(response_url, text)`.
+    pub(crate) respond: &'a mut dyn FnMut(&str, &str),
     /// Writes one diagnostic line.
     pub(crate) log: &'a dyn Fn(&str),
 }
@@ -60,7 +64,12 @@ pub(crate) fn serve(jobs: &Receiver<Job>, db: &Db, left: Vec<SlackBox>, fx: &mut
                 thread,
                 text,
             }) => (fx.reply)(&channel, &thread, &text),
-            Ok(Job::CheckToken(check)) => (fx.check_token)(check),
+            Ok(Job::CheckToken(check)) => login::link(fx, &check),
+            Ok(Job::Unlink {
+                user,
+                account,
+                response_url,
+            }) => login::unlink(fx, &user, account, response_url.as_deref()),
             Ok(Job::Ephemeral {
                 channel,
                 user,
@@ -365,6 +374,7 @@ pub(crate) use job::Job;
 
 mod close;
 mod intake;
+mod login;
 pub(crate) use intake::record;
 
 #[cfg(test)]

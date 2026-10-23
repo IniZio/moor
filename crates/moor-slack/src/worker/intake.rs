@@ -4,23 +4,23 @@
 
 use super::answer::digit;
 use super::Job;
-use crate::command::{not_allowed, reply_action, strip_mentions, Allow, ReplyAction};
+use crate::command::{reply_action, strip_mentions, ReplyAction};
 use crate::db::{Db, InboxItem, ItemKind, SlackThread};
 use crate::socket::Mention;
 
 /// Records one mention or thread message in a single transaction: its event id, and what
-/// [`in_thread`] says for a message in a thread the front keeps. Another mention from a user
-/// on the `users` list opens a coordinator thread; one from anyone else gets one line.
-/// Returns what the worker does next, or nothing for a redelivered event.
+/// [`in_thread`] says for a message in a thread the front keeps. Another mention in an allowed
+/// channel opens a coordinator thread. Returns what the worker does next, or nothing for a
+/// redelivered event.
 pub(crate) fn record(
     mention: &Mention,
     db: &Db,
-    allow: &Allow<'_>,
+    channels: &[String],
     now: i64,
 ) -> rusqlite::Result<Option<Job>> {
     db.atomically(|| {
         let channel = mention.channel.as_str();
-        if !db.event_once(&mention.event_id, now)? || !allow.channels.iter().any(|c| c == channel) {
+        if !db.event_once(&mention.event_id, now)? || !channels.iter().any(|c| c == channel) {
             return Ok(None);
         }
         let thread = mention.thread_ts.as_deref().unwrap_or(&mention.ts);
@@ -29,13 +29,6 @@ pub(crate) fn record(
         }
         if mention.reply {
             return Ok(None);
-        }
-        if !allow.users.contains(&mention.user) {
-            return Ok(Some(Job::Reply {
-                channel: channel.to_owned(),
-                thread: thread.to_owned(),
-                text: not_allowed(&mention.user),
-            }));
         }
         open_coordinated(db, mention, thread, now)?;
         Ok(None)

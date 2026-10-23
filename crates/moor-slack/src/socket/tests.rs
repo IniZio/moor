@@ -19,8 +19,8 @@ use super::{
     next_delay, run, session, session_tracked, Inbound, Intake, Kept, Mention, NotKept, SocketError,
 };
 use super::{AfterAck, Click, Slash, TokenSubmission};
+use crate::account::Account;
 use crate::api::Api;
-use crate::credentials::AgentKind;
 
 impl Intake for mpsc::Sender<Inbound> {
     fn take(&self, item: Inbound) -> Result<Kept, NotKept> {
@@ -422,6 +422,7 @@ fn a_slash_command_is_forwarded_and_its_ack_carries_the_intake_payload() {
         user: "U1".into(),
         text: "repo add acme/api".into(),
         trigger_id: Some("t1".into()),
+        response_url: None,
     });
     assert_eq!(intake.0.into_inner(), vec![want]);
 }
@@ -439,7 +440,7 @@ fn a_login_submission_is_forwarded_with_its_token_trimmed() {
         envelope_id: "env-v".into(),
         user: "U1".into(),
         view_id: "V1".into(),
-        agent: "claude".into(),
+        account: "claude".into(),
         token: Secret::new(b"tok-123".to_vec()),
     });
     assert_eq!(got, vec![want]);
@@ -454,7 +455,7 @@ impl Intake for Opening {
     fn take(&self, _item: Inbound) -> Result<Kept, NotKept> {
         let then = AfterAck::OpenLogin {
             trigger_id: "t1".into(),
-            agent: AgentKind::Claude,
+            account: Account::Claude,
         };
         Ok(Kept {
             ack: None,
@@ -490,7 +491,7 @@ fn the_login_modal_opens_after_the_ack() {
     server.join().expect("server");
     let want = AfterAck::OpenLogin {
         trigger_id: "t1".into(),
-        agent: AgentKind::Claude,
+        account: Account::Claude,
     };
     assert_eq!(intake.1.into_inner(), vec![want]);
 }
