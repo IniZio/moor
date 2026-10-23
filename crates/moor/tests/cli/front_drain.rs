@@ -49,6 +49,40 @@ open(f"{root}/{name}.up", "a").write("x")
 time.sleep(600)
 "#;
 
+/// Prints a 300 KiB line, then a line that is not UTF-8, then `after`.
+const NOISY: &str = r#"
+import os, sys, time
+root, name = sys.argv[1], sys.argv[2]
+out = sys.stdout.buffer
+out.write(b"x" * 300_000 + b"\n")
+out.write(b"bad \xff\xfe bytes\n")
+out.write(b"after\n")
+out.flush()
+open(f"{root}/{name}.up", "a").write("x")
+time.sleep(600)
+"#;
+
+/// Ignores SIGTERM and writes its first argument once it does; a leftover stand-in.
+const LEFTOVER_IGNORING_TERM: &str = r#"
+import signal, sys, time
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+open(sys.argv[1], "w").write("up")
+while True:
+    time.sleep(1)
+"#;
+
+/// Takes two seconds to finish after SIGTERM, writes its second argument; its first argument is written once the handler is set.
+const LEFTOVER_SLOW_TO_TERM: &str = r#"
+import signal, sys, time
+def term(*_):
+    time.sleep(2)
+    open(sys.argv[2], "w").write("done")
+    sys.exit(0)
+signal.signal(signal.SIGTERM, term)
+open(sys.argv[1], "w").write("up")
+time.sleep(600)
+"#;
+
 /// A state dir and config with some fronts that each run a script.
 struct Setup {
     root: Dir,
@@ -199,7 +233,9 @@ fn the_drain_terminates_each_front_and_the_controller_exits_after_they_are_reape
         "the controller left before the front finished: {}",
         setup.log()
     );
-    assert_eq!(setup.front_processes(), Vec::<u32>::new());
+    wait_for("every front process to exit", || {
+        setup.front_processes().is_empty().then_some(())
+    });
     assert!(!setup.pid_file("slow").exists());
 }
 
@@ -217,7 +253,9 @@ fn a_front_that_ignores_sigterm_is_killed_when_the_drain_budget_ends() {
         "{took:?} is under the budget"
     );
     assert!(took < Duration::from_secs(10), "{took:?}");
-    assert_eq!(setup.front_processes(), Vec::<u32>::new());
+    wait_for("every front process to exit", || {
+        setup.front_processes().is_empty().then_some(())
+    });
 }
 
 #[test]
@@ -232,7 +270,9 @@ fn a_front_is_not_restarted_while_the_controller_drains() {
         "{}",
         setup.log()
     );
-    assert_eq!(setup.front_processes(), Vec::<u32>::new());
+    wait_for("every front process to exit", || {
+        setup.front_processes().is_empty().then_some(())
+    });
 }
 
 #[test]
@@ -289,4 +329,116 @@ fn a_recycled_pid_with_another_start_time_is_left_alone() {
     assert!(exit_within(&mut next, Duration::from_secs(20)).is_some());
     bystander.kill().unwrap();
     bystander.wait().unwrap();
+}
+
+/// Starts `python3 -c script args` as a leftover, with a pid file for front `name` naming it
+/// by its real start time. The setup's state dir must exist: run and drain a controller first.
+fn plant_leftover(setup: &Setup, name: &str, script: &str, args: &[&str]) -> Child {
+    let ready = setup.root.join(format!("{name}.leftover-ready"));
+    let leftover = Command::new("python3")
+        .args(["-c", script])
+        .arg(&ready)
+        .args(args)
+        .spawn()
+        .unwrap();
+    wait_for("the leftover to be ready", || ready.exists().then_some(()));
+    let started = wait_for("the leftover's start time", || start_time(leftover.id()));
+    fs::write(
+        setup.pid_file(name),
+        format!("{}\n{started}\n", leftover.id()),
+    )
+    .unwrap();
+    leftover
+}
+
+/// Starts and drains a controller once, so the state dir exists and no front runs.
+fn prepare_state(setup: &Setup, names: &[&str]) {
+    let mut first = serve_until_up(setup, names);
+    kill_process(pid_of(&first), Signal::TERM).unwrap();
+    assert!(exit_within(&mut first, Duration::from_secs(20)).is_some());
+    for name in names {
+        let _ = fs::remove_file(setup.root.join(format!("{name}.up")));
+    }
+}
+
+#[test]
+fn a_leftover_that_ignores_sigterm_is_killed_after_the_grace() {
+    let setup = Setup::new(30, &[("slow", SLOW_TO_TERM)]);
+    prepare_state(&setup, &["slow"]);
+    let mut leftover = plant_leftover(&setup, "slow", LEFTOVER_IGNORING_TERM, &[]);
+    let began = Instant::now();
+    let mut next = setup.serve();
+    wait_for("the leftover to go", || {
+        (!alive(leftover.id())).then_some(())
+    });
+    let took = began.elapsed();
+    assert!(
+        took >= Duration::from_secs(4),
+        "{took:?} is under the grace"
+    );
+    wait_for("the next front", || {
+        (setup.starts("slow") == 1).then_some(())
+    });
+    kill_process(pid_of(&next), Signal::TERM).unwrap();
+    assert!(exit_within(&mut next, Duration::from_secs(20)).is_some());
+    leftover.wait().unwrap();
+}
+
+#[test]
+fn a_leftover_gets_the_grace_to_finish_after_sigterm() {
+    let setup = Setup::new(30, &[("slow", SLOW_TO_TERM)]);
+    prepare_state(&setup, &["slow"]);
+    let done = setup.root.join("leftover.done");
+    let mut leftover = plant_leftover(
+        &setup,
+        "slow",
+        LEFTOVER_SLOW_TO_TERM,
+        &[done.to_str().unwrap()],
+    );
+    let mut next = setup.serve();
+    wait_for("the next front", || {
+        (setup.starts("slow") == 1).then_some(())
+    });
+    assert!(done.exists(), "the leftover was killed inside the grace");
+    kill_process(pid_of(&next), Signal::TERM).unwrap();
+    assert!(exit_within(&mut next, Duration::from_secs(20)).is_some());
+    leftover.wait().unwrap();
+}
+
+#[test]
+fn a_drain_that_begins_while_a_leftover_is_stopped_starts_no_front() {
+    let setup = Setup::new(30, &[("slow", SLOW_TO_TERM)]);
+    prepare_state(&setup, &["slow"]);
+    let mut leftover = plant_leftover(&setup, "slow", LEFTOVER_IGNORING_TERM, &[]);
+    let started_before = setup.log().matches("started pid").count();
+    let mut next = setup.serve();
+    wait_for("the stop to begin", || {
+        setup.log().contains("stopping pid").then_some(())
+    });
+    kill_process(pid_of(&next), Signal::TERM).unwrap();
+    assert!(exit_within(&mut next, Duration::from_secs(20)).is_some());
+    assert_eq!(
+        setup.log().matches("started pid").count(),
+        started_before,
+        "a front started during the drain: {}",
+        setup.log()
+    );
+    leftover.kill().unwrap();
+    leftover.wait().unwrap();
+}
+
+#[test]
+fn a_long_line_is_cut_and_a_line_that_is_not_utf8_does_not_end_the_log() {
+    let setup = Setup::new(30, &[("noisy", NOISY)]);
+    let mut ctl = serve_until_up(&setup, &["noisy"]);
+    wait_for("the last line", || {
+        setup.log().contains("front noisy: after").then_some(())
+    });
+    let log = setup.log();
+    assert!(log.len() < 200_000, "{} bytes logged", log.len());
+    assert!(log.contains("[line cut at 64 KiB]"), "cut marker missing");
+    assert!(log.contains("front noisy: bad \u{fffd}"), "{log}");
+    assert_eq!(setup.starts("noisy"), 1, "{log}");
+    kill_process(pid_of(&ctl), Signal::TERM).unwrap();
+    assert!(exit_within(&mut ctl, Duration::from_secs(20)).is_some());
 }
