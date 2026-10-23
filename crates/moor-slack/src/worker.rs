@@ -64,7 +64,7 @@ pub(crate) fn serve(jobs: &Receiver<Job>, db: &Db, left: Vec<SlackBox>, fx: &mut
                 thread,
                 text,
             }) => (fx.reply)(&channel, &thread, &text),
-            Ok(Job::CheckToken(check)) => login::link(fx, &check),
+            Ok(Job::CheckToken(checks)) => login::link(fx, &checks),
             Ok(Job::Unlink {
                 user,
                 account,

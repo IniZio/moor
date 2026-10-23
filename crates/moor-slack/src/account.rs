@@ -18,7 +18,7 @@ impl Account {
     pub(crate) const DEFAULT: Self = Self::Claude;
 
     /// Every account a person can link.
-    const ALL: [Self; 2] = [Self::Claude, Self::GitHub];
+    pub(crate) const ALL: [Self; 2] = [Self::Claude, Self::GitHub];
 
     /// The account's command word, which is also the name of its secret.
     pub(crate) const fn name(self) -> &'static str {

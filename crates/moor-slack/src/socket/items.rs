@@ -6,7 +6,7 @@ use std::fmt;
 use moor_core::secret::Secret;
 use serde_json::Value;
 
-use crate::account::Account;
+use crate::login::Form;
 
 /// A `/moor` slash command.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,10 +33,10 @@ pub(crate) struct TokenSubmission {
     pub user: String,
     /// The modal's view id, which the front updates with the check's outcome.
     pub view_id: String,
-    /// The account the modal was opened for, as its `private_metadata` names it.
+    /// The form the modal was opened for, as its `private_metadata` names it.
     pub account: String,
-    /// The pasted token, trimmed.
-    pub token: Secret,
+    /// Each input's block id and its pasted text, trimmed; a blank input is empty.
+    pub tokens: Vec<(String, Secret)>,
 }
 
 impl fmt::Debug for TokenSubmission {
@@ -56,7 +56,12 @@ impl PartialEq for TokenSubmission {
             && self.user == other.user
             && self.view_id == other.view_id
             && self.account == other.account
-            && self.token.digest() == other.token.digest()
+            && self.tokens.len() == other.tokens.len()
+            && self
+                .tokens
+                .iter()
+                .zip(&other.tokens)
+                .all(|(a, b)| a.0 == b.0 && a.1.digest() == b.1.digest())
     }
 }
 
@@ -78,7 +83,7 @@ pub(crate) enum AfterAck {
     OpenLogin {
         /// The command's trigger id.
         trigger_id: String,
-        /// The account whose token the modal asks for.
-        account: Account,
+        /// What the modal asks for.
+        form: Form,
     },
 }

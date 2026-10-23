@@ -491,3 +491,56 @@ fn a_lost_start_is_asked_about_on_a_timer_and_holds_up_no_other_thread() {
 mod answer;
 mod close;
 mod post_first;
+
+/// Links the claude and github tokens in one job, where GitHub refuses its token.
+#[test]
+fn one_valid_and_one_refused_token_store_only_the_valid_one_and_name_the_failed() {
+    use crate::account::Account;
+    use crate::credentials::SlackUser;
+    use moor_core::secret::Secret;
+
+    let stored = RefCell::new(Vec::new());
+    let mut call = |_: &str, req: Request| {
+        if let Request::SecretSet(set) = &req {
+            stored.borrow_mut().push(set.name.as_str().to_owned());
+        }
+        Ok(Response::ok(req.cmd(), Some(json!({}))))
+    };
+    let mut check_token = |check: &TokenCheck| match check.account {
+        Account::Claude => Ok(()),
+        Account::GitHub => Err("GitHub refused this token: 401. Nothing was stored.".to_owned()),
+    };
+    let shown = RefCell::new(Vec::new());
+    let mut modal =
+        |view: &str, text: &str| shown.borrow_mut().push((view.to_owned(), text.to_owned()));
+    let mut reply = |_: &str, _: &str, _: &str| {};
+    let mut respond = |_: &str, _: &str| {};
+    let mut ephemeral = |_: &str, _: &str, _: &str, _: &str| {};
+    let mut fx = Fx {
+        call: &mut call,
+        reply: &mut reply,
+        ephemeral: &mut ephemeral,
+        check_token: &mut check_token,
+        modal: &mut modal,
+        respond: &mut respond,
+        log: &|_| {},
+    };
+    let check = |account| TokenCheck {
+        user: SlackUser::parse("U1").unwrap(),
+        account,
+        view_id: "V1".into(),
+        token: Secret::new(b"tok".to_vec()),
+    };
+    let both = [check(Account::GitHub), check(Account::Claude)];
+    super::login::link(&mut fx, &both);
+    super::login::link(&mut fx, &both[1..]);
+    assert_eq!(stored.into_inner(), ["claude", "claude"]);
+    let want = "GitHub: GitHub refused this token: 401. Nothing was stored.\nClaude: Linked.";
+    assert_eq!(
+        shown.into_inner(),
+        [
+            ("V1".to_owned(), want.to_owned()),
+            ("V1".to_owned(), "Linked.".to_owned())
+        ]
+    );
+}

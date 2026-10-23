@@ -15,8 +15,8 @@ pub(crate) enum Job {
         /// What to post.
         text: String,
     },
-    /// Check a pasted token and store it in the vault when its account takes it.
-    CheckToken(TokenCheck),
+    /// Check each pasted token and store it in the vault when its account takes it.
+    CheckToken(Vec<TokenCheck>),
     /// Delete `user`'s secret for `account` from the vault and tell the user through
     /// `response_url`.
     Unlink {

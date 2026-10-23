@@ -4,7 +4,7 @@ use moor_core::secret::Secret;
 use serde_json::Value;
 
 use super::{Click, Mention, Slash, TokenSubmission};
-use crate::login::{LOGIN_CALLBACK, TOKEN_INPUT};
+use crate::login::LOGIN_CALLBACK;
 
 /// The command inside a `slash_commands` envelope, if it is a well-formed one.
 pub(super) fn parse_slash(envelope: &Value) -> Option<Slash> {
@@ -30,22 +30,25 @@ pub(super) fn parse_submission(envelope: &Value) -> Option<TokenSubmission> {
     if view.get("callback_id")?.as_str()? != LOGIN_CALLBACK {
         return None;
     }
-    let input = view
+    let tokens = view
         .get("state")?
         .get("values")?
-        .get(TOKEN_INPUT)?
-        .get(TOKEN_INPUT)?;
-    let token = input
-        .get("value")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
+        .as_object()?
+        .iter()
+        .filter_map(|(block, actions)| {
+            let input = actions.get(block)?;
+            let value = input.get("value").and_then(Value::as_str);
+            let token = Secret::new(value.unwrap_or_default().trim().as_bytes().to_vec());
+            Some((block.clone(), token))
+        })
+        .collect();
     let text = |value: Option<&Value>| value?.as_str().map(str::to_owned);
     Some(TokenSubmission {
         envelope_id: text(envelope.get("envelope_id"))?,
         user: text(payload.get("user").and_then(|u| u.get("id")))?,
         view_id: text(view.get("id"))?,
         account: text(view.get("private_metadata")).unwrap_or_default(),
-        token: Secret::new(token.trim().as_bytes().to_vec()),
+        tokens,
     })
 }
 
