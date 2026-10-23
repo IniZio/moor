@@ -36,13 +36,14 @@ mod relaunch;
 mod reopen;
 pub(crate) mod repo;
 mod response;
+mod revive;
 mod watch;
 
 use response::{queued_view, set_agent, set_provisioned, view, with_provider};
 
 pub(crate) use launch::begin_seeded;
 pub(crate) use needs::run as needs;
-pub(crate) use relaunch::revive_after_wake;
+pub(crate) use revive::{revive_after_wake, revive_for_steer};
 pub(crate) use watch::run as watch_launch;
 
 /// What `start` learns before it changes anything.
