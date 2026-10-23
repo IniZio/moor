@@ -37,6 +37,16 @@ print("probe", json.dumps({"pid": os.getpid()}), file=sys.stderr, flush=True)
 time.sleep(600)
 "#;
 
+/// Forks a sleeper that outlives it, says the sleeper's pid, then exits 0.
+const FORKING: &str = r#"
+import json, os, sys, time
+sleeper = os.fork()
+if sleeper == 0:
+    time.sleep(600)
+    os._exit(0)
+print("probe", json.dumps({"pid": sleeper}), file=sys.stderr, flush=True)
+"#;
+
 /// What a refused write says under Seatbelt.
 const REFUSED: &str = "Operation not permitted";
 
@@ -349,6 +359,14 @@ fn a_front_that_ignores_sigterm_is_killed_after_the_grace() {
     let pid = i32::try_from(ctl.probed()["pid"].as_i64().unwrap()).unwrap();
     drop(ctl);
     wait_for("the front to die", || (!alive(pid)).then_some(()));
+}
+
+#[test]
+fn a_front_that_exits_leaves_no_process_it_forked() {
+    let ctl = Controller::probe_running(FORKING);
+    let sleeper = i32::try_from(ctl.probed()["pid"].as_i64().unwrap()).unwrap();
+    wait_for("the front's exit", || ctl.line("probe", "exited with "));
+    wait_for("the sleeper to die", || (!alive(sleeper)).then_some(()));
 }
 
 #[test]

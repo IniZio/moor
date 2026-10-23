@@ -2,7 +2,7 @@
 //! starts from deny-all, and runs the front under it. The front may read the [`SYSTEM`] paths,
 //! its program and its `read_only` paths, write only its state dir and `/dev/null`, and
 //! connect to no Unix socket but its own and the DNS resolver's. It shares the shim's process
-//! group, which the shim kills once the controller that started it is gone.
+//! group, which the shim kills once the front exits or the controller that started it is gone.
 
 use std::ffi::OsString;
 use std::fs;
@@ -13,7 +13,8 @@ use std::thread;
 
 use nono::{AccessMode, CapabilitySet, Sandbox};
 use rustix::process::{
-    getpgrp, getpid, getppid, kill_process, kill_process_group, waitpid, Pid, Signal, WaitOptions,
+    getpgid, getpgrp, getpid, getppid, kill_process, kill_process_group, setpgid, waitpid, Pid,
+    Signal, WaitOptions,
 };
 use signal_hook::consts::{SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
@@ -127,9 +128,10 @@ fn quoted(path: &Path) -> Result<String, String> {
 }
 
 /// Runs `command`, passes SIGTERM and SIGINT to it and reaps every child that exits; returns
-/// the command's exit code once it exits, or 128 plus the signal that ended it. Once `parent`
-/// is no longer this process's parent, kills this process group, the front with it, when this
-/// process leads it, else the front alone.
+/// the command's exit code once it exits, or 128 plus the signal that ended it, after killing
+/// whatever the front left in this process group. Once `parent` is no longer this process's
+/// parent, kills this process group, the front with it, when this process leads it, else the
+/// front alone.
 fn run(command: &[OsString], parent: Pid) -> Result<u8, String> {
     let mut signals = Signals::new([SIGTERM, SIGINT]).map_err(|e| format!("signals: {e}"))?;
     let (program, args) = command.split_first().ok_or("no front command")?;
@@ -156,11 +158,30 @@ fn run(command: &[OsString], parent: Pid) -> Result<u8, String> {
             };
         }
         match waitpid(None, WaitOptions::NOHANG) {
-            Ok(Some((reaped, status))) if reaped == pid => return Ok(code(status)),
+            Ok(Some((reaped, status))) if reaped == pid => {
+                end_group(parent);
+                return Ok(code(status));
+            }
             Ok(Some(_)) => {}
             Ok(None) => thread::sleep(POLL),
             Err(e) => return Err(format!("wait: {e}")),
         }
+    }
+}
+
+/// Kills every process left in the group this process leads, such as a daemon the front
+/// forked. This process first moves to `parent`'s group, so the kill spares it; the group's id
+/// stays this process's pid, which no other process can take while this one lives.
+fn end_group(parent: Pid) {
+    let group = getpid();
+    if getpgrp() != group {
+        return;
+    }
+    if getpgid(Some(parent))
+        .and_then(|theirs| setpgid(None, Some(theirs)))
+        .is_ok()
+    {
+        let _ = kill_process_group(group, Signal::KILL);
     }
 }
 
