@@ -189,3 +189,10 @@ fn a_front_read_only_list_holds_absolute_paths() {
     assert_eq!(e.path, "fronts.web.read_only", "{e}");
     assert!(e.to_string().contains("must hold absolute paths"), "{e}");
 }
+
+#[test]
+fn a_front_state_dir_under_tmp_is_refused() {
+    let e = err("fronts:\n  web:\n    state_dir: /tmp/web\n");
+    assert_eq!(e.path, "fronts.web.state_dir", "{e}");
+    assert!(e.to_string().contains("must not lie under /tmp"), "{e}");
+}

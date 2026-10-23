@@ -77,6 +77,14 @@ fn fresh_dir(tag: &str) -> Dir {
         .unwrap())
 }
 
+/// Creates a fresh dir outside `/tmp`, for a front's state dir: a front's own `/tmp` hides it.
+fn fresh_dir_outside_tmp(tag: &str) -> Dir {
+    Dir(tempfile::Builder::new()
+        .prefix(&format!("{tag}-"))
+        .tempdir_in(env!("CARGO_TARGET_TMPDIR"))
+        .unwrap())
+}
+
 /// Runs the binary hermetically with optional stdin.
 fn run(args: &[&str], stdin: Option<&str>) -> Run {
     run_with_config(args, stdin, None)

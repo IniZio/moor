@@ -1,5 +1,6 @@
-//! A front may write its own state dir and nothing else, cannot change metadata outside it, and
-//! cannot reach the host's Unix sockets.
+//! A front sees only its own root: the system dirs, its program, its `read_only` paths and its
+//! state dir, the only place it may write. It cannot change metadata outside that dir, and no
+//! Unix socket of the host exists for it.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt as _;
@@ -10,23 +11,27 @@ use serde_json::Value;
 use super::{shim, wait_for, Controller, PROBE};
 
 #[test]
-fn a_front_writes_its_own_state_dir_and_nothing_else() {
+fn a_front_writes_its_own_state_dir_and_tmp() {
     let ctl = Controller::start(PROBE, &[]);
     let got = wait_for("the probe", || ctl.line("probe "));
-    let moor_dir = Path::new(env!("CARGO_BIN_EXE_moor")).parent().unwrap();
-    let planted = moor_dir.join(format!(
-        "planted-{}",
-        ctl.root.file_name().unwrap().to_string_lossy()
-    ));
-    let _ = fs::remove_file(planted);
     let got: Value = serde_json::from_str(&got).unwrap();
     assert_eq!(got["own"], "answers", "{got}");
     assert_eq!(got["own_dir"], "writable", "{got}");
     assert!(ctl.root.join("front").join("planted").exists());
     assert_eq!(got["tmp"], "writable", "{got}");
     assert!(ctl.root.join("front").join("tmp").join("planted").exists());
-    for denied in ["config", "root", "moor_dir", "home"] {
-        assert_eq!(got[denied], "Read-only file system", "{denied}: {got}");
+}
+
+#[test]
+fn a_front_writes_nothing_outside_its_state_dir() {
+    let ctl = Controller::start(PROBE, &[]);
+    let got = wait_for("the probe", || ctl.line("probe "));
+    let got: Value = serde_json::from_str(&got).unwrap();
+    for absent in ["config", "moor_dir"] {
+        assert_eq!(got[absent], "No such file or directory", "{absent}: {got}");
+    }
+    for shown in ["root", "home"] {
+        assert_eq!(got[shown], "Read-only file system", "{shown}: {got}");
     }
     assert_eq!(got["home_secret"], "FileNotFoundError", "{got}");
 }
@@ -43,12 +48,12 @@ fn every_mount_the_front_reaches_is_read_only_but_its_state_dir() {
         .iter()
         .filter_map(Value::as_str)
         .filter(|m| {
-            !["/run", "/dev/shm", "/proc"]
+            !["/dev", "/proc"]
                 .iter()
                 .any(|c| Path::new(m).starts_with(c))
         })
         .collect();
-    assert_eq!(rw, [own.to_str().unwrap()], "{got}");
+    assert_eq!(rw, [own.to_str().unwrap(), "/tmp"], "{got}");
 }
 
 #[test]
@@ -57,7 +62,7 @@ fn a_front_changes_metadata_only_in_its_own_state_dir() {
     let got = wait_for("the probe", || ctl.line("probe "));
     let got: Value = serde_json::from_str(&got).unwrap();
     for call in ["chmod", "chown", "utime", "setxattr", "fchmod"] {
-        for file in ["config_meta", "moor_meta"] {
+        for file in ["shared_meta", "program_meta"] {
             assert_eq!(
                 got[file][call], "Read-only file system",
                 "{file} {call}: {got}"
@@ -69,6 +74,7 @@ fn a_front_changes_metadata_only_in_its_own_state_dir() {
         );
     }
     assert_eq!(got["own_meta"]["chmod"], "ok", "{got}");
+    assert_eq!(got["fd3_chmod"], "Read-only file system", "{got}");
 }
 
 #[test]
@@ -76,10 +82,10 @@ fn a_front_reaches_no_unix_socket_of_the_host() {
     let ctl = Controller::start(PROBE, &[]);
     let got = wait_for("the probe", || ctl.line("probe "));
     let got: Value = serde_json::from_str(&got).unwrap();
-    for socket in ["tmp_sock", "run_sock", "bus", "docker"] {
+    for socket in ["tmp_sock", "run_sock", "bus", "docker", "lxd"] {
         assert_eq!(got[socket], "FileNotFoundError", "{socket}: {got}");
     }
-    assert_eq!(got["shm"], "Read-only file system", "{got}");
+    assert_eq!(got["shm"], "No such file or directory", "{got}");
     assert_eq!(got["own"], "answers", "{got}");
 }
 
@@ -117,11 +123,21 @@ fn a_front_writes_dev_null_and_no_other_device() {
 }
 
 #[test]
-fn a_front_reads_its_read_only_paths_and_its_program_through_the_covers() {
+fn a_front_reads_its_read_only_paths_and_runs_its_program_from_a_hidden_dir() {
     let ctl = Controller::start(PROBE, &[]);
     let got = wait_for("the probe", || ctl.line("probe "));
     let got: Value = serde_json::from_str(&got).unwrap();
     assert_eq!(got["shared_read"], 6, "{got}");
     assert_eq!(got["shared_write"], "Read-only file system", "{got}");
     assert_eq!(got["home_secret"], "FileNotFoundError", "{got}");
+}
+
+#[test]
+fn a_front_resolves_names_and_trusts_the_system_certificates() {
+    let ctl = Controller::start(PROBE, &[]);
+    let got = wait_for("the probe", || ctl.line("probe "));
+    let got: Value = serde_json::from_str(&got).unwrap();
+    assert!(got["resolv"].as_u64().is_some_and(|n| n > 0), "{got}");
+    assert_eq!(got["ca"], true, "{got}");
+    assert_eq!(got["dns"], "ok", "{got}");
 }

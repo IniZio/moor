@@ -5,7 +5,6 @@ use std::ffi::OsString;
 use std::fs::{self, DirBuilder};
 use std::io;
 use std::os::unix::fs::DirBuilderExt as _;
-use std::path::Path;
 use std::process::{self, Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::Arc;
@@ -41,46 +40,16 @@ const STEADY: Duration = Duration::from_secs(60);
 /// How often a supervisor checks whether its front exited.
 const POLL: Duration = Duration::from_millis(50);
 
-/// Dirs hidden from every front because host services keep their Unix sockets there, such as
-/// the user's D-Bus session and Docker's socket under `/run`.
-const SOCKET_ROOTS: [&str; 3] = ["/run", "/tmp", "/dev/shm"];
-
-/// Runs each front under `moor front-shim`, hiding what a front must not reach.
+/// Runs each front under `moor front-shim`, which gives it a root of its own.
 pub(super) struct Shim {
     /// The program that runs `moor front-shim`, and its first arguments.
     program: (OsString, Vec<OsString>),
-    /// `--cover` the state dir, `--mask` the operator socket and the vault key.
-    hide: Vec<OsString>,
 }
 
 impl Shim {
-    /// Runs `program` as the shim, hiding `state_dir`, `socket` and `vault_key` from each front,
-    /// and `home` with [`SOCKET_ROOTS`], where the host keeps the Unix sockets of its services.
-    pub(super) fn new(
-        program: (OsString, Vec<OsString>),
-        state_dir: Option<&Path>,
-        socket: &Path,
-        vault_key: Option<&Path>,
-        home: Option<&Path>,
-    ) -> Self {
-        let roots = SOCKET_ROOTS
-            .iter()
-            .map(Path::new)
-            .filter(|dir| dir.is_dir());
-        let cover = state_dir
-            .into_iter()
-            .chain(home)
-            .chain(roots)
-            .map(|dir| ("--cover", dir));
-        let mask = [Some(socket), vault_key]
-            .into_iter()
-            .flatten()
-            .map(|file| ("--mask", file));
-        let hide = cover
-            .chain(mask)
-            .flat_map(|(flag, path)| [OsString::from(flag), path.as_os_str().to_owned()])
-            .collect();
-        Self { program, hide }
+    /// Runs `program` as the shim.
+    pub(super) const fn new(program: (OsString, Vec<OsString>)) -> Self {
+        Self { program }
     }
 
     /// The command that runs the shim, without its own arguments.
@@ -281,9 +250,7 @@ fn spawn(front: &Front, shim: &Shim, sink: &Sink) -> io::Result<Child> {
     let ns = &front.ns;
     let socket = rustix::fs::open(&front.socket, OFlags::PATH | OFlags::CLOEXEC, Mode::empty())?;
     let mut command = shim.command();
-    command
-        .args(["--parent", &process::id().to_string()])
-        .args(&shim.hide);
+    command.args(["--parent", &process::id().to_string()]);
     if let Some(dir) = &front.state_dir {
         let tmp = dir.join("tmp");
         DirBuilder::new().recursive(true).mode(0o700).create(&tmp)?;

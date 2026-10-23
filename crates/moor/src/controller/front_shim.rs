@@ -1,18 +1,17 @@
-//! `moor front-shim`: runs a front in new user, mount and PID namespaces, where the controller's
-//! state dir, operator socket and vault key are out of reach.
+//! `moor front-shim`: runs a front in new user, mount and PID namespaces, inside a root that
+//! holds only what a front needs.
 //!
-//! The controller runs
-//! `moor front-shim --parent PID [--cover DIR | --mask FILE | --writable DIR | --read-only PATH]...
+//! The controller runs `moor front-shim --parent PID [--writable DIR] [--read-only PATH]...
 //! -- COMMAND...`. That process dies with the controller `PID` (it exits at once if `PID` is not
-//! its parent), enters the namespaces, covers each DIR with an empty tmpfs and each FILE with
-//! `/dev/null`, makes every mount read-only, shows each writable DIR read-write and each PATH
-//! read-only again, then runs `moor front-shim --init [--writable DIR]... -- COMMAND...` as pid 1 of the new PID
-//! namespace. pid 1 mounts a fresh `/proc`, so no controller pid is visible, moves to `/`, so
-//! no cwd reaches the covered paths, confines itself with nono's sandbox so that nothing but
-//! each writable DIR and `/dev/null` can be written, and runs the front without capabilities,
-//! so the front cannot unmount what hides those paths. Both shims pass SIGTERM and SIGINT on,
-//! reap every child and exit with the front's status. `--check` only enters the namespaces and
-//! the sandbox, so the controller can refuse fronts on a host that forbids either.
+//! its parent), enters the namespaces and runs `moor front-shim --init` with the same paths as
+//! pid 1 of the new PID namespace. pid 1 builds the front's root (see the `root` module): the system dirs,
+//! a few devices, the program and each PATH read-only, DIR read-write with its `tmp` as `/tmp`,
+//! and a fresh `/proc`, so no controller pid is visible. It pivots into that root, confines
+//! itself with nono's sandbox so that nothing but DIR, `/tmp` and `/dev/null` can be written,
+//! and runs the front without capabilities. Both shims pass SIGTERM and SIGINT on, reap every
+//! child and exit with the front's status. `--check` enters the namespaces, then as pid 1
+//! (`--check-root`) the root and the sandbox, so the controller can refuse fronts on a host
+//! that forbids any of them.
 
 use std::ffi::OsString;
 use std::fs;
@@ -22,10 +21,11 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::Duration;
 
+use command_fds::{CommandFdExt as _, FdMapping};
 use nix::sched::{unshare, CloneFlags};
 use nono::{AccessMode, Sandbox, SupportInfo};
 use rustix::event::{poll, PollFd, PollFlags, Timespec};
-use rustix::mount::{mount, mount_change, MountFlags, MountPropagationFlags};
+use rustix::mount::{mount_change, MountPropagationFlags};
 use rustix::process::{
     getgid, getppid, getuid, kill_process, set_parent_process_death_signal, waitpid, Pid, Signal,
     WaitOptions, WaitStatus,
@@ -37,7 +37,10 @@ use rustix::thread::{
 use signal_hook::consts::{SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
 
-mod mounts;
+mod root;
+
+use root::Layout;
+pub(super) use root::SYSTEM;
 
 /// How often a shim checks for exited children and signals to pass on.
 const POLL: Duration = Duration::from_millis(50);
@@ -51,38 +54,41 @@ pub fn main(args: &[OsString]) -> Result<u8, String> {
     let flags = parts.next().unwrap_or_default();
     let command = parts.next().unwrap_or_default();
     match flags {
-        [flag] if flag == "--check" => isolate(&[], &[], &[], &[])
-            .and_then(|()| confine(&[]))
+        [flag] if flag == "--check" => {
+            isolate()?;
+            pass_sys_admin()?;
+            relay(
+                Command::new("/proc/self/exe")
+                    .args(["front-shim", "--check-root"])
+                    .stdin(Stdio::null()),
+            )
+        }
+        [flag] if flag == "--check-root" => root::enter(&Layout::default())
+            .and_then(|_| confine(&[]))
             .and_then(|()| enforced())
             .map(|()| {
                 let said = "sandbox enforced: a write outside the allow-list was refused\n";
                 let _ = io::Write::write_all(&mut io::stdout(), said.as_bytes());
                 0
             }),
-        [flag, writable @ ..] if flag == "--init" => init(&Hidden::writable(writable)?, command),
+        [flag, layout @ ..] if flag == "--init" => {
+            init(&Asked::parse(layout, false)?.layout, command)
+        }
         _ => {
-            let Hidden {
-                parent,
-                cover,
-                mask,
-                writable,
-                read_only,
-            } = Hidden::parse(flags)?;
-            die_with(parent)?;
-            isolate(&cover, &mask, &writable, &read_only)?;
-            let mut caps = capabilities(None).map_err(|e| format!("capget: {e}"))?;
-            caps.inheritable |= CapabilitySet::SYS_ADMIN;
-            set_capabilities(None, caps).map_err(|e| format!("capset: {e}"))?;
-            configure_capability_in_ambient_set(CapabilitySet::SYS_ADMIN, true)
-                .map_err(|e| format!("cannot pass CAP_SYS_ADMIN to pid 1: {e}"))?;
+            let Asked { parent, layout } = Asked::parse(flags, true)?;
+            die_with(parent.ok_or("--parent is required")?)?;
+            isolate()?;
+            pass_sys_admin()?;
             let (alive, _held) = std::io::pipe().map_err(|e| format!("pipe: {e}"))?;
+            let writable = layout.writable.iter().map(|dir| ("--writable", dir));
+            let read_only = layout.read_only.iter().map(|path| ("--read-only", path));
             relay(
                 Command::new("/proc/self/exe")
                     .args(["front-shim", "--init"])
                     .args(
                         writable
-                            .iter()
-                            .flat_map(|dir| [OsString::from("--writable"), dir.into()]),
+                            .chain(read_only)
+                            .flat_map(|(flag, path)| [OsString::from(flag), path.into()]),
                     )
                     .arg("--")
                     .args(command)
@@ -90,6 +96,16 @@ pub fn main(args: &[OsString]) -> Result<u8, String> {
             )
         }
     }
+}
+
+/// Keeps `CAP_SYS_ADMIN` in the namespaces for the next program this process runs, pid 1,
+/// which mounts the front's root.
+fn pass_sys_admin() -> Result<(), String> {
+    let mut caps = capabilities(None).map_err(|e| format!("capget: {e}"))?;
+    caps.inheritable |= CapabilitySet::SYS_ADMIN;
+    set_capabilities(None, caps).map_err(|e| format!("capset: {e}"))?;
+    configure_capability_in_ambient_set(CapabilitySet::SYS_ADMIN, true)
+        .map_err(|e| format!("cannot pass CAP_SYS_ADMIN to pid 1: {e}"))
 }
 
 /// Makes this process die with `parent`, the controller that started it: the kernel kills it
@@ -106,81 +122,52 @@ fn die_with(parent: Pid) -> Result<(), String> {
     Ok(())
 }
 
-/// What `moor front-shim` was asked to keep a front away from, and the controller it serves.
-struct Hidden {
-    /// The controller that started this shim.
-    parent: Pid,
-    /// Dirs to cover with an empty tmpfs.
-    cover: Vec<PathBuf>,
-    /// Files to replace with `/dev/null`.
-    mask: Vec<PathBuf>,
-    /// Dirs the front may write.
-    writable: Vec<PathBuf>,
-    /// Paths the front may read even under a cover.
-    read_only: Vec<PathBuf>,
+/// What `moor front-shim` was asked: the controller it serves and the front's root.
+struct Asked {
+    /// The controller that started this shim; pid 1 is not told.
+    parent: Option<Pid>,
+    /// What the front's root holds.
+    layout: Layout,
 }
 
-impl Hidden {
-    /// Reads the `--writable DIR` flags pid 1 gets.
-    fn writable(flags: &[OsString]) -> Result<Vec<PathBuf>, String> {
-        flags
-            .chunks(2)
-            .map(|pair| match pair {
-                [flag, dir] if flag == "--writable" => Ok(PathBuf::from(dir)),
-                _ => Err(format!("pid 1 takes only --writable DIR, not {pair:?}")),
-            })
-            .collect()
-    }
-
-    /// Reads `--parent PID`, `--cover DIR`, `--mask FILE`, `--writable DIR` and
-    /// `--read-only PATH` flags.
-    fn parse(flags: &[OsString]) -> Result<Self, String> {
-        let mut parent = None;
-        let (mut cover, mut mask, mut writable, mut read_only) =
-            (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+impl Asked {
+    /// Reads `--writable DIR` (at most one) and `--read-only PATH` flags, and `--parent PID`
+    /// when `outer`.
+    fn parse(flags: &[OsString], outer: bool) -> Result<Self, String> {
+        let mut asked = Self {
+            parent: None,
+            layout: Layout::default(),
+        };
         let mut flags = flags.iter();
         while let Some(flag) = flags.next() {
             let word = flags
                 .next()
                 .ok_or_else(|| format!("{} needs a value", flag.display()))?;
             match flag.to_str() {
-                Some("--parent") => {
-                    parent = word
+                Some("--parent") if outer => {
+                    asked.parent = word
                         .to_str()
                         .and_then(|w| w.parse().ok())
                         .and_then(Pid::from_raw);
-                    if parent.is_none() {
+                    if asked.parent.is_none() {
                         return Err(format!("--parent {} is not a pid", word.display()));
                     }
                 }
-                Some("--cover") => cover.push(PathBuf::from(word)),
-                Some("--mask") => mask.push(PathBuf::from(word)),
-                Some("--writable") => writable.push(PathBuf::from(word)),
-                Some("--read-only") => read_only.push(PathBuf::from(word)),
+                Some("--writable") if asked.layout.writable.is_none() => {
+                    asked.layout.writable = Some(PathBuf::from(word));
+                }
+                Some("--read-only") => asked.layout.read_only.push(PathBuf::from(word)),
                 _ => return Err(format!("unknown flag {}", flag.display())),
             }
         }
-        let parent = parent.ok_or("--parent is required")?;
-        Ok(Self {
-            parent,
-            cover,
-            mask,
-            writable,
-            read_only,
-        })
+        Ok(asked)
     }
 }
 
-/// Enters new user, mount and PID namespaces as the same uid and gid, then hides `cover` under
-/// empty tmpfs mounts and `mask` under `/dev/null`, makes every mount read-only, binds each
-/// of `writable` back read-write and each of `read_only` back read-only. The PID namespace
-/// applies to the next child, which becomes its pid 1.
-fn isolate(
-    cover: &[PathBuf],
-    mask: &[PathBuf],
-    writable: &[PathBuf],
-    read_only: &[PathBuf],
-) -> Result<(), String> {
+/// Enters new user, mount and PID namespaces as the same uid and gid, with mounts that no
+/// longer reach the host's. The PID namespace applies to the next child, which becomes its
+/// pid 1.
+fn isolate() -> Result<(), String> {
     let (uid, gid) = (getuid().as_raw(), getgid().as_raw());
     unshare(CloneFlags::CLONE_NEWUSER | CloneFlags::CLONE_NEWNS | CloneFlags::CLONE_NEWPID)
         .map_err(|e| {
@@ -202,8 +189,7 @@ fn isolate(
         "/",
         MountPropagationFlags::PRIVATE | MountPropagationFlags::REC,
     )
-    .map_err(|e| format!("cannot make mounts private: {e}"))?;
-    mounts::arrange(cover, mask, writable, read_only)
+    .map_err(|e| format!("cannot make mounts private: {e}"))
 }
 
 /// Fails unless the sandbox now in force refuses a write it would refuse a front: opening
@@ -245,11 +231,12 @@ fn supported(info: &SupportInfo) -> Result<(), String> {
     ))
 }
 
-/// pid 1 of the front's PID namespace: mounts its `/proc`, moves to `/`, confines itself to
-/// writing `writable`, drops every capability and runs `command`. The kernel kills the
-/// namespace if the outer shim dies. The outer shim holds the only write end of stdin, so a
-/// readable stdin means it died before the death signal was set, and pid 1 exits.
-fn init(writable: &[PathBuf], command: &[OsString]) -> Result<u8, String> {
+/// pid 1 of the front's PID namespace: moves into the front's root as `layout` describes,
+/// confines itself to writing the writable dir and `/tmp`, drops every capability and runs
+/// `command` with its socket on fd 3. The kernel kills the namespace if the outer shim dies. The
+/// outer shim holds the only write end of stdin, so a readable stdin means it died before the
+/// death signal was set, and pid 1 exits.
+fn init(layout: &Layout, command: &[OsString]) -> Result<u8, String> {
     set_parent_process_death_signal(Some(Signal::KILL))
         .map_err(|e| format!("cannot set the parent death signal: {e}"))?;
     let held = io::stdin();
@@ -261,9 +248,14 @@ fn init(writable: &[PathBuf], command: &[OsString]) -> Result<u8, String> {
     if poll(&mut outer, Some(&idle)).map_err(|e| format!("poll: {e}"))? > 0 {
         return Err("the outer shim exited before pid 1 started".to_owned());
     }
-    let flags = MountFlags::NOSUID | MountFlags::NODEV | MountFlags::NOEXEC;
-    mount("proc", "/proc", "proc", flags, None).map_err(|e| format!("cannot mount /proc: {e}"))?;
-    confine(writable)?;
+    let socket = root::enter(layout)?;
+    let writable: Vec<PathBuf> = layout
+        .writable
+        .iter()
+        .cloned()
+        .chain(layout.writable.as_ref().map(|_| PathBuf::from("/tmp")))
+        .collect();
+    confine(&writable)?;
     let none = CapabilitySet::empty();
     set_capabilities(
         None,
@@ -274,9 +266,18 @@ fn init(writable: &[PathBuf], command: &[OsString]) -> Result<u8, String> {
         },
     )
     .map_err(|e| format!("cannot drop capabilities: {e}"))?;
-    std::env::set_current_dir("/").map_err(|e| format!("cannot move to /: {e}"))?;
     let (program, args) = command.split_first().ok_or("no front command")?;
-    relay(Command::new(program).args(args).stdin(Stdio::null()))
+    let mut front = Command::new(program);
+    front.args(args).stdin(Stdio::null());
+    if let Some(fd) = socket {
+        front
+            .fd_mappings(vec![FdMapping {
+                parent_fd: fd,
+                child_fd: 3,
+            }])
+            .map_err(|e| format!("cannot pass the front its socket: {e}"))?;
+    }
+    relay(&mut front)
 }
 
 /// Runs `command`, passes SIGTERM and SIGINT to it and reaps every child that exits; returns
