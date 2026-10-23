@@ -15,6 +15,7 @@ use std::time::Duration;
 
 use command_fds::{CommandFdExt as _, FdMapping};
 use moor_client::{Client, Timeouts};
+use moor_core::user::Identity;
 use serde_json::{json, Value};
 
 use super::tools::{self, Call, Reply, Scope, SPECS};
@@ -39,6 +40,8 @@ pub struct ToolSettings {
     pub state_dir: PathBuf,
     /// Controller socket to dial.
     pub socket: PathBuf,
+    /// The Slack user the thread's tools act for; every request asserts it.
+    pub identity: Identity,
     /// The thread, as `<channel>/<thread ts>`.
     pub thread: String,
     /// Most Boxes the thread has open at once.
@@ -124,10 +127,12 @@ pub fn serve_tools(settings: &ToolSettings) -> Result<(), String> {
         return Err(format!("{} does not exist", path.display()));
     }
     let db = Db::open(&path).map_err(|e| format!("open slack.db: {e}"))?;
-    let client = Client::new(&settings.socket).with_timeouts(Timeouts {
-        read: CONTROLLER_WAIT,
-        write: Duration::from_secs(10),
-    });
+    let client = Client::new(&settings.socket)
+        .acting_as(settings.identity.clone())
+        .with_timeouts(Timeouts {
+            read: CONTROLLER_WAIT,
+            write: Duration::from_secs(10),
+        });
     let mut call = |request| client.request(request, |_| {});
     let mut scope = Scope {
         db: &db,

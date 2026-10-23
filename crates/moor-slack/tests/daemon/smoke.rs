@@ -3,12 +3,20 @@
 
 #![allow(clippy::indexing_slicing, reason = "test code")]
 
+use std::path::Path;
+
+use moor_client::Client;
+use moor_core::name::{BoxName, SessionId};
+use moor_core::request::{AsReq, Request, SessionsReq, ShowReq, UpdateHostSessionReq};
+use moor_core::response::{ExitClass, Response};
+use moor_core::user::Identity;
 use serde_json::json;
 
+use super::support::slack_fake::TEAM;
 use super::support::{Rig, BOX_NAME, MCP, TS, USER};
 
-/// The refusal the controller gives a person with no moor user, before it reads any repo.
-const UNKNOWN: &str = "log in first: moor user enroll, then moor user secret set claude, then moor user secret set github";
+/// The refusal the controller gives an enrolled person with no secrets, before it reads any repo.
+const UNKNOWN: &str = "log in first: moor user secret set claude, then moor user secret set github";
 
 /// A daemon on a real controller whose channel's default repo is `o/nosuch`.
 fn rig_on_a_real_controller() -> (Rig, super::support::RealController) {
@@ -21,7 +29,8 @@ fn rig_on_a_real_controller() -> (Rig, super::support::RealController) {
         &[("start_box", json!({"goal": "fix the thing"}))],
     );
     let controller = rig.real_controller();
-    rig.spawn_daemon();
+    enroll(&rig.front_socket(), USER);
+    rig.spawn_daemon_on_front();
     rig.slack.wait_connected();
     rig.set_default_repo("o/nosuch");
     (rig, controller)
@@ -48,4 +57,98 @@ fn real_controller_restart_is_survived() {
     rig.wait_post(&format!(
         "Could not start Box `slack-1730000009-000300-1`: {UNKNOWN}"
     ));
+}
+
+/// The identity the controller knows Slack user `user` of the fake team by.
+fn slack_identity(user: &str) -> Identity {
+    Identity::parse(&format!("slack:{TEAM}/{user}")).unwrap()
+}
+
+/// Enrolls `user` through the front socket, asserting the identity in the request.
+fn enroll(front: &Path, user: &str) {
+    let enroll = Request::Enroll(AsReq {
+        identity: Some(slack_identity(user)),
+    });
+    let reply = Client::new(front).request(enroll, |_| {}).unwrap();
+    assert_eq!(reply.class, ExitClass::Ok, "{reply:?}");
+}
+
+/// The reply to `request` from the controller socket `socket`, sent as Slack user `user`.
+fn ask_as(socket: &Path, user: &str, request: Request) -> Response {
+    let client = Client::new(socket).acting_as(slack_identity(user));
+    client.request(request, |_| {}).unwrap()
+}
+
+/// The ids of the host Sessions `user` sees.
+fn sessions(front: &Path, user: &str) -> Vec<i64> {
+    let reply = ask_as(front, user, Request::Sessions(SessionsReq { parent: None }));
+    assert_eq!(reply.class, ExitClass::Ok, "{reply:?}");
+    let listed = reply.value.unwrap()["sessions"].clone();
+    let ids = listed.as_array().unwrap().iter();
+    ids.filter_map(|s| s["session"].as_i64()).collect()
+}
+
+fn show(name: &str) -> Request {
+    Request::Show(ShowReq {
+        target: Some(BoxName::parse_allow_bare(name).unwrap().into()),
+        events: None,
+        agent: false,
+        reports: false,
+        artifacts: false,
+        pane: false,
+    })
+}
+
+/// Asserts `reply` is a refusal with `message`.
+fn assert_refused(reply: &Response, message: &str) {
+    assert_eq!(reply.class, ExitClass::Refused, "{reply:?}");
+    let error = reply.error.as_ref().unwrap();
+    assert!(error.message.contains(message), "{reply:?}");
+}
+
+/// The user who stays out of the first user's Boxes and Sessions.
+const OTHER: &str = "U0SECOND";
+
+#[test]
+fn on_the_front_socket_the_front_acts_for_one_slack_user_and_no_other_sees_it() {
+    let (rig, _controller) = rig_on_a_real_controller();
+    let front = rig.front_socket();
+    for user in [USER, OTHER] {
+        enroll(&front, user);
+    }
+    rig.mention(1, USER, "<@UBOT> fix the thing", TS, None);
+    rig.wait_post(&format!("Could not start Box `{BOX_NAME}`: {UNKNOWN}"));
+    assert_eq!(sessions(&front, USER).len(), 1, "the owner's host Session");
+    assert_eq!(sessions(&front, OTHER), Vec::<i64>::new());
+    let theirs = sessions(&front, USER)[0];
+    let touch = Request::UpdateHostSession(UpdateHostSessionReq {
+        session: SessionId::new(theirs),
+        agent: None,
+        agent_session_id: None,
+    });
+    assert_refused(&ask_as(&front, OTHER, touch), "not your Box");
+}
+
+#[test]
+fn on_the_operator_socket_the_same_request_path_is_refused() {
+    let mut rig = Rig::new();
+    let bin = rig.use_fake_claude(None);
+    rig.link_token(USER, MCP);
+    Rig::tool_calls(
+        &bin,
+        None,
+        &[("start_box", json!({"goal": "fix the thing"}))],
+    );
+    let _controller = rig.real_controller();
+    rig.spawn_daemon();
+    rig.slack.wait_connected();
+    rig.set_default_repo("o/nosuch");
+    rig.mention(1, USER, "<@UBOT> fix the thing", TS, None);
+    rig.slack.wait_until("the refusal", |_, updates| {
+        updates
+            .iter()
+            .any(|u| u.text.contains("speaks only for local:"))
+    });
+    let direct = ask_as(&rig.socket(), USER, show(BOX_NAME));
+    assert_refused(&direct, "speaks only for local:");
 }

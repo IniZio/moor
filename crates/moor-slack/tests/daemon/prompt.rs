@@ -19,7 +19,7 @@ use super::support::{Rig, BOX_NAME, CHANNEL, QUIET, TS, USER};
 const BOX_ID: i64 = 1;
 
 /// The question the first Box asks.
-fn asks() -> Value {
+pub(super) fn asks() -> Value {
     json!({"question": "Proceed?", "options": ["Yes", "No"]})
 }
 
@@ -61,7 +61,7 @@ fn wait_recorded(rig: &Rig, n: i64) {
 }
 
 /// Waits until the thread shows `n` prompts and `slack.db` records them; returns them.
-fn wait_prompts(rig: &Rig, n: usize) -> Vec<Post> {
+pub(super) fn wait_prompts(rig: &Rig, n: usize) -> Vec<Post> {
     let (posts, _) = rig
         .slack
         .wait_until("the prompts", |posts, _| prompts(posts).len() >= n);
@@ -79,7 +79,7 @@ fn asked() -> (Rig, FakeController, std::path::PathBuf, Post) {
 }
 
 /// Presses button `choice` on `prompt` as `user`, with an envelope id derived from `n`.
-fn click(rig: &Rig, n: u32, user: &str, prompt: &Post, choice: u32) {
+pub(super) fn click(rig: &Rig, n: u32, user: &str, prompt: &Post, choice: u32) {
     rig.slack.send_click(&Click {
         envelope_id: &format!("env-click-{n}"),
         channel: CHANNEL,
@@ -105,7 +105,7 @@ fn menus(controller: &FakeController) -> Vec<(String, u32)> {
 }
 
 /// Answers the next `steer` as the controller does when the agent took it.
-fn steer_ok(controller: &FakeController) {
+pub(super) fn steer_ok(controller: &FakeController) {
     let ok = Response::ok("steer", Some(json!({})));
     controller.script("steer", Scripted::Reply(ok));
 }

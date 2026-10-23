@@ -57,12 +57,14 @@ impl Turns {
     /// Ends each live host Session whose workdir is that of `row`'s thread, whose turn does
     /// not run again. A rerun adopts its thread's Session instead.
     fn end_left(&self, db: &Db, row: &TurnRow) {
-        let live = workdir_path(&self.state_dir, row)
-            .and_then(|dir| host::live_with(&self.client, &dir.display().to_string()));
+        let live = workdir_path(&self.state_dir, row).and_then(|dir| {
+            let client = self.link.acting(&row.owner).map_err(|e| e.to_string())?;
+            host::live_with(&client, &dir.display().to_string())
+        });
         match live {
             Ok(live) => {
                 for session in live {
-                    self.end_host(db, &row.channel, &row.thread_ts, session);
+                    self.end_host(db, (&row.channel, &row.thread_ts), &row.owner, session);
                 }
             }
             Err(e) => (self.log)(&format!(

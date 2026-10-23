@@ -7,19 +7,22 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::mpsc::{Receiver, RecvTimeoutError};
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use moor_client::{Client, WatchItem};
+use moor_client::WatchItem;
 use moor_core::name::BoxId;
 use moor_core::secret::Secret;
+use moor_core::user::Identity;
 use moor_core::view::ArtifactView;
 
 use crate::api::Api;
 use crate::command::{closed, finished, BoxEvent};
-use crate::db::{BoxState, Db, SlackBox};
-use crate::dial::Watched;
+use crate::db::{BoxState, Db, FedBox, SlackBox};
+use crate::dial::{Tagged, Watched};
+use crate::identity::Link;
+use crate::watchers::Watchers;
 use crate::Log;
 
 use status::{Planner, Step, View, UPDATE_EVERY};
@@ -87,16 +90,32 @@ impl Fold {
     }
 }
 
-/// The feed thread's state: where `slack.db` lives and Slack.
+/// The fold of each Slack user's watch. A connection resets only its own user's fold.
+#[derive(Default)]
+struct Folds(HashMap<Identity, Fold>);
+
+impl Folds {
+    /// Folds one item into the fold of the user whose watch sent it.
+    fn take(&mut self, (identity, watched): Tagged) {
+        self.0.entry(identity).or_default().take(watched);
+    }
+
+    /// The folds whose backlog is folded, so the feed may act on them.
+    fn caught_up(&mut self) -> impl Iterator<Item = (&Identity, &mut Fold)> {
+        self.0.iter_mut().filter(|(_, fold)| fold.caught_up)
+    }
+}
+
+/// The feed thread's state: where `slack.db` lives, Slack and the controller.
 pub(crate) struct Feed {
+    /// The controller and team; the feed follows one watch per Slack user.
+    pub(crate) link: Link,
     /// Path of `slack.db`; the feed opens its own connection.
     pub(crate) db_path: PathBuf,
     /// Web API client.
     pub(crate) api: Arc<Api>,
     /// Bot token for posting.
     pub(crate) bot_token: Arc<Secret>,
-    /// Controller socket client, for reading artifact bytes.
-    pub(crate) client: Client,
     /// Daemon log.
     pub(crate) log: Log,
     /// The current time in unix seconds.
@@ -104,59 +123,74 @@ pub(crate) struct Feed {
 }
 
 impl Feed {
-    /// Folds watch items as they arrive and acts after each batch, and at least every
-    /// [`FEED_TICK`], until the watch reader is gone.
-    pub(crate) fn run(&self, items: &Receiver<Watched>) {
+    /// Follows one watch per thread owner, folds watch items as they arrive and acts after each
+    /// batch, and at least every [`FEED_TICK`], until the process ends.
+    pub(crate) fn run(&self) {
         let db = match Db::open(&self.db_path) {
             Ok(db) => db,
             Err(e) => return (self.log)(&format!("open slack.db: {e}")),
         };
-        let mut fold = Fold::default();
+        let (events, items) = mpsc::channel();
+        let mut watchers = Watchers::new(self.link.clone(), events, Arc::clone(&self.log));
+        let mut folds = Folds::default();
         let mut planner = Planner::default();
         let mut lines_due = now();
         loop {
+            match db.thread_owners() {
+                Ok(owners) => watchers.follow(owners),
+                Err(e) => (self.log)(&format!("slack.db: {e}; reading again")),
+            }
             match items.recv_timeout(FEED_TICK) {
-                Ok(watched) => {
-                    fold.take(watched);
-                    for watched in items.try_iter() {
-                        fold.take(watched);
+                Ok(tagged) => {
+                    folds.take(tagged);
+                    for tagged in items.try_iter() {
+                        folds.take(tagged);
                     }
                 }
                 Err(RecvTimeoutError::Timeout) => {}
                 Err(RecvTimeoutError::Disconnected) => return,
             }
-            if fold.caught_up {
-                self.act(&db, &mut fold, &mut planner, &mut lines_due);
-            }
+            self.act(&db, &mut folds, &mut planner, &mut lines_due);
         }
     }
 
-    /// Sends the status messages that are due, closes the prompts whose Box moved on, then
-    /// sends the lines and prompts not yet posted. A line or prompt that fails holds back
-    /// every line and prompt for [`UPDATE_EVERY`].
-    fn act(&self, db: &Db, fold: &mut Fold, planner: &mut Planner, lines_due: &mut Instant) {
+    /// For each user whose watch is caught up: sends the status messages that are due, closes
+    /// the prompts whose Box moved on, then sends the lines and prompts not yet posted. A line
+    /// or prompt that fails holds back every line and prompt for [`UPDATE_EVERY`].
+    fn act(&self, db: &Db, folds: &mut Folds, planner: &mut Planner, lines_due: &mut Instant) {
         let boxes = match db.fed_boxes() {
             Ok(boxes) => boxes,
             Err(e) => return (self.log)(&format!("slack.db: {e}; reading again")),
         };
+        let mut owned: HashMap<Identity, Vec<FedBox>> = HashMap::new();
+        for fed in boxes {
+            if let Ok(owner) = self.link.identity(&fed.boxed.requested_by) {
+                owned.entry(owner).or_default().push(fed);
+            }
+        }
         let at = now();
-        for step in planner.plan(&boxes, &fold.views, at) {
-            self.send_status(db, &step);
-            planner.record(&step, at);
-        }
-        for fed in &boxes {
-            self.close_moved_on(db, fold, &fed.boxed);
-        }
-        if at < *lines_due {
-            return;
-        }
-        for fed in &boxes {
-            if !self.lines(db, fold, &fed.boxed)
-                || !self.prompts(db, fold, &fed.boxed)
-                || !self.artifacts(db, fold, &fed.boxed)
-            {
-                *lines_due = at + UPDATE_EVERY;
-                return;
+        for (identity, fold) in folds.caught_up() {
+            let Some(boxes) = owned.remove(identity) else {
+                continue;
+            };
+            for step in planner.plan(&boxes, &fold.views, at) {
+                self.send_status(db, &step);
+                planner.record(&step, at);
+            }
+            for fed in &boxes {
+                self.close_moved_on(db, fold, &fed.boxed);
+            }
+            if at < *lines_due {
+                continue;
+            }
+            for fed in &boxes {
+                if !self.lines(db, fold, &fed.boxed)
+                    || !self.prompts(db, fold, &fed.boxed)
+                    || !self.artifacts(db, fold, &fed.boxed)
+                {
+                    *lines_due = at + UPDATE_EVERY;
+                    return;
+                }
             }
         }
     }

@@ -18,6 +18,8 @@ mod request;
 
 /// App-level token the fake accepts for opening a connection.
 pub(crate) const APP_TOKEN: &str = "xapp-test";
+/// The team id `auth.test` reports, and so the team of every identity the front asserts.
+pub(crate) const TEAM: &str = "T1";
 /// Bot token the fake accepts for posting messages.
 pub(crate) const BOT_TOKEN: &str = "xoxb-test";
 
@@ -158,6 +160,8 @@ struct State {
     /// How many of the next `chat.postMessage` calls with blocks Slack refuses, and the
     /// error code it refuses them with.
     refused_block_posts: (usize, &'static str),
+    /// The `error` code `auth.test` answers with instead of the team, once set.
+    auth_test_error: Option<&'static str>,
 }
 
 /// The fake Slack: a Web API on one port and a Socket Mode endpoint on another.
@@ -203,6 +207,10 @@ impl FakeSlack {
         self.lock().update_answers.extend(answers.iter().cloned());
     }
 
+    /// Answers every later `auth.test` with `ok: false` and this error code.
+    pub(crate) fn refuse_auth_test(&self, code: &'static str) {
+        self.lock().auth_test_error = Some(code);
+    }
     /// Refuses the next `n` `chat.postMessage` calls that carry blocks with error `code`, in
     /// place of any count set before.
     pub(crate) fn refuse_block_posts(&self, n: usize, code: &'static str) {
@@ -541,6 +549,10 @@ fn serve_http(mut stream: TcpStream, state: &Mutex<State>, ws_port: u16) {
         "/apps.connections.open" if auth == format!("Bearer {APP_TOKEN}") => {
             json!({"ok": true, "url": format!("ws://127.0.0.1:{ws_port}/")})
         }
+        "/auth.test" if auth == format!("Bearer {BOT_TOKEN}") => guard.auth_test_error.map_or(
+            json!({"ok": true, "team_id": TEAM}),
+            |code| json!({"ok": false, "error": code}),
+        ),
         "/chat.postMessage"
             if auth == format!("Bearer {BOT_TOKEN}")
                 && !body["blocks"].is_null()

@@ -126,6 +126,20 @@ fn post_message_sends_the_bot_token_and_json_body() {
 }
 
 #[test]
+fn team_id_reads_the_team_from_auth_test_with_the_bot_token() {
+    let (base, handle) = serve(r#"{"ok":true,"team_id":"T0TEAM1","user_id":"UBOT"}"#);
+    let api = Api::new(&base).expect("api");
+    let team = api.team_id(&Secret::new(TOKEN.as_bytes().to_vec()));
+    assert_eq!(team.expect("auth.test"), "T0TEAM1");
+    let request = handle.join().expect("server");
+    assert!(request.starts_with("POST /auth.test "), "{request}");
+    assert!(
+        request.contains(&format!("authorization: Bearer {TOKEN}")),
+        "{request}"
+    );
+}
+
+#[test]
 fn post_message_without_ts_is_a_slack_error() {
     let (base, handle) = serve(r#"{"ok":true}"#);
     let api = Api::new(&base).expect("api");

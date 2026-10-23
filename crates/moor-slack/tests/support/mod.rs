@@ -21,7 +21,7 @@ use std::time::Duration;
 use moor_core::controller::PROTOCOL;
 
 use controller::FakeController;
-pub(crate) use real::RealController;
+pub(crate) use real::{front_socket, RealController};
 use slack_fake::{FakeSlack, Mention, APP_TOKEN, BOT_TOKEN};
 
 /// Channel the daemon is configured to answer in.
@@ -94,6 +94,16 @@ impl Rig {
             ),
         )
         .unwrap();
+    }
+
+    /// Adds `user` to the config's users, who may start Boxes; call it before the daemon spawns.
+    pub(crate) fn allow_user(&self, user: &str) {
+        let config = std::fs::read_to_string(self.path("slack.yaml")).unwrap();
+        let widened = config.replace(
+            &format!("users: [{USER}]"),
+            &format!("users: [{USER}, {user}]"),
+        );
+        std::fs::write(self.path("slack.yaml"), widened).unwrap();
     }
 
     /// Names `binary` as `coordinator.binary` in the config.
@@ -288,6 +298,24 @@ impl Rig {
     /// Starts a real controller with no repos on the rig's socket.
     pub(crate) fn real_controller(&self) -> RealController {
         RealController::start(self.root.path(), &self.socket())
+    }
+
+    /// The controller's `slack` front socket, which a real controller serves.
+    pub(crate) fn front_socket(&self) -> PathBuf {
+        front_socket(self.root.path())
+    }
+
+    /// Spawns the daemon on the real controller's front socket, with its state dir in the
+    /// rig's root.
+    pub(crate) fn spawn_daemon_on_front(&mut self) {
+        let (socket, state) = (self.front_socket(), self.path("state-slack"));
+        self.spawn_daemon_without_socket(|daemon| {
+            daemon
+                .arg("--socket")
+                .arg(socket)
+                .arg("--state-dir")
+                .arg(state);
+        });
     }
 
     /// Spawns the daemon with its state dir in the rig's root.

@@ -94,6 +94,16 @@ impl Api {
             .ok_or_else(|| ApiError::Transport("reply has no url".into()))
     }
 
+    /// The id of the workspace the bot token belongs to.
+    pub(super) fn team_id(&self, bot_token: &Secret) -> Result<String, ApiError> {
+        let reply = self.call(bot_token, "auth.test", &json!({}))?;
+        reply
+            .get("team_id")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .ok_or_else(|| ApiError::Transport("reply has no team_id".into()))
+    }
+
     /// Posts `text` into the thread `thread_ts` of `channel`; returns the new message `ts`.
     pub(super) fn post_message(
         &self,

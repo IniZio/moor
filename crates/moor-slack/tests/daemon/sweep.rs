@@ -12,9 +12,19 @@ use super::idle::{
     backdate, backdate_by, db, ends, quiet_thread_with_a_box, root_session, shown, thread_session,
     wait_posted, wait_root_session, wait_thread_session,
 };
-use super::support::controller::{failed, Scripted};
+use super::support::controller::{failed, FakeController, Scripted};
+use super::support::slack_fake::TEAM;
 use super::support::{Rig, BOX_NAME, CHANNEL, TS, USER};
 use super::turn::{ask, GOOD};
+
+/// Asserts every request the controller got, the sweep's `show` and `end-host-session` among
+/// them, asserted the thread's owner.
+fn all_as_the_owner(controller: &FakeController) {
+    let acting = controller.seen(|seen| seen.acting.clone());
+    let owner = Some(format!("slack:{TEAM}/{USER}"));
+    assert!(!acting.is_empty());
+    assert!(acting.iter().all(|who| *who == owner), "{acting:?}");
+}
 
 #[test]
 fn a_box_whose_agent_is_working_keeps_the_thread_open() {
@@ -25,6 +35,7 @@ fn a_box_whose_agent_is_working_keeps_the_thread_open() {
     ));
     assert_eq!(ends(&controller), [] as [i64; 0]);
     assert_eq!(root_session(&rig), Some(100));
+    all_as_the_owner(&controller);
 }
 
 #[test]
@@ -128,6 +139,7 @@ fn idle_minutes_counts_minutes_not_seconds() {
         "quiet 180 s ends, quiet 60 s does not"
     );
     assert_eq!(root_session(&rig), Some(100));
+    all_as_the_owner(&controller);
 }
 
 /// The clock the in-process daemon of [`the_sweep_runs_again_a_minute_after_the_first`] reads.
@@ -155,7 +167,8 @@ fn the_sweep_runs_again_a_minute_after_the_first() {
         stop: Arc::default(),
     };
     // `run` never returns; its threads outlive the test and only touch this rig.
-    std::thread::spawn(move || moor_slack::run(&settings, Arc::new(|_: &str| {})));
+    let log: moor_slack::Log = Arc::new(|_: &str| {});
+    std::thread::spawn(move || moor_slack::run(&settings, &log));
     rig.slack.wait_connected();
     ask(&rig, "hello there");
     wait_posted(&rig, 1);

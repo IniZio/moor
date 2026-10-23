@@ -109,7 +109,7 @@ fn send(db: &Db, fx: &mut Fx<'_>, prompt: &Prompt, choice: u32) -> Option<String
         menu: Some(choice),
     });
     let name = prompt.box_name.as_str();
-    let (settled, said) = match (fx.call)(steer) {
+    let (settled, said) = match (fx.call)(&prompt.requested_by, steer) {
         Ok(reply) if reply.class == ExitClass::Ok => (db.answer_sent(prompt.id), None),
         Ok(reply) => {
             let why = escape(&error_text(reply));

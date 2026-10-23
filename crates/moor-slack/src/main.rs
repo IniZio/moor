@@ -8,6 +8,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use clap::Parser;
+use moor_core::user::Identity;
 use moor_slack::{Log, Settings, ToolSettings};
 
 /// Command line of the daemon.
@@ -40,6 +41,9 @@ struct McpArgs {
     /// Controller socket to dial.
     #[arg(long)]
     socket: PathBuf,
+    /// The Slack user the tools act for, as the controller names them: `slack:<team>/<user>`.
+    #[arg(long = "as")]
+    acting_as: String,
     /// The thread whose Boxes the tools act on, as `<channel>/<thread ts>`.
     #[arg(long)]
     thread: String,
@@ -93,9 +97,11 @@ fn mcp() -> Result<(), String> {
     let command_line: Vec<_> = std::env::args_os().collect();
     let given = McpArgs::parse_from(command_line.iter().skip(1));
     moor_slack::close_inherited(&command_line, given.inherited_closed)?;
+    let identity = Identity::parse(&given.acting_as).map_err(|e| format!("--as: {e}"))?;
     moor_slack::serve_tools(&ToolSettings {
         state_dir: given.state_dir,
         socket: given.socket,
+        identity,
         thread: given.thread,
         max_open_boxes: given.max_open_boxes,
         clock: unix_now,
@@ -131,7 +137,7 @@ fn main() -> ExitCode {
             clock: unix_now,
             stop,
         };
-        moor_slack::run(&settings, log)
+        moor_slack::run(&settings, &log)
     });
     match result {
         Ok(()) => ExitCode::SUCCESS,

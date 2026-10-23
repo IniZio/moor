@@ -221,6 +221,15 @@ impl Db {
             .optional()
     }
 
+    /// The Slack users who own a thread, each once.
+    pub(crate) fn thread_owners(&self) -> rusqlite::Result<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT DISTINCT owner FROM slack_threads ORDER BY owner")?;
+        let rows = stmt.query_map([], |r| r.get(0))?;
+        rows.collect()
+    }
+
     /// Records `thread` at `now`; a thread that already has a row is an error.
     pub(crate) fn insert_thread(&self, thread: &SlackThread, now: i64) -> rusqlite::Result<()> {
         self.conn.execute(

@@ -10,6 +10,8 @@ use serde_json::json;
 use super::*;
 use crate::api::Api;
 use crate::db::SlackThread;
+use crate::identity::{Link, Team};
+use moor_client::Client;
 
 /// The id the tests give their Box.
 const ID: BoxId = BoxId::new(7);
@@ -17,10 +19,10 @@ const ID: BoxId = BoxId::new(7);
 /// A feed whose Slack cannot be reached, so any post it tries fails.
 fn feed(dir: &std::path::Path) -> Feed {
     Feed {
+        link: Link::new(Client::new(dir.join("c.sock")), Team::parse("T1").unwrap()),
         db_path: dir.join("slack.db"),
         api: Arc::new(Api::new("http://127.0.0.1:9").unwrap()),
         bot_token: Arc::new(Secret::new(b"xoxb-test".to_vec())),
-        client: moor_client::Client::new(dir.join("controller.sock")),
         log: Arc::new(|_| {}),
         clock: || 9,
     }

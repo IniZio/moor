@@ -23,8 +23,9 @@ fn front_socket_is_dialled_when_no_flag_is_given() {
     rig.spawn_daemon_without_socket(|d| {
         d.env("MOOR_FRONT_SOCKET", socket);
     });
-    controller.wait_until("a hello", |seen| !seen.hellos.is_empty());
     rig.slack.wait_connected();
+    rig.mention(1, USER, "<@UBOT> hello", TS, None);
+    controller.wait_until("a hello", |seen| !seen.hellos.is_empty());
 }
 
 #[test]
@@ -37,8 +38,9 @@ fn the_flag_wins_over_front_socket() {
             .arg(socket)
             .env("MOOR_FRONT_SOCKET", "/nonexistent/front.sock");
     });
-    controller.wait_until("a hello", |seen| !seen.hellos.is_empty());
     rig.slack.wait_connected();
+    rig.mention(1, USER, "<@UBOT> hello", TS, None);
+    controller.wait_until("a hello", |seen| !seen.hellos.is_empty());
 }
 
 #[test]

@@ -17,6 +17,7 @@ mod db;
 mod dial;
 mod escape;
 mod feed;
+mod identity;
 mod login;
 mod prompt;
 mod secret_file;
@@ -24,6 +25,7 @@ mod slash;
 mod socket;
 mod turns;
 mod upload;
+mod watchers;
 mod worker;
 
 pub use coordinator::mcp::{close_inherited, serve_tools, ToolSettings};

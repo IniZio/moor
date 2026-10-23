@@ -60,7 +60,7 @@ fn ask(fx: &mut Fx<'_>, row: &SlackBox, attempt: Attempt) -> Closed {
 
 /// What a `show` says after a lost attempt; `None` when the Box is still open.
 fn look(fx: &mut Fx<'_>, row: &SlackBox) -> Option<Closed> {
-    match (fx.call)(show_request(row)) {
+    match (fx.call)(&row.requested_by, show_request(row)) {
         Ok(reply) if is_closed(&reply, row) => Some(Closed::Done),
         Ok(reply) if reply.class != ExitClass::Ok => Some(Closed::Unsure(error_text(reply))),
         Ok(_) => None,
@@ -74,7 +74,7 @@ fn send(fx: &mut Fx<'_>, row: &SlackBox, attempt: Attempt) -> Closed {
         target: row.box_name.clone().into(),
         force: false,
     });
-    match (fx.call)(request) {
+    match (fx.call)(&row.requested_by, request) {
         Ok(reply) if reply.class == ExitClass::Ok => Closed::Done,
         Ok(reply) => match error_text(reply) {
             message if message == ALREADY_CLOSED => Closed::Done,

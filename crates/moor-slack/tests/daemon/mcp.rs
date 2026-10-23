@@ -13,7 +13,7 @@ use command_fds::{CommandFdExt, FdMapping};
 use serde_json::{json, Value};
 
 use super::support::controller::FakeController;
-use super::support::slack_fake::{APP_TOKEN, BOT_TOKEN};
+use super::support::slack_fake::{APP_TOKEN, BOT_TOKEN, TEAM};
 use super::support::{Rig, BOX_NAME, CHANNEL, MCP, TS, USER};
 
 /// A daemon whose thread [`TS`] runs Box [`BOX_NAME`], so `slack.db` holds it.
@@ -23,10 +23,19 @@ fn thread_with_a_box() -> (Rig, FakeController) {
     (rig, controller)
 }
 
-/// The tool server for thread [`TS`] in `rig`'s state dir, with `extra` setting up the
-/// command before it spawns.
+/// The tool server for thread [`TS`] in `rig`'s state dir, acting as [`USER`], with `extra`
+/// setting up the command before it spawns.
 fn server(
     rig: &Rig,
+    extra: impl FnOnce(&mut Command),
+) -> (Child, ChildStdin, BufReader<ChildStdout>) {
+    server_as(rig, &format!("slack:{TEAM}/{USER}"), extra)
+}
+
+/// Like [`server`], acting as `identity`.
+fn server_as(
+    rig: &Rig,
+    identity: &str,
     extra: impl FnOnce(&mut Command),
 ) -> (Child, ChildStdin, BufReader<ChildStdout>) {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_moor-slack"));
@@ -35,6 +44,8 @@ fn server(
         .arg(rig.path("state-slack"))
         .arg("--socket")
         .arg(rig.socket())
+        .arg("--as")
+        .arg(identity)
         .arg("--thread")
         .arg(format!("{CHANNEL}/{TS}"))
         .env_clear()
@@ -177,7 +188,7 @@ fn a_turn_starts_the_tool_server_named_in_its_mcp_json_and_lists_the_threads_box
     let args = std::fs::read_to_string(bin.join("run-0/server-args")).unwrap();
     let state = std::path::absolute(rig.path("state-slack")).unwrap();
     let want = format!(
-        "mcp\n--state-dir\n{}\n--socket\n{}\n--thread\n{CHANNEL}/{TS}\n--max-open-boxes\n1\n",
+        "mcp\n--state-dir\n{}\n--socket\n{}\n--thread\n{CHANNEL}/{TS}\n--max-open-boxes\n1\n--as\nslack:{TEAM}/{USER}\n",
         state.display(),
         rig.socket().display()
     );
@@ -233,4 +244,38 @@ fn a_steer_in_the_requesters_turn_reaches_the_box_and_the_next_turn_reads_it_as_
          use tokio. Result: sent to Box `{BOX_NAME}`.\n"
     );
     assert!(stdin.contains(&journal), "{stdin}");
+}
+
+#[test]
+fn the_tool_server_sends_its_requests_as_the_identity_it_was_started_with() {
+    let (rig, controller) = thread_with_a_box();
+    let before = controller.seen(|seen| seen.requests.len());
+    let who = format!("slack:{TEAM}/U0TOOLS");
+    let (_child, mut stdin, mut stdout) = server_as(&rig, &who, |_| {});
+    let call = json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+        "params": {"name": "list_boxes", "arguments": {}}});
+    send(&mut stdin, &mut stdout, &call).unwrap();
+    let (sent, acting) = controller.seen(|seen| {
+        (
+            seen.requests[before..].to_vec(),
+            seen.acting[before..].to_vec(),
+        )
+    });
+    assert!(
+        sent.iter()
+            .any(|r| matches!(r, moor_core::request::Request::Show(_))),
+        "{sent:?}"
+    );
+    assert_eq!(acting, vec![Some(who); sent.len()]);
+}
+
+#[test]
+fn the_tool_server_refuses_an_identity_that_is_not_one() {
+    let rig = Rig::new();
+    let (child, stdin, _stdout) = server_as(&rig, "no-namespace", |_| {});
+    drop(stdin);
+    let out = child.wait_with_output().unwrap();
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("--as"), "{stderr}");
 }
