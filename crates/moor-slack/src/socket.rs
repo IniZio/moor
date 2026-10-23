@@ -277,7 +277,7 @@ fn connect(url: &str) -> Result<WebSocket<Stream>, SocketError> {
         .host()
         .ok_or_else(|| SocketError::Url("no host".into()))?;
     let port = uri.port_u16().unwrap_or(if secure { 443 } else { 80 });
-    let tcp = dial(host, port)?;
+    let tcp = open(url, host, port)?;
     let stream = if secure {
         Stream::Tls(Box::new(tls(host, tcp)?))
     } else {
@@ -299,6 +299,61 @@ fn handshake_reason<S: Read + Write>(
         tungstenite::HandshakeError::Failure(inner) => inner.to_string(),
         tungstenite::HandshakeError::Interrupted(_) => "handshake timed out".into(),
     }
+}
+
+/// Opens TCP to `host:port` for `url`: through the CONNECT proxy that `HTTPS_PROXY` or its
+/// kin names, as a front the controller runs must, unless `NO_PROXY` exempts `url`.
+fn open(url: &str, host: &str, port: u16) -> Result<TcpStream, SocketError> {
+    via(ureq::Proxy::try_from_env(), url, host, port)
+}
+
+/// Opens TCP to `host:port` for `url`, through `proxy` unless its `NO_PROXY` list exempts
+/// `url`.
+fn via(
+    proxy: Option<ureq::Proxy>,
+    url: &str,
+    host: &str,
+    port: u16,
+) -> Result<TcpStream, SocketError> {
+    let uri = url.parse::<ureq::http::Uri>().ok();
+    let proxy = proxy.filter(|proxy| uri.as_ref().is_none_or(|uri| !proxy.is_no_proxy(uri)));
+    let Some(proxy) = proxy else {
+        return dial(host, port);
+    };
+    let mut tcp = dial(proxy.host(), proxy.port())?;
+    tunnel(&mut tcp, host, port)?;
+    Ok(tcp)
+}
+
+/// The most bytes a proxy's answer to CONNECT may take before its blank line.
+const MAX_PROXY_HEAD: usize = 8 * 1024;
+
+/// Asks the proxy on `tcp` for a tunnel to `host:port` and reads its answer byte by byte, so
+/// nothing of the tunnel is read with it.
+fn tunnel(tcp: &mut TcpStream, host: &str, port: u16) -> Result<(), SocketError> {
+    let fail = |e: io::Error| SocketError::Connect(format!("proxy: {e}"));
+    write!(
+        tcp,
+        "CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n\r\n"
+    )
+    .map_err(fail)?;
+    let mut head = Vec::new();
+    let mut byte = [0_u8; 1];
+    while !head.ends_with(b"\r\n\r\n") {
+        if head.len() > MAX_PROXY_HEAD {
+            return Err(SocketError::Connect("proxy answer too long".into()));
+        }
+        tcp.read_exact(&mut byte).map_err(fail)?;
+        head.extend_from_slice(&byte);
+    }
+    let head = String::from_utf8_lossy(&head);
+    let status = head.lines().next().unwrap_or_default();
+    if status.split_whitespace().nth(1) == Some("200") {
+        return Ok(());
+    }
+    Err(SocketError::Connect(format!(
+        "proxy refused the tunnel: {status}"
+    )))
 }
 
 /// Opens TCP to `host:port` with the connect timeout applied to later reads and writes.
