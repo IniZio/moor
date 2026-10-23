@@ -220,12 +220,40 @@ fn log(host: &str, port: u16, ip: &str, decision: &str, reason: &str) {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Read as _;
+    use std::io::{Read as _, Write as _};
     use std::net::{TcpListener, TcpStream};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::{serve, target, MAX_TUNNELS};
     use crate::controller::front_shim::denied::Denied;
+
+    /// What the proxy answers `request` with.
+    fn answer(request: &str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        client.write_all(request.as_bytes()).unwrap();
+        let (conn, _) = listener.accept().unwrap();
+        serve(conn, &Denied::new(Vec::new()), &AtomicUsize::new(0));
+        let mut answer = String::new();
+        client.read_to_string(&mut answer).unwrap();
+        answer
+    }
+
+    #[test]
+    fn any_method_but_connect_is_refused_405_before_the_host_is_resolved() {
+        for method in ["GET", "connect", "POST"] {
+            let got = answer(&format!("{method} moor-never.invalid:443 HTTP/1.1\r\n\r\n"));
+            assert!(
+                got.starts_with("HTTP/1.1 405 Method Not Allowed"),
+                "{method}: {got}"
+            );
+        }
+        let resolved = answer("CONNECT moor-never.invalid:443 HTTP/1.1\r\n\r\n");
+        assert!(
+            resolved.starts_with("HTTP/1.1 502 Bad Gateway"),
+            "{resolved}"
+        );
+    }
 
     #[test]
     fn a_tunnel_past_the_cap_is_answered_429_and_leaves_the_count_alone() {

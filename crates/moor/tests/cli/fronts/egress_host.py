@@ -2,6 +2,7 @@ import json, os, socket, struct, subprocess, sys, threading, time
 
 moor = sys.argv[1]
 REMOTE = "198.51.100.7"
+LAN = ["192.168.77.7", "100.64.9.9"]
 PRIVATE = "172.17.0.1"
 HOST_ADDRESSES = [PRIVATE, "100.64.0.156", "10.235.225.1", "fc00::1", "203.0.113.5"]
 
@@ -37,7 +38,8 @@ for _ in range(200):
     if subprocess.run(["ip", "link", "show", "v1"], capture_output=True).returncode == 0:
         break
     time.sleep(0.05)
-for c in ["ip link set lo up", "ip link set v1 up", f"ip addr add {sys.argv[1]}/24 dev v1"]:
+for c in ["ip link set lo up", "ip link set v1 up", f"ip addr add {sys.argv[1]}/24 dev v1",
+          "ip addr add 192.168.77.7/24 dev v1", "ip addr add 100.64.9.9/24 dev v1"]:
     subprocess.run(c.split(), check=True)
 def run(listener):
     for _ in iter(int, 1):
@@ -46,7 +48,7 @@ def run(listener):
         conn.close()
 for port in [443, 80, 8443]:
     s = socket.socket()
-    s.bind((sys.argv[1], port))
+    s.bind(("0.0.0.0", port))
     s.listen(16)
     threading.Thread(target=run, args=(s,), daemon=True).start()
 print("ready", flush=True)
@@ -56,7 +58,8 @@ remote = subprocess.Popen(["unshare", "--net", "--", sys.executable, "-c", remot
                           stdout=subprocess.PIPE, text=True)
 time.sleep(0.2)
 ip("link", "add", "v0", "type", "veth", "peer", "name", "v1", "netns", str(remote.pid))
-ip("addr", "add", "198.51.100.1/24", "dev", "v0")
+for addr in ["198.51.100.1/24", "192.168.77.1/24", "100.64.9.1/24"]:
+    ip("addr", "add", addr, "dev", "v0")
 ip("link", "set", "v0", "up")
 remote.stdout.readline()
 
@@ -95,7 +98,7 @@ def banner(host, port):
         return type(e).__name__
 
 
-control = {h: banner(h, 443) for h in HOST_ADDRESSES + [REMOTE]}
+control = {h: banner(h, 443) for h in HOST_ADDRESSES + [REMOTE] + LAN}
 
 front = r'''
 import json, os, socket, sys
@@ -119,10 +122,11 @@ try:
     got["direct"] = "connected"
 except OSError as e:
     got["direct"] = e.strerror
-got["caps"] = [l.split()[1] for l in open("/proc/self/status") if l.startswith(("CapEff", "CapAmb"))]
+got["caps"] = [l.split()[1] for l in open("/proc/self/status") if l.startswith(("CapEff", "CapBnd", "CapAmb"))]
 print(json.dumps(got), flush=True)
 '''
 targets = [f"[{h}]:443" if ":" in h else f"{h}:443" for h in HOST_ADDRESSES]
+targets += [f"{h}:443" for h in LAN]
 targets += ["127.0.0.1:443", "[::1]:443", "localhost:443", f"{REMOTE}:443", f"{REMOTE}:80",
             f"{REMOTE}:8443", "remote.test:443", "private.test:443", "rebind.test:443"]
 out = subprocess.run(

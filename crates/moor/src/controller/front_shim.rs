@@ -46,7 +46,9 @@ use rustix::process::{
     DumpableBehavior, Signal, WaitOptions,
 };
 #[cfg(target_os = "linux")]
-use rustix::thread::{set_capabilities, CapabilitySet, CapabilitySets};
+use rustix::thread::{
+    remove_capability_from_bounding_set, set_capabilities, CapabilitySet, CapabilitySets,
+};
 #[cfg(target_os = "linux")]
 use signal_hook::consts::{SIGINT, SIGTERM};
 #[cfg(target_os = "linux")]
@@ -204,13 +206,13 @@ fn supported(info: &SupportInfo) -> Result<(), String> {
 }
 
 /// pid 1 of the front's PID namespace: moves into the front's root as `layout` describes,
-/// confines itself to writing the writable dir and `/tmp`, drops every capability, turns
-/// undumpable when it holds the Proxy socket's dir open, so the front cannot reach that dir
-/// through `/proc/1/fd`, and runs
-/// `command` with its socket on fd 3, `proxy` bridged to a loopback port, and the proxy
-/// variables naming the egress proxy port when there is one. The kernel kills the namespace
-/// if the outer shim dies. The outer shim holds the only write end of stdin, so a readable
-/// stdin means it died before the death signal was set, and pid 1 exits.
+/// confines itself to writing the writable dir and `/tmp`, empties its bounding set and drops
+/// every capability, turns undumpable when it holds the Proxy socket's dir open, so the front
+/// cannot reach that dir through `/proc/1/fd`, and runs `command` with its socket on fd 3,
+/// `proxy` bridged to a loopback port, and the proxy variables naming the egress proxy port
+/// when there is one. The kernel kills the namespace if the outer shim dies. The outer shim
+/// holds the only write end of stdin, so a readable stdin means it died before the death
+/// signal was set, and pid 1 exits.
 #[cfg(target_os = "linux")]
 fn init(asked: &Asked, command: &[OsString]) -> Result<u8, String> {
     let (layout, proxy) = (&asked.layout, asked.proxy.as_deref());
@@ -235,6 +237,7 @@ fn init(asked: &Asked, command: &[OsString]) -> Result<u8, String> {
         .chain(layout.writable.as_ref().map(|_| PathBuf::from("/tmp")))
         .collect();
     confine(&writable)?;
+    empty_bounding_set()?;
     let none = CapabilitySet::empty();
     set_capabilities(
         None,
@@ -256,13 +259,7 @@ fn init(asked: &Asked, command: &[OsString]) -> Result<u8, String> {
         front.env(bridge::PORT_VAR, bridge.serve()?.to_string());
     }
     if let Some(port) = asked.egress_port {
-        let url = format!("http://127.0.0.1:{port}");
-        for var in ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"] {
-            front.env(var, &url);
-        }
-        for var in ["NO_PROXY", "no_proxy"] {
-            front.env(var, "localhost,127.0.0.1,::1");
-        }
+        name_egress_proxy(&mut front, port);
     }
     if let Some(fd) = socket {
         front
@@ -273,6 +270,30 @@ fn init(asked: &Asked, command: &[OsString]) -> Result<u8, String> {
             .map_err(|e| format!("cannot pass the front its socket: {e}"))?;
     }
     relay(&mut front)
+}
+
+/// Names the egress proxy on `port` of the front's loopback to `front`, in the variables HTTP
+/// clients read, and leaves that loopback out of it.
+#[cfg(target_os = "linux")]
+fn name_egress_proxy(front: &mut Command, port: u16) {
+    let url = format!("http://127.0.0.1:{port}");
+    for var in ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"] {
+        front.env(var, &url);
+    }
+    for var in ["NO_PROXY", "no_proxy"] {
+        front.env(var, "localhost,127.0.0.1,::1");
+    }
+}
+
+/// Drops every capability from this process's bounding set, so neither it nor what it runs
+/// can gain one again, even through a file capability.
+#[cfg(target_os = "linux")]
+fn empty_bounding_set() -> Result<(), String> {
+    for (name, cap) in CapabilitySet::all().iter_names() {
+        remove_capability_from_bounding_set(cap)
+            .map_err(|e| format!("cannot drop {name} from the bounding set: {e}"))?;
+    }
+    Ok(())
 }
 
 /// Runs `command`, passes SIGTERM and SIGINT to it and reaps every child that exits; returns
