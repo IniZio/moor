@@ -89,6 +89,16 @@ impl FrontSocket {
         }
     }
 
+    /// Creates the directories the socket lives in, or checks the ones there: each must be
+    /// `owner`'s and nobody else's to enter.
+    pub(crate) fn prepare(&self) -> Result<(), String> {
+        private_dir(&self.dir, self.owner)?;
+        if let Some(own) = &self.own {
+            private_dir(own, self.owner)?;
+        }
+        Ok(())
+    }
+
     /// The socket path.
     pub(crate) fn path(&self) -> &Path {
         &self.path
@@ -97,10 +107,7 @@ impl FrontSocket {
     /// Checks the directory, binds the socket with mode 0600 and starts accepting into
     /// `handler`. With `replace`, a file left at the path is removed first.
     pub(super) fn listen(&self, replace: bool, handler: &Handler) -> Result<Listening, String> {
-        private_dir(&self.dir, self.owner)?;
-        if let Some(own) = &self.own {
-            private_dir(own, self.owner)?;
-        }
+        self.prepare()?;
         let fail = |e: io::Error| format!("cannot listen on {}: {e}", self.path.display());
         if replace {
             match fs::remove_file(&self.path) {

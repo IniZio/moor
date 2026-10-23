@@ -119,6 +119,11 @@ fn a_front_reaches_its_proxy_with_a_lease_and_a_killed_proxy_comes_back() {
     let served = Served::start();
     wait_until("a lease", &served, || !served.said("lease").is_empty());
     assert_eq!(served.said("lease"), ["granted"], "{}", served.log());
+    assert!(
+        !served.log().contains("front probe: exited"),
+        "the front starts once: {}",
+        served.log()
+    );
     wait_until("a tunnel", &served, || {
         served.said("connect").iter().any(|c| c == "tls ok")
     });
