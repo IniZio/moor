@@ -51,6 +51,16 @@ def metadata(path):
         "setxattr": touch(lambda: os.setxattr(path, "user.moor", b"1")),
         "fchmod": touch(fchmod),
     }
+def pid1_sockets():
+    found = []
+    for fd in os.listdir("/proc/1/fd"):
+        path = f"/proc/1/fd/{fd}"
+        try:
+            if stat.S_ISSOCK(os.stat(path).st_mode) and not os.readlink(path).startswith("socket:"):
+                found.append(path)
+        except OSError:
+            pass
+    return found
 def kind(fd):
     mode = os.fstat(fd).st_mode
     return "pipe" if stat.S_ISFIFO(mode) else "file" if stat.S_ISREG(mode) else "other"
@@ -93,6 +103,9 @@ got = {
     "shared_meta": metadata(f"{root}/home/shared/note"),
     "program_meta": metadata(f"{root}/home/bin/front"),
     "fd3_chmod": touch(lambda: os.chmod("/proc/self/fd/3", 0o600)),
+    "pid1_socket_chmods": sorted({touch(lambda p=p: os.chmod(p, 0o600)) for p in pid1_sockets()}),
+    "dev": sorted(os.listdir("/dev")),
+    "dev_create": write("/dev/planted"),
     "lxd": dial(f"{root}/var/lib/x/unix.socket"),
     "resolv": read("/etc/resolv.conf"),
     "ca": len(__import__("ssl").create_default_context().get_ca_certs()) > 0 or bool(__import__("ssl").create_default_context().cert_store_stats()["x509_ca"]),

@@ -75,6 +75,11 @@ fn a_front_changes_metadata_only_in_its_own_state_dir() {
     }
     assert_eq!(got["own_meta"]["chmod"], "ok", "{got}");
     assert_eq!(got["fd3_chmod"], "Read-only file system", "{got}");
+    assert_eq!(
+        got["pid1_socket_chmods"],
+        serde_json::json!(["Read-only file system"]),
+        "{got}"
+    );
 }
 
 #[test]
@@ -140,4 +145,30 @@ fn a_front_resolves_names_and_trusts_the_system_certificates() {
     assert!(got["resolv"].as_u64().is_some_and(|n| n > 0), "{got}");
     assert_eq!(got["ca"], true, "{got}");
     assert_eq!(got["dns"], "ok", "{got}");
+}
+
+#[test]
+fn a_front_sees_only_the_listed_devices_on_a_read_only_dev() {
+    let ctl = Controller::start(PROBE, &[]);
+    let got = wait_for("the probe", || ctl.line("probe "));
+    let got: Value = serde_json::from_str(&got).unwrap();
+    let dev = [
+        "fd", "full", "null", "random", "stderr", "stdin", "stdout", "tty", "urandom", "zero",
+    ];
+    assert_eq!(got["dev"], serde_json::json!(dev), "{got}");
+    assert_eq!(got["dev_create"], "Read-only file system", "{got}");
+}
+
+#[test]
+fn a_state_dir_under_tmp_is_refused() {
+    let dir = crate::fresh_dir("undertmp");
+    let writable = dir.display().to_string();
+    let me = std::process::id().to_string();
+    let out = shim(
+        &dir,
+        &["--parent", &me, "--writable", &writable, "--", "true"],
+    );
+    assert!(!out.status.success());
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(said.contains("lies under /tmp"), "{said}");
 }
