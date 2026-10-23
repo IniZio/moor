@@ -71,4 +71,7 @@ jobs:
       - run: cargo test -p moor --locked --test cli fronts_macos
       - name: Show what the sandbox refused
         if: always()
-        run: log show --last 20m --style compact --predicate 'eventMessage CONTAINS "deny("' | grep -E 'python|moor|sh\(' | sed -E 's/^[^ ]+ [^ ]+ +//' | sort | uniq -c | sort -rn | head -200
+        run: >-
+          log show --last 20m --style compact --predicate 'eventMessage CONTAINS "deny("'
+          | grep -iE 'python|moor|sh\(' | sed -E 's/.*Sandbox: //; s/\([0-9]+\)//; s/front-[A-Za-z0-9]+/front-X/'
+          | sort | uniq -c | sort -rn | head -100

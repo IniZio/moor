@@ -21,21 +21,22 @@ use signal_hook::iterator::Signals;
 use super::{code, enforced, supported, Asked, Layout, POLL};
 
 /// The host paths every front may read, where they exist: the programs, libraries, dyld
-/// cache and configuration a front runs with.
+/// cache and configuration a front runs with. A path through a symlink, such as `/etc` to
+/// `/private/etc`, may be read by either name.
 pub(in crate::controller) const SYSTEM: [&str; 6] = [
     "/usr",
     "/bin",
     "/sbin",
     "/System",
-    "/private/etc",
-    "/private/var/run/resolv.conf",
+    "/etc",
+    "/var/run/resolv.conf",
 ];
 
 /// The devices a front may read; it may also write `/dev/null`.
 const DEVICES: [&str; 3] = ["/dev/zero", "/dev/random", "/dev/urandom"];
 
 /// The socket macOS resolves names through.
-const RESOLVER: &str = "/private/var/run/mDNSResponder";
+const RESOLVER: &str = "/var/run/mDNSResponder";
 
 /// Runs `moor front-shim` with `args`, the words after `front-shim`; returns the exit code.
 ///
@@ -69,8 +70,8 @@ pub fn main(args: &[OsString]) -> Result<u8, String> {
 
 /// Confines this process and every process it starts to reading the [`SYSTEM`] paths, the
 /// [`DEVICES`] and `layout`'s `read_only` paths, writing its `writable` dir and `/dev/null`,
-/// and connecting to no Unix socket but `socket` and the [`RESOLVER`]. Other networking is
-/// left as it is.
+/// and connecting to no Unix socket but `socket` and the [`RESOLVER`], each by the name given
+/// or its real path. Other networking is left as it is.
 fn confine(layout: &Layout, socket: Option<&Path>) -> Result<(), String> {
     supported(&Sandbox::support_info())?;
     let mut caps = CapabilitySet::new();
@@ -87,12 +88,14 @@ fn confine(layout: &Layout, socket: Option<&Path>) -> Result<(), String> {
     if let Some(dir) = &layout.writable {
         caps = allow(caps, dir, AccessMode::ReadWrite)?;
     }
-    let mut dial = vec![PathBuf::from(RESOLVER)];
-    if let Some(socket) = socket {
-        dial.push(
-            fs::canonicalize(socket)
-                .map_err(|e| format!("cannot find the front socket {}: {e}", socket.display()))?,
-        );
+    let mut dial = vec![];
+    for path in std::iter::once(Path::new(RESOLVER)).chain(socket) {
+        let real = fs::canonicalize(path)
+            .map_err(|e| format!("cannot find the socket {}: {e}", path.display()))?;
+        dial.push(path.to_owned());
+        if real != path {
+            dial.push(real);
+        }
     }
     let rules = std::iter::once(r#"(deny network-outbound (subpath "/"))"#.to_owned()).chain(
         dial.iter()

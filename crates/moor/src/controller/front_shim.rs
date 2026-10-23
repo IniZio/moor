@@ -377,4 +377,20 @@ mod tests {
         };
         assert_eq!(supported(&info), Ok(()));
     }
+
+    #[test]
+    fn a_mac_without_seatbelt_is_refused_as_linux_is() {
+        let info = SupportInfo {
+            is_supported: false,
+            platform: "macos",
+            details: "Seatbelt not available".to_owned(),
+        };
+        assert_eq!(
+            supported(&info),
+            Err(
+                "they need nono's sandbox, which this macos host lacks: Seatbelt not available"
+                    .to_owned()
+            )
+        );
+    }
 }
