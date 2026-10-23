@@ -275,24 +275,7 @@ fn spawn(front: &Front, shim: &Shim, sink: &Sink) -> io::Result<Child> {
     let ns = &front.ns;
     let mut command = shim.command();
     command.args(["--parent", &process::id().to_string()]);
-    if let Some(dir) = &front.state_dir {
-        let tmp = dir.join("tmp");
-        DirBuilder::new().recursive(true).mode(0o700).create(&tmp)?;
-        command
-            .arg("--writable")
-            .arg(dir)
-            .env("MOOR_FRONT_STATE_DIR", dir)
-            .env("TMPDIR", tmp);
-    }
-    for path in &front.read_only {
-        command.arg("--read-only").arg(path);
-    }
-    if let Some(proxy) = &front.proxy {
-        command
-            .arg("--proxy")
-            .arg(&proxy.socket)
-            .env(front_proxy::CA_PEM_VAR, &proxy.ca_pem);
-    }
+    what_it_reaches(front, &mut command)?;
     command
         .arg("--")
         .args(&front.command)
@@ -338,6 +321,30 @@ fn spawn(front: &Front, shim: &Shim, sink: &Sink) -> io::Result<Child> {
         ),
     }
     Ok(child)
+}
+
+/// Adds to `command` the shim flags and front variables for what `front` may write and read
+/// and how it reaches its Proxy, creating its state dir's `tmp`.
+fn what_it_reaches(front: &Front, command: &mut Command) -> io::Result<()> {
+    if let Some(dir) = &front.state_dir {
+        let tmp = dir.join("tmp");
+        DirBuilder::new().recursive(true).mode(0o700).create(&tmp)?;
+        command
+            .arg("--writable")
+            .arg(dir)
+            .env("MOOR_FRONT_STATE_DIR", dir)
+            .env("TMPDIR", tmp);
+    }
+    for path in &front.read_only {
+        command.arg("--read-only").arg(path);
+    }
+    if let Some(proxy) = &front.proxy {
+        command
+            .arg("--proxy")
+            .arg(&proxy.socket)
+            .env(front_proxy::CA_PEM_VAR, &proxy.ca_pem);
+    }
+    Ok(())
 }
 
 /// Replaces the pid file of `front` with `pid` and its start time.
