@@ -22,12 +22,13 @@ removes the directory once crabbox has deleted the Box or reports it gone.
 Commands, single-file reads and writes, and copies out of a Box do not go
 through crabbox.
 moor runs them over one ssh connection per Box, opened with the ssh options
-`crabbox ssh` prints for the lease, so host-key checking stays as strict as
-crabbox's own: the lease's `known_hosts` file and `StrictHostKeyChecking=yes`.
+`crabbox ssh` prints for the lease, so host-key checking stays on, as in
+crabbox's own: the lease's `known_hosts` file and `StrictHostKeyChecking` set to
+`yes` or `accept-new`.
 Before any ssh to a Box, including the agent pane's, moor runs `ssh -G` with
 those options. `ssh -G` prints the options ssh would use, after it reads every
 flag and config file, and it opens no connection. moor refuses the options
-unless `StrictHostKeyChecking` comes out as `yes` and no `UserKnownHostsFile`
+unless `StrictHostKeyChecking` comes out as `yes` or `accept-new` and no `UserKnownHostsFile`
 comes out as `/dev/null`, another device, `none` or empty. moor also refuses
 them when `ssh -G` fails. The command then fails
 with an error that says so; moor never falls back to an unchecked connection.

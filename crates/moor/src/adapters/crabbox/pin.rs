@@ -1,10 +1,11 @@
 //! The host-key check every Box ssh call must keep.
 //!
-//! moor runs ssh to a Box with the words `crabbox ssh` printed for its lease. Those words are
-//! what pins the Box's host key, so moor refuses to use them when they do not. ssh itself says
-//! what the words come to: `ssh -G` prints the options it would connect with, after reading
-//! every flag and config file, and opens no connection. `StrictHostKeyChecking` must be yes, and
-//! no known-hosts file may be `/dev/null`, another device, `none` or empty.
+//! moor runs ssh to a Box with the words `crabbox ssh` printed for its lease. Those words must
+//! keep host key checking on, so moor refuses to use them when they do not. ssh itself says what
+//! the words come to: `ssh -G` prints the options it would connect with, after reading every
+//! flag and config file, and opens no connection. `StrictHostKeyChecking` must be yes or
+//! accept-new, which records a new key and rejects a changed one. It must not be no, off or
+//! false. No known-hosts file may be `/dev/null`, another device, `none` or empty.
 
 use std::fs;
 use std::os::unix::fs::FileTypeExt;
@@ -36,8 +37,8 @@ pub(super) fn check(cb: &Crabbox, words: &[String]) -> Result<(), DriverError> {
             _ => {}
         }
     }
-    if !matches!(strict, Some("true" | "yes")) {
-        return Err(refused("they leave StrictHostKeyChecking short of yes"));
+    if !matches!(strict, Some("true" | "yes" | "accept-new")) {
+        return Err(refused("they turn host key checking off"));
     }
     match files {
         Some(files) if !files.split(' ').any(holds_no_keys) => Ok(()),

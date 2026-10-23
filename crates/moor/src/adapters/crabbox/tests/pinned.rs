@@ -10,7 +10,7 @@ use moor_core::seam::proc::Deadline;
 use super::fake_ssh::{handle, lab, Lab};
 
 const UNPINNED: [&str; 6] = [
-    "ssh -o 'StrictHostKeyChecking=accept-new' -o 'StrictHostKeyChecking=yes' 'u@box'",
+    "ssh -o 'StrictHostKeyChecking=off' -o 'StrictHostKeyChecking=yes' 'u@box'",
     "ssh -o 'StrictHostKeyChecking=no' 'u@box'",
     "ssh -vo 'StrictHostKeyChecking=no' -o 'StrictHostKeyChecking=yes' 'u@box'",
     "ssh -o 'StrictHostKeyChecking=yes' -o 'UserKnownHostsFile=/dev/null' 'u@box'",
