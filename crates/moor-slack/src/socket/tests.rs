@@ -21,6 +21,7 @@ use super::{
 use super::{AfterAck, Click, Slash, TokenSubmission};
 use crate::account::Account;
 use crate::api::Api;
+use crate::login::Form;
 
 impl Intake for mpsc::Sender<Inbound> {
     fn take(&self, item: Inbound) -> Result<Kept, NotKept> {
@@ -441,7 +442,7 @@ fn a_login_submission_is_forwarded_with_its_token_trimmed() {
         user: "U1".into(),
         view_id: "V1".into(),
         account: "claude".into(),
-        token: Secret::new(b"tok-123".to_vec()),
+        tokens: vec![("token".into(), Secret::new(b"tok-123".to_vec()))],
     });
     assert_eq!(got, vec![want]);
     let (_, got) = forwarded(submission("other_modal", "tok-123"));
@@ -455,7 +456,7 @@ impl Intake for Opening {
     fn take(&self, _item: Inbound) -> Result<Kept, NotKept> {
         let then = AfterAck::OpenLogin {
             trigger_id: "t1".into(),
-            account: Account::Claude,
+            form: Form::One(Account::Claude),
         };
         Ok(Kept {
             ack: None,
@@ -491,7 +492,7 @@ fn the_login_modal_opens_after_the_ack() {
     server.join().expect("server");
     let want = AfterAck::OpenLogin {
         trigger_id: "t1".into(),
-        account: Account::Claude,
+        form: Form::One(Account::Claude),
     };
     assert_eq!(intake.1.into_inner(), vec![want]);
 }

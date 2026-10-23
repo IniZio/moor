@@ -81,11 +81,16 @@ thread that says why.
 
 ## Start work from Slack
 
-1. Each person links their own accounts. Run `/moor login` in any channel and
-   paste the token that `claude setup-token` prints on your own machine into
-   the form. Run `/moor login github` and paste the output of
-   `gh auth token`. The first link makes you a moor user, and each token goes
-   into the controller's vault under your name.
+1. Each person links their own accounts. Run `/moor login` in any channel. The
+   form has two optional fields. Paste the token that `claude setup-token`
+   prints on your own machine into the Claude field and the output of
+   `gh auth token` into the GitHub field. A blank field keeps the account you
+   already linked, and a form with both fields blank is refused. Each filled
+   token is checked on its own, and the form reports each result, so one
+   refused token does not stop the other. `/moor login claude` and
+   `/moor login github` open a form with that one field. The first link makes
+   you a moor user, and each token goes into the controller's vault under your
+   name.
 2. In an allowed channel, add a GitHub repo: `/moor repo add OWNER/NAME`.
 3. Mention the bot at the top level of the channel and describe the work. The
    coordinator replies in a thread and starts Boxes when you ask for work.
@@ -193,5 +198,5 @@ The front rejects unknown keys.
 | `/moor repo add OWNER/NAME` | anyone | `channels` | Adds a GitHub repo. A name that is not `OWNER/NAME` is refused. A start of a repo the person's GitHub account cannot read is refused by the controller. |
 | `/moor repo remove NAME` | anyone | `channels` | Removes a repo. |
 | `/moor repo default NAME` | anyone | `channels` | Makes `NAME` the channel's default repo. |
-| `/moor login [claude\|github]` | anyone | any channel | Opens a form for the token. Claude is the default. The front checks a Claude token with one test call to Claude on `haiku`, and a GitHub token with `GET /user`, which must answer 200. It then stores the token in the controller's vault as you. A 401 or 403 stores nothing. |
+| `/moor login [claude\|github]` | anyone | any channel | Opens a form for the tokens: both optional fields with no word, one field with `claude` or `github`. The front checks a Claude token with one test call to Claude on `haiku`, and a GitHub token with `GET /user`, which must answer 200. It then stores the token in the controller's vault as you. A 401 or 403 stores nothing. |
 | `/moor logout [claude\|github]` | anyone | any channel | Deletes that secret from the vault and tells you whether one was there. Claude is the default. |

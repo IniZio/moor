@@ -68,11 +68,8 @@ impl Intake for Recorder {
     /// Opens the login modal on the Socket Mode thread, because its trigger expires 3 s
     /// after the command and the worker may be busy with a Box start.
     fn after_ack(&self, then: AfterAck) {
-        let AfterAck::OpenLogin {
-            trigger_id,
-            account,
-        } = then;
-        let form = login::form(account);
+        let AfterAck::OpenLogin { trigger_id, form } = then;
+        let form = login::form(form);
         if let Err(e) = self.api.open_view(&self.bot_token, &trigger_id, &form) {
             (self.log)(&format!("slack: login modal failed: {e}"));
         }

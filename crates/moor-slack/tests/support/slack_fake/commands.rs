@@ -26,6 +26,24 @@ impl FakeSlack {
     /// Queues an `interactive` envelope: `user` submits the login modal `view`, as opened,
     /// with `token` in its input.
     pub(crate) fn send_submission(&self, envelope_id: &str, user: &str, view: &Value, token: &str) {
+        self.send_fields(envelope_id, user, view, &[("token", token)]);
+    }
+
+    /// Submits `view` with `fields` as `(block id, text)`; a blank text is a blank input.
+    pub(crate) fn send_fields(
+        &self,
+        envelope_id: &str,
+        user: &str,
+        view: &Value,
+        fields: &[(&str, &str)],
+    ) {
+        let values: serde_json::Map<String, Value> = fields
+            .iter()
+            .map(|(block, text)| {
+                let input = json!({block.to_owned(): {"type": "plain_text_input", "value": text}});
+                ((*block).to_owned(), input)
+            })
+            .collect();
         let envelope = json!({
             "type": "interactive",
             "envelope_id": envelope_id,
@@ -36,10 +54,7 @@ impl FakeSlack {
                     "id": "V1",
                     "callback_id": view["callback_id"],
                     "private_metadata": view["private_metadata"],
-                    "state": {"values": {"token": {"token": {
-                        "type": "plain_text_input",
-                        "value": token,
-                    }}}},
+                    "state": {"values": values},
                 },
             },
         });

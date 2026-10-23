@@ -15,7 +15,7 @@ use moor_core::response::Response;
 use moor_core::secret::Secret;
 use serde_json::{json, Value};
 
-use super::{form, login, logout, submission, vault, Checks, TokenCheck, CHECKING};
+use super::{form, login, logout, submission, vault, Checks, Form, TokenCheck, CHECKING};
 use crate::account::Account;
 use crate::coordinator::claude::tests::install;
 use crate::coordinator::claude::{Claude, HostEnv};
@@ -46,7 +46,7 @@ fn submitted(envelope_id: &str, user: &str, account: &str, token: &str) -> Token
         user: user.into(),
         view_id: "V1".into(),
         account: account.into(),
-        token: Secret::new(token.into()),
+        tokens: vec![("token".into(), Secret::new(token.into()))],
     }
 }
 
@@ -68,17 +68,17 @@ fn login_opens_the_modal_for_the_named_account_once_after_an_empty_ack() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
     let cases = [
-        ("login", Account::Claude),
-        ("login claude", Account::Claude),
-        ("login github", Account::GitHub),
+        ("login", Form::Both),
+        ("login claude", Form::One(Account::Claude)),
+        ("login github", Form::One(Account::GitHub)),
     ];
-    for (n, (text, account)) in cases.into_iter().enumerate() {
+    for (n, (text, form)) in cases.into_iter().enumerate() {
         let id = format!("e{n}");
         let kept = login(&slash(&id, "U1", text), &db, 1).unwrap();
         assert_eq!(kept.ack, None);
         let open = AfterAck::OpenLogin {
             trigger_id: format!("trig-{id}"),
-            account,
+            form,
         };
         assert_eq!(kept.then, Some(open), "{text}");
     }
@@ -87,11 +87,11 @@ fn login_opens_the_modal_for_the_named_account_once_after_an_empty_ack() {
         again.then, None,
         "a redelivered command opens no second modal"
     );
-    let modal = form(Account::Claude);
+    let modal = form(Form::One(Account::Claude));
     assert_eq!(modal["private_metadata"], "claude");
     let prompt = "Paste the token that `claude setup-token` printed on your machine.";
     assert_eq!(modal["blocks"][0]["label"]["text"], prompt);
-    let modal = form(Account::GitHub);
+    let modal = form(Form::One(Account::GitHub));
     assert_eq!(modal["private_metadata"], "github");
     let prompt = "Paste the output of `gh auth token` from your machine.";
     assert_eq!(modal["blocks"][0]["label"]["text"], prompt);
@@ -168,7 +168,7 @@ fn a_submission_queues_one_check_and_keeps_only_its_envelope_id() {
         view_id: "V1".into(),
         token: Secret::new(token.into()),
     };
-    assert_eq!(job, Some(Job::CheckToken(want)));
+    assert_eq!(job, Some(Job::CheckToken(vec![want])));
     let (ack, job) = submission(sub(), &db, 2).unwrap();
     assert_eq!(modal_text(&ack), CHECKING);
     assert_eq!(job, None, "a redelivered submission checks nothing");
@@ -205,6 +205,82 @@ fn a_submission_for_an_unknown_account_or_from_a_bad_id_checks_nothing() {
         assert_eq!(modal_text(&ack), want);
         assert_eq!(job, None);
     }
+}
+
+/// A submission of the both-account form with these inputs, in block order.
+fn both(envelope_id: &str, claude: &str, github: &str) -> TokenSubmission {
+    let mut sub = submitted(envelope_id, "U1", "both", "");
+    let secret = |t: &str| Secret::new(t.into());
+    sub.tokens = vec![
+        ("claude".into(), secret(claude)),
+        ("github".into(), secret(github)),
+    ];
+    sub
+}
+
+#[test]
+fn the_bare_login_modal_has_an_optional_field_per_account() {
+    let modal = form(Form::Both);
+    assert_eq!(modal["private_metadata"], "both");
+    let blocks = modal["blocks"].as_array().unwrap();
+    let ids: Vec<_> = blocks
+        .iter()
+        .map(|b| b["block_id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["claude", "github"]);
+    for block in blocks {
+        assert_eq!(block["optional"], true);
+        assert_eq!(block["element"]["action_id"], block["block_id"]);
+    }
+    let one = form(Form::One(Account::GitHub));
+    assert_eq!(one["blocks"].as_array().unwrap().len(), 1);
+    assert_eq!(one["blocks"][0]["optional"], false);
+}
+
+#[test]
+fn a_both_submission_checks_only_the_filled_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db(dir.path());
+    let accounts = |job: Option<Job>| {
+        let Some(Job::CheckToken(checks)) = job else {
+            panic!("no check: {job:?}");
+        };
+        checks.iter().map(|c| c.account).collect::<Vec<_>>()
+    };
+    let (ack, job) = submission(both("e1", "c-tok", ""), &db, 1).unwrap();
+    assert_eq!(modal_text(&ack), CHECKING);
+    assert_eq!(accounts(job), [Account::Claude]);
+    let (_, job) = submission(both("e2", "", "g-tok"), &db, 1).unwrap();
+    assert_eq!(accounts(job), [Account::GitHub]);
+    let (_, job) = submission(both("e3", "c-tok", "g-tok"), &db, 1).unwrap();
+    assert_eq!(accounts(job), [Account::Claude, Account::GitHub]);
+}
+
+#[test]
+fn a_both_submission_with_every_field_blank_is_an_error_on_the_modal() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db(dir.path());
+    let (ack, job) = submission(both("e1", "", ""), &db, 1).unwrap();
+    assert_eq!(ack["response_action"], "errors");
+    assert_eq!(ack["errors"]["claude"], "Paste at least one token.");
+    assert_eq!(job, None);
+}
+
+#[test]
+fn a_one_account_submission_still_queues_its_one_check() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db(dir.path());
+    let (_, job) = submission(submitted("e1", "U1", "github", "g-tok"), &db, 1).unwrap();
+    let Some(Job::CheckToken(checks)) = job else {
+        panic!("no check: {job:?}");
+    };
+    assert_eq!(checks.len(), 1);
+    assert_eq!(checks[0].account, Account::GitHub);
+    let (_, job) = submission(submitted("e2", "U1", "claude", ""), &db, 1).unwrap();
+    assert!(
+        job.is_some(),
+        "a blank one-account form is left to the account's check"
+    );
 }
 
 fn token_check(account: Account, token: &str) -> TokenCheck {

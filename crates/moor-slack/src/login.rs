@@ -20,8 +20,55 @@ pub(crate) mod vault;
 /// `callback_id` of the login modal.
 pub(crate) const LOGIN_CALLBACK: &str = "moor_login";
 
-/// Block id and action id of the modal's credential input.
+/// Block id and action id of the credential input of a one-account modal.
 pub(crate) const TOKEN_INPUT: &str = "token";
+
+/// What a login modal asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Form {
+    /// One required token, for this account.
+    One(Account),
+    /// Every account's token, each optional: a blank one keeps what is linked.
+    Both,
+}
+
+impl Form {
+    /// The form's name in the modal's `private_metadata`.
+    const fn name(self) -> &'static str {
+        match self {
+            Self::One(account) => account.name(),
+            Self::Both => "both",
+        }
+    }
+
+    /// The form called `name`.
+    fn parse(name: &str) -> Option<Self> {
+        match name {
+            "both" => Some(Self::Both),
+            _ => Account::parse(name).map(Self::One),
+        }
+    }
+
+    /// The tokens a submission filled in, each with its account. A one-account form keeps
+    /// its token even when blank, so the account's check refuses it.
+    fn filled(self, tokens: Vec<(String, Secret)>) -> Vec<(Account, Secret)> {
+        match self {
+            Self::One(account) => tokens
+                .into_iter()
+                .filter(|(block, _)| block == TOKEN_INPUT)
+                .map(|(_, token)| (account, token))
+                .collect(),
+            Self::Both => tokens
+                .into_iter()
+                .filter(|(_, token)| !token.expose().is_empty())
+                .filter_map(|(block, token)| Some((Account::parse(&block)?, token)))
+                .collect(),
+        }
+    }
+}
+
+/// The modal text when a both-account form came back with every field blank.
+const ALL_BLANK: &str = "Paste at least one token.";
 
 /// The modal while the worker checks the credential.
 const CHECKING: &str = "Checking your token…";
@@ -65,21 +112,35 @@ impl PartialEq for TokenCheck {
 
 impl Eq for TokenCheck {}
 
-/// The modal `/moor login` opens for `account`; its `private_metadata` names the account.
-pub(crate) fn form(account: Account) -> Value {
+/// The modal `/moor login` opens for `form`; its `private_metadata` names the form.
+pub(crate) fn form(form: Form) -> Value {
+    let input = |block: &str, label: String, optional: bool| {
+        json!({
+            "type": "input",
+            "block_id": block,
+            "optional": optional,
+            "label": {"type": "plain_text", "text": label},
+            "element": {"type": "plain_text_input", "action_id": block},
+        })
+    };
+    let blocks = match form {
+        Form::One(account) => vec![input(TOKEN_INPUT, account.login_prompt().to_owned(), false)],
+        Form::Both => Account::ALL
+            .into_iter()
+            .map(|a| {
+                let label = format!("{} Leave blank to keep what is linked.", a.login_prompt());
+                input(a.name(), label, true)
+            })
+            .collect(),
+    };
     json!({
         "type": "modal",
         "callback_id": LOGIN_CALLBACK,
-        "private_metadata": account.name(),
+        "private_metadata": form.name(),
         "title": {"type": "plain_text", "text": "moor login"},
         "submit": {"type": "plain_text", "text": "Link"},
         "close": {"type": "plain_text", "text": "Cancel"},
-        "blocks": [{
-            "type": "input",
-            "block_id": TOKEN_INPUT,
-            "label": {"type": "plain_text", "text": account.login_prompt()},
-            "element": {"type": "plain_text_input", "action_id": TOKEN_INPUT},
-        }],
+        "blocks": blocks,
     })
 }
 
@@ -94,14 +155,15 @@ pub(crate) fn notice(text: &str) -> Value {
     })
 }
 
-/// `/moor login [account]`: anyone gets an empty ack, then the modal. The envelope id is
+/// `/moor login [account]`: with no account the modal asks for both. Anyone gets an empty ack, then the modal. The envelope id is
 /// recorded so a redelivered command opens no second modal.
 pub(crate) fn login(slash: &Slash, db: &Db, now: i64) -> rusqlite::Result<Kept> {
     let first = db.atomically(|| db.event_once(&slash.envelope_id, now))?;
-    let account = match account_named(&slash.text) {
-        Ok(account) => account,
+    let named = match account_named(&slash.text) {
+        Ok(named) => named,
         Err(kept) => return Ok(kept),
     };
+    let form = named.map_or(Form::Both, Form::One);
     if SlackUser::parse(&slash.user).is_none() {
         return Ok(text_ack(BAD_ID));
     }
@@ -109,10 +171,7 @@ pub(crate) fn login(slash: &Slash, db: &Db, now: i64) -> rusqlite::Result<Kept> 
         .trigger_id
         .clone()
         .filter(|_| first)
-        .map(|trigger_id| AfterAck::OpenLogin {
-            trigger_id,
-            account,
-        });
+        .map(|trigger_id| AfterAck::OpenLogin { trigger_id, form });
     Ok(Kept { ack: None, then })
 }
 
@@ -121,7 +180,7 @@ pub(crate) fn login(slash: &Slash, db: &Db, now: i64) -> rusqlite::Result<Kept> 
 pub(crate) fn logout(slash: &Slash, db: &Db, now: i64) -> rusqlite::Result<(Kept, Option<Job>)> {
     let first = db.atomically(|| db.event_once(&slash.envelope_id, now))?;
     let account = match account_named(&slash.text) {
-        Ok(account) => account,
+        Ok(account) => account.unwrap_or(Account::DEFAULT),
         Err(kept) => return Ok((kept, None)),
     };
     if SlackUser::parse(&slash.user).is_none() {
@@ -136,13 +195,14 @@ pub(crate) fn logout(slash: &Slash, db: &Db, now: i64) -> rusqlite::Result<(Kept
     Ok((text_ack(&format!("Unlinking your {label} token…")), job))
 }
 
-/// The account the word after `login` or `logout` names, or the default when there is none;
+/// The account the word after `login` or `logout` names, or none when there is no word;
 /// an ack that names the known accounts otherwise.
-fn account_named(text: &str) -> Result<Account, Kept> {
+fn account_named(text: &str) -> Result<Option<Account>, Kept> {
     let mut words = text.split_whitespace().skip(1);
     match (words.next(), words.next()) {
-        (None, _) => Ok(Account::DEFAULT),
+        (None, _) => Ok(None),
         (Some(name), None) => Account::parse(name)
+            .map(Some)
             .ok_or_else(|| text_ack("moor cannot link that. It can link `claude` and `github`.")),
         _ => Err(text_ack(
             "Usage: `/moor login [claude|github]` or `/moor logout [claude|github]`.",
@@ -151,7 +211,8 @@ fn account_named(text: &str) -> Result<Account, Kept> {
 }
 
 /// Keeps a submitted modal: records only its envelope id, and on the first delivery queues the
-/// check. The ack turns the modal into "Checking your token…".
+/// checks of the filled fields. The ack turns the modal into "Checking your token…". A
+/// both-account form with every field blank stays open with an error on its first field.
 pub(crate) fn submission(
     sub: TokenSubmission,
     db: &Db,
@@ -161,17 +222,27 @@ pub(crate) fn submission(
     let Some(user) = SlackUser::parse(&sub.user) else {
         return Ok((update_ack(&format!("{BAD_ID} Nothing was stored.")), None));
     };
-    let Some(account) = Account::parse(&sub.account) else {
+    let Some(form) = Form::parse(&sub.account) else {
         let text = "This form names no account moor knows. Nothing was stored.";
         return Ok((update_ack(text), None));
     };
+    let filled = form.filled(sub.tokens);
+    if filled.is_empty() {
+        let first_field = Account::DEFAULT.name();
+        let errors = json!({"response_action": "errors", "errors": {first_field: ALL_BLANK}});
+        return Ok((errors, None));
+    }
     let job = first.then(|| {
-        Job::CheckToken(TokenCheck {
-            user,
-            account,
-            view_id: sub.view_id,
-            token: sub.token,
-        })
+        let checks = filled
+            .into_iter()
+            .map(|(account, token)| TokenCheck {
+                user: user.clone(),
+                account,
+                view_id: sub.view_id.clone(),
+                token,
+            })
+            .collect();
+        Job::CheckToken(checks)
     });
     Ok((update_ack(CHECKING), job))
 }

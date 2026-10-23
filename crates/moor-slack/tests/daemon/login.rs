@@ -41,7 +41,7 @@ fn start(version: Option<&str>) -> (Rig, PathBuf, FakeController) {
 /// Runs `/moor login` as [`USER`], waits for the modal, then submits `token` in it; returns
 /// the text of the modal once the worker updated it.
 fn link(rig: &Rig, token: &str) -> String {
-    link_account(rig, "login", token)
+    link_account(rig, "login claude", token)
 }
 
 /// Like [`link`], with `command` as the text of the slash command, such as `login github`.
@@ -281,6 +281,74 @@ fn a_pasted_github_token_with_a_space_in_it_is_refused_before_github_is_asked() 
     assert_eq!(asked(&controller), []);
 }
 
+/// Runs bare `/moor login` as [`USER`] and submits `fields` in the modal it opens; returns the
+/// ack of the submission and the text of the modal after the worker's update, if any.
+fn link_both(rig: &Rig, fields: &[(&str, &str)]) -> (Value, Option<String>) {
+    rig.slack.send_slash("env-1", CHANNEL, USER, "login");
+    let opened = rig.slack.wait_views("views.open", 1, CHECK_WAIT);
+    let blocks: Vec<_> = opened[0]["view"]["blocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| b["block_id"].as_str().unwrap())
+        .collect();
+    assert_eq!(blocks, ["claude", "github"]);
+    rig.slack
+        .send_fields("env-2", USER, &opened[0]["view"], fields);
+    let ack = rig.slack.wait_ack_payload("env-2");
+    if ack["response_action"] == "errors" {
+        return (ack, None);
+    }
+    let updated = rig.slack.wait_views("views.update", 1, CHECK_WAIT);
+    (ack, Some(modal_text(&updated[0]["view"]).to_owned()))
+}
+
+#[test]
+fn the_bare_login_links_both_accounts_in_one_modal() {
+    let (rig, _bin, controller) = start(None);
+    let (_, text) = link_both(&rig, &[("claude", GOOD), ("github", GH_GOOD)]);
+    assert_eq!(text.unwrap(), "Claude: Linked.\nGitHub: Linked.");
+    let mut set = secrets_set(&controller);
+    set.sort();
+    let want = [("claude", GOOD), ("github", GH_GOOD)];
+    assert_eq!(set, want.map(|(n, v)| (n.to_owned(), v.to_owned())));
+}
+
+#[test]
+fn a_blank_field_keeps_its_account_and_only_the_filled_one_is_stored() {
+    let (rig, _bin, controller) = start(None);
+    let (_, text) = link_both(&rig, &[("claude", ""), ("github", GH_GOOD)]);
+    assert_eq!(text.unwrap(), "Linked.");
+    assert_eq!(
+        secrets_set(&controller),
+        [("github".to_owned(), GH_GOOD.to_owned())]
+    );
+}
+
+#[test]
+fn one_valid_and_one_refused_token_store_only_the_valid_one_and_name_the_failed() {
+    let (rig, _bin, controller) = start(None);
+    rig.github.answer(401);
+    let (_, text) = link_both(&rig, &[("claude", GOOD), ("github", GH_GOOD)]);
+    let want = "Claude: Linked.\nGitHub: GitHub refused this token: GitHub answered HTTP 401 \
+                for it. Nothing was stored.";
+    assert_eq!(text.unwrap(), want);
+    assert_eq!(
+        secrets_set(&controller),
+        [("claude".to_owned(), GOOD.to_owned())]
+    );
+}
+
+#[test]
+fn both_fields_blank_is_an_error_on_the_modal_and_checks_nothing() {
+    let (rig, _bin, controller) = start(None);
+    let (ack, text) = link_both(&rig, &[("claude", ""), ("github", "  ")]);
+    assert_eq!(ack["errors"]["claude"], "Paste at least one token.");
+    assert_eq!(text, None);
+    assert!(rig.github.asked().is_empty());
+    assert_eq!(asked(&controller), []);
+}
+
 #[test]
 fn a_vault_that_refuses_the_secret_is_reported_and_the_token_stays_out_of_the_log() {
     let (rig, _bin, controller) = start(None);
@@ -431,7 +499,7 @@ fn a_real_claude_code_links_a_real_token() {
     let _controller = rig.serve(PROTOCOL);
     rig.spawn_daemon();
     rig.slack.wait_connected();
-    rig.slack.send_slash("env-1", CHANNEL, USER, "login");
+    rig.slack.send_slash("env-1", CHANNEL, USER, "login claude");
     let opened = rig.slack.wait_views("views.open", 1, CHECK_WAIT);
     rig.slack
         .send_submission("env-2", USER, &opened[0]["view"], token.trim());
