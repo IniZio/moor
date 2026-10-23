@@ -1,0 +1,4 @@
+setup:
+  - '[ -x "$HOME/.cargo/bin/rustup" ] || curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain none --profile minimal'
+  - PATH="$HOME/.cargo/bin:$PATH" rustup toolchain install
+  - 'for b in cargo rustc rustup rustfmt cargo-fmt cargo-clippy clippy-driver; do if [ "$(id -u)" = 0 ]; then ln -sf "$HOME/.cargo/bin/$b" "/usr/local/bin/$b"; else sudo -n ln -sf "$HOME/.cargo/bin/$b" "/usr/local/bin/$b"; fi; done'
