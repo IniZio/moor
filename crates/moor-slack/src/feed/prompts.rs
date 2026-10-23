@@ -211,7 +211,7 @@ impl Feed {
 }
 
 /// The id of a Box the controller named.
-const fn box_id(state: &BoxState) -> Option<BoxId> {
+pub(super) const fn box_id(state: &BoxState) -> Option<BoxId> {
     match state {
         BoxState::Starting => None,
         BoxState::Bound { box_id, .. }

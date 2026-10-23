@@ -1,0 +1,224 @@
+//! Artifact versions in a Box's thread, against a fake Slack and a fake controller socket.
+#![allow(
+    clippy::indexing_slicing,
+    reason = "test assertions index built values"
+)]
+
+use std::path::Path;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
+
+use moor_client::{Client, EventRecord, WatchItem};
+use moor_core::secret::Secret;
+use serde_json::{json, Value};
+
+use super::super::status::Planner;
+use super::super::tests::bound_box;
+use super::super::{now, Fold};
+use super::*;
+use crate::api::Api;
+use crate::dial::Watched;
+use crate::upload::tests::{controller, fake, sha, Fake, Stored};
+
+/// The id [`bound_box`] binds its Box to.
+const ID: BoxId = BoxId::new(7);
+
+/// A feed that posts to `slack` and reads artifacts from the controller at `sock`.
+fn feed(dir: &Path, slack: &Fake, sock: &Path) -> Feed {
+    Feed {
+        db_path: dir.join("slack.db"),
+        api: Arc::new(Api::new(&slack.base).unwrap()),
+        bot_token: Arc::new(Secret::new(b"xoxb-test".to_vec())),
+        client: Client::new(sock),
+        log: Arc::new(|_| {}),
+        clock: || 9,
+    }
+}
+
+/// The caught-up fold of a connection that replays the publishing of `bytes` at each version
+/// in `versions`, as `report.txt` of Box [`ID`].
+fn replay(versions: &[u32], bytes: &[u8]) -> Fold {
+    replay_for(ID, versions, bytes)
+}
+
+/// Like [`replay`], for Box `id`.
+fn replay_for(id: BoxId, versions: &[u32], bytes: &[u8]) -> Fold {
+    let mut fold = Fold::default();
+    fold.take(Watched::Connected);
+    for (cursor, &version) in (1..).zip(versions) {
+        let payload = json!({
+            "name": "report.txt", "version": version, "artifact_kind": "file",
+            "content_type": "text/plain", "size": bytes.len(), "sha256": sha(bytes),
+        });
+        fold.take(Watched::Item(WatchItem::Event(EventRecord {
+            cursor,
+            box_name: Some("slack-1-1".into()),
+            box_id: Some(id),
+            session: None,
+            kind: "artifact_published".into(),
+            payload,
+            ts: 0,
+        })));
+    }
+    fold.take(Watched::Item(WatchItem::CaughtUp { cursor: 0 }));
+    fold
+}
+
+/// One feed tick that is due to send lines.
+fn tick(feed: &Feed, db: &Db, fold: &mut Fold) {
+    feed.act(db, fold, &mut Planner::default(), &mut now());
+}
+
+/// The files Slack shared, by title.
+fn shared(slack: &Fake) -> Vec<String> {
+    let title = |(_, b): &(u64, Vec<u8>)| {
+        let v: Value = serde_json::from_slice(b).unwrap();
+        v["files"][0]["title"].as_str().unwrap().to_owned()
+    };
+    slack
+        .hits("completeuploadexternal")
+        .iter()
+        .map(title)
+        .collect()
+}
+
+/// The texts posted that tell of a failed upload.
+fn failures(slack: &Fake) -> Vec<String> {
+    let mut texts = slack.texts();
+    texts.retain(|t| t.contains("could not be uploaded"));
+    texts
+}
+
+/// The versions the controller was asked to read.
+fn reads(asked: &[Value]) -> Vec<u64> {
+    asked
+        .iter()
+        .map(|r| r["version"].as_u64().unwrap())
+        .collect()
+}
+
+#[test]
+fn a_version_goes_up_once_across_a_refold_and_a_restart() {
+    let (dir, slack) = (tempfile::tempdir().unwrap(), fake());
+    let sock = dir.path().join("c.sock");
+    let ctl = controller(&sock, vec![Stored::of(b"hello")]);
+    let feed = feed(dir.path(), &slack, &sock);
+    let db = Db::open(&feed.db_path).unwrap();
+    bound_box(&db);
+    let mut fold = replay(&[1], b"hello");
+    tick(&feed, &db, &mut fold);
+    tick(&feed, &db, &mut fold);
+    let mut fold = replay(&[1], b"hello");
+    tick(&feed, &db, &mut fold);
+    drop(db);
+    let db = Db::open(&feed.db_path).unwrap();
+    let mut fold = replay(&[1], b"hello");
+    tick(&feed, &db, &mut fold);
+    assert_eq!(reads(&ctl.join().unwrap()), [1], "read once");
+    assert_eq!(shared(&slack), ["report.txt"], "shared once");
+    assert!(failures(&slack).is_empty(), "{:?}", slack.texts());
+}
+
+#[test]
+fn a_second_version_goes_up_once_after_the_first() {
+    let (dir, slack) = (tempfile::tempdir().unwrap(), fake());
+    let sock = dir.path().join("c.sock");
+    let ctl = controller(&sock, vec![Stored::of(b"hello"), Stored::of(b"hello")]);
+    let feed = feed(dir.path(), &slack, &sock);
+    let db = Db::open(&feed.db_path).unwrap();
+    bound_box(&db);
+    let mut fold = replay(&[1], b"hello");
+    tick(&feed, &db, &mut fold);
+    let mut fold = replay(&[1, 2], b"hello");
+    tick(&feed, &db, &mut fold);
+    tick(&feed, &db, &mut fold);
+    assert_eq!(reads(&ctl.join().unwrap()), [1, 2]);
+    assert_eq!(shared(&slack), ["report.txt", "report.txt"]);
+}
+
+#[test]
+fn a_failed_upload_is_told_once_and_tried_again_until_it_goes_up() {
+    let (dir, slack) = (tempfile::tempdir().unwrap(), fake());
+    slack.upload_down.store(true, Ordering::SeqCst);
+    let sock = dir.path().join("c.sock");
+    let stored = (0..3).map(|_| Stored::of(b"hello")).collect();
+    let ctl = controller(&sock, stored);
+    let feed = feed(dir.path(), &slack, &sock);
+    let db = Db::open(&feed.db_path).unwrap();
+    bound_box(&db);
+    let mut fold = replay(&[1], b"hello");
+    tick(&feed, &db, &mut fold);
+    assert_eq!(failures(&slack).len(), 1, "the reason shows in the thread");
+    let mut fold = replay(&[1], b"hello");
+    tick(&feed, &db, &mut fold);
+    assert_eq!(failures(&slack).len(), 1, "told once, across a refold");
+    assert!(shared(&slack).is_empty());
+    slack.upload_down.store(false, Ordering::SeqCst);
+    tick(&feed, &db, &mut fold);
+    tick(&feed, &db, &mut fold);
+    assert_eq!(
+        reads(&ctl.join().unwrap()),
+        [1, 1, 1],
+        "tried on each tick until up"
+    );
+    assert_eq!(shared(&slack), ["report.txt"], "shared once");
+    assert_eq!(failures(&slack).len(), 1);
+}
+
+/// Binds a second thread, `C2` `2.0`, with Box `slack-2-1` bound to id 8.
+fn other_thread_box(db: &Db) {
+    let thread = crate::db::SlackThread {
+        channel: "C2".into(),
+        thread_ts: "2.0".into(),
+        owner: "U1".into(),
+    };
+    db.insert_thread(&thread, 1).unwrap();
+    let row = SlackBox {
+        channel: "C2".into(),
+        thread_ts: "2.0".into(),
+        box_name: BoxName::parse_allow_bare("slack-2-1").unwrap(),
+        repo: "acme/app".into(),
+        goal: "fix it".into(),
+        requested_by: "U1".into(),
+        parent: None,
+        state: crate::db::BoxState::Starting,
+    };
+    db.insert_starting(&row, 1).unwrap();
+    db.bind(&row.box_name, BoxId::new(8), None).unwrap();
+}
+
+#[test]
+fn a_box_of_another_thread_never_posts_here() {
+    let (dir, slack) = (tempfile::tempdir().unwrap(), fake());
+    let sock = dir.path().join("c.sock");
+    let ctl = controller(&sock, vec![Stored::of(b"hello")]);
+    let feed = feed(dir.path(), &slack, &sock);
+    let db = Db::open(&feed.db_path).unwrap();
+    bound_box(&db);
+    other_thread_box(&db);
+    let mut fold = replay_for(BoxId::new(8), &[1], b"hello");
+    tick(&feed, &db, &mut fold);
+    assert_eq!(reads(&ctl.join().unwrap()), [1]);
+    let channels: Vec<String> = slack
+        .hits("completeuploadexternal")
+        .iter()
+        .map(|(_, b)| {
+            let v: Value = serde_json::from_slice(b).unwrap();
+            format!("{}/{}", v["channel_id"], v["thread_ts"])
+        })
+        .collect();
+    assert_eq!(channels, ["\"C2\"/\"2.0\""], "only the Box's own thread");
+}
+
+#[test]
+fn a_box_with_no_thread_posts_nothing() {
+    let (dir, slack) = (tempfile::tempdir().unwrap(), fake());
+    let sock = dir.path().join("c.sock");
+    let feed = feed(dir.path(), &slack, &sock);
+    let db = Db::open(&feed.db_path).unwrap();
+    bound_box(&db);
+    let mut fold = replay_for(BoxId::new(99), &[1], b"hello");
+    tick(&feed, &db, &mut fold);
+    assert!(slack.hits("completeuploadexternal").is_empty());
+    assert!(slack.texts().iter().all(|t| !t.contains("report.txt")));
+}

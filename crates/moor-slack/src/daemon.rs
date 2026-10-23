@@ -120,6 +120,7 @@ pub fn run(settings: &Settings, log: Log) -> Result<(), String> {
         db_path: db_path.clone(),
         api: Arc::clone(&api),
         bot_token: Arc::clone(&bot_token),
+        client: client.clone(),
         log: Arc::clone(&log),
         clock: settings.clock,
     };

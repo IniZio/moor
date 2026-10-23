@@ -23,7 +23,6 @@ mod secret_file;
 mod slash;
 mod socket;
 mod turns;
-#[expect(dead_code, reason = "the poster that uploads each version comes next")]
 mod upload;
 mod worker;
 

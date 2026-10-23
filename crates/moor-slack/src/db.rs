@@ -1,6 +1,7 @@
 //! The front's own `SQLite` file, `slack.db`: seen envelopes, each channel's repos, each
 //! thread with the Boxes it asked for, what its starter wrote, its coordinator turns, what
-//! those turns did to its Boxes and the questions its Boxes asked.
+//! those turns did to its Boxes, the questions its Boxes asked and the artifact versions
+//! shown in their threads.
 
 use std::path::Path;
 use std::time::Duration;
@@ -14,7 +15,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The schema version this build writes and reads. A schema change edits [`SCHEMA`] in place
 /// and raises this number; there are no migrations, so a file at any other version is refused.
-const SCHEMA_VERSION: i64 = 12;
+const SCHEMA_VERSION: i64 = 13;
 
 /// The whole schema, created in an empty file.
 const SCHEMA: &str = "
@@ -115,6 +116,14 @@ const SCHEMA: &str = "
         shown_at INTEGER,
         created_at INTEGER NOT NULL,
         UNIQUE (box_name, event_id)
+    );
+    CREATE TABLE slack_artifacts (
+        box_name TEXT NOT NULL,
+        name TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        failed_at INTEGER,
+        posted_at INTEGER CHECK (posted_at IS NOT NULL OR failed_at IS NOT NULL),
+        PRIMARY KEY (box_name, name, version)
     );
 ";
 
@@ -250,6 +259,9 @@ fn create_if_empty(conn: &mut Connection) -> rusqlite::Result<()> {
 }
 
 mod actions;
+
+mod artifacts;
+pub(crate) use artifacts::ArtifactShown;
 
 mod boxes;
 pub(crate) use boxes::{BoxState, FedBox, SlackBox};
