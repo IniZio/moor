@@ -58,6 +58,7 @@ fn cfg_chained(
         ca_dir: &dir,
         upstream_ca,
         chain,
+        only_rule_hosts: false,
     })
 }
 
@@ -174,6 +175,25 @@ fn every_host_passes_nono_filter_and_only_rule_hosts_get_routes() {
 }
 
 #[test]
+fn a_front_proxy_filter_passes_only_its_rule_hosts() {
+    let state = tempfile::tempdir().unwrap();
+    let ca = ca::load_or_create(state.path(), BoxId::new(3)).unwrap();
+    let token = Secret::new(TOKEN.as_bytes().to_vec());
+    let cfg = build_config(&NonoSpec {
+        rules: &[rule("a", &["a.test"], bearer())],
+        token: &token,
+        ca: &ca,
+        ca_dir: &ca::ca_dir(state.path(), BoxId::new(3)),
+        upstream_ca: None,
+        chain: None,
+        only_rule_hosts: true,
+    });
+    let filter = nono::net_filter::HostFilter::new_strict(&cfg.inner().allowed_hosts);
+    assert!(filter.check_host("a.test", &[]).is_allowed());
+    assert!(!filter.check_host("unlisted.example", &[]).is_allowed());
+}
+
+#[test]
 fn upstream_ca_applies_to_every_route() {
     let rules = [rule("a", &["a.test", "b.test"], bearer())];
     let cfg = cfg_for(&rules, Some(Path::new("/tmp/up.pem")));
@@ -205,6 +225,7 @@ fn non_utf8_token_is_refused_without_echoing_it() {
         ca_dir: &dir,
         upstream_ca: None,
         chain: None,
+        only_rule_hosts: false,
     });
     assert!(cfg.inner().session_token.is_none());
     let capture = Arc::new(capture::MoorCapture::new(std::collections::BTreeMap::new()));

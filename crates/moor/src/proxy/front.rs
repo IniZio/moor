@@ -54,7 +54,14 @@ const DRAIN_LIMIT: u64 = 64 * 1024;
 /// Body of the refusal.
 const REFUSAL_BODY: &str = r#"{"message":"moor: only CONNECT or http:// requests are allowed"}"#;
 
-/// Listener that passes only CONNECT requests to `target` (nono).
+/// Picks the nono a request head goes to and the internal token it presents there; `None`
+/// refuses the request.
+pub(crate) type Route = Arc<RouteFn>;
+
+/// What a [`Route`] calls.
+pub(crate) type RouteFn = dyn Fn(&[u8]) -> Option<(SocketAddr, Secret)> + Send + Sync;
+
+/// Listener that passes only CONNECT requests to nono.
 pub(crate) struct Front {
     /// Where it listens.
     socket: FrontSocket,
@@ -80,7 +87,16 @@ impl Front {
         socket: FrontSocket,
         internal: Secret,
     ) -> Result<Self, String> {
-        let handler: Handler = Arc::new(move |client| serve(client, target, &internal));
+        Self::routed(
+            socket,
+            Arc::new(move |_| Some((target, Secret::new(internal.expose().to_vec())))),
+        )
+    }
+
+    /// Binds `socket`, replacing a stale file, and starts accepting; `route` picks each
+    /// request's nono from its head.
+    pub(crate) fn routed(socket: FrontSocket, route: Route) -> Result<Self, String> {
+        let handler: Handler = Arc::new(move |client| serve(client, &*route));
         let listening = socket.listen(true, &handler)?;
         Ok(Self {
             socket,
@@ -153,12 +169,16 @@ fn read_head(src: &mut impl Read) -> Option<Head> {
 }
 
 /// Handles one client connection.
-fn serve(mut client: UnixStream, target: SocketAddr, internal: &Secret) {
+fn serve(mut client: UnixStream, route: &RouteFn) {
     let _ = client.set_read_timeout(Some(REQUEST_TIMEOUT));
     let _ = client.set_write_timeout(Some(TARGET_TIMEOUT));
     let Some(head) = read_head(&mut client) else {
         return refuse(client);
     };
+    let Some((target, internal)) = route(&head.bytes) else {
+        return refuse(client);
+    };
+    let internal = &internal;
     if !is_connect(&head.bytes) {
         return serve_plain(client, target, internal, &head);
     }

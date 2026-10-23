@@ -1,9 +1,9 @@
 //! The embedded nono-proxy: config built from resolved tool rules, and the
 //! runtime that serves it.
 //!
-//! nono's own host filter allows every host (`*`); the destination guard in
-//! the chained filter is what refuses loopback, private and link-local
-//! targets. Hosts with a credential rule are intercepted; every other host is
+//! For a Box, nono's own host filter allows every host (`*`); the destination
+//! guard in the chained filter is what refuses loopback, private and link-local
+//! targets. The front Proxy allows only its rules' hosts. Hosts with a credential rule are intercepted; every other host is
 //! a blind CONNECT tunnel. A rule host such as `127.0.0.1:4433` needs an
 //! `https://host:port` route upstream and the route credential key. Neither
 //! the session token nor any credential is ever printed.
@@ -39,6 +39,8 @@ pub(crate) struct NonoSpec<'a> {
     pub(crate) upstream_ca: Option<&'a Path>,
     /// Sends every CONNECT through an external proxy with no bypass; `None` keeps all direct.
     pub(crate) chain: Option<Chain<'a>>,
+    /// Refuses every host no rule lists, instead of tunnelling it blind.
+    pub(crate) only_rule_hosts: bool,
 }
 
 /// The host whose TLS the filter terminates and whose GraphQL it judges.
@@ -160,7 +162,11 @@ pub(crate) fn build_config(spec: &NonoSpec<'_>) -> NonoConfig {
         upstream_extra_ca_pems,
         bind_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
         bind_port: 0,
-        allowed_hosts: vec!["*".to_owned()],
+        allowed_hosts: if spec.only_rule_hosts {
+            spec.rules.iter().flat_map(|r| r.hosts.clone()).collect()
+        } else {
+            vec!["*".to_owned()]
+        },
         strict_filter: true,
         require_auth: true,
         strict_connect_auth: true,

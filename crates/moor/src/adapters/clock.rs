@@ -53,7 +53,6 @@ impl SystemClock {
     }
 
     /// Unpinned clock reading real time.
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by wire"))]
     pub(crate) const fn real() -> Self {
         Self { base: None }
     }

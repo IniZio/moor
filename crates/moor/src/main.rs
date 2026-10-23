@@ -12,8 +12,19 @@ use moor::moor_core::controller::WatchFilter;
 use moor::moor_core::{Request, Response};
 use moor::Moor;
 
-/// Runs `moor front-shim`, the controller's wrapper around each front; not a user command.
+/// Runs `moor front-shim`, the controller's wrapper around each front, or `moor proxy
+/// serve-fronts`, the front Proxy the controller runs; neither is a user command.
 fn front_shim(args: &[std::ffi::OsString]) -> Option<ExitCode> {
+    if let [_, proxy, serve, args @ ..] = args {
+        if proxy == "proxy" && serve == "serve-fronts" {
+            return Some(ExitCode::from(
+                moor::serve_front_proxy(args).unwrap_or_else(|e| {
+                    let _ = writeln!(std::io::stderr(), "moor front proxy: {e}");
+                    1
+                }),
+            ));
+        }
+    }
     let [_, verb, args @ ..] = args else {
         return None;
     };

@@ -56,6 +56,7 @@ pub(super) fn listen(deps: &Deps<'_>, box_id: BoxId, spec: &ProxySpec) -> Result
             host: GITHUB_API_HOST,
             ca_pem: &ca_pem,
         }),
+        only_rule_hosts: false,
     });
     let log = match ProxyLog::open(deps.state_dir, box_id, Arc::clone(&deps.clock)) {
         Ok(log) => log,
