@@ -228,8 +228,10 @@ pub struct SteerReq {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OpenHostSessionReq {
-    /// Absolute directory the agent runs in on the host.
-    pub workdir: String,
+    /// Absolute directory the agent runs in on the host. Only the operator chooses one; for
+    /// anyone else the controller gives the Session a directory of its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workdir: Option<String>,
     /// Agent to run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
@@ -239,6 +241,10 @@ pub struct OpenHostSessionReq {
     /// Parent Session of the host Session this request opens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<SessionId>,
+    /// The caller's own name for the Session, opaque to the controller. While the caller has
+    /// a live host Session with this key, opening again returns that Session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
 }
 
 /// Arguments of `update-host-session`.

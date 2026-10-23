@@ -137,7 +137,7 @@ impl FakeController {
         self.lock().boxes.clone().unwrap_or_default()
     }
 
-    /// Each host Session opened so far, by id, with its workdir and whether it has ended.
+    /// Each host Session opened so far, by id, with its key and whether it has ended.
     pub(crate) fn hosts(&self) -> Vec<(i64, String, bool)> {
         let hosts = self.lock().hosts.clone();
         (100..)
@@ -478,36 +478,49 @@ fn host_session(request: &Request, hosts: &mut Vec<(String, bool)>) -> Option<Re
                 .iter()
                 .enumerate()
                 .filter(|(_, (_, ended))| !ended)
-                .map(|(i, (workdir, _))| json!({"session": id(i), "box": null, "workdir": workdir, "state": "working"}))
+                .map(|(i, (key, _))| json!({"session": id(i), "box": null, "workdir": workdir(id(i)), "key": key, "state": "working"}))
                 .collect();
             Some(Response::ok("sessions", Some(json!({"sessions": rows}))))
         }
         Request::OpenHostSession(open) => {
-            hosts.push((open.workdir.clone(), false));
-            let value = json!({"session": id(hosts.len() - 1), "workdir": open.workdir, "state": "working"});
+            let key = open.key.clone().unwrap_or_default();
+            let live = hosts
+                .iter()
+                .position(|(k, ended)| !ended && open.key.is_some() && *k == key);
+            let index = live.unwrap_or_else(|| {
+                hosts.push((key, false));
+                hosts.len() - 1
+            });
+            let value =
+                json!({"session": id(index), "workdir": workdir(id(index)), "state": "working"});
             Some(Response::ok("open-host-session", Some(value)))
         }
         Request::UpdateHostSession(update) => {
             let session = update.session.get();
-            let (workdir, _) = match live_host(hosts, session) {
-                Ok(host) => host,
-                Err(message) => return Some(refused("update-host-session", &message)),
-            };
-            let value = json!({"session": session, "workdir": workdir, "state": "working"});
+            if let Err(message) = live_host(hosts, session) {
+                return Some(refused("update-host-session", &message));
+            }
+            let value =
+                json!({"session": session, "workdir": workdir(session), "state": "working"});
             Some(Response::ok("update-host-session", Some(value)))
         }
         Request::EndHostSession(end) => {
             let session = end.session.get();
-            let (workdir, ended) = match live_host(hosts, session) {
+            let (_, ended) = match live_host(hosts, session) {
                 Ok(host) => host,
                 Err(message) => return Some(refused("end-host-session", &message)),
             };
             *ended = true;
-            let value = json!({"session": session, "workdir": workdir, "state": "ended"});
+            let value = json!({"session": session, "workdir": workdir(session), "state": "ended"});
             Some(Response::ok("end-host-session", Some(value)))
         }
         _ => None,
     }
+}
+
+/// The workdir the controller gives host Session `session`.
+fn workdir(session: i64) -> String {
+    format!("/state/users/1/sessions/{session}")
 }
 
 /// The live host Session `session`, or the real controller's refusal text.

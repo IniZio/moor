@@ -139,7 +139,7 @@ const ON_SESSION: [&str; 8] = [
 fn a_host_session_belongs_to_the_user_who_opened_it() {
     let world = World::new();
     let (slack, main) = (world.slack(), &world.served.main);
-    let open = json!({"cmd": "open-host-session", "workdir": "/threads/a"});
+    let open = json!({"cmd": "open-host-session"});
     let opened = ask(&slack, &acting(A, &open));
     let host = opened["value"]["session"]
         .as_i64()
@@ -158,7 +158,10 @@ fn a_host_session_belongs_to_the_user_who_opened_it() {
         assert_ne!(message, "not your Box", "{kind}: {got}");
     }
     let shown = ask(main, &json!({"cmd": "show-session", "session": host}));
-    assert_eq!(shown["value"]["workdir"], "/threads/a", "{shown}");
+    assert_eq!(
+        shown["value"]["workdir"], opened["value"]["workdir"],
+        "{shown}"
+    );
 }
 
 #[test]

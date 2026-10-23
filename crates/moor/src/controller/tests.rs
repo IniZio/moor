@@ -137,6 +137,7 @@ mod authz;
 mod front_processes;
 mod fronts;
 mod host_paths;
+mod host_workdirs;
 mod operator_only;
 mod run_cancel;
 mod run_grant;

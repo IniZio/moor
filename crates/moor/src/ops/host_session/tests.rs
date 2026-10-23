@@ -24,10 +24,11 @@ fn cx(dir: &Path) -> Cx {
 
 fn req(workdir: &str) -> OpenHostSessionReq {
     OpenHostSessionReq {
-        workdir: workdir.to_owned(),
+        workdir: Some(workdir.to_owned()),
         agent: Some("claude".to_owned()),
         agent_session_id: None,
         parent: None,
+        key: None,
     }
 }
 

@@ -6,6 +6,7 @@ use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionState;
 use moor_core::BoxId;
 
+use crate::store::host::{HostWorkdir, NewHost};
 use crate::store::tests::{new_box, open};
 use crate::store::{Store, StoreError};
 
@@ -228,8 +229,16 @@ fn session_count(store: &Store) -> i64 {
 fn a_child_host_session_records_its_live_parent() {
     let (_dir, store, _id, host) = with_host("p");
     let child = store
-        .open_child_host_session("/w", None, None, Some(host), None)
-        .unwrap();
+        .open_child_host_session(&NewHost {
+            workdir: HostWorkdir::At("/w"),
+            agent: None,
+            agent_session_id: None,
+            parent: Some(host),
+            user: None,
+            key: None,
+        })
+        .unwrap()
+        .0;
     assert_eq!(parent_col(&store, child), Some(host));
 }
 
@@ -238,7 +247,14 @@ fn a_child_host_session_with_an_unknown_parent_is_refused_and_not_inserted() {
     let (_dir, store, _id, _host) = with_host("p");
     let before = session_count(&store);
     let err = store
-        .open_child_host_session("/w", None, None, Some(999), None)
+        .open_child_host_session(&NewHost {
+            workdir: HostWorkdir::At("/w"),
+            agent: None,
+            agent_session_id: None,
+            parent: Some(999),
+            user: None,
+            key: None,
+        })
         .unwrap_err();
     assert!(
         matches!(&err, StoreError::Invalid(m) if m == "no Session 999"),
@@ -253,7 +269,14 @@ fn a_child_host_session_with_an_ended_parent_is_refused_and_not_inserted() {
     store.end_host_session(host).unwrap();
     let before = session_count(&store);
     let err = store
-        .open_child_host_session("/w", None, None, Some(host), None)
+        .open_child_host_session(&NewHost {
+            workdir: HostWorkdir::At("/w"),
+            agent: None,
+            agent_session_id: None,
+            parent: Some(host),
+            user: None,
+            key: None,
+        })
         .unwrap_err();
     assert!(
         matches!(&err, StoreError::Invalid(m) if m == &format!("Session {host} has ended")),

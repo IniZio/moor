@@ -113,6 +113,9 @@ pub struct SessionListItem {
     pub workdir: Option<String>,
     /// Position among the Box's Sessions.
     pub ordinal: i64,
+    /// The key a host Session was opened with.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
 }
 
 #[cfg(test)]
@@ -207,6 +210,7 @@ mod tests {
                     state: "running".into(),
                     workdir: Some("/w".into()),
                     ordinal: 0,
+                    key: None,
                 },
                 SessionListItem {
                     session: SessionId::new(2),
@@ -216,6 +220,7 @@ mod tests {
                     state: "ended".into(),
                     workdir: None,
                     ordinal: 1,
+                    key: None,
                 },
             ],
         };

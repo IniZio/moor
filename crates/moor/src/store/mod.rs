@@ -30,7 +30,7 @@ pub(crate) use bindings::Binding;
 mod follow;
 #[cfg(test)]
 pub(crate) use follow::FollowClaim;
-mod host;
+pub(crate) mod host;
 mod init;
 pub(crate) mod lease;
 mod open;
@@ -54,7 +54,7 @@ pub(crate) use runs::{NewRun, RunOutcome, RunRow};
 pub(crate) use sessions::SessionRecord;
 
 /// Schema version this build reads and writes.
-pub(crate) const SCHEMA_VERSION: &str = "14";
+pub(crate) const SCHEMA_VERSION: &str = "15";
 /// Full schema, applied once when the file has no `meta` table.
 const SCHEMA_SQL: &str = include_str!("schema.sql");
 /// How long a connection waits on a lock before `SQLITE_BUSY`.

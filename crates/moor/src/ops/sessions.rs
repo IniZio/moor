@@ -41,6 +41,7 @@ pub(crate) fn run(cx: &Cx, req: &SessionsReq) -> Result<SessionsValue, CommandEr
             state: r.state.as_str().to_owned(),
             workdir: r.workdir,
             ordinal: r.ordinal,
+            key: r.key,
         });
     }
     Ok(SessionsValue { sessions })

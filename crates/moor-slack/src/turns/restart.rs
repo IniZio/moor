@@ -7,7 +7,7 @@ use std::os::unix::fs::MetadataExt as _;
 
 use rustix::process::{getpgid, kill_process_group, Pid, Signal};
 
-use super::{host, lines, workdir_path, Turns};
+use super::{host, lines, Turns};
 use crate::credentials::daemon_uid;
 use crate::db::{Db, End, TurnRow};
 
@@ -54,13 +54,14 @@ impl Turns {
         reruns
     }
 
-    /// Ends each live host Session whose workdir is that of `row`'s thread, whose turn does
+    /// Ends each live host Session opened with the key of `row`'s thread, whose turn does
     /// not run again. A rerun adopts its thread's Session instead.
     fn end_left(&self, db: &Db, row: &TurnRow) {
-        let live = workdir_path(&self.state_dir, row).and_then(|dir| {
-            let client = self.link.acting(&row.owner).map_err(|e| e.to_string())?;
-            host::live_with(&client, &dir.display().to_string())
-        });
+        let live = self
+            .link
+            .acting(&row.owner)
+            .map_err(|e| e.to_string())
+            .and_then(|client| host::live_with_key(&client, &host::key(row)));
         match live {
             Ok(live) => {
                 for session in live {

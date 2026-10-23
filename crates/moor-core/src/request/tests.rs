@@ -356,10 +356,11 @@ fn open_host_session_round_trips() {
     assert_eq!(
         bare,
         Request::OpenHostSession(OpenHostSessionReq {
-            workdir: "/w".into(),
+            workdir: Some("/w".into()),
             agent: None,
             agent_session_id: None,
             parent: None,
+            key: None,
         })
     );
     assert_eq!(bare.cmd(), "open-host-session");

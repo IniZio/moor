@@ -100,10 +100,11 @@ impl From<SessionCmd> for Request {
         };
         match a.workdir {
             Some(workdir) => Self::OpenHostSession(OpenHostSessionReq {
-                workdir,
+                workdir: Some(workdir),
                 agent: a.agent,
                 agent_session_id: a.agent_session_id,
                 parent: a.parent.map(SessionId::new),
+                key: None,
             }),
             None => Self::OpenSession(OpenSessionReq {
                 box_name: a.name.map(|t| t.as_str().to_string()).unwrap_or_default(),

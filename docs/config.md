@@ -273,6 +273,13 @@ gets `not your Box`, as for a Session that does not exist, and their lists
 leave it out. A host Session the operator opens is the operator's only. An
 identity with no user gets `log in first` when it opens one.
 
+Only the operator names a host Session's `workdir`. Anyone else who names one is
+refused. Their Session gets a directory of its own under the controller's
+state, `users/<user>/sessions/<session>`, created owner-only. A `key` on
+`open-host-session` is the caller's own opaque name for the Session, at most
+256 bytes. While the caller has a live host Session with that key, opening
+again returns it. A key never matches another user's Session.
+
 `env` reads the controller host's configs, so only the operator may send it.
 
 ## Secrets a Box uses

@@ -233,10 +233,11 @@ fn new_request_opens_binds_and_starts_under_the_root() {
         seen,
         vec![
             Request::OpenHostSession(OpenHostSessionReq {
-                workdir: workdir.to_str().unwrap().to_owned(),
+                workdir: Some(workdir.to_str().unwrap().to_owned()),
                 agent: None,
                 agent_session_id: None,
                 parent: None,
+                key: None,
             }),
             Request::BindSession(BindSessionReq {
                 front: "web".into(),
