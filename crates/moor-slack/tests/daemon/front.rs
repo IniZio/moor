@@ -2,6 +2,8 @@
 
 #![allow(clippy::indexing_slicing, reason = "test code")]
 
+use std::io::{Read as _, Write as _};
+use std::net::TcpStream;
 use std::time::Duration;
 
 use moor_core::controller::PROTOCOL;
@@ -96,10 +98,32 @@ fn sigterm_lets_the_request_in_flight_finish_before_exit_0() {
     rig.wait_post(&started_line(BOX_NAME));
 }
 
+/// A controller-run front has a loopback of its own, so a Slack on the host's loopback, as
+/// this fake is, never hears from it; the test itself reaches the fake as a control.
 #[test]
-fn run_by_the_controller_it_connects_and_keeps_slack_db_in_its_own_state_dir() {
+fn run_by_the_controller_it_reaches_no_slack_on_the_hosts_loopback() {
     let rig = Rig::new();
     let (_controller, state) = rig.real_controller_running_the_daemon();
-    rig.slack.wait_connected();
-    assert!(state.path().join("slack.db").exists());
+    let pid_file = rig.path("state").join("fronts").join("slack.pid");
+    for _ in 0..500 {
+        if pid_file.exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(pid_file.exists(), "the controller started the front");
+    std::thread::sleep(Duration::from_secs(2));
+    assert!(
+        rig.slack.requests().is_empty(),
+        "{:?}",
+        rig.slack.requests()
+    );
+    assert!(!state.path().join("slack.db").exists());
+    let port = rig.slack.api_base().rsplit_once(':').unwrap().1.to_owned();
+    let mut control = TcpStream::connect(("127.0.0.1", port.parse::<u16>().unwrap())).unwrap();
+    control
+        .write_all(b"POST /auth.test HTTP/1.1\r\nHost: x\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        .unwrap();
+    let _ = control.read_to_end(&mut Vec::new());
+    assert_eq!(rig.slack.requests().len(), 1, "the host reaches the fake");
 }
