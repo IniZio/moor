@@ -196,7 +196,7 @@ fn the_config_sends_each_credential_host_to_the_tunnel_and_listens_on_loopback()
     );
     assert_eq!(
         got,
-        "Port 40123\nListen 127.0.0.1\nDisableViaHeader Yes\nLogLevel Critical\n\
+        "Port 40123\nListen 127.0.0.1\nDisableViaHeader Yes\nLogLevel Critical\nMaxClients 1024\n\
          upstream http 127.0.0.1:20123 \".corp.example\"\n\
          upstream http 127.0.0.1:20123 \"api.anthropic.com\"\n\
          upstream http 127.0.0.1:20123 \"git.internal.example\"\n\
@@ -205,6 +205,37 @@ fn the_config_sends_each_credential_host_to_the_tunnel_and_listens_on_loopback()
     for absent in ["LogFile", "ConnectPort", "Allow", "Syslog"] {
         assert!(!got.contains(absent), "{absent}: {got}");
     }
+}
+
+#[test]
+fn tinyproxy_starts_with_its_descriptor_limit_raised_to_the_hard_limit() {
+    let b = FakeBox::new(0, Apt::Works, true);
+    moor_testkit::write_executable(
+        &b.bin.join("tinyproxy"),
+        "#!/bin/sh\necho \"nofile $(ulimit -Sn) of $(ulimit -Hn)\" >>\"$HOME/fake.log\"\nexec \"$HOME/bin/tinyproxy.deb\" \"$@\"\n",
+    )
+    .unwrap();
+    let script = format!(
+        "ulimit -Sn 256\n{}\necho ran\n",
+        lines(b.port.port(), UPSTREAM, &hosts(&["github.com"])).join("\n")
+    );
+    let out = std::process::Command::new(b.bin.join("sh"))
+        .args(["-c", &script])
+        .env_clear()
+        .env("HOME", &b.home)
+        .env("PATH", &b.bin)
+        .output()
+        .unwrap();
+    let (ok, stdout, stderr) = FakeBox::outcome(&out);
+    assert!(ok, "{stdout}{stderr}");
+    let log = b.log();
+    let line = log
+        .lines()
+        .find_map(|l| l.strip_prefix("nofile "))
+        .expect(&log);
+    let (soft, hard) = line.split_once(" of ").unwrap();
+    assert_eq!(soft, hard, "{log}");
+    assert_ne!(soft, "256", "{log}");
 }
 
 #[test]
