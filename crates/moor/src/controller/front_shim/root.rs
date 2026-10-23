@@ -5,7 +5,7 @@
 
 use std::fs;
 use std::os::fd::{AsRawFd as _, OwnedFd};
-use std::os::unix::fs::{symlink, DirBuilderExt as _};
+use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 
 use rustix::fs::{open, Mode, OFlags};
@@ -94,7 +94,7 @@ pub(super) fn enter(layout: &Layout) -> Result<Option<OwnedFd>, String> {
     Ok(socket)
 }
 
-/// Opens `dir`'s `tmp`, the front's `/tmp`, made owner-only when it is missing.
+/// Opens `dir`'s `tmp`, the front's `/tmp`, made when it is missing.
 fn own_tmp(dir: &Path) -> Result<OwnedFd, String> {
     if dir.starts_with(STAGE) {
         return Err(format!(
@@ -103,12 +103,7 @@ fn own_tmp(dir: &Path) -> Result<OwnedFd, String> {
         ));
     }
     let tmp = dir.join("tmp");
-    match fs::DirBuilder::new().mode(0o700).create(&tmp) {
-        Err(e) if e.kind() != std::io::ErrorKind::AlreadyExists => {
-            return Err(format!("cannot make {}: {e}", tmp.display()));
-        }
-        _ => {}
-    }
+    fs::create_dir_all(&tmp).map_err(|e| format!("cannot make {}: {e}", tmp.display()))?;
     open(&tmp, OFlags::PATH | OFlags::CLOEXEC, Mode::empty())
         .map_err(|e| format!("cannot open {}: {e}", tmp.display()))
 }

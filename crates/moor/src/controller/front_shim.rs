@@ -249,6 +249,7 @@ fn init(layout: &Layout, command: &[OsString]) -> Result<u8, String> {
         return Err("the outer shim exited before pid 1 started".to_owned());
     }
     let socket = root::enter(layout)?;
+    let _ = nix::unistd::close(3);
     let writable: Vec<PathBuf> = layout
         .writable
         .iter()
