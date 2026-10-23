@@ -20,7 +20,7 @@ You need:
 1. Create a Slack app and turn on Socket Mode.
 2. Create an app-level token with the `connections:write` scope.
 3. Give the bot token these scopes: `app_mentions:read`, `channels:history`,
-   `chat:write`, `commands`, `files:read`, and `files:write`.
+   `chat:write`, `commands`, `files:read`, `files:write`, and `reactions:write`.
 4. Add a `/moor` slash command.
 5. Subscribe to the `app_mention` and `message.channels` bot events. Without
    `message.channels`, the front never sees a reply in a thread.
@@ -121,8 +121,19 @@ schema. Move it aside and start again with a fresh one.
 - Each Box's Session is a child Session of the thread's host Session. The
   Box's name is `slack-<thread ts>-<n>`, with each `.` in the thread
   timestamp replaced by `-`.
+- While a turn runs, the front puts an :hourglass_flowing_sand: reaction on
+  the thread's first message, and takes it off when it posts the reply or the
+  line that says why there is none. After a restart it takes off the reaction
+  of a turn that will not finish. Without the `reactions:write` scope the
+  thread shows no reaction and the replies still post; the front logs the
+  missing scope once.
 - Each Box has one status message in the thread. The front edits it as the
-  Box's state changes, at most once every 2 seconds.
+  Box's state changes, at most once every 2 seconds. It names the phase
+  (starting, setting up, working, waiting on a question, asleep, closing) and,
+  in whole minutes, how long the Box has been in it. A working Box that has
+  emitted no event for 10 minutes gets a second line that says it may be
+  stuck. The elapsed time changes the text once a minute, so a long phase adds
+  one edit a minute.
 - When a Box's agent asks a question, the front posts it with one button per
   option, up to 25. Only the person who asked for the Box can answer.
 - Each file version a Box publishes is uploaded into the thread, normally once.

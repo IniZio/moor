@@ -179,7 +179,7 @@ fn a_turn_starts_the_tool_server_named_in_its_mcp_json_and_lists_the_threads_box
     Rig::tool_calls(&bin, None, &[("list_boxes", json!({}))]);
     rig.open_thread_with_a_box();
     super::inbox::reply(&rig, 2, USER, "what runs?");
-    rig.slack.wait_updates(2);
+    rig.wait_replies(2);
     let results = Rig::tool_results(&bin, 1);
     let want =
         format!("- Box `{BOX_NAME}` on acme/demo, asked for by <@{USER}>: lifecycle unknown");
@@ -222,7 +222,7 @@ fn a_steer_in_the_requesters_turn_reaches_the_box_and_the_next_turn_reads_it_as_
     Rig::tool_calls(&bin, Some(1), &[("steer_box", steer)]);
     rig.open_thread_with_a_box();
     super::inbox::reply(&rig, 2, USER, "tell it to use tokio");
-    rig.slack.wait_updates(2);
+    rig.wait_replies(2);
     let sent = format!("Sent to Box `{BOX_NAME}`.");
     assert_eq!(Rig::tool_results(&bin, 1), [(sent, false)]);
     let steered = controller.seen(|seen| {
@@ -237,7 +237,7 @@ fn a_steer_in_the_requesters_turn_reaches_the_box_and_the_next_turn_reads_it_as_
         [(BOX_NAME.to_owned(), Some("use tokio".to_owned()))]
     );
     super::inbox::reply(&rig, 3, USER, "did it?");
-    rig.slack.wait_updates(3);
+    rig.wait_replies(3);
     let stdin = std::fs::read_to_string(bin.join("run-2/stdin")).unwrap();
     let journal = format!(
         "Turn 2, <@{USER}> asked. steer_box Box `{BOX_NAME}`: \
@@ -259,7 +259,7 @@ fn a_steer_reaches_the_controller_when_the_daemon_dials_it_through_its_fd_3() {
     Rig::tool_calls(&bin, Some(1), &[("steer_box", steer)]);
     rig.open_thread_with_a_box();
     super::inbox::reply(&rig, 2, USER, "tell it to use tokio");
-    rig.slack.wait_updates(2);
+    rig.wait_replies(2);
     let sent = format!("Sent to Box `{BOX_NAME}`.");
     assert_eq!(Rig::tool_results(&bin, 1), [(sent, false)]);
 }

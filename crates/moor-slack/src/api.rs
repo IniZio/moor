@@ -65,6 +65,8 @@ pub(super) struct Api {
     agent: Agent,
     /// Whether the missing `files:read` scope was already reported.
     files_read_reported: AtomicBool,
+    /// Whether the missing `reactions:write` scope was already reported.
+    reactions_reported: AtomicBool,
 }
 
 impl Api {
@@ -77,6 +79,7 @@ impl Api {
             base: base.trim_end_matches('/').to_owned(),
             agent: http_agent(),
             files_read_reported: AtomicBool::new(false),
+            reactions_reported: AtomicBool::new(false),
         })
     }
 
@@ -372,6 +375,7 @@ fn read_reply(
     ))
 }
 
+mod reactions;
 mod respond;
 
 #[cfg(test)]

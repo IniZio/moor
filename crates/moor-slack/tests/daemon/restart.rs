@@ -1,5 +1,6 @@
 //! Turns across a restart of the front: a stored line is posted once, a cut-off turn runs
-//! once more in its placeholder, and a second loss or an old turn stops with a line.
+//! once more, and a second loss or an old turn stops with a line. A turn that will not finish
+//! loses the reaction it left on its thread.
 
 #![allow(clippy::indexing_slicing, reason = "test code")]
 
@@ -67,8 +68,13 @@ fn gone(pid: u32) -> bool {
 fn hung_turn() -> (Rig, PathBuf, u32) {
     let (rig, _, bin) = Rig::start_coordinated(Some(HANG));
     rig.mention(1, USER, "<@UBOT> please do the thing", TS, None);
-    rig.slack.wait_posts(1);
+    rig.slack.wait_reactions(1);
     let pid = run_pid(&bin, 0);
+    assert_eq!(
+        rig.slack.reactions_now().len(),
+        1,
+        "the running turn shows its reaction"
+    );
     (rig, bin, pid)
 }
 
@@ -80,19 +86,17 @@ fn restart(rig: &mut Rig) {
 }
 
 #[test]
-fn a_turn_cut_off_by_a_restart_runs_once_more_in_its_placeholder() {
+fn a_turn_cut_off_by_a_restart_runs_once_more_and_posts_its_reply_once() {
     let (mut rig, bin, pid) = hung_turn();
     rig.kill_daemon();
     rig.link_token(USER, GOOD);
     rig.spawn_daemon();
     rig.slack.wait_connected();
-    let updates = rig.slack.wait_updates(1);
-    let posts = rig.slack.posts();
-    assert_eq!(posts.len(), 1, "the rerun posts no second placeholder");
-    assert_eq!(
-        (updates[0].ts.as_str(), updates[0].text.as_str()),
-        (posts[0].ts.as_str(), "OK")
-    );
+    let posts = rig.slack.wait_posts(1);
+    assert_eq!(posts[0].text, "OK");
+    rig.slack.wait_no_reactions();
+    let stderr = rig.stderr();
+    assert!(!stderr.contains("reaction add failed"), "{stderr}");
     assert!(gone(pid), "the cut-off turn's process outlived the restart");
     let stdin = std::fs::read_to_string(bin.join("run-1").join("stdin")).unwrap();
     let want = "## Your last turn\nYour last turn stopped when the front restarted. \
@@ -157,8 +161,8 @@ fn a_rerun_cut_off_again_stops_with_a_line() {
     restart(&mut rig);
     let pid = run_pid(&bin, 1);
     restart(&mut rig);
-    let updates = rig.slack.wait_updates(1);
-    assert_eq!(updates[0].text, STOPPED);
+    assert_eq!(rig.slack.wait_posts(1)[0].text, STOPPED);
+    rig.slack.wait_no_reactions();
     assert!(gone(pid), "the rerun's process outlived the restart");
     std::thread::sleep(QUIET);
     assert!(!bin.join("run-2").exists(), "a second loss ran again");
@@ -175,7 +179,8 @@ fn a_turn_cut_off_over_an_hour_ago_stops_with_a_line() {
         .unwrap();
     rig.spawn_daemon();
     rig.slack.wait_connected();
-    assert_eq!(rig.slack.wait_updates(1)[0].text, STOPPED);
+    assert_eq!(rig.slack.wait_posts(1)[0].text, STOPPED);
+    rig.slack.wait_no_reactions();
     std::thread::sleep(QUIET);
     assert!(!bin.join("run-1").exists(), "an old turn ran again");
     assert_eq!(ends(&rig), [(Some("lost".to_owned()), None)]);
@@ -185,7 +190,7 @@ fn a_turn_cut_off_over_an_hour_ago_stops_with_a_line() {
 fn a_line_stored_before_a_restart_is_posted_once_after_it() {
     let (mut rig, _, bin) = Rig::start_coordinated(Some(GOOD));
     rig.mention(1, USER, "<@UBOT> hello", TS, None);
-    rig.slack.wait_updates(1);
+    rig.slack.wait_posts(1);
     rig.slack.wait_until("the turn marked posted", |_, _| {
         db(&rig)
             .query_row("SELECT posted_at IS NOT NULL FROM slack_turns", [], |r| {
@@ -193,6 +198,7 @@ fn a_line_stored_before_a_restart_is_posted_once_after_it() {
             })
             .unwrap_or(false)
     });
+    rig.slack.wait_no_reactions();
     rig.kill_daemon();
     db(&rig)
         .execute(
@@ -200,16 +206,16 @@ fn a_line_stored_before_a_restart_is_posted_once_after_it() {
             [],
         )
         .unwrap();
+    rig.slack
+        .leave_reaction(CHANNEL, TS, "hourglass_flowing_sand");
     rig.spawn_daemon();
     rig.slack.wait_connected();
-    let updates = rig.slack.wait_updates(2);
-    assert_eq!(
-        (updates[1].ts.as_str(), updates[1].text.as_str()),
-        (updates[0].ts.as_str(), "stored answer")
-    );
+    let posts = rig.slack.wait_posts(2);
+    assert_eq!(posts[1].text, "stored answer");
+    rig.slack.wait_no_reactions();
     std::thread::sleep(QUIET);
     assert_eq!(
-        rig.slack.updates().len(),
+        rig.slack.posts().len(),
         2,
         "the stored line was posted twice"
     );
@@ -227,25 +233,25 @@ fn posted(rig: &Rig) -> bool {
 fn a_reply_slack_never_took_stays_unposted_and_lands_after_a_restart() {
     let (mut rig, _, bin) = Rig::start_coordinated(Some(GOOD));
     let failed = json!({"ok": false, "error": "internal_error"});
-    rig.slack.answer_updates(&vec![(500, failed); 4]);
+    rig.slack.answer_posts(&vec![(500, failed); 4]);
     rig.mention(1, USER, "<@UBOT> hello", TS, None);
-    rig.slack.wait_updates(4);
+    rig.slack.wait_posts(4);
     std::thread::sleep(QUIET);
     assert!(!posted(&rig), "a line Slack never took was marked posted");
     restart(&mut rig);
-    let updates = rig.slack.wait_updates(5);
-    assert_eq!(updates[4].text, "OK");
+    let posts = rig.slack.wait_posts(5);
+    assert_eq!(posts[4].text, "OK");
     rig.slack
         .wait_until("the line marked posted", |_, _| posted(&rig));
     assert!(!bin.join("run-1").exists(), "a stored turn ran again");
     assert_eq!(ends(&rig), [(Some("replied".to_owned()), None)]);
 }
 
-/// Slack refusing the next four `chat.update` calls: a recovery post's first try and its three
+/// Slack refusing the next four `chat.postMessage` calls: a recovery post's first try and its three
 /// retries.
 fn refuse_a_post(rig: &Rig) {
     let failed = json!({"ok": false, "error": "internal_error"});
-    rig.slack.answer_updates(&vec![(500, failed); 4]);
+    rig.slack.answer_posts(&vec![(500, failed); 4]);
 }
 
 #[test]
@@ -253,21 +259,21 @@ fn a_stored_line_slack_refuses_during_recovery_stays_unposted_and_lands_once_lat
     let (mut rig, _, _) = Rig::start_coordinated(Some(GOOD));
     refuse_a_post(&rig);
     rig.mention(1, USER, "<@UBOT> hello", TS, None);
-    rig.slack.wait_updates(4);
+    rig.slack.wait_posts(4);
     std::thread::sleep(QUIET);
     assert!(!posted(&rig), "a line Slack never took was marked posted");
     refuse_a_post(&rig);
     restart(&mut rig);
-    rig.slack.wait_updates(8);
+    rig.slack.wait_posts(8);
     std::thread::sleep(QUIET);
     assert!(!posted(&rig), "recovery marked a refused line posted");
     restart(&mut rig);
-    let updates = rig.slack.wait_updates(9);
-    assert_eq!(updates[8].text, "OK");
+    let posts = rig.slack.wait_posts(9);
+    assert_eq!(posts[8].text, "OK");
     rig.slack
         .wait_until("the line marked posted", |_, _| posted(&rig));
     std::thread::sleep(QUIET);
-    assert_eq!(rig.slack.updates().len(), 9, "the line landed twice");
+    assert_eq!(rig.slack.posts().len(), 9, "the line landed twice");
 }
 
 #[test]
@@ -280,14 +286,14 @@ fn a_lost_turns_line_slack_refuses_during_recovery_stays_unposted_and_lands_once
     refuse_a_post(&rig);
     rig.spawn_daemon();
     rig.slack.wait_connected();
-    rig.slack.wait_updates(4);
+    rig.slack.wait_posts(4);
     std::thread::sleep(QUIET);
     assert!(!posted(&rig), "recovery marked a refused line posted");
     restart(&mut rig);
-    let updates = rig.slack.wait_updates(5);
-    assert_eq!(updates[4].text, STOPPED);
+    let posts = rig.slack.wait_posts(5);
+    assert_eq!(posts[4].text, STOPPED);
     rig.slack
         .wait_until("the line marked posted", |_, _| posted(&rig));
     std::thread::sleep(QUIET);
-    assert_eq!(rig.slack.updates().len(), 5, "the line landed twice");
+    assert_eq!(rig.slack.posts().len(), 5, "the line landed twice");
 }

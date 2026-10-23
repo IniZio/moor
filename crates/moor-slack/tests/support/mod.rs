@@ -190,6 +190,22 @@ impl Rig {
         panic!("no post reads {text:?}: {:?}", self.slack.posts());
     }
 
+    /// Polls `slack.db` until `n` coordinator turns have their line posted; fails after ten
+    /// seconds.
+    pub(crate) fn wait_replies(&self, n: usize) {
+        let db = rusqlite::Connection::open(self.path("state-slack/slack.db")).unwrap();
+        db.busy_timeout(Duration::from_secs(5)).unwrap();
+        let sql = "SELECT COUNT(*) FROM slack_turns WHERE posted_at IS NOT NULL";
+        for _ in 0..500 {
+            let posted = db.query_row(sql, [], |r| r.get::<_, i64>(0));
+            if posted.is_ok_and(|posted| posted >= i64::try_from(n).unwrap_or(i64::MAX)) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        panic!("fewer than {n} turn lines were posted");
+    }
+
     /// Polls `slack.db` until Box `name` is in `state`; fails after ten seconds.
     pub(crate) fn wait_box_state(&self, name: &str, state: &str) {
         let db = rusqlite::Connection::open(self.path("state-slack/slack.db")).unwrap();

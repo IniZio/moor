@@ -65,7 +65,7 @@ impl Fold {
         self.views
             .entry(id)
             .or_default()
-            .fold(&event.kind, &event.payload);
+            .fold(&event.kind, &event.payload, event.ts);
         prompts::fold(self, id, &event.kind, event.cursor, &event.payload);
         artifacts::fold(self, id, &event.kind, &event.payload);
         match event.kind.as_str() {
@@ -173,7 +173,7 @@ impl Feed {
             let Some(boxes) = owned.remove(identity) else {
                 continue;
             };
-            for step in planner.plan(&boxes, &fold.views, at) {
+            for step in planner.plan(&boxes, &fold.views, at, (self.clock)()) {
                 self.send_status(db, &step);
                 planner.record(&step, at);
             }

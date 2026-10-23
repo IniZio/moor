@@ -148,7 +148,7 @@ fn second_mention_in_a_thread_starts_nothing_new() {
         "1730000005.000300",
         Some(TS),
     );
-    rig.slack.wait_updates(2);
+    rig.wait_replies(2);
     let refused = Rig::tool_results(&bin, 1);
     let want = "This thread already has 1 open Box(es), its limit. Close one first.";
     assert_eq!(refused, [(want.to_owned(), true)]);
@@ -173,7 +173,7 @@ fn with_the_limit_at_2_a_second_start_works_and_a_third_is_refused() {
     let start = |goal: &str| ("start_box", json!({"goal": goal}));
     Rig::tool_calls(&bin, None, &[start("one"), start("two"), start("three")]);
     rig.mention(1, USER, "<@UBOT> three things", TS, None);
-    rig.slack.wait_updates(1);
+    rig.wait_replies(1);
     let results = Rig::tool_results(&bin, 0);
     let errors: Vec<bool> = results.iter().map(|r| r.1).collect();
     assert_eq!(errors, [false, false, true], "{results:?}");
@@ -224,8 +224,8 @@ fn protocol_mismatch_stops_the_turn_before_any_start_with_both_versions() {
     rig.spawn_daemon();
     rig.slack.wait_connected();
     rig.mention(1, USER, "<@UBOT> fix the thing", TS, None);
-    let updates = rig.slack.wait_updates(1);
-    let text = &updates[0].text;
+    let posts = rig.slack.wait_posts(1);
+    let text = &posts[0].text;
     assert!(
         text.contains(&format!(
             "client speaks protocol {PROTOCOL}, controller speaks {newer}"
@@ -339,7 +339,7 @@ fn a_rerun_after_a_killed_start_box_refuses_a_second_start_and_names_the_box() {
     rig.kill_daemon();
     std::fs::remove_file(bin.join("hang-after-tools")).unwrap();
     rig.spawn_daemon();
-    rig.slack.wait_updates(1);
+    rig.wait_replies(1);
     let refused = Rig::tool_results(&bin, 1);
     assert_eq!(refused.len(), 1, "{refused:?}");
     assert!(refused[0].1, "{refused:?}");

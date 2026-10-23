@@ -165,7 +165,7 @@ fn a_quiet_thread_ends_its_host_session_and_the_next_message_reopens_it_with_the
     wait_root_session(&rig, None);
     assert_eq!(ends(&controller), [100]);
     reply(&rig, 2, USER, "what did I ask?");
-    rig.slack.wait_updates(2);
+    rig.slack.wait_posts(2);
     let dir = thread_key();
     assert_eq!(opens(&controller), [dir.clone(), dir.clone()]);
     let hosts = controller.hosts();
@@ -186,7 +186,7 @@ fn a_thread_that_spoke_within_the_idle_minutes_keeps_its_host_session() {
     wait_posted(&rig, 1);
     restart(&mut rig);
     reply(&rig, 2, USER, "and then?");
-    rig.slack.wait_updates(2);
+    rig.slack.wait_posts(2);
     assert_eq!(
         ends(&controller),
         [] as [i64; 0],
@@ -280,7 +280,7 @@ fn a_host_session_opened_before_a_crash_is_adopted_by_its_key() {
     controller.script("open-host-session", Scripted::Lost);
     rig.mention(1, USER, "<@UBOT> hello there", TS, None);
     crash_after(&mut rig, &controller, "open-host-session", 1);
-    assert_eq!(rig.slack.wait_updates(1)[0].text, "OK");
+    assert_eq!(rig.slack.wait_posts(1)[0].text, "OK");
     let dir = thread_key();
     assert_eq!(controller.hosts(), [(100, dir.clone(), false)]);
     let again = "the rerun opens with the same key and gets the same Session";
@@ -304,7 +304,7 @@ fn a_host_session_left_by_a_turn_that_does_not_run_again_is_ended_at_start() {
     rig.spawn_daemon();
     rig.slack.wait_connected();
     let stopped = "Stopped: the front restarted. Send your message again.";
-    assert_eq!(rig.slack.wait_updates(1)[0].text, stopped);
+    assert_eq!(rig.slack.wait_posts(1)[0].text, stopped);
     controller.wait_until("end-host-session", |s| {
         s.requests.iter().any(|r| r.cmd() == "end-host-session")
     });
@@ -333,7 +333,7 @@ fn a_host_session_ended_outside_the_front_is_replaced_with_the_same_key_before_t
     wait_posted(&rig, 1);
     controller.end_host(100);
     reply(&rig, 2, USER, "and now?");
-    assert_eq!(rig.slack.wait_updates(2)[1].text, "OK");
+    assert_eq!(rig.slack.wait_posts(2)[1].text, "OK");
     let dir = thread_key();
     let want = [(100, dir.clone(), true), (101, dir, false)];
     assert_eq!(controller.hosts(), want);
@@ -356,7 +356,7 @@ fn a_host_session_refused_again_after_the_reopen_ends_the_turn_with_its_refusal(
     reply(&rig, 2, USER, "and now?");
     let line = "The coordinator is unavailable: the controller did not open a host Session: \
                 host Session 101 has ended.";
-    assert_eq!(rig.slack.wait_updates(2)[1].text, line);
+    assert_eq!(rig.slack.wait_posts(2)[1].text, line);
     let dir = thread_key();
     assert_eq!(
         opens(&controller),
@@ -382,7 +382,7 @@ fn check_answered(answer: impl Fn() -> Scripted) -> (Rig, FakeController, std::p
 
 /// The turn after [`check_answered`] ran on host Session 100, which stays recorded.
 fn ran_on_the_recorded_session(rig: &Rig, controller: &FakeController, bin: &Path) {
-    assert_eq!(rig.slack.wait_updates(2)[1].text, "OK");
+    assert_eq!(rig.slack.wait_posts(2)[1].text, "OK");
     let dir = thread_key();
     assert_eq!(opens(controller), [dir], "no second host Session");
     assert_eq!(touches(controller), [100, 100]);
@@ -410,7 +410,7 @@ fn a_host_session_reopened_before_a_crash_is_adopted_and_the_ended_one_is_not() 
     controller.script("open-host-session", Scripted::Lost);
     reply(&rig, 2, USER, "and now?");
     crash_after(&mut rig, &controller, "open-host-session", 2);
-    rig.slack.wait_updates(2);
+    rig.slack.wait_posts(2);
     let dir = thread_key();
     assert_eq!(opens(&controller), [dir.clone(), dir.clone(), dir.clone()]);
     let want = [(100, dir.clone(), true), (101, dir, false)];
@@ -430,7 +430,7 @@ fn an_end_cut_off_by_a_crash_is_done_once_the_controller_says_the_session_ended(
     wait_root_session(&rig, None);
     assert_eq!(ends(&controller), [100, 100]);
     reply(&rig, 2, USER, "and now?");
-    rig.slack.wait_updates(2);
+    rig.slack.wait_posts(2);
     let dir = thread_key();
     let want = [(100, dir.clone(), true), (101, dir, false)];
     assert_eq!(controller.hosts(), want, "the next message opens a new one");

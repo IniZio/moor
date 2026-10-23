@@ -51,8 +51,6 @@ pub(crate) struct TurnRow {
     pub(crate) thread_ts: String,
     /// Slack user id of the thread's starter, who pays for the turn.
     pub(crate) owner: String,
-    /// The placeholder message `ts`, when one was posted.
-    pub(crate) placeholder: Option<String>,
     /// The turn a restart cut off that this turn runs again.
     pub(crate) rerun_of: Option<i64>,
 }
@@ -81,7 +79,7 @@ pub(crate) struct OpenTurn {
 }
 
 /// The columns [`turn_row`] reads.
-const TURN_COLUMNS: &str = "u.id, u.channel, u.thread_ts, u.paid_by, u.placeholder_ts, u.rerun_of";
+const TURN_COLUMNS: &str = "u.id, u.channel, u.thread_ts, u.paid_by, u.rerun_of";
 
 /// A [`TurnRow`] from [`TURN_COLUMNS`].
 fn turn_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TurnRow> {
@@ -90,8 +88,7 @@ fn turn_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TurnRow> {
         channel: r.get(1)?,
         thread_ts: r.get(2)?,
         owner: r.get(3)?,
-        placeholder: r.get(4)?,
-        rerun_of: r.get(5)?,
+        rerun_of: r.get(4)?,
     })
 }
 
@@ -133,16 +130,9 @@ impl Db {
                 channel,
                 thread_ts,
                 owner,
-                placeholder: None,
                 rerun_of: None,
             }))
         })
-    }
-
-    /// Records the placeholder message `ts` of turn `id`.
-    pub(crate) fn set_placeholder(&self, id: i64, ts: &str) -> rusqlite::Result<()> {
-        let sql = "UPDATE slack_turns SET placeholder_ts = ?2 WHERE id = ?1";
-        self.conn.execute(sql, params![id, ts]).map(drop)
     }
 
     /// Records the process id of turn `id` and when that process started, in clock ticks
@@ -199,7 +189,7 @@ impl Db {
              AND u.posted_at IS NULL ORDER BY u.id"
         );
         let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map([], |r| Ok((turn_row(r)?, r.get(6)?)))?;
+        let rows = stmt.query_map([], |r| Ok((turn_row(r)?, r.get(5)?)))?;
         rows.collect()
     }
 
@@ -214,15 +204,15 @@ impl Db {
         let rows = stmt.query_map([], |r| {
             Ok(Unended {
                 row: turn_row(r)?,
-                started_at: r.get(6)?,
-                process: r.get::<_, Option<u32>>(7)?.zip(r.get(8)?),
+                started_at: r.get(5)?,
+                process: r.get::<_, Option<u32>>(6)?.zip(r.get(7)?),
             })
         })?;
         rows.collect()
     }
 
-    /// Marks turn `lost` lost at `now` and records a turn that runs it again, with its items
-    /// and its placeholder. Returns the new turn.
+    /// Marks turn `lost` lost at `now` and records a turn that runs it again, with its items.
+    /// Returns the new turn.
     pub(crate) fn rerun(&self, lost: &TurnRow, now: i64) -> rusqlite::Result<TurnRow> {
         self.atomically(|| {
             self.conn.execute(
@@ -231,16 +221,9 @@ impl Db {
             )?;
             self.conn.execute(
                 "INSERT INTO slack_turns \
-                 (channel, thread_ts, paid_by, rerun_of, started_at, placeholder_ts) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![
-                    lost.channel,
-                    lost.thread_ts,
-                    lost.owner,
-                    lost.id,
-                    now,
-                    lost.placeholder
-                ],
+                 (channel, thread_ts, paid_by, rerun_of, started_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![lost.channel, lost.thread_ts, lost.owner, lost.id, now],
             )?;
             let id = self.conn.last_insert_rowid();
             self.conn.execute(

@@ -160,10 +160,10 @@ fn on_the_operator_socket_the_same_request_path_is_refused() {
     rig.slack.wait_connected();
     rig.set_default_repo("o/nosuch");
     rig.mention(1, USER, "<@UBOT> fix the thing", TS, None);
-    rig.slack.wait_until("the refusal", |_, updates| {
-        updates
+    rig.slack.wait_until("the refusal", |posts, _| {
+        posts
             .iter()
-            .any(|u| u.text.contains("speaks only for local:"))
+            .any(|p| p.text.contains("speaks only for local:"))
     });
     let direct = ask_as(&rig.socket(), USER, show(BOX_NAME));
     assert_refused(&direct, "speaks only for local:");

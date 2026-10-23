@@ -69,11 +69,12 @@ fn a_new_connection_folds_afresh_and_acts_only_once_caught_up() {
     fold.take(event(1, Some(ID), "working"));
     fold.take(event(2, None, "idled"));
     assert!(fold.caught_up);
-    let working = View {
-        state: status::State::Working,
-        machine: None,
-    };
-    assert_eq!(fold.views, HashMap::from([(ID, working)]), "by Box id only");
+    let states: Vec<_> = fold
+        .views
+        .iter()
+        .map(|(id, v)| (*id, v.state.clone()))
+        .collect();
+    assert_eq!(states, [(ID, status::State::Working)], "by Box id only");
     fold.take(Watched::Connected);
     assert!(!fold.caught_up, "a replay is not acted on until caught up");
     assert!(fold.views.is_empty());

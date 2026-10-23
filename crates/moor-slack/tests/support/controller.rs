@@ -13,10 +13,11 @@ use std::thread;
 use std::time::Duration;
 
 use moor_core::controller::{parse_frame, ClientFrame, FrameErrorKind, ServerFrame};
-use moor_core::name::BoxId;
 use moor_core::request::Request;
 use moor_core::response::{ErrorKind, ErrorView, Response};
-use serde_json::{json, Value};
+use serde_json::json;
+
+mod emit;
 
 /// Cursor a backlog watch is caught up to while no event was emitted; a live watch must
 /// resume from it.
@@ -162,46 +163,6 @@ impl FakeController {
     pub(crate) fn end_host(&self, session: i64) {
         let index = usize::try_from(session - 100).unwrap();
         self.lock().hosts[index].1 = true;
-    }
-
-    /// Stores an event of `kind` for Box `box_id` named `name`, and sends it to every live
-    /// watch.
-    pub(crate) fn emit(&self, box_id: i64, name: &str, kind: &str, payload: Value) {
-        self.emit_owned(None, box_id, name, kind, payload);
-    }
-
-    /// Like [`Self::emit`], for a Box that `owner` owns: only a watch asserting `owner` carries it.
-    pub(crate) fn emit_for(
-        &self,
-        owner: &str,
-        box_id: i64,
-        name: &str,
-        kind: &str,
-        payload: Value,
-    ) {
-        self.emit_owned(Some(owner), box_id, name, kind, payload);
-    }
-
-    /// Stores the event, owned by `owner` when given, and sends it to the watches that carry it.
-    fn emit_owned(&self, owner: Option<&str>, box_id: i64, name: &str, kind: &str, payload: Value) {
-        let mut inner = self.lock();
-        let cursor = BACKLOG_END + 1 + i64::try_from(inner.events.len()).unwrap();
-        let event = ServerFrame::Event {
-            cursor,
-            r#box: Some(name.to_owned()),
-            box_id: Some(BoxId::new(box_id)),
-            session: None,
-            kind: kind.to_owned(),
-            payload,
-            ts: 1_730_000_000 + cursor,
-        };
-        let line = event.to_line();
-        let owner = owner.map(str::to_owned);
-        inner.events.push((owner.clone(), event));
-        inner.live.retain_mut(|(watcher, stream)| {
-            !carries(owner.as_deref(), watcher.as_deref())
-                || stream.write_all(line.as_bytes()).is_ok()
-        });
     }
 
     /// Sends each later backlog in two writes `pause` apart: its first `events` events, then

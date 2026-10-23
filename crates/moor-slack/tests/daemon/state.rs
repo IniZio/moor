@@ -93,7 +93,7 @@ fn ask_with_path(rig: &mut Rig, search: &str) -> String {
     });
     rig.slack.wait_connected();
     rig.mention(1, USER, "<@UBOT> hello", TS, None);
-    rig.slack.wait_updates(1).remove(0).text
+    rig.slack.wait_posts(1).remove(0).text
 }
 
 #[test]

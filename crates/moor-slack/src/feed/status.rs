@@ -17,12 +17,17 @@ pub(super) const UPDATE_EVERY: Duration = Duration::from_secs(2);
 /// Longest question shown, in characters.
 const QUESTION_MAX: usize = 300;
 
+/// Seconds a working Box may emit no event before its status says it may be stuck.
+pub(super) const STALL_AFTER_SECS: i64 = 10 * 60;
+
 /// Where the Box is in its life.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(super) enum State {
-    /// Created or setting up; not yet working.
+    /// Created; setup has not begun.
     #[default]
     Starting,
+    /// Setting up the Box.
+    SettingUp,
     /// The agent is working.
     Working,
     /// The agent is quiet.
@@ -31,6 +36,8 @@ pub(super) enum State {
     Asleep,
     /// The agent asked a question.
     NeedsInput(String),
+    /// The Box is closing.
+    Closing,
     /// The Box closed.
     Closed,
     /// Admission refused the Box.
@@ -63,11 +70,26 @@ pub(super) struct View {
     pub(super) state: State,
     /// Machine state, once any machine event arrived.
     pub(super) machine: Option<Machine>,
+    /// When `state` began, in milliseconds since the epoch; none before any event.
+    pub(super) since_ms: Option<i64>,
+    /// When the Box last emitted any event, in milliseconds since the epoch.
+    pub(super) last_event_ms: Option<i64>,
 }
 
 impl View {
-    /// Applies one event of `kind` with `payload`; unrelated kinds change nothing.
-    pub(super) fn fold(&mut self, kind: &str, payload: &Value) {
+    /// Applies one event of `kind` with `payload` that happened at `at_ms`; unrelated kinds
+    /// change nothing but the time of the last event.
+    pub(super) fn fold(&mut self, kind: &str, payload: &Value, at_ms: i64) {
+        let before = self.state.clone();
+        self.last_event_ms = Some(at_ms);
+        self.apply(kind, payload);
+        if self.state != before || self.since_ms.is_none() {
+            self.since_ms = Some(at_ms);
+        }
+    }
+
+    /// Sets the state and machine the event of `kind` leads to.
+    fn apply(&mut self, kind: &str, payload: &Value) {
         let text = |key: &str| {
             payload
                 .get(key)
@@ -76,7 +98,8 @@ impl View {
                 .to_owned()
         };
         match kind {
-            "started" | "setting_up" => self.state = State::Starting,
+            "started" => self.state = State::Starting,
+            "setting_up" => self.state = State::SettingUp,
             "working" | "busy" | "woke" => self.state = State::Working,
             "idled" => self.state = State::Idle,
             "asleep" => self.state = State::Asleep,
@@ -95,19 +118,39 @@ impl View {
     }
 }
 
-/// The status message of Box `name`.
-pub(super) fn render(name: &str, view: &View) -> String {
+/// `secs` as whole minutes: `<1m`, `5m`, `1h 05m`. Coarse on purpose, so the text changes
+/// once a minute and the edit loop sends no more than that.
+fn minutes(secs: i64) -> String {
+    let m = secs.max(0) / 60;
+    match m {
+        0 => "<1m".to_owned(),
+        1..=59 => format!("{m}m"),
+        _ => format!("{}h {:02}m", m / 60, m % 60),
+    }
+}
+
+/// The status message of Box `name` at `now` (unix seconds): its phase, how long the Box has
+/// been in it, and a hint when a working Box has been silent for [`STALL_AFTER_SECS`].
+pub(super) fn render(name: &str, view: &View, now: i64) -> String {
+    let since = |from: Option<i64>| from.map_or(0, |ms| now - ms.div_euclid(1000));
+    let timed = |phase: &str| format!("{phase} ({})", minutes(since(view.since_ms)));
     let state = match &view.state {
-        State::Starting => "starting".to_owned(),
-        State::Working => "working".to_owned(),
-        State::Idle => "idle".to_owned(),
-        State::Asleep => "asleep".to_owned(),
+        State::Starting => timed("starting"),
+        State::SettingUp => timed("setting up"),
+        State::Working => timed("working"),
+        State::Idle => timed("idle"),
+        State::Asleep => timed("asleep"),
+        State::Closing => "closing".to_owned(),
         State::Closed => "closed".to_owned(),
-        State::NeedsInput(q) if q.is_empty() => "needs input".to_owned(),
+        State::NeedsInput(q) if q.is_empty() => timed("waiting on a question"),
         State::NeedsInput(q) => {
             let short: String = q.chars().take(QUESTION_MAX).collect();
             let dots = if short.len() < q.len() { "..." } else { "" };
-            format!("needs input: {}{dots}", escape(&short))
+            format!(
+                "{}: {}{dots}",
+                timed("waiting on a question"),
+                escape(&short)
+            )
         }
         State::Rejected(r) => format!("rejected: {}", escape(r)),
         State::SetupFailed(l) => format!("setup failed: {}", escape(l)),
@@ -123,6 +166,10 @@ pub(super) fn render(name: &str, view: &View) -> String {
             Machine::Deleted => "deleted",
         };
         let _ = write!(text, "\nBox: {m}");
+    }
+    let quiet = since(view.last_event_ms);
+    if view.state == State::Working && quiet >= STALL_AFTER_SECS {
+        let _ = write!(text, "\nNo event for {}. It may be stuck.", minutes(quiet));
     }
     text
 }
@@ -158,26 +205,26 @@ impl Planner {
         boxes: &[FedBox],
         views: &HashMap<BoxId, View>,
         now: Instant,
+        unix: i64,
     ) -> Vec<Step> {
         let mut steps = Vec::new();
         for fed in boxes {
             let b = &fed.boxed;
-            let (box_id, gone) = match &b.state {
+            let (box_id, forced) = match &b.state {
                 RowState::Starting => continue,
-                RowState::Bound { box_id, .. } | RowState::Closing { box_id, .. } => {
-                    (*box_id, false)
-                }
-                RowState::Gone { box_id, .. } => (*box_id, true),
+                RowState::Bound { box_id, .. } => (*box_id, None),
+                RowState::Closing { box_id, .. } => (*box_id, Some(State::Closing)),
+                RowState::Gone { box_id, .. } => (*box_id, Some(State::Closed)),
             };
-            if gone && fed.status_ts.is_none() {
+            if matches!(forced, Some(State::Closed)) && fed.status_ts.is_none() {
                 continue;
             }
             let mut view = views.get(&box_id).cloned().unwrap_or_default();
-            if gone {
-                view.state = State::Closed;
+            if let Some(state) = forced {
+                view.state = state;
             }
             let name = b.box_name.as_str();
-            let text = render(name, &view);
+            let text = render(name, &view, unix);
             if fed.status_ts.is_some() && fed.status_text.as_ref() == Some(&text) {
                 continue;
             }

@@ -15,7 +15,7 @@ pub(super) const OTHER: &str = "U0OTHER";
 pub(super) fn started_thread() -> (Rig, FakeController) {
     let (rig, controller) = Rig::start();
     rig.mention(1, USER, "<@UBOT> fix the thing", TS, None);
-    rig.slack.wait_updates(1);
+    rig.slack.wait_posts(1);
     (rig, controller)
 }
 
