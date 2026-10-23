@@ -136,13 +136,23 @@ fn refuse_read_only(
 }
 
 /// The real path of front `ns`'s `program`, none when it cannot be found; an error when that
-/// path is or lies under `/tmp`, which the front's own tmp dir would hide.
+/// path is or lies under `/tmp`, which the front's own tmp dir would hide on Linux.
+#[cfg_attr(
+    not(target_os = "linux"),
+    expect(
+        clippy::unnecessary_wraps,
+        reason = "only Linux gives the front a /tmp of its own to refuse"
+    )
+)]
 fn program_path(ns: &str, program: &str, path: &OsStr) -> Result<Option<PathBuf>, String> {
-    let Some(found) = resolve(program, path) else {
-        return Ok(None);
-    };
-    refuse_under_tmp(&format!("fronts.{ns}: its program"), &found)?;
-    Ok(Some(found))
+    let found = resolve(program, path);
+    #[cfg(target_os = "linux")]
+    if let Some(found) = &found {
+        refuse_under_tmp(&format!("fronts.{ns}: its program"), found)?;
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = ns;
+    Ok(found)
 }
 
 /// The real path of `program`: itself when it names a path, else the first match on `path`;
@@ -161,6 +171,7 @@ fn resolve(program: &str, path: &OsStr) -> Option<PathBuf> {
 mod tests {
     use std::path::Path;
 
+    #[cfg(target_os = "linux")]
     use std::os::unix::fs::PermissionsExt;
 
     use super::{program_path, refuse_read_only};
@@ -193,6 +204,7 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "linux")]
     fn program_under_tmp() -> (tempfile::TempDir, std::path::PathBuf) {
         let dir = tempfile::tempdir_in("/tmp").unwrap();
         let real = dir.path().canonicalize().unwrap().join("front-bin");
@@ -201,6 +213,7 @@ mod tests {
         (dir, real)
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn a_program_under_tmp_found_on_path_starts_no_front() {
         let (dir, real) = program_under_tmp();
@@ -210,6 +223,7 @@ mod tests {
         assert!(e.contains("front's own tmp dir"), "{e}");
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn a_program_under_tmp_named_by_path_starts_no_front() {
         let (_dir, real) = program_under_tmp();
@@ -217,6 +231,7 @@ mod tests {
         assert!(e.contains("its program"), "{e}");
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn new_refuses_a_front_whose_program_lies_under_tmp() {
         let (dir, real) = program_under_tmp();
