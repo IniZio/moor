@@ -84,15 +84,17 @@ impl Stack {
     }
 
     /// Starts the controller with the web daemon as its `web` front, writing only `web/`
-    /// in the stack's root, and waits for the daemon's URL in the controller log.
+    /// in the stack's root, and waits for the daemon's URL in the controller log. The token
+    /// file is copied into `web/`: the front cannot see the stack's root, which is under /tmp.
     pub fn start_as_front() -> Self {
         let mut stack = Self::controller_with(|dir| {
+            std::fs::create_dir(dir.join("web")).unwrap();
             let command = json!([
                 env!("CARGO_BIN_EXE_moor-web"),
                 "--port",
                 "0",
                 "--token-file",
-                dir.join("token"),
+                dir.join("web").join("token"),
             ]);
             format!(
                 "fronts:\n  web:\n    command: {command}\n    state_dir: {}\n",
@@ -144,9 +146,12 @@ impl Stack {
             SEQ.fetch_add(1, Ordering::Relaxed),
             dir.as_os_str().len() * 7919
         );
-        std::fs::write(dir.join("token"), &token).unwrap();
-        std::fs::set_permissions(dir.join("token"), std::fs::Permissions::from_mode(0o600))
-            .unwrap();
+        for file in [dir.join("token"), dir.join("web").join("token")] {
+            if file.parent().is_some_and(Path::is_dir) {
+                std::fs::write(&file, &token).unwrap();
+                std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
+            }
+        }
         let controller = Command::new(moor_bin())
             .env_clear()
             .env("PATH", "/usr/bin:/bin")

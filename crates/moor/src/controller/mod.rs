@@ -279,6 +279,7 @@ impl Running {
             self.env.state_dir().as_deref(),
             &self.socket,
             self.env.vault_key(),
+            self.env.get("HOME").map(Path::new),
         );
         fronts::supervise(std::mem::take(&mut self.commands), shim, sink)
     }

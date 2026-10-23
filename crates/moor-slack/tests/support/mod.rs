@@ -315,14 +315,26 @@ impl Rig {
     }
 
     /// Starts a real controller that runs the daemon as its `slack` front, writing only
-    /// `state-slack`.
+    /// `state-slack`. The config and token files are copied there: the front cannot see the
+    /// rig's root, which is under /tmp.
     pub(crate) fn real_controller_running_the_daemon(&self) -> RealController {
+        let state = self.path("state-slack");
+        std::fs::create_dir(&state).unwrap();
+        secret_file(&state.join("app.token"), APP_TOKEN);
+        secret_file(&state.join("bot.token"), BOT_TOKEN);
+        let config = std::fs::read_to_string(self.path("slack.yaml"))
+            .unwrap()
+            .replace(
+                &*self.root.path().to_string_lossy(),
+                &state.to_string_lossy(),
+            );
+        std::fs::write(state.join("slack.yaml"), config).unwrap();
         let command = serde_json::json!([
             env!("CARGO_BIN_EXE_moor-slack"),
             "--config",
-            self.path("slack.yaml"),
+            state.join("slack.yaml"),
         ]);
-        let entry = serde_json::json!({"command": command, "state_dir": self.path("state-slack")});
+        let entry = serde_json::json!({"command": command, "state_dir": state});
         RealController::start_with(self.root.path(), &self.socket(), &entry.to_string())
     }
 

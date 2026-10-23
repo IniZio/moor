@@ -206,19 +206,36 @@ namespace: it reaps orphans, passes SIGTERM and SIGINT to the front, and exits
 with the front's status. If the controller's shim dies, the kernel kills every
 process in the namespace.
 
-The front and every process it starts can read and run any file it could read
-before, but write only its `state_dir` and `/dev/null`. The controller creates
-the `state_dir` and its `tmp` subdirectory, mode 0700, and sets
-`MOOR_FRONT_STATE_DIR` to the `state_dir` and `TMPDIR` to its `tmp`. moor-web
-and moor-slack keep their state in `MOOR_FRONT_STATE_DIR` when `--state-dir`
-is not given. The shim enforces this with Landlock on Linux. Outbound
-network is not restricted.
+On Linux, a front and every process it starts reach the host as follows:
+
+- **Write.** Only its `state_dir` and `/dev/null`. Every other mount is
+  read-only, so writes, chmod, chown, utimes and xattr changes elsewhere fail
+  with `Read-only file system`, even through a file descriptor. Landlock also
+  refuses writes outside the `state_dir`, such as to other devices.
+- **Hidden.** `/run` (and so `/var/run`), `/tmp`, `/dev/shm` and the
+  controller's `HOME` are empty tmpfs mounts. The Unix sockets of host services
+  live there, such as the D-Bus session bus, `systemd --user` and Docker's
+  socket, so a front cannot reach them. A front's own files, such as a token
+  or config file, must not be there either: put them in its `state_dir`.
+- **Read and run.** Every other file the controller's user can read.
+- **Network.** Outbound TCP is not restricted, and that includes listeners
+  on the host's loopback.
+
+The controller creates the `state_dir` and its `tmp` subdirectory, mode 0700,
+and sets `MOOR_FRONT_STATE_DIR` to the `state_dir` and `TMPDIR` to its `tmp`.
+moor-web and moor-slack keep their state in `MOOR_FRONT_STATE_DIR` when
+`--state-dir` is not given.
 
 Fronts need unprivileged user namespaces and Landlock. When the host forbids
 user namespaces (`kernel.unprivileged_userns_clone=0`,
 `user.max_user_namespaces=0`, or `kernel.apparmor_restrict_unprivileged_userns=1`)
 or lacks Landlock, the controller logs `fronts not started` with the reason,
-starts none, and keeps serving.
+starts none, and keeps serving. `moor front-shim --check` makes that call: it
+enters the namespaces, applies the sandbox and confirms a write outside the
+allow-list is refused.
+
+macOS has no front sandbox. The shim needs Linux namespaces, and nono's
+Seatbelt backend is not wired into moor. None of this has been tried on a Mac.
 
 While a front runs, `<state dir>/fronts/<namespace>.pid` holds the shim's pid on
 the first line and its start time from `/proc/<pid>/stat` on the second. When

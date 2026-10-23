@@ -11,7 +11,7 @@
 
 use std::fs;
 use std::io::{BufRead as _, BufReader, Write as _};
-use std::os::unix::net::UnixStream;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -25,75 +25,10 @@ use super::{fresh_dir, Dir};
 #[path = "fronts/sandbox.rs"]
 mod sandbox;
 
-/// Tries each way a front could reach the controller and prints what each got. Its argv is the
-/// protocol, the test root and the moor binary; it waits for `ctl.pid` in the root, the
-/// controller's pid.
-const PROBE: &str = r#"
-import ctypes, json, os, socket, stat, sys, time
-protocol, root, moor = int(sys.argv[1]), sys.argv[2], sys.argv[3]
-def dial(path):
-    try:
-        s = socket.socket(socket.AF_UNIX)
-        s.settimeout(5)
-        s.connect(path)
-        hello = {"frame": "hello", "protocol": protocol}
-        ask = {"frame": "request", "id": "1", "request": {"cmd": "version"}}
-        s.sendall((json.dumps(hello) + "\n" + json.dumps(ask) + "\n").encode())
-        for line in s.makefile():
-            if json.loads(line)["frame"] == "response":
-                return "answers"
-        return "closed"
-    except OSError as e:
-        return type(e).__name__
-def read(path):
-    try:
-        return len(open(path, "rb").read())
-    except OSError as e:
-        return type(e).__name__
-def write(path, mode="w"):
-    try:
-        open(path, mode).close()
-        return "writable"
-    except OSError as e:
-        return e.strerror
-def kind(fd):
-    mode = os.fstat(fd).st_mode
-    return "pipe" if stat.S_ISFIFO(mode) else "file" if stat.S_ISREG(mode) else "other"
-def listdir(path):
-    try:
-        return len(os.listdir(path))
-    except OSError as e:
-        return type(e).__name__
-while not os.path.exists(f"{root}/ctl.pid"):
-    time.sleep(0.05)
-ctl = open(f"{root}/ctl.pid").read().strip()
-libc = ctypes.CDLL(None, use_errno=True)
-unmounted = libc.umount2(f"{root}/state".encode(), 2) == 0
-got = {
-    "own": dial("/proc/self/fd/3"),
-    "operator": dial(f"{root}/c.sock"),
-    "other_front": dial(f"{root}/state/fronts/slack.sock"),
-    "vault_key": read(f"{root}/vault.key"),
-    "controller_fds": listdir(f"/proc/{ctl}/fd"),
-    "controller_root": dial(f"/proc/{ctl}/root{root}/c.sock"),
-    "unmount": "allowed" if unmounted else os.strerror(ctypes.get_errno()),
-    "cover_write": write(f"{root}/state/planted"),
-    "own_dir": write(f"{os.environ.get('MOOR_FRONT_STATE_DIR')}/planted"),
-    "tmp": write(f"{os.environ.get('TMPDIR')}/planted"),
-    "dev_null": write("/dev/null"),
-    "config": write(f"{root}/c.yaml", "a"),
-    "home": write(f"{root}/home/planted"),
-    "root": write(f"{root}/planted"),
-    "moor_dir": write(f"{os.path.dirname(moor)}/planted-{os.path.basename(root)}"),
-    "cwd": os.getcwd(),
-    "init_cwd": os.readlink("/proc/1/cwd"),
-    "stdout": kind(1),
-    "stderr": kind(2),
-}
-print("front says hello", flush=True)
-print("probe", json.dumps(got), file=sys.stderr, flush=True)
-time.sleep(600)
-"#;
+/// Tries each way a front could reach the controller or the host and prints what each got. Its
+/// argv is the protocol, the test root, the moor binary and two Unix sockets listening on the
+/// host; it waits for `ctl.pid` in its state dir, the controller's pid.
+const PROBE: &str = include_str!("fronts/probe.py");
 
 /// Leaves an orphan for pid 1 to reap, reports whether it was, then exits 7 on SIGTERM.
 const ORPHANING: &str = r#"
@@ -161,19 +96,35 @@ const NO_USER_NAMESPACES: [&str; 6] = [
 struct Controller {
     root: Dir,
     child: Child,
+    /// Unix sockets listening on the host, in `/tmp` and in the user's runtime dir.
+    listeners: Vec<(PathBuf, UnixListener)>,
 }
 
 impl Controller {
     /// Serves the controller with `script` as the probe front, prefixing the moor command with
     /// `wrap`.
     fn start(script: &str, wrap: &[&str]) -> Self {
-        let root = fresh_dir("front");
+        let root = Dir(tempfile::Builder::new()
+            .prefix("front-")
+            .tempdir_in(env!("CARGO_TARGET_TMPDIR"))
+            .unwrap());
         fs::create_dir(root.join("state")).unwrap();
         fs::create_dir(root.join("home")).unwrap();
+        fs::create_dir(root.join("front")).unwrap();
+        fs::write(root.join("home").join("secret"), "x").unwrap();
         let config = root.join("c.yaml");
         let moor = env!("CARGO_BIN_EXE_moor");
-        let command =
-            serde_json::json!(["python3", "-c", script, PROTOCOL.to_string(), &*root, moor]);
+        let listeners = host_listeners(&root.file_name().unwrap().to_string_lossy());
+        let command = serde_json::json!([
+            "python3",
+            "-c",
+            script,
+            PROTOCOL.to_string(),
+            &*root,
+            moor,
+            listeners[0].0,
+            listeners[1].0
+        ]);
         fs::write(
             &config,
             format!(
@@ -199,7 +150,12 @@ impl Controller {
             .spawn()
             .unwrap();
         fs::write(root.join("ctl.pid"), child.id().to_string()).unwrap();
-        let this = Self { root, child };
+        fs::write(root.join("front").join("ctl.pid"), child.id().to_string()).unwrap();
+        let this = Self {
+            root,
+            child,
+            listeners,
+        };
         wait_for("the operator socket", || this.version());
         this
     }
@@ -261,6 +217,9 @@ impl Controller {
 
 impl Drop for Controller {
     fn drop(&mut self) {
+        for (path, _) in &self.listeners {
+            let _ = fs::remove_file(path);
+        }
         if matches!(self.child.try_wait(), Ok(Some(_))) {
             return;
         }
@@ -273,6 +232,19 @@ impl Drop for Controller {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+/// Unix sockets named for `tag` listening on the host, in `/tmp` and the user's runtime dir.
+fn host_listeners(tag: &str) -> Vec<(PathBuf, UnixListener)> {
+    let runtime = PathBuf::from(format!("/run/user/{}", rustix::process::getuid().as_raw()));
+    [std::env::temp_dir(), runtime]
+        .into_iter()
+        .map(|dir| dir.join(format!("moor-{tag}.sock")))
+        .map(|path| {
+            let listener = UnixListener::bind(&path).unwrap();
+            (path, listener)
+        })
+        .collect()
 }
 
 /// Polls `check` until it returns something, for up to 20 s.
