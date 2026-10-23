@@ -6,9 +6,7 @@ use std::fmt::Write as _;
 
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
-use rusqlite::params;
-#[cfg(test)]
-use rusqlite::OptionalExtension;
+use rusqlite::{params, OptionalExtension};
 use sha2::{Digest, Sha256};
 
 use crate::store::{Store, StoreError};
@@ -51,7 +49,6 @@ impl Store {
 
     /// The user the live lease `token` of `front` acts for; none when there is no such lease,
     /// it is another front's, or it expired.
-    #[cfg(test)]
     pub(crate) fn front_lease_user(
         &self,
         token: &[u8],

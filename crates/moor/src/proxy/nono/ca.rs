@@ -1,4 +1,4 @@
-//! Per-Box interception CA that survives a proxy restart.
+//! Interception CA of a Box or of the front Proxy, which survives a proxy restart.
 //!
 //! The machine trusts the certificate for the Box's whole life, so the CA is
 //! persisted under the state directory and reloaded rather than regenerated.
@@ -65,7 +65,7 @@ pub(crate) fn ca_dir(state_dir: &Path, box_id: BoxId) -> PathBuf {
 
 /// Path of the Box's CA certificate, which the machine trusts.
 pub(crate) fn cert_path(state_dir: &Path, box_id: BoxId) -> PathBuf {
-    ca_dir(state_dir, box_id).join(CERT_FILE)
+    cert_in(&ca_dir(state_dir, box_id))
 }
 
 /// Loads the Box's CA, or generates and persists one when neither file
@@ -75,17 +75,27 @@ pub(crate) fn cert_path(state_dir: &Path, box_id: BoxId) -> PathBuf {
 /// A half-present or unparsable CA is an error naming the file: the Box
 /// trusts the old certificate, so a silent replacement would break it.
 pub(crate) fn load_or_create(state_dir: &Path, box_id: BoxId) -> std::io::Result<BoxCa> {
-    let dir = ca_dir(state_dir, box_id);
-    DirBuilder::new().recursive(true).mode(0o700).create(&dir)?;
-    std::fs::set_permissions(&dir, Permissions::from_mode(0o700))?;
+    let cn = format!("moor box {}", box_id.get());
+    load_or_create_in(&ca_dir(state_dir, box_id), &cn)
+}
+
+/// [`load_or_create`] for the CA in `dir`, generated with common name `cn`.
+pub(crate) fn load_or_create_in(dir: &Path, cn: &str) -> std::io::Result<BoxCa> {
+    DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
+    std::fs::set_permissions(dir, Permissions::from_mode(0o700))?;
     let key_path = dir.join(KEY_FILE);
     let cert_path = dir.join(CERT_FILE);
     match (key_path.exists(), cert_path.exists()) {
-        (false, false) => create(&dir, &key_path, &cert_path, box_id),
+        (false, false) => create(dir, &key_path, &cert_path, cn),
         (true, true) => load(&key_path, &cert_path),
         (true, false) => Err(missing(&cert_path)),
         (false, true) => Err(missing(&key_path)),
     }
+}
+
+/// Path of the CA certificate in `dir`.
+pub(crate) fn cert_in(dir: &Path) -> PathBuf {
+    dir.join(CERT_FILE)
 }
 
 /// Removes the Box's CA directory and everything in it; Ok if absent.
@@ -113,9 +123,8 @@ fn invalid(path: &Path) -> Error {
 }
 
 /// Generates a CA and writes cert and key atomically, key first.
-fn create(dir: &Path, key_path: &Path, cert_path: &Path, box_id: BoxId) -> std::io::Result<BoxCa> {
-    let cn = format!("moor box {}", box_id.get());
-    let ca = EphemeralCa::generate_with_cn(&cn, VALIDITY)
+fn create(dir: &Path, key_path: &Path, cert_path: &Path, cn: &str) -> std::io::Result<BoxCa> {
+    let ca = EphemeralCa::generate_with_cn(cn, VALIDITY)
         .map_err(|_| Error::other("proxy CA generation failed"))?;
     write_private(dir, key_path, ca.key_pem().as_bytes())?;
     write_private(dir, cert_path, ca.cert_pem().as_bytes())?;

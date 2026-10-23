@@ -179,6 +179,7 @@ fn upload(total: u64, gate: u64) -> (u64, Option<u16>, u64) {
         ca_dir: &ca::ca_dir(&state, BoxId::new(7)),
         upstream_ca: Some(&up.ca_path),
         chain: None,
+        only_rule_hosts: false,
     });
     cfg.0.upstream_extra_ca_pems = vec![up.ca_path.to_string_lossy().into_owned()];
     let proxy = NonoProxy::start(cfg, capture).unwrap();
