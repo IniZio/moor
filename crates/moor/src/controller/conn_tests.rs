@@ -209,3 +209,19 @@ fn a_wait_or_wait_events_once_the_drain_began_gets_restarting() {
     let shown = answer(serde_json::to_value(show(None)).expect("show"));
     assert!(shown.is_some(), "a show did not run to its end");
 }
+
+#[test]
+fn the_previous_protocol_is_refused_at_the_hello() {
+    let got = super::hello_reply(12);
+    assert!(matches!(
+        got,
+        moor_core::controller::ServerFrame::Error {
+            kind: moor_core::controller::FrameErrorKind::UnsupportedProtocol,
+            ..
+        }
+    ));
+    assert_eq!(
+        super::hello_reply(PROTOCOL),
+        moor_core::controller::ServerFrame::Hello { protocol: PROTOCOL }
+    );
+}
