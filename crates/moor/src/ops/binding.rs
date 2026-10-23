@@ -60,8 +60,10 @@ pub(crate) fn lookup(
 /// Whether the context's viewer may see the Session `binding` names.
 fn visible(cx: &Cx, binding: &Binding) -> Result<bool, CommandError> {
     let store = cx.store()?;
-    let id = store.session_row(binding.session)?.and_then(|s| s.box_id);
-    authz::may_see_session(cx, store, id)
+    let Some(session) = store.session_row(binding.session)? else {
+        return Ok(cx.viewer().may_act_on(None));
+    };
+    authz::may_see_session(cx, store, &session)
 }
 
 /// The wire view of a store binding.

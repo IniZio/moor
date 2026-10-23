@@ -51,6 +51,7 @@ pub(crate) use proxy::{TunnelAck, TunnelRequest, TunnelWant};
 #[cfg(test)]
 pub(crate) use proxy::{EGRESS_PORT_MAX, EGRESS_PORT_MIN};
 pub(crate) use runs::{NewRun, RunOutcome, RunRow};
+pub(crate) use sessions::SessionRecord;
 
 /// Schema version this build reads and writes.
 pub(crate) const SCHEMA_VERSION: &str = "14";

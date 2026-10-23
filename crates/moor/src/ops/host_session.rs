@@ -5,6 +5,7 @@ use std::path::Path;
 use moor_core::domain::session_state::SessionState;
 use moor_core::name::SessionId;
 use moor_core::request::{EndHostSessionReq, OpenHostSessionReq, UpdateHostSessionReq};
+use moor_core::user::Viewer;
 use moor_core::view::session::HostSessionValue;
 use moor_core::ErrorKind;
 
@@ -23,6 +24,16 @@ pub(crate) fn open(cx: &Cx, req: &OpenHostSessionReq) -> Result<HostSessionValue
             format!("workdir must be an absolute path, got {:?}", req.workdir),
         ));
     }
+    let user = match cx.viewer() {
+        Viewer::Operator => None,
+        Viewer::User(user) => Some(user),
+        Viewer::Nobody => {
+            return Err(CommandError::new(
+                ErrorKind::Refused,
+                "log in first: moor user enroll",
+            ))
+        }
+    };
     let session = cx
         .store()?
         .open_child_host_session(
@@ -30,6 +41,7 @@ pub(crate) fn open(cx: &Cx, req: &OpenHostSessionReq) -> Result<HostSessionValue
             req.agent.as_deref(),
             req.agent_session_id.as_deref(),
             req.parent.map(SessionId::get),
+            user,
         )
         .map_err(refuse_invalid)?;
     Ok(HostSessionValue {

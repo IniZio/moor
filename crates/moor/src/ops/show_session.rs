@@ -20,7 +20,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowSessionReq) -> Result<SessionView, CommandE
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Session {id}")))?;
     let mut children = Vec::new();
     for c in store.session_children(id)? {
-        if !authz::may_see_session(cx, store, c.box_id)? {
+        if !authz::may_see_session(cx, store, &c)? {
             continue;
         }
         children.push(SessionChildView {

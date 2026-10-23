@@ -1,6 +1,7 @@
 //! Sessions that run on the host, with no Box.
 
 use moor_core::domain::session_state::{SessionInput, SessionState};
+use moor_core::user::UserId;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 
 use super::{parsed_opt, Store, StoreError};
@@ -76,7 +77,7 @@ impl Store {
         agent: Option<&str>,
         agent_session_id: Option<&str>,
     ) -> Result<i64, StoreError> {
-        self.open_child_host_session(workdir, agent, agent_session_id, None)
+        self.open_child_host_session(workdir, agent, agent_session_id, None, None)
     }
 
     /// Register a Session that runs on the host in `workdir`, with no Box, under `parent` when
@@ -95,6 +96,7 @@ impl Store {
         agent: Option<&str>,
         agent_session_id: Option<&str>,
         parent: Option<i64>,
+        user: Option<UserId>,
     ) -> Result<i64, StoreError> {
         if workdir.is_empty() {
             return Err(StoreError::Invalid(
@@ -122,9 +124,9 @@ impl Store {
             }
         }
         tx.execute(
-            "INSERT INTO sessions (box, ordinal, state, started_at, workdir, agent, agent_session_id, parent_session) \
-             VALUES (NULL, 1, ?1, ?2, ?3, ?4, ?5, ?6)",
-            (state.as_str(), now.as_millis(), workdir, agent, agent_session_id, parent),
+            "INSERT INTO sessions (box, ordinal, state, started_at, workdir, agent, agent_session_id, parent_session, user) \
+             VALUES (NULL, 1, ?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            (state.as_str(), now.as_millis(), workdir, agent, agent_session_id, parent, user.map(UserId::get)),
         )?;
         let id = tx.last_insert_rowid();
         tx.commit()?;

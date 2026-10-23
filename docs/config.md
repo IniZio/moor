@@ -267,12 +267,13 @@ frame may assert an `identity`, checked like a request's. A front's watch
 carries the Boxes of the user it asserts. A watch on a front socket that
 asserts no identity, or one the socket may not assert, carries no events.
 
-Some requests read or change the controller host, so only the operator may
-send them:
+A host Session belongs to the user who opens it. That user and the operator
+may list, show, update, end and bind it, and start Boxes under it. Anyone else
+gets `not your Box`, as for a Session that does not exist, and their lists
+leave it out. A host Session the operator opens is the operator's only. An
+identity with no user gets `log in first` when it opens one.
 
-- `env`.
-- Host Sessions. Anyone else gets `not your Box` for a host Session, as for a
-  Session that does not exist, and a list leaves host Sessions out.
+`env` reads the controller host's configs, so only the operator may send it.
 
 ## Secrets a Box uses
 

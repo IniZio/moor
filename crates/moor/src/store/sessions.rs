@@ -10,6 +10,8 @@ use super::{parsed_opt, Store, StoreError};
 
 mod read;
 
+pub(crate) use read::SessionRecord;
+
 /// One Session of a Box.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BoxSession {

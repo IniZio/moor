@@ -10,7 +10,7 @@ use moor_core::{BoxId, BoxName};
 use serde_json::{json, Value};
 
 use super::authz::{
-    acting, every_kind, naming, not_yours, response_line, Names, World, A, A_BOX, B_BOX,
+    acting, every_kind, naming, not_yours, response_line, Names, World, A, A_BOX, B, B_BOX,
     MISSING_SESSION,
 };
 use super::fronts::{ask, refused};
@@ -84,7 +84,7 @@ fn session_ids(envelope: &Value) -> Vec<i64> {
 }
 
 #[test]
-fn host_sessions_are_the_operators_only() {
+fn the_operators_host_sessions_are_the_operators_only() {
     let world = World::new();
     let (slack, main) = (world.slack(), &world.served.main);
     let opened = ask(
@@ -113,13 +113,6 @@ fn host_sessions_are_the_operators_only() {
             "{kind}"
         );
     }
-    refused(
-        &ask(
-            &slack,
-            &acting(A, &json!({"cmd": "open-host-session", "workdir": "/w"})),
-        ),
-        "host Sessions are operator-only",
-    );
     let listed = ask(&slack, &acting(A, &json!({"cmd": "sessions"})));
     assert!(!session_ids(&listed).contains(&host), "{listed}");
     let lookup = json!({"cmd": "session-binding", "front": "slack", "key": "thread"});
@@ -128,6 +121,54 @@ fn host_sessions_are_the_operators_only() {
     assert!(session_ids(&ask(main, &json!({"cmd": "sessions"}))).contains(&host));
     let shown = ask(main, &json!({"cmd": "show-session", "session": host}));
     assert_eq!(shown["value"]["workdir"], "/home/op/w", "{shown}");
+}
+
+/// The kinds that act on a Session, each sent naming `session`.
+const ON_SESSION: [&str; 8] = [
+    "show-session",
+    "update-host-session",
+    "bind-session",
+    "sessions",
+    "open-host-session",
+    "open-session",
+    "start",
+    "end-host-session",
+];
+
+#[test]
+fn a_host_session_belongs_to_the_user_who_opened_it() {
+    let world = World::new();
+    let (slack, main) = (world.slack(), &world.served.main);
+    let open = json!({"cmd": "open-host-session", "workdir": "/threads/a"});
+    let opened = ask(&slack, &acting(A, &open));
+    let host = opened["value"]["session"]
+        .as_i64()
+        .expect("A opens a host Session");
+    for kind in ON_SESSION {
+        not_yours(&ask(&slack, &acting(B, &on_session(kind, host))));
+    }
+    let listed = ask(&slack, &acting(B, &json!({"cmd": "sessions"})));
+    assert!(!session_ids(&listed).contains(&host), "{listed}");
+    let listed = ask(&slack, &acting(A, &json!({"cmd": "sessions"})));
+    assert!(session_ids(&listed).contains(&host), "{listed}");
+    assert!(session_ids(&ask(main, &json!({"cmd": "sessions"}))).contains(&host));
+    for kind in ON_SESSION {
+        let got = ask(&slack, &acting(A, &on_session(kind, host)));
+        let message = got["error"]["message"].as_str().unwrap_or_default();
+        assert_ne!(message, "not your Box", "{kind}: {got}");
+    }
+    let shown = ask(main, &json!({"cmd": "show-session", "session": host}));
+    assert_eq!(shown["value"]["workdir"], "/threads/a", "{shown}");
+}
+
+#[test]
+fn an_identity_with_no_user_cannot_open_a_host_session() {
+    let world = World::new();
+    let open = json!({"cmd": "open-host-session", "workdir": "/w"});
+    refused(
+        &ask(&world.slack(), &acting("slack:T1:NOBODY", &open)),
+        "log in first: moor user enroll",
+    );
 }
 
 /// A request of `kind` that names Session `session`, as its parent for the kinds that name a
