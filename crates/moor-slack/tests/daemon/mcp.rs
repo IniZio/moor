@@ -247,6 +247,24 @@ fn a_steer_in_the_requesters_turn_reaches_the_box_and_the_next_turn_reads_it_as_
 }
 
 #[test]
+fn a_steer_reaches_the_controller_when_the_daemon_dials_it_through_its_fd_3() {
+    let (rig, controller, bin) = Rig::start_boxes_as_front();
+    controller.script(
+        "steer",
+        super::support::controller::Scripted::Reply(moor_core::response::Response::ok(
+            "steer", None,
+        )),
+    );
+    let steer = json!({"box": BOX_NAME, "text": "use tokio"});
+    Rig::tool_calls(&bin, Some(1), &[("steer_box", steer)]);
+    rig.open_thread_with_a_box();
+    super::inbox::reply(&rig, 2, USER, "tell it to use tokio");
+    rig.slack.wait_updates(2);
+    let sent = format!("Sent to Box `{BOX_NAME}`.");
+    assert_eq!(Rig::tool_results(&bin, 1), [(sent, false)]);
+}
+
+#[test]
 fn the_tool_server_sends_its_requests_as_the_identity_it_was_started_with() {
     let (rig, controller) = thread_with_a_box();
     let before = controller.seen(|seen| seen.requests.len());

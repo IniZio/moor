@@ -224,13 +224,21 @@ impl Rig {
     /// A scripted controller and a daemon whose coordinator is the fake `claude`, with
     /// `user`'s token linked when given, connected to Slack.
     pub(crate) fn start_coordinated(token: Option<&str>) -> (Self, FakeController, PathBuf) {
+        Self::start_coordinated_by(token, Self::spawn_daemon)
+    }
+
+    /// Like [`Self::start_coordinated`], with `spawn` starting the daemon.
+    fn start_coordinated_by(
+        token: Option<&str>,
+        spawn: fn(&mut Self),
+    ) -> (Self, FakeController, PathBuf) {
         let mut rig = Self::new();
         let bin = rig.use_fake_claude(None);
         if let Some(token) = token {
             rig.link_token(USER, token);
         }
         let controller = rig.serve(PROTOCOL);
-        rig.spawn_daemon();
+        spawn(&mut rig);
         rig.slack.wait_connected();
         (rig, controller, bin)
     }
@@ -239,7 +247,18 @@ impl Rig {
     /// `start_box` with goal `fix the thing` in its first turn, connected to Slack with
     /// [`REPO`] as the channel's default. Later turns call what the test writes.
     pub(crate) fn start_boxes() -> (Self, FakeController, PathBuf) {
-        let (rig, controller, bin) = Self::start_coordinated(Some(MCP));
+        Self::start_boxes_by(Self::spawn_daemon)
+    }
+
+    /// Like [`Self::start_boxes`], with the daemon given its socket the way the controller
+    /// starts a front: an `O_PATH` descriptor on fd 3 that `MOOR_FRONT_SOCKET` names.
+    pub(crate) fn start_boxes_as_front() -> (Self, FakeController, PathBuf) {
+        Self::start_boxes_by(Self::spawn_daemon_as_front)
+    }
+
+    /// Like [`Self::start_boxes`], with `spawn` starting the daemon.
+    fn start_boxes_by(spawn: fn(&mut Self)) -> (Self, FakeController, PathBuf) {
+        let (rig, controller, bin) = Self::start_coordinated_by(Some(MCP), spawn);
         controller.keep_boxes();
         rig.set_default_repo(REPO);
         let goal = serde_json::json!({"goal": "fix the thing"});
@@ -358,6 +377,27 @@ impl Rig {
         self.spawn_daemon_without_socket(|daemon| {
             daemon.arg("--socket").arg(socket);
             extra(daemon);
+        });
+    }
+
+    /// Spawns the daemon with its state dir in the rig's root and the rig's socket on fd 3 as
+    /// an `O_PATH` descriptor, named only by `MOOR_FRONT_SOCKET=/proc/self/fd/3`.
+    pub(crate) fn spawn_daemon_as_front(&mut self) {
+        use command_fds::{CommandFdExt as _, FdMapping};
+        use rustix::fs::{Mode, OFlags};
+        let socket =
+            rustix::fs::open(self.socket(), OFlags::PATH | OFlags::CLOEXEC, Mode::empty()).unwrap();
+        let state = self.path("state-slack");
+        self.spawn_daemon_without_socket(|daemon| {
+            daemon
+                .arg("--state-dir")
+                .arg(state)
+                .env("MOOR_FRONT_SOCKET", "/proc/self/fd/3")
+                .fd_mappings(vec![FdMapping {
+                    parent_fd: socket,
+                    child_fd: 3,
+                }])
+                .unwrap();
         });
     }
 
