@@ -176,17 +176,19 @@ struct Asked {
     /// The controller that started this shim; pid 1 is not told.
     parent: Option<Pid>,
     /// The front Proxy's socket, which pid 1 bridges to a loopback port.
+    #[cfg(target_os = "linux")]
     proxy: Option<PathBuf>,
     /// What the front's root holds.
     layout: Layout,
 }
 
 impl Asked {
-    /// Reads `--writable DIR` and `--proxy SOCKET` (at most one each) and `--read-only PATH`
-    /// flags, and `--parent PID` when `outer`.
+    /// Reads `--writable DIR` and, on Linux, `--proxy SOCKET` (at most one each) and
+    /// `--read-only PATH` flags, and `--parent PID` when `outer`.
     fn parse(flags: &[OsString], outer: bool) -> Result<Self, String> {
         let mut asked = Self {
             parent: None,
+            #[cfg(target_os = "linux")]
             proxy: None,
             layout: Layout::default(),
         };
@@ -205,6 +207,7 @@ impl Asked {
                         return Err(format!("--parent {} is not a pid", word.display()));
                     }
                 }
+                #[cfg(target_os = "linux")]
                 Some("--proxy") if asked.proxy.is_none() => {
                     asked.proxy = Some(PathBuf::from(word));
                 }
