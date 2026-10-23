@@ -11,7 +11,9 @@ use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::{BoxHandle, BoxPath, ErrorKind};
 
 use super::{blocked, fx_with, menu, steered, text, Fx};
+use crate::ops::start::revive_for_steer;
 use crate::ops::steer::run;
+use crate::ops::steer::{relaunch, Gone};
 use crate::testing::engine::FakeEngine;
 
 /// Probes that read an agent whose pane shows it exited 3.
@@ -103,7 +105,7 @@ fn an_agent_gone_again_after_its_relaunch_fails_the_steer_and_ends_the_session()
     assert_eq!(err.kind, ErrorKind::Failed);
     let message = err.error.to_string();
     assert!(
-        message.contains("ended again within 60s of its relaunch"),
+        message.contains("again within 60s of its relaunch"),
         "{message}"
     );
     assert_eq!(f.engine.launches().len(), 1, "relaunched once only");
@@ -124,7 +126,7 @@ fn a_second_steer_within_a_minute_of_the_relaunch_does_not_relaunch_again() {
     run(&f.cx, &text("one")).unwrap();
     let err = run(&f.cx, &text("two")).unwrap_err();
     assert!(
-        err.error.to_string().contains("ended again"),
+        err.error.to_string().contains("again within 60s"),
         "{}",
         err.error
     );
@@ -166,4 +168,41 @@ fn an_answer_to_an_exited_agent_relaunches_it_and_picks_the_choice() {
     let sends = f.engine.steers();
     assert_eq!(sends.len(), 1, "nothing goes to the exited agent");
     assert_eq!(sends[0], ("agent-2".to_owned(), Steer::Menu(1)));
+}
+
+#[test]
+fn a_steer_that_waited_out_another_relaunch_sends_to_the_new_agent() {
+    let engine = FakeEngine::new().steer_result(Err(EngineError::PaneGone));
+    let f = resumable(engine);
+    let store = f.cx.store().unwrap();
+    let old = store.live_session(f.id).unwrap();
+    run(&f.cx, &text("one")).unwrap();
+    assert_eq!(session_state(&f), SessionState::Working);
+    let gone = Gone::new("t", old, None);
+    relaunch::once(&f.cx, store, (f.id, "t"), gone).unwrap();
+    assert_eq!(session_state(&f), SessionState::Working);
+    assert!(store.live_session(f.id).unwrap().is_some());
+    run(&f.cx, &text("two")).unwrap();
+    assert_eq!(f.engine.launches().len(), 1);
+    assert_eq!(steered(&f).len(), 2);
+}
+
+#[test]
+fn an_asleep_box_gets_no_new_session_from_a_steer_relaunch() {
+    let f = resumable(FakeEngine::new());
+    let store = f.cx.store().unwrap();
+    assert!(store.end_current_session(f.id, "exited", None).unwrap());
+    put_to_sleep_ended(&f);
+    let before = store.box_sessions(f.id).unwrap().len();
+    let view = revive_for_steer(&f.cx, store, f.id).unwrap();
+    assert!(!view.launched);
+    assert_eq!(store.box_sessions(f.id).unwrap().len(), before);
+}
+
+/// Puts the machine and Box to sleep after the Session ended.
+fn put_to_sleep_ended(f: &Fx) {
+    let d = Decision::new(f.id)
+        .lifecycle(moor_core::domain::box_state::BoxLifecycleInput::Sleep { auto: false })
+        .box_input(moor_core::domain::boxes::BoxInput::Sleep);
+    f.cx.store().unwrap().apply(d).unwrap();
 }

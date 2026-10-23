@@ -19,6 +19,8 @@ const RECENT_EVENTS: usize = 50;
 
 /// Relaunches the gone agent of `target`, resuming its stored agent session.
 ///
+/// An agent that another op relaunched while this one waited for the Box lock is left to run.
+///
 /// # Errors
 /// The gone agent's refusal when there is nothing to resume, a failure naming why the
 /// relaunched agent did not start, or [`ended_again`] when the agent was relaunched less than
@@ -30,6 +32,10 @@ pub(super) fn once(
     gone: Gone,
 ) -> Result<(), CommandError> {
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "steer", boxlock::WAIT)?;
+    let live = store.live_session(id)?.map(|l| l.id);
+    if live.is_some() && live != gone.launch.as_ref().map(|l| l.id) {
+        return Ok(());
+    }
     if relaunched_recently(cx, store, id)? {
         return Err(ended_again(cx, store, (id, name), &gone)?);
     }
@@ -62,13 +68,13 @@ pub(super) fn ended_again(
 ) -> Result<CommandError, CommandError> {
     gone.finish(cx, store, id)?;
     let how = gone.code.map_or_else(
-        || "its pane is gone".to_owned(),
-        |c| format!("it exited {c}"),
+        || "lost its pane".to_owned(),
+        |c| format!("exited with code {c}"),
     );
     Ok(CommandError::new(
         ErrorKind::Failed,
         format!(
-            "the agent of Box {name} ended again within {}s of its relaunch ({how}); its session ended and it was not relaunched again. Start it with `moor start {name} --resume`",
+            "the agent of Box {name} {how} again within {}s of its relaunch, so moor did not relaunch it and its session ended; start it again with `moor start {name} --resume`",
             RELAUNCH_GUARD.as_secs()
         ),
     ))
