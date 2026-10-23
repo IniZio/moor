@@ -290,7 +290,8 @@ fn supported(info: &SupportInfo) -> Result<(), String> {
 
 /// pid 1 of the front's PID namespace: moves into the front's root as `layout` describes,
 /// confines itself to writing the writable dir and `/tmp`, drops every capability, turns
-/// undumpable so the front cannot reach what pid 1 holds open through `/proc/1/fd`, and runs
+/// undumpable when it holds the Proxy socket's dir open, so the front cannot reach that dir
+/// through `/proc/1/fd`, and runs
 /// `command` with its socket on fd 3 and `proxy` bridged to a loopback port. The kernel kills
 /// the namespace if the outer shim dies. The outer shim holds the only write end of stdin, so
 /// a readable stdin means it died before the death signal was set, and pid 1 exits.
@@ -327,8 +328,10 @@ fn init(layout: &Layout, proxy: Option<&Path>, command: &[OsString]) -> Result<u
         },
     )
     .map_err(|e| format!("cannot drop capabilities: {e}"))?;
-    set_dumpable_behavior(DumpableBehavior::NotDumpable)
-        .map_err(|e| format!("cannot make pid 1 undumpable: {e}"))?;
+    if bridge.is_some() {
+        set_dumpable_behavior(DumpableBehavior::NotDumpable)
+            .map_err(|e| format!("cannot make pid 1 undumpable: {e}"))?;
+    }
     let (program, args) = command.split_first().ok_or("no front command")?;
     let mut front = Command::new(program);
     front.args(args).stdin(Stdio::null());
