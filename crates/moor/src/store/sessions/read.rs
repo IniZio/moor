@@ -34,11 +34,13 @@ pub(crate) struct SessionRecord {
     pub(crate) ended_at: Option<i64>,
     /// The user a host Session belongs to; `None` for a Box's Session and the operator's.
     pub(crate) user: Option<UserId>,
+    /// The key a host Session was opened with.
+    pub(crate) key: Option<String>,
 }
 
 /// Columns of a Session row, in the order [`SessionRecord::from_row`] reads them.
 const SELECT: &str = "SELECT s.id, b.name, s.ordinal, s.parent_session, s.workdir, s.agent, \
-     s.agent_session_id, s.state, s.started_at, s.ended_at, s.box, s.user \
+     s.agent_session_id, s.state, s.started_at, s.ended_at, s.box, s.user, s.host_key \
      FROM sessions s LEFT JOIN boxes b ON b.id = s.box";
 
 impl SessionRecord {
@@ -67,6 +69,7 @@ impl SessionRecord {
                 ended_at: row.get(9)?,
                 box_id: row.get::<_, Option<i64>>(10)?.map(BoxId::new),
                 user: row.get::<_, Option<i64>>(11)?.map(UserId::new),
+                key: row.get(12)?,
             })
         })();
         Ok(parsed_row)

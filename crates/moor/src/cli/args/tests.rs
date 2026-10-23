@@ -194,10 +194,11 @@ fn session_open_host_takes_workdir_agent_and_session() {
             "abc"
         ]),
         Request::OpenHostSession(OpenHostSessionReq {
-            workdir: "/w".into(),
+            workdir: Some("/w".into()),
             agent: Some("claude".into()),
             agent_session_id: Some("abc".into()),
             parent: None,
+            key: None,
         })
     );
 }
@@ -225,7 +226,7 @@ fn session_open_host_makes_relative_workdir_absolute() {
     assert!(matches!(
         r,
         Request::OpenHostSession(ref h)
-            if std::path::Path::new(&h.workdir).is_absolute() && h.workdir.ends_with('w')
+            if h.workdir.as_deref().is_some_and(|w| std::path::Path::new(w).is_absolute() && w.ends_with('w'))
     ));
 }
 

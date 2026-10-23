@@ -76,10 +76,11 @@ fn session_open_host_parent_lands_in_request() {
     assert_eq!(
         r,
         Request::OpenHostSession(OpenHostSessionReq {
-            workdir: "/w".into(),
+            workdir: Some("/w".into()),
             agent: None,
             agent_session_id: None,
             parent: Some(SessionId::new(4)),
+            key: None,
         })
     );
 }

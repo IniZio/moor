@@ -14,7 +14,7 @@ mod cp;
 mod end_session;
 pub(crate) mod env;
 mod gate;
-mod host_session;
+pub(crate) mod host_session;
 mod open;
 mod open_session;
 mod run;

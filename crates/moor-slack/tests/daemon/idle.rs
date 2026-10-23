@@ -1,6 +1,6 @@
 //! Quiet threads: the front ends a thread's host Session once the thread has been quiet for
 //! `coordinator.idle_minutes` and none of its Boxes is busy, and the next message opens a new
-//! one in the same workdir. A crash between a host Session request and its record in
+//! one with the same key. A crash between a host Session request and its record in
 //! `slack.db` leaves one live host Session for the thread, which a rerun adopts and a turn that
 //! does not run again ends. A host Session ended outside the front is replaced before a turn;
 //! a check that fails any other way keeps it. The sweep tests backdate the thread's last turn and restart the front, whose scheduler
@@ -17,7 +17,7 @@ use serde_json::json;
 use super::inbox::reply;
 use super::support::controller::{failed, refused, FakeController, Scripted};
 use super::support::{Rig, BOX_NAME, CHANNEL, TS, USER};
-use super::turn::{ask, workdir, GOOD};
+use super::turn::{ask, GOOD};
 
 /// The daemon's `slack.db`.
 pub(super) fn db(rig: &Rig) -> rusqlite::Connection {
@@ -108,11 +108,19 @@ pub(super) fn restart(rig: &mut Rig) {
     rig.slack.wait_connected();
 }
 
-/// The workdir and agent of each `open-host-session` the controller was sent.
+/// The key the front opens its thread's host Session with.
+fn thread_key() -> String {
+    format!("{CHANNEL}/{TS}")
+}
+
+/// The key of each `open-host-session` the controller was sent; none sends a workdir.
 fn opens(controller: &FakeController) -> Vec<String> {
     controller.seen(|seen| {
         let open = |r: &Request| match r {
-            Request::OpenHostSession(open) => Some(open.workdir.clone()),
+            Request::OpenHostSession(open) => {
+                assert_eq!(open.workdir, None, "the front sends no workdir");
+                open.key.clone()
+            }
             _ => None,
         };
         seen.requests.iter().filter_map(open).collect()
@@ -147,7 +155,7 @@ fn quiet_thread() -> (Rig, FakeController, std::path::PathBuf) {
 }
 
 #[test]
-fn a_quiet_thread_ends_its_host_session_and_the_next_message_reopens_it_in_the_same_workdir() {
+fn a_quiet_thread_ends_its_host_session_and_the_next_message_reopens_it_with_the_same_key() {
     let (rig, controller, bin) = quiet_thread();
     controller.wait_until("end-host-session", |s| {
         s.requests
@@ -158,11 +166,11 @@ fn a_quiet_thread_ends_its_host_session_and_the_next_message_reopens_it_in_the_s
     assert_eq!(ends(&controller), [100]);
     reply(&rig, 2, USER, "what did I ask?");
     rig.slack.wait_updates(2);
-    let dir = workdir(&rig).display().to_string();
+    let dir = thread_key();
     assert_eq!(opens(&controller), [dir.clone(), dir.clone()]);
     let hosts = controller.hosts();
     let want = [(100, dir.clone(), true), (101, dir, false)];
-    assert_eq!(hosts, want, "a new host Session row in the same workdir");
+    assert_eq!(hosts, want, "a new host Session with the same key");
     assert_eq!(root_session(&rig), Some(101));
     let stdin = std::fs::read_to_string(bin.join("run-1").join("stdin")).unwrap();
     assert!(
@@ -267,15 +275,16 @@ fn crash_after(rig: &mut Rig, controller: &FakeController, cmd: &'static str, n:
 }
 
 #[test]
-fn a_host_session_opened_before_a_crash_is_adopted_by_its_workdir() {
+fn a_host_session_opened_before_a_crash_is_adopted_by_its_key() {
     let (mut rig, controller, _bin) = Rig::start_coordinated(Some(GOOD));
     controller.script("open-host-session", Scripted::Lost);
     rig.mention(1, USER, "<@UBOT> hello there", TS, None);
     crash_after(&mut rig, &controller, "open-host-session", 1);
     assert_eq!(rig.slack.wait_updates(1)[0].text, "OK");
-    let dir = workdir(&rig).display().to_string();
+    let dir = thread_key();
     assert_eq!(controller.hosts(), [(100, dir.clone(), false)]);
-    assert_eq!(opens(&controller), [dir], "no second host Session");
+    let again = "the rerun opens with the same key and gets the same Session";
+    assert_eq!(opens(&controller), [dir.clone(), dir], "{again}");
     wait_root_session(&rig, Some(100));
     assert_eq!(ends(&controller), [] as [i64; 0], "the rerun keeps it");
 }
@@ -299,7 +308,7 @@ fn a_host_session_left_by_a_turn_that_does_not_run_again_is_ended_at_start() {
     controller.wait_until("end-host-session", |s| {
         s.requests.iter().any(|r| r.cmd() == "end-host-session")
     });
-    let dir = workdir(&rig).display().to_string();
+    let dir = thread_key();
     assert_eq!(controller.hosts(), [(100, dir, true)]);
     assert_eq!(ends(&controller), [100]);
     assert_eq!(root_session(&rig), None);
@@ -318,14 +327,14 @@ fn touches(controller: &FakeController) -> Vec<i64> {
 }
 
 #[test]
-fn a_host_session_ended_outside_the_front_is_replaced_in_the_same_workdir_before_the_turn() {
+fn a_host_session_ended_outside_the_front_is_replaced_with_the_same_key_before_the_turn() {
     let (rig, controller, bin) = Rig::start_coordinated(Some(GOOD));
     ask(&rig, "hello there");
     wait_posted(&rig, 1);
     controller.end_host(100);
     reply(&rig, 2, USER, "and now?");
     assert_eq!(rig.slack.wait_updates(2)[1].text, "OK");
-    let dir = workdir(&rig).display().to_string();
+    let dir = thread_key();
     let want = [(100, dir.clone(), true), (101, dir, false)];
     assert_eq!(controller.hosts(), want);
     assert_eq!(touches(&controller), [100, 100, 101]);
@@ -348,7 +357,7 @@ fn a_host_session_refused_again_after_the_reopen_ends_the_turn_with_its_refusal(
     let line = "The coordinator is unavailable: the controller did not open a host Session: \
                 host Session 101 has ended.";
     assert_eq!(rig.slack.wait_updates(2)[1].text, line);
-    let dir = workdir(&rig).display().to_string();
+    let dir = thread_key();
     assert_eq!(
         opens(&controller),
         [dir.clone(), dir],
@@ -374,7 +383,7 @@ fn check_answered(answer: impl Fn() -> Scripted) -> (Rig, FakeController, std::p
 /// The turn after [`check_answered`] ran on host Session 100, which stays recorded.
 fn ran_on_the_recorded_session(rig: &Rig, controller: &FakeController, bin: &Path) {
     assert_eq!(rig.slack.wait_updates(2)[1].text, "OK");
-    let dir = workdir(rig).display().to_string();
+    let dir = thread_key();
     assert_eq!(opens(controller), [dir], "no second host Session");
     assert_eq!(touches(controller), [100, 100]);
     assert_eq!(root_session(rig), Some(100));
@@ -402,10 +411,10 @@ fn a_host_session_reopened_before_a_crash_is_adopted_and_the_ended_one_is_not() 
     reply(&rig, 2, USER, "and now?");
     crash_after(&mut rig, &controller, "open-host-session", 2);
     rig.slack.wait_updates(2);
-    let dir = workdir(&rig).display().to_string();
-    assert_eq!(opens(&controller), [dir.clone(), dir.clone()]);
+    let dir = thread_key();
+    assert_eq!(opens(&controller), [dir.clone(), dir.clone(), dir.clone()]);
     let want = [(100, dir.clone(), true), (101, dir, false)];
-    assert_eq!(controller.hosts(), want);
+    assert_eq!(controller.hosts(), want, "the third open adopts 101");
     wait_root_session(&rig, Some(101));
 }
 
@@ -422,7 +431,7 @@ fn an_end_cut_off_by_a_crash_is_done_once_the_controller_says_the_session_ended(
     assert_eq!(ends(&controller), [100, 100]);
     reply(&rig, 2, USER, "and now?");
     rig.slack.wait_updates(2);
-    let dir = workdir(&rig).display().to_string();
+    let dir = thread_key();
     let want = [(100, dir.clone(), true), (101, dir, false)];
     assert_eq!(controller.hosts(), want, "the next message opens a new one");
     assert_eq!(root_session(&rig), Some(101));
@@ -475,7 +484,7 @@ fn a_real_claude_code_answers_from_the_rebuilt_context_after_an_idle_end() {
         )
         .unwrap();
     assert!(answer.to_lowercase().contains("heliotrope"), "{answer}");
-    let dir = workdir(&rig).display().to_string();
+    let dir = thread_key();
     let hosts = controller.hosts();
     assert_eq!(hosts, [(100, dir.clone(), true), (101, dir, false)]);
     assert!(

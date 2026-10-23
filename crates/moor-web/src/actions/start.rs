@@ -164,10 +164,11 @@ fn open_root(
         h,
         ("open-host-session", "opening the request session"),
         Request::OpenHostSession(OpenHostSessionReq {
-            workdir,
+            workdir: Some(workdir),
             agent: None,
             agent_session_id: None,
             parent: None,
+            key: None,
         }),
     )?;
     let root = opened

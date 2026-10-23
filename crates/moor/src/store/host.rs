@@ -1,5 +1,7 @@
 //! Sessions that run on the host, with no Box.
 
+use std::path::Path;
+
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::user::UserId;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
@@ -65,6 +67,32 @@ fn load_live(conn: &Connection, id: i64) -> Result<HostRow, StoreError> {
     Ok(row)
 }
 
+/// Where a new host Session runs.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum HostWorkdir<'a> {
+    /// The directory the caller chose.
+    At(&'a str),
+    /// A directory of its own, named by the Session's id, inside this one.
+    Under(&'a Path),
+}
+
+/// A host Session to open.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct NewHost<'a> {
+    /// Where it runs.
+    pub(crate) workdir: HostWorkdir<'a>,
+    /// Agent it runs.
+    pub(crate) agent: Option<&'a str>,
+    /// The agent's own id for the Session.
+    pub(crate) agent_session_id: Option<&'a str>,
+    /// Row id of the parent Session.
+    pub(crate) parent: Option<i64>,
+    /// The user it belongs to; `None` for the operator's.
+    pub(crate) user: Option<UserId>,
+    /// The opener's own name for it; a live Session of the same user and key is returned.
+    pub(crate) key: Option<&'a str>,
+}
+
 impl Store {
     /// Register a Session that runs on the host in `workdir`, with no parent; returns its id.
     ///
@@ -77,7 +105,15 @@ impl Store {
         agent: Option<&str>,
         agent_session_id: Option<&str>,
     ) -> Result<i64, StoreError> {
-        self.open_child_host_session(workdir, agent, agent_session_id, None, None)
+        self.open_child_host_session(&NewHost {
+            workdir: HostWorkdir::At(workdir),
+            agent,
+            agent_session_id,
+            parent: None,
+            user: None,
+            key: None,
+        })
+        .map(|(id, _)| id)
     }
 
     /// Register a Session that runs on the host in `workdir`, with no Box, under `parent` when
@@ -92,13 +128,21 @@ impl Store {
     /// database fails.
     pub(crate) fn open_child_host_session(
         &self,
-        workdir: &str,
-        agent: Option<&str>,
-        agent_session_id: Option<&str>,
-        parent: Option<i64>,
-        user: Option<UserId>,
-    ) -> Result<i64, StoreError> {
-        if workdir.is_empty() {
+        new: &NewHost<'_>,
+    ) -> Result<(i64, String), StoreError> {
+        let NewHost {
+            workdir,
+            agent,
+            agent_session_id,
+            parent,
+            user,
+            key,
+        } = *new;
+        let given = match workdir {
+            HostWorkdir::At(dir) => dir.to_owned(),
+            HostWorkdir::Under(base) => base.display().to_string(),
+        };
+        if given.is_empty() {
             return Err(StoreError::Invalid(
                 "a host Session needs a workdir".to_owned(),
             ));
@@ -108,30 +152,33 @@ impl Store {
         let mut conn = self.writer()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         if let Some(p) = parent {
-            let row: Option<(String, Option<i64>)> = tx
-                .query_row(
-                    "SELECT state, ended_at FROM sessions WHERE id = ?1",
-                    [p],
-                    |r| Ok((r.get(0)?, r.get(1)?)),
-                )
-                .optional()?;
-            match row {
-                None => return Err(StoreError::Invalid(format!("no Session {p}"))),
-                Some((s, ended_at)) if s == SessionState::Ended.as_str() || ended_at.is_some() => {
-                    return Err(StoreError::Invalid(format!("Session {p} has ended")));
-                }
-                Some(_) => {}
-            }
+            check_parent(&tx, p)?;
+        }
+        let user_id = user.map(UserId::get);
+        if let Some(live) = key
+            .map(|k| live_keyed(&tx, user_id, k))
+            .transpose()?
+            .flatten()
+        {
+            return Ok(live);
         }
         tx.execute(
-            "INSERT INTO sessions (box, ordinal, state, started_at, workdir, agent, agent_session_id, parent_session, user) \
-             VALUES (NULL, 1, ?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            (state.as_str(), now.as_millis(), workdir, agent, agent_session_id, parent, user.map(UserId::get)),
+            "INSERT INTO sessions (box, ordinal, state, started_at, workdir, agent, agent_session_id, parent_session, user, host_key) \
+             VALUES (NULL, 1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            (state.as_str(), now.as_millis(), &given, agent, agent_session_id, parent, user_id, key),
         )?;
         let id = tx.last_insert_rowid();
+        let workdir = match workdir {
+            HostWorkdir::At(_) => given,
+            HostWorkdir::Under(base) => {
+                let own = base.join(id.to_string()).display().to_string();
+                tx.execute("UPDATE sessions SET workdir = ?1 WHERE id = ?2", (&own, id))?;
+                own
+            }
+        };
         tx.commit()?;
         drop(conn);
-        Ok(id)
+        Ok((id, workdir))
     }
 
     /// Read the host Session `id`; `None` when no host Session has that id.
@@ -188,6 +235,41 @@ impl Store {
         row.ended_at = Some(now);
         Ok(row)
     }
+}
+
+/// Refuses parent `p` when it is unknown or has ended.
+fn check_parent(conn: &Connection, p: i64) -> Result<(), StoreError> {
+    let row: Option<(String, Option<i64>)> = conn
+        .query_row(
+            "SELECT state, ended_at FROM sessions WHERE id = ?1",
+            [p],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    match row {
+        None => Err(StoreError::Invalid(format!("no Session {p}"))),
+        Some((s, ended_at)) if s == SessionState::Ended.as_str() || ended_at.is_some() => {
+            Err(StoreError::Invalid(format!("Session {p} has ended")))
+        }
+        Some(_) => Ok(()),
+    }
+}
+
+/// The id and workdir of the live host Session that `user` (none for the operator) opened
+/// with `key`.
+fn live_keyed(
+    conn: &Connection,
+    user: Option<i64>,
+    key: &str,
+) -> Result<Option<(i64, String)>, StoreError> {
+    Ok(conn
+        .query_row(
+            "SELECT id, workdir FROM sessions WHERE box IS NULL AND host_key = ?1 \
+             AND IFNULL(user, 0) = IFNULL(?2, 0) AND ended_at IS NULL",
+            (key, user),
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?)
 }
 
 #[cfg(test)]

@@ -15,9 +15,11 @@ CREATE UNIQUE INDEX boxes_open_branch ON boxes(branch) WHERE branch IS NOT NULL 
 CREATE TABLE sessions (id INTEGER PRIMARY KEY, box INTEGER REFERENCES boxes(id), ordinal INTEGER NOT NULL,
   agent TEXT, model TEXT, agent_session_id TEXT, workspace_id TEXT, pane TEXT, state TEXT NOT NULL,
   started_at INTEGER NOT NULL, ended_at INTEGER, parent_session INTEGER REFERENCES sessions(id), workdir TEXT,
-  user INTEGER REFERENCES users(id),
+  user INTEGER REFERENCES users(id), host_key TEXT,
   CHECK (box IS NOT NULL OR workdir IS NOT NULL), UNIQUE (box, ordinal));
 CREATE INDEX sessions_parent ON sessions(parent_session);
+CREATE UNIQUE INDEX sessions_host_key ON sessions(IFNULL(user, 0), host_key)
+  WHERE host_key IS NOT NULL AND ended_at IS NULL;
 CREATE TABLE launches (id INTEGER PRIMARY KEY, box INTEGER NOT NULL REFERENCES boxes(id), session_ref TEXT NOT NULL, pane TEXT,
   started_at INTEGER NOT NULL, ended_at INTEGER, exit INTEGER, transcript_digest TEXT, registered_agent_session TEXT,
   session INTEGER REFERENCES sessions(id));
@@ -43,4 +45,4 @@ CREATE TABLE link_codes (code TEXT PRIMARY KEY, user INTEGER NOT NULL REFERENCES
   expires_at INTEGER NOT NULL);
 CREATE TABLE user_secrets (user INTEGER NOT NULL REFERENCES users(id), name TEXT NOT NULL, value BLOB NOT NULL,
   updated_at INTEGER NOT NULL, PRIMARY KEY (user, name));
-INSERT INTO meta (k, v) VALUES ('schema_version', '14');
+INSERT INTO meta (k, v) VALUES ('schema_version', '15');

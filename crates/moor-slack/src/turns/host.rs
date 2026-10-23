@@ -1,6 +1,6 @@
-//! The thread's host Session on the controller: the one recorded, else a live one with the
-//! thread's workdir that the front opened before a crash, else a new one. The controller
-//! confirms it is live before a turn runs.
+//! The thread's host Session on the controller: the one recorded, else the live one opened
+//! with the thread's key (the front may have opened it before a crash), else a new one. The
+//! controller chooses the workdir and confirms the Session is live before a turn runs.
 
 use moor_client::Client;
 use moor_core::name::SessionId;
@@ -46,7 +46,13 @@ fn refused(client: &Client, id: i64, agent: &str) -> Option<String> {
     (error.kind == ErrorKind::Refused).then_some(error.message)
 }
 
-/// The recorded host Session, else a live one with `workdir`, else a new one; recorded.
+/// The key the thread's host Session is opened with: `<channel>/<thread ts>`.
+pub(super) fn key(row: &TurnRow) -> String {
+    format!("{}/{}", row.channel, row.thread_ts)
+}
+
+/// The recorded host Session, else the live one with the thread's key, else a new one;
+/// recorded with the thread's `workdir`.
 fn find_or_open(
     client: &Client,
     db: &Db,
@@ -60,35 +66,34 @@ fn find_or_open(
     {
         return Ok(id);
     }
-    let found = live_with(client, workdir)?.into_iter().next();
-    let open = || {
-        let opened = call(
-            client,
-            Request::OpenHostSession(OpenHostSessionReq {
-                workdir: workdir.to_owned(),
-                agent: Some(agent.to_owned()),
-                agent_session_id: None,
-                parent: None,
-            }),
-        )?;
-        let id = opened.get("session").and_then(Value::as_i64);
-        id.ok_or_else(|| "the reply carries no session id".to_owned())
-    };
-    let id = found.map_or_else(open, Ok)?;
+    let opened = call(
+        client,
+        Request::OpenHostSession(OpenHostSessionReq {
+            workdir: None,
+            agent: Some(agent.to_owned()),
+            agent_session_id: None,
+            parent: None,
+            key: Some(key(row)),
+        }),
+    )?;
+    let id = opened
+        .get("session")
+        .and_then(Value::as_i64)
+        .ok_or_else(|| "the reply carries no session id".to_owned())?;
     db.set_root_session(&row.channel, &row.thread_ts, workdir, id)
         .map_err(|e| e.to_string())?;
     Ok(id)
 }
 
-/// The ids of the live Sessions whose workdir is `workdir`.
-pub(super) fn live_with(client: &Client, workdir: &str) -> Result<Vec<i64>, String> {
+/// The ids of the caller's live host Sessions opened with `key`.
+pub(super) fn live_with_key(client: &Client, key: &str) -> Result<Vec<i64>, String> {
     let live = call(client, Request::Sessions(SessionsReq { parent: None }))?;
     Ok(live
         .get("sessions")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter(|s| s.get("workdir").and_then(Value::as_str) == Some(workdir))
+        .filter(|s| s.get("key").and_then(Value::as_str) == Some(key))
         .filter_map(|s| s.get("session").and_then(Value::as_i64))
         .collect())
 }

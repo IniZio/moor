@@ -131,13 +131,16 @@ fn a_turn_opens_the_threads_host_session_and_records_how_it_ended() {
     ask(&rig, "hello there");
     let opened = controller.seen(|seen| {
         let open = |r: &Request| match r {
-            Request::OpenHostSession(open) => Some((open.workdir.clone(), open.agent.clone())),
+            Request::OpenHostSession(open) => {
+                Some((open.workdir.clone(), open.key.clone(), open.agent.clone()))
+            }
             _ => None,
         };
         seen.requests.iter().filter_map(open).collect::<Vec<_>>()
     });
     let want = (
-        workdir(&rig).display().to_string(),
+        None,
+        Some(format!("{CHANNEL}/{TS}")),
         Some("claude".to_owned()),
     );
     assert_eq!(opened, [want]);
