@@ -103,12 +103,15 @@ schema. Move it aside and start again with a fresh one.
   Box's state changes, at most once every 2 seconds.
 - When a Box's agent asks a question, the front posts it with one button per
   option, up to 25. Only the person who asked for the Box can answer.
-- Each file version a Box publishes is uploaded into the thread once. Without
-  the `files:write` scope, the thread shows the file's name and size instead.
-  When an upload fails, the thread shows the reason once and the front tries
-  again with a growing wait. After 10 minutes from the first failure the thread
-  says the front gave up, and that version is never tried again, not even after
-  a restart.
+- Each file version a Box publishes is uploaded into the thread, normally once.
+  A crash between Slack sharing the file and the front recording it can upload
+  that version a second time. Without the `files:write` scope, the thread shows
+  the file's name and size instead. When an upload fails, the front posts the
+  reason (if that post is refused, it posts it on a later try) and tries again
+  with a growing wait of 2 seconds up to 64. A retry waits on its own and holds
+  back no other thread. 10 minutes after the first failure the front stops and
+  posts that it gave up, with the reason, when Slack accepts that post. That
+  version is never tried again, not even after a restart.
 - After `idle_minutes` with no turn and no waiting message, the front ends the
   thread's host Session. The front keeps the host Session while a Box is starting or
   closing, while an agent works or waits on a question, or while the

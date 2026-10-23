@@ -19,6 +19,8 @@ pub(crate) enum ArtifactShown {
         tried_at: i64,
         /// Attempts so far.
         tries: u32,
+        /// Whether the thread shows the reason.
+        told: bool,
     },
     /// The version itself, or its name and size when the file cannot go up.
     Version,
@@ -37,7 +39,7 @@ impl Db {
         let row = self
             .conn
             .query_row(
-                "SELECT posted_at IS NOT NULL, gave_up_at IS NOT NULL, failed_at, tried_at, tries \
+                "SELECT posted_at IS NOT NULL, gave_up_at IS NOT NULL, failed_at, tried_at, tries, told \
                  FROM slack_artifacts WHERE box_name = ?1 AND name = ?2 AND version = ?3",
                 params![box_name.as_str(), name, version],
                 |r| {
@@ -47,6 +49,7 @@ impl Db {
                         r.get::<_, Option<i64>>(2)?,
                         r.get::<_, Option<i64>>(3)?,
                         r.get::<_, u32>(4)?,
+                        r.get::<_, bool>(5)?,
                     ))
                 },
             )
@@ -55,28 +58,32 @@ impl Db {
             None => ArtifactShown::Nothing,
             Some((true, ..)) => ArtifactShown::Version,
             Some((_, true, ..)) => ArtifactShown::GaveUp,
-            Some((_, _, since, tried_at, tries)) => ArtifactShown::Failure {
+            Some((_, _, since, tried_at, tries, told)) => ArtifactShown::Failure {
                 since: since.unwrap_or_default(),
                 tried_at: tried_at.unwrap_or_default(),
                 tries,
+                told,
             },
         })
     }
 
-    /// Records that an upload of `version` of `name` failed at `now`.
+    /// Records that an upload of `version` of `name` failed at `now`, and whether the thread
+    /// now shows the reason.
     pub(crate) fn artifact_failed(
         &self,
         box_name: &BoxName,
         name: &str,
         version: u32,
         now: i64,
+        told: bool,
     ) -> rusqlite::Result<()> {
         self.conn.execute(
-            "INSERT INTO slack_artifacts (box_name, name, version, failed_at, tried_at, tries) \
-             VALUES (?1, ?2, ?3, ?4, ?4, 1) \
+            "INSERT INTO slack_artifacts (box_name, name, version, failed_at, tried_at, tries, told) \
+             VALUES (?1, ?2, ?3, ?4, ?4, 1, ?5) \
              ON CONFLICT (box_name, name, version) \
-             DO UPDATE SET tried_at = excluded.tried_at, tries = tries + 1",
-            params![box_name.as_str(), name, version, now],
+             DO UPDATE SET tried_at = excluded.tried_at, tries = tries + 1, \
+                           told = MAX(told, excluded.told)",
+            params![box_name.as_str(), name, version, now, told],
         )?;
         Ok(())
     }

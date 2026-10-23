@@ -6,19 +6,19 @@
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::thread::JoinHandle;
 use std::time::Duration;
 
-use moor_core::controller::{ServerFrame, BYTES_MAX, PROTOCOL};
-use moor_core::{ErrorKind, ErrorView, Response};
+use moor_core::controller::BYTES_MAX;
 use serde_json::{json, Value};
 
 use super::*;
+
+mod controller;
+pub(crate) use controller::{controller, Stored};
 
 /// A token whose text must never reach a thread.
 const TOKEN: &str = "xoxb-artifact-secret";
@@ -46,7 +46,11 @@ pub(crate) struct Fake {
     /// While set, `files.getUploadURLExternal` answers `missing_scope`.
     scope_missing: AtomicBool,
     /// While set, `chat.postMessage` answers `ok: false`.
-    post_down: AtomicBool,
+    pub(crate) post_down: AtomicBool,
+    /// While set, `files.completeUploadExternal` shares the file but answers HTTP 500.
+    pub(crate) complete_lost: AtomicBool,
+    /// While set, `files.info` reports the file as shared nowhere.
+    pub(crate) hide_shares: AtomicBool,
     /// When set, the upload URL `files.getUploadURLExternal` hands out.
     upload_to: Mutex<Option<String>>,
 }
@@ -114,6 +118,26 @@ fn reply(fake: &Fake, host: &str, path: &str) -> (&'static str, String) {
             format!("bad auth Bearer {TOKEN}"),
         );
     }
+    if path.ends_with("completeuploadexternal") && on(&fake.complete_lost) {
+        return ("500 Internal Server Error", "lost".to_owned());
+    }
+    if path.ends_with("files.info") {
+        let done = fake
+            .seen
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|s| s.path.ends_with("completeuploadexternal"));
+        let shares = if done && !on(&fake.hide_shares) {
+            json!({"public": {"C1": [{"ts": "5.5", "thread_ts": "1.0"}]}})
+        } else {
+            json!({})
+        };
+        return (
+            "200 OK",
+            json!({"ok": true, "file": {"id": "F1", "shares": shares}}).to_string(),
+        );
+    }
     if path.ends_with("chat.postmessage") && on(&fake.post_down) {
         return (
             "200 OK",
@@ -133,6 +157,8 @@ pub(crate) fn fake() -> Arc<Fake> {
         upload_down: AtomicBool::default(),
         scope_missing: AtomicBool::default(),
         post_down: AtomicBool::default(),
+        complete_lost: AtomicBool::default(),
+        hide_shares: AtomicBool::default(),
         upload_to: Mutex::default(),
     });
     let served = Arc::clone(&fake);
@@ -175,104 +201,6 @@ impl Fake {
         };
         self.hits("chat.postmessage").iter().map(text).collect()
     }
-}
-
-/// What the fake controller streams for one connection: `pattern` repeated up to `total`
-/// bytes, in bytes frames of `frame` bytes, then an ok response or the error `fail`.
-pub(crate) struct Stored {
-    /// Bytes repeated to make the file.
-    pattern: Vec<u8>,
-    /// File length.
-    total: u64,
-    /// Bytes per frame.
-    frame: usize,
-    /// Error message of the final response, if it fails.
-    fail: Option<&'static str>,
-}
-
-impl Stored {
-    /// `bytes` as one file in full frames.
-    pub(crate) fn of(bytes: &[u8]) -> Self {
-        Self {
-            pattern: bytes.to_vec(),
-            total: bytes.len() as u64,
-            frame: BYTES_MAX,
-            fail: None,
-        }
-    }
-}
-
-/// Writes the frames of `s` to `out`.
-fn send(out: &mut impl Write, s: &Stored) -> std::io::Result<()> {
-    let (mut at, mut sent, mut frame) = (0, 0_u64, Vec::with_capacity(s.frame));
-    while sent < s.total {
-        let want = s.frame.min(usize::try_from(s.total - sent).unwrap());
-        frame.clear();
-        while frame.len() < want {
-            let take = (want - frame.len()).min(s.pattern.len() - at);
-            frame.extend_from_slice(&s.pattern[at..at + take]);
-            at = (at + take) % s.pattern.len();
-        }
-        let head = ServerFrame::Bytes {
-            id: "1".into(),
-            len: want,
-        };
-        out.write_all(head.to_line().as_bytes())?;
-        out.write_all(&frame)?;
-        sent += want as u64;
-    }
-    let envelope = s.fail.map_or_else(
-        || Response::ok("artifact-read", Some(json!({"sent": sent, "eof": true}))),
-        |message| {
-            let error = ErrorView {
-                kind: ErrorKind::Failed,
-                message: message.to_owned(),
-                hints: Vec::new(),
-                context: Vec::new(),
-            };
-            Response::err("artifact-read", error)
-        },
-    );
-    let end = ServerFrame::Response {
-        id: "1".into(),
-        envelope,
-    };
-    out.write_all(end.to_line().as_bytes())
-}
-
-/// Answers the hello on `conn` and returns the request that follows it.
-fn take_request(mut conn: &UnixStream) -> Value {
-    let mut reader = BufReader::new(conn);
-    let mut line = String::new();
-    reader.read_line(&mut line).unwrap();
-    let hello = ServerFrame::Hello { protocol: PROTOCOL };
-    conn.write_all(hello.to_line().as_bytes()).unwrap();
-    line.clear();
-    reader.read_line(&mut line).unwrap();
-    serde_json::from_str::<Value>(&line).unwrap()["request"].clone()
-}
-
-/// Serves one connection per entry of `answers` on `sock`, then records any request that
-/// arrives within 300 ms and answers none. Yields each request received.
-pub(crate) fn controller(sock: &Path, answers: Vec<Stored>) -> JoinHandle<Vec<Value>> {
-    let listener = UnixListener::bind(sock).unwrap();
-    std::thread::spawn(move || {
-        let mut seen = Vec::new();
-        for stored in answers {
-            let (mut conn, _) = listener.accept().unwrap();
-            seen.push(take_request(&conn));
-            let _ = send(&mut conn, &stored);
-        }
-        listener.set_nonblocking(true).unwrap();
-        for _ in 0..6 {
-            std::thread::sleep(Duration::from_millis(50));
-            if let Ok((conn, _)) = listener.accept() {
-                conn.set_nonblocking(false).unwrap();
-                seen.push(take_request(&conn));
-            }
-        }
-        seen
-    })
 }
 
 /// Lowercase hex SHA-256 of `bytes`.

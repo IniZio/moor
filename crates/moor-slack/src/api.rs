@@ -22,7 +22,7 @@ pub(super) struct UploadUrl {
     /// URL the raw bytes go to.
     url: String,
     /// Slack's id for the file.
-    file_id: String,
+    pub(super) file_id: String,
 }
 
 /// Why a Web API call failed; never carries a token.
@@ -245,6 +245,34 @@ impl Api {
         });
         self.call(bot_token, "files.completeUploadExternal", &body)
             .map(|_| ())
+    }
+
+    /// Whether file `file_id` is shared in thread `thread_ts` of `channel`, by `files.info`.
+    pub(super) fn file_shared(
+        &self,
+        bot_token: &Secret,
+        file_id: &str,
+        channel: &str,
+        thread_ts: &str,
+    ) -> Result<bool, ApiError> {
+        let url = format!("{}/files.info", self.base);
+        let request = self
+            .agent
+            .post(&url)
+            .header("Authorization", bearer(bot_token)?)
+            .header("Content-Type", "application/x-www-form-urlencoded");
+        let reply = read_reply(request.send(format!("file={}", form_encode(file_id))))?;
+        let shares = reply.pointer("/file/shares");
+        Ok(["public", "private"].iter().any(|kind| {
+            shares
+                .and_then(|s| s.get(kind))
+                .and_then(|k| k.get(channel))
+                .and_then(Value::as_array)
+                .is_some_and(|list| {
+                    list.iter()
+                        .any(|m| m.get("thread_ts").and_then(Value::as_str) == Some(thread_ts))
+                })
+        }))
     }
 
     /// Sends the JSON `body` to Web API `method` with the bot token.

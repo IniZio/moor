@@ -321,3 +321,127 @@ fn a_box_with_no_thread_posts_nothing() {
     assert!(slack.hits("completeuploadexternal").is_empty());
     assert!(slack.texts().iter().all(|t| !t.contains("report.txt")));
 }
+
+/// An event of `kind` for Box `id` of `slack-2-1`.
+fn other_event(cursor: i64, kind: &str, payload: Value) -> Watched {
+    Watched::Item(WatchItem::Event(EventRecord {
+        cursor,
+        box_name: Some("slack-2-1".into()),
+        box_id: Some(BoxId::new(8)),
+        session: None,
+        kind: kind.into(),
+        payload,
+        ts: 0,
+    }))
+}
+
+#[test]
+fn a_version_waiting_out_its_delay_holds_back_no_other_thread() {
+    let (dir, slack) = (tempfile::tempdir().unwrap(), fake());
+    let sock = dir.path().join("c.sock");
+    let ctl = controller(&sock, vec![Stored::failing("gone"), Stored::of(b"hello")]);
+    let feed = feed(dir.path(), &slack, &sock);
+    let db = Db::open(&feed.db_path).unwrap();
+    bound_box(&db);
+    other_thread_box(&db);
+    let mut fold = replay(&[1], b"hello");
+    at(100);
+    tick(&feed, &db, &mut fold);
+    let payload = json!({
+        "name": "report.txt", "version": 1, "artifact_kind": "file",
+        "content_type": "text/plain", "size": 5, "sha256": sha(b"hello"),
+    });
+    fold.take(other_event(10, "artifact_published", payload));
+    fold.take(other_event(11, "idled", json!({})));
+    at(101);
+    tick(&feed, &db, &mut fold);
+    assert_eq!(shared(&slack), ["report.txt"], "thread B got its file");
+    assert!(
+        slack
+            .texts()
+            .iter()
+            .any(|t| t.contains("`slack-2-1` finished")),
+        "thread B got its finished line: {:?}",
+        slack.texts()
+    );
+    assert_eq!(reads(&seen(ctl)), [1, 1], "thread A waited out its delay");
+}
+
+#[test]
+fn a_refused_reason_still_schedules_the_next_try_and_is_posted_once_chat_works() {
+    let (dir, slack) = (tempfile::tempdir().unwrap(), fake());
+    slack.upload_down.store(true, Ordering::SeqCst);
+    slack.post_down.store(true, Ordering::SeqCst);
+    let sock = dir.path().join("c.sock");
+    let ctl = controller(&sock, (0..5).map(|_| Stored::of(b"hello")).collect());
+    let feed = feed(dir.path(), &slack, &sock);
+    let db = Db::open(&feed.db_path).unwrap();
+    bound_box(&db);
+    let mut fold = replay(&[1], b"hello");
+    for t in [100, 101, 103] {
+        at(t);
+        tick(&feed, &db, &mut fold);
+    }
+    slack.post_down.store(false, Ordering::SeqCst);
+    for t in [110, 130] {
+        at(t);
+        tick(&feed, &db, &mut fold);
+    }
+    assert_eq!(
+        failures(&slack).len(),
+        3,
+        "the reason is tried on tries 1 to 3 only"
+    );
+    slack.post_down.store(true, Ordering::SeqCst);
+    for t in [800, 900, 5000] {
+        at(t);
+        tick(&feed, &db, &mut fold);
+    }
+    assert_eq!(
+        reads(&seen(ctl)),
+        [1, 1, 1, 1, 1],
+        "five tries, then given up"
+    );
+}
+
+#[test]
+fn a_file_slack_shared_when_the_completion_was_lost_is_not_uploaded_again() {
+    let (dir, slack) = (tempfile::tempdir().unwrap(), fake());
+    slack.complete_lost.store(true, Ordering::SeqCst);
+    let sock = dir.path().join("c.sock");
+    let ctl = controller(&sock, vec![Stored::of(b"hello")]);
+    let feed = feed(dir.path(), &slack, &sock);
+    let db = Db::open(&feed.db_path).unwrap();
+    bound_box(&db);
+    let mut fold = replay(&[1], b"hello");
+    for t in [100, 200, 5000] {
+        at(t);
+        tick(&feed, &db, &mut fold);
+    }
+    assert_eq!(reads(&seen(ctl)), [1], "uploaded once");
+    assert_eq!(slack.hits("completeuploadexternal").len(), 1);
+    assert!(failures(&slack).is_empty(), "{:?}", slack.texts());
+}
+
+#[test]
+fn a_file_that_a_lost_completion_did_not_share_is_a_failed_upload() {
+    let (dir, slack) = (tempfile::tempdir().unwrap(), fake());
+    slack.complete_lost.store(true, Ordering::SeqCst);
+    slack.hide_shares.store(true, Ordering::SeqCst);
+    let sock = dir.path().join("c.sock");
+    let ctl = controller(&sock, vec![Stored::of(b"hello")]);
+    let feed = feed(dir.path(), &slack, &sock);
+    let db = Db::open(&feed.db_path).unwrap();
+    bound_box(&db);
+    let mut fold = replay(&[1], b"hello");
+    at(100);
+    tick(&feed, &db, &mut fold);
+    assert_eq!(reads(&seen(ctl)), [1]);
+    assert_eq!(failures(&slack).len(), 1, "{:?}", slack.texts());
+}
+
+#[test]
+fn the_wait_between_tries_stops_growing_at_64_seconds() {
+    let waits: Vec<i64> = [1, 2, 3, 4, 5, 6, 7, 40].into_iter().map(backoff).collect();
+    assert_eq!(waits, [2, 4, 8, 16, 32, 64, 64, 64]);
+}

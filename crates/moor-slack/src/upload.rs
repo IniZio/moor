@@ -148,12 +148,23 @@ fn upload(
     complete(thread, &to, &v.name)
 }
 
-/// Shares the sent file in the thread.
+/// Shares the sent file in the thread. When the call fails without a Slack answer, Slack may
+/// still have shared the file, so the file's shares decide before the caller uploads it again.
 fn complete(thread: &Thread<'_>, to: &UploadUrl, title: &str) -> Result<(), NotUploaded> {
-    thread
+    let shared = thread
         .api
-        .complete_upload(thread.bot, thread.channel, thread.ts, to, title)
-        .map_err(refused)
+        .complete_upload(thread.bot, thread.channel, thread.ts, to, title);
+    match shared {
+        Err(ApiError::Transport(_))
+            if thread
+                .api
+                .file_shared(thread.bot, &to.file_id, thread.channel, thread.ts)
+                .unwrap_or(false) =>
+        {
+            Ok(())
+        }
+        shared => shared.map_err(refused),
+    }
 }
 
 /// The reason for a Slack failure.
