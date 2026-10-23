@@ -35,24 +35,39 @@ enum NotUploaded {
     Failed(String),
 }
 
+/// What a thread shows of one version after [`post_version`].
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Sent {
+    /// The file, or its name and size when the bot token lacks `files:write`.
+    Shown,
+    /// Why the upload failed; the version is still owed.
+    Failed(String),
+}
+
 /// Shows version `v` of Box `box_name` in `thread`: uploads the file, or posts one text line in
-/// its place. Errors only when nothing reached the thread, so the caller can try again.
+/// its place. A failed upload posts its reason unless `told` says the thread already shows
+/// one. Errors only when a line it had to post did not reach the thread.
 pub(crate) fn post_version(
     thread: &Thread<'_>,
     client: &Client,
     box_name: &BoxName,
     v: &ArtifactView,
-) -> Result<(), ApiError> {
+    told: bool,
+) -> Result<Sent, ApiError> {
     let name = escape(&v.name);
-    let text = match upload(thread, client, box_name, v) {
-        Ok(()) => return Ok(()),
-        Err(NotUploaded::MissingScope) => format!("{name} ({})", size_text(v.size)),
-        Err(NotUploaded::Failed(why)) => format!("{name} could not be uploaded: {}", escape(&why)),
+    let (text, sent) = match upload(thread, client, box_name, v) {
+        Ok(()) => return Ok(Sent::Shown),
+        Err(NotUploaded::MissingScope) => (format!("{name} ({})", size_text(v.size)), Sent::Shown),
+        Err(NotUploaded::Failed(why)) if told => return Ok(Sent::Failed(why)),
+        Err(NotUploaded::Failed(why)) => (
+            format!("{name} could not be uploaded: {}", escape(&why)),
+            Sent::Failed(why),
+        ),
     };
     thread
         .api
         .post_message(thread.bot, thread.channel, thread.ts, &text)
-        .map(drop)
+        .map(|_| sent)
 }
 
 /// Streams the stored bytes of `v` to Slack, and shares the file in the thread only when they
@@ -203,4 +218,4 @@ fn size_text(n: u64) -> String {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

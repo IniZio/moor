@@ -36,13 +36,13 @@ struct Seen {
 }
 
 /// A fake Slack that answers by path and records every request.
-struct Fake {
+pub(crate) struct Fake {
     /// Base URL of the Web API.
-    base: String,
+    pub(crate) base: String,
     /// Requests in arrival order.
     seen: Mutex<Vec<Seen>>,
     /// While set, the file POST answers HTTP 500 with the token in its body.
-    upload_down: AtomicBool,
+    pub(crate) upload_down: AtomicBool,
     /// While set, `files.getUploadURLExternal` answers `missing_scope`.
     scope_missing: AtomicBool,
     /// While set, `chat.postMessage` answers `ok: false`.
@@ -124,7 +124,7 @@ fn reply(fake: &Fake, host: &str, path: &str) -> (&'static str, String) {
 }
 
 /// Starts the fake on a loopback port; it runs until the test process ends.
-fn fake() -> Arc<Fake> {
+pub(crate) fn fake() -> Arc<Fake> {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let host = format!("http://{}", listener.local_addr().unwrap());
     let fake = Arc::new(Fake {
@@ -156,7 +156,7 @@ fn fake() -> Arc<Fake> {
 
 impl Fake {
     /// Requests whose path contains `part`, in arrival order: (length, body).
-    fn hits(&self, part: &str) -> Vec<(u64, Vec<u8>)> {
+    pub(crate) fn hits(&self, part: &str) -> Vec<(u64, Vec<u8>)> {
         let seen = self.seen.lock().unwrap();
         let hits = seen
             .iter()
@@ -168,7 +168,7 @@ impl Fake {
     }
 
     /// Texts posted with `chat.postMessage`.
-    fn texts(&self) -> Vec<String> {
+    pub(crate) fn texts(&self) -> Vec<String> {
         let text = |(_, b): &(u64, Vec<u8>)| {
             let v: Value = serde_json::from_slice(b).unwrap();
             v["text"].as_str().unwrap().to_owned()
@@ -179,7 +179,7 @@ impl Fake {
 
 /// What the fake controller streams for one connection: `pattern` repeated up to `total`
 /// bytes, in bytes frames of `frame` bytes, then an ok response or the error `fail`.
-struct Stored {
+pub(crate) struct Stored {
     /// Bytes repeated to make the file.
     pattern: Vec<u8>,
     /// File length.
@@ -192,7 +192,7 @@ struct Stored {
 
 impl Stored {
     /// `bytes` as one file in full frames.
-    fn of(bytes: &[u8]) -> Self {
+    pub(crate) fn of(bytes: &[u8]) -> Self {
         Self {
             pattern: bytes.to_vec(),
             total: bytes.len() as u64,
@@ -254,7 +254,7 @@ fn take_request(mut conn: &UnixStream) -> Value {
 
 /// Serves one connection per entry of `answers` on `sock`, then records any request that
 /// arrives within 300 ms and answers none. Yields each request received.
-fn controller(sock: &Path, answers: Vec<Stored>) -> JoinHandle<Vec<Value>> {
+pub(crate) fn controller(sock: &Path, answers: Vec<Stored>) -> JoinHandle<Vec<Value>> {
     let listener = UnixListener::bind(sock).unwrap();
     std::thread::spawn(move || {
         let mut seen = Vec::new();
@@ -276,7 +276,7 @@ fn controller(sock: &Path, answers: Vec<Stored>) -> JoinHandle<Vec<Value>> {
 }
 
 /// Lowercase hex SHA-256 of `bytes`.
-fn sha(bytes: &[u8]) -> String {
+pub(crate) fn sha(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
@@ -306,7 +306,7 @@ fn post(base: &str, sock: &Path, v: &ArtifactView) -> Result<(), ApiError> {
         ts: "10.5",
     };
     let box_name = BoxName::parse_allow_bare("t1").unwrap();
-    post_version(&thread, &Client::new(sock), &box_name, v)
+    post_version(&thread, &Client::new(sock), &box_name, v, false).map(drop)
 }
 
 #[test]

@@ -1,6 +1,7 @@
 //! The feed: folds the controller's events by Box id and keeps each Box's status message,
-//! its fixed lines and its needs-input prompts in the Box's thread. A new watch connection
-//! replays every event, so the feed folds afresh and acts only once the backlog is caught up.
+//! its fixed lines, its needs-input prompts and its published artifact versions in the Box's
+//! thread. A new watch connection replays every event, so the feed folds afresh and acts only
+//! once the backlog is caught up.
 //! Every side effect is guarded by a `slack.db` row, so a refold after a reconnect or a
 //! restart repeats none.
 
@@ -10,9 +11,10 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use moor_client::WatchItem;
+use moor_client::{Client, WatchItem};
 use moor_core::name::BoxId;
 use moor_core::secret::Secret;
+use moor_core::view::ArtifactView;
 
 use crate::api::Api;
 use crate::command::{closed, finished, BoxEvent};
@@ -40,6 +42,8 @@ struct Fold {
     closed: HashSet<BoxId>,
     /// The question each Box waits on.
     asked: HashMap<BoxId, prompts::Asked>,
+    /// Artifact versions each Box published that are not yet known to be shown.
+    published: HashMap<BoxId, Vec<ArtifactView>>,
     /// Whether this connection's backlog is folded.
     caught_up: bool,
 }
@@ -60,6 +64,7 @@ impl Fold {
             .or_default()
             .fold(&event.kind, &event.payload);
         prompts::fold(self, id, &event.kind, event.cursor, &event.payload);
+        artifacts::fold(self, id, &event.kind, &event.payload);
         match event.kind.as_str() {
             "agent_said" => {
                 let text = event
@@ -90,6 +95,8 @@ pub(crate) struct Feed {
     pub(crate) api: Arc<Api>,
     /// Bot token for posting.
     pub(crate) bot_token: Arc<Secret>,
+    /// Controller socket client, for reading artifact bytes.
+    pub(crate) client: Client,
     /// Daemon log.
     pub(crate) log: Log,
     /// The current time in unix seconds.
@@ -144,7 +151,10 @@ impl Feed {
             return;
         }
         for fed in &boxes {
-            if !self.lines(db, fold, &fed.boxed) || !self.prompts(db, fold, &fed.boxed) {
+            if !self.lines(db, fold, &fed.boxed)
+                || !self.prompts(db, fold, &fed.boxed)
+                || !self.artifacts(db, fold, &fed.boxed)
+            {
                 *lines_due = at + UPDATE_EVERY;
                 return;
             }
@@ -250,6 +260,7 @@ fn now() -> Instant {
     Instant::now()
 }
 
+mod artifacts;
 mod prompts;
 mod status;
 

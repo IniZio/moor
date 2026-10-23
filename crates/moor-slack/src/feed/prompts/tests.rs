@@ -20,6 +20,7 @@ fn feed(dir: &std::path::Path) -> Feed {
         db_path: dir.join("slack.db"),
         api: Arc::new(Api::new("http://127.0.0.1:9").unwrap()),
         bot_token: Arc::new(Secret::new(b"xoxb-test".to_vec())),
+        client: moor_client::Client::new(dir.join("controller.sock")),
         log: Arc::new(|_| {}),
         clock: || 9,
     }
