@@ -170,6 +170,7 @@ fn load(settings: &Settings, log: &Log) -> Result<Loaded, String> {
     let bot_token = Arc::new(bot_token);
     let program = std::env::current_exe().map_err(|e| format!("find this binary: {e}"))?;
     let socket = std::path::absolute(&settings.socket)
+        .map(|path| own_proc(&path))
         .map_err(|e| format!("{}: {e}", settings.socket.display()))?;
     let c = &cfg.coordinator;
     let turns = Turns {
@@ -200,6 +201,20 @@ fn load(settings: &Settings, log: &Log) -> Result<Loaded, String> {
         turns,
         link,
     })
+}
+
+/// `path` with a leading `/proc/self` named as this process's `/proc/<pid>`. A front's socket
+/// is `/proc/self/fd/3`, a descriptor only this process holds; the agent does not hand it on,
+/// so the tool server it starts must dial this process's descriptor by pid.
+fn own_proc(path: &Path) -> PathBuf {
+    path.strip_prefix("/proc/self").map_or_else(
+        |_| path.to_owned(),
+        |rest| {
+            Path::new("/proc")
+                .join(std::process::id().to_string())
+                .join(rest)
+        },
+    )
 }
 
 /// Opens again the prompts whose answer an earlier run never sent.
