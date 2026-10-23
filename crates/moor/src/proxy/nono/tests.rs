@@ -58,7 +58,7 @@ fn cfg_chained(
         ca_dir: &dir,
         upstream_ca,
         chain,
-        only_rule_hosts: false,
+        only_rules: false,
     })
 }
 
@@ -162,7 +162,7 @@ fn basic_auth_maps_to_basic_mode() {
 }
 
 #[test]
-fn every_host_passes_nono_filter_and_only_rule_hosts_get_routes() {
+fn every_host_passes_nono_filter_and_only_rules_get_routes() {
     let rules = [rule("a", &["127.0.0.1:4433", "a.test"], bearer())];
     let cfg = cfg_for(&rules, None);
     assert_eq!(cfg.inner().allowed_hosts, ["*"]);
@@ -186,7 +186,7 @@ fn a_front_proxy_filter_passes_only_its_rule_hosts() {
         ca_dir: &ca::ca_dir(state.path(), BoxId::new(3)),
         upstream_ca: None,
         chain: None,
-        only_rule_hosts: true,
+        only_rules: true,
     });
     let filter = nono::net_filter::HostFilter::new_strict(&cfg.inner().allowed_hosts);
     assert!(filter.check_host("a.test", &[]).is_allowed());
@@ -225,7 +225,7 @@ fn non_utf8_token_is_refused_without_echoing_it() {
         ca_dir: &dir,
         upstream_ca: None,
         chain: None,
-        only_rule_hosts: false,
+        only_rules: false,
     });
     assert!(cfg.inner().session_token.is_none());
     let capture = Arc::new(capture::MoorCapture::new(std::collections::BTreeMap::new()));

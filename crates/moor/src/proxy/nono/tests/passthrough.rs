@@ -52,7 +52,7 @@ fn fetch(path: &str) -> (Result<u16, String>, Vec<upstream::Seen>) {
         ca_dir: &ca::ca_dir(&state, BOX_ID),
         upstream_ca: Some(&up.ca_path),
         chain: None,
-        only_rule_hosts: false,
+        only_rules: false,
     });
     // Stands in for the chained filter's Box CA, trusted for every upstream.
     cfg.0.upstream_extra_ca_pems = vec![up.ca_path.to_string_lossy().into_owned()];

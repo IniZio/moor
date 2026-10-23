@@ -53,7 +53,7 @@ fn send(method: &str, path: &str) -> (Vec<Seen>, Vec<String>) {
         ca_dir: &ca::ca_dir(&state, BOX_ID),
         upstream_ca: Some(&up.ca_path),
         chain: None,
-        only_rule_hosts: false,
+        only_rules: false,
     });
     cfg.0.upstream_extra_ca_pems = vec![up.ca_path.to_string_lossy().into_owned()];
     let capture = Arc::new(capture);

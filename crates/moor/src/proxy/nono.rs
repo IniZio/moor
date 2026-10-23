@@ -3,7 +3,8 @@
 //!
 //! For a Box, nono's own host filter allows every host (`*`); the destination
 //! guard in the chained filter is what refuses loopback, private and link-local
-//! targets. The front Proxy allows only its rules' hosts. Hosts with a credential rule are intercepted; every other host is
+//! targets. The front Proxy allows only its rules' hosts, and refuses a path a rule's allow list
+//! does not name. Hosts with a credential rule are intercepted; every other host is
 //! a blind CONNECT tunnel. A rule host such as `127.0.0.1:4433` needs an
 //! `https://host:port` route upstream and the route credential key. Neither
 //! the session token nor any credential is ever printed.
@@ -20,7 +21,10 @@ use std::time::Duration;
 
 use moor_core::config::proxy::{ResolvedInject, ResolvedRule};
 use moor_core::Secret;
-use nono_proxy::config::{EndpointRule, ExternalProxyConfig, InjectMode, RouteConfig};
+use nono_proxy::config::{
+    EndpointPolicyConfig, EndpointPolicyRule, EndpointRule, ExternalProxyConfig, InjectMode,
+    RouteConfig,
+};
 use nono_proxy::ProxyConfig;
 use zeroize::Zeroizing;
 
@@ -39,8 +43,9 @@ pub(crate) struct NonoSpec<'a> {
     pub(crate) upstream_ca: Option<&'a Path>,
     /// Sends every CONNECT through an external proxy with no bypass; `None` keeps all direct.
     pub(crate) chain: Option<Chain<'a>>,
-    /// Refuses every host no rule lists, instead of tunnelling it blind.
-    pub(crate) only_rule_hosts: bool,
+    /// Refuses every host no rule lists, instead of tunnelling it blind, and every request to a
+    /// rule's host that its allow list does not name, instead of passing it on uncredentialed.
+    pub(crate) only_rules: bool,
 }
 
 /// The host whose TLS the filter terminates and whose GraphQL it judges.
@@ -117,6 +122,22 @@ fn route_for(spec: &NonoSpec<'_>, rule: &ResolvedRule, index: usize, host: &str)
             .map(|p| p.to_string_lossy().into_owned()),
         ..RouteConfig::default()
     };
+    if spec.only_rules && !route.endpoint_rules.is_empty() {
+        route.endpoint_policy = Some(EndpointPolicyConfig {
+            allow: route
+                .endpoint_rules
+                .iter()
+                .map(|r| EndpointPolicyRule {
+                    method: r.method.clone(),
+                    path: r.path.clone(),
+                    backend: None,
+                    reason: None,
+                    timeout_secs: None,
+                })
+                .collect(),
+            ..EndpointPolicyConfig::default()
+        });
+    }
     match &rule.inject {
         ResolvedInject::Header { header, form } => {
             route.inject_mode = InjectMode::Header;
@@ -162,7 +183,7 @@ pub(crate) fn build_config(spec: &NonoSpec<'_>) -> NonoConfig {
         upstream_extra_ca_pems,
         bind_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
         bind_port: 0,
-        allowed_hosts: if spec.only_rule_hosts {
+        allowed_hosts: if spec.only_rules {
             spec.rules.iter().flat_map(|r| r.hosts.clone()).collect()
         } else {
             vec!["*".to_owned()]
