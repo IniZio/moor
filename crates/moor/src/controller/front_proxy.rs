@@ -79,8 +79,12 @@ impl Plan {
         }))
     }
 
-    /// What front `ns` is given; none when it has no Proxy.
+    /// What front `ns` is given; none when it has no Proxy, and on macOS, whose shim has no
+    /// pid 1 to bridge the Proxy socket into the front.
     pub(super) fn access(&self, ns: &str) -> Option<Access> {
+        if cfg!(target_os = "macos") {
+            return None;
+        }
         self.fronts.contains_key(ns).then(|| Access {
             socket: Moor::front_proxy_socket(&self.state_dir, ns),
             ca_pem: self.ca_pem.clone(),
