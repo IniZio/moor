@@ -1,8 +1,8 @@
 //! `moor front-shim`: runs a front in new user, mount and PID namespaces, inside a root that
 //! holds only what a front needs.
 //!
-//! The controller runs `moor front-shim --parent PID [--writable DIR] [--read-only PATH]...
-//! -- COMMAND...`. That process dies with the controller `PID` (it exits at once if `PID` is not
+//! The controller runs `moor front-shim --parent PID [--proxy SOCKET] [--writable DIR]
+//! [--read-only PATH]... -- COMMAND...`. That process dies with the controller `PID` (it exits at once if `PID` is not
 //! its parent), enters the namespaces and runs `moor front-shim --init` with the same paths as
 //! pid 1 of the new PID namespace. pid 1 builds the front's root (see the `root` module): the system dirs,
 //! a few devices, the program and each PATH read-only, DIR read-write with its `tmp` as `/tmp`,
@@ -11,14 +11,17 @@
 //! and runs the front without capabilities. Both shims pass SIGTERM and SIGINT on, reap every
 //! child and exit with the front's status. `--check` enters the namespaces, then as pid 1
 //! (`--check-root`) the root and the sandbox, so the controller can refuse fronts on a host
-//! that forbids any of them.
+//! that forbids any of them. With `--proxy`, pid 1 also bridges a loopback port to the front
+//! Proxy's SOCKET and tells the front the port (see the `bridge` module).
 //!
 //! macOS has none of these namespaces: there the shim confines itself and the front with
-//! nono's Seatbelt profile instead (see the `seatbelt` module).
+//! nono's Seatbelt profile instead (see the `seatbelt` module), and no front gets a Proxy.
 
 use std::ffi::OsString;
 use std::fs;
 use std::io;
+#[cfg(target_os = "linux")]
+use std::path::Path;
 use std::path::PathBuf;
 #[cfg(target_os = "linux")]
 use std::process::{Command, Stdio};
@@ -53,6 +56,8 @@ use signal_hook::consts::{SIGINT, SIGTERM};
 #[cfg(target_os = "linux")]
 use signal_hook::iterator::Signals;
 
+#[cfg(target_os = "linux")]
+mod bridge;
 #[cfg(target_os = "linux")]
 mod root;
 #[cfg(target_os = "macos")]
@@ -96,19 +101,28 @@ pub fn main(args: &[OsString]) -> Result<u8, String> {
                 0
             }),
         [flag, layout @ ..] if flag == "--init" => {
-            init(&Asked::parse(layout, false)?.layout, command)
+            let asked = Asked::parse(layout, false)?;
+            init(&asked.layout, asked.proxy.as_deref(), command)
         }
         _ => {
-            let Asked { parent, layout } = Asked::parse(flags, true)?;
+            let Asked {
+                parent,
+                proxy,
+                layout,
+            } = Asked::parse(flags, true)?;
             die_with(parent.ok_or("--parent is required")?)?;
             isolate()?;
             pass_sys_admin()?;
             let (alive, _held) = std::io::pipe().map_err(|e| format!("pipe: {e}"))?;
+            let proxy = proxy
+                .iter()
+                .flat_map(|p| [OsString::from("--proxy"), p.into()]);
             let writable = layout.writable.iter().map(|dir| ("--writable", dir));
             let read_only = layout.read_only.iter().map(|path| ("--read-only", path));
             relay(
                 Command::new("/proc/self/exe")
                     .args(["front-shim", "--init"])
+                    .args(proxy)
                     .args(
                         writable
                             .chain(read_only)
@@ -161,16 +175,19 @@ struct Layout {
 struct Asked {
     /// The controller that started this shim; pid 1 is not told.
     parent: Option<Pid>,
+    /// The front Proxy's socket, which pid 1 bridges to a loopback port.
+    proxy: Option<PathBuf>,
     /// What the front's root holds.
     layout: Layout,
 }
 
 impl Asked {
-    /// Reads `--writable DIR` (at most one) and `--read-only PATH` flags, and `--parent PID`
-    /// when `outer`.
+    /// Reads `--writable DIR` and `--proxy SOCKET` (at most one each) and `--read-only PATH`
+    /// flags, and `--parent PID` when `outer`.
     fn parse(flags: &[OsString], outer: bool) -> Result<Self, String> {
         let mut asked = Self {
             parent: None,
+            proxy: None,
             layout: Layout::default(),
         };
         let mut flags = flags.iter();
@@ -187,6 +204,9 @@ impl Asked {
                     if asked.parent.is_none() {
                         return Err(format!("--parent {} is not a pid", word.display()));
                     }
+                }
+                Some("--proxy") if asked.proxy.is_none() => {
+                    asked.proxy = Some(PathBuf::from(word));
                 }
                 Some("--writable") if asked.layout.writable.is_none() => {
                     asked.layout.writable = Some(PathBuf::from(word));
@@ -270,11 +290,11 @@ fn supported(info: &SupportInfo) -> Result<(), String> {
 
 /// pid 1 of the front's PID namespace: moves into the front's root as `layout` describes,
 /// confines itself to writing the writable dir and `/tmp`, drops every capability and runs
-/// `command` with its socket on fd 3. The kernel kills the namespace if the outer shim dies. The
+/// `command` with its socket on fd 3, and with `proxy` bridged to a loopback port. The kernel kills the namespace if the outer shim dies. The
 /// outer shim holds the only write end of stdin, so a readable stdin means it died before the
 /// death signal was set, and pid 1 exits.
 #[cfg(target_os = "linux")]
-fn init(layout: &Layout, command: &[OsString]) -> Result<u8, String> {
+fn init(layout: &Layout, proxy: Option<&Path>, command: &[OsString]) -> Result<u8, String> {
     set_parent_process_death_signal(Some(Signal::KILL))
         .map_err(|e| format!("cannot set the parent death signal: {e}"))?;
     let held = io::stdin();
@@ -286,6 +306,7 @@ fn init(layout: &Layout, command: &[OsString]) -> Result<u8, String> {
     if poll(&mut outer, Some(&idle)).map_err(|e| format!("poll: {e}"))? > 0 {
         return Err("the outer shim exited before pid 1 started".to_owned());
     }
+    let bridge = proxy.map(bridge::Bridge::open).transpose()?;
     let socket = root::enter(layout)?;
     let _ = nix::unistd::close(3);
     let writable: Vec<PathBuf> = layout
@@ -308,6 +329,9 @@ fn init(layout: &Layout, command: &[OsString]) -> Result<u8, String> {
     let (program, args) = command.split_first().ok_or("no front command")?;
     let mut front = Command::new(program);
     front.args(args).stdin(Stdio::null());
+    if let Some(bridge) = bridge {
+        front.env(bridge::PORT_VAR, bridge.serve()?.to_string());
+    }
     if let Some(fd) = socket {
         front
             .fd_mappings(vec![FdMapping {

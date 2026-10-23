@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, LazyLock, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
@@ -122,9 +122,13 @@ pub(crate) fn end_front_leases(env: &Env) -> Result<(), CommandError> {
 }
 
 /// The socket of front `ns`'s Proxy for `state_dir`.
-#[cfg(test)]
-pub(crate) fn front_proxy_socket(state_dir: &std::path::Path, ns: &str) -> PathBuf {
+pub(crate) fn front_proxy_socket(state_dir: &Path, ns: &str) -> PathBuf {
     crate::proxy::fronts::socket_path(&socket_dir(), state_dir, ns)
+}
+
+/// The front Proxy's CA certificate, made when missing.
+pub(crate) fn front_proxy_ca(state_dir: &Path) -> std::io::Result<PathBuf> {
+    crate::proxy::fronts::ca_cert(state_dir)
 }
 
 /// Settles the Proxy supervisors recorded in the state store; one line per failure.

@@ -1,5 +1,7 @@
 //! Composition root: the single entry every caller uses.
 
+use std::path::{Path, PathBuf};
+
 use crate::cx::Cx;
 use crate::env::Env;
 use crate::error::CommandError;
@@ -56,9 +58,16 @@ impl Moor {
     }
 
     /// The socket of front `ns`'s Proxy for the state dir `state_dir`, which its shim bridges.
-    #[cfg(test)]
-    pub(crate) fn front_proxy_socket(state_dir: &std::path::Path, ns: &str) -> std::path::PathBuf {
+    pub(crate) fn front_proxy_socket(state_dir: &Path, ns: &str) -> PathBuf {
         wire::front_proxy_socket(state_dir, ns)
+    }
+
+    /// The CA certificate the front Proxy signs with, made when missing.
+    ///
+    /// # Errors
+    /// Why the CA could not be read or made.
+    pub(crate) fn front_proxy_ca(state_dir: &Path) -> std::io::Result<PathBuf> {
+        wire::front_proxy_ca(state_dir)
     }
 
     /// Settles the Proxy supervisors recorded in the state store; one line per failure.

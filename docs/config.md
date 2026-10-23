@@ -185,11 +185,32 @@ fronts:
 | `command` | list of strings, not empty | none | The program and arguments the controller runs as this front. Without it, start the front yourself. |
 | `state_dir` | absolute path, not under `/tmp` | none | The one directory the front may write. Without it, the front writes nothing but `/dev/null`. |
 | `read_only` | list of absolute real paths | empty | Files or dirs outside the system dirs that the front may read, such as a config or token file under `HOME`. |
+| `proxy_rules` | list of rule names | empty | The rules the front Proxy serves to this front. `claude` is the one rule: it injects the user's `claude` secret on `POST /v1/messages`, `GET /api/claude_code/settings` and `GET /api/claude_code/policy_limits` at `api.anthropic.com`. |
+
+#### The front Proxy
+
+When an entry lists `proxy_rules`, the controller runs `moor proxy serve-fronts`
+as a child and starts it again with backoff whenever it exits. It listens on a
+socket per front in moor's private socket directory. The front's shim binds a
+loopback port in the front's network namespace and passes each connection to
+that socket, and the front finds the port in `MOOR_FRONT_PROXY_PORT`. The
+Proxy signs with a CA kept in `<state dir>/proxy/fronts`; the front reads its
+certificate at the path in `MOOR_FRONT_PROXY_CA`.
+
+A front asks for a lease with `proxy-lease`, as an identity of its own
+namespace. The controller grants it only when that identity's user holds
+every secret the front's rules inject, and only while the Proxy runs. A CONNECT
+reaches the Proxy's nono only when its proxy password is a live lease of the
+same front; nono then injects that user's secrets and refuses every host no
+rule lists. The store keeps a hash of each lease, never the lease, and the
+controller ends every lease when it starts.
+
+#### Sockets and processes
 
 For each entry the controller listens on `<state dir>/fronts/<namespace>.sock`,
 mode 0600 in a 0700 directory. Under systemd, the controller takes the socket
 that systemd passes as `front-<namespace>` instead of binding it. A namespace matches `[a-z][a-z0-9-]*` and is
-not `local`.
+not `local` or `proxy`, which names the front Proxy in the controller log.
 
 When an entry has a `command`, the controller starts it at startup. The front
 gets an `O_PATH` file descriptor to its own socket as fd 3, and
