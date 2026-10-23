@@ -454,8 +454,8 @@ fn a_user_nobody_listed_mentions_the_bot_in_an_invited_channel_and_a_thread_open
 }
 
 #[test]
-fn a_mention_in_a_channel_that_is_not_allowed_is_still_ignored() {
-    let (rig, _bin, controller) = start(None);
+fn a_mention_in_a_channel_nobody_configured_opens_a_thread() {
+    let (rig, _bin, _controller) = start(None);
     rig.slack
         .send_mention(&super::support::slack_fake::Mention {
             event_id: "Ev1",
@@ -466,15 +466,20 @@ fn a_mention_in_a_channel_that_is_not_allowed_is_still_ignored() {
             ts: TS,
             thread_ts: None,
         });
-    rig.slack.wait_acks(1);
-    std::thread::sleep(QUIET);
     let db = rusqlite::Connection::open(rig.path("state-slack/slack.db")).unwrap();
-    let threads: i64 = db
-        .query_row("SELECT COUNT(*) FROM slack_threads", [], |r| r.get(0))
-        .unwrap();
-    assert_eq!(threads, 0);
-    assert!(rig.slack.posts().is_empty());
-    assert_eq!(controller.seen(|seen| seen.requests.len()), 0);
+    let mut found = None;
+    for _ in 0..500 {
+        found = db
+            .query_row("SELECT channel FROM slack_threads", [], |r| {
+                r.get::<_, String>(0)
+            })
+            .ok();
+        if found.is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert_eq!(found.as_deref(), Some("C0ELSEWHERE"));
 }
 
 #[test]
