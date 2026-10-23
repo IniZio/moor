@@ -13,14 +13,18 @@ use rustix::thread::{
 
 use super::net;
 
-/// Keeps `CAP_SYS_ADMIN` in the namespaces for the next program this process runs, pid 1,
-/// which mounts the front's root.
+/// Keeps `CAP_SYS_ADMIN` and `CAP_SETPCAP` in the namespaces for the next program this
+/// process runs, pid 1, which mounts the front's root and empties its bounding set.
 pub(super) fn pass_sys_admin() -> Result<(), String> {
+    let kept = CapabilitySet::SYS_ADMIN | CapabilitySet::SETPCAP;
     let mut caps = capabilities(None).map_err(|e| format!("capget: {e}"))?;
-    caps.inheritable |= CapabilitySet::SYS_ADMIN;
+    caps.inheritable |= kept;
     set_capabilities(None, caps).map_err(|e| format!("capset: {e}"))?;
-    configure_capability_in_ambient_set(CapabilitySet::SYS_ADMIN, true)
-        .map_err(|e| format!("cannot pass CAP_SYS_ADMIN to pid 1: {e}"))
+    for cap in kept.iter() {
+        configure_capability_in_ambient_set(cap, true)
+            .map_err(|e| format!("cannot pass {cap:?} to pid 1: {e}"))?;
+    }
+    Ok(())
 }
 
 /// Makes this process die with `parent`, the controller that started it: the kernel kills it

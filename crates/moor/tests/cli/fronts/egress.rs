@@ -9,7 +9,8 @@ use serde_json::{json, Value};
 
 /// Stands in for a host: dummy interfaces with the addresses of a docker0, a tailscale0, an
 /// lxdbr0, a ULA bridge and a public address of its own, a listener on port 443 of all of
-/// them, a remote public host behind a veth listening on 443, 80 and 8443, and a resolver on
+/// them, a remote host behind a veth listening on 443, 80 and 8443 at a public address and at
+/// a LAN and a CGNAT address that are not the host's, and a resolver on
 /// 127.0.0.53 that answers `private.*` with the docker0 address, `rebind.*` first with the
 /// remote and then with the docker0 address, and every other name with the remote. Runs a
 /// front that asks its proxy for each target in turn and connects to the remote directly,
@@ -65,9 +66,16 @@ fn a_front_reaches_the_public_internet_through_its_proxy_and_nothing_private() {
             "the host reaches {host}: {got}"
         );
     }
-    assert_eq!(got["control"]["198.51.100.7"], "remote", "{got}");
+    for remote in ["198.51.100.7", "192.168.77.7", "100.64.9.9"] {
+        assert_eq!(
+            got["control"][remote], "remote",
+            "the host reaches {remote}: {got}"
+        );
+    }
     for target in [
         "172.17.0.1:443",
+        "192.168.77.7:443",
+        "100.64.9.9:443",
         "100.64.0.156:443",
         "10.235.225.1:443",
         "[fc00::1]:443",
@@ -86,8 +94,8 @@ fn a_front_reaches_the_public_internet_through_its_proxy_and_nothing_private() {
     assert_eq!(front["direct"], "Network is unreachable", "{got}");
     assert_eq!(
         front["caps"],
-        json!(["0000000000000000", "0000000000000000"]),
-        "{got}"
+        json!(["0000000000000000", "0000000000000000", "0000000000000000"]),
+        "no effective, bounding or ambient capability: {got}"
     );
 }
 
