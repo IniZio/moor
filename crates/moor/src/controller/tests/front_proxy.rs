@@ -10,6 +10,8 @@ use std::fmt::Write as _;
 use std::os::unix::net::UnixListener;
 use std::sync::{Arc, Mutex};
 
+use moor_core::seam::clock::Ts;
+use moor_core::user::Identity;
 use serde_json::{json, Value};
 
 use super::fronts::{ask, refused};
@@ -158,12 +160,38 @@ fn only_a_front_with_proxy_rules_leases_and_only_for_its_own_namespace() {
 }
 
 #[test]
-fn the_store_open_of_a_controller_start_ends_every_lease() {
+fn a_controller_that_takes_the_state_lock_ends_every_lease_and_one_refused_ends_none() {
     let served = Served::start(tempfile::tempdir().unwrap());
     let _proxy = served.proxy_up();
     served.login("slack:T1:U1");
     assert_eq!(served.lease("slack:T1:U1")["value"]["lease"], "granted");
-    assert_eq!(served.stored_hashes().len(), 1);
-    crate::Moor::open_store(&env_with(served.dir.path(), &[])).unwrap();
+    let config = served.dir.path().join("controller.yaml");
+    let second = start(&env_with(served.dir.path(), &[]), &config);
+    assert!(second.is_err(), "the running controller holds the lock");
+    assert_eq!(
+        served.stored_hashes().len(),
+        1,
+        "a refused start ends no lease"
+    );
+    crate::Moor::end_front_leases(&env_with(served.dir.path(), &[])).unwrap();
+    assert!(served.stored_hashes().is_empty());
+}
+
+#[test]
+fn a_controller_start_ends_the_leases_the_last_one_left() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let clock = Arc::new(crate::testing::clock::FakeClock::new(Ts::from_millis(
+        1_000,
+    )));
+    let store = crate::store::Store::open(&state.join("moor.db"), clock).unwrap();
+    let (user, _) = store
+        .enroll(&Identity::parse("slack:T1:U1").unwrap())
+        .unwrap();
+    store
+        .add_front_lease(b"left", "slack", user, Ts::from_millis(i64::MAX))
+        .unwrap();
+    let served = Served::start(dir);
     assert!(served.stored_hashes().is_empty());
 }

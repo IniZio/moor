@@ -38,13 +38,21 @@ impl Moor {
         Self { cx }
     }
 
-    /// Opens the state store once and ends every front Proxy lease; the error is the one every
-    /// command would get.
+    /// Opens the state store once; the error is the one every command would get.
     ///
     /// # Errors
     /// A refusal for a state dir at another schema version, else the store or clock failure.
     pub fn open_store(env: &Env) -> Result<(), CommandError> {
         wire::open_store(env)
+    }
+
+    /// Ends every front Proxy lease: a controller that holds the state lock is the only one,
+    /// and it restarts every front that held a lease.
+    ///
+    /// # Errors
+    /// The store or clock failure.
+    pub(crate) fn end_front_leases(env: &Env) -> Result<(), CommandError> {
+        wire::end_front_leases(env)
     }
 
     /// The socket of front `ns`'s Proxy for the state dir `state_dir`, which its shim bridges.

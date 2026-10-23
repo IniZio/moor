@@ -151,9 +151,8 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         .state_dir()
         .map(|dir| take_lock(&dir.join(CONTROLLER_LOCK), &socket))
         .transpose()?;
-    let mut socket_lock = socket.as_os_str().to_owned();
-    socket_lock.push(".lock");
-    let lock = take_lock(Path::new(&socket_lock), &socket)?;
+    let lock = take_socket_lock(&socket)?;
+    Moor::end_front_leases(&env).map_err(|e| refused(e.error.to_string()))?;
     let listener = sockets.listen("controller", &socket).map_err(refused)?;
     let fronts = peer::bind_fronts(&env, &mut sockets, &cfg.fronts.keys().collect::<Vec<_>>())?;
     let commands = fronts
@@ -214,6 +213,13 @@ fn open_vault(env: &Env, config: &Path) -> Result<(Vault, PathBuf), Stop> {
 /// The socket path used when no explicit one is configured.
 pub(crate) fn state_socket(env: &Env) -> Option<PathBuf> {
     env.state_dir().map(|dir| dir.join("controller.sock"))
+}
+
+/// Takes the flock beside `socket`, `<socket>.lock`.
+fn take_socket_lock(socket: &Path) -> Result<File, Stop> {
+    let mut path = socket.as_os_str().to_owned();
+    path.push(".lock");
+    take_lock(Path::new(&path), socket)
 }
 
 /// Takes the flock on `path` and records our pid and socket in it.

@@ -208,7 +208,9 @@ fn a_front_read_only_path_under_tmp_is_refused() {
         );
     }
     parse_controller("c.yaml", "fronts:\n  web:\n    read_only: [/tmpfs/x]\n").expect("ok");
+}
 
+#[test]
 fn a_front_may_name_the_claude_rule_and_no_unknown_one() {
     let c = parse_controller("c.yaml", "fronts:\n  slack:\n    proxy_rules: [claude]\n")
         .unwrap_or_else(|e| panic!("{e}"));

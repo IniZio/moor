@@ -101,9 +101,18 @@ pub(crate) fn host_checkout(env: &Env) -> impl Checkout {
     Git::new(Arc::new(SystemProc::new(env, &ToolPaths::default())))
 }
 
-/// Opens the state store once, so a store that every command would refuse fails here, and
-/// ends every front Proxy lease: a controller that starts restarts every front that held one.
+/// Opens the state store once, so a store that every command would refuse fails here.
 pub(crate) fn open_store(env: &Env) -> Result<(), CommandError> {
+    let Some(state_dir) = env.state_dir() else {
+        return Ok(());
+    };
+    let clock = SystemClock::from_env(env).map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
+    Store::open(&state_dir.join(STORE_FILE), Arc::new(clock))?;
+    Ok(())
+}
+
+/// Ends every front Proxy lease in the store.
+pub(crate) fn end_front_leases(env: &Env) -> Result<(), CommandError> {
     let Some(state_dir) = env.state_dir() else {
         return Ok(());
     };
