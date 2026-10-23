@@ -5,7 +5,7 @@ TAPLO_VERSION := 0.10.0
 TYPOS_VERSION := 1.51.1
 LLVM_COV_VERSION := 0.9.1
 
-.PHONY: help coverage setup secret audit lint format test unit ci build deploy overlap
+.PHONY: help coverage setup secret audit lint format test unit ci unit-nextest unit-doc build deploy overlap
 
 help:
 	@echo "targets: setup secret audit lint format test ci build deploy"
@@ -47,12 +47,15 @@ format:
 	cargo fmt --all
 	taplo fmt
 
+# One nextest run for every test target of the workspace, so their binaries overlap, and the
+# doc tests (which nextest cannot run) alongside it.
 unit:
-	cargo nextest run --workspace --lib --locked
-	cargo nextest run -p moor --test cli --locked
-	cargo nextest run -p moor-slack --test daemon --locked
-	cargo test -p moor-web --test deps --locked
-	cargo test -p moor-web --test e2e --locked
+	$(MAKE) --no-print-directory -j2 -O unit-nextest unit-doc
+
+unit-nextest:
+	cargo nextest run --workspace --all-targets --locked
+
+unit-doc:
 	cargo test --workspace --doc --locked
 
 test: unit

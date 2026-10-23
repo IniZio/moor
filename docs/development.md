@@ -26,7 +26,7 @@ none, and a module with no row has no limit.
 | `make build` | `cargo build --workspace --release`. |
 | `make lint` | `cargo fmt --check` and `taplo fmt --check`, Clippy with `-D warnings`, the 400-line cap on Rust files, the removed-name, Box-key, and Box-environment checks, the layering check, the lint self-tests, `typos`, and `cargo doc` with warnings denied. |
 | `make audit` | `cargo deny check` and `cargo machete`. |
-| `make unit` | The unit tests, the `moor` CLI test, the `moor-slack` daemon test, the `moor-web` tests, and the doc tests. |
+| `make unit` | Every test target of the workspace in one `cargo nextest` run, with the doc tests alongside it. |
 | `make test` | The same as `make unit`. |
 | `make ci` | `audit`, `lint`, then `test`. |
 | `make overlap BASE=<ref> [HEAD=<ref>] [FILES="glob ..."]` | Lists open pull requests that touch the same files and are not yet in `BASE`. |
