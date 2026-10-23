@@ -230,6 +230,36 @@ fn a_line_stored_before_a_restart_is_posted_once_after_it() {
     assert_eq!(ends(&rig), [(Some("replied".to_owned()), None)]);
 }
 
+/// The message the only turn still reacts on.
+fn reacted(rig: &Rig) -> Option<String> {
+    let sql = "SELECT reacted_ts FROM slack_turns";
+    db(rig).query_row(sql, [], |r| r.get(0)).unwrap()
+}
+
+#[test]
+fn a_reaction_left_after_the_line_was_posted_is_removed_at_restart() {
+    let (mut rig, _, _) = Rig::start_coordinated(Some(GOOD));
+    rig.mention(1, USER, "<@UBOT> hello", TS, None);
+    rig.slack.wait_posts(1);
+    rig.slack.wait_no_reactions();
+    rig.slack
+        .wait_until("the reaction forgotten", |_, _| reacted(&rig).is_none());
+    rig.kill_daemon();
+    let crash = format!("UPDATE slack_turns SET reacted_ts = '{TS}'");
+    db(&rig).execute(&crash, []).unwrap();
+    rig.slack
+        .leave_reaction(CHANNEL, TS, "hourglass_flowing_sand");
+    restart(&mut rig);
+    rig.slack.wait_no_reactions();
+    rig.slack
+        .wait_until("the reaction forgotten", |_, _| reacted(&rig).is_none());
+    assert_eq!(
+        rig.slack.posts().len(),
+        1,
+        "the posted line is not posted again"
+    );
+}
+
 /// Whether the only turn's line is marked posted.
 fn posted(rig: &Rig) -> bool {
     let sql = "SELECT posted_at IS NOT NULL FROM slack_turns";
@@ -245,11 +275,17 @@ fn a_reply_slack_never_took_stays_unposted_and_lands_after_a_restart() {
     rig.slack.wait_posts(4);
     std::thread::sleep(QUIET);
     assert!(!posted(&rig), "a line Slack never took was marked posted");
+    assert_eq!(
+        rig.slack.reactions_now().len(),
+        1,
+        "no reply, so the reaction stays"
+    );
     restart(&mut rig);
     let posts = rig.slack.wait_posts(5);
     assert_eq!(posts[4].text, "OK");
     rig.slack
         .wait_until("the line marked posted", |_, _| posted(&rig));
+    rig.slack.wait_no_reactions();
     assert!(!bin.join("run-1").exists(), "a stored turn ran again");
     assert_eq!(ends(&rig), [(Some("replied".to_owned()), None)]);
 }

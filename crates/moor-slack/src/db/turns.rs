@@ -208,6 +208,23 @@ impl Db {
         rows.collect()
     }
 
+    /// Forgets the message turn `id` reacted on, once its reaction is removed.
+    pub(crate) fn clear_reacted(&self, id: i64) -> rusqlite::Result<()> {
+        let sql = "UPDATE slack_turns SET reacted_ts = NULL WHERE id = ?1";
+        self.conn.execute(sql, params![id]).map(drop)
+    }
+
+    /// Turns whose line is posted and whose reaction was not yet removed.
+    pub(crate) fn reacting_after_post(&self) -> rusqlite::Result<Vec<TurnRow>> {
+        let sql = format!(
+            "SELECT {TURN_COLUMNS} FROM slack_turns u WHERE u.posted_at IS NOT NULL \
+             AND u.reacted_ts IS NOT NULL ORDER BY u.id"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map([], turn_row)?;
+        rows.collect()
+    }
+
     /// Turns with no end and no stored line.
     pub(crate) fn unended(&self) -> rusqlite::Result<Vec<Unended>> {
         let sql = format!(
