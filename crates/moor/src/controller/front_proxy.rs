@@ -16,15 +16,16 @@ use super::{log, Sink};
 use crate::env::Env;
 use crate::Moor;
 
-/// The variable that tells a front the CA its Proxy signs with.
-pub(super) const CA_VAR: &str = "MOOR_FRONT_PROXY_CA";
+/// The variable that holds the PEM certificate of the CA a front's Proxy signs with. The
+/// front writes it where it likes: no path it can read is the controller's.
+pub(super) const CA_PEM_VAR: &str = "MOOR_FRONT_PROXY_CA_PEM";
 
 /// What a front with a Proxy is given.
 pub(super) struct Access {
     /// The Proxy's socket, which the outer shim bridges.
     pub(super) socket: PathBuf,
-    /// The CA certificate, shown read-only in the front's root.
-    pub(super) ca: PathBuf,
+    /// The CA certificate, in PEM form.
+    pub(super) ca_pem: String,
 }
 
 /// The front Proxy this controller runs.
@@ -35,8 +36,8 @@ pub(super) struct Plan {
     vault_key: PathBuf,
     /// Each front with a Proxy and the names of its rules.
     fronts: BTreeMap<String, Vec<String>>,
-    /// The CA certificate.
-    ca: PathBuf,
+    /// The CA certificate, in PEM form.
+    ca_pem: String,
 }
 
 /// `env` with the rules each front's Proxy serves, and the Proxy for every entry of `fronts`
@@ -67,13 +68,14 @@ impl Plan {
             .vault_key()
             .ok_or("a front Proxy needs the vault key")?
             .to_owned();
-        let ca = Moor::front_proxy_ca(&state_dir)
+        let ca_pem = Moor::front_proxy_ca(&state_dir)
+            .and_then(std::fs::read_to_string)
             .map_err(|e| format!("cannot make the front Proxy CA: {e}"))?;
         Ok(Some(Self {
             state_dir,
             vault_key,
             fronts,
-            ca,
+            ca_pem,
         }))
     }
 
@@ -81,7 +83,7 @@ impl Plan {
     pub(super) fn access(&self, ns: &str) -> Option<Access> {
         self.fronts.contains_key(ns).then(|| Access {
             socket: Moor::front_proxy_socket(&self.state_dir, ns),
-            ca: self.ca.clone(),
+            ca_pem: self.ca_pem.clone(),
         })
     }
 

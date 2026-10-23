@@ -23,8 +23,8 @@ pub(in crate::controller) struct Front {
     pub(super) command: Vec<String>,
     /// The one directory it may write.
     pub(super) state_dir: Option<PathBuf>,
-    /// Paths it may read even where a cover hides them: its `read_only` entries, its program
-    /// and its Proxy's CA.
+    /// Paths it may read even where a cover hides them: its `read_only` entries and its
+    /// program.
     pub(super) read_only: Vec<PathBuf>,
     /// How it reaches its Proxy; none without a Proxy.
     pub(super) proxy: Option<Access>,
@@ -247,7 +247,7 @@ mod tests {
         };
         let env = Env::from_pairs([("MOOR_STATE_DIR", "/var/moor-front-test")]);
         let operator = Path::new("/nonexistent/c.sock");
-        let made = super::Front::new("web", &listener, &entry, &env, operator).unwrap();
+        let made = super::Front::new("web", &listener, &entry, &env, operator, None).unwrap();
         let e = made.err().unwrap();
         assert!(e.starts_with("fronts.web: its program "), "{e}");
     }

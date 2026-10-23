@@ -291,7 +291,7 @@ fn spawn(front: &Front, shim: &Shim, sink: &Sink) -> io::Result<Child> {
         command
             .arg("--proxy")
             .arg(&proxy.socket)
-            .env(front_proxy::CA_VAR, &proxy.ca);
+            .env(front_proxy::CA_PEM_VAR, &proxy.ca_pem);
     }
     command
         .arg("--")
