@@ -89,6 +89,8 @@ pub(crate) struct TokenCheck {
     pub(crate) view_id: String,
     /// The credential.
     pub(crate) token: Secret,
+    /// Whether the modal's result line names the account, as it does when one form took both.
+    pub(crate) named: bool,
 }
 
 impl fmt::Debug for TokenCheck {
@@ -97,6 +99,7 @@ impl fmt::Debug for TokenCheck {
             .field("user", &self.user)
             .field("account", &self.account)
             .field("view_id", &self.view_id)
+            .field("named", &self.named)
             .finish_non_exhaustive()
     }
 }
@@ -106,6 +109,7 @@ impl PartialEq for TokenCheck {
         self.user == other.user
             && self.account == other.account
             && self.view_id == other.view_id
+            && self.named == other.named
             && self.token.digest() == other.token.digest()
     }
 }
@@ -240,6 +244,7 @@ pub(crate) fn submission(
                 account,
                 view_id: sub.view_id.clone(),
                 token,
+                named: form == Form::Both,
             })
             .collect();
         Job::CheckToken(checks)

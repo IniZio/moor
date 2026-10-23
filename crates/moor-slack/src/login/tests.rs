@@ -167,6 +167,7 @@ fn a_submission_queues_one_check_and_keeps_only_its_envelope_id() {
         account: Account::Claude,
         view_id: "V1".into(),
         token: Secret::new(token.into()),
+        named: false,
     };
     assert_eq!(job, Some(Job::CheckToken(vec![want])));
     let (ack, job) = submission(sub(), &db, 2).unwrap();
@@ -254,6 +255,11 @@ fn a_both_submission_checks_only_the_filled_fields() {
     assert_eq!(accounts(job), [Account::GitHub]);
     let (_, job) = submission(both("e3", "c-tok", "g-tok"), &db, 1).unwrap();
     assert_eq!(accounts(job), [Account::Claude, Account::GitHub]);
+    let (_, job) = submission(both("e4", "c-tok", ""), &db, 1).unwrap();
+    let Some(Job::CheckToken(checks)) = job else {
+        panic!("no check");
+    };
+    assert!(checks.iter().all(|c| c.named), "a both-form names accounts");
 }
 
 #[test]
@@ -276,6 +282,7 @@ fn a_one_account_submission_still_queues_its_one_check() {
     };
     assert_eq!(checks.len(), 1);
     assert_eq!(checks[0].account, Account::GitHub);
+    assert!(!checks[0].named);
     let (_, job) = submission(submitted("e2", "U1", "claude", ""), &db, 1).unwrap();
     assert!(
         job.is_some(),
@@ -289,6 +296,7 @@ fn token_check(account: Account, token: &str) -> TokenCheck {
         account,
         view_id: "V1".into(),
         token: Secret::new(token.into()),
+        named: false,
     }
 }
 
