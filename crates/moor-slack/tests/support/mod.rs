@@ -410,7 +410,7 @@ impl Rig {
             .env("PATH", "/usr/bin:/bin")
             .env("HOME", self.path("home"))
             .env("MOOR_FRONT_PROXY_PORT", "1")
-            .env("MOOR_FRONT_PROXY_CA", self.path("proxy-ca.pem"))
+            .env("MOOR_FRONT_PROXY_CA_PEM", "fake pem")
             .arg("--config")
             .arg(self.path("slack.yaml"))
             .stdin(Stdio::null())
