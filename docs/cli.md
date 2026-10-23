@@ -164,7 +164,7 @@ removes any such directory older than an hour.
 | Command | What it does |
 | --- | --- |
 | `moor session open NAME --seed TEXT` | Starts a new agent Session on an open Box. `--seed-file PATH` reads the first prompt from a file. |
-| `moor session open --host --workdir DIR` | Opens a host Session in `DIR`, with no Box. `--agent NAME` and `--agent-session-id ID` set its agent. Host Sessions are the operator's only. |
+| `moor session open --host --workdir DIR` | Opens a host Session in `DIR`, with no Box. `--agent NAME` and `--agent-session-id ID` set its agent. A host Session belongs to the user who opens it. |
 | `moor session set ID` | Changes the `--agent` or `--agent-session-id` recorded on a host Session. |
 | `moor session end ID` | Ends a host Session. |
 

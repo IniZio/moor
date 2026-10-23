@@ -7,7 +7,7 @@ use moor_core::{BoxId, BoxName, BoxTarget, ErrorKind, Request};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::store::{BoxRow, Store};
+use crate::store::{BoxRow, SessionRecord, Store};
 
 /// The one refusal for a Box the caller may not act on and for a Box that does not exist, so
 /// that names and ids cannot be probed.
@@ -18,10 +18,6 @@ pub(crate) const CP_OPERATOR_ONLY: &str = "cp to the host is operator-only";
 
 /// The refusal for an `env` from anyone but the operator: it reads host configs.
 pub(crate) const ENV_OPERATOR_ONLY: &str = "env reads the host's configs, which is operator-only";
-
-/// The refusal for an `open-host-session` from anyone but the operator: host Sessions are the
-/// operator's only.
-pub(crate) const HOST_SESSION_OPERATOR_ONLY: &str = "host Sessions are operator-only";
 
 /// Whose Boxes `caller` may see, asserting `asserted`. Only the controller socket's own uid
 /// is the operator; a front socket is a user at most, whatever it asserts.
@@ -79,7 +75,6 @@ const fn host_only(request: &Request) -> Option<&'static str> {
     match request {
         Request::Cp(_) => Some(CP_OPERATOR_ONLY),
         Request::Env(_) => Some(ENV_OPERATOR_ONLY),
-        Request::OpenHostSession(_) => Some(HOST_SESSION_OPERATOR_ONLY),
         Request::Start(_)
         | Request::StartNeeds(_)
         | Request::Run(_)
@@ -88,6 +83,7 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         | Request::Steer(_)
         | Request::EndSession(_)
         | Request::OpenSession(_)
+        | Request::OpenHostSession(_)
         | Request::UpdateHostSession(_)
         | Request::EndHostSession(_)
         | Request::BindSession(_)
@@ -129,19 +125,21 @@ pub(crate) fn may_see(cx: &Cx, store: &Store, id: BoxId) -> Result<bool, Command
         .is_some_and(|row| viewer.may_act_on(row.user)))
 }
 
-/// Whether the context's viewer may see a Session on Box `id`; a host Session has no Box and
-/// is the operator's only.
+/// Whether the context's viewer may see `session`: a Box's Session with its Box, a host
+/// Session when it belongs to the viewer's user.
 ///
 /// # Errors
 /// A store failure.
 pub(crate) fn may_see_session(
     cx: &Cx,
     store: &Store,
-    id: Option<BoxId>,
+    session: &SessionRecord,
 ) -> Result<bool, CommandError> {
-    id.map_or(Ok(cx.viewer().may_act_on(None)), |id| {
-        may_see(cx, store, id)
-    })
+    session
+        .box_id
+        .map_or(Ok(cx.viewer().may_act_on(session.user)), |id| {
+            may_see(cx, store, id)
+        })
 }
 
 /// Whether `viewer` may act on what `named` names, pinning each name to the Box it means; a
@@ -165,10 +163,12 @@ fn may_name(
             Some(row) => Some(pin(name, row)),
             None => return Ok(true),
         },
-        // A host Session has no Box, so like a Box with no user it is the operator's only.
-        Named::Session(id) => match store.session_row(id.get())?.map(|s| s.box_id) {
-            Some(Some(id)) => store.box_row(id)?.map(|row| row.user),
-            Some(None) => Some(None),
+        // A host Session has no Box: it belongs to the user who opened it.
+        Named::Session(id) => match store.session_row(id.get())? {
+            Some(SessionRecord {
+                box_id: Some(id), ..
+            }) => store.box_row(id)?.map(|row| row.user),
+            Some(host) => Some(host.user),
             None => None,
         },
     };

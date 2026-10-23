@@ -30,7 +30,7 @@ pub(crate) fn run(cx: &Cx, req: &SessionsReq) -> Result<SessionsValue, CommandEr
     };
     let mut sessions = Vec::new();
     for r in rows {
-        if !authz::may_see_session(cx, store, r.box_id)? {
+        if !authz::may_see_session(cx, store, &r)? {
             continue;
         }
         sessions.push(SessionListItem {
