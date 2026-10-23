@@ -67,7 +67,7 @@ jobs:
 
       - run: cargo clippy -p moor --all-targets --locked -- -D warnings
       - run: cargo build -p moor-web -p moor-slack --locked
-      - run: cargo test -p moor --locked --lib front_shim
+      - run: cargo test -p moor --locked --lib -- front_shim controller::peer
       - run: cargo test -p moor --locked --test cli fronts_macos
       - name: Show what the sandbox refused
         if: always()

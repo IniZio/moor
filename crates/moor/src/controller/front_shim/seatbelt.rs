@@ -20,17 +20,12 @@ use signal_hook::iterator::Signals;
 
 use super::{code, enforced, supported, Asked, Layout, POLL};
 
-/// The host paths every front may read, where they exist: the programs, libraries, dyld
-/// cache and configuration a front runs with. A path through a symlink, such as `/etc` to
-/// `/private/etc`, may be read by either name.
-pub(in crate::controller) const SYSTEM: [&str; 6] = [
-    "/usr",
-    "/bin",
-    "/sbin",
-    "/System",
-    "/etc",
-    "/var/run/resolv.conf",
-];
+/// The host paths every front may read: the shell and tools a script front runs, the locale
+/// data, name service config and certificates in `/etc`. moor-web and moor-slack need none of
+/// them; macOS maps the dyld cache and system frameworks for any process. A path through a
+/// symlink, such as `/etc` to `/private/etc`, may be read by either name.
+pub(in crate::controller) const SYSTEM: [&str; 4] =
+    ["/usr", "/bin", "/etc", "/var/run/resolv.conf"];
 
 /// The devices a front may read; it may also write `/dev/null`.
 const DEVICES: [&str; 3] = ["/dev/zero", "/dev/random", "/dev/urandom"];
