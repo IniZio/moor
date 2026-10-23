@@ -25,12 +25,15 @@ fn events_takes_since_boxes_kinds_and_follow() {
         "b",
         "--kind",
         "turn_done",
+        "--parent",
+        "4",
         "--follow",
     ])
     .expect("parses");
     let want = WatchFilter {
         boxes: Some(vec![n("a"), n("b")]),
         kinds: Some(vec!["turn_done".to_string()]),
+        parent: Some(moor_core::SessionId::new(4)),
     };
     assert!(matches!(
         action,

@@ -85,6 +85,7 @@ fn parses_watch() {
             since: 0,
             boxes: None,
             kinds: None,
+            parent: None,
             follow: true,
             identity: None,
         })
@@ -97,10 +98,12 @@ fn watch_with_filter_and_no_follow_round_trips() {
         since: 4,
         boxes: Some(vec![BoxName::parse_allow_bare("fix-login").expect("name")]),
         kinds: Some(vec!["idled".to_owned()]),
+        parent: Some(SessionId::new(7)),
         follow: false,
         identity: None,
     };
     let line = watch.to_line();
+    assert!(line.contains(r#""parent":7"#), "{line}");
     assert!(line.contains(r#""boxes":["fix-login"]"#), "{line}");
     assert!(line.contains(r#""follow":false"#), "{line}");
     assert_eq!(parse_frame(&line), Ok(watch));
@@ -112,6 +115,7 @@ fn default_watch_omits_filter_and_follow() {
         since: 3,
         boxes: None,
         kinds: None,
+        parent: None,
         follow: true,
         identity: None,
     };
@@ -125,6 +129,7 @@ fn a_watch_carries_the_identity_it_asserts() {
         since: 0,
         boxes: None,
         kinds: None,
+        parent: None,
         follow: true,
         identity: Some(identity),
     };
@@ -141,18 +146,21 @@ fn watch_filter_matches() {
     let by_box = WatchFilter {
         boxes: Some(vec![name("a")]),
         kinds: None,
+        parent: None,
     };
     assert!(by_box.matches(Some("a"), "idled"));
     assert!(!by_box.matches(Some("b"), "idled"));
     let by_kind = WatchFilter {
         boxes: None,
         kinds: Some(vec!["idled".to_owned()]),
+        parent: None,
     };
     assert!(by_kind.matches(Some("b"), "idled"));
     assert!(!by_kind.matches(Some("b"), "started"));
     let both = WatchFilter {
         boxes: Some(vec![name("a")]),
         kinds: Some(vec!["idled".to_owned()]),
+        parent: None,
     };
     assert!(both.matches(Some("a"), "idled"));
     assert!(!both.matches(Some("a"), "started"));
@@ -160,6 +168,7 @@ fn watch_filter_matches() {
     let none = WatchFilter {
         boxes: Some(vec![]),
         kinds: None,
+        parent: None,
     };
     assert!(!none.matches(Some("a"), "idled"));
 }
@@ -171,13 +180,20 @@ fn watch_filter_matches_boxless_event() {
     assert!(WatchFilter::default().matches(None, "idled"));
     assert!(WatchFilter {
         boxes: None,
-        kinds: kinds.clone()
+        kinds: kinds.clone(),
+        parent: None,
     }
     .matches(None, "idled"));
-    assert!(!WatchFilter { boxes: None, kinds }.matches(None, "started"));
+    assert!(!WatchFilter {
+        boxes: None,
+        kinds,
+        parent: None
+    }
+    .matches(None, "started"));
     assert!(!WatchFilter {
         boxes: Some(vec![name("a")]),
-        kinds: None
+        kinds: None,
+        parent: None
     }
     .matches(None, "idled"));
 }
@@ -287,8 +303,8 @@ fn event_frame_golden_without_box_or_session() {
 }
 
 #[test]
-fn protocol_is_twelve_and_old_hello_still_parses() {
-    assert_eq!(PROTOCOL, 12);
+fn protocol_is_thirteen_and_old_hello_still_parses() {
+    assert_eq!(PROTOCOL, 13);
     let got = parse_frame(r#"{"frame":"hello","protocol":1}"#);
     assert_eq!(got, Ok(ClientFrame::Hello { protocol: 1 }));
 }
@@ -332,6 +348,7 @@ fn client_frames_round_trip_through_parse_frame() {
         since: 3,
         boxes: None,
         kinds: None,
+        parent: None,
         follow: true,
         identity: None,
     };

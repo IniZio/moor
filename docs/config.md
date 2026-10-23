@@ -346,6 +346,8 @@ may not see. A watch carries only the events of the caller's Boxes. A watch
 frame may assert an `identity`, checked like a request's. A front's watch
 carries the Boxes of the user it asserts. A watch on a front socket that
 asserts no identity, or one the socket may not assert, carries no events.
+A watch frame may also carry a `parent` Session id, which narrows the stream to
+events of that Session's child Sessions. It never widens what the viewer may see.
 
 A host Session belongs to the user who opens it. That user and the operator
 may list, show, update, end and bind it, and start Boxes under it. Anyone else

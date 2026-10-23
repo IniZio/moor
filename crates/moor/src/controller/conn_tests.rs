@@ -168,7 +168,7 @@ fn watch_frame_filter_and_follow_reach_the_stream() {
     let input = format!(
         "{}\n{}\n",
         hello(),
-        json!({"frame": "watch", "since": 5, "boxes": ["a"], "kinds": ["idled"], "follow": false,
+        json!({"frame": "watch", "since": 5, "boxes": ["a"], "kinds": ["idled"], "parent": 6, "follow": false,
             "identity": "slack:T1/U1"})
     );
     let seen = std::cell::RefCell::new(None);
@@ -184,6 +184,7 @@ fn watch_frame_filter_and_follow_reach_the_stream() {
     let filter = WatchFilter {
         boxes: Some(vec![BoxName::parse_allow_bare("a").expect("name")]),
         kinds: Some(vec!["idled".to_owned()]),
+        parent: Some(moor_core::SessionId::new(6)),
     };
     let identity = Identity::parse("slack:T1/U1").expect("identity");
     assert_eq!(seen.into_inner(), Some((5, filter, false, Some(identity))));

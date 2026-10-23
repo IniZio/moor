@@ -1,6 +1,7 @@
 //! Event stream and settle pass for the controller, behind the `Moor` facade.
 
 use moor_core::controller::ServerFrame;
+use moor_core::SessionId;
 
 use super::Moor;
 use crate::ops;
@@ -18,6 +19,16 @@ impl Moor {
             .events_after(after, limit)
             .map_err(|e| e.to_string())?;
         Ok(events.into_iter().map(NamedEvent::into_frame).collect())
+    }
+
+    /// The parent of Session `id`; none when it has no parent or does not exist.
+    ///
+    /// # Errors
+    /// The store failure, as text.
+    pub(crate) fn session_parent(&self, id: SessionId) -> Result<Option<SessionId>, String> {
+        let store = self.cx.store().map_err(|e| e.error.to_string())?;
+        let row = store.session_row(id.get()).map_err(|e| e.to_string())?;
+        Ok(row.and_then(|r| r.parent).map(SessionId::new))
     }
 
     /// Settle every open Box once, as `start` does; returns failure and warning messages to log.
