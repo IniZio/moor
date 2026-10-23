@@ -547,3 +547,43 @@ fn one_valid_and_one_refused_token_store_only_the_valid_one_and_name_the_failed(
         ]
     );
 }
+
+#[test]
+fn a_both_form_line_that_does_not_name_its_account_gets_the_account_first() {
+    use crate::account::Account;
+    use crate::credentials::SlackUser;
+    use moor_core::secret::Secret;
+
+    let mut call = |_: &str, req: Request| Ok(Response::ok(req.cmd(), Some(json!({}))));
+    let mut check_token = |check: &TokenCheck| match check.account {
+        Account::Claude => {
+            Err("The coordinator is unavailable: no binary. Nothing was stored.".to_owned())
+        }
+        Account::GitHub => Ok(()),
+    };
+    let shown = RefCell::new(Vec::new());
+    let mut modal = |_: &str, text: &str| shown.borrow_mut().push(text.to_owned());
+    let mut reply = |_: &str, _: &str, _: &str| {};
+    let mut respond = |_: &str, _: &str| {};
+    let mut ephemeral = |_: &str, _: &str, _: &str, _: &str| {};
+    let mut fx = Fx {
+        call: &mut call,
+        reply: &mut reply,
+        ephemeral: &mut ephemeral,
+        check_token: &mut check_token,
+        modal: &mut modal,
+        respond: &mut respond,
+        log: &|_| {},
+    };
+    let check = |account| TokenCheck {
+        user: SlackUser::parse("U1").unwrap(),
+        account,
+        view_id: "V1".into(),
+        token: Secret::new(b"tok".to_vec()),
+        named: true,
+    };
+    super::login::link(&mut fx, &[check(Account::Claude), check(Account::GitHub)]);
+    let want =
+        "Claude: The coordinator is unavailable: no binary. Nothing was stored.\nLinked GitHub.";
+    assert_eq!(shown.into_inner(), [want]);
+}
