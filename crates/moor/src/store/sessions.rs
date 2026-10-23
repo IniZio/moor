@@ -57,7 +57,7 @@ impl Store {
     }
 
     /// Open another Session on Box `id`, numbered after its last one, in the Starting state,
-    /// recording `parent` as its parent Session.
+    /// recording `parent` as its parent Session. It keeps the Box's workspace from the last one.
     ///
     /// # Errors
     /// Returns [`StoreError::NotFound`] when the Box does not exist, [`StoreError::Invalid`] when its current Session is not Ended, or [`StoreError`] when the database fails.
@@ -98,8 +98,9 @@ impl Store {
         }
         let state = SessionState::Starting;
         tx.execute(
-            "INSERT INTO sessions (box, ordinal, state, started_at, parent_session) \
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO sessions (box, ordinal, state, started_at, parent_session, workspace_id) \
+             VALUES (?1, ?2, ?3, ?4, ?5, (SELECT workspace_id FROM sessions WHERE box = ?1 \
+             ORDER BY ordinal DESC LIMIT 1))",
             (id.get(), ordinal, state.as_str(), now.as_millis(), parent),
         )?;
         let session = BoxSession {
