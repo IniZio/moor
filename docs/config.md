@@ -213,7 +213,8 @@ the first line and its start time from `/proc/<pid>/stat` on the second. When
 the front exits, the controller starts it again after 0.5 s. The wait doubles
 each time, up to 30 s, and goes back to 0.5 s after a run that lasted 60 s.
 When the controller drains on SIGTERM, it sends SIGTERM to each front at once,
-starts none again, and exits after every front has exited. A front still running
+starts none again, and exits after it has reaped each front's outer shim; the rest
+of that front's processes follow by death signal a few milliseconds later. A front still running
 when `drain_timeout_secs` ends is killed. A front can outlive a controller that
 crashed; the next controller reads each pid file and, when the process
 there still has the recorded start time, sends it SIGTERM and then SIGKILL after

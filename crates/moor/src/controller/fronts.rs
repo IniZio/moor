@@ -3,7 +3,7 @@
 
 use std::ffi::OsString;
 use std::fs;
-use std::io::{self, BufRead as _, BufReader, Read};
+use std::io;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::{self, Child, Command, ExitStatus, Stdio};
@@ -19,6 +19,9 @@ use rustix::process::{kill_process, Pid, Signal};
 use super::{log, Sink};
 
 mod leftover;
+mod relay;
+
+use relay::relay_lines;
 
 /// The fd a front finds its own socket on.
 const SOCKET_FD: i32 = 3;
@@ -220,6 +223,9 @@ pub(super) fn supervise(mut fronts: Vec<Front>, shim: Shim, sink: &Sink) -> Supe
 fn keep_running(front: &Front, shim: &Shim, stop: &Receiver<Stop>, sink: &Sink) {
     let ns = &front.ns;
     leftover::stop(front, sink);
+    if !matches!(stop.try_recv(), Err(mpsc::TryRecvError::Empty)) {
+        return;
+    }
     let mut backoff = FIRST_BACKOFF;
     loop {
         let started = Instant::now();
@@ -331,16 +337,6 @@ fn spawn(front: &Front, shim: &Shim, sink: &Sink) -> io::Result<Child> {
         ),
     }
     Ok(child)
-}
-
-/// Logs each line of `stream`, a front's output, to `sink` until the front closes it.
-fn relay_lines(stream: impl Read + Send + 'static, ns: &str, sink: &Sink) {
-    let (sink, ns) = (sink.clone(), ns.to_owned());
-    thread::spawn(move || {
-        for line in BufReader::new(stream).lines().map_while(Result::ok) {
-            log(&sink, &format!("front {ns}: {line}"));
-        }
-    });
 }
 
 /// Replaces the pid file of `front` with `pid` and its start time.

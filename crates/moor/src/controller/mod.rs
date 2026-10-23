@@ -48,7 +48,7 @@ const REFUSED: u8 = 3;
 /// The drain stops accepting and starts no settle pass, gives in-flight requests and a running
 /// settle pass up to `drain_timeout_secs` to finish, answers waits, watches and requests it
 /// did not run with a `restarting` frame, and exits 0. Each front gets SIGTERM when the drain
-/// begins and SIGKILL when the budget ends; the controller exits once they are reaped. Setup failures and the
+/// begins and SIGKILL when the budget ends; the controller exits once it has reaped each front's outer shim. Setup failures and the
 /// "already running" notice go to `stderr`.
 pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u8 {
     let sink: Sink = Arc::new(Mutex::new(stderr));

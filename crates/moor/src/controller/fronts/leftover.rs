@@ -1,10 +1,11 @@
 //! Stops a front that a controller which crashed left running.
 
 use std::fs;
+use std::os::fd::OwnedFd;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use rustix::process::{kill_process, Pid, Signal};
+use rustix::process::{pidfd_open, pidfd_send_signal, Pid, PidfdFlags, Signal};
 
 use super::{log, Front};
 use crate::controller::Sink;
@@ -40,7 +41,7 @@ pub(super) fn stop(front: &Front, sink: &Sink) {
         return;
     };
     let raw = pid.as_raw_nonzero().get();
-    if !running(raw, started) {
+    let Some(target) = Target::open(pid, started) else {
         log(
             sink,
             &format!(
@@ -48,18 +49,35 @@ pub(super) fn stop(front: &Front, sink: &Sink) {
             ),
         );
         return;
-    }
+    };
     log(
         sink,
         &format!("front {ns}: stopping pid {raw}, left by a controller that did not exit"),
     );
     for signal in [Signal::TERM, Signal::KILL] {
-        let _ = kill_process(pid, signal);
+        target.signal(signal);
         if gone_within(raw, started) {
             return;
         }
     }
     log(sink, &format!("front {ns}: pid {raw} did not exit"));
+}
+
+/// A process that was checked to be the one a pid file recorded, held by pidfd so that a pid
+/// the kernel reuses after it exits is never signalled.
+struct Target(OwnedFd);
+
+impl Target {
+    /// Opens `pid` and confirms, after the pidfd exists, that it started at `started`.
+    fn open(pid: Pid, started: &str) -> Option<Self> {
+        let fd = pidfd_open(pid, PidfdFlags::empty()).ok()?;
+        running(pid.as_raw_nonzero().get(), started).then_some(Self(fd))
+    }
+
+    /// Sends `signal`; false once the process is gone.
+    fn signal(&self, signal: Signal) -> bool {
+        pidfd_send_signal(&self.0, signal).is_ok()
+    }
 }
 
 /// Whether the process is gone within the grace.
@@ -90,3 +108,6 @@ fn running(pid: i32, started: &str) -> bool {
     let mut fields = rest.split_whitespace();
     fields.next().is_some_and(|state| state != "Z") && fields.nth(18) == Some(started)
 }
+
+#[cfg(test)]
+mod tests;

@@ -446,7 +446,10 @@ fn a_shim_whose_controller_is_gone_exits_without_running_the_front() {
     let mark = dir.join("ran");
     let touch = format!("touch {}", mark.display());
     let me = std::process::id().to_string();
-    let out = shim(&dir, &["--parent", "1", "--", "sh", "-c", &touch]);
+    let mut gone = Command::new("true").spawn().unwrap();
+    let gone_pid = gone.id().to_string();
+    gone.wait().unwrap();
+    let out = shim(&dir, &["--parent", &gone_pid, "--", "sh", "-c", &touch]);
     assert!(!out.status.success());
     assert!(!mark.exists(), "{}", String::from_utf8_lossy(&out.stderr));
     let out = shim(&dir, &["--parent", &me, "--", "sh", "-c", &touch]);
