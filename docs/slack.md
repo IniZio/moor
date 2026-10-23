@@ -47,10 +47,11 @@ You need:
    app_token_file: ~/.config/moor-slack/app-token
    bot_token_file: ~/.config/moor-slack/bot-token
    channels: [C0123456789]
-   users: [U0123456789]
    ```
 
-   `channels` and `users` take Slack ids, not names.
+   `channels` takes Slack ids, not names. Anyone in the workspace can mention the
+   bot in one of those channels and run `/moor login`. The channel list is the
+   only gate on where the front answers.
 
 ## Run the front
 
@@ -76,9 +77,11 @@ thread that says why.
 
 ## Start work from Slack
 
-1. Each person links their own Claude token. Run `/moor login` in any
-   channel. Run `claude setup-token` on your own machine and paste the token
-   it prints into the form.
+1. Each person links their own accounts. Run `/moor login` in any channel and
+   paste the token that `claude setup-token` prints on your own machine into
+   the form. Run `/moor login github` and paste the output of
+   `gh auth token`. The first link makes you a moor user, and each token goes
+   into the controller's vault under your name.
 2. In an allowed channel, add a GitHub repo: `/moor repo add OWNER/NAME`.
 3. Mention the bot at the top level of the channel and describe the work. The
    coordinator replies in a thread and starts Boxes when you ask for work.
@@ -130,8 +133,13 @@ schema. Move it aside and start again with a fresh one.
 
 ## Where the front keeps secrets
 
-- `/moor login` stores the token at `credentials/claude/<Slack user id>` in
-  the state directory, mode 0600.
+- `/moor login` stores no token in the state directory. After the account
+  accepts the token, the front sends the controller `enroll` and then
+  `secret-set`, each as the person who pasted it, and the controller keeps the
+  secret in its vault under the name `claude` or `github`.
+- A coordinator turn still reads the token from
+  `credentials/claude/<Slack user id>` in the state directory, mode 0600,
+  which the operator writes. `/moor login claude` does not write that file.
 - A turn gets the token on a pipe at file descriptor 3, never in its
   arguments, its environment, `slack.db`, or the log.
 - A turn runs in `/` with a cleared environment and no built-in tools. It gets
@@ -151,8 +159,8 @@ The front rejects unknown keys.
 | `app_token_file` | path | required | The file that holds the `xapp-` token. It must be mode 0600 and not empty. `~` is allowed. |
 | `bot_token_file` | path | required | The file that holds the `xoxb-` token. It must be mode 0600 and not empty. `~` is allowed. |
 | `channels` | list of channel ids | required, at least one | Channels that may start Boxes and use `/moor repo`. |
-| `users` | list of user ids | required, at least one | People who may start Boxes, change a channel's repos, and run `/moor login`. |
 | `api_base` | URL | `https://slack.com/api` | The Slack Web API base. It must start with `https://`, `http://127.0.0.1:`, or `http://localhost:`. |
+| `github_api_base` | URL | `https://api.github.com` | The GitHub API base where a pasted `gh auth token` is checked with `GET /user`. The same URL rules as `api_base`. |
 | `coordinator.binary` | absolute path | `claude` on `PATH` | The Claude Code binary. |
 | `coordinator.agent` | `claude` | `claude` | The coordinator agent. |
 | `coordinator.model` | string | `sonnet` | The model for each turn. |
@@ -164,9 +172,9 @@ The front rejects unknown keys.
 
 | Command | Who | Where | What it does |
 | --- | --- | --- | --- |
-| `/moor repo` | `users` | `channels` | Lists the channel's repos and marks the default. |
-| `/moor repo add OWNER/NAME` | `users` | `channels` | Adds a GitHub repo. A name that is not `OWNER/NAME` is refused. A start of a repo the person's GitHub account cannot read is refused by the controller. |
-| `/moor repo remove NAME` | `users` | `channels` | Removes a repo. |
-| `/moor repo default NAME` | `users` | `channels` | Makes `NAME` the channel's default repo. |
-| `/moor login [AGENT]` | `users` | any channel | Stores your Claude token after one test call to Claude on `haiku`. |
-| `/moor logout [AGENT]` | anyone | any channel | Deletes your stored token. |
+| `/moor repo` | anyone | `channels` | Lists the channel's repos and marks the default. |
+| `/moor repo add OWNER/NAME` | anyone | `channels` | Adds a GitHub repo. A name that is not `OWNER/NAME` is refused. A start of a repo the person's GitHub account cannot read is refused by the controller. |
+| `/moor repo remove NAME` | anyone | `channels` | Removes a repo. |
+| `/moor repo default NAME` | anyone | `channels` | Makes `NAME` the channel's default repo. |
+| `/moor login [claude\|github]` | anyone | any channel | Opens a form for the token. Claude is the default. The front checks a Claude token with one test call to Claude on `haiku`, and a GitHub token with `GET /user`, which must answer 200. It then stores the token in the controller's vault as you. A 401 or 403 stores nothing. |
+| `/moor logout [claude\|github]` | anyone | any channel | Deletes that secret from the vault and tells you whether one was there. Claude is the default. |

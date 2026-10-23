@@ -79,16 +79,17 @@ fn a_channel_works_on_several_repos_with_one_default() {
 }
 
 #[test]
-fn a_user_off_the_list_is_refused_and_nothing_is_recorded() {
+fn a_user_nobody_listed_changes_the_channels_repos_like_anyone() {
     let (rig, _controller) = Rig::start();
     let text = run(&rig, "env-1", "U0OTHER", "repo add acme/api");
-    assert_eq!(
-        text,
-        "<@U0OTHER> is not allowed to change this channel's repos."
+    assert_eq!(text, "Recorded. This channel works on `acme/api`.");
+    let want = (
+        CHANNEL.to_owned(),
+        "acme/api".to_owned(),
+        "U0OTHER".to_owned(),
+        false,
     );
-    std::thread::sleep(QUIET);
-    assert!(rows(&rig).is_empty());
-    assert!(rig.slack.posts().is_empty());
+    assert_eq!(rows(&rig), [want]);
 }
 
 #[test]

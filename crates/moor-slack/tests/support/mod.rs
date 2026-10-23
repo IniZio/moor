@@ -9,6 +9,7 @@
 )]
 
 pub(crate) mod controller;
+pub(crate) mod github_fake;
 mod real;
 pub(crate) mod slack_fake;
 
@@ -21,12 +22,13 @@ use std::time::Duration;
 use moor_core::controller::PROTOCOL;
 
 use controller::FakeController;
+use github_fake::FakeGitHub;
 pub(crate) use real::{front_socket, RealController};
 use slack_fake::{FakeSlack, Mention, APP_TOKEN, BOT_TOKEN};
 
 /// Channel the daemon is configured to answer in.
 pub(crate) const CHANNEL: &str = "C0ALLOWED";
-/// User the daemon is configured to obey.
+/// User most tests speak as; the daemon obeys any user in an allowed channel.
 pub(crate) const USER: &str = "U0ALLOWED";
 /// Ts of the first mention in most tests.
 pub(crate) const TS: &str = "1730000000.000100";
@@ -54,6 +56,8 @@ pub(crate) struct Rig {
     root: tempfile::TempDir,
     /// The fake Slack the daemon talks to.
     pub(crate) slack: FakeSlack,
+    /// The fake GitHub API the daemon checks pasted tokens with.
+    pub(crate) github: FakeGitHub,
     /// The daemon process, once spawned.
     daemon: Option<Child>,
 }
@@ -73,6 +77,7 @@ impl Rig {
         let rig = Self {
             root,
             slack,
+            github: FakeGitHub::start(),
             daemon: None,
         };
         secret_file(&rig.path("app.token"), APP_TOKEN);
@@ -89,21 +94,12 @@ impl Rig {
         std::fs::write(
             self.path("slack.yaml"),
             format!(
-                "app_token_file: {app_token_file}\nbot_token_file: {bot_token_file}\nchannels: [{CHANNEL}]\nusers: [{USER}]\napi_base: {}\n",
+                "app_token_file: {app_token_file}\nbot_token_file: {bot_token_file}\nchannels: [{CHANNEL}]\napi_base: {}\ngithub_api_base: {}\n",
                 self.slack.api_base(),
+                self.github.api_base(),
             ),
         )
         .unwrap();
-    }
-
-    /// Adds `user` to the config's users, who may start Boxes; call it before the daemon spawns.
-    pub(crate) fn allow_user(&self, user: &str) {
-        let config = std::fs::read_to_string(self.path("slack.yaml")).unwrap();
-        let widened = config.replace(
-            &format!("users: [{USER}]"),
-            &format!("users: [{USER}, {user}]"),
-        );
-        std::fs::write(self.path("slack.yaml"), widened).unwrap();
     }
 
     /// Names `binary` as `coordinator.binary` in the config.

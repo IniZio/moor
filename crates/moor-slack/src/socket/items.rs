@@ -6,7 +6,7 @@ use std::fmt;
 use moor_core::secret::Secret;
 use serde_json::Value;
 
-use crate::credentials::AgentKind;
+use crate::account::Account;
 
 /// A `/moor` slash command.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,6 +21,8 @@ pub(crate) struct Slash {
     pub text: String,
     /// Lets the front open a modal for this user within 3 s of the command.
     pub trigger_id: Option<String>,
+    /// Where the front may answer the command later, once.
+    pub response_url: Option<String>,
 }
 
 /// A submitted login modal. The token is a [`Secret`] from the moment it is parsed.
@@ -31,8 +33,8 @@ pub(crate) struct TokenSubmission {
     pub user: String,
     /// The modal's view id, which the front updates with the check's outcome.
     pub view_id: String,
-    /// The agent the modal was opened for, as its `private_metadata` names it.
-    pub agent: String,
+    /// The account the modal was opened for, as its `private_metadata` names it.
+    pub account: String,
     /// The pasted token, trimmed.
     pub token: Secret,
 }
@@ -43,7 +45,7 @@ impl fmt::Debug for TokenSubmission {
             .field("envelope_id", &self.envelope_id)
             .field("user", &self.user)
             .field("view_id", &self.view_id)
-            .field("agent", &self.agent)
+            .field("account", &self.account)
             .finish_non_exhaustive()
     }
 }
@@ -53,7 +55,7 @@ impl PartialEq for TokenSubmission {
         self.envelope_id == other.envelope_id
             && self.user == other.user
             && self.view_id == other.view_id
-            && self.agent == other.agent
+            && self.account == other.account
             && self.token.digest() == other.token.digest()
     }
 }
@@ -76,7 +78,7 @@ pub(crate) enum AfterAck {
     OpenLogin {
         /// The command's trigger id.
         trigger_id: String,
-        /// The agent whose credential the modal asks for.
-        agent: AgentKind,
+        /// The account whose token the modal asks for.
+        account: Account,
     },
 }

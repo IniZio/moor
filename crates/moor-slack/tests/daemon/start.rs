@@ -184,18 +184,6 @@ fn with_the_limit_at_2_a_second_start_works_and_a_third_is_refused() {
 }
 
 #[test]
-fn user_off_the_allow_list_is_refused_and_nothing_starts() {
-    let (rig, controller, _bin) = Rig::start_boxes();
-    rig.mention(1, "U0OTHER", "<@UBOT> fix the thing", TS, None);
-    let posts = rig.slack.wait_posts(1);
-    assert_eq!(posts[0].thread_ts, TS);
-    assert!(posts[0].text.contains("<@U0OTHER>"), "{}", posts[0].text);
-    std::thread::sleep(QUIET);
-    assert_eq!(rig.slack.posts().len(), 1);
-    assert!(controller.seen(|seen| seen.requests.is_empty()));
-}
-
-#[test]
 fn tokens_never_reach_stderr() {
     let (rig, controller, _bin) = Rig::start_boxes();
     controller.script("start", Scripted::Hangup);

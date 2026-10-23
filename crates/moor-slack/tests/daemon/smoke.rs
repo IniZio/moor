@@ -11,6 +11,7 @@ use moor_core::request::{AsReq, Request, SessionsReq, ShowReq, UpdateHostSession
 use moor_core::response::{ExitClass, Response};
 use moor_core::user::Identity;
 use serde_json::json;
+use std::time::Duration;
 
 use super::support::slack_fake::TEAM;
 use super::support::{Rig, BOX_NAME, MCP, TS, USER};
@@ -151,4 +152,43 @@ fn on_the_operator_socket_the_same_request_path_is_refused() {
     });
     let direct = ask_as(&rig.socket(), USER, show(BOX_NAME));
     assert_refused(&direct, "speaks only for local:");
+}
+
+/// The names of the secrets in the vault of Slack user `user`, read through the front socket.
+fn secret_names(front: &Path, user: &str) -> Vec<String> {
+    let reply = ask_as(front, user, Request::SecretNames(AsReq { identity: None }));
+    assert_eq!(reply.class, ExitClass::Ok, "{reply:?}");
+    let names = reply.value.unwrap()["names"].clone();
+    let names = names.as_array().unwrap().iter();
+    names
+        .filter_map(|n| n.as_str().map(str::to_owned))
+        .collect()
+}
+
+#[test]
+fn login_github_through_the_front_fills_that_users_vault_in_a_real_controller_and_no_one_elses() {
+    let mut rig = Rig::new();
+    let _controller = rig.real_controller();
+    rig.spawn_daemon_on_front();
+    rig.slack.wait_connected();
+    let front = rig.front_socket();
+    rig.slack
+        .send_slash("env-1", super::support::CHANNEL, USER, "login github");
+    let opened = rig
+        .slack
+        .wait_views("views.open", 1, Duration::from_secs(10));
+    let token = "gho_fake_real_vault_5c20e1";
+    rig.slack
+        .send_submission("env-2", USER, &opened[0]["view"], token);
+    let updated = rig
+        .slack
+        .wait_views("views.update", 1, Duration::from_secs(20));
+    let text = updated[0]["view"]["blocks"][0]["text"]["text"]
+        .as_str()
+        .unwrap();
+    assert_eq!(text, "Linked.", "{}", rig.stderr());
+    assert_eq!(secret_names(&front, USER), ["github"]);
+    enroll(&front, OTHER);
+    assert_eq!(secret_names(&front, OTHER), Vec::<String>::new());
+    assert!(!rig.stderr().contains(token), "the token reached the log");
 }

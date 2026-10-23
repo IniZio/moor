@@ -21,10 +21,11 @@ use moor_core::response::{ErrorKind, ErrorView, Response};
 use serde_json::json;
 
 use super::{record, serve, settle, Attempt, Fx, Job};
-use crate::command::{Allow, BoxEvent};
+use crate::command::BoxEvent;
 use moor_core::name::{BoxName, SessionId};
 
 use crate::db::{BoxState, Db, SlackBox};
+use crate::login::TokenCheck;
 use crate::socket::Mention;
 
 fn db(dir: &std::path::Path) -> Db {
@@ -43,18 +44,13 @@ fn mention(event_id: &str, user: &str, channel: &str, ts: &str, thread: Option<&
     }
 }
 
-/// Records `m` with user `U1` and channel `C1` allowed.
+/// Records `m` with channel `C1` allowed.
 fn try_record(db: &Db, m: &Mention) -> rusqlite::Result<Option<Job>> {
     let channels = vec!["C1".to_owned()];
-    let users = vec!["U1".to_owned()];
-    let allow = Allow {
-        channels: &channels,
-        users: &users,
-    };
-    record(m, db, &allow, 1_000)
+    record(m, db, &channels, 1_000)
 }
 
-/// Records `m` with user `U1` and channel `C1` allowed; the write must succeed.
+/// Records `m` with channel `C1` allowed; the write must succeed.
 fn record_one(db: &Db, m: &Mention) -> Option<Job> {
     try_record(db, m).unwrap()
 }
@@ -155,13 +151,17 @@ fn with_hooks(
             .push((c.to_owned(), t.to_owned(), text.to_owned()));
         after_post();
     };
-    let mut check_token = |_| {};
+    let mut check_token = |_: &TokenCheck| Ok(());
+    let mut modal = |_: &str, _: &str| {};
+    let mut respond = |_: &str, _: &str| {};
     let mut ephemeral = |_: &str, _: &str, _: &str, _: &str| {};
     let mut fx = Fx {
         call: &mut call,
         reply: &mut reply,
         ephemeral: &mut ephemeral,
         check_token: &mut check_token,
+        modal: &mut modal,
+        respond: &mut respond,
         log,
     };
     step(&mut fx);
@@ -239,16 +239,12 @@ fn failed_record_keeps_nothing_so_the_resent_mention_opens_the_thread() {
 }
 
 #[test]
-fn disallowed_user_is_refused_without_starting() {
+fn any_user_in_an_allowed_channel_opens_a_thread() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
     let job = record_one(&db, &mention("Ev1", "U9", "C1", "10.5", None));
-    let Some(Job::Reply { thread, text, .. }) = job else {
-        panic!("no reply: {job:?}");
-    };
-    assert_eq!(thread, "10.5");
-    assert!(text.contains("not allowed"), "{text}");
-    assert_eq!(db.thread("C1", "10.5").unwrap(), None);
+    assert_eq!(job, None);
+    assert_eq!(db.thread("C1", "10.5").unwrap().unwrap().owner, "U9");
 }
 
 #[test]

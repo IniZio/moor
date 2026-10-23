@@ -232,7 +232,7 @@ refuses any other identity.
 A front acts for one of its people by wrapping a request in `as`:
 
 ```json
-{"cmd": "as", "identity": "slack:T1:U1", "request": {"cmd": "steer", "box": "demo", "text": "go"}}
+{"cmd": "as", "identity": "slack:T1/U1", "request": {"cmd": "steer", "box": "demo", "text": "go"}}
 ```
 
 The controller never reads its own working directory. The CLI makes a
@@ -291,7 +291,7 @@ lacks one of them. The refusal names every missing secret at once, in its
 `needs` and `missing` for the caller and starts nothing:
 
 ```json
-{"cmd": "start-needs", "identity": "slack:T1:U1", "repo": "acme/demo"}
+{"cmd": "start-needs", "identity": "slack:T1/U1", "repo": "acme/demo"}
 ```
 
 `spec.json`, the file the controller writes for each Proxy, names the user and

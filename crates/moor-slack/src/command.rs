@@ -5,14 +5,6 @@ use moor_core::name::BoxName;
 
 use crate::escape::{code, escape};
 
-/// Who may use the front and where.
-pub(super) struct Allow<'a> {
-    /// Channel ids where mentions are answered.
-    pub channels: &'a [String],
-    /// User ids who may open threads.
-    pub users: &'a [String],
-}
-
 /// What a message in a thread the front keeps should cause.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ReplyAction {
@@ -35,11 +27,6 @@ pub(crate) fn reply_action(starter: &str, user: &str, text: &str) -> ReplyAction
     } else {
         ReplyAction::Queue(text.to_owned())
     }
-}
-
-/// The line for a top-level mention from a user off the `users` list.
-pub(crate) fn not_allowed(user: &str) -> String {
-    format!("<@{user}> is not allowed to start Boxes here; nothing was started.")
 }
 
 /// Thread reply after a successful start, with the Box's branch when the reply named one.

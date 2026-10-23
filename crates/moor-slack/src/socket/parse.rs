@@ -16,6 +16,7 @@ pub(super) fn parse_slash(envelope: &Value) -> Option<Slash> {
         user: text(payload.get("user_id"))?,
         text: text(payload.get("text")).unwrap_or_default(),
         trigger_id: text(payload.get("trigger_id")),
+        response_url: text(payload.get("response_url")),
     })
 }
 
@@ -43,7 +44,7 @@ pub(super) fn parse_submission(envelope: &Value) -> Option<TokenSubmission> {
         envelope_id: text(envelope.get("envelope_id"))?,
         user: text(payload.get("user").and_then(|u| u.get("id")))?,
         view_id: text(view.get("id"))?,
-        agent: text(view.get("private_metadata")).unwrap_or_default(),
+        account: text(view.get("private_metadata")).unwrap_or_default(),
         token: Secret::new(token.trim().as_bytes().to_vec()),
     })
 }

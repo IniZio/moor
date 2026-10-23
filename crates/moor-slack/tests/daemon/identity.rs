@@ -81,7 +81,6 @@ fn every_request_in_a_thread_that_starts_a_box_runs_a_turn_answers_and_closes_is
 /// A daemon whose users [`USER`] and [`SECOND`] each own a thread with a bound Box.
 fn two_users() -> (Rig, FakeController) {
     let mut rig = Rig::new();
-    rig.allow_user(SECOND);
     let bin = rig.use_fake_claude(None);
     rig.link_token(USER, MCP);
     rig.link_token(SECOND, MCP);

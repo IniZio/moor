@@ -22,7 +22,7 @@ struct Args {
     /// Controller socket to dial; defaults to `$MOOR_FRONT_SOCKET`.
     #[arg(long, env = "MOOR_SLACK_SOCKET")]
     socket: Option<PathBuf>,
-    /// The front's config file: Slack token files, channels and users.
+    /// The front's config file: Slack token files and channels.
     #[arg(long, env = "MOOR_SLACK_CONFIG")]
     config: PathBuf,
     /// Directory for the front's own state; defaults to `$XDG_STATE_HOME/moor-slack`

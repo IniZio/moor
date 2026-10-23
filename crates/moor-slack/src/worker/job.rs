@@ -1,5 +1,6 @@
 //! The jobs the Socket Mode thread queues for the worker.
 
+use crate::account::Account;
 use crate::login::TokenCheck;
 
 /// What the worker does for one recorded mention or command.
@@ -14,8 +15,18 @@ pub(crate) enum Job {
         /// What to post.
         text: String,
     },
-    /// Check a pasted Claude token and store it when Claude takes it.
+    /// Check a pasted token and store it in the vault when its account takes it.
     CheckToken(TokenCheck),
+    /// Delete `user`'s secret for `account` from the vault and tell the user through
+    /// `response_url`.
+    Unlink {
+        /// The Slack user who ran `/moor logout`.
+        user: String,
+        /// The account to unlink.
+        account: Account,
+        /// Where Slack takes the answer to the command.
+        response_url: Option<String>,
+    },
     /// Show `text` to `user` only, in a thread.
     Ephemeral {
         /// Channel id of the thread.

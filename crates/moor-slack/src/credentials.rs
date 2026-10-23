@@ -2,16 +2,14 @@
 //! state dir, and each user's own config dir for that agent. What a credential looks like
 //! and how to check it belongs to the agent, behind [`CredentialCheck`].
 
-use std::fs::{self, DirBuilder, OpenOptions};
-use std::io::{self, Write as _};
-use std::os::unix::fs::{
-    DirBuilderExt as _, MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _,
-};
+use std::fs::{self, DirBuilder};
+use std::io;
+use std::os::unix::fs::{DirBuilderExt as _, MetadataExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 
 use moor_core::secret::Secret;
 
-/// The agent a credential belongs to; its name is a path component and a command word.
+/// The agent a credential belongs to; its name is a path component.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AgentKind {
     /// Claude Code, with the token `claude setup-token` prints.
@@ -19,12 +17,6 @@ pub(crate) enum AgentKind {
 }
 
 impl AgentKind {
-    /// The agent a command means when it names none.
-    pub(crate) const DEFAULT: Self = Self::Claude;
-
-    /// Every agent a person can link a credential for.
-    const ALL: [Self; 1] = [Self::Claude];
-
     /// The agent's name, such as `claude`.
     pub(crate) const fn name(self) -> &'static str {
         match self {
@@ -37,18 +29,6 @@ impl AgentKind {
         match self {
             Self::Claude => "Claude",
         }
-    }
-
-    /// What the login modal asks this agent's user to paste.
-    pub(crate) const fn login_prompt(self) -> &'static str {
-        match self {
-            Self::Claude => crate::coordinator::claude::LOGIN_PROMPT,
-        }
-    }
-
-    /// The agent called `name`.
-    pub(crate) fn parse(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|kind| kind.name() == name)
     }
 }
 
@@ -105,12 +85,17 @@ pub(crate) fn credential_path(state_dir: &Path, agent: AgentKind, user: &SlackUs
 /// Writes `credential` as `user`'s file for `agent`, mode 0600 in 0700 directories. It
 /// writes a temp file beside it and renames it over the old one, so a reader sees the old
 /// credential or the new one, never part of one.
+#[cfg(test)]
 pub(crate) fn store(
     state_dir: &Path,
     agent: AgentKind,
     user: &SlackUser,
     credential: &Secret,
 ) -> Result<(), String> {
+    use std::fs::OpenOptions;
+    use std::io::Write as _;
+    use std::os::unix::fs::OpenOptionsExt as _;
+
     let path = credential_path(state_dir, agent, user);
     let dir = agent_dir(state_dir, agent);
     let parent = state_dir.join("credentials");
@@ -178,12 +163,6 @@ fn owned(path: &Path, owner: u32, dir: bool) -> io::Result<bool> {
     Err(io::Error::new(io::ErrorKind::PermissionDenied, why))
 }
 
-/// Deletes `user`'s credential for `agent`; a user with no file is already unlinked.
-pub(crate) fn remove(state_dir: &Path, agent: AgentKind, user: &SlackUser) -> Result<(), String> {
-    let path = credential_path(state_dir, agent, user);
-    remove_if_present(&path).map_err(|e| format!("{}: {e}", path.display()))
-}
-
 /// `user`'s own config dir for `agent`, created mode 0700 when missing.
 pub(crate) fn config_dir(
     state_dir: &Path,
@@ -219,6 +198,7 @@ pub(crate) fn private_dir(dir: &Path, owner: u32) -> io::Result<()> {
 }
 
 /// Deletes `path`; a missing file is not an error.
+#[cfg(test)]
 fn remove_if_present(path: &Path) -> io::Result<()> {
     match fs::remove_file(path) {
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),

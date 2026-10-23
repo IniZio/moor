@@ -6,7 +6,7 @@ use std::path::Path;
 
 use moor_core::secret::Secret;
 
-use super::{config_dir, credential_path, load, private_dir, remove, store, AgentKind, SlackUser};
+use super::{config_dir, credential_path, load, private_dir, store, AgentKind, SlackUser};
 
 const CLAUDE: AgentKind = AgentKind::Claude;
 
@@ -36,12 +36,8 @@ fn only_slack_shaped_ids_name_a_file() {
 }
 
 #[test]
-fn agents_are_named_by_one_word() {
-    assert_eq!(AgentKind::parse("claude"), Some(AgentKind::Claude));
-    assert_eq!(AgentKind::DEFAULT.name(), "claude");
-    for bad in ["", "Claude", "../claude", "codex"] {
-        assert_eq!(AgentKind::parse(bad), None, "{bad}");
-    }
+fn the_agent_is_named_by_one_word() {
+    assert_eq!(AgentKind::Claude.name(), "claude");
 }
 
 #[test]
@@ -74,15 +70,14 @@ fn a_wider_credential_dir_is_narrowed_to_0700() {
 }
 
 #[test]
-fn each_user_has_their_own_file_and_remove_deletes_only_theirs() {
+fn each_user_has_their_own_file() {
     let state = tempfile::tempdir().unwrap();
     store(state.path(), CLAUDE, &user("U1"), &secret("one")).unwrap();
     store(state.path(), CLAUDE, &user("U2"), &secret("two")).unwrap();
-    remove(state.path(), CLAUDE, &user("U1")).unwrap();
-    remove(state.path(), CLAUDE, &user("U1")).unwrap();
-    assert!(!credential_path(state.path(), CLAUDE, &user("U1")).exists());
-    let kept = credential_path(state.path(), CLAUDE, &user("U2"));
-    assert_eq!(std::fs::read(kept).unwrap(), b"two");
+    let one = credential_path(state.path(), CLAUDE, &user("U1"));
+    let two = credential_path(state.path(), CLAUDE, &user("U2"));
+    assert_eq!(std::fs::read(one).unwrap(), b"one");
+    assert_eq!(std::fs::read(two).unwrap(), b"two");
 }
 
 #[test]

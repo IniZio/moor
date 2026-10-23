@@ -426,12 +426,26 @@ fn carries(owner: Option<&str>, watcher: Option<&str>) -> bool {
 
 /// The answer to a request no script covers: from the host Sessions, then the Box table.
 fn unscripted(request: &Request, inner: &mut Inner) -> Response {
-    host_session(request, &mut inner.hosts)
+    user_cmd(request)
+        .or_else(|| host_session(request, &mut inner.hosts))
         .or_else(|| from_table(request, inner.boxes.as_mut()?))
         .unwrap_or_else(|| {
             let cmd = command(request);
             failed(&cmd, &format!("no script for {cmd}"))
         })
+}
+
+/// The answer to `enroll`, `secret-set`, `secret-delete` or `secret-names`; `None` for any
+/// other request. The fake keeps no vault: a test reads what was asked from [`Seen`].
+fn user_cmd(request: &Request) -> Option<Response> {
+    let (cmd, value) = match request {
+        Request::Enroll(_) => ("enroll", json!({"user": 1, "created": true})),
+        Request::SecretSet(set) => ("secret-set", json!({"name": set.name, "changed": true})),
+        Request::SecretDelete(del) => ("secret-delete", json!({"name": del.name, "changed": true})),
+        Request::SecretNames(_) => ("secret-names", json!({"names": []})),
+        _ => return None,
+    };
+    Some(Response::ok(cmd, Some(value)))
 }
 
 /// The Box table's answer to a `start` or `show`; `None` for any other request.

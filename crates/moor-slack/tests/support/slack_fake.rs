@@ -14,6 +14,7 @@ use tungstenite::Message;
 
 use request::read_request;
 
+mod commands;
 mod request;
 
 /// App-level token the fake accepts for opening a connection.
@@ -267,45 +268,6 @@ impl FakeSlack {
                 },
                 "message": {"ts": click.message_ts, "thread_ts": click.thread_ts},
                 "actions": [{"action_id": click.action_id, "value": click.value}],
-            },
-        });
-        self.lock().outbox.push_back(envelope.to_string());
-    }
-
-    /// Queues a `slash_commands` envelope: `user` runs `/moor <text>` in `channel`.
-    pub(crate) fn send_slash(&self, envelope_id: &str, channel: &str, user: &str, text: &str) {
-        let envelope = json!({
-            "type": "slash_commands",
-            "envelope_id": envelope_id,
-            "payload": {
-                "command": "/moor",
-                "text": text,
-                "user_id": user,
-                "channel_id": channel,
-                "trigger_id": format!("trigger-{envelope_id}"),
-            },
-        });
-        self.lock().outbox.push_back(envelope.to_string());
-    }
-
-    /// Queues an `interactive` envelope: `user` submits the login modal `view`, as opened,
-    /// with `token` in its input.
-    pub(crate) fn send_submission(&self, envelope_id: &str, user: &str, view: &Value, token: &str) {
-        let envelope = json!({
-            "type": "interactive",
-            "envelope_id": envelope_id,
-            "payload": {
-                "type": "view_submission",
-                "user": {"id": user},
-                "view": {
-                    "id": "V1",
-                    "callback_id": view["callback_id"],
-                    "private_metadata": view["private_metadata"],
-                    "state": {"values": {"token": {"token": {
-                        "type": "plain_text_input",
-                        "value": token,
-                    }}}},
-                },
             },
         });
         self.lock().outbox.push_back(envelope.to_string());
@@ -571,6 +533,7 @@ fn serve_http(mut stream: TcpStream, state: &Mutex<State>, ws_port: u16) {
             status = code;
             reply
         }
+        path if path.starts_with("/respond/") => json!({"ok": true}),
         "/chat.postEphemeral" if auth == format!("Bearer {BOT_TOKEN}") => {
             json!({"ok": true, "message_ts": message_ts(guard.posted)})
         }
