@@ -115,3 +115,13 @@ fn a_front_writes_dev_null_and_no_other_device() {
     assert_eq!(got["dev_null"], "writable", "{got}");
     assert_eq!(got["dev_zero"], "Permission denied", "{got}");
 }
+
+#[test]
+fn a_front_reads_its_read_only_paths_and_its_program_through_the_covers() {
+    let ctl = Controller::start(PROBE, &[]);
+    let got = wait_for("the probe", || ctl.line("probe "));
+    let got: Value = serde_json::from_str(&got).unwrap();
+    assert_eq!(got["shared_read"], 6, "{got}");
+    assert_eq!(got["shared_write"], "Read-only file system", "{got}");
+    assert_eq!(got["home_secret"], "FileNotFoundError", "{got}");
+}

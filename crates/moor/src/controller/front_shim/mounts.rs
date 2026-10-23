@@ -1,6 +1,6 @@
 //! The front's view of the filesystem, set up in its new mount namespace: masked files read as
-//! `/dev/null`, covered dirs are empty, every mount is read-only, and only the writable dirs are
-//! read-write again. Read-only mounts refuse chmod, chown, utimes and xattr changes, even
+//! `/dev/null`, covered dirs are empty, every mount is read-only, the writable dirs are
+//! read-write again and the read-only paths show again through the covers. Read-only mounts refuse chmod, chown, utimes and xattr changes, even
 //! through an fd, which the sandbox alone does not.
 
 use std::fs;
@@ -12,23 +12,33 @@ use rustix::fs::{open, Mode, OFlags};
 use rustix::io::Errno;
 use rustix::mount::{mount, mount_bind, mount_remount, MountFlags};
 
+/// A path the front sees through the covers, open before they hid it.
+struct Kept<'a> {
+    /// Where the front sees it.
+    path: &'a Path,
+    /// It, opened with `O_PATH`.
+    fd: OwnedFd,
+    /// Whether the front may write it.
+    writable: bool,
+}
+
 /// Masks each of `mask` with `/dev/null`, covers each of `cover` with an empty tmpfs, makes
-/// every mount read-only, then binds each of `writable` back read-write at its own path.
+/// every mount read-only, then binds each of `writable` back read-write and each of `read_only`
+/// back read-only, at its own path.
 pub(super) fn arrange(
     cover: &[PathBuf],
     mask: &[PathBuf],
     writable: &[PathBuf],
+    read_only: &[PathBuf],
 ) -> Result<(), String> {
     let kept = writable
         .iter()
-        .map(|dir| {
-            open(
-                dir,
-                OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC,
-                Mode::empty(),
-            )
-            .map(|fd| (dir, fd))
-            .map_err(|e| format!("cannot open {}: {e}", dir.display()))
+        .map(|path| (path, true))
+        .chain(read_only.iter().map(|path| (path, false)))
+        .map(|(path, writable)| {
+            open(path, OFlags::PATH | OFlags::CLOEXEC, Mode::empty())
+                .map(|fd| Kept { path, fd, writable })
+                .map_err(|e| format!("cannot open {}: {e}", path.display()))
         })
         .collect::<Result<Vec<_>, _>>()?;
     for file in mask {
@@ -39,16 +49,27 @@ pub(super) fn arrange(
     for dir in outermost(cover) {
         mount("tmpfs", dir, "tmpfs", flags, c"mode=755")
             .map_err(|e| format!("cannot cover {}: {e}", dir.display()))?;
-        for (path, _) in kept.iter().filter(|(path, _)| path.starts_with(dir)) {
-            fs::create_dir_all(path)
-                .map_err(|e| format!("cannot make room for {}: {e}", path.display()))?;
+        for kept in kept.iter().filter(|k| k.path.starts_with(dir)) {
+            make_room(kept)
+                .map_err(|e| format!("cannot make room for {}: {e}", kept.path.display()))?;
         }
     }
     read_only_everywhere()?;
-    for (path, fd) in &kept {
-        writable_again(path, fd)?;
+    for kept in &kept {
+        bind_back(kept)?;
     }
     Ok(())
+}
+
+/// Creates the dir, or the empty file, that `kept` is bound over inside a cover.
+fn make_room(kept: &Kept<'_>) -> std::io::Result<()> {
+    if rustix::fs::fstat(&kept.fd)?.st_mode & 0o170_000 == 0o040_000 {
+        return fs::create_dir_all(kept.path);
+    }
+    if let Some(parent) = kept.path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::File::create(kept.path).map(drop)
 }
 
 /// The dirs of `cover` that no other dir of `cover` contains.
@@ -64,10 +85,10 @@ fn outermost(cover: &[PathBuf]) -> Vec<&PathBuf> {
 /// kernel answers EINVAL, as for an automount point) is out of the front's reach already, and so
 /// is every mount under `/proc`, which pid 1 covers with a fresh `/proc`.
 fn read_only_everywhere() -> Result<(), String> {
-    for (point, flags) in mounts()? {
-        if point.starts_with("/proc") {
-            continue;
-        }
+    for (point, flags) in mounts()?
+        .into_iter()
+        .filter(|(point, _)| beyond_proc(point))
+    {
         match mount_remount(&point, MountFlags::BIND | MountFlags::RDONLY | flags, "") {
             Ok(()) => {}
             Err(e) if [Errno::NOENT, Errno::ACCESS, Errno::INVAL].contains(&e) => {}
@@ -77,16 +98,27 @@ fn read_only_everywhere() -> Result<(), String> {
     Ok(())
 }
 
-/// Binds the dir open as `fd` over its read-only self at `path`, read-write.
-fn writable_again(path: &Path, fd: &OwnedFd) -> Result<(), String> {
-    let fail = |e: Errno| format!("cannot let the front write {}: {e}", path.display());
-    mount_bind(format!("/proc/self/fd/{}", fd.as_raw_fd()), path).map_err(fail)?;
+/// Binds `kept` over whatever the front sees at its path, read-write only when it may write it.
+fn bind_back(kept: &Kept<'_>) -> Result<(), String> {
+    let path = kept.path;
+    let fail = |e: Errno| format!("cannot show the front {}: {e}", path.display());
+    mount_bind(format!("/proc/self/fd/{}", kept.fd.as_raw_fd()), path).map_err(fail)?;
     let flags = mounts()?
         .into_iter()
         .rev()
         .find_map(|(point, flags)| (point == path).then_some(flags))
         .unwrap_or(MountFlags::empty());
-    mount_remount(path, MountFlags::BIND | flags, "").map_err(fail)
+    let mode = if kept.writable {
+        MountFlags::empty()
+    } else {
+        MountFlags::RDONLY
+    };
+    mount_remount(path, MountFlags::BIND | mode | flags, "").map_err(fail)
+}
+
+/// Whether `point` is outside `/proc`, whose mounts pid 1 covers with a fresh `/proc`.
+fn beyond_proc(point: &Path) -> bool {
+    !point.starts_with("/proc")
 }
 
 /// Each mount point in `/proc/self/mountinfo`, in mount order, with the flags it must keep when
@@ -152,7 +184,17 @@ mod tests {
 
     use rustix::mount::MountFlags;
 
-    use super::{kept_flags, outermost, unescape};
+    use super::{beyond_proc, kept_flags, outermost, unescape};
+
+    #[test]
+    fn mounts_under_proc_are_left_to_the_fresh_proc() {
+        assert!(!beyond_proc(std::path::Path::new(
+            "/proc/sys/fs/binfmt_misc"
+        )));
+        assert!(!beyond_proc(std::path::Path::new("/proc")));
+        assert!(beyond_proc(std::path::Path::new("/procfs")));
+        assert!(beyond_proc(std::path::Path::new("/")));
+    }
 
     #[test]
     fn a_remount_keeps_the_locked_flags_and_the_atime_mode() {

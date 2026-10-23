@@ -5,8 +5,7 @@ use std::ffi::OsString;
 use std::fs::{self, DirBuilder};
 use std::io;
 use std::os::unix::fs::DirBuilderExt as _;
-use std::os::unix::net::UnixListener;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{self, Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::Arc;
@@ -14,15 +13,16 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use command_fds::{CommandFdExt as _, FdMapping};
-use moor_core::config::FrontEntry;
 use rustix::fs::{Mode, OFlags};
 use rustix::process::{kill_process, Pid, Signal};
 
 use super::{log, Sink};
 
+mod front;
 mod leftover;
 mod relay;
 
+pub(super) use front::Front;
 use relay::relay_lines;
 
 /// The fd a front finds its own socket on.
@@ -40,46 +40,6 @@ const STEADY: Duration = Duration::from_secs(60);
 
 /// How often a supervisor checks whether its front exited.
 const POLL: Duration = Duration::from_millis(50);
-
-/// A front the controller runs.
-pub(super) struct Front {
-    /// The front's namespace.
-    ns: String,
-    /// Its socket; the child gets an `O_PATH` fd to it.
-    socket: PathBuf,
-    /// Its argv, not empty.
-    command: Vec<String>,
-    /// The one directory it may write.
-    state_dir: Option<PathBuf>,
-}
-
-impl Front {
-    /// The front `ns` listening on `listener`, run as `entry` says; none when `entry` has no
-    /// command.
-    pub(super) fn new(
-        ns: &str,
-        listener: &UnixListener,
-        entry: &FrontEntry,
-    ) -> Option<Result<Self, String>> {
-        let command = entry.command.clone()?;
-        let socket = listener
-            .local_addr()
-            .ok()
-            .and_then(|a| a.as_pathname().map(PathBuf::from))
-            .ok_or_else(|| format!("front {ns}: its socket has no path"));
-        Some(socket.map(|socket| Self {
-            ns: ns.to_owned(),
-            socket,
-            command,
-            state_dir: entry.state_dir.clone(),
-        }))
-    }
-
-    /// `<state>/fronts/<ns>.pid`: the running front's pid and its start time from `/proc`.
-    fn pid_file(&self) -> PathBuf {
-        self.socket.with_extension("pid")
-    }
-}
 
 /// Dirs hidden from every front because host services keep their Unix sockets there, such as
 /// the user's D-Bus session and Docker's socket under `/run`.
@@ -332,6 +292,9 @@ fn spawn(front: &Front, shim: &Shim, sink: &Sink) -> io::Result<Child> {
             .arg(dir)
             .env("MOOR_FRONT_STATE_DIR", dir)
             .env("TMPDIR", tmp);
+    }
+    for path in &front.read_only {
+        command.arg("--read-only").arg(path);
     }
     command
         .arg("--")

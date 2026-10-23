@@ -54,6 +54,9 @@ pub struct FrontEntry {
     /// nothing.
     #[serde(default)]
     pub state_dir: Option<PathBuf>,
+    /// Absolute paths the front may read even where the controller hides the host from it.
+    #[serde(default)]
+    pub read_only: Vec<PathBuf>,
 }
 
 /// Wraps whatever follows the key in `Some`, so a null value stays distinguishable from a missing key.
@@ -131,6 +134,16 @@ pub fn parse_controller(file: &str, text: &str) -> Result<ControllerConfig, Conf
     {
         return Err(
             ConfigError::new(format!("fronts.{ns}.command"), "must name a program").in_file(file),
+        );
+    }
+    if let Some((ns, _)) = cfg
+        .fronts
+        .iter()
+        .find(|(_, f)| f.read_only.iter().any(|p| !p.is_absolute()))
+    {
+        return Err(
+            ConfigError::new(format!("fronts.{ns}.read_only"), "must hold absolute paths")
+                .in_file(file),
         );
     }
     if let Some((ns, _)) = cfg

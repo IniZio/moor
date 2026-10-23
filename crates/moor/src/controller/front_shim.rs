@@ -2,10 +2,11 @@
 //! state dir, operator socket and vault key are out of reach.
 //!
 //! The controller runs
-//! `moor front-shim --parent PID [--cover DIR | --mask FILE | --writable DIR]... -- COMMAND...`.
-//! That process dies with the controller `PID` (it exits at once if `PID` is not its parent),
-//! enters the namespaces, covers each DIR with an empty tmpfs and each FILE with `/dev/null`,
-//! then runs `moor front-shim --init [--writable DIR]... -- COMMAND...` as pid 1 of the new PID
+//! `moor front-shim --parent PID [--cover DIR | --mask FILE | --writable DIR | --read-only PATH]...
+//! -- COMMAND...`. That process dies with the controller `PID` (it exits at once if `PID` is not
+//! its parent), enters the namespaces, covers each DIR with an empty tmpfs and each FILE with
+//! `/dev/null`, makes every mount read-only, shows each writable DIR read-write and each PATH
+//! read-only again, then runs `moor front-shim --init [--writable DIR]... -- COMMAND...` as pid 1 of the new PID
 //! namespace. pid 1 mounts a fresh `/proc`, so no controller pid is visible, moves to `/`, so
 //! no cwd reaches the covered paths, confines itself with nono's sandbox so that nothing but
 //! each writable DIR and `/dev/null` can be written, and runs the front without capabilities,
@@ -50,7 +51,7 @@ pub fn main(args: &[OsString]) -> Result<u8, String> {
     let flags = parts.next().unwrap_or_default();
     let command = parts.next().unwrap_or_default();
     match flags {
-        [flag] if flag == "--check" => isolate(&[], &[], &[])
+        [flag] if flag == "--check" => isolate(&[], &[], &[], &[])
             .and_then(|()| confine(&[]))
             .and_then(|()| enforced())
             .map(|()| {
@@ -65,9 +66,10 @@ pub fn main(args: &[OsString]) -> Result<u8, String> {
                 cover,
                 mask,
                 writable,
+                read_only,
             } = Hidden::parse(flags)?;
             die_with(parent)?;
-            isolate(&cover, &mask, &writable)?;
+            isolate(&cover, &mask, &writable, &read_only)?;
             let mut caps = capabilities(None).map_err(|e| format!("capget: {e}"))?;
             caps.inheritable |= CapabilitySet::SYS_ADMIN;
             set_capabilities(None, caps).map_err(|e| format!("capset: {e}"))?;
@@ -114,6 +116,8 @@ struct Hidden {
     mask: Vec<PathBuf>,
     /// Dirs the front may write.
     writable: Vec<PathBuf>,
+    /// Paths the front may read even under a cover.
+    read_only: Vec<PathBuf>,
 }
 
 impl Hidden {
@@ -128,10 +132,12 @@ impl Hidden {
             .collect()
     }
 
-    /// Reads `--parent PID`, `--cover DIR`, `--mask FILE` and `--writable DIR` flags.
+    /// Reads `--parent PID`, `--cover DIR`, `--mask FILE`, `--writable DIR` and
+    /// `--read-only PATH` flags.
     fn parse(flags: &[OsString]) -> Result<Self, String> {
-        let (mut parent, mut cover, mut mask, mut writable) =
-            (None, Vec::new(), Vec::new(), Vec::new());
+        let mut parent = None;
+        let (mut cover, mut mask, mut writable, mut read_only) =
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new());
         let mut flags = flags.iter();
         while let Some(flag) = flags.next() {
             let word = flags
@@ -150,6 +156,7 @@ impl Hidden {
                 Some("--cover") => cover.push(PathBuf::from(word)),
                 Some("--mask") => mask.push(PathBuf::from(word)),
                 Some("--writable") => writable.push(PathBuf::from(word)),
+                Some("--read-only") => read_only.push(PathBuf::from(word)),
                 _ => return Err(format!("unknown flag {}", flag.display())),
             }
         }
@@ -159,15 +166,21 @@ impl Hidden {
             cover,
             mask,
             writable,
+            read_only,
         })
     }
 }
 
 /// Enters new user, mount and PID namespaces as the same uid and gid, then hides `cover` under
-/// empty tmpfs mounts and `mask` under `/dev/null`, makes every mount read-only and binds each
-/// of `writable` back read-write. The PID namespace applies to the next child, which becomes its
-/// pid 1.
-fn isolate(cover: &[PathBuf], mask: &[PathBuf], writable: &[PathBuf]) -> Result<(), String> {
+/// empty tmpfs mounts and `mask` under `/dev/null`, makes every mount read-only, binds each
+/// of `writable` back read-write and each of `read_only` back read-only. The PID namespace
+/// applies to the next child, which becomes its pid 1.
+fn isolate(
+    cover: &[PathBuf],
+    mask: &[PathBuf],
+    writable: &[PathBuf],
+    read_only: &[PathBuf],
+) -> Result<(), String> {
     let (uid, gid) = (getuid().as_raw(), getgid().as_raw());
     unshare(CloneFlags::CLONE_NEWUSER | CloneFlags::CLONE_NEWNS | CloneFlags::CLONE_NEWPID)
         .map_err(|e| {
@@ -190,7 +203,7 @@ fn isolate(cover: &[PathBuf], mask: &[PathBuf], writable: &[PathBuf]) -> Result<
         MountPropagationFlags::PRIVATE | MountPropagationFlags::REC,
     )
     .map_err(|e| format!("cannot make mounts private: {e}"))?;
-    mounts::arrange(cover, mask, writable)
+    mounts::arrange(cover, mask, writable, read_only)
 }
 
 /// Fails unless the sandbox now in force refuses a write it would refuse a front: opening
