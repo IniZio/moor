@@ -1,6 +1,6 @@
 //! The front Proxy end to end: a lease reaches the upstream with its own user's secret and no
-//! one else's, and a lease of another front, an expired lease, no lease, a path the rule does
-//! not allow or a host no rule lists gets nothing upstream.
+//! one else's; a lease of another front, an expired lease or no lease gets nothing upstream; and
+//! a path the rule does not allow or a host no rule lists is refused.
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -48,6 +48,27 @@ fn rule(port: u16) -> ResolvedRule {
         }],
         box_env: BTreeMap::new(),
     }
+}
+
+/// Standard base64 with padding.
+fn base64(bytes: &[u8]) -> String {
+    const DIGITS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in bytes.chunks(3) {
+        let n = chunk
+            .iter()
+            .enumerate()
+            .fold(0_u32, |n, (i, b)| n | u32::from(*b) << (16 - 8 * i));
+        for i in 0..4_u32 {
+            let digit = DIGITS.get(usize::try_from((n >> (18 - 6 * i)) & 63).unwrap());
+            out.push(if i as usize <= chunk.len() {
+                char::from(*digit.unwrap())
+            } else {
+                '='
+            });
+        }
+    }
+    out
 }
 
 /// A served front Proxy for the `slack` front, with Ann and Bob each holding a `claude` secret.
@@ -139,6 +160,21 @@ impl Served {
             .map_err(|e| e.to_string())
     }
 
+    /// The status line of a CONNECT to `authority` with `token` as the proxy password.
+    fn connect(&self, token: &str, authority: &str) -> String {
+        use std::io::{BufRead as _, BufReader, Write as _};
+        let mut s = std::net::TcpStream::connect(("127.0.0.1", self.port)).unwrap();
+        let auth = base64(format!("lease:{token}").as_bytes());
+        write!(
+            s,
+            "CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\nProxy-Authorization: Basic {auth}\r\n\r\n"
+        )
+        .unwrap();
+        let mut line = String::new();
+        let _ = BufReader::new(s).read_line(&mut line);
+        line.trim_end().to_owned()
+    }
+
     fn authorizations(&self) -> Vec<Option<String>> {
         self.up
             .seen()
@@ -183,21 +219,17 @@ fn another_fronts_lease_an_expired_lease_or_none_reaches_nothing() {
 }
 
 #[test]
-fn the_secret_goes_only_to_allowed_paths_on_rule_hosts() {
+fn a_path_the_rule_does_not_allow_is_refused_and_reaches_nothing() {
     let served = Served::start();
     let ann = served.lease("slack", served.ann, "lease-ann");
-    let other = served.up.twin();
-    let refused = served.get(&ann, served.up.port, "/nope");
-    assert!(
-        refused != Ok(200),
-        "a path the rule does not allow: {refused:?}"
-    );
-    assert!(
-        served.get(&ann, other.port, "/ok").is_err(),
-        "a host no rule lists"
-    );
-    for seen in served.up.seen().into_iter().chain(other.seen()) {
-        assert!(!seen.head.contains(ANN), "{seen:?}");
-    }
-    assert!(other.seen().is_empty(), "{:?}", other.seen());
+    assert_eq!(served.get(&ann, served.up.port, "/nope"), Ok(403));
+    assert!(served.up.seen().is_empty(), "{:?}", served.up.seen());
+}
+
+#[test]
+fn a_connect_to_a_host_no_rule_lists_is_refused() {
+    let served = Served::start();
+    let ann = served.lease("slack", served.ann, "lease-ann");
+    let line = served.connect(&ann, "unlisted.invalid:443");
+    assert!(line.starts_with("HTTP/1.1 403"), "{line}");
 }

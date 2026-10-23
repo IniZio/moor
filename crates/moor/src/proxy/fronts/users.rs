@@ -92,7 +92,7 @@ impl Users {
             ca_dir: &dir,
             upstream_ca: self.upstream_ca.as_deref(),
             chain: None,
-            only_rule_hosts: true,
+            only_rules: true,
         });
         let sources = sources_for(rules, &self.secrets, &self.vault, user);
         let proxy = NonoProxy::start(cfg, Arc::new(MoorCapture::new(sources))).ok()?;

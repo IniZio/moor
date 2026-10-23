@@ -165,7 +165,7 @@ fn start_proxy(
         ca_dir: &ca_dir,
         upstream_ca: Some(&ups[0].ca_path),
         chain: None,
-        only_rule_hosts: false,
+        only_rules: false,
     });
     NonoProxy::start(cfg, Arc::clone(capture)).unwrap()
 }
@@ -487,7 +487,7 @@ fn secret_bytes_never_appear_in_logs_debug_or_errors() {
         ca_dir: &ca::ca_dir(&rig.state(), BOX_ID),
         upstream_ca: None,
         chain: None,
-        only_rule_hosts: false,
+        only_rules: false,
     });
     texts.push(format!("{cfg:?}"));
     for t in &texts {
