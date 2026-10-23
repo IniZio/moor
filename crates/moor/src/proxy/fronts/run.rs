@@ -1,7 +1,8 @@
 //! `moor proxy serve-fronts`: the front Proxy process the controller starts and restarts.
 //!
 //! It takes `--parent PID --state-dir DIR --vault-key PATH` and one `--front NS=RULE[,RULE]`
-//! per front. It dies with the controller `PID`, and exits at once when that is not its parent.
+//! per front. It stops when the controller `PID` exits, and exits at once when that is not
+//! its parent.
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -9,7 +10,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 use moor_core::config::proxy::{front_rules, ResolvedRule};
-use rustix::process::{getppid, set_parent_process_death_signal, Pid, Signal};
+use rustix::process::{getppid, Pid};
 use signal_hook::consts::{SIGINT, SIGTERM};
 
 use super::{serve, Deps};
@@ -69,7 +70,8 @@ impl Args {
 pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
     let args = Args::parse(words)?;
     let parent = args.parent.ok_or("--parent is required")?;
-    set_parent_process_death_signal(Some(Signal::TERM))
+    #[cfg(target_os = "linux")]
+    rustix::process::set_parent_process_death_signal(Some(rustix::process::Signal::TERM))
         .map_err(|e| format!("cannot set the parent death signal: {e}"))?;
     if getppid().map(Pid::as_raw_nonzero).map(i32::from) != Some(parent) {
         return Err(format!("pid {parent} is not this process's parent"));
@@ -85,6 +87,7 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
     for sig in [SIGTERM, SIGINT] {
         signal_hook::flag::register(sig, Arc::clone(&stop)).map_err(|e| e.to_string())?;
     }
+    stop_when_orphaned(parent, &stop)?;
     let shared = Arc::clone(&store);
     let secrets: SecretsFn = Arc::new(move |vault, user, name| {
         shared
@@ -104,6 +107,22 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
         stderr,
     };
     Ok(serve(&deps, &fronts))
+}
+
+/// Raises `stop` once `parent` is no longer this process's parent, so the Proxy never
+/// outlives the controller, also where no parent death signal exists.
+fn stop_when_orphaned(parent: i32, stop: &Arc<AtomicBool>) -> Result<(), String> {
+    let stop = Arc::clone(stop);
+    std::thread::Builder::new()
+        .name("moor-front-proxy-parent".to_owned())
+        .spawn(move || {
+            while getppid().map(Pid::as_raw_nonzero).map(i32::from) == Some(parent) {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+            stop.store(true, std::sync::atomic::Ordering::Release);
+        })
+        .map(drop)
+        .map_err(|e| format!("cannot watch the parent: {e}"))
 }
 
 /// Each front with the rules its names pick.
