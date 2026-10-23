@@ -56,6 +56,7 @@ use signal_hook::consts::{SIGINT, SIGTERM};
 #[cfg(target_os = "linux")]
 use signal_hook::iterator::Signals;
 
+mod asked;
 #[cfg(target_os = "linux")]
 mod bridge;
 #[cfg(target_os = "linux")]
@@ -63,6 +64,7 @@ mod root;
 #[cfg(target_os = "macos")]
 mod seatbelt;
 
+use asked::Asked;
 #[cfg(target_os = "linux")]
 pub(super) use root::{refuse_under_tmp, SYSTEM};
 #[cfg(target_os = "macos")]
@@ -169,57 +171,6 @@ struct Layout {
     writable: Option<PathBuf>,
     /// Files and dirs the front may read.
     read_only: Vec<PathBuf>,
-}
-
-/// What `moor front-shim` was asked: the controller it serves and the front's root.
-struct Asked {
-    /// The controller that started this shim; pid 1 is not told.
-    parent: Option<Pid>,
-    /// The front Proxy's socket, which pid 1 bridges to a loopback port.
-    #[cfg(target_os = "linux")]
-    proxy: Option<PathBuf>,
-    /// What the front's root holds.
-    layout: Layout,
-}
-
-impl Asked {
-    /// Reads `--writable DIR` and, on Linux, `--proxy SOCKET` (at most one each) and
-    /// `--read-only PATH` flags, and `--parent PID` when `outer`.
-    fn parse(flags: &[OsString], outer: bool) -> Result<Self, String> {
-        let mut asked = Self {
-            parent: None,
-            #[cfg(target_os = "linux")]
-            proxy: None,
-            layout: Layout::default(),
-        };
-        let mut flags = flags.iter();
-        while let Some(flag) = flags.next() {
-            let word = flags
-                .next()
-                .ok_or_else(|| format!("{} needs a value", flag.display()))?;
-            match flag.to_str() {
-                Some("--parent") if outer => {
-                    asked.parent = word
-                        .to_str()
-                        .and_then(|w| w.parse().ok())
-                        .and_then(Pid::from_raw);
-                    if asked.parent.is_none() {
-                        return Err(format!("--parent {} is not a pid", word.display()));
-                    }
-                }
-                #[cfg(target_os = "linux")]
-                Some("--proxy") if asked.proxy.is_none() => {
-                    asked.proxy = Some(PathBuf::from(word));
-                }
-                Some("--writable") if asked.layout.writable.is_none() => {
-                    asked.layout.writable = Some(PathBuf::from(word));
-                }
-                Some("--read-only") => asked.layout.read_only.push(PathBuf::from(word)),
-                _ => return Err(format!("unknown flag {}", flag.display())),
-            }
-        }
-        Ok(asked)
-    }
 }
 
 /// Enters new user, mount and PID namespaces as the same uid and gid, with mounts that no
