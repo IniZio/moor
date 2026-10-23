@@ -17,10 +17,9 @@ fn slash(envelope_id: &str, user: &str, channel: &str, text: &str) -> Slash {
     }
 }
 
-/// Records `s` with channel `C1` allowed; returns the ack text and the job.
+/// Records `s`; returns the ack text and the job.
 fn run(db: &Db, s: &Slash) -> (String, Option<Job>) {
-    let channels = vec!["C1".to_owned()];
-    let (kept, job) = record(s, db, &channels, 1_000).unwrap();
+    let (kept, job) = record(s, db, 1_000).unwrap();
     assert_eq!(kept.then, None);
     let ack = kept.ack.unwrap();
     (ack["text"].as_str().unwrap().to_owned(), job)
@@ -138,17 +137,17 @@ fn a_repo_the_channel_lacks_is_named_and_nothing_changes() {
 }
 
 #[test]
-fn a_channel_off_the_list_changes_nothing() {
+fn repo_add_works_in_a_channel_nobody_configured() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
     let (text, job) = run(&db, &slash("e2", "U1", "C9", "repo add acme/api"));
-    assert_eq!(text, "moor does not work in this channel.");
+    assert_eq!(text, "Recorded. This channel works on `acme/api`.");
     assert_eq!(job, None);
-    assert!(db.channel_repos("C9").unwrap().is_empty());
+    assert_eq!(db.channel_repos("C9").unwrap().len(), 1);
 }
 
 #[test]
-fn anyone_in_an_allowed_channel_changes_its_repos() {
+fn anyone_in_a_channel_changes_its_repos() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
     let (text, _) = run(&db, &slash("e1", "U9", "C1", "repo add acme/api"));

@@ -4,7 +4,7 @@
 
 use super::support::{Rig, CHANNEL, QUIET, USER};
 
-/// Runs `/moor <text>` as `user` in the allowed channel and returns the ack's text.
+/// Runs `/moor <text>` as `user` in a channel and returns the ack's text.
 fn run(rig: &Rig, envelope_id: &str, user: &str, text: &str) -> String {
     rig.slack.send_slash(envelope_id, CHANNEL, user, text);
     let payload = rig.slack.wait_ack_payload(envelope_id);

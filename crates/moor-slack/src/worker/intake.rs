@@ -9,18 +9,13 @@ use crate::db::{Db, InboxItem, ItemKind, SlackThread};
 use crate::socket::Mention;
 
 /// Records one mention or thread message in a single transaction: its event id, and what
-/// [`in_thread`] says for a message in a thread the front keeps. Another mention in an allowed
+/// [`in_thread`] says for a message in a thread the front keeps. Another mention in any
 /// channel opens a coordinator thread. Returns what the worker does next, or nothing for a
 /// redelivered event.
-pub(crate) fn record(
-    mention: &Mention,
-    db: &Db,
-    channels: &[String],
-    now: i64,
-) -> rusqlite::Result<Option<Job>> {
+pub(crate) fn record(mention: &Mention, db: &Db, now: i64) -> rusqlite::Result<Option<Job>> {
     db.atomically(|| {
         let channel = mention.channel.as_str();
-        if !db.event_once(&mention.event_id, now)? || !channels.iter().any(|c| c == channel) {
+        if !db.event_once(&mention.event_id, now)? {
             return Ok(None);
         }
         let thread = mention.thread_ts.as_deref().unwrap_or(&mention.ts);

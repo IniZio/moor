@@ -429,7 +429,7 @@ fn a_logout_the_controller_refuses_says_why_to_the_user() {
 }
 
 #[test]
-fn a_user_nobody_listed_mentions_the_bot_in_an_allowed_channel_and_a_thread_opens() {
+fn a_user_nobody_listed_mentions_the_bot_in_an_invited_channel_and_a_thread_opens() {
     let (rig, _bin, _controller) = start(None);
     rig.mention(1, "U0NEWBIE", "<@UBOT> hello", TS, None);
     let db = rusqlite::Connection::open(rig.path("state-slack/slack.db")).unwrap();

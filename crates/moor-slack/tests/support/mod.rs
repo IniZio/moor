@@ -27,8 +27,8 @@ pub(crate) use real::{front_socket, RealController};
 use slack_fake::{FakeSlack, Mention, APP_TOKEN, BOT_TOKEN};
 
 /// Channel the daemon is configured to answer in.
-pub(crate) const CHANNEL: &str = "C0ALLOWED";
-/// User most tests speak as; the daemon obeys any user in an allowed channel.
+pub(crate) const CHANNEL: &str = "C0INVITED";
+/// User most tests speak as; the daemon obeys any user in a channel it is invited to.
 pub(crate) const USER: &str = "U0ALLOWED";
 /// Ts of the first mention in most tests.
 pub(crate) const TS: &str = "1730000000.000100";
@@ -94,7 +94,7 @@ impl Rig {
         std::fs::write(
             self.path("slack.yaml"),
             format!(
-                "app_token_file: {app_token_file}\nbot_token_file: {bot_token_file}\nchannels: [{CHANNEL}]\napi_base: {}\ngithub_api_base: {}\n",
+                "app_token_file: {app_token_file}\nbot_token_file: {bot_token_file}\napi_base: {}\ngithub_api_base: {}\n",
                 self.slack.api_base(),
                 self.github.api_base(),
             ),
@@ -290,7 +290,7 @@ impl Rig {
         self.wait_box_state(BOX_NAME, "bound");
     }
 
-    /// Adds `repo` to the allowed channel as its default, as `/moor repo` does.
+    /// Adds `repo` to the test channel as its default, as `/moor repo` does.
     pub(crate) fn set_default_repo(&self, repo: &str) {
         let db = rusqlite::Connection::open(self.path("state-slack/slack.db")).unwrap();
         db.busy_timeout(Duration::from_secs(5)).unwrap();
@@ -482,7 +482,7 @@ impl Rig {
         None
     }
 
-    /// Pushes a mention in the allowed channel from `user`, with event and envelope ids derived from `n`.
+    /// Pushes a mention in the test channel from `user`, with event and envelope ids derived from `n`.
     pub(crate) fn mention(
         &self,
         n: u32,
