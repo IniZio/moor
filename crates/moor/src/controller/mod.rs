@@ -47,7 +47,8 @@ const REFUSED: u8 = 3;
 ///
 /// The drain stops accepting and starts no settle pass, gives in-flight requests and a running
 /// settle pass up to `drain_timeout_secs` to finish, answers waits, watches and requests it
-/// did not run with a `restarting` frame, and exits 0. Setup failures and the
+/// did not run with a `restarting` frame, and exits 0. Each front gets SIGTERM when the drain
+/// begins and SIGKILL when the budget ends; the controller exits once they are reaped. Setup failures and the
 /// "already running" notice go to `stderr`.
 pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u8 {
     let sink: Sink = Arc::new(Mutex::new(stderr));
@@ -70,10 +71,12 @@ pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u
         log(&sink, &format!("proxy: {line}"));
     }
     let shim = std::env::current_exe().map_or_else(|_| "/proc/self/exe".into(), OsString::from);
-    let _fronts = running.supervise_fronts((shim, vec!["front-shim".into()]), &sink);
+    let mut fronts = running.supervise_fronts((shim, vec!["front-shim".into()]), &sink);
     let drain = Arc::new(Drain::default());
+    drain.end_fronts_with_drain(fronts.terminator(running.drain_timeout));
     settle::spawn(&running.env, running.settle_every, &drain, &sink);
     running.serve_until(&wake, &drain, &sink);
+    fronts.wait();
     0
 }
 

@@ -16,6 +16,7 @@ use rustix::event::{poll, PollFd, PollFlags};
 use rustix::io::Errno;
 use signal_hook::consts::SIGTERM;
 
+use super::fronts::Terminator;
 use super::{conn, log, Sink};
 use crate::Moor;
 
@@ -29,6 +30,8 @@ pub(crate) struct Drain {
     live: Mutex<Live>,
     /// Notified each time one ends.
     ended: Condvar,
+    /// Stops the fronts when the drain begins.
+    fronts: Mutex<Option<Terminator>>,
 }
 
 /// The work the drain waits for: each connection with a handle that ends its reads while it
@@ -46,6 +49,11 @@ impl Drain {
     /// Whether the drain has begun.
     pub(crate) fn begun(&self) -> bool {
         self.begun.load(Ordering::Acquire)
+    }
+
+    /// Has `fronts` end with the drain; they get SIGTERM the moment it begins.
+    pub(crate) fn end_fronts_with_drain(&self, fronts: Terminator) {
+        *self.fronts.lock().unwrap_or_else(PoisonError::into_inner) = Some(fronts);
     }
 
     /// Admits `stream` for serving, or `None` once the drain has begun.
@@ -82,6 +90,10 @@ impl Drain {
         self.begun.store(true, Ordering::Release);
         for stream in live.streams.iter().filter_map(|(_, s)| s.as_ref()) {
             stream.shutdown(Shutdown::Read).ok();
+        }
+        drop(live);
+        if let Some(fronts) = &*self.fronts.lock().unwrap_or_else(PoisonError::into_inner) {
+            fronts.terminate();
         }
     }
 
