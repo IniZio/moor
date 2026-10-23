@@ -103,6 +103,10 @@ schema. Move it aside and start again with a fresh one.
   Box's state changes, at most once every 2 seconds.
 - When a Box's agent asks a question, the front posts it with one button per
   option, up to 25. Only the person who asked for the Box can answer.
+- Each file version a Box publishes is uploaded into the thread once. Without
+  the `files:write` scope, the thread shows the file's name and size instead.
+  When an upload fails, the thread shows the reason once and the front tries
+  the upload again every 2 seconds until it goes up.
 - After `idle_minutes` with no turn and no waiting message, the front ends the
   thread's host Session. The front keeps the host Session while a Box is starting or
   closing, while an agent works or waits on a question, or while the
