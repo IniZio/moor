@@ -16,9 +16,10 @@ use tungstenite::Message;
 
 use super::parse::parse_mention;
 use super::{
-    next_delay, run, session, session_tracked, via, Inbound, Intake, Kept, Mention, NotKept,
-    SocketError,
+    next_delay, run, session, session_tracked, Inbound, Intake, Kept, Mention, NotKept, SocketError,
 };
+
+mod proxy;
 use super::{AfterAck, Click, Slash, TokenSubmission};
 use crate::account::Account;
 use crate::api::Api;
@@ -544,59 +545,4 @@ fn a_stop_that_came_first_reads_nothing_more() {
     session_tracked(&url, &intake, &mut false, &stop).expect("session ends cleanly");
     assert_eq!(*intake.kept.borrow(), 0);
     assert_eq!(server.join().expect("server"), Vec::<String>::new());
-}
-
-/// A CONNECT proxy on loopback that answers each request with `answer` and then, for a 200,
-/// sends `after`; returns its port and the request lines it saw.
-fn fake_proxy(answer: &'static str, after: &'static [u8]) -> (u16, JoinHandle<String>) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    let handle = std::thread::spawn(move || {
-        let (mut conn, _) = listener.accept().unwrap();
-        let mut head = Vec::new();
-        let mut byte = [0_u8; 1];
-        while !head.ends_with(b"\r\n\r\n") {
-            conn.read_exact(&mut byte).unwrap();
-            head.push(byte[0]);
-        }
-        conn.write_all(answer.as_bytes()).unwrap();
-        conn.write_all(after).unwrap();
-        String::from_utf8(head).unwrap()
-    });
-    (port, handle)
-}
-
-#[test]
-fn socket_mode_opens_its_connection_through_the_proxy_and_reads_nothing_of_the_tunnel() {
-    let (port, saw) = fake_proxy("HTTP/1.1 200 Connection Established\r\n\r\n", b"tunnel");
-    let proxy = ureq::Proxy::new(&format!("http://127.0.0.1:{port}")).unwrap();
-    let mut tcp = via(
-        Some(proxy),
-        "wss://wss-primary.slack.com/link",
-        "wss-primary.slack.com",
-        443,
-    )
-    .unwrap();
-    let mut first = [0_u8; 6];
-    tcp.read_exact(&mut first).unwrap();
-    assert_eq!(&first, b"tunnel");
-    assert!(saw
-        .join()
-        .unwrap()
-        .starts_with("CONNECT wss-primary.slack.com:443 HTTP/1.1\r\n"));
-}
-
-#[test]
-fn a_tunnel_the_proxy_refuses_is_a_connect_error_naming_its_status() {
-    let (port, _saw) = fake_proxy("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n", b"");
-    let proxy = ureq::Proxy::new(&format!("http://127.0.0.1:{port}")).unwrap();
-    let e = via(
-        Some(proxy),
-        "wss://wss-primary.slack.com/link",
-        "wss-primary.slack.com",
-        443,
-    )
-    .err()
-    .unwrap();
-    assert!(e.to_string().contains("403 Forbidden"), "{e}");
 }
