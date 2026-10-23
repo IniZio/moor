@@ -151,8 +151,8 @@ impl Turns {
         self.written(stored);
         if self.post(row, &closing.line) {
             self.written(db.mark_posted(row.id, (self.clock)()));
+            self.hide_working(&db, row);
         }
-        self.hide_working(row);
     }
 
     /// Posts `line` in the thread. A failure Slack may get over is tried again after a wait.
