@@ -46,7 +46,8 @@ fn a_turn_reacts_on_the_latest_message_it_holds() {
     let turn = db.take_turn(5).unwrap().unwrap();
     assert_eq!(turn.reacted_ts, "5.2");
     let unended = db.unended().unwrap();
-    assert_eq!(unended[0].row.reacted_ts, "5.2", "stored on the turn row");
+    let stored = unended.first().map(|u| u.row.reacted_ts.as_str());
+    assert_eq!(stored, Some("5.2"), "stored on the turn row");
     let rerun = db.rerun(&turn, 9).unwrap();
     assert_eq!(rerun.reacted_ts, "5.2");
 }
