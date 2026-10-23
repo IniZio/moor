@@ -177,8 +177,9 @@ fn end_group(parent: Pid) {
     if getpgrp() != group {
         return;
     }
-    if getpgid(Some(parent))
-        .and_then(|theirs| setpgid(None, Some(theirs)))
+    if getpgid(None)
+        .or_else(|_| getpgid(Some(parent)))
+        .and_then(|theirs| setpgid(None, Some(theirs)).or(Ok(())))
         .is_ok()
     {
         let _ = kill_process_group(group, Signal::KILL);
