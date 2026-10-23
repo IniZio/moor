@@ -377,6 +377,29 @@ fn waking_a_box_whose_agent_is_gone_relaunches_it() {
 }
 
 #[test]
+fn every_wake_of_a_box_relaunches_its_gone_agent_into_the_same_workspace() {
+    let f = fx();
+    with_agent(&f);
+    let store = f.cx.store().unwrap();
+    for (n, pane) in [(1, "p-1"), (2, "p-2")] {
+        let reported = Fields {
+            agent_session_id: Field::Set("agent-1".into()),
+            ..Fields::default()
+        };
+        store.apply(Decision::new(f.id).set(reported)).unwrap();
+        sleep(&f);
+        f.surface.push_pane_obs(pane, Err(SurfaceError::NotFound));
+        assert!(wake_and_revive(&f.cx, store, &row(&f)).unwrap());
+        let launches = f.engine.launches();
+        assert_eq!(launches.len(), n, "wake {n} relaunched the agent");
+        let last = launches.last().unwrap();
+        assert_eq!(last.workspace.as_str(), "ws-1");
+        assert_eq!(last.resume.as_deref(), Some("agent-1"));
+        assert_eq!(relaunched(&f).len(), n);
+    }
+}
+
+#[test]
 fn waking_a_box_whose_agent_is_live_does_not_relaunch() {
     let f = fx();
     with_agent(&f);
