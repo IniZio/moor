@@ -61,6 +61,10 @@ pub struct FrontEntry {
     /// Names of the rules the front's Proxy serves to the users it leases for, such as `claude`.
     #[serde(default)]
     pub proxy_rules: Vec<String>,
+    /// TCP ports a client on the host reaches the front on at `127.0.0.1`, where the front
+    /// listens on the same port inside its own network namespace.
+    #[serde(default)]
+    pub ports: Vec<u16>,
 }
 
 /// Wraps whatever follows the key in `Some`, so a null value stays distinguishable from a missing key.
@@ -164,6 +168,9 @@ fn front_entry(front: &FrontEntry) -> Result<(), (&'static str, &'static str)> {
             "proxy_rules",
             "must name rules a front Proxy serves, such as claude",
         ));
+    }
+    if front.ports.contains(&0) {
+        return Err(("ports", "must hold ports from 1 to 65535"));
     }
     if front.read_only.iter().any(|p| !p.is_absolute()) {
         return Err(("read_only", "must hold absolute paths"));

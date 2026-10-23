@@ -225,3 +225,25 @@ fn no_front_may_be_named_proxy() {
     assert_eq!(e.path, "fronts.proxy");
     assert!(e.to_string().contains("reserved"), "{e}");
 }
+
+#[test]
+fn a_front_lists_tcp_ports_and_no_port_zero() {
+    let c = parse_controller("c.yaml", "fronts:\n  web:\n    ports: [8080, 8443]\n")
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(c.fronts.get("web").unwrap().ports, [8080, 8443]);
+    assert!(parse_controller("c.yaml", "fronts:\n  web: {}\n")
+        .unwrap()
+        .fronts
+        .get("web")
+        .unwrap()
+        .ports
+        .is_empty());
+    assert_eq!(
+        err("fronts:\n  web:\n    ports: [0]\n").path,
+        "fronts.web.ports"
+    );
+    assert_eq!(
+        err("fronts:\n  web:\n    ports: [65536]\n").path,
+        "fronts.web.ports[0]"
+    );
+}

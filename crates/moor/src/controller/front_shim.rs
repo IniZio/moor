@@ -1,10 +1,12 @@
-//! `moor front-shim`: runs a front in new user, mount and PID namespaces, inside a root that
-//! holds only what a front needs.
+//! `moor front-shim`: runs a front in new user, mount, PID and network namespaces, inside a
+//! root that holds only what a front needs.
 //!
-//! The controller runs `moor front-shim --parent PID [--proxy SOCKET] [--writable DIR]
-//! [--read-only PATH]... -- COMMAND...`. That process dies with the controller `PID` (it exits at once if `PID` is not
-//! its parent), enters the namespaces and runs `moor front-shim --init` with the same paths as
-//! pid 1 of the new PID namespace. pid 1 builds the front's root (see the `root` module): the system dirs,
+//! The controller runs `moor front-shim --parent PID [--proxy SOCKET] [--port PORT]...
+//! [--writable DIR] [--read-only PATH]... -- COMMAND...`. That process dies with the
+//! controller `PID` (it exits at once if `PID` is not its parent), starts the egress helper
+//! and listens on the host's loopback for each PORT, enters the namespaces, serves the
+//! front's proxy port and PORTs (see the `net` and `egress` modules) and runs
+//! `moor front-shim --init` with the same paths as pid 1 of the new PID namespace. pid 1 builds the front's root (see the `root` module): the system dirs,
 //! a few devices, the program and each PATH read-only, DIR read-write with its `tmp` as `/tmp`,
 //! and a fresh `/proc`, so no controller pid is visible. It pivots into that root, confines
 //! itself with nono's sandbox so that nothing but DIR, `/tmp` and `/dev/null` can be written,
@@ -21,8 +23,6 @@
 use std::ffi::OsString;
 use std::fs;
 use std::io;
-#[cfg(target_os = "linux")]
-use std::path::Path;
 use std::path::PathBuf;
 #[cfg(target_os = "linux")]
 use std::process::{Command, Stdio};
@@ -63,6 +63,12 @@ mod asked;
 #[cfg(target_os = "linux")]
 mod bridge;
 #[cfg(target_os = "linux")]
+mod denied;
+#[cfg(target_os = "linux")]
+mod egress;
+#[cfg(target_os = "linux")]
+mod net;
+#[cfg(target_os = "linux")]
 mod root;
 #[cfg(target_os = "macos")]
 mod seatbelt;
@@ -90,6 +96,7 @@ pub fn main(args: &[OsString]) -> Result<u8, String> {
     match flags {
         [flag] if flag == "--check" => {
             isolate()?;
+            enter_pid_namespace()?;
             pass_sys_admin()?;
             relay(
                 Command::new("/proc/self/exe")
@@ -105,40 +112,51 @@ pub fn main(args: &[OsString]) -> Result<u8, String> {
                 let _ = io::Write::write_all(&mut io::stdout(), said.as_bytes());
                 0
             }),
+        [flag, target] if flag == "--egress" => egress::helper(target),
         [flag, layout @ ..] if flag == "--init" => {
             let asked = Asked::parse(layout, false)?;
-            init(&asked.layout, asked.proxy.as_deref(), command)
+            init(&asked, command)
         }
-        _ => {
-            let Asked {
-                parent,
-                proxy,
-                layout,
-            } = Asked::parse(flags, true)?;
-            die_with(parent.ok_or("--parent is required")?)?;
-            isolate()?;
-            pass_sys_admin()?;
-            let (alive, _held) = std::io::pipe().map_err(|e| format!("pipe: {e}"))?;
-            let proxy = proxy
-                .iter()
-                .flat_map(|p| [OsString::from("--proxy"), p.into()]);
-            let writable = layout.writable.iter().map(|dir| ("--writable", dir));
-            let read_only = layout.read_only.iter().map(|path| ("--read-only", path));
-            relay(
-                Command::new("/proc/self/exe")
-                    .args(["front-shim", "--init"])
-                    .args(proxy)
-                    .args(
-                        writable
-                            .chain(read_only)
-                            .flat_map(|(flag, path)| [OsString::from(flag), path.into()]),
-                    )
-                    .arg("--")
-                    .args(command)
-                    .stdin(alive),
-            )
-        }
+        _ => outer(flags, command),
     }
+}
+
+/// The outer shim: dies with the controller, prepares the front's network from the host's
+/// side, enters the namespaces and runs pid 1 with what `flags` ask.
+#[cfg(target_os = "linux")]
+fn outer(flags: &[OsString], command: &[OsString]) -> Result<u8, String> {
+    let Asked {
+        parent,
+        proxy,
+        layout,
+        ports,
+        ..
+    } = Asked::parse(flags, true)?;
+    die_with(parent.ok_or("--parent is required")?)?;
+    let outside = net::Outside::prepare(&ports)?;
+    isolate()?;
+    let egress_port = outside.serve()?.to_string();
+    enter_pid_namespace()?;
+    pass_sys_admin()?;
+    let (alive, _held) = std::io::pipe().map_err(|e| format!("pipe: {e}"))?;
+    let proxy = proxy
+        .iter()
+        .flat_map(|p| [OsString::from("--proxy"), p.into()]);
+    let writable = layout.writable.iter().map(|dir| ("--writable", dir));
+    let read_only = layout.read_only.iter().map(|path| ("--read-only", path));
+    relay(
+        Command::new("/proc/self/exe")
+            .args(["front-shim", "--init", "--egress-port", &egress_port])
+            .args(proxy)
+            .args(
+                writable
+                    .chain(read_only)
+                    .flat_map(|(flag, path)| [OsString::from(flag), path.into()]),
+            )
+            .arg("--")
+            .args(command)
+            .stdin(alive),
+    )
 }
 
 /// Keeps `CAP_SYS_ADMIN` in the namespaces for the next program this process runs, pid 1,
@@ -176,20 +194,25 @@ struct Layout {
     read_only: Vec<PathBuf>,
 }
 
-/// Enters new user, mount and PID namespaces as the same uid and gid, with mounts that no
-/// longer reach the host's. The PID namespace applies to the next child, which becomes its
-/// pid 1.
+/// Why a host refuses the namespaces, with each sysctl that allows them.
+#[cfg(target_os = "linux")]
+fn refused(e: nix::errno::Errno) -> String {
+    format!(
+        "they need unprivileged user namespaces (sysctl kernel.unprivileged_userns_clone=1, \
+         user.max_user_namespaces above 0, kernel.apparmor_restrict_unprivileged_userns=0): \
+         cannot create user, mount, PID and network namespaces: {e}"
+    )
+}
+
+/// Enters new user, mount and network namespaces as the same uid and gid, with mounts that
+/// no longer reach the host's and a network with only its loopback, which it brings up. The
+/// PID namespace comes after, in [`enter_pid_namespace`], because a process that has unshared
+/// one can start no thread, and the outer shim starts its network threads in between.
 #[cfg(target_os = "linux")]
 fn isolate() -> Result<(), String> {
     let (uid, gid) = (getuid().as_raw(), getgid().as_raw());
-    unshare(CloneFlags::CLONE_NEWUSER | CloneFlags::CLONE_NEWNS | CloneFlags::CLONE_NEWPID)
-        .map_err(|e| {
-            format!(
-                "they need unprivileged user namespaces (sysctl kernel.unprivileged_userns_clone=1, \
-                 user.max_user_namespaces above 0, kernel.apparmor_restrict_unprivileged_userns=0): \
-                 cannot create user, mount and PID namespaces: {e}"
-            )
-        })?;
+    unshare(CloneFlags::CLONE_NEWUSER | CloneFlags::CLONE_NEWNS | CloneFlags::CLONE_NEWNET)
+        .map_err(refused)?;
     for (file, text) in [
         ("setgroups", "deny".to_owned()),
         ("uid_map", format!("{uid} {uid} 1")),
@@ -202,7 +225,14 @@ fn isolate() -> Result<(), String> {
         "/",
         MountPropagationFlags::PRIVATE | MountPropagationFlags::REC,
     )
-    .map_err(|e| format!("cannot make mounts private: {e}"))
+    .map_err(|e| format!("cannot make mounts private: {e}"))?;
+    net::loopback_up()
+}
+
+/// Enters a new PID namespace, whose pid 1 is the next child.
+#[cfg(target_os = "linux")]
+fn enter_pid_namespace() -> Result<(), String> {
+    unshare(CloneFlags::CLONE_NEWPID).map_err(refused)
 }
 
 /// Fails unless the sandbox now in force refuses a write it would refuse a front: opening
@@ -249,11 +279,13 @@ fn supported(info: &SupportInfo) -> Result<(), String> {
 /// confines itself to writing the writable dir and `/tmp`, drops every capability, turns
 /// undumpable when it holds the Proxy socket's dir open, so the front cannot reach that dir
 /// through `/proc/1/fd`, and runs
-/// `command` with its socket on fd 3 and `proxy` bridged to a loopback port. The kernel kills
-/// the namespace if the outer shim dies. The outer shim holds the only write end of stdin, so
-/// a readable stdin means it died before the death signal was set, and pid 1 exits.
+/// `command` with its socket on fd 3, `proxy` bridged to a loopback port, and the proxy
+/// variables naming the egress proxy port when there is one. The kernel kills the namespace
+/// if the outer shim dies. The outer shim holds the only write end of stdin, so a readable
+/// stdin means it died before the death signal was set, and pid 1 exits.
 #[cfg(target_os = "linux")]
-fn init(layout: &Layout, proxy: Option<&Path>, command: &[OsString]) -> Result<u8, String> {
+fn init(asked: &Asked, command: &[OsString]) -> Result<u8, String> {
+    let (layout, proxy) = (&asked.layout, asked.proxy.as_deref());
     set_parent_process_death_signal(Some(Signal::KILL))
         .map_err(|e| format!("cannot set the parent death signal: {e}"))?;
     let held = io::stdin();
@@ -294,6 +326,15 @@ fn init(layout: &Layout, proxy: Option<&Path>, command: &[OsString]) -> Result<u
     front.args(args).stdin(Stdio::null());
     if let Some(bridge) = bridge {
         front.env(bridge::PORT_VAR, bridge.serve()?.to_string());
+    }
+    if let Some(port) = asked.egress_port {
+        let url = format!("http://127.0.0.1:{port}");
+        for var in ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"] {
+            front.env(var, &url);
+        }
+        for var in ["NO_PROXY", "no_proxy"] {
+            front.env(var, "localhost,127.0.0.1,::1");
+        }
     }
     if let Some(fd) = socket {
         front
