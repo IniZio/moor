@@ -394,3 +394,19 @@ fn open_child_session_refuses_an_ended_parent_and_writes_nothing() {
     );
     assert_eq!(store.box_sessions(id).unwrap().len(), 1);
 }
+
+#[test]
+fn open_child_session_keeps_the_box_workspace() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = new_box(&store, "acme/1");
+    let set = Fields {
+        workspace_id: Field::Set("ws-1".into()),
+        ..Fields::default()
+    };
+    store.apply(Decision::new(id).set(set)).unwrap();
+    end_current(&store, id);
+    store.open_child_session(id, None).unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
+    assert_eq!(row.workspace_id.as_deref(), Some("ws-1"));
+}
