@@ -47,10 +47,12 @@ impl Front {
                         .and_then(|a| a.as_pathname().map(PathBuf::from))
                         .ok_or_else(|| format!("front {ns}: its socket has no path"))?;
                     let mut read_only = entry.read_only.clone();
-                    let program = command.first_mut().map(|p| (resolve(p), p));
-                    if let Some((Some(found), word)) = program {
-                        *word = found.display().to_string();
-                        read_only.push(found);
+                    let path = std::env::var_os("PATH").unwrap_or_default();
+                    if let Some(word) = command.first_mut() {
+                        if let Some(found) = program_path(ns, word, &path)? {
+                            *word = found.display().to_string();
+                            read_only.push(found);
+                        }
                     }
                     Ok(Self {
                         ns: ns.to_owned(),
@@ -128,14 +130,23 @@ fn refuse_read_only(
     Ok(())
 }
 
-/// The real path of `program`: itself when it names a path, else the first match on this
-/// process's `PATH`; none when it cannot be found.
-fn resolve(program: &str) -> Option<PathBuf> {
+/// The real path of front `ns`'s `program`, none when it cannot be found; an error when that
+/// path is or lies under `/tmp`, which the front's own tmp dir would hide.
+fn program_path(ns: &str, program: &str, path: &OsStr) -> Result<Option<PathBuf>, String> {
+    let Some(found) = resolve(program, path) else {
+        return Ok(None);
+    };
+    refuse_under_tmp(&format!("fronts.{ns}: its program"), &found)?;
+    Ok(Some(found))
+}
+
+/// The real path of `program`: itself when it names a path, else the first match on `path`;
+/// none when it cannot be found.
+fn resolve(program: &str, path: &OsStr) -> Option<PathBuf> {
     if program.contains('/') {
         return Path::new(program).canonicalize().ok();
     }
-    let path = std::env::var_os("PATH").unwrap_or_default();
-    std::env::split_paths(&path)
+    std::env::split_paths(path)
         .map(|dir| dir.join(OsStr::new(program)))
         .find(|candidate| candidate.is_file())
         .and_then(|found| found.canonicalize().ok())
@@ -145,7 +156,9 @@ fn resolve(program: &str) -> Option<PathBuf> {
 mod tests {
     use std::path::Path;
 
-    use super::refuse_read_only;
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::{program_path, refuse_read_only};
     use crate::env::Env;
 
     #[test]
@@ -172,5 +185,54 @@ mod tests {
             refuse_read_only("web", &[], &env, operator, elsewhere),
             Ok(())
         );
+    }
+
+    fn program_under_tmp() -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir_in("/tmp").unwrap();
+        let real = dir.path().canonicalize().unwrap().join("front-bin");
+        std::fs::write(&real, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o755)).unwrap();
+        (dir, real)
+    }
+
+    #[test]
+    fn a_program_under_tmp_found_on_path_starts_no_front() {
+        let (dir, real) = program_under_tmp();
+        let e = program_path("web", "front-bin", dir.path().as_os_str()).unwrap_err();
+        assert!(e.starts_with("fronts.web: its program "), "{e}");
+        assert!(e.contains(&real.display().to_string()), "{e}");
+        assert!(e.contains("front's own tmp dir"), "{e}");
+    }
+
+    #[test]
+    fn a_program_under_tmp_named_by_path_starts_no_front() {
+        let (_dir, real) = program_under_tmp();
+        let e = program_path("web", real.to_str().unwrap(), "".as_ref()).unwrap_err();
+        assert!(e.contains("its program"), "{e}");
+    }
+
+    #[test]
+    fn new_refuses_a_front_whose_program_lies_under_tmp() {
+        let (dir, real) = program_under_tmp();
+        let listener = std::os::unix::net::UnixListener::bind(dir.path().join("s")).unwrap();
+        let entry = moor_core::config::FrontEntry {
+            command: Some(vec![real.display().to_string()]),
+            ..Default::default()
+        };
+        let env = Env::from_pairs([("MOOR_STATE_DIR", "/var/moor-front-test")]);
+        let operator = Path::new("/nonexistent/c.sock");
+        let made = super::Front::new("web", &listener, &entry, &env, operator).unwrap();
+        let e = made.err().unwrap();
+        assert!(e.starts_with("fronts.web: its program "), "{e}");
+    }
+
+    #[test]
+    fn a_program_outside_tmp_or_not_found_is_accepted() {
+        assert_eq!(
+            program_path("web", "no-such-front-bin", "/bin".as_ref()),
+            Ok(None)
+        );
+        let found = program_path("web", "sh", "/bin:/usr/bin".as_ref()).unwrap();
+        assert!(found.is_some());
     }
 }
