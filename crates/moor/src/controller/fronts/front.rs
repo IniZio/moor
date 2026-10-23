@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use moor_core::config::FrontEntry;
 
+use crate::controller::front_proxy::Access;
 #[cfg(target_os = "linux")]
 use crate::controller::front_shim::refuse_under_tmp;
 use crate::controller::front_shim::SYSTEM;
@@ -22,21 +23,24 @@ pub(in crate::controller) struct Front {
     pub(super) command: Vec<String>,
     /// The one directory it may write.
     pub(super) state_dir: Option<PathBuf>,
-    /// Paths it may read even where a cover hides them: its `read_only` entries and its
-    /// program.
+    /// Paths it may read even where a cover hides them: its `read_only` entries, its program
+    /// and its Proxy's CA.
     pub(super) read_only: Vec<PathBuf>,
+    /// How it reaches its Proxy; none without a Proxy.
+    pub(super) proxy: Option<Access>,
 }
 
 impl Front {
-    /// The front `ns` listening on `listener`, run as `entry` says; none when `entry` has no
-    /// command. Refuses a `read_only` path that would show the front the controller's state
-    /// dir, config dir, operator socket or vault key.
+    /// The front `ns` listening on `listener`, run as `entry` says, reaching its Proxy as
+    /// `access` says; none when `entry` has no command. Refuses a `read_only` path that would
+    /// show the front the controller's state dir, config dir, operator socket or vault key.
     pub(in crate::controller) fn new(
         ns: &str,
         listener: &UnixListener,
         entry: &FrontEntry,
         env: &Env,
         operator: &Path,
+        access: Option<Access>,
     ) -> Option<Result<Self, String>> {
         let mut command = entry.command.clone()?;
         let resolv = fs::canonicalize("/etc/resolv.conf").ok();
@@ -62,6 +66,7 @@ impl Front {
                         command,
                         state_dir: entry.state_dir.clone(),
                         read_only,
+                        proxy: access,
                     })
                 },
             ),

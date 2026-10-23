@@ -16,6 +16,9 @@ mod events;
 #[path = "cli/front_drain.rs"]
 mod front_drain;
 #[cfg(target_os = "linux")]
+#[path = "cli/front_proxy.rs"]
+mod front_proxy;
+#[cfg(target_os = "linux")]
 #[path = "cli/fronts.rs"]
 mod fronts;
 #[cfg(target_os = "macos")]

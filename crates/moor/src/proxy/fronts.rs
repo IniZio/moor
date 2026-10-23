@@ -57,6 +57,16 @@ pub(crate) fn ca_dir(state_dir: &Path) -> PathBuf {
     state_dir.join("proxy").join("fronts")
 }
 
+/// The CA certificate every front trusts, created when missing.
+///
+/// # Errors
+/// Why the CA could not be read or made.
+pub(crate) fn ca_cert(state_dir: &Path) -> std::io::Result<PathBuf> {
+    let dir = ca_dir(state_dir);
+    ca::load_or_create_in(&dir, CA_NAME)?;
+    Ok(ca::cert_in(&dir))
+}
+
 /// The socket of front `ns`'s Proxy.
 pub(crate) fn socket_path(sockets: &Path, state_dir: &Path, ns: &str) -> PathBuf {
     FrontSocket::of_front(sockets, 0, state_dir, ns)

@@ -17,6 +17,7 @@ use command_fds::{CommandFdExt as _, FdMapping};
 use rustix::fs::{Mode, OFlags};
 use rustix::process::{kill_process, Pid, Signal};
 
+use super::front_proxy::{self, Plan};
 use super::{log, Sink};
 
 mod front;
@@ -25,7 +26,7 @@ mod leftover;
 mod relay;
 
 pub(super) use front::Front;
-use relay::relay_lines;
+pub(super) use relay::relay_lines;
 
 /// The fd a front finds its own socket on.
 #[cfg(target_os = "linux")]
@@ -33,13 +34,13 @@ const SOCKET_FD: i32 = 3;
 
 /// Wait before restarting a front that exited; it doubles while the front keeps exiting soon
 /// after it starts.
-const FIRST_BACKOFF: Duration = Duration::from_millis(500);
+pub(super) const FIRST_BACKOFF: Duration = Duration::from_millis(500);
 
 /// Longest wait before a restart.
-const MAX_BACKOFF: Duration = Duration::from_secs(30);
+pub(super) const MAX_BACKOFF: Duration = Duration::from_secs(30);
 
 /// A front that ran this long before it exited is restarted after [`FIRST_BACKOFF`].
-const STEADY: Duration = Duration::from_secs(60);
+pub(super) const STEADY: Duration = Duration::from_secs(60);
 
 /// How often a supervisor checks whether its front exited.
 const POLL: Duration = Duration::from_millis(50);
@@ -80,7 +81,7 @@ impl Shim {
 
 /// What a supervisor is told to do with its front.
 #[derive(Clone, Copy, Debug)]
-enum Stop {
+pub(super) enum Stop {
     /// Send it SIGTERM, restart it no more, and kill it if it is still running after the grace.
     Term(Duration),
     /// Kill it now.
@@ -141,8 +142,14 @@ impl Drop for Supervised {
 }
 
 /// Starts one supervisor thread per front, unless the host forbids the namespaces or the
-/// sandbox each front runs in; then it starts none and logs why.
-pub(super) fn supervise(mut fronts: Vec<Front>, shim: Shim, sink: &Sink) -> Supervised {
+/// sandbox each front runs in; then it starts none and logs why. With `proxy`, the moor binary
+/// and the front Proxy it runs, one more thread keeps that Proxy running.
+pub(super) fn supervise(
+    mut fronts: Vec<Front>,
+    shim: Shim,
+    proxy: Option<(OsString, Plan)>,
+    sink: &Sink,
+) -> Supervised {
     let shim = Arc::new(shim);
     if let Some(Err(e)) = (!fronts.is_empty()).then(|| shim.check()) {
         log(sink, &format!("fronts not started: {e}"));
@@ -158,7 +165,16 @@ pub(super) fn supervise(mut fronts: Vec<Front>, shim: Shim, sink: &Sink) -> Supe
                 thread::spawn(move || keep_running(&front, &shim, &stopped, &sink)),
             )
         })
-        .unzip();
+        .unzip::<_, _, Vec<_>, Vec<_>>();
+    let (mut stops, mut threads) = (stops, threads);
+    if let Some((program, plan)) = proxy {
+        let (stop, stopped) = mpsc::channel();
+        let sink = sink.clone();
+        stops.push(stop);
+        threads.push(thread::spawn(move || {
+            front_proxy::keep_running(&plan, &program, &stopped, &sink);
+        }));
+    }
     Supervised { stops, threads }
 }
 
@@ -203,7 +219,7 @@ fn keep_running(front: &Front, shim: &Shim, stop: &Receiver<Stop>, sink: &Sink) 
 }
 
 /// How a watched front ended.
-enum Outcome {
+pub(super) enum Outcome {
     /// It exited on its own.
     Exited(ExitStatus),
     /// It was told to stop, and is gone.
@@ -216,7 +232,7 @@ enum Outcome {
     clippy::disallowed_methods,
     reason = "times a grace period for a child, not domain time"
 )]
-fn watch(child: &mut Child, stop: &Receiver<Stop>) -> Outcome {
+pub(super) fn watch(child: &mut Child, stop: &Receiver<Stop>) -> Outcome {
     let mut kill_at: Option<Instant> = None;
     loop {
         if let Ok(Some(status)) = child.try_wait() {
@@ -270,6 +286,12 @@ fn spawn(front: &Front, shim: &Shim, sink: &Sink) -> io::Result<Child> {
     }
     for path in &front.read_only {
         command.arg("--read-only").arg(path);
+    }
+    if let Some(proxy) = &front.proxy {
+        command
+            .arg("--proxy")
+            .arg(&proxy.socket)
+            .env(front_proxy::CA_VAR, &proxy.ca);
     }
     command
         .arg("--")

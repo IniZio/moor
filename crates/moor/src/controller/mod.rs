@@ -3,6 +3,7 @@
 pub mod attach;
 mod conn;
 mod drain;
+mod front_proxy;
 pub mod front_shim;
 mod fronts;
 mod hangup;
@@ -15,7 +16,6 @@ mod watch;
 
 pub use local::watch_local;
 
-use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs::{self, File, TryLockError};
 use std::io::{BufReader, Write};
@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use moor_core::config::{parse_controller, FrontEntry};
+use moor_core::config::parse_controller;
 use moor_core::ErrorKind;
 
 use drain::{Admitted, Drain, Handler};
@@ -100,6 +100,8 @@ struct Running {
     fronts: Vec<(String, UnixListener)>,
     /// The fronts that have a command, not yet started.
     commands: Vec<fronts::Front>,
+    /// The front Proxy, not yet started; none when no front lists proxy rules.
+    proxy: Option<front_proxy::Plan>,
     /// The vault key, for the user requests.
     vault: Arc<Vault>,
     /// Holds the single-instance flock until the process exits.
@@ -144,9 +146,7 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         message: e.error.to_string(),
     })?;
     let (vault, key) = open_vault(&env, config)?;
-    let env = env
-        .with_vault_key(key)
-        .with_front_proxies(proxied(&cfg.fronts));
+    let (env, proxy) = front_proxy::plan(env.with_vault_key(key), &cfg.fronts).map_err(refused)?;
     let state_lock = env
         .state_dir()
         .map(|dir| take_lock(&dir.join(CONTROLLER_LOCK), &socket))
@@ -158,7 +158,8 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
     let commands = fronts
         .iter()
         .filter_map(|(ns, listener)| {
-            fronts::Front::new(ns, listener, cfg.fronts.get(ns)?, &env, &socket)
+            let access = proxy.as_ref().and_then(|p| p.access(ns));
+            fronts::Front::new(ns, listener, cfg.fronts.get(ns)?, &env, &socket, access)
         })
         .collect::<Result<_, _>>()
         .map_err(refused)?;
@@ -168,6 +169,7 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         listener,
         fronts,
         commands,
+        proxy,
         vault: Arc::new(vault),
         _lock: lock,
         _state_lock: state_lock,
@@ -175,16 +177,6 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         settle_every: cfg.settle_every(),
         drain_timeout: cfg.drain_timeout(),
     })
-}
-
-/// The rules each front's Proxy serves, by namespace: every entry of `fronts` that lists
-/// `proxy_rules`.
-fn proxied(fronts: &BTreeMap<String, FrontEntry>) -> BTreeMap<String, Vec<String>> {
-    fronts
-        .iter()
-        .filter(|(_, front)| !front.proxy_rules.is_empty())
-        .map(|(ns, front)| (ns.clone(), front.proxy_rules.clone()))
-        .collect()
 }
 
 /// Loads the vault key beside `config`, creating it on first start, and returns it with its
@@ -295,8 +287,9 @@ impl Running {
         program: (OsString, Vec<OsString>),
         sink: &Sink,
     ) -> fronts::Supervised {
+        let proxy = self.proxy.take().map(|plan| (program.0.clone(), plan));
         let shim = fronts::Shim::new(program);
-        fronts::supervise(std::mem::take(&mut self.commands), shim, sink)
+        fronts::supervise(std::mem::take(&mut self.commands), shim, proxy, sink)
     }
 
     /// Serves the controller socket and each front socket until `wake` turns readable, then

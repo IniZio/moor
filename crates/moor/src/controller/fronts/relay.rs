@@ -11,7 +11,11 @@ const MAX_LINE: u64 = 64 * 1024;
 /// Logs each line of `stream`, a front's output, to `sink` until the front closes it. Bytes
 /// that are not UTF-8 are replaced, and a line over [`MAX_LINE`] is cut and says so, so a
 /// front can neither end the log nor grow the controller by what it prints.
-pub(super) fn relay_lines(stream: impl Read + Send + 'static, ns: &str, sink: &Sink) {
+pub(in crate::controller) fn relay_lines(
+    stream: impl Read + Send + 'static,
+    ns: &str,
+    sink: &Sink,
+) {
     let (sink, ns) = (sink.clone(), ns.to_owned());
     thread::spawn(move || {
         let mut reader = BufReader::new(stream);
