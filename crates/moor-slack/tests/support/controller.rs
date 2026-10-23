@@ -48,8 +48,12 @@ pub(crate) struct Seen {
     pub(crate) hellos: Vec<u32>,
     /// `since` and `follow` of each watch.
     pub(crate) watches: Vec<(i64, bool)>,
-    /// Each request.
+    /// Each request, with its `as` wrapper removed.
     pub(crate) requests: Vec<Request>,
+    /// The identity each request asserted, in the order of `requests`; none for a bare one.
+    pub(crate) acting: Vec<Option<String>>,
+    /// The identity each watch asserted, in the order of `watches`.
+    pub(crate) watchers: Vec<Option<String>>,
 }
 
 /// State shared with the connection threads.
@@ -67,10 +71,11 @@ struct Inner {
     /// Workdir of each host Session `open-host-session` opened, and whether it has ended;
     /// its id is its index plus 100.
     hosts: Vec<(String, bool)>,
-    /// Every event emitted so far, oldest first; cursors follow [`BACKLOG_END`].
-    events: Vec<ServerFrame>,
-    /// The connection of each live watch.
-    live: Vec<UnixStream>,
+    /// Every event emitted so far, oldest first, with the identity that owns its Box when it
+    /// has one; cursors follow [`BACKLOG_END`].
+    events: Vec<(Option<String>, ServerFrame)>,
+    /// The identity and connection of each live watch.
+    live: Vec<(Option<String>, UnixStream)>,
     /// How many events a backlog sends before it pauses, and for how long, once set.
     split: Option<(usize, Duration)>,
 }
@@ -150,6 +155,23 @@ impl FakeController {
     /// Stores an event of `kind` for Box `box_id` named `name`, and sends it to every live
     /// watch.
     pub(crate) fn emit(&self, box_id: i64, name: &str, kind: &str, payload: Value) {
+        self.emit_owned(None, box_id, name, kind, payload);
+    }
+
+    /// Like [`Self::emit`], for a Box that `owner` owns: only a watch asserting `owner` carries it.
+    pub(crate) fn emit_for(
+        &self,
+        owner: &str,
+        box_id: i64,
+        name: &str,
+        kind: &str,
+        payload: Value,
+    ) {
+        self.emit_owned(Some(owner), box_id, name, kind, payload);
+    }
+
+    /// Stores the event, owned by `owner` when given, and sends it to the watches that carry it.
+    fn emit_owned(&self, owner: Option<&str>, box_id: i64, name: &str, kind: &str, payload: Value) {
         let mut inner = self.lock();
         let cursor = BACKLOG_END + 1 + i64::try_from(inner.events.len()).unwrap();
         let event = ServerFrame::Event {
@@ -162,10 +184,12 @@ impl FakeController {
             ts: 1_730_000_000 + cursor,
         };
         let line = event.to_line();
-        inner.events.push(event);
-        inner
-            .live
-            .retain_mut(|stream| stream.write_all(line.as_bytes()).is_ok());
+        let owner = owner.map(str::to_owned);
+        inner.events.push((owner.clone(), event));
+        inner.live.retain_mut(|(watcher, stream)| {
+            !carries(owner.as_deref(), watcher.as_deref())
+                || stream.write_all(line.as_bytes()).is_ok()
+        });
     }
 
     /// Sends each later backlog in two writes `pause` apart: its first `events` events, then
@@ -177,7 +201,7 @@ impl FakeController {
     /// Ends every live watch, as a controller restart does; the front dials again and gets
     /// every event again.
     pub(crate) fn drop_watches(&self) {
-        for stream in self.lock().live.drain(..) {
+        for (_, stream) in self.lock().live.drain(..) {
             let _ = stream.shutdown(Shutdown::Both);
         }
     }
@@ -232,8 +256,8 @@ fn serve(stream: UnixStream, inner: &Mutex<Inner>) {
                 pause = wait;
                 frame
             }
-            Next::Backlog(since) => {
-                let (parts, pause) = backlog(&guard, since);
+            Next::Backlog(since, watcher) => {
+                let (parts, pause) = backlog(&guard, since, watcher.as_deref());
                 drop(guard);
                 let [first, rest] = parts;
                 if writer.write_all(first.as_bytes()).is_ok() {
@@ -242,8 +266,8 @@ fn serve(stream: UnixStream, inner: &Mutex<Inner>) {
                 }
                 return;
             }
-            Next::Follow(since) => {
-                follow(&mut writer, &mut guard, since);
+            Next::Follow(since, watcher) => {
+                follow(&mut writer, &mut guard, since, watcher);
                 continue;
             }
             Next::Wait => continue,
@@ -267,10 +291,12 @@ fn serve(stream: UnixStream, inner: &Mutex<Inner>) {
 enum Next {
     /// Send this frame; a caught-up or error frame then closes the connection.
     Send(ServerFrame),
-    /// Send every event after this cursor, then the caught-up frame, then close.
-    Backlog(i64),
-    /// Send every event after this cursor, then keep the connection for later events.
-    Follow(i64),
+    /// Send every event after this cursor that the identity carries, then the caught-up
+    /// frame, then close.
+    Backlog(i64, Option<String>),
+    /// Send every event after this cursor that the identity carries, then keep the
+    /// connection for later events.
+    Follow(i64, Option<String>),
     /// Send this frame after the pause.
     Later(Duration, ServerFrame),
     /// Send nothing and keep the connection.
@@ -301,8 +327,15 @@ fn answer(line: &str, inner: &mut Inner) -> Next {
                 }
             })
         }
-        ClientFrame::Watch { since, follow, .. } => {
+        ClientFrame::Watch {
+            since,
+            follow,
+            identity,
+            ..
+        } => {
+            let watcher = identity.map(|i| i.to_string());
             inner.seen.watches.push((since, follow));
+            inner.seen.watchers.push(watcher.clone());
             if inner.fail_watches {
                 Next::Send(ServerFrame::Error {
                     id: None,
@@ -310,42 +343,51 @@ fn answer(line: &str, inner: &mut Inner) -> Next {
                     message: "cannot read the event store".to_owned(),
                 })
             } else if follow {
-                Next::Follow(since)
+                Next::Follow(since, watcher)
             } else {
-                Next::Backlog(since)
+                Next::Backlog(since, watcher)
             }
         }
-        ClientFrame::Request { id, request } => {
-            let cmd = command(&request);
-            let next = match inner.scripts.get_mut(&cmd).and_then(VecDeque::pop_front) {
-                Some(Scripted::Reply(envelope)) => {
-                    Next::Send(ServerFrame::Response { id, envelope })
-                }
-                Some(Scripted::Slow(pause, envelope)) => {
-                    Next::Later(pause, ServerFrame::Response { id, envelope })
-                }
-                Some(Scripted::Hangup) => Next::Close,
-                Some(Scripted::Hold) => Next::Wait,
-                Some(Scripted::Lost) => {
-                    unscripted(&request, inner);
-                    Next::Wait
-                }
-                None => Next::Send(ServerFrame::Response {
-                    id,
-                    envelope: unscripted(&request, inner),
-                }),
-            };
-            inner.seen.requests.push(*request);
-            next
-        }
+        ClientFrame::Request { id, request } => scripted(id, *request, inner),
     }
+}
+
+/// How the controller answers request `request` sent as `id`, with its `as` wrapper taken
+/// off and recorded.
+fn scripted(id: String, request: Request, inner: &mut Inner) -> Next {
+    let (acting, request) = match request {
+        Request::As(act) => (Some(act.identity.to_string()), *act.request),
+        bare => (None, bare),
+    };
+    let cmd = command(&request);
+    let next = match inner.scripts.get_mut(&cmd).and_then(VecDeque::pop_front) {
+        Some(Scripted::Reply(envelope)) => Next::Send(ServerFrame::Response { id, envelope }),
+        Some(Scripted::Slow(pause, envelope)) => {
+            Next::Later(pause, ServerFrame::Response { id, envelope })
+        }
+        Some(Scripted::Hangup) => Next::Close,
+        Some(Scripted::Hold) => Next::Wait,
+        Some(Scripted::Lost) => {
+            unscripted(&request, inner);
+            Next::Wait
+        }
+        None => Next::Send(ServerFrame::Response {
+            id,
+            envelope: unscripted(&request, inner),
+        }),
+    };
+    inner.seen.requests.push(request);
+    inner.seen.acting.push(acting);
+    next
 }
 
 /// A backlog watch's events after `since` and its caught-up frame, in the two parts it is
 /// written in, with the pause between them.
-fn backlog(inner: &Inner, since: i64) -> ([String; 2], Duration) {
+fn backlog(inner: &Inner, since: i64, watcher: Option<&str>) -> ([String; 2], Duration) {
     let cursor = BACKLOG_END + i64::try_from(inner.events.len()).unwrap();
-    let mut lines: Vec<String> = events(inner, since).map(ServerFrame::to_line).collect();
+    let mut lines: Vec<String> = events(inner, since, watcher)
+        .map(ServerFrame::to_line)
+        .collect();
     lines.push(ServerFrame::CaughtUp { cursor }.to_line());
     let (at, pause) = inner.split.unwrap_or((0, Duration::ZERO));
     let rest = lines.split_off(at.min(lines.len()));
@@ -353,26 +395,33 @@ fn backlog(inner: &Inner, since: i64) -> ([String; 2], Duration) {
 }
 
 /// Sends the events after `since` on a live watch and keeps it for later events.
-fn follow(writer: &mut UnixStream, inner: &mut Inner, since: i64) {
-    if writer
-        .write_all(events_after(inner, since).as_bytes())
-        .is_ok()
-    {
-        inner.live.push(writer.try_clone().unwrap());
+fn follow(writer: &mut UnixStream, inner: &mut Inner, since: i64, watcher: Option<String>) {
+    let missed: String = events(inner, since, watcher.as_deref())
+        .map(ServerFrame::to_line)
+        .collect();
+    if writer.write_all(missed.as_bytes()).is_ok() {
+        inner.live.push((watcher, writer.try_clone().unwrap()));
     }
 }
 
-/// Every event after `since`, oldest first.
-fn events(inner: &Inner, since: i64) -> impl Iterator<Item = &ServerFrame> {
+/// Every event after `since` that a watch asserting `watcher` carries, oldest first.
+fn events<'a>(
+    inner: &'a Inner,
+    since: i64,
+    watcher: Option<&'a str>,
+) -> impl Iterator<Item = &'a ServerFrame> {
     inner
         .events
         .iter()
+        .filter(move |(owner, _)| carries(owner.as_deref(), watcher))
+        .map(|(_, frame)| frame)
         .filter(move |frame| matches!(frame, ServerFrame::Event { cursor, .. } if *cursor > since))
 }
 
-/// The frames of every event after `since`, one per line.
-fn events_after(inner: &Inner, since: i64) -> String {
-    events(inner, since).map(ServerFrame::to_line).collect()
+/// Whether a watch asserting `watcher` carries an event of a Box owned by `owner`: events
+/// with no owner go to every watch.
+fn carries(owner: Option<&str>, watcher: Option<&str>) -> bool {
+    owner.is_none() || owner == watcher
 }
 
 /// The answer to a request no script covers: from the host Sessions, then the Box table.

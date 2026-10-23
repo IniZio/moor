@@ -24,8 +24,8 @@ const POLL: Duration = Duration::from_millis(500);
 
 /// The worker's effects, so tests can script the controller and record what Slack sees.
 pub(crate) struct Fx<'a> {
-    /// Sends one request to the controller.
-    pub(crate) call: &'a mut dyn FnMut(Request) -> Result<Response, ClientError>,
+    /// Sends one request to the controller as the Slack user it names.
+    pub(crate) call: &'a mut dyn FnMut(&str, Request) -> Result<Response, ClientError>,
     /// Posts `(channel, thread, text)` in a thread.
     pub(crate) reply: &'a mut dyn FnMut(&str, &str, &str),
     /// Shows `(channel, user, thread, text)` to that user only, in the thread.
@@ -202,7 +202,9 @@ fn settle_start(db: &Db, fx: &mut Fx<'_>, row: &SlackBox, attempt: Attempt) -> b
 /// controller for up to the client's redial budget.
 fn ask(fx: &mut Fx<'_>, row: &SlackBox, attempt: Attempt) -> Outcome {
     if matches!(attempt, Attempt::Again) {
-        match (fx.call)(show_request(row)).map(|reply| shown(reply, &row.box_name)) {
+        match (fx.call)(&row.requested_by, show_request(row))
+            .map(|reply| shown(reply, &row.box_name))
+        {
             Ok(Shown::Absent) => {}
             Ok(Shown::Settled(outcome)) => return outcome,
             Err(e) => return Outcome::Unsure(e.to_string()),
@@ -212,7 +214,7 @@ fn ask(fx: &mut Fx<'_>, row: &SlackBox, attempt: Attempt) -> Outcome {
         Ok(repo) => repo,
         Err(e) => return Outcome::Refused(e.to_string()),
     };
-    match (fx.call)(start_request(row, repo)) {
+    match (fx.call)(&row.requested_by, start_request(row, repo)) {
         Ok(reply) => start_outcome(reply),
         Err(e) if matches!(attempt, Attempt::First) && !lost(&e) => Outcome::Refused(e.to_string()),
         Err(e) => Outcome::Unsure(e.to_string()),

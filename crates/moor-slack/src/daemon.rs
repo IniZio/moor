@@ -5,7 +5,7 @@ use std::fs::DirBuilder;
 use std::os::unix::fs::DirBuilderExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver};
 use std::sync::Arc;
 use std::thread;
 
@@ -13,20 +13,22 @@ use moor_client::Client;
 use moor_core::secret::Secret;
 
 use crate::api::Api;
-use crate::command::Allow;
 use crate::config::{parse_config, Config, CoordinatorAgent};
 use crate::coordinator::claude::{Claude, HostEnv};
 use crate::coordinator::Agent;
 use crate::credentials::CredentialCheck;
 use crate::db::{Db, SlackBox};
 use crate::feed::Feed;
+use crate::identity::{Link, Team};
 use crate::login::{self, TokenCheck};
 use crate::secret_file::read_secret;
-use crate::socket::{self, AfterAck, Inbound, Intake, Kept, NotKept};
+use crate::socket;
 use crate::turns::Turns;
 use crate::worker::{self, Fx, Job};
-use crate::{dial, slash, Log};
+use crate::Log;
 
+mod recorder;
+use recorder::Recorder;
 mod stop;
 use stop::{finish, sleep_until_stopped};
 
@@ -74,6 +76,8 @@ struct Loaded {
     left: Vec<SlackBox>,
     /// The coordinator's turns.
     turns: Turns,
+    /// The controller's front socket and the Slack team.
+    link: Link,
 }
 
 /// Runs the daemon until its Socket Mode thread ends, or until `settings.stop` is set and the
@@ -83,7 +87,7 @@ struct Loaded {
 /// Returns why startup failed: an unreadable or invalid config, a token file that is
 /// missing, empty or readable by others, an unusable API base, or a state directory or
 /// `slack.db` that cannot be opened. Never carries a token.
-pub fn run(settings: &Settings, log: Log) -> Result<(), String> {
+pub fn run(settings: &Settings, log: &Log) -> Result<(), String> {
     let Loaded {
         cfg,
         api,
@@ -94,10 +98,9 @@ pub fn run(settings: &Settings, log: Log) -> Result<(), String> {
         db_path,
         left,
         turns,
-    } = load(settings, &log)?;
-    let client = Client::new(&settings.socket);
+        link,
+    } = load(settings, log)?;
     let (jobs_tx, jobs_rx) = mpsc::channel();
-    let (feed_tx, feed_rx) = mpsc::channel();
     let (_wake_tx, wake_rx) = mpsc::channel();
     let recorder = Recorder {
         db,
@@ -107,7 +110,7 @@ pub fn run(settings: &Settings, log: Log) -> Result<(), String> {
         api: Arc::clone(&api),
         bot_token: Arc::clone(&bot_token),
         jobs: jobs_tx,
-        log: Arc::clone(&log),
+        log: Arc::clone(log),
         clock: settings.clock,
     };
     let socket_api = Arc::clone(&api);
@@ -117,11 +120,11 @@ pub fn run(settings: &Settings, log: Log) -> Result<(), String> {
         socket::run(&socket_api, &app_token, &recorder, &stop, &sleep);
     });
     let feed = Feed {
+        link: link.clone(),
         db_path: db_path.clone(),
         api: Arc::clone(&api),
         bot_token: Arc::clone(&bot_token),
-        client: client.clone(),
-        log: Arc::clone(&log),
+        log: Arc::clone(log),
         clock: settings.clock,
     };
     let worker = Worker {
@@ -130,13 +133,12 @@ pub fn run(settings: &Settings, log: Log) -> Result<(), String> {
         api,
         bot_token,
         coordinator,
-        client: client.clone(),
-        log: Arc::clone(&log),
+        link,
+        log: Arc::clone(log),
     };
     let worker_thread = thread::spawn(move || worker.run(&jobs_rx, left));
     thread::spawn(move || Arc::new(turns).run());
-    thread::spawn(move || dial::read_events(&client, &feed_tx, &*log, &thread::sleep));
-    thread::spawn(move || feed.run(&feed_rx));
+    thread::spawn(move || feed.run());
     thread::spawn(move || post(&wake_rx));
     finish(&settings.stop, socket, worker_thread)
 }
@@ -150,6 +152,8 @@ fn load(settings: &Settings, log: &Log) -> Result<Loaded, String> {
     let cfg = parse_config(&path.display().to_string(), &text).map_err(|e| e.to_string())?;
     let (app_token, bot_token) = read_tokens(&cfg, settings.home.as_deref())?;
     let api = Api::new(&cfg.api_base).map_err(|e| format!("slack: {e}"))?;
+    let api = Arc::new(api);
+    let link = connect(settings, &api, &bot_token)?;
     let dir = &settings.state_dir;
     DirBuilder::new()
         .recursive(true)
@@ -159,18 +163,10 @@ fn load(settings: &Settings, log: &Log) -> Result<Loaded, String> {
     let db_path = dir.join("slack.db");
     let db = Db::open(&db_path).map_err(|e| format!("open slack.db: {e}"))?;
     let read = |e: rusqlite::Error| format!("read slack.db: {e}");
-    let reopened = db
-        .reopen_unsent()
-        .map_err(|e| format!("write slack.db: {e}"))?;
-    if reopened > 0 {
-        log(&format!(
-            "slack: reopened {reopened} prompts whose answer was never sent"
-        ));
-    }
+    reopen_unsent(&db, log)?;
     let mut left = db.starting().map_err(read)?;
     left.extend(db.closing().map_err(read)?);
     let coordinator = probe(&cfg, settings, log);
-    let api = Arc::new(api);
     let bot_token = Arc::new(bot_token);
     let program = std::env::current_exe().map_err(|e| format!("find this binary: {e}"))?;
     let socket = std::path::absolute(&settings.socket)
@@ -184,7 +180,7 @@ fn load(settings: &Settings, log: &Log) -> Result<Loaded, String> {
         budget: usize::try_from(c.context_kib).map_or(usize::MAX, |kib| kib.saturating_mul(1024)),
         api: Arc::clone(&api),
         bot_token: Arc::clone(&bot_token),
-        client: Client::new(&settings.socket),
+        link: link.clone(),
         socket,
         program,
         max_open_boxes: c.max_open_boxes,
@@ -202,7 +198,30 @@ fn load(settings: &Settings, log: &Log) -> Result<Loaded, String> {
         db_path,
         left,
         turns,
+        link,
     })
+}
+
+/// Opens again the prompts whose answer an earlier run never sent.
+fn reopen_unsent(db: &Db, log: &Log) -> Result<(), String> {
+    let reopened = db
+        .reopen_unsent()
+        .map_err(|e| format!("write slack.db: {e}"))?;
+    if reopened > 0 {
+        log(&format!(
+            "slack: reopened {reopened} prompts whose answer was never sent"
+        ));
+    }
+    Ok(())
+}
+
+/// The link to the controller's front socket for the Slack team the bot token belongs to.
+fn connect(settings: &Settings, api: &Api, bot_token: &Secret) -> Result<Link, String> {
+    let team = api
+        .team_id(bot_token)
+        .map_err(|e| format!("slack auth.test: {e}"))
+        .and_then(|id| Team::parse(&id))?;
+    Ok(Link::new(Client::new(&settings.socket), team))
 }
 
 /// The coordinator agent the config names, probed and logged, or why it cannot run.
@@ -247,85 +266,6 @@ fn expand_home(path: &Path, home: Option<&Path>) -> PathBuf {
     }
 }
 
-/// The Socket Mode thread's intake: records each mention and command in `slack.db`, then
-/// queues its job, all before Slack gets the ack.
-struct Recorder {
-    /// The Socket Mode thread's own `slack.db` connection.
-    db: Db,
-    /// Channel ids where mentions are answered.
-    channels: Vec<String>,
-    /// User ids who may start Boxes.
-    users: Vec<String>,
-    /// The front's state dir, which holds the token files.
-    state_dir: PathBuf,
-    /// Web API client, for the login modal.
-    api: Arc<Api>,
-    /// Bot token for opening the login modal.
-    bot_token: Arc<Secret>,
-    /// The worker's queue.
-    jobs: Sender<Job>,
-    /// Daemon log.
-    log: Log,
-    /// The current time in unix seconds.
-    clock: fn() -> i64,
-}
-
-impl Intake for Recorder {
-    /// Keeps a mention, a button press on a prompt, a command or a login submission.
-    fn take(&self, item: Inbound) -> Result<Kept, NotKept> {
-        let allow = Allow {
-            channels: &self.channels,
-            users: &self.users,
-        };
-        let now = (self.clock)();
-        let kept = match item {
-            Inbound::Mention(mention) => {
-                worker::record(&mention, &self.db, &allow, now).map(|job| (Kept::default(), job))
-            }
-            Inbound::Slash(slash) => {
-                let state = &self.state_dir;
-                slash::record(&slash, &self.db, &allow, state, now, &*self.log)
-            }
-            Inbound::Submission(sub) => {
-                login::submission(sub, &self.db, &self.users, now).map(|(ack, job)| {
-                    (
-                        Kept {
-                            ack: Some(ack),
-                            then: None,
-                        },
-                        job,
-                    )
-                })
-            }
-            Inbound::Click(click) => {
-                worker::click(&click, &self.db, now).map(|job| (Kept::default(), job))
-            }
-        };
-        match kept {
-            Ok((kept, Some(job))) => self
-                .jobs
-                .send(job)
-                .map(|()| kept)
-                .map_err(|_| NotKept::Gone),
-            Ok((kept, None)) => Ok(kept),
-            Err(e) => {
-                (self.log)(&format!("slack.db: {e}; Slack sends the envelope again"));
-                Err(NotKept::Failed)
-            }
-        }
-    }
-
-    /// Opens the login modal on the Socket Mode thread, because its trigger expires 3 s
-    /// after the command and the worker may be busy with a Box start.
-    fn after_ack(&self, then: AfterAck) {
-        let AfterAck::OpenLogin { trigger_id, agent } = then;
-        let form = login::form(agent);
-        if let Err(e) = self.api.open_view(&self.bot_token, &trigger_id, &form) {
-            (self.log)(&format!("slack: login modal failed: {e}"));
-        }
-    }
-}
-
 /// The worker thread's state: where `slack.db` lives, Slack and the controller.
 struct Worker {
     /// Path of `slack.db`; the worker opens its own connection.
@@ -338,8 +278,8 @@ struct Worker {
     bot_token: Arc<Secret>,
     /// The checked coordinator agent, or why it cannot run.
     coordinator: Result<Arc<dyn Agent>, String>,
-    /// Controller socket client; each request opens its own connection.
-    client: Client,
+    /// The controller; each request opens its own connection and speaks for one Slack user.
+    link: Link,
     /// Daemon log.
     log: Log,
 }
@@ -352,7 +292,7 @@ impl Worker {
             Ok(db) => db,
             Err(e) => return (self.log)(&format!("open slack.db: {e}")),
         };
-        let mut call = |req| self.client.request(req, |_| {});
+        let mut call = |user: &str, req| self.link.request(user, req);
         let mut reply = |channel: &str, thread: &str, text: &str| {
             if let Err(e) = self
                 .api

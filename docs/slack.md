@@ -9,8 +9,9 @@ starts and steers Boxes for the person who started the thread.
 
 You need:
 
-- a running controller (`moor controller serve`), and for each person a
-  `github` secret that can read the channel's repos
+- a running controller (`moor controller serve`) with a `slack` entry under
+  `fronts`, and for each person a `github` secret that can read the channel's
+  repos
 - Claude Code 2.1.304 or newer on the controller host
 - a Slack workspace where you can create an app
 
@@ -53,12 +54,21 @@ You need:
 
 ## Run the front
 
-Start `moor-slack` with the controller socket and the config:
+Start `moor-slack` with the controller's `slack` front socket and the config:
 
 ```sh
-moor-slack --socket ~/.local/state/moor/controller.sock \
+moor-slack --socket ~/.local/state/moor/fronts/slack.sock \
   --config ~/.config/moor-slack/config.yaml
 ```
+
+A `command` under `fronts.slack` lets the controller start the front itself.
+It then sets `MOOR_FRONT_SOCKET`, and `--socket` is not needed.
+
+The front reads the workspace's team id from Slack once at startup, with
+`auth.test`, and stops with an error if Slack does not answer. It acts for each
+person as `slack:<team>/<user>`: every request it sends asserts that identity,
+and it opens one watch per person who owns a thread. The controller's own
+socket speaks only for the local operator, so it refuses the front.
 
 The front logs the Claude Code version it found. If it finds no `claude`, or
 one older than 2.1.304, the coordinator is unavailable, and the front posts one line in each
@@ -77,7 +87,7 @@ thread that says why.
 
 | Flag | Environment variable | Default | Meaning |
 | --- | --- | --- | --- |
-| `--socket PATH` | `MOOR_SLACK_SOCKET` | required | The controller socket. |
+| `--socket PATH` | `MOOR_SLACK_SOCKET`, else `MOOR_FRONT_SOCKET` | required | The controller's `slack` front socket. |
 | `--config PATH` | `MOOR_SLACK_CONFIG` | required | The front's config file. |
 | `--state-dir DIR` | `MOOR_SLACK_STATE_DIR` | `$XDG_STATE_HOME/moor-slack`, else `$HOME/.local/state/moor-slack` | The front's own state, including `slack.db`. |
 

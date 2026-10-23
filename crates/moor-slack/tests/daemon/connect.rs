@@ -32,6 +32,7 @@ fn dials_a_controller_that_starts_later() {
     let mut rig = Rig::new();
     rig.spawn_daemon();
     rig.slack.wait_connected();
+    rig.mention(1, USER, "<@UBOT> hello", TS, None);
     std::thread::sleep(Duration::from_millis(600));
     let stderr = rig.stderr();
     assert!(stderr.contains("controller: connect to"), "{stderr}");
@@ -47,6 +48,8 @@ fn failing_watches_are_dialled_with_growing_waits() {
     let controller = rig.serve(PROTOCOL);
     controller.fail_watches();
     rig.spawn_daemon();
+    rig.slack.wait_connected();
+    rig.mention(1, USER, "<@UBOT> hello", TS, None);
     controller.wait_until("a first watch", |seen| !seen.watches.is_empty());
     std::thread::sleep(Duration::from_millis(1600));
     let watches = controller.seen(|seen| seen.watches.len());
@@ -65,6 +68,8 @@ fn protocol_mismatch_is_logged_once() {
     let newer = PROTOCOL + 1;
     let controller = rig.serve(newer);
     rig.spawn_daemon();
+    rig.slack.wait_connected();
+    rig.mention(1, USER, "<@UBOT> hello", TS, None);
     controller.wait_until("three hellos", |seen| seen.hellos.len() >= 3);
     let stderr = rig.stderr();
     let lines = stderr

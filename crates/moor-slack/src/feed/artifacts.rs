@@ -5,6 +5,7 @@
 //! from its first failure. Then the thread says the front gave up and the version is never tried
 //! again, not even after a restart.
 
+use moor_client::Client;
 use moor_core::name::{BoxId, BoxName};
 use moor_core::view::ArtifactView;
 use serde::Deserialize;
@@ -62,6 +63,16 @@ impl Feed {
         let Some(owed) = fold.published.get_mut(&id) else {
             return true;
         };
+        let client = match self.link.acting(&boxed.requested_by) {
+            Ok(client) => client,
+            Err(e) => {
+                (self.log)(&format!(
+                    "controller: no artifacts for {}: {e}",
+                    boxed.box_name.as_str()
+                ));
+                return true;
+            }
+        };
         let thread = Thread {
             api: &self.api,
             bot: &self.bot_token,
@@ -70,20 +81,29 @@ impl Feed {
             log: &*self.log,
         };
         let mut stuck = false;
-        owed.retain(|v| match self.show(db, &thread, &boxed.box_name, v) {
-            Shown::Settled => false,
-            Shown::Owed => true,
-            Shown::Stuck => {
-                stuck = true;
-                true
-            }
-        });
+        owed.retain(
+            |v| match self.show(db, &thread, &client, &boxed.box_name, v) {
+                Shown::Settled => false,
+                Shown::Owed => true,
+                Shown::Stuck => {
+                    stuck = true;
+                    true
+                }
+            },
+        );
         !stuck
     }
 
     /// Shows `v` in `thread` unless it already does, and records what it shows. Uploading
     /// first means a crash before the record uploads the version again instead of losing it.
-    fn show(&self, db: &Db, thread: &Thread<'_>, box_name: &BoxName, v: &ArtifactView) -> Shown {
+    fn show(
+        &self,
+        db: &Db,
+        thread: &Thread<'_>,
+        client: &Client,
+        box_name: &BoxName,
+        v: &ArtifactView,
+    ) -> Shown {
         let now = (self.clock)();
         let attempt = match db.artifact_shown(box_name, &v.name, v.version) {
             Ok(ArtifactShown::Version | ArtifactShown::GaveUp) => return Shown::Settled,
@@ -110,7 +130,7 @@ impl Feed {
                 return Shown::Stuck;
             }
         };
-        let (settled, recorded) = match post_version(thread, &self.client, box_name, v, attempt) {
+        let (settled, recorded) = match post_version(thread, client, box_name, v, attempt) {
             Ok(Sent::Shown) => (true, db.artifact_posted(box_name, &v.name, v.version, now)),
             Ok(Sent::Failed(why)) => {
                 (self.log)(&format!("slack: {} not uploaded: {why}", v.name));

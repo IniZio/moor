@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use moor_client::Client;
 use moor_core::secret::Secret;
+use moor_core::user::Identity;
 
 use crate::api::{Api, ApiError};
 use crate::coordinator::brief::BRIEF;
@@ -19,12 +20,14 @@ use crate::coordinator::turn::{self, Ended, Turn, LIMITS};
 use crate::coordinator::{Agent, Answer, ToolServer, TurnSetup};
 use crate::credentials::{self, daemon_uid, private_dir, SlackUser};
 use crate::db::{Db, End, TurnRow};
+use crate::identity::Link;
 use crate::Log;
 
 mod host;
 mod idle;
 mod lines;
 mod restart;
+mod server_args;
 
 /// Most turns that run at once.
 const MAX_TURNS: usize = 4;
@@ -67,8 +70,8 @@ pub(crate) struct Turns {
     pub(crate) api: Arc<Api>,
     /// Bot token for posting.
     pub(crate) bot_token: Arc<Secret>,
-    /// Controller socket client.
-    pub(crate) client: Client,
+    /// The controller and team; each turn speaks for the thread's owner.
+    pub(crate) link: Link,
     /// Absolute path of the controller socket, for the tool server.
     pub(crate) socket: PathBuf,
     /// Absolute path of this binary, which the agent starts as the tool server.
@@ -207,33 +210,18 @@ impl Turns {
             Ok(agent) => Arc::clone(agent),
             Err(why) => return Closing::of(End::Failed, lines::unavailable(why)),
         };
-        let Some(user) = SlackUser::parse(&row.owner) else {
-            return Closing::of(
-                End::Failed,
-                lines::unavailable("the starter has no Slack user id"),
-            );
+        let ready = match self.ready(row, &*agent) {
+            Ok(ready) => ready,
+            Err(closing) => return closing,
         };
-        let credential = match credentials::load(&self.state_dir, agent.kind(), &user) {
-            Ok(Some(credential)) => credential,
-            Ok(None) => return Closing::of(End::NoToken, lines::no_token(&row.owner)),
-            Err(e) => return Closing::of(End::Failed, lines::unavailable(&e)),
-        };
-        let ready = credentials::config_dir(&self.state_dir, agent.kind(), &user)
-            .and_then(|config| Ok((config, workdir(&self.state_dir, row)?)));
-        let (config_dir, workdir) = match ready {
-            Ok(dirs) => dirs,
-            Err(e) => return Closing::of(End::Failed, lines::unavailable(&e)),
-        };
-        if let Some(why) = agent.unsafe_cwd() {
-            (self.log)(&format!("turn {}: {why}", row.id));
-            return Closing::of(End::Unsafe, lines::UNSAFE.to_owned());
-        }
+        let (credential, workdir) = (&ready.credential, &ready.workdir);
+        let client = self.link.client_as(ready.identity.clone());
         let shown = workdir.display().to_string();
-        if let Err(e) = host::ensure(&self.client, db, row, &shown, agent.kind().name()) {
+        if let Err(e) = host::ensure(&client, db, row, &shown, agent.kind().name()) {
             let why = format!("the controller did not open a host Session: {e}");
             return Closing::of(End::Failed, lines::unavailable(&why));
         }
-        let input = match self.context(db, row) {
+        let input = match self.context(db, row, &client) {
             Ok(input) => input,
             Err(e) => {
                 return Closing::of(End::Failed, lines::unavailable(&format!("slack.db: {e}")))
@@ -242,26 +230,56 @@ impl Turns {
         let server = ToolServer {
             name: "moor",
             program: &self.program,
-            args: &self.tool_args(row),
+            args: &self.tool_args(row, &ready.identity),
             tools: &tools::names(),
         };
         let turn = Turn {
             setup: TurnSetup {
                 model: &self.model,
-                config_dir: &config_dir,
-                workdir: &workdir,
+                config_dir: &ready.config_dir,
+                workdir,
                 brief: BRIEF,
                 tools: &server,
             },
             input: &input,
-            credential: &credential,
+            credential,
             limits: LIMITS,
         };
         let mut spawned = |pid| self.written(db.set_pid(row.id, pid, restart::start_time(pid)));
         let ended = turn::run(&*agent, &turn, &mut spawned, &*self.log);
-        let mut closing = self.closing(ended, row, agent.kind().label(), &credential);
+        let mut closing = self.closing(ended, row, agent.kind().label(), credential);
         closing.bytes = Some(input.len());
         closing
+    }
+
+    /// What the turn of `row` runs with: the owner's credential and directories, and the
+    /// identity the controller knows them by. The turn ends here when any of it is missing.
+    fn ready(&self, row: &TurnRow, agent: &dyn Agent) -> Result<Ready, Closing> {
+        let unavailable = |why: &str| Closing::of(End::Failed, lines::unavailable(why));
+        let user = SlackUser::parse(&row.owner)
+            .ok_or_else(|| unavailable("the starter has no Slack user id"))?;
+        let identity = self
+            .link
+            .identity(&row.owner)
+            .map_err(|e| unavailable(&e))?;
+        let credential = match credentials::load(&self.state_dir, agent.kind(), &user) {
+            Ok(Some(credential)) => credential,
+            Ok(None) => return Err(Closing::of(End::NoToken, lines::no_token(&row.owner))),
+            Err(e) => return Err(unavailable(&e)),
+        };
+        let config_dir = credentials::config_dir(&self.state_dir, agent.kind(), &user)
+            .map_err(|e| unavailable(&e))?;
+        let workdir = workdir(&self.state_dir, row).map_err(|e| unavailable(&e))?;
+        if let Some(why) = agent.unsafe_cwd() {
+            (self.log)(&format!("turn {}: {why}", row.id));
+            return Err(Closing::of(End::Unsafe, lines::UNSAFE.to_owned()));
+        }
+        Ok(Ready {
+            credential,
+            config_dir,
+            workdir,
+            identity,
+        })
     }
 
     /// The end and line of a turn that ran.
@@ -290,7 +308,7 @@ impl Turns {
     }
 
     /// The context of turn `row`, rebuilt from `slack.db`.
-    fn context(&self, db: &Db, row: &TurnRow) -> rusqlite::Result<String> {
+    fn context(&self, db: &Db, row: &TurnRow, client: &Client) -> rusqlite::Result<String> {
         let first = db.first_request(&row.channel, &row.thread_ts)?;
         let first_id = first.as_ref().map(|(id, _)| *id);
         let earlier: Vec<Said> = db
@@ -305,7 +323,7 @@ impl Turns {
             .map(|(_, said)| said)
             .collect();
         let rows = db.thread_boxes(&row.channel, &row.thread_ts)?;
-        let mut call = |request| self.client.request(request, |_| {});
+        let mut call = |request| client.request(request, |_| {});
         let prompts = db.open_prompts(&row.channel, &row.thread_ts)?;
         let boxes = box_lines(&rows, &prompts, &mut call);
         let actions = db.thread_actions(&row.channel, &row.thread_ts)?;
@@ -322,23 +340,16 @@ impl Turns {
     }
 }
 
-impl Turns {
-    /// The tool server's arguments for the thread of `row`; they name no secret.
-    fn tool_args(&self, row: &TurnRow) -> Vec<String> {
-        let state_dir =
-            std::path::absolute(&self.state_dir).unwrap_or_else(|_| self.state_dir.clone());
-        vec![
-            "mcp".to_owned(),
-            "--state-dir".to_owned(),
-            state_dir.display().to_string(),
-            "--socket".to_owned(),
-            self.socket.display().to_string(),
-            "--thread".to_owned(),
-            format!("{}/{}", row.channel, row.thread_ts),
-            "--max-open-boxes".to_owned(),
-            self.max_open_boxes.to_string(),
-        ]
-    }
+/// What a turn needs before it runs.
+struct Ready {
+    /// The starter's credential for the agent.
+    credential: Secret,
+    /// The agent's config dir for the starter.
+    config_dir: PathBuf,
+    /// The thread's workdir.
+    workdir: PathBuf,
+    /// The starter, as the controller knows them.
+    identity: Identity,
 }
 
 /// How a turn ended and the line that says so.

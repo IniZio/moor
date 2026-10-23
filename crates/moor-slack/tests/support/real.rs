@@ -1,4 +1,5 @@
-//! A real `moor controller serve` with no repos and no provider, for the smoke tests.
+//! A real `moor controller serve` with no repos and no provider, and a `slack` front socket
+//! with no front process behind it, for the smoke tests.
 
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -32,6 +33,11 @@ fn moor_bin() -> &'static Path {
     })
 }
 
+/// The `slack` front's socket of a controller started with its state under `root`.
+pub(crate) fn front_socket(root: &Path) -> PathBuf {
+    root.join("state").join("fronts").join("slack.sock")
+}
+
 /// A running controller, killed on drop.
 pub(crate) struct RealController(Child);
 
@@ -43,7 +49,7 @@ impl RealController {
         std::fs::write(
             &config,
             format!(
-                "socket: {}\nstate_dir: {}\n",
+                "socket: {}\nstate_dir: {}\nfronts:\n  slack: {{}}\n",
                 socket.display(),
                 state.display()
             ),
@@ -62,8 +68,9 @@ impl RealController {
             .spawn()
             .unwrap();
         let controller = Self(child);
+        let front = front_socket(root);
         for _ in 0..500 {
-            if UnixStream::connect(socket).is_ok() {
+            if UnixStream::connect(socket).is_ok() && UnixStream::connect(&front).is_ok() {
                 return controller;
             }
             std::thread::sleep(Duration::from_millis(10));

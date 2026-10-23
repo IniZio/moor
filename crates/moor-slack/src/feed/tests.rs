@@ -4,6 +4,8 @@ use serde_json::json;
 
 use super::*;
 use crate::db::SlackThread;
+use crate::identity::Team;
+use moor_client::Client;
 
 /// The id the tests give their Box.
 const ID: BoxId = BoxId::new(7);
@@ -11,10 +13,10 @@ const ID: BoxId = BoxId::new(7);
 /// A feed whose Slack cannot be reached, so any post it tries fails.
 fn feed(dir: &std::path::Path) -> Feed {
     Feed {
+        link: Link::new(Client::new(dir.join("c.sock")), Team::parse("T1").unwrap()),
         db_path: dir.join("slack.db"),
         api: Arc::new(Api::new("http://127.0.0.1:9").unwrap()),
         bot_token: Arc::new(Secret::new(b"xoxb-test".to_vec())),
-        client: moor_client::Client::new(dir.join("controller.sock")),
         log: Arc::new(|_| {}),
         clock: || 9,
     }
@@ -136,4 +138,40 @@ fn a_line_that_cannot_be_posted_queues_no_notice_and_is_tried_again() {
     assert!(!feed.lines(&db, &mut fold, &row));
     assert_eq!(fold.finished.get(&ID), Some(&vec![(1, None)]), "still owed");
     assert!(!db.has_notice(&row, BoxEvent::Finished, Some(1)).unwrap());
+}
+
+/// An identity of the Slack user `user` in the tests' team.
+fn user(user: &str) -> Identity {
+    Identity::parse(&format!("slack:T1/{user}")).unwrap()
+}
+
+#[test]
+fn a_connection_resets_only_its_own_users_fold() {
+    let mut folds = Folds::default();
+    for who in ["U1", "U2"] {
+        folds.take((user(who), Watched::Connected));
+        folds.take((user(who), event(1, Some(ID), "working")));
+        folds.take((user(who), Watched::Item(WatchItem::CaughtUp { cursor: 1 })));
+    }
+    folds.take((user("U2"), Watched::Connected));
+    let mut caught_up: Vec<_> = folds.caught_up().map(|(who, _)| who.to_string()).collect();
+    caught_up.sort();
+    assert_eq!(
+        caught_up,
+        ["slack:T1/U1"],
+        "U2 starts over, U1 keeps its fold"
+    );
+    let (_, kept) = folds.caught_up().next().unwrap();
+    assert_eq!(kept.views.len(), 1, "U1's views survive U2's reconnect");
+}
+
+#[test]
+fn only_the_caught_up_users_are_acted_on() {
+    let mut folds = Folds::default();
+    folds.take((user("U1"), event(1, Some(ID), "working")));
+    assert_eq!(folds.caught_up().count(), 0, "a backlog is not acted on");
+    folds.take((user("U1"), Watched::Item(WatchItem::CaughtUp { cursor: 1 })));
+    folds.take((user("U2"), event(1, Some(ID), "working")));
+    let who: Vec<_> = folds.caught_up().map(|(who, _)| who.to_string()).collect();
+    assert_eq!(who, ["slack:T1/U1"]);
 }

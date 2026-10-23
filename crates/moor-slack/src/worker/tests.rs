@@ -89,6 +89,7 @@ fn started(db: &Db, event_id: &str, thread: &str) -> SlackBox {
 #[derive(Default)]
 struct Seen {
     calls: Vec<Request>,
+    users: Vec<String>,
     replies: Vec<(String, String, String)>,
 }
 
@@ -142,8 +143,9 @@ fn with_hooks(
     log: &dyn Fn(&str),
     step: impl FnOnce(&mut Fx<'_>),
 ) {
-    let mut call = |req: Request| {
+    let mut call = |user: &str, req: Request| {
         let reply = answer(&req);
+        seen.borrow_mut().users.push(user.to_owned());
         seen.borrow_mut().calls.push(req);
         reply
     };
@@ -343,6 +345,19 @@ fn show_finds_the_box_of_a_lost_start() {
     assert_eq!(cmds(&seen), [("show", "slack-10-5-1".into())]);
     assert_eq!(state(&db, "C1", "10.5"), bound_to_7("slack-10-5-1"));
     assert!(seen.replies[0].2.starts_with("Started Box"));
+}
+
+#[test]
+fn the_show_and_the_start_are_sent_as_the_user_who_asked() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db(dir.path());
+    let row = recorded_start(&db);
+    let seen = attempt_with(&db, &row, Attempt::Again, &mut |req| match req {
+        Request::Start(s) => named("start", s.name.as_str()),
+        _ => refused("show", "no Box slack-10-5-1"),
+    });
+    assert_eq!(cmds(&seen).len(), 2);
+    assert_eq!(seen.users, [row.requested_by.clone(), row.requested_by]);
 }
 
 #[test]

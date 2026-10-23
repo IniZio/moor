@@ -14,11 +14,13 @@ use serde_json::{json, Value};
 
 use super::super::status::Planner;
 use super::super::tests::bound_box;
-use super::super::{now, Fold};
+use super::super::{now, Fold, Folds};
 use super::*;
 use crate::api::Api;
 use crate::dial::Watched;
+use crate::identity::{Link, Team};
 use crate::upload::tests::{controller, fake, sha, Fake, Stored};
+use moor_core::user::Identity;
 
 /// The id [`bound_box`] binds its Box to.
 const ID: BoxId = BoxId::new(7);
@@ -65,7 +67,7 @@ fn feed_logging(dir: &Path, slack: &Fake, sock: &Path, log: crate::Log) -> Feed 
         db_path: dir.join("slack.db"),
         api: Arc::new(Api::new(&slack.base).unwrap()),
         bot_token: Arc::new(Secret::new(b"xoxb-test".to_vec())),
-        client: Client::new(sock),
+        link: Link::new(Client::new(sock), Team::parse("T1").unwrap()),
         log,
         clock,
     }
@@ -102,7 +104,10 @@ fn replay_for(id: BoxId, versions: &[u32], bytes: &[u8]) -> Fold {
 
 /// One feed tick that is due to send lines.
 fn tick(feed: &Feed, db: &Db, fold: &mut Fold) {
-    feed.act(db, fold, &mut Planner::default(), &mut now());
+    let owner = Identity::parse("slack:T1/U1").unwrap();
+    let mut folds = Folds(std::iter::once((owner.clone(), std::mem::take(fold))).collect());
+    feed.act(db, &mut folds, &mut Planner::default(), &mut now());
+    *fold = folds.0.remove(&owner).unwrap();
 }
 
 /// The files Slack shared, by title.
@@ -125,11 +130,15 @@ fn failures(slack: &Fake) -> Vec<String> {
     texts
 }
 
-/// The versions the controller was asked to read.
+/// The versions the controller was asked to read, each asked as the Box's owner.
 fn reads(asked: &[Value]) -> Vec<u64> {
     asked
         .iter()
-        .map(|r| r["version"].as_u64().unwrap())
+        .map(|r| {
+            assert_eq!(r["cmd"], "as", "{r}");
+            assert_eq!(r["identity"], "slack:T1/U1", "{r}");
+            r["request"]["version"].as_u64().unwrap()
+        })
         .collect()
 }
 

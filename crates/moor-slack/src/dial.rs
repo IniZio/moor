@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use moor_client::{Client, ClientError, Watch, WatchItem};
 use moor_core::controller::WatchFilter;
+use moor_core::user::Identity;
 
 /// First wait before dialling the controller again.
 const BACKOFF_MIN: Duration = Duration::from_millis(250);
@@ -29,6 +30,9 @@ impl Backoff {
         wait
     }
 }
+
+/// What a watch reader forwards to the feed, with the identity whose watch it follows.
+pub(crate) type Tagged = (Identity, Watched);
 
 /// What the watch reader forwards to the feed.
 #[derive(Debug)]
@@ -72,8 +76,8 @@ impl Dialer {
     }
 }
 
-/// Forwards the controller's events to `feed` until the feed is gone, dialling again after
-/// every drop with backoff.
+/// Forwards the events of `identity`'s watch to `feed` until the feed is gone, dialling again
+/// after every drop with backoff. `client` acts as `identity`.
 ///
 /// The backoff resets only once a backlog is caught up, so a controller that accepts the
 /// hello and then fails every watch is not dialled in a tight loop. A failure is logged only
@@ -81,7 +85,8 @@ impl Dialer {
 /// another protocol shows one line per cause, not one per attempt.
 pub(crate) fn read_events(
     client: &Client,
-    feed: &Sender<Watched>,
+    identity: &Identity,
+    feed: &Sender<Tagged>,
     log: &dyn Fn(&str),
     sleep: &dyn Fn(Duration),
 ) {
@@ -93,7 +98,7 @@ pub(crate) fn read_events(
         let ended = client
             .watch(0, WatchFilter::default(), false)
             .map_err(Ended::Failed)
-            .and_then(|backlog| forward(client, backlog, feed, &mut dialer));
+            .and_then(|backlog| forward(client, identity, backlog, feed, &mut dialer));
         match ended {
             Ok(()) => {}
             Err(Ended::FeedGone) => return,
@@ -107,11 +112,15 @@ pub(crate) fn read_events(
 /// A backlog that closes without a caught-up frame ends the connection.
 fn forward(
     client: &Client,
+    identity: &Identity,
     backlog: Watch,
-    feed: &Sender<Watched>,
+    feed: &Sender<Tagged>,
     dialer: &mut Dialer,
 ) -> Result<(), Ended> {
-    let send = |item| feed.send(item).map_err(|_| Ended::FeedGone);
+    let send = |item| {
+        feed.send((identity.clone(), item))
+            .map_err(|_| Ended::FeedGone)
+    };
     send(Watched::Connected)?;
     let mut caught_up = None;
     for item in backlog {
