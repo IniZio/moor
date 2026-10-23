@@ -106,7 +106,9 @@ schema. Move it aside and start again with a fresh one.
 - Each file version a Box publishes is uploaded into the thread once. Without
   the `files:write` scope, the thread shows the file's name and size instead.
   When an upload fails, the thread shows the reason once and the front tries
-  the upload again every 2 seconds until it goes up.
+  again with a growing wait. After 10 minutes from the first failure the thread
+  says the front gave up, and that version is never tried again, not even after
+  a restart.
 - After `idle_minutes` with no turn and no waiting message, the front ends the
   thread's host Session. The front keeps the host Session while a Box is starting or
   closing, while an agent works or waits on a question, or while the

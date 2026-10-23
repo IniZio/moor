@@ -23,6 +23,37 @@ use crate::upload::tests::{controller, fake, sha, Fake, Stored};
 /// The id [`bound_box`] binds its Box to.
 const ID: BoxId = BoxId::new(7);
 
+thread_local! {
+    /// The time the feed under test reads, per test thread.
+    static NOW: std::cell::Cell<i64> = const { std::cell::Cell::new(9) };
+}
+
+/// The feed's clock.
+fn clock() -> i64 {
+    NOW.with(std::cell::Cell::get)
+}
+
+/// Moves the feed's clock to `t` unix seconds.
+fn at(t: i64) {
+    NOW.with(|n| n.set(t));
+}
+
+/// The requests the fake controller saw, failing after about five seconds when it still
+/// waits for more requests than the feed sent.
+fn seen(ctl: std::thread::JoinHandle<Vec<Value>>) -> Vec<Value> {
+    for _ in 0..500 {
+        if ctl.is_finished() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(
+        ctl.is_finished(),
+        "the fake controller still waits for a read the feed never sent"
+    );
+    ctl.join().unwrap()
+}
+
 /// A feed that posts to `slack` and reads artifacts from the controller at `sock`.
 fn feed(dir: &Path, slack: &Fake, sock: &Path) -> Feed {
     Feed {
@@ -31,7 +62,7 @@ fn feed(dir: &Path, slack: &Fake, sock: &Path) -> Feed {
         bot_token: Arc::new(Secret::new(b"xoxb-test".to_vec())),
         client: Client::new(sock),
         log: Arc::new(|_| {}),
-        clock: || 9,
+        clock,
     }
 }
 
@@ -114,7 +145,7 @@ fn a_version_goes_up_once_across_a_refold_and_a_restart() {
     let db = Db::open(&feed.db_path).unwrap();
     let mut fold = replay(&[1], b"hello");
     tick(&feed, &db, &mut fold);
-    assert_eq!(reads(&ctl.join().unwrap()), [1], "read once");
+    assert_eq!(reads(&seen(ctl)), [1], "read once");
     assert_eq!(shared(&slack), ["report.txt"], "shared once");
     assert!(failures(&slack).is_empty(), "{:?}", slack.texts());
 }
@@ -132,12 +163,12 @@ fn a_second_version_goes_up_once_after_the_first() {
     let mut fold = replay(&[1, 2], b"hello");
     tick(&feed, &db, &mut fold);
     tick(&feed, &db, &mut fold);
-    assert_eq!(reads(&ctl.join().unwrap()), [1, 2]);
+    assert_eq!(reads(&seen(ctl)), [1, 2]);
     assert_eq!(shared(&slack), ["report.txt", "report.txt"]);
 }
 
 #[test]
-fn a_failed_upload_is_told_once_and_tried_again_until_it_goes_up() {
+fn a_failed_upload_is_told_once_and_tried_again_with_a_wait_until_it_goes_up() {
     let (dir, slack) = (tempfile::tempdir().unwrap(), fake());
     slack.upload_down.store(true, Ordering::SeqCst);
     let sock = dir.path().join("c.sock");
@@ -147,22 +178,90 @@ fn a_failed_upload_is_told_once_and_tried_again_until_it_goes_up() {
     let db = Db::open(&feed.db_path).unwrap();
     bound_box(&db);
     let mut fold = replay(&[1], b"hello");
+    at(100);
     tick(&feed, &db, &mut fold);
     assert_eq!(failures(&slack).len(), 1, "the reason shows in the thread");
+    at(101);
+    tick(&feed, &db, &mut fold);
     let mut fold = replay(&[1], b"hello");
+    at(103);
     tick(&feed, &db, &mut fold);
     assert_eq!(failures(&slack).len(), 1, "told once, across a refold");
     assert!(shared(&slack).is_empty());
     slack.upload_down.store(false, Ordering::SeqCst);
+    at(110);
     tick(&feed, &db, &mut fold);
+    at(111);
     tick(&feed, &db, &mut fold);
-    assert_eq!(
-        reads(&ctl.join().unwrap()),
-        [1, 1, 1],
-        "tried on each tick until up"
-    );
+    assert_eq!(reads(&seen(ctl)), [1, 1, 1], "no try inside the wait");
     assert_eq!(shared(&slack), ["report.txt"], "shared once");
     assert_eq!(failures(&slack).len(), 1);
+}
+
+#[test]
+fn a_version_that_keeps_failing_is_given_up_with_one_final_message() {
+    let (dir, slack) = (tempfile::tempdir().unwrap(), fake());
+    slack.upload_down.store(true, Ordering::SeqCst);
+    let sock = dir.path().join("c.sock");
+    let ctl = controller(&sock, (0..4).map(|_| Stored::of(b"hello")).collect());
+    let feed = feed(dir.path(), &slack, &sock);
+    let db = Db::open(&feed.db_path).unwrap();
+    bound_box(&db);
+    let mut fold = replay(&[1], b"hello");
+    for t in [100, 103, 699] {
+        at(t);
+        tick(&feed, &db, &mut fold);
+    }
+    assert_eq!(
+        failures(&slack).len(),
+        1,
+        "no final message before ten minutes"
+    );
+    for t in [710, 800, 5000] {
+        at(t);
+        tick(&feed, &db, &mut fold);
+    }
+    assert_eq!(
+        reads(&seen(ctl)),
+        [1, 1, 1, 1],
+        "four tries, none after the last"
+    );
+    let told = failures(&slack);
+    assert_eq!(told.len(), 2, "{told:?}");
+    assert!(told[1].contains("gave up"), "{}", told[1]);
+    assert!(
+        told[1].contains("500"),
+        "the final message names the reason: {}",
+        told[1]
+    );
+    assert!(!told[0].contains("gave up"));
+}
+
+#[test]
+fn a_version_given_up_on_is_not_tried_again_after_a_restart() {
+    let (dir, slack) = (tempfile::tempdir().unwrap(), fake());
+    slack.upload_down.store(true, Ordering::SeqCst);
+    let sock = dir.path().join("c.sock");
+    let ctl = controller(&sock, (0..2).map(|_| Stored::of(b"hello")).collect());
+    let feed = feed(dir.path(), &slack, &sock);
+    let db = Db::open(&feed.db_path).unwrap();
+    bound_box(&db);
+    let mut fold = replay(&[1], b"hello");
+    for t in [100, 700] {
+        at(t);
+        tick(&feed, &db, &mut fold);
+    }
+    drop(db);
+    slack.upload_down.store(false, Ordering::SeqCst);
+    let db = Db::open(&feed.db_path).unwrap();
+    let mut fold = replay(&[1], b"hello");
+    for t in [701, 3000] {
+        at(t);
+        tick(&feed, &db, &mut fold);
+    }
+    assert_eq!(reads(&seen(ctl)), [1, 1], "no read after the restart");
+    assert!(shared(&slack).is_empty(), "never uploaded");
+    assert_eq!(failures(&slack).len(), 2);
 }
 
 /// Binds a second thread, `C2` `2.0`, with Box `slack-2-1` bound to id 8.
@@ -198,7 +297,7 @@ fn a_box_of_another_thread_never_posts_here() {
     other_thread_box(&db);
     let mut fold = replay_for(BoxId::new(8), &[1], b"hello");
     tick(&feed, &db, &mut fold);
-    assert_eq!(reads(&ctl.join().unwrap()), [1]);
+    assert_eq!(reads(&seen(ctl)), [1]);
     let channels: Vec<String> = slack
         .hits("completeuploadexternal")
         .iter()
