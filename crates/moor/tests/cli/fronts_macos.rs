@@ -29,6 +29,14 @@ use super::{fresh_dir, fresh_dir_outside_tmp, Dir};
 /// host; it waits for `ctl.pid` in its state dir, the controller's pid.
 const PROBE: &str = include_str!("fronts_macos/probe.py");
 
+/// Ignores SIGTERM, so only SIGKILL ends it, and says its pid.
+const STUBBORN: &str = r#"
+import json, os, signal, sys, time
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+print("probe", json.dumps({"pid": os.getpid()}), file=sys.stderr, flush=True)
+time.sleep(600)
+"#;
+
 /// What a refused write says under Seatbelt.
 const REFUSED: &str = "Operation not permitted";
 
@@ -65,7 +73,7 @@ impl Controller {
         fs::write(
             &config,
             format!(
-                "socket: {}\nstate_dir: {}\nfronts:\n{}",
+                "socket: {}\nstate_dir: {}\ndrain_timeout_secs: 1\nfronts:\n{}",
                 root.join("c.sock").display(),
                 root.join("state").display(),
                 fronts(&root, &sockets),
@@ -96,6 +104,11 @@ impl Controller {
     /// Serves a `probe` front that runs [`PROBE`] and may write `front`, and a `slack` front
     /// without a command.
     fn probe() -> Self {
+        Self::probe_running(PROBE)
+    }
+
+    /// As [`Self::probe`], with `script` as the probe.
+    fn probe_running(script: &str) -> Self {
         let python = Python::find();
         let ctl = Self::start(|root, sockets| {
             let program = hidden_program_and_note(root, &python.program);
@@ -103,7 +116,7 @@ impl Controller {
                 program,
                 "-S",
                 "-c",
-                PROBE,
+                script,
                 PROTOCOL.to_string(),
                 root,
                 env!("CARGO_BIN_EXE_moor"),
@@ -328,6 +341,45 @@ fn a_killed_controller_leaves_no_front_process() {
     ctl.child.kill().unwrap();
     ctl.child.wait().unwrap();
     wait_for("the front to die", || (!alive(pid)).then_some(()));
+}
+
+#[test]
+fn a_front_that_ignores_sigterm_is_killed_after_the_grace() {
+    let ctl = Controller::probe_running(STUBBORN);
+    let pid = i32::try_from(ctl.probed()["pid"].as_i64().unwrap()).unwrap();
+    drop(ctl);
+    wait_for("the front to die", || (!alive(pid)).then_some(()));
+}
+
+#[test]
+fn a_shim_whose_controller_is_gone_exits_without_running_the_front() {
+    let dir = fresh_dir_outside_tmp("orphan");
+    let mark = dir.join("ran");
+    let touch = format!("touch {}", mark.display());
+    let mut gone = Command::new("true").spawn().unwrap();
+    let gone_pid = gone.id().to_string();
+    gone.wait().unwrap();
+    let writable = dir.display().to_string();
+    let shim = |parent: &str| {
+        Command::new(env!("CARGO_BIN_EXE_moor"))
+            .args(["front-shim", "--parent", parent, "--writable", &writable])
+            .args(["--", "sh", "-c", &touch])
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap()
+    };
+    let out = shim(&gone_pid);
+    assert!(!out.status.success());
+    assert!(!mark.exists(), "{}", String::from_utf8_lossy(&out.stderr));
+    let out = shim(&std::process::id().to_string());
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(mark.exists());
 }
 
 #[test]
