@@ -286,3 +286,71 @@ fn a_rerun_on_the_same_box_keeps_a_commit_made_after_the_first_run() {
     assert!(!out.contains("moor: work tree"), "{out}");
     assert_eq!(tree_git(&o, &["rev-parse", "HEAD"]), agent);
 }
+
+#[test]
+fn refs_outside_the_box_branch_origin_and_tags_and_other_remotes_are_gone() {
+    let o = Origin::new("refs");
+    ok(&o, BOX1, &o.base);
+    let t = o.tree();
+    o.git(&t, &["checkout", "-q", "--detach"]);
+    std::fs::write(t.join("a.txt"), "hidden\n").unwrap();
+    o.git(&t, &["commit", "-q", "-am", "hidden"]);
+    let hidden = o.git(&t, &["rev-parse", "HEAD"]);
+    o.git(&t, &["checkout", "-q", BRANCH]);
+    o.git(&t, &["update-ref", "refs/wip/x", &hidden]);
+    o.git(&t, &["remote", "add", "other", "file:///nowhere.git"]);
+    o.git(&t, &["update-ref", "refs/remotes/other/x", &hidden]);
+    o.git(&t, &["notes", "add", "-m", "note", "HEAD"]);
+    o.git(&t, &["tag", "kept-tag", &o.base]);
+    o.git(&o.seed(), &["tag", "kept-tag", &o.base]);
+    o.git(&o.seed(), &["push", "-q", "origin", "kept-tag"]);
+    ok(&o, BOX2, &o.base);
+    let refs = tree_git(&o, &["for-each-ref", "--format=%(refname)"]);
+    let left: Vec<&str> = refs
+        .lines()
+        .filter(|r| !r.starts_with("refs/remotes/origin/"))
+        .collect();
+    assert_eq!(
+        left,
+        [
+            format!("refs/heads/{BRANCH}").as_str(),
+            "refs/tags/kept-tag"
+        ]
+    );
+    assert_eq!(tree_git(&o, &["remote"]), "origin");
+    let probe = o.try_git(&t, &["cat-file", "-e", &format!("{hidden}^{{commit}}")]);
+    let reachable = tree_git(&o, &["branch", "-a", "--contains", &hidden]);
+    assert!(
+        probe.status.success() && reachable.is_empty(),
+        "no ref reaches it"
+    );
+}
+
+#[test]
+fn a_bisect_or_a_cherry_pick_sequence_in_progress_ends() {
+    let o = Origin::new("bisect");
+    o.push(BRANCH, &[("a.txt", "two\n")]);
+    o.push(BRANCH, &[("a.txt", "three\n")]);
+    ok(&o, BOX1, &o.base);
+    let t = o.tree();
+    o.git(&t, &["bisect", "start", "HEAD", &o.base]);
+    assert!(t.join(".git/BISECT_START").exists());
+    ok(&o, BOX2, &o.base);
+    assert!(!t.join(".git/BISECT_START").exists(), "the bisect ended");
+    assert!(!o.try_git(&t, &["bisect", "log"]).status.success());
+
+    let o = Origin::new("sequence");
+    o.push("moor/conflict", &[("a.txt", "c1\n")]);
+    o.push("moor/conflict", &[("a.txt", "c2\n")]);
+    ok(&o, BOX1, &o.base);
+    let t = o.tree();
+    std::fs::write(t.join("a.txt"), "local\n").unwrap();
+    o.git(&t, &["commit", "-q", "-am", "local"]);
+    let range = format!("{}..origin/moor/conflict", o.base);
+    let out = o.try_git(&t, &["cherry-pick", &range]);
+    assert!(!out.status.success(), "{out:?}");
+    assert!(t.join(".git/sequencer").exists());
+    ok(&o, BOX2, &o.base);
+    assert!(!t.join(".git/sequencer").exists(), "the sequence ended");
+    clean_on(&o, &o.base);
+}
