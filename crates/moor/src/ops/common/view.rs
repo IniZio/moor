@@ -83,6 +83,8 @@ fn driver_view(b: &DriverRow, config: &UserConfig) -> DriverView {
         handle: box_handle(b),
         workdir: b.workdir.clone(),
         egress: b.egress.clone(),
+        cpus: b.delivered.map(|d| d.cpus),
+        mem_mib: b.delivered.map(|d| d.mem_mib),
         asleep_since: (b.state == BoxState::Asleep).then(|| rfc3339(b.updated_at)),
         sleep: BoxSleepView {
             after: Some(config.box_.sleep_after_label()),

@@ -50,6 +50,10 @@ pub struct Fields {
     pub box_handle: Field<BoxHandle>,
     /// Box workdir.
     pub box_workdir: Field<String>,
+    /// CPUs the Box delivers.
+    pub box_cpus: Field<i64>,
+    /// Memory the Box delivers, in MiB.
+    pub box_mem_mib: Field<i64>,
     /// Box egress: `none`, `enforced` or `not_enforced`.
     pub egress: Field<String>,
     /// Why the box cannot sleep, as last reported by the driver.

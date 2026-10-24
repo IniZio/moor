@@ -106,6 +106,23 @@ To get it into your own checkout, run `git fetch origin BRANCH` there.
 | `--pane` | Add the end of the agent's terminal pane. |
 | `--session ID` | Show one Session and its child Sessions instead of a Box. |
 
+### What `moor show` reports about the machine
+
+While a Box starts, one command inside it reads how many CPUs it can run on
+(`nproc`) and its total memory (`MemTotal` in `/proc/meminfo`). The command
+rides the clone exec, so it adds no call to the Box. `moor show NAME --json`
+and the reply of a start carry the result under `driver`, and the text form
+prints a `machine:` line after the `box:` line.
+
+| Field | Meaning |
+| --- | --- |
+| `driver.cpus` | CPUs the Box can run on, as `nproc` counts them. |
+| `driver.mem_mib` | Total memory in MiB. The kernel keeps some of what a provider gives, so this is a little under the size asked for. |
+
+Both are `null` until a start has read them, when the Box printed nothing
+usable, and for a Box with no repo and no commit author, which runs no clone exec
+for the command to ride. A Box started again on a new machine records that machine's numbers.
+
 ### `moor run` flags
 
 The command runs under bash when the Box has bash, else under sh. One `CMD`
