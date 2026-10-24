@@ -19,7 +19,7 @@ const BOX_STATE: [&str; 4] = ["~/.ssh", "~/.moor", "~/.claude", "~/.config/gh"];
 /// `~/<rel>` (the login home), `/opt/<rel>`, `/var/cache/<rel>`, or one of `/var/lib/containerd`
 /// and `/var/lib/containers`. Never equal to, above or below a path in [`owned_paths`], nor a `~/.moor-*` directory.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct CachePath(String);
+pub struct CachePath(pub(super) String);
 
 impl CachePath {
     /// Validates `s`; a trailing `/` is dropped.

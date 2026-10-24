@@ -9,7 +9,7 @@ const MARKER: &str = ".crabbox-sealed";
 
 /// Every preset but docker, as a drop list.
 const ALL_BUT_DOCKER: &str =
-    "cache: {presets: [npm, yarn, pnpm, bun, podman, gradle, dart, rust, go]}";
+    "cache: {presets: [npm, yarn, pnpm, bun, podman, gradle, dart, rust, go], work_tree: false}";
 
 /// A fake `sudo -n` that runs its command with `FAKE_SUDO` set and logs it.
 const FAKE_SUDO: &str = "#!/bin/sh\n[ \"$1\" = -n ] && shift\necho \"sudo $*\" >>\"$HOME/log\"\nFAKE_SUDO=1 exec \"$@\"\n";
@@ -73,7 +73,7 @@ fn marked(home: &Path, dir: &str) -> bool {
 }
 
 fn sealed_plan(user_yaml: &str) -> CachePlan {
-    let l = layers("cache: {presets: false}", user_yaml);
+    let l = layers("cache: {presets: false, work_tree: false}", user_yaml);
     CachePlan::build(UserId::new(1), Some(&repo("o", "r")), &l, &salt(1)).unwrap()
 }
 
@@ -82,7 +82,7 @@ fn sealed_plan(user_yaml: &str) -> CachePlan {
 fn docker_script(home: &Path) -> String {
     let l = layers(ALL_BUT_DOCKER, "");
     let p = CachePlan::build(UserId::new(1), Some(&repo("o", "r")), &l, &salt(1)).unwrap();
-    let script = p.seal_script().unwrap();
+    let script = p.seal_script(None).unwrap();
     assert!(script.contains("'/var/lib/containerd'"), "{script}");
     fill(home, "docker");
     fill(home, "containerd");
@@ -103,7 +103,7 @@ fn a_failing_seal_empties_only_its_own_volume() {
          {name: bad, path: ~/bad1, seal: [\"true\", \"exit 3\", \"touch \\\"$HOME/ran-after\\\"\"]},\
          {name: plain, path: ~/plain}]}",
     );
-    let (stdout, code) = run(h.path(), &p.seal_script().unwrap());
+    let (stdout, code) = run(h.path(), &p.seal_script(None).unwrap());
     assert_eq!(code, 0, "the seal script never fails the close");
     assert_eq!(seal_failed(&stdout), ["bad"], "{stdout}");
     assert_eq!(
@@ -140,7 +140,7 @@ fn a_successful_seal_marks_its_volume_and_no_other() {
          {name: bad, path: ~/bad, seal: [\"false\"]},\
          {name: plain, path: ~/plain}]}",
     );
-    let (stdout, _) = run(h.path(), &p.seal_script().unwrap());
+    let (stdout, _) = run(h.path(), &p.seal_script(None).unwrap());
     assert_eq!(seal_failed(&stdout), ["bad"], "{stdout}");
     let got = ["one", "two", "bad", "plain"].map(|d| marked(h.path(), d));
     assert_eq!(got, [true, true, false, false]);
@@ -153,7 +153,7 @@ fn the_marker_falls_back_to_sudo() {
     fake(h.path(), "sudo", FAKE_SUDO);
     fake(h.path(), "touch", ROOT_ONLY_TOUCH);
     let p = sealed_plan("cache: {volumes: [{name: v, path: ~/root-owned, seal: [\"true\"]}]}");
-    let (stdout, _) = run(h.path(), &p.seal_script().unwrap());
+    let (stdout, _) = run(h.path(), &p.seal_script(None).unwrap());
     assert!(seal_failed(&stdout).is_empty(), "{stdout}");
     assert!(marked(h.path(), "root-owned"));
     let log = std::fs::read_to_string(h.path().join("log")).unwrap();
@@ -166,7 +166,7 @@ fn a_marker_neither_touch_nor_sudo_can_write_fails_the_seal() {
     fill(h.path(), "root-owned");
     fake(h.path(), "touch", ROOT_ONLY_TOUCH);
     let p = sealed_plan("cache: {volumes: [{name: v, path: ~/root-owned, seal: [\"true\"]}]}");
-    let (stdout, code) = run(h.path(), &p.seal_script().unwrap());
+    let (stdout, code) = run(h.path(), &p.seal_script(None).unwrap());
     assert_eq!((seal_failed(&stdout), code), (vec!["v".to_owned()], 0));
     assert!(!marked(h.path(), "root-owned"));
 }
@@ -175,7 +175,7 @@ fn a_marker_neither_touch_nor_sudo_can_write_fails_the_seal() {
 fn a_missing_directory_is_no_failure() {
     let h = home();
     let p = sealed_plan("cache: {volumes: [{name: bad, path: ~/never, seal: [\"false\"]}]}");
-    let (stdout, code) = run(h.path(), &p.seal_script().unwrap());
+    let (stdout, code) = run(h.path(), &p.seal_script(None).unwrap());
     assert_eq!((seal_failed(&stdout), code), (vec!["bad".to_owned()], 0));
 }
 
@@ -247,8 +247,8 @@ fn the_docker_seal_fails_and_leaves_no_marker_when_neither_docker_nor_sudo_works
 
 #[test]
 fn no_seal_steps_means_no_script() {
-    assert_eq!(sealed_plan("").seal_script(), None);
-    assert_eq!(CachePlan::none().seal_script(), None);
+    assert_eq!(sealed_plan("").seal_script(None), None);
+    assert_eq!(CachePlan::none().seal_script(None), None);
 }
 
 /// Writes a marker from an earlier seal into `~/<dir>`.
@@ -263,7 +263,7 @@ fn a_marker_from_an_earlier_seal_is_gone_after_a_failing_seal() {
     stale_marker(h.path(), "v");
     fake(h.path(), "find", "#!/bin/sh\nexit 1\n");
     let p = sealed_plan("cache: {volumes: [{name: v, path: ~/v, seal: [\"false\"]}]}");
-    let (stdout, code) = run(h.path(), &p.seal_script().unwrap());
+    let (stdout, code) = run(h.path(), &p.seal_script(None).unwrap());
     assert_eq!((seal_failed(&stdout), code), (vec!["v".to_owned()], 0));
     assert!(
         !marked(h.path(), "v"),
@@ -283,7 +283,7 @@ fn every_marker_is_removed_before_the_first_seal_step() {
          {name: one, path: ~/one, seal: [\"[ ! -e \\\"$HOME/one/.crabbox-sealed\\\" ] && [ ! -e \\\"$HOME/two/.crabbox-sealed\\\" ] && touch \\\"$HOME/saw-clean\\\"\"]},\
          {name: two, path: ~/two, seal: [\"true\"]}]}",
     );
-    let (stdout, _) = run(h.path(), &p.seal_script().unwrap());
+    let (stdout, _) = run(h.path(), &p.seal_script(None).unwrap());
     assert!(seal_failed(&stdout).is_empty(), "{stdout}");
     assert!(h.path().join("saw-clean").exists());
 }
@@ -320,7 +320,7 @@ fn the_marker_removal_falls_back_to_sudo() {
     let p = sealed_plan(
         "cache: {volumes: [{name: v, path: ~/root-owned, seal: [\"[ ! -e \\\"$HOME/root-owned/.crabbox-sealed\\\" ]\"]}]}",
     );
-    let (stdout, _) = run(h.path(), &p.seal_script().unwrap());
+    let (stdout, _) = run(h.path(), &p.seal_script(None).unwrap());
     assert!(seal_failed(&stdout).is_empty(), "{stdout}");
     let log = std::fs::read_to_string(h.path().join("log")).unwrap();
     assert!(log.contains("sudo rm -f"), "{log}");
@@ -336,7 +336,7 @@ fn a_marker_neither_rm_nor_sudo_can_remove_fails_the_seal_before_its_steps() {
     let p = sealed_plan(
         "cache: {volumes: [{name: v, path: ~/root-owned, seal: [\"touch \\\"$HOME/ran\\\"\"]}]}",
     );
-    let (stdout, code) = run(h.path(), &p.seal_script().unwrap());
+    let (stdout, code) = run(h.path(), &p.seal_script(None).unwrap());
     assert_eq!((seal_failed(&stdout), code), (vec!["v".to_owned()], 0));
     assert!(
         !h.path().join("ran").exists(),

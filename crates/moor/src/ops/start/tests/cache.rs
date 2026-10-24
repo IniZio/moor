@@ -35,7 +35,8 @@ fn a_provider_with_cache_volumes_gets_the_presets_and_the_repo_volumes() {
     let got = names(&plan);
     assert_eq!(got.first(), Some(&"npm"));
     assert_eq!(got.last(), Some(&"sdk"));
-    assert_eq!(got.len(), 11);
+    assert_eq!(got.len(), 12);
+    assert!(got.contains(&"worktree"), "{got:?}");
     assert!(cache_warnings(&w).is_empty());
 }
 
@@ -135,7 +136,7 @@ fn a_volume_over_docker_data_is_refused_with_presets_off() {
     script_base_yaml(&w, Some(yaml));
     run(&w.cx, &repo_req("demo")).unwrap();
     let [plan]: [CachePlan; 1] = w.driver.acquired_plans().try_into().unwrap();
-    assert!(plan.is_empty());
+    assert_eq!(names(&plan), ["worktree"], "only the work tree is kept");
     let [warned]: [String; 1] = refusals(&w).try_into().unwrap();
     assert!(warned.starts_with("cache_refused: "), "{warned}");
 }
@@ -169,7 +170,7 @@ fn a_close_after_a_controller_restart_seals_the_plan_the_start_used() {
         w.proc.clone(),
     );
     close(&restarted);
-    assert_eq!(seals(&w), [plan.seal_script().unwrap()]);
+    assert_eq!(seals(&w), [plan.seal_script(Some(BASE)).unwrap()]);
     let calls = w.driver.calls();
     let at = |p: &str| calls.iter().rposition(|c| c.starts_with(p)).unwrap();
     assert!(

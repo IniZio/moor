@@ -2,6 +2,7 @@
 
 use moor_core::cache::{CachePath, Origin};
 use moor_core::config::{BoxSettings, DotfilesConfig, Layer};
+use moor_core::name::ForgeRepo;
 use moor_core::seam::forge::{GitAuthor, RepoFiles};
 use moor_core::view::env::{EnvItem, EnvKind};
 
@@ -12,6 +13,7 @@ use crate::ops::common::creds::{checked, plain, Checked};
 pub(crate) fn assemble(
     cx: &Cx,
     s: &BoxSettings,
+    repo: Option<&ForgeRepo>,
     author: Option<&GitAuthor>,
     files: &RepoFiles,
 ) -> Vec<EnvItem> {
@@ -48,19 +50,19 @@ pub(crate) fn assemble(
     if let Some(d) = &s.dotfiles {
         items.push(dotfiles_item(cx, d));
     }
-    items.extend(cache_items(s, author.is_some()));
+    items.extend(cache_items(s, repo));
     items
 }
 
 /// One row per cache volume the Box would get, with its paths; never its key.
-fn cache_items(s: &BoxSettings, has_repo: bool) -> Vec<EnvItem> {
-    match s.cache.declared(has_repo) {
+fn cache_items(s: &BoxSettings, repo: Option<&ForgeRepo>) -> Vec<EnvItem> {
+    match s.cache.declared(repo) {
         Ok(declared) => declared
             .iter()
             .map(|d| {
                 let paths: Vec<&str> = d.volume.paths().iter().map(CachePath::as_str).collect();
                 let source = match d.origin {
-                    Origin::Preset => Layer::Default,
+                    Origin::Preset | Origin::WorkTree => Layer::Default,
                     Origin::Repo => Layer::Repo,
                     Origin::Operator => Layer::User,
                 };
