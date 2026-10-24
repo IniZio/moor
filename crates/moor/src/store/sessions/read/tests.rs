@@ -10,7 +10,6 @@ use crate::store::Store;
 fn end_current(store: &Store, id: BoxId) {
     store
         .writer()
-        .unwrap()
         .execute(
             "UPDATE sessions SET state = 'ended' WHERE box = ?",
             [id.get()],
@@ -74,7 +73,6 @@ fn children_list_box_and_host_sessions_oldest_first() {
     let host_child = store.open_host_session("/w2", None, None).unwrap();
     store
         .writer()
-        .unwrap()
         .execute(
             "UPDATE sessions SET parent_session = ?1 WHERE id = ?2",
             (parent, host_child),
@@ -105,7 +103,6 @@ fn live_sessions_skip_ended_ones_and_come_back_in_id_order() {
     let b = store.open_host_session("/b", None, None).unwrap();
     store
         .writer()
-        .unwrap()
         .execute("UPDATE sessions SET state = 'ended' WHERE id = ?", [gone])
         .unwrap();
     let ids: Vec<i64> = store

@@ -17,7 +17,7 @@ impl Store {
         value: &str,
     ) -> Result<bool, StoreError> {
         // ON CONFLICT, not OR IGNORE: OR IGNORE would also swallow the kind CHECK.
-        let changed = self.writer()?.execute(
+        let changed = self.writer().execute(
             "INSERT INTO box_refs (box, kind, value) VALUES (?1, ?2, ?3) ON CONFLICT DO NOTHING",
             (id.get(), kind, value),
         )?;

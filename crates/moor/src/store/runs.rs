@@ -114,7 +114,7 @@ impl Store {
             pid,
         } = r;
         let now = self.now();
-        let mut conn = self.writer()?;
+        let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         if load_box(&tx, box_id)?.is_none() {
             return Err(StoreError::NotFound(box_id));
@@ -149,7 +149,7 @@ impl Store {
     /// A run that already finished is left untouched and emits nothing.
     pub(crate) fn finish_run(&self, id: RunId, out: RunOutcome) -> Result<(), StoreError> {
         let now = self.now();
-        let mut conn = self.writer()?;
+        let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let box_id: Option<i64> = tx
             .query_row("SELECT box FROM runs WHERE id = ?", [id.get()], |r| {
@@ -193,7 +193,7 @@ impl Store {
     /// Writes no run row and leaves the box's intent untouched.
     pub(crate) fn refused_run(&self, box_id: BoxId) -> Result<(), StoreError> {
         let now = self.now();
-        let mut conn = self.writer()?;
+        let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let ran = Event::Ran {
             run: None,
@@ -245,7 +245,7 @@ impl Store {
 
     /// Records `pid` as the process of run `id` and of its Box's running intent.
     pub(crate) fn set_run_pid(&self, id: RunId, pid: u32) -> Result<(), StoreError> {
-        let mut conn = self.writer()?;
+        let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         tx.execute(
             "UPDATE runs SET pid = ? WHERE id = ?",

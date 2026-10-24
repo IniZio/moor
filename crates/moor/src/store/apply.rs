@@ -47,7 +47,7 @@ impl Store {
     /// Apply a decision atomically: rows and events together, or neither.
     pub(crate) fn apply(&self, d: Decision) -> Result<Applied, StoreError> {
         let now = self.now();
-        let mut conn = self.writer()?;
+        let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let applied = apply_in(&tx, now, d)?;
         tx.commit()?;
@@ -65,7 +65,7 @@ impl Store {
         decide: impl FnOnce(Vec<BoxRow>) -> Option<Decision>,
     ) -> Result<Option<Applied>, StoreError> {
         let now = self.now();
-        let mut conn = self.writer()?;
+        let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let Some(d) = decide(live_holders_in(&tx, provider)?) else {
             return Ok(None);

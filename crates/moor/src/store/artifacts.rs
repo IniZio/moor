@@ -124,7 +124,7 @@ impl Store {
             )));
         }
         let now = self.now();
-        let mut conn = self.writer()?;
+        let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let latest: Option<(i64, String)> = tx
             .query_row(

@@ -1,7 +1,7 @@
 //! `SQLite` store (WAL): one writer connection behind a mutex, fresh read-only connections for reads.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use moor_core::domain::box_state::BoxLifecycle;
@@ -118,9 +118,6 @@ pub(crate) enum StoreError {
     /// An open box already works on this branch.
     #[error("branch `{0}` belongs to another open box")]
     BranchTaken(String),
-    /// The writer mutex was poisoned.
-    #[error("store writer poisoned")]
-    Poisoned,
     /// A user secret did not seal or open.
     #[error(transparent)]
     Vault(#[from] crate::vault::VaultError),
@@ -282,9 +279,10 @@ impl Store {
         Ok(conn)
     }
 
-    /// Lock the writer connection.
-    pub(super) fn writer(&self) -> Result<MutexGuard<'_, Connection>, StoreError> {
-        self.writer.lock().map_err(|_| StoreError::Poisoned)
+    /// Lock the writer connection. A thread that panicked while holding it left at worst an
+    /// open transaction, which rusqlite rolled back during unwind, so the connection is sound.
+    pub(super) fn writer(&self) -> MutexGuard<'_, Connection> {
+        self.writer.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Current time from the clock seam.

@@ -81,7 +81,7 @@ impl Store {
         owner: &str,
     ) -> Result<bool, StoreError> {
         let now = self.now();
-        let mut writer = self.writer()?;
+        let mut writer = self.writer();
         let tx = writer.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let state: Option<String> = tx
             .query_row(

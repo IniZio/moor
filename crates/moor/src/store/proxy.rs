@@ -101,7 +101,7 @@ impl Store {
         lease: Duration,
     ) -> Result<Reserve, StoreError> {
         let now = self.now();
-        let mut conn = self.writer()?;
+        let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         if load_box(&tx, box_id)?.is_none() {
             return Err(StoreError::NotFound(box_id));
@@ -175,7 +175,7 @@ impl Store {
     /// box port, so the next reservation restarts it on the same port.
     pub(crate) fn expire_proxy(&self, box_id: BoxId) -> Result<bool, StoreError> {
         let now = self.now();
-        let conn = self.writer()?;
+        let conn = self.writer();
         let changed = conn.execute(
             "UPDATE proxy SET ready = 0, pid = NULL, handle = NULL, \
              lease_owner = NULL, lease_heartbeat = NULL, boot_id = NULL, updated_at = ? WHERE box = ?",
@@ -187,7 +187,7 @@ impl Store {
 
     /// Delete the proxy row of `box_id`; returns whether a row was deleted.
     pub(crate) fn remove_proxy(&self, box_id: BoxId) -> Result<bool, StoreError> {
-        let mut conn = self.writer()?;
+        let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let changed = tx.execute("DELETE FROM proxy WHERE box = ?", [box_id.get()])?;
         park::clear(&tx, box_id)?;

@@ -159,7 +159,7 @@ impl Store {
         want: TunnelWant,
     ) -> Result<u64, StoreError> {
         let key = want_key(box_id);
-        let mut conn = self.writer()?;
+        let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let prev = match get(&tx, &key)? {
             Some(raw) => {
@@ -194,14 +194,14 @@ impl Store {
 
     /// Records the supervisor's answer to a tunnel request of `box_id`.
     pub(crate) fn ack_tunnel(&self, box_id: BoxId, ack: &TunnelAck) -> Result<(), StoreError> {
-        let conn = self.writer()?;
+        let conn = self.writer();
         put(&conn, &ack_key(box_id), &ack.encode())
     }
 
     /// Records that a tunnel is about to be opened into the Box of `box_id`; it stays set until the
     /// proxy row is removed.
     pub(crate) fn note_tunnel_opened(&self, box_id: BoxId) -> Result<(), StoreError> {
-        let conn = self.writer()?;
+        let conn = self.writer();
         put(&conn, &opened_key(box_id), "1")
     }
 

@@ -149,7 +149,7 @@ impl Store {
         }
         let state = SessionState::initial(&SessionInput::Open)?.step(&SessionInput::Started)?;
         let now = self.now();
-        let mut conn = self.writer()?;
+        let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         if let Some(p) = parent {
             check_parent(&tx, p)?;
@@ -201,7 +201,7 @@ impl Store {
         agent: Option<&str>,
         agent_session_id: Option<&str>,
     ) -> Result<HostRow, StoreError> {
-        let mut conn = self.writer()?;
+        let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         load_live(&tx, id)?;
         tx.execute(
@@ -222,7 +222,7 @@ impl Store {
     /// [`StoreError::Illegal`] when its state cannot end, or [`StoreError`] when the database fails.
     pub(crate) fn end_host_session(&self, id: i64) -> Result<HostRow, StoreError> {
         let now = self.now().as_millis();
-        let mut conn = self.writer()?;
+        let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let mut row = load_live(&tx, id)?;
         row.state = row.state.step(&SessionInput::End)?;

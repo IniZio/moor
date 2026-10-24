@@ -67,7 +67,7 @@ impl Store {
         parent: Option<i64>,
     ) -> Result<BoxSession, StoreError> {
         let now = self.now();
-        let mut conn = self.writer()?;
+        let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let exists = tx
             .query_row("SELECT 1 FROM boxes WHERE id = ?1", [id.get()], |_| Ok(()))
@@ -126,7 +126,7 @@ impl Store {
     /// # Errors
     /// Returns [`StoreError::Illegal`] when the Session is not Starting, or [`StoreError`] when the database fails.
     pub(crate) fn start_session(&self, session: i64) -> Result<(), StoreError> {
-        let mut conn = self.writer()?;
+        let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let state: String = tx.query_row(
             "SELECT state FROM sessions WHERE id = ?1",
@@ -159,7 +159,7 @@ impl Store {
         exit: Option<i32>,
     ) -> Result<bool, StoreError> {
         let now = self.now();
-        let mut conn = self.writer()?;
+        let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let exists = tx
             .query_row("SELECT 1 FROM boxes WHERE id = ?1", [id.get()], |_| Ok(()))

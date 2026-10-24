@@ -79,7 +79,6 @@ fn ended_session_is_refused() {
     let session = store.open_host_session("/w", None, None).unwrap();
     store
         .writer()
-        .unwrap()
         .execute(
             "UPDATE sessions SET state = 'ended', ended_at = 1 WHERE id = ?",
             [session],

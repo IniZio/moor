@@ -165,7 +165,7 @@ impl Store {
         key: &str,
     ) -> Result<LeaseId, StoreError> {
         let now = self.now().as_millis();
-        let conn = self.writer()?;
+        let conn = self.writer();
         conn.execute(
             "INSERT OR IGNORE INTO box_lease (box, kind, key, state, created_at, updated_at) \
              VALUES (?, ?, ?, 'planned', ?, ?)",
@@ -201,7 +201,7 @@ impl Store {
 
     /// Delete the row; call only after release is verified. Returns whether a row was deleted.
     pub(crate) fn drop_lease(&self, id: LeaseId) -> Result<bool, StoreError> {
-        let conn = self.writer()?;
+        let conn = self.writer();
         let changed = conn.execute("DELETE FROM box_lease WHERE id = ?", [id.0])?;
         drop(conn);
         Ok(changed > 0)
@@ -238,7 +238,7 @@ impl Store {
         let mut all: Vec<&dyn rusqlite::ToSql> = args.to_vec();
         all.push(&now);
         all.push(&id.0);
-        let conn = self.writer()?;
+        let conn = self.writer();
         let changed = conn.execute(
             &format!("UPDATE box_lease SET {set}, updated_at = ? WHERE id = ?"),
             all.as_slice(),

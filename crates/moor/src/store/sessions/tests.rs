@@ -15,7 +15,6 @@ use moor_core::seam::clock::Clock;
 fn set_current(store: &crate::store::Store, id: BoxId, state: &str) {
     store
         .writer()
-        .unwrap()
         .execute(
             "UPDATE sessions SET state = ? WHERE box = ? AND ordinal = (SELECT MAX(ordinal) FROM sessions WHERE box = ?)",
             (state, id.get(), id.get()),
@@ -54,7 +53,7 @@ fn open_session_is_allowed_when_the_box_has_no_session() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = new_box(&store, "acme/1");
-    let conn = store.writer().unwrap();
+    let conn = store.writer();
     conn.execute("UPDATE events SET session = NULL WHERE box = ?", [id.get()])
         .unwrap();
     conn.execute("DELETE FROM sessions WHERE box = ?", [id.get()])
@@ -117,7 +116,6 @@ fn open_session_on_unknown_box_errors() {
 fn session_states(store: &crate::store::Store, id: BoxId) -> Vec<String> {
     store
         .writer()
-        .unwrap()
         .prepare("SELECT state FROM sessions WHERE box = ? ORDER BY ordinal")
         .unwrap()
         .query_map([id.get()], |r| r.get(0))
@@ -129,7 +127,6 @@ fn session_states(store: &crate::store::Store, id: BoxId) -> Vec<String> {
 fn add_working_session(store: &crate::store::Store, id: BoxId) {
     store
         .writer()
-        .unwrap()
         .execute(
             "INSERT INTO sessions (box, ordinal, state, started_at) VALUES (?, 2, 'working', 0)",
             [id.get()],
@@ -202,7 +199,6 @@ fn ready_box(store: &crate::store::Store) -> BoxId {
 fn ended_events(store: &crate::store::Store, id: BoxId) -> Vec<String> {
     store
         .writer()
-        .unwrap()
         .prepare("SELECT payload FROM events WHERE box = ? AND kind = 'session_ended'")
         .unwrap()
         .query_map([id.get()], |r| r.get(0))
@@ -220,7 +216,7 @@ fn end_current_session_ends_session_launch_and_records_event() {
     clock.sleep(std::time::Duration::from_secs(5));
     assert!(store.end_current_session(id, "exited", Some(3)).unwrap());
     assert_eq!(session_states(&store, id), ["ended"]);
-    let conn = store.writer().unwrap();
+    let conn = store.writer();
     let (ended_at, exit): (Option<i64>, Option<i32>) = conn
         .query_row(
             "SELECT ended_at, exit FROM launches WHERE id = ?",
@@ -299,7 +295,7 @@ fn ready_box_without_a_session_row_reads_starting() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = ready_box(&store);
-    let conn = store.writer().unwrap();
+    let conn = store.writer();
     conn.execute("UPDATE events SET session = NULL WHERE box = ?", [id.get()])
         .unwrap();
     conn.execute("DELETE FROM sessions WHERE box = ?", [id.get()])

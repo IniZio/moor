@@ -71,7 +71,7 @@ impl Store {
         pane: Option<&str>,
     ) -> Result<i64, StoreError> {
         let now = self.now();
-        let mut conn = self.writer()?;
+        let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         if load_box(&tx, box_id)?.is_none() {
             return Err(StoreError::NotFound(box_id));
@@ -112,7 +112,7 @@ impl Store {
         transcript_digest: Option<&str>,
     ) -> Result<(), StoreError> {
         let now = self.now();
-        let conn = self.writer()?;
+        let conn = self.writer();
         conn.execute(
             "UPDATE launches SET ended_at = ?, exit = ?, transcript_digest = COALESCE(?, transcript_digest) \
              WHERE id = ? AND ended_at IS NULL",
@@ -124,7 +124,7 @@ impl Store {
 
     /// Keep the agent session id registered for resume against session `id`.
     pub(crate) fn set_registered_session(&self, id: i64, agent: &str) -> Result<(), StoreError> {
-        let conn = self.writer()?;
+        let conn = self.writer();
         conn.execute(
             "UPDATE launches SET registered_agent_session = ? WHERE id = ?",
             params![agent, id],
@@ -135,7 +135,7 @@ impl Store {
 
     /// Keep the digest of the transcript saved for a session that is still live.
     pub(crate) fn set_transcript_digest(&self, id: i64, digest: &str) -> Result<(), StoreError> {
-        let conn = self.writer()?;
+        let conn = self.writer();
         conn.execute(
             "UPDATE launches SET transcript_digest = ? WHERE id = ? AND ended_at IS NULL",
             params![digest, id],
@@ -150,7 +150,7 @@ impl Store {
     pub(crate) fn put_hook(&self, box_id: BoxId, record: &HookRecord) -> Result<(), StoreError> {
         let now = self.now();
         let json = serde_json::to_string(&record_json(record))?;
-        let conn = self.writer()?;
+        let conn = self.writer();
         conn.execute(
             "INSERT INTO hook_cache (session, record, at) \
              VALUES ((SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1), ?2, ?3) \
@@ -166,7 +166,7 @@ impl Store {
     /// Mark the cached hook report of `box_id` written at `at` as reported by a `needs_input`
     /// event; a newer report left in its place stays unmarked.
     pub(crate) fn mark_hook_reported(&self, box_id: BoxId, at: Ts) -> Result<(), StoreError> {
-        let conn = self.writer()?;
+        let conn = self.writer();
         conn.execute(
             "UPDATE hook_cache SET record = json_set(record, '$.reported', json('true')) \
              WHERE session = (SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1) \
