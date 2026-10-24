@@ -168,6 +168,13 @@ impl FakeEgress {
         }
     }
 
+    /// [`Self::occupy`] on every IPv4 address, as a process that listens on a wildcard.
+    pub fn occupy_wildcard(&self) {
+        if let Ok(mut slot) = self.open.lock() {
+            *slot = TcpListener::bind(("0.0.0.0", self.port)).ok();
+        }
+    }
+
     /// Closes the port, as a tinyproxy that died leaves it.
     pub fn close(&self) {
         if let Ok(mut slot) = self.open.lock() {

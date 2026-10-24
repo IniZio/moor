@@ -1,5 +1,6 @@
-//! Prelude lines that keep tinyproxy running on the Box loopback as the Box's egress proxy. It
-//! sends each credential host to the Proxy tunnel and dials every other host direct.
+//! Prelude lines that keep tinyproxy running in the Box as the Box's egress proxy. It sends each
+//! credential host to the Proxy tunnel and dials every other host direct. It answers only the Box
+//! loopback and the private ranges Docker hands to its bridges.
 
 use std::fmt::Write as _;
 
@@ -49,8 +50,19 @@ const LOCK_WAIT: u32 = 300;
 /// with its soft descriptor limit raised to the hard one.
 const MAX_CLIENTS: u32 = 1024;
 
-/// The tinyproxy config without its `PidFile` line: listen on loopback `listen`, and send each of
-/// `hosts` to the Proxy tunnel on loopback `upstream`.
+/// Source ranges tinyproxy answers besides loopback: where Docker allocates bridges. The default
+/// bridge is `172.17.0.0/16` and Compose networks follow it up to `172.31.0.0/16`. Docker's last
+/// default pool, `192.168.0.0/20`, is left out: a Box's own network is often inside it, and every
+/// host on that network would reach the proxy.
+pub(super) const DOCKER_SOURCES: [&str; 1] = ["172.16.0.0/12"];
+
+/// The tinyproxy config without its `PidFile` line: listen on port `listen` and answer only
+/// loopback and [`DOCKER_SOURCES`], and send each of `hosts` to the Proxy tunnel on loopback
+/// `upstream`.
+///
+/// tinyproxy binds one `Listen` address. A bridge gateway such as `172.17.0.1` exists only after
+/// Docker runs, which can be after this config is written, so tinyproxy listens on every IPv4
+/// address and refuses any source outside the `Allow` lines.
 ///
 /// A quoted host matches only itself; a host that starts with `.` matches its subdomains.
 pub(super) fn config(listen: u16, upstream: u16, hosts: &[String]) -> String {
@@ -58,8 +70,11 @@ pub(super) fn config(listen: u16, upstream: u16, hosts: &[String]) -> String {
     hosts.sort_unstable();
     hosts.dedup();
     let mut out = format!(
-        "Port {listen}\nListen 127.0.0.1\nDisableViaHeader Yes\nLogLevel Critical\nMaxClients {MAX_CLIENTS}\n"
+        "Port {listen}\nListen 0.0.0.0\nDisableViaHeader Yes\nLogLevel Critical\nMaxClients {MAX_CLIENTS}\nAllow 127.0.0.1\n"
     );
+    for source in DOCKER_SOURCES {
+        let _ = writeln!(out, "Allow {source}");
+    }
     for host in hosts {
         let _ = writeln!(out, "upstream http 127.0.0.1:{upstream} \"{host}\"");
     }
@@ -86,7 +101,9 @@ pub(super) fn lines(listen: u16, upstream: u16, hosts: &[String]) -> Vec<String>
         let _ = write!(out, " -u {v}");
         out
     });
-    let up = format!("grep -q ' 0100007F:{listen:04X} 00000000:0000 0A' /proc/net/tcp 2>/dev/null");
+    let up = format!(
+        "grep -Eq ' (0100007F|00000000):{listen:04X} 00000000:0000 0A' /proc/net/tcp 2>/dev/null"
+    );
     let install = format!(
         "command -v tinyproxy >/dev/null 2>&1 || {{ command -v apt-get >/dev/null 2>&1 || {}; if [ \"$(id -u)\" = 0 ]; then moor_su=; else moor_su=\"sudo -n\"; fi; moor_apt=\"$moor_su env{unset} DEBIAN_FRONTEND=noninteractive apt-get -q -y -o DPkg::Lock::Timeout=300\"; {{ $moor_apt install tinyproxy-bin || {{ $moor_apt update && $moor_apt install tinyproxy-bin; }}; }} >\"{INSTALL_LOG}\" 2>&1 || {}; }}",
         stop("tinyproxy is not installed and the Box has no apt-get; moor installs it only with apt"),
