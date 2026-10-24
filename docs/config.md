@@ -77,7 +77,9 @@ rule adds to that default.
 | `requires_repo` | boolean | If true, moor drops the rule for a Box with no repo. |
 
 A rule whose `allow` is `*` adds its credential to every request to its
-hosts. A rule with `METHODS /path` entries adds it only when an entry matches,
+hosts, whatever the method. That includes PUT and DELETE, so for a private npm
+registry it covers `npm publish` and unpublish too. A rule with no `allow`
+behaves like `*`. A rule with `METHODS /path` entries adds it only when an entry matches,
 and never when an upstream could read the path differently than moor does.
 Such a path has an encoded `/` or `.` (`%2f`, `%2e`), a `;`, a `\`, a `%` that
 is left after one decoding, or a control character. A Box's Proxy forwards that
