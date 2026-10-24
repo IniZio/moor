@@ -19,6 +19,8 @@ pub mod response;
 pub mod seam;
 pub mod secret;
 pub mod shape;
+#[cfg(test)]
+mod testgit;
 pub mod user;
 pub mod view;
 

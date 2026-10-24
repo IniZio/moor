@@ -59,8 +59,8 @@ impl CloneStep {
 /// empty directory, so a workdir with no `.git` is cloned into a temp dir under `.moor/` whose
 /// `.git` then moves into the workdir; the rename stays on one filesystem. When another run's
 /// `.git` appeared first, `mv` moves this clone's into it instead, so that nested copy is removed
-/// and the script stops at the clone step. `.moor/` and `.crabbox/` are excluded so moor's and
-/// crabbox's files never show as changes.
+/// and the script stops at the clone step. `.moor/`, `.crabbox/` and the cache seal marker are
+/// excluded so moor's and crabbox's files never show as changes.
 #[must_use]
 pub fn clone_script(c: &Checkout<'_>) -> String {
     let (url, base, branch) = (quote(c.url), quote(c.base), quote(c.branch));
@@ -97,7 +97,7 @@ if [ "$(git symbolic-ref -q --short HEAD 2>/dev/null)" != {branch} ]; then
     git checkout -q --no-track -b {branch} "$from" -- || exit {checkout}
   fi
 fi
-for p in .moor/ .crabbox/; do
+for p in .moor/ .crabbox/ /.crabbox-sealed; do
   grep -qxF -- "$p" .git/info/exclude 2>/dev/null || printf '%s\n' "$p" >> .git/info/exclude
 done
 "#
