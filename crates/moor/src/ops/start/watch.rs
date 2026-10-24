@@ -2,8 +2,10 @@
 
 use std::time::Duration;
 
+use moor_core::activity::{HookKind, HookRead, Probes};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field};
 use moor_core::exec_env::prelude_stop;
+use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::view::{AgentLaunchView, LaunchFailure};
@@ -12,6 +14,7 @@ use moor_core::{BoxId, Warning};
 use super::launch::{record, to_json, TAIL_LINES};
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::activity::session_ref;
 use crate::ops::common::view::rfc3339;
 use crate::store::Store;
 
@@ -74,7 +77,8 @@ fn exited(cx: &Cx, code: i32, tail: &str) -> LaunchFailure {
 ///
 /// A prompt becomes an `agent_prompt_blocked` event and a warning that quotes its line; a
 /// failed read becomes an `agent_prompt_check_failed` event. A pane that is gone ends the
-/// watch quietly. An exit marker returns the live session id, the exit code and the pane tail.
+/// watch quietly, and so does an agent past its first-run screens. An exit marker returns the
+/// live session id, the exit code and the pane tail.
 fn poll(cx: &Cx, store: &Store, id: BoxId) -> Option<(i64, i32, String)> {
     let live = match store.live_session(id) {
         Ok(Some(row)) => row,
@@ -86,6 +90,8 @@ fn poll(cx: &Cx, store: &Store, id: BoxId) -> Option<(i64, i32, String)> {
     };
     let pane = live.pane?;
     let pane_ref = PaneRef::new(pane.clone());
+    let hooks = hook_reader(store, id, &live.session_ref);
+    let mut marked = false;
     let begin = cx.clock().instant();
     loop {
         let event = match cx.surface().pane_obs(&pane_ref, Deadline(PROMPT_READ)) {
@@ -123,11 +129,42 @@ fn poll(cx: &Cx, store: &Store, id: BoxId) -> Option<(i64, i32, String)> {
             }
             return None;
         }
-        if cx.clock().instant().duration_since(begin) + PROMPT_POLL > cx.prompt_window() {
+        let decided = hooks
+            .as_ref()
+            .is_some_and(|s| past_startup(cx, s, &mut marked));
+        if decided || cx.clock().instant().duration_since(begin) + PROMPT_POLL > cx.prompt_window()
+        {
             return None;
         }
         cx.clock().sleep(PROMPT_POLL);
     }
+}
+
+/// The session to read the hook file of, with no pane so a probe leaves the pane alone.
+fn hook_reader(store: &Store, id: BoxId, session: &str) -> Option<SessionRef> {
+    let row = store.box_row(id).ok().flatten()?;
+    session_ref(&row, session.to_owned(), None)
+}
+
+/// Whether the agent is past its first-run screens: its hook file shows a report of its own
+/// after this watch saw the launch's starting marker.
+///
+/// The agent runs no hook while a first-run screen holds its pane, so no first-run prompt can
+/// follow such a report. A report read before the marker may be left from an earlier launch,
+/// so it never counts. `marked` carries whether the marker was seen across reads.
+fn past_startup(cx: &Cx, hooks: &SessionRef, marked: &mut bool) -> bool {
+    let Ok(Probes {
+        hook: HookRead::Fresh(record),
+        ..
+    }) = cx.engine().probe(hooks, Deadline(PROMPT_READ))
+    else {
+        return false;
+    };
+    if record.kind == HookKind::Starting {
+        *marked = true;
+        return false;
+    }
+    *marked
 }
 
 /// Warns that the first-run prompt check could not be recorded.
