@@ -50,8 +50,8 @@ const QUICK_DEADLINE: Duration = Duration::from_secs(60);
 const LOOKUP_DEADLINE: Duration = Duration::from_secs(5);
 /// An external provider's ssh lookup runs through the adapter and was measured at ~6 s.
 const EXTERNAL_LOOKUP_DEADLINE: Duration = Duration::from_secs(20);
-/// Work root moor asks crabbox for; relative, so crabbox joins it to the lease's login home.
-const WORK_ROOT: &str = "moor";
+/// Env key only the external provider reads; other providers keep crabbox's own work root.
+const WORK_ROOT_KEY: &str = "CRABBOX_EXTERNAL_WORK_ROOT";
 /// Provider whose Boxes share one slug and need the Box id and port in env.
 const STATIC_PROVIDER: &str = "ssh";
 /// Port the static provider dials (not configurable yet).
@@ -153,11 +153,9 @@ impl Crabbox {
         self.proc.run(spec).map_err(|e| map_error(op, provider, &e))
     }
 
-    /// Starts a crabbox spec that asks the external provider for [`WORK_ROOT`]. The
-    /// external-only key keeps every other provider on crabbox's own work root.
+    /// Asks for the relative work root `moor`, which crabbox joins to the lease's login home.
     fn spec(deadline: Duration) -> ProcSpec {
-        ProcSpec::new(Tool::Crabbox, Deadline(deadline))
-            .env("CRABBOX_EXTERNAL_WORK_ROOT", WORK_ROOT)
+        ProcSpec::new(Tool::Crabbox, Deadline(deadline)).env(WORK_ROOT_KEY, "moor")
     }
 }
 

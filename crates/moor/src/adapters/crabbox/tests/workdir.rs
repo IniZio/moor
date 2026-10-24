@@ -123,10 +123,7 @@ fn every_crabbox_call_asks_for_the_relative_work_root() {
     }
     for call in p.calls().iter().filter(|c| c.tool == Tool::Crabbox) {
         let root = ("CRABBOX_EXTERNAL_WORK_ROOT".to_owned(), "moor".to_owned());
-        assert!(call.env.contains(&root), "{call:?}");
-        assert!(
-            call.env.iter().all(|(k, _)| k != "CRABBOX_WORK_ROOT"),
-            "top-level work root leaks to non-external providers: {call:?}"
-        );
+        let leaked = call.env.iter().any(|(k, _)| k == "CRABBOX_WORK_ROOT");
+        assert!(call.env.contains(&root) && !leaked, "{call:?}");
     }
 }
