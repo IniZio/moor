@@ -20,7 +20,7 @@ pub(super) const REQUIRED: Version = Version {
     major: 0,
     minor: 79,
     patch: 1,
-    moor: Some(1),
+    moor: Some(6),
 };
 
 impl Version {

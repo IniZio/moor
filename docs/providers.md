@@ -5,7 +5,7 @@ keys are in the [configuration reference](config.md).
 
 ## Use a `-moor` build of crabbox
 
-moor needs crabbox 0.79.1-moor.1 or a newer `-moor` build of
+moor needs crabbox 0.79.1-moor.6 or a newer `-moor` build of
 [IniZio/crabbox](https://github.com/IniZio/crabbox). It refuses an older
 build and any upstream crabbox release, because only the `-moor` builds have
 the flags that moor uses.
@@ -33,9 +33,15 @@ comes out as `/dev/null`, another device, `none` or empty. With `accept-new`, mo
 them when `ssh -G` fails. The command then fails
 with an error that says so; moor never falls back to an unchecked connection.
 A command's environment travels on ssh's stdin, never in its arguments.
+moor puts Box work in the login user's home. It runs every crabbox call
+with `CRABBOX_WORK_ROOT=moor`, which overrides any `external.workRoot` in
+your crabbox config, and crabbox resolves it against the home of the user
+the lease logs in as: `/root/moor` for a root login, `/home/crabbox/moor`
+for a `crabbox` one. You do not need to set `external.workRoot` for any
+provider.
 A Box's working directory is the one crabbox reports when it leases the Box,
 or `<workroot>/<lease id>/<slug>`; when crabbox reports neither, the start
-fails.
+fails. moor refuses a relative work root in that report.
 
 When a release fails, the directory stays and `moor close` names it. To
 release the Box by hand, run `crabbox stop --provider PROVIDER --id SLUG

@@ -19,6 +19,13 @@ pub(super) fn warm_up(
 ) -> Result<Acquired, DriverError> {
     let out = cb.call(Op::Acquire, Some(provider), spec)?;
     let warm = parse::parse_warmup(&out.stdout).ok_or_else(|| unreadable("acquire"))?;
+    if let Some(root) = warm.workroot.as_deref().filter(|r| !r.starts_with('/')) {
+        return Err(DriverError::Failed {
+            summary: format!(
+                "crabbox reported the relative work root {root:?}; it must resolve it against the login home"
+            ),
+        });
+    }
     let derived = warm.workroot.as_deref().map(|root| {
         format!(
             "{}/{}/{}",
