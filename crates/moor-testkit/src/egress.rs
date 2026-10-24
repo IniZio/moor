@@ -37,19 +37,20 @@ done
 echo start >>"$HOME/fake-starts"
 "#;
 
-/// Stands in for `sudo` and `apt-get` so a Box script that a test runs on this host never runs
+/// Stands in for `sudo`, `apt-get` and `docker` so a Box script that a test runs on this host never runs
 /// the host's own: each names itself on stderr and fails with exit 97.
 pub const HOST_GUARD: &str = "#!/bin/sh\n\
     echo \"a test ran $(basename \"$0\") $*; the host's own is never run\" >&2\n\
     exit 97\n";
 
-/// Writes [`HOST_GUARD`] as `sudo` and `apt-get` into `bin`.
+/// Writes [`HOST_GUARD`] as `sudo`, `apt-get` and `docker` into `bin`.
 ///
 /// A test that runs a Box script with the host's `PATH` after its own `bin` calls this, so the
-/// script never reaches the host's tools. A fake the test already wrote under either name is kept.
+/// script never reaches the host's tools. A fake the test already wrote under one of the names is
+/// kept.
 pub fn write_host_guards(bin: &Path) -> io::Result<()> {
     std::fs::create_dir_all(bin)?;
-    for name in ["sudo", "apt-get"] {
+    for name in ["sudo", "apt-get", "docker"] {
         let path = bin.join(name);
         if !path.exists() {
             write_executable(&path, HOST_GUARD)?;
@@ -226,6 +227,19 @@ mod tests {
         let other = Socket::new(Domain::IPV4, Type::STREAM, None)?;
         other.bind(&SocketAddr::from((Ipv4Addr::LOCALHOST, port)).into())?;
         Ok(other)
+    }
+
+    #[test]
+    fn the_host_guards_stand_in_for_sudo_apt_get_and_docker() {
+        let dir = tempfile::tempdir().unwrap();
+        super::write_host_guards(dir.path()).unwrap();
+        for name in ["sudo", "apt-get", "docker"] {
+            let out = std::process::Command::new(dir.path().join(name))
+                .arg("info")
+                .output()
+                .unwrap();
+            assert_eq!(out.status.code(), Some(97), "{name}");
+        }
     }
 
     #[test]

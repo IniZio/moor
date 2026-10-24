@@ -119,20 +119,29 @@ external:
 moor sends the volumes on `crabbox warmup` only, as a JSON array in
 `CRABBOX_CACHE_VOLUMES`. Each entry has a `group` (16 hex characters, one per
 scope), a `name`, a `key` (`<group>-<name>`), the Box `paths` (`~/` is the
-login user's home), and a `sizeGB` hint (0 means the adapter's default). The
+login user's home), a `sizeGB` hint (0 means the adapter's default), and
+`"sealed": true` when the volume has a seal. A sealed volume's group is the
+scope's 16 hex characters followed by `x`, so it has a store of its own. The
 adapter keeps one store per group, with each name a subdirectory, and decides
 where the store lives, how big it may grow and when old copies go. moor never
 asks a provider to require a volume: every failure starts the Box cold.
 
 At close, after teardown and before release, moor runs each volume's seal in
-the Box. The adapter keeps a Box's copy on release, after a clean shutdown;
-a Box that is killed, or only paused, keeps nothing.
+the Box, and after a seal succeeds it writes `.crabbox-sealed` into each of that
+volume's paths. The adapter deletes that file from every path of a sealed volume
+when it restores the group, and on release keeps a sealed group only when every
+path of each of its sealed volumes holds the file again. The adapter keeps a
+Box's copy on release, after a clean shutdown; a Box that is killed, or only
+paused, keeps nothing.
 
-A provider without the feature starts every Box cold, and each start warns
-`cache_unavailable`. `drivers.<provider>.cache_volumes: false` turns the
+A provider without the feature starts every Box cold. A start warns
+`cache_unavailable` when the repo or the operator declared volumes of their
+own; presets alone start cold without a warning. `drivers.<provider>.cache_volumes: false` turns the
 volumes off for one provider without the warning. Docker's data root is
-`~/docker` on every external-provider Box, so the `docker` preset keeps image
-layers.
+`~/docker` on every external-provider Box, and Docker 29 keeps images in
+containerd's store at `/var/lib/containerd`, so the `docker` preset keeps both.
+An adapter must mount the cache before `containerd.service` and `docker.service`
+start.
 
 agent37 leaves `cacheVolumes` off for now, so its Boxes start cold.
 

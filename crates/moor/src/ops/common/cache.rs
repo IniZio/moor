@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use moor_core::cache::{seal_failed, CachePlan};
+use moor_core::cache::{seal_failed, CachePlan, Origin};
 use moor_core::config::{BoxSettings, DriverConfig};
 use moor_core::seam::driver::{BoxStep, DriverCaps, ExecOutcome, StepDone};
 use moor_core::seam::proc::Deadline;
@@ -22,7 +22,7 @@ const SEAL_DEADLINE: Duration = Duration::from_mins(5);
 enum Cold {
     /// The operator turned them off for the provider, or the Box has no user.
     Off,
-    /// The provider keeps none; this many volumes were declared.
+    /// The provider keeps none; a repo or the operator declared this many volumes.
     Unsupported(usize),
     /// The declarations clash, or the salt could not be read.
     Refused(String),
@@ -54,7 +54,15 @@ fn plan(
         return Ok(CachePlan::none());
     }
     if !caps.cache_volumes {
-        return Err(Cold::Unsupported(declared.len()));
+        let own = declared
+            .iter()
+            .filter(|d| d.origin != Origin::Preset)
+            .count();
+        return if own == 0 {
+            Ok(CachePlan::none())
+        } else {
+            Err(Cold::Unsupported(own))
+        };
     }
     let salt = store.cache_salt().map_err(|e| refused(&e))?;
     CachePlan::build(user, repo, &cfg.cache, &salt).map_err(|e| refused(&e))
@@ -90,8 +98,9 @@ pub(crate) fn for_start(
     CachePlan::none()
 }
 
-/// Runs the seal script of `row`'s plan in the Box, after teardown and before release. A seal
-/// that fails empties its volume in the Box; this only warns and never fails the close.
+/// Runs the seal script of `row`'s plan in the Box, after teardown and before release. A volume
+/// whose seal fails gets no marker, so the provider does not keep it; this only warns and never
+/// fails the close.
 pub(crate) fn seal(
     cx: &Cx,
     store: &Store,
@@ -123,12 +132,13 @@ pub(crate) fn seal(
                 return;
             }
             format!(
-                "the seal of cache volume {} failed, so the volume was emptied",
+                "the seal of cache volume {} failed, so it is not kept; moor emptied it in the \
+                 Box, but partial contents may remain if that failed too",
                 failed.join(", ")
             )
         }
-        Some(Err(e)) => format!("the cache seal did not run: {e}"),
-        _ => "the cache seal did not finish".to_owned(),
+        Some(Err(e)) => format!("the cache seal did not run, so no sealed volume is kept: {e}"),
+        _ => "the cache seal did not finish, so no sealed volume is kept".to_owned(),
     };
     cx.warn(Warning {
         code: "cache_seal_failed".to_owned(),

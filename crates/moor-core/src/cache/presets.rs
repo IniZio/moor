@@ -4,8 +4,12 @@ use super::{CacheName, CachePath, Volume};
 use crate::exec_env::tool_caches;
 
 /// Clears containers, volumes and networks so only images and build cache are kept; without
-/// Docker there is nothing to seal.
-const DOCKER_SEAL: &str = "if command -v docker >/dev/null 2>&1; then docker ps -aq | xargs -r docker rm -f && docker volume prune -af && docker network prune -f; fi";
+/// Docker there is nothing to seal. The login user may lack the socket, so `sudo -n` is tried
+/// next; a Docker neither can reach fails the seal.
+const DOCKER_SEAL: &str = "command -v docker >/dev/null 2>&1 || exit 0; \
+    if docker info >/dev/null 2>&1; then d=docker; \
+    elif sudo -n docker info >/dev/null 2>&1; then d='sudo -n docker'; else exit 1; fi; \
+    $d ps -aq | xargs -r $d rm -f && $d volume prune -af && $d network prune -f";
 
 /// Presets whose paths are the tools' own defaults, in `~/` form.
 const FIXED: [(&str, &[&str]); 8] = [

@@ -166,7 +166,8 @@ private copy of the newest kept copy when it starts. When the Box closes, its
 copy becomes the newest. Two Boxes never write the same copy, and the newest
 close wins. The provider decides where the copies live and how big they grow;
 see [Cache volumes](providers.md#cache-volumes). A provider without them starts
-every Box cold.
+every Box cold. It warns `cache_unavailable` only when the repo or the operator
+declared volumes of their own; presets alone start cold without a warning.
 
 ```yaml
 cache:
@@ -183,7 +184,7 @@ cache:
 | --- | --- | --- | --- |
 | `cache.presets` | `true`, `false`, or a list of preset names | `true` | Which presets this repo keeps. A list names the presets to drop. |
 | `cache.volumes[].name` | string | required | The volume's name, unique in the Box. |
-| `cache.volumes[].path` | path | required | The directory kept: `~/<dir>` (the Box user's home), `/opt/<dir>`, or `/var/cache/<dir>`. Letters, digits, `/` and `._-+@` only. |
+| `cache.volumes[].path` | path | required | The directory kept: `~/<dir>` (the Box user's home), `/opt/<dir>`, `/var/cache/<dir>`, or exactly `/var/lib/containerd` or `/var/lib/containers` (nothing below them). Letters, digits, `/` and `._-+@` only. |
 | `cache.volumes[].size_gb` | integer, at least 1 | none | A size hint. The provider caps it. |
 | `cache.volumes[].seal` | list of shell commands | empty | Commands that run in the Box when it closes, after `teardown`, before the provider keeps the volume. |
 
@@ -204,7 +205,7 @@ caches moor points at `~/.cache` in every command.
 | `yarn` | `~/.cache/yarn` | moor sets `YARN_CACHE_FOLDER` and `YARN_GLOBAL_FOLDER` below it; [Yarn `enableGlobalCache`](https://yarnpkg.com/configuration/yarnrc#enableGlobalCache) |
 | `pnpm` | `~/.local/share/pnpm/store` | [pnpm `storeDir`](https://pnpm.io/settings/store#storedir) |
 | `bun` | `~/.bun/install/cache` | [Bun global cache](https://bun.sh/docs/install/cache) |
-| `docker` | `~/docker` | Docker's data root on every external-provider Box ([`data-root`](https://docs.docker.com/engine/daemon/)); sealed, see below |
+| `docker` | `~/docker`, `/var/lib/containerd` | Docker's data root on every external-provider Box ([`data-root`](https://docs.docker.com/engine/daemon/)) and the containerd image store that Docker 29 uses by default ([containerd image store](https://docs.docker.com/engine/storage/containerd/)); sealed, see below |
 | `podman` | `~/.local/share/containers` | [rootless `graphroot`](https://github.com/containers/storage/blob/main/docs/containers-storage.conf.5.md) |
 | `gradle` | `~/.gradle/caches`, `~/.gradle/wrapper` | [Gradle user home](https://docs.gradle.org/current/userguide/directory_layout.html) |
 | `dart` | `~/.pub-cache` | [`PUB_CACHE`](https://dart.dev/tools/pub/environment-variables) |
@@ -212,8 +213,18 @@ caches moor points at `~/.cache` in every command.
 | `go` | `~/go/pkg/mod`, `~/.cache/go-build` | [`GOPATH`/`GOMODCACHE` and `GOCACHE`](https://pkg.go.dev/cmd/go) |
 
 The `docker` preset's seal removes every container, volume and network, so only
-images and build cache are kept. A seal that fails empties its volume instead of
-keeping it, and the close goes on with a `cache_seal_failed` warning.
+images and build cache are kept. It runs `docker` directly when the login user
+can reach the Docker socket, else `sudo -n docker`; when neither works, the seal
+fails. Without Docker in the Box there is nothing to seal.
+
+When a volume's seal succeeds, moor writes a `.crabbox-sealed` file into each of
+its paths, through `sudo -n` where the login user cannot. The provider keeps a
+volume that has a seal only when every one of its paths holds that file, and it
+deletes the file when it restores the volume. So a seal that fails, a close that
+never ran the seal, or a Box stopped outside moor leaves the volume unkept. A
+seal that fails also empties its volume in the Box, and the close goes on with a
+`cache_seal_failed` warning. Each volume with a seal is kept in a store of its
+own, so a docker volume that is not kept never holds back the other presets.
 
 #### Who shares a cache
 
@@ -230,9 +241,10 @@ state directory starts every cache cold.
 #### What is never cached
 
 moor refuses a path that is, holds, or sits inside a directory moor writes for
-each Box: `~/.moor-*` (the Proxy CA and moor's own files), `~/moor` (the Box
-workdirs), `~/.ssh`, `~/.gradle/gradle.properties` and
-`~/.gradle/moor-proxy-truststore.p12`. So `~/.gradle` itself is refused; the
+each Box or that holds the Box's own state: `~/.moor-*` (the Proxy CA and
+moor's own files), `~/.moor`, `~/moor` (the Box workdirs), `~/.ssh`,
+`~/.claude` (the agent's state), `~/.config/gh` (the gh login),
+`~/.gradle/gradle.properties` and `~/.gradle/moor-proxy-truststore.p12`. So `~/.gradle` itself is refused; the
 `gradle` preset keeps `~/.gradle/caches` and `~/.gradle/wrapper` beside those
 files. Secrets never reach a cache: moor keeps them in the Proxy, not in the Box.
 

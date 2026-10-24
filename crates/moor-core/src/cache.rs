@@ -301,6 +301,6 @@ impl CachePlan {
     /// A volume whose seal fails is emptied and named on stdout (see [`seal_failed`]).
     #[must_use]
     pub fn seal_script(&self) -> Option<String> {
-        seal::script(&self.0)
+        seal::script(&self.volumes)
     }
 }
