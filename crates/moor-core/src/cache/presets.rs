@@ -11,7 +11,7 @@ const DOCKER_SEAL: &str = "if command -v docker >/dev/null 2>&1; then docker ps 
 const FIXED: [(&str, &[&str]); 8] = [
     ("pnpm", &["~/.local/share/pnpm/store"]),
     ("bun", &["~/.bun/install/cache"]),
-    ("docker", &["~/docker"]),
+    ("docker", &["~/docker", "/var/lib/containerd"]),
     ("podman", &["~/.local/share/containers"]),
     ("gradle", &["~/.gradle/caches", "~/.gradle/wrapper"]),
     ("dart", &["~/.pub-cache"]),

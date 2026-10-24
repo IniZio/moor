@@ -252,7 +252,8 @@ fn group(salt: &CacheSalt, origin: Origin, user: UserId, repo: Option<&ForgeRepo
 /// One volume as the Driver receives it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlannedVolume {
-    /// The scope id; the volumes of one group share one store.
+    /// The scope id, with `x` appended for a volume with a seal so that it is kept alone; the
+    /// volumes of one group share one store.
     pub group: String,
     /// Name, unique in the plan.
     pub name: CacheName,
@@ -297,7 +298,10 @@ impl CachePlan {
         salt: &CacheSalt,
     ) -> Result<Self, CacheError> {
         let planned = layers.declared(repo.is_some())?.into_iter().map(|d| {
-            let group = group(salt, d.origin, user, repo);
+            let mut group = group(salt, d.origin, user, repo);
+            if !d.volume.seal.is_empty() {
+                group.push('x');
+            }
             PlannedVolume {
                 key: format!("{group}-{}", d.volume.name.as_str()),
                 group,

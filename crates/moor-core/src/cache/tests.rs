@@ -49,6 +49,8 @@ fn paths_take_the_home_opt_and_var_cache_roots_only() {
         "/opt/android-sdk",
         "/var/cache/apt/",
         "~/a/b+c@1",
+        "/var/lib/containerd",
+        "/var/lib/containers/",
     ] {
         assert!(CachePath::parse(ok).is_ok(), "{ok} is a legal cache path");
     }
@@ -59,6 +61,10 @@ fn paths_take_the_home_opt_and_var_cache_roots_only() {
         "/opt/",
         "/etc/x",
         "/var/lib/docker",
+        "/var/lib/other",
+        "/var/lib",
+        "/var/lib/containerd/io.containerd.content.v1.content",
+        "/var/lib/containers2",
         "relative/x",
         "~/a//b",
         "~/a/../b",
@@ -78,18 +84,20 @@ fn paths_take_the_home_opt_and_var_cache_roots_only() {
 #[test]
 fn every_owned_path_is_refused_equal_above_and_below() {
     let owned = owned_paths();
-    for want in [
+    let missing: Vec<&str> = [
         "~/.moor-proxy",
         "~/.gradle/gradle.properties",
         "~/.gradle/moor-proxy-truststore.p12",
         "~/moor",
         "~/.ssh",
-    ] {
-        assert!(
-            owned.iter().any(|o| o == want),
-            "{want} is owned: {owned:?}"
-        );
-    }
+        "~/.moor",
+        "~/.claude",
+        "~/.config/gh",
+    ]
+    .into_iter()
+    .filter(|w| !owned.iter().any(|o| o == w))
+    .collect();
+    assert!(missing.is_empty(), "not owned: {missing:?} in {owned:?}");
     for o in &owned {
         let parent = o.rsplit_once('/').unwrap().0;
         for p in [o.clone(), format!("{o}/below")] {
@@ -102,6 +110,7 @@ fn every_owned_path_is_refused_equal_above_and_below() {
             );
         }
     }
+    assert!(refusal("~/.moor/runs").contains("~/.moor"));
     assert!(CachePath::parse("~/.gradle/caches").is_ok());
     assert!(
         CachePath::parse("~/moorish").is_ok(),
@@ -134,7 +143,7 @@ fn presets_expand_to_the_table() {
         ("yarn", vec!["~/.cache/yarn"]),
         ("pnpm", vec!["~/.local/share/pnpm/store"]),
         ("bun", vec!["~/.bun/install/cache"]),
-        ("docker", vec!["~/docker"]),
+        ("docker", vec!["~/docker", "/var/lib/containerd"]),
         ("podman", vec!["~/.local/share/containers"]),
         ("gradle", vec!["~/.gradle/caches", "~/.gradle/wrapper"]),
         ("dart", vec!["~/.pub-cache"]),
@@ -170,6 +179,25 @@ fn only_docker_has_a_seal() {
         .map(|v| v.name.as_str())
         .collect();
     assert_eq!(sealed, ["docker"]);
+}
+
+#[test]
+fn a_sealed_volume_gets_a_group_of_its_own() {
+    let p = plan(&layers("", ""));
+    let group = |name: &str| {
+        let v = p
+            .volumes()
+            .iter()
+            .find(|v| v.name.as_str() == name)
+            .unwrap();
+        assert_eq!(v.key, format!("{}-{name}", v.group));
+        v.group.clone()
+    };
+    let (docker, npm) = (group("docker"), group("npm"));
+    assert_eq!(docker, format!("{npm}x"));
+    for other in ["yarn", "gradle", "rust", "podman"] {
+        assert_eq!(group(other), npm, "{other} shares the repo group");
+    }
 }
 
 #[test]
