@@ -76,6 +76,15 @@ rule adds to that default.
 | `box_env` | map | Environment variables for the Box. Values can use `{repo}`. |
 | `requires_repo` | boolean | If true, moor drops the rule for a Box with no repo. |
 
+A rule whose `allow` is `*` adds its credential to every request to its
+hosts. A rule with `METHODS /path` entries adds it only when an entry matches,
+and never when an upstream could read the path differently than moor does.
+Such a path has an encoded `/` or `.` (`%2f`, `%2e`), a `;`, a `\`, a `%` that
+is left after one decoding, or a control character. A Box's Proxy forwards that
+request without the credential, and a front's Proxy refuses it. `GET /**` is a path
+entry too. npm asks a registry for a scoped package as `/@scope%2fname`, so a
+rule for a private npm registry needs `allow: ["*"]`.
+
 The default rules are `claude` for `api.anthropic.com`, which injects the
 `claude` secret, and `github-api`, `github-git`, and `github-uploads` for
 `api.github.com`, `github.com`, and `uploads.github.com`, which inject the
