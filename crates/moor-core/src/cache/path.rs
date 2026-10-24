@@ -6,11 +6,17 @@ use crate::exec_env::per_box_paths;
 
 /// Roots a cache path may start with: the login home, and two system trees moor never writes.
 const ROOTS: [&str; 3] = ["~/", "/opt/", "/var/cache/"];
-/// The login user's ssh directory; the provider writes the Box's keys there.
-const SSH_DIR: &str = "~/.ssh";
+/// System directories a cache may be as a whole, none below them: the image stores of
+/// containerd and of podman run as root.
+const WHOLE: [&str; 2] = ["/var/lib/containerd", "/var/lib/containers"];
+/// Home directories that hold the Box's own state: the provider's ssh keys, moor's per-Box
+/// files, the agent's state and the gh login.
+const BOX_STATE: [&str; 4] = ["~/.ssh", "~/.moor", "~/.claude", "~/.config/gh"];
 
-/// A directory in the Box: `~/<rel>` (the login home), `/opt/<rel>` or `/var/cache/<rel>`.
-/// Never equal to, above or below a path in [`owned_paths`], nor a `~/.moor-*` directory.
+/// A directory in the Box that a cache may cover.
+///
+/// `~/<rel>` (the login home), `/opt/<rel>`, `/var/cache/<rel>`, or one of `/var/lib/containerd`
+/// and `/var/lib/containers`. Never equal to, above or below a path in [`owned_paths`], nor a `~/.moor-*` directory.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CachePath(String);
 
@@ -25,8 +31,18 @@ impl CachePath {
             path: s.to_owned(),
             why,
         };
+        if let Some(whole) = WHOLE
+            .iter()
+            .find(|w| s.strip_suffix('/').unwrap_or(s) == **w)
+        {
+            return Ok(Self((*whole).to_owned()));
+        }
         let Some((root, rel)) = ROOTS.iter().find_map(|r| Some((*r, s.strip_prefix(r)?))) else {
-            return Err(bad("must start with ~/, /opt/ or /var/cache/".to_owned()));
+            return Err(bad(
+                "must start with ~/, /opt/ or /var/cache/, or be /var/lib/containerd or \
+                 /var/lib/containers"
+                    .to_owned(),
+            ));
         };
         let rel = rel.strip_suffix('/').unwrap_or(rel);
         if rel.is_empty()
@@ -77,14 +93,17 @@ impl CachePath {
     }
 }
 
-/// Paths moor itself writes in every Box, in `~/` form: what each exec rewrites (the Proxy CA
-/// directory, Gradle's `gradle.properties` and trust store), the workdir root and `~/.ssh`.
+/// Paths moor itself writes in every Box, in `~/` form.
+///
+/// What each exec rewrites (the Proxy CA directory, Gradle's `gradle.properties` and trust
+/// store), the workdir root, and the directories that hold the Box's own state.
 #[must_use]
 pub fn owned_paths() -> Vec<String> {
     let per_box = per_box_paths()
         .into_iter()
         .map(|p| p.replacen("$HOME/", "~/", 1));
     per_box
-        .chain([format!("~/{WORK_ROOT}"), SSH_DIR.to_owned()])
+        .chain([format!("~/{WORK_ROOT}")])
+        .chain(BOX_STATE.map(str::to_owned))
         .collect()
 }
