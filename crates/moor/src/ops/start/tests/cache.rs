@@ -254,8 +254,6 @@ fn a_work_tree_the_seal_did_not_keep_warns_why_and_nothing_else() {
         .unwrap();
     assert_eq!(warned.code, "work_tree_not_kept");
     let message = &warned.message;
-    for says in ["2 unpushed commits", "the next Box clones fresh"] {
-        assert!(message.contains(says), "{message}");
-    }
+    assert_eq!(message, "the work tree is not kept: 2 unpushed commits");
     assert!(w.driver.calls().iter().any(|c| c.starts_with("release")));
 }
