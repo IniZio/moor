@@ -28,6 +28,7 @@ use crate::store::lease::LeaseKind;
 use crate::store::{BoxRow, Store};
 
 use self::clone::{clone_with_proxy, SetupProxy};
+use self::delivered::record_delivered;
 pub(crate) use self::lease::hold_root;
 use self::lease::hold_workdir;
 use self::outcome::dotfiles_warned;
@@ -292,9 +293,10 @@ fn run_and_record(
     cfg: &BoxSettings,
 ) -> Result<Provisioned, CommandError> {
     let (cloned, proxy) = clone_with_proxy(cx, store, id, advance, target, cfg)?;
-    if let Some(ms) = cloned {
+    if let Some(ms) = cloned.ms {
         store.apply(Decision::new(id).event(ExtraEvent::Cloned { ms }))?;
     }
+    record_delivered(store, id, cloned.delivered)?;
     let run = run_through_proxy(cx, store, id, target, cfg, &proxy);
     let dotfiles = match dotfiles::apply(cx, (target.handle, target.provider), id, cfg, &proxy) {
         Ok(d) => d,
@@ -381,6 +383,7 @@ fn failed(
 }
 
 mod clone;
+mod delivered;
 mod lease;
 mod outcome;
 mod rerun;

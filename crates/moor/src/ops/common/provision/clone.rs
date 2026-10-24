@@ -4,11 +4,13 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use moor_core::boxscript::clone::{clone_script, Checkout, CloneStep};
+use moor_core::boxscript::resources;
 use moor_core::config::BoxSettings;
 use moor_core::exec_env::Purpose;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Output;
 use moor_core::seam::proxy_host::ProxyStatus;
+use moor_core::shape::Shape;
 use moor_core::{box_key, BoxId, Warning};
 
 use super::outcome::clone_failed;
@@ -20,6 +22,15 @@ use crate::ops::common::dotfiles;
 use crate::ops::common::identity::Identity;
 use crate::ops::common::proxy::TAIL_LINES;
 use crate::store::Store;
+
+/// What the clone exec reported about the Box.
+#[derive(Default)]
+pub(super) struct Cloned {
+    /// The clone's milliseconds; none when the Box has no GitHub repo to clone.
+    pub(super) ms: Option<u64>,
+    /// The CPUs and memory the Box has, as read inside it.
+    pub(super) delivered: Option<Shape>,
+}
 
 /// The Proxy setup and dotfiles run through, or why it could not start; `None` when nothing needs it.
 pub(super) type SetupProxy = Result<Option<BoxProxy>, String>;
@@ -48,7 +59,8 @@ impl Plan {
 /// Starts the Proxy when the clone, setup or dotfiles need it, then clones the repo in the Box with
 /// the Proxy env and sets the Box's git identity in the same exec.
 ///
-/// Returns the clone's milliseconds, none when the Box has no GitHub repo to clone. github.com is
+/// Returns the clone's milliseconds, none when the Box has no GitHub repo to clone, and the CPUs
+/// and memory the same exec read. github.com is
 /// reached only through the Proxy, which places the credential, so the clone never starts before
 /// the Proxy is ready. A failed clone aborts provisioning and stops a Proxy this call started.
 pub(super) fn clone_with_proxy(
@@ -58,7 +70,7 @@ pub(super) fn clone_with_proxy(
     advance: bool,
     target: &SetupTarget<'_>,
     cfg: &BoxSettings,
-) -> Result<(Option<u64>, SetupProxy), CommandError> {
+) -> Result<(Cloned, SetupProxy), CommandError> {
     let plan = plan(store, id, target)?;
     let wants = plan.is_some() || !cfg.setup.is_empty() || cfg.dotfiles.is_some();
     let was_up = wants && matches!(cx.proxy_host().status(id), Ok(ProxyStatus::Ready { .. }));
@@ -76,11 +88,14 @@ pub(super) fn clone_with_proxy(
     let job = Job::new(id, target, plan.as_ref());
     let result = match (&plan, &proxy) {
         (Some(_), Err(reason)) => Err(format!("the Proxy could not start: {reason}")),
-        _ if job.is_empty() => return Ok((None, proxy)),
+        _ if job.is_empty() => return Ok((Cloned::default(), proxy)),
         _ => clone(cx, target, cfg, &job, &proxy),
     };
     match result {
-        Ok(ms) => Ok((plan.map(|_| ms), proxy)),
+        Ok((ms, delivered)) => {
+            let ms = plan.map(|_| ms);
+            Ok((Cloned { ms, delivered }, proxy))
+        }
         Err(reason) => {
             if matches!(proxy, Ok(Some(_))) && !was_up {
                 if let Err(e) = cx.proxy_host().stop(id) {
@@ -122,27 +137,31 @@ struct Job<'a> {
 }
 
 impl<'a> Job<'a> {
+    /// Whether the Box has no repo to clone and no identity to set, so no exec runs and the probe
+    /// has none to ride.
+    const fn is_empty(&self) -> bool {
+        self.plan.is_none() && self.identity.is_none()
+    }
+
     /// The job for Box `id`, with the author stored with the target's repo.
     fn new(id: BoxId, target: &SetupTarget<'_>, plan: Option<&'a Plan>) -> Self {
         let identity = target.repo.and_then(|r| Identity::of(&r.author));
         Self { id, plan, identity }
     }
-
-    /// Whether the exec would run nothing.
-    const fn is_empty(&self) -> bool {
-        self.plan.is_none() && self.identity.is_none()
-    }
 }
 
-/// Runs the job's identity lines and clone script as one logged exec; returns its milliseconds,
-/// or the reason it failed with the log's tail.
+/// Runs the job's identity lines, clone script and resource probe as one logged exec; returns its
+/// milliseconds and the shape the probe read, or the reason it failed with the log's tail.
+///
+/// The probe runs after the clone and the exec still exits with the clone's code, so a failed clone
+/// reports as before.
 fn clone(
     cx: &Cx,
     target: &SetupTarget<'_>,
     cfg: &BoxSettings,
     job: &Job<'_>,
     proxy: &SetupProxy,
-) -> Result<u64, String> {
+) -> Result<(u64, Option<Shape>), String> {
     let log = clone_log(cx, job.id)
         .inspect_err(|e| {
             if job.identity.is_some() {
@@ -156,12 +175,13 @@ fn clone(
     let plan = job.plan;
     let identity = job.identity.as_ref().filter(|_| log.is_some());
     if plan.is_none() && identity.is_none() {
-        return Ok(0);
+        return Ok((0, None));
     }
     let mut script = identity.map(Identity::script).unwrap_or_default();
     if let Some(plan) = plan {
         script.push_str(&clone_script(&plan.checkout()));
     }
+    let script = resources::after(&script);
     let site = Site {
         handle: target.handle,
         provider: target.provider,
@@ -191,7 +211,8 @@ fn clone(
             if let (Some(identity), Some(text)) = (identity, &text) {
                 identity.report(cx, text);
             }
-            return Ok(ms);
+            let delivered = text.as_deref().and_then(resources::parse);
+            return Ok((ms, delivered));
         }
         Ok(ExecOutcome::Exited { code }) => CloneStep::of_exit(code)
             .zip(plan)

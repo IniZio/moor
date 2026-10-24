@@ -10,12 +10,14 @@ use moor_core::domain::decision::{BoxRepo, Intent};
 use moor_core::domain::session_state::SessionState;
 use moor_core::request::Pins;
 use moor_core::seam::clock::{Clock, Ts};
+use moor_core::shape::Shape;
 use moor_core::user::UserId;
 use moor_core::view::LaunchFailure;
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 use repo::repo_from_row;
 use rusqlite::{Connection, OpenFlags, Row};
 
+use driver_row::driver_from_row;
 use init::{parsed, parsed_opt};
 
 /// File name of the state database inside the state directory.
@@ -26,6 +28,7 @@ mod agent;
 mod apply;
 pub(crate) mod artifacts;
 mod bindings;
+mod driver_row;
 pub(crate) use bindings::Binding;
 mod follow;
 #[cfg(test)]
@@ -54,7 +57,7 @@ pub(crate) use runs::{NewRun, RunOutcome, RunRow};
 pub(crate) use sessions::SessionRecord;
 
 /// Schema version this build reads and writes.
-pub(crate) const SCHEMA_VERSION: &str = "15";
+pub(crate) const SCHEMA_VERSION: &str = "16";
 /// Full schema, applied once when the file has no `meta` table.
 const SCHEMA_SQL: &str = include_str!("schema.sql");
 /// How long a connection waits on a lock before `SQLITE_BUSY`.
@@ -64,7 +67,7 @@ const BOX_SELECT: &str = "SELECT b.id, b.name, b.repo, b.issue, b.goal, b.base, 
     s.workspace_id, s.agent_session_id, b.state, b.state_reason, b.intent_kind, b.intent_pid, b.intent_run, \
     b.intent_at, b.setup_failed_at, b.created_at, b.updated_at, b.provider, b.handle, b.driver_state, \
     b.attempted_handle, b.workdir, b.egress, b.sleep_reason, b.driver_updated_at, b.idle_since, b.launch_failure, \
-    s.state, b.user, b.repo_config, b.author_name, b.author_email FROM boxes b LEFT JOIN sessions s ON s.box = b.id \
+    s.state, b.user, b.repo_config, b.author_name, b.author_email, b.cpus, b.mem_mib FROM boxes b LEFT JOIN sessions s ON s.box = b.id \
     AND s.ordinal = (SELECT MAX(ordinal) FROM sessions WHERE box = b.id)";
 
 /// Store failure.
@@ -140,6 +143,8 @@ pub(crate) struct DriverRow {
     pub(crate) egress: Option<String>,
     /// Why the box cannot sleep, if the driver said so.
     pub(crate) sleep_reason: Option<String>,
+    /// CPUs and memory the box delivers, as read inside it; `None` until a start has read them.
+    pub(crate) delivered: Option<Shape>,
     /// Last update.
     pub(crate) updated_at: Ts,
 }
@@ -327,24 +332,6 @@ fn intent_from(
         }
         other => Err(StoreError::Corrupt(format!("intent kind `{other}`"))),
     }
-}
-
-/// Map the joined box columns (offset 18..=25) to a `DriverRow`, if the box exists.
-fn driver_from_row(row: &Row<'_>) -> Result<Option<DriverRow>, StoreError> {
-    let Some(provider) = row.get::<_, Option<String>>(18)? else {
-        return Ok(None);
-    };
-    let state: String = row.get(20)?;
-    Ok(Some(DriverRow {
-        provider: ProviderId::new(provider),
-        handle: row.get::<_, Option<String>>(19)?.map(BoxHandle::new),
-        state: parsed_opt("box state", &state, BoxState::parse)?,
-        attempted_handle: row.get::<_, Option<String>>(21)?.map(BoxHandle::new),
-        workdir: row.get(22)?,
-        egress: row.get(23)?,
-        sleep_reason: row.get(24)?,
-        updated_at: Ts::from_millis(row.get(25)?),
-    }))
 }
 
 /// Map a `BOX_SELECT` row to a `BoxRow`.

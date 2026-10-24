@@ -156,6 +156,12 @@ fn detail(view: &Value, value: &Value) -> Option<String> {
                 field(b, "workdir"),
                 field(b, "egress"),
             );
+            if let (Some(cpus), Some(mem)) = (
+                b.get("cpus").and_then(Value::as_u64),
+                b.get("mem_mib").and_then(Value::as_u64),
+            ) {
+                let _ = writeln!(out, "machine:  {cpus} vCPU, {mem} MiB");
+            }
         }
         None => out.push_str("box:      none\n"),
     }

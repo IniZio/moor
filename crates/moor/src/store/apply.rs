@@ -313,6 +313,11 @@ fn driver_field_sets(s: &Fields) -> Sets {
         ("workdir", text(&s.box_workdir)),
         ("egress", text(&s.egress)),
         ("sleep_reason", text(&s.box_sleep_reason)),
+        ("cpus", field_value(&s.box_cpus, |c| Value::Integer(*c))),
+        (
+            "mem_mib",
+            field_value(&s.box_mem_mib, |m| Value::Integer(*m)),
+        ),
     ];
     all.into_iter().filter_map(|(c, v)| Some((c, v?))).collect()
 }

@@ -53,6 +53,28 @@ fn detail_with_box() {
 }
 
 #[test]
+fn detail_shows_the_delivered_cpus_and_memory_after_the_box_line() {
+    let mut t = row("alpha", true);
+    let driver = t
+        .get_mut("driver")
+        .and_then(Value::as_object_mut)
+        .expect("driver is an object");
+    driver.insert("cpus".into(), json!(4));
+    driver.insert("mem_mib".into(), json!(7900));
+    let out = show(json!({"box": t}));
+    assert!(
+        out.contains("egress=none\nmachine:  4 vCPU, 7900 MiB\nagent:"),
+        "{out}"
+    );
+}
+
+#[test]
+fn detail_without_a_read_shape_has_no_machine_line() {
+    let out = show(json!({"box": row("alpha", true)}));
+    assert!(!out.contains("machine:"), "{out}");
+}
+
+#[test]
 fn detail_lists_the_question_and_numbered_options() {
     let mut t = row("alpha", false);
     t.as_object_mut().expect("row is an object").insert(
