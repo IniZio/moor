@@ -43,36 +43,16 @@ pub const HOST_GUARD: &str = "#!/bin/sh\n\
     echo \"a test ran $(basename \"$0\") $*; the host's own is never run\" >&2\n\
     exit 97\n";
 
-/// Stands in for `ip`.
-///
-/// The `docker0` route query prints `$HOME/docker0.route`, or fails without it. The query for the Box's connected subnets prints `$HOME/kernel.routes`, or nothing without
-/// it. Any other arguments fail.
-pub const FAKE_IP: &str = r#"#!/bin/sh
-case "$*" in
-  "-4 route show dev docker0 proto kernel scope link")
-    [ -f "$HOME/docker0.route" ] || { echo 'Cannot find device "docker0"' >&2; exit 1; }
-    exec cat "$HOME/docker0.route";;
-  "-4 route show proto kernel scope link")
-    [ -f "$HOME/kernel.routes" ] || exit 0
-    exec cat "$HOME/kernel.routes";;
-  *) echo "fake ip: $*" >&2; exit 2;;
-esac
-"#;
-
-/// Writes [`HOST_GUARD`] as `sudo` and `apt-get`, and [`FAKE_IP`] as `ip`, into `bin`.
+/// Writes [`HOST_GUARD`] as `sudo` and `apt-get` into `bin`.
 ///
 /// A test that runs a Box script with the host's `PATH` after its own `bin` calls this, so the
 /// script never reaches the host's tools. A fake the test already wrote under either name is kept.
 pub fn write_host_guards(bin: &Path) -> io::Result<()> {
     std::fs::create_dir_all(bin)?;
-    for (name, body) in [
-        ("sudo", HOST_GUARD),
-        ("apt-get", HOST_GUARD),
-        ("ip", FAKE_IP),
-    ] {
+    for name in ["sudo", "apt-get"] {
         let path = bin.join(name);
         if !path.exists() {
-            write_executable(&path, body)?;
+            write_executable(&path, HOST_GUARD)?;
         }
     }
     Ok(())
@@ -185,13 +165,6 @@ impl FakeEgress {
     pub fn occupy(&self) {
         if let Ok(mut slot) = self.open.lock() {
             *slot = TcpListener::bind(("127.0.0.1", self.port)).ok();
-        }
-    }
-
-    /// [`Self::occupy`] on every IPv4 address, as a process that listens on a wildcard.
-    pub fn occupy_wildcard(&self) {
-        if let Ok(mut slot) = self.open.lock() {
-            *slot = TcpListener::bind(("0.0.0.0", self.port)).ok();
         }
     }
 

@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use super::*;
 
-mod docker;
 mod egress;
 mod egress_load;
 mod shell;

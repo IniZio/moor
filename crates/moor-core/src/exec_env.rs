@@ -287,7 +287,6 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Vec<String> {
         ),
     ];
     lines.extend(egress::lines(p.egress_port, p.box_port, p.hosts));
-    lines.push(docker::line(p.egress_port));
     for name in [
         "SSL_CERT_FILE",
         "CURL_CA_BUNDLE",
@@ -345,7 +344,6 @@ fn yarn_lines(port: u16) -> Vec<String> {
     lines
 }
 
-mod docker;
 mod egress;
 mod java;
 
