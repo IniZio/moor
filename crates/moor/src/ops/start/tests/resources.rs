@@ -75,7 +75,7 @@ fn the_probe_rides_the_clone_exec_and_adds_no_box_call() {
 }
 
 #[test]
-fn a_box_with_a_probe_records_its_shape_without_a_warning() {
+fn a_box_with_a_probe_records_its_shape() {
     let driver = FakeDriver::new().exec_stdout([probe(1, 512)]);
     let (_, v) = start_with("setup: [a]\n", driver);
     assert_eq!(v.boxed.driver.unwrap().cpus, Some(1));
