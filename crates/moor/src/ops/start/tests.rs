@@ -44,6 +44,7 @@ mod relaunch_sessions;
 mod repo;
 mod requester;
 mod rerun;
+mod resources;
 mod revive;
 mod session;
 mod settle_busy;

@@ -74,6 +74,7 @@ fn rows(handle: BoxHandle) -> (BoxRow, DriverRow) {
         workdir: Some(WORKDIR.to_owned()),
         egress: None,
         sleep_reason: None,
+        delivered: None,
         updated_at: Ts::from_millis(0),
     };
     let row = BoxRow {

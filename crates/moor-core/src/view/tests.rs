@@ -23,6 +23,8 @@ fn sample_box() -> BoxView {
             handle: Some("h".into()),
             workdir: Some("/work/repo".into()),
             egress: Some("enforced".into()),
+            cpus: Some(4),
+            mem_mib: Some(7900),
             asleep_since: None,
             sleep: BoxSleepView {
                 after: None,
@@ -42,7 +44,7 @@ fn box_json() -> Value {
         "lifecycle": "ready", "session_state": "working", "state_reason": null, "base": null, "branch": "b",
         "workspace": null,
         "driver": {"state": "ready", "provider": "p", "handle": "h",
-                "workdir": "/work/repo", "egress": "enforced", "asleep_since": null,
+                "workdir": "/work/repo", "egress": "enforced", "cpus": 4, "mem_mib": 7900, "asleep_since": null,
                 "sleep": {"after": null, "reason": null}},
         "agent": null, "run": null, "updated_at": "2026-01-01T00:00:00Z"
     })
@@ -350,6 +352,8 @@ fn box_view(after: Option<&str>, reason: Option<&str>) -> DriverView {
         handle: None,
         workdir: None,
         egress: None,
+        cpus: None,
+        mem_mib: None,
         asleep_since: None,
         sleep: BoxSleepView {
             after: after.map(Into::into),

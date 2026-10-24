@@ -90,6 +90,10 @@ pub struct DriverView {
     pub workdir: Option<String>,
     /// `none` (open egress), `enforced` (allow-list applied) or `not_enforced` (allow-list not applied); unset when unknown.
     pub egress: Option<String>,
+    /// CPUs the Box delivers, as read inside it; unset until a start has read them.
+    pub cpus: Option<u32>,
+    /// Memory the Box delivers in MiB, as read inside it; unset until a start has read it.
+    pub mem_mib: Option<u64>,
     /// RFC3339 UTC time the Box went to sleep.
     pub asleep_since: Option<String>,
     /// Sleep configuration and blocking reason.
