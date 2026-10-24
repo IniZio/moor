@@ -432,3 +432,11 @@ fn box_credentials_and_mcp_refs_may_not_name_a_secret_a_proxy_rule_injects() {
     }
     ok("box_credentials: [npm-token]\nmcp_servers: {m: {command: x, args: ['${npm-token}']}}");
 }
+
+#[test]
+fn cache_volumes_are_on_per_provider_unless_turned_off() {
+    let cfg = parse_user("u.yaml", "drivers:\n  a: {}\n  b: {cache_volumes: false}\n").unwrap();
+    assert!(cfg.drivers.get("a").unwrap().cache_volumes());
+    assert!(!cfg.drivers.get("b").unwrap().cache_volumes());
+    assert!(DriverConfig::default().cache_volumes());
+}

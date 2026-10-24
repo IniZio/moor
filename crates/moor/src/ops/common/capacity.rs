@@ -82,6 +82,7 @@ mod tests {
                     max_boxes: Some(n(*max)),
                     lookup_timeout_secs: None,
                     strip_env: Vec::new(),
+                    cache_volumes: None,
                 },
             );
         }

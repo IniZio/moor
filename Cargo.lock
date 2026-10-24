@@ -2529,6 +2529,7 @@ dependencies = [
 name = "moor-core"
 version = "0.2.0"
 dependencies = [
+ "hmac 0.12.1",
  "moor-testkit",
  "rustix",
  "serde",
