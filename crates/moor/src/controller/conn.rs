@@ -288,14 +288,18 @@ fn answer_user(env: &Env, peer: &Peer, asserted: Option<&Identity>, cmd: &UserCm
     }
 }
 
-/// The identity a `start` or `start-needs` acts as: the one asserted, checked against this
-/// connection's socket. Other requests act as no one.
+/// The identity a `start`, `start-needs` or `env` acts as: the one asserted, checked against
+/// this connection's socket. `env` previews a start, so it reads a repo as the same user. Other
+/// requests act as no one.
 fn requester(
     peer: &Peer,
     asserted: Option<&Identity>,
     request: &Request,
 ) -> Result<Option<Identity>, CommandError> {
-    if !matches!(request, Request::Start(_) | Request::StartNeeds(_)) {
+    if !matches!(
+        request,
+        Request::Start(_) | Request::StartNeeds(_) | Request::Env(_)
+    ) {
         return Ok(None);
     }
     peer.caller
@@ -308,7 +312,7 @@ fn requester(
 
 /// Whom one request acts as, and what it may see.
 pub(crate) struct Acting {
-    /// The identity a `start` acts as; none for other requests.
+    /// The identity a `start`, `start-needs` or `env` acts as; none for other requests.
     pub(crate) who: Option<Identity>,
     /// What the request may see.
     pub(crate) grant: Grant,
