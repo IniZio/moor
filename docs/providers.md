@@ -41,9 +41,13 @@ the lease logs in as: `/root/moor` for a root login, `/home/crabbox/moor`
 for a `crabbox` one. You do not need to set `external.workRoot` for the
 external provider. Other providers, such as the static one, keep crabbox's
 own work root.
-A Box's working directory is the one crabbox reports when it leases the Box,
-or `<workroot>/<lease id>/<slug>`; when crabbox reports neither, the start
-fails. moor refuses a relative work root in that report.
+A Box that keeps its [work tree](config.md#work-tree) works in
+`<workroot>/repos/<repo name>`, the same directory in every Box of that repo.
+Any other Box's working directory is the one crabbox reports when it leases
+the Box, or `<workroot>/<lease id>/<slug>`; when crabbox reports neither, the
+start fails. moor refuses a relative work root in that report. A script that
+calls `crabbox run --id` without `--workdir` runs in crabbox's per-lease
+directory, not in the work tree.
 
 When a release fails, the directory stays and `moor close` names it. To
 release the Box by hand, run `crabbox stop --provider PROVIDER --id SLUG
@@ -122,6 +126,10 @@ scope), a `name`, a `key` (`<group>-<name>`), the Box `paths` (`~/` is the
 login user's home), a `sizeGB` hint (0 means the adapter's default), and
 `"sealed": true` when the volume has a seal. A sealed volume's group is the
 scope's 16 hex characters followed by `x`, so it has a store of its own. The
+work tree volume, `worktree` at `~/moor/repos/<repo name>`, is sealed in a
+group that ends in `w` instead, so neither its seal nor Docker's can discard
+the other. An adapter that has the feature gives each lease its own login
+home, since the work tree path is the same in every Box of a repo. The
 adapter keeps one store per group, with each name a subdirectory, and decides
 where the store lives, how big it may grow and when old copies go. moor never
 asks a provider to require a volume: every failure starts the Box cold.

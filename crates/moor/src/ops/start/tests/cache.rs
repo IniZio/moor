@@ -207,3 +207,55 @@ fn a_cold_box_runs_no_seal() {
     close(&w.cx);
     assert!(seals(&w).is_empty());
 }
+
+/// The Box and the script of the clone exec, the one that runs `git clone`.
+fn clone_exec(w: &World) -> (String, String) {
+    let execs = w.driver.execs().into_iter();
+    let mut found =
+        execs.filter_map(|(h, spec, _)| Some((h.as_str().to_owned(), spec.argv.last()?.clone())));
+    found.find(|(_, s)| s.contains("git clone")).unwrap()
+}
+
+#[test]
+fn a_box_that_keeps_its_work_tree_refreshes_it_once_before_the_clone() {
+    let w = world(FakeDriver::new().cache_volumes());
+    started(&w);
+    let (handle, script) = clone_exec(&w);
+    let refresh = script.find("moor_tree_refresh\n").expect(&script);
+    assert!(refresh < script.find("git clone").unwrap(), "{script}");
+    assert!(script.contains(&format!("= '{handle}' ]")), "{script}");
+}
+
+#[test]
+fn a_box_without_the_work_tree_clones_with_no_refresh() {
+    for driver in [FakeDriver::new(), FakeDriver::new().cache_volumes()] {
+        let w = world(driver);
+        let yaml = "cache: {work_tree: false}\n";
+        script_base_yaml(&w, Some(yaml));
+        run(&w.cx, &repo_req("demo")).unwrap();
+        assert!(!clone_exec(&w).1.contains("moor_tree_refresh"));
+    }
+}
+
+#[test]
+fn a_work_tree_the_seal_did_not_keep_warns_why_and_nothing_else() {
+    let w = world(FakeDriver::new().cache_volumes());
+    started(&w);
+    w.cx.take_warnings();
+    w.driver
+        .set_run_stdout("moor: cache not kept: worktree: 2 unpushed commits\n");
+    close(&w.cx);
+    let got = w.cx.take_warnings();
+    let [warned]: [&Warning; 1] = got
+        .iter()
+        .filter(|w| w.code.starts_with("cache_") || w.code.starts_with("work_tree"))
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
+    assert_eq!(warned.code, "work_tree_not_kept");
+    let message = &warned.message;
+    for says in ["2 unpushed commits", "the next Box clones fresh"] {
+        assert!(message.contains(says), "{message}");
+    }
+    assert!(w.driver.calls().iter().any(|c| c.starts_with("release")));
+}
