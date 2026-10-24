@@ -42,6 +42,8 @@ const NATIVE_SLEEP: &str = "native-sleep";
 const ROTATES_HOST_KEY: &str = "resume-rotates-host-key";
 /// Feature token: the Box is reached over SSH, which carries the reverse tunnel.
 const SSH: &str = "ssh";
+/// Feature token: the provider keeps cache volumes across Boxes.
+const CACHE_VOLUME: &str = "cache-volume";
 
 /// Facts for `entry`, read from its feature tokens.
 fn derive(entry: &Entry) -> DriverCaps {
@@ -57,6 +59,7 @@ fn derive(entry: &Entry) -> DriverCaps {
         wake: sleep != SleepKind::None && !entry.has(ROTATES_HOST_KEY),
         reverse_tunnel: entry.has(SSH),
         has_workdir: true,
+        cache_volumes: entry.has(CACHE_VOLUME),
     }
 }
 

@@ -52,6 +52,7 @@ fn rig(dir: &Path, driver: FakeDriver) -> Rig {
             name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
             nonce: "n".to_owned(),
+            cache: moor_core::cache::CachePlan::none(),
         })
         .unwrap();
     let (row, boxed) = rows(got.handle);

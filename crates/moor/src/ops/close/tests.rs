@@ -124,6 +124,7 @@ fn admit(cx: &Cx, driver: &FakeDriver, yaml: Option<&str>) -> BoxId {
             name: BoxName::parse_allow_bare("t").unwrap(),
             class: None,
             nonce: "n".to_owned(),
+            cache: moor_core::cache::CachePlan::none(),
         })
         .unwrap();
     let d = Decision::new(id)

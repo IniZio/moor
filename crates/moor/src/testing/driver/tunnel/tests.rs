@@ -15,6 +15,7 @@ fn boxed(fake: &FakeDriver) -> BoxHandle {
         name: BoxName::parse_allow_bare("t1").unwrap(),
         class: None,
         nonce: "n0".to_owned(),
+        cache: moor_core::cache::CachePlan::none(),
     });
     got.unwrap().handle
 }

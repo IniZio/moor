@@ -51,6 +51,7 @@ fn rig_driver(dir: &Path, config: UserConfig, driver: FakeDriver) -> Rig {
             name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
             nonce: "n".to_owned(),
+            cache: moor_core::cache::CachePlan::none(),
         })
         .unwrap();
     Rig {

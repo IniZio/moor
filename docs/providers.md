@@ -104,6 +104,38 @@ moor reads each provider's features from `crabbox providers --json
 Box to sleep after it has been idle for `box.sleep_after`. Sleep pauses the instance and wake resumes it. A provider with neither
 `pause-resume` nor `native-sleep` cannot sleep, so its Boxes stay up.
 
+## Cache volumes
+
+A provider with the `cache-volume` feature in `crabbox providers --json
+--configured` keeps [cache volumes](config.md#cache-volumes) across Boxes. On
+an external provider the feature comes from the trusted crabbox user config
+only; a repo config, env or flag cannot turn it on:
+
+```yaml
+external:
+  capabilities: { cacheVolumes: true }
+```
+
+moor sends the volumes on `crabbox warmup` only, as a JSON array in
+`CRABBOX_CACHE_VOLUMES`. Each entry has a `group` (16 hex characters, one per
+scope), a `name`, a `key` (`<group>-<name>`), the Box `paths` (`~/` is the
+login user's home), and a `sizeGB` hint (0 means the adapter's default). The
+adapter keeps one store per group, with each name a subdirectory, and decides
+where the store lives, how big it may grow and when old copies go. moor never
+asks a provider to require a volume: every failure starts the Box cold.
+
+At close, after teardown and before release, moor runs each volume's seal in
+the Box. The adapter keeps a Box's copy on release, after a clean shutdown;
+a Box that is killed, or only paused, keeps nothing.
+
+A provider without the feature starts every Box cold, and each start warns
+`cache_unavailable`. `drivers.<provider>.cache_volumes: false` turns the
+volumes off for one provider without the warning. Docker's data root is
+`~/docker` on every external-provider Box, so the `docker` preset keeps image
+layers.
+
+agent37 leaves `cacheVolumes` off for now, so its Boxes start cold.
+
 ## Box image requirements
 
 The Box image must have `sh`, `git`, `curl`, `tar`, and `unzip`. moor's

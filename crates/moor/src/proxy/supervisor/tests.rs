@@ -193,6 +193,7 @@ fn working_box(store: &Store, driver: &FakeDriver, name: &str) -> BoxId {
             name: BoxName::parse_allow_bare(name).unwrap(),
             class: None,
             nonce: "abc123".into(),
+            cache: moor_core::cache::CachePlan::none(),
         })
         .unwrap();
     let d = Decision::new(id)

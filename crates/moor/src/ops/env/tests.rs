@@ -236,3 +236,41 @@ fn a_config_naming_no_provider_shows_the_provider_as_unset() {
     let row = v.rows.iter().find(|r| r.name == "provider").unwrap();
     assert_eq!(row.note, "unset");
 }
+
+#[test]
+fn cache_rows_show_names_and_paths_and_never_a_key() {
+    let (_d, v) = env_with("cache: {presets: [npm, yarn, pnpm, bun, docker, podman, dart, rust, go], volumes: [{name: sdk, path: /opt/sdk}]}");
+    let rows: Vec<(&str, Layer, &str)> = v
+        .rows
+        .iter()
+        .filter(|r| r.kind == EnvKind::Cache)
+        .map(|r| (r.name.as_str(), r.source, r.note.as_str()))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            (
+                "gradle",
+                Layer::Default,
+                "~/.gradle/caches, ~/.gradle/wrapper"
+            ),
+            ("sdk", Layer::Repo, "/opt/sdk"),
+        ]
+    );
+    let json = serde_json::to_string(&v).unwrap();
+    assert!(!json.contains("key") && !json.contains("group"), "{json}");
+}
+
+#[test]
+fn a_box_without_a_repo_lists_no_presets() {
+    let d = tempfile::tempdir().unwrap();
+    let v = run(
+        &cx(d.path()),
+        &EnvReq {
+            repo: None,
+            base: None,
+        },
+    )
+    .unwrap();
+    assert!(!v.rows.iter().any(|r| r.kind == EnvKind::Cache));
+}

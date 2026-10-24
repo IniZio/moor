@@ -9,6 +9,7 @@ mod config;
 mod layers;
 mod path;
 pub mod presets;
+mod seal;
 #[cfg(test)]
 mod tests;
 
@@ -22,6 +23,7 @@ use sha2::Sha256;
 pub use config::{CacheConfig, Presets, VolumeDecl};
 pub use layers::{CacheLayers, Dropped, Resolved};
 pub use path::{owned_paths, CachePath};
+pub use seal::{failed as seal_failed, SEAL_FAILED};
 
 use crate::name::ForgeRepo;
 use crate::user::UserId;
@@ -293,5 +295,12 @@ impl CachePlan {
     #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.volumes.is_empty()
+    }
+
+    /// The script to run in the Box at close, after teardown; none when no volume has seal steps.
+    /// A volume whose seal fails is emptied and named on stdout (see [`seal_failed`]).
+    #[must_use]
+    pub fn seal_script(&self) -> Option<String> {
+        seal::script(&self.0)
     }
 }

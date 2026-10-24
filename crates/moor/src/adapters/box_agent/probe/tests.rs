@@ -112,6 +112,7 @@ fn live_driver(driver: FakeDriver) -> Arc<FakeDriver> {
         name: BoxName::parse_allow_bare("t1").unwrap(),
         class: None,
         nonce: "n0".to_owned(),
+        cache: moor_core::cache::CachePlan::none(),
     })
     .unwrap();
     d

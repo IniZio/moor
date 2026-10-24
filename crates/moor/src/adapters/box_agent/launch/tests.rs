@@ -38,6 +38,7 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
         name: box_name("t1"),
         class: None,
         nonce: "n0".to_owned(),
+        cache: moor_core::cache::CachePlan::none(),
     })
     .unwrap();
     d
@@ -295,6 +296,7 @@ fn a_box_without_a_home_fails_before_delivering() {
         name: box_name("t1"),
         class: None,
         nonce: "n0".to_owned(),
+        cache: moor_core::cache::CachePlan::none(),
     })
     .unwrap();
     let s = surface(FakeSurface::new());

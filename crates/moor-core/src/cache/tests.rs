@@ -1,6 +1,8 @@
 use super::*;
 use crate::config::{parse_repo, parse_user};
 
+mod seal;
+
 fn salt(b: u8) -> CacheSalt {
     CacheSalt::new([b; 64])
 }

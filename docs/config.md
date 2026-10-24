@@ -30,6 +30,7 @@ file means every key takes its default, except `box.provider`, which has none.
 | `max_boxes` | integer, at least 1 | none | The most live Boxes on this provider. It wins over `box.max_boxes`. |
 | `lookup_timeout_secs` | integer, at least 1 | 5, or 20 for `external` | How long moor waits for crabbox to look up a Box's ssh target. |
 | `strip_env` | list of variable names | empty | Variables that the provider puts in the Box, which moor removes from every command it runs there. |
+| `cache_volumes` | boolean | `true` | Whether this provider's Boxes get [cache volumes](#cache-volumes). `false` starts every Box on it cold, with no warning. |
 
 ### `box_credentials`
 
@@ -99,6 +100,22 @@ Only the hosts of these rules go through the Proxy. The Box reaches every
 other host direct. See
 [Which traffic goes through the Proxy](providers.md#which-traffic-goes-through-the-proxy).
 
+### `cache`
+
+The same keys as the [`.moor.yaml` `cache:` section](#cache-volumes), for
+every Box this config starts. `cache.presets: false` turns the presets off for
+every repo, and a list drops those presets for every repo; a repo cannot turn
+them back on. `cache.volumes` declares volumes kept per user, shared across
+that user's repos.
+
+```yaml
+cache:
+  presets: [podman]
+  volumes:
+    - name: cargo-bin
+      path: ~/.cargo/bin
+```
+
 ### Removed keys
 
 moor refuses a user config that has a `credentials` or `github` key. Each
@@ -133,12 +150,93 @@ A repo's `.moor.yaml` configures its Boxes.
 | `compose.project_prefix` | string | A prefix for compose project names. |
 | `box.size` | `small`, `medium`, `large`, or `xlarge` | The Box size. It wins over the user's `box.size`. |
 | `box_credentials` | list of names | Secrets that the Box's user must hold for a `start`. moor does not put them into the Box. |
+| `cache` | map | Which presets to keep and which other directories to keep across Boxes. See [Cache volumes](#cache-volumes). |
 
 moor reads `.moor.yaml` from GitHub at the Box's base commit when the Box
 starts, and keeps that copy for the Box's life. Setup, the agent, `moor run`
 and the teardown all use it, so a change the agent makes to the file in the
 Box never changes what moor runs. A changed `.moor.yaml` takes effect in the
 next Box after it is pushed.
+
+### Cache volumes
+
+A cache volume is a directory in the Box that the provider keeps across Boxes,
+so a second Box does not download the same packages again. Each Box gets a
+private copy of the newest kept copy when it starts. When the Box closes, its
+copy becomes the newest. Two Boxes never write the same copy, and the newest
+close wins. The provider decides where the copies live and how big they grow;
+see [Cache volumes](providers.md#cache-volumes). A provider without them starts
+every Box cold.
+
+```yaml
+cache:
+  presets: [docker]          # drop these presets; false drops all; default: all on
+  volumes:
+    - name: android-sdk      # [a-z][a-z0-9-]{0,31}
+      path: /opt/android-sdk
+      size_gb: 12            # a hint; the provider's default when unset
+      seal:                  # optional; runs in the Box at close
+        - rm -rf /opt/android-sdk/.temp
+```
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `cache.presets` | `true`, `false`, or a list of preset names | `true` | Which presets this repo keeps. A list names the presets to drop. |
+| `cache.volumes[].name` | string | required | The volume's name, unique in the Box. |
+| `cache.volumes[].path` | path | required | The directory kept: `~/<dir>` (the Box user's home), `/opt/<dir>`, or `/var/cache/<dir>`. Letters, digits, `/` and `._-+@` only. |
+| `cache.volumes[].size_gb` | integer, at least 1 | none | A size hint. The provider caps it. |
+| `cache.volumes[].seal` | list of shell commands | empty | Commands that run in the Box when it closes, after `teardown`, before the provider keeps the volume. |
+
+A layer declares at most 8 volumes. Two volumes may not share a name, and
+their paths may not be equal or nested. A repo volume and an operator volume
+that clash leave the Box cold, with a `cache_refused` warning.
+
+#### Presets
+
+Every Box with a repo gets these unless a layer drops them. A volume that a
+repo or the operator declares on the same name or directory replaces the
+preset. Paths are each tool's default on Linux, except npm and Yarn, whose
+caches moor points at `~/.cache` in every command.
+
+| Preset | Paths | Where the tool documents it |
+| --- | --- | --- |
+| `npm` | `~/.cache/npm` | moor sets `npm_config_cache`; [npm `cache`](https://docs.npmjs.com/cli/v10/using-npm/config#cache) |
+| `yarn` | `~/.cache/yarn` | moor sets `YARN_CACHE_FOLDER` and `YARN_GLOBAL_FOLDER` below it; [Yarn `enableGlobalCache`](https://yarnpkg.com/configuration/yarnrc#enableGlobalCache) |
+| `pnpm` | `~/.local/share/pnpm/store` | [pnpm `storeDir`](https://pnpm.io/settings/store#storedir) |
+| `bun` | `~/.bun/install/cache` | [Bun global cache](https://bun.sh/docs/install/cache) |
+| `docker` | `~/docker` | Docker's data root on every external-provider Box ([`data-root`](https://docs.docker.com/engine/daemon/)); sealed, see below |
+| `podman` | `~/.local/share/containers` | [rootless `graphroot`](https://github.com/containers/storage/blob/main/docs/containers-storage.conf.5.md) |
+| `gradle` | `~/.gradle/caches`, `~/.gradle/wrapper` | [Gradle user home](https://docs.gradle.org/current/userguide/directory_layout.html) |
+| `dart` | `~/.pub-cache` | [`PUB_CACHE`](https://dart.dev/tools/pub/environment-variables) |
+| `rust` | `~/.cargo/registry`, `~/.cargo/git`, `~/.rustup` | [Cargo home](https://doc.rust-lang.org/cargo/guide/cargo-home.html), [`RUSTUP_HOME`](https://rust-lang.github.io/rustup/environment-variables.html) |
+| `go` | `~/go/pkg/mod`, `~/.cache/go-build` | [`GOPATH`/`GOMODCACHE` and `GOCACHE`](https://pkg.go.dev/cmd/go) |
+
+The `docker` preset's seal removes every container, volume and network, so only
+images and build cache are kept. A seal that fails empties its volume instead of
+keeping it, and the close goes on with a `cache_seal_failed` warning.
+
+#### Who shares a cache
+
+| Declared by | Kept for |
+| --- | --- |
+| A preset or `.moor.yaml` | One user and one repo |
+| The operator's user config | One user, across all their repos |
+
+Another user's Box never sees a cache. A repo cannot widen its own scope: the
+scope follows the file a volume is declared in, and `.moor.yaml` has no key for
+it. Each state directory makes its own random salt for the keys, so a fresh
+state directory starts every cache cold.
+
+#### What is never cached
+
+moor refuses a path that is, holds, or sits inside a directory moor writes for
+each Box: `~/.moor-*` (the Proxy CA and moor's own files), `~/moor` (the Box
+workdirs), `~/.ssh`, `~/.gradle/gradle.properties` and
+`~/.gradle/moor-proxy-truststore.p12`. So `~/.gradle` itself is refused; the
+`gradle` preset keeps `~/.gradle/caches` and `~/.gradle/wrapper` beside those
+files. Secrets never reach a cache: moor keeps them in the Proxy, not in the Box.
+
+`moor env` lists each volume's name and paths. It never shows a key.
 
 ## Controller config
 

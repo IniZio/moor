@@ -136,6 +136,7 @@ impl FakeDriver {
             wake: false,
             reverse_tunnel: !st.tunnel.lacks_cap,
             has_workdir: true,
+            cache_volumes: st.cache.on,
         }
     }
 

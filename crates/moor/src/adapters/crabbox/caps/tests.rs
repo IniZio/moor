@@ -52,6 +52,7 @@ fn want(sleep: SleepKind, wake: bool) -> DriverCaps {
         wake,
         reverse_tunnel: true,
         has_workdir: true,
+        cache_volumes: false,
     }
 }
 
@@ -140,6 +141,22 @@ fn external_without_pause_resume_cannot_sleep() {
             "{id}"
         );
     }
+}
+
+#[test]
+fn cache_volumes_come_only_from_the_cache_volume_feature() {
+    let mut features = EXTERNAL_BASE.to_vec();
+    features.push("cache-volume");
+    let on = caps_from(
+        &external_json(&features, &["cleanup"]),
+        &ProviderId::new("external"),
+    );
+    assert!(on.unwrap().cache_volumes);
+    let off = caps_from(
+        &external_json(&EXTERNAL_BASE, &["cleanup"]),
+        &ProviderId::new("external"),
+    );
+    assert!(!off.unwrap().cache_volumes);
 }
 
 fn driver() -> (Arc<ScriptedProc>, Crabbox) {

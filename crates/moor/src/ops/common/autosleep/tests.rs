@@ -67,6 +67,7 @@ fn working_with(driver: FakeDriver) -> Fx {
             name,
             class: None,
             nonce: "n".to_owned(),
+            cache: moor_core::cache::CachePlan::none(),
         })
         .unwrap();
     let d = Decision::new(id)

@@ -57,6 +57,7 @@ fn acquire_req(provider: ProviderId, box_id: BoxId, name: BoxName) -> AcquireReq
         name,
         class: None,
         nonce: "n".to_owned(),
+        cache: moor_core::cache::CachePlan::none(),
     }
 }
 
