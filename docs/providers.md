@@ -203,14 +203,19 @@ tinyproxy always listens on `127.0.0.1`. While the Box has `docker0`, it also
 listens on the `docker0` address. It answers only these sources: `127.0.0.1`,
 `172.16.0.0/12`, which holds the default bridge and the Compose networks, and
 the `docker0` network. The config changes when `docker0` appears, changes its
-address or goes, and the next command restarts tinyproxy with it. The proxy is
-reachable from the Box's own processes and from its containers. A host off the
-Box cannot route to the bridge address. A host on the same network segment as
-the Box can still send packets to it, and then meets the `Allow` lines: it is
-answered, with the Proxy credentials of the Box, only when its address is in
-`172.16.0.0/12` or in the `docker0` network. A container on one of Docker's
-last default networks, in `192.168.0.0/20`, is not answered, because a Box's
-own network is often inside that range.
+address or goes, or when the Box's own subnets change, and the next command
+restarts tinyproxy with it. The proxy is reachable from the Box's own processes
+and from its containers. A host off the Box cannot route to the bridge address.
+A host on the same network segment as the Box can still send packets to it, and
+then meets the `Allow` and `Deny` lines in this order: `127.0.0.1`, the `docker0`
+network, a `Deny` for each of the Box's own connected IPv4 subnets (those not on
+`docker0`, `br-*` or `veth*`), then `172.16.0.0/12`. A peer on one of the Box's
+own subnets is refused, even when that subnet is inside `172.16.0.0/12`, as AWS's
+default VPC `172.31.0.0/16` is. A peer that a router sends to the bridge address
+from outside the Box's subnets is answered, with the Proxy credentials of the
+Box, when its address is in `172.16.0.0/12`. A container on one of Docker's last
+default networks, in `192.168.0.0/20`, is not answered, because a Box's own
+network is often inside that range.
 
 moor does not put the Box CA in a build. Docker has no setting for it. The Box
 CA certificate is `~/.moor-proxy/ca.pem` in the Box, and `~/.moor-proxy/ca-bundle.pem`

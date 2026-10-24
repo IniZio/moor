@@ -200,7 +200,7 @@ fn the_config_sends_each_credential_host_to_the_tunnel_and_listens_on_loopback()
     assert_eq!(
         got,
         "Port 40123\nListen 127.0.0.1\nDisableViaHeader Yes\nLogLevel Critical\nMaxClients 1024\n\
-         Allow 127.0.0.1\nAllow 172.16.0.0/12\n\
+         Allow 127.0.0.1\n\
          upstream http 127.0.0.1:20123 \".corp.example\"\n\
          upstream http 127.0.0.1:20123 \"api.anthropic.com\"\n\
          upstream http 127.0.0.1:20123 \"git.internal.example\"\n\
@@ -346,7 +346,7 @@ fn tinyproxy_starts_from_the_config_with_its_pid_file_under_dot_moor() {
         b.port.port(),
         UPSTREAM,
         &hosts(&["api.anthropic.com", "github.com"]),
-    ) + &format!("PidFile \"{}\"\n", pid_file.display());
+    ) + &format!("PidFile \"{}\"\nAllow 172.16.0.0/12\n", pid_file.display());
     assert_eq!(b.conf(), expected);
     assert!(pid_file.exists());
 }
