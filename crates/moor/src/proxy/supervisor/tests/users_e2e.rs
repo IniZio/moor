@@ -66,6 +66,7 @@ fn box_for(store: &Store, driver: &FakeDriver, name: &str, user: UserId) -> (Box
             name: BoxName::parse_allow_bare(name).unwrap(),
             class: None,
             nonce: format!("n-{name}"),
+            cache: moor_core::cache::CachePlan::none(),
         })
         .unwrap();
     let admitted = Decision::new(id)

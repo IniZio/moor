@@ -62,6 +62,7 @@ struct State {
     fail_workdir: Option<DriverError>,
     tunnel: tunnel::TunnelState,
     sleep_kind: Option<SleepKind>,
+    cache: knobs::CacheState,
     runs: runs::RunState,
 }
 
@@ -136,6 +137,7 @@ impl Driver for FakeDriver {
         let id = format!("box-{}", s.next);
         s.live.push(id.clone());
         s.providers.push((id.clone(), req.provider.clone()));
+        s.cache.plans.push(req.cache.clone());
         let workdir = layout(s.work_root.as_deref(), &id)?;
         Ok(Acquired {
             handle: BoxHandle::new(id),

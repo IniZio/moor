@@ -18,6 +18,7 @@ use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, ProviderId};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
+use crate::ops::common::cache;
 use crate::ops::common::capacity;
 use crate::ops::common::dotfiles::{self, DotfilesRun};
 use crate::ops::common::facts::{provider_caps, provider_of, require_reverse_tunnel, settings_of};
@@ -137,7 +138,7 @@ pub(crate) fn provision(
         Some(held) => held.provider.clone(),
         None => ProviderId::new(provider_of(cfg)?),
     };
-    require_reverse_tunnel(provider.as_str(), provider_caps(cx, provider.as_str())?)?;
+    let caps = require_reverse_tunnel(provider.as_str(), provider_caps(cx, provider.as_str())?)?;
     let mut requested = Decision::new(id);
     requested.lifecycle_input = entry.begin();
     let requested = requested
@@ -171,6 +172,7 @@ pub(crate) fn provision(
         store.apply(requested)?;
     }
     let req = AcquireReq {
+        cache: cache::for_start(cx, store, &started, cfg, &provider, caps),
         provider,
         box_id: id,
         name: started.name,

@@ -73,6 +73,7 @@ fn fx_surfaced(driver: FakeDriver, surface: FakeSurface, workspace: Option<&str>
             name,
             class: None,
             nonce: "n".to_owned(),
+            cache: moor_core::cache::CachePlan::none(),
         })
         .unwrap();
     let d = Decision::new(id)

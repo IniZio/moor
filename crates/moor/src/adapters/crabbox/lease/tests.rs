@@ -26,6 +26,7 @@ fn req() -> AcquireReq {
         name: BoxName::parse_allow_bare("t7").unwrap(),
         class: None,
         nonce: "ab12cd".to_owned(),
+        cache: moor_core::cache::CachePlan::none(),
     }
 }
 

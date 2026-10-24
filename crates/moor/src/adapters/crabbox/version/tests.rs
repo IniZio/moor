@@ -123,6 +123,7 @@ fn ops() -> Vec<(&'static str, Op)> {
                 name: BoxName::parse_allow_bare("t7").unwrap(),
                 class: None,
                 nonce: "ab12cd".to_owned(),
+                cache: moor_core::cache::CachePlan::none(),
             };
             c.acquire(&req).is_err()
         }),

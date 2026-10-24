@@ -21,16 +21,18 @@ mod pinned;
 mod slug;
 mod workdir;
 
-const WARMUP_OUT: &str = "leased cbx_1 slug=moor-t7 provider=sprites server=1 type=t ip=1.2.3.4\n\
+pub(super) const WARMUP_OUT: &str =
+    "leased cbx_1 slug=moor-t7 provider=sprites server=1 type=t ip=1.2.3.4\n\
 ready ssh=u@h:22 network=public workroot=/root/crabbox\n";
 
-fn req(provider: &str, class: Option<&str>) -> AcquireReq {
+pub(super) fn req(provider: &str, class: Option<&str>) -> AcquireReq {
     AcquireReq {
         provider: ProviderId::new(provider),
         box_id: BoxId::new(7),
         name: BoxName::parse_allow_bare("t7").unwrap(),
         class: class.map(str::to_owned),
         nonce: "ab12cd".to_owned(),
+        cache: moor_core::cache::CachePlan::none(),
     }
 }
 

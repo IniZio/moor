@@ -243,5 +243,12 @@ pub(super) fn map_error(op: Op, provider: Option<&str>, e: &ProcError) -> Driver
     }
 }
 
+/// Error for output moor cannot read.
+pub(super) fn unreadable(what: &str) -> DriverError {
+    DriverError::Failed {
+        summary: format!("unreadable box provider output for {what}"),
+    }
+}
+
 #[cfg(test)]
 mod tests;

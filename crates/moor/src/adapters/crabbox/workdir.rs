@@ -4,8 +4,9 @@ use moor_core::name::{BoxHandle, BoxPath};
 use moor_core::seam::driver::{Acquired, DriverError};
 use moor_core::seam::proc::ProcSpec;
 
+use super::errors::unreadable;
 use super::errors::Op;
-use super::{parse, split_handle, unreadable, Crabbox};
+use super::{parse, split_handle, Crabbox};
 
 /// Runs the warmup `spec` for `handle` and reads where its workdir is: the ready line's
 /// `workdir`, else crabbox's own `<workroot>/<lease id>/<repo>`, where the repo is the lease dir

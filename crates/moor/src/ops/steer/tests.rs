@@ -89,6 +89,7 @@ fn ready_box(cx: &Cx, driver: &FakeDriver) -> BoxId {
             name,
             class: None,
             nonce: "n".to_owned(),
+            cache: moor_core::cache::CachePlan::none(),
         })
         .unwrap();
     let d = Decision::new(id)

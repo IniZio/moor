@@ -6,6 +6,7 @@
 use std::path::Path;
 use std::time::Duration;
 
+use crate::cache::CachePlan;
 use crate::name::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 use crate::seam::proc::{Deadline, Output};
 
@@ -31,6 +32,10 @@ pub enum SleepKind {
 
 /// Facts about a provider, as data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent provider facts, each a yes or no"
+)]
 pub struct DriverCaps {
     /// Sleep style.
     pub sleep: SleepKind,
@@ -40,6 +45,8 @@ pub struct DriverCaps {
     pub reverse_tunnel: bool,
     /// Whether the Box reports a working directory.
     pub has_workdir: bool,
+    /// Whether the provider keeps cache volumes across Boxes.
+    pub cache_volumes: bool,
 }
 
 /// A request for a new Box.
@@ -55,6 +62,8 @@ pub struct AcquireReq {
     pub class: Option<String>,
     /// Random suffix that keeps the Box name unique.
     pub nonce: String,
+    /// Cache volumes the Box gets; empty for a cold Box.
+    pub cache: CachePlan,
 }
 
 /// A Box the Driver has handed over.

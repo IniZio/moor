@@ -1,6 +1,7 @@
 //! Crabbox adapter: the only code that knows crabbox terms.
 
 mod batch;
+mod cache;
 mod caps;
 mod connect;
 mod cp;
@@ -27,7 +28,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
-use moor_core::box_key::BoxKey;
+use moor_core::box_key::{BoxKey, WORK_ROOT};
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Driver, DriverCaps, DriverError,
@@ -38,7 +39,7 @@ use moor_core::seam::proc::{Deadline, Proc, ProcOutput, ProcSpec, Tool};
 use moor_core::seam::{clock::Clock, rng::Rng};
 
 use caps::size_of;
-use errors::{map_error, Op};
+use errors::{map_error, unreadable, Op};
 
 /// Time allowed for a warmup.
 const ACQUIRE_DEADLINE: Duration = Duration::from_mins(15);
@@ -153,9 +154,9 @@ impl Crabbox {
         self.proc.run(spec).map_err(|e| map_error(op, provider, &e))
     }
 
-    /// Asks for the relative work root `moor`, which crabbox joins to the lease's login home.
+    /// Asks for the relative work root [`WORK_ROOT`], which crabbox joins to the lease's login home.
     fn spec(deadline: Duration) -> ProcSpec {
-        ProcSpec::new(Tool::Crabbox, Deadline(deadline)).env(WORK_ROOT_KEY, "moor")
+        ProcSpec::new(Tool::Crabbox, Deadline(deadline)).env(WORK_ROOT_KEY, WORK_ROOT)
     }
 }
 
@@ -195,13 +196,6 @@ fn target_args(handle: &BoxHandle) -> Vec<String> {
     provider.chain(["--id", name]).map(str::to_owned).collect()
 }
 
-/// Error for output moor cannot read.
-fn unreadable(what: &str) -> DriverError {
-    DriverError::Failed {
-        summary: format!("unreadable box provider output for {what}"),
-    }
-}
-
 impl Driver for Crabbox {
     fn caps(&self, provider: &ProviderId) -> Result<DriverCaps, DriverError> {
         self.require_version()?;
@@ -215,7 +209,7 @@ impl Driver for Crabbox {
         let provider = req.provider.as_str();
         let name = slug(req);
         let class = size_of(req.class.as_deref())?;
-        let spec = Self::spec(ACQUIRE_DEADLINE)
+        let spec = cache::with_volumes(Self::spec(ACQUIRE_DEADLINE), &req.cache)
             .args(["warmup", "--provider", provider])
             .args(["--slug", &name, "--class", class]);
         let handle = handle_of(provider, &name);

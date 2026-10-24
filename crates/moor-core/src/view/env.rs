@@ -24,6 +24,8 @@ pub enum EnvKind {
     Box,
     /// Dotfiles.
     Dotfiles,
+    /// Cache volume.
+    Cache,
 }
 
 impl EnvKind {
@@ -37,6 +39,7 @@ impl EnvKind {
             Self::Mcp => "mcp",
             Self::Box => "box",
             Self::Dotfiles => "dotfiles",
+            Self::Cache => "cache",
         }
     }
 }

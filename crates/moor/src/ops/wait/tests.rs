@@ -245,6 +245,7 @@ fn add_boxed(cx: &Cx) -> BoxId {
             name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
             nonce: "abc123".into(),
+            cache: moor_core::cache::CachePlan::none(),
         })
         .unwrap();
     let store = cx.store().unwrap();

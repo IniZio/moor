@@ -38,6 +38,7 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
         name: BoxName::parse_allow_bare("t1").unwrap(),
         class: None,
         nonce: "n0".to_owned(),
+        cache: moor_core::cache::CachePlan::none(),
     })
     .unwrap();
     d
@@ -185,6 +186,7 @@ fn a_launch_with_no_environ_reports_the_home_step() {
         name: BoxName::parse_allow_bare("t1").unwrap(),
         class: None,
         nonce: "n0".to_owned(),
+        cache: moor_core::cache::CachePlan::none(),
     })
     .unwrap();
     let s = Arc::new(FakeSurface::new());

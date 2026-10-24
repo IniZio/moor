@@ -2,6 +2,7 @@
 
 use super::CacheError;
 use crate::box_key::{HOME_PREFIX, WORK_ROOT};
+use crate::boxscript::quote;
 use crate::exec_env::per_box_paths;
 
 /// Roots a cache path may start with: the login home, and two system trees moor never writes.
@@ -90,6 +91,13 @@ impl CachePath {
     pub fn overlaps(&self, other: &Self) -> bool {
         let (a, b) = (self.0.split('/'), other.0.split('/'));
         a.zip(b).all(|(x, y)| x == y)
+    }
+
+    /// The path as shell text that expands on the Box.
+    pub(super) fn shell(&self) -> String {
+        self.0
+            .strip_prefix("~/")
+            .map_or_else(|| quote(&self.0), |rel| format!("\"$HOME\"/{}", quote(rel)))
     }
 }
 

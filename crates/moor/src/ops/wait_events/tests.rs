@@ -103,6 +103,7 @@ fn ready(cx: &Cx, n: &str) -> BoxId {
             name: name(n),
             class: None,
             nonce: "abc123".into(),
+            cache: moor_core::cache::CachePlan::none(),
         })
         .unwrap();
     let store = cx.store().unwrap();

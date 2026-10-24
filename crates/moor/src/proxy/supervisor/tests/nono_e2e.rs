@@ -78,6 +78,7 @@ fn box_with_machine(store: &Store, driver: &FakeDriver) -> (BoxId, BoxHandle) {
             name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
             nonce: "abc123".into(),
+            cache: moor_core::cache::CachePlan::none(),
         })
         .unwrap();
     let d = Decision::new(id)

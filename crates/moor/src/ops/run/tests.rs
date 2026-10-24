@@ -182,6 +182,7 @@ pub(in crate::ops::run) fn ready_repo(driver: FakeDriver, yaml: Option<&str>) ->
             name: BoxName::parse_allow_bare("t").unwrap(),
             class: None,
             nonce: "n".to_owned(),
+            cache: moor_core::cache::CachePlan::none(),
         })
         .unwrap();
     let environ = BoxPath::restore("/proc/self/environ").unwrap();

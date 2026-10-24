@@ -2,10 +2,31 @@
 
 use std::path::Path;
 
+use moor_core::cache::CacheSalt;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior};
 
 use super::open::sibling;
-use super::{artifacts, bindings, lease, users, StoreError, SCHEMA_SQL, SCHEMA_VERSION};
+use super::{artifacts, bindings, lease, users, Store, StoreError, SCHEMA_SQL, SCHEMA_VERSION};
+
+impl Store {
+    /// This state dir's cache key salt, made on first use and never changed.
+    pub(crate) fn cache_salt(&self) -> Result<CacheSalt, StoreError> {
+        let mut fresh = [0u8; 64];
+        getrandom::fill(&mut fresh)
+            .map_err(|e| StoreError::Corrupt(format!("no randomness for the cache salt: {e}")))?;
+        let stored: String = {
+            let conn = self.writer()?;
+            conn.execute(
+                "INSERT INTO meta (k, v) VALUES ('cache_salt', ?) ON CONFLICT (k) DO NOTHING",
+                [CacheSalt::new(fresh).to_hex()],
+            )?;
+            conn.query_row("SELECT v FROM meta WHERE k = 'cache_salt'", [], |r| {
+                r.get(0)
+            })?
+        };
+        parsed_opt("meta cache_salt", &stored, CacheSalt::from_hex)
+    }
+}
 
 /// Refuse an existing db at another schema version without writing to it or its directory.
 ///

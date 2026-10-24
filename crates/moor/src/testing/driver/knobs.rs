@@ -1,5 +1,6 @@
 //! Setup knobs for the Driver fake: where boxes live and which calls fail, and the calls it saw.
 
+use moor_core::cache::CachePlan;
 use moor_core::seam::driver::{DriverError, ExecSpec};
 use moor_core::seam::proc::{Deadline, Output};
 use moor_core::BoxHandle;
@@ -26,7 +27,27 @@ fn is_artifact_index(spec: &ExecSpec) -> bool {
         if sh == "sh" && c == "-c" && script.contains(".moor/artifacts"))
 }
 
+/// The fake's cache volume capability and the plans `acquire` received.
+#[derive(Default)]
+pub(super) struct CacheState {
+    /// Whether `caps` reports cache volumes.
+    pub(super) on: bool,
+    /// The plan of every `acquire`, in call order.
+    pub(super) plans: Vec<CachePlan>,
+}
+
 impl FakeDriver {
+    /// Reports that the provider keeps cache volumes.
+    pub(crate) fn cache_volumes(self) -> Self {
+        self.st().cache.on = true;
+        self
+    }
+
+    /// The cache plan of every `acquire` so far, in call order.
+    pub(crate) fn acquired_plans(&self) -> Vec<CachePlan> {
+        self.st().cache.plans.clone()
+    }
+
     /// Every `exec` so far: handle, spec and deadline, in call order.
     pub(crate) fn execs(&self) -> Vec<(BoxHandle, ExecSpec, Deadline)> {
         self.st().execs.clone()

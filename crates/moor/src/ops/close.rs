@@ -1,5 +1,6 @@
 //! `moor close`: gate, save the agent's transcript, stop the agent, tear down and release the Box, then close the Workspace.
 
+use moor_core::config::Flags;
 use moor_core::decide::close::{
     close_gate, release_outcome, BoxCheck, CloseFacts, ClosePlan, ReleaseResult,
 };
@@ -17,6 +18,8 @@ use crate::ops::common::agent_stop;
 use crate::ops::common::artifacts;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::boxwork::{self, probe, BoxWork, BOXWORK_DEADLINE};
+use crate::ops::common::cache;
+use crate::ops::common::facts::settings_of;
 use crate::ops::common::promote::promote_waiting;
 use crate::ops::common::reports;
 use crate::ops::common::target::{self, Rule};
@@ -58,6 +61,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     }
     let box_deleted = if plan.release_box {
         teardown::teardown(cx, &row, req.force)?;
+        seal_caches(cx, store, &row);
         release(cx, store, &row)?
     } else {
         store.apply(plan.decision_close.clone())?;
@@ -245,6 +249,17 @@ fn facts(row: &BoxRow, box_check: BoxCheck) -> CloseFacts {
         box_state: row.boxed.as_ref().map(|b| b.state),
         has_handle: row.boxed.as_ref().is_some_and(|b| held(b).is_some()),
         box_check,
+    }
+}
+
+/// Seals the cache volumes of a ready Box after its teardown, from the `.moor.yaml` stored with it.
+fn seal_caches(cx: &Cx, store: &Store, row: &BoxRow) {
+    let ready = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready);
+    let Some((b, handle)) = ready.and_then(|b| Some((b, held(b)?))) else {
+        return;
+    };
+    if let Ok(cfg) = settings_of(cx, row, &Flags::default()) {
+        cache::seal(cx, store, row, &cfg, handle, &b.provider);
     }
 }
 

@@ -1,5 +1,6 @@
 //! Item assembly for `env`, in a fixed order.
 
+use moor_core::cache::{CachePath, Origin};
 use moor_core::config::{BoxSettings, DotfilesConfig, Layer};
 use moor_core::seam::forge::{GitAuthor, RepoFiles};
 use moor_core::view::env::{EnvItem, EnvKind};
@@ -47,7 +48,34 @@ pub(crate) fn assemble(
     if let Some(d) = &s.dotfiles {
         items.push(dotfiles_item(cx, d));
     }
+    items.extend(cache_items(s, author.is_some()));
     items
+}
+
+/// One row per cache volume the Box would get, with its paths; never its key.
+fn cache_items(s: &BoxSettings, has_repo: bool) -> Vec<EnvItem> {
+    match s.cache.declared(has_repo) {
+        Ok(declared) => declared
+            .iter()
+            .map(|d| {
+                let paths: Vec<&str> = d.volume.paths().iter().map(CachePath::as_str).collect();
+                let source = match d.origin {
+                    Origin::Preset => Layer::Default,
+                    Origin::Repo => Layer::Repo,
+                    Origin::Operator => Layer::User,
+                };
+                EnvItem {
+                    source,
+                    ..plain(EnvKind::Cache, d.volume.name().as_str(), &paths.join(", "))
+                }
+            })
+            .collect(),
+        Err(e) => vec![EnvItem {
+            resolves: Some(false),
+            error: Some(format!("{e}; the Box starts cold")),
+            ..plain(EnvKind::Cache, "volumes", "refused")
+        }],
+    }
 }
 
 /// Dotfiles row.

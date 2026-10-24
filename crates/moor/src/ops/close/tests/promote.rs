@@ -112,6 +112,7 @@ fn acquire_holder(driver: &FakeDriver) -> BoxHandle {
             name: BoxName::parse_allow_bare("holder").unwrap(),
             class: None,
             nonce: "n".to_owned(),
+            cache: moor_core::cache::CachePlan::none(),
         })
         .unwrap();
     assert_eq!(got.handle.as_str(), HOLDER_BOX);
