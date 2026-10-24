@@ -9,6 +9,7 @@ targets = [
 yanked = "deny"
 ignore = [
   { id = "RUSTSEC-2026-0374", reason = "basic-toml is unmaintained; only age's i18n-embed-fl proc-macro reads its own i18n.toml with it at build time" },
+  { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5 comes only through elliptic-curve 0.13 (p256) in age 0.12 and nono-proxy's aws-config, with no release on 0.7; moor seals with age x25519 and never runs P-256, and the Proxy has no aws_auth route" },
 ]
 
 [licenses]
