@@ -182,31 +182,35 @@ documents for proxies.
 moor merges the three keys into an existing file and keeps every other key,
 such as `auths` and `credsStore`, and the file's mode. A new file has mode 0600.
 To merge into an existing file, the Box needs `jq`. Without `jq`, or when the
-file is not a JSON object, moor keeps the file, prints a warning on stderr and
-runs the command.
+file is a symlink, is not a regular file or is not a JSON object, moor keeps
+the file, prints a warning on stderr and runs the command.
 
-The address in the file is `172.17.0.1:<port>`, the gateway of Docker's default
-bridge. A container on the default bridge or on a Compose network reaches the
-Box at that address. A container does not reach a service of another container
-through the proxy: `noProxy` holds `localhost`, `127.0.0.1`, `::1` and
-`172.16.0.0/12`, but it cannot hold Compose service names. Add the
-names of your services to `NO_PROXY` in the Compose file. When you change
-Docker's default bridge address with `bip` or its address pools, the address
-in the file no longer matches.
+moor writes only `~/.docker/config.json` of the Box user. A Docker client that
+reads another file does not get the settings: one run with `DOCKER_CONFIG` set,
+and `sudo docker`, which reads root's config.
 
-To make this address reachable, tinyproxy listens on every IPv4 address of the
-Box and answers only these sources: `127.0.0.1` and `172.16.0.0/12`. The
-`172.16.0.0/12` range holds the default bridge and the Compose networks.
-tinyproxy takes one `Listen` address, and the bridge gateway exists only after
-Docker starts, which can be after moor writes the config. A listener on the
-gateway address would fail to start before Docker runs. tinyproxy refuses any
-other source with a 403. A Box with a public address, such as one on agent37,
-therefore accepts the connection but refuses it before it sends a request
-anywhere. A host on the Box's own network segment can still reach the proxy,
-and with it the Proxy credentials of the Box, when its address is in
-`172.16.0.0/12` or when the Box shares the host's network. A container on one of
-Docker's last default networks, in `192.168.0.0/20`, is not answered, because a
-Box's own network is often inside that range.
+The address in the file is the IPv4 address of `docker0`, Docker's default
+bridge, as `ip` reports it before each command: `172.17.0.1` unless Docker's
+`bip` changes it. A container on the default bridge or on a Compose network
+reaches the Box at that address. Before Docker has made `docker0`, or on a Box
+without `ip`, moor does not write the file. A file written earlier stays as it
+is when `docker0` goes. A container does not reach a service of another
+container through the proxy: `noProxy` holds `localhost`, `127.0.0.1`, `::1`
+and `172.16.0.0/12`, but it cannot hold Compose service names. Add the names of
+your services to `NO_PROXY` in the Compose file.
+
+tinyproxy always listens on `127.0.0.1`. While the Box has `docker0`, it also
+listens on the `docker0` address. It answers only these sources: `127.0.0.1`,
+`172.16.0.0/12`, which holds the default bridge and the Compose networks, and
+the `docker0` network. The config changes when `docker0` appears, changes its
+address or goes, and the next command restarts tinyproxy with it. The proxy is
+reachable from the Box's own processes and from its containers. A host off the
+Box cannot route to the bridge address. A host on the same network segment as
+the Box can still send packets to it, and then meets the `Allow` lines: it is
+answered, with the Proxy credentials of the Box, only when its address is in
+`172.16.0.0/12` or in the `docker0` network. A container on one of Docker's
+last default networks, in `192.168.0.0/20`, is not answered, because a Box's
+own network is often inside that range.
 
 moor does not put the Box CA in a build. Docker has no setting for it. The Box
 CA certificate is `~/.moor-proxy/ca.pem` in the Box, and `~/.moor-proxy/ca-bundle.pem`

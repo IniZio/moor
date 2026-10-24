@@ -43,16 +43,27 @@ pub const HOST_GUARD: &str = "#!/bin/sh\n\
     echo \"a test ran $(basename \"$0\") $*; the host's own is never run\" >&2\n\
     exit 97\n";
 
-/// Writes [`HOST_GUARD`] as `sudo` and `apt-get` into `bin`.
+/// Stands in for `ip`: prints `$HOME/docker0.route` as `docker0`'s route, or fails without it.
+pub const FAKE_IP: &str = r#"#!/bin/sh
+[ "$*" = "-4 route show dev docker0 proto kernel scope link" ] || { echo "fake ip: $*" >&2; exit 2; }
+[ -f "$HOME/docker0.route" ] || { echo 'Cannot find device "docker0"' >&2; exit 1; }
+exec cat "$HOME/docker0.route"
+"#;
+
+/// Writes [`HOST_GUARD`] as `sudo` and `apt-get`, and [`FAKE_IP`] as `ip`, into `bin`.
 ///
 /// A test that runs a Box script with the host's `PATH` after its own `bin` calls this, so the
 /// script never reaches the host's tools. A fake the test already wrote under either name is kept.
 pub fn write_host_guards(bin: &Path) -> io::Result<()> {
     std::fs::create_dir_all(bin)?;
-    for name in ["sudo", "apt-get"] {
+    for (name, body) in [
+        ("sudo", HOST_GUARD),
+        ("apt-get", HOST_GUARD),
+        ("ip", FAKE_IP),
+    ] {
         let path = bin.join(name);
         if !path.exists() {
-            write_executable(&path, HOST_GUARD)?;
+            write_executable(&path, body)?;
         }
     }
     Ok(())
