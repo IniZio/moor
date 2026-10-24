@@ -7,8 +7,6 @@ use moor_testkit::{FakeEgress, FAKE_TINYPROXY};
 
 use super::super::egress::{config, lines, EGRESS_FAILED};
 
-mod bridge;
-
 /// Tools the egress lines call that the fake Box takes from the host.
 const HOST_TOOLS: &[&str] = &[
     "sh", "cmp", "mkdir", "mv", "rm", "grep", "sed", "sleep", "cat", "tail", "env", "cp", "chmod",
@@ -85,7 +83,6 @@ impl FakeBox {
             ),
         }
         moor_testkit::write_executable(&bin.join("tinyproxy.deb"), FAKE_TINYPROXY).unwrap();
-        moor_testkit::write_executable(&bin.join("ip"), moor_testkit::FAKE_IP).unwrap();
         let port = FakeEgress::start(&home, &bin).unwrap();
         if !installed {
             std::fs::remove_file(bin.join("tinyproxy")).unwrap();
@@ -200,13 +197,12 @@ fn the_config_sends_each_credential_host_to_the_tunnel_and_listens_on_loopback()
     assert_eq!(
         got,
         "Port 40123\nListen 127.0.0.1\nDisableViaHeader Yes\nLogLevel Critical\nMaxClients 1024\n\
-         Allow 127.0.0.1\n\
          upstream http 127.0.0.1:20123 \".corp.example\"\n\
          upstream http 127.0.0.1:20123 \"api.anthropic.com\"\n\
          upstream http 127.0.0.1:20123 \"git.internal.example\"\n\
          upstream http 127.0.0.1:20123 \"github.com\"\n"
     );
-    for absent in ["LogFile", "ConnectPort", "Syslog"] {
+    for absent in ["LogFile", "ConnectPort", "Allow", "Syslog"] {
         assert!(!got.contains(absent), "{absent}: {got}");
     }
 }
@@ -322,10 +318,7 @@ fn a_tinyproxy_that_never_listens_stops_the_exec() {
     let (ok, out, err) = b.run();
     assert!(!ok);
     assert!(!out.contains("ran"), "{out}");
-    let reason = format!(
-        "tinyproxy started but did not listen on 127.0.0.1:{} within 5 s",
-        b.port.port()
-    );
+    let reason = format!("tinyproxy is not listening on 127.0.0.1:{}", b.port.port());
     assert!(err.contains(&failure(&reason)), "{err}");
 }
 
@@ -346,7 +339,7 @@ fn tinyproxy_starts_from_the_config_with_its_pid_file_under_dot_moor() {
         b.port.port(),
         UPSTREAM,
         &hosts(&["api.anthropic.com", "github.com"]),
-    ) + &format!("PidFile \"{}\"\nAllow 172.16.0.0/12\n", pid_file.display());
+    ) + &format!("PidFile \"{}\"\n", pid_file.display());
     assert_eq!(b.conf(), expected);
     assert!(pid_file.exists());
 }
@@ -457,17 +450,6 @@ fn a_port_held_by_another_process_stops_the_exec_and_starts_nothing() {
     assert!(!out.contains("ran"), "{out}");
     let reason = format!("port {} is taken by another process", b.port.port());
     assert!(err.contains(&failure(&reason)), "{err}");
-    assert_eq!(b.starts(), 0, "{}", b.log());
-}
-
-#[test]
-fn a_wildcard_listener_on_the_port_counts_as_listening() {
-    let b = FakeBox::new(0, Apt::Missing, true);
-    b.port.occupy_wildcard();
-    let (ok, out, err) = b.run();
-    assert!(!ok);
-    let reason = format!("port {} is taken by another process", b.port.port());
-    assert!(err.contains(&failure(&reason)), "{out}{err}");
     assert_eq!(b.starts(), 0, "{}", b.log());
 }
 
