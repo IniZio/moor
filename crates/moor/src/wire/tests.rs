@@ -132,7 +132,7 @@ fn fake_tools(dir: &Path, state: &Path) -> Env {
     let crabbox = dir.join("crabbox");
     script(
         &crabbox,
-        "case \"$1\" in --version) echo 'crabbox 0.79.1-moor.1';; *) echo \"ssh -o StrictHostKeyChecking=yes 'u@box'\";; esac",
+        "case \"$1\" in --version) echo 'crabbox 0.79.1-moor.6';; *) echo \"ssh -o StrictHostKeyChecking=yes 'u@box'\";; esac",
     );
     let ssh = dir.join("ssh");
     let log = dir.join("ssh.log");
@@ -205,7 +205,7 @@ fn freshly_wired_drivers_share_one_answer_to_crabbox_ssh_help() {
             &dir.path().join("crabbox"),
             &format!(
                 "test \"$1 $2\" = 'ssh --help' && {{ echo >> '{}'; exit 0; }}\n\
-                 case \"$1\" in --version) echo 'crabbox 0.79.1-moor.1';; \
+                 case \"$1\" in --version) echo 'crabbox 0.79.1-moor.6';; \
                  *) echo \"ssh -o StrictHostKeyChecking=yes 'u@box'\";; esac",
                 helps.display()
             ),

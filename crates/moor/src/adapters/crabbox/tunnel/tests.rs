@@ -52,7 +52,12 @@ fn argv_and_env_are_recorded() {
             "--json"
         ]
     );
-    assert!(call.env.iter().all(|(k, _)| k == "GIT_CEILING_DIRECTORIES"));
+    let root = ("CRABBOX_WORK_ROOT".to_owned(), "moor".to_owned());
+    assert!(call.env.iter().any(|(k, _)| k == "GIT_CEILING_DIRECTORIES"));
+    assert!(call
+        .env
+        .iter()
+        .all(|e| e.0 == "GIT_CEILING_DIRECTORIES" || *e == root));
 }
 
 #[test]
@@ -174,7 +179,7 @@ fn timed(p: &Arc<ScriptedProc>) -> (Crabbox, Arc<FakeClock>) {
     p.on(
         Tool::Crabbox,
         &["--version"],
-        Reply::Ok("crabbox 0.79.1-moor.1\n".into()),
+        Reply::Ok("crabbox 0.79.1-moor.6\n".into()),
     );
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let c =

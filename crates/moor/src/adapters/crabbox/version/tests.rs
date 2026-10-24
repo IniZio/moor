@@ -37,10 +37,10 @@ fn unreadable_versions_do_not_parse() {
 
 #[test]
 fn accepts_moor_builds_from_the_required_one() {
-    assert!(accepted("0.79.1-moor.1"));
+    assert!(accepted("0.79.1-moor.6"));
     assert!(accepted("0.79.1-moor.10"));
     assert!(accepted("crabbox 0.80.0-moor.1"));
-    assert!(!accepted("0.79.1-moor.0"));
+    assert!(!accepted("0.79.1-moor.5"));
     assert!(!accepted("0.79.0-moor.9"));
     assert!(!accepted("0.72.0-moor.9"));
 }
@@ -56,7 +56,7 @@ fn refuses_upstream_releases_however_new() {
 fn refusal(found: &str) -> Result<(), DriverError> {
     Err(DriverError::Failed {
         summary: format!(
-            "crabbox 0.79.1-moor.1 or a newer -moor build of IniZio/crabbox is required, \
+            "crabbox 0.79.1-moor.6 or a newer -moor build of IniZio/crabbox is required, \
              found {found}; install it"
         ),
     })
@@ -86,14 +86,14 @@ fn caps_refuses_an_old_crabbox_before_listing_providers() {
     let (p, c) = unchecked_fixture(Reply::Ok("crabbox 0.72.0-moor.6\n".into()));
     let err = c.caps(&ProviderId::new("sprites")).unwrap_err();
     let text = format!("{err:?}");
-    assert!(text.contains("0.79.1-moor.1") && text.contains("0.72.0-moor.6"));
+    assert!(text.contains("0.79.1-moor.6") && text.contains("0.72.0-moor.6"));
     assert!(text.contains("IniZio/crabbox"));
     assert_eq!(p.calls().len(), 1);
 }
 
 #[test]
 fn caps_checks_the_version_once() {
-    let (p, c) = unchecked_fixture(Reply::Ok("crabbox 0.79.1-moor.1\n".into()));
+    let (p, c) = unchecked_fixture(Reply::Ok("crabbox 0.79.1-moor.6\n".into()));
     let _ = c.caps(&ProviderId::new("sprites"));
     let _ = c.caps(&ProviderId::new("sprites"));
     let verbs: Vec<_> = p
