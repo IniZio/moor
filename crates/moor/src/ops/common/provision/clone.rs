@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use moor_core::boxscript::clone::{clone_script, Checkout, CloneStep};
+use moor_core::boxscript::refresh::refresh_script;
 use moor_core::boxscript::resources;
 use moor_core::config::BoxSettings;
 use moor_core::exec_env::Purpose;
@@ -11,13 +12,14 @@ use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Output;
 use moor_core::seam::proxy_host::ProxyStatus;
 use moor_core::shape::Shape;
-use moor_core::{box_key, BoxId, Warning};
+use moor_core::{box_key, BoxId, ProviderId, Warning};
 
 use super::outcome::clone_failed;
 use super::SetupTarget;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::box_exec::{self, BoxProxy, Site};
+use crate::ops::common::cache;
 use crate::ops::common::dotfiles;
 use crate::ops::common::identity::Identity;
 use crate::ops::common::proxy::TAIL_LINES;
@@ -43,6 +45,8 @@ struct Plan {
     base: String,
     /// The Box branch.
     branch: String,
+    /// The Box's key when it keeps its work tree, which is refreshed once per Box before the clone.
+    refresh: Option<String>,
 }
 
 impl Plan {
@@ -71,7 +75,7 @@ pub(super) fn clone_with_proxy(
     target: &SetupTarget<'_>,
     cfg: &BoxSettings,
 ) -> Result<(Cloned, SetupProxy), CommandError> {
-    let plan = plan(store, id, target)?;
+    let plan = plan(cx, store, id, target, cfg)?;
     let wants = plan.is_some() || !cfg.setup.is_empty() || cfg.dotfiles.is_some();
     let was_up = wants && matches!(cx.proxy_host().status(id), Ok(ProxyStatus::Ready { .. }));
     let proxy = wants
@@ -112,17 +116,27 @@ pub(super) fn clone_with_proxy(
 }
 
 /// What the Box clones: its repo at the Box's base and on its branch; none for a Box with no repo.
-fn plan(store: &Store, id: BoxId, target: &SetupTarget<'_>) -> Result<Option<Plan>, CommandError> {
+fn plan(
+    cx: &Cx,
+    store: &Store,
+    id: BoxId,
+    target: &SetupTarget<'_>,
+    cfg: &BoxSettings,
+) -> Result<Option<Plan>, CommandError> {
     let Some(repo) = target.repo else {
         return Ok(None);
     };
     let Some(row) = store.box_row(id)? else {
         return Ok(None);
     };
+    let provider = ProviderId::new(target.provider);
+    let refresh = cache::keeps_work_tree(cx, store, &row, cfg, &provider)
+        .then(|| target.handle.as_str().to_owned());
     Ok(Some(Plan {
         url: repo.repo.clone_url(),
         base: row.base.unwrap_or_else(|| "HEAD".to_owned()),
         branch: row.branch.unwrap_or_else(|| box_key::branch(&row.name)),
+        refresh,
     }))
 }
 
@@ -179,6 +193,9 @@ fn clone(
     }
     let mut script = identity.map(Identity::script).unwrap_or_default();
     if let Some(plan) = plan {
+        if let Some(key) = &plan.refresh {
+            script.push_str(&refresh_script(&plan.checkout(), key));
+        }
         script.push_str(&clone_script(&plan.checkout()));
     }
     let script = resources::after(&script);
