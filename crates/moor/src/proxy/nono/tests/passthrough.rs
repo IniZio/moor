@@ -37,7 +37,7 @@ fn hdr_rule(port: u16, allow: &str) -> ResolvedRule {
 
 /// A running proxy that serves one `hdr` rule in front of a fake upstream.
 struct Rig {
-    /// Owns every file; dropped last.
+    /// Owns every file the rig writes.
     _dir: TempDir,
     /// The fake upstream behind the rule.
     up: Upstream,
@@ -173,8 +173,17 @@ fn path_scoped_rule_injects_on_the_same_path_without_the_encoding() {
 fn front_proxy_path_scoped_rule_refuses_an_encoded_slash() {
     let rig = Rig::start("'GET /**'", true);
     let status = rig.get(&format!("https://localhost:{}{SCOPED}", rig.up.port));
-    assert!(status.is_err() || status == Ok(403), "got {status:?}");
+    assert!(
+        matches!(&status, Ok(403)) || status.as_ref().is_err_and(|e| e.contains("403")),
+        "got {status:?}"
+    );
     assert!(rig.up.seen().is_empty(), "{:?}", rig.up.seen());
+    let (status, seen) = rig.fetch("/@fortawesome/fontawesome-pro");
+    assert_eq!(status, Ok(200));
+    assert_eq!(
+        seen.authorization.as_deref(),
+        Some(format!("Bearer {SECRET}").as_str())
+    );
 }
 
 #[test]
