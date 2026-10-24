@@ -153,9 +153,11 @@ impl Crabbox {
         self.proc.run(spec).map_err(|e| map_error(op, provider, &e))
     }
 
-    /// Starts a crabbox spec that asks for [`WORK_ROOT`], overriding `external.workRoot`.
+    /// Starts a crabbox spec that asks the external provider for [`WORK_ROOT`]. The
+    /// external-only key keeps every other provider on crabbox's own work root.
     fn spec(deadline: Duration) -> ProcSpec {
-        ProcSpec::new(Tool::Crabbox, Deadline(deadline)).env("CRABBOX_WORK_ROOT", WORK_ROOT)
+        ProcSpec::new(Tool::Crabbox, Deadline(deadline))
+            .env("CRABBOX_EXTERNAL_WORK_ROOT", WORK_ROOT)
     }
 }
 

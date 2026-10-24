@@ -52,7 +52,7 @@ fn argv_and_env_are_recorded() {
             "--json"
         ]
     );
-    let root = ("CRABBOX_WORK_ROOT".to_owned(), "moor".to_owned());
+    let root = ("CRABBOX_EXTERNAL_WORK_ROOT".to_owned(), "moor".to_owned());
     assert!(call.env.iter().any(|(k, _)| k == "GIT_CEILING_DIRECTORIES"));
     assert!(call
         .env
