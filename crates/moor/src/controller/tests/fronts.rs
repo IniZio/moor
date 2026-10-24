@@ -172,6 +172,27 @@ fn a_start_acts_only_as_an_identity_its_socket_may_assert() {
 }
 
 #[test]
+fn env_reads_a_repo_as_the_identity_a_start_acts_as() {
+    let served = Served::start();
+    let env = json!({"cmd": "env", "repo": "o/n"});
+    let start = json!({"cmd": "start", "name": "demo", "repo": "o/n"});
+    for request in [&start, &env] {
+        refused(
+            &ask(&served.main, request),
+            "log in first: moor user enroll",
+        );
+        let as_me = json!({"cmd": "as", "identity": me(), "request": request});
+        refused(&ask(&served.main, &as_me), "log in first: moor user enroll");
+        let as_other = json!({"cmd": "as", "identity": "local:4242", "request": request});
+        refused(&ask(&served.main, &as_other), "speaks only for local:");
+    }
+    ask(&served.main, &json!({"cmd": "enroll"}));
+    for request in [&start, &env] {
+        refused(&ask(&served.main, request), "moor user secret set github");
+    }
+}
+
+#[test]
 fn start_needs_answers_for_the_identity_a_front_asserts() {
     let served = Served::start();
     let slack = served.front("slack");
