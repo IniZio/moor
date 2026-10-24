@@ -72,6 +72,10 @@ impl Engine for BoxAgent {
         self.profile.first_run_prompt(tail)
     }
 
+    fn hooks_quiet_during_first_run(&self) -> bool {
+        self.profile.hooks_quiet_during_first_run()
+    }
+
     fn launch(&self, req: &LaunchReq) -> Result<SessionRef, EngineError> {
         launch::launch(
             self.driver.as_ref(),

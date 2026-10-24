@@ -29,8 +29,23 @@ fn idle_state_is_idle() {
 fn starting_state_is_starting() {
     assert_eq!(
         kind(r#"{"state":"starting","ts":1}"#),
-        Some(HookKind::Starting)
+        Some(HookKind::Starting { launch: None })
     );
+}
+
+#[test]
+fn a_starting_marker_names_its_launch() {
+    assert_eq!(
+        kind(r#"{"state":"starting","launch":"a1b2c3","ts":1}"#),
+        Some(HookKind::Starting {
+            launch: Some("a1b2c3".to_owned())
+        })
+    );
+}
+
+#[test]
+fn claude_runs_no_hook_while_a_first_run_screen_is_up() {
+    assert!(Claude.hooks_quiet_during_first_run());
 }
 
 #[test]

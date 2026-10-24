@@ -118,6 +118,7 @@ fn start_view_keys_match_wire_shape() {
             launched: true,
             session: Some("s".into()),
             reason: None,
+            nonce: Some("a1b2c3".into()),
         },
         warnings_inline: vec![],
         failed_step: None,
