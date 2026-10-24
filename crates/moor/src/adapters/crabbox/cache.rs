@@ -7,6 +7,9 @@ use serde::Serialize;
 /// The env key crabbox reads cache volumes from.
 const KEY: &str = "CRABBOX_CACHE_VOLUMES";
 
+/// The env key crabbox reads the Box's cache scope from.
+const SCOPE_KEY: &str = "CRABBOX_CACHE_SCOPE";
+
 /// One volume in crabbox's `CacheVolumeConfig` shape, extended with `group`, `paths`
 /// and `sealed`.
 #[derive(Serialize)]
@@ -47,10 +50,14 @@ pub(super) fn env_value(plan: &CachePlan) -> Option<String> {
     serde_json::to_string(&wire).ok()
 }
 
-/// `spec` with the plan's volumes in its env, when there are any.
+/// `spec` with the plan's volumes and scope in its env, when there are any.
 pub(super) fn with_volumes(spec: ProcSpec, plan: &CachePlan) -> ProcSpec {
-    match env_value(plan) {
-        Some(v) => spec.env(KEY, v),
+    let Some(volumes) = env_value(plan) else {
+        return spec;
+    };
+    let spec = spec.env(KEY, volumes);
+    match plan.scope() {
+        Some(scope) => spec.env(SCOPE_KEY, scope),
         None => spec,
     }
 }
