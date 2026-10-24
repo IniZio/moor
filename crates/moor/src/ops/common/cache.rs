@@ -46,18 +46,13 @@ fn plan(
     };
     let repo = row.repo.as_ref().map(|r| &r.repo);
     let refused = |e: &dyn std::fmt::Display| Cold::Refused(e.to_string());
-    let declared = cfg
-        .cache
-        .declared(repo.is_some())
-        .map_err(|e| refused(&e))?;
-    if declared.is_empty() {
+    let resolved = cfg.cache.resolve(repo.is_some()).map_err(|e| refused(&e))?;
+    if resolved.volumes.is_empty() && resolved.dropped.is_empty() {
         return Ok(CachePlan::none());
     }
     if !caps.cache_volumes {
-        let own = declared
-            .iter()
-            .filter(|d| d.origin != Origin::Preset)
-            .count();
+        let kept = resolved.volumes.iter();
+        let own = kept.filter(|d| d.origin != Origin::Preset).count() + resolved.dropped.len();
         return if own == 0 {
             Ok(CachePlan::none())
         } else {
@@ -69,7 +64,7 @@ fn plan(
 }
 
 /// The plan a new Box's acquire carries; a Box that gets none warns why, unless the operator
-/// turned cache volumes off.
+/// turned cache volumes off, and each declared volume the plan dropped warns on its own.
 pub(crate) fn for_start(
     cx: &Cx,
     store: &Store,
@@ -79,7 +74,15 @@ pub(crate) fn for_start(
     caps: DriverCaps,
 ) -> CachePlan {
     let (code, message) = match plan(cx, store, row, cfg, provider, caps) {
-        Ok(plan) => return plan,
+        Ok(plan) => {
+            for d in plan.dropped() {
+                cx.warn(Warning {
+                    code: "cache_refused".to_owned(),
+                    message: d.to_string(),
+                });
+            }
+            return plan;
+        }
         Err(Cold::Off) => return CachePlan::none(),
         Err(Cold::Unsupported(n)) => (
             "cache_unavailable",

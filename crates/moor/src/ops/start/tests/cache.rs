@@ -103,6 +103,43 @@ fn clashing_layers_start_cold_with_a_refusal() {
     assert_eq!(cache_warnings(&w), ["cache_refused"]);
 }
 
+fn refusals(w: &World) -> Vec<String> {
+    let all = w.cx.take_warnings();
+    all.into_iter()
+        .filter(|w| w.code.starts_with("cache_"))
+        .map(|w| format!("{}: {}", w.code, w.message))
+        .collect()
+}
+
+#[test]
+fn a_volume_over_docker_data_is_refused_and_the_box_keeps_the_rest() {
+    let w = world(FakeDriver::new().cache_volumes());
+    let yaml = "cache: {volumes: [{name: mine, path: ~/docker}, {name: sdk, path: /opt/sdk}]}\n";
+    script_base_yaml(&w, Some(yaml));
+    run(&w.cx, &repo_req("demo")).unwrap();
+    let plan = w.driver.acquired_plans().into_iter().next().unwrap();
+    let got = names(&plan);
+    assert!(got.contains(&"docker") && got.contains(&"sdk"), "{got:?}");
+    assert!(!got.contains(&"mine"), "{got:?}");
+    let [warned]: [String; 1] = refusals(&w).try_into().unwrap();
+    assert!(
+        warned.starts_with("cache_refused: repo cache volume mine meets the sealed docker"),
+        "{warned}"
+    );
+}
+
+#[test]
+fn a_volume_over_docker_data_is_refused_with_presets_off() {
+    let w = world(FakeDriver::new().cache_volumes());
+    let yaml = "cache: {presets: false, volumes: [{name: mine, path: ~/docker}]}\n";
+    script_base_yaml(&w, Some(yaml));
+    run(&w.cx, &repo_req("demo")).unwrap();
+    let [plan]: [CachePlan; 1] = w.driver.acquired_plans().try_into().unwrap();
+    assert!(plan.is_empty());
+    let [warned]: [String; 1] = refusals(&w).try_into().unwrap();
+    assert!(warned.starts_with("cache_refused: "), "{warned}");
+}
+
 /// The scripts of every exec that ran a seal, in order.
 fn seals(w: &World) -> Vec<String> {
     w.driver

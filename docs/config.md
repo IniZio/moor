@@ -190,7 +190,10 @@ cache:
 
 A layer declares at most 8 volumes. Two volumes may not share a name, and
 their paths may not be equal or nested. A repo volume and an operator volume
-that clash leave the Box cold, with a `cache_refused` warning.
+that clash leave the Box cold, with a `cache_refused` warning. A declared
+volume on, above or inside Docker's data paths (`~/docker`,
+`/var/lib/containerd`) is dropped with its own `cache_refused` warning, even
+when the docker preset is off, and the Box keeps the rest of its volumes.
 
 #### Presets
 
