@@ -76,7 +76,7 @@ fn refused(name: &str, spoil: fn(&Origin), why: &str) {
     let out = seal(&o, Some(&o.base));
     let [got]: [NotKept; 1] = not_kept(&out).try_into().unwrap();
     assert_eq!(got.name, "worktree", "{name}");
-    assert!(got.reason.contains(why), "{name}: {}", got.reason);
+    assert_eq!(got.reason, why, "{name}");
     assert!(
         seal_failed(&out).is_empty(),
         "{name}: the tree is not emptied"
@@ -94,7 +94,15 @@ fn commit_a(o: &Origin, text: &str) {
 
 #[test]
 fn an_unpushed_commit_on_the_branch_another_branch_or_a_detached_head_is_not_kept() {
-    refused("branch", |o| commit_a(o, "local\n"), "1 unpushed commits");
+    refused("branch", |o| commit_a(o, "local\n"), "1 unpushed commit");
+    refused(
+        "two",
+        |o| {
+            commit_a(o, "first\n");
+            commit_a(o, "second\n");
+        },
+        "2 unpushed commits",
+    );
     refused(
         "side",
         |o| {
@@ -102,7 +110,7 @@ fn an_unpushed_commit_on_the_branch_another_branch_or_a_detached_head_is_not_kep
             commit_a(o, "side\n");
             o.git(&o.tree(), &["checkout", "-q", BRANCH]);
         },
-        "1 unpushed commits",
+        "1 unpushed commit",
     );
     refused(
         "detached",
@@ -110,7 +118,7 @@ fn an_unpushed_commit_on_the_branch_another_branch_or_a_detached_head_is_not_kep
             o.git(&o.tree(), &["checkout", "-q", "--detach"]);
             commit_a(o, "detached\n");
         },
-        "1 unpushed commits",
+        "1 unpushed commit",
     );
 }
 
@@ -122,7 +130,7 @@ fn a_stash_a_staged_change_or_a_rebase_in_progress_is_not_kept() {
             std::fs::write(o.tree().join("a.txt"), "stashed\n").unwrap();
             o.git(&o.tree(), &["stash", "-q"]);
         },
-        "stash",
+        "it holds a git stash",
     );
     refused(
         "staged",
@@ -130,7 +138,7 @@ fn a_stash_a_staged_change_or_a_rebase_in_progress_is_not_kept() {
             std::fs::write(o.tree().join("a.txt"), "staged\n").unwrap();
             o.git(&o.tree(), &["add", "a.txt"]);
         },
-        "staged",
+        "it has staged changes",
     );
     refused(
         "rebase",
@@ -142,7 +150,7 @@ fn a_stash_a_staged_change_or_a_rebase_in_progress_is_not_kept() {
             let out = o.try_git(&o.tree(), &["rebase", "origin/moor/conflict"]);
             assert!(!out.status.success(), "{out:?}");
         },
-        "in progress",
+        "a git operation is in progress (.git/rebase-merge)",
     );
 }
 
