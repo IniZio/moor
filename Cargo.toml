@@ -13,8 +13,8 @@ exclude = ["target"]
 resolver = "2"
 
 [patch.crates-io]
-nono = { git = "https://github.com/IniZio/nono", rev = "46c79a0d67dc084645e856c3a40b43791edc91c8" }
-nono-proxy = { git = "https://github.com/IniZio/nono", rev = "46c79a0d67dc084645e856c3a40b43791edc91c8" }
+nono = { git = "https://github.com/IniZio/nono", rev = "83e639c4ae59538c33753c287324e5a80114a301" }
+nono-proxy = { git = "https://github.com/IniZio/nono", rev = "83e639c4ae59538c33753c287324e5a80114a301" }
 
 [workspace.lints.clippy]
 allow_attributes_without_reason = "deny"
