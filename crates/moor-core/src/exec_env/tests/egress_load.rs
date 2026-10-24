@@ -116,6 +116,20 @@ fn tunnels_through(proxy: (Ipv4Addr, u16)) -> bool {
     s.read_exact(&mut head).is_ok() && head.ends_with(b" 200")
 }
 
+/// The first line of the proxy's answer to a CONNECT sent from `source`.
+fn answer_from(source: Ipv4Addr, proxy: (Ipv4Addr, u16)) -> String {
+    use rustix::net::{bind, connect, socket, AddressFamily, SocketAddrV4, SocketType};
+    let fd = socket(AddressFamily::INET, SocketType::STREAM, None).unwrap();
+    bind(&fd, &SocketAddrV4::new(source, 0)).unwrap();
+    connect(&fd, &SocketAddrV4::new(proxy.0, proxy.1)).unwrap();
+    let mut s = TcpStream::from(fd);
+    s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    write!(s, "CONNECT 127.0.0.1:9 HTTP/1.1\r\n\r\n").unwrap();
+    let mut head = [0u8; 12];
+    s.read_exact(&mut head).unwrap();
+    String::from_utf8_lossy(&head).into_owned()
+}
+
 struct Daemon(std::path::PathBuf);
 
 impl Drop for Daemon {
@@ -179,4 +193,27 @@ fn tinyproxy_serves_on_the_bridge_address_while_docker0_exists_and_drops_it_afte
         "the bridge listener outlived docker0"
     );
     assert!(tunnels_through((Ipv4Addr::LOCALHOST, port)));
+
+    denied_subnets_refuse_their_sources_but_not_loopback(&home, port, &run);
+}
+
+fn denied_subnets_refuse_their_sources_but_not_loopback(
+    home: &std::path::Path,
+    port: u16,
+    run: &dyn Fn(),
+) {
+    std::fs::write(
+        home.join("kernel.routes"),
+        "127.0.0.0/8 dev lo proto kernel scope link src 127.0.0.1\n10.8.0.1 dev tun0 proto kernel scope link src 10.8.0.2\n",
+    )
+    .unwrap();
+    run();
+    assert!(
+        tunnels_through((Ipv4Addr::LOCALHOST, port)),
+        "a Deny of the loopback subnet refused loopback itself"
+    );
+    assert!(
+        answer_from(Ipv4Addr::new(127, 0, 0, 2), (Ipv4Addr::LOCALHOST, port)).ends_with(" 403"),
+        "a source in a denied subnet was not refused"
+    );
 }

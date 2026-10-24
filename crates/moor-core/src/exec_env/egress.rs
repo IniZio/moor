@@ -9,7 +9,7 @@ pub const EGRESS_FAILED: &str = "the egress proxy could not start";
 
 /// Shell variables the egress lines set; the prelude unsets them at its end.
 pub(super) const EGRESS_SHELL_VARS: &str =
-    "moor_su moor_apt moor_conf moor_new moor_n moor_pid moor_ours moor_st moor_br";
+    "moor_su moor_apt moor_conf moor_new moor_n moor_pid moor_ours moor_st moor_br moor_own";
 
 /// The Box directory, under the Box user's home, that holds the files below; each is shell text
 /// that expands on the Box.
@@ -58,8 +58,15 @@ pub(super) fn bridge_line() -> String {
     "moor_br=$(ip -4 route show dev docker0 proto kernel scope link 2>/dev/null | sed -n '1s|^\\([0-9.]*/[0-9]*\\) .*src \\([0-9.]*\\).*|\\2 \\1|p')".to_owned()
 }
 
-/// The tinyproxy config without its `PidFile` line: listen on loopback `listen`, and send each of
-/// `hosts` to the Proxy tunnel on loopback `upstream`.
+/// Sets `moor_own` to the Box's own connected IPv4 subnets, one per line, leaving out the ones on
+/// `docker0`, Compose's `br-*` bridges and container `veth*` ends.
+pub(super) fn own_subnets_line() -> String {
+    "moor_own=$(ip -4 route show proto kernel scope link 2>/dev/null | sed -n -e '/ dev docker0 /d' -e '/ dev br-/d' -e '/ dev veth/d' -e 's|^\\([0-9.]*\\(/[0-9]*\\)\\{0,1\\}\\) dev .*|\\1|p')".to_owned()
+}
+
+/// The tinyproxy config without its `PidFile` line and the access lines after it: listen on
+/// loopback `listen`, answer `127.0.0.1`, and send each of `hosts` to the Proxy tunnel on loopback
+/// `upstream`.
 ///
 /// A quoted host matches only itself; a host that starts with `.` matches its subdomains.
 pub(super) fn config(listen: u16, upstream: u16, hosts: &[String]) -> String {
@@ -69,9 +76,6 @@ pub(super) fn config(listen: u16, upstream: u16, hosts: &[String]) -> String {
     let mut out = format!(
         "Port {listen}\nListen 127.0.0.1\nDisableViaHeader Yes\nLogLevel Critical\nMaxClients {MAX_CLIENTS}\nAllow 127.0.0.1\n"
     );
-    for source in DOCKER_SOURCES {
-        let _ = writeln!(out, "Allow {source}");
-    }
     for host in hosts {
         let _ = writeln!(out, "upstream http 127.0.0.1:{upstream} \"{host}\"");
     }
@@ -87,7 +91,15 @@ fn stop(reason: &str) -> String {
 /// Lines that install tinyproxy when it is missing, write its config, and start it when it is not
 /// listening on `listen` or its config changed. Every failure stops the exec with the reason.
 ///
-/// A `docker0` that appears, moves or goes changes the config, so the next command restarts it.
+/// A `docker0` that appears, moves or goes, or a change in the Box's own subnets, changes the
+/// config, so the next command restarts it.
+///
+/// The access lines run in this order, because tinyproxy applies the first line that matches a
+/// source: `127.0.0.1`, the `docker0` network, a `Deny` for each of the Box's own subnets, then
+/// Docker's address pool. A peer on the Box's own segment can send to the `docker0` address; its
+/// subnet is denied before the pool, which may hold that subnet (AWS's default VPC is
+/// `172.31.0.0/16`). Every subnet is denied, not only those inside the pool, since shell has no
+/// CIDR arithmetic and a `Deny` outside the pool matches nothing the pool would allow.
 ///
 /// A changed config goes to a temp file and replaces `~/.moor/egress.conf` only once the new
 /// tinyproxy listens, so a failed restart leaves the old config and the next command retries.
@@ -109,8 +121,9 @@ pub(super) fn lines(listen: u16, upstream: u16, hosts: &[String]) -> Vec<String>
         stop(&format!("apt-get could not install tinyproxy-bin: $(tail -n 1 \"{INSTALL_LOG}\")")),
     );
     let config = format!(
-        "moor_conf=$(printf '%s\\n' {}\"PidFile \\\"{PID}\\\"\"; [ -z \"$moor_br\" ] || printf 'Listen %s\\nAllow %s\\n' \"${{moor_br% *}}\" \"${{moor_br#* }}\"); moor_new=; if ! printf '%s\\n' \"$moor_conf\" | cmp -s - \"{CONF}\" 2>/dev/null; then printf '%s\\n' \"$moor_conf\" >\"{CONF}.new\" || {{ rm -f \"{CONF}.new\"; {}; }}; moor_new=1; fi",
+        "moor_conf=$(printf '%s\\n' {}\"PidFile \\\"{PID}\\\"\"; [ -z \"$moor_br\" ] || printf 'Listen %s\\nAllow %s\\n' \"${{moor_br% *}}\" \"${{moor_br#* }}\"; [ -z \"$moor_own\" ] || printf 'Deny %s\\n' $moor_own; printf 'Allow %s\\n' {}); moor_new=; if ! printf '%s\\n' \"$moor_conf\" | cmp -s - \"{CONF}\" 2>/dev/null; then printf '%s\\n' \"$moor_conf\" >\"{CONF}.new\" || {{ rm -f \"{CONF}.new\"; {}; }}; moor_new=1; fi",
         crate::boxscript::quote(&config(listen, upstream, hosts)),
+        DOCKER_SOURCES.join(" "),
         stop(&format!("its config could not be written to {CONF}")),
     );
     let ours = format!(
@@ -130,6 +143,7 @@ pub(super) fn lines(listen: u16, upstream: u16, hosts: &[String]) -> Vec<String>
     );
     vec![
         bridge_line(),
+        own_subnets_line(),
         format!(
             "mkdir -p \"{DIR}\" || {}",
             stop(&format!("{DIR} could not be created"))

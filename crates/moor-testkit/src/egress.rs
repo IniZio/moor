@@ -43,11 +43,20 @@ pub const HOST_GUARD: &str = "#!/bin/sh\n\
     echo \"a test ran $(basename \"$0\") $*; the host's own is never run\" >&2\n\
     exit 97\n";
 
-/// Stands in for `ip`: prints `$HOME/docker0.route` as `docker0`'s route, or fails without it.
+/// Stands in for `ip`.
+///
+/// The `docker0` route query prints `$HOME/docker0.route`, or fails without it. The query for the Box's connected subnets prints `$HOME/kernel.routes`, or nothing without
+/// it. Any other arguments fail.
 pub const FAKE_IP: &str = r#"#!/bin/sh
-[ "$*" = "-4 route show dev docker0 proto kernel scope link" ] || { echo "fake ip: $*" >&2; exit 2; }
-[ -f "$HOME/docker0.route" ] || { echo 'Cannot find device "docker0"' >&2; exit 1; }
-exec cat "$HOME/docker0.route"
+case "$*" in
+  "-4 route show dev docker0 proto kernel scope link")
+    [ -f "$HOME/docker0.route" ] || { echo 'Cannot find device "docker0"' >&2; exit 1; }
+    exec cat "$HOME/docker0.route";;
+  "-4 route show proto kernel scope link")
+    [ -f "$HOME/kernel.routes" ] || exit 0
+    exec cat "$HOME/kernel.routes";;
+  *) echo "fake ip: $*" >&2; exit 2;;
+esac
 "#;
 
 /// Writes [`HOST_GUARD`] as `sudo` and `apt-get`, and [`FAKE_IP`] as `ip`, into `bin`.
