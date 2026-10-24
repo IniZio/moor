@@ -96,20 +96,22 @@ pub(super) fn volume(name: &str, size_gb: Option<NonZeroU32>) -> Option<Volume> 
     })
 }
 
-/// The seal step: it passes only when the tree holds nothing a remote lacks, and otherwise prints
-/// why on its last line. Modified and untracked files do not block it, as they never entered
-/// the object store and the next Box's refresh removes them. `MOOR_SEAL_BASE`, when set, is the
-/// Box's base, which counts as pushed. Lazy fetch is off so a check never reaches the network.
+/// The seal step: it passes only when no git operation is in progress, nothing is staged, there
+/// is no stash, and no commit is reached by HEAD or by any ref other than a tag or one of
+/// `origin`'s branches unless `origin`'s branches or the base hold it; otherwise it prints why on
+/// its last line. A tag needs no check, as the refresh prunes tags `origin` lacks. Modified and
+/// untracked files do not block it, as they never entered the object store and the next Box's
+/// refresh removes them. `MOOR_SEAL_BASE`, when set, is the Box's base, which counts as pushed. Lazy fetch is off so a check never reaches the network.
 fn seal_step(path: &CachePath) -> String {
     format!(
         r#"cd {dir} 2>/dev/null && [ "$(git rev-parse --git-dir 2>/dev/null)" = .git ] || {{ echo 'the work tree is not a git checkout'; exit 1; }}
 export GIT_NO_LAZY_FETCH=1
-for f in rebase-merge rebase-apply MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD BISECT_LOG; do
+for f in rebase-merge rebase-apply sequencer MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD BISECT_LOG; do
   [ -e ".git/$f" ] && {{ echo "a git operation is in progress (.git/$f)"; exit 1; }}
 done
 git rev-parse -q --verify refs/stash >/dev/null && {{ echo 'it holds a git stash'; exit 1; }}
 git diff --cached --quiet 2>/dev/null || {{ echo 'it has staged changes'; exit 1; }}
-set -- HEAD --branches --not --remotes
+set -- HEAD --exclude='refs/tags/*' --exclude='refs/remotes/origin/*' --all --not --remotes=origin
 if [ -n "$MOOR_SEAL_BASE" ] && b=$(git rev-parse -q --verify "$MOOR_SEAL_BASE^{{commit}}" 2>/dev/null); then set -- "$@" "$b"; fi
 n=$(git rev-list --count "$@" 2>/dev/null) || {{ echo 'git could not count unpushed commits'; exit 1; }}
 [ "$n" -eq 0 ] || {{ [ "$n" -eq 1 ] && s= || s=s; echo "$n unpushed commit$s"; exit 1; }}"#,
