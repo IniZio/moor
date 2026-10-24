@@ -12,8 +12,8 @@ pub const LOG_PREFIX: &str = "moor: work tree ";
 /// It runs once per Box: `.moor/tree` names the Box that last refreshed the tree, and a rerun
 /// on that Box changes nothing, so the session's commits stay. Otherwise it leaves the workdir
 /// either on the Box branch, as `origin/<branch>` or else the base, with every tracked file
-/// reset, every untracked file and nested repo removed and ignored files kept, no other local
-/// branch, no stash and no reflog; or, when any step fails, empty, so the clone script clones
+/// reset, every untracked file and nested repo removed and ignored files kept, no remote but
+/// `origin`, no ref but the Box branch, `origin`'s branches and the tags, and no reflog; or, when any step fails, empty, so the clone script clones
 /// cold. A base of `HEAD` means the remote's default branch, never the old local HEAD. Lazy
 /// fetch stays on, so a partial clone's checkout fetches the blobs it needs. The refresh never
 /// fails the script. A URL, base or branch that starts with `-` is left to the clone script,
@@ -54,8 +54,9 @@ moor_tree_refresh() {{
   git update-index -q --refresh >/dev/null 2>&1
   git checkout -q -f --no-track -B {branch} "$from" -- || {{ moor_tree_cold 'git checkout failed'; return 0; }}
   git clean -ffdq || {{ moor_tree_cold 'git clean failed'; return 0; }}
-  git for-each-ref --format='%(refname)' refs/heads | grep -vxF -- {local} | while read -r r; do git update-ref -d "$r"; done
-  git update-ref -d refs/stash 2>/dev/null
+  git remote | while read -r r; do [ "$r" = origin ] || git remote remove "$r"; done
+  git for-each-ref --format='%(refname)' | grep -vxF -- {local} | grep -v -e '^refs/remotes/origin/' -e '^refs/tags/' |
+    while read -r r; do git update-ref --no-deref -d "$r"; done
   git reflog expire --expire=now --all && git worktree prune || {{ moor_tree_cold 'git could not drop old refs'; return 0; }}
   if [ -f .gitmodules ] && git submodule status --recursive 2>/dev/null | grep -q '^[ +U]'; then
     {{ git submodule sync -q --recursive && git submodule update -q --init --recursive --force &&
