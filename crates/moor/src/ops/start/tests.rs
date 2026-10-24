@@ -36,6 +36,7 @@ mod lease_dirs;
 mod lease_handle;
 mod others;
 mod parent;
+mod prompt_watch;
 mod provider_caps;
 mod provider_unset;
 mod proxy;

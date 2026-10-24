@@ -9,7 +9,7 @@ use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use moor_core::activity::{HookRead, PaneRead, Probes};
+use moor_core::activity::{HookKind, HookRead, HookRecord, PaneRead, Probes};
 use moor_core::name::BoxPath;
 use moor_core::seam::agent_profile::{FirstRunPrompt, PromptMatch};
 use moor_core::seam::clock::Clock;
@@ -29,6 +29,7 @@ struct State {
     box_home: Option<String>,
     fail_launch_dirs: Option<String>,
     prompts: Vec<(String, FirstRunPrompt)>,
+    quiet_first_run: bool,
     steer_results: VecDeque<Result<SteerOutcome, EngineError>>,
     steers: Vec<(String, Steer)>,
     transcripts: Vec<String>,
@@ -38,6 +39,9 @@ struct State {
     on_transcript: Option<Arc<dyn Fn() + Send + Sync>>,
     hang: Option<Arc<dyn Clock>>,
 }
+
+/// The launch a scripted starting marker names to stand for the latest launch's own marker.
+pub(crate) const THIS_LAUNCH: &str = "this-launch";
 
 /// Scripted Engine: probes are served per session id and counted.
 #[derive(Default)]
@@ -104,6 +108,12 @@ impl FakeEngine {
     /// A pane tail containing `text` shows `prompt`.
     pub(crate) fn prompt(self, text: &str, prompt: FirstRunPrompt) -> Self {
         self.st().prompts.push((text.to_owned(), prompt));
+        self
+    }
+
+    /// The agent runs no hook while a first-run screen is up.
+    pub(crate) fn hooks_quiet_during_first_run(self) -> Self {
+        self.st().quiet_first_run = true;
         self
     }
 
@@ -183,13 +193,29 @@ impl Engine for FakeEngine {
         if let Some(e) = st.fail_probe.remove(&s.id) {
             return Err(e);
         }
-        if let Some(p) = st.queued.get_mut(&s.id).and_then(VecDeque::pop_front) {
-            return Ok(p);
+        let mut p = st
+            .queued
+            .get_mut(&s.id)
+            .and_then(VecDeque::pop_front)
+            .or_else(|| st.probes.get(&s.id).cloned())
+            .unwrap_or(Probes {
+                hook: HookRead::Absent,
+                pane: PaneRead::Absent,
+            });
+        if let HookRead::Fresh(HookRecord {
+            kind: HookKind::Starting { launch },
+            ..
+        }) = &mut p.hook
+        {
+            if launch.as_deref() == Some(THIS_LAUNCH) {
+                *launch = st.launches.last().map(|l| l.nonce.clone());
+            }
         }
-        Ok(st.probes.get(&s.id).cloned().unwrap_or(Probes {
-            hook: HookRead::Absent,
-            pane: PaneRead::Absent,
-        }))
+        Ok(p)
+    }
+
+    fn hooks_quiet_during_first_run(&self) -> bool {
+        self.st().quiet_first_run
     }
 
     fn first_run_prompt(&self, tail: &str) -> Option<PromptMatch> {

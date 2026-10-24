@@ -185,6 +185,9 @@ pub struct AgentLaunchView {
     pub session: Option<String>,
     /// Why the launch failed, when it did.
     pub reason: Option<LaunchFailure>,
+    /// The random token this launch's starting hook marker carries; never output.
+    #[serde(skip)]
+    pub nonce: Option<String>,
 }
 
 /// `value` of `start`.

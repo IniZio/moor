@@ -222,7 +222,7 @@ fn session_from_row(r: &Row<'_>) -> rusqlite::Result<SessionRow> {
 /// The stored form of a hook report.
 fn record_json(rec: &HookRecord) -> Value {
     let kind = match &rec.kind {
-        HookKind::Starting => "starting",
+        HookKind::Starting { .. } => "starting",
         HookKind::Busy => "busy",
         HookKind::Idle => "idle",
         HookKind::Blocked => "blocked",
@@ -240,7 +240,7 @@ fn record_json(rec: &HookRecord) -> Value {
 fn record_from_json(v: &Value) -> Result<HookRecord, StoreError> {
     let bad = |what: &str| StoreError::Invalid(format!("hook cache: {what}"));
     let kind = match v["kind"].as_str() {
-        Some("starting") => HookKind::Starting,
+        Some("starting") => HookKind::Starting { launch: None },
         Some("busy") => HookKind::Busy,
         Some("idle") => HookKind::Idle,
         Some("blocked") => HookKind::Blocked,

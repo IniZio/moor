@@ -187,6 +187,9 @@ pub trait Engine: Send + Sync {
     /// The first-run prompt the pane text `tail` shows, when one holds the agent.
     fn first_run_prompt(&self, tail: &str) -> Option<PromptMatch>;
 
+    /// Whether the agent runs no hook while a first-run screen holds its pane.
+    fn hooks_quiet_during_first_run(&self) -> bool;
+
     /// Delivers the brief and hooks to the Box and opens the agent's pane. The returned
     /// session has an empty `id` until the agent reports its own.
     ///

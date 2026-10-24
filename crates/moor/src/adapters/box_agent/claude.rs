@@ -21,7 +21,9 @@ impl AgentProfile for Claude {
         let idle_prompt = text("notification_type") == Some("idle_prompt");
         let kind = match text("state")? {
             _ if idle_prompt => HookKind::Idle,
-            "starting" => HookKind::Starting,
+            "starting" => HookKind::Starting {
+                launch: text("launch").map(str::to_owned),
+            },
             "working" => HookKind::Busy,
             "idle" => HookKind::Idle,
             "waiting_input" => HookKind::Blocked,
@@ -41,7 +43,7 @@ impl AgentProfile for Claude {
         let message = match kind {
             HookKind::Blocked => question.or_else(|| text("message")),
             HookKind::Idle => text("last_assistant_message"),
-            HookKind::Starting | HookKind::Busy => None,
+            HookKind::Starting { .. } | HookKind::Busy => None,
         }
         .map(str::to_owned);
         let options = asked
@@ -78,6 +80,10 @@ impl AgentProfile for Claude {
             .map(|l| l.trim())
             .find(|l| !l.is_empty())
             .map(str::to_owned)
+    }
+
+    fn hooks_quiet_during_first_run(&self) -> bool {
+        true
     }
 
     fn first_run_prompt(&self, tail: &str) -> Option<PromptMatch> {

@@ -1,3 +1,5 @@
+use moor_core::activity::HookKind;
+
 use super::*;
 
 /// A scratch Box: home, workdir, a credential dir holding a brief, and a stub agent.
@@ -75,7 +77,7 @@ impl Scratch {
         let cred = BoxPath::under(root, "home/.moor-cred-t1-x").unwrap();
         let tmp = BoxPath::under(root, "home/.moor-tmp-t1-x").unwrap();
         super::super::script(
-            (&cred, &tmp),
+            (&cred, &tmp, "x"),
             &ctx,
             &setup(hook_step),
             &setup("true"),
@@ -121,6 +123,20 @@ fn a_clean_run_starts_the_agent_and_removes_the_cred_dir() {
     assert_eq!(
         std::fs::read_to_string(b.path("work/.moor/brief.md")).unwrap(),
         "brief"
+    );
+}
+
+#[test]
+fn the_starting_marker_names_this_launch() {
+    let b = Scratch::new();
+    assert!(b.spawn(&b.script("true")).wait().unwrap().success());
+    let raw = std::fs::read(b.path("work/.moor/agent-state.json")).unwrap();
+    let marker = Claude.parse_hook(&raw).map(|r| r.kind);
+    assert_eq!(
+        marker,
+        Some(HookKind::Starting {
+            launch: Some("x".to_owned())
+        })
     );
 }
 

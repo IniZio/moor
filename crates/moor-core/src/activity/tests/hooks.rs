@@ -108,12 +108,16 @@ fn starting_holds_while_young() {
     Case::new("grace over", a(), obs(P::Idle, ""))
         .started(120)
         .expect(S::Idle, Src::Herdr);
-    Case::new("starting hook", fresh(K::Starting), PaneRead::Absent)
-        .started(30)
-        .expect(S::Working, Src::Hooks);
+    Case::new(
+        "starting hook",
+        fresh(K::Starting { launch: None }),
+        PaneRead::Absent,
+    )
+    .started(30)
+    .expect(S::Working, Src::Hooks);
     Case::new(
         "starting hook, grace over",
-        fresh(K::Starting),
+        fresh(K::Starting { launch: None }),
         obs(P::Idle, ""),
     )
     .started(OLD)

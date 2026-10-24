@@ -26,7 +26,7 @@ pub(super) fn note_turn_done(
             let signal = match c.record.kind {
                 HookKind::Idle => HookSignal::Idle,
                 HookKind::Blocked => HookSignal::Blocked,
-                HookKind::Starting | HookKind::Busy => HookSignal::Other,
+                HookKind::Starting { .. } | HookKind::Busy => HookSignal::Other,
             };
             (signal, c.record.at)
         }),

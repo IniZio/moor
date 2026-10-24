@@ -218,6 +218,7 @@ fn record_session(
         launched: true,
         session: Some(sref),
         reason: None,
+        nonce: Some(launch.nonce.clone()),
     })
 }
 
@@ -234,6 +235,7 @@ fn record_failure(
         launched: false,
         session: None,
         reason: Some(failure),
+        nonce: None,
     })
 }
 
