@@ -209,12 +209,13 @@ pub(crate) struct EventRow {
     pub(crate) ts: Ts,
 }
 
-/// The store: single writer, many readers.
+/// The store: single writer, many readers. A clone shares the writer connection.
+#[derive(Clone)]
 pub(crate) struct Store {
     /// Database file, reopened for each read connection.
     path: PathBuf,
     /// The writer connection.
-    writer: Mutex<Connection>,
+    writer: Arc<Mutex<Connection>>,
     /// Time source for every timestamp.
     clock: Arc<dyn Clock>,
     /// The Box each name meant when the controller let the request name it. A name lookup
@@ -223,9 +224,8 @@ pub(crate) struct Store {
 }
 
 impl Store {
-    /// Open (creating if needed) the store at `path`. The state directory is
-    /// created 0700 and the db, `-wal` and `-shm` files are 0600. A db at another schema
-    /// version is refused before anything writes to it or changes a mode.
+    /// Open (creating if needed) the store at `path`: state dir 0700, db, `-wal` and `-shm` 0600.
+    /// A db at another schema version is refused before anything writes to it or changes a mode.
     pub(crate) fn open(path: &Path, clock: Arc<dyn Clock>) -> Result<Self, StoreError> {
         init::refuse_other_version(path)?;
         open::prepare(path)?;
@@ -238,7 +238,7 @@ impl Store {
         open::tighten(path)?;
         Ok(Self {
             path: path.to_path_buf(),
-            writer: Mutex::new(conn),
+            writer: Arc::new(Mutex::new(conn)),
             clock,
             pins: Pins::new(),
         })

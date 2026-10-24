@@ -176,7 +176,8 @@ fn a_controller_that_takes_the_state_lock_ends_every_lease_and_one_refused_ends_
         1,
         "a refused start ends no lease"
     );
-    crate::Moor::end_front_leases(&env_with(served.dir.path(), &[])).unwrap();
+    let env = crate::Moor::open_store(env_with(served.dir.path(), &[])).unwrap();
+    crate::Moor::end_front_leases(&env).unwrap();
     assert!(served.stored_hashes().is_empty());
 }
 

@@ -125,15 +125,16 @@ impl Cx {
         })
     }
 
-    /// The state store at `<state_dir>/moor.db`, opened on first call.
+    /// The store the env shares, else the one at `<state_dir>/moor.db`; opened on first call.
     pub(crate) fn store(&self) -> Result<&Store, CommandError> {
         if let Some(s) = self.store.get() {
             return Ok(s);
         }
-        let dir = self.state_dir()?;
-        let store =
-            Store::open(&dir.join(STORE_FILE), Arc::clone(&self.clock))?.pinned(self.pins.clone());
-        Ok(self.store.get_or_init(|| store))
+        let store = match self.env.shared::<Store>() {
+            Some(shared) => shared.clone(),
+            None => Store::open(&self.state_dir()?.join(STORE_FILE), Arc::clone(&self.clock))?,
+        };
+        Ok(self.store.get_or_init(|| store.pinned(self.pins.clone())))
     }
 
     /// Box backend.

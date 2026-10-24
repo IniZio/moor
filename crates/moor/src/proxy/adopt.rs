@@ -1,17 +1,15 @@
 //! Controller start-up: keep live Proxy supervisors, restart dead ones, drop orphans.
 
 use std::path::Path;
-use std::sync::Arc;
 use std::thread;
 
 use moor_core::domain::boxes::BoxState;
-use moor_core::seam::clock::Clock;
 use moor_core::seam::proc::Proc;
 use moor_core::seam::proxy_host::ProxyHost;
 use moor_core::BoxId;
 
 use super::detached::{read_spec, DetachedSupervisor};
-use crate::store::{ProxyRow, Store, STORE_FILE};
+use crate::store::{ProxyRow, Store};
 
 /// What the controller does with one recorded Proxy.
 enum Fate {
@@ -33,13 +31,9 @@ enum Fate {
 pub(crate) fn reconcile(
     host: &DetachedSupervisor,
     proc: &dyn Proc,
-    clock: Arc<dyn Clock>,
+    store: &Store,
     state_dir: &Path,
 ) -> Vec<String> {
-    let store = match Store::open(&state_dir.join(STORE_FILE), clock) {
-        Ok(store) => store,
-        Err(e) => return vec![format!("cannot read the proxy state: {e}")],
-    };
     let (rows, live) = match (store.proxies(), store.open_boxes()) {
         (Ok(rows), Ok(live)) => (rows, live),
         (Err(e), _) | (_, Err(e)) => return vec![format!("cannot read the proxy state: {e}")],
@@ -57,7 +51,6 @@ pub(crate) fn reconcile(
                     .find(|(t, _)| *t == row.box_id)
                     .map(|(_, s)| *s);
                 let fate = fate(host, proc, row, state)?;
-                let store = &store;
                 Some(scope.spawn(move || {
                     settle(host, store, state_dir, row.box_id, &fate)
                         .err()
