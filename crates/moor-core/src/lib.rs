@@ -18,6 +18,8 @@ pub mod request;
 pub mod response;
 pub mod seam;
 pub mod secret;
+#[cfg(test)]
+mod testgit;
 pub mod user;
 pub mod view;
 
