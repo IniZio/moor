@@ -34,11 +34,13 @@ them when `ssh -G` fails. The command then fails
 with an error that says so; moor never falls back to an unchecked connection.
 A command's environment travels on ssh's stdin, never in its arguments.
 moor puts Box work in the login user's home. It runs every crabbox call
-with `CRABBOX_WORK_ROOT=moor`, which overrides any `external.workRoot` in
+with `CRABBOX_EXTERNAL_WORK_ROOT=moor`. Only the external provider
+(agent37, cloud-hypervisor) reads it. It overrides any `external.workRoot` in
 your crabbox config, and crabbox resolves it against the home of the user
 the lease logs in as: `/root/moor` for a root login, `/home/crabbox/moor`
-for a `crabbox` one. You do not need to set `external.workRoot` for any
-provider.
+for a `crabbox` one. You do not need to set `external.workRoot` for the
+external provider. Other providers, such as the static one, keep crabbox's
+own work root.
 A Box's working directory is the one crabbox reports when it leases the Box,
 or `<workroot>/<lease id>/<slug>`; when crabbox reports neither, the start
 fails. moor refuses a relative work root in that report.
