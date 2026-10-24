@@ -434,15 +434,34 @@ fn an_unsealed_preset_still_yields_to_a_declared_volume() {
     assert!(p.dropped().is_empty());
 }
 
+fn dropped_mine(p: &CachePlan, origin: Origin) {
+    assert!(!names(p).contains(&"docker".to_owned()), "{:?}", names(p));
+    assert!(!names(p).contains(&"mine".to_owned()), "{:?}", names(p));
+    let want = Dropped {
+        origin,
+        volume: CacheName::parse("mine").unwrap(),
+        preset: CacheName::parse("docker").unwrap(),
+    };
+    assert_eq!(p.dropped(), [want]);
+}
+
 #[test]
-fn a_dropped_docker_preset_leaves_its_directory_to_a_declared_volume() {
+fn docker_paths_stay_reserved_with_presets_off() {
     let p = plan(&layers(
-        "cache: {presets: [docker], volumes: [{name: mine, path: ~/docker}]}",
+        "cache: {presets: false, volumes: [{name: mine, path: ~/docker}]}",
         "",
     ));
-    assert!(names(&p).contains(&"mine".to_owned()));
-    assert!(!names(&p).contains(&"docker".to_owned()));
-    assert!(p.dropped().is_empty());
+    dropped_mine(&p, Origin::Repo);
+}
+
+#[test]
+fn docker_paths_stay_reserved_when_a_drop_list_names_docker() {
+    let p = plan(&layers(
+        "cache: {presets: [docker]}",
+        "cache: {volumes: [{name: mine, path: /var/lib/containerd}]}",
+    ));
+    dropped_mine(&p, Origin::Operator);
+    assert!(names(&p).contains(&"npm".to_owned()));
 }
 
 #[test]
