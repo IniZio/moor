@@ -150,10 +150,7 @@ pub(crate) fn seal(
             for n in not_kept(&stdout) {
                 cx.warn(Warning {
                     code: "work_tree_not_kept".to_owned(),
-                    message: format!(
-                        "the work tree is not kept: {}; the next Box clones fresh",
-                        n.reason
-                    ),
+                    message: format!("the work tree is not kept: {}", n.reason),
                 });
             }
             let failed = seal_failed(&stdout);
