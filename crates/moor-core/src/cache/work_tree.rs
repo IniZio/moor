@@ -112,7 +112,7 @@ git diff --cached --quiet 2>/dev/null || {{ echo 'it has staged changes'; exit 1
 set -- HEAD --branches --not --remotes
 if [ -n "$MOOR_SEAL_BASE" ] && b=$(git rev-parse -q --verify "$MOOR_SEAL_BASE^{{commit}}" 2>/dev/null); then set -- "$@" "$b"; fi
 n=$(git rev-list --count "$@" 2>/dev/null) || {{ echo 'git could not count unpushed commits'; exit 1; }}
-[ "$n" -eq 0 ] || {{ echo "$n unpushed commits"; exit 1; }}"#,
+[ "$n" -eq 0 ] || {{ [ "$n" -eq 1 ] && s= || s=s; echo "$n unpushed commit$s"; exit 1; }}"#,
         dir = path.shell(),
     )
 }

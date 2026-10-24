@@ -255,9 +255,10 @@ that is not on a pushed branch or the base, no stash, no staged change and no
 rebase, merge, cherry-pick, revert, am or bisect in progress. Modified and
 untracked files do not block it, since the next refresh removes them. A tree
 that is not kept stays as it is in the Box, the close warns
-`work_tree_not_kept` with the reason, and the next Box clones fresh. A
-non-forced close already refuses unpushed work, so this matters only after
-`close --force`.
+`work_tree_not_kept` with the reason. The next Box then starts from an earlier
+kept tree, when the provider has one, or clones fresh. A non-forced close
+already refuses unpushed work, so this matters only after `close --force`. A
+provider may also skip saving a tree that barely grew since it was restored.
 
 The work tree has a store of its own, so a failed Docker seal never discards
 it, nor the reverse. `size_gb` is the size hint for that store. A repo whose
