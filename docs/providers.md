@@ -134,6 +134,10 @@ path of each of its sealed volumes holds the file again. The adapter keeps a
 Box's copy on release, after a clean shutdown; a Box that is killed, or only
 paused, keeps nothing.
 
+When the Box has a repo, moor also sends `CRABBOX_CACHE_SCOPE`: the repo
+group's 16 hex characters, without the `x` of a sealed group. A Box without a
+repo, or without volumes, gets no scope.
+
 A provider without the feature starts every Box cold. A start warns
 `cache_unavailable` when the repo or the operator declared volumes of their
 own; presets alone start cold without a warning. `drivers.<provider>.cache_volumes: false` turns the

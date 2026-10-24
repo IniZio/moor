@@ -235,6 +235,8 @@ pub struct CachePlan {
     volumes: Vec<PlannedVolume>,
     /// Declared volumes left out.
     dropped: Vec<Dropped>,
+    /// The repo-scope hash, the Box's own scope; set only for a repo Box with volumes.
+    scope: Option<String>,
 }
 
 impl CachePlan {
@@ -244,6 +246,7 @@ impl CachePlan {
         Self {
             volumes: Vec::new(),
             dropped: Vec::new(),
+            scope: None,
         }
     }
 
@@ -273,9 +276,14 @@ impl CachePlan {
                 seal: d.volume.seal,
             }
         });
+        let volumes: Vec<PlannedVolume> = planned.collect();
+        let scope = repo
+            .filter(|_| !volumes.is_empty())
+            .map(|_| group(salt, Origin::Repo, user, repo));
         Ok(Self {
-            volumes: planned.collect(),
+            volumes,
             dropped,
+            scope,
         })
     }
 
@@ -283,6 +291,13 @@ impl CachePlan {
     #[must_use]
     pub fn volumes(&self) -> &[PlannedVolume] {
         &self.volumes
+    }
+
+    /// The scope of the Box itself: the repo group's hash without the sealed suffix. None for a
+    /// Box without a repo or without volumes.
+    #[must_use]
+    pub fn scope(&self) -> Option<&str> {
+        self.scope.as_deref()
     }
 
     /// Declared volumes left out because they met a sealed preset.

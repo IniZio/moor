@@ -117,3 +117,70 @@ fn only_warmup_carries_the_volumes() {
         "{carried:?}"
     );
 }
+
+fn scope_of(p: &CachePlan) -> Option<String> {
+    let proc = Arc::new(ScriptedProc::new());
+    let c = Crabbox::fake(proc.clone());
+    proc.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
+    let mut r = req("external", None);
+    r.cache = p.clone();
+    c.acquire(&r).unwrap();
+    let calls = proc.calls();
+    let warmup = calls
+        .iter()
+        .find(|call| call.args.first().is_some_and(|a| a == "warmup"))
+        .unwrap();
+    warmup
+        .env
+        .iter()
+        .find(|(k, _)| k == "CRABBOX_CACHE_SCOPE")
+        .map(|(_, v)| v.clone())
+}
+
+#[test]
+fn a_repo_box_with_volumes_sends_the_repo_groups_hash_as_its_scope() {
+    let p = plan("", "");
+    let npm = p.volumes().first().unwrap();
+    assert_eq!(npm.name.as_str(), "npm");
+    assert_eq!(scope_of(&p), Some(npm.group.clone()));
+}
+
+#[test]
+fn only_operator_volumes_still_send_the_repo_scope() {
+    let repo_only = plan("", "");
+    let p = plan(
+        "cache: {presets: false}",
+        "cache: {volumes: [{name: cargo-bin, path: ~/.cargo/bin}]}",
+    );
+    let user_group = &p.volumes().first().unwrap().group;
+    let scope = scope_of(&p).unwrap();
+    assert_ne!(
+        &scope, user_group,
+        "the scope is the repo's, not the user's"
+    );
+    assert_eq!(Some(scope), scope_of(&repo_only));
+}
+
+#[test]
+fn a_box_without_a_repo_sends_no_scope() {
+    let layers = CacheLayers {
+        repo: parse_repo(".moor.yaml", "").unwrap().cache,
+        operator: parse_user(
+            "config.yaml",
+            "cache: {volumes: [{name: cargo-bin, path: ~/.cargo/bin}]}",
+        )
+        .unwrap()
+        .cache,
+    };
+    let p = CachePlan::build(UserId::new(1), None, &layers, &CacheSalt::new([3; 64])).unwrap();
+    assert!(super::env_value(&p).is_some());
+    assert_eq!(scope_of(&p), None);
+}
+
+#[test]
+fn a_box_without_volumes_sends_neither_env() {
+    let p = plan("cache: {presets: false}", "");
+    assert!(p.is_empty());
+    assert_eq!(scope_of(&p), None);
+    assert_eq!(scope_of(&CachePlan::none()), None);
+}

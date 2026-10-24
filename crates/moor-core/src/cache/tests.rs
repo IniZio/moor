@@ -478,3 +478,23 @@ fn a_dropped_volume_says_who_declared_it_and_which_preset_won() {
          so it is dropped"
     );
 }
+
+#[test]
+fn the_box_scope_is_the_repo_groups_hash_and_only_a_repo_box_with_volumes_has_one() {
+    let p = plan(&layers("", ""));
+    let npm = p.volumes().first().unwrap();
+    assert_eq!(p.scope(), Some(npm.group.as_str()));
+    assert_eq!(p.scope().map(str::len), Some(16));
+
+    let none = plan(&layers("cache: {presets: false}", ""));
+    assert!(none.is_empty());
+    assert_eq!(none.scope(), None);
+
+    let l = layers(
+        "",
+        "cache: {volumes: [{name: cargo-bin, path: ~/.cargo/bin}]}",
+    );
+    let norepo = CachePlan::build(UserId::new(7), None, &l, &salt(1)).unwrap();
+    assert_eq!(norepo.scope(), None);
+    assert_eq!(CachePlan::none().scope(), None);
+}
