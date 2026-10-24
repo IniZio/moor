@@ -122,7 +122,6 @@ fn waiting_boxes_returns_waiting_for_box_in_id_order() {
     // An index on (state, name) lets the planner return rows in name order.
     store
         .writer()
-        .unwrap()
         .execute_batch("CREATE INDEX boxes_state_name ON boxes(state, name)")
         .unwrap();
     for id in [d, b, a] {
@@ -172,7 +171,7 @@ fn live_holders_lists_only_the_providers_live_boxes_in_id_order() {
 
 /// Insert a raw event row and return its id.
 fn event(store: &Store, id: BoxId, kind: &str, payload: &str, ts: i64) -> i64 {
-    let conn = store.writer().unwrap();
+    let conn = store.writer();
     conn.execute(
         "INSERT INTO events (box, kind, payload, ts) VALUES (?1, ?2, ?3, ?4)",
         rusqlite::params![id.get(), kind, payload, ts],

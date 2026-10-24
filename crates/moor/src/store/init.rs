@@ -15,7 +15,7 @@ impl Store {
         getrandom::fill(&mut fresh)
             .map_err(|e| StoreError::Corrupt(format!("no randomness for the cache salt: {e}")))?;
         let stored: String = {
-            let conn = self.writer()?;
+            let conn = self.writer();
             conn.execute(
                 "INSERT INTO meta (k, v) VALUES ('cache_salt', ?) ON CONFLICT (k) DO NOTHING",
                 [CacheSalt::new(fresh).to_hex()],

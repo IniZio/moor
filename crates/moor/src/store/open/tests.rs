@@ -193,7 +193,6 @@ fn a_second_open_keeps_the_first_store_locked_against_other_processes() {
     store.apply(insert("b")).unwrap();
     let check: String = store
         .writer()
-        .unwrap()
         .query_row("PRAGMA integrity_check", [], |r| r.get(0))
         .unwrap();
     assert_eq!(check, "ok");

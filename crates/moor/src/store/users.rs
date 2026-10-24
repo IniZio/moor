@@ -27,7 +27,7 @@ impl Store {
     /// call created the user.
     pub(crate) fn enroll(&self, identity: &Identity) -> Result<(UserId, bool), StoreError> {
         let now = self.now().as_millis();
-        let mut writer = self.writer()?;
+        let mut writer = self.writer();
         let tx = writer.transaction_with_behavior(TransactionBehavior::Immediate)?;
         if let Some(user) = user_of_in(&tx, identity)? {
             return Ok((user, false));
@@ -68,7 +68,7 @@ impl Store {
         expires: Ts,
     ) -> Result<(), StoreError> {
         let now = self.now().as_millis();
-        let mut writer = self.writer()?;
+        let mut writer = self.writer();
         let tx = writer.transaction()?;
         tx.execute("DELETE FROM link_codes WHERE expires_at <= ?", [now])?;
         tx.execute(
@@ -88,7 +88,7 @@ impl Store {
         identity: &Identity,
     ) -> Result<UserId, StoreError> {
         let now = self.now().as_millis();
-        let mut writer = self.writer()?;
+        let mut writer = self.writer();
         let tx = writer.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let found: Option<(i64, i64)> = tx
             .query_row(
@@ -128,7 +128,7 @@ impl Store {
         sealed: &[u8],
     ) -> Result<(), StoreError> {
         let now = self.now().as_millis();
-        self.writer()?.execute(
+        self.writer().execute(
             "INSERT INTO user_secrets (user, name, value, updated_at) VALUES (?, ?, ?, ?) \
              ON CONFLICT (user, name) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
             params![user.get(), name.as_str(), sealed, now],
@@ -142,7 +142,7 @@ impl Store {
         user: UserId,
         name: &SecretName,
     ) -> Result<bool, StoreError> {
-        let gone = self.writer()?.execute(
+        let gone = self.writer().execute(
             "DELETE FROM user_secrets WHERE user = ? AND name = ?",
             params![user.get(), name.as_str()],
         )?;

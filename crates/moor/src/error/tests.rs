@@ -128,7 +128,7 @@ mod store_close {
 
     #[test]
     fn other_store_error_is_failed_with_moor_wording() {
-        let e = CommandError::from(StoreError::Poisoned);
+        let e = CommandError::from(StoreError::Corrupt("bad row".to_owned()));
         assert_eq!(e.kind, ErrorKind::Failed);
         assert!(e.error.to_string().starts_with("state store error: "));
     }

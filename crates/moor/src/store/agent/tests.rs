@@ -284,7 +284,6 @@ fn hook_cache_reads_a_legacy_blocked_row_as_its_message() {
 fn set_session_state(store: &Store, id: BoxId, state: &str) {
     store
         .writer()
-        .unwrap()
         .execute(
             "UPDATE sessions SET state = ? WHERE box = ? AND ordinal = (SELECT MAX(ordinal) FROM sessions WHERE box = ?)",
             (state, id.get(), id.get()),
@@ -342,7 +341,7 @@ fn hook_follows_the_current_session() {
     let second = store.open_session(id).unwrap();
     assert_eq!(store.hook(id).unwrap(), None);
     store.put_hook(id, &record(HookKind::Idle)).unwrap();
-    let conn = store.writer().unwrap();
+    let conn = store.writer();
     let cached: i64 = conn
         .query_row(
             "SELECT session FROM hook_cache WHERE session = ?",

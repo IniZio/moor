@@ -44,7 +44,7 @@ impl Store {
         lease: Duration,
     ) -> Result<Lease, StoreError> {
         let now = self.now().as_millis();
-        let mut conn = self.writer()?;
+        let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let current: Option<(Option<String>, Option<i64>)> = tx
             .query_row(
@@ -80,7 +80,7 @@ impl Store {
     /// Refresh the heartbeat; `Ok(false)` if `owner` no longer holds the lease.
     pub(crate) fn heartbeat(&self, box_id: BoxId, owner: &str) -> Result<bool, StoreError> {
         let now = self.now().as_millis();
-        let mut conn = self.writer()?;
+        let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let changed = tx.execute(
             "UPDATE proxy SET lease_heartbeat = ? WHERE box = ? AND lease_owner = ?",
@@ -96,7 +96,7 @@ impl Store {
 
     /// Clear the lease if `owner` holds it; no-op otherwise.
     pub(crate) fn release(&self, box_id: BoxId, owner: &str) -> Result<(), StoreError> {
-        let conn = self.writer()?;
+        let conn = self.writer();
         conn.execute(
             "UPDATE proxy SET lease_owner = NULL, lease_heartbeat = NULL WHERE box = ? AND lease_owner = ?",
             params![box_id.get(), owner],
@@ -115,7 +115,7 @@ impl Store {
         proc: ReadyProc<'_>,
     ) -> Result<Fenced, StoreError> {
         let now = self.now();
-        let mut conn = self.writer()?;
+        let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let changed = tx.execute(
             "UPDATE proxy SET box_port = ?, pid = ?, handle = ?, ready = 1, boot_id = ?, \
@@ -157,7 +157,7 @@ impl Store {
         reason: &str,
     ) -> Result<Fenced, StoreError> {
         let now = self.now();
-        let mut conn = self.writer()?;
+        let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let holder: Option<Option<String>> = tx
             .query_row(

@@ -215,11 +215,15 @@ fn prepare(db: &Path) -> io::Result<()> {
         DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
         fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
     }
-    OpenOptions::new()
-        .create(true)
+    match OpenOptions::new()
+        .create_new(true)
         .append(true)
         .mode(0o600)
-        .open(db)?;
+        .open(db)
+    {
+        Err(e) if e.kind() != io::ErrorKind::AlreadyExists => return Err(e),
+        _ => {}
+    }
     fs::set_permissions(db, fs::Permissions::from_mode(0o600))
 }
 

@@ -42,7 +42,7 @@ fn closed_name_can_be_reused() {
 
 /// Box columns and primary Session column, as stored.
 fn states(store: &crate::store::Store, id: moor_core::BoxId) -> (String, String) {
-    let conn = store.writer().unwrap();
+    let conn = store.writer();
     let b: String = conn
         .query_row("SELECT state FROM boxes WHERE id = ?", [id.get()], |r| {
             r.get(0)
@@ -106,7 +106,6 @@ fn failed_insert_leaves_no_box_and_no_branch_ref() {
     for table in ["box_refs", "boxes"] {
         let n: i64 = store
             .writer()
-            .unwrap()
             .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
             .unwrap();
         assert_eq!(n, 0, "{table} kept rows after a failed insert");
@@ -117,7 +116,6 @@ fn failed_insert_leaves_no_box_and_no_branch_ref() {
 fn set_current_state(store: &crate::store::Store, id: moor_core::BoxId, state: &str) {
     store
         .writer()
-        .unwrap()
         .execute(
             "UPDATE sessions SET state = ?2 WHERE box = ?1 AND ordinal = (SELECT MAX(ordinal) FROM sessions WHERE box = ?1)",
             rusqlite::params![id.get(), state],
@@ -148,7 +146,6 @@ fn sleep_is_refused_while_another_session_works() {
     let id = ready(&store);
     store
         .writer()
-        .unwrap()
         .execute(
             "INSERT INTO sessions (box, ordinal, state, started_at) VALUES (?, 2, 'idle', 0)",
             [id.get()],
@@ -171,7 +168,6 @@ fn step_updates_only_the_current_session() {
     let id = ready(&store);
     store
         .writer()
-        .unwrap()
         .execute(
             "UPDATE sessions SET state = 'ended' WHERE box = ? AND ordinal = 1",
             [id.get()],
@@ -198,7 +194,6 @@ fn box_row_reports_the_current_session_state() {
     let id = ready(&store);
     store
         .writer()
-        .unwrap()
         .execute(
             "UPDATE sessions SET state = 'ended' WHERE box = ? AND ordinal = 1",
             [id.get()],
@@ -206,7 +201,7 @@ fn box_row_reports_the_current_session_state() {
         .unwrap();
     store.open_session(id).unwrap();
     set_current_state(&store, id, "working");
-    let conn = store.writer().unwrap();
+    let conn = store.writer();
     let row = crate::store::load_box(&conn, id).unwrap().unwrap();
     drop(conn);
     assert_eq!(row.session.as_str(), "working");
@@ -219,7 +214,6 @@ fn ended_other_sessions_do_not_block_sleep() {
     let id = ready(&store);
     store
         .writer()
-        .unwrap()
         .execute(
             "UPDATE sessions SET state = 'ended' WHERE box = ? AND ordinal = 1",
             [id.get()],
@@ -246,7 +240,7 @@ fn insert_writes_parent_session_on_the_first_session() {
         .unwrap()
         .box_id;
     let plain = store.apply(insert("plain")).unwrap().box_id;
-    let conn = store.writer().unwrap();
+    let conn = store.writer();
     let get = |id: moor_core::BoxId| -> Option<i64> {
         conn.query_row(
             "SELECT parent_session FROM sessions WHERE box = ?",
@@ -271,7 +265,6 @@ fn insert_with_an_ended_parent_session_writes_no_box() {
     assert!(matches!(err, StoreError::Invalid(_)), "{err:?}");
     let boxes: i64 = store
         .writer()
-        .unwrap()
         .query_row("SELECT COUNT(*) FROM boxes", [], |r| r.get(0))
         .unwrap();
     assert_eq!(boxes, 0);

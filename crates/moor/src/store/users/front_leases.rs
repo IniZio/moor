@@ -34,7 +34,7 @@ impl Store {
         user: UserId,
         expires: Ts,
     ) -> Result<(), StoreError> {
-        let conn = self.writer()?;
+        let conn = self.writer();
         conn.execute(
             "DELETE FROM front_leases WHERE expires_at <= ?",
             [self.now().as_millis()],
@@ -72,7 +72,7 @@ impl Store {
         front: &str,
         user: UserId,
     ) -> Result<bool, StoreError> {
-        let gone = self.writer()?.execute(
+        let gone = self.writer().execute(
             "DELETE FROM front_leases WHERE token_hash = ? AND front = ? AND user = ?",
             params![hash(token), front, user.get()],
         )?;
@@ -81,7 +81,7 @@ impl Store {
 
     /// Ends every lease; a controller that starts has restarted every front that held one.
     pub(crate) fn purge_front_leases(&self) -> Result<(), StoreError> {
-        self.writer()?.execute("DELETE FROM front_leases", [])?;
+        self.writer().execute("DELETE FROM front_leases", [])?;
         Ok(())
     }
 }

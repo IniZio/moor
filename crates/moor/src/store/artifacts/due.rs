@@ -44,7 +44,7 @@ impl Store {
 
     /// Records that artifacts were collected through event `through`; never moves backwards.
     pub(crate) fn set_artifacts_through(&self, id: BoxId, through: i64) -> Result<(), StoreError> {
-        let conn = self.writer()?;
+        let conn = self.writer();
         conn.execute(
             "INSERT INTO artifact_cursors (box, through) VALUES (?1, ?2) \
              ON CONFLICT(box) DO UPDATE SET through = MAX(through, excluded.through)",

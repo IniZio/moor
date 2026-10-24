@@ -22,7 +22,7 @@ impl Store {
         outcome: TurnOutcome,
     ) -> Result<bool, StoreError> {
         let now = self.now();
-        let mut conn = self.writer()?;
+        let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let answered: bool = tx.query_row(
             "SELECT EXISTS (SELECT 1 FROM events WHERE box = ?1 AND kind = 'turn_done' \

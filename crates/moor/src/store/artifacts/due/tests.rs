@@ -25,7 +25,6 @@ fn ready(store: &Store, name: &str) -> BoxId {
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     store
         .writer()
-        .unwrap()
         .execute(
             "UPDATE boxes SET state = 'ready', handle = 'h' WHERE id = ?1",
             [id.get()],
@@ -36,12 +35,12 @@ fn ready(store: &Store, name: &str) -> BoxId {
 
 /// Run `sql` against the Box row.
 fn update(store: &Store, id: BoxId, sql: &str) {
-    store.writer().unwrap().execute(sql, [id.get()]).unwrap();
+    store.writer().execute(sql, [id.get()]).unwrap();
 }
 
 /// Insert a raw event row and return its id.
 fn event(store: &Store, id: BoxId, kind: &str) -> i64 {
-    let conn = store.writer().unwrap();
+    let conn = store.writer();
     conn.execute(
         "INSERT INTO events (box, kind, payload, ts) VALUES (?1, ?2, '{}', 0)",
         rusqlite::params![id.get(), kind],
@@ -148,7 +147,6 @@ fn reopening_creates_the_cursor_table() {
         let t = ready(&store, "a");
         store
             .writer()
-            .unwrap()
             .execute_batch("DROP TABLE artifact_cursors")
             .unwrap();
         t
