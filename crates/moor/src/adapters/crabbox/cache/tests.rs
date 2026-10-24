@@ -65,6 +65,24 @@ fn the_env_value_is_the_wire_contract_exactly() {
 }
 
 #[test]
+fn a_volume_with_a_seal_is_sent_sealed_in_a_group_of_its_own() {
+    let p = plan(
+        "cache: {presets: [yarn, pnpm, bun, podman, gradle, dart, rust, go]}",
+        "",
+    );
+    let npm = p.volumes().first().unwrap();
+    let got: serde_json::Value = serde_json::from_str(&env_value(&p).unwrap()).unwrap();
+    let group = format!("{}x", npm.group);
+    let want = serde_json::json!([
+        {"group": npm.group, "name": "npm", "key": format!("{}-npm", npm.group),
+         "paths": ["~/.cache/npm"], "sizeGB": 0},
+        {"group": group, "name": "docker", "key": format!("{group}-docker"),
+         "paths": ["~/docker", "/var/lib/containerd"], "sizeGB": 0, "sealed": true},
+    ]);
+    assert_eq!(got, want);
+}
+
+#[test]
 fn a_cold_plan_has_no_env_value() {
     assert_eq!(env_value(&CachePlan::none()), None);
 }

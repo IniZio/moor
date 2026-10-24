@@ -2,7 +2,7 @@
 
 use moor_core::cache::CachePlan;
 use moor_core::config::parse_user;
-use moor_core::{BoxName, CloseReq};
+use moor_core::{BoxName, CloseReq, Warning};
 
 use super::*;
 
@@ -43,6 +43,39 @@ fn a_provider_with_cache_volumes_gets_the_presets_and_the_repo_volumes() {
 fn a_provider_without_cache_volumes_starts_cold_with_one_warning() {
     let w = world(FakeDriver::new());
     assert!(started(&w).is_empty());
+    let got: Vec<Warning> = w.cx.take_warnings();
+    let unavailable: Vec<&str> = got
+        .iter()
+        .filter(|w| w.code == "cache_unavailable")
+        .map(|w| w.message.as_str())
+        .collect();
+    assert_eq!(unavailable.len(), 1, "{got:?}");
+    assert!(
+        unavailable.iter().all(|m| m.contains(" 1 declared")),
+        "the presets are not counted: {unavailable:?}"
+    );
+}
+
+#[test]
+fn presets_alone_start_cold_without_a_warning() {
+    for yaml in [None, Some("cache: {presets: [go]}\n")] {
+        let w = world(FakeDriver::new());
+        script_base_yaml(&w, yaml);
+        run(&w.cx, &repo_req("demo")).unwrap();
+        assert!(cache_warnings(&w).is_empty(), "{yaml:?}");
+    }
+}
+
+#[test]
+fn an_operator_volume_on_a_provider_without_cache_volumes_warns() {
+    let config = parse_user(
+        "u.yaml",
+        "cache: {volumes: [{name: tools, path: ~/tools}]}\n",
+    )
+    .unwrap();
+    let w = world_with(FakeDriver::new(), config);
+    script_base_yaml(&w, None);
+    run(&w.cx, &repo_req("demo")).unwrap();
     assert_eq!(cache_warnings(&w), ["cache_unavailable"]);
 }
 
@@ -115,7 +148,17 @@ fn a_failed_seal_warns_and_the_close_still_releases() {
     w.cx.take_warnings();
     w.driver.set_run_stdout("moor: cache seal failed: docker\n");
     close(&w.cx);
-    assert_eq!(cache_warnings(&w), ["cache_seal_failed"]);
+    let got = w.cx.take_warnings();
+    let failed: Vec<&Warning> = got
+        .iter()
+        .filter(|w| w.code.starts_with("cache_"))
+        .collect();
+    assert_eq!(failed.len(), 1, "{got:?}");
+    let message = &failed.first().unwrap().message;
+    assert_eq!(failed.first().unwrap().code, "cache_seal_failed");
+    for says in ["docker", "not kept", "partial contents may remain"] {
+        assert!(message.contains(says), "{message}");
+    }
     assert!(w.driver.calls().iter().any(|c| c.starts_with("release")));
 }
 

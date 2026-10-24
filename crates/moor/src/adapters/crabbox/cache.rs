@@ -7,7 +7,8 @@ use serde::Serialize;
 /// The env key crabbox reads cache volumes from.
 const KEY: &str = "CRABBOX_CACHE_VOLUMES";
 
-/// One volume in crabbox's `CacheVolumeConfig` shape, extended with `group` and `paths`.
+/// One volume in crabbox's `CacheVolumeConfig` shape, extended with `group`, `paths`
+/// and `sealed`.
 #[derive(Serialize)]
 struct Wire<'a> {
     /// Scope id; the volumes of one group share one store.
@@ -21,6 +22,9 @@ struct Wire<'a> {
     /// Size hint; 0 is the adapter's default.
     #[serde(rename = "sizeGB")]
     size_gb: u32,
+    /// The volume has a seal; the provider keeps it only with the seal's marker in each path.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    sealed: bool,
 }
 
 /// The `CRABBOX_CACHE_VOLUMES` value for `plan`; none for a cold Box.
@@ -34,6 +38,7 @@ pub(super) fn env_value(plan: &CachePlan) -> Option<String> {
             key: &v.key,
             paths: v.paths.iter().map(CachePath::as_str).collect(),
             size_gb: v.size_gb.map_or(0, std::num::NonZeroU32::get),
+            sealed: !v.seal().is_empty(),
         })
         .collect();
     if wire.is_empty() {
