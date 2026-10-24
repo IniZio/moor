@@ -372,8 +372,13 @@ fn keytool_imports_the_ca_the_prelude_just_wrote() {
 }
 
 #[test]
-fn the_whole_prelude_points_docker_at_the_egress_port() {
+fn the_whole_prelude_points_docker_at_the_egress_port_on_the_docker0_address() {
     let home = TempHome::new();
+    std::fs::write(
+        home.0.path().join("docker0.route"),
+        "172.18.0.0/16 src 172.18.0.1\n",
+    )
+    .unwrap();
     let out = home.exec(vec!["true".to_owned()]);
     assert!(
         out.status.success(),
@@ -381,9 +386,11 @@ fn the_whole_prelude_points_docker_at_the_egress_port() {
         String::from_utf8_lossy(&out.stderr)
     );
     let text = std::fs::read_to_string(home.0.path().join(".docker/config.json")).unwrap();
-    let url = format!("http://172.17.0.1:{}", home.1.port());
+    let url = format!("http://172.18.0.1:{}", home.1.port());
     assert!(
         text.contains(&format!("\"httpsProxy\": \"{url}\"")),
         "{text}"
     );
+    let conf = std::fs::read_to_string(home.0.path().join(".moor/egress.conf")).unwrap();
+    assert!(conf.contains("\nListen 172.18.0.1\n"), "{conf}");
 }

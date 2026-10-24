@@ -1,6 +1,5 @@
-//! Prelude lines that keep tinyproxy running in the Box as the Box's egress proxy. It sends each
-//! credential host to the Proxy tunnel and dials every other host direct. It answers only the Box
-//! loopback and the private ranges Docker hands to its bridges.
+//! Prelude lines that keep tinyproxy running on the Box loopback and `docker0` as the Box's
+//! egress proxy. It sends each credential host to the Proxy tunnel and dials every other host direct.
 
 use std::fmt::Write as _;
 
@@ -10,7 +9,7 @@ pub const EGRESS_FAILED: &str = "the egress proxy could not start";
 
 /// Shell variables the egress lines set; the prelude unsets them at its end.
 pub(super) const EGRESS_SHELL_VARS: &str =
-    "moor_su moor_apt moor_conf moor_new moor_n moor_pid moor_ours moor_st";
+    "moor_su moor_apt moor_conf moor_new moor_n moor_pid moor_ours moor_st moor_br";
 
 /// The Box directory, under the Box user's home, that holds the files below; each is shell text
 /// that expands on the Box.
@@ -50,19 +49,17 @@ const LOCK_WAIT: u32 = 300;
 /// with its soft descriptor limit raised to the hard one.
 const MAX_CLIENTS: u32 = 1024;
 
-/// Source ranges tinyproxy answers besides loopback: where Docker allocates bridges. The default
-/// bridge is `172.17.0.0/16` and Compose networks follow it up to `172.31.0.0/16`. Docker's last
-/// default pool, `192.168.0.0/20`, is left out: a Box's own network is often inside it, and every
-/// host on that network would reach the proxy.
+/// Where Docker allocates the default bridge and Compose networks. Its `192.168.0.0/20` pool is
+/// left out: a Box's own network is often inside it.
 pub(super) const DOCKER_SOURCES: [&str; 1] = ["172.16.0.0/12"];
 
-/// The tinyproxy config without its `PidFile` line: listen on port `listen` and answer only
-/// loopback and [`DOCKER_SOURCES`], and send each of `hosts` to the Proxy tunnel on loopback
-/// `upstream`.
-///
-/// tinyproxy binds one `Listen` address. A bridge gateway such as `172.17.0.1` exists only after
-/// Docker runs, which can be after this config is written, so tinyproxy listens on every IPv4
-/// address and refuses any source outside the `Allow` lines.
+/// Sets `moor_br` to `docker0`'s address and network, as `172.17.0.1 172.17.0.0/16`, or to nothing.
+pub(super) fn bridge_line() -> String {
+    "moor_br=$(ip -4 route show dev docker0 proto kernel scope link 2>/dev/null | sed -n '1s|^\\([0-9.]*/[0-9]*\\) .*src \\([0-9.]*\\).*|\\2 \\1|p')".to_owned()
+}
+
+/// The tinyproxy config without its `PidFile` line: listen on loopback `listen`, and send each of
+/// `hosts` to the Proxy tunnel on loopback `upstream`.
 ///
 /// A quoted host matches only itself; a host that starts with `.` matches its subdomains.
 pub(super) fn config(listen: u16, upstream: u16, hosts: &[String]) -> String {
@@ -70,7 +67,7 @@ pub(super) fn config(listen: u16, upstream: u16, hosts: &[String]) -> String {
     hosts.sort_unstable();
     hosts.dedup();
     let mut out = format!(
-        "Port {listen}\nListen 0.0.0.0\nDisableViaHeader Yes\nLogLevel Critical\nMaxClients {MAX_CLIENTS}\nAllow 127.0.0.1\n"
+        "Port {listen}\nListen 127.0.0.1\nDisableViaHeader Yes\nLogLevel Critical\nMaxClients {MAX_CLIENTS}\nAllow 127.0.0.1\n"
     );
     for source in DOCKER_SOURCES {
         let _ = writeln!(out, "Allow {source}");
@@ -89,6 +86,8 @@ fn stop(reason: &str) -> String {
 
 /// Lines that install tinyproxy when it is missing, write its config, and start it when it is not
 /// listening on `listen` or its config changed. Every failure stops the exec with the reason.
+///
+/// A `docker0` that appears, moves or goes changes the config, so the next command restarts it.
 ///
 /// A changed config goes to a temp file and replaces `~/.moor/egress.conf` only once the new
 /// tinyproxy listens, so a failed restart leaves the old config and the next command retries.
@@ -110,7 +109,7 @@ pub(super) fn lines(listen: u16, upstream: u16, hosts: &[String]) -> Vec<String>
         stop(&format!("apt-get could not install tinyproxy-bin: $(tail -n 1 \"{INSTALL_LOG}\")")),
     );
     let config = format!(
-        "moor_conf={}\"PidFile \\\"{PID}\\\"\"; moor_new=; if ! printf '%s\\n' \"$moor_conf\" | cmp -s - \"{CONF}\" 2>/dev/null; then printf '%s\\n' \"$moor_conf\" >\"{CONF}.new\" || {{ rm -f \"{CONF}.new\"; {}; }}; moor_new=1; fi",
+        "moor_conf=$(printf '%s\\n' {}\"PidFile \\\"{PID}\\\"\"; [ -z \"$moor_br\" ] || printf 'Listen %s\\nAllow %s\\n' \"${{moor_br% *}}\" \"${{moor_br#* }}\"); moor_new=; if ! printf '%s\\n' \"$moor_conf\" | cmp -s - \"{CONF}\" 2>/dev/null; then printf '%s\\n' \"$moor_conf\" >\"{CONF}.new\" || {{ rm -f \"{CONF}.new\"; {}; }}; moor_new=1; fi",
         crate::boxscript::quote(&config(listen, upstream, hosts)),
         stop(&format!("its config could not be written to {CONF}")),
     );
@@ -126,10 +125,11 @@ pub(super) fn lines(listen: u16, upstream: u16, hosts: &[String]) -> Vec<String>
         stop("the old tinyproxy $moor_pid did not exit after TERM"),
         stop(&format!("port {listen} stays held after tinyproxy was stopped")),
         stop(&format!("tinyproxy exited: $(tail -n 1 \"{START_LOG}\")")),
-        stop(&format!("tinyproxy is not listening on 127.0.0.1:{listen}")),
+        stop(&format!("tinyproxy started but did not listen on 127.0.0.1:{listen} within 5 s")),
         stop(&format!("its config could not be moved to {CONF}")),
     );
     vec![
+        bridge_line(),
         format!(
             "mkdir -p \"{DIR}\" || {}",
             stop(&format!("{DIR} could not be created"))

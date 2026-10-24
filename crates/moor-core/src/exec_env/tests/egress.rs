@@ -7,6 +7,8 @@ use moor_testkit::{FakeEgress, FAKE_TINYPROXY};
 
 use super::super::egress::{config, lines, EGRESS_FAILED};
 
+mod bridge;
+
 /// Tools the egress lines call that the fake Box takes from the host.
 const HOST_TOOLS: &[&str] = &[
     "sh", "cmp", "mkdir", "mv", "rm", "grep", "sed", "sleep", "cat", "tail", "env", "cp", "chmod",
@@ -83,6 +85,7 @@ impl FakeBox {
             ),
         }
         moor_testkit::write_executable(&bin.join("tinyproxy.deb"), FAKE_TINYPROXY).unwrap();
+        moor_testkit::write_executable(&bin.join("ip"), moor_testkit::FAKE_IP).unwrap();
         let port = FakeEgress::start(&home, &bin).unwrap();
         if !installed {
             std::fs::remove_file(bin.join("tinyproxy")).unwrap();
@@ -182,7 +185,7 @@ fn failure(reason: &str) -> String {
 }
 
 #[test]
-fn the_config_sends_each_credential_host_to_the_tunnel_and_allows_only_loopback_and_docker() {
+fn the_config_sends_each_credential_host_to_the_tunnel_and_listens_on_loopback() {
     let got = config(
         40123,
         20123,
@@ -196,7 +199,7 @@ fn the_config_sends_each_credential_host_to_the_tunnel_and_allows_only_loopback_
     );
     assert_eq!(
         got,
-        "Port 40123\nListen 0.0.0.0\nDisableViaHeader Yes\nLogLevel Critical\nMaxClients 1024\n\
+        "Port 40123\nListen 127.0.0.1\nDisableViaHeader Yes\nLogLevel Critical\nMaxClients 1024\n\
          Allow 127.0.0.1\nAllow 172.16.0.0/12\n\
          upstream http 127.0.0.1:20123 \".corp.example\"\n\
          upstream http 127.0.0.1:20123 \"api.anthropic.com\"\n\
@@ -319,7 +322,10 @@ fn a_tinyproxy_that_never_listens_stops_the_exec() {
     let (ok, out, err) = b.run();
     assert!(!ok);
     assert!(!out.contains("ran"), "{out}");
-    let reason = format!("tinyproxy is not listening on 127.0.0.1:{}", b.port.port());
+    let reason = format!(
+        "tinyproxy started but did not listen on 127.0.0.1:{} within 5 s",
+        b.port.port()
+    );
     assert!(err.contains(&failure(&reason)), "{err}");
 }
 
