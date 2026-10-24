@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use moor_core::cache::{seal_failed, CachePlan, Origin};
+use moor_core::cache::{not_kept, seal_failed, CachePlan, Origin};
 use moor_core::config::{BoxSettings, DriverConfig};
 use moor_core::seam::driver::{BoxStep, DriverCaps, ExecOutcome, StepDone};
 use moor_core::seam::proc::Deadline;
@@ -104,6 +104,20 @@ pub(crate) fn for_start(
     CachePlan::none()
 }
 
+/// Whether `row`'s plan on `provider` keeps the work tree, derived again as the start derived it.
+pub(crate) fn keeps_work_tree(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    cfg: &BoxSettings,
+    provider: &ProviderId,
+) -> bool {
+    let Ok(caps) = cx.driver().caps(provider) else {
+        return false;
+    };
+    plan(cx, store, row, cfg, provider, caps).is_ok_and(|p| p.work_tree().is_some())
+}
+
 /// Runs the seal script of `row`'s plan in the Box, after teardown and before release. A volume
 /// whose seal fails gets no marker, so the provider does not keep it; this only warns and never
 /// fails the close.
@@ -133,6 +147,12 @@ pub(crate) fn seal(
             outcome: ExecOutcome::Exited { code: 0 },
             stdout,
         })) => {
+            for n in not_kept(&stdout) {
+                cx.warn(Warning {
+                    code: "work_tree_not_kept".to_owned(),
+                    message: format!("the work tree is not kept: {}", n.reason),
+                });
+            }
             let failed = seal_failed(&stdout);
             if failed.is_empty() {
                 return;

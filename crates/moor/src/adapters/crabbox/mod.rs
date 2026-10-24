@@ -216,7 +216,7 @@ impl Driver for Crabbox {
         let existed = self.lease_dir(&handle)?.exists();
         let spec = self.at_lease(spec, &handle)?;
         self.forget_targets(&handle);
-        let acquired = workdir::warm_up(self, provider, &handle, &spec);
+        let acquired = workdir::warm_up(self, provider, &handle, &spec, req.cache.work_tree());
         if acquired.is_err() && !existed {
             self.drop_lease_dir(&handle);
         }
