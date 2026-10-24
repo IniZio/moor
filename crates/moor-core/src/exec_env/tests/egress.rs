@@ -182,7 +182,7 @@ fn failure(reason: &str) -> String {
 }
 
 #[test]
-fn the_config_sends_each_credential_host_to_the_tunnel_and_listens_on_loopback() {
+fn the_config_sends_each_credential_host_to_the_tunnel_and_allows_only_loopback_and_docker() {
     let got = config(
         40123,
         20123,
@@ -196,13 +196,14 @@ fn the_config_sends_each_credential_host_to_the_tunnel_and_listens_on_loopback()
     );
     assert_eq!(
         got,
-        "Port 40123\nListen 127.0.0.1\nDisableViaHeader Yes\nLogLevel Critical\nMaxClients 1024\n\
+        "Port 40123\nListen 0.0.0.0\nDisableViaHeader Yes\nLogLevel Critical\nMaxClients 1024\n\
+         Allow 127.0.0.1\nAllow 172.16.0.0/12\n\
          upstream http 127.0.0.1:20123 \".corp.example\"\n\
          upstream http 127.0.0.1:20123 \"api.anthropic.com\"\n\
          upstream http 127.0.0.1:20123 \"git.internal.example\"\n\
          upstream http 127.0.0.1:20123 \"github.com\"\n"
     );
-    for absent in ["LogFile", "ConnectPort", "Allow", "Syslog"] {
+    for absent in ["LogFile", "ConnectPort", "Syslog"] {
         assert!(!got.contains(absent), "{absent}: {got}");
     }
 }
@@ -450,6 +451,17 @@ fn a_port_held_by_another_process_stops_the_exec_and_starts_nothing() {
     assert!(!out.contains("ran"), "{out}");
     let reason = format!("port {} is taken by another process", b.port.port());
     assert!(err.contains(&failure(&reason)), "{err}");
+    assert_eq!(b.starts(), 0, "{}", b.log());
+}
+
+#[test]
+fn a_wildcard_listener_on_the_port_counts_as_listening() {
+    let b = FakeBox::new(0, Apt::Missing, true);
+    b.port.occupy_wildcard();
+    let (ok, out, err) = b.run();
+    assert!(!ok);
+    let reason = format!("port {} is taken by another process", b.port.port());
+    assert!(err.contains(&failure(&reason)), "{out}{err}");
     assert_eq!(b.starts(), 0, "{}", b.log());
 }
 

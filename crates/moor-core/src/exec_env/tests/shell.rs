@@ -370,3 +370,20 @@ fn keytool_imports_the_ca_the_prelude_just_wrote() {
         PEM
     );
 }
+
+#[test]
+fn the_whole_prelude_points_docker_at_the_egress_port() {
+    let home = TempHome::new();
+    let out = home.exec(vec!["true".to_owned()]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = std::fs::read_to_string(home.0.path().join(".docker/config.json")).unwrap();
+    let url = format!("http://172.17.0.1:{}", home.1.port());
+    assert!(
+        text.contains(&format!("\"httpsProxy\": \"{url}\"")),
+        "{text}"
+    );
+}
