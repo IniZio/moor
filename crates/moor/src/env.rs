@@ -1,5 +1,6 @@
 //! Process environment and argv access; the only reader of either.
 
+use std::any::Any;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -20,6 +21,8 @@ pub struct Env {
     cancel: Cancel,
     /// The rules each front's Proxy serves, by namespace, when a controller runs this.
     front_proxies: Arc<BTreeMap<String, Vec<String>>>,
+    /// What the controller opened once for every request and tick, such as the state store.
+    shared: Option<Arc<dyn Any + Send + Sync>>,
 }
 
 /// A request's stop flag, shared by everyone who holds a clone.
@@ -120,6 +123,18 @@ impl Env {
     /// The names of the rules front `ns`'s Proxy serves; none when it has no Proxy.
     pub(crate) fn front_proxy_rules(&self, ns: &str) -> &[String] {
         self.front_proxies.get(ns).map_or(&[], Vec::as_slice)
+    }
+
+    /// Share `value` with every request and tick that runs in this environment.
+    #[must_use]
+    pub(crate) fn sharing<T: Any + Send + Sync>(mut self, value: T) -> Self {
+        self.shared = Some(Arc::new(value));
+        self
+    }
+
+    /// The shared value when it is a `T`; `None` outside a controller.
+    pub(crate) fn shared<T: Any>(&self) -> Option<&T> {
+        self.shared.as_deref()?.downcast_ref()
     }
 
     /// This environment for one request that stops when `cancel` is set.

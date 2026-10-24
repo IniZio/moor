@@ -50,6 +50,14 @@ const HERDR_PASSTHROUGH: [&str; 5] = [
     "TERM",
 ];
 
+/// The host variables in [`HERDR_PASSTHROUGH`] that `env` sets.
+fn herdr_env(env: &Env) -> Vec<(String, String)> {
+    HERDR_PASSTHROUGH
+        .iter()
+        .filter_map(|k| Some(((*k).to_owned(), env.get(k)?.to_owned())))
+        .collect()
+}
+
 /// The herdr adapter, numbering its reports from `clock` and opening Workspaces in `state_dir`.
 fn herdr(
     proc: &Arc<dyn Proc>,
@@ -101,23 +109,22 @@ pub(crate) fn host_checkout(env: &Env) -> impl Checkout {
     Git::new(Arc::new(SystemProc::new(env, &ToolPaths::default())))
 }
 
-/// Opens the state store once, so a store that every command would refuse fails here.
-pub(crate) fn open_store(env: &Env) -> Result<(), CommandError> {
+/// Opens the state store and returns `env` sharing it, so a store that every command would
+/// refuse fails here.
+pub(crate) fn open_store(env: Env) -> Result<Env, CommandError> {
     let Some(state_dir) = env.state_dir() else {
-        return Ok(());
+        return Ok(env);
     };
-    let clock = SystemClock::from_env(env).map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
-    Store::open(&state_dir.join(STORE_FILE), Arc::new(clock))?;
-    Ok(())
+    let clock = SystemClock::from_env(&env).map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
+    let store = Store::open(&state_dir.join(STORE_FILE), Arc::new(clock))?;
+    Ok(env.sharing(store))
 }
 
 /// Ends every front Proxy lease in the store.
 pub(crate) fn end_front_leases(env: &Env) -> Result<(), CommandError> {
-    let Some(state_dir) = env.state_dir() else {
-        return Ok(());
-    };
-    let clock = SystemClock::from_env(env).map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
-    Store::open(&state_dir.join(STORE_FILE), Arc::new(clock))?.purge_front_leases()?;
+    if let Some(store) = env.shared::<Store>() {
+        store.purge_front_leases()?;
+    }
     Ok(())
 }
 
@@ -138,9 +145,9 @@ pub(crate) fn front_proxy_ca(state_dir: &Path) -> std::io::Result<PathBuf> {
     crate::proxy::fronts::ca_cert(state_dir)
 }
 
-/// Settles the Proxy supervisors recorded in the state store; one line per failure.
+/// Settles the Proxy supervisors recorded in the store `env` shares; one line per failure.
 pub(crate) fn reconcile_proxies(env: &Env) -> Vec<String> {
-    let Some(state_dir) = env.state_dir() else {
+    let (Some(state_dir), Some(store)) = (env.state_dir(), env.shared::<Store>()) else {
         return Vec::new();
     };
     let clock = match SystemClock::from_env(env) {
@@ -154,11 +161,12 @@ pub(crate) fn reconcile_proxies(env: &Env) -> Vec<String> {
     let proc: Arc<dyn Proc> = Arc::new(SystemProc::new(env, &tool_paths(&config)));
     let host = DetachedSupervisor::new(
         Arc::clone(&proc),
-        Arc::clone(&clock) as Arc<dyn Clock>,
+        clock,
         Arc::new(SystemRng),
         Some(state_dir.clone()),
-    );
-    adopt::reconcile(&host, proc.as_ref(), clock, &state_dir)
+    )
+    .sharing(Some(store.clone()));
+    adopt::reconcile(&host, proc.as_ref(), store, &state_dir)
 }
 
 /// Whether the installed crabbox's `ssh` takes `--no-probe`. The controller wires a driver per
@@ -171,16 +179,12 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
     let clock = SystemClock::from_env(env).map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
     let config = load_user(env)?;
     let proc: Arc<dyn Proc> = Arc::new(SystemProc::new(env, &tool_paths(&config)));
-    let extra_env = HERDR_PASSTHROUGH
-        .iter()
-        .filter_map(|k| Some(((*k).to_owned(), env.get(k)?.to_owned())))
-        .collect();
     let clock = Arc::new(clock);
     let state_dir = env.state_dir();
     let surface: Arc<dyn Surface> = Arc::new(herdr(
         &proc,
         config.herdr_session(),
-        extra_env,
+        herdr_env(env),
         Arc::clone(&clock) as Arc<dyn Clock>,
         state_dir.clone(),
     ));
@@ -205,12 +209,15 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
             env.xdg("XDG_CACHE_HOME", ".cache", "moor"),
         )),
     );
-    let proxy_host = Arc::new(DetachedSupervisor::new(
-        Arc::clone(&proc),
-        Arc::clone(&clock) as Arc<dyn Clock>,
-        Arc::clone(&rng),
-        state_dir.clone(),
-    ));
+    let proxy_host = Arc::new(
+        DetachedSupervisor::new(
+            Arc::clone(&proc),
+            Arc::clone(&clock) as Arc<dyn Clock>,
+            Arc::clone(&rng),
+            state_dir.clone(),
+        )
+        .sharing(env.shared::<Store>().cloned()),
+    );
     let parts = CxParts {
         state_dir,
         clock,
@@ -259,9 +266,7 @@ fn run_proxy(env: &Env, box_id: BoxId, sink: &Sink) -> Result<u8, String> {
     for sig in [SIGTERM, SIGINT] {
         signal_hook::flag::register(sig, Arc::clone(&stop)).map_err(|e| e.to_string())?;
     }
-    let shared = Arc::new(
-        Store::open(&state_dir.join(STORE_FILE), Arc::clone(&clock)).map_err(|e| e.to_string())?,
-    );
+    let shared = store.clone();
     let secrets: SecretsFn = Arc::new(move |vault, user, name| {
         shared
             .user_secret(vault, user, name)

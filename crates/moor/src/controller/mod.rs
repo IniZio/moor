@@ -137,7 +137,7 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         None => state_socket(&env)
             .ok_or_else(|| failed("no state directory: set state_dir or MOOR_STATE_DIR".into()))?,
     };
-    Moor::open_store(&env).map_err(|e| Stop {
+    let env = Moor::open_store(env).map_err(|e| Stop {
         code: match e.kind {
             ErrorKind::Refused => REFUSED,
             ErrorKind::Usage => USAGE,

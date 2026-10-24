@@ -1,10 +1,15 @@
 //! Tests for `Cx`.
 
 use super::Cx;
+use crate::env::Env;
+use crate::store::{Store, STORE_FILE};
+use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
+use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::Ts;
+use moor_core::BoxName;
 use moor_core::Warning;
 use std::path::Path;
 use std::sync::Arc;
@@ -75,4 +80,39 @@ fn the_fake_context_returns_the_scripted_forge() {
     let forge = FakeForge::new().with_repo("o", ForgeRepo::new("a", "b"));
     let cx = cx(Path::new("/s")).with_forge(Arc::new(forge));
     assert_eq!(cx.forge().repo_of("o"), Some(ForgeRepo::new("a", "b")));
+}
+
+#[test]
+fn every_context_uses_the_store_its_env_shares() {
+    let tmp = tempfile::tempdir().unwrap();
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(1000)));
+    let shared = Store::open(&tmp.path().join("shared").join(STORE_FILE), clock).unwrap();
+    let own = tmp.path().join("own");
+    let env = Env::default().sharing(shared.clone());
+    let new_cx = || Cx {
+        env: env.clone(),
+        ..Cx::fake_bare(
+            &own,
+            Arc::new(FakeDriver::new()),
+            Arc::new(FakeSurface::new()),
+            Arc::new(ScriptedProc::new()),
+        )
+    };
+    let name = BoxName::parse_allow_bare("a").unwrap();
+    let made = new_cx()
+        .store()
+        .unwrap()
+        .apply(Decision::insert(NewBox { name, repo: None }))
+        .unwrap();
+    assert!(new_cx()
+        .store()
+        .unwrap()
+        .box_row(made.box_id)
+        .unwrap()
+        .is_some());
+    assert!(shared.box_row(made.box_id).unwrap().is_some());
+    assert!(
+        !own.join(STORE_FILE).exists(),
+        "a context opened its own store"
+    );
 }

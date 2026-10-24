@@ -72,6 +72,15 @@ impl DetachedSupervisor {
         }
     }
 
+    /// This host using `store` instead of opening its own.
+    #[must_use]
+    pub(crate) fn sharing(mut self, store: Option<Store>) -> Self {
+        if let Some(store) = store {
+            self.store = OnceLock::from(store);
+        }
+        self
+    }
+
     /// The state store, opened on first call.
     fn store(&self) -> Result<&Store, StoreError> {
         if let Some(store) = self.store.get() {

@@ -40,11 +40,12 @@ impl Moor {
         Self { cx }
     }
 
-    /// Opens the state store once; the error is the one every command would get.
+    /// Opens the state store once and returns `env` sharing it with every request and tick; the
+    /// error is the one every command would get.
     ///
     /// # Errors
     /// A refusal for a state dir at another schema version, else the store or clock failure.
-    pub fn open_store(env: &Env) -> Result<(), CommandError> {
+    pub(crate) fn open_store(env: Env) -> Result<Env, CommandError> {
         wire::open_store(env)
     }
 

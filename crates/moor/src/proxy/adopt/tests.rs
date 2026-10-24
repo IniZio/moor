@@ -120,12 +120,7 @@ impl Fx {
     }
 
     fn settle(&self) -> Vec<String> {
-        reconcile(
-            &self.host,
-            self.proc.as_ref(),
-            self.clock.clone(),
-            self.dir.path(),
-        )
+        reconcile(&self.host, self.proc.as_ref(), &self.store, self.dir.path())
     }
 
     fn row(&self) -> crate::store::ProxyRow {
