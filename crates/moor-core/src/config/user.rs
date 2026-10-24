@@ -14,6 +14,7 @@ use serde::Deserialize;
 
 use super::proxy::{injected, ProxyConfig};
 use super::{check, parse_strict, ConfigError};
+use crate::cache::CacheConfig;
 pub use controller::ControllerClientConfig;
 pub use creds::McpServer;
 
@@ -133,9 +134,17 @@ pub struct DriverConfig {
     /// Environment variable names the provider's platform puts in the Box.
     /// moor removes them from every Box exec: setup, teardown, `moor run` and the agent.
     pub strip_env: Vec<String>,
+    /// Whether this provider's Boxes get cache volumes; on by default.
+    pub cache_volumes: Option<bool>,
 }
 
 impl DriverConfig {
+    /// Whether this provider's Boxes get cache volumes.
+    #[must_use]
+    pub fn cache_volumes(&self) -> bool {
+        self.cache_volumes.unwrap_or(true)
+    }
+
     /// Every `strip_env` entry is a valid variable name.
     fn validate(&self, provider: &str) -> Result<(), ConfigError> {
         for (i, name) in self.strip_env.iter().enumerate() {
@@ -267,6 +276,8 @@ pub struct UserConfig {
     pub box_credentials: Vec<String>,
     /// State directory override.
     pub state_dir: Option<PathBuf>,
+    /// Presets and user-scoped cache volumes for every Box.
+    pub cache: CacheConfig,
 }
 
 impl UserConfig {
@@ -313,6 +324,7 @@ impl UserConfig {
         }
         self.proxy.validate()?;
         self.controller.validate()?;
+        super::repo::check_cache(&self.cache)?;
         check::box_credentials(&self.box_credentials, &injected)
             .map_err(|(i, m)| ConfigError::new(format!("box_credentials[{i}]"), m))
     }

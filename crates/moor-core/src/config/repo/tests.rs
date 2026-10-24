@@ -220,3 +220,9 @@ fn box_credentials_may_not_name_a_secret_a_default_rule_injects() {
         "the Proxy's github-api rule injects",
     );
 }
+
+#[test]
+fn changed_keys_names_cache() {
+    let a = ok("cache: {presets: false}\n");
+    assert_eq!(a.changed_keys(&ok("")), ["cache"]);
+}

@@ -327,21 +327,38 @@ fn image_path_line_for(file: &str) -> String {
     )
 }
 
+/// Yarn's cache; Yarn Berry's global folder, and so its global cache, sits below it.
+const YARN_CACHE: &str = "$HOME/.cache/yarn";
+/// npm's cache.
+const NPM_CACHE: &str = "$HOME/.cache/npm";
+
 /// Shell lines that point Yarn and npm at the egress proxy and a cache the agent can write.
 fn yarn_lines(port: u16) -> Vec<String> {
     let mut lines: Vec<String> = ["YARN_HTTPS_PROXY", "YARN_HTTP_PROXY"]
         .iter()
         .map(|name| format!("export {name}=\"http://127.0.0.1:{port}\""))
         .collect();
-    lines.extend(
-        [
-            "export YARN_CACHE_FOLDER=\"$HOME/.cache/yarn\"",
-            "export YARN_GLOBAL_FOLDER=\"$HOME/.cache/yarn/berry\"",
-            "export npm_config_cache=\"$HOME/.cache/npm\"",
-        ]
-        .map(str::to_owned),
-    );
+    lines.extend([
+        format!("export YARN_CACHE_FOLDER=\"{YARN_CACHE}\""),
+        format!("export YARN_GLOBAL_FOLDER=\"{YARN_CACHE}/berry\""),
+        format!("export npm_config_cache=\"{NPM_CACHE}\""),
+    ]);
     lines
+}
+
+/// Box paths, in `$HOME/` form, of the files and directories every exec rewrites for the Box it
+/// runs in, so no cache may hold them.
+pub(crate) fn per_box_paths() -> [String; 3] {
+    [
+        PROXY_DIR.to_owned(),
+        format!("{}/{}", java::GRADLE_HOME, java::PROPERTIES_FILE),
+        format!("{}/{}", java::GRADLE_HOME, java::TRUSTSTORE_FILE),
+    ]
+}
+
+/// The npm and Yarn caches every exec points the tools at, in `$HOME/` form.
+pub(crate) const fn tool_caches() -> (&'static str, &'static str) {
+    (NPM_CACHE, YARN_CACHE)
 }
 
 mod egress;

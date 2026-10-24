@@ -7,6 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{BoxSize, DotfilesConfig, McpServer, RepoConfig, ToolsConfig, UserConfig};
+use crate::cache::CacheLayers;
 
 /// The layer a resolved value came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -102,6 +103,8 @@ pub struct BoxSettings {
     pub compose_prefix: Option<String>,
     /// User tool path overrides.
     pub tool_paths: ToolsConfig,
+    /// Repo and operator `cache:` sections.
+    pub cache: CacheLayers,
 }
 
 /// Builds the sorted credential plan from box credentials and MCP refs.
@@ -166,6 +169,10 @@ impl BoxSettings {
             env: r.env.clone(),
             compose_prefix: r.compose.project_prefix.clone(),
             tool_paths: user.tools.clone(),
+            cache: CacheLayers {
+                repo: r.cache.clone(),
+                operator: user.cache.clone(),
+            },
         }
     }
 }

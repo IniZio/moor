@@ -6,6 +6,7 @@ use serde::Deserialize;
 
 use super::proxy::{default_rules, injected};
 use super::{check, parse_strict, BoxSize, ConfigError};
+use crate::cache::CacheConfig;
 
 /// `compose:` section.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
@@ -40,6 +41,8 @@ pub struct RepoConfig {
     pub box_: RepoBox,
     /// Names of user credentials exposed on the Box.
     pub box_credentials: Vec<String>,
+    /// `cache:` section.
+    pub cache: CacheConfig,
 }
 
 /// Parses and validates a `.moor.yaml` document.
@@ -67,6 +70,7 @@ impl RepoConfig {
                 "box_credentials",
                 self.box_credentials != other.box_credentials,
             ),
+            ("cache", self.cache != other.cache),
         ]
         .into_iter()
         .filter_map(|(key, changed)| changed.then_some(key))
@@ -78,6 +82,7 @@ impl RepoConfig {
         non_blank("setup", &self.setup)?;
         non_blank("teardown", &self.teardown)?;
         self.validate_box_credentials()?;
+        check_cache(&self.cache)?;
         for name in self.env.keys() {
             let path = format!("env.{name}");
             check::env_name(name)
@@ -93,6 +98,13 @@ impl RepoConfig {
         check::box_credentials(&self.box_credentials, &injected(&default_rules()))
             .map_err(|(i, m)| ConfigError::new(format!("box_credentials[{i}]"), m))
     }
+}
+
+/// Checks a `cache:` section, naming the key below `cache` that fails.
+pub(super) fn check_cache(cache: &CacheConfig) -> Result<(), ConfigError> {
+    cache
+        .check()
+        .map_err(|(at, why)| ConfigError::new(format!("cache.{at}"), why))
 }
 
 /// Rejects blank entries of a command list.

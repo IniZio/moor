@@ -5,6 +5,12 @@
 
 use crate::name::{BoxId, BoxName};
 
+/// The directory under the Box login home that holds every Box workdir.
+pub const WORK_ROOT: &str = "moor";
+
+/// The start of every directory moor makes directly under the Box home.
+pub const HOME_PREFIX: &str = ".moor-";
+
 /// Derives a Box's internal identifiers from its id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BoxKey(BoxId);
@@ -37,13 +43,13 @@ impl BoxKey {
     /// The credential directory under the Box home, `.moor-cred-{id}-{nonce}`.
     #[must_use]
     pub fn cred_dir(self, nonce: &str) -> String {
-        format!(".moor-cred-{}-{nonce}", self.0.get())
+        format!("{HOME_PREFIX}cred-{}-{nonce}", self.0.get())
     }
 
     /// The scratch directory under the Box home, `.moor-tmp-{id}-{nonce}`.
     #[must_use]
     pub fn tmp_dir(self, nonce: &str) -> String {
-        format!(".moor-tmp-{}-{nonce}", self.0.get())
+        format!("{HOME_PREFIX}tmp-{}-{nonce}", self.0.get())
     }
 }
 
