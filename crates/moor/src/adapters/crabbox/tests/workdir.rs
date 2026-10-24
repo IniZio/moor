@@ -127,3 +127,48 @@ fn every_crabbox_call_asks_for_the_relative_work_root() {
         assert!(call.env.contains(&root) && !leaked, "{call:?}");
     }
 }
+
+/// A plan for repo `o/r` built from `repo_yaml`.
+fn plan(repo_yaml: &str) -> moor_core::cache::CachePlan {
+    let layers = moor_core::cache::CacheLayers {
+        repo: moor_core::config::parse_repo(".moor.yaml", repo_yaml)
+            .unwrap()
+            .cache,
+        operator: moor_core::cache::CacheConfig::default(),
+    };
+    let repo = moor_core::name::ForgeRepo {
+        owner: "o".to_owned(),
+        name: "r".to_owned(),
+    };
+    let salt = moor_core::cache::CacheSalt::new([3; 64]);
+    let user = moor_core::user::UserId::new(1);
+    moor_core::cache::CachePlan::build(user, Some(&repo), &layers, &salt).unwrap()
+}
+
+fn acquired_in(repo_yaml: &str) -> String {
+    let (p, c) = fixture();
+    p.on(
+        Tool::Crabbox,
+        &["warmup"],
+        Reply::Ok(
+            "leased cbx_1 slug=-\nready ssh=u@h:22 workroot=/home/u/moor workdir=/home/u/moor/cbx_1/moor-7-ab12cd\n"
+                .to_owned(),
+        ),
+    );
+    let mut r = req("sprites", None);
+    r.cache = plan(repo_yaml);
+    c.acquire(&r).unwrap().workdir.as_str().to_owned()
+}
+
+#[test]
+fn a_box_that_keeps_its_work_tree_works_in_the_repo_directory_under_the_work_root() {
+    assert_eq!(acquired_in(""), "/home/u/moor/repos/r");
+}
+
+#[test]
+fn a_box_without_the_work_tree_volume_keeps_the_per_lease_workdir() {
+    assert_eq!(
+        acquired_in("cache: {work_tree: false}"),
+        "/home/u/moor/cbx_1/moor-7-ab12cd"
+    );
+}

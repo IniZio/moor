@@ -8,15 +8,17 @@ use super::errors::unreadable;
 use super::errors::Op;
 use super::{parse, split_handle, Crabbox};
 
-/// Runs the warmup `spec` for `handle` and reads where its workdir is: the ready line's
-/// `workdir`, else crabbox's own `<workroot>/<lease id>/<repo>`, where the repo is the lease dir
-/// moor runs crabbox from, named after the Box. With neither, the acquire fails: moor never
-/// searches the Box for a directory by name.
+/// Runs the warmup `spec` for `handle` and reads where its workdir is. A Box that keeps its work
+/// tree works in `<workroot>/<work_tree>`, the same path in every Box of its repo. Otherwise it
+/// is the ready line's `workdir`, else crabbox's own `<workroot>/<lease id>/<repo>`, where the
+/// repo is the lease dir moor runs crabbox from, named after the Box. With none of them, the
+/// acquire fails: moor never searches the Box for a directory by name.
 pub(super) fn warm_up(
     cb: &Crabbox,
     provider: &str,
     handle: &BoxHandle,
     spec: &ProcSpec,
+    work_tree: Option<&str>,
 ) -> Result<Acquired, DriverError> {
     let out = cb.call(Op::Acquire, Some(provider), spec)?;
     let warm = parse::parse_warmup(&out.stdout).ok_or_else(|| unreadable("acquire"))?;
@@ -35,7 +37,12 @@ pub(super) fn warm_up(
             split_handle(handle).1
         )
     });
-    let workdir = [warm.workdir, derived]
+    let kept = warm
+        .workroot
+        .as_deref()
+        .zip(work_tree)
+        .map(|(root, tree)| format!("{}/{tree}", root.trim_end_matches('/')));
+    let workdir = [kept, warm.workdir, derived]
         .into_iter()
         .flatten()
         .find_map(|dir| BoxPath::restore(&dir).ok())
