@@ -371,3 +371,89 @@ fn salt_round_trips_through_hex_and_never_prints() {
     assert_eq!(CacheSalt::from_hex(&"zz".repeat(64)), None);
     assert_eq!(format!("{s:?}"), "CacheSalt(..)");
 }
+
+fn docker_stays_sealed(p: &CachePlan) {
+    let docker = p
+        .volumes()
+        .iter()
+        .find(|v| v.name.as_str() == "docker")
+        .expect("the docker preset is kept");
+    assert!(docker.group.ends_with('x'), "{}", docker.group);
+    assert!(!docker.seal().is_empty());
+    let paths: Vec<&str> = docker.paths.iter().map(CachePath::as_str).collect();
+    assert_eq!(paths, ["~/docker", "/var/lib/containerd"]);
+}
+
+#[test]
+fn a_declared_volume_on_a_sealed_preset_is_dropped_and_docker_stays_sealed() {
+    let own = |path: &str| format!("cache: {{volumes: [{{name: mine, path: {path}}}]}}");
+    let cases = [
+        (own("~/docker"), String::new(), Origin::Repo),
+        (own("/var/lib/containerd"), String::new(), Origin::Repo),
+        (own("~/docker/volumes"), String::new(), Origin::Repo),
+        (String::new(), own("~/docker"), Origin::Operator),
+    ];
+    for (repo_yaml, user_yaml, origin) in cases {
+        let p = plan(&layers(&repo_yaml, &user_yaml));
+        docker_stays_sealed(&p);
+        assert!(
+            !names(&p).contains(&"mine".to_owned()),
+            "{repo_yaml}{user_yaml}"
+        );
+        assert!(names(&p).contains(&"npm".to_owned()));
+        let want = Dropped {
+            origin,
+            volume: CacheName::parse("mine").unwrap(),
+            preset: CacheName::parse("docker").unwrap(),
+        };
+        assert_eq!(p.dropped(), [want], "{repo_yaml}{user_yaml}");
+    }
+}
+
+#[test]
+fn dropping_one_volume_keeps_the_others_and_ignores_it_in_clash_checks() {
+    let p = plan(&layers(
+        "cache: {volumes: [{name: mine, path: ~/docker}, {name: tools, path: /opt/tools}]}",
+        "cache: {volumes: [{name: more, path: ~/docker/x}]}",
+    ));
+    docker_stays_sealed(&p);
+    assert!(names(&p).ends_with(&["tools".into()]), "{:?}", names(&p));
+    let gone: Vec<&str> = p.dropped().iter().map(|d| d.volume.as_str()).collect();
+    assert_eq!(gone, ["mine", "more"]);
+}
+
+#[test]
+fn an_unsealed_preset_still_yields_to_a_declared_volume() {
+    let p = plan(&layers(
+        "cache: {volumes: [{name: mine, path: ~/.cache/npm}]}",
+        "",
+    ));
+    let got = names(&p);
+    assert!(got.contains(&"mine".to_owned()), "{got:?}");
+    assert!(!got.contains(&"npm".to_owned()), "{got:?}");
+    assert!(p.dropped().is_empty());
+}
+
+#[test]
+fn a_dropped_docker_preset_leaves_its_directory_to_a_declared_volume() {
+    let p = plan(&layers(
+        "cache: {presets: [docker], volumes: [{name: mine, path: ~/docker}]}",
+        "",
+    ));
+    assert!(names(&p).contains(&"mine".to_owned()));
+    assert!(!names(&p).contains(&"docker".to_owned()));
+    assert!(p.dropped().is_empty());
+}
+
+#[test]
+fn a_dropped_volume_says_who_declared_it_and_which_preset_won() {
+    let p = plan(&layers(
+        "",
+        "cache: {volumes: [{name: mine, path: ~/docker}]}",
+    ));
+    assert_eq!(
+        p.dropped().first().unwrap().to_string(),
+        "operator cache volume mine meets the sealed docker preset, which keeps its directory, \
+         so it is dropped"
+    );
+}

@@ -6,6 +6,7 @@
 //! so a repo cannot widen its own.
 
 mod config;
+mod layers;
 mod path;
 pub mod presets;
 #[cfg(test)]
@@ -19,6 +20,7 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
 pub use config::{CacheConfig, Presets, VolumeDecl};
+pub use layers::{CacheLayers, Dropped, Resolved};
 pub use path::{owned_paths, CachePath};
 
 use crate::name::ForgeRepo;
@@ -121,70 +123,19 @@ pub enum CacheError {
     Invalid(String, String),
 }
 
+/// Whether any path of `a` equals, holds or sits inside any path of `b`.
+fn nested(a: &Volume, b: &Volume) -> bool {
+    a.paths
+        .iter()
+        .any(|p| b.paths.iter().any(|q| p.overlaps(q)))
+}
+
 /// Why `a` and `b` cannot share a plan, if they cannot.
 fn overlap(a: &Volume, b: &Volume) -> Option<CacheError> {
     if a.name == b.name {
         return Some(CacheError::Duplicate(a.name.0.clone()));
     }
-    let nested = a
-        .paths
-        .iter()
-        .any(|p| b.paths.iter().any(|q| p.overlaps(q)));
-    nested.then(|| CacheError::Overlap(a.name.0.clone(), b.name.0.clone()))
-}
-
-/// Both layers' `cache:` sections for one Box.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct CacheLayers {
-    /// The repo's `.moor.yaml`.
-    pub repo: CacheConfig,
-    /// The operator's moor config.
-    pub operator: CacheConfig,
-}
-
-impl CacheLayers {
-    /// Every volume of a Box, presets first. Presets and repo volumes need a repo. A preset that
-    /// shares a name or a directory with a declared volume yields to it.
-    ///
-    /// # Errors
-    /// A layer that does not check, or a repo and an operator volume that clash.
-    pub fn declared(&self, has_repo: bool) -> Result<Vec<Declared>, CacheError> {
-        let invalid = |(at, why)| CacheError::Invalid(at, why);
-        let repo = if has_repo {
-            self.repo.check().map_err(invalid)?;
-            self.repo.volumes().map_err(invalid)?
-        } else {
-            Vec::new()
-        };
-        self.operator.check().map_err(invalid)?;
-        let operator = self.operator.volumes().map_err(invalid)?;
-        let declared: Vec<Declared> = (repo.into_iter().map(|v| (Origin::Repo, v)))
-            .chain(operator.into_iter().map(|v| (Origin::Operator, v)))
-            .map(|(origin, volume)| Declared { origin, volume })
-            .collect();
-        for (i, d) in declared.iter().enumerate() {
-            if let Some(e) = declared
-                .iter()
-                .take(i)
-                .find_map(|e| overlap(&e.volume, &d.volume))
-            {
-                return Err(e);
-            }
-        }
-        let kept = presets::all().into_iter().filter(|p| {
-            let on = self.repo.presets.keeps(p.name.as_str())
-                && self.operator.presets.keeps(p.name.as_str());
-            has_repo && on && !declared.iter().any(|d| overlap(&d.volume, p).is_some())
-        });
-        let mut all: Vec<Declared> = kept
-            .map(|volume| Declared {
-                origin: Origin::Preset,
-                volume,
-            })
-            .collect();
-        all.extend(declared);
-        Ok(all)
-    }
+    nested(a, b).then(|| CacheError::Overlap(a.name.0.clone(), b.name.0.clone()))
 }
 
 /// Random per state dir; a fresh state dir orphans every cache rather than handing it to
@@ -277,13 +228,21 @@ impl PlannedVolume {
 
 /// What a Driver receives at acquire; empty means a cold Box.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct CachePlan(Vec<PlannedVolume>);
+pub struct CachePlan {
+    /// The volumes.
+    volumes: Vec<PlannedVolume>,
+    /// Declared volumes left out.
+    dropped: Vec<Dropped>,
+}
 
 impl CachePlan {
     /// No volumes.
     #[must_use]
     pub const fn none() -> Self {
-        Self(Vec::new())
+        Self {
+            volumes: Vec::new(),
+            dropped: Vec::new(),
+        }
     }
 
     /// Keys every volume of `layers` to its scope for `user` and `repo`; a Box without a repo
@@ -297,7 +256,8 @@ impl CachePlan {
         layers: &CacheLayers,
         salt: &CacheSalt,
     ) -> Result<Self, CacheError> {
-        let planned = layers.declared(repo.is_some())?.into_iter().map(|d| {
+        let Resolved { volumes, dropped } = layers.resolve(repo.is_some())?;
+        let planned = volumes.into_iter().map(|d| {
             let mut group = group(salt, d.origin, user, repo);
             if !d.volume.seal.is_empty() {
                 group.push('x');
@@ -311,18 +271,27 @@ impl CachePlan {
                 seal: d.volume.seal,
             }
         });
-        Ok(Self(planned.collect()))
+        Ok(Self {
+            volumes: planned.collect(),
+            dropped,
+        })
     }
 
     /// The volumes.
     #[must_use]
     pub fn volumes(&self) -> &[PlannedVolume] {
-        &self.0
+        &self.volumes
+    }
+
+    /// Declared volumes left out because they met a sealed preset.
+    #[must_use]
+    pub fn dropped(&self) -> &[Dropped] {
+        &self.dropped
     }
 
     /// Whether the Box starts cold.
     #[must_use]
     pub const fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.volumes.is_empty()
     }
 }
