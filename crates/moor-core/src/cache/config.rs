@@ -4,7 +4,7 @@ use std::num::NonZeroU32;
 
 use serde::Deserialize;
 
-use super::{overlap, presets, CacheName, CachePath, Volume};
+use super::{overlap, presets, CacheName, CachePath, OnFail, Volume, WorkTree};
 
 /// Most volumes one layer may declare.
 const MAX_VOLUMES: usize = 8;
@@ -59,6 +59,8 @@ pub struct CacheConfig {
     pub presets: Presets,
     /// Volumes this layer declares.
     pub volumes: Vec<VolumeDecl>,
+    /// Whether this layer keeps the repo's work tree, and its size.
+    pub work_tree: WorkTree,
 }
 
 impl CacheConfig {
@@ -110,6 +112,7 @@ impl CacheConfig {
                     paths: vec![path],
                     size_gb: d.size_gb,
                     seal: d.seal.clone(),
+                    on_fail: OnFail::Clear,
                 })
             })
             .collect()

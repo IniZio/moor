@@ -44,7 +44,7 @@ pub(crate) fn run(cx: &Cx, req: &EnvReq) -> Result<EnvView, CommandError> {
     Ok(EnvView::new(
         shown,
         &settings,
-        items::assemble(cx, &settings, author.as_ref(), &files),
+        items::assemble(cx, &settings, req.repo.as_ref(), author.as_ref(), &files),
     ))
 }
 

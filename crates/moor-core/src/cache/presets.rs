@@ -1,6 +1,6 @@
 //! The built-in presets: tool caches every Box with a repo keeps unless a layer drops them.
 
-use super::{CacheName, CachePath, Volume};
+use super::{CacheName, CachePath, OnFail, Volume};
 use crate::exec_env::tool_caches;
 
 /// Clears containers, volumes and networks so only images and build cache are kept; without
@@ -57,6 +57,7 @@ pub(super) fn all() -> Vec<Volume> {
                     .ok()?,
                 size_gb: None,
                 seal,
+                on_fail: OnFail::Clear,
             })
         })
         .collect()
