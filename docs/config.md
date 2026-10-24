@@ -172,6 +172,7 @@ declared volumes of their own; presets alone start cold without a warning.
 ```yaml
 cache:
   presets: [docker]          # drop these presets; false drops all; default: all on
+  work_tree: {size_gb: 60}   # false: clone fresh in every Box; default: true, 40 GB
   volumes:
     - name: android-sdk      # [a-z][a-z0-9-]{0,31}
       path: /opt/android-sdk
@@ -183,6 +184,7 @@ cache:
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `cache.presets` | `true`, `false`, or a list of preset names | `true` | Which presets this repo keeps. A list names the presets to drop. |
+| `cache.work_tree` | `true`, `false`, or `{size_gb: N}` | `true` | Whether the repo's work tree is kept. See [Work tree](#work-tree). |
 | `cache.volumes[].name` | string | required | The volume's name, unique in the Box. |
 | `cache.volumes[].path` | path | required | The directory kept: `~/<dir>` (the Box user's home), `/opt/<dir>`, `/var/cache/<dir>`, or exactly `/var/lib/containerd` or `/var/lib/containers` (nothing below them). Letters, digits, `/` and `._-+@` only. |
 | `cache.volumes[].size_gb` | integer, at least 1 | none | A size hint. The provider caps it. |
@@ -229,11 +231,44 @@ seal that fails also empties its volume in the Box, and the close goes on with a
 `cache_seal_failed` warning. Each volume with a seal is kept in a store of its
 own, so a docker volume that is not kept never holds back the other presets.
 
+#### Work tree
+
+Every Box with a repo also keeps its work tree, in a volume named `worktree`,
+so a later Box of the same user and repo starts with the previous Box's
+ignored build outputs (`build/`, `target/`, `.cxx`) instead of a fresh clone.
+The workdir is then `~/moor/repos/<repo name>` in every Box of that repo. That
+fixed path lets tools that record absolute paths, such as CMake, Gradle and
+cargo, reuse their outputs, and it makes Docker Compose's default project name
+the repo name.
+
+When the Box starts on a kept tree, moor refreshes it before anything else
+runs. It fetches, checks out the Box branch from the remote, or from the base
+when the remote has no such branch, resets every tracked file, and removes
+untracked files and nested repos. Ignored files stay. It then deletes every
+other local branch, the stash and the reflogs. A file whose content did not
+change keeps its modification time. When any step fails, moor empties the
+directory and clones fresh, as on the first Box, so the start never fails
+because of the kept tree.
+
+The close keeps the tree only when it holds nothing a remote lacks: no commit
+that is not on a pushed branch or the base, no stash, no staged change and no
+rebase, merge, cherry-pick, revert, am or bisect in progress. Modified and
+untracked files do not block it, since the next refresh removes them. A tree
+that is not kept stays as it is in the Box, the close warns
+`work_tree_not_kept` with the reason, and the next Box clones fresh. A
+non-forced close already refuses unpushed work, so this matters only after
+`close --force`.
+
+The work tree has a store of its own, so a failed Docker seal never discards
+it, nor the reverse. `size_gb` is the size hint for that store. A repo whose
+name has a character other than letters, digits and `._-+@` gets no work tree.
+A declared volume named `worktree` replaces it.
+
 #### Who shares a cache
 
 | Declared by | Kept for |
 | --- | --- |
-| A preset or `.moor.yaml` | One user and one repo |
+| A preset, the work tree or `.moor.yaml` | One user and one repo |
 | The operator's user config | One user, across all their repos |
 
 Another user's Box never sees a cache. A repo cannot widen its own scope: the

@@ -2,6 +2,8 @@ use super::*;
 use crate::config::{parse_repo, parse_user};
 
 mod seal;
+mod seal_work_tree;
+mod work_tree;
 
 fn salt(b: u8) -> CacheSalt {
     CacheSalt::new([b; 64])
@@ -139,7 +141,7 @@ fn names_follow_the_pattern() {
 
 #[test]
 fn presets_expand_to_the_table() {
-    let got = shape(&plan(&layers("", "")));
+    let got = shape(&plan(&layers("cache: {work_tree: false}", "")));
     let want: Vec<(&str, Vec<&str>)> = vec![
         ("npm", vec!["~/.cache/npm"]),
         ("yarn", vec!["~/.cache/yarn"]),
@@ -172,7 +174,7 @@ fn presets_follow_the_caches_the_exec_env_points_tools_at() {
 }
 
 #[test]
-fn only_docker_has_a_seal() {
+fn only_docker_and_the_work_tree_have_a_seal() {
     let p = plan(&layers("", ""));
     let sealed: Vec<&str> = p
         .volumes()
@@ -180,7 +182,7 @@ fn only_docker_has_a_seal() {
         .filter(|v| !v.seal().is_empty())
         .map(|v| v.name.as_str())
         .collect();
-    assert_eq!(sealed, ["docker"]);
+    assert_eq!(sealed, ["docker", "worktree"]);
 }
 
 #[test]
@@ -204,15 +206,21 @@ fn a_sealed_volume_gets_a_group_of_its_own() {
 
 #[test]
 fn presets_false_or_a_drop_list_in_either_layer_removes_them() {
-    assert!(plan(&layers("cache: {presets: false}", "")).is_empty());
-    assert!(plan(&layers("", "cache: {presets: false}")).is_empty());
+    assert_eq!(
+        names(&plan(&layers("cache: {presets: false}", ""))),
+        ["worktree"]
+    );
+    assert_eq!(
+        names(&plan(&layers("", "cache: {presets: false}"))),
+        ["worktree"]
+    );
     let dropped = names(&plan(&layers(
         "cache: {presets: [docker, podman]}",
         "cache: {presets: [go]}",
     )));
     assert_eq!(
         dropped,
-        ["npm", "yarn", "pnpm", "bun", "gradle", "dart", "rust"]
+        ["npm", "yarn", "pnpm", "bun", "gradle", "dart", "rust", "worktree"]
     );
     let err = parse_repo(".moor.yaml", "cache: {presets: [dockr]}").unwrap_err();
     assert!(err.to_string().contains("cache.presets[0]"), "{err}");
@@ -486,7 +494,7 @@ fn the_box_scope_is_the_repo_groups_hash_and_only_a_repo_box_with_volumes_has_on
     assert_eq!(p.scope(), Some(npm.group.as_str()));
     assert_eq!(p.scope().map(str::len), Some(16));
 
-    let none = plan(&layers("cache: {presets: false}", ""));
+    let none = plan(&layers("cache: {presets: false, work_tree: false}", ""));
     assert!(none.is_empty());
     assert_eq!(none.scope(), None);
 

@@ -46,13 +46,16 @@ fn plan(
     };
     let repo = row.repo.as_ref().map(|r| &r.repo);
     let refused = |e: &dyn std::fmt::Display| Cold::Refused(e.to_string());
-    let resolved = cfg.cache.resolve(repo.is_some()).map_err(|e| refused(&e))?;
+    let resolved = cfg.cache.resolve(repo).map_err(|e| refused(&e))?;
     if resolved.volumes.is_empty() && resolved.dropped.is_empty() {
         return Ok(CachePlan::none());
     }
     if !caps.cache_volumes {
         let kept = resolved.volumes.iter();
-        let own = kept.filter(|d| d.origin != Origin::Preset).count() + resolved.dropped.len();
+        let own = kept
+            .filter(|d| !matches!(d.origin, Origin::Preset | Origin::WorkTree))
+            .count()
+            + resolved.dropped.len();
         return if own == 0 {
             Ok(CachePlan::none())
         } else {
@@ -117,7 +120,7 @@ pub(crate) fn seal(
     };
     let script = plan(cx, store, row, cfg, provider, caps)
         .ok()
-        .and_then(|p| p.seal_script());
+        .and_then(|p| p.seal_script(row.base.as_deref()));
     let Some(script) = script else {
         return;
     };
