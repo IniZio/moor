@@ -244,15 +244,20 @@ the repo name.
 When the Box starts on a kept tree, moor refreshes it before anything else
 runs. It fetches, checks out the Box branch from the remote, or from the base
 when the remote has no such branch, resets every tracked file, and removes
-untracked files and nested repos. Ignored files stay. It then deletes every
-other local branch, the stash and the reflogs. A file whose content did not
+untracked files and nested repos. Ignored files stay. It then removes every
+remote but the repo's own and deletes every ref except the Box branch, the
+remote's branches and the tags, along with the reflogs. A file whose content did not
 change keeps its modification time. When any step fails, moor empties the
 directory and clones fresh, as on the first Box, so the start never fails
 because of the kept tree.
 
-The close keeps the tree only when it holds nothing a remote lacks: no commit
-that is not on a pushed branch or the base, no stash, no staged change and no
-rebase, merge, cherry-pick, revert, am or bisect in progress. Modified and
+The close keeps the tree only when it holds nothing the remote lacks. No
+rebase, merge, cherry-pick, revert, am or bisect may be in progress, and there
+may be no stash and no staged change. No commit may be reached by HEAD or by
+any ref other than a tag or one of the remote's branches, unless one of the
+remote's branches or the base holds it. That covers local branches, a detached
+HEAD, notes, other remotes and custom refs. Tags do not block it, because the
+refresh prunes tags the remote lacks. Modified and
 untracked files do not block it, since the next refresh removes them. A tree
 that is not kept stays as it is in the Box, the close warns
 `work_tree_not_kept` with the reason. The next Box then starts from an earlier

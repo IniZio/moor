@@ -183,3 +183,48 @@ fn a_missing_work_tree_is_not_kept_and_says_why() {
     let [got]: [NotKept; 1] = not_kept(&out).try_into().unwrap();
     assert!(got.reason.contains("not a git checkout"), "{}", got.reason);
 }
+
+/// Makes a commit no branch holds and points `refname` at it.
+fn hidden_commit(o: &Origin, refname: &str) {
+    o.git(&o.tree(), &["checkout", "-q", "--detach"]);
+    commit_a(o, "hidden\n");
+    let hidden = o.git(&o.tree(), &["rev-parse", "HEAD"]);
+    o.git(&o.tree(), &["checkout", "-q", BRANCH]);
+    o.git(&o.tree(), &["update-ref", refname, &hidden]);
+}
+
+#[test]
+fn a_commit_only_a_custom_ref_another_remote_or_notes_reach_is_not_kept() {
+    refused(
+        "wip",
+        |o| hidden_commit(o, "refs/wip/x"),
+        "1 unpushed commit",
+    );
+    refused(
+        "remote",
+        |o| {
+            o.git(
+                &o.tree(),
+                &["remote", "add", "other", "file:///nowhere.git"],
+            );
+            hidden_commit(o, "refs/remotes/other/x");
+        },
+        "1 unpushed commit",
+    );
+    refused(
+        "notes",
+        |o| {
+            o.git(&o.tree(), &["notes", "add", "-m", "note", "HEAD"]);
+        },
+        "1 unpushed commit",
+    );
+}
+
+#[test]
+fn a_commit_only_a_tag_reaches_does_not_block_keeping_as_the_refresh_prunes_it() {
+    let o = cloned("tags");
+    hidden_commit(&o, "refs/tags/local-tag");
+    let out = seal(&o, Some(&o.base));
+    assert!(not_kept(&out).is_empty(), "{out}");
+    assert!(marked(&o));
+}
