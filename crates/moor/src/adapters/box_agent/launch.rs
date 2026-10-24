@@ -237,7 +237,7 @@ impl Launch<'_> {
         let env = agent_env::export_lines(&exec.vars, self.root, &exec.unset);
         let env = env.map_err(|e| fail("script", &e))?;
         let script = script_stripping(
-            (cred, self.tmp),
+            (cred, self.tmp, &req.nonce),
             ctx,
             &hooks,
             &preseed,
@@ -267,7 +267,7 @@ impl Launch<'_> {
 /// [`script_stripping`] with no names to strip.
 #[cfg(test)]
 fn script(
-    paths: (&BoxPath, &BoxPath),
+    paths: (&BoxPath, &BoxPath, &str),
     ctx: &LaunchCtx,
     hooks: &BoxSetup,
     preseed: &BoxSetup,
@@ -284,9 +284,10 @@ const AGENT_PATH_LINE: &str = "export PATH=\"$HOME/.local/bin:$HOME/.bun/bin:$PA
 /// The script the Box runs under `sh`; the credential directory goes once the brief is
 /// installed, and at exit or on a hangup, interrupt or terminate before then. The `strip_env`
 /// names and crabbox's own names are unset before anything else runs, and the `env` exports run
-/// just before the agent.
+/// just before the agent. The starting marker it writes to the hook file names the launch by
+/// `nonce`.
 fn script_stripping(
-    (cred, tmp): (&BoxPath, &BoxPath),
+    (cred, tmp, nonce): (&BoxPath, &BoxPath, &str),
     ctx: &LaunchCtx,
     hooks: &BoxSetup,
     preseed: &BoxSetup,
@@ -311,7 +312,8 @@ fn script_stripping(
         "trap 'exit 143' TERM".to_owned(),
         format!("mkdir -p -m 700 {tmp} && mkdir -p {moor} && install -m 600 {staged} {brief} || exit 1"),
         format!(
-            "printf '{{\"state\":\"starting\",\"event\":\"Launch\",\"ts\":%s}}\\n' \"$(date +%s)\" > {state} || exit 1"
+            "printf '{{\"state\":\"starting\",\"event\":\"Launch\",\"launch\":\"%s\",\"ts\":%s}}\\n' {} \"$(date +%s)\" > {state} || exit 1",
+            quote(nonce)
         ),
         format!("{} || exit 1", hooks.step),
         preseed.step.clone(),

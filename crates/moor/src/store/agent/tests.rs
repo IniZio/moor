@@ -185,7 +185,7 @@ fn hook_cache_round_trips_every_kind_and_keeps_the_latest() {
     let id = add(&store, "t");
     assert_eq!(store.hook(id).unwrap(), None);
     let kinds = [
-        HookKind::Starting,
+        HookKind::Starting { launch: None },
         HookKind::Busy,
         HookKind::Idle,
         HookKind::Blocked,

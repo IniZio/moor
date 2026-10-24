@@ -101,7 +101,10 @@ pub struct Activity {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HookKind {
     /// The session started; no prompt yet.
-    Starting,
+    Starting {
+        /// The launch that wrote this marker; `None` when the marker names none.
+        launch: Option<String>,
+    },
     /// A prompt is being worked on.
     Busy,
     /// The agent finished and waits for input.
@@ -274,7 +277,7 @@ fn from_record(rec: &HookRecord, source: Source, young: bool, pane: &PaneRead) -
         )),
         HookKind::Idle if background_running(tail) => Some(act(AgentState::Working, Source::Pane)),
         HookKind::Idle => Some(act(AgentState::Idle, source)),
-        HookKind::Starting => young.then(|| act(AgentState::Working, source)),
+        HookKind::Starting { .. } => young.then(|| act(AgentState::Working, source)),
     }
 }
 

@@ -8,7 +8,7 @@ use moor_core::StartReq;
 use super::{req, world, World};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
-use crate::testing::engine::FakeEngine;
+use crate::testing::engine::{FakeEngine, THIS_LAUNCH};
 
 /// The agent session the first Box's launch records.
 const SESSION: &str = "moor-1";
@@ -35,6 +35,18 @@ fn hook(kind: HookKind) -> Probes {
         }),
         pane: PaneRead::Absent,
     }
+}
+
+/// The starting marker this launch writes.
+fn marker() -> Probes {
+    hook(HookKind::Starting {
+        launch: Some(THIS_LAUNCH.to_owned()),
+    })
+}
+
+/// An Engine whose agent runs no hook while a first-run screen is up.
+fn quiet() -> FakeEngine {
+    FakeEngine::new().hooks_quiet_during_first_run()
 }
 
 /// A world whose engine knows the folder-trust prompt and whose pane shows `tail`.
@@ -65,9 +77,9 @@ fn pane_reads(w: &World) -> usize {
 
 #[test]
 fn a_hook_report_after_the_launch_marker_ends_the_watch_early() {
-    let engine = FakeEngine::new()
-        .then_probes(SESSION, hook(HookKind::Starting))
-        .then_probes(SESSION, hook(HookKind::Starting))
+    let engine = quiet()
+        .then_probes(SESSION, marker())
+        .then_probes(SESSION, marker())
         .probes(SESSION, hook(HookKind::Busy));
     let w = watching(engine, "working");
     let v = run(&w.cx, &goal_req("demo")).unwrap();
@@ -77,8 +89,8 @@ fn a_hook_report_after_the_launch_marker_ends_the_watch_early() {
 
 #[test]
 fn any_report_but_the_launch_marker_counts_as_past_startup() {
-    let engine = FakeEngine::new()
-        .then_probes(SESSION, hook(HookKind::Starting))
+    let engine = quiet()
+        .then_probes(SESSION, marker())
         .probes(SESSION, hook(HookKind::Idle));
     let w = watching(engine, "working");
     run(&w.cx, &goal_req("demo")).unwrap();
@@ -87,7 +99,7 @@ fn any_report_but_the_launch_marker_counts_as_past_startup() {
 
 #[test]
 fn a_report_never_preceded_by_the_launch_marker_keeps_the_full_window() {
-    let engine = FakeEngine::new().probes(SESSION, hook(HookKind::Busy));
+    let engine = quiet().probes(SESSION, hook(HookKind::Busy));
     let w = watching(engine, "working");
     run(&w.cx, &goal_req("demo")).unwrap();
     assert_eq!(pane_reads(&w), FULL_WINDOW);
@@ -95,7 +107,7 @@ fn a_report_never_preceded_by_the_launch_marker_keeps_the_full_window() {
 
 #[test]
 fn only_the_launch_marker_keeps_the_full_window() {
-    let engine = FakeEngine::new().probes(SESSION, hook(HookKind::Starting));
+    let engine = quiet().probes(SESSION, marker());
     let w = watching(engine, "working");
     run(&w.cx, &goal_req("demo")).unwrap();
     assert_eq!(pane_reads(&w), FULL_WINDOW);
@@ -103,8 +115,8 @@ fn only_the_launch_marker_keeps_the_full_window() {
 
 #[test]
 fn a_prompt_on_screen_is_recorded_before_a_report_ends_the_watch() {
-    let engine = FakeEngine::new()
-        .then_probes(SESSION, hook(HookKind::Starting))
+    let engine = quiet()
+        .then_probes(SESSION, marker())
         .probes(SESSION, hook(HookKind::Busy));
     let w = watching(engine, "working");
     w.surface.push_pane_obs(
@@ -126,4 +138,29 @@ fn a_prompt_on_screen_is_recorded_before_a_report_ends_the_watch() {
             .any(|e| e.kind == "agent_prompt_blocked");
     assert!(blocked);
     assert_eq!(pane_reads(&w), 2);
+}
+
+#[test]
+fn a_stale_marker_then_a_foreign_report_keeps_the_full_window() {
+    let engine = quiet()
+        .then_probes(
+            SESSION,
+            hook(HookKind::Starting {
+                launch: Some("0ld000".to_owned()),
+            }),
+        )
+        .probes(SESSION, hook(HookKind::Busy));
+    let w = watching(engine, "working");
+    run(&w.cx, &goal_req("demo")).unwrap();
+    assert_eq!(pane_reads(&w), FULL_WINDOW);
+}
+
+#[test]
+fn an_agent_that_may_report_during_first_run_keeps_the_full_window() {
+    let engine = FakeEngine::new()
+        .then_probes(SESSION, marker())
+        .probes(SESSION, hook(HookKind::Busy));
+    let w = watching(engine, "working");
+    run(&w.cx, &goal_req("demo")).unwrap();
+    assert_eq!(pane_reads(&w), FULL_WINDOW);
 }

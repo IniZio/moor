@@ -151,6 +151,15 @@ pub trait AgentProfile: Send + Sync {
     /// The first-run prompt the pane text shows, when one holds the agent.
     fn first_run_prompt(&self, tail: &str) -> Option<PromptMatch>;
 
+    /// Whether the agent runs no hook while a first-run screen holds its pane, so a hook report
+    /// after the launch's starting marker shows it is past those screens.
+    ///
+    /// An agent that may report while one is up answers `false`, and the first-run prompt watch
+    /// then runs its whole window.
+    fn hooks_quiet_during_first_run(&self) -> bool {
+        false
+    }
+
     /// Arguments for a fresh session that reads its brief.
     fn argv(&self, ctx: &LaunchCtx) -> Vec<String>;
 

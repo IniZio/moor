@@ -424,7 +424,10 @@ fn a_working_agent_is_probed_on_every_poll() {
 
 #[test]
 fn a_resumed_agent_is_idle_only_once_session_start_records_it() {
-    for (kind, timed_out) in [(HookKind::Starting, true), (HookKind::Idle, false)] {
+    for (kind, timed_out) in [
+        (HookKind::Starting { launch: None }, true),
+        (HookKind::Idle, false),
+    ] {
         let dir = tempfile::tempdir().unwrap();
         let (cx, _) = agent_cx(dir.path(), hook(kind));
         add_live(&cx);
