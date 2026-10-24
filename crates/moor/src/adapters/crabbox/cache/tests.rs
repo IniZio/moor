@@ -33,7 +33,7 @@ fn plan(repo_yaml: &str, user_yaml: &str) -> CachePlan {
 #[test]
 fn the_env_value_is_the_wire_contract_exactly() {
     let p = plan(
-        "cache: {presets: [npm, yarn, pnpm, bun, docker, podman, dart, rust, go], volumes: [{name: android-sdk, path: /opt/android-sdk, size_gb: 12}]}",
+        "cache: {presets: [npm, yarn, pnpm, bun, docker, podman, dart, rust, go], work_tree: false, volumes: [{name: android-sdk, path: /opt/android-sdk, size_gb: 12}]}",
         "",
     );
     let (gradle, sdk) = (p.volumes().first().unwrap(), p.volumes().get(1).unwrap());
@@ -73,11 +73,14 @@ fn a_volume_with_a_seal_is_sent_sealed_in_a_group_of_its_own() {
     let npm = p.volumes().first().unwrap();
     let got: serde_json::Value = serde_json::from_str(&env_value(&p).unwrap()).unwrap();
     let group = format!("{}x", npm.group);
+    let tree = format!("{}w", npm.group);
     let want = serde_json::json!([
         {"group": npm.group, "name": "npm", "key": format!("{}-npm", npm.group),
          "paths": ["~/.cache/npm"], "sizeGB": 0},
         {"group": group, "name": "docker", "key": format!("{group}-docker"),
          "paths": ["~/docker", "/var/lib/containerd"], "sizeGB": 0, "sealed": true},
+        {"group": tree, "name": "worktree", "key": format!("{tree}-worktree"),
+         "paths": ["~/moor/repos/r"], "sizeGB": 40, "sealed": true},
     ]);
     assert_eq!(got, want);
 }
@@ -179,7 +182,7 @@ fn a_box_without_a_repo_sends_no_scope() {
 
 #[test]
 fn a_box_without_volumes_sends_neither_env() {
-    let p = plan("cache: {presets: false}", "");
+    let p = plan("cache: {presets: false, work_tree: false}", "");
     assert!(p.is_empty());
     assert_eq!(scope_of(&p), None);
     assert_eq!(scope_of(&CachePlan::none()), None);
