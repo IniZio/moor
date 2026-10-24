@@ -6,7 +6,8 @@ use super::{
     nested, overlap, presets, CacheConfig, CacheError, CacheName, Declared, Origin, Volume,
 };
 
-/// A declared volume left out of a plan because it met a sealed preset, which wins.
+/// A declared volume left out of a plan because it met a sealed preset's directory, which stays
+/// reserved even when that preset is turned off.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Dropped {
     /// Who declared the volume.
@@ -63,7 +64,7 @@ impl CacheLayers {
     /// Every volume of a Box, presets first, and the declared volumes left out. Presets and repo
     /// volumes need a repo. An unsealed preset that shares a name or a directory with a declared
     /// volume yields to it. A declared volume whose directory meets a sealed preset's is dropped
-    /// instead, so that the seal always runs over that directory.
+    /// instead, whether that preset is kept or not, so no unsealed volume ever holds it.
     ///
     /// # Errors
     /// A layer that does not check, or a repo and an operator volume that clash.
@@ -77,14 +78,7 @@ impl CacheLayers {
         };
         self.operator.check().map_err(invalid)?;
         let operator = self.operator.volumes().map_err(invalid)?;
-        let presets: Vec<Volume> = presets::all()
-            .into_iter()
-            .filter(|p| {
-                has_repo
-                    && self.repo.presets.keeps(p.name.as_str())
-                    && self.operator.presets.keeps(p.name.as_str())
-            })
-            .collect();
+        let presets: Vec<Volume> = presets::all();
         let mut dropped = Vec::new();
         let declared: Vec<Declared> = (repo.into_iter().map(|v| (Origin::Repo, v)))
             .chain(operator.into_iter().map(|v| (Origin::Operator, v)))
@@ -112,9 +106,12 @@ impl CacheLayers {
                 return Err(e);
             }
         }
-        let kept = presets
-            .into_iter()
-            .filter(|p| !declared.iter().any(|d| overlap(&d.volume, p).is_some()));
+        let kept = presets.into_iter().filter(|p| {
+            has_repo
+                && self.repo.presets.keeps(p.name.as_str())
+                && self.operator.presets.keeps(p.name.as_str())
+                && !declared.iter().any(|d| overlap(&d.volume, p).is_some())
+        });
         let mut volumes: Vec<Declared> = kept
             .map(|volume| Declared {
                 origin: Origin::Preset,
