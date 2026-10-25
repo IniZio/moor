@@ -2,7 +2,9 @@
 
 use moor_core::cache::CachePlan;
 use moor_core::config::parse_user;
+use moor_core::view::StartView;
 use moor_core::{BoxName, CloseReq, Warning};
+use serde_json::json;
 
 use super::*;
 
@@ -258,48 +260,73 @@ fn a_work_tree_the_seal_did_not_keep_warns_why_and_nothing_else() {
     assert!(w.driver.calls().iter().any(|c| c.starts_with("release")));
 }
 
-/// The warnings a start raised about the work tree, as `code: message`.
-fn work_tree_notes(w: &World) -> Vec<String> {
-    let all = w.cx.take_warnings();
-    all.into_iter()
-        .filter(|w| w.code == "work_tree")
-        .map(|w| format!("{}: {}", w.code, w.message))
-        .collect()
+/// Starts the `demo` repo Box with the refresh printing `printed`; returns the reply and the
+/// `work_tree` warnings the start raised, as `message`.
+fn start_printing(printed: &str, yaml: Option<&str>) -> (StartView, Vec<String>) {
+    let w = world(FakeDriver::new().cache_volumes().exec_stdout([printed]));
+    script_base_yaml(&w, yaml);
+    let view = run(&w.cx, &repo_req("demo")).unwrap();
+    let warned =
+        w.cx.take_warnings()
+            .into_iter()
+            .filter(|w| w.code == "work_tree")
+            .map(|w| w.message)
+            .collect();
+    (view, warned)
 }
 
 #[test]
-fn the_start_tells_the_user_how_the_work_tree_started() {
-    for (printed, said) in [
-        ("moor: work tree refreshed\n", "work tree refreshed"),
-        ("moor: work tree cold\n", "work tree cold"),
+fn the_start_reply_says_how_the_work_tree_started() {
+    for (printed, want) in [
+        ("moor: work tree refreshed\n", json!({"state": "refreshed"})),
+        ("moor: work tree cold\n", json!({"state": "cold"})),
         (
             "moor: work tree cold after: git fetch failed\n",
-            "work tree cold after: git fetch failed",
+            json!({"state": "cold_after", "reason": "git fetch failed"}),
         ),
     ] {
-        let w = world(FakeDriver::new().cache_volumes().exec_stdout([printed]));
-        started(&w);
-        assert_eq!(work_tree_notes(&w), [format!("work_tree: {said}")]);
+        let (view, _) = start_printing(printed, Some(YAML));
+        let got = serde_json::to_value(&view).unwrap();
+        assert_eq!(got.get("work_tree"), Some(&want), "{printed}");
     }
+}
+
+#[test]
+fn refreshed_and_cold_are_start_facts_not_warnings() {
+    for printed in ["moor: work tree refreshed\n", "moor: work tree cold\n"] {
+        let (view, warned) = start_printing(printed, Some(YAML));
+        assert!(warned.is_empty(), "{warned:?}");
+        assert!(
+            view.warnings_inline.is_empty(),
+            "{:?}",
+            view.warnings_inline
+        );
+    }
+}
+
+#[test]
+fn a_refresh_that_fell_back_warns_with_its_reason() {
+    let (_, warned) = start_printing("moor: work tree cold after: git fetch failed\n", Some(YAML));
+    assert_eq!(warned, ["the work tree refresh failed: git fetch failed"]);
 }
 
 #[test]
 fn a_refresh_that_printed_nothing_says_nothing() {
     let w = world(FakeDriver::new().cache_volumes());
-    started(&w);
-    assert!(work_tree_notes(&w).is_empty());
+    script_base_yaml(&w, Some(YAML));
+    let view = run(&w.cx, &repo_req("demo")).unwrap();
+    assert_eq!(view.work_tree, None);
+    assert!(w.cx.take_warnings().iter().all(|w| w.code != "work_tree"));
 }
 
 #[test]
 fn a_box_that_does_not_keep_its_work_tree_says_nothing_about_it() {
-    let w = world(
-        FakeDriver::new()
-            .cache_volumes()
-            .exec_stdout(["moor: work tree cold\n"]),
+    let (view, warned) = start_printing(
+        "moor: work tree cold after: stale\n",
+        Some("cache: {work_tree: false}\n"),
     );
-    script_base_yaml(&w, Some("cache: {work_tree: false}\n"));
-    run(&w.cx, &repo_req("demo")).unwrap();
-    assert!(work_tree_notes(&w).is_empty());
+    assert_eq!(view.work_tree, None);
+    assert!(warned.is_empty(), "{warned:?}");
 }
 
 #[test]
@@ -309,6 +336,7 @@ fn the_clone_log_is_still_removed_after_the_outcome_is_read() {
             .cache_volumes()
             .exec_stdout(["moor: work tree refreshed\n"]),
     );
-    started(&w);
+    script_base_yaml(&w, Some(YAML));
+    run(&w.cx, &repo_req("demo")).unwrap();
     assert!(!w.dir.path().join("clone").join("1.log").exists());
 }

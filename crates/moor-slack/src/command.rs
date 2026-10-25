@@ -2,6 +2,7 @@
 //! about Boxes.
 
 use moor_core::name::BoxName;
+use serde_json::Value;
 
 use crate::escape::{code, escape};
 
@@ -29,13 +30,41 @@ pub(crate) fn reply_action(starter: &str, user: &str, text: &str) -> ReplyAction
     }
 }
 
-/// Thread reply after a successful start, with the Box's branch when the reply named one.
-pub(super) fn started(name: &BoxName, branch: Option<&str>) -> String {
+/// Thread reply after a successful start, with the Box's branch when the reply named one and a
+/// line for each of the start's `notes`.
+pub(super) fn started(name: &BoxName, branch: Option<&str>, notes: &[String]) -> String {
     let name = name.as_str();
-    branch.map_or_else(
+    let head = branch.map_or_else(
         || format!("Started Box `{name}`."),
         |b| format!("Started Box `{name}` on branch {}.", code(b)),
-    )
+    );
+    notes
+        .iter()
+        .fold(head, |text, note| format!("{text}\n{}", escape(note)))
+}
+
+/// What a start reply says besides its Box: how the work tree started, then each warning. A
+/// `show` reply carries neither, so a start settled through `show` posts no notes.
+pub(super) fn start_notes(value: Option<&Value>) -> Vec<String> {
+    let Some(value) = value else {
+        return Vec::new();
+    };
+    let tree = value.get("work_tree");
+    let state = tree.and_then(|t| t.get("state")).and_then(Value::as_str);
+    let reason = tree.and_then(|t| t.get("reason")).and_then(Value::as_str);
+    let tree = match (state, reason) {
+        (Some("cold_after"), Some(reason)) => Some(format!("Work tree: cold after: {reason}")),
+        (Some(state @ ("refreshed" | "cold")), _) => Some(format!("Work tree: {state}")),
+        _ => None,
+    };
+    let warnings = value
+        .get("warnings_inline")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(|w| format!("Warning: {w}"));
+    tree.into_iter().chain(warnings).collect()
 }
 
 /// Thread reply after a failed start; `message` is the controller's error text.

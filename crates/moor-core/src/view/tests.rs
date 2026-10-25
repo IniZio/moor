@@ -108,6 +108,7 @@ fn start_view_keys_match_wire_shape() {
         attached: false,
         queued: false,
         promoted: vec!["a".into()],
+        work_tree: Some(WorkTreeView::ColdAfter { reason: "x".into() }),
         setup: SetupView {
             ran: true,
             ok: true,
@@ -130,6 +131,7 @@ fn start_view_keys_match_wire_shape() {
         serde_json::to_value(v).ok(),
         Some(json!({
             "box": box_json(), "attached": false, "queued": false, "promoted": ["a"],
+            "work_tree": {"state": "cold_after", "reason": "x"},
             "setup": {"ran": true, "ok": true, "line": null, "ms": 7},
             "dotfiles": {"ran": false, "ok": false, "ms": null},
             "agent": {"launched": true, "session": "s", "reason": null},
@@ -443,4 +445,24 @@ fn attention_view_copies_the_limit() {
             "Claude credential rejected (401)"
         )
     );
+}
+
+#[test]
+fn the_work_tree_state_is_typed_from_the_outcome() {
+    use WorkTreeView::{Cold, ColdAfter, Refreshed};
+    for (text, want) in [
+        ("refreshed", Some(Refreshed)),
+        ("cold", Some(Cold)),
+        (
+            "cold after: git fetch failed",
+            Some(ColdAfter {
+                reason: "git fetch failed".into(),
+            }),
+        ),
+        ("cold after", None),
+        ("something else", None),
+        ("", None),
+    ] {
+        assert_eq!(WorkTreeView::parse(text), want, "{text:?}");
+    }
 }

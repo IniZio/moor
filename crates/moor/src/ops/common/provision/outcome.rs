@@ -2,6 +2,7 @@
 
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, IntentChange};
+use moor_core::view::WorkTreeView;
 use moor_core::BoxId;
 use moor_core::ErrorKind;
 use moor_core::{BoxHandle, Warning};
@@ -20,6 +21,8 @@ pub(crate) struct Provisioned {
     pub(crate) setup: SetupRun,
     /// How the dotfiles step went.
     pub(crate) dotfiles: DotfilesRun,
+    /// How the kept work tree started; none when the Box keeps none or already refreshed it.
+    pub(crate) work_tree: Option<WorkTreeView>,
 }
 
 impl Provisioned {
@@ -28,6 +31,7 @@ impl Provisioned {
         Self {
             setup: SetupRun::Skipped,
             dotfiles: DotfilesRun::Skipped,
+            work_tree: None,
         }
     }
 }

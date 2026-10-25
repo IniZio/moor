@@ -249,13 +249,15 @@ remote but the repo's own and deletes every ref except the Box branch, the
 remote's branches and the tags, along with the reflogs. A file whose content did not
 change keeps its modification time. When any step fails, moor empties the
 directory and clones fresh, as on the first Box, so the start never fails
-because of the kept tree. The start tells you which happened, in a notice with
-the code `work_tree`: `work tree refreshed`, `work tree cold`, or `work tree
-cold after: <reason>` when the refresh ran and fell back to a fresh clone. A
-Box that has already refreshed its tree, such as a rerun of the start, says
-nothing. `work tree cold` does not say why there was no tree to refresh. That
-can be a first Box, a provider that kept none, or a close that did not keep it;
-the close of that Box warned `work_tree_not_kept` with the reason.
+because of the kept tree. The start says which happened in a `work_tree` field of its
+reply, which the CLI prints as its own line: `work tree: refreshed`, `work tree:
+cold`, or `work tree: cold after: <reason>` when the refresh ran and fell back to a
+fresh clone. That last case also warns, with the code `work_tree`, because
+something went wrong. A Box that keeps no tree, or that has already refreshed its
+tree, such as a rerun of the start, says nothing. `cold` does not say why there was
+no tree to refresh. That can be a first Box, a provider that kept none, or a close
+that did not keep it; the close of that Box warned `work_tree_not_kept` with the
+reason.
 
 The close keeps the tree only when it holds nothing the remote lacks. No
 rebase, merge, cherry-pick, revert, am or bisect may be in progress, and there

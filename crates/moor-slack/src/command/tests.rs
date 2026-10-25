@@ -5,9 +5,9 @@ use super::*;
 #[test]
 fn replies_name_the_box() {
     let name = BoxName::parse_allow_bare("slack-1-2").unwrap();
-    assert_eq!(started(&name, None), "Started Box `slack-1-2`.");
+    assert_eq!(started(&name, None, &[]), "Started Box `slack-1-2`.");
     assert_eq!(
-        started(&name, Some("moor/x")),
+        started(&name, Some("moor/x"), &[]),
         "Started Box `slack-1-2` on branch `moor/x`."
     );
     assert!(failed(&name, "boom").contains("boom"));
@@ -17,11 +17,11 @@ fn replies_name_the_box() {
 fn a_branch_or_error_from_the_controller_cannot_ping_and_a_backticked_branch_is_posted_plain() {
     let name = BoxName::parse_allow_bare("slack-1-2").unwrap();
     assert_eq!(
-        started(&name, Some("moor/<!channel> & y")),
+        started(&name, Some("moor/<!channel> & y"), &[]),
         "Started Box `slack-1-2` on branch `moor/&lt;!channel&gt; &amp; y`."
     );
     assert_eq!(
-        started(&name, Some("moor/<!channel>`x` & y")),
+        started(&name, Some("moor/<!channel>`x` & y"), &[]),
         "Started Box `slack-1-2` on branch moor/&lt;!channel&gt;`x` &amp; y."
     );
     assert_eq!(

@@ -61,6 +61,7 @@ pub(super) fn view(cx: &Cx, row: &BoxRow, attached: bool) -> StartView {
         attached,
         queued: row.lifecycle == BoxLifecycle::WaitingForBox,
         promoted: Vec::new(),
+        work_tree: None,
         setup: SetupView::default(),
         dotfiles: DotfilesView::default(),
         agent: AgentLaunchView::default(),
@@ -74,6 +75,7 @@ pub(super) fn view(cx: &Cx, row: &BoxRow, attached: bool) -> StartView {
 pub(super) fn set_provisioned(v: &mut StartView, p: &Provisioned) {
     v.setup = p.setup.view();
     v.dotfiles = p.dotfiles.view();
+    v.work_tree.clone_from(&p.work_tree);
     if p.setup.failed() {
         v.failed_step = Some("setup".to_owned());
         v.handle = v.boxed.driver.as_ref().and_then(|b| b.handle.clone());
