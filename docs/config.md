@@ -79,7 +79,7 @@ mcp_servers:
   linear:
     url: https://mcp.linear.app/mcp/readonly
     headers:
-      Authorization: "Bearer ${LINEAR_API_KEY}"
+      Authorization: "Bearer ${linear-api-key}"
 ```
 
 ### `proxy`
