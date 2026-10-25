@@ -2562,6 +2562,7 @@ dependencies = [
  "command-fds",
  "moor-client",
  "moor-core",
+ "moor-migrate",
  "moor-testkit",
  "rusqlite",
  "rustix",
