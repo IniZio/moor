@@ -62,7 +62,7 @@ fn a_repo_env_value_is_quoted_so_it_cannot_run_in_the_script() {
         ..req_with_proxy(&s)
     };
     agent(&d, &s).launch(&req).unwrap();
-    let script = script_of(&pane_line(&s));
+    let script = script_of(&d);
     let set = script
         .find("export APP_NOTE='it'\\''s\n$(id) `id`'")
         .expect(&script);
@@ -83,7 +83,7 @@ fn a_repo_env_value_cannot_replace_the_root_signal() {
         ..req_with_proxy(&s)
     };
     agent(&d, &s).launch(&req).unwrap();
-    let script = script_of(&pane_line(&s));
+    let script = script_of(&d);
     let last = script
         .lines()
         .rfind(|l| l.contains("IS_SANDBOX"))
@@ -106,7 +106,7 @@ fn the_agent_script_points_the_proxy_variables_at_the_egress_proxy() {
         ..req_with_proxy(&s)
     };
     agent(&d, &s).launch(&req).unwrap();
-    let script = script_of(&pane_line(&s));
+    let script = script_of(&d);
     assert!(
         script.contains("export HTTPS_PROXY=\"http://127.0.0.1:4568\""),
         "{script}"

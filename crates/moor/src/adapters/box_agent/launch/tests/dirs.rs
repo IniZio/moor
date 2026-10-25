@@ -69,24 +69,13 @@ fn agent(d: &Arc<FakeDriver>, s: &Arc<FakeSurface>) -> BoxAgent {
     )
 }
 
-fn unquote(q: &str) -> String {
-    let inner = q.strip_prefix('\'').and_then(|q| q.strip_suffix('\''));
-    inner.unwrap().replace("'\\''", "'")
-}
-
-/// The script the pane line asks the Box to run under `sh -c`.
-fn script_of(line: &str) -> String {
-    let rest = line.strip_prefix("'ssh' '-t' 'box-1' ").unwrap();
-    let remote = unquote(rest.split_once("; c=$?;").unwrap().0);
-    let session = remote.split_once("-x 200 -y 50 ").unwrap().1;
-    let inner = unquote(
-        session
-            .rsplit_once(" || exit 1; tmux set-option")
-            .unwrap()
-            .0,
-    );
-    let script = inner.strip_prefix("sh -c ").unwrap();
-    unquote(script.rsplit_once("; echo $? > ").unwrap().0)
+/// The agent script the launch put on the Box.
+fn script_of(d: &FakeDriver) -> String {
+    let put = d
+        .puts()
+        .into_iter()
+        .find(|p| p.1.as_str().ends_with("/agent.sh"));
+    String::from_utf8(put.expect("the launch puts the agent script").2).unwrap()
 }
 
 #[test]
@@ -97,7 +86,7 @@ fn launch_dirs_names_the_dirs_the_launch_creates() {
     agent.launch(&r).unwrap();
     let brief = d.puts().into_iter().next().unwrap().1;
     assert_eq!(brief.as_str(), format!("{}/brief.md", cred.as_str()));
-    let script = script_of(&s.opened().remove(0).argv.pop().unwrap());
+    let script = script_of(&d);
     let (cred, tmp) = (cred.as_str(), tmp.as_str());
     for want in [
         format!("trap 'rm -rf '\\''{cred}'\\'' '\\''{tmp}'\\''' EXIT"),

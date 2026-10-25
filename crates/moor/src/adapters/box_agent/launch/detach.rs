@@ -28,11 +28,11 @@ fn attach(exit_file: &str) -> String {
     )
 }
 
-/// The Box command that replaces any agent session with one running `script`, then attaches.
-/// A Box without tmux refuses to start the agent: on the bare link a dropped connection would
-/// end it again.
+/// The Box command that replaces any agent session with one running the script file at
+/// `script`, then attaches. A Box without tmux refuses to start the agent: on the bare link a
+/// dropped connection would end it again.
 fn start(exit_file: &str, script: &str) -> String {
-    let inner = format!("sh -c {}; echo $? > {exit_file}", quote(script));
+    let inner = format!("sh {}; echo $? > {exit_file}", quote(script));
     format!(
         "if ! command -v tmux >/dev/null 2>&1; then \
          echo '{NO_TMUX}' >&2; exit {NO_TMUX_EXIT}; fi; \
@@ -52,8 +52,10 @@ const NO_TMUX: &str =
 /// The exit status of that refusal, the shell's command-not-found status.
 const NO_TMUX_EXIT: u8 = 127;
 
-/// The host pane's shell line: start the agent through `connect`, reconnect with doubling waits
-/// while ssh reports a lost link (255), then print the exit marker with the agent's status.
+/// The host pane's shell line: start the agent script at `script` on the Box through `connect`,
+/// reconnect with doubling waits while ssh reports a lost link (255), then print the exit marker
+/// with the agent's status. The script travels as a file, not inside this line: each shell layer
+/// between here and tmux would quote it again.
 pub(super) fn pane_line(
     connect: &[String],
     workdir: &str,

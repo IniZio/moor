@@ -12,7 +12,7 @@ use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::seam::surface::{PaneCmd, PaneRef, Surface};
 
 use self::install::StepResult;
-use self::steps::{Plan, Staged};
+use self::steps::Plan;
 use super::agent_env;
 use super::gh_release::GhRelease;
 use super::probe::HOOK_FILE;
@@ -20,6 +20,8 @@ use super::proxy_env;
 
 /// Where the brief lands, relative to the Box workdir.
 const BRIEF_FILE: &str = ".moor/brief.md";
+/// The agent script, in the credential directory, which the script removes once it runs.
+const SCRIPT_FILE: &str = "agent.sh";
 /// Time allowed for removing the credential directory.
 const CLEANUP_DEADLINE: Duration = Duration::from_secs(30);
 /// Time allowed for checking and installing the pinned `gh` on the Box.
@@ -219,34 +221,35 @@ impl Launch<'_> {
         proxy_env::script_lines(addr, &env).map_err(|e| fail("script", &e))
     }
 
-    /// Puts the files in the Box and opens the tab.
-    fn deliver(&self, connect: &[String], platform: Platform) -> Result<Delivered, Failure> {
-        let Self {
-            surface,
-            ctx,
-            cred,
-            req,
-            ..
-        } = self;
-        let mut plan = Plan::default();
-        let staged = self.plan(platform, &mut plan);
-        let warnings = self.execute(connect, &plan)?;
-        let Staged { hooks, preseed } = staged?;
-        let argv = self.argv();
+    /// The script the Box runs to start the agent with the staged `hooks` and `preseed`.
+    fn agent_script(&self, hooks: &BoxSetup, preseed: &BoxSetup) -> Result<String, Failure> {
+        let (req, ctx) = (self.req, self.ctx);
         let exec = self.exec_env()?;
         let lines = self.proxy_lines()?;
         let env = agent_env::export_lines(&exec.vars, self.root, &exec.unset);
         let env = env.map_err(|e| fail("script", &e))?;
-        let script = script_stripping(
-            (cred, self.tmp, &req.nonce),
+        script_stripping(
+            (self.cred, self.tmp, &req.nonce),
             ctx,
-            &hooks,
-            &preseed,
-            &argv,
+            hooks,
+            preseed,
+            &self.argv(),
             (&lines, &env, &exec.unset),
-        );
-        let script = script.map_err(|e| fail("script", &e))?;
-        let line = detach::pane_line(connect, ctx.workdir.as_str(), &script)
+        )
+        .map_err(|e| fail("script", &e))
+    }
+
+    /// Puts the files in the Box and opens the tab.
+    fn deliver(&self, connect: &[String], platform: Platform) -> Result<Delivered, Failure> {
+        let Self {
+            surface, ctx, req, ..
+        } = self;
+        let mut plan = Plan::default();
+        let planned = self.plan(platform, &mut plan);
+        let warnings = self.execute(connect, &plan)?;
+        planned?;
+        let script = script_path(self.cred).map_err(|e| fail("script", &e))?;
+        let line = detach::pane_line(connect, ctx.workdir.as_str(), script.as_str())
             .map_err(|e| fail("script", &e))?;
         surface
             .open_pane(
@@ -260,6 +263,11 @@ impl Launch<'_> {
             .map(|pane| (pane, warnings))
             .map_err(|e| fail("pane", &e))
     }
+}
+
+/// Where the agent script lands on the Box.
+fn script_path(cred: &BoxPath) -> Result<BoxPath, NameError> {
+    BoxPath::under(cred.as_str(), SCRIPT_FILE)
 }
 
 /// [`script_stripping`] with no names to strip.

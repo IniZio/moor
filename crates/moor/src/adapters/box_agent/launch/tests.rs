@@ -140,6 +140,7 @@ fn delivers_the_hook_writer_files() {
             format!("{CRED}/brief.md"),
             "/work/box-1/.moor/hook.sh".to_owned(),
             "/work/box-1/.moor/hooks.json".to_owned(),
+            format!("{CRED}/agent.sh"),
         ]
     );
 }
@@ -173,7 +174,7 @@ fn a_resume_runs_the_agent_with_the_stored_session_instead_of_the_prompt() {
         ..req(&s)
     };
     agent(&d, &s).launch(&r).unwrap();
-    let script = script_of(&pane_line(&s));
+    let script = script_of(&d);
     assert!(
         script.contains("'claude' '--resume' 'sess-9' '--model' 'haiku'"),
         "{script}"
@@ -183,10 +184,10 @@ fn a_resume_runs_the_agent_with_the_stored_session_instead_of_the_prompt() {
 
 #[test]
 fn the_script_cleans_up_installs_the_brief_and_starts_the_agent() {
-    let (_, s, out) = launch(FakeDriver::new(), FakeSurface::new());
+    let (d, s, out) = launch(FakeDriver::new(), FakeSurface::new());
     out.unwrap();
     let line = pane_line(&s);
-    let script = script_of(&line);
+    let script = script_of(&d);
     for want in [
         &format!("trap 'rm -rf '\\''{CRED}'\\'' '\\''{TMP}'\\''' EXIT"),
         &format!("mkdir -p -m 700 '{TMP}' && mkdir -p '/work/box-1/.moor'"),
@@ -215,31 +216,28 @@ fn remote_of(line: &str) -> String {
     unquote(rest.split_once("; c=$?;").unwrap().0)
 }
 
-/// The agent script the Box's tmux session runs under `sh -c`.
-fn script_of(line: &str) -> String {
-    let remote = remote_of(line);
-    let session = remote.split_once("-x 200 -y 50 ").unwrap().1;
-    let inner = unquote(
-        session
-            .rsplit_once(" || exit 1; tmux set-option")
-            .unwrap()
-            .0,
-    );
-    let script = inner.strip_prefix("sh -c ").unwrap();
-    unquote(script.rsplit_once("; echo $? > ").unwrap().0)
+/// The agent script the launch put on the Box.
+fn script_of(d: &FakeDriver) -> String {
+    let put = d
+        .puts()
+        .into_iter()
+        .find(|p| p.1.as_str().ends_with("/agent.sh"));
+    String::from_utf8(put.expect("the launch puts the agent script").2).unwrap()
 }
 
 #[test]
-fn the_box_runs_the_script_under_sh_not_the_login_shell() {
+fn the_box_runs_the_script_file_under_sh_not_the_login_shell() {
     let (_, s, out) = launch(FakeDriver::new(), FakeSurface::new());
     out.unwrap();
     let remote = remote_of(&pane_line(&s));
-    assert!(remote.contains("tmux new-session -d -s moor-agent -x 200 -y 50 'sh -c '"));
+    let want =
+        format!("tmux new-session -d -s moor-agent -x 200 -y 50 'sh '\\''{CRED}/agent.sh'\\'';");
+    assert!(remote.contains(&want), "{remote}");
 }
 
 #[test]
 fn the_script_is_valid_shell() {
-    let (_, s, out) = launch(FakeDriver::new(), FakeSurface::new());
+    let (d, _, out) = launch(FakeDriver::new(), FakeSurface::new());
     out.unwrap();
     let mut sh = Command::new("sh")
         .arg("-n")
@@ -249,7 +247,7 @@ fn the_script_is_valid_shell() {
     sh.stdin
         .take()
         .unwrap()
-        .write_all(script_of(&pane_line(&s)).as_bytes())
+        .write_all(script_of(&d).as_bytes())
         .unwrap();
     assert!(sh.wait().unwrap().success());
 }
@@ -362,7 +360,7 @@ fn launch_with_proxy() -> (Arc<FakeDriver>, Arc<FakeSurface>) {
 }
 
 #[test]
-fn a_proxy_launch_stages_only_the_brief() {
+fn a_proxy_launch_stages_only_the_brief_and_the_agent_script() {
     let (d, _) = launch_with_proxy();
     let staged: Vec<_> = d
         .puts()
@@ -370,13 +368,19 @@ fn a_proxy_launch_stages_only_the_brief() {
         .filter(|p| p.1.as_str().starts_with(&format!("{CRED}/")))
         .map(|p| (p.1.as_str().to_owned(), p.3))
         .collect();
-    assert_eq!(staged, [(format!("{CRED}/brief.md"), 0o600)]);
+    assert_eq!(
+        staged,
+        [
+            (format!("{CRED}/brief.md"), 0o600),
+            (format!("{CRED}/agent.sh"), 0o600)
+        ]
+    );
 }
 
 #[test]
 fn a_proxy_launch_removes_the_cred_dir_after_the_brief_and_exports_the_proxy_env() {
-    let (_, s) = launch_with_proxy();
-    let script = script_of(&pane_line(&s));
+    let (d, _) = launch_with_proxy();
+    let script = script_of(&d);
     assert!(script.contains(&format!("\nrm -rf '{CRED}'\n")), "{script}");
     assert!(!script.contains("GIT_CONFIG"), "{script}");
     for want in [

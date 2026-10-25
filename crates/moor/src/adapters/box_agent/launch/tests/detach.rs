@@ -1,8 +1,8 @@
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::{pane_line, start, NO_TMUX, NO_TMUX_EXIT, RECONNECTS};
+use super::{pane_line, start, NO_TMUX, NO_TMUX_EXIT, RECONNECTS, SESSION};
 
 /// Writes an executable `name` script into `bin`.
 fn tool(bin: &Path, name: &str, body: &str) {
@@ -107,4 +107,113 @@ fn a_box_without_tmux_refuses_to_start_the_agent() {
     assert_eq!(out.status.code(), Some(i32::from(NO_TMUX_EXIT)));
     assert!(String::from_utf8_lossy(&out.stderr).contains(NO_TMUX));
     assert!(!ran.exists(), "the agent ran on the bare link");
+}
+
+/// A tmux server the test started on its own socket; dropping it kills the server by its pid.
+struct TmuxServer {
+    /// The real tmux.
+    tmux: PathBuf,
+    /// The socket name, under the test's `TMUX_TMPDIR`.
+    socket: String,
+    /// The test's `TMUX_TMPDIR`.
+    dir: PathBuf,
+}
+
+impl Drop for TmuxServer {
+    fn drop(&mut self) {
+        let out = Command::new(&self.tmux)
+            .args([
+                "-L",
+                &self.socket,
+                "display-message",
+                "-p",
+                concat!("#{", "pid}"),
+            ])
+            .env("TMUX_TMPDIR", &self.dir)
+            .env_remove("TMUX")
+            .output();
+        let pid = out.ok().and_then(|o| String::from_utf8(o.stdout).ok());
+        let pid = pid.and_then(|p| p.trim().parse::<i32>().ok());
+        if let Some(pid) = pid.and_then(rustix::process::Pid::from_raw) {
+            let _ = rustix::process::kill_process(pid, rustix::process::Signal::KILL);
+        }
+    }
+}
+
+/// The real tmux on this host's `PATH`.
+fn real_tmux() -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|d| d.join("tmux"))
+        .find(|p| p.is_file())
+}
+
+/// Writes into `bin` an `ssh` that hands the remote command to a login shell on this host, as
+/// sshd does, and a `tmux` on the test's own server under `dir`; the attach waits for the session
+/// to end, since the test has no terminal to attach.
+fn fake_box(bin: &Path, dir: &Path) -> TmuxServer {
+    moor_testkit::write_host_guards(bin).unwrap();
+    let tmux_dir = dir.join("tmux");
+    std::fs::create_dir(&tmux_dir).unwrap();
+    let server = TmuxServer {
+        tmux: real_tmux().expect("tmux on PATH"),
+        socket: format!("moor-test-{}", std::process::id()),
+        dir: tmux_dir,
+    };
+    let real = format!(
+        "{} -L {} -f /dev/null",
+        server.tmux.display(),
+        server.socket
+    );
+    tool(bin, "ssh", "shift 2; exec bash -l -c \"$*\"");
+    tool(
+        bin,
+        "tmux",
+        &format!(
+            "if [ \"$1\" = attach-session ]; then \
+             while {real} has-session -t {SESSION} 2>/dev/null; do sleep 0.05; done; exit 0; fi\n\
+             exec {real} \"$@\""
+        ),
+    );
+    server
+}
+
+#[test]
+fn the_pane_line_starts_the_agent_through_real_shells_and_tmux() {
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join("bin");
+    let server = fake_box(&bin, dir.path());
+    let work = dir.path().join("w");
+    std::fs::create_dir_all(work.join(".moor")).unwrap();
+    let seen = dir.path().join("seen");
+    let quoting = ": 'it'\\''s \"$HOME\" `id` \\\\ %s'\n".repeat(400);
+    let script = dir.path().join("agent.sh");
+    std::fs::write(
+        &script,
+        format!(
+            "{quoting}printf '%s|%s\\n' \"it's\" '$HOME `x`' > {}\nexit 7\n",
+            seen.display()
+        ),
+    )
+    .unwrap();
+    let ssh = ["ssh".into(), "-t".into(), "box".into()];
+    let line = pane_line(&ssh, work.to_str().unwrap(), script.to_str().unwrap()).unwrap();
+    let out = Command::new("bash")
+        .arg("-c")
+        .arg(&line)
+        .current_dir(&work)
+        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+        .env("HOME", dir.path())
+        .env("TMUX_TMPDIR", &server.dir)
+        .env_remove("TMUX")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stdout.trim_end().ends_with("moor: agent exited 7"),
+        "{stdout}{stderr}"
+    );
+    let seen = std::fs::read_to_string(&seen).unwrap_or_default();
+    assert_eq!(seen, "it's|$HOME `x`\n", "{stdout}{stderr}");
 }

@@ -7,7 +7,7 @@ fn script_for(environ: &str, req: impl FnOnce(&FakeSurface) -> LaunchReq) -> Str
     let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
     d.set_peek_text("box-1", &environ_path(), environ);
     agent(&d, &s).launch(&req(&s)).unwrap();
-    script_of(&pane_line(&s))
+    script_of(&d)
 }
 
 /// The position of the line that starts the agent.
