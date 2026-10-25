@@ -242,7 +242,9 @@ pub(crate) fn settle(
     row: &BoxRow,
     reading: &Reading,
 ) -> Result<(), CommandError> {
-    turn::note_turn_done(store, row, reading)?;
+    if turn::note_turn_done(store, row, reading)? && reading.pane != PaneLiveness::Exited {
+        transcript::save_on_turn(cx, store, row)?;
+    }
     if let (PaneLiveness::Exited, Some(probed)) = (reading.pane, reading.session) {
         transcript::save_on_exit(cx, store, row, probed)?;
         end_exited_session(cx, store, row, reading, probed)?;

@@ -108,3 +108,44 @@ fn no_steer_writes_no_turn_done() {
     settle_once(&cx, id);
     assert!(events(&cx, id, "turn_done").is_empty());
 }
+
+#[test]
+fn the_end_of_each_turn_copies_the_transcript_to_the_host() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(
+        FakeEngine::new()
+            .probes(SESSION, hook(HookKind::Idle))
+            .transcript_text("abc"),
+    );
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = working_box(&cx, true);
+    let store = cx.store().unwrap();
+    let live = store.live_session(id).unwrap().unwrap();
+    store.set_registered_session(live.id, "agent-1").unwrap();
+    settle_once(&cx, id);
+    assert!(engine.transcripts().is_empty(), "no turn ended yet");
+    steer(&cx, id);
+    settle_once(&cx, id);
+    let saved = events(&cx, id, "transcript_saved");
+    assert_eq!(saved.len(), 1);
+    assert_eq!(
+        first(&saved)
+            .payload
+            .get("trigger")
+            .and_then(|t| t.as_str()),
+        Some("turn")
+    );
+    assert!(store.live_session(id).unwrap().unwrap().ended_at.is_none());
+    steer(&cx, id);
+    settle_once(&cx, id);
+    assert_eq!(
+        engine.transcripts().len(),
+        2,
+        "the second turn copies again"
+    );
+    assert_eq!(
+        events(&cx, id, "transcript_saved").len(),
+        1,
+        "an unchanged copy is not recorded"
+    );
+}

@@ -18,6 +18,8 @@ pub enum Trigger {
     End,
     /// The agent was first seen to have exited.
     Exit,
+    /// The agent finished a turn.
+    Turn,
 }
 
 impl Trigger {
@@ -29,6 +31,7 @@ impl Trigger {
             Self::Close => "close",
             Self::End => "end",
             Self::Exit => "exit",
+            Self::Turn => "turn",
         }
     }
 }
