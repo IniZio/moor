@@ -370,3 +370,62 @@ fn a_closing_or_gone_box_loses_the_button_even_while_its_view_says_working() {
     assert_eq!(blocks_of(working.clone(), &row(closing)), json!([]));
     assert_eq!(blocks_of(working, &row(gone)), json!([]));
 }
+
+#[test]
+fn a_box_starting_for_three_minutes_gets_a_stuck_line_that_says_how_to_recover() {
+    let v = folded_at(&[("started", 0), ("setting_up", 10), ("working", 20)]);
+    assert!(!render("b", &v, 20 + 179).contains("stuck"));
+    assert!(render("b", &v, 20 + 180).ends_with(
+        "\nNo agent session after 3m. It may be stuck starting; ask me to restart the agent."
+    ));
+    let setting_up = folded_at(&[("started", 0), ("setting_up", 10)]);
+    assert!(!render("b", &setting_up, 10 + 3600).contains("stuck"));
+    let working = folded_at(&[
+        ("started", 0),
+        ("setting_up", 10),
+        ("working", 20),
+        ("session_started", 20),
+    ]);
+    assert!(!render("b", &working, 20 + 600 - 1).contains("No agent session"));
+}
+
+#[test]
+fn a_box_whose_launch_failed_gets_the_stuck_line_once_working_for_three_minutes() {
+    let v = folded_at(&[("working", 0), ("session_failed", 5)]);
+    assert!(!render("b", &v, 179).contains("stuck"));
+    assert!(render("b", &v, 180).ends_with(
+        "\nNo agent session after 3m. It may be stuck starting; ask me to restart the agent."
+    ));
+}
+
+#[test]
+fn a_launch_that_timed_out_keeps_the_stuck_line_after_the_box_goes_quiet() {
+    let mut v = folded_at(&[("working", 0), ("idled", 200)]);
+    v.fold("launch_timed_out", &json!({"after_secs": 180}), 200_000);
+    assert!(render("b", &v, 200).contains("No agent session after 3m."));
+    let asleep = folded_at(&[("working", 0), ("asleep", 300)]);
+    assert!(!render("b", &asleep, 3600).contains("stuck"));
+}
+
+#[test]
+fn a_box_at_a_first_run_screen_for_three_minutes_names_the_screen() {
+    let mut v = folded_at(&[("working", 0)]);
+    v.fold(
+        "agent_prompt_blocked",
+        &json!({"prompt": "folder_trust"}),
+        10_000,
+    );
+    assert!(!render("b", &v, 10 + 179).contains("Stopped at"));
+    assert!(render("b", &v, 10 + 180).ends_with(
+        "\nStopped at its folder_trust screen for 3m. It may be stuck; ask me to restart the agent."
+    ));
+}
+
+#[test]
+fn an_unanswered_question_after_three_minutes_says_to_answer_or_restart() {
+    let v = folded_at(&[("working", 0), ("needs_input", 10)]);
+    assert!(!render("b", &v, 10 + 179).contains("stuck"));
+    assert!(render("b", &v, 10 + 180).ends_with(
+        "\nWaiting on an answer for 3m. It may be stuck; reply here with the answer, or ask me to restart the agent."
+    ));
+}

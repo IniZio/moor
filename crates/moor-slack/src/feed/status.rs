@@ -21,6 +21,9 @@ const QUESTION_MAX: usize = 300;
 /// Seconds a working Box may emit no event before its status says it may be stuck.
 pub(super) const STALL_AFTER_SECS: i64 = 10 * 60;
 
+/// Seconds a starting, blocked or unanswered Box may wait before its status says it may be stuck.
+pub(super) const STUCK_AFTER_SECS: i64 = 3 * 60;
+
 /// Where the Box is in its life.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(super) enum State {
@@ -75,6 +78,14 @@ pub(super) struct View {
     pub(super) since_ms: Option<i64>,
     /// When the Box last emitted any event, in milliseconds since the epoch.
     pub(super) last_event_ms: Option<i64>,
+    /// When the Box began launching its agent, in milliseconds since the epoch, until the agent
+    /// is seen alive. Setup, which can legitimately take long, is not part of it.
+    pub(super) launching_ms: Option<i64>,
+    /// Whether the launch failed or timed out, which keeps `launching_ms` through the quiet
+    /// that follows.
+    pub(super) gave_up: bool,
+    /// The first-run screen the agent stopped at, with when the event came in milliseconds.
+    pub(super) blocked: Option<(String, i64)>,
 }
 
 impl View {
@@ -83,14 +94,20 @@ impl View {
     pub(super) fn fold(&mut self, kind: &str, payload: &Value, at_ms: i64) {
         let before = self.state.clone();
         self.last_event_ms = Some(at_ms);
-        self.apply(kind, payload);
+        self.apply(kind, payload, at_ms);
         if self.state != before || self.since_ms.is_none() {
             self.since_ms = Some(at_ms);
         }
     }
 
+    /// The agent is alive or the Box left the launch, so there is no launch left to wait on.
+    fn forget_launch(&mut self) {
+        self.launching_ms = None;
+        self.gave_up = false;
+    }
+
     /// Sets the state and machine the event of `kind` leads to.
-    fn apply(&mut self, kind: &str, payload: &Value) {
+    fn apply(&mut self, kind: &str, payload: &Value, at_ms: i64) {
         let text = |key: &str| {
             payload
                 .get(key)
@@ -99,13 +116,48 @@ impl View {
                 .to_owned()
         };
         match kind {
-            "started" => self.state = State::Starting,
+            "started" => {
+                self.state = State::Starting;
+                self.forget_launch();
+                self.blocked = None;
+            }
+            "session_started" => {
+                self.forget_launch();
+                self.blocked = None;
+            }
+            "agent_said" => self.forget_launch(),
+            "session_failed" => self.gave_up = true,
+            "launch_timed_out" => {
+                let after = payload.get("after_secs").and_then(Value::as_i64);
+                self.launching_ms = Some(at_ms - after.unwrap_or(0) * 1000);
+                self.gave_up = true;
+            }
+            "agent_prompt_blocked" => self.blocked = Some((text("prompt"), at_ms)),
             "setting_up" => self.state = State::SettingUp,
-            "working" | "busy" | "woke" => self.state = State::Working,
-            "idled" => self.state = State::Idle,
-            "asleep" => self.state = State::Asleep,
+            "working" => {
+                self.launching_ms = Some(at_ms);
+                self.state = State::Working;
+            }
+            "busy" => {
+                self.forget_launch();
+                self.state = State::Working;
+            }
+            "woke" => self.state = State::Working,
+            "idled" => {
+                if !self.gave_up {
+                    self.launching_ms = None;
+                }
+                self.state = State::Idle;
+            }
+            "asleep" => {
+                self.forget_launch();
+                self.state = State::Asleep;
+            }
             "needs_input" => self.state = State::NeedsInput(text("question")),
-            "closed" => self.state = State::Closed,
+            "closed" => {
+                self.forget_launch();
+                self.state = State::Closed;
+            }
             "rejected" => self.state = State::Rejected(text("reason")),
             "setup_failed" => self.state = State::SetupFailed(text("line")),
             "box_requested" => self.machine = Some(Machine::Requested),
@@ -172,7 +224,41 @@ pub(super) fn render(name: &str, view: &View, now: i64) -> String {
     if view.state == State::Working && quiet >= STALL_AFTER_SECS {
         let _ = write!(text, "\nNo event for {}. It may be stuck.", minutes(quiet));
     }
+    if let Some(hint) = stuck_hint(view, now) {
+        let _ = write!(text, "\n{hint}");
+    }
     text
+}
+
+/// The line for a Box that is starting, blocked on a first-run screen or waiting on an
+/// unanswered question for [`STUCK_AFTER_SECS`]: what it is stuck on and how to recover.
+fn stuck_hint(view: &View, now: i64) -> Option<String> {
+    let age = |ms: i64| now - ms.div_euclid(1000);
+    if let Some((prompt, at)) = &view.blocked {
+        if age(*at) >= STUCK_AFTER_SECS {
+            return Some(format!(
+                "Stopped at its {} screen for {}. It may be stuck; ask me to restart the agent.",
+                escape(prompt),
+                minutes(age(*at))
+            ));
+        }
+    }
+    if let State::NeedsInput(_) = view.state {
+        let since = age(view.since_ms?);
+        return (since >= STUCK_AFTER_SECS).then(|| {
+            format!(
+                "Waiting on an answer for {}. It may be stuck; reply here with the answer, or ask me to restart the agent.",
+                minutes(since)
+            )
+        });
+    }
+    let launching = age(view.launching_ms?);
+    (launching >= STUCK_AFTER_SECS).then(|| {
+        format!(
+            "No agent session after {}. It may be stuck starting; ask me to restart the agent.",
+            minutes(launching)
+        )
+    })
 }
 
 /// One status send the planner wants made.
