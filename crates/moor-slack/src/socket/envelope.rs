@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use tungstenite::{Message, WebSocket};
 
 use super::parse::{parse_click, parse_mention, parse_slash, parse_submission};
-use super::{flush, is_timeout, Inbound, Intake, Kept, NotKept, SocketError, Stream};
+use super::{flush, is_timeout, Inbound, Intake, Kept, NotKept, Roleplay, SocketError, Stream};
 
 /// What one envelope asks the read loop to do next.
 pub(super) enum Flow {
@@ -27,6 +27,7 @@ pub(super) fn handle_envelope(
     text: &str,
     ws: &mut WebSocket<Stream>,
     intake: &dyn Intake,
+    roleplay: Option<&Roleplay>,
     stop: &AtomicBool,
 ) -> Result<Flow, SocketError> {
     let Ok(envelope) = serde_json::from_str::<Value>(text) else {
@@ -37,7 +38,7 @@ pub(super) fn handle_envelope(
         Some("disconnect") => (Flow::Disconnect, None),
         Some("events_api") => (
             Flow::Continue,
-            parse_mention(&envelope).map(Inbound::Mention),
+            parse_mention(&envelope, roleplay).map(Inbound::Mention),
         ),
         Some("interactive") => (
             Flow::Continue,

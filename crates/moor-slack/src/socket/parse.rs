@@ -3,7 +3,8 @@
 use moor_core::secret::Secret;
 use serde_json::Value;
 
-use super::{Click, Mention, Press, Slash, TokenSubmission};
+use super::roleplay::roleplayed;
+use super::{Click, Mention, Press, Roleplay, Slash, TokenSubmission};
 use crate::login::LOGIN_CALLBACK;
 use crate::stop::STOP_ACTION;
 
@@ -93,33 +94,18 @@ pub(super) fn parse_click(envelope: &Value) -> Option<Click> {
 }
 
 /// The mention or thread reply inside an `events_api` envelope, if it is a well-formed one.
-pub(super) fn parse_mention(envelope: &Value) -> Option<Mention> {
+/// With `roleplay` set, a post of the bot's own that carries role-play metadata counts as one
+/// from the user the metadata names.
+pub(super) fn parse_mention(envelope: &Value, roleplay: Option<&Roleplay>) -> Option<Mention> {
     let payload = envelope.get("payload")?;
     let event = payload.get("event")?;
     let field = |value: &Value, key: &str| value.get(key)?.as_str().map(str::to_owned);
+    if event.get("bot_id").is_some() {
+        return roleplayed(payload, event, roleplay?);
+    }
     let reply = match event.get("type")?.as_str()? {
         "app_mention" => false,
-        "message" => {
-            // Subtyped events (edits, deletes, joins) and bot posts are not user replies.
-            if event.get("subtype").is_some() || event.get("bot_id").is_some() {
-                return None;
-            }
-            let thread_ts = field(event, "thread_ts")?;
-            if thread_ts == field(event, "ts")? {
-                return None;
-            }
-            // Slack also delivers a message naming the bot as `app_mention`, which handles it.
-            let bot = payload
-                .get("authorizations")
-                .and_then(|a| a.get(0))
-                .and_then(|a| field(a, "user_id"));
-            if let Some(bot) = bot {
-                if field(event, "text")?.contains(&format!("<@{bot}")) {
-                    return None;
-                }
-            }
-            true
-        }
+        "message" => user_reply(payload, event)?,
         _ => return None,
     };
     Some(Mention {
@@ -131,4 +117,28 @@ pub(super) fn parse_mention(envelope: &Value) -> Option<Mention> {
         thread_ts: field(event, "thread_ts"),
         reply,
     })
+}
+
+/// True for a `message` event that is a user's plain thread reply.
+fn user_reply(payload: &Value, event: &Value) -> Option<bool> {
+    let field = |value: &Value, key: &str| value.get(key)?.as_str().map(str::to_owned);
+    // Subtyped events (edits, deletes, joins) are not user replies.
+    if event.get("subtype").is_some() {
+        return None;
+    }
+    let thread_ts = field(event, "thread_ts")?;
+    if thread_ts == field(event, "ts")? {
+        return None;
+    }
+    // Slack also delivers a message naming the bot as `app_mention`, which handles it.
+    let bot = payload
+        .get("authorizations")
+        .and_then(|a| a.get(0))
+        .and_then(|a| field(a, "user_id"));
+    if let Some(bot) = bot {
+        if field(event, "text")?.contains(&format!("<@{bot}")) {
+            return None;
+        }
+    }
+    Some(true)
 }
