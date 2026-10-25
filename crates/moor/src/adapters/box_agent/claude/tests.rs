@@ -272,7 +272,7 @@ fn operating_system_commands_are_stripped_from_the_matched_line() {
 #[test]
 fn transcript_script_archives_the_project_sessions_to_the_given_path() {
     let script = Claude.transcript_script(".moor/t.tgz");
-    assert!(script.contains("$HOME/.claude/projects/$enc"));
+    assert!(script.contains("$HOME/.claude/projects/$(pwd -P"));
     assert!(script.contains("*.jsonl"));
     assert!(script.contains("tar czf \"$OLDPWD/.moor/t.tgz\""));
     assert!(script.contains(NOTHING_TO_ARCHIVE));
@@ -451,4 +451,33 @@ fn a_long_command_word_is_cut_to_the_line_cap() {
     );
     let line = parse(&raw).unwrap().doing.unwrap();
     assert!(line.chars().count() <= 80, "{line}");
+}
+
+#[test]
+fn transcript_script_finds_the_sessions_of_a_workdir_reached_through_a_symlink() {
+    let root = tempfile::tempdir().unwrap();
+    let home = root.path().join("home");
+    let real = root.path().join("real");
+    let link = root.path().join("link");
+    std::fs::create_dir_all(&real).unwrap();
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    let dir = project_dir(&home, &real);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("s.jsonl"), "{}\n").unwrap();
+    let out = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(format!(
+            "cd {} && {}",
+            link.display(),
+            Claude.transcript_script(".moor/t.tgz")
+        ))
+        .env("HOME", &home)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    assert_ne!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        NOTHING_TO_ARCHIVE
+    );
+    assert!(real.join(".moor/t.tgz").exists());
 }
