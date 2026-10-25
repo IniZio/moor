@@ -141,6 +141,31 @@ fn a_line_that_cannot_be_posted_queues_no_notice_and_is_tried_again() {
     assert!(!db.has_notice(&row, BoxEvent::Finished, Some(1)).unwrap());
 }
 
+#[test]
+fn only_a_forced_sleep_and_a_relaunch_with_a_cause_owe_the_thread_a_line() {
+    let mut fold = Fold::default();
+    let at = |cursor, kind: &str, payload| {
+        let Watched::Item(WatchItem::Event(mut e)) = event(cursor, Some(ID), kind) else {
+            unreachable!()
+        };
+        e.payload = payload;
+        Watched::Item(WatchItem::Event(e))
+    };
+    fold.take(at(1, "asleep", json!({"auto": false})));
+    fold.take(at(
+        2,
+        "relaunched",
+        json!({"old_pane": null, "cause": null}),
+    ));
+    fold.take(at(3, "asleep", json!({"auto": true})));
+    fold.take(at(4, "relaunched", json!({"cause": "steer"})));
+    let want = vec![
+        (3, lifecycle::Note::SleptIdle),
+        (4, lifecycle::Note::Relaunched),
+    ];
+    assert_eq!(fold.notes.get(&ID), Some(&want));
+}
+
 /// An identity of the Slack user `user` in the tests' team.
 fn user(user: &str) -> Identity {
     Identity::parse(&format!("slack:T1/{user}")).unwrap()

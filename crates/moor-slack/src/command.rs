@@ -87,6 +87,16 @@ pub(crate) enum BoxEvent {
     Finished,
     /// The Box closed.
     Closed,
+    /// The Box's agent launch failed.
+    LaunchFailed,
+    /// The Box's agent did not start within the launch limit.
+    LaunchTimedOut,
+    /// The sleep timer put the Box to sleep.
+    SleptIdle,
+    /// The Box's agent was started again on its own.
+    Relaunched,
+    /// The controller refused another automatic agent relaunch.
+    RelaunchCapped,
 }
 
 impl BoxEvent {
@@ -97,6 +107,11 @@ impl BoxEvent {
             Self::NotStarted => "not_started",
             Self::Finished => "finished",
             Self::Closed => "closed",
+            Self::LaunchFailed => "launch_failed",
+            Self::LaunchTimedOut => "launch_timed_out",
+            Self::SleptIdle => "slept_idle",
+            Self::Relaunched => "relaunched",
+            Self::RelaunchCapped => "relaunch_capped",
         }
     }
 
@@ -108,6 +123,11 @@ impl BoxEvent {
             Self::NotStarted => "could not start",
             Self::Finished => "finished its turn",
             Self::Closed => "closed",
+            Self::LaunchFailed => "could not start its agent",
+            Self::LaunchTimedOut => "did not start its agent in time",
+            Self::SleptIdle => "went to sleep after sitting idle",
+            Self::Relaunched => "had its agent started again",
+            Self::RelaunchCapped => "was not relaunched, the automatic relaunch cap was reached",
         };
         format!("[moor] Box `{name}` {what}.")
     }

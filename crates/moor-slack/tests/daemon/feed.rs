@@ -141,6 +141,62 @@ fn a_working_box_silent_for_ten_minutes_has_a_stall_hint_in_its_status_edit() {
 }
 
 #[test]
+fn a_launch_problem_a_forced_sleep_and_a_relaunch_each_get_one_line_that_says_how_to_go_on() {
+    let (rig, controller, _bin, _post) = thread_with_status();
+    let lines = [
+        (
+            "session_failed",
+            json!({"step": "launch", "message": "no such binary"}),
+            "could not start its agent. Reply here and ask me to restart the agent.",
+        ),
+        (
+            "launch_timed_out",
+            json!({"after_secs": 180}),
+            "did not start its agent within 3m, so it may go to sleep. Reply here and ask me to restart the agent.",
+        ),
+        (
+            "asleep",
+            json!({"auto": true}),
+            "went to sleep after sitting idle. Reply here to wake it.",
+        ),
+        (
+            "relaunched",
+            json!({"cause": "steer"}),
+            "'s agent had ended, so it was started again. If it stalls, reply here and ask me to restart the agent.",
+        ),
+        (
+            "relaunch_capped",
+            json!({"count": 3, "window_secs": 600}),
+            "'s agent ended 3 times in the last 10m, so it is not started again on its own. Reply here and ask me to restart the agent once the cause is fixed.",
+        ),
+    ];
+    for (kind, payload, _) in &lines {
+        controller.emit(BOX_ID, BOX_NAME, kind, payload.clone());
+    }
+    controller.emit(BOX_ID, BOX_NAME, "asleep", json!({"auto": false}));
+    controller.emit(BOX_ID, BOX_NAME, "relaunched", json!({}));
+    for (_, _, tail) in &lines {
+        let sep = if tail.starts_with('\'') { "" } else { " " };
+        rig.wait_post(&format!("Box `{BOX_NAME}`{sep}{tail}"));
+    }
+    let n = watches(&controller);
+    controller.drop_watches();
+    wait_refolded(&controller, n);
+    std::thread::sleep(QUIET);
+    let posted = rig
+        .slack
+        .posts()
+        .iter()
+        .filter(|p| p.text.starts_with(&format!("Box `{BOX_NAME}`")))
+        .count();
+    assert_eq!(
+        posted,
+        lines.len(),
+        "one line each, none for an asked sleep or relaunch"
+    );
+}
+
+#[test]
 fn a_refold_after_a_dropped_watch_or_a_restart_writes_no_second_line_status_or_notice() {
     let (mut rig, controller, _bin, post) = thread_with_status();
     controller.emit(BOX_ID, BOX_NAME, "working", json!({}));
