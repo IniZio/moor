@@ -76,11 +76,11 @@ fn feed_logging(dir: &Path, slack: &Fake, sock: &Path, log: crate::Log) -> Feed 
 /// The caught-up fold of a connection that replays the publishing of `bytes` at each version
 /// in `versions`, as `report.txt` of Box [`ID`].
 fn replay(versions: &[u32], bytes: &[u8]) -> Fold {
-    replay_for(ID, versions, bytes)
+    replay_for(ID, "slack-1-1", versions, bytes)
 }
 
-/// Like [`replay`], for Box `id`.
-fn replay_for(id: BoxId, versions: &[u32], bytes: &[u8]) -> Fold {
+/// Like [`replay`], for Box `id` named `name`.
+fn replay_for(id: BoxId, name: &str, versions: &[u32], bytes: &[u8]) -> Fold {
     let mut fold = Fold::default();
     fold.take(Watched::Connected);
     for (cursor, &version) in (1..).zip(versions) {
@@ -90,7 +90,7 @@ fn replay_for(id: BoxId, versions: &[u32], bytes: &[u8]) -> Fold {
         });
         fold.take(Watched::Item(WatchItem::Event(EventRecord {
             cursor,
-            box_name: Some("slack-1-1".into()),
+            box_name: Some(name.into()),
             box_id: Some(id),
             session: None,
             kind: "artifact_published".into(),
@@ -310,7 +310,7 @@ fn a_box_of_another_thread_never_posts_here() {
     let db = Db::open(&feed.db_path).unwrap();
     bound_box(&db);
     other_thread_box(&db);
-    let mut fold = replay_for(BoxId::new(8), &[1], b"hello");
+    let mut fold = replay_for(BoxId::new(8), "slack-2-1", &[1], b"hello");
     tick(&feed, &db, &mut fold);
     assert_eq!(reads(&seen(ctl)), [1]);
     let channels: Vec<String> = slack
@@ -331,7 +331,7 @@ fn a_box_with_no_thread_posts_nothing() {
     let feed = feed(dir.path(), &slack, &sock);
     let db = Db::open(&feed.db_path).unwrap();
     bound_box(&db);
-    let mut fold = replay_for(BoxId::new(99), &[1], b"hello");
+    let mut fold = replay_for(BoxId::new(99), "slack-9-1", &[1], b"hello");
     tick(&feed, &db, &mut fold);
     assert!(slack.hits("completeuploadexternal").is_empty());
     assert!(slack.texts().iter().all(|t| !t.contains("report.txt")));
@@ -513,5 +513,62 @@ fn a_missing_files_read_scope_is_logged_once_and_the_version_is_retried() {
     let logged = lines.lock().unwrap();
     let scope = logged.iter().filter(|l| l.contains("files:read")).count();
     assert_eq!(scope, 1, "{logged:?}");
+    drop(logged);
+}
+
+/// An event of `kind` for Box [`ID`] as the controller now names it: `hkfc-verify`, a Box that
+/// got the id after the controller's store was recreated.
+fn reused(cursor: i64, kind: &str, payload: Value) -> Watched {
+    Watched::Item(WatchItem::Event(EventRecord {
+        cursor,
+        box_name: Some("hkfc-verify".into()),
+        box_id: Some(ID),
+        session: None,
+        kind: kind.into(),
+        payload,
+        ts: 0,
+    }))
+}
+
+#[test]
+fn a_box_that_reuses_the_rows_id_under_another_name_never_posts_here() {
+    let (dir, slack) = (tempfile::tempdir().unwrap(), fake());
+    let sock = dir.path().join("c.sock");
+    let ctl = controller(&sock, vec![]);
+    let lines = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let sink = Arc::clone(&lines);
+    let log: crate::Log = Arc::new(move |l| sink.lock().unwrap().push(l.to_owned()));
+    let feed = feed_logging(dir.path(), &slack, &sock, log);
+    let db = Db::open(&feed.db_path).unwrap();
+    let row = bound_box(&db);
+    let mut fold = Fold::default();
+    fold.take(Watched::Connected);
+    fold.take(reused(1, "working", json!({})));
+    fold.take(reused(2, "session_failed", json!({})));
+    let published = json!({
+        "name": "cms-admin.png", "version": 1, "artifact_kind": "file",
+        "content_type": "image/png", "size": 5, "sha256": sha(b"hello"),
+    });
+    fold.take(reused(3, "artifact_published", published));
+    let asked = json!({"question": "which one?", "options": ["a", "b"]});
+    fold.take(reused(4, "needs_input", asked));
+    fold.take(Watched::Item(WatchItem::CaughtUp { cursor: 4 }));
+    tick(&feed, &db, &mut fold);
+    tick(&feed, &db, &mut fold);
+    assert!(reads(&seen(ctl)).is_empty(), "no stored copy read");
+    assert!(slack.hits("").is_empty(), "nothing sent to Slack");
+    let state = db
+        .fed_boxes()
+        .unwrap()
+        .into_iter()
+        .find(|f| f.boxed.box_name == row.box_name)
+        .map(|f| f.boxed.state);
+    assert!(
+        matches!(state, Some(crate::db::BoxState::Gone { .. })),
+        "{state:?}"
+    );
+    let logged = lines.lock().unwrap();
+    let gone_lines = logged.iter().filter(|l| l.contains("hkfc-verify")).count();
+    assert_eq!(gone_lines, 1, "{logged:?}");
     drop(logged);
 }

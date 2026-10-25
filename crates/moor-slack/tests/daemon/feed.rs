@@ -279,7 +279,7 @@ fn a_status_edit_slack_refuses_is_sent_again_after_the_window() {
 }
 
 #[test]
-fn events_reach_a_box_by_its_id_and_its_name_is_only_for_display() {
+fn events_reach_a_box_only_by_its_id_and_its_name_together() {
     let (rig, controller, _bin, post) = thread_with_status();
     controller.emit(BOX_ID + 1, BOX_NAME, "working", json!({}));
     controller.emit(BOX_ID + 1, BOX_NAME, "idled", json!({}));
@@ -291,8 +291,16 @@ fn events_reach_a_box_by_its_id_and_its_name_is_only_for_display() {
     );
     let posts = rig.slack.posts();
     assert!(posts.iter().all(|p| p.text != finished_line()), "{posts:?}");
-    controller.emit(BOX_ID, "another-name", "needs_input", json!({}));
-    wait_status(&rig, &post.ts, &status("waiting on a question (<1m)"));
+    controller.emit(BOX_ID, BOX_NAME, "needs_input", json!({}));
+    let waiting = status("waiting on a question (<1m)");
+    let seen = wait_status(&rig, &post.ts, &waiting).len();
+    controller.emit(BOX_ID, "another-name", "working", json!({}));
+    controller.emit(BOX_ID, "another-name", "idled", json!({}));
+    std::thread::sleep(PAST_WINDOW);
+    let updates = rig.slack.updates();
+    assert_eq!(updates.len(), seen, "a Box reusing the id changes nothing");
+    let posts = rig.slack.posts();
+    assert!(posts.iter().all(|p| p.text != finished_line()), "{posts:?}");
 }
 
 #[test]
