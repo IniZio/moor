@@ -8,6 +8,9 @@ use super::proxy::{default_rules, injected};
 use super::{check, parse_strict, BoxSize, ConfigError};
 use crate::cache::CacheConfig;
 
+/// The most characters the `brief` of a repo config may hold.
+pub const BRIEF_MAX_CHARS: usize = 4000;
+
 /// `compose:` section.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
@@ -28,6 +31,8 @@ pub struct RepoBox {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct RepoConfig {
+    /// Notes from the repo's author for the Box's agent.
+    pub brief: Option<String>,
     /// Setup commands.
     pub setup: Vec<String>,
     /// Teardown commands.
@@ -61,6 +66,7 @@ impl RepoConfig {
     #[must_use]
     pub fn changed_keys(&self, other: &Self) -> Vec<&'static str> {
         [
+            ("brief", self.brief != other.brief),
             ("setup", self.setup != other.setup),
             ("teardown", self.teardown != other.teardown),
             ("env", self.env != other.env),
@@ -79,6 +85,7 @@ impl RepoConfig {
 
     /// Checks values the types cannot.
     fn validate(&self) -> Result<(), ConfigError> {
+        self.validate_brief()?;
         non_blank("setup", &self.setup)?;
         non_blank("teardown", &self.teardown)?;
         self.validate_box_credentials()?;
@@ -88,6 +95,24 @@ impl RepoConfig {
             check::env_name(name)
                 .and_then(|()| check::not_reserved_env(name))
                 .map_err(|r| ConfigError::new(path, r))?;
+        }
+        Ok(())
+    }
+
+    /// Rejects a blank `brief` and one longer than [`BRIEF_MAX_CHARS`].
+    fn validate_brief(&self) -> Result<(), ConfigError> {
+        let Some(text) = &self.brief else {
+            return Ok(());
+        };
+        if text.trim().is_empty() {
+            return Err(ConfigError::new("brief", "brief must not be empty"));
+        }
+        let len = text.chars().count();
+        if len > BRIEF_MAX_CHARS {
+            return Err(ConfigError::new(
+                "brief",
+                format!("brief must be at most {BRIEF_MAX_CHARS} characters, found {len}"),
+            ));
         }
         Ok(())
     }

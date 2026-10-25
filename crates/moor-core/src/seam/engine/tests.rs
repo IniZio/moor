@@ -34,6 +34,8 @@ fn req() -> LaunchReq {
         resume: None,
         issue: None,
         setup_exit: None,
+        repo_notes: None,
+        shape: None,
         model: None,
         nonce: "abc".to_owned(),
         proxy: None,

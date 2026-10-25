@@ -226,3 +226,38 @@ fn changed_keys_names_cache() {
     let a = ok("cache: {presets: false}\n");
     assert_eq!(a.changed_keys(&ok("")), ["cache"]);
 }
+
+#[test]
+fn brief_is_notes_for_the_agent() {
+    let cfg = ok("brief: |\n  Start the emulator with `make emu`.\n");
+    assert_eq!(
+        cfg.brief.as_deref(),
+        Some("Start the emulator with `make emu`.\n")
+    );
+    assert_eq!(ok("brief:").brief, None);
+    assert_eq!(ok("setup: [make]").brief, None);
+}
+
+#[test]
+fn brief_longer_than_the_cap_is_rejected() {
+    let at_cap = "a".repeat(4000);
+    assert_eq!(ok(&format!("brief: {at_cap}")).brief, Some(at_cap));
+    let over = "a".repeat(4001);
+    rejects(
+        &format!("brief: {over}"),
+        "brief",
+        "at most 4000 characters",
+    );
+}
+
+#[test]
+fn a_blank_brief_is_rejected() {
+    rejects("brief: \"  \\n\"", "brief", "must not be empty");
+}
+
+#[test]
+fn a_changed_brief_is_a_changed_key() {
+    let (a, b) = (ok("brief: one"), ok("brief: two"));
+    assert_eq!(a.changed_keys(&b), ["brief"]);
+    assert!(a.changed_keys(&a).is_empty());
+}

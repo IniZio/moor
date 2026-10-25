@@ -2,6 +2,8 @@
 
 use std::fmt::Write;
 
+use moor_core::shape::Shape;
+
 /// What the brief says about one Box.
 pub(super) struct BriefInput<'a> {
     /// The Box name.
@@ -14,6 +16,10 @@ pub(super) struct BriefInput<'a> {
     pub(super) branch: &'a str,
     /// The exit code of a failed setup, if setup failed.
     pub(super) setup_exit: Option<i32>,
+    /// The `brief:` of the repo's `.moor.yaml`.
+    pub(super) repo_notes: Option<&'a str>,
+    /// The CPUs and memory the Box delivers, when they are recorded.
+    pub(super) shape: Option<Shape>,
 }
 
 /// The brief text for a Box.
@@ -26,6 +32,7 @@ pub(super) fn render(b: &BriefInput) -> String {
         (None, Some(i)) => _ = write!(out, "Goal: resolve the Issue below.\n\nIssue: {i}\n\n"),
         (None, None) => {}
     }
+    project_facts(b, &mut out);
     _ = write!(
         out,
         "You are running inside the machine, in the project working directory. Run builds, \
@@ -39,7 +46,9 @@ pub(super) fn render(b: &BriefInput) -> String {
          Write only in the working directory and your own tool state. If a tool the \
          project needs is missing, do not try to install it: say which tool is missing and that \
          it belongs in the repo's setup commands, then continue with what is available. \
-         Do not guess paths.\n\n\
+         Do not guess paths. Before you tell the person a tool or program is missing, check for \
+         it (for example `command -v <name>`, or the desktop's applications) and say what \
+         you checked.\n\n\
          The checkout is on branch `{branch}`. Commit your work with git, following the repo's \
          commit-msg hook and conventions. Push with \
          `git push origin HEAD:refs/heads/{branch}` when the repo's push guard \
@@ -54,12 +63,7 @@ pub(super) fn render(b: &BriefInput) -> String {
          choice is the owner's.\n\n"
     );
     if let Some(n) = b.setup_exit {
-        _ = write!(
-            out,
-            "Setup failed (exit {n}). Read the log at .moor/setup.log, fix the cause and \
-             re-run the setup commands. If you cannot, present what you found as a Report at \
-             `.moor/reports/<kind>.md`.\n\n"
-        );
+        setup_failed(n, &mut out);
     }
     out.push_str(
         "Reports are how you show work to a human: a spec, a checkpoint, a result. \
@@ -81,6 +85,36 @@ const PUBLISH: &str = "To show a human a file (a screenshot, a recording, a log)
     collected while you work, within about 30 seconds of the file being complete, and again \
     when you finish your turn. Name the files you published in your final message.\n\n";
 
+/// What the agent does about a failed setup.
+fn setup_failed(exit: i32, out: &mut String) {
+    _ = write!(
+        out,
+        "Setup failed (exit {exit}). Read the log at .moor/setup.log, fix the cause and \
+         re-run the setup commands. If you cannot, present what you found as a Report at \
+         `.moor/reports/<kind>.md`.\n\n"
+    );
+}
+
+/// The repo author's notes and what the Box delivers, when they are known.
+fn project_facts(b: &BriefInput, out: &mut String) {
+    if let Some(notes) = b.repo_notes {
+        _ = write!(
+            out,
+            "## This project's Box\n\nFrom the repo's `.moor.yaml`:\n\n{notes}\n\n"
+        );
+    }
+    if let Some(Shape { cpus, mem_mib }) = b.shape {
+        let tenths = mem_mib.saturating_mul(10) / 1024;
+        let plural = if cpus == 1 { "" } else { "s" };
+        _ = write!(
+            out,
+            "This Box has {cpus} vCPU{plural} and {}.{} GiB of memory.\n\n",
+            tenths / 10,
+            tenths % 10
+        );
+    }
+}
+
 /// How to show artifacts on a pull request; the limits are gh's own.
 const ATTACH: &str = "To show a published file on a pull request, attach it with gh: \
     `gh pr create --attach .moor/artifacts/<name>` or \
@@ -101,6 +135,8 @@ mod tests {
             issue,
             branch: "moor/t1",
             setup_exit: None,
+            repo_notes: None,
+            shape: None,
         }
     }
 
@@ -201,6 +237,58 @@ mod tests {
         assert!(out.contains("Setup failed (exit 3)"));
         assert!(out.contains(".moor/setup.log"));
         assert!(out.contains(".moor/reports/<kind>.md"));
+    }
+
+    #[test]
+    fn repo_notes_follow_the_goal_under_their_own_heading_verbatim() {
+        let mut b = input(Some("fix x"), None);
+        b.repo_notes = Some("Start the emulator:\n  make emu\n");
+        let out = render(&b);
+        let goal = out.find("Goal: fix x").unwrap();
+        let heading = "## This project's Box\n\nFrom the repo's `.moor.yaml`:\n\nStart the emulator:\n  make emu\n\n";
+        assert!(out.contains(heading), "{out}");
+        let head = out.find(heading).unwrap();
+        assert!(goal < head, "{out}");
+        assert!(head < out.find("You are running inside the machine").unwrap());
+    }
+
+    #[test]
+    fn no_repo_notes_no_heading() {
+        let out = render(&input(Some("g"), None));
+        assert!(!out.contains("## This project's Box"), "{out}");
+    }
+
+    #[test]
+    fn states_cpus_and_memory_when_known() {
+        let mut b = input(Some("g"), None);
+        b.shape = Some(Shape {
+            cpus: 4,
+            mem_mib: 7900,
+        });
+        let out = render(&b);
+        assert!(
+            out.contains("This Box has 4 vCPUs and 7.7 GiB of memory."),
+            "{out}"
+        );
+        b.shape = Some(Shape {
+            cpus: 1,
+            mem_mib: 2048,
+        });
+        assert!(render(&b).contains("1 vCPU and 2.0 GiB of memory."));
+        assert!(!render(&input(Some("g"), None)).contains("vCPU"));
+    }
+
+    #[test]
+    fn says_to_check_before_calling_a_tool_missing() {
+        let out = render(&input(Some("g"), None));
+        assert!(
+            out.contains(
+                "Before you tell the person a tool or program is missing, check for it \
+                 (for example `command -v <name>`, or the desktop's applications) and say what \
+                 you checked."
+            ),
+            "{out}"
+        );
     }
 
     #[test]

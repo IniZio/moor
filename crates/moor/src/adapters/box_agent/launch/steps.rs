@@ -145,6 +145,8 @@ impl Launch<'_> {
             issue: req.issue.as_deref(),
             branch: &req.branch,
             setup_exit: req.setup_exit,
+            repo_notes: req.repo_notes.as_deref(),
+            shape: req.shape,
         });
         let path = BoxPath::under(cred.as_str(), "brief.md").map_err(|e| fail("brief", &e))?;
         let bytes = brief.into_bytes();
