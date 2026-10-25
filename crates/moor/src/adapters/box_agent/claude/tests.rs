@@ -364,3 +364,11 @@ fn transcript_script_fails_when_the_project_dir_is_unreadable() {
         assert_ne!(out.status.code(), Some(0), "{out:?}");
     }
 }
+
+#[test]
+fn claudes_folder_trust_screen_is_a_first_run_prompt() {
+    let screen = include_str!("fixtures/folder_trust.txt");
+    let m = Claude.first_run_prompt(screen).expect("a first-run prompt");
+    assert_eq!(m.prompt, FirstRunPrompt::FolderTrust);
+    assert_eq!(m.line, "Yes, I trust this folder");
+}

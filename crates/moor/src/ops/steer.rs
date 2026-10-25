@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use moor_core::activity::AgentState;
+use moor_core::activity::{Activity, AgentState, Source};
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
@@ -157,7 +157,11 @@ fn attempt(
     };
     let sref = session_ref(&row, session.session_ref.clone(), session.pane.clone())
         .ok_or_else(|| no_agent(name))?;
-    let before = state_of(cx, store, &row)?;
+    let before = activity_of(cx, store, &row)?;
+    if before.as_ref().is_some_and(|a| a.source == Source::FirstRun) {
+        return Err(first_run_refusal(name));
+    }
+    let before = before.map(|a| a.state);
     if let (Some(AgentState::Exited { code }), false) = (&before, is_exit_req(req)) {
         return Ok(Attempt::Gone(Gone::new(name, Some(session), Some(*code))));
     }
@@ -226,8 +230,24 @@ fn relaunch_hint(name: &str) -> String {
 
 /// The agent's state now; none when the Box has no agent to read.
 fn state_of(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Option<AgentState>, CommandError> {
+    Ok(activity_of(cx, store, row)?.map(|a| a.state))
+}
+
+/// The agent's activity now; none when the Box has no agent to read.
+fn activity_of(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Option<Activity>, CommandError> {
     let reading = activity::read(cx, store, row, cx.clock().now(), activity::PROBE_DEADLINE)?;
-    Ok(reading.activity.map(|a| a.state))
+    Ok(reading.activity)
+}
+
+/// The refusal for an agent stopped at a first-run screen: a key typed there may pick an option
+/// that ends the agent, so the Box is started again instead.
+fn first_run_refusal(name: &str) -> CommandError {
+    CommandError::new(
+        ErrorKind::Refused,
+        format!(
+            "the agent of {name} stopped at a first-run screen that moor's pre-seed should have skipped; this is a moor bug; end the Box with `moor end {name}` and start it again"
+        ),
+    )
 }
 
 /// Whether `steer` asks the agent to exit.

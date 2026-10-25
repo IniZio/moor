@@ -288,7 +288,7 @@ fn from_record(
         HookKind::Idle if background_running(tail) => Some(act(AgentState::Working, Source::Pane)),
         HookKind::Idle => Some(act(AgentState::Idle, source)),
         HookKind::Starting { .. } => first_run
-            .map(|m| first_run::first_run_wait(m, tail))
+            .map(first_run::first_run_wait)
             .or_else(|| young.then(|| act(AgentState::Working, source))),
     }
 }

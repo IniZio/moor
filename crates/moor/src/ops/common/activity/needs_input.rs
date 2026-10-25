@@ -13,7 +13,8 @@ use crate::store::{BoxRow, Store};
 /// A hook-reported wait gets one event per hook record, so a `moor run` meanwhile does not end
 /// it. A pane-read wait ends when the Box turns busy or working, so its event is skipped while
 /// the latest such marker is a `needs_input` with the same question and options. It is written
-/// before any state step so a refused step cannot lose it.
+/// before any state step so a refused step cannot lose it. A first-run stop gets none: the start
+/// reports it, and typing into such a screen is never how moor gets past it.
 pub(super) fn note_needs_input(
     store: &Store,
     row: &BoxRow,
@@ -26,6 +27,9 @@ pub(super) fn note_needs_input(
     else {
         return Ok(());
     };
+    if *source == Source::FirstRun {
+        return Ok(());
+    }
     let hooked = matches!(source, Source::Hooks | Source::HooksCached);
     let cache = if hooked { store.hook(row.id)? } else { None };
     if cache.as_ref().is_some_and(|c| c.reported) {
