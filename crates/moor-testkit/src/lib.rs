@@ -1,7 +1,7 @@
 //! Helpers shared by the test suites of the other crates.
 
 use std::io::{self, Write as _};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 mod egress;
@@ -37,6 +37,31 @@ pub fn write_executable(path: &Path, contents: impl AsRef<[u8]>) -> io::Result<(
     }
 }
 
+/// The longest base for [`short_tempdir`]: a front's socket sits under it at
+/// `state/fronts/<name>.sock`, which must fit a Unix socket path (108 bytes on Linux).
+const SHORT_BASE_MAX: usize = 24;
+
+/// The base [`short_tempdir`] uses: `TMPDIR` when it is short and not under `/tmp`, else
+/// `/var/tmp`.
+fn short_base() -> PathBuf {
+    let tmp = std::env::temp_dir();
+    if tmp.starts_with("/tmp") || tmp.as_os_str().len() > SHORT_BASE_MAX {
+        PathBuf::from("/var/tmp")
+    } else {
+        tmp
+    }
+}
+
+/// Makes a fresh dir named `<prefix>-<random>` with a short path outside `/tmp`, for state that
+/// holds a Unix socket and that a front must be able to see: a front's own `/tmp` hides a dir
+/// under `/tmp`. The path never depends on the target dir or the checkout, whose lengths
+/// vary.
+pub fn short_tempdir(prefix: &str) -> io::Result<tempfile::TempDir> {
+    tempfile::Builder::new()
+        .prefix(&format!("{prefix}-"))
+        .tempdir_in(short_base())
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -65,6 +90,16 @@ mod tests {
         );
         let out = Command::new(&path).output().unwrap();
         assert_eq!(out.stdout, b"hi\n");
+    }
+
+    #[test]
+    fn a_short_tempdir_is_short_and_outside_tmp() {
+        let dir = short_tempdir("probe").unwrap();
+        let path = dir.path();
+        assert!(!path.starts_with("/tmp"), "{}", path.display());
+        assert!(path.is_dir());
+        let socket = path.join("state/fronts/a-front-with-a-long-name.sock");
+        assert!(socket.as_os_str().len() < 90, "{}", socket.display());
     }
 
     #[test]

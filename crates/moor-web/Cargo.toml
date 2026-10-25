@@ -24,6 +24,7 @@ signal-hook = "=0.4.4"
 
 [dev-dependencies]
 tempfile = "3"
+moor-testkit = { path = "../moor-testkit" }
 rustix = { version = "1", features = ["process"] }
 
 [lints.rust]

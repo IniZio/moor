@@ -353,10 +353,7 @@ impl Rig {
     /// returned dir, outside /tmp, which the front sees as its own tmp dir. The config and token
     /// files are copied there: the front sees nothing of the rig's root.
     pub(crate) fn real_controller_running_the_daemon(&self) -> (RealController, tempfile::TempDir) {
-        let dir = tempfile::Builder::new()
-            .prefix("ms")
-            .tempdir_in(env!("CARGO_TARGET_TMPDIR"))
-            .unwrap();
+        let dir = moor_testkit::short_tempdir("ms").unwrap();
         let state = dir.path().to_path_buf();
         secret_file(&state.join("app.token"), APP_TOKEN);
         secret_file(&state.join("bot.token"), BOT_TOKEN);
