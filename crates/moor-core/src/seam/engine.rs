@@ -244,6 +244,14 @@ pub trait Engine: Send + Sync {
     /// [`EngineError::Transcript`] names the step that failed; [`EngineError::NothingToArchive`]
     /// when the agent left no transcript.
     fn transcript(&self, s: &SessionRef, dest: &Path) -> Result<(), EngineError>;
+
+    /// Ends the agent of session `s` where it runs, for an agent that outlives its pane.
+    ///
+    /// # Errors
+    /// [`EngineError::Failed`] when the Box could not be told to end it.
+    fn stop(&self, _s: &SessionRef) -> Result<(), EngineError> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]

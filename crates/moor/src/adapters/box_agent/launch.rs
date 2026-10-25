@@ -246,11 +246,8 @@ impl Launch<'_> {
             (&lines, &env, &exec.unset),
         );
         let script = script.map_err(|e| fail("script", &e))?;
-        let line = format!(
-            "{} {}; c=$?; printf '\\r\\033[K'; echo \"moor: agent exited $c\"",
-            command_line(connect),
-            quote(&command_line(&[script]))
-        );
+        let line = detach::pane_line(connect, ctx.workdir.as_str(), &script)
+            .map_err(|e| fail("script", &e))?;
         surface
             .open_pane(
                 &req.workspace,
@@ -362,6 +359,7 @@ fn remove_cred(
     }
 }
 
+pub(super) mod detach;
 mod gh;
 mod install;
 mod steps;

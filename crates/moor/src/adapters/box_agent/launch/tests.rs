@@ -212,21 +212,29 @@ fn unquote(q: &str) -> String {
 /// The command the Box is asked to run.
 fn remote_of(line: &str) -> String {
     let rest = line.strip_prefix("'ssh' '-t' 'box-1' ").unwrap();
-    let quoted = rest
-        .strip_suffix(r#"; c=$?; printf '\r\033[K'; echo "moor: agent exited $c""#)
-        .unwrap();
-    unquote(quoted)
+    unquote(rest.split_once("; c=$?;").unwrap().0)
 }
 
+/// The agent script the Box's tmux session runs under `sh -c`.
 fn script_of(line: &str) -> String {
-    unquote(remote_of(line).strip_prefix("sh -c ").unwrap())
+    let remote = remote_of(line);
+    let session = remote.split_once("-x 200 -y 50 ").unwrap().1;
+    let inner = unquote(
+        session
+            .rsplit_once(" || exit 1; tmux set-option")
+            .unwrap()
+            .0,
+    );
+    let script = inner.strip_prefix("sh -c ").unwrap();
+    unquote(script.rsplit_once("; echo $? > ").unwrap().0)
 }
 
 #[test]
 fn the_box_runs_the_script_under_sh_not_the_login_shell() {
     let (_, s, out) = launch(FakeDriver::new(), FakeSurface::new());
     out.unwrap();
-    assert!(remote_of(&pane_line(&s)).starts_with("sh -c '"));
+    let remote = remote_of(&pane_line(&s));
+    assert!(remote.contains("tmux new-session -d -s moor-agent -x 200 -y 50 'sh -c '"));
 }
 
 #[test]

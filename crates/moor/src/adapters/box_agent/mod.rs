@@ -115,4 +115,8 @@ impl Engine for BoxAgent {
     fn transcript(&self, s: &SessionRef, dest: &Path) -> Result<(), EngineError> {
         transcript::save(self.driver.as_ref(), self.profile.as_ref(), s, dest)
     }
+
+    fn stop(&self, s: &SessionRef) -> Result<(), EngineError> {
+        launch::detach::stop(self.driver.as_ref(), s)
+    }
 }
