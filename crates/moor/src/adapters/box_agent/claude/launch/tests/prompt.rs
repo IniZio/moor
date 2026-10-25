@@ -5,7 +5,7 @@ fn argv_passes_caller_text_verbatim_as_the_prompt() {
     let t = TempDir::new().unwrap();
     let text = "hello 'quoted' $x";
     let c = LaunchCtx {
-        mcp: Default::default(),
+        mcp: std::collections::BTreeMap::new(),
         prompt: LaunchPrompt::Text(text.into()),
         ..ctx(t.path())
     };
@@ -16,7 +16,7 @@ fn argv_passes_caller_text_verbatim_as_the_prompt() {
 fn argv_keeps_a_dash_led_text_out_of_the_option_parser() {
     let t = TempDir::new().unwrap();
     let c = LaunchCtx {
-        mcp: Default::default(),
+        mcp: std::collections::BTreeMap::new(),
         model: Some("opus".into()),
         prompt: LaunchPrompt::Text("-rf hello".into()),
         ..proxied(t.path())
@@ -38,7 +38,7 @@ fn argv_keeps_a_dash_led_text_out_of_the_option_parser() {
 fn argv_has_no_prompt_when_the_launch_asks_for_none() {
     let t = TempDir::new().unwrap();
     let c = LaunchCtx {
-        mcp: Default::default(),
+        mcp: std::collections::BTreeMap::new(),
         prompt: LaunchPrompt::None,
         ..proxied(t.path())
     };
@@ -47,7 +47,7 @@ fn argv_has_no_prompt_when_the_launch_asks_for_none() {
         strings(&["--permission-mode", "bypassPermissions"])
     );
     let bare = LaunchCtx {
-        mcp: Default::default(),
+        mcp: std::collections::BTreeMap::new(),
         prompt: LaunchPrompt::None,
         ..ctx(t.path())
     };

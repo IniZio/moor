@@ -77,7 +77,7 @@ fn counts_are_kept_per_session() {
 
 fn launch_req() -> LaunchReq {
     LaunchReq {
-        mcp: Default::default(),
+        mcp: std::collections::BTreeMap::new(),
         id: BoxId::new(1),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work/box-1", "x").unwrap(),

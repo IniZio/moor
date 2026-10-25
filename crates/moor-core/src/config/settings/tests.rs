@@ -104,7 +104,7 @@ fn size_decision_58() {
 #[test]
 fn credentials_are_the_box_credentials_and_mcp_refs() {
     let s = resolve(
-        "mcp_servers: {m: {url: 'http://h/${tok}'}}\nbox_credentials: [used]",
+        "mcp_servers: {m: {url: 'https://h.example', headers: {A: '${tok}'}}}\nbox_credentials: [used]",
         Some("box_credentials: [boxc]"),
         &Flags::default(),
     );

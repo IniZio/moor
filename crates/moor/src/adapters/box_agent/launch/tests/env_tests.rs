@@ -121,7 +121,7 @@ fn repo_env_is_exported_for_the_agent() {
             ..proxy_addr()
         };
         LaunchReq {
-            mcp: Default::default(),
+            mcp: std::collections::BTreeMap::new(),
             proxy: Some(Arc::new(addr)),
             ..req_with_proxy(s)
         }
