@@ -15,6 +15,8 @@ pub(crate) enum Call {
         goal: String,
         /// The repo as given, when given.
         repo: Option<String>,
+        /// The branch or ref to start from, when given.
+        base: Option<String>,
     },
     /// `steer_box`.
     SteerBox {
@@ -81,6 +83,7 @@ impl Call {
             "start_box" => Ok(Self::StartBox {
                 goal: text("goal")?,
                 repo: text("repo").ok(),
+                base: text("base").ok(),
             }),
             "steer_box" => Ok(Self::SteerBox {
                 box_name: boxed()?,

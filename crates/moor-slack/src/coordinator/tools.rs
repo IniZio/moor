@@ -61,7 +61,7 @@ pub(crate) struct Scope<'a> {
 pub(crate) fn run(scope: &mut Scope<'_>, call: &Call) -> Reply {
     let ran = match call {
         Call::ListBoxes => list(scope),
-        Call::StartBox { goal, repo } => start(scope, goal, repo.as_deref()),
+        Call::StartBox { goal, repo, base } => start(scope, goal, repo.as_deref(), base.as_deref()),
         Call::SteerBox { box_name, text } => steer(scope, box_name, text),
         Call::CloseBox { box_name } => close(scope, box_name),
         Call::AnswerBox {

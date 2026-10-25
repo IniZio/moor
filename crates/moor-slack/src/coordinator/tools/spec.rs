@@ -30,7 +30,8 @@ pub(crate) const SPECS: [Spec; 10] = [
                 "type": "object",
                 "properties": {
                     "goal": {"type": "string", "description": "What the Box's agent should do, in plain words."},
-                    "repo": {"type": "string", "description": "One of the channel's repos as owner/name; leave it out for the channel's default."}
+                    "repo": {"type": "string", "description": "One of the channel's repos as owner/name; leave it out for the channel's default."},
+                    "base": {"type": "string", "description": "A branch or ref to start from; leave it out for the repo's default branch."}
                 },
                 "required": ["goal"],
                 "additionalProperties": false

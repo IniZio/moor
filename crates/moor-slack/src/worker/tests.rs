@@ -72,6 +72,7 @@ fn started(db: &Db, event_id: &str, thread: &str) -> SlackBox {
             .unwrap(),
         repo: "acme/api".into(),
         goal: "fix the flaky test".into(),
+        base: None,
         requested_by: "U1".into(),
         parent: Some(SessionId::new(100)),
         state: BoxState::Starting,
@@ -488,6 +489,7 @@ fn a_lost_start_is_asked_about_on_a_timer_and_holds_up_no_other_thread() {
 }
 
 mod answer;
+mod base;
 mod close;
 mod post_first;
 mod start_notes;
