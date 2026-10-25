@@ -49,6 +49,8 @@ struct Fold {
     notes: HashMap<BoxId, Vec<(i64, lifecycle::Note)>>,
     /// Artifact versions each Box published that are not yet known to be shown.
     published: HashMap<BoxId, Vec<ArtifactView>>,
+    /// The name the controller gives each Box.
+    names: HashMap<BoxId, String>,
     /// Whether this connection's backlog is folded.
     caught_up: bool,
 }
@@ -64,6 +66,9 @@ impl Fold {
         let Some(id) = event.box_id else {
             return;
         };
+        if let Some(name) = &event.box_name {
+            self.names.insert(id, name.clone());
+        }
         self.views
             .entry(id)
             .or_default()
@@ -176,6 +181,7 @@ impl Feed {
             let Some(boxes) = owned.remove(identity) else {
                 continue;
             };
+            let boxes = self.current(db, fold, boxes);
             for step in planner.plan(&boxes, &fold.views, at, (self.clock)()) {
                 self.send_status(db, &step);
                 planner.record(&step, at);
@@ -197,6 +203,37 @@ impl Feed {
                 }
             }
         }
+    }
+
+    /// The rows of `boxes` whose id the controller gives no other Box. A recreated controller
+    /// store hands its ids out again, so an older row can share its id with a different Box.
+    /// Such a bound row is marked gone, like a Box the controller no longer has.
+    fn current(&self, db: &Db, fold: &Fold, boxes: Vec<FedBox>) -> Vec<FedBox> {
+        let mut current = Vec::with_capacity(boxes.len());
+        for fed in boxes {
+            let row = &fed.boxed;
+            let id = prompts::box_id(&row.state);
+            let Some((id, named)) = id.and_then(|id| Some((id, fold.names.get(&id)?))) else {
+                current.push(fed);
+                continue;
+            };
+            if named == row.box_name.as_str() {
+                current.push(fed);
+                continue;
+            }
+            if !matches!(row.state, BoxState::Bound { .. }) {
+                continue;
+            }
+            let name = row.box_name.as_str();
+            match db.mark_gone(&row.box_name) {
+                Ok(()) => (self.log)(&format!(
+                    "feed: Box {name} is gone; the controller's Box {} is now {named}",
+                    id.get()
+                )),
+                Err(e) => (self.log)(&format!("slack.db: {e}")),
+            }
+        }
+        current
     }
 
     /// Posts or edits one status message and records what it shows.
