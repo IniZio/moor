@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use moor_core::activity::{HookRead, PaneObs, PaneRead, PaneStatus, Probes};
-use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::engine::{EngineError, SessionRef, Steer};
 use moor_core::seam::surface::{PaneRef, SurfaceError};
@@ -205,4 +205,59 @@ fn put_to_sleep_ended(f: &Fx) {
         .lifecycle(moor_core::domain::box_state::BoxLifecycleInput::Sleep { auto: false })
         .box_input(moor_core::domain::boxes::BoxInput::Sleep);
     f.cx.store().unwrap().apply(d).unwrap();
+}
+
+/// Records `n` automatic relaunches of the agent of Box `f`.
+fn record_relaunches(f: &Fx, n: usize) {
+    for _ in 0..n {
+        let event = ExtraEvent::Relaunched {
+            old_pane: None,
+            new_pane: None,
+            goal: None,
+            cause: Some("wake".to_owned()),
+        };
+        f.cx.store()
+            .unwrap()
+            .apply(Decision::new(f.id).event(event))
+            .unwrap();
+    }
+}
+
+fn kinds(f: &Fx, kind: &str) -> Vec<serde_json::Value> {
+    let rows = f.cx.store().unwrap().events(f.id, 100).unwrap();
+    rows.into_iter()
+        .filter(|e| e.kind == kind)
+        .map(|e| e.payload)
+        .collect()
+}
+
+#[test]
+fn a_fourth_automatic_relaunch_within_ten_minutes_is_refused_and_recorded_once() {
+    let engine = FakeEngine::new().steer_result(Err(EngineError::PaneGone));
+    let f = resumable(engine);
+    record_relaunches(&f, 3);
+    f.cx.clock().sleep(Duration::from_secs(90));
+    let err = run(&f.cx, &text("hi")).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused);
+    let message = err.error.to_string();
+    assert!(
+        message.contains("3 times in the last 10 minutes"),
+        "{message}"
+    );
+    assert!(f.engine.launches().is_empty(), "no agent was launched");
+    assert_eq!(
+        kinds(&f, "relaunch_capped"),
+        [serde_json::json!({"count": 3, "window_secs": 600})]
+    );
+}
+
+#[test]
+fn relaunches_older_than_ten_minutes_do_not_count() {
+    let engine = FakeEngine::new().steer_result(Err(EngineError::PaneGone));
+    let f = resumable(engine);
+    record_relaunches(&f, 3);
+    f.cx.clock().sleep(Duration::from_mins(11));
+    run(&f.cx, &text("hi")).unwrap();
+    assert_eq!(f.engine.launches().len(), 1);
+    assert!(kinds(&f, "relaunch_capped").is_empty());
 }

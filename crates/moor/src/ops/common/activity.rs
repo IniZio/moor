@@ -15,6 +15,8 @@ use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::PaneRef;
 use moor_core::view::LaunchFailure;
 use moor_core::{BoxId, Warning};
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -68,6 +70,8 @@ pub(crate) struct Reading {
     pub(crate) session: Option<i64>,
     /// Why the agent never launched; the Box has no session then.
     pub(crate) launch_failure: Option<LaunchFailure>,
+    /// The `box.launch_timeout`, in seconds, that a failed launch has outlasted.
+    pub(crate) launch_overdue: Option<u64>,
     /// The agent's own session id, from the hook seen or the Box.
     agent_session: Option<String>,
     /// The pane text this reading observed; none when the pane gave no observation.
@@ -98,21 +102,28 @@ impl Reading {
             run_in_flight,
             session: None,
             launch_failure: None,
+            launch_overdue: None,
             agent_session: None,
             pane_text: None,
             said: None,
         }
     }
 
-    /// No agent because its launch failed; the Box is never quiet for that.
-    const fn launch_failed(run_in_flight: bool, failure: LaunchFailure) -> Self {
+    /// No agent because its launch failed; the Box is not quiet for that until the failure has
+    /// outlasted `box.launch_timeout`, which `overdue` names in seconds.
+    const fn launch_failed(
+        run_in_flight: bool,
+        failure: LaunchFailure,
+        overdue: Option<u64>,
+    ) -> Self {
         Self {
             activity: None,
             pane: PaneLiveness::Gone,
-            may_quiet: false,
+            may_quiet: overdue.is_some() && !run_in_flight,
             run_in_flight,
             session: None,
             launch_failure: Some(failure),
+            launch_overdue: overdue,
             agent_session: None,
             pane_text: None,
             said: None,
@@ -141,7 +152,10 @@ pub(crate) fn read(
     let Some(session) = store.live_session(row.id)? else {
         return Ok(row.launch_failure.clone().map_or_else(
             || Reading::none(in_flight),
-            |f| Reading::launch_failed(in_flight, f),
+            |f| {
+                let overdue = launch_overdue(cx, &f, now);
+                Reading::launch_failed(in_flight, f, overdue)
+            },
         ));
     };
     let Some(sref) = session_ref(row, session.session_ref, session.pane) else {
@@ -179,10 +193,20 @@ pub(crate) fn read(
         run_in_flight: in_flight,
         session: Some(session.id),
         launch_failure: None,
+        launch_overdue: None,
         agent_session,
         pane_text,
         said,
     })
+}
+
+/// The `box.launch_timeout` in seconds when `failure` is older than it at `now`.
+fn launch_overdue(cx: &Cx, failure: &LaunchFailure, now: Ts) -> Option<u64> {
+    let limit = cx.config().box_.launch_timeout();
+    let at = OffsetDateTime::parse(&failure.at, &Rfc3339).ok()?;
+    let failed_ms = i64::try_from(at.unix_timestamp_nanos() / 1_000_000).ok()?;
+    let age = u128::try_from(now.as_millis().saturating_sub(failed_ms)).ok()?;
+    (age >= limit.as_millis()).then(|| limit.as_secs())
 }
 
 /// The cached hook report of Box `id`; an undecodable row is dropped with a warning.
@@ -271,10 +295,36 @@ pub(crate) fn settle(
         let text = text.clone();
         store.apply(Decision::new(row.id).event(ExtraEvent::AgentSaid { text }))?;
     }
-    match store.apply(Decision::new(row.id).session(input)) {
-        Ok(_) | Err(StoreError::Illegal(_)) => Ok(()),
+    let mut decision = Decision::new(row.id).session(input.clone());
+    let timed_out = reading
+        .launch_overdue
+        .filter(|_| input == SessionInput::AgentQuiet);
+    if let Some(after_secs) = timed_out {
+        decision = decision.event(ExtraEvent::LaunchTimedOut { after_secs });
+    }
+    match store.apply(decision) {
+        Ok(_) => {
+            if let Some(after_secs) = timed_out {
+                warn_launch_timed_out(cx, row, after_secs);
+            }
+            Ok(())
+        }
+        Err(StoreError::Illegal(_)) => Ok(()),
         Err(e) => Err(e.into()),
     }
+}
+
+/// Warns that the agent of `row` did not start in time and how to start it again.
+fn warn_launch_timed_out(cx: &Cx, row: &BoxRow, after_secs: u64) {
+    cx.warn(Warning {
+        code: "launch_timed_out".to_owned(),
+        message: format!(
+            "the agent of {} did not start within {}s, so the Box now counts as quiet and may sleep; start it again with `moor start {} --resume`",
+            row.name.as_str(),
+            after_secs,
+            row.name.as_str()
+        ),
+    });
 }
 
 /// Ends the current session of an agent seen exited, once its transcript is saved.

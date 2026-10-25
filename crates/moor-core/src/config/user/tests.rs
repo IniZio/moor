@@ -440,3 +440,22 @@ fn cache_volumes_are_on_per_provider_unless_turned_off() {
     assert!(!cfg.drivers.get("b").unwrap().cache_volumes());
     assert!(DriverConfig::default().cache_volumes());
 }
+
+#[test]
+fn launch_timeout_defaults_to_three_minutes_and_parses() {
+    assert_eq!(ok("").box_.launch_timeout(), Duration::from_mins(3));
+    assert_eq!(
+        ok("box: {launch_timeout: 1m}").box_.launch_timeout(),
+        Duration::from_mins(1)
+    );
+    assert_eq!(
+        ok("box: {launch_timeout: 90s}").box_.launch_timeout(),
+        Duration::from_secs(90)
+    );
+}
+
+#[test]
+fn a_launch_timeout_that_is_not_a_duration_is_refused() {
+    let err = parse_user("user.yaml", "box: {launch_timeout: soon}").unwrap_err();
+    assert!(err.to_string().contains("box.launch_timeout"), "{err}");
+}

@@ -41,6 +41,18 @@ pub enum ExtraEvent {
         /// What went wrong.
         message: String,
     },
+    /// The agent did not start within `box.launch_timeout`.
+    LaunchTimedOut {
+        /// The configured limit, in seconds.
+        after_secs: u64,
+    },
+    /// moor refused another automatic agent relaunch.
+    RelaunchCapped {
+        /// Relaunches within the window.
+        count: usize,
+        /// The window, in seconds.
+        window_secs: u64,
+    },
     /// The agent was started again after its pane ended.
     Relaunched {
         /// The pane of the session that ended.
@@ -190,6 +202,10 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::Copied { from, to } => Self::Copied { from, to },
             ExtraEvent::SessionStarted { session } => Self::SessionStarted { session },
             ExtraEvent::SessionFailed { step, message } => Self::SessionFailed { step, message },
+            ExtraEvent::LaunchTimedOut { after_secs } => Self::LaunchTimedOut { after_secs },
+            ExtraEvent::RelaunchCapped { count, window_secs } => {
+                Self::RelaunchCapped { count, window_secs }
+            }
             ExtraEvent::Relaunched {
                 old_pane,
                 new_pane,
@@ -279,6 +295,10 @@ impl TryFrom<Event> for ExtraEvent {
             Event::Copied { from, to } => Ok(Self::Copied { from, to }),
             Event::SessionStarted { session } => Ok(Self::SessionStarted { session }),
             Event::SessionFailed { step, message } => Ok(Self::SessionFailed { step, message }),
+            Event::LaunchTimedOut { after_secs } => Ok(Self::LaunchTimedOut { after_secs }),
+            Event::RelaunchCapped { count, window_secs } => {
+                Ok(Self::RelaunchCapped { count, window_secs })
+            }
             Event::Relaunched {
                 old_pane,
                 new_pane,

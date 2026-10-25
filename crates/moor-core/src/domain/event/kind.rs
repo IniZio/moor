@@ -34,6 +34,8 @@ impl Event {
             Self::SessionStarted { .. } => "session_started",
             Self::SessionEnded { .. } => "session_ended",
             Self::SessionFailed { .. } => "session_failed",
+            Self::LaunchTimedOut { .. } => "launch_timed_out",
+            Self::RelaunchCapped { .. } => "relaunch_capped",
             Self::Relaunched { .. } => "relaunched",
             Self::Checked { .. } => "checked",
             Self::RunStarted { .. } => "run_started",

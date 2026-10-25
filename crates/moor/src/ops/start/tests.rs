@@ -30,6 +30,7 @@ mod dotfiles;
 mod exited_start;
 mod hold;
 mod identity;
+mod launch_deadline;
 mod launch_skipped;
 mod launch_warnings;
 mod lease;
