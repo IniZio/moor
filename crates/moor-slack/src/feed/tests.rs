@@ -127,6 +127,8 @@ fn a_closing_box_leaves_its_closed_line_to_the_close_path() {
     assert!(feed.lines(&db, &mut fold, &row), "nothing to post yet");
     assert!(fold.closed.contains(&ID), "kept for when the close settles");
     assert!(!db.has_notice(&row, BoxEvent::Closed, None).unwrap());
+    let closing = db.closing().unwrap();
+    assert_eq!(closing.len(), 1, "the close path settles it: {closing:?}");
 }
 
 #[test]

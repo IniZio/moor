@@ -313,6 +313,38 @@ fn a_box_closed_elsewhere_gets_its_final_status_a_closed_line_and_a_notice() {
     assert_eq!(last, Some(format!("[moor] Box `{BOX_NAME}` closed.")));
 }
 
+#[test]
+fn a_box_closed_elsewhere_is_gone_once_so_its_thread_may_start_another() {
+    let (rig, controller, bin, _post) = thread_with_status();
+    controller.emit(BOX_ID, BOX_NAME, "closed", json!({"from": "cli"}));
+    let line = format!("Box `{BOX_NAME}` closed.");
+    rig.wait_post(&line);
+    rig.wait_box_state(BOX_NAME, "gone");
+    let next = ("start_box", json!({"goal": "and the next thing"}));
+    Rig::tool_calls(&bin, None, &[next]);
+    reply(&rig, 2, USER, "start another");
+    let second = format!("{}2", BOX_NAME.strip_suffix('1').unwrap());
+    rig.wait_box_state(&second, "bound");
+    let posts = rig.slack.posts();
+    let closed_lines = posts.iter().filter(|p| p.text == line).count();
+    assert_eq!(closed_lines, 1, "{posts:?}");
+}
+
+#[test]
+fn a_close_of_another_box_with_the_rows_id_posts_no_closed_line_here() {
+    let (rig, controller, _bin, _post) = thread_with_status();
+    controller.emit(BOX_ID, "another-name", "closed", json!({"from": "cli"}));
+    rig.wait_box_state(BOX_NAME, "gone");
+    std::thread::sleep(QUIET);
+    let posts = rig.slack.posts();
+    assert!(
+        posts.iter().all(|p| !p.text.ends_with("closed.")),
+        "{posts:?}"
+    );
+    let notes = notices(&rig);
+    assert!(notes.iter().all(|n| !n.ends_with("closed.")), "{notes:?}");
+}
+
 /// How many coordinator turns the front has taken; the mention that opened the thread is
 /// the first.
 fn turns(rig: &Rig) -> i64 {

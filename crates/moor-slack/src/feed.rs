@@ -267,9 +267,10 @@ impl Feed {
         }
     }
 
-    /// Posts the finished and closed lines of `boxed` that are not yet posted. A Box that is
-    /// closing gets its closed line from the worker's close path. Returns false when a line
-    /// could not be posted or recorded.
+    /// Posts the finished and closed lines of `boxed` that are not yet posted, and marks a
+    /// bound Box the controller closed gone. A Box that is closing gets its closed line and
+    /// its `gone` from the worker's close path. Returns false when a line could not be posted
+    /// or recorded.
     fn lines(&self, db: &Db, fold: &mut Fold, boxed: &SlackBox) -> bool {
         let (BoxState::Bound { box_id, .. }
         | BoxState::Closing { box_id, .. }
@@ -291,6 +292,10 @@ impl Feed {
         if fold.closed.contains(&box_id) && !matches!(boxed.state, BoxState::Closing { .. }) {
             let queue = || db.notice(boxed, BoxEvent::Closed, None);
             if !self.line(db, boxed, (BoxEvent::Closed, None), &closed(name), queue) {
+                return false;
+            }
+            if let Err(e) = db.mark_gone(name) {
+                (self.log)(&format!("slack.db: {e}"));
                 return false;
             }
             fold.closed.remove(&box_id);
