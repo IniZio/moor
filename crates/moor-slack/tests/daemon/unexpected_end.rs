@@ -36,8 +36,8 @@ fn an_agent_that_exited_with_255_posts_the_stop_line_and_never_the_finished_line
         "transcript_skipped",
         json!({ "reason": "nothing to archive", "trigger": "exit" }),
     );
-    controller.emit(BOX_ID, BOX_NAME, "idled", json!({}));
     rig.wait_post(&stopped_line("exit 255", false));
+    controller.emit(BOX_ID, BOX_NAME, "idled", json!({}));
     rig.slack
         .wait_until("the report turn", |_, _| turns(&rig) == 2);
     wait_turns_posted(&rig);
@@ -94,4 +94,80 @@ fn a_failed_transcript_save_adds_its_suffix_whichever_event_comes_first() {
     let reports = notices(&rig);
     let want = format!("[moor] {}", stopped_line("exit 255", true));
     assert!(reports.contains(&want), "{reports:?}");
+}
+
+fn stop_posts(rig: &super::support::Rig) -> Vec<String> {
+    let posts = rig.slack.posts();
+    let texts = posts.iter().map(|p| p.text.clone());
+    texts
+        .filter(|t| t.contains("stopped unexpectedly") || t.contains("stopped answering"))
+        .collect()
+}
+
+#[test]
+fn a_stop_is_posted_when_the_session_ends_without_waiting_for_an_idle() {
+    let (rig, controller, _bin, _post) = thread_with_status();
+    controller.emit(BOX_ID, BOX_NAME, "session_ended", ended(137));
+    rig.wait_post(&stopped_line("exit 137", false));
+}
+
+#[test]
+fn a_stop_that_a_later_session_superseded_is_never_posted() {
+    let (mut rig, controller, _bin, _post) = thread_with_status();
+    let n = watches(&controller);
+    rig.kill_daemon();
+    controller.emit(BOX_ID, BOX_NAME, "session_ended", ended(137));
+    controller.emit(
+        BOX_ID,
+        BOX_NAME,
+        "relaunched",
+        json!({ "old_pane": "p1", "new_pane": "p2", "goal": null, "cause": "steer" }),
+    );
+    controller.emit(
+        BOX_ID,
+        BOX_NAME,
+        "session_started",
+        json!({ "session": "s2" }),
+    );
+    rig.spawn_daemon();
+    wait_refolded(&controller, n);
+    std::thread::sleep(QUIET);
+    assert_eq!(stop_posts(&rig), Vec::<String>::new());
+}
+
+#[test]
+fn a_link_that_was_lost_and_restored_posts_nothing() {
+    let (rig, controller, _bin, _post) = thread_with_status();
+    controller.emit(
+        BOX_ID,
+        BOX_NAME,
+        "agent_link_lost",
+        json!({ "pane": "p1", "exit": 137 }),
+    );
+    controller.emit(
+        BOX_ID,
+        BOX_NAME,
+        "agent_link_restored",
+        json!({ "pane": "p2" }),
+    );
+    controller.emit(BOX_ID, BOX_NAME, "idled", json!({}));
+    rig.wait_post(&finished_line());
+    assert_eq!(stop_posts(&rig), Vec::<String>::new());
+}
+
+#[test]
+fn an_unreachable_box_says_it_stopped_answering() {
+    let (rig, controller, _bin, _post) = thread_with_status();
+    let error = json!({ "attempts": 4, "error": "ssh: connection refused" });
+    controller.emit(BOX_ID, BOX_NAME, "agent_unreachable", error);
+    controller.emit(BOX_ID, BOX_NAME, "session_ended", ended(1));
+    let line = format!(
+        "`{BOX_NAME}` stopped answering, so its agent session was ended. Reply here and I can \
+         restart it."
+    );
+    rig.wait_post(&line);
+    std::thread::sleep(QUIET);
+    assert_eq!(stop_posts(&rig), vec![line.clone()]);
+    let want = format!("[moor] {line}");
+    assert!(notices(&rig).contains(&want), "{:?}", notices(&rig));
 }

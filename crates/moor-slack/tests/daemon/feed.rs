@@ -521,10 +521,14 @@ fn long_turn_posts(rig: &Rig, thread_ts: &str) -> Vec<Post> {
 
 #[test]
 fn a_turn_running_twenty_minutes_posts_one_line_in_the_thread_and_names_what_it_does() {
-    let (rig, controller, _bin, post) = thread_with_status();
+    let (mut rig, controller, _bin, post) = thread_with_status();
+    let n = watches(&controller);
+    rig.kill_daemon();
     controller.emit_ago(21 * 60, (BOX_ID, BOX_NAME, "working"), json!({}));
     let doing = json!({"text": "Bash: cargo test"});
     controller.emit_ago(60, (BOX_ID, BOX_NAME, "agent_doing"), doing);
+    rig.spawn_daemon();
+    wait_refolded(&controller, n);
     rig.wait_post(&format!(
         "`{BOX_NAME}` has been working for 20m. Now: `Bash: cargo test`. \
          Reply here to redirect it, or ask me to stop it."
