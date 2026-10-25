@@ -100,7 +100,7 @@ fn peek(d: &Crabbox) -> Result<Option<String>, DriverError> {
 fn looking_at_a_box_reuses_its_saved_target_and_never_touches_the_lease() {
     let rig = Rig::new();
     peek(&rig.driver()).unwrap();
-    rig.clock.sleep(Duration::from_secs(3 * 60 * 60));
+    rig.clock.sleep(Duration::from_hours(3));
     let d = rig.driver();
     peek(&d).unwrap();
     d.connect_argv(&handle()).unwrap();
@@ -127,7 +127,7 @@ fn real_use_sends_one_heartbeat_to_that_lease() {
         .map(|c| c.args)
         .collect();
     assert_eq!(beats, [["heartbeat", "--provider", "p", "--id", "box"]]);
-    rig.clock.sleep(Duration::from_secs(10 * 60));
+    rig.clock.sleep(Duration::from_mins(10));
     d.touch(&handle()).unwrap();
     assert_eq!(rig.verbs(), ["heartbeat", "ssh", "heartbeat"]);
 }

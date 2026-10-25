@@ -150,9 +150,7 @@ fn acquire_runs_warmup_and_builds_handle() {
             "--slug",
             "moor-7-ab12cd",
             "--class",
-            "standard",
-            "--ttl",
-            "24h"
+            "standard"
         ]
     );
     assert_eq!(c.planned_handle(&req("sprites", None)), got.handle);
