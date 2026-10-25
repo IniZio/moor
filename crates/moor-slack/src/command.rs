@@ -133,9 +133,8 @@ impl Stop {
             ""
         };
         format!(
-            "`{}`'s agent stopped unexpectedly ({exit}){lost}. Its work so far is still in the \
-             Box. Reply here and I can restart it.",
-            name
+            "`{name}`'s agent stopped unexpectedly ({exit}){lost}. Its work so far is still in the \
+             Box. Reply here and I can restart it."
         )
     }
 }
