@@ -7,8 +7,6 @@ publish = false
 [dependencies]
 rustix = { version = "1", features = ["process"] }
 socket2 = "0.6"
-
-[dev-dependencies]
 tempfile = "3"
 
 [lints.rust]

@@ -90,10 +90,7 @@ impl Stack {
     /// sees nothing else of the stack's root. The root is outside /tmp, which the front sees as
     /// its own tmp dir.
     pub fn start_as_front() -> Self {
-        let root = tempfile::Builder::new()
-            .prefix("mw")
-            .tempdir_in(env!("CARGO_TARGET_TMPDIR"))
-            .unwrap();
+        let root = moor_testkit::short_tempdir("mw").unwrap();
         let listed = std::net::TcpListener::bind("127.0.0.1:0")
             .and_then(|l| l.local_addr())
             .unwrap()
