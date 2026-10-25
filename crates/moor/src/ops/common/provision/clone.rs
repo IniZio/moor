@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use moor_core::boxscript::clone::{clone_script, Checkout, CloneStep};
-use moor_core::boxscript::refresh::refresh_script;
+use moor_core::boxscript::refresh::{self, refresh_script};
 use moor_core::boxscript::resources;
 use moor_core::config::BoxSettings;
 use moor_core::exec_env::Purpose;
@@ -225,10 +225,8 @@ fn clone(
     });
     let reason = match outcome {
         Ok(ExecOutcome::Exited { code: 0 }) => {
-            if let (Some(identity), Some(text)) = (identity, &text) {
-                identity.report(cx, text);
-            }
             let delivered = text.as_deref().and_then(resources::parse);
+            report(cx, identity, plan, text.as_deref());
             return Ok((ms, delivered));
         }
         Ok(ExecOutcome::Exited { code }) => CloneStep::of_exit(code)
@@ -238,6 +236,21 @@ fn clone(
         Err(e) => e.to_string(),
     };
     Err(with_tail(reason, text.as_deref().unwrap_or_default()))
+}
+
+/// Reports what a passing clone exec printed in `text`: a failed identity key, and how a kept work
+/// tree started.
+fn report(cx: &Cx, identity: Option<&Identity>, plan: Option<&Plan>, text: Option<&str>) {
+    if let (Some(identity), Some(text)) = (identity, text) {
+        identity.report(cx, text);
+    }
+    let kept = plan.is_some_and(|p| p.refresh.is_some());
+    if let Some(how) = text.filter(|_| kept).and_then(refresh::outcome) {
+        cx.warn(Warning {
+            code: "work_tree".to_owned(),
+            message: format!("work tree {how}"),
+        });
+    }
 }
 
 /// `reason`, then the last lines of the exec's output that are not the identity's exit lines.
