@@ -189,6 +189,11 @@ fn all_events() -> Vec<Event> {
         },
         Event::Cloned { ms: 7 },
         Event::AgentSaid { text: s("done") },
+        Event::LaunchTimedOut { after_secs: 180 },
+        Event::RelaunchCapped {
+            count: 3,
+            window_secs: 600,
+        },
     ]
 }
 
@@ -256,6 +261,8 @@ const fn event_index(e: &Event) -> usize {
         Event::EgressAborted { .. } => 48,
         Event::Cloned { .. } => 49,
         Event::AgentSaid { .. } => 50,
+        Event::LaunchTimedOut { .. } => 51,
+        Event::RelaunchCapped { .. } => 52,
     }
 }
 
@@ -263,7 +270,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 51);
+    assert_eq!(all.len(), 53);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

@@ -83,7 +83,7 @@ impl Note {
 
 /// `secs` as `3m` when it is whole minutes, else `90s`.
 fn span(secs: u64) -> String {
-    if secs >= 60 && secs % 60 == 0 {
+    if secs >= 60 && secs.is_multiple_of(60) {
         format!("{}m", secs / 60)
     } else {
         format!("{secs}s")
