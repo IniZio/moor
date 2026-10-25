@@ -99,8 +99,7 @@ impl From<String> for TryError {
 ///
 /// `probed` is the session the exit was read from. Nothing is saved while another operation
 /// holds the Box lock, when the Box is no longer Ready, when the live session is another one,
-/// or when it was already saved or its exit save already failed or was skipped: neither is retried.
-/// The digest kept on the session marks it saved.
+/// or when its exit save already ran, failed or was skipped: none is retried.
 pub(crate) fn save_on_exit(
     cx: &Cx,
     store: &Store,
@@ -122,7 +121,7 @@ pub(crate) fn save_on_exit(
     let Some(session) = store.live_session(row.id)?.filter(|s| s.id == probed) else {
         return Ok(());
     };
-    if session.transcript_digest.is_some() || exit_save_ended(store, &row)? {
+    if exit_save_ended(store, &row)? {
         return Ok(());
     }
     if let Some(saved) = save(cx, store, &row, &session, Trigger::Exit) {
@@ -131,7 +130,7 @@ pub(crate) fn save_on_exit(
     Ok(())
 }
 
-/// Whether an exit save failed or was skipped since the Box's latest session started.
+/// Whether an exit save ran, failed or was skipped since the Box's latest session started.
 fn exit_save_ended(store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
     let events = store.events(row.id, usize::MAX)?;
     Ok(events
@@ -139,9 +138,39 @@ fn exit_save_ended(store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
         .rev()
         .take_while(|e| e.kind != "session_started")
         .any(|e| {
-            (e.kind == "transcript_failed" || e.kind == "transcript_skipped")
+            [
+                "transcript_saved",
+                "transcript_failed",
+                "transcript_skipped",
+            ]
+            .contains(&e.kind.as_str())
                 && e.payload.get("trigger").and_then(|t| t.as_str()) == Some("exit")
         }))
+}
+
+/// Copies the live session's transcript to the host at the end of a turn, so losing the Box
+/// later keeps everything up to that turn. Nothing is copied while another operation holds the
+/// Box lock; a failed copy is recorded and the next turn tries again.
+pub(crate) fn save_on_turn(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
+    let Ok(_held) = BoxLock::acquire(
+        cx.clock(),
+        cx.state_dir()?,
+        row.id,
+        "transcript",
+        Duration::ZERO,
+    ) else {
+        return Ok(());
+    };
+    let Some(row) = store.box_row(row.id)? else {
+        return Ok(());
+    };
+    let Some(session) = store.live_session(row.id)? else {
+        return Ok(());
+    };
+    if let Some(saved) = save(cx, store, &row, &session, Trigger::Turn) {
+        store.set_transcript_digest(session.id, &saved.digest)?;
+    }
+    Ok(())
 }
 
 /// Records `event`; a store failure is dropped so the caller carries on.
