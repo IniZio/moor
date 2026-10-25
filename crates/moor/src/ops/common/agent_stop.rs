@@ -6,6 +6,7 @@ use moor_core::ErrorKind;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::activity::session_ref;
 use crate::store::{BoxRow, Store};
 
 /// Closes the live agent pane and ends its session, with the digest of its saved transcript;
@@ -21,6 +22,12 @@ pub(crate) fn stop_agent(
     let Some(session) = store.live_session(row.id)? else {
         return Ok(false);
     };
+    let sref = session_ref(row, session.session_ref.clone(), session.pane.clone());
+    // Best effort: a Box that cannot be reached cannot run the agent on, and a close must still
+    // go ahead.
+    if let Some(s) = sref {
+        let _ = cx.engine().stop(&s);
+    }
     if let Some(pane) = session.pane.as_deref() {
         match cx.surface().close_pane(&PaneRef::new(pane)) {
             Ok(()) | Err(SurfaceError::NotFound) => {}

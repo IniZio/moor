@@ -77,10 +77,16 @@ fn unquote(q: &str) -> String {
 /// The script the pane line asks the Box to run under `sh -c`.
 fn script_of(line: &str) -> String {
     let rest = line.strip_prefix("'ssh' '-t' 'box-1' ").unwrap();
-    let quoted = rest
-        .strip_suffix(r#"; c=$?; printf '\r\033[K'; echo "moor: agent exited $c""#)
-        .unwrap();
-    unquote(unquote(quoted).strip_prefix("sh -c ").unwrap())
+    let remote = unquote(rest.split_once("; c=$?;").unwrap().0);
+    let session = remote.split_once("-x 200 -y 50 ").unwrap().1;
+    let inner = unquote(
+        session
+            .rsplit_once(" || exit 1; tmux set-option")
+            .unwrap()
+            .0,
+    );
+    let script = inner.strip_prefix("sh -c ").unwrap();
+    unquote(script.rsplit_once("; echo $? > ").unwrap().0)
 }
 
 #[test]
