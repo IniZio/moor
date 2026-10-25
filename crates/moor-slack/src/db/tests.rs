@@ -4,7 +4,8 @@ use std::path::Path;
 
 use moor_core::name::{BoxId, BoxName};
 
-use super::{BoxState, Db, InboxItem, ItemKind, SlackBox, SlackThread, SCHEMA_VERSION};
+use super::BASELINE_VERSION;
+use super::{BoxState, Db, InboxItem, ItemKind, SlackBox, SlackThread};
 
 fn open(dir: &Path) -> Db {
     Db::open(&dir.join("slack.db")).unwrap()
@@ -138,12 +139,12 @@ fn snapshot(dir: &Path) -> Vec<(String, Vec<u8>)> {
 
 #[test]
 fn newer_schema_is_refused() {
-    for found in [1, SCHEMA_VERSION - 1, SCHEMA_VERSION + 1] {
+    for found in [1, BASELINE_VERSION - 1, BASELINE_VERSION + 1] {
         let dir = tempfile::tempdir().unwrap();
         write_at_version(&dir.path().join("slack.db"), found);
         let err = Db::open(&dir.path().join("slack.db")).err().unwrap();
         let want = format!(
-            "slack.db is schema {found} and this build needs {SCHEMA_VERSION}. Start with a fresh slack.db."
+            "slack.db is schema {found} and this build needs {BASELINE_VERSION}. Start with a fresh slack.db."
         );
         assert_eq!(err, want);
     }
@@ -309,4 +310,44 @@ fn a_thread_is_quiet_only_with_no_turn_waiting_message_or_starting_box_since_the
     );
     db.clear_root_session("C1", "1.0", 100).unwrap();
     assert_eq!(quiet(50), [("C1".to_owned(), "2.0".to_owned(), 101)]);
+}
+
+#[test]
+fn a_file_from_the_last_build_before_migrations_is_adopted_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("slack.db");
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute_batch(include_str!("../../migrations/V1__baseline.sql"))
+        .unwrap();
+    conn.pragma_update(None, "user_version", BASELINE_VERSION)
+        .unwrap();
+    conn.execute(
+        "INSERT INTO slack_events (event_id, seen_at) VALUES ('Ev1', 1)",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+    let db = Db::open(&path).unwrap();
+    assert!(!db.event_once("Ev1", 2).unwrap(), "the old row is kept");
+    let applied: i64 = db
+        .conn
+        .query_row("SELECT count(*) FROM refinery_schema_history", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(applied, 1);
+}
+
+#[test]
+fn applied_migrations_are_never_edited() {
+    let pinned: Vec<(i32, u64)> = super::schema()
+        .unwrap()
+        .iter()
+        .map(|m| (m.version(), m.checksum()))
+        .collect();
+    assert_eq!(
+        pinned,
+        [(1, 8_754_816_789_016_865_323)],
+        "a schema change is a new migration file; an applied one must not change"
+    );
 }
