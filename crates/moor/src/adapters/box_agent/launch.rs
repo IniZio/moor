@@ -61,6 +61,7 @@ pub(super) fn launch(
         .map_err(|e| failed(fail("connect", &e)))?;
     let ((home, root), platform) = open_box(driver, req, &connect).map_err(failed)?;
     let ctx = LaunchCtx {
+        mcp: req.mcp.clone(),
         model: req.model.clone(),
         workdir: req.workdir.clone(),
         proxy: req.proxy.as_deref().map(|p| ProxyAddr {

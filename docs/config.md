@@ -59,10 +59,33 @@ only through a Proxy rule whose `credential` names it.
 | `env` | map | The program's environment. |
 | `url` | string | The server URL. |
 | `headers` | map | Request headers. |
+| `allow_tools` | list of tool names | The only tools the agent may call. Every tool when unset; none when empty. |
+| `coordinator` | bool | Reserved for a front's coordinator. Off by default. |
 
-`args`, `env` values, `url`, and `headers` values can hold `${NAME}`, which
-names the Box user's secret `NAME`. `NAME` may not be a secret that a Proxy
-rule injects.
+moor hands each server to the agent at launch. With `allow_tools` set, the
+agent profile refuses any other tool of that server; for Claude Code, a
+`PreToolUse` hook blocks it.
+
+One `headers` value may hold one `${NAME}`, which names the Box user's secret
+`NAME`. The `url` must then be `https://`. The Box never holds the secret: the
+agent sees `moor-proxy` in its place, and moor adds a Proxy rule `mcp-<name>`
+that sets the header with the real secret on requests to the URL's host.
+`NAME` may not be a secret that another Proxy rule injects. `${NAME}` anywhere
+else (`args`, `env`, `url`) is refused, because a stdio server runs in the Box
+and would hold the secret.
+
+A read-only Linear server, with each teammate's own key stored as their
+secret `linear`. Create the key with read-only permissions: Linear Settings →
+Security & access → Personal API keys → Only select permissions.
+
+```yaml
+mcp_servers:
+  linear:
+    url: https://mcp.linear.app/mcp
+    headers:
+      Authorization: Bearer ${linear}
+    allow_tools: [get_issue, list_issues, list_comments, get_project]
+```
 
 ### `proxy`
 

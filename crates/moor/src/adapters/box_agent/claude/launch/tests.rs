@@ -23,12 +23,14 @@ mod bypass;
 mod doing;
 mod first_run;
 mod last_message;
+mod mcp;
 mod preseed;
 mod prompt;
 
 fn ctx(dir: &Path) -> LaunchCtx {
     let root = dir.to_str().unwrap();
     LaunchCtx {
+        mcp: Default::default(),
         model: None,
         workdir: BoxPath::under(root, "work").unwrap(),
         proxy: None,
@@ -39,6 +41,7 @@ fn ctx(dir: &Path) -> LaunchCtx {
 
 fn proxied(dir: &Path) -> LaunchCtx {
     LaunchCtx {
+        mcp: Default::default(),
         proxy: Some(ProxyAddr {
             box_port: 41234,
             ca_pem: String::new(),
@@ -149,6 +152,7 @@ fn argv_is_the_brief_prompt_alone_by_default() {
 fn argv_names_the_model_before_the_prompt() {
     let t = TempDir::new().unwrap();
     let c = LaunchCtx {
+        mcp: Default::default(),
         model: Some("opus".into()),
         ..ctx(t.path())
     };
@@ -199,6 +203,7 @@ fn env_is_empty_without_a_proxy() {
 fn resume_argv_keeps_the_flags_and_drops_the_prompt() {
     let t = TempDir::new().unwrap();
     let c = LaunchCtx {
+        mcp: Default::default(),
         model: Some("opus".into()),
         ..proxied(t.path())
     };

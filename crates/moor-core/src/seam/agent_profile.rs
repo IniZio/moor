@@ -1,8 +1,10 @@
 //! Agent profile seam: turns an agent's hook state file and pane text into neutral readings.
 
+use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::activity::HookRecord;
+use crate::config::McpServer;
 use crate::name::{BoxPath, NameError};
 use crate::seam::engine::LaunchPrompt;
 use crate::secret::Secret;
@@ -68,6 +70,8 @@ pub struct LaunchCtx {
     pub home: BoxPath,
     /// The first prompt a fresh session starts with.
     pub prompt: LaunchPrompt,
+    /// MCP servers as the Box sees them: no secret in any value.
+    pub mcp: BTreeMap<String, McpServer>,
 }
 
 /// A file to put in the Box.

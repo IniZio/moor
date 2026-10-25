@@ -252,6 +252,12 @@ pub(super) fn launch_req(cx: &Cx, row: &BoxRow, setup_exit: Option<i32>) -> Opti
     }
     let strip_env = box_exec::strip_env(cx, b.provider.as_str());
     Some(LaunchReq {
+        mcp: cx
+            .config()
+            .mcp_servers
+            .iter()
+            .map(|(name, server)| (name.clone(), server.in_box()))
+            .collect(),
         id: row.id,
         handle: b.handle.clone()?,
         workdir: recorded_workdir(b.workdir.as_deref()?)?,

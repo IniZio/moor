@@ -40,6 +40,7 @@ impl Scratch {
     pub(super) fn proxy_ctx(&self) -> LaunchCtx {
         let root = self.dir.path().to_str().unwrap();
         LaunchCtx {
+            mcp: Default::default(),
             model: None,
             workdir: BoxPath::under(root, "work").unwrap(),
             proxy: Some(self.proxy_addr()),
@@ -64,6 +65,7 @@ impl Scratch {
     pub(super) fn script_with(&self, hook_step: &str, proxy: &[String]) -> String {
         let root = self.dir.path().to_str().unwrap();
         let ctx = LaunchCtx {
+            mcp: Default::default(),
             model: None,
             workdir: BoxPath::under(root, "work").unwrap(),
             proxy: None,
