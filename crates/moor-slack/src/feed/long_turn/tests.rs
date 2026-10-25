@@ -45,9 +45,6 @@ fn the_line_names_the_box_the_time_and_what_it_is_doing_when_known() {
 #[test]
 fn each_threshold_of_each_turn_has_its_own_key() {
     let keys = [key(5, 1), key(5, 2), key(6, 1), key(6, 2)];
-    for (i, a) in keys.iter().enumerate() {
-        for b in &keys[i + 1..] {
-            assert_ne!(a, b);
-        }
-    }
+    let distinct: std::collections::BTreeSet<_> = keys.iter().collect();
+    assert_eq!(distinct.len(), keys.len(), "{keys:?}");
 }
