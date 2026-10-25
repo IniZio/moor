@@ -142,10 +142,21 @@ schema. Move it aside and start again with a fresh one.
   (starting, setting up, working, waiting on a question, asleep, closing) and,
   in whole minutes, how long the Box has been in it. A working Box that has
   emitted no event for 10 minutes gets a second line that says it may be
-  stuck. The elapsed time changes the text once a minute, so a long phase adds
+  stuck. So does a Box whose agent has not started a session 3 minutes after
+  the launch began (setup time does not count), a Box stopped at a first-run
+  screen for 3 minutes, and a Box waiting on an unanswered question for 3
+  minutes. Each line says what the Box is stuck on and ends with how to go on:
+  ask the coordinator to restart the agent, or answer the question. The elapsed time changes the text once a minute, so a long phase adds
   one edit a minute. While the Box is working or waiting on a question, the
   message carries a Stop button; only the person who asked for the Box can use
   it, and it interrupts the agent. The button goes when the Box closes.
+- The thread gets one plain line when a Box's agent could not start, did not
+  start within `box.launch_timeout`, was started again on its own after it
+  ended, or was not started again because it ended 3 times in 10 minutes. It
+  gets one when the sleep timer puts the Box to sleep. A sleep or a restart
+  you asked for gets no line. Each line ends with what to reply: ask the
+  coordinator to restart the agent, or reply to wake the Box. Each also reaches
+  the coordinator as a notice with the thread's next message.
 - When a Box's agent asks a question, the front posts it with one button per
   option, up to 25. Only the person who asked for the Box can answer.
 - Each file version a Box publishes is uploaded into the thread, normally once.
