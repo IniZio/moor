@@ -24,7 +24,8 @@ const CHECK: &str =
 
 /// The script that runs the installer when the agent command is not on the Box's `PATH`. A Box
 /// that restored the install directory but not the link in `~/.local/bin` is linked to the
-/// newest version there that runs, and downloads nothing.
+/// newest version there when it runs, and downloads nothing; when it does not run, the
+/// installer runs.
 ///
 /// The installer is downloaded to a private temp file first, so a failed download fails the step
 /// instead of feeding a half-read script to a shell.
