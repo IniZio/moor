@@ -30,8 +30,6 @@ pub struct McpServer {
     pub headers: BTreeMap<String, String>,
     /// The only tools the agent may call; every tool when unset.
     pub allow_tools: Option<Vec<String>>,
-    /// Reserved for a front's coordinator; no front reads it yet.
-    pub coordinator: bool,
 }
 
 /// `${NAME}` references in `text`, in order.

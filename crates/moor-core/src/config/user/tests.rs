@@ -111,7 +111,7 @@ fn accepted_docs() {
         "agent: {model: haiku}",
         "box_credentials: [npm, pypi-token]",
         "state_dir: /var/moor",
-        "mcp_servers: {m: {command: '${NOPE}', args: [a]}, u: {url: 'https://h.example/mcp', headers: {X: '${t}'}, allow_tools: [get_issue], coordinator: true}}",
+        "mcp_servers: {m: {command: '${NOPE}', args: [a]}, u: {url: 'https://h.example/mcp', headers: {X: '${t}'}, allow_tools: [get_issue]}}",
     ];
     for doc in docs {
         ok(doc);
