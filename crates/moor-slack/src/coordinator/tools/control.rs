@@ -259,7 +259,7 @@ fn describe(name: &str, view: &Value) -> String {
         } else {
             "Open question"
         };
-        out.push_str("\n");
+        out.push('\n');
         out.push_str(what);
         out.push_str(", in a Box quote:");
         out.push_str(&quoted(question));
