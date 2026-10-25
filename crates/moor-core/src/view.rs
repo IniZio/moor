@@ -223,6 +223,15 @@ impl WorkTreeView {
     }
 }
 
+/// An MCP server left out of a Box for want of a secret.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct McpLeftOut {
+    /// The server's name in `mcp_servers`.
+    pub server: String,
+    /// The secrets it names that the Box's user lacks.
+    pub secrets: Vec<String>,
+}
+
 /// `value` of `start`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct StartView {
@@ -246,6 +255,9 @@ pub struct StartView {
     pub agent: AgentLaunchView,
     /// Warnings raised while starting.
     pub warnings_inline: Vec<String>,
+    /// MCP servers the agent got none of, because the Box's user lacks a secret they name.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub mcp_left_out: Vec<McpLeftOut>,
     /// The provisioning step that failed while the Box carried on, such as `setup`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failed_step: Option<String>,

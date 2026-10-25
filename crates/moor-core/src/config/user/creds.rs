@@ -1,6 +1,6 @@
 //! User `mcp_servers:` section.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Deserialize;
 
@@ -105,6 +105,15 @@ impl McpServer {
             allow: vec!["*".to_owned()],
             ..ToolRule::default()
         })
+    }
+
+    /// The secrets this server names that `have` does not hold.
+    #[must_use]
+    pub fn missing(&self, have: &BTreeSet<SecretName>) -> Vec<&str> {
+        self.refs()
+            .into_iter()
+            .filter(|r| !SecretName::parse(r).is_ok_and(|n| have.contains(&n)))
+            .collect()
     }
 
     /// Distinct credential names referenced, sorted.

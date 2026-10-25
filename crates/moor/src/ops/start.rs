@@ -39,7 +39,7 @@ mod response;
 mod revive;
 mod watch;
 
-use response::{queued_view, set_agent, set_provisioned, view, with_provider};
+use response::{queued_view, set_agent, set_mcp_left_out, set_provisioned, view, with_provider};
 
 pub(crate) use launch::begin_seeded;
 pub(crate) use needs::run as needs;
@@ -119,6 +119,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     let agent = watch::run(cx, store, id, agent);
     let row = reread(store, id)?;
     let mut v = queued_view(cx, &row, false, provider_of(&cfg).ok());
+    set_mcp_left_out(cx, &mut v, user)?;
     set_provisioned(&mut v, &done);
     set_agent(&mut v, agent);
     Ok(v)

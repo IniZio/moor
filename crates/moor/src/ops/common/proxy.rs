@@ -1,9 +1,12 @@
 //! The Proxy plan of a Box: its repo's tool rules and the env they give the Box.
 
+use std::collections::BTreeSet;
+
 use moor_core::config::check::{agent_env_reserved, credential_like_env};
 use moor_core::config::proxy::{resolve_rules, ResolvedRule};
 use moor_core::config::BoxSettings;
 use moor_core::seam::forge::ForgeRepo;
+use moor_core::user::SecretName;
 use moor_core::Warning;
 
 use crate::cx::Cx;
@@ -37,14 +40,18 @@ pub(crate) fn agent_env(cx: &Cx, settings: &BoxSettings) -> Vec<(String, String)
         .collect()
 }
 
-/// Resolves the proxy plan of a Box of `repo`.
+/// Resolves the proxy plan of a Box of `repo` whose user holds the secrets `have`.
 ///
 /// # Errors
 /// The message of a rule that does not resolve.
-pub(crate) fn plan(cx: &Cx, repo: Option<&ForgeRepo>) -> Result<ProxyPlan, String> {
+pub(crate) fn plan(
+    cx: &Cx,
+    repo: Option<&ForgeRepo>,
+    have: &BTreeSet<SecretName>,
+) -> Result<ProxyPlan, String> {
     let repo = repo.cloned();
     let rules = resolve_rules(
-        &cx.config().box_proxy(),
+        &cx.config().box_proxy(have),
         repo.as_ref().map(|r| (r.owner.as_str(), r.name.as_str())),
     )
     .map_err(|e| e.to_string())?;

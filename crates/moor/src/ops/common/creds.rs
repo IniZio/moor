@@ -43,8 +43,9 @@ pub(crate) fn checked(s: &BoxSettings, files: &RepoFiles) -> Checked {
     Checked { credentials, mcp }
 }
 
-/// Credential and MCP items that do not resolve for a user holding the secrets `have`.
-/// Empty means the preflight passes.
+/// Credential and repo MCP items that do not resolve for a user holding the secrets `have`.
+/// Empty means the preflight passes. A user MCP server whose secret is missing is not here: the
+/// Box starts without it.
 pub(crate) fn unresolved(
     s: &BoxSettings,
     files: &RepoFiles,
@@ -53,7 +54,6 @@ pub(crate) fn unresolved(
     s.credentials
         .iter()
         .map(|c| credential_item(c, Some(have)))
-        .chain(user_mcp_items(s, Some(have)))
         .chain(repo_mcp_items(files))
         .filter(|i| i.resolves == Some(false))
         .collect()

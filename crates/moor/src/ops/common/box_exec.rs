@@ -44,7 +44,14 @@ pub(crate) fn proxy(
 ) -> Result<BoxProxy, String> {
     let user = requester(cx, box_id)?;
     let vault_key = cx.vault_key().map_err(|e| e.error.to_string())?;
-    let plan = plan(cx, repo)?;
+    let have = cx
+        .store()
+        .map_err(|e| e.error.to_string())?
+        .user_secret_names(user)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .collect();
+    let plan = plan(cx, repo, &have)?;
     let repo_env: Vec<(String, String)> = cfg.env.clone().into_iter().collect();
     let spec = ProxySpec {
         box_id,

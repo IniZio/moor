@@ -1,8 +1,11 @@
 //! Builds the response a start returns, from the Box row and the launch outcome.
 
+use std::collections::BTreeSet;
+
 use moor_core::config::Flags;
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::view::{AgentLaunchView, DotfilesView, SetupView, StartView};
+use moor_core::user::{SecretName, UserId};
+use moor_core::view::{AgentLaunchView, McpLeftOut, DotfilesView, SetupView, StartView};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -18,6 +21,22 @@ pub(super) fn set_agent(v: &mut StartView, agent: AgentLaunchView) {
         v.warnings_inline.push(f.text());
     }
     v.agent = agent;
+}
+
+/// Names in the view the MCP servers `user` lacks a secret for, which the Box starts without.
+pub(super) fn set_mcp_left_out(
+    cx: &Cx,
+    v: &mut StartView,
+    user: UserId,
+) -> Result<(), CommandError> {
+    let have: BTreeSet<SecretName> = cx.store()?.user_secret_names(user)?.into_iter().collect();
+    v.mcp_left_out = cx
+        .config()
+        .mcp_left_out(&have)
+        .into_iter()
+        .map(|(server, secrets)| McpLeftOut { server, secrets })
+        .collect();
+    Ok(())
 }
 
 /// [`queued_view`] for a row whose provider is not at hand; resolved only when it is queued.
@@ -66,6 +85,7 @@ pub(super) fn view(cx: &Cx, row: &BoxRow, attached: bool) -> StartView {
         dotfiles: DotfilesView::default(),
         agent: AgentLaunchView::default(),
         warnings_inline: Vec::new(),
+        mcp_left_out: Vec::new(),
         failed_step: None,
         handle: None,
     }

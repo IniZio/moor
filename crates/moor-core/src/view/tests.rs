@@ -124,6 +124,7 @@ fn start_view_keys_match_wire_shape() {
             nonce: Some("a1b2c3".into()),
         },
         warnings_inline: vec![],
+        mcp_left_out: vec![],
         failed_step: None,
         handle: None,
     };

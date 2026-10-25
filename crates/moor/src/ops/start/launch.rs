@@ -1,5 +1,6 @@
 //! Launches the agent of a Working Box and records how that ended.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use moor_core::activity::PaneStatus;
@@ -12,6 +13,7 @@ use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::engine::{EngineError, LaunchPrompt, LaunchReq, SessionRef};
 use moor_core::seam::surface::{PaneRef, WorkspaceRef};
+use moor_core::user::SecretName;
 use moor_core::view::{AgentLaunchView, LaunchFailure};
 use moor_core::{BoxId, StartReq, Warning};
 
@@ -244,6 +246,16 @@ pub(super) fn working(row: &BoxRow) -> bool {
     row.lifecycle == BoxLifecycle::Ready && !row.session.is_quiet()
 }
 
+/// The secrets `row`'s user holds; none when the row has no user or the store cannot say, so
+/// no MCP server that names a secret reaches the agent.
+fn held_secrets(cx: &Cx, row: &BoxRow) -> BTreeSet<SecretName> {
+    let names = row
+        .user
+        .zip(cx.store().ok())
+        .and_then(|(user, store)| store.user_secret_names(user).ok());
+    names.unwrap_or_default().into_iter().collect()
+}
+
 /// What the Engine needs to launch `row`'s agent; none unless the Box is Working with a ready machine.
 pub(super) fn launch_req(cx: &Cx, row: &BoxRow, setup_exit: Option<i32>) -> Option<LaunchReq> {
     let b = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready)?;
@@ -252,12 +264,7 @@ pub(super) fn launch_req(cx: &Cx, row: &BoxRow, setup_exit: Option<i32>) -> Opti
     }
     let strip_env = box_exec::strip_env(cx, b.provider.as_str());
     Some(LaunchReq {
-        mcp: cx
-            .config()
-            .mcp_servers
-            .iter()
-            .map(|(name, server)| (name.clone(), server.in_box()))
-            .collect(),
+        mcp: cx.config().box_mcp(&held_secrets(cx, row)),
         id: row.id,
         handle: b.handle.clone()?,
         workdir: recorded_workdir(b.workdir.as_deref()?)?,

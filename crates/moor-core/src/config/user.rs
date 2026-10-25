@@ -6,7 +6,7 @@ mod controller;
 mod creds;
 mod duration;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
@@ -16,6 +16,7 @@ use serde::Deserialize;
 use super::proxy::{injected, ProxyConfig};
 use super::{check, parse_strict, ConfigError};
 use crate::cache::CacheConfig;
+use crate::user::SecretName;
 pub use controller::ControllerClientConfig;
 pub use creds::McpServer;
 use duration::{duration_or, parse_duration};
@@ -320,16 +321,44 @@ impl UserConfig {
     }
 
     /// The Proxy rules a Box gets: `proxy.rules` plus one per MCP server whose header names a
-    /// secret.
+    /// secret the Box's user holds (`have`).
     #[must_use]
-    pub fn box_proxy(&self) -> ProxyConfig {
+    pub fn box_proxy(&self, have: &BTreeSet<SecretName>) -> ProxyConfig {
         let mut out = self.proxy.clone();
         for (name, server) in &self.mcp_servers {
+            if !server.missing(have).is_empty() {
+                continue;
+            }
             if let Some(rule) = server.proxy_rule() {
                 out.rules.insert(creds::rule_name(name), rule);
             }
         }
         out
+    }
+
+    /// The MCP servers a Box's agent gets, as the Box sees them: only those whose secrets the
+    /// Box's user holds (`have`).
+    #[must_use]
+    pub fn box_mcp(&self, have: &BTreeSet<SecretName>) -> BTreeMap<String, McpServer> {
+        self.mcp_servers
+            .iter()
+            .filter(|(_, server)| server.missing(have).is_empty())
+            .map(|(name, server)| (name.clone(), server.in_box()))
+            .collect()
+    }
+
+    /// The MCP servers a Box leaves out because its user lacks a secret (`have` holds the
+    /// user's), each with the secrets it lacks.
+    #[must_use]
+    pub fn mcp_left_out(&self, have: &BTreeSet<SecretName>) -> Vec<(String, Vec<String>)> {
+        self.mcp_servers
+            .iter()
+            .filter_map(|(name, server)| {
+                let lacking: Vec<String> =
+                    server.missing(have).into_iter().map(str::to_owned).collect();
+                (!lacking.is_empty()).then(|| (name.clone(), lacking))
+            })
+            .collect()
     }
 
     /// Checks values the types cannot. Error paths are dotted key paths.
