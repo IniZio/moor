@@ -74,9 +74,10 @@ fn a_running_agent_gets_a_new_pane_and_keeps_its_session() {
     let seen = kinds(&cx, id, WATCHED);
     let names: Vec<&str> = seen.iter().map(|(k, _)| k.as_str()).collect();
     assert_eq!(names, ["agent_link_lost", "agent_link_restored"]);
-    assert_eq!(seen[0].1["pane"], "p1");
-    assert_eq!(seen[0].1["exit"], 1);
-    assert_eq!(seen[1].1["pane"], "reattached-1");
+    let (lost, restored) = (&seen.first().unwrap().1, &seen.last().unwrap().1);
+    assert_eq!(lost.get("pane").unwrap(), "p1");
+    assert_eq!(lost.get("exit").unwrap(), 1);
+    assert_eq!(restored.get("pane").unwrap(), "reattached-1");
     let live = cx.store().unwrap().live_session(id).unwrap().unwrap();
     assert_eq!(live.pane.as_deref(), Some("reattached-1"));
     assert_eq!(engine.reattached().len(), 1);
@@ -88,7 +89,7 @@ fn an_ended_agent_ends_the_session_with_the_exit_the_box_kept() {
     let (cx, engine, id) = settle_exited(vec![Ok(AgentFate::Ended { exit: Some(42) })]);
     let seen = kinds(&cx, id, WATCHED);
     let ended = seen.iter().find(|(k, _)| k == "session_ended").unwrap();
-    assert_eq!(ended.1["exit"], 42);
+    assert_eq!(ended.1.get("exit").unwrap(), 42);
     assert!(!seen.iter().any(|(k, _)| k.starts_with("agent_link")));
     assert!(engine.reattached().is_empty());
     assert!(cx.store().unwrap().live_session(id).unwrap().is_none());
@@ -99,13 +100,15 @@ fn a_box_that_stays_unreachable_ends_the_session_and_says_so() {
     let (cx, engine, id) = settle_exited((0..4).map(|_| unreachable()).collect());
     let seen = kinds(&cx, id, WATCHED);
     let lost = seen.iter().find(|(k, _)| k == "agent_unreachable").unwrap();
-    assert_eq!(lost.1["attempts"], 4);
-    assert!(lost.1["error"]
-        .as_str()
+    assert_eq!(lost.1.get("attempts").unwrap(), 4);
+    assert!(lost
+        .1
+        .get("error")
+        .and_then(serde_json::Value::as_str)
         .unwrap()
         .contains("connection refused"));
     let ended = seen.iter().find(|(k, _)| k == "session_ended").unwrap();
-    assert_eq!(ended.1["exit"], 1);
+    assert_eq!(ended.1.get("exit").unwrap(), 1);
     assert!(engine.reattached().is_empty());
 }
 

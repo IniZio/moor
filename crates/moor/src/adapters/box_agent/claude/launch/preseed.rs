@@ -58,7 +58,9 @@ fs.renameSync(t, p);
 
 /// Merges first-run state into `~/.claude.json`; the step fails when it cannot, since the agent
 /// would then stop at a first-run screen no one is there to answer.
-pub(in crate::adapters::box_agent::claude) fn preseed(ctx: &LaunchCtx) -> Result<BoxSetup, NameError> {
+pub(in crate::adapters::box_agent::claude) fn preseed(
+    ctx: &LaunchCtx,
+) -> Result<BoxSetup, NameError> {
     let file = quote(BoxPath::under(ctx.home.as_str(), ".claude.json")?.as_str());
     let workdir = quote(ctx.workdir.as_str());
     let template = fresh_preseed(&[ctx.workdir.as_str(), RESOLVED, ROOT]).replace('%', "%%");

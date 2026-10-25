@@ -238,7 +238,10 @@ fn the_box_tells_an_agent_whose_session_runs_is_alive() {
 
 #[test]
 fn the_box_tells_the_recorded_exit_of_an_agent_whose_session_is_gone() {
-    assert_eq!(fate_on_box(1, Some("3\n")), AgentFate::Ended { exit: Some(3) });
+    assert_eq!(
+        fate_on_box(1, Some("3\n")),
+        AgentFate::Ended { exit: Some(3) }
+    );
 }
 
 #[test]
