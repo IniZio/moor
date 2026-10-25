@@ -52,10 +52,11 @@ fn short_base() -> PathBuf {
     }
 }
 
-/// Makes a fresh dir named `<prefix>-<random>` with a short path outside `/tmp`, for state that
-/// holds a Unix socket and that a front must be able to see: a front's own `/tmp` hides a dir
-/// under `/tmp`. The path never depends on the target dir or the checkout, whose lengths
-/// vary.
+/// Makes a fresh dir named `<prefix>-<random>` with a short path outside `/tmp`.
+///
+/// For state that holds a Unix socket and that a front must be able to see: a front's own
+/// `/tmp` hides a dir under `/tmp`. The path never depends on the target dir or the checkout,
+/// whose lengths vary.
 pub fn short_tempdir(prefix: &str) -> io::Result<tempfile::TempDir> {
     tempfile::Builder::new()
         .prefix(&format!("{prefix}-"))
