@@ -82,6 +82,23 @@ mcp_servers:
       Authorization: "Bearer ${linear-api-key}"
 ```
 
+
+#### Per-user MCP servers
+
+`mcp_servers:` here are shared defaults: every Box gets them. Each teammate can also add their own servers, which only their Boxes get. A teammate adds one from a front, or with the dev CLI:
+
+```sh
+moor user mcp add linear https://mcp.linear.app/mcp/readonly
+moor user secret set mcp_linear   # the key, read from stdin
+moor user mcp ls
+moor user mcp rm linear           # also deletes the key
+```
+
+A user's server is an HTTP server with one key. The key is the user secret `mcp_<name>`, sealed in the vault. The Box sees `moor-proxy` in its place, and the Proxy sets the real header on requests to the URL's host: `Authorization: Bearer <key>` by default, or the key alone in another header (`--header X-Api-Key`). Names match `[a-z][a-z0-9_-]*`, and URLs must be `https://`.
+
+At start, a user's server replaces a shared one of the same name, and the start says so. A server whose key the user has not stored is left out, and the start names it in one note. The start is never refused for it. This also holds for shared servers.
+
+For read-only access, point at the server's read-only endpoint with a key that can only read. Linear's is `https://mcp.linear.app/mcp/readonly` with a personal API key limited to Read.
 ### `proxy`
 
 `proxy.rules.<name>` defines a Proxy rule. A rule with the name of a default
