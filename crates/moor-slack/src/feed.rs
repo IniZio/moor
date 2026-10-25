@@ -45,6 +45,8 @@ struct Fold {
     closed: HashSet<BoxId>,
     /// The question each Box waits on.
     asked: HashMap<BoxId, prompts::Asked>,
+    /// What happened to each Box that its thread is owed a line for, by cursor.
+    notes: HashMap<BoxId, Vec<(i64, lifecycle::Note)>>,
     /// Artifact versions each Box published that are not yet known to be shown.
     published: HashMap<BoxId, Vec<ArtifactView>>,
     /// Whether this connection's backlog is folded.
@@ -68,6 +70,7 @@ impl Fold {
             .fold(&event.kind, &event.payload, event.ts);
         prompts::fold(self, id, &event.kind, event.cursor, &event.payload);
         artifacts::fold(self, id, &event.kind, &event.payload);
+        lifecycle::fold(self, id, event.cursor, &event.kind, &event.payload);
         match event.kind.as_str() {
             "agent_said" => {
                 let text = event
@@ -185,6 +188,7 @@ impl Feed {
             }
             for fed in &boxes {
                 if !self.lines(db, fold, &fed.boxed)
+                    || !self.notes(db, fold, &fed.boxed)
                     || !self.prompts(db, fold, &fed.boxed)
                     || !self.artifacts(db, fold, &fed.boxed)
                 {
@@ -301,6 +305,7 @@ fn now() -> Instant {
 }
 
 mod artifacts;
+mod lifecycle;
 mod prompts;
 mod status;
 
