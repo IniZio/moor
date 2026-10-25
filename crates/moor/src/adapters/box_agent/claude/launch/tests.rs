@@ -550,6 +550,41 @@ fn preseed_without_an_interpreter_writes_fresh_or_warns() {
     forced(Interp::Neither, check_preseed_without_interpreter);
 }
 
+/// Claude Code keys folder trust by the physical cwd, so a symlinked workdir needs both keys.
+fn check_preseed_trusts_symlinked_workdir(path: Option<&str>) {
+    let t = TempDir::new().unwrap();
+    let c = ctx(t.path());
+    let real = t.path().join("cache/worktree");
+    fs::create_dir_all(&real).unwrap();
+    std::os::unix::fs::symlink(&real, c.workdir.as_str()).unwrap();
+    let file = format!("{}/.claude.json", c.home.as_str());
+    fs::create_dir_all(c.home.as_str()).unwrap();
+    let setup = Claude.preseed(&c).unwrap();
+
+    assert!(run_step_on(&setup, path).status.success());
+    let projects = &read_json(&file)["projects"];
+    assert_eq!(projects[c.workdir.as_str()]["hasTrustDialogAccepted"], true);
+    assert_eq!(
+        projects[real.to_str().unwrap()]["hasTrustDialogAccepted"],
+        true
+    );
+}
+
+#[test]
+fn preseed_trusts_the_resolved_workdir_with_python3_only() {
+    forced(Interp::Python, check_preseed_trusts_symlinked_workdir);
+}
+
+#[test]
+fn preseed_trusts_the_resolved_workdir_with_node_only() {
+    forced(Interp::Node, check_preseed_trusts_symlinked_workdir);
+}
+
+#[test]
+fn preseed_trusts_the_resolved_workdir_without_an_interpreter() {
+    forced(Interp::Neither, check_preseed_trusts_symlinked_workdir);
+}
+
 #[test]
 fn preseed_failure_warns_and_succeeds() {
     let t = TempDir::new().unwrap();

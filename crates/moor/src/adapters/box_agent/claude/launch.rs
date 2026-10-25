@@ -119,7 +119,8 @@ fs.writeFileSync(t, JSON.stringify(j, null, 2), { mode: 0o600 });
 fs.renameSync(t, p);
 "#;
 
-/// Sets onboarding, theme and folder trust in `~/.claude.json`, keeping other keys.
+/// Sets onboarding, theme and folder trust in `~/.claude.json`, keeping other keys. Trust goes on
+/// the workdir and its resolved path, since Claude Code keys trust by the physical cwd.
 const PRESEED_PY: &str = r#"
 import json, os, sys
 p, w = sys.argv[1:3]
@@ -129,7 +130,8 @@ except FileNotFoundError:
     j = {}
 j["hasCompletedOnboarding"] = True
 j["theme"] = "dark"
-j.setdefault("projects", {}).setdefault(w, {})["hasTrustDialogAccepted"] = True
+for k in {w, os.path.realpath(w)}:
+    j.setdefault("projects", {}).setdefault(k, {})["hasTrustDialogAccepted"] = True
 t = p + ".moor-tmp"
 with os.fdopen(os.open(t, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as o:
     json.dump(j, o, indent=2)
@@ -145,7 +147,9 @@ try { j = JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) { if (e.code !== "
 j.hasCompletedOnboarding = true;
 j.theme = "dark";
 j.projects = j.projects || {};
-j.projects[w] = Object.assign({}, j.projects[w], { hasTrustDialogAccepted: true });
+let r = w;
+try { r = fs.realpathSync(w); } catch (e) {}
+for (const k of new Set([w, r])) j.projects[k] = Object.assign({}, j.projects[k], { hasTrustDialogAccepted: true });
 const t = p + ".moor-tmp";
 fs.writeFileSync(t, JSON.stringify(j, null, 2), { mode: 0o600 });
 fs.renameSync(t, p);
@@ -221,8 +225,16 @@ pub(super) fn preseed(ctx: &LaunchCtx) -> Result<BoxSetup, NameError> {
         PRESEED_JS,
         &format!("{file} {workdir}"),
         &format!(
-            "[ ! -e {file} ] && (umask 077; printf '%s' {} > {file})",
-            quote(&fresh_preseed(ctx))
+            "( [ ! -e {file} ] || exit 1; umask 077; \
+r=$(cd {workdir} 2>/dev/null && pwd -P) || r={workdir}; \
+case \"$r\" in *'\"'*|*'\\'*|{workdir}) printf '%s' {plain} > {file} ;; \
+*) printf {resolved} \"$r\" > {file} ;; esac )",
+            plain = quote(&fresh_preseed(&[ctx.workdir.as_str()])),
+            resolved = quote(
+                &fresh_preseed(&[ctx.workdir.as_str(), RESOLVED])
+                    .replace('%', "%%")
+                    .replace(RESOLVED, "%s")
+            ),
         ),
     );
     Ok(BoxSetup {
@@ -233,12 +245,19 @@ pub(super) fn preseed(ctx: &LaunchCtx) -> Result<BoxSetup, NameError> {
     })
 }
 
-/// A whole `~/.claude.json` for a Box that has none.
-fn fresh_preseed(ctx: &LaunchCtx) -> String {
+/// Stands in for the resolved workdir, which only the Box knows, in [`fresh_preseed`].
+const RESOLVED: &str = "MOOR_RESOLVED_WORKDIR";
+
+/// A whole `~/.claude.json` for a Box that has none, trusting each of `dirs`.
+fn fresh_preseed(dirs: &[&str]) -> String {
+    let trusted: serde_json::Map<String, Value> = dirs
+        .iter()
+        .map(|d| ((*d).to_owned(), json!({ "hasTrustDialogAccepted": true })))
+        .collect();
     json!({
         "hasCompletedOnboarding": true,
         "theme": "dark",
-        "projects": { ctx.workdir.as_str(): { "hasTrustDialogAccepted": true } },
+        "projects": trusted,
     })
     .to_string()
 }
