@@ -9,6 +9,9 @@ use crate::config::Config;
 use crate::socket;
 use crate::Log;
 
+/// The reaction on every post the front took as role-play.
+const ROLEPLAY_MARK: &str = "performing_arts";
+
 /// The role-play setup the config asks for, or why the bot token cannot support it.
 pub(super) fn roleplay(
     cfg: &Config,
@@ -28,6 +31,8 @@ pub(super) fn roleplay(
         section.users.join(", ")
     ));
     let (api, token, warn) = (Arc::clone(api), Arc::clone(bot_token), Arc::clone(log));
+    let (react_api, react_token, react_warn) =
+        (Arc::clone(&api), Arc::clone(&token), Arc::clone(&warn));
     Ok(Some(socket::Roleplay {
         bot_id,
         bot_user,
@@ -39,5 +44,10 @@ pub(super) fn roleplay(
                 .flatten()
         }),
         log: Arc::clone(log),
+        mark: Box::new(move |channel, ts| {
+            if let Err(e) = react_api.add_reaction(&react_token, channel, ts, ROLEPLAY_MARK) {
+                react_warn(&format!("slack: role-play mark on {channel} {ts}: {e}"));
+            }
+        }),
     }))
 }
