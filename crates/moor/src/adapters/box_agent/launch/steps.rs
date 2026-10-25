@@ -2,7 +2,6 @@
 
 use moor_core::boxscript::quote;
 use moor_core::name::BoxPath;
-use moor_core::seam::agent_profile::BoxSetup;
 use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, StepDone};
 use moor_core::seam::engine::LaunchNotice;
 use moor_core::seam::proc::{Deadline, Tool};
@@ -11,7 +10,7 @@ use super::super::brief::{render, BriefInput};
 use super::super::gh_release::sha256_hex;
 use super::gh;
 use super::install::{parse_platform, StepResult};
-use super::{fail, Failure, Launch, Platform, AGENT_PATH_LINE, INSTALL_DEADLINE};
+use super::{fail, script_path, Failure, Launch, Platform, AGENT_PATH_LINE, INSTALL_DEADLINE};
 
 /// Which launch step a batch step belongs to, and so how its failure is reported.
 #[derive(Clone, Copy)]
@@ -26,6 +25,8 @@ pub(super) enum Tag {
     Brief,
     /// A hook or preseed file.
     Hooks,
+    /// The agent script.
+    Script,
 }
 
 impl Tag {
@@ -36,6 +37,7 @@ impl Tag {
             Self::GhCheck | Self::GhPut => fail("gh", e),
             Self::Brief => fail("brief", e),
             Self::Hooks => fail("hooks", e),
+            Self::Script => fail("script", e),
         }
     }
 }
@@ -59,14 +61,6 @@ impl Plan {
         self.tags.push(tag);
         self.steps.push(step);
     }
-}
-
-/// What the launch needs once its steps have run.
-pub(super) struct Staged {
-    /// The agent's hook files and step.
-    pub(super) hooks: BoxSetup,
-    /// The agent's preseed files and step.
-    pub(super) preseed: BoxSetup,
 }
 
 /// The script that exits non-zero when the agent command is not on the `PATH` the launch uses.
@@ -130,7 +124,7 @@ impl Launch<'_> {
 
     /// Adds every step after the platform to `plan`, in the order a failure is reported; on an error
     /// `plan` holds the steps before it.
-    pub(super) fn plan(&self, platform: Platform, plan: &mut Plan) -> Result<Staged, Failure> {
+    pub(super) fn plan(&self, platform: Platform, plan: &mut Plan) -> Result<(), Failure> {
         let (req, cred, ctx) = (self.req, self.cred, self.ctx);
         plan.push(Tag::Agent, BoxStep::Run(agent_check_script()));
         self.plan_forge(platform, plan);
@@ -166,7 +160,15 @@ impl Launch<'_> {
             };
             plan.push(Tag::Hooks, put);
         }
-        Ok(Staged { hooks, preseed })
+        let script = self.agent_script(&hooks, &preseed)?;
+        let path = script_path(cred).map_err(|e| fail("script", &e))?;
+        let put = BoxStep::Put {
+            path,
+            bytes: script.into_bytes(),
+            mode: 0o600,
+        };
+        plan.push(Tag::Script, put);
+        Ok(())
     }
 
     /// Runs the steps of `plan` as batches; a missing `gh` is uploaded at the head of the next
