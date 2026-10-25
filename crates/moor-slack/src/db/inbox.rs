@@ -4,7 +4,7 @@
 use rusqlite::params;
 
 use super::{Db, SlackBox};
-use crate::command::{report, BoxEvent};
+use crate::command::{report, BoxEvent, Stop};
 
 /// What an inbox item is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,6 +94,33 @@ impl Db {
         cursor: i64,
         said: Option<&str>,
     ) -> rusqlite::Result<bool> {
+        self.queue_report(
+            boxed,
+            BoxEvent::Finished,
+            cursor,
+            &report(&boxed.box_name, said),
+        )
+    }
+
+    /// Queues the report of the unexpected end of `boxed`'s agent session at `cursor`, which
+    /// starts a turn of its thread like a finished turn does. Once per Box and cursor.
+    pub(crate) fn stopped(
+        &self,
+        boxed: &SlackBox,
+        cursor: i64,
+        stop: Stop,
+    ) -> rusqlite::Result<bool> {
+        let event = BoxEvent::Stopped(stop);
+        self.queue_report(boxed, event, cursor, &event.notice(&boxed.box_name))
+    }
+
+    fn queue_report(
+        &self,
+        boxed: &SlackBox,
+        event: BoxEvent,
+        cursor: i64,
+        text: &str,
+    ) -> rusqlite::Result<bool> {
         let added = self.conn.execute(
             "INSERT OR IGNORE INTO slack_inbox \
              (channel, thread_ts, kind, text, source, created_at) \
@@ -101,8 +128,8 @@ impl Db {
             params![
                 boxed.channel,
                 boxed.thread_ts,
-                report(&boxed.box_name, said),
-                notice_source(boxed, BoxEvent::Finished, Some(cursor))
+                text,
+                notice_source(boxed, event, Some(cursor))
             ],
         )?;
         Ok(added == 1)
