@@ -138,6 +138,7 @@ impl Driver for FakeDriver {
         s.live.push(id.clone());
         s.providers.push((id.clone(), req.provider.clone()));
         s.cache.plans.push(req.cache.clone());
+        s.cache.nonces.push(req.nonce.clone());
         let workdir = layout(s.work_root.as_deref(), &id)?;
         Ok(Acquired {
             handle: BoxHandle::new(id),
