@@ -10,10 +10,21 @@ use super::super::launch::AGENT_PATH_LINE;
 /// it from `~/.local/bin`, and picks the version itself.
 const INSTALLER_URL: &str = "https://claude.ai/install.sh";
 
-/// The directory that holds the installed versions.
+/// The directory that holds the installed versions, one executable per version.
 const INSTALL_DIR: &str = "~/.local/share/claude";
 
-/// The script that runs the installer when the agent command is not on the Box's `PATH`.
+/// Newest installed version's path in the shell variable `v`; empty when none is installed.
+const NEWEST: &str =
+    "v=$(ls -1 \"$HOME/.local/share/claude/versions\" 2>/dev/null | sort -V | tail -n 1)";
+
+/// Exits 0 only when the newest installed version runs, or none is installed.
+const CHECK: &str =
+    "v=$(ls -1 \"$HOME/.local/share/claude/versions\" 2>/dev/null | sort -V | tail -n 1); \
+    [ -z \"$v\" ] || \"$HOME/.local/share/claude/versions/$v\" --version >/dev/null 2>&1";
+
+/// The script that runs the installer when the agent command is not on the Box's `PATH`. A Box
+/// that restored the install directory but not the link in `~/.local/bin` is linked to the
+/// newest version there that runs, and downloads nothing.
 ///
 /// The installer is downloaded to a private temp file first, so a failed download fails the step
 /// instead of feeding a half-read script to a shell.
@@ -28,6 +39,13 @@ fn script() -> String {
     [
         AGENT_PATH_LINE.to_owned(),
         format!("command -v {program} >/dev/null 2>&1 && exit 0"),
+        NEWEST.to_owned(),
+        format!(
+            "if [ -n \"$v\" ] && \"$HOME/.local/share/claude/versions/$v\" --version >/dev/null 2>&1; then \
+             mkdir -p \"$HOME/.local/bin\" && ln -sf \"$HOME/.local/share/claude/versions/$v\" \"$HOME/.local/bin/{}\" \
+             && command -v {program} >/dev/null 2>&1 && exit 0; fi",
+            Tool::Agent.program()
+        ),
         format!(
             "command -v curl >/dev/null 2>&1 || {{ echo {} >&2; exit 1; }}",
             missing("curl")
@@ -49,6 +67,7 @@ pub(super) fn native() -> AgentInstall {
     AgentInstall {
         script: script(),
         dirs: vec![INSTALL_DIR.to_owned()],
+        check: CHECK.to_owned(),
     }
 }
 

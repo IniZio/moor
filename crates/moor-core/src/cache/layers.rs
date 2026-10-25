@@ -3,8 +3,8 @@
 use std::fmt;
 
 use super::{
-    nested, overlap, presets, work_tree, CacheConfig, CacheError, CacheName, Declared, Origin,
-    Volume,
+    agent, nested, overlap, presets, work_tree, AgentCache, CacheConfig, CacheError, CacheName,
+    Declared, Origin, Volume,
 };
 use crate::name::ForgeRepo;
 
@@ -24,7 +24,7 @@ impl fmt::Display for Dropped {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let who = match self.origin {
             Origin::Operator => "operator",
-            Origin::Preset | Origin::Repo | Origin::WorkTree => "repo",
+            Origin::Preset | Origin::Repo | Origin::WorkTree | Origin::Agent => "repo",
         };
         write!(
             f,
@@ -43,6 +43,8 @@ pub struct CacheLayers {
     pub repo: CacheConfig,
     /// The operator's moor config.
     pub operator: CacheConfig,
+    /// The agent's install directory, when moor installs the agent in the Box.
+    pub agent: Option<AgentCache>,
 }
 
 /// The volumes of a Box, and the declared ones left out.
@@ -122,8 +124,22 @@ impl CacheLayers {
             })
             .collect();
         volumes.extend(self.work_tree(forge, &declared));
+        volumes.extend(self.agent_volume(&declared));
         volumes.extend(declared);
         Ok(Resolved { volumes, dropped })
+    }
+
+    /// The agent's install directory, unless it is not a cache path or a declared volume takes
+    /// its name or a directory of it, to which it yields as an unsealed preset would.
+    fn agent_volume(&self, declared: &[Declared]) -> Option<Declared> {
+        let volume = agent::volume(self.agent.as_ref()?)?;
+        let taken = declared
+            .iter()
+            .any(|d| overlap(&d.volume, &volume).is_some());
+        (!taken).then_some(Declared {
+            origin: Origin::Agent,
+            volume,
+        })
     }
 
     /// The work tree of `forge`, unless a layer turns it off, its name makes no cache path, or a

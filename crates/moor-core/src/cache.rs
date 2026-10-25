@@ -5,6 +5,7 @@
 //! declares is kept per user, across that user's repos. The scope follows who declared a volume,
 //! so a repo cannot widen its own.
 
+mod agent;
 mod config;
 mod layers;
 mod path;
@@ -21,6 +22,7 @@ use hmac::digest::Key;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
+pub use agent::{AgentCache, NAME as AGENT};
 pub use config::{CacheConfig, Presets, VolumeDecl};
 pub use layers::{CacheLayers, Dropped, Resolved};
 pub use path::{owned_paths, CachePath};
@@ -105,6 +107,8 @@ pub enum Origin {
     Operator,
     /// moor itself, for the repo's work tree: scoped like a repo volume, in a group of its own.
     WorkTree,
+    /// moor itself, for the agent's install directory: kept per user, in a group of its own.
+    Agent,
 }
 
 /// A volume and who declared it.
@@ -210,7 +214,7 @@ fn group(salt: &CacheSalt, origin: Origin, user: UserId, repo: Option<&ForgeRepo
     });
     let scope = match origin {
         Origin::Preset | Origin::Repo | Origin::WorkTree => format!("repo\0{}\0{repo}", user.get()),
-        Origin::Operator => format!("user\0{}", user.get()),
+        Origin::Operator | Origin::Agent => format!("user\0{}", user.get()),
     };
     let mut mac = Hmac::<Sha256>::new(Key::<Hmac<Sha256>>::from_slice(&salt.0));
     mac.update(scope.as_bytes());
@@ -299,6 +303,8 @@ impl CachePlan {
             let mut group = group(salt, d.origin, user, repo);
             if d.origin == Origin::WorkTree {
                 group.push('w');
+            } else if d.origin == Origin::Agent {
+                group.push('a');
             } else if !d.volume.seal.is_empty() {
                 group.push('x');
             }

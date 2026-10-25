@@ -146,6 +146,9 @@ pub struct AgentInstall {
     pub script: String,
     /// The directories, in `~/` form, that hold what the script installs.
     pub dirs: Vec<String>,
+    /// POSIX sh text that exits 0 only when `dirs` hold a whole install, or nothing; it runs at
+    /// close, and a failure keeps a half-finished install out of the cache.
+    pub check: String,
 }
 
 /// What a transcript script prints when the agent left no transcript.

@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use moor_core::cache::{not_kept, seal_failed, CachePlan, Origin};
+use moor_core::cache::{not_kept, seal_failed, AgentCache, CacheLayers, CachePlan, Origin};
 use moor_core::config::{BoxSettings, DriverConfig};
 use moor_core::seam::driver::{BoxStep, DriverCaps, ExecOutcome, StepDone};
 use moor_core::seam::proc::Deadline;
@@ -28,6 +28,23 @@ enum Cold {
     Refused(String),
 }
 
+/// The Box's cache layers: its settings, and the agent's install directory when moor installs the
+/// agent.
+fn layers(cx: &Cx, cfg: &BoxSettings) -> CacheLayers {
+    let agent = cx
+        .engine()
+        .agent_install()
+        .filter(|_| cfg.install_agent)
+        .map(|i| AgentCache {
+            dirs: i.dirs,
+            check: i.check,
+        });
+    CacheLayers {
+        agent,
+        ..cfg.cache.clone()
+    }
+}
+
 /// The plan for `row` on `provider`, or why the Box starts cold.
 fn plan(
     cx: &Cx,
@@ -46,14 +63,15 @@ fn plan(
     };
     let repo = row.repo.as_ref().map(|r| &r.repo);
     let refused = |e: &dyn std::fmt::Display| Cold::Refused(e.to_string());
-    let resolved = cfg.cache.resolve(repo).map_err(|e| refused(&e))?;
+    let layers = layers(cx, cfg);
+    let resolved = layers.resolve(repo).map_err(|e| refused(&e))?;
     if resolved.volumes.is_empty() && resolved.dropped.is_empty() {
         return Ok(CachePlan::none());
     }
     if !caps.cache_volumes {
         let kept = resolved.volumes.iter();
         let own = kept
-            .filter(|d| !matches!(d.origin, Origin::Preset | Origin::WorkTree))
+            .filter(|d| !matches!(d.origin, Origin::Preset | Origin::WorkTree | Origin::Agent))
             .count()
             + resolved.dropped.len();
         return if own == 0 {
@@ -63,7 +81,7 @@ fn plan(
         };
     }
     let salt = store.cache_salt().map_err(|e| refused(&e))?;
-    CachePlan::build(user, repo, &cfg.cache, &salt).map_err(|e| refused(&e))
+    CachePlan::build(user, repo, &layers, &salt).map_err(|e| refused(&e))
 }
 
 /// The plan a new Box's acquire carries; a Box that gets none warns why, unless the operator

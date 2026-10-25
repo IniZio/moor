@@ -1,6 +1,7 @@
 use super::*;
 use crate::config::{parse_repo, parse_user};
 
+mod agent;
 mod seal;
 mod seal_work_tree;
 mod work_tree;
@@ -20,6 +21,7 @@ fn layers(repo_yaml: &str, user_yaml: &str) -> CacheLayers {
     CacheLayers {
         repo: parse_repo(".moor.yaml", repo_yaml).unwrap().cache,
         operator: parse_user("config.yaml", user_yaml).unwrap().cache,
+        ..CacheLayers::default()
     }
 }
 

@@ -174,6 +174,7 @@ impl BoxSettings {
             cache: CacheLayers {
                 repo: r.cache.clone(),
                 operator: user.cache.clone(),
+                agent: None,
             },
             install_agent: user.agent.install.unwrap_or(true),
         }
