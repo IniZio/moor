@@ -8,6 +8,9 @@ use super::Mention;
 pub(crate) type MetadataLookup =
     Box<dyn Fn(&str, &str, &str) -> Option<serde_json::Value> + Send + Sync>;
 
+/// Marks the accepted post `ts` in `channel`, so people in the thread can see it was role-play.
+pub(crate) type Marker = Box<dyn Fn(&str, &str) + Send + Sync>;
+
 /// The bot's own posts that may act as another user: those carrying `moor_roleplay` metadata
 /// for one of `users`. Built only when the config turns role-play on.
 pub(crate) struct Roleplay {
@@ -22,6 +25,8 @@ pub(crate) struct Roleplay {
     pub(crate) metadata: MetadataLookup,
     /// Where each role-played message is logged.
     pub(crate) log: crate::Log,
+    /// Called on each role-played message.
+    pub(crate) mark: Marker,
 }
 
 /// A `message` the bot itself posted, as the mention or reply of the user its `moor_roleplay`
@@ -50,6 +55,7 @@ pub(super) fn roleplayed(payload: &Value, event: &Value, roleplay: &Roleplay) ->
     (roleplay.log)(&format!(
         "slack: role-play message in {channel} at {ts} as {user}"
     ));
+    (roleplay.mark)(&channel, &ts);
     Some(Mention {
         event_id,
         channel,

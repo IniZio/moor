@@ -15,6 +15,7 @@ fn roleplay(fetched: Option<Value>) -> (Roleplay, Arc<Mutex<Vec<String>>>) {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let looked = Arc::clone(&seen);
     let logged = Arc::clone(&seen);
+    let marked = Arc::clone(&seen);
     let roleplay = Roleplay {
         bot_id: "B0OWN".into(),
         bot_user: "UBOT".into(),
@@ -27,6 +28,12 @@ fn roleplay(fetched: Option<Value>) -> (Roleplay, Arc<Mutex<Vec<String>>>) {
             fetched.clone()
         }),
         log: Arc::new(move |line| logged.lock().expect("lock").push(line.to_owned())),
+        mark: Box::new(move |channel, ts| {
+            marked
+                .lock()
+                .expect("lock")
+                .push(format!("mark {channel} {ts}"));
+        }),
     };
     (roleplay, seen)
 }
@@ -102,9 +109,10 @@ fn each_roleplayed_message_logs_its_channel_ts_and_user() {
     let (roleplay, seen) = roleplay(None);
     let envelope = own_post("steer", true, Some(as_user("UALICE")));
     assert!(parse_mention(&envelope, Some(&roleplay)).is_some());
-    let seen = seen.lock().expect("lock").clone();
-    assert_eq!(seen.len(), 1, "{seen:?}");
-    let line = &seen[0];
+    let seen: Vec<String> = seen.lock().expect("lock").clone();
+    let logged: Vec<&String> = seen.iter().filter(|l| !l.starts_with("mark ")).collect();
+    assert_eq!(logged.len(), 1, "{seen:?}");
+    let line = logged[0];
     for part in ["C1", "2.0", "UALICE"] {
         assert!(line.contains(part), "{line}");
     }
@@ -147,4 +155,21 @@ fn a_user_post_is_unchanged_with_roleplay_on() {
         json!({"type":"events_api","envelope_id":"env","payload":{"event_id":"Ev1","event":event}});
     let mention = parsed(&envelope, None).expect("reply");
     assert_eq!(mention.user, "U1");
+}
+
+#[test]
+fn each_roleplayed_message_is_marked_and_a_dropped_one_is_not() {
+    let (roleplay, seen) = roleplay(None);
+    let taken = own_post("steer", true, Some(as_user("UALICE")));
+    assert!(parse_mention(&taken, Some(&roleplay)).is_some());
+    let dropped = own_post("steer", true, Some(as_user("UMALLORY")));
+    assert!(parse_mention(&dropped, Some(&roleplay)).is_none());
+    let marks: Vec<String> = seen
+        .lock()
+        .expect("lock")
+        .iter()
+        .filter(|l| l.starts_with("mark "))
+        .cloned()
+        .collect();
+    assert_eq!(marks, ["mark C1 2.0"]);
 }
