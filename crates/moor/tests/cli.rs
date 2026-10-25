@@ -85,11 +85,27 @@ fn fresh_dir(tag: &str) -> Dir {
         .unwrap())
 }
 
-/// Creates a fresh dir outside `/tmp`, for a front's state dir: a front's own `/tmp` hides it.
+/// The longest base for [`fresh_dir_outside_tmp`]: a front's socket sits under it at
+/// `state/fronts/<name>.sock`, which must fit a Unix socket path (108 bytes on Linux).
+const SHORT_BASE_MAX: usize = 24;
+
+/// Where [`fresh_dir_outside_tmp`] makes its dirs: `TMPDIR` when it is short and not under `/tmp`,
+/// else `/var/tmp`. Never the target dir, whose length depends on where the checkout is.
+fn short_base() -> std::path::PathBuf {
+    let tmp = std::env::temp_dir();
+    if tmp.starts_with("/tmp") || tmp.as_os_str().len() > SHORT_BASE_MAX {
+        "/var/tmp".into()
+    } else {
+        tmp
+    }
+}
+
+/// Creates a fresh dir with a short path outside `/tmp`, for a front's state dir: a front's own
+/// `/tmp` hides it, and its sockets live in it.
 fn fresh_dir_outside_tmp(tag: &str) -> Dir {
     Dir(tempfile::Builder::new()
         .prefix(&format!("{tag}-"))
-        .tempdir_in(env!("CARGO_TARGET_TMPDIR"))
+        .tempdir_in(short_base())
         .unwrap())
 }
 
