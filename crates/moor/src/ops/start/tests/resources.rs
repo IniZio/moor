@@ -94,3 +94,18 @@ fn a_re_provisioned_box_records_the_new_machine() {
     let row = store.box_row(id).unwrap().unwrap();
     assert_eq!(row.boxed.unwrap().delivered, Some(shape(8, 15000)));
 }
+
+#[test]
+fn the_launch_request_carries_the_repo_notes_and_the_delivered_shape() {
+    let driver = FakeDriver::new().exec_stdout([probe(4, 7900)]);
+    let (w, v) = start_with("setup: [a]\nbrief: run make emu\n", driver);
+    let row =
+        w.cx.store()
+            .unwrap()
+            .box_row(BoxId::new(v.boxed.id))
+            .unwrap()
+            .unwrap();
+    let req = crate::ops::start::launch::launch_req(&w.cx, &row, None).unwrap();
+    assert_eq!(req.repo_notes.as_deref(), Some("run make emu"));
+    assert_eq!(req.shape, Some(shape(4, 7900)));
+}

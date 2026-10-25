@@ -148,6 +148,7 @@ A repo's `.moor.yaml` configures its Boxes.
 
 | Key | Type | Meaning |
 | --- | --- | --- |
+| `brief` | string, at most 4000 characters | Notes from the repo's author for the Box's agent: how to start services, what is installed, test users. The agent reads it verbatim under "This project's Box", marked as coming from `.moor.yaml`. |
 | `setup` | list of shell commands | Commands that run on each new machine. |
 | `teardown` | list of shell commands | Commands that run when the Box closes. |
 | `env` | map | Plain environment variables for the Box. `PATH` is reserved. moor does not pass names that look like credentials, or names that moor sets, to the agent. |

@@ -18,7 +18,7 @@ use moor_core::{BoxId, StartReq, Warning};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::box_exec;
-use crate::ops::common::facts::settings_of;
+use crate::ops::common::facts::{repo_config, settings_of};
 use crate::ops::common::provision::{nonce, recorded_workdir, reread};
 use crate::ops::common::resume;
 use crate::ops::common::view::rfc3339;
@@ -262,6 +262,8 @@ pub(super) fn launch_req(cx: &Cx, row: &BoxRow, setup_exit: Option<i32>) -> Opti
         resume: None,
         issue: row.issue.clone(),
         setup_exit,
+        repo_notes: repo_config(row).ok().flatten().and_then(|c| c.brief),
+        shape: b.delivered,
         model: None,
         nonce: nonce(cx.rng()),
         proxy: None,

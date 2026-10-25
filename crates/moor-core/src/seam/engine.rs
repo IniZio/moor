@@ -10,6 +10,7 @@ use crate::seam::agent_profile::{AgentInstall, PromptMatch, ProxyAddr};
 use crate::seam::driver::DriverError;
 use crate::seam::proc::Deadline;
 use crate::seam::surface::{PaneRef, WorkspaceRef};
+use crate::shape::Shape;
 
 /// A stored agent session and where it runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,6 +71,10 @@ pub struct LaunchReq {
     pub issue: Option<String>,
     /// The exit code of a failed setup, if setup failed.
     pub setup_exit: Option<i32>,
+    /// The `brief:` of the repo's `.moor.yaml`.
+    pub repo_notes: Option<String>,
+    /// The CPUs and memory the Box delivers, when they are recorded.
+    pub shape: Option<Shape>,
     /// The model to ask for; the agent's default when `None`.
     pub model: Option<String>,
     /// Random hex that keeps the credential directory name unique.
@@ -117,6 +122,8 @@ impl PartialEq for LaunchReq {
             && self.resume == other.resume
             && self.issue == other.issue
             && self.setup_exit == other.setup_exit
+            && self.repo_notes == other.repo_notes
+            && self.shape == other.shape
             && self.model == other.model
             && self.nonce == other.nonce
             && proxy(&self.proxy) == proxy(&other.proxy)
