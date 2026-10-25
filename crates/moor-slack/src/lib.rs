@@ -30,6 +30,7 @@ mod upload;
 mod watchers;
 mod worker;
 
+pub use coordinator::claude::wiring::EGRESS_PROXY_VARS;
 pub use coordinator::mcp::{close_inherited, serve_tools, ToolSettings};
 pub use daemon::{run, Settings};
 

@@ -41,6 +41,7 @@ fn host() -> HostEnv {
     HostEnv {
         home: Some("/home/op".into()),
         user: Some("op".into()),
+        egress_proxy: Vec::new(),
     }
 }
 
@@ -119,6 +120,59 @@ fn the_check_puts_the_token_on_fd_3_only() {
     for file in ["argv", "env", "stdin", "cwd"] {
         assert!(!recorded(bin.path(), file).contains(token), "{file}");
     }
+}
+
+/// The variables the front shim names its egress proxy in, as a Linux front receives them.
+pub(crate) fn egress_proxy() -> Vec<(String, std::ffi::OsString)> {
+    let url = "http://127.0.0.1:41999";
+    let exempt = "localhost,127.0.0.1,::1";
+    [
+        ("HTTPS_PROXY", url),
+        ("https_proxy", url),
+        ("HTTP_PROXY", url),
+        ("http_proxy", url),
+        ("NO_PROXY", exempt),
+        ("no_proxy", exempt),
+    ]
+    .into_iter()
+    .map(|(var, value)| (var.to_owned(), value.into()))
+    .collect()
+}
+
+#[test]
+fn the_check_reaches_claude_through_the_fronts_egress_proxy_and_keeps_nothing_else() {
+    let bin = tempfile::tempdir().unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    let host = HostEnv {
+        egress_proxy: egress_proxy(),
+        ..host()
+    };
+    Claude::probe(&install(bin.path(), None), host)
+        .unwrap()
+        .check(cfg.path(), &Secret::new("sk-ant-oat01-good-1".into()))
+        .unwrap();
+    let mut env: Vec<String> = recorded(bin.path(), "env")
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    env.sort();
+    let cfg_dir = cfg.path().display();
+    let want = [
+        "CLAUDE_CODE_DISABLE_CLAUDE_MDS=1".to_owned(),
+        "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=3".to_owned(),
+        format!("CLAUDE_CONFIG_DIR={cfg_dir}"),
+        "HOME=/home/op".to_owned(),
+        "HTTPS_PROXY=http://127.0.0.1:41999".to_owned(),
+        "HTTP_PROXY=http://127.0.0.1:41999".to_owned(),
+        "LANG=C.UTF-8".to_owned(),
+        "NO_PROXY=localhost,127.0.0.1,::1".to_owned(),
+        "PATH=/usr/local/bin:/usr/bin:/bin".to_owned(),
+        "USER=op".to_owned(),
+        "http_proxy=http://127.0.0.1:41999".to_owned(),
+        "https_proxy=http://127.0.0.1:41999".to_owned(),
+        "no_proxy=localhost,127.0.0.1,::1".to_owned(),
+    ];
+    assert_eq!(env, want);
 }
 
 #[test]

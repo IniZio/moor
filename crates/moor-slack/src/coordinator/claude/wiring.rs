@@ -24,6 +24,16 @@ pub(super) const CWD: &str = "/";
 /// What a turn's `CLAUDE_CODE_OAUTH_TOKEN` holds; the Proxy injects the real token in its place.
 const OAUTH_PLACEHOLDER: &str = "moor-proxy";
 
+/// The variables the front shim names the front's egress proxy in.
+pub const EGRESS_PROXY_VARS: [&str; 6] = [
+    "HTTPS_PROXY",
+    "https_proxy",
+    "HTTP_PROXY",
+    "http_proxy",
+    "NO_PROXY",
+    "no_proxy",
+];
+
 /// `PATH` in a turn's cleared environment.
 const PATH: &str = "/usr/local/bin:/usr/bin:/bin";
 

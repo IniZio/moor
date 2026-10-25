@@ -3,7 +3,7 @@
 //! on a pipe at fd 3, the `mcp.json` that names the front's tool server, the `stream-json`
 //! events of its output, and the instruction files it would load.
 
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -58,6 +58,8 @@ pub(crate) struct HostEnv {
     pub(crate) home: Option<PathBuf>,
     /// `USER` of the daemon.
     pub(crate) user: Option<String>,
+    /// The front's egress proxy variables; only the login check takes them, turns use the Proxy.
+    pub(crate) egress_proxy: Vec<(String, OsString)>,
 }
 
 /// A Claude Code binary that passed the version gate.
@@ -259,11 +261,12 @@ impl CredentialCheck for Claude {
     }
 
     /// Runs one turn on `haiku` with `token` on the pipe and the input "Reply OK.", with
-    /// `config_dir`; `Ok` when Claude answers without an error.
+    /// `config_dir`, through the front's egress proxy; `Ok` when Claude answers without an error.
     fn check(&self, config_dir: &Path, token: &Secret) -> Result<(), CheckError> {
         let unavailable = |why: String| CheckError::Unavailable(redact(&why, token));
         let mut cmd = self.base(CHECK_MODEL, config_dir);
-        cmd.env(TOKEN_FD_VAR, TOKEN_FD.to_string());
+        cmd.env(TOKEN_FD_VAR, TOKEN_FD.to_string())
+            .envs(self.host.egress_proxy.clone());
         let shown = self.binary.display();
         let ran = run(cmd, CHECK_INPUT.as_bytes(), Some(token), CHECK_LIMIT)
             .map_err(|e| unavailable(format!("{shown}: {e}")))?;
@@ -390,7 +393,7 @@ fn run(cmd: Command, input: &[u8], token: Option<&Secret>, limit: Duration) -> i
 
 mod instructions;
 
-mod wiring;
+pub(crate) mod wiring;
 use wiring::{clear_env, on_path, proxied, write_mcp_config, CWD, MCP_CONFIG};
 
 #[cfg(test)]
