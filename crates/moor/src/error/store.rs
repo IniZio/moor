@@ -14,6 +14,7 @@ impl From<StoreError> for CommandError {
             StoreError::NameTaken(_)
             | StoreError::BranchTaken(_)
             | StoreError::Schema { .. }
+            | StoreError::Migration { .. }
             | StoreError::SleepBlocked { .. } => Self::new(ErrorKind::Refused, e),
             other => Self::new(ErrorKind::Failed, format!("state store error: {other}")),
         }

@@ -126,7 +126,9 @@ fn a_state_dir_from_another_schema_version_is_refused_and_kept() {
     drop(store);
     rusqlite::Connection::open(&path)
         .unwrap()
-        .execute("UPDATE meta SET v = '4' WHERE k = 'schema_version'", [])
+        .execute_batch(
+            "UPDATE meta SET v = '4' WHERE k = 'schema_version'; DROP TABLE refinery_schema_history;",
+        )
         .unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let err = Store::open(&path, clock).err().unwrap().to_string();
@@ -152,7 +154,9 @@ fn a_state_dir_from_before_the_cloned_event_is_refused() {
     drop(open(dir.path()));
     rusqlite::Connection::open(&path)
         .unwrap()
-        .execute("UPDATE meta SET v = '9' WHERE k = 'schema_version'", [])
+        .execute_batch(
+            "UPDATE meta SET v = '9' WHERE k = 'schema_version'; DROP TABLE refinery_schema_history;",
+        )
         .unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let err = Store::open(&path, clock).err().unwrap().to_string();

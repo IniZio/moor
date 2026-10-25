@@ -2,7 +2,7 @@ use std::path::Path;
 
 use rusqlite::Connection;
 
-use super::init_schema;
+use super::migrate as init_schema;
 use crate::store::StoreError;
 
 fn version(conn: &Connection) -> String {
@@ -41,6 +41,8 @@ fn an_older_or_newer_version_is_refused_and_left_as_it_is() {
     for found in ["5", "8", "99"] {
         let mut conn = fresh_store();
         conn.execute("UPDATE meta SET v = ?1 WHERE k = 'schema_version'", [found])
+            .unwrap();
+        conn.execute_batch("DROP TABLE refinery_schema_history")
             .unwrap();
         let err = init_schema(&mut conn, Path::new("moor.db")).unwrap_err();
         assert!(matches!(err, StoreError::Schema { .. }), "{err:?}");
@@ -174,4 +176,88 @@ fn the_cache_salt_is_made_once_per_state_dir() {
     assert_eq!(again.cache_salt().unwrap(), first, "kept across calls");
     let other = crate::store::tests::open(b.path()).0.cache_salt().unwrap();
     assert_ne!(other, first, "a fresh state dir has its own");
+}
+
+/// A file exactly as the last build before migrations left it: the baseline SQL and no history.
+fn pre_migration_file(dir: &Path) -> std::path::PathBuf {
+    let path = dir.join("moor.db");
+    let conn = Connection::open(&path).unwrap();
+    conn.execute_batch(include_str!("../../../migrations/V1__baseline.sql"))
+        .unwrap();
+    conn.execute_batch(include_str!(
+        "../../../migrations/V2__tables_made_on_open.sql"
+    ))
+    .unwrap();
+    conn.execute("INSERT INTO meta (k, v) VALUES ('cache_salt', 'kept')", [])
+        .unwrap();
+    path
+}
+
+#[test]
+fn an_adopted_file_gains_the_tables_older_builds_made_on_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("moor.db");
+    Connection::open(&path)
+        .unwrap()
+        .execute_batch(include_str!("../../../migrations/V1__baseline.sql"))
+        .unwrap();
+    let mut conn = Connection::open(&path).unwrap();
+    init_schema(&mut conn, &path).unwrap();
+    let names: Vec<String> = tables(&conn).into_iter().map(|(t, _)| t).collect();
+    assert!(names.contains(&"front_leases".to_owned()), "{names:?}");
+    assert_eq!(version(&conn), "16");
+}
+
+fn tables(conn: &Connection) -> Vec<(String, i64)> {
+    let mut stmt = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+        .unwrap();
+    let names: Vec<String> = stmt
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    names
+        .into_iter()
+        .map(|t| {
+            let n = conn
+                .query_row(&format!("SELECT count(*) FROM \"{t}\""), [], |r| r.get(0))
+                .unwrap();
+            (t, n)
+        })
+        .collect()
+}
+
+#[test]
+fn a_file_from_the_last_build_before_migrations_is_adopted_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = pre_migration_file(dir.path());
+    let before = tables(&Connection::open(&path).unwrap());
+    super::refuse_other_version(&path).unwrap();
+    let mut conn = Connection::open(&path).unwrap();
+    init_schema(&mut conn, &path).unwrap();
+    let mut after = tables(&conn);
+    let history = after
+        .iter()
+        .position(|(t, _)| t == "refinery_schema_history");
+    assert_eq!(
+        history.map(|i| after.remove(i)),
+        Some(("refinery_schema_history".into(), 2))
+    );
+    assert_eq!(after, before, "every table and row kept");
+    assert_eq!(version(&conn), "16");
+}
+
+#[test]
+fn applied_migrations_are_never_edited() {
+    let pinned: Vec<(i32, u64)> = super::schema()
+        .unwrap()
+        .iter()
+        .map(|m| (m.version(), m.checksum()))
+        .collect();
+    assert_eq!(
+        pinned,
+        [(1, 7_584_322_431_300_515_816), (2, 72_415_543_002_251_104)],
+        "a schema change is a new migration file; an applied one must not change"
+    );
 }

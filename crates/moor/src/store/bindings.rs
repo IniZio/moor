@@ -5,9 +5,6 @@ use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
 use super::{parsed, Store, StoreError};
 
-/// DDL for the bindings table; idempotent, so it runs on every open.
-pub(super) const BINDINGS_SQL: &str = include_str!("bindings.sql");
-
 /// A front conversation bound to a Session.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Binding {
