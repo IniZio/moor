@@ -354,3 +354,62 @@ fn a_bisect_or_a_cherry_pick_sequence_in_progress_ends() {
     assert!(!t.join(".git/sequencer").exists(), "the sequence ended");
     clean_on(&o, &o.base);
 }
+
+/// Every ref and every pseudo-ref file in the tree's `.git` that `commit` is reachable from.
+fn names_reaching(o: &Origin, commit: &str) -> Vec<String> {
+    let refs = tree_git(o, &["for-each-ref", "--format=%(refname)"]);
+    let pseudo = Origin::entries(&o.tree().join(".git"))
+        .into_iter()
+        .filter(|n| n.bytes().all(|b| b.is_ascii_uppercase() || b == b'_'));
+    refs.lines()
+        .map(str::to_owned)
+        .chain(pseudo)
+        .filter(|n| {
+            let probe = o.try_git(&o.tree(), &["merge-base", "--is-ancestor", commit, n]);
+            probe.status.success()
+        })
+        .collect()
+}
+
+/// Box 1 commits in the tree and returns the commit.
+fn unpushed_commit(o: &Origin) -> String {
+    ok(o, BOX1, &o.base);
+    std::fs::write(o.tree().join("a.txt"), "unpushed\n").unwrap();
+    tree_git(o, &["commit", "-q", "-am", "unpushed"]);
+    tree_git(o, &["rev-parse", "HEAD"])
+}
+
+#[test]
+fn a_commit_the_previous_session_reset_away_is_reachable_by_no_name() {
+    for left in [
+        "ORIG_HEAD",
+        "MERGE_HEAD",
+        "CHERRY_PICK_HEAD",
+        "REVERT_HEAD",
+        "REBASE_HEAD",
+        "AUTO_MERGE",
+        "BISECT_EXPECTED_REV",
+    ] {
+        let o = Origin::new(left);
+        let gone = unpushed_commit(&o);
+        tree_git(&o, &["reset", "-q", "--hard", "HEAD~1"]);
+        std::fs::write(o.tree().join(".git").join(left), format!("{gone}\n")).unwrap();
+        assert!(
+            names_reaching(&o, &gone).contains(&left.to_owned()),
+            "{left}"
+        );
+        let out = ok(&o, BOX2, &o.base);
+        assert!(out.contains("moor: work tree refreshed\n"), "{left}: {out}");
+        assert_eq!(names_reaching(&o, &gone), Vec::<String>::new(), "{left}");
+    }
+}
+
+#[test]
+fn a_local_tag_on_an_unpushed_commit_is_gone() {
+    let o = Origin::new("tag");
+    let tagged = unpushed_commit(&o);
+    tree_git(&o, &["tag", "wip", &tagged]);
+    let out = ok(&o, BOX2, &o.base);
+    assert!(out.contains("moor: work tree refreshed\n"), "{out}");
+    assert_eq!(names_reaching(&o, &tagged), Vec::<String>::new());
+}
