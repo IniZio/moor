@@ -41,12 +41,15 @@ struct Fold {
     finished: HashMap<BoxId, Vec<(i64, Option<String>)>>,
     /// The last message each Box's agent left in its current turn.
     said: HashMap<BoxId, String>,
-    /// Each Box's session that ended without a clean exit and whose turn has not yet gone idle.
-    stopping: HashMap<BoxId, Stop>,
+    /// Boxes whose session ended without a clean exit, so the idle that follows is no finished
+    /// turn.
+    stopping: HashSet<BoxId>,
     /// Boxes whose transcript could not be saved before their session end was seen.
     transcript_lost: HashSet<BoxId>,
-    /// Each Box's unexpected session ends, by cursor of the idle that followed, whose line is
-    /// not yet known to be posted.
+    /// Boxes the controller could not reach, whose next session end says so.
+    unreachable: HashSet<BoxId>,
+    /// Each Box's unexpected session ends, by cursor of the session end, whose line is not yet
+    /// known to be posted and whose session no later one has replaced.
     stopped: HashMap<BoxId, Vec<(i64, Stop)>>,
     /// Boxes that closed and whose closed line is not yet known to be posted.
     closed: HashSet<BoxId>,
@@ -89,7 +92,7 @@ impl Fold {
         prompts::fold(self, id, &event.kind, event.cursor, &event.payload);
         artifacts::fold(self, id, &event.kind, &event.payload);
         lifecycle::fold(self, id, event.cursor, &event.kind, &event.payload);
-        stopped::fold(self, id, &event.kind, &event.payload);
+        stopped::fold(self, id, event.cursor, &event.kind, &event.payload);
         match event.kind.as_str() {
             "agent_said" => {
                 let text = event
@@ -101,11 +104,7 @@ impl Fold {
             "working" | "busy" | "woke" => drop(self.said.remove(&id)),
             "idled" => {
                 let said = self.said.remove(&id);
-                if let Some(stop) = self.stopping.remove(&id) {
-                    self.stopped
-                        .entry(id)
-                        .or_default()
-                        .push((event.cursor, stop));
+                if self.stopping.remove(&id) {
                     return;
                 }
                 self.finished

@@ -119,11 +119,19 @@ pub(crate) struct Stop {
     pub(crate) exit: Option<i32>,
     /// Whether the controller could not save the agent's transcript.
     pub(crate) transcript_lost: bool,
+    /// Whether the Box stopped answering, so the controller ended the session itself.
+    pub(crate) unreachable: bool,
 }
 
 impl Stop {
     /// The line for Box `name`'s thread.
     pub(crate) fn line(self, name: &str) -> String {
+        if self.unreachable {
+            return format!(
+                "`{name}` stopped answering, so its agent session was ended. Reply here and I can \
+                 restart it."
+            );
+        }
         let exit = self
             .exit
             .map_or_else(|| "exit unknown".to_owned(), |n| format!("exit {n}"));
