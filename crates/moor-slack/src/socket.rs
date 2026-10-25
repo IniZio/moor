@@ -18,8 +18,10 @@ use super::api::Api;
 mod envelope;
 mod items;
 mod parse;
+mod roleplay;
 use envelope::{handle_envelope, Flow};
 pub(super) use items::{AfterAck, Click, Kept, Press, Slash, TokenSubmission};
+pub(super) use roleplay::Roleplay;
 
 /// First wait after a failed or finished connection.
 const MIN_BACKOFF: Duration = Duration::from_secs(1);
@@ -152,7 +154,7 @@ impl Write for Stream {
 /// Reads envelopes from one connection until Slack disconnects or the socket closes.
 #[cfg(test)]
 pub(super) fn session(url: &str, intake: &dyn Intake) -> Result<(), SocketError> {
-    session_tracked(url, intake, &mut false, &AtomicBool::new(false))
+    session_tracked(url, intake, None, &mut false, &AtomicBool::new(false))
 }
 
 /// Runs, reconnecting with backoff, until `intake` is gone or `stop` is set.
@@ -160,6 +162,7 @@ pub(super) fn run(
     api: &Api,
     app_token: &Secret,
     intake: &dyn Intake,
+    roleplay: Option<&Roleplay>,
     stop: &AtomicBool,
     sleep: &dyn Fn(Duration),
 ) {
@@ -168,7 +171,7 @@ pub(super) fn run(
         if let Ok(url) = api.open_connection(app_token) {
             let mut healthy = false;
             if matches!(
-                session_tracked(&url, intake, &mut healthy, stop),
+                session_tracked(&url, intake, roleplay, &mut healthy, stop),
                 Err(SocketError::ReceiverGone)
             ) {
                 return;
@@ -192,6 +195,7 @@ fn next_delay(delay: Duration) -> Duration {
 fn session_tracked(
     url: &str,
     intake: &dyn Intake,
+    roleplay: Option<&Roleplay>,
     healthy: &mut bool,
     stop: &AtomicBool,
 ) -> Result<(), SocketError> {
@@ -204,7 +208,7 @@ fn session_tracked(
         match ws.read() {
             Ok(Message::Text(text)) => {
                 silent_ticks = 0;
-                match handle_envelope(&text, &mut ws, intake, stop)? {
+                match handle_envelope(&text, &mut ws, intake, roleplay, stop)? {
                     Flow::Continue => {}
                     Flow::Hello => *healthy = true,
                     Flow::Disconnect | Flow::Stop => return Ok(()),

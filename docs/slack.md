@@ -222,6 +222,7 @@ The front rejects unknown keys.
 | `coordinator.context_kib` | integer, at least 1 | 32 | The context budget for one turn, in KiB. |
 | `coordinator.max_open_boxes` | integer, at least 1 | 1 | The most Boxes that one thread has open at once. |
 | `coordinator.idle_minutes` | integer, at least 1 | 30 | Quiet minutes before a thread's host Session ends. |
+| `roleplay.users` | list of Slack user ids, at least one | off | For test automation only. A post the bot makes with its own token and with message metadata `{"event_type": "moor_roleplay", "event_payload": {"user": "U…"}}` for a listed user counts as that user's: a top-level post naming the bot starts a thread, a thread post is a reply. Anyone holding the bot token can then act as the listed users. Each such message is logged with its channel, ts and user. |
 
 ## Slash commands
 

@@ -126,11 +126,16 @@ fn post_message_sends_the_bot_token_and_json_body() {
 }
 
 #[test]
-fn team_id_reads_the_team_from_auth_test_with_the_bot_token() {
-    let (base, handle) = serve(r#"{"ok":true,"team_id":"T0TEAM1","user_id":"UBOT"}"#);
+fn auth_test_reads_the_team_user_and_bot_with_the_bot_token() {
+    let (base, handle) =
+        serve(r#"{"ok":true,"team_id":"T0TEAM1","user_id":"UBOT","bot_id":"B0BOT"}"#);
     let api = Api::new(&base).expect("api");
-    let team = api.team_id(&Secret::new(TOKEN.as_bytes().to_vec()));
-    assert_eq!(team.expect("auth.test"), "T0TEAM1");
+    let me = api
+        .auth_test(&Secret::new(TOKEN.as_bytes().to_vec()))
+        .expect("auth.test");
+    assert_eq!(me.team, "T0TEAM1");
+    assert_eq!(me.user.as_deref(), Some("UBOT"));
+    assert_eq!(me.bot.as_deref(), Some("B0BOT"));
     let request = handle.join().expect("server");
     assert!(request.starts_with("POST /auth.test "), "{request}");
     assert!(

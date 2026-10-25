@@ -20,6 +20,7 @@ use super::{
 };
 
 mod proxy;
+mod roleplay;
 use super::{AfterAck, Click, Press, Slash, TokenSubmission};
 use crate::account::Account;
 use crate::api::Api;
@@ -230,9 +231,16 @@ fn run_returns_once_the_receiver_is_gone() {
     drop(rx);
     let slept = RefCell::new(Vec::new());
     let stop = AtomicBool::new(false);
-    run(&api, &Secret::new(b"xapp-1".to_vec()), &tx, &stop, &|d| {
-        slept.borrow_mut().push(d);
-    });
+    run(
+        &api,
+        &Secret::new(b"xapp-1".to_vec()),
+        &tx,
+        None,
+        &stop,
+        &|d| {
+            slept.borrow_mut().push(d);
+        },
+    );
     http.join().expect("http");
     server.join().expect("server");
     assert!(slept.borrow().is_empty());
@@ -248,7 +256,7 @@ fn envelope_for(event: &serde_json::Value) -> serde_json::Value {
 #[test]
 fn thread_reply_is_parsed_as_reply() {
     let event = json!({"type":"message","user":"U1","text":"steer","ts":"2.0","thread_ts":"1.0","channel":"C1"});
-    let mention = parse_mention(&envelope_for(&event)).expect("reply");
+    let mention = parse_mention(&envelope_for(&event), None).expect("reply");
     assert!(mention.reply);
     assert_eq!(mention.thread_ts.as_deref(), Some("1.0"));
     assert_eq!(mention.text, "steer");
@@ -257,7 +265,11 @@ fn thread_reply_is_parsed_as_reply() {
 #[test]
 fn app_mention_is_not_a_reply() {
     let event = json!({"type":"app_mention","user":"U1","text":"<@UBOT> hi","ts":"2.0","thread_ts":"1.0","channel":"C1"});
-    assert!(!parse_mention(&envelope_for(&event)).expect("mention").reply);
+    assert!(
+        !parse_mention(&envelope_for(&event), None)
+            .expect("mention")
+            .reply
+    );
 }
 
 #[test]
@@ -275,20 +287,23 @@ fn ignores_messages_that_are_not_user_thread_replies() {
         with("bot_id", json!("B1")),
         with("text", json!("hey <@UBOT> look")),
     ] {
-        assert!(parse_mention(&envelope_for(&event)).is_none(), "{event}");
+        assert!(
+            parse_mention(&envelope_for(&event), None).is_none(),
+            "{event}"
+        );
     }
     let mut top_level = base.clone();
     top_level
         .as_object_mut()
         .expect("object")
         .remove("thread_ts");
-    assert!(parse_mention(&envelope_for(&top_level)).is_none());
+    assert!(parse_mention(&envelope_for(&top_level), None).is_none());
 }
 
 #[test]
 fn bot_mention_filter_is_skipped_without_authorizations() {
     let event = json!({"type":"message","user":"U1","text":"<@UBOT> hi","ts":"2.0","thread_ts":"1.0","channel":"C1"});
-    assert!(parse_mention(&events_api("env", "Ev9", &event)).is_some());
+    assert!(parse_mention(&events_api("env", "Ev9", &event), None).is_some());
 }
 
 /// An `interactive` envelope with one action.
@@ -528,7 +543,7 @@ fn a_stop_during_the_intake_keeps_the_event_but_leaves_it_unacked() {
         stop: Arc::clone(&stop),
         kept: RefCell::new(0),
     };
-    session_tracked(&url, &intake, &mut false, &stop).expect("session ends cleanly");
+    session_tracked(&url, &intake, None, &mut false, &stop).expect("session ends cleanly");
     assert_eq!(*intake.kept.borrow(), 1, "the event in flight was kept");
     assert_eq!(server.join().expect("server"), Vec::<String>::new());
 }
@@ -542,7 +557,7 @@ fn a_stop_that_came_first_reads_nothing_more() {
         stop: Arc::clone(&stop),
         kept: RefCell::new(0),
     };
-    session_tracked(&url, &intake, &mut false, &stop).expect("session ends cleanly");
+    session_tracked(&url, &intake, None, &mut false, &stop).expect("session ends cleanly");
     assert_eq!(*intake.kept.borrow(), 0);
     assert_eq!(server.join().expect("server"), Vec::<String>::new());
 }

@@ -12,7 +12,7 @@ use std::thread;
 use moor_client::Client;
 use moor_core::secret::Secret;
 
-use crate::api::Api;
+use crate::api::{Api, BotIdentity};
 use crate::config::{parse_config, Config, CoordinatorAgent};
 use crate::coordinator::claude::{Claude, HostEnv};
 use crate::coordinator::Agent;
@@ -29,7 +29,9 @@ use crate::worker::{self, Fx, Job};
 use crate::Log;
 
 mod recorder;
+mod roleplay;
 use recorder::Recorder;
+use roleplay::roleplay;
 mod stop;
 use stop::{finish, sleep_until_stopped};
 
@@ -87,6 +89,8 @@ struct Loaded {
     turns: Turns,
     /// The controller's front socket and the Slack team.
     link: Link,
+    /// Who the bot may post as, when the config turns role-play on.
+    roleplay: Option<socket::Roleplay>,
 }
 
 /// Runs the daemon until its Socket Mode thread ends, or until `settings.stop` is set and the
@@ -108,6 +112,7 @@ pub fn run(settings: &Settings, log: &Log) -> Result<(), String> {
         left,
         turns,
         link,
+        roleplay,
     } = load(settings, log)?;
     let (jobs_tx, jobs_rx) = mpsc::channel();
     let (_wake_tx, wake_rx) = mpsc::channel();
@@ -123,7 +128,14 @@ pub fn run(settings: &Settings, log: &Log) -> Result<(), String> {
     let stop = Arc::clone(&settings.stop);
     let socket = thread::spawn(move || {
         let sleep = |d| sleep_until_stopped(&stop, d);
-        socket::run(&socket_api, &app_token, &recorder, &stop, &sleep);
+        socket::run(
+            &socket_api,
+            &app_token,
+            &recorder,
+            roleplay.as_ref(),
+            &stop,
+            &sleep,
+        );
     });
     let feed = Feed {
         link: link.clone(),
@@ -160,7 +172,7 @@ fn load(settings: &Settings, log: &Log) -> Result<Loaded, String> {
     let (app_token, bot_token) = read_tokens(&cfg, settings.home.as_deref())?;
     let api = Api::new(&cfg.api_base).map_err(|e| format!("slack: {e}"))?;
     let api = Arc::new(api);
-    let link = connect(settings, &api, &bot_token)?;
+    let (link, me) = connect(settings, &api, &bot_token)?;
     let dir = &settings.state_dir;
     DirBuilder::new()
         .recursive(true)
@@ -175,6 +187,7 @@ fn load(settings: &Settings, log: &Log) -> Result<Loaded, String> {
     left.extend(db.closing().map_err(read)?);
     let coordinator = probe(&cfg, settings, log);
     let bot_token = Arc::new(bot_token);
+    let roleplay = roleplay(&cfg, &me, &api, &bot_token, log)?;
     let program = std::env::current_exe().map_err(|e| format!("find this binary: {e}"))?;
     let socket = std::path::absolute(&settings.socket)
         .map(|path| own_proc(&path))
@@ -208,6 +221,7 @@ fn load(settings: &Settings, log: &Log) -> Result<Loaded, String> {
         left,
         turns,
         link,
+        roleplay,
     })
 }
 
@@ -238,13 +252,18 @@ fn reopen_unsent(db: &Db, log: &Log) -> Result<(), String> {
     Ok(())
 }
 
-/// The link to the controller's front socket for the Slack team the bot token belongs to.
-fn connect(settings: &Settings, api: &Api, bot_token: &Secret) -> Result<Link, String> {
-    let team = api
-        .team_id(bot_token)
-        .map_err(|e| format!("slack auth.test: {e}"))
-        .and_then(|id| Team::parse(&id))?;
-    Ok(Link::new(Client::new(&settings.socket), team))
+/// The link to the controller's front socket for the Slack team the bot token belongs to, and
+/// who the bot is.
+fn connect(
+    settings: &Settings,
+    api: &Api,
+    bot_token: &Secret,
+) -> Result<(Link, BotIdentity), String> {
+    let me = api
+        .auth_test(bot_token)
+        .map_err(|e| format!("slack auth.test: {e}"))?;
+    let team = Team::parse(&me.team)?;
+    Ok((Link::new(Client::new(&settings.socket), team), me))
 }
 
 /// The coordinator agent the config names, probed and logged, or why it cannot run.

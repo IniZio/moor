@@ -23,6 +23,17 @@ pub struct Config {
     /// The coordinator agent; a missing section means every default.
     #[serde(default)]
     pub coordinator: Coordinator,
+    /// Users the bot may post as, for test automation; absent means off.
+    #[serde(default)]
+    pub roleplay: Option<Roleplay>,
+}
+
+/// The `roleplay` section: anyone holding the bot token can act as these users.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Roleplay {
+    /// Slack user ids, such as `U0123ABCD`.
+    pub users: Vec<String>,
 }
 
 /// The `coordinator` section.
@@ -150,6 +161,14 @@ fn validate(cfg: &Config) -> Result<(), (&'static str, &'static str)> {
     }
     if c.idle_minutes == 0 {
         return Err(("coordinator.idle_minutes", "must be at least 1"));
+    }
+    if let Some(roleplay) = &cfg.roleplay {
+        if roleplay.users.is_empty() {
+            return Err(("roleplay.users", "must list at least one Slack user id"));
+        }
+        if roleplay.users.iter().any(|u| u.trim().is_empty()) {
+            return Err(("roleplay.users", "must not hold an empty user id"));
+        }
     }
     Ok(())
 }

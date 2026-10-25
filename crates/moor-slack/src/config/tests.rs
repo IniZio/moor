@@ -144,3 +144,23 @@ fn a_host_session_ends_after_30_quiet_minutes_unless_the_config_says_otherwise()
     let e = err(&slack_with("coordinator:\n  idle_minutes: 0\n"));
     assert_eq!(e.path, "coordinator.idle_minutes");
 }
+
+#[test]
+fn roleplay_is_off_unless_the_config_lists_users() {
+    assert_eq!(
+        parse_config("s.yaml", &slack_with("")).unwrap().roleplay,
+        None
+    );
+    let text = slack_with("roleplay:\n  users: [U0ALICE, U0BOB]\n");
+    let roleplay = parse_config("s.yaml", &text).unwrap().roleplay.expect("on");
+    assert_eq!(roleplay.users, ["U0ALICE", "U0BOB"]);
+}
+
+#[test]
+fn a_roleplay_section_with_no_users_is_refused() {
+    let e = err(&slack_with("roleplay:\n  users: []\n"));
+    assert_eq!(e.path, "roleplay.users");
+    assert!(e.to_string().contains("at least one"), "{e}");
+    let e = err(&slack_with("roleplay:\n  users: [\"\"]\n"));
+    assert_eq!(e.path, "roleplay.users");
+}
