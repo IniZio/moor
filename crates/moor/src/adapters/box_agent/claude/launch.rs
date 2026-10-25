@@ -369,13 +369,6 @@ fn fragment_json(ctx: &LaunchCtx, script: &str) -> Value {
     let mut fragment = hooks(script);
     if let Some(map) = fragment.as_object_mut() {
         map.insert("enableAllProjectMcpServers".to_owned(), true.into());
-        if let Some(pre) = map
-            .get_mut("hooks")
-            .and_then(|h| h.get_mut("PreToolUse"))
-            .and_then(Value::as_array_mut)
-        {
-            pre.extend(mcp::tool_denials(ctx));
-        }
         if bypasses_permissions(ctx) {
             map.insert("skipDangerousModePermissionPrompt".to_owned(), true.into());
         }

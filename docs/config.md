@@ -59,11 +59,8 @@ only through a Proxy rule whose `credential` names it.
 | `env` | map | The program's environment. |
 | `url` | string | The server URL. |
 | `headers` | map | Request headers. |
-| `allow_tools` | list of tool names | The only tools the agent may call. Every tool when unset; none when empty. |
 
-moor hands each server to the agent at launch. With `allow_tools` set, the
-agent profile refuses any other tool of that server; for Claude Code, a
-`PreToolUse` hook blocks it.
+moor hands each server to the agent at launch.
 
 One `headers` value may hold one `${NAME}`, which names the Box user's secret
 `NAME`. The `url` must then be `https://`. The Box never holds the secret: the
@@ -73,17 +70,16 @@ that sets the header with the real secret on requests to the URL's host.
 else (`args`, `env`, `url`) is refused, because a stdio server runs in the Box
 and would hold the secret.
 
-A read-only Linear server, with each teammate's own key stored as their
-secret `linear`. Create the key with read-only permissions: Linear Settings →
-Security & access → Personal API keys → Only select permissions.
+A read-only Linear server. Read-only comes from the server's read-only
+endpoint and a key with only read permission (Linear: Settings → Security &
+access → Personal API keys → Only select permissions → Read).
 
 ```yaml
 mcp_servers:
   linear:
-    url: https://mcp.linear.app/mcp
+    url: https://mcp.linear.app/mcp/readonly
     headers:
-      Authorization: Bearer ${linear}
-    allow_tools: [get_issue, list_issues, list_comments, get_project]
+      Authorization: "Bearer ${LINEAR_API_KEY}"
 ```
 
 ### `proxy`

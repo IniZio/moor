@@ -28,8 +28,6 @@ pub struct McpServer {
     pub url: Option<String>,
     /// Request headers; one value may hold one `${SECRET}` ref, which the Proxy injects.
     pub headers: BTreeMap<String, String>,
-    /// The only tools the agent may call; every tool when unset.
-    pub allow_tools: Option<Vec<String>>,
 }
 
 /// `${NAME}` references in `text`, in order.
@@ -135,18 +133,6 @@ pub(super) fn rule_name(name: &str) -> String {
     format!("mcp-{name}")
 }
 
-/// A tool name: `[A-Za-z0-9_-]+`.
-fn tool_name(s: &str) -> Result<(), String> {
-    if !s.is_empty()
-        && s.chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
-    {
-        Ok(())
-    } else {
-        Err(format!("{s:?} must match [A-Za-z0-9_-]+"))
-    }
-}
-
 /// Validates the `mcp_servers` map; each `${NAME}` names a secret of the Box's user that no
 /// Proxy rule in `injected` injects.
 pub(super) fn validate_mcp(
@@ -196,10 +182,6 @@ pub(super) fn validate_mcp(
             }
         }
         check_secret_header(s, &at)?;
-        for (i, tool) in s.allow_tools.iter().flatten().enumerate() {
-            tool_name(tool)
-                .map_err(|why| ConfigError::new(format!("{at}.allow_tools[{i}]"), why))?;
-        }
     }
     Ok(())
 }

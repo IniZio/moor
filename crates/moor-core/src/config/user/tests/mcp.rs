@@ -52,10 +52,6 @@ fn a_secret_that_would_land_in_the_box_is_refused() {
             "{url: 'https://h.example', headers: {A: '${t}${u}'}}",
             "mcp_servers.m.headers.A",
         ),
-        (
-            "{url: 'https://h.example', allow_tools: ['get issue']}",
-            "mcp_servers.m.allow_tools[0]",
-        ),
     ] {
         let e = err(&format!("mcp_servers: {{m: {doc}}}"));
         assert_eq!(e.path, at, "{doc}: {e}");
