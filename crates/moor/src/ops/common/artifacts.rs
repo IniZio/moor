@@ -95,6 +95,15 @@ fn failed(cx: &Cx, reason: &str) {
 /// A failure only warns, so the caller's outcome never changes. File contents never appear in
 /// a warning. The caller holds the Box lock.
 pub(crate) fn collect(cx: &Cx, store: &Store, row: &BoxRow) -> usize {
+    collect_in(cx, store, row, None)
+}
+
+/// [`collect`], optionally holding back files not yet stable.
+///
+/// With `held` (a mid-turn pass), `held` is the previous pass's index. Only files whose name,
+/// size and hash match it are stored, since a file the agent is still writing changes between
+/// passes. `held` becomes this pass's index.
+fn collect_in(cx: &Cx, store: &Store, row: &BoxRow, held: Option<&mut Vec<ArtifactFile>>) -> usize {
     let Some((b, handle)) = target(row) else {
         return 0;
     };
@@ -106,7 +115,7 @@ pub(crate) fn collect(cx: &Cx, store: &Store, row: &BoxRow) -> usize {
         },
     };
     let mut stored = 0;
-    if let Err(reason) = run(cx, store, row, (handle, &workdir), &mut stored) {
+    if let Err(reason) = run(cx, store, row, (handle, &workdir), (&mut stored, held)) {
         cx.warn(Warning {
             code: "artifacts_collect_failed".to_owned(),
             message: format!("artifacts were not fully saved: {reason}"),
@@ -121,12 +130,19 @@ fn run(
     store: &Store,
     row: &BoxRow,
     (handle, workdir): (&BoxHandle, &BoxPath),
-    stored: &mut usize,
+    (stored, held): (&mut usize, Option<&mut Vec<ArtifactFile>>),
 ) -> Result<(), String> {
     let state = cx.state_dir().map_err(|e| e.error.to_string())?;
     let dir = state.join("artifacts");
     let staging = private_staging(state, &row.id.get().to_string())?;
-    let result = stage_and_store(cx, store, row, (handle, workdir), (&dir, &staging), stored);
+    let result = stage_and_store(
+        cx,
+        store,
+        row,
+        (handle, workdir),
+        (&dir, &staging),
+        (stored, held),
+    );
     let _ = fs::remove_dir_all(&staging);
     result
 }
@@ -138,7 +154,7 @@ fn stage_and_store(
     row: &BoxRow,
     (handle, workdir): (&BoxHandle, &BoxPath),
     (dir, staging): (&Path, &Path),
-    stored: &mut usize,
+    (stored, held): (&mut usize, Option<&mut Vec<ArtifactFile>>),
 ) -> Result<(), String> {
     let script = format!(
         "cd -- {} || exit 1\n{INDEX_SCRIPT}",
@@ -179,6 +195,13 @@ fn stage_and_store(
         })
         .collect::<Vec<_>>();
     let index: Vec<_> = index.into_iter().filter(|f| valid_name(&f.name)).collect();
+    let index = match held {
+        Some(prev) => {
+            let before = std::mem::replace(prev, index.clone());
+            index.into_iter().filter(|f| before.contains(f)).collect()
+        }
+        None => index,
+    };
     let fetch = Fetch {
         cx,
         store,
@@ -254,5 +277,7 @@ fn skipped(cx: &Cx, message: &str) {
 }
 
 mod fetch;
+mod midturn;
+pub(crate) use midturn::collect_working;
 #[cfg(test)]
 mod tests;

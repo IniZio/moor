@@ -43,6 +43,7 @@ impl Moor {
                     out.push(e.error.to_string());
                 }
                 ops::common::artifacts::collect_due(&self.cx, store, draining);
+                ops::common::artifacts::collect_working(&self.cx, store, draining);
             }
             Err(e) => out.push(e.error.to_string()),
         }
