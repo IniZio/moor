@@ -198,6 +198,15 @@ volume on, above or inside Docker's data paths (`~/docker`,
 `/var/lib/containerd`) is dropped with its own `cache_refused` warning, even
 when the docker preset is off, and the Box keeps the rest of its volumes.
 
+#### The agent
+
+When moor installs the agent in a Box (see `agent.install`), the directory that
+holds the install is a volume named `agent`, kept per user and shared by every
+repo that user starts a Box in. A later Box restores it and links the cached
+version instead of downloading the agent again. Its seal runs the newest
+cached version, so a half-finished install is never kept. A provider without
+cache volumes keeps nothing and says nothing; the install runs in every Box.
+
 #### Presets
 
 Every Box with a repo gets these unless a layer drops them. A volume that a

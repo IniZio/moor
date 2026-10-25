@@ -16,6 +16,7 @@ fn plan(repo_yaml: &str, user_yaml: &str) -> CachePlan {
     let layers = CacheLayers {
         repo: parse_repo(".moor.yaml", repo_yaml).unwrap().cache,
         operator: parse_user("config.yaml", user_yaml).unwrap().cache,
+        ..CacheLayers::default()
     };
     let repo = ForgeRepo {
         owner: "o".to_owned(),
@@ -174,6 +175,7 @@ fn a_box_without_a_repo_sends_no_scope() {
         )
         .unwrap()
         .cache,
+        ..CacheLayers::default()
     };
     let p = CachePlan::build(UserId::new(1), None, &layers, &CacheSalt::new([3; 64])).unwrap();
     assert!(super::env_value(&p).is_some());

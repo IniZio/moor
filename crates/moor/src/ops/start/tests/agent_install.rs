@@ -35,6 +35,7 @@ fn installer() -> AgentInstall {
     AgentInstall {
         script: SCRIPT.to_owned(),
         dirs: vec!["~/.local/share/agent".to_owned()],
+        check: "true".to_owned(),
     }
 }
 
@@ -220,4 +221,42 @@ fn the_host_log_and_its_directory_are_owner_only() {
     let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode(&dir), 0o700);
     assert_eq!(mode(&dir.join("1.log")), 0o600);
+}
+
+/// The cache volume names the start handed the Driver.
+fn planned(w: &World) -> Vec<String> {
+    let plans = w.driver.acquired_plans();
+    plans
+        .iter()
+        .flat_map(|p| p.volumes().iter().map(|v| v.name.as_str().to_owned()))
+        .collect()
+}
+
+#[test]
+fn the_install_dir_is_kept_as_a_cache_volume_unless_the_install_is_off() {
+    for (user, install, kept) in [
+        (None, true, true),
+        (Some(false), true, false),
+        (None, false, false),
+    ] {
+        let driver = FakeDriver::new().cache_volumes();
+        let (w, _) = install_world("setup: [a]\n", user, install, driver);
+        run(&w.cx, &goal_req()).unwrap();
+        assert_eq!(
+            planned(&w).contains(&"agent".to_owned()),
+            kept,
+            "{user:?} {install}"
+        );
+    }
+}
+
+#[test]
+fn a_provider_without_cache_volumes_warns_nothing_about_the_install_dir() {
+    let (w, _) = install_world("setup: [a]\n", None, true, FakeDriver::new());
+    run(&w.cx, &goal_req()).unwrap();
+    assert!(w
+        .cx
+        .take_warnings()
+        .iter()
+        .all(|x| !x.code.starts_with("cache_")));
 }

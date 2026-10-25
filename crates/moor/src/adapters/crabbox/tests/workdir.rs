@@ -135,6 +135,7 @@ fn plan(repo_yaml: &str) -> moor_core::cache::CachePlan {
             .unwrap()
             .cache,
         operator: moor_core::cache::CacheConfig::default(),
+        ..moor_core::cache::CacheLayers::default()
     };
     let repo = moor_core::name::ForgeRepo {
         owner: "o".to_owned(),

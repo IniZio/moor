@@ -65,6 +65,7 @@ fn cache_items(s: &BoxSettings, repo: Option<&ForgeRepo>) -> Vec<EnvItem> {
                     Origin::Preset | Origin::WorkTree => Layer::Default,
                     Origin::Repo => Layer::Repo,
                     Origin::Operator => Layer::User,
+                    Origin::Agent => Layer::Agent,
                 };
                 EnvItem {
                     source,

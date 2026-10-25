@@ -37,7 +37,8 @@ impl TestBox {
         moor_testkit::write_host_guards(&bin).unwrap();
         moor_testkit::write_executable(&bin.join("curl"), FAKE_CURL).unwrap();
         for tool in [
-            "sh", "bash", "mktemp", "rm", "cp", "cat", "chmod", "mkdir", "printf",
+            "sh", "bash", "mktemp", "rm", "cp", "cat", "chmod", "mkdir", "printf", "ls", "sort",
+            "tail", "ln",
         ] {
             let host = ["/usr/bin", "/bin"]
                 .iter()
@@ -151,4 +152,64 @@ fn a_box_without_curl_says_so() {
 #[test]
 fn the_install_names_the_directory_that_holds_it() {
     assert_eq!(native().dirs, ["~/.local/share/claude"]);
+}
+
+const VERSION_BIN: &str = "#!/bin/sh\necho 1.2.3\n";
+
+impl TestBox {
+    /// Puts a cached version `name` in the install directory, as a restored cache volume does.
+    fn cache_version(&self, name: &str, body: &str) {
+        let dir = self.home.path().join(".local/share/claude/versions");
+        std::fs::create_dir_all(&dir).unwrap();
+        moor_testkit::write_executable(&dir.join(name), body).unwrap();
+    }
+
+    fn linked_to(&self) -> Option<std::path::PathBuf> {
+        std::fs::read_link(self.home.path().join(".local/bin/claude")).ok()
+    }
+}
+
+#[test]
+fn a_restored_install_dir_is_relinked_to_the_newest_version_without_downloading() {
+    let b = TestBox::new(INSTALLER);
+    b.cache_version("2.9.0", VERSION_BIN);
+    b.cache_version("2.10.1", VERSION_BIN);
+    b.cache_version("2.10.0", VERSION_BIN);
+    let (err, code) = b.run(&[]);
+    assert_eq!((code, err.as_str()), (0, ""));
+    assert_eq!(b.log(), "");
+    let want = b.home.path().join(".local/share/claude/versions/2.10.1");
+    assert_eq!(b.linked_to(), Some(want));
+}
+
+#[test]
+fn a_cached_version_that_does_not_run_is_not_linked_and_the_installer_runs() {
+    let b = TestBox::new(INSTALLER);
+    b.cache_version("2.0.0", "#!/bin/sh\nexit 1\n");
+    assert_eq!(b.run(&[]).1, 0);
+    assert!(b.log().contains("ran"));
+    assert_eq!(b.linked_to(), None);
+}
+
+/// Runs the check under `sh` with `HOME` at the box; returns its exit code.
+fn check_code(b: &TestBox) -> i32 {
+    std::process::Command::new(b.home.path().join("bin/sh"))
+        .args(["-c", &native().check])
+        .env_clear()
+        .env("HOME", b.home.path())
+        .env("PATH", b.home.path().join("bin"))
+        .status()
+        .unwrap()
+        .code()
+        .unwrap()
+}
+
+#[test]
+fn the_check_passes_an_empty_dir_or_a_whole_install_and_fails_a_broken_one() {
+    let b = TestBox::new(INSTALLER);
+    assert_eq!(check_code(&b), 0);
+    b.cache_version("1.0.0", VERSION_BIN);
+    assert_eq!(check_code(&b), 0);
+    b.cache_version("1.0.1", "#!/bin/sh\nexit 1\n");
+    assert_ne!(check_code(&b), 0);
 }
