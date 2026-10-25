@@ -124,6 +124,13 @@ pub enum ExtraEvent {
         /// The offered answers.
         options: Vec<String>,
     },
+    /// The Box could not be reached to tell whether the agent outlived its pane.
+    AgentUnreachable {
+        /// Tries made before giving up.
+        attempts: u32,
+        /// The last error.
+        error: String,
+    },
     /// Reading the agent's pane for first-run prompts failed.
     AgentPromptCheckFailed {
         /// The agent's pane.

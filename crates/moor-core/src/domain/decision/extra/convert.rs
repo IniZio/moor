@@ -50,6 +50,9 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::AgentSaid { text } => Self::AgentSaid { text },
             ExtraEvent::AgentDoing { text } => Self::AgentDoing { text },
             ExtraEvent::NeedsInput { question, options } => Self::NeedsInput { question, options },
+            ExtraEvent::AgentUnreachable { attempts, error } => {
+                Self::AgentUnreachable { attempts, error }
+            }
             ExtraEvent::AgentPromptCheckFailed { pane, error } => {
                 Self::AgentPromptCheckFailed { pane, error }
             }
@@ -144,6 +147,9 @@ impl TryFrom<Event> for ExtraEvent {
             Event::AgentSaid { text } => Ok(Self::AgentSaid { text }),
             Event::AgentDoing { text } => Ok(Self::AgentDoing { text }),
             Event::NeedsInput { question, options } => Ok(Self::NeedsInput { question, options }),
+            Event::AgentUnreachable { attempts, error } => {
+                Ok(Self::AgentUnreachable { attempts, error })
+            }
             Event::AgentPromptCheckFailed { pane, error } => {
                 Ok(Self::AgentPromptCheckFailed { pane, error })
             }
@@ -210,7 +216,9 @@ impl TryFrom<Event> for ExtraEvent {
             | Event::BoxDeleted
             | Event::BoxReleaseFailed { .. }
             | Event::ArtifactPublished { .. }
-            | Event::SessionEnded { .. }) => Err(e),
+            | Event::SessionEnded { .. }
+            | Event::AgentLinkLost { .. }
+            | Event::AgentLinkRestored { .. }) => Err(e),
         }
     }
 }

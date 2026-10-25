@@ -252,6 +252,43 @@ pub trait Engine: Send + Sync {
     fn stop(&self, _s: &SessionRef) -> Result<(), EngineError> {
         Ok(())
     }
+
+    /// Whether the agent of session `s` still runs after its pane ended. An agent that runs as
+    /// its pane's child ended with it, its exit unknown here.
+    ///
+    /// # Errors
+    /// [`EngineError::Box`] when the Box could not be reached.
+    fn agent_fate(&self, _s: &SessionRef, _deadline: Deadline) -> Result<AgentFate, EngineError> {
+        Ok(AgentFate::Ended { exit: None })
+    }
+
+    /// Opens a new pane in `ws` attached to the still running agent of session `s`.
+    ///
+    /// # Errors
+    /// [`EngineError::Failed`] when no pane could be opened.
+    fn reattach(
+        &self,
+        _s: &SessionRef,
+        _ws: &WorkspaceRef,
+        _name: &BoxName,
+    ) -> Result<PaneRef, EngineError> {
+        Err(EngineError::Failed {
+            step: "reattach",
+            message: "this agent cannot outlive its pane".to_owned(),
+        })
+    }
+}
+
+/// What became of an agent whose pane ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentFate {
+    /// The agent still runs on the Box.
+    Running,
+    /// The agent ended, with its exit status when the Box kept it.
+    Ended {
+        /// The agent's exit status.
+        exit: Option<i32>,
+    },
 }
 
 #[cfg(test)]

@@ -18,6 +18,7 @@ use moor_core::Warning;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::BoxLock;
+use crate::ops::common::link::{self, Fate};
 use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::resume;
 use crate::ops::common::transcript;
@@ -246,8 +247,10 @@ pub(crate) fn settle(
         transcript::save_on_turn(cx, store, row)?;
     }
     if let (PaneLiveness::Exited, Some(probed)) = (reading.pane, reading.session) {
-        transcript::save_on_exit(cx, store, row, probed)?;
-        end_exited_session(cx, store, row, reading, probed)?;
+        if let Some(exit) = exited_agent(cx, store, row, reading, probed)? {
+            transcript::save_on_exit(cx, store, row, probed)?;
+            end_exited_session(cx, store, row, exit, probed)?;
+        }
     }
     register_session(cx, store, row, reading)?;
     needs_input::note_needs_input(store, row, reading)?;
@@ -292,14 +295,46 @@ pub(crate) fn settle(
     }
 }
 
-/// Ends the current session of an agent seen exited, once its transcript is saved.
+/// The exit status of the agent whose pane `reading` saw end, or `None` when the session goes
+/// on: a new pane attached to the agent, the session is not the probed one, or another
+/// operation holds the Box lock.
+fn exited_agent(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    reading: &Reading,
+    probed: i64,
+) -> Result<Option<Option<i32>>, CommandError> {
+    let Some(launch) = store.live_session(row.id)?.filter(|s| s.id == probed) else {
+        return Ok(None);
+    };
+    let Ok(_held) = BoxLock::acquire(
+        cx.clock(),
+        cx.state_dir()?,
+        row.id,
+        "session end",
+        Duration::ZERO,
+    ) else {
+        return Ok(None);
+    };
+    let pane_exit = match reading.activity.as_ref().map(|a| &a.state) {
+        Some(AgentState::Exited { code }) => Some(*code),
+        _ => None,
+    };
+    Ok(match link::recover(cx, store, row, &launch, pane_exit)? {
+        Fate::Reattached => None,
+        Fate::Ended(exit) => Some(exit),
+    })
+}
+
+/// Ends the current session of an agent that ended with `exit`, once its transcript is saved.
 ///
 /// Nothing is ended when the live session is not the probed one, or while another operation holds the Box lock, so the save is retried first.
 fn end_exited_session(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
-    reading: &Reading,
+    exit: Option<i32>,
     probed: i64,
 ) -> Result<(), CommandError> {
     if store.live_session(row.id)?.is_none_or(|s| s.id != probed) {
@@ -313,10 +348,6 @@ fn end_exited_session(
         Duration::ZERO,
     ) else {
         return Ok(());
-    };
-    let exit = match reading.activity.as_ref().map(|a| &a.state) {
-        Some(AgentState::Exited { code }) => Some(*code),
-        _ => None,
     };
     store.end_current_session(row.id, "exited", exit)?;
     Ok(())

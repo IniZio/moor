@@ -346,6 +346,25 @@ pub enum Event {
         /// The credential rule that works again.
         rule: String,
     },
+    /// The agent's pane ended while the agent kept running on the Box.
+    AgentLinkLost {
+        /// The pane that ended.
+        pane: Option<String>,
+        /// The exit status the pane reported.
+        exit: Option<i32>,
+    },
+    /// A new pane attached to the running agent after its link was lost.
+    AgentLinkRestored {
+        /// The new pane.
+        pane: String,
+    },
+    /// The Box could not be reached to tell whether the agent outlived its pane.
+    AgentUnreachable {
+        /// Tries made before giving up.
+        attempts: u32,
+        /// The last error.
+        error: String,
+    },
     /// The agent finished the turn a steer started.
     TurnDone {
         /// The steer's id.

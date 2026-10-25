@@ -8,6 +8,7 @@ use super::Gone;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
+use crate::ops::common::link::{self, Fate};
 use crate::ops::start::revive_for_steer;
 use crate::store::Store;
 
@@ -29,12 +30,19 @@ pub(super) fn once(
     cx: &Cx,
     store: &Store,
     (id, name): (BoxId, &str),
-    gone: Gone,
+    mut gone: Gone,
 ) -> Result<(), CommandError> {
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "steer", boxlock::WAIT)?;
-    let live = store.live_session(id)?.map(|l| l.id);
-    if live.is_some() && live != gone.launch.as_ref().map(|l| l.id) {
+    let live = store.live_session(id)?;
+    let live_id = live.as_ref().map(|l| l.id);
+    if live_id.is_some() && live_id != gone.launch.as_ref().map(|l| l.id) {
         return Ok(());
+    }
+    if let (Some(launch), Some(row)) = (live, store.box_row(id)?) {
+        match link::recover(cx, store, &row, &launch, gone.code)? {
+            Fate::Reattached => return Ok(()),
+            Fate::Ended(exit) => gone.code = exit,
+        }
     }
     if relaunched_recently(cx, store, id)? {
         return Err(ended_again(cx, store, (id, name), &gone)?);

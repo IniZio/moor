@@ -59,6 +59,9 @@ impl Event {
             Self::AgentRateLimited { .. } => "agent_rate_limited",
             Self::ProxyCredentialRejected { .. } => "proxy_credential_rejected",
             Self::ProxyCredentialRecovered { .. } => "proxy_credential_recovered",
+            Self::AgentLinkLost { .. } => "agent_link_lost",
+            Self::AgentLinkRestored { .. } => "agent_link_restored",
+            Self::AgentUnreachable { .. } => "agent_unreachable",
             Self::TurnDone { .. } => "turn_done",
             Self::ArtifactPublished { .. } => "artifact_published",
         }

@@ -10,12 +10,16 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneRead, Probes};
+use moor_core::name::BoxName;
 use moor_core::name::BoxPath;
 use moor_core::seam::agent_profile::{AgentInstall, FirstRunPrompt, PromptMatch};
 use moor_core::seam::clock::Clock;
-use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef, Steer, SteerOutcome};
+use moor_core::seam::engine::{
+    AgentFate, Engine, EngineError, LaunchReq, SessionRef, Steer, SteerOutcome,
+};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::PaneRef;
+use moor_core::seam::surface::WorkspaceRef;
 
 #[derive(Default)]
 struct State {
@@ -39,6 +43,8 @@ struct State {
     on_transcript: Option<Arc<dyn Fn() + Send + Sync>>,
     hang: Option<Arc<dyn Clock>>,
     install: Option<AgentInstall>,
+    fates: VecDeque<Result<AgentFate, EngineError>>,
+    reattached: Vec<(String, String)>,
 }
 
 /// The launch a scripted starting marker names to stand for the latest launch's own marker.
@@ -164,6 +170,18 @@ impl FakeEngine {
     }
 
     /// The session ids transcripts were requested for, in call order.
+    /// Queues what the next calls to `agent_fate` answer, in order; an empty queue answers
+    /// that the agent ended with its pane.
+    pub(crate) fn fates(self, fates: Vec<Result<AgentFate, EngineError>>) -> Self {
+        self.st().fates.extend(fates);
+        self
+    }
+
+    /// Every reattach so far, as (session id, new pane).
+    pub(crate) fn reattached(&self) -> Vec<(String, String)> {
+        self.st().reattached.clone()
+    }
+
     pub(crate) fn transcripts(&self) -> Vec<String> {
         self.st().transcripts.clone()
     }
@@ -285,6 +303,25 @@ impl Engine for FakeEngine {
             submit_retried: false,
             submit_checked: true,
         }))
+    }
+
+    fn agent_fate(&self, _s: &SessionRef, _deadline: Deadline) -> Result<AgentFate, EngineError> {
+        self.st()
+            .fates
+            .pop_front()
+            .unwrap_or(Ok(AgentFate::Ended { exit: None }))
+    }
+
+    fn reattach(
+        &self,
+        s: &SessionRef,
+        _ws: &WorkspaceRef,
+        _name: &BoxName,
+    ) -> Result<PaneRef, EngineError> {
+        let mut st = self.st();
+        let pane = format!("reattached-{}", st.reattached.len() + 1);
+        st.reattached.push((s.id.clone(), pane.clone()));
+        Ok(PaneRef::new(pane))
     }
 
     fn transcript(&self, s: &SessionRef, dest: &Path) -> Result<(), EngineError> {
