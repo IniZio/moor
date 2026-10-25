@@ -50,7 +50,7 @@ fn surface(s: FakeSurface) -> Arc<FakeSurface> {
 
 fn req(s: &FakeSurface) -> LaunchReq {
     LaunchReq {
-        mcp: Default::default(),
+        mcp: std::collections::BTreeMap::new(),
         id: BoxId::new(1),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
@@ -149,7 +149,7 @@ fn the_pane_line_runs_the_script_without_exec_and_reports_the_exit() {
 fn a_resume_runs_the_agent_with_the_stored_session_instead_of_the_prompt() {
     let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
     let r = LaunchReq {
-        mcp: Default::default(),
+        mcp: std::collections::BTreeMap::new(),
         resume: Some("sess-9".to_owned()),
         ..req(&s)
     };
@@ -322,7 +322,7 @@ fn proxy_addr() -> ProxyAddr {
 
 fn req_with_proxy(s: &FakeSurface) -> LaunchReq {
     LaunchReq {
-        mcp: Default::default(),
+        mcp: std::collections::BTreeMap::new(),
         proxy: Some(Arc::new(proxy_addr())),
         ..req(s)
     }

@@ -1,3 +1,5 @@
+#![allow(clippy::indexing_slicing, reason = "test assertions")]
+
 use crate::config::proxy::{resolve_rules, ResolvedInject};
 
 use super::{err, ok};

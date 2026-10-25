@@ -87,6 +87,10 @@ impl McpServer {
 
     /// The Proxy rule that sets the secret-naming header on requests to the server's host.
     #[must_use]
+    #[expect(
+        clippy::literal_string_with_formatting_args,
+        reason = "`{secret}` is the Proxy's form slot"
+    )]
     pub fn proxy_rule(&self) -> Option<ToolRule> {
         let (key, value, secret) = self.secret_header()?;
         let host = https_host(self.url.as_deref()?)?;
@@ -120,8 +124,7 @@ impl McpServer {
 /// The host of an `https://` URL, without its port.
 fn https_host(url: &str) -> Option<&str> {
     let rest = url.strip_prefix("https://")?;
-    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-    let authority = &rest[..end];
+    let authority = rest.split(['/', '?', '#']).next()?;
     let host = authority.split(':').next()?;
     (!host.is_empty() && !authority.contains('@')).then_some(host)
 }
