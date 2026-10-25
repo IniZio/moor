@@ -18,3 +18,9 @@ nono-proxy = { git = "https://github.com/IniZio/nono", rev = "83e639c4ae59538c33
 
 [workspace.lints.clippy]
 allow_attributes_without_reason = "deny"
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
