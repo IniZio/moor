@@ -3,8 +3,7 @@
 use std::time::Duration;
 
 use moor_core::activity::{
-    decide, may_apply_quiet, Activity, AgentState, HookCache, HookRead, PaneRead, PaneStatus,
-    Probes,
+    decide, may_apply_quiet, Activity, AgentState, HookRead, PaneRead, PaneStatus, Probes,
 };
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
@@ -14,9 +13,7 @@ use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::PaneRef;
 use moor_core::view::LaunchFailure;
-use moor_core::{BoxId, Warning};
-use time::format_description::well_known::Rfc3339;
-use time::OffsetDateTime;
+use moor_core::Warning;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -25,6 +22,9 @@ use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::resume;
 use crate::ops::common::transcript;
 use crate::store::{BoxRow, Store, StoreError};
+
+use launch::launch_overdue;
+use stored::stored_hook;
 
 /// Allowance for the hook file read and for the pane observation in one probe.
 ///
@@ -198,31 +198,6 @@ pub(crate) fn read(
         pane_text,
         said,
     })
-}
-
-/// The `box.launch_timeout` in seconds when `failure` is older than it at `now`.
-fn launch_overdue(cx: &Cx, failure: &LaunchFailure, now: Ts) -> Option<u64> {
-    let limit = cx.config().box_.launch_timeout();
-    let at = OffsetDateTime::parse(&failure.at, &Rfc3339).ok()?;
-    let failed_ms = i64::try_from(at.unix_timestamp_nanos() / 1_000_000).ok()?;
-    let age = u128::try_from(now.as_millis().saturating_sub(failed_ms)).ok()?;
-    (age >= limit.as_millis()).then_some(limit.as_secs())
-}
-
-/// The cached hook report of Box `id`; an undecodable row is dropped with a warning.
-fn stored_hook(cx: &Cx, store: &Store, id: BoxId) -> Result<Option<HookCache>, CommandError> {
-    match store.hook(id) {
-        Ok(c) => Ok(c),
-        Err(StoreError::Invalid(why) | StoreError::Corrupt(why)) => {
-            warn(cx, format!("ignored the stored hook report: {why}"));
-            Ok(None)
-        }
-        Err(StoreError::Json(e)) => {
-            warn(cx, format!("ignored the stored hook report: {e}"));
-            Ok(None)
-        }
-        Err(e) => Err(e.into()),
-    }
 }
 
 /// The name of the first-run screen the profile reads in the pane `tail`, for an agent that runs no hook
@@ -416,8 +391,10 @@ const fn liveness(pane: &PaneRead, activity: &Activity) -> PaneLiveness {
     }
 }
 
+mod launch;
 mod needs_input;
 mod said;
+mod stored;
 mod turn;
 
 #[cfg(test)]
