@@ -77,6 +77,12 @@ pub(crate) fn serve(jobs: &Receiver<Job>, db: &Db, left: Vec<SlackBox>, fx: &mut
                 text,
             }) => (fx.ephemeral)(&channel, &user, &thread, &text),
             Ok(Job::Answer { prompt, choice, by }) => answer::answer(db, fx, prompt, choice, &by),
+            Ok(Job::Stop {
+                name,
+                channel,
+                thread,
+                by,
+            }) => stop::stop(fx, &name, (&channel, &thread), &by),
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return,
         }
@@ -377,6 +383,7 @@ fn written(fx: &Fx<'_>, write: rusqlite::Result<()>) -> bool {
 }
 
 mod answer;
+mod stop;
 pub(crate) use answer::click;
 
 mod job;

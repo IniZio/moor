@@ -87,3 +87,29 @@ pub(crate) enum AfterAck {
         form: Form,
     },
 }
+
+/// What a button press asks for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Press {
+    /// Answer a prompt with this 1-based option number.
+    Answer(u32),
+    /// Stop the Box of this name: interrupt its agent.
+    Stop(String),
+}
+
+/// A button press on a prompt or status message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Click {
+    /// Envelope id, used as the dedupe id.
+    pub envelope_id: String,
+    /// Channel holding the message.
+    pub channel: String,
+    /// User who pressed the button.
+    pub user: String,
+    /// Timestamp of the message carrying the button.
+    pub message_ts: String,
+    /// Thread the message belongs to, if known.
+    pub thread_ts: Option<String>,
+    /// What the button asks for.
+    pub press: Press,
+}

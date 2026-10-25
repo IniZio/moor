@@ -20,7 +20,7 @@ use super::{
 };
 
 mod proxy;
-use super::{AfterAck, Click, Slash, TokenSubmission};
+use super::{AfterAck, Click, Press, Slash, TokenSubmission};
 use crate::account::Account;
 use crate::api::Api;
 use crate::login::Form;
@@ -319,7 +319,7 @@ fn block_actions_is_forwarded_as_click() {
             user: "U1".into(),
             message_ts: "3.0".into(),
             thread_ts: Some("1.0".into()),
-            choice: 2,
+            press: Press::Answer(2),
         })]
     );
 }
@@ -545,4 +545,28 @@ fn a_stop_that_came_first_reads_nothing_more() {
     session_tracked(&url, &intake, &mut false, &stop).expect("session ends cleanly");
     assert_eq!(*intake.kept.borrow(), 0);
     assert_eq!(server.join().expect("server"), Vec::<String>::new());
+}
+
+#[test]
+fn a_stop_button_is_forwarded_as_a_click_naming_its_box() {
+    let (acks, got) = forwarded(interactive("block_actions", "stop_box", "fix-bug"));
+    assert_eq!(acks, vec![r#"{"envelope_id":"env-c"}"#]);
+    assert_eq!(
+        got,
+        vec![Inbound::Click(Click {
+            envelope_id: "env-c".into(),
+            channel: "C1".into(),
+            user: "U1".into(),
+            message_ts: "3.0".into(),
+            thread_ts: Some("1.0".into()),
+            press: Press::Stop("fix-bug".into()),
+        })]
+    );
+}
+
+#[test]
+fn a_stop_button_with_no_box_is_acked_but_not_forwarded() {
+    let (acks, got) = forwarded(interactive("block_actions", "stop_box", ""));
+    assert_eq!(acks, vec![r#"{"envelope_id":"env-c"}"#]);
+    assert!(got.is_empty());
 }

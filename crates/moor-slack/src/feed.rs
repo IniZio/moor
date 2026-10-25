@@ -201,12 +201,18 @@ impl Feed {
         let sent = step.ts.as_ref().map_or_else(
             || {
                 self.api
-                    .post_message(bot, &step.channel, &step.thread_ts, &step.text)
+                    .post_blocks(
+                        bot,
+                        &step.channel,
+                        &step.thread_ts,
+                        &step.text,
+                        &step.blocks,
+                    )
                     .map_err(|e| format!("slack: status post failed: {e}"))
             },
             |ts| {
                 self.api
-                    .update_message(bot, &step.channel, ts, &step.text)
+                    .update_blocks(bot, &step.channel, ts, &step.text, &step.blocks)
                     .map(|()| ts.clone())
                     .map_err(|e| format!("slack: status edit failed: {e}"))
             },

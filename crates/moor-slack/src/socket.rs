@@ -19,7 +19,7 @@ mod envelope;
 mod items;
 mod parse;
 use envelope::{handle_envelope, Flow};
-pub(super) use items::{AfterAck, Kept, Slash, TokenSubmission};
+pub(super) use items::{AfterAck, Click, Kept, Press, Slash, TokenSubmission};
 
 /// First wait after a failed or finished connection.
 const MIN_BACKOFF: Duration = Duration::from_secs(1);
@@ -53,23 +53,6 @@ pub(super) struct Mention {
     pub thread_ts: Option<String>,
     /// True for a plain thread reply, false for an app mention.
     pub(crate) reply: bool,
-}
-
-/// A button press on a prompt message.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct Click {
-    /// Envelope id, used as the dedupe id.
-    pub envelope_id: String,
-    /// Channel holding the message.
-    pub channel: String,
-    /// User who pressed the button.
-    pub user: String,
-    /// Timestamp of the message carrying the button.
-    pub message_ts: String,
-    /// Thread the message belongs to, if known.
-    pub thread_ts: Option<String>,
-    /// 1-based option number.
-    pub choice: u32,
 }
 
 /// What the socket thread hands to its intake.

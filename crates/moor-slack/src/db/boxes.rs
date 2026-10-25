@@ -99,6 +99,18 @@ impl Db {
             .map(drop)
     }
 
+    /// The Box whose status message is `ts` in `channel`, if any.
+    pub(crate) fn box_by_status(
+        &self,
+        channel: &str,
+        ts: &str,
+    ) -> rusqlite::Result<Option<SlackBox>> {
+        let sql = format!("SELECT {BOX_COLUMNS} WHERE b.channel = ?1 AND b.status_ts = ?2");
+        let mut stmt = self.conn.prepare(&sql)?;
+        let mut rows = stmt.query_map(params![channel, ts], box_row)?;
+        rows.next().transpose()
+    }
+
     /// The Boxes of a thread, in the order the thread asked for them.
     pub(crate) fn thread_boxes(
         &self,

@@ -1,3 +1,5 @@
+#![allow(clippy::indexing_slicing, reason = "test code")]
+
 use moor_core::name::BoxName;
 use serde_json::json;
 
@@ -296,4 +298,75 @@ fn a_closing_box_says_so_whatever_its_last_event() {
     );
     let steps = Planner::default().plan(&[row], &vs, t0, 5);
     assert_eq!(one(&steps), (Some("9.9"), "*fix-bug*: closing"));
+}
+
+/// The blocks of the only step planned for the bound Box in `view`.
+fn blocks_of(view: View, row: &FedBox) -> Value {
+    let steps = Planner::default().plan(
+        std::slice::from_ref(row),
+        &views(view),
+        crate::feed::now(),
+        0,
+    );
+    assert_eq!(steps.len(), 1, "{steps:?}");
+    steps.first().unwrap().blocks.clone()
+}
+
+/// The `(action_id, value)` of each button in `blocks`.
+fn buttons(blocks: &Value) -> Vec<(String, String)> {
+    blocks
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|b| b["type"] == "actions")
+        .flat_map(|b| b["elements"].as_array().cloned().unwrap_or_default())
+        .map(|e| {
+            let text = |key: &str| e[key].as_str().unwrap_or_default().to_owned();
+            (text("action_id"), text("value"))
+        })
+        .collect()
+}
+
+#[test]
+fn a_working_or_waiting_box_shows_a_stop_button_that_names_it() {
+    let stop = vec![("stop_box".to_owned(), "fix-bug".to_owned())];
+    let working = folded(&[("working", json!({}))]);
+    let blocks = blocks_of(working, &bound(None, None));
+    assert_eq!(buttons(&blocks), stop);
+    let shown = blocks[0]["text"]["text"].as_str().unwrap();
+    assert!(shown.starts_with("*fix-bug*: working"), "{shown}");
+    let asking = folded(&[("needs_input", json!({"question": "Which db?"}))]);
+    assert_eq!(buttons(&blocks_of(asking, &bound(None, None))), stop);
+}
+
+#[test]
+fn any_other_state_sends_no_blocks_so_the_button_goes_away() {
+    for events in [
+        vec![],
+        vec![("setting_up", json!({}))],
+        vec![("working", json!({})), ("idled", json!({}))],
+        vec![("asleep", json!({}))],
+        vec![("rejected", json!({"reason": "no"}))],
+        vec![("setup_failed", json!({"line": "x"}))],
+        vec![("working", json!({})), ("closed", json!({}))],
+    ] {
+        let blocks = blocks_of(folded(&events), &bound(Some("9.9"), Some("old")));
+        assert_eq!(blocks, json!([]), "{events:?}");
+    }
+}
+
+#[test]
+fn a_closing_or_gone_box_loses_the_button_even_while_its_view_says_working() {
+    let working = folded(&[("working", json!({}))]);
+    let row = |state| fed(state, Some("9.9"), Some("*fix-bug*: working"));
+    let closing = RowState::Closing {
+        box_id: ID,
+        branch: None,
+    };
+    let gone = RowState::Gone {
+        box_id: ID,
+        branch: None,
+    };
+    assert_eq!(blocks_of(working.clone(), &row(closing)), json!([]));
+    assert_eq!(blocks_of(working, &row(gone)), json!([]));
 }
