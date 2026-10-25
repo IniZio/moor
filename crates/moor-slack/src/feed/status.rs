@@ -101,7 +101,7 @@ impl View {
     }
 
     /// The agent is alive or the Box left the launch, so there is no launch left to wait on.
-    fn forget_launch(&mut self) {
+    const fn forget_launch(&mut self) {
         self.launching_ms = None;
         self.gave_up = false;
     }

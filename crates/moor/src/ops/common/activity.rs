@@ -206,7 +206,7 @@ fn launch_overdue(cx: &Cx, failure: &LaunchFailure, now: Ts) -> Option<u64> {
     let at = OffsetDateTime::parse(&failure.at, &Rfc3339).ok()?;
     let failed_ms = i64::try_from(at.unix_timestamp_nanos() / 1_000_000).ok()?;
     let age = u128::try_from(now.as_millis().saturating_sub(failed_ms)).ok()?;
-    (age >= limit.as_millis()).then(|| limit.as_secs())
+    (age >= limit.as_millis()).then_some(limit.as_secs())
 }
 
 /// The cached hook report of Box `id`; an undecodable row is dropped with a warning.
