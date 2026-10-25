@@ -60,7 +60,6 @@ only through a Proxy rule whose `credential` names it.
 | `url` | string | The server URL. |
 | `headers` | map | Request headers. |
 | `allow_tools` | list of tool names | The only tools the agent may call. Every tool when unset; none when empty. |
-| `coordinator` | bool | Reserved for a front's coordinator. Off by default. |
 
 moor hands each server to the agent at launch. With `allow_tools` set, the
 agent profile refuses any other tool of that server; for Claude Code, a

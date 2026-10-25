@@ -25,7 +25,7 @@ fn held(names: &[&str]) -> BTreeSet<SecretName> {
 const SHARED: &str = "
 box_credentials: [a, b]
 mcp_servers:
-  m: {url: 'https://x/${a}'}
+  m: {url: 'https://x.example', headers: {Authorization: 'Bearer ${a}'}}
 ";
 
 #[test]
