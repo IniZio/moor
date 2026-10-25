@@ -2,12 +2,13 @@
 
 use std::sync::Arc;
 
-use moor_core::activity::{HookKind, HookRead, HookRecord, PaneRead, Probes};
+use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes};
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::session_state::SessionInput;
+use moor_core::seam::agent_profile::FirstRunPrompt;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::seam::engine::{EngineError, Steer, SteerOutcome};
@@ -379,6 +380,37 @@ fn a_menu_choice_that_leaves_the_agent_blocked_warns() {
     assert!(!v.answered_menu);
     assert_eq!(f.engine.probe_count("agent-1"), 2);
     assert_eq!(f.cx.take_warnings().len(), 1);
+}
+
+#[test]
+fn a_menu_choice_answers_a_first_run_prompt() {
+    let at_launch = Probes {
+        hook: HookRead::Fresh(HookRecord {
+            kind: HookKind::Starting { launch: None },
+            session_id: None,
+            message: None,
+            options: Vec::new(),
+            at: Ts::from_millis(0),
+        }),
+        pane: PaneRead::Fresh(PaneObs {
+            status: PaneStatus::Unknown,
+            tail: "Do you trust the files in this folder?\n❯ 1. Yes, I trust this folder\n  2. No, exit".to_owned(),
+            prompt: None,
+            exit_marker: None,
+        }),
+    };
+    let engine = FakeEngine::new()
+        .hooks_quiet_during_first_run()
+        .prompt("trust this folder", FirstRunPrompt::FolderTrust)
+        .probes("agent-1", working())
+        .then_probes("agent-1", at_launch);
+    let f = fx_with(engine, true);
+    let v = run(&f.cx, &menu(1)).unwrap();
+    assert!(v.answered_menu);
+    assert_eq!(
+        f.engine.steers(),
+        vec![("agent-1".to_owned(), Steer::Menu(1))]
+    );
 }
 
 #[test]

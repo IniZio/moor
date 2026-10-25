@@ -8,6 +8,7 @@ use moor_core::activity::{
 };
 use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionInput;
+use moor_core::seam::agent_profile::FirstRunPrompt;
 use moor_core::BoxId;
 
 use super::{cx, rec, row, working_box, NOW, SESSION};
@@ -168,4 +169,77 @@ fn the_same_question_asked_again_after_work_is_a_new_episode() {
         tick(&cx, id);
     }
     assert_eq!(asked(&cx, id), 2, "{:?}", kinds(&cx, id));
+}
+
+const TRUST_SCREEN: &str = "Do you trust the files in this folder?\n\n❯ 1. Yes, I trust this folder\n  2. No, exit\n\nEnter to confirm · Esc to cancel";
+
+/// An agent that has reported nothing since its launch marker, with `tail` on its pane.
+fn at_launch(tail: &str) -> Probes {
+    Probes {
+        hook: HookRead::Fresh(rec(HookKind::Starting { launch: None })),
+        pane: PaneRead::Fresh(PaneObs {
+            status: PaneStatus::Unknown,
+            tail: tail.to_owned(),
+            prompt: None,
+            exit_marker: None,
+        }),
+    }
+}
+
+fn trust_engine(quiet: bool) -> FakeEngine {
+    let engine = FakeEngine::new()
+        .prompt("trust this folder", FirstRunPrompt::FolderTrust)
+        .probes(SESSION, at_launch(TRUST_SCREEN));
+    if quiet {
+        engine.hooks_quiet_during_first_run()
+    } else {
+        engine
+    }
+}
+
+#[test]
+fn a_first_run_prompt_asks_with_its_menu_and_lets_the_box_idle() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, _) = cx(dir.path(), &Arc::new(trust_engine(true)));
+    let id = working_box(&cx, true);
+    tick(&cx, id);
+    tick(&cx, id);
+    let events = cx.store().unwrap().events(id, 100).unwrap();
+    let asks: Vec<_> = events
+        .iter()
+        .filter(|e| e.kind == "needs_input")
+        .map(|e| e.payload.clone())
+        .collect();
+    assert_eq!(
+        asks,
+        vec![serde_json::json!({
+            "question": "the agent waits at its folder_trust prompt",
+            "options": ["Yes, I trust this folder", "No, exit"],
+        })],
+        "{:?}",
+        kinds(&cx, id)
+    );
+    assert!(kinds(&cx, id).contains(&"idled".to_owned()));
+}
+
+#[test]
+fn a_first_run_prompt_counts_only_for_an_agent_whose_hooks_wait_it_out() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, _) = cx(dir.path(), &Arc::new(trust_engine(false)));
+    let id = working_box(&cx, true);
+    tick(&cx, id);
+    assert_eq!(asked(&cx, id), 0, "{:?}", kinds(&cx, id));
+    assert!(!kinds(&cx, id).contains(&"idled".to_owned()));
+}
+
+#[test]
+fn first_run_words_after_the_agent_reported_are_not_a_prompt() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut probes = at_launch(TRUST_SCREEN);
+    probes.hook = HookRead::Fresh(rec(HookKind::Busy));
+    let engine = trust_engine(true).probes(SESSION, probes);
+    let (cx, _) = cx(dir.path(), &Arc::new(engine));
+    let id = working_box(&cx, true);
+    tick(&cx, id);
+    assert_eq!(asked(&cx, id), 0, "{:?}", kinds(&cx, id));
 }

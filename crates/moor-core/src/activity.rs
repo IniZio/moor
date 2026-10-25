@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use crate::seam::clock::Ts;
 
+mod first_run;
 mod menu;
 
 pub use menu::menu_options;
@@ -72,6 +73,8 @@ pub enum Source {
     Pane,
     /// A read timed out and no cache stood in.
     Timeout,
+    /// A first-run screen the profile read on the pane while no hook has reported since launch.
+    FirstRun,
 }
 
 impl Source {
@@ -84,6 +87,7 @@ impl Source {
             Self::Herdr => "herdr",
             Self::Pane => "pane",
             Self::Timeout => "timeout",
+            Self::FirstRun => "first_run",
         }
     }
 }
@@ -254,8 +258,14 @@ const fn pane_ended(pane: &PaneRead) -> Option<Activity> {
     }
 }
 
-/// The state a hook report gives, if it still counts.
-fn from_record(rec: &HookRecord, source: Source, young: bool, pane: &PaneRead) -> Option<Activity> {
+/// The state a hook report gives, if it still counts; see [`decide`] for `first_run`.
+fn from_record(
+    rec: &HookRecord,
+    source: Source,
+    young: bool,
+    pane: &PaneRead,
+    first_run: Option<&str>,
+) -> Option<Activity> {
     let tail = tail_of(pane);
     match &rec.kind {
         HookKind::Busy => Some(act(AgentState::Working, source)),
@@ -277,7 +287,9 @@ fn from_record(rec: &HookRecord, source: Source, young: bool, pane: &PaneRead) -
         )),
         HookKind::Idle if background_running(tail) => Some(act(AgentState::Working, Source::Pane)),
         HookKind::Idle => Some(act(AgentState::Idle, source)),
-        HookKind::Starting { .. } => young.then(|| act(AgentState::Working, source)),
+        HookKind::Starting { .. } => first_run
+            .map(|m| first_run::first_run_wait(m, tail))
+            .or_else(|| young.then(|| act(AgentState::Working, source))),
     }
 }
 
@@ -287,9 +299,10 @@ fn from_cache(
     now: Ts,
     young: bool,
     pane: &PaneRead,
+    first_run: Option<&str>,
 ) -> Option<Activity> {
     let c = cache.filter(|c| age(now, c.at) < HOOK_TTL)?;
-    from_record(&c.record, Source::HooksCached, young, pane)
+    from_record(&c.record, Source::HooksCached, young, pane, first_run)
 }
 
 /// The state the pane alone gives.
@@ -324,9 +337,15 @@ fn from_obs(obs: &PaneObs) -> Activity {
 /// Chooses the agent state from one probe reading.
 ///
 /// A dropped hook read never falls through to the pane; only a hook that is absent
-/// does. `started` is when the agent session began.
+/// does. `started` is when the agent session began. `first_run` names the profile's first-run screen.
 #[must_use]
-pub fn decide(probes: &Probes, cache: Option<&HookCache>, now: Ts, started: Ts) -> Activity {
+pub fn decide(
+    probes: &Probes,
+    cache: Option<&HookCache>,
+    now: Ts,
+    started: Ts,
+    first_run: Option<&str>,
+) -> Activity {
     if let Some(a) = pane_ended(&probes.pane) {
         return a;
     }
@@ -334,16 +353,16 @@ pub fn decide(probes: &Probes, cache: Option<&HookCache>, now: Ts, started: Ts) 
     let pane = &probes.pane;
     match &probes.hook {
         HookRead::Fresh(rec) => {
-            if let Some(a) = from_record(rec, Source::Hooks, young, pane) {
+            if let Some(a) = from_record(rec, Source::Hooks, young, pane, first_run) {
                 return a;
             }
         }
         HookRead::TimedOut => {
-            return from_cache(cache, now, young, pane)
+            return from_cache(cache, now, young, pane, first_run)
                 .unwrap_or_else(|| act(AgentState::Unknown, Source::Timeout));
         }
         HookRead::Absent => {
-            if let Some(a) = from_cache(cache, now, young, pane) {
+            if let Some(a) = from_cache(cache, now, young, pane, first_run) {
                 return a;
             }
         }
@@ -356,9 +375,8 @@ pub fn decide(probes: &Probes, cache: Option<&HookCache>, now: Ts, started: Ts) 
 
 /// Whether a reading may move a Working Box to Idle.
 ///
-/// Only a hook report (fresh or cached) of idle or blocked, an exited or vanished pane,
-/// or no live session may. `probes` is `None` when the Box has no live session. Pane
-/// and multiplexer evidence alone may be shown but never applied.
+/// Only a hook report (fresh or cached) of idle or blocked, a first-run screen, an exited or
+/// vanished pane, or no live session (`probes` is `None`) may; pane evidence alone never does.
 #[must_use]
 pub const fn may_apply_quiet(activity: &Activity, probes: Option<&Probes>) -> bool {
     let Some(probes) = probes else {
@@ -368,11 +386,13 @@ pub const fn may_apply_quiet(activity: &Activity, probes: Option<&Probes>) -> bo
     {
         return true;
     }
-    matches!(activity.source, Source::Hooks | Source::HooksCached)
-        && matches!(
-            activity.state,
-            AgentState::Idle | AgentState::NeedsInput { .. }
-        )
+    matches!(
+        activity.source,
+        Source::Hooks | Source::HooksCached | Source::FirstRun
+    ) && matches!(
+        activity.state,
+        AgentState::Idle | AgentState::NeedsInput { .. }
+    )
 }
 
 #[cfg(test)]

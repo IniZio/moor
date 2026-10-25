@@ -134,6 +134,7 @@ impl Case {
             self.cache.as_ref(),
             ts(0),
             ts(self.started_ago),
+            None,
         )
     }
 
