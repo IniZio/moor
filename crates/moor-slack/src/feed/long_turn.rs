@@ -26,6 +26,11 @@ fn reached(view: &View, now: i64, every_secs: i64) -> Option<i64> {
     (n >= 1).then_some(n)
 }
 
+/// The notice key of threshold `n` of the turn that began at event `cursor`.
+const fn key(cursor: i64, n: i64) -> i64 {
+    cursor * THRESHOLDS + n
+}
+
 /// The line for Box `name` after `n` thresholds of `every_secs`, with what the agent is doing.
 fn line(name: &BoxName, doing: Option<&str>, n: i64, every_secs: i64) -> String {
     let name = name.as_str();
@@ -55,7 +60,7 @@ impl Feed {
             n,
             self.long_turn_secs,
         );
-        let key = (BoxEvent::LongTurn, Some(turn * THRESHOLDS + n));
+        let key = (BoxEvent::LongTurn, Some(key(*turn, n)));
         let queue = || db.notice(boxed, BoxEvent::LongTurn, key.1);
         self.line(db, boxed, key, &text, queue)
     }
