@@ -14,7 +14,7 @@ use moor_core::response::{ExitClass, Response};
 use moor_core::seam::forge::ForgeRepo;
 use serde_json::Value;
 
-use crate::command::{failed, started, BoxEvent};
+use crate::command::{failed, start_notes, started, BoxEvent};
 use crate::db::{BoxState, Db, SlackBox};
 use crate::dial::Backoff;
 use crate::login::TokenCheck;
@@ -167,8 +167,9 @@ enum Attempt {
 
 /// How one attempt at a start ends.
 enum Outcome {
-    /// The controller named this Box, with its id and branch.
-    Bound(BoxId, Option<String>),
+    /// The controller named this Box, with its id and branch, and said what else the start
+    /// did, one line each.
+    Bound(BoxId, Option<String>, Vec<String>),
     /// No Box runs for the thread; the text says why.
     Refused(String),
     /// A start may have run and the controller cannot confirm it now; the text says why.
@@ -197,7 +198,9 @@ fn settle(db: &Db, fx: &mut Fx<'_>, row: &SlackBox, attempt: Attempt) -> bool {
 /// `starting`. Returns whether the row is settled.
 fn settle_start(db: &Db, fx: &mut Fx<'_>, row: &SlackBox, attempt: Attempt) -> bool {
     match ask(fx, row, attempt) {
-        Outcome::Bound(box_id, branch) => bind(db, fx, row, box_id, branch.as_deref()),
+        Outcome::Bound(box_id, branch, notes) => {
+            bind(db, fx, row, (box_id, branch.as_deref()), &notes)
+        }
         Outcome::Refused(message) => refuse(db, fx, row, &message),
         Outcome::Unsure(why) => {
             let name = row.box_name.as_str();
@@ -264,9 +267,10 @@ fn start_outcome(reply: Response) -> Outcome {
     if reply.class != ExitClass::Ok {
         return Outcome::Refused(error_text(reply));
     }
-    named_box(reply.value.as_ref()).map_or_else(
+    let value = reply.value.as_ref();
+    named_box(value).map_or_else(
         || Outcome::Unsure("the start reply names no Box".to_owned()),
-        Outcome::from,
+        |(box_id, branch)| Outcome::Bound(box_id, branch, start_notes(value)),
     )
 }
 
@@ -300,7 +304,7 @@ fn shown(reply: Response, name: &BoxName) -> Shown {
 
 impl From<(BoxId, Option<String>)> for Outcome {
     fn from((box_id, branch): (BoxId, Option<String>)) -> Self {
-        Self::Bound(box_id, branch)
+        Self::Bound(box_id, branch, Vec::new())
     }
 }
 
@@ -330,8 +334,14 @@ const fn lost(e: &ClientError) -> bool {
 /// one transaction. Posting first means a crash in between posts again on restart instead of
 /// losing the reply. Returns whether the row is bound; a row left `starting` is asked about
 /// again.
-fn bind(db: &Db, fx: &mut Fx<'_>, row: &SlackBox, box_id: BoxId, branch: Option<&str>) -> bool {
-    let line = started(&row.box_name, branch);
+fn bind(
+    db: &Db,
+    fx: &mut Fx<'_>,
+    row: &SlackBox,
+    (box_id, branch): (BoxId, Option<&str>),
+    notes: &[String],
+) -> bool {
+    let line = started(&row.box_name, branch, notes);
     (fx.reply)(&row.channel, &row.thread_ts, &line);
     written(
         fx,

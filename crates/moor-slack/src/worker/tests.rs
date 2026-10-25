@@ -490,6 +490,7 @@ fn a_lost_start_is_asked_about_on_a_timer_and_holds_up_no_other_thread() {
 mod answer;
 mod close;
 mod post_first;
+mod start_notes;
 
 /// Links the claude and github tokens in one job, where GitHub refuses its token.
 #[test]

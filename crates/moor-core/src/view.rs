@@ -194,6 +194,35 @@ pub struct AgentLaunchView {
     pub nonce: Option<String>,
 }
 
+/// How a Box that keeps its repo work tree started in it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum WorkTreeView {
+    /// The kept tree was brought up to date, so the build cache it holds is warm.
+    Refreshed,
+    /// There was no tree to refresh: the Box cloned fresh.
+    Cold,
+    /// The refresh ran and failed, so the Box cloned fresh.
+    ColdAfter {
+        /// Why the refresh failed.
+        reason: String,
+    },
+}
+
+impl WorkTreeView {
+    /// The state a refresh outcome names: `refreshed`, `cold` or `cold after: <reason>`.
+    #[must_use]
+    pub fn parse(outcome: &str) -> Option<Self> {
+        Some(match outcome {
+            "refreshed" => Self::Refreshed,
+            "cold" => Self::Cold,
+            other => Self::ColdAfter {
+                reason: other.strip_prefix("cold after: ")?.to_owned(),
+            },
+        })
+    }
+}
+
 /// `value` of `start`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct StartView {
@@ -206,6 +235,9 @@ pub struct StartView {
     pub queued: bool,
     /// Names promoted from the queue.
     pub promoted: Vec<String>,
+    /// How the work tree started; absent when the Box keeps none or did not provision this call.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub work_tree: Option<WorkTreeView>,
     /// Setup outcome.
     pub setup: SetupView,
     /// Dotfiles outcome.
