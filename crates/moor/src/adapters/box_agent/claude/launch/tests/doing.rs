@@ -41,6 +41,22 @@ fn check_lines(path: Option<&str>) {
         Some("Bash: run.sh")
     );
     assert_eq!(
+        doing(
+            "Bash",
+            json!({"command": "cd backend && docker compose up -d"})
+        )
+        .as_deref(),
+        Some("Bash: docker compose")
+    );
+    assert_eq!(
+        doing("Bash", json!({"command": "cd /tmp; ls -la"})).as_deref(),
+        Some("Bash: ls")
+    );
+    assert_eq!(
+        doing("Bash", json!({"command": "cd /tmp"})).as_deref(),
+        Some("Bash: cd")
+    );
+    assert_eq!(
         doing("Edit", json!({"file_path": "/work/src/main.rs"})).as_deref(),
         Some("Edit: main.rs")
     );

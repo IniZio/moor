@@ -36,9 +36,17 @@ pub(super) fn line(record: &Value) -> Option<String> {
     doing_line(&arg.map_or_else(|| tool.to_owned(), |a| format!("{tool}: {a}")))
 }
 
-/// The program a command runs, past `NAME=value` words, as a base name, plus its subcommand
-/// when that is a plain lowercase word.
+/// The program a command runs, past `NAME=value` words and a leading `cd <dir> &&` or `;`, as
+/// a base name, plus its subcommand when that is a plain lowercase word.
 fn program(command: &str) -> Option<String> {
+    let after_cd = command.trim_start().strip_prefix("cd ").and_then(|rest| {
+        rest.split_once("&&")
+            .or_else(|| rest.split_once(';'))
+            .map(|(_, after)| after)
+    });
+    if let Some(after) = after_cd {
+        return program(after);
+    }
     let mut words = command
         .split_whitespace()
         .skip_while(|w| w.contains('=') && !w.starts_with('='));
