@@ -9,6 +9,7 @@ use moor_core::seam::agent_profile::{
 use moor_core::seam::clock::Ts;
 use serde_json::Value;
 
+mod doing;
 mod install;
 mod launch;
 
@@ -58,11 +59,15 @@ impl AgentProfile for Claude {
                     .collect()
             })
             .unwrap_or_default();
+        let doing = (kind == HookKind::Busy)
+            .then(|| doing::line(&value))
+            .flatten();
         Some(HookRecord {
             kind,
             session_id: text("session_id").map(str::to_owned),
             message,
             options,
+            doing,
             at: Ts::from_millis(secs.checked_mul(1000)?),
         })
     }

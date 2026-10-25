@@ -10,6 +10,7 @@ pub mod cache;
 pub mod config;
 pub mod controller;
 pub mod decide;
+pub mod doing;
 pub mod domain;
 pub mod exec_env;
 pub mod graphql_scope;

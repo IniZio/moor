@@ -96,6 +96,7 @@ fn hook_asking() -> Probes {
     hook_probe(HookRecord {
         message: Some("Reuse PR #32?".to_owned()),
         options: vec!["Reuse".to_owned(), "Open new".to_owned()],
+        doing: None,
         ..rec(HookKind::Blocked)
     })
 }

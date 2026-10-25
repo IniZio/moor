@@ -231,6 +231,7 @@ fn record_json(rec: &HookRecord) -> Value {
         "kind": kind,
         "message": rec.message,
         "options": rec.options,
+        "doing": rec.doing,
         "session_id": rec.session_id,
         "at": rec.at.as_millis(),
     })
@@ -262,6 +263,7 @@ fn record_from_json(v: &Value) -> Result<HookRecord, StoreError> {
                     .collect()
             })
             .unwrap_or_default(),
+        doing: v["doing"].as_str().map(str::to_owned),
         at: Ts::from_millis(v["at"].as_i64().ok_or_else(|| bad("missing at"))?),
     })
 }

@@ -31,6 +31,7 @@ impl AgentProfile for Stub {
             session_id: None,
             message: None,
             options: Vec::new(),
+            doing: None,
             at: Ts::from_millis(1),
         })
     }
@@ -179,6 +180,7 @@ fn returns_the_parsed_hook_and_the_pane_observation() {
             session_id: None,
             message: None,
             options: Vec::new(),
+            doing: None,
             at: Ts::from_millis(1),
         })
     );

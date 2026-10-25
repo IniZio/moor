@@ -122,6 +122,7 @@ fn blocked(question: &str) -> Probes {
             session_id: None,
             message: Some(question.to_owned()),
             options: Vec::new(),
+            doing: None,
             at: Ts::from_millis(0),
         }),
         pane: PaneRead::Absent,
@@ -136,6 +137,7 @@ fn working() -> Probes {
             session_id: None,
             message: None,
             options: Vec::new(),
+            doing: None,
             at: Ts::from_millis(0),
         }),
         pane: PaneRead::Absent,
@@ -401,6 +403,7 @@ fn a_first_run_screen_refuses_every_steer_and_sends_nothing() {
             session_id: None,
             message: None,
             options: Vec::new(),
+            doing: None,
             at: Ts::from_millis(0),
         }),
         pane: PaneRead::Fresh(PaneObs {

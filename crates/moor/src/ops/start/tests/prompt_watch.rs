@@ -31,6 +31,7 @@ fn hook(kind: HookKind) -> Probes {
             session_id: None,
             message: None,
             options: Vec::new(),
+            doing: None,
             at: Ts::from_millis(1_000),
         }),
         pane: PaneRead::Absent,

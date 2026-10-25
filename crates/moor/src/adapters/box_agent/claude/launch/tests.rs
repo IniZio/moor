@@ -20,6 +20,7 @@ use super::super::Claude;
 
 mod ask;
 mod bypass;
+mod doing;
 mod first_run;
 mod last_message;
 mod preseed;

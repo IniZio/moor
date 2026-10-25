@@ -197,6 +197,7 @@ fn hook_cache_round_trips_every_kind_and_keeps_the_latest() {
             session_id: (i % 2 == 0).then(|| "sess".to_owned()),
             message: (i == 3).then(|| "ok?".to_owned()),
             options: Vec::new(),
+            doing: None,
             at: Ts::from_millis(500 + i64::try_from(i).unwrap()),
         };
         store.put_hook(id, &record).unwrap();
@@ -334,6 +335,7 @@ fn hook_follows_the_current_session() {
         session_id: None,
         message: None,
         options: Vec::new(),
+        doing: None,
         at: Ts::from_millis(5),
     };
     store.put_hook(id, &record(HookKind::Busy)).unwrap();
@@ -355,4 +357,21 @@ fn hook_follows_the_current_session() {
     drop(conn);
     assert_eq!((cached, total), (second.id, 2));
     assert_eq!(store.hook(id).unwrap().unwrap().record.kind, HookKind::Idle);
+}
+
+#[test]
+fn a_hook_report_keeps_its_doing_line_through_the_cache() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = working(&store, "t");
+    let record = HookRecord {
+        kind: HookKind::Busy,
+        session_id: None,
+        message: None,
+        options: Vec::new(),
+        doing: Some("Bash: cargo test".to_owned()),
+        at: Ts::from_millis(900),
+    };
+    store.put_hook(id, &record).unwrap();
+    assert_eq!(store.hook(id).unwrap().unwrap().record, record);
 }

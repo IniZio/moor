@@ -172,6 +172,7 @@ pub(crate) fn read(
     let mut agent_session = row.agent_session_id.clone();
     if let HookRead::Fresh(rec) = &probes.hook {
         store.put_hook(row.id, rec)?;
+        doing::note_doing(store, row.id, rec, now)?;
         note_agent_session(store, row, rec.session_id.as_deref())?;
         agent_session = rec.session_id.clone().or(agent_session);
     }
@@ -378,6 +379,7 @@ const fn liveness(pane: &PaneRead, activity: &Activity) -> PaneLiveness {
     }
 }
 
+mod doing;
 mod launch;
 mod needs_input;
 mod said;
