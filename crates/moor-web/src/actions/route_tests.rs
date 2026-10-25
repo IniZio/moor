@@ -114,6 +114,7 @@ fn steer(text: Option<&str>, menu: Option<u32>) -> Request {
         target: name("t").into(),
         text: text.map(str::to_owned),
         menu,
+        interrupt: false,
     })
 }
 

@@ -119,6 +119,7 @@ fn steer() -> Request {
         target: BoxName::parse_allow_bare("demo").expect("name").into(),
         text: Some("continue".into()),
         menu: None,
+        interrupt: false,
     })
 }
 

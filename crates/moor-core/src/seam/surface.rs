@@ -82,6 +82,8 @@ pub enum Key {
     CtrlM,
     /// A digit key, 0 to 9.
     Digit(u8),
+    /// The Escape key.
+    Escape,
 }
 
 impl Key {
@@ -91,6 +93,7 @@ impl Key {
         match self {
             Self::CtrlU => Some("ctrl+u".to_owned()),
             Self::CtrlM => Some("ctrl+m".to_owned()),
+            Self::Escape => Some("esc".to_owned()),
             Self::Digit(d) => char::from_digit(u32::from(d), 10).map(String::from),
         }
     }

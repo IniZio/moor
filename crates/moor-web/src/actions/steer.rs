@@ -83,6 +83,7 @@ fn steer(box_name: &str, text: Option<String>, menu: Option<u32>) -> Result<Requ
         target: name(box_name)?.into(),
         text,
         menu,
+        interrupt: false,
     }))
 }
 

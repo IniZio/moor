@@ -231,6 +231,9 @@ pub struct SteerReq {
     /// Menu entry to pick.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub menu: Option<u32>,
+    /// Send the agent's interrupt key instead of text or a menu entry.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub interrupt: bool,
 }
 
 /// Arguments of `open-host-session`.

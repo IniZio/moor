@@ -1,5 +1,5 @@
 use moor_core::activity::{HookKind, HookRecord};
-use moor_core::seam::agent_profile::{AgentProfile, FirstRunPrompt, NOTHING_TO_ARCHIVE};
+use moor_core::seam::agent_profile::{AgentProfile, FirstRunPrompt, Key, NOTHING_TO_ARCHIVE};
 use moor_core::seam::clock::Ts;
 
 use super::Claude;
@@ -10,6 +10,11 @@ fn parse(raw: &str) -> Option<HookRecord> {
 
 fn kind(raw: &str) -> Option<HookKind> {
     parse(raw).map(|r| r.kind)
+}
+
+#[test]
+fn escape_interrupts_the_agent() {
+    assert_eq!(Claude.interrupt_key(), Key::Escape);
 }
 
 #[test]

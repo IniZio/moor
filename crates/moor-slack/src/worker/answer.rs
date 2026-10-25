@@ -107,6 +107,7 @@ fn send(db: &Db, fx: &mut Fx<'_>, prompt: &Prompt, choice: u32) -> Option<String
         target: prompt.box_name.clone().into(),
         text: None,
         menu: Some(choice),
+        interrupt: false,
     });
     let name = prompt.box_name.as_str();
     let (settled, said) = match (fx.call)(&prompt.requested_by, steer) {

@@ -251,6 +251,7 @@ fn steer(scope: &mut Scope<'_>, box_name: &str, text: &str) -> rusqlite::Result<
         target: target.boxed.box_name.clone().into(),
         text: Some(text.to_owned()),
         menu: None,
+        interrupt: false,
     });
     let (outcome, reply) = match (scope.call)(request) {
         Ok(r) if r.class == ExitClass::Ok => (

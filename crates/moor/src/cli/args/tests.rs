@@ -264,7 +264,8 @@ fn steer_text_or_menu() {
         Request::Steer(SteerReq {
             target: n("t1").into(),
             text: Some("go on".into()),
-            menu: None
+            menu: None,
+            interrupt: false,
         })
     );
     assert_eq!(
@@ -272,11 +273,23 @@ fn steer_text_or_menu() {
         Request::Steer(SteerReq {
             target: n("t1").into(),
             text: None,
-            menu: Some(2)
+            menu: Some(2),
+            interrupt: false,
+        })
+    );
+    assert_eq!(
+        req(&["steer", "t1", "--interrupt"]),
+        Request::Steer(SteerReq {
+            target: n("t1").into(),
+            text: None,
+            menu: None,
+            interrupt: true
         })
     );
     assert!(run(&["steer", "t1"]).is_err());
     assert!(run(&["steer", "t1", "x", "--menu", "1"]).is_err());
+    assert!(run(&["steer", "t1", "x", "--interrupt"]).is_err());
+    assert!(run(&["steer", "t1", "--menu", "1", "--interrupt"]).is_err());
 }
 
 #[test]
