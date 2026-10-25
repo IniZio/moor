@@ -19,6 +19,8 @@ file means every key takes its default, except `box.provider`, which has none.
 | `box.size` | `small`, `medium`, `large`, or `xlarge` | `small` | The Box size. A `.moor.yaml` value wins over this one. |
 | `box.max_boxes` | integer, at least 1 | none | The most live Boxes at once. |
 | `box.sleep_after` | duration such as `30s`, `45m`, `2h`, or `1d` | `30m` | How long a Box stays idle before moor puts it to sleep. |
+| `box.sleep_after_blocked` | duration | `5m` | How long a Box stays idle while its agent waits on an unanswered prompt or a first-run screen before moor puts it to sleep. The shorter of this and `box.sleep_after` applies. An answer, steer or message wakes it. |
+| `box.max_awake` | duration | `2h` | How long any Box stays awake, counted from its last start or wake, before moor puts it to sleep, even while its agent works. A steer or message wakes it and the agent resumes. |
 
 ### `drivers`
 

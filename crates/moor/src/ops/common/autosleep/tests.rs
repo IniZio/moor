@@ -103,7 +103,11 @@ fn pass(f: &Fx, d: Duration) {
 }
 
 fn auto_sleep(f: &Fx) {
-    run(&f.cx, f.cx.store().unwrap(), f.id);
+    run(&f.cx, f.cx.store().unwrap(), f.id, false);
+}
+
+fn auto_sleep_blocked(f: &Fx) {
+    run(&f.cx, f.cx.store().unwrap(), f.id, true);
 }
 
 /// Kinds of the events recorded for the Box.
@@ -386,4 +390,49 @@ fn auto_sleep_of_a_box_that_cannot_sleep_asks_for_a_clearing_restore() {
     auto_sleep(&f);
     let r = tunnel_request(&f).unwrap();
     assert_eq!((r.want, r.seq), (TunnelWant::UpAwake, 2));
+}
+
+#[test]
+fn a_box_waiting_on_a_prompt_sleeps_after_five_minutes() {
+    let f = idle();
+    pass(&f, Duration::from_mins(4));
+    auto_sleep_blocked(&f);
+    assert_eq!(sleep_calls(&f), 0);
+    pass(&f, Duration::from_mins(1));
+    auto_sleep_blocked(&f);
+    assert_eq!(
+        states(&f),
+        (BoxLifecycle::Asleep, SessionState::Idle, BoxState::Asleep)
+    );
+}
+
+#[test]
+fn a_working_box_sleeps_after_two_hours_awake() {
+    let f = working_with(FakeDriver::new());
+    pass(&f, Duration::from_mins(119));
+    auto_sleep(&f);
+    assert_eq!(sleep_calls(&f), 0);
+    pass(&f, Duration::from_mins(1));
+    auto_sleep(&f);
+    assert_eq!(
+        states(&f).0,
+        BoxLifecycle::Asleep,
+        "a Box awake two hours sleeps while working"
+    );
+}
+
+#[test]
+fn a_wake_restarts_the_awake_clock() {
+    let f = working_with(FakeDriver::new());
+    pass(&f, Duration::from_mins(119));
+    let store = f.cx.store().unwrap();
+    store
+        .apply(Decision::new(f.id).box_input(BoxInput::Sleep))
+        .unwrap();
+    store
+        .apply(Decision::new(f.id).box_input(BoxInput::Wake))
+        .unwrap();
+    pass(&f, Duration::from_mins(119));
+    auto_sleep(&f);
+    assert_eq!(sleep_calls(&f), 0);
 }

@@ -19,6 +19,14 @@ pub struct SleepFacts {
     pub now: Ts,
     /// How long a Box must stay Idle before it sleeps.
     pub after: Duration,
+    /// Whether the agent waits on an unanswered prompt or a first-run screen.
+    pub blocked: bool,
+    /// How long a Box waiting on a prompt stays Idle before it sleeps.
+    pub after_blocked: Duration,
+    /// When the machine last came up, by acquire or wake, if known.
+    pub awake_since: Option<Ts>,
+    /// How long any Box stays awake before it sleeps, whatever its Session does.
+    pub max_awake: Duration,
 }
 
 /// Outcome of one auto-sleep check.
@@ -32,22 +40,36 @@ pub enum SleepVerdict {
     NotIdle,
 }
 
-/// Decides auto-sleep: only an Idle Box is due, once `now - idle_since >= after`.
-/// A clock that went backwards is never due.
+/// Decides auto-sleep.
+///
+/// A Ready Box is due once it has been awake for `max_awake`, whatever its Session does. Otherwise only an Idle Box is due, once `now - idle_since` reaches `after`, or
+/// the shorter `after_blocked` while it waits on a prompt. A clock that went backwards is never due.
 #[must_use]
 pub fn sleep_due(f: &SleepFacts) -> SleepVerdict {
-    if !(f.lifecycle == BoxLifecycle::Ready && f.session.is_quiet()) {
+    if f.lifecycle != BoxLifecycle::Ready {
         return SleepVerdict::NotIdle;
     }
-    let Some(since) = f.idle_since else {
-        return SleepVerdict::NotYet;
-    };
-    let elapsed_ms = i128::from(f.now.as_millis()) - i128::from(since.as_millis());
-    if elapsed_ms >= 0 && elapsed_ms.unsigned_abs() >= f.after.as_millis() {
-        SleepVerdict::Due
-    } else {
-        SleepVerdict::NotYet
+    if f.awake_since.is_some_and(|t| lasted(t, f.now, f.max_awake)) {
+        return SleepVerdict::Due;
     }
+    if !f.session.is_quiet() {
+        return SleepVerdict::NotIdle;
+    }
+    let after = if f.blocked {
+        f.after.min(f.after_blocked)
+    } else {
+        f.after
+    };
+    match f.idle_since {
+        Some(since) if lasted(since, f.now, after) => SleepVerdict::Due,
+        _ => SleepVerdict::NotYet,
+    }
+}
+
+/// Whether at least `span` has passed from `since` to `now`.
+fn lasted(since: Ts, now: Ts, span: Duration) -> bool {
+    let elapsed_ms = i128::from(now.as_millis()) - i128::from(since.as_millis());
+    elapsed_ms >= 0 && elapsed_ms.unsigned_abs() >= span.as_millis()
 }
 
 #[cfg(test)]

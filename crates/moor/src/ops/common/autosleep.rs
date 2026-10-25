@@ -9,6 +9,7 @@ use moor_core::decide::sleep::{sleep_due, SleepFacts, SleepVerdict};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
+use moor_core::domain::session_state::SessionInput;
 use moor_core::name::{BoxHandle, BoxId};
 use moor_core::seam::driver::SleepOutcome;
 use moor_core::seam::surface::{PaneRef, SurfaceError};
@@ -21,12 +22,13 @@ use crate::ops::common::park::{park_tunnel, restore_tunnel};
 use crate::ops::start::revive_after_wake;
 use crate::store::{BoxRow, Store, StoreError};
 
-/// Sleep the machine of Box `id` when the Box has been Idle for `box.sleep_after`.
+/// Sleep the machine of Box `id` when it has been Idle for `box.sleep_after`, Idle for
+/// `box.sleep_after_blocked` while `blocked` on a prompt, or awake for `box.max_awake`.
 ///
 /// A held Box lock, a Box that cannot be slept right now and a step the store refuses leave
 /// everything as it was. A Box with a recorded refusal is not asked again until it has left Idle. Any other failure becomes a warning.
-pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId) {
-    match try_sleep(cx, store, id) {
+pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId, blocked: bool) {
+    match try_sleep(cx, store, id, blocked) {
         Err(e) if e.kind != ErrorKind::Refused => cx.warn(Warning {
             code: "auto_sleep_failed".to_owned(),
             message: e.error.to_string(),
@@ -35,37 +37,50 @@ pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId) {
     }
 }
 
-/// Whether `row` has been Idle long enough to sleep.
-fn due(cx: &Cx, row: &BoxRow) -> bool {
+/// Whether `row` has been Idle, or awake, long enough to sleep.
+fn due(cx: &Cx, store: &Store, row: &BoxRow, blocked: bool) -> Result<bool, CommandError> {
+    let config = &cx.config().box_;
     let facts = SleepFacts {
         lifecycle: row.lifecycle,
         session: row.session,
         idle_since: row.idle_since,
         now: cx.clock().now(),
-        after: cx.config().box_.sleep_after(),
+        after: config.sleep_after(),
+        blocked,
+        after_blocked: config.sleep_after_blocked(),
+        awake_since: store.awake_since(row.id)?,
+        max_awake: config.max_awake(),
     };
-    sleep_due(&facts) == SleepVerdict::Due
+    Ok(sleep_due(&facts) == SleepVerdict::Due)
 }
 
 /// Sleep the machine once the Box lock is free and the Box is still due.
-fn try_sleep(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
+fn try_sleep(cx: &Cx, store: &Store, id: BoxId, blocked: bool) -> Result<(), CommandError> {
     let Some(row) = store.box_row(id)? else {
         return Ok(());
     };
-    if !due(cx, &row) {
+    if !due(cx, store, &row, blocked)? {
         return Ok(());
     }
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "sleep", Duration::ZERO)?;
     let Some(row) = store.box_row(id)? else {
         return Ok(());
     };
-    if !due(cx, &row) {
+    if !due(cx, store, &row, blocked)? {
         return Ok(());
     }
     if row.boxed.as_ref().is_some_and(|b| b.sleep_reason.is_some()) {
         return Ok(());
     }
     let handle = sleep_handle(cx, &row)?;
+    if !row.session.is_quiet() {
+        // Only the awake cap gets here; the sleep ends the agent's pane, so its Session is quiet.
+        match store.apply(Decision::new(id).session(SessionInput::AgentQuiet)) {
+            Ok(_) => {}
+            Err(StoreError::Illegal(_)) => return Ok(()),
+            Err(e) => return Err(e.into()),
+        }
+    }
     let decision = match sleep_parked(cx, store, id, &handle)? {
         SleepOutcome::Slept | SleepOutcome::Native => Decision::new(id)
             .lifecycle(BoxLifecycleInput::Sleep { auto: true })

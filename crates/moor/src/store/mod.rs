@@ -274,6 +274,19 @@ impl Store {
         rows.next().transpose()
     }
 
+    /// When Box `id`'s machine last came up, by acquire or wake.
+    pub(crate) fn awake_since(&self, id: BoxId) -> Result<Option<Ts>, StoreError> {
+        let conn = self.reader()?;
+        let ts = conn
+            .query_row(
+                "SELECT MAX(ts) FROM events WHERE box = ?1 AND kind = 'box_ready'",
+                [id.get()],
+                |r| r.get::<_, Option<i64>>(0),
+            )?
+            .map(Ts::from_millis);
+        Ok(ts)
+    }
+
     /// A new read-only connection; never blocks on the writer.
     pub(super) fn reader(&self) -> Result<Connection, StoreError> {
         let conn = Connection::open_with_flags(
