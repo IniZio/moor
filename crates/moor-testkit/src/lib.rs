@@ -42,14 +42,16 @@ pub fn write_executable(path: &Path, contents: impl AsRef<[u8]>) -> io::Result<(
 const SHORT_BASE_MAX: usize = 24;
 
 /// The base [`short_tempdir`] uses: `TMPDIR` when it is short and not under `/tmp`, else
-/// `/var/tmp`.
-fn short_base() -> PathBuf {
+/// `/var/tmp`, with symlinks resolved: macOS links `/var` to `/private/var`, and its sandbox
+/// matches resolved paths.
+fn short_base() -> io::Result<PathBuf> {
     let tmp = std::env::temp_dir();
-    if tmp.starts_with("/tmp") || tmp.as_os_str().len() > SHORT_BASE_MAX {
+    let base = if tmp.starts_with("/tmp") || tmp.as_os_str().len() > SHORT_BASE_MAX {
         PathBuf::from("/var/tmp")
     } else {
         tmp
-    }
+    };
+    std::fs::canonicalize(base)
 }
 
 /// Makes a fresh dir named `<prefix>-<random>` with a short path outside `/tmp`.
@@ -60,7 +62,7 @@ fn short_base() -> PathBuf {
 pub fn short_tempdir(prefix: &str) -> io::Result<tempfile::TempDir> {
     tempfile::Builder::new()
         .prefix(&format!("{prefix}-"))
-        .tempdir_in(short_base())
+        .tempdir_in(short_base()?)
 }
 
 #[cfg(test)]
