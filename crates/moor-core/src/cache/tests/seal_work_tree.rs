@@ -155,6 +155,19 @@ fn a_stash_a_staged_change_or_a_rebase_in_progress_is_not_kept() {
 }
 
 #[test]
+fn a_cherry_pick_sequence_with_no_other_marker_is_not_kept() {
+    refused(
+        "sequencer",
+        |o| {
+            let seq = o.tree().join(".git/sequencer");
+            std::fs::create_dir_all(&seq).unwrap();
+            std::fs::write(seq.join("todo"), format!("pick {} next\n", o.base)).unwrap();
+        },
+        "a git operation is in progress (.git/sequencer)",
+    );
+}
+
+#[test]
 fn a_base_no_remote_branch_holds_counts_as_pushed() {
     let o = cloned("base");
     let pr = o.push("refs-only", &[("p.txt", "p\n")]);
