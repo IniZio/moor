@@ -2594,6 +2594,7 @@ dependencies = [
  "clap",
  "moor-client",
  "moor-core",
+ "moor-migrate",
  "moor-testkit",
  "rusqlite",
  "rustix",
