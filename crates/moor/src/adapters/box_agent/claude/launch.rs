@@ -17,16 +17,22 @@ const NOTIFY_MATCHER: &str =
     "permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input";
 /// Tools that ask the user a question.
 const ASK_MATCHER: &str = "AskUserQuestion|ExitPlanMode";
+/// Tools that report the agent busy before they run, so a long command shows while it runs;
+/// every tool but those in [`ASK_MATCHER`], whose own entry marks the agent waiting.
+const BUSY_MATCHER: &str = "Bash|BashOutput|Read|Edit|MultiEdit|Write|NotebookEdit|Glob|Grep|\
+WebFetch|WebSearch|Agent|TodoWrite|KillShell|SlashCommand|Skill|mcp__.*";
 
 /// Writes `agent-state.json` beside itself: `hook.sh STATE EVENT`, hook JSON on stdin.
 /// The read is capped in size and time, so a closed or silent stdin never stalls the agent.
 /// A question tool's record keeps its questions, and no Notification replaces it: Claude Code
 /// follows the question with a generic permission notice that names nothing it asked.
+/// A busy record keeps the tool's name and, cut short, the input fields the `doing` line
+/// reads; never the tool's output or any other input.
 const HOOK_SCRIPT: &str = r#"#!/bin/sh
 d=${0%/*}
 in=
 if command -v timeout >/dev/null 2>&1; then in=$(timeout 2 head -c 65536 2>/dev/null); fi
-if [ "$2" = Notification ] && grep -q '"event": *"PreToolUse"' "$d/agent-state.json" 2>/dev/null; then exit 0; fi
+if [ "$2" = Notification ] && grep -q '"state": *"waiting_input", *"event": *"PreToolUse"' "$d/agent-state.json" 2>/dev/null; then exit 0; fi
 t="$d/agent-state.json.tmp.$$"
 if command -v python3 >/dev/null 2>&1; then
   MOOR_HOOK_IN=$in python3 -c '
@@ -51,6 +57,10 @@ if sys.argv[2] == "Notification" and "last_assistant_message" not in o:
 ti = d.get("tool_input")
 if isinstance(ti, dict) and isinstance(ti.get("questions"), list):
     o["questions"] = ti["questions"]
+if sys.argv[1] == "working" and isinstance(d.get("tool_name"), str):
+    o["tool"] = d["tool_name"][:100]
+    if isinstance(ti, dict):
+        o["tool_input"] = {k: ti[k][:300] for k in ("command", "file_path", "notebook_path", "url") if isinstance(ti.get(k), str)}
 print(json.dumps(o))' "$1" "$2" "$d"
 elif command -v node >/dev/null 2>&1; then
   MOOR_HOOK_IN=$in node -e '
@@ -69,6 +79,13 @@ if (process.argv[2] === "Notification" && !("last_assistant_message" in o)) {
 }
 const ti = d.tool_input;
 if (ti && typeof ti === "object" && Array.isArray(ti.questions)) o.questions = ti.questions;
+if (process.argv[1] === "working" && typeof d.tool_name === "string") {
+  o.tool = d.tool_name.slice(0, 100);
+  if (ti && typeof ti === "object") {
+    o.tool_input = {};
+    for (const k of ["command", "file_path", "notebook_path", "url"]) if (typeof ti[k] === "string") o.tool_input[k] = ti[k].slice(0, 300);
+  }
+}
 console.log(JSON.stringify(o));' "$1" "$2" "$d"
 else
   printf '{"state":"%s","event":"%s","ts":%s}\n' "$1" "$2" "$(date +%s)"
@@ -365,14 +382,17 @@ fn hooks(script: &str) -> Value {
                 map.insert("matcher".to_owned(), matcher.into());
             }
         }
-        json!([entry])
+        entry
     };
     json!({ "hooks": {
-        "UserPromptSubmit": hook("working", "UserPromptSubmit", None),
-        "Stop": hook("idle", "Stop", None),
-        "SessionStart": hook("idle", "SessionStart", Some("resume")),
-        "PostToolUse": hook("working", "PostToolUse", None),
-        "Notification": hook("waiting_input", "Notification", Some(NOTIFY_MATCHER)),
-        "PreToolUse": hook("waiting_input", "PreToolUse", Some(ASK_MATCHER)),
+        "UserPromptSubmit": [hook("working", "UserPromptSubmit", None)],
+        "Stop": [hook("idle", "Stop", None)],
+        "SessionStart": [hook("idle", "SessionStart", Some("resume"))],
+        "PostToolUse": [hook("working", "PostToolUse", None)],
+        "Notification": [hook("waiting_input", "Notification", Some(NOTIFY_MATCHER))],
+        "PreToolUse": [
+            hook("waiting_input", "PreToolUse", Some(ASK_MATCHER)),
+            hook("working", "PreToolUse", Some(BUSY_MATCHER)),
+        ],
     }})
 }

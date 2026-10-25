@@ -33,6 +33,7 @@ fn probes(w: &World, hook: Option<HookKind>, pane: PaneStatus) -> Probes {
                 session_id: None,
                 message: None,
                 options: Vec::new(),
+                doing: None,
                 at,
             })
         }),
@@ -292,6 +293,7 @@ fn hooked() -> (World, BoxId) {
         session_id: Some("agent-1".into()),
         message: None,
         options: Vec::new(),
+        doing: None,
         at: Ts::from_millis(w.cx.clock().now().as_millis() - 1000),
     });
     w.cx =

@@ -194,6 +194,9 @@ fn all_events() -> Vec<Event> {
             count: 3,
             window_secs: 600,
         },
+        Event::AgentDoing {
+            text: s("Bash cargo test"),
+        },
     ]
 }
 
@@ -263,6 +266,7 @@ const fn event_index(e: &Event) -> usize {
         Event::AgentSaid { .. } => 50,
         Event::LaunchTimedOut { .. } => 51,
         Event::RelaunchCapped { .. } => 52,
+        Event::AgentDoing { .. } => 53,
     }
 }
 
@@ -270,7 +274,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 53);
+    assert_eq!(all.len(), 54);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

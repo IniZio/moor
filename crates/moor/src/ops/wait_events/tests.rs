@@ -238,6 +238,7 @@ fn the_op_settles_a_finished_steered_turn() {
             session_id: None,
             message: None,
             options: Vec::new(),
+            doing: None,
             at: Ts::from_millis(i64::MAX / 2),
         }),
         pane: PaneRead::Fresh(PaneObs {
@@ -271,6 +272,7 @@ fn the_op_settles_a_steered_turn_on_a_box_whose_setup_failed() {
             session_id: None,
             message: None,
             options: Vec::new(),
+            doing: None,
             at: Ts::from_millis(i64::MAX / 2),
         }),
         pane: PaneRead::Fresh(PaneObs {

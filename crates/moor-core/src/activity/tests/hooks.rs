@@ -143,6 +143,7 @@ fn blocked_hook_without_a_usable_message_falls_back_to_the_pane_prompt() {
         HookRead::Fresh(HookRecord {
             message: m.map(str::to_owned),
             options: Vec::new(),
+            doing: None,
             ..said("")
         })
     };

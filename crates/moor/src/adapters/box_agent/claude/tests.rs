@@ -406,3 +406,49 @@ fn claudes_folder_trust_screen_is_a_first_run_prompt() {
     assert_eq!(m.prompt, FirstRunPrompt::FolderTrust);
     assert_eq!(m.line, "Yes, I trust this folder");
 }
+
+#[test]
+fn a_busy_record_reads_the_tool_and_its_argument_as_the_doing_line() {
+    let raw = r#"{"state":"working","event":"PostToolUse","ts":5,"tool":"Bash","tool_input":{"command":"cargo test -p moor --locked"}}"#;
+    assert_eq!(
+        parse(raw).unwrap().doing.as_deref(),
+        Some("Bash: cargo test")
+    );
+}
+
+#[test]
+fn only_a_busy_record_has_a_doing_line() {
+    let raw =
+        r#"{"state":"idle","event":"Stop","ts":5,"tool":"Bash","tool_input":{"command":"make"}}"#;
+    assert_eq!(parse(raw).unwrap().doing, None);
+}
+
+#[test]
+fn a_tool_named_with_odd_characters_has_no_doing_line() {
+    let raw = r#"{"state":"working","ts":5,"tool":"Bash\nSECRET=1"}"#;
+    assert_eq!(parse(raw).unwrap().doing, None);
+}
+
+#[test]
+fn a_browser_tool_names_its_host_and_other_tools_name_nothing_else() {
+    let nav = r#"{"state":"working","ts":5,"tool":"mcp__playwright__browser_navigate","tool_input":{"url":"https://login.example.com/sso?code=1"}}"#;
+    assert_eq!(
+        parse(nav).unwrap().doing.as_deref(),
+        Some("mcp__playwright__browser_navigate: login.example.com")
+    );
+    let other = r#"{"state":"working","ts":5,"tool":"mcp__linear__get_issue","tool_input":{"url":"https://x.test/secret"}}"#;
+    assert_eq!(
+        parse(other).unwrap().doing.as_deref(),
+        Some("mcp__linear__get_issue")
+    );
+}
+
+#[test]
+fn a_long_command_word_is_cut_to_the_line_cap() {
+    let raw = format!(
+        r#"{{"state":"working","ts":5,"tool":"Bash","tool_input":{{"command":"{}"}}}}"#,
+        "x".repeat(300)
+    );
+    let line = parse(&raw).unwrap().doing.unwrap();
+    assert!(line.chars().count() <= 80, "{line}");
+}

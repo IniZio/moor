@@ -132,6 +132,7 @@ fn rec(kind: HookKind) -> HookRecord {
         session_id: None,
         message: None,
         options: Vec::new(),
+        doing: None,
         at: Ts::from_millis(NOW.as_millis() - 1000),
     }
 }
@@ -569,6 +570,7 @@ fn a_new_hook_session_id_is_stored_once() {
     assert_eq!(row(&cx, id).updated_at, updated);
 }
 
+mod doing;
 mod exit;
 mod needs_input;
 mod said;

@@ -217,6 +217,12 @@ pub enum Event {
         /// The message, cut to its end when long.
         text: String,
     },
+    /// What the agent is doing now: a tool and a short argument, one line. At most one per Box
+    /// in thirty seconds, and only when the line changed.
+    AgentDoing {
+        /// The line, at most 80 characters.
+        text: String,
+    },
     /// The agent stopped to ask the user something; one per waiting episode.
     NeedsInput {
         /// The question, when the agent showed one.

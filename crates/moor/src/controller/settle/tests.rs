@@ -104,6 +104,7 @@ fn idle_hook_at(at: Ts) -> Probes {
             session_id: None,
             message: None,
             options: Vec::new(),
+            doing: None,
             at,
         }),
         pane: PaneRead::Fresh(PaneObs {

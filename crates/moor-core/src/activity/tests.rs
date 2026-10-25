@@ -25,6 +25,7 @@ fn rec(kind: HookKind) -> HookRecord {
         session_id: None,
         message: None,
         options: Vec::new(),
+        doing: None,
         at: ts(1),
     }
 }
@@ -34,6 +35,7 @@ fn said(text: &str) -> HookRecord {
     HookRecord {
         message: Some(text.to_owned()),
         options: Vec::new(),
+        doing: None,
         ..rec(HookKind::Blocked)
     }
 }
