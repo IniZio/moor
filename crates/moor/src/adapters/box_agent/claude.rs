@@ -144,8 +144,7 @@ impl AgentProfile for Claude {
     fn transcript_script(&self, archive: &str) -> String {
         format!(
             r#"set -e
-enc=$(pwd | sed 's/[^A-Za-z0-9]/-/g')
-d="$HOME/.claude/projects/$enc"
+d="$HOME/.claude/projects/$(pwd -P | sed 's/[^A-Za-z0-9]/-/g')"
 mkdir -p "$(dirname {archive})"
 if [ ! -d "$d" ]; then
   echo '{NOTHING_TO_ARCHIVE}'
