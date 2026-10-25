@@ -8,26 +8,23 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use moor_core::name::SessionId;
+use moor_migrate::{Legacy, Migration};
 use rusqlite::types::Type;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
 /// How long a writer waits on a locked database.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Ordered, additive migrations; entry `n` moves `user_version` from `n` to `n + 1`.
-const MIGRATIONS: &[&str] = &["
-    CREATE TABLE requests (
-        key TEXT PRIMARY KEY,
-        root_session TEXT NOT NULL,
-        repo TEXT NOT NULL,
-        created_at INTEGER NOT NULL,
-        ended_at INTEGER
-    );
-    CREATE TABLE cursor (
-        id INTEGER PRIMARY KEY CHECK (id = 0),
-        value INTEGER NOT NULL
-    );
-"];
+/// The pre-migration `user_version` that migration 1 reproduces; a file at it is adopted.
+const BASELINE_VERSION: i64 = 1;
+
+/// The front database's migrations, oldest first. Never edit an applied one; add a new file.
+fn schema() -> Result<Vec<Migration>, DbError> {
+    Ok(moor_migrate::migrations(&[(
+        "V1__baseline.sql",
+        include_str!("../migrations/V1__baseline.sql"),
+    )])?)
+}
 
 /// Columns of a request row, in the order [`request_row`] reads them.
 const REQUEST_COLUMNS: &str = "key, root_session, repo, created_at, ended_at";
@@ -54,6 +51,8 @@ pub enum DbError {
     Sqlite(rusqlite::Error),
     /// The state directory or file could not be prepared.
     Io(io::Error),
+    /// The migrations could not be run.
+    Migration(moor_migrate::Error),
     /// The file was written by a newer build.
     NewerSchema {
         /// The schema version in the file.
@@ -68,6 +67,7 @@ impl fmt::Display for DbError {
         match self {
             Self::Sqlite(e) => write!(f, "database error: {e}"),
             Self::Io(e) => write!(f, "state directory error: {e}"),
+            Self::Migration(e) => write!(f, "database migration error: {e}"),
             Self::NewerSchema { found, known } => write!(
                 f,
                 "database schema {found} is newer than this build knows ({known})"
@@ -81,6 +81,7 @@ impl std::error::Error for DbError {
         match self {
             Self::Sqlite(e) => Some(e),
             Self::Io(e) => Some(e),
+            Self::Migration(e) => Some(e),
             Self::NewerSchema { .. } => None,
         }
     }
@@ -89,6 +90,12 @@ impl std::error::Error for DbError {
 impl From<rusqlite::Error> for DbError {
     fn from(e: rusqlite::Error) -> Self {
         Self::Sqlite(e)
+    }
+}
+
+impl From<moor_migrate::Error> for DbError {
+    fn from(e: moor_migrate::Error) -> Self {
+        Self::Migration(e)
     }
 }
 
@@ -191,22 +198,30 @@ fn request_row(r: &Row<'_>) -> rusqlite::Result<RequestRow> {
     })
 }
 
-/// Apply the migrations not yet recorded in `user_version`, one transaction each.
+/// Bring the db to the latest migration; one process migrates while others wait. A file from a
+/// newer build, or from before migrations at a later `user_version`, is refused untouched.
 fn migrate(conn: &mut Connection) -> Result<(), DbError> {
+    let set = schema()?;
+    let known = moor_migrate::latest(&set);
+    moor_migrate::migrate(conn, &set, legacy).map_err(|e| match e {
+        moor_migrate::Error::Newer { found, known } => DbError::NewerSchema { found, known },
+        moor_migrate::Error::Unadoptable(v) => v.parse().map_or_else(
+            |_| moor_migrate::Error::Unadoptable(v).into(),
+            |found| DbError::NewerSchema { found, known },
+        ),
+        other => other.into(),
+    })
+}
+
+/// What a file without a migration history holds, judged by its `user_version`.
+fn legacy(conn: &Connection) -> rusqlite::Result<Legacy> {
     let found: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-    let known = i64::try_from(MIGRATIONS.len()).unwrap_or(i64::MAX);
-    if found > known {
-        return Err(DbError::NewerSchema { found, known });
-    }
-    let done = usize::try_from(found).unwrap_or(0);
-    for (n, sql) in MIGRATIONS.iter().enumerate().skip(done) {
-        let tx = conn.transaction()?;
-        tx.execute_batch(sql)?;
-        let version = i64::try_from(n + 1).unwrap_or(i64::MAX);
-        tx.pragma_update(None, "user_version", version)?;
-        tx.commit()?;
-    }
-    Ok(())
+    let tables: i64 = conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get(0))?;
+    Ok(match (found, tables) {
+        (0, 0) => Legacy::Empty,
+        (BASELINE_VERSION, _) => Legacy::Baseline,
+        _ => Legacy::Other(found.to_string()),
+    })
 }
 
 /// Create the state dir (0700) and the db file (0600) if missing, and tighten both if looser.

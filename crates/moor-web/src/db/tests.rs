@@ -8,7 +8,7 @@ use moor_core::name::SessionId;
 use rusqlite::Connection;
 use tempfile::TempDir;
 
-use super::{Db, DbError, RequestRow, MIGRATIONS};
+use super::{Db, DbError, RequestRow, BASELINE_VERSION};
 
 fn row(key: &str, created_at: i64) -> RequestRow {
     RequestRow {
@@ -85,18 +85,20 @@ fn reopen_is_idempotent() {
     let db = Db::open(&path).unwrap();
     assert_eq!(db.requests().unwrap(), [row("k1", 10)]);
     drop(db);
-    let version: i64 = Connection::open(&path)
+    let applied: i64 = Connection::open(&path)
         .unwrap()
-        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .query_row("SELECT count(*) FROM refinery_schema_history", [], |r| {
+            r.get(0)
+        })
         .unwrap();
-    assert_eq!(version, i64::try_from(MIGRATIONS.len()).unwrap());
+    assert_eq!(applied, 1);
 }
 
 #[test]
 fn newer_schema_is_refused_untouched() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("web.db");
-    let newer = i64::try_from(MIGRATIONS.len()).unwrap() + 1;
+    let newer = BASELINE_VERSION + 1;
     Connection::open(&path)
         .unwrap()
         .pragma_update(None, "user_version", newer)
@@ -124,4 +126,44 @@ fn files_are_0600_and_new_state_dir_is_0700() {
             assert_eq!(mode(&p), 0o600);
         }
     }
+}
+
+#[test]
+fn a_file_from_the_last_build_before_migrations_is_adopted_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("web.db");
+    let conn = Connection::open(&path).unwrap();
+    conn.execute_batch(include_str!("../../migrations/V1__baseline.sql"))
+        .unwrap();
+    conn.pragma_update(None, "user_version", BASELINE_VERSION)
+        .unwrap();
+    conn.execute(
+        "INSERT INTO requests (key, root_session, repo, created_at) VALUES ('k1', '7', '/work/app', 10)",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+    let db = Db::open(&path).unwrap();
+    assert_eq!(db.requests().unwrap(), [row("k1", 10)]);
+    let applied: i64 = db
+        .conn
+        .query_row("SELECT count(*) FROM refinery_schema_history", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(applied, 1);
+}
+
+#[test]
+fn applied_migrations_are_never_edited() {
+    let pinned: Vec<(i32, u64)> = super::schema()
+        .unwrap()
+        .iter()
+        .map(|m| (m.version(), m.checksum()))
+        .collect();
+    assert_eq!(
+        pinned,
+        [(1, 12_497_078_658_478_940_194)],
+        "a schema change is a new migration file; an applied one must not change"
+    );
 }
