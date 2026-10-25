@@ -18,7 +18,7 @@ use crate::ops::common::proxy::plan;
 /// Usage outside a controller socket; Failed when the rules do not resolve.
 pub(crate) fn run(cx: &Cx, req: &StartNeedsReq) -> Result<StartNeedsValue, CommandError> {
     let (who, user) = cx.requester()?;
-    let needs = needs(cx, req.repo.as_ref())?;
+    let needs = needs(cx, req.repo.as_ref(), user)?;
     let have: BTreeSet<SecretName> = match user {
         Some(user) => cx.store()?.user_secret_names(user)?.into_iter().collect(),
         None => BTreeSet::new(),
@@ -70,9 +70,15 @@ pub(super) fn require(cx: &Cx, repo: Option<&ForgeRepo>) -> Result<UserId, Comma
     .with_value(shown))
 }
 
-/// Every secret the Proxy rules inject for a Box of `repo`, sorted.
-fn needs(cx: &Cx, repo: Option<&ForgeRepo>) -> Result<Vec<SecretName>, CommandError> {
-    let rules = plan(cx, repo)
+/// Every secret the Proxy rules inject for `user`'s Box of `repo`, sorted. An MCP server whose
+/// key the user lacks gets no rule: the Box starts without it.
+fn needs(
+    cx: &Cx,
+    repo: Option<&ForgeRepo>,
+    user: Option<UserId>,
+) -> Result<Vec<SecretName>, CommandError> {
+    let mcp = crate::ops::users::mcp::for_box(cx, user)?;
+    let rules = plan(cx, repo, &mcp.servers)
         .map_err(|e| CommandError::new(ErrorKind::Failed, e))?
         .rules;
     let names: BTreeSet<SecretName> = rules

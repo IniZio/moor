@@ -42,6 +42,36 @@ pub struct SecretDeleteReq {
     pub name: SecretName,
 }
 
+/// Arguments of `mcp-add`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct McpAddReq {
+    /// The identity asserted; the controller socket's own peer when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<Identity>,
+    /// The server's name.
+    pub name: String,
+    /// The server's `https://` URL.
+    pub url: String,
+    /// The header the key goes in; `Authorization` when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub header: Option<String>,
+    /// The key, stored in the vault; the stored one is kept when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<SecretValue>,
+}
+
+/// Arguments of `mcp-remove`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct McpRemoveReq {
+    /// The identity asserted; the controller socket's own peer when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<Identity>,
+    /// The server's name.
+    pub name: String,
+}
+
 /// Arguments of `link-redeem`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -159,6 +189,24 @@ pub enum UserCmd {
     },
     /// The names of the caller's user's secrets.
     SecretNames,
+    /// Add or replace one of the caller's user's MCP servers.
+    McpAdd {
+        /// The server's name.
+        name: String,
+        /// The server's URL.
+        url: String,
+        /// The header the key goes in.
+        header: Option<String>,
+        /// The key to store, if any.
+        key: Option<SecretValue>,
+    },
+    /// Remove one of the caller's user's MCP servers and its key.
+    McpRemove {
+        /// The server's name.
+        name: String,
+    },
+    /// The caller's user's MCP servers.
+    McpList,
     /// Mint a one-time code that links another identity to the caller's user.
     LinkCode,
     /// Link the caller to the user that minted `code`.
@@ -187,6 +235,9 @@ impl UserCmd {
             Self::SecretSet { .. } => "secret-set",
             Self::SecretDelete { .. } => "secret-delete",
             Self::SecretNames => "secret-names",
+            Self::McpAdd { .. } => "mcp-add",
+            Self::McpRemove { .. } => "mcp-remove",
+            Self::McpList => "mcp-list",
             Self::LinkCode => "link-code",
             Self::LinkRedeem { .. } => "link-redeem",
             Self::ProxyLease => "proxy-lease",
@@ -215,6 +266,17 @@ impl Request {
             ),
             Self::SecretDelete(r) => (r.identity, UserCmd::SecretDelete { name: r.name }),
             Self::SecretNames(r) => (r.identity, UserCmd::SecretNames),
+            Self::McpAdd(r) => (
+                r.identity,
+                UserCmd::McpAdd {
+                    name: r.name,
+                    url: r.url,
+                    header: r.header,
+                    key: r.key,
+                },
+            ),
+            Self::McpRemove(r) => (r.identity, UserCmd::McpRemove { name: r.name }),
+            Self::McpList(r) => (r.identity, UserCmd::McpList),
             Self::LinkCode(r) => (r.identity, UserCmd::LinkCode),
             Self::LinkRedeem(r) => (r.identity, UserCmd::LinkRedeem { code: r.code }),
             Self::ProxyLease(r) => (r.identity, UserCmd::ProxyLease),
@@ -255,6 +317,9 @@ impl Request {
             | Self::Whoami(AsReq { identity })
             | Self::Enroll(AsReq { identity })
             | Self::SecretNames(AsReq { identity })
+            | Self::McpList(AsReq { identity })
+            | Self::McpAdd(McpAddReq { identity, .. })
+            | Self::McpRemove(McpRemoveReq { identity, .. })
             | Self::LinkCode(AsReq { identity })
             | Self::ProxyLease(AsReq { identity })
             | Self::ProxyStatus(AsReq { identity })

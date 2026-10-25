@@ -12,7 +12,8 @@ pub use repo::{parse_repo, RepoBox, RepoCompose, RepoConfig};
 
 pub use user::{
     parse_user, AgentConfig, BoxConfig, BoxSize, ControllerClientConfig, DotfilesConfig,
-    DriverConfig, HerdrConfig, McpServer, SurfaceConfig, ToolsConfig, UserConfig,
+    box_mcp, BoxMcp, DriverConfig, HerdrConfig, McpServer, SurfaceConfig, ToolsConfig, UserConfig,
+    UserMcp, DEFAULT_HEADER,
     DEFAULT_SLEEP_AFTER,
 };
 

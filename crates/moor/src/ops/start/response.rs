@@ -65,7 +65,9 @@ pub(super) fn view(cx: &Cx, row: &BoxRow, attached: bool) -> StartView {
         setup: SetupView::default(),
         dotfiles: DotfilesView::default(),
         agent: AgentLaunchView::default(),
-        warnings_inline: Vec::new(),
+        warnings_inline: crate::ops::users::mcp::for_box(cx, row.user)
+            .map(|m| m.notes)
+            .unwrap_or_default(),
         failed_step: None,
         handle: None,
     }

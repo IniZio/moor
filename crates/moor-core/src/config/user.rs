@@ -5,6 +5,7 @@
 mod controller;
 mod creds;
 mod duration;
+mod own_mcp;
 
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
@@ -18,6 +19,7 @@ use super::{check, parse_strict, ConfigError};
 use crate::cache::CacheConfig;
 pub use controller::ControllerClientConfig;
 pub use creds::McpServer;
+pub use own_mcp::{box_mcp, BoxMcp, UserMcp, DEFAULT_HEADER};
 use duration::{duration_or, parse_duration};
 
 /// herdr session used when `surface.herdr.session` is unset.
@@ -319,12 +321,12 @@ impl UserConfig {
         self.box_.provider.as_deref()
     }
 
-    /// The Proxy rules a Box gets: `proxy.rules` plus one per MCP server whose header names a
-    /// secret.
+    /// The Proxy rules a Box gets: `proxy.rules` plus one per MCP server in `mcp` whose header
+    /// names a secret.
     #[must_use]
-    pub fn box_proxy(&self) -> ProxyConfig {
+    pub fn box_proxy(&self, mcp: &BTreeMap<String, McpServer>) -> ProxyConfig {
         let mut out = self.proxy.clone();
-        for (name, server) in &self.mcp_servers {
+        for (name, server) in mcp {
             if let Some(rule) = server.proxy_rule() {
                 out.rules.insert(creds::rule_name(name), rule);
             }

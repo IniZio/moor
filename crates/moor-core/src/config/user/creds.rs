@@ -120,7 +120,7 @@ impl McpServer {
 }
 
 /// The host of an `https://` URL, without its port.
-fn https_host(url: &str) -> Option<&str> {
+pub(super) fn https_host(url: &str) -> Option<&str> {
     let rest = url.strip_prefix("https://")?;
     let authority = rest.split(['/', '?', '#']).next()?;
     let host = authority.split(':').next()?;

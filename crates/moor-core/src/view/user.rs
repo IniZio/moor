@@ -5,6 +5,39 @@ use serde::{Deserialize, Serialize};
 use crate::request::SecretValue;
 use crate::user::{Identity, SecretName, UserId};
 
+/// One of a user's MCP servers as `mcp-list` shows it; never its key.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpServerView {
+    /// The server's name.
+    pub name: String,
+    /// Its URL.
+    pub url: String,
+    /// The header its key goes in.
+    pub header: String,
+    /// The vault secret that holds its key.
+    pub secret: SecretName,
+    /// Whether that secret is stored.
+    pub has_key: bool,
+}
+
+/// Value of `mcp-list`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpListValue {
+    /// The servers by name.
+    pub servers: Vec<McpServerView>,
+}
+
+/// Value of `mcp-add` and `mcp-remove`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpChangeValue {
+    /// The server's name.
+    pub name: String,
+    /// Whether anything changed.
+    pub changed: bool,
+    /// The vault secret that holds its key.
+    pub secret: SecretName,
+}
+
 /// Value of `whoami`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WhoamiValue {

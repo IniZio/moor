@@ -18,7 +18,7 @@ pub use session::{EndSessionReq, OpenSessionReq, SessionsReq, ShowSessionReq};
 pub use target::BoxTarget;
 mod user;
 pub use user::{
-    ActAsReq, AsReq, LinkRedeemReq, ProxyReleaseReq, SecretDeleteReq, SecretSetReq, SecretValue,
+    ActAsReq, AsReq, LinkRedeemReq, McpAddReq, McpRemoveReq, ProxyReleaseReq, SecretDeleteReq, SecretSetReq, SecretValue,
     StartNeedsReq, UserCmd,
 };
 mod wait;
@@ -90,6 +90,12 @@ pub enum Request {
     SecretDelete(SecretDeleteReq),
     /// List the names of the caller's user's secrets.
     SecretNames(AsReq),
+    /// Add or replace one of the caller's user's MCP servers, storing its key in the vault.
+    McpAdd(McpAddReq),
+    /// Remove one of the caller's user's MCP servers and its key.
+    McpRemove(McpRemoveReq),
+    /// List the caller's user's MCP servers; never their keys.
+    McpList(AsReq),
     /// Mint a one-time code that links another identity to the caller's user.
     LinkCode(AsReq),
     /// Link the caller's identity to the user that minted a code.
@@ -142,6 +148,9 @@ impl Request {
             Self::SecretSet(_) => "secret-set",
             Self::SecretDelete(_) => "secret-delete",
             Self::SecretNames(_) => "secret-names",
+            Self::McpAdd(_) => "mcp-add",
+            Self::McpRemove(_) => "mcp-remove",
+            Self::McpList(_) => "mcp-list",
             Self::LinkCode(_) => "link-code",
             Self::LinkRedeem(_) => "link-redeem",
             Self::ProxyLease(_) => "proxy-lease",

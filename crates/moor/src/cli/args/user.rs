@@ -1,7 +1,7 @@
 //! clap definitions for `moor user`: the caller's user, its secrets and its link codes.
 
 use clap::{Args, Subcommand};
-use moor_core::request::{AsReq, LinkRedeemReq, SecretDeleteReq};
+use moor_core::request::{AsReq, LinkRedeemReq, McpAddReq, McpRemoveReq, SecretDeleteReq};
 use moor_core::user::SecretName;
 use moor_core::Request;
 
@@ -15,6 +15,9 @@ pub(super) enum UserCli {
     /// Your user's secrets.
     #[command(subcommand)]
     Secret(SecretCli),
+    /// Your user's own MCP servers; each server's key is the secret `mcp_<name>`.
+    #[command(subcommand)]
+    Mcp(McpCli),
     /// Mint a one-time code that links another identity to your user.
     LinkCode,
     /// Link your identity to the user that minted CODE.
@@ -30,6 +33,36 @@ pub(super) enum SecretCli {
     Rm(NameArg),
     /// List your secrets' names.
     Ls,
+}
+
+/// Subcommands of `user mcp`.
+#[derive(Debug, Subcommand)]
+pub(super) enum McpCli {
+    /// Add or replace server NAME at URL; set its key with `moor user secret set mcp_<name>`.
+    Add(McpAddArgs),
+    /// Remove server NAME and its key.
+    Rm(McpNameArg),
+    /// List your servers.
+    Ls,
+}
+
+/// Arguments of `user mcp add`.
+#[derive(Debug, Args)]
+pub(super) struct McpAddArgs {
+    /// Server name, such as `linear`.
+    name: String,
+    /// Server URL, such as `https://mcp.linear.app/mcp/readonly`.
+    url: String,
+    /// Header the key goes in.
+    #[arg(long)]
+    header: Option<String>,
+}
+
+/// A server's name.
+#[derive(Debug, Args)]
+pub(super) struct McpNameArg {
+    /// Server name.
+    name: String,
 }
 
 /// A secret's name.
@@ -61,6 +94,18 @@ impl UserCli {
                 name: a.name,
             }),
             Self::Secret(SecretCli::Ls) => Request::SecretNames(AS_CALLER),
+            Self::Mcp(McpCli::Add(a)) => Request::McpAdd(McpAddReq {
+                identity: None,
+                name: a.name,
+                url: a.url,
+                header: a.header,
+                key: None,
+            }),
+            Self::Mcp(McpCli::Rm(a)) => Request::McpRemove(McpRemoveReq {
+                identity: None,
+                name: a.name,
+            }),
+            Self::Mcp(McpCli::Ls) => Request::McpList(AS_CALLER),
             Self::LinkCode => Request::LinkCode(AS_CALLER),
             Self::Link(a) => Request::LinkRedeem(LinkRedeemReq {
                 identity: None,
