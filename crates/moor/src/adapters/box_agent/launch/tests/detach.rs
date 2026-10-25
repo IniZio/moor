@@ -2,7 +2,9 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::{attach, pane_line, start, NO_TMUX, NO_TMUX_EXIT, SESSION};
+use moor_core::seam::engine::{AgentFate, EngineError};
+
+use super::{attach, fate_by, pane_line, start, NO_TMUX, NO_TMUX_EXIT, SESSION};
 
 /// Writes an executable `name` script into `bin`.
 fn tool(bin: &Path, name: &str, body: &str) {
@@ -195,4 +197,51 @@ fn the_pane_line_starts_the_agent_through_real_shells_and_tmux() {
     );
     let seen = std::fs::read_to_string(&seen).unwrap_or_default();
     assert_eq!(seen, "it's|$HOME `x`\n", "{stdout}{stderr}");
+}
+
+/// What the Box tells of the agent when `tmux has-session` exits `has_session` and the workdir
+/// holds `exit_file`, each Box command run by a real `sh`.
+fn fate_on_box(has_session: i32, exit_file: Option<&str>) -> AgentFate {
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join("bin");
+    let work = dir.path().join("work");
+    std::fs::create_dir_all(work.join(".moor")).unwrap();
+    std::fs::create_dir(&bin).unwrap();
+    tool(
+        &bin,
+        "tmux",
+        &format!("[ \"$1 $2 $3\" = 'has-session -t {SESSION}' ] || exit 99; exit {has_session}"),
+    );
+    if let Some(content) = exit_file {
+        std::fs::write(work.join(".moor/agent.exit"), content).unwrap();
+    }
+    fate_by(|cmd| {
+        let out = Command::new("sh")
+            .arg("-c")
+            .arg(cmd)
+            .current_dir(&work)
+            .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+            .output()
+            .map_err(|e| EngineError::Failed {
+                step: "fate",
+                message: e.to_string(),
+            })?;
+        Ok(out.status.code().unwrap_or(-1))
+    })
+    .unwrap()
+}
+
+#[test]
+fn the_box_tells_an_agent_whose_session_runs_is_alive() {
+    assert_eq!(fate_on_box(0, Some("3\n")), AgentFate::Running);
+}
+
+#[test]
+fn the_box_tells_the_recorded_exit_of_an_agent_whose_session_is_gone() {
+    assert_eq!(fate_on_box(1, Some("3\n")), AgentFate::Ended { exit: Some(3) });
+}
+
+#[test]
+fn the_box_tells_exit_1_for_a_gone_agent_that_left_no_status() {
+    assert_eq!(fate_on_box(1, None), AgentFate::Ended { exit: Some(1) });
 }
