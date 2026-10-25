@@ -158,7 +158,10 @@ fn attempt(
     let sref = session_ref(&row, session.session_ref.clone(), session.pane.clone())
         .ok_or_else(|| no_agent(name))?;
     let before = activity_of(cx, store, &row)?;
-    if before.as_ref().is_some_and(|a| a.source == Source::FirstRun) {
+    if before
+        .as_ref()
+        .is_some_and(|a| a.source == Source::FirstRun)
+    {
         return Err(first_run_refusal(name));
     }
     let before = before.map(|a| a.state);

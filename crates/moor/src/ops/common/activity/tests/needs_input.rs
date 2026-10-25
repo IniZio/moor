@@ -172,7 +172,8 @@ fn the_same_question_asked_again_after_work_is_a_new_episode() {
 }
 
 /// Claude Code's folder-trust screen as a pane showed it.
-const TRUST_SCREEN: &str = include_str!("../../../../adapters/box_agent/claude/fixtures/folder_trust.txt");
+const TRUST_SCREEN: &str =
+    include_str!("../../../../adapters/box_agent/claude/fixtures/folder_trust.txt");
 
 /// An agent that has reported nothing since its launch marker, with `tail` on its pane.
 fn at_launch(tail: &str) -> Probes {
