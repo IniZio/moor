@@ -101,7 +101,7 @@ fn show_box_of_a_box_that_does_not_run_or_is_not_the_threads_asks_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let db = two_authors(dir.path());
     turn_of(&db, "U1", "Ev1");
-    db.mark_closing(&BoxName::parse_allow_bare(TWO).unwrap())
+    db.mark_closing(&BoxName::parse_allow_bare(TWO).unwrap(), false)
         .unwrap();
     let controller = Controller::new();
     let closing = controller.run(&db, &on("show_box", TWO));
@@ -220,7 +220,7 @@ fn a_box_that_does_not_run_is_not_asked_to_sleep_wake_interrupt_or_restart() {
     let dir = tempfile::tempdir().unwrap();
     let db = two_authors(dir.path());
     turn_of(&db, "U1", "Ev1");
-    db.mark_closing(&BoxName::parse_allow_bare(ONE).unwrap())
+    db.mark_closing(&BoxName::parse_allow_bare(ONE).unwrap(), false)
         .unwrap();
     let controller = Controller::new();
     for tool in ["interrupt_box", "sleep_box", "wake_box", "restart_agent"] {

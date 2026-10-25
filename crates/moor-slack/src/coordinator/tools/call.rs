@@ -29,6 +29,8 @@ pub(crate) enum Call {
     CloseBox {
         /// The Box's name as given.
         box_name: String,
+        /// Discard work the Box has not pushed.
+        discard: bool,
     },
     /// `answer_box`.
     AnswerBox {
@@ -89,7 +91,13 @@ impl Call {
                 box_name: boxed()?,
                 text: text("text")?,
             }),
-            "close_box" => Ok(Self::CloseBox { box_name: boxed()? }),
+            "close_box" => Ok(Self::CloseBox {
+                box_name: boxed()?,
+                discard: args
+                    .get("discard")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            }),
             "answer_box" => Ok(Self::AnswerBox {
                 box_name: boxed()?,
                 prompt: number(name, args, "prompt")?,

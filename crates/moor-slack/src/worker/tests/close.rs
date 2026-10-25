@@ -7,6 +7,7 @@ use std::cell::RefCell;
 use std::panic::AssertUnwindSafe;
 use std::sync::mpsc;
 
+use moor_core::decide::close::Refusal;
 use moor_core::name::BoxId;
 use moor_core::request::Request;
 use moor_core::response::Response;
@@ -43,7 +44,7 @@ fn bound_thread(db: &Db) {
 /// Marks the thread's bound Box `closing`, as `close_box` does, and returns its row.
 fn recorded_close(db: &Db) -> SlackBox {
     let row = db.thread_boxes("C1", "10.5").unwrap().remove(0);
-    db.mark_closing(&row.box_name).unwrap();
+    db.mark_closing(&row.box_name, false).unwrap();
     let row = db.thread_boxes("C1", "10.5").unwrap().remove(0);
     assert_eq!(Some(row.state.clone()), closing());
     row
@@ -92,6 +93,7 @@ fn closing() -> Option<BoxState> {
     Some(BoxState::Closing {
         box_id: BoxId::new(7),
         branch: None,
+        discard: false,
     })
 }
 
@@ -176,6 +178,28 @@ fn a_close_is_sent_without_force_and_the_box_is_gone() {
 }
 
 #[test]
+fn a_confirmed_discarding_close_is_sent_with_force_and_the_box_is_gone() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db(dir.path());
+    bound_thread(&db);
+    let name = db.thread_boxes("C1", "10.5").unwrap().remove(0).box_name;
+    db.mark_closing(&name, true).unwrap();
+    let row = db.thread_boxes("C1", "10.5").unwrap().remove(0);
+    let seen = attempt(&db, &row, Attempt::First, &mut |_| {
+        Ok(Response::ok("close", None))
+    });
+    let Some(Request::Close(req)) = seen.calls.first() else {
+        panic!("no close: {:?}", seen.calls);
+    };
+    assert!(req.force, "the controller discards the unsaved work");
+    assert_eq!(texts(&seen), ["Closed Box `slack-10-5-1`."]);
+    assert!(matches!(
+        state(&db, "C1", "10.5"),
+        Some(BoxState::Gone { .. })
+    ));
+}
+
+#[test]
 fn a_refused_hello_on_the_first_close_is_posted() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
@@ -230,6 +254,43 @@ fn a_mention_in_a_kept_thread_is_queued_like_a_reply() {
         items.last().map(|i| i.text.as_str()),
         Some("start api again")
     );
+}
+
+#[test]
+fn a_close_refused_for_unsaved_work_asks_the_thread_in_slack_terms_and_keeps_the_box() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db(dir.path());
+    bound_thread(&db);
+    let row = recorded_close(&db);
+    let refusal = Refusal::UnsavedInBox {
+        name: "slack-10-5-1".into(),
+        branch: "moor/slack-10-5-1".into(),
+        ahead: 0,
+        dirty: 1,
+    };
+    let seen = attempt(&db, &row, Attempt::First, &mut |_| {
+        refused("close", &refusal.to_string())
+    });
+    let [line] = texts(&seen)[..] else {
+        panic!("{:?}", texts(&seen));
+    };
+    assert!(!line.contains("moor "), "no CLI advice: {line}");
+    assert!(line.contains("1 uncommitted file"), "{line}");
+    assert!(line.contains("nothing is lost"), "{line}");
+    assert!(line.contains("say so in this thread"), "{line}");
+    assert!(matches!(
+        state(&db, "C1", "10.5"),
+        Some(BoxState::Bound { .. })
+    ));
+    let conn = rusqlite::Connection::open(dir.path().join("slack.db")).unwrap();
+    let notice: String = conn
+        .query_row(
+            "SELECT text FROM slack_inbox WHERE kind = 'notice' AND text LIKE '%not closed%'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(notice.contains("1 uncommitted file"), "{notice}");
 }
 
 #[test]

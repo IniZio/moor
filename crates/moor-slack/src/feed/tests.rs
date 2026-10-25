@@ -117,10 +117,11 @@ fn a_closing_box_leaves_its_closed_line_to_the_close_path() {
     let feed = feed(dir.path());
     let db = Db::open(&feed.db_path).unwrap();
     let mut row = bound_box(&db);
-    db.mark_closing(&row.box_name).unwrap();
+    db.mark_closing(&row.box_name, false).unwrap();
     row.state = BoxState::Closing {
         box_id: ID,
         branch: None,
+        discard: false,
     };
     let mut fold = Fold::default();
     fold.take(event(1, Some(ID), "closed"));

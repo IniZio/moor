@@ -97,6 +97,15 @@ pub(crate) enum BoxEvent {
     Relaunched,
     /// The controller refused another automatic agent relaunch.
     RelaunchCapped,
+    /// The controller refused a close because the Box holds work that is not pushed.
+    Unsaved {
+        /// Unpushed commits.
+        ahead: u32,
+        /// Uncommitted files.
+        dirty: u32,
+    },
+    /// The controller refused a close for another reason.
+    CloseRefused,
 }
 
 impl BoxEvent {
@@ -112,6 +121,8 @@ impl BoxEvent {
             Self::AutoSlept => "auto_slept",
             Self::Relaunched => "relaunched",
             Self::RelaunchCapped => "relaunch_capped",
+            Self::Unsaved { .. } => "unsaved",
+            Self::CloseRefused => "close_refused",
         }
     }
 
@@ -119,6 +130,15 @@ impl BoxEvent {
     pub(crate) fn notice(self, name: &BoxName) -> String {
         let name = name.as_str();
         let what = match self {
+            Self::Unsaved { ahead, dirty } => {
+                return format!(
+                    "[moor] Box `{name}` was not closed: it holds {}, which closing would \
+                     discard. The thread was asked to confirm. Call close_box with discard only \
+                     after the person who asked for the Box confirms in the thread.",
+                    unsaved_work(ahead, dirty)
+                )
+            }
+            Self::CloseRefused => "was not closed; the thread was told why",
             Self::Started => "started",
             Self::NotStarted => "could not start",
             Self::Finished => "finished its turn",
@@ -130,6 +150,20 @@ impl BoxEvent {
             Self::RelaunchCapped => "was not relaunched, the automatic relaunch cap was reached",
         };
         format!("[moor] Box `{name}` {what}.")
+    }
+}
+
+/// Unsaved work in Slack terms, such as `2 unpushed commits and 1 uncommitted file`.
+pub(crate) fn unsaved_work(ahead: u32, dirty: u32) -> String {
+    let count = |n: u32, what: &str| format!("{n} {what}{}", if n == 1 { "" } else { "s" });
+    match (ahead, dirty) {
+        (0, dirty) => count(dirty, "uncommitted file"),
+        (ahead, 0) => count(ahead, "unpushed commit"),
+        (ahead, dirty) => format!(
+            "{} and {}",
+            count(ahead, "unpushed commit"),
+            count(dirty, "uncommitted file")
+        ),
     }
 }
 

@@ -63,7 +63,7 @@ pub(crate) fn run(scope: &mut Scope<'_>, call: &Call) -> Reply {
         Call::ListBoxes => list(scope),
         Call::StartBox { goal, repo, base } => start(scope, goal, repo.as_deref(), base.as_deref()),
         Call::SteerBox { box_name, text } => steer(scope, box_name, text),
-        Call::CloseBox { box_name } => close(scope, box_name),
+        Call::CloseBox { box_name, discard } => close(scope, box_name, *discard),
         Call::AnswerBox {
             box_name,
             prompt,
@@ -213,8 +213,9 @@ fn steer(scope: &mut Scope<'_>, box_name: &str, text: &str) -> rusqlite::Result<
 
 /// `close_box`: the journal row and the Box marked `closing`, in one transaction. The worker
 /// sends the close and posts its result in the thread.
-fn close(scope: &Scope<'_>, box_name: &str) -> rusqlite::Result<Reply> {
-    let target = match changeable(scope, "close_box", box_name, "")? {
+fn close(scope: &Scope<'_>, box_name: &str, discard: bool) -> rusqlite::Result<Reply> {
+    let args = if discard { "discard" } else { "" };
+    let target = match changeable(scope, "close_box", box_name, args)? {
         Ok(target) => target,
         Err(refusal) => return Ok(refusal),
     };
@@ -222,16 +223,21 @@ fn close(scope: &Scope<'_>, box_name: &str) -> rusqlite::Result<Reply> {
     if let Some(refusal) = not_running(&target.boxed, "close") {
         return Ok(refusal);
     }
-    let outcome = format!("Box `{name}` is closing");
+    let outcome = if discard {
+        format!("Asked to close Box `{name}` and discard its unsaved work")
+    } else {
+        format!("Asked to close Box `{name}`")
+    };
     let db = scope.db;
     let now = (scope.clock)();
     db.atomically(|| {
         let seq = db.begin_action(target.turn.id, &target.action, now)?;
-        db.mark_closing(&target.boxed.box_name)?;
+        db.mark_closing(&target.boxed.box_name, discard)?;
         db.end_action(target.turn.id, seq, &outcome, now)
     })?;
     Ok(Reply::done(format!(
-        "{outcome}. The thread will say when it has closed."
+        "{outcome}. It is not closed yet. The thread will be told whether it closed or was \
+         refused, and a `[moor]` line in your next turn says which."
     )))
 }
 

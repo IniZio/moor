@@ -159,10 +159,11 @@ fn a_box_that_is_closing_gets_no_new_prompt() {
     let feed = feed(dir.path());
     let db = Db::open(&feed.db_path).unwrap();
     let mut row = bound_box(&db);
-    db.mark_closing(&row.box_name).unwrap();
+    db.mark_closing(&row.box_name, false).unwrap();
     row.state = BoxState::Closing {
         box_id: ID,
         branch: None,
+        discard: false,
     };
     let fold = folded(&[(5, "needs_input")]);
     assert!(feed.prompts(&db, &fold, &row), "nothing to post");

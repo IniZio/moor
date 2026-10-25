@@ -8,7 +8,7 @@ use super::Db;
 
 /// Columns of a Box row, in the order [`box_row`] reads them.
 const BOX_COLUMNS: &str = "b.channel, b.thread_ts, b.box_name, b.repo, b.goal, b.requested_by, \
-     b.state, b.box_id, b.branch, b.parent, b.status_ts, b.status_text, b.base FROM slack_boxes b";
+     b.state, b.box_id, b.branch, b.parent, b.status_ts, b.status_text, b.base, b.discard FROM slack_boxes b";
 
 /// Where a Box stands.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,6 +28,8 @@ pub(crate) enum BoxState {
         box_id: BoxId,
         /// The Box's branch, when the start reply named one.
         branch: Option<String>,
+        /// The close discards work the Box has not pushed; its starter confirmed that.
+        discard: bool,
     },
     /// The controller closed it.
     Gone {
@@ -186,11 +188,12 @@ impl Db {
         Ok(())
     }
 
-    /// Marks a `bound` Box `closing`.
-    pub(crate) fn mark_closing(&self, name: &BoxName) -> rusqlite::Result<()> {
+    /// Marks a `bound` Box `closing`, discarding its unpushed work when `discard`.
+    pub(crate) fn mark_closing(&self, name: &BoxName, discard: bool) -> rusqlite::Result<()> {
         self.conn.execute(
-            "UPDATE slack_boxes SET state = 'closing' WHERE box_name = ?1 AND state = 'bound'",
-            params![name.as_str()],
+            "UPDATE slack_boxes SET state = 'closing', discard = ?2 \
+             WHERE box_name = ?1 AND state = 'bound'",
+            params![name.as_str(), discard],
         )?;
         Ok(())
     }
@@ -200,7 +203,8 @@ impl Db {
     pub(crate) fn settle_close(&self, name: &BoxName, gone: bool) -> rusqlite::Result<()> {
         self.conn
             .execute(
-                "UPDATE slack_boxes SET state = ?2 WHERE box_name = ?1 AND state = 'closing'",
+                "UPDATE slack_boxes SET state = ?2, discard = 0 \
+                 WHERE box_name = ?1 AND state = 'closing'",
                 params![name.as_str(), if gone { "gone" } else { "bound" }],
             )
             .map(drop)
@@ -237,7 +241,11 @@ fn box_row(r: &Row<'_>) -> rusqlite::Result<SlackBox> {
     let state = match (state.as_str(), box_id) {
         ("starting", _) => BoxState::Starting,
         ("bound", Some(box_id)) => BoxState::Bound { box_id, branch },
-        ("closing", Some(box_id)) => BoxState::Closing { box_id, branch },
+        ("closing", Some(box_id)) => BoxState::Closing {
+            box_id,
+            branch,
+            discard: r.get(13)?,
+        },
         ("gone", Some(box_id)) => BoxState::Gone { box_id, branch },
         (other, _) => return Err(bad(6, format!("Box state `{other}`"))),
     };

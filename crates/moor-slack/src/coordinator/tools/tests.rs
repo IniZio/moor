@@ -128,6 +128,7 @@ fn steer(name: &str, text: &str) -> Call {
 fn close(name: &str) -> Call {
     Call::CloseBox {
         box_name: name.into(),
+        discard: false,
     }
 }
 
@@ -278,7 +279,8 @@ fn close_marks_the_box_closing_with_its_journal_row_and_sends_nothing() {
     assert_eq!(
         reply,
         Reply::done(format!(
-            "Box `{ONE}` is closing. The thread will say when it has closed."
+            "Asked to close Box `{ONE}`. It is not closed yet. The thread will be told whether \
+             it closed or was refused, and a `[moor]` line in your next turn says which."
         ))
     );
     assert!(matches!(state(&db, ONE), BoxState::Closing { .. }));
@@ -290,7 +292,40 @@ fn close_marks_the_box_closing_with_its_journal_row_and_sends_nothing() {
     assert_eq!(journal[0].tool, "close_box");
     assert_eq!(
         journal[0].outcome.as_deref(),
-        Some(&*format!("Box `{ONE}` is closing"))
+        Some(&*format!("Asked to close Box `{ONE}`"))
+    );
+}
+
+#[test]
+fn close_with_discard_marks_the_box_to_close_discarding_its_work() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = two_authors(dir.path());
+    turn_of(&db, "U1", "Ev1");
+    let args = json!({"box": ONE, "discard": true});
+    let call = Call::parse("close_box", &args).unwrap();
+    let reply = Controller::new().run(&db, &call);
+    assert!(!reply.is_error, "{}", reply.text);
+    assert!(
+        matches!(state(&db, ONE), BoxState::Closing { discard: true, .. }),
+        "{:?}",
+        state(&db, ONE)
+    );
+}
+
+#[test]
+fn a_queued_close_does_not_tell_the_model_the_box_closed() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = two_authors(dir.path());
+    turn_of(&db, "U1", "Ev1");
+    let reply = Controller::new().run(&db, &close(ONE));
+    assert!(!reply.is_error);
+    for claim in ["is closing", "has closed", "is closed", "closed."] {
+        assert!(!reply.text.contains(claim), "{claim}: {}", reply.text);
+    }
+    assert!(
+        reply.text.contains("whether it closed or was refused"),
+        "{}",
+        reply.text
     );
 }
 
@@ -326,7 +361,7 @@ fn close_of_a_box_still_starting_closing_or_closed_changes_nothing() {
         ))
     );
     db.bind(&starting.box_name, BoxId::new(1), None).unwrap();
-    db.mark_closing(&starting.box_name).unwrap();
+    db.mark_closing(&starting.box_name, false).unwrap();
     let closing = controller.run(&db, &close(ONE));
     assert_eq!(closing, Reply::refused(format!("Box `{ONE}` is closing.")));
     db.settle_close(&starting.box_name, true).unwrap();

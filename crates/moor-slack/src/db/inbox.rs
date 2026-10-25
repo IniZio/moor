@@ -108,6 +108,15 @@ impl Db {
         Ok(added == 1)
     }
 
+    /// The id the next inbox item gets, unless another is written first.
+    pub(crate) fn next_item_id(&self) -> rusqlite::Result<i64> {
+        self.conn.query_row(
+            "SELECT COALESCE(MAX(id), 0) + 1 FROM slack_inbox",
+            [],
+            |r| r.get(0),
+        )
+    }
+
     /// Whether the notice of `event` on `boxed` at `cursor` was queued.
     pub(crate) fn has_notice(
         &self,

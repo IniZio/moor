@@ -8,6 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
+use moor_core::decide::close::Refusal;
 use moor_core::request::Request;
 use moor_core::response::Response;
 use serde_json::json;
@@ -17,8 +18,16 @@ use super::support::controller::{failed, FakeController, Scripted};
 use super::support::{Rig, BOX_NAME, QUIET, USER};
 
 /// The controller's refusal of a close that would lose unpushed work.
-const UNPUSHED: &str = "the Box has work that is not saved (2 unpushed commit(s), \
-     no uncommitted changes); push it, or pass --force to close anyway";
+/// The controller's refusal of a close of the Box, which holds 2 unpushed commits.
+fn unpushed() -> String {
+    Refusal::UnsavedInBox {
+        name: BOX_NAME.into(),
+        branch: format!("moor/{BOX_NAME}"),
+        ahead: 2,
+        dirty: 0,
+    }
+    .to_string()
+}
 
 /// A `close` reply for the Box.
 fn closed() -> Scripted {
@@ -73,7 +82,10 @@ fn close_box_in_the_requesters_turn_closes_the_box_without_force() {
     controller.script("close", closed());
     reply(&rig, 2, USER, "we are done, close it");
     rig.wait_post(&format!("Closed Box `{BOX_NAME}`."));
-    let said = format!("Box `{BOX_NAME}` is closing. The thread will say when it has closed.");
+    let said = format!(
+        "Asked to close Box `{BOX_NAME}`. It is not closed yet. The thread will be told whether \
+         it closed or was refused, and a `[moor]` line in your next turn says which."
+    );
     assert_eq!(results(&bin, 1), [(said, false)]);
     assert_eq!(
         closes_and_shows(&controller),
@@ -84,8 +96,8 @@ fn close_box_in_the_requesters_turn_closes_the_box_without_force() {
     rig.wait_replies(3);
     let stdin = std::fs::read_to_string(bin.join("run-2/stdin")).unwrap();
     let journal = format!(
-        "Turn 2, <@{USER}> asked. close_box Box `{BOX_NAME}`. Result: Box `{BOX_NAME}` is \
-         closing.\n"
+        "Turn 2, <@{USER}> asked. close_box Box `{BOX_NAME}`. Result: Asked to close Box \
+         `{BOX_NAME}`.\n"
     );
     assert!(stdin.contains(&journal), "{stdin}");
     assert!(
@@ -99,9 +111,13 @@ fn close_box_in_the_requesters_turn_closes_the_box_without_force() {
 #[test]
 fn close_refused_with_unpushed_work_is_posted_and_the_box_stays_open() {
     let (rig, controller, _bin) = running_box();
-    controller.script("close", Scripted::Reply(failed("close", UNPUSHED)));
+    controller.script("close", Scripted::Reply(failed("close", &unpushed())));
     reply(&rig, 2, USER, "close it");
-    rig.wait_post(&format!("Could not close Box `{BOX_NAME}`: {UNPUSHED}"));
+    rig.wait_post(&format!(
+        "Box `{BOX_NAME}` is still open: it holds work that is not saved anywhere (2 unpushed \
+         commits). Closing it would discard that work, so nothing is lost unless you confirm. \
+         If you still want it closed, say so in this thread."
+    ));
     controller.script("close", closed());
     reply(&rig, 3, USER, "I pushed, close it");
     rig.wait_post(&format!("Closed Box `{BOX_NAME}`."));
