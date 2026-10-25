@@ -144,6 +144,7 @@ pub fn run(settings: &Settings, log: &Log) -> Result<(), String> {
         bot_token: Arc::clone(&bot_token),
         log: Arc::clone(log),
         clock: settings.clock,
+        long_turn_secs: i64::from(cfg.long_turn_minutes) * 60,
     };
     let worker = Worker {
         db_path,

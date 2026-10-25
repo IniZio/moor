@@ -9,7 +9,7 @@ use moor_core::name::BoxId;
 use serde_json::{json, Value};
 
 use crate::db::{BoxState as RowState, FedBox};
-use crate::escape::escape;
+use crate::escape::{code, escape};
 use crate::stop;
 
 /// Least time between two sends for one Box; changes in between coalesce.
@@ -18,7 +18,7 @@ pub(super) const UPDATE_EVERY: Duration = Duration::from_secs(2);
 /// Longest question shown, in characters.
 const QUESTION_MAX: usize = 300;
 
-/// Seconds a working Box may emit no event before its status says it may be stuck.
+/// Seconds a working Box may show no activity before its status says it may be stuck.
 pub(super) const STALL_AFTER_SECS: i64 = 10 * 60;
 
 /// Seconds a starting, blocked or unanswered Box may wait before its status says it may be stuck.
@@ -76,8 +76,11 @@ pub(super) struct View {
     pub(super) machine: Option<Machine>,
     /// When `state` began, in milliseconds since the epoch; none before any event.
     pub(super) since_ms: Option<i64>,
-    /// When the Box last emitted any event, in milliseconds since the epoch.
-    pub(super) last_event_ms: Option<i64>,
+    /// When the Box last showed activity (an `agent_doing` line, an agent message, a session
+    /// or a turn starting), in milliseconds since the epoch.
+    pub(super) activity_ms: Option<i64>,
+    /// What the agent is doing now, while the Box works.
+    pub(super) doing: Option<String>,
     /// When the Box began launching its agent, in milliseconds since the epoch, until the agent
     /// is seen alive. Setup, which can legitimately take long, is not part of it.
     pub(super) launching_ms: Option<i64>,
@@ -93,11 +96,28 @@ impl View {
     /// change nothing but the time of the last event.
     pub(super) fn fold(&mut self, kind: &str, payload: &Value, at_ms: i64) {
         let before = self.state.clone();
-        self.last_event_ms = Some(at_ms);
         self.apply(kind, payload, at_ms);
+        if matches!(
+            kind,
+            "agent_doing" | "agent_said" | "session_started" | "working" | "busy" | "woke"
+        ) {
+            self.activity_ms = Some(at_ms);
+        }
+        if self.state != before {
+            self.doing = None;
+        }
+        if kind == "agent_doing" {
+            let text = payload.get("text").and_then(Value::as_str);
+            self.doing = text.filter(|t| !t.is_empty()).map(str::to_owned);
+        }
         if self.state != before || self.since_ms.is_none() {
             self.since_ms = Some(at_ms);
         }
+    }
+
+    /// Whether the Box is working.
+    pub(super) fn is_working(&self) -> bool {
+        self.state == State::Working
     }
 
     /// The agent is alive or the Box left the launch, so there is no launch left to wait on.
@@ -173,7 +193,7 @@ impl View {
 
 /// `secs` as whole minutes: `<1m`, `5m`, `1h 05m`. Coarse on purpose, so the text changes
 /// once a minute and the edit loop sends no more than that.
-fn minutes(secs: i64) -> String {
+pub(super) fn minutes(secs: i64) -> String {
     let m = secs.max(0) / 60;
     match m {
         0 => "<1m".to_owned(),
@@ -183,7 +203,8 @@ fn minutes(secs: i64) -> String {
 }
 
 /// The status message of Box `name` at `now` (unix seconds): its phase, how long the Box has
-/// been in it, and a hint when a working Box has been silent for [`STALL_AFTER_SECS`].
+/// been in it, what a working Box is doing, and a hint when it has shown no activity for
+/// [`STALL_AFTER_SECS`].
 pub(super) fn render(name: &str, view: &View, now: i64) -> String {
     let since = |from: Option<i64>| from.map_or(0, |ms| now - ms.div_euclid(1000));
     let timed = |phase: &str| format!("{phase} ({})", minutes(since(view.since_ms)));
@@ -209,6 +230,9 @@ pub(super) fn render(name: &str, view: &View, now: i64) -> String {
         State::SetupFailed(l) => format!("setup failed: {}", escape(l)),
     };
     let mut text = format!("*{}*: {state}", escape(name));
+    if let Some(doing) = view.doing.as_ref().filter(|_| view.state == State::Working) {
+        let _ = write!(text, "\nnow: {}", code(doing));
+    }
     if let Some(m) = view.machine {
         let m = match m {
             Machine::Requested => "requested",
@@ -220,9 +244,13 @@ pub(super) fn render(name: &str, view: &View, now: i64) -> String {
         };
         let _ = write!(text, "\nBox: {m}");
     }
-    let quiet = since(view.last_event_ms);
+    let quiet = since(view.activity_ms.or(view.since_ms));
     if view.state == State::Working && quiet >= STALL_AFTER_SECS {
-        let _ = write!(text, "\nNo event for {}. It may be stuck.", minutes(quiet));
+        let _ = write!(
+            text,
+            "\nNo new activity for {}. It may be stuck.",
+            minutes(quiet)
+        );
     }
     if let Some(hint) = stuck_hint(view, now) {
         let _ = write!(text, "\n{hint}");

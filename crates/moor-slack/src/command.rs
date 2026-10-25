@@ -87,6 +87,8 @@ pub(crate) enum BoxEvent {
     Finished,
     /// The Box closed.
     Closed,
+    /// The Box's agent turn has run past another long-turn threshold.
+    LongTurn,
     /// The Box's agent launch failed.
     LaunchFailed,
     /// The Box's agent did not start within the launch limit.
@@ -116,6 +118,7 @@ impl BoxEvent {
             Self::NotStarted => "not_started",
             Self::Finished => "finished",
             Self::Closed => "closed",
+            Self::LongTurn => "long_turn",
             Self::LaunchFailed => "launch_failed",
             Self::LaunchTimedOut => "launch_timed_out",
             Self::AutoSlept => "auto_slept",
@@ -143,6 +146,7 @@ impl BoxEvent {
             Self::NotStarted => "could not start",
             Self::Finished => "finished its turn",
             Self::Closed => "closed",
+            Self::LongTurn => "has been working on one turn for a long time",
             Self::LaunchFailed => "could not start its agent",
             Self::LaunchTimedOut => "did not start its agent in time",
             Self::AutoSlept => "went to sleep to save resources",

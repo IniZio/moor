@@ -70,6 +70,7 @@ fn feed_logging(dir: &Path, slack: &Fake, sock: &Path, log: crate::Log) -> Feed 
         link: Link::new(Client::new(sock), Team::parse("T1").unwrap()),
         log,
         clock,
+        long_turn_secs: 1200,
     }
 }
 

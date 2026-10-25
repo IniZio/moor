@@ -140,9 +140,12 @@ schema. Move it aside and start again with a fresh one.
 - Each Box has one status message in the thread. The front edits it as the
   Box's state changes, at most once every 2 seconds. It names the phase
   (starting, setting up, working, waiting on a question, asleep, closing) and,
-  in whole minutes, how long the Box has been in it. A working Box that has
-  emitted no event for 10 minutes gets a second line that says it may be
-  stuck. So does a Box whose agent has not started a session 3 minutes after
+  in whole minutes, how long the Box has been in it. While the Box works,
+  a line `now: <what the agent is doing>` in a code span shows its latest
+  activity, such as `Bash: cargo test`; it goes when the turn ends. A working
+  Box that has shown no new activity for 10 minutes gets a line that says it
+  may be stuck; the time counts from its last activity line, or from the
+  turn's start when it has shown none. So does a Box whose agent has not started a session 3 minutes after
   the launch began (setup time does not count), a Box stopped at a first-run
   screen for 3 minutes, and a Box waiting on an unanswered question for 3
   minutes. Each line says what the Box is stuck on and ends with how to go on:
@@ -150,6 +153,12 @@ schema. Move it aside and start again with a fresh one.
   one edit a minute. While the Box is working or waiting on a question, the
   message carries a Stop button; only the person who asked for the Box can use
   it, and it interrupts the agent. The button goes when the Box closes.
+- A turn that has run `long_turn_minutes` (20 by default) gets a new message
+  in the Box's thread, so the requester is notified: "`<box>` has been working
+  for 20m. Now: `<what it is doing>`. Reply here to redirect it, or ask me to
+  stop it." The "Now" part is left out while the agent has shown no activity.
+  The same turn gets one more every further `long_turn_minutes`, and none once
+  it ends. A restart posts none twice.
 - The thread gets one plain line when a Box's agent could not start, did not
   start within `box.launch_timeout`, was started again on its own after it
   ended, or was not started again because it ended 3 times in 10 minutes. It
@@ -216,6 +225,7 @@ The front rejects unknown keys.
 | `bot_token_file` | path | required | The file that holds the `xoxb-` token. It must be mode 0600 and not empty. `~` is allowed. |
 | `api_base` | URL | `https://slack.com/api` | The Slack Web API base. It must start with `https://`, `http://127.0.0.1:`, or `http://localhost:`. A loopback base works only when you run moor-slack yourself: a front the controller runs on Linux has a loopback of its own. |
 | `github_api_base` | URL | `https://api.github.com` | The GitHub API base where a pasted `gh auth token` is checked with `GET /user`. The same URL rules as `api_base`. |
+| `long_turn_minutes` | integer, at least 1 | 20 | Minutes one Box turn may run before its thread gets a line saying so, and again after each further so many minutes of the same turn. |
 | `coordinator.binary` | absolute path | `claude` on `PATH` | The Claude Code binary. |
 | `coordinator.agent` | `claude` | `claude` | The coordinator agent. |
 | `coordinator.model` | string | `sonnet` | The model for each turn. |
