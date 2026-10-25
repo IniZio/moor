@@ -119,12 +119,15 @@ fs.writeFileSync(t, JSON.stringify(j, null, 2), { mode: 0o600 });
 fs.renameSync(t, p);
 "#;
 
-/// Sets onboarding, theme and folder trust in `~/.claude.json`, keeping other keys. Trust goes on
+/// Sets onboarding, theme, folder trust and the external-imports notice in `~/.claude.json`,
+/// keeping other keys. Completed onboarding skips the theme picker, the security notes and their
+/// Enter prompt; the notice is marked shown without approving the imports. Trust goes on
 /// the workdir, its resolved path and the git repository root above that, since Claude Code keys
 /// trust by the physical cwd and accepts a trusted repository root for any folder inside it.
 const PRESEED_PY: &str = r#"
 import json, os, sys
 p, w = sys.argv[1:3]
+PROJECT = {"hasTrustDialogAccepted": True, "hasClaudeMdExternalIncludesWarningShown": True}
 try:
     j = json.load(open(p))
 except FileNotFoundError:
@@ -138,7 +141,7 @@ while not os.path.exists(os.path.join(g, ".git")) and os.path.dirname(g) != g:
 if not os.path.exists(os.path.join(g, ".git")):
     g = r
 for k in {w, r, g}:
-    j.setdefault("projects", {}).setdefault(k, {})["hasTrustDialogAccepted"] = True
+    j.setdefault("projects", {}).setdefault(k, {}).update(PROJECT)
 t = p + ".moor-tmp"
 with os.fdopen(os.open(t, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as o:
     json.dump(j, o, indent=2)
@@ -159,7 +162,7 @@ try { r = fs.realpathSync(w); } catch (e) {}
 let g = r;
 while (!fs.existsSync(path.join(g, ".git")) && path.dirname(g) !== g) g = path.dirname(g);
 if (!fs.existsSync(path.join(g, ".git"))) g = r;
-for (const k of new Set([w, r, g])) j.projects[k] = Object.assign({}, j.projects[k], { hasTrustDialogAccepted: true });
+for (const k of new Set([w, r, g])) j.projects[k] = Object.assign({}, j.projects[k], { hasTrustDialogAccepted: true, hasClaudeMdExternalIncludesWarningShown: true });
 const t = p + ".moor-tmp";
 fs.writeFileSync(t, JSON.stringify(j, null, 2), { mode: 0o600 });
 fs.renameSync(t, p);
@@ -270,7 +273,13 @@ const ROOT: &str = "MOOR_REPOSITORY_ROOT";
 fn fresh_preseed(dirs: &[&str]) -> String {
     let trusted: serde_json::Map<String, Value> = dirs
         .iter()
-        .map(|d| ((*d).to_owned(), json!({ "hasTrustDialogAccepted": true })))
+        .map(|d| {
+            let project = json!({
+                "hasTrustDialogAccepted": true,
+                "hasClaudeMdExternalIncludesWarningShown": true,
+            });
+            ((*d).to_owned(), project)
+        })
         .collect();
     json!({
         "hasCompletedOnboarding": true,
@@ -333,11 +342,13 @@ elif {fallback}; then :; else false; fi",
     )
 }
 
-/// The settings fragment: the hooks, plus the bypass-mode acceptance when the agent launches so.
+/// The settings fragment: the hooks and the approval of the project's MCP servers, whose screen
+/// would otherwise hold the start, plus the bypass-mode acceptance when the agent launches so.
 fn fragment_json(ctx: &LaunchCtx, script: &str) -> Value {
     let mut fragment = hooks(script);
-    if bypasses_permissions(ctx) {
-        if let Some(map) = fragment.as_object_mut() {
+    if let Some(map) = fragment.as_object_mut() {
+        map.insert("enableAllProjectMcpServers".to_owned(), true.into());
+        if bypasses_permissions(ctx) {
             map.insert("skipDangerousModePermissionPrompt".to_owned(), true.into());
         }
     }

@@ -203,6 +203,12 @@ fn prompt_of(line: &str, trusting: bool) -> Option<FirstRunPrompt> {
     if FOLDER.iter().any(|p| line.contains(p)) || (trusting && line.contains("yes, proceed")) {
         return Some(FirstRunPrompt::FolderTrust);
     }
+    if line.contains("new mcp server") {
+        return Some(FirstRunPrompt::McpServers);
+    }
+    if line.contains("allow external claude.md file imports") {
+        return Some(FirstRunPrompt::ExternalImports);
+    }
     if line.contains("bypass permissions mode") {
         return Some(FirstRunPrompt::BypassPermissions);
     }
