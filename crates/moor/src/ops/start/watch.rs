@@ -110,7 +110,7 @@ fn poll(cx: &Cx, store: &Store, id: BoxId, nonce: Option<&str>) -> Option<(i64, 
                         cx.warn(Warning {
                             code: "agent_prompt_blocked".to_owned(),
                             message: format!(
-                                "the agent in pane {pane} waits at a {name} prompt: \"{}\"; answer it in the pane",
+                                "the agent in pane {pane} stopped at its {name} screen (\"{}\"); moor's pre-seed did not cover it, which is a moor bug",
                                 m.line
                             ),
                         });

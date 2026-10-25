@@ -171,7 +171,8 @@ fn the_same_question_asked_again_after_work_is_a_new_episode() {
     assert_eq!(asked(&cx, id), 2, "{:?}", kinds(&cx, id));
 }
 
-const TRUST_SCREEN: &str = "Do you trust the files in this folder?\n\n❯ 1. Yes, I trust this folder\n  2. No, exit\n\nEnter to confirm · Esc to cancel";
+/// Claude Code's folder-trust screen as a pane showed it.
+const TRUST_SCREEN: &str = include_str!("../../../../adapters/box_agent/claude/fixtures/folder_trust.txt");
 
 /// An agent that has reported nothing since its launch marker, with `tail` on its pane.
 fn at_launch(tail: &str) -> Probes {
@@ -198,27 +199,13 @@ fn trust_engine(quiet: bool) -> FakeEngine {
 }
 
 #[test]
-fn a_first_run_prompt_asks_with_its_menu_and_lets_the_box_idle() {
+fn a_first_run_screen_lets_the_box_idle_without_asking() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path(), &Arc::new(trust_engine(true)));
     let id = working_box(&cx, true);
     tick(&cx, id);
     tick(&cx, id);
-    let events = cx.store().unwrap().events(id, 100).unwrap();
-    let asks: Vec<_> = events
-        .iter()
-        .filter(|e| e.kind == "needs_input")
-        .map(|e| e.payload.clone())
-        .collect();
-    assert_eq!(
-        asks,
-        vec![serde_json::json!({
-            "question": "the agent waits at its folder_trust prompt",
-            "options": ["Yes, I trust this folder", "No, exit"],
-        })],
-        "{:?}",
-        kinds(&cx, id)
-    );
+    assert_eq!(asked(&cx, id), 0, "{:?}", kinds(&cx, id));
     assert!(kinds(&cx, id).contains(&"idled".to_owned()));
 }
 
@@ -228,7 +215,6 @@ fn a_first_run_prompt_counts_only_for_an_agent_whose_hooks_wait_it_out() {
     let (cx, _) = cx(dir.path(), &Arc::new(trust_engine(false)));
     let id = working_box(&cx, true);
     tick(&cx, id);
-    assert_eq!(asked(&cx, id), 0, "{:?}", kinds(&cx, id));
     assert!(!kinds(&cx, id).contains(&"idled".to_owned()));
 }
 

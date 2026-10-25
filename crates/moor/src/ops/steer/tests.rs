@@ -383,7 +383,7 @@ fn a_menu_choice_that_leaves_the_agent_blocked_warns() {
 }
 
 #[test]
-fn a_menu_choice_answers_a_first_run_prompt() {
+fn a_first_run_screen_refuses_every_steer_and_sends_nothing() {
     let at_launch = Probes {
         hook: HookRead::Fresh(HookRecord {
             kind: HookKind::Starting { launch: None },
@@ -394,7 +394,8 @@ fn a_menu_choice_answers_a_first_run_prompt() {
         }),
         pane: PaneRead::Fresh(PaneObs {
             status: PaneStatus::Unknown,
-            tail: "Do you trust the files in this folder?\n❯ 1. Yes, I trust this folder\n  2. No, exit".to_owned(),
+            tail: include_str!("../../adapters/box_agent/claude/fixtures/folder_trust.txt")
+                .to_owned(),
             prompt: None,
             exit_marker: None,
         }),
@@ -402,15 +403,14 @@ fn a_menu_choice_answers_a_first_run_prompt() {
     let engine = FakeEngine::new()
         .hooks_quiet_during_first_run()
         .prompt("trust this folder", FirstRunPrompt::FolderTrust)
-        .probes("agent-1", working())
-        .then_probes("agent-1", at_launch);
+        .probes("agent-1", at_launch);
     let f = fx_with(engine, true);
-    let v = run(&f.cx, &menu(1)).unwrap();
-    assert!(v.answered_menu);
-    assert_eq!(
-        f.engine.steers(),
-        vec![("agent-1".to_owned(), Steer::Menu(1))]
-    );
+    for req in [menu(1), menu(2), text("1"), text("yes")] {
+        let err = run(&f.cx, &req).unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Refused);
+        assert!(err.error.to_string().contains("moor bug"), "{}", err.error);
+    }
+    assert!(f.engine.steers().is_empty());
 }
 
 #[test]
