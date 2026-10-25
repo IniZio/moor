@@ -3,18 +3,18 @@
 use std::time::Duration;
 
 use moor_core::activity::{
-    decide, may_apply_quiet, Activity, AgentState, HookRead, PaneRead, PaneStatus, Probes, Source,
+    decide, may_apply_quiet, Activity, AgentState, HookCache, HookRead, PaneRead, PaneStatus,
+    Probes,
 };
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
-use moor_core::domain::event::Event;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::PaneRef;
 use moor_core::view::LaunchFailure;
-use moor_core::Warning;
+use moor_core::{BoxId, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -140,18 +140,7 @@ pub(crate) fn read(
     let Some(sref) = session_ref(row, session.session_ref, session.pane) else {
         return Ok(Reading::none(in_flight));
     };
-    let cache = match store.hook(row.id) {
-        Ok(c) => c,
-        Err(StoreError::Invalid(why) | StoreError::Corrupt(why)) => {
-            warn(cx, format!("ignored the stored hook report: {why}"));
-            None
-        }
-        Err(StoreError::Json(e)) => {
-            warn(cx, format!("ignored the stored hook report: {e}"));
-            None
-        }
-        Err(e) => return Err(e.into()),
-    };
+    let cache = stored_hook(cx, store, row.id)?;
     let probes = cx.engine().probe(&sref, deadline).unwrap_or_else(|e| {
         warn(cx, format!("could not probe the agent: {e}"));
         Probes {
@@ -165,15 +154,16 @@ pub(crate) fn read(
         note_agent_session(store, row, rec.session_id.as_deref())?;
         agent_session = rec.session_id.clone().or(agent_session);
     }
-    let mut activity = decide(&probes, cache.as_ref(), now, session.started_at);
-    if in_flight {
-        activity.state = AgentState::Working;
-    }
-    let may_quiet = !in_flight && may_apply_quiet(&activity, Some(&probes));
     let pane_text = match &probes.pane {
         PaneRead::Fresh(obs) => Some(obs.tail.clone()),
         _ => None,
     };
+    let first_run = first_run(cx, pane_text.as_deref());
+    let mut activity = decide(&probes, cache.as_ref(), now, session.started_at, first_run);
+    if in_flight {
+        activity.state = AgentState::Working;
+    }
+    let may_quiet = !in_flight && may_apply_quiet(&activity, Some(&probes));
     let said = said::said(&activity, &probes.hook, cache.as_ref());
     Ok(Reading {
         pane: liveness(&probes.pane, &activity),
@@ -186,6 +176,30 @@ pub(crate) fn read(
         pane_text,
         said,
     })
+}
+
+/// The cached hook report of Box `id`; an undecodable row is dropped with a warning.
+fn stored_hook(cx: &Cx, store: &Store, id: BoxId) -> Result<Option<HookCache>, CommandError> {
+    match store.hook(id) {
+        Ok(c) => Ok(c),
+        Err(StoreError::Invalid(why) | StoreError::Corrupt(why)) => {
+            warn(cx, format!("ignored the stored hook report: {why}"));
+            Ok(None)
+        }
+        Err(StoreError::Json(e)) => {
+            warn(cx, format!("ignored the stored hook report: {e}"));
+            Ok(None)
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// The name of the first-run screen the profile reads in the pane `tail`, for an agent that runs no hook
+/// while one is up; any other agent's hooks report its prompts.
+fn first_run(cx: &Cx, tail: Option<&str>) -> Option<&'static str> {
+    tail.filter(|_| cx.engine().hooks_quiet_during_first_run())
+        .and_then(|t| cx.engine().first_run_prompt(t))
+        .map(|m| m.prompt.name())
 }
 
 /// Keep the agent's own session id on the Box; written only when it changed.
@@ -227,7 +241,7 @@ pub(crate) fn settle(
         end_exited_session(cx, store, row, reading, probed)?;
     }
     register_session(cx, store, row, reading)?;
-    note_needs_input(store, row, reading)?;
+    needs_input::note_needs_input(store, row, reading)?;
     let input = match (row.lifecycle == BoxLifecycle::Ready, row.session.is_quiet()) {
         (true, false) if !reading.busy() && reading.may_quiet => SessionInput::AgentQuiet,
         (true, true) if reading.busy() => SessionInput::AgentBusy,
@@ -283,45 +297,6 @@ fn end_exited_session(
         _ => None,
     };
     store.end_current_session(row.id, "exited", exit)?;
-    Ok(())
-}
-
-/// Append a `needs_input` event when the agent starts waiting for the user.
-///
-/// A hook-reported wait gets one event per hook record, so a `moor run` meanwhile does not end
-/// it. A pane-read wait ends when the Box turns busy or working, so its event is skipped while
-/// the latest such marker is a `needs_input` with the same question and options. It is written
-/// before any state step so a refused step cannot lose it.
-fn note_needs_input(store: &Store, row: &BoxRow, reading: &Reading) -> Result<(), CommandError> {
-    let Some(Activity {
-        state: AgentState::NeedsInput { question, options },
-        source,
-    }) = reading.activity.as_ref()
-    else {
-        return Ok(());
-    };
-    let hooked = matches!(source, Source::Hooks | Source::HooksCached);
-    let cache = if hooked { store.hook(row.id)? } else { None };
-    if cache.as_ref().is_some_and(|c| c.reported) {
-        return Ok(());
-    }
-    let event = Event::NeedsInput {
-        question: question.clone(),
-        options: options.clone(),
-    };
-    if cache.is_none() {
-        let last = store.last_waiting_marker(row.id)?;
-        if last.is_some_and(|l| l.kind == event.kind() && l.payload == event.payload()) {
-            return Ok(());
-        }
-    }
-    store.apply(Decision::new(row.id).event(ExtraEvent::NeedsInput {
-        question: question.clone(),
-        options: options.clone(),
-    }))?;
-    if let Some(c) = cache {
-        store.mark_hook_reported(row.id, c.record.at)?;
-    }
     Ok(())
 }
 
@@ -384,6 +359,7 @@ const fn liveness(pane: &PaneRead, activity: &Activity) -> PaneLiveness {
     }
 }
 
+mod needs_input;
 mod said;
 mod turn;
 

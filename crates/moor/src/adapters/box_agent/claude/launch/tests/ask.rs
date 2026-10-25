@@ -53,7 +53,7 @@ fn reported(raw: &[u8]) -> AgentState {
         }),
     };
     let now = Ts::from_millis(4_000_000_000_000);
-    decide(&probes, None, now, Ts::from_millis(0)).state
+    decide(&probes, None, now, Ts::from_millis(0), None).state
 }
 
 fn asking() -> AgentState {
