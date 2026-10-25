@@ -7,6 +7,7 @@ mod connect;
 mod cp;
 mod errors;
 mod exec;
+mod handle;
 mod lease;
 mod link;
 mod parse;
@@ -29,21 +30,20 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
-use moor_core::box_key::{BoxKey, WORK_ROOT};
+use moor_core::box_key::WORK_ROOT;
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
+use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Driver, DriverCaps, DriverError,
     ExecOutcome, ExecSpec, Followed, Launched, Released, RunEnd, SleepOutcome, StepDone,
     TunnelHandle,
 };
 use moor_core::seam::proc::{Deadline, Proc, ProcOutput, ProcSpec, Tool};
-use moor_core::seam::{
-    clock::{Clock, Ts},
-    rng::Rng,
-};
+use moor_core::seam::rng::Rng;
 
 use caps::size_of;
 use errors::{map_error, unreadable, Op};
+use handle::{handle_of, slug, split_handle, static_env, target_args};
 
 /// Time allowed for a warmup.
 const ACQUIRE_DEADLINE: Duration = Duration::from_mins(15);
@@ -167,42 +167,6 @@ impl Crabbox {
     }
 }
 
-/// Per-Box crabbox slug, `moor-{id}-{nonce}`; the Box name never enters it.
-fn slug(req: &AcquireReq) -> String {
-    BoxKey::new(req.box_id).slug(&req.nonce)
-}
-
-/// The handle for a Box named `name` under `provider`.
-fn handle_of(provider: &str, name: &str) -> BoxHandle {
-    BoxHandle::new(format!("{provider}/{name}"))
-}
-
-/// Adds the static provider's Box id and port to a call on `handle`.
-fn static_env(spec: ProcSpec, handle: &BoxHandle) -> ProcSpec {
-    match split_handle(handle) {
-        (Some(STATIC_PROVIDER), name) => spec
-            .env("CRABBOX_STATIC_ID", name)
-            .env("CRABBOX_STATIC_PORT", DEFAULT_SSH_PORT.to_string()),
-        _ => spec,
-    }
-}
-
-/// Splits a handle into optional provider and Box name.
-fn split_handle(handle: &BoxHandle) -> (Option<&str>, &str) {
-    match handle.as_str().split_once('/') {
-        Some((p, n)) if !p.is_empty() => (Some(p), n),
-        Some((_, n)) => (None, n),
-        None => (None, handle.as_str()),
-    }
-}
-
-/// Selector arguments that name one Box.
-fn target_args(handle: &BoxHandle) -> Vec<String> {
-    let (provider, name) = split_handle(handle);
-    let provider = provider.into_iter().flat_map(|p| ["--provider", p]);
-    provider.chain(["--id", name]).map(str::to_owned).collect()
-}
-
 impl Driver for Crabbox {
     fn caps(&self, provider: &ProviderId) -> Result<DriverCaps, DriverError> {
         self.require_version()?;
@@ -218,8 +182,7 @@ impl Driver for Crabbox {
         let class = size_of(req.class.as_deref())?;
         let spec = cache::with_volumes(Self::spec(ACQUIRE_DEADLINE), &req.cache)
             .args(["warmup", "--provider", provider])
-            .args(["--slug", &name, "--class", class])
-            .args(["--ttl", touch::LEASE_TTL]);
+            .args(["--slug", &name, "--class", class]);
         let handle = handle_of(provider, &name);
         let existed = self.lease_dir(&handle)?.exists();
         let spec = self.at_lease(spec, &handle)?;

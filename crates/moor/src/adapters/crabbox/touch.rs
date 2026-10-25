@@ -12,11 +12,6 @@ use moor_core::seam::driver::DriverError;
 use super::errors::Op;
 use super::{split_handle, target_args, Crabbox};
 
-/// The lease TTL asked for at acquire. crabbox caps a lease at its creation time plus its TTL,
-/// and a heartbeat moves only the idle side, so this bounds a Box's whole life: well above
-/// moor's 2 h awake limit, so a Box that sleeps and wakes again within a working day keeps
-/// its workdir. crabbox's own default is 90 min.
-pub(super) const LEASE_TTL: &str = "24h";
 /// Milliseconds within which real use of a Box sends no second heartbeat; far inside crabbox's
 /// 30 min default idle timeout.
 const TOUCH_GAP_MS: i64 = 5 * 60 * 1000;

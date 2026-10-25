@@ -64,6 +64,16 @@ fn a_relative_work_root_in_the_ready_line_is_refused_by_name() {
     }
 }
 
+/// `true`, run in the Box with no env, cwd or output file.
+fn true_cmd() -> ExecSpec {
+    ExecSpec {
+        argv: vec!["true".to_owned()],
+        env: Vec::new(),
+        cwd: None,
+        output: None,
+    }
+}
+
 #[test]
 fn every_crabbox_call_asks_for_the_relative_work_root() {
     let (p, c) = fixture();
@@ -97,16 +107,7 @@ fn every_crabbox_call_asks_for_the_relative_work_root() {
     c.acquire(&req("sprites", None)).unwrap();
     c.sleep(&handle).unwrap();
     c.wake(&handle).unwrap();
-    let _ = c.exec(
-        &handle,
-        &ExecSpec {
-            argv: vec!["true".to_owned()],
-            env: Vec::new(),
-            cwd: None,
-            output: None,
-        },
-        Deadline(Duration::from_secs(5)),
-    );
+    let _ = c.exec(&handle, &true_cmd(), Deadline(Duration::from_secs(5)));
     let _tunnel = c
         .reverse_tunnel(&handle, 8080, Path::new("/tmp/px"))
         .unwrap();
