@@ -35,11 +35,12 @@ fn buttons(blocks: &Value) -> Vec<String> {
         .collect()
 }
 
-/// The prompt messages among `posts`: the only posts that carry blocks.
+/// The prompt messages among `posts`: the posts with blocks other than a Box's status message,
+/// whose text starts with the Box's name in bold.
 fn prompts(posts: &[Post]) -> Vec<Post> {
     posts
         .iter()
-        .filter(|p| !p.blocks.is_null())
+        .filter(|p| !p.blocks.is_null() && !p.text.starts_with('*'))
         .cloned()
         .collect()
 }

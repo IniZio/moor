@@ -6,20 +6,30 @@
 use moor_core::request::{Request, SteerReq};
 use moor_core::response::ExitClass;
 
-use super::{error_text, Fx, Job};
+use super::{error_text, stop, Fx, Job};
 use crate::command::bare_number;
 use crate::db::{Db, Prompt, PromptState};
 use crate::escape::escape;
 use crate::prompt::{answer_label, offered};
-use crate::socket::{Click, Mention};
+use crate::socket::{Click, Mention, Press};
 
 /// Records a button press before Slack gets its ack. Returns what the worker does next, or
-/// nothing for a redelivered envelope or a message that is not a prompt.
+/// nothing for a redelivered envelope or a message that is not the one the button belongs to.
 pub(crate) fn click(click: &Click, db: &Db, now: i64) -> rusqlite::Result<Option<Job>> {
     db.atomically(|| {
         if !db.event_once(&click.envelope_id, now)? {
             return Ok(None);
         }
+        match &click.press {
+            Press::Answer(choice) => answer_click(click, *choice, db),
+            Press::Stop(name) => stop::click(click, name, db),
+        }
+    })
+}
+
+/// What a press of option `choice` on a prompt message does.
+fn answer_click(click: &Click, choice: u32, db: &Db) -> rusqlite::Result<Option<Job>> {
+    {
         let Some(prompt) = db.prompt_by_message(&click.channel, &click.message_ts)? else {
             return Ok(None);
         };
@@ -36,13 +46,13 @@ pub(crate) fn click(click: &Click, db: &Db, now: i64) -> rusqlite::Result<Option
         Ok(Some(match &prompt.state {
             PromptState::Open => Job::Answer {
                 prompt: prompt.id,
-                choice: click.choice,
+                choice,
                 by: click.user.clone(),
             },
             PromptState::Answered { label, .. } => tell(already_answered(label)),
             PromptState::Closed(reason) => reply(&prompt, &no_longer_open(&prompt, reason)),
         }))
-    })
+    }
 }
 
 /// The answer a thread message gives when it is a bare number, from the requester of the

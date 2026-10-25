@@ -6,10 +6,11 @@ use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
 use moor_core::name::BoxId;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::db::{BoxState as RowState, FedBox};
 use crate::escape::escape;
+use crate::stop;
 
 /// Least time between two sends for one Box; changes in between coalesce.
 pub(super) const UPDATE_EVERY: Duration = Duration::from_secs(2);
@@ -187,6 +188,9 @@ pub(super) struct Step {
     pub(super) ts: Option<String>,
     /// Text to send.
     pub(super) text: String,
+    /// Block Kit blocks to send with it: the Stop button while the Box works or waits on a
+    /// question, an empty list otherwise, which removes the button from a message that had it.
+    pub(super) blocks: Value,
 }
 
 /// Decides which Boxes need a status send now, honoring the per-Box rate limit.
@@ -225,6 +229,10 @@ impl Planner {
             }
             let name = b.box_name.as_str();
             let text = render(name, &view, unix);
+            let blocks = match view.state {
+                State::Working | State::NeedsInput(_) => stop::blocks(name, &text),
+                _ => json!([]),
+            };
             if fed.status_ts.is_some() && fed.status_text.as_ref() == Some(&text) {
                 continue;
             }
@@ -241,6 +249,7 @@ impl Planner {
                 thread_ts: b.thread_ts.clone(),
                 ts: fed.status_ts.clone(),
                 text,
+                blocks,
             });
         }
         steps

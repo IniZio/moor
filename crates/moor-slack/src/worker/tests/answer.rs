@@ -11,7 +11,7 @@ use serde_json::json;
 
 use super::{db, hung_up, recorded_start, refused, with_fx, Answer, Seen};
 use crate::db::{Db, Posted, PromptState, SlackBox};
-use crate::socket::{Click, Mention};
+use crate::socket::{Click, Mention, Press};
 use crate::worker::answer::{answer, click, digit};
 use crate::worker::Job;
 
@@ -132,7 +132,7 @@ fn a_redelivered_click_queues_nothing() {
         user: "U1".into(),
         message_ts: "m5".into(),
         thread_ts: Some("10.5".into()),
-        choice: 2,
+        press: Press::Answer(2),
     };
     let first = click(&press, &db, 1).unwrap();
     let queued = Job::Answer {

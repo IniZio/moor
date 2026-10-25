@@ -162,8 +162,8 @@ struct State {
     /// HTTP status and body of the next `chat.postMessage` answers without blocks, before the
     /// fake takes posts.
     post_answers: VecDeque<(u16, Value)>,
-    /// How many of the next `chat.postMessage` calls with blocks Slack refuses, and the
-    /// error code it refuses them with.
+    /// How many of the next `chat.postMessage` calls with blocks, other than a status message,
+    /// Slack refuses, and the error code it refuses them with.
     refused_block_posts: (usize, &'static str),
     /// The `error` code `auth.test` answers with instead of the team, once set.
     auth_test_error: Option<&'static str>,
@@ -232,8 +232,9 @@ impl FakeSlack {
         self.lock().reaction_error = Some(code);
     }
 
-    /// Refuses the next `n` `chat.postMessage` calls that carry blocks with error `code`, in
-    /// place of any count set before.
+    /// Refuses the next `n` `chat.postMessage` calls that carry blocks, except a Box's status
+    /// message (its text starts with the Box's name in bold), with error `code`, in place of
+    /// any count set before.
     pub(crate) fn refuse_block_posts(&self, n: usize, code: &'static str) {
         self.lock().refused_block_posts = (n, code);
     }

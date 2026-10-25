@@ -491,6 +491,7 @@ mod answer;
 mod close;
 mod post_first;
 mod start_notes;
+mod stop;
 
 /// Links the claude and github tokens in one job, where GitHub refuses its token.
 #[test]

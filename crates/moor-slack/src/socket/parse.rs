@@ -3,8 +3,9 @@
 use moor_core::secret::Secret;
 use serde_json::Value;
 
-use super::{Click, Mention, Slash, TokenSubmission};
+use super::{Click, Mention, Press, Slash, TokenSubmission};
 use crate::login::LOGIN_CALLBACK;
+use crate::stop::STOP_ACTION;
 
 /// The command inside a `slash_commands` envelope, if it is a well-formed one.
 pub(super) fn parse_slash(envelope: &Value) -> Option<Slash> {
@@ -52,6 +53,22 @@ pub(super) fn parse_submission(envelope: &Value) -> Option<TokenSubmission> {
     })
 }
 
+/// What the button of `action` asks for: Stop on a Box, or an answer by option number.
+fn parse_press(action: &Value) -> Option<Press> {
+    let id = action.get("action_id")?.as_str()?;
+    let value = action.get("value")?.as_str()?;
+    if id == STOP_ACTION {
+        return (!value.is_empty()).then(|| Press::Stop(value.to_owned()));
+    }
+    if !id.starts_with("answer_") {
+        return None;
+    }
+    match value.parse::<u32>().ok()? {
+        0 => None,
+        choice => Some(Press::Answer(choice)),
+    }
+}
+
 /// The button press inside an `interactive` `block_actions` envelope, if it is a well-formed one.
 pub(super) fn parse_click(envelope: &Value) -> Option<Click> {
     let payload = envelope.get("payload")?;
@@ -62,13 +79,7 @@ pub(super) fn parse_click(envelope: &Value) -> Option<Click> {
     let container = payload.get("container");
     let message = payload.get("message");
     let action = payload.get("actions")?.get(0)?;
-    if !action.get("action_id")?.as_str()?.starts_with("answer_") {
-        return None;
-    }
-    let choice = action.get("value")?.as_str()?.parse::<u32>().ok()?;
-    if choice == 0 {
-        return None;
-    }
+    let press = parse_press(action)?;
     Some(Click {
         envelope_id: text(envelope.get("envelope_id"))?,
         channel: text(payload.get("channel").and_then(|c| c.get("id")))
@@ -77,7 +88,7 @@ pub(super) fn parse_click(envelope: &Value) -> Option<Click> {
         message_ts: text(container.and_then(|c| c.get("message_ts")))
             .or_else(|| text(message.and_then(|m| m.get("ts"))))?,
         thread_ts: text(message.and_then(|m| m.get("thread_ts"))),
-        choice,
+        press,
     })
 }
 

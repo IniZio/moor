@@ -21,7 +21,8 @@ impl State {
     /// Answers a `chat.postMessage` for `body`: a refusal or scripted answer when one is
     /// queued, else a new message.
     pub(super) fn post(&mut self, body: &Value) -> (u16, Value) {
-        if !body["blocks"].is_null() && self.refused_block_posts.0 > 0 {
+        let status = body["text"].as_str().is_some_and(|t| t.starts_with('*'));
+        if !body["blocks"].is_null() && !status && self.refused_block_posts.0 > 0 {
             self.refused_block_posts.0 -= 1;
             return (
                 200,

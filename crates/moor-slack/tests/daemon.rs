@@ -41,6 +41,8 @@ mod smoke;
 mod start;
 #[path = "daemon/state.rs"]
 mod state;
+#[path = "daemon/stop.rs"]
+mod stop;
 #[path = "daemon/sweep.rs"]
 mod sweep;
 #[path = "daemon/turn.rs"]

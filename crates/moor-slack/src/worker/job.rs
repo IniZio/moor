@@ -1,5 +1,7 @@
 //! The jobs the Socket Mode thread queues for the worker.
 
+use moor_core::name::BoxName;
+
 use crate::account::Account;
 use crate::login::TokenCheck;
 
@@ -37,6 +39,18 @@ pub(crate) enum Job {
         thread: String,
         /// What to show.
         text: String,
+    },
+    /// Interrupt the agent of Box `name`, which its requester `by` stopped from the status
+    /// message; the interrupt goes to the controller as `by`.
+    Stop {
+        /// The Box.
+        name: BoxName,
+        /// Channel id of the Box's thread.
+        channel: String,
+        /// Timestamp of the thread's root message.
+        thread: String,
+        /// Slack user id of the Box's requester.
+        by: String,
     },
     /// Answer prompt `prompt` with option `choice`, which `by` picked.
     Answer {

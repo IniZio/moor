@@ -25,6 +25,7 @@ mod prompt;
 mod secret_file;
 mod slash;
 mod socket;
+mod stop;
 mod turns;
 mod upload;
 mod watchers;
