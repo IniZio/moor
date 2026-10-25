@@ -42,7 +42,7 @@ fn every_mount_the_front_reaches_is_read_only_but_its_state_dir() {
     let got = wait_for("the probe", || ctl.line("probe "));
     let got: Value = serde_json::from_str(&got).unwrap();
     let own = ctl.root.join("front");
-    let rw: Vec<&str> = got["rw_mounts"]
+    let mut rw: Vec<&str> = got["rw_mounts"]
         .as_array()
         .unwrap()
         .iter()
@@ -53,7 +53,10 @@ fn every_mount_the_front_reaches_is_read_only_but_its_state_dir() {
                 .any(|c| Path::new(m).starts_with(c))
         })
         .collect();
-    assert_eq!(rw, [own.to_str().unwrap(), "/tmp"], "{got}");
+    rw.sort_unstable();
+    let mut want = [own.to_str().unwrap(), "/tmp"];
+    want.sort_unstable();
+    assert_eq!(rw, want, "{got}");
 }
 
 #[test]
