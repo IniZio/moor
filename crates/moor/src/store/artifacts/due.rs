@@ -32,6 +32,21 @@ impl Store {
         Ok(due)
     }
 
+    /// Ready, handled, intent-free open Boxes, by Box id; a Box mid-turn is among them.
+    pub(crate) fn artifacts_ready(&self) -> Result<Vec<BoxId>, StoreError> {
+        let conn = self.reader()?;
+        let mut stmt = conn.prepare(
+            "SELECT id FROM boxes WHERE state = 'ready' AND handle IS NOT NULL \
+             AND intent_kind IS NULL ORDER BY id",
+        )?;
+        let rows = stmt.query_map([], |r| r.get::<_, i64>(0))?;
+        let mut ids = Vec::new();
+        for row in rows {
+            ids.push(BoxId::new(row?));
+        }
+        Ok(ids)
+    }
+
     /// Newest `idled` or `turn_done` event id of the Box, none when it has had neither.
     pub(crate) fn newest_turn_event(&self, id: BoxId) -> Result<Option<i64>, StoreError> {
         let conn = self.reader()?;

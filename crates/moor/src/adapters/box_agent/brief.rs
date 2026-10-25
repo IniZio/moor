@@ -69,16 +69,17 @@ pub(super) fn render(b: &BriefInput) -> String {
          your final message. A Report never means the Box is finished; keep working \
          until the goal is met, and do not stop after reporting.\n\n",
     );
-    out.push_str(
-        "To show a human a file (a screenshot, a recording, a log), copy it into \
-         `.moor/artifacts/` in your working directory, using a plain file name with its \
-         extension. Do not commit it. Writing a file again with the same name adds a new \
-         version. It is collected when you finish your turn. Name the files you published \
-         in your final message.\n\n",
-    );
+    out.push_str(PUBLISH);
     out.push_str(ATTACH);
     out
 }
+
+/// How to show a human a file.
+const PUBLISH: &str = "To show a human a file (a screenshot, a recording, a log), copy it into \
+    `.moor/artifacts/` in your working directory, using a plain file name with its extension. \
+    Do not commit it. Writing a file again with the same name adds a new version. It is \
+    collected while you work, within about 30 seconds of the file being complete, and again \
+    when you finish your turn. Name the files you published in your final message.\n\n";
 
 /// How to show artifacts on a pull request; the limits are gh's own.
 const ATTACH: &str = "To show a published file on a pull request, attach it with gh: \
