@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use moor_core::activity::{HookKind, HookRead, Probes};
-use moor_core::seam::clock::Ts;
 use moor_core::domain::decision::{Decision, ExtraEvent};
+use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 
 use super::exit::exited_probes;
