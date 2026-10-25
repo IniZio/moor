@@ -107,7 +107,15 @@ impl Controller {
             child,
             listeners,
         };
-        wait_for("the operator socket", || this.version());
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while this.version().is_none() {
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for the operator socket; controller log:\n{}",
+                fs::read_to_string(this.root.join("log")).unwrap_or_default()
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
         this
     }
 
