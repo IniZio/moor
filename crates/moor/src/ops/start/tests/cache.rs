@@ -257,3 +257,58 @@ fn a_work_tree_the_seal_did_not_keep_warns_why_and_nothing_else() {
     assert_eq!(message, "the work tree is not kept: 2 unpushed commits");
     assert!(w.driver.calls().iter().any(|c| c.starts_with("release")));
 }
+
+/// The warnings a start raised about the work tree, as `code: message`.
+fn work_tree_notes(w: &World) -> Vec<String> {
+    let all = w.cx.take_warnings();
+    all.into_iter()
+        .filter(|w| w.code == "work_tree")
+        .map(|w| format!("{}: {}", w.code, w.message))
+        .collect()
+}
+
+#[test]
+fn the_start_tells_the_user_how_the_work_tree_started() {
+    for (printed, said) in [
+        ("moor: work tree refreshed\n", "work tree refreshed"),
+        ("moor: work tree cold\n", "work tree cold"),
+        (
+            "moor: work tree cold after: git fetch failed\n",
+            "work tree cold after: git fetch failed",
+        ),
+    ] {
+        let w = world(FakeDriver::new().cache_volumes().exec_stdout([printed]));
+        started(&w);
+        assert_eq!(work_tree_notes(&w), [format!("work_tree: {said}")]);
+    }
+}
+
+#[test]
+fn a_refresh_that_printed_nothing_says_nothing() {
+    let w = world(FakeDriver::new().cache_volumes());
+    started(&w);
+    assert!(work_tree_notes(&w).is_empty());
+}
+
+#[test]
+fn a_box_that_does_not_keep_its_work_tree_says_nothing_about_it() {
+    let w = world(
+        FakeDriver::new()
+            .cache_volumes()
+            .exec_stdout(["moor: work tree cold\n"]),
+    );
+    script_base_yaml(&w, Some("cache: {work_tree: false}\n"));
+    run(&w.cx, &repo_req("demo")).unwrap();
+    assert!(work_tree_notes(&w).is_empty());
+}
+
+#[test]
+fn the_clone_log_is_still_removed_after_the_outcome_is_read() {
+    let w = world(
+        FakeDriver::new()
+            .cache_volumes()
+            .exec_stdout(["moor: work tree refreshed\n"]),
+    );
+    started(&w);
+    assert!(!w.dir.path().join("clone").join("1.log").exists());
+}

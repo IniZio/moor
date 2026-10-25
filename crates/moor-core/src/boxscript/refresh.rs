@@ -7,6 +7,14 @@ use super::quote;
 /// What the refresh prints on stdout before `refreshed`, `cold` or `cold after: <reason>`.
 pub const LOG_PREFIX: &str = "moor: work tree ";
 
+/// The outcome the refresh printed in `output`: `refreshed`, `cold` or `cold after: <reason>`.
+#[must_use]
+pub fn outcome(output: &str) -> Option<&str> {
+    output
+        .lines()
+        .find_map(|line| line.trim_end().strip_prefix(LOG_PREFIX))
+}
+
 /// POSIX sh, run in the Box workdir before [`super::clone::clone_script`], for Box `key`.
 ///
 /// It runs once per Box: `.moor/tree` names the Box that last refreshed the tree, and a rerun

@@ -413,3 +413,30 @@ fn a_local_tag_on_an_unpushed_commit_is_gone() {
     assert!(out.contains("moor: work tree refreshed\n"), "{out}");
     assert_eq!(names_reaching(&o, &tagged), Vec::<String>::new());
 }
+
+#[test]
+fn the_outcome_is_the_text_after_the_log_prefix() {
+    for (text, want) in [
+        ("moor: work tree refreshed\n", Some("refreshed")),
+        ("moor: work tree cold\n", Some("cold")),
+        (
+            "user.name=0\nmoor: work tree cold after: git fetch failed\nmoor.cpus=2\n",
+            Some("cold after: git fetch failed"),
+        ),
+        ("Cloning into '.'\n", None),
+        ("", None),
+    ] {
+        assert_eq!(super::outcome(text), want, "{text:?}");
+    }
+}
+
+#[test]
+fn the_outcome_names_what_the_script_printed() {
+    let o = Origin::new("outcome");
+    let first = ok(&o, BOX1, &o.base);
+    assert_eq!(super::outcome(&first), Some("cold"), "{first}");
+    let second = ok(&o, BOX2, &o.base);
+    assert_eq!(super::outcome(&second), Some("refreshed"), "{second}");
+    let rerun = ok(&o, BOX2, &o.base);
+    assert_eq!(super::outcome(&rerun), None, "{rerun}");
+}
