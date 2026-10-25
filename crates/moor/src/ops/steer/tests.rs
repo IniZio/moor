@@ -585,3 +585,14 @@ mod cold_boot;
 mod interrupt;
 mod relaunch;
 mod target;
+
+#[test]
+fn a_steer_to_an_idle_agent_opens_its_turn() {
+    let f = fx_with(FakeEngine::new().probes("agent-1", working()), true);
+    let quiet = Decision::new(f.id).session(SessionInput::AgentQuiet);
+    f.cx.store().unwrap().apply(quiet).unwrap();
+    let row = || f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
+    assert!(row().session.is_quiet());
+    run(&f.cx, &text("do x")).unwrap();
+    assert!(!row().session.is_quiet());
+}

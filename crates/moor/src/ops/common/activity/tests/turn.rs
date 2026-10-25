@@ -2,7 +2,8 @@
 
 use std::sync::Arc;
 
-use moor_core::activity::{HookKind, Probes};
+use moor_core::activity::{HookKind, HookRead, Probes};
+use moor_core::seam::clock::Ts;
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::BoxId;
 
@@ -148,4 +149,37 @@ fn the_end_of_each_turn_copies_the_transcript_to_the_host() {
         1,
         "an unchanged copy is not recorded"
     );
+}
+
+#[test]
+fn an_idle_hook_from_before_the_steer_keeps_the_turn_open() {
+    let mut probes = hook(HookKind::Idle);
+    if let HookRead::Fresh(rec) = &mut probes.hook {
+        rec.at = Ts::from_millis(0);
+    }
+    let (_dir, cx, id) = fx(probes);
+    steer(&cx, id);
+    settle_once(&cx, id);
+    assert!(events(&cx, id, "turn_done").is_empty());
+    assert!(events(&cx, id, "idled").is_empty());
+    assert!(events(&cx, id, "agent_said").is_empty());
+}
+
+#[test]
+fn an_idle_hook_after_the_steer_tells_what_the_agent_said() {
+    let mut probes = hook(HookKind::Idle);
+    if let HookRead::Fresh(rec) = &mut probes.hook {
+        rec.message = Some("docs lists one file".to_owned());
+    }
+    let (_dir, cx, id) = fx(probes);
+    steer(&cx, id);
+    settle_once(&cx, id);
+    let said = events(&cx, id, "agent_said");
+    assert_eq!(
+        first(&said).payload,
+        serde_json::json!({"text": "docs lists one file"})
+    );
+    let done = events(&cx, id, "turn_done");
+    assert!(first(&done).id < first(&said).id);
+    assert_eq!(events(&cx, id, "idled").len(), 1);
 }

@@ -254,8 +254,12 @@ pub(crate) fn settle(
     }
     register_session(cx, store, row, reading)?;
     needs_input::note_needs_input(store, row, reading)?;
+    // A steered turn ends only on its `turn_done`: a hook report older than the steer is no answer.
+    let turn_open = store.unanswered_steer(row.id)?.is_some();
     let input = match (row.lifecycle == BoxLifecycle::Ready, row.session.is_quiet()) {
-        (true, false) if !reading.busy() && reading.may_quiet => SessionInput::AgentQuiet,
+        (true, false) if !reading.busy() && reading.may_quiet && !turn_open => {
+            SessionInput::AgentQuiet
+        }
         (true, true) if reading.busy() => SessionInput::AgentBusy,
         _ => return Ok(()),
     };

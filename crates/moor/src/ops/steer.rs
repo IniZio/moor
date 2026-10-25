@@ -9,6 +9,7 @@ use moor_core::decide::transcript::Trigger;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent};
+use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::engine::{EngineError, SessionRef, Steer, SteerOutcome};
 use moor_core::seam::proc::Deadline;
 use moor_core::view::steer::SteerValue;
@@ -21,7 +22,7 @@ use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::target::{self, Rule};
 use crate::ops::common::transcript;
 use crate::ops::common::wake::wake_and_revive;
-use crate::store::{BoxRow, SessionRow, Store};
+use crate::store::{BoxRow, SessionRow, Store, StoreError};
 
 /// Longest the send may take, pane reads included.
 const STEER_DEADLINE: Duration = Duration::from_secs(30);
@@ -191,6 +192,7 @@ fn attempt(
         return exited(cx, store, (id, name), &session, sent).map(Attempt::Sent);
     };
     let steer_id = record(store, id, &session, &sent, outcome.submit_retried)?;
+    open_turn(store, &row)?;
     let answered_menu = answered(cx, store, &row, &steer, outcome)?;
     Ok(Attempt::Sent(SteerValue {
         box_name: name.to_owned(),
@@ -324,6 +326,18 @@ fn menu_answered(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandEr
         });
     }
     Ok(!waiting)
+}
+
+/// Move an idle agent's session to working: the steer starts a turn, and the settle that sees
+/// that turn end is what tells the requester. A session in any other state is left as it is.
+fn open_turn(store: &Store, row: &BoxRow) -> Result<(), CommandError> {
+    if row.intent.is_some() || !row.session.is_quiet() {
+        return Ok(());
+    }
+    match store.apply(Decision::new(row.id).session(SessionInput::AgentBusy)) {
+        Ok(_) | Err(StoreError::Illegal(_)) => Ok(()),
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// Append the `steered` event; its id.
