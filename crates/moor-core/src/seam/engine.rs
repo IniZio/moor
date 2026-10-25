@@ -1,10 +1,12 @@
 //! Engine seam: the agent session running in a Box.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
 use crate::activity::Probes;
 use crate::box_key::BoxKey;
+use crate::config::McpServer;
 use crate::name::{BoxHandle, BoxId, BoxName, BoxPath, NameError};
 use crate::seam::agent_profile::{AgentInstall, PromptMatch, ProxyAddr};
 use crate::seam::driver::DriverError;
@@ -80,6 +82,8 @@ pub struct LaunchReq {
     pub strip_env: Vec<String>,
     /// The first prompt the agent starts with.
     pub prompt: LaunchPrompt,
+    /// MCP servers as the Box sees them: no secret in any value.
+    pub mcp: BTreeMap<String, McpServer>,
 }
 
 impl LaunchReq {
@@ -122,6 +126,7 @@ impl PartialEq for LaunchReq {
             && proxy(&self.proxy) == proxy(&other.proxy)
             && self.strip_env == other.strip_env
             && self.prompt == other.prompt
+            && self.mcp == other.mcp
     }
 }
 

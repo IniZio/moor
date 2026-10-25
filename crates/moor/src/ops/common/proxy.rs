@@ -44,7 +44,7 @@ pub(crate) fn agent_env(cx: &Cx, settings: &BoxSettings) -> Vec<(String, String)
 pub(crate) fn plan(cx: &Cx, repo: Option<&ForgeRepo>) -> Result<ProxyPlan, String> {
     let repo = repo.cloned();
     let rules = resolve_rules(
-        &cx.config().proxy,
+        &cx.config().box_proxy(),
         repo.as_ref().map(|r| (r.owner.as_str(), r.name.as_str())),
     )
     .map_err(|e| e.to_string())?;

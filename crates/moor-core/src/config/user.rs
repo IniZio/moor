@@ -347,6 +347,19 @@ impl UserConfig {
         self.box_.provider.as_deref()
     }
 
+    /// The Proxy rules a Box gets: `proxy.rules` plus one per MCP server whose header names a
+    /// secret.
+    #[must_use]
+    pub fn box_proxy(&self) -> ProxyConfig {
+        let mut out = self.proxy.clone();
+        for (name, server) in &self.mcp_servers {
+            if let Some(rule) = server.proxy_rule() {
+                out.rules.insert(creds::rule_name(name), rule);
+            }
+        }
+        out
+    }
+
     /// Checks values the types cannot. Error paths are dotted key paths.
     ///
     /// # Errors
@@ -368,7 +381,7 @@ impl UserConfig {
             d.validate(name)?;
         }
         let injected = injected(&self.proxy.merged_rules());
-        creds::validate_mcp(&self.mcp_servers, &injected)?;
+        creds::validate_mcp(&self.mcp_servers, &injected, &self.proxy.rules)?;
         if let Some(d) = &self.dotfiles {
             d.validate()?;
         }

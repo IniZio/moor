@@ -28,6 +28,7 @@ fn forge_req(s: &FakeSurface, forge: bool) -> LaunchReq {
         hosts: Vec::new(),
     };
     LaunchReq {
+        mcp: Default::default(),
         proxy: Some(Arc::new(addr)),
         ..base
     }

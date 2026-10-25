@@ -205,7 +205,51 @@ fn flags(ctx: &LaunchCtx) -> Vec<String> {
     if bypasses_permissions(ctx) {
         flags.extend(["--permission-mode".to_owned(), BYPASS_MODE.to_owned()]);
     }
+    if !ctx.mcp.is_empty() {
+        flags.extend(["--mcp-config".to_owned(), mcp_config(ctx).to_string()]);
+    }
     flags
+}
+
+/// The Box's MCP servers in Claude Code's `mcpServers` form.
+fn mcp_config(ctx: &LaunchCtx) -> Value {
+    let servers: serde_json::Map<String, Value> = ctx
+        .mcp
+        .iter()
+        .map(|(name, s)| {
+            let entry = match (&s.command, &s.url) {
+                (Some(command), _) => json!({
+                    "type": s.kind.as_deref().unwrap_or("stdio"),
+                    "command": command,
+                    "args": s.args,
+                    "env": s.env,
+                }),
+                (None, url) => json!({
+                    "type": s.kind.as_deref().unwrap_or("http"),
+                    "url": url,
+                    "headers": s.headers,
+                }),
+            };
+            (name.clone(), entry)
+        })
+        .collect();
+    json!({ "mcpServers": servers })
+}
+
+/// `PreToolUse` entries that refuse each server's tools outside its `allow_tools`; Claude Code
+/// matches tool names as regular expressions and blocks a call whose hook exits 2.
+fn tool_denials(ctx: &LaunchCtx) -> Vec<Value> {
+    ctx.mcp
+        .iter()
+        .filter_map(|(name, s)| {
+            let allowed = s.allow_tools.as_ref()?;
+            let why = format!("moor: the {name} MCP server allows only: {}", allowed.join(", "));
+            Some(json!({
+                "matcher": format!("^mcp__{name}__(?!({})$)", allowed.join("|")),
+                "hooks": [{ "type": "command", "command": format!("echo {} >&2; exit 2", quote(&why)) }],
+            }))
+        })
+        .collect()
 }
 
 /// Fixed non-secret token that keeps Claude Code from prompting for login; it matches the claude
@@ -348,6 +392,13 @@ fn fragment_json(ctx: &LaunchCtx, script: &str) -> Value {
     let mut fragment = hooks(script);
     if let Some(map) = fragment.as_object_mut() {
         map.insert("enableAllProjectMcpServers".to_owned(), true.into());
+        if let Some(pre) = map
+            .get_mut("hooks")
+            .and_then(|h| h.get_mut("PreToolUse"))
+            .and_then(Value::as_array_mut)
+        {
+            pre.extend(tool_denials(ctx));
+        }
         if bypasses_permissions(ctx) {
             map.insert("skipDangerousModePermissionPrompt".to_owned(), true.into());
         }

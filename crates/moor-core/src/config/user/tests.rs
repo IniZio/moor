@@ -6,6 +6,8 @@ use std::time::Duration;
 
 use super::*;
 
+mod mcp;
+
 fn err(doc: &str) -> ConfigError {
     parse_user("u.yaml", doc).expect_err(doc)
 }
@@ -109,7 +111,7 @@ fn accepted_docs() {
         "agent: {model: haiku}",
         "box_credentials: [npm, pypi-token]",
         "state_dir: /var/moor",
-        "mcp_servers: {m: {command: '${NOPE}', args: ['${t}'], env: {K: '${t}'}}, u: {url: 'http://h/${t}', headers: {X: '${t}'}}}",
+        "mcp_servers: {m: {command: '${NOPE}', args: [a]}, u: {url: 'https://h.example/mcp', headers: {X: '${t}'}, allow_tools: [get_issue], coordinator: true}}",
     ];
     for doc in docs {
         ok(doc);
@@ -285,13 +287,15 @@ fn mcp_refs() {
         ..McpServer::default()
     };
     assert_eq!(s.refs(), ["X", "Y"]);
-    let c = ok("mcp_servers: {m: {url: 'h/${u}', headers: {A: '${t}', B: '${u}'}}}");
+    let c = ok(
+        "mcp_servers: {m: {url: 'https://h.example/mcp', headers: {A: 'Bearer ${t}', B: plain}}}",
+    );
     assert_eq!(
         c.mcp_servers
             .get("m")
             .map(McpServer::refs)
             .unwrap_or_default(),
-        ["t", "u"]
+        ["t"]
     );
 }
 
@@ -430,7 +434,7 @@ fn box_credentials_and_mcp_refs_may_not_name_a_secret_a_proxy_rule_injects() {
         let want = format!("the Proxy's {rule} rule injects");
         assert!(e.reason.contains(&want), "{doc}: {e}");
     }
-    ok("box_credentials: [npm-token]\nmcp_servers: {m: {command: x, args: ['${npm-token}']}}");
+    ok("box_credentials: [npm-token]\nmcp_servers: {m: {url: 'https://h.example', headers: {A: '${npm-token}'}}}");
 }
 
 #[test]
