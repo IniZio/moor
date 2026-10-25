@@ -10,7 +10,7 @@ use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::{Deadline, ProcError, ProcSpec, Stdin, Tool};
 
 use super::peek::ssh_target;
-use super::{link, Crabbox};
+use super::{link, touch, Crabbox};
 
 /// Time allowed for the write.
 const WRITE_DEADLINE: Duration = Duration::from_secs(30);
@@ -37,6 +37,7 @@ pub(super) fn put_file(
     // umask keeps the file private while it is written; chmod then sets the real mode. The
     // write replaces the whole file, so running it again after a lost connection is safe.
     let remote = format!("umask 077 && mkdir -p {dir} && cat > {file} && chmod {mode:o} {file}");
+    let _ = touch::heartbeat(cb, handle);
     let mut retries = 0;
     loop {
         let words = link::args(cb, handle, ssh_target(cb, handle)?)?;

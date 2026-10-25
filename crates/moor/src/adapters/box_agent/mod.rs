@@ -100,14 +100,16 @@ impl Engine for BoxAgent {
         steer: &Steer,
         deadline: Deadline,
     ) -> Result<SteerOutcome, EngineError> {
-        steer::steer(
+        let sent = steer::steer(
             self.surface.as_ref(),
             self.profile.as_ref(),
             self.clock.as_ref(),
             s,
             steer,
             deadline,
-        )
+        )?;
+        let _ = self.driver.touch(&s.handle);
+        Ok(sent)
     }
 
     fn transcript(&self, s: &SessionRef, dest: &Path) -> Result<(), EngineError> {

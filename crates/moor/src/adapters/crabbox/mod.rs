@@ -19,6 +19,7 @@ mod sleep;
 mod stream;
 #[cfg(test)]
 mod tests;
+mod touch;
 mod tunnel;
 mod version;
 mod workdir;
@@ -36,7 +37,10 @@ use moor_core::seam::driver::{
     TunnelHandle,
 };
 use moor_core::seam::proc::{Deadline, Proc, ProcOutput, ProcSpec, Tool};
-use moor_core::seam::{clock::Clock, rng::Rng};
+use moor_core::seam::{
+    clock::{Clock, Ts},
+    rng::Rng,
+};
 
 use caps::size_of;
 use errors::{map_error, unreadable, Op};
@@ -76,7 +80,9 @@ pub(crate) struct Crabbox {
     touch_every: Duration,
     /// Lookup deadlines that replace the built-in ones, keyed by provider id.
     lookup_deadlines: BTreeMap<String, Duration>,
-    /// Resolved ssh words per lease handle, kept for this driver's lifetime.
+    /// When each lease handle was last sent a heartbeat, on `clock`.
+    touched: Mutex<HashMap<String, Ts>>,
+    /// Resolved ssh words per lease handle, kept until a call on them fails.
     targets: Mutex<HashMap<String, Vec<String>>>,
     /// Where each Box's shared ssh connection lives; none when moor keeps no state.
     links: Option<link::Dirs>,
@@ -99,6 +105,7 @@ impl Crabbox {
             no_probe: Arc::default(),
             touch_every: exec::TOUCH_EVERY,
             lookup_deadlines: BTreeMap::new(),
+            touched: Mutex::new(HashMap::new()),
             targets: Mutex::new(HashMap::new()),
             links: None,
             leases: None,
@@ -211,7 +218,8 @@ impl Driver for Crabbox {
         let class = size_of(req.class.as_deref())?;
         let spec = cache::with_volumes(Self::spec(ACQUIRE_DEADLINE), &req.cache)
             .args(["warmup", "--provider", provider])
-            .args(["--slug", &name, "--class", class]);
+            .args(["--slug", &name, "--class", class])
+            .args(["--ttl", touch::LEASE_TTL]);
         let handle = handle_of(provider, &name);
         let existed = self.lease_dir(&handle)?.exists();
         let spec = self.at_lease(spec, &handle)?;
@@ -379,7 +387,11 @@ impl Driver for Crabbox {
     fn wake(&self, handle: &BoxHandle) -> Result<(), DriverError> {
         let result = sleep::wake(self, handle);
         self.forget_targets(handle);
-        result
+        result.and_then(|()| touch::heartbeat(self, handle))
+    }
+
+    fn touch(&self, handle: &BoxHandle) -> Result<(), DriverError> {
+        touch::heartbeat(self, handle)
     }
 
     fn reverse_tunnel(

@@ -49,13 +49,13 @@ pub(super) fn peek_file(
 
 /// The ssh arguments that reach the Box behind `handle`, without the leading `ssh`.
 pub(super) fn ssh_target(cb: &Crabbox, handle: &BoxHandle) -> Result<Vec<String>, DriverError> {
-    // Lookups are reused within one command and, for a while, through the Box's link, and
-    // idle Boxes are slept by moor's `sleep_after`, not by crabbox's idle timer.
+    // A lookup touches the lease, so the words are reused, in this driver and through the
+    // Box's link, until a call on them fails; real use touches the lease with a heartbeat.
     let key = handle.as_str().to_owned();
     if let Some(words) = cb.targets.lock().ok().and_then(|m| m.get(&key).cloned()) {
         return Ok(words);
     }
-    if let Some(words) = cb.link(handle).and_then(|l| l.saved(cb.clock.now())) {
+    if let Some(words) = cb.link(handle).and_then(|l| l.saved()) {
         if let Ok(mut map) = cb.targets.lock() {
             map.insert(key, words.clone());
         }

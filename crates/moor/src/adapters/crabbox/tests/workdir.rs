@@ -87,6 +87,7 @@ fn every_crabbox_call_asks_for_the_relative_work_root() {
         ok("ssh -o StrictHostKeyChecking=yes u@h\n"),
     );
     p.on(Tool::Ssh, &[], ok("R 0 0\n\n"));
+    p.on(Tool::Crabbox, &["heartbeat"], ok(""));
     p.on_child(
         Tool::Crabbox,
         &["tunnel"],

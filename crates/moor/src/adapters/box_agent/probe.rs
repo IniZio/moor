@@ -1,6 +1,6 @@
 //! One probe: the hook file through the Driver, then the pane through the Surface.
 
-use moor_core::activity::{HookRead, PaneRead, Probes};
+use moor_core::activity::{HookKind, HookRead, PaneRead, Probes};
 use moor_core::name::BoxPath;
 use moor_core::seam::agent_profile::AgentProfile;
 use moor_core::seam::driver::{BoxStep, Driver, DriverError, StepDone};
@@ -12,7 +12,8 @@ use moor_core::seam::surface::{Surface, SurfaceError};
 pub(super) const HOOK_FILE: &str = ".moor/agent-state.json";
 
 /// Reads the hook file once, then the pane once, each within `deadline`; the raw reads are
-/// returned undecided.
+/// returned undecided. A turn the hooks report busy is real use of the Box, so it touches the
+/// Box's lease; any other read only looks.
 pub(super) fn probe(
     driver: &dyn Driver,
     surface: &dyn Surface,
@@ -21,6 +22,9 @@ pub(super) fn probe(
     deadline: Deadline,
 ) -> Result<Probes, EngineError> {
     let hook = read_hook(driver, profile, s, deadline)?;
+    if matches!(&hook, HookRead::Fresh(rec) if rec.kind == HookKind::Busy) {
+        let _ = driver.touch(&s.handle);
+    }
     let pane = read_pane(surface, profile, s, deadline);
     Ok(Probes { hook, pane })
 }
