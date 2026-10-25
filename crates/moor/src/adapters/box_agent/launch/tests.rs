@@ -112,6 +112,23 @@ fn delivers_the_brief_under_the_box_home() {
 }
 
 #[test]
+fn the_delivered_brief_carries_the_repo_notes_and_the_shape() {
+    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
+    let mut r = req(&s);
+    r.repo_notes = Some("run make emu".to_owned());
+    r.shape = Some(moor_core::shape::Shape {
+        cpus: 2,
+        mem_mib: 4096,
+    });
+    agent(&d, &s).launch(&r).unwrap();
+    let (_, _, bytes, _) = d.puts().into_iter().next().unwrap();
+    let text = String::from_utf8_lossy(&bytes);
+    assert!(text.contains("## This project's Box"), "{text}");
+    assert!(text.contains("run make emu"), "{text}");
+    assert!(text.contains("2 vCPUs and 4.0 GiB"), "{text}");
+}
+
+#[test]
 fn delivers_the_hook_writer_files() {
     let (d, _, out) = launch(FakeDriver::new(), FakeSurface::new());
     out.unwrap();
