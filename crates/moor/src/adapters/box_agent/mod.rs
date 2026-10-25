@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use moor_core::activity::Probes;
 use moor_core::name::BoxPath;
-use moor_core::seam::agent_profile::{AgentProfile, PromptMatch};
+use moor_core::seam::agent_profile::{AgentInstall, AgentProfile, PromptMatch};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef, Steer, SteerOutcome};
@@ -74,6 +74,10 @@ impl Engine for BoxAgent {
 
     fn hooks_quiet_during_first_run(&self) -> bool {
         self.profile.hooks_quiet_during_first_run()
+    }
+
+    fn agent_install(&self) -> Option<AgentInstall> {
+        self.profile.install()
     }
 
     fn launch(&self, req: &LaunchReq) -> Result<SessionRef, EngineError> {

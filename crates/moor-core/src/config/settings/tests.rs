@@ -57,6 +57,14 @@ fn model_precedence() {
 }
 
 #[test]
+fn agent_install_is_on_unless_the_user_turns_it_off() {
+    let flags = Flags::default();
+    assert!(resolve("{}", Some("{}"), &flags).install_agent);
+    assert!(resolve("agent: {install: true}", None, &flags).install_agent);
+    assert!(!resolve("agent: {install: false}", Some("{}"), &flags).install_agent);
+}
+
+#[test]
 fn provider_never_from_repo() {
     let s = resolve("{}", Some("{}"), &Flags::default());
     assert_eq!(s.provider, None);

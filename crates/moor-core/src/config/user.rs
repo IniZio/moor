@@ -161,6 +161,8 @@ impl DriverConfig {
 pub struct AgentConfig {
     /// Default model.
     pub model: Option<String>,
+    /// Whether moor installs the agent on a Box that lacks it; on by default.
+    pub install: Option<bool>,
 }
 
 /// `dotfiles:` section.

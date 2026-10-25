@@ -130,6 +130,7 @@ moor also refuses `proxy.direct` in a user config and a `proxy` key in
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `agent.model` | string | none | The default agent model. `moor start --model` wins over it. |
+| `agent.install` | boolean | `true` | Whether moor installs the agent in a Box that lacks it. `false` leaves the Box as its image and `setup` made it, and the start then fails if the agent is missing. |
 | `dotfiles.path` | absolute path or `~/...` | none | A dotfiles directory that moor installs on each new machine. |
 | `dotfiles.install` | relative path | none | The install script inside `dotfiles.path`. |
 | `surface.herdr.session` | string | `moor` | The herdr session that holds Box workspaces. |

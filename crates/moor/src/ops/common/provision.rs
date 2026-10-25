@@ -17,6 +17,7 @@ use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, ProviderId};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::agent_install;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::cache;
 use crate::ops::common::capacity;
@@ -302,6 +303,10 @@ fn run_and_record(
         Ok(d) => d,
         Err(f) => dotfiles_warned(cx, f),
     };
+    if let Err(reason) = agent_install::apply(cx, (target.handle, target.provider), id, cfg, &proxy)
+    {
+        cx.warn(agent_install::warning(&reason));
+    }
     let mut done = Decision::new(id);
     if let DotfilesRun::Failed { tail } = &dotfiles {
         done = done.event(ExtraEvent::SetupFailed {

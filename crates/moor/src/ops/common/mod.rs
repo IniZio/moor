@@ -1,6 +1,7 @@
 //! Helpers shared by the Box ops.
 
 pub(crate) mod activity;
+pub(crate) mod agent_install;
 pub(crate) mod agent_stop;
 pub(crate) mod artifacts;
 pub(crate) mod autosleep;

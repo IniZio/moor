@@ -137,6 +137,17 @@ pub struct PromptMatch {
     pub line: String,
 }
 
+/// How to put an agent on a Box that lacks it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentInstall {
+    /// POSIX sh text run on the Box as its user. It exits 0 at once when the agent command is
+    /// present, installs it otherwise, and exits non-zero when the command is still missing. It
+    /// is safe to run any number of times.
+    pub script: String,
+    /// The directories, in `~/` form, that hold what the script installs.
+    pub dirs: Vec<String>,
+}
+
 /// What a transcript script prints when the agent left no transcript.
 pub const NOTHING_TO_ARCHIVE: &str = "moor: nothing to archive";
 
@@ -158,6 +169,12 @@ pub trait AgentProfile: Send + Sync {
     /// then runs its whole window.
     fn hooks_quiet_during_first_run(&self) -> bool {
         false
+    }
+
+    /// How to install the agent on a Box that lacks it; `None` when this agent has no installer
+    /// moor knows, and the Box must bring its own.
+    fn install(&self) -> Option<AgentInstall> {
+        None
     }
 
     /// Arguments for a fresh session that reads its brief.

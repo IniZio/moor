@@ -91,7 +91,7 @@ pub(crate) fn box_script(stage: &str, archive: &str, install: Option<&str>) -> S
 }
 
 /// The last [`TAIL_LINES`] lines of `log`, ignoring trailing blank lines.
-fn tail(log: &str) -> String {
+pub(crate) fn tail(log: &str) -> String {
     let lines: Vec<&str> = log.trim_end().lines().collect();
     let skip = lines.len().saturating_sub(TAIL_LINES);
     lines.into_iter().skip(skip).collect::<Vec<_>>().join("\n")
