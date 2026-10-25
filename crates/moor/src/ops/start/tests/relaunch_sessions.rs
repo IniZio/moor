@@ -1,6 +1,6 @@
-use moor_core::BoxId;
+use moor_core::{BoxId, StartReq};
 
-use super::relaunch::{obs, started};
+use super::relaunch::{gone, obs, started};
 use super::req;
 use crate::ops::start::run;
 
@@ -53,4 +53,17 @@ fn a_relaunch_ends_the_session_and_opens_the_next() {
         .unwrap();
     assert_eq!(causes.len(), 1);
     assert!(causes.iter().all(|c| c.contains("relaunch")), "{causes:?}");
+}
+
+#[test]
+fn a_relaunch_carries_a_new_nonce() {
+    let (w, engine, _) = started();
+    gone(&w);
+    let again = StartReq {
+        goal: Some("ship it".into()),
+        ..req("demo")
+    };
+    run(&w.cx, &again).unwrap();
+    let [first, second] = engine.launches().try_into().unwrap();
+    assert_ne!(first.nonce, second.nonce);
 }

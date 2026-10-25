@@ -276,3 +276,11 @@ fn no_pane_reads_as_absent_without_touching_the_surface() {
     assert_eq!(got.pane, PaneRead::Absent);
     assert!(s.calls().is_empty());
 }
+
+#[test]
+fn a_profile_that_does_not_say_otherwise_may_report_during_a_first_run_screen() {
+    let d = live_driver(FakeDriver::new());
+    let s = surface_with(Ok(obs()));
+    assert!(!Stub.hooks_quiet_during_first_run());
+    assert!(!agent(&d, &s).hooks_quiet_during_first_run());
+}

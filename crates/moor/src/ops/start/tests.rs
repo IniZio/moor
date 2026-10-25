@@ -317,6 +317,8 @@ fn start_on_a_gone_box_acquires_again_and_keeps_the_box_working() {
     assert_eq!(b.state, BoxState::Ready);
     assert_ne!(b.handle.unwrap().as_str(), "box-1");
     assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
+    let [first_nonce, again_nonce] = w.driver.acquired_nonces().try_into().unwrap();
+    assert_ne!(first_nonce, again_nonce);
 }
 
 #[test]
