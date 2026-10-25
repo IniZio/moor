@@ -92,7 +92,7 @@ pub(crate) enum BoxEvent {
     /// The Box's agent did not start within the launch limit.
     LaunchTimedOut,
     /// The sleep timer put the Box to sleep.
-    SleptIdle,
+    AutoSlept,
     /// The Box's agent was started again on its own.
     Relaunched,
     /// The controller refused another automatic agent relaunch.
@@ -109,7 +109,7 @@ impl BoxEvent {
             Self::Closed => "closed",
             Self::LaunchFailed => "launch_failed",
             Self::LaunchTimedOut => "launch_timed_out",
-            Self::SleptIdle => "slept_idle",
+            Self::AutoSlept => "auto_slept",
             Self::Relaunched => "relaunched",
             Self::RelaunchCapped => "relaunch_capped",
         }
@@ -125,7 +125,7 @@ impl BoxEvent {
             Self::Closed => "closed",
             Self::LaunchFailed => "could not start its agent",
             Self::LaunchTimedOut => "did not start its agent in time",
-            Self::SleptIdle => "went to sleep after sitting idle",
+            Self::AutoSlept => "went to sleep to save resources",
             Self::Relaunched => "had its agent started again",
             Self::RelaunchCapped => "was not relaunched, the automatic relaunch cap was reached",
         };

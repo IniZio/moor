@@ -23,7 +23,7 @@ use crate::ops::common::resume;
 use crate::ops::common::transcript;
 use crate::store::{BoxRow, Store, StoreError};
 
-use launch::launch_overdue;
+use launch::{launch_overdue, warn_launch_timed_out};
 use stored::stored_hook;
 
 /// Allowance for the hook file read and for the pane observation in one probe.
@@ -287,19 +287,6 @@ pub(crate) fn settle(
         Err(StoreError::Illegal(_)) => Ok(()),
         Err(e) => Err(e.into()),
     }
-}
-
-/// Warns that the agent of `row` did not start in time and how to start it again.
-fn warn_launch_timed_out(cx: &Cx, row: &BoxRow, after_secs: u64) {
-    cx.warn(Warning {
-        code: "launch_timed_out".to_owned(),
-        message: format!(
-            "the agent of {} did not start within {}s, so the Box now counts as quiet and may sleep; start it again with `moor start {} --resume`",
-            row.name.as_str(),
-            after_secs,
-            row.name.as_str()
-        ),
-    });
 }
 
 /// Ends the current session of an agent seen exited, once its transcript is saved.

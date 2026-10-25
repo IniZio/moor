@@ -20,7 +20,7 @@ pub(super) enum Note {
     /// The agent did not start within the launch limit, in seconds.
     LaunchTimedOut(u64),
     /// The sleep timer put the Box to sleep.
-    SleptIdle,
+    AutoSlept,
     /// The agent was started again on its own after it ended.
     Relaunched,
     /// The controller refused another automatic relaunch: relaunches seen, window in seconds.
@@ -35,7 +35,7 @@ impl Note {
             "session_failed" => Some(Self::LaunchFailed),
             "launch_timed_out" => Some(Self::LaunchTimedOut(number("after_secs"))),
             "asleep" if payload.get("auto").and_then(Value::as_bool) == Some(true) => {
-                Some(Self::SleptIdle)
+                Some(Self::AutoSlept)
             }
             "relaunched" if payload.get("cause").is_some_and(|c| !c.is_null()) => {
                 Some(Self::Relaunched)
@@ -50,7 +50,7 @@ impl Note {
         match self {
             Self::LaunchFailed => BoxEvent::LaunchFailed,
             Self::LaunchTimedOut(_) => BoxEvent::LaunchTimedOut,
-            Self::SleptIdle => BoxEvent::SleptIdle,
+            Self::AutoSlept => BoxEvent::AutoSlept,
             Self::Relaunched => BoxEvent::Relaunched,
             Self::RelaunchCapped(..) => BoxEvent::RelaunchCapped,
         }
@@ -67,8 +67,8 @@ impl Note {
                 "Box `{name}` did not start its agent within {}, so it may go to sleep. Reply here and ask me to restart the agent.",
                 span(*secs)
             ),
-            Self::SleptIdle => {
-                format!("Box `{name}` went to sleep after sitting idle. Reply here to wake it.")
+            Self::AutoSlept => {
+                format!("Box `{name}` went to sleep to save resources. Reply here to wake it.")
             }
             Self::Relaunched => format!(
                 "Box `{name}`'s agent had ended, so it was started again. If it stalls, reply here and ask me to restart the agent."

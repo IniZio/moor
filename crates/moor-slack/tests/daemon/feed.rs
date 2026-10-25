@@ -157,7 +157,7 @@ fn a_launch_problem_a_forced_sleep_and_a_relaunch_each_get_one_line_that_says_ho
         (
             "asleep",
             json!({"auto": true}),
-            "went to sleep after sitting idle. Reply here to wake it.",
+            "went to sleep to save resources. Reply here to wake it.",
         ),
         (
             "relaunched",
