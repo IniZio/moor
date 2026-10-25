@@ -1,6 +1,5 @@
-//! The Box's MCP servers in Claude Code's forms: the `--mcp-config` value and tool denials.
+//! The Box's MCP servers in Claude Code's forms: the `--mcp-config` value.
 
-use moor_core::boxscript::quote;
 use moor_core::seam::agent_profile::LaunchCtx;
 use serde_json::{json, Value};
 
@@ -27,20 +26,4 @@ pub(super) fn config(ctx: &LaunchCtx) -> Value {
         })
         .collect();
     json!({ "mcpServers": servers })
-}
-
-/// `PreToolUse` entries that refuse each server's tools outside its `allow_tools`; Claude Code
-/// matches tool names as regular expressions and blocks a call whose hook exits 2.
-pub(super) fn tool_denials(ctx: &LaunchCtx) -> Vec<Value> {
-    ctx.mcp
-        .iter()
-        .filter_map(|(name, s)| {
-            let allowed = s.allow_tools.as_ref()?;
-            let why = format!("moor: the {name} MCP server allows only: {}", allowed.join(", "));
-            Some(json!({
-                "matcher": format!("^mcp__{name}__(?!({})$)", allowed.join("|")),
-                "hooks": [{ "type": "command", "command": format!("echo {} >&2; exit 2", quote(&why)) }],
-            }))
-        })
-        .collect()
 }
