@@ -572,6 +572,7 @@ fn a_new_hook_session_id_is_stored_once() {
 
 mod doing;
 mod exit;
+mod link;
 mod needs_input;
 mod said;
 mod turn;

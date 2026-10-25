@@ -2,7 +2,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::{pane_line, start, NO_TMUX, NO_TMUX_EXIT, RECONNECTS, SESSION};
+use super::{attach, pane_line, start, NO_TMUX, NO_TMUX_EXIT, SESSION};
 
 /// Writes an executable `name` script into `bin`.
 fn tool(bin: &Path, name: &str, body: &str) {
@@ -50,48 +50,27 @@ fn run_pane(codes: &[i32]) -> (String, Vec<String>) {
 }
 
 #[test]
-fn a_lost_link_reattaches_and_the_pane_reports_the_agents_own_exit() {
-    let (out, sent) = run_pane(&[255, 7]);
-    assert!(out.contains("link to the Box lost, reconnecting"), "{out}");
-    assert!(out.trim_end().ends_with("moor: agent exited 7"), "{out}");
-    assert_eq!(sent.len(), 2, "{sent:?}");
-    let (first, second) = (sent.first().unwrap(), sent.get(1).unwrap());
-    assert!(
-        first.contains("tmux new-session -d -s moor-agent"),
-        "{first}"
-    );
-    assert!(
-        second.contains("tmux attach-session -t moor-agent"),
-        "{second}"
-    );
-    assert!(!second.contains("new-session"), "{second}");
-}
-
-#[test]
-fn an_agent_exit_on_the_first_link_ends_without_reconnecting() {
-    let (out, sent) = run_pane(&[3]);
-    assert_eq!(sent.len(), 1);
-    assert!(!out.contains("reconnecting"), "{out}");
-    assert!(out.trim_end().ends_with("moor: agent exited 3"), "{out}");
-}
-
-#[test]
-fn a_link_that_never_comes_back_gives_up_with_255() {
-    let (out, sent) = run_pane(&[]);
-    assert_eq!(sent.len(), 1 + RECONNECTS as usize);
-    assert!(out.trim_end().ends_with("moor: agent exited 255"), "{out}");
+fn the_pane_reports_the_exit_of_its_one_link_and_never_reconnects() {
+    for code in [3, 137, 255] {
+        let (out, sent) = run_pane(&[code]);
+        assert_eq!(sent.len(), 1, "{sent:?}");
+        assert!(
+            out.trim_end()
+                .ends_with(&format!("moor: agent exited {code}")),
+            "{out}"
+        );
+    }
 }
 
 #[test]
 fn the_agent_session_writes_its_exit_status_where_the_attach_reads_it() {
-    let (_, sent) = run_pane(&[255, 0]);
-    assert_eq!(sent.len(), 2, "{sent:?}");
-    let (first, second) = (sent.first().unwrap(), sent.get(1).unwrap());
+    let (_, sent) = run_pane(&[0]);
+    let first = sent.first().unwrap();
     assert!(
         first.contains("echo $? > '\\''/w/.moor/agent.exit'\\''"),
         "{first}"
     );
-    assert!(second.contains("cat '/w/.moor/agent.exit'"), "{second}");
+    assert!(attach("'/w/.moor/agent.exit'").contains("cat '/w/.moor/agent.exit'"));
 }
 
 #[test]

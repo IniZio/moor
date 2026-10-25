@@ -14,13 +14,15 @@ use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::activity::Probes;
-use moor_core::name::BoxPath;
+use moor_core::name::{BoxName, BoxPath};
 use moor_core::seam::agent_profile::{AgentInstall, AgentProfile, PromptMatch};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
-use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef, Steer, SteerOutcome};
+use moor_core::seam::engine::{
+    AgentFate, Engine, EngineError, LaunchReq, SessionRef, Steer, SteerOutcome,
+};
 use moor_core::seam::proc::Deadline;
-use moor_core::seam::surface::Surface;
+use moor_core::seam::surface::{PaneRef, Surface, WorkspaceRef};
 
 use self::gh_release::GhRelease;
 
@@ -118,5 +120,18 @@ impl Engine for BoxAgent {
 
     fn stop(&self, s: &SessionRef) -> Result<(), EngineError> {
         launch::detach::stop(self.driver.as_ref(), s)
+    }
+
+    fn agent_fate(&self, s: &SessionRef, deadline: Deadline) -> Result<AgentFate, EngineError> {
+        launch::detach::fate(self.driver.as_ref(), s, deadline)
+    }
+
+    fn reattach(
+        &self,
+        s: &SessionRef,
+        ws: &WorkspaceRef,
+        name: &BoxName,
+    ) -> Result<PaneRef, EngineError> {
+        launch::detach::reattach(self.driver.as_ref(), self.surface.as_ref(), s, ws, name)
     }
 }

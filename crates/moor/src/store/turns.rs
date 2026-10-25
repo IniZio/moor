@@ -1,4 +1,4 @@
-//! Turn bookkeeping that must be decided and written in one transaction.
+//! Turn and link bookkeeping that must be decided and written in one transaction.
 
 use moor_core::domain::event::{Event, TurnOutcome};
 use moor_core::BoxId;
@@ -37,5 +37,38 @@ impl Store {
         tx.commit()?;
         drop(conn);
         Ok(true)
+    }
+
+    /// Moves the live launch `launch` of `box_id` to `pane` after its old pane ended with
+    /// `exit` while the agent kept running, and records the lost and restored link.
+    ///
+    /// # Errors
+    /// Returns [`StoreError`] when the database fails.
+    pub(crate) fn reattach_pane(
+        &self,
+        box_id: BoxId,
+        launch: i64,
+        exit: Option<i32>,
+        pane: &str,
+    ) -> Result<(), StoreError> {
+        let now = self.now();
+        let mut conn = self.writer();
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let old: Option<String> =
+            tx.query_row("SELECT pane FROM launches WHERE id = ?1", [launch], |r| {
+                r.get(0)
+            })?;
+        tx.execute(
+            "UPDATE launches SET pane = ?1 WHERE id = ?2",
+            (pane, launch),
+        )?;
+        insert_event(&tx, box_id, &Event::AgentLinkLost { pane: old, exit }, now)?;
+        let restored = Event::AgentLinkRestored {
+            pane: pane.to_owned(),
+        };
+        insert_event(&tx, box_id, &restored, now)?;
+        tx.commit()?;
+        drop(conn);
+        Ok(())
     }
 }

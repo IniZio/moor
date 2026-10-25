@@ -261,3 +261,34 @@ fn relaunches_older_than_ten_minutes_do_not_count() {
     assert_eq!(f.engine.launches().len(), 1);
     assert!(kinds(&f, "relaunch_capped").is_empty());
 }
+
+#[test]
+fn a_steer_to_an_agent_that_outlived_its_pane_reattaches_and_never_relaunches() {
+    let engine = FakeEngine::new()
+        .steer_result(Err(EngineError::PaneGone))
+        .fates(vec![Ok(moor_core::seam::engine::AgentFate::Running)]);
+    let f = resumable(engine);
+    let v = run(&f.cx, &text("hi")).unwrap();
+    assert_eq!(v.sent, "hi");
+    assert!(f.engine.launches().is_empty(), "no second agent");
+    assert!(relaunches(&f).is_empty());
+    assert_eq!(f.engine.reattached().len(), 1);
+    assert_eq!(
+        f.engine.steers().len(),
+        2,
+        "one failed send, one after the reattach"
+    );
+    assert_eq!(steered(&f).len(), 1);
+    assert_ne!(session_state(&f), SessionState::Ended);
+    let kinds: Vec<String> =
+        f.cx.store()
+            .unwrap()
+            .events(f.id, 100)
+            .unwrap()
+            .into_iter()
+            .map(|e| e.kind)
+            .filter(|k| k.starts_with("agent_link") || k == "session_ended")
+            .collect();
+    assert_eq!(kinds.len(), 2, "{kinds:?}");
+    assert!(!kinds.contains(&"session_ended".to_owned()), "{kinds:?}");
+}
