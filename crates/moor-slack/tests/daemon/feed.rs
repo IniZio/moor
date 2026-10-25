@@ -133,7 +133,7 @@ fn a_working_box_silent_for_ten_minutes_has_a_stall_hint_in_its_status_edit() {
         json!({"session": "s"}),
     );
     let want = format!(
-        "{}\nNo event for 11m. It may be stuck.",
+        "{}\nNo new activity for 11m. It may be stuck.",
         status("working (11m)")
     );
     wait_status(&rig, &post.ts, &want);
@@ -504,4 +504,82 @@ fn a_close_box_posts_one_closed_line_and_one_notice() {
         .filter(|n| n.ends_with("closed."))
         .count();
     assert_eq!(close_notices, 1);
+}
+
+/// The long-turn lines the front posted in the thread of box `name`.
+fn long_turn_posts(rig: &Rig, thread_ts: &str) -> Vec<Post> {
+    let head = format!("`{BOX_NAME}` has been working for");
+    let mut posts: Vec<Post> = rig
+        .slack
+        .posts()
+        .into_iter()
+        .filter(|p| p.text.starts_with(&head) && p.thread_ts == thread_ts)
+        .collect();
+    posts.sort_by(|a, b| a.text.cmp(&b.text));
+    posts
+}
+
+#[test]
+fn a_turn_running_twenty_minutes_posts_one_line_in_the_thread_and_names_what_it_does() {
+    let (rig, controller, _bin, post) = thread_with_status();
+    controller.emit_ago(21 * 60, (BOX_ID, BOX_NAME, "working"), json!({}));
+    let doing = json!({"text": "Bash: cargo test"});
+    controller.emit_ago(60, (BOX_ID, BOX_NAME, "agent_doing"), doing);
+    rig.wait_post(&format!(
+        "`{BOX_NAME}` has been working for 20m. Now: `Bash: cargo test`. \
+         Reply here to redirect it, or ask me to stop it."
+    ));
+    std::thread::sleep(QUIET);
+    let posts = long_turn_posts(&rig, &post.thread_ts);
+    assert_eq!(posts.len(), 1, "once per threshold: {posts:?}");
+    assert_eq!(posts[0].channel, post.channel);
+}
+
+#[test]
+fn a_turn_with_no_activity_line_yet_gets_the_line_without_a_now_part() {
+    let (rig, controller, _bin, _) = thread_with_status();
+    controller.emit_ago(21 * 60, (BOX_ID, BOX_NAME, "working"), json!({}));
+    rig.wait_post(&format!(
+        "`{BOX_NAME}` has been working for 20m. \
+         Reply here to redirect it, or ask me to stop it."
+    ));
+}
+
+#[test]
+fn a_turn_at_forty_minutes_posts_the_forty_minute_line_and_a_restart_repeats_none() {
+    let (mut rig, controller, _bin, post) = thread_with_status();
+    controller.emit_ago(41 * 60, (BOX_ID, BOX_NAME, "working"), json!({}));
+    rig.wait_post(&format!(
+        "`{BOX_NAME}` has been working for 40m. \
+         Reply here to redirect it, or ask me to stop it."
+    ));
+    std::thread::sleep(QUIET);
+    let texts = |rig: &Rig| -> Vec<String> {
+        let posts = long_turn_posts(rig, &post.thread_ts);
+        posts.into_iter().map(|p| p.text).collect()
+    };
+    let before = texts(&rig);
+    assert_eq!(before.len(), 1, "{before:?}");
+
+    let n = watches(&controller);
+    rig.kill_daemon();
+    rig.spawn_daemon();
+    wait_refolded(&controller, n);
+    let after = texts(&rig);
+    assert_eq!(
+        after, before,
+        "a restart replays the turn and posts nothing again"
+    );
+}
+
+#[test]
+fn a_turn_that_ended_or_ran_under_twenty_minutes_posts_no_long_turn_line() {
+    let (rig, controller, _bin, post) = thread_with_status();
+    controller.emit_ago(30 * 60, (BOX_ID, BOX_NAME, "working"), json!({}));
+    controller.emit_ago(10 * 60, (BOX_ID, BOX_NAME, "idled"), json!({}));
+    rig.wait_post(&finished_line());
+    controller.emit_ago(5 * 60, (BOX_ID, BOX_NAME, "busy"), json!({}));
+    std::thread::sleep(QUIET);
+    let posts = long_turn_posts(&rig, &post.thread_ts);
+    assert!(posts.is_empty(), "{posts:?}");
 }

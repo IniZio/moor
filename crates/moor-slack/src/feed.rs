@@ -49,6 +49,8 @@ struct Fold {
     notes: HashMap<BoxId, Vec<(i64, lifecycle::Note)>>,
     /// Artifact versions each Box published that are not yet known to be shown.
     published: HashMap<BoxId, Vec<ArtifactView>>,
+    /// The cursor of the event that began each working Box's current turn.
+    turns: HashMap<BoxId, i64>,
     /// The name the controller gives each Box.
     names: HashMap<BoxId, String>,
     /// Whether this connection's backlog is folded.
@@ -69,10 +71,14 @@ impl Fold {
         if let Some(name) = &event.box_name {
             self.names.insert(id, name.clone());
         }
-        self.views
-            .entry(id)
-            .or_default()
-            .fold(&event.kind, &event.payload, event.ts);
+        let view = self.views.entry(id).or_default();
+        let was_working = view.is_working();
+        view.fold(&event.kind, &event.payload, event.ts);
+        match (was_working, view.is_working()) {
+            (false, true) => drop(self.turns.insert(id, event.cursor)),
+            (_, false) => drop(self.turns.remove(&id)),
+            (true, true) => {}
+        }
         prompts::fold(self, id, &event.kind, event.cursor, &event.payload);
         artifacts::fold(self, id, &event.kind, &event.payload);
         lifecycle::fold(self, id, event.cursor, &event.kind, &event.payload);
@@ -128,6 +134,8 @@ pub(crate) struct Feed {
     pub(crate) log: Log,
     /// The current time in unix seconds.
     pub(crate) clock: fn() -> i64,
+    /// Seconds of one turn after which, and after each further so many, the thread gets a line.
+    pub(crate) long_turn_secs: i64,
 }
 
 impl Feed {
@@ -197,6 +205,7 @@ impl Feed {
                     || !self.notes(db, fold, &fed.boxed)
                     || !self.prompts(db, fold, &fed.boxed)
                     || !self.artifacts(db, fold, &fed.boxed)
+                    || !self.long_turn(db, fold, &fed.boxed)
                 {
                     *lines_due = at + UPDATE_EVERY;
                     return;
@@ -348,6 +357,7 @@ fn now() -> Instant {
 
 mod artifacts;
 mod lifecycle;
+mod long_turn;
 mod prompts;
 mod status;
 

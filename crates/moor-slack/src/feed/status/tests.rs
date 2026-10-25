@@ -262,7 +262,7 @@ fn a_repeated_event_of_the_same_phase_keeps_the_time_it_began() {
 #[test]
 fn a_working_box_silent_for_ten_minutes_gets_a_stall_hint() {
     let v = folded_at(&[("working", 0), ("agent_said", 100)]);
-    let hint = "\nNo event for 10m. It may be stuck.";
+    let hint = "\nNo new activity for 10m. It may be stuck.";
     assert_eq!(render("b", &v, 100 + 599), "*b*: working (11m)");
     assert_eq!(
         render("b", &v, 100 + 600),
@@ -431,4 +431,100 @@ fn an_unanswered_question_after_three_minutes_says_to_answer_or_restart() {
     assert!(render("b", &v, 10 + 180).ends_with(
         "\nWaiting on an answer for 3m. It may be stuck; reply here with the answer, or ask me to restart the agent."
     ));
+}
+
+/// A view folded from `events`, each `(kind, payload, seconds after the epoch)`.
+fn folded_with(events: &[(&str, Value, i64)]) -> View {
+    let mut v = View::default();
+    for (kind, payload, secs) in events {
+        v.fold(kind, payload, secs * 1000);
+    }
+    v
+}
+
+fn doing(text: &str) -> Value {
+    json!({ "text": text })
+}
+
+#[test]
+fn a_working_box_shows_what_its_agent_is_doing_now_in_code() {
+    let v = folded_with(&[
+        ("working", json!({}), 0),
+        ("agent_doing", doing("Bash: cargo test"), 5),
+        ("agent_doing", doing("Edit: main.rs"), 40),
+    ]);
+    assert_eq!(
+        render("b", &v, 60),
+        "*b*: working (1m)\nnow: `Edit: main.rs`"
+    );
+}
+
+#[test]
+fn the_now_line_cannot_break_out_of_its_code_span_or_ping() {
+    let v = folded_with(&[
+        ("working", json!({}), 0),
+        ("agent_doing", doing("Bash: echo `id` <!channel> & done"), 5),
+    ]);
+    let text = render("b", &v, 10);
+    let line = text.lines().nth(1).unwrap();
+    assert_eq!(line, "now: Bash: echo `id` &lt;!channel&gt; &amp; done");
+    let v = folded_with(&[
+        ("working", json!({}), 0),
+        ("agent_doing", doing("Bash: ls <!here>"), 5),
+    ]);
+    assert_eq!(
+        render("b", &v, 10).lines().nth(1).unwrap(),
+        "now: `Bash: ls &lt;!here&gt;`"
+    );
+}
+
+#[test]
+fn the_now_line_goes_when_the_turn_ends_and_does_not_return_with_the_next_turn() {
+    let working = [
+        ("working", json!({}), 0),
+        ("agent_doing", doing("Bash: ls"), 5),
+    ];
+    let mut v = folded_with(&working);
+    v.fold("idled", &json!({}), 20_000);
+    assert_eq!(render("b", &v, 30), "*b*: idle (<1m)");
+    v.fold("busy", &json!({}), 40_000);
+    assert_eq!(render("b", &v, 50), "*b*: working (<1m)");
+    let mut late = folded_with(&working);
+    late.fold("idled", &json!({}), 20_000);
+    late.fold("agent_doing", &doing("Bash: late"), 21_000);
+    assert!(
+        !render("b", &late, 30).contains("now:"),
+        "only while working"
+    );
+}
+
+#[test]
+fn the_stall_hint_counts_from_the_last_activity_not_from_any_event() {
+    let v = folded_with(&[
+        ("working", json!({}), 0),
+        ("agent_doing", doing("Bash: ls"), 500),
+        ("box_ready", json!({}), 900),
+    ]);
+    let stuck = |now| render("b", &v, now).contains("No new activity");
+    assert!(!stuck(500 + 599), "a Box event is not agent activity");
+    let at = render("b", &v, 500 + 600);
+    assert!(
+        at.contains("\nNo new activity for 10m. It may be stuck."),
+        "{at}"
+    );
+    let fresh = folded_with(&[
+        ("working", json!({}), 0),
+        ("agent_doing", doing("Bash: ls"), 650),
+    ]);
+    assert!(
+        !render("b", &fresh, 700).contains("No new activity"),
+        "a new line resets it"
+    );
+}
+
+#[test]
+fn a_turn_with_no_activity_line_yet_counts_from_its_start() {
+    let v = folded_with(&[("working", json!({}), 0)]);
+    assert!(!render("b", &v, 599).contains("No new activity"));
+    assert!(render("b", &v, 600).contains("No new activity for 10m. It may be stuck."));
 }

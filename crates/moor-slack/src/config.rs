@@ -20,6 +20,10 @@ pub struct Config {
     /// `https://` or loopback `http://` only.
     #[serde(default = "default_github_api_base")]
     pub github_api_base: String,
+    /// Minutes a Box's turn may run before its thread gets a line saying so, and again after
+    /// each further so many minutes of the same turn.
+    #[serde(default = "default_long_turn_minutes")]
+    pub long_turn_minutes: u32,
     /// The coordinator agent; a missing section means every default.
     #[serde(default)]
     pub coordinator: Coordinator,
@@ -103,6 +107,11 @@ const fn default_idle_minutes() -> u32 {
     30
 }
 
+/// Minutes of one turn between long-turn lines unless the config names them.
+const fn default_long_turn_minutes() -> u32 {
+    20
+}
+
 /// The public Slack Web API.
 fn default_api_base() -> String {
     "https://slack.com/api".to_owned()
@@ -146,6 +155,9 @@ fn validate(cfg: &Config) -> Result<(), (&'static str, &'static str)> {
     }
     base_ok("api_base", &cfg.api_base)?;
     base_ok("github_api_base", &cfg.github_api_base)?;
+    if cfg.long_turn_minutes == 0 {
+        return Err(("long_turn_minutes", "must be at least 1"));
+    }
     let c = &cfg.coordinator;
     if c.binary.as_ref().is_some_and(|b| !b.is_absolute()) {
         return Err(("coordinator.binary", "must be an absolute path"));

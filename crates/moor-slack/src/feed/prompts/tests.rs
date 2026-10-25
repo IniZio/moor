@@ -25,6 +25,7 @@ fn feed(dir: &std::path::Path) -> Feed {
         bot_token: Arc::new(Secret::new(b"xoxb-test".to_vec())),
         log: Arc::new(|_| {}),
         clock: || 9,
+        long_turn_secs: 1200,
     }
 }
 

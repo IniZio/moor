@@ -164,3 +164,13 @@ fn a_roleplay_section_with_no_users_is_refused() {
     let e = err(&slack_with("roleplay:\n  users: [\"\"]\n"));
     assert_eq!(e.path, "roleplay.users");
 }
+
+#[test]
+fn the_long_turn_interval_defaults_to_twenty_minutes_and_must_be_positive() {
+    let c = parse_config("s.yaml", &slack_with("")).unwrap();
+    assert_eq!(c.long_turn_minutes, 20);
+    let c = parse_config("s.yaml", &slack_with("long_turn_minutes: 45\n")).unwrap();
+    assert_eq!(c.long_turn_minutes, 45);
+    let e = err(&slack_with("long_turn_minutes: 0\n"));
+    assert_eq!(e.path, "long_turn_minutes");
+}
