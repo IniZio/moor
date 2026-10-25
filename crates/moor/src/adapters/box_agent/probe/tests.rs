@@ -74,6 +74,10 @@ impl AgentProfile for Stub {
         Vec::new()
     }
 
+    fn interrupt_key(&self) -> Key {
+        Key::Escape
+    }
+
     fn transcript_script(&self, _: &str) -> String {
         String::new()
     }

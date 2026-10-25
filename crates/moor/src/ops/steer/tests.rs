@@ -147,6 +147,7 @@ fn text(t: &str) -> SteerReq {
         target: BoxName::parse_allow_bare("t").unwrap().into(),
         text: Some(t.to_owned()),
         menu: None,
+        interrupt: false,
     }
 }
 
@@ -155,6 +156,16 @@ fn menu(n: u32) -> SteerReq {
         target: BoxName::parse_allow_bare("t").unwrap().into(),
         text: None,
         menu: Some(n),
+        interrupt: false,
+    }
+}
+
+fn interrupt() -> SteerReq {
+    SteerReq {
+        target: BoxName::parse_allow_bare("t").unwrap().into(),
+        text: None,
+        menu: None,
+        interrupt: true,
     }
 }
 
@@ -568,5 +579,6 @@ fn an_exited_agent_has_its_transcript_saved_before_the_session_ends() {
 }
 
 mod cold_boot;
+mod interrupt;
 mod relaunch;
 mod target;

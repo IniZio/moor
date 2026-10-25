@@ -276,11 +276,19 @@ struct SteerArgs {
     #[arg(value_parser = box_name)]
     name: BoxName,
     /// Text to send.
-    #[arg(conflicts_with = "menu")]
+    #[arg(conflicts_with_all = ["menu", "interrupt"])]
     text: Option<String>,
     /// Menu choice to send.
-    #[arg(long, required_unless_present = "text", value_name = "N")]
+    #[arg(
+        long,
+        required_unless_present_any = ["text", "interrupt"],
+        conflicts_with = "interrupt",
+        value_name = "N"
+    )]
     menu: Option<u32>,
+    /// Send the agent's interrupt key, which stops its current work.
+    #[arg(long)]
+    interrupt: bool,
 }
 
 impl From<SteerArgs> for SteerReq {
@@ -289,6 +297,7 @@ impl From<SteerArgs> for SteerReq {
             target: a.name.into(),
             text: a.text,
             menu: a.menu,
+            interrupt: a.interrupt,
         }
     }
 }

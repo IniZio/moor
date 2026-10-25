@@ -134,6 +134,8 @@ pub enum Steer {
     Text(String),
     /// A choice in a menu the agent shows.
     Menu(u8),
+    /// The agent's interrupt key, which stops its current work and keeps the session.
+    Interrupt,
 }
 
 /// What a steer did.

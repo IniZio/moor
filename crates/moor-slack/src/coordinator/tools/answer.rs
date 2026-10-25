@@ -61,6 +61,7 @@ pub(super) fn answer(
         target: target.boxed.box_name.clone().into(),
         text: None,
         menu: Some(choice),
+        interrupt: false,
     });
     let (outcome, reply) = match (scope.call)(request) {
         Ok(r) if r.class == ExitClass::Ok => {

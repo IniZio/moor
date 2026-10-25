@@ -20,6 +20,7 @@ fn steer(name: &str, text: Option<&str>, menu: Option<u32>) -> Request {
         target: parsed(name).into(),
         text: text.map(Into::into),
         menu,
+        interrupt: false,
     })
 }
 

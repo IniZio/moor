@@ -97,6 +97,8 @@ pub struct BoxSetup {
 pub enum Key {
     /// A printable character.
     Char(char),
+    /// The Escape key.
+    Escape,
 }
 
 /// A first-run prompt that holds the agent until someone answers it.
@@ -218,6 +220,9 @@ pub trait AgentProfile: Send + Sync {
 
     /// The keys that pick menu option `n`.
     fn menu_keys(&self, n: u8) -> Vec<Key>;
+
+    /// The key that stops what the agent is doing now and leaves its session open.
+    fn interrupt_key(&self) -> Key;
 
     /// POSIX sh text that archives the agent's session transcripts to `archive`.
     ///

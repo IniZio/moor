@@ -49,6 +49,7 @@ fn with_args() -> Vec<Request> {
             target: n("a").into(),
             text: Some("x".into()),
             menu: None,
+            interrupt: false,
         }),
         Request::Show(ShowReq {
             target: None,
@@ -107,6 +108,18 @@ fn cmd_equals_serde_tag_and_roundtrips() {
         let back: Request = serde_json::from_value(v).unwrap();
         assert_eq!(back, r);
     }
+}
+
+#[test]
+fn an_interrupt_steer_roundtrips() {
+    let r = Request::Steer(SteerReq {
+        target: n("a").into(),
+        text: None,
+        menu: None,
+        interrupt: true,
+    });
+    let text = serde_json::to_string(&r).unwrap();
+    assert_eq!(serde_json::from_str::<Request>(&text).unwrap(), r);
 }
 
 #[test]

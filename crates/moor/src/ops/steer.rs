@@ -58,6 +58,9 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
         Attempt::Sent(v) => return Ok(v),
         Attempt::Gone(gone) => gone,
     };
+    if req.interrupt {
+        return Err(gone.error);
+    }
     relaunch::once(cx, store, target, gone)?;
     match attempt(cx, store, req, target)? {
         Attempt::Sent(v) => Ok(v),
@@ -172,6 +175,7 @@ fn attempt(
     let sent = match &steer {
         Steer::Text(t) => t.clone(),
         Steer::Menu(n) => n.to_string(),
+        Steer::Interrupt => "(interrupt)".to_owned(),
     };
     let Some(outcome) = send(cx, name, &sref, &steer)? else {
         let code = if let Some(AgentState::Exited { code }) = before {
@@ -294,6 +298,7 @@ fn answered(
 ) -> Result<bool, CommandError> {
     match steer {
         Steer::Menu(_) => menu_answered(cx, store, row),
+        Steer::Interrupt => Ok(false),
         Steer::Text(_) => {
             if !outcome.submit_checked {
                 cx.warn(Warning {
@@ -319,47 +324,6 @@ fn menu_answered(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandEr
         });
     }
     Ok(!waiting)
-}
-
-/// What to send for `req` given what the agent shows.
-///
-/// A blocked agent takes a menu choice only: `--menu N`, or a lone digit as the text.
-fn choose(
-    req: &SteerReq,
-    box_name: &str,
-    state: Option<&AgentState>,
-) -> Result<Steer, CommandError> {
-    let waiting = match state {
-        Some(AgentState::NeedsInput { question, .. }) => Some(question),
-        _ => None,
-    };
-    match (req.menu, req.text.as_deref(), waiting) {
-        (Some(n), _, Some(_)) => Ok(Steer::Menu(choice(n)?)),
-        (Some(_), _, None) => Err(CommandError::new(
-            ErrorKind::Refused,
-            format!("the agent of {box_name} is not waiting at a menu"),
-        )),
-        (None, Some(t), None) => Ok(Steer::Text(t.to_owned())),
-        (None, Some(t), Some(w)) => match t.parse::<u8>() {
-            Ok(n) if t.len() == 1 => Ok(Steer::Menu(n)),
-            _ => Err(CommandError::new(
-                ErrorKind::Refused,
-                format!(
-                    "the agent of {box_name} is blocked (waiting for: {}); answer with `moor steer {box_name} --menu N` or open the Workspace with `moor start {box_name}`",
-                    w.as_deref().unwrap_or("input")
-                ),
-            )),
-        },
-        (None, None, _) => Err(CommandError::new(ErrorKind::Usage, "nothing to send")),
-    }
-}
-
-/// A menu number the pane keys can carry.
-fn choice(n: u32) -> Result<u8, CommandError> {
-    u8::try_from(n)
-        .ok()
-        .filter(|n| *n > 0)
-        .ok_or_else(|| CommandError::new(ErrorKind::Usage, format!("no menu choice {n}")))
 }
 
 /// Append the `steered` event; its id.
@@ -388,7 +352,10 @@ fn record(
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, "the steered event was not recorded"))
 }
 
+mod choose;
 mod relaunch;
+
+use choose::choose;
 
 #[cfg(test)]
 mod tests;

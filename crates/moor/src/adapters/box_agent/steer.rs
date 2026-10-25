@@ -33,10 +33,20 @@ pub(super) fn steer(
             let keys: Vec<Key> = profile
                 .menu_keys(*n)
                 .into_iter()
-                .map(|AgentKey::Char(c)| digit(c))
+                .map(pane_key)
                 .collect::<Option<_>>()
                 .ok_or_else(|| failed("menu", "the choice has no key".to_owned()))?;
             send(surface.send_keys(pane, &keys), "menu")?;
+            Ok(SteerOutcome {
+                submit_retried: false,
+                submit_checked: false,
+            })
+        }
+        Steer::Interrupt => {
+            let key = pane_key(profile.interrupt_key()).ok_or_else(|| {
+                failed("interrupt", "the interrupt key has no pane key".to_owned())
+            })?;
+            send(surface.send_keys(pane, &[key]), "interrupt")?;
             Ok(SteerOutcome {
                 submit_retried: false,
                 submit_checked: false,
@@ -90,9 +100,12 @@ const fn failed(step: &'static str, message: String) -> EngineError {
     EngineError::Failed { step, message }
 }
 
-/// The key for a digit character.
-fn digit(c: char) -> Option<Key> {
-    u8::try_from(c.to_digit(10)?).ok().map(Key::Digit)
+/// The pane key for an agent key; `None` for a character that is not a digit.
+fn pane_key(key: AgentKey) -> Option<Key> {
+    match key {
+        AgentKey::Char(c) => u8::try_from(c.to_digit(10)?).ok().map(Key::Digit),
+        AgentKey::Escape => Some(Key::Escape),
+    }
 }
 
 /// The last [`CHECK_LINES`] lines of `tail`.

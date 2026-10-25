@@ -74,6 +74,29 @@ fn sends(s: &FakeSurface) -> Vec<String> {
 }
 
 #[test]
+fn an_interrupt_sends_the_profile_key_and_types_nothing() {
+    let (s, session) = surface(vec![Ok(obs(""))]);
+    let (out, waited) = steer(&s, &session, &Steer::Interrupt);
+    assert_eq!(
+        out,
+        Ok(SteerOutcome {
+            submit_retried: false,
+            submit_checked: false
+        })
+    );
+    assert_eq!(sends(&s), ["send_keys p-2 esc"]);
+    assert_eq!(waited, Duration::ZERO);
+}
+
+#[test]
+fn an_interrupt_to_a_gone_pane_is_pane_gone() {
+    let (s, session) = surface(vec![Err(SurfaceError::NotFound)]);
+    let (out, _) = steer(&s, &session, &Steer::Interrupt);
+    assert_eq!(out, Err(EngineError::PaneGone));
+    assert!(sends(&s).is_empty());
+}
+
+#[test]
 fn text_clears_types_then_submits_with_the_waits() {
     let (s, session) = surface(vec![Ok(obs("")), Ok(obs("> \n"))]);
     let (out, waited) = steer(&s, &session, &text("fix the build"));

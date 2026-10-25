@@ -180,6 +180,15 @@ fn send_keys_names_each_key_in_one_call() {
 }
 
 #[test]
+fn send_keys_names_escape_esc() {
+    let (p, h) = fixture();
+    p.on(Tool::Herdr, &["pane", "send-keys"], ok(""));
+    h.send_keys(&PaneRef::new("p1"), &[Key::Escape])
+        .expect("sent");
+    assert_eq!(args(&p.calls(), 0), ["pane", "send-keys", "p1", "esc"]);
+}
+
+#[test]
 fn send_keys_rejects_a_two_digit_key_without_calling_herdr() {
     let (p, h) = fixture();
     assert!(matches!(

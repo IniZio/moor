@@ -132,6 +132,10 @@ impl AgentProfile for Claude {
         launch::menu_keys(n)
     }
 
+    fn interrupt_key(&self) -> Key {
+        Key::Escape
+    }
+
     fn transcript_script(&self, archive: &str) -> String {
         format!(
             r#"set -e
