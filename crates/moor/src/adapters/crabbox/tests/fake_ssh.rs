@@ -41,6 +41,7 @@ TMPDIR="$d/boxtmp" exec sh -c "$last"
 /// lease, or with the contents of a `words` file, and fails anything else. `ssh --help` is
 /// recorded in `help.<n>` instead and lists `-no-probe` only when a `no-probe` file exists, as
 /// the IniZio/crabbox builds with that flag do, and exits 2 when a `help-fails` file exists.
+/// `heartbeat` is recorded in `heartbeat.<n>` instead and succeeds.
 const FAKE_CRABBOX: &str = r#"#!/bin/sh
 d=$(dirname "$0")
 if test "$1 $2" = "ssh --help"; then
@@ -49,6 +50,10 @@ if test "$1 $2" = "ssh --help"; then
   echo "  -id string" >&2
   if test -f "$d/no-probe"; then echo "  -no-probe" >&2; fi
   if test -f "$d/help-fails"; then exit 2; fi
+  exit 0
+fi
+if test "$1" = heartbeat; then
+  printf '%s\0' "$@" > "$d/heartbeat.$(ls "$d" | grep -c '^heartbeat\.')"
   exit 0
 fi
 n=$(ls "$d" | grep -c '^crabbox\.')

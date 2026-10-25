@@ -167,19 +167,28 @@ fn a_long_command_touches_the_lease_while_it_runs_and_stops_when_it_ends() {
             .exec(&handle(), &spec, Deadline(Duration::from_secs(60)));
         let _ = sent.send(out);
     });
-    wait_for("three touches", || lab.argvs("crabbox").len() >= 4);
+    wait_for("three touches", || lab.argvs("heartbeat").len() >= 3);
     fs::write(&release, "").unwrap();
     let ended = outcome
         .recv_timeout(Duration::from_secs(20))
         .expect("the exec returns once its command ends");
     assert_eq!(ended, Ok(ExecOutcome::Exited { code: 0 }));
-    let touched = lab.argvs("crabbox");
+    let touched = lab.argvs("heartbeat");
     for argv in &touched {
-        assert!(no_probe(argv), "{argv:?}");
+        assert_eq!(
+            argv,
+            &[
+                "heartbeat",
+                "--provider",
+                "external",
+                "--id",
+                "moor-7-ab12cd"
+            ]
+        );
     }
     thread::sleep(EVERY * 10);
     assert_eq!(
-        lab.argvs("crabbox").len(),
+        lab.argvs("heartbeat").len(),
         touched.len(),
         "no touch after the command ended"
     );

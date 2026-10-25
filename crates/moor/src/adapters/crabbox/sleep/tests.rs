@@ -121,11 +121,12 @@ fn pause_timeout_is_a_timeout() {
 fn wake_resumes_by_provider_and_id() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["resume"], Reply::Ok(String::new()));
+    p.on(Tool::Crabbox, &["heartbeat"], Reply::Ok(String::new()));
     assert_eq!(c.wake(&BoxHandle::new("pauser/box")), Ok(()));
     let calls = p.calls();
-    assert_eq!(verbs(&p), ["providers", "resume"]);
+    assert_eq!(verbs(&p), ["providers", "resume", "heartbeat"]);
     assert_eq!(
-        calls.last().unwrap().args,
+        calls.get(1).unwrap().args,
         ["resume", "--provider", "pauser", "--id", "box"]
     );
 }
@@ -141,10 +142,11 @@ fn failed_resume_is_an_error_without_raw_stderr() {
 }
 
 #[test]
-fn wake_of_native_provider_makes_only_the_providers_call() {
+fn wake_of_native_provider_makes_only_the_providers_call_and_a_heartbeat() {
     let (p, c) = fixture();
+    p.on(Tool::Crabbox, &["heartbeat"], Reply::Ok(String::new()));
     assert_eq!(c.wake(&BoxHandle::new("sprites/box")), Ok(()));
-    assert_eq!(verbs(&p), ["providers"]);
+    assert_eq!(verbs(&p), ["providers", "heartbeat"]);
 }
 
 #[test]

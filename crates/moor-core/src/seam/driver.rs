@@ -392,6 +392,16 @@ pub trait Driver: Send + Sync {
     /// # Errors
     /// Returns a [`DriverError`] when the resume fails.
     fn wake(&self, handle: &BoxHandle) -> Result<(), DriverError>;
+
+    /// Tells the provider the Box is in real use, so it does not expire the Box as idle.
+    /// Reads that only look at a Box never call this. A provider without idle expiry ignores it.
+    ///
+    /// # Errors
+    /// Returns a [`DriverError`] when the provider cannot be told.
+    fn touch(&self, handle: &BoxHandle) -> Result<(), DriverError> {
+        let _ = handle;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

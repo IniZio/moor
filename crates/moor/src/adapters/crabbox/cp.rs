@@ -21,7 +21,7 @@ use tar::EntryType;
 
 use super::peek::ssh_target;
 use super::stream::NO_TAR;
-use super::{link, Crabbox};
+use super::{link, touch, Crabbox};
 
 /// Time allowed for one copy.
 const COPY_OUT_DEADLINE: Duration = Duration::from_mins(5);
@@ -44,6 +44,7 @@ pub(super) fn copy_out(
 ) -> Result<(), DriverError> {
     let (parent, leaf) = split(from)?;
     let target = target(to, leaf)?;
+    let _ = touch::heartbeat(cb, handle);
     let stage = stage_beside(cb, &target)?;
     let copied = fetch(cb, handle, from, parent, leaf, &stage)
         .and_then(|()| publish(&stage.join(leaf), &target));

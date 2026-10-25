@@ -11,8 +11,8 @@ use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, ProcError, ProcSpec, StderrGate, Stdin, Tool};
 
 use super::errors::{one_line, EXIT_SSH};
-use super::peek::{lookup, ssh_target};
-use super::{link, Crabbox};
+use super::peek::ssh_target;
+use super::{link, touch, Crabbox};
 
 /// How often a running Box command touches the Box's lease: crabbox renews a lease only
 /// while one of its own commands runs, and moor's commands run over ssh instead.
@@ -124,19 +124,20 @@ impl Crabbox {
     }
 }
 
-/// Runs `command`, and while it runs touches the lease of the Box behind `handle` every
-/// `cb.touch_every` with a fresh lookup, so crabbox does not reap a Box that is busy with a
-/// long command. A failed touch is left to the next one.
+/// Runs `command`, touching the lease of the Box behind `handle` as it starts and every
+/// `cb.touch_every` while it runs, so crabbox does not reap a Box that is busy with a long
+/// command. A failed touch is left to the next one.
 pub(super) fn touching_lease<T>(
     cb: &Crabbox,
     handle: &BoxHandle,
     command: impl FnOnce() -> T,
 ) -> T {
+    let _ = touch::heartbeat(cb, handle);
     let (ended, wait) = mpsc::channel::<()>();
     thread::scope(|s| {
         s.spawn(move || {
             while wait.recv_timeout(cb.touch_every) == Err(RecvTimeoutError::Timeout) {
-                let _ = lookup(cb, handle);
+                let _ = touch::send(cb, handle);
             }
         });
         let out = command();

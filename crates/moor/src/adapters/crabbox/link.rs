@@ -4,7 +4,8 @@
 //! on one OpenSSH control master, so a Box probed every few seconds pays for one connect, not
 //! one per probe. The target words a master was opened with live under moor's state dir and
 //! its socket in a short private directory, so every moor process and every freshly wired
-//! driver reuses them without a new lookup. The agent's pane keeps its own connection, so
+//! driver reuses them without a new lookup. A saved target is kept until a call on it fails:
+//! every lookup touches the Box's lease, so a Box that is only looked at must not cause one. The agent's pane keeps its own connection, so
 //! ending a master never ends the agent.
 
 use std::fs::{self, DirBuilder, OpenOptions};
@@ -25,12 +26,9 @@ use super::errors::{one_line, transport_loss, EXIT_SSH};
 use super::{pin, Crabbox};
 use crate::adapters::sockets::{private_dir, short_hash};
 
-/// Seconds a master stays up after its last call: as long as a saved target lives, so a Box
-/// used within that time pays for no connect, and the master and its target expire together.
+/// Seconds a master stays up after its last call, so a Box used within that time pays for no
+/// connect.
 const PERSIST_SECS: u32 = 600;
-/// Milliseconds a saved target stands in for a lookup. A lookup also touches the Box's lease,
-/// so a busy Box still gets one well inside crabbox's 30 min default idle timeout.
-const TARGET_TTL_MS: i64 = 10 * 60 * 1000;
 /// Time allowed for a request to a master; it goes over the local socket only.
 const CONTROL_DEADLINE: Duration = Duration::from_secs(5);
 /// Bytes of a master's log that go into an error message.
@@ -129,13 +127,11 @@ impl Crabbox {
 }
 
 impl Link {
-    /// The saved target words when they were looked up less than [`TARGET_TTL_MS`] before `now`.
-    pub(super) fn saved(&self, now: Ts) -> Option<Vec<String>> {
+    /// The saved target words, however old: they hold until a call on them fails.
+    pub(super) fn saved(&self) -> Option<Vec<String>> {
         let text = fs::read_to_string(&self.target).ok()?;
         let saved = serde_json::from_str::<Saved>(&text).ok()?;
-        let age = now.as_millis().checked_sub(saved.at)?;
-        let fresh = (0..TARGET_TTL_MS).contains(&age) && !saved.words.is_empty();
-        fresh.then_some(saved.words)
+        (!saved.words.is_empty()).then_some(saved.words)
     }
 
     /// Saves `words`, looked up at `now`, for later calls; a failed save only costs a lookup.

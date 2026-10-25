@@ -347,16 +347,13 @@ fn an_ssh_failure_asks_crabbox_for_the_target_again() {
 }
 
 #[test]
-fn a_saved_target_is_looked_up_again_after_ten_minutes() {
+fn a_saved_target_is_never_looked_up_again_by_age_alone() {
     let lab = lab();
     lab.probe_tick().unwrap();
-    lab.clock.sleep(Duration::from_mins(9));
+    lab.clock.sleep(Duration::from_hours(3));
     lab.probe_tick().unwrap();
-    assert_eq!(lab.lookups(), 1, "within ten minutes");
-    lab.clock.sleep(Duration::from_mins(2));
-    lab.probe_tick().unwrap();
-    assert_eq!(lab.lookups(), 2, "after ten minutes");
-    assert_eq!(lab.connects(), 1, "a lookup keeps the connection");
+    assert_eq!(lab.lookups(), 1, "a lookup would touch the lease");
+    assert_eq!(lab.connects(), 1);
 }
 
 #[test]

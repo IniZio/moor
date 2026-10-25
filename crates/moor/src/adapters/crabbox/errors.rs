@@ -24,6 +24,8 @@ pub(super) enum Op {
     Sleep,
     /// Resuming a Box.
     Wake,
+    /// Touching a Box's lease.
+    Touch,
 }
 
 impl Op {
@@ -31,6 +33,7 @@ impl Op {
     const fn phrase(self) -> &'static str {
         match self {
             Self::Acquire => "box acquire",
+            Self::Touch => "box lease touch",
             Self::Release => "box release",
             Self::List => "box list",
             Self::Caps => "provider lookup",
