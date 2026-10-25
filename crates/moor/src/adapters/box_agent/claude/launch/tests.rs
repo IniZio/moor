@@ -540,13 +540,13 @@ fn check_preseed_without_interpreter(path: Option<&str>) {
     );
     fs::write(&file, r#"{"keep":1}"#).unwrap();
     let out = run_step_on(&setup, path);
-    assert!(out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("warning"));
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("could not preseed"));
     assert_eq!(fs::read_to_string(&file).unwrap(), r#"{"keep":1}"#);
 }
 
 #[test]
-fn preseed_without_an_interpreter_writes_fresh_or_warns() {
+fn preseed_without_an_interpreter_writes_fresh_or_fails() {
     forced(Interp::Neither, check_preseed_without_interpreter);
 }
 
@@ -585,15 +585,50 @@ fn preseed_trusts_the_resolved_workdir_without_an_interpreter() {
     forced(Interp::Neither, check_preseed_trusts_symlinked_workdir);
 }
 
+/// Claude Code takes a trusted repository root for any folder inside it.
+fn check_preseed_trusts_the_repository_root(path: Option<&str>) {
+    let t = TempDir::new().unwrap();
+    let c = ctx(t.path());
+    let repo = t.path().join("cache/repo");
+    let real = repo.join("sub/dir");
+    fs::create_dir_all(&real).unwrap();
+    fs::create_dir_all(repo.join(".git")).unwrap();
+    std::os::unix::fs::symlink(&real, c.workdir.as_str()).unwrap();
+    let file = format!("{}/.claude.json", c.home.as_str());
+    fs::create_dir_all(c.home.as_str()).unwrap();
+    let setup = Claude.preseed(&c).unwrap();
+
+    assert!(run_step_on(&setup, path).status.success());
+    let projects = &read_json(&file)["projects"];
+    for key in [c.workdir.as_str(), real.to_str().unwrap(), repo.to_str().unwrap()] {
+        assert_eq!(projects[key]["hasTrustDialogAccepted"], true, "{key}: {projects}");
+    }
+}
+
 #[test]
-fn preseed_failure_warns_and_succeeds() {
+fn preseed_trusts_the_repository_root_with_python3_only() {
+    forced(Interp::Python, check_preseed_trusts_the_repository_root);
+}
+
+#[test]
+fn preseed_trusts_the_repository_root_with_node_only() {
+    forced(Interp::Node, check_preseed_trusts_the_repository_root);
+}
+
+#[test]
+fn preseed_trusts_the_repository_root_without_an_interpreter() {
+    forced(Interp::Neither, check_preseed_trusts_the_repository_root);
+}
+
+#[test]
+fn preseed_failure_fails_the_step() {
     let t = TempDir::new().unwrap();
     let c = ctx(t.path());
     let path = format!("{}/.claude.json", c.home.as_str());
     fs::create_dir_all(c.home.as_str()).unwrap();
     fs::write(&path, "not json").unwrap();
     let out = run_step(&Claude.preseed(&c).unwrap());
-    assert!(out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("warning"));
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("could not preseed"));
     assert_eq!(fs::read_to_string(&path).unwrap(), "not json");
 }

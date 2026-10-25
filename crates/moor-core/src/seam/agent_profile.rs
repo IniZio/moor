@@ -193,7 +193,7 @@ pub trait AgentProfile: Send + Sync {
 
     /// Records the agent's first-run answers so it opens without prompts.
     ///
-    /// The step only warns on failure.
+    /// The step fails when it cannot record them.
     ///
     /// # Errors
     /// Returns a [`NameError`] when a path cannot be formed.
