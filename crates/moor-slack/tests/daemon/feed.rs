@@ -127,6 +127,11 @@ fn each_box_keeps_one_status_message_edited_in_place_and_never_posted_twice() {
 fn a_working_box_silent_for_ten_minutes_has_a_stall_hint_in_its_status_edit() {
     let (rig, controller, _bin, post) = thread_with_status();
     controller.emit_ago(11 * 60, (BOX_ID, BOX_NAME, "working"), json!({}));
+    controller.emit_ago(
+        11 * 60,
+        (BOX_ID, BOX_NAME, "session_started"),
+        json!({"session": "s"}),
+    );
     let want = format!(
         "{}\nNo event for 11m. It may be stuck.",
         status("working (11m)")
