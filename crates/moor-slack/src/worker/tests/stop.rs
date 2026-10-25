@@ -127,7 +127,7 @@ fn a_press_on_a_closing_box_says_so_and_stops_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
     let name = shown(&db).box_name;
-    db.mark_closing(&name).unwrap();
+    db.mark_closing(&name, false).unwrap();
     let job = click(&press(name.as_str(), "U1", "env-1"), &db, 1).unwrap();
     let Some(Job::Ephemeral { user, text, .. }) = job else {
         panic!("expected a refusal, got {job:?}");

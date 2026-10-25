@@ -293,6 +293,7 @@ fn a_closing_box_says_so_whatever_its_last_event() {
         RowState::Closing {
             box_id: ID,
             branch: None,
+            discard: false,
         },
         Some("9.9"),
         Some("*fix-bug*: working (<1m)"),
@@ -363,6 +364,7 @@ fn a_closing_or_gone_box_loses_the_button_even_while_its_view_says_working() {
     let closing = RowState::Closing {
         box_id: ID,
         branch: None,
+        discard: false,
     };
     let gone = RowState::Gone {
         box_id: ID,

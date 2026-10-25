@@ -56,14 +56,16 @@ pub(crate) const SPECS: [Spec; 10] = [
     },
     Spec {
         name: "close_box",
-        description: "Close one of this thread's Boxes. The thread is told when it has closed, \
-                      or why the controller refused. Works only when the person who asked for \
-                      the Box wrote in this turn.",
+        description: "Ask to close one of this thread's Boxes. The close runs after this call \
+                      returns; the thread is told whether it closed or why it was refused. A \
+                      Box holding work that is not pushed is not closed unless discard is set. \
+                      Works only when the person who asked for the Box wrote in this turn.",
         input: || {
             json!({
                 "type": "object",
                 "properties": {
-                    "box": {"type": "string", "description": "The Box's name, as list_boxes shows it."}
+                    "box": {"type": "string", "description": "The Box's name, as list_boxes shows it."},
+                    "discard": {"type": "boolean", "description": "Set only after the thread's starter has confirmed in the thread that unsaved work may be lost. It discards the Box's unpushed commits and uncommitted files."}
                 },
                 "required": ["box"],
                 "additionalProperties": false
