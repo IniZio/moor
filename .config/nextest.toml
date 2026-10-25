@@ -1,2 +1,6 @@
+# The tests mostly wait on child processes and timers, not the CPU, so run more than one per core.
+[profile.default]
+test-threads = 16
+
 [profile.timing.junit]
 path = "junit.xml"
