@@ -53,6 +53,10 @@ pub struct Settings {
     pub proxy_port: Option<u16>,
     /// The PEM certificate of the CA the front Proxy signs with.
     pub proxy_ca_pem: Option<String>,
+    /// The variables that name the egress proxy the front shim gave the daemon, such as
+    /// `HTTPS_PROXY` and `NO_PROXY`, with their values; empty where the front reaches the
+    /// internet directly.
+    pub egress_proxy: Vec<(String, OsString)>,
     /// The current time in unix seconds.
     pub clock: fn() -> i64,
     /// Set when the daemon is asked to stop: it stops acking events, finishes the request in
@@ -248,6 +252,7 @@ fn probe(cfg: &Config, settings: &Settings, log: &Log) -> Result<Arc<dyn Agent>,
     let host = HostEnv {
         home: settings.home.clone(),
         user: settings.user.clone(),
+        egress_proxy: settings.egress_proxy.clone(),
     };
     let c = &cfg.coordinator;
     let binary = c.binary.as_deref();

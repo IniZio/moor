@@ -140,6 +140,10 @@ fn main() -> ExitCode {
                 .ok()
                 .and_then(|port| port.parse().ok()),
             proxy_ca_pem: std::env::var("MOOR_FRONT_PROXY_CA_PEM").ok(),
+            egress_proxy: moor_slack::EGRESS_PROXY_VARS
+                .into_iter()
+                .filter_map(|var| Some((var.to_owned(), std::env::var_os(var)?)))
+                .collect(),
             clock: unix_now,
             stop,
         };

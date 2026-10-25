@@ -17,6 +17,7 @@ fn claude(bin: &Path) -> Claude {
     let host = HostEnv {
         home: Some("/home/op".into()),
         user: Some("op".into()),
+        egress_proxy: crate::coordinator::claude::tests::egress_proxy(),
     };
     Claude::probe(&install(bin, None), host).unwrap()
 }
