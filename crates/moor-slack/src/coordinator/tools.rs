@@ -11,75 +11,6 @@ use serde_json::Value;
 use super::context::{action_line, Action};
 use crate::db::{BoxState, Db, OpenTurn, Prompt, SlackBox};
 
-/// One tool call, parsed from its name and arguments.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Call {
-    /// `list_boxes`.
-    ListBoxes,
-    /// `start_box`.
-    StartBox {
-        /// What the Box should do.
-        goal: String,
-        /// The repo as given, when given.
-        repo: Option<String>,
-    },
-    /// `steer_box`.
-    SteerBox {
-        /// The Box's name as given.
-        box_name: String,
-        /// What to send.
-        text: String,
-    },
-    /// `close_box`.
-    CloseBox {
-        /// The Box's name as given.
-        box_name: String,
-    },
-    /// `answer_box`.
-    AnswerBox {
-        /// The Box's name as given.
-        box_name: String,
-        /// The id of the prompt to answer.
-        prompt: i64,
-        /// The option to pick, numbered from 1.
-        choice: u32,
-    },
-}
-
-impl Call {
-    /// The call `name` with `args`, or why it is not one.
-    pub(crate) fn parse(name: &str, args: &Value) -> Result<Self, String> {
-        let text = |key: &str| {
-            args.get(key)
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|v| !v.is_empty())
-                .map(str::to_owned)
-                .ok_or_else(|| format!("{name} needs a non-empty `{key}`."))
-        };
-        match name {
-            "list_boxes" => Ok(Self::ListBoxes),
-            "start_box" => Ok(Self::StartBox {
-                goal: text("goal")?,
-                repo: text("repo").ok(),
-            }),
-            "steer_box" => Ok(Self::SteerBox {
-                box_name: text("box")?,
-                text: text("text")?,
-            }),
-            "close_box" => Ok(Self::CloseBox {
-                box_name: text("box")?,
-            }),
-            "answer_box" => Ok(Self::AnswerBox {
-                box_name: text("box")?,
-                prompt: number(name, args, "prompt")?,
-                choice: number(name, args, "choice")?,
-            }),
-            other => Err(format!("There is no tool `{other}`.")),
-        }
-    }
-}
-
 /// What a tool says back: text for the model, and whether the call was refused or failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Reply {
@@ -138,6 +69,11 @@ pub(crate) fn run(scope: &mut Scope<'_>, call: &Call) -> Reply {
             prompt,
             choice,
         } => answer(scope, box_name, *prompt, *choice),
+        Call::ShowBox { box_name } => control::show(scope, box_name),
+        Call::InterruptBox { box_name } => control::interrupt(scope, box_name),
+        Call::SleepBox { box_name } => control::sleep(scope, box_name),
+        Call::WakeBox { box_name } => control::wake(scope, box_name),
+        Call::RestartAgent { box_name } => control::restart(scope, box_name),
     };
     ran.unwrap_or_else(|e| Reply::refused(format!("The front could not read slack.db: {e}")))
 }
@@ -299,6 +235,20 @@ fn close(scope: &Scope<'_>, box_name: &str) -> rusqlite::Result<Reply> {
     )))
 }
 
+/// The Box `box_name` names among this thread's Boxes, or the refusal.
+fn thread_box(scope: &Scope<'_>, box_name: &str) -> rusqlite::Result<Result<SlackBox, Reply>> {
+    let wanted = box_name.trim().trim_matches('`');
+    let rows = scope.db.thread_boxes(scope.channel, scope.thread_ts)?;
+    Ok(rows
+        .into_iter()
+        .find(|b| b.box_name.as_str() == wanted)
+        .ok_or_else(|| {
+            Reply::refused(format!(
+                "This thread has no Box `{wanted}`. Call list_boxes for its Boxes."
+            ))
+        }))
+}
+
 /// A Box a tool may change in this turn, with the turn and the journal row to write.
 struct Target {
     /// The turn that runs now.
@@ -322,13 +272,11 @@ fn changeable(
     let Some(turn) = db.open_turn(scope.channel, scope.thread_ts)? else {
         return Ok(Err(Reply::refused("No turn of this thread is running.")));
     };
-    let wanted = box_name.trim().trim_matches('`');
-    let rows = db.thread_boxes(scope.channel, scope.thread_ts)?;
-    let Some(boxed) = rows.into_iter().find(|b| b.box_name.as_str() == wanted) else {
-        return Ok(Err(Reply::refused(format!(
-            "This thread has no Box `{wanted}`. Call list_boxes for its Boxes."
-        ))));
+    let boxed = match thread_box(scope, box_name)? {
+        Ok(boxed) => boxed,
+        Err(refusal) => return Ok(Err(refusal)),
     };
+    let wanted = boxed.box_name.as_str();
     let by = boxed.requested_by.clone();
     if !turn.authors.contains(&by) {
         return Ok(Err(Reply::refused(format!(
@@ -386,7 +334,12 @@ mod spec;
 pub(crate) use spec::{names, SPECS};
 
 mod answer;
-use answer::{answer, number};
+use answer::answer;
+
+mod call;
+pub(crate) use call::Call;
+
+mod control;
 
 mod start;
 use start::start;

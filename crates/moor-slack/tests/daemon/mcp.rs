@@ -101,7 +101,12 @@ fn the_tool_server_answers_mcp_over_stdin_and_stdout() {
             "start_box",
             "steer_box",
             "close_box",
-            "answer_box"
+            "answer_box",
+            "show_box",
+            "interrupt_box",
+            "sleep_box",
+            "wake_box",
+            "restart_agent"
         ]
     );
     drop(stdin);

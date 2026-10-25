@@ -119,9 +119,14 @@ schema. Move it aside and start again with a fresh one.
   go into the next turn together. The front stops a turn that runs past 10
   minutes. Up to 4 turns run at once.
 - The coordinator's only tools are `list_boxes`, `start_box`, `steer_box`,
-  `close_box`, and `answer_box`. They act only on the thread's own Boxes. A
+  `close_box`, `answer_box`, `show_box`, `interrupt_box`, `sleep_box`,
+  `wake_box`, and `restart_agent`. They act only on the thread's own Boxes. A
   tool that changes a Box works only in a turn that holds a message from the
-  person who asked for that Box.
+  person who asked for that Box. `show_box` only reads (the agent's state,
+  the question or first-run screen it waits on, and the last lines of its
+  pane), so anyone in the thread may ask for it. `restart_agent` ends the
+  agent's session and resumes it, or starts the Box's goal over when there is
+  no session to resume.
 - Each Box's Session is a child Session of the thread's host Session. The
   Box's name is `slack-<thread ts>-<n>`, with each `.` in the thread
   timestamp replaced by `-`.
@@ -138,7 +143,9 @@ schema. Move it aside and start again with a fresh one.
   in whole minutes, how long the Box has been in it. A working Box that has
   emitted no event for 10 minutes gets a second line that says it may be
   stuck. The elapsed time changes the text once a minute, so a long phase adds
-  one edit a minute.
+  one edit a minute. While the Box is working or waiting on a question, the
+  message carries a Stop button; only the person who asked for the Box can use
+  it, and it interrupts the agent. The button goes when the Box closes.
 - When a Box's agent asks a question, the front posts it with one button per
   option, up to 25. Only the person who asked for the Box can answer.
 - Each file version a Box publishes is uploaded into the thread, normally once.
