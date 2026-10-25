@@ -6,7 +6,7 @@ use std::sync::Arc;
 use crate::activity::Probes;
 use crate::box_key::BoxKey;
 use crate::name::{BoxHandle, BoxId, BoxName, BoxPath, NameError};
-use crate::seam::agent_profile::{PromptMatch, ProxyAddr};
+use crate::seam::agent_profile::{AgentInstall, PromptMatch, ProxyAddr};
 use crate::seam::driver::DriverError;
 use crate::seam::proc::Deadline;
 use crate::seam::surface::{PaneRef, WorkspaceRef};
@@ -189,6 +189,11 @@ pub trait Engine: Send + Sync {
 
     /// Whether the agent runs no hook while a first-run screen holds its pane.
     fn hooks_quiet_during_first_run(&self) -> bool;
+
+    /// How to install the agent on a Box that lacks it; `None` when the engine has no installer.
+    fn agent_install(&self) -> Option<AgentInstall> {
+        None
+    }
 
     /// Delivers the brief and hooks to the Box and opens the agent's pane. The returned
     /// session has an empty `id` until the agent reports its own.

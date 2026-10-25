@@ -105,6 +105,8 @@ pub struct BoxSettings {
     pub tool_paths: ToolsConfig,
     /// Repo and operator `cache:` sections.
     pub cache: CacheLayers,
+    /// Whether moor installs the agent on a Box that lacks it: user config only, on by default.
+    pub install_agent: bool,
 }
 
 /// Builds the sorted credential plan from box credentials and MCP refs.
@@ -173,6 +175,7 @@ impl BoxSettings {
                 repo: r.cache.clone(),
                 operator: user.cache.clone(),
             },
+            install_agent: user.agent.install.unwrap_or(true),
         }
     }
 }

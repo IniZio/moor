@@ -3,11 +3,13 @@
 use moor_core::activity::{HookKind, HookRecord};
 use moor_core::name::NameError;
 use moor_core::seam::agent_profile::{
-    AgentProfile, BoxSetup, EnvVar, FirstRunPrompt, Key, LaunchCtx, PromptMatch, NOTHING_TO_ARCHIVE,
+    AgentInstall, AgentProfile, BoxSetup, EnvVar, FirstRunPrompt, Key, LaunchCtx, PromptMatch,
+    NOTHING_TO_ARCHIVE,
 };
 use moor_core::seam::clock::Ts;
 use serde_json::Value;
 
+mod install;
 mod launch;
 
 /// Parses the state file Claude Code's hooks write.
@@ -63,6 +65,10 @@ impl AgentProfile for Claude {
             options,
             at: Ts::from_millis(secs.checked_mul(1000)?),
         })
+    }
+
+    fn install(&self) -> Option<AgentInstall> {
+        Some(install::native())
     }
 
     fn pane_prompt(&self, tail: &str) -> Option<String> {

@@ -279,7 +279,8 @@ fn script(
 
 /// The line that puts the agent's install directories on the Box's `PATH`, in the launch script
 /// and in the check that the agent command exists.
-const AGENT_PATH_LINE: &str = "export PATH=\"$HOME/.local/bin:$HOME/.bun/bin:$PATH\"";
+pub(in crate::adapters::box_agent) const AGENT_PATH_LINE: &str =
+    "export PATH=\"$HOME/.local/bin:$HOME/.bun/bin:$PATH\"";
 
 /// The script the Box runs under `sh`; the credential directory goes once the brief is
 /// installed, and at exit or on a hangup, interrupt or terminate before then. The `strip_env`

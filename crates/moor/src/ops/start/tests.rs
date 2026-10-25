@@ -18,6 +18,7 @@ use crate::testing::surface::FakeSurface;
 use crate::testing::{box_name, driver::FakeDriver};
 
 mod activity;
+mod agent_install;
 mod branch_owner;
 mod cache;
 mod capacity;
