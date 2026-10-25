@@ -42,6 +42,7 @@ fn bound_box(db: &Db) -> SlackBox {
         box_name: BoxName::parse_allow_bare("slack-1-1").unwrap(),
         repo: "acme/app".into(),
         goal: "fix it".into(),
+        base: None,
         requested_by: "U1".into(),
         parent: None,
         state: BoxState::Starting,

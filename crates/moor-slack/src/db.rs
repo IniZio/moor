@@ -15,7 +15,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The schema version this build writes and reads. A schema change edits [`SCHEMA`] in place
 /// and raises this number; there are no migrations, so a file at any other version is refused.
-const SCHEMA_VERSION: i64 = 14;
+const SCHEMA_VERSION: i64 = 15;
 
 /// The whole schema, created in an empty file.
 const SCHEMA: &str = "
@@ -37,6 +37,7 @@ const SCHEMA: &str = "
         n INTEGER NOT NULL,
         repo TEXT NOT NULL,
         goal TEXT NOT NULL,
+        base TEXT,
         parent INTEGER,
         requested_by TEXT NOT NULL,
         state TEXT NOT NULL CHECK (state IN ('starting', 'bound', 'closing', 'gone')),

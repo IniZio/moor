@@ -65,6 +65,15 @@ fn start(goal: &str, repo: Option<&str>) -> Call {
     Call::StartBox {
         goal: goal.into(),
         repo: repo.map(str::to_owned),
+        base: None,
+    }
+}
+
+fn start_from(goal: &str, base: &str) -> Call {
+    Call::StartBox {
+        goal: goal.into(),
+        repo: Some("acme/api".into()),
+        base: Some(base.to_owned()),
     }
 }
 
@@ -92,6 +101,33 @@ fn start_box_records_the_box_on_the_channel_default_with_the_host_session_as_par
         (journal[0].tool.as_str(), &journal[0].outcome),
         ("start_box", &outcome)
     );
+}
+
+#[test]
+fn start_box_stores_the_base_it_is_given_and_none_without_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = fresh_thread(dir.path(), Some("acme/web"));
+    turn_of(&db, "U1", "Ev1");
+    let based = start_with(&db, &start_from("set up", "moor-setup"), 2);
+    assert!(!based.is_error, "{based:?}");
+    let plain = start_with(&db, &start("set up", None), 2);
+    assert!(!plain.is_error, "{plain:?}");
+    let [based, plain] = db.thread_boxes("C1", "1.0").unwrap().try_into().unwrap();
+    assert_eq!(based.base.as_deref(), Some("moor-setup"));
+    assert_eq!(plain.base, None);
+}
+
+#[test]
+fn start_box_reads_base_from_the_tool_arguments() {
+    let args = serde_json::json!({"goal": "g", "base": " moor-setup "});
+    let with = Call::StartBox {
+        goal: "g".into(),
+        repo: None,
+        base: Some("moor-setup".into()),
+    };
+    assert_eq!(Call::parse("start_box", &args), Ok(with));
+    let args = serde_json::json!({"goal": "g"});
+    assert_eq!(Call::parse("start_box", &args), Ok(start("g", None)));
 }
 
 #[test]

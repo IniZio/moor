@@ -17,6 +17,7 @@ fn starting(thread_ts: &str, name: &str, owner: &str) -> SlackBox {
         box_name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "api".into(),
         goal: "fix it".into(),
+        base: None,
         requested_by: owner.into(),
         parent: None,
         state: BoxState::Starting,

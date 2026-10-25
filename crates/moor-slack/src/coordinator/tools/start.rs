@@ -9,7 +9,12 @@ use crate::db::{BoxState, ChannelRepo, OpenTurn, SlackBox};
 /// `start_box`: the journal row and a `starting` Box row, in one transaction. The Box asks for
 /// the thread's host Session as its parent. The worker sends the start and posts its result in
 /// the thread.
-pub(super) fn start(scope: &Scope<'_>, goal: &str, repo: Option<&str>) -> rusqlite::Result<Reply> {
+pub(super) fn start(
+    scope: &Scope<'_>,
+    goal: &str,
+    repo: Option<&str>,
+    base: Option<&str>,
+) -> rusqlite::Result<Reply> {
     let (db, channel, thread_ts) = (scope.db, scope.channel, scope.thread_ts);
     let Some(turn) = db.open_turn(channel, thread_ts)? else {
         return Ok(Reply::refused("No turn of this thread is running."));
@@ -37,6 +42,7 @@ pub(super) fn start(scope: &Scope<'_>, goal: &str, repo: Option<&str>) -> rusqli
         box_name,
         repo: repo.clone(),
         goal: goal.to_owned(),
+        base: base.map(str::to_owned),
         requested_by: by.clone(),
         parent: db.root_session(channel, thread_ts)?.map(SessionId::new),
         state: BoxState::Starting,

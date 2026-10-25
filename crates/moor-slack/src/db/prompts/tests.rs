@@ -23,6 +23,7 @@ fn with_box(dir: &std::path::Path, names: &[&str]) -> Db {
             box_name: BoxName::parse_allow_bare(name).unwrap(),
             repo: "acme/app".into(),
             goal: "fix".into(),
+            base: None,
             requested_by: "U1".into(),
             parent: None,
             state: BoxState::Starting,
