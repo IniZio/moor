@@ -252,9 +252,9 @@ pub(super) fn launch_req(cx: &Cx, row: &BoxRow, setup_exit: Option<i32>) -> Opti
     }
     let strip_env = box_exec::strip_env(cx, b.provider.as_str());
     Some(LaunchReq {
-        mcp: cx
-            .config()
-            .mcp_servers
+        mcp: crate::ops::users::mcp::for_box(cx, row.user)
+            .map(|m| m.servers)
+            .unwrap_or_default()
             .iter()
             .map(|(name, server)| (name.clone(), server.in_box()))
             .collect(),

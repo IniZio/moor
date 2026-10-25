@@ -17,6 +17,8 @@ use crate::error::CommandError;
 use crate::store::Store;
 use crate::vault::Vault;
 
+pub(crate) mod mcp;
+
 /// How long a link code stays redeemable.
 const LINK_CODE_TTL: Duration = Duration::from_secs(600);
 
@@ -49,6 +51,17 @@ pub(crate) fn run(
             let names = store.user_secret_names(enrolled(store, who)?)?;
             to_value(&SecretNamesValue { names })
         }
+        UserCmd::McpAdd {
+            name,
+            url,
+            header,
+            key,
+        } => {
+            let user = enrolled(store, who)?;
+            mcp::add(cx, vault, user, (name, url, header.as_deref()), key.as_ref())
+        }
+        UserCmd::McpRemove { name } => mcp::remove(store, enrolled(store, who)?, name),
+        UserCmd::McpList => mcp::list(store, enrolled(store, who)?),
         UserCmd::LinkCode => {
             let user = enrolled(store, who)?;
             let code = mint_code()?;

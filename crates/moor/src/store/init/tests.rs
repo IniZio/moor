@@ -242,8 +242,9 @@ fn a_file_from_the_last_build_before_migrations_is_adopted_unchanged() {
         .position(|(t, _)| t == "refinery_schema_history");
     assert_eq!(
         history.map(|i| after.remove(i)),
-        Some(("refinery_schema_history".into(), 2))
+        Some(("refinery_schema_history".into(), 3))
     );
+    after.retain(|(t, _)| t != "user_mcp_servers");
     assert_eq!(after, before, "every table and row kept");
     assert_eq!(version(&conn), "16");
 }
@@ -257,7 +258,37 @@ fn applied_migrations_are_never_edited() {
         .collect();
     assert_eq!(
         pinned,
-        [(1, 7_584_322_431_300_515_816), (2, 72_415_543_002_251_104)],
+        [
+            (1, 7_584_322_431_300_515_816),
+            (2, 72_415_543_002_251_104),
+            (3, 5_219_232_375_637_337_112),
+        ],
         "a schema change is a new migration file; an applied one must not change"
     );
+}
+
+#[test]
+fn a_file_at_migration_2_gains_user_mcp_servers_and_keeps_its_rows() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("moor.db");
+    let mut conn = Connection::open(&path).unwrap();
+    let up_to_2 = &super::schema().unwrap()[..2];
+    moor_migrate::migrate(&mut conn, up_to_2, |_| Ok(moor_migrate::Legacy::Empty)).unwrap();
+    conn.execute_batch(
+        "INSERT INTO users (id, created_at) VALUES (7, 1);
+         INSERT INTO user_secrets (user, name, value, updated_at) VALUES (7, 'claude', x'00', 1);",
+    )
+    .unwrap();
+    let before = tables(&conn);
+    init_schema(&mut conn, &path).unwrap();
+    let mut after = tables(&conn);
+    assert!(after.contains(&("user_mcp_servers".into(), 0)), "{after:?}");
+    after.retain(|(t, _)| t != "user_mcp_servers" && t != "refinery_schema_history");
+    let mut before = before;
+    before.retain(|(t, _)| t != "refinery_schema_history");
+    assert_eq!(after, before, "every table and row kept");
+    let applied: i64 = conn
+        .query_row("SELECT MAX(version) FROM refinery_schema_history", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(applied, 3);
 }

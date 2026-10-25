@@ -53,7 +53,6 @@ pub(crate) fn unresolved(
     s.credentials
         .iter()
         .map(|c| credential_item(c, Some(have)))
-        .chain(user_mcp_items(s, Some(have)))
         .chain(repo_mcp_items(files))
         .filter(|i| i.resolves == Some(false))
         .collect()

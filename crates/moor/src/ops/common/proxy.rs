@@ -2,7 +2,9 @@
 
 use moor_core::config::check::{agent_env_reserved, credential_like_env};
 use moor_core::config::proxy::{resolve_rules, ResolvedRule};
-use moor_core::config::BoxSettings;
+use std::collections::BTreeMap;
+
+use moor_core::config::{BoxSettings, McpServer};
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::Warning;
 
@@ -37,14 +39,18 @@ pub(crate) fn agent_env(cx: &Cx, settings: &BoxSettings) -> Vec<(String, String)
         .collect()
 }
 
-/// Resolves the proxy plan of a Box of `repo`.
+/// Resolves the proxy plan of a Box of `repo` with the MCP servers `mcp`.
 ///
 /// # Errors
 /// The message of a rule that does not resolve.
-pub(crate) fn plan(cx: &Cx, repo: Option<&ForgeRepo>) -> Result<ProxyPlan, String> {
+pub(crate) fn plan(
+    cx: &Cx,
+    repo: Option<&ForgeRepo>,
+    mcp: &BTreeMap<String, McpServer>,
+) -> Result<ProxyPlan, String> {
     let repo = repo.cloned();
     let rules = resolve_rules(
-        &cx.config().box_proxy(),
+        &cx.config().box_proxy(mcp),
         repo.as_ref().map(|r| (r.owner.as_str(), r.name.as_str())),
     )
     .map_err(|e| e.to_string())?;

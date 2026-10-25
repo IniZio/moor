@@ -43,6 +43,10 @@ pub(super) fn schema() -> Result<Vec<Migration>, StoreError> {
             "V2__tables_made_on_open.sql",
             include_str!("../../migrations/V2__tables_made_on_open.sql"),
         ),
+        (
+            "V3__user_mcp_servers.sql",
+            include_str!("../../migrations/V3__user_mcp_servers.sql"),
+        ),
     ])
     .map_err(|e| StoreError::Corrupt(format!("migration files: {e}")))
 }
