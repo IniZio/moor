@@ -162,6 +162,18 @@ pub enum Event {
         /// What went wrong.
         message: String,
     },
+    /// The agent did not start within `box.launch_timeout`, so the Box now reads quiet.
+    LaunchTimedOut {
+        /// The configured limit, in seconds.
+        after_secs: u64,
+    },
+    /// moor refused another automatic agent relaunch.
+    RelaunchCapped {
+        /// Relaunches within the window.
+        count: usize,
+        /// The window, in seconds.
+        window_secs: u64,
+    },
     /// The agent was started again after its pane ended.
     Relaunched {
         /// The pane of the session that ended.

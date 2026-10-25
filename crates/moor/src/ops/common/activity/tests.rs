@@ -44,6 +44,7 @@ impl Reading {
             run_in_flight,
             session: None,
             launch_failure: None,
+            launch_overdue: None,
             agent_session: None,
             pane_text: None,
             said: None,

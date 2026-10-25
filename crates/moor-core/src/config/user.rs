@@ -33,6 +33,9 @@ const DEFAULT_MAX_AWAKE: Duration = Duration::from_hours(2);
 /// Label shown for [`DEFAULT_SLEEP_AFTER`].
 const DEFAULT_SLEEP_AFTER_LABEL: &str = "30m";
 
+/// Time an agent launch may take before it counts as timed out when `box.launch_timeout` is unset.
+const DEFAULT_LAUNCH_TIMEOUT: Duration = Duration::from_mins(3);
+
 /// Box size class.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -77,9 +80,20 @@ pub struct BoxConfig {
     pub sleep_after_blocked: Option<String>,
     /// Awake time before any Box sleeps.
     pub max_awake: Option<String>,
+    /// Time an agent launch may take before the Box counts as quiet.
+    pub launch_timeout: Option<String>,
 }
 
 impl BoxConfig {
+    /// Time an agent launch may take: the configured value or the default.
+    #[must_use]
+    pub fn launch_timeout(&self) -> Duration {
+        self.launch_timeout
+            .as_deref()
+            .and_then(|t| parse_duration(t).ok())
+            .unwrap_or(DEFAULT_LAUNCH_TIMEOUT)
+    }
+
     /// Idle time before a Box sleeps: the configured value or the default.
     #[must_use]
     pub fn sleep_after(&self) -> Duration {
@@ -116,6 +130,7 @@ impl BoxConfig {
             ("box.sleep_after", &self.sleep_after),
             ("box.sleep_after_blocked", &self.sleep_after_blocked),
             ("box.max_awake", &self.max_awake),
+            ("box.launch_timeout", &self.launch_timeout),
         ] {
             if let Some(t) = value {
                 parse_duration(t).map_err(|why| ConfigError::new(key, why))?;

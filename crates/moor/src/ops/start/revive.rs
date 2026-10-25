@@ -4,9 +4,10 @@ use std::time::Duration;
 
 use moor_core::config::Flags;
 use moor_core::domain::box_state::BoxLifecycle;
+use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::seam::proxy_host::ProxyStatus;
 use moor_core::view::AgentLaunchView;
-use moor_core::{BoxId, StartReq};
+use moor_core::{BoxId, ErrorKind, StartReq};
 
 use super::relaunch::{ended, record_relaunch, relaunch, Ended};
 use super::{launch, reopen, watch};
@@ -22,6 +23,15 @@ const TUNNEL_WAIT: Duration = Duration::from_secs(60);
 const TUNNEL_POLL: Duration = Duration::from_secs(1);
 /// How long the tunnel must go without restarting before the agent relaunches.
 const TUNNEL_SETTLE: Duration = Duration::from_secs(5);
+/// Automatic relaunches one Box may have within `RELAUNCH_WINDOW`.
+const RELAUNCH_CAP: usize = 3;
+
+/// The window `RELAUNCH_CAP` counts over.
+const RELAUNCH_WINDOW: Duration = Duration::from_mins(10);
+
+/// Recent events searched for relaunches.
+const CAP_EVENTS: usize = 100;
+
 /// Recent events searched for a tunnel restart.
 const TUNNEL_EVENTS: usize = 50;
 
@@ -86,6 +96,7 @@ fn revive(
     if ended_pane.is_none() && !(revivable(row) && reopen::ended_session(store, id, None)?) {
         return Ok(AgentLaunchView::default());
     }
+    check_cap(cx, store, row)?;
     super::wake_idle(store, id)?;
     await_tunnel(cx, store, id);
     let req = StartReq {
@@ -113,6 +124,47 @@ fn revive(
         Some((old, end)) => relaunch(cx, store, &req, (old, end), (false, Some(cause)), &settings)?,
     };
     Ok(watch::run(cx, store, id, view))
+}
+
+/// Refuses another automatic relaunch once `RELAUNCH_CAP` have happened within `RELAUNCH_WINDOW`.
+///
+/// Only the first refusal after a relaunch is recorded as `relaunch_capped`. An explicit
+/// `moor start --resume` is not an automatic relaunch and never meets the cap.
+fn check_cap(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
+    let now = cx.clock().now().as_millis();
+    let window = i64::try_from(RELAUNCH_WINDOW.as_millis()).unwrap_or(i64::MAX);
+    let events = store.events(row.id, CAP_EVENTS)?;
+    let recent = events
+        .iter()
+        .filter(|e| {
+            e.kind == "relaunched"
+                && e.payload.get("cause").is_some_and(|c| !c.is_null())
+                && now.saturating_sub(e.ts.as_millis()) < window
+        })
+        .count();
+    if recent < RELAUNCH_CAP {
+        return Ok(());
+    }
+    let recorded = events
+        .iter()
+        .rev()
+        .find(|e| matches!(e.kind.as_str(), "relaunched" | "relaunch_capped"))
+        .is_some_and(|e| e.kind == "relaunch_capped");
+    if !recorded {
+        let event = ExtraEvent::RelaunchCapped {
+            count: recent,
+            window_secs: RELAUNCH_WINDOW.as_secs(),
+        };
+        store.apply(Decision::new(row.id).event(event))?;
+    }
+    let name = row.name.as_str();
+    Err(CommandError::new(
+        ErrorKind::Refused,
+        format!(
+            "moor relaunched the agent of Box {name} {recent} times in the last {} minutes, so it will not relaunch it again on its own; once you know why it keeps ending, start it again with `moor start {name} --resume`",
+            RELAUNCH_WINDOW.as_secs() / 60
+        ),
+    ))
 }
 
 /// Whether `row` holds a goal or an agent session to start again.
