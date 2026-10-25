@@ -187,6 +187,35 @@ fn first_run_prompts_are_told_apart() {
         Some(FirstRunPrompt::BypassPermissions)
     );
     assert_eq!(first_run("❯ 2. Light mode"), Some(FirstRunPrompt::Theme));
+    assert_eq!(
+        first_run("New MCP server found in this project: db"),
+        Some(FirstRunPrompt::McpServers)
+    );
+    assert_eq!(
+        first_run("3 new MCP servers found in this project"),
+        Some(FirstRunPrompt::McpServers)
+    );
+    assert_eq!(
+        first_run("Allow external CLAUDE.md file imports?"),
+        Some(FirstRunPrompt::ExternalImports)
+    );
+}
+
+#[test]
+fn every_first_run_prompt_has_a_distinct_name() {
+    let names = [
+        FirstRunPrompt::BypassPermissions,
+        FirstRunPrompt::FolderTrust,
+        FirstRunPrompt::PressEnter,
+        FirstRunPrompt::SecurityNotes,
+        FirstRunPrompt::Theme,
+        FirstRunPrompt::McpServers,
+        FirstRunPrompt::ExternalImports,
+    ]
+    .map(FirstRunPrompt::name);
+    assert_eq!(names[5..], ["mcp_servers", "external_imports"]);
+    let unique: std::collections::BTreeSet<_> = names.iter().collect();
+    assert_eq!(unique.len(), names.len());
 }
 
 #[test]

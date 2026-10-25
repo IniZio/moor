@@ -112,6 +112,10 @@ pub enum FirstRunPrompt {
     SecurityNotes,
     /// Asks for a colour theme.
     Theme,
+    /// Asks whether to run the MCP servers the project declares.
+    McpServers,
+    /// Asks whether to load files the agent's instructions import from outside the project.
+    ExternalImports,
 }
 
 impl FirstRunPrompt {
@@ -124,6 +128,8 @@ impl FirstRunPrompt {
             Self::PressEnter => "press_enter",
             Self::SecurityNotes => "security_notes",
             Self::Theme => "theme",
+            Self::McpServers => "mcp_servers",
+            Self::ExternalImports => "external_imports",
         }
     }
 }
