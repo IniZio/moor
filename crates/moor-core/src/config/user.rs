@@ -24,6 +24,12 @@ const DEFAULT_HERDR_SESSION: &str = "moor";
 /// Idle time before a Box sleeps when `box.sleep_after` is unset.
 pub const DEFAULT_SLEEP_AFTER: Duration = Duration::from_mins(30);
 
+/// Idle time before a Box waiting on a prompt sleeps when `box.sleep_after_blocked` is unset.
+const DEFAULT_SLEEP_AFTER_BLOCKED: Duration = Duration::from_mins(5);
+
+/// Awake time before any Box sleeps when `box.max_awake` is unset.
+const DEFAULT_MAX_AWAKE: Duration = Duration::from_hours(2);
+
 /// Label shown for [`DEFAULT_SLEEP_AFTER`].
 const DEFAULT_SLEEP_AFTER_LABEL: &str = "30m";
 
@@ -67,16 +73,32 @@ pub struct BoxConfig {
     pub max_boxes: Option<NonZeroU32>,
     /// Idle time before a Box sleeps.
     pub sleep_after: Option<String>,
+    /// Idle time before a Box waiting on a prompt or a first-run screen sleeps.
+    pub sleep_after_blocked: Option<String>,
+    /// Awake time before any Box sleeps.
+    pub max_awake: Option<String>,
 }
 
 impl BoxConfig {
     /// Idle time before a Box sleeps: the configured value or the default.
     #[must_use]
     pub fn sleep_after(&self) -> Duration {
-        self.sleep_after
-            .as_deref()
-            .and_then(|t| parse_duration(t).ok())
-            .unwrap_or(DEFAULT_SLEEP_AFTER)
+        duration_or(self.sleep_after.as_deref(), DEFAULT_SLEEP_AFTER)
+    }
+
+    /// Idle time before a Box waiting on a prompt sleeps: the configured value or the default.
+    #[must_use]
+    pub fn sleep_after_blocked(&self) -> Duration {
+        duration_or(
+            self.sleep_after_blocked.as_deref(),
+            DEFAULT_SLEEP_AFTER_BLOCKED,
+        )
+    }
+
+    /// Awake time before any Box sleeps: the configured value or the default.
+    #[must_use]
+    pub fn max_awake(&self) -> Duration {
+        duration_or(self.max_awake.as_deref(), DEFAULT_MAX_AWAKE)
     }
 
     /// The idle time as text: as configured (trimmed), or `30m` when unset.
@@ -88,13 +110,24 @@ impl BoxConfig {
         )
     }
 
-    /// `sleep_after` parses as a duration.
+    /// Each sleep timer parses as a duration.
     fn validate(&self) -> Result<(), ConfigError> {
-        if let Some(t) = &self.sleep_after {
-            parse_duration(t).map_err(|why| ConfigError::new("box.sleep_after", why))?;
+        for (key, value) in [
+            ("box.sleep_after", &self.sleep_after),
+            ("box.sleep_after_blocked", &self.sleep_after_blocked),
+            ("box.max_awake", &self.max_awake),
+        ] {
+            if let Some(t) = value {
+                parse_duration(t).map_err(|why| ConfigError::new(key, why))?;
+            }
         }
         Ok(())
     }
+}
+
+/// `text` as a duration, or `default` when unset or unparsable.
+fn duration_or(text: Option<&str>, default: Duration) -> Duration {
+    text.and_then(|t| parse_duration(t).ok()).unwrap_or(default)
 }
 
 /// Parses `<positive integer><s|m|h|d>`, e.g. `45m`.

@@ -8,6 +8,8 @@ use crate::domain::session_state::SessionState;
 use crate::seam::clock::Ts;
 
 const AFTER: Duration = Duration::from_secs(600);
+const BLOCKED_MS: i64 = 300_000;
+const MAX_AWAKE_MS: i64 = 7_200_000;
 
 fn facts(
     lifecycle: BoxLifecycle,
@@ -21,6 +23,10 @@ fn facts(
         idle_since: idle_since.map(Ts::from_millis),
         now: Ts::from_millis(now),
         after: AFTER,
+        after_blocked: Duration::from_secs(300),
+        max_awake: Duration::from_secs(7200),
+        blocked: false,
+        awake_since: None,
     }
 }
 
@@ -119,4 +125,50 @@ fn extreme_timestamps_do_not_overflow() {
         i64::MIN,
     );
     assert_eq!(sleep_due(&f), SleepVerdict::NotYet);
+}
+
+fn limited(session: SessionState, blocked: bool, awake_since: Option<i64>, now: i64) -> SleepFacts {
+    SleepFacts {
+        blocked,
+        awake_since: awake_since.map(Ts::from_millis),
+        ..facts(BoxLifecycle::Ready, session, Some(0), now)
+    }
+}
+
+#[test]
+fn a_box_waiting_on_a_prompt_sleeps_after_the_blocked_timer() {
+    let at = |now| sleep_due(&limited(SessionState::Idle, true, None, now));
+    assert_eq!(at(BLOCKED_MS - 1), SleepVerdict::NotYet);
+    assert_eq!(at(BLOCKED_MS), SleepVerdict::Due);
+}
+
+#[test]
+fn an_idle_box_not_waiting_keeps_the_idle_timer() {
+    let f = limited(SessionState::Idle, false, None, BLOCKED_MS);
+    assert_eq!(sleep_due(&f), SleepVerdict::NotYet);
+}
+
+#[test]
+fn any_box_awake_past_the_cap_is_due_whatever_its_session() {
+    for session in [SessionState::Working, SessionState::Starting] {
+        let at = |now| sleep_due(&limited(session, false, Some(0), now));
+        assert_eq!(at(MAX_AWAKE_MS - 1), SleepVerdict::NotIdle, "{session:?}");
+        assert_eq!(at(MAX_AWAKE_MS), SleepVerdict::Due, "{session:?}");
+    }
+}
+
+#[test]
+fn the_awake_cap_needs_a_ready_box_and_a_known_wake() {
+    let asleep = SleepFacts {
+        awake_since: Some(Ts::from_millis(0)),
+        ..facts(
+            BoxLifecycle::Asleep,
+            SessionState::Working,
+            None,
+            MAX_AWAKE_MS,
+        )
+    };
+    assert_eq!(sleep_due(&asleep), SleepVerdict::NotIdle);
+    let unknown = limited(SessionState::Working, false, None, MAX_AWAKE_MS);
+    assert_eq!(sleep_due(&unknown), SleepVerdict::NotIdle);
 }
