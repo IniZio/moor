@@ -160,7 +160,7 @@ fn only_a_forced_sleep_and_a_relaunch_with_a_cause_owe_the_thread_a_line() {
     fold.take(at(3, "asleep", json!({"auto": true})));
     fold.take(at(4, "relaunched", json!({"cause": "steer"})));
     let want = vec![
-        (3, lifecycle::Note::SleptIdle),
+        (3, lifecycle::Note::AutoSlept),
         (4, lifecycle::Note::Relaunched),
     ];
     assert_eq!(fold.notes.get(&ID), Some(&want));
