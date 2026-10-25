@@ -5,8 +5,14 @@ use super::*;
 #[test]
 fn queries_run_against_the_real_schema() {
     let conn = Connection::open_in_memory().unwrap();
-    conn.execute_batch(include_str!("../../../crates/moor/src/store/schema.sql"))
-        .unwrap();
+    conn.execute_batch(include_str!(
+        "../../../crates/moor/migrations/V1__baseline.sql"
+    ))
+    .unwrap();
+    conn.execute_batch(include_str!(
+        "../../../crates/moor/migrations/V2__tables_made_on_open.sql"
+    ))
+    .unwrap();
     conn.execute_batch(
         "INSERT INTO boxes (id, name, repo, state, created_at, updated_at) VALUES (1, 'b', 'r', 'open', 0, 0);
          INSERT INTO events (id, box, kind, payload, ts) VALUES (7, 1, 'box_ready', '{}', 1000);

@@ -138,21 +138,3 @@ fn cursor_never_moves_backwards() {
     store.set_artifacts_through(t, first).unwrap();
     assert!(store.artifacts_due().unwrap().is_empty());
 }
-
-#[test]
-fn reopening_creates_the_cursor_table() {
-    let dir = tempfile::tempdir().unwrap();
-    let t = {
-        let store = open(dir.path());
-        let t = ready(&store, "a");
-        store
-            .writer()
-            .execute_batch("DROP TABLE artifact_cursors")
-            .unwrap();
-        t
-    };
-    let store = open(dir.path());
-    let e = event(&store, t, "idled");
-    store.set_artifacts_through(t, e).unwrap();
-    assert!(store.artifacts_due().unwrap().is_empty());
-}

@@ -1,2 +1,0 @@
-CREATE TABLE IF NOT EXISTS front_leases (token_hash TEXT PRIMARY KEY, front TEXT NOT NULL,
-  user INTEGER NOT NULL REFERENCES users(id), expires_at INTEGER NOT NULL);

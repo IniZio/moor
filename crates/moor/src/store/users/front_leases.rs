@@ -11,9 +11,6 @@ use sha2::{Digest, Sha256};
 
 use crate::store::{Store, StoreError};
 
-/// DDL for the lease table; idempotent, so it runs on every open.
-pub(in crate::store) const FRONT_LEASES_SQL: &str = include_str!("front_leases.sql");
-
 /// The hex SHA-256 of `token`, which is all the store keeps of it.
 fn hash(token: &[u8]) -> String {
     Sha256::digest(token)

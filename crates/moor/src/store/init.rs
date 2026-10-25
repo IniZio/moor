@@ -3,10 +3,11 @@
 use std::path::Path;
 
 use moor_core::cache::CacheSalt;
-use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior};
+use moor_migrate::{Legacy, Migration};
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
 use super::open::sibling;
-use super::{artifacts, bindings, lease, users, Store, StoreError, SCHEMA_SQL, SCHEMA_VERSION};
+use super::{Store, StoreError};
 
 impl Store {
     /// This state dir's cache key salt, made on first use and never changed.
@@ -28,7 +29,25 @@ impl Store {
     }
 }
 
-/// Refuse an existing db at another schema version without writing to it or its directory.
+/// The pre-migration schema version that migration 1 reproduces; a file at it is adopted.
+pub(super) const BASELINE_VERSION: &str = "16";
+
+/// moor.db's migrations, oldest first. Never edit an applied one; add a new file.
+pub(super) fn schema() -> Result<Vec<Migration>, StoreError> {
+    moor_migrate::migrations(&[
+        (
+            "V1__baseline.sql",
+            include_str!("../../migrations/V1__baseline.sql"),
+        ),
+        (
+            "V2__tables_made_on_open.sql",
+            include_str!("../../migrations/V2__tables_made_on_open.sql"),
+        ),
+    ])
+    .map_err(|e| StoreError::Corrupt(format!("migration files: {e}")))
+}
+
+/// Refuse an existing db this build would not migrate, without writing to it or its directory.
 ///
 /// A db with no `-wal` file is read as immutable, because a read-only open of a WAL-mode db
 /// creates the `-wal` and `-shm` files.
@@ -50,43 +69,45 @@ pub(super) fn refuse_other_version(db: &Path) -> Result<(), StoreError> {
         format!("file:{escaped}?mode=ro{immutable}"),
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
     )?;
-    has_current_meta(&conn, db).map(drop)
+    moor_migrate::check(&conn, &schema()?, legacy).map_err(|e| refused(db, e))
 }
 
-/// Create the schema when `meta` is absent, else refuse any version but [`SCHEMA_VERSION`].
-pub(super) fn init_schema(conn: &mut Connection, db: &Path) -> Result<(), StoreError> {
-    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    if !has_current_meta(&tx, db)? {
-        tx.execute_batch(SCHEMA_SQL)?;
-    }
-    tx.execute_batch(bindings::BINDINGS_SQL)?;
-    tx.execute_batch(lease::LEASE_SQL)?;
-    tx.execute_batch(artifacts::ARTIFACTS_SQL)?;
-    tx.execute_batch(users::front_leases::FRONT_LEASES_SQL)?;
-    tx.commit()?;
-    Ok(())
+/// Bring the db to the latest migration; one process migrates while others wait.
+pub(super) fn migrate(conn: &mut Connection, db: &Path) -> Result<(), StoreError> {
+    moor_migrate::migrate(conn, &schema()?, legacy).map_err(|e| refused(db, e))
 }
 
-/// True when `meta` exists; refuses a `meta` whose schema version is not [`SCHEMA_VERSION`].
-fn has_current_meta(conn: &Connection, db: &Path) -> Result<bool, StoreError> {
+/// What a db without a migration history holds, read from its `meta` schema version.
+fn legacy(conn: &Connection) -> rusqlite::Result<Legacy> {
     let has_meta: bool = conn.query_row(
         "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta')",
         [],
         |r| r.get(0),
     )?;
     if !has_meta {
-        return Ok(false);
+        return Ok(Legacy::Empty);
     }
     let sql = "SELECT v FROM meta WHERE k = 'schema_version'";
     let found: Option<String> = conn.query_row(sql, [], |r| r.get(0)).optional()?;
-    if found.as_deref() != Some(SCHEMA_VERSION) {
-        return Err(StoreError::Schema {
+    Ok(match found {
+        Some(v) if v == BASELINE_VERSION => Legacy::Baseline,
+        other => Legacy::Other(other.unwrap_or_else(|| "none".to_owned())),
+    })
+}
+
+/// The store error for a db this build will not migrate.
+fn refused(db: &Path, e: moor_migrate::Error) -> StoreError {
+    match e {
+        moor_migrate::Error::Unadoptable(found) => StoreError::Schema {
             db: db.to_path_buf(),
-            found: found.unwrap_or_else(|| "none".to_owned()),
-            want: SCHEMA_VERSION,
-        });
+            found,
+        },
+        moor_migrate::Error::Sqlite(e) => StoreError::Sqlite(e),
+        other => StoreError::Migration {
+            db: db.to_path_buf(),
+            source: other,
+        },
     }
-    Ok(true)
 }
 
 /// Parse a stored text value, naming the column on failure.

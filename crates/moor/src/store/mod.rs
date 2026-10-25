@@ -20,6 +20,8 @@ use rusqlite::{Connection, OpenFlags, Row};
 use driver_row::driver_from_row;
 use init::{parsed, parsed_opt};
 
+pub(crate) use error::StoreError;
+
 /// File name of the state database inside the state directory.
 pub(crate) const STORE_FILE: &str = "moor.db";
 
@@ -29,6 +31,7 @@ mod apply;
 pub(crate) mod artifacts;
 mod bindings;
 mod driver_row;
+mod error;
 pub(crate) use bindings::Binding;
 mod follow;
 #[cfg(test)]
@@ -56,10 +59,6 @@ pub(crate) use proxy::{EGRESS_PORT_MAX, EGRESS_PORT_MIN};
 pub(crate) use runs::{NewRun, RunOutcome, RunRow};
 pub(crate) use sessions::SessionRecord;
 
-/// Schema version this build reads and writes.
-pub(crate) const SCHEMA_VERSION: &str = "16";
-/// Full schema, applied once when the file has no `meta` table.
-const SCHEMA_SQL: &str = include_str!("schema.sql");
 /// How long a connection waits on a lock before `SQLITE_BUSY`.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// Column list shared by the box reads; session columns come from the current session.
@@ -69,62 +68,6 @@ const BOX_SELECT: &str = "SELECT b.id, b.name, b.repo, b.issue, b.goal, b.base, 
     b.attempted_handle, b.workdir, b.egress, b.sleep_reason, b.driver_updated_at, b.idle_since, b.launch_failure, \
     s.state, b.user, b.repo_config, b.author_name, b.author_email, b.cpus, b.mem_mib FROM boxes b LEFT JOIN sessions s ON s.box = b.id \
     AND s.ordinal = (SELECT MAX(ordinal) FROM sessions WHERE box = b.id)";
-
-/// Store failure.
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum StoreError {
-    /// `SQLite` failed.
-    #[error("sqlite: {0}")]
-    Sqlite(#[from] rusqlite::Error),
-    /// An event payload failed to (de)serialise.
-    #[error("json: {0}")]
-    Json(#[from] serde_json::Error),
-    /// The state directory or a database file could not be prepared.
-    #[error("io: {0}")]
-    Io(#[from] std::io::Error),
-    /// The file was written by a different schema version. moor never upgrades or removes it.
-    #[error(
-        "the state database {} has schema version `{found}` and this moor reads only `{want}`; \
-         use a fresh state dir: set MOOR_STATE_DIR to a new directory, or move the old one away \
-         (moor does not delete it)",
-        db.display()
-    )]
-    Schema {
-        /// The database file.
-        db: PathBuf,
-        /// Version found in `meta`.
-        found: String,
-        /// Version this build needs.
-        want: &'static str,
-    },
-    /// A box input or box input was illegal in the current state.
-    #[error("{0}")]
-    Illegal(#[from] moor_core::domain::Illegal),
-    /// No such box.
-    #[error("box {} not found", .0.get())]
-    NotFound(BoxId),
-    /// The decision or request was malformed.
-    #[error("invalid: {0}")]
-    Invalid(String),
-    /// A sleep was refused because other Sessions are still working.
-    #[error("sleep blocked: {busy} Sessions busy")]
-    SleepBlocked {
-        /// How many other Sessions are not idle.
-        busy: usize,
-    },
-    /// A stored value could not be parsed.
-    #[error("corrupt store: {0}")]
-    Corrupt(String),
-    /// An open box already has this name.
-    #[error("name `{}` is taken by an open box", .0.as_str())]
-    NameTaken(BoxName),
-    /// An open box already works on this branch.
-    #[error("branch `{0}` belongs to another open box")]
-    BranchTaken(String),
-    /// A user secret did not seal or open.
-    #[error(transparent)]
-    Vault(#[from] crate::vault::VaultError),
-}
 
 /// Box row joined to a box.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -227,7 +170,7 @@ pub(crate) struct Store {
 
 impl Store {
     /// Open (creating if needed) the store at `path`: state dir 0700, db, `-wal` and `-shm` 0600.
-    /// A db at another schema version is refused before anything writes to it or changes a mode.
+    /// A db this build would not migrate is refused before anything writes to it or changes a mode.
     pub(crate) fn open(path: &Path, clock: Arc<dyn Clock>) -> Result<Self, StoreError> {
         init::refuse_other_version(path)?;
         open::prepare(path)?;
@@ -236,7 +179,7 @@ impl Store {
         conn.execute_batch(
             "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;",
         )?;
-        init::init_schema(&mut conn, path)?;
+        init::migrate(&mut conn, path)?;
         open::tighten(path)?;
         Ok(Self {
             path: path.to_path_buf(),

@@ -1,0 +1,42 @@
+[package]
+name = "moor-migrate"
+version = "0.2.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+refinery-core = { version = "0.10", default-features = false, features = [
+  "rusqlite",
+] }
+time = { version = "0.3", features = ["parsing"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+unreachable_pub = "deny"
+
+[lints.clippy]
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+disallowed_methods = "deny"
+indexing_slicing = "deny"
+missing_docs_in_private_items = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+exit = "deny"
+string_slice = "deny"
+missing_errors_doc = "allow"
+allow_attributes_without_reason = "deny"
+cognitive_complexity = "deny"
+redundant_pub_crate = "allow"

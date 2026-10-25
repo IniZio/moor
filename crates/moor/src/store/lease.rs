@@ -11,22 +11,6 @@ use rusqlite::{params, Connection, Row};
 
 use super::{parsed_opt, Store, StoreError};
 
-/// DDL for the lease table; idempotent so existing files gain it on open.
-pub(super) const LEASE_SQL: &str = "\
-CREATE TABLE IF NOT EXISTS box_lease (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  box INTEGER NOT NULL REFERENCES boxes(id),
-  kind TEXT NOT NULL,
-  key TEXT NOT NULL,
-  state TEXT NOT NULL,
-  booted INTEGER NOT NULL DEFAULT 0,
-  pgid INTEGER, sid INTEGER, root_pid INTEGER, root_start INTEGER,
-  size_at_release INTEGER,
-  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
-  UNIQUE(box, kind, key));
-CREATE INDEX IF NOT EXISTS box_lease_box ON box_lease(box);
-";
-
 /// Columns read into a `LeaseRow`, in `row` order.
 const COLUMNS: &str = "id, box, kind, key, state, booted, pgid, sid, root_pid, root_start, \
                        size_at_release, updated_at";

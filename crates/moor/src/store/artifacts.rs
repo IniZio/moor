@@ -13,9 +13,6 @@ use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior}
 
 use super::{Store, StoreError};
 
-/// DDL for the artifacts table; idempotent so existing files gain it on open.
-pub(super) const ARTIFACTS_SQL: &str = include_str!("artifacts.sql");
-
 /// Columns of an `artifacts` row, in the order `artifact_from_row` reads them.
 const COLUMNS: &str =
     "id, box, session, name, version, kind, content_type, size, sha256, path, created_at";
