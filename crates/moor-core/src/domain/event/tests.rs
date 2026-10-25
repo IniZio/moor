@@ -197,6 +197,17 @@ fn all_events() -> Vec<Event> {
         Event::AgentDoing {
             text: s("Bash cargo test"),
         },
+        Event::AgentLinkLost {
+            pane: Some("%1".to_owned()),
+            exit: Some(137),
+        },
+        Event::AgentLinkRestored {
+            pane: "%2".to_owned(),
+        },
+        Event::AgentUnreachable {
+            attempts: 4,
+            error: "timed out".to_owned(),
+        },
     ]
 }
 
@@ -267,6 +278,9 @@ const fn event_index(e: &Event) -> usize {
         Event::LaunchTimedOut { .. } => 51,
         Event::RelaunchCapped { .. } => 52,
         Event::AgentDoing { .. } => 53,
+        Event::AgentLinkLost { .. } => 54,
+        Event::AgentLinkRestored { .. } => 55,
+        Event::AgentUnreachable { .. } => 56,
     }
 }
 
@@ -274,7 +288,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 54);
+    assert_eq!(all.len(), 57);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

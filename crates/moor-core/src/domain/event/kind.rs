@@ -1,6 +1,30 @@
 //! Kind name, payload and assertion helpers for [`Event`].
 
-use super::{Event, ASSERTED_KINDS};
+use super::Event;
+
+/// The event kinds the event tests pin. Frozen.
+pub const ASSERTED_KINDS: [&str; 20] = [
+    "started",
+    "rejected",
+    "waiting_for_box",
+    "setting_up",
+    "working",
+    "setup_failed",
+    "idled",
+    "busy",
+    "asleep",
+    "woke",
+    "closed",
+    "box_ready",
+    "box_failed",
+    "box_gone",
+    "box_deleted",
+    "box_asleep",
+    "session_started",
+    "ran",
+    "copied",
+    "credential_failed",
+];
 
 impl Event {
     /// The `snake_case` kind name; equals the serde tag.

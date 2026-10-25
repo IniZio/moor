@@ -6,30 +6,6 @@ use crate::domain::box_state::BoxLifecycle;
 pub use crate::domain::turn::TurnOutcome;
 use crate::name::RunId;
 
-/// The event kinds the event tests pin. Frozen.
-pub const ASSERTED_KINDS: [&str; 20] = [
-    "started",
-    "rejected",
-    "waiting_for_box",
-    "setting_up",
-    "working",
-    "setup_failed",
-    "idled",
-    "busy",
-    "asleep",
-    "woke",
-    "closed",
-    "box_ready",
-    "box_failed",
-    "box_gone",
-    "box_deleted",
-    "box_asleep",
-    "session_started",
-    "ran",
-    "copied",
-    "credential_failed",
-];
-
 /// One recorded fact about a box, serialized with its `kind` tag.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -391,6 +367,7 @@ pub enum Event {
 
 pub use boxes::box_events;
 pub use checked::CheckedCred;
+pub use kind::ASSERTED_KINDS;
 pub use steps::{lifecycle_events, session_events};
 
 mod boxes;

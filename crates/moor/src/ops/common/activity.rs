@@ -247,7 +247,7 @@ pub(crate) fn settle(
         transcript::save_on_turn(cx, store, row)?;
     }
     if let (PaneLiveness::Exited, Some(probed)) = (reading.pane, reading.session) {
-        if let Some(exit) = exited_agent(cx, store, row, reading, probed)? {
+        if let Some(Fate::Ended(exit)) = link::after_pane_end(cx, store, row, reading, probed)? {
             transcript::save_on_exit(cx, store, row, probed)?;
             end_exited_session(cx, store, row, exit, probed)?;
         }
@@ -293,38 +293,6 @@ pub(crate) fn settle(
         Err(StoreError::Illegal(_)) => Ok(()),
         Err(e) => Err(e.into()),
     }
-}
-
-/// The exit status of the agent whose pane `reading` saw end, or `None` when the session goes
-/// on: a new pane attached to the agent, the session is not the probed one, or another
-/// operation holds the Box lock.
-fn exited_agent(
-    cx: &Cx,
-    store: &Store,
-    row: &BoxRow,
-    reading: &Reading,
-    probed: i64,
-) -> Result<Option<Option<i32>>, CommandError> {
-    let Some(launch) = store.live_session(row.id)?.filter(|s| s.id == probed) else {
-        return Ok(None);
-    };
-    let Ok(_held) = BoxLock::acquire(
-        cx.clock(),
-        cx.state_dir()?,
-        row.id,
-        "session end",
-        Duration::ZERO,
-    ) else {
-        return Ok(None);
-    };
-    let pane_exit = match reading.activity.as_ref().map(|a| &a.state) {
-        Some(AgentState::Exited { code }) => Some(*code),
-        _ => None,
-    };
-    Ok(match link::recover(cx, store, row, &launch, pane_exit)? {
-        Fate::Reattached => None,
-        Fate::Ended(exit) => Some(exit),
-    })
 }
 
 /// Ends the current session of an agent that ended with `exit`, once its transcript is saved.
