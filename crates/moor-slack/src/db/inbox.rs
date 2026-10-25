@@ -114,6 +114,7 @@ impl Db {
         self.queue_report(boxed, event, cursor, &event.notice(&boxed.box_name))
     }
 
+    /// Queues `text` as the report of `event` at `cursor`, once per Box, event and cursor.
     fn queue_report(
         &self,
         boxed: &SlackBox,
