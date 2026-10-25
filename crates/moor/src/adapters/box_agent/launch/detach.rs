@@ -137,6 +137,13 @@ pub(in crate::adapters::box_agent) fn fate(
             Err(e) => Err(EngineError::Box(e)),
         }
     };
+    fate_by(run)
+}
+
+/// What became of the agent, told by Box commands that `run` runs in the workdir.
+fn fate_by(
+    run: impl Fn(String) -> Result<i32, EngineError>,
+) -> Result<AgentFate, EngineError> {
     if run(format!("tmux has-session -t {SESSION} 2>/dev/null"))? == 0 {
         return Ok(AgentFate::Running);
     }
