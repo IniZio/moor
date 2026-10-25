@@ -120,7 +120,8 @@ fs.renameSync(t, p);
 "#;
 
 /// Sets onboarding, theme and folder trust in `~/.claude.json`, keeping other keys. Trust goes on
-/// the workdir and its resolved path, since Claude Code keys trust by the physical cwd.
+/// the workdir, its resolved path and the git repository root above that, since Claude Code keys
+/// trust by the physical cwd and accepts a trusted repository root for any folder inside it.
 const PRESEED_PY: &str = r#"
 import json, os, sys
 p, w = sys.argv[1:3]
@@ -130,7 +131,13 @@ except FileNotFoundError:
     j = {}
 j["hasCompletedOnboarding"] = True
 j["theme"] = "dark"
-for k in {w, os.path.realpath(w)}:
+r = os.path.realpath(w)
+g = r
+while not os.path.exists(os.path.join(g, ".git")) and os.path.dirname(g) != g:
+    g = os.path.dirname(g)
+if not os.path.exists(os.path.join(g, ".git")):
+    g = r
+for k in {w, r, g}:
     j.setdefault("projects", {}).setdefault(k, {})["hasTrustDialogAccepted"] = True
 t = p + ".moor-tmp"
 with os.fdopen(os.open(t, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as o:
@@ -140,7 +147,7 @@ os.replace(t, p)
 
 /// The node form of [`PRESEED_PY`].
 const PRESEED_JS: &str = r#"
-const fs = require("fs");
+const fs = require("fs"), path = require("path");
 const [p, w] = process.argv.slice(1);
 let j = {};
 try { j = JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) { if (e.code !== "ENOENT") throw e; }
@@ -149,7 +156,10 @@ j.theme = "dark";
 j.projects = j.projects || {};
 let r = w;
 try { r = fs.realpathSync(w); } catch (e) {}
-for (const k of new Set([w, r])) j.projects[k] = Object.assign({}, j.projects[k], { hasTrustDialogAccepted: true });
+let g = r;
+while (!fs.existsSync(path.join(g, ".git")) && path.dirname(g) !== g) g = path.dirname(g);
+if (!fs.existsSync(path.join(g, ".git"))) g = r;
+for (const k of new Set([w, r, g])) j.projects[k] = Object.assign({}, j.projects[k], { hasTrustDialogAccepted: true });
 const t = p + ".moor-tmp";
 fs.writeFileSync(t, JSON.stringify(j, null, 2), { mode: 0o600 });
 fs.renameSync(t, p);
@@ -216,10 +226,17 @@ pub(super) fn menu_keys(n: u8) -> Vec<Key> {
     n.to_string().chars().map(Key::Char).collect()
 }
 
-/// Merges first-run state into `~/.claude.json`; a failure only warns.
+/// Merges first-run state into `~/.claude.json`; the step fails when it cannot, since the agent
+/// would then stop at a first-run screen no one is there to answer.
 pub(super) fn preseed(ctx: &LaunchCtx) -> Result<BoxSetup, NameError> {
     let file = quote(BoxPath::under(ctx.home.as_str(), ".claude.json")?.as_str());
     let workdir = quote(ctx.workdir.as_str());
+    let template = fresh_preseed(&[ctx.workdir.as_str(), RESOLVED, ROOT]).replace('%', "%%");
+    let values = if template.find(RESOLVED) < template.find(ROOT) {
+        "\"$r\" \"$g\""
+    } else {
+        "\"$g\" \"$r\""
+    };
     let merge = interpreters(
         PRESEED_PY,
         PRESEED_JS,
@@ -227,26 +244,27 @@ pub(super) fn preseed(ctx: &LaunchCtx) -> Result<BoxSetup, NameError> {
         &format!(
             "( [ ! -e {file} ] || exit 1; umask 077; \
 r=$(cd {workdir} 2>/dev/null && pwd -P) || r={workdir}; \
-case \"$r\" in *'\"'*|*'\\'*|{workdir}) printf '%s' {plain} > {file} ;; \
-*) printf {resolved} \"$r\" > {file} ;; esac )",
+g=$r; while [ ! -e \"$g/.git\" ] && [ -n \"$g\" ]; do g=${{g%/*}}; done; \
+[ -e \"$g/.git\" ] || g=$r; \
+case \"$r$g\" in *'\"'*|*'\\'*) printf '%s' {plain} > {file} ;; \
+*) printf {resolved} {values} > {file} ;; esac )",
             plain = quote(&fresh_preseed(&[ctx.workdir.as_str()])),
-            resolved = quote(
-                &fresh_preseed(&[ctx.workdir.as_str(), RESOLVED])
-                    .replace('%', "%%")
-                    .replace(RESOLVED, "%s")
-            ),
+            resolved = quote(&template.replace(RESOLVED, "%s").replace(ROOT, "%s")),
         ),
     );
     Ok(BoxSetup {
         files: Vec::new(),
         step: format!(
-            "{merge} || echo 'moor: warning: could not preseed ~/.claude.json' >&2; true"
+            "{merge} || {{ echo 'moor: could not preseed ~/.claude.json; the agent would stop at its first-run screens' >&2; false; }}"
         ),
     })
 }
 
 /// Stands in for the resolved workdir, which only the Box knows, in [`fresh_preseed`].
 const RESOLVED: &str = "MOOR_RESOLVED_WORKDIR";
+
+/// Stands in for the git repository root above the resolved workdir in [`fresh_preseed`].
+const ROOT: &str = "MOOR_REPOSITORY_ROOT";
 
 /// A whole `~/.claude.json` for a Box that has none, trusting each of `dirs`.
 fn fresh_preseed(dirs: &[&str]) -> String {
