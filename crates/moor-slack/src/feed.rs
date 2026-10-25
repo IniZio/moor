@@ -18,7 +18,7 @@ use moor_core::user::Identity;
 use moor_core::view::ArtifactView;
 
 use crate::api::Api;
-use crate::command::{closed, finished, BoxEvent};
+use crate::command::{closed, finished, BoxEvent, Stop};
 use crate::db::{BoxState, Db, FedBox, SlackBox};
 use crate::dial::{Tagged, Watched};
 use crate::identity::Link;
@@ -41,6 +41,13 @@ struct Fold {
     finished: HashMap<BoxId, Vec<(i64, Option<String>)>>,
     /// The last message each Box's agent left in its current turn.
     said: HashMap<BoxId, String>,
+    /// Each Box's session that ended without a clean exit and whose turn has not yet gone idle.
+    stopping: HashMap<BoxId, Stop>,
+    /// Boxes whose transcript could not be saved before their session end was seen.
+    transcript_lost: HashSet<BoxId>,
+    /// Each Box's unexpected session ends, by cursor of the idle that followed, whose line is
+    /// not yet known to be posted.
+    stopped: HashMap<BoxId, Vec<(i64, Stop)>>,
     /// Boxes that closed and whose closed line is not yet known to be posted.
     closed: HashSet<BoxId>,
     /// The question each Box waits on.
@@ -82,6 +89,7 @@ impl Fold {
         prompts::fold(self, id, &event.kind, event.cursor, &event.payload);
         artifacts::fold(self, id, &event.kind, &event.payload);
         lifecycle::fold(self, id, event.cursor, &event.kind, &event.payload);
+        stopped::fold(self, id, &event.kind, &event.payload);
         match event.kind.as_str() {
             "agent_said" => {
                 let text = event
@@ -93,6 +101,13 @@ impl Fold {
             "working" | "busy" | "woke" => drop(self.said.remove(&id)),
             "idled" => {
                 let said = self.said.remove(&id);
+                if let Some(stop) = self.stopping.remove(&id) {
+                    self.stopped
+                        .entry(id)
+                        .or_default()
+                        .push((event.cursor, stop));
+                    return;
+                }
                 self.finished
                     .entry(id)
                     .or_default()
@@ -202,6 +217,7 @@ impl Feed {
             }
             for fed in &boxes {
                 if !self.lines(db, fold, &fed.boxed)
+                    || !self.stops(db, fold, &fed.boxed)
                     || !self.notes(db, fold, &fed.boxed)
                     || !self.prompts(db, fold, &fed.boxed)
                     || !self.artifacts(db, fold, &fed.boxed)
@@ -360,6 +376,7 @@ mod lifecycle;
 mod long_turn;
 mod prompts;
 mod status;
+mod stopped;
 
 #[cfg(test)]
 mod tests;

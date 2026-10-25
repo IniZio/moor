@@ -166,6 +166,13 @@ schema. Move it aside and start again with a fresh one.
   you asked for gets no line. Each line ends with what to reply: ask the
   coordinator to restart the agent, or reply to wake the Box. Each also reaches
   the coordinator as a notice with the thread's next message.
+- When a Box's agent session ends without a clean exit (a non-zero or unknown
+  exit code), the thread gets one plain line in place of "finished its turn":
+  the agent stopped unexpectedly, with the exit code, plus ", and its
+  transcript could not be saved" when the controller could not save it. The
+  Box's work is still in the Box. The line ends with what to reply: ask the
+  coordinator to restart the agent. The coordinator gets the same line, so it
+  does not say the turn finished. A clean exit keeps the finished line.
 - When a Box's agent asks a question, the front posts it with one button per
   option, up to 25. Only the person who asked for the Box can answer.
 - Each file version a Box publishes is uploaded into the thread, normally once.

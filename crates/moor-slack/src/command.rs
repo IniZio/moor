@@ -108,6 +108,36 @@ pub(crate) enum BoxEvent {
     },
     /// The controller refused a close for another reason.
     CloseRefused,
+    /// The Box's agent session ended without a clean exit.
+    Stopped(Stop),
+}
+
+/// How a Box's agent session ended when it did not exit cleanly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Stop {
+    /// The exit code, if the controller knew it.
+    pub(crate) exit: Option<i32>,
+    /// Whether the controller could not save the agent's transcript.
+    pub(crate) transcript_lost: bool,
+}
+
+impl Stop {
+    /// The line for Box `name`'s thread.
+    pub(crate) fn line(self, name: &str) -> String {
+        let exit = self
+            .exit
+            .map_or_else(|| "exit unknown".to_owned(), |n| format!("exit {n}"));
+        let lost = if self.transcript_lost {
+            ", and its transcript could not be saved"
+        } else {
+            ""
+        };
+        format!(
+            "`{}`'s agent stopped unexpectedly ({exit}){lost}. Its work so far is still in the \
+             Box. Reply here and I can restart it.",
+            name
+        )
+    }
 }
 
 impl BoxEvent {
@@ -126,6 +156,7 @@ impl BoxEvent {
             Self::RelaunchCapped => "relaunch_capped",
             Self::Unsaved { .. } => "unsaved",
             Self::CloseRefused => "close_refused",
+            Self::Stopped(_) => "stopped",
         }
     }
 
@@ -141,6 +172,7 @@ impl BoxEvent {
                     unsaved_work(ahead, dirty)
                 )
             }
+            Self::Stopped(stop) => return format!("[moor] {}", stop.line(name)),
             Self::CloseRefused => "was not closed; the thread was told why",
             Self::Started => "started",
             Self::NotStarted => "could not start",

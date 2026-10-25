@@ -32,7 +32,7 @@ fn status_of_box(name: &str, state: &str) -> String {
 }
 
 /// The line the front posts when the first Box's agent finishes its turn.
-fn finished_line() -> String {
+pub(super) fn finished_line() -> String {
     format!("Box `{BOX_NAME}` finished its turn.")
 }
 
@@ -43,7 +43,7 @@ fn status_posts(posts: &[Post]) -> Vec<&Post> {
 }
 
 /// Opens a thread whose first Box is bound, and waits for its status message.
-fn thread_with_status() -> (Rig, FakeController, std::path::PathBuf, Post) {
+pub(super) fn thread_with_status() -> (Rig, FakeController, std::path::PathBuf, Post) {
     let (rig, controller, bin) = Rig::start_boxes();
     rig.open_thread_with_a_box();
     let (posts, _) = rig.slack.wait_until("the status message", |posts, _| {
@@ -86,7 +86,7 @@ fn wait_recorded(rig: &Rig, ts: &str, text: &str) {
 }
 
 /// The texts of the thread's notices, in the order they were queued.
-fn notices(rig: &Rig) -> Vec<String> {
+pub(super) fn notices(rig: &Rig) -> Vec<String> {
     let db = rusqlite::Connection::open(rig.path("state-slack/slack.db")).unwrap();
     db.busy_timeout(Duration::from_secs(5)).unwrap();
     let mut stmt = db
@@ -97,13 +97,13 @@ fn notices(rig: &Rig) -> Vec<String> {
 }
 
 /// How many watches the controller has served so far.
-fn watches(controller: &FakeController) -> usize {
+pub(super) fn watches(controller: &FakeController) -> usize {
     controller.seen(|seen| seen.watches.len())
 }
 
 /// Waits until the front has dialled a live watch after the `n`th watch, so its last
 /// backlog is folded, then gives the feed time to act on it.
-fn wait_refolded(controller: &FakeController, n: usize) {
+pub(super) fn wait_refolded(controller: &FakeController, n: usize) {
     controller.wait_until("a new live watch", |seen| {
         seen.watches.iter().skip(n).any(|(_, follow)| *follow)
     });
@@ -254,7 +254,7 @@ fn a_backlog_read_in_parts_after_a_dropped_watch_is_acted_on_only_once_caught_up
 }
 
 /// Waits until every coordinator turn's line is posted, so a later `chat.update` is the feed's.
-fn wait_turns_posted(rig: &Rig) {
+pub(super) fn wait_turns_posted(rig: &Rig) {
     let db = rusqlite::Connection::open(rig.path("state-slack/slack.db")).unwrap();
     db.busy_timeout(Duration::from_secs(5)).unwrap();
     let sql = "SELECT COUNT(*) FROM slack_turns WHERE posted_at IS NULL";
@@ -347,7 +347,7 @@ fn a_close_of_another_box_with_the_rows_id_posts_no_closed_line_here() {
 
 /// How many coordinator turns the front has taken; the mention that opened the thread is
 /// the first.
-fn turns(rig: &Rig) -> i64 {
+pub(super) fn turns(rig: &Rig) -> i64 {
     let db = rusqlite::Connection::open(rig.path("state-slack/slack.db")).unwrap();
     db.busy_timeout(Duration::from_secs(5)).unwrap();
     db.query_row("SELECT COUNT(*) FROM slack_turns", [], |r| r.get(0))

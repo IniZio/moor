@@ -47,3 +47,5 @@ mod stop;
 mod sweep;
 #[path = "daemon/turn.rs"]
 mod turn;
+#[path = "daemon/unexpected_end.rs"]
+mod unexpected_end;
