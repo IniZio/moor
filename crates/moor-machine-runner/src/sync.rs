@@ -16,7 +16,7 @@ use crate::caller::Caller;
 pub(crate) struct SyncArgs {
     /// rsync patterns, relative to the work tree root, to leave alone on the machine: they are
     /// not copied there and not deleted there. For things the machine builds for itself, such
-    /// as `app/build`. Added to machine_info's `sync_exclude`, which always applies. At most 64.
+    /// as `app/build`. Added to `machine_info`'s `sync_exclude`, which always applies. At most 64.
     #[serde(default)]
     pub(crate) exclude: Vec<String>,
 }

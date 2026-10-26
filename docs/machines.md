@@ -61,11 +61,15 @@ hops. The runner first asks the controller for a [`box-mirror`](cli.md#box-mirro
 into `<state dir>/mirrors/<box id>` on the host, then runs
 `rsync -a --delete --exclude=.git` over ssh from that mirror to the machine.
 Both hops send only what changed since the last sync, and files gone from the
-Box go from the machine. `.git` is left out; `node_modules` is kept, so native
-builds on the machine find their packages.
+Box go from the machine. `.git` is left out, and so is every pattern in the
+Box's [sync excludes](config.md#sync-excludes), which the Proxy sends in
+`X-Moor-Machine-Exclude`. By default that leaves out `node_modules`, `Pods`,
+`.gradle`, `DerivedData`, `.dart_tool` and `target`, so install packages on the
+machine itself. `machine_info` returns the list as `sync_exclude`.
 
-`sync` takes an optional `exclude`: up to 64 rsync patterns relative to the work
-tree root, such as `["app/node_modules", "app/ios/Pods"]`. Each becomes one
+`sync` takes an optional `exclude`: up to 64 more rsync patterns relative to the
+work tree root, such as `["app/android/app/build"]`. A call adds to the Box's
+sync excludes and cannot remove one. Each becomes one
 `--exclude=PATTERN` argument of the second hop, so the machine neither receives
 those paths nor loses them to `--delete`. Use it for what the machine builds for
 itself, such as `node_modules` installed there, which a Box on another platform

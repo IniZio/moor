@@ -124,6 +124,28 @@ machines:
 
 A plain `http://` request from a Box to `host`, on any port, goes through that Box's Proxy straight to `upstream`. The Proxy drops every `X-Moor-*` header the Box sent and adds `X-Moor-Box` (the Box id), `X-Moor-Machine` (the machine's name) and `X-Moor-Machine-Ssh` (its ssh target), so the service can trust them. The Proxy refuses with 403 a CONNECT to `host` and any request from a Box that holds no machine at that moment. `upstream` must be a loopback address and port; moor refuses the config otherwise. Without `machines.service`, `host` is a host like any other.
 
+#### Sync excludes
+
+`machines.sync` in the user config and `machine.sync` in `.moor.yaml` name what a sync to the machine leaves alone: folders a machine builds for itself, which a Box on another platform must not overwrite. Each layer has `presets` (`true`, the default; `false`; or the preset names it drops) and `exclude`, at most 64 rsync patterns of its own. A preset stays only when both layers keep it. The repo's patterns follow, then the user's.
+
+| Preset | Patterns |
+| --- | --- |
+| `node` | `node_modules` |
+| `cocoapods` | `Pods` |
+| `gradle` | `.gradle` |
+| `xcode` | `DerivedData`, `*.xcworkspace/xcuserdata` |
+| `dart` | `.dart_tool` |
+| `rust` | `target` |
+
+A pattern without a leading `/` matches at any depth. A pattern that is empty, starts with `-` or holds a newline or NUL is refused, with its key named. moor resolves the list when the Box starts and its machine is attached, and the Proxy sends it to the machine service as `X-Moor-Machine-Exclude`.
+
+```yaml
+machines:
+  sync:
+    presets: [rust]
+    exclude: [android/app/build]
+```
+
 ### `proxy`
 
 `proxy.rules.<name>` defines a Proxy rule. A rule with the name of a default
@@ -216,6 +238,7 @@ A repo's `.moor.yaml` configures its Boxes.
 | `box.size` | `small`, `medium`, `large`, or `xlarge` | The Box size. It wins over the user's `box.size`. |
 | `box_credentials` | list of names | Secrets that the Box's user must hold for a `start`. moor does not put them into the Box. |
 | `machine.labels`, `machine.ports` | lists | Attach one of the requester's own machines (`moor user machine add`) that has every label, and serve each listed Box port at the same number on that machine's loopback, over ssh from the host. Without a free matching machine the Box starts without one and the start says why. |
+| `machine.sync.presets`, `machine.sync.exclude` | `true`, `false` or preset names to drop; list of rsync patterns | Paths the machine runner's `sync` neither copies to the machine nor deletes there. See [Sync excludes](#sync-excludes). |
 | `cache` | map | Which presets to keep and which other directories to keep across Boxes. See [Cache volumes](#cache-volumes). |
 
 moor reads `.moor.yaml` from GitHub at the Box's base commit when the Box
