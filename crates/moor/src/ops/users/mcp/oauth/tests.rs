@@ -28,6 +28,30 @@ struct Fake {
     base: String,
     /// Every request so far.
     seen: Seen,
+    /// How the fake answers.
+    knobs: Knobs,
+}
+
+/// What a test changes about the fake's answers.
+#[derive(Clone, Default)]
+struct Knobs {
+    /// Fields that replace the authorization server metadata's.
+    meta: Arc<Mutex<Value>>,
+    /// How a refresh is answered: `rotate`, `keep`, `5xx` or `invalid`.
+    refresh: Arc<Mutex<&'static str>>,
+}
+
+impl Knobs {
+    fn refresh(&self) -> &'static str {
+        *self.refresh.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn meta(&self) -> Value {
+        self.meta
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
 }
 
 impl Fake {
@@ -35,12 +59,14 @@ impl Fake {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         let seen: Seen = Arc::default();
-        let (b, s) = (base.clone(), Arc::clone(&seen));
+        let knobs = Knobs::default();
+        *knobs.refresh.lock().unwrap() = "rotate";
+        let (b, s, k) = (base.clone(), Arc::clone(&seen), knobs.clone());
         std::thread::spawn(move || {
             for conn in listener.incoming() {
                 let Ok(mut conn) = conn else { return };
                 let (method, path, body) = read_request(&mut conn);
-                let (status, headers, reply) = route(&b, registration, &method, &path, &body);
+                let (status, headers, reply) = route(&b, (registration, &k), &method, &path, &body);
                 s.lock()
                     .unwrap_or_else(PoisonError::into_inner)
                     .push((method, path, body));
@@ -51,7 +77,7 @@ impl Fake {
                 );
             }
         });
-        Self { base, seen }
+        Self { base, seen, knobs }
     }
 
     fn mcp(&self) -> String {
@@ -98,7 +124,7 @@ fn read_request(conn: &mut std::net::TcpStream) -> (String, String, String) {
 
 fn route(
     base: &str,
-    registration: bool,
+    (registration, knobs): (bool, &Knobs),
     method: &str,
     path: &str,
     body: &str,
@@ -126,6 +152,11 @@ fn route(
             if registration {
                 meta["registration_endpoint"] = json!(format!("{base}/register"));
             }
+            if let Value::Object(patch) = knobs.meta() {
+                for (k, v) in patch {
+                    meta[k] = v;
+                }
+            }
             ok(meta)
         }
         ("POST", "/register") => ("201 Created", String::new(), json!({"client_id": "dcr-client"}).to_string()),
@@ -135,6 +166,12 @@ fn route(
             "expires_in": 3600,
             "refresh_token": "rt-1",
         })),
+        ("POST", "/token") if body.contains("grant_type=refresh_token") => match knobs.refresh() {
+            "rotate" => ok(json!({"access_token": "at-2", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "rt-2"})),
+            "keep" => ok(json!({"access_token": "at-3", "token_type": "Bearer", "expires_in": 3600})),
+            "5xx" => ("503 Service Unavailable", String::new(), "{}".to_owned()),
+            _ => ("400 Bad Request", String::new(), json!({"error": "invalid_grant"}).to_string()),
+        },
         ("POST", "/token") => ("400 Bad Request", String::new(), json!({"error": "invalid_grant"}).to_string()),
         _ => ("404 Not Found", String::new(), "{}".to_owned()),
     }
@@ -258,7 +295,7 @@ fn remove_drops_the_access_token_and_the_grant() {
     finish(&f, "local:2000", &q["state"], "good", Some(&fake.base)).unwrap();
     let me = user(&f, "local:2000");
     let store = f.cx.store().unwrap();
-    assert_eq!(store.user_mcp_oauth_expiry(me).unwrap().len(), 1);
+    assert_eq!(store.user_mcp_oauth_state(me).unwrap().len(), 1);
     run(
         &f.cx,
         &f.vault,
@@ -274,7 +311,7 @@ fn remove_drops_the_access_token_and_the_grant() {
         "remove drops the access token"
     );
     assert!(
-        store.user_mcp_oauth_expiry(me).unwrap().is_empty(),
+        store.user_mcp_oauth_state(me).unwrap().is_empty(),
         "remove drops the grant"
     );
 }
@@ -396,3 +433,35 @@ fn a_server_that_does_not_answer_401_is_added_as_before() {
     let list = run(&f.cx, &f.vault, &id("local:2000"), &UserCmd::McpList).unwrap();
     assert_eq!(list["servers"][0]["has_key"], false);
 }
+
+#[test]
+fn an_issuer_that_is_not_the_discovered_one_is_refused() {
+    let fake = Fake::start(true);
+    *fake.knobs.meta.lock().unwrap() = json!({"issuer": "https://elsewhere.example"});
+    let (f, _) = setup(UserConfig::default());
+    user(&f, "local:2000");
+    let err = add(&f, "local:2000", &fake.mcp()).unwrap_err();
+    assert!(
+        err.error
+            .to_string()
+            .contains("names issuer https://elsewhere.example"),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn a_plain_http_token_endpoint_is_refused() {
+    let fake = Fake::start(true);
+    *fake.knobs.meta.lock().unwrap() = json!({"token_endpoint": "http://tokens.example/token"});
+    let (f, _) = setup(UserConfig::default());
+    user(&f, "local:2000");
+    let err = add(&f, "local:2000", &fake.mcp()).unwrap_err();
+    assert!(
+        err.error
+            .to_string()
+            .contains("http://tokens.example/token is not https"),
+        "{err:?}"
+    );
+}
+
+mod refresh;

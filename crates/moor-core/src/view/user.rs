@@ -25,6 +25,9 @@ pub struct McpServerView {
     /// milliseconds, or `None` when the server named no expiry.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signed_in: Option<Option<i64>>,
+    /// Whether the server's sign-in ended and the user must sign in again with `mcp-add`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub sign_in_again: bool,
 }
 
 /// Value of `mcp-list`.

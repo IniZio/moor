@@ -108,11 +108,12 @@ pub struct BoxMcp {
 /// The shared servers merged with the user's `own`: the user's server wins a name clash.
 ///
 /// A server naming a secret the user lacks (`have`) is left out, never refusing the start. A
-/// server for machine Boxes only is left out unless the Box asks for a `machine`.
+/// server for machine Boxes only is left out unless the Box asks for a `machine`. A server
+/// in `ended` lost its sign-in, so its note asks the user to sign in again.
 #[must_use]
 pub fn box_mcp(
     shared: &BTreeMap<String, McpServer>,
-    own: &[UserMcp],
+    (own, ended): (&[UserMcp], &BTreeSet<String>),
     have: &BTreeSet<SecretName>,
     machine: bool,
 ) -> BoxMcp {
@@ -132,7 +133,11 @@ pub fn box_mcp(
             .filter(|r| !SecretName::parse(r).is_ok_and(|n| have.contains(&n)))
             .map(str::to_owned)
             .collect();
-        if !missing.is_empty() {
+        if !missing.is_empty() && ended.contains(name) {
+            left_out.push(format!(
+                "MCP server {name} left out: its sign-in ended; sign in again with mcp-add {name}"
+            ));
+        } else if !missing.is_empty() {
             left_out.push(format!(
                 "MCP server {name} left out: you have no secret {}",
                 missing.join(", ")

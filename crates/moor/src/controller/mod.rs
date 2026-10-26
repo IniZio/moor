@@ -76,6 +76,13 @@ pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u
     let drain = Arc::new(Drain::default());
     drain.end_fronts_with_drain(fronts.terminator(running.drain_timeout));
     settle::spawn(&running.env, running.settle_every, &drain, &sink);
+    settle::spawn_oauth(
+        &running.env,
+        &running.vault,
+        running.settle_every,
+        &drain,
+        &sink,
+    );
     running.serve_until(&wake, &drain, &sink);
     fronts.wait();
     0

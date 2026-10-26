@@ -3,6 +3,7 @@
 //! a client, and keeps the access token as the server's vault secret so the Proxy injects it.
 
 mod http;
+pub(crate) mod refresh;
 
 use std::time::Duration;
 
@@ -210,11 +211,10 @@ pub(crate) fn finish(
         resource: p.resource,
         client: p.client,
     };
-    let expires = token
-        .expires_in()
-        .map(|d| cx.clock().now().saturating_add(d));
+    let now = cx.clock().now();
+    let expires = token.expires_in().map(|d| now.saturating_add(d));
     let sealed = seal(vault, user, &secret, &grant)?;
-    store.set_user_mcp_oauth(user, (&row.name, &sealed), expires)?;
+    store.set_user_mcp_oauth(user, (&row.name, &sealed), (now, expires))?;
     to_value(&McpChangeValue {
         name: row.name,
         changed: true,

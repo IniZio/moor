@@ -117,6 +117,7 @@ impl Http {
     /// # Errors
     /// None of the well-known addresses answers, or the answer names another issuer.
     pub(super) fn server(&self, issuer: &str) -> Result<Server, String> {
+        secure(issuer)?;
         let base = Url::parse(issuer).map_err(|e| format!("issuer `{issuer}`: {e}"))?;
         let path = base.path().trim_end_matches('/');
         let mut tried = Vec::new();
@@ -131,6 +132,11 @@ impl Http {
             if let Some(meta) = self.get_json::<Server>(&url)? {
                 if meta.issuer != issuer {
                     return Err(format!("{url} names issuer {}, not {issuer}", meta.issuer));
+                }
+                secure(&meta.authorization_endpoint)?;
+                secure(&meta.token_endpoint)?;
+                if let Some(r) = &meta.registration_endpoint {
+                    secure(r)?;
                 }
                 return Ok(meta);
             }
@@ -196,6 +202,18 @@ impl oauth2::SyncHttpClient for Http {
     fn call(&self, request: oauth2::HttpRequest) -> Result<oauth2::HttpResponse, Self::Error> {
         let (parts, mut body) = self.0.run(request)?.into_parts();
         Ok(http::Response::from_parts(parts, read(&mut body)?))
+    }
+}
+
+/// Refuses an authorization server address that is not `https`; tests' fakes serve plain
+/// `http` on loopback.
+pub(super) fn secure(address: &str) -> Result<(), String> {
+    let url = Url::parse(address).map_err(|e| format!("`{address}`: {e}"))?;
+    let loopback = matches!(url.host_str(), Some("127.0.0.1" | "localhost"));
+    if url.scheme() == "https" || (cfg!(test) && url.scheme() == "http" && loopback) {
+        Ok(())
+    } else {
+        Err(format!("{address} is not https"))
     }
 }
 
