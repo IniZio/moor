@@ -36,8 +36,6 @@ use crate::store::{BoxRow, DriverRow, Store};
 /// The agent stops first, so the session stays ended when the release fails and the
 /// Box stays open. The Box's proxy supervisor stops after the lock is dropped: the wait can take
 /// seconds and a closed Box cannot get a new proxy row. Waiting Boxes are then promoted.
-/// Under `--force`, a Box whose machine the provider no longer lists is marked Gone and closed
-/// with one warning, since teardown, collection and release all need the machine.
 pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     let store = cx.store()?;
     let first = target::resolve(store, &req.target, Rule::OpenElseLatest)?
@@ -56,35 +54,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     let saved = save_transcript(cx, store, &row)?;
     let digest = saved.as_ref().map(|t| t.digest.as_str());
     let agent_stopped = agent_stop::stop_agent(cx, store, &row, digest)?;
-    let vanished = req.force && plan.release_box && machine_vanished(cx, &row);
-    if vanished {
-        cx.warn(Warning {
-            code: "box_already_gone".to_owned(),
-            message: "the Box's machine was already gone on the provider; teardown and \
-                      collecting Reports and artifacts were skipped"
-                .to_owned(),
-        });
-    } else if probed_clean {
-        recheck_and_collect(cx, store, &row)?;
-    } else {
-        reports::collect(cx, store, &row);
-        collect_artifacts(cx, store, &row);
-    }
-    let box_deleted = if vanished {
-        store.apply(
-            plan.decision_close
-                .clone()
-                .box_input(BoxInput::DriverMissing),
-        )?;
-        true
-    } else if plan.release_box {
-        teardown::teardown(cx, &row, req.force)?;
-        seal_caches(cx, store, &row);
-        release(cx, store, &row)?
-    } else {
-        store.apply(plan.decision_close.clone())?;
-        false
-    };
+    let box_deleted = wind_down(cx, store, &row, &plan, req.force, probed_clean)?;
     let workspace_closed = close_workspace(cx, &row, &plan);
     drop(lock);
     if let Err(e) = cx.proxy_host().stop(row.id) {
@@ -279,6 +249,47 @@ fn seal_caches(cx: &Cx, store: &Store, row: &BoxRow) {
     if let Ok(cfg) = settings_of(cx, row, &Flags::default()) {
         cache::seal(cx, store, row, &cfg, handle, &b.provider);
     }
+}
+
+/// Collects from the Box, tears it down and releases it; returns whether the Box is now deleted.
+///
+/// Under `force`, a machine the provider no longer lists is marked Gone with one warning,
+/// since collection, teardown and release all need the machine.
+fn wind_down(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    plan: &ClosePlan,
+    force: bool,
+    probed_clean: bool,
+) -> Result<bool, CommandError> {
+    if force && plan.release_box && machine_vanished(cx, row) {
+        cx.warn(Warning {
+            code: "box_already_gone".to_owned(),
+            message: "the Box's machine was already gone on the provider; teardown and \
+                      collecting Reports and artifacts were skipped"
+                .to_owned(),
+        });
+        let gone = plan
+            .decision_close
+            .clone()
+            .box_input(BoxInput::DriverMissing);
+        store.apply(gone)?;
+        return Ok(true);
+    }
+    if probed_clean {
+        recheck_and_collect(cx, store, row)?;
+    } else {
+        reports::collect(cx, store, row);
+        collect_artifacts(cx, store, row);
+    }
+    if !plan.release_box {
+        store.apply(plan.decision_close.clone())?;
+        return Ok(false);
+    }
+    teardown::teardown(cx, row, force)?;
+    seal_caches(cx, store, row);
+    release(cx, store, row)
 }
 
 /// Whether the provider's inventory no longer lists the Box's machine, as reconcile reads it.

@@ -34,7 +34,7 @@ fn force_closes_a_box_whose_machine_vanished_in_one_call() {
     let warnings = f.cx.take_warnings();
     let codes: Vec<_> = warnings.iter().map(|w| w.code.as_str()).collect();
     assert_eq!(codes, ["box_already_gone"], "one note: {warnings:?}");
-    assert!(warnings[0].message.contains("already gone"));
+    assert!(warnings.iter().all(|w| w.message.contains("already gone")));
     assert_eq!(exec_calls(&f), 0, "nothing runs on a machine that is gone");
     assert!(!f.driver.calls().iter().any(|c| c.starts_with("release")));
 }
