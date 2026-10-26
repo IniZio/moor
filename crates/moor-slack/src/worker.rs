@@ -70,14 +70,7 @@ pub(crate) fn serve(jobs: &Receiver<Job>, db: &Db, left: Vec<SlackBox>, fx: &mut
                 account,
                 response_url,
             }) => login::unlink(fx, &user, account, response_url.as_deref()),
-            Ok(Job::McpList { user, response_url }) => {
-                login::mcp_list(fx, &user, response_url.as_deref());
-            }
-            Ok(Job::McpRemove {
-                user,
-                name,
-                response_url,
-            }) => login::mcp_remove(fx, &user, &name, response_url.as_deref()),
+            Ok(Job::Mcp(job)) => login::mcp(fx, &job),
             Ok(Job::Ephemeral {
                 channel,
                 user,

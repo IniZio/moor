@@ -41,8 +41,8 @@ pub(crate) fn form() -> Value {
             "label": {"type": "plain_text", "text": label},
             "element": {"type": "plain_text_input", "action_id": block},
         });
-        if let Some(hint) = hint {
-            input["hint"] = json!({"type": "plain_text", "text": hint});
+        if let (Some(hint), Some(map)) = (hint, input.as_object_mut()) {
+            map.insert("hint".into(), json!({"type": "plain_text", "text": hint}));
         }
         input
     };
@@ -90,6 +90,17 @@ fn name_ok(name: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"_-".contains(&b))
 }
 
+/// A `/moor mcp list` or `/moor mcp remove` for the worker; no `name` means list.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct McpJob {
+    /// The Slack user who ran the command.
+    pub(crate) user: String,
+    /// The server to remove, or none to list.
+    pub(crate) name: Option<String>,
+    /// Where Slack takes the answer to the command.
+    pub(crate) response_url: Option<String>,
+}
+
 /// `/moor mcp ...`: `add` opens the modal after an empty ack, `list` and `remove` queue a job
 /// whose answer goes to the user alone through the command's `response_url`.
 pub(crate) fn slash(slash: &Slash, db: &Db, now: i64) -> rusqlite::Result<(Kept, Option<Job>)> {
@@ -111,15 +122,19 @@ pub(crate) fn slash(slash: &Slash, db: &Db, now: i64) -> rusqlite::Result<(Kept,
         }
         (Some("list"), None, _) => (
             text_ack("Looking up your MCP servers…"),
-            Some(Job::McpList { user, response_url }),
+            Some(Job::Mcp(McpJob {
+                user,
+                name: None,
+                response_url,
+            })),
         ),
         (Some("remove"), Some(name), None) if name_ok(name) => (
             text_ack(&format!("Removing `{name}`…")),
-            Some(Job::McpRemove {
+            Some(Job::Mcp(McpJob {
                 user,
-                name: name.to_owned(),
+                name: Some(name.to_owned()),
                 response_url,
-            }),
+            })),
         ),
         _ => (text_ack(USAGE), None),
     };

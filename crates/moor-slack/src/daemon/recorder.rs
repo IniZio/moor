@@ -1,14 +1,17 @@
 //! The Socket Mode thread's intake.
 
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
+use std::thread;
 
 use moor_core::secret::Secret;
 
+use super::stop::sleep_until_stopped;
 use crate::api::Api;
 use crate::db::Db;
 use crate::identity::Link;
-use crate::socket::{AfterAck, Inbound, Intake, Kept, NotKept};
+use crate::socket::{self, AfterAck, Inbound, Intake, Kept, NotKept};
 use crate::worker::{self, Job};
 use crate::{login, mcp, slash, Log};
 
@@ -29,6 +32,23 @@ pub(super) struct Recorder {
     pub(super) log: Log,
     /// The current time in unix seconds.
     pub(super) clock: fn() -> i64,
+}
+
+impl Recorder {
+    /// Runs Socket Mode on its own thread, feeding this intake, until `stop` is set.
+    pub(super) fn spawn(
+        self,
+        app_token: Secret,
+        roleplay: Option<socket::Roleplay>,
+        stop: &Arc<AtomicBool>,
+    ) -> thread::JoinHandle<()> {
+        let stop = Arc::clone(stop);
+        thread::spawn(move || {
+            let sleep = |d| sleep_until_stopped(&stop, d);
+            let api = Arc::clone(&self.api);
+            socket::run(&api, &app_token, &self, roleplay.as_ref(), &stop, &sleep);
+        })
+    }
 }
 
 impl Intake for Recorder {
