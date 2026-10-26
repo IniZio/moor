@@ -60,3 +60,8 @@ fn slug_fits_crabbox_cap_for_any_id() {
 fn session_ref_carries_the_id() {
     assert_eq!(BoxKey::new(BoxId::new(7)).session_ref(), "moor-7");
 }
+
+#[test]
+fn machine_dir_sits_under_the_work_root_by_id() {
+    assert_eq!(key(7).machine_dir(), "moor/7");
+}

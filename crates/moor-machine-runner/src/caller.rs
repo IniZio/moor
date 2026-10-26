@@ -1,6 +1,7 @@
 //! Who is calling: the three headers the Box's Proxy sets on every request.
 
 use http::HeaderMap;
+use moor_core::box_key::BoxKey;
 use moor_core::BoxId;
 use rmcp::ErrorData;
 
@@ -55,7 +56,7 @@ impl Caller {
 
     /// The Box's copy on the machine, relative to the machine user's home.
     pub(crate) fn remote_dir(&self) -> String {
-        format!("moor/{}", self.box_id.get())
+        BoxKey::new(self.box_id).machine_dir()
     }
 }
 

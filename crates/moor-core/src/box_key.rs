@@ -46,6 +46,12 @@ impl BoxKey {
         format!("{HOME_PREFIX}cred-{}-{nonce}", self.0.get())
     }
 
+    /// The Box's copy on a user machine, under the machine user's home, `moor/{id}`.
+    #[must_use]
+    pub fn machine_dir(self) -> String {
+        format!("{WORK_ROOT}/{}", self.0.get())
+    }
+
     /// The scratch directory under the Box home, `.moor-tmp-{id}-{nonce}`.
     #[must_use]
     pub fn tmp_dir(self, nonce: &str) -> String {
