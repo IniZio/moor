@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use moor_core::seam::proc::{
     ChildHandle, Output, Proc, ProcError, ProcOutput, ProcSpec, Signal as GroupSignal, Tool,
+    OUTPUT_CAP,
 };
 use rustix::io::Errno;
 use rustix::process::test_kill_process;
@@ -32,8 +33,6 @@ const TAIL: usize = 2048;
 /// Longest extra wait for pipe readers after the child exits (an escaped
 /// grandchild may hold the pipe open), shared by both pipes.
 const DRAIN_GRACE: Duration = Duration::from_millis(500);
-/// Bytes kept per stream; the rest is read and discarded.
-const CAP: usize = 4 * 1024 * 1024;
 
 /// Every tool, for program resolution at construction.
 const TOOLS: [Tool; 9] = [
@@ -129,9 +128,9 @@ impl SystemProc {
 /// Bytes read so far from one pipe.
 #[derive(Default)]
 struct Capture {
-    /// Kept bytes, at most [`CAP`]; wiped on drop.
+    /// Kept bytes, at most [`OUTPUT_CAP`]; wiped on drop.
     buf: Zeroizing<Vec<u8>>,
-    /// Bytes past [`CAP`] were discarded.
+    /// Bytes past [`OUTPUT_CAP`] were discarded.
     truncated: bool,
 }
 
@@ -147,7 +146,7 @@ fn drain<R: Read + Send + 'static>(pipe: Option<R>, done: Sender<bool>) -> Arc<M
                     break;
                 }
                 if let Ok(mut c) = shared.lock() {
-                    let room = CAP.saturating_sub(c.buf.len());
+                    let room = OUTPUT_CAP.saturating_sub(c.buf.len());
                     let take = n.min(room);
                     c.buf
                         .extend_from_slice(chunk.get(..take).unwrap_or_default());

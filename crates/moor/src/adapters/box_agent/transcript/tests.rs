@@ -142,6 +142,14 @@ fn a_symlinked_archive_is_refused() {
 }
 
 #[test]
+fn an_archive_whose_text_overflows_the_output_capture_is_copied_out() {
+    let dir = archive_dir(&vec![7u8; 3 * 1024 * 1024]);
+    let out = stream(dir.path(), STREAM_CAP);
+    assert!(out.status.success());
+    assert_eq!(String::from_utf8(out.stdout).unwrap().trim(), TOO_LARGE);
+}
+
+#[test]
 fn an_archive_over_the_cap_prints_the_marker_not_the_bytes() {
     let dir = archive_dir(&[7u8; 100]);
     let out = stream(dir.path(), 99);

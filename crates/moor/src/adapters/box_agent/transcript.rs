@@ -11,7 +11,7 @@ use moor_core::name::BoxPath;
 use moor_core::seam::agent_profile::{AgentProfile, NOTHING_TO_ARCHIVE};
 use moor_core::seam::driver::{BoxStep, Driver, DriverError, ExecOutcome, StepDone};
 use moor_core::seam::engine::{EngineError, SessionRef};
-use moor_core::seam::proc::Deadline;
+use moor_core::seam::proc::{Deadline, OUTPUT_CAP};
 
 /// Where the archive is built, relative to the Box workdir.
 const ARCHIVE: &str = ".moor/transcripts.tgz";
@@ -20,7 +20,9 @@ const ARCHIVE: &str = ".moor/transcripts.tgz";
 const ARCHIVE_DEADLINE: Duration = Duration::from_secs(15);
 
 /// The largest archive streamed over the batch ssh; a bigger one is copied out instead.
-const STREAM_CAP: u64 = 8 * 1024 * 1024;
+///
+/// Half the output capture limit, so the base64 text (4/3 the archive) always fits whole.
+const STREAM_CAP: u64 = OUTPUT_CAP as u64 / 2;
 
 /// What the stream step prints in place of the archive when it is over the cap.
 const TOO_LARGE: &str = "moor: archive too large to stream";

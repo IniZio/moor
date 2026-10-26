@@ -192,12 +192,25 @@ fn ssh_failure_adds_one_error_for_the_first_unframed_step() {
     let steps = [BoxStep::Run("a".to_owned()), BoxStep::Peek(path("/w/a"))];
     assert_eq!(
         batch(&p, &connect(), &steps),
-        [Err(failed("box command failed"))]
+        [Err(failed("box command failed: ssh exit 255: lost"))]
     );
     let steps = [BoxStep::Peek(path("/w/a")), put("/w/b", b"1", 0o600)];
     assert_eq!(
         batch(&p, &connect(), &steps),
-        [Err(failed("box file read failed"))]
+        [Err(failed("box file read failed: ssh exit 255: lost"))]
+    );
+}
+
+#[test]
+fn output_past_the_capture_limit_names_the_limit() {
+    let body = "A".repeat(moor_core::seam::proc::OUTPUT_CAP);
+    let p = scripted(Reply::Ok(format!("R 0 {}\n{body}\n", body.len())));
+    let out = batch(&p, &connect(), &[BoxStep::Run("a".to_owned())]);
+    assert_eq!(
+        out,
+        [Err(failed(
+            "box command failed: output passed the 4194304-byte capture limit"
+        ))]
     );
 }
 
