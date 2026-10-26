@@ -29,7 +29,8 @@ const USAGE: &str = "Usage: `/moor mcp add` opens a form for a server of yours, 
     `/moor mcp list` shows your servers and `/moor mcp remove <name>` drops one.";
 
 /// The ack of a user whose Slack id the front cannot act for.
-const BAD_ID: &str = "Your Slack user id is not one moor can act for, so nothing was changed.";
+pub(crate) const BAD_ID: &str =
+    "Your Slack user id is not one moor can act for, so nothing was changed.";
 
 /// The modal `/moor mcp add` opens.
 pub(crate) fn form() -> Value {
@@ -74,7 +75,7 @@ fn notice(text: &str) -> Value {
 }
 
 /// An ack that shows `text` to the user who ran the command.
-fn text_ack(text: &str) -> Kept {
+pub(crate) fn text_ack(text: &str) -> Kept {
     Kept {
         ack: Some(json!({ "text": text })),
         then: None,
@@ -82,7 +83,7 @@ fn text_ack(text: &str) -> Kept {
 }
 
 /// True for a name made of the characters a server name takes.
-fn name_ok(name: &str) -> bool {
+pub(crate) fn name_ok(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 64
         && name
@@ -142,7 +143,7 @@ pub(crate) fn slash(slash: &Slash, db: &Db, now: i64) -> rusqlite::Result<(Kept,
 }
 
 /// What a submission's field named `block` holds, trimmed.
-fn field(sub: &TokenSubmission, block: &str) -> String {
+pub(crate) fn field(sub: &TokenSubmission, block: &str) -> String {
     let value = sub.tokens.iter().find(|(b, _)| b == block);
     value.map_or_else(String::new, |(_, v)| {
         String::from_utf8_lossy(v.expose()).into_owned()

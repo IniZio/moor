@@ -21,6 +21,7 @@ mod feed;
 mod github;
 mod identity;
 mod login;
+mod machine;
 mod mcp;
 mod prompt;
 mod secret_file;

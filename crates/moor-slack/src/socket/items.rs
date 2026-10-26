@@ -91,6 +91,11 @@ pub(crate) enum AfterAck {
         /// The command's trigger id.
         trigger_id: String,
     },
+    /// Open the add-machine modal with this trigger.
+    OpenMachine {
+        /// The command's trigger id.
+        trigger_id: String,
+    },
 }
 
 /// What a button press asks for.
