@@ -44,6 +44,7 @@ moor-machine-runner --socket /path/to/moor.sock --state-dir ~/.local/state/moor-
 | `--force-arg NAME.ARG=FACT` | none | set argument ARG of relay NAME's tools to the Box's fact FACT on every call, hidden from the Box; repeat for more |
 | `--hide-tool NAME.TOOL` | none | leave relay NAME's tool TOOL out of the listing and refuse calls to it; repeat for more |
 | `--relay-idle-secs` | `1800` | how long a relay session may go without a call before it ends |
+| `--keep-alive-secs` | `15` | how often an open call's response stream gets a ping, so a long `sync` or build never looks idle to the agent's MCP client or a proxy on the way |
 
 A resource caps heavy work on a machine, such as native builds, at CAP calls at
 once. It is counted per machine name across all Boxes, and only the runner

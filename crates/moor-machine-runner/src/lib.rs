@@ -69,6 +69,8 @@ pub struct Config {
     pub relays: Vec<Relay>,
     /// How long a relay session may go without a call before it ends.
     pub relay_idle: Duration,
+    /// How often an open call's stream gets a ping, so no client or proxy on the way sees it idle.
+    pub keep_alive: Duration,
 }
 
 /// Where a Box is on its machine.
@@ -132,7 +134,8 @@ pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
             config.service_host.as_str(),
         ])
         .with_legacy_session_mode(false)
-        .with_json_response(true);
+        .with_json_response(false)
+        .with_sse_keep_alive(Some(config.keep_alive));
     let service = StreamableHttpService::new(
         move || Ok(runner.clone()),
         Arc::new(LocalSessionManager::default()),
