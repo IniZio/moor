@@ -27,7 +27,7 @@ pub mod view;
 
 pub use name::{BoxHandle, BoxId, BoxName, BoxPath, NameError, ProviderId, RunId, SessionId, Sha};
 pub use request::{
-    ArtifactReadReq, ArtifactsReq, BoxReq, BoxTarget, CloseReq, CpReq, EnvReq, GateReq, Request,
+    ArtifactReadReq, ArtifactsReq, BoxMirrorReq, BoxReq, BoxTarget, CloseReq, CpReq, EnvReq, GateReq, Request,
     RunReq, ShowReq, StartReq, SteerReq, WaitEventsReq, WaitFor, WaitMode, WaitReq,
 };
 pub use response::{ErrorKind, ErrorView, ExitClass, Response, Warning, SCHEMA};

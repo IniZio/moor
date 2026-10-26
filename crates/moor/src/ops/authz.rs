@@ -16,6 +16,9 @@ pub(crate) const NOT_YOURS: &str = "not your Box";
 /// The refusal for a `cp` from anyone but the operator: it writes on the controller host.
 pub(crate) const CP_OPERATOR_ONLY: &str = "cp to the host is operator-only";
 
+/// The refusal for a `box-mirror` from anyone but the operator: it writes on the host.
+pub(crate) const MIRROR_OPERATOR_ONLY: &str = "box-mirror to the host is operator-only";
+
 /// The refusal for an `env` from anyone but the operator: it reads host configs.
 pub(crate) const ENV_OPERATOR_ONLY: &str = "env reads the host's configs, which is operator-only";
 
@@ -74,6 +77,7 @@ pub(crate) fn authorize(
 const fn host_only(request: &Request) -> Option<&'static str> {
     match request {
         Request::Cp(_) => Some(CP_OPERATOR_ONLY),
+        Request::BoxMirror(_) => Some(MIRROR_OPERATOR_ONLY),
         Request::Env(_) => Some(ENV_OPERATOR_ONLY),
         Request::Start(_)
         | Request::StartNeeds(_)

@@ -139,3 +139,15 @@ fn no_request_names_a_host_directory_for_the_controller_to_read() {
         assert_eq!(got["frame"], "error", "{got}");
     }
 }
+
+#[test]
+fn a_front_box_mirror_is_refused() {
+    let (served, store) = served();
+    let user = enroll_ann(&served);
+    let id = ready_box(&store, user);
+    let dest = served.dir.path().join("mirror");
+    let mirror = json!({"cmd": "box-mirror", "id": id.get(), "dest": dest});
+    let got = ask(&served.front("slack"), &acting(ANN, &mirror));
+    refused(&got, "box-mirror to the host is operator-only");
+    assert!(!dest.exists(), "the refused mirror wrote {}", dest.display());
+}

@@ -132,6 +132,15 @@ pub enum SleepOutcome {
     CannotSleep(String),
 }
 
+/// What one mirror sent, from rsync's stats.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MirrorStats {
+    /// Regular files transferred.
+    pub files: u64,
+    /// Bytes that came over the link.
+    pub bytes: u64,
+}
+
 /// Boxes, behind whichever provider hub is wired.
 pub trait Driver: Send + Sync {
     /// Reports what `provider` can do.
@@ -194,6 +203,22 @@ pub trait Driver: Send + Sync {
     /// # Errors
     /// Returns a [`DriverError`] when the copy fails.
     fn copy_out(&self, handle: &BoxHandle, from: &BoxPath, to: &Path) -> Result<(), DriverError>;
+
+    /// Makes the host directory `to` an exact copy of the Box directory `from`, links and modes
+    /// kept and `.git` left out, sending only what changed since the last mirror.
+    ///
+    /// # Errors
+    /// [`DriverError::Unsupported`] naming the side that cannot mirror; another
+    /// [`DriverError`] when the mirror fails.
+    fn mirror_out(
+        &self,
+        handle: &BoxHandle,
+        from: &BoxPath,
+        to: &Path,
+    ) -> Result<MirrorStats, DriverError> {
+        let _ = (handle, from, to);
+        Err(DriverError::Unsupported("mirroring a Box"))
+    }
 
     /// Streams the regular files `names` from directory `dir` in the Box in one round trip,
     /// calling `sink` once per file received, in stream order. `Some(reader)` yields exactly that

@@ -374,6 +374,12 @@ pub trait Proc: Send + Sync {
 
     /// Whether a process with this pid exists.
     fn alive(&self, pid: u32) -> bool;
+
+    /// The program this runs for `tool`, for a tool that starts another, as rsync starts ssh.
+    fn program_path(&self, tool: Tool) -> Option<std::ffi::OsString> {
+        let _ = tool;
+        None
+    }
 }
 
 #[cfg(test)]
