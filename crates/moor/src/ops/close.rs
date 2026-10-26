@@ -4,8 +4,9 @@ use moor_core::config::Flags;
 use moor_core::decide::close::{
     close_gate, release_outcome, BoxCheck, CloseFacts, ClosePlan, ReleaseResult,
 };
+use moor_core::decide::reconcile::{reconcile, BoxFact};
 use moor_core::decide::transcript::Trigger;
-use moor_core::domain::boxes::BoxState;
+use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::seam::driver::{DriverError, Released};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{SurfaceError, WorkspaceRef};
@@ -35,6 +36,8 @@ use crate::store::{BoxRow, DriverRow, Store};
 /// The agent stops first, so the session stays ended when the release fails and the
 /// Box stays open. The Box's proxy supervisor stops after the lock is dropped: the wait can take
 /// seconds and a closed Box cannot get a new proxy row. Waiting Boxes are then promoted.
+/// Under `--force`, a Box whose machine the provider no longer lists is marked Gone and closed
+/// with one warning, since teardown, collection and release all need the machine.
 pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     let store = cx.store()?;
     let first = target::resolve(store, &req.target, Rule::OpenElseLatest)?
@@ -53,13 +56,24 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     let saved = save_transcript(cx, store, &row)?;
     let digest = saved.as_ref().map(|t| t.digest.as_str());
     let agent_stopped = agent_stop::stop_agent(cx, store, &row, digest)?;
-    if probed_clean {
+    let vanished = req.force && plan.release_box && machine_vanished(cx, &row);
+    if vanished {
+        cx.warn(Warning {
+            code: "box_already_gone".to_owned(),
+            message: "the Box's machine was already gone on the provider; teardown and \
+                      collecting Reports and artifacts were skipped"
+                .to_owned(),
+        });
+    } else if probed_clean {
         recheck_and_collect(cx, store, &row)?;
     } else {
         reports::collect(cx, store, &row);
         collect_artifacts(cx, store, &row);
     }
-    let box_deleted = if plan.release_box {
+    let box_deleted = if vanished {
+        store.apply(plan.decision_close.clone().box_input(BoxInput::DriverMissing))?;
+        true
+    } else if plan.release_box {
         teardown::teardown(cx, &row, req.force)?;
         seal_caches(cx, store, &row);
         release(cx, store, &row)?
@@ -261,6 +275,23 @@ fn seal_caches(cx: &Cx, store: &Store, row: &BoxRow) {
     if let Ok(cfg) = settings_of(cx, row, &Flags::default()) {
         cache::seal(cx, store, row, &cfg, handle, &b.provider);
     }
+}
+
+/// Whether the provider's inventory no longer lists the Box's machine, as reconcile reads it.
+///
+/// A listing that fails or is unsupported cannot tell, so the close goes on as usual.
+fn machine_vanished(cx: &Cx, row: &BoxRow) -> bool {
+    let Some(b) = row.boxed.as_ref() else {
+        return false;
+    };
+    let fact = BoxFact {
+        box_id: row.id,
+        state: b.state,
+        handle: b.handle.clone(),
+    };
+    cx.driver()
+        .list(&b.provider)
+        .is_ok_and(|listing| !reconcile(&[fact], &listing).is_empty())
 }
 
 /// Asks the Driver to release the Box and records the verdict.
