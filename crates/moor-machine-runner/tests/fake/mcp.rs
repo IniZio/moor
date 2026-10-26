@@ -1,6 +1,6 @@
 //! A stdio MCP server standing in for one of the machine's own, for the relay tests.
 //!
-//! Each start appends `<pid> <MOOR_BOX>` to `~/fake-starts`; each `tap` appends its arguments
+//! Each start appends `<pid> <MOOR_BOX>` to `~/fake-starts`; each `tap`, `connect` and `stop` appends its arguments
 //! as JSON to `~/fake-calls` and echoes them back.
 #![allow(
     clippy::unused_async_trait_impl,
@@ -23,6 +23,29 @@ struct Tap {
     x: i64,
 }
 
+/// Arguments of `connect`, echoed back.
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
+struct Connect {
+    /// The port to connect on.
+    port: i64,
+    /// The device to connect to.
+    device_id: String,
+}
+
+/// Arguments of `stop`, echoed back.
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
+struct Stop {
+    /// The devices to stop.
+    devices: Vec<String>,
+}
+
+/// What `update` returns.
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct Updated {
+    /// Always true.
+    updated: bool,
+}
+
 /// What `list-devices` lists.
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 struct Devices {
@@ -42,6 +65,30 @@ impl Fake {
             &serde_json::to_string(&tap).unwrap_or_default(),
         );
         Json(tap)
+    }
+
+    #[tool(description = "Echo the connection.")]
+    fn connect(&self, Parameters(connect): Parameters<Connect>) -> Json<Connect> {
+        note(
+            "fake-calls",
+            &serde_json::to_string(&connect).unwrap_or_default(),
+        );
+        Json(connect)
+    }
+
+    #[tool(description = "Echo the devices to stop.")]
+    fn stop(&self, Parameters(stop): Parameters<Stop>) -> Json<Stop> {
+        note(
+            "fake-calls",
+            &serde_json::to_string(&stop).unwrap_or_default(),
+        );
+        Json(stop)
+    }
+
+    #[tool(description = "Change the install every Box shares.")]
+    fn update(&self) -> Json<Updated> {
+        note("fake-calls", "update");
+        Json(Updated { updated: true })
     }
 
     #[tool(name = "list-devices", description = "List the devices.")]

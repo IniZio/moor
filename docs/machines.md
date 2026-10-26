@@ -42,6 +42,7 @@ moor-machine-runner --socket /path/to/moor.sock --state-dir ~/.local/state/moor-
 | `--sweep-secs` | `60` | how often the runner looks for prepared Boxes that are no longer open and for idle relay sessions |
 | `--relay NAME=CMD` | none | a stdio MCP server on the machine whose tools the runner lists as `NAME_<tool>`; repeat for more; see [Relays](#relays) |
 | `--force-arg NAME.ARG=FACT` | none | set argument ARG of relay NAME's tools to the Box's fact FACT on every call, hidden from the Box; repeat for more |
+| `--hide-tool NAME.TOOL` | none | leave relay NAME's tool TOOL out of the listing and refuse calls to it; repeat for more |
 | `--relay-idle-secs` | `1800` | how long a relay session may go without a call before it ends |
 
 A resource caps heavy work on a machine, such as native builds, at CAP calls at
@@ -175,6 +176,20 @@ schema's `properties` and `required`, so the agent never sees it, and on every
 call sets ARG to the Box's fact FACT, replacing anything the agent sent. A Box
 without FACT gets an error naming it, and the call is not relayed.
 
+Facts are strings, so the value sent follows the type the tool's schema gives
+ARG:
+
+| Schema type | Sent |
+| --- | --- |
+| `string`, or none | the fact as is |
+| `integer`, `number` | the fact parsed as a JSON number; a fact that does not parse gets an error naming the fact and the tool, and the call is not relayed |
+| `array` | a one-item array of the fact, the item converted by the schema's `items.type` by these same rules |
+| anything else | the tool's session refuses to start, with an error naming the tool and ARG |
+
+`--hide-tool NAME.TOOL` drops relay NAME's tool TOOL (its name on the relay)
+from the listing, and a call to it is refused with an error saying it is hidden.
+Use it for tools that change what every Box on the machine shares.
+
 The runner keeps one MCP session per Box and relay. It starts on the Box's first
 call of a relayed tool or tool listing, after prepare, as
 `ssh <target> 'cd ~/moor/<box id> && exec "$SHELL" -lc CMD'` with `MOOR_BOX`,
@@ -190,8 +205,17 @@ Argent:
 moor-machine-runner --socket /path/to/moor.sock \
   --state-dir ~/.local/state/moor-machine-runner \
   --prepare '~/bin/moor-prepare' --release '~/bin/moor-release' \
-  --relay argent='argent mcp' --force-arg argent.udid=device
+  --relay argent='argent mcp' \
+  --force-arg argent.udid=device --force-arg argent.device_id=device \
+  --force-arg argent.device=device --force-arg argent.devices=device \
+  --force-arg argent.port=metro_port \
+  --hide-tool argent.update-argent --hide-tool argent.dismiss-update
 ```
 
-The Box sees `argent_tap` and the rest without their `udid` argument, and each
-call reaches the simulator prepare made for that Box.
+Argent names the device `udid`, `device_id`, `device` or `devices` (an array)
+depending on the tool, and a per-Box `port` is an integer, so the example forces
+each. Prepare prints both facts as
+`{"device": "<udid>", "metro_port": "<8081 + MOOR_PORT_OFFSET>"}`. The Box sees
+`argent_tap` and the rest without those arguments, each call reaches the
+simulator prepare made for that Box, and `update-argent` and `dismiss-update`,
+which change the install every Box shares, are not offered.
