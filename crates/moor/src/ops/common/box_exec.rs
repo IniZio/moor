@@ -57,7 +57,13 @@ pub(crate) fn proxy(
     };
     let rule_env = box_env(&spec.rules);
     let forge = forge_routed(&spec.rules);
-    let hosts = spec.rules.iter().flat_map(|r| r.hosts.clone()).collect();
+    let service = cx.config().machines.service.iter().map(|s| s.host.clone());
+    let hosts = spec
+        .rules
+        .iter()
+        .flat_map(|r| r.hosts.clone())
+        .chain(service)
+        .collect();
     let ep = cx.proxy_host().ensure(&spec).map_err(|e| e.to_string())?;
     let addr = ProxyAddr {
         box_port: ep.box_port,
