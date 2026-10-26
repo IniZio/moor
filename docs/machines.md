@@ -64,6 +64,14 @@ Both hops send only what changed since the last sync, and files gone from the
 Box go from the machine. `.git` is left out; `node_modules` is kept, so native
 builds on the machine find their packages.
 
+`sync` takes an optional `exclude`: up to 64 rsync patterns relative to the work
+tree root, such as `["app/node_modules", "app/ios/Pods"]`. Each becomes one
+`--exclude=PATTERN` argument of the second hop, so the machine neither receives
+those paths nor loses them to `--delete`. Use it for what the machine builds for
+itself, such as `node_modules` installed there, which a Box on another platform
+would otherwise overwrite. A pattern that is empty, starts with `-` or holds a
+newline or NUL is refused by name. The first hop is unchanged.
+
 `exec` takes `command` and `timeout_secs` (default 600, at most 3600). It runs
 `cd ~/moor/<box id> && <command>` on the machine through the machine user's
 login shell, so that user's `PATH` applies. It returns `exit_code`, `output`
