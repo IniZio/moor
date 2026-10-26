@@ -21,6 +21,10 @@ pub struct McpServerView {
     /// Whether only a Box whose repo asks for a machine gets it; shown only when true.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub machine: bool,
+    /// When the server was signed in to over OAuth: when its access token expires, in Unix
+    /// milliseconds, or `None` when the server named no expiry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signed_in: Option<Option<i64>>,
 }
 
 /// Value of `mcp-list`.
@@ -39,6 +43,9 @@ pub struct McpChangeValue {
     pub changed: bool,
     /// The vault secret that holds its key.
     pub secret: SecretName,
+    /// The address to open to sign in, when the server asked for OAuth.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sign_in: Option<String>,
 }
 
 /// One of a user's machines as `machine-list` shows it.

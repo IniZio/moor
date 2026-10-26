@@ -121,6 +121,7 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         | Request::McpAdd(_)
         | Request::McpRemove(_)
         | Request::McpList(_)
+        | Request::McpOAuthFinish(_)
         | Request::MachineAdd(_)
         | Request::MachineRemove(_)
         | Request::MachineList(_)

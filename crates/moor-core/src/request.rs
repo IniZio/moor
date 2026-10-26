@@ -22,8 +22,8 @@ pub use session::{EndSessionReq, OpenSessionReq, SessionsReq, ShowSessionReq};
 pub use target::BoxTarget;
 mod user;
 pub use user::{
-    ActAsReq, AsReq, LinkRedeemReq, McpAddReq, McpRemoveReq, ProxyReleaseReq, SecretDeleteReq,
-    SecretSetReq, SecretValue, StartNeedsReq, UserCmd,
+    ActAsReq, AsReq, LinkRedeemReq, McpAddReq, McpOAuthFinishReq, McpRemoveReq, ProxyReleaseReq,
+    SecretDeleteReq, SecretSetReq, SecretValue, StartNeedsReq, UserCmd,
 };
 mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
@@ -104,6 +104,9 @@ pub enum Request {
     McpRemove(McpRemoveReq),
     /// List the caller's user's MCP servers; never their keys.
     McpList(AsReq),
+    /// Finish signing the caller's user in to one of their MCP servers.
+    #[serde(rename = "mcp-oauth-finish")]
+    McpOAuthFinish(McpOAuthFinishReq),
     /// Add or replace one of the caller's user's machines.
     MachineAdd(MachineAddReq),
     /// Remove one of the caller's user's machines.
@@ -169,6 +172,7 @@ impl Request {
             Self::McpAdd(_) => "mcp-add",
             Self::McpRemove(_) => "mcp-remove",
             Self::McpList(_) => "mcp-list",
+            Self::McpOAuthFinish(_) => "mcp-oauth-finish",
             Self::MachineAdd(_) => "machine-add",
             Self::MachineRemove(_) => "machine-remove",
             Self::MachineList(_) => "machine-list",

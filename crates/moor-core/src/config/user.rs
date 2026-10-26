@@ -6,6 +6,7 @@ mod controller;
 mod creds;
 mod duration;
 mod machine;
+mod oauth;
 mod own_mcp;
 mod service;
 
@@ -24,6 +25,7 @@ pub use creds::McpServer;
 use duration::{duration_or, parse_duration};
 pub(crate) use machine::check_label;
 pub use machine::{check_ssh, pick_machine, wake_slot, MachinePick, UserMachine};
+pub use oauth::{OAuthCallback, OAuthClient, OAuthConfig};
 pub use own_mcp::{box_mcp, BoxMcp, UserMcp, DEFAULT_HEADER};
 pub use service::{MachineService, MachinesConfig};
 
@@ -278,6 +280,8 @@ pub struct UserConfig {
     pub credentials: Option<Option<serde_json::Value>>,
     /// MCP servers.
     pub mcp_servers: BTreeMap<String, McpServer>,
+    /// How the controller signs users in to their own OAuth MCP servers.
+    pub oauth: OAuthConfig,
     /// Box settings.
     #[serde(rename = "box")]
     pub box_: BoxConfig,

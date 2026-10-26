@@ -14,7 +14,10 @@ use crate::error::CommandError;
 use crate::store::Store;
 use crate::vault::Vault;
 
-/// `mcp-add`: check the server, store `key` as its secret when given, then list it.
+pub(super) mod oauth;
+
+/// `mcp-add`: check the server and store `key` as its secret, or with no key start an OAuth
+/// sign-in when the server asks for one, then list it.
 pub(super) fn add(
     cx: &Cx,
     vault: &Vault,
@@ -34,14 +37,19 @@ pub(super) fn add(
         ));
     }
     let store = cx.store()?;
-    if let Some(key) = key {
-        set_secret(store, vault, user, &server.secret(), key.secret())?;
-    }
+    let sign_in = match key {
+        Some(key) => {
+            set_secret(store, vault, user, &server.secret(), key.secret())?;
+            None
+        }
+        None => oauth::start(cx, vault, user, &server)?,
+    };
     store.set_user_mcp(user, &server)?;
     to_value(&McpChangeValue {
         name: server.name.clone(),
         changed: true,
         secret: server.secret(),
+        sign_in,
     })
 }
 
@@ -55,20 +63,24 @@ pub(super) fn remove(
         .map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
     let changed = store.delete_user_mcp(user, name)?;
     store.delete_user_secret(user, &server.secret())?;
+    store.delete_user_mcp_oauth(user, name)?;
     to_value(&McpChangeValue {
         name: name.to_owned(),
         changed,
         secret: server.secret(),
+        sign_in: None,
     })
 }
 
-/// `mcp-list`: names, URLs and whether a key is stored; never a key.
+/// `mcp-list`: names, URLs, whether a key is stored and when a sign-in expires; never a key.
 pub(super) fn list(store: &Store, user: UserId) -> Result<serde_json::Value, CommandError> {
     let have = held(store, user)?;
+    let signed = store.user_mcp_oauth_expiry(user)?;
     let servers = store
         .user_mcp(user)?
         .into_iter()
         .map(|s| McpServerView {
+            signed_in: signed.get(&s.name).copied(),
             has_key: have.contains(&s.secret()),
             secret: s.secret(),
             machine: s.machine,

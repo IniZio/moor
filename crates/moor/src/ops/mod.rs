@@ -42,6 +42,9 @@ pub(crate) use start::settle_all;
 #[cfg(test)]
 mod tests;
 
+/// Why `artifact-read` is refused here.
+const RAW_BYTES: &str = "artifact-read sends raw bytes, so only the controller socket serves it";
+
 /// Route a request to its op.
 pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, CommandError> {
     match req {
@@ -51,10 +54,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::Show(r) => to_value(&show::run(cx, &r)?),
         Request::ShowSession(r) => to_value(&show_session::run(cx, &r)?),
         Request::Artifacts(r) => to_value(&artifacts::list(cx, &r)?),
-        Request::ArtifactRead(_) => Err(CommandError::new(
-            ErrorKind::Usage,
-            "artifact-read sends raw bytes, so only the controller socket serves it",
-        )),
+        Request::ArtifactRead(_) => Err(CommandError::new(ErrorKind::Usage, RAW_BYTES)),
         Request::Whoami(_)
         | Request::Enroll(_)
         | Request::SecretSet(_)
@@ -63,6 +63,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         | Request::McpAdd(_)
         | Request::McpRemove(_)
         | Request::McpList(_)
+        | Request::McpOAuthFinish(_)
         | Request::MachineAdd(_)
         | Request::MachineRemove(_)
         | Request::MachineList(_)
