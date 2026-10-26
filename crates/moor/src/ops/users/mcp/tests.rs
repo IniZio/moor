@@ -57,10 +57,10 @@ fn a_users_servers_and_keys_are_theirs_alone() {
     );
     assert!(store.user_secret(&f.vault, b, &secret).unwrap().is_none());
     assert!(
-        for_box(&f.cx, Some(b)).unwrap().servers.is_empty(),
+        for_box(&f.cx, Some(b), false).unwrap().servers.is_empty(),
         "B's Box never gets A's server"
     );
-    assert!(for_box(&f.cx, Some(a))
+    assert!(for_box(&f.cx, Some(a), false)
         .unwrap()
         .servers
         .contains_key("linear"));
@@ -87,10 +87,10 @@ fn the_box_sees_a_placeholder_never_the_key() {
     let a = enrolled(&f, "local:2000");
     let cmd = add("linear", "https://mcp.linear.app/mcp/readonly", Some(KEY));
     run(&f.cx, &f.vault, &id("local:2000"), &cmd).unwrap();
-    let server = for_box(&f.cx, Some(a)).unwrap().servers["linear"].in_box();
+    let server = for_box(&f.cx, Some(a), false).unwrap().servers["linear"].in_box();
     assert_eq!(server.headers["Authorization"], "Bearer moor-proxy");
     assert!(!format!("{server:?}").contains(KEY));
-    let rule = for_box(&f.cx, Some(a)).unwrap().servers["linear"]
+    let rule = for_box(&f.cx, Some(a), false).unwrap().servers["linear"]
         .proxy_rule()
         .unwrap();
     assert_eq!(rule.credential, "mcp_linear", "the Proxy injects A's key");
@@ -102,7 +102,7 @@ fn a_server_without_a_key_is_left_out_and_named() {
     let a = enrolled(&f, "local:2000");
     let cmd = add("docs", "https://docs.example/mcp", None);
     run(&f.cx, &f.vault, &id("local:2000"), &cmd).unwrap();
-    let got = for_box(&f.cx, Some(a)).unwrap();
+    let got = for_box(&f.cx, Some(a), false).unwrap();
     assert!(got.servers.is_empty());
     assert_eq!(
         got.notes,

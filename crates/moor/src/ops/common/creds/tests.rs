@@ -83,3 +83,23 @@ fn only_the_committed_claude_settings_approve_a_repo_server() {
         "{error}"
     );
 }
+
+#[test]
+fn the_env_listing_shows_a_machine_only_server_only_for_a_machine_repo() {
+    let user = parse_user(
+        "u.yaml",
+        "mcp_servers: {sim: {command: sim-tool, machine: true}, docs: {url: 'https://d.example'}}",
+    )
+    .unwrap();
+    let names = |repo: &str| -> Vec<String> {
+        let repo = moor_core::config::parse_repo("r.yaml", repo).unwrap();
+        let s = BoxSettings::resolve(&user, Some(&repo), &Flags::default());
+        checked(&s, &RepoFiles::default())
+            .mcp
+            .into_iter()
+            .map(|i| i.name)
+            .collect()
+    };
+    assert_eq!(names("setup: [a]"), ["docs"]);
+    assert_eq!(names("machine: {labels: [ios]}"), ["docs", "sim"]);
+}

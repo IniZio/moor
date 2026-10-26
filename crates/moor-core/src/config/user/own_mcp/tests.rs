@@ -75,7 +75,12 @@ fn names_urls_and_headers_are_checked() {
 #[test]
 fn the_users_server_wins_a_name_clash_and_says_so() {
     let shared = BTreeMap::from([shared("linear", "linear_ro"), shared("docs", "docs_key")]);
-    let got = box_mcp(&shared, &[linear()], &have(&["mcp_linear", "docs_key"]));
+    let got = box_mcp(
+        &shared,
+        &[linear()],
+        &have(&["mcp_linear", "docs_key"]),
+        false,
+    );
     assert_eq!(
         got.servers.keys().collect::<Vec<_>>(),
         ["docs", "linear"],
@@ -95,7 +100,7 @@ fn the_users_server_wins_a_name_clash_and_says_so() {
 #[test]
 fn a_server_whose_key_is_missing_is_left_out_and_names_the_secret() {
     let shared = BTreeMap::from([shared("docs", "docs_key"), shared("open", "open_key")]);
-    let got = box_mcp(&shared, &[linear()], &have(&["open_key"]));
+    let got = box_mcp(&shared, &[linear()], &have(&["open_key"]), false);
     assert_eq!(got.servers.keys().collect::<Vec<_>>(), ["open"]);
     assert_eq!(
         got.notes,
@@ -108,7 +113,22 @@ fn a_server_whose_key_is_missing_is_left_out_and_names_the_secret() {
 
 #[test]
 fn nothing_to_say_when_every_server_resolves() {
-    let got = box_mcp(&BTreeMap::new(), &[linear()], &have(&["mcp_linear"]));
+    let got = box_mcp(&BTreeMap::new(), &[linear()], &have(&["mcp_linear"]), false);
     assert_eq!(got.servers.len(), 1);
     assert!(got.notes.is_empty());
+}
+
+fn machine_only(name: &str) -> (String, McpServer) {
+    let (n, s) = shared(name, "k");
+    (n, McpServer { machine: true, ..s })
+}
+
+#[test]
+fn a_machine_only_server_reaches_only_a_machine_box() {
+    let shared = BTreeMap::from([machine_only("sim"), shared("docs", "k")]);
+    let held = have(&["k"]);
+    let plain = box_mcp(&shared, &[], &held, false);
+    assert_eq!(plain.servers.keys().collect::<Vec<_>>(), ["docs"]);
+    let machine = box_mcp(&shared, &[], &held, true);
+    assert_eq!(machine.servers.keys().collect::<Vec<_>>(), ["docs", "sim"]);
 }
