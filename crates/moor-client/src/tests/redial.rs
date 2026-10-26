@@ -329,7 +329,9 @@ fn a_wait_cut_by_two_restarting_frames_is_resent_once() {
     let cut: Script = Box::new(|peer: &mut Peer| {
         peer.take_request();
         peer.say(r#"{"frame":"error","id":"1","kind":"restarting","message":"wait cut"}"#);
-        peer.say(r#"{"frame":"error","kind":"restarting","message":"connection ending"}"#);
+        // The client may hang up after the first frame, so this write can meet a closed socket.
+        let ending = r#"{"frame":"error","kind":"restarting","message":"connection ending"}"#;
+        let _ = writeln!(peer.writer, "{ending}");
     });
     let seen = controller(&sock, Duration::ZERO, vec![cut, respond_ok()]);
     let resp = Client::new(&sock)
