@@ -76,7 +76,7 @@ fn login_opens_the_modal_for_the_named_account_once_after_an_empty_ack() {
         let id = format!("e{n}");
         let kept = login(&slash(&id, "U1", text), &db, 1).unwrap();
         assert_eq!(kept.ack, None);
-        let open = AfterAck::OpenLogin {
+        let open = AfterAck::Login {
             trigger_id: format!("trig-{id}"),
             form,
         };

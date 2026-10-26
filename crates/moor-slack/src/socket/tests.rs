@@ -471,7 +471,7 @@ struct Opening(Arc<AtomicBool>, RefCell<Vec<AfterAck>>);
 
 impl Intake for Opening {
     fn take(&self, _item: Inbound) -> Result<Kept, NotKept> {
-        let then = AfterAck::OpenLogin {
+        let then = AfterAck::Login {
             trigger_id: "t1".into(),
             form: Form::One(Account::Claude),
         };
@@ -507,7 +507,7 @@ fn the_login_modal_opens_after_the_ack() {
     let intake = Opening(acked, RefCell::default());
     session(&url, &intake).expect("session ends cleanly");
     server.join().expect("server");
-    let want = AfterAck::OpenLogin {
+    let want = AfterAck::Login {
         trigger_id: "t1".into(),
         form: Form::One(Account::Claude),
     };

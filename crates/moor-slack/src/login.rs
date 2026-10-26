@@ -175,7 +175,7 @@ pub(crate) fn login(slash: &Slash, db: &Db, now: i64) -> rusqlite::Result<Kept> 
         .trigger_id
         .clone()
         .filter(|_| first)
-        .map(|trigger_id| AfterAck::OpenLogin { trigger_id, form });
+        .map(|trigger_id| AfterAck::Login { trigger_id, form });
     Ok(Kept { ack: None, then })
 }
 

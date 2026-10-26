@@ -80,19 +80,19 @@ pub(crate) struct Kept {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum AfterAck {
     /// Open the login modal with this trigger, which Slack honours for 3 s.
-    OpenLogin {
+    Login {
         /// The command's trigger id.
         trigger_id: String,
         /// What the modal asks for.
         form: Form,
     },
     /// Open the add-server modal with this trigger.
-    OpenMcp {
+    Mcp {
         /// The command's trigger id.
         trigger_id: String,
     },
     /// Open the add-machine modal with this trigger.
-    OpenMachine {
+    Machine {
         /// The command's trigger id.
         trigger_id: String,
     },

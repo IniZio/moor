@@ -118,7 +118,7 @@ pub(crate) fn slash(slash: &Slash, db: &Db, now: i64) -> rusqlite::Result<(Kept,
                 .trigger_id
                 .clone()
                 .filter(|_| first)
-                .map(|trigger_id| AfterAck::OpenMcp { trigger_id });
+                .map(|trigger_id| AfterAck::Mcp { trigger_id });
             (Kept { ack: None, then }, None)
         }
         (Some("list"), None, _) => (
