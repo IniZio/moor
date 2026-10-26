@@ -13,9 +13,9 @@ controller serve` binds its own sockets.
 The units below assume the binaries are in `~/.local/bin`, the controller
 config is `~/.config/moor/controller.yaml`, and the state directory is the
 default `~/.local/state/moor`. In a user unit, `%S` is that state base,
-`$XDG_STATE_HOME` or `~/.local/state`. Set `XDG_STATE_HOME` the same way in
-your login shell and in the systemd user manager (or in neither), or the
-CLI dials a socket path the units never bound.
+`$XDG_STATE_HOME` or `~/.local/state`. Set `XDG_STATE_HOME` to the same value
+in your login shell and in the systemd user manager, or leave it unset in
+both. Otherwise the CLI dials a socket path that the units never bound.
 
 1. Write `~/.config/systemd/user/moor.socket`:
 
@@ -77,7 +77,7 @@ CLI dials a socket path the units never bound.
    ```
 
 `KillMode=process` makes systemd signal only the controller on stop. Proxy
-supervisors, tunnels and other processes that the controller started keep
+supervisors, tunnels, and other processes that the controller started keep
 running. systemd logs them as left-over processes when the service starts
 again. `TimeoutStopSec` must be above the config's `drain_timeout_secs`,
 600 by default, or systemd kills the controller in the middle of its drain.
@@ -96,11 +96,11 @@ not match the config:
   for a namespace in `fronts`.
 - The config needs a socket that systemd did not pass. Enable the missing
   `moor-front@<namespace>.socket`.
-- A socket is bound at another path than the config gives. The controller
+- A socket is bound at a path other than the one the config gives. The controller
   socket path is `socket` in the config, else `<state dir>/controller.sock`.
 - A socket file is open to the group or to other users. Set `SocketMode=0600`.
 
-The controller never deletes or binds again a socket that systemd passed in.
+The controller never deletes or rebinds a socket that systemd passed in.
 The passed fds are close-on-exec, so Box processes and fronts do not inherit
 them.
 
@@ -122,11 +122,12 @@ On the restart, systemd sends SIGTERM and the controller drains, as
 
 1. The controller stops accepting connections. New connects wait in the
    backlog that the socket unit holds.
-2. A `wait`, `wait-events` or `watch` gets an error frame of kind
+2. A `wait`, `wait-events`, or `watch` gets an error frame of kind
    `restarting` and is closed.
 3. Any other request in flight, such as a `start`, runs to its end, for up to
-   `drain_timeout_secs`. So does a settle pass already running. A settle
-   pass that outlives `drain_timeout_secs` is cut without rollback.
+   `drain_timeout_secs`. A settle pass that is already running also runs to
+   its end. The controller stops a settle pass that outlives
+   `drain_timeout_secs`, without rollback.
 4. Every connection ends with an error frame of kind `restarting`, which
    answers any request the controller did not run.
 5. The controller exits 0. systemd starts the new controller on the same
@@ -137,21 +138,22 @@ The CLI and the fronts dial again only when a request provably did not run:
 - The connection dropped before the controller's hello, or the controller
   answered `restarting` before any progress or output. Both prove a restart,
   so the client dials again for up to 60 s of wall time.
-- The socket path exists but refuses the connect: a stale socket left by a
-  controller that died, or a controller between unlink and bind. The client
-  dials again for at most 5 s.
+- The socket path exists but refuses the connection. A stale socket left by a
+  controller that died does this, and so does a controller between unlink
+  and bind. The client dials again for at most 5 s.
 - A socket path that does not exist fails at once, with the unreachable
   message.
 
 A `wait` or `wait-events` is sent again even after progress, because it
-changes nothing. A `watch` resumes after the last cursor it delivered. A
-request whose write failed, whose connection dropped after it was sent, or
-that already showed progress or output is reported as an error and never sent
-again, because it may have run. For the CLI, `MOOR_CONTROLLER_REDIAL_SECS`
-sets the 60 s; `0` turns redialing off, and a value that is not a whole number
-of seconds is a usage error.
+changes nothing. A `watch` resumes after the last cursor it delivered. The
+client reports an error and never sends a request again when its write
+failed, its connection dropped after the send, or it already showed progress
+or output. Such a request may have run. For the CLI,
+`MOOR_CONTROLLER_REDIAL_SECS` sets the 60 s limit. A value of `0` turns
+redialing off. A value that is not a whole number of seconds is a usage
+error.
 
 Over ssh, `moor controller attach` applies the same rules on the remote side.
-It exits 75 when the remote socket refuses the connect, and the CLI dials
-again for at most 5 s. A missing remote socket (exit 1) or an ssh that could
-not connect (exit 255) fails at once.
+It exits 75 when the remote socket refuses the connection, and the CLI dials
+again for at most 5 s. It exits 1 when the remote socket is missing, and ssh
+exits 255 when it cannot connect. Both fail at once.

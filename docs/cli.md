@@ -18,9 +18,9 @@ state directory.
 
 When the client of a `moor run` goes away, the controller stops streaming the
 command and records the run as interrupted. The command in the Box gets no
-hangup, so it can keep running until it next writes output. Ctrl-C does this on
-purpose: moor asks the controller to stop the run, waits for its answer, and
-exits 130. A second Ctrl-C exits 130 at once.
+hangup, so it can keep running until it next writes output. On Ctrl-C, moor
+asks the controller to stop the run, waits for its answer, and exits 130. A
+second Ctrl-C exits 130 at once.
 
 ## Global flags
 
@@ -70,27 +70,31 @@ not a github.com repo. Outside a checkout it sends no repo, and the Box starts
 with an empty workdir. The controller never reads a directory on its host for
 a start.
 
-Before any machine exists, the controller reads the repo through the GitHub
-API with the requester's own `github` secret: the commit `--base` names (or
-the default branch), the `.moor.yaml`, `.mcp.json` and `.claude/settings.json`
-at that commit, and the token account's name. moor keeps that `.moor.yaml` in
-the Box's row and every later command uses that copy. A repo the account
-cannot read is refused, and a Box whose branch `moor/NAME` already exists on
-GitHub is refused unless `--base moor/NAME` names it. An account that cannot
-push gets a warning. Commits in the Box use the account's profile name, or its
-login, and its GitHub noreply address.
+Before any machine exists, the controller reads these from the GitHub API
+with the requester's own `github` secret:
+
+- the commit that `--base` names, or the default branch's commit
+- `.moor.yaml`, `.mcp.json`, and `.claude/settings.json` at that commit
+- the name of the token's account
+
+moor keeps that `.moor.yaml` in the Box's row, and every later command uses
+that copy. The controller refuses a repo that the account cannot read. It also
+refuses a Box whose branch `moor/NAME` already exists on GitHub, unless
+`--base moor/NAME` names it. An account that cannot push gets a warning.
+Commits in the Box use the account's profile name, or its login, and its
+GitHub noreply address.
 
 The start works from what is on GitHub. Uncommitted or unpushed changes in
-your checkout are not in the Box; the CLI says so in a warning. A branch with
-no upstream counts as unpushed, since without `--base` the Box starts from the
-default branch.
+your checkout are not in the Box, and the CLI warns about them. A branch with
+no upstream counts as unpushed, because without `--base` the Box starts from
+the default branch.
 
 The Box clones its repo itself, through its Proxy, from
 `https://github.com/OWNER/NAME.git`. The clone is partial
-(`--filter=blob:none`): it has the full history and fetches file contents when
+(`--filter=blob:none`). It has the full history and fetches file contents when
 a command first needs them. A retried setup keeps the Box branch where it is,
-so commits made in the Box are never reset. Submodules and Git LFS objects from
-other private repos are not supported, because the Proxy places the user's
+so it never resets commits made in the Box. moor does not support submodules
+or Git LFS objects from other private repos, because the Proxy adds the user's
 token only for the Box's own repo.
 
 Work leaves the Box when the agent runs `git push origin HEAD:refs/heads/BRANCH`.
@@ -109,19 +113,23 @@ To get it into your own checkout, run `git fetch origin BRANCH` there.
 ### What `moor show` reports about the machine
 
 While a Box starts, one command inside it reads how many CPUs it can run on
-(`nproc`) and its total memory (`MemTotal` in `/proc/meminfo`). The command
-rides the clone exec, so it adds no call to the Box. `moor show NAME --json`
-and the reply of a start carry the result under `driver`, and the text form
-prints a `machine:` line after the `box:` line.
+(`nproc`) and its total memory (`MemTotal` in `/proc/meminfo`). moor runs that
+command in the same exec as the clone, so it adds no call to the Box.
+`moor show NAME --json` and the reply of a start put the result under
+`driver`. The text form prints a `machine:` line after the `box:` line.
 
 | Field | Meaning |
 | --- | --- |
 | `driver.cpus` | CPUs the Box can run on, as `nproc` counts them. |
-| `driver.mem_mib` | Total memory in MiB. The kernel keeps some of what a provider gives, so this is a little under the size asked for. |
+| `driver.mem_mib` | Total memory in MiB. The kernel keeps some of the memory a provider gives, so the value is a little under the size asked for. |
 
-Both are `null` until a start has read them, when the Box printed nothing
-usable, and for a Box with no repo and no commit author, which runs no clone exec
-for the command to ride. A Box started again on a new machine records that machine's numbers.
+Both fields are `null` in these cases:
+
+- A start has not read them yet.
+- The Box printed nothing usable.
+- The Box has no repo and no commit author, so it runs no clone exec.
+
+A Box started again on a new machine records that machine's numbers.
 
 ### `moor run` flags
 
@@ -139,7 +147,7 @@ a host checkout into a Box.
 
 | Flag | Effect |
 | --- | --- |
-| `--for STATE` | `idle` (the default), `done`, `input`, or `run`. `idle`, `done`, and `input` all return when the agent is not working and no run is in progress. `run` returns when no run is in progress. |
+| `--for STATE` | `idle`, `done`, `input`, or `run`. The default is `idle`. `idle`, `done`, and `input` all return when the agent is not working and no run is in progress. `run` returns when no run is in progress. |
 | `--timeout S` | Give up after `S` seconds. The default is 1800. |
 
 ### `moor wait-events` flags
@@ -155,26 +163,26 @@ a host checkout into a Box.
 
 | Flag | Effect |
 | --- | --- |
-| `--force` | Close even when the Box has unsaved work: commits that are on no branch on GitHub, or uncommitted files. You lose that work. Without it, `moor close` refuses and says how to push the work with `moor run NAME -- git push origin HEAD:refs/heads/BRANCH`. |
+| `--force` | Close even when the Box has unsaved work. Unsaved work is commits that are on no branch on GitHub, and uncommitted files. You lose that work. Without `--force`, `moor close` refuses and says how to push the work with `moor run NAME -- git push origin HEAD:refs/heads/BRANCH`. |
 
 moor creates no host worktree for a Box, so `moor close` checks only the
-Box checkout for unsaved work. To get the Box's work on your host, run
-`git fetch origin BRANCH` in your own checkout after the Box pushed it.
+Box checkout for unsaved work.
 
 ### `moor cp` paths
 
 `SRC` is a path on the Box. moor resolves a relative `SRC` from the Box's
-workdir. A relative `SRC` must not contain `..`. `DEST` is a path on the host, relative to the
-current directory.
+workdir. A relative `SRC` must not contain `..`. `DEST` is a path on the host,
+relative to the current directory.
 
-When `DEST` is a directory, the copy lands inside it. A copied file is readable
-by you only (mode 0600) and a copied directory is 0700. A copied file replaces
-a file already at the destination. Nothing replaces a directory there, and a
-copied directory replaces nothing, not even an empty directory. moor refuses a `SRC`
-that is or holds a symlink or a special file, and a `DEST` that is a symlink.
-A failed copy leaves nothing at the destination. A moor killed mid-copy can
-leave a `.moor-cp-*` directory beside the destination; the next copy there
-removes any such directory older than an hour.
+When `DEST` is a directory, the copy goes inside it. Only you can read a copied
+file (mode 0600) or a copied directory (mode 0700). A copied file replaces a
+file already at the destination. Nothing replaces a directory there, and a
+copied directory replaces nothing, not even an empty directory. moor refuses a
+`SRC` that is or holds a symlink or a special file. It also refuses a `DEST`
+that is a symlink. A failed copy leaves nothing at the destination. If moor is
+killed during a copy, it can leave a `.moor-cp-*` directory beside the
+destination. The next copy there removes any such directory older than an
+hour.
 
 ## Session commands
 
@@ -224,23 +232,27 @@ echo '{"cmd":"show"}' | moor call
 
 `{"cmd":"box-mirror","id":ID,"dest":DIR,"exclude":[PATTERN,...]}` makes the host directory `DIR`
 an exact copy of the work tree of the open Box with store id `ID`. It has no
-CLI command; a client sends it through `moor call` or moor-client. Only the
+CLI command. A client sends it through `moor call` or moor-client. Only the
 operator may send it. `DIR` must be absolute, and moor creates it when it is
-missing. moor runs rsync over the Box's ssh connection, so links stay links,
-modes are kept, files gone from the Box go from `DIR`, and `.git` is left
-out. A later mirror sends only what changed. The result gives `files`, the
-regular files sent, and `bytes`, the bytes that came from the Box. moor
-refuses a Box without a ready machine, and refuses when rsync is missing on
-the Box or on the host, naming which.
+missing.
+
+moor runs rsync over the Box's ssh connection. The mirror keeps links as links
+and keeps file modes. It deletes from `DIR` the files that are gone from the
+Box, and it leaves out `.git`. A later mirror sends only what changed. The
+result gives `files`, the regular files sent, and `bytes`, the bytes that came
+from the Box. moor refuses a Box without a ready machine. It also refuses when
+rsync is missing on the Box or on the host, and the error names which one.
 
 ### `box-put`
 
 `{"cmd":"box-put","id":ID,"src":FILE,"dest":PATH}` writes the host file `FILE` into the work
-tree of the open Box with store id `ID`, at `PATH`, with mode 0644. It has no CLI command; a
-client sends it through `moor call` or moor-client. Only the operator may send it. `FILE` must
-be an absolute path to a regular file of at most 32 MiB. `PATH` is relative to the work tree;
-moor refuses an empty, absolute or `..` path, creates missing directories and replaces an
-existing file. The result gives `path`, the file's place in the Box, and `bytes`.
+tree of the open Box with store id `ID`, at `PATH`, with mode 0644. It has no CLI command. A
+client sends it through `moor call` or moor-client. Only the operator may send it.
+
+`FILE` must be an absolute path to a regular file of at most 32 MiB. `PATH` is relative to
+the work tree. moor refuses an empty path, an absolute path, and a path with `..`. It
+creates missing directories and replaces an existing file. The result gives `path`, the
+file's place in the Box, and `bytes`.
 
 ## Exit codes
 
