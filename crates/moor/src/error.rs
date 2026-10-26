@@ -49,6 +49,13 @@ impl CommandError {
         self
     }
 
+    /// Attach the structured detail a client reads instead of the message.
+    #[must_use]
+    pub fn with_detail(mut self, detail: ErrorDetail) -> Self {
+        self.detail = Some(Box::new(detail));
+        self
+    }
+
     /// Attach the outcome the envelope `value` keeps despite the failure.
     #[must_use]
     pub fn with_value(mut self, value: serde_json::Value) -> Self {

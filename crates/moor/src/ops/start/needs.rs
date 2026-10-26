@@ -6,7 +6,7 @@ use moor_core::request::StartNeedsReq;
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::user::{SecretName, UserId};
 use moor_core::view::user::StartNeedsValue;
-use moor_core::ErrorKind;
+use moor_core::{ErrorDetail, ErrorKind};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -67,6 +67,7 @@ pub(super) fn require(cx: &Cx, repo: Option<&ForgeRepo>) -> Result<UserId, Comma
         ErrorKind::Refused,
         format!("log in first: {}", steps.join(", then ")),
     )
+    .with_detail(ErrorDetail::LoginRequired)
     .with_value(shown))
 }
 

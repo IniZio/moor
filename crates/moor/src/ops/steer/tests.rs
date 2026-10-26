@@ -13,7 +13,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::seam::engine::{EngineError, Steer, SteerOutcome};
 use moor_core::seam::proc::Tool;
-use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, SteerReq};
+use moor_core::{BoxId, BoxName, ErrorDetail, ErrorKind, ProviderId, SteerReq};
 
 use std::time::Duration;
 
@@ -302,6 +302,7 @@ fn a_gone_pane_stops_the_session_and_refuses() {
         err.error.to_string(),
         "the agent's pane is gone; relaunch with `moor start t --goal \"...\"`"
     );
+    assert_eq!(err.detail.as_deref(), Some(&ErrorDetail::AgentGone));
     assert!(!live(&f));
     assert!(steered(&f).is_empty());
 }
@@ -342,6 +343,7 @@ fn an_exited_agent_names_its_code() {
         err.error.to_string(),
         "agent exited 3; relaunch with `moor start t --goal \"...\"`"
     );
+    assert_eq!(err.detail.as_deref(), Some(&ErrorDetail::AgentGone));
     let exit: Option<i32> =
         f.cx.store()
             .unwrap()

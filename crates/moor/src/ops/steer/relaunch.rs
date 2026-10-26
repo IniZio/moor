@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use moor_core::{BoxId, ErrorKind};
+use moor_core::{BoxId, ErrorDetail, ErrorKind};
 
 use super::Gone;
 use crate::cx::Cx;
@@ -85,7 +85,8 @@ pub(super) fn ended_again(
             "the agent of Box {name} {how} again within {}s of its relaunch, so moor did not relaunch it and its session ended; start it again with `moor start {name} --resume`",
             RELAUNCH_GUARD.as_secs()
         ),
-    ))
+    )
+    .with_detail(ErrorDetail::RelaunchCapped))
 }
 
 /// Whether the agent of `id` was relaunched less than `RELAUNCH_GUARD` ago.

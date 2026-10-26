@@ -7,7 +7,7 @@ use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::seam::proxy_host::ProxyStatus;
 use moor_core::view::AgentLaunchView;
-use moor_core::{BoxId, ErrorKind, StartReq};
+use moor_core::{BoxId, ErrorDetail, ErrorKind, StartReq};
 
 use super::relaunch::{ended, record_relaunch, relaunch, Ended};
 use super::{launch, reopen, watch};
@@ -164,7 +164,8 @@ fn check_cap(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
             "moor relaunched the agent of Box {name} {recent} times in the last {} minutes, so it will not relaunch it again on its own; once you know why it keeps ending, start it again with `moor start {name} --resume`",
             RELAUNCH_WINDOW.as_secs() / 60
         ),
-    ))
+    )
+    .with_detail(ErrorDetail::RelaunchCapped))
 }
 
 /// Whether `row` holds a goal or an agent session to start again.

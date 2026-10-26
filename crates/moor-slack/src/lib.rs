@@ -16,6 +16,7 @@ mod credentials;
 mod daemon;
 mod db;
 mod dial;
+mod error_text;
 mod escape;
 mod feed;
 mod github;

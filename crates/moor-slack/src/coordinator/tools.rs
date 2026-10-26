@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use super::context::{action_line, Action};
 use crate::db::{BoxState, Db, OpenTurn, Prompt, SlackBox};
+use crate::error_text::error_text;
 
 /// What a tool says back: text for the model, and whether the call was refused or failed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -327,13 +328,6 @@ fn not_running(boxed: &SlackBox, verb: &str) -> Option<Reply> {
         BoxState::Closing { .. } => Some(Reply::refused(format!("Box `{name}` is closing."))),
         BoxState::Gone { .. } => Some(Reply::refused(format!("Box `{name}` is closed."))),
     }
-}
-
-/// The error text of a failed reply.
-fn error_text(reply: Response) -> String {
-    reply
-        .error
-        .map_or_else(|| format!("{} failed", reply.cmd), |e| e.message)
 }
 
 mod spec;

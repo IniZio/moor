@@ -3,7 +3,7 @@
 use moor_core::config::proxy::GITHUB_SECRET;
 use moor_core::seam::forge::{ForgeError, ForgeRepo, RepoAt};
 use moor_core::user::{SecretName, UserId};
-use moor_core::{ErrorKind, Secret, Warning};
+use moor_core::{ErrorDetail, ErrorKind, Secret, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -75,6 +75,7 @@ fn github_token(cx: &Cx, user: UserId) -> Result<Secret, CommandError> {
                 ErrorKind::Refused,
                 format!("log in first: moor user secret set {GITHUB_SECRET}"),
             )
+            .with_detail(ErrorDetail::LoginRequired)
         })
 }
 

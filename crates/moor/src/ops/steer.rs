@@ -13,7 +13,7 @@ use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::engine::{EngineError, SessionRef, Steer, SteerOutcome};
 use moor_core::seam::proc::Deadline;
 use moor_core::view::steer::SteerValue;
-use moor_core::{BoxId, ErrorKind, SteerReq, Warning};
+use moor_core::{BoxId, ErrorDetail, ErrorKind, SteerReq, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -146,6 +146,7 @@ fn gone_refusal(name: &str, ended: &str) -> CommandError {
         ErrorKind::Refused,
         format!("{ended}; relaunch with {}", relaunch_hint(name)),
     )
+    .with_detail(ErrorDetail::AgentGone)
 }
 
 /// Sends `req` to the live agent of `target`, or says the agent is gone.
@@ -270,6 +271,7 @@ fn first_run_refusal(name: &str) -> CommandError {
             "the agent of {name} stopped at a first-run screen that moor's pre-seed should have skipped; this is a moor bug; end the Box with `moor end {name}` and start it again"
         ),
     )
+    .with_detail(ErrorDetail::FirstRunScreen)
 }
 
 /// Whether `steer` asks the agent to exit.
@@ -298,7 +300,8 @@ fn send(
                 "the agent has no pane; relaunch with {}",
                 relaunch_hint(name)
             ),
-        )),
+        )
+        .with_detail(ErrorDetail::AgentGone)),
         Err(e) => Err(CommandError::new(ErrorKind::Failed, e.to_string())),
     }
 }

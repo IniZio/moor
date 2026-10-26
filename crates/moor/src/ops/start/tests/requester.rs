@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use moor_core::request::StartNeedsReq;
 use moor_core::user::{Identity, SecretName};
-use moor_core::{ErrorKind, SessionId, StartReq};
+use moor_core::{ErrorDetail, ErrorKind, SessionId, StartReq};
 use serde_json::json;
 
 use super::{on_github, repo, repo_req, req, world, World};
@@ -159,6 +159,7 @@ fn a_start_missing_secrets_is_refused_naming_every_one_and_creates_nothing() {
         err.error.to_string(),
         "log in first: moor user secret set claude, then moor user secret set github"
     );
+    assert_eq!(err.detail.as_deref(), Some(&ErrorDetail::LoginRequired));
     let value = err.value.unwrap();
     let both = json!(["claude", "github"]);
     assert_eq!(value.get("missing"), Some(&both), "{value}");

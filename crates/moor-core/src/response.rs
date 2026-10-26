@@ -100,6 +100,16 @@ pub enum CloseRefusal {
 pub enum ErrorDetail {
     /// A close was refused.
     CloseRefused(CloseRefusal),
+    /// The agent of the Box has ended and nothing is left to steer.
+    AgentGone,
+    /// The agent stopped at a first-run screen and cannot take a steer.
+    FirstRunScreen,
+    /// The agent kept ending right after relaunches, so it is not relaunched again.
+    RelaunchCapped,
+    /// The caller has not stored a secret the command needs.
+    LoginRequired,
+    /// The Box's provisioning owner died before the Box had a machine.
+    ProvisioningDead,
 }
 
 /// The envelope every command returns.
