@@ -117,6 +117,21 @@ fn a_second_save_takes_the_next_number() {
 }
 
 #[test]
+fn a_later_unchanged_save_keeps_the_earlier_archive() {
+    let (_dir, cx) = fx(FakeEngine::new().transcript_text("abc"));
+    let (row, mut session) = ready(&cx);
+    let store = cx.store().unwrap();
+    let first = save(&cx, store, &row, &session, Trigger::Turn).unwrap();
+    store
+        .set_transcript_digest(session.id, &first.digest)
+        .unwrap();
+    session.transcript_digest = Some(first.digest.clone());
+    let again = save(&cx, store, &row, &session, Trigger::Close).unwrap();
+    assert_eq!(again.path, first.path);
+    assert_eq!(fs::read(&first.path).unwrap(), b"abc");
+}
+
+#[test]
 fn a_failure_records_the_error_and_saves_nothing() {
     let engine =
         FakeEngine::new().fail_transcript(EngineError::Transcript("archive: exit 3".into()));
