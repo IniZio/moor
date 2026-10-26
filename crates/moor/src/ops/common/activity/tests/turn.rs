@@ -124,7 +124,8 @@ fn the_end_of_each_turn_copies_the_transcript_to_the_host() {
     let live = store.live_session(id).unwrap().unwrap();
     store.set_registered_session(live.id, "agent-1").unwrap();
     settle_once(&cx, id);
-    assert!(engine.transcripts().is_empty(), "no turn ended yet");
+    assert_eq!(events(&cx, id, "idled").len(), 1, "the first turn ended");
+    assert_eq!(engine.transcripts().len(), 1, "the first turn copies");
     steer(&cx, id);
     settle_once(&cx, id);
     let saved = events(&cx, id, "transcript_saved");
@@ -141,8 +142,8 @@ fn the_end_of_each_turn_copies_the_transcript_to_the_host() {
     settle_once(&cx, id);
     assert_eq!(
         engine.transcripts().len(),
-        2,
-        "the second turn copies again"
+        3,
+        "each later turn copies again"
     );
     assert_eq!(
         events(&cx, id, "transcript_saved").len(),
