@@ -148,8 +148,8 @@ impl Hooks {
             Ok(ids) => ids,
             Err(e) => return eprintln!("moor-machine-runner: cannot read the Box records: {e}"),
         };
-        let client = client.clone();
-        let open = match tokio::task::spawn_blocking(move || open_boxes(&client)).await {
+        let asks = client.clone();
+        let open = match tokio::task::spawn_blocking(move || open_boxes(&asks)).await {
             Ok(Ok(open)) => open,
             Ok(Err(e)) => return eprintln!("moor-machine-runner: sweep: {e}"),
             Err(e) => return eprintln!("moor-machine-runner: sweep: {e}"),
@@ -160,7 +160,7 @@ impl Hooks {
                 eprintln!("moor-machine-runner: release of Box {id} failed, retrying: {e}");
             }
         }
-        self.reconcile(&open).await;
+        self.reconcile(client).await;
     }
 
     /// Runs `release` for Box `id`, then drops its host mirror and its record.
@@ -273,7 +273,7 @@ pub(crate) fn spawn_sweep(every: Duration, client: Client, hooks: Arc<Hooks>, re
 }
 
 /// The ids of the Boxes the controller lists as open.
-fn open_boxes(client: &Client) -> Result<HashSet<i64>, String> {
+pub(super) fn open_boxes(client: &Client) -> Result<HashSet<i64>, String> {
     let request = Request::Show(ShowReq {
         target: None,
         events: None,

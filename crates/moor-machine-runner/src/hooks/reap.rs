@@ -9,7 +9,9 @@ use tokio::time::Instant;
 use moor_core::box_key::BoxKey;
 use moor_core::BoxId;
 
-use super::{read, tail, Hooks};
+use moor_client::Client;
+
+use super::{open_boxes, read, tail, Hooks};
 use crate::exec;
 
 /// Shell lines that give a command a state dir of its own and a `TMPDIR` inside it, so what the
@@ -30,53 +32,64 @@ fn box_id(name: &str) -> Option<i64> {
 
 impl Hooks {
     /// Cleans up every closed Box that has no record: its host mirror at once, and its files on
-    /// each known machine at most once per `reconcile` period.
-    pub(super) async fn reconcile(&self, open: &HashSet<i64>) {
+    /// each known machine at most once per `reconcile` period. The open Boxes and the records are
+    /// read after the listing: a Box that started meanwhile has files only once it is open.
+    pub(super) async fn reconcile(&self, client: &Client) {
+        let host = self.host_ids();
+        let mut found: Vec<(String, BTreeSet<i64>)> = Vec::new();
+        if self.listing_due() {
+            for target in self.targets() {
+                match self.listing(&target).await {
+                    Ok(ids) => found.push((target, ids)),
+                    Err(e) => {
+                        eprintln!("moor-machine-runner: cannot list the files on {target}: {e}");
+                    }
+                }
+            }
+        }
+        let client = client.clone();
+        let open = match tokio::task::spawn_blocking(move || open_boxes(&client)).await {
+            Ok(Ok(open)) => open,
+            Ok(Err(e)) => return eprintln!("moor-machine-runner: reconcile: {e}"),
+            Err(e) => return eprintln!("moor-machine-runner: reconcile: {e}"),
+        };
         let recorded: HashSet<i64> = match self.prepared() {
             Ok(ids) => ids.into_iter().collect(),
             Err(e) => return eprintln!("moor-machine-runner: cannot read the Box records: {e}"),
         };
-        self.reap_host(open, &recorded);
-        {
-            let mut last = self.listed.lock().unwrap_or_else(PoisonError::into_inner);
-            if last.is_some_and(|at| at.elapsed() < self.reconcile) {
-                return;
+        let orphan = |id: &i64| !open.contains(id) && !recorded.contains(id);
+        for id in host.iter().filter(|id| orphan(id)) {
+            if let Err(e) = std::fs::remove_dir_all(self.mirrors.join(id.to_string())) {
+                eprintln!("moor-machine-runner: cannot remove the mirror of Box {id}: {e}");
             }
-            *last = Some(Instant::now());
         }
-        for target in self.targets() {
-            let ids = match self.listing(&target).await {
-                Ok(ids) => ids,
-                Err(e) => {
-                    eprintln!("moor-machine-runner: cannot list the files on {target}: {e}");
-                    continue;
-                }
-            };
-            for id in ids
-                .iter()
-                .filter(|id| !recorded.contains(id) && !open.contains(id))
-            {
-                if let Err(e) = self.release_orphan(&target, *id).await {
+        for (target, ids) in &found {
+            for id in ids.iter().filter(|id| orphan(id)) {
+                if let Err(e) = self.release_orphan(target, *id).await {
                     eprintln!("moor-machine-runner: clean-up of Box {id} on {target} failed: {e}");
                 }
             }
         }
     }
 
-    /// Removes the host mirror of each closed Box that has no record.
-    fn reap_host(&self, open: &HashSet<i64>, recorded: &HashSet<i64>) {
-        let Ok(entries) = std::fs::read_dir(&self.mirrors) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let id = entry.file_name().to_str().and_then(box_id);
-            let Some(id) = id.filter(|id| !open.contains(id) && !recorded.contains(id)) else {
-                continue;
-            };
-            if let Err(e) = std::fs::remove_dir_all(self.mirrors.join(id.to_string())) {
-                eprintln!("moor-machine-runner: cannot remove the mirror of Box {id}: {e}");
-            }
+    /// Whether the machines' files are due for a listing; marks it done when they are.
+    fn listing_due(&self) -> bool {
+        let mut last = self.listed.lock().unwrap_or_else(PoisonError::into_inner);
+        if last.is_some_and(|at| at.elapsed() < self.reconcile) {
+            return false;
         }
+        *last = Some(Instant::now());
+        true
+    }
+
+    /// The Box ids the host mirrors are named for.
+    fn host_ids(&self) -> BTreeSet<i64> {
+        std::fs::read_dir(&self.mirrors)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|e| e.file_name().to_str().and_then(box_id))
+            .collect()
     }
 
     /// The ids named by the entries under `~/moor` and `~/moor-state` on the machine.
