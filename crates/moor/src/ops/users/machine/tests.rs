@@ -132,26 +132,3 @@ fn a_caller_without_a_user_is_refused() {
     let err = as_user(&f, "slack:T1:UZ", &UserCmd::MachineList).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
 }
-
-#[test]
-fn a_box_gets_only_its_requesters_machine() {
-    use crate::ops::common::machine::choose;
-    use moor_core::config::{MachinePick, RepoMachine};
-    use std::collections::BTreeMap;
-
-    let f = fixture();
-    let (me, _) = f.cx.store().unwrap().enroll(&id("slack:T1:UA")).unwrap();
-    enroll(&f, "slack:T1:UB");
-    as_user(&f, "slack:T1:UA", &add("mini", "me@mini", &["macos"])).unwrap();
-    as_user(&f, "slack:T1:UB", &add("air", "them@air", &["macos"])).unwrap();
-    let want = RepoMachine {
-        labels: vec!["macos".to_owned()],
-        ports: vec![8081],
-    };
-    let got = choose(f.cx.store().unwrap(), me, &want, &BTreeMap::new()).unwrap();
-    let attached = match got {
-        MachinePick::Attach(m) => Some((m.name, m.ssh)),
-        MachinePick::LeftOut { .. } => None,
-    };
-    assert_eq!(attached, Some(("mini".to_owned(), "me@mini".to_owned())));
-}

@@ -16,11 +16,6 @@ pub(crate) mod facts;
 pub(crate) mod host_path;
 pub(crate) mod identity;
 pub(crate) mod link;
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "Box start and the supervisor call it next")
-)]
-pub(crate) mod machine;
 pub(crate) mod park;
 pub(crate) mod promote;
 pub(crate) mod provision;

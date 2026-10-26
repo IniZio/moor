@@ -4,32 +4,13 @@
 //! Each Box port gets a driver local tunnel to a free host loopback port; one ssh child to the
 //! machine then serves every one of them back as the Box port on the machine's loopback.
 
-use std::collections::BTreeMap;
-
-use moor_core::config::{pick_machine, MachinePick, RepoMachine, UserMachine};
+use moor_core::config::UserMachine;
 use moor_core::seam::driver::{Driver, LocalTunnel};
 use moor_core::seam::proc::{ChildHandle, Deadline, Proc, ProcSpec, Tool};
-use moor_core::user::UserId;
 use moor_core::BoxHandle;
-
-use crate::store::{Store, StoreError};
 
 /// How long ssh may take to start; it then runs until dropped.
 const SSH_START: Deadline = Deadline(std::time::Duration::from_secs(30));
-
-/// Picks among `user`'s own machines only; `held` maps a machine name to the open Box holding it.
-pub(crate) fn choose(
-    store: &Store,
-    user: UserId,
-    want: &RepoMachine,
-    held: &BTreeMap<String, String>,
-) -> Result<MachinePick, StoreError> {
-    Ok(pick_machine(
-        &want.labels,
-        &store.user_machines(user)?,
-        held,
-    ))
-}
 
 /// The ssh arguments that serve each `(box_port, host_port)` as `box_port` on the machine's
 /// loopback. Only the machine's checked ssh target and port numbers reach the argv.

@@ -20,6 +20,7 @@ mod graphql_e2e;
 mod hairpin_e2e;
 #[cfg(target_os = "linux")]
 mod host_tcp;
+mod machine;
 mod nono_e2e;
 mod socket;
 mod users_e2e;
