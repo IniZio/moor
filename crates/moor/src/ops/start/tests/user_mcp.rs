@@ -67,8 +67,9 @@ fn a_server_without_a_key_is_left_out_and_the_start_says_so() {
     let (w, _) = with_linear(false);
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(
-        v.warnings_inline.iter().any(|n| n
-            == "MCP server linear left out: no key stored for it (add one with /moor mcp add)"),
+        v.warnings_inline
+            .iter()
+            .any(|n| n == "MCP server linear left out: you have no secret mcp_linear"),
         "{:?}",
         v.warnings_inline
     );
