@@ -1,0 +1,229 @@
+//! A runner process wired to a fake controller and a fake machine.
+
+use std::io::{BufRead, BufReader, Write};
+use std::os::unix::net::UnixListener;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::time::Duration;
+
+use moor_core::controller::{ServerFrame, PROTOCOL};
+use moor_core::response::Response;
+use serde_json::{json, Value};
+
+/// Stands in for `ssh`: runs the remote command locally, in `$FAKE_REMOTE_HOME`, the way sshd
+/// hands it to the remote user's shell.
+const FAKE_SSH: &str = r#"#!/bin/sh
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o|-l|-p|-i|-F) shift 2 ;;
+    --) shift; break ;;
+    -*) shift ;;
+    *) break ;;
+  esac
+done
+shift
+cd "$FAKE_REMOTE_HOME" || exit 255
+HOME="$FAKE_REMOTE_HOME" SHELL=/bin/sh exec /bin/sh -c "$*"
+"#;
+
+/// The headers the Box's Proxy sets for Box 7 on machine `minion`.
+pub const HEADERS: [(&str, &str); 3] = [
+    ("X-Moor-Box", "7"),
+    ("X-Moor-Machine", "minion"),
+    ("X-Moor-Machine-Ssh", "moor@minion"),
+];
+
+pub struct Rig {
+    _dir: tempfile::TempDir,
+    /// The fake Box's work tree, which the fake controller mirrors.
+    pub tree: PathBuf,
+    /// The fake machine user's home.
+    pub remote: PathBuf,
+    port: u16,
+    runner: Child,
+    agent: ureq::Agent,
+}
+
+impl Rig {
+    pub fn start() -> Self {
+        let dir = moor_testkit::short_tempdir("mrun").unwrap();
+        let bin = dir.path().join("bin");
+        moor_testkit::write_host_guards(&bin).unwrap();
+        moor_testkit::write_executable(&bin.join("ssh"), FAKE_SSH).unwrap();
+        let tree = dir.path().join("box");
+        let remote = dir.path().join("remote");
+        std::fs::create_dir_all(&tree).unwrap();
+        std::fs::create_dir_all(&remote).unwrap();
+        let socket = dir.path().join("c.sock");
+        fake_controller(&socket, tree.clone());
+        let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+        let mut runner = Command::new(env!("CARGO_BIN_EXE_moor-machine-runner"))
+            .args(["--listen", "127.0.0.1:0", "--socket"])
+            .arg(&socket)
+            .arg("--state-dir")
+            .arg(dir.path().join("state"))
+            .env("PATH", path)
+            .env("FAKE_REMOTE_HOME", &remote)
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut line = String::new();
+        BufReader::new(runner.stderr.take().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        let port = line.trim().rsplit(':').next().unwrap().parse().unwrap();
+        let agent = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .timeout_global(Some(Duration::from_secs(60)))
+            .build()
+            .into();
+        Self {
+            _dir: dir,
+            tree,
+            remote,
+            port,
+            runner,
+            agent,
+        }
+    }
+
+    /// The Box's copy on the fake machine.
+    pub fn copy(&self) -> PathBuf {
+        self.remote.join("moor/7")
+    }
+
+    pub fn write(&self, rel: &str, contents: &str) {
+        let path = self.tree.join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, contents).unwrap();
+    }
+
+    /// Calls `tool` as Box 7; the tool's structured result, or the error's message.
+    pub fn call(&self, tool: &str, args: Value) -> Result<Value, String> {
+        self.call_with(tool, args, &HEADERS)
+    }
+
+    pub fn call_with(
+        &self,
+        tool: &str,
+        args: Value,
+        headers: &[(&str, &str)],
+    ) -> Result<Value, String> {
+        let (init, session) = self.post(&rpc(1, "initialize", initialize()), headers, None);
+        assert!(init.get("result").is_some(), "initialize: {init}");
+        let note = json!({"jsonrpc": "2.0", "method": "notifications/initialized"});
+        self.post(&note, headers, session.as_deref());
+        let params = json!({"name": tool, "arguments": args});
+        let (reply, _) = self.post(&rpc(2, "tools/call", params), headers, session.as_deref());
+        if let Some(e) = reply.get("error") {
+            return Err(e["message"].as_str().unwrap().to_owned());
+        }
+        let result = &reply["result"];
+        if result["isError"] == true {
+            return Err(result["content"][0]["text"].as_str().unwrap().to_owned());
+        }
+        Ok(result["structuredContent"].clone())
+    }
+
+    fn post(
+        &self,
+        body: &Value,
+        headers: &[(&str, &str)],
+        session: Option<&str>,
+    ) -> (Value, Option<String>) {
+        let mut req = self
+            .agent
+            .post(format!("http://127.0.0.1:{}/mcp", self.port))
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream");
+        for (k, v) in headers {
+            req = req.header(*k, *v);
+        }
+        if let Some(s) = session {
+            req = req.header("Mcp-Session-Id", s);
+        }
+        let mut resp = req.send(body.to_string()).unwrap();
+        let session = resp
+            .headers()
+            .get("mcp-session-id")
+            .map(|v| v.to_str().unwrap().to_owned());
+        let text = resp.body_mut().read_to_string().unwrap();
+        let json = text
+            .lines()
+            .filter_map(|l| l.strip_prefix("data:"))
+            .map(str::trim)
+            .chain(std::iter::once(text.trim()))
+            .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+            .find(|v| v.get("id").is_some())
+            .unwrap_or(Value::Null);
+        (json, session)
+    }
+}
+
+impl Drop for Rig {
+    fn drop(&mut self) {
+        let _ = self.runner.kill();
+        let _ = self.runner.wait();
+    }
+}
+
+fn rpc(id: u64, method: &str, params: Value) -> Value {
+    json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params})
+}
+
+fn initialize() -> Value {
+    json!({
+        "protocolVersion": "2025-06-18",
+        "capabilities": {},
+        "clientInfo": {"name": "rig", "version": "0"}
+    })
+}
+
+/// Serves `box-mirror` the way the controller does, from `tree`, with a local rsync.
+fn fake_controller(socket: &Path, tree: PathBuf) {
+    let listener = UnixListener::bind(socket).unwrap();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let stream = stream.unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut writer = stream;
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            let hello = ServerFrame::Hello { protocol: PROTOCOL };
+            writeln!(writer, "{}", serde_json::to_string(&hello).unwrap()).unwrap();
+            line.clear();
+            reader.read_line(&mut line).unwrap();
+            let frame: Value = serde_json::from_str(&line).unwrap();
+            let req = request(&frame).unwrap();
+            assert_eq!(req["cmd"], "box-mirror", "{frame}");
+            assert_eq!(req["id"], 7, "{frame}");
+            let dest = req["dest"].as_str().unwrap().to_owned();
+            std::fs::create_dir_all(&dest).unwrap();
+            let ok = Command::new("rsync")
+                .args(["-a", "--delete", "--exclude=.git"])
+                .arg(format!("{}/", tree.display()))
+                .arg(format!("{dest}/"))
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok, "fake controller rsync");
+            let value = json!({"from": "/work", "to": dest, "files": 1, "bytes": 1,
+                "confirmation": "mirrored"});
+            let envelope = Response::ok("box-mirror", Some(value));
+            let frame = ServerFrame::Response {
+                id: "1".to_owned(),
+                envelope,
+            };
+            writeln!(writer, "{}", serde_json::to_string(&frame).unwrap()).unwrap();
+        }
+    });
+}
+
+/// The request inside a client frame: the object that names a `cmd`.
+fn request(v: &Value) -> Option<&Value> {
+    match v {
+        Value::Object(m) if m.contains_key("cmd") => Some(v),
+        Value::Object(m) => m.values().find_map(request),
+        _ => None,
+    }
+}
