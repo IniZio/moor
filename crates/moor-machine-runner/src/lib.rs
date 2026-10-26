@@ -1,7 +1,8 @@
 //! An MCP server on the host through which a Box uses one of its user's machines over ssh.
 //!
 //! The Box's Proxy routes `machine.moor.internal` here and names the caller in four headers:
-//! the Box id, the machine's name, its ssh target and the Box's slot on it. `sync` mirrors the
+//! the Box id, the machine's name, its ssh target and the Box's slot on it. A Box that holds no
+//! slot gets the Box id and the reason instead, and every call answers that reason. `sync` mirrors the
 //! Box's work tree onto the machine; `exec` runs a command there, in that copy, holding any
 //! capped resources it names; `pull` brings one file back into the Box's work tree; `machine_info` says which slot and ports the Box has. The
 //! operator's `prepare`, `suspend` and `release` commands set up, pause and clean up per-Box
@@ -20,7 +21,8 @@ use moor_client::Client;
 use rmcp::handler::server::tool::{Extension, ToolCallContext};
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, ListToolsResult, PaginatedRequestParams,
+    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ListToolsResult,
+    PaginatedRequestParams,
 };
 use rmcp::service::RequestContext;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
@@ -318,7 +320,7 @@ impl ServerHandler for Runner {
         context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
         let mut tools = Self::tool_router().list_all();
-        if !self.relays.is_empty() {
+        if !self.relays.is_empty() && missing(&context)?.is_none() {
             let caller = caller(&context)?;
             match self.hooks.facts(&caller).await {
                 Ok(facts) => {
@@ -339,6 +341,12 @@ impl ServerHandler for Runner {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
+        if let Some(reason) = missing(&context)? {
+            return Ok(CallToolResult::error(vec![ContentBlock::text(format!(
+                "{reason}. Try again later."
+            ))])
+            .into());
+        }
         let router = Self::tool_router();
         if router.has_route(&request.name) || self.relays.is_empty() {
             return router
@@ -361,6 +369,15 @@ fn own_names() -> Vec<String> {
         .into_iter()
         .map(|t| t.name.into_owned())
         .collect()
+}
+
+/// Why the calling Box holds no machine slot, when its Proxy says so.
+fn missing(context: &RequestContext<RoleServer>) -> Result<Option<String>, ErrorData> {
+    let parts = context
+        .extensions
+        .get::<http::request::Parts>()
+        .ok_or_else(|| internal("request headers missing"))?;
+    Caller::missing(&parts.headers)
 }
 
 /// The caller named in the request's headers.

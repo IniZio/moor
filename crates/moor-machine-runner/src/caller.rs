@@ -16,6 +16,8 @@ const SSH: &str = "X-Moor-Machine-Ssh";
 const SLOT: &str = "X-Moor-Machine-Slot";
 /// Header carrying what syncs leave alone, as a JSON array of rsync patterns; optional.
 const EXCLUDE: &str = "X-Moor-Machine-Exclude";
+/// Header carrying why the Box holds no machine slot; set instead of the machine headers.
+const MISSING: &str = "X-Moor-Machine-Missing";
 /// Highest slot: its ports, the repo's plus ten per slot, must stay below 65536.
 const MAX_SLOT: u16 = 6553;
 
@@ -46,13 +48,7 @@ impl Caller {
                 .map(str::to_owned)
                 .ok_or_else(|| refused(format!("missing header {name}")))
         };
-        let raw = header(BOX)?;
-        let box_id = raw
-            .parse::<i64>()
-            .ok()
-            .filter(|n| *n > 0)
-            .map(BoxId::new)
-            .ok_or_else(|| refused(format!("header {BOX} is not a Box id: {raw}")))?;
+        let box_id = box_id(headers)?;
         let machine = header(MACHINE)?;
         let ssh = header(SSH)?;
         check_ssh(&ssh).map_err(|e| refused(format!("header {SSH}: {e}")))?;
@@ -89,10 +85,40 @@ impl Caller {
         })
     }
 
+    /// Why the Box holds no machine slot, when the Proxy says so; `None` for a Box that holds one.
+    ///
+    /// # Errors
+    /// Returns an MCP error when the marker comes without a valid Box id.
+    pub(crate) fn missing(headers: &HeaderMap) -> Result<Option<String>, ErrorData> {
+        let Some(reason) = headers.get(MISSING) else {
+            return Ok(None);
+        };
+        box_id(headers)?;
+        let reason = reason
+            .to_str()
+            .map_err(|_| refused(format!("header {MISSING} is not text")))?;
+        Ok(Some(reason.trim().to_owned()))
+    }
+
     /// The Box's copy on the machine, relative to the machine user's home.
     pub(crate) fn remote_dir(&self) -> String {
         BoxKey::new(self.box_id).machine_dir()
     }
+}
+
+/// The calling Box's id from the request headers.
+fn box_id(headers: &HeaderMap) -> Result<BoxId, ErrorData> {
+    let raw = headers
+        .get(BOX)
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| refused(format!("missing header {BOX}")))?;
+    raw.parse::<i64>()
+        .ok()
+        .filter(|n| *n > 0)
+        .map(BoxId::new)
+        .ok_or_else(|| refused(format!("header {BOX} is not a Box id: {raw}")))
 }
 
 /// An MCP error for a request the runner will not serve.
