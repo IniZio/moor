@@ -115,8 +115,25 @@ fn a_closed_box_is_released_once_and_its_record_and_mirror_go() {
     rig.open.lock().unwrap().clear();
     eventually("the record is gone", || !record.exists());
     assert!(!mirror.exists(), "the mirror is gone");
+    assert!(!rig.copy().exists(), "the copy on the machine is gone");
     std::thread::sleep(Duration::from_secs(3));
     assert_eq!(lines(&rig.remote.join("released")), ["7 dev-7"]);
+}
+
+#[test]
+fn a_closed_box_that_only_synced_loses_its_copies_without_a_release() {
+    let rig = hooked(RELEASE);
+    rig.call("sync", json!({})).unwrap();
+    let mirror = rig.state().join("mirrors/7");
+    assert!(mirror.is_dir() && rig.copy().is_dir());
+    rig.open.lock().unwrap().clear();
+    eventually("the mirror is gone", || !mirror.exists());
+    eventually("the copy on the machine is gone", || !rig.copy().exists());
+    assert!(!rig.state().join("boxes/7.json").exists());
+    assert!(
+        lines(&rig.remote.join("released")).is_empty(),
+        "never prepared, never released"
+    );
 }
 
 #[test]

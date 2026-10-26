@@ -1,9 +1,10 @@
 //! Per-Box setup and clean-up on the machine: operator commands the runner runs over ssh.
 //!
 //! `prepare` runs before a Box's first `exec` or `machine_info` and prints the Box's facts,
-//! which the runner keeps in `<state dir>/boxes/<id>.json`. A sweep runs `release` for each
-//! Box with a record that the controller no longer lists as open, then drops the record and
-//! the Box's host mirror. A failed step keeps everything, so the next call or sweep retries.
+//! which the runner keeps in `<state dir>/boxes/<id>.json`; a `sync` leaves a record too. A
+//! sweep takes each Box with a record that the controller no longer lists as open: it runs
+//! `release` if the Box was prepared, removes the Box's copy on the machine, then drops its host
+//! mirror and the record. A failed step keeps everything, so the next call or sweep retries.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io;
@@ -51,6 +52,8 @@ struct Record {
     slot: u16,
     /// What `prepare` printed.
     facts: Facts,
+    /// Whether `prepare` ran; a record a `sync` left has not.
+    prepared: bool,
 }
 
 impl Hooks {
@@ -66,7 +69,7 @@ impl Hooks {
         };
         let _held = lock.lock().await;
         let path = self.record(id);
-        if let Some(record) = read(&path)? {
+        if let Some(record) = read(&path)?.filter(|r| r.prepared) {
             return Ok(record.facts);
         }
         let facts = match &self.prepare {
@@ -92,9 +95,34 @@ impl Hooks {
             ssh: caller.ssh.clone(),
             slot: caller.slot,
             facts,
+            prepared: true,
         };
         write(&path, &record).map_err(|e| format!("could not keep the Box's facts: {e}"))?;
         Ok(record.facts)
+    }
+
+    /// Leaves a record for the caller's Box when it has none, so a sweep finds it once closed.
+    pub(crate) async fn note(&self, caller: &Caller) -> Result<(), String> {
+        let id = caller.box_id.get();
+        let lock = {
+            let mut locks = self
+                .preparing
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            Arc::clone(locks.entry(id).or_default())
+        };
+        let _held = lock.lock().await;
+        let path = self.record(id);
+        if read(&path)?.is_some() {
+            return Ok(());
+        }
+        let record = Record {
+            ssh: caller.ssh.clone(),
+            slot: caller.slot,
+            facts: Facts::new(),
+            prepared: false,
+        };
+        write(&path, &record).map_err(|e| format!("could not note the Box: {e}"))
     }
 
     /// Releases every Box with a record that the controller does not list as open.
@@ -123,9 +151,20 @@ impl Hooks {
         let Some(record) = read(&path)? else {
             return Ok(());
         };
-        if let Some(command) = &self.release {
+        if let (Some(command), true) = (&self.release, record.prepared) {
             let out = self.on_machine(id, &record.ssh, record.slot, &record.facts, command);
             out.await?;
+        }
+        let copy = BoxKey::new(BoxId::new(id)).machine_dir();
+        let out = exec::run(
+            &record.ssh,
+            &format!("cd && rm -rf -- {copy}"),
+            self.timeout,
+        )
+        .await
+        .map_err(|e| format!("could not run ssh: {e}"))?;
+        if out.exit_code != Some(0) {
+            return Err(format!("could not remove {copy}: {}", tail(&out)));
         }
         let gone = |r: io::Result<()>| match r {
             Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e.to_string()),

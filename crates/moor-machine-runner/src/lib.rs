@@ -167,6 +167,7 @@ impl Runner {
             Arc::clone(locks.entry(caller.box_id.get()).or_default())
         };
         let _held = lock.lock().await;
+        self.hooks.note(&caller).await.map_err(|e| internal(&e))?;
         let (client, mirrors) = (self.client.clone(), self.mirrors.clone());
         tokio::task::spawn_blocking(move || sync::run(&client, &mirrors, &caller))
             .await

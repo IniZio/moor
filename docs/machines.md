@@ -37,7 +37,7 @@ moor-machine-runner --socket /path/to/moor.sock --state-dir ~/.local/state/moor-
 | `--service-host` | `machine.moor.internal` | the `Host` the Proxy passes through, accepted besides the loopback names |
 | `--resource NAME=CAP` | none | a capped resource each machine has, such as `build=1`; repeat for more |
 | `--prepare CMD` | none | run on the machine before a Box's first `exec` or `machine_info`; see [Per-Box setup](#per-box-setup) |
-| `--release CMD` | none | run on the machine once a prepared Box is no longer open |
+| `--release CMD` | none | run on the machine once a prepared Box is no longer open, before its copy there is removed |
 | `--hook-timeout-secs` | `600` | how long `prepare` or `release` may run |
 | `--sweep-secs` | `60` | how often the runner looks for prepared Boxes that are no longer open |
 
@@ -109,14 +109,15 @@ digits as `_`, so `device` is `MOOR_FACT_DEVICE`. With no `--prepare` the facts
 are empty and the record is still kept.
 
 `--release CMD` runs, in the same place, with the same variables and the
-`MOOR_FACT_*` ones, once the Box is no longer open. Every `--sweep-secs` the
+`MOOR_FACT_*` ones, once a prepared Box is no longer open. A `sync` also leaves a
+record, so a Box that only synced is cleaned up too. Every `--sweep-secs` the
 runner asks the controller for the open Boxes (a `show` with no Box, over the
 same socket). For each recorded Box the controller does not list, it runs
-release, then deletes the Box's record and its host mirror
-`<state dir>/mirrors/<box id>`. If release fails, it keeps both, prints the
-tail of the output to stderr, and tries again on the next sweep. If the
-controller cannot be asked, nothing is released. With no `--release` the record
-and mirror are still deleted.
+release if the Box was prepared, removes `~/moor/<box id>` on the machine, then
+deletes the Box's record and its host mirror `<state dir>/mirrors/<box id>`. If
+a step fails, it keeps the rest, prints the tail of the output to stderr, and
+tries again on the next sweep. If the controller cannot be asked, nothing is
+released.
 
 `sync` runs `rsync --delete` into `~/moor/<box id>`, so anything prepare puts
 there is removed by the next sync. Put per-Box folders, such as a build's
