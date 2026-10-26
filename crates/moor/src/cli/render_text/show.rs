@@ -138,6 +138,30 @@ fn agent_block(out: &mut String, a: &Value) {
     }
 }
 
+/// The `attached:` line of a Box that holds one of its user's machines.
+fn held_machine_line(out: &mut String, view: &Value) {
+    let Some(m) = view.get("held_machine").filter(|m| !m.is_null()) else {
+        return;
+    };
+    let ports: Vec<String> = m
+        .get("ports")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(Value::to_string)
+        .collect();
+    let slot = m
+        .get("slot")
+        .and_then(Value::as_u64)
+        .map_or_else(|| "-".to_owned(), |s| s.to_string());
+    let _ = writeln!(
+        out,
+        "attached: {} slot {slot} ports {}",
+        field(m, "name"),
+        ports.join(",")
+    );
+}
+
 /// The detail block for one Box.
 fn detail(view: &Value, value: &Value) -> Option<String> {
     let mut out = String::new();
@@ -165,24 +189,7 @@ fn detail(view: &Value, value: &Value) -> Option<String> {
         }
         None => out.push_str("box:      none\n"),
     }
-    if let Some(m) = view.get("held_machine").filter(|m| !m.is_null()) {
-        let ports: Vec<String> = m
-            .get("ports")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .map(Value::to_string)
-            .collect();
-        let _ = writeln!(
-            out,
-            "attached: {} slot {} ports {}",
-            field(m, "name"),
-            m.get("slot")
-                .and_then(Value::as_u64)
-                .map_or("-".to_owned(), |s| s.to_string()),
-            ports.join(",")
-        );
-    }
+    held_machine_line(&mut out, view);
     if let Some(a) = view.get("agent").filter(|a| !a.is_null()) {
         agent_block(&mut out, a);
     }

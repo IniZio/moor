@@ -184,7 +184,10 @@ fn show_session_renders_host_with_child() {
 #[test]
 fn detail_names_the_held_machine_its_slot_and_ports() {
     let mut t = row("alpha", true);
-    t["held_machine"] = json!({"name": "mini", "slot": 1, "ports": [8091, 8095]});
+    let held = json!({"name": "mini", "slot": 1, "ports": [8091, 8095]});
+    t.as_object_mut()
+        .unwrap()
+        .insert("held_machine".into(), held);
     let out = show(json!({"box": t}));
     assert!(
         out.contains("egress=none\nattached: mini slot 1 ports 8091,8095\nagent:"),

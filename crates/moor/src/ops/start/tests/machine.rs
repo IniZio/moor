@@ -213,7 +213,10 @@ fn closing_a_box_with_no_supervisor_frees_its_machine() {
     let held_box = start(&w, "a");
     close(&w, &held_box);
     assert_eq!(slot(&w, &held_box), None);
-    let kinds: Vec<String> = machine_events(&w, &held_box).into_iter().map(|e| e.0).collect();
+    let kinds: Vec<String> = machine_events(&w, &held_box)
+        .into_iter()
+        .map(|e| e.0)
+        .collect();
     assert_eq!(kinds, ["machine_detached"]);
 }
 
