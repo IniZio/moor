@@ -27,6 +27,7 @@ fn rec(kind: HookKind) -> HookRecord {
         options: Vec::new(),
         doing: None,
         at: ts(1),
+        turn: None,
     }
 }
 

@@ -27,6 +27,8 @@ const BUSY_MATCHER: &str = "Bash|BashOutput|Read|Edit|MultiEdit|Write|NotebookEd
 WebFetch|WebSearch|Agent|TodoWrite|KillShell|SlashCommand|Skill|mcp__.*";
 
 /// Writes `agent-state.json` beside itself: `hook.sh STATE EVENT`, hook JSON on stdin.
+/// `ts` is when it ran and `turn` when the prompt of the current turn was submitted, both in
+/// milliseconds on the Box's clock; every report but a prompt's carries `turn` forward.
 /// The read is capped in size and time, so a closed or silent stdin never stalls the agent.
 /// A question tool's record keeps its questions, and no Notification replaces it: Claude Code
 /// follows the question with a generic permission notice that names nothing it asked.
@@ -47,17 +49,23 @@ except ValueError:
     d = {}
 if not isinstance(d, dict):
     d = {}
-o = {"state": sys.argv[1], "event": sys.argv[2], "ts": int(time.time())}
+o = {"state": sys.argv[1], "event": sys.argv[2], "ts": int(time.time() * 1000)}
 for k in ("session_id", "message", "notification_type", "last_assistant_message"):
     if isinstance(d.get(k), str):
         o[k] = d[k]
+try:
+    p = json.load(open(sys.argv[3] + "/agent-state.json"))
+    if not isinstance(p, dict):
+        p = {}
+except (OSError, ValueError):
+    p = {}
+if sys.argv[2] == "UserPromptSubmit":
+    o["turn"] = o["ts"]
+elif isinstance(p.get("turn"), int):
+    o["turn"] = p["turn"]
 if sys.argv[2] == "Notification" and "last_assistant_message" not in o:
-    try:
-        p = json.load(open(sys.argv[3] + "/agent-state.json"))
-        if p.get("state") == "idle" and isinstance(p.get("last_assistant_message"), str):
-            o["last_assistant_message"] = p["last_assistant_message"]
-    except (OSError, ValueError, AttributeError):
-        pass
+    if p.get("state") == "idle" and isinstance(p.get("last_assistant_message"), str):
+        o["last_assistant_message"] = p["last_assistant_message"]
 ti = d.get("tool_input")
 if isinstance(ti, dict) and isinstance(ti.get("questions"), list):
     o["questions"] = ti["questions"]
@@ -71,15 +79,17 @@ elif command -v node >/dev/null 2>&1; then
 let d = {};
 try { d = JSON.parse(process.env.MOOR_HOOK_IN || ""); } catch (e) {}
 if (d === null || typeof d !== "object" || Array.isArray(d)) d = {};
-const o = { state: process.argv[1], event: process.argv[2], ts: Math.floor(Date.now() / 1000) };
+const o = { state: process.argv[1], event: process.argv[2], ts: Date.now() };
 for (const k of ["session_id", "message", "notification_type", "last_assistant_message"]) {
   if (typeof d[k] === "string") o[k] = d[k];
 }
+let p = {};
+try { p = JSON.parse(require("fs").readFileSync(process.argv[3] + "/agent-state.json", "utf8")); } catch (e) {}
+if (p === null || typeof p !== "object") p = {};
+if (process.argv[2] === "UserPromptSubmit") o.turn = o.ts;
+else if (Number.isInteger(p.turn)) o.turn = p.turn;
 if (process.argv[2] === "Notification" && !("last_assistant_message" in o)) {
-  try {
-    const p = JSON.parse(require("fs").readFileSync(process.argv[3] + "/agent-state.json", "utf8"));
-    if (p.state === "idle" && typeof p.last_assistant_message === "string") o.last_assistant_message = p.last_assistant_message;
-  } catch (e) {}
+  if (p.state === "idle" && typeof p.last_assistant_message === "string") o.last_assistant_message = p.last_assistant_message;
 }
 const ti = d.tool_input;
 if (ti && typeof ti === "object" && Array.isArray(ti.questions)) o.questions = ti.questions;
@@ -92,7 +102,11 @@ if (process.argv[1] === "working" && typeof d.tool_name === "string") {
 }
 console.log(JSON.stringify(o));' "$1" "$2" "$d"
 else
-  printf '{"state":"%s","event":"%s","ts":%s}\n' "$1" "$2" "$(date +%s)"
+  ts=$(date +%s%3N 2>/dev/null)
+  case $ts in ''|*[!0-9]*) ts=$(($(date +%s) * 1000)) ;; esac
+  if [ "$2" = UserPromptSubmit ]; then turn=$ts
+  else turn=$(sed -n 's/.*"turn": *\([0-9][0-9]*\).*/\1/p' "$d/agent-state.json" 2>/dev/null); fi
+  printf '{"state":"%s","event":"%s","ts":%s,"turn":%s}\n' "$1" "$2" "$ts" "${turn:-null}"
 fi > "$t" 2>/dev/null && mv -f "$t" "$d/agent-state.json" || rm -f "$t"
 exit 0
 "#;

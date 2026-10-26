@@ -58,6 +58,7 @@ fn an_interrupt_is_refused_at_a_first_run_screen_and_sends_nothing() {
             options: Vec::new(),
             doing: None,
             at: Ts::from_millis(0),
+            turn: None,
         }),
         pane: PaneRead::Fresh(PaneObs {
             status: PaneStatus::Unknown,

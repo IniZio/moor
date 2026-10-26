@@ -33,4 +33,6 @@ pub struct HookRecord {
     pub doing: Option<String>,
     /// When the agent wrote it.
     pub at: Ts,
+    /// When the prompt of the turn it belongs to was submitted; none when the report names none.
+    pub turn: Option<Ts>,
 }

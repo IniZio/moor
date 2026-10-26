@@ -32,7 +32,8 @@ impl AgentProfile for Claude {
             "waiting_input" => HookKind::Blocked,
             _ => return None,
         };
-        let secs = value.get("ts")?.as_i64().filter(|s| *s >= 0)?;
+        let ms = |key: &str| value.get(key).and_then(Value::as_i64).filter(|t| *t >= 0);
+        let at = ms("ts")?;
         let blocked = kind == HookKind::Blocked;
         // A question tool's record carries its questions; the first is the one on screen.
         let asked = value
@@ -68,7 +69,8 @@ impl AgentProfile for Claude {
             message,
             options,
             doing,
-            at: Ts::from_millis(secs.checked_mul(1000)?),
+            at: Ts::from_millis(at),
+            turn: ms("turn").map(Ts::from_millis),
         })
     }
 

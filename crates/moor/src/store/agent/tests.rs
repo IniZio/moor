@@ -199,6 +199,7 @@ fn hook_cache_round_trips_every_kind_and_keeps_the_latest() {
             options: Vec::new(),
             doing: None,
             at: Ts::from_millis(500 + i64::try_from(i).unwrap()),
+            turn: None,
         };
         store.put_hook(id, &record).unwrap();
         let cache = store.hook(id).unwrap().unwrap();
@@ -337,6 +338,7 @@ fn hook_follows_the_current_session() {
         options: Vec::new(),
         doing: None,
         at: Ts::from_millis(5),
+        turn: None,
     };
     store.put_hook(id, &record(HookKind::Busy)).unwrap();
     set_session_state(&store, id, "ended");
@@ -371,6 +373,7 @@ fn a_hook_report_keeps_its_doing_line_through_the_cache() {
         options: Vec::new(),
         doing: Some("Bash: cargo test".to_owned()),
         at: Ts::from_millis(900),
+        turn: None,
     };
     store.put_hook(id, &record).unwrap();
     assert_eq!(store.hook(id).unwrap().unwrap().record, record);

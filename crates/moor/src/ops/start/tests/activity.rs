@@ -35,6 +35,7 @@ fn probes(w: &World, hook: Option<HookKind>, pane: PaneStatus) -> Probes {
                 options: Vec::new(),
                 doing: None,
                 at,
+                turn: None,
             })
         }),
         pane: PaneRead::Fresh(PaneObs {
@@ -295,6 +296,7 @@ fn hooked() -> (World, BoxId) {
         options: Vec::new(),
         doing: None,
         at: Ts::from_millis(w.cx.clock().now().as_millis() - 1000),
+        turn: None,
     });
     w.cx =
         w.cx.with_engine(Arc::new(FakeEngine::new().probes(SESSION, p)));

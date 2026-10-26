@@ -33,6 +33,7 @@ impl AgentProfile for Stub {
             options: Vec::new(),
             doing: None,
             at: Ts::from_millis(1),
+            turn: None,
         })
     }
 
@@ -182,6 +183,7 @@ fn returns_the_parsed_hook_and_the_pane_observation() {
             options: Vec::new(),
             doing: None,
             at: Ts::from_millis(1),
+            turn: None,
         })
     );
     assert_eq!(got.pane, PaneRead::Fresh(obs()));

@@ -33,6 +33,7 @@ fn hook(kind: HookKind) -> Probes {
             options: Vec::new(),
             doing: None,
             at: Ts::from_millis(1_000),
+            turn: None,
         }),
         pane: PaneRead::Absent,
     }

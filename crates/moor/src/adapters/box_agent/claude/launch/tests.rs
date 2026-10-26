@@ -443,7 +443,8 @@ fn check_hook_without_interpreter(path: Option<&str>) {
     assert_eq!(value["state"], "waiting_input");
     assert_eq!(value["event"], "Notification");
     assert!(value["ts"].as_i64().unwrap() > 0);
-    assert_eq!(value.as_object().unwrap().len(), 3);
+    assert_eq!(value["turn"], Value::Null, "no prompt was submitted yet");
+    assert_eq!(value.as_object().unwrap().len(), 4);
     let rec = Claude.parse_hook(&raw).unwrap();
     assert_eq!(rec.session_id, None);
 }

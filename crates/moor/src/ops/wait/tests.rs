@@ -282,6 +282,7 @@ fn hook(kind: HookKind) -> Probes {
             options: Vec::new(),
             doing: None,
             at: Ts::from_millis(0),
+            turn: None,
         }),
         pane: PaneRead::Fresh(PaneObs {
             status: PaneStatus::Unknown,
