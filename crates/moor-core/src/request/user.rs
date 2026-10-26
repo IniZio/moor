@@ -9,6 +9,9 @@ use super::{MachineAddReq, MachineRemoveReq, Request, StartReq};
 use crate::secret::Secret;
 use crate::user::{Identity, SecretName};
 
+mod mcp;
+pub use mcp::{McpAddReq, McpOAuthFinishReq, McpRemoveReq};
+
 /// Arguments of a user request that needs only the identity it acts as.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -40,39 +43,6 @@ pub struct SecretDeleteReq {
     pub identity: Option<Identity>,
     /// The secret's name.
     pub name: SecretName,
-}
-
-/// Arguments of `mcp-add`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct McpAddReq {
-    /// The identity asserted; the controller socket's own peer when absent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub identity: Option<Identity>,
-    /// The server's name.
-    pub name: String,
-    /// The server's `https://` URL.
-    pub url: String,
-    /// The header the key goes in; `Authorization` when absent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub header: Option<String>,
-    /// The key, stored in the vault; the stored one is kept when absent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub key: Option<SecretValue>,
-    /// Whether only a Box whose repo asks for a machine gets the server.
-    #[serde(default)]
-    pub machine: bool,
-}
-
-/// Arguments of `mcp-remove`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct McpRemoveReq {
-    /// The identity asserted; the controller socket's own peer when absent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub identity: Option<Identity>,
-    /// The server's name.
-    pub name: String,
 }
 
 /// Arguments of `link-redeem`.
@@ -212,6 +182,15 @@ pub enum UserCmd {
     },
     /// The caller's user's MCP servers.
     McpList,
+    /// Finish signing in to one of the caller's user's MCP servers.
+    McpOAuthFinish {
+        /// The `state` the sign-in started with.
+        state: String,
+        /// The authorization code.
+        code: String,
+        /// The issuer the authorization server named.
+        iss: Option<String>,
+    },
     /// Add or replace one of the caller's user's machines.
     MachineAdd {
         /// The machine's name.
@@ -261,6 +240,7 @@ impl UserCmd {
             Self::McpAdd { .. } => "mcp-add",
             Self::McpRemove { .. } => "mcp-remove",
             Self::McpList => "mcp-list",
+            Self::McpOAuthFinish { .. } => "mcp-oauth-finish",
             Self::MachineAdd { .. } => "machine-add",
             Self::MachineRemove { .. } => "machine-remove",
             Self::MachineList => "machine-list",
@@ -304,6 +284,14 @@ impl Request {
             ),
             Self::McpRemove(r) => (r.identity, UserCmd::McpRemove { name: r.name }),
             Self::McpList(r) => (r.identity, UserCmd::McpList),
+            Self::McpOAuthFinish(r) => (
+                r.identity,
+                UserCmd::McpOAuthFinish {
+                    state: r.state,
+                    code: r.code,
+                    iss: r.iss,
+                },
+            ),
             Self::MachineAdd(r) => (
                 r.identity,
                 UserCmd::MachineAdd {
@@ -361,6 +349,7 @@ impl Request {
             | Self::MachineRemove(MachineRemoveReq { identity, .. })
             | Self::McpAdd(McpAddReq { identity, .. })
             | Self::McpRemove(McpRemoveReq { identity, .. })
+            | Self::McpOAuthFinish(McpOAuthFinishReq { identity, .. })
             | Self::LinkCode(AsReq { identity })
             | Self::ProxyLease(AsReq { identity })
             | Self::ProxyStatus(AsReq { identity })

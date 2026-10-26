@@ -223,6 +223,13 @@ impl Cx {
         self.clock.as_ref()
     }
 
+    /// This context with `config` in place of the current one.
+    #[cfg(test)]
+    pub(crate) fn with_config(mut self, config: UserConfig) -> Self {
+        self.config = config;
+        self
+    }
+
     /// This context with `clock` in place of the current one.
     #[cfg(test)]
     pub(crate) fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {

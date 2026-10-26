@@ -1,8 +1,10 @@
 //! clap definitions for `moor user`: the caller's user, its secrets and its link codes.
 
 use clap::{Args, Subcommand};
+use moor_core::config::OAuthCallback;
 use moor_core::request::{
-    AsReq, LinkRedeemReq, MachineAddReq, MachineRemoveReq, McpAddReq, McpRemoveReq, SecretDeleteReq,
+    AsReq, LinkRedeemReq, MachineAddReq, MachineRemoveReq, McpAddReq, McpOAuthFinishReq,
+    McpRemoveReq, SecretDeleteReq,
 };
 use moor_core::user::SecretName;
 use moor_core::Request;
@@ -43,12 +45,23 @@ pub(super) enum SecretCli {
 /// Subcommands of `user mcp`.
 #[derive(Debug, Subcommand)]
 pub(super) enum McpCli {
-    /// Add or replace server NAME at URL; set its key with `moor user secret set mcp_<name>`.
+    /// Add or replace server NAME at URL; set its key with `moor user secret set mcp_<name>`,
+    /// or open the printed `sign_in` address when the server asks for OAuth.
     Add(McpAddArgs),
+    /// Finish an OAuth sign-in with the address the browser ended on.
+    Finish(McpFinishArg),
     /// Remove server NAME and its key.
     Rm(McpNameArg),
     /// List your servers.
     Ls,
+}
+
+/// Arguments of `user mcp finish`.
+#[derive(Debug, Args)]
+pub(super) struct McpFinishArg {
+    /// The full address in the browser's address bar after signing in.
+    #[arg(value_parser = OAuthCallback::from_url)]
+    pub(super) url: OAuthCallback,
 }
 
 /// Subcommands of `user machine`.
@@ -142,6 +155,12 @@ impl UserCli {
                 name: a.name,
             }),
             Self::Mcp(McpCli::Ls) => Request::McpList(AS_CALLER),
+            Self::Mcp(McpCli::Finish(a)) => Request::McpOAuthFinish(McpOAuthFinishReq {
+                identity: None,
+                state: a.url.state,
+                code: a.url.code,
+                iss: a.url.iss,
+            }),
             Self::Machine(MachineCli::Add(a)) => Request::MachineAdd(MachineAddReq {
                 identity: None,
                 name: a.name,

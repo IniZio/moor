@@ -33,6 +33,7 @@ rustix = { version = "1", features = [
   "thread",
 ] }
 zeroize = "1"
+oauth2 = { version = "5", default-features = false }
 age = { version = "0.12", default-features = false }
 sha2 = "0.10"
 flate2 = "1"

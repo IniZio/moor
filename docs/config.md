@@ -108,6 +108,28 @@ says so. moor leaves out a server whose key the user has not stored, and the
 start names it in one note. The start is never refused for a missing key. The
 same holds for shared servers.
 
+#### Signing in over OAuth
+
+Added without a key, a server is probed. When it answers 401 and names its resource metadata, the controller signs the user in as an OAuth client under the MCP authorization spec, and the reply carries a `sign_in` address. The user opens it, signs in, and hands back the address the browser ends on, even when that page fails to load:
+
+```sh
+moor user mcp add notion https://mcp.notion.com/mcp   # prints sign_in
+moor user mcp finish 'http://127.0.0.1:33418/oauth/callback?code=...&state=...&iss=...'
+```
+
+The sign-in expires after 10 minutes. The access token becomes the secret `mcp_<name>`, so the Proxy injects it like a key, and `mcp ls` shows `signed_in` with the token's expiry. The refresh token and client registration are sealed apart, and the Proxy never reads them. `mcp rm` deletes both. Shared `mcp_servers:` never sign in.
+
+The controller registers itself with each authorization server (RFC 7591) unless the operator names a client for that server's host:
+
+```yaml
+oauth:
+  callback_url: https://moor.example.com/oauth/callback   # optional; the loopback address otherwise
+  clients:
+    auth.example.com:
+      client_id: moor
+      client_secret: "..."   # optional; users never see it
+```
+
 ### Per-user machines
 
 A teammate can register machines of their own, with labels. An example is a

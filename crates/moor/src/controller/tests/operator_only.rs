@@ -31,6 +31,7 @@ fn nameless(kind: &str) -> Option<Value> {
         "mcp-add" => json!({"cmd": kind, "name": "n", "url": "https://example.com/mcp"}),
         "machine-add" => json!({"cmd": kind, "name": "n", "ssh": "u@h"}),
         "link-redeem" => json!({"cmd": kind, "code": "c"}),
+        "mcp-oauth-finish" => json!({"cmd": kind, "state": "s", "code": "c"}),
         "box-mirror" => json!({"cmd": kind, "id": 1, "dest": "/d"}),
         "box-put" => json!({"cmd": kind, "id": 1, "src": "/s", "dest": "d"}),
         "in" => json!({"cmd": kind, "dir": "/w", "request": {"cmd": "show"}}),

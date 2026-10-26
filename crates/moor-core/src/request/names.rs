@@ -95,6 +95,7 @@ impl Request {
             | Self::McpAdd(_)
             | Self::McpRemove(_)
             | Self::McpList(_)
+            | Self::McpOAuthFinish(_)
             | Self::MachineAdd(_)
             | Self::MachineRemove(_)
             | Self::MachineList(_)
