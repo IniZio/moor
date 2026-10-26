@@ -78,11 +78,11 @@ fn a_clean_exit_keeps_the_finished_line() {
 }
 
 #[test]
-fn a_failed_transcript_save_adds_its_suffix_whichever_event_comes_first() {
+fn a_transcript_save_that_failed_before_the_session_end_adds_its_suffix() {
     let (rig, controller, _bin, _post) = thread_with_status();
     let failed = json!({ "trigger": "exit", "error": "scp failed" });
-    controller.emit(BOX_ID, BOX_NAME, "session_ended", ended(255));
     controller.emit(BOX_ID, BOX_NAME, "transcript_failed", failed.clone());
+    controller.emit(BOX_ID, BOX_NAME, "session_ended", ended(255));
     controller.emit(BOX_ID, BOX_NAME, "idled", json!({}));
     rig.wait_post(&stopped_line("exit 255", true));
     controller.emit(BOX_ID, BOX_NAME, "working", json!({}));

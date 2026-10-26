@@ -36,13 +36,7 @@ pub(super) fn fold(fold: &mut Fold, id: BoxId, cursor: i64, kind: &str, payload:
                 fold.stopped.entry(id).or_default().push((cursor, stop));
             }
         }
-        "transcript_failed" => {
-            let pending = fold.stopped.get_mut(&id).and_then(|owed| owed.last_mut());
-            match pending {
-                Some((_, stop)) => stop.transcript_lost = true,
-                None => drop(fold.transcript_lost.insert(id)),
-            }
-        }
+        "transcript_failed" => drop(fold.transcript_lost.insert(id)),
         "session_started" | "relaunched" => {
             fold.stopped.remove(&id);
             fold.stopping.remove(&id);
