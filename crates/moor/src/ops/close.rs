@@ -71,7 +71,11 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
         collect_artifacts(cx, store, &row);
     }
     let box_deleted = if vanished {
-        store.apply(plan.decision_close.clone().box_input(BoxInput::DriverMissing))?;
+        store.apply(
+            plan.decision_close
+                .clone()
+                .box_input(BoxInput::DriverMissing),
+        )?;
         true
     } else if plan.release_box {
         teardown::teardown(cx, &row, req.force)?;
