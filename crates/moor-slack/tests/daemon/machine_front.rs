@@ -71,6 +71,16 @@ fn open_modal(rig: &Rig, envelope: &str, user: &str) -> Value {
     opened[0]["view"].clone()
 }
 
+/// Runs `/moor machine add` as `user` for the `n`th time; returns the modal it opened.
+fn open_modal_nth(rig: &Rig, envelope: &str, user: &str, n: usize) -> Value {
+    rig.slack.send_slash(envelope, CHANNEL, user, "machine add");
+    let opened = rig.slack.wait_views("views.open", n, WAIT);
+    opened[n - 1]["view"].clone()
+}
+
+/// What the modal shows for a capacity it cannot use.
+const BAD_CAPACITY: &str = "Capacity must be a whole number from 1 to 65535. Nothing was stored.";
+
 /// Submits the modal as `user` with these fields; returns the ack's payload.
 fn submit(rig: &Rig, envelope: &str, user: &str, view: &Value, fields: &[(&str, &str)]) -> Value {
     rig.slack.send_fields(envelope, user, view, fields);
@@ -104,7 +114,13 @@ fn machine_add_opens_a_modal_with_name_ssh_target_and_labels() {
             (b["block_id"].as_str().unwrap(), optional)
         })
         .collect();
-    assert_eq!(inputs, [("name", false), ("ssh", false), ("labels", true)]);
+    let want = [
+        ("name", false),
+        ("ssh", false),
+        ("labels", true),
+        ("capacity", true),
+    ];
+    assert_eq!(inputs, want);
 }
 
 #[test]
@@ -118,6 +134,55 @@ fn a_submission_sends_machine_add_with_the_three_fields_as_that_user() {
         [("minion".to_owned(), "moor@minion".to_owned(), labels)]
     );
     assert_eq!(machines(&front, OTHER), []);
+}
+
+/// The capacity the controller stores for `user`'s machine `name`.
+fn capacity(front: &Path, user: &str, name: &str) -> Option<u64> {
+    let listed = ask_as(front, user, Request::MachineList(AsReq { identity: None }));
+    let machines = listed.value.unwrap()["machines"].clone();
+    let found = machines
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["name"] == name)
+        .cloned();
+    found.map(|m| m["capacity"].as_u64().unwrap_or(1))
+}
+
+#[test]
+fn a_submission_with_a_capacity_stores_it() {
+    let (rig, _controller) = rig();
+    let view = open_modal(&rig, "env-1", USER);
+    let fields = [
+        ("name", "minion"),
+        ("ssh", "moor@minion"),
+        ("capacity", " 2 "),
+    ];
+    let ack = submit(&rig, "env-2", USER, &view, &fields);
+    assert_eq!(ack["response_action"], "update", "{ack}");
+    let shown = &ack["view"]["blocks"][0]["text"]["text"];
+    assert_eq!(
+        capacity(&rig.front_socket(), USER, "minion"),
+        Some(2),
+        "{shown}"
+    );
+}
+
+#[test]
+fn a_capacity_that_is_not_a_whole_number_from_one_stores_nothing() {
+    let (rig, _controller) = rig();
+    for (n, bad) in ["0", "two", "-1", "70000"].iter().enumerate() {
+        let view = open_modal_nth(&rig, &format!("env-o{n}"), USER, n + 1);
+        let fields = [
+            ("name", "minion"),
+            ("ssh", "moor@minion"),
+            ("capacity", *bad),
+        ];
+        let ack = submit(&rig, &format!("env-s{n}"), USER, &view, &fields);
+        let shown = ack["view"]["blocks"][0]["text"]["text"].as_str().unwrap();
+        assert_eq!(shown, BAD_CAPACITY, "{bad}");
+    }
+    assert_eq!(capacity(&rig.front_socket(), USER, "minion"), None);
 }
 
 #[test]

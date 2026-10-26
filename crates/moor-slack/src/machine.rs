@@ -26,13 +26,19 @@ const HELP: &str = "Example: name minion, ssh target moor@minion. The host's own
 const USAGE: &str = "Usage: `/moor machine add` opens a form for a machine of yours, \
     `/moor machine list` shows your machines and `/moor machine remove <name>` drops one.";
 
+/// Shown under the capacity input.
+const CAPACITY_HINT: &str = "How many Boxes may use it at once. Optional, 1 when empty.";
+
+/// The answer to a capacity the controller could not store.
+const BAD_CAPACITY: &str = "Capacity must be a whole number from 1 to 65535. Nothing was stored.";
+
 /// The modal `/moor machine add` opens.
 pub(crate) fn form() -> Value {
     let input = |block: &str, label: &str, hint: Option<&str>| {
         let mut input = json!({
             "type": "input",
             "block_id": block,
-            "optional": block == "labels",
+            "optional": block == "labels" || block == "capacity",
             "label": {"type": "plain_text", "text": label},
             "element": {"type": "plain_text_input", "action_id": block},
         });
@@ -53,6 +59,7 @@ pub(crate) fn form() -> Value {
             input("name", "Name", None),
             input("ssh", "SSH target", Some("user@host or user@host:port")),
             input("labels", "Labels", Some("Comma-separated, optional.")),
+            input("capacity", "Capacity", Some(CAPACITY_HINT)),
         ],
     })
 }
@@ -124,6 +131,14 @@ fn labels(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// The capacity typed, 1 when empty; `None` unless a whole number from 1.
+fn capacity(text: &str) -> Option<u16> {
+    match text.trim() {
+        "" => Some(1),
+        n => n.parse().ok().filter(|c| *c >= 1),
+    }
+}
+
 /// Handles a submitted add modal, as the Slack user who submitted it: enrolls them when new,
 /// then sends `machine-add`. A refusal is shown to them in the controller's own words.
 pub(crate) fn submission(sub: &TokenSubmission, call: &mut Call<'_>) -> Value {
@@ -132,11 +147,15 @@ pub(crate) fn submission(sub: &TokenSubmission, call: &mut Call<'_>) -> Value {
         return update(&format!("{BAD_ID} Nothing was stored."));
     }
     let (name, ssh) = (field(sub, "name"), field(sub, "ssh"));
+    let Some(capacity) = capacity(&field(sub, "capacity")) else {
+        return update(BAD_CAPACITY);
+    };
     let add = MachineAddReq {
         identity: None,
         name: name.clone(),
         ssh,
         labels: labels(&field(sub, "labels")),
+        capacity,
     };
     let enroll = Request::Enroll(AsReq { identity: None });
     if let Err(why) = send(call, &sub.user, enroll) {
