@@ -19,12 +19,22 @@ pub struct MachineAddReq {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub labels: Vec<String>,
     /// How many Boxes may hold it at once, each in its own port slot.
-    #[serde(default = "one")]
+    #[serde(default = "one", skip_serializing_if = "is_one")]
     pub capacity: u16,
 }
 
+/// The capacity of a machine added without one.
 const fn one() -> u16 {
     1
+}
+
+/// True for the default capacity, which the wire leaves out.
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde passes a reference"
+)]
+const fn is_one(n: &u16) -> bool {
+    *n == 1
 }
 
 /// Arguments of `machine-remove`.
