@@ -70,6 +70,8 @@ pub enum Request {
     Cp(CpReq),
     /// Mirror a Box's work tree into a host directory.
     BoxMirror(BoxMirrorReq),
+    /// Write one host file into a Box's work tree.
+    BoxPut(BoxPutReq),
     /// Open a box's workspace.
     Open(BoxReq),
     /// Sleep a box.
@@ -148,6 +150,7 @@ impl Request {
             Self::Close(_) => "close",
             Self::Cp(_) => "cp",
             Self::BoxMirror(_) => "box-mirror",
+            Self::BoxPut(_) => "box-put",
             Self::Open(_) => "open",
             Self::Sleep(_) => "sleep",
             Self::Wake(_) => "wake",
@@ -326,6 +329,18 @@ pub struct BoxMirrorReq {
     /// rsync patterns left out of the mirror besides `.git`.
     #[serde(default)]
     pub exclude: Vec<String>,
+}
+
+/// Arguments of `box-put`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BoxPutReq {
+    /// The Box's store id.
+    pub id: BoxId,
+    /// Regular file on the host, absolute.
+    pub src: String,
+    /// Where the file lands, relative to the Box's work tree.
+    pub dest: String,
 }
 
 /// Arguments of commands that take only a box.

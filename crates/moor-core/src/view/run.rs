@@ -74,6 +74,17 @@ pub struct CpValue {
     pub confirmation: String,
 }
 
+/// Payload of `box-put`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct PutValue {
+    /// Where the file landed, in the Box.
+    pub path: String,
+    /// Bytes written.
+    pub bytes: u64,
+    /// Confirmation text.
+    pub confirmation: String,
+}
+
 /// Payload of `box-mirror`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct MirrorValue {
