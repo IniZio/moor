@@ -21,6 +21,7 @@ use rig::{Rig, HEADERS};
 mod gc;
 mod holds;
 mod hooks;
+mod missing;
 mod pull;
 mod relay;
 mod rig;

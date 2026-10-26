@@ -20,6 +20,15 @@ the caller.
 A request missing any of them, or with a malformed one, gets an MCP error that
 names the header.
 
+While a Box holds no slot (its repo asks for no machine, it sleeps, or it
+woke and waits for a free slot), the Proxy still passes its requests through,
+with `X-Moor-Box` and `X-Moor-Machine-Missing: <reason>` in place of the
+machine headers. The agent keeps `sync`, `exec`, `pull` and `machine_info`
+listed, relayed tools are left out, and every call returns an error result
+saying the reason and "Try again later." Nothing runs on the machine. A
+refusal would make the agent's client ask for OAuth and drop the tools for the
+rest of the session.
+
 A machine is shared by several Boxes, one per slot. Every port of slot k is the
 repo's port plus 10·k, the same number on the machine and in the Box.
 

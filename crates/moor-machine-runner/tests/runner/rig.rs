@@ -205,6 +205,16 @@ impl Rig {
         (Self::result(&reply), progress)
     }
 
+    /// The whole JSON-RPC reply to a `tools/call` with `headers`.
+    pub fn call_reply(&self, tool: &str, args: Value, headers: &[(&str, &str)]) -> Value {
+        let (_, session, _) = self.post(&rpc(1, "initialize", initialize()), headers, None);
+        let note = json!({"jsonrpc": "2.0", "method": "notifications/initialized"});
+        self.post(&note, headers, session.as_deref());
+        let params = json!({"name": tool, "arguments": args});
+        let (reply, _, _) = self.post(&rpc(2, "tools/call", params), headers, session.as_deref());
+        reply
+    }
+
     /// The tools the runner lists to the caller with `headers`.
     pub fn tools(&self, headers: &[(&str, &str)]) -> Vec<Value> {
         let (init, session, _) = self.post(&rpc(1, "initialize", initialize()), headers, None);
