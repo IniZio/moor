@@ -35,7 +35,7 @@ use crate::exec::{ExecArgs, ExecOutput};
 use crate::holds::Holds;
 use crate::hooks::{Facts, Hooks};
 use crate::relay::Relays;
-use crate::sync::SyncOutput;
+use crate::sync::{SyncArgs, SyncOutput};
 
 pub use crate::relay::Relay;
 
@@ -179,12 +179,19 @@ impl Runner {
     #[tool(
         description = "Copy this Box's work tree to the attached machine at ~/moor/<box id>, so \
                        the machine sees your current files. .git is left out; node_modules is \
-                       kept. Later syncs send only what changed, and remove files you deleted."
+                       kept. Later syncs send only what changed, and remove files you deleted. exclude \
+                       lists rsync patterns, relative to the work tree root, such as \
+                       app/node_modules, that sync neither copies nor deletes on the machine: \
+                       use it for what the machine builds for itself, like node_modules \
+                       installed there, so a sync does not replace them with the Box's."
     )]
     async fn sync(
         &self,
         context: RequestContext<RoleServer>,
+        Parameters(args): Parameters<SyncArgs>,
     ) -> Result<Json<SyncOutput>, ErrorData> {
+        args.check()
+            .map_err(|e| ErrorData::invalid_params(e, None))?;
         let parts = context
             .extensions
             .get::<http::request::Parts>()
@@ -201,7 +208,8 @@ impl Runner {
         let _held = lock.lock().await;
         self.hooks.note(&caller).await.map_err(|e| internal(&e))?;
         let (client, mirrors) = (self.client.clone(), self.mirrors.clone());
-        let copy = tokio::task::spawn_blocking(move || sync::run(&client, &mirrors, &caller));
+        let copy =
+            tokio::task::spawn_blocking(move || sync::run(&client, &mirrors, &caller, &args));
         tokio::select! {
             done = copy => done
                 .map_err(|e| internal(&e.to_string()))?

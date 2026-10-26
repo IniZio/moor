@@ -323,3 +323,65 @@ fn a_long_exec_reports_progress_while_it_runs() {
         .count();
     assert!(beats >= 2, "{progress:?}");
 }
+
+fn sync_excluding(rig: &Rig, exclude: &[&str]) {
+    rig.call("sync", json!({ "exclude": exclude })).unwrap();
+}
+
+#[test]
+fn sync_leaves_an_excluded_directory_out() {
+    let rig = Rig::start();
+    rig.write("app/node_modules/m/index.js", "linux");
+    rig.write("app/src.js", "src");
+    sync_excluding(&rig, &["app/node_modules"]);
+    assert!(rig.copy().join("app/src.js").exists());
+    assert!(!rig.copy().join("app/node_modules").exists());
+}
+
+#[test]
+fn a_second_sync_keeps_what_the_machine_built_in_an_excluded_path() {
+    let rig = Rig::start();
+    rig.write("app/node_modules/m/index.js", "linux");
+    rig.write("gone.txt", "g");
+    rig.write("keep.txt", "k");
+    sync_excluding(&rig, &["app/node_modules"]);
+    let own = rig.copy().join("app/node_modules/darwin.node");
+    std::fs::create_dir_all(own.parent().unwrap()).unwrap();
+    std::fs::write(&own, "machine").unwrap();
+    std::fs::remove_file(rig.tree.join("gone.txt")).unwrap();
+    sync_excluding(&rig, &["app/node_modules"]);
+    assert_eq!(std::fs::read_to_string(&own).unwrap(), "machine");
+    assert!(!rig.copy().join("gone.txt").exists());
+    assert!(rig.copy().join("keep.txt").exists());
+}
+
+#[test]
+fn sync_refuses_a_bad_exclude_pattern_naming_it() {
+    let rig = Rig::start();
+    rig.write("a.txt", "a");
+    let too_many: Vec<String> = (0..65).map(|i| format!("p{i}")).collect();
+    for bad in ["", "-rf", "--delete-excluded", "a\nb", "a\0b"] {
+        let err = rig.call("sync", json!({ "exclude": [bad] })).unwrap_err();
+        assert!(err.contains("exclude"), "{err}");
+        assert!(err.contains(&format!("{bad:?}")), "{err}");
+    }
+    let err = rig
+        .call("sync", json!({ "exclude": too_many }))
+        .unwrap_err();
+    assert!(err.contains("at most 64"), "{err}");
+    assert!(!rig.copy().join("a.txt").exists(), "nothing was synced");
+}
+
+#[test]
+fn an_exclude_with_spaces_or_a_star_is_one_rsync_pattern() {
+    let rig = Rig::start();
+    rig.write("my dir/f.txt", "spaced");
+    rig.write("build/a.o", "o");
+    rig.write("build/b.o", "o");
+    rig.write("build/c.txt", "c");
+    sync_excluding(&rig, &["my dir", "build/*.o"]);
+    assert!(!rig.copy().join("my dir").exists());
+    assert!(!rig.copy().join("build/a.o").exists());
+    assert!(!rig.copy().join("build/b.o").exists());
+    assert!(rig.copy().join("build/c.txt").exists());
+}
