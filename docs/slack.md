@@ -264,13 +264,25 @@ The front rejects unknown keys.
 
 Each person can give their Boxes their own MCP servers with `/moor mcp add`.
 The form asks for a name, an `https://` URL, and a key, which is a bearer token
-or an API key. The key field shows what you type, to you only. The front sends
+or an API key. Leave the key empty for a server that lets you sign in instead,
+such as Linear, Notion or GitHub. The key field shows what you type, to you only. The front sends
 the form to the controller as you. The controller keeps the key in your vault,
 and a Box sees only a placeholder. The servers in the operator's `mcp_servers`
 stay shared defaults for everyone. If one of your servers has the same name,
 yours wins. `/moor mcp list` and `/moor mcp remove NAME` answer only you. A
 refused form stays open with the reason under the field. For example, the
 front refuses a name that is not allowed or a URL that is not `https://`.
+
+When you leave the key empty and the server asks you to sign in, the form turns
+into a Sign in button that opens the server's sign-in page, and a field named
+Address after sign-in. Approve there. The page may not load, because the
+address the server sends you back to may not be reachable from your browser.
+That is fine. Copy the address from your browser's address bar, paste it into
+the field and choose Finish sign-in. Moor then says that the server is
+connected. If the sign-in ran out of time, belongs to someone else or came from
+a different server than the one you started with, the reason shows under the
+field, and you can run `/moor mcp add` again. A server of yours that you
+signed in to never shows its token to a Box.
 
 To keep a server read-only, point it at a read-only URL and give it a key that
 can only read. For Linear, use the URL `https://mcp.linear.app/mcp/readonly`

@@ -33,6 +33,8 @@ mod machine_front;
 mod mcp;
 #[path = "daemon/mcp_front.rs"]
 mod mcp_front;
+#[path = "daemon/mcp_oauth.rs"]
+mod mcp_oauth;
 #[path = "daemon/prompt.rs"]
 mod prompt;
 #[path = "daemon/proxy.rs"]

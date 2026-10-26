@@ -71,7 +71,7 @@ impl Intake for Recorder {
                     None,
                 ))
             }
-            Inbound::Submission(sub) if sub.account == mcp::MCP_FORM => {
+            Inbound::Submission(sub) if mcp::owns(&sub.account) => {
                 let mut call = |user: &str, req| self.link.request(user, req);
                 let ack = mcp::submission(&sub, &mut call);
                 Ok((
