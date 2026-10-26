@@ -41,11 +41,13 @@ pub(super) fn rejection(
     Ok(Some(format!("unresolved: {}", lines.join("; "))))
 }
 
-/// The credentials the Box uses, all resolved; names and layers only.
+/// The `box_credentials` the Box requires, all resolved; names and layers only. A missing MCP
+/// secret leaves its server out instead.
 pub(super) fn checked(settings: &BoxSettings) -> Vec<CheckedCred> {
     settings
         .credentials
         .iter()
+        .filter(|c| c.boxed)
         .map(|c| CheckedCred {
             name: c.name.clone(),
             source: c.layer.as_str().to_owned(),
