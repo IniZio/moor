@@ -99,6 +99,18 @@ A user's server is an HTTP server with one key. The key is the user secret `mcp_
 At start, a user's server replaces a shared one of the same name, and the start says so. A server whose key the user has not stored is left out, and the start names it in one note. The start is never refused for it. This also holds for shared servers.
 
 For read-only access, point at the server's read-only endpoint with a key that can only read. Linear's is `https://mcp.linear.app/mcp/readonly` with a personal API key limited to Read.
+#### Per-user machines
+
+A teammate can register machines of their own, such as a Mac that builds iOS apps, with labels:
+
+```sh
+moor user machine add mac --ssh dev@mac.example.com:22 --label macos --label ios-sim
+moor user machine ls
+moor user machine rm mac
+```
+
+Adding a name again replaces that machine. Names match `[a-z][a-z0-9_-]*` (64 bytes at most). Labels match `[a-z0-9][a-z0-9-]*` (32 bytes at most), at most 16 per machine, stored sorted and without repeats. The target is `user@host` or `user@host:port`, where the host is a DNS name, an IPv4 address or a bracketed IPv6 address. Moor stores no credential: the host's own ssh key or agent reaches the machine. Registering a machine does not yet attach it to a Box.
+
 ### `proxy`
 
 `proxy.rules.<name>` defines a Proxy rule. A rule with the name of a default

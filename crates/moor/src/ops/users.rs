@@ -17,6 +17,7 @@ use crate::error::CommandError;
 use crate::store::Store;
 use crate::vault::Vault;
 
+mod machine;
 pub(crate) mod mcp;
 
 /// How long a link code stays redeemable.
@@ -68,16 +69,10 @@ pub(crate) fn run(
         }
         UserCmd::McpRemove { name } => mcp::remove(store, enrolled(store, who)?, name),
         UserCmd::McpList => mcp::list(store, enrolled(store, who)?),
-        UserCmd::LinkCode => {
-            let user = enrolled(store, who)?;
-            let code = mint_code()?;
-            let expires = cx.clock().now().saturating_add(LINK_CODE_TTL);
-            store.add_link_code(user, &code, expires)?;
-            to_value(&LinkCodeValue {
-                code,
-                expires_in_secs: LINK_CODE_TTL.as_secs(),
-            })
+        UserCmd::MachineAdd { .. } | UserCmd::MachineRemove { .. } | UserCmd::MachineList => {
+            machine::run(store, enrolled(store, who)?, cmd)
         }
+        UserCmd::LinkCode => link_code(cx, store, enrolled(store, who)?),
         UserCmd::ProxyLease => super::front_proxy::lease(cx, store, who),
         UserCmd::ProxyRelease { token } => super::front_proxy::release(cx, store, who, token),
         UserCmd::ProxyStatus => super::front_proxy::status(cx, who),
@@ -89,6 +84,17 @@ pub(crate) fn run(
             })
         }
     }
+}
+
+/// `link-code`: mint a one-time code for `user`.
+fn link_code(cx: &Cx, store: &Store, user: UserId) -> Result<serde_json::Value, CommandError> {
+    let code = mint_code()?;
+    let expires = cx.clock().now().saturating_add(LINK_CODE_TTL);
+    store.add_link_code(user, &code, expires)?;
+    to_value(&LinkCodeValue {
+        code,
+        expires_in_secs: LINK_CODE_TTL.as_secs(),
+    })
 }
 
 /// `whoami`: `who`, its user, and every identity linked to that user.

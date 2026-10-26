@@ -9,6 +9,7 @@ use super::{parsed, Store, StoreError};
 use crate::vault::Vault;
 
 pub(super) mod front_leases;
+mod machine;
 mod mcp;
 
 /// The user `identity` is linked to, on any connection.

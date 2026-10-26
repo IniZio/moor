@@ -38,6 +38,33 @@ pub struct McpChangeValue {
     pub secret: SecretName,
 }
 
+/// One of a user's machines as `machine-list` shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MachineView {
+    /// The machine's name.
+    pub name: String,
+    /// Its ssh target.
+    pub ssh: String,
+    /// Its labels, sorted.
+    pub labels: Vec<String>,
+}
+
+/// Value of `machine-list`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MachineListValue {
+    /// The machines by name.
+    pub machines: Vec<MachineView>,
+}
+
+/// Value of `machine-add` and `machine-remove`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MachineChangeValue {
+    /// The machine's name.
+    pub name: String,
+    /// Whether anything changed.
+    pub changed: bool,
+}
+
 /// Value of `whoami`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WhoamiValue {

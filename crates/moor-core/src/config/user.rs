@@ -5,6 +5,7 @@
 mod controller;
 mod creds;
 mod duration;
+mod machine;
 mod own_mcp;
 
 use std::collections::BTreeMap;
@@ -20,6 +21,7 @@ use crate::cache::CacheConfig;
 pub use controller::ControllerClientConfig;
 pub use creds::McpServer;
 use duration::{duration_or, parse_duration};
+pub use machine::UserMachine;
 pub use own_mcp::{box_mcp, BoxMcp, UserMcp, DEFAULT_HEADER};
 
 /// herdr session used when `surface.herdr.session` is unset.

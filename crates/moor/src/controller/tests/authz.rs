@@ -185,8 +185,10 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
         }
         "start-needs" | "session-binding" | "gate" | "env" | "repos" | "whoami" | "enroll"
         | "secret-set" | "secret-delete" | "secret-names" | "link-code" | "link-redeem" | "as"
-        | "mcp-add" | "mcp-remove" | "mcp-list" | "in" | "version" | "proxy-lease"
-        | "proxy-release" | "proxy-status" => return Names::Nothing,
+        | "mcp-add" | "mcp-remove" | "mcp-list" | "machine-add" | "machine-remove"
+        | "machine-list" | "in" | "version" | "proxy-lease" | "proxy-release" | "proxy-status" => {
+            return Names::Nothing
+        }
         _ => return Names::Unknown,
     })
 }

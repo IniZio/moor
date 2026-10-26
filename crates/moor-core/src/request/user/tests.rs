@@ -149,3 +149,18 @@ fn as_refuses_a_second_identity_or_another_as_inside() {
     let err = nested.split_identity().unwrap_err();
     assert!(err.contains("cannot wrap another as"), "{err}");
 }
+
+#[test]
+fn machine_requests_round_trip() {
+    for wire in [
+        json!({"cmd": "machine-add", "name": "mac", "ssh": "u@h", "labels": ["macos"]}),
+        json!({"cmd": "machine-add", "name": "mac", "ssh": "u@h", "identity": "slack:T1:U1"}),
+        json!({"cmd": "machine-remove", "name": "mac"}),
+        json!({"cmd": "machine-list"}),
+    ] {
+        let req: Request = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&req).unwrap(), wire);
+        let (_, cmd) = req.into_user().unwrap();
+        assert!(cmd.cmd().starts_with("machine-"));
+    }
+}

@@ -1,7 +1,9 @@
 //! clap definitions for `moor user`: the caller's user, its secrets and its link codes.
 
 use clap::{Args, Subcommand};
-use moor_core::request::{AsReq, LinkRedeemReq, McpAddReq, McpRemoveReq, SecretDeleteReq};
+use moor_core::request::{
+    AsReq, LinkRedeemReq, MachineAddReq, MachineRemoveReq, McpAddReq, McpRemoveReq, SecretDeleteReq,
+};
 use moor_core::user::SecretName;
 use moor_core::Request;
 
@@ -18,6 +20,9 @@ pub(super) enum UserCli {
     /// Your user's own MCP servers; each server's key is the secret `mcp_<name>`.
     #[command(subcommand)]
     Mcp(McpCli),
+    /// Your user's own machines, reached over ssh with this host's own key.
+    #[command(subcommand)]
+    Machine(MachineCli),
     /// Mint a one-time code that links another identity to your user.
     LinkCode,
     /// Link your identity to the user that minted CODE.
@@ -44,6 +49,30 @@ pub(super) enum McpCli {
     Rm(McpNameArg),
     /// List your servers.
     Ls,
+}
+
+/// Subcommands of `user machine`.
+#[derive(Debug, Subcommand)]
+pub(super) enum MachineCli {
+    /// Add or replace machine NAME; no credential is stored.
+    Add(MachineAddArgs),
+    /// Remove machine NAME.
+    Rm(McpNameArg),
+    /// List your machines.
+    Ls,
+}
+
+/// Arguments of `user machine add`.
+#[derive(Debug, Args)]
+pub(super) struct MachineAddArgs {
+    /// Machine name, such as `mac`.
+    name: String,
+    /// Target as `user@host` or `user@host:port`.
+    #[arg(long)]
+    ssh: String,
+    /// A label such as `macos`; repeat for more.
+    #[arg(long = "label")]
+    labels: Vec<String>,
 }
 
 /// Arguments of `user mcp add`.
@@ -106,6 +135,17 @@ impl UserCli {
                 name: a.name,
             }),
             Self::Mcp(McpCli::Ls) => Request::McpList(AS_CALLER),
+            Self::Machine(MachineCli::Add(a)) => Request::MachineAdd(MachineAddReq {
+                identity: None,
+                name: a.name,
+                ssh: a.ssh,
+                labels: a.labels,
+            }),
+            Self::Machine(MachineCli::Rm(a)) => Request::MachineRemove(MachineRemoveReq {
+                identity: None,
+                name: a.name,
+            }),
+            Self::Machine(MachineCli::Ls) => Request::MachineList(AS_CALLER),
             Self::LinkCode => Request::LinkCode(AS_CALLER),
             Self::Link(a) => Request::LinkRedeem(LinkRedeemReq {
                 identity: None,

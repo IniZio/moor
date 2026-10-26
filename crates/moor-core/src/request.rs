@@ -10,6 +10,8 @@ mod artifacts;
 pub use artifacts::{ArtifactReadReq, ArtifactsReq};
 mod binding;
 pub use binding::{BindSessionReq, SessionBindingReq};
+mod machine;
+pub use machine::{MachineAddReq, MachineRemoveReq};
 mod names;
 pub use names::{Grant, Named, Pins};
 mod session;
@@ -96,6 +98,12 @@ pub enum Request {
     McpRemove(McpRemoveReq),
     /// List the caller's user's MCP servers; never their keys.
     McpList(AsReq),
+    /// Add or replace one of the caller's user's machines.
+    MachineAdd(MachineAddReq),
+    /// Remove one of the caller's user's machines.
+    MachineRemove(MachineRemoveReq),
+    /// List the caller's user's machines.
+    MachineList(AsReq),
     /// Mint a one-time code that links another identity to the caller's user.
     LinkCode(AsReq),
     /// Link the caller's identity to the user that minted a code.
@@ -151,6 +159,9 @@ impl Request {
             Self::McpAdd(_) => "mcp-add",
             Self::McpRemove(_) => "mcp-remove",
             Self::McpList(_) => "mcp-list",
+            Self::MachineAdd(_) => "machine-add",
+            Self::MachineRemove(_) => "machine-remove",
+            Self::MachineList(_) => "machine-list",
             Self::LinkCode(_) => "link-code",
             Self::LinkRedeem(_) => "link-redeem",
             Self::ProxyLease(_) => "proxy-lease",
