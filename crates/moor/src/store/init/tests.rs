@@ -272,7 +272,8 @@ fn a_file_at_migration_2_gains_user_mcp_servers_and_keeps_its_rows() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("moor.db");
     let mut conn = Connection::open(&path).unwrap();
-    let up_to_2 = &super::schema().unwrap()[..2];
+    let all = super::schema().unwrap();
+    let up_to_2 = all.get(..2).unwrap();
     moor_migrate::migrate(&mut conn, up_to_2, |_| Ok(moor_migrate::Legacy::Empty)).unwrap();
     conn.execute_batch(
         "INSERT INTO users (id, created_at) VALUES (7, 1);

@@ -1,3 +1,5 @@
+#![allow(clippy::indexing_slicing, reason = "test assertions")]
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{box_mcp, UserMcp};

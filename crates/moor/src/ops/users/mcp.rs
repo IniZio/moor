@@ -77,6 +77,7 @@ pub(super) fn list(store: &Store, user: UserId) -> Result<serde_json::Value, Com
     to_value(&McpListValue { servers })
 }
 
+/// The names of `user`'s vault secrets.
 fn held(store: &Store, user: UserId) -> Result<BTreeSet<SecretName>, CommandError> {
     Ok(store.user_secret_names(user)?.into_iter().collect())
 }
