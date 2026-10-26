@@ -5,7 +5,7 @@ use std::fmt;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use super::{Request, StartReq};
+use super::{MachineAddReq, MachineRemoveReq, Request, StartReq};
 use crate::secret::Secret;
 use crate::user::{Identity, SecretName};
 
@@ -207,6 +207,22 @@ pub enum UserCmd {
     },
     /// The caller's user's MCP servers.
     McpList,
+    /// Add or replace one of the caller's user's machines.
+    MachineAdd {
+        /// The machine's name.
+        name: String,
+        /// The ssh target.
+        ssh: String,
+        /// The machine's labels.
+        labels: Vec<String>,
+    },
+    /// Remove one of the caller's user's machines.
+    MachineRemove {
+        /// The machine's name.
+        name: String,
+    },
+    /// The caller's user's machines.
+    MachineList,
     /// Mint a one-time code that links another identity to the caller's user.
     LinkCode,
     /// Link the caller to the user that minted `code`.
@@ -238,6 +254,9 @@ impl UserCmd {
             Self::McpAdd { .. } => "mcp-add",
             Self::McpRemove { .. } => "mcp-remove",
             Self::McpList => "mcp-list",
+            Self::MachineAdd { .. } => "machine-add",
+            Self::MachineRemove { .. } => "machine-remove",
+            Self::MachineList => "machine-list",
             Self::LinkCode => "link-code",
             Self::LinkRedeem { .. } => "link-redeem",
             Self::ProxyLease => "proxy-lease",
@@ -277,6 +296,16 @@ impl Request {
             ),
             Self::McpRemove(r) => (r.identity, UserCmd::McpRemove { name: r.name }),
             Self::McpList(r) => (r.identity, UserCmd::McpList),
+            Self::MachineAdd(r) => (
+                r.identity,
+                UserCmd::MachineAdd {
+                    name: r.name,
+                    ssh: r.ssh,
+                    labels: r.labels,
+                },
+            ),
+            Self::MachineRemove(r) => (r.identity, UserCmd::MachineRemove { name: r.name }),
+            Self::MachineList(r) => (r.identity, UserCmd::MachineList),
             Self::LinkCode(r) => (r.identity, UserCmd::LinkCode),
             Self::LinkRedeem(r) => (r.identity, UserCmd::LinkRedeem { code: r.code }),
             Self::ProxyLease(r) => (r.identity, UserCmd::ProxyLease),
@@ -318,6 +347,9 @@ impl Request {
             | Self::Enroll(AsReq { identity })
             | Self::SecretNames(AsReq { identity })
             | Self::McpList(AsReq { identity })
+            | Self::MachineList(AsReq { identity })
+            | Self::MachineAdd(MachineAddReq { identity, .. })
+            | Self::MachineRemove(MachineRemoveReq { identity, .. })
             | Self::McpAdd(McpAddReq { identity, .. })
             | Self::McpRemove(McpRemoveReq { identity, .. })
             | Self::LinkCode(AsReq { identity })

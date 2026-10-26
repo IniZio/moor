@@ -247,7 +247,7 @@ fn a_file_from_the_last_build_before_migrations_is_adopted_unchanged() {
             i64::try_from(super::schema().unwrap().len()).unwrap()
         ))
     );
-    after.retain(|(t, _)| t != "user_mcp_servers");
+    after.retain(|(t, _)| t != "user_mcp_servers" && t != "user_machines");
     assert_eq!(after, before, "every table and row kept");
     assert_eq!(version(&conn), "16");
 }
@@ -266,6 +266,7 @@ fn applied_migrations_are_never_edited() {
             (2, 72_415_543_002_251_104),
             (3, 5_219_232_375_637_337_112),
             (4, 10_900_489_595_431_863_429),
+            (5, 5_318_751_723_043_880_253),
         ],
         "a schema change is a new migration file; an applied one must not change"
     );
@@ -288,7 +289,9 @@ fn a_file_at_migration_2_gains_user_mcp_servers_and_keeps_its_rows() {
     init_schema(&mut conn, &path).unwrap();
     let mut after = tables(&conn);
     assert!(after.contains(&("user_mcp_servers".into(), 0)), "{after:?}");
-    after.retain(|(t, _)| t != "user_mcp_servers" && t != "refinery_schema_history");
+    after.retain(|(t, _)| {
+        t != "user_mcp_servers" && t != "user_machines" && t != "refinery_schema_history"
+    });
     let mut before = before;
     before.retain(|(t, _)| t != "refinery_schema_history");
     assert_eq!(after, before, "every table and row kept");
@@ -347,4 +350,26 @@ fn bindings_from_before_history_survive_and_a_key_takes_more_sessions() {
         "SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = 'bindings_session'",
     );
     assert_eq!(index, 1);
+}
+
+#[test]
+fn a_file_at_migration_4_gains_user_machines_and_keeps_its_rows() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("moor.db");
+    let mut conn = Connection::open(&path).unwrap();
+    let all = super::schema().unwrap();
+    let up_to_4 = all.get(..4).unwrap();
+    moor_migrate::migrate(&mut conn, up_to_4, |_| Ok(moor_migrate::Legacy::Empty)).unwrap();
+    conn.execute_batch(
+        "INSERT INTO users (id, created_at) VALUES (7, 1);
+         INSERT INTO user_secrets (user, name, value, updated_at) VALUES (7, 'claude', x'00', 1);",
+    )
+    .unwrap();
+    let mut before = tables(&conn);
+    before.retain(|(t, _)| t != "refinery_schema_history");
+    init_schema(&mut conn, &path).unwrap();
+    let mut after = tables(&conn);
+    assert!(after.contains(&("user_machines".into(), 0)), "{after:?}");
+    after.retain(|(t, _)| t != "user_machines" && t != "refinery_schema_history");
+    assert_eq!(after, before, "every table and row kept");
 }
