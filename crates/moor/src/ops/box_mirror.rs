@@ -29,7 +29,7 @@ pub(crate) fn run(cx: &Cx, req: &BoxMirrorReq) -> Result<MirrorValue, CommandErr
     let open = |row: &crate::store::BoxRow| {
         !matches!(row.lifecycle, BoxLifecycle::Closed | BoxLifecycle::Rejected)
     };
-    store.box_row(id)?.filter(open).ok_or_else(not_open)?;
+    store.box_row(id)?.ok_or_else(not_open)?;
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "box-mirror", boxlock::WAIT)?;
     let reload = || store.box_row(id)?.filter(open).ok_or_else(not_open);
     let mut row = reload()?;
