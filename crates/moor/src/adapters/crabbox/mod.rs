@@ -37,8 +37,7 @@ use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Driver, DriverCaps, DriverError,
     ExecOutcome, ExecSpec, Followed, Launched, LocalTunnel, MirrorStats, Released, RunEnd,
-    SleepOutcome,
-    StepDone, TunnelHandle,
+    SleepOutcome, StepDone, TunnelHandle,
 };
 use moor_core::seam::proc::{Deadline, Proc, ProcOutput, ProcSpec, Tool};
 use moor_core::seam::rng::Rng;

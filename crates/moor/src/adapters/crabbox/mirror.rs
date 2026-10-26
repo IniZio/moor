@@ -28,9 +28,8 @@ pub(super) fn mirror_out(
     from: &BoxPath,
     to: &Path,
 ) -> Result<MirrorStats, DriverError> {
-    std::fs::create_dir_all(to).map_err(|e| {
-        failed(&format!("cannot make the destination ({})", e.kind()))
-    })?;
+    std::fs::create_dir_all(to)
+        .map_err(|e| failed(&format!("cannot make the destination ({})", e.kind())))?;
     let _ = touch::heartbeat(cb, handle);
     let mut words = link::args(cb, handle, ssh_target(cb, handle)?)?;
     let host = words
@@ -44,7 +43,11 @@ pub(super) fn mirror_out(
     for w in &words {
         rsh.push(rsh_word(w)?);
     }
-    let source = format!("{}:{}/", remote_host(&host), from.as_str().trim_end_matches('/'));
+    let source = format!(
+        "{}:{}/",
+        remote_host(&host),
+        from.as_str().trim_end_matches('/')
+    );
     let spec = ProcSpec::new(Tool::Rsync, Deadline(MIRROR_DEADLINE))
         .args(["-a", "--delete", "--exclude", ".git", "--stats", "-e"])
         .arg(rsh.join(" "))
@@ -59,8 +62,7 @@ pub(super) fn mirror_out(
         link::failed(cb, handle, e);
     }
     match ran {
-        Ok(out) => stats(&out.stdout)
-            .ok_or_else(|| failed("rsync printed no stats")),
+        Ok(out) => stats(&out.stdout).ok_or_else(|| failed("rsync printed no stats")),
         Err(ProcError::Spawn(e)) if e.kind() == std::io::ErrorKind::NotFound => {
             Err(DriverError::Unsupported("rsync on the host"))
         }
@@ -95,9 +97,7 @@ fn rsh_word(word: &str) -> Result<String, DriverError> {
 
 /// The ssh destination as rsync reads a host: an IPv6 address goes in brackets.
 fn remote_host(host: &str) -> String {
-    let (user, addr) = host
-        .rsplit_once('@')
-        .map_or(("", host), |(u, a)| (u, a));
+    let (user, addr) = host.rsplit_once('@').map_or(("", host), |(u, a)| (u, a));
     let addr = if addr.contains(':') && !addr.starts_with('[') {
         format!("[{addr}]")
     } else {

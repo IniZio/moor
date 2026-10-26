@@ -130,7 +130,14 @@ fn a_box_without_a_machine_is_refused() {
 #[test]
 fn a_relative_destination_is_usage() {
     let f = fx();
-    let err = run(&f.cx, &BoxMirrorReq { id: f.id, dest: "rel".into() }).unwrap_err();
+    let err = run(
+        &f.cx,
+        &BoxMirrorReq {
+            id: f.id,
+            dest: "rel".into(),
+        },
+    )
+    .unwrap_err();
     assert_eq!(err.kind, ErrorKind::Usage);
 }
 
@@ -139,7 +146,10 @@ fn a_driver_that_cannot_mirror_is_refused_naming_what_is_missing() {
     let f = fx();
     let err = run(&f.cx, &req(&f, f.id)).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
-    assert!(err.error.to_string().contains("needs mirroring a Box"), "{err:?}");
+    assert!(
+        err.error.to_string().contains("needs mirroring a Box"),
+        "{err:?}"
+    );
 }
 
 #[test]
