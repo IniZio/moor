@@ -18,6 +18,7 @@ use serde_json::json;
 
 use rig::{Rig, HEADERS};
 
+mod holds;
 mod rig;
 
 fn ino(path: &Path) -> u64 {
@@ -138,4 +139,36 @@ fn exec_past_its_timeout_is_killed_and_says_so() {
     assert_eq!(out["timed_out"], true, "{out}");
     assert_eq!(out["exit_code"], json!(null));
     assert!(out["output"].as_str().unwrap().contains("started"), "{out}");
+}
+
+#[test]
+fn a_bad_slot_header_is_refused() {
+    let rig = Rig::start();
+    for bad in ["-1", "6554", "two"] {
+        let headers: Vec<_> = HEADERS
+            .into_iter()
+            .map(|(k, v)| (k, if k == "X-Moor-Machine-Slot" { bad } else { v }))
+            .collect();
+        let err = rig
+            .call_with("machine_info", json!({}), &headers)
+            .unwrap_err();
+        assert!(
+            err.contains("X-Moor-Machine-Slot") && err.contains(bad),
+            "{err}"
+        );
+    }
+}
+
+#[test]
+fn machine_info_gives_the_slot_and_its_port_offset() {
+    let rig = Rig::start();
+    let headers: Vec<_> = HEADERS
+        .into_iter()
+        .map(|(k, v)| (k, if k == "X-Moor-Machine-Slot" { "2" } else { v }))
+        .collect();
+    let info = rig.call_with("machine_info", json!({}), &headers).unwrap();
+    assert_eq!(
+        info,
+        json!({"box": 7, "machine": "minion", "slot": 2, "port_offset": 20})
+    );
 }

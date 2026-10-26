@@ -15,6 +15,10 @@ use crate::caller::Caller;
 pub(crate) const DEFAULT_TIMEOUT_SECS: u64 = 600;
 /// Longest timeout a call may ask for.
 pub(crate) const MAX_TIMEOUT_SECS: u64 = 3600;
+/// Wait for held resources when the call names none.
+pub(crate) const DEFAULT_HOLD_WAIT_SECS: u64 = 900;
+/// Longest wait for held resources a call may ask for.
+pub(crate) const MAX_HOLD_WAIT_SECS: u64 = 3600;
 /// Bytes of output kept, from the end.
 const TAIL: usize = 64 * 1024;
 /// How long output may keep arriving after ssh exits, from children it left behind.
@@ -27,6 +31,11 @@ pub(crate) struct ExecArgs {
     pub(crate) command: String,
     /// Seconds before the command is killed: default 600, at most 3600.
     pub(crate) timeout_secs: Option<u64>,
+    /// Resources to hold one unit of while the command runs, such as `build`.
+    #[serde(default)]
+    pub(crate) hold: Vec<String>,
+    /// Seconds to wait for the held resources: default 900, at most 3600.
+    pub(crate) hold_wait_secs: Option<u64>,
 }
 
 /// What a command did.

@@ -23,6 +23,23 @@ struct Args {
     /// Directory for the runner's per-Box host mirrors.
     #[arg(long)]
     state_dir: PathBuf,
+    /// A capped resource each machine has, as NAME=CAP; repeat for more.
+    #[arg(long = "resource", value_name = "NAME=CAP", value_parser = resource)]
+    resources: Vec<(String, usize)>,
+}
+
+/// Parses `NAME=CAP`, with CAP at least 1.
+fn resource(s: &str) -> Result<(String, usize), String> {
+    let (name, cap) = s.split_once('=').ok_or("expected NAME=CAP")?;
+    let cap = cap
+        .parse::<usize>()
+        .ok()
+        .filter(|n| *n > 0)
+        .ok_or_else(|| format!("CAP must be a whole number from 1, not {cap}"))?;
+    if name.is_empty() {
+        return Err("NAME is empty".to_owned());
+    }
+    Ok((name.to_owned(), cap))
 }
 
 #[tokio::main]
@@ -42,6 +59,7 @@ async fn main() -> ExitCode {
         socket: args.socket,
         state_dir: args.state_dir,
         service_host: args.service_host,
+        resources: args.resources.into_iter().collect(),
     };
     match serve(listener, config).await {
         Ok(()) => ExitCode::SUCCESS,

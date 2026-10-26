@@ -26,12 +26,28 @@ cd "$FAKE_REMOTE_HOME" || exit 255
 HOME="$FAKE_REMOTE_HOME" SHELL=/bin/sh exec /bin/sh -c "$*"
 "#;
 
-/// The headers the Box's Proxy sets for Box 7 on machine `minion`.
-pub const HEADERS: [(&str, &str); 3] = [
+/// The headers the Box's Proxy sets for Box 7 in slot 0 of machine `minion`.
+pub const HEADERS: [(&str, &str); 4] = [
     ("X-Moor-Box", "7"),
     ("X-Moor-Machine", "minion"),
     ("X-Moor-Machine-Ssh", "moor@minion"),
+    ("X-Moor-Machine-Slot", "0"),
 ];
+
+/// The headers for Box `id` on machine `machine`, with its copy made on the fake machine.
+pub fn caller(
+    rig: &Rig,
+    id: &'static str,
+    machine: &'static str,
+) -> [(&'static str, &'static str); 4] {
+    std::fs::create_dir_all(rig.remote.join("moor").join(id)).unwrap();
+    [
+        ("X-Moor-Box", id),
+        ("X-Moor-Machine", machine),
+        ("X-Moor-Machine-Ssh", "moor@minion"),
+        ("X-Moor-Machine-Slot", "0"),
+    ]
+}
 
 pub struct Rig {
     _dir: tempfile::TempDir,
@@ -46,6 +62,11 @@ pub struct Rig {
 
 impl Rig {
     pub fn start() -> Self {
+        Self::with_resources(&[])
+    }
+
+    /// A runner started with one `--resource` flag per entry, such as `build=1`.
+    pub fn with_resources(resources: &[&str]) -> Self {
         let dir = moor_testkit::short_tempdir("mrun").unwrap();
         let bin = dir.path().join("bin");
         moor_testkit::write_host_guards(&bin).unwrap();
@@ -62,6 +83,7 @@ impl Rig {
             .arg(&socket)
             .arg("--state-dir")
             .arg(dir.path().join("state"))
+            .args(resources.iter().flat_map(|r| ["--resource", r]))
             .env("PATH", path)
             .env("FAKE_REMOTE_HOME", &remote)
             .stderr(Stdio::piped())
@@ -109,12 +131,45 @@ impl Rig {
         args: Value,
         headers: &[(&str, &str)],
     ) -> Result<Value, String> {
-        let (init, session) = self.post(&rpc(1, "initialize", initialize()), headers, None);
+        self.call_progress(tool, args, headers).0
+    }
+
+    /// Calls `tool` asking for progress; its result and the progress messages sent before it.
+    pub fn call_progress(
+        &self,
+        tool: &str,
+        args: Value,
+        headers: &[(&str, &str)],
+    ) -> (Result<Value, String>, Vec<String>) {
+        let (init, session, _) = self.post(&rpc(1, "initialize", initialize()), headers, None);
         assert!(init.get("result").is_some(), "initialize: {init}");
         let note = json!({"jsonrpc": "2.0", "method": "notifications/initialized"});
         self.post(&note, headers, session.as_deref());
-        let params = json!({"name": tool, "arguments": args});
-        let (reply, _) = self.post(&rpc(2, "tools/call", params), headers, session.as_deref());
+        let params = json!({"name": tool, "arguments": args, "_meta": {"progressToken": "p"}});
+        let (reply, _, progress) =
+            self.post(&rpc(2, "tools/call", params), headers, session.as_deref());
+        (Self::result(&reply), progress)
+    }
+
+    /// Sends a `tools/call` as Box 7 without reading the reply; dropping the stream hangs up.
+    pub fn send_call(&self, tool: &str, args: Value) -> std::net::TcpStream {
+        let body = rpc(2, "tools/call", json!({"name": tool, "arguments": args})).to_string();
+        let mut stream = std::net::TcpStream::connect(("127.0.0.1", self.port)).unwrap();
+        write!(
+            stream,
+            "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\n\
+             Accept: application/json, text/event-stream\r\nContent-Length: {}\r\n",
+            body.len()
+        )
+        .unwrap();
+        for (k, v) in HEADERS {
+            write!(stream, "{k}: {v}\r\n").unwrap();
+        }
+        write!(stream, "\r\n{body}").unwrap();
+        stream
+    }
+
+    fn result(reply: &Value) -> Result<Value, String> {
         if let Some(e) = reply.get("error") {
             return Err(e["message"].as_str().unwrap().to_owned());
         }
@@ -130,7 +185,7 @@ impl Rig {
         body: &Value,
         headers: &[(&str, &str)],
         session: Option<&str>,
-    ) -> (Value, Option<String>) {
+    ) -> (Value, Option<String>, Vec<String>) {
         let mut req = self
             .agent
             .post(format!("http://127.0.0.1:{}/mcp", self.port))
@@ -148,15 +203,28 @@ impl Rig {
             .get("mcp-session-id")
             .map(|v| v.to_str().unwrap().to_owned());
         let text = resp.body_mut().read_to_string().unwrap();
-        let json = text
+        let messages: Vec<Value> = text
             .lines()
             .filter_map(|l| l.strip_prefix("data:"))
             .map(str::trim)
             .chain(std::iter::once(text.trim()))
             .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+            .collect();
+        let progress = messages
+            .iter()
+            .filter(|m| m["method"] == "notifications/progress")
+            .map(|m| {
+                m["params"]["message"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned()
+            })
+            .collect();
+        let json = messages
+            .into_iter()
             .find(|v| v.get("id").is_some())
             .unwrap_or(Value::Null);
-        (json, session)
+        (json, session, progress)
     }
 }
 
