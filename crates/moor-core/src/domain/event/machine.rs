@@ -31,6 +31,16 @@ pub enum MachineEvent {
     MachineDetached {
         /// The machine's name.
         name: String,
+        /// The Box slept: its slot is free for another Box, and it keeps its claim on the machine
+        /// to take a slot on it again when it wakes.
+        asleep: bool,
+    },
+    /// The Box woke but every slot on its machine is taken; it runs without it until one frees.
+    MachineWaiting {
+        /// The machine's name.
+        name: String,
+        /// Why there is no slot.
+        reason: String,
     },
 }
 
@@ -43,6 +53,7 @@ impl MachineEvent {
             Self::MachineLeftOut { .. } => "machine_left_out",
             Self::MachineForwardFailed { .. } => "machine_forward_failed",
             Self::MachineDetached { .. } => "machine_detached",
+            Self::MachineWaiting { .. } => "machine_waiting",
         }
     }
 }

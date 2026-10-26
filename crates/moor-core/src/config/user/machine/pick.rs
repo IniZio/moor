@@ -70,13 +70,7 @@ pub fn pick_machine(
         Some((m, slot))
     });
     let Some((machine, slot)) = free else {
-        let boxes: Vec<&str> = taken(first).values().map(String::as_str).collect();
-        let noun = if boxes.len() == 1 { "Box" } else { "Boxes" };
-        return left_out(format!(
-            "machine {} is attached to {noun} {}",
-            first.name,
-            boxes.join(", ")
-        ));
+        return left_out(full(first, taken(first)));
     };
     match slot_ports(&want.ports, slot) {
         Ok(ports) => MachinePick::Attach {
@@ -89,6 +83,51 @@ pub fn pick_machine(
             machine.name
         )),
     }
+}
+
+/// The lowest slot of `machine` that `taken` leaves free, with `ports` (which slot `from` moved)
+/// moved there instead.
+///
+/// # Errors
+/// Says why when every slot is taken or a port cannot move to the free slot.
+pub fn wake_slot(
+    machine: &UserMachine,
+    ports: &[u16],
+    from: u16,
+    taken: &BTreeMap<u16, String>,
+) -> Result<(u16, Vec<u16>), String> {
+    let Some(slot) = (0..machine.capacity).find(|s| !taken.contains_key(s)) else {
+        return Err(full(machine, taken));
+    };
+    let shift = SLOT_STRIDE * u32::from(from);
+    let base = ports
+        .iter()
+        .map(|&p| {
+            u32::from(p)
+                .checked_sub(shift)
+                .and_then(|b| u16::try_from(b).ok())
+                .ok_or_else(|| format!("port {p} is below slot {from}'s shift"))
+        })
+        .collect::<Result<Vec<u16>, String>>()?;
+    slot_ports(&base, slot)
+        .map(|ports| (slot, ports))
+        .map_err(|port| {
+            format!(
+                "port {port} in slot {slot} of machine {} would be above 65535",
+                machine.name
+            )
+        })
+}
+
+/// Why `machine` has no free slot: the Boxes in `taken`.
+fn full(machine: &UserMachine, taken: &BTreeMap<u16, String>) -> String {
+    let boxes: Vec<&str> = taken.values().map(String::as_str).collect();
+    let noun = if boxes.len() == 1 { "Box" } else { "Boxes" };
+    format!(
+        "machine {} is attached to {noun} {}",
+        machine.name,
+        boxes.join(", ")
+    )
 }
 
 /// `ports` moved to `slot`, or the first port that would pass 65535.

@@ -23,6 +23,15 @@ names the header.
 A machine is shared by several Boxes, one per slot. Every port of slot k is the
 repo's port plus 10·k, the same number on the machine and in the Box.
 
+A Box that sleeps frees its slot for other Boxes but keeps its claim on the same
+machine, and its files there stay (`machine_detached` with `asleep: true`).
+When it wakes it takes the lowest free slot on that machine, which may be a
+different slot and so different ports (`machine_attached` names them). If every
+slot is taken, the Box runs without the machine, `machine_waiting` says why
+once, and the Proxy tries again on each tick until a slot frees or the Box
+sleeps or closes. `moor show` names the machine as asleep or waiting meanwhile.
+Closing the Box ends its claim.
+
 Start it next to the controller, as the same host user:
 
 ```sh

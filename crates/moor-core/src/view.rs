@@ -165,6 +165,20 @@ pub struct HeldMachineView {
     pub slot: u16,
     /// The forwarded ports, the same number on both ends.
     pub ports: Vec<u16>,
+    /// Whether the Box holds the slot now; an asleep or waiting Box shows its last slot and ports.
+    pub state: MachineHoldState,
+}
+
+/// Whether a Box that claims a machine holds a slot on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MachineHoldState {
+    /// The Box holds its slot and its ports are forwarded.
+    Held,
+    /// The Box sleeps and its slot is free for another Box.
+    Asleep,
+    /// The Box is awake but every slot on its machine is taken.
+    Waiting,
 }
 
 /// Outcome of the setup script.
