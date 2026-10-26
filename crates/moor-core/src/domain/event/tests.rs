@@ -208,6 +208,21 @@ fn all_events() -> Vec<Event> {
             attempts: 4,
             error: "timed out".to_owned(),
         },
+        Event::Machine(MachineEvent::MachineAttached {
+            name: "mini".to_owned(),
+            ports: vec![8081],
+        }),
+        Event::Machine(MachineEvent::MachineLeftOut {
+            labels: vec!["ios-sim".to_owned()],
+            reason: "you have no machine with labels ios-sim".to_owned(),
+        }),
+        Event::Machine(MachineEvent::MachineForwardFailed {
+            port: Some(8081),
+            error: "exit 255".to_owned(),
+        }),
+        Event::Machine(MachineEvent::MachineDetached {
+            name: "mini".to_owned(),
+        }),
     ]
 }
 
@@ -281,6 +296,12 @@ const fn event_index(e: &Event) -> usize {
         Event::AgentLinkLost { .. } => 54,
         Event::AgentLinkRestored { .. } => 55,
         Event::AgentUnreachable { .. } => 56,
+        Event::Machine(m) => match m {
+            MachineEvent::MachineAttached { .. } => 57,
+            MachineEvent::MachineLeftOut { .. } => 58,
+            MachineEvent::MachineForwardFailed { .. } => 59,
+            MachineEvent::MachineDetached { .. } => 60,
+        },
     }
 }
 
@@ -453,3 +474,20 @@ fn artifact_published_kind_and_payload() {
 }
 
 mod kinds;
+
+#[test]
+fn machine_events_carry_their_own_kind() {
+    let e = Event::Machine(MachineEvent::MachineForwardFailed {
+        port: Some(8081),
+        error: "refused".to_owned(),
+    });
+    assert_eq!(e.kind(), "machine_forward_failed");
+    assert_eq!(
+        serde_json::to_value(&e).unwrap(),
+        serde_json::json!({"kind": "machine_forward_failed", "port": 8081, "error": "refused"})
+    );
+    assert_eq!(
+        e.payload(),
+        serde_json::json!({"port": 8081, "error": "refused"})
+    );
+}

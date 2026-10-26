@@ -50,6 +50,8 @@ pub(super) struct World {
     pub(super) store: Store,
     /// Fake box driver with reverse tunnels enabled.
     pub(super) driver: FakeDriver,
+    /// Scripted children for the machine link.
+    pub(super) proc: crate::testing::proc::ScriptedProc,
     /// Random source for port draws.
     pub(super) rng: FakeRng,
     /// Stop flag handed to the supervisor.
@@ -94,6 +96,7 @@ impl World {
             clock,
             store,
             driver,
+            proc: crate::testing::proc::ScriptedProc::new(),
             rng: FakeRng::default(),
             stop: Arc::new(AtomicBool::new(false)),
             err: Arc::new(Mutex::new(Vec::new())),
@@ -122,6 +125,7 @@ impl World {
         Deps {
             store: &self.store,
             driver: &self.driver,
+            proc: &self.proc,
             clock,
             rng: &self.rng,
             secrets,

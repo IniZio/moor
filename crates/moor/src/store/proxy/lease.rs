@@ -156,6 +156,20 @@ impl Store {
         box_port: u16,
         reason: &str,
     ) -> Result<Fenced, StoreError> {
+        let event = Event::TunnelRestarted {
+            box_port,
+            reason: reason.to_owned(),
+        };
+        self.fenced_event(box_id, owner, &event)
+    }
+
+    /// Append `event` for `box_id`, provided `owner` holds the lease.
+    pub(crate) fn fenced_event(
+        &self,
+        box_id: BoxId,
+        owner: &str,
+        event: &Event,
+    ) -> Result<Fenced, StoreError> {
         let now = self.now();
         let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -171,11 +185,7 @@ impl Store {
             Some(h) if h.as_deref() != Some(owner) => return Ok(Fenced::LostLease),
             Some(_) => {}
         }
-        let event = Event::TunnelRestarted {
-            box_port,
-            reason: reason.to_owned(),
-        };
-        insert_event(&tx, box_id, &event, now)?;
+        insert_event(&tx, box_id, event, now)?;
         tx.commit()?;
         drop(conn);
         Ok(Fenced::Applied)

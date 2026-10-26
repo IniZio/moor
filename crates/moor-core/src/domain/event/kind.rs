@@ -88,6 +88,7 @@ impl Event {
             Self::AgentUnreachable { .. } => "agent_unreachable",
             Self::TurnDone { .. } => "turn_done",
             Self::ArtifactPublished { .. } => "artifact_published",
+            Self::Machine(m) => m.kind(),
         }
     }
 

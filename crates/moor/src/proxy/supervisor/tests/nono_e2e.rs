@@ -227,9 +227,11 @@ fn serve_injects_the_credential_audits_requests_and_stops() {
     let stop = Arc::new(AtomicBool::new(false));
     let err: Sink = Arc::new(Mutex::new(Vec::new()));
     let rng = FakeRng::default();
+    let proc = crate::testing::proc::ScriptedProc::new();
     let deps = Deps {
         store: &store,
         driver: &driver,
+        proc: &proc,
         clock,
         rng: &rng,
         secrets: Arc::new(|_, _, name| {

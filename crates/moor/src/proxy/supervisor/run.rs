@@ -13,6 +13,7 @@ use moor_core::{BoxHandle, BoxId};
 
 use super::bind;
 use super::listen::{listen, Live};
+use super::machine::MachineSlot;
 use super::park::{parked_tunnel, starts_parked};
 use super::{Deps, Sink, LEASE};
 use crate::proxy::detached::read_spec;
@@ -53,6 +54,8 @@ pub(super) struct Running<'d> {
     pub(super) handle: BoxHandle,
     /// The Box port the tunnel exposes.
     pub(super) box_port: u16,
+    /// The user's machine attached to the Box.
+    pub(super) machine: RefCell<MachineSlot>,
 }
 
 /// Writes one `moor proxy: ` line to `sink`, ignoring write errors and a poisoned lock.
@@ -234,6 +237,7 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, box_id: BoxId) -> Result<Running<'d>
         parked: Cell::new(parked),
         handle,
         box_port,
+        machine: RefCell::default(),
     };
     if parked {
         // Answers a pending request: Parked is acked, Up reopens the tunnel.
@@ -330,6 +334,7 @@ impl Running<'_> {
             }
         }
         self.follow_request();
+        self.tend_machine();
         if let Err(err) = self.live.rebind() {
             say(
                 &self.deps.stderr,
@@ -345,6 +350,9 @@ impl Running<'_> {
 
     /// Stops the tunnel and listener, tidies the row for `stop` and returns the exit code.
     pub(super) fn finish(self, stop: Stop) -> u8 {
+        if stop == Stop::Closed {
+            self.let_go_machine();
+        }
         let Self {
             deps,
             box_id,

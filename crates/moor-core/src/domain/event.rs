@@ -363,16 +363,21 @@ pub enum Event {
         /// Lowercase hex SHA-256 of the contents.
         sha256: String,
     },
+    /// The user's machine attached to the Box.
+    #[serde(untagged)]
+    Machine(MachineEvent),
 }
 
 pub use boxes::box_events;
 pub use checked::CheckedCred;
 pub use kind::ASSERTED_KINDS;
+pub use machine::MachineEvent;
 pub use steps::{lifecycle_events, session_events};
 
 mod boxes;
 mod checked;
 mod kind;
+mod machine;
 mod steps;
 
 #[cfg(test)]
