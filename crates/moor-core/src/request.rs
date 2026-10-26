@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::name::ForgeRepo;
-use crate::name::{BoxName, SessionId};
+use crate::name::{BoxId, BoxName, SessionId};
 use crate::user::Identity;
 
 mod artifacts;
@@ -66,6 +66,8 @@ pub enum Request {
     Close(CloseReq),
     /// Copy a file into a box.
     Cp(CpReq),
+    /// Mirror a Box's work tree into a host directory.
+    BoxMirror(BoxMirrorReq),
     /// Open a box's workspace.
     Open(BoxReq),
     /// Sleep a box.
@@ -143,6 +145,7 @@ impl Request {
             Self::Show(_) => "show",
             Self::Close(_) => "close",
             Self::Cp(_) => "cp",
+            Self::BoxMirror(_) => "box-mirror",
             Self::Open(_) => "open",
             Self::Sleep(_) => "sleep",
             Self::Wake(_) => "wake",
@@ -352,6 +355,16 @@ pub struct CpReq {
     /// Source path.
     pub src: String,
     /// Destination path on the host, absolute.
+    pub dest: String,
+}
+
+/// Arguments of `box-mirror`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BoxMirrorReq {
+    /// The Box's store id.
+    pub id: BoxId,
+    /// Destination directory on the host, absolute.
     pub dest: String,
 }
 

@@ -76,7 +76,7 @@ pub(crate) fn run(cx: &Cx, req: &CpReq) -> Result<CpValue, CommandError> {
 }
 
 /// The handle of the Box's ready machine, or a refusal.
-fn usable_handle(row: &BoxRow) -> Result<BoxHandle, CommandError> {
+pub(crate) fn usable_handle(row: &BoxRow) -> Result<BoxHandle, CommandError> {
     let refuse = |why: &str| CommandError::new(ErrorKind::Refused, why.to_owned());
     if row.lifecycle == BoxLifecycle::WaitingForBox {
         return Err(refuse("the Box is waiting for a machine"));

@@ -220,6 +220,19 @@ A `moor call` request names the command in `cmd`, in kebab case:
 echo '{"cmd":"show"}' | moor call
 ```
 
+### `box-mirror`
+
+`{"cmd":"box-mirror","id":ID,"dest":DIR}` makes the host directory `DIR`
+an exact copy of the work tree of the open Box with store id `ID`. It has no
+CLI command; a client sends it through `moor call` or moor-client. Only the
+operator may send it. `DIR` must be absolute, and moor creates it when it is
+missing. moor runs rsync over the Box's ssh connection, so links stay links,
+modes are kept, files gone from the Box go from `DIR`, and `.git` is left
+out. A later mirror sends only what changed. The result gives `files`, the
+regular files sent, and `bytes`, the bytes that came from the Box. moor
+refuses a Box without a ready machine, and refuses when rsync is missing on
+the Box or on the host, naming which.
+
 ## Exit codes
 
 | Code | Meaning |

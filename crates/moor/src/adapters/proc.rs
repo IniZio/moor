@@ -289,6 +289,10 @@ impl SystemProc {
 }
 
 impl Proc for SystemProc {
+    fn program_path(&self, tool: Tool) -> Option<OsString> {
+        Some(self.program(tool))
+    }
+
     fn run(&self, spec: &ProcSpec) -> Result<ProcOutput, ProcError> {
         self.trace.timed(spec, || {
             let (status, out, err) = self.exec(spec)?;

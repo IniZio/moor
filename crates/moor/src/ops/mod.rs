@@ -10,6 +10,7 @@ pub(crate) mod authz;
 mod binding;
 mod close;
 pub(crate) mod common;
+mod box_mirror;
 mod cp;
 mod end_session;
 pub(crate) mod env;
@@ -83,6 +84,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::Wait(r) => to_value(&wait::run(cx, &r)?),
         Request::WaitEvents(r) => to_value(&wait_events::run(cx, &r)?),
         Request::Cp(r) => to_value(&cp::run(cx, &r)?),
+        Request::BoxMirror(r) => to_value(&box_mirror::run(cx, &r)?),
         Request::Sleep(r) => to_value(&sleep::run(cx, &r)?),
         Request::Wake(r) => to_value(&wake::run(cx, &r)?),
         Request::Open(r) => to_value(&open::run(cx, &r)?),
