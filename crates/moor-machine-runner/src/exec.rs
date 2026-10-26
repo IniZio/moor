@@ -5,6 +5,7 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use rmcp::ErrorData;
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 use tokio::sync::oneshot;
@@ -184,4 +185,15 @@ const fn has_single_quote(s: &str) -> bool {
         i += 1;
     }
     false
+}
+
+/// `secs` as a duration when it is 1 to `max`, else an error naming `name`.
+pub(crate) fn bounded(name: &str, secs: u64, max: u64) -> Result<Duration, ErrorData> {
+    if secs == 0 || secs > max {
+        return Err(ErrorData::invalid_params(
+            format!("{name} must be 1 to {max}, not {secs}"),
+            None,
+        ));
+    }
+    Ok(Duration::from_secs(secs))
 }

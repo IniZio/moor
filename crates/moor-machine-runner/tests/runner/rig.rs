@@ -59,6 +59,9 @@ pub fn caller(
     ]
 }
 
+/// `box-put` requests with the bytes of their `src`.
+pub type Puts = Arc<Mutex<Vec<(Value, Vec<u8>)>>>;
+
 pub struct Rig {
     dir: tempfile::TempDir,
     /// The fake Box's work tree, which the fake controller mirrors.
@@ -69,6 +72,8 @@ pub struct Rig {
     pub open: Arc<Mutex<Vec<i64>>>,
     /// The `exclude` of each `box-mirror` request the fake controller served.
     pub mirror_excludes: Arc<Mutex<Vec<Value>>>,
+    /// Each `box-put` request the fake controller served, with the bytes of its `src`.
+    pub puts: Puts,
     args: Vec<String>,
     port: u16,
     runner: Child,
@@ -98,11 +103,13 @@ impl Rig {
         std::fs::create_dir_all(&remote).unwrap();
         let open = Arc::new(Mutex::new(vec![7]));
         let mirror_excludes = Arc::new(Mutex::new(Vec::new()));
+        let puts = Arc::new(Mutex::new(Vec::new()));
         fake_controller(
             &dir.path().join("c.sock"),
             tree.clone(),
             Arc::clone(&open),
             Arc::clone(&mirror_excludes),
+            Arc::clone(&puts),
         );
         let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
         let (runner, port) = spawn(dir.path(), &args);
@@ -117,6 +124,7 @@ impl Rig {
             remote,
             open,
             mirror_excludes,
+            puts,
             args,
             port,
             runner,
@@ -324,6 +332,7 @@ fn fake_controller(
     tree: PathBuf,
     open: Arc<Mutex<Vec<i64>>>,
     mirror_excludes: Arc<Mutex<Vec<Value>>>,
+    puts: Puts,
 ) {
     let listener = UnixListener::bind(socket).unwrap();
     std::thread::spawn(move || {
@@ -346,6 +355,18 @@ fn fake_controller(
                 let frame = ServerFrame::Response {
                     id: "1".to_owned(),
                     envelope: Response::ok("show", Some(value)),
+                };
+                writeln!(writer, "{}", serde_json::to_string(&frame).unwrap()).unwrap();
+                continue;
+            }
+            if req["cmd"] == "box-put" {
+                let bytes = std::fs::read(req["src"].as_str().unwrap()).unwrap();
+                let value =
+                    json!({"path": "/work/x", "bytes": bytes.len(), "confirmation": "wrote"});
+                puts.lock().unwrap().push((req.clone(), bytes));
+                let frame = ServerFrame::Response {
+                    id: "1".to_owned(),
+                    envelope: Response::ok("box-put", Some(value)),
                 };
                 writeln!(writer, "{}", serde_json::to_string(&frame).unwrap()).unwrap();
                 continue;

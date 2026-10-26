@@ -20,6 +20,7 @@ use rig::{Rig, HEADERS};
 
 mod holds;
 mod hooks;
+mod pull;
 mod relay;
 mod rig;
 

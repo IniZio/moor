@@ -77,6 +77,14 @@ itself, such as `node_modules` installed there, which a Box on another platform
 would otherwise overwrite. A pattern that is empty, starts with `-` or holds a
 newline or NUL is refused by name. The first hop is unchanged.
 
+`pull` copies one file from the machine into the Box's work tree, for something the
+machine made, such as a screenshot a relayed tool saved or a build log. `path` is
+absolute on the machine or relative to `~/moor/<box id>`; `dest` is relative to the
+work tree and may not be empty, absolute or contain `..`. The runner brings the file
+to a staging file on the host with rsync over ssh, then asks the controller to
+write it with [`box-put`](cli.md#box-put). The file may be at most 32 MiB, and an
+existing file at `dest` is replaced. It returns `dest` and `bytes`.
+
 `exec` takes `command` and `timeout_secs` (default 600, at most 3600). It runs
 `cd ~/moor/<box id> && <command>` on the machine through the machine user's
 login shell, so that user's `PATH` applies. It returns `exit_code`, `output`
