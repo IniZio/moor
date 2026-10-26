@@ -94,7 +94,9 @@ impl Hooks {
 
     /// The ids named by the entries under `~/moor` and `~/moor-state` on the machine.
     async fn listing(&self, target: &str) -> Result<BTreeSet<i64>, String> {
-        let script = "cd && for e in moor/* moor-state/*; do [ -e \"$e\" ] && echo \"$e\"; done; :";
+        // No glob: the machine's login shell may be zsh, which fails on a pattern that matches
+        // nothing.
+        let script = "cd && find moor moor-state -mindepth 1 -maxdepth 1 2>/dev/null; :";
         let out = exec::run(target, script, self.timeout)
             .await
             .map_err(|e| format!("could not run the remote shell: {e}"))?;
