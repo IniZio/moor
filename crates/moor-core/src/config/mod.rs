@@ -12,9 +12,9 @@ pub use repo::{parse_repo, RepoBox, RepoCompose, RepoConfig, RepoMachine};
 
 pub use user::{
     box_mcp, parse_user, pick_machine, AgentConfig, BoxConfig, BoxMcp, BoxSize,
-    ControllerClientConfig, DotfilesConfig, DriverConfig, HerdrConfig, MachinePick, McpServer,
-    SurfaceConfig, ToolsConfig, UserConfig, UserMachine, UserMcp, DEFAULT_HEADER,
-    DEFAULT_SLEEP_AFTER,
+    ControllerClientConfig, DotfilesConfig, DriverConfig, HerdrConfig, MachinePick, MachineService,
+    MachinesConfig, McpServer, SurfaceConfig, ToolsConfig, UserConfig, UserMachine, UserMcp,
+    DEFAULT_HEADER, DEFAULT_SLEEP_AFTER,
 };
 
 pub use settings::{BoxSettings, CredPlan, Flags, Layer, Sourced};

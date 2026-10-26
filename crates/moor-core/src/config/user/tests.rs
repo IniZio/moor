@@ -7,6 +7,7 @@ use std::time::Duration;
 use super::*;
 
 mod mcp;
+mod service;
 
 fn err(doc: &str) -> ConfigError {
     parse_user("u.yaml", doc).expect_err(doc)

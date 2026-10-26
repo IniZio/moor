@@ -57,6 +57,8 @@ pub(crate) struct Deps<'a> {
     pub(crate) upstream_dial: Option<std::net::SocketAddr>,
     /// Loopback addresses the egress guard lets through; empty in production.
     pub(crate) guard_exempt: Vec<std::net::SocketAddr>,
+    /// The service the front serves itself for the Box's machine; `None` when none is configured.
+    pub(crate) machine_service: Option<moor_core::config::MachineService>,
     /// Directory holding the proxy logs, CA and spec.
     pub(crate) state_dir: &'a Path,
     /// moor's private socket directory, where the front listens.

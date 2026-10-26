@@ -240,6 +240,7 @@ fn serve_injects_the_credential_audits_requests_and_stops() {
         }),
         upstream_ca: Some(up.ca_path.clone()),
         upstream_dial: None,
+        machine_service: None,
         guard_exempt: vec![SocketAddr::from((Ipv4Addr::LOCALHOST, up.port))],
         state_dir: dir.path(),
         sockets: &dir.path().join("s"),

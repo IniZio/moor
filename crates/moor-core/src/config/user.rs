@@ -7,6 +7,7 @@ mod creds;
 mod duration;
 mod machine;
 mod own_mcp;
+mod service;
 
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
@@ -24,6 +25,7 @@ use duration::{duration_or, parse_duration};
 pub(crate) use machine::check_label;
 pub use machine::{pick_machine, MachinePick, UserMachine};
 pub use own_mcp::{box_mcp, BoxMcp, UserMcp, DEFAULT_HEADER};
+pub use service::{MachineService, MachinesConfig};
 
 /// herdr session used when `surface.herdr.session` is unset.
 const DEFAULT_HERDR_SESSION: &str = "moor";
@@ -281,6 +283,8 @@ pub struct UserConfig {
     pub box_: BoxConfig,
     /// Dotfiles source.
     pub dotfiles: Option<DotfilesConfig>,
+    /// The service Boxes reach for the machine they hold.
+    pub machines: MachinesConfig,
     /// Removed key, kept only so a stale config gets a pointed error; `None` in any config
     /// that validates.
     #[serde(default, deserialize_with = "super::controller::present_key")]
@@ -361,6 +365,9 @@ impl UserConfig {
         creds::validate_mcp(&self.mcp_servers, &injected, &self.proxy.rules)?;
         if let Some(d) = &self.dotfiles {
             d.validate()?;
+        }
+        if let Some(s) = &self.machines.service {
+            s.validate()?;
         }
         self.proxy.validate()?;
         self.controller.validate()?;

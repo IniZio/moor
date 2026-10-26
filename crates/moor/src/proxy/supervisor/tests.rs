@@ -131,6 +131,7 @@ impl World {
             rng: &self.rng,
             secrets,
             upstream_dial: None,
+            machine_service: None,
             guard_exempt: Vec::new(),
             upstream_ca,
             state_dir: self.dir.path(),

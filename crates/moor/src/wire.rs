@@ -282,6 +282,7 @@ fn run_proxy(env: &Env, box_id: BoxId, sink: &Sink) -> Result<u8, String> {
         upstream_ca: None,
         upstream_dial: None,
         guard_exempt: Vec::new(),
+        machine_service: cx.config().machines.service.clone(),
         state_dir,
         sockets: &sockets,
         owner: rustix::process::getuid().as_raw(),

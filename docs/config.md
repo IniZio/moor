@@ -111,6 +111,19 @@ moor user machine rm mac
 
 Adding a name again replaces that machine. Names match `[a-z][a-z0-9_-]*` (64 bytes at most). Labels match `[a-z0-9][a-z0-9-]*` (32 bytes at most), at most 16 per machine, stored sorted and without repeats. The target is `user@host` or `user@host:port`, where the host is a DNS name, an IPv4 address or a bracketed IPv6 address. Moor stores no credential: the host's own ssh key or agent reaches the machine. Registering a machine does not yet attach it to a Box.
 
+#### The machine service
+
+A service on the host can act on the machine a Box holds. The operator names it under `machines.service`:
+
+```yaml
+machines:
+  service:
+    host: machine.moor.internal
+    upstream: 127.0.0.1:7700
+```
+
+A plain `http://` request from a Box to `host`, on any port, goes through that Box's Proxy straight to `upstream`. The Proxy drops every `X-Moor-*` header the Box sent and adds `X-Moor-Box` (the Box id), `X-Moor-Machine` (the machine's name) and `X-Moor-Machine-Ssh` (its ssh target), so the service can trust them. The Proxy refuses with 403 a CONNECT to `host` and any request from a Box that holds no machine at that moment. `upstream` must be a loopback address and port; moor refuses the config otherwise. Without `machines.service`, `host` is a host like any other.
+
 ### `proxy`
 
 `proxy.rules.<name>` defines a Proxy rule. A rule with the name of a default
