@@ -5,6 +5,8 @@ use moor_core::seam::proc::Tool;
 use moor_core::user::Identity;
 
 use super::{start, Stop, World};
+use crate::proxy::front::Hold;
+use crate::proxy::supervisor::machine::hold_of;
 use crate::store::TunnelWant;
 use crate::testing::proc::ChildReply;
 
@@ -213,4 +215,39 @@ fn a_full_machine_reports_waiting_once_and_wakes_when_a_slot_frees() {
     assert!(run.tick().is_none());
     assert_eq!(machine_kinds(&w).last().unwrap(), "machine_attached");
     assert_eq!(last_forwards(&w), ["8081"]);
+}
+
+fn missing_reason(w: &World) -> String {
+    match hold_of(&w.store, w.id) {
+        Hold::Missing { reason, .. } => reason,
+        Hold::Held(_) => String::new(),
+    }
+}
+
+#[test]
+fn a_box_without_a_claim_is_told_its_repo_asks_for_none() {
+    let w = World::new([]);
+    assert!(missing_reason(&w).starts_with("this Box has no machine: "));
+}
+
+#[test]
+fn an_asleep_claim_is_released_while_parked_and_waiting_once_asked_up() {
+    let w = held_machine();
+    let deps = w.deps();
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+    assert!(run.tick().is_none());
+    assert!(matches!(hold_of(&w.store, w.id), Hold::Held(h) if h.name == "mini"));
+
+    w.store.request_tunnel(w.id, TunnelWant::Parked).unwrap();
+    assert!(run.tick().is_none());
+    assert_eq!(
+        missing_reason(&w),
+        "machine mini is released while this Box sleeps"
+    );
+
+    w.store.request_tunnel(w.id, TunnelWant::Up).unwrap();
+    assert_eq!(
+        missing_reason(&w),
+        "machine mini has no free slot yet; this Box takes one as soon as another Box frees it"
+    );
 }

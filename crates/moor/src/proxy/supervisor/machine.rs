@@ -2,12 +2,14 @@
 //! freed while the Box sleeps and taken again when it wakes, let go when the Box closes. A
 //! supervisor that stops on a signal keeps the record, so the next supervisor opens the link again.
 
+mod hold;
 mod link;
 
 use moor_core::domain::event::{Event, MachineEvent};
 
 use super::run::{say, Running};
 use crate::store::MachineWake;
+pub(super) use hold::hold_of;
 use link::{keep, ForwardFailed, MachineLink};
 
 /// The link to the attached machine and whether its last open failed.

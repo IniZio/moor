@@ -1,7 +1,8 @@
 //! The machine service. A plain `http://` request a Box sends to the service's host name goes
 //! straight to the service's loopback address, never to nono, carrying the Box and the machine
-//! it holds in `X-Moor-*` headers that only this front sets. A CONNECT to that host, or a request
-//! from a Box that holds no machine, is refused.
+//! it holds in `X-Moor-*` headers that only this front sets. A Box that holds no slot is passed
+//! on too, marked with why, so its agent sees a tool error and not an auth failure. A CONNECT to
+//! that host is refused.
 
 use std::io::Write;
 use std::net::{Shutdown, TcpStream};
@@ -18,8 +19,22 @@ const OWN_PREFIX: &str = "x-moor-";
 /// Body of the answer when the service does not accept the connection.
 const UNAVAILABLE_BODY: &str = r#"{"message":"moor: the machine service is not answering"}"#;
 
-/// Reads the machine the Box holds now; `None` when it holds none.
-pub(crate) type HeldFn = Arc<dyn Fn() -> Option<Held> + Send + Sync>;
+/// Reads what the Box holds now.
+pub(crate) type HeldFn = Arc<dyn Fn() -> Hold + Send + Sync>;
+
+/// What a Box holds of the machine service.
+pub(crate) enum Hold {
+    /// A slot on a machine.
+    Held(Held),
+    /// No slot. A client treats a 401 or 403 as a call for OAuth and drops the server's tools
+    /// for good, so the service is told instead.
+    Missing {
+        /// The Box.
+        box_id: BoxId,
+        /// Why, as one line the agent reads.
+        reason: String,
+    },
+}
 
 /// The machine a Box holds, as the service learns it.
 pub(crate) struct Held {
@@ -51,10 +66,10 @@ impl MachineRoute {
 
     /// Sends a plain request to the service with the Box's identity, then relays both ways.
     pub(super) fn serve(&self, client: UnixStream, head: &Head) {
-        let (Some(plain), Some(machine)) = (plain::parse(&head.bytes), (self.held)()) else {
+        let Some(plain) = plain::parse(&head.bytes) else {
             return refuse(client);
         };
-        let Some(request) = marked(&plain.request, &machine) else {
+        let Some(request) = marked(&plain.request, &(self.held)()) else {
             return refuse(client);
         };
         let Ok(mut upstream) = TcpStream::connect_timeout(&self.service.upstream, TARGET_TIMEOUT)
@@ -87,20 +102,26 @@ fn target_host(head: &[u8]) -> Option<&str> {
 }
 
 /// `request` without any `X-Moor-*` header, with the front's own added.
-fn marked(request: &[u8], held: &Held) -> Option<Vec<u8>> {
+fn marked(request: &[u8], slot: &Hold) -> Option<Vec<u8>> {
     let text = std::str::from_utf8(request)
         .ok()?
         .strip_suffix("\r\n\r\n")?;
-    let own = [
-        ("X-Moor-Box", held.box_id.get().to_string()),
-        ("X-Moor-Machine", held.name.clone()),
-        ("X-Moor-Machine-Ssh", held.ssh.clone()),
-        ("X-Moor-Machine-Slot", held.slot.to_string()),
-        (
-            "X-Moor-Machine-Exclude",
-            serde_json::to_string(&held.sync_exclude).ok()?,
-        ),
-    ];
+    let own = match slot {
+        Hold::Held(held) => vec![
+            ("X-Moor-Box", held.box_id.get().to_string()),
+            ("X-Moor-Machine", held.name.clone()),
+            ("X-Moor-Machine-Ssh", held.ssh.clone()),
+            ("X-Moor-Machine-Slot", held.slot.to_string()),
+            (
+                "X-Moor-Machine-Exclude",
+                serde_json::to_string(&held.sync_exclude).ok()?,
+            ),
+        ],
+        Hold::Missing { box_id, reason } => vec![
+            ("X-Moor-Box", box_id.get().to_string()),
+            ("X-Moor-Machine-Missing", reason.clone()),
+        ],
+    };
     if own
         .iter()
         .any(|(_, v)| v.bytes().any(|b| b.is_ascii_control()))

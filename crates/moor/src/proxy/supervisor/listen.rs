@@ -9,10 +9,11 @@ use moor_core::graphql_scope::RepoRef;
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::{BoxId, Secret};
 
+use super::machine::hold_of;
 use super::run::say;
 use super::Deps;
 use crate::proxy::detached::base64url;
-use crate::proxy::front::{Front, FrontSocket, Held, MachineRoute};
+use crate::proxy::front::{Front, FrontSocket, MachineRoute};
 use crate::proxy::graphql::upstream::Upstream;
 use crate::proxy::graphql::{FilterSpec, GraphqlFilter};
 use crate::proxy::guard::Guard;
@@ -95,16 +96,7 @@ pub(super) fn listen(deps: &Deps<'_>, box_id: BoxId, spec: &ProxySpec) -> Result
 fn machine_route(deps: &Deps<'_>, box_id: BoxId) -> Option<MachineRoute> {
     let service = deps.machine_service.clone()?;
     let store = deps.store.clone();
-    let held = Arc::new(move || {
-        let held = store.box_machine(box_id).ok()??;
-        Some(Held {
-            box_id,
-            name: held.machine.name,
-            ssh: held.machine.ssh,
-            slot: held.slot,
-            sync_exclude: held.sync_exclude,
-        })
-    });
+    let held = Arc::new(move || hold_of(&store, box_id));
     Some(MachineRoute { service, held })
 }
 
