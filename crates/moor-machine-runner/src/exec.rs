@@ -23,6 +23,36 @@ pub(crate) const MAX_HOLD_WAIT_SECS: u64 = 3600;
 const TAIL: usize = 64 * 1024;
 /// How long output may keep arriving after ssh exits, from children it left behind.
 const DRAIN: Duration = Duration::from_secs(2);
+/// Runs the script on fd 3 in the login shell, in its own process group, and ends that group
+/// (TERM, then KILL after 5 s) once stdin reaches EOF: ssh died or was killed. Without a pty,
+/// nothing else stops the command when its call ends. POSIX sh, since macOS has no `setsid`
+/// binary and dash cannot turn job control on without a tty. It sits in single quotes, so it
+/// holds none.
+const WRAPPER: &str = r#"exec 4<&0 </dev/null
+cmd=$(cat <&3) || exit 255
+exec 3<&-
+sh=${SHELL:-/bin/sh}
+if command -v setsid >/dev/null 2>&1; then
+  setsid "$sh" -lc "$cmd" 4<&- &
+else
+  set -m
+  "$sh" -lc "$cmd" 4<&- &
+fi
+job=$!
+(
+  while read -r _; do :; done <&4
+  kill -s TERM -- "-$job" "$job"
+  sleep 5
+  kill -s KILL -- "-$job" "$job"
+) >/dev/null 2>&1 &
+watch=$!
+exec 4<&-
+wait "$job"
+code=$?
+kill "$watch" 2>/dev/null
+exit "$code"
+"#;
+const _: () = assert!(!has_single_quote(WRAPPER));
 
 /// Arguments of `exec`.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -85,15 +115,20 @@ pub(crate) async fn run(
     timeout: Duration,
 ) -> io::Result<ExecOutput> {
     let script = format!("cd ~/{} && {command}", caller.remote_dir());
-    let remote = format!("exec \"${{SHELL:-/bin/sh}}\" -lc {}", quote(&script));
+    let mut end = String::from("MOOR_END");
+    while script.lines().any(|line| line == end) {
+        end.push('_');
+    }
+    let remote = format!("exec /bin/sh -c '{WRAPPER}' 3<<'{end}'\n{script}\n{end}\n");
     let (mut reader, writer) = io::pipe()?;
     let mut child = Command::new("ssh")
         .args(["-o", "BatchMode=yes", "--", &caller.ssh, &remote])
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(writer.try_clone()?)
         .stderr(writer)
         .kill_on_drop(true)
         .spawn()?;
+    let stdin = child.stdin.take();
     let tail = Arc::new(Mutex::new(Tail::default()));
     let (done, drained) = oneshot::channel();
     let sink = Arc::clone(&tail);
@@ -114,6 +149,7 @@ pub(crate) async fn run(
         child.wait().await?;
         (None, true)
     };
+    drop(stdin);
     if !timed_out {
         let _ = tokio::time::timeout(DRAIN, drained).await;
     }
@@ -127,7 +163,15 @@ pub(crate) async fn run(
     })
 }
 
-/// `s` as one single-quoted word for a POSIX shell.
-fn quote(s: &str) -> String {
-    format!("'{}'", s.replace('\'', r"'\''"))
+/// Whether `s` holds a `'`.
+const fn has_single_quote(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\'' {
+            return true;
+        }
+        i += 1;
+    }
+    false
 }

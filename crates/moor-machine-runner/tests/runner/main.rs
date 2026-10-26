@@ -172,3 +172,95 @@ fn machine_info_gives_the_slot_and_its_port_offset() {
         json!({"box": 7, "machine": "minion", "slot": 2, "port_offset": 20})
     );
 }
+
+/// Waits up to 10 s for the pid the command wrote to `file` in the Box's copy.
+fn written_pid(rig: &Rig, file: &str) -> u32 {
+    let path = rig.copy().join(file);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(pid) = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+        {
+            return pid;
+        }
+        assert!(Instant::now() < deadline, "the command never wrote {file}");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// Whether `pid` still runs: it exists and is not a zombie.
+fn alive(pid: u32) -> bool {
+    std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
+        stat.rsplit(')')
+            .next()
+            .is_some_and(|s| !s.trim_start().starts_with('Z'))
+    })
+}
+
+fn gone_within_6s(pid: u32) {
+    let started = Instant::now();
+    while alive(pid) {
+        assert!(
+            started.elapsed() < Duration::from_secs(6),
+            "the command on the machine outlived its call"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+#[test]
+fn exec_past_its_timeout_ends_the_command_on_the_machine() {
+    let rig = Rig::start();
+    rig.call("sync", json!({})).unwrap();
+    let command = "echo $$ > pid; exec sleep 300";
+    let out = rig
+        .call("exec", json!({"command": command, "timeout_secs": 1}))
+        .unwrap();
+    assert_eq!(out["timed_out"], true, "{out}");
+    gone_within_6s(written_pid(&rig, "pid"));
+}
+
+#[test]
+fn a_call_hung_up_on_ends_the_command_on_the_machine() {
+    let rig = Rig::start();
+    rig.call("sync", json!({})).unwrap();
+    let call = rig.send_call("exec", json!({"command": "echo $$ > pid; exec sleep 300"}));
+    let pid = written_pid(&rig, "pid");
+    std::thread::sleep(Duration::from_secs(1));
+    assert!(alive(pid), "the command runs while its call is open");
+    drop(call);
+    gone_within_6s(pid);
+}
+
+#[test]
+fn exec_runs_quotes_substitutions_and_heredocs_as_typed() {
+    let rig = Rig::start();
+    rig.call("sync", json!({})).unwrap();
+    let command = "printf '%s|' \"it's\" \"$(echo sub)\" 'a;b'; echo\n\
+                   cat <<'MOOR_END'\nMOOR_END_\nMOOR_END\necho end; exit 4";
+    let out = rig.call("exec", json!({ "command": command })).unwrap();
+    assert_eq!(out["output"], "it's|sub|a;b|\nMOOR_END_\nend\n", "{out}");
+    assert_eq!(out["exit_code"], 4, "{out}");
+}
+
+#[test]
+fn an_ssh_header_that_is_not_a_strict_target_is_refused() {
+    let rig = Rig::start();
+    let with_ssh = |ssh: &'static str| -> Vec<(&str, &str)> {
+        HEADERS
+            .into_iter()
+            .map(|(k, v)| (k, if k == "X-Moor-Machine-Ssh" { ssh } else { v }))
+            .collect()
+    };
+    for bad in ["user@-oProxyCommand=x", "-x@h"] {
+        let err = rig
+            .call_with("machine_info", json!({}), &with_ssh(bad))
+            .unwrap_err();
+        assert!(err.contains("X-Moor-Machine-Ssh"), "{bad}: {err}");
+    }
+    for good in ["moor@minion", "moor@[::1]:22"] {
+        let info = rig.call_with("machine_info", json!({}), &with_ssh(good));
+        assert!(info.is_ok(), "{good}: {info:?}");
+    }
+}

@@ -2,6 +2,7 @@
 
 use http::HeaderMap;
 use moor_core::box_key::BoxKey;
+use moor_core::config::check_ssh;
 use moor_core::BoxId;
 use rmcp::ErrorData;
 
@@ -50,9 +51,7 @@ impl Caller {
             .ok_or_else(|| refused(format!("header {BOX} is not a Box id: {raw}")))?;
         let machine = header(MACHINE)?;
         let ssh = header(SSH)?;
-        if ssh.starts_with('-') || ssh.contains(char::is_whitespace) {
-            return Err(refused(format!("header {SSH} is not an ssh target: {ssh}")));
-        }
+        check_ssh(&ssh).map_err(|e| refused(format!("header {SSH}: {e}")))?;
         let raw = header(SLOT)?;
         let slot = raw
             .parse::<u16>()
