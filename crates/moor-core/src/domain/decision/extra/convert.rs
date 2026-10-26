@@ -218,7 +218,8 @@ impl TryFrom<Event> for ExtraEvent {
             | Event::ArtifactPublished { .. }
             | Event::SessionEnded { .. }
             | Event::AgentLinkLost { .. }
-            | Event::AgentLinkRestored { .. }) => Err(e),
+            | Event::AgentLinkRestored { .. }
+            | Event::Machine(_)) => Err(e),
         }
     }
 }

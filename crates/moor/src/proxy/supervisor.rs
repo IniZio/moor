@@ -6,6 +6,7 @@
 
 mod bind;
 mod listen;
+mod machine;
 mod park;
 mod run;
 #[cfg(test)]
@@ -20,6 +21,7 @@ use std::time::Duration;
 
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
+use moor_core::seam::proc::Proc;
 use moor_core::seam::rng::Rng;
 use moor_core::BoxId;
 
@@ -41,6 +43,8 @@ pub(crate) struct Deps<'a> {
     pub(crate) store: &'a Store,
     /// Opens the reverse tunnel into the Box.
     pub(crate) driver: &'a dyn Driver,
+    /// Starts the ssh child that serves the attached machine's forwards.
+    pub(crate) proc: &'a dyn Proc,
     /// Source of time and sleeping.
     pub(crate) clock: Arc<dyn Clock>,
     /// Source of the lease owner token.
