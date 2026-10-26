@@ -2,10 +2,12 @@
 //! when the Box sleeps or closes. A supervisor that stops on a signal keeps the record, so the
 //! next supervisor opens the link again.
 
+mod link;
+
 use moor_core::domain::event::{Event, MachineEvent};
 
 use super::run::{say, Running};
-use crate::ops::common::machine::{keep, ForwardFailed, MachineLink};
+use link::{keep, ForwardFailed, MachineLink};
 
 /// The link to the attached machine and whether its last open failed.
 #[derive(Default)]
@@ -69,10 +71,8 @@ impl Running<'_> {
     /// Ends the forwards and frees the machine for the next Box.
     pub(super) fn let_go_machine(&self) {
         *self.machine.borrow_mut() = MachineSlot::default();
-        let name = match self.deps.store.box_machine(self.box_id) {
-            Ok(held) => held.map(|(m, _)| m.name),
-            Err(_) => None,
-        };
+        let held = self.deps.store.box_machine(self.box_id);
+        let name = held.ok().flatten().map(|(m, _)| m.name);
         match self.deps.store.detach_machine(self.box_id) {
             Ok(true) => {}
             Ok(false) => return,

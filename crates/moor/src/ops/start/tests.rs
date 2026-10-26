@@ -36,6 +36,7 @@ mod launch_warnings;
 mod lease;
 mod lease_dirs;
 mod lease_handle;
+mod machine;
 mod others;
 mod parent;
 mod prompt_watch;

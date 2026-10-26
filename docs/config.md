@@ -202,6 +202,7 @@ A repo's `.moor.yaml` configures its Boxes.
 | `compose.project_prefix` | string | A prefix for compose project names. |
 | `box.size` | `small`, `medium`, `large`, or `xlarge` | The Box size. It wins over the user's `box.size`. |
 | `box_credentials` | list of names | Secrets that the Box's user must hold for a `start`. moor does not put them into the Box. |
+| `machine.labels`, `machine.ports` | lists | Attach one of the requester's own machines (`moor user machine add`) that has every label, and serve each listed Box port at the same number on that machine's loopback, over ssh from the host. Without a free matching machine the Box starts without one and the start says why. |
 | `cache` | map | Which presets to keep and which other directories to keep across Boxes. See [Cache volumes](#cache-volumes). |
 
 moor reads `.moor.yaml` from GitHub at the Box's base commit when the Box
