@@ -19,6 +19,7 @@ use serde_json::json;
 use rig::{Rig, HEADERS};
 
 mod holds;
+mod hooks;
 mod rig;
 
 fn ino(path: &Path) -> u64 {
@@ -169,7 +170,7 @@ fn machine_info_gives_the_slot_and_its_port_offset() {
     let info = rig.call_with("machine_info", json!({}), &headers).unwrap();
     assert_eq!(
         info,
-        json!({"box": 7, "machine": "minion", "slot": 2, "port_offset": 20})
+        json!({"box": 7, "machine": "minion", "slot": 2, "port_offset": 20, "facts": {}})
     );
 }
 
