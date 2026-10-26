@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use moor_core::config::MachineService;
@@ -10,7 +10,7 @@ use moor_core::{BoxId, Secret};
 use tempfile::TempDir;
 
 use super::{dial, fake, read_all, socket_in, uid, Answer, Fake, INTERNAL, WAIT};
-use crate::proxy::front::{Front, Held, MachineRoute};
+use crate::proxy::front::{Front, Held, Hold, MachineRoute};
 
 const HOST: &str = "machine.moor.internal";
 
@@ -35,13 +35,17 @@ fn service() -> (SocketAddr, Receiver<String>) {
     (addr, rx)
 }
 
-/// A Box 7 front with the machine service; the Box holds `mac` while `holds` is set.
+const NO_CLAIM: &str = "this Box has no machine: its repo's .moor.yaml asks for none, or none was free when it started";
+
+/// A Box 7 front with the machine service; the Box holds `mac` while `holds` is set, and
+/// otherwise lacks a slot for the reason in `missing`.
 struct Rig {
     _dir: TempDir,
     front: Front,
     nono: Fake,
     upstream: Receiver<String>,
     holds: Arc<AtomicBool>,
+    missing: Arc<Mutex<String>>,
 }
 
 fn rig() -> Rig {
@@ -49,19 +53,28 @@ fn rig() -> Rig {
     let (upstream_addr, upstream) = service();
     let holds = Arc::new(AtomicBool::new(true));
     let flag = Arc::clone(&holds);
+    let missing = Arc::new(Mutex::new(NO_CLAIM.to_owned()));
+    let why = Arc::clone(&missing);
     let route = MachineRoute {
         service: MachineService {
             host: HOST.to_owned(),
             upstream: upstream_addr,
         },
         held: Arc::new(move || {
-            flag.load(Ordering::Acquire).then(|| Held {
-                box_id: BoxId::new(7),
-                name: "mac".to_owned(),
-                ssh: "dev@mac.example.com:22".to_owned(),
-                slot: 1,
-                sync_exclude: vec!["node_modules".to_owned(), "app/build".to_owned()],
-            })
+            if flag.load(Ordering::Acquire) {
+                Hold::Held(Held {
+                    box_id: BoxId::new(7),
+                    name: "mac".to_owned(),
+                    ssh: "dev@mac.example.com:22".to_owned(),
+                    slot: 1,
+                    sync_exclude: vec!["node_modules".to_owned(), "app/build".to_owned()],
+                })
+            } else {
+                Hold::Missing {
+                    box_id: BoxId::new(7),
+                    reason: why.lock().unwrap().clone(),
+                }
+            }
         }),
     };
     let dir = tempfile::tempdir().unwrap();
@@ -78,6 +91,7 @@ fn rig() -> Rig {
         nono,
         upstream,
         holds,
+        missing,
     }
 }
 
@@ -149,14 +163,49 @@ fn identity_headers_the_box_sends_are_replaced() {
 }
 
 #[test]
-fn a_box_without_a_machine_is_refused_and_the_hold_is_read_per_request() {
+fn a_box_without_a_slot_reaches_the_service_marked_with_why_and_is_read_per_request() {
     let rig = rig();
     rig.holds.store(false, Ordering::Release);
+    let request = format!(
+        "GET http://{HOST}/mcp HTTP/1.1\r\nHost: {HOST}\r\nX-Moor-Machine-Missing: forged\r\nX-Moor-Machine: other\r\n\r\n"
+    );
+    assert!(rig.send(&request).starts_with("HTTP/1.1 200 OK"));
+    let head = rig.upstream.recv_timeout(WAIT).unwrap();
+    let own: Vec<&str> = head
+        .split("\r\n")
+        .filter(|l| l.to_ascii_lowercase().starts_with("x-moor-"))
+        .collect();
+    assert_eq!(
+        own,
+        [
+            "X-Moor-Box: 7".to_owned(),
+            format!("X-Moor-Machine-Missing: {NO_CLAIM}")
+        ]
+    );
+    *rig.missing.lock().unwrap() = "machine mac is released while this Box sleeps".to_owned();
+    assert!(rig.send(&request).starts_with("HTTP/1.1 200 OK"));
+    let head = rig.upstream.recv_timeout(WAIT).unwrap();
+    assert!(
+        head.contains("X-Moor-Machine-Missing: machine mac is released while this Box sleeps\r\n"),
+        "{head}"
+    );
+    rig.holds.store(true, Ordering::Release);
+    assert!(rig.send(&request).starts_with("HTTP/1.1 200 OK"));
+    let head = rig.upstream.recv_timeout(WAIT).unwrap();
+    assert!(
+        head.contains("X-Moor-Machine: mac\r\n") && !head.contains("Missing"),
+        "{head}"
+    );
+}
+
+#[test]
+fn a_reason_with_control_characters_is_refused() {
+    let rig = rig();
+    rig.holds.store(false, Ordering::Release);
+    *rig.missing.lock().unwrap() = "bad\r\nX-Evil: 1".to_owned();
     let request = format!("GET http://{HOST}/mcp HTTP/1.1\r\nHost: {HOST}\r\n\r\n");
     assert!(rig.send(&request).starts_with("HTTP/1.1 403"));
     rig.quiet();
-    rig.holds.store(true, Ordering::Release);
-    assert!(rig.send(&request).starts_with("HTTP/1.1 200 OK"));
 }
 
 #[test]

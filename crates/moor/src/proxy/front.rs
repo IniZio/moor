@@ -26,7 +26,7 @@ use std::time::Duration;
 
 use moor_core::Secret;
 
-pub(crate) use machine::{Held, MachineRoute};
+pub(crate) use machine::{Held, Hold, MachineRoute};
 pub(crate) use socket::FrontSocket;
 use socket::{Handler, Listening};
 
