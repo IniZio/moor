@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -14,10 +14,7 @@ const PREPARE: &str = r#"case "$MOOR_BOX" in 8) echo '{}';; 9) echo '{"device":"
 const RELEASE: &str = r#"pid=$(tail -n 1 ~/fake-starts | cut -d ' ' -f 1); if kill -0 "$pid" 2>/dev/null; then echo alive; else echo gone; fi >> ~/released"#;
 
 fn fake() -> PathBuf {
-    Path::new(env!("CARGO_BIN_EXE_moor-machine-runner"))
-        .parent()
-        .unwrap()
-        .join("examples/fake-mcp")
+    PathBuf::from(env!("CARGO_BIN_EXE_fake-mcp"))
 }
 
 fn relayed(extra: &[&str]) -> Rig {
