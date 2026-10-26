@@ -89,8 +89,11 @@ pub struct BoxSettings {
     pub credentials: Vec<CredPlan>,
     /// Repo box credential names, in repo order.
     pub box_credentials: Vec<String>,
-    /// User MCP servers.
+    /// User MCP servers this Box gets: servers for machine Boxes only are left out unless
+    /// `machine` is set.
     pub mcp: BTreeMap<String, McpServer>,
+    /// Whether the repo asks for a machine.
+    pub machine: bool,
     /// User dotfiles source.
     pub dotfiles: Option<DotfilesConfig>,
     /// Repo setup commands.
@@ -118,7 +121,11 @@ fn plan_credentials(uc: &UserConfig, repo: &RepoConfig) -> Vec<CredPlan> {
         .map(String::as_str)
         .collect();
     let mut names = boxed.clone();
-    for server in uc.mcp_servers.values() {
+    for server in uc
+        .mcp_servers
+        .values()
+        .filter(|s| !s.machine || repo.machine.is_some())
+    {
         names.extend(server.refs());
     }
     names
@@ -164,7 +171,13 @@ impl BoxSettings {
             size,
             credentials: plan_credentials(user, r),
             box_credentials: r.box_credentials.clone(),
-            mcp: user.mcp_servers.clone(),
+            mcp: user
+                .mcp_servers
+                .iter()
+                .filter(|(_, s)| !s.machine || r.machine.is_some())
+                .map(|(n, s)| (n.clone(), s.clone()))
+                .collect(),
+            machine: r.machine.is_some(),
             dotfiles: user.dotfiles.clone(),
             setup: r.setup.clone(),
             teardown: r.teardown.clone(),

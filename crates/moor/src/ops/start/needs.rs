@@ -77,7 +77,7 @@ fn needs(
     repo: Option<&ForgeRepo>,
     user: Option<UserId>,
 ) -> Result<Vec<SecretName>, CommandError> {
-    let mcp = crate::ops::users::mcp::for_box(cx, user)?;
+    let mcp = crate::ops::users::mcp::for_box(cx, user, true)?;
     let rules = plan(cx, repo, &mcp.servers)
         .map_err(|e| CommandError::new(ErrorKind::Failed, e))?
         .rules;
