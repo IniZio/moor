@@ -14,6 +14,8 @@ use tempfile::TempDir;
 
 use super::{Front, FrontSocket};
 
+mod machine;
+
 const INTERNAL: &str = "internal-token-456";
 const FORWARDED_HEAD: &str = "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nProxy-Authorization: Bearer internal-token-456\r\n\r\n";
 const WAIT: Duration = Duration::from_secs(5);
@@ -118,6 +120,7 @@ fn start(target: SocketAddr) -> (TempDir, Front) {
         target,
         socket_in(&dir, uid()),
         Secret::new(INTERNAL.as_bytes().to_vec()),
+        None,
     )
     .unwrap();
     (dir, front)
@@ -346,6 +349,7 @@ fn a_successor_bound_while_a_front_stops_keeps_its_socket() {
             nono.addr,
             socket_in(&dir, uid()),
             Secret::new(INTERNAL.as_bytes().to_vec()),
+            None,
         )
         .unwrap();
         stopping.join().unwrap();
@@ -460,6 +464,7 @@ fn a_file_left_at_the_socket_path_is_replaced() {
         nono.addr,
         socket.clone(),
         Secret::new(INTERNAL.as_bytes().to_vec()),
+        None,
     )
     .unwrap();
 

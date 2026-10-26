@@ -267,6 +267,7 @@ impl Rig {
             },
             upstream_ca: Some(self.up.ca_path.clone()),
             upstream_dial: Some(self.up.addr),
+            machine_service: None,
             guard_exempt: Vec::new(),
             state_dir: self.dir.path(),
             sockets: &self.sockets,

@@ -12,7 +12,7 @@ use moor_core::{BoxId, Secret};
 use super::run::say;
 use super::Deps;
 use crate::proxy::detached::base64url;
-use crate::proxy::front::{Front, FrontSocket};
+use crate::proxy::front::{Front, FrontSocket, Held, MachineRoute};
 use crate::proxy::graphql::upstream::Upstream;
 use crate::proxy::graphql::{FilterSpec, GraphqlFilter};
 use crate::proxy::guard::Guard;
@@ -74,7 +74,7 @@ pub(super) fn listen(deps: &Deps<'_>, box_id: BoxId, spec: &ProxySpec) -> Result
     };
     let nono_addr = SocketAddr::from(([127, 0, 0, 1], proxy.port()));
     let socket = FrontSocket::new(deps.sockets, deps.owner, deps.state_dir, box_id);
-    let front = match Front::start(nono_addr, socket, internal) {
+    let front = match Front::start(nono_addr, socket, internal, machine_route(deps, box_id)) {
         Ok(front) => front,
         Err(err) => {
             proxy.stop();
@@ -89,6 +89,21 @@ pub(super) fn listen(deps: &Deps<'_>, box_id: BoxId, spec: &ProxySpec) -> Result
         withheld,
         log,
     })
+}
+
+/// The machine service for `box_id`, reading the machine it holds from the store per request.
+fn machine_route(deps: &Deps<'_>, box_id: BoxId) -> Option<MachineRoute> {
+    let service = deps.machine_service.clone()?;
+    let store = deps.store.clone();
+    let held = Arc::new(move || {
+        let (machine, _) = store.box_machine(box_id).ok()??;
+        Some(Held {
+            box_id,
+            name: machine.name,
+            ssh: machine.ssh,
+        })
+    });
+    Some(MachineRoute { service, held })
 }
 
 /// The capture that reads `spec`'s user's secrets on every request, with the vault key the

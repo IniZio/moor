@@ -26,10 +26,12 @@ use std::time::Duration;
 
 use moor_core::Secret;
 
+pub(crate) use machine::{Held, MachineRoute};
 pub(crate) use socket::FrontSocket;
 use socket::{Handler, Listening};
 
 mod auth;
+mod machine;
 mod plain;
 mod socket;
 
@@ -81,22 +83,34 @@ impl fmt::Debug for Front {
 
 impl Front {
     /// Binds `socket`, replacing a stale file, and starts accepting. `internal`
-    /// is the session token nono checks, never shown to the Box.
+    /// is the session token nono checks, never shown to the Box; `machine` is the service
+    /// the front serves itself.
     pub(crate) fn start(
         target: SocketAddr,
         socket: FrontSocket,
         internal: Secret,
+        machine: Option<MachineRoute>,
     ) -> Result<Self, String> {
-        Self::routed(
+        Self::bind(
             socket,
             Arc::new(move |_| Some((target, Secret::new(internal.expose().to_vec())))),
+            machine,
         )
     }
 
     /// Binds `socket`, replacing a stale file, and starts accepting; `route` picks each
     /// request's nono from its head.
     pub(crate) fn routed(socket: FrontSocket, route: Route) -> Result<Self, String> {
-        let handler: Handler = Arc::new(move |client| serve(client, &*route));
+        Self::bind(socket, route, None)
+    }
+
+    /// Binds `socket` and serves each connection by `route` and `machine`.
+    fn bind(
+        socket: FrontSocket,
+        route: Route,
+        machine: Option<MachineRoute>,
+    ) -> Result<Self, String> {
+        let handler: Handler = Arc::new(move |client| serve(client, &*route, machine.as_ref()));
         let listening = socket.listen(true, &handler)?;
         Ok(Self {
             socket,
@@ -169,12 +183,15 @@ fn read_head(src: &mut impl Read) -> Option<Head> {
 }
 
 /// Handles one client connection.
-fn serve(mut client: UnixStream, route: &RouteFn) {
+fn serve(mut client: UnixStream, route: &RouteFn, machine: Option<&MachineRoute>) {
     let _ = client.set_read_timeout(Some(REQUEST_TIMEOUT));
     let _ = client.set_write_timeout(Some(TARGET_TIMEOUT));
     let Some(head) = read_head(&mut client) else {
         return refuse(client);
     };
+    if let Some(machine) = machine.filter(|m| m.aims_at(&head.bytes)) {
+        return machine.serve(client, &head);
+    }
     let Some((target, internal)) = route(&head.bytes) else {
         return refuse(client);
     };
