@@ -4,7 +4,7 @@
 //! rsync runs on the host and starts the Box's rsync through the same ssh words every other
 //! short call uses, so the copy rides the Box's master and keeps crabbox's host-key pinning.
 //! Links stay links, modes are kept, files gone from the Box go from the host, and `.git` is
-//! left out. A later mirror sends only what changed.
+//! left out, with any patterns the caller names. A later mirror sends only what changed.
 
 use std::path::Path;
 use std::time::Duration;
@@ -27,6 +27,7 @@ pub(super) fn mirror_out(
     handle: &BoxHandle,
     from: &BoxPath,
     to: &Path,
+    exclude: &[String],
 ) -> Result<MirrorStats, DriverError> {
     std::fs::create_dir_all(to)
         .map_err(|e| failed(&format!("cannot make the destination ({})", e.kind())))?;
@@ -49,7 +50,9 @@ pub(super) fn mirror_out(
         from.as_str().trim_end_matches('/')
     );
     let spec = ProcSpec::new(Tool::Rsync, Deadline(MIRROR_DEADLINE))
-        .args(["-a", "--delete", "--exclude", ".git", "--stats", "-e"])
+        .args(["-a", "--delete", "--exclude=.git"])
+        .args(exclude.iter().map(|p| format!("--exclude={p}")))
+        .args(["--stats", "-e"])
         .arg(rsh.join(" "))
         .arg(format!(
             "--rsync-path=command -v rsync >/dev/null 2>&1 || {{ echo {NO_RSYNC} >&2; exit 1; }}; rsync"

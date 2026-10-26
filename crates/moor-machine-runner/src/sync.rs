@@ -40,7 +40,7 @@ pub(crate) struct SyncOutput {
 }
 
 /// Mirrors the caller's Box into `mirrors/<box id>`, then that mirror onto the machine, except
-/// the caller's `sync_exclude` and the call's `exclude`, which only the second hop honors.
+/// the caller's `sync_exclude` and the call's `exclude`, which both hops honor.
 pub(crate) fn run(
     client: &Client,
     mirrors: &Path,
@@ -48,9 +48,16 @@ pub(crate) fn run(
     args: &SyncArgs,
 ) -> Result<SyncOutput, String> {
     let mirror = mirrors.join(caller.box_id.get().to_string());
+    let exclude: Vec<String> = caller
+        .sync_exclude
+        .iter()
+        .chain(&args.exclude)
+        .cloned()
+        .collect();
     let request = Request::BoxMirror(BoxMirrorReq {
         id: caller.box_id,
         dest: mirror.display().to_string(),
+        exclude: exclude.clone(),
     });
     let response = client
         .request(request, |_| {})
@@ -70,13 +77,7 @@ pub(crate) fn run(
     let remote = caller.remote_dir();
     let out = Command::new("rsync")
         .args(["-a", "--delete", "--exclude=.git"])
-        .args(
-            caller
-                .sync_exclude
-                .iter()
-                .chain(&args.exclude)
-                .map(|p| format!("--exclude={p}")),
-        )
+        .args(exclude.iter().map(|p| format!("--exclude={p}")))
         .args(["-e", "ssh -o BatchMode=yes"])
         .arg(format!("--rsync-path=mkdir -p {remote} && rsync"))
         .arg(format!("{}/", mirror.display()))

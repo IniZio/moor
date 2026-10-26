@@ -92,6 +92,7 @@ fn req(f: &Fx, id: BoxId) -> BoxMirrorReq {
     BoxMirrorReq {
         id,
         dest: f.dir.path().join("mirror").display().to_string(),
+        exclude: Vec::new(),
     }
 }
 
@@ -137,6 +138,7 @@ fn a_relative_destination_is_usage() {
         &BoxMirrorReq {
             id: f.id,
             dest: "rel".into(),
+            exclude: Vec::new(),
         },
     )
     .unwrap_err();
@@ -169,4 +171,35 @@ fn a_mirror_waits_for_no_op_holding_the_box_lock() {
     assert_eq!(err.kind, ErrorKind::Refused);
     assert!(err.error.to_string().contains("close"), "{err:?}");
     assert_eq!(mirrors(&f), 0);
+}
+
+#[test]
+fn a_bad_exclude_pattern_is_refused_naming_it_before_the_driver_is_called() {
+    let f = fx();
+    for bad in ["", "-rf", "--delete-excluded", "a\nb"] {
+        let mut r = req(&f, f.id);
+        r.exclude = vec!["node_modules".to_owned(), bad.to_owned()];
+        let err = run(&f.cx, &r).unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Usage, "{bad:?}");
+        assert!(err.error.to_string().contains("exclude pattern"), "{err:?}");
+    }
+    let mut r = req(&f, f.id);
+    r.exclude = vec!["x".to_owned(); 65];
+    let err = run(&f.cx, &r).unwrap_err();
+    assert!(err.error.to_string().contains("at most 64"), "{err:?}");
+    assert_eq!(mirrors(&f), 0);
+}
+
+#[test]
+fn good_exclude_patterns_reach_the_driver_in_order() {
+    let f = fx();
+    let mut r = req(&f, f.id);
+    r.exclude = vec!["node_modules".to_owned(), "/app/android".to_owned()];
+    let _ = run(&f.cx, &r);
+    let calls = f.driver.calls();
+    let call = calls.iter().find(|c| c.starts_with("mirror_out")).unwrap();
+    assert!(
+        call.ends_with(r#"["node_modules", "/app/android"]"#),
+        "{call}"
+    );
 }

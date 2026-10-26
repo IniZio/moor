@@ -182,7 +182,8 @@ pub trait Driver: Send + Sync {
     fn copy_out(&self, handle: &BoxHandle, from: &BoxPath, to: &Path) -> Result<(), DriverError>;
 
     /// Makes the host directory `to` an exact copy of the Box directory `from`, links and modes
-    /// kept and `.git` left out, sending only what changed since the last mirror.
+    /// kept and `.git` and the rsync patterns `exclude` left out, sending only what changed since
+    /// the last mirror.
     ///
     /// # Errors
     /// [`DriverError::Unsupported`] naming the side that cannot mirror; another
@@ -192,8 +193,9 @@ pub trait Driver: Send + Sync {
         handle: &BoxHandle,
         from: &BoxPath,
         to: &Path,
+        exclude: &[String],
     ) -> Result<MirrorStats, DriverError> {
-        let _ = (handle, from, to);
+        let _ = (handle, from, to, exclude);
         Err(DriverError::Unsupported("mirroring a Box"))
     }
 

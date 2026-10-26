@@ -11,20 +11,16 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Driver, DriverCaps, DriverError,
-    ExecOutcome, ExecSpec, Followed, Released, RunEnd, SleepKind, SleepOutcome, StepDone,
+    ExecOutcome, ExecSpec, Followed, MirrorStats, Released, RunEnd, SleepKind, SleepOutcome,
+    StepDone,
 };
 use moor_core::seam::proc::{Deadline, Output};
 use moor_core::{BoxHandle, BoxPath, ProviderId};
 
 pub(crate) use runs::{eventually, live_in_group, reaped_pid};
-pub(crate) use script::PutCall;
-use script::{layout, write_bytes, PeekCall};
+pub(crate) use script::{is_clone_exec, PutCall};
+use script::{layout, write_bytes, CopyCall, ExecHook, PeekCall};
 pub(crate) use tunnel::TunnelReply;
-
-/// Whether `spec` is the provisioning clone exec, the one exec that streams into the clone log.
-pub(crate) fn is_clone_exec(spec: &ExecSpec) -> bool {
-    matches!(&spec.output, Some(Output::Log(p)) if p.parent().is_some_and(|d| d.ends_with("clone")))
-}
 
 #[derive(Default)]
 struct State {
@@ -65,12 +61,6 @@ struct State {
     cache: knobs::CacheState,
     runs: runs::RunState,
 }
-
-/// One `copy_out` call: handle, source and destination.
-pub(super) type CopyCall = (BoxHandle, BoxPath, PathBuf);
-
-/// Runs inside every `exec`, before its result is served.
-type ExecHook = dyn Fn() + Send + Sync;
 
 /// Scripted Driver: boxes `box-1`, `box-2`, ... with workdir `/work/cbx_N/repo`
 /// unless [`FakeDriver::work_root`] says otherwise; the lease id differs from
@@ -252,6 +242,18 @@ impl Driver for FakeDriver {
         s.copy_content
             .as_deref()
             .map_or(Ok(()), |bytes| write_bytes(to, bytes))
+    }
+
+    fn mirror_out(
+        &self,
+        handle: &BoxHandle,
+        _: &BoxPath,
+        _: &Path,
+        exclude: &[String],
+    ) -> Result<MirrorStats, DriverError> {
+        self.st()
+            .note(format!("mirror_out {} {exclude:?}", handle.as_str()));
+        Err(DriverError::Unsupported("mirroring a Box"))
     }
 
     fn peek_file(&self, handle: &BoxHandle, path: &BoxPath) -> Result<Option<String>, DriverError> {

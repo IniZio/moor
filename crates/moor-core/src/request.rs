@@ -323,6 +323,9 @@ pub struct BoxMirrorReq {
     pub id: BoxId,
     /// Destination directory on the host, absolute.
     pub dest: String,
+    /// rsync patterns left out of the mirror besides `.git`.
+    #[serde(default)]
+    pub exclude: Vec<String>,
 }
 
 /// Arguments of commands that take only a box.

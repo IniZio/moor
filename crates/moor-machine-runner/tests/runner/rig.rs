@@ -67,6 +67,8 @@ pub struct Rig {
     pub remote: PathBuf,
     /// The Box ids the fake controller lists as open.
     pub open: Arc<Mutex<Vec<i64>>>,
+    /// The `exclude` of each `box-mirror` request the fake controller served.
+    pub mirror_excludes: Arc<Mutex<Vec<Value>>>,
     args: Vec<String>,
     port: u16,
     runner: Child,
@@ -95,7 +97,13 @@ impl Rig {
         std::fs::create_dir_all(&tree).unwrap();
         std::fs::create_dir_all(&remote).unwrap();
         let open = Arc::new(Mutex::new(vec![7]));
-        fake_controller(&dir.path().join("c.sock"), tree.clone(), Arc::clone(&open));
+        let mirror_excludes = Arc::new(Mutex::new(Vec::new()));
+        fake_controller(
+            &dir.path().join("c.sock"),
+            tree.clone(),
+            Arc::clone(&open),
+            Arc::clone(&mirror_excludes),
+        );
         let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
         let (runner, port) = spawn(dir.path(), &args);
         let agent = ureq::Agent::config_builder()
@@ -108,6 +116,7 @@ impl Rig {
             tree,
             remote,
             open,
+            mirror_excludes,
             args,
             port,
             runner,
@@ -310,7 +319,12 @@ fn initialize() -> Value {
 
 /// Serves `box-mirror` the way the controller does, from `tree`, with a local rsync, and
 /// `show` listing the Boxes in `open`.
-fn fake_controller(socket: &Path, tree: PathBuf, open: Arc<Mutex<Vec<i64>>>) {
+fn fake_controller(
+    socket: &Path,
+    tree: PathBuf,
+    open: Arc<Mutex<Vec<i64>>>,
+    mirror_excludes: Arc<Mutex<Vec<Value>>>,
+) {
     let listener = UnixListener::bind(socket).unwrap();
     std::thread::spawn(move || {
         for stream in listener.incoming() {
@@ -338,6 +352,7 @@ fn fake_controller(socket: &Path, tree: PathBuf, open: Arc<Mutex<Vec<i64>>>) {
             }
             assert_eq!(req["cmd"], "box-mirror", "{frame}");
             assert_eq!(req["id"], 7, "{frame}");
+            mirror_excludes.lock().unwrap().push(req["exclude"].clone());
             let dest = req["dest"].as_str().unwrap().to_owned();
             std::fs::create_dir_all(&dest).unwrap();
             let ok = Command::new("rsync")

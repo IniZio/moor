@@ -55,8 +55,17 @@ impl Lab {
 }
 
 fn mirror_with(cb: &Crabbox, from: &Path, to: &Path) -> Result<MirrorStats, DriverError> {
+    mirror_excluding(cb, from, to, &[])
+}
+
+fn mirror_excluding(
+    cb: &Crabbox,
+    from: &Path,
+    to: &Path,
+    exclude: &[String],
+) -> Result<MirrorStats, DriverError> {
     let from = BoxPath::restore(from.to_str().unwrap()).unwrap();
-    cb.mirror_out(&handle(), &from, to)
+    cb.mirror_out(&handle(), &from, to, exclude)
 }
 
 fn seed(tree: &Path) {
@@ -156,4 +165,51 @@ fn a_host_without_rsync_is_named() {
         matches!(err, DriverError::Unsupported("rsync on the host")),
         "{err:?}"
     );
+}
+
+/// Records the host rsync's argv in `rsync.argv`, then runs the real one.
+const RECORDING_RSYNC: &str = r#"#!/bin/sh
+printf '%s\n' "$@" > "$(dirname "$0")/rsync.argv"
+exec /usr/bin/rsync "$@"
+"#;
+
+#[test]
+fn excluded_patterns_follow_git_in_the_rsync_argv_and_stay_off_the_host() {
+    let lab = rsync_lab();
+    let tree = lab.tree();
+    seed(&tree);
+    fs::create_dir_all(tree.join("node_modules/m")).unwrap();
+    fs::write(tree.join("node_modules/m/i.js"), "x").unwrap();
+    fs::create_dir_all(tree.join("app/android")).unwrap();
+    fs::write(tree.join("app/android/b"), "x").unwrap();
+    let rsync = lab.bin().join("rsync");
+    moor_testkit::write_executable(&rsync, RECORDING_RSYNC).unwrap();
+    let env = Env::from_pairs([
+        ("PATH", "/usr/bin:/bin".to_owned()),
+        ("MOOR_RSYNC_BIN", rsync.display().to_string()),
+    ]);
+    let proc = Arc::new(SystemProc::new(&env, &tools(&lab.bin())));
+    let clock = Arc::new(FakeClock::new(moor_core::seam::clock::Ts::from_millis(0)));
+    let dir = lab.dir.path().join("other");
+    let cb = Crabbox::new(proc, clock, Arc::new(FakeRng::default()))
+        .with_state_dir(Some(dir.join("state")), dir.join("s"));
+    let _ = cb.version_ok.set(());
+    let exclude = ["node_modules".to_owned(), "/app/android".to_owned()];
+    mirror_excluding(&cb, &tree, &lab.dest(), &exclude).unwrap();
+    let argv = fs::read_to_string(lab.bin().join("rsync.argv")).unwrap();
+    let flags: Vec<&str> = argv
+        .lines()
+        .filter(|a| a.starts_with("--exclude"))
+        .collect();
+    assert_eq!(
+        flags,
+        [
+            "--exclude=.git",
+            "--exclude=node_modules",
+            "--exclude=/app/android"
+        ]
+    );
+    assert!(!lab.dest().join("node_modules").exists());
+    assert!(!lab.dest().join("app/android").exists());
+    assert!(lab.dest().join("src/deep/a.txt").exists());
 }
