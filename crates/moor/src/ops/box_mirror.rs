@@ -42,13 +42,16 @@ pub(crate) fn run(cx: &Cx, req: &BoxMirrorReq) -> Result<MirrorValue, CommandErr
         Some(w) => w,
         None => cx.driver().workdir(&handle)?,
     };
-    let stats = cx.driver().mirror_out(&handle, &from, &to).map_err(|e| match e {
-        DriverError::Unsupported(what) => CommandError::new(
-            ErrorKind::Refused,
-            format!("box-mirror needs {what}, which is missing"),
-        ),
-        other => other.into(),
-    })?;
+    let stats = cx
+        .driver()
+        .mirror_out(&handle, &from, &to)
+        .map_err(|e| match e {
+            DriverError::Unsupported(what) => CommandError::new(
+                ErrorKind::Refused,
+                format!("box-mirror needs {what}, which is missing"),
+            ),
+            other => other.into(),
+        })?;
     Ok(MirrorValue {
         from: from.as_str().to_owned(),
         to: to.display().to_string(),

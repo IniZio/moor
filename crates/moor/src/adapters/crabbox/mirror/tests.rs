@@ -76,11 +76,20 @@ fn a_mirror_keeps_links_modes_and_nested_dirs_and_leaves_git_out() {
     let stats = lab.mirror().unwrap();
     let dest = lab.dest();
     assert_eq!(stats.files, 2, "{stats:?}");
-    assert_eq!(fs::read_to_string(dest.join("src/deep/a.txt")).unwrap(), "alpha");
+    assert_eq!(
+        fs::read_to_string(dest.join("src/deep/a.txt")).unwrap(),
+        "alpha"
+    );
     let link = fs::symlink_metadata(dest.join("link")).unwrap();
     assert!(link.file_type().is_symlink(), "the link arrives as a link");
-    assert_eq!(fs::read_link(dest.join("link")).unwrap(), Path::new("src/deep/a.txt"));
-    let mode = fs::metadata(dest.join("run.sh")).unwrap().permissions().mode();
+    assert_eq!(
+        fs::read_link(dest.join("link")).unwrap(),
+        Path::new("src/deep/a.txt")
+    );
+    let mode = fs::metadata(dest.join("run.sh"))
+        .unwrap()
+        .permissions()
+        .mode();
     assert_eq!(mode & 0o777, 0o755, "the executable keeps +x");
     assert!(!dest.join(".git").exists(), ".git is left out");
 }
@@ -100,7 +109,10 @@ fn a_second_mirror_sends_only_the_changed_file_and_drops_deleted_ones() {
         fs::read_to_string(dest.join("src/deep/a.txt")).unwrap(),
         "alpha, changed"
     );
-    assert!(!dest.join("run.sh").exists(), "a file gone from the Box goes from the host");
+    assert!(
+        !dest.join("run.sh").exists(),
+        "a file gone from the Box goes from the host"
+    );
 }
 
 #[test]
@@ -110,7 +122,7 @@ fn a_mirror_rides_the_box_master_and_keeps_the_pinning() {
     lab.mirror().unwrap();
     let ssh = lab.argvs("ssh");
     assert_eq!(ssh.len(), 1, "{ssh:?}");
-    lab.assert_on_the_master_and_pinned(&ssh[0]);
+    lab.assert_on_the_master_and_pinned(ssh.first().unwrap());
 }
 
 #[test]

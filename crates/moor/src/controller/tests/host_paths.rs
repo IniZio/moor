@@ -149,5 +149,9 @@ fn a_front_box_mirror_is_refused() {
     let mirror = json!({"cmd": "box-mirror", "id": id.get(), "dest": dest});
     let got = ask(&served.front("slack"), &acting(ANN, &mirror));
     refused(&got, "box-mirror to the host is operator-only");
-    assert!(!dest.exists(), "the refused mirror wrote {}", dest.display());
+    assert!(
+        !dest.exists(),
+        "the refused mirror wrote {}",
+        dest.display()
+    );
 }
