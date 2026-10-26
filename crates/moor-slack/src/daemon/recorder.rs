@@ -113,9 +113,9 @@ impl Intake for Recorder {
     /// after the command and the worker may be busy with a Box start.
     fn after_ack(&self, then: AfterAck) {
         let (trigger_id, form) = match then {
-            AfterAck::OpenLogin { trigger_id, form } => (trigger_id, login::form(form)),
-            AfterAck::OpenMcp { trigger_id } => (trigger_id, mcp::form()),
-            AfterAck::OpenMachine { trigger_id } => (trigger_id, machine::form()),
+            AfterAck::Login { trigger_id, form } => (trigger_id, login::form(form)),
+            AfterAck::Mcp { trigger_id } => (trigger_id, mcp::form()),
+            AfterAck::Machine { trigger_id } => (trigger_id, machine::form()),
         };
         if let Err(e) = self.api.open_view(&self.bot_token, &trigger_id, &form) {
             (self.log)(&format!("slack: modal failed: {e}"));

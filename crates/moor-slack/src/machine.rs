@@ -102,7 +102,7 @@ pub(crate) fn slash(slash: &Slash, db: &Db, now: i64) -> rusqlite::Result<(Kept,
                 .trigger_id
                 .clone()
                 .filter(|_| first)
-                .map(|trigger_id| AfterAck::OpenMachine { trigger_id });
+                .map(|trigger_id| AfterAck::Machine { trigger_id });
             (Kept { ack: None, then }, None)
         }
         (Some("list"), None, _) => (text_ack("Looking up your machines…"), Some(job(None))),
