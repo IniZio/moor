@@ -22,10 +22,11 @@ impl Store {
         let labels = serde_json::to_string(&machine.labels)
             .map_err(|e| StoreError::Corrupt(format!("machine labels: {e}")))?;
         self.writer().execute(
-            "INSERT INTO user_machines (user, name, ssh, labels, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (user, name) DO UPDATE SET ssh = excluded.ssh, \
-             labels = excluded.labels, updated_at = excluded.updated_at",
-            params![user.get(), machine.name, machine.ssh, labels, now, now],
+            "INSERT INTO user_machines (user, name, ssh, labels, capacity, created_at, updated_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (user, name) DO UPDATE SET \
+             ssh = excluded.ssh, labels = excluded.labels, capacity = excluded.capacity, \
+             updated_at = excluded.updated_at",
+            params![user.get(), machine.name, machine.ssh, labels, machine.capacity, now, now],
         )?;
         Ok(())
     }
@@ -44,9 +45,9 @@ impl Store {
         machines_in(&self.reader()?, user)
     }
 
-    /// Picks one of `user`'s machines for `box_id` per `want` and records the outcome: the hold,
-    /// or `machine_left_out`. `machine_attached` comes from the supervisor once the forwards are
-    /// open. One write transaction, so two starts never hold the same machine.
+    /// Picks one of `user`'s machines and a free slot on it for `box_id` per `want` and records
+    /// the outcome: the hold, or `machine_left_out`. `machine_attached` comes from the supervisor
+    /// once the forwards are open. One write transaction, so two starts never share a slot.
     pub(crate) fn claim_machine(
         &self,
         box_id: BoxId,
@@ -56,15 +57,24 @@ impl Store {
         let now = self.now();
         let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let pick = pick_machine(&want.labels, &machines_in(&tx, user)?, &held_in(&tx, user)?);
+        tx.execute(
+            "DELETE FROM box_machines WHERE user = ? AND box IN \
+             (SELECT id FROM boxes WHERE state IN ('closed','rejected'))",
+            [user.get()],
+        )?;
+        let pick = pick_machine(want, &machines_in(&tx, user)?, &held_in(&tx, user)?);
         match &pick {
-            MachinePick::Attach(m) => {
-                let ports = serde_json::to_string(&want.ports)
+            MachinePick::Attach {
+                machine,
+                slot,
+                ports,
+            } => {
+                let ports = serde_json::to_string(ports)
                     .map_err(|e| StoreError::Corrupt(format!("machine ports: {e}")))?;
                 tx.execute(
-                    "INSERT OR REPLACE INTO box_machines (box, user, machine, ports) \
-                     VALUES (?, ?, ?, ?)",
-                    params![box_id.get(), user.get(), m.name, ports],
+                    "INSERT OR REPLACE INTO box_machines (box, user, machine, slot, ports) \
+                     VALUES (?, ?, ?, ?, ?)",
+                    params![box_id.get(), user.get(), machine.name, slot, ports],
                 )?;
             }
             MachinePick::LeftOut { labels, reason } => {
@@ -88,21 +98,18 @@ impl Store {
         Ok(gone == 1)
     }
 
-    /// The machine `box_id` holds and the Box ports it forwards; `None` when it holds none or
-    /// its owner removed it.
-    pub(crate) fn box_machine(
-        &self,
-        box_id: BoxId,
-    ) -> Result<Option<(UserMachine, Vec<u16>)>, StoreError> {
-        let held: Option<(i64, String, String)> = self
+    /// The machine `box_id` holds, in which slot and with which ports; `None` when it holds none
+    /// or its owner removed it.
+    pub(crate) fn box_machine(&self, box_id: BoxId) -> Result<Option<HeldMachine>, StoreError> {
+        let held: Option<(i64, String, u16, String)> = self
             .reader()?
             .query_row(
-                "SELECT user, machine, ports FROM box_machines WHERE box = ?",
+                "SELECT user, machine, slot, ports FROM box_machines WHERE box = ?",
                 [box_id.get()],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
             .optional()?;
-        let Some((user, name, ports)) = held else {
+        let Some((user, name, slot, ports)) = held else {
             return Ok(None);
         };
         let ports: Vec<u16> = serde_json::from_str(&ports)
@@ -112,30 +119,54 @@ impl Store {
             .user_machines(user)?
             .into_iter()
             .find(|m| m.name == name);
-        Ok(machine.map(|m| (m, ports)))
+        Ok(machine.map(|machine| HeldMachine {
+            machine,
+            slot,
+            ports,
+        }))
     }
+}
+
+/// A machine a Box holds: its slot and the ports forwarded, already moved by the slot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct HeldMachine {
+    pub(crate) machine: UserMachine,
+    pub(crate) slot: u16,
+    pub(crate) ports: Vec<u16>,
 }
 
 /// `user`'s machines by name, read through `conn`.
 fn machines_in(conn: &Connection, user: UserId) -> Result<Vec<UserMachine>, StoreError> {
-    let mut stmt =
-        conn.prepare("SELECT name, ssh, labels FROM user_machines WHERE user = ? ORDER BY name")?;
+    let mut stmt = conn.prepare(
+        "SELECT name, ssh, labels, capacity FROM user_machines WHERE user = ? ORDER BY name",
+    )?;
     let rows = stmt.query_and_then([user.get()], |r| {
         let (name, ssh, labels): (String, String, String) = (r.get(0)?, r.get(1)?, r.get(2)?);
+        let capacity: u16 = r.get(3)?;
         let corrupt = |e: String| StoreError::Corrupt(format!("user_machines row {name}: {e}"));
         let labels: Vec<String> =
             serde_json::from_str(&labels).map_err(|e| corrupt(e.to_string()))?;
-        UserMachine::parse(&name, &ssh, &labels).map_err(corrupt)
+        UserMachine::parse(&name, &ssh, &labels)
+            .and_then(|m| m.with_capacity(capacity))
+            .map_err(corrupt)
     })?;
     rows.collect()
 }
 
-/// `user`'s machines held by an open Box: machine name to Box name.
-fn held_in(conn: &Connection, user: UserId) -> Result<BTreeMap<String, String>, StoreError> {
+/// `user`'s machines held by a Box: machine name to its taken slots and the Box in each.
+fn held_in(
+    conn: &Connection,
+    user: UserId,
+) -> Result<BTreeMap<String, BTreeMap<u16, String>>, StoreError> {
     let mut stmt = conn.prepare(
-        "SELECT m.machine, b.name FROM box_machines m JOIN boxes b ON b.id = m.box \
-         WHERE m.user = ? AND b.state NOT IN ('closed','rejected')",
+        "SELECT m.machine, m.slot, b.name FROM box_machines m JOIN boxes b ON b.id = m.box \
+         WHERE m.user = ?",
     )?;
-    let rows = stmt.query_map([user.get()], |r| Ok((r.get(0)?, r.get(1)?)))?;
-    Ok(rows.collect::<Result<_, _>>()?)
+    let mut held: BTreeMap<String, BTreeMap<u16, String>> = BTreeMap::new();
+    let rows = stmt.query_map([user.get()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+    for row in rows {
+        let (machine, slot, name): (String, u16, String) = row?;
+        held.entry(machine).or_default().insert(slot, name);
+    }
+    Ok(held)
 }

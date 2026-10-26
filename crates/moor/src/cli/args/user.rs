@@ -73,6 +73,9 @@ pub(super) struct MachineAddArgs {
     /// A label such as `macos`; repeat for more.
     #[arg(long = "label")]
     labels: Vec<String>,
+    /// How many Boxes may hold the machine at once; slot k moves each port up by 10·k.
+    #[arg(long, default_value_t = 1)]
+    capacity: u16,
 }
 
 /// Arguments of `user mcp add`.
@@ -140,6 +143,7 @@ impl UserCli {
                 name: a.name,
                 ssh: a.ssh,
                 labels: a.labels,
+                capacity: a.capacity,
             }),
             Self::Machine(MachineCli::Rm(a)) => Request::MachineRemove(MachineRemoveReq {
                 identity: None,

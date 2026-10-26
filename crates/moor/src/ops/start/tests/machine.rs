@@ -37,7 +37,7 @@ fn start(w: &World, name: &str) -> StartView {
 fn held(w: &World, v: &StartView) -> Option<String> {
     let store = w.cx.store().unwrap();
     let held = store.box_machine(BoxId::new(v.boxed.id)).unwrap();
-    held.map(|(m, _)| m.name)
+    held.map(|h| h.machine.name)
 }
 
 /// The Box's machine events as (kind, payload).
@@ -65,8 +65,8 @@ fn a_matching_machine_is_held_with_no_note() {
     let v = start(&w, "a");
     assert_eq!(held(&w, &v).as_deref(), Some("mini"));
     let store = w.cx.store().unwrap();
-    let (_, ports) = store.box_machine(BoxId::new(v.boxed.id)).unwrap().unwrap();
-    assert_eq!(ports, [5432, 8080]);
+    let got = store.box_machine(BoxId::new(v.boxed.id)).unwrap().unwrap();
+    assert_eq!((got.slot, got.ports), (0, vec![5432, 8080]));
     assert!(
         machine_events(&w, &v).is_empty(),
         "start only holds the machine; machine_attached waits for open forwards"
@@ -135,4 +135,86 @@ fn another_users_machine_is_never_picked() {
     let v = start(&w, "a");
     assert_eq!(held(&w, &v), None);
     assert_eq!(notes(&v).len(), 1, "{:?}", v.warnings_inline);
+}
+
+fn shared(capacity: u16) -> World {
+    let w = world(FakeDriver::new());
+    script_base_yaml(&w, Some(YAML));
+    let m = UserMachine::parse("mini", "dev@mac.example", &["macos".to_owned()])
+        .and_then(|m| m.with_capacity(capacity))
+        .unwrap();
+    w.cx.store()
+        .unwrap()
+        .set_user_machine(REQUESTER_USER, &m)
+        .unwrap();
+    w
+}
+
+/// The slot and ports the Box of `v` holds.
+fn slot(w: &World, v: &StartView) -> Option<(u16, Vec<u16>)> {
+    let store = w.cx.store().unwrap();
+    let held = store.box_machine(BoxId::new(v.boxed.id)).unwrap();
+    held.map(|h| (h.slot, h.ports))
+}
+
+fn close(w: &World, v: &StartView) {
+    w.cx.store()
+        .unwrap()
+        .apply(
+            Decision::new(BoxId::new(v.boxed.id))
+                .lifecycle(BoxLifecycleInput::Close)
+                .session(SessionInput::End)
+                .box_input(BoxInput::Released),
+        )
+        .unwrap();
+}
+
+#[test]
+fn a_shared_machine_gives_each_box_its_own_slot_until_full() {
+    let w = shared(2);
+    let a = start(&w, "a");
+    let b = start(&w, "b");
+    assert_eq!(slot(&w, &a), Some((0, vec![5432, 8080])));
+    assert_eq!(slot(&w, &b), Some((1, vec![5442, 8090])));
+    let c = start(&w, "c");
+    assert_eq!(slot(&w, &c), None);
+    assert_eq!(
+        notes(&c),
+        [format!(
+            "machine left out: machine mini is attached to Boxes {}, {}",
+            a.boxed.name, b.boxed.name
+        )
+        .as_str()]
+    );
+    close(&w, &a);
+    let d = start(&w, "d");
+    assert_eq!(slot(&w, &d), Some((0, vec![5432, 8080])));
+}
+
+#[test]
+fn parallel_claims_never_share_a_slot() {
+    let w = shared(4);
+    let views: Vec<StartView> = ["a", "b", "c", "d"].iter().map(|n| start(&w, n)).collect();
+    let store = w.cx.store().unwrap();
+    let ids: Vec<BoxId> = views.iter().map(|v| BoxId::new(v.boxed.id)).collect();
+    for id in &ids {
+        store.detach_machine(*id).unwrap();
+    }
+    let want = moor_core::config::RepoMachine {
+        labels: vec!["macos".to_owned()],
+        ports: vec![8080],
+    };
+    std::thread::scope(|s| {
+        for id in &ids {
+            let (store, want) = (store.clone(), &want);
+            s.spawn(move || store.claim_machine(*id, REQUESTER_USER, want).unwrap());
+        }
+    });
+    let mut slots: Vec<u16> = views
+        .iter()
+        .filter_map(|v| slot(&w, v))
+        .map(|s| s.0)
+        .collect();
+    slots.sort_unstable();
+    assert_eq!(slots, [0, 1, 2, 3]);
 }

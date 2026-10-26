@@ -12,6 +12,7 @@ fn add(name: &str, ssh: &str, labels: &[&str]) -> UserCmd {
         name: name.to_owned(),
         ssh: ssh.to_owned(),
         labels: labels.iter().map(|l| (*l).to_owned()).collect(),
+        capacity: 1,
     }
 }
 
@@ -43,8 +44,8 @@ fn add_list_and_remove() {
     assert_eq!(
         listed,
         json!({"machines": [
-            {"name": "amd", "ssh": "ci@10.0.0.2", "labels": []},
-            {"name": "mac", "ssh": "dev@mac.local:2222", "labels": ["ios-sim", "macos"]},
+            {"name": "amd", "ssh": "ci@10.0.0.2", "labels": [], "capacity": 1},
+            {"name": "mac", "ssh": "dev@mac.local:2222", "labels": ["ios-sim", "macos"], "capacity": 1},
         ]})
     );
 
@@ -75,7 +76,7 @@ fn adding_the_same_name_replaces_it() {
     let listed = as_user(&f, "slack:T1:UA", &UserCmd::MachineList).unwrap();
     assert_eq!(
         listed,
-        json!({"machines": [{"name": "mac", "ssh": "dev@new.local:22", "labels": ["ios-sim"]}]})
+        json!({"machines": [{"name": "mac", "ssh": "dev@new.local:22", "labels": ["ios-sim"], "capacity": 1}]})
     );
 }
 
@@ -131,4 +132,22 @@ fn a_caller_without_a_user_is_refused() {
     let f = fixture();
     let err = as_user(&f, "slack:T1:UZ", &UserCmd::MachineList).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
+}
+
+#[test]
+fn capacity_is_stored_and_listed_and_zero_is_refused() {
+    let f = fixture();
+    enroll(&f, "slack:T1:U1");
+    let mut cmd = add("mac", "dev@mac.local", &["macos"]);
+    if let UserCmd::MachineAdd { capacity, .. } = &mut cmd {
+        *capacity = 3;
+    }
+    as_user(&f, "slack:T1:U1", &cmd).unwrap();
+    let list = as_user(&f, "slack:T1:U1", &UserCmd::MachineList).unwrap();
+    assert_eq!(list["machines"][0]["capacity"], 3);
+    if let UserCmd::MachineAdd { capacity, .. } = &mut cmd {
+        *capacity = 0;
+    }
+    let err = as_user(&f, "slack:T1:U1", &cmd).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Usage);
 }

@@ -28,6 +28,13 @@ pub struct UserMachine {
     pub ssh: String,
     /// What the machine offers, such as `macos`; sorted and without repeats.
     pub labels: Vec<String>,
+    /// How many Boxes may hold the machine at once, each in its own port slot; at least 1.
+    #[serde(default = "one")]
+    pub capacity: u16,
+}
+
+const fn one() -> u16 {
+    1
 }
 
 impl UserMachine {
@@ -49,7 +56,19 @@ impl UserMachine {
             name: name.to_owned(),
             ssh: ssh.to_owned(),
             labels,
+            capacity: 1,
         })
+    }
+
+    /// The machine taking up to `capacity` Boxes at once.
+    ///
+    /// # Errors
+    /// When `capacity` is 0.
+    pub fn with_capacity(self, capacity: u16) -> Result<Self, String> {
+        if capacity == 0 {
+            return Err("capacity must be at least 1".to_owned());
+        }
+        Ok(Self { capacity, ..self })
     }
 }
 

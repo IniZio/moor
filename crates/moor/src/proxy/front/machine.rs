@@ -29,6 +29,8 @@ pub(crate) struct Held {
     pub(crate) name: String,
     /// The machine's ssh target.
     pub(crate) ssh: String,
+    /// The Box's port slot on the machine.
+    pub(crate) slot: u16,
 }
 
 /// The service one Box's front serves itself.
@@ -91,6 +93,7 @@ fn marked(request: &[u8], held: &Held) -> Option<Vec<u8>> {
         ("X-Moor-Box", held.box_id.get().to_string()),
         ("X-Moor-Machine", held.name.clone()),
         ("X-Moor-Machine-Ssh", held.ssh.clone()),
+        ("X-Moor-Machine-Slot", held.slot.to_string()),
     ];
     if own
         .iter()
