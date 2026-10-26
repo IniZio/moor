@@ -229,6 +229,9 @@ pub enum Output {
     Log(PathBuf),
 }
 
+/// Bytes a Proc keeps of each output stream; the rest is read and discarded.
+pub const OUTPUT_CAP: usize = 4 * 1024 * 1024;
+
 /// Captured result of a child that exited 0.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProcOutput {

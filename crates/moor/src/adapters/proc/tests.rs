@@ -205,7 +205,7 @@ fn oversized_output_is_capped_and_flagged() {
     let t = Instant::now();
     let out = sh_proc().run(&sh("head -c 5000000 /dev/zero", 10)).unwrap();
     eprintln!("oversized elapsed: {:?}", t.elapsed());
-    assert_eq!(out.stdout.len(), super::CAP);
+    assert_eq!(out.stdout.len(), moor_core::seam::proc::OUTPUT_CAP);
     assert!(out.truncated);
 }
 

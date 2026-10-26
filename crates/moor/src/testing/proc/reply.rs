@@ -2,7 +2,7 @@
 
 use std::io::Read;
 
-use moor_core::seam::proc::{ProcError, ProcOutput, ProcSpec};
+use moor_core::seam::proc::{ProcError, ProcOutput, ProcSpec, OUTPUT_CAP as CAP};
 
 use super::{poisoned, Reply, ScriptedProc};
 
@@ -48,12 +48,18 @@ impl ScriptedProc {
         spec: &ProcSpec,
         args: &[String],
     ) -> Result<ProcOutput, ProcError> {
-        let ok = |stdout: String| {
+        let ok = |mut stdout: String| {
+            let truncated = stdout.len() > CAP;
+            let mut at = CAP.min(stdout.len());
+            while !stdout.is_char_boundary(at) {
+                at -= 1;
+            }
+            stdout.truncate(at);
             Ok(ProcOutput {
                 code: 0,
                 stdout,
                 stderr: String::new(),
-                truncated: false,
+                truncated,
             })
         };
         match self.pick(spec, args)? {
