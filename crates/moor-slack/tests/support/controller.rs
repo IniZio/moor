@@ -17,6 +17,7 @@ use moor_core::request::Request;
 use moor_core::response::{ErrorKind, ErrorView, Response};
 use serde_json::json;
 
+mod binding;
 mod emit;
 
 /// Cursor a backlog watch is caught up to while no event was emitted; a live watch must
@@ -72,6 +73,8 @@ struct Inner {
     /// Workdir of each host Session `open-host-session` opened, and whether it has ended;
     /// its id is its index plus 100.
     hosts: Vec<(String, bool)>,
+    /// Every binding `bind-session` made.
+    bindings: Vec<binding::Bound>,
     /// Every event emitted so far, oldest first, with the identity that owns its Box when it
     /// has one; cursors follow [`BACKLOG_END`].
     events: Vec<(Option<String>, ServerFrame)>,
@@ -103,6 +106,7 @@ impl FakeController {
             fail_watches: false,
             boxes: None,
             hosts: Vec::new(),
+            bindings: Vec::new(),
             events: Vec::new(),
             live: Vec::new(),
             split: None,
@@ -402,6 +406,7 @@ fn carries(owner: Option<&str>, watcher: Option<&str>) -> bool {
 fn unscripted(request: &Request, inner: &mut Inner) -> Response {
     user_cmd(request)
         .or_else(|| host_session(request, &mut inner.hosts))
+        .or_else(|| binding::answer(request, &mut inner.hosts, &mut inner.bindings))
         .or_else(|| from_table(request, inner.boxes.as_mut()?))
         .unwrap_or_else(|| {
             let cmd = command(request);
