@@ -44,7 +44,10 @@ fn the_first_exec_prepares_once_and_its_facts_reach_the_command() {
     let rig = hooked(RELEASE);
     rig.call("sync", json!({})).unwrap();
     let out = rig
-        .call("exec", json!({"command": "echo \"device=$MOOR_FACT_DEVICE\""}))
+        .call(
+            "exec",
+            json!({"command": "echo \"device=$MOOR_FACT_DEVICE\""}),
+        )
         .unwrap();
     assert!(
         out["output"].as_str().unwrap().contains("device=dev-7"),
@@ -104,7 +107,10 @@ fn a_closed_box_is_released_once_and_its_record_and_mirror_go() {
     let rig = hooked(RELEASE);
     rig.call("sync", json!({})).unwrap();
     rig.call("exec", json!({"command": "true"})).unwrap();
-    let (record, mirror) = (rig.state().join("boxes/7.json"), rig.state().join("mirrors/7"));
+    let (record, mirror) = (
+        rig.state().join("boxes/7.json"),
+        rig.state().join("mirrors/7"),
+    );
     assert!(record.is_file() && mirror.is_dir());
     rig.open.lock().unwrap().clear();
     eventually("the record is gone", || !record.exists());

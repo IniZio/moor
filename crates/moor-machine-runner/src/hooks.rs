@@ -12,7 +12,9 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use moor_client::Client;
+use moor_core::box_key::BoxKey;
 use moor_core::request::{Request, ShowReq};
+use moor_core::BoxId;
 use serde::{Deserialize, Serialize};
 
 use crate::caller::Caller;
@@ -146,10 +148,13 @@ impl Hooks {
         let mut env = vec![
             ("MOOR_BOX".to_owned(), id.to_string()),
             ("MOOR_SLOT".to_owned(), slot.to_string()),
-            ("MOOR_PORT_OFFSET".to_owned(), (10 * u32::from(slot)).to_string()),
+            (
+                "MOOR_PORT_OFFSET".to_owned(),
+                (10 * u32::from(slot)).to_string(),
+            ),
         ];
         env.extend(fact_env(facts));
-        let dir = format!("moor/{id}");
+        let dir = BoxKey::new(BoxId::new(id)).machine_dir();
         let body = format!("mkdir -p ~/{dir} && cd ~/{dir} && {command}");
         let out = exec::run(ssh, &exec::script(&env, &body), self.timeout)
             .await
