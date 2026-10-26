@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::caller::Caller;
 use crate::exec::{self, ExecOutput};
+use crate::relay::Relays;
 
 /// What `prepare` printed about a Box, such as `device`.
 pub(crate) type Facts = BTreeMap<String, String>;
@@ -125,8 +126,9 @@ impl Hooks {
         write(&path, &record).map_err(|e| format!("could not note the Box: {e}"))
     }
 
-    /// Releases every Box with a record that the controller does not list as open.
-    pub(crate) async fn sweep(&self, client: &Client) {
+    /// Releases every Box with a record that the controller does not list as open, ending its
+    /// relay sessions first.
+    pub(crate) async fn sweep(&self, client: &Client, relays: &Relays) {
         let prepared = match self.prepared() {
             Ok(ids) if ids.is_empty() => return,
             Ok(ids) => ids,
@@ -139,6 +141,7 @@ impl Hooks {
             Err(e) => return eprintln!("moor-machine-runner: sweep: {e}"),
         };
         for id in prepared.into_iter().filter(|id| !open.contains(id)) {
+            relays.end_box(id).await;
             if let Err(e) = self.release(id).await {
                 eprintln!("moor-machine-runner: release of Box {id} failed, retrying: {e}");
             }
@@ -184,15 +187,7 @@ impl Hooks {
         facts: &Facts,
         command: &str,
     ) -> Result<ExecOutput, String> {
-        let mut env = vec![
-            ("MOOR_BOX".to_owned(), id.to_string()),
-            ("MOOR_SLOT".to_owned(), slot.to_string()),
-            (
-                "MOOR_PORT_OFFSET".to_owned(),
-                (10 * u32::from(slot)).to_string(),
-            ),
-        ];
-        env.extend(fact_env(facts));
+        let env = box_env(id, slot, facts);
         let dir = BoxKey::new(BoxId::new(id)).machine_dir();
         let body = format!("mkdir -p ~/{dir} && cd ~/{dir} && {command}");
         let out = exec::run(ssh, &exec::script(&env, &body), self.timeout)
@@ -224,6 +219,20 @@ impl Hooks {
         }
         Ok(ids)
     }
+}
+
+/// What a command run for Box `id` in `slot` sees: its id, slot, port offset and facts.
+pub(crate) fn box_env(id: i64, slot: u16, facts: &Facts) -> Vec<(String, String)> {
+    let mut env = vec![
+        ("MOOR_BOX".to_owned(), id.to_string()),
+        ("MOOR_SLOT".to_owned(), slot.to_string()),
+        (
+            "MOOR_PORT_OFFSET".to_owned(),
+            (10 * u32::from(slot)).to_string(),
+        ),
+    ];
+    env.extend(fact_env(facts));
+    env
 }
 
 /// `facts` as env: `MOOR_FACT_<KEY>`, the key uppercased with every other character as `_`.

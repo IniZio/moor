@@ -21,6 +21,7 @@ hyper-util = { version = "0.1", features = [
   "http1",
 ] }
 rmcp = { version = "3.7", default-features = false, features = [
+  "client",
   "server",
   "macros",
   "transport-streamable-http-server",
@@ -42,7 +43,16 @@ tokio = { version = "1", features = [
 name = "runner"
 path = "tests/runner/main.rs"
 
+[[example]]
+name = "fake-mcp"
+path = "tests/fake/mcp.rs"
+
 [dev-dependencies]
+rmcp = { version = "3.7", default-features = false, features = [
+  "server",
+  "macros",
+  "transport-io",
+] }
 moor-testkit = { path = "../moor-testkit" }
 tempfile = "3"
 ureq = { version = "3", default-features = false, features = ["json"] }

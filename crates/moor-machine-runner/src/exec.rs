@@ -168,7 +168,7 @@ pub(crate) async fn run(ssh: &str, script: &str, timeout: Duration) -> io::Resul
 }
 
 /// `s` as one single-quoted word for a POSIX shell.
-fn quote(s: &str) -> String {
+pub(crate) fn quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
 }
 
