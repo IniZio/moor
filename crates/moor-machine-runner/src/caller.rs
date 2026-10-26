@@ -1,8 +1,8 @@
-//! Who is calling: the four headers the Box's Proxy sets on every request.
+//! Who is calling: the headers the Box's Proxy sets on every request.
 
 use http::HeaderMap;
 use moor_core::box_key::BoxKey;
-use moor_core::config::check_ssh;
+use moor_core::config::{check_exclude, check_ssh};
 use moor_core::BoxId;
 use rmcp::ErrorData;
 
@@ -14,6 +14,8 @@ const MACHINE: &str = "X-Moor-Machine";
 const SSH: &str = "X-Moor-Machine-Ssh";
 /// Header carrying the Box's slot on the machine, which sets its ports.
 const SLOT: &str = "X-Moor-Machine-Slot";
+/// Header carrying what syncs leave alone, as a JSON array of rsync patterns; optional.
+const EXCLUDE: &str = "X-Moor-Machine-Exclude";
 /// Highest slot: its ports, the repo's plus ten per slot, must stay below 65536.
 const MAX_SLOT: u16 = 6553;
 
@@ -28,6 +30,8 @@ pub(crate) struct Caller {
     pub(crate) ssh: String,
     /// The Box's slot on the machine: 0 up to [`MAX_SLOT`].
     pub(crate) slot: u16,
+    /// rsync patterns every sync leaves alone, from the Box's config.
+    pub(crate) sync_exclude: Vec<String>,
 }
 
 impl Caller {
@@ -62,11 +66,26 @@ impl Caller {
                     "header {SLOT} is not a slot 0 to {MAX_SLOT}: {raw}"
                 ))
             })?;
+        let sync_exclude = match headers.get(EXCLUDE) {
+            None => Vec::new(),
+            Some(raw) => raw
+                .to_str()
+                .ok()
+                .and_then(|v| serde_json::from_str::<Vec<String>>(v).ok())
+                .ok_or_else(|| refused(format!("header {EXCLUDE} is not a JSON array of strings")))
+                .and_then(|list| {
+                    list.iter()
+                        .try_for_each(|p| check_exclude(p))
+                        .map_err(|e| refused(format!("header {EXCLUDE}: {e}")))
+                        .map(|()| list)
+                })?,
+        };
         Ok(Self {
             box_id,
             machine,
             ssh,
             slot,
+            sync_exclude,
         })
     }
 

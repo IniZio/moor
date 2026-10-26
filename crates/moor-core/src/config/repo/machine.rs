@@ -4,6 +4,7 @@
 use serde::Deserialize;
 
 use super::super::user::check_label;
+use super::super::SyncConfig;
 use super::ConfigError;
 
 /// Most labels or ports one `machine:` section may name.
@@ -17,6 +18,8 @@ pub struct RepoMachine {
     pub labels: Vec<String>,
     /// Box ports the machine sees at the same numbers on its loopback.
     pub ports: Vec<u16>,
+    /// What a sync to the machine leaves alone.
+    pub sync: SyncConfig,
 }
 
 impl RepoMachine {
@@ -53,6 +56,6 @@ impl RepoMachine {
                 ));
             }
         }
-        Ok(())
+        self.sync.validate("machine.sync")
     }
 }

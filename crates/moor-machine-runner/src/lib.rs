@@ -88,6 +88,8 @@ struct MachineInfo {
     port_offset: u32,
     /// What the machine's operator set up for this Box, such as its own device.
     facts: Facts,
+    /// rsync patterns every sync leaves alone; a sync's own `exclude` adds to them.
+    sync_exclude: Vec<String>,
 }
 
 /// Serves MCP over streamable HTTP on `listener` until accepting fails.
@@ -178,12 +180,11 @@ impl Runner {
     /// Mirrors the calling Box's work tree onto its machine.
     #[tool(
         description = "Copy this Box's work tree to the attached machine at ~/moor/<box id>, so \
-                       the machine sees your current files. .git is left out; node_modules is \
-                       kept. Later syncs send only what changed, and remove files you deleted. exclude \
-                       lists rsync patterns, relative to the work tree root, such as \
-                       app/node_modules, that sync neither copies nor deletes on the machine: \
-                       use it for what the machine builds for itself, like node_modules \
-                       installed there, so a sync does not replace them with the Box's."
+                       the machine sees your current files. .git is left out. Later syncs send \
+                       only what changed, and remove files you deleted. Sync neither copies \
+                       nor deletes the rsync patterns in machine_info's sync_exclude, such as \
+                       node_modules, so what the machine builds for itself survives. exclude \
+                       adds patterns, relative to the work tree root, such as app/build."
     )]
     async fn sync(
         &self,
@@ -221,8 +222,8 @@ impl Runner {
 
     /// Says which slot the Box has on its machine and how its ports shift.
     #[tool(
-        description = "Where this Box is on the attached machine: its slot, port_offset and \
-                       facts. The machine is shared, so run your dev servers there on the \
+        description = "Where this Box is on the attached machine: its slot, port_offset, \
+                       facts and sync_exclude. The machine is shared, so run your dev servers there on the \
                        repo's port plus port_offset; that same port number reaches them from \
                        the Box. facts are what the machine set up for this Box alone; exec \
                        sees each as env MOOR_FACT_<KEY>."
@@ -239,6 +240,7 @@ impl Runner {
             slot: caller.slot,
             port_offset: 10 * u32::from(caller.slot),
             facts,
+            sync_exclude: caller.sync_exclude,
         }))
     }
 

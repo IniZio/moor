@@ -17,8 +17,9 @@ fn held_machine() -> World {
     let want = RepoMachine {
         labels: vec!["macos".to_owned()],
         ports: vec![8081, 3001],
+        ..RepoMachine::default()
     };
-    w.store.claim_machine(w.id, user, &want).unwrap();
+    w.store.claim_machine(w.id, user, &want, &[]).unwrap();
     w.proc.on_child(Tool::Ssh, &[], ChildReply::Hang);
     w
 }
@@ -82,10 +83,11 @@ fn slot_one_forwards_each_port_moved_by_ten_at_the_same_number_on_both_ends() {
     let want = RepoMachine {
         labels: vec!["macos".to_owned()],
         ports: vec![8081],
+        ..RepoMachine::default()
     };
     let other = super::working_box(&w.store, &w.driver, "other");
-    w.store.claim_machine(other, user, &want).unwrap();
-    w.store.claim_machine(w.id, user, &want).unwrap();
+    w.store.claim_machine(other, user, &want, &[]).unwrap();
+    w.store.claim_machine(w.id, user, &want, &[]).unwrap();
     w.proc.on_child(Tool::Ssh, &[], ChildReply::Hang);
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();

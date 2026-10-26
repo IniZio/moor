@@ -31,6 +31,8 @@ pub(crate) struct Held {
     pub(crate) ssh: String,
     /// The Box's port slot on the machine.
     pub(crate) slot: u16,
+    /// rsync patterns a sync to the machine leaves alone.
+    pub(crate) sync_exclude: Vec<String>,
 }
 
 /// The service one Box's front serves itself.
@@ -94,6 +96,10 @@ fn marked(request: &[u8], held: &Held) -> Option<Vec<u8>> {
         ("X-Moor-Machine", held.name.clone()),
         ("X-Moor-Machine-Ssh", held.ssh.clone()),
         ("X-Moor-Machine-Slot", held.slot.to_string()),
+        (
+            "X-Moor-Machine-Exclude",
+            serde_json::to_string(&held.sync_exclude).ok()?,
+        ),
     ];
     if own
         .iter()

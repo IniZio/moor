@@ -25,9 +25,10 @@ fn detail_shows_the_held_machine_and_a_box_without_one_shows_none() {
     let want = RepoMachine {
         labels: vec!["macos".to_owned()],
         ports: vec![8081, 8085],
+        ..RepoMachine::default()
     };
-    store.claim_machine(first, user, &want).unwrap();
-    store.claim_machine(second, user, &want).unwrap();
+    store.claim_machine(first, user, &want, &[]).unwrap();
+    store.claim_machine(second, user, &want, &[]).unwrap();
     let held = |name: &str| {
         run(&cx, &req(Some(name), None))
             .unwrap()

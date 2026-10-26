@@ -5,7 +5,7 @@ use std::net::SocketAddr;
 
 use serde::{Deserialize, Deserializer};
 
-use crate::config::ConfigError;
+use crate::config::{ConfigError, SyncConfig};
 
 /// `machines:` section.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
@@ -13,6 +13,8 @@ use crate::config::ConfigError;
 pub struct MachinesConfig {
     /// The machine service; `None` leaves its host name to the usual egress path.
     pub service: Option<MachineService>,
+    /// What a sync to a machine leaves alone, beside the repo's own `machine.sync`.
+    pub sync: SyncConfig,
 }
 
 /// `machines.service:` a host name the Proxy serves itself, from a loopback address.

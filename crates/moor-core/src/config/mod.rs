@@ -5,6 +5,7 @@ pub mod controller;
 pub mod proxy;
 pub mod repo;
 pub mod settings;
+mod sync;
 mod user;
 
 pub use controller::{parse_controller, ControllerConfig, FrontEntry};
@@ -18,6 +19,7 @@ pub use user::{
 };
 
 pub use settings::{BoxSettings, CredPlan, Flags, Layer, Sourced};
+pub use sync::{check_exclude, check_excludes, sync_excludes, SyncConfig, MAX_EXCLUDES};
 
 use std::fmt;
 

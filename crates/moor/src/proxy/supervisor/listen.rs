@@ -102,6 +102,7 @@ fn machine_route(deps: &Deps<'_>, box_id: BoxId) -> Option<MachineRoute> {
             name: held.machine.name,
             ssh: held.machine.ssh,
             slot: held.slot,
+            sync_exclude: held.sync_exclude,
         })
     });
     Some(MachineRoute { service, held })
