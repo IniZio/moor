@@ -1,7 +1,7 @@
 //! The `turn_done` event: the agent finished the turn a steer started.
 
 use moor_core::activity::HookKind;
-use moor_core::decide::turn::{turn_done, HookSignal, TurnFacts};
+use moor_core::decide::turn::{turn_done, HookFacts, HookSignal, TurnFacts};
 
 use super::{PaneLiveness, Reading};
 use crate::error::CommandError;
@@ -22,13 +22,14 @@ pub(super) fn note_turn_done(
     let cache = store.hook(row.id)?;
     let facts = TurnFacts {
         steer: Some(steer),
-        hook: cache.as_ref().map(|c| {
-            let signal = match c.record.kind {
+        hook: cache.as_ref().map(|c| HookFacts {
+            signal: match c.record.kind {
                 HookKind::Idle => HookSignal::Idle,
                 HookKind::Blocked => HookSignal::Blocked,
                 HookKind::Starting { .. } | HookKind::Busy => HookSignal::Other,
-            };
-            (signal, c.record.at)
+            },
+            at: c.record.at,
+            turn: c.record.turn,
         }),
         pane_exited: reading.pane == PaneLiveness::Exited,
     };

@@ -319,7 +319,7 @@ fn script_stripping(
         "trap 'exit 143' TERM".to_owned(),
         format!("mkdir -p -m 700 {tmp} && mkdir -p {moor} && install -m 600 {staged} {brief} || exit 1"),
         format!(
-            "printf '{{\"state\":\"starting\",\"event\":\"Launch\",\"launch\":\"%s\",\"ts\":%s}}\\n' {} \"$(date +%s)\" > {state} || exit 1",
+            "printf '{{\"state\":\"starting\",\"event\":\"Launch\",\"launch\":\"%s\",\"ts\":%s000}}\\n' {} \"$(date +%s)\" > {state} || exit 1",
             quote(nonce)
         ),
         format!("{} || exit 1", hooks.step),

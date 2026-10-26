@@ -45,6 +45,8 @@ struct State {
     install: Option<AgentInstall>,
     fates: VecDeque<Result<AgentFate, EngineError>>,
     reattached: Vec<(String, String)>,
+    /// Probes a session reads from once a steer is sent to it.
+    after_steer: Vec<(String, Probes)>,
 }
 
 /// The launch a scripted starting marker names to stand for the latest launch's own marker.
@@ -133,6 +135,18 @@ impl FakeEngine {
     /// The next steer returns `r`; steers past the scripted ones succeed without a retry.
     pub(crate) fn steer_result(self, r: Result<SteerOutcome, EngineError>) -> Self {
         self.st().steer_results.push_back(r);
+        self
+    }
+
+    /// From now on `session` probes as `p`.
+    pub(crate) fn set_probes(&self, session: &str, p: Probes) {
+        self.st().probes.insert(session.to_owned(), p);
+    }
+
+    /// Once a steer reaches `session`, its probes read `p`: what the agent wrote while the
+    /// steer was still being sent.
+    pub(crate) fn probes_after_steer(self, session: &str, p: Probes) -> Self {
+        self.st().after_steer.push((session.to_owned(), p));
         self
     }
 
@@ -299,6 +313,10 @@ impl Engine for FakeEngine {
     ) -> Result<SteerOutcome, EngineError> {
         let mut st = self.st();
         st.steers.push((s.id.clone(), steer.clone()));
+        if let Some(i) = st.after_steer.iter().position(|(id, _)| *id == s.id) {
+            let (id, p) = st.after_steer.remove(i);
+            st.probes.insert(id, p);
+        }
         st.steer_results.pop_front().unwrap_or(Ok(SteerOutcome {
             submit_retried: false,
             submit_checked: true,

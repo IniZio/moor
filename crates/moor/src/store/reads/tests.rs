@@ -1,5 +1,6 @@
 //! Tests for name lookups and live-box scans.
 
+use moor_core::decide::turn::SteerMark;
 use std::sync::Arc;
 
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
@@ -189,7 +190,33 @@ fn unanswered_steer_is_the_newest_steer_without_turn_done() {
     let newest = event(&store, id, "steered", "{}", 20);
     assert_eq!(
         store.unanswered_steer(id).unwrap(),
-        Some((newest, Ts::from_millis(20)))
+        Some(SteerMark {
+            id: newest,
+            hook_before: None,
+            new_turn: false,
+        })
+    );
+}
+
+#[test]
+fn unanswered_steer_reads_the_hook_time_before_the_send() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let id = add(&store, "a");
+    let steer = event(
+        &store,
+        id,
+        "steered",
+        r#"{"hook_before":1234,"new_turn":true}"#,
+        10,
+    );
+    assert_eq!(
+        store.unanswered_steer(id).unwrap(),
+        Some(SteerMark {
+            id: steer,
+            hook_before: Some(Ts::from_millis(1234)),
+            new_turn: true,
+        })
     );
 }
 

@@ -124,6 +124,7 @@ fn blocked(question: &str) -> Probes {
             options: Vec::new(),
             doing: None,
             at: Ts::from_millis(0),
+            turn: None,
         }),
         pane: PaneRead::Absent,
     }
@@ -139,6 +140,7 @@ fn working() -> Probes {
             options: Vec::new(),
             doing: None,
             at: Ts::from_millis(0),
+            turn: None,
         }),
         pane: PaneRead::Absent,
     }
@@ -235,6 +237,8 @@ fn text_goes_to_the_agent_and_is_recorded() {
             "session": "agent-1",
             "message": "do x",
             "submit_retried": false,
+            "hook_before": 0,
+            "new_turn": true,
         })]
     );
     assert!(f.cx.take_warnings().is_empty());
@@ -405,6 +409,7 @@ fn a_first_run_screen_refuses_every_steer_and_sends_nothing() {
             options: Vec::new(),
             doing: None,
             at: Ts::from_millis(0),
+            turn: None,
         }),
         pane: PaneRead::Fresh(PaneObs {
             status: PaneStatus::Unknown,
@@ -585,14 +590,4 @@ mod cold_boot;
 mod interrupt;
 mod relaunch;
 mod target;
-
-#[test]
-fn a_steer_to_an_idle_agent_opens_its_turn() {
-    let f = fx_with(FakeEngine::new().probes("agent-1", working()), true);
-    let quiet = Decision::new(f.id).session(SessionInput::AgentQuiet);
-    f.cx.store().unwrap().apply(quiet).unwrap();
-    let row = || f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
-    assert!(row().session.is_quiet());
-    run(&f.cx, &text("do x")).unwrap();
-    assert!(!row().session.is_quiet());
-}
+mod turn_end;

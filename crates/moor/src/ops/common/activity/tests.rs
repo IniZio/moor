@@ -4,8 +4,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::activity::{
-    Activity, AgentState, HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes,
-    Source, STARTUP_GRACE,
+    AgentState, HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes, Source,
+    STARTUP_GRACE,
 };
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
@@ -48,6 +48,7 @@ impl Reading {
             agent_session: None,
             pane_text: None,
             said: None,
+            hook_unread: false,
         }
     }
 }
@@ -134,6 +135,7 @@ fn rec(kind: HookKind) -> HookRecord {
         options: Vec::new(),
         doing: None,
         at: Ts::from_millis(NOW.as_millis() - 1000),
+        turn: None,
     }
 }
 
@@ -576,24 +578,3 @@ mod link;
 mod needs_input;
 mod said;
 mod turn;
-
-#[test]
-fn a_reading_waiting_on_a_prompt_or_first_run_screen_is_blocked() {
-    let waiting = |source| {
-        let activity = Activity {
-            state: AgentState::NeedsInput {
-                question: None,
-                options: Vec::new(),
-            },
-            source,
-        };
-        Reading::new(Some(activity), PaneLiveness::Live, true, false)
-    };
-    assert!(waiting(Source::Hooks).blocked());
-    assert!(waiting(Source::FirstRun).blocked());
-    let idle = Activity {
-        state: AgentState::Idle,
-        source: Source::Hooks,
-    };
-    assert!(!Reading::new(Some(idle), PaneLiveness::Live, true, false).blocked());
-}

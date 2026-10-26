@@ -244,6 +244,11 @@ pub enum Event {
         message: String,
         /// Whether the submit key was pressed a second time.
         submit_retried: bool,
+        /// When the newest hook report read before the send was written, in Box-clock ms.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        hook_before: Option<i64>,
+        /// Whether the steer typed a prompt that starts a turn of its own.
+        new_turn: bool,
     },
     /// The Proxy for the box is ready to accept connections.
     ProxyStarted {

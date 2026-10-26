@@ -231,3 +231,24 @@ fn first_run_words_after_the_agent_reported_are_not_a_prompt() {
     tick(&cx, id);
     assert_eq!(asked(&cx, id), 0, "{:?}", kinds(&cx, id));
 }
+
+#[test]
+fn a_reading_waiting_on_a_prompt_or_first_run_screen_is_blocked() {
+    let waiting = |source| {
+        let activity = Activity {
+            state: AgentState::NeedsInput {
+                question: None,
+                options: Vec::new(),
+            },
+            source,
+        };
+        Reading::new(Some(activity), PaneLiveness::Live, true, false)
+    };
+    assert!(waiting(Source::Hooks).blocked());
+    assert!(waiting(Source::FirstRun).blocked());
+    let idle = Activity {
+        state: AgentState::Idle,
+        source: Source::Hooks,
+    };
+    assert!(!Reading::new(Some(idle), PaneLiveness::Live, true, false).blocked());
+}

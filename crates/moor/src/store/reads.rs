@@ -1,6 +1,7 @@
 //! Read-only lookups by box name and live-box scans, built on the shared box row mapping.
 
 use moor_core::controller::ServerFrame;
+use moor_core::decide::turn::SteerMark;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::request::Pins;
@@ -165,16 +166,23 @@ impl Store {
     ///
     /// # Errors
     /// Returns [`StoreError`] when the database fails.
-    pub(crate) fn unanswered_steer(&self, box_id: BoxId) -> Result<Option<(i64, Ts)>, StoreError> {
+    pub(crate) fn unanswered_steer(&self, box_id: BoxId) -> Result<Option<SteerMark>, StoreError> {
         let row = self
             .reader()?
             .query_row(
-                "SELECT s.id, s.ts FROM events s WHERE s.box = ?1 AND s.kind = 'steered' \
+                "SELECT s.id, json_extract(s.payload, '$.hook_before'), \
+                 COALESCE(json_extract(s.payload, '$.new_turn'), 0) FROM events s WHERE s.box = ?1 AND s.kind = 'steered' \
                  AND s.id = (SELECT MAX(id) FROM events WHERE box = ?1 AND kind = 'steered') \
                  AND NOT EXISTS (SELECT 1 FROM events d WHERE d.box = ?1 AND d.kind = 'turn_done' \
                  AND json_extract(d.payload, '$.steer') = s.id)",
                 [box_id.get()],
-                |r| Ok((r.get::<_, i64>(0)?, Ts::from_millis(r.get::<_, i64>(1)?))),
+                |r| {
+                    Ok(SteerMark {
+                        id: r.get(0)?,
+                        hook_before: r.get::<_, Option<i64>>(1)?.map(Ts::from_millis),
+                        new_turn: r.get(2)?,
+                    })
+                },
             )
             .optional()?;
         Ok(row)

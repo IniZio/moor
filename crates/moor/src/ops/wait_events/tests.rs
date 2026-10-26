@@ -65,6 +65,8 @@ fn steered(cx: &Cx, id: BoxId) {
         session: SESSION.to_owned(),
         message: "go".to_owned(),
         submit_retried: false,
+        hook_before: None,
+        new_turn: false,
     };
     cx.store()
         .unwrap()
@@ -240,6 +242,7 @@ fn the_op_settles_a_finished_steered_turn() {
             options: Vec::new(),
             doing: None,
             at: Ts::from_millis(i64::MAX / 2),
+            turn: None,
         }),
         pane: PaneRead::Fresh(PaneObs {
             status: PaneStatus::Unknown,
@@ -274,6 +277,7 @@ fn the_op_settles_a_steered_turn_on_a_box_whose_setup_failed() {
             options: Vec::new(),
             doing: None,
             at: Ts::from_millis(i64::MAX / 2),
+            turn: None,
         }),
         pane: PaneRead::Fresh(PaneObs {
             status: PaneStatus::Unknown,

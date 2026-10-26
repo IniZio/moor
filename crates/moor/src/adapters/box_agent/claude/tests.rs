@@ -92,9 +92,9 @@ fn idle_prompt_notification_is_idle_not_blocked() {
 }
 
 #[test]
-fn timestamp_seconds_become_milliseconds() {
-    let rec = parse(r#"{"state":"working","ts":1760000000}"#).unwrap();
-    assert_eq!(rec.at, Ts::from_millis(1_760_000_000_000));
+fn timestamp_is_milliseconds() {
+    let rec = parse(r#"{"state":"working","ts":1760000000123}"#).unwrap();
+    assert_eq!(rec.at, Ts::from_millis(1_760_000_000_123));
 }
 
 #[test]
@@ -134,9 +134,8 @@ fn string_ts_is_absent() {
 }
 
 #[test]
-fn negative_or_overflowing_ts_is_absent() {
+fn negative_ts_is_absent() {
     assert_eq!(parse(r#"{"state":"idle","ts":-1}"#), None);
-    assert_eq!(parse(r#"{"state":"idle","ts":9223372036854775807}"#), None);
 }
 
 const RULE: &str = "────────────────";

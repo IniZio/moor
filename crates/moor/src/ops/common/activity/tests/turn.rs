@@ -22,10 +22,17 @@ fn fx(probes: Probes) -> (tempfile::TempDir, Cx, BoxId) {
 }
 
 fn steer(cx: &Cx, id: BoxId) -> i64 {
+    steer_after(cx, id, None)
+}
+
+/// A steer sent once the report written at `hook_before` had been read.
+fn steer_after(cx: &Cx, id: BoxId, hook_before: Option<Ts>) -> i64 {
     let event = ExtraEvent::Steered {
         session: SESSION.to_owned(),
         message: "go".to_owned(),
         submit_retried: false,
+        hook_before: hook_before.map(Ts::as_millis),
+        new_turn: false,
     };
     let applied = cx
         .store()
@@ -159,7 +166,7 @@ fn an_idle_hook_from_before_the_steer_keeps_the_turn_open() {
         rec.at = Ts::from_millis(0);
     }
     let (_dir, cx, id) = fx(probes);
-    steer(&cx, id);
+    steer_after(&cx, id, Some(Ts::from_millis(0)));
     settle_once(&cx, id);
     assert!(events(&cx, id, "turn_done").is_empty());
     assert!(events(&cx, id, "idled").is_empty());

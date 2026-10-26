@@ -106,6 +106,7 @@ fn idle_hook_at(at: Ts) -> Probes {
             options: Vec::new(),
             doing: None,
             at,
+            turn: None,
         }),
         pane: PaneRead::Fresh(PaneObs {
             status: PaneStatus::Unknown,
@@ -367,6 +368,8 @@ fn a_steered_turn_on_an_idle_box_ends_and_collects_in_one_pass() {
         session: "s-a".to_owned(),
         message: "go".to_owned(),
         submit_retried: false,
+        hook_before: None,
+        new_turn: false,
     };
     cx.store()
         .unwrap()

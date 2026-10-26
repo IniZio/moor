@@ -27,11 +27,9 @@ use crate::store::{BoxRow, Store, StoreError};
 use launch::{launch_overdue, warn_launch_timed_out};
 use stored::stored_hook;
 
-/// Allowance for the hook file read and for the pane observation in one probe.
-///
-/// The multiplexer can take up to twice its deadline, so the pane read takes up to ten
-/// seconds. The hook file read first looks up the Box (5 s) and then reads the file within
-/// the allowance, each with 2.5 s of grace to stop the child, so one probe takes up to about 25 seconds.
+/// Allowance for the hook file read and for the pane observation in one probe. The pane read takes up
+/// to ten seconds; the hook read looks up the Box (5 s) then reads the file, each with 2.5 s of
+/// grace to stop the child, so one probe takes up to about 25 seconds.
 pub(crate) const PROBE_DEADLINE: Deadline = Deadline(Duration::from_secs(5));
 
 /// Whether the agent's pane is still there.
@@ -79,6 +77,8 @@ pub(crate) struct Reading {
     pub(crate) pane_text: Option<String>,
     /// The agent's last message, when a hook reported it idle with one.
     said: Option<String>,
+    /// Whether the hook report could not be read and none was read before.
+    pub(crate) hook_unread: bool,
 }
 
 impl Reading {
@@ -107,6 +107,7 @@ impl Reading {
             agent_session: None,
             pane_text: None,
             said: None,
+            hook_unread: false,
         }
     }
 
@@ -128,17 +129,15 @@ impl Reading {
             agent_session: None,
             pane_text: None,
             said: None,
+            hook_unread: false,
         }
     }
 }
 
 /// Read `row`'s agent once.
 ///
-/// This is the only caller of `Engine::probe`. A Box with no live session, or whose machine has
-/// no handle or workdir to reach, has no agent and is not probed; a run in flight still makes it busy. A fresh hook report is
-/// cached; a dropped read leaves the cache as it was. A run in flight forces `Working` whatever
-/// the probe says; the reading keeps the probe's source, as no source names a run. `deadline`
-/// bounds each of the probe's reads; [`PROBE_DEADLINE`] unless the caller has less time.
+/// The only caller of `Engine::probe`; a Box with no live session, handle or workdir is not probed.
+/// A fresh hook report is cached; a dropped read leaves the cache. A run in flight forces `Working`.
 ///
 /// # Errors
 /// A store failure other than an undecodable cache row.
@@ -199,6 +198,7 @@ pub(crate) fn read(
         agent_session,
         pane_text,
         said,
+        hook_unread: cache.is_none() && matches!(probes.hook, HookRead::TimedOut),
     })
 }
 

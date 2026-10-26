@@ -8,7 +8,7 @@ use moor_core::activity::{Activity, AgentState, Source};
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
-use moor_core::domain::decision::{Decision, ExtraEvent};
+use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::engine::{EngineError, SessionRef, Steer, SteerOutcome};
 use moor_core::seam::proc::Deadline;
@@ -161,13 +161,21 @@ fn attempt(
     };
     let sref = session_ref(&row, session.session_ref.clone(), session.pane.clone())
         .ok_or_else(|| no_agent(name))?;
-    let before = activity_of(cx, store, &row)?;
+    let reading = activity::read(cx, store, &row, cx.clock().now(), activity::PROBE_DEADLINE)?;
+    if reading.hook_unread {
+        let msg = format!(
+            "could not read the agent of {name}, so its turn could not be told apart; try again"
+        );
+        return Err(CommandError::new(ErrorKind::Failed, msg));
+    }
+    let before = reading.activity;
     if before
         .as_ref()
         .is_some_and(|a| a.source == Source::FirstRun)
     {
         return Err(first_run_refusal(name));
     }
+    let hook_before = store.hook(id)?.map(|c| c.record.at);
     let before = before.map(|a| a.state);
     if let (Some(AgentState::Exited { code }), false) = (&before, is_exit_req(req)) {
         return Ok(Attempt::Gone(Gone::new(name, Some(session), Some(*code))));
@@ -191,7 +199,12 @@ fn attempt(
         gone.finish(cx, store, id)?;
         return exited(cx, store, (id, name), &session, sent).map(Attempt::Sent);
     };
-    let steer_id = record(store, id, &session, &sent, outcome.submit_retried)?;
+    let mark = Mark {
+        hook_before,
+        new_turn: matches!(steer, Steer::Text(_)),
+        submit_retried: outcome.submit_retried,
+    };
+    let steer_id = record(store, id, &session, &sent, mark)?;
     open_turn(store, &row)?;
     let answered_menu = answered(cx, store, &row, &steer, outcome)?;
     Ok(Attempt::Sent(SteerValue {
@@ -210,7 +223,7 @@ fn exited(
     session: &SessionRow,
     sent: String,
 ) -> Result<SteerValue, CommandError> {
-    let steer = record(store, id, session, &sent, false)?;
+    let steer = record(store, id, session, &sent, Mark::default())?;
     cx.warn(Warning {
         code: "agent_exited".to_owned(),
         message: "the agent exited and its session ended".to_owned(),
@@ -340,36 +353,12 @@ fn open_turn(store: &Store, row: &BoxRow) -> Result<(), CommandError> {
     }
 }
 
-/// Append the `steered` event; its id.
-fn record(
-    store: &Store,
-    id: BoxId,
-    session: &SessionRow,
-    message: &str,
-    submit_retried: bool,
-) -> Result<i64, CommandError> {
-    let who = if session.session_ref.is_empty() {
-        session.pane.as_deref().unwrap_or_default()
-    } else {
-        &session.session_ref
-    };
-    let event = ExtraEvent::Steered {
-        session: who.to_owned(),
-        message: message.to_owned(),
-        submit_retried,
-    };
-    let applied = store.apply(Decision::new(id).event(event))?;
-    applied
-        .events
-        .first()
-        .copied()
-        .ok_or_else(|| CommandError::new(ErrorKind::Failed, "the steered event was not recorded"))
-}
-
 mod choose;
+mod record;
 mod relaunch;
 
 use choose::choose;
+use record::{record, Mark};
 
 #[cfg(test)]
 mod tests;
