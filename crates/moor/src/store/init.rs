@@ -47,6 +47,10 @@ pub(super) fn schema() -> Result<Vec<Migration>, StoreError> {
             "V3__user_mcp_servers.sql",
             include_str!("../../migrations/V3__user_mcp_servers.sql"),
         ),
+        (
+            "V4__binding_history.sql",
+            include_str!("../../migrations/V4__binding_history.sql"),
+        ),
     ])
     .map_err(|e| StoreError::Corrupt(format!("migration files: {e}")))
 }

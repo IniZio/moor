@@ -71,6 +71,20 @@ fn binding_the_same_key_again_keeps_the_original_session() {
 }
 
 #[test]
+fn a_key_rebinds_to_a_new_session_after_the_first_ends() {
+    let dir = tempfile::tempdir().unwrap();
+    let cx = cx(dir.path());
+    let a = host_session(&cx);
+    bind(&cx, &bind_req("k", a)).unwrap();
+    cx.store().unwrap().end_host_session(a.get()).unwrap();
+    let b = host_session(&cx);
+    let v = bind(&cx, &bind_req("k", b)).unwrap();
+    assert!(v.created);
+    assert_eq!(v.binding.session, b);
+    assert_eq!(lookup(&cx, &find_req("k")).unwrap().unwrap().session, b);
+}
+
+#[test]
 fn lookup_returns_the_binding_or_none() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());

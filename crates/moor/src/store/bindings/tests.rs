@@ -88,3 +88,69 @@ fn ended_session_is_refused() {
     assert!(matches!(err, StoreError::Invalid(_)), "{err:?}");
     assert!(store.binding("cli", "k1").unwrap().is_none());
 }
+
+fn end(store: &Store, session: i64) {
+    store.end_host_session(session).unwrap();
+}
+
+#[test]
+fn a_second_session_binds_once_the_first_has_ended() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let first = store.open_host_session("/a", None, None).unwrap();
+    assert!(store.bind_session("cli", "k1", first, "U1").unwrap());
+    end(&store, first);
+    let second = store.open_host_session("/b", None, None).unwrap();
+    assert!(store.bind_session("cli", "k1", second, "U2").unwrap());
+    let found = store.binding("cli", "k1").unwrap().unwrap();
+    assert_eq!(found.session, second);
+    assert_eq!(found.owner, "U2");
+}
+
+#[test]
+fn every_session_a_key_had_keeps_its_binding() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let first = store.open_host_session("/a", None, None).unwrap();
+    store.bind_session("cli", "k1", first, "U1").unwrap();
+    end(&store, first);
+    let second = store.open_host_session("/b", None, None).unwrap();
+    store.bind_session("cli", "k1", second, "U2").unwrap();
+    for (session, owner) in [(first, "U1"), (second, "U2")] {
+        let found = store.session_binding(session).unwrap().unwrap();
+        assert_eq!((found.front.as_str(), found.key.as_str()), ("cli", "k1"));
+        assert_eq!((found.session, found.owner.as_str()), (session, owner));
+    }
+    let unbound = store.open_host_session("/c", None, None).unwrap();
+    assert!(store.session_binding(unbound).unwrap().is_none());
+}
+
+#[test]
+fn with_no_live_session_the_newest_binding_is_found() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let first = store.open_host_session("/a", None, None).unwrap();
+    store.bind_session("cli", "k1", first, "U1").unwrap();
+    end(&store, first);
+    let second = store.open_host_session("/b", None, None).unwrap();
+    store.bind_session("cli", "k1", second, "U2").unwrap();
+    end(&store, second);
+    assert_eq!(store.binding("cli", "k1").unwrap().unwrap().session, second);
+}
+
+#[test]
+fn binding_the_same_session_again_changes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let session = store.open_host_session("/a", None, None).unwrap();
+    assert!(store.bind_session("cli", "k1", session, "U1").unwrap());
+    assert!(!store.bind_session("cli", "k1", session, "U2").unwrap());
+    let found = store.binding("cli", "k1").unwrap().unwrap();
+    assert_eq!((found.session, found.owner.as_str()), (session, "U1"));
+    let rows: i64 = store
+        .reader()
+        .unwrap()
+        .query_row("SELECT COUNT(*) FROM bindings", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(rows, 1);
+}
