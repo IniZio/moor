@@ -9,14 +9,20 @@ fn shared(name: &str, secret: &str) -> (String, McpServer) {
         name.to_owned(),
         McpServer {
             url: Some(format!("https://{name}.shared.example/mcp")),
-            headers: BTreeMap::from([("Authorization".to_owned(), format!("Bearer ${{{secret}}}"))]),
+            headers: BTreeMap::from([(
+                "Authorization".to_owned(),
+                format!("Bearer ${{{secret}}}"),
+            )]),
             ..McpServer::default()
         },
     )
 }
 
 fn have(names: &[&str]) -> BTreeSet<SecretName> {
-    names.iter().map(|n| SecretName::parse(n).unwrap()).collect()
+    names
+        .iter()
+        .map(|n| SecretName::parse(n).unwrap())
+        .collect()
 }
 
 fn linear() -> UserMcp {
@@ -26,7 +32,10 @@ fn linear() -> UserMcp {
 #[test]
 fn a_user_server_names_its_own_vault_secret_in_a_bearer_header() {
     let s = linear().server();
-    assert_eq!(s.url.as_deref(), Some("https://mcp.linear.app/mcp/readonly"));
+    assert_eq!(
+        s.url.as_deref(),
+        Some("https://mcp.linear.app/mcp/readonly")
+    );
     assert_eq!(s.headers["Authorization"], "Bearer ${mcp_linear}");
     let rule = s.proxy_rule().unwrap();
     assert_eq!(rule.hosts, ["mcp.linear.app"]);

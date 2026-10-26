@@ -36,7 +36,10 @@ fn a_users_servers_and_keys_are_theirs_alone() {
         json!({"servers": [{"name": "linear", "url": "https://mcp.linear.app/mcp/readonly",
             "header": "Authorization", "secret": "mcp_linear", "has_key": true}]})
     );
-    assert!(!listed.to_string().contains(KEY), "a list never shows a key");
+    assert!(
+        !listed.to_string().contains(KEY),
+        "a list never shows a key"
+    );
     let theirs = run(&f.cx, &f.vault, &id("slack:T1:UB"), &UserCmd::McpList).unwrap();
     assert_eq!(theirs, json!({"servers": []}), "B never sees A's server");
 
@@ -55,7 +58,10 @@ fn a_users_servers_and_keys_are_theirs_alone() {
         for_box(&f.cx, Some(b)).unwrap().servers.is_empty(),
         "B's Box never gets A's server"
     );
-    assert!(for_box(&f.cx, Some(a)).unwrap().servers.contains_key("linear"));
+    assert!(for_box(&f.cx, Some(a))
+        .unwrap()
+        .servers
+        .contains_key("linear"));
 
     let removed = run(
         &f.cx,
@@ -129,5 +135,11 @@ fn a_bad_url_or_name_is_refused_before_anything_is_stored() {
         let err = run(&f.cx, &f.vault, &id("local:2000"), &cmd).unwrap_err();
         assert_eq!(err.kind, ErrorKind::Usage, "{err:?}");
     }
-    assert!(f.cx.store().unwrap().user_secret_names(a).unwrap().is_empty());
+    assert!(f
+        .cx
+        .store()
+        .unwrap()
+        .user_secret_names(a)
+        .unwrap()
+        .is_empty());
 }

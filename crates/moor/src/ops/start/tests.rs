@@ -40,7 +40,6 @@ mod others;
 mod parent;
 mod prompt_watch;
 mod provider_caps;
-mod user_mcp;
 mod provider_unset;
 mod proxy;
 mod relaunch;
@@ -56,6 +55,7 @@ mod setup;
 mod setup_rerun;
 mod state;
 mod transcript;
+mod user_mcp;
 mod workdir;
 
 /// A world of fakes plus the context over them.

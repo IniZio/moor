@@ -19,8 +19,8 @@ use super::{check, parse_strict, ConfigError};
 use crate::cache::CacheConfig;
 pub use controller::ControllerClientConfig;
 pub use creds::McpServer;
-pub use own_mcp::{box_mcp, BoxMcp, UserMcp, DEFAULT_HEADER};
 use duration::{duration_or, parse_duration};
+pub use own_mcp::{box_mcp, BoxMcp, UserMcp, DEFAULT_HEADER};
 
 /// herdr session used when `surface.herdr.session` is unset.
 const DEFAULT_HERDR_SESSION: &str = "moor";

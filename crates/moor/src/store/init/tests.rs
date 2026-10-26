@@ -288,7 +288,11 @@ fn a_file_at_migration_2_gains_user_mcp_servers_and_keeps_its_rows() {
     before.retain(|(t, _)| t != "refinery_schema_history");
     assert_eq!(after, before, "every table and row kept");
     let applied: i64 = conn
-        .query_row("SELECT MAX(version) FROM refinery_schema_history", [], |r| r.get(0))
+        .query_row(
+            "SELECT MAX(version) FROM refinery_schema_history",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(applied, 3);
 }

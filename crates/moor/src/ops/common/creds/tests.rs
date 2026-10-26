@@ -32,7 +32,11 @@ mcp_servers:
 fn rows_resolve_only_for_secrets_the_user_holds() {
     let failing = unresolved(&settings(SHARED), &RepoFiles::default(), &held(&["b"]));
     let names: Vec<&str> = failing.iter().map(|i| i.name.as_str()).collect();
-    assert_eq!(names, ["a"], "an MCP server missing its key never refuses the start");
+    assert_eq!(
+        names,
+        ["a"],
+        "an MCP server missing its key never refuses the start"
+    );
     let a = failing.first().unwrap();
     assert_eq!(
         a.error.as_deref(),
