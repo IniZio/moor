@@ -244,11 +244,12 @@ mod tests {
 
     #[test]
     fn two_fakes_started_in_one_range_hold_different_ports() {
+        // Below Linux's ephemeral range (32768-60999), where outgoing sockets can hold a port.
         let dir = tempfile::tempdir().unwrap();
-        let a = FakeEgress::start_in(dir.path(), dir.path(), 41000..=41001).unwrap();
-        let b = FakeEgress::start_in(dir.path(), dir.path(), 41000..=41001).unwrap();
+        let a = FakeEgress::start_in(dir.path(), dir.path(), 29400..=29401).unwrap();
+        let b = FakeEgress::start_in(dir.path(), dir.path(), 29400..=29401).unwrap();
         assert_ne!(a.port(), b.port());
-        assert!(FakeEgress::start_in(dir.path(), dir.path(), 41000..=41001).is_err());
+        assert!(FakeEgress::start_in(dir.path(), dir.path(), 29400..=29401).is_err());
     }
 
     #[test]
