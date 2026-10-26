@@ -43,7 +43,7 @@ pub(crate) fn delete(call: &mut Call<'_>, user: &str, account: Account) -> Resul
 }
 
 /// The reply to `request` when the controller took it, or its error text.
-fn send(call: &mut Call<'_>, user: &str, request: Request) -> Result<Response, String> {
+pub(crate) fn send(call: &mut Call<'_>, user: &str, request: Request) -> Result<Response, String> {
     let reply = call(user, request).map_err(|e| e.to_string())?;
     if reply.class == ExitClass::Ok {
         return Ok(reply);
