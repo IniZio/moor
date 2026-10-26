@@ -57,7 +57,7 @@ impl Hooks {
             Ok(ids) => ids.into_iter().collect(),
             Err(e) => return eprintln!("moor-machine-runner: cannot read the Box records: {e}"),
         };
-        let orphan = |id: &i64| !open.contains(id) && !recorded.contains(id);
+        let orphan = |id: &i64| !open.contains(*id) && !recorded.contains(id);
         for id in host.iter().filter(|id| orphan(id)) {
             if let Err(e) = std::fs::remove_dir_all(self.mirrors.join(id.to_string())) {
                 eprintln!("moor-machine-runner: cannot remove the mirror of Box {id}: {e}");

@@ -20,4 +20,7 @@ pub(crate) struct MachineInfo {
     pub(crate) facts: Facts,
     /// rsync patterns every sync leaves alone; a sync's own `exclude` adds to them.
     pub(crate) sync_exclude: Vec<String>,
+    /// Set when the Box's files on the machine were removed while it slept: sync again.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) notice: Option<String>,
 }

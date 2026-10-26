@@ -4,10 +4,10 @@
 //! the Box id, the machine's name, its ssh target and the Box's slot on it. `sync` mirrors the
 //! Box's work tree onto the machine; `exec` runs a command there, in that copy, holding any
 //! capped resources it names; `pull` brings one file back into the Box's work tree; `machine_info` says which slot and ports the Box has. The
-//! operator's `prepare` and `release` commands set up and clean up per-Box things on the
-//! machine. Relays list the tools of the machine's own stdio MCP servers beside these.
+//! operator's `prepare`, `suspend` and `release` commands set up, pause and clean up per-Box
+//! things on the machine. Relays list the tools of the machine's own stdio MCP servers beside these.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -38,10 +38,12 @@ use crate::pull::{PullArgs, PullOutput};
 use crate::relay::Relays;
 use crate::sync::{SyncArgs, SyncOutput};
 
+pub use crate::config::Config;
 pub use crate::relay::Relay;
 
 mod beat;
 mod caller;
+mod config;
 mod exec;
 mod holds;
 mod hooks;
@@ -49,35 +51,6 @@ mod info;
 mod pull;
 mod relay;
 mod sync;
-
-/// What the runner needs to serve.
-#[derive(Debug, Clone)]
-pub struct Config {
-    /// The controller's socket, which `sync` asks for the Box's work tree.
-    pub socket: PathBuf,
-    /// Where the runner keeps one host mirror per Box.
-    pub state_dir: PathBuf,
-    /// The `Host` the Box's Proxy passes through, accepted besides the loopback names.
-    pub service_host: String,
-    /// Units of each capped resource one machine has, such as `build` = 1.
-    pub resources: BTreeMap<String, usize>,
-    /// Command run on the machine before a Box's first `exec` or `machine_info`.
-    pub prepare: Option<String>,
-    /// Command run on the machine once a prepared Box is no longer open.
-    pub release: Option<String>,
-    /// How long `prepare` or `release` may run.
-    pub hook_timeout: Duration,
-    /// How often to look for prepared Boxes that are no longer open, and idle relay sessions.
-    pub sweep: Duration,
-    /// How often to list the files on each machine for Boxes the runner holds no record of.
-    pub reconcile: Duration,
-    /// The machine's stdio MCP servers whose tools the runner relays.
-    pub relays: Vec<Relay>,
-    /// How long a relay session may go without a call before it ends.
-    pub relay_idle: Duration,
-    /// How often an open call's stream gets a ping, so no client or proxy on the way sees it idle.
-    pub keep_alive: Duration,
-}
 
 /// Serves MCP over streamable HTTP on `listener` until accepting fails.
 ///
@@ -88,6 +61,9 @@ pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
     let hooks = Arc::new(Hooks {
         prepare: config.prepare,
         release: config.release,
+        suspend: config.suspend,
+        min_free_gb: config.min_free_gb,
+        client: Client::new(&config.socket),
         timeout: config.hook_timeout,
         boxes: config.state_dir.join("boxes"),
         mirrors: mirrors.clone(),
@@ -101,16 +77,17 @@ pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
         config.relay_idle,
         config.hook_timeout,
     ));
+    let holds = Arc::new(Holds::new(config.resources));
     let runner = Runner {
         client: Client::new(&config.socket),
         mirrors,
         syncing: Arc::default(),
-        holds: Arc::new(Holds::new(config.resources)),
+        holds: Arc::clone(&holds),
         hooks: Arc::clone(&hooks),
         relays: Arc::clone(&relays),
         beat: config.keep_alive,
     };
-    hooks::spawn_sweep(config.sweep, runner.client.clone(), hooks, relays);
+    hooks::spawn_sweep(config.sweep, runner.client.clone(), hooks, relays, holds);
     let http = StreamableHttpServerConfig::default()
         .with_allowed_hosts([
             "localhost",
@@ -188,15 +165,20 @@ impl Runner {
             Arc::clone(locks.entry(caller.box_id.get()).or_default())
         };
         let _held = lock.lock().await;
-        self.hooks.note(&caller).await.map_err(|e| internal(&e))?;
+        self.hooks
+            .before_sync(&caller)
+            .await
+            .map_err(|e| internal(&e))?;
         let (client, mirrors) = (self.client.clone(), self.mirrors.clone());
+        let noted = caller.clone();
         let copy =
             tokio::task::spawn_blocking(move || sync::run(&client, &mirrors, &caller, &args));
         tokio::select! {
-            done = copy => done
-                .map_err(|e| internal(&e.to_string()))?
-                .map(Json)
-                .map_err(|e| internal(&e)),
+            done = copy => {
+                let out = done.map_err(|e| internal(&e.to_string()))?.map_err(|e| internal(&e))?;
+                self.hooks.synced(&noted).await.map_err(|e| internal(&e))?;
+                Ok(Json(out))
+            }
             () = progress.beat("sync", self.beat) => unreachable!("a beat never ends"),
         }
     }
@@ -242,6 +224,7 @@ impl Runner {
     ) -> Result<Json<MachineInfo>, ErrorData> {
         let caller = Caller::from_headers(&parts.headers)?;
         let facts = self.hooks.facts(&caller).await.map_err(|e| internal(&e))?;
+        let notice = self.hooks.notice(&caller);
         Ok(Json(MachineInfo {
             box_id: caller.box_id.get(),
             machine: caller.machine,
@@ -249,6 +232,7 @@ impl Runner {
             port_offset: 10 * u32::from(caller.slot),
             facts,
             sync_exclude: caller.sync_exclude,
+            notice,
         }))
     }
 

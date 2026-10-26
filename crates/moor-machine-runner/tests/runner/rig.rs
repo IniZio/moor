@@ -36,6 +36,14 @@ rm -f "$fifo"
 exit "$code"
 "#;
 
+/// Stands in for `df -Pk`: reports the free KiB kept in `$FAKE_REMOTE_HOME/.free-kb`, plenty
+/// when there is none, so a test sets the machine's disk by writing that file.
+const FAKE_DF: &str = r#"#!/bin/sh
+kb=$(cat "$FAKE_REMOTE_HOME/.free-kb" 2>/dev/null || echo 999999999)
+echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
+echo "/dev/fake 1000000000 1 $kb 1% $HOME"
+"#;
+
 /// The headers the Box's Proxy sets for Box 7 in slot 0 of machine `minion`.
 pub const HEADERS: [(&str, &str); 4] = [
     ("X-Moor-Box", "7"),
@@ -70,6 +78,8 @@ pub struct Rig {
     pub remote: PathBuf,
     /// The Box ids the fake controller lists as open.
     pub open: Arc<Mutex<Vec<i64>>>,
+    /// The open Box ids the fake controller reports asleep.
+    pub asleep: Arc<Mutex<Vec<i64>>>,
     /// The `exclude` of each `box-mirror` request the fake controller served.
     pub mirror_excludes: Arc<Mutex<Vec<Value>>>,
     /// Each `box-put` request the fake controller served, with the bytes of its `src`.
@@ -97,17 +107,20 @@ impl Rig {
         let bin = dir.path().join("bin");
         moor_testkit::write_host_guards(&bin).unwrap();
         moor_testkit::write_executable(&bin.join("ssh"), FAKE_SSH).unwrap();
+        moor_testkit::write_executable(&bin.join("df"), FAKE_DF).unwrap();
         let tree = dir.path().join("box");
         let remote = dir.path().join("remote");
         std::fs::create_dir_all(&tree).unwrap();
         std::fs::create_dir_all(&remote).unwrap();
         let open = Arc::new(Mutex::new(vec![7]));
+        let asleep = Arc::new(Mutex::new(Vec::new()));
         let mirror_excludes = Arc::new(Mutex::new(Vec::new()));
         let puts = Arc::new(Mutex::new(Vec::new()));
         fake_controller(
             &dir.path().join("c.sock"),
             tree.clone(),
             Arc::clone(&open),
+            Arc::clone(&asleep),
             Arc::clone(&mirror_excludes),
             Arc::clone(&puts),
         );
@@ -123,6 +136,7 @@ impl Rig {
             tree,
             remote,
             open,
+            asleep,
             mirror_excludes,
             puts,
             args,
@@ -142,6 +156,11 @@ impl Rig {
     /// The runner's state dir.
     pub fn state(&self) -> PathBuf {
         self.dir.path().join("state")
+    }
+
+    /// Sets the free space the fake machine reports, in KiB.
+    pub fn set_free_kb(&self, kb: u64) {
+        std::fs::write(self.remote.join(".free-kb"), kb.to_string()).unwrap();
     }
 
     /// The Box's copy on the fake machine.
@@ -325,12 +344,29 @@ fn initialize() -> Value {
     })
 }
 
+/// The `show` list reply: each Box in `open`, asleep when `asleep` names it.
+fn show_value(open: &[i64], asleep: &[i64]) -> Value {
+    let boxes: Vec<Value> = open
+        .iter()
+        .map(|id| {
+            let lifecycle = if asleep.contains(id) {
+                "asleep"
+            } else {
+                "ready"
+            };
+            json!({ "id": id, "lifecycle": lifecycle })
+        })
+        .collect();
+    json!({ "boxes": boxes, "box": null })
+}
+
 /// Serves `box-mirror` the way the controller does, from `tree`, with a local rsync, and
 /// `show` listing the Boxes in `open`.
 fn fake_controller(
     socket: &Path,
     tree: PathBuf,
     open: Arc<Mutex<Vec<i64>>>,
+    asleep: Arc<Mutex<Vec<i64>>>,
     mirror_excludes: Arc<Mutex<Vec<Value>>>,
     puts: Puts,
 ) {
@@ -349,9 +385,7 @@ fn fake_controller(
             let frame: Value = serde_json::from_str(&line).unwrap();
             let req = request(&frame).unwrap();
             if req["cmd"] == "show" {
-                let ids = open.lock().unwrap().clone();
-                let boxes: Vec<Value> = ids.iter().map(|id| json!({ "id": id })).collect();
-                let value = json!({ "boxes": boxes, "box": null });
+                let value = show_value(&open.lock().unwrap(), &asleep.lock().unwrap());
                 let frame = ServerFrame::Response {
                     id: "1".to_owned(),
                     envelope: Response::ok("show", Some(value)),

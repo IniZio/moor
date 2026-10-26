@@ -47,7 +47,9 @@ moor-machine-runner --socket /path/to/moor.sock --state-dir ~/.local/state/moor-
 | `--resource NAME=CAP` | none | a capped resource each machine has, such as `build=1`; repeat for more |
 | `--prepare CMD` | none | run on the machine before a Box's first `exec` or `machine_info`; see [Per-Box setup](#per-box-setup) |
 | `--release CMD` | none | run on the machine once a prepared Box is no longer open, before its copy there is removed |
-| `--hook-timeout-secs` | `600` | how long `prepare` or `release` may run |
+| `--suspend CMD` | none | run on the machine when a prepared Box falls asleep; see [Sleeping Boxes](#sleeping-boxes) |
+| `--min-free-gb` | `20` | free GB a machine needs before a Box is prepared or synced there; below it sleeping Boxes' files are removed, oldest first; 0 turns it off; see [Disk guard](#disk-guard) |
+| `--hook-timeout-secs` | `600` | how long `prepare`, `suspend` or `release` may run |
 | `--reconcile-secs` | `60` | how often the runner lists each machine's `~/moor` and `~/moor-state` for Boxes it has no record of |
 | `--sweep-secs` | `60` | how often the runner looks for prepared Boxes that are no longer open and for idle relay sessions |
 | `--relay NAME=CMD` | none | a stdio MCP server on the machine whose tools the runner lists as `NAME_<tool>`; repeat for more; see [Relays](#relays) |
@@ -197,8 +199,17 @@ moor-machine-runner --socket /path/to/moor.sock \
 #!/bin/sh
 set -e
 mkdir -p "$MOOR_STATE_DIR"/DerivedData
-udid=$(xcrun simctl create "moor-$MOOR_BOX" "iPhone 16" "iOS18.5")
+udid=$(xcrun simctl list devices | sed -n "s/.*moor-$MOOR_BOX (\([0-9A-F-]*\)).*/\1/p" | head -1)
+[ -n "$udid" ] || udid=$(xcrun simctl create "moor-$MOOR_BOX" "iPhone 16" "iOS18.5")
 printf '{"device": "%s"}\n' "$udid"
+```
+
+`~/bin/moor-suspend` on the machine:
+
+```sh
+#!/bin/sh
+xcrun simctl shutdown "$MOOR_FACT_DEVICE" 2>/dev/null
+exit 0
 ```
 
 `~/bin/moor-release` on the machine:
@@ -211,6 +222,48 @@ exit 0
 
 An agent in the Box then builds with
 `xcodebuild -destination "id=$MOOR_FACT_DEVICE" -derivedDataPath $MOOR_STATE_DIR/DerivedData`.
+
+### Sleeping Boxes
+
+A Box the controller lists as asleep (`lifecycle` `asleep` in the `show` reply)
+frees its slot, and its processes on the machine should stop, but its files stay.
+On each sweep, for every recorded, prepared Box that is asleep and not yet
+suspended, the runner ends the Box's relay sessions, frees the capped resources
+its calls hold (even a call still running), then runs `--suspend CMD`. CMD runs
+where `release` runs, with the same variables, `MOOR_FACT_*` included, and the
+slot the Box had; use it to stop what `prepare` started, such as a simulator. Only
+after it succeeds does the runner note the time in the Box's record as
+`suspended_at`; a failing suspend is logged and run again on the next sweep. With
+no `--suspend` the Box is still marked, so the steps below apply.
+
+When the Box wakes it may get a different slot, since the controller gives it the
+lowest free slot on the same machine. Its next `exec`, `machine_info`, relay
+call or `sync` runs `prepare` again, with the slot from the request, if the Box
+was suspended or the request's slot differs from the record's. The new facts and
+slot replace the old ones, `suspended_at` is cleared, and `machine_info` reports
+the new slot, `port_offset` and facts. So `prepare` must be idempotent: running it
+again for a Box that already has its device and folders must reuse them and print
+the facts for the current slot, such as a Metro port that depends on
+`MOOR_PORT_OFFSET`.
+
+### Disk guard
+
+`--min-free-gb N` (default 20; 0 turns it off) keeps the machine from filling up.
+Before it runs `prepare` for a Box and before every `sync`, the runner reads the
+free space in the machine user's home with one remote call, `df -Pk ~`. Below the
+floor, it takes the machine's suspended Boxes that the controller still lists as
+asleep, oldest `suspended_at` first, and for each runs `release`, removes
+`~/moor/<box id>` and `~/moor-state/<box id>`, and re-reads the free space,
+stopping once it is above the floor. It keeps the Box's record, marked `evicted`
+with its facts cleared and `prepared` false, and its host mirror. It never
+touches a Box that is awake, a Box in the middle of a call, nor anything outside
+the Boxes' own directories, such as shared caches. If the space is still below the
+floor with no sleeping Box left, the call fails with the free GB, the floor and
+that no sleeping Box is left to evict.
+
+An evicted Box's next call prepares it again. Until it syncs, `machine_info`
+carries a `notice` saying its files on the machine were removed while it slept,
+so it must `sync` again.
 
 ## Relays
 
