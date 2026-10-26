@@ -245,6 +245,27 @@ The front rejects unknown keys.
 | `coordinator.idle_minutes` | integer, at least 1 | 30 | Quiet minutes before a thread's host Session ends. |
 | `roleplay.users` | list of Slack user ids, at least one | off | For test automation only. A post the bot makes with its own token and with message metadata `{"event_type": "moor_roleplay", "event_payload": {"user": "U…"}}` for a listed user counts as that user's: a top-level post naming the bot starts a thread, a thread post is a reply. Anyone holding the bot token can then act as the listed users. Each such message is logged with its channel, ts and user. |
 
+## Your own MCP servers
+
+Each person can give their Boxes MCP servers of their own with `/moor mcp add`. The
+form asks for a name, an `https://` URL and a key (a bearer token or API key).
+The key field shows what you type, to you alone. The front sends the form to the
+controller as you. The controller keeps the key in your vault, and a Box sees
+only a placeholder. The servers in the operator's `mcp_servers` stay shared
+defaults for everyone, and a server of yours wins a name clash.
+`/moor mcp list` and `/moor mcp remove NAME` answer only you. A refused form,
+such as a name that is not allowed or a URL that is not `https://`, stays open
+with the reason under the field.
+
+To keep a server read-only, point it at a read-only URL and give it a key that
+can only read. For Linear, use URL `https://mcp.linear.app/mcp/readonly` with a
+personal API key that has only Read permission:
+
+1. In Linear, open Settings, then Security & access, then Personal API keys.
+2. Create a key and choose Only select permissions.
+3. Tick Read and nothing else, then copy the key.
+4. Run `/moor mcp add`, enter a name such as `linear`, the URL above and the key.
+
 ## Slash commands
 
 | Command | Who | Where | What it does |
@@ -255,3 +276,6 @@ The front rejects unknown keys.
 | `/moor repo default NAME` | anyone | any channel the bot is in | Makes `NAME` the channel's default repo. |
 | `/moor login [claude\|github]` | anyone | any channel | Opens a form for the tokens: both optional fields with no word, one field with `claude` or `github`. The front checks a Claude token with one test call to Claude on `haiku`, and a GitHub token with `GET /user`, which must answer 200. It then stores the token in the controller's vault as you. A 401 or 403 stores nothing. |
 | `/moor logout [claude\|github]` | anyone | any channel | Deletes that secret from the vault and tells you whether one was there. Claude is the default. |
+| `/moor mcp add` | anyone | any channel | Opens a private form for an MCP server of yours: Name, URL and Key. See [Your own MCP servers](#your-own-mcp-servers). |
+| `/moor mcp list` | anyone | any channel | Shows only you each server's name, URL and whether a key is stored. Never a key. |
+| `/moor mcp remove NAME` | anyone | any channel | Removes that server and its key, and tells only you. |
