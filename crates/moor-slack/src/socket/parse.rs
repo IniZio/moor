@@ -6,6 +6,7 @@ use serde_json::Value;
 use super::roleplay::roleplayed;
 use super::{Click, Mention, Press, Roleplay, Slash, TokenSubmission};
 use crate::login::LOGIN_CALLBACK;
+use crate::machine::MACHINE_CALLBACK;
 use crate::mcp::MCP_CALLBACK;
 use crate::stop::STOP_ACTION;
 
@@ -30,7 +31,9 @@ pub(super) fn parse_submission(envelope: &Value) -> Option<TokenSubmission> {
         return None;
     }
     let view = payload.get("view")?;
-    if ![LOGIN_CALLBACK, MCP_CALLBACK].contains(&view.get("callback_id")?.as_str()?) {
+    if ![LOGIN_CALLBACK, MCP_CALLBACK, MACHINE_CALLBACK]
+        .contains(&view.get("callback_id")?.as_str()?)
+    {
         return None;
     }
     let tokens = view

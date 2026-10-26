@@ -27,6 +27,8 @@ mod idle;
 mod inbox;
 #[path = "daemon/login.rs"]
 mod login;
+#[path = "daemon/machine_front.rs"]
+mod machine_front;
 #[path = "daemon/mcp.rs"]
 mod mcp;
 #[path = "daemon/mcp_front.rs"]

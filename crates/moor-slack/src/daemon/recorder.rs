@@ -13,7 +13,7 @@ use crate::db::Db;
 use crate::identity::Link;
 use crate::socket::{self, AfterAck, Inbound, Intake, Kept, NotKept};
 use crate::worker::{self, Job};
-use crate::{login, mcp, slash, Log};
+use crate::{login, machine, mcp, slash, Log};
 
 /// The Socket Mode thread's intake: records each mention and command in `slack.db`, then
 /// queues its job, all before Slack gets the ack.
@@ -60,6 +60,17 @@ impl Intake for Recorder {
                 worker::record(&mention, &self.db, now).map(|job| (Kept::default(), job))
             }
             Inbound::Slash(slash) => slash::record(&slash, &self.db, now),
+            Inbound::Submission(sub) if sub.account == machine::MACHINE_FORM => {
+                let mut call = |user: &str, req| self.link.request(user, req);
+                let ack = machine::submission(&sub, &mut call);
+                Ok((
+                    Kept {
+                        ack: Some(ack),
+                        then: None,
+                    },
+                    None,
+                ))
+            }
             Inbound::Submission(sub) if sub.account == mcp::MCP_FORM => {
                 let mut call = |user: &str, req| self.link.request(user, req);
                 let ack = mcp::submission(&sub, &mut call);
@@ -104,6 +115,7 @@ impl Intake for Recorder {
         let (trigger_id, form) = match then {
             AfterAck::OpenLogin { trigger_id, form } => (trigger_id, login::form(form)),
             AfterAck::OpenMcp { trigger_id } => (trigger_id, mcp::form()),
+            AfterAck::OpenMachine { trigger_id } => (trigger_id, machine::form()),
         };
         if let Err(e) = self.api.open_view(&self.bot_token, &trigger_id, &form) {
             (self.log)(&format!("slack: modal failed: {e}"));

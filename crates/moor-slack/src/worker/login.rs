@@ -5,6 +5,7 @@ use super::Fx;
 use crate::account::Account;
 use crate::escape::escape;
 use crate::login::{vault, TokenCheck, LINKED};
+use crate::machine::MachineJob;
 use crate::mcp::McpJob;
 
 /// Checks each pasted token, stores the ones its account takes, and shows every outcome in the
@@ -64,5 +65,17 @@ pub(super) fn mcp(fx: &mut Fx<'_>, job: &McpJob) {
     match job.response_url.as_deref() {
         Some(url) => (fx.respond)(url, &text),
         None => (fx.log)("mcp: the command carried no response_url"),
+    }
+}
+
+/// Answers `/moor machine list` or `/moor machine remove` to the user alone.
+pub(super) fn machine(fx: &mut Fx<'_>, job: &MachineJob) {
+    let text = match &job.name {
+        None => crate::machine::listing(&mut *fx.call, &job.user),
+        Some(name) => crate::machine::removal(&mut *fx.call, &job.user, name),
+    };
+    match job.response_url.as_deref() {
+        Some(url) => (fx.respond)(url, &text),
+        None => (fx.log)("machine: the command carried no response_url"),
     }
 }

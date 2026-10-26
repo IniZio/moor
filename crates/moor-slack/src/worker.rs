@@ -71,6 +71,7 @@ pub(crate) fn serve(jobs: &Receiver<Job>, db: &Db, left: Vec<SlackBox>, fx: &mut
                 response_url,
             }) => login::unlink(fx, &user, account, response_url.as_deref()),
             Ok(Job::Mcp(job)) => login::mcp(fx, &job),
+            Ok(Job::Machine(job)) => login::machine(fx, &job),
             Ok(Job::Ephemeral {
                 channel,
                 user,

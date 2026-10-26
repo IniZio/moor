@@ -4,6 +4,7 @@ use moor_core::name::BoxName;
 
 use crate::account::Account;
 use crate::login::TokenCheck;
+use crate::machine::MachineJob;
 use crate::mcp::McpJob;
 
 /// What the worker does for one recorded mention or command.
@@ -32,6 +33,8 @@ pub(crate) enum Job {
     },
     /// Answer `/moor mcp list` or `/moor mcp remove`.
     Mcp(McpJob),
+    /// Answer `/moor machine list` or `/moor machine remove`.
+    Machine(MachineJob),
     /// Show `text` to `user` only, in a thread.
     Ephemeral {
         /// Channel id of the thread.
