@@ -90,6 +90,7 @@ fn failed(message: &str) -> Response {
             message: message.to_owned(),
             hints: Vec::new(),
             context: Vec::new(),
+            detail: None,
         },
     )
 }

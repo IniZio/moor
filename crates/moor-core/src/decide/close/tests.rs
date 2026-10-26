@@ -307,3 +307,34 @@ fn box_with_unpushed_commits_keeps_the_bundle_hint() {
     let text = close_gate(&f, false).expect_err("refused").to_string();
     assert!(text.contains("git bundle create"), "{text}");
 }
+
+#[test]
+fn every_refusal_maps_to_its_kind() {
+    use crate::response::CloseRefusal as C;
+    for (refusal, want) in [
+        (Refusal::AlreadyClosed, C::AlreadyClosed),
+        (
+            Refusal::UnsavedInBox {
+                name: "fix-bug".to_owned(),
+                branch: "moor/fix-bug".to_owned(),
+                ahead: 2,
+                dirty: 1,
+            },
+            C::Unsaved {
+                branch: "moor/fix-bug".to_owned(),
+                ahead: 2,
+                dirty: 1,
+            },
+        ),
+        (
+            Refusal::BoxUnchecked {
+                reason: "ssh timed out".to_owned(),
+            },
+            C::Unchecked {
+                reason: "ssh timed out".to_owned(),
+            },
+        ),
+    ] {
+        assert_eq!(C::from(&refusal), want);
+    }
+}

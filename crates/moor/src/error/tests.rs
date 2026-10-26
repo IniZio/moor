@@ -108,7 +108,7 @@ mod store_close {
     use crate::store::StoreError;
     use moor_core::decide::close::Refusal;
     use moor_core::domain::Illegal;
-    use moor_core::{BoxName, ErrorKind};
+    use moor_core::{BoxName, CloseRefusal, ErrorDetail, ErrorKind};
 
     #[test]
     fn illegal_store_error_is_internal() {
@@ -143,6 +143,15 @@ mod store_close {
         });
         assert_eq!(e.kind, ErrorKind::Refused);
         assert!(e.error.to_string().contains("--force"), "{}", e.error);
+        assert_eq!(
+            e.detail.as_deref(),
+            Some(&ErrorDetail::CloseRefused(CloseRefusal::Unsaved {
+                branch: "moor/t".into(),
+                ahead: 2,
+                dirty: 1,
+            }))
+        );
+        assert!(e.context.is_empty());
     }
 
     #[test]
@@ -151,6 +160,10 @@ mod store_close {
         assert_eq!(e.kind, ErrorKind::Refused);
         assert_eq!(e.error.to_string(), "Box is already closed");
         assert!(e.hints.is_empty());
+        assert_eq!(
+            e.detail.as_deref(),
+            Some(&ErrorDetail::CloseRefused(CloseRefusal::AlreadyClosed))
+        );
     }
 
     #[test]

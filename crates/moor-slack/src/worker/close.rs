@@ -2,15 +2,12 @@
 //! again after a lost connection, and its result or the controller's refusal posted.
 
 use moor_core::request::{CloseReq, Request};
-use moor_core::response::{ExitClass, Response};
+use moor_core::response::{CloseRefusal, ErrorDetail, ExitClass, Response};
 use serde_json::Value;
 
 use super::{error_text, lost, show_request, written, Attempt, Fx};
 use crate::command::{unsaved_work, BoxEvent};
 use crate::db::{BoxState, Db, SlackBox};
-
-/// The controller's refusal of a close for a Box that is already closed.
-const ALREADY_CLOSED: &str = "Box is already closed";
 
 /// How one attempt at a close ends.
 enum Closed {
@@ -23,6 +20,8 @@ enum Closed {
         /// Uncommitted files.
         dirty: u32,
     },
+    /// The Box stays open because the controller could not check it for unsaved work.
+    Unchecked(String),
     /// The Box stays open; the text says why.
     Refused(String),
     /// A close may have run and the controller cannot confirm it now; the text says why.
@@ -44,6 +43,17 @@ pub(super) fn settle_close(db: &Db, fx: &mut Fx<'_>, row: &SlackBox, attempt: At
             ),
             BoxEvent::Unsaved { ahead, dirty },
         ),
+        Closed::Unchecked(reason) => {
+            (fx.log)(&format!("close of {name}: Box not checked: {reason}"));
+            (
+                format!(
+                    "Box `{name}` is still open: I could not check it for work that is not saved \
+                     anywhere, and closing it could discard that work. If you want it closed \
+                     anyway, ask me to close it and discard its work."
+                ),
+                BoxEvent::CloseRefused,
+            )
+        }
         Closed::Refused(message) => (
             format!("Could not close Box `{name}`: {message}"),
             BoxEvent::CloseRefused,
@@ -96,24 +106,25 @@ fn send(fx: &mut Fx<'_>, row: &SlackBox, attempt: Attempt) -> Closed {
     });
     match (fx.call)(&row.requested_by, request) {
         Ok(reply) if reply.class == ExitClass::Ok => Closed::Done,
-        Ok(reply) => match error_text(reply) {
-            message if message == ALREADY_CLOSED => Closed::Done,
-            message => unsaved(&message).map_or(Closed::Refused(message), |(ahead, dirty)| {
-                Closed::Unsaved { ahead, dirty }
-            }),
-        },
+        Ok(reply) => refusal(reply),
         Err(e) if matches!(attempt, Attempt::First) && !lost(&e) => Closed::Refused(e.to_string()),
         Err(e) => Closed::Unsure(e.to_string()),
     }
 }
 
-/// The unpushed commits and uncommitted files a refusal for unsaved work names. The controller
-/// words it for its CLI, with commands a Slack user cannot run.
-fn unsaved(message: &str) -> Option<(u32, u32)> {
-    let rest = message.strip_prefix("the Box holds work that is not pushed (")?;
-    let (ahead, rest) = rest.split_once(" unpushed commit(s), ")?;
-    let (dirty, _) = rest.split_once(" uncommitted file(s))")?;
-    Some((ahead.parse().ok()?, dirty.parse().ok()?))
+/// How a refused close ends, read from the refusal's kind and never from its text.
+fn refusal(reply: Response) -> Closed {
+    let kind = reply
+        .error
+        .as_ref()
+        .and_then(|e| e.detail.as_ref())
+        .map(|ErrorDetail::CloseRefused(kind)| kind.clone());
+    match kind {
+        Some(CloseRefusal::AlreadyClosed) => Closed::Done,
+        Some(CloseRefusal::Unsaved { ahead, dirty, .. }) => Closed::Unsaved { ahead, dirty },
+        Some(CloseRefusal::Unchecked { reason }) => Closed::Unchecked(reason),
+        None => Closed::Refused(error_text(reply)),
+    }
 }
 
 /// True when a `show` reply says the Box is closed or that the controller has no such Box.

@@ -104,6 +104,7 @@ fn refused(cmd: &str, message: &str) -> Answer {
         message: message.to_owned(),
         hints: Vec::new(),
         context: Vec::new(),
+        detail: None,
     };
     Ok(Response::err(cmd, error))
 }

@@ -144,6 +144,7 @@ fn a_refused_answer_leaves_the_prompt_open() {
             message: "the agent is not waiting".into(),
             hints: Vec::new(),
             context: Vec::new(),
+            detail: None,
         },
     );
     let reply = controller.run_with(&db, &answer(ONE, id, 1), &mut |_| Ok(refusal.clone()));

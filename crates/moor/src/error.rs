@@ -1,6 +1,6 @@
 //! Top-level command error and its single conversion to the response envelope.
 
-use moor_core::{ErrorKind, ErrorView, Response, Warning};
+use moor_core::{ErrorDetail, ErrorKind, ErrorView, Response, Warning};
 
 mod close;
 mod config;
@@ -20,6 +20,8 @@ pub struct CommandError {
     pub hints: Vec<String>,
     /// Extra lines describing where the failure happened.
     pub context: Vec<String>,
+    /// Structured detail a client can act on without reading the message.
+    pub detail: Option<Box<ErrorDetail>>,
     /// Outcome still reported in the envelope `value`, when the command made one.
     pub value: Option<Box<serde_json::Value>>,
 }
@@ -35,6 +37,7 @@ impl CommandError {
             error: error.into(),
             hints: Vec::new(),
             context: Vec::new(),
+            detail: None,
             value: None,
         }
     }
@@ -61,6 +64,7 @@ impl CommandError {
             message: self.error.to_string(),
             hints: self.hints,
             context: self.context,
+            detail: self.detail.map(|d| *d),
         };
         let mut resp = Response::err(cmd, view).with_warnings(warnings);
         resp.value = self.value.map(|v| *v);

@@ -80,6 +80,7 @@ fn refused(cmd: &str, message: &str) -> Response {
             message: message.into(),
             hints: vec![],
             context: vec![],
+            detail: None,
         },
     )
 }

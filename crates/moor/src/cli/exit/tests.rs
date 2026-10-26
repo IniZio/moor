@@ -14,6 +14,7 @@ fn err(cmd: &str, kind: ErrorKind) -> Response {
             message: "m".into(),
             hints: vec![],
             context: vec![],
+            detail: None,
         },
     )
 }

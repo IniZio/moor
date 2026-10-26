@@ -35,6 +35,7 @@ fn err_envelope() {
         message: "no".into(),
         hints: vec!["h".into()],
         context: vec![],
+        detail: None,
     };
     let v = serde_json::to_value(Response::err("close", e)).unwrap();
     assert_eq!(v.as_object().unwrap().len(), 6);
@@ -69,6 +70,7 @@ fn kind_maps_to_class() {
         message: "b".into(),
         hints: vec![],
         context: vec![],
+        detail: None,
     };
     assert_eq!(Response::err("x", e).class, ExitClass::Failed);
 }
@@ -80,6 +82,7 @@ fn constructors_roundtrip() {
         message: "no".into(),
         hints: vec!["h".into()],
         context: vec!["c".into()],
+        detail: None,
     };
     let w = Warning {
         code: "c".into(),
@@ -102,4 +105,37 @@ fn wrong_schema_rejected() {
         .unwrap()
         .insert("schema".into(), json!("moor/2"));
     assert!(serde_json::from_value::<Response>(v).is_err());
+}
+
+#[test]
+fn error_detail_round_trips_through_json() {
+    use super::CloseRefusal as C;
+    for kind in [
+        C::AlreadyClosed,
+        C::Unsaved {
+            branch: "moor/t".into(),
+            ahead: 2,
+            dirty: 1,
+        },
+        C::Unchecked {
+            reason: "ssh timed out".into(),
+        },
+    ] {
+        let detail = ErrorDetail::CloseRefused(kind);
+        let text = serde_json::to_string(&detail).unwrap();
+        assert_eq!(serde_json::from_str::<ErrorDetail>(&text).unwrap(), detail);
+    }
+    let json = serde_json::to_value(ErrorDetail::CloseRefused(C::AlreadyClosed)).unwrap();
+    assert_eq!(
+        json,
+        json!({"kind":"close_refused","refusal":"already_closed"})
+    );
+}
+
+#[test]
+fn error_without_detail_reads_and_writes_as_before() {
+    let old = json!({"kind":"refused","message":"no","hints":[],"context":[]});
+    let e: ErrorView = serde_json::from_value(old.clone()).unwrap();
+    assert_eq!(e.detail, None);
+    assert_eq!(serde_json::to_value(&e).unwrap(), old);
 }

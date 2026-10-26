@@ -7,6 +7,8 @@ use crate::domain::session_state::{SessionInput, SessionState};
 use crate::name::BoxId;
 use crate::response::Warning;
 
+mod wire;
+
 /// What the close op read before deciding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CloseFacts {

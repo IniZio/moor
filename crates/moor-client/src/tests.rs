@@ -513,6 +513,7 @@ fn failed_line(message: &str) -> Vec<u8> {
         message: message.to_owned(),
         hints: Vec::new(),
         context: Vec::new(),
+        detail: None,
     };
     let envelope = serde_json::to_string(&Response::err("artifact-read", error)).unwrap();
     format!("{{\"frame\":\"response\",\"id\":\"1\",\"envelope\":{envelope}}}\n").into_bytes()

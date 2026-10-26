@@ -67,6 +67,39 @@ pub struct ErrorView {
     pub hints: Vec<String>,
     /// Context lines.
     pub context: Vec<String>,
+    /// What a client can act on without reading the message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<ErrorDetail>,
+}
+
+/// Why a close was refused, by kind.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "refusal", rename_all = "snake_case")]
+pub enum CloseRefusal {
+    /// The box is already closed or was rejected.
+    AlreadyClosed,
+    /// The Box holds work that is not pushed.
+    Unsaved {
+        /// The box branch, or a placeholder when unknown.
+        branch: String,
+        /// Commits not reachable from any remote-tracking ref or the base.
+        ahead: u32,
+        /// Uncommitted files.
+        dirty: u32,
+    },
+    /// The Box could not be checked for unsaved work.
+    Unchecked {
+        /// Why the check failed.
+        reason: String,
+    },
+}
+
+/// Structured detail of an error, tagged by kind.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ErrorDetail {
+    /// A close was refused.
+    CloseRefused(CloseRefusal),
 }
 
 /// The envelope every command returns.
