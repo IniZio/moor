@@ -151,6 +151,20 @@ pub struct BoxView {
     /// Open problems with the agent's model account; non-empty means the Box needs attention.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub attention: Vec<AttentionView>,
+    /// The user machine the Box holds, on `show` of one Box.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub held_machine: Option<HeldMachineView>,
+}
+
+/// A user machine a Box holds: its slot and the ports forwarded, already moved by the slot.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct HeldMachineView {
+    /// The machine's name.
+    pub name: String,
+    /// The Box's slot on it.
+    pub slot: u16,
+    /// The forwarded ports, the same number on both ends.
+    pub ports: Vec<u16>,
 }
 
 /// Outcome of the setup script.

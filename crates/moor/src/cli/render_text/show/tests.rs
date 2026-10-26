@@ -180,3 +180,14 @@ fn show_session_renders_host_with_child() {
         "Session 5 working (host) in /w\nagent session abc\n  child 7 box-name working\n"
     );
 }
+
+#[test]
+fn detail_names_the_held_machine_its_slot_and_ports() {
+    let mut t = row("alpha", true);
+    t["held_machine"] = json!({"name": "mini", "slot": 1, "ports": [8091, 8095]});
+    let out = show(json!({"box": t}));
+    assert!(
+        out.contains("egress=none\nattached: mini slot 1 ports 8091,8095\nagent:"),
+        "{out}"
+    );
+}

@@ -165,6 +165,24 @@ fn detail(view: &Value, value: &Value) -> Option<String> {
         }
         None => out.push_str("box:      none\n"),
     }
+    if let Some(m) = view.get("held_machine").filter(|m| !m.is_null()) {
+        let ports: Vec<String> = m
+            .get("ports")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .map(Value::to_string)
+            .collect();
+        let _ = writeln!(
+            out,
+            "attached: {} slot {} ports {}",
+            field(m, "name"),
+            m.get("slot")
+                .and_then(Value::as_u64)
+                .map_or("-".to_owned(), |s| s.to_string()),
+            ports.join(",")
+        );
+    }
     if let Some(a) = view.get("agent").filter(|a| !a.is_null()) {
         agent_block(&mut out, a);
     }

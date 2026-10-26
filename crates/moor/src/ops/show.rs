@@ -3,7 +3,9 @@
 
 use std::collections::HashMap;
 
-use moor_core::view::{ArtifactView, AttentionView, BoxView, EventView, PaneView, ShowView};
+use moor_core::view::{
+    ArtifactView, AttentionView, BoxView, EventView, HeldMachineView, PaneView, ShowView,
+};
 use moor_core::{BoxId, ErrorKind, ShowReq};
 
 use crate::cx::Cx;
@@ -89,6 +91,11 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     let mut detail = box_view_with_run(&row, in_flight.as_ref(), cx.config());
     detail.agent = agent;
     detail.attention = attention(store, row.id)?;
+    detail.held_machine = store.box_machine(row.id)?.map(|h| HeldMachineView {
+        name: h.machine.name,
+        slot: h.slot,
+        ports: h.ports,
+    });
     hide_unsupported_sleep(&mut detail, cx);
     let events = match req.events {
         Some(n) => {
