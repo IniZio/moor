@@ -8,10 +8,12 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use moor_core::controller::{ServerFrame, PROTOCOL};
-use moor_core::response::Response;
+use moor_core::response::{ErrorView, Response};
+use moor_core::ErrorKind;
 use serde_json::{json, Value};
 
-/// Stands in for `ssh`: runs the remote command locally, in `$FAKE_REMOTE_HOME`, the way sshd
+/// Stands in for `ssh`: runs the remote command locally, in `$FAKE_REMOTES/<target>` when that
+/// exists and else in `$FAKE_REMOTE_HOME`, the way sshd
 /// hands it to the remote user's shell. As with sshd, the command is not this process: killing
 /// it leaves the command running, and the command's stdin is a pipe that ends when this
 /// process's own stdin does.
@@ -24,13 +26,15 @@ while [ $# -gt 0 ]; do
     *) break ;;
   esac
 done
+home="$FAKE_REMOTE_HOME"
+[ -d "$FAKE_REMOTES/$1" ] && home="$FAKE_REMOTES/$1"
 shift
-cd "$FAKE_REMOTE_HOME" || exit 255
-fifo=$(mktemp -u "$FAKE_REMOTE_HOME/.ssh-in.XXXXXX") && mkfifo "$fifo" || exit 255
+cd "$home" || exit 255
+fifo=$(mktemp -u "$home/.ssh-in.XXXXXX") && mkfifo "$fifo" || exit 255
 exec 3<&0
 cat <&3 >"$fifo" 3<&- &
 exec 3<&-
-HOME="$FAKE_REMOTE_HOME" SHELL=/bin/sh /bin/sh -c "$*" <"$fifo"
+HOME="$home" SHELL=/bin/sh /bin/sh -c "$*" <"$fifo"
 code=$?
 rm -f "$fifo"
 exit "$code"
@@ -70,6 +74,9 @@ pub fn caller(
 /// `box-put` requests with the bytes of their `src`.
 pub type Puts = Arc<Mutex<Vec<(Value, Vec<u8>)>>>;
 
+/// The machines' ssh targets `machine-targets` lists, or none to refuse it.
+pub type Targets = Arc<Mutex<Option<Vec<String>>>>;
+
 pub struct Rig {
     dir: tempfile::TempDir,
     /// The fake Box's work tree, which the fake controller mirrors.
@@ -84,6 +91,8 @@ pub struct Rig {
     pub mirror_excludes: Arc<Mutex<Vec<Value>>>,
     /// Each `box-put` request the fake controller served, with the bytes of its `src`.
     pub puts: Puts,
+    /// The ssh targets the fake controller lists as enrolled; none refuses the listing.
+    pub targets: Targets,
     args: Vec<String>,
     port: u16,
     runner: Child,
@@ -116,13 +125,17 @@ impl Rig {
         let asleep = Arc::new(Mutex::new(Vec::new()));
         let mirror_excludes = Arc::new(Mutex::new(Vec::new()));
         let puts = Arc::new(Mutex::new(Vec::new()));
+        let targets = Arc::new(Mutex::new(Some(vec!["moor@minion".to_owned()])));
         fake_controller(
             &dir.path().join("c.sock"),
             tree.clone(),
-            Arc::clone(&open),
-            Arc::clone(&asleep),
-            Arc::clone(&mirror_excludes),
-            Arc::clone(&puts),
+            Fake {
+                open: Arc::clone(&open),
+                asleep: Arc::clone(&asleep),
+                mirror_excludes: Arc::clone(&mirror_excludes),
+                puts: Arc::clone(&puts),
+                targets: Arc::clone(&targets),
+            },
         );
         let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
         let (runner, port) = spawn(dir.path(), &args);
@@ -139,6 +152,7 @@ impl Rig {
             asleep,
             mirror_excludes,
             puts,
+            targets,
             args,
             port,
             runner,
@@ -156,6 +170,15 @@ impl Rig {
     /// The runner's state dir.
     pub fn state(&self) -> PathBuf {
         self.dir.path().join("state")
+    }
+
+    /// The home on machine `target`, which the fake controller now lists as enrolled.
+    pub fn machine(&self, target: &str) -> PathBuf {
+        let home = self.dir.path().join("remotes").join(target);
+        std::fs::create_dir_all(&home).unwrap();
+        let mut targets = self.targets.lock().unwrap();
+        targets.get_or_insert_with(Vec::new).push(target.to_owned());
+        home
     }
 
     /// Sets the free space the fake machine reports, in KiB.
@@ -324,6 +347,7 @@ fn spawn(dir: &Path, args: &[String]) -> (Child, u16) {
         .args(args)
         .env("PATH", path)
         .env("FAKE_REMOTE_HOME", dir.join("remote"))
+        .env("FAKE_REMOTES", dir.join("remotes"))
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
@@ -372,14 +396,23 @@ fn show_value(open: &[i64], asleep: &[i64]) -> Value {
 
 /// Serves `box-mirror` the way the controller does, from `tree`, with a local rsync, and
 /// `show` listing the Boxes in `open`.
-fn fake_controller(
-    socket: &Path,
-    tree: PathBuf,
+/// What the fake controller shares with the test.
+struct Fake {
     open: Arc<Mutex<Vec<i64>>>,
     asleep: Arc<Mutex<Vec<i64>>>,
     mirror_excludes: Arc<Mutex<Vec<Value>>>,
     puts: Puts,
-) {
+    targets: Targets,
+}
+
+fn fake_controller(socket: &Path, tree: PathBuf, fake: Fake) {
+    let Fake {
+        open,
+        asleep,
+        mirror_excludes,
+        puts,
+        targets,
+    } = fake;
     let listener = UnixListener::bind(socket).unwrap();
     std::thread::spawn(move || {
         for stream in listener.incoming() {
@@ -396,11 +429,14 @@ fn fake_controller(
             let req = request(&frame).unwrap();
             if req["cmd"] == "show" {
                 let value = show_value(&open.lock().unwrap(), &asleep.lock().unwrap());
-                let frame = ServerFrame::Response {
-                    id: "1".to_owned(),
-                    envelope: Response::ok("show", Some(value)),
-                };
-                writeln!(writer, "{}", serde_json::to_string(&frame).unwrap()).unwrap();
+                reply(&mut writer, Response::ok("show", Some(value)));
+                continue;
+            }
+            if req["cmd"] == "machine-targets" {
+                reply(
+                    &mut writer,
+                    targets_envelope(targets.lock().unwrap().clone()),
+                );
                 continue;
             }
             if req["cmd"] == "box-put" {
@@ -408,11 +444,7 @@ fn fake_controller(
                 let value =
                     json!({"path": "/work/x", "bytes": bytes.len(), "confirmation": "wrote"});
                 puts.lock().unwrap().push((req.clone(), bytes));
-                let frame = ServerFrame::Response {
-                    id: "1".to_owned(),
-                    envelope: Response::ok("box-put", Some(value)),
-                };
-                writeln!(writer, "{}", serde_json::to_string(&frame).unwrap()).unwrap();
+                reply(&mut writer, Response::ok("box-put", Some(value)));
                 continue;
             }
             assert_eq!(req["cmd"], "box-mirror", "{frame}");
@@ -431,13 +463,34 @@ fn fake_controller(
             let value = json!({"from": "/work", "to": dest, "files": 1, "bytes": 1,
                 "confirmation": "mirrored"});
             let envelope = Response::ok("box-mirror", Some(value));
-            let frame = ServerFrame::Response {
-                id: "1".to_owned(),
-                envelope,
-            };
-            writeln!(writer, "{}", serde_json::to_string(&frame).unwrap()).unwrap();
+            reply(&mut writer, envelope);
         }
     });
+}
+
+/// Writes one response frame carrying `envelope`.
+fn reply(writer: &mut impl Write, envelope: Response) {
+    let frame = ServerFrame::Response {
+        id: "1".to_owned(),
+        envelope,
+    };
+    writeln!(writer, "{}", serde_json::to_string(&frame).unwrap()).unwrap();
+}
+
+/// `machine-targets` answered with `targets`, or failed when there are none.
+fn targets_envelope(targets: Option<Vec<String>>) -> Response {
+    match targets {
+        Some(targets) => Response::ok("machine-targets", Some(json!({ "targets": targets }))),
+        None => Response::err(
+            "machine-targets",
+            ErrorView {
+                kind: ErrorKind::Internal,
+                message: "the store is down".to_owned(),
+                hints: Vec::new(),
+                context: Vec::new(),
+            },
+        ),
+    }
 }
 
 /// The request inside a client frame: the object that names a `cmd`.

@@ -54,13 +54,9 @@ impl Request {
         let target = |target: &BoxTarget| vec![Named::Box(target.clone())];
         let session = |id: SessionId| vec![Named::Session(id)];
         match self {
-            Self::Start(r) => [
-                Some(Named::Attach(r.name.clone())),
-                r.parent.map(Named::Session),
-            ]
-            .into_iter()
-            .flatten()
-            .collect(),
+            Self::Start(r) => std::iter::once(Named::Attach(r.name.clone()))
+                .chain(r.parent.map(Named::Session))
+                .collect(),
             Self::OpenSession(r) => [bare(&r.box_name), r.parent.map(Named::Session)]
                 .into_iter()
                 .flatten()
@@ -102,6 +98,7 @@ impl Request {
             | Self::MachineAdd(_)
             | Self::MachineRemove(_)
             | Self::MachineList(_)
+            | Self::MachineTargets {}
             | Self::LinkCode(_)
             | Self::LinkRedeem(_)
             | Self::ProxyLease(_)

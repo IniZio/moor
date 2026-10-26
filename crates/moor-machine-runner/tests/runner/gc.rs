@@ -113,3 +113,34 @@ fn a_host_mirror_of_a_closed_box_with_no_record_is_removed() {
     assert!(rig.state().join("mirrors/7").is_dir(), "open Box's mirror");
     assert!(rig.state().join("mirrors/other").is_dir(), "not a Box");
 }
+
+#[test]
+fn a_machine_of_another_user_the_runner_never_served_is_swept() {
+    let rig = reaping(RELEASE);
+    let other = rig.machine("b@other");
+    make(&other.join("moor/9"));
+    make(&other.join("moor-state/9"));
+    make(&other.join("moor/7"));
+    eventually("the other machine's orphans are gone", || {
+        !other.join("moor/9").exists() && !other.join("moor-state/9").exists()
+    });
+    assert!(other.join("moor/7/file").is_file(), "an open Box stays");
+    let released = std::fs::read_to_string(other.join("released")).unwrap();
+    assert!(released.starts_with("9 "), "{released}");
+}
+
+#[test]
+fn nothing_is_swept_while_the_controller_cannot_list_the_machines() {
+    let rig = reaping(RELEASE);
+    rig.call("sync", json!({})).unwrap();
+    std::fs::remove_file(rig.state().join("boxes/7.json")).unwrap();
+    *rig.targets.lock().unwrap() = None;
+    make(&rig.remote.join("moor/9"));
+    std::thread::sleep(Duration::from_secs(4));
+    assert!(
+        rig.remote.join("moor/9/file").is_file(),
+        "swept a partial list"
+    );
+    *rig.targets.lock().unwrap() = Some(vec!["moor@minion".to_owned()]);
+    eventually("the orphan is gone", || !rig.remote.join("moor/9").exists());
+}

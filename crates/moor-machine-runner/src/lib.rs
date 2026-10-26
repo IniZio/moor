@@ -69,7 +69,6 @@ pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
         timeout: config.hook_timeout,
         boxes: config.state_dir.join("boxes"),
         mirrors: mirrors.clone(),
-        machines: config.state_dir.join("machines"),
         reconcile: config.reconcile,
         listed: Mutex::default(),
         preparing: Mutex::default(),

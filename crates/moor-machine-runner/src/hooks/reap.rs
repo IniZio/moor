@@ -2,16 +2,17 @@
 //! lost record, a crash between a copy and its record, or a record removed by hand.
 
 use std::collections::{BTreeSet, HashSet};
-use std::io::{self, Write};
 use std::sync::PoisonError;
 use tokio::time::Instant;
 
 use moor_core::box_key::BoxKey;
+use moor_core::request::Request;
+use moor_core::view::user::MachineTargetsValue;
 use moor_core::BoxId;
 
 use moor_client::Client;
 
-use super::{open_boxes, read, tail, Hooks};
+use super::{open_boxes, tail, Hooks};
 use crate::exec;
 
 /// Shell lines that give a command a state dir of its own and a `TMPDIR` inside it, so what the
@@ -32,21 +33,15 @@ fn box_id(name: &str) -> Option<i64> {
 
 impl Hooks {
     /// Cleans up every closed Box that has no record: its host mirror at once, and its files on
-    /// each known machine at most once per `reconcile` period. The open Boxes and the records are
+    /// each machine the controller lists at most once per `reconcile` period; a pass skips when
+    /// that list cannot be had, rather than sweep fewer machines as though they were all. The open Boxes and the records are
     /// read after the listing: a Box that started meanwhile has files only once it is open.
     pub(super) async fn reconcile(&self, client: &Client) {
         let host = self.host_ids();
-        let mut found: Vec<(String, BTreeSet<i64>)> = Vec::new();
-        if self.listing_due() {
-            for target in self.targets() {
-                match self.listing(&target).await {
-                    Ok(ids) => found.push((target, ids)),
-                    Err(e) => {
-                        eprintln!("moor-machine-runner: cannot list the files on {target}: {e}");
-                    }
-                }
-            }
-        }
+        let found = match self.machine_files(client).await {
+            Ok(found) => found,
+            Err(e) => return eprintln!("moor-machine-runner: reconcile skipped: {e}"),
+        };
         let client = client.clone();
         let open = match tokio::task::spawn_blocking(move || open_boxes(&client)).await {
             Ok(Ok(open)) => open,
@@ -70,6 +65,29 @@ impl Hooks {
                 }
             }
         }
+    }
+
+    /// The Box ids named on each machine the controller lists, when a listing is due; none
+    /// otherwise. A machine that cannot be listed is logged and left for the next pass.
+    ///
+    /// # Errors
+    /// Why the controller's list of machines could not be had.
+    async fn machine_files(&self, client: &Client) -> Result<Vec<(String, BTreeSet<i64>)>, String> {
+        let mut found = Vec::new();
+        if !self.listing_due() {
+            return Ok(found);
+        }
+        let client = client.clone();
+        let targets = tokio::task::spawn_blocking(move || machine_targets(&client))
+            .await
+            .map_err(|e| e.to_string())??;
+        for target in targets {
+            match self.listing(&target).await {
+                Ok(ids) => found.push((target, ids)),
+                Err(e) => eprintln!("moor-machine-runner: cannot list the files on {target}: {e}"),
+            }
+        }
+        Ok(found)
     }
 
     /// Whether the machines' files are due for a listing; marks it done when they are.
@@ -140,34 +158,21 @@ impl Hooks {
             )),
         }
     }
+}
 
-    /// Every machine the runner has served or holds a record for.
-    fn targets(&self) -> BTreeSet<String> {
-        let mut all: BTreeSet<String> = std::fs::read_to_string(&self.machines)
-            .unwrap_or_default()
-            .lines()
-            .map(str::to_owned)
-            .collect();
-        for id in self.prepared().unwrap_or_default() {
-            if let Ok(Some(record)) = read(&self.record(id)) {
-                all.insert(record.ssh);
-            }
-        }
-        all
+/// The ssh target of every enrolled machine, whichever user it belongs to.
+fn machine_targets(client: &Client) -> Result<BTreeSet<String>, String> {
+    let response = client
+        .request(Request::MachineTargets {}, |_| {})
+        .map_err(|e| format!("the controller did not list the machines: {e}"))?;
+    if let Some(error) = response.error {
+        return Err(format!(
+            "the controller refused to list the machines: {}",
+            error.message
+        ));
     }
-
-    /// Keeps `target` among the machines to look through, past the loss of every record.
-    pub(super) fn remember(&self, target: &str) -> io::Result<()> {
-        if self.targets().contains(target) {
-            return Ok(());
-        }
-        if let Some(dir) = self.machines.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.machines)?;
-        writeln!(file, "{target}")
-    }
+    let value = response.value.unwrap_or_default();
+    let listed: MachineTargetsValue = serde_json::from_value(value)
+        .map_err(|e| format!("the controller's machine list is malformed: {e}"))?;
+    Ok(listed.targets.into_iter().collect())
 }

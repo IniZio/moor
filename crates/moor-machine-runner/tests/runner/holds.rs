@@ -24,6 +24,8 @@ fn concurrently(
     rig: &Arc<Rig>,
     calls: Vec<(&'static str, &'static str, Value)>,
 ) -> Vec<(Result<Value, String>, Vec<String>, Duration)> {
+    let ids = calls.iter().map(|(id, _, _)| id.parse::<i64>().unwrap());
+    rig.open.lock().unwrap().extend(ids);
     let started = Instant::now();
     let handles: Vec<_> = calls
         .into_iter()

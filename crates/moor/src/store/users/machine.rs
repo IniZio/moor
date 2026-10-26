@@ -46,6 +46,14 @@ impl Store {
         machines_in(&self.reader()?, user)
     }
 
+    /// The distinct ssh targets of every user's machines, sorted.
+    pub(crate) fn machine_targets(&self) -> Result<Vec<String>, StoreError> {
+        let conn = self.reader()?;
+        let mut stmt = conn.prepare("SELECT DISTINCT ssh FROM user_machines ORDER BY ssh")?;
+        let rows = stmt.query_map([], |r| r.get(0))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
     /// Picks one of `user`'s machines and a free slot on it for `box_id` per `want` and records
     /// the outcome: the hold with the patterns its syncs leave alone, or `machine_left_out`. `machine_attached` comes from the supervisor
     /// once the forwards are open. One write transaction, so two starts never share a slot.
