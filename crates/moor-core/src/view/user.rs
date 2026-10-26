@@ -58,6 +58,13 @@ pub struct MachineListValue {
     pub machines: Vec<MachineView>,
 }
 
+/// Value of `machine-targets`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MachineTargetsValue {
+    /// The distinct ssh targets of every user's machines, sorted.
+    pub targets: Vec<String>,
+}
+
 /// Value of `machine-add` and `machine-remove`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MachineChangeValue {

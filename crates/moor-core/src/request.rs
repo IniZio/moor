@@ -110,6 +110,8 @@ pub enum Request {
     MachineRemove(MachineRemoveReq),
     /// List the caller's user's machines.
     MachineList(AsReq),
+    /// List the ssh target of every user's machines; the operator's only.
+    MachineTargets {},
     /// Mint a one-time code that links another identity to the caller's user.
     LinkCode(AsReq),
     /// Link the caller's identity to the user that minted a code.
@@ -170,6 +172,7 @@ impl Request {
             Self::MachineAdd(_) => "machine-add",
             Self::MachineRemove(_) => "machine-remove",
             Self::MachineList(_) => "machine-list",
+            Self::MachineTargets {} => "machine-targets",
             Self::LinkCode(_) => "link-code",
             Self::LinkRedeem(_) => "link-redeem",
             Self::ProxyLease(_) => "proxy-lease",

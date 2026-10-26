@@ -1,5 +1,6 @@
 //! Command operations: one op per request.
 
+use moor_core::view::user::MachineTargetsValue;
 use moor_core::{ErrorKind, Request};
 
 use crate::cx::Cx;
@@ -77,6 +78,9 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
             ErrorKind::Usage,
             "as acts as an identity a socket checks, so only the controller socket serves it",
         )),
+        Request::MachineTargets {} => to_value(&MachineTargetsValue {
+            targets: cx.store()?.machine_targets()?,
+        }),
         Request::Sessions(r) => to_value(&sessions::run(cx, &r)?),
         Request::Close(r) => to_value(&close::run(cx, &r)?),
         Request::Gate(r) => to_value(&gate::run(cx, &r)?),

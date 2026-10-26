@@ -176,11 +176,12 @@ released.
 
 The sweep also cleans up Boxes the runner has no record of, such as after the
 state dir was lost, a crash between a copy and its record, or a record removed
-by hand. At start and then every `--reconcile-secs` (default 60), for each
-machine the runner has served or holds a record for (it keeps their ssh targets
-in `<state dir>/machines`; `machine-list` names one user's machines, so it
-cannot list them all), one ssh call lists the entries under `~/moor` and
-`~/moor-state`. Each entry named by a plain decimal Box id that is not open and
+by hand. At start and then every `--reconcile-secs` (default 60), the runner
+asks the controller for every enrolled machine's ssh target, whichever user it
+belongs to (`machine-targets`, which only the operator socket may send). If the
+controller cannot answer, that pass is skipped and logged; it never sweeps a
+shorter list as though it were all. For each listed machine, one ssh call lists
+the entries under `~/moor` and `~/moor-state`. Each entry named by a plain decimal Box id that is not open and
 has no record gets `release` run with `MOOR_BOX`, `MOOR_STATE_DIR` and `TMPDIR`
 set and no `MOOR_SLOT`, `MOOR_PORT_OFFSET` or `MOOR_FACT_*`, then both
 directories removed. Mirrors under `<state dir>/mirrors` of closed Boxes with no

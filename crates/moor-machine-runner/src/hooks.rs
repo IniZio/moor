@@ -49,7 +49,7 @@ pub(crate) struct Hooks {
     pub(crate) suspend: Option<String>,
     /// Free GB a machine must have before a Box is prepared or synced there; 0 disables.
     pub(crate) min_free_gb: u64,
-    /// Client for the controller's operator socket, to list the Boxes asleep.
+    /// Client for the controller's operator socket, to list the Boxes asleep and the machines.
     pub(crate) client: Client,
     /// How long either may run.
     pub(crate) timeout: Duration,
@@ -57,8 +57,6 @@ pub(crate) struct Hooks {
     pub(crate) boxes: PathBuf,
     /// Parent of the per-Box host mirrors, which release removes.
     pub(crate) mirrors: PathBuf,
-    /// File of the machines the runner has served, one target per line.
-    pub(crate) machines: PathBuf,
     /// How often to list the files on each machine.
     pub(crate) reconcile: Duration,
     /// When the machines' files were last listed.
@@ -139,8 +137,6 @@ impl Hooks {
         };
         let mut record = Record::new(caller, facts, true);
         record.evicted = old.is_some_and(|r| r.evicted);
-        self.remember(&caller.ssh)
-            .map_err(|e| format!("could not keep the machine: {e}"))?;
         write(&path, &record).map_err(|e| format!("could not keep the Box's facts: {e}"))?;
         Ok(record.facts)
     }
@@ -155,8 +151,6 @@ impl Hooks {
             return Ok(());
         }
         let record = Record::new(caller, Facts::new(), false);
-        self.remember(&caller.ssh)
-            .map_err(|e| format!("could not keep the machine: {e}"))?;
         write(&path, &record).map_err(|e| format!("could not note the Box: {e}"))
     }
 
