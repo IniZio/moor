@@ -11,7 +11,7 @@ use crate::vault::Vault;
 pub(super) mod front_leases;
 pub(super) mod machine;
 mod mcp;
-mod mcp_oauth;
+pub(super) mod mcp_oauth;
 
 /// The user `identity` is linked to, on any connection.
 fn user_of_in(conn: &Connection, identity: &Identity) -> Result<Option<UserId>, StoreError> {

@@ -7,6 +7,7 @@ use std::time::Duration;
 use super::drain::Drain;
 use super::{log, Sink};
 use crate::env::Env;
+use crate::vault::Vault;
 use crate::Moor;
 
 /// Settles every open Box each `every` on a detached thread, until `drain` begins.
@@ -21,6 +22,23 @@ pub(super) fn spawn(env: &Env, every: Duration, drain: &Arc<Drain>, sink: &Sink)
             Err(e) => vec![e.error.to_string()],
         }
     });
+}
+
+/// Refreshes users' OAuth MCP access tokens near expiry each `every`, on its own thread so a
+/// slow authorization server never delays a settle pass.
+pub(super) fn spawn_oauth(
+    env: &Env,
+    vault: &Arc<Vault>,
+    every: Duration,
+    drain: &Arc<Drain>,
+    sink: &Sink,
+) {
+    passes(
+        every,
+        drain,
+        sink,
+        Moor::oauth_refresher(env, Arc::clone(vault)),
+    );
 }
 
 /// Runs `pass` each `every` on a detached thread, logging each message it returns.

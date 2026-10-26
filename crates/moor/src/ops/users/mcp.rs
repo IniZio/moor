@@ -11,10 +11,10 @@ use moor_core::ErrorKind;
 use super::{set_secret, to_value};
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::store::Store;
+use crate::store::{SignIn, Store};
 use crate::vault::Vault;
 
-pub(super) mod oauth;
+pub(crate) mod oauth;
 
 /// `mcp-add`: check the server and store `key` as its secret, or with no key start an OAuth
 /// sign-in when the server asks for one, then list it.
@@ -75,12 +75,16 @@ pub(super) fn remove(
 /// `mcp-list`: names, URLs, whether a key is stored and when a sign-in expires; never a key.
 pub(super) fn list(store: &Store, user: UserId) -> Result<serde_json::Value, CommandError> {
     let have = held(store, user)?;
-    let signed = store.user_mcp_oauth_expiry(user)?;
+    let signed = store.user_mcp_oauth_state(user)?;
     let servers = store
         .user_mcp(user)?
         .into_iter()
         .map(|s| McpServerView {
-            signed_in: signed.get(&s.name).copied(),
+            signed_in: match signed.get(&s.name) {
+                Some(SignIn::Until(at)) => Some(*at),
+                _ => None,
+            },
+            sign_in_again: signed.get(&s.name) == Some(&SignIn::Ended),
             has_key: have.contains(&s.secret()),
             secret: s.secret(),
             machine: s.machine,
@@ -110,12 +114,22 @@ pub(crate) fn for_box(
 ) -> Result<BoxMcp, CommandError> {
     let shared = &cx.config().mcp_servers;
     let Some(user) = user else {
-        return Ok(box_mcp(shared, &[], &BTreeSet::new(), machine));
+        return Ok(box_mcp(
+            shared,
+            (&[], &BTreeSet::new()),
+            &BTreeSet::new(),
+            machine,
+        ));
     };
     let store = cx.store()?;
+    let ended = store
+        .user_mcp_oauth_state(user)?
+        .into_iter()
+        .filter_map(|(name, s)| (s == SignIn::Ended).then_some(name))
+        .collect();
     Ok(box_mcp(
         shared,
-        &store.user_mcp(user)?,
+        (&store.user_mcp(user)?, &ended),
         &held(store, user)?,
         machine,
     ))

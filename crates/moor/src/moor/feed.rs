@@ -31,6 +31,25 @@ impl Moor {
         Ok(row.and_then(|r| r.parent).map(SessionId::new))
     }
 
+    /// A pass that refreshes users' OAuth MCP access tokens near expiry and returns lines to
+    /// log. The pass keeps each server's retry backoff from one run to the next.
+    pub(crate) fn oauth_refresher(
+        env: &crate::env::Env,
+        vault: std::sync::Arc<crate::vault::Vault>,
+    ) -> impl Fn(&dyn Fn() -> bool) -> Vec<String> + Send + 'static {
+        let env = env.clone();
+        let retries = std::sync::Mutex::new(ops::users::mcp::oauth::refresh::Retries::default());
+        move |_| match Self::from_env(&env) {
+            Ok(moor) => {
+                let mut retries = retries
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                ops::users::mcp::oauth::refresh::refresh_due(&moor.cx, &vault, &mut retries)
+            }
+            Err(e) => vec![e.error.to_string()],
+        }
+    }
+
     /// Settle every open Box once, as `start` does; returns failure and warning messages to log.
     ///
     /// Autosleep runs with it, so an agent idle past its limit sleeps without a client. Each
