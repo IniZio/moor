@@ -3,6 +3,7 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::time::Duration;
 
 use clap::Parser;
 use moor_machine_runner::{serve, Config};
@@ -26,6 +27,19 @@ struct Args {
     /// A capped resource each machine has, as NAME=CAP; repeat for more.
     #[arg(long = "resource", value_name = "NAME=CAP", value_parser = resource)]
     resources: Vec<(String, usize)>,
+    /// Command run on the machine, in the Box's copy, before a Box's first exec or
+    /// machine_info; its last stdout line is a JSON object of the Box's facts.
+    #[arg(long, value_name = "CMD")]
+    prepare: Option<String>,
+    /// Command run on the machine, in the Box's copy, once a prepared Box is no longer open.
+    #[arg(long, value_name = "CMD")]
+    release: Option<String>,
+    /// Seconds prepare or release may run.
+    #[arg(long, default_value_t = 600, value_parser = clap::value_parser!(u64).range(1..))]
+    hook_timeout_secs: u64,
+    /// Seconds between looks for prepared Boxes that are no longer open.
+    #[arg(long, default_value_t = 60, value_parser = clap::value_parser!(u64).range(1..))]
+    sweep_secs: u64,
 }
 
 /// Parses `NAME=CAP`, with CAP at least 1.
@@ -60,6 +74,10 @@ async fn main() -> ExitCode {
         state_dir: args.state_dir,
         service_host: args.service_host,
         resources: args.resources.into_iter().collect(),
+        prepare: args.prepare,
+        release: args.release,
+        hook_timeout: Duration::from_secs(args.hook_timeout_secs),
+        sweep: Duration::from_secs(args.sweep_secs),
     };
     match serve(listener, config).await {
         Ok(()) => ExitCode::SUCCESS,

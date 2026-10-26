@@ -9,8 +9,6 @@ use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 use tokio::sync::oneshot;
 
-use crate::caller::Caller;
-
 /// Timeout when the call names none.
 pub(crate) const DEFAULT_TIMEOUT_SECS: u64 = 600;
 /// Longest timeout a call may ask for.
@@ -108,13 +106,18 @@ impl Tail {
     }
 }
 
-/// Runs `command` on the caller's machine within `timeout`.
-pub(crate) async fn run(
-    caller: &Caller,
-    command: &str,
-    timeout: Duration,
-) -> io::Result<ExecOutput> {
-    let script = format!("cd ~/{} && {command}", caller.remote_dir());
+/// `body` after exporting each of `env`, as one shell script.
+pub(crate) fn script(env: &[(String, String)], body: &str) -> String {
+    let exports: String = env
+        .iter()
+        .map(|(k, v)| format!("export {k}={}; ", quote(v)))
+        .collect();
+    format!("{exports}{body}")
+}
+
+/// Runs `script` at the ssh target `ssh` through the login shell, within `timeout`; the script
+/// ends when this call does.
+pub(crate) async fn run(ssh: &str, script: &str, timeout: Duration) -> io::Result<ExecOutput> {
     let mut end = String::from("MOOR_END");
     while script.lines().any(|line| line == end) {
         end.push('_');
@@ -122,7 +125,7 @@ pub(crate) async fn run(
     let remote = format!("exec /bin/sh -c '{WRAPPER}' 3<<'{end}'\n{script}\n{end}\n");
     let (mut reader, writer) = io::pipe()?;
     let mut child = Command::new("ssh")
-        .args(["-o", "BatchMode=yes", "--", &caller.ssh, &remote])
+        .args(["-o", "BatchMode=yes", "--", ssh, &remote])
         .stdin(Stdio::piped())
         .stdout(writer.try_clone()?)
         .stderr(writer)
@@ -161,6 +164,11 @@ pub(crate) async fn run(
         output: String::from_utf8_lossy(&tail.bytes).into_owned(),
         truncated: tail.cut,
     })
+}
+
+/// `s` as one single-quoted word for a POSIX shell.
+fn quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', r"'\''"))
 }
 
 /// Whether `s` holds a `'`.

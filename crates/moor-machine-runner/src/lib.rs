@@ -3,7 +3,9 @@
 //! The Box's Proxy routes `machine.moor.internal` here and names the caller in four headers:
 //! the Box id, the machine's name, its ssh target and the Box's slot on it. `sync` mirrors the
 //! Box's work tree onto the machine; `exec` runs a command there, in that copy, holding any
-//! capped resources it names; `machine_info` says which slot and ports the Box has.
+//! capped resources it names; `machine_info` says which slot and ports the Box has. The
+//! operator's `prepare` and `release` commands set up and clean up per-Box things on the
+//! machine.
 
 use std::collections::{BTreeMap, HashMap};
 use std::io;
@@ -28,11 +30,13 @@ use tokio::net::TcpListener;
 use crate::caller::Caller;
 use crate::exec::{ExecArgs, ExecOutput};
 use crate::holds::Holds;
+use crate::hooks::{Facts, Hooks};
 use crate::sync::SyncOutput;
 
 mod caller;
 mod exec;
 mod holds;
+mod hooks;
 mod sync;
 
 /// What the runner needs to serve.
@@ -46,6 +50,14 @@ pub struct Config {
     pub service_host: String,
     /// Units of each capped resource one machine has, such as `build` = 1.
     pub resources: BTreeMap<String, usize>,
+    /// Command run on the machine before a Box's first `exec` or `machine_info`.
+    pub prepare: Option<String>,
+    /// Command run on the machine once a prepared Box is no longer open.
+    pub release: Option<String>,
+    /// How long `prepare` or `release` may run.
+    pub hook_timeout: Duration,
+    /// How often to look for prepared Boxes that are no longer open.
+    pub sweep: Duration,
 }
 
 /// Where a Box is on its machine.
@@ -60,6 +72,8 @@ struct MachineInfo {
     slot: u16,
     /// Add this to a repo's port for the Box's port on the machine: 10 times the slot.
     port_offset: u32,
+    /// What the machine's operator set up for this Box, such as its own device.
+    facts: Facts,
 }
 
 /// Serves MCP over streamable HTTP on `listener` until accepting fails.
@@ -67,12 +81,31 @@ struct MachineInfo {
 /// # Errors
 /// Returns the error that stopped the listener.
 pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
+    let mirrors = config.state_dir.join("mirrors");
+    let hooks = Arc::new(Hooks {
+        prepare: config.prepare,
+        release: config.release,
+        timeout: config.hook_timeout,
+        boxes: config.state_dir.join("boxes"),
+        mirrors: mirrors.clone(),
+        preparing: Mutex::default(),
+    });
     let runner = Runner {
         client: Client::new(&config.socket),
-        mirrors: config.state_dir.join("mirrors"),
+        mirrors,
         syncing: Arc::default(),
         holds: Arc::new(Holds::new(config.resources)),
+        hooks: Arc::clone(&hooks),
     };
+    let client = runner.client.clone();
+    tokio::spawn(async move {
+        let mut every = tokio::time::interval(config.sweep);
+        every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            every.tick().await;
+            hooks.sweep(&client).await;
+        }
+    });
     let http = StreamableHttpServerConfig::default()
         .with_allowed_hosts([
             "localhost",
@@ -109,6 +142,8 @@ struct Runner {
     syncing: Arc<Mutex<HashMap<i64, Arc<tokio::sync::Mutex<()>>>>>,
     /// The capped resources and who holds them, shared by every call.
     holds: Arc<Holds>,
+    /// The operator's per-Box commands and the facts they left.
+    hooks: Arc<Hooks>,
 }
 
 #[tool_router]
@@ -142,27 +177,32 @@ impl Runner {
 
     /// Says which slot the Box has on its machine and how its ports shift.
     #[tool(
-        description = "Where this Box is on the attached machine: its slot and port_offset. \
-                       The machine is shared, so run your dev servers there on the repo's port \
-                       plus port_offset; that same port number reaches them from the Box."
+        description = "Where this Box is on the attached machine: its slot, port_offset and \
+                       facts. The machine is shared, so run your dev servers there on the \
+                       repo's port plus port_offset; that same port number reaches them from \
+                       the Box. facts are what the machine set up for this Box alone; exec \
+                       sees each as env MOOR_FACT_<KEY>."
     )]
     async fn machine_info(
         &self,
         Extension(parts): Extension<http::request::Parts>,
     ) -> Result<Json<MachineInfo>, ErrorData> {
         let caller = Caller::from_headers(&parts.headers)?;
+        let facts = self.hooks.facts(&caller).await.map_err(|e| internal(&e))?;
         Ok(Json(MachineInfo {
             box_id: caller.box_id.get(),
             machine: caller.machine,
             slot: caller.slot,
             port_offset: 10 * u32::from(caller.slot),
+            facts,
         }))
     }
 
     /// Runs a shell command on the machine, in the synced copy of the work tree.
     #[tool(
         description = "Run a shell command on the attached machine, in ~/moor/<box id> (call \
-                       sync first), through the machine user's login shell. Returns the exit \
+                       sync first), through the machine user's login shell, with each of \
+                       machine_info's facts as env MOOR_FACT_<KEY>. Returns the exit \
                        code and the last 64 KiB of combined stdout and stderr. timeout_secs \
                        defaults to 600, at most 3600; on timeout the command is killed. hold \
                        names capped resources of the machine, such as build, to hold one unit \
@@ -212,12 +252,15 @@ impl Runner {
             }
         };
         let run = async {
+            let facts = self.hooks.facts(&caller).await.map_err(|e| internal(&e))?;
+            let body = format!("cd ~/{} && {}", caller.remote_dir(), args.command);
+            let script = exec::script(&hooks::fact_env(&facts), &body);
             let _held = self
                 .holds
                 .take(&caller, wanted, Duration::from_secs(wait), waiting)
                 .await
                 .map_err(|e| internal(&e))?;
-            exec::run(&caller, &args.command, timeout)
+            exec::run(&caller.ssh, &script, timeout)
                 .await
                 .map(Json)
                 .map_err(|e| internal(&format!("could not run ssh: {e}")))

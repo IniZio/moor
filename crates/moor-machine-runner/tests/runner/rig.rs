@@ -4,6 +4,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use moor_core::controller::{ServerFrame, PROTOCOL};
@@ -59,11 +60,14 @@ pub fn caller(
 }
 
 pub struct Rig {
-    _dir: tempfile::TempDir,
+    dir: tempfile::TempDir,
     /// The fake Box's work tree, which the fake controller mirrors.
     pub tree: PathBuf,
     /// The fake machine user's home.
     pub remote: PathBuf,
+    /// The Box ids the fake controller lists as open.
+    pub open: Arc<Mutex<Vec<i64>>>,
+    args: Vec<String>,
     port: u16,
     runner: Child,
     agent: ureq::Agent,
@@ -71,11 +75,17 @@ pub struct Rig {
 
 impl Rig {
     pub fn start() -> Self {
-        Self::with_resources(&[])
+        Self::with_args(&[])
     }
 
     /// A runner started with one `--resource` flag per entry, such as `build=1`.
     pub fn with_resources(resources: &[&str]) -> Self {
+        let args: Vec<&str> = resources.iter().flat_map(|r| ["--resource", r]).collect();
+        Self::with_args(&args)
+    }
+
+    /// A runner started with `args` besides the ones every rig passes.
+    pub fn with_args(args: &[&str]) -> Self {
         let dir = moor_testkit::short_tempdir("mrun").unwrap();
         let bin = dir.path().join("bin");
         moor_testkit::write_host_guards(&bin).unwrap();
@@ -84,38 +94,37 @@ impl Rig {
         let remote = dir.path().join("remote");
         std::fs::create_dir_all(&tree).unwrap();
         std::fs::create_dir_all(&remote).unwrap();
-        let socket = dir.path().join("c.sock");
-        fake_controller(&socket, tree.clone());
-        let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
-        let mut runner = Command::new(env!("CARGO_BIN_EXE_moor-machine-runner"))
-            .args(["--listen", "127.0.0.1:0", "--socket"])
-            .arg(&socket)
-            .arg("--state-dir")
-            .arg(dir.path().join("state"))
-            .args(resources.iter().flat_map(|r| ["--resource", r]))
-            .env("PATH", path)
-            .env("FAKE_REMOTE_HOME", &remote)
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        let mut line = String::new();
-        BufReader::new(runner.stderr.take().unwrap())
-            .read_line(&mut line)
-            .unwrap();
-        let port = line.trim().rsplit(':').next().unwrap().parse().unwrap();
+        let open = Arc::new(Mutex::new(vec![7]));
+        fake_controller(&dir.path().join("c.sock"), tree.clone(), Arc::clone(&open));
+        let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
+        let (runner, port) = spawn(dir.path(), &args);
         let agent = ureq::Agent::config_builder()
             .http_status_as_error(false)
             .timeout_global(Some(Duration::from_secs(60)))
             .build()
             .into();
         Self {
-            _dir: dir,
+            dir,
             tree,
             remote,
+            open,
+            args,
             port,
             runner,
             agent,
         }
+    }
+
+    /// Stops the runner and starts a new one with the same flags and state dir.
+    pub fn restart(&mut self) {
+        let _ = self.runner.kill();
+        let _ = self.runner.wait();
+        (self.runner, self.port) = spawn(self.dir.path(), &self.args);
+    }
+
+    /// The runner's state dir.
+    pub fn state(&self) -> PathBuf {
+        self.dir.path().join("state")
     }
 
     /// The Box's copy on the fake machine.
@@ -237,6 +246,28 @@ impl Rig {
     }
 }
 
+/// Starts a runner in the rig at `dir`; it and the port it listens on.
+fn spawn(dir: &Path, args: &[String]) -> (Child, u16) {
+    let path = format!("{}:{}", dir.join("bin").display(), std::env::var("PATH").unwrap());
+    let mut runner = Command::new(env!("CARGO_BIN_EXE_moor-machine-runner"))
+        .args(["--listen", "127.0.0.1:0", "--socket"])
+        .arg(dir.join("c.sock"))
+        .arg("--state-dir")
+        .arg(dir.join("state"))
+        .args(args)
+        .env("PATH", path)
+        .env("FAKE_REMOTE_HOME", dir.join("remote"))
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stderr = BufReader::new(runner.stderr.take().unwrap());
+    let mut line = String::new();
+    stderr.read_line(&mut line).unwrap();
+    let port = line.trim().rsplit(':').next().unwrap().parse().unwrap();
+    std::thread::spawn(move || std::io::copy(&mut stderr, &mut std::io::sink()));
+    (runner, port)
+}
+
 impl Drop for Rig {
     fn drop(&mut self) {
         let _ = self.runner.kill();
@@ -256,8 +287,9 @@ fn initialize() -> Value {
     })
 }
 
-/// Serves `box-mirror` the way the controller does, from `tree`, with a local rsync.
-fn fake_controller(socket: &Path, tree: PathBuf) {
+/// Serves `box-mirror` the way the controller does, from `tree`, with a local rsync, and
+/// `show` listing the Boxes in `open`.
+fn fake_controller(socket: &Path, tree: PathBuf, open: Arc<Mutex<Vec<i64>>>) {
     let listener = UnixListener::bind(socket).unwrap();
     std::thread::spawn(move || {
         for stream in listener.incoming() {
@@ -272,6 +304,17 @@ fn fake_controller(socket: &Path, tree: PathBuf) {
             reader.read_line(&mut line).unwrap();
             let frame: Value = serde_json::from_str(&line).unwrap();
             let req = request(&frame).unwrap();
+            if req["cmd"] == "show" {
+                let ids = open.lock().unwrap().clone();
+                let boxes: Vec<Value> = ids.iter().map(|id| json!({ "id": id })).collect();
+                let value = json!({ "boxes": boxes, "box": null });
+                let frame = ServerFrame::Response {
+                    id: "1".to_owned(),
+                    envelope: Response::ok("show", Some(value)),
+                };
+                writeln!(writer, "{}", serde_json::to_string(&frame).unwrap()).unwrap();
+                continue;
+            }
             assert_eq!(req["cmd"], "box-mirror", "{frame}");
             assert_eq!(req["id"], 7, "{frame}");
             let dest = req["dest"].as_str().unwrap().to_owned();

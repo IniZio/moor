@@ -1,0 +1,263 @@
+//! Per-Box setup and clean-up on the machine: operator commands the runner runs over ssh.
+//!
+//! `prepare` runs before a Box's first `exec` or `machine_info` and prints the Box's facts,
+//! which the runner keeps in `<state dir>/boxes/<id>.json`. A sweep runs `release` for each
+//! Box with a record that the controller no longer lists as open, then drops the record and
+//! the Box's host mirror. A failed step keeps everything, so the next call or sweep retries.
+
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::io;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
+
+use moor_client::Client;
+use moor_core::request::{Request, ShowReq};
+use serde::{Deserialize, Serialize};
+
+use crate::caller::Caller;
+use crate::exec::{self, ExecOutput};
+
+/// What `prepare` printed about a Box, such as `device`.
+pub(crate) type Facts = BTreeMap<String, String>;
+
+/// Lines of a failed command's output quoted in its error.
+const TAIL_LINES: usize = 20;
+
+/// The operator's commands and where the runner keeps what they leave.
+pub(crate) struct Hooks {
+    /// Run on the machine before a Box's first call that needs its facts.
+    pub(crate) prepare: Option<String>,
+    /// Run on the machine once the Box is no longer open.
+    pub(crate) release: Option<String>,
+    /// How long either may run.
+    pub(crate) timeout: Duration,
+    /// Parent of the per-Box records.
+    pub(crate) boxes: PathBuf,
+    /// Parent of the per-Box host mirrors, which release removes.
+    pub(crate) mirrors: PathBuf,
+    /// One lock per Box id, so two calls of a Box never prepare it twice.
+    pub(crate) preparing: Mutex<HashMap<i64, Arc<tokio::sync::Mutex<()>>>>,
+}
+
+/// What the runner keeps about a prepared Box: where it is, for `release`, and its facts.
+#[derive(Serialize, Deserialize)]
+struct Record {
+    /// The machine's ssh target.
+    ssh: String,
+    /// The Box's slot on the machine.
+    slot: u16,
+    /// What `prepare` printed.
+    facts: Facts,
+}
+
+impl Hooks {
+    /// The caller's facts, running `prepare` first if the Box has no record yet.
+    pub(crate) async fn facts(&self, caller: &Caller) -> Result<Facts, String> {
+        let id = caller.box_id.get();
+        let lock = {
+            let mut locks = self
+                .preparing
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            Arc::clone(locks.entry(id).or_default())
+        };
+        let _held = lock.lock().await;
+        let path = self.record(id);
+        if let Some(record) = read(&path)? {
+            return Ok(record.facts);
+        }
+        let facts = match &self.prepare {
+            None => Facts::new(),
+            Some(command) => {
+                let wrapped = format!(
+                    "f=$(mktemp) || exit 1; ( {command}\n ) >\"$f\"; rc=$?; cat \"$f\"; \
+                     rm -f \"$f\"; exit $rc"
+                );
+                let none = Facts::new();
+                let out = self.on_machine(id, &caller.ssh, caller.slot, &none, &wrapped);
+                let out = out.await.map_err(|e| format!("prepare: {e}"))?;
+                let last = out.output.lines().rev().find(|l| !l.trim().is_empty());
+                serde_json::from_str(last.unwrap_or_default()).map_err(|e| {
+                    format!(
+                        "prepare's last line is not a JSON object of strings ({e}): {}",
+                        tail(&out)
+                    )
+                })?
+            }
+        };
+        let record = Record {
+            ssh: caller.ssh.clone(),
+            slot: caller.slot,
+            facts,
+        };
+        write(&path, &record).map_err(|e| format!("could not keep the Box's facts: {e}"))?;
+        Ok(record.facts)
+    }
+
+    /// Releases every Box with a record that the controller does not list as open.
+    pub(crate) async fn sweep(&self, client: &Client) {
+        let prepared = match self.prepared() {
+            Ok(ids) if ids.is_empty() => return,
+            Ok(ids) => ids,
+            Err(e) => return eprintln!("moor-machine-runner: cannot read the Box records: {e}"),
+        };
+        let client = client.clone();
+        let open = match tokio::task::spawn_blocking(move || open_boxes(&client)).await {
+            Ok(Ok(open)) => open,
+            Ok(Err(e)) => return eprintln!("moor-machine-runner: sweep: {e}"),
+            Err(e) => return eprintln!("moor-machine-runner: sweep: {e}"),
+        };
+        for id in prepared.into_iter().filter(|id| !open.contains(id)) {
+            if let Err(e) = self.release(id).await {
+                eprintln!("moor-machine-runner: release of Box {id} failed, retrying: {e}");
+            }
+        }
+    }
+
+    /// Runs `release` for Box `id`, then drops its host mirror and its record.
+    async fn release(&self, id: i64) -> Result<(), String> {
+        let path = self.record(id);
+        let Some(record) = read(&path)? else {
+            return Ok(());
+        };
+        if let Some(command) = &self.release {
+            let out = self.on_machine(id, &record.ssh, record.slot, &record.facts, command);
+            out.await?;
+        }
+        let gone = |r: io::Result<()>| match r {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e.to_string()),
+            _ => Ok(()),
+        };
+        gone(std::fs::remove_dir_all(self.mirrors.join(id.to_string())))?;
+        gone(std::fs::remove_file(&path))
+    }
+
+    /// Runs `command` on the machine in the Box's copy with the hook env; its output when it
+    /// exits 0, else an error quoting the output's tail.
+    async fn on_machine(
+        &self,
+        id: i64,
+        ssh: &str,
+        slot: u16,
+        facts: &Facts,
+        command: &str,
+    ) -> Result<ExecOutput, String> {
+        let mut env = vec![
+            ("MOOR_BOX".to_owned(), id.to_string()),
+            ("MOOR_SLOT".to_owned(), slot.to_string()),
+            ("MOOR_PORT_OFFSET".to_owned(), (10 * u32::from(slot)).to_string()),
+        ];
+        env.extend(fact_env(facts));
+        let dir = format!("moor/{id}");
+        let body = format!("mkdir -p ~/{dir} && cd ~/{dir} && {command}");
+        let out = exec::run(ssh, &exec::script(&env, &body), self.timeout)
+            .await
+            .map_err(|e| format!("could not run ssh: {e}"))?;
+        match out.exit_code {
+            Some(0) => Ok(out),
+            _ if out.timed_out => Err(format!("timed out: {}", tail(&out))),
+            code => Err(format!("exit {code:?}: {}", tail(&out))),
+        }
+    }
+
+    /// The record of Box `id`.
+    fn record(&self, id: i64) -> PathBuf {
+        self.boxes.join(format!("{id}.json"))
+    }
+
+    /// The ids of the Boxes with a record.
+    fn prepared(&self) -> io::Result<Vec<i64>> {
+        let entries = match std::fs::read_dir(&self.boxes) {
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+            entries => entries?,
+        };
+        let mut ids = Vec::new();
+        for entry in entries {
+            let name = entry?.file_name();
+            let id = name.to_str().and_then(|n| n.strip_suffix(".json"));
+            ids.extend(id.and_then(|n| n.parse::<i64>().ok()));
+        }
+        Ok(ids)
+    }
+}
+
+/// `facts` as env: `MOOR_FACT_<KEY>`, the key uppercased with every other character as `_`.
+pub(crate) fn fact_env(facts: &Facts) -> Vec<(String, String)> {
+    facts
+        .iter()
+        .map(|(k, v)| {
+            let key: String = k
+                .chars()
+                .map(|c| {
+                    if c.is_ascii_alphanumeric() {
+                        c.to_ascii_uppercase()
+                    } else {
+                        '_'
+                    }
+                })
+                .collect();
+            (format!("MOOR_FACT_{key}"), v.clone())
+        })
+        .collect()
+}
+
+/// The ids of the Boxes the controller lists as open.
+fn open_boxes(client: &Client) -> Result<HashSet<i64>, String> {
+    let request = Request::Show(ShowReq {
+        target: None,
+        events: None,
+        agent: false,
+        reports: false,
+        artifacts: false,
+        pane: false,
+    });
+    let response = client
+        .request(request, |_| {})
+        .map_err(|e| format!("the controller did not list the open Boxes: {e}"))?;
+    if let Some(error) = response.error {
+        return Err(format!(
+            "the controller refused to list the open Boxes: {}",
+            error.message
+        ));
+    }
+    response
+        .value
+        .as_ref()
+        .and_then(|v| v.get("boxes"))
+        .and_then(serde_json::Value::as_array)
+        .and_then(|boxes| {
+            boxes
+                .iter()
+                .map(|b| b.get("id").and_then(serde_json::Value::as_i64))
+                .collect()
+        })
+        .ok_or_else(|| "the controller's Box list has no ids".to_owned())
+}
+
+/// The record at `path`, or none when there is no file.
+fn read(path: &Path) -> Result<Option<Record>, String> {
+    match std::fs::read(path) {
+        Ok(bytes) => serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(|e| format!("{} is not a Box record: {e}", path.display())),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("cannot read {}: {e}", path.display())),
+    }
+}
+
+/// Writes `record` to `path` whole: to a temp file, then renamed over it.
+fn write(path: &Path, record: &Record) -> io::Result<()> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_vec(record)?)?;
+    std::fs::rename(tmp, path)
+}
+
+/// The last [`TAIL_LINES`] lines of a command's output.
+fn tail(out: &ExecOutput) -> String {
+    let lines: Vec<&str> = out.output.lines().collect();
+    lines[lines.len().saturating_sub(TAIL_LINES)..].join("\n")
+}
