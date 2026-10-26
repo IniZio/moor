@@ -273,6 +273,7 @@ fn applied_migrations_are_never_edited() {
             (6, 2_440_567_841_224_804_303),
             (7, 8_758_016_023_718_617_059),
             (8, 1_332_927_781_846_038_899),
+            (9, 1_889_085_957_596_602_796),
         ],
         "a schema change is a new migration file; an applied one must not change"
     );
@@ -376,4 +377,40 @@ fn a_file_at_migration_4_gains_user_machines_and_keeps_its_rows() {
     assert!(after.contains(&("user_machines".into(), 0)), "{after:?}");
     after.retain(|(t, _)| !ADDED_AFTER_V2.contains(&t.as_str()) && t != "refinery_schema_history");
     assert_eq!(after, before, "every table and row kept");
+}
+
+#[test]
+fn a_file_at_migration_8_keeps_its_held_machines_and_lets_asleep_ones_share_a_slot() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("moor.db");
+    let mut conn = Connection::open(&path).unwrap();
+    let all = super::schema().unwrap();
+    let up_to_8 = all.get(..8).unwrap();
+    moor_migrate::migrate(&mut conn, up_to_8, |_| Ok(moor_migrate::Legacy::Empty)).unwrap();
+    conn.execute_batch("PRAGMA foreign_keys = OFF").unwrap();
+    conn.execute(
+        "INSERT INTO box_machines (box, user, machine, ports, slot) VALUES (1, 7, 'mini', '[8081]', 0)",
+        [],
+    )
+    .unwrap();
+
+    init_schema(&mut conn, &path).unwrap();
+    conn.execute_batch("PRAGMA foreign_keys = OFF").unwrap();
+
+    let asleep = "SELECT COUNT(*) FROM box_machines WHERE box = 1 AND asleep = 0";
+    assert_eq!(
+        count(&conn, asleep),
+        1,
+        "an existing row still holds its slot"
+    );
+    let row = |b: i64, asleep: i64| {
+        conn.execute(
+            "INSERT INTO box_machines (box, user, machine, ports, slot, asleep) \
+             VALUES (?, 7, 'mini', '[8081]', 0, ?)",
+            [b, asleep],
+        )
+    };
+    row(2, 1).unwrap();
+    row(3, 1).unwrap();
+    assert!(row(4, 0).is_err(), "two holding rows never share a slot");
 }

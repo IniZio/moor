@@ -154,12 +154,13 @@ fn held_machine_line(out: &mut String, view: &Value) {
         .get("slot")
         .and_then(Value::as_u64)
         .map_or_else(|| "-".to_owned(), |s| s.to_string());
-    let _ = writeln!(
-        out,
-        "attached: {} slot {slot} ports {}",
-        field(m, "name"),
-        ports.join(",")
-    );
+    let name = field(m, "name");
+    let line = match m.get("state").and_then(Value::as_str) {
+        Some("asleep") => format!("machine:  {name} asleep, its slot free for other Boxes"),
+        Some("waiting") => format!("machine:  {name} waiting for a free slot"),
+        _ => format!("attached: {name} slot {slot} ports {}", ports.join(",")),
+    };
+    let _ = writeln!(out, "{line}");
 }
 
 /// The detail block for one Box.

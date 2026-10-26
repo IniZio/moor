@@ -3,8 +3,11 @@
 
 use std::collections::HashMap;
 
+use moor_core::domain::boxes::BoxState;
+use moor_core::seam::clock::Ts;
 use moor_core::view::{
-    ArtifactView, AttentionView, BoxView, EventView, HeldMachineView, PaneView, ShowView,
+    ArtifactView, AttentionView, BoxView, EventView, HeldMachineView, MachineHoldState, PaneView,
+    ShowView,
 };
 use moor_core::{BoxId, ErrorKind, ShowReq};
 
@@ -51,12 +54,22 @@ fn artifacts_of(store: &Store, box_id: BoxId) -> Result<Vec<ArtifactView>, Comma
         .collect())
 }
 
-/// The user machine Box `id` holds, with its slot and ports.
-fn held_machine(store: &Store, id: BoxId) -> Result<Option<HeldMachineView>, CommandError> {
-    Ok(store.box_machine(id)?.map(|h| HeldMachineView {
+/// The user machine Box `id` claims, with its slot and ports and whether it holds them;
+/// `box_asleep` tells a sleeping Box from one that woke and waits for a slot.
+fn held_machine(
+    store: &Store,
+    id: BoxId,
+    box_asleep: bool,
+) -> Result<Option<HeldMachineView>, CommandError> {
+    Ok(store.claimed_machine(id)?.map(|h| HeldMachineView {
         name: h.machine.name,
         slot: h.slot,
         ports: h.ports,
+        state: match (h.asleep, box_asleep) {
+            (false, _) => MachineHoldState::Held,
+            (true, true) => MachineHoldState::Asleep,
+            (true, false) => MachineHoldState::Waiting,
+        },
     }))
 }
 
@@ -66,31 +79,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     let store = cx.store()?;
     let now = cx.clock().now();
     let Some(target) = &req.target else {
-        let mut boxes: Vec<BoxView> = Vec::new();
-        let mut sleep_caps = HashMap::new();
-        for mut row in store.open_boxes()? {
-            if !cx.viewer().may_act_on(row.user) {
-                continue;
-            }
-            let reading = activity::read(cx, store, &row, now, activity::PROBE_DEADLINE)?;
-            activity::settle(cx, store, &row, &reading)?;
-            autosleep::run(cx, store, row.id, reading.blocked());
-            row = store.box_row(row.id)?.unwrap_or(row);
-            let in_flight = store.in_flight_run(row.id)?;
-            let mut view = box_view_with_run(&row, in_flight.as_ref(), cx.config());
-            view.agent = agent_view(&reading);
-            view.attention = attention(store, row.id)?;
-            hide_unsupported_sleep_cached(&mut view, cx, &mut sleep_caps);
-            boxes.push(view);
-        }
-        return Ok(ShowView {
-            boxes: Some(boxes),
-            boxed: None,
-            events: None,
-            pane: None,
-            reports: None,
-            artifacts: None,
-        });
+        return list(cx, store, now);
     };
     let row = target::resolve(store, target, Rule::Latest)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {target}")))?;
@@ -98,7 +87,11 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     let reading = activity::read(cx, store, &row, now, activity::PROBE_DEADLINE)?;
     let (agent, pane) = (agent_view(&reading), pane_view(&reading));
     let mut detail = box_view_with_run(&row, in_flight.as_ref(), cx.config());
-    (detail.agent, detail.held_machine) = (agent, held_machine(store, row.id)?);
+    let asleep = row
+        .boxed
+        .as_ref()
+        .is_some_and(|b| b.state == BoxState::Asleep);
+    (detail.agent, detail.held_machine) = (agent, held_machine(store, row.id, asleep)?);
     detail.attention = attention(store, row.id)?;
     hide_unsupported_sleep(&mut detail, cx);
     let events = match req.events {
@@ -121,6 +114,35 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         pane: pane.filter(|_| req.pane),
         reports: None,
         artifacts,
+    })
+}
+
+/// Every open Box the viewer may act on.
+fn list(cx: &Cx, store: &Store, now: Ts) -> Result<ShowView, CommandError> {
+    let mut boxes: Vec<BoxView> = Vec::new();
+    let mut sleep_caps = HashMap::new();
+    for mut row in store.open_boxes()? {
+        if !cx.viewer().may_act_on(row.user) {
+            continue;
+        }
+        let reading = activity::read(cx, store, &row, now, activity::PROBE_DEADLINE)?;
+        activity::settle(cx, store, &row, &reading)?;
+        autosleep::run(cx, store, row.id, reading.blocked());
+        row = store.box_row(row.id)?.unwrap_or(row);
+        let in_flight = store.in_flight_run(row.id)?;
+        let mut view = box_view_with_run(&row, in_flight.as_ref(), cx.config());
+        view.agent = agent_view(&reading);
+        view.attention = attention(store, row.id)?;
+        hide_unsupported_sleep_cached(&mut view, cx, &mut sleep_caps);
+        boxes.push(view);
+    }
+    Ok(ShowView {
+        boxes: Some(boxes),
+        boxed: None,
+        events: None,
+        pane: None,
+        reports: None,
+        artifacts: None,
     })
 }
 
