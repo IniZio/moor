@@ -27,6 +27,9 @@ const COLS: &str = "g.front, g.conv_key, g.session, b.name, g.owner";
 const FROM: &str =
     "bindings g JOIN sessions s ON s.id = g.session LEFT JOIN boxes b ON b.id = s.box";
 
+/// Orders a key's bindings newest first.
+const NEWEST: &str = "ORDER BY g.created_at DESC, g.rowid DESC";
+
 /// Raw binding row: the Box name is still unparsed text.
 type BindingRow = (String, String, i64, Option<String>, String);
 
@@ -49,7 +52,8 @@ fn binding_of(row: BindingRow) -> Result<Binding, StoreError> {
     })
 }
 
-/// Insert the binding unless (front, key) is already bound; true when this call created it.
+/// Bind (front, key) to `session` unless the key's newest binding names a live Session;
+/// true when this call added a row.
 fn insert_binding(
     conn: &rusqlite::Connection,
     front: &str,
@@ -58,6 +62,19 @@ fn insert_binding(
     owner: &str,
     at: i64,
 ) -> Result<bool, StoreError> {
+    let newest_live: Option<bool> = conn
+        .query_row(
+            &format!(
+                "SELECT s.state != 'ended' FROM {FROM} \
+                 WHERE g.front = ? AND g.conv_key = ? {NEWEST} LIMIT 1"
+            ),
+            params![front, key],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if newest_live == Some(true) {
+        return Ok(false);
+    }
     let added = conn.execute(
         "INSERT OR IGNORE INTO bindings (front, conv_key, session, owner, created_at) \
          VALUES (?, ?, ?, ?, ?)",
@@ -68,7 +85,8 @@ fn insert_binding(
 
 impl Store {
     /// Binds (front, key) to Session `session`, owned by `owner`.
-    /// The first binding wins; true when this call created it.
+    /// While the key's newest binding names a live Session that binding wins; once that
+    /// Session ends, a new Session binds beside it. True when this call created a binding.
     /// Errors with [`StoreError::Invalid`] when the Session does not exist or has ended.
     pub(crate) fn bind_session(
         &self,
@@ -100,12 +118,29 @@ impl Store {
         Ok(added)
     }
 
-    /// The binding of (front, key), if any.
+    /// The binding of (front, key): the newest naming a live Session, else the newest.
     pub(crate) fn binding(&self, front: &str, key: &str) -> Result<Option<Binding>, StoreError> {
         self.reader()?
             .query_row(
-                &format!("SELECT {COLS} FROM {FROM} WHERE g.front = ? AND g.conv_key = ?"),
+                &format!(
+                    "SELECT {COLS} FROM {FROM} WHERE g.front = ? AND g.conv_key = ? \
+                     ORDER BY s.state != 'ended' DESC, g.created_at DESC, g.rowid DESC LIMIT 1"
+                ),
                 params![front, key],
+                row_of,
+            )
+            .optional()?
+            .map(binding_of)
+            .transpose()
+    }
+
+    /// The binding that names Session `session`, if any.
+    #[cfg_attr(not(test), expect(dead_code, reason = "no caller outside tests yet"))]
+    pub(crate) fn session_binding(&self, session: i64) -> Result<Option<Binding>, StoreError> {
+        self.reader()?
+            .query_row(
+                &format!("SELECT {COLS} FROM {FROM} WHERE g.session = ? {NEWEST} LIMIT 1"),
+                params![session],
                 row_of,
             )
             .optional()?

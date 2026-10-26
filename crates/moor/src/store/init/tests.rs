@@ -262,6 +262,7 @@ fn applied_migrations_are_never_edited() {
             (1, 7_584_322_431_300_515_816),
             (2, 72_415_543_002_251_104),
             (3, 5_219_232_375_637_337_112),
+            (4, 10_900_489_595_431_863_429),
         ],
         "a schema change is a new migration file; an applied one must not change"
     );
@@ -290,10 +291,57 @@ fn a_file_at_migration_2_gains_user_mcp_servers_and_keeps_its_rows() {
     assert_eq!(after, before, "every table and row kept");
     let applied: i64 = conn
         .query_row(
-            "SELECT MAX(version) FROM refinery_schema_history",
+            "SELECT COUNT(*) FROM refinery_schema_history WHERE version = 3",
             [],
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(applied, 3);
+    assert_eq!(applied, 1);
+}
+
+#[test]
+fn bindings_from_before_history_survive_and_a_key_takes_more_sessions() {
+    let mut conn = Connection::open_in_memory().unwrap();
+    let schema = super::schema().unwrap();
+    let before: Vec<_> = schema.iter().take(2).cloned().collect();
+    moor_migrate::migrate(&mut conn, &before, super::legacy).unwrap();
+    conn.execute_batch(
+        "INSERT INTO sessions (id, ordinal, state, started_at, workdir) VALUES \
+           (1, 0, 'ended', 1, '/a'), (2, 0, 'live', 2, '/b'), (3, 0, 'live', 3, '/c'); \
+         INSERT INTO bindings VALUES ('slack', 't1', 1, 'U1', 10); \
+         INSERT INTO bindings VALUES ('web', 'c1', 2, 'U2', 20);",
+    )
+    .unwrap();
+    init_schema(&mut conn, Path::new("moor.db")).unwrap();
+    let rows = |conn: &Connection| -> Vec<(String, String, i64, String, i64)> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT front, conv_key, session, owner, created_at FROM bindings ORDER BY rowid",
+            )
+            .unwrap();
+        stmt.query_map([], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+        })
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+    };
+    assert_eq!(
+        rows(&conn),
+        [
+            ("slack".into(), "t1".into(), 1, "U1".into(), 10),
+            ("web".into(), "c1".into(), 2, "U2".into(), 20)
+        ]
+    );
+    conn.execute(
+        "INSERT INTO bindings VALUES ('slack', 't1', 3, 'U1', 30)",
+        [],
+    )
+    .unwrap();
+    assert_eq!(rows(&conn).len(), 3, "a key holds one row per Session");
+    let index: i64 = count(
+        &conn,
+        "SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = 'bindings_session'",
+    );
+    assert_eq!(index, 1);
 }
