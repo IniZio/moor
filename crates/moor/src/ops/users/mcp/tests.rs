@@ -17,6 +17,7 @@ fn add(name: &str, url: &str, key: Option<&str>) -> UserCmd {
         url: url.to_owned(),
         header: None,
         key: key.map(|k| SecretValue::new(k.into())),
+        machine: false,
     }
 }
 
@@ -144,4 +145,62 @@ fn a_bad_url_or_name_is_refused_before_anything_is_stored() {
         .user_secret_names(a)
         .unwrap()
         .is_empty());
+}
+
+fn add_for_machine(name: &str, machine: bool) -> UserCmd {
+    let UserCmd::McpAdd {
+        name,
+        url,
+        header,
+        key,
+        ..
+    } = add(name, "https://mcp.example/mcp", Some(KEY))
+    else {
+        unreachable!("add builds an McpAdd")
+    };
+    UserCmd::McpAdd {
+        name,
+        url,
+        header,
+        key,
+        machine,
+    }
+}
+
+#[test]
+fn a_machine_server_reaches_only_a_box_that_asks_for_a_machine() {
+    let f = fixture();
+    let a = enrolled(&f, "local:2000");
+    for (name, machine) in [("plain", false), ("onlymac", true)] {
+        let cmd = add_for_machine(name, machine);
+        run(&f.cx, &f.vault, &id("local:2000"), &cmd).unwrap();
+    }
+    let without = for_box(&f.cx, Some(a), false).unwrap();
+    assert!(without.servers.contains_key("plain"));
+    assert!(!without.servers.contains_key("onlymac"));
+    let with = for_box(&f.cx, Some(a), true).unwrap();
+    assert!(with.servers.contains_key("plain"));
+    assert!(with.servers.contains_key("onlymac"));
+}
+
+#[test]
+fn the_machine_flag_round_trips_through_add_and_list() {
+    let f = fixture();
+    enrolled(&f, "local:2000");
+    for (name, machine) in [("plain", false), ("onlymac", true)] {
+        let cmd = add_for_machine(name, machine);
+        run(&f.cx, &f.vault, &id("local:2000"), &cmd).unwrap();
+    }
+    let listed = run(&f.cx, &f.vault, &id("local:2000"), &UserCmd::McpList).unwrap();
+    let flags: Vec<_> = listed["servers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| (s["name"].as_str().unwrap(), s["machine"].as_bool()))
+        .collect();
+    assert_eq!(flags, [("onlymac", Some(true)), ("plain", None)]);
+    let again = add_for_machine("onlymac", false);
+    run(&f.cx, &f.vault, &id("local:2000"), &again).unwrap();
+    let listed = run(&f.cx, &f.vault, &id("local:2000"), &UserCmd::McpList).unwrap();
+    assert!(listed["servers"][0].get("machine").is_none());
 }
