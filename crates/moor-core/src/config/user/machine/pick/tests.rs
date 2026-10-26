@@ -12,6 +12,7 @@ fn want(labels: &[&str], ports: &[u16]) -> RepoMachine {
     RepoMachine {
         labels: labels.iter().map(|l| (*l).to_owned()).collect(),
         ports: ports.to_vec(),
+        ..RepoMachine::default()
     }
 }
 

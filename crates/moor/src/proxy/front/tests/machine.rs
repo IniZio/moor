@@ -60,6 +60,7 @@ fn rig() -> Rig {
                 name: "mac".to_owned(),
                 ssh: "dev@mac.example.com:22".to_owned(),
                 slot: 1,
+                sync_exclude: vec!["node_modules".to_owned(), "app/build".to_owned()],
             })
         }),
     };
@@ -116,6 +117,7 @@ fn a_plain_request_to_the_service_host_reaches_it_with_the_box_and_machine() {
         "X-Moor-Machine: mac\r\n",
         "X-Moor-Machine-Ssh: dev@mac.example.com:22\r\n",
         "X-Moor-Machine-Slot: 1\r\n",
+        "X-Moor-Machine-Exclude: [\"node_modules\",\"app/build\"]\r\n",
     ] {
         assert!(head.contains(line), "{line} missing from {head}");
     }
@@ -126,7 +128,7 @@ fn a_plain_request_to_the_service_host_reaches_it_with_the_box_and_machine() {
 fn identity_headers_the_box_sends_are_replaced() {
     let rig = rig();
     let reply = rig.send(&format!(
-        "POST http://{HOST}:8080/mcp HTTP/1.1\r\nHost: {HOST}\r\nX-Moor-Machine: other\r\nx-moor-box: 99\r\nX-MOOR-Extra: 1\r\nContent-Length: 0\r\n\r\n"
+        "POST http://{HOST}:8080/mcp HTTP/1.1\r\nHost: {HOST}\r\nX-Moor-Machine: other\r\nx-moor-box: 99\r\nX-Moor-Machine-Exclude: []\r\nX-MOOR-Extra: 1\r\nContent-Length: 0\r\n\r\n"
     ));
     assert!(reply.starts_with("HTTP/1.1 200 OK"), "{reply}");
     let head = rig.upstream.recv_timeout(WAIT).unwrap();
@@ -140,7 +142,8 @@ fn identity_headers_the_box_sends_are_replaced() {
             "X-Moor-Box: 7",
             "X-Moor-Machine: mac",
             "X-Moor-Machine-Ssh: dev@mac.example.com:22",
-            "X-Moor-Machine-Slot: 1"
+            "X-Moor-Machine-Slot: 1",
+            "X-Moor-Machine-Exclude: [\"node_modules\",\"app/build\"]"
         ]
     );
 }

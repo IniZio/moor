@@ -232,11 +232,12 @@ fn parallel_claims_never_share_a_slot() {
     let want = moor_core::config::RepoMachine {
         labels: vec!["macos".to_owned()],
         ports: vec![8080],
+        ..moor_core::config::RepoMachine::default()
     };
     std::thread::scope(|s| {
         for id in &ids {
             let (store, want) = (store.clone(), &want);
-            s.spawn(move || store.claim_machine(*id, REQUESTER_USER, want).unwrap());
+            s.spawn(move || store.claim_machine(*id, REQUESTER_USER, want, &[]).unwrap());
         }
     });
     let mut slots: Vec<u16> = views
@@ -246,4 +247,24 @@ fn parallel_claims_never_share_a_slot() {
         .collect();
     slots.sort_unstable();
     assert_eq!(slots, [0, 1, 2, 3]);
+}
+
+#[test]
+fn the_hold_keeps_what_its_syncs_leave_alone() {
+    let w = with_machines(&[("mini", "macos")]);
+    let yaml =
+        "machine:\n  labels: [macos]\n  sync: {presets: [node, rust], exclude: [app/build]}\n";
+    script_base_yaml(&w, Some(yaml));
+    let v = start(&w, "a");
+    let store = w.cx.store().unwrap();
+    let got = store.box_machine(BoxId::new(v.boxed.id)).unwrap().unwrap();
+    let want = [
+        "Pods",
+        ".gradle",
+        "DerivedData",
+        "*.xcworkspace/xcuserdata",
+        ".dart_tool",
+        "app/build",
+    ];
+    assert_eq!(got.sync_exclude, want);
 }

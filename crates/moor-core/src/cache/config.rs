@@ -27,7 +27,7 @@ impl Default for Presets {
 
 impl Presets {
     /// Whether this layer keeps the preset `name`.
-    pub(super) fn keeps(&self, name: &str) -> bool {
+    pub(crate) fn keeps(&self, name: &str) -> bool {
         match self {
             Self::All(on) => *on,
             Self::Drop(names) => !names.iter().any(|n| n == name),

@@ -171,7 +171,7 @@ fn machine_info_gives_the_slot_and_its_port_offset() {
     let info = rig.call_with("machine_info", json!({}), &headers).unwrap();
     assert_eq!(
         info,
-        json!({"box": 7, "machine": "minion", "slot": 2, "port_offset": 20, "facts": {}})
+        json!({"box": 7, "machine": "minion", "slot": 2, "port_offset": 20, "facts": {}, "sync_exclude": []})
     );
 }
 
@@ -384,4 +384,59 @@ fn an_exclude_with_spaces_or_a_star_is_one_rsync_pattern() {
     assert!(!rig.copy().join("build/a.o").exists());
     assert!(!rig.copy().join("build/b.o").exists());
     assert!(rig.copy().join("build/c.txt").exists());
+}
+
+/// [`HEADERS`] with the Proxy's exclude header set to `json`.
+fn excluding(json: &'static str) -> Vec<(&'static str, &'static str)> {
+    let mut headers = HEADERS.to_vec();
+    headers.push(("X-Moor-Machine-Exclude", json));
+    headers
+}
+
+#[test]
+fn sync_leaves_alone_the_proxys_patterns_and_the_calls_own() {
+    let rig = Rig::start();
+    let headers = excluding(r#"["node_modules"]"#);
+    rig.write("app/node_modules/m/index.js", "linux");
+    rig.write("app/build/out.o", "linux");
+    rig.write("app/src.js", "src");
+    let args = json!({ "exclude": ["app/build"] });
+    rig.call_with("sync", args.clone(), &headers).unwrap();
+    assert!(rig.copy().join("app/src.js").exists());
+    assert!(!rig.copy().join("app/node_modules").exists());
+    assert!(!rig.copy().join("app/build").exists());
+    let built = ["app/node_modules/darwin.node", "app/build/darwin.o"];
+    for rel in built {
+        let own = rig.copy().join(rel);
+        std::fs::create_dir_all(own.parent().unwrap()).unwrap();
+        std::fs::write(&own, "machine").unwrap();
+    }
+    rig.call_with("sync", args, &headers).unwrap();
+    for rel in built {
+        let kept = std::fs::read_to_string(rig.copy().join(rel)).unwrap();
+        assert_eq!(kept, "machine", "{rel}");
+    }
+}
+
+#[test]
+fn machine_info_shows_the_patterns_every_sync_leaves_alone() {
+    let rig = Rig::start();
+    let headers = excluding(r#"["node_modules","Pods"]"#);
+    let info = rig.call_with("machine_info", json!({}), &headers).unwrap();
+    assert_eq!(info["sync_exclude"], json!(["node_modules", "Pods"]));
+    let info = rig.call("machine_info", json!({})).unwrap();
+    assert_eq!(info["sync_exclude"], json!([]));
+}
+
+#[test]
+fn a_bad_exclude_header_is_refused() {
+    let rig = Rig::start();
+    rig.write("a.txt", "a");
+    for bad in ["node_modules", "[1]", r#"{"a":1}"#, r#"["-rf"]"#] {
+        let err = rig
+            .call_with("sync", json!({}), &excluding(bad))
+            .unwrap_err();
+        assert!(err.contains("X-Moor-Machine-Exclude"), "{bad}: {err}");
+    }
+    assert!(!rig.copy().join("a.txt").exists(), "nothing was synced");
 }

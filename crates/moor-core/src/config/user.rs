@@ -369,6 +369,7 @@ impl UserConfig {
         if let Some(s) = &self.machines.service {
             s.validate()?;
         }
+        self.machines.sync.validate("machines.sync")?;
         self.proxy.validate()?;
         self.controller.validate()?;
         super::repo::check_cache(&self.cache)?;

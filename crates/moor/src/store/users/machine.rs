@@ -47,13 +47,14 @@ impl Store {
     }
 
     /// Picks one of `user`'s machines and a free slot on it for `box_id` per `want` and records
-    /// the outcome: the hold, or `machine_left_out`. `machine_attached` comes from the supervisor
+    /// the outcome: the hold with the patterns its syncs leave alone, or `machine_left_out`. `machine_attached` comes from the supervisor
     /// once the forwards are open. One write transaction, so two starts never share a slot.
     pub(crate) fn claim_machine(
         &self,
         box_id: BoxId,
         user: UserId,
         want: &RepoMachine,
+        sync_exclude: &[String],
     ) -> Result<MachinePick, StoreError> {
         let now = self.now();
         let mut conn = self.writer();
@@ -67,10 +68,12 @@ impl Store {
             } => {
                 let ports = serde_json::to_string(ports)
                     .map_err(|e| StoreError::Corrupt(format!("machine ports: {e}")))?;
+                let exclude = serde_json::to_string(sync_exclude)
+                    .map_err(|e| StoreError::Corrupt(format!("machine sync exclude: {e}")))?;
                 tx.execute(
-                    "INSERT OR REPLACE INTO box_machines (box, user, machine, slot, ports) \
-                     VALUES (?, ?, ?, ?, ?)",
-                    params![box_id.get(), user.get(), machine.name, slot, ports],
+                    "INSERT OR REPLACE INTO box_machines \
+                     (box, user, machine, slot, ports, sync_exclude) VALUES (?, ?, ?, ?, ?, ?)",
+                    params![box_id.get(), user.get(), machine.name, slot, ports, exclude],
                 )?;
             }
             MachinePick::LeftOut { labels, reason } => {
@@ -97,19 +100,21 @@ impl Store {
     /// The machine `box_id` holds, in which slot and with which ports; `None` when it holds none
     /// or its owner removed it.
     pub(crate) fn box_machine(&self, box_id: BoxId) -> Result<Option<HeldMachine>, StoreError> {
-        let held: Option<(i64, String, u16, String)> = self
+        let held: Option<(i64, String, u16, String, String)> = self
             .reader()?
             .query_row(
-                "SELECT user, machine, slot, ports FROM box_machines WHERE box = ?",
+                "SELECT user, machine, slot, ports, sync_exclude FROM box_machines WHERE box = ?",
                 [box_id.get()],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
             )
             .optional()?;
-        let Some((user, name, slot, ports)) = held else {
+        let Some((user, name, slot, ports, exclude)) = held else {
             return Ok(None);
         };
         let ports: Vec<u16> = serde_json::from_str(&ports)
             .map_err(|e| StoreError::Corrupt(format!("box_machines ports: {e}")))?;
+        let sync_exclude: Vec<String> = serde_json::from_str(&exclude)
+            .map_err(|e| StoreError::Corrupt(format!("box_machines sync_exclude: {e}")))?;
         let user = UserId::new(user);
         let machine = self
             .user_machines(user)?
@@ -119,6 +124,7 @@ impl Store {
             machine,
             slot,
             ports,
+            sync_exclude,
         }))
     }
 }
@@ -153,6 +159,8 @@ pub(crate) struct HeldMachine {
     pub(crate) slot: u16,
     /// The forwarded ports, the same number on both ends.
     pub(crate) ports: Vec<u16>,
+    /// rsync patterns a sync to the machine leaves alone.
+    pub(crate) sync_exclude: Vec<String>,
 }
 
 /// `user`'s machines by name, read through `conn`.
