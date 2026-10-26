@@ -309,3 +309,17 @@ fn a_long_call_answers_at_once_and_keeps_the_stream_alive() {
     );
     assert!(text.contains("done"), "{text}");
 }
+
+#[test]
+fn a_long_exec_reports_progress_while_it_runs() {
+    let rig = Rig::with_args(&["--keep-alive-secs", "1"]);
+    rig.call("sync", json!({})).unwrap();
+    let (out, progress) =
+        rig.call_progress("exec", json!({"command": "sleep 3; echo done"}), &HEADERS);
+    assert_eq!(out.unwrap()["output"], "done\n");
+    let beats = progress
+        .iter()
+        .filter(|m| m.starts_with("exec: running for"))
+        .count();
+    assert!(beats >= 2, "{progress:?}");
+}

@@ -21,7 +21,6 @@ use rmcp::handler::server::tool::{Extension, ToolCallContext};
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, ListToolsResult, PaginatedRequestParams,
-    ProgressNotificationParam,
 };
 use rmcp::service::RequestContext;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
@@ -30,6 +29,7 @@ use rmcp::{tool, tool_handler, tool_router, ErrorData, RoleServer, ServerHandler
 use serde::Serialize;
 use tokio::net::TcpListener;
 
+use crate::beat::Progress;
 use crate::caller::Caller;
 use crate::exec::{ExecArgs, ExecOutput};
 use crate::holds::Holds;
@@ -39,6 +39,7 @@ use crate::sync::SyncOutput;
 
 pub use crate::relay::Relay;
 
+mod beat;
 mod caller;
 mod exec;
 mod holds;
@@ -115,6 +116,7 @@ pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
         holds: Arc::new(Holds::new(config.resources)),
         hooks: Arc::clone(&hooks),
         relays: Arc::clone(&relays),
+        beat: config.keep_alive,
     };
     let client = runner.client.clone();
     tokio::spawn(async move {
@@ -167,6 +169,8 @@ struct Runner {
     hooks: Arc<Hooks>,
     /// The machine's stdio MCP servers and the sessions open to them.
     relays: Arc<Relays>,
+    /// How often a long call reports that it still runs.
+    beat: Duration,
 }
 
 #[tool_router]
@@ -179,9 +183,14 @@ impl Runner {
     )]
     async fn sync(
         &self,
-        Extension(parts): Extension<http::request::Parts>,
+        context: RequestContext<RoleServer>,
     ) -> Result<Json<SyncOutput>, ErrorData> {
+        let parts = context
+            .extensions
+            .get::<http::request::Parts>()
+            .ok_or_else(|| internal("request headers missing"))?;
         let caller = Caller::from_headers(&parts.headers)?;
+        let progress = Progress::of(&context);
         let lock = {
             let mut locks = self
                 .syncing
@@ -192,11 +201,14 @@ impl Runner {
         let _held = lock.lock().await;
         self.hooks.note(&caller).await.map_err(|e| internal(&e))?;
         let (client, mirrors) = (self.client.clone(), self.mirrors.clone());
-        tokio::task::spawn_blocking(move || sync::run(&client, &mirrors, &caller))
-            .await
-            .map_err(|e| internal(&e.to_string()))?
-            .map(Json)
-            .map_err(|e| internal(&e))
+        let copy = tokio::task::spawn_blocking(move || sync::run(&client, &mirrors, &caller));
+        tokio::select! {
+            done = copy => done
+                .map_err(|e| internal(&e.to_string()))?
+                .map(Json)
+                .map_err(|e| internal(&e)),
+            () = progress.beat("sync", self.beat) => unreachable!("a beat never ends"),
+        }
     }
 
     /// Says which slot the Box has on its machine and how its ports shift.
@@ -263,17 +275,10 @@ impl Runner {
             .holds
             .wanted(&args.hold)
             .map_err(|e| ErrorData::invalid_params(e, None))?;
-        let token = context.meta.get_progress_token();
-        let mut progress = 0.0;
+        let progress = Progress::of(&context);
         let waiting = |reason: String| {
-            progress += 1.0;
-            let (peer, token) = (context.peer.clone(), token.clone());
-            async move {
-                if let Some(token) = token {
-                    let note = ProgressNotificationParam::new(token, progress).with_message(reason);
-                    let _ = peer.notify_progress(note).await;
-                }
-            }
+            let progress = progress.clone();
+            async move { progress.note(reason).await }
         };
         let run = async {
             let facts = self.hooks.facts(&caller).await.map_err(|e| internal(&e))?;
@@ -284,10 +289,12 @@ impl Runner {
                 .take(&caller, wanted, Duration::from_secs(wait), waiting)
                 .await
                 .map_err(|e| internal(&e))?;
-            exec::run(&caller.ssh, &script, timeout)
-                .await
-                .map(Json)
-                .map_err(|e| internal(&format!("could not run ssh: {e}")))
+            tokio::select! {
+                out = exec::run(&caller.ssh, &script, timeout) => out
+                    .map(Json)
+                    .map_err(|e| internal(&format!("could not run ssh: {e}"))),
+                () = progress.beat("exec", self.beat) => unreachable!("a beat never ends"),
+            }
         };
         tokio::select! {
             result = run => result,
