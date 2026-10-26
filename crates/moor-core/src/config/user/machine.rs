@@ -4,6 +4,10 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 use serde::{Deserialize, Serialize};
 
+pub use pick::{pick_machine, MachinePick};
+
+mod pick;
+
 /// Longest machine name.
 const NAME_MAX: usize = 64;
 /// Longest label.
@@ -66,7 +70,7 @@ fn check_name(name: &str) -> Result<(), String> {
 }
 
 /// `[a-z0-9][a-z0-9-]*` in at most 32 bytes.
-fn check_label(label: &str) -> Result<(), String> {
+pub(crate) fn check_label(label: &str) -> Result<(), String> {
     let ok = label.len() <= LABEL_MAX
         && label.starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit())
         && label

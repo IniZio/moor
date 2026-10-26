@@ -90,18 +90,6 @@ impl FakeDriver {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Makes every `copy_out` write `content` to its destination.
-    pub(crate) fn copy_text(self, content: impl AsRef<[u8]>) -> Self {
-        self.st().copy_content = Some(content.as_ref().to_vec());
-        self
-    }
-
-    /// Makes every `copy_out` leave a symlink to `target` at its destination.
-    pub(crate) fn copy_symlink(self, target: impl Into<PathBuf>) -> Self {
-        self.st().copy_symlink = Some(target.into());
-        self
-    }
-
     /// Queues scripted `exec` results, served in order; then exit code 0.
     pub(crate) fn exec_results(
         self,
@@ -192,6 +180,13 @@ impl Driver for FakeDriver {
 
     fn reverse_tunnel(&self, h: &BoxHandle, bp: u16, socket: &Path) -> tunnel::Opened {
         self.tunnel_request(h, bp, socket)
+    }
+    fn local_tunnel(
+        &self,
+        h: &BoxHandle,
+        bp: u16,
+    ) -> Result<moor_core::seam::driver::LocalTunnel, DriverError> {
+        self.local_request(h, bp)
     }
 
     fn workdir(&self, handle: &BoxHandle) -> Result<BoxPath, DriverError> {
