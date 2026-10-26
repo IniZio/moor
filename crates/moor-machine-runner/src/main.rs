@@ -48,6 +48,10 @@ struct Args {
     /// Box, as NAME.ARG=FACT; repeat for more.
     #[arg(long = "force-arg", value_name = "NAME.ARG=FACT", value_parser = force_arg)]
     forced: Vec<(String, String, String)>,
+    /// A relay's tool left out of the listing and refused when called, as NAME.TOOL; repeat for
+    /// more.
+    #[arg(long = "hide-tool", value_name = "NAME.TOOL", value_parser = hide_tool)]
+    hidden: Vec<(String, String)>,
     /// Seconds a relay session may go without a call before it ends.
     #[arg(long, default_value_t = 1800, value_parser = clap::value_parser!(u64).range(1..))]
     relay_idle_secs: u64,
@@ -78,8 +82,17 @@ fn force_arg(s: &str) -> Result<(String, String, String), String> {
     Ok((name.to_owned(), arg.to_owned(), fact.to_owned()))
 }
 
+/// Parses `NAME.TOOL`.
+fn hide_tool(s: &str) -> Result<(String, String), String> {
+    let (name, tool) = s.split_once('.').ok_or("expected NAME.TOOL")?;
+    if name.is_empty() || tool.is_empty() {
+        return Err("NAME and TOOL must not be empty".to_owned());
+    }
+    Ok((name.to_owned(), tool.to_owned()))
+}
+
 /// The relays with their forced arguments; an error naming a relay given twice or a forced
-/// argument of no relay.
+/// argument or hidden tool of no relay.
 fn relays(args: &Args) -> Result<Vec<Relay>, String> {
     let mut relays: Vec<Relay> = Vec::new();
     for (name, command) in &args.relays {
@@ -90,6 +103,7 @@ fn relays(args: &Args) -> Result<Vec<Relay>, String> {
             name: name.clone(),
             command: command.clone(),
             forced: std::collections::BTreeMap::new(),
+            hidden: std::collections::BTreeSet::new(),
         });
     }
     for (name, arg, fact) in &args.forced {
@@ -98,6 +112,13 @@ fn relays(args: &Args) -> Result<Vec<Relay>, String> {
             .find(|r| &r.name == name)
             .ok_or_else(|| format!("--force-arg {name}.{arg} names no --relay {name}"))?;
         relay.forced.insert(arg.clone(), fact.clone());
+    }
+    for (name, tool) in &args.hidden {
+        let relay = relays
+            .iter_mut()
+            .find(|r| &r.name == name)
+            .ok_or_else(|| format!("--hide-tool {name}.{tool} names no --relay {name}"))?;
+        relay.hidden.insert(tool.clone());
     }
     Ok(relays)
 }

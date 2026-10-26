@@ -6,9 +6,9 @@ use serde_json::{json, Value};
 use crate::rig::{caller, Rig, HEADERS};
 use crate::{alive, gone_within_6s};
 
-/// Prints device `dev-<box>`, except for Box 8, which gets no facts.
-const PREPARE: &str =
-    r#"if [ "$MOOR_BOX" = 8 ]; then echo '{}'; else echo '{"device":"dev-'"$MOOR_BOX"'"}'; fi"#;
+/// Prints device `dev-<box>` and metro port `800<box>`, except for Box 8, which gets no facts,
+/// and Box 9, whose metro port is not a number.
+const PREPARE: &str = r#"case "$MOOR_BOX" in 8) echo '{}';; 9) echo '{"device":"dev-9","metro_port":"none"}';; *) echo '{"device":"dev-'"$MOOR_BOX"'","metro_port":"800'"$MOOR_BOX"'"}';; esac"#;
 
 /// Notes whether the fake's latest process still ran when release did.
 const RELEASE: &str = r#"pid=$(tail -n 1 ~/fake-starts | cut -d ' ' -f 1); if kill -0 "$pid" 2>/dev/null; then echo alive; else echo gone; fi >> ~/released"#;
@@ -31,6 +31,14 @@ fn relayed(extra: &[&str]) -> Rig {
         &relay,
         "--force-arg",
         "fake.udid=device",
+        "--force-arg",
+        "fake.device_id=device",
+        "--force-arg",
+        "fake.devices=device",
+        "--force-arg",
+        "fake.port=metro_port",
+        "--hide-tool",
+        "fake.update",
         "--sweep-secs",
         "1",
     ];
@@ -183,4 +191,65 @@ fn a_crashed_server_starts_again_on_the_next_call() {
     std::thread::sleep(Duration::from_millis(300));
     assert_eq!(tap(&rig, &HEADERS).unwrap()["udid"], "dev-7");
     assert_eq!(lines(&rig, "fake-starts").len(), 2);
+}
+
+#[test]
+fn a_forced_integer_argument_arrives_as_a_json_number() {
+    let rig = relayed(&[]);
+    let out = rig
+        .call_with("fake_connect", json!({"port": "1"}), &HEADERS)
+        .unwrap();
+    assert_eq!(out, json!({"port": 8007, "device_id": "dev-7"}));
+    assert_eq!(
+        lines(&rig, "fake-calls"),
+        [r#"{"port":8007,"device_id":"dev-7"}"#]
+    );
+}
+
+#[test]
+fn a_fact_that_is_not_a_number_is_refused_naming_it_and_the_tool_and_nothing_is_relayed() {
+    let rig = relayed(&[]);
+    rig.open.lock().unwrap().push(9);
+    let err = rig
+        .call_with("fake_connect", json!({}), &caller(&rig, "9", "minion"))
+        .unwrap_err();
+    assert!(err.contains("metro_port"), "{err}");
+    assert!(err.contains("fake_connect"), "{err}");
+    assert!(lines(&rig, "fake-calls").is_empty(), "the fake saw no call");
+}
+
+#[test]
+fn a_forced_array_argument_arrives_as_a_one_item_array() {
+    let rig = relayed(&[]);
+    let out = rig
+        .call_with("fake_stop", json!({"devices": ["x", "y"]}), &HEADERS)
+        .unwrap();
+    assert_eq!(out, json!({"devices": ["dev-7"]}));
+    assert_eq!(lines(&rig, "fake-calls"), [r#"{"devices":["dev-7"]}"#]);
+}
+
+#[test]
+fn forced_arguments_of_every_type_are_hidden_from_the_schema() {
+    let rig = relayed(&[]);
+    let tools = rig.tools(&HEADERS);
+    let connect = tools.iter().find(|t| t["name"] == "fake_connect").unwrap();
+    assert_eq!(connect["inputSchema"]["properties"], json!({}));
+    let stop = tools.iter().find(|t| t["name"] == "fake_stop").unwrap();
+    assert_eq!(stop["inputSchema"]["properties"], json!({}));
+}
+
+#[test]
+fn a_hidden_tool_is_not_listed_and_a_call_to_it_is_refused() {
+    let rig = relayed(&[]);
+    let tools = rig.tools(&HEADERS);
+    assert!(tools.iter().any(|t| t["name"] == "fake_tap"));
+    assert!(
+        tools.iter().all(|t| t["name"] != "fake_update"),
+        "{tools:?}"
+    );
+    let err = rig
+        .call_with("fake_update", json!({}), &HEADERS)
+        .unwrap_err();
+    assert!(err.contains("hidden"), "{err}");
+    assert!(lines(&rig, "fake-calls").is_empty(), "the fake saw no call");
 }

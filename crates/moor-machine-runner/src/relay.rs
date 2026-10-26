@@ -3,11 +3,11 @@
 //! Per Box and relay the runner keeps one MCP client session to the server, started over ssh
 //! in the Box's copy on its first relayed call or tool listing. Each relayed tool is listed as
 //! `<relay>_<tool>`. A forced argument is dropped from the tool's schema and set from the Box's
-//! facts on every call, so a Box only ever reaches what was set up for it. A session ends when
+//! facts on every call, as the type the schema gave it; a hidden tool is not listed or callable, so a Box only ever reaches what was set up for it. A session ends when
 //! its Box is released, after it sits idle, or when its server exits; the next call starts it
 //! again.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -19,7 +19,6 @@ use rmcp::model::{
 };
 use rmcp::service::{NotificationContext, Peer, RequestContext, RunningService, ServiceError};
 use rmcp::{ClientHandler, ErrorData, RoleClient, RoleServer, ServiceExt};
-use serde_json::Value;
 use tokio::process::{Child, Command};
 use tokio::time::Instant;
 
@@ -39,6 +38,8 @@ pub struct Relay {
     pub command: String,
     /// Argument name to the fact it is set from on every call, such as `udid` = `device`.
     pub forced: BTreeMap<String, String>,
+    /// Names, on the relay, of tools left out of the listing and refused when called.
+    pub hidden: BTreeSet<String>,
 }
 
 /// Every relay and the sessions open to them.
@@ -191,19 +192,7 @@ impl Relays {
                 Arc::clone(&session.used),
             )
         };
-        let mut arguments = request.arguments.take().unwrap_or_default();
-        for (arg, fact) in &route.forced {
-            let value = facts.get(fact).ok_or_else(|| {
-                ErrorData::invalid_request(
-                    format!(
-                        "this Box has no fact {fact}, which {listed} needs; the machine's \
-                         prepare command sets it"
-                    ),
-                    None,
-                )
-            })?;
-            arguments.insert(arg.clone(), Value::String(value.clone()));
-        }
+        let arguments = route.arguments(&listed, facts, request.arguments.take())?;
         request.name = route.name.into();
         request.arguments = Some(arguments);
         let key = self.track_progress(&mut request, &context.peer);
