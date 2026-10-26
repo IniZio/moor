@@ -51,6 +51,15 @@ fn artifacts_of(store: &Store, box_id: BoxId) -> Result<Vec<ArtifactView>, Comma
         .collect())
 }
 
+/// The user machine Box `id` holds, with its slot and ports.
+fn held_machine(store: &Store, id: BoxId) -> Result<Option<HeldMachineView>, CommandError> {
+    Ok(store.box_machine(id)?.map(|h| HeldMachineView {
+        name: h.machine.name,
+        slot: h.slot,
+        ports: h.ports,
+    }))
+}
+
 /// Run `show`.
 pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     reconcile::run(cx);
@@ -89,13 +98,8 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     let reading = activity::read(cx, store, &row, now, activity::PROBE_DEADLINE)?;
     let (agent, pane) = (agent_view(&reading), pane_view(&reading));
     let mut detail = box_view_with_run(&row, in_flight.as_ref(), cx.config());
-    detail.agent = agent;
+    (detail.agent, detail.held_machine) = (agent, held_machine(store, row.id)?);
     detail.attention = attention(store, row.id)?;
-    detail.held_machine = store.box_machine(row.id)?.map(|h| HeldMachineView {
-        name: h.machine.name,
-        slot: h.slot,
-        ports: h.ports,
-    });
     hide_unsupported_sleep(&mut detail, cx);
     let events = match req.events {
         Some(n) => {
