@@ -2,6 +2,7 @@
 //!
 //! Holds the Box lock for the mirror, as `cp` does for its copy.
 
+use moor_core::config::check_excludes;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::seam::driver::DriverError;
 use moor_core::view::run::MirrorValue;
@@ -18,6 +19,7 @@ use crate::ops::cp::usable_handle;
 /// Run `box-mirror`.
 pub(crate) fn run(cx: &Cx, req: &BoxMirrorReq) -> Result<MirrorValue, CommandError> {
     let to = absolute("the destination", &req.dest)?;
+    check_excludes(&req.exclude).map_err(|why| CommandError::new(ErrorKind::Usage, why))?;
     let store = cx.store()?;
     let id = req.id;
     let not_open = || {
@@ -44,7 +46,7 @@ pub(crate) fn run(cx: &Cx, req: &BoxMirrorReq) -> Result<MirrorValue, CommandErr
     };
     let stats = cx
         .driver()
-        .mirror_out(&handle, &from, &to)
+        .mirror_out(&handle, &from, &to, &req.exclude)
         .map_err(|e| match e {
             DriverError::Unsupported(what) => CommandError::new(
                 ErrorKind::Refused,

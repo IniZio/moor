@@ -70,8 +70,9 @@ machine itself. `machine_info` returns the list as `sync_exclude`.
 `sync` takes an optional `exclude`: up to 64 more rsync patterns relative to the
 work tree root, such as `["app/android/app/build"]`. A call adds to the Box's
 sync excludes and cannot remove one. Each becomes one
-`--exclude=PATTERN` argument of the second hop, so the machine neither receives
-those paths nor loses them to `--delete`. Use it for what the machine builds for
+`--exclude=PATTERN` argument of both hops, so the Box never sends those paths
+to the host mirror and the machine neither receives them nor loses them to
+`--delete`. Use it for what the machine builds for
 itself, such as `node_modules` installed there, which a Box on another platform
 would otherwise overwrite. A pattern that is empty, starts with `-` or holds a
 newline or NUL is refused by name. The first hop is unchanged.

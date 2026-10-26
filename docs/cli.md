@@ -222,7 +222,7 @@ echo '{"cmd":"show"}' | moor call
 
 ### `box-mirror`
 
-`{"cmd":"box-mirror","id":ID,"dest":DIR}` makes the host directory `DIR`
+`{"cmd":"box-mirror","id":ID,"dest":DIR,"exclude":[PATTERN,...]}` makes the host directory `DIR`
 an exact copy of the work tree of the open Box with store id `ID`. It has no
 CLI command; a client sends it through `moor call` or moor-client. Only the
 operator may send it. `DIR` must be absolute, and moor creates it when it is

@@ -1,15 +1,26 @@
 //! Scripted failures and recorded calls for the Driver fake.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use moor_core::seam::driver::{
     BoxStep, Driver, DriverError, ExecOutcome, ExecSpec, SleepOutcome, StepDone,
 };
-use moor_core::seam::proc::Deadline;
+use moor_core::seam::proc::{Deadline, Output};
 use moor_core::{BoxHandle, BoxPath};
 
 use super::{FakeDriver, State};
+
+/// Whether `spec` is the provisioning clone exec, the one exec that streams into the clone log.
+pub(crate) fn is_clone_exec(spec: &ExecSpec) -> bool {
+    matches!(&spec.output, Some(Output::Log(p)) if p.parent().is_some_and(|d| d.ends_with("clone")))
+}
+
+/// One `copy_out` call: handle, source and destination.
+pub(super) type CopyCall = (BoxHandle, BoxPath, PathBuf);
+
+/// Runs inside every `exec`, before its result is served.
+pub(super) type ExecHook = dyn Fn() + Send + Sync;
 
 /// One `peek_file` call: handle and path.
 pub(super) type PeekCall = (BoxHandle, BoxPath);

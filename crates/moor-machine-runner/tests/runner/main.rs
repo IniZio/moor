@@ -419,6 +419,16 @@ fn sync_leaves_alone_the_patterns_the_proxy_sends_and_the_calls_own() {
 }
 
 #[test]
+fn the_box_mirror_request_carries_the_merged_exclude_list() {
+    let rig = Rig::start();
+    let headers = excluding(r#"["node_modules","Pods"]"#);
+    let args = json!({ "exclude": ["app/build"] });
+    rig.call_with("sync", args, &headers).unwrap();
+    let sent = rig.mirror_excludes.lock().unwrap().clone();
+    assert_eq!(sent, [json!(["node_modules", "Pods", "app/build"])]);
+}
+
+#[test]
 fn machine_info_shows_the_patterns_every_sync_leaves_alone() {
     let rig = Rig::start();
     let headers = excluding(r#"["node_modules","Pods"]"#);

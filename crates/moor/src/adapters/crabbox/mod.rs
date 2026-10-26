@@ -269,9 +269,10 @@ impl Driver for Crabbox {
         handle: &BoxHandle,
         from: &BoxPath,
         to: &Path,
+        exclude: &[String],
     ) -> Result<MirrorStats, DriverError> {
         self.require_version()?;
-        mirror::mirror_out(self, handle, from, to)
+        mirror::mirror_out(self, handle, from, to, exclude)
     }
 
     fn stream_files(
