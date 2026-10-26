@@ -1,0 +1,61 @@
+[package]
+name = "moor-machine-runner"
+version = "0.2.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "moor-machine-runner"
+path = "src/main.rs"
+
+[dependencies]
+moor-client = { path = "../moor-client" }
+moor-core = { path = "../moor-core" }
+clap = { version = "4", features = ["derive", "env"] }
+http = "1"
+hyper-util = { version = "0.1", features = [
+  "server",
+  "server-auto",
+  "service",
+  "tokio",
+  "http1",
+] }
+rmcp = { version = "3.7", default-features = false, features = [
+  "server",
+  "macros",
+  "transport-streamable-http-server",
+] }
+schemars = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = [
+  "rt-multi-thread",
+  "macros",
+  "net",
+  "process",
+  "io-util",
+  "sync",
+  "time",
+] }
+
+[[test]]
+name = "runner"
+path = "tests/runner/main.rs"
+
+[dev-dependencies]
+moor-testkit = { path = "../moor-testkit" }
+tempfile = "3"
+ureq = { version = "3", default-features = false, features = ["json"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+unreachable_pub = "deny"
+
+[lints.clippy]
+pedantic = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+dbg_macro = "deny"
+allow_attributes_without_reason = "deny"
