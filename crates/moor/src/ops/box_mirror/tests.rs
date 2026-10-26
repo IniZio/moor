@@ -109,6 +109,8 @@ fn an_unknown_box_id_is_refused() {
     let err = run(&f.cx, &req(&f, BoxId::new(f.id.get() + 1))).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
     assert!(err.error.to_string().contains("no open Box"), "{err:?}");
+    let lock = format!("locks/{}.box.lock", f.id.get() + 1);
+    assert!(!f.cx.state_dir().unwrap().join(lock).exists());
 }
 
 #[test]
