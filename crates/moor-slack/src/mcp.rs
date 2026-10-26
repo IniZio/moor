@@ -11,11 +11,18 @@ use crate::login::vault::{send, Call};
 use crate::socket::{AfterAck, Kept, Slash, TokenSubmission};
 use crate::worker::Job;
 
+mod oauth;
+
 /// `callback_id` of the add modal.
 pub(crate) const MCP_CALLBACK: &str = "moor_mcp";
 
 /// The add modal's `private_metadata`, which tells a submission from a login one.
 pub(crate) const MCP_FORM: &str = "mcp";
+
+/// True for the `private_metadata` of a modal this module handles.
+pub(crate) fn owns(account: &str) -> bool {
+    account == MCP_FORM || account.starts_with(oauth::FINISH_PREFIX)
+}
 
 /// Shown under the key input.
 const KEY_HINT: &str = "Bearer token or API key. Visible while you type, only to you.";
@@ -150,6 +157,11 @@ pub(crate) fn field(sub: &TokenSubmission, block: &str) -> String {
     })
 }
 
+/// An ack that replaces the modal with a notice showing `text`.
+fn update(text: &str) -> Value {
+    json!({"response_action": "update", "view": notice(text)})
+}
+
 /// An ack that keeps the modal open with `message` on `block`.
 fn on_field(block: &str, message: &str) -> Value {
     json!({"response_action": "errors", "errors": {block: message}})
@@ -168,7 +180,9 @@ fn refused_field(message: &str) -> &'static str {
 /// then sends `mcp-add`. The ack is the modal's answer, so a refusal stays on its field.
 /// Nothing here logs or returns the key.
 pub(crate) fn submission(sub: &TokenSubmission, call: &mut Call<'_>) -> Value {
-    let update = |text: &str| json!({"response_action": "update", "view": notice(text)});
+    if sub.account.starts_with(oauth::FINISH_PREFIX) {
+        return oauth::finish(sub, call);
+    }
     if SlackUser::parse(&sub.user).is_none() {
         return update(&format!("{BAD_ID} Nothing was stored."));
     }
@@ -191,7 +205,13 @@ pub(crate) fn submission(sub: &TokenSubmission, call: &mut Call<'_>) -> Value {
         return update(&format!("Could not set you up: {why}. Nothing was stored."));
     }
     match send(call, &sub.user, Request::McpAdd(add)) {
-        Ok(_) => update(&format!("Added `{name}`. Its key is in your vault.")),
+        Ok(reply) => {
+            let sign_in = reply.value.as_ref().and_then(|v| v.get("sign_in"));
+            let stored = || update(&format!("Added `{name}`. Its key is in your vault."));
+            sign_in
+                .and_then(Value::as_str)
+                .map_or_else(stored, |authorize| oauth::ask(&name, authorize))
+        }
         Err(why) => on_field(refused_field(&why), &why),
     }
 }
