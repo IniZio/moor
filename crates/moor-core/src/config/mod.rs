@@ -126,4 +126,6 @@ impl serde_saphyr::MessageFormatter for NoLocation {
 }
 
 #[cfg(test)]
+mod docs_examples;
+#[cfg(test)]
 mod tests;
