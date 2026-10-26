@@ -5,7 +5,7 @@
 //! Box's work tree onto the machine; `exec` runs a command there, in that copy, holding any
 //! capped resources it names; `machine_info` says which slot and ports the Box has. The
 //! operator's `prepare` and `release` commands set up and clean up per-Box things on the
-//! machine.
+//! machine. Relays list the tools of the machine's own stdio MCP servers beside these.
 
 use std::collections::{BTreeMap, HashMap};
 use std::io;
@@ -17,9 +17,12 @@ use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto;
 use hyper_util::service::TowerToHyperService;
 use moor_client::Client;
-use rmcp::handler::server::tool::Extension;
+use rmcp::handler::server::tool::{Extension, ToolCallContext};
 use rmcp::handler::server::wrapper::{Json, Parameters};
-use rmcp::model::ProgressNotificationParam;
+use rmcp::model::{
+    CallToolRequestParams, CallToolResponse, ListToolsResult, PaginatedRequestParams,
+    ProgressNotificationParam,
+};
 use rmcp::service::RequestContext;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
@@ -31,12 +34,16 @@ use crate::caller::Caller;
 use crate::exec::{ExecArgs, ExecOutput};
 use crate::holds::Holds;
 use crate::hooks::{Facts, Hooks};
+use crate::relay::Relays;
 use crate::sync::SyncOutput;
+
+pub use crate::relay::Relay;
 
 mod caller;
 mod exec;
 mod holds;
 mod hooks;
+mod relay;
 mod sync;
 
 /// What the runner needs to serve.
@@ -56,8 +63,12 @@ pub struct Config {
     pub release: Option<String>,
     /// How long `prepare` or `release` may run.
     pub hook_timeout: Duration,
-    /// How often to look for prepared Boxes that are no longer open.
+    /// How often to look for prepared Boxes that are no longer open, and idle relay sessions.
     pub sweep: Duration,
+    /// The machine's stdio MCP servers whose tools the runner relays.
+    pub relays: Vec<Relay>,
+    /// How long a relay session may go without a call before it ends.
+    pub relay_idle: Duration,
 }
 
 /// Where a Box is on its machine.
@@ -90,12 +101,18 @@ pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
         mirrors: mirrors.clone(),
         preparing: Mutex::default(),
     });
+    let relays = Arc::new(Relays::new(
+        config.relays,
+        config.relay_idle,
+        config.hook_timeout,
+    ));
     let runner = Runner {
         client: Client::new(&config.socket),
         mirrors,
         syncing: Arc::default(),
         holds: Arc::new(Holds::new(config.resources)),
         hooks: Arc::clone(&hooks),
+        relays: Arc::clone(&relays),
     };
     let client = runner.client.clone();
     tokio::spawn(async move {
@@ -103,7 +120,8 @@ pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
         every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             every.tick().await;
-            hooks.sweep(&client).await;
+            relays.expire().await;
+            hooks.sweep(&client, &relays).await;
         }
     });
     let http = StreamableHttpServerConfig::default()
@@ -144,6 +162,8 @@ struct Runner {
     holds: Arc<Holds>,
     /// The operator's per-Box commands and the facts they left.
     hooks: Arc<Hooks>,
+    /// The machine's stdio MCP servers and the sessions open to them.
+    relays: Arc<Relays>,
 }
 
 #[tool_router]
@@ -289,7 +309,66 @@ fn bounded(name: &str, secs: u64, max: u64) -> Result<Duration, ErrorData> {
     reason = "the generated handlers are async whether or not they await"
 )]
 #[tool_handler]
-impl ServerHandler for Runner {}
+impl ServerHandler for Runner {
+    async fn list_tools(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, ErrorData> {
+        let mut tools = Self::tool_router().list_all();
+        if !self.relays.is_empty() {
+            let caller = caller(&context)?;
+            match self.hooks.facts(&caller).await {
+                Ok(facts) => {
+                    let own = own_names();
+                    tools.extend(self.relays.tools(&caller, &facts, &own).await);
+                }
+                Err(e) => eprintln!(
+                    "moor-machine-runner: relays for Box {} left out: {e}",
+                    caller.box_id.get()
+                ),
+            }
+        }
+        Ok(ListToolsResult::with_all_items(tools))
+    }
+
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResponse, ErrorData> {
+        let router = Self::tool_router();
+        if router.has_route(&request.name) || self.relays.is_empty() {
+            return router
+                .call(ToolCallContext::new(self, request, context))
+                .await;
+        }
+        let caller = caller(&context)?;
+        let facts = self.hooks.facts(&caller).await.map_err(|e| internal(&e))?;
+        let own = own_names();
+        self.relays
+            .call(&caller, &facts, &own, request, context)
+            .await
+    }
+}
+
+/// The runner's own tool names, which no relayed tool may take.
+fn own_names() -> Vec<String> {
+    Runner::tool_router()
+        .list_all()
+        .into_iter()
+        .map(|t| t.name.into_owned())
+        .collect()
+}
+
+/// The caller named in the request's headers.
+fn caller(context: &RequestContext<RoleServer>) -> Result<Caller, ErrorData> {
+    let parts = context
+        .extensions
+        .get::<http::request::Parts>()
+        .ok_or_else(|| internal("request headers missing"))?;
+    Caller::from_headers(&parts.headers)
+}
 
 /// An MCP internal error carrying `message`.
 fn internal(message: &str) -> ErrorData {

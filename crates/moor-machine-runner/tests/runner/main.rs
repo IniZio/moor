@@ -20,6 +20,7 @@ use rig::{Rig, HEADERS};
 
 mod holds;
 mod hooks;
+mod relay;
 mod rig;
 
 fn ino(path: &Path) -> u64 {

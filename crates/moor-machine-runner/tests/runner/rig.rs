@@ -169,6 +169,23 @@ impl Rig {
         (Self::result(&reply), progress)
     }
 
+    /// The tools the runner lists to the caller with `headers`.
+    pub fn tools(&self, headers: &[(&str, &str)]) -> Vec<Value> {
+        let (init, session, _) = self.post(&rpc(1, "initialize", initialize()), headers, None);
+        assert!(init.get("result").is_some(), "initialize: {init}");
+        let note = json!({"jsonrpc": "2.0", "method": "notifications/initialized"});
+        self.post(&note, headers, session.as_deref());
+        let (reply, _, _) = self.post(
+            &rpc(2, "tools/list", json!({})),
+            headers,
+            session.as_deref(),
+        );
+        reply["result"]["tools"]
+            .as_array()
+            .cloned()
+            .unwrap_or_else(|| panic!("{reply}"))
+    }
+
     /// Sends a `tools/call` as Box 7 without reading the reply; dropping the stream hangs up.
     pub fn send_call(&self, tool: &str, args: Value) -> std::net::TcpStream {
         let body = rpc(2, "tools/call", json!({"name": tool, "arguments": args})).to_string();
