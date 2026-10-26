@@ -1,4 +1,4 @@
-//! Who is calling: the three headers the Box's Proxy sets on every request.
+//! Who is calling: the four headers the Box's Proxy sets on every request.
 
 use http::HeaderMap;
 use moor_core::box_key::BoxKey;
@@ -11,6 +11,10 @@ const BOX: &str = "X-Moor-Box";
 const MACHINE: &str = "X-Moor-Machine";
 /// Header carrying the machine's ssh target, such as `user@host`.
 const SSH: &str = "X-Moor-Machine-Ssh";
+/// Header carrying the Box's slot on the machine, which sets its ports.
+const SLOT: &str = "X-Moor-Machine-Slot";
+/// Highest slot: its ports, the repo's plus ten per slot, must stay below 65536.
+const MAX_SLOT: u16 = 6553;
 
 /// The Box a request comes from and the machine attached to it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,6 +25,8 @@ pub(crate) struct Caller {
     pub(crate) machine: String,
     /// The ssh target the host reaches the machine at.
     pub(crate) ssh: String,
+    /// The Box's slot on the machine: 0 up to [`MAX_SLOT`].
+    pub(crate) slot: u16,
 }
 
 impl Caller {
@@ -47,10 +53,21 @@ impl Caller {
         if ssh.starts_with('-') || ssh.contains(char::is_whitespace) {
             return Err(refused(format!("header {SSH} is not an ssh target: {ssh}")));
         }
+        let raw = header(SLOT)?;
+        let slot = raw
+            .parse::<u16>()
+            .ok()
+            .filter(|n| *n <= MAX_SLOT)
+            .ok_or_else(|| {
+                refused(format!(
+                    "header {SLOT} is not a slot 0 to {MAX_SLOT}: {raw}"
+                ))
+            })?;
         Ok(Self {
             box_id,
             machine,
             ssh,
+            slot,
         })
     }
 
