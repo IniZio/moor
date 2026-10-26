@@ -18,7 +18,7 @@ mod tunnel;
 pub use batch::{run_each, BoxStep, StepDone};
 pub use error::DriverError;
 pub use run::{Cancelled, FollowEnd, Followed, Launched, RunEnd, RunOutcome};
-pub use tunnel::{TunnelFailure, TunnelHandle};
+pub use tunnel::{LocalTunnel, TunnelFailure, TunnelHandle};
 
 /// How a provider keeps an idle Box cheap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -262,6 +262,16 @@ pub trait Driver: Send + Sync {
         box_port: u16,
         socket: &Path,
     ) -> Result<Box<dyn TunnelHandle>, DriverError>;
+
+    /// Forwards a free host loopback port to Box `127.0.0.1:box_port` until the returned
+    /// tunnel drops.
+    ///
+    /// # Errors
+    /// As for [`Driver::reverse_tunnel`].
+    fn local_tunnel(&self, handle: &BoxHandle, box_port: u16) -> Result<LocalTunnel, DriverError> {
+        let _ = (handle, box_port);
+        Err(DriverError::Unsupported("local tunnel"))
+    }
 
     /// Runs `steps` in order in one round trip where the provider can. `connect` is what
     /// `connect_argv` returned for `handle`; a driver may reach the Box through it rather than

@@ -261,3 +261,41 @@ fn a_changed_brief_is_a_changed_key() {
     assert_eq!(a.changed_keys(&b), ["brief"]);
     assert!(a.changed_keys(&a).is_empty());
 }
+
+#[test]
+fn machine_section_names_labels_and_ports() {
+    let cfg = ok("machine:\n  labels: [macos]\n  ports: [8081, 8080]\n");
+    let m = cfg.machine.expect("machine section");
+    assert_eq!(m.labels, ["macos"]);
+    assert_eq!(m.ports, [8081, 8080]);
+    assert!(ok("brief: hi\n").machine.is_none());
+}
+
+#[test]
+fn machine_section_rejects_bad_entries() {
+    rejects(
+        "machine:\n  ports: [8081]\n",
+        "machine.labels",
+        "at least one",
+    );
+    rejects(
+        "machine:\n  labels: [Mac]\n",
+        "machine.labels[0]",
+        "must match",
+    );
+    rejects(
+        "machine:\n  labels: [macos]\n  ports: [0]\n",
+        "machine.ports[0]",
+        "not a port",
+    );
+    rejects(
+        "machine:\n  labels: [macos]\n  ports: [8081, 8081]\n",
+        "machine.ports[1]",
+        "twice",
+    );
+    rejects(
+        "machine:\n  labels: [macos]\n  host: x\n",
+        "machine.host",
+        "unknown field",
+    );
+}

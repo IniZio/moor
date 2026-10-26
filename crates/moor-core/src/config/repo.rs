@@ -8,6 +8,10 @@ use super::proxy::{default_rules, injected};
 use super::{check, parse_strict, BoxSize, ConfigError};
 use crate::cache::CacheConfig;
 
+pub use machine::RepoMachine;
+
+mod machine;
+
 /// The most characters the `brief` of a repo config may hold.
 pub const BRIEF_MAX_CHARS: usize = 4000;
 
@@ -48,6 +52,8 @@ pub struct RepoConfig {
     pub box_credentials: Vec<String>,
     /// `cache:` section.
     pub cache: CacheConfig,
+    /// `machine:` section: what a user's machine attached to the Box must offer.
+    pub machine: Option<RepoMachine>,
 }
 
 /// Parses and validates a `.moor.yaml` document.
@@ -77,6 +83,7 @@ impl RepoConfig {
                 self.box_credentials != other.box_credentials,
             ),
             ("cache", self.cache != other.cache),
+            ("machine", self.machine != other.machine),
         ]
         .into_iter()
         .filter_map(|(key, changed)| changed.then_some(key))
@@ -90,6 +97,9 @@ impl RepoConfig {
         non_blank("teardown", &self.teardown)?;
         self.validate_box_credentials()?;
         check_cache(&self.cache)?;
+        self.machine
+            .as_ref()
+            .map_or(Ok(()), RepoMachine::validate)?;
         for name in self.env.keys() {
             let path = format!("env.{name}");
             check::env_name(name)

@@ -9,7 +9,7 @@ use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use moor_core::name::BoxHandle;
-use moor_core::seam::driver::{DriverError, TunnelFailure, TunnelHandle};
+use moor_core::seam::driver::{DriverError, LocalTunnel, TunnelFailure, TunnelHandle};
 use moor_core::seam::proc::{ChildHandle, Deadline, FirstLineError, ProcSpec};
 use serde::Deserialize;
 
@@ -77,6 +77,46 @@ pub(super) fn reverse_tunnel(
     cb.retry_claim_race(|| open(cb, &spec, box_port, socket))
 }
 
+/// Starts a tunnel that forwards a host loopback port crabbox picks to Box `127.0.0.1:box_port`.
+/// crabbox prints `http://127.0.0.1:<port>` once the host port accepts.
+pub(super) fn local_tunnel(
+    cb: &Crabbox,
+    handle: &BoxHandle,
+    box_port: u16,
+) -> Result<LocalTunnel, DriverError> {
+    let spec = cb.at_lease(
+        Crabbox::spec(TUNNEL_READY_DEADLINE)
+            .arg("tunnel")
+            .args(target_args(handle))
+            .arg("--local-port")
+            .arg("0")
+            .arg(box_port.to_string()),
+        handle,
+    )?;
+    cb.retry_claim_race(|| {
+        let mut child = cb
+            .proc
+            .spawn_child(&spec)
+            .map_err(|_| DriverError::Unavailable("crabbox could not be started".to_owned()))?;
+        let line = child
+            .first_line(Deadline(TUNNEL_READY_DEADLINE))
+            .map_err(ready_error)?;
+        let host_port = line
+            .trim()
+            .strip_prefix("http://127.0.0.1:")
+            .and_then(|p| p.parse::<u16>().ok())
+            .ok_or_else(|| DriverError::Failed {
+                summary: "local tunnel printed an unexpected ready line".to_owned(),
+            })?;
+        Ok(LocalTunnel {
+            host_port,
+            tunnel: Box::new(Tunnel {
+                child: Mutex::new(child),
+            }),
+        })
+    })
+}
+
 /// Spawns the tunnel child once and waits for its ready line.
 fn open(
     cb: &Crabbox,
@@ -97,21 +137,28 @@ fn open(
                 summary: UNEXPECTED_READY.to_owned(),
             }),
         },
-        Err(FirstLineError::Exited {
+        Err(e) => Err(ready_error(e)),
+    }
+}
+
+/// The error for a tunnel child that did not print its ready line.
+fn ready_error(e: FirstLineError) -> DriverError {
+    match e {
+        FirstLineError::Exited {
             code,
             signal,
             stderr_tail,
-        }) => Err(DriverError::Tunnel {
+        } => DriverError::Tunnel {
             failure: TunnelFailure::Exited { code, signal },
             stderr_tail,
-        }),
-        Err(FirstLineError::Timeout { after, .. }) => Err(DriverError::Tunnel {
+        },
+        FirstLineError::Timeout { after, .. } => DriverError::Tunnel {
             failure: TunnelFailure::TimedOut(after),
             stderr_tail: String::new(),
-        }),
-        Err(FirstLineError::Io(_)) => Err(DriverError::Failed {
-            summary: "could not read the reverse tunnel's output".to_owned(),
-        }),
+        },
+        FirstLineError::Io(_) => DriverError::Failed {
+            summary: "could not read the tunnel's output".to_owned(),
+        },
     }
 }
 

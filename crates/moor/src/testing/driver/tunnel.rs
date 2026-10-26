@@ -7,7 +7,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use moor_core::seam::driver::{DriverCaps, DriverError, SleepKind, TunnelFailure, TunnelHandle};
+use moor_core::seam::driver::{
+    DriverCaps, DriverError, LocalTunnel, SleepKind, TunnelFailure, TunnelHandle,
+};
 use moor_core::BoxHandle;
 
 use super::FakeDriver;
@@ -17,6 +19,12 @@ const FIRST_TUNNEL_PID: u32 = 50_000;
 
 /// How long a `Hang` outcome reports waiting before giving up.
 const HANG_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// The socket a local tunnel request is recorded under.
+pub(crate) const LOCAL_SOCKET: &str = "local";
+
+/// What a fake local tunnel adds to the Box port to make its host port.
+pub(crate) const LOCAL_PORT_OFFSET: u16 = 20_000;
 
 /// What `reverse_tunnel` returns.
 pub(super) type Opened = Result<Box<dyn TunnelHandle>, DriverError>;
@@ -138,6 +146,20 @@ impl FakeDriver {
             has_workdir: true,
             cache_volumes: st.cache.on,
         }
+    }
+
+    /// A local tunnel plays the next scripted reply, as a reverse tunnel to the socket
+    /// [`LOCAL_SOCKET`] would; its host port is the Box port plus [`LOCAL_PORT_OFFSET`].
+    pub(super) fn local_request(
+        &self,
+        handle: &BoxHandle,
+        box_port: u16,
+    ) -> Result<LocalTunnel, DriverError> {
+        let tunnel = self.tunnel_request(handle, box_port, Path::new(LOCAL_SOCKET))?;
+        Ok(LocalTunnel {
+            host_port: box_port.wrapping_add(LOCAL_PORT_OFFSET),
+            tunnel,
+        })
     }
 
     pub(super) fn tunnel_request(

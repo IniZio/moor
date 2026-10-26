@@ -39,6 +39,18 @@ pub(super) struct CacheState {
 }
 
 impl FakeDriver {
+    /// Makes every `copy_out` write `content` to its destination.
+    pub(crate) fn copy_text(self, content: impl AsRef<[u8]>) -> Self {
+        self.st().copy_content = Some(content.as_ref().to_vec());
+        self
+    }
+
+    /// Makes every `copy_out` leave a symlink to `target` at its destination.
+    pub(crate) fn copy_symlink(self, target: impl Into<std::path::PathBuf>) -> Self {
+        self.st().copy_symlink = Some(target.into());
+        self
+    }
+
     /// Reports that the provider keeps cache volumes.
     pub(crate) fn cache_volumes(self) -> Self {
         self.st().cache.on = true;

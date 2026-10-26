@@ -51,3 +51,20 @@ pub trait TunnelHandle: Send {
     /// Whether the tunnel process is still running.
     fn alive(&self) -> bool;
 }
+
+/// A host loopback port forwarded to a port inside a Box; the forward ends when `tunnel` drops.
+pub struct LocalTunnel {
+    /// The host loopback port that reaches the Box port.
+    pub host_port: u16,
+    /// The running forward.
+    pub tunnel: Box<dyn TunnelHandle>,
+}
+
+impl std::fmt::Debug for LocalTunnel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LocalTunnel")
+            .field("host_port", &self.host_port)
+            .field("pid", &self.tunnel.pid())
+            .finish()
+    }
+}

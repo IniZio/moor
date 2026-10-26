@@ -35,8 +35,8 @@ use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Driver, DriverCaps, DriverError,
-    ExecOutcome, ExecSpec, Followed, Launched, Released, RunEnd, SleepOutcome, StepDone,
-    TunnelHandle,
+    ExecOutcome, ExecSpec, Followed, Launched, LocalTunnel, Released, RunEnd, SleepOutcome,
+    StepDone, TunnelHandle,
 };
 use moor_core::seam::proc::{Deadline, Proc, ProcOutput, ProcSpec, Tool};
 use moor_core::seam::rng::Rng;
@@ -365,5 +365,10 @@ impl Driver for Crabbox {
     ) -> Result<Box<dyn TunnelHandle>, DriverError> {
         self.require_version()?;
         tunnel::reverse_tunnel(self, handle, box_port, socket)
+    }
+
+    fn local_tunnel(&self, handle: &BoxHandle, box_port: u16) -> Result<LocalTunnel, DriverError> {
+        self.require_version()?;
+        tunnel::local_tunnel(self, handle, box_port)
     }
 }
