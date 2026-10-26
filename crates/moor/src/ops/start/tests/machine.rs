@@ -172,23 +172,49 @@ fn close(w: &World, v: &StartView) {
 #[test]
 fn a_shared_machine_gives_each_box_its_own_slot_until_full() {
     let w = shared(2);
-    let a = start(&w, "a");
-    let b = start(&w, "b");
-    assert_eq!(slot(&w, &a), Some((0, vec![5432, 8080])));
-    assert_eq!(slot(&w, &b), Some((1, vec![5442, 8090])));
-    let c = start(&w, "c");
-    assert_eq!(slot(&w, &c), None);
+    let first = start(&w, "a");
+    let second = start(&w, "b");
+    assert_eq!(slot(&w, &first), Some((0, vec![5432, 8080])));
+    assert_eq!(slot(&w, &second), Some((1, vec![5442, 8090])));
+    let third = start(&w, "c");
+    assert_eq!(slot(&w, &third), None);
     assert_eq!(
-        notes(&c),
+        notes(&third),
         [format!(
             "machine left out: machine mini is attached to Boxes {}, {}",
-            a.boxed.name, b.boxed.name
+            first.boxed.name, second.boxed.name
         )
         .as_str()]
     );
-    close(&w, &a);
-    let d = start(&w, "d");
-    assert_eq!(slot(&w, &d), Some((0, vec![5432, 8080])));
+    close(&w, &first);
+    let fourth = start(&w, "d");
+    assert_eq!(slot(&w, &fourth), Some((0, vec![5432, 8080])));
+}
+
+#[test]
+fn adding_a_machine_again_changes_its_capacity() {
+    let w = shared(1);
+    let m = UserMachine::parse("mini", "dev@mac.example", &["macos".to_owned()])
+        .and_then(|m| m.with_capacity(2))
+        .unwrap();
+    w.cx.store()
+        .unwrap()
+        .set_user_machine(REQUESTER_USER, &m)
+        .unwrap();
+    let first = start(&w, "a");
+    let second = start(&w, "b");
+    assert_eq!(slot(&w, &first).map(|s| s.0), Some(0));
+    assert_eq!(slot(&w, &second).map(|s| s.0), Some(1));
+}
+
+#[test]
+fn closing_a_box_with_no_supervisor_frees_its_machine() {
+    let w = shared(1);
+    let held_box = start(&w, "a");
+    close(&w, &held_box);
+    assert_eq!(slot(&w, &held_box), None);
+    let kinds: Vec<String> = machine_events(&w, &held_box).into_iter().map(|e| e.0).collect();
+    assert_eq!(kinds, ["machine_detached"]);
 }
 
 #[test]

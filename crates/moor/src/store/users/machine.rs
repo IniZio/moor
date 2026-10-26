@@ -4,9 +4,10 @@ use std::collections::BTreeMap;
 
 use moor_core::config::{pick_machine, MachinePick, RepoMachine, UserMachine};
 use moor_core::domain::event::{Event, MachineEvent};
+use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::BoxId;
-use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
+use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 
 use crate::store::apply::insert_event;
 use crate::store::{Store, StoreError};
@@ -57,11 +58,6 @@ impl Store {
         let now = self.now();
         let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        tx.execute(
-            "DELETE FROM box_machines WHERE user = ? AND box IN \
-             (SELECT id FROM boxes WHERE state IN ('closed','rejected'))",
-            [user.get()],
-        )?;
         let pick = pick_machine(want, &machines_in(&tx, user)?, &held_in(&tx, user)?);
         match &pick {
             MachinePick::Attach {
@@ -127,11 +123,35 @@ impl Store {
     }
 }
 
+/// Frees the machine `box_id` holds as the Box leaves the live states, recording
+/// `machine_detached`, so a close that no supervisor sees still lets the machine go.
+pub(in crate::store) fn release_in(
+    tx: &Transaction<'_>,
+    box_id: BoxId,
+    now: Ts,
+) -> Result<(), StoreError> {
+    let name: Option<String> = tx
+        .query_row(
+            "DELETE FROM box_machines WHERE box = ? RETURNING machine",
+            [box_id.get()],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if let Some(name) = name {
+        let event = Event::Machine(MachineEvent::MachineDetached { name });
+        insert_event(tx, box_id, &event, now)?;
+    }
+    Ok(())
+}
+
 /// A machine a Box holds: its slot and the ports forwarded, already moved by the slot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HeldMachine {
+    /// The machine.
     pub(crate) machine: UserMachine,
+    /// The Box's slot on it.
     pub(crate) slot: u16,
+    /// The forwarded ports, the same number on both ends.
     pub(crate) ports: Vec<u16>,
 }
 

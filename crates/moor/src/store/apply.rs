@@ -204,6 +204,7 @@ fn write_box_row(
             "UPDATE sessions SET state = 'ended', ended_at = ? WHERE box = ? AND state != 'ended'",
             params![now.as_millis(), id.get()],
         )?;
+        super::users::machine::release_in(tx, id, now)?;
     }
     Ok(())
 }
