@@ -266,3 +266,46 @@ fn an_ssh_header_that_is_not_a_strict_target_is_refused() {
         assert!(info.is_ok(), "{good}: {info:?}");
     }
 }
+
+#[test]
+fn a_long_call_answers_at_once_and_keeps_the_stream_alive() {
+    use std::io::Read;
+    let rig = Rig::with_args(&["--keep-alive-secs", "1"]);
+    rig.call("sync", json!({})).unwrap();
+    let mut call = rig.send_call("exec", json!({"command": "sleep 4; echo done"}));
+    call.set_read_timeout(Some(Duration::from_millis(200)))
+        .unwrap();
+    let started = Instant::now();
+    let mut seen = Vec::new();
+    let mut buf = [0u8; 4096];
+    let mut head_at = None;
+    while started.elapsed() < Duration::from_secs(10) {
+        match call.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => seen.extend_from_slice(&buf[..n]),
+            Err(_) => {}
+        }
+        let text = String::from_utf8_lossy(&seen);
+        if head_at.is_none() && text.contains("\r\n\r\n") {
+            head_at = Some(started.elapsed());
+        }
+        if text.contains("done") {
+            break;
+        }
+    }
+    let text = String::from_utf8_lossy(&seen);
+    let head_at = head_at.unwrap_or_else(|| panic!("no response head: {text}"));
+    assert!(
+        head_at < Duration::from_secs(2),
+        "head after {head_at:?}: {text}"
+    );
+    assert!(text.contains("text/event-stream"), "{text}");
+    let body = text.split_once("\r\n\r\n").map_or("", |(_, b)| b);
+    let before_result = body.split("\"result\"").next().unwrap_or_default();
+    assert!(
+        before_result.matches("\n:").count() + usize::from(before_result.starts_with(':')) >= 2
+            || before_result.contains("ping"),
+        "no keep-alive before the result: {body}"
+    );
+    assert!(text.contains("done"), "{text}");
+}

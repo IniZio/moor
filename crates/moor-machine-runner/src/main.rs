@@ -55,6 +55,9 @@ struct Args {
     /// Seconds a relay session may go without a call before it ends.
     #[arg(long, default_value_t = 1800, value_parser = clap::value_parser!(u64).range(1..))]
     relay_idle_secs: u64,
+    /// Seconds between pings on an open call's stream.
+    #[arg(long, default_value_t = 15, value_parser = clap::value_parser!(u64).range(1..))]
+    keep_alive_secs: u64,
 }
 
 /// Parses `NAME=CMD`, with NAME of `[a-z][a-z0-9-]*`.
@@ -168,6 +171,7 @@ async fn main() -> ExitCode {
         sweep: Duration::from_secs(args.sweep_secs),
         relays,
         relay_idle: Duration::from_secs(args.relay_idle_secs),
+        keep_alive: Duration::from_secs(args.keep_alive_secs),
     };
     match serve(listener, config).await {
         Ok(()) => ExitCode::SUCCESS,
