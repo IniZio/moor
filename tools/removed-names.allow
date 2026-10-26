@@ -8,3 +8,5 @@ background task
 multitask
 # tokio's own module path, unrelated to the removed concept.
 tokio::task::
+# The kernel's per-thread directory, read to see a daemon thread start.
+/proc/{}/task"

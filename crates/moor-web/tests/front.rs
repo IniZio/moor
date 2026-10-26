@@ -52,6 +52,7 @@ fn sigterm_lets_a_request_in_flight_finish_before_exit_0() {
     )
     .unwrap();
     conn.flush().unwrap();
+    stack.wait_web_serving(LIMIT);
     stack.terminate_web();
     std::thread::sleep(Duration::from_millis(500));
     assert!(

@@ -240,6 +240,31 @@ impl Stack {
         stream
     }
 
+    /// Waits until the web daemon runs a thread serving a connection. A connection still in
+    /// the listen backlog when SIGTERM lands is never accepted, and the kernel resets it.
+    pub fn wait_web_serving(&self, limit: Duration) {
+        let threads = format!("/proc/{}/task", self.web.id());
+        let serving = || {
+            std::fs::read_dir(&threads)
+                .unwrap()
+                .flatten()
+                .any(|thread| {
+                    std::fs::read_to_string(thread.path().join("comm"))
+                        .is_ok_and(|name| name.trim_end() == "moor-web-conn")
+                })
+        };
+        let mut waited = Duration::ZERO;
+        while !serving() {
+            assert!(
+                waited < limit,
+                "moor-web never served the connection\n{}",
+                self.diagnostics()
+            );
+            std::thread::sleep(Duration::from_millis(10));
+            waited += Duration::from_millis(10);
+        }
+    }
+
     /// The access token the daemon expects.
     pub fn token(&self) -> &str {
         &self.token
