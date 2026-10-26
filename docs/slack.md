@@ -269,8 +269,9 @@ personal API key that has only Read permission:
 ## Your own machines
 
 Each person can register machines of their own with `/moor machine add`. The form
-asks for a name, an ssh target such as `moor@minion` and optional comma-separated
-labels. The front sends the form to the controller as you, and the host's own ssh
+asks for a name, an ssh target such as `moor@minion`, optional comma-separated
+labels and an optional capacity: how many Boxes may use the machine at once, 1
+when empty. The front sends the form to the controller as you, and the host's own ssh
 key reaches the machine, so nothing secret is stored. If the controller refuses
 the machine, for example because it does not know the host's key, the form shows
 its reason word for word. `/moor machine list` and `/moor machine remove NAME`
@@ -289,6 +290,6 @@ answer only you and cover only your own machines.
 | `/moor mcp add` | anyone | any channel | Opens a private form for an MCP server of yours: Name, URL and Key. See [Your own MCP servers](#your-own-mcp-servers). |
 | `/moor mcp list` | anyone | any channel | Shows only you each server's name, URL and whether a key is stored. Never a key. |
 | `/moor mcp remove NAME` | anyone | any channel | Removes that server and its key, and tells only you. |
-| `/moor machine add` | anyone | any channel | Opens a private form for a machine of yours: Name, SSH target and Labels. See [Your own machines](#your-own-machines). |
+| `/moor machine add` | anyone | any channel | Opens a private form for a machine of yours: Name, SSH target, Labels and Capacity. See [Your own machines](#your-own-machines). |
 | `/moor machine list` | anyone | any channel | Shows only you each machine's name, ssh target and labels. |
 | `/moor machine remove NAME` | anyone | any channel | Removes that machine, and tells only you whether there was one. |
