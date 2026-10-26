@@ -107,7 +107,10 @@ pub(crate) fn check_label(label: &str) -> Result<(), String> {
 
 /// `user@host` or `user@host:port`; the host is a DNS name, an IPv4 address or a bracketed IPv6
 /// address. Nothing in it can read as a command-line option or reach a shell.
-fn check_ssh(target: &str) -> Result<(), String> {
+///
+/// # Errors
+/// Why `target` is not such an ssh target.
+pub fn check_ssh(target: &str) -> Result<(), String> {
     let bad = || format!("ssh target `{target}` must be user@host or user@host:port");
     let (user, rest) = target.split_once('@').ok_or_else(bad)?;
     let user_ok = !user.is_empty()

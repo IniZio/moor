@@ -11,7 +11,9 @@ use moor_core::response::Response;
 use serde_json::{json, Value};
 
 /// Stands in for `ssh`: runs the remote command locally, in `$FAKE_REMOTE_HOME`, the way sshd
-/// hands it to the remote user's shell.
+/// hands it to the remote user's shell. As with sshd, the command is not this process: killing
+/// it leaves the command running, and the command's stdin is a pipe that ends when this
+/// process's own stdin does.
 const FAKE_SSH: &str = r#"#!/bin/sh
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -23,7 +25,14 @@ while [ $# -gt 0 ]; do
 done
 shift
 cd "$FAKE_REMOTE_HOME" || exit 255
-HOME="$FAKE_REMOTE_HOME" SHELL=/bin/sh exec /bin/sh -c "$*"
+fifo=$(mktemp -u "$FAKE_REMOTE_HOME/.ssh-in.XXXXXX") && mkfifo "$fifo" || exit 255
+exec 3<&0
+cat <&3 >"$fifo" 3<&- &
+exec 3<&-
+HOME="$FAKE_REMOTE_HOME" SHELL=/bin/sh /bin/sh -c "$*" <"$fifo"
+code=$?
+rm -f "$fifo"
+exit "$code"
 "#;
 
 /// The headers the Box's Proxy sets for Box 7 in slot 0 of machine `minion`.
