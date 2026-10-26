@@ -578,9 +578,13 @@ fn a_turn_at_forty_minutes_posts_the_forty_minute_line_and_a_restart_repeats_non
 
 #[test]
 fn a_turn_that_ended_or_ran_under_twenty_minutes_posts_no_long_turn_line() {
-    let (rig, controller, _bin, post) = thread_with_status();
+    let (mut rig, controller, _bin, post) = thread_with_status();
+    let n = watches(&controller);
+    rig.kill_daemon();
     controller.emit_ago(30 * 60, (BOX_ID, BOX_NAME, "working"), json!({}));
     controller.emit_ago(10 * 60, (BOX_ID, BOX_NAME, "idled"), json!({}));
+    rig.spawn_daemon();
+    wait_refolded(&controller, n);
     rig.wait_post(&finished_line());
     controller.emit_ago(5 * 60, (BOX_ID, BOX_NAME, "busy"), json!({}));
     std::thread::sleep(QUIET);
