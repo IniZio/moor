@@ -252,3 +252,37 @@ fn ensure_plans_the_proxy_for_the_user_of_the_box() {
         .collect();
     assert_eq!(users, [second]);
 }
+
+/// The egress hosts `proxy` gives the Box under `config`.
+fn egress_hosts(config: UserConfig) -> Vec<String> {
+    let dir = tempfile::tempdir().unwrap();
+    let mut r = rig_with(dir.path(), config);
+    r.cx = r.cx.with_proxy_host(Arc::new(FakeProxyHost::new()));
+    let store = r.cx.store().unwrap();
+    let (user, _) = store.enroll(&Identity::local(2000)).unwrap();
+    let new = NewBox {
+        name: BoxName::parse_allow_bare("machine-box").unwrap(),
+        repo: None,
+    };
+    let id = store
+        .apply(Decision::insert(new).requester(user))
+        .unwrap()
+        .box_id;
+    let proxy = super::proxy(&r.cx, id, Some(BoxHandle::new("h")), None, &cfg()).unwrap();
+    proxy.addr.hosts
+}
+
+#[test]
+fn the_machine_service_host_goes_through_the_proxy_when_configured() {
+    let mut config = UserConfig::default();
+    config.machines.service = Some(moor_core::config::MachineService {
+        host: "machine.moor.internal".to_owned(),
+        upstream: "127.0.0.1:7700".parse().unwrap(),
+    });
+    assert!(egress_hosts(config).contains(&"machine.moor.internal".to_owned()));
+    let hosts = egress_hosts(UserConfig::default());
+    assert!(
+        !hosts.contains(&"machine.moor.internal".to_owned()),
+        "{hosts:?}"
+    );
+}
