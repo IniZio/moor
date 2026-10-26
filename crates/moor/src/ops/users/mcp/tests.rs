@@ -106,7 +106,7 @@ fn a_server_without_a_key_is_left_out_and_named() {
     assert!(got.servers.is_empty());
     assert_eq!(
         got.notes,
-        ["MCP server docs left out: no key stored for it (add one with /moor mcp add)"]
+        ["MCP server docs left out: you have no secret mcp_docs"]
     );
 }
 

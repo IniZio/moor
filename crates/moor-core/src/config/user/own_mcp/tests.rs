@@ -93,13 +93,16 @@ fn the_users_server_wins_a_name_clash_and_says_so() {
 }
 
 #[test]
-fn a_server_whose_key_is_missing_is_left_out_with_one_note() {
+fn a_server_whose_key_is_missing_is_left_out_and_names_the_secret() {
     let shared = BTreeMap::from([shared("docs", "docs_key"), shared("open", "open_key")]);
     let got = box_mcp(&shared, &[linear()], &have(&["open_key"]));
     assert_eq!(got.servers.keys().collect::<Vec<_>>(), ["open"]);
     assert_eq!(
         got.notes,
-        ["MCP server docs, linear left out: no key stored for it (add one with /moor mcp add)"]
+        [
+            "MCP server docs left out: you have no secret docs_key",
+            "MCP server linear left out: you have no secret mcp_linear",
+        ]
     );
 }
 

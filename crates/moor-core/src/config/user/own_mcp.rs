@@ -112,14 +112,19 @@ pub fn box_mcp(
     }
     let mut left_out = Vec::new();
     servers.retain(|name, s| {
-        let held = s
+        let missing: Vec<String> = s
             .refs()
-            .iter()
-            .all(|r| SecretName::parse(r).is_ok_and(|n| have.contains(&n)));
-        if !held {
-            left_out.push(name.clone());
+            .into_iter()
+            .filter(|r| !SecretName::parse(r).is_ok_and(|n| have.contains(&n)))
+            .map(str::to_owned)
+            .collect();
+        if !missing.is_empty() {
+            left_out.push(format!(
+                "MCP server {name} left out: you have no secret {}",
+                missing.join(", ")
+            ));
         }
-        held
+        missing.is_empty()
     });
     let mut notes = Vec::new();
     if !replaced.is_empty() {
@@ -128,12 +133,7 @@ pub fn box_mcp(
             replaced.join(", ")
         ));
     }
-    if !left_out.is_empty() {
-        notes.push(format!(
-            "MCP server {} left out: no key stored for it (add one with /moor mcp add)",
-            left_out.join(", ")
-        ));
-    }
+    notes.extend(left_out);
     BoxMcp { servers, notes }
 }
 
