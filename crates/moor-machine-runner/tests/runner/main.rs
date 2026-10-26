@@ -394,7 +394,7 @@ fn excluding(json: &'static str) -> Vec<(&'static str, &'static str)> {
 }
 
 #[test]
-fn sync_leaves_alone_the_proxys_patterns_and_the_calls_own() {
+fn sync_leaves_alone_the_patterns_the_proxy_sends_and_the_calls_own() {
     let rig = Rig::start();
     let headers = excluding(r#"["node_modules"]"#);
     rig.write("app/node_modules/m/index.js", "linux");
