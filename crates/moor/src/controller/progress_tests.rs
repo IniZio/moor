@@ -3,7 +3,7 @@ use std::sync::mpsc;
 use std::thread::{self, sleep};
 use std::time::Duration;
 
-use super::{report_while, respond_with_progress};
+use super::{report_while, reports_progress, respond_with_progress};
 use crate::controller::conn::operator;
 use crate::env::Env;
 use moor_core::controller::{parse_server_frame, ServerFrame};
@@ -152,11 +152,6 @@ fn close_reports_progress_and_show_does_not() {
         force: false,
     });
     assert!(progress(close) > 0);
-    let mirror = serde_json::from_value(serde_json::json!({"id": 1, "dest": "/nonexistent/m"}));
-    assert!(progress(Request::BoxMirror(mirror.unwrap())) > 0);
-    let put =
-        serde_json::from_value(serde_json::json!({"id": 1, "src": "/nonexistent/s", "dest": "d"}));
-    assert!(progress(Request::BoxPut(put.unwrap())) > 0);
     let show = Request::Show(ShowReq {
         target: Some(target.into()),
         events: None,
@@ -166,4 +161,13 @@ fn close_reports_progress_and_show_does_not() {
         pane: false,
     });
     assert_eq!(progress(show), 0);
+}
+
+#[test]
+fn box_mirror_and_box_put_report_progress() {
+    let req = |v| serde_json::from_value::<Request>(v).unwrap();
+    let mirror = req(serde_json::json!({"cmd": "box-mirror", "id": 1, "dest": "/m"}));
+    let put = req(serde_json::json!({"cmd": "box-put", "id": 1, "src": "/s", "dest": "d"}));
+    assert!(reports_progress(&mirror));
+    assert!(reports_progress(&put));
 }
