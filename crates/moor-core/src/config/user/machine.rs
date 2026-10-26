@@ -33,6 +33,7 @@ pub struct UserMachine {
     pub capacity: u16,
 }
 
+/// The capacity of a machine added without one.
 const fn one() -> u16 {
     1
 }

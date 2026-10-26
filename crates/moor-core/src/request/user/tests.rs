@@ -154,6 +154,7 @@ fn as_refuses_a_second_identity_or_another_as_inside() {
 fn machine_requests_round_trip() {
     for wire in [
         json!({"cmd": "machine-add", "name": "mac", "ssh": "u@h", "labels": ["macos"]}),
+        json!({"cmd": "machine-add", "name": "mac", "ssh": "u@h", "capacity": 2}),
         json!({"cmd": "machine-add", "name": "mac", "ssh": "u@h", "identity": "slack:T1:U1"}),
         json!({"cmd": "machine-remove", "name": "mac"}),
         json!({"cmd": "machine-list"}),
