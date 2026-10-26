@@ -166,7 +166,7 @@ fn a_crashed_server_starts_again_on_the_next_call() {
     tap(&rig, &HEADERS).unwrap();
     let pid = latest_pid(&rig);
     let killed = std::process::Command::new("kill")
-        .args(["-9", &pid.to_string()])
+        .args(["-KILL", "--", &pid.to_string()])
         .status()
         .unwrap();
     assert!(killed.success());

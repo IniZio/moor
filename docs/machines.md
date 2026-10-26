@@ -39,7 +39,10 @@ moor-machine-runner --socket /path/to/moor.sock --state-dir ~/.local/state/moor-
 | `--prepare CMD` | none | run on the machine before a Box's first `exec` or `machine_info`; see [Per-Box setup](#per-box-setup) |
 | `--release CMD` | none | run on the machine once a prepared Box is no longer open, before its copy there is removed |
 | `--hook-timeout-secs` | `600` | how long `prepare` or `release` may run |
-| `--sweep-secs` | `60` | how often the runner looks for prepared Boxes that are no longer open |
+| `--sweep-secs` | `60` | how often the runner looks for prepared Boxes that are no longer open and for idle relay sessions |
+| `--relay NAME=CMD` | none | a stdio MCP server on the machine whose tools the runner lists as `NAME_<tool>`; repeat for more; see [Relays](#relays) |
+| `--force-arg NAME.ARG=FACT` | none | set argument ARG of relay NAME's tools to the Box's fact FACT on every call, hidden from the Box; repeat for more |
+| `--relay-idle-secs` | `1800` | how long a relay session may go without a call before it ends |
 
 A resource caps heavy work on a machine, such as native builds, at CAP calls at
 once. It is counted per machine name across all Boxes, and only the runner
@@ -151,3 +154,44 @@ rm -rf ~/moor-state/"$MOOR_BOX" ~/moor/"$MOOR_BOX"
 
 An agent in the Box then builds with
 `xcodebuild -destination "id=$MOOR_FACT_DEVICE" -derivedDataPath ~/moor-state/$MOOR_BOX/DerivedData`.
+
+## Relays
+
+A machine may run MCP servers of its own over stdio, such as Argent
+(`argent mcp`) for driving simulators. `--relay NAME=CMD` lists such a server's
+tools to every Box beside `sync`, `exec` and `machine_info`. NAME is
+`[a-z][a-z0-9-]*`.
+
+Each tool is listed as `NAME_<tool>`, with every character but letters, digits
+and `_` turned into `_`: relay `argent`'s `list-devices` is
+`argent_list_devices`. If two tools would get the same name, or one would take
+a name the runner already lists, that relay's session refuses to start and its
+tools are left out, with the reason on stderr and in the error of a call to one
+of them. Results, errors and progress come back from the server unchanged.
+
+`--force-arg NAME.ARG=FACT` keeps a Box on what was set up for it. For each of
+relay NAME's tools whose input schema has ARG, the runner removes ARG from the
+schema's `properties` and `required`, so the agent never sees it, and on every
+call sets ARG to the Box's fact FACT, replacing anything the agent sent. A Box
+without FACT gets an error naming it, and the call is not relayed.
+
+The runner keeps one MCP session per Box and relay. It starts on the Box's first
+call of a relayed tool or tool listing, after prepare, as
+`ssh <target> 'cd ~/moor/<box id> && exec "$SHELL" -lc CMD'` with `MOOR_BOX`,
+`MOOR_SLOT`, `MOOR_PORT_OFFSET` and the `MOOR_FACT_*` variables set. It ends
+when the sweep releases the Box (before release runs), after
+`--relay-idle-secs` without a call, or when the server exits. Ending it closes
+the server's stdin. A later call starts it again.
+
+For the iOS example above, each Box drives only its own simulator through
+Argent:
+
+```sh
+moor-machine-runner --socket /path/to/moor.sock \
+  --state-dir ~/.local/state/moor-machine-runner \
+  --prepare '~/bin/moor-prepare' --release '~/bin/moor-release' \
+  --relay argent='argent mcp' --force-arg argent.udid=device
+```
+
+The Box sees `argent_tap` and the rest without their `udid` argument, and each
+call reaches the simulator prepare made for that Box.
