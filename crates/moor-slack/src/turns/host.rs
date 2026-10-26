@@ -4,12 +4,17 @@
 
 use moor_client::Client;
 use moor_core::name::SessionId;
-use moor_core::request::{OpenHostSessionReq, Request, SessionsReq, UpdateHostSessionReq};
+use moor_core::request::{
+    BindSessionReq, OpenHostSessionReq, Request, SessionsReq, UpdateHostSessionReq,
+};
 use moor_core::response::{ExitClass, Response};
 use moor_core::ErrorKind;
 use serde_json::Value;
 
 use crate::db::{Db, TurnRow};
+
+/// The front name the controller's bindings know this front by.
+const FRONT: &str = "slack";
 
 /// The id of a live host Session for the thread of `row`, recording it when it is new to
 /// `slack.db`. `agent` names the coordinator agent in a Session it opens. When the controller
@@ -20,10 +25,11 @@ pub(super) fn ensure(
     row: &TurnRow,
     workdir: &str,
     agent: &str,
+    log: &dyn Fn(&str),
 ) -> Result<i64, String> {
     let mut refusal = String::new();
     for _ in 0..2 {
-        let id = find_or_open(client, db, row, workdir, agent)?;
+        let id = find_or_open(client, db, row, workdir, agent, log)?;
         let Some(why) = refused(client, id, agent) else {
             return Ok(id);
         };
@@ -59,6 +65,7 @@ fn find_or_open(
     row: &TurnRow,
     workdir: &str,
     agent: &str,
+    log: &dyn Fn(&str),
 ) -> Result<i64, String> {
     if let Some(id) = db
         .root_session(&row.channel, &row.thread_ts)
@@ -82,7 +89,36 @@ fn find_or_open(
         .ok_or_else(|| "the reply carries no session id".to_owned())?;
     db.set_root_session(&row.channel, &row.thread_ts, workdir, id)
         .map_err(|e| e.to_string())?;
+    bind(client, row, id, log);
     Ok(id)
+}
+
+/// Binds host Session `id` to the thread's key under front `slack`, so a monitor can tell
+/// which conversation started a Box. The binding only serves monitoring: a refusal is logged
+/// and the turn goes on. The controller keeps the first binding of a key, so a key whose
+/// earlier Session has ended stays bound to that one, and the log says so.
+fn bind(client: &Client, row: &TurnRow, id: i64, log: &dyn Fn(&str)) {
+    let key = key(row);
+    let request = Request::BindSession(BindSessionReq {
+        front: FRONT.to_owned(),
+        key: key.clone(),
+        session: SessionId::new(id),
+        owner: FRONT.to_owned(),
+    });
+    match call(client, request) {
+        Ok(bound) => {
+            let held = bound.pointer("/binding/session").and_then(Value::as_i64);
+            if held.is_some_and(|held| held != id) {
+                log(&format!(
+                    "host: {FRONT} {key} stays bound to host Session {} and not to {id}",
+                    held.unwrap_or_default()
+                ));
+            }
+        }
+        Err(e) => log(&format!(
+            "host: could not bind host Session {id} as {FRONT} {key}: {e}"
+        )),
+    }
 }
 
 /// The ids of the caller's live host Sessions opened with `key`.

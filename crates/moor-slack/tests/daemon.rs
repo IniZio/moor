@@ -9,6 +9,8 @@
 
 mod support;
 
+#[path = "daemon/binding.rs"]
+mod binding;
 #[path = "daemon/close.rs"]
 mod close;
 #[path = "daemon/connect.rs"]

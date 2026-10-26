@@ -200,7 +200,7 @@ impl Turns {
         let workdir = &ready.workdir;
         let client = self.link.client_as(ready.identity.clone());
         let shown = workdir.display().to_string();
-        if let Err(e) = host::ensure(&client, db, row, &shown, agent.kind().name()) {
+        if let Err(e) = host::ensure(&client, db, row, &shown, agent.kind().name(), &*self.log) {
             let why = format!("the controller did not open a host Session: {e}");
             return Closing::of(End::Failed, lines::unavailable(&why));
         }
