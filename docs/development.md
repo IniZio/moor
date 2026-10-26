@@ -20,24 +20,28 @@ none, and a module with no row has no limit.
 
 ## Database migrations
 
-Each database's schema is an ordered list of `V<n>__<name>.sql` files.
-moor.db's live in [crates/moor/migrations](../crates/moor/migrations). Opening
-a database applies the files it lacks inside one `BEGIN IMMEDIATE`
-transaction, so a second process waits for the whole run, and records each in
-`refinery_schema_history`. A database from before migrations is adopted as
-already at migration 1 when its old schema version is the last one shipped
-without migrations, and refused otherwise. moor.db's migration 2 creates, if
-missing, the tables older builds added on every open, so an adopted file that
-predates one of them gains it. A database that holds a migration
-this build does not know is refused, so an older build never reads a newer
-file.
+Each database's schema is an ordered list of `V<n>__<name>.sql` files. The
+files for moor.db are in [crates/moor/migrations](../crates/moor/migrations).
+When moor opens a database, it applies the missing files in one
+`BEGIN IMMEDIATE` transaction and records each one in
+`refinery_schema_history`. A second process that opens the database waits for
+the whole run.
 
-A schema change is a new migration file. Never edit an applied one: a test
-pins every file's checksum, and refinery refuses a database whose applied
-migration changed. Keep changes additive, as the engineering handbook's
-non-breaking changes guide asks: add tables and nullable or defaulted columns, and ship a data patch
-separately from the schema change. Migrations run before the new code uses
-them, and a deploy never moves a database back.
+moor adopts a database that has no migration history as already at
+migration 1 when its old schema version is the last one shipped without
+migrations. It refuses any other database without history. Migration 2 of
+moor.db creates the tables that older builds added on every open, if they are
+missing, so an adopted file that lacks one of them gets it. moor refuses a
+database that holds a migration this build does not know, so an older build
+never reads a newer file.
+
+A schema change is a new migration file. Do not edit an applied migration. A
+test pins the checksum of every file, and refinery refuses a database whose
+applied migration changed. Keep changes additive, as the engineering
+handbook's guide to non-breaking changes asks. Add tables and nullable or
+defaulted columns, and ship a data patch separately from the schema change.
+Migrations run before the new code uses them, and a deploy never moves a
+database back.
 
 ## Build and test
 
@@ -45,7 +49,7 @@ them, and a deploy never moves a database back.
 
 | Target | What it runs |
 | --- | --- |
-| `make build` | `cargo build --workspace --release`. |
+| `make build` | `cargo build --workspace --release --locked`. |
 | `make lint` | `cargo fmt --check` and `taplo fmt --check`, Clippy with `-D warnings`, the 400-line cap on Rust files, the removed-name, Box-key, and Box-environment checks, the layering check, the lint self-tests, `typos`, and `cargo doc` with warnings denied. |
 | `make audit` | `cargo deny check` and `cargo machete`. |
 | `make unit` | Every test target of the workspace in one `cargo nextest` run, with the doc tests alongside it. |
@@ -53,8 +57,8 @@ them, and a deploy never moves a database back.
 | `make ci` | `audit`, `lint`, then `test`. |
 | `make overlap BASE=<ref> [HEAD=<ref>] [FILES="glob ..."]` | Lists open pull requests that touch the same files and are not yet in `BASE`. |
 
-Run `make overlap` before you branch new work and before you rebase a stack,
-then base the new branch on the pull requests that it lists.
+Run `make overlap` before you branch new work and before you rebase a stack.
+Base the new branch on the pull requests that it lists.
 
 CI runs `lint`, `audit`, and `unit` in
 [ci.yaml](../.github/workflows/ci.yaml).

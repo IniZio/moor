@@ -19,7 +19,8 @@ controller. It listens only on `127.0.0.1` and asks for an access token.
 
    `moor-web` prints the URL that it listens on, such as `http://127.0.0.1:34149/`.
 
-3. Open the URL with the token added, as `http://127.0.0.1:34149/?token=<token>`.
+3. Open the URL with the token as a query parameter, such as
+   `http://127.0.0.1:34149/?token=<token>`.
    The page stores the token in a cookie, so later visits need no token in
    the URL.
 
@@ -27,10 +28,10 @@ To reach the page from another machine, forward the port over ssh.
 
 ## Run it from the controller
 
-The controller can run `moor-web` as a front instead. On Linux the front has a
-network namespace of its own, so give it a fixed `--port` and list the same
-port in `ports`. The controller then forwards that port from the host's
-`127.0.0.1` to the front:
+The controller can run `moor-web` as a front. On Linux the front has its own
+network namespace, so give it a fixed `--port` and list the same port in
+`ports`. The controller forwards that port from the host's `127.0.0.1` to the
+front:
 
 ```yaml
 fronts:
@@ -42,8 +43,8 @@ fronts:
 ```
 
 Without `ports`, nothing on the host reaches the page. With `--port 0`, the
-port changes on each start and no listed port matches it. See
-[fronts](config.md#fronts).
+port changes on each start and no listed port matches it. The configuration
+reference describes [`fronts`](config.md#fronts).
 
 ## Command line
 

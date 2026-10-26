@@ -8,8 +8,8 @@ the agent's requests.
 
 moor is for engineers who run several agents at once and want each one on
 its own machine and branch. People reach moor through fronts, such as the
-Slack front. The `moor` CLI is a dev tool for driving and debugging the core
-directly. It is not the main user interface.
+Slack front. The `moor` CLI is a dev tool to drive and debug the core. It is
+not the main user interface.
 
 ## Concepts
 
@@ -33,7 +33,7 @@ This guide starts one Box from a git repo on your machine. You need:
 
 - the Rust toolchain that `rust-toolchain.toml` pins
 - `herdr` on `PATH`
-- crabbox 0.79.1-moor.1 or a newer `-moor` build of
+- crabbox 0.79.1-moor.6 or a newer `-moor` build of
   [IniZio/crabbox](https://github.com/IniZio/crabbox) on `PATH`, set up for
   the `local-container` provider
 - a GitHub token, for a repo on GitHub, such as the one `gh auth token` prints
@@ -67,7 +67,7 @@ This guide starts one Box from a git repo on your machine. You need:
 
 3. Create your moor user, and store your tokens as its secrets. The CLI acts
    as your `local:<uid>` identity, and each command reads the value from
-   stdin. The `github` secret is needed only for a repo on GitHub:
+   stdin. You need the `github` secret only for a repo on GitHub:
 
    ```sh
    moor user enroll
