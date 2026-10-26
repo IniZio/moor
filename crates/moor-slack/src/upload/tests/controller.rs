@@ -76,6 +76,7 @@ fn send(out: &mut impl Write, s: &Stored) -> std::io::Result<()> {
                 message: message.to_owned(),
                 hints: Vec::new(),
                 context: Vec::new(),
+                detail: None,
             };
             Response::err("artifact-read", error)
         },

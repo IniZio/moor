@@ -430,6 +430,7 @@ fn a_failed_enroll_stops_before_the_secret_and_names_the_controllers_reason() {
             message: "the vault is sealed".to_owned(),
             hints: Vec::new(),
             context: Vec::new(),
+            detail: None,
         };
         Ok(Response::err(r.cmd(), error))
     };

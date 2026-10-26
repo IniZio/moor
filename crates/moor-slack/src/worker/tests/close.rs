@@ -10,7 +10,7 @@ use std::sync::mpsc;
 use moor_core::decide::close::Refusal;
 use moor_core::name::BoxId;
 use moor_core::request::Request;
-use moor_core::response::Response;
+use moor_core::response::{CloseRefusal, ErrorDetail, ErrorKind, ErrorView, Response};
 use serde_json::json;
 
 use super::{
@@ -21,6 +21,18 @@ use crate::command::BoxEvent;
 use crate::db::{BoxState, Db, InboxItem, ItemKind, SlackBox};
 use crate::socket::Mention;
 use crate::worker::{serve, settle, Attempt};
+
+/// A refused close whose text is nothing a front could match: only the detail says why.
+fn refused_close(refusal: &Refusal) -> Answer {
+    let error = ErrorView {
+        kind: ErrorKind::Refused,
+        message: "the controller words this however it likes".to_owned(),
+        hints: Vec::new(),
+        context: Vec::new(),
+        detail: Some(ErrorDetail::CloseRefused(CloseRefusal::from(refusal))),
+    };
+    Ok(Response::err("close", error))
+}
 
 /// A plain reply in thread `10.5` of channel `C1`.
 fn reply(event_id: &str, user: &str, text: &str) -> Mention {
@@ -235,7 +247,7 @@ fn a_box_still_open_after_a_lost_close_is_closed_again() {
     let row = recorded_close(&db);
     let seen = attempt(&db, &row, Attempt::Again, &mut |req| match req {
         Request::Show(_) => shown("ready"),
-        _ => refused("close", "Box is already closed"),
+        _ => refused_close(&Refusal::AlreadyClosed),
     });
     assert_eq!(seen.calls.len(), 2, "a show, then a close");
     assert_eq!(texts(&seen), ["Closed Box `slack-10-5-1`."]);
@@ -268,9 +280,7 @@ fn a_close_refused_for_unsaved_work_asks_the_thread_in_slack_terms_and_keeps_the
         ahead: 0,
         dirty: 1,
     };
-    let seen = attempt(&db, &row, Attempt::First, &mut |_| {
-        refused("close", &refusal.to_string())
-    });
+    let seen = attempt(&db, &row, Attempt::First, &mut |_| refused_close(&refusal));
     let [line] = texts(&seen)[..] else {
         panic!("{:?}", texts(&seen));
     };
@@ -291,6 +301,43 @@ fn a_close_refused_for_unsaved_work_asks_the_thread_in_slack_terms_and_keeps_the
         )
         .unwrap();
     assert!(notice.contains("1 uncommitted file"), "{notice}");
+}
+
+#[test]
+fn a_close_the_box_could_not_be_checked_for_tells_the_thread_it_can_discard_without_cli_advice() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db(dir.path());
+    bound_thread(&db);
+    let row = recorded_close(&db);
+    let refusal = Refusal::BoxUnchecked {
+        reason: "ssh timed out".into(),
+    };
+    let seen = attempt(&db, &row, Attempt::First, &mut |_| refused_close(&refusal));
+    let [line] = texts(&seen)[..] else {
+        panic!("{:?}", texts(&seen));
+    };
+    assert!(!line.contains("--force"), "no CLI flag: {line}");
+    assert!(!line.contains("moor "), "no CLI advice: {line}");
+    assert!(line.contains("close it and discard"), "{line}");
+    assert!(matches!(
+        state(&db, "C1", "10.5"),
+        Some(BoxState::Bound { .. })
+    ));
+}
+
+#[test]
+fn a_refusal_without_a_kind_is_posted_as_the_controller_worded_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db(dir.path());
+    bound_thread(&db);
+    let row = recorded_close(&db);
+    let seen = attempt(&db, &row, Attempt::First, &mut |_| {
+        refused("close", "Box is already closed")
+    });
+    let [line] = texts(&seen)[..] else {
+        panic!("{:?}", texts(&seen));
+    };
+    assert!(line.starts_with("Could not close Box"), "{line}");
 }
 
 #[test]
@@ -351,7 +398,7 @@ fn a_crash_after_the_closed_post_leaves_the_close_to_settle_and_post_again_on_re
     let (_, jobs) = mpsc::channel();
     let mut answer = |req: &Request| match req {
         Request::Show(_) => shown("closed"),
-        _ => refused("close", "Box is already closed"),
+        _ => refused_close(&Refusal::AlreadyClosed),
     };
     with_fx(&seen, &mut answer, |fx| serve(&jobs, &db, left, fx));
     let after = seen.into_inner();

@@ -213,6 +213,7 @@ pub(crate) fn failed(cmd: &str, message: &str) -> Response {
             message: message.to_owned(),
             hints: Vec::new(),
             context: Vec::new(),
+            detail: None,
         },
     )
 }
@@ -548,6 +549,7 @@ pub(crate) fn refused(cmd: &str, message: &str) -> Response {
             message: message.to_owned(),
             hints: Vec::new(),
             context: Vec::new(),
+            detail: None,
         },
     )
 }

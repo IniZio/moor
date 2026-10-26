@@ -167,6 +167,7 @@ fn refusal_envelope_passes_through_unchanged() {
             message: "box has unfinished work".into(),
             hints: vec!["moor close --force".into()],
             context: vec![],
+            detail: None,
         },
     );
     let dir = tempfile::tempdir().unwrap();

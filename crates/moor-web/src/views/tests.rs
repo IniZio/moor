@@ -101,6 +101,7 @@ pub(super) fn failure(cmd: &str, kind: ErrorKind) -> Response {
         message: "no".to_owned(),
         hints: Vec::new(),
         context: Vec::new(),
+        detail: None,
     };
     Response::err(cmd, error)
 }

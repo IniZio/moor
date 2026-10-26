@@ -488,6 +488,7 @@ fn targets_envelope(targets: Option<Vec<String>>) -> Response {
                 message: "the store is down".to_owned(),
                 hints: Vec::new(),
                 context: Vec::new(),
+                detail: None,
             },
         ),
     }

@@ -95,6 +95,7 @@ fn error_prints_message_and_hints() {
         message: "bad thing".into(),
         hints: vec!["try x".into(), "or y".into()],
         context: vec![],
+        detail: None,
     };
     let (out, err) = render(&Response::err("show", e), false);
     assert_eq!(out, "");
@@ -191,6 +192,7 @@ fn failed_run_renders_error_on_stderr() {
         message: "no box".into(),
         hints: vec![],
         context: vec![],
+        detail: None,
     };
     let (out, err) = render(&Response::err("run", e), false);
     assert_eq!(out, "");

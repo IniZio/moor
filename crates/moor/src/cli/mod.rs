@@ -136,6 +136,7 @@ pub fn parse_call(stdin: &str) -> Result<Request, Output> {
             message: e.to_string(),
             hints: Vec::new(),
             context: Vec::new(),
+            detail: None,
         };
         let opts = GlobalOpts {
             json: true,
@@ -229,6 +230,7 @@ fn clap_output(err: &clap::Error, cmd: String, opts: &GlobalOpts) -> Output {
                 message: "missing subcommand".to_owned(),
                 hints: text.lines().map(str::to_owned).collect(),
                 context: Vec::new(),
+                detail: None,
             };
             render(&Response::err(cmd, view), opts)
         }
@@ -246,6 +248,7 @@ fn clap_output(err: &clap::Error, cmd: String, opts: &GlobalOpts) -> Output {
                 message,
                 hints,
                 context: Vec::new(),
+                detail: None,
             };
             render(&Response::err(cmd, view), opts)
         }

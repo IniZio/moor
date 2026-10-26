@@ -8,25 +8,26 @@
 
 use std::path::{Path, PathBuf};
 
-use moor_core::decide::close::Refusal;
 use moor_core::request::Request;
-use moor_core::response::Response;
+use moor_core::response::{CloseRefusal, ErrorDetail, Response};
 use serde_json::json;
 
 use super::inbox::reply;
 use super::support::controller::{failed, FakeController, Scripted};
 use super::support::{Rig, BOX_NAME, QUIET, USER};
 
-/// The controller's refusal of a close that would lose unpushed work.
-/// The controller's refusal of a close of the Box, which holds 2 unpushed commits.
-fn unpushed() -> String {
-    Refusal::UnsavedInBox {
-        name: BOX_NAME.into(),
-        branch: format!("moor/{BOX_NAME}"),
-        ahead: 2,
-        dirty: 0,
+/// The controller's refusal of a close of the Box, which holds 2 unpushed commits. Its text is
+/// not one the front could match; the kind says what it is.
+fn unpushed() -> Response {
+    let mut reply = failed("close", "the controller words this however it likes");
+    if let Some(error) = reply.error.as_mut() {
+        error.detail = Some(ErrorDetail::CloseRefused(CloseRefusal::Unsaved {
+            branch: format!("moor/{BOX_NAME}"),
+            ahead: 2,
+            dirty: 0,
+        }));
     }
-    .to_string()
+    reply
 }
 
 /// A `close` reply for the Box.
@@ -111,7 +112,7 @@ fn close_box_in_the_requesters_turn_closes_the_box_without_force() {
 #[test]
 fn close_refused_with_unpushed_work_is_posted_and_the_box_stays_open() {
     let (rig, controller, _bin) = running_box();
-    controller.script("close", Scripted::Reply(failed("close", &unpushed())));
+    controller.script("close", Scripted::Reply(unpushed()));
     reply(&rig, 2, USER, "close it");
     rig.wait_post(&format!(
         "Box `{BOX_NAME}` is still open: it holds work that is not saved anywhere (2 unpushed \

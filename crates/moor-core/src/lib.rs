@@ -31,5 +31,7 @@ pub use request::{
     EnvReq, GateReq, Request, RunReq, ShowReq, StartReq, SteerReq, WaitEventsReq, WaitFor,
     WaitMode, WaitReq,
 };
-pub use response::{ErrorKind, ErrorView, ExitClass, Response, Warning, SCHEMA};
+pub use response::{
+    CloseRefusal, ErrorDetail, ErrorKind, ErrorView, ExitClass, Response, Warning, SCHEMA,
+};
 pub use secret::{Digest, Secret};

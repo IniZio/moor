@@ -29,6 +29,7 @@ fn refusal(request: &Request, message: &str) -> Response {
         message: message.to_owned(),
         hints: Vec::new(),
         context: Vec::new(),
+        detail: None,
     };
     Response::err(request.cmd(), error)
 }
