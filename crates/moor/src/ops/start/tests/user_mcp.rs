@@ -4,10 +4,10 @@
 
 use std::sync::Arc;
 
-use moor_core::config::UserMcp;
+use moor_core::config::{parse_user, UserMcp};
 use moor_core::{BoxId, StartReq};
 
-use super::{req, world, World};
+use super::{req, world, world_with, World};
 use crate::ops::start::run;
 use crate::testing::cx::{put_secret, REQUESTER_USER};
 use crate::testing::driver::FakeDriver;
@@ -76,4 +76,23 @@ fn a_server_without_a_key_is_left_out_and_the_start_says_so() {
     let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
     let launch = super::super::launch::launch_req(&w.cx, &row.unwrap().unwrap(), None).unwrap();
     assert!(launch.mcp.is_empty());
+}
+
+#[test]
+fn a_shared_server_whose_secret_the_user_lacks_is_left_out_not_refused() {
+    let config = parse_user(
+        "u.yaml",
+        "mcp_servers:\n  linear:\n    url: https://mcp.linear.app/mcp/readonly\n    \
+         headers: {Authorization: \"Bearer ${linear-api-key}\"}\n",
+    )
+    .unwrap();
+    let w = world_with(FakeDriver::new(), config);
+    let v = run(&w.cx, &req("demo")).unwrap();
+    assert!(
+        v.warnings_inline
+            .iter()
+            .any(|n| n == "MCP server linear left out: you have no secret linear-api-key"),
+        "{:?}",
+        v.warnings_inline
+    );
 }

@@ -52,6 +52,7 @@ pub(crate) fn unresolved(
 ) -> Vec<EnvItem> {
     s.credentials
         .iter()
+        .filter(|c| c.boxed)
         .map(|c| credential_item(c, Some(have)))
         .chain(repo_mcp_items(files))
         .filter(|i| i.resolves == Some(false))
