@@ -34,7 +34,17 @@ struct Args {
     /// Command run on the machine, in the Box's copy, once a prepared Box is no longer open.
     #[arg(long, value_name = "CMD")]
     release: Option<String>,
-    /// Seconds prepare or release may run.
+    /// Command run on the machine, in the Box's copy, when a prepared Box falls asleep, with
+    /// the Box's facts as env; stop what `prepare` started that holds the slot, such as its
+    /// simulator.
+    #[arg(long, value_name = "CMD")]
+    suspend: Option<String>,
+    /// Free GB a machine must have before a Box is prepared or synced there; below it the files
+    /// of sleeping Boxes are removed, oldest first, and the call fails if that is not enough.
+    /// 0 turns the check off.
+    #[arg(long, default_value_t = 20, value_name = "GB")]
+    min_free_gb: u64,
+    /// Seconds prepare, suspend or release may run.
     #[arg(long, default_value_t = 600, value_parser = clap::value_parser!(u64).range(1..))]
     hook_timeout_secs: u64,
     /// Seconds between looks for prepared Boxes that are no longer open.
@@ -170,6 +180,8 @@ async fn main() -> ExitCode {
         resources: args.resources.into_iter().collect(),
         prepare: args.prepare,
         release: args.release,
+        suspend: args.suspend,
+        min_free_gb: args.min_free_gb,
         hook_timeout: Duration::from_secs(args.hook_timeout_secs),
         sweep: Duration::from_secs(args.sweep_secs),
         reconcile: Duration::from_secs(args.reconcile_secs),

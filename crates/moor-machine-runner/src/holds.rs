@@ -33,8 +33,19 @@ pub(crate) struct Holds {
 struct Pool {
     /// Free units.
     free: Arc<Semaphore>,
-    /// Who holds a unit now, by hold id, for the waiting message.
-    holders: Mutex<Vec<(u64, BoxId)>>,
+    /// Who holds a unit now, for the waiting message. The entry owns the unit, so removing it
+    /// frees the unit whether or not its call still runs.
+    holders: Mutex<Vec<Holder>>,
+}
+
+/// One held unit.
+struct Holder {
+    /// The hold's id.
+    id: u64,
+    /// The Box holding it.
+    box_id: BoxId,
+    /// The unit, returned to its pool when the entry drops.
+    _permit: OwnedSemaphorePermit,
 }
 
 /// Resource names a call asked for, checked against the runner's resources, in name order.
@@ -48,8 +59,6 @@ pub(crate) struct Held {
 
 /// One unit of one resource.
 struct Hold {
-    /// The unit, returned to its pool on drop.
-    _permit: OwnedSemaphorePermit,
     /// Where to clear the holder entry.
     pool: Arc<Pool>,
     /// The holder entry's id.
@@ -63,7 +72,7 @@ impl Drop for Hold {
             .holders
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        holders.retain(|(id, _)| *id != self.id);
+        holders.retain(|h| h.id != self.id);
     }
 }
 
@@ -113,14 +122,24 @@ impl Holds {
             pool.holders
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
-                .push((id, caller.box_id));
-            held.push(Hold {
-                _permit: permit,
-                pool,
-                id,
-            });
+                .push(Holder {
+                    id,
+                    box_id: caller.box_id,
+                    _permit: permit,
+                });
+            held.push(Hold { pool, id });
         }
         Ok(Held { _units: held })
+    }
+
+    /// Frees every unit Box `id` holds, even while its calls run, so a sleeping Box takes none
+    /// of the machine's capacity.
+    pub(crate) fn release_box(&self, id: i64) {
+        let pools = self.pools.lock().unwrap_or_else(PoisonError::into_inner);
+        for pool in pools.values() {
+            let mut holders = pool.holders.lock().unwrap_or_else(PoisonError::into_inner);
+            holders.retain(|h| h.box_id.get() != id);
+        }
     }
 
     /// The pool of `resource` on `machine`; `resource` is one of the runner's.
@@ -168,7 +187,7 @@ impl Pool {
         let holders = self.holders.lock().unwrap_or_else(PoisonError::into_inner);
         let who: Vec<String> = holders
             .iter()
-            .map(|(_, b)| format!("Box {}", b.get()))
+            .map(|h| format!("Box {}", h.box_id.get()))
             .collect();
         format!(
             "waiting for {resource} on {machine}: held by {}",

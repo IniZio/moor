@@ -5,6 +5,10 @@
 //! sweep takes each Box with a record that the controller no longer lists as open: it runs
 //! `release` if the Box was prepared, removes the Box's copy on the machine, then drops its host
 //! mirror and the record. A failed step keeps everything, so the next call or sweep retries.
+//!
+//! A Box the controller lists as asleep is suspended: its relay sessions and holds end and
+//! `suspend` runs, and the record notes when. Its next call prepares it again, as does a call in
+//! another slot. When a machine runs short of disk, suspended Boxes' files go, oldest first.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io;
@@ -22,9 +26,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::caller::Caller;
 use crate::exec::{self, ExecOutput};
+use crate::holds::Holds;
 use crate::relay::Relays;
 
 mod reap;
+mod sleep;
 pub(crate) use reap::state_prelude;
 
 /// What `prepare` printed about a Box, such as `device`.
@@ -39,6 +45,12 @@ pub(crate) struct Hooks {
     pub(crate) prepare: Option<String>,
     /// Run on the machine once the Box is no longer open.
     pub(crate) release: Option<String>,
+    /// Run on the machine when a prepared Box falls asleep.
+    pub(crate) suspend: Option<String>,
+    /// Free GB a machine must have before a Box is prepared or synced there; 0 disables.
+    pub(crate) min_free_gb: u64,
+    /// Client for the controller's operator socket, to list the Boxes asleep.
+    pub(crate) client: Client,
     /// How long either may run.
     pub(crate) timeout: Duration,
     /// Parent of the per-Box records.
@@ -66,24 +78,46 @@ struct Record {
     facts: Facts,
     /// Whether `prepare` ran; a record a `sync` left has not.
     prepared: bool,
+    /// When the Box was suspended, in unix seconds; none while it is awake.
+    #[serde(default)]
+    suspended_at: Option<u64>,
+    /// Whether the Box's files on the machine were removed while it slept; until its next sync.
+    #[serde(default)]
+    evicted: bool,
+}
+
+impl Record {
+    /// Whether the facts still hold for `caller`: prepared, awake, and in the same slot.
+    fn is_current(&self, caller: &Caller) -> bool {
+        self.prepared && self.suspended_at.is_none() && self.slot == caller.slot
+    }
+
+    /// A record of a Box that is not suspended and whose files were not evicted.
+    fn new(caller: &Caller, facts: Facts, prepared: bool) -> Self {
+        Self {
+            ssh: caller.ssh.clone(),
+            slot: caller.slot,
+            facts,
+            prepared,
+            suspended_at: None,
+            evicted: false,
+        }
+    }
 }
 
 impl Hooks {
-    /// The caller's facts, running `prepare` first if the Box has no record yet.
+    /// The caller's facts, running `prepare` first if the Box has no record yet, was suspended,
+    /// or is in another slot than the record says.
     pub(crate) async fn facts(&self, caller: &Caller) -> Result<Facts, String> {
         let id = caller.box_id.get();
-        let lock = {
-            let mut locks = self
-                .preparing
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            Arc::clone(locks.entry(id).or_default())
-        };
+        let lock = self.lock_for(id);
         let _held = lock.lock().await;
         let path = self.record(id);
-        if let Some(record) = read(&path)?.filter(|r| r.prepared) {
-            return Ok(record.facts);
+        let old = read(&path)?;
+        if let Some(record) = old.as_ref().filter(|r| r.is_current(caller)) {
+            return Ok(record.facts.clone());
         }
+        self.guard(caller).await?;
         let facts = match &self.prepare {
             None => Facts::new(),
             Some(command) => {
@@ -103,12 +137,8 @@ impl Hooks {
                 })?
             }
         };
-        let record = Record {
-            ssh: caller.ssh.clone(),
-            slot: caller.slot,
-            facts,
-            prepared: true,
-        };
+        let mut record = Record::new(caller, facts, true);
+        record.evicted = old.is_some_and(|r| r.evicted);
         self.remember(&caller.ssh)
             .map_err(|e| format!("could not keep the machine: {e}"))?;
         write(&path, &record).map_err(|e| format!("could not keep the Box's facts: {e}"))?;
@@ -118,32 +148,31 @@ impl Hooks {
     /// Leaves a record for the caller's Box when it has none, so a sweep finds it once closed.
     pub(crate) async fn note(&self, caller: &Caller) -> Result<(), String> {
         let id = caller.box_id.get();
-        let lock = {
-            let mut locks = self
-                .preparing
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            Arc::clone(locks.entry(id).or_default())
-        };
+        let lock = self.lock_for(id);
         let _held = lock.lock().await;
         let path = self.record(id);
         if read(&path)?.is_some() {
             return Ok(());
         }
-        let record = Record {
-            ssh: caller.ssh.clone(),
-            slot: caller.slot,
-            facts: Facts::new(),
-            prepared: false,
-        };
+        let record = Record::new(caller, Facts::new(), false);
         self.remember(&caller.ssh)
             .map_err(|e| format!("could not keep the machine: {e}"))?;
         write(&path, &record).map_err(|e| format!("could not note the Box: {e}"))
     }
 
+    /// The lock that keeps two calls of Box `id` from preparing it twice.
+    fn lock_for(&self, id: i64) -> Arc<tokio::sync::Mutex<()>> {
+        let mut locks = self
+            .preparing
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        Arc::clone(locks.entry(id).or_default())
+    }
+
     /// Releases every Box with a record that the controller does not list as open, ending its
-    /// relay sessions first, then cleans up Boxes it has no record for.
-    pub(crate) async fn sweep(&self, client: &Client, relays: &Relays) {
+    /// relay sessions first, suspends the open ones that sleep, then cleans up Boxes it has no
+    /// record for.
+    pub(crate) async fn sweep(&self, client: &Client, relays: &Relays, holds: &Holds) {
         let prepared = match self.prepared() {
             Ok(ids) => ids,
             Err(e) => return eprintln!("moor-machine-runner: cannot read the Box records: {e}"),
@@ -154,7 +183,12 @@ impl Hooks {
             Ok(Err(e)) => return eprintln!("moor-machine-runner: sweep: {e}"),
             Err(e) => return eprintln!("moor-machine-runner: sweep: {e}"),
         };
-        for id in prepared.into_iter().filter(|id| !open.contains(id)) {
+        for id in prepared.iter().filter(|id| open.asleep.contains(id)) {
+            if let Err(e) = self.suspend(*id, relays, holds).await {
+                eprintln!("moor-machine-runner: suspend of Box {id} failed, retrying: {e}");
+            }
+        }
+        for id in prepared.into_iter().filter(|id| !open.contains(*id)) {
             relays.end_box(id).await;
             if let Err(e) = self.release(id).await {
                 eprintln!("moor-machine-runner: release of Box {id} failed, retrying: {e}");
@@ -169,17 +203,22 @@ impl Hooks {
         let Some(record) = read(&path)? else {
             return Ok(());
         };
-        if let (Some(command), true) = (&self.release, record.prepared) {
-            let env = box_env(id, record.slot, &record.facts);
-            self.on_machine(id, &record.ssh, &env, command).await?;
-        }
-        self.remove_on_machine(&record.ssh, id).await?;
+        self.release_files(id, &record).await?;
         let gone = |r: io::Result<()>| match r {
             Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e.to_string()),
             _ => Ok(()),
         };
         gone(std::fs::remove_dir_all(self.mirrors.join(id.to_string())))?;
         gone(std::fs::remove_file(&path))
+    }
+
+    /// Runs `release` for a prepared Box, then removes its copy and state dir on the machine.
+    async fn release_files(&self, id: i64, record: &Record) -> Result<(), String> {
+        if let (Some(command), true) = (&self.release, record.prepared) {
+            let env = box_env(id, record.slot, &record.facts);
+            self.on_machine(id, &record.ssh, &env, command).await?;
+        }
+        self.remove_on_machine(&record.ssh, id).await
     }
 
     /// Runs `command` on the machine in the Box's copy with `env` and the Box's state dir; its
@@ -260,20 +299,42 @@ pub(crate) fn fact_env(facts: &Facts) -> Vec<(String, String)> {
 }
 
 /// Every `every`, ends idle relay sessions and sweeps the Boxes that are no longer open.
-pub(crate) fn spawn_sweep(every: Duration, client: Client, hooks: Arc<Hooks>, relays: Arc<Relays>) {
+pub(crate) fn spawn_sweep(
+    every: Duration,
+    client: Client,
+    hooks: Arc<Hooks>,
+    relays: Arc<Relays>,
+    holds: Arc<Holds>,
+) {
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(every);
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             tick.tick().await;
             relays.expire().await;
-            hooks.sweep(&client, &relays).await;
+            hooks.sweep(&client, &relays, &holds).await;
         }
     });
 }
 
-/// The ids of the Boxes the controller lists as open.
-pub(super) fn open_boxes(client: &Client) -> Result<HashSet<i64>, String> {
+/// The Boxes the controller lists as open, and which of them sleep.
+#[derive(Default)]
+pub(super) struct OpenBoxes {
+    /// Every open Box.
+    pub(super) all: HashSet<i64>,
+    /// The open Boxes that are asleep.
+    pub(super) asleep: HashSet<i64>,
+}
+
+impl OpenBoxes {
+    /// Whether the controller lists Box `id` as open.
+    pub(super) fn contains(&self, id: i64) -> bool {
+        self.all.contains(&id)
+    }
+}
+
+/// The Boxes the controller lists as open.
+pub(super) fn open_boxes(client: &Client) -> Result<OpenBoxes, String> {
     let request = Request::Show(ShowReq {
         target: None,
         events: None,
@@ -291,18 +352,24 @@ pub(super) fn open_boxes(client: &Client) -> Result<HashSet<i64>, String> {
             error.message
         ));
     }
-    response
+    let boxes = response
         .value
         .as_ref()
         .and_then(|v| v.get("boxes"))
         .and_then(serde_json::Value::as_array)
-        .and_then(|boxes| {
-            boxes
-                .iter()
-                .map(|b| b.get("id").and_then(serde_json::Value::as_i64))
-                .collect()
-        })
-        .ok_or_else(|| "the controller's Box list has no ids".to_owned())
+        .ok_or_else(|| "the controller's Box list has no ids".to_owned())?;
+    let mut open = OpenBoxes::default();
+    for b in boxes {
+        let id = b
+            .get("id")
+            .and_then(serde_json::Value::as_i64)
+            .ok_or_else(|| "the controller's Box list has no ids".to_owned())?;
+        open.all.insert(id);
+        if b.get("lifecycle").and_then(serde_json::Value::as_str) == Some("asleep") {
+            open.asleep.insert(id);
+        }
+    }
+    Ok(open)
 }
 
 /// The record at `path`, or none when there is no file.

@@ -24,6 +24,7 @@ mod hooks;
 mod pull;
 mod relay;
 mod rig;
+mod sleep;
 
 fn ino(path: &Path) -> u64 {
     std::fs::metadata(path).unwrap().ino()
