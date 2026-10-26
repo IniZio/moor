@@ -108,11 +108,12 @@ impl Tail {
 
 /// `body` after exporting each of `env`, as one shell script.
 pub(crate) fn script(env: &[(String, String)], body: &str) -> String {
-    let exports: String = env
+    let mut parts: Vec<String> = env
         .iter()
         .map(|(k, v)| format!("export {k}={}; ", quote(v)))
         .collect();
-    format!("{exports}{body}")
+    parts.push(body.to_owned());
+    parts.concat()
 }
 
 /// Runs `script` at the ssh target `ssh` through the login shell, within `timeout`; the script

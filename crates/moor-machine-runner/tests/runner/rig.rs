@@ -248,7 +248,11 @@ impl Rig {
 
 /// Starts a runner in the rig at `dir`; it and the port it listens on.
 fn spawn(dir: &Path, args: &[String]) -> (Child, u16) {
-    let path = format!("{}:{}", dir.join("bin").display(), std::env::var("PATH").unwrap());
+    let path = format!(
+        "{}:{}",
+        dir.join("bin").display(),
+        std::env::var("PATH").unwrap()
+    );
     let mut runner = Command::new(env!("CARGO_BIN_EXE_moor-machine-runner"))
         .args(["--listen", "127.0.0.1:0", "--socket"])
         .arg(dir.join("c.sock"))

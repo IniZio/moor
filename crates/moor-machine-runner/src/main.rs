@@ -27,8 +27,8 @@ struct Args {
     /// A capped resource each machine has, as NAME=CAP; repeat for more.
     #[arg(long = "resource", value_name = "NAME=CAP", value_parser = resource)]
     resources: Vec<(String, usize)>,
-    /// Command run on the machine, in the Box's copy, before a Box's first exec or
-    /// machine_info; its last stdout line is a JSON object of the Box's facts.
+    /// Command run on the machine, in the Box's copy, before a Box's first `exec` or
+    /// `machine_info`; its last stdout line is a JSON object of the Box's facts.
     #[arg(long, value_name = "CMD")]
     prepare: Option<String>,
     /// Command run on the machine, in the Box's copy, once a prepared Box is no longer open.
