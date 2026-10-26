@@ -59,11 +59,12 @@ pub(crate) fn respond_with_progress(
                 None => run(),
             }
         }
-        request @ (Request::Start(_) | Request::Close(_) | Request::BoxMirror(_)) => {
-            report_while(cmd, id, interval, out, |_| {
-                conn::respond(env, acting, request)
-            })
-        }
+        request @ (Request::Start(_)
+        | Request::Close(_)
+        | Request::BoxMirror(_)
+        | Request::BoxPut(_)) => report_while(cmd, id, interval, out, |_| {
+            conn::respond(env, acting, request)
+        }),
         request => conn::respond(env, acting, request),
     }
 }

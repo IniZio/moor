@@ -154,6 +154,9 @@ fn close_reports_progress_and_show_does_not() {
     assert!(progress(close) > 0);
     let mirror = serde_json::from_value(serde_json::json!({"id": 1, "dest": "/nonexistent/m"}));
     assert!(progress(Request::BoxMirror(mirror.unwrap())) > 0);
+    let put =
+        serde_json::from_value(serde_json::json!({"id": 1, "src": "/nonexistent/s", "dest": "d"}));
+    assert!(progress(Request::BoxPut(put.unwrap())) > 0);
     let show = Request::Show(ShowReq {
         target: Some(target.into()),
         events: None,

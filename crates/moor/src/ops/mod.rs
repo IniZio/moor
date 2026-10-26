@@ -9,6 +9,7 @@ mod artifacts;
 pub(crate) mod authz;
 mod binding;
 mod box_mirror;
+mod box_put;
 mod close;
 pub(crate) mod common;
 mod cp;
@@ -85,6 +86,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::WaitEvents(r) => to_value(&wait_events::run(cx, &r)?),
         Request::Cp(r) => to_value(&cp::run(cx, &r)?),
         Request::BoxMirror(r) => to_value(&box_mirror::run(cx, &r)?),
+        Request::BoxPut(r) => to_value(&box_put::run(cx, &r)?),
         Request::Sleep(r) => to_value(&sleep::run(cx, &r)?),
         Request::Wake(r) => to_value(&wake::run(cx, &r)?),
         Request::Open(r) => to_value(&open::run(cx, &r)?),

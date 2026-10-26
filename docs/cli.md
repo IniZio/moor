@@ -233,6 +233,15 @@ regular files sent, and `bytes`, the bytes that came from the Box. moor
 refuses a Box without a ready machine, and refuses when rsync is missing on
 the Box or on the host, naming which.
 
+### `box-put`
+
+`{"cmd":"box-put","id":ID,"src":FILE,"dest":PATH}` writes the host file `FILE` into the work
+tree of the open Box with store id `ID`, at `PATH`, with mode 0644. It has no CLI command; a
+client sends it through `moor call` or moor-client. Only the operator may send it. `FILE` must
+be an absolute path to a regular file of at most 32 MiB. `PATH` is relative to the work tree;
+moor refuses an empty, absolute or `..` path, creates missing directories and replaces an
+existing file. The result gives `path`, the file's place in the Box, and `bytes`.
+
 ## Exit codes
 
 | Code | Meaning |

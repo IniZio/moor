@@ -73,6 +73,7 @@ impl Request {
             Self::Wait(r) => vec![named(&r.box_name)],
             Self::Cp(r) => vec![named(&r.box_name)],
             Self::BoxMirror(r) => vec![Named::Box(r.id.into())],
+            Self::BoxPut(r) => vec![Named::Box(r.id.into())],
             Self::Open(r) | Self::Sleep(r) | Self::Wake(r) | Self::Connect(r) => {
                 vec![named(&r.box_name)]
             }
