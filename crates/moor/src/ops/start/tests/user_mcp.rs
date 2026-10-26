@@ -1,5 +1,6 @@
 //! A start hands the requester's own MCP servers to the agent with a placeholder for each key,
 //! and the Proxy a rule that injects that user's key.
+#![allow(clippy::indexing_slicing, reason = "test assertions")]
 
 use std::sync::Arc;
 

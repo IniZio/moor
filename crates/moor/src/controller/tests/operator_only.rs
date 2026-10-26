@@ -19,15 +19,13 @@ use super::fronts::{ask, refused};
 fn nameless(kind: &str) -> Option<Value> {
     Some(match kind {
         "start-needs" | "env" | "repos" | "whoami" | "enroll" | "secret-names" | "link-code"
-        | "version" | "proxy-lease" | "proxy-status" => json!({"cmd": kind}),
+        | "version" | "proxy-lease" | "proxy-status" | "mcp-list" => json!({"cmd": kind}),
         "proxy-release" => json!({"cmd": kind, "token": "t"}),
         "session-binding" => json!({"cmd": kind, "front": "slack", "key": "k"}),
         "gate" => json!({"cmd": kind, "sha": "abcd123", "name": "test"}),
         "secret-set" => json!({"cmd": kind, "name": "n", "value": "v"}),
-        "secret-delete" => json!({"cmd": kind, "name": "n"}),
+        "secret-delete" | "mcp-remove" => json!({"cmd": kind, "name": "n"}),
         "mcp-add" => json!({"cmd": kind, "name": "n", "url": "https://example.com/mcp"}),
-        "mcp-remove" => json!({"cmd": kind, "name": "n"}),
-        "mcp-list" => json!({"cmd": kind}),
         "link-redeem" => json!({"cmd": kind, "code": "c"}),
         "in" => json!({"cmd": kind, "dir": "/w", "request": {"cmd": "show"}}),
         _ => return None,

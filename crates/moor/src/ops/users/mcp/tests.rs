@@ -1,3 +1,5 @@
+#![allow(clippy::indexing_slicing, reason = "test assertions")]
+
 use moor_core::request::{SecretValue, UserCmd};
 use moor_core::user::SecretName;
 use moor_core::ErrorKind;
