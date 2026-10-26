@@ -3,7 +3,7 @@
 //! The Box's Proxy routes `machine.moor.internal` here and names the caller in four headers:
 //! the Box id, the machine's name, its ssh target and the Box's slot on it. `sync` mirrors the
 //! Box's work tree onto the machine; `exec` runs a command there, in that copy, holding any
-//! capped resources it names; `machine_info` says which slot and ports the Box has. The
+//! capped resources it names; `pull` brings one file back into the Box's work tree; `machine_info` says which slot and ports the Box has. The
 //! operator's `prepare` and `release` commands set up and clean up per-Box things on the
 //! machine. Relays list the tools of the machine's own stdio MCP servers beside these.
 
@@ -26,14 +26,15 @@ use rmcp::service::RequestContext;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 use rmcp::{tool, tool_handler, tool_router, ErrorData, RoleServer, ServerHandler};
-use serde::Serialize;
 use tokio::net::TcpListener;
 
 use crate::beat::Progress;
 use crate::caller::Caller;
 use crate::exec::{ExecArgs, ExecOutput};
 use crate::holds::Holds;
-use crate::hooks::{Facts, Hooks};
+use crate::hooks::Hooks;
+use crate::info::MachineInfo;
+use crate::pull::{PullArgs, PullOutput};
 use crate::relay::Relays;
 use crate::sync::{SyncArgs, SyncOutput};
 
@@ -44,6 +45,8 @@ mod caller;
 mod exec;
 mod holds;
 mod hooks;
+mod info;
+mod pull;
 mod relay;
 mod sync;
 
@@ -72,24 +75,6 @@ pub struct Config {
     pub relay_idle: Duration,
     /// How often an open call's stream gets a ping, so no client or proxy on the way sees it idle.
     pub keep_alive: Duration,
-}
-
-/// Where a Box is on its machine.
-#[derive(Debug, Serialize, schemars::JsonSchema)]
-struct MachineInfo {
-    /// The calling Box's id.
-    #[serde(rename = "box")]
-    box_id: i64,
-    /// The machine's name.
-    machine: String,
-    /// The Box's slot on the machine.
-    slot: u16,
-    /// Add this to a repo's port for the Box's port on the machine: 10 times the slot.
-    port_offset: u32,
-    /// What the machine's operator set up for this Box, such as its own device.
-    facts: Facts,
-    /// rsync patterns every sync leaves alone; a sync's own `exclude` adds to them.
-    sync_exclude: Vec<String>,
 }
 
 /// Serves MCP over streamable HTTP on `listener` until accepting fails.
@@ -220,6 +205,33 @@ impl Runner {
         }
     }
 
+    /// Copies one file from the machine into the Box's work tree.
+    #[tool(
+        description = "Copy one file from the attached machine into this Box's work tree, such \
+                       as a screenshot a relayed tool saved there or a build log. path is \
+                       absolute on the machine or relative to ~/moor/<box id>; dest is relative \
+                       to your work tree. At most 32 MiB."
+    )]
+    async fn pull(
+        &self,
+        context: RequestContext<RoleServer>,
+        Parameters(args): Parameters<PullArgs>,
+    ) -> Result<Json<PullOutput>, ErrorData> {
+        let caller = caller(&context)?;
+        let stage = self.mirrors.with_file_name("pulls");
+        let client = self.client.clone();
+        pull::serve(
+            client,
+            stage,
+            caller,
+            args,
+            Progress::of(&context),
+            self.beat,
+        )
+        .await
+        .map(Json)
+    }
+
     /// Says which slot the Box has on its machine and how its ports shift.
     #[tool(
         description = "Where this Box is on the attached machine: its slot, port_offset, \
@@ -266,7 +278,7 @@ impl Runner {
             .get::<http::request::Parts>()
             .ok_or_else(|| internal("request headers missing"))?;
         let caller = Caller::from_headers(&parts.headers)?;
-        let timeout = bounded(
+        let timeout = exec::bounded(
             "timeout_secs",
             args.timeout_secs.unwrap_or(exec::DEFAULT_TIMEOUT_SECS),
             exec::MAX_TIMEOUT_SECS,
@@ -311,17 +323,6 @@ impl Runner {
             () = context.ct.cancelled() => Err(internal("the caller went away")),
         }
     }
-}
-
-/// `secs` as a duration when it is 1 to `max`, else an error naming `name`.
-fn bounded(name: &str, secs: u64, max: u64) -> Result<Duration, ErrorData> {
-    if secs == 0 || secs > max {
-        return Err(ErrorData::invalid_params(
-            format!("{name} must be 1 to {max}, not {secs}"),
-            None,
-        ));
-    }
-    Ok(Duration::from_secs(secs))
 }
 
 #[allow(
