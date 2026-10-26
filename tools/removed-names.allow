@@ -6,3 +6,5 @@ background task
 "background", "task"]
 # English word, unrelated to the removed concept.
 multitask
+# tokio's own module path, unrelated to the removed concept.
+tokio::task::
