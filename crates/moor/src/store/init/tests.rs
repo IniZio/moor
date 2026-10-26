@@ -242,7 +242,10 @@ fn a_file_from_the_last_build_before_migrations_is_adopted_unchanged() {
         .position(|(t, _)| t == "refinery_schema_history");
     assert_eq!(
         history.map(|i| after.remove(i)),
-        Some(("refinery_schema_history".into(), 3))
+        Some((
+            "refinery_schema_history".into(),
+            i64::try_from(super::schema().unwrap().len()).unwrap()
+        ))
     );
     after.retain(|(t, _)| t != "user_mcp_servers");
     assert_eq!(after, before, "every table and row kept");
