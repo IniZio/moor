@@ -33,7 +33,7 @@ mod roleplay;
 use recorder::Recorder;
 use roleplay::roleplay;
 mod stop;
-use stop::{finish, sleep_until_stopped};
+use stop::finish;
 
 /// What the daemon needs from its command line and environment.
 #[derive(Debug, Clone)]
@@ -125,19 +125,7 @@ pub fn run(settings: &Settings, log: &Log) -> Result<(), String> {
         log: Arc::clone(log),
         clock: settings.clock,
     };
-    let socket_api = Arc::clone(&api);
-    let stop = Arc::clone(&settings.stop);
-    let socket = thread::spawn(move || {
-        let sleep = |d| sleep_until_stopped(&stop, d);
-        socket::run(
-            &socket_api,
-            &app_token,
-            &recorder,
-            roleplay.as_ref(),
-            &stop,
-            &sleep,
-        );
-    });
+    let socket = recorder.spawn(app_token, roleplay, &settings.stop);
     let feed = Feed {
         link: link.clone(),
         db_path: db_path.clone(),

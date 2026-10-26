@@ -5,6 +5,7 @@ use super::Fx;
 use crate::account::Account;
 use crate::escape::escape;
 use crate::login::{vault, TokenCheck, LINKED};
+use crate::mcp::McpJob;
 
 /// Checks each pasted token, stores the ones its account takes, and shows every outcome in the
 /// one modal. A failed token does not stop the others. When the form took both accounts, each
@@ -54,22 +55,14 @@ pub(super) fn unlink(fx: &mut Fx<'_>, user: &str, account: Account, response_url
     }
 }
 
-/// Tells the user which MCP servers they have; the answer is theirs alone.
-pub(super) fn mcp_list(fx: &mut Fx<'_>, user: &str, response_url: Option<&str>) {
-    let text = crate::mcp::listing(&mut *fx.call, user);
-    answer(fx, "mcp list", &text, response_url);
-}
-
-/// Removes the user's MCP server `name` and tells them.
-pub(super) fn mcp_remove(fx: &mut Fx<'_>, user: &str, name: &str, response_url: Option<&str>) {
-    let text = crate::mcp::removal(&mut *fx.call, user, name);
-    answer(fx, "mcp remove", &text, response_url);
-}
-
-/// Sends `text` through the command's `response_url`.
-fn answer(fx: &mut Fx<'_>, what: &str, text: &str, response_url: Option<&str>) {
-    match response_url {
-        Some(url) => (fx.respond)(url, text),
-        None => (fx.log)(&format!("{what}: the command carried no response_url")),
+/// Answers `/moor mcp list` or `/moor mcp remove` to the user alone.
+pub(super) fn mcp(fx: &mut Fx<'_>, job: &McpJob) {
+    let text = match &job.name {
+        None => crate::mcp::listing(&mut *fx.call, &job.user),
+        Some(name) => crate::mcp::removal(&mut *fx.call, &job.user, name),
+    };
+    match job.response_url.as_deref() {
+        Some(url) => (fx.respond)(url, &text),
+        None => (fx.log)("mcp: the command carried no response_url"),
     }
 }

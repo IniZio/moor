@@ -4,6 +4,7 @@ use moor_core::name::BoxName;
 
 use crate::account::Account;
 use crate::login::TokenCheck;
+use crate::mcp::McpJob;
 
 /// What the worker does for one recorded mention or command.
 #[derive(Debug, PartialEq, Eq)]
@@ -29,22 +30,8 @@ pub(crate) enum Job {
         /// Where Slack takes the answer to the command.
         response_url: Option<String>,
     },
-    /// Tell `user` which MCP servers they have, through `response_url`.
-    McpList {
-        /// The Slack user who ran `/moor mcp list`.
-        user: String,
-        /// Where Slack takes the answer to the command.
-        response_url: Option<String>,
-    },
-    /// Remove `user`'s MCP server `name` and tell them through `response_url`.
-    McpRemove {
-        /// The Slack user who ran `/moor mcp remove`.
-        user: String,
-        /// The server's name.
-        name: String,
-        /// Where Slack takes the answer to the command.
-        response_url: Option<String>,
-    },
+    /// Answer `/moor mcp list` or `/moor mcp remove`.
+    Mcp(McpJob),
     /// Show `text` to `user` only, in a thread.
     Ephemeral {
         /// Channel id of the thread.
