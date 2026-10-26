@@ -69,6 +69,8 @@ pub struct Config {
     pub hook_timeout: Duration,
     /// How often to look for prepared Boxes that are no longer open, and idle relay sessions.
     pub sweep: Duration,
+    /// How often to list the files on each machine for Boxes the runner holds no record of.
+    pub reconcile: Duration,
     /// The machine's stdio MCP servers whose tools the runner relays.
     pub relays: Vec<Relay>,
     /// How long a relay session may go without a call before it ends.
@@ -89,6 +91,9 @@ pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
         timeout: config.hook_timeout,
         boxes: config.state_dir.join("boxes"),
         mirrors: mirrors.clone(),
+        machines: config.state_dir.join("machines"),
+        reconcile: config.reconcile,
+        listed: Mutex::default(),
         preparing: Mutex::default(),
     });
     let relays = Arc::new(Relays::new(
@@ -105,16 +110,7 @@ pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
         relays: Arc::clone(&relays),
         beat: config.keep_alive,
     };
-    let client = runner.client.clone();
-    tokio::spawn(async move {
-        let mut every = tokio::time::interval(config.sweep);
-        every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        loop {
-            every.tick().await;
-            relays.expire().await;
-            hooks.sweep(&client, &relays).await;
-        }
-    });
+    hooks::spawn_sweep(config.sweep, runner.client.clone(), hooks, relays);
     let http = StreamableHttpServerConfig::default()
         .with_allowed_hosts([
             "localhost",
@@ -304,7 +300,8 @@ impl Runner {
         };
         let run = async {
             let facts = self.hooks.facts(&caller).await.map_err(|e| internal(&e))?;
-            let body = format!("cd ~/{} && {}", caller.remote_dir(), args.command);
+            let prelude = hooks::state_prelude(caller.box_id.get());
+            let body = format!("{prelude}cd ~/{} && {}", caller.remote_dir(), args.command);
             let script = exec::script(&hooks::fact_env(&facts), &body);
             let _held = self
                 .holds

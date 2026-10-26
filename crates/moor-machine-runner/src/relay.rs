@@ -320,8 +320,9 @@ impl Relays {
         taken: &[String],
     ) -> Result<Session, String> {
         let dir = caller.remote_dir();
+        let prelude = hooks::state_prelude(caller.box_id.get());
         let body = format!(
-            "mkdir -p ~/{dir} && cd ~/{dir} && exec \"$SHELL\" -lc {}",
+            "{prelude}mkdir -p ~/{dir} && cd ~/{dir} && exec \"$SHELL\" -lc {}",
             exec::quote(&relay.command)
         );
         let env = hooks::box_env(caller.box_id.get(), caller.slot, facts);

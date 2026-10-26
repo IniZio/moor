@@ -40,6 +40,9 @@ struct Args {
     /// Seconds between looks for prepared Boxes that are no longer open.
     #[arg(long, default_value_t = 60, value_parser = clap::value_parser!(u64).range(1..))]
     sweep_secs: u64,
+    /// Seconds between looks through each machine for files of Boxes the runner has no record of.
+    #[arg(long, default_value_t = 60, value_parser = clap::value_parser!(u64).range(1..))]
+    reconcile_secs: u64,
     /// A stdio MCP server on the machine whose tools the runner lists as NAME_<tool>, as
     /// NAME=CMD; repeat for more.
     #[arg(long = "relay", value_name = "NAME=CMD", value_parser = relay)]
@@ -169,6 +172,7 @@ async fn main() -> ExitCode {
         release: args.release,
         hook_timeout: Duration::from_secs(args.hook_timeout_secs),
         sweep: Duration::from_secs(args.sweep_secs),
+        reconcile: Duration::from_secs(args.reconcile_secs),
         relays,
         relay_idle: Duration::from_secs(args.relay_idle_secs),
         keep_alive: Duration::from_secs(args.keep_alive_secs),

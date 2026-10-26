@@ -65,3 +65,8 @@ fn session_ref_carries_the_id() {
 fn machine_dir_sits_under_the_work_root_by_id() {
     assert_eq!(key(7).machine_dir(), "moor/7");
 }
+
+#[test]
+fn machine_state_dir_sits_beside_the_copy_by_id() {
+    assert_eq!(key(7).machine_state_dir(), "moor-state/7");
+}
