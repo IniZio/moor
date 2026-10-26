@@ -14,7 +14,9 @@ const USAGE: &str = "Usage: `/moor repo` lists this channel's repos. \
     `/moor repo add <owner/name>`, `/moor repo remove <owner/name>` and \
     `/moor repo default <owner/name>` change them. \
     `/moor login [claude|github]` links a token of yours and \
-    `/moor logout [claude|github]` unlinks it.";
+    `/moor logout [claude|github]` unlinks it. \
+    `/moor mcp add` adds an MCP server of yours, `/moor mcp list` shows them and \
+    `/moor mcp remove <name>` drops one.";
 
 /// Longest repo name taken.
 const MAX_REPO: usize = 200;
@@ -38,6 +40,9 @@ pub(crate) fn record(slash: &Slash, db: &Db, now: i64) -> rusqlite::Result<(Kept
     let verb = slash.text.split_whitespace().next().unwrap_or_default();
     if verb.eq_ignore_ascii_case("login") {
         return login::login(slash, db, now).map(|kept| (kept, None));
+    }
+    if verb.eq_ignore_ascii_case("mcp") {
+        return crate::mcp::slash(slash, db, now);
     }
     if verb.eq_ignore_ascii_case("logout") {
         return login::logout(slash, db, now);

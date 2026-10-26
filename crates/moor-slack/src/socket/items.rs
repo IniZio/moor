@@ -86,6 +86,11 @@ pub(crate) enum AfterAck {
         /// What the modal asks for.
         form: Form,
     },
+    /// Open the add-server modal with this trigger.
+    OpenMcp {
+        /// The command's trigger id.
+        trigger_id: String,
+    },
 }
 
 /// What a button press asks for.

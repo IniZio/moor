@@ -27,6 +27,8 @@ mod inbox;
 mod login;
 #[path = "daemon/mcp.rs"]
 mod mcp;
+#[path = "daemon/mcp_front.rs"]
+mod mcp_front;
 #[path = "daemon/prompt.rs"]
 mod prompt;
 #[path = "daemon/proxy.rs"]
