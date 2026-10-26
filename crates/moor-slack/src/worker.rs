@@ -17,6 +17,7 @@ use serde_json::Value;
 use crate::command::{failed, start_notes, started, BoxEvent};
 use crate::db::{BoxState, Db, SlackBox};
 use crate::dial::Backoff;
+use crate::error_text::error_text;
 use crate::login::TokenCheck;
 
 /// How often the worker reads `slack.db` for Boxes to start or close.
@@ -322,13 +323,6 @@ fn named_box(value: Option<&Value>) -> Option<(BoxId, Option<String>)> {
     let id = boxed.get("id").and_then(Value::as_i64)?;
     let branch = boxed.get("branch").and_then(Value::as_str);
     Some((BoxId::new(id), branch.map(str::to_owned)))
-}
-
-/// The error text of a failed reply.
-fn error_text(reply: Response) -> String {
-    reply
-        .error
-        .map_or_else(|| format!("{} failed", reply.cmd), |e| e.message)
 }
 
 /// True when the request may have reached the controller, or the controller may answer

@@ -20,7 +20,8 @@ use super::support::{Rig, BOX_NAME, MCP, TS, USER};
 
 /// The refusal the controller gives an enrolled person with only a Claude secret, before it
 /// reads any repo.
-const UNKNOWN: &str = "log in first: moor user secret set github";
+const UNKNOWN: &str =
+    "A token you have not linked is needed. Link it with `/moor login`, then try again.";
 
 /// A daemon on a real controller whose channel's default repo is `o/nosuch`.
 fn rig_on_a_real_controller() -> (Rig, super::support::RealController) {

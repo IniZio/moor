@@ -7,7 +7,7 @@ use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange}
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::forge::ForgeRepo;
-use moor_core::{BoxId, BoxPath, ErrorKind, StartReq};
+use moor_core::{BoxId, BoxPath, ErrorDetail, ErrorKind, StartReq};
 
 use super::run;
 use crate::cx::Cx;
@@ -473,6 +473,7 @@ fn dead_provisioning_is_refused_with_a_close_hint() {
         "provisioning dead; run moor close demo"
     );
     assert!(err.hints.iter().any(|h| h == "moor close demo"), "{err:?}");
+    assert_eq!(err.detail.as_deref(), Some(&ErrorDetail::ProvisioningDead));
     assert_eq!(w.driver.calls().len(), before);
 }
 

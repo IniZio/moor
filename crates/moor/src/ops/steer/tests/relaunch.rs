@@ -8,7 +8,7 @@ use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::engine::{EngineError, SessionRef, Steer};
 use moor_core::seam::surface::{PaneRef, SurfaceError};
-use moor_core::{BoxHandle, BoxPath, ErrorKind};
+use moor_core::{BoxHandle, BoxPath, ErrorDetail, ErrorKind};
 
 use super::{blocked, fx_with, menu, steered, text, Fx};
 use crate::ops::start::revive_for_steer;
@@ -108,6 +108,7 @@ fn an_agent_gone_again_after_its_relaunch_fails_the_steer_and_ends_the_session()
         message.contains("again within 60s of its relaunch"),
         "{message}"
     );
+    assert_eq!(err.detail.as_deref(), Some(&ErrorDetail::RelaunchCapped));
     assert_eq!(f.engine.launches().len(), 1, "relaunched once only");
     assert_eq!(session_state(&f), SessionState::Ended);
     assert!(steered(&f).is_empty());

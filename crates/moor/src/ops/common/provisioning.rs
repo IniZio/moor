@@ -1,7 +1,7 @@
 //! Whether a Box's provisioning is still alive.
 
 use moor_core::decide::intent::{age, provisioning_dead};
-use moor_core::ErrorKind;
+use moor_core::{ErrorDetail, ErrorKind};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -22,5 +22,6 @@ pub(crate) fn dead_provisioning(cx: &Cx, row: &BoxRow) -> Result<(), CommandErro
         ErrorKind::Failed,
         format!("provisioning dead; run moor close {name}"),
     )
-    .with_hint(format!("moor close {name}")))
+    .with_hint(format!("moor close {name}"))
+    .with_detail(ErrorDetail::ProvisioningDead))
 }

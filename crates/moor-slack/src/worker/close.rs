@@ -114,11 +114,10 @@ fn send(fx: &mut Fx<'_>, row: &SlackBox, attempt: Attempt) -> Closed {
 
 /// How a refused close ends, read from the refusal's kind and never from its text.
 fn refusal(reply: Response) -> Closed {
-    let kind = reply
-        .error
-        .as_ref()
-        .and_then(|e| e.detail.as_ref())
-        .map(|ErrorDetail::CloseRefused(kind)| kind.clone());
+    let kind = reply.error.as_ref().and_then(|e| match e.detail.as_ref() {
+        Some(ErrorDetail::CloseRefused(kind)) => Some(kind.clone()),
+        _ => None,
+    });
     match kind {
         Some(CloseRefusal::AlreadyClosed) => Closed::Done,
         Some(CloseRefusal::Unsaved { ahead, dirty, .. }) => Closed::Unsaved { ahead, dirty },
