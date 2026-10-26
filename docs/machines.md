@@ -48,6 +48,7 @@ moor-machine-runner --socket /path/to/moor.sock --state-dir ~/.local/state/moor-
 | `--prepare CMD` | none | run on the machine before a Box's first `exec` or `machine_info`; see [Per-Box setup](#per-box-setup) |
 | `--release CMD` | none | run on the machine once a prepared Box is no longer open, before its copy there is removed |
 | `--hook-timeout-secs` | `600` | how long `prepare` or `release` may run |
+| `--reconcile-secs` | `60` | how often the runner lists each machine's `~/moor` and `~/moor-state` for Boxes it has no record of |
 | `--sweep-secs` | `60` | how often the runner looks for prepared Boxes that are no longer open and for idle relay sessions |
 | `--relay NAME=CMD` | none | a stdio MCP server on the machine whose tools the runner lists as `NAME_<tool>`; repeat for more; see [Relays](#relays) |
 | `--force-arg NAME.ARG=FACT` | none | set argument ARG of relay NAME's tools to the Box's fact FACT on every call, hidden from the Box; repeat for more |
@@ -129,6 +130,13 @@ the machine user's login shell, with these variables set:
 | `MOOR_BOX` | the Box's id |
 | `MOOR_SLOT` | the Box's slot |
 | `MOOR_PORT_OFFSET` | 10 times the slot |
+| `MOOR_STATE_DIR` | the Box's state dir, `~/moor-state/<box id>`, as an absolute path |
+| `TMPDIR` | `$MOOR_STATE_DIR/tmp` |
+
+The runner makes the state dir and its `tmp` before running anything for the
+Box, and gives the same two variables to `exec` commands and to the processes
+the relays start. Whatever a tool writes to its temp dir therefore lands under
+the Box's state dir and goes when the Box does.
 
 The last line CMD prints on stdout must be a JSON object of string values: the
 Box's facts, such as `{"device": "<udid>"}`. Its stderr may say anything. If CMD
@@ -148,15 +156,32 @@ are empty and the record is still kept.
 record, so a Box that only synced is cleaned up too. Every `--sweep-secs` the
 runner asks the controller for the open Boxes (a `show` with no Box, over the
 same socket). For each recorded Box the controller does not list, it runs
-release if the Box was prepared, removes `~/moor/<box id>` on the machine, then
-deletes the Box's record and its host mirror `<state dir>/mirrors/<box id>`. If
+release if the Box was prepared, removes `~/moor/<box id>` and
+`~/moor-state/<box id>` on the machine, then deletes the Box's record and its
+host mirror `<state dir>/mirrors/<box id>`. If
 a step fails, it keeps the rest, prints the tail of the output to stderr, and
 tries again on the next sweep. If the controller cannot be asked, nothing is
 released.
 
+The sweep also cleans up Boxes the runner has no record of, such as after the
+state dir was lost, a crash between a copy and its record, or a record removed
+by hand. At start and then every `--reconcile-secs` (default 60), for each
+machine the runner has served or holds a record for (it keeps their ssh targets
+in `<state dir>/machines`; `machine-list` names one user's machines, so it
+cannot list them all), one ssh call lists the entries under `~/moor` and
+`~/moor-state`. Each entry named by a plain decimal Box id that is not open and
+has no record gets `release` run with `MOOR_BOX`, `MOOR_STATE_DIR` and `TMPDIR`
+set and no `MOOR_SLOT`, `MOOR_PORT_OFFSET` or `MOOR_FACT_*`, then both
+directories removed. Mirrors under `<state dir>/mirrors` of closed Boxes with no
+record go on every sweep. Entries with any other name are never touched, nor
+are the files of an open Box. A failing step is logged and retried on the next
+pass. So `release` must tolerate a run with no facts, and one for a Box whose
+`prepare` never ran.
+
 `sync` runs `rsync --delete` into `~/moor/<box id>`, so anything prepare puts
 there is removed by the next sync. Put per-Box folders, such as a build's
-derived data, under `~/moor-state/<box id>/` instead, and remove them in release.
+derived data, under `$MOOR_STATE_DIR` instead; the runner removes it with the Box,
+and release only has to undo what lives elsewhere.
 
 An example for iOS work, where each Box gets its own simulator:
 
@@ -171,7 +196,7 @@ moor-machine-runner --socket /path/to/moor.sock \
 ```sh
 #!/bin/sh
 set -e
-mkdir -p ~/moor-state/"$MOOR_BOX"/DerivedData
+mkdir -p "$MOOR_STATE_DIR"/DerivedData
 udid=$(xcrun simctl create "moor-$MOOR_BOX" "iPhone 16" "iOS18.5")
 printf '{"device": "%s"}\n' "$udid"
 ```
@@ -180,12 +205,12 @@ printf '{"device": "%s"}\n' "$udid"
 
 ```sh
 #!/bin/sh
-xcrun simctl delete "$MOOR_FACT_DEVICE" 2>/dev/null || true
-rm -rf ~/moor-state/"$MOOR_BOX" ~/moor/"$MOOR_BOX"
+[ -n "$MOOR_FACT_DEVICE" ] && xcrun simctl delete "$MOOR_FACT_DEVICE" 2>/dev/null
+exit 0
 ```
 
 An agent in the Box then builds with
-`xcodebuild -destination "id=$MOOR_FACT_DEVICE" -derivedDataPath ~/moor-state/$MOOR_BOX/DerivedData`.
+`xcodebuild -destination "id=$MOOR_FACT_DEVICE" -derivedDataPath $MOOR_STATE_DIR/DerivedData`.
 
 ## Relays
 

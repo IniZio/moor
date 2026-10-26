@@ -12,6 +12,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use tokio::time::Instant;
+
 use moor_client::Client;
 use moor_core::box_key::BoxKey;
 use moor_core::request::{Request, ShowReq};
@@ -21,6 +23,9 @@ use serde::{Deserialize, Serialize};
 use crate::caller::Caller;
 use crate::exec::{self, ExecOutput};
 use crate::relay::Relays;
+
+mod reap;
+pub(crate) use reap::state_prelude;
 
 /// What `prepare` printed about a Box, such as `device`.
 pub(crate) type Facts = BTreeMap<String, String>;
@@ -40,6 +45,12 @@ pub(crate) struct Hooks {
     pub(crate) boxes: PathBuf,
     /// Parent of the per-Box host mirrors, which release removes.
     pub(crate) mirrors: PathBuf,
+    /// File of the machines the runner has served, one target per line.
+    pub(crate) machines: PathBuf,
+    /// How often to list the files on each machine.
+    pub(crate) reconcile: Duration,
+    /// When the machines' files were last listed.
+    pub(crate) listed: Mutex<Option<Instant>>,
     /// One lock per Box id, so two calls of a Box never prepare it twice.
     pub(crate) preparing: Mutex<HashMap<i64, Arc<tokio::sync::Mutex<()>>>>,
 }
@@ -80,8 +91,8 @@ impl Hooks {
                     "f=$(mktemp) || exit 1; ( {command}\n ) >\"$f\"; rc=$?; cat \"$f\"; \
                      rm -f \"$f\"; exit $rc"
                 );
-                let none = Facts::new();
-                let out = self.on_machine(id, &caller.ssh, caller.slot, &none, &wrapped);
+                let env = box_env(id, caller.slot, &Facts::new());
+                let out = self.on_machine(id, &caller.ssh, &env, &wrapped);
                 let out = out.await.map_err(|e| format!("prepare: {e}"))?;
                 let last = out.output.lines().rev().find(|l| !l.trim().is_empty());
                 serde_json::from_str(last.unwrap_or_default()).map_err(|e| {
@@ -98,6 +109,8 @@ impl Hooks {
             facts,
             prepared: true,
         };
+        self.remember(&caller.ssh)
+            .map_err(|e| format!("could not keep the machine: {e}"))?;
         write(&path, &record).map_err(|e| format!("could not keep the Box's facts: {e}"))?;
         Ok(record.facts)
     }
@@ -123,14 +136,15 @@ impl Hooks {
             facts: Facts::new(),
             prepared: false,
         };
+        self.remember(&caller.ssh)
+            .map_err(|e| format!("could not keep the machine: {e}"))?;
         write(&path, &record).map_err(|e| format!("could not note the Box: {e}"))
     }
 
     /// Releases every Box with a record that the controller does not list as open, ending its
-    /// relay sessions first.
+    /// relay sessions first, then cleans up Boxes it has no record for.
     pub(crate) async fn sweep(&self, client: &Client, relays: &Relays) {
         let prepared = match self.prepared() {
-            Ok(ids) if ids.is_empty() => return,
             Ok(ids) => ids,
             Err(e) => return eprintln!("moor-machine-runner: cannot read the Box records: {e}"),
         };
@@ -146,6 +160,7 @@ impl Hooks {
                 eprintln!("moor-machine-runner: release of Box {id} failed, retrying: {e}");
             }
         }
+        self.reconcile(&open).await;
     }
 
     /// Runs `release` for Box `id`, then drops its host mirror and its record.
@@ -155,20 +170,10 @@ impl Hooks {
             return Ok(());
         };
         if let (Some(command), true) = (&self.release, record.prepared) {
-            let out = self.on_machine(id, &record.ssh, record.slot, &record.facts, command);
-            out.await?;
+            let env = box_env(id, record.slot, &record.facts);
+            self.on_machine(id, &record.ssh, &env, command).await?;
         }
-        let copy = BoxKey::new(BoxId::new(id)).machine_dir();
-        let out = exec::run(
-            &record.ssh,
-            &format!("cd && rm -rf -- {copy}"),
-            self.timeout,
-        )
-        .await
-        .map_err(|e| format!("could not run ssh: {e}"))?;
-        if out.exit_code != Some(0) {
-            return Err(format!("could not remove {copy}: {}", tail(&out)));
-        }
+        self.remove_on_machine(&record.ssh, id).await?;
         let gone = |r: io::Result<()>| match r {
             Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e.to_string()),
             _ => Ok(()),
@@ -177,20 +182,19 @@ impl Hooks {
         gone(std::fs::remove_file(&path))
     }
 
-    /// Runs `command` on the machine in the Box's copy with the hook env; its output when it
-    /// exits 0, else an error quoting the output's tail.
+    /// Runs `command` on the machine in the Box's copy with `env` and the Box's state dir; its
+    /// output when it exits 0, else an error quoting the output's tail.
     async fn on_machine(
         &self,
         id: i64,
         ssh: &str,
-        slot: u16,
-        facts: &Facts,
+        env: &[(String, String)],
         command: &str,
     ) -> Result<ExecOutput, String> {
-        let env = box_env(id, slot, facts);
         let dir = BoxKey::new(BoxId::new(id)).machine_dir();
-        let body = format!("mkdir -p ~/{dir} && cd ~/{dir} && {command}");
-        let out = exec::run(ssh, &exec::script(&env, &body), self.timeout)
+        let prelude = state_prelude(id);
+        let body = format!("{prelude}mkdir -p ~/{dir} && cd ~/{dir} && {command}");
+        let out = exec::run(ssh, &exec::script(env, &body), self.timeout)
             .await
             .map_err(|e| format!("could not run ssh: {e}"))?;
         match out.exit_code {
@@ -253,6 +257,19 @@ pub(crate) fn fact_env(facts: &Facts) -> Vec<(String, String)> {
             (format!("MOOR_FACT_{key}"), v.clone())
         })
         .collect()
+}
+
+/// Every `every`, ends idle relay sessions and sweeps the Boxes that are no longer open.
+pub(crate) fn spawn_sweep(every: Duration, client: Client, hooks: Arc<Hooks>, relays: Arc<Relays>) {
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(every);
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tick.tick().await;
+            relays.expire().await;
+            hooks.sweep(&client, &relays).await;
+        }
+    });
 }
 
 /// The ids of the Boxes the controller lists as open.

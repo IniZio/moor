@@ -7,6 +7,8 @@ use crate::name::{BoxId, BoxName};
 
 /// The directory under the Box login home that holds every Box workdir.
 pub const WORK_ROOT: &str = "moor";
+/// Directory under a machine user's home that holds one state dir per Box.
+pub const STATE_ROOT: &str = "moor-state";
 
 /// The start of every directory moor makes directly under the Box home.
 pub const HOME_PREFIX: &str = ".moor-";
@@ -50,6 +52,13 @@ impl BoxKey {
     #[must_use]
     pub fn machine_dir(self) -> String {
         format!("{WORK_ROOT}/{}", self.0.get())
+    }
+
+    /// The runner's per-Box state on a user machine, under the machine user's home,
+    /// `moor-state/{id}`; holds the Box's temp files and whatever the machine's hooks keep.
+    #[must_use]
+    pub fn machine_state_dir(self) -> String {
+        format!("{STATE_ROOT}/{}", self.0.get())
     }
 
     /// The scratch directory under the Box home, `.moor-tmp-{id}-{nonce}`.
