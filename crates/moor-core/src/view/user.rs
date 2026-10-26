@@ -47,6 +47,8 @@ pub struct MachineView {
     pub ssh: String,
     /// Its labels, sorted.
     pub labels: Vec<String>,
+    /// How many Boxes may hold it at once.
+    pub capacity: u16,
 }
 
 /// Value of `machine-list`.

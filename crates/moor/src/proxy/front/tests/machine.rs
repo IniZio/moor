@@ -59,6 +59,7 @@ fn rig() -> Rig {
                 box_id: BoxId::new(7),
                 name: "mac".to_owned(),
                 ssh: "dev@mac.example.com:22".to_owned(),
+                slot: 1,
             })
         }),
     };
@@ -114,6 +115,7 @@ fn a_plain_request_to_the_service_host_reaches_it_with_the_box_and_machine() {
         "X-Moor-Box: 7\r\n",
         "X-Moor-Machine: mac\r\n",
         "X-Moor-Machine-Ssh: dev@mac.example.com:22\r\n",
+        "X-Moor-Machine-Slot: 1\r\n",
     ] {
         assert!(head.contains(line), "{line} missing from {head}");
     }
@@ -137,7 +139,8 @@ fn identity_headers_the_box_sends_are_replaced() {
         [
             "X-Moor-Box: 7",
             "X-Moor-Machine: mac",
-            "X-Moor-Machine-Ssh: dev@mac.example.com:22"
+            "X-Moor-Machine-Ssh: dev@mac.example.com:22",
+            "X-Moor-Machine-Slot: 1"
         ]
     );
 }

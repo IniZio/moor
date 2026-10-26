@@ -18,6 +18,13 @@ pub struct MachineAddReq {
     /// The machine's labels.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub labels: Vec<String>,
+    /// How many Boxes may hold it at once, each in its own port slot.
+    #[serde(default = "one")]
+    pub capacity: u16,
+}
+
+const fn one() -> u16 {
+    1
 }
 
 /// Arguments of `machine-remove`.

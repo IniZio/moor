@@ -17,7 +17,12 @@ pub(super) fn run(
     cmd: &UserCmd,
 ) -> Result<serde_json::Value, CommandError> {
     match cmd {
-        UserCmd::MachineAdd { name, ssh, labels } => add(store, user, name, ssh, labels),
+        UserCmd::MachineAdd {
+            name,
+            ssh,
+            labels,
+            capacity,
+        } => add(store, user, name, ssh, labels, *capacity),
         UserCmd::MachineRemove { name } => remove(store, user, name),
         UserCmd::MachineList => list(store, user),
         _ => Err(CommandError::new(ErrorKind::Usage, "not a machine request")),
@@ -31,8 +36,10 @@ pub(super) fn add(
     name: &str,
     ssh: &str,
     labels: &[String],
+    capacity: u16,
 ) -> Result<serde_json::Value, CommandError> {
     let machine = UserMachine::parse(name, ssh, labels)
+        .and_then(|m| m.with_capacity(capacity))
         .map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
     store.set_user_machine(user, &machine)?;
     to_value(&MachineChangeValue {
@@ -54,7 +61,7 @@ pub(super) fn remove(
     })
 }
 
-/// `machine-list`: names, ssh targets and labels.
+/// `machine-list`: names, ssh targets, labels and capacities.
 pub(super) fn list(store: &Store, user: UserId) -> Result<serde_json::Value, CommandError> {
     let machines = store
         .user_machines(user)?
@@ -63,6 +70,7 @@ pub(super) fn list(store: &Store, user: UserId) -> Result<serde_json::Value, Com
             name: m.name,
             ssh: m.ssh,
             labels: m.labels,
+            capacity: m.capacity,
         })
         .collect();
     to_value(&MachineListValue { machines })

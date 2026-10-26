@@ -96,11 +96,12 @@ fn machine_route(deps: &Deps<'_>, box_id: BoxId) -> Option<MachineRoute> {
     let service = deps.machine_service.clone()?;
     let store = deps.store.clone();
     let held = Arc::new(move || {
-        let (machine, _) = store.box_machine(box_id).ok()??;
+        let held = store.box_machine(box_id).ok()??;
         Some(Held {
             box_id,
-            name: machine.name,
-            ssh: machine.ssh,
+            name: held.machine.name,
+            ssh: held.machine.ssh,
+            slot: held.slot,
         })
     });
     Some(MachineRoute { service, held })

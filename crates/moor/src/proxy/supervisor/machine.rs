@@ -37,7 +37,7 @@ impl Running<'_> {
                 return;
             }
         };
-        let (machine, ports) = want;
+        let (machine, ports) = (want.machine, want.ports);
         let mut slot = self.machine.borrow_mut();
         let fresh = !slot.link.as_mut().is_some_and(MachineLink::alive);
         let open = || {
@@ -72,7 +72,7 @@ impl Running<'_> {
     pub(super) fn let_go_machine(&self) {
         *self.machine.borrow_mut() = MachineSlot::default();
         let held = self.deps.store.box_machine(self.box_id);
-        let name = held.ok().flatten().map(|(m, _)| m.name);
+        let name = held.ok().flatten().map(|h| h.machine.name);
         match self.deps.store.detach_machine(self.box_id) {
             Ok(true) => {}
             Ok(false) => return,

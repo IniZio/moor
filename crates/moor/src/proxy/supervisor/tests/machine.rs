@@ -67,3 +67,35 @@ fn closing_the_box_ends_the_forwards_and_frees_the_machine() {
     assert_eq!(machine_kinds(&w), ["machine_attached", "machine_detached"]);
     assert!(!w.proc.dropped().is_empty(), "the ssh child was ended");
 }
+
+#[test]
+fn slot_one_forwards_each_port_moved_by_ten_at_the_same_number_on_both_ends() {
+    let w = World::new([]);
+    let (user, _) = w
+        .store
+        .enroll(&Identity::parse("slack:T1:U1").unwrap())
+        .unwrap();
+    let mini = UserMachine::parse("mini", "dev@mini", &["macos".to_owned()])
+        .and_then(|m| m.with_capacity(2))
+        .unwrap();
+    w.store.set_user_machine(user, &mini).unwrap();
+    let want = RepoMachine {
+        labels: vec!["macos".to_owned()],
+        ports: vec![8081],
+    };
+    let other = super::working_box(&w.store, &w.driver, "other");
+    w.store.claim_machine(other, user, &want).unwrap();
+    w.store.claim_machine(w.id, user, &want).unwrap();
+    w.proc.on_child(Tool::Ssh, &[], ChildReply::Hang);
+    let deps = w.deps();
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+    assert!(run.tick().is_none());
+    let calls = w.proc.calls();
+    let ssh = calls.iter().find(|c| c.tool == Tool::Ssh).unwrap();
+    let forwards: Vec<&str> = ssh
+        .args
+        .iter()
+        .filter_map(|a| a.split_once(":127.0.0.1:").map(|(p, _)| p))
+        .collect();
+    assert_eq!(forwards, ["8091"], "{:?}", ssh.args);
+}

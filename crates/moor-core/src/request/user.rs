@@ -215,6 +215,8 @@ pub enum UserCmd {
         ssh: String,
         /// The machine's labels.
         labels: Vec<String>,
+        /// How many Boxes may hold it at once.
+        capacity: u16,
     },
     /// Remove one of the caller's user's machines.
     MachineRemove {
@@ -302,6 +304,7 @@ impl Request {
                     name: r.name,
                     ssh: r.ssh,
                     labels: r.labels,
+                    capacity: r.capacity,
                 },
             ),
             Self::MachineRemove(r) => (r.identity, UserCmd::MachineRemove { name: r.name }),
