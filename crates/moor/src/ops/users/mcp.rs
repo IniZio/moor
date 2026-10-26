@@ -21,9 +21,11 @@ pub(super) fn add(
     user: UserId,
     (name, url, header): (&str, &str, Option<&str>),
     key: Option<&SecretValue>,
+    machine: bool,
 ) -> Result<serde_json::Value, CommandError> {
-    let server =
-        UserMcp::parse(name, url, header).map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
+    let server = UserMcp::parse(name, url, header)
+        .map_err(|e| CommandError::new(ErrorKind::Usage, e))?
+        .for_machine(machine);
     let rule = format!("mcp-{name}");
     if cx.config().proxy.rules.contains_key(&rule) {
         return Err(CommandError::new(
@@ -69,6 +71,7 @@ pub(super) fn list(store: &Store, user: UserId) -> Result<serde_json::Value, Com
         .map(|s| McpServerView {
             has_key: have.contains(&s.secret()),
             secret: s.secret(),
+            machine: s.machine,
             name: s.name,
             url: s.url,
             header: s.header,

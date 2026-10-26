@@ -88,6 +88,9 @@ pub(super) struct McpAddArgs {
     /// Header the key goes in.
     #[arg(long)]
     header: Option<String>,
+    /// Give the server only to Boxes whose repo asks for a machine.
+    #[arg(long)]
+    machine: bool,
 }
 
 /// A server's name.
@@ -132,6 +135,7 @@ impl UserCli {
                 url: a.url,
                 header: a.header,
                 key: None,
+                machine: a.machine,
             }),
             Self::Mcp(McpCli::Rm(a)) => Request::McpRemove(McpRemoveReq {
                 identity: None,

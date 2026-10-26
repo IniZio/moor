@@ -18,6 +18,9 @@ pub struct McpServerView {
     pub secret: SecretName,
     /// Whether that secret is stored.
     pub has_key: bool,
+    /// Whether only a Box whose repo asks for a machine gets it; shown only when true.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub machine: bool,
 }
 
 /// Value of `mcp-list`.

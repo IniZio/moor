@@ -21,6 +21,8 @@ pub struct UserMcp {
     pub url: String,
     /// The header the Proxy sets the key in.
     pub header: String,
+    /// Whether only a Box whose repo asks for a machine gets this server.
+    pub machine: bool,
 }
 
 impl UserMcp {
@@ -50,7 +52,14 @@ impl UserMcp {
             name: name.to_owned(),
             url: url.to_owned(),
             header: header.to_owned(),
+            machine: false,
         })
+    }
+
+    /// This server for machine Boxes only when `machine`.
+    #[must_use]
+    pub fn for_machine(self, machine: bool) -> Self {
+        Self { machine, ..self }
     }
 
     /// The vault secret that holds this server's key.
@@ -74,6 +83,7 @@ impl UserMcp {
             kind: Some("http".to_owned()),
             url: Some(self.url.clone()),
             headers: BTreeMap::from([(self.header.clone(), value)]),
+            machine: self.machine,
             ..McpServer::default()
         }
     }
@@ -109,7 +119,7 @@ pub fn box_mcp(
     let mut servers = shared.clone();
     servers.retain(|_, s| machine || !s.machine);
     let mut replaced = Vec::new();
-    for o in own {
+    for o in own.iter().filter(|o| machine || !o.machine) {
         if servers.insert(o.name.clone(), o.server()).is_some() {
             replaced.push(o.name.as_str());
         }

@@ -59,6 +59,9 @@ pub struct McpAddReq {
     /// The key, stored in the vault; the stored one is kept when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<SecretValue>,
+    /// Whether only a Box whose repo asks for a machine gets the server.
+    #[serde(default)]
+    pub machine: bool,
 }
 
 /// Arguments of `mcp-remove`.
@@ -199,6 +202,8 @@ pub enum UserCmd {
         header: Option<String>,
         /// The key to store, if any.
         key: Option<SecretValue>,
+        /// Whether only a Box whose repo asks for a machine gets the server.
+        machine: bool,
     },
     /// Remove one of the caller's user's MCP servers and its key.
     McpRemove {
@@ -294,6 +299,7 @@ impl Request {
                     url: r.url,
                     header: r.header,
                     key: r.key,
+                    machine: r.machine,
                 },
             ),
             Self::McpRemove(r) => (r.identity, UserCmd::McpRemove { name: r.name }),
