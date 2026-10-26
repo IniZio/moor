@@ -8,6 +8,14 @@ publish = false
 name = "moor-machine-runner"
 path = "src/main.rs"
 
+# A stdio MCP server the relay tests drive. A bin rather than an example, because nextest's
+# --all-targets builds examples only as test harnesses and never writes their binary path.
+[[bin]]
+name = "fake-mcp"
+path = "tests/fake/mcp.rs"
+test = false
+doc = false
+
 [dependencies]
 moor-client = { path = "../moor-client" }
 moor-core = { path = "../moor-core" }
@@ -24,6 +32,7 @@ rmcp = { version = "3.7", default-features = false, features = [
   "client",
   "server",
   "macros",
+  "transport-io",
   "transport-streamable-http-server",
 ] }
 schemars = "1"
@@ -43,16 +52,7 @@ tokio = { version = "1", features = [
 name = "runner"
 path = "tests/runner/main.rs"
 
-[[example]]
-name = "fake-mcp"
-path = "tests/fake/mcp.rs"
-
 [dev-dependencies]
-rmcp = { version = "3.7", default-features = false, features = [
-  "server",
-  "macros",
-  "transport-io",
-] }
 moor-testkit = { path = "../moor-testkit" }
 tempfile = "3"
 ureq = { version = "3", default-features = false, features = ["json"] }
