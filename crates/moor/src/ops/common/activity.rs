@@ -223,17 +223,15 @@ fn note_agent_session(store: &Store, row: &BoxRow, seen: Option<&str>) -> Result
     Ok(())
 }
 
-/// Move the Box's state to match `reading`, and save the transcript of an agent first seen exited
-/// and end its session.
+/// Move the Box's state to match `reading`, copy the transcript at each turn end, and save the
+/// transcript of an agent first seen exited and end its session.
 ///
 /// The agent session id of the live session is registered with the multiplexer when it is not yet.
 ///
-/// A Box that an op holds, or that has an intent set, is not moved.
-///
-/// A Working Box goes Idle only when the reading `may_quiet` and is not busy; an Idle Box
-/// goes back to Working when the reading is busy. Nothing else decides quiet: a gone pane, an
-/// idle status or a dropped hook read never idles a Box. If the row changed since the read,
-/// the store refuses the step and the Box is left as the other writer set it.
+/// A Box that an op holds, or that has an intent set, is not moved. A Working Box goes Idle
+/// only when the reading `may_quiet` and is not busy; an Idle Box goes back to Working when the
+/// reading is busy. Nothing else decides quiet: a gone pane, an idle status or a dropped hook
+/// read never idles a Box. If the row changed since the read, the store refuses the step.
 ///
 /// # Errors
 /// A store failure other than a refused step.
@@ -243,9 +241,7 @@ pub(crate) fn settle(
     row: &BoxRow,
     reading: &Reading,
 ) -> Result<(), CommandError> {
-    if turn::note_turn_done(store, row, reading)? && reading.pane != PaneLiveness::Exited {
-        transcript::save_on_turn(cx, store, row)?;
-    }
+    let turn_done = turn::note_turn_done(store, row, reading)?;
     if let (PaneLiveness::Exited, Some(probed)) = (reading.pane, reading.session) {
         if let Some(Fate::Ended(exit)) = link::after_pane_end(cx, store, row, reading, probed)? {
             transcript::save_on_exit(cx, store, row, probed)?;
@@ -254,6 +250,15 @@ pub(crate) fn settle(
     }
     register_session(cx, store, row, reading)?;
     needs_input::note_needs_input(store, row, reading)?;
+    let went_quiet = step(cx, store, row, reading)?;
+    if (turn_done || went_quiet) && reading.pane != PaneLiveness::Exited {
+        transcript::save_on_turn(cx, store, row)?;
+    }
+    Ok(())
+}
+
+/// Steps the Box between Working and Idle to match `reading`; true when it went Idle.
+fn step(cx: &Cx, store: &Store, row: &BoxRow, reading: &Reading) -> Result<bool, CommandError> {
     // A steered turn ends only on its `turn_done`: a hook report older than the steer is no answer.
     let turn_open = store.unanswered_steer(row.id)?.is_some();
     let input = match (row.lifecycle == BoxLifecycle::Ready, row.session.is_quiet()) {
@@ -261,7 +266,7 @@ pub(crate) fn settle(
             SessionInput::AgentQuiet
         }
         (true, true) if reading.busy() => SessionInput::AgentBusy,
-        _ => return Ok(()),
+        _ => return Ok(false),
     };
     // An op that owns the Box decides where the Box goes; hold the lock across the write.
     let Ok(_held) = BoxLock::acquire(
@@ -271,10 +276,10 @@ pub(crate) fn settle(
         "settle",
         Duration::ZERO,
     ) else {
-        return Ok(());
+        return Ok(false);
     };
     if row.intent.is_some() {
-        return Ok(());
+        return Ok(false);
     }
     if let (SessionInput::AgentQuiet, Some(text)) = (&input, &reading.said) {
         let text = text.clone();
@@ -292,9 +297,9 @@ pub(crate) fn settle(
             if let Some(after_secs) = timed_out {
                 warn_launch_timed_out(cx, row, after_secs);
             }
-            Ok(())
+            Ok(input == SessionInput::AgentQuiet)
         }
-        Err(StoreError::Illegal(_)) => Ok(()),
+        Err(StoreError::Illegal(_)) => Ok(false),
         Err(e) => Err(e.into()),
     }
 }
