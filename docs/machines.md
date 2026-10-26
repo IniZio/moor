@@ -32,10 +32,14 @@ moor-machine-runner --socket /path/to/moor.sock --state-dir ~/.local/state/moor-
 | Flag | Default | Meaning |
 | --- | --- | --- |
 | `--socket` | `$MOOR_SOCKET` | the controller's operator socket |
-| `--state-dir` | | where the runner keeps one host mirror per Box |
+| `--state-dir` | | where the runner keeps one host mirror and one record per Box |
 | `--listen` | `127.0.0.1:7700` | the address the Proxy routes to |
 | `--service-host` | `machine.moor.internal` | the `Host` the Proxy passes through, accepted besides the loopback names |
 | `--resource NAME=CAP` | none | a capped resource each machine has, such as `build=1`; repeat for more |
+| `--prepare CMD` | none | run on the machine before a Box's first `exec` or `machine_info`; see [Per-Box setup](#per-box-setup) |
+| `--release CMD` | none | run on the machine once a prepared Box is no longer open |
+| `--hook-timeout-secs` | `600` | how long `prepare` or `release` may run |
+| `--sweep-secs` | `60` | how often the runner looks for prepared Boxes that are no longer open |
 
 A resource caps heavy work on a machine, such as native builds, at CAP calls at
 once. It is counted per machine name across all Boxes, and only the runner
@@ -71,6 +75,78 @@ wait runs out, the call returns an error with that reason and runs nothing. A
 hold ends when the call returns, times out or its client hangs up, so a call
 dropped while it waits never takes the hold.
 
-`machine_info` returns `box`, `machine`, `slot` and `port_offset` (10 times the
-slot). An agent runs its dev servers on the machine on the repo's port plus
-`port_offset`.
+`machine_info` returns `box`, `machine`, `slot`, `port_offset` (10 times the
+slot) and `facts`. An agent runs its dev servers on the machine on the repo's
+port plus `port_offset`.
+
+## Per-Box setup
+
+Boxes that share a machine may each need their own things on it, such as their
+own simulator device or build folder, gone once the Box closes. The operator
+supplies two commands; the runner knows nothing of what they make.
+
+`--prepare CMD` runs before a Box's first `exec` or `machine_info`. The runner
+runs it on the machine over ssh, in `~/moor/<box id>` (made if missing), through
+the machine user's login shell, with these variables set:
+
+| Variable | Value |
+| --- | --- |
+| `MOOR_BOX` | the Box's id |
+| `MOOR_SLOT` | the Box's slot |
+| `MOOR_PORT_OFFSET` | 10 times the slot |
+
+The last line CMD prints on stdout must be a JSON object of string values: the
+Box's facts, such as `{"device": "<udid>"}`. Its stderr may say anything. If CMD
+exits non-zero, runs past `--hook-timeout-secs` or ends on another line, the
+call that needed it fails with the tail of its output, nothing is kept, and the
+Box's next call runs it again. Two calls of one Box never run it at once.
+
+The runner keeps the facts with the Box's ssh target and slot in
+`<state dir>/boxes/<box id>.json`, so a restarted runner does not prepare the Box
+again. `machine_info` returns them as `facts`, and every `exec` command sees
+each as `MOOR_FACT_<KEY>`: the key uppercased, every character but letters and
+digits as `_`, so `device` is `MOOR_FACT_DEVICE`. With no `--prepare` the facts
+are empty and the record is still kept.
+
+`--release CMD` runs, in the same place, with the same variables and the
+`MOOR_FACT_*` ones, once the Box is no longer open. Every `--sweep-secs` the
+runner asks the controller for the open Boxes (a `show` with no Box, over the
+same socket). For each recorded Box the controller does not list, it runs
+release, then deletes the Box's record and its host mirror
+`<state dir>/mirrors/<box id>`. If release fails, it keeps both, prints the
+tail of the output to stderr, and tries again on the next sweep. If the
+controller cannot be asked, nothing is released. With no `--release` the record
+and mirror are still deleted.
+
+`sync` runs `rsync --delete` into `~/moor/<box id>`, so anything prepare puts
+there is removed by the next sync. Put per-Box folders, such as a build's
+derived data, under `~/moor-state/<box id>/` instead, and remove them in release.
+
+An example for iOS work, where each Box gets its own simulator:
+
+```sh
+moor-machine-runner --socket /path/to/moor.sock \
+  --state-dir ~/.local/state/moor-machine-runner \
+  --prepare '~/bin/moor-prepare' --release '~/bin/moor-release'
+```
+
+`~/bin/moor-prepare` on the machine:
+
+```sh
+#!/bin/sh
+set -e
+mkdir -p ~/moor-state/"$MOOR_BOX"/DerivedData
+udid=$(xcrun simctl create "moor-$MOOR_BOX" "iPhone 16" "iOS18.5")
+printf '{"device": "%s"}\n' "$udid"
+```
+
+`~/bin/moor-release` on the machine:
+
+```sh
+#!/bin/sh
+xcrun simctl delete "$MOOR_FACT_DEVICE" 2>/dev/null || true
+rm -rf ~/moor-state/"$MOOR_BOX" ~/moor/"$MOOR_BOX"
+```
+
+An agent in the Box then builds with
+`xcodebuild -destination "id=$MOOR_FACT_DEVICE" -derivedDataPath ~/moor-state/$MOOR_BOX/DerivedData`.
