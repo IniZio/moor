@@ -11,10 +11,9 @@ pub use controller::{parse_controller, ControllerConfig, FrontEntry};
 pub use repo::{parse_repo, RepoBox, RepoCompose, RepoConfig};
 
 pub use user::{
-    parse_user, AgentConfig, BoxConfig, BoxSize, ControllerClientConfig, DotfilesConfig,
-    box_mcp, BoxMcp, DriverConfig, HerdrConfig, McpServer, SurfaceConfig, ToolsConfig, UserConfig,
-    UserMcp, DEFAULT_HEADER,
-    DEFAULT_SLEEP_AFTER,
+    box_mcp, parse_user, AgentConfig, BoxConfig, BoxMcp, BoxSize, ControllerClientConfig,
+    DotfilesConfig, DriverConfig, HerdrConfig, McpServer, SurfaceConfig, ToolsConfig, UserConfig,
+    UserMcp, DEFAULT_HEADER, DEFAULT_SLEEP_AFTER,
 };
 
 pub use settings::{BoxSettings, CredPlan, Flags, Layer, Sourced};

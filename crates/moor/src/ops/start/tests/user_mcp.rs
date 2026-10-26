@@ -41,7 +41,10 @@ fn the_agent_gets_a_placeholder_and_the_proxy_injects_the_users_key() {
     let launch = super::super::launch::launch_req(&w.cx, &row.unwrap().unwrap(), None).unwrap();
     let linear = &launch.mcp["linear"];
     assert_eq!(linear.headers["Authorization"], "Bearer moor-proxy");
-    assert!(!format!("{launch:?}").contains(KEY), "the key never reaches the Box");
+    assert!(
+        !format!("{launch:?}").contains(KEY),
+        "the key never reaches the Box"
+    );
     let spec = fake
         .calls()
         .into_iter()
@@ -51,7 +54,10 @@ fn the_agent_gets_a_placeholder_and_the_proxy_injects_the_users_key() {
         })
         .unwrap();
     let rule = spec.rules.iter().find(|r| r.name == "mcp-linear").unwrap();
-    assert_eq!((rule.credential.as_str(), spec.user), ("mcp_linear", REQUESTER_USER));
+    assert_eq!(
+        (rule.credential.as_str(), spec.user),
+        ("mcp_linear", REQUESTER_USER)
+    );
     assert_eq!(rule.hosts, ["mcp.linear.app"]);
 }
 

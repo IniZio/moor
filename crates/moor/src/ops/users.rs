@@ -58,7 +58,13 @@ pub(crate) fn run(
             key,
         } => {
             let user = enrolled(store, who)?;
-            mcp::add(cx, vault, user, (name, url, header.as_deref()), key.as_ref())
+            mcp::add(
+                cx,
+                vault,
+                user,
+                (name, url, header.as_deref()),
+                key.as_ref(),
+            )
         }
         UserCmd::McpRemove { name } => mcp::remove(store, enrolled(store, who)?, name),
         UserCmd::McpList => mcp::list(store, enrolled(store, who)?),

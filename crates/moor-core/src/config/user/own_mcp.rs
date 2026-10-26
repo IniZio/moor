@@ -39,7 +39,11 @@ impl UserMcp {
             (None, None) => return Err(format!("server URL `{url}` must be https:// with a host")),
         }
         let header = header.unwrap_or(DEFAULT_HEADER);
-        if header.is_empty() || !header.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
+        if header.is_empty()
+            || !header
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        {
             return Err(format!("header `{header}` must match [A-Za-z0-9-]+"));
         }
         Ok(Self {

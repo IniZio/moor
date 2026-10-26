@@ -18,8 +18,8 @@ pub use session::{EndSessionReq, OpenSessionReq, SessionsReq, ShowSessionReq};
 pub use target::BoxTarget;
 mod user;
 pub use user::{
-    ActAsReq, AsReq, LinkRedeemReq, McpAddReq, McpRemoveReq, ProxyReleaseReq, SecretDeleteReq, SecretSetReq, SecretValue,
-    StartNeedsReq, UserCmd,
+    ActAsReq, AsReq, LinkRedeemReq, McpAddReq, McpRemoveReq, ProxyReleaseReq, SecretDeleteReq,
+    SecretSetReq, SecretValue, StartNeedsReq, UserCmd,
 };
 mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
