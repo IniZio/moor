@@ -216,19 +216,19 @@ pub(super) fn shown(state: &str) -> Scripted {
 
 #[test]
 fn a_box_whose_agent_is_idle_does_not_keep_the_thread_open_and_is_left_alone() {
-    let (rig, controller) = quiet_thread_with_a_box(shown("idle"));
+    let (mut rig, controller, _bin) = Rig::start_boxes();
+    rig.open_thread_with_a_box();
+    wait_posted(&rig, 1);
+    backdate(&rig);
+    controller.script("show", shown("idle"));
+    let before_sweep = commands(&controller).len();
+    restart(&mut rig);
     wait_root_session(&rig, None);
     assert_eq!(ends(&controller), [100]);
-    let after_start: Vec<_> = commands(&controller)
-        .into_iter()
-        .skip_while(|c| *c != "start")
-        .skip(1)
-        .collect();
-    assert_eq!(
-        after_start,
-        ["show", "end-host-session"],
-        "the Box is not touched"
-    );
+    let swept = commands(&controller).split_off(before_sweep);
+    let why = "the sweep leaves the Box alone; the turn's calls, whose release races the \
+               worker's start, all came before the restart";
+    assert_eq!(swept, ["show", "end-host-session"], "{why}");
     rig.wait_box_state(BOX_NAME, "bound");
 }
 
