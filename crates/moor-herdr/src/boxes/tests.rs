@@ -49,8 +49,8 @@ fn each_lifecycle_reads_as_the_phase_the_sidebar_shows() {
 }
 
 #[test]
-fn one_box_comes_from_boxed() {
-    let one = parse_one(json!({ "boxed": row("ready", "idle") }))
+fn one_box_comes_from_the_box_field() {
+    let one = parse_one(json!({ "box": row("ready", "idle") }))
         .unwrap()
         .unwrap();
     assert_eq!(one.branch.as_deref(), Some("moor/fix"));

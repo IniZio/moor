@@ -130,6 +130,7 @@ struct ShowValue {
     #[serde(default)]
     boxes: Vec<Row>,
     /// The Box named.
+    #[serde(rename = "box")]
     boxed: Option<Row>,
 }
 
