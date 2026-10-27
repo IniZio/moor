@@ -4,24 +4,33 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::Shutdown;
-use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
+use moor_core::seam::clock::Clock;
 use moor_core::view::{AttachEnd, AttachView};
 
 use super::{run, Link};
 use crate::adapters::box_agent::relay_argv;
+use crate::adapters::clock::SystemClock;
+
+/// The clock the tests wait on.
+const CLOCK: SystemClock = SystemClock::real();
+
+/// Serializes the tests here, since `ptys` counts the whole process's pty descriptors.
+static SERIAL: Mutex<()> = Mutex::new(());
 
 /// A tmux server on a private socket running the agent's session, killed on drop.
 struct Agent {
     /// Holds the socket and the `tmux` wrapper.
     dir: tempfile::TempDir,
+    /// Held while the server lives.
+    _serial: std::sync::MutexGuard<'static, ()>,
 }
 
 impl Agent {
@@ -39,9 +48,23 @@ impl Agent {
             tmux.display(),
             sock.display()
         );
-        std::fs::write(&wrapper, script).expect("wrapper");
-        std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755)).expect("chmod");
-        let agent = Self { dir };
+        // Written by a child: a writable fd in this process leaks into other tests' forks and
+        // makes exec of the wrapper fail with ETXTBSY.
+        let draft = dir.path().join("tmux.sh");
+        std::fs::write(&draft, script).expect("wrapper");
+        let installed = Command::new("install")
+            .args(["-m", "755"])
+            .arg(&draft)
+            .arg(&wrapper)
+            .status()
+            .expect("install");
+        assert!(installed.success(), "install the wrapper");
+        let agent = Self {
+            dir,
+            _serial: SERIAL
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        };
         agent.tmux(&[
             "new-session",
             "-d",
@@ -169,9 +192,9 @@ impl Attached {
 
     /// Waits for the relay to end.
     fn ended(self) -> AttachView {
-        let deadline = Instant::now() + Duration::from_secs(10);
+        let deadline = CLOCK.instant() + Duration::from_secs(10);
         while !self.relay.is_finished() {
-            assert!(Instant::now() < deadline, "the relay did not end");
+            assert!(CLOCK.instant() < deadline, "the relay did not end");
             thread::sleep(Duration::from_millis(20));
         }
         self.relay.join().expect("relay").expect("relay ran")
@@ -184,8 +207,12 @@ fn read_screen(down: &mut impl BufRead, screen: &Mutex<Vec<u8>>) {
     while matches!(down.read_line(&mut line), Ok(n) if n > 0) {
         let frame: serde_json::Value = serde_json::from_str(line.trim_end()).expect("frame");
         line.clear();
-        if frame["frame"] == "bytes" {
-            let len = usize::try_from(frame["len"].as_u64().expect("len")).expect("len");
+        if frame.get("frame").and_then(serde_json::Value::as_str) == Some("bytes") {
+            let len = frame
+                .get("len")
+                .and_then(serde_json::Value::as_u64)
+                .expect("len");
+            let len = usize::try_from(len).expect("len");
             let mut buf = vec![0u8; len];
             down.read_exact(&mut buf).expect("bytes");
             screen.lock().expect("screen").extend_from_slice(&buf);
@@ -195,9 +222,9 @@ fn read_screen(down: &mut impl BufRead, screen: &Mutex<Vec<u8>>) {
 
 /// Waits up to ten seconds for `cond`.
 fn wait_for(what: &str, cond: impl Fn() -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = CLOCK.instant() + Duration::from_secs(10);
     while !cond() {
-        assert!(Instant::now() < deadline, "timed out waiting for {what}");
+        assert!(CLOCK.instant() < deadline, "timed out waiting for {what}");
         thread::sleep(Duration::from_millis(50));
     }
 }
@@ -215,7 +242,7 @@ fn ptys() -> usize {
 fn agent() -> Option<Agent> {
     let agent = Agent::start();
     if agent.is_none() {
-        eprintln!("skipped: tmux is not installed");
+        let _ = writeln!(std::io::stderr(), "skipped: tmux is not installed");
     }
     agent
 }
@@ -248,7 +275,6 @@ fn keys_reach_the_agent_and_its_screen_and_size_follow_the_client_until_it_shuts
 }
 
 #[test]
-#[ignore = "open: the agent's window keeps the last client's size after the relay ends"]
 fn the_agent_window_returns_to_its_own_size_after_a_relay() {
     let Some(agent) = agent() else { return };
     let relay = Attached::open(&agent);

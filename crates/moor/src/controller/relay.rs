@@ -58,14 +58,16 @@ impl Shared {
             .ended
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if ended.is_none() {
-            *ended = Some(why);
-            let _ = self
-                .killer
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .kill();
+        if ended.is_some() {
+            return;
         }
+        *ended = Some(why);
+        drop(ended);
+        let _ = self
+            .killer
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .kill();
     }
 }
 
@@ -94,7 +96,7 @@ pub(crate) fn run(argv: &[String], cols: u16, rows: u16, link: Link<'_>) -> io::
         .master
         .try_clone_reader()
         .and_then(|screen| Ok((screen, pair.master.take_writer()?)));
-    let (screen, keys) = match started {
+    let (screen, mut keys) = match started {
         Ok(ends) => ends,
         Err(e) => {
             shared.end(AttachEnd::Link);
@@ -112,6 +114,7 @@ pub(crate) fn run(argv: &[String], cols: u16, rows: u16, link: Link<'_>) -> io::
     let (bytes_out, status) = thread::scope(|scope| {
         let master = pair.master;
         let shared = &shared;
+        let keys = keys.as_mut();
         scope.spawn(move || {
             take_input(id, input, keys, master.as_ref(), shared);
             shared.end(AttachEnd::Client);
@@ -123,6 +126,9 @@ pub(crate) fn run(argv: &[String], cols: u16, rows: u16, link: Link<'_>) -> io::
         unblock();
         (bytes_out, status)
     });
+    // Dropping the pty writer types a newline and EOF into the pty, which the attached tmux
+    // client would pass on to the agent, so it goes only after the command is gone.
+    drop(keys);
     let ended = shared
         .ended
         .into_inner()
@@ -189,7 +195,7 @@ fn pump(
 fn take_input(
     id: &str,
     input: &mut (dyn BufRead + Send),
-    mut keys: Box<dyn Write + Send>,
+    keys: &mut (dyn Write + Send),
     master: &dyn MasterPty,
     shared: &Shared,
 ) {
@@ -233,5 +239,4 @@ fn watch_stop(stopping: &(dyn Fn() -> bool + Sync), shared: &Shared) {
 }
 
 #[cfg(test)]
-#[path = "relay_tests.rs"]
 mod tests;

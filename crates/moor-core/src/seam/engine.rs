@@ -209,6 +209,12 @@ pub trait Engine: Send + Sync {
         None
     }
 
+    /// The command that relays the agent's live terminal through `connect`; `None` when this
+    /// engine has no terminal a client can attach to.
+    fn relay_argv(&self, _connect: &[String]) -> Option<Vec<String>> {
+        None
+    }
+
     /// Delivers the brief and hooks to the Box and opens the agent's pane. The returned
     /// session has an empty `id` until the agent reports its own.
     ///

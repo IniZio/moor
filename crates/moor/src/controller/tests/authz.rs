@@ -268,6 +268,16 @@ fn a_user_runs_steers_closes_and_shows_only_its_own_box() {
 }
 
 #[test]
+fn a_box_owner_may_attach_to_its_own_box() {
+    let world = World::new();
+    let slack = world.slack();
+    let attach = |name: &str| json!({"cmd": "attach", "box": name, "cols": 80, "rows": 24});
+    let got = ask(&slack, &acting(A, &attach(A_BOX)));
+    assert_ne!(got["error"]["message"], "not your Box", "{got}");
+    not_yours(&ask(&slack, &acting(A, &attach(B_BOX))));
+}
+
+#[test]
 fn the_operator_acts_on_every_box() {
     let world = World::new();
     for name in [A_BOX, B_BOX, NO_USER_BOX] {

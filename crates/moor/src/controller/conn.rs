@@ -8,17 +8,22 @@ use moor_core::controller::{
 };
 use moor_core::request::{Grant, UserCmd};
 use moor_core::user::{Caller, Identity, Viewer};
-use moor_core::{ArtifactReadReq, AttachReq, ErrorKind, Request, Response, RunReq};
+use moor_core::{ArtifactReadReq, ErrorKind, Request, Response, RunReq};
 
 use super::drain::Admitted;
 use super::hangup::Hangup;
 use super::progress::{respond_with_progress, wait_unless_draining, Sink, INTERVAL};
-use super::relay;
 use super::watch;
 use crate::env::Env;
 use crate::error::CommandError;
 use crate::vault::Vault;
 use crate::Moor;
+
+mod attach;
+mod frames;
+
+use attach::attach;
+use frames::{hello_reply, hello_required, stray};
 
 /// Whom one connection speaks for, the vault key its user requests use, and its place in the
 /// drain that ends it.
@@ -185,53 +190,20 @@ pub(super) fn serve<W: Write>(
             Ok(frame) if !handshaken && !matches!(frame, ClientFrame::Hello { .. }) => {
                 hello_required(frame)
             }
-            Ok(ClientFrame::Watch {
-                since,
-                boxes,
-                kinds,
-                parent,
-                follow,
-                identity,
-            }) => {
-                watch(
-                    &mut writer,
-                    since,
-                    &WatchFilter {
-                        boxes,
-                        kinds,
-                        parent,
-                    },
-                    follow,
-                    identity.as_ref(),
-                );
+            Ok(frame @ ClientFrame::Watch { .. }) => {
+                start_watch(&mut writer, frame, &watch);
                 return;
             }
             Ok(ClientFrame::Bytes { id, .. } | ClientFrame::Resize { id, .. }) => {
-                send(
-                    &mut writer,
-                    &ServerFrame::Error {
-                        id: Some(id),
-                        kind: FrameErrorKind::Malformed,
-                        message: "bytes and resize frames belong to a running attach".to_owned(),
-                    },
-                );
+                send(&mut writer, &stray(id));
                 return;
             }
-            Ok(ClientFrame::Request { id, request }) => match conn.answering().and_then(
-                |_answering| {
-                    last = matches!(*request, Request::Attach(_));
-                    answer(&id, *request, (&mut reader, &mut writer))
-                },
-            ) {
-                Some(envelope) => ServerFrame::Response { id, envelope },
-                None => ServerFrame::Error {
-                    id: Some(id),
-                    kind: FrameErrorKind::Restarting,
-                    message:
-                        "the controller is restarting before the request finished; send it again"
-                            .to_owned(),
-                },
-            },
+            Ok(ClientFrame::Request { id, request }) => {
+                let reply;
+                (reply, last) =
+                    request_reply(conn, &answer, id, *request, (&mut reader, &mut writer));
+                reply
+            }
         };
         if !send(&mut writer, &reply) || last {
             return;
@@ -242,32 +214,54 @@ pub(super) fn serve<W: Write>(
     }
 }
 
-/// The controller's answer to a client hello of `protocol`.
-fn hello_reply(protocol: u32) -> ServerFrame {
-    if protocol == PROTOCOL {
-        return ServerFrame::Hello { protocol: PROTOCOL };
-    }
-    ServerFrame::Error {
-        id: None,
-        kind: FrameErrorKind::UnsupportedProtocol,
-        message: format!("client speaks protocol {protocol}, controller speaks {PROTOCOL}"),
+/// Hands a watch `frame` to `watch`, which streams until the connection ends.
+fn start_watch<W: Write>(
+    writer: &mut W,
+    frame: ClientFrame,
+    watch: &impl Fn(&mut W, i64, &WatchFilter, bool, Option<&Identity>),
+) {
+    if let ClientFrame::Watch {
+        since,
+        boxes,
+        kinds,
+        parent,
+        follow,
+        identity,
+    } = frame
+    {
+        let filter = WatchFilter {
+            boxes,
+            kinds,
+            parent,
+        };
+        watch(writer, since, &filter, follow, identity.as_ref());
     }
 }
 
-/// The error for `frame`, a watch or a request, sent before the hello.
-fn hello_required(frame: ClientFrame) -> ServerFrame {
-    let (id, message) = match frame {
-        ClientFrame::Request { id, .. } => (
-            Some(id.clone()),
-            format!("request {id} arrived before hello"),
+/// The reply to `request` sent as `id`, and whether it is the connection's last: an `attach`
+/// that ran hands the connection to its relay.
+fn request_reply(
+    conn: &Admitted,
+    answer: &impl Fn(&str, Request, Duplex<'_>) -> Option<Response>,
+    id: String,
+    request: Request,
+    duplex: Duplex<'_>,
+) -> (ServerFrame, bool) {
+    let attach = matches!(request, Request::Attach(_));
+    match conn
+        .answering()
+        .and_then(|_answering| answer(&id, request, duplex))
+    {
+        Some(envelope) => (ServerFrame::Response { id, envelope }, attach),
+        None => (
+            ServerFrame::Error {
+                id: Some(id),
+                kind: FrameErrorKind::Restarting,
+                message: "the controller is restarting before the request finished; send it again"
+                    .to_owned(),
+            },
+            false,
         ),
-        ClientFrame::Watch { .. } => (None, "watch arrived before hello".to_owned()),
-        _ => (None, "a frame arrived before hello".to_owned()),
-    };
-    ServerFrame::Error {
-        id,
-        kind: FrameErrorKind::HelloRequired,
-        message,
     }
 }
 
@@ -303,43 +297,6 @@ fn read_artifact(
 
 /// The client's side of one connection: its frames, and where its answers go.
 pub(super) type Duplex<'a> = (&'a mut (dyn BufRead + Send), &'a mut dyn Write);
-
-/// Relay the agent's terminal on the Box `req` names over this connection, then answer.
-fn attach(
-    env: &Env,
-    peer: &Peer,
-    grant: Grant,
-    id: &str,
-    req: &AttachReq,
-    (input, output): Duplex<'_>,
-) -> Response {
-    let refused = |e: CommandError| e.into_response("attach", vec![]);
-    let Some(hangup) = peer.hangup.as_ref() else {
-        return refused(CommandError::new(
-            ErrorKind::Failed,
-            "this connection cannot be relayed",
-        ));
-    };
-    let argv = match Moor::from_env(env).and_then(|m| m.granted(grant).attach_argv(req)) {
-        Ok(argv) => argv,
-        Err(e) => return refused(e),
-    };
-    let drain = peer.conn.drain();
-    let link = relay::Link {
-        id,
-        input,
-        output,
-        unblock: &|| hangup.stop_reading(),
-        stopping: &|| drain.begun(),
-    };
-    match relay::run(&argv, req.cols, req.rows, link) {
-        Ok(view) => Response::ok("attach", serde_json::to_value(view).ok()),
-        Err(e) => refused(CommandError::new(
-            ErrorKind::Failed,
-            format!("cannot relay the agent's terminal: {e}"),
-        )),
-    }
-}
 
 /// Run a user request as the identity this connection may assert.
 fn answer_user(env: &Env, peer: &Peer, asserted: Option<&Identity>, cmd: &UserCmd) -> Response {

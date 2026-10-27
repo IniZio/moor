@@ -55,8 +55,10 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::Show(r) => to_value(&show::run(cx, &r)?),
         Request::ShowSession(r) => to_value(&show_session::run(cx, &r)?),
         Request::Artifacts(r) => to_value(&artifacts::list(cx, &r)?),
-        Request::ArtifactRead(_) => Err(CommandError::new(ErrorKind::Usage, RAW_BYTES)),
-        Request::Whoami(_)
+        req @ (Request::ArtifactRead(_)
+        | Request::Attach(_)
+        | Request::As(_)
+        | Request::Whoami(_)
         | Request::Enroll(_)
         | Request::SecretSet(_)
         | Request::SecretDelete(_)
@@ -72,14 +74,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         | Request::LinkRedeem(_)
         | Request::ProxyLease(_)
         | Request::ProxyRelease(_)
-        | Request::ProxyStatus(_) => Err(CommandError::new(
-            ErrorKind::Usage,
-            "user requests act as the caller of a socket, so only the controller socket serves them",
-        )),
-        Request::As(_) => Err(CommandError::new(
-            ErrorKind::Usage,
-            "as acts as an identity a socket checks, so only the controller socket serves it",
-        )),
+        | Request::ProxyStatus(_)) => Err(socket_only(&req)),
         Request::MachineTargets {} => to_value(&MachineTargetsValue {
             targets: cx.store()?.machine_targets()?,
         }),
@@ -97,10 +92,6 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::Wake(r) => to_value(&wake::run(cx, &r)?),
         Request::Open(r) => to_value(&open::run(cx, &r)?),
         Request::Connect(r) => to_value(&open::connect(cx, &r)?),
-        Request::Attach(_) => Err(CommandError::new(
-            ErrorKind::Refused,
-            "attach relays a terminal both ways, so only the controller socket serves it",
-        )),
         Request::Steer(r) => to_value(&steer::run(cx, &r)?),
         Request::EndSession(r) => to_value(&end_session::run(cx, &r)?),
         Request::OpenSession(r) => to_value(&open_session::run(cx, &r)?),
@@ -110,6 +101,26 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::BindSession(r) => to_value(&binding::bind(cx, &r)?),
         Request::SessionBinding(r) => to_value(&binding::lookup(cx, &r)?),
     }
+}
+
+/// The refusal for `req`, a request only the controller socket serves.
+fn socket_only(req: &Request) -> CommandError {
+    let (kind, why) = match req {
+        Request::ArtifactRead(_) => (ErrorKind::Usage, RAW_BYTES),
+        Request::Attach(_) => (
+            ErrorKind::Refused,
+            "attach relays a terminal both ways, so only the controller socket serves it",
+        ),
+        Request::As(_) => (
+            ErrorKind::Usage,
+            "as acts as an identity a socket checks, so only the controller socket serves it",
+        ),
+        _ => (
+            ErrorKind::Usage,
+            "user requests act as the caller of a socket, so only the controller socket serves them",
+        ),
+    };
+    CommandError::new(kind, why)
 }
 
 /// `artifact-read`: stream the Artifact's bytes to `out`, then the response value.

@@ -62,6 +62,10 @@ impl BoxAgent {
 }
 
 impl Engine for BoxAgent {
+    fn relay_argv(&self, connect: &[String]) -> Option<Vec<String>> {
+        Some(relay_argv(connect))
+    }
+
     fn probe(&self, s: &SessionRef, deadline: Deadline) -> Result<Probes, EngineError> {
         probe::probe(
             self.driver.as_ref(),

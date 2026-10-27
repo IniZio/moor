@@ -327,6 +327,7 @@ fn answer(line: &str, inner: &mut Inner) -> Next {
             }
         }
         ClientFrame::Request { id, request } => scripted(id, *request, inner),
+        ClientFrame::Bytes { .. } | ClientFrame::Resize { .. } => Next::Close,
     }
 }
 
