@@ -41,13 +41,25 @@ description = "moor: new"
 ```
 
 Every Box workspace carries `env=BOX`, which the second row shows in colour. It also carries
-`state`: empty while the Box is up, `◐` asleep, `◌` waiting for a machine slot, `✕` closed.
+`state`: empty while the Box is up, `◐` asleep, `◌` while it waits for a slot on the machine it claims, `✕` closed.
 While the Box is up, herdr's own agent dot shows working, waiting or idle.
+
+## New work
+
+`prefix+c` (or `moor: new` from the command palette) opens a popup that asks `local` or `box`.
+
+- `local` asks for a worktree name. An empty name opens a plain tab, as herdr does. A name makes
+  a git worktree. A name that an open Box already has is refused, since the two would look alike
+  in the sidebar.
+- `box` lists the repos your open Boxes work on and takes a number or any `owner/name`. It then
+  asks for a Box name, starts the Box on the controller, shows its workspace and focuses it.
+
+The popup closes when the work is started. A failure stays on screen until you press Enter.
 
 ## Keys
 
 | Where | Key | Does |
 | --- | --- | --- |
 | Attached | `ctrl+]` | Detach. The agent keeps running. |
-| Card | `r` or Enter | Attach again. |
+| Card | `r` or Enter | Attach again. On an asleep Box, wake it first. On a closed Box, say it is closed. |
 | Card | `q` | Close the pane. |
