@@ -125,7 +125,12 @@ fn sync(socket: &Path, every: Option<u64>) -> Result<(), Error> {
     let client = Client::new(socket);
     let exe = std::env::current_exe()?;
     let attach = attach_command(&exe, socket);
+    let herdr = std::env::var_os("HERDR_SOCKET_PATH").map(PathBuf::from);
     loop {
+        // A follower that outlived its herdr server would sync nothing forever.
+        if every.is_some() && herdr.as_deref().is_some_and(|p| !p.exists()) {
+            return Ok(());
+        }
         let synced =
             open_boxes(&client).and_then(|boxes| reconcile(&mut Cli::from_env(), &boxes, &attach));
         let mut out = io::stdout().lock();

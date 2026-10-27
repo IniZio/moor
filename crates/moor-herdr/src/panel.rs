@@ -181,22 +181,19 @@ impl Panel {
         if self.boxes.is_empty() {
             lines.push(vec![Piece::text("No open Boxes.")]);
         }
-        let wide = self.boxes.iter().map(|b| b.label().chars().count()).max();
         let armed = self.confirm.armed(now);
         for (i, b) in self.boxes.iter().enumerate() {
             let mark = if i == self.selected { "›" } else { " " };
-            let label = format!("{mark} {:<w$}", b.label(), w = wide.unwrap_or(0));
+            lines.push(vec![Piece {
+                text: format!("{mark} {}", b.label()),
+                button: Some(Button::Select(i)),
+            }]);
             let icon = match b.phase.icon() {
                 "" => "●",
                 icon => icon,
             };
-            let state = format!(" {icon} {:<21} ", phase_words(b.phase));
             let mut row = vec![
-                Piece {
-                    text: label,
-                    button: Some(Button::Select(i)),
-                },
-                Piece::text(state),
+                Piece::text(format!("    {icon} {}  ", phase_words(b.phase))),
                 Piece::button("attach", Button::Attach(b.name.clone())),
             ];
             if b.phase == Phase::Asleep {
@@ -285,7 +282,8 @@ impl Panel {
             Button::Attach(name) => ops.attach(name).map(|()| format!("Attached {name}.")),
             Button::Wake(name) => ops.wake(name).map(|()| format!("Waking {name}...")),
             Button::Close(name) if !self.confirm.press(name, now) => {
-                Ok(format!("Close {name}? Press [confirm close] again."))
+                self.note = format!("Close {name}? Press [confirm close] again.");
+                return;
             }
             Button::Close(name) => ops.close(name).map(|()| format!("Closed {name}.")),
         };

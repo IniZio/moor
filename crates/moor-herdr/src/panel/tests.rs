@@ -27,10 +27,12 @@ fn shown(name: &str, repo: &str, phase: Phase) -> Shown {
 struct Fake {
     boxes: Vec<Shown>,
     calls: Vec<String>,
+    opens: usize,
 }
 
 impl Ops for Fake {
     fn open(&mut self) -> Result<Vec<Shown>, Error> {
+        self.opens += 1;
         Ok(self.boxes.clone())
     }
 
@@ -63,6 +65,7 @@ fn fake() -> Fake {
             shown("nap", "acme/site", Phase::Asleep),
         ],
         calls: Vec::new(),
+        opens: 0,
     }
 }
 
@@ -73,7 +76,7 @@ fn loaded(ops: &mut Fake) -> Panel {
 }
 
 fn screen(panel: &Panel, now: Instant) -> Vec<String> {
-    let mut terminal = Terminal::new(TestBackend::new(76, 5)).unwrap();
+    let mut terminal = Terminal::new(TestBackend::new(76, 7)).unwrap();
     terminal.draw(|f| view::draw(f, panel, now)).unwrap();
     let buffer = terminal.backend().buffer();
     buffer
@@ -104,8 +107,10 @@ fn each_box_is_a_row_with_its_label_state_and_buttons() {
         [
             "[+ New Box] [refresh]",
             "",
-            "› ◈ app/fix  ● working               [attach] [close]",
-            "  ◈ site/nap ◐ asleep                [attach] [wake] [close]",
+            "› ◈ app/fix",
+            "    ● working  [attach] [close]",
+            "  ◈ site/nap",
+            "    ◐ asleep  [attach] [wake] [close]",
             "",
         ]
     );
@@ -117,7 +122,7 @@ fn an_armed_close_reads_confirm_close() {
     let mut panel = loaded(&mut fake());
     panel.confirm.press("fix", now);
     assert!(screen(&panel, now)
-        .get(2)
+        .get(3)
         .unwrap()
         .ends_with("[attach] [confirm close]"));
 }
@@ -137,7 +142,7 @@ fn a_click_on_the_toolbar_lands_on_new_or_refresh() {
 fn a_click_lands_on_the_button_under_it_and_nowhere_else() {
     let now = clock();
     let panel = loaded(&mut fake());
-    let row = FIRST_BOX_ROW + 1;
+    let row = FIRST_BOX_ROW + 3;
     let attach = column_of(&panel, row, "[attach]", now);
     let wake = column_of(&panel, row, "[wake]", now);
     assert_eq!(
@@ -150,7 +155,10 @@ fn a_click_lands_on_the_button_under_it_and_nowhere_else() {
     );
     assert_eq!(panel.hit(attach + 8, row, now), None);
     assert_eq!(panel.hit(wake, row, now), Some(Button::Wake("nap".into())));
-    assert_eq!(panel.hit(1, row, now), Some(Button::Select(1)));
+    assert_eq!(
+        panel.hit(1, FIRST_BOX_ROW + 2, now),
+        Some(Button::Select(1))
+    );
     assert_eq!(panel.hit(0, 9, now), None);
     assert_eq!(panel.hit(200, row, now), None);
 }
@@ -160,7 +168,7 @@ fn a_live_box_has_no_wake_button() {
     let now = clock();
     let panel = loaded(&mut fake());
     let lines = panel.lines(now);
-    let line = lines.get(usize::from(FIRST_BOX_ROW)).unwrap();
+    let line = lines.get(usize::from(FIRST_BOX_ROW + 1)).unwrap();
     assert!(!line
         .iter()
         .any(|p| matches!(p.button, Some(Button::Wake(_)))));
@@ -197,10 +205,10 @@ fn clicking_close_twice_closes_the_box_and_once_does_not() {
     let now = clock();
     let mut ops = fake();
     let mut panel = loaded(&mut ops);
-    let col = column_of(&panel, FIRST_BOX_ROW, "[close]", now);
+    let col = column_of(&panel, FIRST_BOX_ROW + 1, "[close]", now);
     let click = Input::Click {
         col,
-        row: FIRST_BOX_ROW,
+        row: FIRST_BOX_ROW + 1,
     };
     panel.handle(click, now, &mut ops);
     assert!(ops.calls.is_empty());
@@ -215,7 +223,7 @@ fn each_button_calls_its_operation() {
     let now = clock();
     let mut ops = fake();
     let mut panel = loaded(&mut ops);
-    let row = FIRST_BOX_ROW + 1;
+    let row = FIRST_BOX_ROW + 3;
     for text in ["[attach]", "[wake]"] {
         let col = column_of(&panel, row, text, now);
         panel.handle(Input::Click { col, row }, now, &mut ops);
@@ -243,4 +251,16 @@ fn keys_drive_the_selected_box() {
     assert_eq!(panel.selected, 0);
     panel.handle(Input::Key('q'), now, &mut ops);
     assert!(panel.quit);
+}
+
+#[test]
+fn arming_a_close_redraws_without_waiting_on_the_controller() {
+    let now = clock();
+    let mut ops = fake();
+    let mut panel = loaded(&mut ops);
+    let row = FIRST_BOX_ROW + 1;
+    let col = column_of(&panel, row, "[close]", now);
+    panel.handle(Input::Click { col, row }, now, &mut ops);
+    assert_eq!(ops.opens, 1, "only the first load asked the controller");
+    assert!(screen(&panel, now)[3].ends_with("[confirm close]"));
 }
