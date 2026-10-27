@@ -3,7 +3,7 @@
 
 use std::io::{self, Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -85,7 +85,7 @@ fn ended(answer: Result<Response, ClientError>) -> Ended {
         Ok(Response { value, .. }) => value
             .and_then(|v| serde_json::from_value::<AttachView>(v).ok())
             .map_or(Ended::Relay(AttachEnd::Link), |v| Ended::Relay(v.ended_by)),
-        Err(_) => Ended::Relay(AttachEnd::Link),
+        Err(e) => Ended::Refused(e.to_string()),
     }
 }
 
@@ -182,6 +182,33 @@ fn choose(rx: &Receiver<Event>, label: &str, card: &Card) -> io::Result<Choice> 
     Ok(Choice::Close)
 }
 
+/// How often a starting Box is asked whether it is up.
+const POLL: Duration = Duration::from_secs(2);
+
+/// Waits while `starting` says the Box is still being set up; `true` when the user closed
+/// the pane meanwhile.
+fn closed_while(rx: &Receiver<Event>, every: Duration, mut starting: impl FnMut() -> bool) -> bool {
+    loop {
+        match rx.recv_timeout(every) {
+            Ok(Event::Keys(bytes)) => {
+                if bytes
+                    .iter()
+                    .any(|b| Card::Starting.key(*b) == Choice::Close)
+                {
+                    return true;
+                }
+            }
+            Ok(_) => {}
+            Err(RecvTimeoutError::Timeout) => {
+                if !starting() {
+                    return false;
+                }
+            }
+            Err(RecvTimeoutError::Disconnected) => return true,
+        }
+    }
+}
+
 /// Attaches once to Box `name`.
 fn attach_once(client: &Client, name: &str, events: (&Sender<Event>, &Receiver<Event>)) -> Ended {
     let (cols, rows) = size();
@@ -212,6 +239,17 @@ pub fn run(client: &Client, name: &str) -> Result<(), Error> {
                     branch = b.branch.clone().or(branch);
                     label = b.label();
                 }
+                if before.as_ref().is_some_and(|b| b.phase == Phase::Starting) {
+                    draw(&label, &Card::Starting, None)?;
+                    let starting = || {
+                        open_box(client, name)
+                            .is_ok_and(|b| b.is_some_and(|b| b.phase == Phase::Starting))
+                    };
+                    if closed_while(&rx, POLL, starting) {
+                        return Ok(());
+                    }
+                    continue;
+                }
                 let ended = match before.map(|b| b.phase) {
                     Some(Phase::Live(_) | Phase::WaitingForMachine) => {
                         attach_once(client, name, (&tx, &rx))
@@ -241,3 +279,6 @@ pub fn run(client: &Client, name: &str) -> Result<(), Error> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

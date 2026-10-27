@@ -47,6 +47,8 @@ pub enum Card {
     },
     /// The Box is paused.
     Asleep,
+    /// The Box is still being set up; the pane attaches once it is up.
+    Starting,
     /// The user detached; the agent keeps running.
     Detached,
     /// The agent's terminal session ended while the Box stays up.
@@ -64,10 +66,12 @@ impl Card {
         match now.map(|b| b.phase) {
             None | Some(Phase::Closed) => Self::Closed { branch },
             Some(Phase::Asleep) => Self::Asleep,
+            Some(Phase::Starting) => Self::Starting,
             Some(Phase::Live(_) | Phase::WaitingForMachine) => match ended {
                 Ended::Relay(AttachEnd::Client) => Self::Detached,
                 Ended::Relay(AttachEnd::Agent) => Self::AgentEnded,
-                Ended::Relay(AttachEnd::Link) | Ended::Skipped => Self::LinkDropped,
+                Ended::Relay(AttachEnd::Link) => Self::LinkDropped,
+                Ended::Skipped => Self::Refused("the Box was not up yet; r attaches".to_owned()),
                 Ended::Refused(why) => Self::Refused(why.clone()),
             },
         }
@@ -81,6 +85,7 @@ impl Card {
             (b'r' | b'R' | b'\r', Self::Closed { .. }) => {
                 Choice::Note("closed: there is nothing to attach")
             }
+            (b'r' | b'R' | b'\r', Self::Starting) => Choice::Stay,
             (b'r' | b'R' | b'\r', Self::Asleep) => Choice::Wake,
             (b'r' | b'R' | b'\r', _) => Choice::Attach,
             _ => Choice::Stay,
@@ -90,7 +95,7 @@ impl Card {
     /// Whether `r` attaches again from this card.
     #[must_use]
     pub const fn reattaches(&self) -> bool {
-        !matches!(self, Self::Closed { .. })
+        !matches!(self, Self::Closed { .. } | Self::Starting)
     }
 
     /// The card's lines under the Box's `label`.
@@ -100,6 +105,7 @@ impl Card {
             Self::Closed { branch: Some(b) } => format!("closed · branch {b} · PR: gh pr view {b}"),
             Self::Closed { branch: None } => "closed".to_owned(),
             Self::Asleep => "asleep · r wakes it and attaches".to_owned(),
+            Self::Starting => "starting · attaches when it's up".to_owned(),
             Self::Detached => "detached · the agent keeps running".to_owned(),
             Self::AgentEnded => "the agent's terminal ended · the Box is still up".to_owned(),
             Self::LinkDropped => "the link to the Box dropped".to_owned(),
