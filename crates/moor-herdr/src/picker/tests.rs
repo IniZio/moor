@@ -34,6 +34,7 @@ impl Prompt for Screen {
 struct Ctl {
     open: Vec<Shown>,
     started: std::cell::RefCell<Vec<(String, String)>>,
+    goals: std::cell::RefCell<Vec<String>>,
 }
 
 impl Controller for Ctl {
@@ -48,7 +49,8 @@ impl Controller for Ctl {
         Ok(now)
     }
 
-    fn start(&self, name: &str, repo: &str) -> Result<(), Error> {
+    fn start(&self, name: &str, repo: &str, goal: &str) -> Result<(), Error> {
+        self.goals.borrow_mut().push(goal.to_owned());
         self.started
             .borrow_mut()
             .push((name.to_owned(), repo.to_owned()));
@@ -73,6 +75,7 @@ fn ctl() -> Ctl {
             live("more", "acme/app"),
         ],
         started: std::cell::RefCell::default(),
+        goals: std::cell::RefCell::default(),
     }
 }
 
@@ -174,7 +177,7 @@ fn a_worktree_name_an_open_box_has_is_refused_with_the_reason() {
 
 #[test]
 fn a_box_starts_on_a_known_repo_then_appears_and_takes_focus() {
-    let (screen, ctl, herd) = pick(&["box", "2", "tidy"]);
+    let (screen, ctl, herd) = pick(&["box", "2", "tidy", "fix the login page"]);
     assert!(
         screen.said.iter().any(|l| l.contains("1) acme/app")),
         "{:?}",
@@ -196,7 +199,7 @@ fn a_box_starts_on_a_known_repo_then_appears_and_takes_focus() {
 
 #[test]
 fn a_repo_can_be_typed_when_no_listed_one_fits() {
-    let (_, ctl, _) = pick(&["2", "acme/new", "tidy"]);
+    let (_, ctl, _) = pick(&["2", "acme/new", "tidy", "fix it"]);
     assert_eq!(
         ctl.started.borrow().first().map(|s| s.1.as_str()),
         Some("acme/new")
@@ -215,11 +218,22 @@ fn a_bad_choice_asks_again() {
 }
 
 #[test]
-fn the_start_request_names_the_box_and_its_repo() {
-    let wire = serde_json::to_value(start_request("tidy", "acme/site").unwrap()).unwrap();
+fn a_box_needs_a_goal_since_its_agent_starts_on_one() {
+    let (screen, ctl, _) = pick(&["box", "2", "tidy", "", "fix the login page"]);
+    assert!(
+        screen.said.iter().any(|l| l.contains("goal")),
+        "{:?}",
+        screen.said
+    );
+    assert_eq!(*ctl.goals.borrow(), ["fix the login page"]);
+}
+
+#[test]
+fn the_start_request_carries_the_goal() {
+    let wire = serde_json::to_value(start_request("tidy", "acme/site", "fix it").unwrap()).unwrap();
     assert_eq!(
         wire,
-        serde_json::json!({"cmd": "start", "name": "tidy", "repo": "acme/site",
+        serde_json::json!({"cmd": "start", "name": "tidy", "repo": "acme/site", "goal": "fix it",
             "no_agent": false, "hold": false, "resume": false})
     );
 }
