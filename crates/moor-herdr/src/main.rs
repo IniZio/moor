@@ -1,7 +1,7 @@
 //! `moor-herdr`: shows moor Boxes as herdr workspaces and relays their agents' terminals.
 
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::thread;
 use std::time::Duration;
@@ -11,6 +11,7 @@ use moor_client::Client;
 use moor_herdr::boxes::open_boxes;
 use moor_herdr::error::Error;
 use moor_herdr::herdr::Cli;
+use moor_herdr::picker::{self, Prompt, Tty};
 use moor_herdr::sync::{reconcile, shell_quote};
 use moor_herdr::{relay, setup};
 
@@ -40,6 +41,12 @@ enum Cmd {
         /// The Box.
         name: String,
     },
+    /// Ask where new work goes: a local worktree or a new Box.
+    New {
+        /// The workspace the key was pressed in.
+        #[arg(long, env = "MOOR_HERDR_WORKSPACE")]
+        workspace: String,
+    },
     /// Print the herdr config snippet that colours Boxes and binds moor's keys.
     HerdrSetup,
 }
@@ -65,19 +72,43 @@ fn run(args: &Args) -> Result<(), Error> {
         Cmd::HerdrSetup => Ok(write!(io::stdout(), "{}", setup::snippet())?),
         Cmd::Attach { name } => relay::run(&Client::new(socket()?), name),
         Cmd::Sync { every } => sync(&socket()?, *every),
+        Cmd::New { workspace } => new(&socket()?, workspace),
     }
 }
 
-/// Syncs once, or every `every` seconds, logging changes and failures.
-fn sync(socket: &PathBuf, every: Option<u64>) -> Result<(), Error> {
-    let client = Client::new(socket);
-    let exe = std::env::current_exe()?;
+/// The shell command that runs a Box's pane.
+fn attach_command(exe: &Path, socket: &Path) -> impl Fn(&str) -> String {
     let prefix = format!(
         "exec {} --socket {} attach",
         shell_quote(&exe.to_string_lossy()),
         shell_quote(&socket.to_string_lossy())
     );
-    let attach = |name: &str| format!("{prefix} {}", shell_quote(name));
+    move |name: &str| format!("{prefix} {}", shell_quote(name))
+}
+
+/// Runs the picker in herdr's popup, which closes with this process, so a failure waits for
+/// Enter to be read first.
+fn new(socket: &Path, workspace: &str) -> Result<(), Error> {
+    let attach = attach_command(&std::env::current_exe()?, socket);
+    let done = picker::run(
+        &mut Tty,
+        &Client::new(socket),
+        &mut Cli::from_env(),
+        workspace,
+        &attach,
+    );
+    if let Err(e) = &done {
+        let _ = Tty.say(&format!("moor-herdr: {e}"));
+        let _ = Tty.ask("Press Enter to close. ");
+    }
+    done
+}
+
+/// Syncs once, or every `every` seconds, logging changes and failures.
+fn sync(socket: &Path, every: Option<u64>) -> Result<(), Error> {
+    let client = Client::new(socket);
+    let exe = std::env::current_exe()?;
+    let attach = attach_command(&exe, socket);
     loop {
         let synced =
             open_boxes(&client).and_then(|boxes| reconcile(&mut Cli::from_env(), &boxes, &attach));

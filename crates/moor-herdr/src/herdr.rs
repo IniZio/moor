@@ -8,6 +8,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::error::Error;
+use crate::picker::Bench;
 
 /// The metadata source and agent-report source this front writes as.
 pub const SOURCE: &str = "moor";
@@ -170,5 +171,29 @@ impl Herdr for Cli {
             state,
         ];
         self.call(&args).map(drop)
+    }
+}
+
+impl Bench for Cli {
+    fn tab(&mut self, workspace: &str) -> Result<(), Error> {
+        self.call(&["tab", "create", "--workspace", workspace, "--focus"])
+            .map(drop)
+    }
+
+    fn worktree(&mut self, workspace: &str, name: &str) -> Result<(), Error> {
+        let args = [
+            "worktree",
+            "create",
+            "--workspace",
+            workspace,
+            "--branch",
+            name,
+            "--focus",
+        ];
+        self.call(&args).map(drop)
+    }
+
+    fn focus(&mut self, workspace: &str) -> Result<(), Error> {
+        self.call(&["workspace", "focus", workspace]).map(drop)
     }
 }

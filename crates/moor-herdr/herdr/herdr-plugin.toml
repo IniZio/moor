@@ -22,3 +22,9 @@ id = "new"
 title = "moor: new"
 contexts = ["workspace"]
 command = ["sh", "bin/new.sh"]
+
+[[panes]]
+id = "new"
+title = "moor: new"
+placement = "popup"
+command = ["sh", "bin/run.sh", "new"]

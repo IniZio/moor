@@ -6,6 +6,7 @@ pub mod boxes;
 pub mod card;
 pub mod error;
 pub mod herdr;
+pub mod picker;
 pub mod relay;
 pub mod setup;
 pub mod sync;

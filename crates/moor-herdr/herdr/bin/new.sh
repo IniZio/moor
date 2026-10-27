@@ -1,4 +1,5 @@
 #!/bin/sh
-# A plain tab in the current workspace until moor's own picker takes this key.
+# Opens moor's picker as a popup over the current workspace.
 set -eu
-exec "${HERDR_BIN_PATH:-herdr}" tab create --workspace "$HERDR_WORKSPACE_ID" --focus
+exec "${HERDR_BIN_PATH:-herdr}" plugin pane open --plugin moor --entrypoint new \
+  --placement popup --width 70 --height 18 --env "MOOR_HERDR_WORKSPACE=$HERDR_WORKSPACE_ID"
