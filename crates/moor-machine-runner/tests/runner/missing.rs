@@ -31,7 +31,14 @@ fn a_box_without_a_slot_lists_only_the_runners_own_tools() {
     let rig = marked();
     assert_eq!(
         names(&rig.tools(&MISSING)),
-        ["exec", "machine_info", "pull", "sync"]
+        [
+            "exec",
+            "machine_claim",
+            "machine_info",
+            "machine_release",
+            "pull",
+            "sync"
+        ]
     );
 }
 

@@ -22,17 +22,17 @@ names the header.
 
 A new Box holds no machine. A start never claims one, even when the repo's
 `.moor.yaml` has a `machine:` section. The Box claims one of its user's machines
-itself, and the runner asks the controller for it with
-[`machine-hold`](config.md#who-may-act-on-a-box). The runner's
-`machine_claim` and `machine_release` tools that send it come next.
+itself with the runner's `machine_claim` tool, and the runner asks the
+controller for it with [`machine-hold`](config.md#who-may-act-on-a-box). See
+[Claiming a machine](#claiming-a-machine).
 
 A Box holds no slot until it claims one, when its repo asks for no machine,
 when it sleeps, or when it woke and waits for a free slot. The Proxy still passes its requests through,
 with `X-Moor-Box` and `X-Moor-Machine-Missing: <reason>` in place of the
-machine headers. The agent still sees `sync`, `exec`, `pull`, and
-`machine_info` in the tool list, and the list leaves out relayed tools. Every
-call returns an error result that gives the reason and says "Try again later."
-Nothing runs on the machine. The runner does not refuse these requests, because
+machine headers. The agent still sees the runner's own tools in the tool list,
+and the list leaves out relayed tools. Every call except `machine_claim` and
+`machine_release` returns an error result that gives the reason and says "Try
+again later." Nothing runs on the machine. The runner does not refuse these requests, because
 a refusal makes the agent's client ask for OAuth and drop the tools for the
 rest of the session.
 
@@ -84,6 +84,43 @@ no `--resource` flags, the runner holds nothing.
 
 The runner uses the host's `ssh` and `rsync` in batch mode, with the host
 user's own key and `known_hosts`. It stores and passes no secret.
+
+## Claiming a machine
+
+An agent in a Box takes a slot on one of its user's machines with
+`machine_claim`, and gives it back with `machine_release`. Both work while the
+Box holds no machine.
+
+`machine_claim` takes these optional arguments:
+
+- `labels`, the labels the machine must all have
+- `machine`, the name of the one machine wanted
+- `ports`, the Box ports to forward
+- `wait_secs`, how long to wait for a free slot (default 0, at most 3600)
+
+Left out, `labels` and `ports` are the repo's `machine:` section. The call
+returns `machine`, `slot`, `port_offset`, `ports`, and `facts`, as
+`machine_info` gives them. A claim while the Box holds a slot returns that
+slot. From the next request on, the Proxy sends the machine headers, so
+`sync` and `exec` work without a restart.
+
+With no free slot and `wait_secs` 0, the call fails at once with the reason,
+such as `no free slot: machine mac is attached to Boxes a, b`. With
+`wait_secs`, the Box joins the line. The runner asks again about every 2
+seconds. While the call waits, it sends MCP progress notifications, such as
+`waiting for mac: place 1 in line`, when the call asked for progress. When the
+wait runs out, or the client cancels or hangs up, the runner gives up the
+Box's place in line, and the call fails with the reason.
+
+After a claim is held, the runner sends `notifications/tools/list_changed`. The
+client then lists the tools again and sees the machine's relayed tools, which
+the list leaves out while the Box holds no machine.
+
+`machine_release` takes no arguments. It runs the `--suspend` command for the
+Box first, as when the Box falls asleep, and then gives the slot back. The
+Box's files on the machine stay until the Box closes, so a later claim finds
+them. It returns `{"released": "mac"}`, or `{"released": null}` when the Box
+held no machine.
 
 ## Tools
 
