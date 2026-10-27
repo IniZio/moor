@@ -202,15 +202,14 @@ fn name(s: &str) -> BoxName {
     BoxName::parse_allow_bare(s).unwrap()
 }
 
-fn start_req(box_name: &str, goal: Option<&str>, repo: &str, parent: i64) -> Request {
+fn start_req(box_name: &str, prompt: Option<&str>, repo: &str, parent: i64) -> Request {
     Request::Start(StartReq {
         name: name(box_name),
-        goal: goal.map(str::to_owned),
+        prompt: prompt.map(str::to_owned),
         issue: None,
         base: None,
         model: None,
         no_agent: false,
-        hold: false,
         resume: false,
         repo: Some(ForgeRepo::parse(repo).unwrap()),
         parent: Some(SessionId::new(parent)),
@@ -219,7 +218,7 @@ fn start_req(box_name: &str, goal: Option<&str>, repo: &str, parent: i64) -> Req
 }
 
 fn payload() -> Value {
-    json!({"repo": "o/r", "name": "t", "goal": "ship it"})
+    json!({"repo": "o/r", "name": "t", "prompt": "ship it"})
 }
 
 #[test]
@@ -275,9 +274,9 @@ fn new_request_records_the_request() {
 }
 
 #[test]
-fn empty_goal_sends_none() {
+fn empty_prompt_sends_none() {
     let f = front(&script());
-    let (_, job) = new_request(&f, &json!({"repo": "o/r", "name": "t", "goal": ""}));
+    let (_, job) = new_request(&f, &json!({"repo": "o/r", "name": "t", "prompt": ""}));
     assert_eq!(job["state"], "done", "{job}");
     let seen = f.seen.lock().unwrap().clone();
     assert_eq!(seen.last().unwrap(), &start_req("t", None, "o/r", 7));
@@ -342,7 +341,7 @@ fn failed_start_keeps_the_request_open_for_more_workers() {
     let resp = post(
         &f.web,
         &format!("/requests/{key}/workers"),
-        &json!({"name": "w2", "goal": ""}),
+        &json!({"name": "w2", "prompt": ""}),
     );
     assert!(resp.starts_with("HTTP/1.1 202"), "{resp}");
     finished(&f, body(&resp)["job"].as_str().unwrap());
@@ -380,7 +379,7 @@ fn added_worker_sends_one_start_under_the_root() {
     let resp = post(
         &f.web,
         &format!("/requests/{key}/workers"),
-        &json!({"name": "w2", "goal": ""}),
+        &json!({"name": "w2", "prompt": ""}),
     );
     assert!(resp.starts_with("HTTP/1.1 202"), "{resp}");
     let accepted = body(&resp);
@@ -397,7 +396,7 @@ fn worker_on_unknown_or_ended_request_is_refused() {
     let resp = post(
         &f.web,
         "/requests/nope/workers",
-        &json!({"name": "w", "goal": ""}),
+        &json!({"name": "w", "prompt": ""}),
     );
     assert!(resp.starts_with("HTTP/1.1 404"), "{resp}");
     let (key, _) = new_request(&f, &payload());
@@ -406,7 +405,7 @@ fn worker_on_unknown_or_ended_request_is_refused() {
     let resp = post(
         &f.web,
         &format!("/requests/{key}/workers"),
-        &json!({"name": "w", "goal": ""}),
+        &json!({"name": "w", "prompt": ""}),
     );
     assert!(resp.starts_with("HTTP/1.1 409"), "{resp}");
     assert_eq!(f.seen.lock().unwrap().len(), before);
@@ -418,13 +417,16 @@ fn bad_bodies_are_400_without_a_socket_request() {
     for (path, raw) in [
         ("/requests", "not json"),
         ("/requests", r#"{"repo":"o/r","name":"t"}"#),
-        ("/requests", r#"{"repo":"o/r","name":"t","goal":"","x":1}"#),
         (
             "/requests",
-            r#"{"repo":"o/r","name":"Bad Name!","goal":""}"#,
+            r#"{"repo":"o/r","name":"t","prompt":"","x":1}"#,
         ),
-        ("/requests", r#"{"repo":"r","name":"t","goal":""}"#),
-        ("/requests", r#"{"repo":"o/r/x","name":"t","goal":""}"#),
+        (
+            "/requests",
+            r#"{"repo":"o/r","name":"Bad Name!","prompt":""}"#,
+        ),
+        ("/requests", r#"{"repo":"r","name":"t","prompt":""}"#),
+        ("/requests", r#"{"repo":"o/r/x","name":"t","prompt":""}"#),
     ] {
         let resp = send(&f.web, "POST", path, raw);
         assert!(resp.starts_with("HTTP/1.1 400"), "{path} {raw}: {resp}");

@@ -114,7 +114,7 @@ fn session(id: i64, parent: Option<i64>, bx: Option<&str>, ordinal: i64) -> Valu
 fn box_view(name: &str, state: &str, question: Option<&str>) -> Value {
     json!({
         "name": name, "repo": "o/app", "branch": format!("moor/{name}"), "lifecycle": "ready", "session_state": "working",
-        "goal": format!("goal of {name}"),
+        "prompt": format!("prompt of {name}"),
         "driver": {"state": state},
         "agent": {"state": if question.is_some() { "needs_input" } else { "working" },
                   "question": question, "options": if question.is_some() { json!(["yes", "no"]) } else { json!([]) }},
@@ -264,7 +264,7 @@ fn child_carries_box_and_agent_question() {
     assert_eq!(
         second["box"],
         json!({"name": "app/2", "repo": "o/app", "repo_url": "https://github.com/o/app",
-               "branch": "moor/app/2", "lifecycle": "ready", "session_state": "working", "goal": "goal of app/2",
+               "branch": "moor/app/2", "lifecycle": "ready", "session_state": "working", "prompt": "prompt of app/2",
                "box_state": "asleep"})
     );
     assert_eq!(

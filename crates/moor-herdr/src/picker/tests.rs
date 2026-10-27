@@ -34,7 +34,7 @@ impl Prompt for Screen {
 struct Ctl {
     open: Vec<Shown>,
     started: std::cell::RefCell<Vec<(String, String)>>,
-    goals: std::cell::RefCell<Vec<Option<String>>>,
+    prompts: std::cell::RefCell<Vec<Option<String>>>,
 }
 
 impl Controller for Ctl {
@@ -49,8 +49,8 @@ impl Controller for Ctl {
         Ok(now)
     }
 
-    fn start(&self, name: &str, repo: &str, goal: Option<&str>) -> Result<(), Error> {
-        self.goals.borrow_mut().push(goal.map(str::to_owned));
+    fn start(&self, name: &str, repo: &str, prompt: Option<&str>) -> Result<(), Error> {
+        self.prompts.borrow_mut().push(prompt.map(str::to_owned));
         self.started
             .borrow_mut()
             .push((name.to_owned(), repo.to_owned()));
@@ -75,7 +75,7 @@ fn ctl() -> Ctl {
             live("more", "acme/app"),
         ],
         started: std::cell::RefCell::default(),
-        goals: std::cell::RefCell::default(),
+        prompts: std::cell::RefCell::default(),
     }
 }
 
@@ -218,35 +218,38 @@ fn a_bad_choice_asks_again() {
 }
 
 #[test]
-fn an_empty_goal_starts_the_box_with_none() {
+fn an_empty_prompt_starts_the_box_with_none() {
     let (_, ctl, _) = pick(&["box", "2", "tidy", ""]);
-    assert_eq!(*ctl.goals.borrow(), [None]);
+    assert_eq!(*ctl.prompts.borrow(), [None]);
     assert_eq!(ctl.started.borrow().len(), 1);
 }
 
 #[test]
-fn a_given_goal_reaches_the_controller() {
+fn a_given_prompt_reaches_the_controller() {
     let (_, ctl, _) = pick(&["box", "2", "tidy", " fix the login page "]);
-    assert_eq!(*ctl.goals.borrow(), [Some("fix the login page".to_owned())]);
-}
-
-#[test]
-fn the_start_request_without_a_goal_sends_none() {
-    let wire = serde_json::to_value(start_request("tidy", "acme/site", None).unwrap()).unwrap();
     assert_eq!(
-        wire,
-        serde_json::json!({"cmd": "start", "name": "tidy", "repo": "acme/site",
-            "no_agent": false, "hold": false, "resume": false})
+        *ctl.prompts.borrow(),
+        [Some("fix the login page".to_owned())]
     );
 }
 
 #[test]
-fn the_start_request_carries_the_goal() {
+fn the_start_request_without_a_prompt_sends_none() {
+    let wire = serde_json::to_value(start_request("tidy", "acme/site", None).unwrap()).unwrap();
+    assert_eq!(
+        wire,
+        serde_json::json!({"cmd": "start", "name": "tidy", "repo": "acme/site",
+            "no_agent": false, "resume": false})
+    );
+}
+
+#[test]
+fn the_start_request_carries_the_prompt() {
     let wire =
         serde_json::to_value(start_request("tidy", "acme/site", Some("fix it")).unwrap()).unwrap();
     assert_eq!(
         wire,
-        serde_json::json!({"cmd": "start", "name": "tidy", "repo": "acme/site", "goal": "fix it",
-            "no_agent": false, "hold": false, "resume": false})
+        serde_json::json!({"cmd": "start", "name": "tidy", "repo": "acme/site", "prompt": "fix it",
+            "no_agent": false, "resume": false})
     );
 }

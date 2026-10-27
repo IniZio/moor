@@ -204,8 +204,8 @@ function makeNode(n) {
   r.pr.rel = 'noopener noreferrer';
   r.pr.setAttribute('aria-label', 'Pull requests for session ' + sid);
   head.append(r.toggle, r.title, r.badge, r.meta, r.pr);
-  r.goal = h('div', null, 'muted');
-  card.append(head, r.goal);
+  r.prompt = h('div', null, 'muted');
+  card.append(head, r.prompt);
 
   r.ask = h('div', null, 'ask');
   r.askText = h('div');
@@ -262,20 +262,20 @@ function makeNode(n) {
     r.reqBox = h('div');
     const row = h('div', null, 'row');
     const name = control('input', 'New worker Box for request ' + key, { type: 'text', placeholder: 'worker Box name' });
-    const goal = control('input', 'New worker goal for request ' + key, { type: 'text', placeholder: 'worker goal' });
+    const prompt = control('input', 'New worker prompt for request ' + key, { type: 'text', placeholder: 'worker prompt' });
     const add = control('button', 'Add worker to request ' + key, { type: 'button', text: 'Add worker' });
     const end = control('button', 'End request ' + key, { type: 'button', text: 'End request', class: 'danger' });
     r.jobs = h('div', null, 'jobs');
     jobOut.set(key, r.jobs);
     add.addEventListener('click', () => {
-      if (!name.value.trim() || !goal.value.trim()) { show(r.jobs, 'Worker needs a Box name and a goal.', 'bad'); return; }
-      startJob('/requests/' + encodeURIComponent(key) + '/workers', { name: name.value.trim(), goal: goal.value.trim() }, r.jobs,
-        () => { name.value = ''; goal.value = ''; });
+      if (!name.value.trim() || !prompt.value.trim()) { show(r.jobs, 'Worker needs a Box name and a prompt.', 'bad'); return; }
+      startJob('/requests/' + encodeURIComponent(key) + '/workers', { name: name.value.trim(), prompt: prompt.value.trim() }, r.jobs,
+        () => { name.value = ''; prompt.value = ''; });
     });
     end.addEventListener('click', () => confirmThen('End request ' + key,
       'End request? This closes every worker Box and ends the request.',
       () => startJob('/requests/' + encodeURIComponent(key) + '/end', {}, r.jobs)));
-    row.append(name, goal, add, end);
+    row.append(name, prompt, add, end);
     r.reqBox.append(row, r.jobs);
     card.appendChild(r.reqBox);
     card.classList.add('root');
@@ -301,8 +301,8 @@ function updateNode(r, n) {
   if (n.box && n.box.lifecycle) meta.push('Box ' + n.box.lifecycle + ' / ' + n.box.session_state);
   if (ended) meta.push('ended');
   r.meta.textContent = meta.join(' · ');
-  r.goal.textContent = (n.box && n.box.goal) || '';
-  r.goal.hidden = !r.goal.textContent;
+  r.prompt.textContent = (n.box && n.box.prompt) || '';
+  r.prompt.hidden = !r.prompt.textContent;
   const url = prUrl(n.box);
   r.pr.hidden = !url;
   if (url) r.pr.href = url;
@@ -407,9 +407,9 @@ $('new-start').addEventListener('click', () => {
   const out = $('new-out');
   const repo = $('new-repo').value.trim();
   const name = $('new-name').value.trim();
-  const goal = $('new-goal').value.trim();
-  if (!repo || !name || !goal) { show(out, 'Fill in owner/name, Box name and goal.', 'bad'); return; }
-  startJob('/requests', { repo, name, goal }, out, () => { $('new-name').value = ''; $('new-goal').value = ''; });
+  const prompt = $('new-prompt').value.trim();
+  if (!repo || !name || !prompt) { show(out, 'Fill in owner/name, Box name and prompt.', 'bad'); return; }
+  startJob('/requests', { repo, name, prompt }, out, () => { $('new-name').value = ''; $('new-prompt').value = ''; });
 });
 
 $('confirm-yes').addEventListener('click', () => $('confirm').close('yes'));

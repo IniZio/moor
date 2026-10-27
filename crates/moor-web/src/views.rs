@@ -201,7 +201,7 @@ impl Source<'_> {
             "branch": field(t, "branch"),
             "lifecycle": field(t, "lifecycle"),
             "session_state": field(t, "session_state"),
-            "goal": field(t, "goal"),
+            "prompt": field(t, "prompt"),
             "box_state": t.get("driver").map_or(Value::Null, |b| field(b, "state")),
         })
     }
