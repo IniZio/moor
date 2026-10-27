@@ -36,11 +36,12 @@ Box.
 
 A Box that sleeps frees its slot for other Boxes. It keeps its claim on the
 same machine, and its files there stay (`machine_detached` with
-`asleep: true`). When it wakes, it takes the lowest free slot on that machine.
-That slot can differ from the old one, and so can its ports
-(`machine_attached` names them). If every slot is taken, the Box runs without
-the machine, and `machine_waiting` says why once. The Proxy then tries again on
-each tick until a slot frees or the Box sleeps or closes. Until then,
+`asleep: true`). When it wakes, it joins the line for that machine and takes
+the lowest free slot once the Boxes that asked before it have theirs. That slot
+can differ from the old one, and so can its ports (`machine_attached` names
+them). If every slot is taken, the Box runs without the machine, and
+`machine_waiting` says why once. The Proxy then tries again on each tick until
+a slot frees or the Box sleeps or closes. Until then,
 `moor show` names the machine as asleep or waiting. Closing the Box ends its
 claim.
 

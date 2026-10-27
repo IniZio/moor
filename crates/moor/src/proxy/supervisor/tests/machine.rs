@@ -162,7 +162,11 @@ fn a_parked_tick_frees_the_slot_but_keeps_the_claim() {
     assert_eq!(machine_payloads(&w)[1]["asleep"], true);
     assert!(w.store.box_machine(w.id).unwrap().is_none());
     let claim = w.store.claimed_machine(w.id).unwrap().unwrap();
-    assert!(claim.asleep, "the Box keeps its claim on mini");
+    assert_eq!(
+        claim.state,
+        moor_core::view::MachineHoldState::Asleep,
+        "the Box keeps its claim on mini"
+    );
 }
 
 #[test]

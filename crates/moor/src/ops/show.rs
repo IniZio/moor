@@ -65,10 +65,9 @@ fn held_machine(
         name: h.machine.name,
         slot: h.slot,
         ports: h.ports,
-        state: match (h.asleep, box_asleep) {
-            (false, _) => MachineHoldState::Held,
-            (true, true) => MachineHoldState::Asleep,
-            (true, false) => MachineHoldState::Waiting,
+        state: match (h.state, box_asleep) {
+            (MachineHoldState::Asleep, false) => MachineHoldState::Waiting,
+            (state, _) => state,
         },
     }))
 }

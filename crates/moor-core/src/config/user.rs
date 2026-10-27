@@ -24,7 +24,7 @@ pub use controller::ControllerClientConfig;
 pub use creds::McpServer;
 use duration::{duration_or, parse_duration};
 pub(crate) use machine::check_label;
-pub use machine::{check_ssh, pick_machine, wake_slot, MachinePick, UserMachine};
+pub use machine::{check_ssh, pick_machine, unslot_ports, MachinePick, UserMachine};
 pub use oauth::{OAuthCallback, OAuthClient, OAuthConfig};
 pub use own_mcp::{box_mcp, BoxMcp, UserMcp, DEFAULT_HEADER};
 pub use service::{MachineService, MachinesConfig};

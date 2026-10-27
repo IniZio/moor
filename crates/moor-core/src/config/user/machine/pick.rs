@@ -85,38 +85,21 @@ pub fn pick_machine(
     }
 }
 
-/// The lowest slot of `machine` that `taken` leaves free, with `ports` (which slot `from` moved)
-/// moved there instead.
+/// `ports` as the repo asked for them, before slot `slot` moved them.
 ///
 /// # Errors
-/// Says why when every slot is taken or a port cannot move to the free slot.
-pub fn wake_slot(
-    machine: &UserMachine,
-    ports: &[u16],
-    from: u16,
-    taken: &BTreeMap<u16, String>,
-) -> Result<(u16, Vec<u16>), String> {
-    let Some(slot) = (0..machine.capacity).find(|s| !taken.contains_key(s)) else {
-        return Err(full(machine, taken));
-    };
-    let shift = SLOT_STRIDE * u32::from(from);
-    let base = ports
+/// Names the first port below the slot's shift.
+pub fn unslot_ports(ports: &[u16], slot: u16) -> Result<Vec<u16>, String> {
+    let shift = SLOT_STRIDE * u32::from(slot);
+    ports
         .iter()
         .map(|&p| {
             u32::from(p)
                 .checked_sub(shift)
                 .and_then(|b| u16::try_from(b).ok())
-                .ok_or_else(|| format!("port {p} is below slot {from}'s shift"))
+                .ok_or_else(|| format!("port {p} is below slot {slot}'s shift"))
         })
-        .collect::<Result<Vec<u16>, String>>()?;
-    slot_ports(&base, slot)
-        .map(|ports| (slot, ports))
-        .map_err(|port| {
-            format!(
-                "port {port} in slot {slot} of machine {} would be above 65535",
-                machine.name
-            )
-        })
+        .collect()
 }
 
 /// Why `machine` has no free slot: the Boxes in `taken`.

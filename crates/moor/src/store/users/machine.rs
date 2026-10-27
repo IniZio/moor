@@ -2,15 +2,23 @@
 
 use std::collections::BTreeMap;
 
-use moor_core::config::{pick_machine, wake_slot, MachinePick, RepoMachine, UserMachine};
+use moor_core::config::{pick_machine, MachinePick, RepoMachine, UserMachine};
 use moor_core::domain::event::{Event, MachineEvent};
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
+use moor_core::view::MachineHoldState;
 use moor_core::BoxId;
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 
 use crate::store::apply::insert_event;
 use crate::store::{Store, StoreError};
+
+mod hold;
+
+use hold::ClaimState;
+pub(crate) use hold::MachineWake;
+#[cfg(test)]
+pub(crate) use hold::{HoldOp, HoldValue};
 
 impl Store {
     /// Adds `machine` to `user`'s list, replacing one of the same name.
@@ -74,15 +82,16 @@ impl Store {
                 slot,
                 ports,
             } => {
-                let ports = serde_json::to_string(ports)
-                    .map_err(|e| StoreError::Corrupt(format!("machine ports: {e}")))?;
-                let exclude = serde_json::to_string(sync_exclude)
-                    .map_err(|e| StoreError::Corrupt(format!("machine sync exclude: {e}")))?;
-                tx.execute(
-                    "INSERT OR REPLACE INTO box_machines \
-                     (box, user, machine, slot, ports, sync_exclude) VALUES (?, ?, ?, ?, ?, ?)",
-                    params![box_id.get(), user.get(), machine.name, slot, ports, exclude],
-                )?;
+                let claim = Claim {
+                    user,
+                    state: ClaimState::Held {
+                        machine: machine.name.clone(),
+                        slot: *slot,
+                    },
+                    ports: ports.clone(),
+                    sync_exclude: sync_exclude.to_vec(),
+                };
+                put_in(&tx, box_id, &claim)?;
             }
             MachinePick::LeftOut { labels, reason } => {
                 let event = MachineEvent::MachineLeftOut {
@@ -111,7 +120,8 @@ impl Store {
         let name = self
             .writer()
             .query_row(
-                "UPDATE box_machines SET asleep = 1 WHERE box = ? AND asleep = 0 RETURNING machine",
+                "UPDATE box_machines SET state = 'asleep' WHERE box = ? AND state = 'held' \
+                 RETURNING machine",
                 [box_id.get()],
                 |r| r.get(0),
             )
@@ -119,162 +129,195 @@ impl Store {
         Ok(name)
     }
 
-    /// Takes the lowest free slot on the machine asleep `box_id` claims, moving its ports to it.
-    /// One write transaction, so a wake and a start never share a slot.
-    pub(crate) fn wake_machine(&self, box_id: BoxId) -> Result<MachineWake, StoreError> {
-        if !self.claims_asleep(box_id)? {
-            return Ok(MachineWake::Nothing);
-        }
-        let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let Some(claim) = claim_in(&tx, box_id)?.filter(|c| c.asleep) else {
-            return Ok(MachineWake::Nothing);
-        };
-        let (slot, ports) = match wake_pick(&tx, &claim)? {
-            Ok(free) => free,
-            Err(reason) => {
-                let name = claim.name;
-                return Ok(MachineWake::Waiting { name, reason });
-            }
-        };
-        tx.execute(
-            "UPDATE box_machines SET asleep = 0, slot = ?, ports = ? WHERE box = ?",
-            params![slot, ports, box_id.get()],
-        )?;
-        tx.commit()?;
-        drop(conn);
-        Ok(MachineWake::Woke)
-    }
-
-    /// Whether `box_id` claims a machine while asleep. Every supervisor tick asks before a wake,
-    /// so only an asleep claim takes the write lock.
-    fn claims_asleep(&self, box_id: BoxId) -> Result<bool, StoreError> {
-        Ok(claim_in(&self.reader()?, box_id)?.is_some_and(|c| c.asleep))
-    }
-
     /// The machine `box_id` holds, in which slot and with which ports; `None` when it holds none,
     /// sleeps or its owner removed it.
     pub(crate) fn box_machine(&self, box_id: BoxId) -> Result<Option<HeldMachine>, StoreError> {
-        Ok(self.claimed_machine(box_id)?.filter(|h| !h.asleep))
+        let held = self.claimed_machine(box_id)?;
+        Ok(held.filter(|h| h.state == MachineHoldState::Held))
     }
 
-    /// The machine `box_id` claims, holding a slot or asleep; `None` when it claims none or its
-    /// owner removed it.
+    /// The machine `box_id` claims, holding a slot, asleep or waiting for one by name; `None`
+    /// when it claims none, waits on labels alone, or its owner removed the machine.
     pub(crate) fn claimed_machine(&self, box_id: BoxId) -> Result<Option<HeldMachine>, StoreError> {
         let Some(claim) = claim_in(&self.reader()?, box_id)? else {
             return Ok(None);
         };
-        let Claim {
-            user,
-            name,
-            slot,
-            ports,
-            sync_exclude,
-            asleep,
-        } = claim;
+        let (name, slot, state) = match claim.state {
+            ClaimState::Held { machine, slot } => (machine, slot, MachineHoldState::Held),
+            ClaimState::Asleep { machine, last_slot } => {
+                (machine, last_slot, MachineHoldState::Asleep)
+            }
+            ClaimState::Wanted {
+                machine: Some(machine),
+                ..
+            } => (machine, 0, MachineHoldState::Waiting),
+            ClaimState::Wanted { machine: None, .. } => return Ok(None),
+        };
         let machine = self
-            .user_machines(user)?
+            .user_machines(claim.user)?
             .into_iter()
             .find(|m| m.name == name);
         Ok(machine.map(|machine| HeldMachine {
             machine,
             slot,
-            ports,
-            sync_exclude,
-            asleep,
+            ports: claim.ports,
+            sync_exclude: claim.sync_exclude,
+            state,
         }))
     }
-}
-
-/// What waking the machine a sleeping Box claims did.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum MachineWake {
-    /// The Box claims no asleep machine.
-    Nothing,
-    /// The Box holds a slot again.
-    Woke,
-    /// Every slot is taken; the claim stays asleep.
-    Waiting {
-        /// The machine's name.
-        name: String,
-        /// Why there is no slot.
-        reason: String,
-    },
 }
 
 /// A `box_machines` row.
 struct Claim {
     /// The Box's owner, whose machine it is.
     user: UserId,
-    /// The machine's name.
-    name: String,
-    /// The slot held, or the last one held while asleep.
-    slot: u16,
-    /// The forwarded ports, moved by `slot`.
+    /// Whether the Box wants, holds or slept on a machine.
+    state: ClaimState,
+    /// The forwarded ports: moved by the slot once held, as asked while wanted.
     ports: Vec<u16>,
     /// What syncs leave alone.
     sync_exclude: Vec<String>,
-    /// The Box sleeps and holds no slot.
-    asleep: bool,
-}
-
-/// The lowest free slot on the machine `claim` names and its ports there, as stored; or why
-/// there is none.
-fn wake_pick(
-    conn: &Connection,
-    claim: &Claim,
-) -> Result<Result<(u16, String), String>, StoreError> {
-    let name = &claim.name;
-    let machines = machines_in(conn, claim.user)?;
-    let Some(machine) = machines.iter().find(|m| &m.name == name) else {
-        return Ok(Err(format!(
-            "machine {name} is no longer one of your machines"
-        )));
-    };
-    let taken = held_in(conn, claim.user)?.remove(name).unwrap_or_default();
-    let (slot, ports) = match wake_slot(machine, &claim.ports, claim.slot, &taken) {
-        Ok(free) => free,
-        Err(reason) => return Ok(Err(reason)),
-    };
-    let ports = serde_json::to_string(&ports)
-        .map_err(|e| StoreError::Corrupt(format!("machine ports: {e}")))?;
-    Ok(Ok((slot, ports)))
 }
 
 /// The `box_machines` row of `box_id`, read through `conn`.
 fn claim_in(conn: &Connection, box_id: BoxId) -> Result<Option<Claim>, StoreError> {
-    let row: Option<(i64, String, u16, String, String, bool)> = conn
-        .query_row(
-            "SELECT user, machine, slot, ports, sync_exclude, asleep FROM box_machines \
-             WHERE box = ?",
-            [box_id.get()],
-            |r| {
-                Ok((
-                    r.get(0)?,
-                    r.get(1)?,
-                    r.get(2)?,
-                    r.get(3)?,
-                    r.get(4)?,
-                    r.get(5)?,
-                ))
-            },
-        )
+    let sql = "SELECT user, state, machine, labels, slot, ports, sync_exclude, since, until \
+               FROM box_machines WHERE box = ?";
+    let row = conn
+        .query_row(sql, [box_id.get()], |r| Ok(ClaimRow::read(r)))
         .optional()?;
-    let Some((user, name, slot, ports, exclude, asleep)) = row else {
-        return Ok(None);
+    row.transpose()?.map(ClaimRow::parse).transpose()
+}
+
+/// The columns of a `box_machines` row, before the JSON ones are parsed.
+struct ClaimRow {
+    /// `user`.
+    user: i64,
+    /// `state`.
+    state: String,
+    /// `machine`.
+    machine: Option<String>,
+    /// `labels`, JSON.
+    labels: String,
+    /// `slot`.
+    slot: u16,
+    /// `ports`, JSON.
+    ports: String,
+    /// `sync_exclude`, JSON.
+    sync_exclude: String,
+    /// `since`, in ms.
+    since: i64,
+    /// `until`, in ms.
+    until: Option<i64>,
+}
+
+impl ClaimRow {
+    /// The columns `claim_in` selects, in its order.
+    fn read(r: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            user: r.get(0)?,
+            state: r.get(1)?,
+            machine: r.get(2)?,
+            labels: r.get(3)?,
+            slot: r.get(4)?,
+            ports: r.get(5)?,
+            sync_exclude: r.get(6)?,
+            since: r.get(7)?,
+            until: r.get(8)?,
+        })
+    }
+
+    /// The claim the row holds.
+    fn parse(self) -> Result<Claim, StoreError> {
+        let corrupt =
+            |what: &str, e: String| StoreError::Corrupt(format!("box_machines {what}: {e}"));
+        let machine = |m: Option<String>| m.ok_or_else(|| corrupt("machine", "missing".to_owned()));
+        let state = match self.state.as_str() {
+            "wanted" => ClaimState::Wanted {
+                labels: from_json("labels", &self.labels)?,
+                machine: self.machine,
+                since: Ts::from_millis(self.since),
+                until: self.until.map(Ts::from_millis),
+            },
+            "held" => ClaimState::Held {
+                machine: machine(self.machine)?,
+                slot: self.slot,
+            },
+            "asleep" => ClaimState::Asleep {
+                machine: machine(self.machine)?,
+                last_slot: self.slot,
+            },
+            other => return Err(corrupt("state", other.to_owned())),
+        };
+        Ok(Claim {
+            user: UserId::new(self.user),
+            state,
+            ports: from_json("ports", &self.ports)?,
+            sync_exclude: from_json("sync_exclude", &self.sync_exclude)?,
+        })
+    }
+}
+
+/// The `box_machines` JSON column `what`, holding `v`.
+fn from_json<T: serde::de::DeserializeOwned>(what: &str, v: &str) -> Result<T, StoreError> {
+    serde_json::from_str(v).map_err(|e| StoreError::Corrupt(format!("box_machines {what}: {e}")))
+}
+
+/// `v` as the JSON a `box_machines` column holds.
+fn to_json<T: serde::Serialize + ?Sized>(v: &T) -> Result<String, StoreError> {
+    serde_json::to_string(v).map_err(|e| StoreError::Corrupt(format!("box_machines json: {e}")))
+}
+
+/// Writes `claim` as the `box_machines` row of `box_id`.
+fn put_in(conn: &Connection, box_id: BoxId, claim: &Claim) -> Result<(), StoreError> {
+    let (state, machine, labels, slot, since, until) = match &claim.state {
+        ClaimState::Wanted {
+            labels,
+            machine,
+            since,
+            until,
+        } => (
+            "wanted",
+            machine.as_deref(),
+            to_json(labels)?,
+            0,
+            since.as_millis(),
+            until.map(Ts::as_millis),
+        ),
+        ClaimState::Held { machine, slot } => (
+            "held",
+            Some(machine.as_str()),
+            "[]".to_owned(),
+            *slot,
+            0,
+            None,
+        ),
+        ClaimState::Asleep { machine, last_slot } => (
+            "asleep",
+            Some(machine.as_str()),
+            "[]".to_owned(),
+            *last_slot,
+            0,
+            None,
+        ),
     };
-    let ports: Vec<u16> = serde_json::from_str(&ports)
-        .map_err(|e| StoreError::Corrupt(format!("box_machines ports: {e}")))?;
-    let sync_exclude: Vec<String> = serde_json::from_str(&exclude)
-        .map_err(|e| StoreError::Corrupt(format!("box_machines sync_exclude: {e}")))?;
-    Ok(Some(Claim {
-        user: UserId::new(user),
-        name,
-        slot,
-        ports,
-        sync_exclude,
-        asleep,
-    }))
+    conn.execute(
+        "INSERT OR REPLACE INTO box_machines (box, user, state, machine, labels, slot, ports, \
+         sync_exclude, since, until) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        params![
+            box_id.get(),
+            claim.user.get(),
+            state,
+            machine,
+            labels,
+            slot,
+            to_json(&claim.ports)?,
+            to_json(&claim.sync_exclude)?,
+            since,
+            until
+        ],
+    )?;
+    Ok(())
 }
 
 /// Frees the machine `box_id` holds as the Box leaves the live states, recording
@@ -312,8 +355,9 @@ pub(crate) struct HeldMachine {
     pub(crate) ports: Vec<u16>,
     /// rsync patterns a sync to the machine leaves alone.
     pub(crate) sync_exclude: Vec<String>,
-    /// The Box sleeps: its slot is free and `slot` and `ports` are the ones it last held.
-    pub(crate) asleep: bool,
+    /// Whether the Box holds the slot, sleeps with `slot` and `ports` the ones it last held, or
+    /// waits for a slot, with `slot` 0 and `ports` as asked.
+    pub(crate) state: MachineHoldState,
 }
 
 /// `user`'s machines by name, read through `conn`.
@@ -341,7 +385,7 @@ fn held_in(
 ) -> Result<BTreeMap<String, BTreeMap<u16, String>>, StoreError> {
     let mut stmt = conn.prepare(
         "SELECT m.machine, m.slot, b.name FROM box_machines m JOIN boxes b ON b.id = m.box \
-         WHERE m.user = ? AND m.asleep = 0",
+         WHERE m.user = ? AND m.state = 'held'",
     )?;
     let mut held: BTreeMap<String, BTreeMap<u16, String>> = BTreeMap::new();
     let rows = stmt.query_map([user.get()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
