@@ -114,6 +114,18 @@ fn release_suspends_the_box_first_and_a_new_claim_does_not_sync() {
 }
 
 #[test]
+fn a_held_slot_on_a_machine_too_full_to_use_is_released_and_the_claim_fails() {
+    let rig = answering(&[], vec![held()]);
+    rig.set_free_kb(1_048_576);
+    let err = rig
+        .call_with("machine_claim", json!({}), &MISSING)
+        .unwrap_err();
+    assert!(err.contains("minion") && err.contains("released"), "{err}");
+    let ops: Vec<Value> = seen(&rig).into_iter().map(|s| s["op"].clone()).collect();
+    assert_eq!(ops, [json!({"claim": {}}), json!("release")]);
+}
+
+#[test]
 fn a_held_claim_tells_the_client_the_tool_list_changed() {
     let rig = answering(&[], vec![held()]);
     let (got, methods) = rig.call_watching("machine_claim", json!({}), &MISSING);

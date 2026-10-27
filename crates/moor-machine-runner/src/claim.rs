@@ -93,6 +93,16 @@ impl Runner {
             Ok(caller) => self.claimed(caller).await,
             Err(reason) => return Ok(failed(reason)),
         };
+        let claimed = match claimed {
+            Ok(claimed) => claimed,
+            Err(reason) => {
+                let reason = match ask(&self.client, id, HoldOp::Release).await {
+                    Ok(_) => format!("{reason}; the slot is released"),
+                    Err(e) => format!("{reason}; releasing the slot failed too: {e}"),
+                };
+                return Ok(failed(reason));
+            }
+        };
         let _ = context.peer.notify_tool_list_changed().await;
         Ok(claimed)
     }
@@ -127,21 +137,19 @@ impl Runner {
 }
 
 impl Runner {
-    /// The answer to a claim that holds `caller`'s slot, with the Box's facts there.
-    async fn claimed(&self, caller: (Caller, Vec<u16>)) -> CallToolResult {
+    /// The answer to a claim that holds `caller`'s slot, with the Box's facts there, or why the
+    /// machine can't be used.
+    async fn claimed(&self, caller: (Caller, Vec<u16>)) -> Result<CallToolResult, String> {
         let (caller, ports) = caller;
         match self.hooks.facts(&caller).await {
-            Ok(facts) => CallToolResult::structured(serde_json::json!(Claimed {
+            Ok(facts) => Ok(CallToolResult::structured(serde_json::json!(Claimed {
                 port_offset: 10 * u32::from(caller.slot),
                 machine: caller.machine,
                 slot: caller.slot,
                 ports,
                 facts,
-            })),
-            Err(e) => failed(format!(
-                "this Box holds slot {} on {}, but its facts failed: {e}",
-                caller.slot, caller.machine
-            )),
+            }))),
+            Err(e) => Err(format!("{} can't be used: {e}", caller.machine)),
         }
     }
 }
