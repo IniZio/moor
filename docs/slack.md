@@ -126,7 +126,7 @@ Move the file aside and start again with a fresh one.
   can ask for it. It shows the agent's state, the question or first-run screen
   the agent waits on, and the last lines of its pane. `restart_agent` ends the
   agent's session and resumes it. If there is no session to resume, it starts
-  the Box's goal over.
+  the Box's prompt over.
 - Each Box's Session is a child Session of the thread's host Session. The
   Box's name is `slack-<thread ts>-<n>`, with each `.` in the thread
   timestamp replaced by `-`.

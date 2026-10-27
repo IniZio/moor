@@ -260,7 +260,7 @@ impl Rig {
     }
 
     /// A scripted controller that keeps Boxes, and a daemon whose fake `claude` calls
-    /// `start_box` with goal `fix the thing` in its first turn, connected to Slack with
+    /// `start_box` with prompt `fix the thing` in its first turn, connected to Slack with
     /// [`REPO`] as the channel's default. Later turns call what the test writes.
     pub(crate) fn start_boxes() -> (Self, FakeController, PathBuf) {
         Self::start_boxes_by(Self::spawn_daemon)
@@ -277,8 +277,8 @@ impl Rig {
         let (rig, controller, bin) = Self::start_coordinated_by(Some(MCP), spawn);
         controller.keep_boxes();
         rig.set_default_repo(REPO);
-        let goal = serde_json::json!({"goal": "fix the thing"});
-        Self::tool_calls(&bin, Some(0), &[("start_box", goal)]);
+        let prompt = serde_json::json!({"prompt": "fix the thing"});
+        Self::tool_calls(&bin, Some(0), &[("start_box", prompt)]);
         Self::tool_calls(&bin, None, &[]);
         (rig, controller, bin)
     }

@@ -292,7 +292,7 @@ fn other_thread_box(db: &Db) {
         thread_ts: "2.0".into(),
         box_name: BoxName::parse_allow_bare("slack-2-1").unwrap(),
         repo: "acme/app".into(),
-        goal: "fix it".into(),
+        prompt: "fix it".into(),
         base: None,
         requested_by: "U1".into(),
         parent: None,

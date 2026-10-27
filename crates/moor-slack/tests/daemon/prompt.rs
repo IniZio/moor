@@ -329,11 +329,11 @@ fn a_digit_with_two_open_prompts_reaches_the_coordinator_as_text() {
         .unwrap();
     rig.kill_daemon();
     rig.spawn_daemon();
-    let goal = |g: &str| ("start_box", json!({ "goal": g }));
+    let prompt = |g: &str| ("start_box", json!({ "prompt": g }));
     Rig::tool_calls(
         &bin,
         Some(0),
-        &[goal("fix the thing"), goal("and the other")],
+        &[prompt("fix the thing"), prompt("and the other")],
     );
     rig.open_thread_with_a_box();
     let second = format!("{}2", BOX_NAME.strip_suffix('1').unwrap());
@@ -358,11 +358,11 @@ fn a_prompt_slack_refuses_is_dropped_and_the_other_box_still_gets_its_lines() {
         .unwrap();
     rig.kill_daemon();
     rig.spawn_daemon();
-    let goal = |g: &str| ("start_box", json!({ "goal": g }));
+    let prompt = |g: &str| ("start_box", json!({ "prompt": g }));
     Rig::tool_calls(
         &bin,
         Some(0),
-        &[goal("fix the thing"), goal("and the other")],
+        &[prompt("fix the thing"), prompt("and the other")],
     );
     rig.open_thread_with_a_box();
     let second = format!("{}2", BOX_NAME.strip_suffix('1').unwrap());

@@ -98,8 +98,8 @@ fn a_box_with_no_record_marks_only_its_own_row_gone() {
     let (mut rig, controller, bin) = Rig::start_boxes();
     rig.open_thread_with_a_box();
     wait_posted(&rig, 1);
-    let goal = json!({"goal": "fix the other thing"});
-    Rig::tool_calls(&bin, Some(1), &[("start_box", goal)]);
+    let prompt = json!({"prompt": "fix the other thing"});
+    Rig::tool_calls(&bin, Some(1), &[("start_box", prompt)]);
     open_second_thread(&rig, 2);
     rig.wait_box_state(BOX2, "bound");
     rig.kill_daemon();

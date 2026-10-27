@@ -12,7 +12,7 @@ fn asked(name: &str, by: &str) -> SlackBox {
         thread_ts: "1.1".into(),
         box_name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "acme/api".into(),
-        goal: format!("goal of {name}"),
+        prompt: format!("prompt of {name}"),
         base: None,
         requested_by: by.into(),
         parent: None,

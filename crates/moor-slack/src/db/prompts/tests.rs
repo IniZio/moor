@@ -22,7 +22,7 @@ fn with_box(dir: &std::path::Path, names: &[&str]) -> Db {
             thread_ts: "1.0".into(),
             box_name: BoxName::parse_allow_bare(name).unwrap(),
             repo: "acme/app".into(),
-            goal: "fix".into(),
+            prompt: "fix".into(),
             base: None,
             requested_by: "U1".into(),
             parent: None,

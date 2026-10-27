@@ -30,7 +30,7 @@ fn rig_on_a_real_controller() -> (Rig, super::support::RealController) {
     Rig::tool_calls(
         &bin,
         None,
-        &[("start_box", json!({"goal": "fix the thing"}))],
+        &[("start_box", json!({"prompt": "fix the thing"}))],
     );
     let controller = rig.real_controller();
     enroll(&rig.front_socket(), USER);
@@ -154,7 +154,7 @@ fn on_the_operator_socket_the_same_request_path_is_refused() {
     Rig::tool_calls(
         &bin,
         None,
-        &[("start_box", json!({"goal": "fix the thing"}))],
+        &[("start_box", json!({"prompt": "fix the thing"}))],
     );
     let _controller = rig.real_controller();
     rig.spawn_daemon();

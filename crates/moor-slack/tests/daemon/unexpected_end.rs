@@ -121,7 +121,7 @@ fn a_stop_that_a_later_session_superseded_is_never_posted() {
         BOX_ID,
         BOX_NAME,
         "relaunched",
-        json!({ "old_pane": "p1", "new_pane": "p2", "goal": null, "cause": "steer" }),
+        json!({ "old_pane": "p1", "new_pane": "p2", "prompt": null, "cause": "steer" }),
     );
     controller.emit(
         BOX_ID,

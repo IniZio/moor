@@ -11,7 +11,7 @@ use crate::db::{BoxState, ChannelRepo, OpenTurn, SlackBox};
 /// the thread.
 pub(super) fn start(
     scope: &Scope<'_>,
-    goal: &str,
+    prompt: &str,
     repo: Option<&str>,
     base: Option<&str>,
 ) -> rusqlite::Result<Reply> {
@@ -41,7 +41,7 @@ pub(super) fn start(
         thread_ts: thread_ts.to_owned(),
         box_name,
         repo: repo.clone(),
-        goal: goal.to_owned(),
+        prompt: prompt.to_owned(),
         base: base.map(str::to_owned),
         requested_by: by.clone(),
         parent: db.root_session(channel, thread_ts)?.map(SessionId::new),
@@ -52,7 +52,7 @@ pub(super) fn start(
         requested_by: by,
         tool: "start_box".to_owned(),
         box_name: name.clone(),
-        args: format!("{goal} (repo {repo})"),
+        args: format!("{prompt} (repo {repo})"),
         outcome: None,
     };
     let outcome = format!("Box `{name}` is starting on {repo}");

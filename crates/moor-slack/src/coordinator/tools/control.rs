@@ -141,7 +141,7 @@ pub(super) fn wake(scope: &mut Scope<'_>, box_name: &str) -> rusqlite::Result<Re
 }
 
 /// `restart_agent`: end the agent's session, then start it again with `resume`; when the Box
-/// holds no session to resume, start its goal over.
+/// holds no session to resume, start its prompt over.
 pub(super) fn restart(scope: &mut Scope<'_>, box_name: &str) -> rusqlite::Result<Reply> {
     journaled(scope, "restart_agent", box_name, "restart", |call, b| {
         let name = b.box_name.as_str();
@@ -167,8 +167,8 @@ pub(super) fn restart(scope: &mut Scope<'_>, box_name: &str) -> rusqlite::Result
             }
         };
         let resumed = ask(&mut *call, start_request(b, &repo, true));
-        let from_goal = matches!(&resumed, Said::Refused(why) if why == NOTHING_TO_RESUME);
-        let said = if from_goal {
+        let from_prompt = matches!(&resumed, Said::Refused(why) if why == NOTHING_TO_RESUME);
+        let said = if from_prompt {
             ask(call, start_request(b, &repo, false))
         } else {
             resumed
@@ -176,8 +176,8 @@ pub(super) fn restart(scope: &mut Scope<'_>, box_name: &str) -> rusqlite::Result
         if let Some(stopped) = failed(&said, "restarted") {
             return stopped;
         }
-        let how = if from_goal {
-            " from its goal; it had no session to resume"
+        let how = if from_prompt {
+            " from its prompt; it had no session to resume"
         } else {
             ", resuming its session"
         };
@@ -188,16 +188,15 @@ pub(super) fn restart(scope: &mut Scope<'_>, box_name: &str) -> rusqlite::Result
 }
 
 /// The `start` request that launches the agent of the Box `b` again: its session when
-/// `resume`, else its goal.
+/// `resume`, else its prompt.
 fn start_request(b: &SlackBox, repo: &ForgeRepo, resume: bool) -> Request {
     Request::Start(StartReq {
         name: b.box_name.clone(),
-        goal: (!resume).then(|| b.goal.clone()),
+        prompt: (!resume).then(|| b.prompt.clone()),
         issue: None,
         base: None,
         model: None,
         no_agent: false,
-        hold: false,
         resume,
         repo: Some(repo.clone()),
         parent: b.parent,

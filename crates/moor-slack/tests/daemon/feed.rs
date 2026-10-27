@@ -320,7 +320,7 @@ fn a_box_closed_elsewhere_is_gone_once_so_its_thread_may_start_another() {
     let line = format!("Box `{BOX_NAME}` closed.");
     rig.wait_post(&line);
     rig.wait_box_state(BOX_NAME, "gone");
-    let next = ("start_box", json!({"goal": "and the next thing"}));
+    let next = ("start_box", json!({"prompt": "and the next thing"}));
     Rig::tool_calls(&bin, None, &[next]);
     reply(&rig, 2, USER, "start another");
     let second = format!("{}2", BOX_NAME.strip_suffix('1').unwrap());
@@ -452,11 +452,11 @@ fn two_bound_boxes_in_one_thread_each_keep_their_own_status_and_lines() {
         .unwrap();
     rig.kill_daemon();
     rig.spawn_daemon();
-    let goal = |g: &str| ("start_box", json!({ "goal": g }));
+    let prompt = |g: &str| ("start_box", json!({ "prompt": g }));
     Rig::tool_calls(
         &bin,
         Some(0),
-        &[goal("fix the thing"), goal("and the other")],
+        &[prompt("fix the thing"), prompt("and the other")],
     );
     rig.open_thread_with_a_box();
     let second = format!("{}2", BOX_NAME.strip_suffix('1').unwrap());

@@ -71,7 +71,7 @@ fn started(db: &Db, event_id: &str, thread: &str) -> SlackBox {
         box_name: BoxName::parse_allow_bare(&format!("slack-{}-1", thread.replace('.', "-")))
             .unwrap(),
         repo: "acme/api".into(),
-        goal: "fix the flaky test".into(),
+        prompt: "fix the flaky test".into(),
         base: None,
         requested_by: "U1".into(),
         parent: Some(SessionId::new(100)),
@@ -277,7 +277,7 @@ fn allowed_mention_starts_binds_and_replies() {
         req.repo.as_ref().map(ToString::to_string).as_deref(),
         Some("acme/api")
     );
-    assert_eq!(req.goal.as_deref(), Some("fix the flaky test"));
+    assert_eq!(req.prompt.as_deref(), Some("fix the flaky test"));
     assert_eq!(
         req.parent,
         Some(SessionId::new(100)),
@@ -358,7 +358,7 @@ fn the_show_and_the_start_are_sent_as_the_user_who_asked() {
 }
 
 #[test]
-fn absent_box_is_started_again_with_the_goal() {
+fn absent_box_is_started_again_with_the_prompt() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
     let row = recorded_start(&db);
@@ -370,7 +370,7 @@ fn absent_box_is_started_again_with_the_goal() {
         panic!("no resend: {:?}", cmds(&seen));
     };
     assert_eq!(cmds(&seen)[0], ("show", "slack-10-5-1".into()));
-    assert_eq!(resent.goal.as_deref(), Some("fix the flaky test"));
+    assert_eq!(resent.prompt.as_deref(), Some("fix the flaky test"));
     assert_eq!(state(&db, "C1", "10.5"), bound_to_7("slack-10-5-1"));
     assert_eq!(seen.replies.len(), 1);
 }
