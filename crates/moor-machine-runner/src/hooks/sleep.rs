@@ -19,7 +19,7 @@ impl Hooks {
     /// Ends Box `id`'s relay sessions and holds and runs `suspend`, once: a Box that is not
     /// prepared or already suspended is left alone. The record notes the time only after the
     /// hook succeeded, so a failure is retried by the next sweep.
-    pub(super) async fn suspend(
+    pub(crate) async fn suspend(
         &self,
         id: i64,
         relays: &Relays,

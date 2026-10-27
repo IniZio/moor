@@ -77,6 +77,37 @@ pub type Puts = Arc<Mutex<Vec<(Value, Vec<u8>)>>>;
 /// The machines' ssh targets `machine-targets` lists, or none to refuse it.
 pub type Targets = Arc<Mutex<Option<Vec<String>>>>;
 
+/// The fake controller's `machine-hold`: the answers it gives claims, in turn, the last one
+/// again and again, and each request it served, with whether `~/suspended` existed by then.
+#[derive(Default)]
+pub struct FakeHolds {
+    pub answers: std::collections::VecDeque<Value>,
+    pub seen: Vec<Value>,
+    held: bool,
+}
+
+/// What a `machine-hold` claim is answered: the next of `answers`, or slot 0 on minion.
+fn hold_answer(holds: &mut FakeHolds, req: &Value, suspended: bool) -> Value {
+    holds
+        .seen
+        .push(json!({"op": req["op"].clone(), "suspended": suspended}));
+    if req["op"] == "release" {
+        let held = std::mem::take(&mut holds.held);
+        return json!({"state": "released", "machine": held.then_some("minion")});
+    }
+    let next = if holds.answers.len() > 1 {
+        holds.answers.pop_front()
+    } else {
+        holds.answers.front().cloned()
+    };
+    let answer = next.unwrap_or_else(|| {
+        json!({"state": "held", "machine": "minion", "ssh": "moor@minion", "slot": 0,
+            "ports": [8081]})
+    });
+    holds.held |= answer["state"] == "held";
+    answer
+}
+
 pub struct Rig {
     dir: tempfile::TempDir,
     /// The fake Box's work tree, which the fake controller mirrors.
@@ -93,6 +124,8 @@ pub struct Rig {
     pub puts: Puts,
     /// The ssh targets the fake controller lists as enrolled; none refuses the listing.
     pub targets: Targets,
+    /// The fake controller's `machine-hold`.
+    pub holds: Arc<Mutex<FakeHolds>>,
     args: Vec<String>,
     port: u16,
     runner: Child,
@@ -126,6 +159,7 @@ impl Rig {
         let mirror_excludes = Arc::new(Mutex::new(Vec::new()));
         let puts = Arc::new(Mutex::new(Vec::new()));
         let targets = Arc::new(Mutex::new(Some(vec!["moor@minion".to_owned()])));
+        let holds = Arc::new(Mutex::new(FakeHolds::default()));
         fake_controller(
             &dir.path().join("c.sock"),
             tree.clone(),
@@ -135,6 +169,7 @@ impl Rig {
                 mirror_excludes: Arc::clone(&mirror_excludes),
                 puts: Arc::clone(&puts),
                 targets: Arc::clone(&targets),
+                holds: Arc::clone(&holds),
             },
         );
         let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
@@ -153,6 +188,7 @@ impl Rig {
             mirror_excludes,
             puts,
             targets,
+            holds,
             args,
             port,
             runner,
@@ -223,9 +259,18 @@ impl Rig {
         let note = json!({"jsonrpc": "2.0", "method": "notifications/initialized"});
         self.post(&note, headers, session.as_deref());
         let params = json!({"name": tool, "arguments": args, "_meta": {"progressToken": "p"}});
-        let (reply, _, progress) =
+        let (reply, _, notes) =
             self.post(&rpc(2, "tools/call", params), headers, session.as_deref());
-        (Self::result(&reply), progress)
+        let progress = notes
+            .iter()
+            .filter(|m| m["method"] == "notifications/progress")
+            .map(|m| {
+                m["params"]["message"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned()
+            });
+        (Self::result(&reply), progress.collect())
     }
 
     /// The whole JSON-RPC reply to a `tools/call` with `headers`.
@@ -253,6 +298,21 @@ impl Rig {
             .as_array()
             .cloned()
             .unwrap_or_else(|| panic!("{reply}"))
+    }
+
+    /// Calls `tool`; its result and the methods of the notifications sent before it.
+    pub fn call_watching(
+        &self,
+        tool: &str,
+        args: Value,
+        headers: &[(&str, &str)],
+    ) -> (Result<Value, String>, Vec<String>) {
+        let params = json!({"name": tool, "arguments": args});
+        let (reply, _, notes) = self.post(&rpc(2, "tools/call", params), headers, None);
+        let methods = notes
+            .iter()
+            .map(|m| m["method"].as_str().unwrap().to_owned());
+        (Self::result(&reply), methods.collect())
     }
 
     /// Sends a `tools/call` as Box 7 without reading the reply; dropping the stream hangs up.
@@ -289,7 +349,7 @@ impl Rig {
         body: &Value,
         headers: &[(&str, &str)],
         session: Option<&str>,
-    ) -> (Value, Option<String>, Vec<String>) {
+    ) -> (Value, Option<String>, Vec<Value>) {
         let mut req = self
             .agent
             .post(format!("http://127.0.0.1:{}/mcp", self.port))
@@ -314,21 +374,10 @@ impl Rig {
             .chain(std::iter::once(text.trim()))
             .filter_map(|l| serde_json::from_str::<Value>(l).ok())
             .collect();
-        let progress = messages
-            .iter()
-            .filter(|m| m["method"] == "notifications/progress")
-            .map(|m| {
-                m["params"]["message"]
-                    .as_str()
-                    .unwrap_or_default()
-                    .to_owned()
-            })
-            .collect();
-        let json = messages
-            .into_iter()
-            .find(|v| v.get("id").is_some())
-            .unwrap_or(Value::Null);
-        (json, session, progress)
+        let (replies, notes): (Vec<Value>, Vec<Value>) =
+            messages.into_iter().partition(|v| v.get("id").is_some());
+        let json = replies.into_iter().next().unwrap_or(Value::Null);
+        (json, session, notes)
     }
 }
 
@@ -403,6 +452,7 @@ struct Fake {
     mirror_excludes: Arc<Mutex<Vec<Value>>>,
     puts: Puts,
     targets: Targets,
+    holds: Arc<Mutex<FakeHolds>>,
 }
 
 fn fake_controller(socket: &Path, tree: PathBuf, fake: Fake) {
@@ -412,6 +462,7 @@ fn fake_controller(socket: &Path, tree: PathBuf, fake: Fake) {
         mirror_excludes,
         puts,
         targets,
+        holds,
     } = fake;
     let listener = UnixListener::bind(socket).unwrap();
     std::thread::spawn(move || {
@@ -439,6 +490,13 @@ fn fake_controller(socket: &Path, tree: PathBuf, fake: Fake) {
                 );
                 continue;
             }
+            if req["cmd"] == "machine-hold" {
+                assert_eq!(req["id"], 7, "{frame}");
+                let suspended = tree.with_file_name("remote").join("suspended").exists();
+                let value = hold_answer(&mut holds.lock().unwrap(), req, suspended);
+                reply(&mut writer, Response::ok("machine-hold", Some(value)));
+                continue;
+            }
             if req["cmd"] == "box-put" {
                 let bytes = std::fs::read(req["src"].as_str().unwrap()).unwrap();
                 let value =
@@ -450,22 +508,25 @@ fn fake_controller(socket: &Path, tree: PathBuf, fake: Fake) {
             assert_eq!(req["cmd"], "box-mirror", "{frame}");
             assert_eq!(req["id"], 7, "{frame}");
             mirror_excludes.lock().unwrap().push(req["exclude"].clone());
-            let dest = req["dest"].as_str().unwrap().to_owned();
-            std::fs::create_dir_all(&dest).unwrap();
-            let ok = Command::new("rsync")
-                .args(["-a", "--delete", "--exclude=.git"])
-                .arg(format!("{}/", tree.display()))
-                .arg(format!("{dest}/"))
-                .status()
-                .unwrap()
-                .success();
-            assert!(ok, "fake controller rsync");
-            let value = json!({"from": "/work", "to": dest, "files": 1, "bytes": 1,
-                "confirmation": "mirrored"});
-            let envelope = Response::ok("box-mirror", Some(value));
-            reply(&mut writer, envelope);
+            reply(&mut writer, mirror(&tree, req["dest"].as_str().unwrap()));
         }
     });
+}
+
+/// Serves `box-mirror`: copies `tree` to `dest` with a local rsync.
+fn mirror(tree: &Path, dest: &str) -> Response {
+    std::fs::create_dir_all(dest).unwrap();
+    let ok = Command::new("rsync")
+        .args(["-a", "--delete", "--exclude=.git"])
+        .arg(format!("{}/", tree.display()))
+        .arg(format!("{dest}/"))
+        .status()
+        .unwrap()
+        .success();
+    assert!(ok, "fake controller rsync");
+    let value = json!({"from": "/work", "to": dest, "files": 1, "bytes": 1,
+        "confirmation": "mirrored"});
+    Response::ok("box-mirror", Some(value))
 }
 
 /// Writes one response frame carrying `envelope`.

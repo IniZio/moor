@@ -100,6 +100,11 @@ impl Caller {
         Ok(Some(reason.trim().to_owned()))
     }
 
+    /// The calling Box's id, which every request carries, with a machine or without.
+    pub(crate) fn box_of(headers: &HeaderMap) -> Result<BoxId, ErrorData> {
+        box_id(headers)
+    }
+
     /// The Box's copy on the machine, relative to the machine user's home.
     pub(crate) fn remote_dir(&self) -> String {
         BoxKey::new(self.box_id).machine_dir()

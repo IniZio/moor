@@ -18,6 +18,7 @@ use serde_json::json;
 
 use rig::{Rig, HEADERS};
 
+mod claim;
 mod gc;
 mod holds;
 mod hooks;

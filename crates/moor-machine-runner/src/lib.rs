@@ -4,8 +4,9 @@
 //! the Box id, the machine's name, its ssh target and the Box's slot on it. A Box that holds no
 //! slot gets the Box id and the reason instead, and every call answers that reason. `sync` mirrors the
 //! Box's work tree onto the machine; `exec` runs a command there, in that copy, holding any
-//! capped resources it names; `pull` brings one file back into the Box's work tree; `machine_info` says which slot and ports the Box has. The
-//! operator's `prepare`, `suspend` and `release` commands set up, pause and clean up per-Box
+//! capped resources it names; `pull` brings one file back into the Box's work tree;
+//! `machine_info` says which slot and ports the Box has; `machine_claim` and `machine_release`
+//! take and give back the slot. The operator's `prepare`, `suspend` and `release` commands set up, pause and clean up per-Box
 //! things on the machine. Relays list the tools of the machine's own stdio MCP servers beside these.
 
 use std::collections::HashMap;
@@ -18,6 +19,7 @@ use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto;
 use hyper_util::service::TowerToHyperService;
 use moor_client::Client;
+use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::tool::{Extension, ToolCallContext};
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::{
@@ -45,6 +47,7 @@ pub use crate::relay::Relay;
 
 mod beat;
 mod caller;
+mod claim;
 mod config;
 mod exec;
 mod holds;
@@ -152,11 +155,7 @@ impl Runner {
     ) -> Result<Json<SyncOutput>, ErrorData> {
         args.check()
             .map_err(|e| ErrorData::invalid_params(e, None))?;
-        let parts = context
-            .extensions
-            .get::<http::request::Parts>()
-            .ok_or_else(|| internal("request headers missing"))?;
-        let caller = Caller::from_headers(&parts.headers)?;
+        let caller = caller(&context)?;
         let progress = Progress::of(&context);
         let lock = {
             let mut locks = self
@@ -254,11 +253,7 @@ impl Runner {
         context: RequestContext<RoleServer>,
         Parameters(args): Parameters<ExecArgs>,
     ) -> Result<Json<ExecOutput>, ErrorData> {
-        let parts = context
-            .extensions
-            .get::<http::request::Parts>()
-            .ok_or_else(|| internal("request headers missing"))?;
-        let caller = Caller::from_headers(&parts.headers)?;
+        let caller = caller(&context)?;
         let timeout = exec::bounded(
             "timeout_secs",
             args.timeout_secs.unwrap_or(exec::DEFAULT_TIMEOUT_SECS),
@@ -311,14 +306,14 @@ impl Runner {
     clippy::unused_async_trait_impl,
     reason = "the generated handlers are async whether or not they await"
 )]
-#[tool_handler]
+#[tool_handler(router = router())]
 impl ServerHandler for Runner {
     async fn list_tools(
         &self,
         _request: Option<PaginatedRequestParams>,
         context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
-        let mut tools = Self::tool_router().list_all();
+        let mut tools = router().list_all();
         if !self.relays.is_empty() && missing(&context)?.is_none() {
             let caller = caller(&context)?;
             match self.hooks.facts(&caller).await {
@@ -340,13 +335,14 @@ impl ServerHandler for Runner {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
-        if let Some(reason) = missing(&context)? {
+        let claims = Runner::claim_router();
+        if let Some(reason) = missing(&context)?.filter(|_| !claims.has_route(&request.name)) {
             return Ok(CallToolResult::error(vec![ContentBlock::text(format!(
                 "{reason}. Try again later."
             ))])
             .into());
         }
-        let router = Self::tool_router();
+        let router = Self::tool_router() + claims;
         if router.has_route(&request.name) || self.relays.is_empty() {
             return router
                 .call(ToolCallContext::new(self, request, context))
@@ -361,9 +357,14 @@ impl ServerHandler for Runner {
     }
 }
 
+/// Every tool of the runner's own.
+fn router() -> ToolRouter<Runner> {
+    Runner::tool_router() + Runner::claim_router()
+}
+
 /// The runner's own tool names, which no relayed tool may take.
 fn own_names() -> Vec<String> {
-    Runner::tool_router()
+    router()
         .list_all()
         .into_iter()
         .map(|t| t.name.into_owned())
@@ -372,20 +373,20 @@ fn own_names() -> Vec<String> {
 
 /// Why the calling Box holds no machine slot, when its Proxy says so.
 fn missing(context: &RequestContext<RoleServer>) -> Result<Option<String>, ErrorData> {
-    let parts = context
-        .extensions
-        .get::<http::request::Parts>()
-        .ok_or_else(|| internal("request headers missing"))?;
-    Caller::missing(&parts.headers)
+    Caller::missing(&parts(context)?.headers)
 }
 
 /// The caller named in the request's headers.
 fn caller(context: &RequestContext<RoleServer>) -> Result<Caller, ErrorData> {
-    let parts = context
+    Caller::from_headers(&parts(context)?.headers)
+}
+
+/// The request's HTTP parts, which carry the Proxy's headers.
+fn parts(context: &RequestContext<RoleServer>) -> Result<&http::request::Parts, ErrorData> {
+    context
         .extensions
         .get::<http::request::Parts>()
-        .ok_or_else(|| internal("request headers missing"))?;
-    Caller::from_headers(&parts.headers)
+        .ok_or_else(|| internal("request headers missing"))
 }
 
 /// An MCP internal error carrying `message`.
