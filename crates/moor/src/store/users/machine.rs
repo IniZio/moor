@@ -2,13 +2,13 @@
 
 use std::collections::BTreeMap;
 
-use moor_core::config::{pick_machine, MachinePick, RepoMachine, UserMachine};
+use moor_core::config::UserMachine;
 use moor_core::domain::event::{Event, MachineEvent};
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::view::MachineHoldState;
 use moor_core::BoxId;
-use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use crate::store::apply::insert_event;
 use crate::store::{Store, StoreError};
@@ -17,8 +17,6 @@ mod hold;
 
 use hold::ClaimState;
 pub(crate) use hold::MachineWake;
-#[cfg(test)]
-pub(crate) use hold::{HoldOp, HoldValue};
 
 impl Store {
     /// Adds `machine` to `user`'s list, replacing one of the same name.
@@ -60,50 +58,6 @@ impl Store {
         let mut stmt = conn.prepare("SELECT DISTINCT ssh FROM user_machines ORDER BY ssh")?;
         let rows = stmt.query_map([], |r| r.get(0))?;
         Ok(rows.collect::<Result<_, _>>()?)
-    }
-
-    /// Picks one of `user`'s machines and a free slot on it for `box_id` per `want` and records
-    /// the outcome: the hold with the patterns its syncs leave alone, or `machine_left_out`. `machine_attached` comes from the supervisor
-    /// once the forwards are open. One write transaction, so two starts never share a slot.
-    pub(crate) fn claim_machine(
-        &self,
-        box_id: BoxId,
-        user: UserId,
-        want: &RepoMachine,
-        sync_exclude: &[String],
-    ) -> Result<MachinePick, StoreError> {
-        let now = self.now();
-        let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let pick = pick_machine(want, &machines_in(&tx, user)?, &held_in(&tx, user)?);
-        match &pick {
-            MachinePick::Attach {
-                machine,
-                slot,
-                ports,
-            } => {
-                let claim = Claim {
-                    user,
-                    state: ClaimState::Held {
-                        machine: machine.name.clone(),
-                        slot: *slot,
-                    },
-                    ports: ports.clone(),
-                    sync_exclude: sync_exclude.to_vec(),
-                };
-                put_in(&tx, box_id, &claim)?;
-            }
-            MachinePick::LeftOut { labels, reason } => {
-                let event = MachineEvent::MachineLeftOut {
-                    labels: labels.clone(),
-                    reason: reason.clone(),
-                };
-                insert_event(&tx, box_id, &Event::Machine(event), now)?;
-            }
-        }
-        tx.commit()?;
-        drop(conn);
-        Ok(pick)
     }
 
     /// Lets go of the machine `box_id` holds; true when it held one.

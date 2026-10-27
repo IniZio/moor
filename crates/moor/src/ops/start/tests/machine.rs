@@ -1,5 +1,6 @@
-//! A start whose repo asks for a machine holds one of the requester's machines, or starts
-//! without one and says why; closing the Box frees the machine for the next start.
+//! A start holds no machine: the Box claims one of its requester's machines through
+//! `machine-hold`, with the ports and syncs its repo's `.moor.yaml` names; closing the Box
+//! frees the machine for the next claim.
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
 use moor_core::config::UserMachine;
@@ -7,11 +8,11 @@ use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionInput;
-use moor_core::user::Identity;
 use moor_core::view::StartView;
-use moor_core::BoxId;
+use moor_core::{BoxId, HoldOp, HoldValue, MachineHoldReq};
 
 use super::{repo_req, script_base_yaml, world, World};
+use crate::ops::machine_hold;
 use crate::ops::start::run;
 use crate::testing::cx::REQUESTER_USER;
 use crate::testing::driver::FakeDriver;
@@ -29,8 +30,32 @@ fn with_machines(names: &[(&str, &str)]) -> World {
     w
 }
 
+/// Starts Box `name` and claims a machine for it as its runner would.
 fn start(w: &World, name: &str) -> StartView {
+    let v = started(w, name);
+    claim(w, BoxId::new(v.boxed.id));
+    v
+}
+
+fn started(w: &World, name: &str) -> StartView {
     run(&w.cx, &repo_req(name)).unwrap()
+}
+
+fn claim(w: &World, id: BoxId) -> HoldValue {
+    let req = MachineHoldReq {
+        id,
+        op: HoldOp::repo(),
+    };
+    machine_hold::run(&w.cx, &req).unwrap()
+}
+
+#[test]
+fn a_box_whose_repo_has_a_machine_holds_none_right_after_start() {
+    let w = with_machines(&[("mini", "macos")]);
+    let v = started(&w, "a");
+    assert_eq!(held(&w, &v), None);
+    assert!(machine_events(&w, &v).is_empty());
+    assert!(notes(&v).is_empty(), "{:?}", v.warnings_inline);
 }
 
 /// The machine the Box of `v` holds, by name.
@@ -60,81 +85,12 @@ fn notes(v: &StartView) -> Vec<&str> {
 }
 
 #[test]
-fn a_matching_machine_is_held_with_no_note() {
-    let w = with_machines(&[("mini", "macos")]);
-    let v = start(&w, "a");
-    assert_eq!(held(&w, &v).as_deref(), Some("mini"));
-    let store = w.cx.store().unwrap();
-    let got = store.box_machine(BoxId::new(v.boxed.id)).unwrap().unwrap();
-    assert_eq!((got.slot, got.ports), (0, vec![5432, 8080]));
-    assert!(
-        machine_events(&w, &v).is_empty(),
-        "start only holds the machine; machine_attached waits for open forwards"
-    );
-    assert!(notes(&v).is_empty(), "{:?}", v.warnings_inline);
-}
-
-#[test]
-fn no_matching_machine_starts_without_one_and_says_so() {
-    let w = with_machines(&[("pc", "linux")]);
-    let v = start(&w, "a");
-    assert!(v.boxed.id > 0, "the start is not refused");
-    assert_eq!(held(&w, &v), None);
-    assert_eq!(
-        notes(&v),
-        ["machine left out: you have no machine with labels macos"]
-    );
-    let events = machine_events(&w, &v);
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].0, "machine_left_out");
-}
-
-#[test]
 fn a_second_box_gets_the_next_free_machine() {
     let w = with_machines(&[("mini", "macos"), ("studio", "macos")]);
     let a = start(&w, "a");
     let b = start(&w, "b");
     assert_eq!(held(&w, &a).as_deref(), Some("mini"));
     assert_eq!(held(&w, &b).as_deref(), Some("studio"));
-}
-
-#[test]
-fn a_held_machine_is_named_with_its_holder_and_closing_frees_it() {
-    let w = with_machines(&[("mini", "macos")]);
-    let a = start(&w, "a");
-    let b = start(&w, "b");
-    assert_eq!(held(&w, &b), None);
-    assert_eq!(
-        notes(&b),
-        [format!(
-            "machine left out: machine mini is attached to Box {}",
-            a.boxed.name
-        )
-        .as_str()]
-    );
-    w.cx.store()
-        .unwrap()
-        .apply(
-            Decision::new(BoxId::new(a.boxed.id))
-                .lifecycle(BoxLifecycleInput::Close)
-                .session(SessionInput::End)
-                .box_input(BoxInput::Released),
-        )
-        .unwrap();
-    let c = start(&w, "c");
-    assert_eq!(held(&w, &c).as_deref(), Some("mini"));
-}
-
-#[test]
-fn another_users_machine_is_never_picked() {
-    let w = with_machines(&[]);
-    let store = w.cx.store().unwrap();
-    let (other, _) = store.enroll(&Identity::local(2000)).unwrap();
-    let m = UserMachine::parse("theirs", "dev@mac.example", &["macos".to_owned()]).unwrap();
-    store.set_user_machine(other, &m).unwrap();
-    let v = start(&w, "a");
-    assert_eq!(held(&w, &v), None);
-    assert_eq!(notes(&v).len(), 1, "{:?}", v.warnings_inline);
 }
 
 fn shared(capacity: u16) -> World {
@@ -167,28 +123,6 @@ fn close(w: &World, v: &StartView) {
                 .box_input(BoxInput::Released),
         )
         .unwrap();
-}
-
-#[test]
-fn a_shared_machine_gives_each_box_its_own_slot_until_full() {
-    let w = shared(2);
-    let first = start(&w, "a");
-    let second = start(&w, "b");
-    assert_eq!(slot(&w, &first), Some((0, vec![5432, 8080])));
-    assert_eq!(slot(&w, &second), Some((1, vec![5442, 8090])));
-    let third = start(&w, "c");
-    assert_eq!(slot(&w, &third), None);
-    assert_eq!(
-        notes(&third),
-        [format!(
-            "machine left out: machine mini is attached to Boxes {}, {}",
-            first.boxed.name, second.boxed.name
-        )
-        .as_str()]
-    );
-    close(&w, &first);
-    let fourth = start(&w, "d");
-    assert_eq!(slot(&w, &fourth), Some((0, vec![5432, 8080])));
 }
 
 #[test]
@@ -237,7 +171,12 @@ fn parallel_claims_never_share_a_slot() {
     std::thread::scope(|s| {
         for id in &ids {
             let (store, want) = (store.clone(), &want);
-            s.spawn(move || store.claim_machine(*id, REQUESTER_USER, want, &[]).unwrap());
+            s.spawn(move || {
+                let op = HoldOp::repo();
+                store
+                    .hold_machine(*id, REQUESTER_USER, &op, Some(want), &[])
+                    .unwrap()
+            });
         }
     });
     let mut slots: Vec<u16> = views

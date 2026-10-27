@@ -12,7 +12,9 @@ use moor_core::view::MachineHoldState;
 use moor_core::{BoxId, BoxName};
 
 use crate::store::tests::open;
-use crate::store::{HoldOp, HoldValue, MachineWake, Store};
+use moor_core::{HoldOp, HoldValue};
+
+use crate::store::{MachineWake, Store};
 use crate::testing::clock::FakeClock;
 
 struct Rig {
@@ -92,7 +94,7 @@ fn claim_op(machine: Option<&str>, wait_until: Option<Ts>) -> HoldOp {
     }
 }
 
-fn waiting(v: &HoldValue) -> Option<usize> {
+fn waiting(v: &HoldValue) -> Option<u16> {
     match v {
         HoldValue::Waiting { position, .. } => Some(*position),
         _ => None,

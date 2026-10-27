@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::name::BoxId;
+use crate::seam::clock::Ts;
 use crate::user::Identity;
 
 /// Arguments of `machine-add`.
@@ -46,4 +48,86 @@ pub struct MachineRemoveReq {
     pub identity: Option<Identity>,
     /// The machine's name.
     pub name: String,
+}
+
+/// Arguments of `machine-hold`: a Box claims one of its user's machines or lets go of it. The
+/// machine runner sends it over the operator socket for the Box its Proxy named.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MachineHoldReq {
+    /// The Box's store id.
+    pub id: BoxId,
+    /// What the Box asks of its claim.
+    pub op: HoldOp,
+}
+
+/// What a Box asks of its claim on a machine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum HoldOp {
+    /// Hold a machine, waiting for a slot until `wait_until` or refusing at once without it.
+    Claim {
+        /// Labels the machine must all hold; the repo's when empty and `machine` is `None`.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        labels: Vec<String>,
+        /// The one machine wanted.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        machine: Option<String>,
+        /// Box ports forwarded; the repo's when `None`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ports: Option<Vec<u16>>,
+        /// How long to wait for a slot.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        wait_until: Option<Ts>,
+    },
+    /// Let go of the machine held, waited for or slept on.
+    Release,
+}
+
+impl HoldOp {
+    /// A claim on a machine the repo's `machine:` section fits, with its ports, refused at once
+    /// when no slot is free.
+    #[must_use]
+    pub const fn repo() -> Self {
+        Self::Claim {
+            labels: Vec::new(),
+            machine: None,
+            ports: None,
+            wait_until: None,
+        }
+    }
+}
+
+/// The answer to a `machine-hold`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum HoldValue {
+    /// The Box holds `slot` on `machine`.
+    Held {
+        /// The machine's name.
+        machine: String,
+        /// Its ssh target.
+        ssh: String,
+        /// The Box's slot on it.
+        slot: u16,
+        /// The forwarded ports, moved by the slot.
+        ports: Vec<u16>,
+    },
+    /// The want is recorded; `position` counts from 1 among the user's waiters.
+    Waiting {
+        /// The want's place in line.
+        position: u16,
+        /// Why there is no slot yet.
+        reason: String,
+    },
+    /// Nothing was recorded.
+    Refused {
+        /// Why.
+        reason: String,
+    },
+    /// The claim is gone.
+    Released {
+        /// The machine held or slept on, if any.
+        machine: Option<String>,
+    },
 }

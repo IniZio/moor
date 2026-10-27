@@ -30,7 +30,6 @@ use crate::error::CommandError;
 use crate::store::{BoxRow, Store, StoreError};
 
 mod launch;
-mod machine;
 mod needs;
 mod preflight;
 mod relaunch;
@@ -107,12 +106,6 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         Ok(id) => id,
         Err(e) => return raced(cx, store, (req, user), e),
     };
-    let machine_note = machine::claim(
-        store,
-        (id, user),
-        repo_cfg.as_ref(),
-        &cx.config().machines.sync,
-    );
     let (done, agent) = {
         let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?;
         let done = if reread(store, id)?.boxed.is_none() {
@@ -128,7 +121,6 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     let mut v = queued_view(cx, &row, false, provider_of(&cfg).ok());
     set_provisioned(&mut v, &done);
     set_agent(&mut v, agent);
-    v.warnings_inline.extend(machine_note);
     Ok(v)
 }
 

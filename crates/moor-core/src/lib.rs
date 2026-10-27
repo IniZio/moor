@@ -28,8 +28,8 @@ pub mod view;
 pub use name::{BoxHandle, BoxId, BoxName, BoxPath, NameError, ProviderId, RunId, SessionId, Sha};
 pub use request::{
     ArtifactReadReq, ArtifactsReq, AttachReq, BoxMirrorReq, BoxPutReq, BoxReq, BoxTarget, CloseReq,
-    CpReq, EnvReq, GateReq, Request, RunReq, ShowReq, StartReq, SteerReq, WaitEventsReq, WaitFor,
-    WaitMode, WaitReq,
+    CpReq, EnvReq, GateReq, HoldOp, HoldValue, MachineHoldReq, Request, RunReq, ShowReq, StartReq,
+    SteerReq, WaitEventsReq, WaitFor, WaitMode, WaitReq,
 };
 pub use response::{
     CloseRefusal, ErrorDetail, ErrorKind, ErrorView, ExitClass, Response, Warning, SCHEMA,
