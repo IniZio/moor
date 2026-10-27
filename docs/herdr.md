@@ -53,7 +53,8 @@ While the Box is up, herdr's own agent dot shows working, waiting or idle.
   in the sidebar.
 - `box` lists the repos your open Boxes work on and takes a number or any `owner/name`. It then
   asks for a Box name and a goal for its agent, starts the Box on the controller, shows its
-  workspace and focuses it. The goal is the agent's first prompt.
+  workspace and focuses it. The goal is the agent's first prompt. The goal is optional. Leave it
+  empty and the agent waits, so you type its first prompt once you attach.
 
 The popup closes when the work is started. A failure stays on screen until you press Enter.
 

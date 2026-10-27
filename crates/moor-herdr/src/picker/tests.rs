@@ -34,7 +34,7 @@ impl Prompt for Screen {
 struct Ctl {
     open: Vec<Shown>,
     started: std::cell::RefCell<Vec<(String, String)>>,
-    goals: std::cell::RefCell<Vec<String>>,
+    goals: std::cell::RefCell<Vec<Option<String>>>,
 }
 
 impl Controller for Ctl {
@@ -49,8 +49,8 @@ impl Controller for Ctl {
         Ok(now)
     }
 
-    fn start(&self, name: &str, repo: &str, goal: &str) -> Result<(), Error> {
-        self.goals.borrow_mut().push(goal.to_owned());
+    fn start(&self, name: &str, repo: &str, goal: Option<&str>) -> Result<(), Error> {
+        self.goals.borrow_mut().push(goal.map(str::to_owned));
         self.started
             .borrow_mut()
             .push((name.to_owned(), repo.to_owned()));
@@ -218,19 +218,32 @@ fn a_bad_choice_asks_again() {
 }
 
 #[test]
-fn a_box_needs_a_goal_since_its_agent_starts_on_one() {
-    let (screen, ctl, _) = pick(&["box", "2", "tidy", "", "fix the login page"]);
-    assert!(
-        screen.said.iter().any(|l| l.contains("goal")),
-        "{:?}",
-        screen.said
+fn an_empty_goal_starts_the_box_with_none() {
+    let (_, ctl, _) = pick(&["box", "2", "tidy", ""]);
+    assert_eq!(*ctl.goals.borrow(), [None]);
+    assert_eq!(ctl.started.borrow().len(), 1);
+}
+
+#[test]
+fn a_given_goal_reaches_the_controller() {
+    let (_, ctl, _) = pick(&["box", "2", "tidy", " fix the login page "]);
+    assert_eq!(*ctl.goals.borrow(), [Some("fix the login page".to_owned())]);
+}
+
+#[test]
+fn the_start_request_without_a_goal_sends_none() {
+    let wire = serde_json::to_value(start_request("tidy", "acme/site", None).unwrap()).unwrap();
+    assert_eq!(
+        wire,
+        serde_json::json!({"cmd": "start", "name": "tidy", "repo": "acme/site",
+            "no_agent": false, "hold": false, "resume": false})
     );
-    assert_eq!(*ctl.goals.borrow(), ["fix the login page"]);
 }
 
 #[test]
 fn the_start_request_carries_the_goal() {
-    let wire = serde_json::to_value(start_request("tidy", "acme/site", "fix it").unwrap()).unwrap();
+    let wire =
+        serde_json::to_value(start_request("tidy", "acme/site", Some("fix it")).unwrap()).unwrap();
     assert_eq!(
         wire,
         serde_json::json!({"cmd": "start", "name": "tidy", "repo": "acme/site", "goal": "fix it",
