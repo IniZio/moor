@@ -10,7 +10,7 @@ use moor_core::seam::proxy_host::{ProxyHostError, ProxyStatus};
 use moor_core::BoxId;
 
 use super::setup::{exit, start_req};
-use super::{req, script_base_yaml, World};
+use super::{agentless_req, script_base_yaml, World};
 use crate::ops::start::run;
 use crate::testing::driver::{is_clone_exec, FakeDriver};
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall, FAKE_EGRESS_PORT};
@@ -96,7 +96,7 @@ fn a_box_with_no_repo_starts_no_proxy_and_runs_no_clone() {
     let host = FakeProxyHost::new();
     let mut w = super::world(FakeDriver::new());
     w.cx = w.cx.with_proxy_host(Arc::new(host.clone()));
-    run(&w.cx, &req("demo")).unwrap();
+    run(&w.cx, &agentless_req("demo")).unwrap();
     assert_eq!(ensured_stopped(&host), (false, false));
     assert!(w.driver.execs().is_empty(), "{:?}", w.driver.execs());
     let kinds = super::setup::kinds(&w, BoxId::new(1));

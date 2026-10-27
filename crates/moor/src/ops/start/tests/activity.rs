@@ -50,7 +50,7 @@ fn probes(w: &World, hook: Option<HookKind>, pane: PaneStatus) -> Probes {
 /// A started `demo` with a live session, probed as `probes` says; idle first when `idle`.
 fn started(idle: bool, probes: impl FnOnce(&World) -> Probes) -> (World, BoxId) {
     let mut w = world(FakeDriver::new());
-    let id = BoxId::new(run(&w.cx, &req("demo")).unwrap().boxed.id);
+    let id = BoxId::new(run(&w.cx, &super::agentless_req("demo")).unwrap().boxed.id);
     let store = w.cx.store().unwrap();
     store.begin_session(id, SESSION, None).unwrap();
     if idle {
@@ -168,7 +168,7 @@ fn newest_session(w: &World, id: BoxId) -> i64 {
 }
 
 #[test]
-fn start_does_not_revive_a_box_whose_session_ended() {
+fn a_no_agent_start_does_not_revive_a_box_whose_session_ended() {
     let (w, id) = started(false, |w| probes(w, None, PaneStatus::Unknown));
     let store = w.cx.store().unwrap();
     while let Some(live) = store.live_session(id).unwrap() {
@@ -176,7 +176,7 @@ fn start_does_not_revive_a_box_whose_session_ended() {
     }
     let ended = newest_session(&w, id);
 
-    let v = run(&w.cx, &req("demo")).unwrap();
+    let v = run(&w.cx, &super::agentless_req("demo")).unwrap();
     assert!(v.attached);
 
     assert!(store.live_session(id).unwrap().is_none());

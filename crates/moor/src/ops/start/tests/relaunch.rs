@@ -3,7 +3,7 @@ use std::sync::Arc;
 use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::seam::agent_profile::FirstRunPrompt;
-use moor_core::seam::engine::{EngineError, LaunchReq, SessionRef};
+use moor_core::seam::engine::{EngineError, LaunchPrompt, LaunchReq, SessionRef};
 use moor_core::seam::surface::{PaneRef, ResumeOutcome, SurfaceError};
 use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, SessionId, StartReq};
 
@@ -104,11 +104,8 @@ fn warning_codes(w: &World) -> Vec<String> {
 }
 
 #[test]
-fn a_gone_pane_relaunches_only_with_a_goal() {
+fn a_gone_pane_relaunches_with_a_goal() {
     let (w, engine, id) = started();
-    gone(&w);
-    assert!(!run(&w.cx, &req("demo")).unwrap().agent.launched);
-    assert_eq!(engine.launches().len(), 1);
     gone(&w);
     let v = run(&w.cx, &goal_req("ship it")).unwrap();
     assert!(v.agent.launched);
@@ -183,12 +180,12 @@ fn a_stored_agent_session_relaunches_with_resume() {
 }
 
 #[test]
-fn a_stored_agent_session_alone_does_not_relaunch() {
+fn a_stored_agent_session_alone_relaunches_with_resume() {
     let (w, engine, id) = started();
     gone(&w);
     set_agent_session(&w, id, "agent-1");
-    assert!(!run(&w.cx, &req("demo")).unwrap().agent.launched);
-    assert_eq!(engine.launches().len(), 1);
+    assert!(run(&w.cx, &req("demo")).unwrap().agent.launched);
+    assert_eq!(relaunch_of(&engine).resume.as_deref(), Some("agent-1"));
 }
 
 #[test]
@@ -264,7 +261,7 @@ fn a_failed_relaunch_records_no_relaunched_event_and_sets_the_failure() {
 }
 
 #[test]
-fn a_gone_pane_with_no_goal_and_no_agent_session_launches_nothing() {
+fn a_gone_pane_with_no_goal_and_no_agent_session_launches_with_no_prompt() {
     let (w, engine, id) = started();
     let clear = Fields {
         goal: Field::Clear,
@@ -276,8 +273,8 @@ fn a_gone_pane_with_no_goal_and_no_agent_session_launches_nothing() {
         .unwrap();
     gone(&w);
     let v = run(&w.cx, &req("demo")).unwrap();
-    assert!(!v.agent.launched);
-    assert_eq!(engine.launches().len(), 1);
+    assert!(v.agent.launched);
+    assert_eq!(relaunch_of(&engine).prompt, LaunchPrompt::None);
 }
 
 #[test]

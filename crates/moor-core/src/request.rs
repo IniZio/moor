@@ -223,7 +223,7 @@ pub struct StartReq {
     /// Skip starting an agent.
     #[serde(default)]
     pub no_agent: bool,
-    /// Launch the agent with no first prompt.
+    /// Launch the agent with no first prompt; a start with neither goal nor issue is held anyway.
     #[serde(default)]
     pub hold: bool,
     /// Resume the agent's stored session instead of starting a fresh one.

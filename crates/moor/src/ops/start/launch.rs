@@ -28,7 +28,8 @@ use crate::store::{BoxRow, Store};
 /// Lines of a failure's output kept as its tail.
 pub(super) const TAIL_LINES: usize = 10;
 
-/// Launches the agent when the Box is Working with a ready machine, a goal and no live session.
+/// Launches the agent when the Box is Working with a ready machine and no live session, given a
+/// goal, an issue, a session to resume or a hold.
 ///
 /// `setup_exit` is the exit code of a setup that just failed; the agent still launches then.
 /// A launch that fails is recorded on the Box, which stays Working with no session, and
@@ -49,8 +50,11 @@ pub(super) fn run(
     let resume = row
         .agent_session_id
         .clone()
-        .filter(|s| req.resume && req.goal.is_none() && !s.is_empty());
-    if req.no_agent || (row.goal.is_none() && resume.is_none()) || store.live_session(id)?.is_some()
+        .filter(|s| (req.resume || req.hold) && req.goal.is_none() && !s.is_empty());
+    let briefed = row.goal.is_some() || row.issue.is_some();
+    if req.no_agent
+        || !(briefed || resume.is_some() || req.hold)
+        || store.live_session(id)?.is_some()
     {
         return Ok(AgentLaunchView::default());
     }

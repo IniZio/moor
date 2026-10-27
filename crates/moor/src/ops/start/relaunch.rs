@@ -31,10 +31,10 @@ pub(super) enum Ended {
     Exited(i32),
 }
 
-/// Launches, or relaunches, the agent of an attached Box when `req` gives a goal or `--resume`.
+/// Launches, or relaunches, the agent of an attached Box when `req` gives a goal, `--hold` or
+/// `--resume`.
 ///
-/// Without either nothing launches, whether or not the agent's pane has ended, so a start
-/// never runs the stored goal again on its own.
+/// A start with neither goal nor issue is held, so it never runs the stored goal again on its own.
 ///
 /// # Errors
 /// As [`launch_asked`].
@@ -93,9 +93,10 @@ fn launch_asked(
     relaunch(cx, store, req, (&old, &end), (recreated, None), settings)
 }
 
-/// Whether a start of an open Box asks for its agent: a goal or `--resume`, without `--no-agent`.
-const fn asks_for_agent(req: &StartReq) -> bool {
-    !req.no_agent && (req.goal.is_some() || req.resume)
+/// Whether a start of an open Box asks for its agent: a goal, `--hold` or `--resume`, without
+/// `--no-agent`.
+pub(super) const fn asks_for_agent(req: &StartReq) -> bool {
+    !req.no_agent && (req.goal.is_some() || req.hold || req.resume)
 }
 
 /// Refuses `--resume` for a Box with no stored agent session.
@@ -157,7 +158,7 @@ fn store_goal(store: &Store, req: &StartReq, id: BoxId) -> Result<(), CommandErr
 /// Replaces the ended session `old` with a new one.
 ///
 /// A given goal replaces the Box's goal and starts a fresh brief. Without one the agent resumes
-/// its stored session, else starts a fresh brief with the Box's goal. The old tab stays.
+/// its stored session, else starts fresh, with no prompt when held. The old tab stays.
 pub(super) fn relaunch(
     cx: &Cx,
     store: &Store,
@@ -173,7 +174,7 @@ pub(super) fn relaunch(
         None => row.agent_session_id.clone().filter(|s| !s.is_empty()),
     };
     let goal = req.goal.clone().or_else(|| row.goal.clone());
-    if goal.is_none() && resume.is_none() {
+    if goal.is_none() && resume.is_none() && !req.hold {
         return Ok(AgentLaunchView::default());
     }
     row.goal.clone_from(&goal);

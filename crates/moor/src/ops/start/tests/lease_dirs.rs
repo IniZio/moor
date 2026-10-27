@@ -21,7 +21,7 @@ fn goal_req(name: &str) -> StartReq {
 fn started(engine: &Arc<FakeEngine>) -> (World, BoxId) {
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine.clone());
-    let v = run(&w.cx, &req("demo")).unwrap();
+    let v = run(&w.cx, &super::agentless_req("demo")).unwrap();
     (w, BoxId::new(v.boxed.id))
 }
 
