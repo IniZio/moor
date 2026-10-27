@@ -283,6 +283,12 @@ impl Rig {
         reply
     }
 
+    /// The runner's answer to `initialize`.
+    pub fn initialized(&self) -> Value {
+        let (init, _, _) = self.post(&rpc(1, "initialize", initialize()), &HEADERS, None);
+        init["result"].clone()
+    }
+
     /// The tools the runner lists to the caller with `headers`.
     pub fn tools(&self, headers: &[(&str, &str)]) -> Vec<Value> {
         let (init, session, _) = self.post(&rpc(1, "initialize", initialize()), headers, None);
