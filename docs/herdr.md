@@ -39,6 +39,12 @@ key = "prefix+c"
 type = "plugin_action"
 command = "moor.new"
 description = "moor: new"
+
+[[keys.command]]
+key = "prefix+m"
+type = "plugin_action"
+command = "moor.panel"
+description = "moor: Boxes"
 ```
 
 Every Box workspace carries `env=BOX`, which the second row shows in colour. It also carries
@@ -58,6 +64,33 @@ While the Box is up, herdr's own agent dot shows working, waiting or idle.
   so you type its first prompt once you attach.
 
 The popup closes when the work is started. A failure stays on screen until you press Enter.
+
+## Panel
+
+`prefix+m` (or `moor: Boxes` from the command palette) opens the Boxes panel as a split beside
+the current pane. herdr's own right-click menus and `+` buttons take no plugin entries, so the
+panel is where you click. Mouse capture must be on in herdr (`mouse_capture = true`, the default).
+
+The top row has `[+ New Box]`, which opens the same popup as `prefix+c`, and `[refresh]`. Below it
+each open Box is one row: its label `◈ repo/name`, its state icon and words, and its buttons.
+
+- `[attach]` brings the Box's workspace to the front, making it first if herdr has none.
+- `[wake]`, shown only on an asleep Box, wakes it.
+- `[close]` closes the Box on the controller. The first click turns it into `[confirm close]`;
+  a second click within four seconds closes the Box. Otherwise it turns back.
+
+The list refreshes every 2 seconds. The line under the top row says what the last click did, or
+why it failed.
+
+| Key | Does |
+| --- | --- |
+| Up, Down, `k`, `j` | Select a Box. Clicking its label selects it too. |
+| Enter | Attach the selected Box. |
+| `w` | Wake the selected Box, when it is asleep. |
+| `c` | Close the selected Box. Press it again within four seconds to confirm. |
+| `n` | New Box. |
+| `r` | Refresh now. |
+| `q` | Close the panel. |
 
 ## Keys
 

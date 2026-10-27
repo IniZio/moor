@@ -75,6 +75,15 @@ fn waking_a_box_sends_the_core_wake_request() {
 }
 
 #[test]
+fn closing_a_box_sends_the_core_close_request_without_force() {
+    let parsed = super::request(super::close_wire("fix")).unwrap();
+    assert_eq!(
+        serde_json::to_value(parsed).unwrap(),
+        json!({"cmd": "close", "box": "fix", "force": false})
+    );
+}
+
+#[test]
 fn a_box_still_setting_up_is_starting_and_shows_the_ellipsis() {
     for lifecycle in ["checking", "waiting_for_box", "setting_up"] {
         let one = parse_one(json!({ "box": row(lifecycle, "idle") }))

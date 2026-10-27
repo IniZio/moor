@@ -13,7 +13,7 @@ use moor_herdr::error::Error;
 use moor_herdr::herdr::Cli;
 use moor_herdr::picker::{self, Prompt, Tty};
 use moor_herdr::sync::{reconcile, shell_quote};
-use moor_herdr::{relay, setup};
+use moor_herdr::{panel, relay, setup};
 
 /// moor Boxes in herdr.
 #[derive(Debug, Parser)]
@@ -47,6 +47,12 @@ enum Cmd {
         #[arg(long, env = "MOOR_HERDR_WORKSPACE")]
         workspace: String,
     },
+    /// Show the open Boxes as a list with buttons to attach, wake and close them.
+    Panel {
+        /// The workspace the panel was opened in.
+        #[arg(long, env = "MOOR_HERDR_WORKSPACE")]
+        workspace: String,
+    },
     /// Print the herdr config snippet that colours Boxes and binds moor's keys.
     HerdrSetup,
 }
@@ -73,6 +79,16 @@ fn run(args: &Args) -> Result<(), Error> {
         Cmd::Attach { name } => relay::run(&Client::new(socket()?), name),
         Cmd::Sync { every } => sync(&socket()?, *every),
         Cmd::New { workspace } => new(&socket()?, workspace),
+        Cmd::Panel { workspace } => {
+            let socket = socket()?;
+            let attach = attach_command(&std::env::current_exe()?, &socket);
+            panel::term::run(&mut panel::term::Live {
+                client: Client::new(&socket),
+                herdr: Cli::from_env(),
+                workspace: workspace.clone(),
+                attach: &attach,
+            })
+        }
     }
 }
 

@@ -14,3 +14,9 @@ key = "prefix+c"
 type = "plugin_action"
 command = "moor.new"
 description = "moor: new"
+
+[[keys.command]]
+key = "prefix+m"
+type = "plugin_action"
+command = "moor.panel"
+description = "moor: Boxes"
