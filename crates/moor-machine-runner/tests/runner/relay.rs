@@ -250,3 +250,17 @@ fn a_hidden_tool_is_not_listed_and_a_call_to_it_is_refused() {
     assert!(err.contains("hidden"), "{err}");
     assert!(lines(&rig, "fake-calls").is_empty(), "the fake saw no call");
 }
+
+#[test]
+fn a_claim_starts_the_relays_before_it_answers() {
+    let rig = relayed(&[]);
+    rig.holds.lock().unwrap().answers = vec![json!({"state": "held", "machine": "minion",
+        "ssh": "moor@minion", "slot": 0, "ports": []})]
+    .into();
+    let missing = [
+        ("X-Moor-Box", "7"),
+        ("X-Moor-Machine-Missing", "this Box holds no machine"),
+    ];
+    rig.call_with("machine_claim", json!({}), &missing).unwrap();
+    assert_eq!(lines(&rig, "fake-starts").len(), 1);
+}

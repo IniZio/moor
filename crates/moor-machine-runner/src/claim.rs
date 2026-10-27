@@ -142,13 +142,20 @@ impl Runner {
     async fn claimed(&self, caller: (Caller, Vec<u16>)) -> Result<CallToolResult, String> {
         let (caller, ports) = caller;
         match self.hooks.facts(&caller).await {
-            Ok(facts) => Ok(CallToolResult::structured(serde_json::json!(Claimed {
-                port_offset: 10 * u32::from(caller.slot),
-                machine: caller.machine,
-                slot: caller.slot,
-                ports,
-                facts,
-            }))),
+            Ok(facts) => {
+                // Starting a relay takes seconds; started here, the client's re-list after the
+                // claim finds its tools at once instead of after a later call.
+                self.relays
+                    .tools(&caller, &facts, &crate::own_names())
+                    .await;
+                Ok(CallToolResult::structured(serde_json::json!(Claimed {
+                    port_offset: 10 * u32::from(caller.slot),
+                    machine: caller.machine,
+                    slot: caller.slot,
+                    ports,
+                    facts,
+                })))
+            }
             Err(e) => Err(format!("{} can't be used: {e}", caller.machine)),
         }
     }
