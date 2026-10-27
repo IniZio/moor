@@ -138,6 +138,18 @@ fn agent_block(out: &mut String, a: &Value) {
     }
 }
 
+/// `n` as 1st, 2nd, 3rd, 4th.
+fn ordinal(n: u64) -> String {
+    let suffix = match (n % 10, n % 100) {
+        (_, 11..=13) => "th",
+        (1, _) => "st",
+        (2, _) => "nd",
+        (3, _) => "rd",
+        _ => "th",
+    };
+    format!("{n}{suffix}")
+}
+
 /// The `attached:` line of a Box that holds one of its user's machines.
 fn held_machine_line(out: &mut String, view: &Value) {
     let Some(m) = view.get("held_machine").filter(|m| !m.is_null()) else {
@@ -157,7 +169,10 @@ fn held_machine_line(out: &mut String, view: &Value) {
     let name = field(m, "name");
     let line = match m.get("state").and_then(Value::as_str) {
         Some("asleep") => format!("machine:  {name} asleep, its slot free for other Boxes"),
-        Some("waiting") => format!("machine:  {name} waiting for a free slot"),
+        Some("waiting") => m.get("position").and_then(Value::as_u64).map_or_else(
+            || format!("machine:  {name} waiting for a free slot"),
+            |n| format!("machine:  {name} waiting, {} in line", ordinal(n)),
+        ),
         _ => format!("attached: {name} slot {slot} ports {}", ports.join(",")),
     };
     let _ = writeln!(out, "{line}");

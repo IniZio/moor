@@ -46,9 +46,10 @@ same machine, and its files there stay (`machine_detached` with
 the lowest free slot once the Boxes that asked before it have theirs. That slot
 can differ from the old one, and so can its ports (`machine_attached` names
 them). If every slot is taken, the Box runs without the machine, and
-`machine_waiting` says why once. The Proxy then tries again on each tick until
-a slot frees or the Box sleeps or closes. Until then,
-`moor show` names the machine as asleep or waiting. Closing the Box ends its
+`machine_waiting` says why and the Box's `position` in line (counting from 1),
+and says so again only when the position changes. The Proxy then tries again on
+each tick until a slot frees or the Box sleeps or closes. Until then,
+`moor show` names the machine as asleep or waiting, with the place in line. Closing the Box ends its
 claim.
 
 Start the runner next to the controller, as the same host user:
@@ -110,7 +111,10 @@ such as `no free slot: machine mac is attached to Boxes a, b`. With
 seconds. While the call waits, it sends MCP progress notifications, such as
 `waiting for mac: place 1 in line`, when the call asked for progress. When the
 wait runs out, or the client cancels or hangs up, the runner gives up the
-Box's place in line, and the call fails with the reason.
+Box's place in line, and the call fails with the reason. A waiting claim
+records `machine_waiting` with its place in line, again only when the place
+changes, and a refused one records `machine_refused` with the reason;
+`moor show` reports the place while the claim waits.
 
 After a claim is held, the runner sends `notifications/tools/list_changed`. The
 client then lists the tools again and sees the machine's relayed tools, which

@@ -228,7 +228,11 @@ fn all_events() -> Vec<Event> {
         }),
         Event::Machine(MachineEvent::MachineWaiting {
             name: "mini".to_owned(),
+            position: 2,
             reason: "machine mini is attached to Box b".to_owned(),
+        }),
+        Event::Machine(MachineEvent::MachineRefused {
+            reason: "no free slot: machine mini is attached to Box b".to_owned(),
         }),
     ]
 }
@@ -310,6 +314,7 @@ const fn event_index(e: &Event) -> usize {
             MachineEvent::MachineForwardFailed { .. } => 59,
             MachineEvent::MachineDetached { .. } => 60,
             MachineEvent::MachineWaiting { .. } => 61,
+            MachineEvent::MachineRefused { .. } => 62,
         },
     }
 }
@@ -318,7 +323,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 62);
+    assert_eq!(all.len(), 63);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
@@ -499,4 +504,24 @@ fn machine_events_carry_their_own_kind() {
         e.payload(),
         serde_json::json!({"port": 8081, "error": "refused"})
     );
+}
+
+/// `MachineWaiting` carries the place in line and `MachineRefused` only its reason.
+#[test]
+fn machine_waiting_and_refused_payloads() {
+    let waiting = Event::Machine(MachineEvent::MachineWaiting {
+        name: "mini".to_owned(),
+        position: 2,
+        reason: "full".to_owned(),
+    });
+    assert_eq!(waiting.kind(), "machine_waiting");
+    assert_eq!(
+        waiting.payload(),
+        serde_json::json!({"name": "mini", "position": 2, "reason": "full"})
+    );
+    let refused = Event::Machine(MachineEvent::MachineRefused {
+        reason: "no".to_owned(),
+    });
+    assert_eq!(refused.kind(), "machine_refused");
+    assert_eq!(refused.payload(), serde_json::json!({"reason": "no"}));
 }

@@ -123,7 +123,7 @@ fn waking_on_a_full_machine_waits_and_says_why() {
 
     let wake = m.store.grant_machine(a).unwrap();
     assert!(
-        matches!(&wake, MachineWake::Waiting { name, reason } if name == "mini" && reason.contains("Box b")),
+        matches!(&wake, MachineWake::Waiting { name, position: 1, reason } if name == "mini" && reason.contains("Box b")),
         "{wake:?}"
     );
     assert_eq!(m.slot_and_ports(a), None);

@@ -256,3 +256,89 @@ fn a_request_and_its_values_round_trip_on_the_wire() {
         );
     }
 }
+
+impl Hold {
+    /// The machine events recorded for `id`, as (kind, payload), oldest first.
+    fn machine_events(&self, id: BoxId) -> Vec<(String, Value)> {
+        let rows = self.store.events(id, 100).expect("events");
+        rows.into_iter()
+            .filter(|e| e.kind.starts_with("machine_"))
+            .map(|e| (e.kind, e.payload))
+            .collect()
+    }
+}
+
+fn wait() -> Value {
+    json!({"claim": {"wait_until": 4_000_000_000_000_i64}})
+}
+
+#[test]
+fn polling_a_wait_at_the_same_place_records_one_event_and_a_new_place_one_more() {
+    let h = Hold::new();
+    let (a, b, c) = (h.new_box(A, "a"), h.new_box(A, "b"), h.new_box(A, "c"));
+    assert_eq!(ask(h.main(), &hold(a, &claim()))["value"]["state"], "held");
+    for _ in 0..3 {
+        let got = ask(h.main(), &hold(b, &wait()));
+        assert_eq!(got["value"]["position"], 1, "{got}");
+    }
+    let got = ask(h.main(), &hold(c, &wait()));
+    assert_eq!(got["value"]["position"], 2, "{got}");
+    let events = h.machine_events(b);
+    assert_eq!(events.len(), 1, "{events:?}");
+    assert_eq!(events[0].0, "machine_waiting");
+    assert_eq!(events[0].1["position"], 1);
+    assert_eq!(events[0].1["name"], "macos");
+    assert!(events[0].1["reason"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Box a"));
+}
+
+#[test]
+fn a_want_that_moves_up_the_line_records_its_new_place_once() {
+    let h = Hold::new();
+    let (a, b, c) = (h.new_box(A, "a"), h.new_box(A, "b"), h.new_box(A, "c"));
+    assert_eq!(ask(h.main(), &hold(a, &claim()))["value"]["state"], "held");
+    ask(h.main(), &hold(b, &wait()));
+    for _ in 0..2 {
+        assert_eq!(ask(h.main(), &hold(c, &wait()))["value"]["position"], 2);
+    }
+    ask(h.main(), &hold(b, &json!("release")));
+    for _ in 0..2 {
+        assert_eq!(ask(h.main(), &hold(c, &wait()))["value"]["position"], 1);
+    }
+    let places: Vec<_> = h
+        .machine_events(c)
+        .iter()
+        .map(|e| e.1["position"].clone())
+        .collect();
+    assert_eq!(places, [json!(2), json!(1)]);
+}
+
+#[test]
+fn a_refused_claim_records_one_refused_event_and_keeps_no_want() {
+    let h = Hold::new();
+    let (a, b) = (h.new_box(A, "a"), h.new_box(A, "b"));
+    assert_eq!(ask(h.main(), &hold(a, &claim()))["value"]["state"], "held");
+    let got = ask(h.main(), &hold(b, &claim()));
+    assert_eq!(got["value"]["state"], "refused", "{got}");
+    let events = h.machine_events(b);
+    assert_eq!(events.len(), 1, "{events:?}");
+    assert_eq!(events[0].0, "machine_refused");
+    assert_eq!(events[0].1["reason"], got["value"]["reason"]);
+    assert!(h.store.wait_place(b).expect("read").is_none());
+}
+
+#[test]
+fn show_reports_a_waiting_claim_with_its_place_in_line() {
+    let h = Hold::new();
+    let (a, b, c) = (h.new_box(A, "a"), h.new_box(A, "b"), h.new_box(A, "c"));
+    assert_eq!(ask(h.main(), &hold(a, &claim()))["value"]["state"], "held");
+    ask(h.main(), &hold(b, &wait()));
+    ask(h.main(), &hold(c, &wait()));
+    let got = ask(h.main(), &json!({"cmd": "show", "box": "c"}));
+    let held = &got["value"]["box"]["held_machine"];
+    assert_eq!(held["state"], "waiting", "{got}");
+    assert_eq!(held["position"], 2, "{got}");
+    assert_eq!(held["name"], "macos", "{got}");
+}

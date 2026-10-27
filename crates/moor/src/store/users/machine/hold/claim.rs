@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 use super::super::{claim_in, machines_in, put_in, Claim};
 use moor_core::{HoldOp, HoldValue};
 
-use super::{grant_in, wants_in, why_waiting, ClaimState};
+use super::{grant_in, position_in, said_waiting, why_waiting, ClaimState};
 use crate::store::apply::insert_event;
 use crate::store::{Store, StoreError};
 
@@ -40,6 +40,14 @@ impl Store {
             tx.commit()?;
         } else {
             drop(tx);
+            if let HoldValue::Refused { reason } = &value {
+                let event = MachineEvent::MachineRefused {
+                    reason: reason.clone(),
+                };
+                let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                insert_event(&tx, id, &Event::Machine(event), now)?;
+                tx.commit()?;
+            }
         }
         drop(conn);
         Ok(value)
@@ -105,6 +113,20 @@ fn claim_tx(
         Some(claim) if waits => {
             let reason = why_waiting(tx, &claim)?;
             let position = position_in(tx, id, user)?;
+            if !said_waiting(tx, id, u32::from(position))? {
+                let name = match &claim.state {
+                    ClaimState::Wanted {
+                        machine, labels, ..
+                    } => machine.clone().unwrap_or_else(|| labels.join(", ")),
+                    _ => String::new(),
+                };
+                let event = MachineEvent::MachineWaiting {
+                    name,
+                    position: u32::from(position),
+                    reason: reason.clone(),
+                };
+                insert_event(tx, id, &Event::Machine(event), now)?;
+            }
             (HoldValue::Waiting { position, reason }, true)
         }
         Some(claim) => {
@@ -184,14 +206,4 @@ fn held_value(conn: &Connection, id: BoxId) -> Result<HoldValue, StoreError> {
         slot,
         ports,
     })
-}
-
-/// Where `id`'s want stands among `user`'s, counting from 1.
-fn position_in(conn: &Connection, id: BoxId, user: UserId) -> Result<u16, StoreError> {
-    let wants = wants_in(conn, user)?;
-    let place = wants
-        .iter()
-        .position(|(w, _)| *w == id)
-        .map_or(0, |p| p + 1);
-    Ok(u16::try_from(place).unwrap_or(u16::MAX))
 }

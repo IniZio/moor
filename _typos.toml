@@ -1,6 +1,7 @@
 [default.extend-words]
 UDID = "UDID"
 udid = "udid"
+nd = "nd"
 
 [files]
 extend-exclude = [
