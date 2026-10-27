@@ -262,5 +262,8 @@ fn arming_a_close_redraws_without_waiting_on_the_controller() {
     let col = column_of(&panel, row, "[close]", now);
     panel.handle(Input::Click { col, row }, now, &mut ops);
     assert_eq!(ops.opens, 1, "only the first load asked the controller");
-    assert!(screen(&panel, now)[3].ends_with("[confirm close]"));
+    assert!(screen(&panel, now)
+        .get(3)
+        .unwrap()
+        .ends_with("[confirm close]"));
 }
