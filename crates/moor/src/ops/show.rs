@@ -61,14 +61,28 @@ fn held_machine(
     id: BoxId,
     box_asleep: bool,
 ) -> Result<Option<HeldMachineView>, CommandError> {
-    Ok(store.claimed_machine(id)?.map(|h| HeldMachineView {
+    let place = store.wait_place(id)?;
+    let Some(h) = store.claimed_machine(id)? else {
+        return Ok(place.map(|p| HeldMachineView {
+            name: p.name,
+            slot: 0,
+            ports: p.ports,
+            state: MachineHoldState::Waiting,
+            position: Some(p.position),
+        }));
+    };
+    let state = match (h.state, box_asleep) {
+        (MachineHoldState::Asleep, false) => MachineHoldState::Waiting,
+        (state, _) => state,
+    };
+    Ok(Some(HeldMachineView {
         name: h.machine.name,
         slot: h.slot,
         ports: h.ports,
-        state: match (h.state, box_asleep) {
-            (MachineHoldState::Asleep, false) => MachineHoldState::Waiting,
-            (state, _) => state,
-        },
+        position: place
+            .filter(|_| state == MachineHoldState::Waiting)
+            .map(|p| p.position),
+        state,
     }))
 }
 

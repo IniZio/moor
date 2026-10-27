@@ -37,9 +37,16 @@ pub enum MachineEvent {
     },
     /// The Box woke but every slot on its machine is taken; it runs without it until one frees.
     MachineWaiting {
-        /// The machine's name.
+        /// The machine's name, or the labels wanted.
         name: String,
+        /// Where the Box stands among the user's waiting Boxes, counting from 1.
+        position: u32,
         /// Why there is no slot.
+        reason: String,
+    },
+    /// A claim was turned down and holds nothing.
+    MachineRefused {
+        /// Why no machine was given.
         reason: String,
     },
 }
@@ -54,6 +61,7 @@ impl MachineEvent {
             Self::MachineForwardFailed { .. } => "machine_forward_failed",
             Self::MachineDetached { .. } => "machine_detached",
             Self::MachineWaiting { .. } => "machine_waiting",
+            Self::MachineRefused { .. } => "machine_refused",
         }
     }
 }

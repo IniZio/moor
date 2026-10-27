@@ -19,8 +19,6 @@ pub(super) struct MachineSlot {
     link: Option<MachineLink>,
     /// The last open failed and was reported; set back when an open succeeds.
     failing: bool,
-    /// The wake found no free slot and said so; set back when the Box takes one or sleeps.
-    waiting: bool,
     /// The machine and ports the link was opened for.
     opened: Option<(String, Vec<u16>)>,
 }
@@ -106,20 +104,29 @@ impl Running<'_> {
         }
     }
 
-    /// Grants the Box's want, an asleep claim wanted again first, saying once per wait when no
-    /// slot fits.
+    /// Grants the Box's want, an asleep claim wanted again first, saying so when no
+    /// slot fits and its place in line changed.
     fn grant_machine(&self) {
         let event = match self.deps.store.grant_machine(self.box_id) {
-            Ok(MachineWake::Nothing) => return,
-            Ok(MachineWake::Woke) => {
-                self.machine.borrow_mut().waiting = false;
-                return;
-            }
-            Ok(MachineWake::Waiting { name, reason }) => {
-                if std::mem::replace(&mut self.machine.borrow_mut().waiting, true) {
+            Ok(MachineWake::Nothing | MachineWake::Woke) => return,
+            Ok(MachineWake::Waiting {
+                name,
+                position,
+                reason,
+            }) => {
+                if self
+                    .deps
+                    .store
+                    .waiting_said(self.box_id, position)
+                    .unwrap_or(false)
+                {
                     return;
                 }
-                MachineEvent::MachineWaiting { name, reason }
+                MachineEvent::MachineWaiting {
+                    name,
+                    position,
+                    reason,
+                }
             }
             Err(err) => {
                 say(

@@ -8,7 +8,7 @@ use moor_core::domain::event::{Event, MachineEvent};
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::BoxId;
-use rusqlite::{params, Connection, Transaction, TransactionBehavior};
+use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 
 use super::{claim_in, held_in, machines_in, put_in, Claim};
 use crate::store::apply::insert_event;
@@ -57,6 +57,8 @@ pub(crate) enum MachineWake {
     Waiting {
         /// The machine's name, or the labels wanted.
         name: String,
+        /// Where the Box stands among the user's wants, counting from 1.
+        position: u32,
         /// Why there is no slot.
         reason: String,
     },
@@ -116,13 +118,89 @@ impl Store {
                     ));
                 };
                 let name = machine.unwrap_or_else(|| labels.join(", "));
-                MachineWake::Waiting { name, reason }
+                let position = u32::from(position_in(&tx, id, claim.user)?);
+                MachineWake::Waiting {
+                    name,
+                    position,
+                    reason,
+                }
             }
         };
         tx.commit()?;
         drop(conn);
         Ok(wake)
     }
+
+    /// Whether `id`'s newest machine event already says it waits at `position`, so a repeat poll
+    /// or tick has nothing new to record.
+    ///
+    /// # Errors
+    /// A store read failed.
+    pub(crate) fn waiting_said(&self, id: BoxId, position: u32) -> Result<bool, StoreError> {
+        said_waiting(&self.reader()?, id, position)
+    }
+
+    /// The place in line of `id`'s want, if it waits for a slot.
+    ///
+    /// # Errors
+    /// A store read failed.
+    pub(crate) fn wait_place(&self, id: BoxId) -> Result<Option<WaitPlace>, StoreError> {
+        let conn = self.reader()?;
+        let Some(claim) = claim_in(&conn, id)? else {
+            return Ok(None);
+        };
+        let position = u32::from(position_in(&conn, id, claim.user)?);
+        let ClaimState::Wanted {
+            labels, machine, ..
+        } = claim.state
+        else {
+            return Ok(None);
+        };
+        Ok(Some(WaitPlace {
+            name: machine.unwrap_or_else(|| labels.join(", ")),
+            ports: claim.ports,
+            position,
+        }))
+    }
+}
+
+/// Where a waiting Box stands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WaitPlace {
+    /// The machine's name, or the labels wanted.
+    pub(crate) name: String,
+    /// The ports asked for.
+    pub(crate) ports: Vec<u16>,
+    /// The place in line, counting from 1.
+    pub(crate) position: u32,
+}
+
+/// Whether the newest machine event of `id` is a `machine_waiting` at `position`.
+fn said_waiting(conn: &Connection, id: BoxId, position: u32) -> Result<bool, StoreError> {
+    let last: Option<(String, String)> = conn
+        .query_row(
+            "SELECT kind, payload FROM events WHERE box = ? AND substr(kind, 1, 8) = 'machine_' \
+             ORDER BY id DESC LIMIT 1",
+            [id.get()],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let Some((kind, payload)) = last else {
+        return Ok(false);
+    };
+    let payload: serde_json::Value = serde_json::from_str(&payload)
+        .map_err(|e| StoreError::Corrupt(format!("events payload: {e}")))?;
+    Ok(kind == "machine_waiting" && payload.get("position") == Some(&serde_json::json!(position)))
+}
+
+/// Where `id`'s want stands among `user`'s, counting from 1.
+fn position_in(conn: &Connection, id: BoxId, user: UserId) -> Result<u16, StoreError> {
+    let wants = wants_in(conn, user)?;
+    let place = wants
+        .iter()
+        .position(|(w, _)| *w == id)
+        .map_or(0, |p| p + 1);
+    Ok(u16::try_from(place).unwrap_or(u16::MAX))
 }
 
 /// Drops `user`'s expired wants, recording `machine_left_out`, then gives each remaining want,

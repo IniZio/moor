@@ -46,6 +46,7 @@ fn detail_shows_the_held_machine_and_a_box_without_one_shows_none() {
         slot: 1,
         ports: vec![8091, 8095],
         state: MachineHoldState::Held,
+        position: None,
     };
     assert_eq!(held("b"), Some(slot_one));
     assert_eq!(held("c"), None);

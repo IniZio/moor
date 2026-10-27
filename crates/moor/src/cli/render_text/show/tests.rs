@@ -194,3 +194,27 @@ fn detail_names_the_held_machine_its_slot_and_ports() {
         "{out}"
     );
 }
+
+#[test]
+fn detail_says_where_a_waiting_machine_claim_stands_in_line() {
+    for (n, line) in [
+        (1, "1st"),
+        (2, "2nd"),
+        (3, "3rd"),
+        (4, "4th"),
+        (11, "11th"),
+        (22, "22nd"),
+    ] {
+        let mut t = row("alpha", true);
+        let held =
+            json!({"name": "mini", "slot": 0, "ports": [], "state": "waiting", "position": n});
+        t.as_object_mut()
+            .unwrap()
+            .insert("held_machine".into(), held);
+        let out = show(json!({"box": t}));
+        assert!(
+            out.contains(&format!("machine:  mini waiting, {line} in line\n")),
+            "{out}"
+        );
+    }
+}
