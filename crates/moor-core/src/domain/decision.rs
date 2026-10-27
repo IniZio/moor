@@ -28,8 +28,8 @@ pub enum Field<T> {
 pub struct Fields {
     /// Issue reference.
     pub issue: Field<String>,
-    /// Box goal.
-    pub goal: Field<String>,
+    /// Box prompt.
+    pub prompt: Field<String>,
     /// Base ref.
     pub base: Field<String>,
     /// Branch name.

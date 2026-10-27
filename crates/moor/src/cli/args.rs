@@ -197,9 +197,9 @@ struct StartArgs {
     /// Box name.
     #[arg(value_parser = box_name)]
     name: BoxName,
-    /// Goal for the agent.
+    /// Prompt for the agent.
     #[arg(long)]
-    goal: Option<String>,
+    prompt: Option<String>,
     /// Issue reference.
     #[arg(long)]
     issue: Option<String>,
@@ -215,9 +215,6 @@ struct StartArgs {
     /// Do not launch an agent.
     #[arg(long)]
     no_agent: bool,
-    /// Launch the agent with no first prompt.
-    #[arg(long, conflicts_with = "no_agent")]
-    hold: bool,
     /// Resume the agent's stored session.
     #[arg(long)]
     resume: bool,
@@ -230,13 +227,12 @@ impl From<StartArgs> for StartReq {
     fn from(a: StartArgs) -> Self {
         Self {
             name: a.name,
-            goal: a.goal,
+            prompt: a.prompt,
             issue: a.issue,
             base: a.base,
             repo: a.repo,
             model: a.model,
             no_agent: a.no_agent,
-            hold: a.hold,
             resume: a.resume,
             parent: a.parent.map(SessionId::new),
             identity: None,

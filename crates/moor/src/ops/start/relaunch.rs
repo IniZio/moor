@@ -31,10 +31,9 @@ pub(super) enum Ended {
     Exited(i32),
 }
 
-/// Launches, or relaunches, the agent of an attached Box when `req` gives a goal, `--hold` or
-/// `--resume`.
+/// Launches, or relaunches, the agent of an attached Box unless `req` gives `--no-agent`.
 ///
-/// A start with neither goal nor issue is held, so it never runs the stored goal again on its own.
+/// A start without a prompt never sends the stored prompt again on its own.
 ///
 /// # Errors
 /// As [`launch_asked`].
@@ -83,7 +82,7 @@ fn launch_asked(
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?;
     let Some(old) = store.live_session(id)? else {
         let cfg = settings()?;
-        store_goal(store, req, id)?;
+        store_prompt(store, req, id)?;
         return launch::run(cx, store, req, id, setup_exit, &|| Ok(cfg.clone()));
     };
     let Some(end) = ended(cx, &old) else {
@@ -93,22 +92,21 @@ fn launch_asked(
     relaunch(cx, store, req, (&old, &end), (recreated, None), settings)
 }
 
-/// Whether a start of an open Box asks for its agent: a goal, `--hold` or `--resume`, without
-/// `--no-agent`.
+/// Whether a start of an open Box asks for its agent: any start without `--no-agent`.
 pub(super) const fn asks_for_agent(req: &StartReq) -> bool {
-    !req.no_agent && (req.goal.is_some() || req.hold || req.resume)
+    !req.no_agent
 }
 
 /// Refuses `--resume` for a Box with no stored agent session.
 ///
 /// # Errors
-/// [`ErrorKind::Refused`] when `req` resumes without a goal and `row` holds no session id.
+/// [`ErrorKind::Refused`] when `req` resumes without a prompt and `row` holds no session id.
 pub(super) fn check_resume(req: &StartReq, row: &BoxRow) -> Result<(), CommandError> {
     let stored = row
         .agent_session_id
         .as_deref()
         .is_some_and(|s| !s.is_empty());
-    if req.resume && req.goal.is_none() && !stored {
+    if req.resume && req.prompt.is_none() && !stored {
         return Err(nothing_to_resume());
     }
     Ok(())
@@ -119,10 +117,10 @@ pub(super) fn nothing_to_resume() -> CommandError {
     CommandError::new(ErrorKind::Refused, "no agent session to resume")
 }
 
-/// Handles a start that finds the agent live: warns of a goal it cannot take, and with
+/// Handles a start that finds the agent live: warns of a prompt it cannot take, and with
 /// `--resume` registers the session with the multiplexer again.
 fn on_live(cx: &Cx, store: &Store, req: &StartReq, row: &BoxRow, session: &SessionRow) {
-    warn_goal_ignored(cx, req, &row.name);
+    warn_prompt_ignored(cx, req, &row.name);
     let (true, Some(pane)) = (req.resume, session.pane.as_deref()) else {
         return;
     };
@@ -142,13 +140,13 @@ fn on_live(cx: &Cx, store: &Store, req: &StartReq, row: &BoxRow, session: &Sessi
     }
 }
 
-/// Stores a given goal on the Box, replacing any it holds, so the launch brief carries it.
-fn store_goal(store: &Store, req: &StartReq, id: BoxId) -> Result<(), CommandError> {
-    let Some(g) = &req.goal else {
+/// Stores a given prompt on the Box, replacing any it holds, so the launch sends it.
+fn store_prompt(store: &Store, req: &StartReq, id: BoxId) -> Result<(), CommandError> {
+    let Some(g) = &req.prompt else {
         return Ok(());
     };
     let set = Fields {
-        goal: Field::Set(g.clone()),
+        prompt: Field::Set(g.clone()),
         ..Fields::default()
     };
     store.apply(Decision::new(id).set(set))?;
@@ -157,8 +155,8 @@ fn store_goal(store: &Store, req: &StartReq, id: BoxId) -> Result<(), CommandErr
 
 /// Replaces the ended session `old` with a new one.
 ///
-/// A given goal replaces the Box's goal and starts a fresh brief. Without one the agent resumes
-/// its stored session, else starts fresh, with no prompt when held. The old tab stays.
+/// A given prompt replaces the Box's prompt and starts a fresh agent on it. Without one the agent
+/// resumes its stored session, else starts fresh waiting for a prompt. The old tab stays.
 pub(super) fn relaunch(
     cx: &Cx,
     store: &Store,
@@ -168,28 +166,24 @@ pub(super) fn relaunch(
     settings: &dyn Fn() -> Result<BoxSettings, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
     let id = old.box_id;
-    let mut row = reread(store, id)?;
-    let resume = match &req.goal {
+    let row = reread(store, id)?;
+    let resume = match &req.prompt {
         Some(_) => None,
         None => row.agent_session_id.clone().filter(|s| !s.is_empty()),
     };
-    let goal = req.goal.clone().or_else(|| row.goal.clone());
-    if goal.is_none() && resume.is_none() && !req.hold {
-        return Ok(AgentLaunchView::default());
-    }
-    row.goal.clone_from(&goal);
     let Some(mut launch) = launch::launch_req(cx, &row, None) else {
         return Ok(AgentLaunchView::default());
     };
     let cfg = settings()?;
     launch.resume = resume;
-    if req.hold {
-        launch.prompt = LaunchPrompt::None;
-    }
+    launch.prompt = req
+        .prompt
+        .clone()
+        .map_or(LaunchPrompt::None, LaunchPrompt::Text);
     launch.model = cfg.model.clone().map(|m| m.value);
-    if let Some(g) = &req.goal {
+    if let Some(g) = &req.prompt {
         let set = Fields {
-            goal: Field::Set(g.clone()),
+            prompt: Field::Set(g.clone()),
             ..Fields::default()
         };
         store.apply(Decision::new(id).set(set))?;
@@ -212,7 +206,7 @@ pub(super) fn relaunch(
     store.start_session(next.id)?;
     let view = launch::begin(cx, store, &row, &launch, &cfg)?;
     if view.launched {
-        record_relaunch(store, id, old.pane.clone(), goal, cause)?;
+        record_relaunch(store, id, old.pane.clone(), req.prompt.clone(), cause)?;
     }
     Ok(view)
 }
@@ -222,7 +216,7 @@ pub(super) fn record_relaunch(
     store: &Store,
     id: BoxId,
     old_pane: Option<String>,
-    goal: Option<String>,
+    prompt: Option<String>,
     cause: Option<&str>,
 ) -> Result<(), CommandError> {
     let new_pane = store.live_session(id)?.and_then(|s| s.pane);
@@ -230,7 +224,7 @@ pub(super) fn record_relaunch(
     let event = ExtraEvent::Relaunched {
         old_pane,
         new_pane,
-        goal,
+        prompt,
         cause,
     };
     store.apply(Decision::new(id).event(event))?;
@@ -247,13 +241,13 @@ pub(super) fn ended(cx: &Cx, session: &SessionRow) -> Option<Ended> {
     }
 }
 
-/// Warns that a given goal does not reach a live agent.
-fn warn_goal_ignored(cx: &Cx, req: &StartReq, name: &moor_core::BoxName) {
-    if req.goal.is_some() {
+/// Warns that a given prompt does not reach a live agent.
+fn warn_prompt_ignored(cx: &Cx, req: &StartReq, name: &moor_core::BoxName) {
+    if req.prompt.is_some() {
         cx.warn(Warning {
-            code: "goal_ignored".to_owned(),
+            code: "prompt_ignored".to_owned(),
             message: format!(
-                "--goal ignored: the agent for {} is live; use moor steer",
+                "--prompt ignored: the agent for {} is live; use moor steer",
                 name.as_str()
             ),
         });

@@ -45,7 +45,8 @@ impl Scratch {
             workdir: BoxPath::under(root, "work").unwrap(),
             proxy: Some(self.proxy_addr()),
             home: BoxPath::under(root, "home").unwrap(),
-            prompt: LaunchPrompt::Brief,
+            prompt: LaunchPrompt::None,
+            instructions: BoxPath::under("/w", ".moor/brief.md").unwrap(),
         }
     }
 
@@ -70,7 +71,8 @@ impl Scratch {
             workdir: BoxPath::under(root, "work").unwrap(),
             proxy: None,
             home: BoxPath::under(root, "home").unwrap(),
-            prompt: LaunchPrompt::Brief,
+            prompt: LaunchPrompt::None,
+            instructions: BoxPath::under("/w", ".moor/brief.md").unwrap(),
         };
         let setup = |step: &str| BoxSetup {
             files: Vec::new(),

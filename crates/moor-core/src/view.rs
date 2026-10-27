@@ -130,8 +130,8 @@ pub struct BoxView {
     pub repo: Option<crate::name::ForgeRepo>,
     /// Issue reference.
     pub issue: Option<String>,
-    /// Goal text.
-    pub goal: Option<String>,
+    /// Prompt text.
+    pub prompt: Option<String>,
     /// Box lifecycle state.
     pub lifecycle: BoxLifecycle,
     /// Agent session state.

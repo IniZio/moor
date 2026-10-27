@@ -82,7 +82,7 @@ fn the_proxy_spec_names_the_box_user_and_the_vault_key_path() {
     run(
         &w.cx,
         &StartReq {
-            goal: Some("ship it".into()),
+            prompt: Some("ship it".into()),
             ..req("demo")
         },
     )

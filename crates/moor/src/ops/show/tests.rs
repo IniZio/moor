@@ -517,7 +517,7 @@ fn a_box_freshly_started_is_not_idled_by_the_next_list() {
     let cx = start_cx(dir.path(), &driver);
     let started = crate::ops::start::run(
         &cx,
-        &serde_json::from_str::<StartReq>(r#"{"name": "demo", "goal": "ship it"}"#).unwrap(),
+        &serde_json::from_str::<StartReq>(r#"{"name": "demo", "prompt": "ship it"}"#).unwrap(),
     )
     .unwrap();
     let s = &started.boxed;

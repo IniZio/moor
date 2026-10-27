@@ -16,9 +16,9 @@ use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 
-fn goal_req(name: &str) -> StartReq {
+fn prompt_req(name: &str) -> StartReq {
     StartReq {
-        goal: Some("ship it".into()),
+        prompt: Some("ship it".into()),
         ..req(name)
     }
 }
@@ -30,7 +30,7 @@ fn failed_launch(config: UserConfig) -> (World, Arc<FakeClock>, BoxId) {
     let mut w = world_with(FakeDriver::new(), config);
     w.cx = w.cx.with_engine(engine).with_clock(clock.clone());
     w.surface.push_pane_obs("p-1", Ok(ca_stopped()));
-    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let v = run(&w.cx, &prompt_req("demo")).unwrap();
     assert!(!v.agent.launched);
     (w, clock, BoxId::new(v.boxed.id))
 }

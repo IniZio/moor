@@ -225,7 +225,7 @@ fn idle_since_is_set_on_quiet_and_cleared_on_busy() {
     clock.sleep(Duration::from_millis(40));
     store
         .apply(Decision::new(id).set(Fields {
-            goal: Field::Set("g".into()),
+            prompt: Field::Set("g".into()),
             ..Fields::default()
         }))
         .unwrap();

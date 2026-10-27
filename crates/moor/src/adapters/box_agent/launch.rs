@@ -76,6 +76,8 @@ pub(super) fn launch(
         }),
         home,
         prompt: req.prompt.clone(),
+        instructions: BoxPath::under(req.workdir.as_str(), BRIEF_FILE)
+            .map_err(|e| failed(fail("brief", &e)))?,
     };
     let (cred, tmp) = dirs_in(&ctx.home, req).map_err(failed)?;
     let launch = Launch {

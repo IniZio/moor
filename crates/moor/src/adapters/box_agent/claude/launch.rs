@@ -14,8 +14,6 @@ mod preseed;
 #[cfg(test)]
 mod tests;
 
-/// The prompt that points the agent at its brief.
-const PROMPT: &str = "Read and follow .moor/brief.md";
 /// Notification kinds that mean the agent waits on the user.
 const NOTIFY_MATCHER: &str =
     "permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input";
@@ -158,7 +156,6 @@ fs.renameSync(t, p);
 pub(super) fn argv(ctx: &LaunchCtx) -> Vec<String> {
     let mut argv = flags(ctx);
     let prompt = match &ctx.prompt {
-        LaunchPrompt::Brief => PROMPT,
         LaunchPrompt::Text(text) => text,
         LaunchPrompt::None => return argv,
     };
@@ -182,9 +179,12 @@ const fn bypasses_permissions(ctx: &LaunchCtx) -> bool {
     ctx.proxy.is_some()
 }
 
-/// The model and permission flags shared by both argument lists.
+/// The instructions, model and permission flags shared by both argument lists.
 fn flags(ctx: &LaunchCtx) -> Vec<String> {
-    let mut flags = Vec::new();
+    let mut flags = vec![
+        "--append-system-prompt-file".to_owned(),
+        ctx.instructions.as_str().to_owned(),
+    ];
     if let Some(model) = &ctx.model {
         flags.extend(["--model".to_owned(), model.clone()]);
     }

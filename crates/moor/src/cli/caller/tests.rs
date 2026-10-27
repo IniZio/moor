@@ -67,7 +67,7 @@ fn a_start_in_a_github_checkout_sends_its_owner_and_name() {
 fn a_start_outside_a_checkout_sends_no_repo() {
     assert_eq!(
         sent(&["start", "demo"], None),
-        json!({"cmd": "start", "name": "demo", "no_agent": false, "hold": false, "resume": false}),
+        json!({"cmd": "start", "name": "demo", "no_agent": false, "resume": false}),
     );
 }
 

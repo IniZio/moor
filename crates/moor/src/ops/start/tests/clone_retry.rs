@@ -32,7 +32,7 @@ fn world_with_setup(
 
 fn start(w: &World) -> Result<moor_core::view::StartView, crate::error::CommandError> {
     let req = StartReq {
-        goal: Some("ship it".into()),
+        prompt: Some("ship it".into()),
         ..start_req()
     };
     run(&w.cx, &req)
@@ -210,7 +210,7 @@ fn the_retry_in_the_kept_box_uses_the_providers_the_box_is_on_not_the_configs() 
     let again = run(
         &later,
         &StartReq {
-            goal: Some("ship it".into()),
+            prompt: Some("ship it".into()),
             ..start_req()
         },
     )

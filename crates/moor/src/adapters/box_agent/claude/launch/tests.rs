@@ -35,8 +35,15 @@ fn ctx(dir: &Path) -> LaunchCtx {
         workdir: BoxPath::under(root, "work").unwrap(),
         proxy: None,
         home: BoxPath::under(root, "home").unwrap(),
-        prompt: LaunchPrompt::Brief,
+        prompt: LaunchPrompt::None,
+        instructions: BoxPath::under("/w", ".moor/brief.md").unwrap(),
     }
+}
+
+const BRIEF: [&str; 2] = ["--append-system-prompt-file", "/w/.moor/brief.md"];
+
+fn with_brief(rest: &[&str]) -> Vec<String> {
+    strings(&[&BRIEF[..], rest].concat())
 }
 
 fn proxied(dir: &Path) -> LaunchCtx {
@@ -140,12 +147,9 @@ fn read_json(path: &str) -> Value {
 }
 
 #[test]
-fn argv_is_the_brief_prompt_alone_by_default() {
+fn argv_is_the_brief_flag_alone_by_default() {
     let t = TempDir::new().unwrap();
-    assert_eq!(
-        Claude.argv(&ctx(t.path())),
-        strings(&["--", "Read and follow .moor/brief.md"])
-    );
+    assert_eq!(Claude.argv(&ctx(t.path())), with_brief(&[]));
 }
 
 #[test]
@@ -154,11 +158,12 @@ fn argv_names_the_model_before_the_prompt() {
     let c = LaunchCtx {
         mcp: std::collections::BTreeMap::new(),
         model: Some("opus".into()),
+        prompt: LaunchPrompt::Text("ship it".into()),
         ..ctx(t.path())
     };
     assert_eq!(
         Claude.argv(&c),
-        strings(&["--model", "opus", "--", "Read and follow .moor/brief.md"])
+        with_brief(&["--model", "opus", "--", "ship it"])
     );
 }
 
@@ -167,12 +172,7 @@ fn argv_asks_for_bypass_only_behind_a_proxy() {
     let t = TempDir::new().unwrap();
     assert_eq!(
         Claude.argv(&proxied(t.path())),
-        strings(&[
-            "--permission-mode",
-            "bypassPermissions",
-            "--",
-            "Read and follow .moor/brief.md"
-        ])
+        with_brief(&["--permission-mode", "bypassPermissions"])
     );
     let argv = Claude.argv(&ctx(t.path())).join(" ");
     assert!(!argv.contains("permission") && !argv.contains("--settings"));
@@ -200,7 +200,7 @@ fn env_is_empty_without_a_proxy() {
 }
 
 #[test]
-fn resume_argv_keeps_the_flags_and_drops_the_prompt() {
+fn resume_argv_keeps_the_brief_and_flags_and_drops_the_prompt() {
     let t = TempDir::new().unwrap();
     let c = LaunchCtx {
         mcp: std::collections::BTreeMap::new(),
@@ -212,6 +212,8 @@ fn resume_argv_keeps_the_flags_and_drops_the_prompt() {
         strings(&[
             "--resume",
             "s-1",
+            "--append-system-prompt-file",
+            "/w/.moor/brief.md",
             "--model",
             "opus",
             "--permission-mode",

@@ -64,7 +64,7 @@ pub(crate) use users::mcp_oauth::{GrantRow, SignIn};
 /// How long a connection waits on a lock before `SQLITE_BUSY`.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// Column list shared by the box reads; session columns come from the current session.
-const BOX_SELECT: &str = "SELECT b.id, b.name, b.repo, b.issue, b.goal, b.base, b.branch, \
+const BOX_SELECT: &str = "SELECT b.id, b.name, b.repo, b.issue, b.prompt, b.base, b.branch, \
     s.workspace_id, s.agent_session_id, b.state, b.state_reason, b.intent_kind, b.intent_pid, b.intent_run, \
     b.intent_at, b.setup_failed_at, b.created_at, b.updated_at, b.provider, b.handle, b.driver_state, \
     b.attempted_handle, b.workdir, b.egress, b.sleep_reason, b.driver_updated_at, b.idle_since, b.launch_failure, \
@@ -107,8 +107,8 @@ pub(crate) struct BoxRow {
     pub(crate) user: Option<UserId>,
     /// Issue reference.
     pub(crate) issue: Option<String>,
-    /// Goal text.
-    pub(crate) goal: Option<String>,
+    /// Prompt text.
+    pub(crate) prompt: Option<String>,
     /// Base ref.
     pub(crate) base: Option<String>,
     /// Branch name.
@@ -308,7 +308,7 @@ fn box_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
         repo: repo_from_row(row)?,
         user: row.get::<_, Option<i64>>(29)?.map(UserId::new),
         issue: row.get(3)?,
-        goal: row.get(4)?,
+        prompt: row.get(4)?,
         base: row.get(5)?,
         branch: row.get(6)?,
         workspace_id: row.get(7)?,

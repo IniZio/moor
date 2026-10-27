@@ -50,7 +50,7 @@ fn start_with_all_flags() {
     let r = req(&[
         "start",
         "t1",
-        "--goal",
+        "--prompt",
         "g",
         "--issue",
         "I-1",
@@ -65,31 +65,17 @@ fn start_with_all_flags() {
         r,
         Request::Start(StartReq {
             name: n("t1"),
-            goal: Some("g".into()),
+            prompt: Some("g".into()),
             issue: Some("I-1".into()),
             base: Some("main".into()),
             model: Some("haiku".into()),
             no_agent: true,
-            hold: false,
             resume: true,
             repo: None,
             parent: None,
             identity: None,
         })
     );
-}
-
-#[test]
-fn start_hold_flag() {
-    assert!(matches!(
-        req(&["start", "t", "--hold"]),
-        Request::Start(s) if s.hold
-    ));
-    assert!(matches!(
-        req(&["start", "t"]),
-        Request::Start(s) if !s.hold
-    ));
-    assert!(run(&["start", "t", "--hold", "--no-agent"]).is_err());
 }
 
 #[test]

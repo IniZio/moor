@@ -10,7 +10,7 @@ fn sample_box() -> BoxView {
         name: "t".into(),
         repo: Some(crate::seam::forge::ForgeRepo::new("o", "r")),
         issue: None,
-        goal: Some("g".into()),
+        prompt: Some("g".into()),
         lifecycle: BoxLifecycle::Ready,
         session_state: SessionState::Working,
         state_reason: None,
@@ -41,7 +41,7 @@ fn sample_box() -> BoxView {
 
 fn box_json() -> Value {
     json!({
-        "id": 7, "name": "t", "repo": "o/r", "issue": null, "goal": "g",
+        "id": 7, "name": "t", "repo": "o/r", "issue": null, "prompt": "g",
         "lifecycle": "ready", "session_state": "working", "state_reason": null, "base": null, "branch": "b",
         "workspace": null,
         "driver": {"state": "ready", "provider": "p", "handle": "h",

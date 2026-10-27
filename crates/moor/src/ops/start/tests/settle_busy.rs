@@ -14,11 +14,11 @@ use crate::store::BoxRow;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 
-/// A Working Box with a goal, a ready machine and no Session.
+/// A Working Box with a prompt, a ready machine and no Session.
 fn working_without_session() -> (World, BoxId) {
     let w = world(FakeDriver::new());
     let start = StartReq {
-        goal: Some("ship it".into()),
+        prompt: Some("ship it".into()),
         no_agent: true,
         ..req("demo")
     };
@@ -114,7 +114,7 @@ fn a_start_with_settles_running_during_setup_still_launches() {
         settle_all(&other, other.store().unwrap(), &|| false).unwrap();
     });
     let start = StartReq {
-        goal: Some("ship it".into()),
+        prompt: Some("ship it".into()),
         ..repo_req("demo")
     };
     let v = run(&w.cx, &start).unwrap();

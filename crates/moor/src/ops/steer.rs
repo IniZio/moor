@@ -248,7 +248,7 @@ fn asleep(row: &BoxRow) -> bool {
 
 /// The command that starts the agent again.
 fn relaunch_hint(name: &str) -> String {
-    format!("`moor start {name} --goal \"...\"`")
+    format!("`moor start {name} --prompt \"...\"`")
 }
 
 /// The agent's state now; none when the Box has no agent to read.

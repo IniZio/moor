@@ -31,7 +31,6 @@ fn req() -> LaunchReq {
         workspace: WorkspaceRef::new("ws-1"),
         box_name: BoxName::parse_allow_bare("web/fix-bug").unwrap(),
         branch: String::new(),
-        goal: None,
         resume: None,
         issue: None,
         setup_exit: None,
@@ -41,7 +40,7 @@ fn req() -> LaunchReq {
         nonce: "abc".to_owned(),
         proxy: None,
         strip_env: Vec::new(),
-        prompt: LaunchPrompt::Brief,
+        prompt: LaunchPrompt::None,
     }
 }
 

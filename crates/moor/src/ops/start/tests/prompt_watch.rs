@@ -16,9 +16,9 @@ const SESSION: &str = "moor-1";
 /// Pane reads of a watch that runs its whole window.
 const FULL_WINDOW: usize = 17;
 
-fn goal_req(name: &str) -> StartReq {
+fn prompt_req(name: &str) -> StartReq {
     StartReq {
-        goal: Some("ship it".into()),
+        prompt: Some("ship it".into()),
         ..req(name)
     }
 }
@@ -84,7 +84,7 @@ fn a_hook_report_after_the_launch_marker_ends_the_watch_early() {
         .then_probes(SESSION, marker())
         .probes(SESSION, hook(HookKind::Busy));
     let w = watching(engine, "working");
-    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let v = run(&w.cx, &prompt_req("demo")).unwrap();
     assert!(v.agent.launched);
     assert_eq!(pane_reads(&w), 3);
 }
@@ -95,7 +95,7 @@ fn any_report_but_the_launch_marker_counts_as_past_startup() {
         .then_probes(SESSION, marker())
         .probes(SESSION, hook(HookKind::Idle));
     let w = watching(engine, "working");
-    run(&w.cx, &goal_req("demo")).unwrap();
+    run(&w.cx, &prompt_req("demo")).unwrap();
     assert_eq!(pane_reads(&w), 2);
 }
 
@@ -103,7 +103,7 @@ fn any_report_but_the_launch_marker_counts_as_past_startup() {
 fn a_report_never_preceded_by_the_launch_marker_keeps_the_full_window() {
     let engine = quiet().probes(SESSION, hook(HookKind::Busy));
     let w = watching(engine, "working");
-    run(&w.cx, &goal_req("demo")).unwrap();
+    run(&w.cx, &prompt_req("demo")).unwrap();
     assert_eq!(pane_reads(&w), FULL_WINDOW);
 }
 
@@ -111,7 +111,7 @@ fn a_report_never_preceded_by_the_launch_marker_keeps_the_full_window() {
 fn only_the_launch_marker_keeps_the_full_window() {
     let engine = quiet().probes(SESSION, marker());
     let w = watching(engine, "working");
-    run(&w.cx, &goal_req("demo")).unwrap();
+    run(&w.cx, &prompt_req("demo")).unwrap();
     assert_eq!(pane_reads(&w), FULL_WINDOW);
 }
 
@@ -130,7 +130,7 @@ fn a_prompt_on_screen_is_recorded_before_a_report_ends_the_watch() {
             exit_marker: None,
         }),
     );
-    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let blocked =
         w.cx.store()
             .unwrap()
@@ -153,7 +153,7 @@ fn a_stale_marker_then_a_foreign_report_keeps_the_full_window() {
         )
         .probes(SESSION, hook(HookKind::Busy));
     let w = watching(engine, "working");
-    run(&w.cx, &goal_req("demo")).unwrap();
+    run(&w.cx, &prompt_req("demo")).unwrap();
     assert_eq!(pane_reads(&w), FULL_WINDOW);
 }
 
@@ -163,6 +163,6 @@ fn an_agent_that_may_report_during_first_run_keeps_the_full_window() {
         .then_probes(SESSION, marker())
         .probes(SESSION, hook(HookKind::Busy));
     let w = watching(engine, "working");
-    run(&w.cx, &goal_req("demo")).unwrap();
+    run(&w.cx, &prompt_req("demo")).unwrap();
     assert_eq!(pane_reads(&w), FULL_WINDOW);
 }

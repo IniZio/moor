@@ -84,7 +84,6 @@ fn launch_req() -> LaunchReq {
         workspace: WorkspaceRef::new("ws-1"),
         box_name: BoxName::parse_allow_bare("t1").unwrap(),
         branch: "moor/t1".to_owned(),
-        goal: None,
         resume: None,
         issue: None,
         setup_exit: None,
@@ -94,7 +93,7 @@ fn launch_req() -> LaunchReq {
         nonce: "abc123".to_owned(),
         proxy: None,
         strip_env: Vec::new(),
-        prompt: LaunchPrompt::Brief,
+        prompt: LaunchPrompt::None,
     }
 }
 

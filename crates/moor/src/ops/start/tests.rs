@@ -28,8 +28,6 @@ mod clone_timing;
 mod dead_agent;
 mod dotfiles;
 mod exited_start;
-mod goalless;
-mod hold;
 mod identity;
 mod launch_deadline;
 mod launch_skipped;
@@ -41,6 +39,7 @@ mod machine;
 mod others;
 mod parent;
 mod prompt_watch;
+mod promptless;
 mod provider_caps;
 mod provider_unset;
 mod proxy;
@@ -139,12 +138,11 @@ fn on_github(w: World) -> World {
 fn req(name: &str) -> StartReq {
     StartReq {
         name: box_name(name),
-        goal: None,
+        prompt: None,
         issue: None,
         base: None,
         model: None,
         no_agent: false,
-        hold: false,
         resume: false,
         repo: None,
         parent: None,

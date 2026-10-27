@@ -34,10 +34,10 @@ fn first_digest(w: &World, id: BoxId) -> Option<String> {
         .unwrap()
 }
 
-/// A start of `demo` that resumes the stored agent session, or else gives the goal again.
+/// A start of `demo` that resumes the stored agent session, or else gives the prompt again.
 fn asked(resume: bool) -> StartReq {
     StartReq {
-        goal: (!resume).then(|| "ship it".to_owned()),
+        prompt: (!resume).then(|| "ship it".to_owned()),
         resume,
         ..req("demo")
     }
@@ -116,12 +116,12 @@ fn a_resuming_relaunch_skips_the_save_and_makes_no_box_call() {
 }
 
 #[test]
-fn a_relaunch_with_a_new_goal_still_saves_though_a_session_is_stored() {
+fn a_relaunch_with_a_new_prompt_still_saves_though_a_session_is_stored() {
     let (w, engine, id) = with_transcript(FakeEngine::new().transcript_text("abc"));
     set_agent_session(&w, id, "agent-1");
     gone(&w);
     let mut r = req("demo");
-    r.goal = Some("new goal".into());
+    r.prompt = Some("new prompt".into());
     run(&w.cx, &r).unwrap();
     assert_eq!(engine.transcripts().len(), 1);
     assert_eq!(kinds(&w, id), ["transcript_saved"]);

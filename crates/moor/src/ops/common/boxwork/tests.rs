@@ -83,7 +83,7 @@ fn rows(handle: BoxHandle) -> (BoxRow, DriverRow) {
         repo: None,
         user: None,
         issue: None,
-        goal: None,
+        prompt: None,
         base: None,
         branch: None,
         workspace_id: None,

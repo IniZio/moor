@@ -11,7 +11,7 @@ fn relaunched_cause_is_omitted_when_none() {
     let e = Event::Relaunched {
         old_pane: None,
         new_pane: None,
-        goal: None,
+        prompt: None,
         cause: None,
     };
     assert!(e.payload().get("cause").is_none());
@@ -22,7 +22,7 @@ fn relaunched_cause_is_in_payload_when_set() {
     let e = Event::Relaunched {
         old_pane: None,
         new_pane: None,
-        goal: None,
+        prompt: None,
         cause: Some(s("wake")),
     };
     assert_eq!(e.payload().get("cause"), Some(&serde_json::json!("wake")));

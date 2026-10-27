@@ -91,7 +91,7 @@ fn all_events() -> Vec<Event> {
         Event::Relaunched {
             old_pane: Some(s("p-1")),
             new_pane: Some(s("p-2")),
-            goal: Some(s("g")),
+            prompt: Some(s("g")),
             cause: None,
         },
         Event::Checked {

@@ -214,7 +214,7 @@ fn record_relaunches(f: &Fx, n: usize) {
         let event = ExtraEvent::Relaunched {
             old_pane: None,
             new_pane: None,
-            goal: None,
+            prompt: None,
             cause: Some("wake".to_owned()),
         };
         f.cx.store()

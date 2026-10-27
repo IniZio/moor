@@ -14,17 +14,17 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall, FAKE_BOX_PORT, FAKE_EGRESS_PORT};
 
-fn goal_req() -> StartReq {
+fn prompt_req() -> StartReq {
     StartReq {
-        goal: Some("ship it".into()),
+        prompt: Some("ship it".into()),
         ..req("demo")
     }
 }
 
-/// [`goal_req`] for a Box of [`repo`].
-fn goal_repo_req() -> StartReq {
+/// [`prompt_req`] for a Box of [`repo`].
+fn prompt_repo_req() -> StartReq {
     StartReq {
-        goal: Some("ship it".into()),
+        prompt: Some("ship it".into()),
         ..repo_req("demo")
     }
 }
@@ -48,7 +48,7 @@ fn failure_step(w: &World, id: BoxId) -> (String, String, Option<String>) {
 #[test]
 fn the_first_launch_ensures_the_proxy_once_and_hands_the_agent_its_address() {
     let (w, engine, fake) = host_world(FakeProxyHost::new());
-    let v = run(&w.cx, &goal_req()).unwrap();
+    let v = run(&w.cx, &prompt_req()).unwrap();
     let id = BoxId::new(v.boxed.id);
     assert_eq!(fake.calls().len(), 1);
     let spec = spec_of(&fake);
@@ -71,9 +71,9 @@ fn a_relaunch_ensures_the_proxy_again() {
     w.cx =
         w.cx.with_engine(engine.clone())
             .with_proxy_host(Arc::new(fake.clone()));
-    run(&w.cx, &goal_req()).unwrap();
+    run(&w.cx, &prompt_req()).unwrap();
     gone(&w);
-    run(&w.cx, &goal_req()).unwrap();
+    run(&w.cx, &prompt_req()).unwrap();
     let launches = engine.launches();
     assert_eq!(launches.len(), 2);
     let ensures = fake
@@ -90,7 +90,7 @@ fn a_relaunch_ensures_the_proxy_again() {
 fn a_proxy_that_cannot_be_ensured_fails_the_launch_at_the_proxy_step() {
     let fake = FakeProxyHost::new().with_ensure_error(ProxyHostError::Failed("boom\ntail".into()));
     let (w, engine, _) = host_world(fake);
-    let v = run(&w.cx, &goal_req()).unwrap();
+    let v = run(&w.cx, &prompt_req()).unwrap();
     let id = BoxId::new(v.boxed.id);
     assert!(!v.agent.launched);
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
@@ -107,7 +107,7 @@ fn only_the_last_lines_of_a_long_proxy_failure_are_kept() {
     text.extend((1..=25).map(|n| format!("\nline {n}")));
     let fake = FakeProxyHost::new().with_ensure_error(ProxyHostError::Failed(text));
     let (w, _, _) = host_world(fake);
-    let v = run(&w.cx, &goal_req()).unwrap();
+    let v = run(&w.cx, &prompt_req()).unwrap();
     let (_, _, tail) = failure_step(&w, BoxId::new(v.boxed.id));
     let tail = tail.unwrap();
     assert_eq!(tail.lines().count(), TAIL_LINES);
@@ -132,7 +132,7 @@ fn env_of<'a>(env: &'a [(String, String)], key: &str) -> Option<&'a str> {
 fn the_spec_carries_the_box_repo_and_resolved_rules() {
     let (w, engine, fake) = host_world(FakeProxyHost::new());
     script_base_yaml(&w, None);
-    run(&w.cx, &goal_repo_req()).unwrap();
+    run(&w.cx, &prompt_repo_req()).unwrap();
     let spec = spec_of(&fake);
     assert_eq!(spec.box_repo, Some(repo()));
     let names: Vec<&str> = spec.rules.iter().map(|r| r.name.as_str()).collect();
@@ -155,7 +155,7 @@ fn the_spec_carries_the_box_repo_and_resolved_rules() {
 fn rule_names_with_a_repo() -> Vec<String> {
     let (w, _, fake) = host_world(FakeProxyHost::new());
     script_base_yaml(&w, None);
-    run(&w.cx, &goal_repo_req()).unwrap();
+    run(&w.cx, &prompt_repo_req()).unwrap();
     spec_of(&fake).rules.into_iter().map(|r| r.name).collect()
 }
 
@@ -170,7 +170,7 @@ fn a_box_with_a_repo_always_gets_the_upload_rule() {
 #[test]
 fn without_a_repo_only_the_rules_that_need_no_repo_remain() {
     let (w, engine, fake) = host_world(FakeProxyHost::new());
-    run(&w.cx, &goal_req()).unwrap();
+    run(&w.cx, &prompt_req()).unwrap();
     let spec = spec_of(&fake);
     assert_eq!(spec.box_repo, None);
     let names: Vec<&str> = spec.rules.iter().map(|r| r.name.as_str()).collect();
@@ -192,7 +192,7 @@ fn repo_env_launch(yaml: &str) -> (World, Vec<(String, String)>) {
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine.clone());
     script_base_yaml(&w, Some(yaml));
-    run(&w.cx, &goal_repo_req()).unwrap();
+    run(&w.cx, &prompt_repo_req()).unwrap();
     let env = engine
         .launches()
         .first()
@@ -290,7 +290,7 @@ fn the_agent_proxy_sends_only_the_credential_hosts_to_the_egress_tunnel() {
     w.cx =
         w.cx.with_engine(engine.clone())
             .with_proxy_host(Arc::new(FakeProxyHost::new()));
-    run(&w.cx, &goal_req()).unwrap();
+    run(&w.cx, &prompt_req()).unwrap();
     let launches = engine.launches();
     let addr = launches.first().unwrap().proxy.as_ref().unwrap();
     let mut hosts = addr.hosts.clone();

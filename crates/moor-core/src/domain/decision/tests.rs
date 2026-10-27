@@ -45,7 +45,7 @@ fn lifecycle_and_session_builders() {
 #[test]
 fn builder_chains() {
     let f = Fields {
-        goal: Field::Set("g".into()),
+        prompt: Field::Set("g".into()),
         ..Fields::default()
     };
     let d = Decision::new(BoxId::new(1))

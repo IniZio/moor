@@ -27,9 +27,9 @@ fn exit(code: i32) -> ExecOutcome {
     ExecOutcome::Exited { code }
 }
 
-fn goal_req() -> StartReq {
+fn prompt_req() -> StartReq {
     StartReq {
-        goal: Some("ship it".into()),
+        prompt: Some("ship it".into()),
         ..repo_req("demo")
     }
 }
@@ -86,7 +86,7 @@ fn dotfiles_execs(w: &World) -> Vec<(Vec<String>, Deadline)> {
 }
 
 fn started(w: &World) -> StartView {
-    run(&w.cx, &goal_req()).unwrap()
+    run(&w.cx, &prompt_req()).unwrap()
 }
 
 /// The one upload: the scripted tar bytes in a per-run random directory, owner-only.
@@ -226,7 +226,7 @@ fn assert_warned_with_tail(w: &World) {
 #[test]
 fn a_failing_install_does_not_stop_start_and_warns_with_the_log_tail() {
     let (w, engine, _src) = failed_start();
-    let v = run(&w.cx, &goal_req()).unwrap();
+    let v = run(&w.cx, &prompt_req()).unwrap();
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert!(v.dotfiles.ran && !v.dotfiles.ok);
     assert_eq!(engine.launches().len(), 1);
@@ -276,7 +276,7 @@ fn dotfiles_still_run_when_a_setup_line_fails() {
 fn the_host_log_and_its_directory_are_owner_only() {
     use std::os::unix::fs::PermissionsExt;
     let (w, _, _src) = failed_start();
-    run(&w.cx, &goal_req()).unwrap();
+    run(&w.cx, &prompt_req()).unwrap();
     let dir = w.dir.path().join("dotfiles");
     let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode(&dir), 0o700);
@@ -289,7 +289,7 @@ fn a_failed_setup_line_still_fails_setup_when_the_dotfiles_fail_too() {
     let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1)), Ok(exit(1))]);
     let (w, engine) = dotfiles_world("setup: [make-it]\n", Some(src.path()), None, driver);
     log_writer(&w);
-    let v = run(&w.cx, &goal_req()).unwrap();
+    let v = run(&w.cx, &prompt_req()).unwrap();
     assert!(v.setup.ran && !v.setup.ok);
     assert!(v.dotfiles.ran && !v.dotfiles.ok);
     assert_eq!(engine.launches().len(), 1);
@@ -326,7 +326,7 @@ fn dotfiles_fail_when_the_proxy_cannot_start() {
         FakeProxyHost::new().with_ensure_error(ProxyHostError::Failed("boom".into())),
     ));
     let no_repo = StartReq {
-        goal: Some("ship it".into()),
+        prompt: Some("ship it".into()),
         ..req("demo")
     };
     let v = run(&w.cx, &no_repo).unwrap();

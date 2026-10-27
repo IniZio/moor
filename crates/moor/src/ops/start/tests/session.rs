@@ -21,10 +21,10 @@ use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 
-/// A start request for `name` with a goal.
-fn goal_req(name: &str) -> StartReq {
+/// A start request for `name` with a prompt.
+fn prompt_req(name: &str) -> StartReq {
     StartReq {
-        goal: Some("ship it".into()),
+        prompt: Some("ship it".into()),
         ..req(name)
     }
 }
@@ -33,7 +33,7 @@ fn goal_req(name: &str) -> StartReq {
 fn start_records_one_live_session_and_attach_adds_none() {
     let engine = Arc::new(FakeEngine::new());
     let w = with_engine(&engine);
-    let first = run(&w.cx, &goal_req("demo")).unwrap();
+    let first = run(&w.cx, &prompt_req("demo")).unwrap();
     let id = BoxId::new(first.boxed.id);
     let store = w.cx.store().unwrap();
     let sessions = || -> i64 {
@@ -49,13 +49,13 @@ fn start_records_one_live_session_and_attach_adds_none() {
     };
     assert_eq!((first.boxed.lifecycle, first.boxed.session_state), WORKING);
     assert_eq!(sessions(), 1);
-    run(&w.cx, &goal_req("demo")).unwrap();
+    run(&w.cx, &prompt_req("demo")).unwrap();
     assert_eq!(sessions(), 1);
     assert_eq!(engine.launches().len(), 1);
 }
 
 #[test]
-fn start_without_a_goal_records_a_session() {
+fn start_without_a_prompt_records_a_session() {
     let w = world(FakeDriver::new());
     let first = run(&w.cx, &req("demo")).unwrap();
     let id = BoxId::new(first.boxed.id);
@@ -97,7 +97,7 @@ fn launch_error(step: &'static str, message: &str) -> EngineError {
 fn a_launch_records_a_session_with_its_pane() {
     let engine = Arc::new(FakeEngine::new());
     let w = with_engine(&engine);
-    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let id = BoxId::new(v.boxed.id);
     assert!(v.agent.launched);
     let s = w.cx.store().unwrap().live_session(id).unwrap().unwrap();
@@ -105,7 +105,7 @@ fn a_launch_records_a_session_with_its_pane() {
     assert_eq!(v.agent.session.as_deref(), Some(s.session_ref.as_str()));
     let launches = engine.launches();
     let l = launches.first().unwrap();
-    assert_eq!(l.goal.as_deref(), Some("ship it"));
+    assert_eq!(l.prompt.text(), Some("ship it"));
     assert_eq!(l.box_name.as_str(), "demo");
     assert_eq!(l.setup_exit, None);
 }
@@ -116,7 +116,7 @@ fn a_failed_launch_records_no_session_and_leaves_the_box_working() {
         FakeEngine::new().launch_result(Err(launch_error("pane", "no tab\nline one\nline two"))),
     );
     let w = with_engine(&engine);
-    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
@@ -136,7 +136,7 @@ fn a_failed_launch_records_no_session_and_leaves_the_box_working() {
 fn a_launch_failure_shows_as_failed_and_is_not_idled_by_the_next_list() {
     let engine = Arc::new(FakeEngine::new().launch_result(Err(launch_error("pane", "no tab"))));
     let w = with_engine(&engine);
-    run(&w.cx, &goal_req("demo")).unwrap();
+    run(&w.cx, &prompt_req("demo")).unwrap();
     let req = ShowReq {
         target: None,
         events: None,
@@ -158,7 +158,7 @@ fn a_launch_failure_shows_as_failed_and_is_not_idled_by_the_next_list() {
 fn wait_fails_on_a_launch_failure() {
     let engine = Arc::new(FakeEngine::new().launch_result(Err(launch_error("pane", "no tab"))));
     let w = with_engine(&engine);
-    run(&w.cx, &goal_req("demo")).unwrap();
+    run(&w.cx, &prompt_req("demo")).unwrap();
     let wait = WaitReq {
         box_name: BoxName::parse_allow_bare("demo").unwrap(),
         wait_for: Some(WaitFor::Idle),
@@ -176,23 +176,23 @@ fn wait_fails_on_a_launch_failure() {
 fn starting_again_launches_once_and_clears_the_failure() {
     let engine = Arc::new(FakeEngine::new().launch_result(Err(launch_error("pane", "no tab"))));
     let w = with_engine(&engine);
-    let first = run(&w.cx, &goal_req("demo")).unwrap();
+    let first = run(&w.cx, &prompt_req("demo")).unwrap();
     let id = BoxId::new(first.boxed.id);
-    let again = run(&w.cx, &goal_req("demo")).unwrap();
+    let again = run(&w.cx, &prompt_req("demo")).unwrap();
     assert!(again.agent.launched);
     assert!(again.agent.reason.is_none());
     let store = w.cx.store().unwrap();
     assert!(store.box_row(id).unwrap().unwrap().launch_failure.is_none());
     assert!(store.live_session(id).unwrap().is_some());
-    run(&w.cx, &goal_req("demo")).unwrap();
+    run(&w.cx, &prompt_req("demo")).unwrap();
     assert_eq!(engine.launches().len(), 2);
 }
 
 #[test]
-fn restarting_an_idle_box_with_a_goal_and_no_session_wakes_and_launches_once() {
+fn restarting_an_idle_box_with_a_prompt_and_no_session_wakes_and_launches_once() {
     let engine = Arc::new(FakeEngine::new());
     let w = with_engine(&engine);
-    let first = run(&w.cx, &goal_req("demo")).unwrap();
+    let first = run(&w.cx, &prompt_req("demo")).unwrap();
     let id = BoxId::new(first.boxed.id);
     let store = w.cx.store().unwrap();
     while let Some(live) = store.live_session(id).unwrap() {
@@ -202,7 +202,7 @@ fn restarting_an_idle_box_with_a_goal_and_no_session_wakes_and_launches_once() {
         .apply(Decision::new(id).session(SessionInput::AgentQuiet))
         .unwrap();
     assert!(idle(&store.box_row(id).unwrap().unwrap()));
-    let again = run(&w.cx, &goal_req("demo")).unwrap();
+    let again = run(&w.cx, &prompt_req("demo")).unwrap();
     assert_eq!((again.boxed.lifecycle, again.boxed.session_state), WORKING);
     assert!(again.agent.launched);
     assert_eq!(engine.launches().len(), 2);
@@ -211,7 +211,7 @@ fn restarting_an_idle_box_with_a_goal_and_no_session_wakes_and_launches_once() {
 }
 
 #[test]
-fn restarting_an_idle_box_without_a_goal_or_session_wakes_it_and_launches_with_no_prompt() {
+fn restarting_an_idle_box_without_a_prompt_or_session_wakes_it_and_launches_with_no_prompt() {
     let engine = Arc::new(FakeEngine::new());
     let w = with_engine(&engine);
     let first = run(&w.cx, &super::agentless_req("demo")).unwrap();
@@ -236,9 +236,9 @@ fn restarting_an_idle_box_without_a_goal_or_session_wakes_it_and_launches_with_n
 fn rerunning_after_a_failed_launch_launches_once_and_stays_working() {
     let engine = Arc::new(FakeEngine::new().launch_result(Err(launch_error("pane", "no tab"))));
     let w = with_engine(&engine);
-    let first = run(&w.cx, &goal_req("demo")).unwrap();
+    let first = run(&w.cx, &prompt_req("demo")).unwrap();
     let id = BoxId::new(first.boxed.id);
-    let again = run(&w.cx, &goal_req("demo")).unwrap();
+    let again = run(&w.cx, &prompt_req("demo")).unwrap();
     assert_eq!((again.boxed.lifecycle, again.boxed.session_state), WORKING);
     assert!(again.agent.launched);
     assert_eq!(engine.launches().len(), 2);
@@ -253,13 +253,13 @@ fn rerunning_after_a_failed_launch_launches_once_and_stays_working() {
 }
 
 #[test]
-fn no_agent_launches_nothing_with_or_without_a_goal() {
+fn no_agent_launches_nothing_with_or_without_a_prompt() {
     let engine = Arc::new(FakeEngine::new());
     let w = with_engine(&engine);
     let flagged = StartReq {
         no_agent: true,
         resume: false,
-        ..goal_req("a")
+        ..prompt_req("a")
     };
     run(&w.cx, &flagged).unwrap();
     run(&w.cx, &super::agentless_req("b")).unwrap();
@@ -278,7 +278,7 @@ fn a_failed_setup_still_launches_with_its_exit_code() {
     script_base_yaml(&w, Some("setup: [bad]\n"));
     let of_repo = StartReq {
         repo: Some(repo()),
-        ..goal_req("demo")
+        ..prompt_req("demo")
     };
     let v = run(&w.cx, &of_repo).unwrap();
     assert!(!v.setup.ok);
@@ -290,8 +290,8 @@ fn a_failed_setup_still_launches_with_its_exit_code() {
 fn a_launch_failure_stays_in_the_events_after_a_successful_retry() {
     let engine = Arc::new(FakeEngine::new().launch_result(Err(launch_error("pane", "no tab"))));
     let w = with_engine(&engine);
-    let id = BoxId::new(run(&w.cx, &goal_req("demo")).unwrap().boxed.id);
-    run(&w.cx, &goal_req("demo")).unwrap();
+    let id = BoxId::new(run(&w.cx, &prompt_req("demo")).unwrap().boxed.id);
+    run(&w.cx, &prompt_req("demo")).unwrap();
     let kinds: Vec<_> =
         w.cx.store()
             .unwrap()
@@ -312,7 +312,7 @@ fn a_launch_failure_stays_in_the_events_after_a_successful_retry() {
 fn waiting_for_a_run_does_not_return_the_dispatch_failure() {
     let engine = Arc::new(FakeEngine::new().launch_result(Err(launch_error("pane", "no tab"))));
     let w = with_engine(&engine);
-    run(&w.cx, &goal_req("demo")).unwrap();
+    run(&w.cx, &prompt_req("demo")).unwrap();
     let wait = WaitReq {
         box_name: BoxName::parse_allow_bare("demo").unwrap(),
         wait_for: Some(WaitFor::Run),
@@ -364,7 +364,7 @@ fn a_first_run_prompt_in_the_pane_is_recorded_and_warned() {
     let w = prompting();
     w.surface
         .push_pane_obs("p-1", Ok(pane_tail("Do you trust this folder?")));
-    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let events = events_of(&w, BoxId::new(v.boxed.id));
     let blocked = events.iter().find(|(k, _)| k == "agent_prompt_blocked");
     assert_eq!(
@@ -386,7 +386,7 @@ fn a_first_run_prompt_in_the_pane_is_recorded_and_warned() {
 fn no_prompt_within_the_window_records_nothing_and_polls_a_bounded_number_of_times() {
     let w = prompting();
     w.surface.push_pane_obs("p-1", Ok(pane_tail("working")));
-    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let events = events_of(&w, BoxId::new(v.boxed.id));
     assert!(!events.iter().any(|(k, _)| k.starts_with("agent_prompt")));
     assert_eq!(pane_reads(&w), 17);
@@ -398,7 +398,7 @@ fn a_zero_window_reads_the_pane_once() {
     let mut w = prompting();
     w.cx = w.cx.with_prompt_window(Duration::ZERO);
     w.surface.push_pane_obs("p-1", Ok(pane_tail("working")));
-    run(&w.cx, &goal_req("demo")).unwrap();
+    run(&w.cx, &prompt_req("demo")).unwrap();
     assert_eq!(pane_reads(&w), 1);
 }
 
@@ -406,7 +406,7 @@ fn a_zero_window_reads_the_pane_once() {
 fn a_failed_pane_read_records_a_check_failure_and_start_succeeds() {
     let w = prompting();
     w.surface.push_pane_obs("p-1", Err(SurfaceError::Timeout));
-    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let events = events_of(&w, BoxId::new(v.boxed.id));
     let failed = events
         .iter()
@@ -424,7 +424,7 @@ fn a_failed_pane_read_records_a_check_failure_and_start_succeeds() {
 fn a_gone_pane_stops_the_watch_after_one_read() {
     let w = prompting();
     w.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
-    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let events = events_of(&w, BoxId::new(v.boxed.id));
     assert!(!events.iter().any(|(k, _)| k.starts_with("agent_prompt")));
     assert_eq!(pane_reads(&w), 1);
@@ -435,7 +435,7 @@ fn the_watch_matches_only_the_last_forty_pane_lines() {
     let w = prompting();
     let tail = format!("trust this folder\n{}", "x\n".repeat(40));
     w.surface.push_pane_obs("p-1", Ok(pane_tail(&tail)));
-    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let events = events_of(&w, BoxId::new(v.boxed.id));
     assert!(!events.iter().any(|(k, _)| k == "agent_prompt_blocked"));
 }
@@ -445,7 +445,7 @@ fn a_prompt_exactly_forty_lines_from_the_bottom_is_matched() {
     let w = prompting();
     let tail = format!("trust this folder\n{}", "x\n".repeat(39));
     w.surface.push_pane_obs("p-1", Ok(pane_tail(&tail)));
-    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let events = events_of(&w, BoxId::new(v.boxed.id));
     assert!(events.iter().any(|(k, _)| k == "agent_prompt_blocked"));
 }
@@ -460,10 +460,10 @@ fn a_retry_that_launches_after_a_failed_launch_watches_the_new_pane() {
     let w = with_engine(&engine);
     w.surface
         .push_pane_obs("p-1", Ok(pane_tail("Do you trust this folder?")));
-    let first = run(&w.cx, &goal_req("demo")).unwrap();
+    let first = run(&w.cx, &prompt_req("demo")).unwrap();
     assert!(!first.agent.launched);
     assert_eq!(pane_reads(&w), 0);
-    let again = run(&w.cx, &goal_req("demo")).unwrap();
+    let again = run(&w.cx, &prompt_req("demo")).unwrap();
     assert!(again.agent.launched);
     assert_eq!(pane_reads(&w), 1);
     let events = events_of(&w, BoxId::new(again.boxed.id));
@@ -474,9 +474,9 @@ fn a_retry_that_launches_after_a_failed_launch_watches_the_new_pane() {
 fn attaching_to_a_live_session_does_not_watch_its_pane() {
     let w = prompting();
     w.surface.push_pane_obs("p-1", Ok(pane_tail("working")));
-    run(&w.cx, &goal_req("demo")).unwrap();
+    run(&w.cx, &prompt_req("demo")).unwrap();
     let before = pane_reads(&w);
-    let again = run(&w.cx, &goal_req("demo")).unwrap();
+    let again = run(&w.cx, &prompt_req("demo")).unwrap();
     assert!(again.attached);
     assert!(!again.agent.launched);
     // The extra read is the liveness check of the session before the attach; the watch adds none.
@@ -499,7 +499,7 @@ fn the_box_lock_is_free_while_the_pane_is_watched() {
             f.store(false, Ordering::SeqCst);
         }
     });
-    run(&w.cx, &goal_req("demo")).unwrap();
+    run(&w.cx, &prompt_req("demo")).unwrap();
     assert!(seen.load(Ordering::SeqCst));
     assert!(free.load(Ordering::SeqCst));
 }

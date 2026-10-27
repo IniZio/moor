@@ -38,7 +38,8 @@ const TUNNEL_EVENTS: usize = 50;
 /// Starts the agent again after a Box wake when its pane did not survive.
 ///
 /// The caller holds the Box lock. A live agent, or a Box with no live session or not Working, is
-/// left alone. The stored agent session is resumed; a Box with neither one nor a goal stays as is.
+/// left alone. The stored agent session is resumed, else the stored prompt starts a fresh agent; a
+/// Box with neither stays as is.
 /// The new pane is watched as `start` watches it, so an agent that dies at launch, such as one
 /// stopped because the Proxy CA could not be written, is recorded as a launch failure.
 ///
@@ -93,22 +94,25 @@ fn revive(
     cause: &str,
 ) -> Result<AgentLaunchView, CommandError> {
     let id = row.id;
-    if ended_pane.is_none() && !(revivable(row) && reopen::ended_session(store, id, None)?) {
+    if !revivable(row) || (ended_pane.is_none() && !reopen::ended_session(store, id, None)?) {
         return Ok(AgentLaunchView::default());
     }
     check_cap(cx, store, row)?;
     super::wake_idle(store, id)?;
     await_tunnel(cx, store, id);
+    let resumable = row
+        .agent_session_id
+        .as_deref()
+        .is_some_and(|s| !s.is_empty());
     let req = StartReq {
         name: row.name.clone(),
-        goal: None,
+        prompt: (!resumable).then(|| row.prompt.clone()).flatten(),
         issue: None,
         base: None,
         model: None,
         no_agent: false,
         resume: cause == "steer",
         repo: None,
-        hold: false,
         parent: None,
         identity: None,
     };
@@ -117,7 +121,7 @@ fn revive(
         None => {
             let view = launch::run(cx, store, &req, id, None, &settings)?;
             if view.launched && cause == "steer" {
-                record_relaunch(store, id, None, row.goal.clone(), Some(cause))?;
+                record_relaunch(store, id, None, row.prompt.clone(), Some(cause))?;
             }
             view
         }
@@ -168,9 +172,9 @@ fn check_cap(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
     .with_detail(ErrorDetail::RelaunchCapped))
 }
 
-/// Whether `row` holds a goal or an agent session to start again.
+/// Whether `row` holds a prompt or an agent session to start again.
 fn revivable(row: &BoxRow) -> bool {
-    row.goal.is_some()
+    row.prompt.is_some()
         || row
             .agent_session_id
             .as_deref()
