@@ -4,8 +4,9 @@ set -eu
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 state=${HERDR_PLUGIN_STATE_DIR:-${TMPDIR:-/tmp}}
 mkdir -p "$state"
-if [ -f "$state/sync.pid" ] && kill -0 "$(cat "$state/sync.pid")" 2>/dev/null; then
-  exit 0
+old=$(cat "$state/sync.pid" 2>/dev/null || true)
+if [ -n "$old" ] && ps -o args= -p "$old" 2>/dev/null | grep -q 'moor-herdr.* sync --every'; then
+  kill "$old"
 fi
 nohup sh "$here/run.sh" sync --every 5 >>"$state/sync.log" 2>&1 &
 echo $! > "$state/sync.pid"
