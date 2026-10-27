@@ -18,11 +18,13 @@ use moor_core::request::{ActAsReq, Request};
 use moor_core::response::Response;
 use moor_core::user::Identity;
 
+pub use attach::AttachKeys;
 pub use error::ClientError;
 pub use redial::{redial, Attempt, GaveUp, Redial, WallClock, ATTACH_REFUSED_EXIT};
 pub use stream::ByteStream;
 pub use watch::{EventRecord, Watch, WatchItem, WatchStop};
 
+mod attach;
 mod error;
 mod redial;
 mod stream;

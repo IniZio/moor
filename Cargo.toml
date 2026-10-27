@@ -3,6 +3,7 @@ members = [
   "crates/moor",
   "crates/moor-client",
   "crates/moor-core",
+  "crates/moor-herdr",
   "crates/moor-machine-runner",
   "crates/moor-migrate",
   "crates/moor-slack",

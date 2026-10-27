@@ -1,0 +1,24 @@
+id = "moor"
+name = "moor"
+version = "0.1.0"
+min_herdr_version = "0.9.3"
+description = "moor Boxes as herdr workspaces, with each agent's terminal in a pane."
+platforms = ["linux", "macos"]
+
+[[build]]
+command = ["sh", "build.sh"]
+
+[[startup]]
+command = ["sh", "bin/follow.sh"]
+
+[[actions]]
+id = "sync"
+title = "moor: show Boxes now"
+contexts = ["workspace"]
+command = ["sh", "bin/run.sh", "sync"]
+
+[[actions]]
+id = "new"
+title = "moor: new"
+contexts = ["workspace"]
+command = ["sh", "bin/new.sh"]

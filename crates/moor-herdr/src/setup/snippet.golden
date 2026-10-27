@@ -1,0 +1,16 @@
+# moor: set Boxes apart from local worktrees in the sidebar.
+[ui.sidebar.spaces]
+rows = [
+  ["state_icon", { token = "workspace", rules = [{ starts_with = "◈", fg = "#c678dd", bold = true }] }, { token = "$state", fg = "#e5c07b", bold = true }],
+  [{ token = "$env", dim = true, rules = [{ equals = "BOX", fg = "#c678dd", bold = true, dim = false }] }, "branch", "git_status"],
+]
+
+# moor: prefix+c runs moor's new in place of a plain tab. Merge into an existing [keys].
+[keys]
+new_tab = ""
+
+[[keys.command]]
+key = "prefix+c"
+type = "plugin_action"
+command = "moor.new"
+description = "moor: new"
