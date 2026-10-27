@@ -9,7 +9,9 @@ use moor_core::BoxId;
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 
 use super::super::{claim_in, machines_in, put_in, Claim};
-use super::{grant_in, wants_in, why_waiting, ClaimState, HoldOp, HoldValue};
+use moor_core::{HoldOp, HoldValue};
+
+use super::{grant_in, wants_in, why_waiting, ClaimState};
 use crate::store::apply::insert_event;
 use crate::store::{Store, StoreError};
 
@@ -19,10 +21,6 @@ impl Store {
     ///
     /// # Errors
     /// A store read or write failed.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the machine_claim tool is its first caller")
-    )]
     pub(crate) fn hold_machine(
         &self,
         id: BoxId,
@@ -48,10 +46,6 @@ impl Store {
     }
 
     /// Drops `id`'s claim, recording `machine_detached` when it held a slot.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the machine_claim tool is its first caller")
-    )]
     fn release_machine(&self, id: BoxId) -> Result<HoldValue, StoreError> {
         let now = self.now();
         let mut conn = self.writer();
@@ -80,10 +74,6 @@ impl Store {
 }
 
 /// Runs a claim inside `tx`: the answer, and whether to keep what it wrote.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the machine_claim tool is its first caller")
-)]
 fn claim_tx(
     tx: &Transaction<'_>,
     (id, user): (BoxId, UserId),
@@ -130,10 +120,6 @@ fn claim_tx(
 
 /// The want `op` records for `user`, given `own`, the user's machines, and the repo's machine
 /// section and sync excludes; or why it is refused.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the machine_claim tool is its first caller")
-)]
 fn new_want(
     own: &[UserMachine],
     user: UserId,
@@ -176,10 +162,6 @@ fn new_want(
 }
 
 /// The `Held` answer for `id`, which holds a slot.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the machine_claim tool is its first caller")
-)]
 fn held_value(conn: &Connection, id: BoxId) -> Result<HoldValue, StoreError> {
     let claim = claim_in(conn, id)?;
     let Some(Claim {
@@ -205,14 +187,11 @@ fn held_value(conn: &Connection, id: BoxId) -> Result<HoldValue, StoreError> {
 }
 
 /// Where `id`'s want stands among `user`'s, counting from 1.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the machine_claim tool is its first caller")
-)]
-fn position_in(conn: &Connection, id: BoxId, user: UserId) -> Result<usize, StoreError> {
+fn position_in(conn: &Connection, id: BoxId, user: UserId) -> Result<u16, StoreError> {
     let wants = wants_in(conn, user)?;
-    Ok(wants
+    let place = wants
         .iter()
         .position(|(w, _)| *w == id)
-        .map_or(0, |p| p + 1))
+        .map_or(0, |p| p + 1);
+    Ok(u16::try_from(place).unwrap_or(u16::MAX))
 }

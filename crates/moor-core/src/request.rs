@@ -15,7 +15,7 @@ pub use binding::{BindSessionReq, SessionBindingReq};
 mod host_session;
 pub use host_session::{EndHostSessionReq, OpenHostSessionReq, UpdateHostSessionReq};
 mod machine;
-pub use machine::{MachineAddReq, MachineRemoveReq};
+pub use machine::{HoldOp, HoldValue, MachineAddReq, MachineHoldReq, MachineRemoveReq};
 mod names;
 pub use names::{Grant, Named, Pins};
 mod session;
@@ -120,6 +120,9 @@ pub enum Request {
     MachineList(AsReq),
     /// List the ssh target of every user's machines; the operator's only.
     MachineTargets {},
+    /// Claim one of a Box's user's machines for it, or let go of it; the operator's only.
+    #[serde(rename = "machine-hold")]
+    MachineHold(MachineHoldReq),
     /// Mint a one-time code that links another identity to the caller's user.
     LinkCode(AsReq),
     /// Link the caller's identity to the user that minted a code.
@@ -183,6 +186,7 @@ impl Request {
             Self::MachineRemove(_) => "machine-remove",
             Self::MachineList(_) => "machine-list",
             Self::MachineTargets {} => "machine-targets",
+            Self::MachineHold(_) => "machine-hold",
             Self::LinkCode(_) => "link-code",
             Self::LinkRedeem(_) => "link-redeem",
             Self::ProxyLease(_) => "proxy-lease",

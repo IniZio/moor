@@ -5,6 +5,7 @@ use std::sync::Arc;
 use moor_core::config::{RepoMachine, UserMachine};
 use moor_core::user::Identity;
 use moor_core::view::{HeldMachineView, MachineHoldState};
+use moor_core::HoldOp;
 
 use super::super::run;
 use super::{add, cx, req};
@@ -27,8 +28,12 @@ fn detail_shows_the_held_machine_and_a_box_without_one_shows_none() {
         ports: vec![8081, 8085],
         ..RepoMachine::default()
     };
-    store.claim_machine(first, user, &want, &[]).unwrap();
-    store.claim_machine(second, user, &want, &[]).unwrap();
+    store
+        .hold_machine(first, user, &HoldOp::repo(), Some(&want), &[])
+        .unwrap();
+    store
+        .hold_machine(second, user, &HoldOp::repo(), Some(&want), &[])
+        .unwrap();
     let held = |name: &str| {
         run(&cx, &req(Some(name), None))
             .unwrap()
@@ -60,7 +65,9 @@ fn detail_says_an_asleep_claim_waits_while_the_box_is_awake() {
         ports: vec![8081],
         ..RepoMachine::default()
     };
-    store.claim_machine(first, user, &want, &[]).unwrap();
+    store
+        .hold_machine(first, user, &HoldOp::repo(), Some(&want), &[])
+        .unwrap();
     store.sleep_machine(first).unwrap();
 
     let view = run(&cx, &req(Some("a"), None)).unwrap();

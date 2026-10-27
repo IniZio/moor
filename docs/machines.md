@@ -20,8 +20,14 @@ to name the caller.
 If a request misses a header or has a malformed one, it gets an MCP error that
 names the header.
 
-A Box holds no slot when its repo asks for no machine, when it sleeps, or when
-it woke and waits for a free slot. The Proxy still passes its requests through,
+A new Box holds no machine. A start never claims one, even when the repo's
+`.moor.yaml` has a `machine:` section. The Box claims one of its user's machines
+itself, and the runner asks the controller for it with
+[`machine-hold`](config.md#who-may-act-on-a-box). The runner's
+`machine_claim` and `machine_release` tools that send it come next.
+
+A Box holds no slot until it claims one, when its repo asks for no machine,
+when it sleeps, or when it woke and waits for a free slot. The Proxy still passes its requests through,
 with `X-Moor-Box` and `X-Moor-Machine-Missing: <reason>` in place of the
 machine headers. The agent still sees `sync`, `exec`, `pull`, and
 `machine_info` in the tool list, and the list leaves out relayed tools. Every

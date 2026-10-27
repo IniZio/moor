@@ -717,6 +717,24 @@ A Box acts for the user who started it. Only that user and the local operator
 may act on the Box, for example to run, steer, show, close, sleep, or wake it,
 or read its artifacts. Only the operator may copy files out of it, because `cp`
 writes on the controller host. A front gets `cp to the host is operator-only`.
+Only the operator may send `machine-hold`, which the machine runner sends for
+the Box its Proxy named. A front gets `machine-hold is the machine runner's,
+which is operator-only`. It claims one of the machines of the Box's own user
+or lets go of the claim:
+
+```json
+{"cmd": "machine-hold", "id": 7, "op": {"claim": {"labels": ["macos"], "wait_until": 1767225600000}}}
+{"cmd": "machine-hold", "id": 7, "op": "release"}
+```
+
+A claim may name `labels`, one `machine`, `ports` and `wait_until` (Unix
+milliseconds). Labels and ports left out come from the repo's `.moor.yaml`
+`machine:` section, and the syncs leave alone what its `machine.sync` names.
+The value's `state` is `held` (with `machine`, `ssh`, `slot` and `ports`),
+`waiting` (with `position` and `reason`) while a `wait_until` has not passed,
+`refused` (with `reason`, such as the Boxes that hold every slot or a machine
+that is not the user's), or `released` (with the `machine` let go, if any). A
+Box that already holds a slot gets the same `held` again.
 The local operator is a peer on the controller socket with the controller's
 own uid. A front socket is never the operator, whatever identity it asserts. A
 Box with no user is the operator's alone.

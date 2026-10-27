@@ -46,65 +46,6 @@ pub(crate) enum ClaimState {
     },
 }
 
-/// What a Box asks of its claim.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the machine_claim tool is its first caller")
-)]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum HoldOp {
-    /// Hold a machine, waiting for a slot until `wait_until` or refusing at once without it.
-    Claim {
-        /// Labels the machine must all hold; the repo's when empty and `machine` is `None`.
-        labels: Vec<String>,
-        /// The one machine wanted.
-        machine: Option<String>,
-        /// Box ports forwarded; the repo's when `None`.
-        ports: Option<Vec<u16>>,
-        /// How long to wait for a slot.
-        wait_until: Option<Ts>,
-    },
-    /// Let go of the machine held, waited for or slept on.
-    Release,
-}
-
-/// The answer to a `HoldOp`.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the machine_claim tool is its first caller")
-)]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum HoldValue {
-    /// The Box holds `slot` on `machine`.
-    Held {
-        /// The machine's name.
-        machine: String,
-        /// Its ssh target.
-        ssh: String,
-        /// The Box's slot on it.
-        slot: u16,
-        /// The forwarded ports, moved by the slot.
-        ports: Vec<u16>,
-    },
-    /// The want is recorded; `position` counts from 1 among the user's waiters.
-    Waiting {
-        /// The want's place in line.
-        position: usize,
-        /// Why there is no slot yet.
-        reason: String,
-    },
-    /// Nothing was recorded.
-    Refused {
-        /// Why.
-        reason: String,
-    },
-    /// The claim is gone.
-    Released {
-        /// The machine held or slept on, if any.
-        machine: Option<String>,
-    },
-}
-
 /// What a supervisor tick's grant did for its Box.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum MachineWake {

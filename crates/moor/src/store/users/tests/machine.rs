@@ -1,13 +1,14 @@
 //! A Box that sleeps keeps its claim on its machine but frees its slot; waking wants the same
 //! machine again and the grant gives it the lowest free slot, or it waits while there is none.
 
-use moor_core::config::{MachinePick, RepoMachine, UserMachine};
+use moor_core::config::{RepoMachine, UserMachine};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::user::{Identity, UserId};
 use moor_core::view::MachineHoldState;
 use moor_core::{BoxId, BoxName};
+use moor_core::{HoldOp, HoldValue};
 
 use crate::store::tests::open;
 use crate::store::{MachineWake, Store};
@@ -44,7 +45,7 @@ impl Mini {
         self.store.apply(Decision::insert(nt)).unwrap().box_id
     }
 
-    fn claim(&self, name: &str) -> (BoxId, MachinePick) {
+    fn claim(&self, name: &str) -> (BoxId, HoldValue) {
         let id = self.new_box(name);
         let want = RepoMachine {
             labels: vec!["macos".to_owned()],
@@ -53,7 +54,9 @@ impl Mini {
         };
         (
             id,
-            self.store.claim_machine(id, self.user, &want, &[]).unwrap(),
+            self.store
+                .hold_machine(id, self.user, &HoldOp::repo(), Some(&want), &[])
+                .unwrap(),
         )
     }
 
@@ -63,10 +66,10 @@ impl Mini {
     }
 }
 
-fn slot_of(pick: &MachinePick) -> Option<u16> {
+fn slot_of(pick: &HoldValue) -> Option<u16> {
     match pick {
-        MachinePick::Attach { slot, .. } => Some(*slot),
-        MachinePick::LeftOut { .. } => None,
+        HoldValue::Held { slot, .. } => Some(*slot),
+        _ => None,
     }
 }
 

@@ -29,6 +29,11 @@ pub(crate) const ENV_OPERATOR_ONLY: &str = "env reads the host's configs, which 
 pub(crate) const TARGETS_OPERATOR_ONLY: &str =
     "machine-targets lists every user's machines, which is operator-only";
 
+/// The refusal for a `machine-hold` from anyone but the operator: only the machine runner,
+/// trusting the Box its Proxy named, claims a machine for a Box.
+pub(crate) const HOLD_OPERATOR_ONLY: &str =
+    "machine-hold is the machine runner's, which is operator-only";
+
 /// Whose Boxes `caller` may see, asserting `asserted`. Only the controller socket's own uid
 /// is the operator; a front socket is a user at most, whatever it asserts.
 ///
@@ -89,6 +94,7 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         Request::BoxPut(_) => Some(PUT_OPERATOR_ONLY),
         Request::Env(_) => Some(ENV_OPERATOR_ONLY),
         Request::MachineTargets {} => Some(TARGETS_OPERATOR_ONLY),
+        Request::MachineHold(_) => Some(HOLD_OPERATOR_ONLY),
         Request::Start(_)
         | Request::StartNeeds(_)
         | Request::Run(_)

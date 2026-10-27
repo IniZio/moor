@@ -20,6 +20,7 @@ pub(crate) mod env;
 mod front_proxy;
 mod gate;
 pub(crate) mod host_session;
+pub(crate) mod machine_hold;
 mod open;
 mod open_session;
 mod run;
@@ -88,6 +89,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::Cp(r) => to_value(&cp::run(cx, &r)?),
         Request::BoxMirror(r) => to_value(&box_mirror::run(cx, &r)?),
         Request::BoxPut(r) => to_value(&box_put::run(cx, &r)?),
+        Request::MachineHold(r) => to_value(&machine_hold::run(cx, &r)?),
         Request::Sleep(r) => to_value(&sleep::run(cx, &r)?),
         Request::Wake(r) => to_value(&wake::run(cx, &r)?),
         Request::Open(r) => to_value(&open::run(cx, &r)?),

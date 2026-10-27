@@ -3,6 +3,7 @@
 use moor_core::config::{RepoMachine, UserMachine};
 use moor_core::seam::proc::Tool;
 use moor_core::user::Identity;
+use moor_core::HoldOp;
 
 use super::{start, Stop, World};
 use crate::proxy::front::Hold;
@@ -24,7 +25,9 @@ fn held_machine() -> World {
         ports: vec![8081, 3001],
         ..RepoMachine::default()
     };
-    w.store.claim_machine(w.id, user, &want, &[]).unwrap();
+    w.store
+        .hold_machine(w.id, user, &HoldOp::repo(), Some(&want), &[])
+        .unwrap();
     w.proc.on_child(Tool::Ssh, &[], ChildReply::Hang);
     w
 }
@@ -91,8 +94,12 @@ fn slot_one_forwards_each_port_moved_by_ten_at_the_same_number_on_both_ends() {
         ..RepoMachine::default()
     };
     let other = super::working_box(&w.store, &w.driver, "other");
-    w.store.claim_machine(other, user, &want, &[]).unwrap();
-    w.store.claim_machine(w.id, user, &want, &[]).unwrap();
+    w.store
+        .hold_machine(other, user, &HoldOp::repo(), Some(&want), &[])
+        .unwrap();
+    w.store
+        .hold_machine(w.id, user, &HoldOp::repo(), Some(&want), &[])
+        .unwrap();
     w.proc.on_child(Tool::Ssh, &[], ChildReply::Hang);
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
@@ -119,7 +126,7 @@ fn mini_of(capacity: u16) -> (World, moor_core::user::UserId) {
         .unwrap();
     w.store.set_user_machine(user, &mini).unwrap();
     w.store
-        .claim_machine(w.id, user, &want_8081(), &[])
+        .hold_machine(w.id, user, &HoldOp::repo(), Some(&want_8081()), &[])
         .unwrap();
     w.proc.on_child(Tool::Ssh, &[], ChildReply::Hang);
     (w, user)
@@ -179,7 +186,7 @@ fn an_unparked_tick_takes_a_free_slot_and_forwards_its_ports() {
     assert!(run.tick().is_none());
     let other = super::working_box(&w.store, &w.driver, "other");
     w.store
-        .claim_machine(other, user, &want_8081(), &[])
+        .hold_machine(other, user, &HoldOp::repo(), Some(&want_8081()), &[])
         .unwrap();
 
     w.store.request_tunnel(w.id, TunnelWant::Up).unwrap();
@@ -203,7 +210,7 @@ fn a_full_machine_reports_waiting_once_and_wakes_when_a_slot_frees() {
     assert!(run.tick().is_none());
     let other = super::working_box(&w.store, &w.driver, "other");
     w.store
-        .claim_machine(other, user, &want_8081(), &[])
+        .hold_machine(other, user, &HoldOp::repo(), Some(&want_8081()), &[])
         .unwrap();
 
     w.store.request_tunnel(w.id, TunnelWant::Up).unwrap();

@@ -59,8 +59,6 @@ pub(crate) use proxy::{EGRESS_PORT_MAX, EGRESS_PORT_MIN};
 pub(crate) use runs::{NewRun, RunOutcome, RunRow};
 pub(crate) use sessions::SessionRecord;
 pub(crate) use users::machine::MachineWake;
-#[cfg(test)]
-pub(crate) use users::machine::{HoldOp, HoldValue};
 pub(crate) use users::mcp_oauth::{GrantRow, SignIn};
 
 /// How long a connection waits on a lock before `SQLITE_BUSY`.
