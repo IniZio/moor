@@ -1,11 +1,12 @@
-//! A Box that sleeps keeps its claim on its machine but frees its slot; waking takes the lowest
-//! free slot on the same machine again, or waits while there is none.
+//! A Box that sleeps keeps its claim on its machine but frees its slot; waking wants the same
+//! machine again and the grant gives it the lowest free slot, or it waits while there is none.
 
 use moor_core::config::{MachinePick, RepoMachine, UserMachine};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::user::{Identity, UserId};
+use moor_core::view::MachineHoldState;
 use moor_core::{BoxId, BoxName};
 
 use crate::store::tests::open;
@@ -79,7 +80,11 @@ fn a_sleeping_box_frees_its_slot_for_another_box() {
 
     assert_eq!(m.slot_and_ports(a), None, "an asleep Box serves no machine");
     let claim = m.store.claimed_machine(a).unwrap().unwrap();
-    assert!(claim.asleep, "the claim on mini is kept");
+    assert_eq!(
+        claim.state,
+        MachineHoldState::Asleep,
+        "the claim on mini is kept"
+    );
     let (_, pick) = m.claim("b");
     assert_eq!(slot_of(&pick), Some(0), "{pick:?}");
 }
@@ -94,31 +99,36 @@ fn waking_takes_the_lowest_free_slot_and_moves_the_ports_by_it() {
     m.store.sleep_machine(a).unwrap();
     m.store.sleep_machine(c).unwrap();
 
-    assert_eq!(m.store.wake_machine(c).unwrap(), MachineWake::Woke);
+    assert_eq!(m.store.grant_machine(c).unwrap(), MachineWake::Woke);
     assert_eq!(m.slot_and_ports(c), Some((0, vec![8081])));
-    assert_eq!(m.store.wake_machine(a).unwrap(), MachineWake::Woke);
+    assert_eq!(m.store.grant_machine(a).unwrap(), MachineWake::Woke);
     assert_eq!(m.slot_and_ports(a), Some((2, vec![8101])));
     assert_eq!(m.slot_and_ports(b), Some((1, vec![8091])));
-    assert_eq!(m.store.wake_machine(a).unwrap(), MachineWake::Nothing);
+    assert_eq!(
+        m.store.grant_machine(a).unwrap(),
+        MachineWake::Woke,
+        "still held"
+    );
 }
 
 #[test]
-fn waking_on_a_full_machine_stays_asleep_and_says_why() {
+fn waking_on_a_full_machine_waits_and_says_why() {
     let m = Mini::new(1);
     let (a, _) = m.claim("a");
     m.store.sleep_machine(a).unwrap();
     let (b, _) = m.claim("b");
 
-    let wake = m.store.wake_machine(a).unwrap();
+    let wake = m.store.grant_machine(a).unwrap();
     assert!(
         matches!(&wake, MachineWake::Waiting { name, reason } if name == "mini" && reason.contains("Box b")),
         "{wake:?}"
     );
     assert_eq!(m.slot_and_ports(a), None);
-    assert!(m.store.claimed_machine(a).unwrap().unwrap().asleep);
+    let claim = m.store.claimed_machine(a).unwrap().unwrap();
+    assert_eq!(claim.state, MachineHoldState::Waiting);
 
     m.store.detach_machine(b).unwrap();
-    assert_eq!(m.store.wake_machine(a).unwrap(), MachineWake::Woke);
+    assert_eq!(m.store.grant_machine(a).unwrap(), MachineWake::Woke);
     assert_eq!(m.slot_and_ports(a), Some((0, vec![8081])));
 }
 
@@ -134,5 +144,5 @@ fn closing_an_asleep_box_removes_its_claim() {
     m.store.apply(close).unwrap();
 
     assert_eq!(m.store.claimed_machine(a).unwrap(), None);
-    assert_eq!(m.store.wake_machine(a).unwrap(), MachineWake::Nothing);
+    assert_eq!(m.store.grant_machine(a).unwrap(), MachineWake::Nothing);
 }

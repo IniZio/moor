@@ -4,7 +4,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 use serde::{Deserialize, Serialize};
 
-pub use pick::{pick_machine, wake_slot, MachinePick};
+pub use pick::{pick_machine, unslot_ports, MachinePick};
 
 mod pick;
 

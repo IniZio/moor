@@ -1,5 +1,5 @@
 //! The user's machine attached to the supervised Box: opened and revived on each tick, its slot
-//! freed while the Box sleeps and taken again when it wakes, let go when the Box closes. A
+//! freed while the Box sleeps and granted again when it wakes, let go when the Box closes. A
 //! supervisor that stops on a signal keeps the record, so the next supervisor opens the link again.
 
 mod hold;
@@ -25,13 +25,13 @@ pub(super) struct MachineSlot {
 
 impl Running<'_> {
     /// Opens the recorded machine's forwards, or opens them again when a child died. A sleeping
-    /// Box frees its slot; a woken one takes a free slot on the same machine again.
+    /// Box frees its slot; an awake one's want is granted once a slot fits it.
     pub(super) fn tend_machine(&self) {
         if self.parked.get() {
             self.sleep_machine();
             return;
         }
-        self.wake_machine();
+        self.grant_machine();
         let want = match self.deps.store.box_machine(self.box_id) {
             Ok(Some(want)) => want,
             Ok(None) => return,
@@ -89,9 +89,10 @@ impl Running<'_> {
         }
     }
 
-    /// Takes a free slot on the machine an asleep claim names, saying once per wait when none is.
-    fn wake_machine(&self) {
-        let event = match self.deps.store.wake_machine(self.box_id) {
+    /// Grants the Box's want, an asleep claim wanted again first, saying once per wait when no
+    /// slot fits.
+    fn grant_machine(&self) {
+        let event = match self.deps.store.grant_machine(self.box_id) {
             Ok(MachineWake::Nothing) => return,
             Ok(MachineWake::Woke) => {
                 self.machine.borrow_mut().waiting = false;
@@ -106,7 +107,7 @@ impl Running<'_> {
             Err(err) => {
                 say(
                     &self.deps.stderr,
-                    format_args!("cannot wake the machine: {err}"),
+                    format_args!("cannot grant the machine: {err}"),
                 );
                 return;
             }

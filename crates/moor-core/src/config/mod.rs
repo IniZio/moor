@@ -12,7 +12,7 @@ pub use controller::{parse_controller, ControllerConfig, FrontEntry};
 pub use repo::{parse_repo, RepoBox, RepoCompose, RepoConfig, RepoMachine};
 
 pub use user::{
-    box_mcp, check_ssh, parse_user, pick_machine, wake_slot, AgentConfig, BoxConfig, BoxMcp,
+    box_mcp, check_ssh, parse_user, pick_machine, unslot_ports, AgentConfig, BoxConfig, BoxMcp,
     BoxSize, ControllerClientConfig, DotfilesConfig, DriverConfig, HerdrConfig, MachinePick,
     MachineService, MachinesConfig, McpServer, OAuthCallback, OAuthClient, OAuthConfig,
     SurfaceConfig, ToolsConfig, UserConfig, UserMachine, UserMcp, DEFAULT_HEADER,

@@ -284,6 +284,7 @@ fn applied_migrations_are_never_edited() {
             (11, 17_284_506_714_882_587_087),
             (12, 13_829_219_089_020_947_795),
             (13, 13_975_279_521_182_795_894),
+            (14, 14_226_300_463_046_355_811),
         ],
         "a schema change is a new migration file; an applied one must not change"
     );
@@ -404,8 +405,8 @@ fn a_file_at_migration_8_keeps_its_held_machines_and_lets_asleep_ones_share_a_sl
     )
     .unwrap();
 
-    init_schema(&mut conn, &path).unwrap();
-    conn.execute_batch("PRAGMA foreign_keys = OFF").unwrap();
+    let up_to_9 = all.get(..9).unwrap();
+    moor_migrate::migrate(&mut conn, up_to_9, |_| Ok(moor_migrate::Legacy::Empty)).unwrap();
 
     let asleep = "SELECT COUNT(*) FROM box_machines WHERE box = 1 AND asleep = 0";
     assert_eq!(
@@ -423,4 +424,83 @@ fn a_file_at_migration_8_keeps_its_held_machines_and_lets_asleep_ones_share_a_sl
     row(2, 1).unwrap();
     row(3, 1).unwrap();
     assert!(row(4, 0).is_err(), "two holding rows never share a slot");
+}
+
+#[test]
+fn a_file_at_migration_10_turns_asleep_rows_asleep_and_the_rest_held() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("moor.db");
+    let mut conn = Connection::open(&path).unwrap();
+    let all = super::schema().unwrap();
+    let up_to_10 = all.get(..10).unwrap();
+    moor_migrate::migrate(&mut conn, up_to_10, |_| Ok(moor_migrate::Legacy::Empty)).unwrap();
+    conn.execute_batch(
+        "PRAGMA foreign_keys = OFF;
+         INSERT INTO box_machines (box, user, machine, ports, slot, sync_exclude, asleep) \
+           VALUES (1, 7, 'mini', '[8081]', 0, '[\"target\"]', 0);
+         INSERT INTO box_machines (box, user, machine, ports, slot, asleep) \
+           VALUES (2, 7, 'mini', '[8091]', 1, 1);",
+    )
+    .unwrap();
+
+    init_schema(&mut conn, &path).unwrap();
+    conn.execute_batch("PRAGMA foreign_keys = OFF").unwrap();
+
+    let rows = claim_rows(&conn);
+    let held = (
+        1,
+        "held".into(),
+        "mini".into(),
+        0,
+        "[8081]".into(),
+        "[\"target\"]".into(),
+        None,
+    );
+    let asleep = (
+        2,
+        "asleep".into(),
+        "mini".into(),
+        1,
+        "[8091]".into(),
+        "[]".into(),
+        None,
+    );
+    assert_eq!(rows, [held, asleep]);
+    let insert = |b: i64, state: &str| {
+        conn.execute(
+            "INSERT INTO box_machines (box, user, state, machine, ports, slot) \
+             VALUES (?, 7, ?, 'mini', '[8081]', 0)",
+            rusqlite::params![b, state],
+        )
+    };
+    insert(3, "asleep").unwrap();
+    insert(4, "wanted").unwrap();
+    assert!(
+        insert(5, "held").is_err(),
+        "two held rows never share a slot"
+    );
+    assert!(insert(6, "gone").is_err(), "only the three states");
+}
+
+/// A `box_machines` row: box, state, machine, slot, ports, sync excludes, until.
+type ClaimRow = (i64, String, String, u16, String, String, Option<i64>);
+
+fn claim_rows(conn: &Connection) -> Vec<ClaimRow> {
+    let sql = "SELECT box, state, machine, slot, ports, sync_exclude, until FROM box_machines \
+               ORDER BY box";
+    let mut stmt = conn.prepare(sql).unwrap();
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+            ))
+        })
+        .unwrap();
+    rows.collect::<Result<_, _>>().unwrap()
 }
