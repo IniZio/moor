@@ -24,8 +24,8 @@ pub trait Prompt {
 pub trait Controller {
     /// Every open Box.
     fn open(&self) -> Result<Vec<Shown>, Error>;
-    /// Starts Box `name` on `repo`.
-    fn start(&self, name: &str, repo: &str) -> Result<(), Error>;
+    /// Starts Box `name` on `repo`, its agent working on `goal`.
+    fn start(&self, name: &str, repo: &str, goal: &str) -> Result<(), Error>;
 }
 
 /// The herdr calls only the picker makes, besides [`Herdr`]'s.
@@ -62,8 +62,8 @@ impl Controller for Client {
         open_boxes(self)
     }
 
-    fn start(&self, name: &str, repo: &str) -> Result<(), Error> {
-        let reply = self.request(start_request(name, repo)?, |_| {})?;
+    fn start(&self, name: &str, repo: &str, goal: &str) -> Result<(), Error> {
+        let reply = self.request(start_request(name, repo, goal)?, |_| {})?;
         reply
             .error
             .map_or(Ok(()), |e| Err(Error::Refused(e.message)))
@@ -71,8 +71,8 @@ impl Controller for Client {
 }
 
 /// The `start` every front sends for a Box on a repo; the controller picks the rest.
-pub fn start_request(name: &str, repo: &str) -> Result<Request, Error> {
-    request(json!({"cmd": "start", "name": name, "repo": repo}))
+pub fn start_request(name: &str, repo: &str, goal: &str) -> Result<Request, Error> {
+    request(json!({"cmd": "start", "name": name, "repo": repo, "goal": goal}))
 }
 
 /// Asks until `parse` accepts an answer; `None` when the input ends.
@@ -175,8 +175,17 @@ fn start_box(
         }
     })?;
     let Some(name) = name else { return Ok(()) };
+    // The controller launches a Box's agent only on a goal, and attach needs that agent.
+    let goal = ask_until(prompt, "Goal for its agent: ", |a| {
+        if a.trim().is_empty() {
+            Err("The agent starts on a goal; say what it should do.".to_owned())
+        } else {
+            Ok(a.trim().to_owned())
+        }
+    })?;
+    let Some(goal) = goal else { return Ok(()) };
     prompt.say(&format!("Starting {name} on {repo}..."))?;
-    ctl.start(&name, &repo)?;
+    ctl.start(&name, &repo, &goal)?;
     reconcile(bench, &ctl.open()?, attach)?;
     let label = crate::boxes::label(Some(&repo), &name);
     if let Some(space) = bench.spaces()?.into_iter().find(|s| s.label == label) {
