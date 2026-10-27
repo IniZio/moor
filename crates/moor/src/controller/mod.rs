@@ -11,6 +11,7 @@ mod inherit;
 mod local;
 mod peer;
 mod progress;
+mod relay;
 mod settle;
 mod watch;
 

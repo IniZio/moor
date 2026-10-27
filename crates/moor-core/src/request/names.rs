@@ -75,6 +75,7 @@ impl Request {
             }
             Self::WaitEvents(r) => r.boxes.iter().map(named).collect(),
             Self::Steer(r) => target(&r.target),
+            Self::Attach(r) => target(&r.target),
             Self::Close(r) => target(&r.target),
             Self::Artifacts(r) => target(&r.target),
             Self::ArtifactRead(r) => target(&r.target),

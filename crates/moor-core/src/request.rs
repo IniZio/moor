@@ -80,6 +80,9 @@ pub enum Request {
     Wake(BoxReq),
     /// Wake a box and return the command that attaches to its workspace; the caller runs it.
     Connect(BoxReq),
+    /// Relay the agent's terminal on the Box both ways over this connection until either side
+    /// ends it. It takes over the connection: the controller socket closes it after the answer.
+    Attach(AttachReq),
     /// Check a gate.
     Gate(GateReq),
     /// Show the layered environment.
@@ -160,6 +163,7 @@ impl Request {
             Self::Sleep(_) => "sleep",
             Self::Wake(_) => "wake",
             Self::Connect(_) => "connect",
+            Self::Attach(_) => "attach",
             Self::Gate(_) => "gate",
             Self::Env(_) => "env",
             Self::Artifacts(_) => "artifacts",
@@ -228,6 +232,19 @@ pub struct StartReq {
     /// The identity the Box acts for; the controller socket's own peer when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<Identity>,
+}
+
+/// Arguments of `attach`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AttachReq {
+    /// The Box: by name, the newest open Box of that name.
+    #[serde(rename = "box")]
+    pub target: BoxTarget,
+    /// Columns of the caller's terminal.
+    pub cols: u16,
+    /// Rows of the caller's terminal.
+    pub rows: u16,
 }
 
 /// Arguments of `run`.

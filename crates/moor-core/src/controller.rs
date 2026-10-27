@@ -12,7 +12,7 @@ use crate::response::Response;
 use crate::user::Identity;
 
 /// Protocol revision a client announces in its hello frame.
-pub const PROTOCOL: u32 = 13;
+pub const PROTOCOL: u32 = 14;
 
 /// Most raw bytes one bytes frame carries; a reader refuses a larger `len`.
 pub const BYTES_MAX: usize = 64 * 1024;
@@ -32,6 +32,22 @@ pub enum ClientFrame {
         id: String,
         /// The command to run.
         request: Box<Request>,
+    },
+    /// Keystrokes for a running `attach`; exactly `len` raw bytes follow the line.
+    Bytes {
+        /// Id of the `attach` the bytes belong to.
+        id: String,
+        /// Number of raw bytes after the line, at most [`BYTES_MAX`].
+        len: usize,
+    },
+    /// The caller's terminal changed size during a running `attach`.
+    Resize {
+        /// Id of the `attach` the size belongs to.
+        id: String,
+        /// Columns.
+        cols: u16,
+        /// Rows.
+        rows: u16,
     },
     /// Streams stored events whose cursor is greater than `since`; 0 means from the start.
     ///
@@ -115,8 +131,8 @@ pub enum ServerFrame {
     },
     /// Raw bytes for a request still running; exactly `len` bytes follow the line.
     ///
-    /// `artifact-read` sends the Artifact's content this way, and `run` sends the command's
-    /// output as it reaches the run log.
+    /// `artifact-read` sends the Artifact's content this way, `run` sends the command's
+    /// output as it reaches the run log, and `attach` sends the relayed terminal's output.
     Bytes {
         /// Id of the request the bytes belong to.
         id: String,

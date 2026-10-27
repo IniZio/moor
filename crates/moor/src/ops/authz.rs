@@ -110,6 +110,7 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         | Request::Sleep(_)
         | Request::Wake(_)
         | Request::Connect(_)
+        | Request::Attach(_)
         | Request::Gate(_)
         | Request::Artifacts(_)
         | Request::ArtifactRead(_)

@@ -45,7 +45,7 @@ fn handler(answer: Answer) -> Handler {
             reader,
             stream,
             &conn,
-            |id, r, out| answer(id, r, out, conn.drain()),
+            |id, r, (_, out)| answer(id, r, out, conn.drain()),
             |_, _, _, _, _| {},
         );
     })

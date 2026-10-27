@@ -5,6 +5,8 @@ mod brief;
 pub(crate) mod claude;
 pub(crate) mod gh_release;
 mod launch;
+
+pub(crate) use launch::detach::relay_argv;
 mod probe;
 mod proxy_env;
 mod steer;

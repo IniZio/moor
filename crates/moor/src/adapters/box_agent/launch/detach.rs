@@ -75,6 +75,17 @@ pub(super) fn pane_line(
     Ok(line(connect, &start(&exit_file, script)))
 }
 
+/// The command that relays the agent's terminal through `connect`. The agent's window takes the
+/// size of the client that used it last.
+pub(crate) fn relay_argv(connect: &[String]) -> Vec<String> {
+    let mut argv = connect.to_vec();
+    argv.push(format!(
+        "tmux set-option -w -t {SESSION} window-size latest >/dev/null 2>&1; \
+         exec tmux attach-session -t {SESSION}"
+    ));
+    argv
+}
+
 /// Opens a pane in `ws` that attaches to the running agent of `s`.
 pub(in crate::adapters::box_agent) fn reattach(
     driver: &dyn Driver,
