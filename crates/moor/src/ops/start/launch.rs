@@ -18,7 +18,7 @@ use moor_core::{BoxId, StartReq, Warning};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::box_exec;
-use crate::ops::common::facts::{repo_config, settings_of, wants_machine};
+use crate::ops::common::facts::{repo_config, settings_of};
 use crate::ops::common::provision::{nonce, recorded_workdir, reread};
 use crate::ops::common::resume;
 use crate::ops::common::view::rfc3339;
@@ -252,7 +252,7 @@ pub(super) fn launch_req(cx: &Cx, row: &BoxRow, setup_exit: Option<i32>) -> Opti
     }
     let strip_env = box_exec::strip_env(cx, b.provider.as_str());
     Some(LaunchReq {
-        mcp: crate::ops::users::mcp::for_box(cx, row.user, wants_machine(row))
+        mcp: crate::ops::users::mcp::for_box(cx, row.user)
             .map(|m| m.servers)
             .unwrap_or_default()
             .iter()

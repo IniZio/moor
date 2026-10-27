@@ -122,7 +122,7 @@ fn invalid_grant_clears_the_secret_and_asks_to_sign_in_again() {
     let row = listed(&f);
     assert_eq!(row["sign_in_again"], true);
     assert_eq!(row.get("signed_in"), None);
-    let boxed = for_box(&f.cx, Some(me), false).unwrap();
+    let boxed = for_box(&f.cx, Some(me)).unwrap();
     assert_eq!(
         boxed.notes,
         ["MCP server notion left out: its sign-in ended; sign in again with mcp-add notion"]

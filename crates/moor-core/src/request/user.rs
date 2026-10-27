@@ -172,8 +172,6 @@ pub enum UserCmd {
         header: Option<String>,
         /// The key to store, if any.
         key: Option<SecretValue>,
-        /// Whether only a Box whose repo asks for a machine gets the server.
-        machine: bool,
     },
     /// Remove one of the caller's user's MCP servers and its key.
     McpRemove {
@@ -279,7 +277,6 @@ impl Request {
                     url: r.url,
                     header: r.header,
                     key: r.key,
-                    machine: r.machine,
                 },
             ),
             Self::McpRemove(r) => (r.identity, UserCmd::McpRemove { name: r.name }),

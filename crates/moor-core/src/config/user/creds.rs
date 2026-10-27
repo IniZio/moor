@@ -28,8 +28,6 @@ pub struct McpServer {
     pub url: Option<String>,
     /// Request headers; one value may hold one `${SECRET}` ref, which the Proxy injects.
     pub headers: BTreeMap<String, String>,
-    /// Whether only a Box whose repo asks for a machine gets this server.
-    pub machine: bool,
 }
 
 /// `${NAME}` references in `text`, in order.

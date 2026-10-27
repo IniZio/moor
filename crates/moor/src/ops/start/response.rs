@@ -7,7 +7,7 @@ use moor_core::view::{AgentLaunchView, DotfilesView, SetupView, StartView};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::capacity;
-use crate::ops::common::facts::{provider_of, settings_of, wants_machine};
+use crate::ops::common::facts::{provider_of, settings_of};
 use crate::ops::common::provision::Provisioned;
 use crate::ops::common::view::{box_view, hide_unsupported_sleep};
 use crate::store::BoxRow;
@@ -65,7 +65,7 @@ pub(super) fn view(cx: &Cx, row: &BoxRow, attached: bool) -> StartView {
         setup: SetupView::default(),
         dotfiles: DotfilesView::default(),
         agent: AgentLaunchView::default(),
-        warnings_inline: crate::ops::users::mcp::for_box(cx, row.user, wants_machine(row))
+        warnings_inline: crate::ops::users::mcp::for_box(cx, row.user)
             .map(|m| m.notes)
             .unwrap_or_default(),
         failed_step: None,
