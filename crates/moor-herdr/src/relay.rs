@@ -15,8 +15,8 @@ use moor_core::view::{AttachEnd, AttachView};
 use rustix::termios::{self, OptionalActions, Termios};
 use serde_json::json;
 
-use crate::boxes::{open_box, Phase};
-use crate::card::{Card, Ended, DETACH_BYTE};
+use crate::boxes::{open_box, wake, Phase};
+use crate::card::{Card, Choice, Ended, DETACH_BYTE};
 use crate::error::Error;
 
 /// What the pane's loop reacts to.
@@ -152,31 +152,34 @@ fn feed(tx: &Sender<Event>) -> io::Result<()> {
     Ok(())
 }
 
-/// Draws `card` over the whole pane.
-fn draw(label: &str, card: &Card) -> io::Result<()> {
+/// Draws `card` over the whole pane, with a `note` under it when there is one.
+fn draw(label: &str, card: &Card, note: Option<&str>) -> io::Result<()> {
     let mut out = io::stdout().lock();
     write!(
         out,
         "\x1b[0m\x1b[2J\x1b[H{}\r\n",
         card.lines(label).join("\r\n")
     )?;
+    if let Some(note) = note {
+        write!(out, "\r\n{note}\r\n")?;
+    }
     out.flush()
 }
 
-/// Waits on the card: true to attach again, false to close the pane.
-fn choose(rx: &Receiver<Event>, reattaches: bool) -> bool {
+/// Waits on the card for a key that does something; a note is drawn and waiting goes on.
+fn choose(rx: &Receiver<Event>, label: &str, card: &Card) -> io::Result<Choice> {
     for event in rx {
         if let Event::Keys(bytes) = event {
             for b in bytes {
-                match b {
-                    b'q' | b'Q' => return false,
-                    b'r' | b'R' | b'\r' if reattaches => return true,
-                    _ => {}
+                match card.key(b) {
+                    Choice::Stay => {}
+                    Choice::Note(text) => draw(label, card, Some(text))?,
+                    chosen => return Ok(chosen),
                 }
             }
         }
     }
-    false
+    Ok(Choice::Close)
 }
 
 /// Attaches once to Box `name`.
@@ -222,9 +225,19 @@ pub fn run(client: &Client, name: &str) -> Result<(), Error> {
             }
             Err(e) => Card::Refused(e.to_string()),
         };
-        draw(&label, &card)?;
-        if !choose(&rx, card.reattaches()) {
-            return Ok(());
+        draw(&label, &card, None)?;
+        match choose(&rx, &label, &card)? {
+            Choice::Wake => {
+                if let Err(e) = wake(client, name) {
+                    let refused = Card::Refused(format!("wake: {e}"));
+                    draw(&label, &refused, None)?;
+                    if choose(&rx, &label, &refused)? == Choice::Close {
+                        return Ok(());
+                    }
+                }
+            }
+            Choice::Close => return Ok(()),
+            _ => {}
         }
     }
 }

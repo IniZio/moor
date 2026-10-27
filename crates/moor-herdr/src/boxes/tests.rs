@@ -62,3 +62,10 @@ fn a_label_drops_the_repo_owner_and_stands_alone_without_a_repo() {
     assert_eq!(label(Some("oursky/moor"), "fix"), "◈ moor/fix");
     assert_eq!(label(None, "fix"), "◈ fix");
 }
+
+#[test]
+fn waking_a_box_sends_the_core_wake_request() {
+    let wire = super::wake_wire("fix");
+    let parsed = super::request(wire).unwrap();
+    assert!(matches!(parsed, moor_core::request::Request::Wake(_)));
+}

@@ -22,6 +22,21 @@ pub enum Ended {
     Skipped,
 }
 
+/// What a key on the card asks the pane to do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Choice {
+    /// Close the pane.
+    Close,
+    /// Wake the Box, then attach.
+    Wake,
+    /// Attach again.
+    Attach,
+    /// Tell the user why nothing happens.
+    Note(&'static str),
+    /// Nothing.
+    Stay,
+}
+
 /// What the card says.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Card {
@@ -58,6 +73,20 @@ impl Card {
         }
     }
 
+    /// What pressing `byte` on this card does.
+    #[must_use]
+    pub const fn key(&self, byte: u8) -> Choice {
+        match (byte, self) {
+            (b'q' | b'Q', _) => Choice::Close,
+            (b'r' | b'R' | b'\r', Self::Closed { .. }) => {
+                Choice::Note("closed: there is nothing to attach")
+            }
+            (b'r' | b'R' | b'\r', Self::Asleep) => Choice::Wake,
+            (b'r' | b'R' | b'\r', _) => Choice::Attach,
+            _ => Choice::Stay,
+        }
+    }
+
     /// Whether `r` attaches again from this card.
     #[must_use]
     pub const fn reattaches(&self) -> bool {
@@ -70,13 +99,15 @@ impl Card {
         let state = match self {
             Self::Closed { branch: Some(b) } => format!("closed · branch {b} · PR: gh pr view {b}"),
             Self::Closed { branch: None } => "closed".to_owned(),
-            Self::Asleep => "asleep · r to attach once it wakes".to_owned(),
+            Self::Asleep => "asleep · r wakes it and attaches".to_owned(),
             Self::Detached => "detached · the agent keeps running".to_owned(),
             Self::AgentEnded => "the agent's terminal ended · the Box is still up".to_owned(),
             Self::LinkDropped => "the link to the Box dropped".to_owned(),
             Self::Refused(why) => format!("attach refused: {why}"),
         };
-        let keys = if self.reattaches() {
+        let keys = if matches!(self, Self::Asleep) {
+            "r wake and attach · q close this pane".to_owned()
+        } else if self.reattaches() {
             format!("r attach · q close this pane · {DETACH_KEY} detaches while attached")
         } else {
             "q close this pane".to_owned()
