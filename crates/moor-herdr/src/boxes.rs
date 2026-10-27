@@ -200,6 +200,19 @@ pub fn open_box(client: &Client, name: &str) -> Result<Option<Shown>, Error> {
     }
 }
 
+/// Wakes the asleep Box `name`.
+pub fn wake(client: &Client, name: &str) -> Result<(), Error> {
+    let reply = client.request(request(wake_wire(name))?, |_| {})?;
+    reply
+        .error
+        .map_or(Ok(()), |e| Err(Error::Refused(e.message)))
+}
+
+/// The wire form of the request that wakes Box `name`.
+fn wake_wire(name: &str) -> Value {
+    json!({"cmd": "wake", "box": name})
+}
+
 /// A request from its wire form, so the front states only the fields it sets.
 pub fn request(wire: Value) -> Result<Request, Error> {
     Ok(serde_json::from_value(wire)?)

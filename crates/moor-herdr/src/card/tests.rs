@@ -1,6 +1,6 @@
 use moor_core::view::AttachEnd;
 
-use super::{Card, Ended};
+use super::{Card, Choice, Ended};
 use crate::boxes::{Activity, Phase, Shown};
 
 fn shown(phase: Phase) -> Shown {
@@ -31,10 +31,10 @@ fn a_box_gone_from_the_list_shows_where_its_work_went() {
 }
 
 #[test]
-fn an_asleep_box_offers_to_attach_again() {
+fn an_asleep_box_offers_to_wake_and_attach() {
     assert_eq!(
         text(&Ended::Skipped, Some(Phase::Asleep)),
-        format!("◈ moor/fix\n\nasleep · r to attach once it wakes\n\n{KEYS}")
+        "◈ moor/fix\n\nasleep · r wakes it and attaches\n\nr wake and attach · q close this pane"
     );
 }
 
@@ -55,4 +55,33 @@ fn each_end_of_a_live_relay_has_its_own_line() {
     );
     assert_eq!(line(Ended::Refused("no".into())), "attach refused: no");
     assert!(text(&Ended::Relay(AttachEnd::Client), LIVE).ends_with(KEYS));
+}
+
+#[test]
+fn r_and_enter_wake_an_asleep_box_and_reattach_a_live_one() {
+    for key in *b"rR\r" {
+        assert_eq!(Card::Asleep.key(key), Choice::Wake);
+        assert_eq!(Card::Detached.key(key), Choice::Attach);
+    }
+}
+
+#[test]
+fn r_on_a_closed_box_says_so_and_offers_nothing() {
+    let closed = Card::Closed { branch: None };
+    assert_eq!(
+        closed.key(b'r'),
+        Choice::Note("closed: there is nothing to attach")
+    );
+    assert_eq!(
+        closed.key(b'\r'),
+        Choice::Note("closed: there is nothing to attach")
+    );
+}
+
+#[test]
+fn q_closes_the_pane_from_every_card_and_other_keys_do_nothing() {
+    for card in [Card::Asleep, Card::Detached, Card::Closed { branch: None }] {
+        assert_eq!(card.key(b'q'), Choice::Close);
+        assert_eq!(card.key(b'x'), Choice::Stay);
+    }
 }
