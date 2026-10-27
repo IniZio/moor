@@ -13,6 +13,8 @@ use moor_core::seam::surface::{PaneCmd, PaneRef, Surface, WorkspaceRef};
 
 /// The tmux session the agent runs in; a Box runs one agent at a time.
 pub(in crate::adapters::box_agent) const SESSION: &str = "moor-agent";
+/// The agent window's own size, as tmux size flags.
+const WINDOW: &str = "-x 200 -y 50";
 /// Where the agent's exit status lands, relative to the Box workdir.
 const EXIT_FILE: &str = ".moor/agent.exit";
 /// The Box command that attaches to the agent's session and exits with the agent's status once
@@ -34,7 +36,7 @@ fn start(exit_file: &str, script: &str) -> String {
         "if ! command -v tmux >/dev/null 2>&1; then \
          echo '{NO_TMUX}' >&2; exit {NO_TMUX_EXIT}; fi; \
          tmux kill-session -t {SESSION} 2>/dev/null; rm -f {exit_file}; \
-         tmux new-session -d -s {SESSION} -x 200 -y 50 {} || exit 1; \
+         tmux new-session -d -s {SESSION} {WINDOW} {} || exit 1; \
          tmux set-option -t {SESSION} status off >/dev/null; \
          tmux set-option -t {SESSION} prefix None >/dev/null; \
          tmux set-option -s escape-time 0 >/dev/null; {}",
@@ -75,12 +77,16 @@ pub(super) fn pane_line(
     Ok(line(connect, &start(&exit_file, script)))
 }
 
-/// The command that relays the agent's terminal through `connect`. The agent's window takes the
-/// size of the client that used it last.
+/// The command that relays the agent's terminal through `connect`. While a client is attached
+/// the agent's window takes the size of the client that used it last; once the last client
+/// leaves, by detaching or by a dropped link, tmux puts the window back to its own size.
 pub(crate) fn relay_argv(connect: &[String]) -> Vec<String> {
     let mut argv = connect.to_vec();
     argv.push(format!(
-        "tmux set-option -w -t {SESSION} window-size latest >/dev/null 2>&1; \
+        "tmux set-hook -t {SESSION} client-detached \
+         'if -F \"#{{==:#{{session_attached}},0}}\" \"resize-window -t {SESSION} {WINDOW}\"' \
+         >/dev/null 2>&1; \
+         tmux set-option -w -t {SESSION} window-size latest >/dev/null 2>&1; \
          exec tmux attach-session -t {SESSION}"
     ));
     argv

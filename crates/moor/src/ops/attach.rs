@@ -5,7 +5,6 @@ use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::{AttachReq, ErrorKind};
 
-use crate::adapters::box_agent::relay_argv;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::target::{self, Rule};
@@ -41,5 +40,7 @@ pub(crate) fn argv(cx: &Cx, req: &AttachReq) -> Result<Vec<String>, CommandError
         .driver()
         .connect_argv(handle)
         .map_err(|e| CommandError::new(ErrorKind::Failed, e.to_string()))?;
-    Ok(relay_argv(&connect))
+    cx.engine()
+        .relay_argv(&connect)
+        .ok_or_else(|| refused("runs an agent with no terminal to attach to"))
 }

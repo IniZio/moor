@@ -751,6 +751,22 @@ opening again returns it. A key never matches another user's Session.
 
 `env` reads the controller host's configs, so only the operator may send it.
 
+### Attach to a Box's terminal
+
+An `attach` request attaches a client to the Box agent's live terminal. The
+client's keys go to the session, and the screen comes back as bytes. The Box's
+owner or the operator may use it. Anyone else gets `not your Box`. An asleep
+Box is refused.
+
+The client detaches by closing its write side. The relay then ends with one of
+three reasons:
+
+- `client`: the client closed its side or went away.
+- `agent`: the agent's session ended.
+- `link`: the connection to the Box dropped, or the controller restarted.
+
+After the last client leaves, the agent's window returns to 200x50.
+
 ## Secrets a Box uses
 
 Each Proxy rule names the secret it injects. A Box's Proxy injects the
