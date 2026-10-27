@@ -24,7 +24,7 @@ use rmcp::handler::server::tool::{Extension, ToolCallContext};
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ListToolsResult,
-    PaginatedRequestParams,
+    PaginatedRequestParams, ServerConfig,
 };
 use rmcp::service::RequestContext;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
@@ -308,6 +308,10 @@ impl Runner {
 )]
 #[tool_handler(router = router())]
 impl ServerHandler for Runner {
+    fn get_info(&self) -> ServerConfig {
+        claim::server_config()
+    }
+
     async fn list_tools(
         &self,
         _request: Option<PaginatedRequestParams>,

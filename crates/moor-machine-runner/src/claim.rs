@@ -10,7 +10,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{CallToolResult, ContentBlock};
+use rmcp::model::{CallToolResult, ContentBlock, ServerCapabilities, ServerConfig};
 use rmcp::service::RequestContext;
 use rmcp::{tool, tool_router, ErrorData, RoleServer};
 use serde::{Deserialize, Serialize};
@@ -242,4 +242,15 @@ fn now() -> Ts {
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX));
     Ts::from_millis(ms)
+}
+
+/// Clients re-list tools on `tools/list_changed` only from a server that says its list can
+/// change, and a claim adds the machine's relayed tools.
+pub(crate) fn server_config() -> ServerConfig {
+    ServerConfig::new(
+        ServerCapabilities::builder()
+            .enable_tools()
+            .enable_tool_list_changed()
+            .build(),
+    )
 }

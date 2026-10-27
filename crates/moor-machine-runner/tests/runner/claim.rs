@@ -126,6 +126,13 @@ fn a_held_slot_on_a_machine_too_full_to_use_is_released_and_the_claim_fails() {
 }
 
 #[test]
+fn the_runner_says_its_tool_list_can_change_so_clients_heed_the_notice() {
+    let rig = Rig::start();
+    let init = rig.initialized();
+    assert_eq!(init["capabilities"]["tools"]["listChanged"], true, "{init}");
+}
+
+#[test]
 fn a_held_claim_tells_the_client_the_tool_list_changed() {
     let rig = answering(&[], vec![held()]);
     let (got, methods) = rig.call_watching("machine_claim", json!({}), &MISSING);
