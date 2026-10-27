@@ -28,10 +28,10 @@ fn names_box(cmd: &str, name: &str) -> Scripted {
     Scripted::Reply(Response::ok(cmd, Some(value)))
 }
 
-/// The name, repo, goal and parent of one `start`.
+/// The name, repo, prompt and parent of one `start`.
 type Start = (String, Option<String>, Option<String>, Option<i64>);
 
-/// The name, repo, goal and parent of every `start` the controller received.
+/// The name, repo, prompt and parent of every `start` the controller received.
 fn starts(controller: &FakeController) -> Vec<Start> {
     controller.seen(|seen| {
         seen.requests
@@ -40,7 +40,7 @@ fn starts(controller: &FakeController) -> Vec<Start> {
                 Request::Start(s) => Some((
                     s.name.as_str().to_owned(),
                     s.repo.as_ref().map(ToString::to_string),
-                    s.goal.clone(),
+                    s.prompt.clone(),
                     s.parent.map(moor_core::name::SessionId::get),
                 )),
                 _ => None,
@@ -89,7 +89,7 @@ fn every_turn_starts(bin: &Path) {
     Rig::tool_calls(
         bin,
         None,
-        &[("start_box", json!({"goal": "fix the thing"}))],
+        &[("start_box", json!({"prompt": "fix the thing"}))],
     );
 }
 
@@ -170,7 +170,7 @@ fn with_the_limit_at_2_a_second_start_works_and_a_third_is_refused() {
     rig.spawn_daemon();
     rig.slack.wait_connected();
     rig.set_default_repo(REPO);
-    let start = |goal: &str| ("start_box", json!({"goal": goal}));
+    let start = |prompt: &str| ("start_box", json!({"prompt": prompt}));
     Rig::tool_calls(&bin, None, &[start("one"), start("two"), start("three")]);
     rig.mention(1, USER, "<@UBOT> three things", TS, None);
     rig.wait_replies(1);
@@ -255,7 +255,7 @@ fn starting_row_left_by_a_stopped_daemon_is_settled_at_startup() {
 }
 
 #[test]
-fn start_sent_again_after_a_restart_carries_the_stored_goal() {
+fn start_sent_again_after_a_restart_carries_the_stored_prompt() {
     let (mut rig, controller, _bin) = Rig::start_boxes();
     controller.script("start", Scripted::Hold);
     rig.mention(1, USER, "<@UBOT> fix the thing", TS, None);

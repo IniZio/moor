@@ -12,7 +12,7 @@ pub(crate) enum Call {
     /// `start_box`.
     StartBox {
         /// What the Box should do.
-        goal: String,
+        prompt: String,
         /// The repo as given, when given.
         repo: Option<String>,
         /// The branch or ref to start from, when given.
@@ -83,7 +83,7 @@ impl Call {
         match name {
             "list_boxes" => Ok(Self::ListBoxes),
             "start_box" => Ok(Self::StartBox {
-                goal: text("goal")?,
+                prompt: text("prompt")?,
                 repo: text("repo").ok(),
                 base: text("base").ok(),
             }),

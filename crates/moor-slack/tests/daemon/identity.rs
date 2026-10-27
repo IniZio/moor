@@ -87,7 +87,7 @@ fn two_users() -> (Rig, FakeController) {
     Rig::tool_calls(
         &bin,
         None,
-        &[("start_box", json!({"goal": "fix the thing"}))],
+        &[("start_box", json!({"prompt": "fix the thing"}))],
     );
     let controller = rig.serve(PROTOCOL);
     controller.keep_boxes();

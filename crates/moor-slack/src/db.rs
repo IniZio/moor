@@ -19,10 +19,16 @@ const BASELINE_VERSION: i64 = 16;
 
 /// slack.db's migrations, oldest first. Never edit an applied one; add a new file.
 fn schema() -> Result<Vec<Migration>, moor_migrate::Error> {
-    moor_migrate::migrations(&[(
-        "V1__baseline.sql",
-        include_str!("../migrations/V1__baseline.sql"),
-    )])
+    moor_migrate::migrations(&[
+        (
+            "V1__baseline.sql",
+            include_str!("../migrations/V1__baseline.sql"),
+        ),
+        (
+            "V2__box_prompt.sql",
+            include_str!("../migrations/V2__box_prompt.sql"),
+        ),
+    ])
 }
 
 /// A Slack thread the front answers in.

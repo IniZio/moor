@@ -17,7 +17,7 @@ fn starting(thread_ts: &str, name: &str, owner: &str) -> SlackBox {
         thread_ts: thread_ts.into(),
         box_name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "api".into(),
-        goal: "fix it".into(),
+        prompt: "fix it".into(),
         base: None,
         requested_by: owner.into(),
         parent: None,
@@ -157,7 +157,7 @@ fn slack_db_that_keeps_the_box_in_the_thread_row_is_refused() {
     let conn = rusqlite::Connection::open(&path).unwrap();
     conn.execute_batch(
         "CREATE TABLE slack_threads (channel TEXT, thread_ts TEXT, state TEXT, box_id INTEGER, \
-         box_name TEXT, repo TEXT, goal TEXT, owner TEXT); PRAGMA user_version = 3;",
+         box_name TEXT, repo TEXT, prompt TEXT, owner TEXT); PRAGMA user_version = 3;",
     )
     .unwrap();
     drop(conn);
@@ -335,7 +335,11 @@ fn a_file_from_the_last_build_before_migrations_is_adopted_unchanged() {
             r.get(0)
         })
         .unwrap();
-    assert_eq!(applied, 1);
+    let all = i64::try_from(super::schema().unwrap().len()).unwrap();
+    assert_eq!(
+        applied, all,
+        "the baseline is adopted and the later ones run"
+    );
 }
 
 #[test]
@@ -347,7 +351,10 @@ fn applied_migrations_are_never_edited() {
         .collect();
     assert_eq!(
         pinned,
-        [(1, 8_754_816_789_016_865_323)],
+        [
+            (1, 8_754_816_789_016_865_323),
+            (2, 6_043_544_592_493_671_438)
+        ],
         "a schema change is a new migration file; an applied one must not change"
     );
 }

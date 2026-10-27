@@ -22,7 +22,7 @@ fn action() -> Action {
         requested_by: "U1".to_owned(),
         tool: "start_box".to_owned(),
         box_name: "slack-1-1".to_owned(),
-        args: format!("goal '{}'", "x".repeat(300)),
+        args: format!("prompt '{}'", "x".repeat(300)),
         outcome: Some("Box slack-1-1 started on branch moor/bump".to_owned()),
     }
 }
@@ -52,9 +52,9 @@ fn a_long_thread_keeps_its_first_request_and_journal_and_drops_old_messages() {
     assert!(text.len() <= 2048, "{} bytes", text.len());
     assert!(text.starts_with("## First request\nbump the app version past 1.2.0\n"));
     let journal = format!(
-        "Turn 3, <@U1> asked. start_box Box `slack-1-1`: goal '{} (shortened here; the Box got the full text). \
+        "Turn 3, <@U1> asked. start_box Box `slack-1-1`: prompt '{} (shortened here; the Box got the full text). \
          Result: Box slack-1-1 started on branch moor/bump.",
-        "x".repeat(194)
+        "x".repeat(192)
     );
     assert!(text.contains(&journal), "{text}");
     assert!(text.contains(&boxes[0]));

@@ -246,12 +246,11 @@ fn ask(fx: &mut Fx<'_>, row: &SlackBox, attempt: Attempt) -> Outcome {
 fn start_request(row: &SlackBox, repo: ForgeRepo) -> Request {
     Request::Start(StartReq {
         name: row.box_name.clone(),
-        goal: Some(row.goal.clone()),
+        prompt: Some(row.prompt.clone()),
         issue: None,
         base: row.base.clone(),
         model: None,
         no_agent: false,
-        hold: false,
         resume: false,
         repo: Some(repo),
         parent: row.parent,

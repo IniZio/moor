@@ -255,13 +255,13 @@ fn restart_agent_ends_the_session_then_resumes_it() {
     };
     assert_eq!(end.box_name, ONE);
     assert_eq!(start.name.as_str(), ONE);
-    assert!(start.resume && start.goal.is_none(), "{start:?}");
+    assert!(start.resume && start.prompt.is_none(), "{start:?}");
     assert_eq!(start.repo, Some(ForgeRepo::parse("acme/api").unwrap()));
     assert_eq!(db.turn_actions(turn).unwrap()[0].tool, "restart_agent");
 }
 
 #[test]
-fn restart_agent_starts_the_goal_over_when_there_is_no_session_to_resume() {
+fn restart_agent_starts_the_prompt_over_when_there_is_no_session_to_resume() {
     let dir = tempfile::tempdir().unwrap();
     let db = two_authors(dir.path());
     turn_of(&db, "U1", "Ev1");
@@ -279,7 +279,7 @@ fn restart_agent_starts_the_goal_over_when_there_is_no_session_to_resume() {
     assert_eq!(
         reply,
         Reply::done(format!(
-            "Restarted the agent of Box `{ONE}` from its goal; it had no session to resume."
+            "Restarted the agent of Box `{ONE}` from its prompt; it had no session to resume."
         ))
     );
     assert_eq!(controller.cmds(), ["end-session", "start", "start"]);
@@ -288,7 +288,7 @@ fn restart_agent_starts_the_goal_over_when_there_is_no_session_to_resume() {
         panic!("{sent:?}");
     };
     assert!(!again.resume);
-    assert_eq!(again.goal.as_deref(), Some(&*format!("goal of {ONE}")));
+    assert_eq!(again.prompt.as_deref(), Some(&*format!("prompt of {ONE}")));
 }
 
 #[test]

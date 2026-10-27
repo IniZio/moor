@@ -83,7 +83,7 @@ fn sigterm_lets_the_request_in_flight_finish_before_exit_0() {
     Rig::tool_calls(
         &bin,
         None,
-        &[("start_box", json!({"goal": "fix the thing"}))],
+        &[("start_box", json!({"prompt": "fix the thing"}))],
     );
     let value = json!({"box": {"id": 7, "name": BOX_NAME, "branch": format!("moor/{BOX_NAME}")}});
     let reply = Response::ok("start", Some(value));

@@ -22,18 +22,18 @@ pub(crate) const SPECS: [Spec; 10] = [
     },
     Spec {
         name: "start_box",
-        description: "Start a Box, a remote machine whose coding agent works on one goal in one \
+        description: "Start a Box, a remote machine whose coding agent works on one prompt in one \
                       repo. Works only when the thread's starter wrote in this turn, and only \
                       while the thread has fewer open Boxes than its limit.",
         input: || {
             json!({
                 "type": "object",
                 "properties": {
-                    "goal": {"type": "string", "description": "What the Box's agent should do, in plain words."},
+                    "prompt": {"type": "string", "description": "What the Box's agent should do, in plain words."},
                     "repo": {"type": "string", "description": "One of the channel's repos as owner/name; leave it out for the channel's default."},
                     "base": {"type": "string", "description": "A branch or ref to start from; leave it out for the repo's default branch."}
                 },
-                "required": ["goal"],
+                "required": ["prompt"],
                 "additionalProperties": false
             })
         },
@@ -148,7 +148,7 @@ pub(crate) const SPECS: [Spec; 10] = [
     },
     Spec {
         name: "restart_agent",
-        description: "Start the coding agent of one of this thread's Boxes again: it ends the agent's session and resumes it, or starts the Box's goal over when there is nothing to resume. Works only when the person who asked for the Box wrote in this turn.",
+        description: "Start the coding agent of one of this thread's Boxes again: it ends the agent's session and resumes it, or starts the Box's prompt over when there is nothing to resume. Works only when the person who asked for the Box wrote in this turn.",
         input: || {
             json!({
                 "type": "object",

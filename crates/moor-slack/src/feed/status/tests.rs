@@ -17,7 +17,7 @@ fn fed(state: RowState, ts: Option<&str>, text: Option<&str>) -> FedBox {
             thread_ts: "1.0".into(),
             box_name: BoxName::parse_allow_bare("fix-bug").unwrap(),
             repo: "acme/app".into(),
-            goal: "fix it".into(),
+            prompt: "fix it".into(),
             base: None,
             requested_by: "U1".into(),
             parent: None,

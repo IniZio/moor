@@ -61,17 +61,17 @@ fn run_with(
     run(&mut scope, call)
 }
 
-fn start(goal: &str, repo: Option<&str>) -> Call {
+fn start(prompt: &str, repo: Option<&str>) -> Call {
     Call::StartBox {
-        goal: goal.into(),
+        prompt: prompt.into(),
         repo: repo.map(str::to_owned),
         base: None,
     }
 }
 
-fn start_from(goal: &str, base: &str) -> Call {
+fn start_from(prompt: &str, base: &str) -> Call {
     Call::StartBox {
-        goal: goal.into(),
+        prompt: prompt.into(),
         repo: Some("acme/api".into()),
         base: Some(base.to_owned()),
     }
@@ -89,7 +89,7 @@ fn start_box_records_the_box_on_the_channel_default_with_the_host_session_as_par
     let [row] = db.thread_boxes("C1", "1.0").unwrap().try_into().unwrap();
     assert_eq!(row.box_name.as_str(), "slack-1-0-1");
     assert_eq!(
-        (row.repo.as_str(), row.goal.as_str()),
+        (row.repo.as_str(), row.prompt.as_str()),
         ("acme/web", "bump the version")
     );
     assert_eq!(row.requested_by, "U1");
@@ -119,14 +119,14 @@ fn start_box_stores_the_base_it_is_given_and_none_without_one() {
 
 #[test]
 fn start_box_reads_base_from_the_tool_arguments() {
-    let args = serde_json::json!({"goal": "g", "base": " moor-setup "});
+    let args = serde_json::json!({"prompt": "g", "base": " moor-setup "});
     let with = Call::StartBox {
-        goal: "g".into(),
+        prompt: "g".into(),
         repo: None,
         base: Some("moor-setup".into()),
     };
     assert_eq!(Call::parse("start_box", &args), Ok(with));
-    let args = serde_json::json!({"goal": "g"});
+    let args = serde_json::json!({"prompt": "g"});
     assert_eq!(Call::parse("start_box", &args), Ok(start("g", None)));
 }
 
