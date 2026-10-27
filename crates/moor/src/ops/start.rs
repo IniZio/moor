@@ -2,7 +2,7 @@
 //!
 //! It queues the Box when the machine limit for its provider is reached. On a new machine it runs the repo
 //! setup, then the dotfiles, before the agent launches.
-//! It launches the agent for a Working Box with a goal.
+//! It launches the agent for a Working Box; without a goal or issue the agent waits for a prompt.
 
 use moor_core::config::Flags;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
@@ -69,6 +69,7 @@ struct Placed {
 /// # Errors
 /// [`CommandError`] when a read, a seam call or a store write fails.
 pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
+    let req = &held_without_goal(req);
     let store = cx.store()?;
     let user = needs::require(cx, req.repo.as_ref())?;
     if let Some(parent) = req.parent {
@@ -122,6 +123,15 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     set_provisioned(&mut v, &done);
     set_agent(&mut v, agent);
     Ok(v)
+}
+
+/// `req` held when it gives neither goal nor issue, so the agent launches waiting for a prompt.
+fn held_without_goal(req: &StartReq) -> StartReq {
+    let hold = req.hold || (req.goal.is_none() && req.issue.is_none());
+    StartReq {
+        hold,
+        ..req.clone()
+    }
 }
 
 /// Records a rejected Box, with no Workspace, and fails with the outcome.
@@ -202,7 +212,7 @@ fn attach(
         row.boxed.as_ref().map(|b| b.state),
         Some(BoxState::Failed | BoxState::Gone)
     );
-    if !req.no_agent && (req.goal.is_some() || req.resume) {
+    if relaunch::asks_for_agent(req) {
         reopen::ended_session(store, row.id, req.parent.map(SessionId::get))?;
     }
     wake_idle(store, row.id)?;

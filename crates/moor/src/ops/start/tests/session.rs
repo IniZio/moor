@@ -8,7 +8,7 @@ use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::agent_profile::FirstRunPrompt;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::ExecOutcome;
-use moor_core::seam::engine::EngineError;
+use moor_core::seam::engine::{EngineError, LaunchPrompt};
 use moor_core::seam::surface::SurfaceError;
 use moor_core::{BoxId, BoxName, ErrorKind, ShowReq, StartReq, WaitFor, WaitReq};
 
@@ -55,19 +55,19 @@ fn start_records_one_live_session_and_attach_adds_none() {
 }
 
 #[test]
-fn start_without_a_goal_records_no_session() {
+fn start_without_a_goal_records_a_session() {
     let w = world(FakeDriver::new());
     let first = run(&w.cx, &req("demo")).unwrap();
     let id = BoxId::new(first.boxed.id);
     run(&w.cx, &req("demo")).unwrap();
     assert_eq!((first.boxed.lifecycle, first.boxed.session_state), WORKING);
-    assert!(!w.cx.store().unwrap().has_session(id).unwrap());
+    assert!(w.cx.store().unwrap().has_session(id).unwrap());
 }
 
 #[test]
-fn wait_for_idle_returns_after_a_start_without_a_goal() {
+fn wait_for_idle_returns_after_a_start_with_no_agent() {
     let w = world(FakeDriver::new());
-    run(&w.cx, &req("demo")).unwrap();
+    run(&w.cx, &super::agentless_req("demo")).unwrap();
     let wait = WaitReq {
         box_name: BoxName::parse_allow_bare("demo").unwrap(),
         wait_for: Some(WaitFor::Idle),
@@ -211,10 +211,10 @@ fn restarting_an_idle_box_with_a_goal_and_no_session_wakes_and_launches_once() {
 }
 
 #[test]
-fn restarting_an_idle_box_without_a_goal_or_session_wakes_it_and_launches_nothing() {
+fn restarting_an_idle_box_without_a_goal_or_session_wakes_it_and_launches_with_no_prompt() {
     let engine = Arc::new(FakeEngine::new());
     let w = with_engine(&engine);
-    let first = run(&w.cx, &req("demo")).unwrap();
+    let first = run(&w.cx, &super::agentless_req("demo")).unwrap();
     let id = BoxId::new(first.boxed.id);
     let store = w.cx.store().unwrap();
     store
@@ -227,7 +227,9 @@ fn restarting_an_idle_box_without_a_goal_or_session_wakes_it_and_launches_nothin
         .unwrap()
         .iter()
         .any(|e| e.kind == "busy"));
-    assert!(engine.launches().is_empty());
+    let all = engine.launches();
+    assert_eq!(all.len(), 1);
+    assert_eq!(all.first().unwrap().prompt, LaunchPrompt::None);
 }
 
 #[test]
@@ -251,7 +253,7 @@ fn rerunning_after_a_failed_launch_launches_once_and_stays_working() {
 }
 
 #[test]
-fn no_agent_and_no_goal_launch_nothing() {
+fn no_agent_launches_nothing_with_or_without_a_goal() {
     let engine = Arc::new(FakeEngine::new());
     let w = with_engine(&engine);
     let flagged = StartReq {
@@ -260,7 +262,7 @@ fn no_agent_and_no_goal_launch_nothing() {
         ..goal_req("a")
     };
     run(&w.cx, &flagged).unwrap();
-    run(&w.cx, &req("b")).unwrap();
+    run(&w.cx, &super::agentless_req("b")).unwrap();
     assert!(engine.launches().is_empty());
 }
 

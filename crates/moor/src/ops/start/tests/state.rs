@@ -19,7 +19,7 @@ pub(super) fn idle(row: &BoxRow) -> bool {
 #[test]
 fn ready_box_without_a_session_row_counts_as_working() {
     let w = super::world(crate::testing::driver::FakeDriver::new());
-    let first = crate::ops::start::run(&w.cx, &super::req("demo")).unwrap();
+    let first = crate::ops::start::run(&w.cx, &super::agentless_req("demo")).unwrap();
     let id = moor_core::BoxId::new(first.boxed.id);
     let store = w.cx.store().unwrap();
     let conn = store.writer();

@@ -28,6 +28,7 @@ mod clone_timing;
 mod dead_agent;
 mod dotfiles;
 mod exited_start;
+mod goalless;
 mod hold;
 mod identity;
 mod launch_deadline;
@@ -151,6 +152,14 @@ fn req(name: &str) -> StartReq {
     }
 }
 
+/// A start request for `name` that launches no agent.
+fn agentless_req(name: &str) -> StartReq {
+    StartReq {
+        no_agent: true,
+        ..req(name)
+    }
+}
+
 /// A start request for `name` of [`repo`].
 fn repo_req(name: &str) -> StartReq {
     StartReq {
@@ -178,7 +187,7 @@ fn happy_path_makes_a_working_box_with_a_ready_box() {
 #[test]
 fn happy_path_calls_seams_in_order_and_clears_intent() {
     let w = world(FakeDriver::new());
-    let v = run(&w.cx, &req("demo")).unwrap();
+    let v = run(&w.cx, &agentless_req("demo")).unwrap();
     let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
     assert!(row.unwrap().unwrap().intent.is_none());
     assert_eq!(w.surface.calls(), ["ensure_workspace moor:demo"]);
@@ -260,8 +269,8 @@ fn restart_of_a_closed_name_creates_a_new_box() {
 #[test]
 fn open_name_attaches_without_touching_the_box() {
     let w = world(FakeDriver::new());
-    let first = run(&w.cx, &req("demo")).unwrap();
-    let again = run(&w.cx, &req("demo")).unwrap();
+    let first = run(&w.cx, &agentless_req("demo")).unwrap();
+    let again = run(&w.cx, &agentless_req("demo")).unwrap();
     assert!(again.attached);
     assert_eq!(again.boxed.id, first.boxed.id);
     assert_eq!(w.driver.calls(), ["acquire"]);
@@ -291,8 +300,8 @@ fn start_after_acquire_failure_gets_a_new_box() {
     let w = world(FakeDriver::new().fail_acquire(DriverError::Failed {
         summary: "boom".into(),
     }));
-    run(&w.cx, &req("demo")).unwrap_err();
-    let again = run(&w.cx, &req("demo")).unwrap();
+    run(&w.cx, &agentless_req("demo")).unwrap_err();
+    let again = run(&w.cx, &agentless_req("demo")).unwrap();
     assert!(again.attached);
     assert_eq!(
         (again.boxed.lifecycle, again.boxed.session_state),

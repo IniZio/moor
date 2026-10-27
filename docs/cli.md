@@ -37,7 +37,7 @@ The state directory holds `moor.db`. It is the first of `--state-dir`,
 
 | Command | What it does |
 | --- | --- |
-| `moor start NAME` | Creates a Box on the branch `moor/NAME` with its herdr workspace and machine, or attaches to the open Box of that name. The agent starts when you give `--goal` or `--resume`. The Box acts for the moor user of whoever started it, so `start` runs only through a controller, and refuses an open Box of another user. It also refuses when the user lacks a secret the Box needs, naming every missing one. See [Secrets a Box uses](config.md#secrets-a-box-uses). |
+| `moor start NAME` | Creates a Box on the branch `moor/NAME` with its herdr workspace and machine, or attaches to the open Box of that name. The agent starts unless you give `--no-agent`. Without `--goal` or `--issue` it waits for your first prompt, or resumes its stored session on a Box that has one. The Box acts for the moor user of whoever started it, so `start` runs only through a controller, and refuses an open Box of another user. It also refuses when the user lacks a secret the Box needs, naming every missing one. See [Secrets a Box uses](config.md#secrets-a-box-uses). |
 | `moor show [NAME]` | Shows all open Boxes, or one Box in detail. `list` is an alias. |
 | `moor run NAME -- CMD...` | Runs a command on the Box's machine. |
 | `moor wait NAME` | Waits until the Box reaches a state. |
@@ -54,7 +54,7 @@ The state directory holds `moor.db`. It is the first of `--state-dir`,
 
 | Flag | Effect |
 | --- | --- |
-| `--goal TEXT` | The agent's first prompt. |
+| `--goal TEXT` | The agent's first prompt. Without it the agent starts waiting for a prompt. |
 | `--issue REF` | An issue reference for the Box. |
 | `--base REF` | The ref on GitHub the Box branch starts from. The default is the repo's default branch. |
 | `--repo OWNER/NAME\|URL` | The GitHub repo the Box clones, as `OWNER/NAME` or a github.com URL, instead of the current checkout's `origin`. |

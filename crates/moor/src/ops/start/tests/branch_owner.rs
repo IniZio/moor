@@ -32,7 +32,7 @@ fn a_branch_that_belongs_to_another_open_box_is_refused() {
 #[test]
 fn start_records_the_box_branch_and_makes_no_worktree() {
     let w = world(FakeDriver::new());
-    let v = run(&w.cx, &req("demo")).unwrap();
+    let v = run(&w.cx, &super::agentless_req("demo")).unwrap();
     assert_eq!(v.boxed.branch.as_deref(), Some("moor/demo"));
     let refs =
         w.cx.store()

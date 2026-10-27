@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use moor_core::activity::{HookRead, PaneObs, PaneRead, PaneStatus, Probes};
+use moor_core::seam::engine::LaunchPrompt;
 use moor_core::{BoxId, StartReq};
 
 use super::relaunch::session;
@@ -119,22 +120,26 @@ fn a_resume_start_after_the_agent_exited_opens_a_new_session() {
 }
 
 #[test]
-fn a_plain_start_after_the_agent_exited_launches_nothing_once_settled() {
+fn a_plain_start_after_the_agent_exited_launches_with_no_prompt_once_settled() {
     let (w, engine, id) = exited_agent();
     let v = run(&w.cx, &req("demo")).unwrap();
-    assert!(!v.agent.launched);
-    assert_eq!(engine.launches().len(), 1);
-    assert!(w.cx.store().unwrap().live_session(id).unwrap().is_none());
+    assert!(v.agent.launched);
+    let all = engine.launches();
+    assert_eq!(all.len(), 2);
+    assert_eq!(all.get(1).unwrap().prompt, LaunchPrompt::None);
+    assert!(w.cx.store().unwrap().live_session(id).unwrap().is_some());
 }
 
 #[test]
-fn a_plain_start_after_the_agent_exited_launches_nothing_before_settling() {
+fn a_plain_start_after_the_agent_exited_launches_with_no_prompt_before_settling() {
     let (w, engine, _) = super::relaunch::started();
     w.surface
         .push_pane_obs("p-1", Ok(super::relaunch::obs(Some(3))));
     let v = run(&w.cx, &req("demo")).unwrap();
-    assert!(!v.agent.launched);
-    assert_eq!(engine.launches().len(), 1);
+    assert!(v.agent.launched);
+    let all = engine.launches();
+    assert_eq!(all.len(), 2);
+    assert_eq!(all.get(1).unwrap().prompt, LaunchPrompt::None);
 }
 
 #[test]
