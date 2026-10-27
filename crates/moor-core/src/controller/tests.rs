@@ -303,10 +303,51 @@ fn event_frame_golden_without_box_or_session() {
 }
 
 #[test]
-fn protocol_is_thirteen_and_old_hello_still_parses() {
-    assert_eq!(PROTOCOL, 13);
+fn protocol_is_fourteen_and_old_hello_still_parses() {
+    assert_eq!(PROTOCOL, 14);
     let got = parse_frame(r#"{"frame":"hello","protocol":1}"#);
     assert_eq!(got, Ok(ClientFrame::Hello { protocol: 1 }));
+}
+
+#[test]
+fn attach_input_frames_round_trip() {
+    let keys = ClientFrame::Bytes {
+        id: "1".to_owned(),
+        len: 3,
+    };
+    let line = keys.to_line();
+    assert_eq!(line, "{\"frame\":\"bytes\",\"id\":\"1\",\"len\":3}\n");
+    assert_eq!(parse_frame(line.trim_end()), Ok(keys));
+    let size = ClientFrame::Resize {
+        id: "1".to_owned(),
+        cols: 120,
+        rows: 35,
+    };
+    let line = size.to_line();
+    assert_eq!(
+        line,
+        "{\"frame\":\"resize\",\"id\":\"1\",\"cols\":120,\"rows\":35}\n"
+    );
+    assert_eq!(parse_frame(line.trim_end()), Ok(size));
+}
+
+#[test]
+fn attach_request_and_view_round_trip() {
+    let line = r#"{"cmd":"attach","box":"b","cols":120,"rows":33}"#;
+    let req: Request = serde_json::from_str(line).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(req.cmd(), "attach");
+    let back = serde_json::to_string(&req).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(back, line);
+    let view = crate::view::AttachView {
+        ended_by: crate::view::AttachEnd::Agent,
+        bytes_out: 7,
+        bytes_in: 2,
+    };
+    let json = serde_json::to_string(&view).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(json, r#"{"ended_by":"agent","bytes_out":7,"bytes_in":2}"#);
+    let again: crate::view::AttachView =
+        serde_json::from_str(&json).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(again, view);
 }
 
 #[test]

@@ -7,6 +7,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 
 mod artifacts;
+pub(crate) mod attach;
 pub(crate) mod authz;
 mod binding;
 mod box_mirror;
@@ -96,6 +97,10 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::Wake(r) => to_value(&wake::run(cx, &r)?),
         Request::Open(r) => to_value(&open::run(cx, &r)?),
         Request::Connect(r) => to_value(&open::connect(cx, &r)?),
+        Request::Attach(_) => Err(CommandError::new(
+            ErrorKind::Refused,
+            "attach relays a terminal both ways, so only the controller socket serves it",
+        )),
         Request::Steer(r) => to_value(&steer::run(cx, &r)?),
         Request::EndSession(r) => to_value(&end_session::run(cx, &r)?),
         Request::OpenSession(r) => to_value(&open_session::run(cx, &r)?),

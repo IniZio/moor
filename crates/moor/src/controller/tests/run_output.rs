@@ -50,7 +50,7 @@ fn run_output_reaches_the_client_while_the_command_runs() {
             reader,
             stream,
             &Admitted::unwatched(),
-            |id, request, out| match request {
+            |id, request, (_, out)| match request {
                 Request::Run(run) => {
                     let cx = cx.lock().unwrap().take().unwrap();
                     Some(report_while("run", id, WAIT, out, move |sink| {

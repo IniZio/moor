@@ -33,6 +33,12 @@ impl Hangup {
         stream.try_clone().map(Self)
     }
 
+    /// Wakes a read blocked on this connection, which then sees its end; the client can still
+    /// read what the controller writes.
+    pub(crate) fn stop_reading(&self) {
+        let _ = self.0.shutdown(std::net::Shutdown::Read);
+    }
+
     /// Runs `work`, setting `cancel` as soon as the client hangs up while it runs.
     pub(crate) fn cancels<T>(&self, cancel: &Cancel, work: impl FnOnce() -> T) -> T {
         let done = AtomicBool::new(false);

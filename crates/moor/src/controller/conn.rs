@@ -8,11 +8,12 @@ use moor_core::controller::{
 };
 use moor_core::request::{Grant, UserCmd};
 use moor_core::user::{Caller, Identity, Viewer};
-use moor_core::{ArtifactReadReq, ErrorKind, Request, Response, RunReq};
+use moor_core::{ArtifactReadReq, AttachReq, ErrorKind, Request, Response, RunReq};
 
 use super::drain::Admitted;
 use super::hangup::Hangup;
 use super::progress::{respond_with_progress, wait_unless_draining, Sink, INTERVAL};
+use super::relay;
 use super::watch;
 use crate::env::Env;
 use crate::error::CommandError;
@@ -50,15 +51,15 @@ impl Peer {
 /// Serve frames from `reader` until EOF, an I/O error on either side, or the peer's drain.
 ///
 /// Frame-level problems get an error frame and leave the connection open.
-pub(crate) fn handle(reader: impl BufRead, writer: impl Write, env: &Env, peer: &Peer) {
+pub(crate) fn handle(reader: impl BufRead + Send, writer: impl Write, env: &Env, peer: &Peer) {
     serve(
         reader,
         writer,
         &peer.conn,
-        |id, request, out| {
+        |id, request, link| {
             let cmd = request.cmd();
             match request.split_identity() {
-                Ok((asserted, request)) => answer(env, peer, id, asserted.as_ref(), request, out),
+                Ok((asserted, request)) => answer(env, peer, id, asserted.as_ref(), request, link),
                 Err(why) => {
                     Some(CommandError::new(ErrorKind::Refused, why).into_response(cmd, vec![]))
                 }
@@ -91,7 +92,7 @@ fn answer(
     id: &str,
     asserted: Option<&Identity>,
     request: Request,
-    out: &mut dyn Write,
+    (input, out): Duplex<'_>,
 ) -> Option<Response> {
     let cmd = request.cmd();
     if matches!(request, Request::Version {}) {
@@ -104,6 +105,7 @@ fn answer(
         };
     match request {
         Request::ArtifactRead(req) => Some(read_artifact(env, grant, id, &req, out)),
+        Request::Attach(req) => Some(attach(env, peer, grant, id, &req, (input, out))),
         request => match request.into_user() {
             Ok((_, cmd)) => Some(answer_user(env, peer, asserted, &cmd)),
             Err(request) => match requester(peer, asserted, &request) {
@@ -154,15 +156,20 @@ fn respond_unless_draining(
 /// answered: the connection ends with a `restarting` frame that names no request, which also
 /// answers a request half read, unread, or written after the read side shut.
 pub(super) fn serve<W: Write>(
-    reader: impl BufRead,
+    mut reader: impl BufRead + Send,
     mut writer: W,
     conn: &Admitted,
-    answer: impl Fn(&str, Request, &mut dyn Write) -> Option<Response>,
+    answer: impl Fn(&str, Request, Duplex<'_>) -> Option<Response>,
     watch: impl Fn(&mut W, i64, &WatchFilter, bool, Option<&Identity>),
 ) {
     let mut handshaken = false;
-    for line in reader.lines() {
-        let Ok(line) = line else { break };
+    let mut line = String::new();
+    let mut last = false;
+    loop {
+        line.clear();
+        if !matches!(reader.read_line(&mut line), Ok(n) if n > 0) {
+            break;
+        }
         if conn.drain().begun() {
             break;
         }
@@ -199,10 +206,23 @@ pub(super) fn serve<W: Write>(
                 );
                 return;
             }
-            Ok(ClientFrame::Request { id, request }) => match conn
-                .answering()
-                .and_then(|_answering| answer(&id, *request, &mut writer))
-            {
+            Ok(ClientFrame::Bytes { id, .. } | ClientFrame::Resize { id, .. }) => {
+                send(
+                    &mut writer,
+                    &ServerFrame::Error {
+                        id: Some(id),
+                        kind: FrameErrorKind::Malformed,
+                        message: "bytes and resize frames belong to a running attach".to_owned(),
+                    },
+                );
+                return;
+            }
+            Ok(ClientFrame::Request { id, request }) => match conn.answering().and_then(
+                |_answering| {
+                    last = matches!(*request, Request::Attach(_));
+                    answer(&id, *request, (&mut reader, &mut writer))
+                },
+            ) {
                 Some(envelope) => ServerFrame::Response { id, envelope },
                 None => ServerFrame::Error {
                     id: Some(id),
@@ -213,7 +233,7 @@ pub(super) fn serve<W: Write>(
                 },
             },
         };
-        if !send(&mut writer, &reply) {
+        if !send(&mut writer, &reply) || last {
             return;
         }
     }
@@ -241,7 +261,8 @@ fn hello_required(frame: ClientFrame) -> ServerFrame {
             Some(id.clone()),
             format!("request {id} arrived before hello"),
         ),
-        _ => (None, "watch arrived before hello".to_owned()),
+        ClientFrame::Watch { .. } => (None, "watch arrived before hello".to_owned()),
+        _ => (None, "a frame arrived before hello".to_owned()),
     };
     ServerFrame::Error {
         id,
@@ -277,6 +298,46 @@ fn read_artifact(
             .granted(grant)
             .read_artifact(req, &mut |data| write_bytes(out, id, data)),
         Err(e) => e.into_response("artifact-read", vec![]),
+    }
+}
+
+/// The client's side of one connection: its frames, and where its answers go.
+pub(super) type Duplex<'a> = (&'a mut (dyn BufRead + Send), &'a mut dyn Write);
+
+/// Relay the agent's terminal on the Box `req` names over this connection, then answer.
+fn attach(
+    env: &Env,
+    peer: &Peer,
+    grant: Grant,
+    id: &str,
+    req: &AttachReq,
+    (input, output): Duplex<'_>,
+) -> Response {
+    let refused = |e: CommandError| e.into_response("attach", vec![]);
+    let Some(hangup) = peer.hangup.as_ref() else {
+        return refused(CommandError::new(
+            ErrorKind::Failed,
+            "this connection cannot be relayed",
+        ));
+    };
+    let argv = match Moor::from_env(env).and_then(|m| m.granted(grant).attach_argv(req)) {
+        Ok(argv) => argv,
+        Err(e) => return refused(e),
+    };
+    let drain = peer.conn.drain();
+    let link = relay::Link {
+        id,
+        input,
+        output,
+        unblock: &|| hangup.stop_reading(),
+        stopping: &|| drain.begun(),
+    };
+    match relay::run(&argv, req.cols, req.rows, link) {
+        Ok(view) => Response::ok("attach", serde_json::to_value(view).ok()),
+        Err(e) => refused(CommandError::new(
+            ErrorKind::Failed,
+            format!("cannot relay the agent's terminal: {e}"),
+        )),
     }
 }
 

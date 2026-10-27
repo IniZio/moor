@@ -176,7 +176,7 @@ fn watch_frame_filter_and_follow_reach_the_stream() {
         Cursor::new(input.into_bytes()),
         Vec::new(),
         &Admitted::unwatched(),
-        |_, _, _| Some(Moor::version()),
+        |_, _, _: super::Duplex<'_>| Some(Moor::version()),
         |_, since, filter: &WatchFilter, follow, identity: Option<&Identity>| {
             *seen.borrow_mut() = Some((since, filter.clone(), follow, identity.cloned()));
         },

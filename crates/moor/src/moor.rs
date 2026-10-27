@@ -116,6 +116,17 @@ impl Moor {
         }
     }
 
+    /// The command that relays the agent's terminal on the Box `req` names.
+    ///
+    /// # Errors
+    /// [`CommandError`] when the Box is not open, asleep, or has no machine to reach.
+    pub(crate) fn attach_argv(
+        &self,
+        req: &moor_core::AttachReq,
+    ) -> Result<Vec<String>, CommandError> {
+        ops::attach::argv(&self.cx, req)
+    }
+
     /// This engine doing only what `grant` lets its request do.
     #[must_use]
     pub(crate) fn granted(self, grant: Grant) -> Self {
