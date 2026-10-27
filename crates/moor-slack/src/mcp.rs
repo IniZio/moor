@@ -195,7 +195,6 @@ pub(crate) fn submission(sub: &TokenSubmission, call: &mut Call<'_>) -> Value {
     let add = McpAddReq {
         identity: None,
         header: None,
-        machine: false,
         key: (!key.is_empty()).then(|| SecretValue::new(key.into_bytes())),
         name: name.clone(),
         url,

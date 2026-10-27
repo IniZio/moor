@@ -31,14 +31,6 @@ pub(crate) fn repo_config(row: &BoxRow) -> Result<Option<RepoConfig>, CommandErr
     repo_config_of(row.repo.as_ref(), row.base.as_deref())
 }
 
-/// Whether the `.moor.yaml` stored with `row` asks for a machine.
-pub(crate) fn wants_machine(row: &BoxRow) -> bool {
-    repo_config(row)
-        .ok()
-        .flatten()
-        .is_some_and(|c| c.machine.is_some())
-}
-
 /// The `.moor.yaml` of `repo` read at `base`, parsed; named `OWNER/NAME@BASE:.moor.yaml` in errors.
 ///
 /// # Errors

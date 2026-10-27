@@ -21,8 +21,6 @@ pub struct UserMcp {
     pub url: String,
     /// The header the Proxy sets the key in.
     pub header: String,
-    /// Whether only a Box whose repo asks for a machine gets this server.
-    pub machine: bool,
 }
 
 impl UserMcp {
@@ -52,14 +50,7 @@ impl UserMcp {
             name: name.to_owned(),
             url: url.to_owned(),
             header: header.to_owned(),
-            machine: false,
         })
-    }
-
-    /// This server for machine Boxes only when `machine`.
-    #[must_use]
-    pub fn for_machine(self, machine: bool) -> Self {
-        Self { machine, ..self }
     }
 
     /// The vault secret that holds this server's key.
@@ -83,7 +74,6 @@ impl UserMcp {
             kind: Some("http".to_owned()),
             url: Some(self.url.clone()),
             headers: BTreeMap::from([(self.header.clone(), value)]),
-            machine: self.machine,
             ..McpServer::default()
         }
     }
@@ -108,19 +98,16 @@ pub struct BoxMcp {
 /// The shared servers merged with the user's `own`: the user's server wins a name clash.
 ///
 /// A server naming a secret the user lacks (`have`) is left out, never refusing the start. A
-/// server for machine Boxes only is left out unless the Box asks for a `machine`. A server
-/// in `ended` lost its sign-in, so its note asks the user to sign in again.
+/// server in `ended` lost its sign-in, so its note asks the user to sign in again.
 #[must_use]
 pub fn box_mcp(
     shared: &BTreeMap<String, McpServer>,
     (own, ended): (&[UserMcp], &BTreeSet<String>),
     have: &BTreeSet<SecretName>,
-    machine: bool,
 ) -> BoxMcp {
     let mut servers = shared.clone();
-    servers.retain(|_, s| machine || !s.machine);
     let mut replaced = Vec::new();
-    for o in own.iter().filter(|o| machine || !o.machine) {
+    for o in own {
         if servers.insert(o.name.clone(), o.server()).is_some() {
             replaced.push(o.name.as_str());
         }

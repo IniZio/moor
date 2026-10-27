@@ -197,7 +197,6 @@ fn add(f: &Fixture, who: &str, url: &str) -> Result<Value, crate::error::Command
         url: url.into(),
         header: None,
         key: None,
-        machine: false,
     };
     run(&f.cx, &f.vault, &id(who), &cmd)
 }

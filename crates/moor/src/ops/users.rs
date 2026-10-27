@@ -57,7 +57,6 @@ pub(crate) fn run(
             url,
             header,
             key,
-            machine,
         } => {
             let user = enrolled(store, who)?;
             mcp::add(
@@ -66,7 +65,6 @@ pub(crate) fn run(
                 user,
                 (name, url, header.as_deref()),
                 key.as_ref(),
-                *machine,
             )
         }
         UserCmd::McpRemove { name } => mcp::remove(store, enrolled(store, who)?, name),

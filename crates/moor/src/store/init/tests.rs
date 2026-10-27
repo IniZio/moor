@@ -283,6 +283,7 @@ fn applied_migrations_are_never_edited() {
             (10, 13_545_173_366_957_201_799),
             (11, 17_284_506_714_882_587_087),
             (12, 13_829_219_089_020_947_795),
+            (13, 13_975_279_521_182_795_894),
         ],
         "a schema change is a new migration file; an applied one must not change"
     );

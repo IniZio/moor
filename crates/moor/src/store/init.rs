@@ -83,6 +83,10 @@ pub(super) fn schema() -> Result<Vec<Migration>, StoreError> {
             "V12__mcp_oauth_sign_out.sql",
             include_str!("../../migrations/V12__mcp_oauth_sign_out.sql"),
         ),
+        (
+            "V13__drop_mcp_machine.sql",
+            include_str!("../../migrations/V13__drop_mcp_machine.sql"),
+        ),
     ])
     .map_err(|e| StoreError::Corrupt(format!("migration files: {e}")))
 }

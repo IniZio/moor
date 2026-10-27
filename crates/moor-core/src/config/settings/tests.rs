@@ -145,30 +145,14 @@ fn layer_names() {
     }
 }
 
-const SIM_USER: &str = "
+#[test]
+fn every_user_server_reaches_a_box_that_asks_for_no_machine() {
+    let user = "
 mcp_servers:
-  sim: {url: 'https://sim.example', machine: true, headers: {Authorization: 'Bearer ${sim_key}'}}
+  sim: {url: 'https://sim.example', headers: {Authorization: 'Bearer ${sim_key}'}}
   docs: {url: 'https://docs.example'}
 ";
-
-#[test]
-fn a_machine_only_server_is_left_out_of_a_box_that_asks_for_no_machine() {
-    let none = resolve(SIM_USER, None, &Flags::default());
-    assert_eq!(none.mcp.keys().collect::<Vec<_>>(), ["docs"]);
-    assert!(none.credentials.iter().all(|c| c.name != "sim_key"));
-    assert!(!none.machine);
-    let other = resolve(SIM_USER, Some("setup: [a]"), &Flags::default());
-    assert_eq!(other.mcp.keys().collect::<Vec<_>>(), ["docs"]);
-}
-
-#[test]
-fn a_machine_only_server_reaches_a_box_that_asks_for_a_machine() {
-    let s = resolve(
-        SIM_USER,
-        Some("machine: {labels: [ios]}"),
-        &Flags::default(),
-    );
+    let s = resolve(user, None, &Flags::default());
     assert_eq!(s.mcp.keys().collect::<Vec<_>>(), ["docs", "sim"]);
     assert!(s.credentials.iter().any(|c| c.name == "sim_key"));
-    assert!(s.machine);
 }
