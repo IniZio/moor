@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use moor_core::seam::proc::{
     ChildHandle, Deadline, ExitInfo, FirstLineError, Output, Proc, ProcError, ProcOutput, ProcSpec,
@@ -160,6 +160,7 @@ pub(crate) struct ScriptedProc {
     daemons: Daemons,
     signals: Signals,
     boot_id: Mutex<Option<String>>,
+    on_spawn: OnceLock<Box<dyn Fn() + Send + Sync>>,
 }
 
 impl ScriptedProc {
@@ -174,7 +175,14 @@ impl ScriptedProc {
             daemons: Daemons::default(),
             signals: Signals::default(),
             boot_id: Mutex::new(None),
+            on_spawn: OnceLock::new(),
         }
+    }
+
+    /// Run `hook` while each later child is spawned, as if the world changed meanwhile.
+    pub(crate) fn on_spawn(&self, hook: impl Fn() + Send + Sync + 'static) -> &Self {
+        let _ = self.on_spawn.set(Box::new(hook));
+        self
     }
 
     /// Report `id` as the host boot id; none by default.
@@ -344,6 +352,9 @@ impl Proc for ScriptedProc {
                 format!("unscripted: {} {}", spec.tool.program(), args.join(" ")),
             ))
         })?;
+        if let Some(hook) = self.on_spawn.get() {
+            hook();
+        }
         Ok(Box::new(FakeChild {
             pid: self.next_pid.fetch_add(1, Ordering::Relaxed),
             tool: spec.tool,
