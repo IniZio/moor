@@ -69,3 +69,15 @@ fn waking_a_box_sends_the_core_wake_request() {
     let parsed = super::request(wire).unwrap();
     assert!(matches!(parsed, moor_core::request::Request::Wake(_)));
 }
+
+#[test]
+fn a_box_still_setting_up_is_starting_and_shows_the_ellipsis() {
+    for lifecycle in ["checking", "waiting_for_box", "setting_up"] {
+        let one = parse_one(json!({ "box": row(lifecycle, "idle") }))
+            .unwrap()
+            .unwrap();
+        assert_eq!(one.phase, Phase::Starting, "{lifecycle}");
+    }
+    assert_eq!(Phase::Starting.icon(), "…");
+    assert_eq!(Phase::Starting.agent_state(), "unknown");
+}

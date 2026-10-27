@@ -26,6 +26,8 @@ pub enum Activity {
 /// Where a Box is in its life, as the sidebar shows it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
+    /// Still being set up; there is nothing to attach to yet.
+    Starting,
     /// Up, with an agent to attach to.
     Live(Activity),
     /// Up, but every slot on its machine is taken.
@@ -42,6 +44,7 @@ impl Phase {
     pub const fn icon(self) -> &'static str {
         match self {
             Self::Live(_) => "",
+            Self::Starting => "…",
             Self::WaitingForMachine => "◌",
             Self::Asleep => "◐",
             Self::Closed => "✕",
@@ -55,7 +58,7 @@ impl Phase {
             Self::Live(Activity::Working) => "working",
             Self::Live(Activity::Waiting) => "blocked",
             Self::Live(Activity::Idle) => "idle",
-            Self::WaitingForMachine | Self::Asleep | Self::Closed => "unknown",
+            Self::Starting | Self::WaitingForMachine | Self::Asleep | Self::Closed => "unknown",
         }
     }
 }
@@ -142,6 +145,9 @@ impl Row {
                 Phase::Closed
             }
             BoxLifecycle::Asleep => Phase::Asleep,
+            BoxLifecycle::Checking | BoxLifecycle::WaitingForBox | BoxLifecycle::SettingUp => {
+                Phase::Starting
+            }
             _ if self
                 .held_machine
                 .as_ref()
@@ -152,7 +158,7 @@ impl Row {
             _ if self.agent.as_ref().is_some_and(|a| a.question.is_some()) => {
                 Phase::Live(Activity::Waiting)
             }
-            _ => Phase::Live(match self.session_state {
+            BoxLifecycle::Ready => Phase::Live(match self.session_state {
                 SessionState::Starting | SessionState::Working => Activity::Working,
                 SessionState::Idle | SessionState::Ended => Activity::Idle,
             }),

@@ -41,7 +41,7 @@ description = "moor: new"
 ```
 
 Every Box workspace carries `env=BOX`, which the second row shows in colour. It also carries
-`state`: empty while the Box is up, `◐` asleep, `◌` while it waits for a slot on the machine it claims, `✕` closed.
+`state`: empty while the Box is up, `…` while it is being set up, `◐` asleep, `◌` while it waits for a slot on the machine it claims, `✕` closed.
 While the Box is up, herdr's own agent dot shows working, waiting or idle.
 
 ## New work

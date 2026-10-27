@@ -85,3 +85,30 @@ fn q_closes_the_pane_from_every_card_and_other_keys_do_nothing() {
         assert_eq!(card.key(b'x'), Choice::Stay);
     }
 }
+
+#[test]
+fn a_skipped_attach_on_a_live_box_is_not_a_dropped_link() {
+    assert_ne!(
+        text(&Ended::Skipped, LIVE).lines().nth(2).unwrap(),
+        "the link to the Box dropped"
+    );
+}
+
+#[test]
+fn a_client_error_shows_its_message() {
+    let err = Ended::Refused("socket closed".into());
+    assert_eq!(
+        text(&err, LIVE).lines().nth(2).unwrap(),
+        "attach refused: socket closed"
+    );
+}
+
+#[test]
+fn a_starting_box_says_so_and_only_q_does_anything() {
+    assert_eq!(
+        text(&Ended::Skipped, Some(Phase::Starting)),
+        "◈ moor/fix\n\nstarting · attaches when it's up\n\nq close this pane"
+    );
+    assert_eq!(Card::Starting.key(b'q'), Choice::Close);
+    assert_eq!(Card::Starting.key(b'r'), Choice::Stay);
+}
