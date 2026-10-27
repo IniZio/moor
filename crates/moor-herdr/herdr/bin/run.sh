@@ -1,5 +1,4 @@
 #!/bin/sh
-# Runs one moor-herdr command; the plugin's env file may set MOOR_HERDR_SOCKET and MOOR_HERDR_BIN.
 set -eu
 root=${HERDR_PLUGIN_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}
 if [ -f "${HERDR_PLUGIN_CONFIG_DIR:-/nonexistent}/env" ]; then
