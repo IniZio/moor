@@ -4,7 +4,7 @@ use super::{label, parse_list, parse_one, Activity, Phase};
 
 fn row(lifecycle: &str, session: &str) -> serde_json::Value {
     json!({"name": "fix", "repo": "oursky/moor", "branch": "moor/fix",
-           "lifecycle": lifecycle, "session_state": session})
+           "lifecycle": lifecycle, "session_state": session, "agent": {"launched": true}})
 }
 
 fn with(mut row: serde_json::Value, key: &str, value: serde_json::Value) -> serde_json::Value {
@@ -16,7 +16,11 @@ fn with(mut row: serde_json::Value, key: &str, value: serde_json::Value) -> serd
 
 #[test]
 fn each_lifecycle_reads_as_the_phase_the_sidebar_shows() {
-    let asking = with(row("ready", "idle"), "agent", json!({"question": "which?"}));
+    let asking = with(
+        row("ready", "idle"),
+        "agent",
+        json!({"launched": true, "question": "which?"}),
+    );
     let waiting = with(
         row("ready", "working"),
         "held_machine",
@@ -77,6 +81,15 @@ fn a_box_still_setting_up_is_starting_and_shows_the_ellipsis() {
             .unwrap()
             .unwrap();
         assert_eq!(one.phase, Phase::Starting, "{lifecycle}");
+    }
+    for agent in [json!(null), json!({"launched": false})] {
+        let ready = with(row("ready", "working"), "agent", agent);
+        let one = parse_one(json!({ "box": ready })).unwrap().unwrap();
+        assert_eq!(
+            one.phase,
+            Phase::Starting,
+            "a ready Box whose agent isn't up yet"
+        );
     }
     assert_eq!(Phase::Starting.icon(), "…");
     assert_eq!(Phase::Starting.agent_state(), "unknown");

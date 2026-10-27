@@ -115,6 +115,9 @@ struct Row {
 /// The fields of a `show` agent view this front reads.
 #[derive(Debug, Deserialize)]
 struct AgentRow {
+    /// Whether the agent was launched.
+    #[serde(default)]
+    launched: bool,
     /// The question the agent waits on.
     question: Option<String>,
 }
@@ -154,6 +157,10 @@ impl Row {
                 .is_some_and(|m| m.state == "waiting") =>
             {
                 Phase::WaitingForMachine
+            }
+            // Setup ends seconds before the agent's terminal exists; an attach then finds none.
+            BoxLifecycle::Ready if !self.agent.as_ref().is_some_and(|a| a.launched) => {
+                Phase::Starting
             }
             _ if self.agent.as_ref().is_some_and(|a| a.question.is_some()) => {
                 Phase::Live(Activity::Waiting)
