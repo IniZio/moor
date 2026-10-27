@@ -15,7 +15,7 @@ fn sample_box() -> BoxView {
         name: "t".into(),
         repo: Some(crate::seam::forge::ForgeRepo::new("o", "r")),
         issue: None,
-        goal: None,
+        prompt: None,
         lifecycle: BoxLifecycle::Ready,
         session_state: SessionState::Working,
         state_reason: None,

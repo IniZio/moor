@@ -41,7 +41,7 @@ fn exited_agent() -> (World, Arc<FakeEngine>, BoxId) {
     let first = run(
         &w.cx,
         &StartReq {
-            goal: Some("ship it".into()),
+            prompt: Some("ship it".into()),
             ..req("demo")
         },
     )
@@ -91,12 +91,12 @@ fn check_second_session(w: &World, engine: &FakeEngine, id: BoxId) {
 }
 
 #[test]
-fn a_goal_start_after_the_agent_exited_opens_a_new_session() {
+fn a_prompt_start_after_the_agent_exited_opens_a_new_session() {
     let (w, engine, id) = exited_agent();
     run(
         &w.cx,
         &StartReq {
-            goal: Some("again".into()),
+            prompt: Some("again".into()),
             ..req("demo")
         },
     )

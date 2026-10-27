@@ -1,4 +1,4 @@
-//! The brief the agent reads on start: what to do and how the Box works.
+//! The brief the agent keeps as standing instructions: how the Box works.
 
 use std::fmt::Write;
 
@@ -8,8 +8,6 @@ use moor_core::shape::Shape;
 pub(super) struct BriefInput<'a> {
     /// The Box name.
     pub(super) name: &'a str,
-    /// What the agent is asked to do.
-    pub(super) goal: Option<&'a str>,
     /// The Issue text, when the Box came from one.
     pub(super) issue: Option<&'a str>,
     /// The Box branch the agent pushes to.
@@ -26,11 +24,8 @@ pub(super) struct BriefInput<'a> {
 pub(super) fn render(b: &BriefInput) -> String {
     let (name, branch) = (b.name, b.branch);
     let mut out = format!("# Box {name}\n\n");
-    match (b.goal, b.issue) {
-        (Some(g), Some(i)) => _ = write!(out, "Goal: {g}\n\nIssue: {i}\n\n"),
-        (Some(g), None) => _ = write!(out, "Goal: {g}\n\n"),
-        (None, Some(i)) => _ = write!(out, "Goal: resolve the Issue below.\n\nIssue: {i}\n\n"),
-        (None, None) => {}
+    if let Some(i) = b.issue {
+        _ = write!(out, "Issue: {i}\n\n");
     }
     project_facts(b, &mut out);
     _ = write!(
@@ -55,8 +50,8 @@ pub(super) fn render(b: &BriefInput) -> String {
          allows it, not after each commit. If `git remote get-url origin` fails, commit \
          only, do not push, and say so. The checkout is a partial clone with full history: \
          git fetches file contents through the proxy when a command first needs them. \
-         Push to the branch named in the Goal if it names one, else \
-         to `{branch}`. Do not switch branches. Do not add Co-Authored-By trailers to \
+         Push to the branch the first prompt names, if it names one, \
+         else to `{branch}`. Do not switch branches. Do not add Co-Authored-By trailers to \
          commits. When you opened a pull request, end your final message with its URL.\n\n\
          You may receive follow-up messages (steers) typed into this session.\n\n\
          Decide on your own when you reasonably can, and ask a question only when the \
@@ -71,7 +66,7 @@ pub(super) fn render(b: &BriefInput) -> String {
          a Markdown file at `.moor/reports/<kind>.md` in your working directory; do not \
          commit it. Writing again with the same kind adds a new version. Name that path in \
          your final message. A Report never means the Box is finished; keep working \
-         until the goal is met, and do not stop after reporting.\n\n",
+         until the work is done, and do not stop after reporting.\n\n",
     );
     out.push_str(PUBLISH);
     out.push_str(ATTACH);
@@ -128,10 +123,9 @@ const ATTACH: &str = "To show a published file on a pull request, attach it with
 mod tests {
     use super::*;
 
-    fn input<'a>(goal: Option<&'a str>, issue: Option<&'a str>) -> BriefInput<'a> {
+    fn input(issue: Option<&str>) -> BriefInput<'_> {
         BriefInput {
             name: "t1",
-            goal,
             issue,
             branch: "moor/t1",
             setup_exit: None,
@@ -141,28 +135,24 @@ mod tests {
     }
 
     #[test]
-    fn goal_and_issue() {
-        let out = render(&input(Some("fix x"), Some("x is broken")));
-        assert!(out.starts_with("# Box t1\n\n"));
-        assert!(out.contains("Goal: fix x\n\nIssue: x is broken\n\n"));
+    fn names_no_prompt_or_goal_line() {
+        let out = render(&input(None));
+        assert!(
+            out.starts_with("# Box t1\n\nYou are running inside the machine"),
+            "{out}"
+        );
+        assert!(!out.contains("Goal:") && !out.contains("Prompt:"), "{out}");
     }
 
     #[test]
-    fn goal_only() {
-        let out = render(&input(Some("fix x"), None));
-        assert!(out.contains("Goal: fix x\n\n"));
-        assert!(!out.contains("Issue:"));
-    }
-
-    #[test]
-    fn issue_only_states_the_goal() {
-        let out = render(&input(None, Some("x is broken")));
-        assert!(out.contains("Goal: resolve the Issue below.\n\nIssue: x is broken\n\n"));
+    fn names_the_issue() {
+        let out = render(&input(Some("x is broken")));
+        assert!(out.contains("# Box t1\n\nIssue: x is broken\n\n"));
     }
 
     #[test]
     fn states_the_box_contract() {
-        let out = render(&input(Some("g"), None));
+        let out = render(&input(None));
         assert!(out.contains("git push origin HEAD:refs/heads/moor/t1"));
         assert!(out.contains("on branch `moor/t1`"));
         assert!(out.contains("partial clone"));
@@ -173,7 +163,7 @@ mod tests {
 
     #[test]
     fn asks_for_the_pull_request_url_at_the_end_of_the_final_message() {
-        let out = render(&input(Some("g"), None));
+        let out = render(&input(None));
         assert!(
             out.contains("When you opened a pull request, end your final message with its URL."),
             "{out}"
@@ -182,7 +172,7 @@ mod tests {
 
     #[test]
     fn asks_only_when_the_choice_is_the_owners() {
-        let out = render(&input(Some("g"), None));
+        let out = render(&input(None));
         assert!(out.contains(
             "Decide on your own when you reasonably can, and ask a question only when the choice is the owner's.\n\n"
         ));
@@ -190,7 +180,7 @@ mod tests {
 
     #[test]
     fn names_no_moor_remote_and_no_shallow_history() {
-        let out = render(&input(Some("g"), None));
+        let out = render(&input(None));
         assert!(!out.contains("shallow"), "{out}");
         assert!(!out.contains(" moor`"), "{out}");
     }
@@ -198,7 +188,7 @@ mod tests {
     #[test]
     fn says_how_to_attach_artifacts_to_a_pull_request_right_after_publishing() {
         let attach = "To show a published file on a pull request, attach it with gh: `gh pr create --attach .moor/artifacts/<name>` or `gh pr edit <number> --attach .moor/artifacts/<name>`. Write `![<name>](.moor/artifacts/<name>)` in the body where it should appear. gh replaces it with the uploaded URL. gh attaches png, jpg, jpeg, gif, webp, svg, mp4, mov and webm files: images up to 10 MB, videos up to 100 MB on paid plans, at most 50 files. An upload cannot be deleted.\n";
-        let out = render(&input(Some("g"), None));
+        let out = render(&input(None));
         assert!(
             out.contains(&format!("in your final message.\n\n{attach}")),
             "{out}"
@@ -207,7 +197,7 @@ mod tests {
 
     #[test]
     fn says_how_to_publish_artifacts() {
-        let out = render(&input(Some("g"), None));
+        let out = render(&input(None));
         assert!(out.contains(".moor/artifacts/"));
         assert!(out.contains("Do not commit it"));
         assert!(out.contains("adds a new version"));
@@ -217,7 +207,7 @@ mod tests {
 
     #[test]
     fn states_limits_and_points_missing_tools_at_setup() {
-        let out = render(&input(Some("g"), None));
+        let out = render(&input(None));
         assert!(out.contains("Do not use sudo."));
         assert!(!out.contains("sandbox"));
         assert!(out.contains("The network is open."));
@@ -230,8 +220,8 @@ mod tests {
 
     #[test]
     fn setup_failure_is_named_only_when_it_failed() {
-        assert!(!render(&input(Some("g"), None)).contains("Setup failed"));
-        let mut b = input(Some("g"), None);
+        assert!(!render(&input(None)).contains("Setup failed"));
+        let mut b = input(None);
         b.setup_exit = Some(3);
         let out = render(&b);
         assert!(out.contains("Setup failed (exit 3)"));
@@ -240,27 +230,27 @@ mod tests {
     }
 
     #[test]
-    fn repo_notes_follow_the_goal_under_their_own_heading_verbatim() {
-        let mut b = input(Some("fix x"), None);
+    fn repo_notes_follow_the_issue_under_their_own_heading_verbatim() {
+        let mut b = input(Some("x is broken"));
         b.repo_notes = Some("Start the emulator:\n  make emu\n");
         let out = render(&b);
-        let goal = out.find("Goal: fix x").unwrap();
+        let issue = out.find("Issue: x is broken").unwrap();
         let heading = "## This project's Box\n\nFrom the repo's `.moor.yaml`:\n\nStart the emulator:\n  make emu\n\n";
         assert!(out.contains(heading), "{out}");
         let head = out.find(heading).unwrap();
-        assert!(goal < head, "{out}");
+        assert!(issue < head, "{out}");
         assert!(head < out.find("You are running inside the machine").unwrap());
     }
 
     #[test]
     fn no_repo_notes_no_heading() {
-        let out = render(&input(Some("g"), None));
+        let out = render(&input(None));
         assert!(!out.contains("## This project's Box"), "{out}");
     }
 
     #[test]
     fn states_cpus_and_memory_when_known() {
-        let mut b = input(Some("g"), None);
+        let mut b = input(None);
         b.shape = Some(Shape {
             cpus: 4,
             mem_mib: 7900,
@@ -275,12 +265,12 @@ mod tests {
             mem_mib: 2048,
         });
         assert!(render(&b).contains("1 vCPU and 2.0 GiB of memory."));
-        assert!(!render(&input(Some("g"), None)).contains("vCPU"));
+        assert!(!render(&input(None)).contains("vCPU"));
     }
 
     #[test]
     fn says_to_check_before_calling_a_tool_missing() {
-        let out = render(&input(Some("g"), None));
+        let out = render(&input(None));
         assert!(
             out.contains(
                 "Before you tell the person a tool or program is missing, check for it \
@@ -293,7 +283,7 @@ mod tests {
 
     #[test]
     fn names_no_host_paths_moor_commands_or_secrets() {
-        let mut b = input(Some("g"), Some("i"));
+        let mut b = input(Some("i"));
         b.setup_exit = Some(1);
         let out = render(&b);
         assert!(!out.contains("/home/"));

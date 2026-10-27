@@ -57,7 +57,6 @@ fn req(s: &FakeSurface) -> LaunchReq {
         workspace: s.ensure_workspace("moor:t1").unwrap(),
         box_name: box_name("t1"),
         branch: "moor/t1".to_owned(),
-        goal: Some("fix x".to_owned()),
         resume: None,
         issue: None,
         setup_exit: None,
@@ -67,7 +66,7 @@ fn req(s: &FakeSurface) -> LaunchReq {
         nonce: "abc123".to_owned(),
         proxy: None,
         strip_env: Vec::new(),
-        prompt: LaunchPrompt::Brief,
+        prompt: LaunchPrompt::None,
     }
 }
 
@@ -108,7 +107,7 @@ fn delivers_the_brief_under_the_box_home() {
     let (handle, path, bytes, mode) = d.puts().into_iter().next().unwrap();
     assert_eq!(handle, BoxHandle::new("box-1"));
     assert_eq!(path.as_str(), format!("{CRED}/brief.md"));
-    assert!(String::from_utf8_lossy(&bytes).contains("Goal: fix x"));
+    assert!(String::from_utf8_lossy(&bytes).starts_with("# Box t1\n"));
     assert_eq!(mode, 0o600);
 }
 
@@ -176,7 +175,7 @@ fn a_resume_runs_the_agent_with_the_stored_session_instead_of_the_prompt() {
     agent(&d, &s).launch(&r).unwrap();
     let script = script_of(&d);
     assert!(
-        script.contains("'claude' '--resume' 'sess-9' '--model' 'haiku'"),
+        script.contains("'claude' '--resume' 'sess-9' '--append-system-prompt-file' '/work/box-1/.moor/brief.md' '--model' 'haiku'"),
         "{script}"
     );
     assert!(!script.contains("Read and follow"), "{script}");
@@ -197,7 +196,7 @@ fn the_script_cleans_up_installs_the_brief_and_starts_the_agent() {
         "> '/work/box-1/.moor/agent-state.json'",
         "settings.json",
         ".claude.json",
-        "cd '/work/box-1' && 'claude' '--model' 'haiku'",
+        "cd '/work/box-1' && 'claude' '--append-system-prompt-file' '/work/box-1/.moor/brief.md' '--model' 'haiku'",
     ] {
         assert!(script.contains(want), "{want}: {script}");
     }

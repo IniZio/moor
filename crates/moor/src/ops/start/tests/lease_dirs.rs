@@ -9,10 +9,10 @@ use crate::store::lease::{LeaseKind, LeaseRow, LeaseState};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 
-/// A start request for `name` with a goal.
-fn goal_req(name: &str) -> StartReq {
+/// A start request for `name` with a prompt.
+fn prompt_req(name: &str) -> StartReq {
     StartReq {
-        goal: Some("ship it".into()),
+        prompt: Some("ship it".into()),
         ..req(name)
     }
 }
@@ -52,7 +52,7 @@ fn assert_dirs(rows: &[LeaseRow], id: BoxId, state: LeaseState) {
 fn a_launch_holds_its_credential_and_tmp_directories() {
     let engine = Arc::new(FakeEngine::new().box_home("/home/box"));
     let (w, id) = started(&engine);
-    run(&w.cx, &goal_req("demo")).unwrap();
+    run(&w.cx, &prompt_req("demo")).unwrap();
     assert_dirs(&dirs(&w, id), id, LeaseState::Held);
 }
 
@@ -65,7 +65,7 @@ fn a_failed_launch_leaves_its_directories_planned() {
         },
     )));
     let (w, id) = started(&engine);
-    run(&w.cx, &goal_req("demo")).unwrap();
+    run(&w.cx, &prompt_req("demo")).unwrap();
     assert_dirs(&dirs(&w, id), id, LeaseState::Planned);
 }
 
@@ -77,7 +77,7 @@ fn a_launch_whose_dirs_cannot_be_named_fails_before_launching() {
             .fail_launch_dirs("no home"),
     );
     let (w, id) = started(&engine);
-    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let v = run(&w.cx, &prompt_req("demo")).unwrap();
     assert!(engine.launches().is_empty());
     assert!(dirs(&w, id).is_empty());
     let agent = v.agent;

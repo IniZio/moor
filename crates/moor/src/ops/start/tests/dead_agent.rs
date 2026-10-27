@@ -15,9 +15,9 @@ const NOT_FOUND: &str = "the agent exited 127: its command was not found on the 
 /// The prelude's message when it cannot write the Proxy CA.
 pub(super) const CA: &str = "the Proxy CA could not be written to /home/u/.moor-proxy/ca.pem";
 
-fn goal_req(name: &str) -> StartReq {
+fn prompt_req(name: &str) -> StartReq {
     StartReq {
-        goal: Some("ship it".into()),
+        prompt: Some("ship it".into()),
         ..req(name)
     }
 }
@@ -57,7 +57,7 @@ fn an_agent_that_exits_127_at_launch_is_a_launch_failure() {
         "p-1",
         Ok(exited(127, "sh: claude: not found\nmoor: agent exited 127")),
     );
-    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
     assert!(!v.agent.launched);
@@ -88,7 +88,7 @@ fn an_agent_that_exits_127_at_launch_is_a_launch_failure() {
 fn a_launch_stopped_by_an_unwritable_proxy_ca_fails_with_the_ca_message() {
     let w = launching();
     w.surface.push_pane_obs("p-1", Ok(ca_stopped()));
-    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let v = run(&w.cx, &prompt_req("demo")).unwrap();
     assert!(!v.agent.launched);
     let f = v.agent.reason.unwrap();
     assert_eq!((f.step.as_str(), f.message.as_str()), ("launch", CA));
@@ -107,7 +107,7 @@ fn a_launch_stopped_by_the_egress_proxy_fails_with_its_reason_and_no_fallback() 
         "p-1",
         Ok(exited(1, &format!("moor: {reason}\nmoor: agent exited 1"))),
     );
-    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let v = run(&w.cx, &prompt_req("demo")).unwrap();
     assert!(!v.agent.launched);
     let f = v.agent.reason.unwrap();
     assert_eq!((f.step.as_str(), f.message.as_str()), ("launch", reason));
@@ -118,7 +118,7 @@ fn a_relaunch_stopped_by_an_unwritable_proxy_ca_fails_with_the_ca_message() {
     let (w, _engine, id) = started();
     gone(&w);
     w.surface.push_pane_obs("p-2", Ok(ca_stopped()));
-    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let v = run(&w.cx, &prompt_req("demo")).unwrap();
     assert!(!v.agent.launched);
     assert_eq!(v.agent.reason.unwrap().message, CA);
     assert_eq!(recorded_failure(&w, id).as_deref(), Some(CA));
@@ -129,7 +129,7 @@ fn a_relaunch_stopped_by_an_unwritable_proxy_ca_fails_with_the_ca_message() {
 fn any_other_exit_code_is_named_in_the_failure() {
     let w = launching();
     w.surface.push_pane_obs("p-1", Ok(exited(2, "")));
-    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let f = v.agent.reason.unwrap();
     assert_eq!(f.message, "the agent exited 2 right after launch");
     assert!(f.tail.is_none());
@@ -140,7 +140,7 @@ fn any_other_exit_code_is_named_in_the_failure() {
 fn a_dead_agent_shows_as_failed_and_wait_fails() {
     let w = launching();
     w.surface.push_pane_obs("p-1", Ok(exited(127, "")));
-    run(&w.cx, &goal_req("demo")).unwrap();
+    run(&w.cx, &prompt_req("demo")).unwrap();
     let show = ShowReq {
         target: None,
         events: None,
@@ -171,7 +171,7 @@ fn a_relaunched_agent_that_exits_127_is_a_launch_failure() {
     let (w, _engine, id) = started();
     gone(&w);
     w.surface.push_pane_obs("p-2", Ok(exited(127, "")));
-    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let v = run(&w.cx, &prompt_req("demo")).unwrap();
     let store = w.cx.store().unwrap();
     assert!(!v.agent.launched);
     assert_eq!(v.agent.reason.unwrap().message, NOT_FOUND);

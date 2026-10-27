@@ -28,8 +28,7 @@ use crate::store::{BoxRow, Store};
 /// Lines of a failure's output kept as its tail.
 pub(super) const TAIL_LINES: usize = 10;
 
-/// Launches the agent when the Box is Working with a ready machine and no live session, given a
-/// goal, an issue, a session to resume or a hold.
+/// Launches the agent when the Box is Working with a ready machine and no live session.
 ///
 /// `setup_exit` is the exit code of a setup that just failed; the agent still launches then.
 /// A launch that fails is recorded on the Box, which stays Working with no session, and
@@ -50,38 +49,29 @@ pub(super) fn run(
     let resume = row
         .agent_session_id
         .clone()
-        .filter(|s| (req.resume || req.hold) && req.goal.is_none() && !s.is_empty());
-    let briefed = row.goal.is_some() || row.issue.is_some();
-    if req.no_agent
-        || !(briefed || resume.is_some() || req.hold)
-        || store.live_session(id)?.is_some()
-    {
+        .filter(|s| req.prompt.is_none() && !s.is_empty());
+    if req.no_agent || store.live_session(id)?.is_some() {
         return Ok(AgentLaunchView::default());
     }
     let Some(mut launch) = launch_req(cx, &row, setup_exit) else {
-        return not_working(cx, store, &row, req.hold);
+        return not_working(cx, store, &row);
     };
-    launch.resume = resume;
-    if req.hold {
-        launch.prompt = LaunchPrompt::None;
+    if resume.is_none() {
+        launch.prompt = first_prompt(req);
     }
+    launch.resume = resume;
     let cfg = settings()?;
     launch.model = cfg.model.clone().map(|m| m.value);
     begin(cx, store, &row, &launch, &cfg)
 }
 
-/// Records why an agent that should launch on a ready machine did not, unless the Box is held.
-fn not_working(
-    cx: &Cx,
-    store: &Store,
-    row: &BoxRow,
-    hold: bool,
-) -> Result<AgentLaunchView, CommandError> {
+/// Records why an agent that should launch on a ready machine did not.
+fn not_working(cx: &Cx, store: &Store, row: &BoxRow) -> Result<AgentLaunchView, CommandError> {
     let ready = row
         .boxed
         .as_ref()
         .is_some_and(|b| b.state == BoxState::Ready);
-    if hold || !ready || (row.lifecycle == BoxLifecycle::Ready && !row.session.is_quiet()) {
+    if !ready || (row.lifecycle == BoxLifecycle::Ready && !row.session.is_quiet()) {
         return Ok(AgentLaunchView::default());
     }
     let e = EngineError::Failed {
@@ -268,7 +258,6 @@ pub(super) fn launch_req(cx: &Cx, row: &BoxRow, setup_exit: Option<i32>) -> Opti
         workspace: WorkspaceRef::new(row.workspace_id.as_deref()?),
         box_name: row.name.clone(),
         branch: row.branch.clone().unwrap_or_default(),
-        goal: row.goal.clone(),
         resume: None,
         issue: row.issue.clone(),
         setup_exit,
@@ -278,8 +267,17 @@ pub(super) fn launch_req(cx: &Cx, row: &BoxRow, setup_exit: Option<i32>) -> Opti
         nonce: nonce(cx.rng()),
         proxy: None,
         strip_env,
-        prompt: LaunchPrompt::Brief,
+        prompt: LaunchPrompt::None,
     })
+}
+
+/// The first prompt `req` gives a fresh agent: its prompt, else one naming its Issue.
+fn first_prompt(req: &StartReq) -> LaunchPrompt {
+    match (&req.prompt, &req.issue) {
+        (Some(p), _) => LaunchPrompt::Text(p.clone()),
+        (None, Some(i)) => LaunchPrompt::Text(format!("Resolve issue {i}.")),
+        (None, None) => LaunchPrompt::None,
+    }
 }
 
 /// The failure to record for `e`: the first line is the message, the last lines after it the tail.

@@ -94,12 +94,11 @@ fn driver_limit(provider: &str, n: u32) -> BTreeMap<String, DriverConfig> {
 fn req(name: &str) -> StartReq {
     StartReq {
         name: BoxName::parse_allow_bare(name).unwrap(),
-        goal: None,
+        prompt: None,
         issue: None,
         base: None,
         model: None,
         no_agent: false,
-        hold: false,
         resume: false,
         repo: None,
         parent: None,

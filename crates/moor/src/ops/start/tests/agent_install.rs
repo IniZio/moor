@@ -24,9 +24,9 @@ fn exit(code: i32) -> ExecOutcome {
     ExecOutcome::Exited { code }
 }
 
-fn goal_req() -> StartReq {
+fn prompt_req() -> StartReq {
     StartReq {
-        goal: Some("ship it".into()),
+        prompt: Some("ship it".into()),
         ..repo_req("demo")
     }
 }
@@ -79,7 +79,7 @@ fn installs(w: &World) -> Vec<(ExecSpec, Deadline)> {
 #[test]
 fn the_install_runs_after_setup_and_dotfiles_with_the_proxy_and_a_deadline() {
     let (w, engine) = install_world("setup: [a]\n", None, true, FakeDriver::new());
-    let v = run(&w.cx, &goal_req()).unwrap();
+    let v = run(&w.cx, &prompt_req()).unwrap();
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert_eq!(engine.launches().len(), 1);
     let execs = w.driver.execs();
@@ -118,7 +118,7 @@ fn the_install_runs_after_the_dotfiles_so_a_user_who_installs_their_own_agent_wi
     );
     let engine = Arc::new(FakeEngine::new().install(installer()));
     w.cx = w.cx.with_engine(engine);
-    run(&w.cx, &goal_req()).unwrap();
+    run(&w.cx, &prompt_req()).unwrap();
     let scripts: Vec<String> = w
         .driver
         .execs()
@@ -133,7 +133,7 @@ fn the_install_runs_after_the_dotfiles_so_a_user_who_installs_their_own_agent_wi
 #[test]
 fn an_engine_without_an_installer_runs_nothing_extra() {
     let (w, _) = install_world("setup: [a]\n", None, false, FakeDriver::new());
-    run(&w.cx, &goal_req()).unwrap();
+    run(&w.cx, &prompt_req()).unwrap();
     assert_eq!(w.driver.execs().len(), 2);
 }
 
@@ -141,7 +141,7 @@ fn an_engine_without_an_installer_runs_nothing_extra() {
 fn the_user_config_switch_turns_the_install_off() {
     for (user, runs) in [(None, 1), (Some(true), 1), (Some(false), 0)] {
         let (w, _) = install_world("setup: [a]\n", user, true, FakeDriver::new());
-        run(&w.cx, &goal_req()).unwrap();
+        run(&w.cx, &prompt_req()).unwrap();
         assert_eq!(installs(&w).len(), runs, "user {user:?}");
     }
 }
@@ -164,7 +164,7 @@ fn a_failed_install_warns_with_the_log_tail_and_the_start_goes_on() {
     let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1))]);
     let (w, engine) = install_world("setup: [a]\n", None, true, driver);
     log_writer(&w);
-    let v = run(&w.cx, &goal_req()).unwrap();
+    let v = run(&w.cx, &prompt_req()).unwrap();
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert!(v.setup.ok);
     assert_eq!(engine.launches().len(), 1);
@@ -192,7 +192,7 @@ fn an_install_that_cannot_run_warns_with_the_driver_error() {
         Err(DriverError::Unavailable("ssh down".into())),
     ]);
     let (w, engine) = install_world("setup: [a]\n", None, true, driver);
-    run(&w.cx, &goal_req()).unwrap();
+    run(&w.cx, &prompt_req()).unwrap();
     assert_eq!(engine.launches().len(), 1);
     let warnings = w.cx.take_warnings();
     let warn = warnings
@@ -208,7 +208,7 @@ fn no_install_runs_when_the_proxy_cannot_start() {
     w.cx = w.cx.with_proxy_host(Arc::new(
         FakeProxyHost::new().with_ensure_error(ProxyHostError::Failed("boom".into())),
     ));
-    run(&w.cx, &goal_req()).unwrap_err();
+    run(&w.cx, &prompt_req()).unwrap_err();
     assert!(installs(&w).is_empty());
 }
 
@@ -216,7 +216,7 @@ fn no_install_runs_when_the_proxy_cannot_start() {
 fn the_host_log_and_its_directory_are_owner_only() {
     use std::os::unix::fs::PermissionsExt;
     let (w, _) = install_world("setup: [a]\n", None, true, FakeDriver::new());
-    run(&w.cx, &goal_req()).unwrap();
+    run(&w.cx, &prompt_req()).unwrap();
     let dir = w.dir.path().join("agent-install");
     let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode(&dir), 0o700);
@@ -241,7 +241,7 @@ fn the_install_dir_is_kept_as_a_cache_volume_unless_the_install_is_off() {
     ] {
         let driver = FakeDriver::new().cache_volumes();
         let (w, _) = install_world("setup: [a]\n", user, install, driver);
-        run(&w.cx, &goal_req()).unwrap();
+        run(&w.cx, &prompt_req()).unwrap();
         assert_eq!(
             planned(&w).contains(&"agent".to_owned()),
             kept,
@@ -253,7 +253,7 @@ fn the_install_dir_is_kept_as_a_cache_volume_unless_the_install_is_off() {
 #[test]
 fn a_provider_without_cache_volumes_warns_nothing_about_the_install_dir() {
     let (w, _) = install_world("setup: [a]\n", None, true, FakeDriver::new());
-    run(&w.cx, &goal_req()).unwrap();
+    run(&w.cx, &prompt_req()).unwrap();
     assert!(w
         .cx
         .take_warnings()

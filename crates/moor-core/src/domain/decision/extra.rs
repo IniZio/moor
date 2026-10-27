@@ -59,8 +59,8 @@ pub enum ExtraEvent {
         old_pane: Option<String>,
         /// The pane of the new session.
         new_pane: Option<String>,
-        /// The goal the new session works on.
-        goal: Option<String>,
+        /// The prompt the new session works on.
+        prompt: Option<String>,
         /// Why the agent was relaunched; `None` for a plain `moor start`.
         cause: Option<String>,
     },

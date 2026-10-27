@@ -120,7 +120,7 @@ pub(crate) fn box_view_with_run(
         name: row.name.as_str().to_owned(),
         repo: row.repo.as_ref().map(|r| r.repo.clone()),
         issue: row.issue.clone(),
-        goal: row.goal.clone(),
+        prompt: row.prompt.clone(),
         lifecycle: row.lifecycle,
         session_state: row.session,
         state_reason: row.state_reason.clone(),

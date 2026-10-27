@@ -90,10 +90,10 @@ fn an_unreadable_pane_after_wake_counts_as_live() {
 }
 
 #[test]
-fn nothing_to_resume_and_no_goal_launches_nothing() {
+fn nothing_to_resume_and_no_prompt_launches_nothing() {
     let (w, engine, id) = started();
     let clear = Fields {
-        goal: Field::Clear,
+        prompt: Field::Clear,
         ..Fields::default()
     };
     w.cx.store()

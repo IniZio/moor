@@ -33,7 +33,7 @@ fn a_relaunch_ends_the_session_and_opens_the_next() {
     let (w, _engine, id) = started();
     w.surface.push_pane_obs("p-1", Ok(obs(Some(3))));
     let again = moor_core::StartReq {
-        goal: Some("ship it".into()),
+        prompt: Some("ship it".into()),
         ..req("demo")
     };
     run(&w.cx, &again).unwrap();
@@ -60,7 +60,7 @@ fn a_relaunch_carries_a_new_nonce() {
     let (w, engine, _) = started();
     gone(&w);
     let again = StartReq {
-        goal: Some("ship it".into()),
+        prompt: Some("ship it".into()),
         ..req("demo")
     };
     run(&w.cx, &again).unwrap();

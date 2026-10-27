@@ -424,11 +424,11 @@ fn start_recording_launches(
     script_base_yaml(&w, Some(yaml));
     let engine = Arc::new(FakeEngine::new());
     w.cx = w.cx.with_engine(engine.clone());
-    let with_goal = StartReq {
-        goal: Some("ship it".into()),
+    let with_prompt = StartReq {
+        prompt: Some("ship it".into()),
         ..start_req()
     };
-    let got = run(&w.cx, &with_goal);
+    let got = run(&w.cx, &with_prompt);
     (w, engine, got)
 }
 

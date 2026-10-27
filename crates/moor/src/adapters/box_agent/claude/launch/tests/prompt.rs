@@ -9,7 +9,7 @@ fn argv_passes_caller_text_verbatim_as_the_prompt() {
         prompt: LaunchPrompt::Text(text.into()),
         ..ctx(t.path())
     };
-    assert_eq!(Claude.argv(&c), strings(&["--", text]));
+    assert_eq!(Claude.argv(&c), with_brief(&["--", text]));
 }
 
 #[test]
@@ -23,7 +23,7 @@ fn argv_keeps_a_dash_led_text_out_of_the_option_parser() {
     };
     assert_eq!(
         Claude.argv(&c),
-        strings(&[
+        with_brief(&[
             "--model",
             "opus",
             "--permission-mode",
@@ -44,12 +44,12 @@ fn argv_has_no_prompt_when_the_launch_asks_for_none() {
     };
     assert_eq!(
         Claude.argv(&c),
-        strings(&["--permission-mode", "bypassPermissions"])
+        with_brief(&["--permission-mode", "bypassPermissions"])
     );
     let bare = LaunchCtx {
         mcp: std::collections::BTreeMap::new(),
         prompt: LaunchPrompt::None,
         ..ctx(t.path())
     };
-    assert!(Claude.argv(&bare).is_empty());
+    assert_eq!(Claude.argv(&bare), with_brief(&[]));
 }

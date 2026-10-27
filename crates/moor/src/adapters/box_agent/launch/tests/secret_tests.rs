@@ -19,7 +19,7 @@ fn with_names(s: &FakeSurface) -> LaunchReq {
     LaunchReq {
         mcp: std::collections::BTreeMap::new(),
         strip_env: names(),
-        prompt: LaunchPrompt::Brief,
+        prompt: LaunchPrompt::None,
         ..req(s)
     }
 }
@@ -42,7 +42,7 @@ fn a_proxy_launch_unsets_the_configured_secrets_before_the_agent() {
     let script = launch_script(|s| LaunchReq {
         mcp: std::collections::BTreeMap::new(),
         strip_env: names(),
-        prompt: LaunchPrompt::Brief,
+        prompt: LaunchPrompt::None,
         ..req_with_proxy(s)
     });
     assert_unsets_before_agent(&script);

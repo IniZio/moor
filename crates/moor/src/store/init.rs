@@ -32,67 +32,74 @@ impl Store {
 /// The pre-migration schema version that migration 1 reproduces; a file at it is adopted.
 pub(super) const BASELINE_VERSION: &str = "16";
 
-/// moor.db's migrations, oldest first. Never edit an applied one; add a new file.
+/// moor.db's migration files, oldest first. Never edit an applied one; add a new file.
+const FILES: &[(&str, &str)] = &[
+    (
+        "V1__baseline.sql",
+        include_str!("../../migrations/V1__baseline.sql"),
+    ),
+    (
+        "V2__tables_made_on_open.sql",
+        include_str!("../../migrations/V2__tables_made_on_open.sql"),
+    ),
+    (
+        "V3__user_mcp_servers.sql",
+        include_str!("../../migrations/V3__user_mcp_servers.sql"),
+    ),
+    (
+        "V4__binding_history.sql",
+        include_str!("../../migrations/V4__binding_history.sql"),
+    ),
+    (
+        "V5__user_machines.sql",
+        include_str!("../../migrations/V5__user_machines.sql"),
+    ),
+    (
+        "V6__box_machines.sql",
+        include_str!("../../migrations/V6__box_machines.sql"),
+    ),
+    (
+        "V7__machine_slots.sql",
+        include_str!("../../migrations/V7__machine_slots.sql"),
+    ),
+    (
+        "V8__machine_sync_exclude.sql",
+        include_str!("../../migrations/V8__machine_sync_exclude.sql"),
+    ),
+    (
+        "V9__machine_sleep.sql",
+        include_str!("../../migrations/V9__machine_sleep.sql"),
+    ),
+    (
+        "V10__mcp_machine.sql",
+        include_str!("../../migrations/V10__mcp_machine.sql"),
+    ),
+    (
+        "V11__mcp_oauth.sql",
+        include_str!("../../migrations/V11__mcp_oauth.sql"),
+    ),
+    (
+        "V12__mcp_oauth_sign_out.sql",
+        include_str!("../../migrations/V12__mcp_oauth_sign_out.sql"),
+    ),
+    (
+        "V13__drop_mcp_machine.sql",
+        include_str!("../../migrations/V13__drop_mcp_machine.sql"),
+    ),
+    (
+        "V14__machine_claim_state.sql",
+        include_str!("../../migrations/V14__machine_claim_state.sql"),
+    ),
+    (
+        "V15__box_prompt.sql",
+        include_str!("../../migrations/V15__box_prompt.sql"),
+    ),
+];
+
+/// moor.db's migrations, oldest first.
 pub(super) fn schema() -> Result<Vec<Migration>, StoreError> {
-    moor_migrate::migrations(&[
-        (
-            "V1__baseline.sql",
-            include_str!("../../migrations/V1__baseline.sql"),
-        ),
-        (
-            "V2__tables_made_on_open.sql",
-            include_str!("../../migrations/V2__tables_made_on_open.sql"),
-        ),
-        (
-            "V3__user_mcp_servers.sql",
-            include_str!("../../migrations/V3__user_mcp_servers.sql"),
-        ),
-        (
-            "V4__binding_history.sql",
-            include_str!("../../migrations/V4__binding_history.sql"),
-        ),
-        (
-            "V5__user_machines.sql",
-            include_str!("../../migrations/V5__user_machines.sql"),
-        ),
-        (
-            "V6__box_machines.sql",
-            include_str!("../../migrations/V6__box_machines.sql"),
-        ),
-        (
-            "V7__machine_slots.sql",
-            include_str!("../../migrations/V7__machine_slots.sql"),
-        ),
-        (
-            "V8__machine_sync_exclude.sql",
-            include_str!("../../migrations/V8__machine_sync_exclude.sql"),
-        ),
-        (
-            "V9__machine_sleep.sql",
-            include_str!("../../migrations/V9__machine_sleep.sql"),
-        ),
-        (
-            "V10__mcp_machine.sql",
-            include_str!("../../migrations/V10__mcp_machine.sql"),
-        ),
-        (
-            "V11__mcp_oauth.sql",
-            include_str!("../../migrations/V11__mcp_oauth.sql"),
-        ),
-        (
-            "V12__mcp_oauth_sign_out.sql",
-            include_str!("../../migrations/V12__mcp_oauth_sign_out.sql"),
-        ),
-        (
-            "V13__drop_mcp_machine.sql",
-            include_str!("../../migrations/V13__drop_mcp_machine.sql"),
-        ),
-        (
-            "V14__machine_claim_state.sql",
-            include_str!("../../migrations/V14__machine_claim_state.sql"),
-        ),
-    ])
-    .map_err(|e| StoreError::Corrupt(format!("migration files: {e}")))
+    moor_migrate::migrations(FILES)
+        .map_err(|e| StoreError::Corrupt(format!("migration files: {e}")))
 }
 
 /// Refuse an existing db this build would not migrate, without writing to it or its directory.

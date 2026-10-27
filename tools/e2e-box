@@ -21,8 +21,8 @@ options:
   --name NAME             Box name (default e2e-<epoch>)
   --moor BIN              moor binary (default: built from this repo)
   --state-dir DIR         moor state dir (default: fresh mktemp -d)
-  --goal TEXT             goal passed to `moor start --goal` (default: "Reply with OK and wait.");
-                          a Box without a goal skips the agent launch, so the agent checks need one
+  --prompt TEXT             prompt passed to `moor start --prompt` (default: "Reply with OK and wait.");
+                          the agent checks need a first prompt to answer
   --start-arg ARG         extra argument for `moor start` (repeatable)
   --box-step CMD          shell command run on the Box via `moor run` after start,
                           before the agent check; timed as box_step.N, report only
@@ -63,7 +63,7 @@ EOF
 
 die() { echo "e2e-box: $*" >&2; exit 2; }
 
-cfg="" moor_cfg="" pilot="" cycles=2 name="e2e-$(date +%s)" moor="" state="" dry=0 goal="Reply with OK and wait."
+cfg="" moor_cfg="" pilot="" cycles=2 name="e2e-$(date +%s)" moor="" state="" dry=0 prompt="Reply with OK and wait."
 start_args=() box_steps=()
 b_box_ready=30 b_proxy=15 b_session=20 b_start_total=90 b_sleep=15 b_tunnels=5
 b_woke=20 b_relaunch=25 b_wake_total=45 b_close=30
@@ -79,7 +79,7 @@ while [ $# -gt 0 ]; do
     --name) name=$2 ;;
     --moor) moor=$2 ;;
     --state-dir) state=$2 ;;
-    --goal) goal=$2 ;;
+    --prompt) prompt=$2 ;;
     --start-arg) start_args+=("$2") ;;
     --box-step) box_steps+=("$2") ;;
     --start-box-ready) b_box_ready=$2 ;;
@@ -170,7 +170,7 @@ box_run() { mo 180 run "$name" -- "$@"; }
 agent_up() { box_run sh -c "pgrep -f '[c]laude' >/dev/null"; }
 # agent_check PHASE KIND [AFTER_ID] [REF_MS]: the agent process runs, the proxy log shows a model POST within 60 s
 # of the newest KIND event (or of REF_MS, when given), and the Box has a registered agent session. A FAIL names
-# the missing part and prints the agent pane tail, so a screen that blocks the goal is visible.
+# the missing part and prints the agent pane tail, so a screen that blocks the prompt is visible.
 agent_check() {
   local phase=$1 kind=$2 after=${3:-0} ref=${4:-} t0 why="" mreq=0 sess=0 proc=0 out="" limited="" until_ms
   t0=$(now_ms)
@@ -268,7 +268,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 if [ "$dry" = 1 ]; then
-  echo "+ (cd $pilot && MOOR_STATE_DIR=$state $moor --state-dir $state start $name --goal '$goal'${start_args[*]:+ ${start_args[*]}})   # timeout $(outer "$b_start_total")s"
+  echo "+ (cd $pilot && MOOR_STATE_DIR=$state $moor --state-dir $state start $name --prompt '$prompt'${start_args[*]:+ ${start_args[*]}})   # timeout $(outer "$b_start_total")s"
   echo "+ e2e-budget events --db $state/moor.db --box $name; e2e-budget start ... (budgets $b_box_ready/$b_proxy/$b_session/$b_start_total)"
   for ((n = 0; n < ${#box_steps[@]}; n++)); do
     echo "+ moor run $name -- sh -c '${box_steps[n]}'   # phase box_step.$((n + 1)), report only"
@@ -291,7 +291,7 @@ echo "e2e-box: Box $name, state dir $state"
 # start
 t0=$(now_ms)
 started=1
-if in_pilot mo "$(outer "$b_start_total")" start "$name" --goal "$goal" ${start_args[@]+"${start_args[@]}"} >"$scratch/start.log" 2>&1; then
+if in_pilot mo "$(outer "$b_start_total")" start "$name" --prompt "$prompt" ${start_args[@]+"${start_args[@]}"} >"$scratch/start.log" 2>&1; then
   budget events --db "$state/moor.db" --box "$name" >"$scratch/start.jsonl" || ok=0
   if [ "$ok" = 1 ]; then
     phase_lines start start --events "$scratch/start.jsonl" --box-ready "$b_box_ready" \

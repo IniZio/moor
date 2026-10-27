@@ -23,7 +23,7 @@ fn launch_notices_are_reported_as_warnings() {
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine);
     let start = StartReq {
-        goal: Some("ship it".into()),
+        prompt: Some("ship it".into()),
         ..req("demo")
     };
     run(&w.cx, &start).unwrap();

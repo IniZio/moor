@@ -16,12 +16,11 @@ fn with_args() -> Vec<Request> {
         Request::Sessions(SessionsReq { parent: None }),
         Request::Start(StartReq {
             name: n("a"),
-            goal: Some("g".into()),
+            prompt: Some("g".into()),
             issue: None,
             base: None,
             model: None,
             no_agent: true,
-            hold: false,
             resume: false,
             repo: None,
             parent: None,
@@ -395,18 +394,6 @@ fn open_host_session_parent_parses_and_round_trips() {
 }
 
 #[test]
-fn start_without_hold_parses_as_false_and_hold_round_trips() {
-    let bare: StartReq = serde_json::from_value(json!({"name": "a"})).expect("parses");
-    assert!(!bare.hold);
-    let held: StartReq =
-        serde_json::from_value(json!({"name": "a", "hold": true})).expect("parses");
-    assert!(held.hold);
-    let back: StartReq =
-        serde_json::from_str(&serde_json::to_string(&held).expect("ser")).expect("de");
-    assert_eq!(back, held);
-}
-
-#[test]
 fn start_parent_parses_and_defaults_none() {
     let with: Request =
         serde_json::from_value(json!({"cmd": "start", "name": "x", "parent": 7})).expect("parses");
@@ -433,12 +420,11 @@ fn open_session_parent_parses_and_defaults_none() {
 fn parent_is_omitted_when_none() {
     let start = StartReq {
         name: n("x"),
-        goal: None,
+        prompt: None,
         issue: None,
         base: None,
         model: None,
         no_agent: false,
-        hold: false,
         resume: false,
         repo: None,
         parent: None,

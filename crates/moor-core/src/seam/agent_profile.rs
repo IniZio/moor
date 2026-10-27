@@ -70,6 +70,8 @@ pub struct LaunchCtx {
     pub home: BoxPath,
     /// The first prompt a fresh session starts with.
     pub prompt: LaunchPrompt,
+    /// The file of standing instructions the agent keeps for its whole session, resumed or fresh.
+    pub instructions: BoxPath,
     /// MCP servers as the Box sees them: no secret in any value.
     pub mcp: BTreeMap<String, McpServer>,
 }

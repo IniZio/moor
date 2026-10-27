@@ -12,10 +12,10 @@ use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 
-/// A start request for `demo` with `goal`.
-fn goal_req(goal: &str) -> StartReq {
+/// A start request for `demo` with `prompt`.
+fn prompt_req(prompt: &str) -> StartReq {
     StartReq {
-        goal: Some(goal.into()),
+        prompt: Some(prompt.into()),
         ..req("demo")
     }
 }
@@ -50,7 +50,7 @@ pub(super) fn started() -> (World, Arc<FakeEngine>, BoxId) {
     );
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine.clone());
-    let first = run(&w.cx, &goal_req("ship it")).unwrap();
+    let first = run(&w.cx, &prompt_req("ship it")).unwrap();
     (w, engine, BoxId::new(first.boxed.id))
 }
 
@@ -104,13 +104,13 @@ fn warning_codes(w: &World) -> Vec<String> {
 }
 
 #[test]
-fn a_gone_pane_relaunches_with_a_goal() {
+fn a_gone_pane_relaunches_with_a_prompt() {
     let (w, engine, id) = started();
     gone(&w);
-    let v = run(&w.cx, &goal_req("ship it")).unwrap();
+    let v = run(&w.cx, &prompt_req("ship it")).unwrap();
     assert!(v.agent.launched);
     let second = relaunch_of(&engine);
-    assert_eq!(second.goal.as_deref(), Some("ship it"));
+    assert_eq!(second.prompt.text(), Some("ship it"));
     assert_eq!(second.resume, None);
     assert_eq!(live_pane(&w, id).as_deref(), Some("p-2"));
 }
@@ -125,7 +125,7 @@ fn a_relaunch_records_the_given_parent_session() {
         &w.cx,
         &StartReq {
             parent: Some(SessionId::new(parent)),
-            ..goal_req("again")
+            ..prompt_req("again")
         },
     )
     .unwrap();
@@ -144,7 +144,7 @@ fn a_relaunch_records_the_given_parent_session() {
 fn an_exited_pane_relaunches_and_the_old_session_keeps_its_exit() {
     let (w, engine, id) = started();
     w.surface.push_pane_obs("p-1", Ok(obs(Some(3))));
-    run(&w.cx, &goal_req("ship it")).unwrap();
+    run(&w.cx, &prompt_req("ship it")).unwrap();
     assert_eq!(engine.launches().len(), 2);
     assert_eq!(live_pane(&w, id).as_deref(), Some("p-2"));
     assert_eq!(exit_of_first_session(&w, id), Some(3));
@@ -156,16 +156,16 @@ fn an_exited_pane_relaunches_and_the_old_session_keeps_its_exit() {
 }
 
 #[test]
-fn a_given_goal_relaunches_with_a_fresh_brief_and_is_stored() {
+fn a_given_prompt_relaunches_with_a_fresh_brief_and_is_stored() {
     let (w, engine, id) = started();
     gone(&w);
     set_agent_session(&w, id, "agent-1");
-    run(&w.cx, &goal_req("new goal")).unwrap();
+    run(&w.cx, &prompt_req("new prompt")).unwrap();
     let second = relaunch_of(&engine);
-    assert_eq!(second.goal.as_deref(), Some("new goal"));
+    assert_eq!(second.prompt.text(), Some("new prompt"));
     assert_eq!(second.resume, None);
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
-    assert_eq!(row.goal.as_deref(), Some("new goal"));
+    assert_eq!(row.prompt.as_deref(), Some("new prompt"));
 }
 
 #[test]
@@ -199,42 +199,42 @@ fn a_pane_read_error_counts_as_live() {
 }
 
 #[test]
-fn a_given_goal_with_a_live_pane_warns_and_changes_nothing() {
+fn a_given_prompt_with_a_live_pane_warns_and_changes_nothing() {
     let (w, engine, id) = started();
     w.surface.push_pane_obs("p-1", Ok(obs(None)));
     w.cx.take_warnings();
-    run(&w.cx, &goal_req("new goal")).unwrap();
+    run(&w.cx, &prompt_req("new prompt")).unwrap();
     let warned = w.cx.take_warnings();
-    let msg = warned.iter().find(|x| x.code == "goal_ignored").unwrap();
+    let msg = warned.iter().find(|x| x.code == "prompt_ignored").unwrap();
     assert_eq!(
         msg.message,
-        "--goal ignored: the agent for demo is live; use moor steer"
+        "--prompt ignored: the agent for demo is live; use moor steer"
     );
     assert_eq!(engine.launches().len(), 1);
     assert_eq!(live_pane(&w, id).as_deref(), Some("p-1"));
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
-    assert_eq!(row.goal.as_deref(), Some("ship it"));
+    assert_eq!(row.prompt.as_deref(), Some("ship it"));
 }
 
 #[test]
-fn a_live_pane_without_a_goal_does_not_warn() {
+fn a_live_pane_without_a_prompt_does_not_warn() {
     let (w, _engine, _id) = started();
     w.surface.push_pane_obs("p-1", Ok(obs(None)));
     w.cx.take_warnings();
     run(&w.cx, &req("demo")).unwrap();
-    assert!(!warning_codes(&w).contains(&"goal_ignored".to_owned()));
+    assert!(!warning_codes(&w).contains(&"prompt_ignored".to_owned()));
 }
 
 #[test]
-fn the_relaunched_event_carries_both_panes_and_the_goal() {
+fn the_relaunched_event_carries_both_panes_and_the_prompt() {
     let (w, _engine, id) = started();
     gone(&w);
-    run(&w.cx, &goal_req("new goal")).unwrap();
+    run(&w.cx, &prompt_req("new prompt")).unwrap();
     let events = w.cx.store().unwrap().events(id, 100).unwrap();
     let e = events.iter().find(|e| e.kind == "relaunched").unwrap();
     assert_eq!(
         e.payload,
-        serde_json::json!({"old_pane": "p-1", "new_pane": "p-2", "goal": "new goal"})
+        serde_json::json!({"old_pane": "p-1", "new_pane": "p-2", "prompt": "new prompt"})
     );
 }
 
@@ -250,9 +250,9 @@ fn a_failed_relaunch_records_no_relaunched_event_and_sets_the_failure() {
     );
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine);
-    let id = BoxId::new(run(&w.cx, &goal_req("ship it")).unwrap().boxed.id);
+    let id = BoxId::new(run(&w.cx, &prompt_req("ship it")).unwrap().boxed.id);
     gone(&w);
-    let v = run(&w.cx, &goal_req("ship it")).unwrap();
+    let v = run(&w.cx, &prompt_req("ship it")).unwrap();
     assert!(!v.agent.launched);
     let store = w.cx.store().unwrap();
     assert!(store.box_row(id).unwrap().unwrap().launch_failure.is_some());
@@ -261,10 +261,10 @@ fn a_failed_relaunch_records_no_relaunched_event_and_sets_the_failure() {
 }
 
 #[test]
-fn a_gone_pane_with_no_goal_and_no_agent_session_launches_with_no_prompt() {
+fn a_gone_pane_with_no_prompt_and_no_agent_session_launches_with_no_prompt() {
     let (w, engine, id) = started();
     let clear = Fields {
-        goal: Field::Clear,
+        prompt: Field::Clear,
         ..Fields::default()
     };
     w.cx.store()
@@ -282,11 +282,11 @@ fn a_gone_pane_start_is_refused_while_another_op_holds_the_lock() {
     let (w, engine, _id) = started();
     gone(&w);
     let held = super::hold(&w, "close");
-    let err = run(&w.cx, &goal_req("ship it")).unwrap_err();
+    let err = run(&w.cx, &prompt_req("ship it")).unwrap_err();
     assert_eq!(err.error.to_string(), "box busy: close in progress");
     assert_eq!(engine.launches().len(), 1);
     drop(held);
-    assert!(run(&w.cx, &goal_req("ship it")).unwrap().agent.launched);
+    assert!(run(&w.cx, &prompt_req("ship it")).unwrap().agent.launched);
 }
 
 #[test]
@@ -299,7 +299,7 @@ fn a_relaunch_watches_its_new_pane_for_a_first_run_prompt() {
     );
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine);
-    let first = run(&w.cx, &goal_req("ship it")).unwrap();
+    let first = run(&w.cx, &prompt_req("ship it")).unwrap();
     let id = BoxId::new(first.boxed.id);
     gone(&w);
     w.surface.push_pane_obs(
@@ -309,7 +309,7 @@ fn a_relaunch_watches_its_new_pane_for_a_first_run_prompt() {
             ..obs(None)
         }),
     );
-    let v = run(&w.cx, &goal_req("ship it")).unwrap();
+    let v = run(&w.cx, &prompt_req("ship it")).unwrap();
     assert!(v.agent.launched);
     let events = w.cx.store().unwrap().events(id, 50).unwrap();
     let blocked = events
@@ -320,11 +320,11 @@ fn a_relaunch_watches_its_new_pane_for_a_first_run_prompt() {
     assert_eq!(blocked.payload.get("prompt"), Some(&"folder_trust".into()));
 }
 
-/// A world whose Working Box `demo` has no goal and no session.
-fn goalless() -> (World, Arc<FakeEngine>, BoxId) {
+/// A world whose Working Box `demo` has no prompt and no session.
+fn promptless() -> (World, Arc<FakeEngine>, BoxId) {
     let (w, engine, id) = started();
     let clear = Fields {
-        goal: Field::Clear,
+        prompt: Field::Clear,
         ..Fields::default()
     };
     let store = w.cx.store().unwrap();
@@ -335,20 +335,20 @@ fn goalless() -> (World, Arc<FakeEngine>, BoxId) {
 }
 
 #[test]
-fn a_goal_on_a_goalless_box_without_a_session_is_stored_and_launches_once() {
-    let (w, engine, id) = goalless();
-    let v = run(&w.cx, &goal_req("late goal")).unwrap();
+fn a_prompt_on_a_promptless_box_without_a_session_is_stored_and_launches_once() {
+    let (w, engine, id) = promptless();
+    let v = run(&w.cx, &prompt_req("late prompt")).unwrap();
     assert!(v.agent.launched);
     assert_eq!(engine.launches().len(), 2);
-    assert_eq!(relaunch_of(&engine).goal.as_deref(), Some("late goal"));
+    assert_eq!(relaunch_of(&engine).prompt.text(), Some("late prompt"));
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
-    assert_eq!(row.goal.as_deref(), Some("late goal"));
+    assert_eq!(row.prompt.as_deref(), Some("late prompt"));
 }
 
 #[test]
-fn a_second_start_without_a_goal_does_not_launch_again() {
-    let (w, engine, _id) = goalless();
-    run(&w.cx, &goal_req("late goal")).unwrap();
+fn a_second_start_without_a_prompt_does_not_launch_again() {
+    let (w, engine, _id) = promptless();
+    run(&w.cx, &prompt_req("late prompt")).unwrap();
     w.surface.push_pane_obs("p-2", Ok(obs(None)));
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(!v.agent.launched);
@@ -356,22 +356,26 @@ fn a_second_start_without_a_goal_does_not_launch_again() {
 }
 
 #[test]
-fn an_issue_alone_does_not_launch_a_goalless_box() {
-    let (w, engine, _id) = goalless();
+fn an_issue_alone_launches_a_promptless_box_asking_to_resolve_it() {
+    let (w, engine, _id) = promptless();
     let issue = StartReq {
         issue: Some("42".into()),
         ..req("demo")
     };
     let v = run(&w.cx, &issue).unwrap();
-    assert!(!v.agent.launched);
-    assert_eq!(engine.launches().len(), 1);
+    assert!(v.agent.launched);
+    assert_eq!(engine.launches().len(), 2);
+    assert_eq!(
+        relaunch_of(&engine).prompt.text(),
+        Some("Resolve issue 42.")
+    );
 }
 
 #[test]
-fn a_goal_on_a_goalless_box_with_a_live_pane_warns() {
+fn a_prompt_on_a_promptless_box_with_a_live_pane_warns() {
     let (w, engine, id) = started();
     let clear = Fields {
-        goal: Field::Clear,
+        prompt: Field::Clear,
         ..Fields::default()
     };
     w.cx.store()
@@ -380,23 +384,23 @@ fn a_goal_on_a_goalless_box_with_a_live_pane_warns() {
         .unwrap();
     w.surface.push_pane_obs("p-1", Ok(obs(None)));
     w.cx.take_warnings();
-    run(&w.cx, &goal_req("late goal")).unwrap();
-    assert!(warning_codes(&w).contains(&"goal_ignored".to_owned()));
+    run(&w.cx, &prompt_req("late prompt")).unwrap();
+    assert!(warning_codes(&w).contains(&"prompt_ignored".to_owned()));
     assert_eq!(engine.launches().len(), 1);
 }
 
 #[test]
-fn a_given_goal_replaces_the_stored_goal_when_there_is_no_session() {
+fn a_given_prompt_replaces_the_stored_prompt_when_there_is_no_session() {
     let (w, engine, id) = started();
     let store = w.cx.store().unwrap();
     let live = store.live_session(id).unwrap().unwrap();
     store.end_session(live.id, None, None).unwrap();
-    let v = run(&w.cx, &goal_req("second goal")).unwrap();
+    let v = run(&w.cx, &prompt_req("second prompt")).unwrap();
     assert!(v.agent.launched);
     assert_eq!(engine.launches().len(), 2);
-    assert_eq!(relaunch_of(&engine).goal.as_deref(), Some("second goal"));
+    assert_eq!(relaunch_of(&engine).prompt.text(), Some("second prompt"));
     let row = store.box_row(id).unwrap().unwrap();
-    assert_eq!(row.goal.as_deref(), Some("second goal"));
+    assert_eq!(row.prompt.as_deref(), Some("second prompt"));
 }
 
 /// A resume request for `demo`.
@@ -517,7 +521,7 @@ fn a_rejected_registration_is_a_warning_not_a_failure() {
     assert!(msg.message.ends_with("invalid_resume_argv"), "{msg:?}");
 }
 
-/// A world with a Working goal-less Box `demo`, no session, and stored agent session `agent-1`.
+/// A world with a Working prompt-less Box `demo`, no session, and stored agent session `agent-1`.
 fn idle_of_sessions() -> (World, Arc<FakeEngine>, BoxId) {
     let engine = Arc::new(FakeEngine::new().launch_result(Ok(session("p-1"))));
     let mut w = world(FakeDriver::new());
@@ -549,31 +553,31 @@ fn resume_with_no_session_row_launches_the_stored_session() {
 }
 
 #[test]
-fn a_goal_beats_resume_when_there_is_no_session_row() {
+fn a_prompt_beats_resume_when_there_is_no_session_row() {
     let (w, engine, _id) = idle_of_sessions();
     let r = StartReq {
-        goal: Some("G".into()),
+        prompt: Some("G".into()),
         ..resume_req()
     };
     run(&w.cx, &r).unwrap();
     let all = engine.launches();
     let first = all.first().unwrap();
     assert_eq!(first.resume, None);
-    assert_eq!(first.goal.as_deref(), Some("G"));
+    assert_eq!(first.prompt.text(), Some("G"));
 }
 
 #[test]
-fn resume_with_a_goal_is_not_refused_without_a_stored_session() {
+fn resume_with_a_prompt_is_not_refused_without_a_stored_session() {
     let (w, engine, id) = idle_of_sessions();
     set_agent_session(&w, id, "");
     let r = StartReq {
-        goal: Some("G".into()),
+        prompt: Some("G".into()),
         ..resume_req()
     };
     let v = run(&w.cx, &r).unwrap();
     assert!(v.agent.launched);
     assert_eq!(
-        engine.launches().first().and_then(|l| l.goal.as_deref()),
+        engine.launches().first().and_then(|l| l.prompt.text()),
         Some("G")
     );
 }

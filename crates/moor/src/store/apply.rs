@@ -278,7 +278,7 @@ fn input_handle_sets(input: &BoxInput, taken: &Sets) -> Sets {
 fn box_field_sets(s: &Fields) -> Sets {
     let all = [
         ("issue", text(&s.issue)),
-        ("goal", text(&s.goal)),
+        ("prompt", text(&s.prompt)),
         ("base", text(&s.base)),
         ("branch", text(&s.branch)),
         ("state_reason", text(&s.state_reason)),

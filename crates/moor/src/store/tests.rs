@@ -247,7 +247,7 @@ fn illegal_box_step_changes_nothing() {
     let id = new_box(&store, "t");
     let before = store.events(id, 100).unwrap().len();
     let set = Fields {
-        goal: Field::Set("g".into()),
+        prompt: Field::Set("g".into()),
         ..provider()
     };
     let d = Decision::new(id)
@@ -261,7 +261,7 @@ fn illegal_box_step_changes_nothing() {
     ));
     let row = store.box_row(id).unwrap().unwrap();
     assert_eq!(
-        (row.lifecycle, row.goal, row.boxed),
+        (row.lifecycle, row.prompt, row.boxed),
         (BoxLifecycle::Checking, None, None)
     );
     assert_eq!(store.events(id, 100).unwrap().len(), before);
@@ -289,7 +289,7 @@ fn readers_are_not_blocked_by_an_open_writer() {
     let path = dir.path().join("state").join("moor.db");
     let raw = rusqlite::Connection::open(&path).unwrap();
     raw.execute_batch(
-        "BEGIN EXCLUSIVE; UPDATE boxes SET goal = 'dirty'; \
+        "BEGIN EXCLUSIVE; UPDATE boxes SET prompt = 'dirty'; \
          INSERT INTO boxes (name, repo, state, created_at, updated_at) VALUES ('x', 'o/r', 'checking', 0, 0); \
          INSERT INTO sessions (box, ordinal, state, started_at) \
          VALUES (last_insert_rowid(), 1, 'starting', 0); \
@@ -297,7 +297,7 @@ fn readers_are_not_blocked_by_an_open_writer() {
     )
     .unwrap();
     let start = Instant::now();
-    assert_eq!(store.box_row(id).unwrap().unwrap().goal, None);
+    assert_eq!(store.box_row(id).unwrap().unwrap().prompt, None);
     assert_eq!(store.open_boxes().unwrap().len(), 1);
     assert_eq!(store.events(id, 100).unwrap().len(), 1);
     assert!(start.elapsed() < Duration::from_secs(1));

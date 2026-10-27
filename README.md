@@ -96,10 +96,10 @@ This guide starts one Box from a git repo on your machine. You need:
    Each line names a setting and the layer it came from, such as
    `box provider  [user]  local-container`.
 
-6. Start a Box with a goal for the agent:
+6. Start a Box with a prompt for the agent:
 
    ```sh
-   moor start fix-typo --goal "Fix the typo in the README"
+   moor start fix-typo --prompt "Fix the typo in the README"
    ```
 
    Run it inside a checkout of a GitHub repo, or name one with

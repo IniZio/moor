@@ -11,11 +11,11 @@ use crate::ops::start::launch;
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 
-/// An Idle Box with a goal, a ready machine and no Session.
+/// An Idle Box with a prompt, a ready machine and no Session.
 fn idle() -> (World, BoxId) {
     let w = world(FakeDriver::new());
     let start = StartReq {
-        goal: Some("ship it".into()),
+        prompt: Some("ship it".into()),
         no_agent: true,
         ..req("demo")
     };
@@ -38,7 +38,7 @@ fn launch_with(w: &World, id: BoxId, start: &StartReq) -> moor_core::view::Agent
 fn a_launch_skipped_because_the_box_is_not_working_is_recorded() {
     let (w, id) = idle();
     let start = StartReq {
-        goal: Some("ship it".into()),
+        prompt: Some("ship it".into()),
         ..req("demo")
     };
     let view = launch_with(&w, id, &start);
@@ -52,33 +52,25 @@ fn a_launch_skipped_because_the_box_is_not_working_is_recorded() {
 }
 
 #[test]
-fn a_held_or_agentless_start_that_does_not_launch_stays_silent() {
+fn an_agentless_start_that_does_not_launch_stays_silent() {
     let (w, id) = idle();
-    for start in [
-        StartReq {
-            goal: Some("ship it".into()),
-            hold: true,
-            ..req("demo")
-        },
-        StartReq {
-            goal: Some("ship it".into()),
-            no_agent: true,
-            ..req("demo")
-        },
-    ] {
-        let view = launch_with(&w, id, &start);
-        assert!(!view.launched && view.reason.is_none());
-    }
+    let start = StartReq {
+        prompt: Some("ship it".into()),
+        no_agent: true,
+        ..req("demo")
+    };
+    let view = launch_with(&w, id, &start);
+    assert!(!view.launched && view.reason.is_none());
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert!(row.launch_failure.is_none());
 }
 
 #[test]
-fn no_agent_beats_a_goal_on_a_gone_pane() {
+fn no_agent_beats_a_prompt_on_a_gone_pane() {
     let (w, engine, _id) = started();
     gone(&w);
     let r = StartReq {
-        goal: Some("ship it".into()),
+        prompt: Some("ship it".into()),
         no_agent: true,
         ..req("demo")
     };

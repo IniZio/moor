@@ -90,12 +90,11 @@ fn exchange(cx: Cx, requests: &[Request]) -> (String, String, Vec<Value>) {
 fn start() -> Request {
     Request::Start(StartReq {
         name: BoxName::parse_allow_bare("demo").expect("name"),
-        goal: Some("ship it".into()),
+        prompt: Some("ship it".into()),
         issue: None,
         base: None,
         model: None,
         no_agent: false,
-        hold: false,
         resume: false,
         repo: None,
         parent: None,

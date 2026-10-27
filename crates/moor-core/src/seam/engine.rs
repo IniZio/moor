@@ -41,13 +41,22 @@ pub struct LaunchNotice {
 /// The first prompt the agent starts with.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum LaunchPrompt {
-    /// The prompt derived from the brief.
-    #[default]
-    Brief,
     /// This text, verbatim.
     Text(String),
     /// No first prompt; the agent waits for input.
+    #[default]
     None,
+}
+
+impl LaunchPrompt {
+    /// The first prompt's text, when there is one.
+    #[must_use]
+    pub fn text(&self) -> Option<&str> {
+        match self {
+            Self::Text(t) => Some(t),
+            Self::None => None,
+        }
+    }
 }
 
 /// What a launch needs to start the agent in a Box.
@@ -65,8 +74,6 @@ pub struct LaunchReq {
     pub box_name: BoxName,
     /// The Box branch the agent pushes to.
     pub branch: String,
-    /// What the agent is asked to do.
-    pub goal: Option<String>,
     /// The stored agent session to continue instead of reading the brief.
     pub resume: Option<String>,
     /// The Issue text, when the Box came from one.
@@ -122,7 +129,6 @@ impl PartialEq for LaunchReq {
             && self.workspace == other.workspace
             && self.box_name == other.box_name
             && self.branch == other.branch
-            && self.goal == other.goal
             && self.resume == other.resume
             && self.issue == other.issue
             && self.setup_exit == other.setup_exit

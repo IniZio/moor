@@ -32,28 +32,30 @@ fn second(engine: &FakeEngine) -> LaunchReq {
 }
 
 #[test]
-fn a_start_without_a_goal_launches_the_agent_with_no_first_prompt() {
+fn a_start_without_a_prompt_launches_the_agent_with_no_first_prompt() {
     let (w, engine) = fresh();
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(v.agent.launched);
     let first = only(&engine);
     assert_eq!(first.prompt, LaunchPrompt::None);
-    assert_eq!(first.goal, None);
 }
 
 #[test]
-fn a_start_with_an_issue_launches_with_the_brief() {
+fn a_start_with_an_issue_asks_the_agent_to_resolve_it() {
     let (w, engine) = fresh();
     let issue = StartReq {
         issue: Some("42".into()),
         ..req("demo")
     };
     run(&w.cx, &issue).unwrap();
-    assert_eq!(only(&engine).prompt, LaunchPrompt::Brief);
+    assert_eq!(
+        only(&engine).prompt,
+        LaunchPrompt::Text("Resolve issue 42.".into())
+    );
 }
 
 #[test]
-fn a_start_with_no_agent_and_no_goal_launches_nothing() {
+fn a_start_with_no_agent_and_no_prompt_launches_nothing() {
     let (w, engine) = fresh();
     let none = StartReq {
         no_agent: true,
@@ -64,7 +66,7 @@ fn a_start_with_no_agent_and_no_goal_launches_nothing() {
 }
 
 #[test]
-fn a_goalless_start_of_a_live_agent_changes_nothing() {
+fn a_promptless_start_of_a_live_agent_changes_nothing() {
     let (w, engine, id) = started();
     w.surface.push_pane_obs("p-1", Ok(obs(None)));
     assert!(!run(&w.cx, &req("demo")).unwrap().agent.launched);
@@ -74,7 +76,7 @@ fn a_goalless_start_of_a_live_agent_changes_nothing() {
 }
 
 #[test]
-fn a_goalless_start_after_the_pane_ended_resumes_the_stored_session() {
+fn a_promptless_start_after_the_pane_ended_resumes_the_stored_session() {
     let (w, engine, id) = started();
     set_agent_session(&w, id, "agent-1");
     gone(&w);
@@ -85,7 +87,7 @@ fn a_goalless_start_after_the_pane_ended_resumes_the_stored_session() {
 }
 
 #[test]
-fn a_goalless_start_after_the_pane_ended_with_no_stored_session_launches_with_no_prompt() {
+fn a_promptless_start_after_the_pane_ended_with_no_stored_session_launches_with_no_prompt() {
     let (w, engine, _id) = started();
     gone(&w);
     assert!(run(&w.cx, &req("demo")).unwrap().agent.launched);
@@ -95,7 +97,7 @@ fn a_goalless_start_after_the_pane_ended_with_no_stored_session_launches_with_no
 }
 
 #[test]
-fn a_goalless_start_after_the_session_ended_resumes_the_stored_session() {
+fn a_promptless_start_after_the_session_ended_resumes_the_stored_session() {
     let (w, engine, id) = started();
     let store = w.cx.store().unwrap();
     let live = store.live_session(id).unwrap().unwrap();
@@ -108,7 +110,7 @@ fn a_goalless_start_after_the_session_ended_resumes_the_stored_session() {
 }
 
 #[test]
-fn a_wake_of_a_box_with_neither_goal_nor_session_launches_nothing() {
+fn a_wake_of_a_box_with_neither_prompt_nor_session_launches_nothing() {
     let (w, engine) = fresh();
     let none = StartReq {
         no_agent: true,

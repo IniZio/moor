@@ -135,7 +135,6 @@ impl Launch<'_> {
         let preseed = self.profile.preseed(ctx).map_err(|e| fail("preseed", &e))?;
         let brief = render(&BriefInput {
             name: req.box_name.as_str(),
-            goal: req.goal.as_deref(),
             issue: req.issue.as_deref(),
             branch: &req.branch,
             setup_exit: req.setup_exit,

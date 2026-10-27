@@ -70,12 +70,11 @@ fn the_check_pins_the_open_box_a_start_attaches_to() {
     let caller = Ok(Caller::Local(1000));
     let start = Request::Start(StartReq {
         name: name("a"),
-        goal: None,
+        prompt: None,
         issue: None,
         base: None,
         model: None,
         no_agent: false,
-        hold: false,
         resume: false,
         repo: None,
         parent: None,

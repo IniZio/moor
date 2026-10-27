@@ -39,7 +39,7 @@ fn box_view_maps_row_without_box() {
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let fields = Fields {
-        goal: Field::Set("g".into()),
+        prompt: Field::Set("g".into()),
         ..Fields::default()
     };
     store.apply(Decision::new(id).set(fields)).unwrap();
@@ -52,7 +52,7 @@ fn box_view_maps_row_without_box() {
         ),
         (id.get(), "t", Some("o/n".to_owned()))
     );
-    assert_eq!(v.goal.as_deref(), Some("g"));
+    assert_eq!(v.prompt.as_deref(), Some("g"));
     assert!(v.driver.is_none() && v.agent.is_none() && v.run.is_none());
     assert_eq!(v.updated_at, "1970-01-02T00:00:00Z");
     let events = store.events(id, 10).unwrap();

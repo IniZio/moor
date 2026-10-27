@@ -33,11 +33,11 @@ fn with_linear(key: bool) -> (World, FakeProxyHost) {
 #[test]
 fn the_agent_gets_a_placeholder_and_the_proxy_injects_the_users_key() {
     let (w, fake) = with_linear(true);
-    let goal = StartReq {
-        goal: Some("ship it".into()),
+    let prompt = StartReq {
+        prompt: Some("ship it".into()),
         ..req("demo")
     };
-    let v = run(&w.cx, &goal).unwrap();
+    let v = run(&w.cx, &prompt).unwrap();
     let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
     let launch = super::super::launch::launch_req(&w.cx, &row.unwrap().unwrap(), None).unwrap();
     let linear = &launch.mcp["linear"];

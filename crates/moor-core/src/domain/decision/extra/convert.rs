@@ -29,12 +29,12 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::Relaunched {
                 old_pane,
                 new_pane,
-                goal,
+                prompt,
                 cause,
             } => Self::Relaunched {
                 old_pane,
                 new_pane,
-                goal,
+                prompt,
                 cause,
             },
             ExtraEvent::SetupFailed { line } => Self::SetupFailed { line },
@@ -130,12 +130,12 @@ impl TryFrom<Event> for ExtraEvent {
             Event::Relaunched {
                 old_pane,
                 new_pane,
-                goal,
+                prompt,
                 cause,
             } => Ok(Self::Relaunched {
                 old_pane,
                 new_pane,
-                goal,
+                prompt,
                 cause,
             }),
             Event::SetupFailed { line } => Ok(Self::SetupFailed { line }),

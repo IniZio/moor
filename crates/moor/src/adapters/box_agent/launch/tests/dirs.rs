@@ -45,7 +45,6 @@ fn req(s: &FakeSurface) -> LaunchReq {
         workspace: s.ensure_workspace("moor:t1").unwrap(),
         box_name: BoxName::parse_allow_bare("t1").unwrap(),
         branch: "moor/t1".to_owned(),
-        goal: Some("fix x".to_owned()),
         resume: None,
         issue: None,
         setup_exit: None,
@@ -55,7 +54,7 @@ fn req(s: &FakeSurface) -> LaunchReq {
         nonce: "abc123".to_owned(),
         proxy: None,
         strip_env: Vec::new(),
-        prompt: LaunchPrompt::Brief,
+        prompt: LaunchPrompt::None,
     }
 }
 
