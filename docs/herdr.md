@@ -7,10 +7,11 @@ happened. The pane goes away only when you close it.
 
 ## Install
 
-1. Build and install the binary: `cargo install --path crates/moor-herdr`.
+1. Build and install the binary: `cargo install --path crates/moor-herdr`. The plugin finds it on
+   PATH or in `~/.cargo/bin`; set `MOOR_HERDR_BIN` in the plugin's `env` file if it lives elsewhere.
 2. Link the plugin: `herdr plugin link crates/moor-herdr/herdr`.
 3. Tell it the controller socket. Put `MOOR_HERDR_SOCKET=/path/to/controller.sock` in the
-   plugin's `env` file under herdr's plugin config dir.
+   plugin's `env` file, `~/.config/herdr/plugins/config/moor/env`.
 4. Add the config snippet below to `~/.config/herdr/config.toml`, then run
    `herdr server reload-config`. The plugin never edits that file.
 
