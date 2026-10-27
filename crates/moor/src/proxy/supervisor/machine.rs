@@ -21,6 +21,8 @@ pub(super) struct MachineSlot {
     failing: bool,
     /// The wake found no free slot and said so; set back when the Box takes one or sleeps.
     waiting: bool,
+    /// The machine and ports the link was opened for.
+    opened: Option<(String, Vec<u16>)>,
 }
 
 impl Running<'_> {
@@ -34,7 +36,10 @@ impl Running<'_> {
         self.grant_machine();
         let want = match self.deps.store.box_machine(self.box_id) {
             Ok(Some(want)) => want,
-            Ok(None) => return,
+            Ok(None) => {
+                self.machine.borrow_mut().link = None;
+                return;
+            }
             Err(err) => {
                 say(
                     &self.deps.stderr,
@@ -45,6 +50,10 @@ impl Running<'_> {
         };
         let (machine, ports) = (want.machine, want.ports);
         let mut slot = self.machine.borrow_mut();
+        let wanted = Some((machine.name.clone(), ports.clone()));
+        if slot.opened != wanted {
+            slot.link = None;
+        }
         let fresh = !slot.link.as_mut().is_some_and(MachineLink::alive);
         let open = || {
             MachineLink::open(
@@ -57,6 +66,14 @@ impl Running<'_> {
         };
         let event = match keep(&mut slot.link, open) {
             Ok(()) if fresh => {
+                // Opening can take long enough for the Box to release the claim meanwhile.
+                let now = self.deps.store.box_machine(self.box_id);
+                let still = now.ok().flatten().map(|h| (h.machine.name, h.ports));
+                if still != wanted {
+                    slot.link = None;
+                    return;
+                }
+                slot.opened = wanted;
                 slot.failing = false;
                 MachineEvent::MachineAttached {
                     name: machine.name.clone(),

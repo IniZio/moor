@@ -262,3 +262,54 @@ fn an_asleep_claim_is_released_while_parked_and_waiting_once_asked_up() {
         "machine mini has no free slot yet; this Box takes one as soon as another Box frees it"
     );
 }
+
+fn release(store: &crate::store::Store, id: moor_core::BoxId) {
+    let (user, _) = store
+        .enroll(&Identity::parse("slack:T1:U1").unwrap())
+        .unwrap();
+    store
+        .hold_machine(id, user, &HoldOp::Release, None, &[])
+        .unwrap();
+}
+
+#[test]
+fn a_released_claim_ends_the_forwards_on_the_next_tick() {
+    let w = held_machine();
+    let deps = w.deps();
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+    assert!(run.tick().is_none());
+    assert!(w.proc.dropped().is_empty());
+
+    release(&w.store, w.id);
+    assert!(run.tick().is_none());
+
+    assert!(!w.proc.dropped().is_empty(), "the ssh child was ended");
+    assert!(run.tick().is_none());
+    assert_eq!(machine_kinds(&w), ["machine_attached", "machine_detached"]);
+}
+
+#[test]
+fn a_claim_released_while_its_forwards_open_is_not_attached() {
+    let w = held_machine();
+    let (store, id) = (w.store.clone(), w.id);
+    w.proc.on_spawn(move || release(&store, id));
+    let deps = w.deps();
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+
+    assert!(run.tick().is_none());
+
+    assert_eq!(
+        machine_kinds(&w),
+        ["machine_detached"],
+        "no attachment is recorded for a Box that holds nothing"
+    );
+    assert!(!w.proc.dropped().is_empty(), "the ssh child was ended");
+}
+
+#[test]
+fn a_held_claim_reaches_the_machine_service_before_any_tick() {
+    let w = held_machine();
+
+    assert!(matches!(hold_of(&w.store, w.id), Hold::Held(h) if h.name == "mini"));
+    assert!(machine_kinds(&w).is_empty(), "no tick has attached it");
+}
