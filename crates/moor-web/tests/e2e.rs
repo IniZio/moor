@@ -37,7 +37,7 @@ fn root_for(stack: &Stack, key: &str) -> Option<Value> {
 fn create_request(stack: &Stack) -> String {
     let (status, body) = stack.post(
         "/requests",
-        &json!({"repo": "o/demo", "name": "t1", "goal": "g"}),
+        &json!({"repo": "o/demo", "name": "t1", "prompt": "g"}),
     );
     assert_eq!(
         status,
@@ -120,7 +120,7 @@ fn end_request(stack: &Stack, key: &str, id: i64) {
 
     let (status, body) = stack.post(
         &format!("/requests/{key}/workers"),
-        &json!({"name": "t2", "goal": "g"}),
+        &json!({"name": "t2", "prompt": "g"}),
     );
     assert_eq!(status, 409, "workers after end: {body}\n{diag}");
 }
@@ -142,7 +142,7 @@ fn a_repo_that_is_not_owner_name_is_refused_before_any_root_is_opened() {
     let stack = Stack::start();
     let (status, body) = stack.post(
         "/requests",
-        &json!({"repo": "demo", "name": "t1", "goal": "g"}),
+        &json!({"repo": "demo", "name": "t1", "prompt": "g"}),
     );
     assert_eq!(status, 400, "POST /requests: {body}");
 

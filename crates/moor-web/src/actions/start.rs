@@ -51,8 +51,8 @@ struct NewBody {
     repo: String,
     /// Name of the first worker.
     name: String,
-    /// Goal text; empty means none.
-    goal: String,
+    /// Prompt text; empty means none.
+    prompt: String,
 }
 
 /// JSON body of `POST /requests/{key}/workers`.
@@ -61,8 +61,8 @@ struct NewBody {
 struct WorkerBody {
     /// Name of the worker.
     name: String,
-    /// Goal text; empty means none.
-    goal: String,
+    /// Prompt text; empty means none.
+    prompt: String,
 }
 
 /// Serves the start routes on POST and hands everything else to `fallback`.
@@ -100,10 +100,10 @@ fn create(ctx: &StartCtx, body: &[u8]) -> HttpResponse {
     }
     let key = new_key();
     let (ctx2, key2) = (ctx.clone(), key.clone());
-    let goal = goal(b.goal);
+    let prompt = prompt(b.prompt);
     let job = ctx.jobs.spawn("new request", move |h| {
         let root = open_root(&ctx2, h, &key2, &b.repo)?;
-        let start = start(&ctx2.client, h, &b.repo, root, box_name, goal)?;
+        let start = start(&ctx2.client, h, &b.repo, root, box_name, prompt)?;
         Ok(json!({"key": key2, "root": root, "start": start}))
     });
     accepted(&key, &job)
@@ -132,9 +132,9 @@ fn add_worker(ctx: &StartCtx, key: &str, body: &[u8]) -> HttpResponse {
     if row.ended_at.is_some() {
         return HttpResponse::text("409 Conflict", "request has ended");
     }
-    let (client, goal) = (ctx.client.clone(), goal(b.goal));
+    let (client, prompt) = (ctx.client.clone(), prompt(b.prompt));
     let job = ctx.jobs.spawn("add worker", move |h| {
-        let start = start(&client, h, &row.repo, row.root_session, box_name, goal)?;
+        let start = start(&client, h, &row.repo, row.root_session, box_name, prompt)?;
         Ok(json!({"key": row.key, "root": row.root_session, "start": start}))
     });
     accepted(key, &job)
@@ -226,7 +226,7 @@ fn start(
     repo: &str,
     root: SessionId,
     box_name: BoxName,
-    goal: Option<String>,
+    prompt: Option<String>,
 ) -> Result<Value, JobFailure> {
     let repo = ForgeRepo::parse(repo).map_err(|e| fail("repo", e.to_string()))?;
     call(
@@ -235,12 +235,11 @@ fn start(
         ("start", "starting the worker"),
         Request::Start(StartReq {
             name: box_name,
-            goal,
+            prompt,
             issue: None,
             base: None,
             model: None,
             no_agent: false,
-            hold: false,
             resume: false,
             repo: Some(repo),
             parent: Some(root),
@@ -305,8 +304,8 @@ fn bad(msg: String) -> HttpResponse {
     HttpResponse::text("400 Bad Request", msg)
 }
 
-/// Goal text, with an empty one meaning none.
-fn goal(text: String) -> Option<String> {
+/// Prompt text, with an empty one meaning none.
+fn prompt(text: String) -> Option<String> {
     Some(text).filter(|g| !g.is_empty())
 }
 
