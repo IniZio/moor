@@ -91,6 +91,29 @@ impl Cli {
         Ok(reply.get_mut("result").map_or(Value::Null, Value::take))
     }
 
+    /// Opens moor's picker as a popup, for new work beside `workspace`.
+    pub fn open_picker(&self, workspace: &str) -> Result<(), Error> {
+        let env = format!("MOOR_HERDR_WORKSPACE={workspace}");
+        let args = [
+            "plugin",
+            "pane",
+            "open",
+            "--plugin",
+            SOURCE,
+            "--entrypoint",
+            "new",
+            "--placement",
+            "popup",
+            "--width",
+            "70",
+            "--height",
+            "18",
+            "--env",
+            &env,
+        ];
+        self.call(&args).map(drop)
+    }
+
     /// The string at `path` in `value`.
     fn text(value: &Value, path: &str) -> Result<String, Error> {
         value

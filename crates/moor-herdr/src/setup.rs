@@ -8,6 +8,9 @@ use crate::sync::ENV_TOKEN;
 /// The plugin action that `prefix+c` runs in place of herdr's plain new tab.
 pub const NEW_ACTION: &str = "new";
 
+/// The plugin action that `prefix+m` runs to open the Boxes panel.
+pub const PANEL_ACTION: &str = "panel";
+
 /// The config snippet: sidebar rows that set Boxes apart, and the key rebind.
 #[must_use]
 pub fn snippet() -> String {
@@ -29,6 +32,12 @@ key = "prefix+c"
 type = "plugin_action"
 command = "{SOURCE}.{NEW_ACTION}"
 description = "moor: new"
+
+[[keys.command]]
+key = "prefix+m"
+type = "plugin_action"
+command = "{SOURCE}.{PANEL_ACTION}"
+description = "moor: Boxes"
 "##
     )
 }

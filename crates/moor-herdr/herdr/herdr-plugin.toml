@@ -23,6 +23,18 @@ title = "moor: new"
 contexts = ["workspace"]
 command = ["sh", "bin/new.sh"]
 
+[[actions]]
+id = "panel"
+title = "moor: Boxes"
+contexts = ["workspace"]
+command = ["sh", "bin/panel.sh"]
+
+[[panes]]
+id = "panel"
+title = "moor: Boxes"
+placement = "split"
+command = ["sh", "bin/run.sh", "panel"]
+
 [[panes]]
 id = "new"
 title = "moor: new"

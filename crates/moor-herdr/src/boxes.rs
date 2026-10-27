@@ -227,6 +227,19 @@ fn wake_wire(name: &str) -> Value {
     json!({"cmd": "wake", "box": name})
 }
 
+/// Closes Box `name` on the controller, the way `moor close` does without `--force`.
+pub fn close(client: &Client, name: &str) -> Result<(), Error> {
+    let reply = client.request(request(close_wire(name))?, |_| {})?;
+    reply
+        .error
+        .map_or(Ok(()), |e| Err(Error::Refused(e.message)))
+}
+
+/// The wire form of the request that closes Box `name`.
+fn close_wire(name: &str) -> Value {
+    json!({"cmd": "close", "box": name})
+}
+
 /// A request from its wire form, so the front states only the fields it sets.
 pub fn request(wire: Value) -> Result<Request, Error> {
     Ok(serde_json::from_value(wire)?)
