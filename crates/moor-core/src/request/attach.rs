@@ -15,4 +15,7 @@ pub struct AttachReq {
     pub cols: u16,
     /// Rows of the caller's terminal.
     pub rows: u16,
+    /// Open a login shell in the Box's work tree in place of the agent's terminal.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub shell: bool,
 }

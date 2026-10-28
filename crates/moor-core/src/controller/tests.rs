@@ -338,6 +338,10 @@ fn attach_request_and_view_round_trip() {
     assert_eq!(req.cmd(), "attach");
     let back = serde_json::to_string(&req).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(back, line);
+    let shell = r#"{"cmd":"attach","box":"b","cols":120,"rows":33,"shell":true}"#;
+    let req: Request = serde_json::from_str(shell).unwrap_or_else(|e| panic!("{e}"));
+    let back = serde_json::to_string(&req).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(back, shell);
     let view = crate::view::AttachView {
         ended_by: crate::view::AttachEnd::Agent,
         bytes_out: 7,
