@@ -47,13 +47,13 @@ pub struct Pane<'a> {
 }
 
 /// Decides where `pane`'s shell runs: one herdr call for the workspace label, then one
-/// `show` of the Box it names.
+/// `show` of the Box it names. A Box workspace with no controller still says why.
 pub fn decide(
     pane: Pane<'_>,
     spaces: impl FnOnce() -> Result<Vec<Space>, Error>,
     show: impl FnOnce(&str) -> Result<Option<Shown>, Error>,
 ) -> Target {
-    let Some(id) = pane.workspace.filter(|_| pane.socket && !pane.agent) else {
+    let Some(id) = pane.workspace.filter(|_| !pane.agent) else {
         return Target::Host;
     };
     let Some(label) = spaces()
@@ -69,6 +69,9 @@ pub fn decide(
         .next()
         .unwrap_or_default()
         .to_owned();
+    if !pane.socket {
+        return Target::Fallback(format!("no moor controller to reach Box {name}"));
+    }
     match show(&name) {
         Ok(Some(b)) => on(&b),
         Ok(None) => Target::Fallback(format!("Box {name} is closed")),

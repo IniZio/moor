@@ -79,14 +79,24 @@ fn a_plain_workspace_gets_the_host_shell_without_asking_the_controller() {
 }
 
 #[test]
-fn a_pane_outside_herdr_or_without_a_controller_skips_every_lookup() {
-    let no_socket = Pane {
+fn a_pane_outside_herdr_skips_every_lookup() {
+    assert_eq!(counted(pane(None)), (Target::Host, 0));
+}
+
+#[test]
+fn a_box_workspace_without_a_controller_says_so_asking_only_herdr() {
+    let no_socket = |workspace| Pane {
         socket: false,
-        ..pane(Some("w2"))
+        ..pane(Some(workspace))
     };
-    for p in [pane(None), no_socket] {
-        assert_eq!(counted(p), (Target::Host, 0));
-    }
+    assert_eq!(
+        counted(no_socket("w2")),
+        (
+            Target::Fallback("no moor controller to reach Box fix-login".to_owned()),
+            1
+        )
+    );
+    assert_eq!(counted(no_socket("w1")), (Target::Host, 1));
 }
 
 #[test]
