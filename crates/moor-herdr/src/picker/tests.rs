@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::time::Duration;
 
-use super::{run, start_request, Bench, Controller, Prompt, Start};
+use super::{accepted, run, start_request, Bench, Controller, Prompt, Start};
 use crate::boxes::{Activity, Phase, Shown};
 use crate::error::Error;
 use crate::herdr::{Created, Herdr, Space};
@@ -271,4 +272,34 @@ fn the_start_request_carries_the_base_and_prompt() {
         serde_json::json!({"cmd": "start", "name": "tidy", "repo": "acme/site",
             "base": "release/2.1", "prompt": "fix it", "no_agent": false, "resume": false})
     );
+}
+
+#[test]
+fn a_start_is_accepted_once_its_box_is_listed_while_the_start_runs_on() {
+    let (_running, outcome) = std::sync::mpsc::channel();
+    let mut polls = 0;
+    let listed = || {
+        polls += 1;
+        polls == 3
+    };
+    assert!(accepted(&outcome, Duration::ZERO, listed).is_ok());
+    assert_eq!(polls, 3);
+}
+
+#[test]
+fn a_refused_start_fails_with_the_refusal_before_its_box_is_listed() {
+    let (done, outcome) = std::sync::mpsc::channel();
+    done.send(Err(Error::Refused("name taken".into()))).unwrap();
+    let got = accepted(&outcome, Duration::ZERO, || false);
+    assert_eq!(
+        got.unwrap_err().to_string(),
+        Error::Refused("name taken".into()).to_string()
+    );
+}
+
+#[test]
+fn a_start_that_ends_before_a_poll_sees_its_box_is_accepted() {
+    let (done, outcome) = std::sync::mpsc::channel();
+    done.send(Ok(())).unwrap();
+    assert!(accepted(&outcome, Duration::ZERO, || false).is_ok());
 }
