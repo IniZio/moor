@@ -353,8 +353,54 @@ fn applied_migrations_are_never_edited() {
         pinned,
         [
             (1, 8_754_816_789_016_865_323),
-            (2, 6_043_544_592_493_671_438)
+            (2, 6_043_544_592_493_671_438),
+            (3, 10_676_293_054_036_308_522)
         ],
         "a schema change is a new migration file; an applied one must not change"
     );
+}
+
+#[test]
+fn a_remembered_email_is_kept_per_user_and_replaced_by_a_newer_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(dir.path());
+    assert_eq!(db.user_email("U1").unwrap(), None);
+    db.set_user_email("U1", "a@example.com", 10).unwrap();
+    db.set_user_email("U2", "b@example.com", 11).unwrap();
+    db.set_user_email("U1", "c@example.com", 20).unwrap();
+    assert_eq!(
+        db.user_email("U1").unwrap(),
+        Some(("c@example.com".to_owned(), 20))
+    );
+    assert_eq!(
+        db.user_email("U2").unwrap(),
+        Some(("b@example.com".to_owned(), 11))
+    );
+    drop(db);
+    let again = open(dir.path());
+    assert_eq!(
+        again.user_email("U2").unwrap(),
+        Some(("b@example.com".to_owned(), 11)),
+        "reopening runs no migration again and keeps the rows"
+    );
+}
+
+#[test]
+fn a_file_from_before_emails_gains_the_table_and_keeps_its_rows() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("slack.db");
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute_batch(include_str!("../../migrations/V1__baseline.sql"))
+        .unwrap();
+    conn.pragma_update(None, "user_version", BASELINE_VERSION)
+        .unwrap();
+    conn.execute(
+        "INSERT INTO slack_events (event_id, seen_at) VALUES ('Ev1', 1)",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+    let db = Db::open(&path).unwrap();
+    db.set_user_email("U1", "a@example.com", 5).unwrap();
+    assert!(!db.event_once("Ev1", 2).unwrap(), "the old row is kept");
 }

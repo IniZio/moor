@@ -40,8 +40,46 @@ pub(super) fn read_request(stream: &mut TcpStream) -> Option<(String, String, Va
         let n = stream.read(&mut chunk).ok().filter(|n| *n > 0)?;
         body.extend_from_slice(&chunk[..n]);
     }
-    let body = serde_json::from_slice(&body).unwrap_or(Value::Null);
+    let body = serde_json::from_slice(&body).unwrap_or_else(|_| form_fields(&body));
     Some((path, auth, body))
+}
+
+/// The fields of an `application/x-www-form-urlencoded` body as a JSON object, for the Web API
+/// methods Slack reads from a form; `Null` when it is not one.
+fn form_fields(body: &[u8]) -> Value {
+    let Ok(text) = std::str::from_utf8(body) else {
+        return Value::Null;
+    };
+    let fields = text
+        .split('&')
+        .filter_map(|pair| pair.split_once('='))
+        .map(|(k, v)| (k.to_owned(), Value::String(unescape(v))))
+        .collect();
+    Value::Object(fields)
+}
+
+/// `text` with its `%XX` escapes decoded.
+fn unescape(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex = bytes
+            .get(i + 1..i + 3)
+            .and_then(|h| std::str::from_utf8(h).ok())
+            .and_then(|h| u8::from_str_radix(h, 16).ok());
+        match (bytes[i], hex) {
+            (b'%', Some(byte)) => {
+                out.push(byte);
+                i += 3;
+            }
+            (b, _) => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// Index of the first occurrence of `needle` in `hay`.

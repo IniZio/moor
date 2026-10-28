@@ -10,6 +10,7 @@ use moor_core::secret::Secret;
 use super::stop::sleep_until_stopped;
 use crate::api::Api;
 use crate::db::Db;
+use crate::email::Emails;
 use crate::identity::Link;
 use crate::socket::{self, AfterAck, Inbound, Intake, Kept, NotKept};
 use crate::worker::{self, Job};
@@ -26,6 +27,8 @@ pub(super) struct Recorder {
     pub(super) bot_token: Arc<Secret>,
     /// The controller, which the add-server modal asks as the Slack user before its ack.
     pub(super) link: Link,
+    /// The profile email each of those asks carries when it enrolls.
+    pub(super) emails: Emails,
     /// The worker's queue.
     pub(super) jobs: Sender<Job>,
     /// Daemon log.
@@ -61,7 +64,7 @@ impl Intake for Recorder {
             }
             Inbound::Slash(slash) => slash::record(&slash, &self.db, now),
             Inbound::Submission(sub) if sub.account == machine::MACHINE_FORM => {
-                let mut call = |user: &str, req| self.link.request(user, req);
+                let mut call = |user: &str, req| self.emails.call(&self.link, &self.db, user, req);
                 let ack = machine::submission(&sub, &mut call);
                 Ok((
                     Kept {
@@ -72,7 +75,7 @@ impl Intake for Recorder {
                 ))
             }
             Inbound::Submission(sub) if mcp::owns(&sub.account) => {
-                let mut call = |user: &str, req| self.link.request(user, req);
+                let mut call = |user: &str, req| self.emails.call(&self.link, &self.db, user, req);
                 let ack = mcp::submission(&sub, &mut call);
                 Ok((
                     Kept {

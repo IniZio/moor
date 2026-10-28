@@ -2,7 +2,7 @@
 
 #![allow(clippy::indexing_slicing, reason = "test code")]
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -15,6 +15,7 @@ use tungstenite::Message;
 use request::read_request;
 
 mod commands;
+mod profiles;
 mod reactions;
 mod request;
 
@@ -167,6 +168,10 @@ struct State {
     refused_block_posts: (usize, &'static str),
     /// The `error` code `auth.test` answers with instead of the team, once set.
     auth_test_error: Option<&'static str>,
+    /// The profile email `users.info` reports, by Slack user id.
+    profile_emails: HashMap<String, String>,
+    /// The `error` code `users.info` answers with instead of a profile, once set.
+    users_info_error: Option<&'static str>,
     /// The `error` code `reactions.add` and `reactions.remove` answer with, once set.
     reaction_error: Option<&'static str>,
     /// The reactions now on messages, as `(channel, ts, name)`.
@@ -547,8 +552,10 @@ fn serve_http(mut stream: TcpStream, state: &Mutex<State>, ws_port: u16) {
             status = code;
             reply
         }
-        "/reactions.add" | "/reactions.remove" if auth == format!("Bearer {BOT_TOKEN}") => {
-            guard.react(path.ends_with("add"), &body)
+        "/reactions.add" | "/reactions.remove" | "/users.info"
+            if auth == format!("Bearer {BOT_TOKEN}") =>
+        {
+            guard.state_reply(&path, &body)
         }
         path if path.starts_with("/respond/") => json!({"ok": true}),
         "/chat.postEphemeral" if auth == format!("Bearer {BOT_TOKEN}") => {

@@ -28,6 +28,10 @@ fn schema() -> Result<Vec<Migration>, moor_migrate::Error> {
             "V2__box_prompt.sql",
             include_str!("../migrations/V2__box_prompt.sql"),
         ),
+        (
+            "V3__user_emails.sql",
+            include_str!("../migrations/V3__user_emails.sql"),
+        ),
     ])
 }
 
@@ -168,6 +172,8 @@ pub(crate) use boxes::{BoxState, FedBox, SlackBox};
 
 mod channel_repos;
 pub(crate) use channel_repos::ChannelRepo;
+
+mod emails;
 
 mod host;
 
