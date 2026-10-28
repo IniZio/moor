@@ -82,9 +82,8 @@ the same relay the agent's pane uses. `exit` or `ctrl+]` ends it and closes the 
 
 Every other pane gets your own shell: `MOOR_HERDR_HOST_SHELL` from the plugin's `env` file,
 else `$SHELL`, else `/bin/sh`. The Box's own agent pane stays a host shell too, since sync runs
-the attach in it. When the Box is asleep, still being set up, closed or unreachable, the pane
-says so on one line and gives you a local shell instead. Without a controller socket it goes
-straight to your shell.
+the attach in it. When the Box is asleep, still being set up, closed or unreachable, or no
+controller is running, the pane says so on one line and gives you a local shell instead.
 
 ## Panel
 
