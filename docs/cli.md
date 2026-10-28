@@ -205,8 +205,6 @@ controller.
 | `moor user secret set NAME` | Stores secret `NAME`. moor reads the value from stdin, never from the arguments. |
 | `moor user secret rm NAME` | Deletes secret `NAME`. |
 | `moor user secret ls` | Lists the names of your secrets. |
-| `moor user link-code` | Prints a code that links another identity to your user. The code works once, within 10 minutes. |
-| `moor user link CODE` | Links your identity to the user that printed `CODE`. |
 | `moor whoami` | Shows your identity, its user, and that user's linked identities. |
 
 ## Other commands
