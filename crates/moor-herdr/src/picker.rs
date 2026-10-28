@@ -82,6 +82,11 @@ impl Controller for Client {
     // request still running; the Box's pane shows the rest.
     fn start(&self, start: &Start) -> Result<(), Error> {
         let req = start_request(start)?;
+        let open = |c: &Self| {
+            open_box(c, &start.name).is_ok_and(|b| b.is_some_and(|b| b.phase != Phase::Closed))
+        };
+        // A Box already open under this name is the controller's refusal to make, not a start.
+        let taken = open(self);
         let (done, outcome) = mpsc::channel();
         let client = self.clone();
         thread::spawn(move || {
@@ -90,9 +95,7 @@ impl Controller for Client {
                 reply.and_then(|r| r.error.map_or(Ok(()), |e| Err(Error::Refused(e.message)))),
             );
         });
-        accepted(&outcome, ACCEPT_POLL, || {
-            open_box(self, &start.name).is_ok_and(|b| b.is_some_and(|b| b.phase != Phase::Closed))
-        })
+        accepted(&outcome, ACCEPT_POLL, || !taken && open(self))
     }
 }
 
