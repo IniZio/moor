@@ -34,6 +34,8 @@ struct Claims {
     email: Option<String>,
     /// Whether the issuer verified that email.
     email_verified: Option<bool>,
+    /// The scopes granted, space separated.
+    scope: Option<String>,
 }
 
 /// The key set last fetched, and when.
@@ -100,6 +102,24 @@ impl Verifier {
     /// # Errors
     /// Why the token is refused.
     pub fn verify(&self, token: &str) -> Result<Person, String> {
+        self.check(token, &self.client_id).map(|(person, _)| person)
+    }
+
+    /// The person `token` speaks for and the scopes it grants, when it was issued for the API
+    /// resource `resource` rather than for the gate's own client.
+    ///
+    /// # Errors
+    /// Why the token is refused.
+    pub fn verify_resource(
+        &self,
+        token: &str,
+        resource: &str,
+    ) -> Result<(Person, Vec<String>), String> {
+        self.check(token, resource)
+    }
+
+    /// Checks `token` for audience `aud`.
+    fn check(&self, token: &str, aud: &str) -> Result<(Person, Vec<String>), String> {
         let header = decode_header(token).map_err(|e| format!("the token is not a JWT: {e}"))?;
         if matches!(
             header.alg,
@@ -110,7 +130,7 @@ impl Verifier {
         let key = self.key(header.kid.as_deref())?;
         let mut validation = Validation::new(header.alg);
         validation.set_issuer(&[&self.issuer]);
-        validation.set_audience(&[&self.client_id]);
+        validation.set_audience(&[aud]);
         validation.set_required_spec_claims(&["exp", "iss", "aud", "sub"]);
         let claims = decode::<Claims>(token, &key, &validation)
             .map_err(|e| format!("the token is refused: {e}"))?
@@ -121,10 +141,16 @@ impl Verifier {
         if claims.email_verified != Some(true) {
             return Err(format!("the token's email {email} is not verified"));
         }
-        Ok(Person {
+        let scopes = claims
+            .scope
+            .iter()
+            .flat_map(|s| s.split_whitespace().map(str::to_owned))
+            .collect();
+        let person = Person {
             identity: Identity::parse(&format!("{NAMESPACE}:{}", claims.sub))?,
             email: Email::parse(&email)?,
-        })
+        };
+        Ok((person, scopes))
     }
 
     /// The key `kid` names, fetching the key set again when it is not known yet.

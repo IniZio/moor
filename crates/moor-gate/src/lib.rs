@@ -8,10 +8,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 mod http;
+mod mcp;
 mod relay;
 mod rewrite;
 mod token;
+mod tools;
 
+pub use mcp::Mcp;
 pub use token::{Person, Verifier};
 
 /// The identity namespace the gate asserts; the controller's `fronts` key for this socket.
@@ -23,6 +26,8 @@ pub struct Gate {
     pub front_socket: PathBuf,
     /// Checks access tokens.
     pub verifier: Verifier,
+    /// The `/mcp` surface; `/mcp` is a 404 without it.
+    pub mcp: Option<Mcp>,
 }
 
 /// Serves `listener` until it fails, one thread per connection.

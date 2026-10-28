@@ -115,12 +115,24 @@ fn world_on(
     seen: mpsc::Receiver<String>,
     dir: tempfile::TempDir,
 ) -> World {
+    world_with(socket, seen, dir, false)
+}
+
+fn world_with(
+    socket: std::path::PathBuf,
+    seen: mpsc::Receiver<String>,
+    dir: tempfile::TempDir,
+    mcp: bool,
+) -> World {
     let key = keypair();
     let issuer = serve_issuer(&key);
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let gate = listener.local_addr().unwrap().to_string();
+    let mcp =
+        mcp.then(|| moor_gate::Mcp::new(&format!("http://{gate}/mcp"), socket.clone()).unwrap());
     let config = Arc::new(Gate {
         front_socket: socket,
+        mcp,
         verifier: Verifier::new(issuer.clone(), CLIENT_ID.to_owned(), None),
     });
     std::thread::spawn(move || moor_gate::serve(&listener, &config));
@@ -378,3 +390,5 @@ fn a_real_controller_enrolls_the_token_email() {
         .unwrap();
     assert_eq!(email, "alice@example.com");
 }
+
+mod mcp;

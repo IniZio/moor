@@ -108,7 +108,7 @@ fn frame(line: &str, person: &Person) -> Result<(ClientFrame, usize), Box<Server
 }
 
 /// `request` acting as `person`, with their verified email on an `enroll`.
-fn act(request: Request, person: &Person) -> Result<Request, String> {
+pub(crate) fn act(request: Request, person: &Person) -> Result<Request, String> {
     let (asserted, inner) = request.split_identity()?;
     if let Some(other) = asserted.filter(|id| *id != person.identity) {
         return Err(not_you(person, &other));
