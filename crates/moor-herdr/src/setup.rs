@@ -3,6 +3,7 @@
 
 use crate::boxes::BOX_MARK;
 use crate::herdr::SOURCE;
+use crate::shell::HOST_SHELL_ENV;
 use crate::sync::ENV_TOKEN;
 
 /// The plugin action that `prefix+c` runs in place of herdr's plain new tab.
@@ -11,9 +12,20 @@ pub const NEW_ACTION: &str = "new";
 /// The plugin action that `prefix+m` runs to open the Boxes panel.
 pub const PANEL_ACTION: &str = "panel";
 
-/// The config snippet: sidebar rows that set Boxes apart, and the key rebind.
+/// The plugin's default-shell wrapper: under the linked plugin when herdr runs this, else in
+/// the source tree this binary was built from.
 #[must_use]
-pub fn snippet() -> String {
+pub fn shell_path() -> String {
+    std::env::var("HERDR_PLUGIN_ROOT").map_or_else(
+        |_| concat!(env!("CARGO_MANIFEST_DIR"), "/herdr/bin/shell.sh").to_owned(),
+        |root| format!("{root}/bin/shell.sh"),
+    )
+}
+
+/// The config snippet: sidebar rows that set Boxes apart, the key rebind, and the default
+/// shell at `shell` that opens new panes of a Box's workspace in the Box.
+#[must_use]
+pub fn snippet(shell: &str) -> String {
     let (env, tag) = ENV_TOKEN;
     format!(
         r##"# moor: set Boxes apart from local worktrees in the sidebar.
@@ -38,6 +50,11 @@ key = "prefix+m"
 type = "plugin_action"
 command = "{SOURCE}.{PANEL_ACTION}"
 description = "moor: Boxes"
+
+# moor: a new tab in a Box's workspace opens a shell in the Box; other tabs get your shell.
+# Had you set default_shell, put it in the plugin env file as {HOST_SHELL_ENV}=<path>.
+[terminal]
+default_shell = "{shell}"
 "##
     )
 }

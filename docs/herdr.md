@@ -45,7 +45,14 @@ key = "prefix+m"
 type = "plugin_action"
 command = "moor.panel"
 description = "moor: Boxes"
+
+# moor: a new tab in a Box's workspace opens a shell in the Box; other tabs get your shell.
+# Had you set default_shell, put it in the plugin env file as MOOR_HERDR_HOST_SHELL=<path>.
+[terminal]
+default_shell = "/path/to/moor/crates/moor-herdr/herdr/bin/shell.sh"
 ```
+
+`herdr-setup` fills in the real path of `bin/shell.sh`.
 
 Every Box workspace carries `env=BOX`, which the second row shows in colour. It also carries
 `state`: empty while the Box is up, `…` while it is being set up, `◐` asleep, `◌` while it waits for a slot on the machine it claims, `✕` closed.
@@ -66,6 +73,18 @@ While the Box is up, herdr's own agent dot shows working, waiting or idle.
   an earlier Box's branch.
 
 The popup closes when the work is started. A failure stays on screen until you press Enter.
+
+## Shells in a Box
+
+With the snippet's `default_shell`, every new tab or split herdr opens runs the plugin's
+`bin/shell.sh`. In a Box's workspace it opens a login shell in the Box, in its work tree, over
+the same relay the agent's pane uses. `exit` or `ctrl+]` ends it and closes the pane.
+
+Every other pane gets your own shell: `MOOR_HERDR_HOST_SHELL` from the plugin's `env` file,
+else `$SHELL`, else `/bin/sh`. The Box's own agent pane stays a host shell too, since sync runs
+the attach in it. When the Box is asleep, still being set up, closed or unreachable, the pane
+says so on one line and gives you a local shell instead. Without a controller socket it goes
+straight to your shell.
 
 ## Panel
 
