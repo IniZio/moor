@@ -10,4 +10,5 @@ pub mod panel;
 pub mod picker;
 pub mod relay;
 pub mod setup;
+pub mod shell;
 pub mod sync;

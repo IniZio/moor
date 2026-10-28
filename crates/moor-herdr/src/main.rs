@@ -13,7 +13,7 @@ use moor_herdr::error::Error;
 use moor_herdr::herdr::Cli;
 use moor_herdr::picker::{self, Prompt, Tty};
 use moor_herdr::sync::{reconcile, shell_quote};
-use moor_herdr::{panel, relay, setup};
+use moor_herdr::{panel, relay, setup, shell};
 
 /// moor Boxes in herdr.
 #[derive(Debug, Parser)]
@@ -55,6 +55,13 @@ enum Cmd {
     },
     /// Print the herdr config snippet that colours Boxes and binds moor's keys.
     HerdrSetup,
+    /// herdr's default shell: a shell in the Box whose workspace the pane is in, else the
+    /// user's own shell.
+    Shell {
+        /// herdr started the pane as a login shell.
+        #[arg(long)]
+        login: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -75,7 +82,12 @@ fn run(args: &Args) -> Result<(), Error> {
         })
     };
     match &args.cmd {
-        Cmd::HerdrSetup => Ok(write!(io::stdout(), "{}", setup::snippet())?),
+        Cmd::HerdrSetup => Ok(write!(
+            io::stdout(),
+            "{}",
+            setup::snippet(&setup::shell_path())
+        )?),
+        Cmd::Shell { login } => shell::run(args.socket.as_deref(), *login),
         Cmd::Attach { name } => relay::run(&Client::new(socket()?), name),
         Cmd::Sync { every } => sync(&socket()?, *every),
         Cmd::New { workspace } => new(&socket()?, workspace),

@@ -42,7 +42,8 @@ pub struct Created {
 pub trait Herdr {
     /// Every workspace.
     fn spaces(&mut self) -> Result<Vec<Space>, Error>;
-    /// Makes a workspace labelled `label` without moving focus.
+    /// Makes a workspace labelled `label` without moving focus; its first pane is the one
+    /// sync runs the agent's attach in.
     fn create(&mut self, label: &str) -> Result<Created, Error>;
     /// Runs `command` in `pane`'s shell.
     fn run(&mut self, pane: &str, command: &str) -> Result<(), Error>;
@@ -143,6 +144,8 @@ impl Herdr for Cli {
     }
 
     fn create(&mut self, label: &str) -> Result<Created, Error> {
+        let (key, value) = crate::shell::AGENT_PANE;
+        let marker = format!("{key}={value}");
         let args = [
             "workspace",
             "create",
@@ -150,6 +153,8 @@ impl Herdr for Cli {
             "/",
             "--label",
             label,
+            "--env",
+            &marker,
             "--no-focus",
         ];
         let reply = self.call(&args)?;
