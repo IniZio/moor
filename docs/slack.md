@@ -20,13 +20,21 @@ You need:
 1. Create a Slack app and turn on Socket Mode.
 2. Create an app-level token with the `connections:write` scope.
 3. Give the bot token these scopes: `app_mentions:read`, `channels:history`,
-   `chat:write`, `commands`, `files:read`, `files:write`, and `reactions:write`.
+   `chat:write`, `commands`, `files:read`, `files:write`, `reactions:write`,
+   `users:read`, and `users:read.email`. The last two let the front read each
+   person's Slack email.
 4. Add a `/moor` slash command.
 5. Subscribe to the `app_mention` and `message.channels` bot events. Without
    `message.channels`, the front never sees a reply in a thread.
 6. Turn on Interactivity. Socket Mode needs no request URL.
 7. Install the app in the workspace, and invite the bot to each channel that
    it serves.
+
+The front gives the controller each person's Slack profile email when it sets
+that person up. The same email in Slack and in the sign-in provider is one moor
+user, with the same secrets and machines in both. A different email in each
+makes two users. Without the two scopes, or for a profile with no email, the
+front sets the person up without one and logs the missing scope.
 
 ## Write the config
 
