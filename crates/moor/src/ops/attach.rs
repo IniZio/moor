@@ -1,8 +1,8 @@
 //! `attach`: the command that relays the agent's terminal, or a login shell, on a Box. The
 //! controller socket runs it under a pty and relays it to the caller.
 
-use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::boxscript::quote;
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::{AttachReq, ErrorKind};
 
