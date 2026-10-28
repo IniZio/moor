@@ -2,6 +2,7 @@
 //! tagged with metadata tokens the user's sidebar config colours; its pane relays the agent's
 //! terminal and turns into a card when the relay ends.
 
+pub mod auth;
 pub mod boxes;
 pub mod card;
 pub mod error;

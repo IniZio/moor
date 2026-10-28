@@ -1,0 +1,78 @@
+//! The HTTP side of sign-in: discovery documents and the token endpoint.
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use oauth2::url::Url;
+use serde::de::DeserializeOwned;
+use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
+use ureq::{http, Agent};
+
+/// The most a discovery or token response may hold.
+const BODY_LIMIT: u64 = 1 << 20;
+
+/// An HTTP client that follows no redirect and hands back every status.
+pub(super) struct Http(Agent);
+
+impl Http {
+    /// A client trusting the platform's roots.
+    pub(super) fn new() -> Self {
+        let tls = TlsConfig::builder()
+            .provider(TlsProvider::Rustls)
+            .root_certs(RootCerts::PlatformVerifier)
+            .unversioned_rustls_crypto_provider(Arc::new(rustls::crypto::ring::default_provider()))
+            .build();
+        let config = Agent::config_builder()
+            .tls_config(tls)
+            .timeout_global(Some(Duration::from_secs(15)))
+            .http_status_as_error(false)
+            .max_redirects(0)
+            .build();
+        Self(Agent::new_with_config(config))
+    }
+
+    /// The JSON document at `url`.
+    ///
+    /// # Errors
+    /// The address is not `https` (or loopback `http`), cannot be reached, answers an error
+    /// status, or answers something unreadable.
+    pub(super) fn get_json<T: DeserializeOwned>(&self, url: &str) -> Result<T, String> {
+        secure(url)?;
+        let mut resp = self
+            .0
+            .get(url)
+            .header("Accept", "application/json")
+            .call()
+            .map_err(|e| format!("cannot reach {url}: {e}"))?;
+        if !resp.status().is_success() {
+            return Err(format!("{url} answered {}", resp.status()));
+        }
+        let bytes = read(resp.body_mut()).map_err(|e| format!("{url}: {e}"))?;
+        serde_json::from_slice(&bytes).map_err(|e| format!("{url}: {e}"))
+    }
+}
+
+/// Refuses an address that is not `https`; `http` is for a server on this machine.
+pub(super) fn secure(address: &str) -> Result<(), String> {
+    let url = Url::parse(address).map_err(|e| format!("`{address}`: {e}"))?;
+    let local = matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"));
+    if url.scheme() == "https" || (url.scheme() == "http" && local) {
+        Ok(())
+    } else {
+        Err(format!("{address} is not https"))
+    }
+}
+
+/// A response body up to [`BODY_LIMIT`].
+fn read(body: &mut ureq::Body) -> Result<Vec<u8>, ureq::Error> {
+    body.with_config().limit(BODY_LIMIT).read_to_vec()
+}
+
+impl oauth2::SyncHttpClient for Http {
+    type Error = ureq::Error;
+
+    fn call(&self, request: oauth2::HttpRequest) -> Result<oauth2::HttpResponse, Self::Error> {
+        let (parts, mut body) = self.0.run(request)?.into_parts();
+        Ok(http::Response::from_parts(parts, read(&mut body)?))
+    }
+}
