@@ -20,3 +20,8 @@ key = "prefix+m"
 type = "plugin_action"
 command = "moor.panel"
 description = "moor: Boxes"
+
+# moor: a new tab in a Box's workspace opens a shell in the Box; other tabs get your shell.
+# Had you set default_shell, put it in the plugin env file as MOOR_HERDR_HOST_SHELL=<path>.
+[terminal]
+default_shell = "/opt/moor/herdr/bin/shell.sh"
