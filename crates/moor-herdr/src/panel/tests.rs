@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 
-use super::{view, Button, Confirm, Input, Ops, Panel, CONFIRM_WINDOW, FIRST_BOX_ROW};
+use super::{view, Button, Confirm, Input, Ops, Panel, CONFIRM_MIN, CONFIRM_WINDOW, FIRST_BOX_ROW};
 use moor_client::WallClock;
 use moor_core::seam::clock::Clock;
 
@@ -212,7 +212,10 @@ fn clicking_close_twice_closes_the_box_and_once_does_not() {
     };
     panel.handle(click, now, &mut ops);
     assert!(ops.calls.is_empty());
-    assert!(panel.note.contains("confirm close"));
+    assert_eq!(
+        screen(&panel, now).get(1).map(String::as_str),
+        Some("Close fix? Press [confirm close] again.")
+    );
     panel.handle(click, now + Duration::from_secs(1), &mut ops);
     assert_eq!(ops.calls, ["close fix"]);
     assert_eq!(panel.boxes.len(), 1, "refreshed after closing");
@@ -245,7 +248,7 @@ fn keys_drive_the_selected_box() {
         panel.handle(Input::Key(key), now, &mut ops);
     }
     assert_eq!(ops.calls, ["attach nap", "wake nap", "new"]);
-    panel.handle(Input::Key('c'), now, &mut ops);
+    panel.handle(Input::Key('c'), now + Duration::from_secs(1), &mut ops);
     assert_eq!(ops.calls.last().map(String::as_str), Some("close nap"));
     panel.handle(Input::Up, now, &mut ops);
     assert_eq!(panel.selected, 0);
@@ -266,4 +269,31 @@ fn arming_a_close_redraws_without_waiting_on_the_controller() {
         .get(3)
         .unwrap()
         .ends_with("[confirm close]"));
+}
+
+#[test]
+fn a_second_press_right_after_arming_is_not_a_confirm() {
+    let t0 = clock();
+    let mut c = Confirm::default();
+    assert!(!c.press("fix", t0));
+    let soon = t0 + CONFIRM_MIN / 3;
+    assert!(!c.press("fix", soon), "a double click does not close");
+    assert_eq!(c.armed(soon), Some("fix"));
+    assert!(c.press("fix", t0 + CONFIRM_MIN), "the arming time stands");
+}
+
+#[test]
+fn the_confirm_prompt_goes_when_its_window_passes() {
+    let now = clock();
+    let mut ops = fake();
+    let mut panel = loaded(&mut ops);
+    let row = FIRST_BOX_ROW + 1;
+    let col = column_of(&panel, row, "[close]", now);
+    panel.handle(Input::Click { col, row }, now, &mut ops);
+    let later = now + CONFIRM_WINDOW;
+    assert_eq!(screen(&panel, later).get(1).map(String::as_str), Some(""));
+    assert!(screen(&panel, later)
+        .get(3)
+        .unwrap()
+        .ends_with("[attach] [close]"));
 }
