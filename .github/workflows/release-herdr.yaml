@@ -70,9 +70,9 @@ jobs:
           home=$(mktemp -d)
           version=$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/moor-herdr/Cargo.toml | head -n 1)
           mkdir -p "$home/rel/moor-herdr-v$version" && cp dist/* "$home/rel/moor-herdr-v$version/"
-          HOME=$home XDG_CONFIG_HOME= MOOR_HERDR_RELEASES="file://$home/rel" sh crates/moor-herdr/herdr/build.sh
-          crates/moor-herdr/herdr/moor-herdr --version
-          grep -q "default_shell = \"$home/.config/herdr/plugins/config/moor/shell.sh\"" "$home/.config/herdr/plugins/config/moor/herdr-setup.toml"
+          HOME=$home XDG_CONFIG_HOME= XDG_STATE_HOME= MOOR_HERDR_RELEASES="file://$home/rel" sh crates/moor-herdr/herdr/build.sh
+          "$home/.local/state/herdr/plugins/moor/bin/moor-herdr" --version
+          grep -q "default_shell = \"$home/.local/state/herdr/plugins/moor/shell.sh\"" "$home/.config/herdr/plugins/config/moor/herdr-setup.toml"
       - name: Upload
         if: github.event_name == 'push'
         run: gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY"

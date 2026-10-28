@@ -27,13 +27,20 @@ happened. The pane goes away only when you close it.
    herdr server reload-config
    ```
 
+herdr runs plugin startup hooks only when its server starts, so the Boxes follow the controller
+from the next server start. Until then, `moor: show Boxes now` syncs once.
+
 `herdr plugin update moor` fetches the same ref again. To move to a new release, install again
 with its tag.
 
+The binary and the default shell go to the plugin's state dir,
+`~/.local/state/herdr/plugins/moor`, which keeps its path across updates.
+
 To work on the plugin itself, build the binary (`cargo install --path crates/moor-herdr`) and
-link the checkout with `herdr plugin link crates/moor-herdr/herdr`. A linked plugin runs
-`moor-herdr` from PATH or `~/.cargo/bin`, and `moor-herdr herdr-setup` prints its snippet.
-`MOOR_HERDR_BIN` in the plugin's `env` file overrides the binary either way.
+link the checkout with `herdr plugin link crates/moor-herdr/herdr`. A linked plugin runs the
+installed release if there is one, else `moor-herdr` from PATH or `~/.cargo/bin`, and
+`moor-herdr herdr-setup` prints its snippet. `MOOR_HERDR_BIN` in the plugin's `env` file
+overrides the binary either way.
 
 ## Releases
 
@@ -79,7 +86,7 @@ description = "moor: Boxes"
 default_shell = "/path/to/moor/crates/moor-herdr/herdr/bin/shell.sh"
 ```
 
-An installed plugin names a `shell.sh` in its config dir, which keeps its path across plugin updates; `moor-herdr herdr-setup` names the checkout's `bin/shell.sh`.
+An installed plugin names the `shell.sh` in its state dir; `moor-herdr herdr-setup` names the checkout's `bin/shell.sh`.
 
 Every Box workspace carries `env=BOX`, which the second row shows in colour. It also carries
 `state`: empty while the Box is up, `…` while it is being set up, `◐` asleep, `◌` while it waits for a slot on the machine it claims, `✕` closed.
