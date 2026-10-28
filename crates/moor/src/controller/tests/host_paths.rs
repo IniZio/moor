@@ -24,7 +24,7 @@ const ANN: &str = "slack:T1:ANN";
 pub(super) const BOX: &str = "ann-box";
 
 /// A crabbox that reports a supported version and the ssh target of every Box.
-const FAKE_CRABBOX: &str = "#!/bin/sh\n\
+pub(super) const FAKE_CRABBOX: &str = "#!/bin/sh\n\
     case \"$1\" in\n\
     --version) echo 'crabbox 0.79.1-moor.6' ;;\n\
     ssh) echo 'ssh -o StrictHostKeyChecking=yes u@box' ;;\n\
