@@ -53,6 +53,14 @@ static Linux binaries and macOS binaries, checks that the plugin installs from e
 attaches them to the release with their checksums. Merging `develop` into `main` makes the
 stable release.
 
+After the image is pushed, the `gitops` job records the release in a private deploy repository
+over an SSH deploy key. The repository variable `GITOPS_REPO` (`owner/name`) names it and the
+secret `GITOPS_DEPLOY_KEY`, kept in the `release` environment, holds the key; with either unset
+the job prints a notice and succeeds. A nightly tag becomes a commit setting `image.tag` in
+`deploy/environments/nightly/values.yaml` on the default branch; a stable tag pushes the same
+edit for `stable` to the branch `bump/<version>`, which the deploy repository turns into a PR.
+The job accepts only GitHub's published SSH host key.
+
 The plugin finds its release from the commit herdr fetched: the newest `v*` tag that commit
 contains, counting nightly tags only while the commit is not yet on `main`.
 

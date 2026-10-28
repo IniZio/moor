@@ -92,7 +92,7 @@ jobs:
         run: |
           home=$(mktemp -d)
           mkdir -p "$home/rel/$TAG" && cp dist/* "$home/rel/$TAG/"
-          HOME=$home XDG_CONFIG_HOME= XDG_STATE_HOME= MOOR_HERDR_TAG=$TAG MOOR_HERDR_RELEASES="file://$home/rel" \
+          HOME=$home XDG_CONFIG_HOME='' XDG_STATE_HOME='' MOOR_HERDR_TAG=$TAG MOOR_HERDR_RELEASES="file://$home/rel" \
             sh crates/moor-herdr/herdr/build.sh
           "$home/.local/state/herdr/plugins/moor/bin/moor-herdr" --version | grep -qx "moor-herdr ${TAG#v}"
           grep -q "default_shell = \"$home/.local/state/herdr/plugins/moor/shell.sh\"" "$home/.config/herdr/plugins/config/moor/herdr-setup.toml"
@@ -138,3 +138,24 @@ jobs:
           build-args: MOOR_COMMIT=${{ steps.version.outputs.commit }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  gitops:
+    needs: [release, image]
+    # The release environment keeps the deploy key away from pull requests.
+    if: github.event_name == 'push' && needs.release.outputs.tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+          persist-credentials: false
+      - name: Record the release in the deploy repository
+        env:
+          TAG: ${{ needs.release.outputs.tag }}
+          GITOPS_DEPLOY_KEY: ${{ secrets.GITOPS_DEPLOY_KEY }}
+          GITOPS_REPO: ${{ vars.GITOPS_REPO }}
+        run: .github/scripts/gitops-bump.sh
