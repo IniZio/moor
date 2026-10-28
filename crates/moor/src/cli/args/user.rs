@@ -1,10 +1,10 @@
-//! clap definitions for `moor user`: the caller's user, its secrets and its link codes.
+//! clap definitions for `moor user`: the caller's user and its secrets.
 
 use clap::{Args, Subcommand};
 use moor_core::config::OAuthCallback;
 use moor_core::request::{
-    AsReq, LinkRedeemReq, MachineAddReq, MachineRemoveReq, McpAddReq, McpOAuthFinishReq,
-    McpRemoveReq, SecretDeleteReq,
+    AsReq, EnrollReq, MachineAddReq, MachineRemoveReq, McpAddReq, McpOAuthFinishReq, McpRemoveReq,
+    SecretDeleteReq,
 };
 use moor_core::user::SecretName;
 use moor_core::Request;
@@ -25,10 +25,6 @@ pub(super) enum UserCli {
     /// Your user's own machines, reached over ssh with this host's own key.
     #[command(subcommand)]
     Machine(MachineCli),
-    /// Mint a one-time code that links another identity to your user.
-    LinkCode,
-    /// Link your identity to the user that minted CODE.
-    Link(LinkArgs),
 }
 
 /// Subcommands of `user secret`.
@@ -118,13 +114,6 @@ pub(super) struct NameArg {
     name: SecretName,
 }
 
-/// Arguments of `user link`.
-#[derive(Debug, Args)]
-pub(super) struct LinkArgs {
-    /// The code `moor user link-code` printed for the other identity.
-    code: String,
-}
-
 /// The `local:<uid>` identity is the socket's own, so no request asserts one.
 const AS_CALLER: AsReq = AsReq { identity: None };
 
@@ -132,7 +121,10 @@ impl UserCli {
     /// Convert the parsed verb into an action.
     pub(super) fn into_action(self) -> Action {
         Action::Request(match self {
-            Self::Enroll => Request::Enroll(AS_CALLER),
+            Self::Enroll => Request::Enroll(EnrollReq {
+                identity: None,
+                email: None,
+            }),
             Self::Secret(SecretCli::Set(a)) => return Action::SecretSetStdin(a.name),
             Self::Secret(SecretCli::Rm(a)) => Request::SecretDelete(SecretDeleteReq {
                 identity: None,
@@ -169,11 +161,6 @@ impl UserCli {
                 name: a.name,
             }),
             Self::Machine(MachineCli::Ls) => Request::MachineList(AS_CALLER),
-            Self::LinkCode => Request::LinkCode(AS_CALLER),
-            Self::Link(a) => Request::LinkRedeem(LinkRedeemReq {
-                identity: None,
-                code: a.code,
-            }),
         })
     }
 }

@@ -18,9 +18,8 @@ use super::fronts::{ask, refused};
 /// A request of `kind` for a kind that names no Box; `None` for a kind this test does not know.
 fn nameless(kind: &str) -> Option<Value> {
     Some(match kind {
-        "start-needs" | "env" | "repos" | "whoami" | "enroll" | "secret-names" | "link-code"
-        | "version" | "proxy-lease" | "proxy-status" | "mcp-list" | "machine-list"
-        | "machine-targets" => {
+        "start-needs" | "env" | "repos" | "whoami" | "enroll" | "secret-names" | "version"
+        | "proxy-lease" | "proxy-status" | "mcp-list" | "machine-list" | "machine-targets" => {
             json!({"cmd": kind})
         }
         "proxy-release" => json!({"cmd": kind, "token": "t"}),
@@ -30,7 +29,6 @@ fn nameless(kind: &str) -> Option<Value> {
         "secret-delete" | "mcp-remove" | "machine-remove" => json!({"cmd": kind, "name": "n"}),
         "mcp-add" => json!({"cmd": kind, "name": "n", "url": "https://example.com/mcp"}),
         "machine-add" => json!({"cmd": kind, "name": "n", "ssh": "u@h"}),
-        "link-redeem" => json!({"cmd": kind, "code": "c"}),
         "mcp-oauth-finish" => json!({"cmd": kind, "state": "s", "code": "c"}),
         "box-mirror" => json!({"cmd": kind, "id": 1, "dest": "/d"}),
         "machine-hold" => json!({"cmd": kind, "id": 1, "op": "release"}),

@@ -1,7 +1,6 @@
-//! Users, the identities linked to them, one-time link codes, and each user's sealed secrets.
+//! Users, the identities linked to them, and each user's sealed secrets.
 
-use moor_core::seam::clock::Ts;
-use moor_core::user::{Identity, SecretName, UserId};
+use moor_core::user::{Email, Identity, SecretName, UserId};
 use moor_core::Secret;
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 
@@ -28,22 +27,55 @@ fn user_of_in(conn: &Connection, identity: &Identity) -> Result<Option<UserId>, 
 impl Store {
     /// The user `identity` is linked to, creating one for it when it has none; true when this
     /// call created the user.
-    pub(crate) fn enroll(&self, identity: &Identity) -> Result<(UserId, bool), StoreError> {
+    ///
+    /// With a verified `email`, an unknown identity joins the user that has the email, and a
+    /// new user is created with it; a known identity's user gains the email when it has none
+    /// and no other user holds it. No two users ever share an email.
+    pub(crate) fn enroll(
+        &self,
+        identity: &Identity,
+        email: Option<&Email>,
+    ) -> Result<(UserId, bool), StoreError> {
         let now = self.now().as_millis();
+        let email = email.map(Email::as_str);
         let mut writer = self.writer();
         let tx = writer.transaction_with_behavior(TransactionBehavior::Immediate)?;
         if let Some(user) = user_of_in(&tx, identity)? {
+            if let Some(email) = email {
+                tx.execute(
+                    "UPDATE users SET email = ?1 WHERE id = ?2 AND email IS NULL \
+                     AND NOT EXISTS (SELECT 1 FROM users WHERE email = ?1)",
+                    params![email, user.get()],
+                )?;
+            }
+            tx.commit()?;
             return Ok((user, false));
         }
-        tx.execute("INSERT INTO users (created_at) VALUES (?)", [now])?;
-        let user = tx.last_insert_rowid();
+        let holder: Option<i64> = match email {
+            Some(email) => tx
+                .query_row("SELECT id FROM users WHERE email = ?", [email], |r| {
+                    r.get(0)
+                })
+                .optional()?,
+            None => None,
+        };
+        let (user, created) = if let Some(user) = holder {
+            (user, false)
+        } else {
+            let user = tx.query_row(
+                "INSERT INTO users (created_at, email) VALUES (?, ?) RETURNING id",
+                params![now, email],
+                |r| r.get(0),
+            )?;
+            (user, true)
+        };
         tx.execute(
             "INSERT INTO identities (identity, user, linked_at) VALUES (?, ?, ?)",
             params![identity.as_str(), user, now],
         )?;
         tx.commit()?;
         drop(writer);
-        Ok((UserId::new(user), true))
+        Ok((UserId::new(user), created))
     }
 
     /// The user `identity` is linked to, if any.
@@ -61,66 +93,6 @@ impl Store {
             parsed("identity", &raw, Identity::parse)
         })?;
         rows.collect()
-    }
-
-    /// Records the one-time `code` for `user`, usable until `expires`, and drops expired codes.
-    pub(crate) fn add_link_code(
-        &self,
-        user: UserId,
-        code: &str,
-        expires: Ts,
-    ) -> Result<(), StoreError> {
-        let now = self.now().as_millis();
-        let mut writer = self.writer();
-        let tx = writer.transaction()?;
-        tx.execute("DELETE FROM link_codes WHERE expires_at <= ?", [now])?;
-        tx.execute(
-            "INSERT INTO link_codes (code, user, expires_at) VALUES (?, ?, ?)",
-            params![code, user.get(), expires.as_millis()],
-        )?;
-        tx.commit()?;
-        drop(writer);
-        Ok(())
-    }
-
-    /// Links `identity` to the user that minted `code`, and uses the code up. An unknown, used
-    /// or expired code, or an identity that is already linked, is [`StoreError::Invalid`].
-    pub(crate) fn redeem_link_code(
-        &self,
-        code: &str,
-        identity: &Identity,
-    ) -> Result<UserId, StoreError> {
-        let now = self.now().as_millis();
-        let mut writer = self.writer();
-        let tx = writer.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let found: Option<(i64, i64)> = tx
-            .query_row(
-                "SELECT user, expires_at FROM link_codes WHERE code = ?",
-                [code],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()?;
-        let Some((user, expires)) = found else {
-            return Err(StoreError::Invalid("unknown or used link code".into()));
-        };
-        tx.execute("DELETE FROM link_codes WHERE code = ?", [code])?;
-        let refusal = if expires <= now {
-            Some("link code expired; mint a new one".to_owned())
-        } else {
-            user_of_in(&tx, identity)?
-                .map(|had| format!("{identity} is already linked to user {}", had.get()))
-        };
-        if let Some(why) = refusal {
-            tx.commit()?;
-            return Err(StoreError::Invalid(why));
-        }
-        tx.execute(
-            "INSERT INTO identities (identity, user, linked_at) VALUES (?, ?, ?)",
-            params![identity.as_str(), user, now],
-        )?;
-        tx.commit()?;
-        drop(writer);
-        Ok(UserId::new(user))
     }
 
     /// Stores `sealed`, a value the vault encrypted, as `user`'s secret `name`.

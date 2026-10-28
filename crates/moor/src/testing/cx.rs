@@ -176,7 +176,7 @@ fn with_requester(cx: Cx, state_dir: &Path) -> Cx {
     let key = state_dir.join("vault.key");
     if let (Ok(store), Ok(vault)) = (cx.store(), Vault::load_or_create(&key)) {
         let (user, _) = store
-            .enroll(&requester())
+            .enroll(&requester(), None)
             .expect("enroll the test requester");
         for name in REQUESTER_SECRETS {
             put_secret(store, &vault, user, name, &format!("{name}-test-value"));

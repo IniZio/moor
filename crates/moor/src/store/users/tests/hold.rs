@@ -67,7 +67,10 @@ impl Rig {
 }
 
 fn enroll(store: &Store, who: &str) -> UserId {
-    store.enroll(&Identity::parse(who).unwrap()).unwrap().0
+    store
+        .enroll(&Identity::parse(who).unwrap(), None)
+        .unwrap()
+        .0
 }
 
 fn add_machine(store: &Store, user: UserId, name: &str, capacity: u16) {

@@ -102,8 +102,6 @@ impl Request {
             | Self::MachineRemove(_)
             | Self::MachineList(_)
             | Self::MachineTargets {}
-            | Self::LinkCode(_)
-            | Self::LinkRedeem(_)
             | Self::ProxyLease(_)
             | Self::ProxyRelease(_)
             | Self::ProxyStatus(_)

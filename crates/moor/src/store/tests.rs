@@ -23,6 +23,7 @@ use crate::testing::clock::FakeClock;
 mod events_after;
 mod open_boxes;
 mod poison;
+mod rules;
 mod turns;
 
 use super::apply::Applied;

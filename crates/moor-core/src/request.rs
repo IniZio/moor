@@ -24,7 +24,7 @@ pub use session::{EndSessionReq, OpenSessionReq, SessionsReq, ShowSessionReq};
 pub use target::BoxTarget;
 mod user;
 pub use user::{
-    ActAsReq, AsReq, LinkRedeemReq, McpAddReq, McpOAuthFinishReq, McpRemoveReq, ProxyReleaseReq,
+    ActAsReq, AsReq, EnrollReq, McpAddReq, McpOAuthFinishReq, McpRemoveReq, ProxyReleaseReq,
     SecretDeleteReq, SecretSetReq, SecretValue, StartNeedsReq, UserCmd,
 };
 mod wait;
@@ -95,8 +95,9 @@ pub enum Request {
     ArtifactRead(ArtifactReadReq),
     /// Show the caller's user and its linked identities.
     Whoami(AsReq),
-    /// Create a user for the caller's identity, or return the one it has.
-    Enroll(AsReq),
+    /// Create a user for the caller's identity, or return the one it has; a front adds the
+    /// verified email that decides which user that is.
+    Enroll(EnrollReq),
     /// Store a secret for the caller's user, sealed with the vault key.
     SecretSet(SecretSetReq),
     /// Delete one of the caller's user's secrets.
@@ -123,10 +124,6 @@ pub enum Request {
     /// Claim one of a Box's user's machines for it, or let go of it; the operator's only.
     #[serde(rename = "machine-hold")]
     MachineHold(MachineHoldReq),
-    /// Mint a one-time code that links another identity to the caller's user.
-    LinkCode(AsReq),
-    /// Link the caller's identity to the user that minted a code.
-    LinkRedeem(LinkRedeemReq),
     /// Lease the front Proxy for the caller's user until the lease is released or expires.
     ProxyLease(AsReq),
     /// End a lease `proxy-lease` granted.
@@ -187,8 +184,6 @@ impl Request {
             Self::MachineList(_) => "machine-list",
             Self::MachineTargets {} => "machine-targets",
             Self::MachineHold(_) => "machine-hold",
-            Self::LinkCode(_) => "link-code",
-            Self::LinkRedeem(_) => "link-redeem",
             Self::ProxyLease(_) => "proxy-lease",
             Self::ProxyRelease(_) => "proxy-release",
             Self::ProxyStatus(_) => "proxy-status",

@@ -93,7 +93,7 @@ impl Served {
         let store = Arc::new(Store::open(&state.join("moor.db"), clock.clone()).unwrap());
         let vault = Vault::load(&test_vault_key(dir.path())).unwrap();
         let enroll = |who: &str, token: &str| {
-            let (user, _) = store.enroll(&Identity::parse(who).unwrap()).unwrap();
+            let (user, _) = store.enroll(&Identity::parse(who).unwrap(), None).unwrap();
             put_secret(&store, &vault, user, "claude", token);
             user
         };

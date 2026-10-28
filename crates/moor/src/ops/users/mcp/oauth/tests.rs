@@ -188,7 +188,7 @@ fn setup(config: UserConfig) -> (Fixture, Arc<FakeClock>) {
 }
 
 fn user(f: &Fixture, who: &str) -> UserId {
-    f.cx.store().unwrap().enroll(&id(who)).unwrap().0
+    f.cx.store().unwrap().enroll(&id(who), None).unwrap().0
 }
 
 fn add(f: &Fixture, who: &str, url: &str) -> Result<Value, crate::error::CommandError> {

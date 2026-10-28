@@ -16,7 +16,7 @@ fn held_machine() -> World {
     let w = World::new([]);
     let (user, _) = w
         .store
-        .enroll(&Identity::parse("slack:T1:U1").unwrap())
+        .enroll(&Identity::parse("slack:T1:U1").unwrap(), None)
         .unwrap();
     let mini = UserMachine::parse("mini", "dev@mini", &["macos".to_owned()]).unwrap();
     w.store.set_user_machine(user, &mini).unwrap();
@@ -82,7 +82,7 @@ fn slot_one_forwards_each_port_moved_by_ten_at_the_same_number_on_both_ends() {
     let w = World::new([]);
     let (user, _) = w
         .store
-        .enroll(&Identity::parse("slack:T1:U1").unwrap())
+        .enroll(&Identity::parse("slack:T1:U1").unwrap(), None)
         .unwrap();
     let mini = UserMachine::parse("mini", "dev@mini", &["macos".to_owned()])
         .and_then(|m| m.with_capacity(2))
@@ -119,7 +119,7 @@ fn mini_of(capacity: u16) -> (World, moor_core::user::UserId) {
     let w = World::new([]);
     let (user, _) = w
         .store
-        .enroll(&Identity::parse("slack:T1:U1").unwrap())
+        .enroll(&Identity::parse("slack:T1:U1").unwrap(), None)
         .unwrap();
     let mini = UserMachine::parse("mini", "dev@mini", &["macos".to_owned()])
         .and_then(|m| m.with_capacity(capacity))
@@ -265,7 +265,7 @@ fn an_asleep_claim_is_released_while_parked_and_waiting_once_asked_up() {
 
 fn release(store: &crate::store::Store, id: moor_core::BoxId) {
     let (user, _) = store
-        .enroll(&Identity::parse("slack:T1:U1").unwrap())
+        .enroll(&Identity::parse("slack:T1:U1").unwrap(), None)
         .unwrap();
     store
         .hold_machine(id, user, &HoldOp::Release, None, &[])

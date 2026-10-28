@@ -4,6 +4,8 @@
     reason = "test assertions index decoded frames"
 )]
 
+use std::path::Path;
+
 use serde_json::json;
 
 use super::fronts::{ask, me, refused, Served};
@@ -40,23 +42,47 @@ fn a_secret_value_is_in_no_reply_log_event_or_plaintext_db_byte() {
 }
 
 #[test]
-fn a_code_minted_on_the_controller_socket_links_a_slack_identity() {
+fn two_fronts_asserting_one_email_share_a_user_and_its_secrets() {
     let served = Served::start();
-    let user = ask(&served.main, &json!({"cmd": "enroll"}))["value"]["user"].clone();
-    let minted = ask(&served.main, &json!({"cmd": "link-code"}));
-    let code = minted["value"]["code"].clone();
     let slack = served.front("slack");
-    let redeem = json!({"cmd": "link-redeem", "identity": "slack:T1:U1", "code": code});
-    let linked = ask(&slack, &redeem);
-    assert_eq!(linked["value"]["user"], user, "{linked}");
-    let who = ask(&slack, &json!({"cmd": "whoami", "identity": "slack:T1:U1"}));
-    assert_eq!(
-        who["value"]["identities"],
-        json!([me(), "slack:T1:U1"]),
-        "{who}"
+    let web = served.front("web");
+    let enroll = |socket: &Path, identity: &str, email: Option<&str>| {
+        let mut req = json!({"cmd": "enroll", "identity": identity});
+        if let Some(email) = email {
+            req["email"] = json!(email);
+        }
+        ask(socket, &req)
+    };
+    let first = enroll(&slack, "slack:T1:U1", Some("alice@example.com"));
+    assert_eq!(first["value"]["created"], true, "{first}");
+    let set =
+        json!({"cmd": "secret-set", "identity": "slack:T1:U1", "name": "claude", "value": CANARY});
+    ask(&slack, &set);
+    let second = enroll(&web, "web:sub-1", Some("Alice@Example.com"));
+    assert_eq!(second["value"]["user"], first["value"]["user"], "{second}");
+    assert_eq!(second["value"]["created"], false, "{second}");
+    let names = ask(
+        &web,
+        &json!({"cmd": "secret-names", "identity": "web:sub-1"}),
     );
-    let reused = json!({"cmd": "link-redeem", "identity": "slack:T1:U2", "code": code});
-    refused(&ask(&slack, &reused), "unknown or used link code");
+    assert_eq!(names["value"]["names"], json!(["claude"]), "{names}");
+    let third = enroll(&web, "web:sub-2", None);
+    assert_ne!(third["value"]["user"], first["value"]["user"], "{third}");
+}
+
+#[test]
+fn only_a_front_socket_may_vouch_for_an_email() {
+    let served = Served::start();
+    let got = ask(
+        &served.main,
+        &json!({"cmd": "enroll", "email": "alice@example.com"}),
+    );
+    refused(&got, "only a front can vouch for an email");
+    let bad = ask(
+        &served.front("slack"),
+        &json!({"cmd": "enroll", "identity": "slack:T1:U1", "email": "not-an-email"}),
+    );
+    assert_ne!(bad["class"], "ok", "{bad}");
 }
 
 #[test]
@@ -68,7 +94,6 @@ fn a_front_socket_cannot_act_for_the_local_user() {
         json!({"cmd": "enroll", "identity": me()}),
         json!({"cmd": "secret-set", "identity": me(), "name": "claude", "value": CANARY}),
         json!({"cmd": "secret-names", "identity": me()}),
-        json!({"cmd": "link-code", "identity": me()}),
     ] {
         let got = ask(&slack, &request);
         refused(&got, "may assert only slack:");

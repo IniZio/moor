@@ -134,7 +134,7 @@ fn starting_another_users_open_box_is_refused() {
     run(&w.cx, &req("demo")).unwrap();
     let other = Identity::parse("local:2000").unwrap();
     let store = w.cx.store().unwrap();
-    let (user, _) = store.enroll(&other).unwrap();
+    let (user, _) = store.enroll(&other, None).unwrap();
     let vault = Vault::load_or_create(w.cx.vault_key().unwrap()).unwrap();
     put_secret(store, &vault, user, "claude", "theirs");
     let w = acting_as(w, "local:2000");
@@ -146,7 +146,7 @@ fn starting_another_users_open_box_is_refused() {
 /// `w` acting as `local:2000`, enrolled with no secrets.
 fn enrolled_without_secrets(w: World) -> World {
     let other = Identity::parse("local:2000").unwrap();
-    w.cx.store().unwrap().enroll(&other).unwrap();
+    w.cx.store().unwrap().enroll(&other, None).unwrap();
     acting_as(w, "local:2000")
 }
 

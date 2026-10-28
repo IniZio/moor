@@ -23,7 +23,7 @@ fn name(s: &str) -> BoxName {
 /// Inserts open Box `n` acting for the user of `who`.
 fn add_for(cx: &Cx, n: &str, who: &Identity) -> BoxId {
     let store = cx.store().unwrap();
-    let (user, _) = store.enroll(who).unwrap();
+    let (user, _) = store.enroll(who, None).unwrap();
     let new = NewBox {
         name: name(n),
         repo: None,

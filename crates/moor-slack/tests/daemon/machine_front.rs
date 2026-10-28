@@ -7,7 +7,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use moor_client::Client;
-use moor_core::request::{AsReq, Request};
+use moor_core::request::{AsReq, EnrollReq, Request};
 use moor_core::response::{ExitClass, Response};
 use moor_core::user::Identity;
 use serde_json::Value;
@@ -56,7 +56,14 @@ fn rig() -> (Rig, super::support::RealController) {
     let controller = rig.real_controller();
     let front = rig.front_socket();
     for user in [USER, OTHER] {
-        ask_as(&front, user, Request::Enroll(AsReq { identity: None }));
+        ask_as(
+            &front,
+            user,
+            Request::Enroll(EnrollReq {
+                identity: None,
+                email: None,
+            }),
+        );
     }
     rig.spawn_daemon_on_front();
     rig.slack.wait_connected();

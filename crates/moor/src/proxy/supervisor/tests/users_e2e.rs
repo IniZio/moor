@@ -151,7 +151,7 @@ fn two() -> Two {
     let driver = FakeDriver::new().reverse_tunnels();
     let mut boxes = [("ann", ANN, 1), ("bob", BOB, 2)]
         .map(|(name, token, uid)| {
-            let (user, _) = store.enroll(&Identity::local(uid)).unwrap();
+            let (user, _) = store.enroll(&Identity::local(uid), None).unwrap();
             put_secret(&store, &vault, user, "claude", token);
             let (id, handle) = box_for(&store, &driver, name, user);
             let spec = ProxySpec {
