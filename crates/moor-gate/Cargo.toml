@@ -1,0 +1,66 @@
+[package]
+name = "moor-gate"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "moor_gate"
+path = "src/lib.rs"
+
+[[bin]]
+name = "moor-gate"
+path = "src/main.rs"
+
+[dependencies]
+moor-core = { path = "../moor-core" }
+clap = { version = "4", features = ["derive", "env"] }
+httparse = "1"
+jsonwebtoken = { version = "9", default-features = false }
+rustix = { version = "1", features = ["event"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = { version = "3", default-features = false, features = [
+  "rustls-no-provider",
+  "platform-verifier",
+] }
+rustls = { version = "0.23", default-features = false, features = [
+  "ring",
+  "std",
+  "tls12",
+] }
+tungstenite = { version = "0.29", default-features = false, features = [
+  "handshake",
+] }
+
+[dev-dependencies]
+base64 = "0.22"
+ring = "0.17"
+rusqlite = { version = "0.40", features = ["bundled"] }
+tempfile = "3"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+unreachable_pub = "deny"
+
+[lints.clippy]
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+disallowed_methods = "deny"
+indexing_slicing = "deny"
+missing_docs_in_private_items = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+exit = "deny"
+string_slice = "deny"
+missing_errors_doc = "allow"
+allow_attributes_without_reason = "deny"
+cognitive_complexity = "deny"
+redundant_pub_crate = "allow"

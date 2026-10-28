@@ -2767,6 +2767,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "jsonwebtoken"
+version = "9.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a87cc7a48537badeae96744432de36f4be2b4a34a05a5ef32e9dd8a1c169dde"
+dependencies = [
+ "base64 0.22.1",
+ "js-sys",
+ "ring",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "kasuari"
 version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3064,6 +3077,26 @@ dependencies = [
  "thiserror 2.0.21",
  "url",
  "zeroize",
+]
+
+[[package]]
+name = "moor-gate"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "clap",
+ "httparse",
+ "jsonwebtoken",
+ "moor-core",
+ "ring",
+ "rusqlite",
+ "rustix",
+ "rustls",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tungstenite",
+ "ureq",
 ]
 
 [[package]]
