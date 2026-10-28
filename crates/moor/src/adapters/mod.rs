@@ -7,5 +7,7 @@ pub(crate) mod git;
 pub(crate) mod github;
 pub(crate) mod herdr;
 pub(crate) mod proc;
+#[cfg(feature = "pty-surface")]
+pub(crate) mod pty;
 pub(crate) mod rng;
 pub(crate) mod sockets;

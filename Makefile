@@ -4,11 +4,16 @@ NEXTEST_VERSION := 0.9.148
 TAPLO_VERSION := 0.10.0
 TYPOS_VERSION := 1.51.1
 LLVM_COV_VERSION := 0.9.1
+# The pty surface embeds libghostty-vt, whose build runs Zig 0.17 from $ZIG (or PATH)
+# and downloads Ghostty's pinned source.
+ZIG_VERSION := 0.17.0
+ZIG_SHA256 := 1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026
+PTY := --features moor/pty-surface
 
-.PHONY: help coverage setup secret audit lint format test unit ci unit-nextest unit-doc build deploy overlap
+.PHONY: help coverage setup secret audit lint format test unit ci unit-nextest unit-doc build deploy overlap lint-pty unit-pty
 
 help:
-	@echo "targets: setup secret audit lint format test ci build deploy"
+	@echo "targets: setup secret audit lint lint-pty format test unit-pty ci build deploy"
 
 setup:
 	@rustup show active-toolchain >/dev/null
@@ -72,12 +77,21 @@ ci:
 	$(MAKE) test
 
 build:
-	cargo build --workspace --release --locked
+	cargo build --workspace --release --locked $(PTY)
+
+lint-pty:
+	cargo clippy -p moor --all-targets --locked $(PTY) -- -D warnings
+
+unit-pty:
+	cargo test -p moor --lib --locked $(PTY) -- adapters::pty
 
 deploy:
 	@echo "deploy: CLI, nothing to deploy"
 
 # Single source of the pins for CI's install-action step.
-.PHONY: print-tool-versions
+.PHONY: print-tool-versions print-zig
+print-zig:
+	@echo "$(ZIG_VERSION) $(ZIG_SHA256)"
+
 print-tool-versions:
 	@echo "cargo-deny@$(DENY_VERSION),cargo-machete@$(MACHETE_VERSION),cargo-nextest@$(NEXTEST_VERSION),taplo@$(TAPLO_VERSION),typos@$(TYPOS_VERSION)"

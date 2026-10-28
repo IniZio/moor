@@ -54,6 +54,37 @@ jobs:
           sudo apt-get install -y tinyproxy-bin
           cargo test -p moor-core --locked --lib -- --ignored exec_env::tests::egress_load
 
+  pty-surface:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install toolchain from rust-toolchain.toml
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: target
+          key: cargo-target-pty-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          restore-keys: |
+            cargo-target-pty-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml') }}-
+            cargo-target-pty-${{ runner.os }}-
+
+      - name: Install Zig, pinned by version and checksum, for libghostty-vt
+        run: |
+          read -r version sha < <(make -s print-zig)
+          curl -fsSLo "$RUNNER_TEMP/zig.tar.xz" "https://ziglang.org/download/$version/zig-x86_64-linux-$version.tar.xz"
+          echo "$sha  $RUNNER_TEMP/zig.tar.xz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/zig"
+          tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP/zig" --strip-components=1
+          echo "ZIG=$RUNNER_TEMP/zig/zig" >> "$GITHUB_ENV"
+
+      - run: make lint-pty
+      - run: make unit-pty
+
   macos-fronts:
     runs-on: macos-latest
     timeout-minutes: 20

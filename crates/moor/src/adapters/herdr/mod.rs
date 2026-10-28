@@ -1,7 +1,7 @@
 //! Surface adapter over herdr on a dedicated session.
 
 mod errors;
-mod pane;
+pub(crate) mod pane;
 mod parse;
 mod resume;
 #[cfg(test)]

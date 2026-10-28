@@ -94,6 +94,7 @@ fn provider_session_and_tools_parse() {
     assert_eq!(c.box_.max_boxes, NonZeroU32::new(3));
     assert_eq!(c.box_.sleep_after.as_deref(), Some("30m"));
     assert_eq!(c.herdr_session(), "work");
+    assert_eq!(c.surface.kind, SurfaceKind::Herdr);
     assert_eq!(c.tools.crabbox, Some(PathBuf::from("/opt/crabbox")));
     assert_eq!(c.tools.git, Some(PathBuf::from("git2")));
     assert_eq!(c.tools.herdr, None);
@@ -463,4 +464,14 @@ fn launch_timeout_defaults_to_three_minutes_and_parses() {
 fn a_launch_timeout_that_is_not_a_duration_is_refused() {
     let err = parse_user("user.yaml", "box: {launch_timeout: soon}").unwrap_err();
     assert!(err.to_string().contains("box.launch_timeout"), "{err}");
+}
+
+#[test]
+fn surface_kind_parses() {
+    assert_eq!(ok("surface: {kind: pty}").surface.kind, SurfaceKind::Pty);
+    assert_eq!(
+        ok("surface: {kind: herdr}").surface.kind,
+        SurfaceKind::Herdr
+    );
+    err("surface: {kind: tmux}");
 }
