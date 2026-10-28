@@ -686,8 +686,9 @@ start time belongs to another process, and the controller leaves it alone. The
 next controller never adopts a front.
 
 A moor user owns secrets, such as a Claude or GitHub token. An identity names
-a person on one front, as `<namespace>:<rest>`, and a user can link several
-identities with `moor user link-code`. Every request on a front socket except
+a person on one front, as `<namespace>:<rest>`. A front may send the verified
+email of the person with `enroll`, and identities that assert the same email
+are one user. The controller socket cannot send one. Every request on a front socket except
 `version` must assert an identity in that front's namespace. Any other request
 gets `must assert an identity`. On the controller socket, the controller reads
 the peer's uid from the kernel and acts as `local:<uid>`. It refuses any other
