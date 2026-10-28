@@ -59,9 +59,11 @@ While the Box is up, herdr's own agent dot shows working, waiting or idle.
   a git worktree. A name that an open Box already has is refused, since the two would look alike
   in the sidebar.
 - `box` lists the repos your open Boxes work on and takes a number or any `owner/name`. It then
-  asks for a Box name and the first prompt for its agent, starts the Box on the controller, shows
-  its workspace and focuses it. The first prompt is optional. Leave it empty and the agent waits,
-  so you type its first prompt once you attach.
+  asks for a Box name, the branch or ref to start from (empty for the repo's default) and the
+  first prompt for its agent. It starts the Box on the controller, shows its workspace and focuses
+  it. The first prompt is optional. Leave it empty and the agent waits, so you type its first
+  prompt once you attach. The Box's own branch is `moor/<name>`; give that as the base to continue
+  an earlier Box's branch.
 
 The popup closes when the work is started. A failure stays on screen until you press Enter.
 

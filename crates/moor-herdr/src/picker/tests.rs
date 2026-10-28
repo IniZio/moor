@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
 
-use super::{run, start_request, Bench, Controller, Prompt};
+use super::{run, start_request, Bench, Controller, Prompt, Start};
 use crate::boxes::{Activity, Phase, Shown};
 use crate::error::Error;
 use crate::herdr::{Created, Herdr, Space};
@@ -33,27 +33,18 @@ impl Prompt for Screen {
 
 struct Ctl {
     open: Vec<Shown>,
-    started: std::cell::RefCell<Vec<(String, String)>>,
-    prompts: std::cell::RefCell<Vec<Option<String>>>,
+    started: std::cell::RefCell<Vec<Start>>,
 }
 
 impl Controller for Ctl {
     fn open(&self) -> Result<Vec<Shown>, Error> {
         let mut now = self.open.clone();
-        now.extend(
-            self.started
-                .borrow()
-                .iter()
-                .map(|(name, repo)| live(name, repo)),
-        );
+        now.extend(self.started.borrow().iter().map(|s| live(&s.name, &s.repo)));
         Ok(now)
     }
 
-    fn start(&self, name: &str, repo: &str, prompt: Option<&str>) -> Result<(), Error> {
-        self.prompts.borrow_mut().push(prompt.map(str::to_owned));
-        self.started
-            .borrow_mut()
-            .push((name.to_owned(), repo.to_owned()));
+    fn start(&self, start: &Start) -> Result<(), Error> {
+        self.started.borrow_mut().push(start.clone());
         Ok(())
     }
 }
@@ -75,7 +66,6 @@ fn ctl() -> Ctl {
             live("more", "acme/app"),
         ],
         started: std::cell::RefCell::default(),
-        prompts: std::cell::RefCell::default(),
     }
 }
 
@@ -177,17 +167,20 @@ fn a_worktree_name_an_open_box_has_is_refused_with_the_reason() {
 
 #[test]
 fn a_box_starts_on_a_known_repo_then_appears_and_takes_focus() {
-    let (screen, ctl, herd) = pick(&["box", "2", "tidy", "fix the login page"]);
+    let (screen, ctl, herd) = pick(&["box", "2", "tidy", "", "fix the login page"]);
     assert!(
         screen.said.iter().any(|l| l.contains("1) acme/app")),
         "{:?}",
         screen.said
     );
     assert!(screen.said.iter().any(|l| l.contains("2) acme/site")));
-    assert_eq!(
-        *ctl.started.borrow(),
-        [("tidy".to_owned(), "acme/site".to_owned())]
-    );
+    let started: Vec<_> = ctl
+        .started
+        .borrow()
+        .iter()
+        .map(|s| (s.name.clone(), s.repo.clone()))
+        .collect();
+    assert_eq!(started, [("tidy".to_owned(), "acme/site".to_owned())]);
     assert_eq!(
         herd.calls.last().map(String::as_str),
         Some("focus w4"),
@@ -199,9 +192,9 @@ fn a_box_starts_on_a_known_repo_then_appears_and_takes_focus() {
 
 #[test]
 fn a_repo_can_be_typed_when_no_listed_one_fits() {
-    let (_, ctl, _) = pick(&["2", "acme/new", "tidy", "fix it"]);
+    let (_, ctl, _) = pick(&["2", "acme/new", "tidy", "", "fix it"]);
     assert_eq!(
-        ctl.started.borrow().first().map(|s| s.1.as_str()),
+        ctl.started.borrow().first().map(|s| s.repo.as_str()),
         Some("acme/new")
     );
 }
@@ -218,24 +211,46 @@ fn a_bad_choice_asks_again() {
 }
 
 #[test]
-fn an_empty_prompt_starts_the_box_with_none() {
-    let (_, ctl, _) = pick(&["box", "2", "tidy", ""]);
-    assert_eq!(*ctl.prompts.borrow(), [None]);
-    assert_eq!(ctl.started.borrow().len(), 1);
+fn an_empty_base_and_prompt_leave_both_to_the_controller() {
+    let (_, ctl, _) = pick(&["box", "2", "tidy", " ", ""]);
+    let started = ctl.started.borrow();
+    let start = started.first().unwrap();
+    assert_eq!(
+        (start.base.as_deref(), start.prompt.as_deref()),
+        (None, None)
+    );
+    assert_eq!(started.len(), 1);
 }
 
 #[test]
-fn a_given_prompt_reaches_the_controller() {
-    let (_, ctl, _) = pick(&["box", "2", "tidy", " fix the login page "]);
+fn a_given_base_reaches_the_controller() {
+    let (_, ctl, _) = pick(&["box", "2", "tidy", " release/2.1 ", ""]);
     assert_eq!(
-        *ctl.prompts.borrow(),
-        [Some("fix the login page".to_owned())]
+        ctl.started.borrow().first().and_then(|s| s.base.clone()),
+        Some("release/2.1".to_owned())
     );
 }
 
 #[test]
-fn the_start_request_without_a_prompt_sends_none() {
-    let wire = serde_json::to_value(start_request("tidy", "acme/site", None).unwrap()).unwrap();
+fn a_given_prompt_reaches_the_controller() {
+    let (_, ctl, _) = pick(&["box", "2", "tidy", "", " fix the login page "]);
+    assert_eq!(
+        ctl.started.borrow().first().and_then(|s| s.prompt.clone()),
+        Some("fix the login page".to_owned())
+    );
+}
+
+fn tidy() -> Start {
+    Start {
+        name: "tidy".to_owned(),
+        repo: "acme/site".to_owned(),
+        ..Start::default()
+    }
+}
+
+#[test]
+fn the_start_request_without_a_base_or_prompt_sends_neither() {
+    let wire = serde_json::to_value(start_request(&tidy()).unwrap()).unwrap();
     assert_eq!(
         wire,
         serde_json::json!({"cmd": "start", "name": "tidy", "repo": "acme/site",
@@ -244,12 +259,16 @@ fn the_start_request_without_a_prompt_sends_none() {
 }
 
 #[test]
-fn the_start_request_carries_the_prompt() {
-    let wire =
-        serde_json::to_value(start_request("tidy", "acme/site", Some("fix it")).unwrap()).unwrap();
+fn the_start_request_carries_the_base_and_prompt() {
+    let start = Start {
+        base: Some("release/2.1".to_owned()),
+        prompt: Some("fix it".to_owned()),
+        ..tidy()
+    };
+    let wire = serde_json::to_value(start_request(&start).unwrap()).unwrap();
     assert_eq!(
         wire,
-        serde_json::json!({"cmd": "start", "name": "tidy", "repo": "acme/site", "prompt": "fix it",
-            "no_agent": false, "resume": false})
+        serde_json::json!({"cmd": "start", "name": "tidy", "repo": "acme/site",
+            "base": "release/2.1", "prompt": "fix it", "no_agent": false, "resume": false})
     );
 }
