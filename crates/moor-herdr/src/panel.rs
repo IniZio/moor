@@ -28,6 +28,8 @@ pub enum Button {
     New,
     /// Ask the controller for the Boxes now.
     Refresh,
+    /// Open the popup that takes new tokens for the secrets Boxes need.
+    Connect,
     /// Select the Box on this row.
     Select(usize),
     /// Bring Box `name`'s workspace to the front.
@@ -50,6 +52,8 @@ pub trait Ops {
     fn close(&mut self, name: &str) -> Result<(), Error>;
     /// Opens the picker popup.
     fn new_box(&mut self) -> Result<(), Error>;
+    /// Opens the popup that stores the person's tokens.
+    fn connect(&mut self) -> Result<(), Error>;
 }
 
 /// A close waiting for its second press.
@@ -185,6 +189,8 @@ impl Panel {
                 Piece::button("+ New Box", Button::New),
                 Piece::text(" "),
                 Piece::button("refresh", Button::Refresh),
+                Piece::text(" "),
+                Piece::button("connect", Button::Connect),
             ],
             vec![Piece::text(self.confirm.armed(now).map_or_else(
                 || self.note.clone(),
@@ -292,6 +298,7 @@ impl Panel {
                 return;
             }
             Button::New => ops.new_box().map(|()| String::new()),
+            Button::Connect => ops.connect().map(|()| String::new()),
             Button::Attach(name) => ops.attach(name).map(|()| format!("Attached {name}.")),
             Button::Wake(name) => ops.wake(name).map(|()| format!("Waking {name}...")),
             Button::Close(name) if !self.confirm.press(name, now) => {

@@ -94,6 +94,16 @@ impl Cli {
 
     /// Opens moor's picker as a popup, for new work beside `workspace`.
     pub fn open_picker(&self, workspace: &str) -> Result<(), Error> {
+        self.open_popup("new", workspace)
+    }
+
+    /// Opens the popup that stores the person's tokens.
+    pub fn open_connect(&self, workspace: &str) -> Result<(), Error> {
+        self.open_popup("connect", workspace)
+    }
+
+    /// Opens the plugin's popup pane `entrypoint` over `workspace`.
+    fn open_popup(&self, entrypoint: &str, workspace: &str) -> Result<(), Error> {
         let env = format!("MOOR_HERDR_WORKSPACE={workspace}");
         let args = [
             "plugin",
@@ -102,7 +112,7 @@ impl Cli {
             "--plugin",
             SOURCE,
             "--entrypoint",
-            "new",
+            entrypoint,
             "--placement",
             "popup",
             "--width",

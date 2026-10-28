@@ -60,6 +60,10 @@ on at the prompt. The plugin keeps the sign-in in `credentials.json` in its stat
 only by you, and renews it by itself. `moor-herdr logout` deletes it. With neither
 `MOOR_HERDR_SERVER` nor `MOOR_HERDR_SOCKET` set, nothing connects.
 
+The first Box you start asks for the tokens it needs (a GitHub token, a Claude token), with the
+command that prints each, reads them with echo off and starts the Box once they are stored.
+`[connect]` in the Boxes panel asks for them again, so you can replace one.
+
 ## Releases
 
 Pull requests go to `develop`. `.github/workflows/cd.yaml` runs semantic-release on every push
@@ -156,7 +160,8 @@ controller is running, the pane says so on one line and gives you a local shell 
 the current pane. herdr's own right-click menus and `+` buttons take no plugin entries, so the
 panel is where you click. Mouse capture must be on in herdr (`mouse_capture = true`, the default).
 
-The top row has `[+ New Box]`, which opens the same popup as `prefix+c`, and `[refresh]`. Below it
+The top row has `[+ New Box]`, which opens the same popup as `prefix+c`, `[refresh]` and `[connect]`,
+which shows which tokens are set and takes a new value for any you type. Below it
 each open Box is one row: its label `◈ repo/name`, its state icon and words, and its buttons.
 
 - `[attach]` brings the Box's workspace to the front, making it first if herdr has none.
