@@ -64,7 +64,7 @@ fn listed_status(out: &str, pane: &PaneRef) -> Result<Option<PaneStatus>, Surfac
 /// the line and be followed at once by digits; leftover screen text after
 /// the digits is ignored, while a marker mid-line (such as an echoed command)
 /// is not one.
-fn exit_marker(text: &str) -> Option<i32> {
+pub(crate) fn exit_marker(text: &str) -> Option<i32> {
     text.lines().rev().find_map(|line| {
         let rest = line.trim_start().strip_prefix(EXIT_MARKER)?;
         let digits = rest.len() - rest.trim_start_matches(|c: char| c.is_ascii_digit()).len();

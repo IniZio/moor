@@ -9,6 +9,7 @@ mod machine;
 mod oauth;
 mod own_mcp;
 mod service;
+mod surface;
 
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
@@ -28,6 +29,7 @@ pub use machine::{check_ssh, pick_machine, unslot_ports, MachinePick, UserMachin
 pub use oauth::{OAuthCallback, OAuthClient, OAuthConfig};
 pub use own_mcp::{box_mcp, BoxMcp, UserMcp, DEFAULT_HEADER};
 pub use service::{MachineService, MachinesConfig};
+pub use surface::{HerdrConfig, SurfaceConfig, SurfaceKind};
 
 /// herdr session used when `surface.herdr.session` is unset.
 const DEFAULT_HERDR_SESSION: &str = "moor";
@@ -228,22 +230,6 @@ impl DotfilesConfig {
         }
         Ok(())
     }
-}
-
-/// `surface.herdr:` section.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub struct HerdrConfig {
-    /// herdr session name.
-    pub session: Option<String>,
-}
-
-/// `surface:` section.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub struct SurfaceConfig {
-    /// herdr settings.
-    pub herdr: HerdrConfig,
 }
 
 /// `tools:` section: absolute or PATH-relative program overrides.

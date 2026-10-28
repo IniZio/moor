@@ -12,7 +12,11 @@ path = "src/lib.rs"
 name = "moor"
 path = "src/main.rs"
 
+[features]
+pty-surface = ["dep:ghostty-vt"]
+
 [dependencies]
+ghostty-vt = { version = "=0.8.0", default-features = false, optional = true }
 moor-core = { path = "../moor-core" }
 moor-client = { path = "../moor-client" }
 clap = { version = "4", features = ["derive", "env"] }

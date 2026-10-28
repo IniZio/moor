@@ -15,7 +15,7 @@ pub use user::{
     box_mcp, check_ssh, parse_user, pick_machine, unslot_ports, AgentConfig, BoxConfig, BoxMcp,
     BoxSize, ControllerClientConfig, DotfilesConfig, DriverConfig, HerdrConfig, MachinePick,
     MachineService, MachinesConfig, McpServer, OAuthCallback, OAuthClient, OAuthConfig,
-    SurfaceConfig, ToolsConfig, UserConfig, UserMachine, UserMcp, DEFAULT_HEADER,
+    SurfaceConfig, SurfaceKind, ToolsConfig, UserConfig, UserMachine, UserMcp, DEFAULT_HEADER,
     DEFAULT_SLEEP_AFTER,
 };
 
