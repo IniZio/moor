@@ -10,7 +10,9 @@ use std::path::{Path, PathBuf};
 
 use rustix::fs::{open, Mode, OFlags};
 use rustix::io::Errno;
-use rustix::mount::{mount, mount_bind, mount_remount, unmount, MountFlags, UnmountFlags};
+use rustix::mount::{
+    mount, mount_bind_recursive, mount_remount, unmount, MountFlags, UnmountFlags,
+};
 use rustix::process::pivot_root;
 
 use super::Layout;
@@ -221,33 +223,51 @@ fn bind_at(at: &Path, source: &Path, writable: bool) -> Result<(), String> {
         fs::File::create(at).map_err(|e| fail(e.to_string()))?;
     }
     let errno = |e: Errno| fail(e.to_string());
-    mount_bind(source, at).map_err(errno)?;
-    let flags = mounts()?
-        .into_iter()
-        .rev()
-        .find_map(|(point, flags)| (point == at).then_some(flags))
-        .unwrap_or(MountFlags::empty());
-    let mode = if writable {
-        MountFlags::empty()
+    mount_bind_recursive(source, at).map_err(errno)?;
+    let (mode, depth) = if writable {
+        (MountFlags::empty(), 1)
     } else {
-        MountFlags::RDONLY
+        (MountFlags::RDONLY, usize::MAX)
     };
-    mount_remount(at, MountFlags::BIND | mode | flags, "").map_err(errno)
+    for (point, flags) in subtree(at)?.into_iter().take(depth) {
+        mount_remount(&point, MountFlags::BIND | mode | flags, "").map_err(errno)?;
+    }
+    Ok(())
 }
 
-/// Each mount point in `/proc/self/mountinfo`, in mount order, with the flags it must keep when
+/// The mount just made at `at` and every mount under it, each with the flags it must keep when
 /// remounted: the kernel refuses to change nosuid, nodev, noexec or atime on a mount that came
-/// from the parent namespace.
-fn mounts() -> Result<Vec<(PathBuf, MountFlags)>, String> {
+/// from the parent namespace. A bind of a dir that holds mounts brings them along, and the
+/// kernel refuses to bind such a dir without them when they came from the parent namespace.
+fn subtree(at: &Path) -> Result<Vec<(PathBuf, MountFlags)>, String> {
     let info = fs::read_to_string("/proc/self/mountinfo")
         .map_err(|e| format!("cannot read /proc/self/mountinfo: {e}"))?;
-    Ok(info
+    let mounts: Vec<_> = info
         .lines()
         .filter_map(|line| {
-            let mut fields = line.split(' ').skip(4);
+            let mut fields = line.split(' ');
+            let id = fields.next()?;
+            let parent = fields.next()?;
+            let mut fields = fields.skip(2);
             let point = unescape(fields.next()?);
-            Some((point, kept_flags(fields.next()?)))
+            Some((id, parent, point, kept_flags(fields.next()?)))
         })
+        .collect();
+    let Some(top) = mounts.iter().rposition(|(_, _, point, _)| point == at) else {
+        return Ok(vec![(at.to_path_buf(), MountFlags::empty())]);
+    };
+    let mut ids = Vec::new();
+    Ok(mounts
+        .into_iter()
+        .skip(top)
+        .filter(|(id, parent, _, _)| {
+            let inside = ids.is_empty() || ids.contains(parent);
+            if inside {
+                ids.push(*id);
+            }
+            inside
+        })
+        .map(|(_, _, point, flags)| (point, flags))
         .collect())
 }
 

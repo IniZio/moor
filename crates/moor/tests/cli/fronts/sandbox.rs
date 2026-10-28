@@ -175,3 +175,35 @@ fn a_state_dir_under_tmp_is_refused() {
     let said = String::from_utf8_lossy(&out.stderr);
     assert!(said.contains("lies under /tmp"), "{said}");
 }
+
+#[test]
+fn a_system_dir_with_a_bind_mount_inside_shows_both_read_only() {
+    let dir = crate::fresh_dir_outside_tmp("locked");
+    let passwd = dir.join("passwd");
+    fs::copy("/etc/passwd", &passwd).unwrap();
+    fs::create_dir(dir.join("state")).unwrap();
+    let out = std::process::Command::new("unshare")
+        .args(["--user", "--map-root-user", "--mount", "sh", "-c"])
+        .arg(r#"mount --bind "$1" /etc/passwd && shift && exec "$@""#)
+        .arg("sh")
+        .arg(&passwd)
+        .arg(env!("CARGO_BIN_EXE_moor"))
+        .args(["front-shim", "--parent", &std::process::id().to_string()])
+        .arg("--writable")
+        .arg(dir.join("state"))
+        .args([
+            "--",
+            "sh",
+            "-c",
+            "grep -q root /etc/passwd && echo x >> /etc/passwd",
+        ])
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "{said}");
+    assert!(said.contains("Read-only file system"), "{said}");
+    assert_eq!(fs::read(&passwd).unwrap(), fs::read("/etc/passwd").unwrap());
+}
