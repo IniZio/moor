@@ -1,8 +1,13 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::time::Duration;
 
-use super::{accepted, run, start_request, Bench, Controller, Prompt, Start};
+use moor_core::request::SecretValue;
+use moor_core::user::SecretName;
+use moor_core::view::user::StartNeedsValue;
+
+use super::{accepted, refusal, run, start_request, Bench, Controller, Prompt, Start};
 use crate::boxes::{Activity, Phase, Shown};
+use crate::connect::Vault;
 use crate::error::Error;
 use crate::herdr::{Created, Herdr, Space};
 
@@ -10,6 +15,8 @@ use crate::herdr::{Created, Herdr, Space};
 struct Screen {
     answers: VecDeque<String>,
     said: Vec<String>,
+    hidden: VecDeque<String>,
+    asked_hidden: Vec<String>,
 }
 
 impl Screen {
@@ -17,13 +24,25 @@ impl Screen {
         Self {
             answers: answers.iter().map(|a| (*a).to_owned()).collect(),
             said: Vec::new(),
+            hidden: VecDeque::new(),
+            asked_hidden: Vec::new(),
         }
+    }
+
+    fn with_tokens(mut self, tokens: &[&str]) -> Self {
+        self.hidden = tokens.iter().map(|t| (*t).to_owned()).collect();
+        self
     }
 }
 
 impl Prompt for Screen {
     fn ask(&mut self, _question: &str) -> Result<Option<String>, Error> {
         Ok(self.answers.pop_front())
+    }
+
+    fn ask_hidden(&mut self, question: &str) -> Result<Option<String>, Error> {
+        self.asked_hidden.push(question.to_owned());
+        Ok(self.hidden.pop_front())
     }
 
     fn say(&mut self, line: &str) -> Result<(), Error> {
@@ -35,6 +54,75 @@ impl Prompt for Screen {
 struct Ctl {
     open: Vec<Shown>,
     started: std::cell::RefCell<Vec<Start>>,
+    /// Secrets the person must store before a start is accepted.
+    lacks: Vec<SecretName>,
+    /// Every call that stores something, in order, without values.
+    vault: std::cell::RefCell<Vec<String>>,
+    /// What each stored secret was set to.
+    values: std::cell::RefCell<Vec<(String, String)>>,
+    /// Start requests, accepted or not.
+    attempts: std::cell::Cell<usize>,
+}
+
+impl Ctl {
+    fn lacking(names: &[&str]) -> Self {
+        Self {
+            lacks: names
+                .iter()
+                .map(|n| SecretName::parse(n).unwrap())
+                .collect(),
+            ..ctl()
+        }
+    }
+
+    fn missing(&self) -> Vec<SecretName> {
+        let done = self.values.borrow();
+        self.lacks
+            .iter()
+            .filter(|n| !done.iter().any(|(d, _)| d == n.as_str()))
+            .cloned()
+            .collect()
+    }
+
+    fn needs(&self) -> StartNeedsValue {
+        StartNeedsValue {
+            identity: moor_core::user::Identity::local(1),
+            user: self
+                .vault
+                .borrow()
+                .iter()
+                .any(|c| c == "enroll")
+                .then(|| serde_json::from_value(serde_json::json!(1)).unwrap()),
+            needs: self.lacks.clone(),
+            missing: self.missing(),
+        }
+    }
+}
+
+impl Vault for Ctl {
+    fn needs(&self) -> Result<StartNeedsValue, Error> {
+        Ok(self.needs())
+    }
+
+    fn names(&self) -> Result<Vec<SecretName>, Error> {
+        Ok(Vec::new())
+    }
+
+    fn enroll(&self) -> Result<(), Error> {
+        self.vault.borrow_mut().push("enroll".to_owned());
+        Ok(())
+    }
+
+    fn store(&self, name: &SecretName, value: SecretValue) -> Result<(), Error> {
+        self.vault
+            .borrow_mut()
+            .push(format!("set {name}", name = name.as_str()));
+        self.values.borrow_mut().push((
+            name.as_str().to_owned(),
+            String::from_utf8(value.secret().expose().to_vec()).unwrap(),
+        ));
+        Ok(())
+    }
 }
 
 impl Controller for Ctl {
@@ -45,6 +133,10 @@ impl Controller for Ctl {
     }
 
     fn start(&self, start: &Start) -> Result<(), Error> {
+        self.attempts.set(self.attempts.get() + 1);
+        if !self.missing().is_empty() {
+            return Err(Error::LoginRequired(Box::new(self.needs())));
+        }
         self.started.borrow_mut().push(start.clone());
         Ok(())
     }
@@ -67,6 +159,10 @@ fn ctl() -> Ctl {
             live("more", "acme/app"),
         ],
         started: std::cell::RefCell::default(),
+        lacks: Vec::new(),
+        vault: std::cell::RefCell::default(),
+        values: std::cell::RefCell::default(),
+        attempts: std::cell::Cell::new(0),
     }
 }
 
@@ -132,7 +228,12 @@ impl Bench for Herd {
 }
 
 fn pick(answers: &[&str]) -> (Screen, Ctl, Herd) {
-    let (mut screen, ctl, mut herd) = (Screen::typing(answers), ctl(), Herd::default());
+    let (screen, ctl) = (Screen::typing(answers), ctl());
+    pick_with(screen, ctl)
+}
+
+fn pick_with(mut screen: Screen, ctl: Ctl) -> (Screen, Ctl, Herd) {
+    let mut herd = Herd::default();
     run(&mut screen, &ctl, &mut herd, "w1", &|n| {
         format!("attach {n}")
     })
@@ -302,4 +403,81 @@ fn a_start_that_ends_before_a_poll_sees_its_box_is_accepted() {
     let (done, outcome) = std::sync::mpsc::channel();
     done.send(Ok(())).unwrap();
     assert!(accepted(&outcome, Duration::ZERO, || false).is_ok());
+}
+
+const BOX: [&str; 5] = ["box", "1", "tidy", "", "fix it"];
+
+#[test]
+fn a_start_refused_for_missing_secrets_asks_for_each_stores_it_and_starts_again() {
+    let screen = Screen::typing(&BOX).with_tokens(&["gho_one", "sk-ant-two"]);
+    let (screen, ctl, herd) = pick_with(screen, Ctl::lacking(&["github", "claude"]));
+    assert_eq!(
+        *ctl.vault.borrow(),
+        ["enroll", "set github", "set claude"],
+        "in the order the controller lists them"
+    );
+    assert_eq!(
+        *ctl.values.borrow(),
+        [
+            ("github".to_owned(), "gho_one".to_owned()),
+            ("claude".to_owned(), "sk-ant-two".to_owned())
+        ]
+    );
+    assert_eq!(ctl.attempts.get(), 2, "one refusal, one retry");
+    assert_eq!(ctl.started.borrow().len(), 1);
+    assert!(screen.said.iter().any(|l| l.contains("gh auth token")));
+    assert!(screen.said.iter().any(|l| l.contains("claude setup-token")));
+    assert_eq!(screen.asked_hidden.len(), 2);
+    assert!(herd.calls.iter().any(|c| c.starts_with("focus")));
+}
+
+#[test]
+fn a_value_is_never_among_the_lines_the_picker_shows() {
+    let screen = Screen::typing(&BOX).with_tokens(&["gho_topsecret"]);
+    let (screen, _, _) = pick_with(screen, Ctl::lacking(&["github"]));
+    let shown = format!("{:?} {:?}", screen.said, screen.asked_hidden);
+    assert!(!shown.contains("gho_topsecret"), "{shown}");
+}
+
+#[test]
+fn a_start_with_nothing_missing_asks_for_no_token() {
+    let (screen, ctl, _) = pick(&BOX);
+    assert!(screen.asked_hidden.is_empty());
+    assert!(ctl.vault.borrow().is_empty());
+    assert_eq!(ctl.attempts.get(), 1);
+}
+
+#[test]
+fn giving_up_on_the_tokens_starts_nothing() {
+    let screen = Screen::typing(&BOX);
+    let (_, ctl, herd) = pick_with(screen, Ctl::lacking(&["github"]));
+    assert!(ctl.started.borrow().is_empty());
+    assert_eq!(ctl.attempts.get(), 1);
+    assert!(herd.calls.is_empty());
+}
+
+fn refused(
+    detail: Option<&serde_json::Value>,
+    value: &serde_json::Value,
+) -> moor_core::response::Response {
+    serde_json::from_value(serde_json::json!({
+        "schema": "moor/1", "cmd": "start", "class": "refused", "value": value, "warnings": [],
+        "error": {"kind": "refused", "message": "log in first", "hints": [], "context": [],
+                  "detail": detail},
+    }))
+    .unwrap()
+}
+
+#[test]
+fn a_login_required_refusal_keeps_what_is_missing() {
+    let value = serde_json::json!({"identity": "local:1", "user": null,
+        "needs": ["github", "claude"], "missing": ["github", "claude"]});
+    let detail = serde_json::json!({"kind": "login_required"});
+    let err = refusal(refused(Some(&detail), &value)).unwrap_err();
+    assert!(
+        matches!(&err, Error::LoginRequired(needs) if needs.missing.len() == 2),
+        "{err}"
+    );
+    let other = refusal(refused(None, &value)).unwrap_err();
+    assert!(matches!(other, Error::Refused(m) if m == "log in first"));
 }

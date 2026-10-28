@@ -8,9 +8,12 @@ use std::time::Duration;
 
 use moor_client::Client;
 use moor_core::request::Request;
+use moor_core::response::{ErrorDetail, Response};
+use rustix::termios::{self, LocalModes, OptionalActions};
 use serde_json::json;
 
 use crate::boxes::{open_box, open_boxes, request, Phase, Shown};
+use crate::connect::{provide, Vault};
 use crate::error::Error;
 use crate::herdr::Herdr;
 use crate::sync::reconcile;
@@ -19,15 +22,19 @@ use crate::sync::reconcile;
 pub trait Prompt {
     /// Asks `question`; `None` once the input ends.
     fn ask(&mut self, question: &str) -> Result<Option<String>, Error>;
+    /// Asks `question` and reads the answer without showing it as it is typed; `None` once the
+    /// input ends.
+    fn ask_hidden(&mut self, question: &str) -> Result<Option<String>, Error>;
     /// Shows one line.
     fn say(&mut self, line: &str) -> Result<(), Error>;
 }
 
 /// The controller calls the picker makes.
-pub trait Controller {
+pub trait Controller: Vault {
     /// Every open Box.
     fn open(&self) -> Result<Vec<Shown>, Error>;
     /// Starts the Box `start` describes, returning once the controller lists it or refuses it.
+    /// A start refused for lacking the person's secrets is [`Error::LoginRequired`].
     fn start(&self, start: &Start) -> Result<(), Error>;
 }
 
@@ -68,6 +75,27 @@ impl Prompt for Tty {
         Ok((read > 0).then(|| line.trim().to_owned()))
     }
 
+    fn ask_hidden(&mut self, question: &str) -> Result<Option<String>, Error> {
+        let mut out = io::stdout().lock();
+        write!(out, "{question}")?;
+        out.flush()?;
+        let saved = termios::tcgetattr(io::stdin()).ok();
+        if let Some(saved) = &saved {
+            let mut quiet = saved.clone();
+            quiet.local_modes.remove(LocalModes::ECHO);
+            termios::tcsetattr(io::stdin(), OptionalActions::Now, &quiet)
+                .map_err(io::Error::from)?;
+        }
+        let mut line = String::new();
+        let read = io::stdin().lock().read_line(&mut line);
+        if let Some(saved) = &saved {
+            let _ = termios::tcsetattr(io::stdin(), OptionalActions::Now, saved);
+        }
+        // The Enter that ended the answer was not echoed either.
+        writeln!(out)?;
+        Ok((read? > 0).then(|| line.trim().to_owned()))
+    }
+
     fn say(&mut self, line: &str) -> Result<(), Error> {
         Ok(writeln!(io::stdout().lock(), "{line}")?)
     }
@@ -91,12 +119,25 @@ impl Controller for Client {
         let client = self.clone();
         thread::spawn(move || {
             let reply = client.request(req, |_| {}).map_err(Error::from);
-            let _ = done.send(
-                reply.and_then(|r| r.error.map_or(Ok(()), |e| Err(Error::Refused(e.message)))),
-            );
+            let _ = done.send(reply.and_then(refusal));
         });
         accepted(&outcome, ACCEPT_POLL, || !taken && open(self))
     }
+}
+
+/// A start's reply as the picker takes it: a refusal for missing secrets keeps what the
+/// controller says is missing.
+fn refusal(reply: Response) -> Result<(), Error> {
+    let Some(error) = reply.error else {
+        return Ok(());
+    };
+    let needs = (error.detail == Some(ErrorDetail::LoginRequired))
+        .then(|| reply.value.and_then(|v| serde_json::from_value(v).ok()))
+        .flatten();
+    Err(needs.map_or_else(
+        || Error::Refused(error.message),
+        |n| Error::LoginRequired(Box::new(n)),
+    ))
 }
 
 /// How often the picker asks whether the Box it started is listed yet.
@@ -263,13 +304,33 @@ fn start_box(
         return Ok(());
     };
     prompt.say(&format!("Starting {} on {}...", start.name, start.repo))?;
-    ctl.start(&start)?;
+    if !start_once_connected(prompt, ctl, &start)? {
+        return Ok(());
+    }
     reconcile(bench, &ctl.open()?, attach)?;
     let label = crate::boxes::label(Some(&start.repo), &start.name);
     if let Some(space) = bench.spaces()?.into_iter().find(|s| s.label == label) {
         bench.focus(&space.id)?;
     }
     Ok(())
+}
+
+/// Starts the Box. When the controller refuses for secrets the person lacks, asks for them,
+/// stores them and starts once more; `false` when the person gave up asking.
+fn start_once_connected(
+    prompt: &mut dyn Prompt,
+    ctl: &dyn Controller,
+    start: &Start,
+) -> Result<bool, Error> {
+    let needs = match ctl.start(start) {
+        Err(Error::LoginRequired(needs)) => needs,
+        started => return started.map(|()| true),
+    };
+    prompt.say("Starting needs tokens you have not given moor yet.")?;
+    if !provide(prompt, ctl, &needs)? {
+        return Ok(false);
+    }
+    ctl.start(start).map(|()| true)
 }
 
 #[cfg(test)]
