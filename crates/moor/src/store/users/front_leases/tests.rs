@@ -13,7 +13,7 @@ fn a_lease_serves_only_its_front_until_it_expires() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
     let (user, _) = store
-        .enroll(&Identity::parse("slack:T1:U1").unwrap())
+        .enroll(&Identity::parse("slack:T1:U1").unwrap(), None)
         .unwrap();
     let expires = clock.now().saturating_add(Duration::from_secs(60));
     store
@@ -43,10 +43,10 @@ fn release_and_purge_end_leases() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
     let (user, _) = store
-        .enroll(&Identity::parse("slack:T1:U1").unwrap())
+        .enroll(&Identity::parse("slack:T1:U1").unwrap(), None)
         .unwrap();
     let (other, _) = store
-        .enroll(&Identity::parse("slack:T1:U2").unwrap())
+        .enroll(&Identity::parse("slack:T1:U2").unwrap(), None)
         .unwrap();
     let expires = clock.now().saturating_add(Duration::from_secs(60));
     store

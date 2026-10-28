@@ -24,7 +24,7 @@ impl Mini {
         let dir = tempfile::tempdir().unwrap();
         let (store, _) = open(dir.path());
         let (user, _) = store
-            .enroll(&Identity::parse("slack:T1:U1").unwrap())
+            .enroll(&Identity::parse("slack:T1:U1").unwrap(), None)
             .unwrap();
         let mini = UserMachine::parse("mini", "dev@mini", &["macos".to_owned()])
             .and_then(|m| m.with_capacity(capacity))

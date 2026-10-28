@@ -241,7 +241,8 @@ fn tables(conn: &Connection) -> Vec<(String, i64)> {
 fn a_file_from_the_last_build_before_migrations_is_adopted_unchanged() {
     let dir = tempfile::tempdir().unwrap();
     let path = pre_migration_file(dir.path());
-    let before = tables(&Connection::open(&path).unwrap());
+    let mut before = tables(&Connection::open(&path).unwrap());
+    before.retain(|(t, _)| t != "link_codes");
     super::refuse_other_version(&path).unwrap();
     let mut conn = Connection::open(&path).unwrap();
     init_schema(&mut conn, &path).unwrap();
@@ -286,6 +287,7 @@ fn applied_migrations_are_never_edited() {
             (13, 13_975_279_521_182_795_894),
             (14, 14_226_300_463_046_355_811),
             (15, 16_361_376_529_293_542_384),
+            (16, 7_650_188_887_765_728_129),
         ],
         "a schema change is a new migration file; an applied one must not change"
     );
@@ -310,7 +312,9 @@ fn a_file_at_migration_2_gains_user_mcp_servers_and_keeps_its_rows() {
     assert!(after.contains(&("user_mcp_servers".into(), 0)), "{after:?}");
     after.retain(|(t, _)| !ADDED_AFTER_V2.contains(&t.as_str()) && t != "refinery_schema_history");
     let mut before = before;
-    before.retain(|(t, _)| !ADDED_AFTER_V2.contains(&t.as_str()) && t != "refinery_schema_history");
+    before.retain(|(t, _)| {
+        !ADDED_AFTER_V2.contains(&t.as_str()) && t != "refinery_schema_history" && t != "link_codes"
+    });
     assert_eq!(after, before, "every table and row kept");
     let applied: i64 = conn
         .query_row(
@@ -383,7 +387,9 @@ fn a_file_at_migration_4_gains_user_machines_and_keeps_its_rows() {
     )
     .unwrap();
     let mut before = tables(&conn);
-    before.retain(|(t, _)| !ADDED_AFTER_V2.contains(&t.as_str()) && t != "refinery_schema_history");
+    before.retain(|(t, _)| {
+        !ADDED_AFTER_V2.contains(&t.as_str()) && t != "refinery_schema_history" && t != "link_codes"
+    });
     init_schema(&mut conn, &path).unwrap();
     let mut after = tables(&conn);
     assert!(after.contains(&("user_machines".into(), 0)), "{after:?}");

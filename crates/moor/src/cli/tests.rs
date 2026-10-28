@@ -322,8 +322,6 @@ fn user_verbs_assert_no_identity_so_the_socket_supplies_local() {
         (&["user", "enroll"][..], "enroll"),
         (&["user", "secret", "rm", "claude"][..], "secret-delete"),
         (&["user", "secret", "ls"][..], "secret-names"),
-        (&["user", "link-code"][..], "link-code"),
-        (&["user", "link", "c0de"][..], "link-redeem"),
     ] {
         let req = parsed_request(args);
         assert_eq!(req.cmd(), cmd);

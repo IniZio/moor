@@ -231,7 +231,7 @@ fn ensure_plans_the_proxy_for_the_user_of_the_box() {
     let mut r = rig(dir.path());
     r.cx = r.cx.with_proxy_host(Arc::new(fake.clone()));
     let store = r.cx.store().unwrap();
-    let (second, _) = store.enroll(&Identity::local(2000)).unwrap();
+    let (second, _) = store.enroll(&Identity::local(2000), None).unwrap();
     assert_ne!(second.get(), 1, "the Box's user is not the first user");
     let new = NewBox {
         name: BoxName::parse_allow_bare("second-users-box").unwrap(),
@@ -259,7 +259,7 @@ fn egress_hosts(config: UserConfig) -> Vec<String> {
     let mut r = rig_with(dir.path(), config);
     r.cx = r.cx.with_proxy_host(Arc::new(FakeProxyHost::new()));
     let store = r.cx.store().unwrap();
-    let (user, _) = store.enroll(&Identity::local(2000)).unwrap();
+    let (user, _) = store.enroll(&Identity::local(2000), None).unwrap();
     let new = NewBox {
         name: BoxName::parse_allow_bare("machine-box").unwrap(),
         repo: None,

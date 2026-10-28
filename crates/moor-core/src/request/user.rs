@@ -7,7 +7,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::{MachineAddReq, MachineRemoveReq, Request, StartReq};
 use crate::secret::Secret;
-use crate::user::{Identity, SecretName};
+use crate::user::{Email, Identity, SecretName};
 
 mod mcp;
 pub use mcp::{McpAddReq, McpOAuthFinishReq, McpRemoveReq};
@@ -45,15 +45,16 @@ pub struct SecretDeleteReq {
     pub name: SecretName,
 }
 
-/// Arguments of `link-redeem`.
+/// Arguments of `enroll`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct LinkRedeemReq {
+pub struct EnrollReq {
     /// The identity asserted; the controller socket's own peer when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<Identity>,
-    /// The code `link-code` minted.
-    pub code: String,
+    /// The email the front verified for that identity; only a front socket may send one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<Email>,
 }
 
 /// Arguments of `proxy-release`.
@@ -147,7 +148,10 @@ pub enum UserCmd {
     /// The user and identities of the caller.
     Whoami,
     /// Create a user for the caller, or return the one it has.
-    Enroll,
+    Enroll {
+        /// The email the front verified for the caller.
+        email: Option<Email>,
+    },
     /// Store one of the caller's user's secrets.
     SecretSet {
         /// The secret's name.
@@ -207,13 +211,6 @@ pub enum UserCmd {
     },
     /// The caller's user's machines.
     MachineList,
-    /// Mint a one-time code that links another identity to the caller's user.
-    LinkCode,
-    /// Link the caller to the user that minted `code`.
-    LinkRedeem {
-        /// The code.
-        code: String,
-    },
     /// Lease the front Proxy for the caller's user.
     ProxyLease,
     /// End the lease of `token`.
@@ -231,7 +228,7 @@ impl UserCmd {
     pub const fn cmd(&self) -> &'static str {
         match self {
             Self::Whoami => "whoami",
-            Self::Enroll => "enroll",
+            Self::Enroll { .. } => "enroll",
             Self::SecretSet { .. } => "secret-set",
             Self::SecretDelete { .. } => "secret-delete",
             Self::SecretNames => "secret-names",
@@ -242,8 +239,6 @@ impl UserCmd {
             Self::MachineAdd { .. } => "machine-add",
             Self::MachineRemove { .. } => "machine-remove",
             Self::MachineList => "machine-list",
-            Self::LinkCode => "link-code",
-            Self::LinkRedeem { .. } => "link-redeem",
             Self::ProxyLease => "proxy-lease",
             Self::ProxyRelease { .. } => "proxy-release",
             Self::ProxyStatus => "proxy-status",
@@ -260,7 +255,7 @@ impl Request {
     pub fn into_user(self) -> Result<(Option<Identity>, UserCmd), Box<Self>> {
         Ok(match self {
             Self::Whoami(r) => (r.identity, UserCmd::Whoami),
-            Self::Enroll(r) => (r.identity, UserCmd::Enroll),
+            Self::Enroll(r) => (r.identity, UserCmd::Enroll { email: r.email }),
             Self::SecretSet(r) => (
                 r.identity,
                 UserCmd::SecretSet {
@@ -300,8 +295,6 @@ impl Request {
             ),
             Self::MachineRemove(r) => (r.identity, UserCmd::MachineRemove { name: r.name }),
             Self::MachineList(r) => (r.identity, UserCmd::MachineList),
-            Self::LinkCode(r) => (r.identity, UserCmd::LinkCode),
-            Self::LinkRedeem(r) => (r.identity, UserCmd::LinkRedeem { code: r.code }),
             Self::ProxyLease(r) => (r.identity, UserCmd::ProxyLease),
             Self::ProxyRelease(r) => (r.identity, UserCmd::ProxyRelease { token: r.token }),
             Self::ProxyStatus(r) => (r.identity, UserCmd::ProxyStatus),
@@ -338,7 +331,7 @@ impl Request {
             Self::Start(StartReq { identity, .. })
             | Self::StartNeeds(StartNeedsReq { identity, .. })
             | Self::Whoami(AsReq { identity })
-            | Self::Enroll(AsReq { identity })
+            | Self::Enroll(EnrollReq { identity, .. })
             | Self::SecretNames(AsReq { identity })
             | Self::McpList(AsReq { identity })
             | Self::MachineList(AsReq { identity })
@@ -347,13 +340,11 @@ impl Request {
             | Self::McpAdd(McpAddReq { identity, .. })
             | Self::McpRemove(McpRemoveReq { identity, .. })
             | Self::McpOAuthFinish(McpOAuthFinishReq { identity, .. })
-            | Self::LinkCode(AsReq { identity })
             | Self::ProxyLease(AsReq { identity })
             | Self::ProxyStatus(AsReq { identity })
             | Self::ProxyRelease(ProxyReleaseReq { identity, .. })
             | Self::SecretSet(SecretSetReq { identity, .. })
-            | Self::SecretDelete(SecretDeleteReq { identity, .. })
-            | Self::LinkRedeem(LinkRedeemReq { identity, .. }) => identity.as_ref(),
+            | Self::SecretDelete(SecretDeleteReq { identity, .. }) => identity.as_ref(),
             _ => None,
         }
     }

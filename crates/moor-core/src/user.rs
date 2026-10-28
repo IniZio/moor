@@ -39,6 +39,68 @@ fn lower_word(s: &str, max: usize, more: impl Fn(u8) -> bool) -> bool {
         && bytes.all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || more(b))
 }
 
+/// Most bytes in an email address.
+const EMAIL_MAX: usize = 254;
+
+/// A verified email address, lowercased: the key that makes identities from different fronts
+/// one user. Only the shape is checked here; the front that sends it vouches for the rest.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct Email(String);
+
+impl Email {
+    /// Parses an email: one `@` between a non-empty local part and a domain with a dot, no
+    /// whitespace or control characters, at most 254 bytes. Letter case is folded.
+    ///
+    /// # Errors
+    /// A sentence naming the rule `s` breaks.
+    pub fn parse(s: &str) -> Result<Self, String> {
+        let bad = |why: &str| Err(format!("email `{s}` {why}"));
+        if s.len() > EMAIL_MAX {
+            return bad("is longer than 254 bytes");
+        }
+        if s.chars().any(|c| c.is_whitespace() || c.is_control()) {
+            return bad("has whitespace or a control character");
+        }
+        let Some((local, domain)) = s.split_once('@') else {
+            return bad("has no `@`");
+        };
+        if local.is_empty() || domain.contains('@') || !domain.contains('.') {
+            return bad("is not `<local>@<domain>`");
+        }
+        if domain.starts_with('.') || domain.ends_with('.') {
+            return bad("has a domain that starts or ends with a dot");
+        }
+        Ok(Self(s.to_lowercase()))
+    }
+
+    /// The address, lowercased.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for Email {
+    type Error = String;
+
+    fn try_from(s: String) -> Result<Self, String> {
+        Self::parse(&s)
+    }
+}
+
+impl From<Email> for String {
+    fn from(email: Email) -> Self {
+        email.0
+    }
+}
+
+impl fmt::Display for Email {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// The namespace of the identities the controller's own socket asserts.
 pub const LOCAL: &str = "local";
 

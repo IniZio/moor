@@ -7,7 +7,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use moor_client::Client;
-use moor_core::request::{AsReq, Request};
+use moor_core::request::{AsReq, EnrollReq, Request};
 use moor_core::response::{ExitClass, Response};
 use moor_core::user::Identity;
 use serde_json::Value;
@@ -60,7 +60,10 @@ fn rig() -> (Rig, super::support::RealController) {
     let controller = rig.real_controller();
     let front = rig.front_socket();
     for user in [USER, OTHER] {
-        let enroll = Request::Enroll(AsReq { identity: None });
+        let enroll = Request::Enroll(EnrollReq {
+            identity: None,
+            email: None,
+        });
         ask_as(&front, user, enroll);
     }
     rig.spawn_daemon_on_front();

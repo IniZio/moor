@@ -14,7 +14,7 @@ use crate::vault::Vault;
 fn second_user(cx: Cx) -> (Cx, UserId) {
     let other = Identity::local(2000);
     let store = cx.store().unwrap();
-    let (user, _) = store.enroll(&other).unwrap();
+    let (user, _) = store.enroll(&other, None).unwrap();
     let vault = Vault::load_or_create(cx.vault_key().unwrap()).unwrap();
     for name in ["claude", "github"] {
         put_secret(store, &vault, user, name, &format!("{name}-of-2000"));

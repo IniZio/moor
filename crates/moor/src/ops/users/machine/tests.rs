@@ -25,7 +25,7 @@ fn as_user(
 }
 
 fn enroll(f: &Fixture, who: &str) {
-    f.cx.store().unwrap().enroll(&id(who)).unwrap();
+    f.cx.store().unwrap().enroll(&id(who), None).unwrap();
 }
 
 #[test]

@@ -120,24 +120,6 @@ pub struct SecretNamesValue {
     pub names: Vec<SecretName>,
 }
 
-/// Value of `link-code`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LinkCodeValue {
-    /// The one-time code; another identity redeems it with `link-redeem`.
-    pub code: String,
-    /// Seconds until it expires.
-    pub expires_in_secs: u64,
-}
-
-/// Value of `link-redeem`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LinkedValue {
-    /// The user the caller is now linked to.
-    pub user: UserId,
-    /// The identity that was linked.
-    pub identity: Identity,
-}
-
 /// Value of `start-needs`, and of a `start` refused for missing secrets.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StartNeedsValue {

@@ -137,7 +137,7 @@ enum Cmd {
     Gate(GateCmd),
     /// Print stored events as JSON lines; --follow keeps streaming (dev tool).
     Events(EventsArgs),
-    /// Your moor user, its secrets and its link codes (dev tool).
+    /// Your moor user and its secrets (dev tool).
     #[command(subcommand)]
     User(UserCli),
     /// Show your identity, its user and that user's linked identities.

@@ -154,11 +154,11 @@ fn vaulted() -> Vaulted {
     let store = Store::open(&dir.path().join(STORE_FILE), clock).unwrap();
     let vault = Vault::load_or_create(&dir.path().join("vault.key")).unwrap();
     let ann = store
-        .enroll(&Identity::parse("local:1").unwrap())
+        .enroll(&Identity::parse("local:1").unwrap(), None)
         .unwrap()
         .0;
     let bob = store
-        .enroll(&Identity::parse("local:2").unwrap())
+        .enroll(&Identity::parse("local:2").unwrap(), None)
         .unwrap()
         .0;
     Vaulted {

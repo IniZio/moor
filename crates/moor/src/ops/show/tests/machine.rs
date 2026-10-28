@@ -18,7 +18,7 @@ fn detail_shows_the_held_machine_and_a_box_without_one_shows_none() {
     let (first, second) = (add(&cx, "a"), add(&cx, "b"));
     add(&cx, "c");
     let store = cx.store().unwrap();
-    let (user, _) = store.enroll(&Identity::local(2000)).unwrap();
+    let (user, _) = store.enroll(&Identity::local(2000), None).unwrap();
     let mini = UserMachine::parse("mini", "dev@mini", &["macos".to_owned()])
         .and_then(|m| m.with_capacity(2))
         .unwrap();
@@ -58,7 +58,7 @@ fn detail_says_an_asleep_claim_waits_while_the_box_is_awake() {
     let cx = cx(dir.path(), &Arc::new(FakeDriver::new()));
     let first = add(&cx, "a");
     let store = cx.store().unwrap();
-    let (user, _) = store.enroll(&Identity::local(2000)).unwrap();
+    let (user, _) = store.enroll(&Identity::local(2000), None).unwrap();
     let mini = UserMachine::parse("mini", "dev@mini", &["macos".to_owned()]).unwrap();
     store.set_user_machine(user, &mini).unwrap();
     let want = RepoMachine {
