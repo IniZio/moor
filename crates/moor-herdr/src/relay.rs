@@ -90,14 +90,14 @@ fn ended(answer: Result<Response, ClientError>) -> Ended {
 }
 
 /// Raw mode on the pane's terminal, restored on drop.
-struct Raw {
+pub struct Raw {
     /// The settings before raw mode.
     saved: Termios,
 }
 
 impl Raw {
     /// Puts stdin's terminal in raw mode; `None` when stdin is not a terminal.
-    fn enter() -> io::Result<Option<Self>> {
+    pub fn enter() -> io::Result<Option<Self>> {
         if !termios::isatty(io::stdin()) {
             return Ok(None);
         }
@@ -116,7 +116,8 @@ impl Drop for Raw {
 }
 
 /// The pane's size, or 80 by 24 when it cannot be read.
-fn size() -> (u16, u16) {
+#[must_use]
+pub fn size() -> (u16, u16) {
     termios::tcgetwinsize(io::stdout())
         .ok()
         .filter(|w| w.ws_col > 0 && w.ws_row > 0)
@@ -124,7 +125,7 @@ fn size() -> (u16, u16) {
 }
 
 /// Feeds typed bytes and resizes into `tx` for the life of the pane.
-fn feed(tx: &Sender<Event>) -> io::Result<()> {
+pub fn feed(tx: &Sender<Event>) -> io::Result<()> {
     let keys = tx.clone();
     thread::spawn(move || {
         let mut buf = [0u8; 4096];
