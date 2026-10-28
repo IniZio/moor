@@ -24,8 +24,21 @@ pub trait Prompt {
 pub trait Controller {
     /// Every open Box.
     fn open(&self) -> Result<Vec<Shown>, Error>;
-    /// Starts Box `name` on `repo`, its agent working on `prompt`, or waiting for a prompt without one.
-    fn start(&self, name: &str, repo: &str, prompt: Option<&str>) -> Result<(), Error>;
+    /// Starts the Box `start` describes.
+    fn start(&self, start: &Start) -> Result<(), Error>;
+}
+
+/// A Box to start. A field left `None` is the controller's default.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Start {
+    /// The Box's name; its branch is `moor/<name>`.
+    pub name: String,
+    /// The repo, as `owner/name`.
+    pub repo: String,
+    /// The branch or ref to start from; `None` for the repo's default branch.
+    pub base: Option<String>,
+    /// The agent's first prompt; `None` leaves the agent waiting for one.
+    pub prompt: Option<String>,
 }
 
 /// The herdr calls only the picker makes, besides [`Herdr`]'s.
@@ -62,8 +75,8 @@ impl Controller for Client {
         open_boxes(self)
     }
 
-    fn start(&self, name: &str, repo: &str, prompt: Option<&str>) -> Result<(), Error> {
-        let reply = self.request(start_request(name, repo, prompt)?, |_| {})?;
+    fn start(&self, start: &Start) -> Result<(), Error> {
+        let reply = self.request(start_request(start)?, |_| {})?;
         reply
             .error
             .map_or(Ok(()), |e| Err(Error::Refused(e.message)))
@@ -71,8 +84,21 @@ impl Controller for Client {
 }
 
 /// The `start` every front sends for a Box on a repo; the controller picks the rest.
-pub fn start_request(name: &str, repo: &str, prompt: Option<&str>) -> Result<Request, Error> {
-    request(json!({"cmd": "start", "name": name, "repo": repo, "prompt": prompt}))
+pub fn start_request(start: &Start) -> Result<Request, Error> {
+    request(json!({
+        "cmd": "start",
+        "name": start.name,
+        "repo": start.repo,
+        "base": start.base,
+        "prompt": start.prompt,
+    }))
+}
+
+/// `answer` trimmed, or `None` when that leaves it empty.
+fn given(answer: &str) -> Option<String> {
+    Some(answer.trim())
+        .filter(|a| !a.is_empty())
+        .map(str::to_owned)
 }
 
 /// Asks until `parse` accepts an answer; `None` when the input ends.
@@ -140,20 +166,15 @@ fn local(
     }
 }
 
-/// Picks a repo and a name, starts the Box, syncs and brings its workspace to the front.
-fn start_box(
-    prompt: &mut dyn Prompt,
-    boxes: &[Shown],
-    (ctl, bench): (&dyn Controller, &mut dyn Bench),
-    attach: &dyn Fn(&str) -> String,
-) -> Result<(), Error> {
+/// Asks for the repo of the new Box, listing those the open Boxes work on.
+fn ask_repo(prompt: &mut dyn Prompt, boxes: &[Shown]) -> Result<Option<String>, Error> {
     let mut repos: Vec<&str> = boxes.iter().filter_map(|b| b.repo.as_deref()).collect();
     repos.sort_unstable();
     repos.dedup();
     for (i, repo) in repos.iter().enumerate() {
         prompt.say(&format!("{}) {repo}", i + 1))?;
     }
-    let repo = ask_until(prompt, "Repo (number or owner/name): ", |a| {
+    ask_until(prompt, "Repo (number or owner/name): ", |a| {
         let listed = a
             .parse::<usize>()
             .ok()
@@ -165,8 +186,14 @@ fn start_box(
             }
             _ => Err("Give a number from the list or owner/name.".to_owned()),
         }
-    })?;
-    let Some(repo) = repo else { return Ok(()) };
+    })
+}
+
+/// Asks what the new Box starts from; `None` when the input ends first.
+fn ask_start(prompt: &mut dyn Prompt, boxes: &[Shown]) -> Result<Option<Start>, Error> {
+    let Some(repo) = ask_repo(prompt, boxes)? else {
+        return Ok(None);
+    };
     let name = ask_until(prompt, "Box name: ", |a| {
         if a.is_empty() || a.contains(char::is_whitespace) {
             Err("A Box name is one word.".to_owned())
@@ -174,15 +201,35 @@ fn start_box(
             Ok(a.to_owned())
         }
     })?;
-    let Some(name) = name else { return Ok(()) };
+    let Some(name) = name else { return Ok(None) };
+    let Some(base) = prompt.ask("Base branch or ref (empty for the repo's default): ")? else {
+        return Ok(None);
+    };
     let Some(first) = prompt.ask("First prompt (empty to type it once attached): ")? else {
+        return Ok(None);
+    };
+    Ok(Some(Start {
+        name,
+        repo,
+        base: given(&base),
+        prompt: given(&first),
+    }))
+}
+
+/// Asks for the Box, starts it, syncs and brings its workspace to the front.
+fn start_box(
+    prompt: &mut dyn Prompt,
+    boxes: &[Shown],
+    (ctl, bench): (&dyn Controller, &mut dyn Bench),
+    attach: &dyn Fn(&str) -> String,
+) -> Result<(), Error> {
+    let Some(start) = ask_start(prompt, boxes)? else {
         return Ok(());
     };
-    let first = Some(first.trim()).filter(|g| !g.is_empty());
-    prompt.say(&format!("Starting {name} on {repo}..."))?;
-    ctl.start(&name, &repo, first)?;
+    prompt.say(&format!("Starting {} on {}...", start.name, start.repo))?;
+    ctl.start(&start)?;
     reconcile(bench, &ctl.open()?, attach)?;
-    let label = crate::boxes::label(Some(&repo), &name);
+    let label = crate::boxes::label(Some(&start.repo), &start.name);
     if let Some(space) = bench.spaces()?.into_iter().find(|s| s.label == label) {
         bench.focus(&space.id)?;
     }
