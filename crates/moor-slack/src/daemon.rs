@@ -18,6 +18,7 @@ use crate::coordinator::claude::{Claude, HostEnv};
 use crate::coordinator::Agent;
 use crate::credentials::CredentialCheck;
 use crate::db::{Db, SlackBox};
+use crate::email::Emails;
 use crate::feed::Feed;
 use crate::github::GitHub;
 use crate::identity::{Link, Team};
@@ -114,6 +115,12 @@ pub fn run(settings: &Settings, log: &Log) -> Result<(), String> {
         link,
         roleplay,
     } = load(settings, log)?;
+    let emails = Emails {
+        api: Arc::clone(&api),
+        bot_token: Arc::clone(&bot_token),
+        log: Arc::clone(log),
+        clock: settings.clock,
+    };
     let (jobs_tx, jobs_rx) = mpsc::channel();
     let (_wake_tx, wake_rx) = mpsc::channel();
     let recorder = Recorder {
@@ -121,6 +128,7 @@ pub fn run(settings: &Settings, log: &Log) -> Result<(), String> {
         api: Arc::clone(&api),
         bot_token: Arc::clone(&bot_token),
         link: link.clone(),
+        emails: emails.clone(),
         jobs: jobs_tx,
         log: Arc::clone(log),
         clock: settings.clock,
@@ -143,6 +151,7 @@ pub fn run(settings: &Settings, log: &Log) -> Result<(), String> {
         coordinator,
         github: GitHub::new(&cfg.github_api_base),
         link,
+        emails,
         log: Arc::clone(log),
     };
     let worker_thread = thread::spawn(move || worker.run(&jobs_rx, left));
@@ -315,6 +324,8 @@ struct Worker {
     github: GitHub,
     /// The controller; each request opens its own connection and speaks for one Slack user.
     link: Link,
+    /// Adds the profile email to the requests that enroll a user.
+    emails: Emails,
     /// Daemon log.
     log: Log,
 }
@@ -327,7 +338,7 @@ impl Worker {
             Ok(db) => db,
             Err(e) => return (self.log)(&format!("open slack.db: {e}")),
         };
-        let mut call = |user: &str, req| self.link.request(user, req);
+        let mut call = |user: &str, req| self.emails.call(&self.link, &db, user, req);
         let mut reply = |channel: &str, thread: &str, text: &str| {
             if let Err(e) = self
                 .api

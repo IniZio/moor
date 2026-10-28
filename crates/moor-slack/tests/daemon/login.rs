@@ -517,3 +517,71 @@ fn a_real_claude_code_links_a_real_token() {
         "the token reached the log"
     );
 }
+
+/// The email each `enroll` the controller got carried, in order.
+fn enroll_emails(controller: &FakeController) -> Vec<Option<String>> {
+    controller.seen(|seen| {
+        seen.requests
+            .iter()
+            .filter_map(|request| match request {
+                Request::Enroll(enroll) => {
+                    Some(enroll.email.as_ref().map(|e| e.as_str().to_owned()))
+                }
+                _ => None,
+            })
+            .collect()
+    })
+}
+
+#[test]
+fn an_enroll_carries_the_slack_profile_email_and_the_email_is_read_once() {
+    let (rig, _bin, controller) = start(None);
+    rig.slack.set_email(USER, "Alice@Example.com");
+    assert_eq!(link_account(&rig, "login github", GH_GOOD), LINKED);
+    assert_eq!(
+        enroll_emails(&controller),
+        [Some("alice@example.com".to_owned())]
+    );
+    assert_eq!(rig.slack.users_info_calls(), 1);
+    rig.slack.send_slash("env-3", CHANNEL, USER, "login github");
+    let opened = rig.slack.wait_views("views.open", 2, CHECK_WAIT);
+    rig.slack
+        .send_submission("env-4", USER, &opened[1]["view"], GH_GOOD);
+    controller.wait_until("a second enroll", |seen| {
+        seen.requests
+            .iter()
+            .filter(|r| matches!(r, Request::Enroll(_)))
+            .count()
+            == 2
+    });
+    assert_eq!(
+        enroll_emails(&controller),
+        [
+            Some("alice@example.com".to_owned()),
+            Some("alice@example.com".to_owned())
+        ]
+    );
+    assert_eq!(
+        rig.slack.users_info_calls(),
+        1,
+        "the second enroll used the remembered email"
+    );
+}
+
+#[test]
+fn a_bot_scope_that_is_missing_enrolls_without_an_email_and_logs_the_scope_once() {
+    let (rig, _bin, controller) = start(None);
+    rig.slack.refuse_users_info("missing_scope");
+    assert_eq!(link_account(&rig, "login github", GH_GOOD), LINKED);
+    assert_eq!(enroll_emails(&controller), [None]);
+    let stderr = rig.stderr();
+    assert_eq!(stderr.matches("users:read.email").count(), 1, "{stderr}");
+}
+
+#[test]
+fn a_profile_without_an_email_enrolls_without_one() {
+    let (rig, _bin, controller) = start(None);
+    assert_eq!(link_account(&rig, "login github", GH_GOOD), LINKED);
+    assert_eq!(enroll_emails(&controller), [None]);
+    assert_eq!(rig.slack.users_info_calls(), 1);
+}
