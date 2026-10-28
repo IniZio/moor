@@ -50,6 +50,21 @@ pub(crate) fn handle(stream: TcpStream, gate: &Gate) {
             });
             respond(&mut stream, "200 OK", "application/json", &doc.to_string());
         }
+        (Some("GET"), p) if p.starts_with(crate::mcp::METADATA_PATH) && gate.mcp.is_some() => {
+            let doc = gate
+                .mcp
+                .as_ref()
+                .map(|mcp| mcp.metadata(gate.verifier.issuer()))
+                .unwrap_or_default();
+            respond(&mut stream, "200 OK", "application/json", &doc);
+        }
+        (_, "/mcp" | "/mcp/") if gate.mcp.is_some() => {
+            if let Some(mcp) = &gate.mcp {
+                let mut prefix = head.clone();
+                prefix.extend_from_slice(&leftover);
+                mcp.serve(stream, prefix, gate);
+            }
+        }
         (Some("GET"), "/front") => front(stream, leftover, &req, gate),
         _ => respond(&mut stream, "404 Not Found", "text/plain", "not found\n"),
     }

@@ -14,6 +14,25 @@ path = "src/main.rs"
 
 [dependencies]
 moor-core = { path = "../moor-core" }
+moor-client = { path = "../moor-client" }
+bytes = "1"
+http = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["service", "tokio", "http1"] }
+rmcp = { version = "3.7", default-features = false, features = [
+  "server",
+  "macros",
+  "transport-streamable-http-server",
+] }
+schemars = "1"
+tokio = { version = "1", features = [
+  "rt-multi-thread",
+  "net",
+  "io-util",
+  "sync",
+  "time",
+] }
 clap = { version = "4", features = ["derive", "env"] }
 httparse = "1"
 jsonwebtoken = { version = "9", default-features = false }

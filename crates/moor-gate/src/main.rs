@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use clap::Parser;
-use moor_gate::{Gate, Verifier};
+use moor_gate::{Gate, Mcp, Verifier};
 
 /// The remote front: OIDC access tokens in, the controller's front socket out.
 #[derive(Parser)]
@@ -27,6 +27,10 @@ struct Args {
     /// Where the issuer's keys are, when the gate cannot reach the issuer's discovery URL.
     #[arg(long, env = "MOOR_GATE_JWKS_URL")]
     jwks_url: Option<String>,
+    /// The public URL of `/mcp`, such as `https://moor.example.com/mcp`; tokens for bots must
+    /// name it in `aud`. `/mcp` is off without it.
+    #[arg(long, env = "MOOR_GATE_MCP_RESOURCE_URL")]
+    mcp_resource_url: Option<String>,
 }
 
 fn main() -> ExitCode {
@@ -38,8 +42,20 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let mcp = match args
+        .mcp_resource_url
+        .map(|url| Mcp::new(&url, args.front_socket.clone()))
+        .transpose()
+    {
+        Ok(mcp) => mcp,
+        Err(why) => {
+            moor_gate_log(&why);
+            return ExitCode::FAILURE;
+        }
+    };
     let gate = Arc::new(Gate {
         front_socket: args.front_socket,
+        mcp,
         verifier: Verifier::new(args.issuer, args.client_id, args.jwks_url),
     });
     match moor_gate::serve(&listener, &gate) {
