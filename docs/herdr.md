@@ -29,8 +29,9 @@ happened. The pane goes away only when you close it.
    herdr server reload-config
    ```
 
-herdr runs plugin startup hooks only when its server starts, so the Boxes follow the controller
-from the next server start. Until then, `moor: show Boxes now` syncs once.
+herdr runs plugin startup hooks only when its server starts. So that a fresh install or update
+needn't wait for one, any moor action or pane (`prefix+c`, `prefix+m`, `moor: show Boxes now`)
+starts the follower when none is running.
 
 `herdr plugin update moor` fetches the channel again and installs its newest release.
 
