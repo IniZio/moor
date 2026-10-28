@@ -7,12 +7,14 @@ happened. The pane goes away only when you close it.
 
 ## Install
 
-1. Install the plugin. It downloads the matching `moor-herdr` release for Linux or macOS
-   (x86_64 or arm64) and checks it against its SHA-256:
+1. Install the plugin from `main`, the stable channel. It downloads the newest stable
+   `moor-herdr` release for Linux or macOS (x86_64 or arm64) and checks it against its SHA-256:
 
    ```sh
-   herdr plugin install IniZio/moor/crates/moor-herdr/herdr --ref moor-herdr-v0.2.0
+   herdr plugin install IniZio/moor/crates/moor-herdr/herdr --ref main
    ```
+
+   `--ref develop` installs the nightly channel instead.
 
 2. Tell it the controller socket:
 
@@ -30,8 +32,7 @@ happened. The pane goes away only when you close it.
 herdr runs plugin startup hooks only when its server starts, so the Boxes follow the controller
 from the next server start. Until then, `moor: show Boxes now` syncs once.
 
-`herdr plugin update moor` fetches the same ref again. To move to a new release, install again
-with its tag.
+`herdr plugin update moor` fetches the channel again and installs its newest release.
 
 The binary and the default shell go to the plugin's state dir,
 `~/.local/state/herdr/plugins/moor`, which keeps its path across updates.
@@ -44,10 +45,15 @@ overrides the binary either way.
 
 ## Releases
 
-Pushing a tag `moor-herdr-v<version>`, where the version is `crates/moor-herdr`'s, runs
-`.github/workflows/release-herdr.yaml`. It builds static Linux binaries and macOS binaries,
-checks that the plugin installs from each build, and publishes them with their checksums.
-Bump the crate's version before you tag.
+Pull requests go to `develop`. `.github/workflows/cd.yaml` runs semantic-release on every push
+to `develop` and `main`. When the commits since the last release include a `feat`, `fix`,
+`perf` or `refactor`, it tags `vX.Y.Z-nightly.N` on `develop` or `vX.Y.Z` on `main`, builds
+static Linux binaries and macOS binaries, checks that the plugin installs from each, and
+attaches them to the release with their checksums. Merging `develop` into `main` makes the
+stable release.
+
+The plugin finds its release from the commit herdr fetched: the newest `v*` tag that commit
+contains, counting nightly tags only while the commit is not yet on `main`.
 
 The plugin's startup hook keeps the workspaces in step with the controller every few
 seconds. `moor: show Boxes now` syncs at once.
