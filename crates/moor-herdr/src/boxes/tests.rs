@@ -1,6 +1,6 @@
 use serde_json::json;
 
-use super::{label, parse_list, parse_one, Activity, Phase};
+use super::{label, parse_list, parse_one, parse_watched, Activity, Phase};
 
 fn row(lifecycle: &str, session: &str) -> serde_json::Value {
     json!({"name": "fix", "repo": "oursky/moor", "branch": "moor/fix",
@@ -102,4 +102,16 @@ fn a_box_still_setting_up_is_starting_and_shows_the_ellipsis() {
     }
     assert_eq!(Phase::Starting.icon(), "…");
     assert_eq!(Phase::Starting.agent_state(), "unknown");
+}
+
+#[test]
+fn a_watched_box_comes_with_its_events_oldest_first() {
+    let value = json!({"box": row("setting_up", "starting"), "events": [
+        {"id": 1, "kind": "started", "payload": {}, "ts": "2026-10-26T07:33:20Z"},
+        {"id": 2, "kind": "cloned", "payload": {"ms": 900}, "ts": "2026-10-26T07:33:21Z"},
+    ]});
+    let (shown, events) = parse_watched(value).unwrap();
+    assert_eq!(shown.map(|b| b.phase), Some(Phase::Starting));
+    let kinds: Vec<_> = events.iter().map(|e| e.kind.as_str()).collect();
+    assert_eq!(kinds, ["started", "cloned"]);
 }

@@ -1,6 +1,6 @@
 use moor_core::view::AttachEnd;
 
-use super::{Card, Choice, Ended};
+use super::{Card, Choice, Ended, Progress};
 use crate::boxes::{Activity, Phase, Shown};
 
 fn shown(phase: Phase) -> Shown {
@@ -67,7 +67,10 @@ fn r_and_enter_wake_an_asleep_box_and_reattach_a_live_one() {
 
 #[test]
 fn r_on_a_closed_box_says_so_and_offers_nothing() {
-    let closed = Card::Closed { branch: None };
+    let closed = Card::Closed {
+        branch: None,
+        why: None,
+    };
     assert_eq!(
         closed.key(b'r'),
         Choice::Note("closed: there is nothing to attach")
@@ -80,7 +83,14 @@ fn r_on_a_closed_box_says_so_and_offers_nothing() {
 
 #[test]
 fn q_closes_the_pane_from_every_card_and_other_keys_do_nothing() {
-    for card in [Card::Asleep, Card::Detached, Card::Closed { branch: None }] {
+    for card in [
+        Card::Asleep,
+        Card::Detached,
+        Card::Closed {
+            branch: None,
+            why: None,
+        },
+    ] {
         assert_eq!(card.key(b'q'), Choice::Close);
         assert_eq!(card.key(b'x'), Choice::Stay);
     }
@@ -109,6 +119,30 @@ fn a_starting_box_says_so_and_only_q_does_anything() {
         text(&Ended::Skipped, Some(Phase::Starting)),
         "◈ moor/fix\n\nstarting · attaches when it's up\n\nq close this pane"
     );
-    assert_eq!(Card::Starting.key(b'q'), Choice::Close);
-    assert_eq!(Card::Starting.key(b'r'), Choice::Stay);
+    assert_eq!(Card::Starting(Progress::default()).key(b'q'), Choice::Close);
+    assert_eq!(Card::Starting(Progress::default()).key(b'r'), Choice::Stay);
+}
+
+#[test]
+fn a_starting_box_shows_how_long_it_has_taken_and_its_steps() {
+    let card = Card::Starting(Progress {
+        elapsed: Some(65),
+        steps: vec!["    +3s  machine requested".into()],
+    });
+    assert_eq!(
+        card.lines("◈ moor/fix").join("\n"),
+        "◈ moor/fix\n\nstarting · 1m 05s · attaches when it's up\n\n    +3s  machine requested\n\nq close this pane"
+    );
+}
+
+#[test]
+fn a_box_down_from_a_failure_says_why_instead_of_closed() {
+    let card = Card::Closed {
+        branch: Some("moor/fix".into()),
+        why: Some("setup failed: exit 1".into()),
+    };
+    assert_eq!(
+        card.lines("◈ moor/fix").join("\n"),
+        "◈ moor/fix\n\nsetup failed: exit 1\n\nq close this pane"
+    );
 }

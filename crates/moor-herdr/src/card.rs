@@ -5,6 +5,10 @@ use moor_core::view::AttachEnd;
 
 use crate::boxes::{Phase, Shown};
 
+pub mod progress;
+
+pub use progress::Progress;
+
 /// The key that detaches from the agent's terminal. Claude Code leaves it unbound.
 pub const DETACH_KEY: &str = "ctrl+]";
 
@@ -44,11 +48,13 @@ pub enum Card {
     Closed {
         /// The branch the Box pushed, when known.
         branch: Option<String>,
+        /// The failure that left the Box down, when one did.
+        why: Option<String>,
     },
     /// The Box is paused.
     Asleep,
     /// The Box is still being set up; the pane attaches once it is up.
-    Starting,
+    Starting(Progress),
     /// The user detached; the agent keeps running.
     Detached,
     /// The agent's terminal session ended while the Box stays up.
@@ -64,9 +70,9 @@ impl Card {
     #[must_use]
     pub fn after(ended: &Ended, now: Option<&Shown>, branch: Option<String>) -> Self {
         match now.map(|b| b.phase) {
-            None | Some(Phase::Closed) => Self::Closed { branch },
+            None | Some(Phase::Closed) => Self::Closed { branch, why: None },
             Some(Phase::Asleep) => Self::Asleep,
-            Some(Phase::Starting) => Self::Starting,
+            Some(Phase::Starting) => Self::Starting(Progress::default()),
             Some(Phase::Live(_) | Phase::WaitingForMachine) => match ended {
                 Ended::Relay(AttachEnd::Client) => Self::Detached,
                 Ended::Relay(AttachEnd::Agent) => Self::AgentEnded,
@@ -85,7 +91,7 @@ impl Card {
             (b'r' | b'R' | b'\r', Self::Closed { .. }) => {
                 Choice::Note("closed: there is nothing to attach")
             }
-            (b'r' | b'R' | b'\r', Self::Starting) => Choice::Stay,
+            (b'r' | b'R' | b'\r', Self::Starting(_)) => Choice::Stay,
             (b'r' | b'R' | b'\r', Self::Asleep) => Choice::Wake,
             (b'r' | b'R' | b'\r', _) => Choice::Attach,
             _ => Choice::Stay,
@@ -95,17 +101,28 @@ impl Card {
     /// Whether `r` attaches again from this card.
     #[must_use]
     pub const fn reattaches(&self) -> bool {
-        !matches!(self, Self::Closed { .. } | Self::Starting)
+        !matches!(self, Self::Closed { .. } | Self::Starting(_))
     }
 
     /// The card's lines under the Box's `label`.
     #[must_use]
     pub fn lines(&self, label: &str) -> Vec<String> {
         let state = match self {
-            Self::Closed { branch: Some(b) } => format!("closed · branch {b} · PR: gh pr view {b}"),
-            Self::Closed { branch: None } => "closed".to_owned(),
+            Self::Closed { why: Some(why), .. } => why.clone(),
+            Self::Closed {
+                branch: Some(b), ..
+            } => format!("closed · branch {b} · PR: gh pr view {b}"),
+            Self::Closed { branch: None, .. } => "closed".to_owned(),
             Self::Asleep => "asleep · r wakes it and attaches".to_owned(),
-            Self::Starting => "starting · attaches when it's up".to_owned(),
+            Self::Starting(p) => p.elapsed.map_or_else(
+                || "starting · attaches when it's up".to_owned(),
+                |secs| {
+                    format!(
+                        "starting · {} · attaches when it's up",
+                        progress::span(secs)
+                    )
+                },
+            ),
             Self::Detached => "detached · the agent keeps running".to_owned(),
             Self::AgentEnded => "the agent's terminal ended · the Box is still up".to_owned(),
             Self::LinkDropped => "the link to the Box dropped".to_owned(),
@@ -118,7 +135,13 @@ impl Card {
         } else {
             "q close this pane".to_owned()
         };
-        vec![label.to_owned(), String::new(), state, String::new(), keys]
+        let mut lines = vec![label.to_owned(), String::new(), state, String::new()];
+        if let Self::Starting(p) = self {
+            lines.extend(p.steps.iter().cloned());
+            lines.extend((!p.steps.is_empty()).then(String::new));
+        }
+        lines.push(keys);
+        lines
     }
 }
 
