@@ -16,7 +16,7 @@ use moor_herdr::error::Error;
 use moor_herdr::herdr::Cli;
 use moor_herdr::picker::{self, Prompt, Tty};
 use moor_herdr::sync::{reconcile, shell_quote};
-use moor_herdr::{panel, relay, setup, shell};
+use moor_herdr::{connect, panel, relay, setup, shell};
 
 /// moor Boxes in herdr.
 #[derive(Debug, Parser)]
@@ -53,6 +53,8 @@ enum Cmd {
         #[arg(long, env = "MOOR_HERDR_WORKSPACE")]
         workspace: String,
     },
+    /// Give moor the tokens Boxes need, or replace them.
+    Connect,
     /// Show the open Boxes as a list with buttons to attach, wake and close them.
     Panel {
         /// The workspace the panel was opened in.
@@ -154,6 +156,7 @@ fn run(args: &Args) -> Result<(), Error> {
         Cmd::Attach { name } => relay::run(&Link::of(args)?.client(), name),
         Cmd::Sync { every } => sync(&Link::of(args)?, *every),
         Cmd::New { workspace } => new(&Link::of(args)?, workspace),
+        Cmd::Connect => connect(&Link::of(args)?),
         Cmd::Panel { workspace } => {
             let link = Link::of(args)?;
             let attach = attach_command(&std::env::current_exe()?, &link);
@@ -174,17 +177,13 @@ fn sign_in(args: &Args) -> Result<(), Error> {
             "no server: pass --server https://<host> or set MOOR_HERDR_SERVER".to_owned(),
         ));
     };
-    let store = Store::new(auth::state_dir());
-    login::run(
+    connect::sign_in(
         server,
         login::REDIRECT_PORT,
-        &store,
+        &Store::new(auth::state_dir()),
         &mut Console,
         auth::unix_now(),
     )
-    .map_err(Error::Usage)?;
-    writeln!(io::stderr(), "Signed in to {}.", auth::normalize(server))?;
-    Ok(())
 }
 
 /// Deletes the saved credentials.
@@ -227,6 +226,18 @@ fn new(link: &Link, workspace: &str) -> Result<(), Error> {
         let _ = Tty.say(&format!("moor-herdr: {e}"));
         let _ = Tty.ask("Press Enter to close. ");
     }
+    done
+}
+
+/// Takes the person's tokens in herdr's popup, which closes with this process, so the outcome
+/// waits for Enter to be read first.
+fn connect(link: &Link) -> Result<(), Error> {
+    let done = connect::run(&mut Tty, &link.client());
+    let _ = Tty.say(&match &done {
+        Ok(()) => "Done.".to_owned(),
+        Err(e) => format!("moor-herdr: {e}"),
+    });
+    let _ = Tty.ask("Press Enter to close. ");
     done
 }
 

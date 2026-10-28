@@ -56,6 +56,11 @@ impl Ops for Fake {
         self.calls.push("new".to_owned());
         Ok(())
     }
+
+    fn connect(&mut self) -> Result<(), Error> {
+        self.calls.push("connect".to_owned());
+        Ok(())
+    }
 }
 
 fn fake() -> Fake {
@@ -105,7 +110,7 @@ fn each_box_is_a_row_with_its_label_state_and_buttons() {
     assert_eq!(
         screen(&panel, now),
         [
-            "[+ New Box] [refresh]",
+            "[+ New Box] [refresh] [connect]",
             "",
             "› ◈ app/fix",
             "    ● working  [attach] [close]",
@@ -128,13 +133,17 @@ fn an_armed_close_reads_confirm_close() {
 }
 
 #[test]
-fn a_click_on_the_toolbar_lands_on_new_or_refresh() {
+fn a_click_on_the_toolbar_lands_on_new_refresh_or_connect() {
     let now = clock();
     let panel = loaded(&mut fake());
     assert_eq!(panel.hit(0, 0, now), Some(Button::New));
     assert_eq!(panel.hit(10, 0, now), Some(Button::New));
     assert_eq!(panel.hit(11, 0, now), None);
     assert_eq!(panel.hit(12, 0, now), Some(Button::Refresh));
+    assert_eq!(panel.hit(21, 0, now), None);
+    assert_eq!(panel.hit(22, 0, now), Some(Button::Connect));
+    assert_eq!(panel.hit(30, 0, now), Some(Button::Connect));
+    assert_eq!(panel.hit(31, 0, now), None);
     assert_eq!(panel.hit(0, 1, now), None);
 }
 

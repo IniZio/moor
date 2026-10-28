@@ -88,6 +88,10 @@ impl Ops for Live<'_> {
     fn new_box(&mut self) -> Result<(), Error> {
         self.herdr.open_picker(&self.workspace)
     }
+
+    fn connect(&mut self) -> Result<(), Error> {
+        self.herdr.open_connect(&self.workspace)
+    }
 }
 
 /// The panel's input for a terminal event, if it means anything to it.

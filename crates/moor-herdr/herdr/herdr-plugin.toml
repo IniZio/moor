@@ -40,3 +40,9 @@ id = "new"
 title = "moor: new"
 placement = "popup"
 command = ["sh", "bin/run.sh", "new"]
+
+[[panes]]
+id = "connect"
+title = "moor: connect"
+placement = "popup"
+command = ["sh", "bin/run.sh", "connect"]
