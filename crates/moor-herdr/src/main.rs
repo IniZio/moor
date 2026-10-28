@@ -54,7 +54,11 @@ enum Cmd {
         workspace: String,
     },
     /// Print the herdr config snippet that colours Boxes and binds moor's keys.
-    HerdrSetup,
+    HerdrSetup {
+        /// The default shell to name; the plugin's own `bin/shell.sh` if left out.
+        #[arg(long)]
+        shell: Option<String>,
+    },
     /// herdr's default shell: a shell in the Box whose workspace the pane is in, else the
     /// user's own shell.
     Shell {
@@ -82,10 +86,10 @@ fn run(args: &Args) -> Result<(), Error> {
         })
     };
     match &args.cmd {
-        Cmd::HerdrSetup => Ok(write!(
+        Cmd::HerdrSetup { shell } => Ok(write!(
             io::stdout(),
             "{}",
-            setup::snippet(&setup::shell_path())
+            setup::snippet(&shell.clone().unwrap_or_else(setup::shell_path))
         )?),
         Cmd::Shell { login } => shell::run(args.socket.as_deref(), *login),
         Cmd::Attach { name } => relay::run(&Client::new(socket()?), name),

@@ -9,8 +9,9 @@ case $0 in
   -*) login=--login ;;
   *) login= ;;
 esac
-case $0 in
-  */*) root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd) ;;
+case ${MOOR_HERDR_ROOT:-}:$0 in
+  ?*:*) root=$MOOR_HERDR_ROOT ;;
+  :*/*) root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd) ;;
   *) root=/nonexistent ;;
 esac
 bin=${MOOR_HERDR_BIN:-$(cat "$root/moor-herdr.path" 2>/dev/null || command -v moor-herdr || echo "$HOME/.cargo/bin/moor-herdr")}

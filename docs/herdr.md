@@ -7,20 +7,47 @@ happened. The pane goes away only when you close it.
 
 ## Install
 
-1. Build and install the binary: `cargo install --path crates/moor-herdr`. The plugin finds it on
-   PATH or in `~/.cargo/bin`; set `MOOR_HERDR_BIN` in the plugin's `env` file if it lives elsewhere.
-2. Link the plugin: `herdr plugin link crates/moor-herdr/herdr`.
-3. Tell it the controller socket. Put `MOOR_HERDR_SOCKET=/path/to/controller.sock` in the
-   plugin's `env` file, `~/.config/herdr/plugins/config/moor/env`.
-4. Add the config snippet below to `~/.config/herdr/config.toml`, then run
-   `herdr server reload-config`. The plugin never edits that file.
+1. Install the plugin. It downloads the matching `moor-herdr` release for Linux or macOS
+   (x86_64 or arm64) and checks it against its SHA-256:
+
+   ```sh
+   herdr plugin install IniZio/moor/crates/moor-herdr/herdr --ref moor-herdr-v0.2.0
+   ```
+
+2. Tell it the controller socket:
+
+   ```sh
+   echo MOOR_HERDR_SOCKET=/path/to/controller.sock >> "$(herdr plugin config-dir moor)/env"
+   ```
+
+3. Add the config snippet the install wrote, then reload. The plugin never edits your config.
+
+   ```sh
+   cat "$(herdr plugin config-dir moor)/herdr-setup.toml" >> ~/.config/herdr/config.toml
+   herdr server reload-config
+   ```
+
+`herdr plugin update moor` fetches the same ref again. To move to a new release, install again
+with its tag.
+
+To work on the plugin itself, build the binary (`cargo install --path crates/moor-herdr`) and
+link the checkout with `herdr plugin link crates/moor-herdr/herdr`. A linked plugin runs
+`moor-herdr` from PATH or `~/.cargo/bin`, and `moor-herdr herdr-setup` prints its snippet.
+`MOOR_HERDR_BIN` in the plugin's `env` file overrides the binary either way.
+
+## Releases
+
+Pushing a tag `moor-herdr-v<version>`, where the version is `crates/moor-herdr`'s, runs
+`.github/workflows/release-herdr.yaml`. It builds static Linux binaries and macOS binaries,
+checks that the plugin installs from each build, and publishes them with their checksums.
+Bump the crate's version before you tag.
 
 The plugin's startup hook keeps the workspaces in step with the controller every few
 seconds. `moor: show Boxes now` syncs at once.
 
 ## The config snippet
 
-`moor-herdr herdr-setup` prints it:
+The installed plugin writes it to `herdr-setup.toml`; `moor-herdr herdr-setup` prints it:
 
 ```toml
 # moor: set Boxes apart from local worktrees in the sidebar.
@@ -52,7 +79,7 @@ description = "moor: Boxes"
 default_shell = "/path/to/moor/crates/moor-herdr/herdr/bin/shell.sh"
 ```
 
-`herdr-setup` fills in the real path of `bin/shell.sh`.
+An installed plugin names a `shell.sh` in its config dir, which keeps its path across plugin updates; `moor-herdr herdr-setup` names the checkout's `bin/shell.sh`.
 
 Every Box workspace carries `env=BOX`, which the second row shows in colour. It also carries
 `state`: empty while the Box is up, `…` while it is being set up, `◐` asleep, `◌` while it waits for a slot on the machine it claims, `✕` closed.
