@@ -21,12 +21,14 @@ use moor_core::user::Identity;
 pub use attach::AttachKeys;
 pub use error::ClientError;
 pub use redial::{redial, Attempt, GaveUp, Redial, WallClock, ATTACH_REFUSED_EXIT};
+pub use remote::TokenSource;
 pub use stream::ByteStream;
 pub use watch::{EventRecord, Watch, WatchItem, WatchStop};
 
 mod attach;
 mod error;
 mod redial;
+mod remote;
 mod stream;
 mod watch;
 
@@ -54,11 +56,11 @@ impl Default for Timeouts {
     }
 }
 
-/// Dials the controller socket.
+/// Dials the controller, on its socket or through a server.
 #[derive(Debug, Clone)]
 pub struct Client {
-    /// Path of the controller's Unix socket.
-    socket: PathBuf,
+    /// Where to dial.
+    link: remote::Link,
     /// Socket timeouts applied to each call.
     timeouts: Timeouts,
     /// When a call whose request did not run dials again.
@@ -70,8 +72,13 @@ pub struct Client {
 impl Client {
     /// A client for the controller listening on `socket`, with the default [`Redial`].
     pub fn new(socket: impl Into<PathBuf>) -> Self {
+        Self::linked(remote::Link::Socket(socket.into()))
+    }
+
+    /// A client dialing `link` with the default timeouts and redial budget.
+    fn linked(link: remote::Link) -> Self {
         Self {
-            socket: socket.into(),
+            link,
             timeouts: Timeouts::default(),
             redial: Redial::default(),
             identity: None,
@@ -254,19 +261,9 @@ impl Client {
             })
     }
 
-    /// Connects to the socket.
+    /// Connects to the socket, or to the server.
     fn connect(&self) -> Attempt<UnixStream, ClientError> {
-        match UnixStream::connect(&self.socket) {
-            Ok(stream) => Attempt::Done(stream),
-            Err(source) => {
-                let kind = source.kind();
-                let e = ClientError::Connect {
-                    socket: self.socket.clone(),
-                    source,
-                };
-                Attempt::connect_failed(kind, e)
-            }
-        }
+        self.link.connect()
     }
 
     /// Completes the hello exchange on a connected stream. Nothing has been asked yet, so a

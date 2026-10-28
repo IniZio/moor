@@ -19,6 +19,10 @@ pub enum ClientError {
         /// The OS error.
         source: io::Error,
     },
+    /// The server could not be reached over the network, or its upgrade failed.
+    Remote(String),
+    /// The server did not accept the sign-in: no token, or one it refuses.
+    Unauthorized(String),
     /// Reading or writing the connection failed.
     Io(io::Error),
     /// The controller did not read or send within the configured timeout.
@@ -48,6 +52,8 @@ impl fmt::Display for ClientError {
             Self::Connect { socket, source } => {
                 write!(f, "connect to {}: {source}", socket.display())
             }
+            Self::Remote(m) => write!(f, "cannot reach the server: {m}"),
+            Self::Unauthorized(m) => write!(f, "not signed in: {m}"),
             Self::Io(e) => write!(f, "controller connection: {e}"),
             Self::Timeout => f.write_str("controller connection: timed out waiting on the socket"),
             Self::Protocol(m) => write!(f, "controller protocol: {m}"),
@@ -65,7 +71,11 @@ impl std::error::Error for ClientError {
         match self {
             Self::Connect { source, .. } | Self::Io(source) => Some(source),
             Self::GaveUp { last, .. } => Some(last.as_ref()),
-            Self::Timeout | Self::Protocol(_) | Self::Frame { .. } => None,
+            Self::Timeout
+            | Self::Protocol(_)
+            | Self::Remote(_)
+            | Self::Unauthorized(_)
+            | Self::Frame { .. } => None,
         }
     }
 }
