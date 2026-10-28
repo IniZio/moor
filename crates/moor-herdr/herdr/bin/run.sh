@@ -10,4 +10,8 @@ bin=${MOOR_HERDR_BIN:-${installed:-$(command -v moor-herdr || echo "$HOME/.cargo
   echo "moor: no moor-herdr at $bin; install the plugin with herdr plugin install, or set MOOR_HERDR_BIN in the plugin's env file" >&2
   exit 127
 }
+case "$*" in
+  "sync --every"*) ;;
+  *) sh "$(dirname -- "$0")/follow.sh" --if-down >/dev/null 2>&1 || true ;;
+esac
 exec "$bin" "$@"
