@@ -34,7 +34,12 @@ impl Served {
 
     /// [`Self::start`] with its config and state in `dir`, and the variables `extra` set.
     pub(super) fn start_in(dir: tempfile::TempDir, extra: &[(&str, &str)]) -> Self {
-        let cfg = config(dir.path(), "fronts:\n  slack: {}\n  web: {}\n");
+        Self::start_fronts(dir, "fronts:\n  slack: {}\n  web: {}\n", extra)
+    }
+
+    /// [`Self::start_in`] with the controller config `cfg`.
+    pub(super) fn start_fronts(dir: tempfile::TempDir, cfg: &str, extra: &[(&str, &str)]) -> Self {
+        let cfg = config(dir.path(), cfg);
         let running = start(&env_with(dir.path(), extra), &cfg).expect("start");
         let main = running.socket.clone();
         let log = Buf::default();
