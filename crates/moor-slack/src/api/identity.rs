@@ -29,6 +29,27 @@ impl Api {
         })
     }
 
+    /// The profile email of Slack user `user`, from `users.info`; none when the profile has
+    /// none, as a bot user's. Needs the bot scopes `users:read` and `users:read.email`.
+    pub(crate) fn user_email(
+        &self,
+        bot_token: &Secret,
+        user: &str,
+    ) -> Result<Option<String>, ApiError> {
+        let url = format!("{}/users.info", self.base);
+        let request = self
+            .agent
+            .post(&url)
+            .header("Authorization", bearer(bot_token)?)
+            .header("Content-Type", "application/x-www-form-urlencoded");
+        let reply = read_reply(request.send(format!("user={}", form_encode(user))))?;
+        Ok(reply
+            .pointer("/user/profile/email")
+            .and_then(Value::as_str)
+            .filter(|email| !email.is_empty())
+            .map(str::to_owned))
+    }
+
     /// The metadata of the message `ts` in thread `root` of `channel`, if it has any.
     pub(crate) fn message_metadata(
         &self,
