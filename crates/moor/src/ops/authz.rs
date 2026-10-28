@@ -132,8 +132,6 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         | Request::MachineAdd(_)
         | Request::MachineRemove(_)
         | Request::MachineList(_)
-        | Request::LinkCode(_)
-        | Request::LinkRedeem(_)
         | Request::ProxyLease(_)
         | Request::ProxyRelease(_)
         | Request::ProxyStatus(_)

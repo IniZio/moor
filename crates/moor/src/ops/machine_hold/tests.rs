@@ -23,7 +23,7 @@ fn a_local_caller_who_is_not_the_operator_is_refused() {
         Arc::new(ScriptedProc::new()),
     );
     let store = cx.store().unwrap();
-    let (user, _) = store.enroll(&Identity::local(1000)).unwrap();
+    let (user, _) = store.enroll(&Identity::local(1000), None).unwrap();
     let name = BoxName::parse_allow_bare("a").unwrap();
     let id = store.apply(new_box(name).requester(user)).unwrap().box_id;
     let hold = Request::MachineHold(MachineHoldReq {

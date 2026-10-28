@@ -8,7 +8,8 @@ use std::path::Path;
 use moor_client::Client;
 use moor_core::name::{BoxName, SessionId};
 use moor_core::request::{
-    AsReq, Request, SecretSetReq, SecretValue, SessionsReq, ShowReq, UpdateHostSessionReq,
+    AsReq, EnrollReq, Request, SecretSetReq, SecretValue, SessionsReq, ShowReq,
+    UpdateHostSessionReq,
 };
 use moor_core::response::{ExitClass, Response};
 use moor_core::user::{Identity, SecretName};
@@ -71,8 +72,9 @@ fn slack_identity(user: &str) -> Identity {
 
 /// Enrolls `user` through the front socket, asserting the identity in the request.
 fn enroll(front: &Path, user: &str) {
-    let enroll = Request::Enroll(AsReq {
+    let enroll = Request::Enroll(EnrollReq {
         identity: Some(slack_identity(user)),
+        email: None,
     });
     let reply = Client::new(front).request(enroll, |_| {}).unwrap();
     assert_eq!(reply.class, ExitClass::Ok, "{reply:?}");

@@ -2,7 +2,7 @@
 //! concerns: enroll and store the secret, or delete it.
 
 use moor_client::ClientError;
-use moor_core::request::{AsReq, Request, SecretDeleteReq, SecretSetReq, SecretValue};
+use moor_core::request::{EnrollReq, Request, SecretDeleteReq, SecretSetReq, SecretValue};
 use moor_core::response::{ExitClass, Response};
 use moor_core::secret::Secret;
 use serde_json::Value;
@@ -22,7 +22,14 @@ pub(crate) fn store(
     token: &Secret,
 ) -> Result<(), String> {
     let name = account.secret()?;
-    send(call, user, Request::Enroll(AsReq { identity: None }))?;
+    send(
+        call,
+        user,
+        Request::Enroll(EnrollReq {
+            identity: None,
+            email: None,
+        }),
+    )?;
     let set = SecretSetReq {
         identity: None,
         name,

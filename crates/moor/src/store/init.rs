@@ -94,6 +94,10 @@ const FILES: &[(&str, &str)] = &[
         "V15__box_prompt.sql",
         include_str!("../../migrations/V15__box_prompt.sql"),
     ),
+    (
+        "V16__user_email.sql",
+        include_str!("../../migrations/V16__user_email.sql"),
+    ),
 ];
 
 /// moor.db's migrations, oldest first.

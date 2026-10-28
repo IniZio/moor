@@ -1,9 +1,6 @@
-//! Tests for users, identities, link codes and sealed user secrets.
+//! Tests for users, identities and sealed user secrets.
 
-use std::time::Duration;
-
-use moor_core::seam::clock::{Clock as _, Ts};
-use moor_core::user::{Identity, SecretName, UserId};
+use moor_core::user::{Email, Identity, SecretName, UserId};
 use moor_core::Secret;
 
 use crate::store::tests::open;
@@ -22,85 +19,114 @@ fn name(s: &str) -> SecretName {
 fn enroll_creates_a_user_once_per_identity() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    let (user, created) = store.enroll(&id("local:1000")).unwrap();
+    let (user, created) = store.enroll(&id("local:1000"), None).unwrap();
     assert!(created);
-    assert_eq!(store.enroll(&id("local:1000")).unwrap(), (user, false));
-    let (other, created) = store.enroll(&id("slack:T1:U1")).unwrap();
+    assert_eq!(
+        store.enroll(&id("local:1000"), None).unwrap(),
+        (user, false)
+    );
+    let (other, created) = store.enroll(&id("slack:T1:U1"), None).unwrap();
     assert!(created);
     assert_ne!(other, user);
     assert_eq!(store.user_of(&id("local:1000")).unwrap(), Some(user));
     assert_eq!(store.user_of(&id("web:x")).unwrap(), None);
 }
 
-#[test]
-fn a_link_code_links_a_second_identity_once() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, clock) = open(dir.path());
-    let (user, _) = store.enroll(&id("local:1000")).unwrap();
-    let expires = clock.now().saturating_add(Duration::from_secs(600));
-    store.add_link_code(user, "code-1", expires).unwrap();
-    assert_eq!(
-        store
-            .redeem_link_code("code-1", &id("slack:T1:U1"))
-            .unwrap(),
-        user
-    );
-    assert_eq!(
-        store.identities(user).unwrap(),
-        vec![id("local:1000"), id("slack:T1:U1")]
-    );
-    let again = store
-        .redeem_link_code("code-1", &id("web:alice"))
-        .unwrap_err();
-    assert!(
-        matches!(&again, StoreError::Invalid(why) if why == "unknown or used link code"),
-        "{again:?}"
-    );
-    assert_eq!(store.user_of(&id("web:alice")).unwrap(), None);
+fn email(s: &str) -> Email {
+    Email::parse(s).unwrap()
 }
 
 #[test]
-fn an_expired_link_code_is_refused_and_used_up() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, clock) = open(dir.path());
-    let (user, _) = store.enroll(&id("local:1000")).unwrap();
-    let expires = clock.now().saturating_add(Duration::from_secs(600));
-    store.add_link_code(user, "code-1", expires).unwrap();
-    clock.sleep(Duration::from_secs(600));
-    let err = store
-        .redeem_link_code("code-1", &id("web:alice"))
-        .unwrap_err();
-    assert!(
-        matches!(&err, StoreError::Invalid(why) if why.contains("expired")),
-        "{err:?}"
-    );
-    assert_eq!(store.user_of(&id("web:alice")).unwrap(), None);
-    let again = store
-        .redeem_link_code("code-1", &id("web:alice"))
-        .unwrap_err();
-    assert!(
-        matches!(&again, StoreError::Invalid(why) if why.contains("unknown")),
-        "{again:?}"
-    );
-}
-
-#[test]
-fn a_linked_identity_cannot_redeem_a_code() {
+fn identities_with_one_email_are_one_user() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    let (user, _) = store.enroll(&id("local:1000")).unwrap();
-    let (other, _) = store.enroll(&id("web:alice")).unwrap();
-    store
-        .add_link_code(user, "code-1", Ts::from_millis(i64::MAX))
-        .unwrap();
-    let err = store
-        .redeem_link_code("code-1", &id("web:alice"))
-        .unwrap_err();
-    assert!(
-        matches!(&err, StoreError::Invalid(why) if why.contains("already linked")),
-        "{err:?}"
+    let alice = email("alice@example.com");
+    let (first, created) = store.enroll(&id("slack:T1:U1"), Some(&alice)).unwrap();
+    assert!(created);
+    let (second, created) = store.enroll(&id("authgear:sub-1"), Some(&alice)).unwrap();
+    assert_eq!((second, created), (first, false));
+    assert_eq!(
+        store.identities(first).unwrap(),
+        vec![id("authgear:sub-1"), id("slack:T1:U1")]
     );
-    assert_eq!(store.user_of(&id("web:alice")).unwrap(), Some(other));
+    assert_eq!(store.user_of(&id("authgear:sub-1")).unwrap(), Some(first));
+}
+
+#[test]
+fn an_identity_without_an_email_gets_its_own_user() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let alice = email("alice@example.com");
+    let (first, _) = store.enroll(&id("slack:T1:U1"), Some(&alice)).unwrap();
+    let (third, created) = store.enroll(&id("web:bob"), None).unwrap();
+    assert!(created);
+    assert_ne!(third, first);
+    let (fourth, _) = store.enroll(&id("web:carol"), None).unwrap();
+    assert_ne!(fourth, third);
+}
+
+#[test]
+fn an_email_is_matched_whatever_its_letter_case() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let (first, _) = store
+        .enroll(&id("slack:T1:U1"), Some(&email("Alice@Example.com")))
+        .unwrap();
+    let (second, _) = store
+        .enroll(&id("web:alice"), Some(&email("alice@example.COM")))
+        .unwrap();
+    assert_eq!(second, first);
+}
+
+#[test]
+fn a_known_identity_gains_an_email_it_lacked() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let (user, _) = store.enroll(&id("slack:T1:U1"), None).unwrap();
+    let alice = email("alice@example.com");
+    assert_eq!(
+        store.enroll(&id("slack:T1:U1"), Some(&alice)).unwrap(),
+        (user, false)
+    );
+    let (joined, created) = store.enroll(&id("authgear:sub-1"), Some(&alice)).unwrap();
+    assert_eq!((joined, created), (user, false));
+}
+
+#[test]
+fn a_known_identity_never_takes_an_email_another_user_holds() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let alice = email("alice@example.com");
+    let (holder, _) = store.enroll(&id("web:alice"), Some(&alice)).unwrap();
+    let (other, _) = store.enroll(&id("slack:T1:U2"), None).unwrap();
+    assert_eq!(
+        store.enroll(&id("slack:T1:U2"), Some(&alice)).unwrap(),
+        (other, false)
+    );
+    assert_ne!(other, holder);
+    assert_eq!(
+        store.enroll(&id("authgear:sub-1"), Some(&alice)).unwrap(),
+        (holder, false)
+    );
+}
+
+#[test]
+fn the_database_refuses_two_users_with_one_email() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    store
+        .enroll(&id("web:alice"), Some(&email("alice@example.com")))
+        .unwrap();
+    let raw = rusqlite::Connection::open(dir.path().join("state").join("moor.db")).unwrap();
+    let duplicate = raw.execute(
+        "INSERT INTO users (created_at, email) VALUES (1, 'alice@example.com')",
+        [],
+    );
+    assert!(duplicate.is_err());
+    raw.execute("INSERT INTO users (created_at) VALUES (1)", [])
+        .unwrap();
+    raw.execute("INSERT INTO users (created_at) VALUES (1)", [])
+        .unwrap();
 }
 
 #[test]
@@ -108,8 +134,8 @@ fn user_secrets_are_stored_sealed_and_opened_on_every_read() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let vault = Vault::load_or_create(&dir.path().join("vault.key")).unwrap();
-    let (user, _) = store.enroll(&id("local:1000")).unwrap();
-    let (other, _) = store.enroll(&id("web:bob")).unwrap();
+    let (user, _) = store.enroll(&id("local:1000"), None).unwrap();
+    let (other, _) = store.enroll(&id("web:bob"), None).unwrap();
     let value = "sk-plaintext-canary-7f3e";
     let sealed = vault
         .seal(user, &name("claude"), &Secret::new(value.into()))
@@ -151,8 +177,8 @@ fn listing_secret_names_shows_only_the_users_own() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let vault = Vault::load_or_create(&dir.path().join("vault.key")).unwrap();
-    let (alice, _) = store.enroll(&id("local:1000")).unwrap();
-    let (bob, _) = store.enroll(&id("web:bob")).unwrap();
+    let (alice, _) = store.enroll(&id("local:1000"), None).unwrap();
+    let (bob, _) = store.enroll(&id("web:bob"), None).unwrap();
     put(&store, &vault, alice, "github", "a-github");
     put(&store, &vault, bob, "claude", "b-claude");
     put(&store, &vault, bob, "openai", "b-openai");
@@ -171,8 +197,8 @@ fn deleting_a_secret_leaves_another_users_same_name() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let vault = Vault::load_or_create(&dir.path().join("vault.key")).unwrap();
-    let (alice, _) = store.enroll(&id("local:1000")).unwrap();
-    let (bob, _) = store.enroll(&id("web:bob")).unwrap();
+    let (alice, _) = store.enroll(&id("local:1000"), None).unwrap();
+    let (bob, _) = store.enroll(&id("web:bob"), None).unwrap();
     put(&store, &vault, alice, "github", "a-github");
     put(&store, &vault, bob, "github", "b-github");
     let deleted = store.delete_user_secret(alice, &name("github")).unwrap();
@@ -193,7 +219,7 @@ fn each_secret_name_opens_to_its_own_value() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let vault = Vault::load_or_create(&dir.path().join("vault.key")).unwrap();
-    let (alice, _) = store.enroll(&id("local:1000")).unwrap();
+    let (alice, _) = store.enroll(&id("local:1000"), None).unwrap();
     put(&store, &vault, alice, "claude", "a-claude");
     put(&store, &vault, alice, "github", "a-github");
     for (key, value) in [("claude", "a-claude"), ("github", "a-github")] {
@@ -207,7 +233,7 @@ fn setting_a_secret_again_replaces_it() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let vault = Vault::load_or_create(&dir.path().join("vault.key")).unwrap();
-    let (user, _) = store.enroll(&id("local:1000")).unwrap();
+    let (user, _) = store.enroll(&id("local:1000"), None).unwrap();
     for value in ["one", "two"] {
         let sealed = vault
             .seal(user, &name("github"), &Secret::new(value.into()))
@@ -225,8 +251,8 @@ fn a_sealed_value_copied_into_another_row_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let vault = Vault::load_or_create(&dir.path().join("vault.key")).unwrap();
-    let (alice, _) = store.enroll(&id("local:1000")).unwrap();
-    let (bob, _) = store.enroll(&id("web:bob")).unwrap();
+    let (alice, _) = store.enroll(&id("local:1000"), None).unwrap();
+    let (bob, _) = store.enroll(&id("web:bob"), None).unwrap();
     for (user, key) in [(alice, "claude"), (bob, "claude"), (alice, "github")] {
         let value = Secret::new(format!("{}-{key}", user.get()).into_bytes());
         let sealed = vault.seal(user, &name(key), &value).unwrap();

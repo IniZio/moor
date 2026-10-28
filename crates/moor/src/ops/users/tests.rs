@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use moor_core::request::{AsReq, SecretValue, UserCmd};
-use moor_core::user::{Identity, SecretName};
+use moor_core::user::{Email, Identity, SecretName};
 use moor_core::{ErrorKind, Request};
 use serde_json::json;
 
@@ -52,7 +52,7 @@ fn whoami_names_the_identity_before_and_after_it_has_a_user() {
         json!({"identity": "local:2000", "user": null, "identities": []})
     );
     let store = f.cx.store().unwrap();
-    let (user, _) = store.enroll(&me).unwrap();
+    let (user, _) = store.enroll(&me, None).unwrap();
     let after = run(&f.cx, &f.vault, &me, &UserCmd::Whoami).unwrap();
     assert_eq!(
         after,
@@ -85,9 +85,9 @@ fn enroll_is_idempotent_and_a_user_is_needed_for_secrets() {
     let err = run(&f.cx, &f.vault, &me, &secret_set("claude", "v")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
     assert!(err.error.to_string().contains("has no user"), "{err:?}");
-    let first = run(&f.cx, &f.vault, &me, &UserCmd::Enroll).unwrap();
+    let first = run(&f.cx, &f.vault, &me, &UserCmd::Enroll { email: None }).unwrap();
     assert_eq!(first["created"], true);
-    let again = run(&f.cx, &f.vault, &me, &UserCmd::Enroll).unwrap();
+    let again = run(&f.cx, &f.vault, &me, &UserCmd::Enroll { email: None }).unwrap();
     assert_eq!(
         (again["created"].clone(), again["user"].clone()),
         (json!(false), first["user"].clone())
@@ -98,7 +98,7 @@ fn enroll_is_idempotent_and_a_user_is_needed_for_secrets() {
 fn secrets_set_list_and_delete_by_name_only() {
     let f = fixture();
     let me = id("local:2000");
-    run(&f.cx, &f.vault, &me, &UserCmd::Enroll).unwrap();
+    run(&f.cx, &f.vault, &me, &UserCmd::Enroll { email: None }).unwrap();
     let set = run(&f.cx, &f.vault, &me, &secret_set("claude", "tok-1")).unwrap();
     assert_eq!(set, json!({"name": "claude", "changed": true}));
     let names = run(&f.cx, &f.vault, &me, &UserCmd::SecretNames).unwrap();
@@ -115,39 +115,27 @@ fn secrets_set_list_and_delete_by_name_only() {
 }
 
 #[test]
-fn a_link_code_links_another_identity_once() {
+fn identities_with_one_email_see_the_same_secrets() {
     let f = fixture();
-    let me = id("local:2000");
-    let user = run(&f.cx, &f.vault, &me, &UserCmd::Enroll).unwrap()["user"].clone();
-    let minted = run(&f.cx, &f.vault, &me, &UserCmd::LinkCode).unwrap();
-    assert_eq!(minted["expires_in_secs"], 600);
-    let code = minted["code"].as_str().unwrap().to_owned();
-    assert_eq!(code.len(), 16, "{code}");
-    let redeem = UserCmd::LinkRedeem { code };
-    let linked = run(&f.cx, &f.vault, &id("slack:T1:U1"), &redeem).unwrap();
-    assert_eq!(linked, json!({"user": user, "identity": "slack:T1:U1"}));
-    let reused = run(&f.cx, &f.vault, &id("web:alice"), &redeem).unwrap_err();
-    assert_eq!(reused.kind, ErrorKind::Refused);
-    let who = run(&f.cx, &f.vault, &id("slack:T1:U1"), &UserCmd::Whoami).unwrap();
-    assert_eq!(who["identities"], json!(["local:2000", "slack:T1:U1"]));
-}
-
-#[test]
-fn minted_link_codes_are_random_16_digit_hex() {
-    let f = fixture();
-    let me = id("local:2000");
-    run(&f.cx, &f.vault, &me, &UserCmd::Enroll).unwrap();
-    let codes: Vec<String> = (0..2)
-        .map(|_| {
-            let minted = run(&f.cx, &f.vault, &me, &UserCmd::LinkCode).unwrap();
-            minted["code"].as_str().unwrap().to_owned()
-        })
-        .collect();
-    for code in &codes {
-        assert!(
-            code.len() == 16 && code.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')),
-            "{code}"
-        );
-    }
-    assert_ne!(codes[0], codes[1]);
+    let email = Email::parse("alice@example.com").unwrap();
+    let enroll = UserCmd::Enroll { email: Some(email) };
+    let slack = id("slack:T1:U1");
+    let first = run(&f.cx, &f.vault, &slack, &enroll).unwrap();
+    run(&f.cx, &f.vault, &slack, &secret_set("claude", "tok-1")).unwrap();
+    let authgear = id("authgear:sub-1");
+    let second = run(&f.cx, &f.vault, &authgear, &enroll).unwrap();
+    assert_eq!(second["user"], first["user"]);
+    assert_eq!(second["created"], false);
+    let names = run(&f.cx, &f.vault, &authgear, &UserCmd::SecretNames).unwrap();
+    assert_eq!(names, json!({"names": ["claude"]}));
+    let who = run(&f.cx, &f.vault, &authgear, &UserCmd::Whoami).unwrap();
+    assert_eq!(who["identities"], json!(["authgear:sub-1", "slack:T1:U1"]));
+    let third = run(
+        &f.cx,
+        &f.vault,
+        &id("web:bob"),
+        &UserCmd::Enroll { email: None },
+    )
+    .unwrap();
+    assert_ne!(third["user"], first["user"]);
 }

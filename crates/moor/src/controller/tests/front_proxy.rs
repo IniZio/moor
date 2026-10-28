@@ -191,7 +191,7 @@ fn a_controller_start_ends_the_leases_the_last_one_left() {
     )));
     let store = crate::store::Store::open(&state.join("moor.db"), clock).unwrap();
     let (user, _) = store
-        .enroll(&Identity::parse("slack:T1:U1").unwrap())
+        .enroll(&Identity::parse("slack:T1:U1").unwrap(), None)
         .unwrap();
     store
         .add_front_lease(b"left", "slack", user, Ts::from_millis(i64::MAX))

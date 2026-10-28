@@ -2,7 +2,7 @@
 //! opens a modal for the name, ssh target and labels, and sends `machine-add` as that Slack user.
 //! Nothing secret is stored here. These are setup commands; nothing reads words in a thread.
 
-use moor_core::request::{AsReq, MachineAddReq, MachineRemoveReq, Request};
+use moor_core::request::{AsReq, EnrollReq, MachineAddReq, MachineRemoveReq, Request};
 use serde_json::{json, Value};
 
 use crate::credentials::SlackUser;
@@ -157,7 +157,10 @@ pub(crate) fn submission(sub: &TokenSubmission, call: &mut Call<'_>) -> Value {
         labels: labels(&field(sub, "labels")),
         capacity,
     };
-    let enroll = Request::Enroll(AsReq { identity: None });
+    let enroll = Request::Enroll(EnrollReq {
+        identity: None,
+        email: None,
+    });
     if let Err(why) = send(call, &sub.user, enroll) {
         return update(&format!("Could not set you up: {why}. Nothing was stored."));
     }

@@ -446,7 +446,7 @@ fn promoted_box_runs_the_repo_setup_commands_in_its_new_box() {
 fn bystander(w: &World) -> UserId {
     w.cx.store()
         .unwrap()
-        .enroll(&Identity::local(2000))
+        .enroll(&Identity::local(2000), None)
         .unwrap()
         .0
 }

@@ -187,8 +187,8 @@ fn a_gate_reads_only_the_runs_of_boxes_its_caller_may_see() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
     let store = cx.store().unwrap();
-    let (mine, _) = store.enroll(&Identity::local(2000)).unwrap();
-    let (theirs, _) = store.enroll(&Identity::local(3000)).unwrap();
+    let (mine, _) = store.enroll(&Identity::local(2000), None).unwrap();
+    let (theirs, _) = store.enroll(&Identity::local(3000), None).unwrap();
     let nt = NewBox {
         name: BoxName::parse_allow_bare("theirs").unwrap(),
         repo: None,

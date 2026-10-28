@@ -13,7 +13,7 @@ use std::sync::Arc;
 use moor_core::controller::{WatchFilter, PROTOCOL};
 use moor_core::domain::decision::{Decision, ExtraEvent, NewBox};
 use moor_core::seam::clock::Ts;
-use moor_core::user::{UserId, Viewer};
+use moor_core::user::{Email, Identity, UserId, Viewer};
 use moor_core::{BoxId, BoxName, Request};
 use serde_json::{json, Value};
 
@@ -58,9 +58,14 @@ impl World {
         };
         let (a, b) = (enroll(&slack, Some(A)), enroll(&slack, Some(B)));
         let operator = enroll(&served.main, None);
-        let code = ask(&served.main, &json!({"cmd": "link-code"}))["value"]["code"].clone();
-        let redeem = json!({"cmd": "link-redeem", "identity": OPERATOR_ON_SLACK, "code": code});
-        assert_eq!(ask(&slack, &redeem)["class"], "ok");
+        let email = Email::parse("operator@example.com").expect("email");
+        store
+            .enroll(&Identity::parse(&me()).expect("identity"), Some(&email))
+            .expect("give the operator's user an email");
+        let redeem = json!({
+            "cmd": "enroll", "identity": OPERATOR_ON_SLACK, "email": email.as_str(),
+        });
+        assert_eq!(ask(&slack, &redeem)["value"]["user"], json!(operator.get()));
         insert(&store, A_BOX, Some(a));
         insert(&store, OPERATOR_BOX, Some(operator));
         let b_box = insert(&store, B_BOX, Some(b));
@@ -185,12 +190,10 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
             json!({"cmd": kind, "front": "slack", "key": "k", "session": session, "owner": "o"})
         }
         "start-needs" | "session-binding" | "gate" | "env" | "repos" | "whoami" | "enroll"
-        | "secret-set" | "secret-delete" | "secret-names" | "link-code" | "link-redeem" | "as"
-        | "mcp-add" | "mcp-remove" | "mcp-list" | "mcp-oauth-finish" | "machine-add"
-        | "machine-remove" | "machine-list" | "machine-targets" | "box-mirror" | "box-put"
-        | "machine-hold" | "in" | "version" | "proxy-lease" | "proxy-release" | "proxy-status" => {
-            return Names::Nothing
-        }
+        | "secret-set" | "secret-delete" | "secret-names" | "as" | "mcp-add" | "mcp-remove"
+        | "mcp-list" | "mcp-oauth-finish" | "machine-add" | "machine-remove" | "machine-list"
+        | "machine-targets" | "box-mirror" | "box-put" | "machine-hold" | "in" | "version"
+        | "proxy-lease" | "proxy-release" | "proxy-status" => return Names::Nothing,
         _ => return Names::Unknown,
     })
 }

@@ -190,7 +190,14 @@ impl Moor {
         let who = caller
             .as_ref()
             .map_err(Clone::clone)
-            .and_then(|caller| caller.resolve(asserted))
+            .and_then(|caller| {
+                if matches!(cmd, UserCmd::Enroll { email: Some(_) })
+                    && !matches!(caller, Caller::Front(_))
+                {
+                    return Err("only a front can vouch for an email".to_owned());
+                }
+                caller.resolve(asserted)
+            })
             .map_err(|why| CommandError::new(ErrorKind::Refused, why));
         match who.and_then(|who| ops::users::run(&self.cx, vault, &who, cmd)) {
             Ok(value) => Response::ok(name, Some(value)).with_warnings(self.cx.take_warnings()),

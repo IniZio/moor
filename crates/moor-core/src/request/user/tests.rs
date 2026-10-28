@@ -64,8 +64,10 @@ fn every_user_request_round_trips_and_splits() {
             json!({"cmd": "secret-names", "identity": "web:a"}),
             "secret-names",
         ),
-        (json!({"cmd": "link-code"}), "link-code"),
-        (json!({"cmd": "link-redeem", "code": "c0de"}), "link-redeem"),
+        (
+            json!({"cmd": "enroll", "email": "alice@example.com"}),
+            "enroll",
+        ),
     ] {
         let req: Request = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(req.cmd(), cmd);

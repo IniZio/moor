@@ -27,7 +27,7 @@ fn a_streamed_run_acts_on_the_box_its_grant_pinned() {
     let store = Store::open(&dir.path().join(STORE_FILE), clock).unwrap();
     let name = BoxName::parse_allow_bare("a").unwrap();
     let open = |who: u32| {
-        let (user, _) = store.enroll(&Identity::local(who)).unwrap();
+        let (user, _) = store.enroll(&Identity::local(who), None).unwrap();
         let new = NewBox {
             name: name.clone(),
             repo: None,

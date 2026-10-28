@@ -2,7 +2,7 @@
 //! URL and key; the key goes into the controller's vault as that Slack user, with the server in
 //! their list. These are setup commands; nothing here reads words in a thread.
 
-use moor_core::request::{AsReq, McpAddReq, McpRemoveReq, Request, SecretValue};
+use moor_core::request::{AsReq, EnrollReq, McpAddReq, McpRemoveReq, Request, SecretValue};
 use serde_json::{json, Value};
 
 use crate::credentials::SlackUser;
@@ -199,7 +199,10 @@ pub(crate) fn submission(sub: &TokenSubmission, call: &mut Call<'_>) -> Value {
         name: name.clone(),
         url,
     };
-    let enroll = Request::Enroll(AsReq { identity: None });
+    let enroll = Request::Enroll(EnrollReq {
+        identity: None,
+        email: None,
+    });
     if let Err(why) = send(call, &sub.user, enroll) {
         return update(&format!("Could not set you up: {why}. Nothing was stored."));
     }

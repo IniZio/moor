@@ -68,18 +68,6 @@ fn the_cli_enrolls_stores_a_secret_from_stdin_and_shows_whoami() {
     assert_eq!(gone["value"]["changed"], true, "{gone}");
 }
 
-#[test]
-fn the_cli_mints_a_link_code_and_refuses_it_for_an_already_linked_identity() {
-    let daemon = Daemon::start();
-    moor(&daemon, &["user", "enroll"], "");
-    let (minted, _) = moor(&daemon, &["user", "link-code"], "");
-    let code = minted["value"]["code"].as_str().unwrap().to_owned();
-    let (linked, _) = moor(&daemon, &["user", "link", &code], "");
-    assert_eq!(linked["class"], "refused", "{linked}");
-    let message = linked["error"]["message"].as_str().unwrap();
-    assert!(message.contains("already linked"), "{linked}");
-}
-
 /// `user`'s secret `name` as the controller stored it, opened with the vault key beside its
 /// config; the sealed value starts with a `<user> <name>` line the vault checks.
 fn stored_secret(daemon: &Daemon, user: i64, name: &str) -> Vec<u8> {

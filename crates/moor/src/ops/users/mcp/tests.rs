@@ -21,7 +21,7 @@ fn add(name: &str, url: &str, key: Option<&str>) -> UserCmd {
 }
 
 fn enrolled(f: &Fixture, who: &str) -> moor_core::user::UserId {
-    f.cx.store().unwrap().enroll(&id(who)).unwrap().0
+    f.cx.store().unwrap().enroll(&id(who), None).unwrap().0
 }
 
 #[test]
