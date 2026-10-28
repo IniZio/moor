@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use moor_client::{AttachKeys, ByteStream, Client, ClientError};
 use moor_core::request::AttachReq;
@@ -15,8 +15,9 @@ use moor_core::view::{AttachEnd, AttachView};
 use rustix::termios::{self, OptionalActions, Termios};
 use serde_json::json;
 
-use crate::boxes::{open_box, wake, Phase};
-use crate::card::{Card, Choice, Ended, DETACH_BYTE};
+use crate::boxes::{wake, watch_box, Phase};
+use crate::card::progress::{failure, Happened, EVENTS};
+use crate::card::{Card, Choice, Ended, Progress, DETACH_BYTE};
 use crate::error::Error;
 
 /// What the pane's loop reacts to.
@@ -193,7 +194,7 @@ fn closed_while(rx: &Receiver<Event>, every: Duration, mut starting: impl FnMut(
             Ok(Event::Keys(bytes)) => {
                 if bytes
                     .iter()
-                    .any(|b| Card::Starting.key(*b) == Choice::Close)
+                    .any(|b| Card::Starting(Progress::default()).key(*b) == Choice::Close)
                 {
                     return true;
                 }
@@ -225,6 +226,55 @@ fn attach_once(client: &Client, name: &str, events: (&Sender<Event>, &Receiver<E
     }
 }
 
+/// Now, in unix seconds.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the pane's one clock read; the progress it feeds takes the time as an argument"
+)]
+fn now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(0))
+}
+
+/// Draws a starting Box's card from its `events`.
+fn draw_starting(label: &str, events: &[Happened]) -> io::Result<()> {
+    draw(label, &Card::Starting(Progress::of(events, now())), None)
+}
+
+/// Redraws the progress of the starting Box `name` until it is up; `true` when the user closed
+/// the pane meanwhile.
+fn watch_starting(
+    client: &Client,
+    name: &str,
+    label: &str,
+    rx: &Receiver<Event>,
+) -> io::Result<bool> {
+    let mut drawn = Ok(());
+    let closed = closed_while(rx, POLL, || match watch_box(client, name, EVENTS) {
+        Ok((Some(b), events)) if b.phase == Phase::Starting => {
+            drawn = draw_starting(label, &events);
+            drawn.is_ok()
+        }
+        _ => false,
+    });
+    drawn.map(|()| closed)
+}
+
+/// The card after `ended`, from the Box as the controller shows it now.
+fn card_after(client: &Client, name: &str, ended: &Ended, branch: Option<String>) -> Card {
+    match watch_box(client, name, EVENTS) {
+        Ok((now, events)) => {
+            let mut card = Card::after(ended, now.as_ref(), branch);
+            if let Card::Closed { why, .. } = &mut card {
+                *why = failure(&events);
+            }
+            card
+        }
+        Err(e) => Card::Refused(e.to_string()),
+    }
+}
+
 /// Runs the pane for Box `name` until the user closes it from the card.
 pub fn run(client: &Client, name: &str) -> Result<(), Error> {
     let _raw = Raw::enter()?;
@@ -233,19 +283,15 @@ pub fn run(client: &Client, name: &str) -> Result<(), Error> {
     let mut branch = None;
     let mut label = crate::boxes::label(None, name);
     loop {
-        let card = match open_box(client, name) {
-            Ok(before) => {
+        let card = match watch_box(client, name, EVENTS) {
+            Ok((before, events)) => {
                 if let Some(b) = &before {
                     branch = b.branch.clone().or(branch);
                     label = b.label();
                 }
                 if before.as_ref().is_some_and(|b| b.phase == Phase::Starting) {
-                    draw(&label, &Card::Starting, None)?;
-                    let starting = || {
-                        open_box(client, name)
-                            .is_ok_and(|b| b.is_some_and(|b| b.phase == Phase::Starting))
-                    };
-                    if closed_while(&rx, POLL, starting) {
+                    draw_starting(&label, &events)?;
+                    if watch_starting(client, name, &label, &rx)? {
                         return Ok(());
                     }
                     continue;
@@ -256,10 +302,7 @@ pub fn run(client: &Client, name: &str) -> Result<(), Error> {
                     }
                     _ => Ended::Skipped,
                 };
-                match open_box(client, name) {
-                    Ok(now) => Card::after(&ended, now.as_ref(), branch.clone()),
-                    Err(e) => Card::Refused(e.to_string()),
-                }
+                card_after(client, name, &ended, branch.clone())
             }
             Err(e) => Card::Refused(e.to_string()),
         };

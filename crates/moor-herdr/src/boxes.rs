@@ -7,6 +7,7 @@ use moor_core::request::Request;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::card::progress::Happened;
 use crate::error::Error;
 
 /// The mark that starts every Box workspace label, and how sync tells its workspaces apart.
@@ -138,6 +139,9 @@ struct ShowValue {
     /// The Box named.
     #[serde(rename = "box")]
     boxed: Option<Row>,
+    /// The named Box's latest events, oldest first, when they were asked for.
+    #[serde(default)]
+    events: Option<Vec<Happened>>,
 }
 
 impl Row {
@@ -212,6 +216,30 @@ pub fn open_box(client: &Client, name: &str) -> Result<Option<Shown>, Error> {
         (None, Some(value)) => parse_one(value),
         _ => Ok(None),
     }
+}
+
+/// Box `name` as `show` reads it, with its latest `events` events, oldest first; no Box once
+/// the controller shows none by that name.
+pub fn watch_box(
+    client: &Client,
+    name: &str,
+    events: u32,
+) -> Result<(Option<Shown>, Vec<Happened>), Error> {
+    let wire = json!({"cmd": "show", "box": name, "events": events});
+    let reply = client.request(request(wire)?, |_| {})?;
+    match (reply.error, reply.value) {
+        (None, Some(value)) => parse_watched(value),
+        _ => Ok((None, Vec::new())),
+    }
+}
+
+/// The Box and events in a `show <box>` value asked for its events.
+pub fn parse_watched(value: Value) -> Result<(Option<Shown>, Vec<Happened>), Error> {
+    let shown: ShowValue = serde_json::from_value(value)?;
+    Ok((
+        shown.boxed.map(Row::shown),
+        shown.events.unwrap_or_default(),
+    ))
 }
 
 /// Wakes the asleep Box `name`.
