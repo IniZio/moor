@@ -77,7 +77,8 @@ each open Box is one row: its label `◈ repo/name`, its state icon and words, a
 - `[attach]` brings the Box's workspace to the front, making it first if herdr has none.
 - `[wake]`, shown only on an asleep Box, wakes it.
 - `[close]` closes the Box on the controller. The first click turns it into `[confirm close]`;
-  a second click within four seconds closes the Box. Otherwise it turns back.
+  a second click within four seconds closes the Box and removes its workspace from the sidebar.
+  Otherwise it turns back. A Box closed anywhere else keeps its workspace, marked `✕`.
 
 The list refreshes every 2 seconds. The line under the top row says what the last click did, or
 why it failed.

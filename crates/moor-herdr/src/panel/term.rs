@@ -67,7 +67,22 @@ impl Ops for Live<'_> {
     }
 
     fn close(&mut self, name: &str) -> Result<(), Error> {
-        boxes::close(&self.client, name)
+        let label = open_boxes(&self.client)?
+            .iter()
+            .find(|b| b.name == name)
+            .map(Shown::label);
+        boxes::close(&self.client, name)?;
+        // A close from the panel is the user dismissing the card as well.
+        let Some(label) = label else { return Ok(()) };
+        for space in self
+            .herdr
+            .spaces()?
+            .into_iter()
+            .filter(|s| s.label == label)
+        {
+            self.herdr.close_space(&space.id)?;
+        }
+        Ok(())
     }
 
     fn new_box(&mut self) -> Result<(), Error> {

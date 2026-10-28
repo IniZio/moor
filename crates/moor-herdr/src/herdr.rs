@@ -114,6 +114,11 @@ impl Cli {
         self.call(&args).map(drop)
     }
 
+    /// Closes `workspace` with its panes.
+    pub fn close_space(&self, workspace: &str) -> Result<(), Error> {
+        self.call(&["workspace", "close", workspace]).map(drop)
+    }
+
     /// The string at `path` in `value`.
     fn text(value: &Value, path: &str) -> Result<String, Error> {
         value
