@@ -44,6 +44,22 @@ installed release if there is one, else `moor-herdr` from PATH or `~/.cargo/bin`
 `moor-herdr herdr-setup` prints its snippet. `MOOR_HERDR_BIN` in the plugin's `env` file
 overrides the binary either way.
 
+## A remote moor
+
+To use a moor server instead of a local controller, install the plugin as above, then name
+the server in the plugin's `env` file in place of `MOOR_HERDR_SOCKET`, and sign in once:
+
+```sh
+echo MOOR_HERDR_SERVER=https://moor.example.com >> "$(herdr plugin config-dir moor)/env"
+~/.local/state/herdr/plugins/moor/bin/moor-herdr login
+```
+
+`login` opens your browser to sign in and then returns to a page on `localhost:53682`. If the
+browser cannot reach that port (you are on a remote machine, say), paste the address it ended
+on at the prompt. The plugin keeps the sign-in in `credentials.json` in its state dir, readable
+only by you, and renews it by itself. `moor-herdr logout` deletes it. With neither
+`MOOR_HERDR_SERVER` nor `MOOR_HERDR_SOCKET` set, nothing connects.
+
 ## Releases
 
 Pull requests go to `develop`. `.github/workflows/cd.yaml` runs semantic-release on every push

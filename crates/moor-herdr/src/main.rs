@@ -3,11 +3,14 @@
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use moor_client::Client;
+use moor_herdr::auth::login::{self, Console};
+use moor_herdr::auth::{self, Store, Tokens};
 use moor_herdr::boxes::open_boxes;
 use moor_herdr::error::Error;
 use moor_herdr::herdr::Cli;
@@ -22,6 +25,9 @@ struct Args {
     /// The controller socket to dial.
     #[arg(long, env = "MOOR_HERDR_SOCKET", global = true)]
     socket: Option<PathBuf>,
+    /// The moor server to dial, `https://<host>`; sign in with `moor-herdr login`.
+    #[arg(long, env = "MOOR_HERDR_SERVER", global = true)]
+    server: Option<String>,
     /// What to do.
     #[command(subcommand)]
     cmd: Cmd,
@@ -53,6 +59,10 @@ enum Cmd {
         #[arg(long, env = "MOOR_HERDR_WORKSPACE")]
         workspace: String,
     },
+    /// Sign in to the server in your browser.
+    Login,
+    /// Forget the saved sign-in.
+    Logout,
     /// Print the herdr config snippet that colours Boxes and binds moor's keys.
     HerdrSetup {
         /// The default shell to name; the plugin's own `bin/shell.sh` if left out.
@@ -78,28 +88,77 @@ fn main() -> ExitCode {
     }
 }
 
+/// Where the controller is: a socket on this machine, or a signed-in server.
+enum Link {
+    /// A controller's Unix socket.
+    Socket(PathBuf),
+    /// A moor server.
+    Server(String),
+}
+
+impl Link {
+    /// The link the command line and environment name; a server wins over a socket.
+    fn of(args: &Args) -> Result<Self, Error> {
+        match (&args.server, &args.socket) {
+            (Some(server), _) => Ok(Self::Server(auth::normalize(server))),
+            (None, Some(socket)) => Ok(Self::Socket(socket.clone())),
+            (None, None) => Err(Error::Usage(
+                "no controller: set MOOR_HERDR_SERVER (or pass --server), or MOOR_HERDR_SOCKET for a local socket"
+                    .to_owned(),
+            )),
+        }
+    }
+
+    /// A client dialing this link.
+    fn client(&self) -> Client {
+        match self {
+            Self::Socket(socket) => Client::new(socket),
+            Self::Server(server) => Client::remote(
+                server.clone(),
+                Arc::new(Tokens::new(Store::new(auth::state_dir()), server)),
+            ),
+        }
+    }
+
+    /// The flags that make a child `moor-herdr` dial this link.
+    fn flags(&self) -> String {
+        match self {
+            Self::Socket(socket) => format!("--socket {}", shell_quote(&socket.to_string_lossy())),
+            Self::Server(server) => format!("--server {}", shell_quote(server)),
+        }
+    }
+
+    /// Whether there is something to dial: a socket file, or any server.
+    fn present(&self) -> bool {
+        match self {
+            Self::Socket(socket) => socket.exists(),
+            Self::Server(_) => true,
+        }
+    }
+}
+
 /// Runs one subcommand.
 fn run(args: &Args) -> Result<(), Error> {
-    let socket = || {
-        args.socket.clone().ok_or_else(|| {
-            Error::Usage("no controller socket: pass --socket or set MOOR_HERDR_SOCKET".to_owned())
-        })
-    };
     match &args.cmd {
         Cmd::HerdrSetup { shell } => Ok(write!(
             io::stdout(),
             "{}",
             setup::snippet(&shell.clone().unwrap_or_else(setup::shell_path))
         )?),
-        Cmd::Shell { login } => shell::run(args.socket.as_deref(), *login),
-        Cmd::Attach { name } => relay::run(&Client::new(socket()?), name),
-        Cmd::Sync { every } => sync(&socket()?, *every),
-        Cmd::New { workspace } => new(&socket()?, workspace),
+        Cmd::Shell { login } => {
+            let link = Link::of(args).ok();
+            shell::run(link.map(|l| (l.client(), l.present())), *login)
+        }
+        Cmd::Login => sign_in(args),
+        Cmd::Logout => sign_out(),
+        Cmd::Attach { name } => relay::run(&Link::of(args)?.client(), name),
+        Cmd::Sync { every } => sync(&Link::of(args)?, *every),
+        Cmd::New { workspace } => new(&Link::of(args)?, workspace),
         Cmd::Panel { workspace } => {
-            let socket = socket()?;
-            let attach = attach_command(&std::env::current_exe()?, &socket);
+            let link = Link::of(args)?;
+            let attach = attach_command(&std::env::current_exe()?, &link);
             panel::term::run(&mut panel::term::Live {
-                client: Client::new(&socket),
+                client: link.client(),
                 herdr: Cli::from_env(),
                 workspace: workspace.clone(),
                 attach: &attach,
@@ -108,23 +167,58 @@ fn run(args: &Args) -> Result<(), Error> {
     }
 }
 
+/// Signs in to the named server in the browser and saves the credentials.
+fn sign_in(args: &Args) -> Result<(), Error> {
+    let Some(server) = &args.server else {
+        return Err(Error::Usage(
+            "no server: pass --server https://<host> or set MOOR_HERDR_SERVER".to_owned(),
+        ));
+    };
+    let store = Store::new(auth::state_dir());
+    login::run(
+        server,
+        login::REDIRECT_PORT,
+        &store,
+        &mut Console,
+        auth::unix_now(),
+    )
+    .map_err(Error::Usage)?;
+    writeln!(io::stderr(), "Signed in to {}.", auth::normalize(server))?;
+    Ok(())
+}
+
+/// Deletes the saved credentials.
+fn sign_out() -> Result<(), Error> {
+    let gone = Store::new(auth::state_dir()).delete()?;
+    writeln!(
+        io::stderr(),
+        "{}",
+        if gone {
+            "Signed out."
+        } else {
+            "Not signed in."
+        }
+    )?;
+    Ok(())
+}
+
 /// The shell command that runs a Box's pane.
-fn attach_command(exe: &Path, socket: &Path) -> impl Fn(&str) -> String {
+fn attach_command(exe: &Path, link: &Link) -> impl Fn(&str) -> String {
     let prefix = format!(
-        "exec {} --socket {} attach",
+        "exec {} {} attach",
         shell_quote(&exe.to_string_lossy()),
-        shell_quote(&socket.to_string_lossy())
+        link.flags()
     );
     move |name: &str| format!("{prefix} {}", shell_quote(name))
 }
 
 /// Runs the picker in herdr's popup, which closes with this process, so a failure waits for
 /// Enter to be read first.
-fn new(socket: &Path, workspace: &str) -> Result<(), Error> {
-    let attach = attach_command(&std::env::current_exe()?, socket);
+fn new(link: &Link, workspace: &str) -> Result<(), Error> {
+    let attach = attach_command(&std::env::current_exe()?, link);
     let done = picker::run(
         &mut Tty,
-        &Client::new(socket),
+        &link.client(),
         &mut Cli::from_env(),
         workspace,
         &attach,
@@ -137,10 +231,10 @@ fn new(socket: &Path, workspace: &str) -> Result<(), Error> {
 }
 
 /// Syncs once, or every `every` seconds, logging changes and failures.
-fn sync(socket: &Path, every: Option<u64>) -> Result<(), Error> {
-    let client = Client::new(socket);
+fn sync(link: &Link, every: Option<u64>) -> Result<(), Error> {
+    let client = link.client();
     let exe = std::env::current_exe()?;
-    let attach = attach_command(&exe, socket);
+    let attach = attach_command(&exe, link);
     let herdr = std::env::var_os("HERDR_SOCKET_PATH").map(PathBuf::from);
     loop {
         // A follower that outlived its herdr server would sync nothing forever.

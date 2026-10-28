@@ -132,14 +132,14 @@ fn relay_shell(client: &Client, name: &str) -> Result<Ended, Error> {
 
 /// Runs a new pane's shell. Returns only when a Box shell ended, or with the error that kept
 /// the user's own shell from starting.
-pub fn run(socket: Option<&Path>, login: bool) -> Result<(), Error> {
+pub fn run(controller: Option<(Client, bool)>, login: bool) -> Result<(), Error> {
     let workspace = std::env::var("HERDR_WORKSPACE_ID").ok();
     let pane = Pane {
         workspace: workspace.as_deref(),
         agent: std::env::var(AGENT_PANE.0).is_ok_and(|v| v == AGENT_PANE.1),
-        socket: socket.is_some_and(Path::exists),
+        socket: controller.as_ref().is_some_and(|(_, there)| *there),
     };
-    let client = socket.map(Client::new);
+    let client = controller.map(|(client, _)| client);
     let target = decide(
         pane,
         || crate::herdr::Herdr::spaces(&mut crate::herdr::Cli::from_env()),
