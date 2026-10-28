@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use moor_client::Client;
-use moor_core::request::{AsReq, Request, SecretSetReq, SecretValue};
+use moor_core::request::{AsReq, EnrollReq, Request, SecretSetReq, SecretValue};
 use moor_core::user::SecretName;
 use moor_core::view::user::{SecretNamesValue, StartNeedsValue};
 use serde_json::{json, Value};
@@ -50,7 +50,7 @@ impl Vault for Client {
     }
 
     fn enroll(&self) -> Result<(), Error> {
-        ask(self, Request::Enroll(AsReq { identity: None })).map(drop)
+        ask(self, Request::Enroll(EnrollReq { identity: None, email: None })).map(drop)
     }
 
     fn store(&self, name: &SecretName, value: SecretValue) -> Result<(), Error> {
