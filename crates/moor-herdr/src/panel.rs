@@ -14,6 +14,10 @@ pub mod view;
 /// How long an armed `[confirm close]` waits for its second click.
 pub const CONFIRM_WINDOW: Duration = Duration::from_secs(4);
 
+/// How soon after arming a second press still counts as the first click: a double click, or
+/// presses herdr hands the pane at once, must not close a Box.
+pub const CONFIRM_MIN: Duration = Duration::from_millis(300);
+
 /// The row the first Box is drawn on; the toolbar and a status line sit above it.
 pub const FIRST_BOX_ROW: u16 = 2;
 
@@ -58,6 +62,12 @@ pub struct Confirm {
 impl Confirm {
     /// Presses close on `name`: `true` when this press confirms an armed close of the same Box.
     pub fn press(&mut self, name: &str, now: Instant) -> bool {
+        let too_soon = self.armed.as_ref().is_some_and(|(armed, at)| {
+            armed == name && now.saturating_duration_since(*at) < CONFIRM_MIN
+        });
+        if too_soon {
+            return false;
+        }
         let confirmed = self.armed(now) == Some(name);
         self.armed = (!confirmed).then(|| (name.to_owned(), now));
         confirmed
@@ -176,7 +186,10 @@ impl Panel {
                 Piece::text(" "),
                 Piece::button("refresh", Button::Refresh),
             ],
-            vec![Piece::text(self.note.clone())],
+            vec![Piece::text(self.confirm.armed(now).map_or_else(
+                || self.note.clone(),
+                |name| format!("Close {name}? Press [confirm close] again."),
+            ))],
         ];
         if self.boxes.is_empty() {
             lines.push(vec![Piece::text("No open Boxes.")]);
@@ -282,7 +295,7 @@ impl Panel {
             Button::Attach(name) => ops.attach(name).map(|()| format!("Attached {name}.")),
             Button::Wake(name) => ops.wake(name).map(|()| format!("Waking {name}...")),
             Button::Close(name) if !self.confirm.press(name, now) => {
-                self.note = format!("Close {name}? Press [confirm close] again.");
+                self.note.clear();
                 return;
             }
             Button::Close(name) => ops.close(name).map(|()| format!("Closed {name}.")),
