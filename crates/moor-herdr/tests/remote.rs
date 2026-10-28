@@ -20,10 +20,14 @@ use std::time::Duration;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use moor_client::TokenSource;
+use moor_core::controller::PROTOCOL;
+use moor_core::response::Response;
 use moor_herdr::auth::login::{self, Ui};
 use moor_herdr::auth::{Credentials, Store, Tokens};
+use moor_herdr::connect;
 use oauth2::url::Url;
 use sha2::{Digest, Sha256};
+use tungstenite::{Message, WebSocket};
 
 const NOW: i64 = 1_000_000;
 
@@ -34,6 +38,10 @@ struct State {
     /// Current refresh token.
     refresh: String,
     refreshes: usize,
+    /// Request frames the signed-in front received.
+    requests: Vec<String>,
+    /// The front drops every connection.
+    front_down: bool,
 }
 
 /// A tiny identity provider and moor server in one: discovery, authorize, token.
@@ -163,6 +171,53 @@ fn token(stream: &mut TcpStream, body: &str, state: &Mutex<State>) {
     }
 }
 
+/// The front: answers hello, then every request with an empty success, noting what it saw.
+fn front(mut stream: TcpStream, state: &Mutex<State>) {
+    if state.lock().unwrap().front_down {
+        let mut sink = [0_u8; 1024];
+        let _ = stream.read(&mut sink);
+        respond(&mut stream, "401 Unauthorized", "", "{}");
+        return;
+    }
+    let Ok(mut ws) = tungstenite::accept(stream) else {
+        return;
+    };
+    let mut pending = Vec::new();
+    let mut hello = false;
+    while let Ok(Message::Binary(bytes)) = ws.read() {
+        pending.extend_from_slice(&bytes);
+        while let Some(at) = pending.iter().position(|b| *b == b'\n') {
+            let line = String::from_utf8(pending.drain(..=at).collect()).unwrap();
+            let reply = if hello {
+                state.lock().unwrap().requests.push(line.trim().to_owned());
+                let ok = serde_json::to_string(&Response::ok("enroll", None)).unwrap();
+                format!(r#"{{"frame":"response","id":"1","envelope":{ok}}}"#)
+            } else {
+                hello = true;
+                format!(r#"{{"frame":"hello","protocol":{PROTOCOL}}}"#)
+            };
+            send(&mut ws, &format!("{reply}\n"));
+        }
+    }
+}
+
+fn send(ws: &mut WebSocket<TcpStream>, line: &str) {
+    let _ = ws.send(Message::Binary(line.as_bytes().to_vec().into()));
+}
+
+/// True when the connection opens with the front's upgrade request.
+fn is_front(stream: &TcpStream) -> bool {
+    let mut head = [0_u8; 11];
+    for _ in 0..200 {
+        match stream.peek(&mut head) {
+            Ok(11) => return &head == b"GET /front ",
+            Ok(_) => std::thread::sleep(Duration::from_millis(5)),
+            Err(_) => return false,
+        }
+    }
+    false
+}
+
 fn fake() -> Fake {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
@@ -171,7 +226,13 @@ fn fake() -> Fake {
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             let (b, s) = (b.clone(), Arc::clone(&s));
-            std::thread::spawn(move || handle(stream, &b, &s));
+            std::thread::spawn(move || {
+                if is_front(&stream) {
+                    front(stream, &s);
+                } else {
+                    handle(stream, &b, &s);
+                }
+            });
         }
     });
     Fake { base, state }
@@ -263,6 +324,33 @@ fn pasting_the_callback_completes_login_and_saves_0600_credentials() {
         .permissions()
         .mode();
     assert_eq!(mode & 0o777, 0o600);
+}
+
+#[test]
+fn signing_in_enrolls_the_person_with_moor() {
+    let fake = fake();
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path());
+    connect::sign_in(&fake.base, 0, &store, &mut person(true), NOW).unwrap();
+    let requests = fake.state.lock().unwrap().requests.clone();
+    assert_eq!(requests.len(), 1, "{requests:?}");
+    assert!(requests[0].contains(r#""cmd":"enroll""#), "{requests:?}");
+    assert!(!requests[0].contains("email"), "{requests:?}");
+}
+
+#[test]
+fn a_front_that_refuses_after_sign_in_is_reported_and_keeps_the_sign_in() {
+    let fake = fake();
+    fake.state.lock().unwrap().front_down = true;
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path());
+    let err = connect::sign_in(&fake.base, 0, &store, &mut person(true), NOW).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("signed in, but moor did not answer"),
+        "{err}"
+    );
+    assert!(store.read().unwrap().is_some());
 }
 
 #[test]

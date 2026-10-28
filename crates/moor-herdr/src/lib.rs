@@ -5,6 +5,7 @@
 pub mod auth;
 pub mod boxes;
 pub mod card;
+pub mod connect;
 pub mod error;
 pub mod herdr;
 pub mod panel;

@@ -1,6 +1,14 @@
 //! Why a `moor-herdr` command failed.
 
 use moor_client::ClientError;
+use moor_core::user::SecretName;
+use moor_core::view::user::StartNeedsValue;
+
+/// The names of the secrets a refused start lacks, comma separated.
+fn missing(needs: &StartNeedsValue) -> String {
+    let names: Vec<&str> = needs.missing.iter().map(SecretName::as_str).collect();
+    names.join(", ")
+}
 
 /// A failed `moor-herdr` step.
 #[derive(Debug, thiserror::Error)]
@@ -22,6 +30,9 @@ pub enum Error {
     /// The controller answered with an error.
     #[error("controller: {0}")]
     Refused(String),
+    /// The controller refused a start for secrets the person has not stored.
+    #[error("controller: log in first: missing {}", missing(.0))]
+    LoginRequired(Box<StartNeedsValue>),
     /// The controller's answer had an unexpected shape.
     #[error("unreadable controller answer: {0}")]
     Json(#[from] serde_json::Error),
