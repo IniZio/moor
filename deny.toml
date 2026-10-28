@@ -57,7 +57,9 @@ ignore = true
 multiple-versions = "deny"
 wildcards = "deny"
 allow-wildcard-paths = true
-skip = []
+skip = [
+  { crate = "signal-hook@0.3.18", reason = "crossterm, under ratatui in moor-herdr, is still on 0.3; moor uses 0.4" },
+]
 skip-tree = [
   { crate = "nono-proxy@0.80.0", reason = "nono-proxy's aws and sigstore stack duplicates many crates; versions are not ours to align" },
   { crate = "rmcp@3.7.0", reason = "rmcp needs rand 0.10 while age and tungstenite stay on 0.8 and 0.9; versions are not ours to align" },
