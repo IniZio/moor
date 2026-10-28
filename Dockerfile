@@ -111,8 +111,10 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,targe
     --mount=type=cache,target=/build/target \
     features=""; \
     if [ -n "$MOOR_FEATURES" ]; then features="--features $(echo "$MOOR_FEATURES" | sed 's#\([^,]\+\)#moor/\1#g')"; fi; \
-    cargo build --release --locked -p moor -p moor-slack -p moor-machine-runner $features \
- && for b in moor moor-slack moor-machine-runner; do install -D "target/release/$b" "/out/$b"; done
+    bins="moor moor-slack moor-machine-runner"; \
+    if [ -d crates/moor-gate ]; then bins="$bins moor-gate"; fi; \
+    cargo build --release --locked $(for b in $bins; do printf -- '-p %s ' "$b"; done) $features \
+ && for b in $bins; do install -D "target/release/$b" "/out/$b"; done
 
 
 FROM ${NODE_IMAGE} AS runtime
