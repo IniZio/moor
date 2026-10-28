@@ -17,7 +17,7 @@ use moor_herdr::{panel, relay, setup, shell};
 
 /// moor Boxes in herdr.
 #[derive(Debug, Parser)]
-#[command(name = "moor-herdr", version)]
+#[command(name = "moor-herdr", version = option_env!("MOOR_VERSION").unwrap_or(env!("CARGO_PKG_VERSION")))]
 struct Args {
     /// The controller socket to dial.
     #[arg(long, env = "MOOR_HERDR_SOCKET", global = true)]

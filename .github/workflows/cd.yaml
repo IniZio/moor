@@ -1,0 +1,103 @@
+name: CD
+
+# Every push to main (stable vX.Y.Z) or develop (vX.Y.Z-nightly.N) lets semantic-release decide
+# from the commit types whether to release; the builds run only when it made a tag.
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    paths:
+      - .github/workflows/cd.yaml
+      - .releaserc.json
+      - crates/moor-herdr/herdr/build.sh
+
+concurrency:
+  group: cd-${{ github.ref }}
+  # A cancel mid-publish would leave a release without some of its binaries.
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  release:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.semantic.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Install semantic-release
+        run: |
+          npm install --no-save \
+            semantic-release@24.2.3 \
+            @semantic-release/commit-analyzer@13.0.1 \
+            @semantic-release/release-notes-generator@14.1.3 \
+            @semantic-release/github@11.0.6 \
+            conventional-changelog-conventionalcommits@8.0.0
+      - id: semantic
+        name: Release if the commits call for one
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          before=$(git tag -l 'v*' | sort)
+          ./node_modules/.bin/semantic-release
+          git fetch -q --tags --force origin
+          tag=$(comm -13 <(echo "$before") <(git tag -l 'v*' | sort) | tail -n 1)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "${tag:-no release this run}"
+
+  build:
+    needs: release
+    if: always() && (needs.release.outputs.tag != '' || github.event_name == 'pull_request')
+    strategy:
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: macos-latest, target: x86_64-apple-darwin }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.release.outputs.tag || 'v0.0.0-check' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.tag || github.sha }}
+          persist-credentials: false
+      - name: Install toolchain from rust-toolchain.toml
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add ${{ matrix.target }}
+      - run: MOOR_VERSION=${TAG#v} cargo build -p moor-herdr --release --locked --target ${{ matrix.target }}
+      - name: Package
+        run: |
+          asset=moor-herdr-${{ matrix.target }}.tar.gz
+          mkdir -p dist
+          tar -czf "dist/$asset" -C target/${{ matrix.target }}/release moor-herdr
+          (cd dist && shasum -a 256 "$asset" > "$asset.sha256")
+      - name: The plugin installs from this build
+        if: matrix.target != 'x86_64-apple-darwin'
+        run: |
+          home=$(mktemp -d)
+          mkdir -p "$home/rel/$TAG" && cp dist/* "$home/rel/$TAG/"
+          HOME=$home XDG_CONFIG_HOME= XDG_STATE_HOME= MOOR_HERDR_TAG=$TAG MOOR_HERDR_RELEASES="file://$home/rel" \
+            sh crates/moor-herdr/herdr/build.sh
+          "$home/.local/state/herdr/plugins/moor/bin/moor-herdr" --version | grep -qx "moor-herdr ${TAG#v}"
+          grep -q "default_shell = \"$home/.local/state/herdr/plugins/moor/shell.sh\"" "$home/.config/herdr/plugins/config/moor/herdr-setup.toml"
+      - name: Upload
+        if: github.event_name == 'push'
+        run: gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}
