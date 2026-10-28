@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Records a release in the private deploy repository.
-#   nightly tag -> commit on the default branch
-#   stable tag  -> branch bump/<version>, which that repository turns into a PR
-# Env: TAG, GITOPS_DEPLOY_KEY, GITOPS_REPO; GITOPS_URL replaces the SSH remote.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)

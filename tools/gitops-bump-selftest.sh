@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Runs .github/scripts/gitops-bump.sh against a scratch bare repository.
-# GITOPS_FIXTURE_DIR may point at a deploy/environments tree to use instead of the built-in one.
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -74,10 +72,8 @@ tagline bump/1.2.3 stable | grep -q 'tag: "1.2.3"' || fail "stable tag not set"
 [ "$(show main stable)" = "$(show "$before" stable)" ] || fail "stable file on main changed"
 run v1.2.3 >/dev/null || fail "stable re-run failed"
 
-# Not a release tag.
 if run vnext >/dev/null 2>&1; then fail "accepted a bad tag"; fi
 
-# Host key pinning: GitHub's published ed25519 key passes, any other key fails.
 printf 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl\n' > "$tmp/good"
 "$hostkey" "$tmp/good" "$tmp/known" || fail "rejected GitHub's key"
 ssh-keygen -q -t ed25519 -N '' -f "$tmp/other"

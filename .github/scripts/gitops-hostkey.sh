@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
-# Usage: gitops-hostkey.sh <ssh-keyscan output> <known_hosts to write>
-# Accepts only GitHub's published ed25519 host key, so a hijacked keyscan cannot
-# point the deploy key at another server.
 set -euo pipefail
 
-# From https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints
 pinned='SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU'
 
 scan=${1:?keyscan output file}
