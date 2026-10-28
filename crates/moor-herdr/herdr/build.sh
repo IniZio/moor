@@ -1,7 +1,4 @@
 #!/bin/sh
-# herdr runs this on a GitHub install, not on `plugin link`, and in a checkout it moves
-# afterwards. So the matching moor-herdr release and a copy of the default shell go to the
-# plugin's state dir, and the config snippet naming that shell to its config dir.
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 conf=${XDG_CONFIG_HOME:-$HOME/.config}/herdr/plugins/config/moor
