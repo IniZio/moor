@@ -2,12 +2,15 @@
 //! on the controller and shown as a workspace of its own, ready to attach.
 
 use std::io::{self, BufRead, Write};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::thread;
+use std::time::Duration;
 
 use moor_client::Client;
 use moor_core::request::Request;
 use serde_json::json;
 
-use crate::boxes::{open_boxes, request, Shown};
+use crate::boxes::{open_box, open_boxes, request, Phase, Shown};
 use crate::error::Error;
 use crate::herdr::Herdr;
 use crate::sync::reconcile;
@@ -24,7 +27,7 @@ pub trait Prompt {
 pub trait Controller {
     /// Every open Box.
     fn open(&self) -> Result<Vec<Shown>, Error>;
-    /// Starts the Box `start` describes.
+    /// Starts the Box `start` describes, returning once the controller lists it or refuses it.
     fn start(&self, start: &Start) -> Result<(), Error>;
 }
 
@@ -75,11 +78,41 @@ impl Controller for Client {
         open_boxes(self)
     }
 
+    // The controller finishes a start whose client hung up, so the popup may close with the
+    // request still running; the Box's pane shows the rest.
     fn start(&self, start: &Start) -> Result<(), Error> {
-        let reply = self.request(start_request(start)?, |_| {})?;
-        reply
-            .error
-            .map_or(Ok(()), |e| Err(Error::Refused(e.message)))
+        let req = start_request(start)?;
+        let (done, outcome) = mpsc::channel();
+        let client = self.clone();
+        thread::spawn(move || {
+            let reply = client.request(req, |_| {}).map_err(Error::from);
+            let _ = done.send(
+                reply.and_then(|r| r.error.map_or(Ok(()), |e| Err(Error::Refused(e.message)))),
+            );
+        });
+        accepted(&outcome, ACCEPT_POLL, || {
+            open_box(self, &start.name).is_ok_and(|b| b.is_some_and(|b| b.phase != Phase::Closed))
+        })
+    }
+}
+
+/// How often the picker asks whether the Box it started is listed yet.
+const ACCEPT_POLL: Duration = Duration::from_millis(500);
+
+/// Waits for a start's `outcome` until `listed` sees its Box, asking `every` so often: a refusal
+/// comes before the Box exists, and once the Box is listed the start is accepted.
+fn accepted(
+    outcome: &Receiver<Result<(), Error>>,
+    every: Duration,
+    mut listed: impl FnMut() -> bool,
+) -> Result<(), Error> {
+    loop {
+        match outcome.recv_timeout(every) {
+            Ok(done) => return done,
+            Err(RecvTimeoutError::Timeout) if listed() => return Ok(()),
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => return Ok(()),
+        }
     }
 }
 
