@@ -1,7 +1,7 @@
 //! A Box's claim on one of its user's machines: wanted, held in a slot, or asleep. Wants are
 //! granted first come, first served, in one write transaction per claim or tick.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use moor_core::config::{pick_machine, unslot_ports, MachinePick, RepoMachine, UserMachine};
 use moor_core::domain::event::{Event, MachineEvent};
@@ -10,7 +10,7 @@ use moor_core::user::UserId;
 use moor_core::BoxId;
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 
-use super::{claim_in, held_in, machines_in, put_in, Claim};
+use super::{claim_in, held_in, machines_in, owned_in, put_in, Claim};
 use crate::store::apply::insert_event;
 use crate::store::{Store, StoreError};
 
@@ -207,7 +207,13 @@ fn position_in(conn: &Connection, id: BoxId, user: UserId) -> Result<u16, StoreE
 /// oldest first, the slot `pick_machine` finds free.
 fn grant_in(conn: &Transaction<'_>, user: UserId, now: Ts) -> Result<(), StoreError> {
     drop_expired_in(conn, user, now)?;
-    let own = machines_in(conn, user)?;
+    let owned = owned_in(conn, user)?;
+    let enrolled: BTreeSet<String> = owned
+        .iter()
+        .filter(|(id, _)| id.is_some())
+        .map(|(_, m)| m.name.clone())
+        .collect();
+    let own: Vec<UserMachine> = owned.into_iter().map(|(_, m)| m).collect();
     let mut held = held_in(conn, user)?;
     for (id, box_name) in wants_in(conn, user)? {
         let Some(claim) = claim_in(conn, id)? else {
@@ -221,6 +227,10 @@ fn grant_in(conn: &Transaction<'_>, user: UserId, now: Ts) -> Result<(), StoreEr
         else {
             continue;
         };
+        let on_enrolled = enrolled.contains(&machine.name);
+        if claim.enrolled && !on_enrolled {
+            continue;
+        }
         held.entry(machine.name.clone())
             .or_default()
             .insert(slot, box_name);
@@ -234,6 +244,7 @@ fn grant_in(conn: &Transaction<'_>, user: UserId, now: Ts) -> Result<(), StoreEr
             &Claim {
                 state,
                 ports,
+                enrolled: on_enrolled,
                 ..claim
             },
         )?;

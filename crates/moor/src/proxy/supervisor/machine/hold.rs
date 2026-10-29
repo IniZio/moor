@@ -16,6 +16,9 @@ pub(in crate::proxy) fn hold_of(store: &Store, box_id: BoxId) -> Hold {
         return missing("the Box's machine could not be read".to_owned());
     };
     let Some(claim) = claim else {
+        if let Ok(Some(name)) = store.removed_machine(box_id) {
+            return missing(format!("machine {name} was removed"));
+        }
         return missing(
             "this Box has no machine: its repo's .moor.yaml asks for none, or none was free when it started"
                 .to_owned(),

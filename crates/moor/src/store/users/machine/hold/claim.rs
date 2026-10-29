@@ -8,7 +8,7 @@ use moor_core::user::UserId;
 use moor_core::BoxId;
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 
-use super::super::{claim_in, machines_in, owned_in, put_in, Claim};
+use super::super::{claim_in, machines_in, named_in, put_in, Claim};
 use moor_core::{HoldOp, HoldValue};
 
 use super::{grant_in, position_in, said_waiting, why_waiting, ClaimState};
@@ -180,6 +180,7 @@ fn new_want(
         state,
         ports: ports.unwrap_or_default(),
         sync_exclude: exclude.to_vec(),
+        enrolled: false,
     })
 }
 
@@ -190,16 +191,18 @@ fn held_value(conn: &Connection, id: BoxId) -> Result<HoldValue, StoreError> {
         user,
         state: ClaimState::Held { machine, slot },
         ports,
+        enrolled,
         ..
     }) = claim
     else {
         return Err(StoreError::Corrupt("box_machines: no held row".into()));
     };
-    let (machine_id, ssh) = owned_in(conn, user)?
-        .into_iter()
-        .find(|(_, m)| m.name == machine)
-        .map(|(id, m)| (id, m.ssh))
-        .unwrap_or_default();
+    let found = named_in(conn, user, &machine, enrolled)?;
+    if enrolled && found.is_none() {
+        let reason = format!("machine {machine} was removed");
+        return Ok(HoldValue::Refused { reason });
+    }
+    let (machine_id, ssh) = found.map(|(id, m)| (id, m.ssh)).unwrap_or_default();
     Ok(HoldValue::Held {
         machine,
         ssh,

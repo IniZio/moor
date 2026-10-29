@@ -135,9 +135,7 @@ impl Store {
             } => (machine, 0, MachineHoldState::Waiting),
             ClaimState::Wanted { machine: None, .. } => return Ok(None),
         };
-        let machine = owned_in(&self.reader()?, claim.user)?
-            .into_iter()
-            .find(|(_, m)| m.name == name);
+        let machine = named_in(&self.reader()?, claim.user, &name, claim.enrolled)?;
         Ok(machine.map(|(machine_id, machine)| HeldMachine {
             machine,
             machine_id,
@@ -146,6 +144,25 @@ impl Store {
             sync_exclude: claim.sync_exclude,
             state,
         }))
+    }
+
+    /// The name of the enrolled machine `box_id`'s claim is on, when its owner has since removed
+    /// it.
+    pub(crate) fn removed_machine(&self, box_id: BoxId) -> Result<Option<String>, StoreError> {
+        let conn = self.reader()?;
+        let Some(claim) = claim_in(&conn, box_id)? else {
+            return Ok(None);
+        };
+        let name = match claim.state {
+            ClaimState::Held { machine, .. } | ClaimState::Asleep { machine, .. } => machine,
+            ClaimState::Wanted {
+                machine: Some(machine),
+                ..
+            } => machine,
+            ClaimState::Wanted { machine: None, .. } => return Ok(None),
+        };
+        let gone = claim.enrolled && named_in(&conn, claim.user, &name, true)?.is_none();
+        Ok(gone.then_some(name))
     }
 }
 
@@ -159,12 +176,15 @@ struct Claim {
     ports: Vec<u16>,
     /// What syncs leave alone.
     sync_exclude: Vec<String>,
+    /// Whether the machine it was given is an enrolled one, so a later machine of the same name
+    /// reached over ssh never stands in for it.
+    enrolled: bool,
 }
 
 /// The `box_machines` row of `box_id`, read through `conn`.
 fn claim_in(conn: &Connection, box_id: BoxId) -> Result<Option<Claim>, StoreError> {
-    let sql = "SELECT user, state, machine, labels, slot, ports, sync_exclude, since, until \
-               FROM box_machines WHERE box = ?";
+    let sql = "SELECT user, state, machine, labels, slot, ports, sync_exclude, since, until, \
+               enrolled FROM box_machines WHERE box = ?";
     let row = conn
         .query_row(sql, [box_id.get()], |r| Ok(ClaimRow::read(r)))
         .optional()?;
@@ -191,6 +211,8 @@ struct ClaimRow {
     since: i64,
     /// `until`, in ms.
     until: Option<i64>,
+    /// `enrolled`.
+    enrolled: bool,
 }
 
 impl ClaimRow {
@@ -206,6 +228,7 @@ impl ClaimRow {
             sync_exclude: r.get(6)?,
             since: r.get(7)?,
             until: r.get(8)?,
+            enrolled: r.get(9)?,
         })
     }
 
@@ -236,6 +259,7 @@ impl ClaimRow {
             state,
             ports: from_json("ports", &self.ports)?,
             sync_exclude: from_json("sync_exclude", &self.sync_exclude)?,
+            enrolled: self.enrolled,
         })
     }
 }
@@ -285,7 +309,7 @@ fn put_in(conn: &Connection, box_id: BoxId, claim: &Claim) -> Result<(), StoreEr
     };
     conn.execute(
         "INSERT OR REPLACE INTO box_machines (box, user, state, machine, labels, slot, ports, \
-         sync_exclude, since, until) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         sync_exclude, since, until, enrolled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             box_id.get(),
             claim.user.get(),
@@ -296,7 +320,8 @@ fn put_in(conn: &Connection, box_id: BoxId, claim: &Claim) -> Result<(), StoreEr
             to_json(&claim.ports)?,
             to_json(&claim.sync_exclude)?,
             since,
-            until
+            until,
+            claim.enrolled
         ],
     )?;
     Ok(())
@@ -363,6 +388,27 @@ fn owned_in(
         own.insert(m.name.clone(), (Some(id), m));
     }
     Ok(own.into_values().collect())
+}
+
+/// `user`'s machine `name`, enrolled or reached over ssh as `enrolled` says, with its enrolled id.
+fn named_in(
+    conn: &Connection,
+    user: UserId,
+    name: &str,
+    enrolled: bool,
+) -> Result<Option<(Option<i64>, UserMachine)>, StoreError> {
+    let found = if enrolled {
+        links::enrolled_in(conn, user)?
+            .into_iter()
+            .find(|(_, m)| m.name == name)
+            .map(|(id, m)| (Some(id), m))
+    } else {
+        ssh_machines_in(conn, user)?
+            .into_iter()
+            .find(|m| m.name == name)
+            .map(|m| (None, m))
+    };
+    Ok(found)
 }
 
 /// `user`'s machines reached over ssh by name, read through `conn`.
