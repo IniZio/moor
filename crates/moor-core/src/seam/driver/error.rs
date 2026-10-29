@@ -26,6 +26,8 @@ pub enum DriverError {
     Unavailable(String),
     /// Provider cannot do this.
     Unsupported(&'static str),
+    /// The provider moor looked up is not one crabbox knows.
+    UnknownProvider(String),
     /// A reverse tunnel stopped or stalled before it was ready.
     Tunnel {
         /// What went wrong.
