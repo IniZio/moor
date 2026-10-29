@@ -44,16 +44,7 @@ fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
                         && inner["box"].is_string()
                         && !is_known(&started, box_name.unwrap())
                     {
-                        let error = ErrorView {
-                            kind: ErrorKind::NotFound,
-                            message: "no such box".to_owned(),
-                            hints: vec![],
-                            context: vec![],
-                            detail: None,
-                        };
-                        let out = json!({"frame": "response", "id": frame["id"],
-                            "envelope": Response::err("show", error)});
-                        writeln!(reply, "{out}").unwrap();
+                        writeln!(reply, "{}", not_found(&frame["id"])).unwrap();
                         continue;
                     }
                     let value = match cmd {
@@ -80,6 +71,18 @@ fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
 /// A `show` of one Box by name, which `start_box` sends to see whether the Box exists yet.
 fn is_existence_probe(frame: &Value) -> bool {
     frame["request"]["request"]["cmd"] == "show" && frame["request"]["request"]["box"].is_string()
+}
+
+/// The controller's answer to frame `id` for a `show` of a Box that does not exist.
+fn not_found(id: &Value) -> Value {
+    let error = ErrorView {
+        kind: ErrorKind::NotFound,
+        message: "no such box".to_owned(),
+        hints: vec![],
+        context: vec![],
+        detail: None,
+    };
+    json!({"frame": "response", "id": id, "envelope": Response::err("show", error)})
 }
 
 /// Whether `show` of the Box `name` finds it: one of the fixed Boxes or one started.
