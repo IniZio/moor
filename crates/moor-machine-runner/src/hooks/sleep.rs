@@ -7,8 +7,9 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::{box_env, open_boxes, read, tail, write, Facts, Hooks, Record};
-use crate::caller::Caller;
-use crate::exec;
+use moor_client::link::ops::Hook;
+
+use crate::caller::{Caller, Reach};
 use crate::holds::Holds;
 use crate::relay::Relays;
 
@@ -34,10 +35,8 @@ impl Hooks {
         };
         relays.end_box(id).await;
         holds.release_box(id);
-        if let Some(command) = &self.suspend {
-            let env = box_env(id, record.slot, &record.facts);
-            self.on_machine(id, &record.ssh, &env, command).await?;
-        }
+        let env = box_env(id, record.slot, &record.facts);
+        self.hook(id, &record.reach, Hook::Suspend, &env).await?;
         record.suspended_at = Some(now());
         write(&path, &record).map_err(|e| format!("could not note the suspend: {e}"))
     }
@@ -50,16 +49,16 @@ impl Hooks {
             return Ok(());
         }
         let floor = self.min_free_gb.saturating_mul(KIB_PER_GB);
-        let mut free = self.free_kib(&caller.ssh).await?;
+        let mut free = self.free_kib(caller).await?;
         if free >= floor {
             return Ok(());
         }
-        for id in self.sleepers(&caller.ssh, caller.box_id.get()).await {
+        for id in self.sleepers(&caller.reach, caller.box_id.get()).await {
             if let Err(e) = self.evict(id).await {
                 eprintln!("moor-machine-runner: could not remove the files of Box {id}: {e}");
                 continue;
             }
-            free = self.free_kib(&caller.ssh).await?;
+            free = self.free_kib(caller).await?;
             if free >= floor {
                 return Ok(());
             }
@@ -74,11 +73,11 @@ impl Hooks {
         ))
     }
 
-    /// Free KiB in the machine user's home.
-    async fn free_kib(&self, target: &str) -> Result<u64, String> {
-        let out = exec::run(target, "df -Pk ~", self.timeout)
-            .await
-            .map_err(|e| format!("could not run the remote shell: {e}"))?;
+    /// Free KiB in the home of `caller`'s machine user.
+    async fn free_kib(&self, caller: &Caller) -> Result<u64, String> {
+        let out = self
+            .helper(caller.box_id.get(), &caller.reach, "df -Pk ~")
+            .await?;
         if out.exit_code != Some(0) {
             return Err(format!(
                 "could not read the free disk space: {}",
@@ -90,7 +89,7 @@ impl Hooks {
 
     /// The suspended Boxes on `target` that the controller still lists asleep, besides
     /// `except`, oldest sleep first.
-    async fn sleepers(&self, target: &str, except: i64) -> Vec<i64> {
+    async fn sleepers(&self, target: &Reach, except: i64) -> Vec<i64> {
         let client = self.client.clone();
         let open = match tokio::task::spawn_blocking(move || open_boxes(&client)).await {
             Ok(Ok(open)) => open,
@@ -110,7 +109,7 @@ impl Hooks {
             .filter(|id| *id != except && open.asleep.contains(id))
             .filter_map(|id| {
                 let record = read(&self.record(id)).ok().flatten()?;
-                let at = record.suspended_at.filter(|_| record.ssh == target)?;
+                let at = record.suspended_at.filter(|_| record.reach == *target)?;
                 Some((at, id))
             })
             .collect();

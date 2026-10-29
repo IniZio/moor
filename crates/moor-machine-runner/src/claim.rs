@@ -16,7 +16,7 @@ use rmcp::{tool, tool_router, ErrorData, RoleServer};
 use serde::{Deserialize, Serialize};
 
 use crate::beat::Progress;
-use crate::caller::Caller;
+use crate::caller::{Caller, Reach};
 use crate::hooks::Facts;
 use crate::Runner;
 
@@ -186,15 +186,19 @@ async fn claim(
             HoldValue::Held {
                 machine,
                 ssh,
+                machine_id,
                 slot,
                 ports,
             } => {
                 let sync_exclude = Vec::new();
+                let reach = match machine_id {
+                    Some(machine_id) => Reach::Linked { machine_id },
+                    None => Reach::Ssh { ssh },
+                };
                 let caller = Caller {
                     box_id: id,
                     machine,
-                    ssh,
-                    machine_id: None,
+                    reach,
                     slot,
                     sync_exclude,
                 };

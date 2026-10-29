@@ -13,6 +13,9 @@ use moor_core::BoxId;
 use moor_client::Client;
 
 use super::{open_boxes, tail, Hooks};
+use moor_client::link::ops::Hook;
+
+use crate::caller::Reach;
 use crate::exec;
 
 /// Shell lines that give a command a state dir of its own and a `TMPDIR` inside it, so what the
@@ -135,21 +138,20 @@ impl Hooks {
 
     /// Runs `release` for a Box without a record, so without facts, then removes its files.
     async fn release_orphan(&self, target: &str, id: i64) -> Result<(), String> {
-        if let Some(command) = &self.release {
-            let env = [("MOOR_BOX".to_owned(), id.to_string())];
-            self.on_machine(id, target, &env, command).await?;
-        }
-        self.remove_on_machine(target, id).await
+        let reach = Reach::Ssh {
+            ssh: target.to_owned(),
+        };
+        let env = [("MOOR_BOX".to_owned(), id.to_string())];
+        self.hook(id, &reach, Hook::Release, &env).await?;
+        self.remove_on_machine(&reach, id).await
     }
 
     /// Removes Box `id`'s copy and state dir on the machine.
-    pub(super) async fn remove_on_machine(&self, target: &str, id: i64) -> Result<(), String> {
+    pub(super) async fn remove_on_machine(&self, reach: &Reach, id: i64) -> Result<(), String> {
         let key = BoxKey::new(BoxId::new(id));
         let (copy, state) = (key.machine_dir(), key.machine_state_dir());
         let script = format!("cd && rm -rf -- {copy} {state}");
-        let out = exec::run(target, &script, self.timeout)
-            .await
-            .map_err(|e| format!("could not run the remote shell: {e}"))?;
+        let out = self.helper(id, reach, &script).await?;
         match out.exit_code {
             Some(0) => Ok(()),
             _ => Err(format!(
@@ -174,5 +176,5 @@ fn machine_targets(client: &Client) -> Result<BTreeSet<String>, String> {
     let value = response.value.unwrap_or_default();
     let listed: MachineTargetsValue = serde_json::from_value(value)
         .map_err(|e| format!("the controller's machine list is malformed: {e}"))?;
-    Ok(listed.targets.into_iter().collect())
+    Ok(listed.targets.into_iter().filter(|t| !t.is_empty()).collect())
 }

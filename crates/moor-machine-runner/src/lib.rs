@@ -54,6 +54,7 @@ mod exec;
 mod holds;
 mod hooks;
 mod info;
+mod link;
 mod pull;
 mod relay;
 mod sync;
@@ -76,11 +77,13 @@ pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
         reconcile: config.reconcile,
         listed: Mutex::default(),
         preparing: Mutex::default(),
+        agents: config.agents.clone(),
     });
     let relays = Arc::new(Relays::new(
         config.relays,
         config.relay_idle,
         config.hook_timeout,
+        config.agents.clone(),
     ));
     let holds = Arc::new(Holds::new(config.resources));
     let runner = Runner {

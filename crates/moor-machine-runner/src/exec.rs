@@ -11,6 +11,9 @@ use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 use tokio::sync::oneshot;
 
+use crate::caller::Reach;
+use crate::link;
+
 /// Timeout when the call names none.
 pub(crate) const DEFAULT_TIMEOUT_SECS: u64 = 600;
 /// Longest timeout a call may ask for.
@@ -200,7 +203,7 @@ pub(crate) fn bounded(name: &str, secs: u64, max: u64) -> Result<Duration, Error
 }
 
 /// Runs `command` in the Box's copy on its machine with `facts` exported, over the machine's
-/// link when it holds one and over ssh otherwise.
+/// link when it is enrolled and over ssh otherwise.
 pub(crate) async fn on_machine(
     agents: Option<&crate::Agents>,
     caller: &crate::caller::Caller,
@@ -209,35 +212,35 @@ pub(crate) async fn on_machine(
     timeout: Duration,
 ) -> Result<ExecOutput, String> {
     let env = crate::hooks::fact_env(facts);
-    let Some(machine_id) = caller.machine_id else {
-        let prelude = crate::hooks::state_prelude(caller.box_id.get());
-        let body = format!("{prelude}cd ~/{} && {command}", caller.remote_dir());
-        return run(&caller.ssh, &script(&env, &body), timeout)
-            .await
-            .map_err(|e| format!("could not run ssh: {e}"));
+    let machine_id = match &caller.reach {
+        Reach::Ssh { ssh } => {
+            let prelude = crate::hooks::state_prelude(caller.box_id.get());
+            let body = format!("{prelude}cd ~/{} && {command}", caller.remote_dir());
+            return run(ssh, &script(&env, &body), timeout)
+                .await
+                .map_err(|e| format!("could not run ssh: {e}"));
+        }
+        Reach::Linked { machine_id } => *machine_id,
     };
-    let offline = |why: String| format!("machine {} is offline: {why}", caller.machine);
-    let agents = agents.ok_or_else(|| offline("this runner takes no agent links".to_owned()))?;
-    let mut stream = agents.open(machine_id).await.map_err(offline)?;
     let op = ops::Op::Exec {
         box_id: caller.box_id.get(),
         env,
         script: command.to_owned(),
-        timeout_secs: timeout.as_secs(),
+        timeout_secs: link::secs(timeout),
     };
-    ops::write_line(&mut stream, &op)
-        .await
-        .map_err(|e| offline(e.to_string()))?;
-    match ops::read_line(&mut stream).await.map_err(offline)? {
-        ops::Reply::Ran(ran) => Ok(ExecOutput {
+    match link::send(agents, &caller.machine, machine_id, &op).await? {
+        link::Answer::Ran(ran) => Ok(ran.into()),
+        _ => Err(format!("machine {} answered no run", caller.machine)),
+    }
+}
+
+impl From<ops::Ran> for ExecOutput {
+    fn from(ran: ops::Ran) -> Self {
+        Self {
             exit_code: ran.exit_code,
             timed_out: ran.timed_out,
             output: ran.output,
             truncated: ran.truncated,
-        }),
-        ops::Reply::Refused { reason } => {
-            Err(format!("machine {} refused: {reason}", caller.machine))
         }
-        other => Err(format!("machine {} answered {other:?}", caller.machine)),
     }
 }

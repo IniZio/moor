@@ -8,7 +8,7 @@ use moor_core::user::UserId;
 use moor_core::BoxId;
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 
-use super::super::{claim_in, machines_in, put_in, Claim};
+use super::super::{claim_in, machines_in, owned_in, put_in, Claim};
 use moor_core::{HoldOp, HoldValue};
 
 use super::{grant_in, position_in, said_waiting, why_waiting, ClaimState};
@@ -195,14 +195,15 @@ fn held_value(conn: &Connection, id: BoxId) -> Result<HoldValue, StoreError> {
     else {
         return Err(StoreError::Corrupt("box_machines: no held row".into()));
     };
-    let ssh = machines_in(conn, user)?
+    let (machine_id, ssh) = owned_in(conn, user)?
         .into_iter()
-        .find(|m| m.name == machine)
-        .map(|m| m.ssh)
+        .find(|(_, m)| m.name == machine)
+        .map(|(id, m)| (id, m.ssh))
         .unwrap_or_default();
     Ok(HoldValue::Held {
         machine,
         ssh,
+        machine_id,
         slot,
         ports,
     })

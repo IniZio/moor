@@ -22,9 +22,12 @@ use rmcp::{ClientHandler, ErrorData, RoleClient, RoleServer, ServiceExt};
 use tokio::process::{Child, Command};
 use tokio::time::Instant;
 
-use crate::caller::Caller;
+use moor_client::link::ops::Op;
+
+use crate::caller::{Caller, Reach};
 use crate::exec;
 use crate::hooks::{self, Facts};
+use crate::link::{self, Answer};
 use crate::relay::tools::{expose, mcp_name, Route};
 
 mod tools;
@@ -44,6 +47,8 @@ pub struct Relay {
 
 /// Every relay and the sessions open to them.
 pub(crate) struct Relays {
+    /// The links that carry relays for enrolled machines, which start their own relay files.
+    agents: Option<crate::Agents>,
     /// The relays, in flag order.
     list: Vec<Relay>,
     /// How long a session may go without a call.
@@ -68,8 +73,8 @@ type Progress = Arc<Mutex<HashMap<String, (ProgressToken, Peer<RoleServer>)>>>;
 struct Session {
     /// The MCP client; dropping it closes the server's stdin.
     service: RunningService<RoleClient, Forward>,
-    /// The ssh process carrying the session.
-    child: Child,
+    /// The ssh process carrying the session; none when the machine's link carries it.
+    child: Option<Child>,
     /// The relay's tools as listed to the Box.
     tools: Vec<Tool>,
     /// Listed name to how a call to it is relayed.
@@ -121,8 +126,14 @@ impl ClientHandler for Forward {
 }
 
 impl Relays {
-    pub(crate) fn new(relays: Vec<Relay>, idle: Duration, start_timeout: Duration) -> Self {
+    pub(crate) fn new(
+        relays: Vec<Relay>,
+        idle: Duration,
+        start_timeout: Duration,
+        agents: Option<crate::Agents>,
+    ) -> Self {
         Self {
+            agents,
             list: relays,
             idle,
             start_timeout,
@@ -319,28 +330,40 @@ impl Relays {
         facts: &Facts,
         taken: &[String],
     ) -> Result<Session, String> {
-        let dir = caller.remote_dir();
-        let prelude = hooks::state_prelude(caller.box_id.get());
-        let body = format!(
-            "{prelude}mkdir -p ~/{dir} && cd ~/{dir} && exec \"$SHELL\" -lc {}",
-            exec::quote(&relay.command)
-        );
         let env = hooks::box_env(caller.box_id.get(), caller.slot, facts);
-        let mut child = Command::new("ssh")
-            .args(["-o", "BatchMode=yes", "--", &caller.ssh])
-            .arg(exec::script(&env, &body))
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|e| format!("could not run ssh: {e}"))?;
-        let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
-            return Err("ssh has no stdio".to_owned());
+        let (service, child) = match &caller.reach {
+            Reach::Ssh { ssh } => {
+                let mut child = self.over_ssh(caller, ssh, relay, &env)?;
+                let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take())
+                else {
+                    return Err("ssh has no stdio".to_owned());
+                };
+                let service = Forward(Arc::clone(&self.progress)).serve((stdout, stdin));
+                (service.await, Some(child))
+            }
+            Reach::Linked { machine_id } => {
+                let op = Op::Relay {
+                    box_id: caller.box_id.get(),
+                    name: relay.name.clone(),
+                    env,
+                };
+                let stream =
+                    match link::send(self.agents.as_ref(), &caller.machine, *machine_id, &op)
+                        .await?
+                    {
+                        Answer::Started(stream) => stream,
+                        Answer::Missing => {
+                            return Err(format!("machine {} has no such relay", caller.machine))
+                        }
+                        Answer::Ran(_) => {
+                            return Err(format!("machine {} ran the relay as a command", caller.machine))
+                        }
+                    };
+                let service = Forward(Arc::clone(&self.progress)).serve(tokio::io::split(stream));
+                (service.await, None)
+            }
         };
-        let service = Forward(Arc::clone(&self.progress))
-            .serve((stdout, stdin))
-            .await
-            .map_err(|e| format!("could not start: {e}"))?;
+        let service = service.map_err(|e| format!("could not start: {e}"))?;
         let listed = service
             .peer()
             .list_all_tools()
@@ -360,18 +383,51 @@ impl Relays {
     }
 }
 
+impl Relays {
+    /// Starts `relay`'s command on the caller's machine over ssh, with `env`.
+    fn over_ssh(
+        &self,
+        caller: &Caller,
+        ssh: &str,
+        relay: &Relay,
+        env: &[(String, String)],
+    ) -> Result<Child, String> {
+        let dir = caller.remote_dir();
+        let prelude = hooks::state_prelude(caller.box_id.get());
+        let body = format!(
+            "{prelude}mkdir -p ~/{dir} && cd ~/{dir} && exec \"$SHELL\" -lc {}",
+            exec::quote(&relay.command)
+        );
+        Command::new("ssh")
+            .args(["-o", "BatchMode=yes", "--", ssh])
+            .arg(exec::script(env, &body))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(|e| format!("could not run ssh: {e}"))
+    }
+}
+
 impl Session {
     /// Whether its server still runs.
     fn alive(&mut self) -> bool {
-        !self.service.is_closed() && matches!(self.child.try_wait(), Ok(None))
+        !self.service.is_closed()
+            && self
+                .child
+                .as_mut()
+                .is_none_or(|c| matches!(c.try_wait(), Ok(None)))
     }
 
     /// Closes the server's stdin and waits up to 5 s for ssh to exit, then kills it.
-    async fn end(mut self) {
+    async fn end(self) {
         let _ = self.service.cancel().await;
-        let wait = tokio::time::timeout(Duration::from_secs(5), self.child.wait());
+        let Some(mut child) = self.child else {
+            return;
+        };
+        let wait = tokio::time::timeout(Duration::from_secs(5), child.wait());
         if wait.await.is_err() {
-            let _ = self.child.kill().await;
+            let _ = child.kill().await;
         }
     }
 }

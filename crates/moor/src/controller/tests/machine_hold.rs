@@ -237,6 +237,7 @@ fn a_request_and_its_values_round_trip_on_the_wire() {
         HoldValue::Held {
             machine: "mini".to_owned(),
             ssh: "dev@mac".to_owned(),
+            machine_id: None,
             slot: 1,
             ports: vec![8090],
         },

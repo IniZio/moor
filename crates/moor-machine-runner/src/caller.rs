@@ -5,6 +5,7 @@ use moor_core::box_key::BoxKey;
 use moor_core::config::{check_exclude, check_ssh};
 use moor_core::BoxId;
 use rmcp::ErrorData;
+use serde::{Deserialize, Serialize};
 
 /// Header carrying the calling Box's numeric store id.
 const BOX: &str = "X-Moor-Box";
@@ -30,10 +31,8 @@ pub(crate) struct Caller {
     pub(crate) box_id: BoxId,
     /// The machine's name, for messages.
     pub(crate) machine: String,
-    /// The ssh target the host reaches the machine at; empty for a linked machine.
-    pub(crate) ssh: String,
-    /// The machine's enrolled id when its agent links in, whose link then carries every call.
-    pub(crate) machine_id: Option<i64>,
+    /// How the runner reaches the machine.
+    pub(crate) reach: Reach,
     /// The Box's slot on the machine: 0 up to [`MAX_SLOT`].
     pub(crate) slot: u16,
     /// rsync patterns every sync leaves alone, from the Box's config.
@@ -64,12 +63,12 @@ impl Caller {
                     .ok_or_else(|| refused(format!("header {MACHINE_ID} is not a machine id")))?,
             ),
         };
-        let ssh = if machine_id.is_some() {
-            String::new()
+        let reach = if let Some(machine_id) = machine_id {
+            Reach::Linked { machine_id }
         } else {
             let ssh = header(SSH)?;
             check_ssh(&ssh).map_err(|e| refused(format!("header {SSH}: {e}")))?;
-            ssh
+            Reach::Ssh { ssh }
         };
         let raw = header(SLOT)?;
         let slot = raw
@@ -98,8 +97,7 @@ impl Caller {
         Ok(Self {
             box_id,
             machine,
-            ssh,
-            machine_id,
+            reach,
             slot,
             sync_exclude,
         })
@@ -128,6 +126,33 @@ impl Caller {
     /// The Box's copy on the machine, relative to the machine user's home.
     pub(crate) fn remote_dir(&self) -> String {
         BoxKey::new(self.box_id).machine_dir()
+    }
+}
+
+/// How the runner reaches a machine: one with an enrolled id only over its agent's link, so no
+/// ssh target is ever made up for it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum Reach {
+    /// Its agent links in under this enrolled id.
+    Linked {
+        /// The enrolled id.
+        machine_id: i64,
+    },
+    /// The host dials this ssh target.
+    Ssh {
+        /// Such as `user@host`.
+        ssh: String,
+    },
+}
+
+impl Reach {
+    /// The ssh target, or why `what` cannot reach a linked machine yet.
+    pub(crate) fn ssh(&self, what: &str) -> Result<&str, String> {
+        match self {
+            Self::Ssh { ssh } => Ok(ssh),
+            Self::Linked { .. } => Err(format!("{what} to enrolled machines is not available yet")),
+        }
     }
 }
 
