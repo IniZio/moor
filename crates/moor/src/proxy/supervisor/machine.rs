@@ -46,7 +46,7 @@ impl Running<'_> {
                 return;
             }
         };
-        let (machine, ports) = (want.machine, want.ports);
+        let (machine, ports, enrolled) = (want.machine, want.ports, want.machine_id.is_some());
         let mut slot = self.machine.borrow_mut();
         let wanted = Some((machine.name.clone(), ports.clone()));
         if slot.opened != wanted {
@@ -54,6 +54,12 @@ impl Running<'_> {
         }
         let fresh = !slot.link.as_mut().is_some_and(MachineLink::alive);
         let open = || {
+            if enrolled {
+                return Err(ForwardFailed {
+                    port: None,
+                    error: "port forwarding to enrolled machines is not available yet".to_owned(),
+                });
+            }
             MachineLink::open(
                 self.deps.driver,
                 self.deps.proc,
