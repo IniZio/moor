@@ -433,7 +433,7 @@ fn list_boxes_says_why_a_box_failed_and_what_a_starting_one_waits_on() {
     let boxes = &reply["structuredContent"]["boxes"];
     assert_eq!(
         boxes[1]["status"],
-        format!("failed: machine failed: {ACQUIRE_FAILED}")
+        format!("machine failed: {ACQUIRE_FAILED}")
     );
     let starting = boxes[2]["status"].as_str().unwrap();
     assert!(starting.starts_with("starting · "), "{starting}");
@@ -453,10 +453,7 @@ fn box_status_carries_the_failure_text() {
         shown["failure"],
         format!("machine failed: {ACQUIRE_FAILED}")
     );
-    assert_eq!(
-        shown["status"],
-        format!("failed: machine failed: {ACQUIRE_FAILED}")
-    );
+    assert_eq!(shown["status"], format!("machine failed: {ACQUIRE_FAILED}"));
 }
 
 #[test]
