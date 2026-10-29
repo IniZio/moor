@@ -83,8 +83,8 @@ fn start_box_records_the_box_on_the_channel_default_with_the_host_session_as_par
     let db = fresh_thread(dir.path(), Some("acme/web"));
     let turn = turn_of(&db, "U1", "Ev1");
     let reply = start_with(&db, &start("bump the version", None), 1);
-    let said =
-        "Box `slack-1-0-1` is starting on acme/web. The thread will say when it has started.";
+    let said = "Box `slack-1-0-1` is starting on acme/web. It has not started yet and can still \
+                fail, so do not tell the thread it started; the thread will say whether it did.";
     assert_eq!(reply, Reply::done(said));
     let [row] = db.thread_boxes("C1", "1.0").unwrap().try_into().unwrap();
     assert_eq!(row.box_name.as_str(), "slack-1-0-1");
