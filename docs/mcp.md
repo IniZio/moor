@@ -30,10 +30,28 @@ read.
 | Tool | Arguments |
 | --- | --- |
 | `list_boxes` | none |
-| `start_box` | `repo` as `owner/name`; optional `name`, `prompt`, `base` |
+| `start_box` | `repo` as `owner/name`; optional `name`, `prompt`, `base`, `wait` |
 | `box_status` | `box` |
 | `send_to_box` | `box`, `text` |
 | `close_box` | `box` |
+
+### Starting without blocking
+
+A start clones the repo, runs setup and launches the agent, which takes minutes.
+`start_box` therefore returns as soon as the Box exists, with the same fields
+`box_status` gives (name, repo, branch, lifecycle, session state). Setup carries
+on in the background; poll `box_status` until the lifecycle is `ready`, or
+`failed` with the reason in its events. A failure after the early return shows
+only there, not in the `start_box` result.
+
+Pass `wait: true` to block until setup and the agent launch finish and get the
+controller's full start result, as `start_box` did before.
+
+If the Box name already exists, `start_box` does not return early: it attaches
+and answers as the controller does, so a start that collides with another
+start of the same name gets the controller's busy error, with or without `wait`.
+A start the controller refuses before the Box exists (bad repo, no capacity)
+returns that error directly.
 
 ## Operator setup
 

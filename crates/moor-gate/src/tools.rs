@@ -37,6 +37,9 @@ struct StartArgs {
     prompt: Option<String>,
     /// The revision to branch from; the repo's default branch when left out.
     base: Option<String>,
+    /// Wait for setup and the agent launch to finish before returning; false by default, so
+    /// the call returns once the Box exists and `box_status` shows its progress.
+    wait: Option<bool>,
 }
 
 /// Arguments of the tools that name one Box.
@@ -74,15 +77,21 @@ impl Tools {
     /// Starts a Box.
     #[tool(
         description = "Start a Box on a GitHub repo given as owner/name, optionally with a name, \
-                       a first prompt for its agent and a base revision. Needs the moor:write \
-                       scope."
+                       a first prompt for its agent and a base revision. Returns once the Box \
+                       exists, while setup continues; poll box_status. Pass wait=true to block \
+                       until setup and the agent launch finish. Needs the moor:write scope."
     )]
     async fn start_box(
         &self,
         context: RequestContext<RoleServer>,
         Parameters(args): Parameters<StartArgs>,
     ) -> CallToolResult {
-        self.run(&context, WRITE, start_request(args)).await
+        let wait = args.wait.unwrap_or(false);
+        let request = start_request(args);
+        if wait {
+            return self.run(&context, WRITE, request).await;
+        }
+        self.run_with(&context, WRITE, request, send_early).await
     }
 
     /// Shows one Box.
@@ -154,6 +163,17 @@ impl Tools {
         scope: &str,
         request: Result<ControllerRequest, String>,
     ) -> CallToolResult {
+        self.run_with(context, scope, request, send).await
+    }
+
+    /// Like [`Self::run`], sending with `sender`.
+    async fn run_with(
+        &self,
+        context: &RequestContext<RoleServer>,
+        scope: &str,
+        request: Result<ControllerRequest, String>,
+        sender: SendFn,
+    ) -> CallToolResult {
         let auth = context
             .extensions
             .get::<http::request::Parts>()
@@ -172,7 +192,8 @@ impl Tools {
             Err(why) => return failed(why),
         };
         let socket = self.front_socket.clone();
-        let sent = tokio::task::spawn_blocking(move || send(&socket, &auth.person, request)).await;
+        let sent =
+            tokio::task::spawn_blocking(move || sender(&socket, &auth.person, request)).await;
         match sent {
             Ok(Ok(value)) => CallToolResult::structured(value),
             Ok(Err(why)) => failed(why),
@@ -234,6 +255,62 @@ fn random() -> u32 {
     use std::hash::{BuildHasher, Hasher, RandomState};
     let bits = RandomState::new().build_hasher().finish();
     u32::try_from(bits & u64::from(u32::MAX)).unwrap_or_default()
+}
+
+/// The shape of [`send`] and [`send_early`].
+type SendFn = fn(&std::path::Path, &Person, ControllerRequest) -> Result<serde_json::Value, String>;
+
+/// How often [`send_early`] looks for the Box.
+const EARLY_POLL: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// The longest [`send_early`] waits for the Box to appear before giving up on returning early.
+const EARLY_LIMIT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Runs a `start` without waiting for it to finish: returns the Box's `show` as soon as the Box
+/// exists, while the controller's start carries on in the background. A start that ends first, or for
+/// a Box that exists already, answers with its own result. Other requests go through [`send`].
+fn send_early(
+    socket: &std::path::Path,
+    person: &Person,
+    request: ControllerRequest,
+) -> Result<serde_json::Value, String> {
+    let ControllerRequest::Start(start) = &request else {
+        return send(socket, person, request);
+    };
+    let show = ControllerRequest::Show(ShowReq {
+        target: Some(start.name.clone().into()),
+        events: Some(5),
+        agent: true,
+        reports: false,
+        artifacts: false,
+        pane: false,
+    });
+    if send(socket, person, show.clone()).is_ok() {
+        // The Box exists already: this start attaches or is refused as busy, and either answer
+        // comes from the controller, so wait for it.
+        return send(socket, person, request);
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    let (path, who) = (socket.to_path_buf(), person.clone());
+    std::thread::spawn(move || {
+        let _ = tx.send(send(&path, &who, request));
+    });
+    let began = std::time::Instant::now();
+    loop {
+        match rx.recv_timeout(EARLY_POLL) {
+            Ok(done) => return done,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                return Err("the start did not finish".to_owned());
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+        }
+        if let Ok(shown) = send(socket, person, show.clone()) {
+            return Ok(shown);
+        }
+        if began.elapsed() > EARLY_LIMIT {
+            return Err("the Box did not appear in time; check box_status".to_owned());
+        }
+    }
 }
 
 /// Enrolls `person`, then runs `request` as them; the controller's value, or why not.

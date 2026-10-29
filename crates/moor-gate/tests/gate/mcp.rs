@@ -1,10 +1,12 @@
 //! `/mcp` against the in-process issuer and a fake controller that answers like the real one:
 //! every request arrives wrapped in `as`, and `show` answers only for the identity it names.
 
+use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixListener;
+use std::sync::{Arc, Mutex};
 
-use moor_core::response::Response;
+use moor_core::response::{ErrorKind, ErrorView, Response};
 use serde_json::{json, Value};
 
 use std::sync::atomic::Ordering;
@@ -14,9 +16,11 @@ use super::{claims, mpsc, now, sign, world_with, World};
 fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
     let listener = UnixListener::bind(path).unwrap();
     let (tx, rx) = mpsc::channel();
+    let started = Arc::new(Mutex::new(HashSet::new()));
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             let tx = tx.clone();
+            let started = started.clone();
             std::thread::spawn(move || {
                 let mut reply = stream.try_clone().unwrap();
                 for line in BufReader::new(stream).lines().map_while(Result::ok) {
@@ -28,7 +32,31 @@ fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
                     tx.send(line).unwrap();
                     let inner = &frame["request"]["request"];
                     let who = frame["request"]["identity"].as_str().unwrap_or_default();
-                    let value = match inner["cmd"].as_str().unwrap_or_default() {
+                    let box_name = inner["name"].as_str().or(inner["box"].as_str());
+                    let cmd = inner["cmd"].as_str().unwrap_or_default();
+                    if cmd == "start" {
+                        started.lock().unwrap().insert(box_name.unwrap().to_owned());
+                        if box_name.unwrap().ends_with("/slow") {
+                            std::thread::sleep(std::time::Duration::from_secs(3));
+                        }
+                    }
+                    if cmd == "show"
+                        && inner["box"].is_string()
+                        && !started.lock().unwrap().contains(box_name.unwrap())
+                    {
+                        let error = ErrorView {
+                            kind: ErrorKind::NotFound,
+                            message: "no such box".to_owned(),
+                            hints: vec![],
+                            context: vec![],
+                            detail: None,
+                        };
+                        let out = json!({"frame": "response", "id": frame["id"],
+                            "envelope": Response::err("show", error)});
+                        writeln!(reply, "{out}").unwrap();
+                        continue;
+                    }
+                    let value = match cmd {
                         "show" => {
                             json!({"boxes": [{"name": format!("repo/{}", who.replace(':', "-")),
                                 "state": "ready"}]})
@@ -44,6 +72,11 @@ fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
         }
     });
     rx
+}
+
+/// A `show` of one Box by name, which `start_box` sends to see whether the Box exists yet.
+fn is_existence_probe(frame: &Value) -> bool {
+    frame["request"]["request"]["cmd"] == "show" && frame["request"]["request"]["box"].is_string()
 }
 
 struct Mcp {
@@ -166,6 +199,7 @@ impl Mcp {
             .try_iter()
             .map(|l| serde_json::from_str::<Value>(&l).unwrap())
             .filter(|f| f["request"]["request"]["cmd"] != "enroll")
+            .filter(|f| !is_existence_probe(f))
             .collect()
     }
 }
@@ -304,4 +338,33 @@ fn start_box_sends_a_start_as_the_person() {
             "cmd": "start", "name": "web/fix", "prompt": "fix it", "base": "main",
             "repo": "acme/web", "no_agent": false, "resume": false}})
     );
+}
+
+#[test]
+fn start_box_returns_while_the_start_is_still_running() {
+    let m = mcp();
+    let token = m.token("alice-sub", &m.url(), "moor:read moor:write");
+    let began = std::time::Instant::now();
+    let result = m.call(
+        &token,
+        "start_box",
+        json!({"repo": "acme/web", "name": "web/slow"}),
+    );
+    assert_ne!(result["isError"], true, "{result}");
+    assert!(began.elapsed() < std::time::Duration::from_secs(2));
+    assert!(result["structuredContent"]["boxes"].is_array(), "{result}");
+}
+
+#[test]
+fn start_box_with_wait_returns_the_start_result() {
+    let m = mcp();
+    let token = m.token("alice-sub", &m.url(), "moor:read moor:write");
+    let began = std::time::Instant::now();
+    let result = m.call(
+        &token,
+        "start_box",
+        json!({"repo": "acme/web", "name": "web/slow", "wait": true}),
+    );
+    assert!(began.elapsed() >= std::time::Duration::from_secs(3));
+    assert_eq!(result["structuredContent"]["started"], "web/slow");
 }
