@@ -58,7 +58,9 @@ impl Hooks {
         match link::send(self.agents.as_ref(), machine, machine_id, &op).await? {
             Answer::Ran(ran) => succeeded(ran.into()).map(Some),
             Answer::Missing => Ok(None),
-            Answer::Started(_) => Err(format!("machine {machine} started a hook as a relay")),
+            Answer::Started(_) | Answer::Sending(..) => {
+                Err(format!("machine {machine} answered no run"))
+            }
         }
     }
 

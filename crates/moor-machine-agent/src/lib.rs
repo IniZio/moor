@@ -18,6 +18,7 @@ use tokio::sync::mpsc;
 
 pub use crate::serve::Machine;
 
+mod files;
 mod serve;
 
 /// What `enroll` asks for.

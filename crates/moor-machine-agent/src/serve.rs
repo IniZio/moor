@@ -10,6 +10,8 @@ use moor_client::link::Channel;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
+use crate::files;
+
 /// How long a relay may take to exit once its stdin closes, before it is killed.
 const RELAY_EXIT: Duration = Duration::from_secs(5);
 
@@ -53,6 +55,8 @@ impl Machine {
 pub(crate) async fn serve(machine: &Machine, mut ch: Channel) {
     let reply = match ops::read_line::<_, Op>(&mut ch).await {
         Err(e) => refused(e),
+        Ok(Op::Sync { box_id, argv }) => return files::sync(machine, ch, box_id, &argv).await,
+        Ok(Op::Pull { box_id, path }) => return files::pull(machine, ch, box_id, &path).await,
         Ok(op) => match start(machine, op) {
             Ok(Start::Run(script, timeout)) => return ran(machine, ch, &script, timeout).await,
             Ok(Start::Relay(script)) => return relay(machine, ch, &script).await,
@@ -105,6 +109,7 @@ fn start(machine: &Machine, op: Op) -> Result<Start, Reply> {
             let body = format!("exec \"$SHELL\" -lc {}", ops::quote(&ops::quote(&path)));
             Ok(Start::Relay(ops::script(&env, &ops::in_box(box_id, &body))))
         }
+        Op::Sync { .. } | Op::Pull { .. } => Err(refused("not a command".to_owned())),
     }
 }
 

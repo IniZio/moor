@@ -49,7 +49,7 @@ impl Relays {
                         Answer::Missing => {
                             return Err(format!("machine {} has no such relay", caller.machine))
                         }
-                        Answer::Ran(_) => {
+                        Answer::Ran(_) | Answer::Sending(..) => {
                             return Err(format!(
                                 "machine {} ran the relay as a command",
                                 caller.machine

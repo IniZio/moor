@@ -25,6 +25,8 @@ pub const TAIL: usize = 64 * 1024;
 const DRAIN: Duration = Duration::from_secs(2);
 /// Longest timeout a request may ask for.
 pub const MAX_TIMEOUT_SECS: u64 = 3600;
+/// Largest file a pull carries.
+pub const MAX_PULL: u64 = 32 << 20;
 
 /// Runs the script on fd 3 in the login shell, in its own process group, and ends that group
 /// (TERM, then KILL after 5 s) once stdin reaches EOF: its carrier died or was killed. Without a
@@ -93,6 +95,21 @@ pub enum Op {
         /// Exported before the relay starts.
         env: Vec<(String, String)>,
     },
+    /// Receive a sync into the Box's dir: the agent runs `rsync --server` on the stream.
+    Sync {
+        /// The Box whose dir receives it.
+        box_id: i64,
+        /// The remote command rsync asked its shell to run, from `rsync --server`; its
+        /// destination must be the Box's dir, which the agent then names itself.
+        argv: Vec<String>,
+    },
+    /// Send one file from the Box's dirs; its bytes follow the answer.
+    Pull {
+        /// The Box whose dirs it lies in.
+        box_id: i64,
+        /// Absolute, or relative to the Box's dir.
+        path: String,
+    },
 }
 
 /// A Box lifecycle hook, a file of that name in the agent's hooks dir.
@@ -129,6 +146,11 @@ pub enum Reply {
     Started,
     /// The machine has no such hook or relay.
     Missing,
+    /// The pulled file's `bytes` follow on the stream.
+    Sending {
+        /// Its length.
+        bytes: u64,
+    },
     /// The request was not served.
     Refused {
         /// Why.
