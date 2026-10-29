@@ -37,4 +37,6 @@ pub struct Config {
     pub relay_idle: Duration,
     /// How often an open call's stream gets a ping, so no client or proxy on the way sees it idle.
     pub keep_alive: Duration,
+    /// The links machine agents hold, which carry calls for linked machines; none takes none.
+    pub agents: Option<crate::Agents>,
 }

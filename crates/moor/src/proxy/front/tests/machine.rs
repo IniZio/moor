@@ -66,6 +66,7 @@ fn rig() -> Rig {
                     box_id: BoxId::new(7),
                     name: "mac".to_owned(),
                     ssh: "dev@mac.example.com:22".to_owned(),
+                    machine_id: None,
                     slot: 1,
                     sync_exclude: vec!["node_modules".to_owned(), "app/build".to_owned()],
                 })

@@ -16,6 +16,8 @@ const SSH: &str = "X-Moor-Machine-Ssh";
 const SLOT: &str = "X-Moor-Machine-Slot";
 /// Header carrying what syncs leave alone, as a JSON array of rsync patterns; optional.
 const EXCLUDE: &str = "X-Moor-Machine-Exclude";
+/// Header carrying the machine's enrolled id when its agent links in; the ssh one is then unused.
+const MACHINE_ID: &str = "X-Moor-Machine-Id";
 /// Header carrying why the Box holds no machine slot; set instead of the machine headers.
 const MISSING: &str = "X-Moor-Machine-Missing";
 /// Highest slot: its ports, the repo's plus ten per slot, must stay below 65536.
@@ -28,8 +30,10 @@ pub(crate) struct Caller {
     pub(crate) box_id: BoxId,
     /// The machine's name, for messages.
     pub(crate) machine: String,
-    /// The ssh target the host reaches the machine at.
+    /// The ssh target the host reaches the machine at; empty for a linked machine.
     pub(crate) ssh: String,
+    /// The machine's enrolled id when its agent links in, whose link then carries every call.
+    pub(crate) machine_id: Option<i64>,
     /// The Box's slot on the machine: 0 up to [`MAX_SLOT`].
     pub(crate) slot: u16,
     /// rsync patterns every sync leaves alone, from the Box's config.
@@ -50,8 +54,23 @@ impl Caller {
         };
         let box_id = box_id(headers)?;
         let machine = header(MACHINE)?;
-        let ssh = header(SSH)?;
-        check_ssh(&ssh).map_err(|e| refused(format!("header {SSH}: {e}")))?;
+        let machine_id = match headers.get(MACHINE_ID) {
+            None => None,
+            Some(raw) => Some(
+                raw.to_str()
+                    .ok()
+                    .and_then(|v| v.trim().parse::<i64>().ok())
+                    .filter(|n| *n > 0)
+                    .ok_or_else(|| refused(format!("header {MACHINE_ID} is not a machine id")))?,
+            ),
+        };
+        let ssh = if machine_id.is_some() {
+            String::new()
+        } else {
+            let ssh = header(SSH)?;
+            check_ssh(&ssh).map_err(|e| refused(format!("header {SSH}: {e}")))?;
+            ssh
+        };
         let raw = header(SLOT)?;
         let slot = raw
             .parse::<u16>()
@@ -80,6 +99,7 @@ impl Caller {
             box_id,
             machine,
             ssh,
+            machine_id,
             slot,
             sync_exclude,
         })

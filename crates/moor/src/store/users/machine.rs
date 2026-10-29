@@ -135,12 +135,12 @@ impl Store {
             } => (machine, 0, MachineHoldState::Waiting),
             ClaimState::Wanted { machine: None, .. } => return Ok(None),
         };
-        let machine = self
-            .user_machines(claim.user)?
+        let machine = owned_in(&self.reader()?, claim.user)?
             .into_iter()
-            .find(|m| m.name == name);
-        Ok(machine.map(|machine| HeldMachine {
+            .find(|(_, m)| m.name == name);
+        Ok(machine.map(|(machine_id, machine)| HeldMachine {
             machine,
+            machine_id,
             slot,
             ports: claim.ports,
             sync_exclude: claim.sync_exclude,
@@ -331,6 +331,8 @@ pub(in crate::store) fn release_in(
 pub(crate) struct HeldMachine {
     /// The machine.
     pub(crate) machine: UserMachine,
+    /// Its enrolled id when its agent links in; none for a machine reached over ssh.
+    pub(crate) machine_id: Option<i64>,
     /// The Box's slot on it.
     pub(crate) slot: u16,
     /// The forwarded ports, the same number on both ends.
@@ -344,6 +346,27 @@ pub(crate) struct HeldMachine {
 
 /// `user`'s machines by name, read through `conn`.
 fn machines_in(conn: &Connection, user: UserId) -> Result<Vec<UserMachine>, StoreError> {
+    Ok(owned_in(conn, user)?.into_iter().map(|(_, m)| m).collect())
+}
+
+/// `user`'s machines by name with the enrolled id of each that has one: an enrolled machine
+/// hides an ssh one of the same name.
+fn owned_in(
+    conn: &Connection,
+    user: UserId,
+) -> Result<Vec<(Option<i64>, UserMachine)>, StoreError> {
+    let mut own: BTreeMap<String, (Option<i64>, UserMachine)> = ssh_machines_in(conn, user)?
+        .into_iter()
+        .map(|m| (m.name.clone(), (None, m)))
+        .collect();
+    for (id, m) in links::enrolled_in(conn, user)? {
+        own.insert(m.name.clone(), (Some(id), m));
+    }
+    Ok(own.into_values().collect())
+}
+
+/// `user`'s machines reached over ssh by name, read through `conn`.
+fn ssh_machines_in(conn: &Connection, user: UserId) -> Result<Vec<UserMachine>, StoreError> {
     let mut stmt = conn.prepare(
         "SELECT name, ssh, labels, capacity FROM user_machines WHERE user = ? ORDER BY name",
     )?;

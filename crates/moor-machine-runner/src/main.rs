@@ -176,6 +176,7 @@ async fn main() -> ExitCode {
     if let Ok(addr) = listener.local_addr() {
         eprintln!("moor-machine-runner listening on {addr}");
     }
+    let mut linked = None;
     if let Some(addr) = args.agents {
         let agents = match tokio::net::TcpListener::bind(addr).await {
             Ok(l) => l,
@@ -187,14 +188,16 @@ async fn main() -> ExitCode {
         if let Ok(addr) = agents.local_addr() {
             eprintln!("moor-machine-runner taking agent links on {addr}");
         }
-        let linked = Agents::new(&args.socket);
+        let agents_of = Agents::new(&args.socket);
+        linked = Some(agents_of.clone());
         tokio::spawn(async move {
-            if let Err(e) = serve_agents(agents, linked).await {
+            if let Err(e) = serve_agents(agents, agents_of).await {
                 eprintln!("moor-machine-runner: agent links stopped: {e}");
             }
         });
     }
     let config = Config {
+        agents: linked,
         socket: args.socket,
         state_dir: args.state_dir,
         service_host: args.service_host,

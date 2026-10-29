@@ -60,3 +60,27 @@ impl Store {
         Ok(held)
     }
 }
+
+/// `user`'s enrolled machines with their ids. They have no ssh target: their agent links in.
+pub(super) fn enrolled_in(
+    conn: &rusqlite::Connection,
+    user: UserId,
+) -> Result<Vec<(i64, moor_core::config::UserMachine)>, StoreError> {
+    let mut stmt = conn.prepare(
+        "SELECT machine_id, name, labels, capacity FROM user_machines_v2 WHERE user = ? \
+         ORDER BY name",
+    )?;
+    let rows = stmt.query_and_then([user.get()], |r| {
+        let (id, name, labels): (i64, String, String) = (r.get(0)?, r.get(1)?, r.get(2)?);
+        let labels = serde_json::from_str(&labels)
+            .map_err(|e| StoreError::Corrupt(format!("user_machines_v2 row {name}: {e}")))?;
+        let machine = moor_core::config::UserMachine {
+            name,
+            ssh: String::new(),
+            labels,
+            capacity: r.get(3)?,
+        };
+        Ok((id, machine))
+    })?;
+    rows.collect()
+}

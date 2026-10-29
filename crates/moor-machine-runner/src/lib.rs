@@ -91,6 +91,7 @@ pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
         hooks: Arc::clone(&hooks),
         relays: Arc::clone(&relays),
         beat: config.keep_alive,
+        agents: config.agents,
     };
     hooks::spawn_sweep(config.sweep, runner.client.clone(), hooks, relays, holds);
     let http = StreamableHttpServerConfig::default()
@@ -136,6 +137,8 @@ struct Runner {
     relays: Arc<Relays>,
     /// How often a long call reports that it still runs.
     beat: Duration,
+    /// Links of the machines whose agents dial in.
+    agents: Option<Agents>,
 }
 
 #[tool_router]
@@ -281,18 +284,14 @@ impl Runner {
         };
         let run = async {
             let facts = self.hooks.facts(&caller).await.map_err(|e| internal(&e))?;
-            let prelude = hooks::state_prelude(caller.box_id.get());
-            let body = format!("{prelude}cd ~/{} && {}", caller.remote_dir(), args.command);
-            let script = exec::script(&hooks::fact_env(&facts), &body);
             let _held = self
                 .holds
                 .take(&caller, wanted, Duration::from_secs(wait), waiting)
                 .await
                 .map_err(|e| internal(&e))?;
             tokio::select! {
-                out = exec::run(&caller.ssh, &script, timeout) => out
-                    .map(Json)
-                    .map_err(|e| internal(&format!("could not run ssh: {e}"))),
+                out = exec::on_machine(self.agents.as_ref(), &caller, &facts, &args.command, timeout)
+                    => out.map(Json).map_err(|e| internal(&e)),
                 () = progress.beat("exec", self.beat) => unreachable!("a beat never ends"),
             }
         };

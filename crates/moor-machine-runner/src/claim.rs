@@ -194,6 +194,7 @@ async fn claim(
                     box_id: id,
                     machine,
                     ssh,
+                    machine_id: None,
                     slot,
                     sync_exclude,
                 };
