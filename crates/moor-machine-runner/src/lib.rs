@@ -39,6 +39,7 @@ use crate::relay::Relays;
 use crate::sync::{SyncArgs, SyncOutput};
 
 pub use crate::agents::{serve_agents, Agents};
+pub use crate::rsh::rsh;
 pub use crate::{config::Config, relay::Relay};
 
 mod agents;
@@ -54,6 +55,7 @@ mod info;
 mod link;
 mod pull;
 mod relay;
+mod rsh;
 mod sync;
 
 /// Serves MCP over streamable HTTP on `listener` until accepting fails.
@@ -84,6 +86,7 @@ pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
     ));
     let holds = Arc::new(Holds::new(config.resources));
     let runner = Runner {
+        rsh: rsh::listen(&config.state_dir, config.agents.as_ref())?,
         client: Client::new(&config.socket),
         mirrors,
         syncing: Arc::default(),
@@ -139,6 +142,8 @@ struct Runner {
     beat: Duration,
     /// Links of the machines whose agents dial in.
     agents: Option<Agents>,
+    /// Where rsync's remote shell reaches the runner, when it takes agent links.
+    rsh: Option<rsh::Rsh>,
 }
 
 #[tool_router]
@@ -174,9 +179,10 @@ impl Runner {
             .await
             .map_err(|e| internal(&e))?;
         let (client, mirrors) = (self.client.clone(), self.mirrors.clone());
-        let noted = caller.clone();
-        let copy =
-            tokio::task::spawn_blocking(move || sync::run(&client, &mirrors, &caller, &args));
+        let (rsh, noted) = (self.rsh.clone(), caller.clone());
+        let copy = tokio::task::spawn_blocking(move || {
+            sync::run(&client, &mirrors, rsh.as_ref(), &caller, &args)
+        });
         tokio::select! {
             done = copy => {
                 let out = done.map_err(|e| internal(&e.to_string()))?.map_err(|e| internal(&e))?;
@@ -202,16 +208,12 @@ impl Runner {
         let caller = caller(&context)?;
         let stage = self.mirrors.with_file_name("pulls");
         let client = self.client.clone();
-        pull::serve(
-            client,
-            stage,
-            caller,
-            args,
-            Progress::of(&context),
-            self.beat,
-        )
-        .await
-        .map(Json)
+        let pull = pull::serve(client, self.agents.clone(), stage, caller, args);
+        let progress = Progress::of(&context);
+        tokio::select! {
+            done = pull => done.map(Json),
+            () = progress.beat("pull", self.beat) => unreachable!("a beat never ends"),
+        }
     }
 
     /// Says which slot the Box has on its machine and how its ports shift.

@@ -1,5 +1,5 @@
 //! `sync`: Box work tree to a host mirror (through the controller), then the mirror to the
-//! machine (rsync over ssh).
+//! machine: rsync over ssh, or for a linked machine over its agent's link.
 
 use std::path::Path;
 use std::process::Command;
@@ -9,7 +9,10 @@ use moor_core::config::check_excludes;
 use moor_core::request::{BoxMirrorReq, Request};
 use serde::{Deserialize, Serialize};
 
-use crate::caller::Caller;
+use moor_client::link::ops;
+
+use crate::caller::{Caller, Reach};
+use crate::rsh::{Rsh, Syncing, SOCKET_ENV};
 
 /// Arguments of `sync`.
 #[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
@@ -44,10 +47,10 @@ pub(crate) struct SyncOutput {
 pub(crate) fn run(
     client: &Client,
     mirrors: &Path,
+    rsh: Option<&Rsh>,
     caller: &Caller,
     args: &SyncArgs,
 ) -> Result<SyncOutput, String> {
-    let ssh = caller.reach.ssh("syncing")?;
     let mirror = mirrors.join(caller.box_id.get().to_string());
     let exclude: Vec<String> = caller
         .sync_exclude
@@ -76,13 +79,14 @@ pub(crate) fn run(
         .and_then(serde_json::Value::as_u64)
         .unwrap_or(0);
     let remote = caller.remote_dir();
-    let out = Command::new("rsync")
+    let mut rsync = Command::new("rsync");
+    rsync
         .args(["-a", "--delete", "--exclude=.git"])
-        .args(exclude.iter().map(|p| format!("--exclude={p}")))
-        .args(["-e", "ssh -o BatchMode=yes"])
-        .arg(format!("--rsync-path=mkdir -p {remote} && rsync"))
+        .args(exclude.iter().map(|p| format!("--exclude={p}")));
+    let (target, _syncing) = reach(&mut rsync, rsh, caller, &remote)?;
+    let out = rsync
         .arg(format!("{}/", mirror.display()))
-        .arg(format!("{ssh}:{remote}/"))
+        .arg(target)
         .output()
         .map_err(|e| format!("could not run rsync: {e}"))?;
     if !out.status.success() {
@@ -98,4 +102,39 @@ pub(crate) fn run(
         path: format!("~/{remote}"),
         files_from_box,
     })
+}
+
+/// Points `rsync` at the caller's machine: its ssh target, or the agent link through the
+/// runner's rsh helper, which serves the sync while the returned [`Syncing`] is held.
+fn reach(
+    rsync: &mut Command,
+    rsh: Option<&Rsh>,
+    caller: &Caller,
+    remote: &str,
+) -> Result<(String, Option<Syncing>), String> {
+    match &caller.reach {
+        Reach::Ssh { ssh } => {
+            rsync
+                .args(["-e", "ssh -o BatchMode=yes"])
+                .arg(format!("--rsync-path=mkdir -p {remote} && rsync"));
+            Ok((format!("{ssh}:{remote}/"), None))
+        }
+        Reach::Linked {
+            machine_id,
+            machine,
+        } => {
+            let rsh = rsh.ok_or_else(|| {
+                format!("machine {machine} is offline: this runner takes no agent links")
+            })?;
+            let exe = std::env::current_exe()
+                .map_err(|e| format!("cannot find the runner's own binary: {e}"))?;
+            let helper = ops::quote(&exe.display().to_string());
+            rsync
+                .arg("-e")
+                .arg(format!("{helper} rsh {}", caller.box_id.get()))
+                .env(SOCKET_ENV, &rsh.socket);
+            let syncing = rsh.syncs.start(caller.box_id.get(), *machine_id, machine);
+            Ok((format!("link:{remote}/"), Some(syncing)))
+        }
+    }
 }
