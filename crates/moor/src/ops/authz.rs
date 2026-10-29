@@ -25,6 +25,14 @@ pub(crate) const PUT_OPERATOR_ONLY: &str = "box-put from the host is operator-on
 /// The refusal for an `env` from anyone but the operator: it reads host configs.
 pub(crate) const ENV_OPERATOR_ONLY: &str = "env reads the host's configs, which is operator-only";
 
+/// The refusal for a `machine-keys` from anyone but the operator: it spans every user.
+pub(crate) const KEYS_OPERATOR_ONLY: &str =
+    "machine-keys lists every user's machine keys, which is operator-only";
+
+/// The refusal for a `machine-links` from anyone but the operator: it spans every user.
+pub(crate) const LINKS_OPERATOR_ONLY: &str =
+    "machine-links records every user's machine links, which is operator-only";
+
 /// The refusal for a `machine-targets` from anyone but the operator: it spans every user.
 pub(crate) const TARGETS_OPERATOR_ONLY: &str =
     "machine-targets lists every user's machines, which is operator-only";
@@ -94,6 +102,8 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         Request::BoxPut(_) => Some(PUT_OPERATOR_ONLY),
         Request::Env(_) => Some(ENV_OPERATOR_ONLY),
         Request::MachineTargets {} => Some(TARGETS_OPERATOR_ONLY),
+        Request::MachineKeys {} => Some(KEYS_OPERATOR_ONLY),
+        Request::MachineLinks(_) => Some(LINKS_OPERATOR_ONLY),
         Request::MachineHold(_) => Some(HOLD_OPERATOR_ONLY),
         Request::Start(_)
         | Request::StartNeeds(_)

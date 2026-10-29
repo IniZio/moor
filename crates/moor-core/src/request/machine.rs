@@ -47,6 +47,27 @@ pub struct MachineEnrollReq {
     pub capacity: u16,
 }
 
+/// Arguments of `machine-links`: the runner's whole view of which enrolled machines hold a
+/// link, sent again on every change so the stored view converges on it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MachineLinksReq {
+    /// Every machine the runner has seen since it started; any other is offline.
+    pub links: Vec<MachineLink>,
+}
+
+/// Whether an enrolled machine's agent holds a link to the runner, and since when.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MachineLink {
+    /// The enrolled machine.
+    pub machine_id: i64,
+    /// Whether its agent holds a link now.
+    pub online: bool,
+    /// When the link came up or went down.
+    pub since: Ts,
+}
+
 /// The capacity of a machine added without one.
 const fn one() -> u16 {
     1

@@ -47,6 +47,7 @@ impl Request {
     /// Every Box and Session this request names. Requests that list Boxes name none; their
     /// handlers show only what the caller may see.
     #[must_use]
+    #[expect(clippy::too_many_lines, reason = "one arm per request kind")]
     pub fn names(&self) -> Vec<Named> {
         let named = |name: &BoxName| Named::Box(name.clone().into());
         // A name that does not parse names no Box; the handler refuses it the same way.
@@ -103,6 +104,8 @@ impl Request {
             | Self::MachineEnroll(_)
             | Self::MachineList(_)
             | Self::MachineTargets {}
+            | Self::MachineKeys {}
+            | Self::MachineLinks(_)
             | Self::ProxyLease(_)
             | Self::ProxyRelease(_)
             | Self::ProxyStatus(_)
