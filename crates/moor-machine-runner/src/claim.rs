@@ -192,7 +192,10 @@ async fn claim(
             } => {
                 let sync_exclude = Vec::new();
                 let reach = match machine_id {
-                    Some(machine_id) => Reach::Linked { machine_id },
+                    Some(machine_id) => Reach::Linked {
+                        machine_id,
+                        machine: machine.clone(),
+                    },
                     None => Reach::Ssh { ssh },
                 };
                 let caller = Caller {

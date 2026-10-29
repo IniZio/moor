@@ -220,7 +220,7 @@ pub(crate) async fn on_machine(
                 .await
                 .map_err(|e| format!("could not run ssh: {e}"));
         }
-        Reach::Linked { machine_id } => *machine_id,
+        Reach::Linked { machine_id, .. } => *machine_id,
     };
     let op = ops::Op::Exec {
         box_id: caller.box_id.get(),

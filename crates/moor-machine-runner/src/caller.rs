@@ -64,7 +64,10 @@ impl Caller {
             ),
         };
         let reach = if let Some(machine_id) = machine_id {
-            Reach::Linked { machine_id }
+            Reach::Linked {
+                machine_id,
+                machine: machine.clone(),
+            }
         } else {
             let ssh = header(SSH)?;
             check_ssh(&ssh).map_err(|e| refused(format!("header {SSH}: {e}")))?;
@@ -138,6 +141,8 @@ pub(crate) enum Reach {
     Linked {
         /// The enrolled id.
         machine_id: i64,
+        /// Its name, for errors.
+        machine: String,
     },
     /// The host dials this ssh target.
     Ssh {
