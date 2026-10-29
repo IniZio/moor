@@ -329,8 +329,12 @@ impl Linked {
 
 /// Sends `ping` to the machine's loopback `port` and reads what comes back.
 fn ping(port: u16) -> std::io::Result<String> {
+    ping_at("127.0.0.1", port)
+}
+
+fn ping_at(ip: &str, port: u16) -> std::io::Result<String> {
     use std::io::{Read, Write};
-    let mut conn = std::net::TcpStream::connect(("127.0.0.1", port))?;
+    let mut conn = std::net::TcpStream::connect((ip, port))?;
     conn.set_read_timeout(Some(Duration::from_secs(5)))?;
     conn.write_all(b"ping")?;
     let mut got = [0u8; 4];
@@ -374,4 +378,18 @@ fn a_forward_of_no_ports_is_refused() {
 
     let (answer, _) = m.forward(7, &[]);
     assert_eq!(answer["reply"], "refused");
+}
+
+#[test]
+fn a_machine_port_answers_on_127_0_0_1_alone() {
+    let m = Linked::start(&[]);
+    let (machine_port, host_port) = (free_port(), echo());
+
+    let (answer, _held) = m.forward(7, &[(machine_port, host_port)]);
+    assert_eq!(answer, json!({"reply": "up"}));
+    assert_eq!(ping(machine_port).unwrap(), "ping");
+    assert!(
+        ping_at("127.0.0.2", machine_port).is_err(),
+        "no other address of the machine reaches the Box"
+    );
 }
