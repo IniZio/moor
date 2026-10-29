@@ -334,7 +334,7 @@ async fn exec_keeps_the_last_64_kib_of_output() {
         "script": "head -c 200000 /dev/zero | tr '\\0' a; echo end", "timeout_secs": 30});
     let out = ran(ask(&w, &op).await.1);
     assert!(out.truncated);
-    assert_eq!(out.output.len(), ops::TAIL);
+    assert_eq!(out.output.len(), 64 * 1024);
     assert!(out.output.ends_with("aaaend\n"));
 }
 
