@@ -10,6 +10,7 @@ on:
       - .github/workflows/cd.yaml
       - .releaserc.json
       - crates/moor-herdr/herdr/build.sh
+      - crates/moor-machine-agent/Cargo.toml
 
 concurrency:
   group: cd-${{ github.ref }}
@@ -86,13 +87,15 @@ jobs:
           sudo apt-get update -q && sudo apt-get install -y -q musl-tools
           target=${{ matrix.target }}
           echo "CC_${target//-/_}=musl-gcc" >> "$GITHUB_ENV"
-      - run: MOOR_VERSION=${TAG#v} cargo build -p moor-herdr --release --locked --target ${{ matrix.target }}
+      - run: MOOR_VERSION=${TAG#v} cargo build -p moor-herdr -p moor-machine-agent --release --locked --target ${{ matrix.target }}
       - name: Package
         run: |
-          asset=moor-herdr-${{ matrix.target }}.tar.gz
           mkdir -p dist
-          tar -czf "dist/$asset" -C target/${{ matrix.target }}/release moor-herdr
-          (cd dist && shasum -a 256 "$asset" > "$asset.sha256")
+          for bin in moor-herdr moor-machine-agent; do
+            asset=$bin-${{ matrix.target }}.tar.gz
+            tar -czf "dist/$asset" -C target/${{ matrix.target }}/release "$bin"
+            (cd dist && shasum -a 256 "$asset" > "$asset.sha256")
+          done
       - name: The plugin installs from this build
         if: matrix.target != 'x86_64-apple-darwin'
         run: |

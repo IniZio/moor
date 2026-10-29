@@ -5,6 +5,7 @@ members = [
   "crates/moor-core",
   "crates/moor-gate",
   "crates/moor-herdr",
+  "crates/moor-machine-agent",
   "crates/moor-machine-runner",
   "crates/moor-migrate",
   "crates/moor-slack",
