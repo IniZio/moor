@@ -23,6 +23,7 @@ use crate::ops::common::boxwork::{self, probe, BoxWork, BOXWORK_DEADLINE};
 use crate::ops::common::cache;
 use crate::ops::common::facts::settings_of;
 use crate::ops::common::promote::promote_waiting;
+use crate::ops::common::provision::planned_root;
 use crate::ops::common::reports;
 use crate::ops::common::target::{self, Rule};
 use crate::ops::common::transcript::{self, Saved};
@@ -49,6 +50,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
         boxlock::WAIT,
     )?;
     let mut row = store.box_row(first.id)?.unwrap_or(first);
+    with_planned(store, &mut row)?;
     let box_check = box_check(cx, store, &mut row, req.force)?;
     let probed_clean = matches!(box_check, BoxCheck::Clean);
     let plan = close_gate(&facts(&row, box_check), req.force).map_err(|r| refused(&row, r))?;
@@ -98,6 +100,16 @@ const fn held(b: &DriverRow) -> Option<&BoxHandle> {
         (Some(h), _) | (None, Some(h)) => Some(h),
         (None, None) => None,
     }
+}
+
+/// Gives a Box that recorded no handle the one its acquire planned, so the close releases a
+/// machine an unfinished acquire may have created.
+fn with_planned(store: &Store, row: &mut BoxRow) -> Result<(), CommandError> {
+    let id = row.id;
+    if let Some(b) = row.boxed.as_mut().filter(|b| held(b).is_none()) {
+        b.attempted_handle = planned_root(store, id)?;
+    }
+    Ok(())
 }
 
 /// Looks for work that exists only in the Box, waking a sleeping Box to read it.

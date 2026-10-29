@@ -72,6 +72,13 @@ pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u
     for line in Moor::reconcile_proxies(&running.env) {
         log(&sink, &format!("proxy: {line}"));
     }
+    let interrupted = Moor::from_env(&running.env).map_or_else(
+        |e| vec![e.error.to_string()],
+        |moor| moor.fail_interrupted_starts(),
+    );
+    for line in interrupted {
+        log(&sink, &format!("start: {line}"));
+    }
     let shim = std::env::current_exe().map_or_else(|_| "/proc/self/exe".into(), OsString::from);
     let mut fronts = running.supervise_fronts((shim, vec!["front-shim".into()]), &sink);
     let drain = Arc::new(Drain::default());
