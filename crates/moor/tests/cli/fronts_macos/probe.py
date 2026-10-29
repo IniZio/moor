@@ -42,7 +42,7 @@ got = {
     "pid": os.getpid(),
     "own": dial(mine),
     "operator": dial(f"{root}/c.sock"),
-    "other_front": dial(f"{root}/state/fronts/slack.sock"),
+    "other_front": dial(f"{root}/state/fronts/slack/front"),
     "tmp_sock": dial(tmp_sock),
     "home_sock": dial(home_sock),
     "socket_chmod": touch(lambda: os.chmod(mine, 0o600)),

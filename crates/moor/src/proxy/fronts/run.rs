@@ -15,7 +15,6 @@ use signal_hook::consts::{SIGINT, SIGTERM};
 
 use super::{serve, Deps};
 use crate::adapters::clock::SystemClock;
-use crate::adapters::sockets::socket_dir;
 use crate::proxy::nono::capture::SecretsFn;
 use crate::proxy::Sink;
 use crate::store::{Store, STORE_FILE};
@@ -100,7 +99,6 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
         secrets,
         vault: Arc::new(vault),
         state_dir,
-        sockets: socket_dir(),
         owner: rustix::process::getuid().as_raw(),
         upstream_ca: None,
         stop,

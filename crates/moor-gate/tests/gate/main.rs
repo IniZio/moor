@@ -491,7 +491,7 @@ fn a_real_controller_enrolls_the_token_email() {
         .spawn()
         .unwrap();
     let state = root.join("state");
-    let socket = state.join("fronts/authgear.sock");
+    let socket = state.join("fronts/authgear/front");
     for _ in 0..200 {
         if socket.exists() {
             break;

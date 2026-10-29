@@ -46,7 +46,8 @@ impl Served {
             .path()
             .join("state")
             .join("fronts")
-            .join(format!("{ns}.sock"));
+            .join(ns)
+            .join("front");
         ask(&socket, request)
     }
 
@@ -198,4 +199,31 @@ fn a_controller_start_ends_the_leases_the_last_one_left() {
         .unwrap();
     let served = Served::start(dir);
     assert!(served.stored_hashes().is_empty());
+}
+
+#[test]
+fn a_front_without_a_command_gets_its_proxy_socket_and_ca_in_its_own_dir() {
+    let served = Served::start(tempfile::tempdir().unwrap());
+    let state = served.dir.path().join("state");
+    let held = |ns: &str| {
+        let mut names: Vec<String> = std::fs::read_dir(state.join("fronts").join(ns))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    };
+    assert_eq!(held("slack"), ["ca.pem", "front"]);
+    assert_eq!(held("web"), ["front"]);
+    let ca = std::fs::read_to_string(Moor::front_proxy_ca(&state).unwrap()).unwrap();
+    let given = std::fs::read_to_string(state.join("fronts/slack/ca.pem")).unwrap();
+    assert_eq!(given, ca);
+    assert!(
+        !given.contains("PRIVATE KEY"),
+        "only the certificate is handed out"
+    );
+    assert_eq!(
+        Moor::front_proxy_socket(&state, "slack"),
+        state.join("fronts/slack/proxy")
+    );
 }

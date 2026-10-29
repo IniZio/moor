@@ -20,6 +20,7 @@ use moor_core::BoxId;
 use rustix::event::{poll, PollFd, PollFlags, Timespec};
 
 use crate::adapters::sockets::{private_dir, short_hash};
+use crate::front_dir;
 
 /// Longest wait for a connection before the acceptor checks its stop flag again.
 const POLL: Timespec = Timespec {
@@ -76,14 +77,13 @@ impl FrontSocket {
         }
     }
 
-    /// The socket of the Proxy that front `ns` of `state_dir` reaches, alone in a `pf-<hash>`
-    /// directory of `dir`, so whoever holds that directory open reaches no other socket.
-    pub(crate) fn of_front(dir: &Path, owner: u32, state_dir: &Path, ns: &str) -> Self {
-        let hash = short_hash(&[state_dir.as_os_str().as_bytes(), b"front", ns.as_bytes()]);
-        let own = dir.join(format!("pf-{hash}"));
+    /// The socket of the Proxy that front `ns` of `state_dir` reaches, in that front's own
+    /// directory, so whoever holds that directory open reaches no other front's sockets.
+    pub(crate) fn of_front(owner: u32, state_dir: &Path, ns: &str) -> Self {
+        let own = front_dir::of(state_dir, ns);
         Self {
-            dir: dir.to_path_buf(),
-            path: own.join("s"),
+            dir: front_dir::root(state_dir),
+            path: own.join(front_dir::PROXY_SOCKET),
             own: Some(own),
             owner,
         }

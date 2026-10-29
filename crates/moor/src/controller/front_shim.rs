@@ -16,6 +16,10 @@
 //! that forbids any of them. With `--proxy`, pid 1 also bridges a loopback port to the front
 //! Proxy's SOCKET and tells the front the port (see the `bridge` module).
 //!
+//! `moor front-run --dir DIR -- COMMAND...` runs a front the controller does not start, whose
+//! isolation comes from elsewhere (a container), with what pid 1 gives a started one: the
+//! front socket in DIR and, when DIR holds the Proxy's CA, the bridge to DIR's Proxy socket.
+//!
 //! macOS has none of these namespaces: there the shim confines itself and the front with
 //! nono's Seatbelt profile instead (see the `seatbelt` module), and no front gets a Proxy.
 
@@ -116,6 +120,48 @@ pub fn main(args: &[OsString]) -> Result<u8, String> {
         }
         _ => outer(flags, command),
     }
+}
+
+/// `moor front-run --dir DIR -- COMMAND...`: runs COMMAND with the front variables for front
+/// directory DIR and exits with its status.
+#[cfg(target_os = "linux")]
+pub fn run(args: &[OsString]) -> Result<u8, String> {
+    const USAGE: &str = "usage: moor front-run --dir DIR -- COMMAND...";
+    let mut parts = args.splitn(2, |a| a == "--");
+    let (flags, command) = (
+        parts.next().unwrap_or_default(),
+        parts.next().unwrap_or_default(),
+    );
+    let ([flag, dir], Some((program, args))) = (flags, command.split_first()) else {
+        return Err(USAGE.to_owned());
+    };
+    if flag != "--dir" {
+        return Err(USAGE.to_owned());
+    }
+    let dir = PathBuf::from(dir);
+    let mut front = Command::new(program);
+    front.args(args).env(
+        "MOOR_FRONT_SOCKET",
+        dir.join(crate::front_dir::FRONT_SOCKET),
+    );
+    let ca = dir.join(crate::front_dir::CA_PEM);
+    match fs::read_to_string(&ca) {
+        Ok(pem) => {
+            let port = bridge::Bridge::open(&dir.join(crate::front_dir::PROXY_SOCKET))?.serve()?;
+            front
+                .env(bridge::PORT_VAR, port.to_string())
+                .env(super::front_proxy::CA_PEM_VAR, pem);
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("cannot read {}: {e}", ca.display())),
+    }
+    relay(&mut front)
+}
+
+/// `moor front-run` needs the loopback bridge, which only Linux builds.
+#[cfg(not(target_os = "linux"))]
+pub fn run(_args: &[std::ffi::OsString]) -> Result<u8, String> {
+    Err("moor front-run needs Linux".to_owned())
 }
 
 /// The outer shim: dies with the controller, prepares the front's network from the host's

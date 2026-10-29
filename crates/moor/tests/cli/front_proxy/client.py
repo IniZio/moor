@@ -24,7 +24,7 @@ def through_pid1():
     for n in range(64):
         s = socket.socket(socket.AF_UNIX)
         try:
-            s.connect(f"/proc/1/fd/{n}/s")
+            s.connect(f"/proc/1/fd/{n}/proxy")
             reached.append(str(n))
         except PermissionError:
             pass

@@ -12,8 +12,9 @@ use moor::moor_core::controller::WatchFilter;
 use moor::moor_core::{Request, Response};
 use moor::Moor;
 
-/// Runs `moor front-shim`, the controller's wrapper around each front, or `moor proxy
-/// serve-fronts`, the front Proxy the controller runs; neither is a user command.
+/// Runs `moor front-shim`, the controller's wrapper around each front, `moor front-run`, the
+/// wrapper of a front the controller does not start, or `moor proxy serve-fronts`, the front
+/// Proxy the controller runs; none is a user command.
 fn front_shim(args: &[std::ffi::OsString]) -> Option<ExitCode> {
     if let [_, proxy, serve, args @ ..] = args {
         if proxy == "proxy" && serve == "serve-fronts" {
@@ -28,14 +29,15 @@ fn front_shim(args: &[std::ffi::OsString]) -> Option<ExitCode> {
     let [_, verb, args @ ..] = args else {
         return None;
     };
-    (verb == "front-shim").then(|| {
-        ExitCode::from(
-            moor::controller::front_shim::main(args).unwrap_or_else(|e| {
-                let _ = writeln!(std::io::stderr(), "front-shim: {e}");
-                125
-            }),
-        )
-    })
+    let run = match verb.to_str() {
+        Some("front-shim") => moor::controller::front_shim::main,
+        Some("front-run") => moor::controller::front_shim::run,
+        _ => return None,
+    };
+    Some(ExitCode::from(run(args).unwrap_or_else(|e| {
+        let _ = writeln!(std::io::stderr(), "{}: {e}", verb.to_string_lossy());
+        125
+    })))
 }
 
 /// Parse argv, run the request, print the rendered output, return its exit code.

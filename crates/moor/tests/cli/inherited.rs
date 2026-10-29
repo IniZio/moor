@@ -30,7 +30,7 @@ impl Holder {
         let root = fresh_dir("held");
         let socket = root.join("c.sock");
         let state = root.join("state");
-        let front = state.join("fronts").join("web.sock");
+        let front = state.join("fronts/web/front");
         let config = root.join("c.yaml");
         let yaml = format!(
             "socket: {}\nstate_dir: {}\nfronts:\n  web: {{}}\n",
@@ -270,7 +270,7 @@ fn sockets_passed_under_swapped_names_stop_the_start() {
     let mut controller = holder.serve("front-web:controller");
     assert_eq!(exit_code(&mut controller), Some(1));
     let stderr = holder.stderr();
-    assert!(stderr.contains("web.sock"), "{stderr}");
+    assert!(stderr.contains("web/front"), "{stderr}");
 }
 
 #[test]

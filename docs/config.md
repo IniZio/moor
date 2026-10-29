@@ -543,18 +543,19 @@ fronts:
 
 #### The front Proxy
 
-When an entry lists `proxy_rules`, the controller runs `moor proxy serve-fronts`
-as a child, and starts it again with backoff whenever it exits. The front
-Proxy listens on a socket per front in moor's private socket directory. The
-front's shim binds a loopback port in the front's network namespace and passes
-each connection to that socket. The front finds the port in
-`MOOR_FRONT_PROXY_PORT`. The Proxy signs with a CA kept in
-`<state dir>/proxy/fronts`. The front gets the CA certificate as PEM text in
-`MOOR_FRONT_PROXY_CA_PEM`, so the front sees no controller path. Each front's
-Proxy socket sits alone in a directory of its own. The shim's pid 1 holds that
-directory open and is not dumpable, so the front cannot reach the directory
-through `/proc/1/fd`. The bridge needs the Linux shim. On macOS no front gets a
-Proxy, so a coordinator front there says the controller gave it no Proxy.
+When an entry lists `proxy_rules`, with or without a `command`, the controller
+runs `moor proxy serve-fronts` as a child, and starts it again with backoff
+whenever it exits. The front Proxy listens on
+`<state dir>/fronts/<namespace>/proxy`, and the controller writes the CA
+certificate to `<state dir>/fronts/<namespace>/ca.pem`. The front's shim binds
+a loopback port in the front's network namespace and passes each connection to
+that socket. The front finds the port in `MOOR_FRONT_PROXY_PORT`. The Proxy
+signs with a CA kept in `<state dir>/proxy/fronts`. The front gets the CA
+certificate as PEM text in `MOOR_FRONT_PROXY_CA_PEM`, so the front sees no
+controller path. The shim's pid 1 holds the front's directory open and is not
+dumpable, so the front cannot reach the directory through `/proc/1/fd`. The
+bridge needs the Linux shim. On macOS no front gets a Proxy, so a coordinator
+front there says the controller gave it no Proxy.
 
 A front asks for a lease with `proxy-lease`, as an identity of its own
 namespace. The controller grants the lease only when that identity's user holds
@@ -566,11 +567,21 @@ controller ends every lease when it starts.
 
 #### Sockets and processes
 
-For each entry the controller listens on `<state dir>/fronts/<namespace>.sock`,
-mode 0600 in a 0700 directory. Under systemd, the controller takes the socket
+For each entry the controller listens on
+`<state dir>/fronts/<namespace>/front`, mode 0600 in 0700 directories.
+That directory holds only the front's socket and, with `proxy_rules`, its
+Proxy's socket and `ca.pem`, so a front run in a container of its own needs
+only that directory mounted. Under systemd, the controller takes the socket
 that systemd passes as `front-<namespace>` instead of binding it. A namespace
 matches `[a-z][a-z0-9-]*`. It is not `local`, and not `proxy`, which names the
 front Proxy in the controller log.
+
+A front without a `command` runs elsewhere. On Linux,
+`moor front-run --dir <state dir>/fronts/<namespace> -- COMMAND...` runs it with
+`MOOR_FRONT_SOCKET` set to the directory's `front` socket. When the directory
+holds `ca.pem`, it also bridges a loopback port to the `proxy` socket, sets
+`MOOR_FRONT_PROXY_PORT` and sets `MOOR_FRONT_PROXY_CA_PEM` to the
+certificate. It passes SIGTERM and SIGINT on and exits with the front's status.
 
 When an entry has a `command`, the controller starts it at startup. The front
 gets an `O_PATH` file descriptor to its own socket as fd 3, and
