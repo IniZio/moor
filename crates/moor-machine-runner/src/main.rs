@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use clap::Parser;
-use moor_machine_runner::{serve, serve_agents, Config, Relay};
+use moor_machine_runner::{serve, serve_agents, Agents, Config, Relay};
 
 /// Serves the tools a Box uses to work on its attached machine.
 #[derive(Parser)]
@@ -187,9 +187,9 @@ async fn main() -> ExitCode {
         if let Ok(addr) = agents.local_addr() {
             eprintln!("moor-machine-runner taking agent links on {addr}");
         }
-        let socket = args.socket.clone();
+        let linked = Agents::new(&args.socket);
         tokio::spawn(async move {
-            if let Err(e) = serve_agents(agents, &socket).await {
+            if let Err(e) = serve_agents(agents, linked).await {
                 eprintln!("moor-machine-runner: agent links stopped: {e}");
             }
         });

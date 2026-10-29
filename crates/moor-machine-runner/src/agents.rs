@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use futures_util::StreamExt;
-use moor_client::link::{self, Frame, WebSocketStream};
+use moor_client::link::{self, Asked, Channel, Frame, WebSocketStream};
 use moor_client::Client;
 use moor_core::request::{MachineLink, MachineLinksReq, Request};
 use moor_core::view::user::MachineKeysValue;
@@ -16,7 +16,7 @@ use ssh_key::rand_core::{OsRng, RngCore};
 use ssh_key::{PublicKey, SshSig};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
-use tokio::sync::{oneshot, watch};
+use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::claim::now;
 
@@ -30,20 +30,56 @@ const ANSWER: Duration = Duration::from_secs(10);
 /// How long a failed `machine-links` report waits before it is sent again.
 const RETRY: Duration = Duration::from_secs(1);
 
-/// Accepts agents' links on `listener` until accepting fails, reporting the online machines
-/// to the controller at `socket`.
+/// The machines whose agents hold a link, which execs, hooks and relays open streams on.
+#[derive(Clone)]
+pub struct Agents {
+    /// The controller's operator socket.
+    client: Client,
+    /// Each machine's link.
+    links: Arc<Links>,
+}
+
+impl Agents {
+    /// None linked yet; every change is reported to the controller at `socket`.
+    #[must_use]
+    pub fn new(socket: &Path) -> Self {
+        let client = Client::new(socket);
+        let (tx, rx) = watch::channel(Vec::new());
+        tokio::spawn(report(client.clone(), rx));
+        let links = Arc::new(Links {
+            held: Mutex::default(),
+            report: tx,
+            next: Mutex::new(0),
+        });
+        Self { client, links }
+    }
+
+    /// A new stream to machine `machine_id`'s agent.
+    ///
+    /// # Errors
+    /// The machine holds no link, or the link cannot open a stream.
+    pub async fn open(&self, machine_id: i64) -> Result<Channel, String> {
+        let asks = self
+            .links
+            .held
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&machine_id)
+            .and_then(|h| h.asks.clone())
+            .ok_or_else(|| format!("machine {machine_id} is not linked"))?;
+        let (ask, opened) = oneshot::channel();
+        let gone = || format!("machine {machine_id}'s link closed");
+        asks.send(ask).await.map_err(|_| gone())?;
+        opened.await.map_err(|_| gone())?
+    }
+}
+
+/// Accepts agents' links on `listener` until accepting fails, holding each in `agents`.
 ///
 /// # Errors
 /// Returns the error that stopped the listener.
-pub async fn serve_agents(listener: TcpListener, socket: &Path) -> io::Result<()> {
-    let client = Client::new(socket);
-    let (tx, rx) = watch::channel(Vec::new());
-    tokio::spawn(report(client.clone(), rx));
-    let links = Arc::new(Links {
-        held: Mutex::default(),
-        report: tx,
-        next: Mutex::new(0),
-    });
+pub async fn serve_agents(listener: TcpListener, agents: Agents) -> io::Result<()> {
+    let Agents { client, links } = agents;
     loop {
         let (stream, _) = listener.accept().await?;
         let (client, links) = (client.clone(), Arc::clone(&links));
@@ -75,11 +111,11 @@ where
     if link::send(&mut ws, &welcome).await.is_err() {
         return;
     }
-    let (generation, replaced) = links.up(machine_id);
+    let (generation, replaced, asks) = links.up(machine_id);
     eprintln!("machine {machine_id} linked");
     let socket = link::carry(ws, link::KEEPALIVE);
     let why = tokio::select! {
-        why = link::hold(socket, link::Mode::Server) => why,
+        why = link::drive(socket, link::Mode::Server, asks, drop) => why,
         _ = replaced => "a newer link replaced it".to_owned(),
     };
     links.down(machine_id, generation);
@@ -192,18 +228,21 @@ struct Held {
     generation: u64,
     /// Dropping it ends the link that set it.
     end: Option<oneshot::Sender<()>>,
+    /// Asks that link for streams; none once it is down.
+    asks: Option<mpsc::Sender<Asked>>,
 }
 
 impl Links {
-    /// Marks `machine_id` online, ending its previous link; the new link's generation and
-    /// what resolves once a newer link replaces it.
-    fn up(&self, machine_id: i64) -> (u64, oneshot::Receiver<()>) {
+    /// Marks `machine_id` online, ending its previous link; the new link's generation, what
+    /// resolves once a newer link replaces it, and the asks for its streams.
+    fn up(&self, machine_id: i64) -> (u64, oneshot::Receiver<()>, mpsc::Receiver<Asked>) {
         let generation = {
             let mut next = self.next.lock().unwrap_or_else(PoisonError::into_inner);
             *next += 1;
             *next
         };
         let (end, replaced) = oneshot::channel();
+        let (ask, asks) = mpsc::channel(16);
         let link = MachineLink {
             machine_id,
             online: true,
@@ -216,10 +255,11 @@ impl Links {
                     link,
                     generation,
                     end: Some(end),
+                    asks: Some(ask),
                 },
             );
         });
-        (generation, replaced)
+        (generation, replaced, asks)
     }
 
     /// Marks `machine_id` offline, unless a newer link than `generation` holds it.
@@ -232,6 +272,7 @@ impl Links {
                 h.link.online = false;
                 h.link.since = now();
                 h.end = None;
+                h.asks = None;
             }
         });
     }

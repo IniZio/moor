@@ -24,7 +24,7 @@ ssh-key = { version = "0.6", default-features = false, features = [
   "rand_core",
   "getrandom",
 ] }
-tokio = { version = "1", features = ["rt", "time"] }
+tokio = { version = "1", features = ["rt", "time", "io-util", "macros", "process", "sync"] }
 
 [dev-dependencies]
 moor-machine-runner = { path = "../moor-machine-runner" }

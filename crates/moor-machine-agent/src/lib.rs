@@ -1,10 +1,11 @@
 //! The machine agent: runs on a person's own computer, enrolls it with their sign-in, and keeps
-//! it linked to the server so Boxes the controller starts can later claim it.
+//! it linked to the server, running the execs, hooks and relays the server asks of its Boxes.
 
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use moor_client::link::{self, Frame};
@@ -13,6 +14,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use ssh_key::rand_core::OsRng;
 use ssh_key::{Algorithm, HashAlg, LineEnding, PrivateKey};
+use tokio::sync::mpsc;
+
+pub use crate::serve::Machine;
+
+mod serve;
 
 /// What `enroll` asks for.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,7 +126,8 @@ pub fn enroll(req: &Enroll, dir: &Path, port: u16, ui: &mut dyn Ui) -> Result<St
 ///
 /// # Errors
 /// Enrollment left nothing usable in `dir`, or the server says this agent must be updated.
-pub async fn run(dir: &Path, log: &(dyn Fn(&str) + Sync)) -> Result<(), String> {
+pub async fn run(dir: &Path, machine: Machine, log: &(dyn Fn(&str) + Sync)) -> Result<(), String> {
+    let machine = Arc::new(machine);
     let path = dir.join("state.json");
     let text = fs::read_to_string(&path)
         .map_err(|e| format!("cannot read {}: {e}; enroll first", path.display()))?;
@@ -134,7 +141,12 @@ pub async fn run(dir: &Path, log: &(dyn Fn(&str) + Sync)) -> Result<(), String> 
             Ok(socket) => {
                 log(&format!("linked to {}", state.server));
                 wait = FIRST_WAIT;
-                let why = link::hold(socket, link::Mode::Client).await;
+                let (_, asks) = mpsc::channel(1);
+                let why = link::drive(socket, link::Mode::Client, asks, |ch| {
+                    let machine = Arc::clone(&machine);
+                    tokio::spawn(async move { serve::serve(&machine, ch).await });
+                })
+                .await;
                 log(&format!("{why}; dialing again in {}s", wait.as_secs()));
             }
             Err(Turned::Update(version)) => {

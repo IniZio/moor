@@ -42,7 +42,11 @@ use crate::pull::{PullArgs, PullOutput};
 use crate::relay::Relays;
 use crate::sync::{SyncArgs, SyncOutput};
 
-pub use crate::{agents::serve_agents, config::Config, relay::Relay};
+pub use crate::{
+    agents::{serve_agents, Agents},
+    config::Config,
+    relay::Relay,
+};
 
 mod agents;
 mod beat;
