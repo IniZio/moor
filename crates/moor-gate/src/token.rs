@@ -1,5 +1,6 @@
 //! Access token checks against the issuer's published signing keys.
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -16,6 +17,11 @@ use crate::NAMESPACE;
 /// key ids cannot make the gate hammer the issuer.
 const REFETCH_EVERY: Duration = Duration::from_secs(10);
 
+/// How long a userinfo email answers for its `sub`. A front WebSocket verifies once, but every
+/// `/mcp` request verifies its token; five minutes keeps that to one userinfo call per person
+/// per five minutes while an email the issuer unverifies stops working within that time.
+const EMAIL_TTL: Duration = Duration::from_secs(300);
+
 /// Who a verified token speaks for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Person {
@@ -25,17 +31,61 @@ pub struct Person {
     pub email: Email,
 }
 
-/// The claims the gate reads; `exp`, `iss` and `aud` are checked by the validation.
+/// One audience or several, as `aud` may be either.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Aud {
+    /// A single audience.
+    One(String),
+    /// Several audiences.
+    Many(Vec<String>),
+}
+
+impl Aud {
+    /// Whether `want` is among the audiences.
+    fn names(&self, want: &str) -> bool {
+        match self {
+            Self::One(aud) => aud == want,
+            Self::Many(auds) => auds.iter().any(|aud| aud == want),
+        }
+    }
+}
+
+/// Who a token must be for.
+#[derive(Clone, Copy)]
+enum For<'a> {
+    /// The gate's own client: `aud` names it, or `client_id` is it.
+    Client,
+    /// An API resource: `aud` names it.
+    Resource(&'a str),
+}
+
+/// The claims the gate reads; `exp` and `iss` are checked by the validation.
 #[derive(Deserialize)]
 struct Claims {
     /// The issuer's id for the person.
     sub: String,
+    /// Who the token is for.
+    aud: Aud,
+    /// The client the token was issued to.
+    client_id: Option<String>,
     /// The person's email, present when the `email` scope was granted.
     email: Option<String>,
     /// Whether the issuer verified that email.
     email_verified: Option<bool>,
     /// The scopes granted, space separated.
     scope: Option<String>,
+}
+
+/// What the issuer's userinfo endpoint says about the person.
+#[derive(Deserialize)]
+struct Userinfo {
+    /// Must be the token's `sub`.
+    sub: String,
+    /// The person's email.
+    email: Option<String>,
+    /// Whether the issuer verified that email.
+    email_verified: Option<bool>,
 }
 
 /// The key set last fetched, and when.
@@ -56,7 +106,11 @@ pub struct Verifier {
     jwks_url: Option<String>,
     /// The keys fetched so far.
     cache: Mutex<Cache>,
-    /// Fetches the discovery document and the keys.
+    /// The issuer's userinfo endpoint, once its discovery document was read.
+    userinfo_url: Mutex<Option<String>>,
+    /// Verified emails from the userinfo endpoint by `sub`, and when each was fetched.
+    emails: Mutex<HashMap<String, (Email, Instant)>>,
+    /// Fetches the discovery document, the keys and userinfo.
     agent: Agent,
 }
 
@@ -81,6 +135,8 @@ impl Verifier {
                 keys: JwkSet { keys: Vec::new() },
                 fetched: None,
             }),
+            userinfo_url: Mutex::new(None),
+            emails: Mutex::new(HashMap::new()),
             agent: Agent::new_with_config(config),
         }
     }
@@ -102,7 +158,7 @@ impl Verifier {
     /// # Errors
     /// Why the token is refused.
     pub fn verify(&self, token: &str) -> Result<Person, String> {
-        self.check(token, &self.client_id).map(|(person, _)| person)
+        self.check(token, For::Client).map(|(person, _)| person)
     }
 
     /// The person `token` speaks for and the scopes it grants, when it was issued for the API
@@ -115,11 +171,11 @@ impl Verifier {
         token: &str,
         resource: &str,
     ) -> Result<(Person, Vec<String>), String> {
-        self.check(token, resource)
+        self.check(token, For::Resource(resource))
     }
 
-    /// Checks `token` for audience `aud`.
-    fn check(&self, token: &str, aud: &str) -> Result<(Person, Vec<String>), String> {
+    /// Checks `token` is for `audience`.
+    fn check(&self, token: &str, audience: For<'_>) -> Result<(Person, Vec<String>), String> {
         let header = decode_header(token).map_err(|e| format!("the token is not a JWT: {e}"))?;
         if matches!(
             header.alg,
@@ -130,17 +186,28 @@ impl Verifier {
         let key = self.key(header.kid.as_deref())?;
         let mut validation = Validation::new(header.alg);
         validation.set_issuer(&[&self.issuer]);
-        validation.set_audience(&[aud]);
+        validation.validate_aud = false;
         validation.set_required_spec_claims(&["exp", "iss", "aud", "sub"]);
         let claims = decode::<Claims>(token, &key, &validation)
             .map_err(|e| format!("the token is refused: {e}"))?
             .claims;
-        let email = claims.email.ok_or_else(|| {
-            "the token carries no email; sign in again with the email scope".to_owned()
-        })?;
-        if claims.email_verified != Some(true) {
-            return Err(format!("the token's email {email} is not verified"));
+        let for_us = match audience {
+            For::Client => {
+                claims.aud.names(&self.client_id)
+                    || claims.client_id.as_deref() == Some(self.client_id.as_str())
+            }
+            For::Resource(resource) => claims.aud.names(resource),
+        };
+        if !for_us {
+            return Err("the token is refused: it is for another audience".to_owned());
         }
+        let email = match (claims.email, claims.email_verified) {
+            (Some(email), Some(true)) => Email::parse(&email)?,
+            (Some(email), Some(false)) => {
+                return Err(format!("the token's email {email} is not verified"))
+            }
+            _ => self.userinfo_email(token, &claims.sub)?,
+        };
         let scopes = claims
             .scope
             .iter()
@@ -148,7 +215,7 @@ impl Verifier {
             .collect();
         let person = Person {
             identity: Identity::parse(&format!("{NAMESPACE}:{}", claims.sub))?,
-            email: Email::parse(&email)?,
+            email,
         };
         Ok((person, scopes))
     }
@@ -172,29 +239,93 @@ impl Verifier {
             .unwrap_or_else(|| Err("no signing key of the issuer matches the token".to_owned()))
     }
 
-    /// The issuer's current key set.
-    fn fetch(&self) -> Result<JwkSet, String> {
-        let url = if let Some(url) = &self.jwks_url {
-            url.clone()
-        } else {
-            let discovery = format!(
-                "{}/.well-known/openid-configuration",
-                self.issuer.trim_end_matches('/')
-            );
-            let doc: serde_json::Value = self.get_json(&discovery)?;
-            doc.get("jwks_uri")
-                .and_then(serde_json::Value::as_str)
-                .ok_or_else(|| format!("{discovery} names no jwks_uri"))?
-                .to_owned()
-        };
-        self.get_json(&url)
+    /// The verified email the issuer's userinfo endpoint gives for `sub`, asked with `token`.
+    fn userinfo_email(&self, token: &str, sub: &str) -> Result<Email, String> {
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "a cache expiry, not a time anything stores or shows"
+        )]
+        let now = Instant::now();
+        let mut emails = self.emails.lock().unwrap_or_else(PoisonError::into_inner);
+        emails.retain(|_, (_, at)| now.duration_since(*at) < EMAIL_TTL);
+        if let Some((email, _)) = emails.get(sub) {
+            return Ok(email.clone());
+        }
+        drop(emails);
+        let url = self.userinfo_url()?;
+        let info: Userinfo = self
+            .get_json(&url, Some(token))
+            .map_err(|e| format!("the token carries no email and asking userinfo failed: {e}"))?;
+        if info.sub != sub {
+            return Err(format!("{url} answered for another subject"));
+        }
+        let email = info
+            .email
+            .ok_or_else(|| format!("{url} gives no email; sign in again with the email scope"))?;
+        if info.email_verified != Some(true) {
+            return Err(format!("the email {email} is not verified"));
+        }
+        let email = Email::parse(&email)?;
+        self.emails
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(sub.to_owned(), (email.clone(), now));
+        Ok(email)
     }
 
-    /// GETs `url` and parses its JSON body.
-    fn get_json<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T, String> {
-        let body = self
-            .agent
-            .get(url)
+    /// The issuer's userinfo endpoint, reading the discovery document when not known yet.
+    fn userinfo_url(&self) -> Result<String, String> {
+        if let Some(url) = &*self
+            .userinfo_url
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+        {
+            return Ok(url.clone());
+        }
+        self.discover("userinfo_endpoint")
+    }
+
+    /// The URL `field` of the issuer's discovery document, remembering its userinfo endpoint.
+    fn discover(&self, field: &str) -> Result<String, String> {
+        let discovery = format!(
+            "{}/.well-known/openid-configuration",
+            self.issuer.trim_end_matches('/')
+        );
+        let doc: serde_json::Value = self.get_json(&discovery, None)?;
+        let url = |name: &str| {
+            doc.get(name)
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        };
+        if let Some(userinfo) = url("userinfo_endpoint") {
+            *self
+                .userinfo_url
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner) = Some(userinfo);
+        }
+        url(field).ok_or_else(|| format!("{discovery} names no {field}"))
+    }
+
+    /// The issuer's current key set.
+    fn fetch(&self) -> Result<JwkSet, String> {
+        let url = match &self.jwks_url {
+            Some(url) => url.clone(),
+            None => self.discover("jwks_uri")?,
+        };
+        self.get_json(&url, None)
+    }
+
+    /// GETs `url`, with `bearer` as its access token when given, and parses its JSON body.
+    fn get_json<T: serde::de::DeserializeOwned>(
+        &self,
+        url: &str,
+        bearer: Option<&str>,
+    ) -> Result<T, String> {
+        let mut req = self.agent.get(url);
+        if let Some(token) = bearer {
+            req = req.header("Authorization", format!("Bearer {token}"));
+        }
+        let body = req
             .call()
             .and_then(|mut res| res.body_mut().read_to_string())
             .map_err(|e| format!("fetching {url} failed: {e}"))?;
