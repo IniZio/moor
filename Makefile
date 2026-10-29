@@ -84,7 +84,7 @@ lint-pty:
 	cargo clippy -p moor --all-targets --locked $(PTY) -- -D warnings
 
 unit-pty:
-	cargo test -p moor --lib --locked $(PTY) -- adapters::pty
+	cargo test -p moor --lib --locked $(PTY) -- adapters::pty adapters::box_agent::steer wire::
 
 deploy:
 	@echo "deploy: CLI, nothing to deploy"

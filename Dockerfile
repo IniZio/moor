@@ -105,8 +105,9 @@ COPY . .
 # The build context carries no .git, so the commit comes in as an argument.
 ARG MOOR_COMMIT=unknown
 ENV MOOR_COMMIT=${MOOR_COMMIT}
-# Comma-separated cargo features of the moor crate, for example pty-surface.
-ARG MOOR_FEATURES=
+# Comma-separated cargo features of the moor crate. pty-surface lets the controller hold Box
+# agent panes itself, with no herdr server.
+ARG MOOR_FEATURES=pty-surface
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/build/target \
     features=""; \
@@ -137,6 +138,7 @@ COPY --from=rust /out/ /usr/local/bin/
 ENV HOME=/var/lib/moor \
     MOOR_STATE_DIR=/var/lib/moor/state \
     MOOR_CONFIG=/etc/moor/config.yaml \
+    MOOR_SURFACE=pty \
     DISABLE_AUTOUPDATER=1
 USER 10001:10001
 WORKDIR /var/lib/moor

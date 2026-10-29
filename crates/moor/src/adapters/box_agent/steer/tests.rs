@@ -372,3 +372,46 @@ fn the_twelfth_line_from_the_bottom_still_counts() {
     let (out, _) = steer(&s, &session, &text("fix the build"));
     assert!(out.unwrap().submit_retried);
 }
+
+/// A text steer, as MCP `send_to_box` makes one, typed and submitted into a pty pane: no herdr
+/// server takes part.
+#[cfg(feature = "pty-surface")]
+#[test]
+fn a_text_steer_reaches_a_pty_pane() {
+    use crate::adapters::pty::PtySurface;
+
+    let s = Arc::new(PtySurface::default());
+    let ws = s.ensure_workspace("moor:t1").unwrap();
+    let cmd = PaneCmd {
+        label: "agent".to_owned(),
+        argv: vec!["sh".to_owned(), "-c".to_owned(), "exec cat".to_owned()],
+        env: Vec::new(),
+    };
+    let pane = s.open_pane(&ws, &cmd).unwrap();
+    let session = SessionRef {
+        id: "s1".to_owned(),
+        handle: BoxHandle::new("box-1"),
+        workdir: BoxPath::under("/work", "box-1").unwrap(),
+        pane: Some(pane.clone()),
+        warnings: Vec::new(),
+    };
+    let agent = BoxAgent::new(
+        Arc::new(FakeDriver::new()),
+        s.clone(),
+        Arc::new(Claude),
+        Arc::new(FakeClock::new(Ts::from_millis(0))),
+        offline_release(),
+    );
+    agent
+        .steer(&session, &text("hello from mcp"), DEADLINE)
+        .unwrap();
+    let mut tail = String::new();
+    for _ in 0..500 {
+        tail = s.pane_obs(&pane, DEADLINE).unwrap().tail;
+        if tail.matches("hello from mcp").count() >= 2 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(tail.matches("hello from mcp").count() >= 2, "{tail}");
+}

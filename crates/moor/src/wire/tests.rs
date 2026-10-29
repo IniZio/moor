@@ -222,3 +222,131 @@ fn freshly_wired_drivers_share_one_answer_to_crabbox_ssh_help() {
         "two wired drivers, each with its own lookup, asked `crabbox ssh --help` {asked} times"
     );
 }
+
+fn kind_of(config: Option<SurfaceKind>, env: &[(&str, &str)]) -> Result<SurfaceKind, CommandError> {
+    let mut c = UserConfig::default();
+    c.surface.kind = config;
+    surface_kind(&c, &Env::from_pairs(env.iter().copied()))
+}
+
+#[test]
+fn the_surface_is_herdr_when_neither_config_nor_environment_names_one() {
+    assert_eq!(kind_of(None, &[]).unwrap(), SurfaceKind::Herdr);
+    assert_eq!(
+        kind_of(None, &[(SURFACE_ENV, " ")]).unwrap(),
+        SurfaceKind::Herdr
+    );
+}
+
+#[test]
+fn the_environment_names_the_surface_when_the_config_does_not() {
+    assert_eq!(
+        kind_of(None, &[(SURFACE_ENV, "pty")]).unwrap(),
+        SurfaceKind::Pty
+    );
+    assert_eq!(
+        kind_of(None, &[(SURFACE_ENV, "herdr")]).unwrap(),
+        SurfaceKind::Herdr
+    );
+}
+
+#[test]
+fn the_config_surface_wins_over_the_environment() {
+    assert_eq!(
+        kind_of(Some(SurfaceKind::Herdr), &[(SURFACE_ENV, "pty")]).unwrap(),
+        SurfaceKind::Herdr
+    );
+}
+
+#[test]
+fn an_unknown_surface_in_the_environment_is_a_usage_error() {
+    let e = kind_of(None, &[(SURFACE_ENV, "tmux")]).unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Usage);
+    assert!(e.error.to_string().contains("MOOR_SURFACE"), "{}", e.error);
+}
+
+#[cfg(not(feature = "pty-surface"))]
+#[test]
+fn a_build_without_the_pty_feature_refuses_the_pty_surface() {
+    let e = build(&Env::from_pairs([(SURFACE_ENV, "pty")]))
+        .err()
+        .unwrap();
+    assert_eq!(e.kind, ErrorKind::Usage);
+    assert!(e.error.to_string().contains("pty-surface"), "{}", e.error);
+}
+
+/// A herdr that answers every call with `server_not_running`, and what it was asked.
+fn herdr_without_server() -> (Arc<ScriptedProc>, Arc<dyn Proc>) {
+    let proc = Arc::new(ScriptedProc::new());
+    proc.on(
+        Tool::Herdr,
+        &[],
+        Reply::Fail {
+            code: 1,
+            stdout: String::new(),
+            stderr:
+                r#"{"error":{"code":"server_not_running","message":"no herdr server is running"}}"#
+                    .to_owned(),
+        },
+    );
+    let dyn_proc = proc.clone() as Arc<dyn Proc>;
+    (proc, dyn_proc)
+}
+
+/// The failure MCP `send_to_box` hit: the default herdr surface reads the pane through a herdr
+/// server, and none runs on the controller.
+#[test]
+fn the_herdr_surface_cannot_read_a_pane_with_no_herdr_server() {
+    let (_, proc) = herdr_without_server();
+    let clock: Arc<dyn Clock> = Arc::new(FakeClock::new(Ts::from_millis(0)));
+    let config = UserConfig::default();
+    let kind = surface_kind(&config, &Env::from_pairs(Vec::<(&str, &str)>::new())).unwrap();
+    let s = surface(kind, &config, &proc, Vec::new(), clock, None).unwrap();
+    let e = s
+        .pane_obs(
+            &PaneRef::new("p"),
+            moor_core::seam::proc::Deadline(Duration::from_secs(1)),
+        )
+        .unwrap_err();
+    assert!(e.to_string().contains("herdr server not running"), "{e}");
+}
+
+/// The surface `MOOR_SURFACE=pty` wires types into and reads its pane while herdr has no
+/// server, and never runs herdr.
+#[cfg(feature = "pty-surface")]
+#[test]
+fn the_pty_surface_types_into_a_pane_with_no_herdr_server() {
+    use moor_core::seam::proc::Deadline;
+    use moor_core::seam::surface::PaneCmd;
+
+    let (calls, proc) = herdr_without_server();
+    let clock: Arc<dyn Clock> = Arc::new(FakeClock::new(Ts::from_millis(0)));
+    let config = UserConfig::default();
+    let kind = surface_kind(&config, &Env::from_pairs([(SURFACE_ENV, "pty")])).unwrap();
+    assert_eq!(kind, SurfaceKind::Pty);
+    let s = surface(kind, &config, &proc, Vec::new(), clock, None).unwrap();
+    let ws = s.ensure_workspace("moor:no-herdr").unwrap();
+    let pane = s
+        .open_pane(
+            &ws,
+            &PaneCmd {
+                label: "agent".to_owned(),
+                argv: vec!["sh".to_owned(), "-c".to_owned(), "exec cat".to_owned()],
+                env: Vec::new(),
+            },
+        )
+        .unwrap();
+    s.send_text(&pane, "hello from mcp\r").unwrap();
+    let deadline = Deadline(Duration::from_secs(5));
+    let mut tail = String::new();
+    for _ in 0..500 {
+        tail = s.pane_obs(&pane, deadline).unwrap().tail;
+        if tail.matches("hello from mcp").count() >= 2 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(tail.matches("hello from mcp").count(), 2, "{tail}");
+    s.close_pane(&pane).unwrap();
+    assert!(calls.calls().iter().all(|c| c.tool != Tool::Herdr));
+}

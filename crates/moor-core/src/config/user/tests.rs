@@ -94,7 +94,7 @@ fn provider_session_and_tools_parse() {
     assert_eq!(c.box_.max_boxes, NonZeroU32::new(3));
     assert_eq!(c.box_.sleep_after.as_deref(), Some("30m"));
     assert_eq!(c.herdr_session(), "work");
-    assert_eq!(c.surface.kind, SurfaceKind::Herdr);
+    assert_eq!(c.surface.kind, None);
     assert_eq!(c.tools.crabbox, Some(PathBuf::from("/opt/crabbox")));
     assert_eq!(c.tools.git, Some(PathBuf::from("git2")));
     assert_eq!(c.tools.herdr, None);
@@ -468,10 +468,21 @@ fn a_launch_timeout_that_is_not_a_duration_is_refused() {
 
 #[test]
 fn surface_kind_parses() {
-    assert_eq!(ok("surface: {kind: pty}").surface.kind, SurfaceKind::Pty);
+    assert_eq!(
+        ok("surface: {kind: pty}").surface.kind,
+        Some(SurfaceKind::Pty)
+    );
     assert_eq!(
         ok("surface: {kind: herdr}").surface.kind,
-        SurfaceKind::Herdr
+        Some(SurfaceKind::Herdr)
     );
     err("surface: {kind: tmux}");
+}
+
+#[test]
+fn surface_kind_names_parse_as_the_config_spells_them() {
+    assert_eq!(SurfaceKind::parse("pty"), Some(SurfaceKind::Pty));
+    assert_eq!(SurfaceKind::parse("herdr"), Some(SurfaceKind::Herdr));
+    assert_eq!(SurfaceKind::parse("Pty"), None);
+    assert_eq!(SurfaceKind::parse(""), None);
 }
