@@ -111,6 +111,7 @@ fn a_relayed_call_carries_the_box_fact_whatever_the_agent_sent() {
 #[test]
 fn a_box_without_the_fact_is_refused_naming_it_and_nothing_is_relayed() {
     let rig = relayed(&[]);
+    rig.open.lock().unwrap().push(8);
     let err = tap(&rig, &caller(&rig, "8", "minion")).unwrap_err();
     assert!(err.contains("device"), "{err}");
     assert!(lines(&rig, "fake-calls").is_empty(), "the fake saw no call");
