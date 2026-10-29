@@ -60,6 +60,7 @@ name = "runner"
 path = "tests/runner/main.rs"
 
 [dev-dependencies]
+moor-machine-agent = { path = "../moor-machine-agent" }
 moor-testkit = { path = "../moor-testkit" }
 tempfile = "3"
 ureq = { version = "3", default-features = false, features = ["json"] }

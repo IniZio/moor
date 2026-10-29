@@ -22,6 +22,7 @@ mod claim;
 mod gc;
 mod holds;
 mod hooks;
+mod linked;
 mod missing;
 mod pull;
 mod relay;

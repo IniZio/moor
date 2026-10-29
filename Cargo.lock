@@ -3193,6 +3193,7 @@ dependencies = [
  "hyper-util",
  "moor-client",
  "moor-core",
+ "moor-machine-agent",
  "moor-testkit",
  "rmcp",
  "schemars 1.2.3",
