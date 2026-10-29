@@ -164,10 +164,68 @@ fn a_machine_whose_agent_dropped_its_link_is_reported_offline() {
 }
 
 #[test]
-fn sync_to_a_linked_machine_is_refused_without_dialing_ssh() {
+fn sync_lands_the_tree_in_the_box_copy_over_the_link_and_never_dials_ssh() {
     let m = Linked::start(&[]);
+    m.rig.write("src/main.rs", "fn main() {}");
+    m.rig.write("node_modules/x.js", "skip");
+    m.call("sync", json!({"exclude": ["node_modules"]}))
+        .unwrap();
+    let copied = std::fs::read_to_string(m.rig.copy().join("src/main.rs")).unwrap();
+    assert_eq!(copied, "fn main() {}");
+    assert!(!m.rig.copy().join("node_modules").exists(), "excludes hold");
+    std::fs::remove_file(m.rig.tree.join("src/main.rs")).unwrap();
+    m.call("sync", json!({})).unwrap();
+    assert!(
+        !m.rig.copy().join("src/main.rs").exists(),
+        "a deleted file goes"
+    );
+    assert!(!m.ssh_ran());
+}
+
+#[test]
+fn sync_into_a_box_copy_that_is_a_symlink_out_is_refused() {
+    let m = Linked::start(&[]);
+    let outside = m.rig.dir().join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::remove_dir_all(m.rig.copy()).unwrap();
+    std::os::unix::fs::symlink(&outside, m.rig.copy()).unwrap();
+    m.rig.write("a.txt", "a");
     let err = m.call("sync", json!({})).unwrap_err();
-    assert!(err.contains("not available yet"), "{err}");
+    assert!(err.contains("rsync"), "{err}");
+    assert_eq!(
+        std::fs::read_dir(&outside).unwrap().count(),
+        0,
+        "nothing landed"
+    );
+    assert!(!m.ssh_ran());
+}
+
+#[test]
+fn pull_reads_a_file_in_the_box_copy_over_the_link() {
+    let m = Linked::start(&[]);
+    std::fs::write(m.rig.copy().join("shot.png"), "png").unwrap();
+    let got = m
+        .call("pull", json!({"path": "shot.png", "dest": "out/shot.png"}))
+        .unwrap();
+    assert_eq!(got, json!({"dest": "out/shot.png", "bytes": 3}));
+    assert_eq!(m.rig.puts.lock().unwrap()[0].1, b"png");
+    assert!(!m.ssh_ran());
+}
+
+#[test]
+fn pull_of_a_path_outside_the_box_dirs_is_refused() {
+    let m = Linked::start(&[]);
+    let secret = m.rig.remote.join("secret");
+    std::fs::write(&secret, "no").unwrap();
+    std::os::unix::fs::symlink(&secret, m.rig.copy().join("link")).unwrap();
+    let absolute = secret.display().to_string();
+    for path in ["../../secret", absolute.as_str(), "link"] {
+        let err = m
+            .call("pull", json!({"path": path, "dest": "x"}))
+            .unwrap_err();
+        assert!(err.contains("outside the Box's dirs"), "{path}: {err}");
+    }
+    assert!(m.rig.puts.lock().unwrap().is_empty());
     assert!(!m.ssh_ran());
 }
 

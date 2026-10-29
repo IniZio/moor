@@ -176,6 +176,10 @@ async fn take_links(addr: SocketAddr, socket: &Path) -> Result<Agents, String> {
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    let raw: Vec<String> = std::env::args().collect();
+    if raw.get(1).map(String::as_str) == Some("rsh") {
+        std::process::exit(moor_machine_runner::rsh(raw.get(2..).unwrap_or_default()).await);
+    }
     let args = Args::parse();
     let relays = match relays(&args) {
         Ok(r) => r,

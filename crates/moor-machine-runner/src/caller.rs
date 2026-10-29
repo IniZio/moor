@@ -141,16 +141,6 @@ pub(crate) enum Reach {
     },
 }
 
-impl Reach {
-    /// The ssh target, or why `what` cannot reach a linked machine yet.
-    pub(crate) fn ssh(&self, what: &str) -> Result<&str, String> {
-        match self {
-            Self::Ssh { ssh } => Ok(ssh),
-            Self::Linked { .. } => Err(format!("{what} to enrolled machines is not available yet")),
-        }
-    }
-}
-
 /// The machine's enrolled id from the request headers, when its agent links in.
 fn machine_id(headers: &HeaderMap) -> Result<Option<i64>, ErrorData> {
     let Some(raw) = headers.get(MACHINE_ID) else {
