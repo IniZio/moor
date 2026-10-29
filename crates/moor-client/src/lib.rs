@@ -27,6 +27,7 @@ pub use watch::{EventRecord, Watch, WatchItem, WatchStop};
 
 mod attach;
 mod error;
+pub mod forward;
 #[cfg(feature = "link")]
 pub mod link;
 pub mod oidc;

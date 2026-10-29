@@ -11,7 +11,7 @@ use moor_core::domain::event::{Event, MachineEvent};
 use super::run::{say, Running};
 use crate::store::MachineWake;
 pub(super) use hold::hold_of;
-use link::{keep, ForwardFailed, MachineLink};
+use link::{keep, ForwardFailed, MachineLink, Via};
 
 /// The link to the attached machine and whether its last open failed.
 #[derive(Default)]
@@ -47,7 +47,7 @@ impl Running<'_> {
                 return;
             }
         };
-        let (machine, ports, enrolled) = (want.machine, want.ports, want.machine_id.is_some());
+        let (machine, ports, enrolled) = (want.machine, want.ports, want.machine_id);
         let mut slot = self.machine.borrow_mut();
         let wanted = Some((machine.name.clone(), ports.clone()));
         if slot.opened != wanted {
@@ -81,26 +81,21 @@ impl Running<'_> {
         self.record_machine(event);
     }
 
-    /// Opens forwards of `ports` to `machine`; an enrolled machine has none yet.
+    /// Opens forwards of `ports` to `machine`: over ssh, or through the machine runner when
+    /// it is `enrolled` under that id.
     fn forwards(
         &self,
         machine: &UserMachine,
         ports: &[u16],
-        enrolled: bool,
+        enrolled: Option<i64>,
     ) -> Result<MachineLink, ForwardFailed> {
-        if enrolled {
-            return Err(ForwardFailed {
-                port: None,
-                error: "port forwarding to enrolled machines is not available yet".to_owned(),
-            });
-        }
-        MachineLink::open(
-            self.deps.driver,
-            self.deps.proc,
-            &self.handle,
-            machine,
-            ports,
-        )
+        let socket = self.deps.state_dir.join(moor_client::forward::SOCKET);
+        let via = enrolled.map_or(Via::Ssh(machine), |machine_id| Via::Runner {
+            socket: &socket,
+            box_id: self.box_id.get(),
+            machine_id,
+        });
+        MachineLink::open(self.deps.driver, self.deps.proc, &self.handle, &via, ports)
     }
 
     /// Ends the forwards and frees the slot for another Box, keeping the claim on the machine.

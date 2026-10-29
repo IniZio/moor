@@ -17,7 +17,6 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{Connector, MaybeTlsStream};
 use tokio_util::compat::{Compat, FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
 
-pub mod forward;
 pub mod ops;
 
 /// Where the runner accepts links.

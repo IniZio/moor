@@ -7,7 +7,7 @@ use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::seam::proc::Tool;
 use moor_core::{BoxHandle, BoxId, ProviderId};
 
-use super::{forward_args, keep, MachineLink};
+use super::{forward_args, keep, MachineLink, Via};
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::{ChildReply, ScriptedProc};
 
@@ -66,8 +66,14 @@ fn opens_a_tunnel_per_port_then_one_ssh_child() {
     let (driver, proc) = (FakeDriver::new().reverse_tunnels(), ScriptedProc::new());
     proc.on_child(Tool::Ssh, &[], ChildReply::Hang);
     let h = boxed(&driver);
-    let mut link =
-        MachineLink::open(&driver, &proc, &h, &machine("dev@mac"), &[8081, 3001]).expect("open");
+    let mut link = MachineLink::open(
+        &driver,
+        &proc,
+        &h,
+        &Via::Ssh(&machine("dev@mac")),
+        &[8081, 3001],
+    )
+    .expect("open");
     assert!(link.alive());
     let ports: Vec<u16> = driver.tunnels().iter().map(|t| t.box_port).collect();
     assert_eq!(ports, [8081, 3001]);
@@ -86,7 +92,7 @@ fn a_dead_tunnel_is_revived_and_close_ends_every_child() {
     let (driver, proc) = (FakeDriver::new().reverse_tunnels(), ScriptedProc::new());
     proc.on_child(Tool::Ssh, &[], ChildReply::Hang);
     let h = boxed(&driver);
-    let open = || MachineLink::open(&driver, &proc, &h, &machine("dev@mac"), &[8081]);
+    let open = || MachineLink::open(&driver, &proc, &h, &Via::Ssh(&machine("dev@mac")), &[8081]);
     let mut link = Some(open().expect("open"));
     let first = driver.tunnels().len();
     keep(&mut link, open).expect("alive link kept");
@@ -111,7 +117,7 @@ fn a_dead_tunnel_is_revived_and_close_ends_every_child() {
 fn a_failed_tunnel_names_its_port() {
     let (driver, proc) = (FakeDriver::new(), ScriptedProc::new());
     let h = boxed(&driver);
-    let err = MachineLink::open(&driver, &proc, &h, &machine("dev@mac"), &[8081])
+    let err = MachineLink::open(&driver, &proc, &h, &Via::Ssh(&machine("dev@mac")), &[8081])
         .err()
         .expect("no tunnel support");
     assert_eq!(err.port, Some(8081));

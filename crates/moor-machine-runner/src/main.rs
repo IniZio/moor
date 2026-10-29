@@ -185,7 +185,7 @@ async fn take_links(addr: SocketAddr, socket: &Path) -> Result<Agents, String> {
 /// only by this user; the listener and this user's uid.
 fn forward_socket(socket: &Path) -> Result<(tokio::net::UnixListener, u32), String> {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
-    let path = socket.with_file_name(moor_client::link::forward::SOCKET);
+    let path = socket.with_file_name(moor_client::forward::SOCKET);
     let failed = |e: std::io::Error| format!("cannot listen on {}: {e}", path.display());
     match std::fs::remove_file(&path) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(failed(e)),
