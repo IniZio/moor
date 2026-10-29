@@ -39,6 +39,7 @@ pub(crate) async fn send(
         Reply::Missing => Ok(Answer::Missing),
         Reply::Sending { bytes } => Ok(Answer::Sending(stream, bytes)),
         Reply::Refused { reason } => Err(format!("machine {machine} refused: {reason}")),
+        Reply::Listening => Err(format!("machine {machine} answered something else")),
     }
 }
 

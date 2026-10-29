@@ -110,6 +110,16 @@ pub enum Op {
         /// Absolute, or relative to the Box's dir.
         path: String,
     },
+    /// Listen on the machine's loopback at each of `ports` for the Box while the stream stays
+    /// open, opening a stream back per accepted connection.
+    Listen {
+        /// The Box whose ports these are.
+        box_id: i64,
+        /// Names this listen in each [`super::forward::Accepted`].
+        listen: u64,
+        /// Machine ports, at most [`super::forward::MAX_PORTS`].
+        ports: Vec<u16>,
+    },
 }
 
 /// A Box lifecycle hook, a file of that name in the agent's hooks dir.
@@ -151,6 +161,8 @@ pub enum Reply {
         /// Its length.
         bytes: u64,
     },
+    /// Every port of the listen is bound; the agent holds them until the stream closes.
+    Listening,
     /// The request was not served.
     Refused {
         /// Why.

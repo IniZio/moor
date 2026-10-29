@@ -283,3 +283,95 @@ fn a_claim_on_a_removed_machine_is_refused_with_the_reason() {
 fn hold_answers(m: &Linked, answers: Vec<Value>) {
     m.rig.holds.lock().unwrap().answers = answers.into();
 }
+
+/// A free loopback port, unbound again.
+fn free_port() -> u16 {
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
+}
+
+/// Echoes every connection on a fresh loopback port, standing in for the tunnel into the Box.
+fn echo() -> u16 {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for conn in listener.incoming().flatten() {
+            std::thread::spawn(move || {
+                let mut out = conn.try_clone().unwrap();
+                let _ = std::io::copy(&mut &conn, &mut out);
+            });
+        }
+    });
+    port
+}
+
+impl Linked {
+    /// Asks the runner to forward `ports` of `box_id`, as the supervisor does; its answer and
+    /// the connection that holds the forwards.
+    fn forward(
+        &self,
+        box_id: i64,
+        ports: &[(u16, u16)],
+    ) -> (Value, std::os::unix::net::UnixStream) {
+        use std::io::{BufRead, Write};
+        let path = self.rig.dir().join("machine-forwards.sock");
+        let mut conn = std::os::unix::net::UnixStream::connect(path).unwrap();
+        let req = json!({"box_id": box_id, "machine_id": MACHINE_ID, "ports": ports});
+        writeln!(conn, "{req}").unwrap();
+        let mut line = String::new();
+        std::io::BufReader::new(&conn).read_line(&mut line).unwrap();
+        (serde_json::from_str(&line).unwrap(), conn)
+    }
+}
+
+/// Sends `ping` to the machine's loopback `port` and reads what comes back.
+fn ping(port: u16) -> std::io::Result<String> {
+    use std::io::{Read, Write};
+    let mut conn = std::net::TcpStream::connect(("127.0.0.1", port))?;
+    conn.set_read_timeout(Some(Duration::from_secs(5)))?;
+    conn.write_all(b"ping")?;
+    let mut got = [0u8; 4];
+    conn.read_exact(&mut got)?;
+    Ok(String::from_utf8_lossy(&got).into_owned())
+}
+
+#[test]
+fn a_machine_port_reaches_the_box_until_the_supervisor_lets_go() {
+    let m = Linked::start(&[]);
+    let (machine_port, host_port) = (free_port(), echo());
+
+    let (answer, conn) = m.forward(7, &[(machine_port, host_port)]);
+    assert_eq!(answer, json!({"reply": "up"}));
+    assert_eq!(ping(machine_port).unwrap(), "ping", "the Box answered");
+    drop(conn);
+    eventually("the listener closed", || ping(machine_port).is_err());
+    assert!(!m.ssh_ran(), "the forward never used ssh");
+}
+
+#[test]
+fn a_box_beyond_the_machines_slots_gets_no_listener() {
+    let m = Linked::start(&[]);
+    let (first, second) = (free_port(), free_port());
+    let host_port = echo();
+
+    let (answer, _held) = m.forward(7, &[(first, host_port)]);
+    assert_eq!(answer, json!({"reply": "up"}));
+    let (answer, _) = m.forward(8, &[(second, host_port)]);
+    assert_eq!(answer["reply"], "refused");
+    assert!(
+        answer["reason"].as_str().unwrap().contains("slots"),
+        "{answer}"
+    );
+    assert!(ping(second).is_err(), "nothing listens for the second Box");
+}
+
+#[test]
+fn a_forward_of_no_ports_is_refused() {
+    let m = Linked::start(&[]);
+
+    let (answer, _) = m.forward(7, &[]);
+    assert_eq!(answer["reply"], "refused");
+}

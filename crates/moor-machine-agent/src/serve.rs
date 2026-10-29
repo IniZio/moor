@@ -11,6 +11,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
 use crate::files;
+use crate::listen::{self, Link};
 
 /// How long a relay may take to exit once its stdin closes, before it is killed.
 const RELAY_EXIT: Duration = Duration::from_secs(5);
@@ -52,7 +53,7 @@ impl Machine {
 }
 
 /// Serves the request that opens `ch`.
-pub(crate) async fn serve(machine: &Machine, mut ch: Channel) {
+pub(crate) async fn serve(machine: &Machine, link: &Link, mut ch: Channel) {
     let reply = match ops::read_line::<_, Op>(&mut ch).await {
         Err(e) => refused(e),
         Ok(Op::Sync { box_id, argv }) => return files::sync(machine, ch, box_id, &argv).await,
@@ -60,6 +61,11 @@ pub(crate) async fn serve(machine: &Machine, mut ch: Channel) {
         Ok(op) => match start(machine, op) {
             Ok(Start::Run(script, timeout)) => return ran(machine, ch, &script, timeout).await,
             Ok(Start::Relay(script)) => return relay(machine, ch, &script).await,
+            Ok(Start::Listen {
+                box_id,
+                listen,
+                ports,
+            }) => return listen::serve(ch, link, box_id, listen, &ports).await,
             Err(reply) => reply,
         },
     };
@@ -73,6 +79,15 @@ enum Start {
     Run(String, Duration),
     /// A relay's script, whose stdio the stream carries.
     Relay(String),
+    /// Ports to listen on for a Box while the stream stays open.
+    Listen {
+        /// The Box.
+        box_id: i64,
+        /// The listen's id.
+        listen: u64,
+        /// The machine ports.
+        ports: Vec<u16>,
+    },
 }
 
 /// What `op` starts, or the reply that refuses it.
@@ -110,6 +125,15 @@ fn start(machine: &Machine, op: Op) -> Result<Start, Reply> {
             Ok(Start::Relay(ops::script(&env, &ops::in_box(box_id, &body))))
         }
         Op::Sync { .. } | Op::Pull { .. } => Err(refused("not a command".to_owned())),
+        Op::Listen {
+            box_id,
+            listen,
+            ports,
+        } => Ok(Start::Listen {
+            box_id,
+            listen,
+            ports,
+        }),
     }
 }
 

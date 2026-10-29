@@ -19,6 +19,7 @@ use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::claim::now;
+use crate::forwards::{accepted, Routes};
 
 /// The runner's release, which an agent told to update must become.
 const VERSION: &str = match option_env!("MOOR_VERSION") {
@@ -37,6 +38,8 @@ pub struct Agents {
     client: Client,
     /// Each machine's link.
     links: Arc<Links>,
+    /// Where connections accepted for forwards go.
+    pub(crate) routes: Arc<Routes>,
 }
 
 impl std::fmt::Debug for Agents {
@@ -57,7 +60,11 @@ impl Agents {
             report: tx,
             next: Mutex::new(0),
         });
-        Self { client, links }
+        Self {
+            client,
+            links,
+            routes: Arc::default(),
+        }
     }
 
     /// A new stream to machine `machine_id`'s agent.
@@ -85,16 +92,20 @@ impl Agents {
 /// # Errors
 /// Returns the error that stopped the listener.
 pub async fn serve_agents(listener: TcpListener, agents: Agents) -> io::Result<()> {
-    let Agents { client, links } = agents;
+    let Agents {
+        client,
+        links,
+        routes,
+    } = agents;
     loop {
         let (stream, _) = listener.accept().await?;
-        let (client, links) = (client.clone(), Arc::clone(&links));
-        tokio::spawn(async move { serve_link(stream, &client, &links).await });
+        let (client, links, routes) = (client.clone(), Arc::clone(&links), Arc::clone(&routes));
+        tokio::spawn(async move { serve_link(stream, &client, &links, routes).await });
     }
 }
 
 /// One agent's link, from the upgrade until it drops or a newer link replaces it.
-async fn serve_link<S>(stream: S, client: &Client, links: &Links)
+async fn serve_link<S>(stream: S, client: &Client, links: &Links, routes: Arc<Routes>)
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
@@ -121,7 +132,10 @@ where
     eprintln!("machine {machine_id} linked");
     let socket = link::carry(ws, link::KEEPALIVE);
     let why = tokio::select! {
-        why = link::drive(socket, link::Mode::Server, asks, drop) => why,
+        why = link::drive(socket, link::Mode::Server, asks, |ch| {
+            let routes = Arc::clone(&routes);
+            tokio::spawn(async move { accepted(ch, machine_id, &routes).await });
+        }) => why,
         _ = replaced => "a newer link replaced it".to_owned(),
     };
     links.down(machine_id, generation);
