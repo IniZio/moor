@@ -184,7 +184,10 @@ fn an_unauthenticated_call_gets_401_pointing_at_the_resource_metadata() {
     let doc: Value = serde_json::from_str(doc.split("\r\n\r\n").nth(1).unwrap()).unwrap();
     assert_eq!(doc["resource"], m.url());
     assert_eq!(doc["authorization_servers"], json!([m.world.issuer]));
-    assert_eq!(doc["scopes_supported"], json!(["moor:read", "moor:write"]));
+    assert_eq!(
+        doc["scopes_supported"],
+        json!(["openid", "offline_access", "moor:read", "moor:write"])
+    );
 }
 
 #[test]

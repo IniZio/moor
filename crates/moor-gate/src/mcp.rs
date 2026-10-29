@@ -87,7 +87,8 @@ impl Mcp {
         serde_json::json!({
             "resource": self.resource_url,
             "authorization_servers": [issuer],
-            "scopes_supported": [READ, WRITE],
+            // Clients request what is listed here, and an OIDC issuer refuses a request without openid.
+            "scopes_supported": ["openid", "offline_access", READ, WRITE],
             "bearer_methods_supported": ["header"],
         })
         .to_string()
