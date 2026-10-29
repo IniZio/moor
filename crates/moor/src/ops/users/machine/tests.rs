@@ -151,3 +151,56 @@ fn capacity_is_stored_and_listed_and_zero_is_refused() {
     let err = as_user(&f, "slack:T1:U1", &cmd).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Usage);
 }
+
+const KEY: &str =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl";
+
+fn machine_enroll(email: Option<&str>, name: &str, pubkey: &str, capacity: u16) -> UserCmd {
+    UserCmd::MachineEnroll {
+        email: email.map(|e| moor_core::user::Email::parse(e).unwrap()),
+        name: name.to_owned(),
+        pubkey: pubkey.to_owned(),
+        labels: vec!["macos".to_owned()],
+        capacity,
+    }
+}
+
+#[test]
+fn machine_enroll_joins_the_user_with_the_email_and_keeps_the_id_on_re_enroll() {
+    let f = fixture();
+    let slack = f.cx.store().unwrap();
+    let email = moor_core::user::Email::parse("alice@example.com").unwrap();
+    let (alice, _) = slack.enroll(&id("slack:T1:UA"), Some(&email)).unwrap();
+    let cmd = machine_enroll(Some("alice@example.com"), "minion", KEY, 2);
+    let first = as_user(&f, "authgear:alice-sub", &cmd).unwrap();
+    assert_eq!(first["user"], json!(alice.get()), "{first}");
+    assert_eq!(first["owner"], "alice@example.com");
+    assert_eq!(first["capacity"], 2);
+    let again = as_user(&f, "authgear:alice-sub", &cmd).unwrap();
+    assert_eq!(again["machine_id"], first["machine_id"]);
+}
+
+#[test]
+fn machine_enroll_refuses_a_key_that_is_not_one_ed25519_public_key_and_a_bad_name() {
+    let f = fixture();
+    for (name, pubkey, capacity) in [
+        ("minion", "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ", 1),
+        ("minion", &format!("{KEY} alice@laptop") as &str, 1),
+        ("minion", KEY.strip_suffix('l').unwrap(), 1),
+        ("Minion", KEY, 1),
+        ("minion", KEY, 0),
+    ] {
+        let err = as_user(
+            &f,
+            "authgear:a",
+            &machine_enroll(None, name, pubkey, capacity),
+        )
+        .unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Usage, "{name} {pubkey} {capacity}");
+    }
+    assert_eq!(
+        f.cx.store().unwrap().user_of(&id("authgear:a")).unwrap(),
+        None,
+        "no user made"
+    );
+}

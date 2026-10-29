@@ -61,6 +61,19 @@ pub(crate) fn run(
         UserCmd::McpRemove { name } => mcp::remove(store, enrolled(store, who)?, name),
         UserCmd::McpOAuthFinish { .. } => mcp::oauth::finish(cx, vault, enrolled(store, who)?, cmd),
         UserCmd::McpList => mcp::list(store, enrolled(store, who)?),
+        UserCmd::MachineEnroll {
+            email,
+            name,
+            pubkey,
+            labels,
+            capacity,
+        } => machine::enroll(
+            store,
+            who,
+            email.as_ref(),
+            (name, pubkey, labels),
+            *capacity,
+        ),
         UserCmd::MachineAdd { .. } | UserCmd::MachineRemove { .. } | UserCmd::MachineList => {
             machine::run(store, enrolled(store, who)?, cmd)
         }

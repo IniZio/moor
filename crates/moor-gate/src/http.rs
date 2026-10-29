@@ -1,4 +1,5 @@
-//! The gate's HTTP surface: the metadata document, the `/front` upgrade, and 404 for the rest.
+//! The gate's HTTP surface: the metadata document, the `/front` upgrade, machine enrollment,
+//! and 404 for the rest.
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
@@ -66,6 +67,10 @@ pub(crate) fn handle(stream: TcpStream, gate: &Gate) {
             }
         }
         (Some("GET"), "/front") => front(stream, leftover, &req, gate),
+        (Some("POST"), "/machines/enroll") => {
+            let length = header(&req, "content-length").and_then(|v| v.trim().parse().ok());
+            crate::enroll::handle(stream, leftover, length, gate);
+        }
         _ => respond(&mut stream, "404 Not Found", "text/plain", "not found\n"),
     }
 }
@@ -152,7 +157,7 @@ fn header<'a>(req: &'a httparse::Request<'_, '_>, name: &str) -> Option<&'a str>
 }
 
 /// Writes a whole response and lets the connection close.
-fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &str) {
+pub(crate) fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &str) {
     let _ = write!(
         stream,
         "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",

@@ -1,9 +1,11 @@
 //! A user's own machines: `machine-add`, `machine-remove`, `machine-list`.
 
-use moor_core::config::UserMachine;
+use moor_core::config::{EnrolledMachine, UserMachine};
 use moor_core::request::UserCmd;
-use moor_core::user::UserId;
-use moor_core::view::user::{MachineChangeValue, MachineListValue, MachineView};
+use moor_core::user::{Email, Identity, UserId};
+use moor_core::view::user::{
+    MachineChangeValue, MachineEnrollValue, MachineListValue, MachineView,
+};
 use moor_core::ErrorKind;
 
 use super::to_value;
@@ -45,6 +47,28 @@ pub(super) fn add(
     to_value(&MachineChangeValue {
         name: machine.name,
         changed: true,
+    })
+}
+
+/// `machine-enroll`: find or create `who`'s user by `email`, then store the machine over any
+/// of the same name, replacing its key.
+pub(super) fn enroll(
+    store: &Store,
+    who: &Identity,
+    email: Option<&Email>,
+    (name, pubkey, labels): (&str, &str, &[String]),
+    capacity: u16,
+) -> Result<serde_json::Value, CommandError> {
+    let machine = EnrolledMachine::parse(name, pubkey, labels, capacity)
+        .map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
+    let (user, _) = store.enroll(who, email)?;
+    let machine_id = store.enroll_machine(user, &machine)?;
+    to_value(&MachineEnrollValue {
+        machine_id,
+        name: machine.name,
+        user,
+        owner: email.cloned(),
+        capacity: machine.capacity,
     })
 }
 

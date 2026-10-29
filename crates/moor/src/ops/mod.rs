@@ -70,6 +70,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         | Request::McpOAuthFinish(_)
         | Request::MachineAdd(_)
         | Request::MachineRemove(_)
+        | Request::MachineEnroll(_)
         | Request::MachineList(_)
         | Request::ProxyLease(_)
         | Request::ProxyRelease(_)

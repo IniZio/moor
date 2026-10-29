@@ -287,3 +287,63 @@ fn a_sealed_value_copied_into_another_row_is_refused() {
 
 mod hold;
 mod machine;
+
+#[test]
+fn enrolling_a_machine_again_replaces_its_key_and_keeps_its_id() {
+    use moor_core::config::EnrolledMachine;
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let (alice, _) = store.enroll(&id("authgear:a"), None).unwrap();
+    let (bob, _) = store.enroll(&id("authgear:b"), None).unwrap();
+    let machine = |key: &str, capacity| {
+        EnrolledMachine::parse("minion", key, &["macos".to_owned()], capacity).unwrap()
+    };
+    let first = store
+        .enroll_machine(
+            alice,
+            &machine(
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl",
+                1,
+            ),
+        )
+        .unwrap();
+    let again = store
+        .enroll_machine(
+            alice,
+            &machine(
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                3,
+            ),
+        )
+        .unwrap();
+    let bobs = store
+        .enroll_machine(
+            bob,
+            &machine(
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl",
+                1,
+            ),
+        )
+        .unwrap();
+    assert_eq!(again, first, "the same name keeps its id");
+    assert_ne!(bobs, first, "names are per user");
+    let row: (String, u16, i64) = store
+        .reader()
+        .unwrap()
+        .query_row(
+            "SELECT pubkey, capacity, count(*) OVER () FROM user_machines_v2 \
+             WHERE machine_id = ?",
+            [first],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        row,
+        (
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                .to_owned(),
+            3,
+            1
+        )
+    );
+}

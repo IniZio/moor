@@ -100,6 +100,7 @@ impl Request {
             | Self::McpOAuthFinish(_)
             | Self::MachineAdd(_)
             | Self::MachineRemove(_)
+            | Self::MachineEnroll(_)
             | Self::MachineList(_)
             | Self::MachineTargets {}
             | Self::ProxyLease(_)

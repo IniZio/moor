@@ -1,7 +1,7 @@
 //! Splits the client's byte stream into frames and makes each act as the connection's person.
 
 use moor_core::controller::{parse_frame, ClientFrame, ServerFrame};
-use moor_core::request::{ActAsReq, EnrollReq, Request};
+use moor_core::request::{ActAsReq, EnrollReq, MachineEnrollReq, Request};
 use moor_core::response::{ErrorKind, ErrorView, Response};
 
 use crate::Person;
@@ -107,7 +107,8 @@ fn frame(line: &str, person: &Person) -> Result<(ClientFrame, usize), Box<Server
     }
 }
 
-/// `request` acting as `person`, with their verified email on an `enroll`.
+/// `request` acting as `person`, with their verified email on an `enroll` or a
+/// `machine-enroll`.
 pub(crate) fn act(request: Request, person: &Person) -> Result<Request, String> {
     let (asserted, inner) = request.split_identity()?;
     if let Some(other) = asserted.filter(|id| *id != person.identity) {
@@ -115,6 +116,9 @@ pub(crate) fn act(request: Request, person: &Person) -> Result<Request, String> 
     }
     let inner = match inner {
         Request::Enroll(EnrollReq {
+            email: Some(email), ..
+        })
+        | Request::MachineEnroll(MachineEnrollReq {
             email: Some(email), ..
         }) if email != person.email => {
             return Err(format!(
@@ -125,6 +129,10 @@ pub(crate) fn act(request: Request, person: &Person) -> Result<Request, String> 
         Request::Enroll(EnrollReq { identity, .. }) => Request::Enroll(EnrollReq {
             identity,
             email: Some(person.email.clone()),
+        }),
+        Request::MachineEnroll(machine) => Request::MachineEnroll(MachineEnrollReq {
+            email: Some(person.email.clone()),
+            ..machine
         }),
         other => other,
     };
