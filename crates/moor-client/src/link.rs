@@ -1,19 +1,23 @@
 //! The machine link: one WebSocket a machine agent dials to the runner. A few JSON text frames
-//! prove who the agent is; then the socket carries yamux, whose streams later slices use.
+//! prove who the agent is; then the socket carries yamux, one stream per exec, hook or relay.
 
 use std::sync::Arc;
+use std::task::Poll;
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream};
 use tokio::net::TcpStream;
+use tokio::sync::{mpsc, oneshot};
 use tokio::time::Instant;
 use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
 use tokio_tungstenite::tungstenite::http::StatusCode;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{Connector, MaybeTlsStream};
-use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
+use tokio_util::compat::{Compat, FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
+
+pub mod ops;
 
 /// Where the runner accepts links.
 pub const PATH: &str = "/machines/link";
@@ -189,15 +193,57 @@ async fn deliver(
     }
 }
 
-/// Runs yamux on `socket` until the link ends, turning away every stream the far end opens;
-/// why it ended.
-pub async fn hold(socket: Socket, mode: yamux::Mode) -> String {
+/// One stream on the link.
+pub type Channel = Compat<yamux::Stream>;
+/// Where a stream asked of the link is sent once it opens.
+pub type Asked = oneshot::Sender<Result<Channel, String>>;
+
+/// What the link did next.
+enum Event {
+    /// A stream asked for opened, or could not.
+    Opened(Result<yamux::Stream, yamux::ConnectionError>),
+    /// The far end opened a stream, the link failed, or it closed.
+    Inbound(Option<Result<yamux::Stream, yamux::ConnectionError>>),
+}
+
+/// Runs yamux on `socket` until the link ends, opening a stream for each ask on `asks` and
+/// handing each stream the far end opens to `take`; why it ended.
+pub async fn drive(
+    socket: Socket,
+    mode: yamux::Mode,
+    mut asks: mpsc::Receiver<Asked>,
+    mut take: impl FnMut(Channel),
+) -> String {
     let mut conn = yamux::Connection::new(socket, yamux::Config::default(), mode);
+    let mut asking: Option<Asked> = None;
     loop {
-        match std::future::poll_fn(|cx| conn.poll_next_inbound(cx)).await {
-            Some(Ok(stream)) => drop(stream),
-            Some(Err(e)) => return format!("the link failed: {e}"),
-            None => return "the link closed".to_owned(),
+        let event = std::future::poll_fn(|cx| {
+            if asking.is_none() {
+                if let Poll::Ready(Some(ask)) = asks.poll_recv(cx) {
+                    asking = Some(ask);
+                }
+            }
+            if asking.is_some() {
+                if let Poll::Ready(opened) = conn.poll_new_outbound(cx) {
+                    return Poll::Ready(Event::Opened(opened));
+                }
+            }
+            conn.poll_next_inbound(cx).map(Event::Inbound)
+        })
+        .await;
+        match event {
+            Event::Opened(opened) => {
+                if let Some(ask) = asking.take() {
+                    let _ = ask.send(
+                        opened
+                            .map(FuturesAsyncReadCompatExt::compat)
+                            .map_err(|e| format!("the link cannot open a stream: {e}")),
+                    );
+                }
+            }
+            Event::Inbound(Some(Ok(stream))) => take(stream.compat()),
+            Event::Inbound(Some(Err(e))) => return format!("the link failed: {e}"),
+            Event::Inbound(None) => return "the link closed".to_owned(),
         }
     }
 }

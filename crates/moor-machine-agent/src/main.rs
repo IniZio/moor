@@ -6,7 +6,7 @@ use std::sync::mpsc::Sender;
 
 use clap::{Parser, Subcommand};
 use moor_client::oidc::{Console, Ui, REDIRECT_PORT};
-use moor_machine_agent::{enroll, run, state_dir, Enroll};
+use moor_machine_agent::{enroll, run, state_dir, Enroll, Machine};
 
 /// Command line.
 #[derive(Parser)]
@@ -90,7 +90,7 @@ fn main() -> ExitCode {
             .enable_all()
             .build()
             .map_err(|e| format!("cannot start: {e}"))
-            .and_then(|rt| rt.block_on(run(&state_dir(), &|line| say(line)))),
+            .and_then(|rt| rt.block_on(run(&state_dir(), Machine::from_env(), &|line| say(line)))),
     };
     if let Err(e) = ended {
         say(&e);
