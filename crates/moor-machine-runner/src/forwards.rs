@@ -8,7 +8,7 @@ use std::net::Ipv4Addr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use moor_client::link::forward::{Accepted, Forward, Forwarding, MAX_PORTS};
+use moor_client::forward::{Accepted, Forward, Forwarding, MAX_PORTS};
 use moor_client::link::ops::{self, Op, Reply};
 use moor_client::link::Channel;
 use tokio::io::AsyncReadExt;

@@ -115,9 +115,9 @@ pub enum Op {
     Listen {
         /// The Box whose ports these are.
         box_id: i64,
-        /// Names this listen in each [`super::forward::Accepted`].
+        /// Names this listen in each [`crate::forward::Accepted`].
         listen: u64,
-        /// Machine ports, at most [`super::forward::MAX_PORTS`].
+        /// Machine ports, at most [`crate::forward::MAX_PORTS`].
         ports: Vec<u16>,
     },
 }

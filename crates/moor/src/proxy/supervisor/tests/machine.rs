@@ -344,15 +344,65 @@ fn an_enrolled_machine_hides_an_ssh_one_of_its_name_and_is_never_dialed() {
         matches!(hold_of(&w.store, w.id), Hold::Held(h) if h.machine_id == Some(id)),
         "the Box's hold names the enrolled machine"
     );
+    let runner = FakeRunner::listen(&w.dir.path().join("machine-forwards.sock"));
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
     assert!(run.tick().is_none());
+    let (req, conn) = runner.served.recv().unwrap();
+    assert_eq!(req["box_id"], w.id.get());
+    assert_eq!(req["machine_id"], id);
+    assert_eq!(
+        req["ports"][0][0], 8081,
+        "the Box port listens on the machine"
+    );
     let ssh = w.proc.calls().into_iter().filter(|c| c.tool == Tool::Ssh);
     assert_eq!(ssh.count(), 0, "no ssh child for an enrolled machine");
-    assert_eq!(
-        machine_payloads(&w)[0]["error"],
-        "port forwarding to enrolled machines is not available yet"
+    assert_eq!(machine_kinds(&w), ["machine_attached"]);
+
+    drop((conn, runner));
+    assert!(run.tick().is_none());
+    let error = machine_payloads(&w)[1]["error"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        error.contains("cannot reach the machine runner"),
+        "the runner letting go is noticed and the forwards opened again: {error}"
     );
+}
+
+/// Stands in for the machine runner's forward socket: answers one request `up` and hands it
+/// over with the connection that holds it.
+struct FakeRunner {
+    /// Each request and its held connection.
+    served: std::sync::mpsc::Receiver<(serde_json::Value, std::os::unix::net::UnixStream)>,
+    /// Removes the socket once dropped, so nothing answers there.
+    path: std::path::PathBuf,
+}
+
+impl FakeRunner {
+    fn listen(path: &std::path::Path) -> Self {
+        use std::io::{BufRead, Write};
+        let listener = std::os::unix::net::UnixListener::bind(path).unwrap();
+        let (tx, served) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let (mut conn, _) = listener.accept().unwrap();
+            let mut line = String::new();
+            std::io::BufReader::new(&conn).read_line(&mut line).unwrap();
+            conn.write_all(b"{\"reply\":\"up\"}\n").unwrap();
+            let _ = tx.send((serde_json::from_str(&line).unwrap(), conn));
+        });
+        Self {
+            served,
+            path: path.to_owned(),
+        }
+    }
+}
+
+impl Drop for FakeRunner {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
 }
 
 #[test]

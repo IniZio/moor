@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use moor_client::link::forward::{Accepted, MAX_PORTS};
+use moor_client::forward::{Accepted, MAX_PORTS};
 use moor_client::link::ops::{self, Reply};
 use moor_client::link::{Asked, Channel};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
