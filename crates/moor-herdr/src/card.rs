@@ -5,7 +5,7 @@ use moor_core::view::AttachEnd;
 
 use crate::boxes::{Phase, Shown};
 
-pub mod progress;
+pub use moor_core::view::progress;
 
 pub use progress::Progress;
 

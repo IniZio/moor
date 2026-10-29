@@ -73,6 +73,12 @@ pub fn failure(events: &[Happened]) -> Option<String> {
         .and_then(|e| step(&e.kind, &e.payload))
 }
 
+/// The newest step `events` tell, without its time.
+#[must_use]
+pub fn latest(events: &[Happened]) -> Option<String> {
+    events.iter().rev().find_map(|e| step(&e.kind, &e.payload))
+}
+
 /// Event `kind` as a step, or `None` for one that says nothing about getting the Box up.
 fn step(kind: &str, payload: &Value) -> Option<String> {
     let text = |key: &str| payload.get(key).and_then(Value::as_str).unwrap_or_default();
@@ -110,7 +116,7 @@ fn step(kind: &str, payload: &Value) -> Option<String> {
 }
 
 /// `secs` as `12s` or `1m 05s`.
-pub(crate) fn span(secs: impl TryInto<u64>) -> String {
+pub fn span(secs: impl TryInto<u64>) -> String {
     let s = secs.try_into().unwrap_or(0);
     if s < 60 {
         format!("{s}s")
