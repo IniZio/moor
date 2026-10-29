@@ -65,7 +65,18 @@ fn status(lifecycle: &str, events: &[Happened]) -> String {
     match Stage::of(lifecycle) {
         Stage::Failed => progress::failure(events).map_or_else(
             || lifecycle.replace('_', " "),
-            |why| format!("failed: {}", why.replace('\n', " ")),
+            |why| {
+                let why = why.replace('\n', " ");
+                if why
+                    .split(':')
+                    .next()
+                    .is_some_and(|head| head.ends_with("failed"))
+                {
+                    why
+                } else {
+                    format!("failed: {why}")
+                }
+            },
         ),
         Stage::Starting => {
             let elapsed = Progress::of(events, now()).elapsed.map(progress::span);
