@@ -341,7 +341,7 @@ impl Relays {
                 let service = Forward(Arc::clone(&self.progress)).serve((stdout, stdin));
                 (service.await, Some(child))
             }
-            Reach::Linked { machine_id } => {
+            Reach::Linked { machine_id, .. } => {
                 let op = Op::Relay {
                     box_id: caller.box_id.get(),
                     name: relay.name.clone(),

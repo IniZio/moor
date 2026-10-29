@@ -226,7 +226,7 @@ impl Hooks {
         hook: Hook,
         env: &[(String, String)],
     ) -> Result<Option<ExecOutput>, String> {
-        let machine_id = match reach {
+        let (machine_id, machine) = match reach {
             Reach::Ssh { ssh } => {
                 let command = match hook {
                     Hook::Prepare => self.prepare.as_ref().map(|c| {
@@ -249,7 +249,10 @@ impl Hooks {
                     .map_err(|e| format!("could not run ssh: {e}"))?;
                 return succeeded(out).map(Some);
             }
-            Reach::Linked { machine_id } => *machine_id,
+            Reach::Linked {
+                machine_id,
+                machine,
+            } => (*machine_id, machine),
         };
         let op = Op::Hook {
             box_id: id,
@@ -257,23 +260,26 @@ impl Hooks {
             env: env.to_vec(),
             timeout_secs: link::secs(self.timeout),
         };
-        match link::send(self.agents.as_ref(), &machine_id.to_string(), machine_id, &op).await? {
+        match link::send(self.agents.as_ref(), machine, machine_id, &op).await? {
             Answer::Ran(ran) => succeeded(ran.into()).map(Some),
             Answer::Missing => Ok(None),
-            Answer::Started(_) => Err(format!("machine {machine_id} started a hook as a relay")),
+            Answer::Started(_) => Err(format!("machine {machine} started a hook as a relay")),
         }
     }
 
     /// Runs the runner's own `script` for Box `id` on the machine, from the machine user's home
     /// over ssh and from the Box's copy over a link.
     async fn helper(&self, id: i64, reach: &Reach, script: &str) -> Result<ExecOutput, String> {
-        let machine_id = match reach {
+        let (machine_id, machine) = match reach {
             Reach::Ssh { ssh } => {
                 return exec::run(ssh, script, self.timeout)
                     .await
                     .map_err(|e| format!("could not run the remote shell: {e}"));
             }
-            Reach::Linked { machine_id } => *machine_id,
+            Reach::Linked {
+                machine_id,
+                machine,
+            } => (*machine_id, machine),
         };
         let op = Op::Exec {
             box_id: id,
@@ -281,9 +287,9 @@ impl Hooks {
             script: script.to_owned(),
             timeout_secs: link::secs(self.timeout),
         };
-        match link::send(self.agents.as_ref(), &machine_id.to_string(), machine_id, &op).await? {
+        match link::send(self.agents.as_ref(), machine, machine_id, &op).await? {
             Answer::Ran(ran) => Ok(ran.into()),
-            _ => Err(format!("machine {machine_id} answered no run")),
+            _ => Err(format!("machine {machine} answered no run")),
         }
     }
 
