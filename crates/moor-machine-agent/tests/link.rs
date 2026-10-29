@@ -312,7 +312,7 @@ fn hook_file(path: &Path, text: &str) {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn exec_runs_in_the_boxs_dir_with_its_env() {
+async fn exec_runs_in_the_box_dir_with_its_env() {
     let (w, home) = (world().await, tempfile::tempdir().unwrap());
     let _agent = linked(&w, home.path()).await;
     let op = json!({"op": "exec", "box_id": 7, "env": [["MOOR_FACT_DEVICE", "sim 1"]],
