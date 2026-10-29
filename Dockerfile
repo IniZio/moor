@@ -1,7 +1,4 @@
 # syntax=docker/dockerfile:1.7
-# The controller image: `moor controller serve` plus every program it runs.
-# Every download is pinned by version and sha256 (or by git commit), so a build today and a
-# build next month produce the same tools.
 
 ARG RUST_IMAGE=rust:1.98.1-slim-bookworm@sha256:ff521445a372125ed4f76e1453a1f8098f2d05332d1601d30db1c1f62757e730
 ARG GO_IMAGE=golang:1.27.3-bookworm@sha256:d9b6a1beb9474adc2a1ce842573639b44b2a0dd49b6669f51d3821baf9ec37c9
@@ -32,7 +29,6 @@ ARG ZIG_SHA256_AMD64=1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4
 ARG ZIG_SHA256_ARM64=9e8d11661d4ae3bd57702a3832781e23ad151dde5798e16a5ccd503f65234ff8
 
 
-# gh and herdr, checked against their published digests.
 FROM ${FETCH_IMAGE} AS fetch
 ARG TARGETARCH
 ARG GH_VERSION GH_SHA256_AMD64 GH_SHA256_ARM64 HERDR_VERSION HERDR_SHA256_AMD64 HERDR_SHA256_ARM64
@@ -55,7 +51,6 @@ RUN set -eu; \
     install -m 0755 /tmp/herdr /out/herdr
 
 
-# The -moor crabbox build, from a pinned commit.
 FROM ${GO_IMAGE} AS crabbox
 ARG CRABBOX_REPO CRABBOX_COMMIT CRABBOX_VERSION
 ENV GOTOOLCHAIN=local CGO_ENABLED=0
@@ -69,7 +64,6 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
       -o /out/crabbox ./cmd/crabbox
 
 
-# moor's own binaries and the agent37 provider.
 FROM ${RUST_IMAGE} AS rust
 ARG TARGETARCH
 ARG ZIG_VERSION ZIG_SHA256_AMD64 ZIG_SHA256_ARM64 AGENT37_REPO AGENT37_COMMIT
@@ -105,7 +99,6 @@ COPY . .
 # The build context carries no .git, so the commit comes in as an argument.
 ARG MOOR_COMMIT=unknown
 ENV MOOR_COMMIT=${MOOR_COMMIT}
-# Comma-separated cargo features of the moor crate, for example pty-surface.
 ARG MOOR_FEATURES=
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/build/target \
