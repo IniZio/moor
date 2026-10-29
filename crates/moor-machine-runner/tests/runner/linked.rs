@@ -19,6 +19,15 @@ const PREPARE: &str = "#!/bin/sh\necho \"$MOOR_BOX $MOOR_SLOT\" >> ~/prepared\ne
 /// Notes each run and the device it was given in `~/released`.
 const RELEASE: &str = "#!/bin/sh\necho \"$MOOR_BOX $MOOR_FACT_DEVICE\" >> ~/released\n";
 
+/// Notes each run and the device it was given in `~/suspended`.
+const SUSPEND: &str = "#!/bin/sh\necho \"$MOOR_BOX $MOOR_FACT_DEVICE\" >> ~/suspended\n";
+
+/// The headers of Box 7 while it holds no machine.
+const MISSING: [(&str, &str); 2] = [
+    ("X-Moor-Box", "7"),
+    ("X-Moor-Machine-Missing", "this Box holds no machine"),
+];
+
 struct Linked {
     rig: Rig,
     agent: Option<tokio::runtime::Runtime>,
@@ -31,9 +40,13 @@ impl Linked {
         let rig = Rig::with_args(&all);
         moor_testkit::write_executable(&rig.dir().join("bin/ssh"), NO_SSH).unwrap();
         let hooks = rig.dir().join("hooks");
-        std::fs::create_dir_all(&hooks).unwrap();
+        std::fs::create_dir_all(hooks.join("relays")).unwrap();
         moor_testkit::write_executable(&hooks.join("prepare"), PREPARE).unwrap();
         moor_testkit::write_executable(&hooks.join("release"), RELEASE).unwrap();
+        moor_testkit::write_executable(&hooks.join("suspend"), SUSPEND).unwrap();
+        let fake = env!("CARGO_BIN_EXE_fake-mcp");
+        let relay = format!("#!/bin/sh\nexec '{fake}'\n");
+        moor_testkit::write_executable(&hooks.join("relays/fake"), &relay).unwrap();
         std::fs::create_dir_all(rig.copy()).unwrap();
         let key = PrivateKey::random(&mut OsRng, Algorithm::Ed25519).unwrap();
         *rig.link.pubkey.lock().unwrap() = Some(key.public_key().to_openssh().unwrap());
@@ -153,4 +166,56 @@ fn sync_to_a_linked_machine_is_refused_without_dialing_ssh() {
     let err = m.call("sync", json!({})).unwrap_err();
     assert!(err.contains("not available yet"), "{err}");
     assert!(!m.ssh_ran());
+}
+
+#[test]
+fn a_relay_runs_the_machines_own_file_of_that_name_over_the_link() {
+    let m = Linked::start(&["--relay", "fake=false", "--force-arg", "fake.udid=device"]);
+    let out = m
+        .call("fake_tap", json!({"udid": "other", "x": 3}))
+        .unwrap();
+    assert_eq!(out, json!({"udid": "dev-7", "x": 3}));
+    let calls = lines(&m.rig.remote.join("fake-calls"));
+    assert_eq!(calls, [r#"{"udid":"dev-7","x":3}"#]);
+    assert!(!m.ssh_ran());
+}
+
+#[test]
+fn an_asleep_box_runs_the_machines_suspend_hook_with_its_facts() {
+    let m = Linked::start(&[]);
+    m.call("exec", json!({"command": "true"})).unwrap();
+    m.rig.asleep.lock().unwrap().push(7);
+    let suspended = m.rig.remote.join("suspended");
+    eventually("suspend ran", || lines(&suspended) == ["7 dev-7"]);
+    assert!(!m.ssh_ran());
+}
+
+#[test]
+fn a_claim_held_on_an_enrolled_machine_prepares_it_over_the_link() {
+    let m = Linked::start(&[]);
+    let held = json!({"state": "held", "machine": "minion", "ssh": "", "machine_id": MACHINE_ID,
+        "slot": 0, "ports": [8081]});
+    hold_answers(&m, vec![held]);
+    let got = m.rig.call_with("machine_claim", json!({}), &MISSING).unwrap();
+    assert_eq!(got["facts"], json!({"device": "dev-7"}), "{got}");
+    assert_eq!(lines(&m.rig.remote.join("prepared")), ["7 0"]);
+    assert!(!m.ssh_ran());
+}
+
+#[test]
+fn a_claim_on_a_removed_machine_is_refused_with_the_reason() {
+    let m = Linked::start(&[]);
+    let removed = json!({"state": "refused", "reason": "machine minion was removed"});
+    hold_answers(&m, vec![removed]);
+    let err = m
+        .rig
+        .call_with("machine_claim", json!({"machine": "minion"}), &MISSING)
+        .unwrap_err();
+    assert!(err.contains("machine minion was removed"), "{err}");
+    assert!(lines(&m.rig.remote.join("prepared")).is_empty());
+    assert!(!m.ssh_ran());
+}
+
+fn hold_answers(m: &Linked, answers: Vec<Value>) {
+    m.rig.holds.lock().unwrap().answers = answers.into();
 }
