@@ -1,7 +1,7 @@
 //! A runner process wired to a fake controller and a fake machine.
 
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixListener;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -485,9 +485,8 @@ fn show_value(open: &[i64], asleep: &[i64]) -> Value {
     json!({ "boxes": boxes, "box": null })
 }
 
-/// Serves `box-mirror` the way the controller does, from `tree`, with a local rsync, and
-/// `show` listing the Boxes in `open`.
 /// What the fake controller shares with the test.
+#[derive(Clone)]
 struct Fake {
     open: Arc<Mutex<Vec<i64>>>,
     asleep: Arc<Mutex<Vec<i64>>>,
@@ -506,86 +505,78 @@ pub struct FakeLink {
     pub links: Arc<Mutex<Option<Value>>>,
 }
 
+/// Serves `box-mirror` the way the controller does, from `tree`, with a local rsync, and
+/// `show` listing the Boxes in `open`.
 fn fake_controller(socket: &Path, tree: PathBuf, fake: Fake) {
-    let Fake {
-        open,
-        asleep,
-        mirror_excludes,
-        puts,
-        targets,
-        holds,
-        link,
-    } = fake;
     let listener = UnixListener::bind(socket).unwrap();
     std::thread::spawn(move || {
         for stream in listener.incoming() {
-            let stream = stream.unwrap();
-            let (open, asleep, mirror_excludes, puts, targets, holds, link) = (
-                Arc::clone(&open),
-                Arc::clone(&asleep),
-                Arc::clone(&mirror_excludes),
-                Arc::clone(&puts),
-                Arc::clone(&targets),
-                Arc::clone(&holds),
-                link.clone(),
-            );
-            let tree = tree.clone();
-            std::thread::spawn(move || {
-                let mut reader = BufReader::new(stream.try_clone().unwrap());
-                let mut writer = stream;
-                let mut line = String::new();
-                reader.read_line(&mut line).unwrap();
-                let hello = ServerFrame::Hello { protocol: PROTOCOL };
-                writeln!(writer, "{}", serde_json::to_string(&hello).unwrap()).unwrap();
-                loop {
-                    line.clear();
-                    if reader.read_line(&mut line).unwrap_or(0) == 0 {
-                        return;
-                    }
-                    let frame: Value = serde_json::from_str(&line).unwrap();
-                    let id = frame["id"].as_str().unwrap_or("1").to_owned();
-                    let req = request(&frame).unwrap();
-                    let answer = if req["cmd"] == "show" {
-                        let value = show_value(&open.lock().unwrap(), &asleep.lock().unwrap());
-                        Response::ok("show", Some(value))
-                    } else if req["cmd"] == "machine-targets" {
-                        targets_envelope(targets.lock().unwrap().clone())
-                    } else if req["cmd"] == "machine-keys" {
-                        let pubkey = link.pubkey.lock().unwrap().clone();
-                        let machines: Vec<Value> = pubkey
-                            .into_iter()
-                            .map(|pubkey| {
-                                json!({"machine_id": MACHINE_ID, "user": 1, "name": "minion",
-                                    "pubkey": pubkey})
-                            })
-                            .collect();
-                        Response::ok("machine-keys", Some(json!({ "machines": machines })))
-                    } else if req["cmd"] == "machine-links" {
-                        let sent = req["links"].clone();
-                        *link.links.lock().unwrap() = Some(sent.clone());
-                        Response::ok("machine-links", Some(json!({ "links": sent })))
-                    } else if req["cmd"] == "machine-hold" {
-                        assert_eq!(req["id"], 7, "{frame}");
-                        let suspended = tree.with_file_name("remote").join("suspended").exists();
-                        let value = hold_answer(&mut holds.lock().unwrap(), req, suspended);
-                        Response::ok("machine-hold", Some(value))
-                    } else if req["cmd"] == "box-put" {
-                        let bytes = std::fs::read(req["src"].as_str().unwrap()).unwrap();
-                        let value = json!({"path": "/work/x", "bytes": bytes.len(),
-                            "confirmation": "wrote"});
-                        puts.lock().unwrap().push((req.clone(), bytes));
-                        Response::ok("box-put", Some(value))
-                    } else {
-                        assert_eq!(req["cmd"], "box-mirror", "{frame}");
-                        assert_eq!(req["id"], 7, "{frame}");
-                        mirror_excludes.lock().unwrap().push(req["exclude"].clone());
-                        mirror(&tree, req["dest"].as_str().unwrap())
-                    };
-                    reply(&mut writer, &id, answer);
-                }
-            });
+            let (stream, fake, tree) = (stream.unwrap(), fake.clone(), tree.clone());
+            std::thread::spawn(move || serve_connection(stream, &tree, &fake));
         }
     });
+}
+
+/// Answers one runner connection until it closes.
+fn serve_connection(stream: UnixStream, tree: &Path, fake: &Fake) {
+    let mut reader = BufReader::new(stream.try_clone().unwrap());
+    let mut writer = stream;
+    let mut line = String::new();
+    reader.read_line(&mut line).unwrap();
+    let hello = ServerFrame::Hello { protocol: PROTOCOL };
+    writeln!(writer, "{}", serde_json::to_string(&hello).unwrap()).unwrap();
+    loop {
+        line.clear();
+        if reader.read_line(&mut line).unwrap_or(0) == 0 {
+            return;
+        }
+        let frame: Value = serde_json::from_str(&line).unwrap();
+        let id = frame["id"].as_str().unwrap_or("1").to_owned();
+        let answer = answer(&frame, tree, fake);
+        reply(&mut writer, &id, answer);
+    }
+}
+
+/// The fake controller's answer to one request `frame`.
+fn answer(frame: &Value, tree: &Path, fake: &Fake) -> Response {
+    let req = request(frame).unwrap();
+    if req["cmd"] == "show" {
+        let value = show_value(&fake.open.lock().unwrap(), &fake.asleep.lock().unwrap());
+        Response::ok("show", Some(value))
+    } else if req["cmd"] == "machine-targets" {
+        targets_envelope(fake.targets.lock().unwrap().clone())
+    } else if req["cmd"] == "machine-keys" {
+        let pubkey = fake.link.pubkey.lock().unwrap().clone();
+        let machines: Vec<Value> = pubkey
+            .into_iter()
+            .map(|pubkey| {
+                json!({"machine_id": MACHINE_ID, "user": 1, "name": "minion", "pubkey": pubkey})
+            })
+            .collect();
+        Response::ok("machine-keys", Some(json!({ "machines": machines })))
+    } else if req["cmd"] == "machine-links" {
+        let sent = req["links"].clone();
+        *fake.link.links.lock().unwrap() = Some(sent.clone());
+        Response::ok("machine-links", Some(json!({ "links": sent })))
+    } else if req["cmd"] == "machine-hold" {
+        assert_eq!(req["id"], 7, "{frame}");
+        let suspended = tree.with_file_name("remote").join("suspended").exists();
+        let value = hold_answer(&mut fake.holds.lock().unwrap(), req, suspended);
+        Response::ok("machine-hold", Some(value))
+    } else if req["cmd"] == "box-put" {
+        let bytes = std::fs::read(req["src"].as_str().unwrap()).unwrap();
+        let value = json!({"path": "/work/x", "bytes": bytes.len(), "confirmation": "wrote"});
+        fake.puts.lock().unwrap().push((req.clone(), bytes));
+        Response::ok("box-put", Some(value))
+    } else {
+        assert_eq!(req["cmd"], "box-mirror", "{frame}");
+        assert_eq!(req["id"], 7, "{frame}");
+        fake.mirror_excludes
+            .lock()
+            .unwrap()
+            .push(req["exclude"].clone());
+        mirror(tree, req["dest"].as_str().unwrap())
+    }
 }
 
 /// Serves `box-mirror`: copies `tree` to `dest` with a local rsync.

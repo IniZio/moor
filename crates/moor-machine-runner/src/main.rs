@@ -1,7 +1,7 @@
 //! `moor-machine-runner`: serve the machine runner MCP server on the host.
 
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -156,6 +156,24 @@ fn resource(s: &str) -> Result<(String, usize), String> {
     Ok((name.to_owned(), cap))
 }
 
+/// Listens for machine agents on `addr` and serves their links in the background.
+async fn take_links(addr: SocketAddr, socket: &Path) -> Result<Agents, String> {
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .map_err(|e| format!("cannot listen for agents on {addr}: {e}"))?;
+    if let Ok(addr) = listener.local_addr() {
+        eprintln!("moor-machine-runner taking agent links on {addr}");
+    }
+    let agents = Agents::new(socket);
+    let serving = agents.clone();
+    tokio::spawn(async move {
+        if let Err(e) = serve_agents(listener, serving).await {
+            eprintln!("moor-machine-runner: agent links stopped: {e}");
+        }
+    });
+    Ok(agents)
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let args = Args::parse();
@@ -176,26 +194,16 @@ async fn main() -> ExitCode {
     if let Ok(addr) = listener.local_addr() {
         eprintln!("moor-machine-runner listening on {addr}");
     }
-    let mut linked = None;
-    if let Some(addr) = args.agents {
-        let agents = match tokio::net::TcpListener::bind(addr).await {
-            Ok(l) => l,
+    let linked = match args.agents {
+        Some(addr) => match take_links(addr, &args.socket).await {
+            Ok(agents) => Some(agents),
             Err(e) => {
-                eprintln!("moor-machine-runner: cannot listen for agents on {addr}: {e}");
+                eprintln!("moor-machine-runner: {e}");
                 return ExitCode::FAILURE;
             }
-        };
-        if let Ok(addr) = agents.local_addr() {
-            eprintln!("moor-machine-runner taking agent links on {addr}");
-        }
-        let agents_of = Agents::new(&args.socket);
-        linked = Some(agents_of.clone());
-        tokio::spawn(async move {
-            if let Err(e) = serve_agents(agents, agents_of).await {
-                eprintln!("moor-machine-runner: agent links stopped: {e}");
-            }
-        });
-    }
+        },
+        None => None,
+    };
     let config = Config {
         agents: linked,
         socket: args.socket,

@@ -5,6 +5,7 @@
 mod hold;
 mod link;
 
+use moor_core::config::UserMachine;
 use moor_core::domain::event::{Event, MachineEvent};
 
 use super::run::{say, Running};
@@ -53,22 +54,7 @@ impl Running<'_> {
             slot.link = None;
         }
         let fresh = !slot.link.as_mut().is_some_and(MachineLink::alive);
-        let open = || {
-            if enrolled {
-                return Err(ForwardFailed {
-                    port: None,
-                    error: "port forwarding to enrolled machines is not available yet".to_owned(),
-                });
-            }
-            MachineLink::open(
-                self.deps.driver,
-                self.deps.proc,
-                &self.handle,
-                &machine,
-                &ports,
-            )
-        };
-        let event = match keep(&mut slot.link, open) {
+        let event = match keep(&mut slot.link, || self.forwards(&machine, &ports, enrolled)) {
             Ok(()) if fresh => {
                 // Opening can take long enough for the Box to release the claim meanwhile.
                 let now = self.deps.store.box_machine(self.box_id);
@@ -93,6 +79,28 @@ impl Running<'_> {
         };
         drop(slot);
         self.record_machine(event);
+    }
+
+    /// Opens forwards of `ports` to `machine`; an enrolled machine has none yet.
+    fn forwards(
+        &self,
+        machine: &UserMachine,
+        ports: &[u16],
+        enrolled: bool,
+    ) -> Result<MachineLink, ForwardFailed> {
+        if enrolled {
+            return Err(ForwardFailed {
+                port: None,
+                error: "port forwarding to enrolled machines is not available yet".to_owned(),
+            });
+        }
+        MachineLink::open(
+            self.deps.driver,
+            self.deps.proc,
+            &self.handle,
+            machine,
+            ports,
+        )
     }
 
     /// Ends the forwards and frees the slot for another Box, keeping the claim on the machine.

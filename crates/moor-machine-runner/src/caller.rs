@@ -53,17 +53,7 @@ impl Caller {
         };
         let box_id = box_id(headers)?;
         let machine = header(MACHINE)?;
-        let machine_id = match headers.get(MACHINE_ID) {
-            None => None,
-            Some(raw) => Some(
-                raw.to_str()
-                    .ok()
-                    .and_then(|v| v.trim().parse::<i64>().ok())
-                    .filter(|n| *n > 0)
-                    .ok_or_else(|| refused(format!("header {MACHINE_ID} is not a machine id")))?,
-            ),
-        };
-        let reach = if let Some(machine_id) = machine_id {
+        let reach = if let Some(machine_id) = machine_id(headers)? {
             Reach::Linked {
                 machine_id,
                 machine: machine.clone(),
@@ -159,6 +149,19 @@ impl Reach {
             Self::Linked { .. } => Err(format!("{what} to enrolled machines is not available yet")),
         }
     }
+}
+
+/// The machine's enrolled id from the request headers, when its agent links in.
+fn machine_id(headers: &HeaderMap) -> Result<Option<i64>, ErrorData> {
+    let Some(raw) = headers.get(MACHINE_ID) else {
+        return Ok(None);
+    };
+    raw.to_str()
+        .ok()
+        .and_then(|v| v.trim().parse::<i64>().ok())
+        .filter(|n| *n > 0)
+        .map(Some)
+        .ok_or_else(|| refused(format!("header {MACHINE_ID} is not a machine id")))
 }
 
 /// The calling Box's id from the request headers.
