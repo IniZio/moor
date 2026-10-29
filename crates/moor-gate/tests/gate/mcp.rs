@@ -42,7 +42,7 @@ fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
                     }
                     if cmd == "show"
                         && inner["box"].is_string()
-                        && !started.lock().unwrap().contains(box_name.unwrap())
+                        && !is_known(&started, box_name.unwrap())
                     {
                         let error = ErrorView {
                             kind: ErrorKind::NotFound,
@@ -57,9 +57,12 @@ fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
                         continue;
                     }
                     let value = match cmd {
+                        "show" if inner["box"].is_string() => shown(&inner["box"]),
                         "show" => {
                             json!({"boxes": [{"name": format!("repo/{}", who.replace(':', "-")),
-                                "state": "ready"}]})
+                                "state": "ready"},
+                                {"name": "repo/failed", "lifecycle": "setup_failed"},
+                                {"name": "repo/starting", "lifecycle": "setting_up"}]})
                         }
                         "start" => json!({"started": inner["name"]}),
                         _ => Value::Null,
@@ -77,6 +80,52 @@ fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
 /// A `show` of one Box by name, which `start_box` sends to see whether the Box exists yet.
 fn is_existence_probe(frame: &Value) -> bool {
     frame["request"]["request"]["cmd"] == "show" && frame["request"]["request"]["box"].is_string()
+}
+
+/// Whether `show` of the Box `name` finds it: one of the fixed Boxes or one started.
+fn is_known(started: &Mutex<HashSet<String>>, name: &str) -> bool {
+    matches!(name, "repo/failed" | "repo/starting") || started.lock().unwrap().contains(name)
+}
+
+const ACQUIRE_FAILED: &str = "box acquire failed on provider external (exit 1): \
+    HTTP 502 provisioning_failed; releasing the lease it started also failed";
+
+/// One Box with its events, as `show` of a named Box answers.
+fn shown(name: &Value) -> Value {
+    let event =
+        |kind: &str, payload: Value, ts: &str| json!({"kind": kind, "payload": payload, "ts": ts});
+    let (lifecycle, events) = match name.as_str().unwrap_or_default() {
+        "repo/failed" => (
+            "setup_failed",
+            vec![
+                event("started", json!({}), "2026-10-29T10:00:00Z"),
+                event("box_requested", json!({}), "2026-10-29T10:00:01Z"),
+                event(
+                    "box_failed",
+                    json!({"error": ACQUIRE_FAILED}),
+                    "2026-10-29T10:01:00Z",
+                ),
+            ],
+        ),
+        _ => (
+            "setting_up",
+            vec![
+                event("started", json!({}), "2026-10-29T10:00:00Z"),
+                event("box_requested", json!({}), "2026-10-29T10:00:01Z"),
+                event(
+                    "credential_seen",
+                    json!({"token": "s3cret"}),
+                    "2026-10-29T10:00:02Z",
+                ),
+                event(
+                    "box_progress",
+                    json!({"text": "waiting for SSH (1m6s)"}),
+                    "2026-10-29T10:01:07Z",
+                ),
+            ],
+        ),
+    };
+    json!({"box": {"name": name, "lifecycle": lifecycle}, "events": events})
 }
 
 struct Mcp {
@@ -352,7 +401,12 @@ fn start_box_returns_while_the_start_is_still_running() {
     );
     assert_ne!(result["isError"], true, "{result}");
     assert!(began.elapsed() < std::time::Duration::from_secs(2));
-    assert!(result["structuredContent"]["boxes"].is_array(), "{result}");
+    assert_eq!(
+        result["structuredContent"]["box"]["name"], "web/slow",
+        "{result}"
+    );
+    let next = result["structuredContent"]["next"].as_str().unwrap();
+    assert!(next.contains("box_status"), "{result}");
 }
 
 #[test]
@@ -367,4 +421,83 @@ fn start_box_with_wait_returns_the_start_result() {
     );
     assert!(began.elapsed() >= std::time::Duration::from_secs(3));
     assert_eq!(result["structuredContent"]["started"], "web/slow");
+    let next = result["structuredContent"]["next"].as_str().unwrap();
+    assert!(next.contains("box_status"), "{result}");
+}
+
+#[test]
+fn list_boxes_says_why_a_box_failed_and_what_a_starting_one_waits_on() {
+    let m = mcp();
+    let token = m.token("alice-sub", &m.url(), "moor:read");
+    let reply = m.call(&token, "list_boxes", json!({}));
+    let boxes = &reply["structuredContent"]["boxes"];
+    assert_eq!(
+        boxes[1]["status"],
+        format!("failed: machine failed: {ACQUIRE_FAILED}")
+    );
+    let starting = boxes[2]["status"].as_str().unwrap();
+    assert!(starting.starts_with("starting · "), "{starting}");
+    assert!(
+        starting.ends_with(" · waiting for SSH (1m6s)"),
+        "{starting}"
+    );
+}
+
+#[test]
+fn box_status_carries_the_failure_text() {
+    let m = mcp();
+    let token = m.token("alice-sub", &m.url(), "moor:read");
+    let reply = m.call(&token, "box_status", json!({"box": "repo/failed"}));
+    let shown = &reply["structuredContent"];
+    assert_eq!(
+        shown["failure"],
+        format!("machine failed: {ACQUIRE_FAILED}")
+    );
+    assert_eq!(
+        shown["status"],
+        format!("failed: machine failed: {ACQUIRE_FAILED}")
+    );
+}
+
+#[test]
+fn box_status_carries_a_starting_box_s_steps_and_nothing_the_card_hides() {
+    let m = mcp();
+    let token = m.token("alice-sub", &m.url(), "moor:read");
+    let reply = m.call(&token, "box_status", json!({"box": "repo/starting"}));
+    let steps = reply["structuredContent"]["steps"].as_array().unwrap();
+    let steps: Vec<&str> = steps
+        .iter()
+        .map(|s| s.as_str().unwrap().trim_start())
+        .collect();
+    assert_eq!(
+        steps,
+        ["+1s  machine requested", "+1m 07s  waiting for SSH (1m6s)"]
+    );
+    assert!(
+        reply["structuredContent"].get("failure").is_none(),
+        "{reply}"
+    );
+}
+
+#[test]
+fn start_box_tells_the_client_to_follow_it_with_box_status() {
+    let m = mcp();
+    let token = m.token("alice-sub", &m.url(), "moor:read moor:write");
+    let result = m.call(
+        &token,
+        "start_box",
+        json!({"repo": "acme/web", "name": "web/fix"}),
+    );
+    let next = result["structuredContent"]["next"].as_str().unwrap();
+    assert!(next.contains("box_status"), "{result}");
+    let reply = m.rpc(&token, "tools/list", json!({}));
+    let tools = reply["result"]["tools"].as_array().unwrap();
+    let described = |name: &str| {
+        tools.iter().find(|t| t["name"] == name).unwrap()["description"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    assert!(described("start_box").contains("box_status"));
+    assert!(described("list_boxes").contains("why it failed or what it is waiting on"));
 }
