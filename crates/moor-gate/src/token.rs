@@ -58,6 +58,9 @@ enum For<'a> {
     Client,
     /// An API resource: `aud` names it.
     Resource(&'a str),
+    /// An OIDC id token for the gate's own client: `aud` names it and the token itself
+    /// carries the verified email.
+    IdToken,
 }
 
 /// The claims the gate reads; `exp` and `iss` are checked by the validation.
@@ -174,6 +177,14 @@ impl Verifier {
         self.check(token, For::Resource(resource))
     }
 
+    /// The person an id token the gate's own client was issued speaks for.
+    ///
+    /// # Errors
+    /// Why the token is refused.
+    pub fn verify_id_token(&self, token: &str) -> Result<Person, String> {
+        self.check(token, For::IdToken).map(|(person, _)| person)
+    }
+
     /// Checks `token` is for `audience`.
     fn check(&self, token: &str, audience: For<'_>) -> Result<(Person, Vec<String>), String> {
         let header = decode_header(token).map_err(|e| format!("the token is not a JWT: {e}"))?;
@@ -197,6 +208,7 @@ impl Verifier {
                     || claims.client_id.as_deref() == Some(self.client_id.as_str())
             }
             For::Resource(resource) => claims.aud.names(resource),
+            For::IdToken => claims.aud.names(&self.client_id),
         };
         if !for_us {
             return Err("the token is refused: it is for another audience".to_owned());
@@ -205,6 +217,9 @@ impl Verifier {
             (Some(email), Some(true)) => Email::parse(&email)?,
             (Some(email), Some(false)) => {
                 return Err(format!("the token's email {email} is not verified"))
+            }
+            _ if matches!(audience, For::IdToken) => {
+                return Err("the id token carries no verified email".to_owned())
             }
             _ => self.userinfo_email(token, &claims.sub)?,
         };

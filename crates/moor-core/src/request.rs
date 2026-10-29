@@ -15,7 +15,9 @@ pub use binding::{BindSessionReq, SessionBindingReq};
 mod host_session;
 pub use host_session::{EndHostSessionReq, OpenHostSessionReq, UpdateHostSessionReq};
 mod machine;
-pub use machine::{HoldOp, HoldValue, MachineAddReq, MachineHoldReq, MachineRemoveReq};
+pub use machine::{
+    HoldOp, HoldValue, MachineAddReq, MachineEnrollReq, MachineHoldReq, MachineRemoveReq,
+};
 mod names;
 pub use names::{Grant, Named, Pins};
 mod session;
@@ -117,6 +119,9 @@ pub enum Request {
     MachineAdd(MachineAddReq),
     /// Remove one of the caller's user's machines.
     MachineRemove(MachineRemoveReq),
+    /// Add or replace a machine its agent enrolls, creating the caller's user when needed; a
+    /// front adds the verified email that decides which user that is.
+    MachineEnroll(MachineEnrollReq),
     /// List the caller's user's machines.
     MachineList(AsReq),
     /// List the ssh target of every user's machines; the operator's only.
@@ -181,6 +186,7 @@ impl Request {
             Self::McpOAuthFinish(_) => "mcp-oauth-finish",
             Self::MachineAdd(_) => "machine-add",
             Self::MachineRemove(_) => "machine-remove",
+            Self::MachineEnroll(_) => "machine-enroll",
             Self::MachineList(_) => "machine-list",
             Self::MachineTargets {} => "machine-targets",
             Self::MachineHold(_) => "machine-hold",

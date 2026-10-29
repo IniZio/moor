@@ -191,8 +191,11 @@ impl Moor {
             .as_ref()
             .map_err(Clone::clone)
             .and_then(|caller| {
-                if matches!(cmd, UserCmd::Enroll { email: Some(_) })
-                    && !matches!(caller, Caller::Front(_))
+                if matches!(
+                    cmd,
+                    UserCmd::Enroll { email: Some(_) }
+                        | UserCmd::MachineEnroll { email: Some(_), .. }
+                ) && !matches!(caller, Caller::Front(_))
                 {
                     return Err("only a front can vouch for an email".to_owned());
                 }

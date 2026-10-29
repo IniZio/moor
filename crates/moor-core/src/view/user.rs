@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::request::SecretValue;
-use crate::user::{Identity, SecretName, UserId};
+use crate::user::{Email, Identity, SecretName, UserId};
 
 /// One of a user's MCP servers as `mcp-list` shows it; never its key.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -82,6 +82,21 @@ pub struct MachineChangeValue {
     pub name: String,
     /// Whether anything changed.
     pub changed: bool,
+}
+
+/// Value of `machine-enroll`: what the agent keeps in its state file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MachineEnrollValue {
+    /// The machine's id, kept when the same name enrolls again.
+    pub machine_id: i64,
+    /// The machine's name.
+    pub name: String,
+    /// The user that owns it.
+    pub user: UserId,
+    /// The verified email the user was found by; none for an enrollment without a front.
+    pub owner: Option<Email>,
+    /// How many Boxes may hold it at once.
+    pub capacity: u16,
 }
 
 /// Value of `whoami`.

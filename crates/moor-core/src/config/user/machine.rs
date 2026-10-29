@@ -73,6 +73,63 @@ impl UserMachine {
     }
 }
 
+/// A machine its agent enrolled: the key it signs with in place of an ssh target.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnrolledMachine {
+    /// The machine's name, unique per user.
+    pub name: String,
+    /// The agent's ed25519 public key as an OpenSSH line, `ssh-ed25519 AAAA...`.
+    pub pubkey: String,
+    /// The machine's labels, sorted and distinct.
+    pub labels: Vec<String>,
+    /// How many Boxes may hold it at once.
+    pub capacity: u16,
+}
+
+impl EnrolledMachine {
+    /// Checks a machine an agent enrolls.
+    ///
+    /// # Errors
+    /// Why the name, key, a label or the capacity is not accepted.
+    pub fn parse(
+        name: &str,
+        pubkey: &str,
+        labels: &[String],
+        capacity: u16,
+    ) -> Result<Self, String> {
+        check_pubkey(pubkey)?;
+        let checked =
+            UserMachine::parse(name, "moor@localhost", labels)?.with_capacity(capacity)?;
+        Ok(Self {
+            name: checked.name,
+            pubkey: pubkey.to_owned(),
+            labels: checked.labels,
+            capacity: checked.capacity,
+        })
+    }
+}
+
+/// `ssh-ed25519 <base64>` with nothing after it. Every ed25519 key blob is 51 bytes that
+/// start with the same 19, so its base64 is 68 characters with this fixed head.
+fn check_pubkey(pubkey: &str) -> Result<(), String> {
+    const HEAD: &str = "AAAAC3NzaC1lZDI1NTE5AAAAI";
+    let ok = pubkey.strip_prefix("ssh-ed25519 ").is_some_and(|b64| {
+        b64.len() == 68
+            && b64.starts_with(HEAD)
+            && b64
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/')
+    });
+    if ok {
+        Ok(())
+    } else {
+        Err(
+            "the machine key must be one OpenSSH ed25519 public key, `ssh-ed25519 AAAA...`"
+                .to_owned(),
+        )
+    }
+}
+
 /// `[a-z][a-z0-9_-]*` in at most 64 bytes.
 fn check_name(name: &str) -> Result<(), String> {
     let ok = name.len() <= NAME_MAX

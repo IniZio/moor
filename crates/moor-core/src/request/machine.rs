@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::name::BoxId;
 use crate::seam::clock::Ts;
-use crate::user::Identity;
+use crate::user::{Email, Identity};
 
 /// Arguments of `machine-add`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -21,6 +21,28 @@ pub struct MachineAddReq {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub labels: Vec<String>,
     /// How many Boxes may hold it at once, each in its own port slot.
+    #[serde(default = "one", skip_serializing_if = "is_one")]
+    pub capacity: u16,
+}
+
+/// Arguments of `machine-enroll`: a machine agent adds or replaces its machine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MachineEnrollReq {
+    /// The identity asserted; the controller socket's own peer when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<Identity>,
+    /// The email the front verified for that identity; only a front socket may send one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<Email>,
+    /// The machine's name.
+    pub name: String,
+    /// The agent's ed25519 public key as an OpenSSH line.
+    pub pubkey: String,
+    /// The machine's labels.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<String>,
+    /// How many Boxes may hold it at once.
     #[serde(default = "one", skip_serializing_if = "is_one")]
     pub capacity: u16,
 }

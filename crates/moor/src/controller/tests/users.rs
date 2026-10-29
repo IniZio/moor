@@ -78,6 +78,12 @@ fn only_a_front_socket_may_vouch_for_an_email() {
         &json!({"cmd": "enroll", "email": "alice@example.com"}),
     );
     refused(&got, "only a front can vouch for an email");
+    let machine = ask(
+        &served.main,
+        &json!({"cmd": "machine-enroll", "email": "alice@example.com", "name": "minion",
+            "pubkey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"}),
+    );
+    refused(&machine, "only a front can vouch for an email");
     let bad = ask(
         &served.front("slack"),
         &json!({"cmd": "enroll", "identity": "slack:T1:U1", "email": "not-an-email"}),

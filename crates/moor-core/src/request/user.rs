@@ -5,7 +5,7 @@ use std::fmt;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use super::{MachineAddReq, MachineRemoveReq, Request, StartReq};
+use super::{MachineAddReq, MachineEnrollReq, MachineRemoveReq, Request, StartReq};
 use crate::secret::Secret;
 use crate::user::{Email, Identity, SecretName};
 
@@ -193,6 +193,19 @@ pub enum UserCmd {
         /// The issuer the authorization server named.
         iss: Option<String>,
     },
+    /// Enroll the caller's user, then add or replace a machine its agent enrolls.
+    MachineEnroll {
+        /// The email the front verified.
+        email: Option<Email>,
+        /// The machine's name.
+        name: String,
+        /// The agent's public key.
+        pubkey: String,
+        /// The machine's labels.
+        labels: Vec<String>,
+        /// How many Boxes may hold it at once.
+        capacity: u16,
+    },
     /// Add or replace one of the caller's user's machines.
     MachineAdd {
         /// The machine's name.
@@ -236,6 +249,7 @@ impl UserCmd {
             Self::McpRemove { .. } => "mcp-remove",
             Self::McpList => "mcp-list",
             Self::McpOAuthFinish { .. } => "mcp-oauth-finish",
+            Self::MachineEnroll { .. } => "machine-enroll",
             Self::MachineAdd { .. } => "machine-add",
             Self::MachineRemove { .. } => "machine-remove",
             Self::MachineList => "machine-list",
@@ -293,6 +307,16 @@ impl Request {
                     capacity: r.capacity,
                 },
             ),
+            Self::MachineEnroll(r) => (
+                r.identity,
+                UserCmd::MachineEnroll {
+                    email: r.email,
+                    name: r.name,
+                    pubkey: r.pubkey,
+                    labels: r.labels,
+                    capacity: r.capacity,
+                },
+            ),
             Self::MachineRemove(r) => (r.identity, UserCmd::MachineRemove { name: r.name }),
             Self::MachineList(r) => (r.identity, UserCmd::MachineList),
             Self::ProxyLease(r) => (r.identity, UserCmd::ProxyLease),
@@ -337,6 +361,7 @@ impl Request {
             | Self::MachineList(AsReq { identity })
             | Self::MachineAdd(MachineAddReq { identity, .. })
             | Self::MachineRemove(MachineRemoveReq { identity, .. })
+            | Self::MachineEnroll(MachineEnrollReq { identity, .. })
             | Self::McpAdd(McpAddReq { identity, .. })
             | Self::McpRemove(McpRemoveReq { identity, .. })
             | Self::McpOAuthFinish(McpOAuthFinishReq { identity, .. })

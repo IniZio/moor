@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use moor_core::config::UserMachine;
+use moor_core::config::{EnrolledMachine, UserMachine};
 use moor_core::domain::event::{Event, MachineEvent};
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
@@ -36,6 +36,33 @@ impl Store {
             params![user.get(), machine.name, machine.ssh, labels, machine.capacity, now, now],
         )?;
         Ok(())
+    }
+
+    /// Adds the machine an agent enrolled to `user`'s, replacing the key, labels and capacity
+    /// of one of the same name; the machine's id, which a replacement keeps.
+    pub(crate) fn enroll_machine(
+        &self,
+        user: UserId,
+        machine: &EnrolledMachine,
+    ) -> Result<i64, StoreError> {
+        let now = self.now().as_millis();
+        let labels = serde_json::to_string(&machine.labels)
+            .map_err(|e| StoreError::Corrupt(format!("machine labels: {e}")))?;
+        Ok(self.writer().query_row(
+            "INSERT INTO user_machines_v2 (user, name, pubkey, labels, capacity, enrolled_at) \
+             VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (user, name) DO UPDATE SET \
+             pubkey = excluded.pubkey, labels = excluded.labels, capacity = excluded.capacity, \
+             enrolled_at = excluded.enrolled_at RETURNING machine_id",
+            params![
+                user.get(),
+                machine.name,
+                machine.pubkey,
+                labels,
+                machine.capacity,
+                now
+            ],
+            |r| r.get(0),
+        )?)
     }
 
     /// Removes `user`'s machine `name`; true when there was one.

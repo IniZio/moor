@@ -27,6 +27,7 @@ fn nameless(kind: &str) -> Option<Value> {
         "gate" => json!({"cmd": kind, "sha": "abcd123", "name": "test"}),
         "secret-set" => json!({"cmd": kind, "name": "n", "value": "v"}),
         "secret-delete" | "mcp-remove" | "machine-remove" => json!({"cmd": kind, "name": "n"}),
+        "machine-enroll" => json!({"cmd": kind, "name": "n", "pubkey": "k"}),
         "mcp-add" => json!({"cmd": kind, "name": "n", "url": "https://example.com/mcp"}),
         "machine-add" => json!({"cmd": kind, "name": "n", "ssh": "u@h"}),
         "mcp-oauth-finish" => json!({"cmd": kind, "state": "s", "code": "c"}),
