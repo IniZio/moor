@@ -162,6 +162,7 @@ fn releasing_a_box_ends_its_session_before_release_runs() {
     eventually("release runs", || !lines(&rig, "released").is_empty());
     assert!(!alive(pid), "the fake is gone");
     assert_eq!(lines(&rig, "released"), ["gone"]);
+    rig.open.lock().unwrap().push(7);
     tap(&rig, &HEADERS).unwrap();
     assert_eq!(lines(&rig, "fake-starts").len(), 2);
 }
