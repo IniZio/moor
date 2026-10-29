@@ -5,8 +5,10 @@
 //! one per probe. The target words a master was opened with live under moor's state dir and
 //! its socket in a short private directory, so every moor process and every freshly wired
 //! driver reuses them without a new lookup. A saved target is kept until a call on it fails:
-//! every lookup touches the Box's lease, so a Box that is only looked at must not cause one. The agent's pane keeps its own connection, so
-//! ending a master never ends the agent.
+//! every lookup touches the Box's lease, so a Box that is only looked at must not cause one.
+//! The agent's pane rides the same master, since a gateway may close a fresh connect right
+//! after setup's calls; ending a master, which only a Box's acquire, wake, sleep or release
+//! does, ends the pane too.
 
 use std::fs::{self, DirBuilder, OpenOptions};
 use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
@@ -166,6 +168,18 @@ impl Link {
     /// Options that put a call on this connection, opening it when it is down. They go before
     /// the target words, because ssh keeps the first value it reads for an option.
     fn options(&self) -> Vec<String> {
+        let mut options = self.socket_options();
+        options.extend([
+            "-E".to_owned(),
+            self.log.display().to_string(),
+            "-o".to_owned(),
+            "LogLevel=ERROR".to_owned(),
+        ]);
+        options
+    }
+
+    /// [`Link::options`] without the log, so a terminal on the connection shows ssh's errors.
+    fn socket_options(&self) -> Vec<String> {
         vec![
             "-o".to_owned(),
             "ControlMaster=auto".to_owned(),
@@ -173,10 +187,6 @@ impl Link {
             format!("ControlPersist={}", self.persist),
             "-o".to_owned(),
             format!("ControlPath={}", self.socket.display()),
-            "-E".to_owned(),
-            self.log.display().to_string(),
-            "-o".to_owned(),
-            "LogLevel=ERROR".to_owned(),
         ]
     }
 
@@ -246,6 +256,15 @@ pub(super) fn args(
     };
     pin::check(cb, &args)?;
     Ok(args)
+}
+
+/// The options that put a terminal on the shared connection of the Box behind `handle`,
+/// opening it when it is down; none without a usable link.
+pub(super) fn terminal_options(cb: &Crabbox, handle: &BoxHandle) -> Vec<String> {
+    cb.link(handle)
+        .filter(|_| cb.unshared().is_none())
+        .map(|link| link.socket_options())
+        .unwrap_or_default()
 }
 
 /// Runs `spec`, a short call to the Box, and handles a failure as [`failed`] does.

@@ -52,7 +52,8 @@ pub(super) fn run(
     results
 }
 
-/// The ssh arguments for the Box: `connect` without `ssh` and `-t`, or a fresh lookup.
+/// The ssh arguments for the Box: `connect` without `ssh`, `-t` and the shared-connection
+/// options, or a fresh lookup.
 fn target_words(
     cb: &Crabbox,
     handle: &BoxHandle,
@@ -61,7 +62,11 @@ fn target_words(
     match connect.split_first() {
         Some((first, rest)) if first == "ssh" => {
             let rest = rest.strip_prefix(&["-t".to_owned()]).unwrap_or(rest);
-            Ok(rest.to_vec())
+            let shared = link::terminal_options(cb, handle);
+            Ok(rest
+                .strip_prefix(shared.as_slice())
+                .unwrap_or(rest)
+                .to_vec())
         }
         _ => ssh_target(cb, handle),
     }
