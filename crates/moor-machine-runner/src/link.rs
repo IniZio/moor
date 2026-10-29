@@ -2,8 +2,8 @@
 
 use moor_client::link::ops::{self, Op, Ran, Reply};
 
-use moor_client::link::Channel;
 use crate::Agents;
+use moor_client::link::Channel;
 
 /// What a request over the link came to.
 pub(crate) enum Answer {

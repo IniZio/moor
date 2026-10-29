@@ -125,7 +125,10 @@ fn exec_runs_in_the_box_copy_over_the_link_and_never_dials_ssh() {
         .unwrap();
     let text = out["output"].as_str().unwrap();
     assert!(text.contains("moor/7"), "ran in the Box's copy: {out}");
-    assert!(text.contains("device=dev-7"), "prepare's facts reach it: {out}");
+    assert!(
+        text.contains("device=dev-7"),
+        "prepare's facts reach it: {out}"
+    );
     assert!(!m.ssh_ran(), "no ssh for a linked machine");
 }
 
@@ -196,7 +199,10 @@ fn a_claim_held_on_an_enrolled_machine_prepares_it_over_the_link() {
     let held = json!({"state": "held", "machine": "minion", "ssh": "", "machine_id": MACHINE_ID,
         "slot": 0, "ports": [8081]});
     hold_answers(&m, vec![held]);
-    let got = m.rig.call_with("machine_claim", json!({}), &MISSING).unwrap();
+    let got = m
+        .rig
+        .call_with("machine_claim", json!({}), &MISSING)
+        .unwrap();
     assert_eq!(got["facts"], json!({"device": "dev-7"}), "{got}");
     assert_eq!(lines(&m.rig.remote.join("prepared")), ["7 0"]);
     assert!(!m.ssh_ran());

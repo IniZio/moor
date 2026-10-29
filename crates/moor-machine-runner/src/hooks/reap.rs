@@ -177,5 +177,9 @@ fn machine_targets(client: &Client) -> Result<BTreeSet<String>, String> {
     let value = response.value.unwrap_or_default();
     let listed: MachineTargetsValue = serde_json::from_value(value)
         .map_err(|e| format!("the controller's machine list is malformed: {e}"))?;
-    Ok(listed.targets.into_iter().filter(|t| !t.is_empty()).collect())
+    Ok(listed
+        .targets
+        .into_iter()
+        .filter(|t| !t.is_empty())
+        .collect())
 }

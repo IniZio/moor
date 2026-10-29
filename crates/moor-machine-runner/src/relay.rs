@@ -334,8 +334,7 @@ impl Relays {
         let (service, child) = match &caller.reach {
             Reach::Ssh { ssh } => {
                 let mut child = self.over_ssh(caller, ssh, relay, &env)?;
-                let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take())
-                else {
+                let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
                     return Err("ssh has no stdio".to_owned());
                 };
                 let service = Forward(Arc::clone(&self.progress)).serve((stdout, stdin));
@@ -356,7 +355,10 @@ impl Relays {
                             return Err(format!("machine {} has no such relay", caller.machine))
                         }
                         Answer::Ran(_) => {
-                            return Err(format!("machine {} ran the relay as a command", caller.machine))
+                            return Err(format!(
+                                "machine {} ran the relay as a command",
+                                caller.machine
+                            ))
                         }
                     };
                 let service = Forward(Arc::clone(&self.progress)).serve(tokio::io::split(stream));
