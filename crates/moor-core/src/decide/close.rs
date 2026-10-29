@@ -85,7 +85,8 @@ pub enum Refusal {
     /// The Box could not be checked for unsaved work.
     #[error(
         "could not check the Box for unsaved work: {reason}; \
-         pass --force to close anyway and discard any work in the Box"
+         try the close again once the Box can be reached, \
+         or close it anyway and discard any work in the Box"
     )]
     BoxUnchecked {
         /// Why the check failed.
@@ -132,17 +133,27 @@ pub struct ReleaseVerdict {
     pub closes: bool,
 }
 
+/// Whether closing a Box in `lifecycle` with primary Session `session` must first check the Box
+/// for unsaved work. A Box whose setup failed before its Session started never ran its agent.
+#[must_use]
+pub const fn needs_box_check(lifecycle: BoxLifecycle, session: SessionState) -> bool {
+    !matches!(
+        (lifecycle, session),
+        (BoxLifecycle::SetupFailed, SessionState::Starting)
+    )
+}
+
 /// Decides whether `f` may close, and what closing involves.
 ///
 /// # Errors
-/// [`Refusal::AlreadyClosed`] for a closed box; when `force` is false,
+/// [`Refusal::AlreadyClosed`] for a closed box; when `force` is false and [`needs_box_check`] holds,
 /// [`Refusal::UnsavedInBox`] for work only in the Box, and [`Refusal::BoxUnchecked`] when the Box could
 /// not be checked.
 pub fn close_gate(f: &CloseFacts, force: bool) -> Result<ClosePlan, Refusal> {
     if !f.lifecycle.is_live() {
         return Err(Refusal::AlreadyClosed);
     }
-    if !force {
+    if !force && needs_box_check(f.lifecycle, f.session) {
         match &f.box_check {
             BoxCheck::Unsaved { ahead, dirty } if *ahead > 0 || *dirty > 0 => {
                 return Err(Refusal::UnsavedInBox {

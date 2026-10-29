@@ -99,10 +99,42 @@ fn unknown_box_check_is_refused_with_its_reason() {
         }
     );
     let text = err.to_string();
-    assert!(
-        text.contains("ssh timed out") && text.contains("--force"),
-        "{text}"
-    );
+    assert!(text.contains("ssh timed out"), "{text}");
+    assert!(text.contains("try the close again"), "{text}");
+    assert!(text.contains("discard any work"), "{text}");
+    assert!(!text.contains("--force"), "no CLI flag: {text}");
+}
+
+#[test]
+fn box_whose_setup_failed_before_its_agent_launched_closes_unchecked() {
+    let f = CloseFacts {
+        lifecycle: BoxLifecycle::SetupFailed,
+        session: SessionState::Starting,
+        box_check: BoxCheck::Unknown("ssh timed out".to_owned()),
+        ..facts()
+    };
+    let plan = close_gate(&f, false).expect("closes");
+    assert!(plan.release_box);
+}
+
+#[test]
+fn launched_box_whose_probe_cannot_run_is_still_refused() {
+    for (lifecycle, session) in [
+        (BoxLifecycle::Ready, SessionState::Working),
+        (BoxLifecycle::Ready, SessionState::Starting),
+        (BoxLifecycle::SetupFailed, SessionState::Working),
+    ] {
+        let f = CloseFacts {
+            lifecycle,
+            session,
+            box_check: BoxCheck::Unknown("ssh timed out".to_owned()),
+            ..facts()
+        };
+        assert!(
+            matches!(close_gate(&f, false), Err(Refusal::BoxUnchecked { .. })),
+            "{lifecycle:?} {session:?}"
+        );
+    }
 }
 
 #[test]

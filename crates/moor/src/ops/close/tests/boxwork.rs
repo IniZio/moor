@@ -5,7 +5,7 @@ use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::seam::driver::{DriverError, ExecOutcome};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::{BoxName, CloseReq, ErrorKind, ProviderId};
 
 use std::sync::Arc;
@@ -157,6 +157,88 @@ fn close_refuses_when_the_box_cannot_be_checked() {
         t.contains("could not check the Box for unsaved work"),
         "{t}"
     );
+}
+
+#[test]
+fn unchecked_refusal_leaves_the_force_flag_to_the_cli_hint() {
+    let f = fx_probe(None);
+    let e = refused(&f);
+    assert!(!e.error.to_string().contains("--force"), "{}", e.error);
+    assert!(
+        e.hints.iter().any(|h| h.contains("`moor close t --force`")),
+        "{:?}",
+        e.hints
+    );
+}
+
+/// A Box whose machine is up but whose setup failed before its agent launched.
+fn fx_setup_failed() -> Fx {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new());
+    let surface = Arc::new(surface());
+    let proc = proc();
+    let cx = Cx::fake(dir.path(), driver.clone(), surface.clone(), proc.clone());
+    let store = cx.store().unwrap();
+    let id = store
+        .apply(crate::testing::cx::new_box_of(
+            BoxName::parse_allow_bare("t").unwrap(),
+            crate::testing::cx::box_repo(None),
+        ))
+        .unwrap()
+        .box_id;
+    let provider = ProviderId::new("p");
+    store
+        .apply(
+            Decision::new(id)
+                .lifecycle(BoxLifecycleInput::Admitted)
+                .box_input(BoxInput::Requested)
+                .set(Fields {
+                    box_provider: Field::Set(provider.clone()),
+                    workspace_id: Field::Set("ws-1".into()),
+                    box_workdir: Field::Set("/work/box-1".into()),
+                    ..Fields::default()
+                }),
+        )
+        .unwrap();
+    let got = driver
+        .acquire(&AcquireReq {
+            provider,
+            box_id: id,
+            name: BoxName::parse_allow_bare("t").unwrap(),
+            class: None,
+            nonce: "n".to_owned(),
+            cache: moor_core::cache::CachePlan::none(),
+        })
+        .unwrap();
+    store
+        .apply(
+            Decision::new(id)
+                .box_input(BoxInput::Acquired { handle: got.handle })
+                .lifecycle(BoxLifecycleInput::SetupFailed {
+                    cause: "clone failed".to_owned(),
+                    which: None,
+                }),
+        )
+        .unwrap();
+    Fx {
+        dir,
+        cx,
+        driver,
+        surface,
+        proc,
+        id,
+    }
+}
+
+#[test]
+fn box_whose_setup_failed_before_launch_closes_without_the_probe() {
+    let f = fx_setup_failed();
+    assert_eq!(row(&f).lifecycle, BoxLifecycle::SetupFailed);
+    assert_eq!(box_state(&f), BoxState::Ready);
+    let v = run(&f.cx, &req(false)).unwrap();
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(box_state(&f), BoxState::Deleted);
+    assert_eq!(probes(&f), 0, "no unsaved-work probe");
 }
 
 #[test]

@@ -2,7 +2,8 @@
 
 use moor_core::config::Flags;
 use moor_core::decide::close::{
-    close_gate, release_outcome, BoxCheck, CloseFacts, ClosePlan, ReleaseResult,
+    close_gate, needs_box_check, release_outcome, BoxCheck, CloseFacts, ClosePlan, Refusal,
+    ReleaseResult,
 };
 use moor_core::decide::reconcile::{reconcile, BoxFact};
 use moor_core::decide::transcript::Trigger;
@@ -50,7 +51,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     let mut row = store.box_row(first.id)?.unwrap_or(first);
     let box_check = box_check(cx, store, &mut row, req.force)?;
     let probed_clean = matches!(box_check, BoxCheck::Clean);
-    let plan = close_gate(&facts(&row, box_check), req.force)?;
+    let plan = close_gate(&facts(&row, box_check), req.force).map_err(|r| refused(&row, r))?;
     let saved = save_transcript(cx, store, &row)?;
     let digest = saved.as_ref().map(|t| t.digest.as_str());
     let agent_stopped = agent_stop::stop_agent(cx, store, &row, digest)?;
@@ -110,7 +111,7 @@ fn box_check(
     force: bool,
 ) -> Result<BoxCheck, CommandError> {
     // --force discards Box work, so the Box is neither woken nor probed.
-    if force {
+    if force || !needs_box_check(row.lifecycle, row.session) {
         return Ok(BoxCheck::Skipped);
     }
     let live = |r: &BoxRow| {
@@ -219,11 +220,24 @@ fn recheck_verdict(row: &BoxRow, work: BoxWork) -> Result<(), CommandError> {
     };
     match close_gate(&facts(row, check), false) {
         Ok(_) => Ok(()),
-        Err(refusal) => Err(CommandError::from(refusal).with_hint(format!(
+        Err(refusal) => Err(refused(row, refusal).with_hint(format!(
             "the agent was stopped; `moor start {} --resume` continues it",
             row.name.as_str()
         ))),
     }
+}
+
+/// The gate's refusal of `row`; the CLI way past an unchecked Box is a hint, so fronts never show it.
+fn refused(row: &BoxRow, r: Refusal) -> CommandError {
+    let unchecked = matches!(r, Refusal::BoxUnchecked { .. });
+    let e = CommandError::from(r);
+    if unchecked {
+        let name = row.name.as_str();
+        return e.with_hint(format!(
+            "`moor close {name} --force` closes it anyway and discards any work in the Box"
+        ));
+    }
+    e
 }
 
 /// The facts the gate decides on; only the Box's own probe speaks for unsaved work.
