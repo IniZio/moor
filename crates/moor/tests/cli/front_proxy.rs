@@ -34,7 +34,7 @@ impl Served {
     fn start() -> Self {
         let command = serde_json::json!(["python3", "-c", CLIENT, PROTOCOL.to_string()]);
         Self::serve(&format!(
-            "    command: {command}\n    state_dir: {{front}}\n"
+            "    command: {command}\n    state_dir: FRONT_DIR\n"
         ))
     }
 
@@ -65,7 +65,7 @@ impl Served {
         for dir in ["state", "home", "front", "cfg"] {
             fs::create_dir(root.join(dir)).unwrap();
         }
-        let front = front.replace("{front}", &root.join("front").display().to_string());
+        let front = front.replace("FRONT_DIR", &root.join("front").display().to_string());
         let config = root.join("cfg").join("c.yaml");
         fs::write(
             &config,
