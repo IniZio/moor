@@ -112,6 +112,11 @@ pub enum ExtraEvent {
         /// The message, cut to its end when long.
         text: String,
     },
+    /// What the provider reports while it brings the Box up.
+    BoxProgress {
+        /// The step or the latest problem, one short line.
+        text: String,
+    },
     /// What the agent is doing now.
     AgentDoing {
         /// The line, at most 80 characters.

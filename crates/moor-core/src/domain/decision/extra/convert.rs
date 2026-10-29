@@ -49,6 +49,7 @@ impl From<ExtraEvent> for Event {
             }
             ExtraEvent::AgentSaid { text } => Self::AgentSaid { text },
             ExtraEvent::AgentDoing { text } => Self::AgentDoing { text },
+            ExtraEvent::BoxProgress { text } => Self::BoxProgress { text },
             ExtraEvent::NeedsInput { question, options } => Self::NeedsInput { question, options },
             ExtraEvent::AgentUnreachable { attempts, error } => {
                 Self::AgentUnreachable { attempts, error }
@@ -150,6 +151,7 @@ impl TryFrom<Event> for ExtraEvent {
             }
             Event::AgentSaid { text } => Ok(Self::AgentSaid { text }),
             Event::AgentDoing { text } => Ok(Self::AgentDoing { text }),
+            Event::BoxProgress { text } => Ok(Self::BoxProgress { text }),
             Event::NeedsInput { question, options } => Ok(Self::NeedsInput { question, options }),
             Event::AgentUnreachable { attempts, error } => {
                 Ok(Self::AgentUnreachable { attempts, error })

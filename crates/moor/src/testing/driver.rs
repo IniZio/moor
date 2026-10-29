@@ -30,9 +30,12 @@ struct State {
     calls: Vec<String>,
     rec: script::Rec,
     fail_acquire: Option<DriverError>,
+    acquire_notes: Vec<String>,
+    during_acquire: Option<Arc<dyn Fn() + Send + Sync>>,
     fail_release: Option<DriverError>,
     fail_release_always: Option<DriverError>,
     fail_list: Option<DriverError>,
+    fail_list_always: Option<DriverError>,
     fail_copy_out: Option<DriverError>,
     copy_content: Option<Vec<u8>>,
     copy_symlink: Option<PathBuf>,
@@ -106,22 +109,16 @@ impl Driver for FakeDriver {
     }
 
     fn acquire(&self, req: &AcquireReq) -> Result<Acquired, DriverError> {
-        let mut s = self.st();
-        s.note("acquire".to_owned());
-        if let Some(e) = s.fail_acquire.take() {
-            return Err(e);
-        }
-        s.next += 1;
-        let id = format!("box-{}", s.next);
-        s.live.push(id.clone());
-        s.providers.push((id.clone(), req.provider.clone()));
-        s.cache.plans.push(req.cache.clone());
-        s.cache.nonces.push(req.nonce.clone());
-        let workdir = layout(s.work_root.as_deref(), &id)?;
-        Ok(Acquired {
-            handle: BoxHandle::new(id),
-            workdir,
-        })
+        self.acquired(req)
+    }
+
+    fn acquire_noting(
+        &self,
+        req: &AcquireReq,
+        note: &mut dyn FnMut(&str),
+    ) -> Result<Acquired, DriverError> {
+        self.replay_notes(note);
+        self.acquire(req)
     }
 
     fn planned_handle(&self, _req: &AcquireReq) -> BoxHandle {
@@ -154,7 +151,7 @@ impl Driver for FakeDriver {
     fn list(&self, provider: &ProviderId) -> Result<Vec<BoxListing>, DriverError> {
         let mut s = self.st();
         s.note("list".to_owned());
-        if let Some(e) = s.fail_list.take() {
+        if let Some(e) = s.fail_list.take().or_else(|| s.fail_list_always.clone()) {
             return Err(e);
         }
         Ok(s.providers
@@ -389,6 +386,7 @@ impl Driver for FakeDriver {
     }
 }
 
+mod acquire;
 mod knobs;
 mod runs;
 mod script;

@@ -40,7 +40,7 @@ moor::client	moor::cli,moor::config_load,moor::env,moor::error
 moor::controller	moor::Moor,moor::front_dir,moor::env,moor::error,moor::vault
 moor::wire	moor::config_load,moor::adapters,moor::proxy,moor::store,moor::cx,moor::env,moor::error
 moor::cx	moor::config_load,moor::store,moor::adapters::git,moor::adapters::creds,moor::env,moor::error
-moor::ops	moor::vault,moor::cx,moor::store,moor::error,moor::adapters::git,moor::adapters::creds
+moor::ops	moor::vault,moor::cx,moor::store,moor::error,moor::adapters::git,moor::adapters::creds,moor::adapters::proc
 moor::moor	moor::vault,moor::cx,moor::wire,moor::ops,moor::store,moor::adapters::clock,moor::error,moor::env
 extern:nono_proxy	moor::proxy
 extern:nono	moor::proxy, moor::controller::front_shim

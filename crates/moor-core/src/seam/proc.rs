@@ -6,67 +6,12 @@ mod error;
 mod first_line;
 mod gate;
 mod signal;
+mod tool;
 pub use error::ProcError;
 pub use first_line::FirstLineError;
 pub use gate::StderrGate;
 pub use signal::{check_group, Signal};
-
-/// An external program moor may run.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Tool {
-    /// The crabbox driver hub.
-    Crabbox,
-    /// The herdr surface.
-    Herdr,
-    /// The agent engine program (claude today).
-    Agent,
-    /// OpenSSH client.
-    Ssh,
-    /// GitHub CLI.
-    Gh,
-    /// Git.
-    Git,
-    /// Rsync.
-    Rsync,
-    /// This binary, re-invoked.
-    MoorSelf,
-    /// POSIX shell, for credential `cmd` sources.
-    Sh,
-}
-
-impl Tool {
-    /// Environment variable that overrides the program path.
-    #[must_use]
-    pub const fn bin_var(self) -> &'static str {
-        match self {
-            Self::Crabbox => "MOOR_CRABBOX_BIN",
-            Self::Herdr => "MOOR_HERDR_BIN",
-            Self::Agent => "MOOR_CLAUDE_BIN",
-            Self::Ssh => "MOOR_SSH_BIN",
-            Self::Gh => "MOOR_GH_BIN",
-            Self::Git => "MOOR_GIT_BIN",
-            Self::Rsync => "MOOR_RSYNC_BIN",
-            Self::MoorSelf => "MOOR_SELF_BIN",
-            Self::Sh => "MOOR_SH_BIN",
-        }
-    }
-
-    /// Default program name looked up on `PATH`.
-    #[must_use]
-    pub const fn program(self) -> &'static str {
-        match self {
-            Self::Crabbox => "crabbox",
-            Self::Herdr => "herdr",
-            Self::Agent => "claude",
-            Self::Ssh => "ssh",
-            Self::Gh => "gh",
-            Self::Git => "git",
-            Self::Rsync => "rsync",
-            Self::MoorSelf => "moor",
-            Self::Sh => "sh",
-        }
-    }
-}
+pub use tool::Tool;
 
 /// Environment variables every child inherits; only crabbox gets more, see
 /// [`CRABBOX_ENV`] and [`CRABBOX_ENV_PREFIX`].
@@ -287,6 +232,27 @@ pub trait Proc: Send + Sync {
     /// # Errors
     /// [`ProcError`] on spawn failure, timeout, signal, non-zero exit or oversize output.
     fn run_secret(&self, spec: &ProcSpec) -> Result<zeroize::Zeroizing<Vec<u8>>, ProcError>;
+
+    /// [`Proc::run`], handing each stderr line to `line` as the child writes it, so a long call
+    /// can report what it is waiting on. This default hands the lines over only once the child
+    /// exits.
+    ///
+    /// # Errors
+    /// As [`Proc::run`].
+    fn run_watched(
+        &self,
+        spec: &ProcSpec,
+        line: &mut dyn FnMut(&str),
+    ) -> Result<ProcOutput, ProcError> {
+        let result = self.run(spec);
+        let stderr = match &result {
+            Ok(out) => out.stderr.as_str(),
+            Err(ProcError::NonZero { stderr_tail, .. }) => stderr_tail.as_str(),
+            Err(_) => "",
+        };
+        stderr.lines().for_each(&mut *line);
+        result
+    }
 
     /// Runs to completion with output streamed to `out`; interrupting moor
     /// stops the child's process group. A non-zero exit is

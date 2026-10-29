@@ -19,6 +19,7 @@ mod lookup;
 mod master;
 mod pinned;
 mod slug;
+mod watch;
 mod workdir;
 
 pub(super) const WARMUP_OUT: &str =

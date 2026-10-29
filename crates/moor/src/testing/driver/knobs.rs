@@ -1,5 +1,7 @@
 //! Setup knobs for the Driver fake: where boxes live and which calls fail, and the calls it saw.
 
+use std::sync::Arc;
+
 use moor_core::cache::CachePlan;
 use moor_core::seam::driver::{DriverError, ExecSpec};
 use moor_core::seam::proc::{Deadline, Output};
@@ -92,6 +94,17 @@ impl FakeDriver {
         self.st().fail_workdir = Some(e);
     }
 
+    /// Every `acquire` reports `notes`, then runs `during` before it returns.
+    pub(crate) fn notes_while_acquiring(
+        &self,
+        notes: &[&str],
+        during: impl Fn() + Send + Sync + 'static,
+    ) {
+        let mut s = self.st();
+        s.acquire_notes = notes.iter().map(|n| (*n).to_owned()).collect();
+        s.during_acquire = Some(Arc::new(during));
+    }
+
     /// The next `acquire` fails once with `e`.
     pub(crate) fn fail_acquire(self, e: DriverError) -> Self {
         self.st().fail_acquire = Some(e);
@@ -108,6 +121,11 @@ impl FakeDriver {
     pub(crate) fn fail_release_always(self, e: DriverError) -> Self {
         self.st().fail_release_always = Some(e);
         self
+    }
+
+    /// Every later `list` fails with `e`.
+    pub(crate) fn fail_list_always(&self, e: DriverError) {
+        self.st().fail_list_always = Some(e);
     }
 
     /// The next `list` fails once with `e`.

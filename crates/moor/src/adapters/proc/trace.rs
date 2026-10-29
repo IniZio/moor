@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use moor_core::seam::proc::{ProcError, ProcSpec, Tool};
 
+use super::plain::last_sentence;
 use crate::env::Env;
 
 /// Variable that turns tracing on when set to `1`.
@@ -49,7 +50,10 @@ impl Trace {
         let begun = Instant::now();
         let result = call();
         let exit = exit_label(result.as_ref().err());
-        let line = done_line(&spec.args, begun.elapsed(), &exit);
+        let line = with_said(
+            done_line(&spec.args, begun.elapsed(), &exit),
+            result.as_ref().err(),
+        );
         emit(&mut io::stderr(), &line);
         result
     }
@@ -92,6 +96,18 @@ fn done_line(args: &[OsString], took: Duration, exit: &str) -> String {
         subcommand(args),
         took.as_secs_f64()
     )
+}
+
+/// `line`, plus what a non-zero exit last printed, in plain words.
+fn with_said(line: String, err: Option<&ProcError>) -> String {
+    let said = match err {
+        Some(ProcError::NonZero { stderr_tail, .. }) => last_sentence(stderr_tail),
+        _ => None,
+    };
+    match said {
+        Some(said) => format!("{line} said={said:?}"),
+        None => line,
+    }
 }
 
 /// Line for a long-lived child.

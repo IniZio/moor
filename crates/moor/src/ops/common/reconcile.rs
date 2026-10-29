@@ -1,10 +1,14 @@
 //! Reconcile stored Boxes against what the Driver still lists.
 
 use moor_core::decide::reconcile::{reconcile, BoxFact};
+use moor_core::domain::boxes::BoxState;
+use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::seam::driver::DriverError;
 use moor_core::{ProviderId, Warning};
 
+use crate::adapters::proc::plain::last_sentence;
 use crate::cx::Cx;
+use crate::store::Store;
 
 /// Group live Box rows by provider, keeping first-seen order.
 fn by_provider(
@@ -43,13 +47,35 @@ pub(crate) fn run(cx: &Cx) {
                 }
             }
             Err(DriverError::Unsupported(_)) => {}
-            Err(_) => cx.warn(Warning {
-                code: "reconcile_skipped".to_owned(),
-                message: format!(
-                    "could not list boxes for provider {}; box states left as they were",
-                    provider.as_str()
-                ),
-            }),
+            Err(e) => {
+                note_starting(store, &facts, &e);
+                cx.warn(Warning {
+                    code: "reconcile_skipped".to_owned(),
+                    message: format!(
+                        "could not list boxes for provider {}; box states left as they were",
+                        provider.as_str()
+                    ),
+                });
+            }
         }
+    }
+}
+
+/// Tells each starting Box in `facts` that listing its provider fails, once per distinct error,
+/// so its card shows why the provider looks unwell while the acquire still runs.
+fn note_starting(store: &Store, facts: &[BoxFact], e: &DriverError) {
+    let Some(text) = last_sentence(&e.to_string()) else {
+        return;
+    };
+    for f in facts.iter().filter(|f| f.state == BoxState::Starting) {
+        let last = store.last_event_of(f.box_id, "box_progress").ok().flatten();
+        if last.is_some_and(|ev| ev.payload.get("text").and_then(|t| t.as_str()) == Some(&text)) {
+            continue;
+        }
+        drop(
+            store.apply(
+                Decision::new(f.box_id).event(ExtraEvent::BoxProgress { text: text.clone() }),
+            ),
+        );
     }
 }

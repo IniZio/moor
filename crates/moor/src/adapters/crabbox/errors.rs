@@ -7,6 +7,8 @@
 use moor_core::seam::driver::{DriverError, TunnelFailure};
 use moor_core::seam::proc::ProcError;
 
+use crate::adapters::proc::plain::last_sentence;
+
 /// The crabbox operation that failed.
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Op {
@@ -190,6 +192,9 @@ const TAIL_MAX: usize = 300;
 
 /// The stderr tail appended to a summary of `op`, or nothing.
 fn stderr_suffix(op: Op, stderr: &str) -> String {
+    if matches!(op, Op::List) {
+        return last_sentence(stderr).map_or_else(String::new, |s| format!(": {s}"));
+    }
     if !matches!(op, Op::Acquire | Op::Release | Op::Caps) {
         return String::new();
     }

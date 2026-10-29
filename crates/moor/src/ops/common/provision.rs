@@ -34,6 +34,7 @@ pub(crate) use self::lease::hold_root;
 use self::lease::hold_workdir;
 use self::outcome::dotfiles_warned;
 pub(crate) use self::outcome::Provisioned;
+use self::progress::progress;
 use self::rerun::note_setup_not_rerun;
 use self::retry::{kept_box_retry, retry_in_box};
 
@@ -184,7 +185,7 @@ pub(crate) fn provision(
     // The record exists before the Box does; a failed acquire leaves it `planned`.
     let planned = cx.driver().planned_handle(&req);
     let root = store.plan_lease(id, LeaseKind::BoxRoot, planned.as_str())?;
-    match cx.driver().acquire(&req) {
+    match cx.driver().acquire_noting(&req, &mut progress(store, id)) {
         Ok(got) => {
             hold_root(store, id, root, &planned, &got)?;
             record_acquired(store, id, &got)?;
@@ -392,6 +393,7 @@ mod clone;
 mod delivered;
 mod lease;
 mod outcome;
+mod progress;
 mod rerun;
 mod retry;
 #[cfg(test)]
