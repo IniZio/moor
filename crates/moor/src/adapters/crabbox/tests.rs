@@ -256,6 +256,68 @@ fn acquire_failure_maps_through_errors() {
     assert!(c.acquire(&req("ssh", None)).is_err());
 }
 
+fn stops(p: &ScriptedProc) -> Vec<Vec<String>> {
+    p.calls()
+        .into_iter()
+        .map(|call| call.args)
+        .filter(|args| args.first().is_some_and(|a| a == "stop"))
+        .collect()
+}
+
+#[test]
+fn timed_out_first_acquire_deletes_its_lease_then_drops_the_dir() {
+    let (p, c) = fixture();
+    p.on(Tool::Crabbox, &["warmup"], Reply::Timeout);
+    p.on(Tool::Crabbox, &["stop"], Reply::Ok(String::new()));
+    let r = req("sprites", None);
+    let dir = c.lease_dir(&c.planned_handle(&r)).unwrap();
+    let err = c.acquire(&r).unwrap_err();
+    assert!(matches!(err, DriverError::Timeout(_)), "{err:?}");
+    let want = [
+        "stop",
+        "--provider",
+        "sprites",
+        "--id",
+        "moor-7-ab12cd",
+        "--delete",
+    ];
+    assert_eq!(stops(&p), [want.map(str::to_owned).to_vec()]);
+    assert!(!dir.exists(), "lease dir outlived the release");
+}
+
+#[test]
+fn failed_release_after_failed_acquire_keeps_the_dir_and_names_both() {
+    let (p, c) = fixture();
+    p.on(Tool::Crabbox, &["warmup"], Reply::Timeout);
+    p.on(
+        Tool::Crabbox,
+        &["stop"],
+        fail(1, "provider refused the delete"),
+    );
+    let r = req("sprites", None);
+    let dir = c.lease_dir(&c.planned_handle(&r)).unwrap();
+    let msg = c.acquire(&r).unwrap_err().to_string();
+    assert!(msg.contains("timed out"), "{msg}");
+    assert!(msg.contains("provider refused the delete"), "{msg}");
+    assert_eq!(stops(&p).len(), 1, "no retry of the release");
+    assert!(
+        dir.exists(),
+        "lease dir dropped though its lease may still run"
+    );
+}
+
+#[test]
+fn failed_acquire_of_an_existing_lease_keeps_it() {
+    let (p, c) = fixture();
+    p.on(Tool::Crabbox, &["warmup"], Reply::Timeout);
+    let r = req("sprites", None);
+    let dir = c.lease_dir(&c.planned_handle(&r)).unwrap();
+    std::fs::create_dir_all(&dir).unwrap();
+    assert!(c.acquire(&r).is_err());
+    assert!(stops(&p).is_empty());
+    assert!(dir.exists());
+}
+
 #[test]
 fn release_stops_by_provider_and_name() {
     let (p, c) = fixture();

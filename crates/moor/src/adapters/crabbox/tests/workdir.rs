@@ -26,7 +26,8 @@ fn acquire_without_a_ready_line_fails_closed_and_never_searches_the_box() {
     let err = c.acquire(&req("sprites", None)).unwrap_err();
     assert!(matches!(err, DriverError::Failed { .. }), "{err:?}");
     let calls = p.calls();
-    assert_eq!(calls.len(), 1, "the warmup only: {calls:?}");
+    let words: Vec<_> = calls.iter().filter_map(|c| c.args.first()).collect();
+    assert_eq!(words, ["warmup", "stop"], "no search of the Box: {calls:?}");
 }
 
 #[test]

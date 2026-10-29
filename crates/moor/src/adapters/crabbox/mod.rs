@@ -162,6 +162,20 @@ impl Crabbox {
         self.proc.run(spec).map_err(|e| map_error(op, provider, &e))
     }
 
+    /// Releases whatever a failed first acquire of `handle` started, which also drops its
+    /// lease dir; when that release fails the dir stays so a later release can still name
+    /// the lease, and the error carries both failures.
+    fn undo_acquire(&self, handle: &BoxHandle, failed: DriverError) -> DriverError {
+        match self.release(handle) {
+            Ok(_) => failed,
+            Err(release) => DriverError::Failed {
+                summary: format!(
+                    "{failed}; releasing the lease it started also failed, so its lease dir stays for a later release: {release}"
+                ),
+            },
+        }
+    }
+
     /// Asks for the relative work root [`WORK_ROOT`], which crabbox joins to the lease's login home.
     fn spec(deadline: Duration) -> ProcSpec {
         ProcSpec::new(Tool::Crabbox, Deadline(deadline)).env(WORK_ROOT_KEY, WORK_ROOT)
@@ -188,11 +202,10 @@ impl Driver for Crabbox {
         let existed = self.lease_dir(&handle)?.exists();
         let spec = self.at_lease(spec, &handle)?;
         self.forget_targets(&handle);
-        let acquired = workdir::warm_up(self, provider, &handle, &spec, req.cache.work_tree());
-        if acquired.is_err() && !existed {
-            self.drop_lease_dir(&handle);
+        match workdir::warm_up(self, provider, &handle, &spec, req.cache.work_tree()) {
+            Err(failed) if !existed => Err(self.undo_acquire(&handle, failed)),
+            acquired => acquired,
         }
-        acquired
     }
 
     fn planned_handle(&self, req: &AcquireReq) -> BoxHandle {
