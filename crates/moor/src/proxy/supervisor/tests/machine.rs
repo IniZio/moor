@@ -313,3 +313,44 @@ fn a_held_claim_reaches_the_machine_service_before_any_tick() {
     assert!(matches!(hold_of(&w.store, w.id), Hold::Held(h) if h.name == "mini"));
     assert!(machine_kinds(&w).is_empty(), "no tick has attached it");
 }
+
+#[test]
+fn an_enrolled_machine_hides_an_ssh_one_of_its_name_and_is_never_dialed() {
+    let w = World::new([]);
+    let (user, _) = w
+        .store
+        .enroll(&Identity::parse("slack:T1:U1").unwrap(), None)
+        .unwrap();
+    let mini = UserMachine::parse("mini", "dev@mini", &["macos".to_owned()]).unwrap();
+    w.store.set_user_machine(user, &mini).unwrap();
+    let key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl";
+    let enrolled =
+        moor_core::config::EnrolledMachine::parse("mini", key, &["macos".to_owned()], 1).unwrap();
+    let id = w.store.enroll_machine(user, &enrolled).unwrap();
+    let want = RepoMachine {
+        labels: vec!["macos".to_owned()],
+        ports: vec![8081],
+        ..RepoMachine::default()
+    };
+    let held = w
+        .store
+        .hold_machine(w.id, user, &HoldOp::repo(), Some(&want), &[])
+        .unwrap();
+    assert!(
+        matches!(held, moor_core::HoldValue::Held { machine_id: Some(m), ref ssh, .. } if m == id && ssh.is_empty()),
+        "the claim holds the enrolled machine: {held:?}"
+    );
+    match hold_of(&w.store, w.id) {
+        Hold::Held(h) => assert_eq!(h.machine_id, Some(id)),
+        Hold::Missing { reason, .. } => panic!("not held: {reason}"),
+    }
+    let deps = w.deps();
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+    assert!(run.tick().is_none());
+    let ssh = w.proc.calls().into_iter().filter(|c| c.tool == Tool::Ssh);
+    assert_eq!(ssh.count(), 0, "no ssh child for an enrolled machine");
+    assert_eq!(
+        machine_payloads(&w)[0]["error"],
+        "port forwarding to enrolled machines is not available yet"
+    );
+}
