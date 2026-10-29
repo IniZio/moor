@@ -263,8 +263,8 @@ type SendFn = fn(&std::path::Path, &Person, ControllerRequest) -> Result<serde_j
 /// How often [`send_early`] looks for the Box.
 const EARLY_POLL: std::time::Duration = std::time::Duration::from_millis(250);
 
-/// The longest [`send_early`] waits for the Box to appear before giving up on returning early.
-const EARLY_LIMIT: std::time::Duration = std::time::Duration::from_secs(60);
+/// How many polls [`send_early`] makes (about a minute) before giving up on the Box appearing.
+const EARLY_POLLS: u32 = 240;
 
 /// Runs a `start` without waiting for it to finish: returns the Box's `show` as soon as the Box
 /// exists, while the controller's start carries on in the background. A start that ends first, or for
@@ -295,8 +295,7 @@ fn send_early(
     std::thread::spawn(move || {
         let _ = tx.send(send(&path, &who, request));
     });
-    let began = std::time::Instant::now();
-    loop {
+    for _ in 0..EARLY_POLLS {
         match rx.recv_timeout(EARLY_POLL) {
             Ok(done) => return done,
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
@@ -307,10 +306,8 @@ fn send_early(
         if let Ok(shown) = send(socket, person, show.clone()) {
             return Ok(shown);
         }
-        if began.elapsed() > EARLY_LIMIT {
-            return Err("the Box did not appear in time; check box_status".to_owned());
-        }
     }
+    Err("the Box did not appear in time; check box_status".to_owned())
 }
 
 /// Enrolls `person`, then runs `request` as them; the controller's value, or why not.
