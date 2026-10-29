@@ -63,7 +63,8 @@ pub(super) fn start(
         db.end_action(turn.id, seq, &outcome, now)
     })?;
     Ok(Reply::done(format!(
-        "{outcome}. The thread will say when it has started."
+        "{outcome}. It has not started yet and can still fail, so do not tell the thread it \
+         started; the thread will say whether it did."
     )))
 }
 
