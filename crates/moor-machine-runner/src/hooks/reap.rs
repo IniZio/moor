@@ -162,7 +162,8 @@ impl Hooks {
     }
 }
 
-/// The ssh target of every enrolled machine, whichever user it belongs to.
+/// The ssh target of every machine reached over ssh, whichever user it belongs to. A machine
+/// whose agent links in has none and is skipped: its orphans wait for clean-up over the link.
 fn machine_targets(client: &Client) -> Result<BTreeSet<String>, String> {
     let response = client
         .request(Request::MachineTargets {}, |_| {})
