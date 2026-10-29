@@ -3057,10 +3057,13 @@ name = "moor-client"
 version = "0.2.0"
 dependencies = [
  "moor-core",
+ "oauth2",
  "rustls",
+ "serde",
  "serde_json",
  "tempfile",
  "tungstenite",
+ "ureq",
  "webpki-roots",
 ]
 
@@ -3086,7 +3089,6 @@ dependencies = [
 name = "moor-gate"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
  "bytes",
  "clap",
  "http",
@@ -3097,7 +3099,7 @@ dependencies = [
  "jsonwebtoken",
  "moor-client",
  "moor-core",
- "ring",
+ "moor-testkit",
  "rmcp",
  "rusqlite",
  "rustix",
@@ -3122,7 +3124,6 @@ dependencies = [
  "oauth2",
  "ratatui",
  "rustix",
- "rustls",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -3191,9 +3192,14 @@ dependencies = [
 name = "moor-testkit"
 version = "0.2.0"
 dependencies = [
+ "base64 0.22.1",
+ "jsonwebtoken",
+ "ring",
  "rustix",
+ "serde_json",
  "socket2",
  "tempfile",
+ "url",
 ]
 
 [[package]]

@@ -27,6 +27,7 @@ pub use watch::{EventRecord, Watch, WatchItem, WatchStop};
 
 mod attach;
 mod error;
+pub mod oidc;
 mod redial;
 mod remote;
 mod stream;

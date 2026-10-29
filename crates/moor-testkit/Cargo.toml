@@ -5,6 +5,11 @@ edition = "2021"
 publish = false
 
 [dependencies]
+base64 = "0.22"
+jsonwebtoken = { version = "9", default-features = false }
+ring = "0.17"
+serde_json = "1"
+url = "2"
 rustix = { version = "1", features = ["process"] }
 socket2 = "0.6"
 tempfile = "3"
