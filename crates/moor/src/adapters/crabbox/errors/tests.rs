@@ -90,7 +90,7 @@ fn op_names_the_summary() {
     );
     assert_eq!(
         map_error(Op::List, None, &e),
-        failed("box list failed (crabbox exit 1)")
+        failed("box list failed (crabbox exit 1): x")
     );
     assert_eq!(
         map_error(Op::Caps, None, &e),
@@ -144,9 +144,15 @@ fn empty_stderr_adds_no_tail() {
 }
 
 #[test]
-fn other_ops_carry_no_tail() {
-    let e = map_error(Op::List, None, &nz(1, "boom"));
-    assert_eq!(e.to_string(), "box list failed (crabbox exit 1)");
+fn a_list_carries_only_the_plain_words_of_its_last_line() {
+    let e = map_error(
+        Op::List,
+        None,
+        &nz(1, "first\nboom at lease-7f3a token=ab12CD"),
+    );
+    assert_eq!(e.to_string(), "box list failed (crabbox exit 1): boom at …");
+    let e = map_error(Op::Sleep, None, &nz(1, "boom"));
+    assert_eq!(e.to_string(), "box sleep failed (crabbox exit 1)");
 }
 
 #[test]

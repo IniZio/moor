@@ -29,6 +29,7 @@ pub const ASSERTED_KINDS: [&str; 20] = [
 impl Event {
     /// The `snake_case` kind name; equals the serde tag.
     #[must_use]
+    #[allow(clippy::too_many_lines, reason = "one arm per event variant")]
     pub const fn kind(&self) -> &'static str {
         match self {
             Self::Started => "started",
@@ -46,6 +47,7 @@ impl Event {
             Self::Woke => "woke",
             Self::Closed { .. } => "closed",
             Self::BoxRequested => "box_requested",
+            Self::BoxProgress { .. } => "box_progress",
             Self::BoxReady => "box_ready",
             Self::BoxFailed { .. } => "box_failed",
             Self::BoxAsleep => "box_asleep",

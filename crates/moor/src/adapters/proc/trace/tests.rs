@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use moor_core::seam::proc::{Deadline, ProcError, ProcSpec, Tool};
 
-use super::{done_line, emit, exit_label, started_line, subcommand, Trace};
+use super::{done_line, emit, exit_label, started_line, subcommand, with_said, Trace};
 use crate::env::Env;
 
 fn args(a: &[&str]) -> Vec<OsString> {
@@ -114,4 +114,22 @@ fn emit_ignores_write_failure() {
     let mut buf = Vec::new();
     emit(&mut buf, "x");
     assert_eq!(buf, b"x\n");
+}
+
+#[test]
+fn a_failed_call_names_what_crabbox_said_in_plain_words() {
+    let err = ProcError::NonZero {
+        code: 2,
+        stdout: String::new(),
+        stderr_tail: "external provider SSH output requires external.connection.ssh.trustProviderOutput in trusted user config token=ab12CD34\n".to_owned(),
+    };
+    let line = with_said(
+        done_line(&args(&["list"]), Duration::from_millis(30), "2"),
+        Some(&err),
+    );
+    assert_eq!(
+        line,
+        "moor-trace: crabbox list took=0.030s exit=2 said=\"external provider SSH output requires external.connection.ssh.trustProviderOutput in trusted user config …\""
+    );
+    assert_eq!(with_said("x".to_owned(), None), "x");
 }

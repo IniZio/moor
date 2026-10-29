@@ -14,6 +14,7 @@ mod mirror;
 mod parse;
 mod peek;
 mod pin;
+mod progress;
 mod put;
 mod retry;
 mod runbox;
@@ -191,21 +192,15 @@ impl Driver for Crabbox {
     }
 
     fn acquire(&self, req: &AcquireReq) -> Result<Acquired, DriverError> {
-        self.require_version()?;
-        let provider = req.provider.as_str();
-        let name = slug(req);
-        let class = size_of(req.class.as_deref())?;
-        let spec = cache::with_volumes(Self::spec(ACQUIRE_DEADLINE), &req.cache)
-            .args(["warmup", "--provider", provider])
-            .args(["--slug", &name, "--class", class]);
-        let handle = handle_of(provider, &name);
-        let existed = self.lease_dir(&handle)?.exists();
-        let spec = self.at_lease(spec, &handle)?;
-        self.forget_targets(&handle);
-        match workdir::warm_up(self, provider, &handle, &spec, req.cache.work_tree()) {
-            Err(failed) if !existed => Err(self.undo_acquire(&handle, failed)),
-            acquired => acquired,
-        }
+        self.acquire_noting(req, &mut |_| {})
+    }
+
+    fn acquire_noting(
+        &self,
+        req: &AcquireReq,
+        note: &mut dyn FnMut(&str),
+    ) -> Result<Acquired, DriverError> {
+        workdir::acquire(self, req, note)
     }
 
     fn planned_handle(&self, req: &AcquireReq) -> BoxHandle {

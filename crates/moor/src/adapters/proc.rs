@@ -6,19 +6,19 @@ use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
 use moor_core::seam::proc::{
     ChildHandle, Output, Proc, ProcError, ProcOutput, ProcSpec, Signal as GroupSignal, Tool,
-    OUTPUT_CAP,
 };
 use rustix::io::Errno;
 use rustix::process::test_kill_process;
 use zeroize::Zeroizing;
 
 use crate::env::{Cancel, Env};
+use drain::{drain, drain_lines};
 use env::{resolve, Snapshot};
 use grace::{terminate, GRACE};
 use signal::{is_group_leader, send_group, signal_group, to_pid};
@@ -28,6 +28,8 @@ use trace::Trace;
 
 /// Poll interval while waiting for a child.
 const POLL: Duration = Duration::from_millis(10);
+/// How often a watched call hands over the stderr lines read so far.
+const LINE_POLL: Duration = Duration::from_millis(100);
 /// Bytes of stderr kept in `NonZero`.
 const TAIL: usize = 2048;
 /// Longest extra wait for pipe readers after the child exits (an escaped
@@ -128,35 +130,10 @@ impl SystemProc {
 /// Bytes read so far from one pipe.
 #[derive(Default)]
 struct Capture {
-    /// Kept bytes, at most [`OUTPUT_CAP`]; wiped on drop.
+    /// Kept bytes, at most [`OUTPUT_CAP`](moor_core::seam::proc::OUTPUT_CAP); wiped on drop.
     buf: Zeroizing<Vec<u8>>,
-    /// Bytes past [`OUTPUT_CAP`] were discarded.
+    /// Bytes past [`OUTPUT_CAP`](moor_core::seam::proc::OUTPUT_CAP) were discarded.
     truncated: bool,
-}
-
-/// Detached reader: owns the pipe, fills the shared capture, signals EOF on `done`.
-fn drain<R: Read + Send + 'static>(pipe: Option<R>, done: Sender<bool>) -> Arc<Mutex<Capture>> {
-    let cap = Arc::new(Mutex::new(Capture::default()));
-    let shared = Arc::clone(&cap);
-    thread::spawn(move || {
-        if let Some(mut r) = pipe {
-            let mut chunk = [0_u8; 8192];
-            while let Ok(n) = r.read(&mut chunk) {
-                if n == 0 {
-                    break;
-                }
-                if let Ok(mut c) = shared.lock() {
-                    let room = OUTPUT_CAP.saturating_sub(c.buf.len());
-                    let take = n.min(room);
-                    c.buf
-                        .extend_from_slice(chunk.get(..take).unwrap_or_default());
-                    c.truncated |= take < n;
-                }
-            }
-        }
-        done.send(true).ok();
-    });
-    cap
 }
 
 /// Waits for both readers' EOF (`true`) or the [`DRAIN_GRACE`] tick (`false`).
@@ -237,8 +214,12 @@ fn finish(status: ExitStatus, o: &Capture, e: &Capture) -> Result<ProcOutput, Pr
 
 impl SystemProc {
     /// Spawns, feeds stdin, enforces the deadline and returns the exit status
-    /// with both captured streams.
-    fn exec(&self, spec: &ProcSpec) -> Result<(ExitStatus, Capture, Capture), ProcError> {
+    /// with both captured streams; `line`, when given, gets each stderr line as it arrives.
+    fn exec(
+        &self,
+        spec: &ProcSpec,
+        mut line: Option<&mut dyn FnMut(&str)>,
+    ) -> Result<(ExitStatus, Capture, Capture), ProcError> {
         let (stdin, payload) = stdin_for(&spec.stdin).map_err(ProcError::Spawn)?;
         let mut cmd = self.command(spec);
         cmd.stdin(stdin)
@@ -250,24 +231,45 @@ impl SystemProc {
         let payload = payload.map(|b| Zeroizing::new(b.to_vec()));
         thread::spawn(move || feed(w, payload.as_ref().map(|p| p.as_slice())));
         let (etx, erx) = mpsc::channel();
+        let (ltx, lrx) = mpsc::channel();
         let out = drain(o, etx.clone());
-        let err = drain(e, etx.clone());
+        let err = drain_lines(e, etx.clone(), line.is_some().then_some(ltx));
+        let watched = line.is_some();
+        let mut hand_over = || {
+            if let Some(f) = line.as_mut() {
+                for l in lrx.try_iter() {
+                    f(&l);
+                }
+            }
+        };
         let pid = child.id();
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || tx.send(child.wait()).ok());
-        let status = match rx.recv_timeout(limit) {
-            Ok(st) => st.map_err(ProcError::Spawn)?,
-            Err(RecvTimeoutError::Timeout) => {
+        let (dtx, drx) = mpsc::channel();
+        if watched {
+            thread::spawn(move || {
+                thread::sleep(limit);
+                dtx.send(()).ok();
+            });
+        }
+        let status = loop {
+            match rx.recv_timeout(if watched { LINE_POLL } else { limit }) {
+                Ok(st) => break st.map_err(ProcError::Spawn)?,
+                Err(RecvTimeoutError::Timeout) => hand_over(),
+                Err(RecvTimeoutError::Disconnected) => return Err(ProcError::Spawn(gone())),
+            }
+            if !watched || drx.try_recv().is_ok() {
                 terminate(pid, &rx, spec.tool, limit).map_err(ProcError::Spawn)?;
                 wait_eof(&erx, etx);
+                hand_over();
                 return Err(ProcError::Timeout {
                     tool: spec.tool,
                     after: limit,
                 });
             }
-            Err(RecvTimeoutError::Disconnected) => return Err(ProcError::Spawn(gone())),
         };
         wait_eof(&erx, etx);
+        hand_over();
         Ok((status, take(&out), take(&err)))
     }
 }
@@ -275,7 +277,7 @@ impl SystemProc {
 impl SystemProc {
     /// Stdout of a zero exit; truncated output is an error, never a short secret.
     fn secret(&self, spec: &ProcSpec) -> Result<Zeroizing<Vec<u8>>, ProcError> {
-        let (status, out, err) = self.exec(spec)?;
+        let (status, out, err) = self.exec(spec, None)?;
         if status.code() != Some(0) {
             return Err(failure(status, &err.buf));
         }
@@ -295,7 +297,7 @@ impl Proc for SystemProc {
 
     fn run(&self, spec: &ProcSpec) -> Result<ProcOutput, ProcError> {
         self.trace.timed(spec, || {
-            let (status, out, err) = self.exec(spec)?;
+            let (status, out, err) = self.exec(spec, None)?;
             finish(status, &out, &err)
         })
     }
@@ -304,6 +306,17 @@ impl Proc for SystemProc {
     /// never a truncated secret.
     fn run_secret(&self, spec: &ProcSpec) -> Result<Zeroizing<Vec<u8>>, ProcError> {
         self.trace.timed(spec, || self.secret(spec))
+    }
+
+    fn run_watched(
+        &self,
+        spec: &ProcSpec,
+        line: &mut dyn FnMut(&str),
+    ) -> Result<ProcOutput, ProcError> {
+        self.trace.timed(spec, || {
+            let (status, out, err) = self.exec(spec, Some(line))?;
+            finish(status, &out, &err)
+        })
     }
 
     fn run_reading(
@@ -357,8 +370,10 @@ impl Proc for SystemProc {
 mod boot;
 mod child;
 mod detached;
+mod drain;
 mod env;
 mod grace;
+pub(crate) mod plain;
 mod reading;
 mod signal;
 mod stdin;

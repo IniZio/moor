@@ -89,6 +89,8 @@ pub(super) struct View {
     pub(super) gave_up: bool,
     /// The first-run screen the agent stopped at, with when the event came in milliseconds.
     pub(super) blocked: Option<(String, i64)>,
+    /// The latest thing the provider reported while bringing the machine up, or why it failed.
+    pub(super) machine_note: Option<String>,
 }
 
 impl View {
@@ -180,13 +182,7 @@ impl View {
             }
             "rejected" => self.state = State::Rejected(text("reason")),
             "setup_failed" => self.state = State::SetupFailed(text("line")),
-            "box_requested" => self.machine = Some(Machine::Requested),
-            "box_ready" => self.machine = Some(Machine::Ready),
-            "box_failed" => self.machine = Some(Machine::Failed),
-            "box_asleep" => self.machine = Some(Machine::Asleep),
-            "box_gone" => self.machine = Some(Machine::Gone),
-            "box_deleted" => self.machine = Some(Machine::Deleted),
-            _ => {}
+            _ => self.apply_machine(kind, payload),
         }
     }
 }
@@ -242,7 +238,10 @@ pub(super) fn render(name: &str, view: &View, now: i64) -> String {
             Machine::Gone => "gone",
             Machine::Deleted => "deleted",
         };
-        let _ = write!(text, "\nBox: {m}");
+        match view.machine_note.as_ref() {
+            Some(note) => drop(write!(text, "\nBox: {m}: {}", escape(note))),
+            None => drop(write!(text, "\nBox: {m}")),
+        }
     }
     let quiet = since(view.activity_ms.or(view.since_ms));
     if view.state == State::Working && quiet >= STALL_AFTER_SECS {
@@ -375,5 +374,6 @@ impl Planner {
     }
 }
 
+mod machine;
 #[cfg(test)]
 mod tests;

@@ -132,6 +132,20 @@ pub trait Driver: Send + Sync {
     /// Returns [`DriverError::Capacity`], `Quota`, `Auth` and the like.
     fn acquire(&self, req: &AcquireReq) -> Result<Acquired, DriverError>;
 
+    /// [`Driver::acquire`], handing `note` each new thing the provider reports while it works,
+    /// already in moor's words. This default reports nothing.
+    ///
+    /// # Errors
+    /// As [`Driver::acquire`].
+    fn acquire_noting(
+        &self,
+        req: &AcquireReq,
+        note: &mut dyn FnMut(&str),
+    ) -> Result<Acquired, DriverError> {
+        let _ = note;
+        self.acquire(req)
+    }
+
     /// The handle `acquire` returns for `req`; pure, so a failed acquire can
     /// still name the half-made Box for release.
     fn planned_handle(&self, req: &AcquireReq) -> BoxHandle;

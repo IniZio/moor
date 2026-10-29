@@ -264,3 +264,26 @@ fn other_tools_grace_is_capped_by_the_deadline() {
         Duration::from_secs(2)
     );
 }
+
+#[test]
+fn watched_stderr_lines_arrive_while_the_child_runs() {
+    let dir = tempfile::tempdir().unwrap();
+    let done = dir.path().join("done");
+    let body = format!(
+        "echo 'waiting for h:22 SSH... elapsed=0s' >&2; sleep 1; echo second >&2; touch {}",
+        done.display()
+    );
+    let mut seen = Vec::new();
+    let out = sh_proc()
+        .run_watched(&sh(&body, 10), &mut |l| {
+            seen.push((l.to_owned(), done.exists()));
+        })
+        .unwrap();
+    assert_eq!(out.code, 0);
+    let lines: Vec<&str> = seen.iter().map(|(l, _)| l.as_str()).collect();
+    assert_eq!(lines, ["waiting for h:22 SSH... elapsed=0s", "second"]);
+    assert!(
+        !seen.first().unwrap().1,
+        "the first line arrived only after the child exited"
+    );
+}

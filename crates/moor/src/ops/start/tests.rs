@@ -38,6 +38,7 @@ mod lease_handle;
 mod machine;
 mod others;
 mod parent;
+mod progress;
 mod prompt_watch;
 mod promptless;
 mod provider_caps;

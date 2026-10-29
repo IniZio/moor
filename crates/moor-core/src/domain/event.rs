@@ -71,6 +71,11 @@ pub enum Event {
     },
     /// A box was requested.
     BoxRequested,
+    /// What the provider reports while it brings the Box up, in moor's words.
+    BoxProgress {
+        /// The step or the latest problem, one short line.
+        text: String,
+    },
     /// The box is ready.
     BoxReady,
     /// Acquiring the box failed.

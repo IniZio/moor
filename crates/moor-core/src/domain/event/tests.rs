@@ -234,6 +234,9 @@ fn all_events() -> Vec<Event> {
         Event::Machine(MachineEvent::MachineRefused {
             reason: "no free slot: machine mini is attached to Box b".to_owned(),
         }),
+        Event::BoxProgress {
+            text: s("waiting for SSH: port 22 closed"),
+        },
     ]
 }
 
@@ -316,6 +319,7 @@ const fn event_index(e: &Event) -> usize {
             MachineEvent::MachineWaiting { .. } => 61,
             MachineEvent::MachineRefused { .. } => 62,
         },
+        Event::BoxProgress { .. } => 63,
     }
 }
 
@@ -323,7 +327,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 63);
+    assert_eq!(all.len(), 64);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
