@@ -32,7 +32,7 @@ fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
                     tx.send(line).unwrap();
                     let inner = &frame["request"]["request"];
                     let who = frame["request"]["identity"].as_str().unwrap_or_default();
-                    let box_name = inner["name"].as_str().or(inner["box"].as_str());
+                    let box_name = inner["name"].as_str().or_else(|| inner["box"].as_str());
                     let cmd = inner["cmd"].as_str().unwrap_or_default();
                     if cmd == "start" {
                         started.lock().unwrap().insert(box_name.unwrap().to_owned());
