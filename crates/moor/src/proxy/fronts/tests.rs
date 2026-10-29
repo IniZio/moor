@@ -87,7 +87,6 @@ impl Served {
     fn start() -> Self {
         let dir = tempfile::tempdir().unwrap();
         let state = dir.path().join("state");
-        let sockets = dir.path().join("s");
         let up = upstream::start(dir.path());
         let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
         let store = Arc::new(Store::open(&state.join("moor.db"), clock.clone()).unwrap());
@@ -110,7 +109,6 @@ impl Served {
             secrets,
             vault: Arc::new(vault),
             state_dir: state.clone(),
-            sockets: sockets.clone(),
             owner: rustix::process::getuid().as_raw(),
             upstream_ca: Some(up.ca_path.clone()),
             stop: Arc::clone(&stop),
@@ -118,7 +116,7 @@ impl Served {
         };
         let fronts = vec![("slack".to_owned(), vec![rule(up.port)])];
         std::thread::spawn(move || serve(&deps, &fronts));
-        let socket = socket_path(&sockets, &state, "slack");
+        let socket = socket_path(&state, "slack");
         for _ in 0..400 {
             if socket.exists() {
                 break;

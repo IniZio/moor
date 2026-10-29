@@ -38,7 +38,7 @@ pub fn write_executable(path: &Path, contents: impl AsRef<[u8]>) -> io::Result<(
 }
 
 /// The longest base for [`short_tempdir`]: a front's socket sits under it at
-/// `state/fronts/<name>.sock`, which must fit a Unix socket path (108 bytes on Linux).
+/// `state/fronts/<name>/proxy`, which must fit a Unix socket path (108 bytes on Linux).
 const SHORT_BASE_MAX: usize = 24;
 
 /// The base [`short_tempdir`] uses: `TMPDIR` when it is short and not under `/tmp`, else
@@ -101,7 +101,7 @@ mod tests {
         let path = dir.path();
         assert!(!path.starts_with("/tmp"), "{}", path.display());
         assert!(path.is_dir());
-        let socket = path.join("state/fronts/a-front-with-a-long-name.sock");
+        let socket = path.join("state/fronts/a-front-with-a-long-name/proxy");
         assert!(socket.as_os_str().len() < 90, "{}", socket.display());
     }
 

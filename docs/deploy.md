@@ -43,7 +43,7 @@ both. Otherwise the CLI dials a socket path that the units never bound.
    Description=moor socket for the %i front
 
    [Socket]
-   ListenStream=%S/moor/fronts/%i.sock
+   ListenStream=%S/moor/fronts/%i/front
    FileDescriptorName=front-%i
    Service=moor.service
    SocketMode=0600

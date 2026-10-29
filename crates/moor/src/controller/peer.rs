@@ -5,15 +5,17 @@ use std::fs;
 use std::io;
 use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::net::{UnixListener, UnixStream};
+use std::path::Path;
 
 use moor_core::user::Caller;
 
 use super::inherit::Sockets;
 use super::{mkdir, Stop, USAGE};
 use crate::env::Env;
+use crate::front_dir;
 
-/// Listens on `<state>/fronts/<namespace>.sock` for each front, taking the socket passed in as
-/// `front-<namespace>` when sockets were passed: each socket 0600 in a 0700 dir.
+/// Listens on `<state>/fronts/<namespace>/front` for each front, taking the socket passed
+/// in as `front-<namespace>` when sockets were passed: each socket 0600 in 0700 dirs.
 pub(super) fn bind_fronts(
     env: &Env,
     sockets: &mut Sockets,
@@ -23,20 +25,22 @@ pub(super) fn bind_fronts(
         return Ok(Vec::new());
     }
     let failed = |message: String| Stop { code: 1, message };
-    let dir = env
-        .state_dir()
-        .map(|d| d.join("fronts"))
-        .ok_or_else(|| Stop {
-            code: USAGE,
-            message: "fronts need a state directory: set state_dir or MOOR_STATE_DIR".into(),
-        })?;
-    mkdir(&dir)
-        .and_then(|()| fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)))
-        .map_err(|e| failed(format!("cannot prepare {}: {e}", dir.display())))?;
+    let state_dir = env.state_dir().ok_or_else(|| Stop {
+        code: USAGE,
+        message: "fronts need a state directory: set state_dir or MOOR_STATE_DIR".into(),
+    })?;
+    let private = |dir: &Path| {
+        mkdir(dir)
+            .and_then(|()| fs::set_permissions(dir, fs::Permissions::from_mode(0o700)))
+            .map_err(|e| failed(format!("cannot prepare {}: {e}", dir.display())))
+    };
+    private(&front_dir::root(&state_dir))?;
     fronts
         .iter()
         .map(|ns| {
-            let socket = dir.join(format!("{ns}.sock"));
+            let dir = front_dir::of(&state_dir, ns);
+            private(&dir)?;
+            let socket = dir.join(front_dir::FRONT_SOCKET);
             sockets
                 .listen(&format!("front-{ns}"), &socket)
                 .map(|listener| ((*ns).clone(), listener))

@@ -66,7 +66,7 @@ front sets the person up without one and logs the missing scope.
 Start `moor-slack` with the controller's `slack` front socket and the config:
 
 ```sh
-moor-slack --socket ~/.local/state/moor/fronts/slack.sock \
+moor-slack --socket ~/.local/state/moor/fronts/slack/front \
   --config ~/.config/moor-slack/config.yaml
 ```
 

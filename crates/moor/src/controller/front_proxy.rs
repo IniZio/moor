@@ -1,6 +1,7 @@
 //! The front Proxy as a child of the controller: `moor proxy serve-fronts` for every front
-//! whose config lists `proxy_rules`, restarted with backoff whenever it exits. A front with a
-//! Proxy gets its socket, through the shim's loopback bridge, and the CA that Proxy signs with.
+//! whose config lists `proxy_rules`, started by the controller or not, restarted with backoff
+//! whenever it exits. Its socket and the CA it signs with sit in the front's own directory; a
+//! started front reaches the socket through the shim's loopback bridge.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -14,6 +15,7 @@ use moor_core::config::FrontEntry;
 
 use super::{log, Sink};
 use crate::env::Env;
+use crate::front_dir;
 use crate::Moor;
 
 /// The variable that holds the PEM certificate of the CA a front's Proxy signs with. The
@@ -74,6 +76,11 @@ impl Plan {
         let ca_pem = Moor::front_proxy_ca(&state_dir)
             .and_then(std::fs::read_to_string)
             .map_err(|e| format!("cannot make the front Proxy CA: {e}"))?;
+        for ns in fronts.keys() {
+            let path = front_dir::of(&state_dir, ns).join(front_dir::CA_PEM);
+            std::fs::write(&path, &ca_pem)
+                .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+        }
         Ok(Some(Self {
             state_dir,
             vault_key,

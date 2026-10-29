@@ -54,7 +54,8 @@ impl Served {
             .path()
             .join("state")
             .join("fronts")
-            .join(format!("{ns}.sock"))
+            .join(ns)
+            .join("front")
     }
 }
 
@@ -99,6 +100,7 @@ fn each_front_gets_an_owner_only_socket_in_an_owner_only_dir() {
     assert_eq!(mode(&served.dir.path().join("state").join("fronts")), 0o700);
     for ns in ["slack", "web"] {
         assert_eq!(mode(&served.front(ns)), 0o600, "{ns}");
+        assert_eq!(mode(served.front(ns).parent().unwrap()), 0o700, "{ns}");
     }
 }
 

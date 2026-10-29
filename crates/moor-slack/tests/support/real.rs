@@ -35,7 +35,7 @@ fn moor_bin() -> &'static Path {
 
 /// The `slack` front's socket of a controller started with its state under `root`.
 pub(crate) fn front_socket(root: &Path) -> PathBuf {
-    root.join("state").join("fronts").join("slack.sock")
+    root.join("state/fronts/slack/front")
 }
 
 /// A running controller, killed on drop.

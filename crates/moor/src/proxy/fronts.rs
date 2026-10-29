@@ -40,9 +40,7 @@ pub(crate) struct Deps {
     pub(crate) vault: Arc<Vault>,
     /// The controller's state dir; the CA and each nono's files live under it.
     pub(crate) state_dir: PathBuf,
-    /// moor's private socket directory, where each listener binds.
-    pub(crate) sockets: PathBuf,
-    /// The uid that must own `sockets`.
+    /// The uid that must own each front's directory and socket.
     pub(crate) owner: u32,
     /// Extra upstream root PEM; `None` in production.
     pub(crate) upstream_ca: Option<PathBuf>,
@@ -68,15 +66,13 @@ pub(crate) fn ca_cert(state_dir: &Path) -> std::io::Result<PathBuf> {
 }
 
 /// The socket of front `ns`'s Proxy.
-pub(crate) fn socket_path(sockets: &Path, state_dir: &Path, ns: &str) -> PathBuf {
-    FrontSocket::of_front(sockets, 0, state_dir, ns)
-        .path()
-        .to_owned()
+pub(crate) fn socket_path(state_dir: &Path, ns: &str) -> PathBuf {
+    FrontSocket::of_front(0, state_dir, ns).path().to_owned()
 }
 
 /// Whether front `ns`'s Proxy accepts connections.
-pub(crate) fn running(sockets: &Path, state_dir: &Path, ns: &str) -> bool {
-    UnixStream::connect(socket_path(sockets, state_dir, ns)).is_ok()
+pub(crate) fn running(state_dir: &Path, ns: &str) -> bool {
+    UnixStream::connect(socket_path(state_dir, ns)).is_ok()
 }
 
 /// Serves each of `fronts`, a namespace and the rules its Proxy serves, until the stop flag
@@ -100,7 +96,7 @@ pub(crate) fn serve(deps: &Deps, fronts: &[(String, Vec<ResolvedRule>)]) -> u8 {
     let users = Arc::new(Users::new(deps, ca));
     let mut listening = Vec::new();
     for (ns, rules) in fronts {
-        let socket = FrontSocket::of_front(&deps.sockets, deps.owner, &deps.state_dir, ns);
+        let socket = FrontSocket::of_front(deps.owner, &deps.state_dir, ns);
         match Front::routed(socket, route(deps, &users, ns, rules)) {
             Ok(front) => listening.push(front),
             Err(e) => {

@@ -11,6 +11,7 @@ pub mod controller;
 mod cx;
 pub mod env;
 pub mod error;
+mod front_dir;
 mod moor;
 mod ops;
 mod proxy;

@@ -78,9 +78,11 @@ impl Front {
         )
     }
 
-    /// `<state>/fronts/<ns>.pid`: the running front's pid and its start time from `/proc`.
+    /// `<state>/fronts/<ns>.pid`, beside the front's directory rather than in it: the running
+    /// front's pid and its start time from `/proc`.
     pub(super) fn pid_file(&self) -> PathBuf {
-        self.socket.with_extension("pid")
+        let dir = self.socket.parent().unwrap_or(&self.socket);
+        dir.with_file_name(format!("{}.pid", self.ns))
     }
 }
 

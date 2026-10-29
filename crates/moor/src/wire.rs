@@ -132,14 +132,14 @@ pub(crate) fn end_front_leases(env: &Env) -> Result<(), CommandError> {
 
 /// The socket of front `ns`'s Proxy for `state_dir`.
 pub(crate) fn front_proxy_socket(state_dir: &Path, ns: &str) -> PathBuf {
-    crate::proxy::fronts::socket_path(&socket_dir(), state_dir, ns)
+    crate::proxy::fronts::socket_path(state_dir, ns)
 }
 
 /// Creates the directory of front `ns`'s Proxy socket for `state_dir`, so the front's shim can
 /// open it before the Proxy binds the socket.
 pub(crate) fn prepare_front_proxy_socket(state_dir: &Path, ns: &str) -> Result<(), String> {
     let owner = rustix::process::getuid().as_raw();
-    crate::proxy::front::FrontSocket::of_front(&socket_dir(), owner, state_dir, ns).prepare()
+    crate::proxy::front::FrontSocket::of_front(owner, state_dir, ns).prepare()
 }
 
 /// The front Proxy's CA certificate, made when missing.
