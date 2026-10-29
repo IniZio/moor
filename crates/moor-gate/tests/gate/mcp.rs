@@ -7,6 +7,8 @@ use std::os::unix::net::UnixListener;
 use moor_core::response::Response;
 use serde_json::{json, Value};
 
+use std::sync::atomic::Ordering;
+
 use super::{claims, mpsc, now, sign, world_with, World};
 
 fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
@@ -191,6 +193,33 @@ fn a_token_for_another_audience_is_refused() {
     let front = m.token("alice-sub", super::CLIENT_ID, "moor:read moor:write");
     let (status, _, _) = m.post(Some(&front), &json!({}), None);
     assert_eq!(status, 401);
+}
+
+#[test]
+fn an_authgear_token_for_the_gate_s_client_is_refused() {
+    let m = mcp();
+    let front = super::authgear_token(&m.world);
+    let (status, _, _) = m.post(Some(&front), &json!({}), None);
+    assert_eq!(status, 401);
+}
+
+#[test]
+fn a_resource_token_without_email_acts_with_the_userinfo_email() {
+    let m = mcp();
+    let mut c = claims(&m.world);
+    c["aud"] = json!([m.url()]);
+    c["client_id"] = json!("an-mcp-client");
+    c["scope"] = json!("moor:read");
+    c.as_object_mut().unwrap().remove("email");
+    c.as_object_mut().unwrap().remove("email_verified");
+    let token = sign(&m.world.key, &c);
+    let reply = m.call(&token, "list_boxes", json!({}));
+    assert_eq!(
+        reply["structuredContent"]["boxes"][0]["name"],
+        "repo/authgear-alice-sub"
+    );
+    m.call(&token, "list_boxes", json!({}));
+    assert_eq!(m.world.userinfo_calls.load(Ordering::SeqCst), 1);
 }
 
 #[test]

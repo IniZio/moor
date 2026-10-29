@@ -13,8 +13,9 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::os::unix::net::UnixListener;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -34,6 +35,10 @@ struct World {
     issuer: String,
     gate: String,
     key: Vec<u8>,
+    /// The issuer's userinfo answer: its status and body.
+    userinfo: Arc<Mutex<(u16, Value)>>,
+    /// Userinfo requests that carried a bearer token.
+    userinfo_calls: Arc<AtomicUsize>,
     /// Lines the fake controller received, in order; `"<eof>"` when the client half-closed.
     seen: mpsc::Receiver<String>,
     _dir: tempfile::TempDir,
@@ -58,12 +63,17 @@ fn jwks(pkcs8: &[u8]) -> Value {
         "x": URL_SAFE_NO_PAD.encode(&point[1..33]), "y": URL_SAFE_NO_PAD.encode(&point[33..65])}]})
 }
 
-fn serve_issuer(pkcs8: &[u8]) -> String {
+fn serve_issuer(
+    pkcs8: &[u8],
+    userinfo: Arc<Mutex<(u16, Value)>>,
+    calls: Arc<AtomicUsize>,
+) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let (keys, discovery) = (
         jwks(pkcs8).to_string(),
-        json!({"jwks_uri": format!("{base}/jwks")}).to_string(),
+        json!({"jwks_uri": format!("{base}/jwks"), "userinfo_endpoint": format!("{base}/userinfo")})
+            .to_string(),
     );
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
@@ -71,16 +81,26 @@ fn serve_issuer(pkcs8: &[u8]) -> String {
             let mut first = String::new();
             reader.read_line(&mut first).unwrap();
             let mut line = String::new();
+            let mut bearer = false;
             while reader.read_line(&mut line).unwrap() > 2 {
+                bearer |= line
+                    .to_ascii_lowercase()
+                    .starts_with("authorization: bearer ");
                 line.clear();
             }
-            let body = if first.contains("/jwks") {
-                &keys
+            let (status, body) = if first.contains("/jwks") {
+                (200, keys.clone())
+            } else if first.contains("/userinfo") {
+                if bearer {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                }
+                let (status, body) = &*userinfo.lock().unwrap();
+                (*status, body.to_string())
             } else {
-                &discovery
+                (200, discovery.clone())
             };
             let mut stream = reader.into_inner();
-            let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+            let _ = write!(stream, "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
         }
     });
     base
@@ -125,7 +145,12 @@ fn world_with(
     mcp: bool,
 ) -> World {
     let key = keypair();
-    let issuer = serve_issuer(&key);
+    let userinfo = Arc::new(Mutex::new((
+        200,
+        json!({"sub": "alice-sub", "email": "Alice@Example.com", "email_verified": true}),
+    )));
+    let userinfo_calls = Arc::new(AtomicUsize::new(0));
+    let issuer = serve_issuer(&key, userinfo.clone(), userinfo_calls.clone());
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let gate = listener.local_addr().unwrap().to_string();
     let mcp =
@@ -140,6 +165,8 @@ fn world_with(
         issuer,
         gate,
         key,
+        userinfo,
+        userinfo_calls,
         seen,
         _dir: dir,
     }
@@ -161,6 +188,33 @@ fn sign(key: &[u8], claims: &Value) -> String {
     let mut header = Header::new(Algorithm::ES256);
     header.kid = Some("k1".to_owned());
     encode(&header, claims, &EncodingKey::from_ec_der(key)).unwrap()
+}
+
+/// An RFC 9068 access token as Authgear issues it: the issuer as audience, the client in
+/// `client_id`, and no email claims.
+fn authgear_token(w: &World) -> String {
+    let mut header = Header::new(Algorithm::ES256);
+    header.kid = Some("k1".to_owned());
+    header.typ = Some("at+jwt".to_owned());
+    let claims = json!({"iss": w.issuer, "aud": [w.issuer], "client_id": CLIENT_ID,
+        "sub": "alice-sub", "exp": now() + 600, "iat": now(), "auth_time": now(), "jti": "j1",
+        "scope": "openid email offline_access",
+        "https://authgear.com/claims/user/is_anonymous": false});
+    encode(&header, &claims, &EncodingKey::from_ec_der(&w.key)).unwrap()
+}
+
+/// The 401 body the gate answers `token` with at `/front`.
+fn refusal(w: &World, token: &str) -> String {
+    let mut stream = TcpStream::connect(&w.gate).unwrap();
+    write!(
+        stream,
+        "GET /front HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer {token}\r\n\r\n"
+    )
+    .unwrap();
+    let mut out = String::new();
+    stream.read_to_string(&mut out).unwrap();
+    assert!(out.starts_with("HTTP/1.1 401"), "{out}");
+    out.split("\r\n\r\n").nth(1).unwrap().to_owned()
 }
 
 type Client = WebSocket<MaybeTlsStream<TcpStream>>;
@@ -280,6 +334,7 @@ fn an_empty_message_half_closes_the_controller_socket() {
 #[test]
 fn bad_tokens_get_401_before_the_upgrade() {
     let w = world();
+    *w.userinfo.lock().unwrap() = (200, json!({"sub": "alice-sub"}));
     let other_key = keypair();
     let mut wrong_aud = claims(&w);
     wrong_aud["aud"] = json!("someone-else");
@@ -303,6 +358,84 @@ fn bad_tokens_get_401_before_the_upgrade() {
         assert_eq!(connect(&w, Some(&token)).err(), Some(401), "{what}");
     }
     assert_eq!(connect(&w, None).err(), Some(401), "no token");
+}
+
+#[test]
+fn an_authgear_access_token_acts_with_the_userinfo_email() {
+    let w = world();
+    let mut ws = connect(&w, Some(&authgear_token(&w))).unwrap();
+    send(&mut ws, &request("1", json!({"cmd": "enroll"})));
+    let enroll = json!({"cmd": "as", "identity": "authgear:alice-sub",
+        "request": {"cmd": "enroll", "email": "alice@example.com"}});
+    assert_eq!(recv(&mut ws), request("1", enroll));
+    assert_eq!(w.userinfo_calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn a_second_sign_in_reuses_the_userinfo_email() {
+    let w = world();
+    connect(&w, Some(&authgear_token(&w))).unwrap();
+    connect(&w, Some(&authgear_token(&w))).unwrap();
+    assert_eq!(w.userinfo_calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn a_dex_token_with_a_verified_email_never_asks_userinfo() {
+    let w = world();
+    connect(&w, Some(&sign(&w.key, &claims(&w)))).unwrap();
+    assert_eq!(w.userinfo_calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn an_unverified_userinfo_email_is_refused() {
+    let w = world();
+    *w.userinfo.lock().unwrap() = (
+        200,
+        json!({"sub": "alice-sub", "email": "alice@example.com", "email_verified": false}),
+    );
+    let why = refusal(&w, &authgear_token(&w));
+    assert!(why.contains("alice@example.com is not verified"), "{why}");
+}
+
+#[test]
+fn userinfo_without_an_email_is_refused() {
+    let w = world();
+    *w.userinfo.lock().unwrap() = (200, json!({"sub": "alice-sub"}));
+    let why = refusal(&w, &authgear_token(&w));
+    assert!(why.contains("gives no email"), "{why}");
+}
+
+#[test]
+fn userinfo_for_another_subject_is_refused() {
+    let w = world();
+    *w.userinfo.lock().unwrap() = (
+        200,
+        json!({"sub": "mallory-sub", "email": "mallory@example.com", "email_verified": true}),
+    );
+    let why = refusal(&w, &authgear_token(&w));
+    assert!(why.contains("another subject"), "{why}");
+}
+
+#[test]
+fn a_failing_userinfo_endpoint_is_refused_with_why() {
+    let w = world();
+    *w.userinfo.lock().unwrap() = (503, json!({}));
+    let why = refusal(&w, &authgear_token(&w));
+    assert!(
+        why.contains("the token carries no email and asking userinfo failed"),
+        "{why}"
+    );
+    assert!(why.contains("503"), "{why}");
+}
+
+#[test]
+fn a_client_id_claim_for_another_client_is_refused() {
+    let w = world();
+    let mut c = claims(&w);
+    c["aud"] = json!([w.issuer]);
+    c["client_id"] = json!("someone-else");
+    let why = refusal(&w, &sign(&w.key, &c));
+    assert!(why.contains("another audience"), "{why}");
 }
 
 fn http_get(w: &World, path: &str) -> String {
