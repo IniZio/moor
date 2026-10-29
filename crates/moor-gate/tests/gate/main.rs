@@ -1,4 +1,4 @@
-//! The gate against an in-process OIDC issuer and a fake controller front socket that echoes
+//! The gate against the testkit's OIDC issuer and a fake controller front socket that echoes
 //! every line it receives back to the client.
 #![allow(
     clippy::unwrap_used,
@@ -16,14 +16,10 @@ use std::os::unix::net::UnixListener;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use base64::Engine;
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use moor_gate::{Gate, Verifier};
-use ring::rand::SystemRandom;
-use ring::signature::{EcdsaKeyPair, KeyPair, ECDSA_P256_SHA256_FIXED_SIGNING};
+use moor_testkit::oidc::{now, Issuer};
 use serde_json::{json, Value};
 use tungstenite::client::IntoClientRequest;
 use tungstenite::stream::MaybeTlsStream;
@@ -42,68 +38,6 @@ struct World {
     /// Lines the fake controller received, in order; `"<eof>"` when the client half-closed.
     seen: mpsc::Receiver<String>,
     _dir: tempfile::TempDir,
-}
-
-fn keypair() -> Vec<u8> {
-    EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, &SystemRandom::new())
-        .unwrap()
-        .as_ref()
-        .to_vec()
-}
-
-fn jwks(pkcs8: &[u8]) -> Value {
-    let pair = EcdsaKeyPair::from_pkcs8(
-        &ECDSA_P256_SHA256_FIXED_SIGNING,
-        pkcs8,
-        &SystemRandom::new(),
-    )
-    .unwrap();
-    let point = pair.public_key().as_ref();
-    json!({"keys": [{"kty": "EC", "crv": "P-256", "kid": "k1", "alg": "ES256", "use": "sig",
-        "x": URL_SAFE_NO_PAD.encode(&point[1..33]), "y": URL_SAFE_NO_PAD.encode(&point[33..65])}]})
-}
-
-fn serve_issuer(
-    pkcs8: &[u8],
-    userinfo: Arc<Mutex<(u16, Value)>>,
-    calls: Arc<AtomicUsize>,
-) -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let base = format!("http://{}", listener.local_addr().unwrap());
-    let (keys, discovery) = (
-        jwks(pkcs8).to_string(),
-        json!({"jwks_uri": format!("{base}/jwks"), "userinfo_endpoint": format!("{base}/userinfo")})
-            .to_string(),
-    );
-    std::thread::spawn(move || {
-        for stream in listener.incoming().flatten() {
-            let mut reader = BufReader::new(stream);
-            let mut first = String::new();
-            reader.read_line(&mut first).unwrap();
-            let mut line = String::new();
-            let mut bearer = false;
-            while reader.read_line(&mut line).unwrap() > 2 {
-                bearer |= line
-                    .to_ascii_lowercase()
-                    .starts_with("authorization: bearer ");
-                line.clear();
-            }
-            let (status, body) = if first.contains("/jwks") {
-                (200, keys.clone())
-            } else if first.contains("/userinfo") {
-                if bearer {
-                    calls.fetch_add(1, Ordering::SeqCst);
-                }
-                let (status, body) = &*userinfo.lock().unwrap();
-                (*status, body.to_string())
-            } else {
-                (200, discovery.clone())
-            };
-            let mut stream = reader.into_inner();
-            let _ = write!(stream, "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
-        }
-    });
-    base
 }
 
 fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
@@ -144,13 +78,13 @@ fn world_with(
     dir: tempfile::TempDir,
     mcp: bool,
 ) -> World {
-    let key = keypair();
-    let userinfo = Arc::new(Mutex::new((
-        200,
-        json!({"sub": "alice-sub", "email": "Alice@Example.com", "email_verified": true}),
-    )));
-    let userinfo_calls = Arc::new(AtomicUsize::new(0));
-    let issuer = serve_issuer(&key, userinfo.clone(), userinfo_calls.clone());
+    let Issuer {
+        base: issuer,
+        key,
+        userinfo,
+        userinfo_calls,
+        ..
+    } = Issuer::start(CLIENT_ID);
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let gate = listener.local_addr().unwrap().to_string();
     let mcp =
@@ -170,13 +104,6 @@ fn world_with(
         seen,
         _dir: dir,
     }
-}
-
-fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
 }
 
 fn claims(w: &World) -> Value {
@@ -335,7 +262,7 @@ fn an_empty_message_half_closes_the_controller_socket() {
 fn bad_tokens_get_401_before_the_upgrade() {
     let w = world();
     *w.userinfo.lock().unwrap() = (200, json!({"sub": "alice-sub"}));
-    let other_key = keypair();
+    let other_key = Issuer::start(CLIENT_ID).key;
     let mut wrong_aud = claims(&w);
     wrong_aud["aud"] = json!("someone-else");
     let mut expired = claims(&w);

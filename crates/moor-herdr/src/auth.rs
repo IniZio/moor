@@ -7,14 +7,12 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use moor_client::oidc::Http;
 use moor_client::TokenSource;
 use oauth2::basic::{BasicClient, BasicErrorResponseType};
 use oauth2::{ClientId, RefreshToken, RequestTokenError, TokenResponse, TokenUrl};
 use serde::{Deserialize, Serialize};
 
-use http::Http;
-
-mod http;
 pub mod login;
 
 /// Seconds before expiry from which an access token is refreshed.

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 mod egress;
+pub mod oidc;
 
 pub use egress::{write_host_guards, FakeEgress, FAKE_TINYPROXY, HOST_GUARD};
 

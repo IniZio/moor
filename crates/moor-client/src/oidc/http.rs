@@ -12,11 +12,12 @@ use ureq::{http, Agent};
 const BODY_LIMIT: u64 = 1 << 20;
 
 /// An HTTP client that follows no redirect and hands back every status.
-pub(super) struct Http(Agent);
+pub struct Http(Agent);
 
 impl Http {
     /// A client trusting the platform's roots.
-    pub(super) fn new() -> Self {
+    #[must_use]
+    pub fn new() -> Self {
         let tls = TlsConfig::builder()
             .provider(TlsProvider::Rustls)
             .root_certs(RootCerts::PlatformVerifier)
@@ -36,7 +37,7 @@ impl Http {
     /// # Errors
     /// The address is not `https` (or loopback `http`), cannot be reached, answers an error
     /// status, or answers something unreadable.
-    pub(super) fn get_json<T: DeserializeOwned>(&self, url: &str) -> Result<T, String> {
+    pub fn get_json<T: DeserializeOwned>(&self, url: &str) -> Result<T, String> {
         secure(url)?;
         let mut resp = self
             .0
@@ -50,10 +51,45 @@ impl Http {
         let bytes = read(resp.body_mut()).map_err(|e| format!("{url}: {e}"))?;
         serde_json::from_slice(&bytes).map_err(|e| format!("{url}: {e}"))
     }
+
+    /// Posts `body` as JSON to `url` and reads the JSON answer.
+    ///
+    /// # Errors
+    /// As [`Http::get_json`]; an error status carries the answer's `error` field.
+    pub fn post_json<T: DeserializeOwned>(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+    ) -> Result<T, String> {
+        secure(url)?;
+        let mut resp = self
+            .0
+            .post(url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json")
+            .send(body.to_string())
+            .map_err(|e| format!("cannot reach {url}: {e}"))?;
+        let status = resp.status();
+        let bytes = read(resp.body_mut()).map_err(|e| format!("{url}: {e}"))?;
+        if !status.is_success() {
+            let why = serde_json::from_slice::<serde_json::Value>(&bytes)
+                .ok()
+                .and_then(|v| v.get("error")?.as_str().map(str::to_owned))
+                .unwrap_or_default();
+            return Err(format!("{url} answered {status}: {why}"));
+        }
+        serde_json::from_slice(&bytes).map_err(|e| format!("{url}: {e}"))
+    }
+}
+
+impl Default for Http {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Refuses an address that is not `https`; `http` is for a server on this machine.
-pub(super) fn secure(address: &str) -> Result<(), String> {
+fn secure(address: &str) -> Result<(), String> {
     let url = Url::parse(address).map_err(|e| format!("`{address}`: {e}"))?;
     let local = matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"));
     if url.scheme() == "https" || (url.scheme() == "http" && local) {
