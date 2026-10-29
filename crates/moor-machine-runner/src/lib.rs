@@ -39,6 +39,7 @@ use crate::relay::Relays;
 use crate::sync::{SyncArgs, SyncOutput};
 
 pub use crate::agents::{serve_agents, Agents};
+pub use crate::forwards::serve_forwards;
 pub use crate::rsh::rsh;
 pub use crate::{config::Config, relay::Relay};
 
@@ -48,6 +49,7 @@ mod caller;
 mod claim;
 mod config;
 mod exec;
+mod forwards;
 mod handler;
 mod holds;
 mod hooks;

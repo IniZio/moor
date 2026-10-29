@@ -19,6 +19,7 @@ use tokio::sync::mpsc;
 pub use crate::serve::Machine;
 
 mod files;
+mod listen;
 mod serve;
 
 /// What `enroll` asks for.
@@ -136,16 +137,21 @@ pub async fn run(dir: &Path, machine: Machine, log: &(dyn Fn(&str) + Sync)) -> R
         .map_err(|e| format!("{} is not the agent's state: {e}", path.display()))?;
     let key = read_key(&dir.join(KEY))?
         .ok_or_else(|| format!("{} has no key; enroll first", dir.display()))?;
+    let boxes = listen::Boxes::new(state.slots);
     let mut wait = FIRST_WAIT;
     loop {
         match connect(&state, &key).await {
             Ok(socket) => {
                 log(&format!("linked to {}", state.server));
                 wait = FIRST_WAIT;
-                let (_, asks) = mpsc::channel(1);
+                let (open, asks) = mpsc::channel(16);
+                let streams = listen::Link {
+                    open,
+                    boxes: Arc::clone(&boxes),
+                };
                 let why = link::drive(socket, link::Mode::Client, asks, |ch| {
-                    let machine = Arc::clone(&machine);
-                    tokio::spawn(async move { serve::serve(&machine, ch).await });
+                    let (machine, streams) = (Arc::clone(&machine), streams.clone());
+                    tokio::spawn(async move { serve::serve(&machine, &streams, ch).await });
                 })
                 .await;
                 log(&format!("{why}; dialing again in {}s", wait.as_secs()));

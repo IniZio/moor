@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use clap::Parser;
-use moor_machine_runner::{serve, serve_agents, Agents, Config, Relay};
+use moor_machine_runner::{serve, serve_agents, serve_forwards, Agents, Config, Relay};
 
 /// Serves the tools a Box uses to work on its attached machine.
 #[derive(Parser)]
@@ -165,13 +165,36 @@ async fn take_links(addr: SocketAddr, socket: &Path) -> Result<Agents, String> {
         eprintln!("moor-machine-runner taking agent links on {addr}");
     }
     let agents = Agents::new(socket);
+    let (forwards, uid) = forward_socket(socket)?;
     let serving = agents.clone();
     tokio::spawn(async move {
         if let Err(e) = serve_agents(listener, serving).await {
             eprintln!("moor-machine-runner: agent links stopped: {e}");
         }
     });
+    let serving = agents.clone();
+    tokio::spawn(async move {
+        if let Err(e) = serve_forwards(forwards, serving, uid).await {
+            eprintln!("moor-machine-runner: port forwards stopped: {e}");
+        }
+    });
     Ok(agents)
+}
+
+/// Listens beside the controller's `socket` for the supervisors' forward requests, readable
+/// only by this user; the listener and this user's uid.
+fn forward_socket(socket: &Path) -> Result<(tokio::net::UnixListener, u32), String> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let path = socket.with_file_name(moor_client::link::forward::SOCKET);
+    let failed = |e: std::io::Error| format!("cannot listen on {}: {e}", path.display());
+    match std::fs::remove_file(&path) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(failed(e)),
+        _ => {}
+    }
+    let listener = tokio::net::UnixListener::bind(&path).map_err(failed)?;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).map_err(failed)?;
+    let uid = std::fs::metadata(&path).map_err(failed)?.uid();
+    Ok((listener, uid))
 }
 
 #[tokio::main]
