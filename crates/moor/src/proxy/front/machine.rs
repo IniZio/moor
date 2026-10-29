@@ -44,6 +44,8 @@ pub(crate) struct Held {
     pub(crate) name: String,
     /// The machine's ssh target.
     pub(crate) ssh: String,
+    /// Its enrolled id when its agent links in to the service.
+    pub(crate) machine_id: Option<i64>,
     /// The Box's port slot on the machine.
     pub(crate) slot: u16,
     /// rsync patterns a sync to the machine leaves alone.
@@ -106,7 +108,7 @@ fn marked(request: &[u8], slot: &Hold) -> Option<Vec<u8>> {
     let text = std::str::from_utf8(request)
         .ok()?
         .strip_suffix("\r\n\r\n")?;
-    let own = match slot {
+    let mut own = match slot {
         Hold::Held(held) => vec![
             ("X-Moor-Box", held.box_id.get().to_string()),
             ("X-Moor-Machine", held.name.clone()),
@@ -122,6 +124,13 @@ fn marked(request: &[u8], slot: &Hold) -> Option<Vec<u8>> {
             ("X-Moor-Machine-Missing", reason.clone()),
         ],
     };
+    if let Hold::Held(Held {
+        machine_id: Some(id),
+        ..
+    }) = slot
+    {
+        own.push(("X-Moor-Machine-Id", id.to_string()));
+    }
     if own
         .iter()
         .any(|(_, v)| v.bytes().any(|b| b.is_ascii_control()))

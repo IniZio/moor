@@ -39,6 +39,12 @@ pub struct Agents {
     links: Arc<Links>,
 }
 
+impl std::fmt::Debug for Agents {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Agents").finish_non_exhaustive()
+    }
+}
+
 impl Agents {
     /// None linked yet; every change is reported to the controller at `socket`.
     #[must_use]
