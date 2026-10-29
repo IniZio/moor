@@ -365,7 +365,10 @@ fn an_enrolled_machine_forwards_through_the_runner_and_never_dials_ssh() {
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
     assert!(run.tick().is_none());
-    let (req, conn) = runner.served.recv().unwrap();
+    let (req, conn) = runner
+        .served
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("the runner was asked to forward");
     assert_eq!(req["box_id"], w.id.get());
     assert_eq!(req["machine_id"], id);
     assert_eq!(
