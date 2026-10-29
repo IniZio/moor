@@ -15,6 +15,7 @@ impl fmt::Display for DriverError {
             Self::Timeout(d) => write!(f, "box operation timed out after {}s", d.as_secs()),
             Self::Unavailable(m) => write!(f, "box provider unavailable: {m}"),
             Self::Unsupported(what) => write!(f, "not supported by this provider: {what}"),
+            Self::UnknownProvider(p) => write!(f, "unknown box provider `{p}`"),
             Self::Tunnel {
                 failure,
                 stderr_tail,

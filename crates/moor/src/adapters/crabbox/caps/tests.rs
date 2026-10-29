@@ -81,10 +81,14 @@ fn alias_resolves_to_canonical_facts() {
 }
 
 #[test]
-fn unknown_provider_is_unsupported() {
+fn unknown_provider_is_named() {
     assert_eq!(
         caps("nope"),
-        Err(DriverError::Unsupported("unknown box provider"))
+        Err(DriverError::UnknownProvider("nope".to_owned()))
+    );
+    assert_eq!(
+        caps("nope").unwrap_err().to_string(),
+        "unknown box provider `nope`"
     );
 }
 

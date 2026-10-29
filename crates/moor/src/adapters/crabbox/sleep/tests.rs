@@ -162,7 +162,7 @@ fn wake_is_unsupported_without_sleep_or_provider() {
     ));
     assert!(matches!(
         c.wake(&BoxHandle::new("nope/box")),
-        Err(DriverError::Unsupported(_))
+        Err(DriverError::UnknownProvider(p)) if p == "nope"
     ));
     assert_eq!(verbs(&p), ["providers", "providers"]);
 }

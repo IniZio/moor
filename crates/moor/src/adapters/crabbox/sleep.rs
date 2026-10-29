@@ -24,7 +24,7 @@ pub(super) fn sleep(cb: &Crabbox, handle: &BoxHandle) -> Result<SleepOutcome, Dr
     };
     let caps = match cb.caps(&ProviderId::new(provider)) {
         Ok(caps) => caps,
-        Err(DriverError::Unsupported(_)) => {
+        Err(DriverError::UnknownProvider(_)) => {
             return Ok(SleepOutcome::CannotSleep(format!(
                 "provider {provider} is unknown; box stays up"
             )));

@@ -73,7 +73,7 @@ pub(super) fn caps_from(providers_json: &str, id: &ProviderId) -> Result<DriverC
         .iter()
         .find(|e| e.answers_to(id.as_str()))
         .map(derive)
-        .ok_or(DriverError::Unsupported("unknown box provider"))
+        .ok_or_else(|| DriverError::UnknownProvider(id.as_str().to_owned()))
 }
 
 /// Maps a moor size to crabbox's machine class.
