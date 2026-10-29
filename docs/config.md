@@ -276,7 +276,7 @@ moor also refuses `proxy.direct` in a user config and a `proxy` key in
 | `agent.install` | boolean | `true` | Whether moor installs the agent in a Box that lacks it. `false` leaves the Box as its image and `setup` made it, and the start then fails if the agent is missing. |
 | `dotfiles.path` | absolute path or `~/...` | none | A dotfiles directory that moor installs on each new machine. |
 | `dotfiles.install` | relative path | none | The install script inside `dotfiles.path`. |
-| `surface.kind` | `herdr` or `pty` | `herdr` | What holds each Box agent's pane on the controller. `pty` keeps the panes in pseudo-terminals inside the controller, for a host without herdr; it needs a moor built with the `pty-surface` feature (`make build`, which needs Zig 0.17), and herdr's working or idle guess is then not available. |
+| `surface.kind` | `herdr` or `pty` | `$MOOR_SURFACE`, else `herdr` | What holds each Box agent's pane on the controller. `pty` keeps the panes in pseudo-terminals inside the controller, for a host without herdr; it needs a moor built with the `pty-surface` feature (`make build`, which needs Zig 0.17), and herdr's working or idle guess is then not available. The controller image is built with the feature and sets `MOOR_SURFACE=pty`, so its Boxes need no herdr server unless the config asks for `herdr`. |
 | `surface.herdr.session` | string | `moor` | The herdr session that holds Box workspaces. |
 | `tools.crabbox`, `tools.herdr`, `tools.claude`, `tools.gh`, `tools.ssh`, `tools.git` | path | the name on `PATH` | The program moor runs for each tool. |
 | `controller.socket` | path | none | Send CLI commands to the controller on this socket. |

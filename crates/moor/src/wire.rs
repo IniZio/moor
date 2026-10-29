@@ -183,7 +183,26 @@ fn pty_surface(state_dir: Option<PathBuf>) -> Arc<dyn Surface> {
     Arc::clone(pty) as Arc<dyn Surface>
 }
 
-/// The Surface `config` asks for.
+/// The environment variable that picks the Surface when the config sets no `surface.kind`.
+const SURFACE_ENV: &str = "MOOR_SURFACE";
+
+/// The Surface kind `config` sets, else the one [`SURFACE_ENV`] names, else herdr.
+fn surface_kind(config: &UserConfig, env: &Env) -> Result<SurfaceKind, CommandError> {
+    if let Some(kind) = config.surface.kind {
+        return Ok(kind);
+    }
+    match env.get(SURFACE_ENV).map(str::trim) {
+        None | Some("") => Ok(SurfaceKind::Herdr),
+        Some(name) => SurfaceKind::parse(name).ok_or_else(|| {
+            CommandError::new(
+                ErrorKind::Usage,
+                format!("{SURFACE_ENV} is {name}, but it must be herdr or pty"),
+            )
+        }),
+    }
+}
+
+/// The Surface of `kind`.
 #[cfg_attr(
     feature = "pty-surface",
     allow(
@@ -192,13 +211,14 @@ fn pty_surface(state_dir: Option<PathBuf>) -> Arc<dyn Surface> {
     )
 )]
 fn surface(
+    kind: SurfaceKind,
     config: &UserConfig,
     proc: &Arc<dyn Proc>,
     extra_env: Vec<(String, String)>,
     clock: Arc<dyn Clock>,
     state_dir: Option<PathBuf>,
 ) -> Result<Arc<dyn Surface>, CommandError> {
-    match config.surface.kind {
+    match kind {
         SurfaceKind::Herdr => Ok(Arc::new(herdr(
             proc,
             config.herdr_session(),
@@ -211,7 +231,7 @@ fn surface(
         #[cfg(not(feature = "pty-surface"))]
         SurfaceKind::Pty => Err(CommandError::new(
             ErrorKind::Usage,
-            "surface.kind is pty, but this moor was built without the pty-surface feature",
+            "the surface is pty, but this moor was built without the pty-surface feature",
         )),
     }
 }
@@ -225,6 +245,7 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
     let clock = Arc::new(clock);
     let state_dir = env.state_dir();
     let surface = surface(
+        surface_kind(&config, env)?,
         &config,
         &proc,
         herdr_env(env),

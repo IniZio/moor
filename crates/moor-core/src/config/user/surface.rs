@@ -14,19 +14,30 @@ pub struct HerdrConfig {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct SurfaceConfig {
-    /// Which surface holds Box agent panes.
-    pub kind: SurfaceKind,
+    /// Which surface holds Box agent panes; unset leaves the choice to the host.
+    pub kind: Option<SurfaceKind>,
     /// herdr settings.
     pub herdr: HerdrConfig,
 }
 
 /// `surface.kind`: what holds Box agent panes.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SurfaceKind {
     /// A herdr session.
-    #[default]
     Herdr,
     /// Pseudo-terminals inside the controller process.
     Pty,
+}
+
+impl SurfaceKind {
+    /// The kind `name` spells as `surface.kind` does; `None` for any other text.
+    #[must_use]
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "herdr" => Some(Self::Herdr),
+            "pty" => Some(Self::Pty),
+            _ => None,
+        }
+    }
 }
