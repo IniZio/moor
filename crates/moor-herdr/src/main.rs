@@ -67,7 +67,7 @@ enum Cmd {
     Logout,
     /// Print the herdr config snippet that colours Boxes and binds moor's keys.
     HerdrSetup {
-        /// The default shell to name; the plugin's own `bin/shell.sh` if left out.
+        /// The default shell to name; the plugin's installed `shell.sh` if left out.
         #[arg(long)]
         shell: Option<String>,
     },
