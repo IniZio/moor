@@ -80,7 +80,8 @@ impl Store {
         machines_in(&self.reader()?, user)
     }
 
-    /// The distinct ssh targets of every user's machines, sorted.
+    /// The distinct ssh targets of every user's machines reached over ssh, sorted; an enrolled
+    /// machine has none.
     pub(crate) fn machine_targets(&self) -> Result<Vec<String>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare("SELECT DISTINCT ssh FROM user_machines ORDER BY ssh")?;
