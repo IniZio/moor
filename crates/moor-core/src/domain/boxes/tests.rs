@@ -36,7 +36,7 @@ fn input(name: &str) -> BoxInput {
 }
 
 /// Every legal (from, input name, to) triple.
-const LEGAL: [(BoxState, &str, BoxState); 18] = [
+const LEGAL: [(BoxState, &str, BoxState); 19] = [
     (Starting, "acquired", Ready),
     (Starting, "acquire_failed", Failed),
     (Failed, "requested", Starting),
@@ -46,6 +46,7 @@ const LEGAL: [(BoxState, &str, BoxState); 18] = [
     (Ready, "driver_missing", Gone),
     (Asleep, "driver_missing", Gone),
     (Failed, "driver_missing", Gone),
+    (Starting, "released", Deleted),
     (Ready, "released", Deleted),
     (Asleep, "released", Deleted),
     (Failed, "released", Deleted),

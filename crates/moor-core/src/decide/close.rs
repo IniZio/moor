@@ -180,18 +180,23 @@ pub fn close_gate(f: &CloseFacts, force: bool) -> Result<ClosePlan, Refusal> {
     })
 }
 
-/// A Gone Box is never released through the Driver; a Starting one has no handle yet.
+/// A Gone Box is never released through the Driver; a Starting one is, under the handle its
+/// acquire planned, since the machine can exist before the acquire returns.
 const fn releasable(s: BoxState) -> bool {
     matches!(
         s,
-        BoxState::Ready | BoxState::Asleep | BoxState::Failed | BoxState::ReleaseFailed
+        BoxState::Starting
+            | BoxState::Ready
+            | BoxState::Asleep
+            | BoxState::Failed
+            | BoxState::ReleaseFailed
     )
 }
 
 /// Maps a release result to the decision that closes the Box.
 ///
-/// A live Box (`Ready`/`Asleep`) that cannot be released keeps the Box open;
-/// a `Failed` or `ReleaseFailed` Box does not hold the close back.
+/// A Box whose machine may still run keeps the Box open when it cannot be released;
+/// only a `ReleaseFailed` Box, already marked for manual release, does not hold the close back.
 #[must_use]
 pub fn release_outcome(box_id: BoxId, box_state: BoxState, r: ReleaseResult) -> ReleaseVerdict {
     let close = Decision::new(box_id)
@@ -204,11 +209,13 @@ pub fn release_outcome(box_id: BoxId, box_state: BoxState, r: ReleaseResult) -> 
             closes: true,
         },
         ReleaseResult::Failed => match box_state {
-            BoxState::Ready | BoxState::Asleep => ReleaseVerdict {
-                decision: None,
-                warning: None,
-                closes: false,
-            },
+            BoxState::Starting | BoxState::Ready | BoxState::Asleep | BoxState::Failed => {
+                ReleaseVerdict {
+                    decision: None,
+                    warning: None,
+                    closes: false,
+                }
+            }
             _ => ReleaseVerdict {
                 decision: Some(failed_close(close, box_state)),
                 warning: Some(release_warning()),

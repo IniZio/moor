@@ -235,7 +235,7 @@ fn release_is_planned_only_for_a_releasable_box_with_a_handle() {
     let cases = [
         (None, true, false),
         (Some(B::Starting), false, false),
-        (Some(B::Starting), true, false),
+        (Some(B::Starting), true, true),
         (Some(B::Ready), true, true),
         (Some(B::Asleep), true, true),
         (Some(B::Failed), true, true),
@@ -281,25 +281,14 @@ fn deleted_and_already_gone_mark_the_box_deleted() {
 }
 
 #[test]
-fn failed_release_of_a_live_box_keeps_the_box_open() {
-    for b in [B::Ready, B::Asleep] {
+fn failed_release_of_a_box_whose_machine_may_run_keeps_the_box_open() {
+    for b in [B::Starting, B::Ready, B::Asleep, B::Failed] {
         let v = release_outcome(BoxId::new(7), b, R::Failed);
-        assert!(!v.closes && v.decision.is_none() && v.warning.is_none());
+        assert!(
+            !v.closes && v.decision.is_none() && v.warning.is_none(),
+            "{b:?}"
+        );
     }
-}
-
-#[test]
-fn failed_release_of_a_failed_box_closes_with_release_failed_and_warns() {
-    let v = release_outcome(BoxId::new(7), B::Failed, R::Failed);
-    assert!(v.closes);
-    assert_eq!(
-        apply(&v, BoxLifecycle::SetupFailed, B::Failed),
-        (BoxLifecycle::Closed, B::ReleaseFailed)
-    );
-    let w = v.warning.expect("warning");
-    assert_eq!(w.code, "box_release_failed");
-    assert!(!w.message.contains("RAWDRIVER"));
-    assert!(w.message.contains("not deleted") && w.message.contains("handle kept"));
 }
 
 #[test]

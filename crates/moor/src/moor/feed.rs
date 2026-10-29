@@ -69,6 +69,19 @@ impl Moor {
         out.extend(self.cx.take_warnings().into_iter().map(|w| w.message));
         out
     }
+
+    /// Fails each start an earlier process left unfinished; returns what to log.
+    pub(crate) fn fail_interrupted_starts(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let failed = self.cx.store().and_then(|store| {
+            ops::common::provision::interrupted::fail_interrupted(&self.cx, store)
+        });
+        if let Err(e) = failed {
+            out.push(e.error.to_string());
+        }
+        out.extend(self.cx.take_warnings().into_iter().map(|w| w.message));
+        out
+    }
 }
 
 #[cfg(test)]

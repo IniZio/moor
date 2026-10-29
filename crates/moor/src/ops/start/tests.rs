@@ -29,6 +29,7 @@ mod dead_agent;
 mod dotfiles;
 mod exited_start;
 mod identity;
+mod interrupted;
 mod launch_deadline;
 mod launch_skipped;
 mod launch_warnings;

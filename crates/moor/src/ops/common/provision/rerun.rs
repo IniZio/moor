@@ -47,7 +47,7 @@ pub(super) fn note_setup_not_rerun(
 }
 
 /// Records a dead setup as failed, as a failed setup run would, without running anything.
-fn record_interrupted(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
+pub(super) fn record_interrupted(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
     let line = "setup was interrupted".to_owned();
     let mut done = Decision::new(row.id);
     if row.lifecycle == BoxLifecycle::SettingUp {

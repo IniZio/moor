@@ -30,8 +30,7 @@ use crate::store::{BoxRow, Store};
 
 use self::clone::{clone_with_proxy, SetupProxy};
 use self::delivered::record_delivered;
-pub(crate) use self::lease::hold_root;
-use self::lease::hold_workdir;
+pub(crate) use self::lease::{hold_root, hold_workdir, planned_root};
 use self::outcome::dotfiles_warned;
 pub(crate) use self::outcome::Provisioned;
 use self::progress::progress;
@@ -391,6 +390,7 @@ fn failed(
 
 mod clone;
 mod delivered;
+pub(crate) mod interrupted;
 mod lease;
 mod outcome;
 mod progress;
