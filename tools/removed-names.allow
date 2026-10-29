@@ -10,3 +10,5 @@ multitask
 tokio::task::
 # The kernel's per-thread directory, read to see a daemon thread start.
 /proc/{}/task"
+# std's own poll type, unrelated to the removed concept.
+std::task::Poll
