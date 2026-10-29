@@ -1,0 +1,60 @@
+[package]
+name = "moor-machine-agent"
+version = "0.2.0"
+edition = "2021"
+publish = false
+description = "Runs on a person's own computer so Boxes can claim it: enrolls it with their sign-in."
+
+[lib]
+name = "moor_machine_agent"
+path = "src/lib.rs"
+
+[[bin]]
+name = "moor-machine-agent"
+path = "src/main.rs"
+
+[dependencies]
+moor-client = { path = "../moor-client" }
+clap = { version = "4", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ssh-key = { version = "0.6", default-features = false, features = [
+  "std",
+  "ed25519",
+  "rand_core",
+  "getrandom",
+] }
+
+[dev-dependencies]
+moor-core = { path = "../moor-core" }
+moor-gate = { path = "../moor-gate" }
+moor-testkit = { path = "../moor-testkit" }
+rusqlite = { version = "0.40", features = ["bundled"] }
+tempfile = "3"
+ureq = { version = "3", default-features = false }
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+unreachable_pub = "deny"
+
+[lints.clippy]
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+disallowed_methods = "deny"
+indexing_slicing = "deny"
+missing_docs_in_private_items = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+exit = "deny"
+string_slice = "deny"
+missing_errors_doc = "allow"
+allow_attributes_without_reason = "deny"
+cognitive_complexity = "deny"
+redundant_pub_crate = "allow"
