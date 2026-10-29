@@ -149,8 +149,11 @@ pub enum HoldValue {
     Held {
         /// The machine's name.
         machine: String,
-        /// Its ssh target.
+        /// Its ssh target; empty for an enrolled machine.
         ssh: String,
+        /// Its enrolled id, when its agent links in instead.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        machine_id: Option<i64>,
         /// The Box's slot on it.
         slot: u16,
         /// The forwarded ports, moved by the slot.

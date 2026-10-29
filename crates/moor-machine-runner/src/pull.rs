@@ -97,9 +97,10 @@ pub(crate) fn run(
     } else {
         format!("{}/{}", caller.remote_dir(), args.path)
     };
+    let ssh = caller.reach.ssh("pulling files")?;
     let out = Command::new("rsync")
         .args(["-L", "-e", "ssh -o BatchMode=yes"])
-        .arg(format!("{}:{remote}", caller.ssh))
+        .arg(format!("{ssh}:{remote}"))
         .arg(&staged.0)
         .output()
         .map_err(|e| format!("could not run rsync: {e}"))?;

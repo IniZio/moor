@@ -24,9 +24,12 @@ use moor_core::request::{Request, ShowReq};
 use moor_core::BoxId;
 use serde::{Deserialize, Serialize};
 
-use crate::caller::Caller;
+use moor_client::link::ops::{Hook, Op};
+
+use crate::caller::{Caller, Reach};
 use crate::exec::{self, ExecOutput};
 use crate::holds::Holds;
+use crate::link::{self, Answer};
 use crate::relay::Relays;
 
 mod reap;
@@ -63,13 +66,16 @@ pub(crate) struct Hooks {
     pub(crate) listed: Mutex<Option<Instant>>,
     /// One lock per Box id, so two calls of a Box never prepare it twice.
     pub(crate) preparing: Mutex<HashMap<i64, Arc<tokio::sync::Mutex<()>>>>,
+    /// The links that carry hooks for enrolled machines, whose own hooks then run by name.
+    pub(crate) agents: Option<crate::Agents>,
 }
 
 /// What the runner keeps about a prepared Box: where it is, for `release`, and its facts.
 #[derive(Serialize, Deserialize)]
 struct Record {
-    /// The machine's ssh target.
-    ssh: String,
+    /// How the runner reaches the machine.
+    #[serde(flatten)]
+    reach: Reach,
     /// The Box's slot on the machine.
     slot: u16,
     /// What `prepare` printed.
@@ -93,7 +99,7 @@ impl Record {
     /// A record of a Box that is not suspended and whose files were not evicted.
     fn new(caller: &Caller, facts: Facts, prepared: bool) -> Self {
         Self {
-            ssh: caller.ssh.clone(),
+            reach: caller.reach.clone(),
             slot: caller.slot,
             facts,
             prepared,
@@ -116,16 +122,11 @@ impl Hooks {
             return Ok(record.facts.clone());
         }
         self.guard(caller).await?;
-        let facts = match &self.prepare {
+        let env = box_env(id, caller.slot, &Facts::new());
+        let out = self.hook(id, &caller.reach, Hook::Prepare, &env);
+        let facts = match out.await.map_err(|e| format!("prepare: {e}"))? {
             None => Facts::new(),
-            Some(command) => {
-                let wrapped = format!(
-                    "f=$(mktemp) || exit 1; ( {command}\n ) >\"$f\"; rc=$?; cat \"$f\"; \
-                     rm -f \"$f\"; exit $rc"
-                );
-                let env = box_env(id, caller.slot, &Facts::new());
-                let out = self.on_machine(id, &caller.ssh, &env, &wrapped);
-                let out = out.await.map_err(|e| format!("prepare: {e}"))?;
+            Some(out) => {
                 let last = out.output.lines().rev().find(|l| !l.trim().is_empty());
                 serde_json::from_str(last.unwrap_or_default()).map_err(|e| {
                     format!(
@@ -208,32 +209,81 @@ impl Hooks {
 
     /// Runs `release` for a prepared Box, then removes its copy and state dir on the machine.
     async fn release_files(&self, id: i64, record: &Record) -> Result<(), String> {
-        if let (Some(command), true) = (&self.release, record.prepared) {
+        if record.prepared {
             let env = box_env(id, record.slot, &record.facts);
-            self.on_machine(id, &record.ssh, &env, command).await?;
+            self.hook(id, &record.reach, Hook::Release, &env).await?;
         }
-        self.remove_on_machine(&record.ssh, id).await
+        self.remove_on_machine(&record.reach, id).await
     }
 
-    /// Runs `command` on the machine in the Box's copy with `env` and the Box's state dir; its
-    /// output when it exits 0, else an error quoting the output's tail.
-    async fn on_machine(
+    /// Runs hook `hook` for Box `id` with `env` in the Box's copy: over ssh the runner's command
+    /// for it, over a link the machine's own file of that name. Its output when it exits 0, none
+    /// when there is no such hook, else an error quoting the output's tail.
+    async fn hook(
         &self,
         id: i64,
-        ssh: &str,
+        reach: &Reach,
+        hook: Hook,
         env: &[(String, String)],
-        command: &str,
-    ) -> Result<ExecOutput, String> {
-        let dir = BoxKey::new(BoxId::new(id)).machine_dir();
-        let prelude = state_prelude(id);
-        let body = format!("{prelude}mkdir -p ~/{dir} && cd ~/{dir} && {command}");
-        let out = exec::run(ssh, &exec::script(env, &body), self.timeout)
-            .await
-            .map_err(|e| format!("could not run ssh: {e}"))?;
-        match out.exit_code {
-            Some(0) => Ok(out),
-            _ if out.timed_out => Err(format!("timed out: {}", tail(&out))),
-            code => Err(format!("exit {code:?}: {}", tail(&out))),
+    ) -> Result<Option<ExecOutput>, String> {
+        let machine_id = match reach {
+            Reach::Ssh { ssh } => {
+                let command = match hook {
+                    Hook::Prepare => self.prepare.as_ref().map(|c| {
+                        format!(
+                            "f=$(mktemp) || exit 1; ( {c}\n ) >\"$f\"; rc=$?; cat \"$f\"; \
+                             rm -f \"$f\"; exit $rc"
+                        )
+                    }),
+                    Hook::Suspend => self.suspend.clone(),
+                    Hook::Release => self.release.clone(),
+                };
+                let Some(command) = command else {
+                    return Ok(None);
+                };
+                let dir = BoxKey::new(BoxId::new(id)).machine_dir();
+                let prelude = state_prelude(id);
+                let body = format!("{prelude}mkdir -p ~/{dir} && cd ~/{dir} && {command}");
+                let out = exec::run(ssh, &exec::script(env, &body), self.timeout)
+                    .await
+                    .map_err(|e| format!("could not run ssh: {e}"))?;
+                return succeeded(out).map(Some);
+            }
+            Reach::Linked { machine_id } => *machine_id,
+        };
+        let op = Op::Hook {
+            box_id: id,
+            hook,
+            env: env.to_vec(),
+            timeout_secs: link::secs(self.timeout),
+        };
+        match link::send(self.agents.as_ref(), &machine_id.to_string(), machine_id, &op).await? {
+            Answer::Ran(ran) => succeeded(ran.into()).map(Some),
+            Answer::Missing => Ok(None),
+            Answer::Started(_) => Err(format!("machine {machine_id} started a hook as a relay")),
+        }
+    }
+
+    /// Runs the runner's own `script` for Box `id` on the machine, from the machine user's home
+    /// over ssh and from the Box's copy over a link.
+    async fn helper(&self, id: i64, reach: &Reach, script: &str) -> Result<ExecOutput, String> {
+        let machine_id = match reach {
+            Reach::Ssh { ssh } => {
+                return exec::run(ssh, script, self.timeout)
+                    .await
+                    .map_err(|e| format!("could not run the remote shell: {e}"));
+            }
+            Reach::Linked { machine_id } => *machine_id,
+        };
+        let op = Op::Exec {
+            box_id: id,
+            env: Vec::new(),
+            script: script.to_owned(),
+            timeout_secs: link::secs(self.timeout),
+        };
+        match link::send(self.agents.as_ref(), &machine_id.to_string(), machine_id, &op).await? {
+            Answer::Ran(ran) => Ok(ran.into()),
+            _ => Err(format!("machine {machine_id} answered no run")),
         }
     }
 
@@ -385,6 +435,15 @@ fn write(path: &Path, record: &Record) -> io::Result<()> {
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, serde_json::to_vec(record)?)?;
     std::fs::rename(tmp, path)
+}
+
+/// `out` when it exited 0, else an error quoting its tail.
+fn succeeded(out: ExecOutput) -> Result<ExecOutput, String> {
+    match out.exit_code {
+        Some(0) => Ok(out),
+        _ if out.timed_out => Err(format!("timed out: {}", tail(&out))),
+        code => Err(format!("exit {code:?}: {}", tail(&out))),
+    }
 }
 
 /// The last [`TAIL_LINES`] lines of a command's output.

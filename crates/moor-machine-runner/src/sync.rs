@@ -47,6 +47,7 @@ pub(crate) fn run(
     caller: &Caller,
     args: &SyncArgs,
 ) -> Result<SyncOutput, String> {
+    let ssh = caller.reach.ssh("syncing")?;
     let mirror = mirrors.join(caller.box_id.get().to_string());
     let exclude: Vec<String> = caller
         .sync_exclude
@@ -81,7 +82,7 @@ pub(crate) fn run(
         .args(["-e", "ssh -o BatchMode=yes"])
         .arg(format!("--rsync-path=mkdir -p {remote} && rsync"))
         .arg(format!("{}/", mirror.display()))
-        .arg(format!("{}:{remote}/", caller.ssh))
+        .arg(format!("{ssh}:{remote}/"))
         .output()
         .map_err(|e| format!("could not run rsync: {e}"))?;
     if !out.status.success() {
