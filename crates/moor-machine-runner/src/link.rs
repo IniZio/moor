@@ -13,6 +13,8 @@ pub(crate) enum Answer {
     Started(Channel),
     /// The machine has no such hook or relay.
     Missing,
+    /// The pulled file's bytes follow on the stream.
+    Sending(Channel, u64),
 }
 
 /// Sends `op` to machine `machine_id`, named `machine` in errors, and reads its answer.
@@ -35,6 +37,7 @@ pub(crate) async fn send(
         Reply::Ran(ran) => Ok(Answer::Ran(ran)),
         Reply::Started => Ok(Answer::Started(stream)),
         Reply::Missing => Ok(Answer::Missing),
+        Reply::Sending { bytes } => Ok(Answer::Sending(stream, bytes)),
         Reply::Refused { reason } => Err(format!("machine {machine} refused: {reason}")),
     }
 }
