@@ -3172,12 +3172,14 @@ dependencies = [
  "moor-client",
  "moor-core",
  "moor-gate",
+ "moor-machine-runner",
  "moor-testkit",
  "rusqlite",
  "serde",
  "serde_json",
  "ssh-key",
  "tempfile",
+ "tokio",
  "ureq",
 ]
 
@@ -3186,6 +3188,7 @@ name = "moor-machine-runner"
 version = "0.2.0"
 dependencies = [
  "clap",
+ "futures-util",
  "http",
  "hyper-util",
  "moor-client",
@@ -3195,6 +3198,7 @@ dependencies = [
  "schemars 1.2.3",
  "serde",
  "serde_json",
+ "ssh-key",
  "tempfile",
  "tokio",
  "ureq",

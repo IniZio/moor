@@ -1,4 +1,4 @@
-//! `moor-machine-agent`: enrolls this computer with a moor server.
+//! `moor-machine-agent`: enrolls this computer with a moor server and keeps it linked.
 
 use std::io::Write;
 use std::process::ExitCode;
@@ -6,7 +6,7 @@ use std::sync::mpsc::Sender;
 
 use clap::{Parser, Subcommand};
 use moor_client::oidc::{Console, Ui, REDIRECT_PORT};
-use moor_machine_agent::{enroll, state_dir, Enroll};
+use moor_machine_agent::{enroll, run, state_dir, Enroll};
 
 /// Command line.
 #[derive(Parser)]
@@ -41,6 +41,8 @@ enum Command {
         #[arg(long)]
         new_key: bool,
     },
+    /// Keeps this enrolled machine linked to its server until stopped.
+    Run,
 }
 
 /// The console, with or without the browser.
@@ -66,23 +68,45 @@ impl Ui for Terminal {
 }
 
 fn main() -> ExitCode {
-    let Command::Enroll {
-        server,
-        name,
-        labels,
-        slots,
-        paste,
-        new_key,
-    } = Args::parse().command;
-    let req = Enroll {
-        server,
-        name,
-        labels,
-        slots,
-        new_key,
+    let ended = match Args::parse().command {
+        Command::Enroll {
+            server,
+            name,
+            labels,
+            slots,
+            paste,
+            new_key,
+        } => {
+            let req = Enroll {
+                server,
+                name,
+                labels,
+                slots,
+                new_key,
+            };
+            return enroll_here(&req, paste);
+        }
+        Command::Run => tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| format!("cannot start: {e}"))
+            .and_then(|rt| rt.block_on(run(&state_dir(), &|line| say(line)))),
     };
+    if let Err(e) = ended {
+        say(&e);
+    }
+    ExitCode::FAILURE
+}
+
+/// Writes `line` to stderr, where the agent logs.
+fn say(line: &str) {
+    let _ = writeln!(std::io::stderr(), "moor-machine-agent: {line}");
+}
+
+/// Enrolls this machine, signing in through the browser unless `paste`.
+fn enroll_here(req: &Enroll, paste: bool) -> ExitCode {
     let mut ui = Terminal { browser: !paste };
-    match enroll(&req, &state_dir(), REDIRECT_PORT, &mut ui) {
+    match enroll(req, &state_dir(), REDIRECT_PORT, &mut ui) {
         Ok(state) => {
             ui.say(&format!(
                 "Enrolled {} as machine {} for {}.",
@@ -91,7 +115,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(e) => {
-            let _ = writeln!(std::io::stderr(), "moor-machine-agent: {e}");
+            say(&e);
             ExitCode::FAILURE
         }
     }

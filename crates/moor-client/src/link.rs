@@ -9,8 +9,10 @@ use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream};
 use tokio::net::TcpStream;
 use tokio::time::Instant;
+use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
+use tokio_tungstenite::tungstenite::http::StatusCode;
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::{Connector, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{Connector, MaybeTlsStream};
 use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 
 /// Where the runner accepts links.
@@ -110,12 +112,15 @@ where
     }
 }
 
+pub use tokio_tungstenite::WebSocketStream;
+pub use yamux::Mode;
+
 /// The socket yamux runs on.
 pub type Socket = Compat<DuplexStream>;
 
-/// Hands `ws` to a task that carries yamux's bytes and pings every `keepalive`.
+/// Spawns a pump that carries yamux's bytes over `ws` and pings every `keepalive`.
 ///
-/// Returns the end yamux runs on. The task closes it when the socket closes or fails, or
+/// Returns the end yamux runs on. The pump closes it when the socket closes or fails, or
 /// nothing arrives for three `keepalive` periods.
 pub fn carry<S>(ws: WebSocketStream<S>, keepalive: Duration) -> Socket
 where
@@ -127,7 +132,10 @@ where
 }
 
 /// Moves bytes between `ws` and `far` until either ends or the far end goes quiet.
-#[expect(clippy::cognitive_complexity, reason = "the count is select!'s expansion")]
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "the count is select!'s expansion"
+)]
 async fn pump<S>(mut ws: WebSocketStream<S>, mut far: DuplexStream, keepalive: Duration)
 where
     S: AsyncRead + AsyncWrite + Unpin,
@@ -224,4 +232,29 @@ pub async fn dial(server: &str) -> Result<Dialed, String> {
         .await
         .map_err(|e| format!("cannot reach {url}: {e}"))?;
     Ok(ws)
+}
+
+/// Takes the WebSocket upgrade on `stream`; a request for any path but [`PATH`] gets 404.
+///
+/// # Errors
+/// The request is not an upgrade to [`PATH`].
+#[expect(
+    clippy::result_large_err,
+    reason = "tungstenite fixes the callback's signature"
+)]
+pub async fn accept<S>(stream: S) -> Result<WebSocketStream<S>, String>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    let only_link = |req: &Request, res: Response| {
+        if req.uri().path() == PATH {
+            return Ok(res);
+        }
+        let mut missing = ErrorResponse::new(Some("not found".to_owned()));
+        *missing.status_mut() = StatusCode::NOT_FOUND;
+        Err(missing)
+    };
+    tokio_tungstenite::accept_hdr_async(stream, only_link)
+        .await
+        .map_err(|e| format!("not a link: {e}"))
 }

@@ -17,9 +17,10 @@ test = false
 doc = false
 
 [dependencies]
-moor-client = { path = "../moor-client" }
+moor-client = { path = "../moor-client", features = ["link"] }
 moor-core = { path = "../moor-core" }
 clap = { version = "4", features = ["derive", "env"] }
+futures-util = { version = "0.3", default-features = false }
 http = "1"
 hyper-util = { version = "0.1", features = [
   "server",
@@ -38,6 +39,12 @@ rmcp = { version = "3.7", default-features = false, features = [
 schemars = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+ssh-key = { version = "0.6", default-features = false, features = [
+  "std",
+  "ed25519",
+  "rand_core",
+  "getrandom",
+] }
 tokio = { version = "1", features = [
   "rt-multi-thread",
   "macros",

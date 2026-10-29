@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use clap::Parser;
-use moor_machine_runner::{serve, Config, Relay};
+use moor_machine_runner::{serve, serve_agents, Config, Relay};
 
 /// Serves the tools a Box uses to work on its attached machine.
 #[derive(Parser)]
@@ -15,6 +15,9 @@ struct Args {
     /// Address to listen on; the Box's Proxy routes the service host here.
     #[arg(long, default_value = "127.0.0.1:7700")]
     listen: SocketAddr,
+    /// Address to accept machine agents' links on, at `/machines/link`; none accepts no links.
+    #[arg(long, value_name = "ADDR")]
+    agents: Option<SocketAddr>,
     /// The Host the Box's Proxy passes through.
     #[arg(long, default_value = "machine.moor.internal")]
     service_host: String,
@@ -172,6 +175,24 @@ async fn main() -> ExitCode {
     };
     if let Ok(addr) = listener.local_addr() {
         eprintln!("moor-machine-runner listening on {addr}");
+    }
+    if let Some(addr) = args.agents {
+        let agents = match tokio::net::TcpListener::bind(addr).await {
+            Ok(l) => l,
+            Err(e) => {
+                eprintln!("moor-machine-runner: cannot listen for agents on {addr}: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        if let Ok(addr) = agents.local_addr() {
+            eprintln!("moor-machine-runner taking agent links on {addr}");
+        }
+        let socket = args.socket.clone();
+        tokio::spawn(async move {
+            if let Err(e) = serve_agents(agents, &socket).await {
+                eprintln!("moor-machine-runner: agent links stopped: {e}");
+            }
+        });
     }
     let config = Config {
         socket: args.socket,
