@@ -30,7 +30,9 @@ fn acquire_notes_arrive_while_crabbox_still_runs() {
     let mut got = Vec::new();
     cb.acquire_noting(&req("external", None), &mut |n| {
         got.push((n.to_owned(), bin.join("done").exists()));
-        fs::write(bin.join("go"), "").unwrap();
+        if got.len() == 2 {
+            fs::write(bin.join("go"), "").unwrap();
+        }
     })
     .unwrap();
     assert_eq!(
