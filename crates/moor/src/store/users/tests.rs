@@ -289,6 +289,56 @@ mod hold;
 mod machine;
 
 #[test]
+fn machine_links_are_replaced_whole_and_skip_unknown_machines() {
+    use moor_core::config::EnrolledMachine;
+    use moor_core::request::MachineLink;
+    use moor_core::seam::clock::Ts;
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let (alice, _) = store.enroll(&id("authgear:a"), None).unwrap();
+    let keys = [
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl",
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    ];
+    let [key_one, key_two] = keys;
+    let [one, two] = [("one", key_one), ("two", key_two)].map(|(name, key)| {
+        let m = EnrolledMachine::parse(name, key, &[], 1).unwrap();
+        store.enroll_machine(alice, &m).unwrap()
+    });
+    let link = |machine_id, online, since| MachineLink {
+        machine_id,
+        online,
+        since: Ts::from_millis(since),
+    };
+    let held = store
+        .set_machine_links(&[
+            link(one, true, 5),
+            link(two, false, 6),
+            link(999, true, 7),
+        ])
+        .unwrap();
+    assert_eq!(held, vec![link(one, true, 5), link(two, false, 6)]);
+    let held = store.set_machine_links(&[link(two, true, 9)]).unwrap();
+    assert_eq!(held, vec![link(two, true, 9)]);
+    let listed: Vec<(i64, String, String)> = store
+        .machine_keys()
+        .unwrap()
+        .into_iter()
+        .map(|k| {
+            assert_eq!(k.user, alice);
+            (k.machine_id, k.name, k.pubkey)
+        })
+        .collect();
+    assert_eq!(
+        listed,
+        vec![
+            (one, "one".to_owned(), key_one.to_owned()),
+            (two, "two".to_owned(), key_two.to_owned()),
+        ]
+    );
+}
+
+#[test]
 fn enrolling_a_machine_again_replaces_its_key_and_keeps_its_id() {
     use moor_core::config::EnrolledMachine;
     let dir = tempfile::tempdir().unwrap();

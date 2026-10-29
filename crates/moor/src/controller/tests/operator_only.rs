@@ -19,9 +19,9 @@ use super::fronts::{ask, refused};
 fn nameless(kind: &str) -> Option<Value> {
     Some(match kind {
         "start-needs" | "env" | "repos" | "whoami" | "enroll" | "secret-names" | "version"
-        | "proxy-lease" | "proxy-status" | "mcp-list" | "machine-list" | "machine-targets" => {
-            json!({"cmd": kind})
-        }
+        | "proxy-lease" | "proxy-status" | "mcp-list" | "machine-list" | "machine-targets"
+        | "machine-keys" => json!({"cmd": kind}),
+        "machine-links" => json!({"cmd": kind, "links": []}),
         "proxy-release" => json!({"cmd": kind, "token": "t"}),
         "session-binding" => json!({"cmd": kind, "front": "slack", "key": "k"}),
         "gate" => json!({"cmd": kind, "sha": "abcd123", "name": "test"}),

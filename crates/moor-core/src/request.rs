@@ -16,7 +16,8 @@ mod host_session;
 pub use host_session::{EndHostSessionReq, OpenHostSessionReq, UpdateHostSessionReq};
 mod machine;
 pub use machine::{
-    HoldOp, HoldValue, MachineAddReq, MachineEnrollReq, MachineHoldReq, MachineRemoveReq,
+    HoldOp, HoldValue, MachineAddReq, MachineEnrollReq, MachineHoldReq, MachineLink, MachineLinksReq,
+    MachineRemoveReq,
 };
 mod names;
 pub use names::{Grant, Named, Pins};
@@ -126,6 +127,10 @@ pub enum Request {
     MachineList(AsReq),
     /// List the ssh target of every user's machines; the operator's only.
     MachineTargets {},
+    /// List every enrolled machine's key; the operator's only.
+    MachineKeys {},
+    /// Record which enrolled machines hold a link to the runner; the operator's only.
+    MachineLinks(MachineLinksReq),
     /// Claim one of a Box's user's machines for it, or let go of it; the operator's only.
     #[serde(rename = "machine-hold")]
     MachineHold(MachineHoldReq),
@@ -189,6 +194,8 @@ impl Request {
             Self::MachineEnroll(_) => "machine-enroll",
             Self::MachineList(_) => "machine-list",
             Self::MachineTargets {} => "machine-targets",
+            Self::MachineKeys {} => "machine-keys",
+            Self::MachineLinks(_) => "machine-links",
             Self::MachineHold(_) => "machine-hold",
             Self::ProxyLease(_) => "proxy-lease",
             Self::ProxyRelease(_) => "proxy-release",

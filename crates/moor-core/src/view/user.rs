@@ -75,6 +75,33 @@ pub struct MachineTargetsValue {
     pub targets: Vec<String>,
 }
 
+/// Value of `machine-keys`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MachineKeysValue {
+    /// Every enrolled machine, by id.
+    pub machines: Vec<MachineKey>,
+}
+
+/// An enrolled machine and the key its agent signs with.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MachineKey {
+    /// The machine's id.
+    pub machine_id: i64,
+    /// The user that owns it.
+    pub user: UserId,
+    /// The machine's name.
+    pub name: String,
+    /// The agent's ed25519 public key as an OpenSSH line.
+    pub pubkey: String,
+}
+
+/// Value of `machine-links`: what the store now holds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MachineLinksValue {
+    /// The link of every enrolled machine the runner reported, by id.
+    pub links: Vec<crate::request::MachineLink>,
+}
+
 /// Value of `machine-add` and `machine-remove`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MachineChangeValue {

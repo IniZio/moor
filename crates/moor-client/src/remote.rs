@@ -273,15 +273,20 @@ fn dial(host: &str, port: u16) -> Result<TcpStream, String> {
 fn tls(host: &str, tcp: TcpStream) -> Result<StreamOwned<ClientConnection, TcpStream>, String> {
     let name = ServerName::try_from(host.to_owned())
         .map_err(|_| "the server's host is not a valid name".to_owned())?;
+    let conn = ClientConnection::new(Arc::new(tls_config()?), name).map_err(|e| e.to_string())?;
+    Ok(StreamOwned::new(conn, tcp))
+}
+
+/// TLS that verifies against the bundled web roots.
+pub(crate) fn tls_config() -> Result<ClientConfig, String> {
     let roots = RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    let config =
+    Ok(
         ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
             .with_safe_default_protocol_versions()
             .map_err(|e| e.to_string())?
             .with_root_certificates(roots)
-            .with_no_client_auth();
-    let conn = ClientConnection::new(Arc::new(config), name).map_err(|e| e.to_string())?;
-    Ok(StreamOwned::new(conn, tcp))
+            .with_no_client_auth(),
+    )
 }
 
 /// Joins `ws` to a fresh socket pair and returns the client's end.
