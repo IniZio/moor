@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::name::ForgeRepo;
-use crate::name::{BoxId, BoxName, SessionId};
+use crate::name::{BoxName, SessionId};
 use crate::user::Identity;
 
 mod artifacts;
@@ -12,12 +12,14 @@ mod attach;
 pub use attach::AttachReq;
 mod binding;
 pub use binding::{BindSessionReq, SessionBindingReq};
+mod files;
+pub use files::{BoxMirrorReq, BoxPutReq, CpReq};
 mod host_session;
 pub use host_session::{EndHostSessionReq, OpenHostSessionReq, UpdateHostSessionReq};
 mod machine;
 pub use machine::{
-    HoldOp, HoldValue, MachineAddReq, MachineEnrollReq, MachineHoldReq, MachineLink, MachineLinksReq,
-    MachineRemoveReq,
+    HoldOp, HoldValue, MachineAddReq, MachineEnrollReq, MachineHoldReq, MachineLink,
+    MachineLinksReq, MachineRemoveReq,
 };
 mod names;
 pub use names::{Grant, Named, Pins};
@@ -325,44 +327,6 @@ pub struct CloseReq {
     /// Close despite unfinished work.
     #[serde(default)]
     pub force: bool,
-}
-
-/// Arguments of `cp`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CpReq {
-    /// Box name.
-    #[serde(rename = "box")]
-    pub box_name: BoxName,
-    /// Source path.
-    pub src: String,
-    /// Destination path on the host, absolute.
-    pub dest: String,
-}
-
-/// Arguments of `box-mirror`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BoxMirrorReq {
-    /// The Box's store id.
-    pub id: BoxId,
-    /// Destination directory on the host, absolute.
-    pub dest: String,
-    /// rsync patterns left out of the mirror besides `.git`.
-    #[serde(default)]
-    pub exclude: Vec<String>,
-}
-
-/// Arguments of `box-put`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BoxPutReq {
-    /// The Box's store id.
-    pub id: BoxId,
-    /// Regular file on the host, absolute.
-    pub src: String,
-    /// Where the file lands, relative to the Box's work tree.
-    pub dest: String,
 }
 
 /// Arguments of commands that take only a box.

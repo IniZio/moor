@@ -311,11 +311,7 @@ fn machine_links_are_replaced_whole_and_skip_unknown_machines() {
         since: Ts::from_millis(since),
     };
     let held = store
-        .set_machine_links(&[
-            link(one, true, 5),
-            link(two, false, 6),
-            link(999, true, 7),
-        ])
+        .set_machine_links(&[link(one, true, 5), link(two, false, 6), link(999, true, 7)])
         .unwrap();
     assert_eq!(held, vec![link(one, true, 5), link(two, false, 6)]);
     let held = store.set_machine_links(&[link(two, true, 9)]).unwrap();

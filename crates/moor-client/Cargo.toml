@@ -42,7 +42,13 @@ tokio-util = { version = "0.7", optional = true, features = ["compat"] }
 yamux = { version = "0.13", optional = true }
 
 [features]
-link = ["dep:futures-util", "dep:tokio", "dep:tokio-tungstenite", "dep:tokio-util", "dep:yamux"]
+link = [
+  "dep:futures-util",
+  "dep:tokio",
+  "dep:tokio-tungstenite",
+  "dep:tokio-util",
+  "dep:yamux",
+]
 
 [dev-dependencies]
 tempfile = "3"

@@ -14,7 +14,7 @@ name = "moor-machine-agent"
 path = "src/main.rs"
 
 [dependencies]
-moor-client = { path = "../moor-client" }
+moor-client = { path = "../moor-client", features = ["link"] }
 clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -24,8 +24,11 @@ ssh-key = { version = "0.6", default-features = false, features = [
   "rand_core",
   "getrandom",
 ] }
+tokio = { version = "1", features = ["rt", "time"] }
 
 [dev-dependencies]
+moor-machine-runner = { path = "../moor-machine-runner" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
 moor-core = { path = "../moor-core" }
 moor-gate = { path = "../moor-gate" }
 moor-testkit = { path = "../moor-testkit" }

@@ -244,7 +244,7 @@ fn failed(reason: String) -> CallToolResult {
     clippy::disallowed_methods,
     reason = "the controller compares wait_until with its wall clock; the runner has no injected clock"
 )]
-fn now() -> Ts {
+pub(crate) fn now() -> Ts {
     let ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX));
