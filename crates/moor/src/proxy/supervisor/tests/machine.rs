@@ -354,3 +354,38 @@ fn an_enrolled_machine_hides_an_ssh_one_of_its_name_and_is_never_dialed() {
         "port forwarding to enrolled machines is not available yet"
     );
 }
+
+#[test]
+fn a_removed_enrolled_machine_is_refused_and_its_ssh_namesake_never_stands_in() {
+    let w = World::new([]);
+    let (user, _) = w
+        .store
+        .enroll(&Identity::parse("slack:T1:U1").unwrap(), None)
+        .unwrap();
+    let mini = UserMachine::parse("mini", "dev@mini", &["macos".to_owned()]).unwrap();
+    w.store.set_user_machine(user, &mini).unwrap();
+    let key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl";
+    let enrolled =
+        moor_core::config::EnrolledMachine::parse("mini", key, &["macos".to_owned()], 1).unwrap();
+    let id = w.store.enroll_machine(user, &enrolled).unwrap();
+    let want = RepoMachine {
+        labels: vec!["macos".to_owned()],
+        ..RepoMachine::default()
+    };
+    let claim = |w: &World| {
+        w.store
+            .hold_machine(w.id, user, &HoldOp::repo(), Some(&want), &[])
+            .unwrap()
+    };
+    assert!(matches!(claim(&w), moor_core::HoldValue::Held { .. }));
+    w.store
+        .writer()
+        .execute("DELETE FROM user_machines_v2 WHERE machine_id = ?", [id])
+        .unwrap();
+
+    let removed = moor_core::HoldValue::Refused {
+        reason: "machine mini was removed".to_owned(),
+    };
+    assert_eq!(claim(&w), removed);
+    assert_eq!(missing_reason(&w), "machine mini was removed");
+}

@@ -1,0 +1,1 @@
+ALTER TABLE box_machines ADD COLUMN enrolled INTEGER NOT NULL DEFAULT 0;

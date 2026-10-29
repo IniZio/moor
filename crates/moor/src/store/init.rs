@@ -106,6 +106,10 @@ const FILES: &[(&str, &str)] = &[
         "V18__machine_links.sql",
         include_str!("../../migrations/V18__machine_links.sql"),
     ),
+    (
+        "V19__machine_claim_enrolled.sql",
+        include_str!("../../migrations/V19__machine_claim_enrolled.sql"),
+    ),
 ];
 
 /// moor.db's migrations, oldest first.
