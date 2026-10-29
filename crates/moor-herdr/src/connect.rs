@@ -50,7 +50,14 @@ impl Vault for Client {
     }
 
     fn enroll(&self) -> Result<(), Error> {
-        ask(self, Request::Enroll(EnrollReq { identity: None, email: None })).map(drop)
+        ask(
+            self,
+            Request::Enroll(EnrollReq {
+                identity: None,
+                email: None,
+            }),
+        )
+        .map(drop)
     }
 
     fn store(&self, name: &SecretName, value: SecretValue) -> Result<(), Error> {
