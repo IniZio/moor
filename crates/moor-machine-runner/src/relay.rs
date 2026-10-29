@@ -333,7 +333,7 @@ impl Relays {
         let env = hooks::box_env(caller.box_id.get(), caller.slot, facts);
         let (service, child) = match &caller.reach {
             Reach::Ssh { ssh } => {
-                let mut child = self.over_ssh(caller, ssh, relay, &env)?;
+                let mut child = Self::over_ssh(caller, ssh, relay, &env)?;
                 let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
                     return Err("ssh has no stdio".to_owned());
                 };
@@ -388,7 +388,6 @@ impl Relays {
 impl Relays {
     /// Starts `relay`'s command on the caller's machine over ssh, with `env`.
     fn over_ssh(
-        &self,
         caller: &Caller,
         ssh: &str,
         relay: &Relay,

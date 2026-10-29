@@ -340,10 +340,10 @@ fn an_enrolled_machine_hides_an_ssh_one_of_its_name_and_is_never_dialed() {
         matches!(held, moor_core::HoldValue::Held { machine_id: Some(m), ref ssh, .. } if m == id && ssh.is_empty()),
         "the claim holds the enrolled machine: {held:?}"
     );
-    match hold_of(&w.store, w.id) {
-        Hold::Held(h) => assert_eq!(h.machine_id, Some(id)),
-        Hold::Missing { reason, .. } => panic!("not held: {reason}"),
-    }
+    assert!(
+        matches!(hold_of(&w.store, w.id), Hold::Held(h) if h.machine_id == Some(id)),
+        "the Box's hold names the enrolled machine"
+    );
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
     assert!(run.tick().is_none());

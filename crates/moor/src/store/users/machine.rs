@@ -155,8 +155,9 @@ impl Store {
             return Ok(None);
         };
         let name = match claim.state {
-            ClaimState::Held { machine, .. } | ClaimState::Asleep { machine, .. } => machine,
-            ClaimState::Wanted {
+            ClaimState::Held { machine, .. }
+            | ClaimState::Asleep { machine, .. }
+            | ClaimState::Wanted {
                 machine: Some(machine),
                 ..
             } => machine,
