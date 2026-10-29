@@ -2,7 +2,7 @@
 
 use moor_core::config::{RepoMachine, UserMachine};
 use moor_core::seam::proc::Tool;
-use moor_core::user::Identity;
+use moor_core::user::{Identity, UserId};
 use moor_core::HoldOp;
 
 use super::{start, Stop, World};
@@ -314,9 +314,9 @@ fn a_held_claim_reaches_the_machine_service_before_any_tick() {
     assert!(machine_kinds(&w).is_empty(), "no tick has attached it");
 }
 
-#[test]
-fn an_enrolled_machine_hides_an_ssh_one_of_its_name_and_is_never_dialed() {
-    let w = World::new([]);
+/// Gives the Box's requester an ssh machine `mini` and an enrolled machine of the same name;
+/// the requester and the enrolled machine's id.
+fn enrolled_mini_beside_ssh_mini(w: &World) -> (UserId, i64) {
     let (user, _) = w
         .store
         .enroll(&Identity::parse("slack:T1:U1").unwrap(), None)
@@ -327,15 +327,25 @@ fn an_enrolled_machine_hides_an_ssh_one_of_its_name_and_is_never_dialed() {
     let enrolled =
         moor_core::config::EnrolledMachine::parse("mini", key, &["macos".to_owned()], 1).unwrap();
     let id = w.store.enroll_machine(user, &enrolled).unwrap();
+    (user, id)
+}
+
+fn claim_mini(w: &World, user: UserId, ports: Vec<u16>) -> moor_core::HoldValue {
     let want = RepoMachine {
         labels: vec!["macos".to_owned()],
-        ports: vec![8081],
+        ports,
         ..RepoMachine::default()
     };
-    let held = w
-        .store
+    w.store
         .hold_machine(w.id, user, &HoldOp::repo(), Some(&want), &[])
-        .unwrap();
+        .unwrap()
+}
+
+#[test]
+fn an_enrolled_machine_hides_an_ssh_one_of_its_name() {
+    let w = World::new([]);
+    let (user, id) = enrolled_mini_beside_ssh_mini(&w);
+    let held = claim_mini(&w, user, vec![8081]);
     assert!(
         matches!(held, moor_core::HoldValue::Held { machine_id: Some(m), ref ssh, .. } if m == id && ssh.is_empty()),
         "the claim holds the enrolled machine: {held:?}"
@@ -344,6 +354,13 @@ fn an_enrolled_machine_hides_an_ssh_one_of_its_name_and_is_never_dialed() {
         matches!(hold_of(&w.store, w.id), Hold::Held(h) if h.machine_id == Some(id)),
         "the Box's hold names the enrolled machine"
     );
+}
+
+#[test]
+fn an_enrolled_machine_forwards_through_the_runner_and_never_dials_ssh() {
+    let w = World::new([]);
+    let (user, id) = enrolled_mini_beside_ssh_mini(&w);
+    claim_mini(&w, user, vec![8081]);
     let runner = FakeRunner::listen(&w.dir.path().join("machine-forwards.sock"));
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
@@ -408,25 +425,8 @@ impl Drop for FakeRunner {
 #[test]
 fn a_removed_enrolled_machine_is_refused_and_its_ssh_namesake_never_stands_in() {
     let w = World::new([]);
-    let (user, _) = w
-        .store
-        .enroll(&Identity::parse("slack:T1:U1").unwrap(), None)
-        .unwrap();
-    let mini = UserMachine::parse("mini", "dev@mini", &["macos".to_owned()]).unwrap();
-    w.store.set_user_machine(user, &mini).unwrap();
-    let key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl";
-    let enrolled =
-        moor_core::config::EnrolledMachine::parse("mini", key, &["macos".to_owned()], 1).unwrap();
-    let id = w.store.enroll_machine(user, &enrolled).unwrap();
-    let want = RepoMachine {
-        labels: vec!["macos".to_owned()],
-        ..RepoMachine::default()
-    };
-    let claim = |w: &World| {
-        w.store
-            .hold_machine(w.id, user, &HoldOp::repo(), Some(&want), &[])
-            .unwrap()
-    };
+    let (user, id) = enrolled_mini_beside_ssh_mini(&w);
+    let claim = |w: &World| claim_mini(w, user, vec![]);
     assert!(matches!(claim(&w), moor_core::HoldValue::Held { .. }));
     w.store
         .writer()
