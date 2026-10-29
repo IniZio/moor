@@ -90,3 +90,89 @@ fn hosts_and_lease_ids_are_not_forwarded() {
         .iter()
         .all(|n| !n.contains("10.0.0.9") && !n.contains("lease-7f3a")));
 }
+
+const COLD_WAIT: &str = "\
+acquire: cold; created hgj3fctcz8 with a 12 GB disk
+acquire: checking required tools
+tools: installing rsync linux-minimal
+acquire: Docker data root is /root/docker
+acquire: reading host key
+waiting for hgj3fctcz8.agent37.app:22 external provider SSH ssh-transport... elapsed=6s remaining=19m54s ports=proxy
+waiting for hgj3fctcz8.agent37.app:22 external provider SSH ssh-transport... elapsed=16s remaining=19m44s ports=proxy
+waiting for hgj3fctcz8.agent37.app:22 external provider SSH ssh-transport... elapsed=56s remaining=19m4s ports=proxy
+waiting for hgj3fctcz8.agent37.app:22 external provider SSH ssh-transport... elapsed=1m6s remaining=18m54s ports=proxy
+waiting for hgj3fctcz8.agent37.app:22 external provider SSH ssh-transport... elapsed=1m16s remaining=18m44s ports=proxy
+waiting for hgj3fctcz8.agent37.app:22 external provider SSH ssh-transport... elapsed=2m6s remaining=17m54s ports=proxy
+";
+
+#[test]
+fn a_cold_acquire_reports_its_steps_and_a_wait_at_most_once_a_minute() {
+    let (_, got) = notes(COLD_WAIT);
+    assert_eq!(
+        got,
+        [
+            "machine created with a 12 GB disk",
+            "checking required tools",
+            "installing rsync linux-minimal",
+            "Docker data root is /root/docker",
+            "reading host key",
+            "waiting for SSH (6s)",
+            "waiting for SSH (1m6s)",
+            "waiting for SSH (2m6s)",
+        ]
+    );
+    assert!(got
+        .iter()
+        .all(|n| !n.contains("hgj3fctcz8") && !n.contains("agent37")));
+}
+
+#[test]
+fn a_wait_names_ssh_complaint_and_reports_again_only_when_it_changes() {
+    let (_, got) = notes(
+        "\
+waiting for h1.example.com:22 external provider SSH ssh-transport... elapsed=6s remaining=19m54s ports=proxy
+waiting for h1.example.com:22 external provider SSH ssh-auth... elapsed=16s remaining=19m44s ports=proxy last=root@h1.example.com: Permission denied (publickey).
+waiting for h1.example.com:22 external provider SSH ssh-auth... elapsed=26s remaining=19m34s ports=proxy last=root@h1.example.com: Permission denied (publickey).
+waiting for h1.example.com:22 external provider SSH ssh-auth... elapsed=2m26s remaining=17m34s ports=proxy last=root@h1.example.com: Permission denied (publickey).
+waiting for h1.example.com:22 external provider SSH ssh-transport... elapsed=2m36s remaining=17m24s ports=proxy last=ssh: connect to host h1.example.com port 22: Connection refused
+",
+    );
+    assert_eq!(
+        got,
+        [
+            "waiting for SSH (6s)",
+            "waiting for SSH: Permission denied (publickey)",
+            "waiting for SSH: connection refused",
+        ]
+    );
+}
+
+#[test]
+fn crabbox_giving_up_on_ssh_names_its_cause_in_the_failure() {
+    let (watch, _) = notes(
+        "\
+waiting for h1.example.com:22 external provider SSH ssh-auth... elapsed=19m56s remaining=4s ports=proxy last=root@h1.example.com: Permission denied (publickey).
+timed out waiting for SSH on h1.example.com:22 during ssh-auth: root@h1.example.com: Permission denied (publickey).; next_action=check the key crabbox installs
+",
+    );
+    let failed = DriverError::Failed {
+        summary: "box acquire failed on provider p (exit 1): timed out waiting for SSH on h1.example.com:22".to_owned(),
+    };
+    assert_eq!(
+        watch.explain(failed).to_string(),
+        "timed out waiting for SSH: Permission denied (publickey)"
+    );
+}
+
+#[test]
+fn crabbox_giving_up_without_a_cause_says_only_that() {
+    let (watch, _) = notes(
+        "timed out waiting for SSH on h1.example.com:22 during ssh-transport; next_action=retry\n",
+    );
+    assert_eq!(
+        watch
+            .explain(DriverError::Timeout(Duration::from_mins(15)))
+            .to_string(),
+        "timed out waiting for SSH"
+    );
+}
