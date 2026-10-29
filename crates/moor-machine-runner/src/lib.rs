@@ -19,22 +19,18 @@ use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto;
 use hyper_util::service::TowerToHyperService;
 use moor_client::Client;
-use rmcp::handler::server::router::tool::ToolRouter;
-use rmcp::handler::server::tool::{Extension, ToolCallContext};
+use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};
-use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ListToolsResult,
-    PaginatedRequestParams, ServerConfig,
-};
 use rmcp::service::RequestContext;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
-use rmcp::{tool, tool_handler, tool_router, ErrorData, RoleServer, ServerHandler};
+use rmcp::{tool, tool_router, ErrorData, RoleServer};
 use tokio::net::TcpListener;
 
 use crate::beat::Progress;
 use crate::caller::Caller;
 use crate::exec::{ExecArgs, ExecOutput};
+use crate::handler::own_names;
 use crate::holds::Holds;
 use crate::hooks::Hooks;
 use crate::info::MachineInfo;
@@ -51,6 +47,7 @@ mod caller;
 mod claim;
 mod config;
 mod exec;
+mod handler;
 mod holds;
 mod hooks;
 mod info;
@@ -303,79 +300,6 @@ impl Runner {
             () = context.ct.cancelled() => Err(internal("the caller went away")),
         }
     }
-}
-
-#[allow(
-    clippy::unused_async_trait_impl,
-    reason = "the generated handlers are async whether or not they await"
-)]
-#[tool_handler(router = router())]
-impl ServerHandler for Runner {
-    fn get_info(&self) -> ServerConfig {
-        claim::server_config()
-    }
-
-    async fn list_tools(
-        &self,
-        _request: Option<PaginatedRequestParams>,
-        context: RequestContext<RoleServer>,
-    ) -> Result<ListToolsResult, ErrorData> {
-        let mut tools = router().list_all();
-        if !self.relays.is_empty() && missing(&context)?.is_none() {
-            let caller = caller(&context)?;
-            match self.hooks.facts(&caller).await {
-                Ok(facts) => {
-                    let own = own_names();
-                    tools.extend(self.relays.tools(&caller, &facts, &own).await);
-                }
-                Err(e) => eprintln!(
-                    "moor-machine-runner: relays for Box {} left out: {e}",
-                    caller.box_id.get()
-                ),
-            }
-        }
-        Ok(ListToolsResult::with_all_items(tools))
-    }
-
-    async fn call_tool(
-        &self,
-        request: CallToolRequestParams,
-        context: RequestContext<RoleServer>,
-    ) -> Result<CallToolResponse, ErrorData> {
-        let claims = Runner::claim_router();
-        if let Some(reason) = missing(&context)?.filter(|_| !claims.has_route(&request.name)) {
-            return Ok(CallToolResult::error(vec![ContentBlock::text(format!(
-                "{reason}. Try again later."
-            ))])
-            .into());
-        }
-        let router = Self::tool_router() + claims;
-        if router.has_route(&request.name) || self.relays.is_empty() {
-            return router
-                .call(ToolCallContext::new(self, request, context))
-                .await;
-        }
-        let caller = caller(&context)?;
-        let facts = self.hooks.facts(&caller).await.map_err(|e| internal(&e))?;
-        let own = own_names();
-        self.relays
-            .call(&caller, &facts, &own, request, context)
-            .await
-    }
-}
-
-/// Every tool of the runner's own.
-fn router() -> ToolRouter<Runner> {
-    Runner::tool_router() + Runner::claim_router()
-}
-
-/// The runner's own tool names, which no relayed tool may take.
-fn own_names() -> Vec<String> {
-    router()
-        .list_all()
-        .into_iter()
-        .map(|t| t.name.into_owned())
-        .collect()
 }
 
 /// Why the calling Box holds no machine slot, when its Proxy says so.
