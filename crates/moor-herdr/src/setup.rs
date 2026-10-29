@@ -12,14 +12,14 @@ pub const NEW_ACTION: &str = "new";
 /// The plugin action that `prefix+m` runs to open the Boxes panel.
 pub const PANEL_ACTION: &str = "panel";
 
-/// The plugin's default-shell wrapper: under the linked plugin when herdr runs this, else in
-/// the source tree this binary was built from.
+/// The copy of the plugin's default-shell wrapper that the plugin's build installs into its
+/// state dir, which keeps its path across plugin updates.
 #[must_use]
 pub fn shell_path() -> String {
-    std::env::var("HERDR_PLUGIN_ROOT").map_or_else(
-        |_| concat!(env!("CARGO_MANIFEST_DIR"), "/herdr/bin/shell.sh").to_owned(),
-        |root| format!("{root}/bin/shell.sh"),
-    )
+    crate::auth::state_dir()
+        .join("shell.sh")
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// The config snippet: sidebar rows that set Boxes apart, the key rebind, and the default
