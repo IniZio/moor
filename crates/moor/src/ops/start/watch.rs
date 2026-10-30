@@ -15,6 +15,7 @@ use super::launch::{record, to_json, TAIL_LINES};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::activity::session_ref;
+use crate::ops::common::profile_fetch;
 use crate::ops::common::view::rfc3339;
 use crate::store::Store;
 
@@ -36,6 +37,7 @@ pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId, agent: AgentLaunchView) -> 
         return agent;
     }
     let Some((session, code, tail)) = poll(cx, store, id, agent.nonce.as_deref()) else {
+        report_installs(cx, store, id);
         return agent;
     };
     let failure = exited(cx, code, &tail);
@@ -51,6 +53,23 @@ pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId, agent: AgentLaunchView) -> 
         session: None,
         reason: Some(failure),
         nonce: None,
+    }
+}
+
+/// Records the profile installs the launch script reports as failed; a store failure is warned.
+fn report_installs(cx: &Cx, store: &Store, id: BoxId) {
+    let reported = store
+        .box_row(id)
+        .map_err(CommandError::from)
+        .and_then(|row| row.map_or(Ok(()), |row| profile_fetch::installs(cx, store, &row)));
+    if let Err(e) = reported {
+        cx.warn(Warning {
+            code: "profile_check_failed".to_owned(),
+            message: format!(
+                "could not record which profile installs failed: {}",
+                e.error
+            ),
+        });
     }
 }
 

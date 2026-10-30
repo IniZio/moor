@@ -6,15 +6,18 @@ use moor_core::boxscript::profile::fetch_script;
 use moor_core::config::BoxSettings;
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::event::ProfileStep;
+use moor_core::name::BoxPath;
 use moor_core::seam::driver::ExecOutcome;
 use moor_core::{BoxHandle, BoxId, Warning};
 
+use crate::adapters::box_agent::FAILURES_FILE;
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::activity::session_ref;
 use crate::ops::common::agent_install;
 use crate::ops::common::box_exec::{BoxProxy, Site};
 use crate::ops::common::dotfiles::{private_log, tail};
-use crate::store::Store;
+use crate::store::{BoxRow, Store};
 
 /// Wall-clock allowance for the shallow fetch.
 const FETCH_DEADLINE: Duration = Duration::from_mins(2);
@@ -98,11 +101,51 @@ pub(crate) fn failed(
         ProfileStep::Resolve => "could not be resolved",
         ProfileStep::Manifest => "has a bad manifest or marketplace",
         ProfileStep::Fetch => "could not be fetched into the Box",
+        ProfileStep::Install => "was only partly installed",
+    };
+    let after = if step == ProfileStep::Install {
+        "the agent runs without that part"
+    } else {
+        "the Box starts without it"
     };
     cx.warn(Warning {
         code: "profile_failed".to_owned(),
-        message: format!("your agent profile {what}: {detail}; the Box starts without it"),
+        message: format!("your agent profile {what}: {detail}; {after}"),
     });
     store.apply(Decision::new(id).event(ExtraEvent::ProfileFailed { step, detail }))?;
+    Ok(())
+}
+
+/// Records each line of the launch's install failures file in Box `row` as a failed install.
+/// A Box with no stored profile, or no such file, records nothing; a failed read is warned.
+///
+/// # Errors
+/// [`CommandError`] when the store cannot be read or written.
+pub(crate) fn installs(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
+    if store.box_profile(row.id)?.is_none() {
+        return Ok(());
+    }
+    let Some(session) = session_ref(row, String::new(), None) else {
+        return Ok(());
+    };
+    let path = BoxPath::under(session.workdir.as_str(), FAILURES_FILE);
+    let read = path.map_err(|e| e.to_string()).and_then(|p| {
+        cx.driver()
+            .peek_file(&session.handle, &p)
+            .map_err(|e| e.to_string())
+    });
+    let text = match read {
+        Ok(text) => text.unwrap_or_default(),
+        Err(e) => {
+            cx.warn(Warning {
+                code: "profile_check_failed".to_owned(),
+                message: format!("could not read which profile installs failed: {e}"),
+            });
+            return Ok(());
+        }
+    };
+    for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        failed(cx, store, row.id, ProfileStep::Install, line.to_owned())?;
+    }
     Ok(())
 }
