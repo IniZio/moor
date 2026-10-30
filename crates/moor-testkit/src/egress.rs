@@ -21,11 +21,18 @@ use crate::write_executable;
 /// It logs its argv to `$HOME/fake.log`, runs a placeholder process named `tinyproxy` in a session
 /// of its own, as the real daemon detaches, writes that pid to the config's `PidFile`, and records
 /// the start in `$HOME/fake-starts`.
+///
+/// The placeholder is a script, not a copy of `sleep`: a multi-call coreutils, such as Ubuntu's
+/// uutils or busybox, picks its tool by name and fails when run as `tinyproxy`.
 pub const FAKE_TINYPROXY: &str = r#"#!/bin/sh
 echo "tinyproxy $*" >>"$HOME/fake.log"
 pid=$(sed -n 's/^PidFile "\(.*\)"$/\1/p' "$2")
 daemon="$HOME/.fake-tinyproxy/tinyproxy"
-[ -x "$daemon" ] || { mkdir -p "$HOME/.fake-tinyproxy" && cp "$(command -v sleep)" "$daemon"; }
+[ -x "$daemon" ] || { mkdir -p "$HOME/.fake-tinyproxy" && cat >"$daemon" <<'EOF' && chmod +x "$daemon"; }
+#!/bin/sh
+trap 'kill $! 2>/dev/null; exit 0' TERM
+sleep "$1" & wait $!
+EOF
 rm -f "$pid"
 setsid sh -c 'echo $$ >"$1.tmp" && mv -f "$1.tmp" "$1" && exec "$2" 30' sh "$pid" "$daemon" </dev/null >/dev/null 2>&1 &
 n=0
