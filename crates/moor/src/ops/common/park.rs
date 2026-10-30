@@ -8,6 +8,7 @@ use moor_core::{BoxId, ErrorKind};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::proxy::detached::read_spec;
 use crate::store::{Store, TunnelAck, TunnelWant};
 
 /// How old a supervisor heartbeat may be before the supervisor counts as gone; matches the
@@ -50,7 +51,13 @@ pub(crate) fn restore_tunnel(
     } else {
         TunnelWant::Up
     };
-    match request(cx, store, box_id, want, RESTORE_WAIT)? {
+    let reply = if store.proxy(box_id)?.is_some() && !supervisor_alive(cx, store, box_id)? {
+        restart_supervisor(cx, box_id)?;
+        ask(cx, store, box_id, want, RESTORE_WAIT)?
+    } else {
+        request(cx, store, box_id, want, RESTORE_WAIT)?
+    };
+    match reply {
         Reply::NoSupervisor | Reply::Got(TunnelAck::Up { .. }) => Ok(()),
         Reply::Got(TunnelAck::Failed { error, .. }) => Err(CommandError::new(
             ErrorKind::Failed,
@@ -82,18 +89,45 @@ fn unexpected() -> CommandError {
     )
 }
 
-/// Writes `ask` and polls for the answer to that request until `patience` has passed.
+/// Asks a live supervisor for `want`; with none, nothing is asked.
 fn request(
     cx: &Cx,
     store: &Store,
     box_id: BoxId,
-    ask: TunnelWant,
+    want: TunnelWant,
     patience: Duration,
 ) -> Result<Reply, CommandError> {
     if !supervisor_alive(cx, store, box_id)? {
         return Ok(Reply::NoSupervisor);
     }
-    let seq = store.request_tunnel(box_id, ask)?;
+    ask(cx, store, box_id, want, patience)
+}
+
+/// Starts the Box's Proxy supervisor again from the spec its last start saved.
+fn restart_supervisor(cx: &Cx, box_id: BoxId) -> Result<(), CommandError> {
+    let spec = read_spec(cx.state_dir()?, box_id).map_err(|e| {
+        CommandError::new(
+            ErrorKind::Failed,
+            format!("the Proxy is gone and cannot restart without its spec: {e}"),
+        )
+    })?;
+    cx.proxy_host().ensure(&spec).map(drop).map_err(|e| {
+        CommandError::new(
+            ErrorKind::Failed,
+            format!("the Proxy is gone and did not restart: {e}"),
+        )
+    })
+}
+
+/// Writes `want` and polls for the answer to that request until `patience` has passed.
+fn ask(
+    cx: &Cx,
+    store: &Store,
+    box_id: BoxId,
+    want: TunnelWant,
+    patience: Duration,
+) -> Result<Reply, CommandError> {
+    let seq = store.request_tunnel(box_id, want)?;
     let clock = cx.clock();
     let deadline = clock.instant() + patience;
     loop {

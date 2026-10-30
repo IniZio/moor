@@ -1,13 +1,20 @@
 //! Waking a Box brings its Proxy tunnel back before the op proceeds.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::domain::boxes::BoxState;
 
 use moor_core::seam::surface::SurfaceError;
 
+use moor_core::seam::proxy_host::ProxySpec;
+use moor_core::user::UserId;
+use moor_core::BoxHandle;
+
 use super::{fx, row, sleep, wake_and_revive, wake_box_if_asleep, wake_if_asleep, with_agent, Fx};
+use crate::proxy::detached::write_spec;
 use crate::store::{ReadyProc, TunnelAck, TunnelWant};
+use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
 use crate::testing::rng::FakeRng;
 
 /// Give the Box a live Proxy: a ready row held by a fresh lease.
@@ -113,5 +120,63 @@ fn waking_only_the_box_leaves_the_tunnel_and_the_agent_alone() {
     assert!(wake_box_if_asleep(&f.cx, store, &row(&f)).unwrap());
     assert!(store.tunnel_request(f.id).unwrap().is_none());
     assert!(f.engine.launches().is_empty());
+    assert_eq!(box_state(&f), BoxState::Ready);
+}
+
+/// A Proxy row whose supervisor died with the controller: no lease, not ready.
+fn orphaned_proxy(f: &Fx) {
+    let store = f.cx.store().unwrap();
+    drop(
+        store
+            .reserve(f.id, &FakeRng::default(), Duration::from_secs(30))
+            .unwrap(),
+    );
+    store.expire_proxy(f.id).unwrap();
+}
+
+fn saved_spec(f: &Fx) -> ProxySpec {
+    let spec = ProxySpec {
+        box_id: f.id,
+        box_handle: Some(BoxHandle::new("box-1")),
+        box_repo: None,
+        rules: Vec::new(),
+        user: UserId::new(7),
+        vault_key: "/vault.key".into(),
+    };
+    write_spec(f.cx.state_dir().unwrap(), &spec).unwrap();
+    spec
+}
+
+#[test]
+fn wake_restarts_a_proxy_that_died_while_the_box_slept() {
+    let mut f = fx();
+    let host = FakeProxyHost::new();
+    f.cx = f.cx.with_proxy_host(Arc::new(host.clone()));
+    sleep(&f);
+    orphaned_proxy(&f);
+    let spec = saved_spec(&f);
+    let store = f.cx.store().unwrap();
+    store.ack_tunnel(f.id, &TunnelAck::Up { seq: 1 }).unwrap();
+    assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
+    assert!(
+        host.calls().contains(&ProxyHostCall::Ensure(spec)),
+        "{:?}",
+        host.calls()
+    );
+    let req = store.tunnel_request(f.id).unwrap().unwrap();
+    assert_eq!((req.want, req.seq), (TunnelWant::Up, 1));
+}
+
+#[test]
+fn a_dead_proxy_without_its_spec_fails_the_wake() {
+    let f = fx();
+    sleep(&f);
+    orphaned_proxy(&f);
+    let store = f.cx.store().unwrap();
+    let err = wake_if_asleep(&f.cx, store, &row(&f)).unwrap_err();
+    assert!(
+        err.error.to_string().contains("the Proxy is gone"),
+        "{err:?}"
+    );
     assert_eq!(box_state(&f), BoxState::Ready);
 }
