@@ -27,6 +27,9 @@ ARG HERDR_VERSION=0.9.5
 ARG HERDR_SHA256_AMD64=14d9e8bc8b4a9e0118d77c32266f76d461f09b40342eb23752960bd89f59929d
 ARG HERDR_SHA256_ARM64=17d7536f2da50859523680ef279dffcac8e4a235f4e46fe8da6c2ec44141897c
 
+# Splits the dependency build from moor's own crates, so the dependencies stay a cached layer.
+ARG CARGO_CHEF_VERSION=0.1.78
+
 ARG ZIG_VERSION=0.17.0
 ARG ZIG_SHA256_AMD64=1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026
 ARG ZIG_SHA256_ARM64=9e8d11661d4ae3bd57702a3832781e23ad151dde5798e16a5ccd503f65234ff8
@@ -94,6 +97,9 @@ RUN git init -q /agent37 \
  && git -C /agent37 fetch -q --depth 1 "$AGENT37_REPO" "$AGENT37_COMMIT" \
  && git -C /agent37 checkout -q FETCH_HEAD
 
+ARG CARGO_CHEF_VERSION
+RUN cargo install --locked "cargo-chef@${CARGO_CHEF_VERSION}"
+
 ENV CARGO_INCREMENTAL=0 CARGO_TARGET_DIR=/build/target
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/agent37-target \
@@ -101,15 +107,34 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,targe
  && install -D /agent37-target/release/crabbox-agent37 /out/crabbox-agent37
 
 WORKDIR /build
+
+
+# The manifests and lockfile, with every source file emptied: the recipe changes only when the
+# dependencies do.
+FROM rust AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path /recipe.json
+
+
+FROM rust AS build
+# Comma-separated cargo features of the moor crate. pty-surface lets the controller hold Box
+# agent panes itself, with no herdr server.
+ARG MOOR_FEATURES=pty-surface
+COPY --from=planner /recipe.json recipe.json
+# The dependencies, built with the same packages, features and profile as the build below, so
+# that build finds them compiled.
+RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/usr/local/cargo/git \
+    features=""; \
+    if [ -n "$MOOR_FEATURES" ]; then features="--features $(echo "$MOOR_FEATURES" | sed 's#\([^,]\+\)#moor/\1#g')"; fi; \
+    pkgs="-p moor -p moor-slack -p moor-machine-runner"; \
+    if grep -q '"moor-gate"' recipe.json; then pkgs="$pkgs -p moor-gate"; fi; \
+    cargo chef cook --release --locked --recipe-path recipe.json $pkgs $features
+
 COPY . .
 # The build context carries no .git, so the commit comes in as an argument.
 ARG MOOR_COMMIT=unknown
 ENV MOOR_COMMIT=${MOOR_COMMIT}
-# Comma-separated cargo features of the moor crate. pty-surface lets the controller hold Box
-# agent panes itself, with no herdr server.
-ARG MOOR_FEATURES=pty-surface
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/build/target \
     features=""; \
     if [ -n "$MOOR_FEATURES" ]; then features="--features $(echo "$MOOR_FEATURES" | sed 's#\([^,]\+\)#moor/\1#g')"; fi; \
     bins="moor moor-slack moor-machine-runner"; \
@@ -133,7 +158,8 @@ RUN apt-get update \
 
 COPY --from=fetch /out/gh /out/herdr /usr/local/bin/
 COPY --from=crabbox /out/crabbox /usr/local/bin/
-COPY --from=rust /out/ /usr/local/bin/
+COPY --from=rust /out/crabbox-agent37 /usr/local/bin/
+COPY --from=build /out/ /usr/local/bin/
 
 ENV HOME=/var/lib/moor \
     MOOR_STATE_DIR=/var/lib/moor/state \
