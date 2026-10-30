@@ -2,7 +2,7 @@
 
 use moor_core::boxscript::quote;
 use moor_core::exec_env::{self, BoxCtx, ExecEnv, ProxyCtx, Purpose};
-use moor_core::seam::agent_profile::{EnvVar, ProxyAddr};
+use moor_core::seam::agent_adapter::{EnvVar, ProxyAddr};
 use moor_core::BoxPath;
 
 /// True when `name` is a shell identifier.

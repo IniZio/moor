@@ -1,4 +1,4 @@
-//! Agent profile seam: turns an agent's hook state file and pane text into neutral readings.
+//! Agent adapter seam: turns an agent's hook state file and pane text into neutral readings.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -169,7 +169,7 @@ pub struct AgentInstall {
 pub const NOTHING_TO_ARCHIVE: &str = "moor: nothing to archive";
 
 /// What is specific to one kind of agent.
-pub trait AgentProfile: Send + Sync {
+pub trait AgentAdapter: Send + Sync {
     /// Parses the agent's hook state file; `None` when it is unreadable or partial.
     fn parse_hook(&self, raw: &[u8]) -> Option<HookRecord>;
 

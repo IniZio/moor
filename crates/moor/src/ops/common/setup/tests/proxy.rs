@@ -1,6 +1,6 @@
 //! Setup runs with and without the Proxy.
 
-use moor_core::seam::agent_profile::ProxyAddr;
+use moor_core::seam::agent_adapter::ProxyAddr;
 
 use moor_core::domain::box_state::SetupOutcome;
 

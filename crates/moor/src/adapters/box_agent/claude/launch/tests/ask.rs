@@ -1,7 +1,7 @@
 //! The record a question tool's hook writes, and the notice that follows it.
 
 use moor_core::activity::{decide, AgentState, HookRead, PaneObs, PaneRead, PaneStatus, Probes};
-use moor_core::seam::agent_profile::AgentProfile;
+use moor_core::seam::agent_adapter::AgentAdapter;
 use moor_core::seam::clock::Ts;
 use serde_json::json;
 use tempfile::TempDir;

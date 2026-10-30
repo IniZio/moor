@@ -8,7 +8,7 @@ use moor_core::activity::{
 };
 use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionInput;
-use moor_core::seam::agent_profile::FirstRunPrompt;
+use moor_core::seam::agent_adapter::FirstRunPrompt;
 use moor_core::BoxId;
 
 use super::{cx, rec, row, working_box, NOW, SESSION};

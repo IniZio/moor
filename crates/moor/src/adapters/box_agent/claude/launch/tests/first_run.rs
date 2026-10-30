@@ -3,7 +3,7 @@
 
 use std::fs;
 
-use moor_core::seam::agent_profile::{AgentProfile, LaunchCtx};
+use moor_core::seam::agent_adapter::{AgentAdapter, LaunchCtx};
 use serde_json::Value;
 use tempfile::TempDir;
 

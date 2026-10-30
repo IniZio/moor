@@ -1,7 +1,7 @@
 //! The `doing` line a tool-use hook leaves in the record, and what it never carries.
 
 use moor_core::activity::HookKind;
-use moor_core::seam::agent_profile::AgentProfile;
+use moor_core::seam::agent_adapter::AgentAdapter;
 use serde_json::{json, Value};
 use tempfile::TempDir;
 

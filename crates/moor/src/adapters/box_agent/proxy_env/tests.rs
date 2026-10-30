@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use moor_core::exec_env::{self, BoxCtx, ProxyCtx, Purpose};
-use moor_core::seam::agent_profile::{EnvVar, ProxyAddr};
+use moor_core::seam::agent_adapter::{EnvVar, ProxyAddr};
 use moor_core::{BoxPath, Secret};
 
 use super::script_lines;

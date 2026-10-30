@@ -11,7 +11,7 @@ use std::process::{Command, Stdio};
 
 use moor_core::activity::HookKind;
 use moor_core::name::BoxPath;
-use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, Key, LaunchCtx, ProxyAddr};
+use moor_core::seam::agent_adapter::{AgentAdapter, BoxSetup, Key, LaunchCtx, ProxyAddr};
 use moor_core::seam::engine::LaunchPrompt;
 use serde_json::{json, Value};
 use tempfile::TempDir;

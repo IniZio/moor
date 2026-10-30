@@ -8,7 +8,7 @@ use moor_core::config::proxy::{ResolvedInject, ResolvedRule, GITHUB_SECRET};
 use moor_core::config::{parse_user, BoxSettings, Flags, UserConfig};
 use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::exec_env::Purpose;
-use moor_core::seam::agent_profile::ProxyAddr;
+use moor_core::seam::agent_adapter::ProxyAddr;
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::user::{Identity, UserId};
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};

@@ -1,4 +1,4 @@
-//! The neutral hook report an agent profile parses its hook file into.
+//! The neutral hook report an agent adapter parses its hook file into.
 
 use crate::seam::clock::Ts;
 

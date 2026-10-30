@@ -1,4 +1,4 @@
-//! The Box agent kit, the one Engine adapter; agent-specific behaviour sits behind an `AgentProfile`.
+//! The Box agent kit, the one Engine adapter; agent-specific behaviour sits behind an `AgentAdapter`.
 
 mod agent_env;
 mod brief;
@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use moor_core::activity::Probes;
 use moor_core::name::{BoxName, BoxPath};
-use moor_core::seam::agent_profile::{AgentInstall, AgentProfile, PromptMatch};
+use moor_core::seam::agent_adapter::{AgentAdapter, AgentInstall, PromptMatch};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::engine::{
@@ -35,7 +35,7 @@ pub(crate) struct BoxAgent {
     /// Observes and opens the agent's pane.
     surface: Arc<dyn Surface>,
     /// Parses the agent's hook file and builds its launch.
-    profile: Arc<dyn AgentProfile>,
+    profile: Arc<dyn AgentAdapter>,
     /// Paces the submit key after typing.
     clock: Arc<dyn Clock>,
     /// Fetches the pinned gh for a Box that lacks it.
@@ -43,11 +43,11 @@ pub(crate) struct BoxAgent {
 }
 
 impl BoxAgent {
-    /// A kit over the given Driver, Surface, agent profile, clock and gh source.
+    /// A kit over the given Driver, Surface, agent adapter, clock and gh source.
     pub(crate) fn new(
         driver: Arc<dyn Driver>,
         surface: Arc<dyn Surface>,
-        profile: Arc<dyn AgentProfile>,
+        profile: Arc<dyn AgentAdapter>,
         clock: Arc<dyn Clock>,
         release: Arc<GhRelease>,
     ) -> Self {

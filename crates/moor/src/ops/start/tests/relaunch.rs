@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::domain::decision::{Decision, Field, Fields};
-use moor_core::seam::agent_profile::FirstRunPrompt;
+use moor_core::seam::agent_adapter::FirstRunPrompt;
 use moor_core::seam::engine::{EngineError, LaunchPrompt, LaunchReq, SessionRef};
 use moor_core::seam::surface::{PaneRef, ResumeOutcome, SurfaceError};
 use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, SessionId, StartReq};

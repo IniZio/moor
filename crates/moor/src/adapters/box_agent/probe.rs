@@ -2,7 +2,7 @@
 
 use moor_core::activity::{HookKind, HookRead, PaneRead, Probes};
 use moor_core::name::BoxPath;
-use moor_core::seam::agent_profile::AgentProfile;
+use moor_core::seam::agent_adapter::AgentAdapter;
 use moor_core::seam::driver::{BoxStep, Driver, DriverError, StepDone};
 use moor_core::seam::engine::{EngineError, SessionRef};
 use moor_core::seam::proc::Deadline;
@@ -17,7 +17,7 @@ pub(super) const HOOK_FILE: &str = ".moor/agent-state.json";
 pub(super) fn probe(
     driver: &dyn Driver,
     surface: &dyn Surface,
-    profile: &dyn AgentProfile,
+    profile: &dyn AgentAdapter,
     s: &SessionRef,
     deadline: Deadline,
 ) -> Result<Probes, EngineError> {
@@ -32,7 +32,7 @@ pub(super) fn probe(
 /// The hook file read; a missing or unparsable file is `Absent`, a failed read is `TimedOut`.
 fn read_hook(
     driver: &dyn Driver,
-    profile: &dyn AgentProfile,
+    profile: &dyn AgentAdapter,
     s: &SessionRef,
     deadline: Deadline,
 ) -> Result<HookRead, EngineError> {
@@ -54,7 +54,7 @@ fn read_hook(
 /// The pane read; a missing pane is `Gone`, no pane at all is `Absent`, a failed read is `TimedOut`.
 fn read_pane(
     surface: &dyn Surface,
-    profile: &dyn AgentProfile,
+    profile: &dyn AgentAdapter,
     s: &SessionRef,
     deadline: Deadline,
 ) -> PaneRead {

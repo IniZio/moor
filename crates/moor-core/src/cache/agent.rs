@@ -6,7 +6,7 @@ use super::{CacheName, CachePath, OnFail, Volume};
 /// The volume's name.
 pub const NAME: &str = "agent";
 
-/// What the agent profile says to keep.
+/// What the agent adapter says to keep.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentCache {
     /// The directories that hold the install, in `~/` form.
