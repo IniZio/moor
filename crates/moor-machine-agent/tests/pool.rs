@@ -182,3 +182,14 @@ fn dial_carries_bytes_both_ways_through_the_proxy_command() {
     assert!(child.wait().unwrap().success());
     assert_eq!(back, "SSH-2.0-hello\n");
 }
+
+#[test]
+fn a_pool_host_cannot_also_allow_exec() {
+    let home = home();
+    let out = agent(home.path(), &["run", "--allow-exec"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let err = String::from_utf8(out.stderr).unwrap();
+    assert!(err.contains("--allow-exec"), "{err}");
+}

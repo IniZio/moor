@@ -277,7 +277,7 @@ async fn run_needs_an_enrolled_state() {
 
 /// An agent for machine 7 linked to `w`'s runner, its home and hooks under `home`.
 async fn linked(w: &World, home: &Path) -> tempfile::TempDir {
-    linked_as(w, home, None).await
+    linked_as(w, home, None, true).await
 }
 
 /// Links an agent serving `pool`, or no pool, from `home`.
@@ -285,6 +285,7 @@ async fn linked_as(
     w: &World,
     home: &Path,
     pool: Option<moor_machine_agent::Pool>,
+    allow_exec: bool,
 ) -> tempfile::TempDir {
     let dir = agent_dir(w, MACHINE, &w.key);
     let machine = moor_machine_agent::Machine {
@@ -292,6 +293,7 @@ async fn linked_as(
         shell: "/bin/sh".into(),
         hooks: home.join("hooks"),
         pool,
+        allow_exec,
     };
     let state = dir.path().to_owned();
     tokio::spawn(async move { run(&state, machine, &|_| {}).await });
@@ -335,6 +337,26 @@ async fn exec_runs_in_the_box_dir_with_its_env() {
     assert_eq!(
         (out.exit_code, out.output.as_str()),
         (Some(3), want.as_str())
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn exec_is_refused_unless_the_agent_was_started_with_allow_exec() {
+    let (w, home) = (world().await, tempfile::tempdir().unwrap());
+    let _agent = linked_as(&w, home.path(), None, false).await;
+    let marker = home.path().join("ran");
+    let op = json!({"op": "exec", "box_id": 7, "env": [], "timeout_secs": 30,
+        "script": format!("touch {}", marker.display())});
+    let Reply::Refused { reason } = ask(&w, &op).await.1 else {
+        panic!("exec was served");
+    };
+    assert!(reason.contains("--allow-exec"), "{reason}");
+    assert!(!marker.exists());
+    let hook = json!({"op": "hook", "box_id": 7, "hook": "nope", "env": [], "timeout_secs": 30});
+    let reply = ask(&w, &hook).await.1;
+    assert!(
+        !matches!(&reply, Reply::Refused { reason } if reason.contains("--allow-exec")),
+        "{reply:?}"
     );
 }
 
@@ -468,7 +490,7 @@ async fn pool_host(w: &World, home: &Path) -> tempfile::TempDir {
         max: None,
         crabbox: fake_crabbox::install(home),
     };
-    linked_as(w, home, Some(pool)).await
+    linked_as(w, home, Some(pool), false).await
 }
 
 fn refused(reply: &Reply) -> bool {
