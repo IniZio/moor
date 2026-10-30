@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// The runner's forward socket, beside the controller's socket.
+/// The runner's forward socket, beside the runner's socket to the controller.
 pub const SOCKET: &str = "machine-forwards.sock";
 /// Most ports one forward may carry.
 pub const MAX_PORTS: usize = 64;

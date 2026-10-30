@@ -89,7 +89,7 @@ impl Running<'_> {
         ports: &[u16],
         enrolled: Option<i64>,
     ) -> Result<MachineLink, ForwardFailed> {
-        let socket = self.deps.state_dir.join(moor_client::forward::SOCKET);
+        let socket = crate::runner_dir::of(self.deps.state_dir).join(moor_client::forward::SOCKET);
         let via = enrolled.map_or(Via::Ssh(machine), |machine_id| Via::Runner {
             socket: &socket,
             box_id: self.box_id.get(),
