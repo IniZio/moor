@@ -21,6 +21,7 @@ pub mod response;
 pub mod seam;
 pub mod secret;
 pub mod shape;
+pub mod ssh;
 #[cfg(test)]
 mod testgit;
 pub mod user;
