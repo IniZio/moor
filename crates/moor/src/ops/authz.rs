@@ -187,6 +187,7 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         | Request::MachineRemove(_)
         | Request::MachineEnroll(_)
         | Request::MachineList(_)
+        | Request::MachineStatus(_)
         | Request::ProxyLease(_)
         | Request::ProxyRelease(_)
         | Request::ProxyStatus(_)

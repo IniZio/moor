@@ -19,7 +19,7 @@ pub use host_session::{EndHostSessionReq, OpenHostSessionReq, UpdateHostSessionR
 mod machine;
 pub use machine::{
     HoldOp, HoldValue, MachineAddReq, MachineEnrollReq, MachineHoldReq, MachineLink,
-    MachineLinksReq, MachineRemoveReq,
+    MachineLinksReq, MachineRemoveReq, MachineStatusReq,
 };
 mod names;
 pub use names::{Grant, Named, Pins};
@@ -133,6 +133,8 @@ pub enum Request {
     MachineEnroll(MachineEnrollReq),
     /// List the caller's user's machines.
     MachineList(AsReq),
+    /// Ask one of the caller's user's machine agents for its status.
+    MachineStatus(MachineStatusReq),
     /// List the ssh target of every user's machines; the operator's only.
     MachineTargets {},
     /// List every enrolled machine's key; the operator's only.
@@ -204,6 +206,7 @@ impl Request {
             Self::MachineRemove(_) => "machine-remove",
             Self::MachineEnroll(_) => "machine-enroll",
             Self::MachineList(_) => "machine-list",
+            Self::MachineStatus(_) => "machine-status",
             Self::MachineTargets {} => "machine-targets",
             Self::MachineKeys {} => "machine-keys",
             Self::MachineLinks(_) => "machine-links",
