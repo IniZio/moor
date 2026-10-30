@@ -1,6 +1,6 @@
 //! Events a decision may carry, and their conversion to and from stored events.
 
-use crate::domain::event::{CheckedCred, TurnOutcome};
+use crate::domain::event::{CheckedCred, ProfileStep, TurnOutcome};
 use crate::name::RunId;
 
 /// An event a caller may pass; every other kind is derived from state steps.
@@ -80,6 +80,20 @@ pub enum ExtraEvent {
     Cloned {
         /// Time the clone, with the git identity set inside it, took in milliseconds.
         ms: u64,
+    },
+    /// The requester's agent profile resolved to a commit.
+    ProfileResolved {
+        /// The profile repo, `owner/name`.
+        repo: crate::name::ForgeRepo,
+        /// The full commit sha.
+        sha: String,
+    },
+    /// A profile step failed; the Box starts without the profile.
+    ProfileFailed {
+        /// Which step failed.
+        step: ProfileStep,
+        /// What went wrong.
+        detail: String,
     },
     /// Admission checked credentials.
     Checked {

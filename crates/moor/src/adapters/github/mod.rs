@@ -7,7 +7,7 @@ mod tests;
 use std::time::Duration;
 
 use moor_core::seam::forge::{Forge, ForgeError, ForgeRepo, RepoAt};
-use moor_core::Secret;
+use moor_core::{Secret, Sha};
 
 /// GitHub as a [`Forge`].
 pub(crate) struct GitHub {
@@ -49,5 +49,15 @@ impl Forge for GitHub {
         token: &Secret,
     ) -> Result<RepoAt, ForgeError> {
         read::read(&self.api, self.timeout, repo, base, branch, token)
+    }
+
+    fn file_at(
+        &self,
+        repo: &ForgeRepo,
+        at: Option<&str>,
+        path: &'static str,
+        token: &Secret,
+    ) -> Result<(Sha, Option<String>), ForgeError> {
+        read::file_at(&self.api, self.timeout, repo, at, path, token)
     }
 }

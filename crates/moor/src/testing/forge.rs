@@ -11,8 +11,13 @@ use moor_core::{Secret, Sha};
 struct State {
     repos: HashMap<String, ForgeRepo>,
     reads: HashMap<ForgeRepo, Result<RepoAt, ForgeError>>,
+    files: HashMap<(ForgeRepo, Option<String>, &'static str), FileAnswer>,
     asked: Vec<Read>,
+    files_asked: Vec<(ForgeRepo, Option<String>, &'static str)>,
 }
+
+/// What `file_at` answers: the commit and the file's text there.
+pub(crate) type FileAnswer = Result<(Sha, Option<String>), ForgeError>;
 
 /// One `read` the fake answered.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,6 +84,25 @@ impl FakeForge {
         self.lock().reads.insert(repo, answer);
     }
 
+    /// Answers `file_at` of `path` in `repo` at `at` with `answer`.
+    pub(crate) fn with_file(
+        self,
+        repo: ForgeRepo,
+        at: Option<&str>,
+        path: &'static str,
+        answer: FileAnswer,
+    ) -> Self {
+        self.lock()
+            .files
+            .insert((repo, at.map(str::to_owned), path), answer);
+        self
+    }
+
+    /// Every `file_at` asked so far, as repo, ref and path, in order.
+    pub(crate) fn files_asked(&self) -> Vec<(ForgeRepo, Option<String>, &'static str)> {
+        self.lock().files_asked.clone()
+    }
+
     /// Every `read` answered so far, in order.
     pub(crate) fn reads(&self) -> Vec<Read> {
         self.lock().asked.clone()
@@ -119,6 +143,23 @@ impl Forge for FakeForge {
         state
             .reads
             .get(repo)
+            .cloned()
+            .unwrap_or(Err(ForgeError::NotVisible))
+    }
+
+    fn file_at(
+        &self,
+        repo: &ForgeRepo,
+        at: Option<&str>,
+        path: &'static str,
+        _token: &Secret,
+    ) -> FileAnswer {
+        let key = (repo.clone(), at.map(str::to_owned), path);
+        let mut state = self.lock();
+        state.files_asked.push(key.clone());
+        state
+            .files
+            .get(&key)
             .cloned()
             .unwrap_or(Err(ForgeError::NotVisible))
     }

@@ -237,6 +237,14 @@ fn all_events() -> Vec<Event> {
         Event::BoxProgress {
             text: s("waiting for SSH: port 22 closed"),
         },
+        Event::ProfileResolved {
+            repo: crate::name::ForgeRepo::new("o", "p"),
+            sha: s("abc"),
+        },
+        Event::ProfileFailed {
+            step: ProfileStep::Fetch,
+            detail: s("d"),
+        },
     ]
 }
 
@@ -320,6 +328,8 @@ const fn event_index(e: &Event) -> usize {
             MachineEvent::MachineRefused { .. } => 62,
         },
         Event::BoxProgress { .. } => 63,
+        Event::ProfileResolved { .. } => 64,
+        Event::ProfileFailed { .. } => 65,
     }
 }
 
@@ -327,7 +337,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 64);
+    assert_eq!(all.len(), 66);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

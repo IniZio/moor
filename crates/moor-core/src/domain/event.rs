@@ -6,6 +6,18 @@ use crate::domain::box_state::BoxLifecycle;
 pub use crate::domain::turn::TurnOutcome;
 use crate::name::RunId;
 
+/// The profile step that failed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProfileStep {
+    /// Resolving the ref to a commit.
+    Resolve,
+    /// Reading or parsing `moor-profile.yaml` or a marketplace.
+    Manifest,
+    /// Fetching the profile into the Box.
+    Fetch,
+}
+
 /// One recorded fact about a box, serialized with its `kind` tag.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -45,6 +57,20 @@ pub enum Event {
     Cloned {
         /// Time the clone, with the git identity set inside it, took in milliseconds.
         ms: u64,
+    },
+    /// The requester's agent profile resolved to a commit.
+    ProfileResolved {
+        /// The profile repo, `owner/name`.
+        repo: crate::name::ForgeRepo,
+        /// The full commit sha.
+        sha: String,
+    },
+    /// A profile step failed; the Box starts without the profile.
+    ProfileFailed {
+        /// Which step failed.
+        step: ProfileStep,
+        /// What went wrong.
+        detail: String,
     },
     /// A credential could not be delivered.
     CredentialFailed {

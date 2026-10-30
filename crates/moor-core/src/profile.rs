@@ -131,5 +131,56 @@ pub fn model(flag: Option<&str>, profile: Option<&str>, config: Option<&str>) ->
     flag.or(profile).or(config).map(str::to_owned)
 }
 
+/// Where a marketplace repo lists its plugins.
+pub const MARKETPLACE_FILE: &str = ".claude-plugin/marketplace.json";
+
+/// The GitHub repos the plugins named `wanted` in the marketplace file of manifest key `key` are
+/// sourced from, each once. A plugin in the marketplace's own repo, or on another host, adds
+/// nothing.
+///
+/// # Errors
+/// Why, when `json` is not a marketplace file or names itself other than `key`, since plugins
+/// install as `plugin@<its name>`.
+pub fn plugin_sources(json: &str, key: &str, wanted: &[&str]) -> Result<Vec<ForgeRepo>, String> {
+    #[derive(Deserialize)]
+    struct Marketplace {
+        name: String,
+        plugins: Vec<Plugin>,
+    }
+    #[derive(Deserialize)]
+    struct Plugin {
+        name: String,
+        source: serde_json::Value,
+    }
+    let market: Marketplace =
+        serde_json::from_str(json).map_err(|e| format!("marketplace {key}: {e}"))?;
+    if market.name != key {
+        return Err(format!("marketplace {key} is named {}", market.name));
+    }
+    let mut out: Vec<ForgeRepo> = Vec::new();
+    for plugin in market
+        .plugins
+        .iter()
+        .filter(|p| wanted.contains(&p.name.as_str()))
+    {
+        let source = &plugin.source;
+        let repo = match source.get("source").and_then(serde_json::Value::as_str) {
+            Some("github") => source
+                .get("repo")
+                .and_then(serde_json::Value::as_str)
+                .and_then(|r| ForgeRepo::parse(r).ok()),
+            Some("url") => source
+                .get("url")
+                .and_then(serde_json::Value::as_str)
+                .and_then(ForgeRepo::from_github_url),
+            _ => None,
+        };
+        if let Some(repo) = repo.filter(|r| !out.contains(r)) {
+            out.push(repo);
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests;
