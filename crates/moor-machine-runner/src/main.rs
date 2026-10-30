@@ -6,7 +6,9 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use clap::Parser;
-use moor_machine_runner::{serve, serve_agents, serve_forwards, Agents, Config, Relay};
+use moor_machine_runner::{
+    bind_broker, serve, serve_agents, serve_broker, serve_forwards, Agents, Config, Relay,
+};
 
 /// Serves the tools a Box uses to work on its attached machine.
 #[derive(Parser)]
@@ -176,6 +178,13 @@ async fn take_links(addr: SocketAddr, socket: &Path) -> Result<Agents, String> {
     tokio::spawn(async move {
         if let Err(e) = serve_forwards(forwards, serving, uid).await {
             eprintln!("moor-machine-runner: port forwards stopped: {e}");
+        }
+    });
+    let (broker, uid) = bind_broker(socket)?;
+    let serving = agents.clone();
+    tokio::spawn(async move {
+        if let Err(e) = serve_broker(broker, serving, uid).await {
+            eprintln!("moor-machine-runner: the links broker stopped: {e}");
         }
     });
     Ok(agents)

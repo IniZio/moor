@@ -62,24 +62,15 @@ fn main() -> ExitCode {
             run(env, Invocation { opts, request })
         }
         Parsed::ProxyServe { opts, box_id } => {
-            let env = match &opts.state_dir {
-                Some(dir) => env.with_state_dir(dir),
-                None => env,
-            };
+            let env = scoped(env, &opts);
             return ExitCode::from(moor::serve_proxy(&env, box_id, std::io::stderr()));
         }
         Parsed::ControllerServe { opts, config } => {
-            let env = match &opts.state_dir {
-                Some(dir) => env.with_state_dir(dir),
-                None => env,
-            };
+            let env = scoped(env, &opts);
             return ExitCode::from(moor::controller::serve(&env, &config, std::io::stderr()));
         }
         Parsed::ControllerAttach { opts, socket } => {
-            let env = match &opts.state_dir {
-                Some(dir) => env.with_state_dir(dir),
-                None => env,
-            };
+            let env = scoped(env, &opts);
             return ExitCode::from(moor::controller::attach::attach(
                 &env,
                 socket.as_deref(),
@@ -88,20 +79,33 @@ fn main() -> ExitCode {
                 std::io::stderr(),
             ));
         }
+        Parsed::LinkDial {
+            opts,
+            machine_id,
+            slug,
+        } => {
+            let env = scoped(env, &opts);
+            return ExitCode::from(moor::link_dial::on_stdio(&env, machine_id, &slug));
+        }
         Parsed::Events {
             opts,
             since,
             filter,
             follow,
         } => {
-            let env = match &opts.state_dir {
-                Some(dir) => env.with_state_dir(dir),
-                None => env,
-            };
+            let env = scoped(env, &opts);
             return run_events(&env, since, &filter, follow);
         }
     };
     emit(&output)
+}
+
+/// `env` with the state dir `opts` names, if any.
+fn scoped(env: Env, opts: &cli::GlobalOpts) -> Env {
+    match &opts.state_dir {
+        Some(dir) => env.with_state_dir(dir),
+        None => env,
+    }
 }
 
 /// Stream events as JSON lines from the configured controller, else the local store.

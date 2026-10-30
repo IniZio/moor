@@ -59,7 +59,7 @@ pub fn attach(
 }
 
 /// Copy stdin to the socket on a thread and the socket to `output`, flushing per chunk.
-fn bridge(
+pub(crate) fn bridge(
     stream: UnixStream,
     mut input: impl Read + Send + 'static,
     mut output: impl Write,

@@ -103,6 +103,11 @@ not match the config:
 The machine runner's socket, `<state dir>/runner/runner.sock`, may be passed
 as `runner`. When it is not passed, the controller binds it itself.
 
+The machine runner binds `<state dir>/runner/links.sock` itself, mode 0600, and
+refuses to start when the file is open to the group or to other users. The
+controller and `moor link-dial` use it to reach a pool host over that host's
+link. It accepts only lease and dial requests.
+
 The controller never deletes or rebinds a socket that systemd passed in.
 The passed fds are close-on-exec, so Box processes and fronts do not inherit
 them.

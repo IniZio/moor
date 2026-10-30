@@ -78,6 +78,15 @@ pub enum Parsed {
         /// Controller socket override.
         socket: Option<std::path::PathBuf>,
     },
+    /// Bridge stdin/stdout to a pool lease's sshd through the links broker.
+    LinkDial {
+        /// Global options.
+        opts: GlobalOpts,
+        /// The pool host's machine id.
+        machine_id: i64,
+        /// The lease.
+        slug: String,
+    },
     /// Print the event stream as JSON lines.
     Events {
         /// Global options.
@@ -111,6 +120,11 @@ pub fn parse(args: Vec<OsString>) -> Parsed {
         Ok((opts, Action::ControllerServe(config))) => Parsed::ControllerServe { opts, config },
         Ok((opts, Action::ControllerAttach(socket))) => Parsed::ControllerAttach { opts, socket },
         Ok((opts, Action::SecretSetStdin(name))) => Parsed::SecretSetStdin { opts, name },
+        Ok((opts, Action::LinkDial { machine_id, slug })) => Parsed::LinkDial {
+            opts,
+            machine_id,
+            slug,
+        },
         Ok((
             opts,
             Action::Events {

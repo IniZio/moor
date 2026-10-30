@@ -18,6 +18,10 @@ pub(super) enum AdminCmd {
     /// Controller commands.
     #[command(subcommand)]
     Controller(ControllerCmd),
+    /// Bridge stdin/stdout to a pool lease's sshd over its host's link, as an ssh
+    /// `ProxyCommand`.
+    #[command(hide = true)]
+    LinkDial(LinkDialArgs),
     /// Run a JSON request read from stdin.
     Call,
     /// Print version information.
@@ -60,6 +64,15 @@ pub(super) struct ControllerAttachArgs {
     socket: Option<PathBuf>,
 }
 
+/// Arguments of `link-dial`.
+#[derive(Debug, Args)]
+pub(super) struct LinkDialArgs {
+    /// The pool host's machine id.
+    machine_id: i64,
+    /// The lease, `moor-<id>`.
+    slug: String,
+}
+
 /// Arguments of `controller serve`.
 #[derive(Debug, Args)]
 pub(super) struct ControllerServeArgs {
@@ -86,6 +99,10 @@ impl AdminCmd {
             Self::Proxy(ProxyCmd::Serve(a)) => Action::ProxyServe(BoxId::new(a.box_id)),
             Self::Controller(ControllerCmd::Serve(a)) => Action::ControllerServe(a.config),
             Self::Controller(ControllerCmd::Attach(a)) => Action::ControllerAttach(a.socket),
+            Self::LinkDial(a) => Action::LinkDial {
+                machine_id: a.machine_id,
+                slug: a.slug,
+            },
             Self::Call => Action::CallStdin,
             Self::Version => Action::Request(Request::Version {}),
         }
