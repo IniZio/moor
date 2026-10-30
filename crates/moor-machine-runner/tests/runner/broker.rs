@@ -34,7 +34,19 @@ impl Drop for Host {
 impl Host {
     /// A runner taking links, and a pool host serving provider `fake` linked to it.
     fn start() -> Self {
-        let rig = Rig::with_args(&["--agents", "127.0.0.1:0"]);
+        let mut rig = Rig::start();
+        // The rig links an ordinary machine under the same id; the pool host replaces it.
+        if let Some(agent) = rig.machine_agent.take() {
+            agent.shutdown_background();
+        }
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while rig.link.links.lock().unwrap().as_ref().is_some_and(|l| {
+            l.as_array()
+                .is_some_and(|l| l.iter().any(|m| m["online"] == true))
+        }) {
+            assert!(Instant::now() < deadline, "the rig's agent never unlinked");
+            std::thread::sleep(Duration::from_millis(50));
+        }
         let key = PrivateKey::random(&mut OsRng, Algorithm::Ed25519).unwrap();
         *rig.link.pubkey.lock().unwrap() = Some(key.public_key().to_openssh().unwrap());
         let state_dir = rig.dir().join("agent");
@@ -42,7 +54,7 @@ impl Host {
         std::fs::create_dir_all(&state_dir).unwrap();
         std::fs::create_dir_all(&home).unwrap();
         let state = State {
-            server: format!("http://127.0.0.1:{}", rig.agents.unwrap()),
+            server: format!("http://127.0.0.1:{}", rig.agents),
             machine_id: MACHINE_ID,
             owner: "ada@example.com".to_owned(),
             name: "hv1".to_owned(),
