@@ -7,6 +7,9 @@ use moor_core::{Secret, Sha};
 
 use super::{bearer, commit_at, full_sha, post, text, unexpected_shape, visible};
 
+/// Largest profile file read; plugin marketplaces list hundreds of plugins and pass 64 KiB.
+const PROFILE_FILE_CAP: u64 = 1024 * 1024;
+
 /// Asks for the commit a ref names, or the default branch head, and one file there.
 const FILE_QUERY: &str = r"query($owner: String!, $name: String!, $at: String!, $hasAt: Boolean!, $path: String!) {
   repository(owner: $owner, name: $name) {
@@ -48,7 +51,10 @@ pub(in crate::adapters::github) fn read_file_at(
             let reply = serde_json::from_slice(&reply).map_err(|_| unexpected_shape())?;
             let (_, mut found) = visible(reply)?;
             let commit = commit_at(&mut found, at)?;
-            Ok((full_sha(commit.oid.as_deref())?, text(commit.file, path)?))
+            Ok((
+                full_sha(commit.oid.as_deref())?,
+                text(commit.file, path, PROFILE_FILE_CAP)?,
+            ))
         }
         401 => Err(ForgeError::Rejected),
         s => Err(ForgeError::Unavailable(format!("GitHub answered HTTP {s}"))),
