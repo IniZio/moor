@@ -12,8 +12,8 @@ pub use controller::{parse_controller, ControllerConfig, FrontEntry};
 pub use repo::{parse_repo, RepoBox, RepoCompose, RepoConfig, RepoMachine};
 
 pub use user::{
-    box_mcp, check_ssh, parse_user, pick_machine, unslot_ports, AgentConfig, BoxConfig, BoxMcp,
-    BoxSize, ControllerClientConfig, DotfilesConfig, DriverConfig, EnrolledMachine, HerdrConfig,
+    box_mcp, parse_user, pick_machine, unslot_ports, AgentConfig, BoxConfig, BoxMcp, BoxSize,
+    ControllerClientConfig, DotfilesConfig, DriverConfig, EnrolledMachine, HerdrConfig,
     MachinePick, MachineService, MachinesConfig, McpServer, OAuthCallback, OAuthClient,
     OAuthConfig, SurfaceConfig, SurfaceKind, ToolsConfig, UserConfig, UserMachine, UserMcp,
     DEFAULT_HEADER, DEFAULT_SLEEP_AFTER,

@@ -20,7 +20,7 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
     Some(match kind {
         "start-needs" | "env" | "repos" | "whoami" | "enroll" | "secret-names" | "version"
         | "proxy-lease" | "proxy-status" | "mcp-list" | "profile-show" | "profile-remove"
-        | "machine-list" | "machine-targets" | "machine-keys" => json!({"cmd": kind}),
+        | "machine-list" | "machine-keys" => json!({"cmd": kind}),
         "machine-links" => json!({"cmd": kind, "links": []}),
         "proxy-release" => json!({"cmd": kind, "token": "t"}),
         "session-binding" => json!({"cmd": kind, "front": "slack", "key": "k"}),
@@ -32,7 +32,6 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
         "machine-enroll" => json!({"cmd": kind, "name": "n", "pubkey": "k"}),
         "profile-set" => json!({"cmd": kind, "source": "https://github.com/alice/agent"}),
         "mcp-add" => json!({"cmd": kind, "name": "n", "url": "https://example.com/mcp"}),
-        "machine-add" => json!({"cmd": kind, "name": "n", "ssh": "u@h"}),
         "mcp-oauth-finish" => json!({"cmd": kind, "state": "s", "code": "c"}),
         "box-mirror" => json!({"cmd": kind, "id": 1, "dest": "/d"}),
         "machine-hold" => json!({"cmd": kind, "id": 1, "op": "release"}),
@@ -68,30 +67,6 @@ fn every_front_request_but_version_must_assert_an_identity() {
     assert!(
         unknown.is_empty(),
         "say how to send these new request kinds: {unknown:?}"
-    );
-}
-
-#[test]
-fn machine_targets_lists_every_users_machines_to_the_operator_only() {
-    let world = World::new();
-    let (slack, main) = (world.slack(), &world.served.main);
-    for (who, name, ssh) in [
-        (A, "one", "a@one"),
-        (B, "two", "b@two"),
-        (B, "three", "b@three"),
-    ] {
-        let add = json!({"cmd": "machine-add", "name": name, "ssh": ssh});
-        assert_eq!(ask(&slack, &acting(who, &add))["class"], "ok");
-    }
-    let listed = ask(main, &json!({"cmd": "machine-targets"}));
-    assert_eq!(
-        listed["value"]["targets"],
-        json!(["a@one", "b@three", "b@two"]),
-        "{listed}"
-    );
-    refused(
-        &ask(&slack, &acting(A, &json!({"cmd": "machine-targets"}))),
-        "machine-targets lists every user's machines, which is operator-only",
     );
 }
 

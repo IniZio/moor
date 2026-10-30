@@ -21,6 +21,8 @@ struct Rig {
     store: Store,
     clock: Arc<FakeClock>,
     user: UserId,
+    /// The enrolled id of `mini`.
+    mini: i64,
     _dir: tempfile::TempDir,
 }
 
@@ -29,11 +31,12 @@ impl Rig {
         let dir = tempfile::tempdir().unwrap();
         let (store, clock) = open(dir.path());
         let user = enroll(&store, "slack:T1:U1");
-        add_machine(&store, user, "mini", capacity);
+        let mini = add_machine(&store, user, "mini", capacity);
         Self {
             store,
             clock,
             user,
+            mini,
             _dir: dir,
         }
     }
@@ -73,11 +76,11 @@ fn enroll(store: &Store, who: &str) -> UserId {
         .0
 }
 
-fn add_machine(store: &Store, user: UserId, name: &str, capacity: u16) {
-    let m = UserMachine::parse(name, &format!("dev@{name}"), &["macos".to_owned()])
+fn add_machine(store: &Store, user: UserId, name: &str, capacity: u16) -> i64 {
+    let m = UserMachine::parse(name, &["macos".to_owned()])
         .and_then(|m| m.with_capacity(capacity))
         .unwrap();
-    store.set_user_machine(user, &m).unwrap();
+    store.set_user_machine(user, &m).unwrap()
 }
 
 fn repo() -> RepoMachine {
@@ -120,8 +123,7 @@ fn a_claim_on_a_free_machine_holds_slot_zero_with_the_repo_ports() {
 
     let want = HoldValue::Held {
         machine: "mini".to_owned(),
-        ssh: "dev@mini".to_owned(),
-        machine_id: None,
+        machine_id: r.mini,
         slot: 0,
         ports: vec![8081],
     };
@@ -242,7 +244,7 @@ fn sleep_frees_the_slot_and_a_wake_takes_one_again_through_the_grant() {
 fn a_box_cannot_name_another_users_machine() {
     let r = Rig::new(1);
     let other = enroll(&r.store, "slack:T1:U2");
-    add_machine(&r.store, other, "studio", 1);
+    let _ = add_machine(&r.store, other, "studio", 1);
     let a = r.new_box("a");
 
     let got = r.claim_as(a, r.user, &claim_op(Some("studio"), None));

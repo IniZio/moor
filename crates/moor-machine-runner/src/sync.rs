@@ -104,37 +104,26 @@ pub(crate) fn run(
     })
 }
 
-/// Points `rsync` at the caller's machine: its ssh target, or the agent link through the
-/// runner's rsh helper, which serves the sync while the returned [`Syncing`] is held.
+/// Points `rsync` at the caller's machine's agent link through the runner's rsh helper, which serves the sync while the returned [`Syncing`] is held.
 fn reach(
     rsync: &mut Command,
     rsh: Option<&Rsh>,
     caller: &Caller,
     remote: &str,
 ) -> Result<(String, Option<Syncing>), String> {
-    match &caller.reach {
-        Reach::Ssh { ssh } => {
-            rsync
-                .args(["-e", "ssh -o BatchMode=yes"])
-                .arg(format!("--rsync-path=mkdir -p {remote} && rsync"));
-            Ok((format!("{ssh}:{remote}/"), None))
-        }
-        Reach::Linked {
-            machine_id,
-            machine,
-        } => {
-            let rsh = rsh.ok_or_else(|| {
-                format!("machine {machine} is offline: this runner takes no agent links")
-            })?;
-            let exe = std::env::current_exe()
-                .map_err(|e| format!("cannot find the runner's own binary: {e}"))?;
-            let helper = ops::quote(&exe.display().to_string());
-            rsync
-                .arg("-e")
-                .arg(format!("{helper} rsh {}", caller.box_id.get()))
-                .env(SOCKET_ENV, &rsh.socket);
-            let syncing = rsh.syncs.start(caller.box_id.get(), *machine_id, machine);
-            Ok((format!("link:{remote}/"), Some(syncing)))
-        }
-    }
+    let Reach {
+        machine_id,
+        machine,
+    } = &caller.reach;
+    let rsh = rsh
+        .ok_or_else(|| format!("machine {machine} is offline: this runner takes no agent links"))?;
+    let exe =
+        std::env::current_exe().map_err(|e| format!("cannot find the runner's own binary: {e}"))?;
+    let helper = ops::quote(&exe.display().to_string());
+    rsync
+        .arg("-e")
+        .arg(format!("{helper} rsh {}", caller.box_id.get()))
+        .env(SOCKET_ENV, &rsh.socket);
+    let syncing = rsh.syncs.start(caller.box_id.get(), *machine_id, machine);
+    Ok((format!("link:{remote}/"), Some(syncing)))
 }

@@ -24,7 +24,7 @@ fn with_machines(names: &[(&str, &str)]) -> World {
     script_base_yaml(&w, Some(YAML));
     let store = w.cx.store().unwrap();
     for (name, label) in names {
-        let m = UserMachine::parse(name, "dev@mac.example", &[(*label).to_owned()]).unwrap();
+        let m = UserMachine::parse(name, &[(*label).to_owned()]).unwrap();
         store.set_user_machine(REQUESTER_USER, &m).unwrap();
     }
     w
@@ -96,7 +96,7 @@ fn a_second_box_gets_the_next_free_machine() {
 fn shared(capacity: u16) -> World {
     let w = world(FakeDriver::new());
     script_base_yaml(&w, Some(YAML));
-    let m = UserMachine::parse("mini", "dev@mac.example", &["macos".to_owned()])
+    let m = UserMachine::parse("mini", &["macos".to_owned()])
         .and_then(|m| m.with_capacity(capacity))
         .unwrap();
     w.cx.store()
@@ -128,7 +128,7 @@ fn close(w: &World, v: &StartView) {
 #[test]
 fn adding_a_machine_again_changes_its_capacity() {
     let w = shared(1);
-    let m = UserMachine::parse("mini", "dev@mac.example", &["macos".to_owned()])
+    let m = UserMachine::parse("mini", &["macos".to_owned()])
         .and_then(|m| m.with_capacity(2))
         .unwrap();
     w.cx.store()

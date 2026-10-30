@@ -2,7 +2,7 @@
 
 use http::HeaderMap;
 use moor_core::box_key::BoxKey;
-use moor_core::config::{check_exclude, check_ssh};
+use moor_core::config::check_exclude;
 use moor_core::BoxId;
 use rmcp::ErrorData;
 use serde::{Deserialize, Serialize};
@@ -11,13 +11,11 @@ use serde::{Deserialize, Serialize};
 const BOX: &str = "X-Moor-Box";
 /// Header carrying the attached machine's name.
 const MACHINE: &str = "X-Moor-Machine";
-/// Header carrying the machine's ssh target, such as `user@host`.
-const SSH: &str = "X-Moor-Machine-Ssh";
 /// Header carrying the Box's slot on the machine, which sets its ports.
 const SLOT: &str = "X-Moor-Machine-Slot";
 /// Header carrying what syncs leave alone, as a JSON array of rsync patterns; optional.
 const EXCLUDE: &str = "X-Moor-Machine-Exclude";
-/// Header carrying the machine's enrolled id when its agent links in; the ssh one is then unused.
+/// Header carrying the machine's enrolled id, under which its agent links in.
 const MACHINE_ID: &str = "X-Moor-Machine-Id";
 /// Header carrying why the Box holds no machine slot; set instead of the machine headers.
 const MISSING: &str = "X-Moor-Machine-Missing";
@@ -53,15 +51,11 @@ impl Caller {
         };
         let box_id = box_id(headers)?;
         let machine = header(MACHINE)?;
-        let reach = if let Some(machine_id) = machine_id(headers)? {
-            Reach::Linked {
-                machine_id,
-                machine: machine.clone(),
-            }
-        } else {
-            let ssh = header(SSH)?;
-            check_ssh(&ssh).map_err(|e| refused(format!("header {SSH}: {e}")))?;
-            Reach::Ssh { ssh }
+        let machine_id =
+            machine_id(headers)?.ok_or_else(|| refused(format!("missing header {MACHINE_ID}")))?;
+        let reach = Reach {
+            machine_id,
+            machine: machine.clone(),
         };
         let raw = header(SLOT)?;
         let slot = raw
@@ -122,23 +116,13 @@ impl Caller {
     }
 }
 
-/// How the runner reaches a machine: one with an enrolled id only over its agent's link, so no
-/// ssh target is ever made up for it.
+/// How the runner reaches a machine: only over its agent's link, under its enrolled id.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub(crate) enum Reach {
-    /// Its agent links in under this enrolled id.
-    Linked {
-        /// The enrolled id.
-        machine_id: i64,
-        /// Its name, for errors.
-        machine: String,
-    },
-    /// The host dials this ssh target.
-    Ssh {
-        /// Such as `user@host`.
-        ssh: String,
-    },
+pub(crate) struct Reach {
+    /// The enrolled id its agent links in under.
+    pub(crate) machine_id: i64,
+    /// Its name, for errors.
+    pub(crate) machine: String,
 }
 
 /// The machine's enrolled id from the request headers, when its agent links in.

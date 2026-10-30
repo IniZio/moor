@@ -135,7 +135,6 @@ struct Two {
     store: Store,
     shared: Arc<Store>,
     driver: FakeDriver,
-    proc: crate::testing::proc::ScriptedProc,
     rng: FakeRng,
     ann: (UserId, BoxId, BoxHandle),
     bob: (UserId, BoxId, BoxHandle),
@@ -174,7 +173,6 @@ fn two() -> Two {
         store,
         shared,
         driver,
-        proc: crate::testing::proc::ScriptedProc::new(),
         rng: FakeRng::default(),
         ann,
         bob,
@@ -193,7 +191,6 @@ impl Two {
         Deps {
             store: &self.store,
             driver: &self.driver,
-            proc: &self.proc,
             clock: Arc::new(FakeClock::new(Ts::from_millis(1_000))),
             rng: &self.rng,
             secrets,

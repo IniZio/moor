@@ -3,7 +3,6 @@
 //! `box-put` writes it into the Box.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use moor_client::link::ops::{Op, MAX_PULL};
@@ -80,29 +79,15 @@ pub(crate) async fn serve(
             .map_err(|e| format!("could not create {}: {e}", stage.display()))?;
         let n = CALLS.fetch_add(1, Ordering::Relaxed);
         let staged = Staged(stage.join(format!("{}-{n}", std::process::id())));
-        match &caller.reach {
-            Reach::Ssh { ssh } => {
-                let (ssh, from, path, to) = (
-                    ssh.clone(),
-                    caller.clone(),
-                    args.path.clone(),
-                    staged.0.clone(),
-                );
-                tokio::task::spawn_blocking(move || over_ssh(&ssh, &from, &path, &to))
-                    .await
-                    .map_err(|e| e.to_string())??;
-            }
-            Reach::Linked {
-                machine_id,
-                machine,
-            } => {
-                let op = Op::Pull {
-                    box_id: caller.box_id.get(),
-                    path: args.path.clone(),
-                };
-                over_link(agents.as_ref(), machine_id, machine, &op, &staged.0).await?;
-            }
-        }
+        let Reach {
+            machine_id,
+            machine,
+        } = &caller.reach;
+        let op = Op::Pull {
+            box_id: caller.box_id.get(),
+            path: args.path.clone(),
+        };
+        over_link(agents.as_ref(), machine_id, machine, &op, &staged.0).await?;
         if !staged.0.is_file() {
             return Err(format!(
                 "{} on {} is not a regular file",
@@ -115,30 +100,6 @@ pub(crate) async fn serve(
             .map_err(|e| e.to_string())?
     };
     pull.await.map_err(|e| ErrorData::internal_error(e, None))
-}
-
-/// Copies `path`, absolute or relative to the Box's copy, from `ssh` to `to`.
-fn over_ssh(ssh: &str, caller: &Caller, path: &str, to: &Path) -> Result<(), String> {
-    let remote = if path.starts_with('/') {
-        path.to_owned()
-    } else {
-        format!("{}/{}", caller.remote_dir(), path)
-    };
-    let out = Command::new("rsync")
-        .args(["-L", "-e", "ssh -o BatchMode=yes"])
-        .arg(format!("{ssh}:{remote}"))
-        .arg(to)
-        .output()
-        .map_err(|e| format!("could not run rsync: {e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "rsync from {} failed ({}): {}",
-            caller.machine,
-            out.status,
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
-    }
-    Ok(())
 }
 
 /// Sends the pull `op` to machine `machine_id` and writes the file it sends to `to`.

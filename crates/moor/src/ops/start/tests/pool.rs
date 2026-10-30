@@ -1,7 +1,7 @@
 //! A provider that names a host, `cloudhypervisor@hv1`, starts a Box only on a machine of the
 //! requester that offers that provider and is online; none of it falls back to another provider.
 
-use moor_core::config::{parse_user, EnrolledMachine, UserMachine};
+use moor_core::config::{parse_user, EnrolledMachine};
 use moor_core::request::MachineLink;
 use moor_core::seam::clock::Ts;
 use moor_core::ErrorKind;
@@ -94,19 +94,6 @@ fn a_usable_host_goes_on_to_acquire() {
     let _ = start::run(&w.cx, &req("demo"));
     let calls = w.driver.calls();
     assert!(calls.iter().any(|c| c.starts_with("acquire")), "{calls:?}");
-}
-
-#[test]
-fn a_machine_reached_over_ssh_is_refused_as_not_enrolled() {
-    let w = world_on("cloudhypervisor@hv1");
-    let m = UserMachine::parse("hv1", "me@box:22", &[])
-        .and_then(|m| m.with_pool("cloudhypervisor"))
-        .unwrap();
-    w.cx.store()
-        .unwrap()
-        .set_user_machine(REQUESTER_USER, &m)
-        .unwrap();
-    assert!(refusal(&w).contains("not enrolled with moor-machine-agent"));
 }
 
 #[test]

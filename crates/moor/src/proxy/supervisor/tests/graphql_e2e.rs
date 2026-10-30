@@ -227,7 +227,6 @@ pub(super) struct Rig {
     clock: Arc<FakeClock>,
     /// Driver the deps need; never used by `listen`.
     driver: FakeDriver,
-    proc: crate::testing::proc::ScriptedProc,
     /// Randomness the deps need; never used by `listen`.
     rng: FakeRng,
     /// The fake `api.github.com`.
@@ -255,7 +254,6 @@ impl Rig {
         Deps {
             store: &self.store,
             driver: &self.driver,
-            proc: &self.proc,
             clock: self.clock.clone(),
             rng: &self.rng,
             secrets: {
@@ -331,7 +329,6 @@ pub(super) fn rig_with(extra: Vec<ResolvedRule>) -> Rig {
         store,
         clock,
         driver: FakeDriver::new(),
-        proc: crate::testing::proc::ScriptedProc::new(),
         rng: FakeRng::default(),
         up,
         box_id,

@@ -1,7 +1,7 @@
 //! A Box's claim on one of its user's machines: wanted, held in a slot, or asleep. Wants are
 //! granted first come, first served, in one write transaction per claim or tick.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use moor_core::config::{pick_machine, unslot_ports, MachinePick, RepoMachine, UserMachine};
 use moor_core::domain::event::{Event, MachineEvent};
@@ -208,11 +208,6 @@ fn position_in(conn: &Connection, id: BoxId, user: UserId) -> Result<u16, StoreE
 fn grant_in(conn: &Transaction<'_>, user: UserId, now: Ts) -> Result<(), StoreError> {
     drop_expired_in(conn, user, now)?;
     let owned = owned_in(conn, user)?;
-    let enrolled: BTreeSet<String> = owned
-        .iter()
-        .filter(|(id, _)| id.is_some())
-        .map(|(_, m)| m.name.clone())
-        .collect();
     let own: Vec<UserMachine> = owned.into_iter().map(|(_, m)| m).collect();
     let mut held = held_in(conn, user)?;
     for (id, box_name) in wants_in(conn, user)? {
@@ -227,10 +222,6 @@ fn grant_in(conn: &Transaction<'_>, user: UserId, now: Ts) -> Result<(), StoreEr
         else {
             continue;
         };
-        let on_enrolled = enrolled.contains(&machine.name);
-        if claim.enrolled && !on_enrolled {
-            continue;
-        }
         held.entry(machine.name.clone())
             .or_default()
             .insert(slot, box_name);
@@ -244,7 +235,6 @@ fn grant_in(conn: &Transaction<'_>, user: UserId, now: Ts) -> Result<(), StoreEr
             &Claim {
                 state,
                 ports,
-                enrolled: on_enrolled,
                 ..claim
             },
         )?;

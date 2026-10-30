@@ -158,8 +158,8 @@ fn a_file_at_migration_22_drops_the_machine_kind_and_keeps_its_machines() {
     moor_migrate::migrate(&mut conn, up_to_22, |_| Ok(moor_migrate::Legacy::Empty)).unwrap();
     conn.execute_batch(
         "INSERT INTO users (id, created_at) VALUES (1, 1);
-         INSERT INTO user_machines (user, name, ssh, labels, capacity, kind, vm_provider, \
-         created_at, updated_at) VALUES (1, 'hv', 'u@h', '[]', 2, 'vm-host', 'external', 1, 1);",
+         INSERT INTO user_machines_v2 (user, name, pubkey, labels, capacity, enrolled_at) \
+         VALUES (1, 'hv', 'k', '[]', 2, 1);",
     )
     .unwrap();
     init_schema(&mut conn, &path).unwrap();
@@ -170,21 +170,13 @@ fn a_file_at_migration_22_drops_the_machine_kind_and_keeps_its_machines() {
         let rows = stmt.query_map([table], |r| r.get(0)).unwrap();
         rows.map(Result::unwrap).collect()
     };
-    for table in ["user_machines", "user_machines_v2"] {
-        let cols = columns(table);
-        assert!(
-            cols.contains(&"pool_provider".to_owned()),
-            "{table}: {cols:?}"
-        );
-        assert!(!cols.contains(&"kind".to_owned()), "{table}: {cols:?}");
-        assert!(
-            !cols.contains(&"vm_provider".to_owned()),
-            "{table}: {cols:?}"
-        );
-    }
+    let cols = columns("user_machines_v2");
+    assert!(cols.contains(&"pool_provider".to_owned()), "{cols:?}");
+    assert!(!cols.contains(&"kind".to_owned()), "{cols:?}");
+    assert!(!cols.contains(&"vm_provider".to_owned()), "{cols:?}");
     let (capacity, pool): (u16, Option<String>) = conn
         .query_row(
-            "SELECT capacity, pool_provider FROM user_machines WHERE name = 'hv'",
+            "SELECT capacity, pool_provider FROM user_machines_v2 WHERE name = 'hv'",
             [],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
@@ -194,6 +186,28 @@ fn a_file_at_migration_22_drops_the_machine_kind_and_keeps_its_machines() {
         (2, None),
         "the row stays, as an ordinary machine"
     );
+}
+
+#[test]
+fn a_file_at_migration_23_loses_its_ssh_machines_and_keeps_the_enrolled_ones() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("moor.db");
+    let mut conn = Connection::open(&path).unwrap();
+    let all = super::schema().unwrap();
+    let up_to_23 = all.get(..23).unwrap();
+    moor_migrate::migrate(&mut conn, up_to_23, |_| Ok(moor_migrate::Legacy::Empty)).unwrap();
+    conn.execute_batch(
+        "INSERT INTO users (id, created_at) VALUES (1, 1);
+         INSERT INTO user_machines (user, name, ssh, labels, created_at, updated_at) \
+         VALUES (1, 'old', 'u@h', '[]', 1, 1);
+         INSERT INTO user_machines_v2 (user, name, pubkey, labels, capacity, enrolled_at) \
+         VALUES (1, 'new', 'k', '[]', 1, 1);",
+    )
+    .unwrap();
+    init_schema(&mut conn, &path).unwrap();
+    let after = tables(&conn);
+    assert!(after.iter().all(|(t, _)| t != "user_machines"), "{after:?}");
+    assert!(after.contains(&("user_machines_v2".into(), 1)), "{after:?}");
 }
 
 #[test]
@@ -348,6 +362,7 @@ fn applied_migrations_are_never_edited() {
             (22, 7_963_545_269_253_560_683),
             (23, 3_791_705_829_165_739_481),
             (24, 6_792_033_737_033_784_812),
+            (25, 6_121_697_301_380_157_741),
         ],
         "a schema change is a new migration file; an applied one must not change"
     );
@@ -434,7 +449,7 @@ fn bindings_from_before_history_survive_and_a_key_takes_more_sessions() {
 }
 
 #[test]
-fn a_file_at_migration_4_gains_user_machines_and_keeps_its_rows() {
+fn a_file_at_migration_4_keeps_its_rows_and_ends_without_ssh_machines() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("moor.db");
     let mut conn = Connection::open(&path).unwrap();
@@ -452,7 +467,7 @@ fn a_file_at_migration_4_gains_user_machines_and_keeps_its_rows() {
     });
     init_schema(&mut conn, &path).unwrap();
     let mut after = tables(&conn);
-    assert!(after.contains(&("user_machines".into(), 0)), "{after:?}");
+    assert!(after.iter().all(|(t, _)| t != "user_machines"), "{after:?}");
     after.retain(|(t, _)| !ADDED_AFTER_V2.contains(&t.as_str()) && t != "refinery_schema_history");
     assert_eq!(after, before, "every table and row kept");
 }

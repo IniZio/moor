@@ -7,10 +7,11 @@ use serde_json::json;
 use crate::ops::users::run;
 use crate::ops::users::tests::{fixture, id, Fixture};
 
-fn add(name: &str, ssh: &str, labels: &[&str]) -> UserCmd {
-    UserCmd::MachineAdd {
+fn add(name: &str, labels: &[&str]) -> UserCmd {
+    UserCmd::MachineEnroll {
+        email: None,
         name: name.to_owned(),
-        ssh: ssh.to_owned(),
+        pubkey: KEY.to_owned(),
         labels: labels.iter().map(|l| (*l).to_owned()).collect(),
         capacity: 1,
         pool: None,
@@ -36,17 +37,18 @@ fn add_list_and_remove() {
     let added = as_user(
         &f,
         "slack:T1:UA",
-        &add("mac", "dev@mac.local:2222", &["macos", "ios-sim", "macos"]),
-    );
-    assert_eq!(added.unwrap(), json!({"name": "mac", "changed": true}));
-    as_user(&f, "slack:T1:UA", &add("amd", "ci@10.0.0.2", &[])).unwrap();
+        &add("mac", &["macos", "ios-sim", "macos"]),
+    )
+    .unwrap();
+    assert_eq!(added["name"], "mac", "{added}");
+    as_user(&f, "slack:T1:UA", &add("amd", &[])).unwrap();
 
     let listed = as_user(&f, "slack:T1:UA", &UserCmd::MachineList).unwrap();
     assert_eq!(
         listed,
         json!({"machines": [
-            {"name": "amd", "ssh": "ci@10.0.0.2", "labels": [], "capacity": 1},
-            {"name": "mac", "ssh": "dev@mac.local:2222", "labels": ["ios-sim", "macos"], "capacity": 1},
+            {"name": "amd", "labels": [], "capacity": 1},
+            {"name": "mac", "labels": ["ios-sim", "macos"], "capacity": 1},
         ]})
     );
 
@@ -67,17 +69,12 @@ fn add_list_and_remove() {
 fn adding_the_same_name_replaces_it() {
     let f = fixture();
     enroll(&f, "slack:T1:UA");
-    as_user(&f, "slack:T1:UA", &add("mac", "dev@old.local", &["macos"])).unwrap();
-    as_user(
-        &f,
-        "slack:T1:UA",
-        &add("mac", "dev@new.local:22", &["ios-sim"]),
-    )
-    .unwrap();
+    as_user(&f, "slack:T1:UA", &add("mac", &["macos"])).unwrap();
+    as_user(&f, "slack:T1:UA", &add("mac", &["ios-sim"])).unwrap();
     let listed = as_user(&f, "slack:T1:UA", &UserCmd::MachineList).unwrap();
     assert_eq!(
         listed,
-        json!({"machines": [{"name": "mac", "ssh": "dev@new.local:22", "labels": ["ios-sim"], "capacity": 1}]})
+        json!({"machines": [{"name": "mac", "labels": ["ios-sim"], "capacity": 1}]})
     );
 }
 
@@ -86,7 +83,7 @@ fn a_users_machines_are_theirs_alone() {
     let f = fixture();
     enroll(&f, "slack:T1:UA");
     enroll(&f, "slack:T1:UB");
-    as_user(&f, "slack:T1:UA", &add("mac", "dev@a.local", &["macos"])).unwrap();
+    as_user(&f, "slack:T1:UA", &add("mac", &["macos"])).unwrap();
 
     let theirs = as_user(&f, "slack:T1:UB", &UserCmd::MachineList).unwrap();
     assert_eq!(theirs, json!({"machines": []}), "B never sees A's machine");
@@ -101,11 +98,11 @@ fn a_users_machines_are_theirs_alone() {
     let mine = as_user(&f, "slack:T1:UA", &UserCmd::MachineList).unwrap();
     assert_eq!(mine["machines"].as_array().unwrap().len(), 1);
 
-    as_user(&f, "slack:T1:UB", &add("mac", "dev@b.local", &[])).unwrap();
+    as_user(&f, "slack:T1:UB", &add("mac", &[])).unwrap();
     let mine = as_user(&f, "slack:T1:UA", &UserCmd::MachineList).unwrap();
     assert_eq!(
-        mine["machines"][0]["ssh"],
-        json!("dev@a.local"),
+        mine["machines"][0]["labels"],
+        json!(["macos"]),
         "B's add never replaces A's"
     );
 }
@@ -114,13 +111,7 @@ fn a_users_machines_are_theirs_alone() {
 fn a_bad_machine_is_a_usage_error_and_stores_nothing() {
     let f = fixture();
     enroll(&f, "slack:T1:UA");
-    for cmd in [
-        add("Mac", "dev@h", &[]),
-        add("mac", "-oProxyCommand=x", &[]),
-        add("mac", "a b@c", &[]),
-        add("mac", "root@host;rm", &[]),
-        add("mac", "dev@h", &["Bad"]),
-    ] {
+    for cmd in [add("Mac", &[]), add("mac", &["Bad"])] {
         let err = as_user(&f, "slack:T1:UA", &cmd).unwrap_err();
         assert_eq!(err.kind, ErrorKind::Usage, "{cmd:?}");
     }
@@ -139,14 +130,14 @@ fn a_caller_without_a_user_is_refused() {
 fn capacity_is_stored_and_listed_and_zero_is_refused() {
     let f = fixture();
     enroll(&f, "slack:T1:U1");
-    let mut cmd = add("mac", "dev@mac.local", &["macos"]);
-    if let UserCmd::MachineAdd { capacity, .. } = &mut cmd {
+    let mut cmd = add("mac", &["macos"]);
+    if let UserCmd::MachineEnroll { capacity, .. } = &mut cmd {
         *capacity = 3;
     }
     as_user(&f, "slack:T1:U1", &cmd).unwrap();
     let list = as_user(&f, "slack:T1:U1", &UserCmd::MachineList).unwrap();
     assert_eq!(list["machines"][0]["capacity"], 3);
-    if let UserCmd::MachineAdd { capacity, .. } = &mut cmd {
+    if let UserCmd::MachineEnroll { capacity, .. } = &mut cmd {
         *capacity = 0;
     }
     let err = as_user(&f, "slack:T1:U1", &cmd).unwrap_err();
@@ -211,16 +202,16 @@ fn machine_enroll_refuses_a_key_that_is_not_one_ed25519_public_key_and_a_bad_nam
 fn a_pool_provider_is_stored_listed_and_refused_when_malformed() {
     let f = fixture();
     enroll(&f, "slack:T1:UA");
-    let mut cmd = add("hv", "me@box:22", &["android-emu"]);
-    if let UserCmd::MachineAdd { pool, .. } = &mut cmd {
+    let mut cmd = add("hv", &["android-emu"]);
+    if let UserCmd::MachineEnroll { pool, .. } = &mut cmd {
         *pool = Some("cloudhypervisor".to_owned());
     }
     as_user(&f, "slack:T1:UA", &cmd).unwrap();
-    as_user(&f, "slack:T1:UA", &add("mac", "dev@mac.local", &[])).unwrap();
+    as_user(&f, "slack:T1:UA", &add("mac", &[])).unwrap();
     let listed = as_user(&f, "slack:T1:UA", &UserCmd::MachineList).unwrap();
     assert_eq!(listed["machines"][0]["pool"], "cloudhypervisor");
     assert!(listed["machines"][1].get("pool").is_none());
-    if let UserCmd::MachineAdd { pool, .. } = &mut cmd {
+    if let UserCmd::MachineEnroll { pool, .. } = &mut cmd {
         *pool = Some("Cloud_Hypervisor".to_owned());
     }
     let err = as_user(&f, "slack:T1:UA", &cmd).unwrap_err();

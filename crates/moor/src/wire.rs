@@ -340,7 +340,6 @@ fn run_proxy(env: &Env, box_id: BoxId, sink: &Sink) -> Result<u8, String> {
     let deps = Deps {
         store,
         driver: cx.driver(),
-        proc: proc.as_ref(),
         clock,
         rng: cx.rng(),
         secrets,

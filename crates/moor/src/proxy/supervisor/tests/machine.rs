@@ -1,24 +1,69 @@
-#![allow(clippy::indexing_slicing, reason = "test assertions")]
+#![allow(clippy::indexing_slicing, clippy::panic, reason = "test assertions")]
+
+use std::io::{BufRead, BufReader, Write};
+use std::net::Shutdown;
+use std::os::unix::net::{UnixListener, UnixStream};
+use std::sync::mpsc::{self, Receiver};
 
 use moor_core::config::{RepoMachine, UserMachine};
-use moor_core::seam::proc::Tool;
-use moor_core::user::{Identity, UserId};
+use moor_core::user::Identity;
 use moor_core::HoldOp;
+use serde_json::Value;
 
 use super::{start, Stop, World};
 use crate::proxy::front::Hold;
 use crate::proxy::supervisor::machine::hold_of;
 use crate::store::TunnelWant;
-use crate::testing::proc::ChildReply;
+
+/// What the machine runner was asked, with the connection it holds the forwards up on.
+type Asked = Receiver<(Value, UnixStream)>;
+
+/// Stands in for the machine runner's forward socket: runs `on_ask` for each request, answers
+/// it `up` and holds its connection until the test shuts it.
+fn runner_with(w: &World, on_ask: impl Fn() + Send + 'static) -> Asked {
+    let dir = crate::runner_dir::of(w.dir.path());
+    std::fs::create_dir_all(&dir).unwrap();
+    let listener = UnixListener::bind(dir.join(moor_client::forward::SOCKET)).unwrap();
+    let (tx, asked) = mpsc::channel();
+    std::thread::spawn(move || {
+        // Held so the runner's side of each link stays open.
+        #[allow(clippy::collection_is_never_read, reason = "held only to stay open")]
+        let mut held = Vec::new();
+        for conn in listener.incoming() {
+            let mut conn = conn.unwrap();
+            let mut line = String::new();
+            BufReader::new(&conn).read_line(&mut line).unwrap();
+            on_ask();
+            let _ = tx.send((
+                serde_json::from_str(&line).unwrap(),
+                conn.try_clone().unwrap(),
+            ));
+            conn.write_all(b"{\"reply\":\"up\"}\n").unwrap();
+            held.push(conn);
+        }
+    });
+    asked
+}
+
+fn runner(w: &World) -> Asked {
+    runner_with(w, || {})
+}
+
+/// The Box ports the runner was last asked to serve on the machine.
+fn last_forwards(asked: &Asked) -> Vec<u64> {
+    let req = asked.try_iter().last().expect("the runner was asked").0;
+    let ports = req["ports"].as_array().unwrap().iter();
+    ports.map(|p| p[0].as_u64().unwrap()).collect()
+}
 
 /// A Box whose requester holds the machine `mini`, forwarding Box ports 8081 and 3001.
-fn held_machine() -> World {
+fn held_machine() -> (World, Asked) {
     let w = World::new([]);
     let (user, _) = w
         .store
         .enroll(&Identity::parse("slack:T1:U1").unwrap(), None)
         .unwrap();
-    let mini = UserMachine::parse("mini", "dev@mini", &["macos".to_owned()]).unwrap();
+    let mini = UserMachine::parse("mini", &["macos".to_owned()]).unwrap();
     w.store.set_user_machine(user, &mini).unwrap();
     let want = RepoMachine {
         labels: vec!["macos".to_owned()],
@@ -28,8 +73,8 @@ fn held_machine() -> World {
     w.store
         .hold_machine(w.id, user, &HoldOp::repo(), Some(&want), &[])
         .unwrap();
-    w.proc.on_child(Tool::Ssh, &[], ChildReply::Hang);
-    w
+    let asked = runner(&w);
+    (w, asked)
 }
 
 fn machine_kinds(w: &World) -> Vec<String> {
@@ -40,15 +85,18 @@ fn machine_kinds(w: &World) -> Vec<String> {
 
 #[test]
 fn the_first_tick_opens_the_forwards_and_reports_the_machine_attached() {
-    let w = held_machine();
+    let (w, asked) = held_machine();
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
 
     assert!(run.tick().is_none());
 
     assert_eq!(machine_kinds(&w), ["machine_attached"]);
-    let ssh = w.proc.calls().into_iter().filter(|c| c.tool == Tool::Ssh);
-    assert_eq!(ssh.count(), 1, "one ssh child serves every port");
+    assert_eq!(
+        asked.try_iter().count(),
+        1,
+        "one held request serves every port"
+    );
     assert!(run.tick().is_none());
     assert_eq!(
         machine_kinds(&w),
@@ -59,7 +107,7 @@ fn the_first_tick_opens_the_forwards_and_reports_the_machine_attached() {
 
 #[test]
 fn closing_the_box_ends_the_forwards_and_frees_the_machine() {
-    let w = held_machine();
+    let (w, _asked) = held_machine();
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
     assert!(run.tick().is_none());
@@ -74,7 +122,10 @@ fn closing_the_box_ends_the_forwards_and_frees_the_machine() {
         "the machine is free"
     );
     assert_eq!(machine_kinds(&w), ["machine_attached", "machine_detached"]);
-    assert!(!w.proc.dropped().is_empty(), "the ssh child was ended");
+    assert!(
+        !w.driver.dropped_tunnels().is_empty(),
+        "the tunnels were ended"
+    );
 }
 
 #[test]
@@ -84,7 +135,7 @@ fn slot_one_forwards_each_port_moved_by_ten_at_the_same_number_on_both_ends() {
         .store
         .enroll(&Identity::parse("slack:T1:U1").unwrap(), None)
         .unwrap();
-    let mini = UserMachine::parse("mini", "dev@mini", &["macos".to_owned()])
+    let mini = UserMachine::parse("mini", &["macos".to_owned()])
         .and_then(|m| m.with_capacity(2))
         .unwrap();
     w.store.set_user_machine(user, &mini).unwrap();
@@ -100,36 +151,29 @@ fn slot_one_forwards_each_port_moved_by_ten_at_the_same_number_on_both_ends() {
     w.store
         .hold_machine(w.id, user, &HoldOp::repo(), Some(&want), &[])
         .unwrap();
-    w.proc.on_child(Tool::Ssh, &[], ChildReply::Hang);
+    let asked = runner(&w);
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
     assert!(run.tick().is_none());
-    let calls = w.proc.calls();
-    let ssh = calls.iter().find(|c| c.tool == Tool::Ssh).unwrap();
-    let forwards: Vec<&str> = ssh
-        .args
-        .iter()
-        .filter_map(|a| a.split_once(":127.0.0.1:").map(|(p, _)| p))
-        .collect();
-    assert_eq!(forwards, ["8091"], "{:?}", ssh.args);
+    assert_eq!(last_forwards(&asked), [8091]);
 }
 
 /// `held_machine` with `mini` taking `capacity` Boxes.
-fn mini_of(capacity: u16) -> (World, moor_core::user::UserId) {
+fn mini_of(capacity: u16) -> (World, moor_core::user::UserId, Asked) {
     let w = World::new([]);
     let (user, _) = w
         .store
         .enroll(&Identity::parse("slack:T1:U1").unwrap(), None)
         .unwrap();
-    let mini = UserMachine::parse("mini", "dev@mini", &["macos".to_owned()])
+    let mini = UserMachine::parse("mini", &["macos".to_owned()])
         .and_then(|m| m.with_capacity(capacity))
         .unwrap();
     w.store.set_user_machine(user, &mini).unwrap();
     w.store
         .hold_machine(w.id, user, &HoldOp::repo(), Some(&want_8081()), &[])
         .unwrap();
-    w.proc.on_child(Tool::Ssh, &[], ChildReply::Hang);
-    (w, user)
+    let asked = runner(&w);
+    (w, user, asked)
 }
 
 fn want_8081() -> RepoMachine {
@@ -148,16 +192,9 @@ fn machine_payloads(w: &World) -> Vec<serde_json::Value> {
     machine.map(|e| e.payload).collect()
 }
 
-fn last_forwards(w: &World) -> Vec<String> {
-    let calls = w.proc.calls();
-    let ssh = calls.iter().rev().find(|c| c.tool == Tool::Ssh).unwrap();
-    let forwards = ssh.args.iter().filter_map(|a| a.split_once(":127.0.0.1:"));
-    forwards.map(|(p, _)| p.to_owned()).collect()
-}
-
 #[test]
 fn a_parked_tick_frees_the_slot_but_keeps_the_claim() {
-    let (w, _) = mini_of(1);
+    let (w, _, _asked) = mini_of(1);
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
     assert!(run.tick().is_none());
@@ -178,7 +215,7 @@ fn a_parked_tick_frees_the_slot_but_keeps_the_claim() {
 
 #[test]
 fn an_unparked_tick_takes_a_free_slot_and_forwards_its_ports() {
-    let (w, user) = mini_of(2);
+    let (w, user, asked) = mini_of(2);
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
     assert!(run.tick().is_none());
@@ -196,13 +233,13 @@ fn an_unparked_tick_takes_a_free_slot_and_forwards_its_ports() {
     assert_eq!(kinds.last().map(String::as_str), Some("machine_attached"));
     let attached = machine_payloads(&w).pop().unwrap();
     assert_eq!(attached["ports"], serde_json::json!([8091]));
-    assert_eq!(last_forwards(&w), ["8091"]);
+    assert_eq!(last_forwards(&asked), [8091]);
     assert_eq!(w.store.box_machine(w.id).unwrap().unwrap().slot, 1);
 }
 
 #[test]
 fn a_full_machine_reports_waiting_once_and_wakes_when_a_slot_frees() {
-    let (w, user) = mini_of(1);
+    let (w, user, asked) = mini_of(1);
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
     assert!(run.tick().is_none());
@@ -225,7 +262,7 @@ fn a_full_machine_reports_waiting_once_and_wakes_when_a_slot_frees() {
     w.store.detach_machine(other).unwrap();
     assert!(run.tick().is_none());
     assert_eq!(machine_kinds(&w).last().unwrap(), "machine_attached");
-    assert_eq!(last_forwards(&w), ["8081"]);
+    assert_eq!(last_forwards(&asked), [8081]);
 }
 
 fn missing_reason(w: &World) -> String {
@@ -243,7 +280,7 @@ fn a_box_without_a_claim_is_told_its_repo_asks_for_none() {
 
 #[test]
 fn an_asleep_claim_is_released_while_parked_and_waiting_once_asked_up() {
-    let w = held_machine();
+    let (w, _asked) = held_machine();
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
     assert!(run.tick().is_none());
@@ -274,25 +311,28 @@ fn release(store: &crate::store::Store, id: moor_core::BoxId) {
 
 #[test]
 fn a_released_claim_ends_the_forwards_on_the_next_tick() {
-    let w = held_machine();
+    let (w, _asked) = held_machine();
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
     assert!(run.tick().is_none());
-    assert!(w.proc.dropped().is_empty());
+    assert!(w.driver.dropped_tunnels().is_empty());
 
     release(&w.store, w.id);
     assert!(run.tick().is_none());
 
-    assert!(!w.proc.dropped().is_empty(), "the ssh child was ended");
+    assert!(
+        !w.driver.dropped_tunnels().is_empty(),
+        "the tunnels were ended"
+    );
     assert!(run.tick().is_none());
     assert_eq!(machine_kinds(&w), ["machine_attached", "machine_detached"]);
 }
 
 #[test]
 fn a_claim_released_while_its_forwards_open_is_not_attached() {
-    let w = held_machine();
+    let w = held_without_runner();
     let (store, id) = (w.store.clone(), w.id);
-    w.proc.on_spawn(move || release(&store, id));
+    let _asked = runner_with(&w, move || release(&store, id));
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
 
@@ -303,144 +343,86 @@ fn a_claim_released_while_its_forwards_open_is_not_attached() {
         ["machine_detached"],
         "no attachment is recorded for a Box that holds nothing"
     );
-    assert!(!w.proc.dropped().is_empty(), "the ssh child was ended");
+    assert!(
+        !w.driver.dropped_tunnels().is_empty(),
+        "the tunnels were ended"
+    );
 }
 
 #[test]
 fn a_held_claim_reaches_the_machine_service_before_any_tick() {
-    let w = held_machine();
+    let (w, _asked) = held_machine();
 
     assert!(matches!(hold_of(&w.store, w.id), Hold::Held(h) if h.name == "mini"));
     assert!(machine_kinds(&w).is_empty(), "no tick has attached it");
 }
 
-/// Gives the Box's requester an ssh machine `mini` and an enrolled machine of the same name;
-/// the requester and the enrolled machine's id.
-fn enrolled_mini_beside_ssh_mini(w: &World) -> (UserId, i64) {
+/// `held_machine` before any runner listens.
+fn held_without_runner() -> World {
+    let w = World::new([]);
     let (user, _) = w
         .store
         .enroll(&Identity::parse("slack:T1:U1").unwrap(), None)
         .unwrap();
-    let mini = UserMachine::parse("mini", "dev@mini", &["macos".to_owned()]).unwrap();
+    let mini = UserMachine::parse("mini", &["macos".to_owned()]).unwrap();
     w.store.set_user_machine(user, &mini).unwrap();
-    let key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl";
-    let enrolled =
-        moor_core::config::EnrolledMachine::parse("mini", key, &["macos".to_owned()], 1).unwrap();
-    let id = w.store.enroll_machine(user, &enrolled).unwrap();
-    (user, id)
-}
-
-fn claim_mini(w: &World, user: UserId, ports: Vec<u16>) -> moor_core::HoldValue {
-    let want = RepoMachine {
-        labels: vec!["macos".to_owned()],
-        ports,
-        ..RepoMachine::default()
-    };
     w.store
-        .hold_machine(w.id, user, &HoldOp::repo(), Some(&want), &[])
-        .unwrap()
+        .hold_machine(w.id, user, &HoldOp::repo(), Some(&want_8081()), &[])
+        .unwrap();
+    w
 }
 
 #[test]
-fn an_enrolled_machine_hides_an_ssh_one_of_its_name() {
-    let w = World::new([]);
-    let (user, id) = enrolled_mini_beside_ssh_mini(&w);
-    let held = claim_mini(&w, user, vec![8081]);
-    assert!(
-        matches!(held, moor_core::HoldValue::Held { machine_id: Some(m), ref ssh, .. } if m == id && ssh.is_empty()),
-        "the claim holds the enrolled machine: {held:?}"
-    );
-    assert!(
-        matches!(hold_of(&w.store, w.id), Hold::Held(h) if h.machine_id == Some(id)),
-        "the Box's hold names the enrolled machine"
-    );
-}
-
-#[test]
-fn an_enrolled_machine_forwards_through_the_runner_and_never_dials_ssh() {
-    let w = World::new([]);
-    let (user, id) = enrolled_mini_beside_ssh_mini(&w);
-    claim_mini(&w, user, vec![8081]);
-    let dir = crate::runner_dir::of(w.dir.path());
-    std::fs::create_dir_all(&dir).unwrap();
-    let runner = FakeRunner::listen(&dir.join(moor_client::forward::SOCKET));
+fn the_runner_is_asked_for_the_held_machine_and_letting_go_is_noticed() {
+    let (w, asked) = held_machine();
+    let id = match hold_of(&w.store, w.id) {
+        Hold::Held(h) => h.machine_id,
+        Hold::Missing { reason, .. } => panic!("not held: {reason}"),
+    };
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
     assert!(run.tick().is_none());
-    let (req, conn) = runner
-        .served
-        .recv_timeout(std::time::Duration::from_secs(5))
-        .expect("the runner was asked to forward");
+    let (req, conn) = asked.try_recv().expect("the runner was asked to forward");
     assert_eq!(req["box_id"], w.id.get());
     assert_eq!(req["machine_id"], id);
     assert_eq!(
         req["ports"][0][0], 8081,
         "the Box port listens on the machine"
     );
-    let ssh = w.proc.calls().into_iter().filter(|c| c.tool == Tool::Ssh);
-    assert_eq!(ssh.count(), 0, "no ssh child for an enrolled machine");
     assert_eq!(machine_kinds(&w), ["machine_attached"]);
 
-    drop((conn, runner));
+    conn.shutdown(Shutdown::Both).unwrap();
     assert!(run.tick().is_none());
-    let error = machine_payloads(&w)[1]["error"]
-        .as_str()
-        .unwrap()
-        .to_owned();
     assert!(
-        error.contains("cannot reach the machine runner"),
-        "the runner letting go is noticed and the forwards opened again: {error}"
+        asked.try_recv().is_ok(),
+        "the runner letting go is noticed and the forwards opened again"
     );
 }
 
-/// Stands in for the machine runner's forward socket: answers one request `up` and hands it
-/// over with the connection that holds it.
-struct FakeRunner {
-    /// Each request and its held connection.
-    served: std::sync::mpsc::Receiver<(serde_json::Value, std::os::unix::net::UnixStream)>,
-    /// Removes the socket once dropped, so nothing answers there.
-    path: std::path::PathBuf,
-}
-
-impl FakeRunner {
-    fn listen(path: &std::path::Path) -> Self {
-        use std::io::{BufRead, Write};
-        let listener = std::os::unix::net::UnixListener::bind(path).unwrap();
-        let (tx, served) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let (mut conn, _) = listener.accept().unwrap();
-            let mut line = String::new();
-            std::io::BufReader::new(&conn).read_line(&mut line).unwrap();
-            conn.write_all(b"{\"reply\":\"up\"}\n").unwrap();
-            let _ = tx.send((serde_json::from_str(&line).unwrap(), conn));
-        });
-        Self {
-            served,
-            path: path.to_owned(),
-        }
-    }
-}
-
-impl Drop for FakeRunner {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
-    }
-}
-
 #[test]
-fn a_removed_enrolled_machine_is_refused_and_its_ssh_namesake_never_stands_in() {
-    let w = World::new([]);
-    let (user, id) = enrolled_mini_beside_ssh_mini(&w);
-    let claim = |w: &World| claim_mini(w, user, vec![]);
-    assert!(matches!(claim(&w), moor_core::HoldValue::Held { .. }));
+fn a_removed_machine_is_refused() {
+    let w = held_without_runner();
+    let id = match hold_of(&w.store, w.id) {
+        Hold::Held(h) => h.machine_id,
+        Hold::Missing { reason, .. } => panic!("not held: {reason}"),
+    };
     w.store
         .writer()
         .execute("DELETE FROM user_machines_v2 WHERE machine_id = ?", [id])
         .unwrap();
-
+    let user = w
+        .store
+        .enroll(&Identity::parse("slack:T1:U1").unwrap(), None);
+    let held = w.store.hold_machine(
+        w.id,
+        user.unwrap().0,
+        &HoldOp::repo(),
+        Some(&want_8081()),
+        &[],
+    );
     let removed = moor_core::HoldValue::Refused {
         reason: "machine mini was removed".to_owned(),
     };
-    assert_eq!(claim(&w), removed);
+    assert_eq!(held.unwrap(), removed);
     assert_eq!(missing_reason(&w), "machine mini was removed");
 }

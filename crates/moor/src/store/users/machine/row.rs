@@ -18,15 +18,12 @@ pub(super) struct Claim {
     pub(super) ports: Vec<u16>,
     /// What syncs leave alone.
     pub(super) sync_exclude: Vec<String>,
-    /// Whether the machine it was given is an enrolled one, so a later machine of the same name
-    /// reached over ssh never stands in for it.
-    pub(super) enrolled: bool,
 }
 
 /// The `box_machines` row of `box_id`, read through `conn`.
 pub(super) fn claim_in(conn: &Connection, box_id: BoxId) -> Result<Option<Claim>, StoreError> {
-    let sql = "SELECT user, state, machine, labels, slot, ports, sync_exclude, since, until, \
-               enrolled FROM box_machines WHERE box = ?";
+    let sql = "SELECT user, state, machine, labels, slot, ports, sync_exclude, since, until \
+               FROM box_machines WHERE box = ?";
     let row = conn
         .query_row(sql, [box_id.get()], |r| Ok(ClaimRow::read(r)))
         .optional()?;
@@ -53,8 +50,6 @@ struct ClaimRow {
     since: i64,
     /// `until`, in ms.
     until: Option<i64>,
-    /// `enrolled`.
-    enrolled: bool,
 }
 
 impl ClaimRow {
@@ -70,7 +65,6 @@ impl ClaimRow {
             sync_exclude: r.get(6)?,
             since: r.get(7)?,
             until: r.get(8)?,
-            enrolled: r.get(9)?,
         })
     }
 
@@ -101,7 +95,6 @@ impl ClaimRow {
             state,
             ports: from_json("ports", &self.ports)?,
             sync_exclude: from_json("sync_exclude", &self.sync_exclude)?,
-            enrolled: self.enrolled,
         })
     }
 }
@@ -151,7 +144,7 @@ pub(super) fn put_in(conn: &Connection, box_id: BoxId, claim: &Claim) -> Result<
     };
     conn.execute(
         "INSERT OR REPLACE INTO box_machines (box, user, state, machine, labels, slot, ports, \
-         sync_exclude, since, until, enrolled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         sync_exclude, since, until) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             box_id.get(),
             claim.user.get(),
@@ -162,8 +155,7 @@ pub(super) fn put_in(conn: &Connection, box_id: BoxId, claim: &Claim) -> Result<
             to_json(&claim.ports)?,
             to_json(&claim.sync_exclude)?,
             since,
-            until,
-            claim.enrolled
+            until
         ],
     )?;
     Ok(())

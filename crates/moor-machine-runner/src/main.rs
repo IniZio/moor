@@ -32,18 +32,6 @@ struct Args {
     /// A capped resource each machine has, as NAME=CAP; repeat for more.
     #[arg(long = "resource", value_name = "NAME=CAP", value_parser = resource)]
     resources: Vec<(String, usize)>,
-    /// Command run on the machine, in the Box's copy, before a Box's first `exec` or
-    /// `machine_info`; its last stdout line is a JSON object of the Box's facts.
-    #[arg(long, value_name = "CMD")]
-    prepare: Option<String>,
-    /// Command run on the machine, in the Box's copy, once a prepared Box is no longer open.
-    #[arg(long, value_name = "CMD")]
-    release: Option<String>,
-    /// Command run on the machine, in the Box's copy, when a prepared Box falls asleep, with
-    /// the Box's facts as env; stop what `prepare` started that holds the slot, such as its
-    /// simulator.
-    #[arg(long, value_name = "CMD")]
-    suspend: Option<String>,
     /// Free GB a machine must have before a Box is prepared or synced there; below it the files
     /// of sleeping Boxes are removed, oldest first, and the call fails if that is not enough.
     /// 0 turns the check off.
@@ -55,9 +43,6 @@ struct Args {
     /// Seconds between looks for prepared Boxes that are no longer open.
     #[arg(long, default_value_t = 60, value_parser = clap::value_parser!(u64).range(1..))]
     sweep_secs: u64,
-    /// Seconds between looks through each machine for files of Boxes the runner has no record of.
-    #[arg(long, default_value_t = 60, value_parser = clap::value_parser!(u64).range(1..))]
-    reconcile_secs: u64,
     /// A stdio MCP server on the machine whose tools the runner lists as NAME_<tool>, as
     /// NAME=CMD; repeat for more.
     #[arg(long = "relay", value_name = "NAME=CMD", value_parser = relay)]
@@ -246,13 +231,9 @@ async fn main() -> ExitCode {
         state_dir: args.state_dir,
         service_host: args.service_host,
         resources: args.resources.into_iter().collect(),
-        prepare: args.prepare,
-        release: args.release,
-        suspend: args.suspend,
         min_free_gb: args.min_free_gb,
         hook_timeout: Duration::from_secs(args.hook_timeout_secs),
         sweep: Duration::from_secs(args.sweep_secs),
-        reconcile: Duration::from_secs(args.reconcile_secs),
         relays,
         relay_idle: Duration::from_secs(args.relay_idle_secs),
         keep_alive: Duration::from_secs(args.keep_alive_secs),

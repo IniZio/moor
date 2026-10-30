@@ -106,12 +106,10 @@ impl Request {
             | Self::ProfileShow(_)
             | Self::ProfileRemove(_)
             | Self::McpOAuthFinish(_)
-            | Self::MachineAdd(_)
             | Self::MachineRemove(_)
             | Self::MachineEnroll(_)
             | Self::MachineList(_)
             | Self::MachineStatus(_)
-            | Self::MachineTargets {}
             | Self::MachineKeys {}
             | Self::MachineLinks(_)
             | Self::ProxyLease(_)

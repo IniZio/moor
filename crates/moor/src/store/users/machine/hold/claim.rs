@@ -180,7 +180,6 @@ fn new_want(
         state,
         ports: ports.unwrap_or_default(),
         sync_exclude: exclude.to_vec(),
-        enrolled: false,
     })
 }
 
@@ -191,21 +190,17 @@ fn held_value(conn: &Connection, id: BoxId) -> Result<HoldValue, StoreError> {
         user,
         state: ClaimState::Held { machine, slot },
         ports,
-        enrolled,
         ..
     }) = claim
     else {
         return Err(StoreError::Corrupt("box_machines: no held row".into()));
     };
-    let found = named_in(conn, user, &machine, enrolled)?;
-    if enrolled && found.is_none() {
+    let Some((machine_id, _)) = named_in(conn, user, &machine)? else {
         let reason = format!("machine {machine} was removed");
         return Ok(HoldValue::Refused { reason });
-    }
-    let (machine_id, ssh) = found.map(|(id, m)| (id, m.ssh)).unwrap_or_default();
+    };
     Ok(HoldValue::Held {
         machine,
-        ssh,
         machine_id,
         slot,
         ports,

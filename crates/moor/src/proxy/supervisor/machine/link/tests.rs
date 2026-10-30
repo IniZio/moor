@@ -1,19 +1,24 @@
-#![allow(clippy::indexing_slicing, reason = "test assertions")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    reason = "tests"
+)]
 
+use std::io::{BufRead, BufReader, Write};
+use std::os::unix::net::{UnixListener, UnixStream};
+use std::path::Path;
+use std::sync::mpsc;
+use std::thread;
+
+use moor_client::forward::{Forward, Forwarding};
 use moor_core::cache::CachePlan;
-use moor_core::config::UserMachine;
 use moor_core::name::BoxName;
 use moor_core::seam::driver::{AcquireReq, Driver};
-use moor_core::seam::proc::Tool;
 use moor_core::{BoxHandle, BoxId, ProviderId};
 
-use super::{forward_args, keep, MachineLink, Via};
+use super::{keep, MachineLink, Via};
 use crate::testing::driver::FakeDriver;
-use crate::testing::proc::{ChildReply, ScriptedProc};
-
-fn machine(ssh: &str) -> UserMachine {
-    UserMachine::parse("mini", ssh, &["macos".to_owned()]).expect("valid machine")
-}
 
 fn boxed(fake: &FakeDriver) -> BoxHandle {
     fake.acquire(&AcquireReq {
@@ -29,85 +34,73 @@ fn boxed(fake: &FakeDriver) -> BoxHandle {
     .handle
 }
 
-#[test]
-fn ssh_argv_forwards_each_port_to_its_host_tunnel() {
-    let args = forward_args(
-        &machine("dev@mac.example:2222"),
-        &[(8081, 41001), (1337, 41002)],
-    );
-    assert_eq!(
-        args,
-        [
-            "-N",
-            "-o",
-            "ExitOnForwardFailure=yes",
-            "-o",
-            "BatchMode=yes",
-            "-R",
-            "8081:127.0.0.1:41001",
-            "-R",
-            "1337:127.0.0.1:41002",
-            "-p",
-            "2222",
-            "--",
-            "dev@mac.example"
-        ]
-    );
+/// A runner that answers each forward request with `answer`, holds the connection, and sends
+/// every request it read plus its held connection back.
+fn runner(socket: &Path, answer: Forwarding) -> mpsc::Receiver<(Forward, UnixStream)> {
+    let listener = UnixListener::bind(socket).expect("bind");
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        for conn in listener.incoming() {
+            let mut conn = conn.expect("accept");
+            let mut line = String::new();
+            BufReader::new(&conn).read_line(&mut line).expect("read");
+            let req: Forward = serde_json::from_str(&line).expect("forward request");
+            let mut out = serde_json::to_vec(&answer).expect("answer");
+            out.push(b'\n');
+            conn.write_all(&out).expect("write");
+            if tx.send((req, conn)).is_err() {
+                return;
+            }
+        }
+    });
+    rx
+}
+
+fn via(socket: &Path) -> Via<'_> {
+    Via {
+        socket,
+        box_id: 7,
+        machine_id: 3,
+    }
 }
 
 #[test]
-fn ssh_argv_unbrackets_an_ipv6_host() {
-    let args = forward_args(&machine("dev@[::1]"), &[(8080, 41000)]);
-    assert_eq!(args[args.len() - 2..], ["--", "dev@::1"]);
-    assert!(!args.contains(&"-p".to_owned()));
-}
-
-#[test]
-fn opens_a_tunnel_per_port_then_one_ssh_child() {
-    let (driver, proc) = (FakeDriver::new().reverse_tunnels(), ScriptedProc::new());
-    proc.on_child(Tool::Ssh, &[], ChildReply::Hang);
+fn opens_a_tunnel_per_port_then_asks_the_runner_to_serve_them() {
+    let dir = tempfile::tempdir().expect("dir");
+    let socket = dir.path().join("forward.sock");
+    let seen = runner(&socket, Forwarding::Up);
+    let driver = FakeDriver::new().reverse_tunnels();
     let h = boxed(&driver);
-    let mut link = MachineLink::open(
-        &driver,
-        &proc,
-        &h,
-        &Via::Ssh(&machine("dev@mac")),
-        &[8081, 3001],
-    )
-    .expect("open");
+    let mut link = MachineLink::open(&driver, &h, &via(&socket), &[8081, 3001]).expect("open");
     assert!(link.alive());
     let ports: Vec<u16> = driver.tunnels().iter().map(|t| t.box_port).collect();
     assert_eq!(ports, [8081, 3001]);
-    let ssh: Vec<_> = proc
-        .calls()
-        .into_iter()
-        .filter(|c| c.tool == Tool::Ssh)
-        .collect();
-    assert_eq!(ssh.len(), 1);
-    assert!(ssh[0].args.contains(&"8081:127.0.0.1:28081".to_owned()));
-    assert!(ssh[0].args.contains(&"3001:127.0.0.1:23001".to_owned()));
+    let (req, _conn) = seen.recv().expect("runner asked");
+    assert_eq!((req.box_id, req.machine_id), (7, 3));
+    assert_eq!(req.ports, [(8081, 28081), (3001, 23001)]);
 }
 
 #[test]
-fn a_dead_tunnel_is_revived_and_close_ends_every_child() {
-    let (driver, proc) = (FakeDriver::new().reverse_tunnels(), ScriptedProc::new());
-    proc.on_child(Tool::Ssh, &[], ChildReply::Hang);
+fn a_dead_link_is_reopened_and_close_ends_every_tunnel() {
+    let dir = tempfile::tempdir().expect("dir");
+    let socket = dir.path().join("forward.sock");
+    let seen = runner(&socket, Forwarding::Up);
+    let driver = FakeDriver::new().reverse_tunnels();
     let h = boxed(&driver);
-    let open = || MachineLink::open(&driver, &proc, &h, &Via::Ssh(&machine("dev@mac")), &[8081]);
+    let open = || MachineLink::open(&driver, &h, &via(&socket), &[8081]);
     let mut link = Some(open().expect("open"));
     let first = driver.tunnels().len();
     keep(&mut link, open).expect("alive link kept");
     assert_eq!(driver.tunnels().len(), first, "a live link is left alone");
-    driver.end_tunnel(50_000);
-    keep(&mut link, open).expect("revived");
+    let (_, held) = seen.recv().expect("runner asked");
+    drop(held);
+    keep(&mut link, open).expect("reopened");
     assert_eq!(
         driver.tunnels().len(),
         first + 1,
-        "the dead link was opened again"
+        "the link the runner let go was opened again"
     );
-    assert_eq!(proc.dropped().len(), 1, "the old ssh child was ended");
     drop(link);
-    assert_eq!(proc.dropped().len(), 2, "close ends the ssh child");
     assert!(
         driver.dropped_tunnels().contains(&50_001),
         "close ends the tunnel"
@@ -116,10 +109,30 @@ fn a_dead_tunnel_is_revived_and_close_ends_every_child() {
 
 #[test]
 fn a_failed_tunnel_names_its_port() {
-    let (driver, proc) = (FakeDriver::new(), ScriptedProc::new());
+    let dir = tempfile::tempdir().expect("dir");
+    let socket = dir.path().join("forward.sock");
+    let driver = FakeDriver::new();
     let h = boxed(&driver);
-    let err = MachineLink::open(&driver, &proc, &h, &Via::Ssh(&machine("dev@mac")), &[8081])
+    let err = MachineLink::open(&driver, &h, &via(&socket), &[8081])
         .err()
         .expect("no tunnel support");
     assert_eq!(err.port, Some(8081));
+}
+
+#[test]
+fn a_refused_forward_carries_the_runner_reason() {
+    let dir = tempfile::tempdir().expect("dir");
+    let socket = dir.path().join("forward.sock");
+    let _seen = runner(
+        &socket,
+        Forwarding::Refused {
+            reason: "mini is not linked".to_owned(),
+        },
+    );
+    let driver = FakeDriver::new().reverse_tunnels();
+    let h = boxed(&driver);
+    let err = MachineLink::open(&driver, &h, &via(&socket), &[8081])
+        .err()
+        .expect("refused");
+    assert_eq!((err.port, err.error.as_str()), (None, "mini is not linked"));
 }

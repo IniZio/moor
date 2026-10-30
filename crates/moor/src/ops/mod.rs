@@ -1,6 +1,6 @@
 //! Command operations: one op per request.
 
-use moor_core::view::user::{MachineKeysValue, MachineLinksValue, MachineTargetsValue};
+use moor_core::view::user::{MachineKeysValue, MachineLinksValue};
 use moor_core::{ErrorKind, Request};
 
 use crate::cx::Cx;
@@ -48,7 +48,6 @@ mod tests;
 const RAW_BYTES: &str = "artifact-read sends raw bytes, so only the controller socket serves it";
 
 /// Route a request to its op.
-#[expect(clippy::too_many_lines, reason = "one arm per request kind")]
 pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, CommandError> {
     match req {
         Request::Version {} => version_value(),
@@ -72,7 +71,6 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         | Request::ProfileShow(_)
         | Request::ProfileRemove(_)
         | Request::McpOAuthFinish(_)
-        | Request::MachineAdd(_)
         | Request::MachineRemove(_)
         | Request::MachineEnroll(_)
         | Request::MachineList(_)
@@ -80,9 +78,6 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         | Request::ProxyLease(_)
         | Request::ProxyRelease(_)
         | Request::ProxyStatus(_)) => Err(socket_only(&req)),
-        Request::MachineTargets {} => to_value(&MachineTargetsValue {
-            targets: cx.store()?.machine_targets()?,
-        }),
         Request::MachineKeys {} => to_value(&MachineKeysValue {
             machines: cx.store()?.machine_keys()?,
         }),
