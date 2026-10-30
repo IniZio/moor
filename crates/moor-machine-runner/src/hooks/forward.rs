@@ -131,7 +131,9 @@ fn inner(words: &[String], ports: &[(u16, u16)]) -> String {
     .into();
     for (vm, host) in ports {
         args.push("-R".to_owned());
-        args.push(format!("{vm}:127.0.0.1:{host}"));
+        // Bound to one address, a port taken in the VM fails the forward instead of leaving it
+        // on `::1` alone.
+        args.push(format!("127.0.0.1:{vm}:127.0.0.1:{host}"));
     }
     args.extend(words.iter().map(|w| quote(w)));
     args.join(" ")
@@ -147,7 +149,7 @@ mod tests {
         assert_eq!(
             inner(&words, &[(8081, 8101), (3000, 3020)]),
             "ssh -o BatchMode=yes -o ExitOnForwardFailure=yes -N \
-             -R 8081:127.0.0.1:8101 -R 3000:127.0.0.1:3020 '-p' '2222' 'vm@vm7'"
+             -R 127.0.0.1:8081:127.0.0.1:8101 -R 127.0.0.1:3000:127.0.0.1:3020 '-p' '2222' 'vm@vm7'"
         );
     }
 }

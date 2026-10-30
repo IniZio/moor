@@ -355,10 +355,10 @@ fn the_vm_forward_runs_after_boot_and_ends_on_suspend_and_close() {
     rig.call_with("exec", json!({"command": "true"}), &VM_HOST_PORTS)
         .unwrap();
     let forwards = vm.join("forwards");
-    let up = "up -R 8081:127.0.0.1:8101".to_owned();
+    let up = "up -R 127.0.0.1:8081:127.0.0.1:8101".to_owned();
     eventually("the forward is up", || lines(&forwards) == [up.clone()]);
     suspend(&rig);
-    let down = "down -R 8081:127.0.0.1:8101".to_owned();
+    let down = "down -R 127.0.0.1:8081:127.0.0.1:8101".to_owned();
     eventually("the forward ends on suspend", || {
         lines(&forwards) == [up.clone(), down.clone()]
     });
