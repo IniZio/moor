@@ -107,6 +107,7 @@ fn world_failing(
 fn acquire_holder(driver: &FakeDriver) -> BoxHandle {
     let got = driver
         .acquire(&AcquireReq {
+            pool_machine: None,
             provider: ProviderId::new(PROVIDER),
             box_id: BoxId::new(1),
             name: BoxName::parse_allow_bare("holder").unwrap(),

@@ -212,7 +212,11 @@ impl Driver for Crabbox {
     }
 
     fn planned_handle(&self, req: &AcquireReq) -> BoxHandle {
-        handle_of(req.provider.as_str(), &slug(req))
+        let plain = || handle_of(req.provider.as_str(), &slug(req));
+        if pool::is_pool_provider(&req.provider) {
+            return pool::planned(req).unwrap_or_else(|_| plain());
+        }
+        plain()
     }
 
     fn release(&self, handle: &BoxHandle) -> Result<Released, DriverError> {

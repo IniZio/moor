@@ -207,8 +207,9 @@ shows each machine's pool.
 Then set `box.provider: cloudhypervisor@hv`. `moor start` refuses, with the
 reason, when `hv` is not one of your machines, offers another provider or no
 pool, was not enrolled with `moor-machine-agent`, or its agent is not linked.
-It never falls back to another provider. Running the Box on the host is not
-supported yet, so a host that passes these checks is refused too.
+It never falls back to another provider. moor reaches the Box's VM through the
+host's agent, and sleeping the Box pauses the VM. Reverse tunnels and cache
+volumes do not reach Boxes on a pool host yet.
 
 ### The machine service
 

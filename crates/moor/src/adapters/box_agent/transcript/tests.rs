@@ -20,6 +20,7 @@ use crate::testing::surface::FakeSurface;
 fn live(driver: FakeDriver) -> Arc<FakeDriver> {
     let d = Arc::new(driver);
     d.acquire(&AcquireReq {
+        pool_machine: None,
         provider: ProviderId::new("fake"),
         box_id: BoxId::new(1),
         name: BoxName::parse_allow_bare("t1").unwrap(),

@@ -120,6 +120,7 @@ fn admit(cx: &Cx, driver: &FakeDriver, yaml: Option<&str>) -> BoxId {
     store.apply(d).unwrap();
     let got = driver
         .acquire(&AcquireReq {
+            pool_machine: None,
             provider,
             box_id: id,
             name: BoxName::parse_allow_bare("t").unwrap(),

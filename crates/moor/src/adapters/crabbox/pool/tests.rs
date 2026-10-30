@@ -9,7 +9,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
-use moor_client::link::lease::{Answer, Lease, Verb};
+use moor_client::link::lease::{Answer, Verb};
 use moor_core::name::{BoxHandle, BoxId, ProviderId};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, Released, SleepOutcome};
 
@@ -28,6 +28,7 @@ type Asked = (Verb, Option<String>, Option<String>);
 struct FakeHost {
     answers: Mutex<BTreeMap<String, Result<Answer, String>>>,
     asked: Mutex<Vec<Asked>>,
+    machines: Mutex<Vec<i64>>,
 }
 
 impl FakeHost {
@@ -44,14 +45,6 @@ impl FakeHost {
 }
 
 impl PoolHosts for FakeHost {
-    fn machine(&self, host: &str) -> Result<i64, String> {
-        if host == "hv" {
-            Ok(42)
-        } else {
-            Err(format!("{host} is not enrolled with moor-machine-agent"))
-        }
-    }
-
     fn lease(
         &self,
         machine_id: i64,
@@ -59,7 +52,7 @@ impl PoolHosts for FakeHost {
         slug: Option<&str>,
         key: Option<&str>,
     ) -> Result<Answer, String> {
-        assert_eq!(machine_id, 42);
+        self.machines.lock().unwrap().push(machine_id);
         self.asked
             .lock()
             .unwrap()
@@ -95,11 +88,12 @@ fn rig() -> (Arc<FakeHost>, Crabbox) {
 fn req() -> AcquireReq {
     let mut req = crate::adapters::crabbox::tests::req("external@hv", None);
     req.box_id = BoxId::new(9101);
+    req.pool_machine = Some(42);
     req
 }
 
 fn handle() -> BoxHandle {
-    BoxHandle::new("external@hv/moor-9101")
+    BoxHandle::new("external@hv/42/moor-9101")
 }
 
 #[test]
@@ -171,37 +165,54 @@ fn sleep_and_wake_pause_and_resume_or_say_they_cannot() {
 }
 
 #[test]
-fn list_keeps_only_moor_leases() {
-    let (host, cb) = rig();
-    let lease = |slug: &str, state: &str| Lease {
-        slug: slug.to_owned(),
-        state: state.to_owned(),
-    };
-    host.answer(
-        Verb::List,
-        Ok(Answer::Leases {
-            leases: vec![
-                lease("moor-7", "running"),
-                lease("other", "running"),
-                lease("moor-8", "paused"),
-            ],
-        }),
-    );
-    let got = cb.list(&ProviderId::new("external@hv")).unwrap();
-    let names: Vec<(&str, bool)> = got.iter().map(|b| (b.handle.as_str(), b.asleep)).collect();
-    assert_eq!(
-        names,
-        [("external@hv/moor-7", false), ("external@hv/moor-8", true)]
-    );
+fn the_planned_handle_names_the_host_machine() {
+    let (_, cb) = rig();
+    assert_eq!(cb.planned_handle(&req()), handle());
 }
 
 #[test]
-fn an_unenrolled_host_is_refused_and_caps_need_no_crabbox() {
-    let (_, cb) = rig();
+fn every_later_op_reaches_the_machine_its_handle_names() {
+    let (host, cb) = rig();
+    let on_seven = BoxHandle::new("external@hv/7/moor-9101");
+    cb.sleep(&on_seven).unwrap();
+    cb.release(&on_seven).unwrap();
+    cb.connect_argv(&on_seven).unwrap();
+    assert_eq!(*host.machines.lock().unwrap(), [7, 7, 7]);
+}
+
+#[test]
+fn a_handle_without_a_well_formed_machine_and_slug_is_refused_unasked() {
+    let (host, cb) = rig();
+    for bad in [
+        "external@hv/moor-9101",
+        "external@hv/+42/moor-9101",
+        "external@hv//moor-9101",
+        "external@hv/4x/moor-9101",
+        "external@hv/42/other",
+        "external@hv/42/moor-9101/x",
+        "external/42/moor-9101",
+    ] {
+        assert!(cb.release(&BoxHandle::new(bad)).is_err(), "{bad}");
+    }
+    assert!(host.verbs().is_empty());
+}
+
+#[test]
+fn a_pool_provider_is_not_listable() {
+    let (host, cb) = rig();
+    let got = cb.list(&ProviderId::new("external@hv"));
+    assert!(matches!(got, Err(DriverError::Unsupported(_))), "{got:?}");
+    assert!(host.verbs().is_empty());
+}
+
+#[test]
+fn an_acquire_with_no_pool_machine_fails_and_caps_need_no_crabbox() {
+    let (host, cb) = rig();
     let mut other = req();
-    other.provider = ProviderId::new("external@laptop");
+    other.pool_machine = None;
     let err = cb.acquire(&other).unwrap_err().to_string();
-    assert!(err.contains("not enrolled"), "{err}");
+    assert!(err.contains("no machine there"), "{err}");
+    assert!(host.verbs().is_empty());
     let caps = cb.caps(&ProviderId::new("external@hv")).unwrap();
     assert!(!caps.reverse_tunnel && caps.wake);
 }

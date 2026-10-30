@@ -28,6 +28,7 @@ ready ssh=u@h:22 network=public workroot=/root/crabbox\n";
 
 pub(super) fn req(provider: &str, class: Option<&str>) -> AcquireReq {
     AcquireReq {
+        pool_machine: None,
         provider: ProviderId::new(provider),
         box_id: BoxId::new(7),
         name: BoxName::parse_allow_bare("t7").unwrap(),

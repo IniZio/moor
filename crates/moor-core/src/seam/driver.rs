@@ -67,6 +67,8 @@ pub struct AcquireReq {
     pub nonce: String,
     /// Cache volumes the Box gets; empty for a cold Box.
     pub cache: CachePlan,
+    /// The enrolled machine that hosts the Box, for a provider that names a host.
+    pub pool_machine: Option<i64>,
 }
 
 /// A Box the Driver has handed over.

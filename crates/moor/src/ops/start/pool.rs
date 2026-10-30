@@ -8,26 +8,34 @@ use moor_core::{ErrorKind, ProviderId};
 use crate::error::CommandError;
 use crate::store::Store;
 
-/// Refuses a start whose provider names a host that cannot take the Box.
+/// The enrolled machine that takes `user`'s Box on `provider`; `None` when `provider` names no
+/// host.
 ///
 /// # Errors
-/// Refused when `provider` is malformed, or names a machine that is not the user's, offers no
-/// pool or another provider, or is offline; and, for a usable host, until its driver lands.
-pub(super) fn check(store: &Store, user: UserId, provider: &str) -> Result<(), CommandError> {
+/// Refused when `provider` is malformed, or names a machine that is not the user's, has no agent,
+/// offers no pool or another provider, or is offline.
+pub(crate) fn placement(
+    store: &Store,
+    user: Option<UserId>,
+    provider: &str,
+) -> Result<Option<i64>, CommandError> {
     let id = ProviderId::parse(provider)
         .map_err(|e| CommandError::new(ErrorKind::Refused, e.to_string()))?;
     let Some(host) = id.host() else {
-        return Ok(());
+        return Ok(None);
     };
     let refuse = |why: String| Err(CommandError::new(ErrorKind::Refused, why));
+    let Some(user) = user else {
+        return refuse(format!("a Box with no owner cannot run on host {host}"));
+    };
     let Some(found) = store.pool_host(user, host)? else {
         return refuse(format!("{host} is not one of your machines"));
     };
-    if !found.enrolled {
+    let Some(machine) = found.id else {
         return refuse(format!(
             "{host} is not enrolled with moor-machine-agent: a pool host is reached only through it"
         ));
-    }
+    };
     match found.pool.as_deref() {
         None => return refuse(format!("{host} offers no Box pool: enroll it with --pool")),
         Some(pool) if pool != id.base() => {
@@ -41,7 +49,5 @@ pub(super) fn check(store: &Store, user: UserId, provider: &str) -> Result<(), C
     if !found.online {
         return refuse(format!("{host} is offline: start moor-machine-agent on it"));
     }
-    refuse(format!(
-        "Boxes on your own host ({host}) are not supported yet"
-    ))
+    Ok(Some(machine))
 }

@@ -118,6 +118,7 @@ fn ops() -> Vec<(&'static str, Op)> {
     vec![
         ("acquire", |c| {
             let req = AcquireReq {
+                pool_machine: None,
                 provider: ProviderId::new("sprites"),
                 box_id: BoxId::new(7),
                 name: BoxName::parse_allow_bare("t7").unwrap(),

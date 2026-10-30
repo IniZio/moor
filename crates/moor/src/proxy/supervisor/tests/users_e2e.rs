@@ -61,6 +61,7 @@ fn box_for(store: &Store, driver: &FakeDriver, name: &str, user: UserId) -> (Box
     let provider = ProviderId::new("p");
     let got = driver
         .acquire(&AcquireReq {
+            pool_machine: None,
             provider: provider.clone(),
             box_id: id,
             name: BoxName::parse_allow_bare(name).unwrap(),

@@ -64,6 +64,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
     store.apply(d).unwrap();
     let got = driver
         .acquire(&AcquireReq {
+            pool_machine: None,
             provider,
             box_id: id,
             name,
