@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use moor_core::activity::PaneStatus;
 use moor_core::box_key::BoxKey;
-use moor_core::config::{BoxSettings, Flags};
+use moor_core::config::{BoxSettings, Flags, Layer};
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
@@ -61,7 +61,7 @@ pub(super) fn run(
     }
     launch.resume = resume;
     let cfg = settings()?;
-    launch.model = cfg.model.clone().map(|m| m.value);
+    with_profile(store, &mut launch, &cfg)?;
     begin(cx, store, &row, &launch, &cfg)
 }
 
@@ -102,9 +102,36 @@ pub(crate) fn begin_seeded(
         return Ok(AgentLaunchView::default());
     };
     let cfg = settings_of(cx, row, &Flags::default())?;
-    launch.model = cfg.model.clone().map(|m| m.value);
+    with_profile(store, &mut launch, &cfg)?;
     launch.prompt = LaunchPrompt::Text(seed);
     begin(cx, store, &working, &launch, &cfg)
+}
+
+/// Puts the Box's person profile on `launch`, and the model: the `--model` flag, else the
+/// profile's, else the user config's. A manifest that does not parse still leaves the profile's
+/// files to apply.
+///
+/// # Errors
+/// A store failure.
+pub(super) fn with_profile(
+    store: &Store,
+    launch: &mut LaunchReq,
+    cfg: &BoxSettings,
+) -> Result<(), CommandError> {
+    launch.profile = store.box_profile(launch.id)?.map(|p| {
+        p.manifest
+            .and_then(|text| moor_core::profile::parse(&text).ok())
+            .unwrap_or_default()
+    });
+    let flag = cfg.model.as_ref().filter(|m| m.source == Layer::Flag);
+    let config = cfg.model.as_ref().filter(|m| m.source != Layer::Flag);
+    let profile = launch.profile.as_ref().and_then(|m| m.claude.model.as_deref());
+    launch.model = moor_core::profile::model(
+        flag.map(|m| m.value.as_str()),
+        profile,
+        config.map(|m| m.value.as_str()),
+    );
+    Ok(())
 }
 
 /// Launches `launch` and records the session, or the failure, on the Box `row`.
@@ -246,6 +273,7 @@ pub(super) fn launch_req(cx: &Cx, row: &BoxRow, setup_exit: Option<i32>) -> Opti
     }
     let strip_env = box_exec::strip_env(cx, b.provider.as_str());
     Some(LaunchReq {
+        profile: None,
         mcp: crate::ops::users::mcp::for_box(cx, row.user)
             .map(|m| m.servers)
             .unwrap_or_default()

@@ -14,6 +14,7 @@ use moor_core::seam::surface::{PaneCmd, PaneRef, Surface};
 use self::install::StepResult;
 use self::steps::Plan;
 use super::agent_env;
+use super::profile_writer::FAILURES_FILE;
 use super::gh_release::GhRelease;
 use super::probe::HOOK_FILE;
 use super::proxy_env;
@@ -223,8 +224,14 @@ impl Launch<'_> {
         proxy_env::script_lines(addr, &env).map_err(|e| fail("script", &e))
     }
 
-    /// The script the Box runs to start the agent with the staged `hooks` and `preseed`.
-    fn agent_script(&self, hooks: &BoxSetup, preseed: &BoxSetup) -> Result<String, Failure> {
+    /// The script the Box runs to start the agent with the staged `hooks`, `preseed` and
+    /// profile `writers`.
+    fn agent_script(
+        &self,
+        hooks: &BoxSetup,
+        preseed: &BoxSetup,
+        writers: &[BoxSetup],
+    ) -> Result<String, Failure> {
         let (req, ctx) = (self.req, self.ctx);
         let exec = self.exec_env()?;
         let lines = self.proxy_lines()?;
@@ -235,7 +242,7 @@ impl Launch<'_> {
             ctx,
             hooks,
             preseed,
-            &self.argv(),
+            (&self.argv(), writers),
             (&lines, &env, &exec.unset),
         )
         .map_err(|e| fail("script", &e))
@@ -282,7 +289,7 @@ fn script(
     argv: &[String],
     (proxy, env): (&[String], &[String]),
 ) -> Result<String, NameError> {
-    script_stripping(paths, ctx, hooks, preseed, argv, (proxy, env, &[]))
+    script_stripping(paths, ctx, hooks, preseed, (argv, &[]), (proxy, env, &[]))
 }
 
 /// The line that puts the agent's install directories on the Box's `PATH`, in the launch script
@@ -293,14 +300,15 @@ pub(in crate::adapters::box_agent) const AGENT_PATH_LINE: &str =
 /// The script the Box runs under `sh`; the credential directory goes once the brief is
 /// installed, and at exit or on a hangup, interrupt or terminate before then. The `strip_env`
 /// names and crabbox's own names are unset before anything else runs, and the `env` exports run
-/// just before the agent. The starting marker it writes to the hook file names the launch by
+/// just before the profile `writers`, which run last before the agent, with the agent on `PATH`
+/// and the Proxy reachable. The starting marker it writes to the hook file names the launch by
 /// `nonce`.
 fn script_stripping(
     (cred, tmp, nonce): (&BoxPath, &BoxPath, &str),
     ctx: &LaunchCtx,
     hooks: &BoxSetup,
     preseed: &BoxSetup,
-    argv: &[String],
+    (argv, writers): (&[String], &[BoxSetup]),
     (proxy, env, strip_env): (&[String], &[String], &[String]),
 ) -> Result<String, NameError> {
     let workdir = ctx.workdir.as_str();
@@ -343,6 +351,18 @@ fn script_stripping(
     lines.insert(at + 1, remove);
     lines.extend(proxy.iter().cloned());
     lines.extend(env.iter().cloned());
+    if !writers.is_empty() {
+        // Each writer rewrites the failures file, so each one's lines are kept as it ends.
+        let failures = BoxPath::under(workdir, FAILURES_FILE)?;
+        let all = quote(&format!("{}.all", failures.as_str()));
+        let failures = quote(failures.as_str());
+        lines.push(format!(": > {all}"));
+        for w in writers {
+            lines.push(w.step.clone());
+            lines.push(format!("cat {failures} >> {all}"));
+        }
+        lines.push(format!("mv {all} {failures}"));
+    }
     lines.push(format!("cd {} && {}", quote(workdir), command_line(&agent)));
     Ok(lines.join("\n"))
 }

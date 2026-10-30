@@ -57,6 +57,7 @@ fn a_repo_env_value_is_quoted_so_it_cannot_run_in_the_script() {
         ..proxy_addr()
     };
     let req = LaunchReq {
+        profile: None,
         mcp: std::collections::BTreeMap::new(),
         proxy: Some(Arc::new(addr)),
         ..req_with_proxy(&s)
@@ -78,6 +79,7 @@ fn a_repo_env_value_cannot_replace_the_root_signal() {
         ..proxy_addr()
     };
     let req = LaunchReq {
+        profile: None,
         mcp: std::collections::BTreeMap::new(),
         proxy: Some(Arc::new(addr)),
         ..req_with_proxy(&s)
@@ -101,6 +103,7 @@ fn the_agent_script_points_the_proxy_variables_at_the_egress_proxy() {
         ..proxy_addr()
     };
     let req = LaunchReq {
+        profile: None,
         mcp: std::collections::BTreeMap::new(),
         proxy: Some(Arc::new(addr)),
         ..req_with_proxy(&s)

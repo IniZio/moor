@@ -24,6 +24,7 @@ fn launch_errors_display() {
 
 fn req() -> LaunchReq {
     LaunchReq {
+        profile: None,
         mcp: std::collections::BTreeMap::new(),
         id: BoxId::new(7),
         handle: BoxHandle::new("box-1"),
@@ -56,6 +57,7 @@ fn dir_names_come_from_the_box_id() {
 
 fn proxied(box_port: u16, ca_pem: &str) -> LaunchReq {
     LaunchReq {
+        profile: None,
         mcp: std::collections::BTreeMap::new(),
         proxy: Some(Arc::new(ProxyAddr {
             box_port,
