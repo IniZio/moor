@@ -8,7 +8,6 @@ use moor_core::{BoxId, ErrorKind};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::proxy::detached::read_spec;
 use crate::store::{Store, TunnelAck, TunnelWant};
 
 /// How old a supervisor heartbeat may be before the supervisor counts as gone; matches the
@@ -105,13 +104,7 @@ fn request(
 
 /// Starts the Box's Proxy supervisor again from the spec its last start saved.
 fn restart_supervisor(cx: &Cx, box_id: BoxId) -> Result<(), CommandError> {
-    let spec = read_spec(cx.state_dir()?, box_id).map_err(|e| {
-        CommandError::new(
-            ErrorKind::Failed,
-            format!("the Proxy is gone and cannot restart without its spec: {e}"),
-        )
-    })?;
-    cx.proxy_host().ensure(&spec).map(drop).map_err(|e| {
+    cx.proxy_host().restart(box_id).map_err(|e| {
         CommandError::new(
             ErrorKind::Failed,
             format!("the Proxy is gone and did not restart: {e}"),

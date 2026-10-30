@@ -7,12 +7,9 @@ use moor_core::domain::boxes::BoxState;
 
 use moor_core::seam::surface::SurfaceError;
 
-use moor_core::seam::proxy_host::ProxySpec;
-use moor_core::user::UserId;
-use moor_core::BoxHandle;
+use moor_core::seam::proxy_host::ProxyHostError;
 
 use super::{fx, row, sleep, wake_and_revive, wake_box_if_asleep, wake_if_asleep, with_agent, Fx};
-use crate::proxy::detached::write_spec;
 use crate::store::{ReadyProc, TunnelAck, TunnelWant};
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
 use crate::testing::rng::FakeRng;
@@ -134,19 +131,6 @@ fn orphaned_proxy(f: &Fx) {
     store.expire_proxy(f.id).unwrap();
 }
 
-fn saved_spec(f: &Fx) -> ProxySpec {
-    let spec = ProxySpec {
-        box_id: f.id,
-        box_handle: Some(BoxHandle::new("box-1")),
-        box_repo: None,
-        rules: Vec::new(),
-        user: UserId::new(7),
-        vault_key: "/vault.key".into(),
-    };
-    write_spec(f.cx.state_dir().unwrap(), &spec).unwrap();
-    spec
-}
-
 #[test]
 fn wake_restarts_a_proxy_that_died_while_the_box_slept() {
     let mut f = fx();
@@ -154,12 +138,11 @@ fn wake_restarts_a_proxy_that_died_while_the_box_slept() {
     f.cx = f.cx.with_proxy_host(Arc::new(host.clone()));
     sleep(&f);
     orphaned_proxy(&f);
-    let spec = saved_spec(&f);
     let store = f.cx.store().unwrap();
     store.ack_tunnel(f.id, &TunnelAck::Up { seq: 1 }).unwrap();
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
     assert!(
-        host.calls().contains(&ProxyHostCall::Ensure(spec)),
+        host.calls().contains(&ProxyHostCall::Restart(f.id)),
         "{:?}",
         host.calls()
     );
@@ -168,8 +151,10 @@ fn wake_restarts_a_proxy_that_died_while_the_box_slept() {
 }
 
 #[test]
-fn a_dead_proxy_without_its_spec_fails_the_wake() {
-    let f = fx();
+fn a_dead_proxy_that_cannot_restart_fails_the_wake() {
+    let mut f = fx();
+    let host = FakeProxyHost::new().with_ensure_error(ProxyHostError::Failed("no spec".into()));
+    f.cx = f.cx.with_proxy_host(Arc::new(host));
     sleep(&f);
     orphaned_proxy(&f);
     let store = f.cx.store().unwrap();

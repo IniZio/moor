@@ -19,6 +19,7 @@ pub(crate) const FAKE_EGRESS_PORT: u16 = 14123;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ProxyHostCall {
     Ensure(ProxySpec),
+    Restart(BoxId),
     Status(BoxId),
     Stop(BoxId),
 }
@@ -124,6 +125,12 @@ impl ProxyHost for FakeProxyHost {
             egress_port: s.egress_port,
             ca_pem: String::new(),
         })
+    }
+
+    fn restart(&self, box_id: BoxId) -> Result<(), ProxyHostError> {
+        let mut s = self.lock();
+        s.calls.push(ProxyHostCall::Restart(box_id));
+        s.ensure_error.clone().map_or(Ok(()), Err)
     }
 
     fn status(&self, box_id: BoxId) -> Result<ProxyStatus, ProxyHostError> {
