@@ -26,13 +26,16 @@ use std::time::Duration;
 
 use moor_core::Secret;
 
+use super::Sink;
 pub(crate) use machine::{Held, Hold, MachineRoute};
+use refusal::{target_of, Refusals};
 pub(crate) use socket::FrontSocket;
 use socket::{Handler, Listening};
 
 mod auth;
 mod machine;
 mod plain;
+mod refusal;
 mod socket;
 
 /// Largest request or response head accepted.
@@ -90,27 +93,32 @@ impl Front {
         socket: FrontSocket,
         internal: Secret,
         machine: Option<MachineRoute>,
+        log: Sink,
     ) -> Result<Self, String> {
         Self::bind(
             socket,
             Arc::new(move |_| Some((target, Secret::new(internal.expose().to_vec())))),
             machine,
+            log,
         )
     }
 
     /// Binds `socket`, replacing a stale file, and starts accepting; `route` picks each
     /// request's nono from its head.
-    pub(crate) fn routed(socket: FrontSocket, route: Route) -> Result<Self, String> {
-        Self::bind(socket, route, None)
+    pub(crate) fn routed(socket: FrontSocket, route: Route, log: Sink) -> Result<Self, String> {
+        Self::bind(socket, route, None, log)
     }
 
-    /// Binds `socket` and serves each connection by `route` and `machine`.
+    /// Binds `socket` and serves each connection by `route` and `machine`, writing one line
+    /// per refusal to `log`.
     fn bind(
         socket: FrontSocket,
         route: Route,
         machine: Option<MachineRoute>,
+        log: Sink,
     ) -> Result<Self, String> {
-        let handler: Handler = Arc::new(move |client| serve(client, &*route, machine.as_ref()));
+        let handler: Handler =
+            Arc::new(move |client| serve(client, &*route, machine.as_ref(), &log));
         let listening = socket.listen(true, &handler)?;
         Ok(Self {
             socket,
@@ -183,42 +191,68 @@ fn read_head(src: &mut impl Read) -> Option<Head> {
 }
 
 /// Handles one client connection.
-fn serve(mut client: UnixStream, route: &RouteFn, machine: Option<&MachineRoute>) {
+fn serve(mut client: UnixStream, route: &RouteFn, machine: Option<&MachineRoute>, log: &Sink) {
     let _ = client.set_read_timeout(Some(REQUEST_TIMEOUT));
     let _ = client.set_write_timeout(Some(TARGET_TIMEOUT));
     let Some(head) = read_head(&mut client) else {
-        return refuse(client);
+        let unread = Refusals {
+            log,
+            target: "an unreadable request".to_owned(),
+        };
+        return unread.refuse(
+            client,
+            "the request head was unreadable, oversize or never finished",
+        );
+    };
+    let refusals = Refusals {
+        log,
+        target: target_of(&head.bytes),
     };
     if let Some(machine) = machine.filter(|m| m.aims_at(&head.bytes)) {
         return machine.serve(client, &head);
     }
     let Some((target, internal)) = route(&head.bytes) else {
-        return refuse(client);
+        return refusals.refuse(client, "no route for this request");
     };
     let internal = &internal;
     if !is_connect(&head.bytes) {
-        return serve_plain(client, target, internal, &head);
+        return serve_plain(client, target, internal, &head, &refusals);
     }
     let Some(rewritten) = auth::with_token(&head.bytes, internal) else {
-        return refuse(client);
+        return refusals.refuse(
+            client,
+            "the CONNECT head could not take the proxy credential",
+        );
     };
     let Some(upstream) = open_upstream(target, &rewritten) else {
-        return refuse(client);
+        return refusals.refuse(client, "could not connect or write to the upstream proxy");
     };
-    relay(client, upstream, &Entry::Connect, &head.rest);
+    relay(client, upstream, &Entry::Connect, &head.rest, &refusals);
 }
 
 /// Handles an absolute-form `http://` request as a CONNECT to nono; every
 /// other non-CONNECT request is refused.
-fn serve_plain(client: UnixStream, target: SocketAddr, internal: &Secret, head: &Head) {
+fn serve_plain(
+    client: UnixStream,
+    target: SocketAddr,
+    internal: &Secret,
+    head: &Head,
+    refusals: &Refusals<'_>,
+) {
     let Some(plain) = plain::parse(&head.bytes) else {
-        return refuse(client);
+        return refusals.refuse(client, "the plain request could not be parsed");
     };
     let connect = plain::connect_head(&plain.authority, internal.expose());
     let Some(upstream) = open_upstream(target, &connect) else {
-        return refuse(client);
+        return refusals.refuse(client, "could not connect or write to the upstream proxy");
     };
-    relay(client, upstream, &Entry::Plain(plain.request), &head.rest);
+    relay(
+        client,
+        upstream,
+        &Entry::Plain(plain.request),
+        &head.rest,
+        refusals,
+    );
 }
 
 /// How the client entered the tunnel.
@@ -241,9 +275,15 @@ fn open_upstream(target: SocketAddr, head: &[u8]) -> Option<TcpStream> {
 /// Relays nono's answer, then splices the tunnel when nono accepted it.
 /// Client bytes sent after the head stay buffered until nono answers 2xx, so
 /// a refused CONNECT never leaves nono a second request on the connection.
-fn relay(mut client: UnixStream, mut upstream: TcpStream, entry: &Entry, client_rest: &[u8]) {
+fn relay(
+    mut client: UnixStream,
+    mut upstream: TcpStream,
+    entry: &Entry,
+    client_rest: &[u8],
+    refusals: &Refusals<'_>,
+) {
     let Some(answer) = read_head(&mut upstream) else {
-        return refuse(client);
+        return refusals.refuse(client, "the upstream proxy's answer was unreadable");
     };
     let success = is_success(&answer.bytes);
     if (!success || matches!(entry, Entry::Connect)) && client.write_all(&answer.bytes).is_err() {

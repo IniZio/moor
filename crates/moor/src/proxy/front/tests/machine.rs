@@ -84,6 +84,7 @@ fn rig() -> Rig {
         socket_in(&dir, uid()),
         Secret::new(INTERNAL.as_bytes().to_vec()),
         Some(route),
+        std::sync::Arc::new(std::sync::Mutex::new(std::io::sink())),
     )
     .unwrap();
     Rig {

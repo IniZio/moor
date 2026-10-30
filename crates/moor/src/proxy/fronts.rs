@@ -97,7 +97,7 @@ pub(crate) fn serve(deps: &Deps, fronts: &[(String, Vec<ResolvedRule>)]) -> u8 {
     let mut listening = Vec::new();
     for (ns, rules) in fronts {
         let socket = FrontSocket::of_front(deps.owner, &deps.state_dir, ns);
-        match Front::routed(socket, route(deps, &users, ns, rules)) {
+        match Front::routed(socket, route(deps, &users, ns, rules), deps.stderr.clone()) {
             Ok(front) => listening.push(front),
             Err(e) => {
                 say(&format!("front {ns}: {e}"));
