@@ -1,10 +1,18 @@
 //! The user machine a Box claims, as `show` reports it.
 
+use crate::config::MachineKindName;
+
 /// A user machine a Box holds: its slot and the ports forwarded, already moved by the slot.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct HeldMachineView {
     /// The machine's name.
     pub name: String,
+    /// Whether the Box holds the machine or a VM on it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<MachineKindName>,
+    /// The crabbox provider of a VM host.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vm_provider: Option<String>,
     /// The Box's slot on it.
     pub slot: u16,
     /// The forwarded ports, the same number on both ends.

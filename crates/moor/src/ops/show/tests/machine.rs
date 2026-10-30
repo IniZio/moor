@@ -43,6 +43,8 @@ fn detail_shows_the_held_machine_and_a_box_without_one_shows_none() {
     };
     let slot_one = HeldMachineView {
         name: "mini".to_owned(),
+        kind: Some(moor_core::config::MachineKindName::Physical),
+        vm_provider: None,
         slot: 1,
         ports: vec![8091, 8095],
         state: MachineHoldState::Held,

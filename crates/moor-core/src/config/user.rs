@@ -5,7 +5,7 @@
 mod controller;
 mod creds;
 mod duration;
-mod machine;
+pub(crate) mod machine;
 mod oauth;
 mod own_mcp;
 mod service;

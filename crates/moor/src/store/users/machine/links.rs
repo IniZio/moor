@@ -79,6 +79,7 @@ pub(super) fn enrolled_in(
             ssh: String::new(),
             labels,
             capacity: r.get(3)?,
+            kind: moor_core::config::MachineKind::Physical,
         };
         Ok((id, machine))
     })?;

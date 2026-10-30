@@ -2,10 +2,11 @@
 
 use std::collections::BTreeMap;
 
-use moor_core::config::{EnrolledMachine, UserMachine};
+use moor_core::config::{EnrolledMachine, MachineKind, MachineKindName, UserMachine};
 use moor_core::domain::event::{Event, MachineEvent};
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
+use moor_core::view::user::MachineTarget;
 use moor_core::view::MachineHoldState;
 use moor_core::BoxId;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
@@ -32,11 +33,23 @@ impl Store {
         let labels = serde_json::to_string(&machine.labels)
             .map_err(|e| StoreError::Corrupt(format!("machine labels: {e}")))?;
         self.writer().execute(
-            "INSERT INTO user_machines (user, name, ssh, labels, capacity, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (user, name) DO UPDATE SET \
+            "INSERT INTO user_machines \
+             (user, name, ssh, labels, capacity, kind, vm_provider, created_at, updated_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (user, name) DO UPDATE SET \
              ssh = excluded.ssh, labels = excluded.labels, capacity = excluded.capacity, \
+             kind = excluded.kind, vm_provider = excluded.vm_provider, \
              updated_at = excluded.updated_at",
-            params![user.get(), machine.name, machine.ssh, labels, machine.capacity, now, now],
+            params![
+                user.get(),
+                machine.name,
+                machine.ssh,
+                labels,
+                machine.capacity,
+                machine.kind.name().as_str(),
+                machine.kind.provider(),
+                now,
+                now
+            ],
         )?;
         Ok(())
     }
@@ -82,13 +95,23 @@ impl Store {
         machines_in(&self.reader()?, user)
     }
 
-    /// The distinct ssh targets of every user's machines reached over ssh, sorted; an enrolled
+    /// The distinct machines of every user reached over ssh, sorted by ssh target; an enrolled
     /// machine has none.
-    pub(crate) fn machine_targets(&self) -> Result<Vec<String>, StoreError> {
+    pub(crate) fn machine_targets(&self) -> Result<Vec<MachineTarget>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt = conn.prepare("SELECT DISTINCT ssh FROM user_machines ORDER BY ssh")?;
-        let rows = stmt.query_map([], |r| r.get(0))?;
-        Ok(rows.collect::<Result<_, _>>()?)
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT ssh, kind, vm_provider FROM user_machines \
+             ORDER BY ssh, kind, vm_provider",
+        )?;
+        let rows = stmt.query_and_then([], |r| {
+            let kind: String = r.get(1)?;
+            Ok(MachineTarget {
+                ssh: r.get(0)?,
+                kind: kind_name(&kind)?,
+                vm_provider: r.get(2)?,
+            })
+        })?;
+        rows.collect()
     }
 
     /// Lets go of the machine `box_id` holds; true when it held one.
@@ -257,19 +280,36 @@ fn named_in(
 /// `user`'s machines reached over ssh by name, read through `conn`.
 fn ssh_machines_in(conn: &Connection, user: UserId) -> Result<Vec<UserMachine>, StoreError> {
     let mut stmt = conn.prepare(
-        "SELECT name, ssh, labels, capacity FROM user_machines WHERE user = ? ORDER BY name",
+        "SELECT name, ssh, labels, capacity, kind, vm_provider FROM user_machines \
+         WHERE user = ? ORDER BY name",
     )?;
     let rows = stmt.query_and_then([user.get()], |r| {
         let (name, ssh, labels): (String, String, String) = (r.get(0)?, r.get(1)?, r.get(2)?);
         let capacity: u16 = r.get(3)?;
+        let (kind, provider): (String, Option<String>) = (r.get(4)?, r.get(5)?);
         let corrupt = |e: String| StoreError::Corrupt(format!("user_machines row {name}: {e}"));
         let labels: Vec<String> =
             serde_json::from_str(&labels).map_err(|e| corrupt(e.to_string()))?;
+        let kind = kind_name(&kind)
+            .and_then(|k| {
+                MachineKind::from_parts(k, provider.as_deref()).map_err(StoreError::Corrupt)
+            })
+            .map_err(|e| corrupt(e.to_string()))?;
         UserMachine::parse(&name, &ssh, &labels)
             .and_then(|m| m.with_capacity(capacity))
+            .map(|m| UserMachine { kind, ..m })
             .map_err(corrupt)
     })?;
     rows.collect()
+}
+
+/// The kind a stored `kind` column spells.
+fn kind_name(raw: &str) -> Result<MachineKindName, StoreError> {
+    match raw {
+        "physical" => Ok(MachineKindName::Physical),
+        "vm-host" => Ok(MachineKindName::VmHost),
+        other => Err(StoreError::Corrupt(format!("machine kind `{other}`"))),
+    }
 }
 
 /// `user`'s machines held by a Box: machine name to its taken slots and the Box in each.

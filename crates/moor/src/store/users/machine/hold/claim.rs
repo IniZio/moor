@@ -202,12 +202,14 @@ fn held_value(conn: &Connection, id: BoxId) -> Result<HoldValue, StoreError> {
         let reason = format!("machine {machine} was removed");
         return Ok(HoldValue::Refused { reason });
     }
-    let (machine_id, ssh) = found.map(|(id, m)| (id, m.ssh)).unwrap_or_default();
+    let (machine_id, ssh, kind) = found.map(|(id, m)| (id, m.ssh, m.kind)).unwrap_or_default();
     Ok(HoldValue::Held {
         machine,
         ssh,
         machine_id,
         slot,
         ports,
+        kind: kind.name(),
+        vm_provider: kind.provider().map(str::to_owned),
     })
 }

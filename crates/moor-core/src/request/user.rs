@@ -1,17 +1,16 @@
 //! Requests about moor users. Each may assert the identity it acts as; the controller checks
 //! it against the socket it arrived on.
 
-use std::fmt;
-
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 use super::{MachineAddReq, MachineEnrollReq, MachineRemoveReq, Request, StartReq};
 use crate::name::ProfileSource;
-use crate::secret::Secret;
 use crate::user::{Email, Identity, SecretName};
 
 mod mcp;
+mod secret_value;
 pub use mcp::{McpAddReq, McpOAuthFinishReq, McpRemoveReq, ProfileSetReq};
+pub use secret_value::SecretValue;
 
 /// Arguments of a user request that needs only the identity it acts as.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -89,58 +88,6 @@ pub struct StartNeedsReq {
     /// The repo, as `start` takes it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<crate::name::ForgeRepo>,
-}
-
-/// A secret value in a request. Its JSON form is the text itself, because `secret-set` must
-/// carry it over the socket; `Debug` never shows it. Serialize a request only to send it.
-pub struct SecretValue(Secret);
-
-impl SecretValue {
-    /// Wraps the value's bytes.
-    #[must_use]
-    pub fn new(bytes: Vec<u8>) -> Self {
-        Self(Secret::new(bytes))
-    }
-
-    /// The value.
-    #[must_use]
-    pub const fn secret(&self) -> &Secret {
-        &self.0
-    }
-}
-
-impl fmt::Debug for SecretValue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("SecretValue(<redacted>)")
-    }
-}
-
-impl Clone for SecretValue {
-    fn clone(&self) -> Self {
-        Self::new(self.0.expose().to_vec())
-    }
-}
-
-impl PartialEq for SecretValue {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.expose() == other.0.expose()
-    }
-}
-
-impl Eq for SecretValue {}
-
-impl Serialize for SecretValue {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let text = std::str::from_utf8(self.0.expose())
-            .map_err(|_| serde::ser::Error::custom("a secret value must be UTF-8 text"))?;
-        s.serialize_str(text)
-    }
-}
-
-impl<'de> Deserialize<'de> for SecretValue {
-    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        String::deserialize(d).map(|text| Self::new(text.into_bytes()))
-    }
 }
 
 /// A user request with its asserted identity taken out.
@@ -226,6 +173,8 @@ pub enum UserCmd {
         labels: Vec<String>,
         /// How many Boxes may hold it at once.
         capacity: u16,
+        /// The crabbox provider that makes it a VM host.
+        vm: Option<String>,
     },
     /// Remove one of the caller's user's machines.
     MachineRemove {
@@ -314,15 +263,7 @@ impl Request {
                     iss: r.iss,
                 },
             ),
-            Self::MachineAdd(r) => (
-                r.identity,
-                UserCmd::MachineAdd {
-                    name: r.name,
-                    ssh: r.ssh,
-                    labels: r.labels,
-                    capacity: r.capacity,
-                },
-            ),
+            Self::MachineAdd(r) => machine_add(r),
             Self::MachineEnroll(r) => (
                 r.identity,
                 UserCmd::MachineEnroll {
@@ -392,6 +333,20 @@ impl Request {
             _ => None,
         }
     }
+}
+
+/// A `machine-add` request as its command.
+fn machine_add(r: MachineAddReq) -> (Option<Identity>, UserCmd) {
+    (
+        r.identity,
+        UserCmd::MachineAdd {
+            name: r.name,
+            ssh: r.ssh,
+            labels: r.labels,
+            capacity: r.capacity,
+            vm: r.vm,
+        },
+    )
 }
 
 #[cfg(test)]

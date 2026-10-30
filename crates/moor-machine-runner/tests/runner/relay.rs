@@ -257,7 +257,7 @@ fn a_hidden_tool_is_not_listed_and_a_call_to_it_is_refused() {
 fn a_claim_starts_the_relays_before_it_answers() {
     let rig = relayed(&[]);
     rig.holds.lock().unwrap().answers = vec![json!({"state": "held", "machine": "minion",
-        "ssh": "moor@minion", "slot": 0, "ports": []})]
+        "ssh": "moor@minion", "slot": 0, "ports": [], "kind": "physical"})]
     .into();
     let missing = [
         ("X-Moor-Box", "7"),

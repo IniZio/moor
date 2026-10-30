@@ -190,6 +190,19 @@ address, or a bracketed IPv6 address. moor stores no credential. The host's own
 ssh key or ssh agent reaches the machine. A Box gets a machine only through the
 repo's `machine.labels` in [`.moor.yaml`](#mooryaml).
 
+A machine can be a VM host: it runs crabbox with a provider adapter, and each
+Box claim gets its own VM leased on it.
+
+```sh
+moor user machine add hv --ssh me@box:22 --label android-emu --vm external --capacity 3
+```
+
+`--vm PROVIDER` makes the machine a VM host. The provider matches
+`[a-z][a-z0-9-]*`, 64 bytes at most, like a crabbox provider name. On a VM host,
+`capacity` is the most VMs that run at once. `moor user machine ls` shows each
+machine's kind and provider. A VM host matches a repo's `machine.labels` the
+same way a physical machine does.
+
 ### The machine service
 
 A service on the host can act on the machine that a Box holds. The operator
@@ -205,9 +218,10 @@ machines:
 A plain `http://` request from a Box to `host`, on any port, goes through that
 Box's Proxy to `upstream`. The Proxy drops every `X-Moor-*` header that the Box
 sent. It then adds `X-Moor-Box` (the Box id), `X-Moor-Machine` (the machine's
-name), and `X-Moor-Machine-Ssh` (its ssh target), so the service can trust
-them. The Proxy answers 403 to a CONNECT to `host`, and to any request from a
-Box that holds no machine at that moment. `upstream` must be a loopback address
+name), `X-Moor-Machine-Ssh` (its ssh target), and `X-Moor-Machine-Kind`,
+`X-Moor-Machine-Vm` and `X-Moor-Machine-Ports` (see [machines](machines.md)),
+so the service can trust them. The Proxy answers 403 to a CONNECT to `host`,
+and to any request from a Box that holds no machine at that moment. `upstream` must be a loopback address
 and port, or moor refuses the config. Without `machines.service`, `host` is a
 host like any other.
 

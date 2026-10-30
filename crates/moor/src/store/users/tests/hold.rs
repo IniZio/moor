@@ -124,6 +124,8 @@ fn a_claim_on_a_free_machine_holds_slot_zero_with_the_repo_ports() {
         machine_id: None,
         slot: 0,
         ports: vec![8081],
+        kind: moor_core::config::MachineKindName::Physical,
+        vm_provider: None,
     };
     assert_eq!(got, want);
     assert_eq!(

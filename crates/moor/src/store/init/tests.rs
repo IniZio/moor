@@ -149,6 +149,37 @@ fn fresh_store() -> Connection {
 }
 
 #[test]
+fn fresh_store_has_machine_kind_columns_that_tie_the_provider_to_vm_hosts() {
+    let conn = fresh_store();
+    let insert = |kind: &str, provider: &str| {
+        conn.execute_batch(&format!(
+            "INSERT INTO users (id, created_at) VALUES (1, 1) ON CONFLICT DO NOTHING;
+             INSERT INTO user_machines (user, name, ssh, labels, capacity, kind, vm_provider, \
+             created_at, updated_at) VALUES (1, lower(hex(randomblob(4))), 'u@h', '[]', 1, '{kind}', \
+             {provider}, 1, 1);"
+        ))
+    };
+    assert!(insert("physical", "NULL").is_ok());
+    assert!(insert("vm-host", "'external'").is_ok());
+    assert!(insert("vm-host", "NULL").is_err());
+    assert!(insert("physical", "'external'").is_err());
+    assert!(insert("bogus", "NULL").is_err());
+    conn.execute_batch(
+        "INSERT INTO user_machines (user, name, ssh, labels, capacity, created_at, updated_at) \
+         VALUES (1, 'old', 'u@h', '[]', 1, 1, 1);",
+    )
+    .unwrap();
+    let kind: String = conn
+        .query_row(
+            "SELECT kind FROM user_machines WHERE name = 'old'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(kind, "physical", "a row added without a kind is physical");
+}
+
+#[test]
 fn fresh_store_has_no_front_message_column_or_slack_tables() {
     let conn = fresh_store();
     let columns: Vec<String> = conn
@@ -297,6 +328,7 @@ fn applied_migrations_are_never_edited() {
             (19, 17_463_361_039_883_431_822),
             (20, 17_939_743_571_477_548_879),
             (21, 11_768_997_959_363_115_407),
+            (22, 7_963_545_269_253_560_683),
         ],
         "a schema change is a new migration file; an applied one must not change"
     );

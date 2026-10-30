@@ -33,6 +33,8 @@ pub(in crate::proxy) fn hold_of(store: &Store, box_id: BoxId) -> Hold {
                 ssh: claim.machine.ssh,
                 machine_id: claim.machine_id,
                 slot: claim.slot,
+                kind: claim.machine.kind,
+                ports: claim.ports,
                 sync_exclude: claim.sync_exclude,
             })
         }

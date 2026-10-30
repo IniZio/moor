@@ -29,7 +29,7 @@ fn hold_answer(holds: &mut FakeHolds, req: &Value, suspended: bool) -> Value {
     };
     let answer = next.unwrap_or_else(|| {
         json!({"state": "held", "machine": "minion", "ssh": "moor@minion", "slot": 0,
-            "ports": [8081]})
+            "ports": [8081], "kind": "physical"})
     });
     holds.held |= answer["state"] == "held";
     answer
@@ -165,7 +165,13 @@ fn reply(writer: &mut impl Write, id: &str, envelope: Response) {
 /// `machine-targets` answered with `targets`, or failed when there are none.
 fn targets_envelope(targets: Option<Vec<String>>) -> Response {
     match targets {
-        Some(targets) => Response::ok("machine-targets", Some(json!({ "targets": targets }))),
+        Some(targets) => {
+            let rows: Vec<_> = targets
+                .into_iter()
+                .map(|ssh| json!({"ssh": ssh, "kind": "physical"}))
+                .collect();
+            Response::ok("machine-targets", Some(json!({ "targets": rows })))
+        }
         None => Response::err(
             "machine-targets",
             ErrorView {
