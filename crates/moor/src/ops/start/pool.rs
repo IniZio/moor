@@ -23,6 +23,11 @@ pub(super) fn check(store: &Store, user: UserId, provider: &str) -> Result<(), C
     let Some(found) = store.pool_host(user, host)? else {
         return refuse(format!("{host} is not one of your machines"));
     };
+    if !found.enrolled {
+        return refuse(format!(
+            "{host} is not enrolled with moor-machine-agent: a pool host is reached only through it"
+        ));
+    }
     match found.pool.as_deref() {
         None => return refuse(format!("{host} offers no Box pool: enroll it with --pool")),
         Some(pool) if pool != id.base() => {
