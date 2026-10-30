@@ -7,7 +7,7 @@ use moor_core::domain::boxes::BoxState;
 use moor_core::seam::clock::Ts;
 use moor_core::view::{
     ArtifactView, AttentionView, BoxView, EventView, HeldMachineView, MachineHoldState, PaneView,
-    ShowView,
+    ReportView, SaidView, ShowView,
 };
 use moor_core::{BoxId, ErrorKind, ShowReq};
 
@@ -17,7 +17,7 @@ use crate::ops::artifacts::artifact_view;
 use crate::ops::common::target::{self, Rule};
 use crate::ops::common::view::{
     agent_view, box_view_with_run, event_view, hide_unsupported_sleep,
-    hide_unsupported_sleep_cached,
+    hide_unsupported_sleep_cached, rfc3339,
 };
 use crate::ops::common::{activity, autosleep, reconcile};
 use crate::store::Store;
@@ -52,6 +52,36 @@ fn artifacts_of(store: &Store, box_id: BoxId) -> Result<Vec<ArtifactView>, Comma
         .iter()
         .map(artifact_view)
         .collect())
+}
+
+/// The latest version of each of the Box's Reports as views.
+fn reports_of(store: &Store, box_id: BoxId) -> Result<Vec<ReportView>, CommandError> {
+    let mut latest: Vec<ReportView> = Vec::new();
+    // Rows come ordered by kind then version, so the last of a kind is its newest.
+    for r in store.reports(box_id)? {
+        let view = ReportView {
+            id: r.id,
+            kind: r.kind,
+            version: u32::try_from(r.version).unwrap_or(u32::MAX),
+            title: r.title,
+            path: r.path,
+        };
+        match latest.last_mut() {
+            Some(last) if last.kind == view.kind => *last = view,
+            _ => latest.push(view),
+        }
+    }
+    Ok(latest)
+}
+
+/// The agent's newest message of the Box, whenever it said it.
+fn said_of(store: &Store, box_id: BoxId) -> Result<Option<SaidView>, CommandError> {
+    Ok(store.newest_event_of(box_id, "agent_said")?.and_then(|e| {
+        Some(SaidView {
+            text: e.payload.get("text")?.as_str()?.to_owned(),
+            at: rfc3339(e.ts),
+        })
+    }))
 }
 
 /// The user machine Box `id` claims, with its slot and ports and whether it holds them;
@@ -106,6 +136,11 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         .is_some_and(|b| b.state == BoxState::Asleep);
     (detail.agent, detail.held_machine) = (agent, held_machine(store, row.id, asleep)?);
     detail.attention = attention(store, row.id)?;
+    detail.said = if req.agent {
+        said_of(store, row.id)?
+    } else {
+        None
+    };
     hide_unsupported_sleep(&mut detail, cx);
     let events = match req.events {
         Some(n) => {
@@ -120,12 +155,17 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     } else {
         None
     };
+    let reports = if req.reports {
+        Some(reports_of(store, row.id)?)
+    } else {
+        None
+    };
     Ok(ShowView {
         boxes: None,
         boxed: Some(detail),
         events,
         pane: pane.filter(|_| req.pane),
-        reports: None,
+        reports,
         artifacts,
     })
 }

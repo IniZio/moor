@@ -109,8 +109,9 @@ impl Tools {
     /// Shows one Box.
     #[tool(
         description = "Show one of your Boxes: its state, branch and last activity, \
-                       including why it failed (failure) or what it is waiting on (steps). \
-                       Needs the moor:read scope."
+                       including why it failed (failure) or what it is waiting on (steps), \
+                       the agent's last message (agent_said), its published artifacts and \
+                       its reports. Needs the moor:read scope."
     )]
     async fn box_status(
         &self,
@@ -122,8 +123,8 @@ impl Tools {
                 target: Some(target),
                 events: Some(progress::EVENTS),
                 agent: true,
-                reports: false,
-                artifacts: false,
+                reports: true,
+                artifacts: true,
                 pane: false,
             })
         });

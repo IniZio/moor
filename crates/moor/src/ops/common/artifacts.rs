@@ -16,7 +16,7 @@ use moor_core::{BoxHandle, BoxPath, Warning};
 use self::fetch::Fetch;
 use super::boxlock::BoxLock;
 use super::provision::recorded_workdir;
-use super::reports::target;
+use super::reports::{self, target};
 use crate::cx::Cx;
 use crate::store::{BoxRow, Store};
 
@@ -41,7 +41,7 @@ find . -maxdepth 1 -type f ! -name '*
 done
 "#;
 
-/// Collects the artifacts of each Box whose newest idle or finished turn is past its cursor.
+/// Collects the artifacts and Reports of each Box whose newest idle or finished turn is past its cursor.
 ///
 /// A Box whose lock an operation holds is skipped and stays due for the next pass. The cursor
 /// moves only after a collect. Never errors; a failure warns.
@@ -76,6 +76,7 @@ pub(crate) fn collect_due(cx: &Cx, store: &Store, draining: &dyn Fn() -> bool) {
             Err(e) => return failed(cx, &e.to_string()),
         };
         collect(cx, store, &row);
+        reports::collect(cx, store, &row);
         if let Err(e) = store.set_artifacts_through(id, cursor) {
             failed(cx, &e.to_string());
         }

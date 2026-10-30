@@ -35,6 +35,24 @@ read.
 | `send_to_box` | `box`, `text` |
 | `close_box` | `box` |
 
+### What `box_status` returns
+
+`box_status` returns what has already happened and decides nothing about when
+a Box is done:
+
+- `status`: one line, the lifecycle (or why it failed or what a start is
+  doing). While the agent has ended its turn but waits on background work such
+  as a CI watch, it reads `ready · waiting on CI` (`waiting on background work`
+  when the agent names nothing). `list_boxes` rows carry the same `status`.
+- `agent_said`: `{text, at}`, the agent's newest message, however many events
+  came after it; absent when it has said nothing.
+- `artifacts`: the latest version of each published artifact.
+- `reports`: the latest version of each Report the agent wrote.
+- `events`: the last five raw events.
+
+Artifacts and Reports are saved after each of the agent's turns, so they show
+up once the turn ends.
+
 ### Starting without blocking
 
 A start clones the repo, runs setup and launches the agent, which takes minutes.

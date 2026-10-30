@@ -94,6 +94,23 @@ fn status(lifecycle: &str, events: &[Happened]) -> String {
     }
 }
 
+/// `status` with what the agent still waits on, when its row says it ended its turn but waits.
+fn waiting(status: String, agent: Option<&Value>) -> String {
+    let field = |name| agent.and_then(|a| a.get(name));
+    if field("state").and_then(Value::as_str) != Some("waiting") {
+        return status;
+    }
+    let on: Vec<&str> = field("waiting_on")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    if on.is_empty() {
+        format!("{status} · waiting on background work")
+    } else {
+        format!("{status} · waiting on {}", on.join(", "))
+    }
+}
+
 /// `value`'s events, oldest first, as the card reads them.
 fn happened(value: &Value) -> Vec<Happened> {
     serde_json::from_value(value.clone()).unwrap_or_default()
@@ -119,7 +136,7 @@ fn started(value: &mut Value) {
     }
 }
 
-/// Adds one Box's status, failure and steps to `show`'s answer, then trims its raw events.
+/// Adds one Box's status, failure, steps and the agent's last message to `show`'s answer, then trims its raw events.
 fn detailed(value: &mut Value) {
     let Some(reply) = value.as_object_mut() else {
         return;
@@ -130,7 +147,15 @@ fn detailed(value: &mut Value) {
         .map(lifecycle)
         .unwrap_or_default()
         .to_owned();
-    reply.insert("status".to_owned(), json!(status(&lifecycle, &events)));
+    let line = waiting(
+        status(&lifecycle, &events),
+        reply.get("box").and_then(|b| b.get("agent")),
+    );
+    reply.insert("status".to_owned(), json!(line));
+    // The trim below may drop the agent's message, so it gets a key of its own.
+    if let Some(said) = reply.get("box").and_then(|b| b.get("said")).cloned() {
+        reply.insert("agent_said".to_owned(), said);
+    }
     if matches!(Stage::of(&lifecycle), Stage::Failed) {
         reply.insert("failure".to_owned(), json!(progress::failure(&events)));
     }
@@ -159,8 +184,10 @@ fn listed(value: &mut Value, ask: &dyn Fn(ControllerRequest) -> Result<Value, St
             (Stage::Settled, _) | (_, None) => Vec::new(),
             (_, Some(name)) => events_of(name, ask),
         };
+        let agent = row.get("agent").cloned();
         if let Some(row) = row.as_object_mut() {
-            row.insert("status".to_owned(), json!(status(&lifecycle, &events)));
+            let line = waiting(status(&lifecycle, &events), agent.as_ref());
+            row.insert("status".to_owned(), json!(line));
         }
     }
 }
@@ -197,3 +224,6 @@ fn now() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
 }
+
+#[cfg(test)]
+mod tests;

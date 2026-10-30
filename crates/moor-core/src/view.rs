@@ -161,6 +161,18 @@ pub struct BoxView {
     /// The user machine the Box holds, on `show` of one Box.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub held_machine: Option<HeldMachineView>,
+    /// The agent's newest message, on `show` of one Box asked for the agent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub said: Option<SaidView>,
+}
+
+/// The newest `agent_said` event of a Box.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct SaidView {
+    /// What the agent said.
+    pub text: String,
+    /// RFC3339 UTC time it was recorded.
+    pub at: String,
 }
 
 /// Outcome of the setup script.

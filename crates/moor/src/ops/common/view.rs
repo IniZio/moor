@@ -139,6 +139,7 @@ pub(crate) fn box_view_with_run(
         updated_at: rfc3339(row.updated_at),
         attention: Vec::new(),
         held_machine: None,
+        said: None,
     }
 }
 

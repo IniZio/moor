@@ -460,6 +460,24 @@ fn box_status_carries_the_failure_text() {
 }
 
 #[test]
+fn box_status_asks_for_the_agent_artifacts_and_reports() {
+    let m = mcp();
+    let token = m.token("alice-sub", &m.url(), "moor:read");
+    m.call(&token, "box_status", json!({"box": "repo/failed"}));
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let asked: Vec<Value> = m
+        .seen
+        .try_iter()
+        .map(|l| serde_json::from_str(&l).unwrap())
+        .collect();
+    let inner = &asked.last().unwrap()["request"]["request"];
+    assert_eq!(
+        (&inner["agent"], &inner["artifacts"], &inner["reports"]),
+        (&json!(true), &json!(true), &json!(true))
+    );
+}
+
+#[test]
 fn box_status_carries_a_starting_box_s_steps_and_nothing_the_card_hides() {
     let m = mcp();
     let token = m.token("alice-sub", &m.url(), "moor:read");
