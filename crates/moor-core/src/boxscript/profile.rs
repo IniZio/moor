@@ -5,6 +5,10 @@ use super::quote;
 /// Where the profile is checked out, relative to the Box user's home.
 pub const PROFILE_DIR: &str = ".moor-profile/person";
 
+/// Under the Box workdir: one line per profile step that failed at launch, `<what> exit <code>`,
+/// rewritten on every launch that applies a profile.
+pub const FAILURES_FILE: &str = ".moor/profile-failures";
+
 /// Shell text that leaves `$HOME/.moor-profile/person` at exactly `sha` of `url`.
 ///
 /// A fresh `git init` plus a shallow fetch of the sha works for any commit, branch head or

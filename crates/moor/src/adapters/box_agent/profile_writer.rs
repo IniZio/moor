@@ -25,9 +25,7 @@ pub(crate) trait ProfileWriter {
     fn write(&self, ctx: &ProfileCtx<'_>) -> Result<BoxSetup, NameError>;
 }
 
-/// Under `<workdir>`: one line per profile step that failed, `<what> exit <code>`, rewritten
-/// on every run.
-pub(crate) const FAILURES_FILE: &str = ".moor/profile-failures";
+pub(crate) use moor_core::boxscript::profile::FAILURES_FILE;
 
 /// Records a failed step as one line and goes on. Called `fail <what> $?` right after the command.
 pub(crate) const FAIL_FN: &str =

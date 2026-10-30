@@ -18,7 +18,6 @@ mod probe;
     reason = "the launch script calls the writers in a later change"
 )]
 mod profile_writer;
-pub(crate) use profile_writer::FAILURES_FILE;
 mod proxy_env;
 mod steer;
 mod transcript;
