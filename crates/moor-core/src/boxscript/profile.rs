@@ -23,3 +23,18 @@ pub fn fetch_script(url: &str, sha: &str) -> String {
         sha = quote(sha),
     )
 }
+
+/// The script at the checkout's root that sets the Box up for the profile's plugins.
+pub const SETUP_FILE: &str = "setup.sh";
+
+/// Shell text that runs the checkout's `setup.sh` from the checkout, and does nothing when the
+/// profile has none.
+#[must_use]
+pub fn setup_script() -> String {
+    format!(
+        "d=\"$HOME/{PROFILE_DIR}\"\ncd \"$d\" || exit 1\n[ -f {SETUP_FILE} ] || exit 0\nsh {SETUP_FILE}\n"
+    )
+}
+
+#[cfg(test)]
+mod tests;
