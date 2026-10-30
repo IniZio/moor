@@ -75,7 +75,13 @@ pub(super) fn listen(deps: &Deps<'_>, box_id: BoxId, spec: &ProxySpec) -> Result
     };
     let nono_addr = SocketAddr::from(([127, 0, 0, 1], proxy.port()));
     let socket = FrontSocket::new(deps.sockets, deps.owner, deps.state_dir, box_id);
-    let front = match Front::start(nono_addr, socket, internal, machine_route(deps, box_id)) {
+    let front = match Front::start(
+        nono_addr,
+        socket,
+        internal,
+        machine_route(deps, box_id),
+        Arc::clone(&deps.stderr),
+    ) {
         Ok(front) => front,
         Err(err) => {
             proxy.stop();

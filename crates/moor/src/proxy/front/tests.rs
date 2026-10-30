@@ -1,11 +1,12 @@
 //! Tests for the front listener.
 
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::sync::mpsc::{self, Receiver};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -13,6 +14,7 @@ use moor_core::{BoxId, Secret};
 use tempfile::TempDir;
 
 use super::{Front, FrontSocket};
+use crate::proxy::Sink;
 
 mod machine;
 
@@ -115,12 +117,18 @@ fn socket_in(dir: &TempDir, owner: u32) -> FrontSocket {
 
 /// A front for `target`; the temp dir holds its socket and must outlive it.
 fn start(target: SocketAddr) -> (TempDir, Front) {
+    start_logged(target, Arc::new(Mutex::new(io::sink())))
+}
+
+/// A front for `target` writing its refusal lines to `log`.
+fn start_logged(target: SocketAddr, log: Sink) -> (TempDir, Front) {
     let dir = tempfile::tempdir().unwrap();
     let front = Front::start(
         target,
         socket_in(&dir, uid()),
         Secret::new(INTERNAL.as_bytes().to_vec()),
         None,
+        log,
     )
     .unwrap();
     (dir, front)
@@ -350,6 +358,7 @@ fn a_successor_bound_while_a_front_stops_keeps_its_socket() {
             socket_in(&dir, uid()),
             Secret::new(INTERNAL.as_bytes().to_vec()),
             None,
+            Arc::new(Mutex::new(io::sink())),
         )
         .unwrap();
         stopping.join().unwrap();
@@ -465,6 +474,7 @@ fn a_file_left_at_the_socket_path_is_replaced() {
         socket.clone(),
         Secret::new(INTERNAL.as_bytes().to_vec()),
         None,
+        Arc::new(Mutex::new(io::sink())),
     )
     .unwrap();
 
@@ -494,4 +504,71 @@ fn a_nono_that_never_answers_gets_the_client_a_bounded_refusal() {
         nono.seen.recv_timeout(WAIT).unwrap(),
         FORWARDED_HEAD.as_bytes()
     );
+}
+
+/// A log sink and the buffer it fills.
+fn capture() -> (Sink, Arc<Mutex<Vec<u8>>>) {
+    let buf = Arc::new(Mutex::new(Vec::new()));
+    let sink: Sink = buf.clone();
+    (sink, buf)
+}
+
+/// Waits for the log to hold a line, then returns everything written.
+fn logged(buf: &Mutex<Vec<u8>>) -> String {
+    for _ in 0..100 {
+        let text = String::from_utf8_lossy(&buf.lock().unwrap()).into_owned();
+        if text.ends_with('\n') {
+            return text;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    String::new()
+}
+
+#[test]
+fn a_refused_plain_request_logs_its_target_and_reason_without_credentials() {
+    let nono = fake(Answer::Echo);
+    let (log, buf) = capture();
+    let (_dir, front) = start_logged(nono.addr, log);
+    let mut c = dial(&front);
+    let _ = c.write_all(
+        b"GET https://user:hunter2@example.com:8443/p?token=abc HTTP/1.1\r\nProxy-Authorization: Bearer sekret-value\r\n\r\n",
+    );
+    let _ = read_all(&mut c);
+    let line = logged(&buf);
+    assert!(
+        line.starts_with("moor proxy: refused example.com:8443: "),
+        "{line}"
+    );
+    assert!(line.contains("could not be parsed"), "{line}");
+    for secret in ["hunter2", "sekret-value", "abc", INTERNAL] {
+        assert!(!line.contains(secret), "{line}");
+    }
+    front.stop();
+}
+
+#[test]
+fn a_refused_unreadable_head_and_a_silent_upstream_each_log_a_reason() {
+    let (log, buf) = capture();
+    let nono = fake(Answer::Hang);
+    let (_dir, front) = start_logged(nono.addr, log);
+    let mut c = dial(&front);
+    c.write_all(connect_head().as_bytes()).unwrap();
+    let _ = read_all(&mut c);
+    let line = logged(&buf);
+    assert!(
+        line.starts_with("moor proxy: refused example.com:443: "),
+        "{line}"
+    );
+    assert!(line.contains("unreadable"), "{line}");
+    assert!(!line.contains(INTERNAL), "{line}");
+
+    let mut c = dial(&front);
+    let _ = c.write_all(b"GET /x HTTP/1.1\r\n");
+    let _ = c.shutdown(std::net::Shutdown::Write);
+    let _ = read_all(&mut c);
+    thread::sleep(Duration::from_millis(300));
+    let text = String::from_utf8_lossy(&buf.lock().unwrap()).into_owned();
+    assert!(text.contains("refused an unreadable request: "), "{text}");
+    front.stop();
 }
