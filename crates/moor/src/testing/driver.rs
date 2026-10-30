@@ -85,21 +85,6 @@ impl FakeDriver {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Queues scripted `exec` results, served in order; then exit code 0.
-    pub(crate) fn exec_results(
-        self,
-        rs: impl IntoIterator<Item = Result<ExecOutcome, DriverError>>,
-    ) -> Self {
-        self.st().exec_results.extend(rs);
-        self
-    }
-
-    /// Ends every `exec` whose argv mentions `needle` with `outcome`, whatever is queued.
-    pub(crate) fn exec_ends_when(self, needle: &str, outcome: ExecOutcome) -> Self {
-        self.st().exec_ends.push((needle.to_owned(), outcome));
-        self
-    }
-
     /// Makes `handle` vanish, as if deleted behind moor's back.
     pub(crate) fn forget(&self, handle: &BoxHandle) {
         self.st().live.retain(|h| h != handle.as_str());

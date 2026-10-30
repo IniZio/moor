@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use moor_core::cache::CachePlan;
-use moor_core::seam::driver::{DriverError, ExecSpec};
+use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Output};
 use moor_core::BoxHandle;
 
@@ -41,6 +41,21 @@ pub(super) struct CacheState {
 }
 
 impl FakeDriver {
+    /// Queues scripted `exec` results, served in order; then exit code 0.
+    pub(crate) fn exec_results(
+        self,
+        rs: impl IntoIterator<Item = Result<ExecOutcome, DriverError>>,
+    ) -> Self {
+        self.st().exec_results.extend(rs);
+        self
+    }
+
+    /// Ends every `exec` whose argv mentions `needle` with `outcome`, whatever is queued.
+    pub(crate) fn exec_ends_when(self, needle: &str, outcome: ExecOutcome) -> Self {
+        self.st().exec_ends.push((needle.to_owned(), outcome));
+        self
+    }
+
     /// Makes every `copy_out` write `content` to its destination.
     pub(crate) fn copy_text(self, content: impl AsRef<[u8]>) -> Self {
         self.st().copy_content = Some(content.as_ref().to_vec());

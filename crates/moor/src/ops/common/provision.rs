@@ -28,6 +28,7 @@ use crate::ops::common::{agent_install, profile_fetch};
 use crate::store::lease::LeaseKind;
 use crate::store::{BoxRow, Store};
 
+use self::acquired::record_acquired;
 use self::clone::{clone_with_proxy, SetupProxy};
 use self::delivered::record_delivered;
 pub(crate) use self::lease::{hold_root, hold_workdir, planned_root};
@@ -203,24 +204,6 @@ pub(crate) fn nonce(rng: &dyn Rng) -> String {
     format!("{:06x}", rng.u32() & 0xFF_FFFF)
 }
 
-/// Records an acquired Box under the setup intent.
-fn record_acquired(store: &Store, id: BoxId, got: &Acquired) -> Result<(), CommandError> {
-    let acquired = Decision::new(id)
-        .box_input(BoxInput::Acquired {
-            handle: got.handle.clone(),
-        })
-        .set(Fields {
-            box_handle: Field::Set(got.handle.clone()),
-            box_workdir: Field::Set(got.workdir.as_str().to_owned()),
-            ..Fields::default()
-        })
-        .intent(IntentChange::Set(Intent::Setup {
-            pid: std::process::id(),
-        }));
-    store.apply(acquired)?;
-    Ok(())
-}
-
 /// Where setup runs: the freshly acquired Box, the repo it clones and where its setup log is kept.
 struct SetupTarget<'a> {
     /// The Box setup runs in.
@@ -389,6 +372,7 @@ fn failed(
     }
 }
 
+mod acquired;
 mod clone;
 mod delivered;
 pub(crate) mod interrupted;
