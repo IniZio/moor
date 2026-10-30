@@ -36,7 +36,13 @@ impl Cx {
             cx.store = OnceCell::from(store.pinned(grant.pins.clone()));
         }
         cx.pins = grant.pins;
+        cx.host_dir = grant.host_dir;
         cx
+    }
+
+    /// The one host directory this request reads and writes through; `None` for anywhere.
+    pub(crate) fn host_dir(&self) -> Option<&Path> {
+        self.host_dir.as_deref()
     }
 
     /// Whose Boxes this request may see.

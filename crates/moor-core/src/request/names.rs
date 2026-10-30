@@ -2,6 +2,7 @@
 //! it may act on them.
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use super::{BoxTarget, Request};
 use crate::name::{BoxId, BoxName, SessionId};
@@ -30,6 +31,8 @@ pub struct Grant {
     pub viewer: Viewer,
     /// The Box each checked name meant.
     pub pins: Pins,
+    /// The one host directory the request may read or write through; `None` for anywhere.
+    pub host_dir: Option<PathBuf>,
 }
 
 impl Grant {
@@ -39,6 +42,7 @@ impl Grant {
         Self {
             viewer: Viewer::Operator,
             pins: BTreeMap::new(),
+            host_dir: None,
         }
     }
 }

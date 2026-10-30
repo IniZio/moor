@@ -60,6 +60,8 @@ pub(crate) struct Cx {
     viewer: Viewer,
     /// The Box each name meant when the controller let this request name it.
     pins: Pins,
+    /// The one host directory this request reads and writes through; `None` for anywhere.
+    host_dir: Option<PathBuf>,
 }
 
 /// Everything a context is built from.
@@ -112,6 +114,7 @@ impl Cx {
             requester: None,
             viewer: Viewer::Operator,
             pins: Pins::new(),
+            host_dir: None,
         }
     }
 

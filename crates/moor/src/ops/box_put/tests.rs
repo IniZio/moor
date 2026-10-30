@@ -182,3 +182,26 @@ fn a_good_request_writes_the_bytes_under_the_work_tree_at_0644() {
     assert_eq!(got.path, path.as_str());
     assert_eq!(got.bytes, 9);
 }
+
+#[test]
+fn a_source_held_to_a_host_directory_is_read_only_beneath_it() {
+    let f = fx();
+    let outside = file(&f, b"secret");
+    let root = f.dir.path().join("runner");
+    std::fs::create_dir(&root).unwrap();
+    std::fs::write(root.join("staged"), b"staged").unwrap();
+    std::os::unix::fs::symlink(&outside, root.join("link")).unwrap();
+    run(&f.cx, &req(&f, &root.join("link"), "a")).expect("the operator follows the link");
+    let f = Fx {
+        cx: f.cx.with_grant(moor_core::request::Grant {
+            host_dir: Some(root.clone()),
+            ..moor_core::request::Grant::operator()
+        }),
+        ..f
+    };
+    let e = run(&f.cx, &req(&f, &root.join("link"), "b")).unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Refused, "{}", e.error);
+    run(&f.cx, &req(&f, &outside, "c")).unwrap_err();
+    run(&f.cx, &req(&f, &root.join("staged"), "d")).expect("inside");
+    assert_eq!(f.driver.puts().last().unwrap().2, b"staged");
+}

@@ -86,6 +86,7 @@ pub(crate) fn authorize(
         return runners(cx, request).map(|()| Grant {
             viewer: Viewer::Operator,
             pins: Pins::new(),
+            host_dir: cx.env().runner_state().map(ToOwned::to_owned),
         });
     }
     let viewer = viewer(cx, caller, asserted)?;
@@ -101,7 +102,11 @@ pub(crate) fn authorize(
             return Err(CommandError::new(ErrorKind::Refused, why));
         }
     }
-    Ok(Grant { viewer, pins })
+    Ok(Grant {
+        viewer,
+        pins,
+        host_dir: None,
+    })
 }
 
 /// Refuses every request the machine runner does not send; it sends those for every user's

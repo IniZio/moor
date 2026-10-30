@@ -57,6 +57,7 @@ fn a_streamed_run_acts_on_the_box_its_grant_pinned() {
         grant: Grant {
             viewer: Viewer::User(mine),
             pins: [(name.clone(), checked)].into(),
+            host_dir: None,
         },
     };
     let run = Request::Run(RunReq {

@@ -81,6 +81,7 @@ fn a_name_the_controller_pinned_keeps_meaning_the_box_it_checked() {
     let grant = moor_core::request::Grant {
         viewer: moor_core::user::Viewer::Operator,
         pins: [(BoxName::parse_allow_bare("a").unwrap(), old)].into(),
+        host_dir: None,
     };
     let pinned = cx(dir.path(), &driver).with_grant(grant);
     add(&setup, "a");
