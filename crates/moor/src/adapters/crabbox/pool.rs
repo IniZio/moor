@@ -99,11 +99,12 @@ pub(super) fn is_pool_provider(provider: &ProviderId) -> bool {
     host_of(provider.as_str()).is_some()
 }
 
-/// A pool VM pauses and resumes through its host; no tunnel or cache volume reaches it yet.
+/// A pool VM pauses and resumes through its host, and its reverse tunnel is ssh over moor's own
+/// words; no cache volume reaches it yet.
 pub(super) const CAPS: DriverCaps = DriverCaps {
     sleep: SleepKind::Suspend,
     wake: true,
-    reverse_tunnel: false,
+    reverse_tunnel: true,
     has_workdir: true,
     cache_volumes: false,
 };
