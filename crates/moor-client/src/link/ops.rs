@@ -129,6 +129,9 @@ pub enum Op {
         /// `moor-<id>`; none for a list.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         slug: Option<String>,
+        /// The OpenSSH public key an authorize lets in; none for every other verb.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
     },
     /// Carry the stream to and from the sshd of a pool lease's VM; only a pool host serves it.
     Dial {

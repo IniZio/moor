@@ -21,6 +21,8 @@ pub enum Verb {
     Stop,
     /// The pool's leases; it names no slug.
     List,
+    /// Let a public key sign in to the VM; the request carries the key.
+    Authorize,
 }
 
 /// The host's answer to a lease request.
