@@ -35,6 +35,8 @@ mod mcp;
 mod mcp_front;
 #[path = "daemon/mcp_oauth.rs"]
 mod mcp_oauth;
+#[path = "daemon/profile_front.rs"]
+mod profile_front;
 #[path = "daemon/prompt.rs"]
 mod prompt;
 #[path = "daemon/proxy.rs"]

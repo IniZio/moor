@@ -319,6 +319,15 @@ machine, for example because it does not know the host's key, the form shows
 the controller's reason word for word. `/moor machine list` and
 `/moor machine remove NAME` answer only you and cover only your own machines.
 
+## Your agent profile
+
+`/moor profile set https://github.com/OWNER/NAME[#REF]` records the GitHub repo
+you keep your agent profile in. Each new Box you start applies it; see
+[Per-user agent profile](config.md#per-user-agent-profile). The front sends the
+command to the controller as you, and the controller's refusal, for example for
+a URL that is not on github.com, is shown word for word. `/moor profile` and
+`/moor profile remove` answer only you.
+
 ## Slash commands
 
 | Command | Who | Where | What it does |
@@ -335,3 +344,6 @@ the controller's reason word for word. `/moor machine list` and
 | `/moor machine add` | anyone | any channel | Opens a private form for a machine of yours with the fields Name, SSH target, Labels, and Capacity. See [Your own machines](#your-own-machines). |
 | `/moor machine list` | anyone | any channel | Shows only you each machine's name, ssh target, and labels. |
 | `/moor machine remove NAME` | anyone | any channel | Removes that machine, and tells only you whether there was one. |
+| `/moor profile` | anyone | any channel | Shows only you your agent profile repo and ref, or that none is set. |
+| `/moor profile set URL[#REF]` | anyone | any channel | Records your agent profile repo, which each new Box applies. Answers only you with the stored value or the controller's refusal. See [Your agent profile](#your-agent-profile). |
+| `/moor profile remove` | anyone | any channel | Clears your profile, and tells only you whether one was set. |

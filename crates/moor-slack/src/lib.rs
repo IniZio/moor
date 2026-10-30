@@ -25,6 +25,7 @@ mod identity;
 mod login;
 mod machine;
 mod mcp;
+mod profile;
 mod prompt;
 mod secret_file;
 mod slash;
