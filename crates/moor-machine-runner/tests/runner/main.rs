@@ -254,24 +254,36 @@ fn exec_runs_quotes_substitutions_and_heredocs_as_typed() {
 }
 
 #[test]
-fn an_ssh_header_that_is_not_a_strict_target_is_refused() {
+fn a_machine_id_header_that_is_not_a_machine_id_is_refused() {
     let rig = Rig::start();
-    let with_ssh = |ssh: &'static str| -> Vec<(&str, &str)> {
+    let with_id = |id: &'static str| -> Vec<(&str, &str)> {
         HEADERS
             .into_iter()
-            .map(|(k, v)| (k, if k == "X-Moor-Machine-Ssh" { ssh } else { v }))
+            .map(|(k, v)| (k, if k == "X-Moor-Machine-Id" { id } else { v }))
             .collect()
     };
-    for bad in ["user@-oProxyCommand=x", "-x@h"] {
+    for bad in ["minion", "0", "-7"] {
         let err = rig
-            .call_with("machine_info", json!({}), &with_ssh(bad))
+            .call_with("machine_info", json!({}), &with_id(bad))
             .unwrap_err();
-        assert!(err.contains("X-Moor-Machine-Ssh"), "{bad}: {err}");
+        assert!(err.contains("X-Moor-Machine-Id"), "{bad}: {err}");
     }
-    for good in ["moor@minion", "moor@[::1]:22"] {
-        let info = rig.call_with("machine_info", json!({}), &with_ssh(good));
-        assert!(info.is_ok(), "{good}: {info:?}");
-    }
+    let info = rig.call_with("machine_info", json!({}), &with_id("7"));
+    assert!(info.is_ok(), "{info:?}");
+}
+
+#[test]
+fn a_caller_without_a_machine_id_is_refused() {
+    let rig = Rig::start();
+    let headers: Vec<(&str, &str)> = HEADERS
+        .into_iter()
+        .filter(|(k, _)| *k != "X-Moor-Machine-Id")
+        .collect();
+    let err = rig
+        .call_with("exec", json!({"command": "touch ~/ran"}), &headers)
+        .unwrap_err();
+    assert!(err.contains("missing header X-Moor-Machine-Id"), "{err}");
+    assert!(!rig.remote.join("ran").exists());
 }
 
 #[test]

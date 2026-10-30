@@ -43,10 +43,10 @@ struct Args {
     /// Seconds between looks for prepared Boxes that are no longer open.
     #[arg(long, default_value_t = 60, value_parser = clap::value_parser!(u64).range(1..))]
     sweep_secs: u64,
-    /// A stdio MCP server on the machine whose tools the runner lists as NAME_<tool>, as
-    /// NAME=CMD; repeat for more.
-    #[arg(long = "relay", value_name = "NAME=CMD", value_parser = relay)]
-    relays: Vec<(String, String)>,
+    /// A stdio MCP server whose tools the runner lists as NAME_<tool>, run from the machine's
+    /// own relay file of that name; repeat for more.
+    #[arg(long = "relay", value_name = "NAME", value_parser = relay)]
+    relays: Vec<String>,
     /// An argument of a relay's tools set from the Box's fact on every call and hidden from the
     /// Box, as NAME.ARG=FACT; repeat for more.
     #[arg(long = "force-arg", value_name = "NAME.ARG=FACT", value_parser = force_arg)]
@@ -63,19 +63,15 @@ struct Args {
     keep_alive_secs: u64,
 }
 
-/// Parses `NAME=CMD`, with NAME of `[a-z][a-z0-9-]*`.
-fn relay(s: &str) -> Result<(String, String), String> {
-    let (name, command) = s.split_once('=').ok_or("expected NAME=CMD")?;
+/// Parses `NAME`, of `[a-z][a-z0-9-]*`.
+fn relay(name: &str) -> Result<String, String> {
     let mut chars = name.chars();
     let good = chars.next().is_some_and(|c| c.is_ascii_lowercase())
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
     if !good {
         return Err(format!("NAME must be [a-z][a-z0-9-]*, not {name:?}"));
     }
-    if command.trim().is_empty() {
-        return Err("CMD is empty".to_owned());
-    }
-    Ok((name.to_owned(), command.to_owned()))
+    Ok(name.to_owned())
 }
 
 /// Parses `NAME.ARG=FACT`.
@@ -101,13 +97,12 @@ fn hide_tool(s: &str) -> Result<(String, String), String> {
 /// argument or hidden tool of no relay.
 fn relays(args: &Args) -> Result<Vec<Relay>, String> {
     let mut relays: Vec<Relay> = Vec::new();
-    for (name, command) in &args.relays {
+    for name in &args.relays {
         if relays.iter().any(|r| &r.name == name) {
             return Err(format!("--relay {name} is given twice"));
         }
         relays.push(Relay {
             name: name.clone(),
-            command: command.clone(),
             forced: std::collections::BTreeMap::new(),
             hidden: std::collections::BTreeSet::new(),
         });

@@ -29,14 +29,10 @@ fn eventually(what: &str, done: impl Fn() -> bool) {
 }
 
 fn hooked(release: &str) -> Rig {
-    Rig::with_args(&[
-        "--prepare",
-        PREPARE,
-        "--release",
-        release,
-        "--sweep-secs",
-        "1",
-    ])
+    let rig = Rig::with_args(&["--sweep-secs", "1"]);
+    rig.hook("prepare", PREPARE);
+    rig.hook("release", release);
+    rig
 }
 
 #[test]
@@ -73,7 +69,8 @@ fn machine_info_prepares_and_returns_the_facts() {
 #[test]
 fn a_bad_last_line_fails_the_call_and_the_next_call_prepares_again() {
     let prepare = r#"echo run >> ~/prepared; echo detail; if [ -f ~/good ]; then echo '{"device":"d"}'; else echo '{"device":1}'; fi"#;
-    let rig = Rig::with_args(&["--prepare", prepare]);
+    let rig = Rig::start();
+    rig.hook("prepare", prepare);
     rig.call("sync", json!({})).unwrap();
     let err = rig.call("exec", json!({"command": "true"})).unwrap_err();
     assert!(err.contains("detail"), "the output tail: {err}");
@@ -87,7 +84,8 @@ fn a_bad_last_line_fails_the_call_and_the_next_call_prepares_again() {
 
 #[test]
 fn a_failing_prepare_fails_the_call_with_its_output() {
-    let rig = Rig::with_args(&["--prepare", "echo broke; exit 4"]);
+    let rig = Rig::start();
+    rig.hook("prepare", "echo broke; exit 4");
     let err = rig.call("machine_info", json!({})).unwrap_err();
     assert!(err.contains("broke") && err.contains('4'), "{err}");
 }

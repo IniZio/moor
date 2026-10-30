@@ -19,7 +19,7 @@ const RELEASE: &str = r#"echo "$MOOR_BOX" >> ~/released; n=$(wc -l < ~/released)
 const SLOT_3: [(&str, &str); 4] = [
     ("X-Moor-Box", "7"),
     ("X-Moor-Machine", "minion"),
-    ("X-Moor-Machine-Ssh", "moor@minion"),
+    ("X-Moor-Machine-Id", "7"),
     ("X-Moor-Machine-Slot", "3"),
 ];
 
@@ -40,18 +40,13 @@ fn eventually(what: &str, done: impl Fn() -> bool) {
 }
 
 fn sleepy(extra: &[&str]) -> Rig {
-    let mut args = vec![
-        "--prepare",
-        PREPARE,
-        "--suspend",
-        SUSPEND,
-        "--release",
-        RELEASE,
-        "--sweep-secs",
-        "1",
-    ];
+    let mut args = vec!["--sweep-secs", "1"];
     args.extend_from_slice(extra);
-    Rig::with_args(&args)
+    let rig = Rig::with_args(&args);
+    rig.hook("prepare", PREPARE);
+    rig.hook("suspend", SUSPEND);
+    rig.hook("release", RELEASE);
+    rig
 }
 
 fn record(rig: &Rig, id: i64) -> Value {
@@ -89,14 +84,9 @@ fn an_asleep_box_is_suspended_once_with_its_facts() {
 
 #[test]
 fn a_failed_suspend_is_retried_and_leaves_the_record_unmarked() {
-    let rig = Rig::with_args(&[
-        "--prepare",
-        PREPARE,
-        "--suspend",
-        "echo run >> ~/suspended; exit 1",
-        "--sweep-secs",
-        "1",
-    ]);
+    let rig = Rig::with_args(&["--sweep-secs", "1"]);
+    rig.hook("prepare", PREPARE);
+    rig.hook("suspend", "echo run >> ~/suspended; exit 1");
     rig.call("exec", json!({"command": "true"})).unwrap();
     rig.asleep.lock().unwrap().push(7);
     eventually("the hook ran twice", || {
