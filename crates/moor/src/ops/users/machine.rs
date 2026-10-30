@@ -119,11 +119,7 @@ pub(super) fn list(store: &Store, user: UserId) -> Result<serde_json::Value, Com
 
 /// `machine-status`: ask the agent of `user`'s machine `name` for its status through the
 /// runner's links broker. Another user's machine is as unknown as one that does not exist.
-pub(super) fn status(
-    cx: &Cx,
-    user: UserId,
-    name: &str,
-) -> Result<serde_json::Value, CommandError> {
+pub(super) fn status(cx: &Cx, user: UserId, name: &str) -> Result<serde_json::Value, CommandError> {
     let store = cx.store()?;
     let refused = |reason: String| CommandError::new(ErrorKind::Refused, reason);
     if !store.user_machines(user)?.iter().any(|m| m.name == name) {

@@ -4,8 +4,8 @@ use clap::{Args, Subcommand};
 use moor_core::config::OAuthCallback;
 use moor_core::name::ProfileSource;
 use moor_core::request::{
-    AsReq, EnrollReq, MachineAddReq, MachineRemoveReq, McpAddReq, McpOAuthFinishReq, McpRemoveReq,
-    ProfileSetReq, SecretDeleteReq,
+    AsReq, EnrollReq, MachineAddReq, MachineRemoveReq, MachineStatusReq, McpAddReq,
+    McpOAuthFinishReq, McpRemoveReq, ProfileSetReq, SecretDeleteReq,
 };
 use moor_core::user::SecretName;
 use moor_core::Request;
@@ -93,6 +93,8 @@ pub(super) enum MachineCli {
     Rm(McpNameArg),
     /// List your machines.
     Ls,
+    /// Ask machine NAME's agent for its version and state; it only reads.
+    Status(McpNameArg),
 }
 
 /// Arguments of `user machine add`.
@@ -196,6 +198,10 @@ impl UserCli {
                 name: a.name,
             }),
             Self::Machine(MachineCli::Ls) => Request::MachineList(AS_CALLER),
+            Self::Machine(MachineCli::Status(a)) => Request::MachineStatus(MachineStatusReq {
+                identity: None,
+                name: a.name,
+            }),
         })
     }
 }

@@ -1,4 +1,9 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, reason = "tests")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    reason = "tests"
+)]
 
 use moor_client::link::broker::{Ask, Brokered, PoolOp};
 use moor_client::link::ops::{self, Reply};
@@ -99,7 +104,10 @@ fn the_owner_gets_the_agents_status() {
 fn another_users_machine_is_as_unknown_as_a_missing_one() {
     let f = fixture();
     linked(&f, "authgear:a", "minion", true);
-    f.cx.store().unwrap().enroll(&id("authgear:b"), None).unwrap();
+    f.cx.store()
+        .unwrap()
+        .enroll(&id("authgear:b"), None)
+        .unwrap();
     let other = run(&f.cx, &f.vault, &id("authgear:b"), &status_cmd("minion")).unwrap_err();
     let missing = run(&f.cx, &f.vault, &id("authgear:b"), &status_cmd("nope")).unwrap_err();
     assert_eq!(other.kind, ErrorKind::Refused);

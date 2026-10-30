@@ -26,7 +26,9 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
         "session-binding" => json!({"cmd": kind, "front": "slack", "key": "k"}),
         "gate" => json!({"cmd": kind, "sha": "abcd123", "name": "test"}),
         "secret-set" => json!({"cmd": kind, "name": "n", "value": "v"}),
-        "secret-delete" | "mcp-remove" | "machine-remove" => json!({"cmd": kind, "name": "n"}),
+        "secret-delete" | "mcp-remove" | "machine-remove" | "machine-status" => {
+            json!({"cmd": kind, "name": "n"})
+        }
         "machine-enroll" => json!({"cmd": kind, "name": "n", "pubkey": "k"}),
         "profile-set" => json!({"cmd": kind, "source": "https://github.com/alice/agent"}),
         "mcp-add" => json!({"cmd": kind, "name": "n", "url": "https://example.com/mcp"}),

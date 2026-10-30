@@ -477,3 +477,41 @@ fn wait_durations_scale_from_milliseconds_to_hours() {
     assert_eq!(duration_text(250), "250ms");
     assert_eq!(duration_text(3_723_000), "1h02m03s");
 }
+
+#[test]
+fn machine_ls_shows_each_machines_link_and_version() {
+    let v = json!({"machines": [
+        {"name": "amd", "ssh": "", "labels": [], "capacity": 1,
+         "link": {"machine_id": 1, "online": true, "since": 5, "version": "1.2.3", "protocol": 2}},
+        {"name": "old", "ssh": "", "labels": [], "capacity": 1,
+         "link": {"machine_id": 2, "online": false, "since": 5}},
+        {"name": "mac", "ssh": "d@mac", "labels": [], "capacity": 1},
+    ]});
+    let (out, _) = render(&Response::ok("machine-list", Some(v)), false);
+    assert_eq!(
+        out,
+        "amd  online  1.2.3\nold  offline  -\nmac  not linked  -\n"
+    );
+}
+
+#[test]
+fn machine_status_lists_fields_leases_and_recent_ops_newest_first() {
+    let v = json!({
+        "version": "1.2.3", "protocol": 2, "os": "linux", "arch": "x86_64",
+        "free_disk_gb": 40,
+        "pool": {"provider": "cloudhypervisor", "crabbox": "crabbox 0.9",
+                 "leases": [{"slug": "moor-7", "state": "running"}]},
+        "recent": [
+            {"op": "lease", "target": "moor-7", "at": 0},
+            {"op": "dial", "target": "moor-7", "error": "no vm", "at": 60},
+        ],
+    });
+    let (out, _) = render(&Response::ok("machine-status", Some(v)), false);
+    assert_eq!(
+        out,
+        "version: 1.2.3 (protocol 2)\nos:      linux x86_64\ndisk:    40 GB free\n\
+         pool:    cloudhypervisor\ncrabbox: crabbox 0.9\nlease:   moor-7 running\n\
+         recent:  2 ops\n  1970-01-01T00:01:00Z dial moor-7 error: no vm\n  \
+         1970-01-01T00:00:00Z lease moor-7 ok\n"
+    );
+}

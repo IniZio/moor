@@ -471,3 +471,12 @@ fn valid_box_name_parses() {
         })
     );
 }
+
+#[test]
+fn machine_status_names_one_machine() {
+    assert!(matches!(
+        run(&["user", "machine", "status", "mac"]),
+        Ok((_, Action::Request(Request::MachineStatus(r)))) if r.name == "mac"
+    ));
+    assert!(run(&["user", "machine", "status"]).is_err());
+}
