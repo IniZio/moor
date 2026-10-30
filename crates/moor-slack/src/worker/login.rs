@@ -7,6 +7,7 @@ use crate::escape::escape;
 use crate::login::{vault, TokenCheck, LINKED};
 use crate::machine::MachineJob;
 use crate::mcp::McpJob;
+use crate::profile::ProfileJob;
 
 /// Checks each pasted token, stores the ones its account takes, and shows every outcome in the
 /// one modal. A failed token does not stop the others. When the form took both accounts, each
@@ -77,5 +78,14 @@ pub(super) fn machine(fx: &mut Fx<'_>, job: &MachineJob) {
     match job.response_url.as_deref() {
         Some(url) => (fx.respond)(url, &text),
         None => (fx.log)("machine: the command carried no response_url"),
+    }
+}
+
+/// Answers `/moor profile` to the user alone.
+pub(super) fn profile(fx: &mut Fx<'_>, job: &ProfileJob) {
+    let text = crate::profile::answer(&mut *fx.call, job);
+    match job.response_url.as_deref() {
+        Some(url) => (fx.respond)(url, &text),
+        None => (fx.log)("profile: the command carried no response_url"),
     }
 }
