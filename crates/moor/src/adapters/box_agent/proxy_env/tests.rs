@@ -101,7 +101,7 @@ fn the_lines_carry_the_exports() {
         "export npm_config_cache=\"$HOME/.cache/npm\"",
         "export NODE_USE_ENV_PROXY=1",
         "export CLAUDE_CODE_OAUTH_TOKEN='moor-proxy'",
-        "unset moor_bundle moor_sys moor_mark moor_f moor_g moor_p moor_ts moor_jh moor_su moor_apt moor_conf moor_new moor_n moor_pid moor_ours moor_st",
+        "unset moor_bundle moor_sys moor_mark moor_f moor_g moor_p moor_ts moor_jh moor_su moor_apt moor_conf moor_new moor_n moor_pid moor_ours moor_st moor_aa",
     ] {
         assert!(lines.iter().any(|l| l == want), "missing {want}\n{text}");
     }

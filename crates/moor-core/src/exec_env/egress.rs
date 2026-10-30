@@ -9,7 +9,7 @@ pub const EGRESS_FAILED: &str = "the egress proxy could not start";
 
 /// Shell variables the egress lines set; the prelude unsets them at its end.
 pub(super) const EGRESS_SHELL_VARS: &str =
-    "moor_su moor_apt moor_conf moor_new moor_n moor_pid moor_ours moor_st";
+    "moor_su moor_apt moor_conf moor_new moor_n moor_pid moor_ours moor_st moor_aa";
 
 /// The Box directory, under the Box user's home, that holds the files below; each is shell text
 /// that expands on the Box.
@@ -24,6 +24,37 @@ const LOCK: &str = "$HOME/.moor/egress.lock";
 const INSTALL_LOG: &str = "$HOME/.moor/egress-install.log";
 /// What tinyproxy printed when it last started.
 const START_LOG: &str = "$HOME/.moor/egress-start.log";
+/// What `apparmor_parser` printed when it last reloaded tinyproxy's profile.
+const APPARMOR_LOG: &str = "$HOME/.moor/egress-apparmor.log";
+
+/// Where a Box keeps the `AppArmor` files that decide what tinyproxy may open.
+pub(super) struct AppArmor<'a> {
+    /// tinyproxy's profile.
+    pub profile: &'a str,
+    /// The binary the profile attaches to.
+    pub exec: &'a str,
+    /// The local rules the profile includes.
+    pub local: &'a str,
+    /// The kernel's list of loaded profiles and their modes.
+    pub loaded: &'a str,
+}
+
+/// Ubuntu's apparmor package ships an enforced tinyproxy profile that reads only
+/// `/etc/tinyproxy/tinyproxy.conf` and writes only `/run/tinyproxy/tinyproxy.pid`.
+pub(super) const SYSTEM_APPARMOR: AppArmor<'static> = AppArmor {
+    profile: "/etc/apparmor.d/tinyproxy",
+    exec: "/usr/bin/tinyproxy",
+    local: "/etc/apparmor.d/local/tinyproxy",
+    loaded: "/sys/kernel/security/apparmor/profiles",
+};
+
+/// The local `AppArmor` rules that let the distro's tinyproxy profile reach moor's files and no
+/// others, as shell text inside double quotes.
+pub(super) fn apparmor_rules() -> String {
+    format!(
+        "# Written by moor for its egress proxy.\nfile r \\\"{CONF}\\\",\nfile r \\\"{CONF}.new\\\",\nfile rw \\\"{PID}\\\",\nfile w \\\"{START_LOG}\\\","
+    )
+}
 
 /// Proxy variables apt must not see, so the install goes direct.
 const PROXY_VARS: [&str; 8] = [
@@ -82,6 +113,20 @@ fn stop(reason: &str) -> String {
 /// start together never start two tinyproxies. The listener is ours only while the pid file names
 /// a live `tinyproxy`; a port held by anything else stops the exec.
 pub(super) fn lines(listen: u16, upstream: u16, hosts: &[String]) -> Vec<String> {
+    lines_with(listen, upstream, hosts, &SYSTEM_APPARMOR)
+}
+
+/// [`lines`] against the `AppArmor` files in `aa`. Before tinyproxy starts, when the `tinyproxy`
+/// on `PATH` is `aa.exec` and `aa.profile` is loaded in enforce mode, the rules from
+/// [`apparmor_rules`] go into `aa.local` and the profile is reloaded, as root or through
+/// `sudo -n`. tinyproxy always runs under its profile: with no way to write the rules the exec
+/// stops.
+pub(super) fn lines_with(
+    listen: u16,
+    upstream: u16,
+    hosts: &[String],
+    aa: &AppArmor<'_>,
+) -> Vec<String> {
     let unset = PROXY_VARS.iter().fold(String::new(), |mut out, v| {
         let _ = write!(out, " -u {v}");
         out
@@ -100,11 +145,23 @@ pub(super) fn lines(listen: u16, upstream: u16, hosts: &[String]) -> Vec<String>
     let ours = format!(
         "moor_pid=$(cat \"{PID}\" 2>/dev/null); moor_ours=; [ -n \"$moor_pid\" ] && [ \"$(cat \"/proc/$moor_pid/comm\" 2>/dev/null)\" = tinyproxy ] && moor_ours=1"
     );
+    let (profile, exec, local, loaded) = (
+        crate::boxscript::quote(aa.profile),
+        crate::boxscript::quote(aa.exec),
+        crate::boxscript::quote(aa.local),
+        crate::boxscript::quote(aa.loaded),
+    );
+    let apparmor = format!(
+        "if [ -f {profile} ] && [ -e {loaded} ] && [ \"$(readlink -f \"$(command -v tinyproxy)\")\" = {exec} ]; then if [ \"$(id -u)\" = 0 ]; then moor_su=; elif sudo -n true 2>/dev/null; then moor_su=\"sudo -n\"; else {}; fi; if $moor_su grep -qx 'tinyproxy (enforce)' {loaded} 2>/dev/null; then moor_aa=\"{}\"; if ! printf '%s\\n' \"$moor_aa\" | $moor_su cmp -s - {local} 2>/dev/null; then {{ printf '%s\\n' \"$moor_aa\" | $moor_su tee {local} >/dev/null && $moor_su apparmor_parser -r {profile} >\"{APPARMOR_LOG}\" 2>&1; }} || {{ $moor_su rm -f {local}; {}; }}; fi; fi; fi",
+        stop(&format!("{} confines tinyproxy, and allowing it {DIR} in {} needs root or passwordless sudo", aa.profile, aa.local)),
+        apparmor_rules(),
+        stop(&format!("{} could not be reloaded with {DIR} allowed: $(tail -n 1 \"{APPARMOR_LOG}\")", aa.profile)),
+    );
     // tinyproxy removes its pid file as it exits, so the new one starts only once the old one
     // is gone; a zombie counts as gone.
     let old_runs = "moor_st=$(sed -n 's/.*) \\(.\\) .*/\\1/p' \"/proc/$moor_pid/stat\" 2>/dev/null) && [ -n \"$moor_st\" ] && [ \"$moor_st\" != Z ]";
     let start = format!(
-        "if {up} && [ -z \"$moor_ours\" ]; then {}; fi; if [ -n \"$moor_new\" ] || ! {up}; then if [ -n \"$moor_ours\" ]; then kill \"$moor_pid\" 2>/dev/null; moor_n=0; while {old_runs}; do moor_n=$((moor_n+1)); [ $moor_n -le {POLLS} ] || {}; sleep 0.1; done; fi; moor_n=0; while {up}; do moor_n=$((moor_n+1)); [ $moor_n -le {POLLS} ] || {}; sleep 0.1; done; if [ -n \"$moor_new\" ]; then moor_cfg=\"{CONF}.new\"; else moor_cfg=\"{CONF}\"; fi; ulimit -n \"$(ulimit -Hn)\" 2>/dev/null; tinyproxy -c \"$moor_cfg\" </dev/null >/dev/null 2>\"{START_LOG}\" 9>&- || {}; moor_n=0; until {up}; do moor_n=$((moor_n+1)); [ $moor_n -le {POLLS} ] || {}; sleep 0.1; done; if [ -n \"$moor_new\" ]; then mv -f \"{CONF}.new\" \"{CONF}\" || {}; fi; fi",
+        "if {up} && [ -z \"$moor_ours\" ]; then {}; fi; if [ -n \"$moor_new\" ] || ! {up}; then if [ -n \"$moor_ours\" ]; then kill \"$moor_pid\" 2>/dev/null; moor_n=0; while {old_runs}; do moor_n=$((moor_n+1)); [ $moor_n -le {POLLS} ] || {}; sleep 0.1; done; fi; moor_n=0; while {up}; do moor_n=$((moor_n+1)); [ $moor_n -le {POLLS} ] || {}; sleep 0.1; done; if [ -n \"$moor_new\" ]; then moor_cfg=\"{CONF}.new\"; else moor_cfg=\"{CONF}\"; fi; {apparmor}; ulimit -n \"$(ulimit -Hn)\" 2>/dev/null; tinyproxy -c \"$moor_cfg\" </dev/null >/dev/null 2>\"{START_LOG}\" 9>&- || {}; moor_n=0; until {up}; do moor_n=$((moor_n+1)); [ $moor_n -le {POLLS} ] || {}; sleep 0.1; done; if [ -n \"$moor_new\" ]; then mv -f \"{CONF}.new\" \"{CONF}\" || {}; fi; fi",
         stop(&format!("port {listen} is taken by another process")),
         stop("the old tinyproxy $moor_pid did not exit after TERM"),
         stop(&format!("port {listen} stays held after tinyproxy was stopped")),
