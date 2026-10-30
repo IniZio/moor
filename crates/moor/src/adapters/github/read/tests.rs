@@ -495,3 +495,35 @@ fn unusable_profile_name_falls_back_to_the_login() {
 }
 
 mod transport;
+
+fn file_reply(text: String) -> impl FnOnce(&Value) -> (u16, String) + Send {
+    move |_| {
+        let target = commit(DEFAULT_SHA, &[("file", blob(&text))]);
+        ok(&json!({"data": {"repository": {"defaultBranchRef": {"target": target}}}}))
+    }
+}
+
+fn file_via(api: &FakeApi) -> Result<(Sha, Option<String>), ForgeError> {
+    GitHub::at(&api.url).read_file_at(
+        &ForgeRepo::new("o", "n"),
+        None,
+        ".claude-plugin/marketplace.json",
+        &token(),
+    )
+}
+
+#[test]
+fn a_profile_file_past_the_config_cap_is_read() {
+    let big = "a".repeat(200 * 1024);
+    let api = FakeApi::start(file_reply(big.clone()));
+    assert_eq!(file_via(&api), Ok((sha(DEFAULT_SHA), Some(big))));
+}
+
+#[test]
+fn a_profile_file_past_a_mebibyte_is_unreadable() {
+    let api = FakeApi::start(file_reply("a".repeat(1024 * 1024 + 1)));
+    assert_eq!(
+        file_via(&api),
+        Err(ForgeError::Unreadable(".claude-plugin/marketplace.json"))
+    );
+}

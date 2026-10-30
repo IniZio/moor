@@ -291,9 +291,9 @@ fn parse(reply: Reply, base: Option<&str>) -> Result<RepoAt, ForgeError> {
             .map(|t| full_sha(t.oid.as_deref()))
             .transpose()?,
         files: RepoFiles {
-            moor_yaml: text(commit.moor_yaml, ".moor.yaml")?,
-            mcp_json: text(commit.mcp_json, ".mcp.json")?,
-            claude_settings: text(commit.claude_settings, ".claude/settings.json")?,
+            moor_yaml: text(commit.moor_yaml, ".moor.yaml", FILE_CAP)?,
+            mcp_json: text(commit.mcp_json, ".mcp.json", FILE_CAP)?,
+            claude_settings: text(commit.claude_settings, ".claude/settings.json", FILE_CAP)?,
         },
         author: author(viewer)?,
         can_push: matches!(
@@ -342,8 +342,8 @@ fn full_sha(oid: Option<&str>) -> Result<Sha, ForgeError> {
         .ok_or_else(|| ForgeError::Unavailable("GitHub returned a malformed object id".to_owned()))
 }
 
-/// A config file's text: `None` when absent, unreadable when binary, oversized or not a file.
-fn text(entry: Option<Entry>, path: &'static str) -> Result<Option<String>, ForgeError> {
+/// A config file's text: `None` when absent, unreadable when binary, over `cap` bytes or not a file.
+fn text(entry: Option<Entry>, path: &'static str, cap: u64) -> Result<Option<String>, ForgeError> {
     let Some(entry) = entry else {
         return Ok(None);
     };
@@ -352,7 +352,7 @@ fn text(entry: Option<Entry>, path: &'static str) -> Result<Option<String>, Forg
             byte_size: Some(size),
             is_binary: Some(false),
             text: Some(text),
-        }) if size <= FILE_CAP => Ok(Some(text)),
+        }) if size <= cap => Ok(Some(text)),
         _ => Err(ForgeError::Unreadable(path)),
     }
 }
