@@ -17,6 +17,7 @@ fn launch_script(req: impl FnOnce(&FakeSurface) -> LaunchReq) -> String {
 
 fn with_names(s: &FakeSurface) -> LaunchReq {
     LaunchReq {
+        profile: None,
         mcp: std::collections::BTreeMap::new(),
         strip_env: names(),
         prompt: LaunchPrompt::None,
@@ -40,6 +41,7 @@ fn a_launch_without_a_proxy_unsets_the_configured_secrets_before_the_agent() {
 #[test]
 fn a_proxy_launch_unsets_the_configured_secrets_before_the_agent() {
     let script = launch_script(|s| LaunchReq {
+        profile: None,
         mcp: std::collections::BTreeMap::new(),
         strip_env: names(),
         prompt: LaunchPrompt::None,

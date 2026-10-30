@@ -7,6 +7,7 @@ use std::sync::Arc;
 use crate::activity::Probes;
 use crate::box_key::BoxKey;
 use crate::config::McpServer;
+use crate::profile::Manifest;
 use crate::name::{BoxHandle, BoxId, BoxName, BoxPath, NameError};
 use crate::seam::agent_adapter::{AgentInstall, PromptMatch, ProxyAddr};
 use crate::seam::driver::DriverError;
@@ -96,6 +97,8 @@ pub struct LaunchReq {
     pub prompt: LaunchPrompt,
     /// MCP servers as the Box sees them: no secret in any value.
     pub mcp: BTreeMap<String, McpServer>,
+    /// The Box's person profile, checked out on the Box; `None` when the Box has none.
+    pub profile: Option<Manifest>,
 }
 
 impl LaunchReq {

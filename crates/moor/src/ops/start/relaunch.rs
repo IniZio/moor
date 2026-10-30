@@ -180,7 +180,7 @@ pub(super) fn relaunch(
         .prompt
         .clone()
         .map_or(LaunchPrompt::None, LaunchPrompt::Text);
-    launch.model = cfg.model.clone().map(|m| m.value);
+    launch::with_profile(store, &mut launch, &cfg)?;
     if let Some(g) = &req.prompt {
         let set = Fields {
             prompt: Field::Set(g.clone()),

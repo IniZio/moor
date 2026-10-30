@@ -47,6 +47,7 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
 fn req(s: &FakeSurface, proxy: bool) -> LaunchReq {
     let name = BoxName::parse_allow_bare("t1").unwrap();
     LaunchReq {
+        profile: None,
         mcp: std::collections::BTreeMap::new(),
         id: BoxId::new(1),
         handle: BoxHandle::new("box-1"),

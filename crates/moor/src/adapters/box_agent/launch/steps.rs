@@ -1,12 +1,17 @@
 //! The Box steps of one launch, run as batches.
 
+use moor_core::boxscript::profile::PROFILE_DIR;
 use moor_core::boxscript::quote;
 use moor_core::name::BoxPath;
+use moor_core::seam::agent_adapter::BoxSetup;
 use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, StepDone};
 use moor_core::seam::engine::LaunchNotice;
 use moor_core::seam::proc::{Deadline, Tool};
 
 use super::super::brief::{render, BriefInput};
+use super::super::claude::Claude;
+use super::super::codex::Codex;
+use super::super::profile_writer::{ProfileCtx, ProfileWriter};
 use super::super::gh_release::sha256_hex;
 use super::gh;
 use super::install::{parse_platform, StepResult};
@@ -122,6 +127,26 @@ impl Launch<'_> {
         }
     }
 
+    /// The profile writers' setups, one per agent; none when the Box has no profile.
+    fn profile_setups(&self) -> Result<Vec<BoxSetup>, Failure> {
+        let Some(manifest) = &self.req.profile else {
+            return Ok(Vec::new());
+        };
+        let home = &self.ctx.home;
+        let dir = BoxPath::under(home.as_str(), PROFILE_DIR).map_err(|e| fail("profile", &e))?;
+        let ctx = ProfileCtx {
+            manifest,
+            profile_dir: &dir,
+            workdir: &self.ctx.workdir,
+            home,
+        };
+        let writers: [&dyn ProfileWriter; 2] = [&Claude, &Codex];
+        writers
+            .iter()
+            .map(|w| w.write(&ctx).map_err(|e| fail("profile", &e)))
+            .collect()
+    }
+
     /// Adds every step after the platform to `plan`, in the order a failure is reported; on an error
     /// `plan` holds the steps before it.
     pub(super) fn plan(&self, platform: Platform, plan: &mut Plan) -> Result<(), Failure> {
@@ -133,6 +158,7 @@ impl Launch<'_> {
             .hook_writer(ctx)
             .map_err(|e| fail("hooks", &e))?;
         let preseed = self.profile.preseed(ctx).map_err(|e| fail("preseed", &e))?;
+        let writers = self.profile_setups()?;
         let brief = render(&BriefInput {
             name: req.box_name.as_str(),
             issue: req.issue.as_deref(),
@@ -151,7 +177,8 @@ impl Launch<'_> {
                 mode: 0o600,
             },
         );
-        for file in hooks.files.iter().chain(&preseed.files) {
+        let written = writers.iter().flat_map(|w| &w.files);
+        for file in hooks.files.iter().chain(&preseed.files).chain(written) {
             let put = BoxStep::Put {
                 path: file.path.clone(),
                 bytes: file.content.as_bytes().to_vec(),
@@ -159,7 +186,7 @@ impl Launch<'_> {
             };
             plan.push(Tag::Hooks, put);
         }
-        let script = self.agent_script(&hooks, &preseed)?;
+        let script = self.agent_script(&hooks, &preseed, &writers)?;
         let path = script_path(cred).map_err(|e| fail("script", &e))?;
         let put = BoxStep::Put {
             path,
