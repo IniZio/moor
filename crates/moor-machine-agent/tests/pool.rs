@@ -3,6 +3,7 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::missing_docs_in_private_items,
+    clippy::indexing_slicing,
     reason = "tests"
 )]
 
@@ -69,6 +70,13 @@ fn stopping_a_lease_already_gone_succeeds() {
     let home = home();
     std::fs::write(home.path().join("stop-gone"), "").unwrap();
     assert_eq!(lease(home.path(), &["stop", "moor-7"]), (true, DONE()));
+    std::fs::remove_file(home.path().join("stop-gone")).unwrap();
+    std::fs::write(home.path().join("stop-missing"), "").unwrap();
+    assert_eq!(
+        lease(home.path(), &["stop", "moor-7"]),
+        (true, DONE()),
+        "external's not-found"
+    );
 }
 
 #[test]

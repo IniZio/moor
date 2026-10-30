@@ -17,7 +17,8 @@ mod reach;
 const BOOT: Duration = Duration::from_mins(15);
 /// How long any other crabbox call may take.
 const CALL: Duration = Duration::from_mins(2);
-/// The exit code of `crabbox stop` for a lease that is already gone.
+/// The exit code of `crabbox stop` for a lease that is already gone; the external provider
+/// exits 1 instead, saying the lease is not found.
 const GONE: i32 = 4;
 /// Bytes of crabbox's stderr an error quotes, from the end.
 const TAIL: usize = 2048;
@@ -91,6 +92,9 @@ async fn act(lease: &Crabbox<'_>, verb: Verb, id: i64) -> Result<Answer, String>
         Ok(_) => Ok(Answer::Done),
         Err(e) if verb == Verb::Pause && e.contains("does not support pause") => {
             Ok(Answer::Unsupported)
+        }
+        Err(e) if verb == Verb::Stop && e.contains(&format!("lease moor-{id} not found")) => {
+            Ok(Answer::Done)
         }
         Err(e) => Err(e),
     }
