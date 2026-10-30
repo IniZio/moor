@@ -39,7 +39,8 @@ pub(crate) fn agent_env(cx: &Cx, settings: &BoxSettings) -> Vec<(String, String)
         .collect()
 }
 
-/// Resolves the proxy plan of a Box of `repo` with the MCP servers `mcp`.
+/// Resolves the proxy plan of a Box of `repo` with the MCP servers `mcp`, which may also
+/// fetch the repos in `reads`.
 ///
 /// # Errors
 /// The message of a rule that does not resolve.
@@ -47,11 +48,13 @@ pub(crate) fn plan(
     cx: &Cx,
     repo: Option<&ForgeRepo>,
     mcp: &BTreeMap<String, McpServer>,
+    reads: &[ForgeRepo],
 ) -> Result<ProxyPlan, String> {
     let repo = repo.cloned();
     let rules = resolve_rules(
         &cx.config().box_proxy(mcp),
         repo.as_ref().map(|r| (r.owner.as_str(), r.name.as_str())),
+        reads,
     )
     .map_err(|e| e.to_string())?;
     Ok(ProxyPlan { repo, rules })

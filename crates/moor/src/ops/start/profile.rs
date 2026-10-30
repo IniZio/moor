@@ -8,11 +8,12 @@ use moor_core::domain::event::ProfileStep;
 use moor_core::profile::{self, GithubRepo, MANIFEST_FILE, MARKETPLACE_FILE};
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::user::UserId;
-use moor_core::{BoxId, Secret, Warning};
+use moor_core::{BoxId, Secret};
 
 use super::repo::github_token;
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::profile_fetch::failed;
 use crate::store::box_profile::BoxProfile;
 use crate::store::Store;
 
@@ -132,29 +133,5 @@ pub(crate) fn record(
     for (step, detail) in gathered.failures {
         failed(cx, store, id, step, detail)?;
     }
-    Ok(())
-}
-
-/// Records a failed profile `step` on Box `id` and warns, so the thread shows it.
-///
-/// # Errors
-/// [`CommandError`] when the event cannot be written.
-pub(crate) fn failed(
-    cx: &Cx,
-    store: &Store,
-    id: BoxId,
-    step: ProfileStep,
-    detail: String,
-) -> Result<(), CommandError> {
-    let what = match step {
-        ProfileStep::Resolve => "could not be resolved",
-        ProfileStep::Manifest => "has a bad manifest or marketplace",
-        ProfileStep::Fetch => "could not be fetched into the Box",
-    };
-    cx.warn(Warning {
-        code: "profile_failed".to_owned(),
-        message: format!("your agent profile {what}: {detail}; the Box starts without it"),
-    });
-    store.apply(Decision::new(id).event(ExtraEvent::ProfileFailed { step, detail }))?;
     Ok(())
 }

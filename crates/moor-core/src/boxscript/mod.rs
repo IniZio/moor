@@ -3,6 +3,7 @@
 pub mod boxwork;
 pub mod clone;
 pub mod detached;
+pub mod profile;
 pub mod record;
 pub mod refresh;
 pub mod resources;

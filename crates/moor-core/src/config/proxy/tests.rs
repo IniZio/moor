@@ -181,7 +181,7 @@ fn defaults_are_valid_and_complete() {
 
 #[test]
 fn resolve_fills_repo() {
-    let rules = resolve_rules(&ProxyConfig::default(), Some(repo())).expect("resolves");
+    let rules = resolve_rules(&ProxyConfig::default(), Some(repo()), &[]).expect("resolves");
     let get = |n: &str| rules.iter().find(|r| r.name == n).expect(n);
     let git = get("github-git");
     assert_eq!(
@@ -226,7 +226,7 @@ fn user_rule_overrides_default_inject_and_adds() {
     let cfg = user(&format!(
         "{GOOD}\n    claude: {{inject: {{header: X-Key, form: '{{secret}}'}}}}"
     ));
-    let rules = resolve_rules(&cfg.proxy, Some(repo())).expect("resolves");
+    let rules = resolve_rules(&cfg.proxy, Some(repo()), &[]).expect("resolves");
     let claude = rules.iter().find(|r| r.name == "claude").expect("claude");
     assert_eq!(claude.hosts, ["api.anthropic.com"]);
     assert_eq!(
@@ -255,7 +255,7 @@ fn github_api_paths(allow: Option<&str>) -> Vec<String> {
         format!("proxy:\n  rules:\n    github-api:\n      allow: ['{a}']\n")
     });
     let cfg = user(&doc);
-    let rules = resolve_rules(&cfg.proxy, Some(repo())).expect("resolves");
+    let rules = resolve_rules(&cfg.proxy, Some(repo()), &[]).expect("resolves");
     let gh = rules.iter().find(|r| r.name == "github-api").expect("gh");
     assert_eq!(gh.hosts, ["api.github.com"]);
     assert_eq!(gh.credential, "github");
@@ -281,7 +281,7 @@ fn user_allow_extends_default_rule() {
 fn user_box_env_overrides_default_var() {
     let doc = "proxy:\n  rules:\n    github-api:\n      box_env: {GH_REPO: fixed, MORE: x}\n";
     let cfg = user(doc);
-    let rules = resolve_rules(&cfg.proxy, Some(repo())).expect("resolves");
+    let rules = resolve_rules(&cfg.proxy, Some(repo()), &[]).expect("resolves");
     let gh = rules.iter().find(|r| r.name == "github-api").expect("gh");
     assert_eq!(gh.box_env.get("GH_REPO").map(String::as_str), Some("fixed"));
     assert_eq!(gh.box_env.get("MORE").map(String::as_str), Some("x"));
@@ -293,7 +293,7 @@ fn user_box_env_overrides_default_var() {
 
 #[test]
 fn github_uploads_rule_injects_github_and_allows_only_the_asset_post() {
-    let rules = resolve_rules(&ProxyConfig::default(), Some(("o", "w"))).expect("resolves");
+    let rules = resolve_rules(&ProxyConfig::default(), Some(("o", "w")), &[]).expect("resolves");
     let up = rules
         .iter()
         .find(|r| r.name == "github-uploads")
@@ -324,7 +324,7 @@ fn duplicate_user_allow_collapses() {
 #[test]
 fn new_name_rule_stays_whole() {
     let cfg = user(GOOD);
-    let rules = resolve_rules(&cfg.proxy, Some(repo())).expect("resolves");
+    let rules = resolve_rules(&cfg.proxy, Some(repo()), &[]).expect("resolves");
     let gl = rules.iter().find(|r| r.name == "gitlab").expect("gitlab");
     assert_eq!(gl.hosts, ["gitlab.com"]);
     assert_eq!(gl.credential, "gitlab");
@@ -333,7 +333,7 @@ fn new_name_rule_stays_whole() {
 
 #[test]
 fn no_repo_drops_repo_rules() {
-    let rules = resolve_rules(&ProxyConfig::default(), None).expect("resolves");
+    let rules = resolve_rules(&ProxyConfig::default(), None, &[]).expect("resolves");
     let names: Vec<_> = rules.iter().map(|r| r.name.as_str()).collect();
     assert_eq!(names, ["claude"]);
 }
@@ -352,7 +352,7 @@ fn unsafe_repo_parts_rejected() {
         ("ac\u{fc}", "w"),
         ("a", "w{repo}"),
     ] {
-        let e = resolve_rules(&ProxyConfig::default(), Some((owner, name))).expect_err(owner);
+        let e = resolve_rules(&ProxyConfig::default(), Some((owner, name)), &[]).expect_err(owner);
         assert!(
             e.reason.contains(&format!("{owner:?}")) || e.reason.contains(&format!("{name:?}")),
             "{owner}/{name}: {e}"
@@ -376,7 +376,7 @@ fn path_matches(glob: &str, path: &str) -> bool {
 }
 
 fn github_api_allows(method: &str, path: &str) -> bool {
-    let rules = resolve_rules(&ProxyConfig::default(), Some(repo())).expect("resolves");
+    let rules = resolve_rules(&ProxyConfig::default(), Some(repo()), &[]).expect("resolves");
     let api = rules.iter().find(|r| r.name == "github-api").expect("api");
     api.endpoint_rules
         .iter()
@@ -449,7 +449,7 @@ fn github_api_allows_run_reads_and_nothing_else_under_actions() {
 
 #[test]
 fn each_default_rule_injects_its_own_secret() {
-    let rules = resolve_rules(&ProxyConfig::default(), Some(repo())).expect("resolves");
+    let rules = resolve_rules(&ProxyConfig::default(), Some(repo()), &[]).expect("resolves");
     let got: Vec<(&str, &str)> = rules
         .iter()
         .map(|r| (r.name.as_str(), r.credential.as_str()))
@@ -491,4 +491,80 @@ fn the_front_claude_rule_allows_only_what_a_turn_calls() {
         default_rules().get("claude").unwrap().allow.is_empty(),
         "the Box claude rule keeps no path list"
     );
+}
+
+fn reads() -> Vec<crate::name::ForgeRepo> {
+    ["me/profile", "acme/agent-tools"]
+        .into_iter()
+        .map(|r| crate::name::ForgeRepo::parse(r).expect(r))
+        .collect()
+}
+
+fn git_entries(repo: Option<(&str, &str)>, reads: &[crate::name::ForgeRepo]) -> Vec<String> {
+    let rules = resolve_rules(&ProxyConfig::default(), repo, reads).expect("resolves");
+    rules
+        .iter()
+        .find(|r| r.name == "github-git")
+        .map(|r| {
+            r.endpoint_rules
+                .iter()
+                .map(|e| format!("{} {}", e.method, e.path))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn read_repos_may_fetch_but_never_push() {
+    assert_eq!(
+        git_entries(Some(repo()), &reads()),
+        [
+            "GET /acme/widgets.git/info/refs",
+            "POST /acme/widgets.git/git-upload-pack",
+            "POST /acme/widgets.git/git-receive-pack",
+            "GET /me/profile.git/info/refs",
+            "GET /acme/agent-tools.git/info/refs",
+            "POST /me/profile.git/git-upload-pack",
+            "POST /acme/agent-tools.git/git-upload-pack",
+        ]
+    );
+}
+
+#[test]
+fn no_reads_resolve_as_before() {
+    let plain = resolve_rules(&ProxyConfig::default(), Some(repo()), &[]).expect("resolves");
+    assert_eq!(
+        git_entries(Some(repo()), &[]),
+        [
+            "GET /acme/widgets.git/info/refs",
+            "POST /acme/widgets.git/git-upload-pack",
+            "POST /acme/widgets.git/git-receive-pack",
+        ]
+    );
+    assert!(plain
+        .iter()
+        .all(|r| r.endpoint_rules.iter().all(|e| !e.path.contains('{'))));
+}
+
+#[test]
+fn reads_without_a_box_repo_keep_only_the_read_entries() {
+    assert_eq!(
+        git_entries(None, reads().get(..1).unwrap()),
+        [
+            "GET /me/profile.git/info/refs",
+            "POST /me/profile.git/git-upload-pack",
+        ]
+    );
+    let names: Vec<String> = resolve_rules(&ProxyConfig::default(), None, &reads())
+        .expect("resolves")
+        .into_iter()
+        .map(|r| r.name)
+        .collect();
+    assert_eq!(names, ["claude", "github-git"]);
+}
+
+#[test]
+fn read_repo_push_is_refused() {
+    let e = err("proxy:\n  rules:\n    github-git:\n      allow: ['POST /{read_repo}.git/git-receive-pack']\n");
+    assert!(e.to_string().contains("only read"), "{e}");
 }

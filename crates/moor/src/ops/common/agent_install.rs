@@ -25,14 +25,19 @@ pub(crate) fn warning(reason: &str) -> Warning {
 }
 
 /// Runs the agent's install script in the Box with the env and Proxy setup gets, logging to
-/// `log`. The error is why it could not run to an exit.
-fn run(
+/// `log`, for at most `deadline`. The error is why it could not run to an exit.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the Box, settings, Proxy, script, log and deadline"
+)]
+pub(crate) fn run(
     cx: &Cx,
     site: &Site<'_>,
     cfg: &BoxSettings,
     proxy: Option<&BoxProxy>,
     script: String,
     log: &Path,
+    deadline: Duration,
 ) -> Result<ExecOutcome, String> {
     let env = box_exec::prepare(cx, site, proxy, cfg, Purpose::Run)
         .map_err(|e| format!("could not prepare the install: {e}"))?;
@@ -43,7 +48,7 @@ fn run(
         output: Some(Output::Log(log.to_path_buf())),
     };
     cx.driver()
-        .exec(site.handle, &exec, Deadline(INSTALL_DEADLINE))
+        .exec(site.handle, &exec, Deadline(deadline))
         .map_err(|e| e.to_string())
 }
 
@@ -75,7 +80,15 @@ pub(crate) fn apply(
         provider,
         workdir: None,
     };
-    let reason = match run(cx, &site, cfg, proxy.as_ref(), install.script, &log) {
+    let reason = match run(
+        cx,
+        &site,
+        cfg,
+        proxy.as_ref(),
+        install.script,
+        &log,
+        INSTALL_DEADLINE,
+    ) {
         Ok(ExecOutcome::Exited { code: 0 }) => return Ok(()),
         Ok(ExecOutcome::Exited { code }) => format!("exit {code}"),
         Ok(ExecOutcome::Interrupted) => "interrupted".to_owned(),

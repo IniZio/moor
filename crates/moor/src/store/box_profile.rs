@@ -44,7 +44,6 @@ impl Store {
     }
 
     /// The profile Box `id` resolved, if any.
-    #[cfg(test)]
     pub(crate) fn box_profile(&self, id: BoxId) -> Result<Option<BoxProfile>, StoreError> {
         let row: Option<(String, String, Option<String>, String)> = self
             .reader()?

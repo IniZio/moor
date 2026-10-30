@@ -17,7 +17,7 @@ fn the_box_sees_a_placeholder_where_a_header_names_a_secret() {
 #[test]
 fn the_proxy_injects_the_named_secret_for_the_server_host() {
     let cfg = ok(LINEAR);
-    let rules = resolve_rules(&cfg.box_proxy(&cfg.mcp_servers), None).unwrap();
+    let rules = resolve_rules(&cfg.box_proxy(&cfg.mcp_servers), None, &[]).unwrap();
     let rule = rules.iter().find(|r| r.name == "mcp-tracker").unwrap();
     assert_eq!(rule.hosts, ["mcp.example.test"]);
     assert_eq!(rule.credential, "linear");

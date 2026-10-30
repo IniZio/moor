@@ -79,7 +79,7 @@ fn needs(
     user: Option<UserId>,
 ) -> Result<Vec<SecretName>, CommandError> {
     let mcp = crate::ops::users::mcp::for_box(cx, user)?;
-    let rules = plan(cx, repo, &mcp.servers)
+    let rules = plan(cx, repo, &mcp.servers, &[])
         .map_err(|e| CommandError::new(ErrorKind::Failed, e))?
         .rules;
     let names: BTreeSet<SecretName> = rules
