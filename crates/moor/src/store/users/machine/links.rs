@@ -37,28 +37,52 @@ impl Store {
         tx.execute("DELETE FROM machine_links", [])?;
         for link in links {
             tx.execute(
-                "INSERT OR REPLACE INTO machine_links (machine_id, online, since) \
-                 SELECT machine_id, ?, ? FROM user_machines_v2 WHERE machine_id = ?",
-                params![link.online, link.since.as_millis(), link.machine_id],
+                "INSERT OR REPLACE INTO machine_links (machine_id, online, since, version, protocol) \
+                 SELECT machine_id, ?, ?, ?, ? FROM user_machines_v2 WHERE machine_id = ?",
+                params![
+                    link.online,
+                    link.since.as_millis(),
+                    link.version,
+                    link.protocol,
+                    link.machine_id
+                ],
             )?;
         }
         let held = {
-            let mut stmt = tx.prepare(
-                "SELECT machine_id, online, since FROM machine_links ORDER BY machine_id",
-            )?;
-            let rows = stmt.query_map([], |r| {
-                Ok(MachineLink {
-                    machine_id: r.get(0)?,
-                    online: r.get(1)?,
-                    since: Ts::from_millis(r.get(2)?),
-                })
-            })?;
+            let mut stmt = tx.prepare(&format!("SELECT {LINK_COLUMNS} ORDER BY machine_id"))?;
+            let rows = stmt.query_map([], link_row)?;
             rows.collect::<Result<Vec<_>, _>>()?
         };
         tx.commit()?;
         drop(conn);
         Ok(held)
     }
+
+    /// The stored link of each of `user`'s machines that has one, by machine name.
+    pub(crate) fn user_machine_links(
+        &self,
+        user: UserId,
+    ) -> Result<Vec<(String, MachineLink)>, StoreError> {
+        let conn = self.reader()?;
+        let mut stmt = conn.prepare(&format!("SELECT {LINK_COLUMNS} WHERE m.user = ?"))?;
+        let rows = stmt.query_map([user.get()], |r| Ok((r.get(5)?, link_row(r)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+}
+
+/// The columns [`link_row`] reads, then the machine's name once `user_machines_v2 m` is joined.
+const LINK_COLUMNS: &str = "machine_id, online, since, version, protocol, m.name \
+     FROM machine_links LEFT JOIN user_machines_v2 m USING (machine_id)";
+
+/// One `machine_links` row.
+fn link_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<MachineLink> {
+    Ok(MachineLink {
+        machine_id: r.get(0)?,
+        online: r.get(1)?,
+        since: Ts::from_millis(r.get(2)?),
+        version: r.get(3)?,
+        protocol: r.get(4)?,
+    })
 }
 
 /// `user`'s enrolled machines with their ids. They have no ssh target: their agent links in.

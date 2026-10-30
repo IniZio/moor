@@ -31,6 +31,8 @@ fn enrolled(w: &World, pool: Option<&str>, online: Option<bool>) {
             machine_id,
             online,
             since: Ts::from_millis(1),
+            version: None,
+            protocol: None,
         };
         store.set_machine_links(&[link]).unwrap();
     }
