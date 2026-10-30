@@ -86,6 +86,28 @@ no `--resource` flags, the runner holds nothing.
 The runner uses the host's `ssh` and `rsync` in batch mode, with the host
 user's own key and `known_hosts`. It stores and passes no secret.
 
+## Seeing a machine's state
+
+`moor user machine ls` prints one line per machine of yours: its name, whether
+its agent is linked (`online`, `offline`, or `not linked` before it first
+links) and the agent's version.
+
+```
+amd  online  1.2.3
+old  offline  1.2.0
+mac  not linked  -
+```
+
+`moor user machine status NAME` asks that machine's agent for its version, OS,
+CPU architecture and free disk. A machine that hosts a Box pool also reports
+its provider, its crabbox version and its leases, one `slug state` line each.
+Last come the agent's last 50 operations, newest first, each with its time,
+name, target and whether it succeeded. Add `--json` for the same data as JSON.
+
+The request is read-only and never runs a command on the machine. It refuses
+a machine that is offline, naming since when, and it refuses a name that is
+not one of yours.
+
 ## Claiming a machine
 
 An agent in a Box takes a slot on one of its user's machines with
