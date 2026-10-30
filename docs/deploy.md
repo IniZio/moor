@@ -92,13 +92,16 @@ does.
 The controller refuses to start, with exit code 1, when the passed sockets do
 not match the config:
 
-- A passed socket has a name other than `controller` or `front-<namespace>`
-  for a namespace in `fronts`.
+- A passed socket has a name other than `controller`, `runner` or
+  `front-<namespace>` for a namespace in `fronts`.
 - The config needs a socket that systemd did not pass. Enable the missing
   `moor-front@<namespace>.socket`.
 - A socket is bound at a path other than the one the config gives. The controller
   socket path is `socket` in the config, else `<state dir>/controller.sock`.
 - A socket file is open to the group or to other users. Set `SocketMode=0600`.
+
+The machine runner's socket, `<state dir>/runner/runner.sock`, may be passed
+as `runner`. When it is not passed, the controller binds it itself.
 
 The controller never deletes or rebinds a socket that systemd passed in.
 The passed fds are close-on-exec, so Box processes and fronts do not inherit

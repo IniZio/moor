@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use moor_core::config::parse_controller;
+use moor_core::config::{parse_controller, ControllerConfig};
 use moor_core::ErrorKind;
 
 use drain::{Admitted, Drain, Handler};
@@ -113,6 +113,8 @@ struct Running {
     listener: UnixListener,
     /// Each front's socket, by namespace.
     fronts: Vec<(String, UnixListener)>,
+    /// The machine runner's socket.
+    runner: UnixListener,
     /// The fronts that have a command, not yet started.
     commands: Vec<fronts::Front>,
     /// The front Proxy, not yet started; none when no front lists proxy rules.
@@ -170,19 +172,14 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
     Moor::end_front_leases(&env).map_err(|e| refused(e.error.to_string()))?;
     let listener = sockets.listen("controller", &socket).map_err(refused)?;
     let fronts = peer::bind_fronts(&env, &mut sockets, &cfg.fronts.keys().collect::<Vec<_>>())?;
-    let commands = fronts
-        .iter()
-        .filter_map(|(ns, listener)| {
-            let access = proxy.as_ref().and_then(|p| p.access(ns));
-            fronts::Front::new(ns, listener, cfg.fronts.get(ns)?, &env, &socket, access)
-        })
-        .collect::<Result<_, _>>()
-        .map_err(refused)?;
+    let runner = peer::bind_runner(&env, &mut sockets)?;
+    let commands = front_commands(&fronts, &cfg, proxy.as_ref(), &env, &socket).map_err(refused)?;
     sockets.finish().map_err(refused)?;
     Ok(Running {
         socket,
         listener,
         fronts,
+        runner,
         commands,
         proxy,
         vault: Arc::new(vault),
@@ -192,6 +189,23 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         settle_every: cfg.settle_every(),
         drain_timeout: cfg.drain_timeout(),
     })
+}
+
+/// The fronts in `cfg` that have a command, each on its socket in `fronts`.
+fn front_commands(
+    fronts: &[(String, UnixListener)],
+    cfg: &ControllerConfig,
+    proxy: Option<&front_proxy::Plan>,
+    env: &Env,
+    socket: &Path,
+) -> Result<Vec<fronts::Front>, String> {
+    fronts
+        .iter()
+        .filter_map(|(ns, listener)| {
+            let access = proxy.and_then(|p| p.access(ns));
+            fronts::Front::new(ns, listener, cfg.fronts.get(ns)?, env, socket, access)
+        })
+        .collect()
 }
 
 /// Loads the vault key beside `config`, creating it on first start, and returns it with its
@@ -307,14 +321,15 @@ impl Running {
         fronts::supervise(std::mem::take(&mut self.commands), shim, proxy, sink)
     }
 
-    /// Serves the controller socket and each front socket until `wake` turns readable, then
+    /// Serves the controller socket, each front socket and the runner socket until `wake` turns readable, then
     /// drains `drain`; the locks are held until it returns.
     fn serve_until(self, wake: &UnixStream, drain: &Arc<Drain>, sink: &Sink) {
-        let mut listeners = vec![(self.listener, handler(&self.env, &self.vault, None, sink))];
+        let serve = |on: peer::On| handler(&self.env, &self.vault, on, sink);
+        let mut listeners = vec![(self.listener, serve(peer::On::Controller))];
         for (ns, listener) in self.fronts {
-            let handler = handler(&self.env, &self.vault, Some(ns), sink);
-            listeners.push((listener, handler));
+            listeners.push((listener, serve(peer::On::Front(ns))));
         }
+        listeners.push((self.runner, serve(peer::On::Runner)));
         match drain::serve_until(&listeners, wake, drain, self.drain_timeout, sink) {
             0 => log(sink, "drained; exiting"),
             left => log(
@@ -347,16 +362,12 @@ impl Running {
     }
 }
 
-/// Serves one connection on a listener; `front` names the front whose socket it is, none for
-/// the controller socket.
-fn handler(env: &Arc<Env>, vault: &Arc<Vault>, front: Option<String>, sink: &Sink) -> Handler {
+/// Serves one connection on the listener `on`.
+fn handler(env: &Arc<Env>, vault: &Arc<Vault>, on: peer::On, sink: &Sink) -> Handler {
     let (env, vault, sink) = (Arc::clone(env), Arc::clone(vault), Arc::clone(sink));
     Arc::new(move |stream: UnixStream, conn: Admitted| {
         let peer = conn::Peer {
-            caller: front.clone().map_or_else(
-                || peer::local_caller(&stream, rustix::process::geteuid().as_raw()),
-                |ns| Ok(moor_core::user::Caller::Front(ns)),
-            ),
+            caller: peer::caller(&on, &stream),
             vault: Arc::clone(&vault),
             hangup: hangup::Hangup::of(&stream).ok(),
             conn,

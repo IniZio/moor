@@ -48,6 +48,15 @@ impl Served {
         Self { dir, main, log }
     }
 
+    /// The machine runner's socket.
+    pub(super) fn runner(&self) -> PathBuf {
+        self.dir
+            .path()
+            .join("state")
+            .join("runner")
+            .join("runner.sock")
+    }
+
     /// The socket of front `ns`.
     pub(super) fn front(&self, ns: &str) -> PathBuf {
         self.dir

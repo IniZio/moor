@@ -88,6 +88,18 @@ fn a_claim_with_a_free_slot_holds_it_with_the_repos_ports() {
 }
 
 #[test]
+fn the_runner_socket_claims_a_machine_for_any_users_box() {
+    let h = Hold::new();
+    let (a, b) = (h.new_box(A, "a"), h.new_box(B, "b"));
+    let runner = h.served.runner();
+    assert_eq!(ask(&runner, &hold(a, &claim()))["value"]["machine"], "mini");
+    assert_eq!(
+        ask(&runner, &hold(b, &claim()))["value"]["machine"],
+        "studio"
+    );
+}
+
+#[test]
 fn a_claim_on_a_full_machine_without_a_wait_is_refused_naming_the_holder() {
     let h = Hold::new();
     let (a, b) = (h.new_box(A, "a"), h.new_box(A, "b"));

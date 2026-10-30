@@ -187,6 +187,9 @@ pub enum Caller {
     Local(u32),
     /// A front's socket, bound to that front's namespace. Never the operator.
     Front(String),
+    /// The machine runner's socket: the few requests the runner sends, for every user's Boxes
+    /// and machines, and no identity of its own.
+    Runner,
 }
 
 impl Caller {
@@ -212,6 +215,7 @@ impl Caller {
             (Self::Front(ns), None) => {
                 Err(format!("the {ns} front socket must assert an identity"))
             }
+            (Self::Runner, _) => Err("the machine runner's socket acts for no identity".to_owned()),
         }
     }
 }

@@ -16,7 +16,7 @@ use super::authz::{
 use super::fronts::{ask, refused};
 
 /// A request of `kind` for a kind that names no Box; `None` for a kind this test does not know.
-fn nameless(kind: &str) -> Option<Value> {
+pub(super) fn nameless(kind: &str) -> Option<Value> {
     Some(match kind {
         "start-needs" | "env" | "repos" | "whoami" | "enroll" | "secret-names" | "version"
         | "proxy-lease" | "proxy-status" | "mcp-list" | "machine-list" | "machine-targets"
