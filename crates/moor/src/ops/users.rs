@@ -80,7 +80,7 @@ pub(crate) fn run(
             (name, pubkey, labels),
             (*capacity, pool.as_deref()),
         ),
-        UserCmd::MachineAdd { .. } | UserCmd::MachineRemove { .. } | UserCmd::MachineList => {
+        UserCmd::MachineRemove { .. } | UserCmd::MachineList => {
             machine::run(store, enrolled(store, who)?, cmd)
         }
         UserCmd::MachineStatus { name } => machine::status(cx, enrolled(store, who)?, name),

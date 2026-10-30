@@ -1,79 +1,25 @@
-//! `/moor machine add|list|remove`: a person's own machines, reached over the host's ssh. `add`
-//! opens a modal for the name, ssh target and labels, and sends `machine-add` as that Slack user.
-//! Nothing secret is stored here. These are setup commands; nothing reads words in a thread.
+//! `/moor machine list|remove`: a person's own machines. A machine joins by running
+//! `moor-machine-agent enroll` on it, so `add` only says how. Nothing secret is stored here.
+//! These are setup commands; nothing reads words in a thread.
 
-use moor_core::request::{AsReq, EnrollReq, MachineAddReq, MachineRemoveReq, Request};
-use serde_json::{json, Value};
+use moor_core::request::{AsReq, MachineRemoveReq, Request};
+use serde_json::Value;
 
 use crate::credentials::SlackUser;
 use crate::db::Db;
 use crate::login::vault::{send, Call};
-use crate::mcp::{field, name_ok, text_ack, BAD_ID};
-use crate::socket::{AfterAck, Kept, Slash, TokenSubmission};
+use crate::mcp::{name_ok, text_ack, BAD_ID};
+use crate::socket::{Kept, Slash};
 use crate::worker::Job;
 
-/// `callback_id` of the add modal.
-pub(crate) const MACHINE_CALLBACK: &str = "moor_machine";
-
-/// The add modal's `private_metadata`, which tells a submission from a login one.
-pub(crate) const MACHINE_FORM: &str = "machine";
-
-/// Shown above the inputs.
-const HELP: &str = "Example: name minion, ssh target moor@minion. The host's own ssh key \
-    reaches the machine; nothing secret is stored.";
+/// The reply to `/moor machine add`: machines enroll themselves.
+const ENROLL: &str = "A machine joins by enrolling itself: run \
+    `moor-machine-agent enroll --server <url> --name <name>` on it, then \
+    `moor-machine-agent run`.";
 
 /// The reply to a `/moor machine` that is not one of the three.
-const USAGE: &str = "Usage: `/moor machine add` opens a form for a machine of yours, \
-    `/moor machine list` shows your machines and `/moor machine remove <name>` drops one.";
-
-/// Shown under the capacity input.
-const CAPACITY_HINT: &str = "How many Boxes may use it at once. Optional, 1 when empty.";
-
-/// The answer to a capacity the controller could not store.
-const BAD_CAPACITY: &str = "Capacity must be a whole number from 1 to 65535. Nothing was stored.";
-
-/// The modal `/moor machine add` opens.
-pub(crate) fn form() -> Value {
-    let input = |block: &str, label: &str, hint: Option<&str>| {
-        let mut input = json!({
-            "type": "input",
-            "block_id": block,
-            "optional": block == "labels" || block == "capacity",
-            "label": {"type": "plain_text", "text": label},
-            "element": {"type": "plain_text_input", "action_id": block},
-        });
-        if let (Some(hint), Some(map)) = (hint, input.as_object_mut()) {
-            map.insert("hint".into(), json!({"type": "plain_text", "text": hint}));
-        }
-        input
-    };
-    json!({
-        "type": "modal",
-        "callback_id": MACHINE_CALLBACK,
-        "private_metadata": MACHINE_FORM,
-        "title": {"type": "plain_text", "text": "moor machine"},
-        "submit": {"type": "plain_text", "text": "Add"},
-        "close": {"type": "plain_text", "text": "Cancel"},
-        "blocks": [
-            {"type": "context", "elements": [{"type": "plain_text", "text": HELP}]},
-            input("name", "Name", None),
-            input("ssh", "SSH target", Some("user@host or user@host:port")),
-            input("labels", "Labels", Some("Comma-separated, optional.")),
-            input("capacity", "Capacity", Some(CAPACITY_HINT)),
-        ],
-    })
-}
-
-/// A modal that shows `text` as plain text.
-fn notice(text: &str) -> Value {
-    json!({
-        "type": "modal",
-        "callback_id": MACHINE_CALLBACK,
-        "title": {"type": "plain_text", "text": "moor machine"},
-        "close": {"type": "plain_text", "text": "Close"},
-        "blocks": [{"type": "section", "text": {"type": "plain_text", "text": text}}],
-    })
-}
+const USAGE: &str = "Usage: `/moor machine list` shows your machines, \
+    `/moor machine remove <name>` drops one and `/moor machine add` says how to enroll one.";
 
 /// A `/moor machine list` or `/moor machine remove` for the worker; no `name` means list.
 #[derive(Debug, PartialEq, Eq)]
@@ -86,7 +32,7 @@ pub(crate) struct MachineJob {
     pub(crate) response_url: Option<String>,
 }
 
-/// `/moor machine ...`: `add` opens the modal after an empty ack, `list` and `remove` queue a
+/// `/moor machine ...`: `add` answers how to enroll, `list` and `remove` queue a
 /// job whose answer goes to the user alone through the command's `response_url`.
 pub(crate) fn slash(slash: &Slash, db: &Db, now: i64) -> rusqlite::Result<(Kept, Option<Job>)> {
     let first = db.atomically(|| db.event_once(&slash.envelope_id, now))?;
@@ -104,14 +50,7 @@ pub(crate) fn slash(slash: &Slash, db: &Db, now: i64) -> rusqlite::Result<(Kept,
         })
     };
     let (kept, job) = match (words.next(), words.next(), words.next()) {
-        (Some("add"), None, _) => {
-            let then = slash
-                .trigger_id
-                .clone()
-                .filter(|_| first)
-                .map(|trigger_id| AfterAck::Machine { trigger_id });
-            (Kept { ack: None, then }, None)
-        }
+        (Some("add"), None, _) => (text_ack(ENROLL), None),
         (Some("list"), None, _) => (text_ack("Looking up your machines…"), Some(job(None))),
         (Some("remove"), Some(name), None) if name_ok(name) => (
             text_ack(&format!("Removing `{name}`…")),
@@ -122,56 +61,7 @@ pub(crate) fn slash(slash: &Slash, db: &Db, now: i64) -> rusqlite::Result<(Kept,
     Ok((kept, job.filter(|_| first)))
 }
 
-/// The labels typed in a comma-separated field.
-fn labels(text: &str) -> Vec<String> {
-    text.split(',')
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .map(str::to_owned)
-        .collect()
-}
-
-/// The capacity typed, 1 when empty; `None` unless a whole number from 1.
-fn capacity(text: &str) -> Option<u16> {
-    match text.trim() {
-        "" => Some(1),
-        n => n.parse().ok().filter(|c| *c >= 1),
-    }
-}
-
-/// Handles a submitted add modal, as the Slack user who submitted it: enrolls them when new,
-/// then sends `machine-add`. A refusal is shown to them in the controller's own words.
-pub(crate) fn submission(sub: &TokenSubmission, call: &mut Call<'_>) -> Value {
-    let update = |text: &str| json!({"response_action": "update", "view": notice(text)});
-    if SlackUser::parse(&sub.user).is_none() {
-        return update(&format!("{BAD_ID} Nothing was stored."));
-    }
-    let (name, ssh) = (field(sub, "name"), field(sub, "ssh"));
-    let Some(capacity) = capacity(&field(sub, "capacity")) else {
-        return update(BAD_CAPACITY);
-    };
-    let add = MachineAddReq {
-        identity: None,
-        name: name.clone(),
-        ssh,
-        labels: labels(&field(sub, "labels")),
-        capacity,
-        pool: None,
-    };
-    let enroll = Request::Enroll(EnrollReq {
-        identity: None,
-        email: None,
-    });
-    if let Err(why) = send(call, &sub.user, enroll) {
-        return update(&format!("Could not set you up: {why}. Nothing was stored."));
-    }
-    match send(call, &sub.user, Request::MachineAdd(add)) {
-        Ok(_) => update(&format!("Added `{name}`.")),
-        Err(why) => update(&why),
-    }
-}
-
-/// The body of `/moor machine list` for `user`: each machine's name, ssh target and labels, or
+/// The body of `/moor machine list` for `user`: each machine's name and labels, or
 /// why the controller could not say.
 pub(crate) fn listing(call: &mut Call<'_>, user: &str) -> String {
     let reply = match send(call, user, Request::MachineList(AsReq { identity: None })) {
@@ -188,7 +78,8 @@ pub(crate) fn listing(call: &mut Call<'_>, user: &str) -> String {
         .and_then(Value::as_array)
         .map_or(&[][..], Vec::as_slice);
     if machines.is_empty() {
-        return "You have no machines. Add one with `/moor machine add`.".to_owned();
+        return "You have no machines. Enroll one with `moor-machine-agent enroll` on it."
+            .to_owned();
     }
     let text = |m: &Value, k: &str| {
         crate::escape::code(m.get(k).and_then(Value::as_str).unwrap_or_default())
@@ -208,7 +99,7 @@ pub(crate) fn listing(call: &mut Call<'_>, user: &str) -> String {
             } else {
                 crate::escape::escape(&labels.join(", "))
             };
-            format!("{} {} ({labels})", text(m, "name"), text(m, "ssh"))
+            format!("{} ({labels})", text(m, "name"))
         })
         .collect();
     format!("Your machines:\n{}", lines.join("\n"))

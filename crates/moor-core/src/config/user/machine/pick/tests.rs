@@ -5,7 +5,7 @@ use crate::config::{RepoMachine, UserMachine};
 
 fn machine(name: &str, labels: &[&str]) -> UserMachine {
     let labels: Vec<String> = labels.iter().map(|l| (*l).to_owned()).collect();
-    UserMachine::parse(name, "dev@mac.example", &labels).expect("valid machine")
+    UserMachine::parse(name, &labels).expect("valid machine")
 }
 
 fn want(labels: &[&str], ports: &[u16]) -> RepoMachine {

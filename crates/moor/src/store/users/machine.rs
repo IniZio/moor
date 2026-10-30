@@ -1,4 +1,4 @@
-//! Each user's own machines. A row holds an ssh target and labels, never a credential.
+//! Each user's enrolled machines. A row holds the key the machine's agent signs with and its labels.
 
 use std::collections::BTreeMap;
 
@@ -13,6 +13,8 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use crate::store::apply::insert_event;
 use crate::store::{Store, StoreError};
 
+#[cfg(test)]
+mod fixture;
 mod hold;
 mod links;
 mod pool;
@@ -23,35 +25,6 @@ pub(crate) use hold::MachineWake;
 use row::{claim_in, put_in, Claim};
 
 impl Store {
-    /// Adds `machine` to `user`'s list, replacing one of the same name.
-    pub(crate) fn set_user_machine(
-        &self,
-        user: UserId,
-        machine: &UserMachine,
-    ) -> Result<(), StoreError> {
-        let now = self.now().as_millis();
-        let labels = serde_json::to_string(&machine.labels)
-            .map_err(|e| StoreError::Corrupt(format!("machine labels: {e}")))?;
-        self.writer().execute(
-            "INSERT INTO user_machines \
-             (user, name, ssh, labels, capacity, pool_provider, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (user, name) DO UPDATE SET \
-             ssh = excluded.ssh, labels = excluded.labels, capacity = excluded.capacity, \
-             pool_provider = excluded.pool_provider, updated_at = excluded.updated_at",
-            params![
-                user.get(),
-                machine.name,
-                machine.ssh,
-                labels,
-                machine.capacity,
-                machine.pool,
-                now,
-                now
-            ],
-        )?;
-        Ok(())
-    }
-
     /// Adds the machine an agent enrolled to `user`'s, replacing the key, labels and capacity
     /// of one of the same name; the machine's id, which a replacement keeps.
     pub(crate) fn enroll_machine(
@@ -84,7 +57,7 @@ impl Store {
     /// Removes `user`'s machine `name`; true when there was one.
     pub(crate) fn delete_user_machine(&self, user: UserId, name: &str) -> Result<bool, StoreError> {
         let gone = self.writer().execute(
-            "DELETE FROM user_machines WHERE user = ? AND name = ?",
+            "DELETE FROM user_machines_v2 WHERE user = ? AND name = ?",
             params![user.get(), name],
         )?;
         Ok(gone == 1)
@@ -93,15 +66,6 @@ impl Store {
     /// `user`'s machines by name.
     pub(crate) fn user_machines(&self, user: UserId) -> Result<Vec<UserMachine>, StoreError> {
         machines_in(&self.reader()?, user)
-    }
-
-    /// The distinct ssh targets of every user's machines reached over ssh, sorted; an enrolled
-    /// machine has none.
-    pub(crate) fn machine_targets(&self) -> Result<Vec<String>, StoreError> {
-        let conn = self.reader()?;
-        let mut stmt = conn.prepare("SELECT DISTINCT ssh FROM user_machines ORDER BY ssh")?;
-        let rows = stmt.query_map([], |r| r.get(0))?;
-        Ok(rows.collect::<Result<_, _>>()?)
     }
 
     /// Lets go of the machine `box_id` holds; true when it held one.
@@ -151,7 +115,7 @@ impl Store {
             } => (machine, 0, MachineHoldState::Waiting),
             ClaimState::Wanted { machine: None, .. } => return Ok(None),
         };
-        let machine = named_in(&self.reader()?, claim.user, &name, claim.enrolled)?;
+        let machine = named_in(&self.reader()?, claim.user, &name)?;
         Ok(machine.map(|(machine_id, machine)| HeldMachine {
             machine,
             machine_id,
@@ -178,7 +142,7 @@ impl Store {
             } => machine,
             ClaimState::Wanted { machine: None, .. } => return Ok(None),
         };
-        let gone = claim.enrolled && named_in(&conn, claim.user, &name, true)?.is_none();
+        let gone = named_in(&conn, claim.user, &name)?.is_none();
         Ok(gone.then_some(name))
     }
 }
@@ -212,8 +176,8 @@ pub(in crate::store) fn release_in(
 pub(crate) struct HeldMachine {
     /// The machine.
     pub(crate) machine: UserMachine,
-    /// Its enrolled id when its agent links in; none for a machine reached over ssh.
-    pub(crate) machine_id: Option<i64>,
+    /// Its enrolled id, which its agent links in under.
+    pub(crate) machine_id: i64,
     /// The Box's slot on it.
     pub(crate) slot: u16,
     /// The forwarded ports, the same number on both ends.
@@ -230,65 +194,20 @@ fn machines_in(conn: &Connection, user: UserId) -> Result<Vec<UserMachine>, Stor
     Ok(owned_in(conn, user)?.into_iter().map(|(_, m)| m).collect())
 }
 
-/// `user`'s machines by name with the enrolled id of each that has one: an enrolled machine
-/// hides an ssh one of the same name.
-fn owned_in(
-    conn: &Connection,
-    user: UserId,
-) -> Result<Vec<(Option<i64>, UserMachine)>, StoreError> {
-    let mut own: BTreeMap<String, (Option<i64>, UserMachine)> = ssh_machines_in(conn, user)?
-        .into_iter()
-        .map(|m| (m.name.clone(), (None, m)))
-        .collect();
-    for (id, m) in links::enrolled_in(conn, user)? {
-        own.insert(m.name.clone(), (Some(id), m));
-    }
-    Ok(own.into_values().collect())
+/// `user`'s machines by name with the id each is enrolled under.
+fn owned_in(conn: &Connection, user: UserId) -> Result<Vec<(i64, UserMachine)>, StoreError> {
+    links::enrolled_in(conn, user)
 }
 
-/// `user`'s machine `name`, enrolled or reached over ssh as `enrolled` says, with its enrolled id.
+/// `user`'s machine `name` with its enrolled id.
 fn named_in(
     conn: &Connection,
     user: UserId,
     name: &str,
-    enrolled: bool,
-) -> Result<Option<(Option<i64>, UserMachine)>, StoreError> {
-    let found = if enrolled {
-        links::enrolled_in(conn, user)?
-            .into_iter()
-            .find(|(_, m)| m.name == name)
-            .map(|(id, m)| (Some(id), m))
-    } else {
-        ssh_machines_in(conn, user)?
-            .into_iter()
-            .find(|m| m.name == name)
-            .map(|m| (None, m))
-    };
-    Ok(found)
-}
-
-/// `user`'s machines reached over ssh by name, read through `conn`.
-fn ssh_machines_in(conn: &Connection, user: UserId) -> Result<Vec<UserMachine>, StoreError> {
-    let mut stmt = conn.prepare(
-        "SELECT name, ssh, labels, capacity, pool_provider FROM user_machines WHERE user = ? \
-         ORDER BY name",
-    )?;
-    let rows = stmt.query_and_then([user.get()], |r| {
-        let (name, ssh, labels): (String, String, String) = (r.get(0)?, r.get(1)?, r.get(2)?);
-        let capacity: u16 = r.get(3)?;
-        let pool: Option<String> = r.get(4)?;
-        let corrupt = |e: String| StoreError::Corrupt(format!("user_machines row {name}: {e}"));
-        let labels: Vec<String> =
-            serde_json::from_str(&labels).map_err(|e| corrupt(e.to_string()))?;
-        UserMachine::parse(&name, &ssh, &labels)
-            .and_then(|m| m.with_capacity(capacity))
-            .and_then(|m| match pool.as_deref() {
-                Some(p) => m.with_pool(p),
-                None => Ok(m),
-            })
-            .map_err(corrupt)
-    })?;
-    rows.collect()
+) -> Result<Option<(i64, UserMachine)>, StoreError> {
+    Ok(owned_in(conn, user)?
+        .into_iter()
+        .find(|(_, m)| m.name == name))
 }
 
 /// `user`'s machines held by a Box: machine name to its taken slots and the Box in each.

@@ -18,8 +18,8 @@ mod host_session;
 pub use host_session::{EndHostSessionReq, OpenHostSessionReq, UpdateHostSessionReq};
 mod machine;
 pub use machine::{
-    HoldOp, HoldValue, MachineAddReq, MachineEnrollReq, MachineHoldReq, MachineLink,
-    MachineLinksReq, MachineRemoveReq, MachineStatusReq,
+    HoldOp, HoldValue, MachineEnrollReq, MachineHoldReq, MachineLink, MachineLinksReq,
+    MachineRemoveReq, MachineStatusReq,
 };
 mod names;
 pub use names::{Grant, Named, Pins};
@@ -124,8 +124,6 @@ pub enum Request {
     /// Finish signing the caller's user in to one of their MCP servers.
     #[serde(rename = "mcp-oauth-finish")]
     McpOAuthFinish(McpOAuthFinishReq),
-    /// Add or replace one of the caller's user's machines.
-    MachineAdd(MachineAddReq),
     /// Remove one of the caller's user's machines.
     MachineRemove(MachineRemoveReq),
     /// Add or replace a machine its agent enrolls, creating the caller's user when needed; a
@@ -135,8 +133,6 @@ pub enum Request {
     MachineList(AsReq),
     /// Ask one of the caller's user's machine agents for its status.
     MachineStatus(MachineStatusReq),
-    /// List the ssh target of every user's machines; the operator's only.
-    MachineTargets {},
     /// List every enrolled machine's key; the operator's only.
     MachineKeys {},
     /// Record which enrolled machines hold a link to the runner; the operator's only.
@@ -202,12 +198,10 @@ impl Request {
             Self::ProfileShow(_) => "profile-show",
             Self::ProfileRemove(_) => "profile-remove",
             Self::McpOAuthFinish(_) => "mcp-oauth-finish",
-            Self::MachineAdd(_) => "machine-add",
             Self::MachineRemove(_) => "machine-remove",
             Self::MachineEnroll(_) => "machine-enroll",
             Self::MachineList(_) => "machine-list",
             Self::MachineStatus(_) => "machine-status",
-            Self::MachineTargets {} => "machine-targets",
             Self::MachineKeys {} => "machine-keys",
             Self::MachineLinks(_) => "machine-links",
             Self::MachineHold(_) => "machine-hold",

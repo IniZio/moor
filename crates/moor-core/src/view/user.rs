@@ -61,8 +61,6 @@ pub struct ProfileValue {
 pub struct MachineView {
     /// The machine's name.
     pub name: String,
-    /// Its ssh target.
-    pub ssh: String,
     /// Its labels, sorted.
     pub labels: Vec<String>,
     /// How many Boxes may hold it at once.
@@ -81,13 +79,6 @@ pub struct MachineView {
 pub struct MachineListValue {
     /// The machines by name.
     pub machines: Vec<MachineView>,
-}
-
-/// Value of `machine-targets`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MachineTargetsValue {
-    /// The distinct ssh targets of every user's machines, sorted.
-    pub targets: Vec<String>,
 }
 
 /// Value of `machine-keys`.

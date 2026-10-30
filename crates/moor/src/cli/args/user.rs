@@ -4,8 +4,8 @@ use clap::{Args, Subcommand};
 use moor_core::config::OAuthCallback;
 use moor_core::name::ProfileSource;
 use moor_core::request::{
-    AsReq, EnrollReq, MachineAddReq, MachineRemoveReq, MachineStatusReq, McpAddReq,
-    McpOAuthFinishReq, McpRemoveReq, ProfileSetReq, SecretDeleteReq,
+    AsReq, EnrollReq, MachineRemoveReq, MachineStatusReq, McpAddReq, McpOAuthFinishReq,
+    McpRemoveReq, ProfileSetReq, SecretDeleteReq,
 };
 use moor_core::user::SecretName;
 use moor_core::Request;
@@ -87,34 +87,12 @@ pub(super) struct McpFinishArg {
 /// Subcommands of `user machine`.
 #[derive(Debug, Subcommand)]
 pub(super) enum MachineCli {
-    /// Add or replace machine NAME; no credential is stored.
-    Add(MachineAddArgs),
     /// Remove machine NAME.
     Rm(McpNameArg),
     /// List your machines.
     Ls,
     /// Ask machine NAME's agent for its version and state; it only reads.
     Status(McpNameArg),
-}
-
-/// Arguments of `user machine add`.
-#[derive(Debug, Args)]
-pub(super) struct MachineAddArgs {
-    /// Machine name, such as `mac`.
-    name: String,
-    /// Target as `user@host` or `user@host:port`.
-    #[arg(long)]
-    ssh: String,
-    /// A label such as `macos`; repeat for more.
-    #[arg(long = "label")]
-    labels: Vec<String>,
-    /// How many Boxes may hold the machine at once; slot k moves each port up by 10·k.
-    #[arg(long, default_value_t = 1)]
-    capacity: u16,
-    /// Offer Boxes on this machine through crabbox PROVIDER, such as `cloudhypervisor`; use it
-    /// as `box.provider: PROVIDER@NAME`.
-    #[arg(long, value_name = "PROVIDER")]
-    pool: Option<String>,
 }
 
 /// Arguments of `user mcp add`.
@@ -185,14 +163,6 @@ impl UserCli {
             }),
             Self::Profile(ProfileCli::Show) => Request::ProfileShow(AS_CALLER),
             Self::Profile(ProfileCli::Rm) => Request::ProfileRemove(AS_CALLER),
-            Self::Machine(MachineCli::Add(a)) => Request::MachineAdd(MachineAddReq {
-                identity: None,
-                name: a.name,
-                ssh: a.ssh,
-                labels: a.labels,
-                capacity: a.capacity,
-                pool: a.pool,
-            }),
             Self::Machine(MachineCli::Rm(a)) => Request::MachineRemove(MachineRemoveReq {
                 identity: None,
                 name: a.name,

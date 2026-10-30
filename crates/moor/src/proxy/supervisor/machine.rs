@@ -5,7 +5,6 @@
 mod hold;
 mod link;
 
-use moor_core::config::UserMachine;
 use moor_core::domain::event::{Event, MachineEvent};
 
 use super::run::{say, Running};
@@ -54,7 +53,7 @@ impl Running<'_> {
             slot.link = None;
         }
         let fresh = !slot.link.as_mut().is_some_and(MachineLink::alive);
-        let event = match keep(&mut slot.link, || self.forwards(&machine, &ports, enrolled)) {
+        let event = match keep(&mut slot.link, || self.forwards(&ports, enrolled)) {
             Ok(()) if fresh => {
                 // Opening can take long enough for the Box to release the claim meanwhile.
                 let now = self.deps.store.box_machine(self.box_id);
@@ -66,8 +65,8 @@ impl Running<'_> {
                 slot.opened = wanted;
                 slot.failing = false;
                 MachineEvent::MachineAttached {
-                    name: machine.name.clone(),
-                    ports: ports.clone(),
+                    name: machine.name,
+                    ports,
                 }
             }
             Ok(()) => return,
@@ -81,21 +80,16 @@ impl Running<'_> {
         self.record_machine(event);
     }
 
-    /// Opens forwards of `ports` to `machine`: over ssh, or through the machine runner when
-    /// it is `enrolled` under that id.
-    fn forwards(
-        &self,
-        machine: &UserMachine,
-        ports: &[u16],
-        enrolled: Option<i64>,
-    ) -> Result<MachineLink, ForwardFailed> {
+    /// Opens forwards of `ports` to the machine enrolled under `machine_id`, through the
+    /// machine runner.
+    fn forwards(&self, ports: &[u16], machine_id: i64) -> Result<MachineLink, ForwardFailed> {
         let socket = crate::runner_dir::of(self.deps.state_dir).join(moor_client::forward::SOCKET);
-        let via = enrolled.map_or(Via::Ssh(machine), |machine_id| Via::Runner {
+        let via = Via {
             socket: &socket,
             box_id: self.box_id.get(),
             machine_id,
-        });
-        MachineLink::open(self.deps.driver, self.deps.proc, &self.handle, &via, ports)
+        };
+        MachineLink::open(self.deps.driver, &self.handle, &via, ports)
     }
 
     /// Ends the forwards and frees the slot for another Box, keeping the claim on the machine.

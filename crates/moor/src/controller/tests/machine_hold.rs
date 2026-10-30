@@ -23,6 +23,9 @@ use crate::testing::cx::{box_repo, new_box_of};
 const YAML: &str = "machine:\n  labels: [macos]\n  ports: [5432, 8080]\n";
 
 /// A controller where user A owns machine `mini` of one slot and user B owns `studio`.
+const KEY: &str =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl";
+
 struct Hold {
     served: Served,
     store: Store,
@@ -41,7 +44,7 @@ impl Hold {
                 "ok"
             );
             let add =
-                json!({"cmd": "machine-add", "name": name, "ssh": "dev@mac", "labels": [label]});
+                json!({"cmd": "machine-enroll", "name": name, "pubkey": KEY, "labels": [label]});
             assert_eq!(ask(&slack, &acting(who, &add))["class"], "ok");
         }
         Self { served, store }
@@ -76,7 +79,7 @@ fn a_claim_with_a_free_slot_holds_it_with_the_repos_ports() {
     let got = ask(h.main(), &hold(a, &claim()));
     assert_eq!(
         got["value"],
-        json!({"state": "held", "machine": "mini", "ssh": "dev@mac", "slot": 0,
+        json!({"state": "held", "machine": "mini", "machine_id": 1, "slot": 0,
             "ports": [5432, 8080]}),
         "{got}"
     );
@@ -171,7 +174,7 @@ fn a_claim_by_labels_never_takes_another_users_machine() {
 #[test]
 fn a_shared_machine_gives_each_box_its_own_slot_and_ports_until_full() {
     let h = Hold::new();
-    let add = json!({"cmd": "machine-add", "name": "mini", "ssh": "dev@mac",
+    let add = json!({"cmd": "machine-enroll", "name": "mini", "pubkey": KEY,
         "labels": ["macos"], "capacity": 2});
     assert_eq!(
         ask(&h.served.front("slack"), &acting(A, &add))["class"],
@@ -248,8 +251,7 @@ fn a_request_and_its_values_round_trip_on_the_wire() {
     for value in [
         HoldValue::Held {
             machine: "mini".to_owned(),
-            ssh: "dev@mac".to_owned(),
-            machine_id: None,
+            machine_id: 3,
             slot: 1,
             ports: vec![8090],
         },

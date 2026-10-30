@@ -192,10 +192,9 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
         "start-needs" | "session-binding" | "gate" | "env" | "repos" | "whoami" | "enroll"
         | "secret-set" | "secret-delete" | "secret-names" | "as" | "mcp-add" | "mcp-remove"
         | "mcp-list" | "profile-set" | "profile-show" | "profile-remove" | "mcp-oauth-finish"
-        | "machine-add" | "machine-remove" | "machine-enroll" | "machine-list"
-        | "machine-status" | "machine-targets" | "machine-keys" | "machine-links"
-        | "box-mirror" | "box-put" | "machine-hold" | "in" | "version" | "proxy-lease"
-        | "proxy-release" | "proxy-status" => return Names::Nothing,
+        | "machine-remove" | "machine-enroll" | "machine-list" | "machine-status"
+        | "machine-keys" | "machine-links" | "box-mirror" | "box-put" | "machine-hold" | "in"
+        | "version" | "proxy-lease" | "proxy-release" | "proxy-status" => return Names::Nothing,
         _ => return Names::Unknown,
     })
 }

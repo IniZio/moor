@@ -18,7 +18,6 @@ use rmcp::model::{
 };
 use rmcp::service::{NotificationContext, Peer, RequestContext, RunningService, ServiceError};
 use rmcp::{ClientHandler, ErrorData, RoleClient, RoleServer};
-use tokio::process::Child;
 use tokio::time::Instant;
 
 use crate::caller::Caller;
@@ -69,8 +68,6 @@ type Progress = Arc<Mutex<HashMap<String, (ProgressToken, Peer<RoleServer>)>>>;
 struct Session {
     /// The MCP client; dropping it closes the server's stdin.
     service: RunningService<RoleClient, Forward>,
-    /// The ssh process carrying the session; none when the machine's link carries it.
-    child: Option<Child>,
     /// The relay's tools as listed to the Box.
     tools: Vec<Tool>,
     /// Listed name to how a call to it is relayed.
@@ -323,22 +320,11 @@ impl Session {
     /// Whether its server still runs.
     fn alive(&mut self) -> bool {
         !self.service.is_closed()
-            && self
-                .child
-                .as_mut()
-                .is_none_or(|c| matches!(c.try_wait(), Ok(None)))
     }
 
-    /// Closes the server's stdin and waits up to 5 s for ssh to exit, then kills it.
+    /// Closes the session.
     async fn end(self) {
         let _ = self.service.cancel().await;
-        let Some(mut child) = self.child else {
-            return;
-        };
-        let wait = tokio::time::timeout(Duration::from_secs(5), child.wait());
-        if wait.await.is_err() {
-            let _ = child.kill().await;
-        }
     }
 }
 

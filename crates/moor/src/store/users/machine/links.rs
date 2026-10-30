@@ -85,7 +85,7 @@ fn link_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<MachineLink> {
     })
 }
 
-/// `user`'s enrolled machines with their ids. They have no ssh target: their agent links in.
+/// `user`'s enrolled machines with their ids.
 pub(super) fn enrolled_in(
     conn: &rusqlite::Connection,
     user: UserId,
@@ -100,7 +100,6 @@ pub(super) fn enrolled_in(
             .map_err(|e| StoreError::Corrupt(format!("user_machines_v2 row {name}: {e}")))?;
         let machine = moor_core::config::UserMachine {
             name,
-            ssh: String::new(),
             labels,
             capacity: r.get(3)?,
             pool: r.get(4)?,

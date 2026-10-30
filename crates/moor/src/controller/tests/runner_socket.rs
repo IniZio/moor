@@ -31,7 +31,6 @@ fn runners_requests(own: &Path) -> Vec<Value> {
     vec![
         json!({"cmd": "show"}),
         json!({"cmd": "show", "name": B_BOX}),
-        json!({"cmd": "machine-targets"}),
         json!({"cmd": "machine-keys"}),
         json!({"cmd": "machine-links", "links": []}),
         json!({"cmd": "machine-hold", "id": NO_BOX, "op": "release"}),
@@ -61,7 +60,6 @@ fn the_runner_socket_refuses_every_other_request_but_version() {
         "machine-hold",
         "machine-keys",
         "machine-links",
-        "machine-targets",
         "box-mirror",
         "box-put",
     ];

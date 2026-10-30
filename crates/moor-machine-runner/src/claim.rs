@@ -185,18 +185,14 @@ async fn claim(
         let reason = match ask(client, id, op.clone()).await? {
             HoldValue::Held {
                 machine,
-                ssh,
                 machine_id,
                 slot,
                 ports,
             } => {
                 let sync_exclude = Vec::new();
-                let reach = match machine_id {
-                    Some(machine_id) => Reach::Linked {
-                        machine_id,
-                        machine: machine.clone(),
-                    },
-                    None => Reach::Ssh { ssh },
+                let reach = Reach {
+                    machine_id,
+                    machine: machine.clone(),
                 };
                 let caller = Caller {
                     box_id: id,

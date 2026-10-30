@@ -31,11 +31,6 @@ pub(crate) fn placement(
     let Some(found) = store.pool_host(user, host)? else {
         return refuse(format!("{host} is not one of your machines"));
     };
-    let Some(machine) = found.id else {
-        return refuse(format!(
-            "{host} is not enrolled with moor-machine-agent: a pool host is reached only through it"
-        ));
-    };
     match found.pool.as_deref() {
         None => return refuse(format!("{host} offers no Box pool: enroll it with --pool")),
         Some(pool) if pool != id.base() => {
@@ -49,5 +44,5 @@ pub(crate) fn placement(
     if !found.online {
         return refuse(format!("{host} is offline: start moor-machine-agent on it"));
     }
-    Ok(Some(machine))
+    Ok(Some(found.id))
 }

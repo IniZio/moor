@@ -6,7 +6,7 @@
 //! Box's work tree onto the machine; `exec` runs a command there, in that copy, holding any
 //! capped resources it names; `pull` brings one file back into the Box's work tree;
 //! `machine_info` says which slot and ports the Box has; `machine_claim` and `machine_release`
-//! take and give back the slot. The operator's `prepare`, `suspend` and `release` commands set up, pause and clean up per-Box
+//! take and give back the slot. The machine's `prepare`, `suspend` and `release` hooks set up, pause and clean up per-Box
 //! things on the machine. Relays list the tools of the machine's own stdio MCP servers beside these.
 
 use std::collections::HashMap;
@@ -69,16 +69,11 @@ mod sync;
 pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
     let mirrors = config.state_dir.join("mirrors");
     let hooks = Arc::new(Hooks {
-        prepare: config.prepare,
-        release: config.release,
-        suspend: config.suspend,
         min_free_gb: config.min_free_gb,
         client: Client::new(&config.socket),
         timeout: config.hook_timeout,
         boxes: config.state_dir.join("boxes"),
         mirrors: mirrors.clone(),
-        reconcile: config.reconcile,
-        listed: Mutex::default(),
         preparing: Mutex::default(),
         agents: config.agents.clone(),
     });

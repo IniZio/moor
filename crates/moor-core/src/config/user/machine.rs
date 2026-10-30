@@ -1,6 +1,4 @@
-//! Machines a moor user registers for themselves, reached over ssh with the host's own key.
-
-use std::net::{Ipv4Addr, Ipv6Addr};
+//! Machines a moor user enrolls, each reached over the link its `moor-machine-agent` dials.
 
 use serde::{Deserialize, Serialize};
 
@@ -14,18 +12,12 @@ const NAME_MAX: usize = 64;
 const LABEL_MAX: usize = 32;
 /// Most labels on one machine.
 const LABELS_MAX: usize = 16;
-/// Longest ssh user.
-const USER_MAX: usize = 32;
-/// Longest host name.
-const HOST_MAX: usize = 253;
 
-/// One of a user's machines. It holds no credential: the host's own ssh key or agent reaches it.
+/// One of a user's enrolled machines, without the key its agent signs with.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserMachine {
     /// The machine's name, unique per user.
     pub name: String,
-    /// The ssh target, `user@host` or `user@host:port`.
-    pub ssh: String,
     /// What the machine offers, such as `macos`; sorted and without repeats.
     pub labels: Vec<String>,
     /// How many Boxes may hold the machine at once, each in its own port slot; at least 1.
@@ -42,13 +34,12 @@ const fn one() -> u16 {
 }
 
 impl UserMachine {
-    /// Checks a machine a user registers.
+    /// Checks a machine's name and labels.
     ///
     /// # Errors
-    /// Why the name, ssh target or a label is not accepted.
-    pub fn parse(name: &str, ssh: &str, labels: &[String]) -> Result<Self, String> {
+    /// Why the name or a label is not accepted.
+    pub fn parse(name: &str, labels: &[String]) -> Result<Self, String> {
         check_name(name)?;
-        check_ssh(ssh)?;
         let mut labels = labels.to_vec();
         labels.sort();
         labels.dedup();
@@ -58,7 +49,6 @@ impl UserMachine {
         labels.iter().try_for_each(|l| check_label(l))?;
         Ok(Self {
             name: name.to_owned(),
-            ssh: ssh.to_owned(),
             labels,
             capacity: 1,
             pool: None,
@@ -89,7 +79,7 @@ impl UserMachine {
     }
 }
 
-/// A machine its agent enrolled: the key it signs with in place of an ssh target.
+/// A machine its agent enrolled, with the key the agent signs with.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnrolledMachine {
     /// The machine's name, unique per user.
@@ -116,8 +106,7 @@ impl EnrolledMachine {
         capacity: u16,
     ) -> Result<Self, String> {
         check_pubkey(pubkey)?;
-        let checked =
-            UserMachine::parse(name, "moor@localhost", labels)?.with_capacity(capacity)?;
+        let checked = UserMachine::parse(name, labels)?.with_capacity(capacity)?;
         Ok(Self {
             name: checked.name,
             pubkey: pubkey.to_owned(),
@@ -213,71 +202,6 @@ pub(crate) fn check_label(label: &str) -> Result<(), String> {
             "label `{label}` must match [a-z0-9][a-z0-9-]* in at most {LABEL_MAX} bytes"
         ))
     }
-}
-
-/// `user@host` or `user@host:port`; the host is a DNS name, an IPv4 address or a bracketed IPv6
-/// address. Nothing in it can read as a command-line option or reach a shell.
-///
-/// # Errors
-/// Why `target` is not such an ssh target.
-pub fn check_ssh(target: &str) -> Result<(), String> {
-    let bad = || format!("ssh target `{target}` must be user@host or user@host:port");
-    let (user, rest) = target.split_once('@').ok_or_else(bad)?;
-    let user_ok = !user.is_empty()
-        && user.len() <= USER_MAX
-        && user.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
-        && user
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.'));
-    let (host, port) = split_port(rest).ok_or_else(bad)?;
-    let port_ok = port.is_none_or(|p| {
-        p.len() <= 5
-            && p.bytes().all(|b| b.is_ascii_digit())
-            && matches!(p.parse::<u16>(), Ok(n) if n > 0)
-    });
-    if user_ok && port_ok && check_host(host) {
-        Ok(())
-    } else {
-        Err(bad())
-    }
-}
-
-/// Splits `host[:port]`; an IPv6 host keeps its brackets.
-fn split_port(rest: &str) -> Option<(&str, Option<&str>)> {
-    if rest.starts_with('[') {
-        let end = rest.find(']')?;
-        let host = rest.get(..=end)?;
-        return match rest.get(end + 1..)? {
-            "" => Some((host, None)),
-            tail => Some((host, Some(tail.strip_prefix(':')?))),
-        };
-    }
-    match rest.split_once(':') {
-        Some((host, port)) => Some((host, Some(port))),
-        None => Some((rest, None)),
-    }
-}
-
-/// A DNS name, an IPv4 address or a bracketed IPv6 address.
-fn check_host(host: &str) -> bool {
-    if let Some(inner) = host.strip_prefix('[').and_then(|h| h.strip_suffix(']')) {
-        return inner.parse::<Ipv6Addr>().is_ok();
-    }
-    if host.is_empty() || host.len() > HOST_MAX {
-        return false;
-    }
-    if host.bytes().all(|b| b.is_ascii_digit() || b == b'.') {
-        return host.parse::<Ipv4Addr>().is_ok();
-    }
-    host.split('.').all(|label| {
-        !label.is_empty()
-            && label.len() <= 63
-            && !label.starts_with('-')
-            && !label.ends_with('-')
-            && label
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'-')
-    })
 }
 
 #[cfg(test)]

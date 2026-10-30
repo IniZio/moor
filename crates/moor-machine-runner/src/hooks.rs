@@ -16,8 +16,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use tokio::time::Instant;
-
 use moor_client::Client;
 use moor_core::request::{Request, ShowReq};
 use serde::{Deserialize, Serialize};
@@ -32,7 +30,6 @@ use crate::relay::Relays;
 mod reach;
 mod reap;
 mod sleep;
-pub(crate) use reap::state_prelude;
 
 /// What `prepare` printed about a Box, such as `device`.
 pub(crate) type Facts = BTreeMap<String, String>;
@@ -42,12 +39,6 @@ const TAIL_LINES: usize = 20;
 
 /// The operator's commands and where the runner keeps what they leave.
 pub(crate) struct Hooks {
-    /// Run on the machine before a Box's first call that needs its facts.
-    pub(crate) prepare: Option<String>,
-    /// Run on the machine once the Box is no longer open.
-    pub(crate) release: Option<String>,
-    /// Run on the machine when a prepared Box falls asleep.
-    pub(crate) suspend: Option<String>,
     /// Free GB a machine must have before a Box is prepared or synced there; 0 disables.
     pub(crate) min_free_gb: u64,
     /// Client for the controller's operator socket, to list the Boxes asleep and the machines.
@@ -58,10 +49,6 @@ pub(crate) struct Hooks {
     pub(crate) boxes: PathBuf,
     /// Parent of the per-Box host mirrors, which release removes.
     pub(crate) mirrors: PathBuf,
-    /// How often to list the files on each machine.
-    pub(crate) reconcile: Duration,
-    /// When the machines' files were last listed.
-    pub(crate) listed: Mutex<Option<Instant>>,
     /// One lock per Box id, so two calls of a Box never prepare it twice.
     pub(crate) preparing: Mutex<HashMap<i64, Arc<tokio::sync::Mutex<()>>>>,
     /// The links that carry hooks for enrolled machines, whose own hooks then run by name.

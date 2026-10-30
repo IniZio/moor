@@ -1,32 +1,10 @@
-//! Arguments of the machine requests: a user's own machines, reached over the host's ssh.
+//! Arguments of the machine requests: a user's enrolled machines.
 
 use serde::{Deserialize, Serialize};
 
 use crate::name::BoxId;
 use crate::seam::clock::Ts;
 use crate::user::{Email, Identity};
-
-/// Arguments of `machine-add`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct MachineAddReq {
-    /// The identity asserted; the controller socket's own peer when absent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub identity: Option<Identity>,
-    /// The machine's name.
-    pub name: String,
-    /// The ssh target, `user@host` or `user@host:port`.
-    pub ssh: String,
-    /// The machine's labels.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub labels: Vec<String>,
-    /// How many Boxes may hold it at once, each in its own port slot.
-    #[serde(default = "one", skip_serializing_if = "is_one")]
-    pub capacity: u16,
-    /// The crabbox provider the machine offers Boxes on, when it hosts a Box pool.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pool: Option<String>,
-}
 
 /// Arguments of `machine-enroll`: a machine agent adds or replaces its machine.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -173,11 +151,8 @@ pub enum HoldValue {
     Held {
         /// The machine's name.
         machine: String,
-        /// Its ssh target; empty for an enrolled machine.
-        ssh: String,
-        /// Its enrolled id, when its agent links in instead.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        machine_id: Option<i64>,
+        /// Its enrolled id, which its agent links in under.
+        machine_id: i64,
         /// The Box's slot on it.
         slot: u16,
         /// The forwarded ports, moved by the slot.

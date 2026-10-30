@@ -3,9 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{
-    MachineAddReq, MachineEnrollReq, MachineRemoveReq, MachineStatusReq, Request, StartReq,
-};
+use super::{MachineEnrollReq, MachineRemoveReq, MachineStatusReq, Request, StartReq};
 use crate::name::ProfileSource;
 use crate::user::{Email, Identity, SecretName};
 
@@ -167,19 +165,6 @@ pub enum UserCmd {
         /// The crabbox provider the machine offers Boxes on.
         pool: Option<String>,
     },
-    /// Add or replace one of the caller's user's machines.
-    MachineAdd {
-        /// The machine's name.
-        name: String,
-        /// The ssh target.
-        ssh: String,
-        /// The machine's labels.
-        labels: Vec<String>,
-        /// How many Boxes may hold it at once.
-        capacity: u16,
-        /// The crabbox provider the machine offers Boxes on.
-        pool: Option<String>,
-    },
     /// Remove one of the caller's user's machines.
     MachineRemove {
         /// The machine's name.
@@ -221,7 +206,6 @@ impl UserCmd {
             Self::ProfileShow => "profile-show",
             Self::ProfileRemove => "profile-remove",
             Self::MachineEnroll { .. } => "machine-enroll",
-            Self::MachineAdd { .. } => "machine-add",
             Self::MachineRemove { .. } => "machine-remove",
             Self::MachineList => "machine-list",
             Self::MachineStatus { .. } => "machine-status",
@@ -273,7 +257,6 @@ impl Request {
                     iss: r.iss,
                 },
             ),
-            Self::MachineAdd(r) => machine_add(r),
             Self::MachineEnroll(r) => (
                 r.identity,
                 UserCmd::MachineEnroll {
@@ -331,7 +314,6 @@ impl Request {
             | Self::ProfileRemove(AsReq { identity })
             | Self::ProfileSet(ProfileSetReq { identity, .. })
             | Self::MachineList(AsReq { identity })
-            | Self::MachineAdd(MachineAddReq { identity, .. })
             | Self::MachineRemove(MachineRemoveReq { identity, .. })
             | Self::MachineStatus(MachineStatusReq { identity, .. })
             | Self::MachineEnroll(MachineEnrollReq { identity, .. })
@@ -346,20 +328,6 @@ impl Request {
             _ => None,
         }
     }
-}
-
-/// A `machine-add` request as its command.
-fn machine_add(r: MachineAddReq) -> (Option<Identity>, UserCmd) {
-    (
-        r.identity,
-        UserCmd::MachineAdd {
-            name: r.name,
-            ssh: r.ssh,
-            labels: r.labels,
-            capacity: r.capacity,
-            pool: r.pool,
-        },
-    )
 }
 
 #[cfg(test)]

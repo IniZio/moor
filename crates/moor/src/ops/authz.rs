@@ -34,10 +34,6 @@ pub(crate) const KEYS_OPERATOR_ONLY: &str =
 pub(crate) const LINKS_OPERATOR_ONLY: &str =
     "machine-links records every user's machine links, which is operator-only";
 
-/// The refusal for a `machine-targets` from anyone but the operator: it spans every user.
-pub(crate) const TARGETS_OPERATOR_ONLY: &str =
-    "machine-targets lists every user's machines, which is operator-only";
-
 /// The refusal for a `machine-hold` from anyone but the runner and the operator: only the
 /// machine runner, trusting the Box its Proxy named, claims a machine for a Box.
 pub(crate) const HOLD_OPERATOR_ONLY: &str =
@@ -46,7 +42,7 @@ pub(crate) const HOLD_OPERATOR_ONLY: &str =
 /// The refusal for any other request on the machine runner's socket.
 pub(crate) const NOT_THE_RUNNERS: &str =
     "the machine runner's socket serves only show, machine-hold, machine-keys, machine-links, \
-     machine-targets, box-mirror and box-put";
+     box-mirror and box-put";
 
 /// Whose Boxes `caller` may see, asserting `asserted`. Only the controller socket's own uid
 /// is the operator; a front socket is a user at most, whatever it asserts.
@@ -125,8 +121,7 @@ fn runners(cx: &Cx, request: &Request) -> Result<(), CommandError> {
         Request::Show(_)
         | Request::MachineHold(_)
         | Request::MachineKeys {}
-        | Request::MachineLinks(_)
-        | Request::MachineTargets {} => Ok(()),
+        | Request::MachineLinks(_) => Ok(()),
         Request::BoxMirror(req) => own("the destination", &req.dest),
         Request::BoxPut(req) => own("the source", &req.src),
         _ => Err(CommandError::new(ErrorKind::Refused, NOT_THE_RUNNERS)),
@@ -142,7 +137,6 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         Request::BoxMirror(_) => Some(MIRROR_OPERATOR_ONLY),
         Request::BoxPut(_) => Some(PUT_OPERATOR_ONLY),
         Request::Env(_) => Some(ENV_OPERATOR_ONLY),
-        Request::MachineTargets {} => Some(TARGETS_OPERATOR_ONLY),
         Request::MachineKeys {} => Some(KEYS_OPERATOR_ONLY),
         Request::MachineLinks(_) => Some(LINKS_OPERATOR_ONLY),
         Request::MachineHold(_) => Some(HOLD_OPERATOR_ONLY),
@@ -183,7 +177,6 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         | Request::ProfileShow(_)
         | Request::ProfileRemove(_)
         | Request::McpOAuthFinish(_)
-        | Request::MachineAdd(_)
         | Request::MachineRemove(_)
         | Request::MachineEnroll(_)
         | Request::MachineList(_)

@@ -1,9 +1,9 @@
-//! A user's own machines: `machine-add`, `machine-remove`, `machine-list`.
+//! A user's own machines: `machine-remove`, `machine-list`.
 
 use std::future::Future;
 
 use moor_client::link::broker;
-use moor_core::config::{EnrolledMachine, UserMachine};
+use moor_core::config::EnrolledMachine;
 use moor_core::request::UserCmd;
 use moor_core::user::{Email, Identity, UserId};
 use moor_core::view::user::{
@@ -23,40 +23,10 @@ pub(super) fn run(
     cmd: &UserCmd,
 ) -> Result<serde_json::Value, CommandError> {
     match cmd {
-        UserCmd::MachineAdd {
-            name,
-            ssh,
-            labels,
-            capacity,
-            pool,
-        } => add(store, user, name, ssh, labels, (*capacity, pool.as_deref())),
         UserCmd::MachineRemove { name } => remove(store, user, name),
         UserCmd::MachineList => list(store, user),
         _ => Err(CommandError::new(ErrorKind::Usage, "not a machine request")),
     }
-}
-
-/// `machine-add`: check the machine, then store it over any of the same name.
-pub(super) fn add(
-    store: &Store,
-    user: UserId,
-    name: &str,
-    ssh: &str,
-    labels: &[String],
-    (capacity, pool): (u16, Option<&str>),
-) -> Result<serde_json::Value, CommandError> {
-    let machine = UserMachine::parse(name, ssh, labels)
-        .and_then(|m| m.with_capacity(capacity))
-        .and_then(|m| match pool {
-            Some(provider) => m.with_pool(provider),
-            None => Ok(m),
-        })
-        .map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
-    store.set_user_machine(user, &machine)?;
-    to_value(&MachineChangeValue {
-        name: machine.name,
-        changed: true,
-    })
 }
 
 /// `machine-enroll`: find or create `who`'s user by `email`, then store the machine over any
@@ -98,7 +68,7 @@ pub(super) fn remove(
     })
 }
 
-/// `machine-list`: names, ssh targets, labels and capacities.
+/// `machine-list`: names, labels and capacities.
 pub(super) fn list(store: &Store, user: UserId) -> Result<serde_json::Value, CommandError> {
     let mut links: std::collections::BTreeMap<_, _> =
         store.user_machine_links(user)?.into_iter().collect();
@@ -108,7 +78,6 @@ pub(super) fn list(store: &Store, user: UserId) -> Result<serde_json::Value, Com
         .map(|m| MachineView {
             link: links.remove(&m.name),
             name: m.name,
-            ssh: m.ssh,
             labels: m.labels,
             capacity: m.capacity,
             pool: m.pool,
