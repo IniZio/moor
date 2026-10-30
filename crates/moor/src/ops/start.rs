@@ -32,6 +32,7 @@ use crate::store::{BoxRow, Store, StoreError};
 mod launch;
 mod needs;
 mod preflight;
+mod profile;
 mod relaunch;
 mod reopen;
 pub(crate) mod repo;
@@ -54,6 +55,8 @@ struct Facts {
     base: Option<String>,
     /// The repo's MCP and Claude settings files at the base.
     files: RepoFiles,
+    /// The requester's agent profile; `None` when they set none.
+    profile: Option<profile::Gathered>,
 }
 
 /// Where the Box works.
@@ -81,7 +84,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     if req.resume {
         return Err(relaunch::nothing_to_resume());
     }
-    let facts = gather(cx, req, user)?;
+    let mut facts = gather(cx, req, user)?;
     let flags = Flags {
         model: req.model.clone(),
     };
@@ -106,6 +109,9 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         Ok(id) => id,
         Err(e) => return raced(cx, store, (req, user), e),
     };
+    if let Some(gathered) = facts.profile.take() {
+        profile::record(cx, store, id, gathered)?;
+    }
     let (done, agent) = {
         let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?;
         let done = if reread(store, id)?.boxed.is_none() {
@@ -263,11 +269,13 @@ fn settle_one(cx: &Cx, store: &Store, row: &BoxRow) {
 
 /// Reads the repo the Box starts from through the forge; changes nothing.
 fn gather(cx: &Cx, req: &StartReq, user: UserId) -> Result<Facts, CommandError> {
+    let profile = profile::gather(cx, user)?;
     let Some(repo) = &req.repo else {
         return Ok(Facts {
             repo: None,
             base: None,
             files: RepoFiles::default(),
+            profile,
         });
     };
     let branch = moor_core::box_key::branch(&req.name);
@@ -280,6 +288,7 @@ fn gather(cx: &Cx, req: &StartReq, user: UserId) -> Result<Facts, CommandError> 
         }),
         base: Some(at.base.as_str().to_owned()),
         files: at.files,
+        profile,
     })
 }
 

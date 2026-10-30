@@ -67,6 +67,19 @@ pub trait Forge: Send + Sync {
         branch: &str,
         token: &Secret,
     ) -> Result<RepoAt, ForgeError>;
+
+    /// Resolves `at` (a branch, tag or sha; the default branch when `None`) in `repo` to a commit
+    /// and reads the text of `path` there, `None` when absent, as the account of `token`.
+    ///
+    /// # Errors
+    /// Returns the [`ForgeError`] that says why the repo, the ref or the file cannot be read.
+    fn file_at(
+        &self,
+        repo: &ForgeRepo,
+        at: Option<&str>,
+        path: &'static str,
+        token: &Secret,
+    ) -> Result<(Sha, Option<String>), ForgeError>;
 }
 
 #[cfg(test)]

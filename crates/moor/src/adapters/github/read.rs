@@ -224,6 +224,8 @@ struct Object {
     mcp_json: Option<Entry>,
     /// `.claude/settings.json` at a commit.
     claude_settings: Option<Entry>,
+    /// The one file a [`file_at`] read asks for.
+    file: Option<Entry>,
 }
 
 /// A path in a commit's tree.
@@ -245,8 +247,8 @@ struct Blob {
     text: Option<String>,
 }
 
-/// Turns a 200 reply into a [`RepoAt`].
-fn parse(reply: Reply, base: Option<&str>) -> Result<RepoAt, ForgeError> {
+/// The reply's viewer and repo; the repo is not visible when GitHub only says `NOT_FOUND`.
+fn visible(reply: Reply) -> Result<(Option<Viewer>, Repository), ForgeError> {
     let not_found = |e: &GqlError| e.kind.as_deref() == Some("NOT_FOUND");
     let data = reply.data.unwrap_or(Data {
         viewer: None,
@@ -262,15 +264,25 @@ fn parse(reply: Reply, base: Option<&str>) -> Result<RepoAt, ForgeError> {
     if !reply.errors.iter().all(not_found) {
         return Err(unavailable_errors(&reply.errors));
     }
-    let viewer = data
-        .viewer
-        .ok_or_else(|| ForgeError::Unavailable("GitHub returned no viewer".to_owned()))?;
+    Ok((data.viewer, repo))
+}
+
+/// The commit `base` names in `repo`, or the default branch head when `base` is `None`.
+fn commit_at(repo: &mut Repository, base: Option<&str>) -> Result<Object, ForgeError> {
     let unknown = || ForgeError::UnknownBase(base.unwrap_or("the default branch").to_owned());
     let at = match base {
-        Some(_) => repo.object,
-        None => repo.default_branch_ref.and_then(|r| r.target),
+        Some(_) => repo.object.take(),
+        None => repo.default_branch_ref.take().and_then(|r| r.target),
     };
-    let commit = peel(at.ok_or_else(unknown)?).ok_or_else(unknown)?;
+    peel(at.ok_or_else(unknown)?).ok_or_else(unknown)
+}
+
+/// Turns a 200 reply into a [`RepoAt`].
+fn parse(reply: Reply, base: Option<&str>) -> Result<RepoAt, ForgeError> {
+    let (viewer, mut repo) = visible(reply)?;
+    let viewer =
+        viewer.ok_or_else(|| ForgeError::Unavailable("GitHub returned no viewer".to_owned()))?;
+    let commit = commit_at(&mut repo, base)?;
     Ok(RepoAt {
         base: full_sha(commit.oid.as_deref())?,
         branch_tip: repo
@@ -394,6 +406,54 @@ const FORMAT_CHARS: &[(char, char)] = &[
 /// Whether `c` is a control, format or separator character a profile name must not carry.
 fn spoofs(c: char) -> bool {
     c.is_control() || FORMAT_CHARS.iter().any(|&(lo, hi)| (lo..=hi).contains(&c))
+}
+
+/// Asks for the commit a ref names, or the default branch head, and one file there.
+const FILE_QUERY: &str = r"query($owner: String!, $name: String!, $at: String!, $hasAt: Boolean!, $path: String!) {
+  repository(owner: $owner, name: $name) {
+    defaultBranchRef @skip(if: $hasAt) { target { ...at } }
+    object(expression: $at) @include(if: $hasAt) { ...at }
+  }
+}
+fragment at on GitObject { ...commit ... on Tag { target { ...commit } } }
+fragment commit on GitObject {
+  __typename
+  oid
+  ... on Commit { file(path: $path) { object { __typename ... on Blob { byteSize isBinary text } } } }
+}";
+
+/// Reads `path` in `repo` at `at` (the default branch when `None`) from the GraphQL endpoint
+/// `api` as the account of `token`, with the commit `at` resolved to.
+pub(super) fn file_at(
+    api: &str,
+    timeout: Duration,
+    repo: &ForgeRepo,
+    at: Option<&str>,
+    path: &'static str,
+    token: &Secret,
+) -> Result<(Sha, Option<String>), ForgeError> {
+    let auth = bearer(token)?;
+    let body = serde_json::json!({
+        "query": FILE_QUERY,
+        "variables": {
+            "owner": repo.owner,
+            "name": repo.name,
+            "at": at.unwrap_or_default(),
+            "hasAt": at.is_some(),
+            "path": path,
+        },
+    });
+    let (status, reply) = post(api, timeout, &auth, &body.to_string())?;
+    match status {
+        200 => {
+            let reply = serde_json::from_slice(&reply).map_err(|_| unexpected_shape())?;
+            let (_, mut found) = visible(reply)?;
+            let commit = commit_at(&mut found, at)?;
+            Ok((full_sha(commit.oid.as_deref())?, text(commit.file, path)?))
+        }
+        401 => Err(ForgeError::Rejected),
+        s => Err(ForgeError::Unavailable(format!("GitHub answered HTTP {s}"))),
+    }
 }
 
 #[cfg(test)]

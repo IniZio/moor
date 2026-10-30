@@ -132,6 +132,14 @@ fn extra_events_round_trip() {
             session: "s".into(),
         },
         ExtraEvent::SetupFailed { line: "l".into() },
+        ExtraEvent::ProfileResolved {
+            repo: crate::name::ForgeRepo::new("o", "p"),
+            sha: "abc".into(),
+        },
+        ExtraEvent::ProfileFailed {
+            step: crate::domain::event::ProfileStep::Fetch,
+            detail: "d".into(),
+        },
         ExtraEvent::Checked {
             credentials: vec![crate::domain::event::CheckedCred {
                 name: "c".into(),

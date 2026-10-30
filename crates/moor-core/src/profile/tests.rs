@@ -112,3 +112,26 @@ fn model_order_is_flag_then_profile_then_config() {
         assert_eq!(model(flag, profile, config).as_deref(), want);
     }
 }
+
+#[test]
+fn plugin_sources_are_the_github_repos_of_the_named_plugins() {
+    let json = r#"{"name":"tools","owner":{"name":"a"},"plugins":[
+      {"name":"lint","source":{"source":"github","repo":"acme/lint"}},
+      {"name":"fmt","source":{"source":"url","url":"https://github.com/acme/fmt.git"}},
+      {"name":"local","source":"./plugins/local"},
+      {"name":"other","source":{"source":"url","url":"https://example.com/x.git"}},
+      {"name":"unwanted","source":{"source":"github","repo":"acme/unwanted"}}]}"#;
+    let got = plugin_sources(json, "tools", &["lint", "fmt", "local", "other"]).unwrap();
+    assert_eq!(
+        got,
+        [
+            ForgeRepo::new("acme", "lint"),
+            ForgeRepo::new("acme", "fmt")
+        ]
+    );
+    assert!(plugin_sources("not json", "tools", &["lint"]).is_err());
+    assert_eq!(
+        plugin_sources(json, "kit", &["lint"]).unwrap_err(),
+        "marketplace kit is named tools"
+    );
+}

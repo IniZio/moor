@@ -40,6 +40,8 @@ impl Event {
             Self::SetupFailed { .. } => "setup_failed",
             Self::SetupFinished { .. } => "setup_finished",
             Self::Cloned { .. } => "cloned",
+            Self::ProfileResolved { .. } => "profile_resolved",
+            Self::ProfileFailed { .. } => "profile_failed",
             Self::CredentialFailed { .. } => "credential_failed",
             Self::Idled => "idled",
             Self::Busy => "busy",

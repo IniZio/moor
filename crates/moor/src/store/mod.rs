@@ -30,6 +30,7 @@ mod agent;
 mod apply;
 pub(crate) mod artifacts;
 mod bindings;
+pub(crate) mod box_profile;
 mod driver_row;
 mod error;
 pub(crate) use bindings::Binding;
