@@ -5,12 +5,14 @@ use std::path::{Path, PathBuf};
 
 use moor_testkit::{FakeEgress, FAKE_TINYPROXY};
 
-use super::super::egress::{config, lines, EGRESS_FAILED};
+use super::super::egress::{config, lines, lines_with, AppArmor, EGRESS_FAILED};
+
+mod apparmor;
 
 /// Tools the egress lines call that the fake Box takes from the host.
 const HOST_TOOLS: &[&str] = &[
     "sh", "cmp", "mkdir", "mv", "rm", "grep", "sed", "sleep", "cat", "tail", "env", "cp", "chmod",
-    "flock", "setsid",
+    "flock", "setsid", "readlink", "tee", "true",
 ];
 
 /// Whether the fake Box has apt and what an install does.
@@ -103,7 +105,14 @@ impl FakeBox {
 
     /// The `sh` that runs the egress lines for `hosts`, then `echo ran`.
     fn command(&self, hosts: &[String]) -> std::process::Command {
-        let mut script = lines(self.port.port(), UPSTREAM, hosts).join("\n");
+        let [profile, exec, local, loaded] = self.apparmor_paths();
+        let aa = AppArmor {
+            profile: &profile,
+            exec: &exec,
+            local: &local,
+            loaded: &loaded,
+        };
+        let mut script = lines_with(self.port.port(), UPSTREAM, hosts, &aa).join("\n");
         script.push_str("\necho ran\n");
         let mut cmd = std::process::Command::new(self.bin.join("sh"));
         cmd.args(["-c", &script])
@@ -136,6 +145,20 @@ impl FakeBox {
             .lines()
             .filter(|l| l.starts_with("tinyproxy "))
             .count()
+    }
+
+    /// The `AppArmor` profile, the tinyproxy it attaches to, its local rules and the kernel's
+    /// loaded list, all absent until [`FakeBox::apparmor`].
+    fn apparmor_paths(&self) -> [String; 4] {
+        let aa = self.home.join("aa");
+        let bin = std::fs::canonicalize(&self.bin).unwrap();
+        [
+            aa.join("tinyproxy"),
+            bin.join("tinyproxy"),
+            aa.join("local-tinyproxy"),
+            aa.join("profiles"),
+        ]
+        .map(|p| p.display().to_string())
     }
 
     fn conf(&self) -> String {

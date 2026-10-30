@@ -1,23 +1,26 @@
-//! moor's egress config run by a real `tinyproxy` under the parallel load a build tool opens.
+//! A real `tinyproxy`, started by moor's egress lines as on a Box, under the parallel load a build
+//! tool opens.
 
 use std::io::{Read as _, Write as _};
 use std::net::{Ipv4Addr, TcpListener, TcpStream};
-use std::process::{Child, Command, Stdio};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
-use super::super::egress::config;
+use super::super::egress::lines;
 
 /// Tunnels held open at once: Gradle and the Android plugin open well over a hundred while they
 /// resolve dependencies.
 const TUNNELS: usize = 200;
 
-/// A `tinyproxy -d` child, killed on drop.
-struct Tinyproxy(Child);
+/// The pid file of a tinyproxy the egress lines started, killed on drop.
+struct Tinyproxy(PathBuf);
 
 impl Drop for Tinyproxy {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        if let Ok(pid) = std::fs::read_to_string(&self.0) {
+            let _ = Command::new("kill").arg(pid.trim()).status();
+        }
     }
 }
 
@@ -29,34 +32,22 @@ fn free_port() -> u16 {
         .port()
 }
 
-/// Starts tinyproxy from moor's config on a free loopback port and waits until it listens.
-fn start(dir: &std::path::Path) -> (Tinyproxy, u16) {
+/// Runs the egress lines with `home` as the Box home, which return once tinyproxy listens.
+fn start(home: &Path) -> (Tinyproxy, u16) {
     let port = free_port();
-    let conf = dir.join("egress.conf");
-    let pid = dir.join("egress.pid");
-    let text = format!(
-        "{}PidFile \"{}\"\n",
-        config(port, free_port(), &[]),
-        pid.display()
+    let out = Command::new("sh")
+        .arg("-c")
+        .arg(lines(port, free_port(), &[]).join("\n"))
+        .env("HOME", home)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let proxy = Tinyproxy(home.join(".moor/egress.pid"));
+    assert!(
+        out.status.success(),
+        "tinyproxy never listened on {port}: {}",
+        String::from_utf8_lossy(&out.stderr)
     );
-    std::fs::write(&conf, text).unwrap();
-    let child =
-        Command::new(std::env::var_os("MOOR_TINYPROXY").unwrap_or_else(|| "tinyproxy".into()))
-            .arg("-d")
-            .arg("-c")
-            .arg(&conf)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("tinyproxy on PATH or MOOR_TINYPROXY");
-    let proxy = Tinyproxy(child);
-    let mut polls = 0;
-    while TcpStream::connect((Ipv4Addr::LOCALHOST, port)).is_err() {
-        polls += 1;
-        assert!(polls < 250, "tinyproxy never listened on {port}");
-        std::thread::sleep(Duration::from_millis(20));
-    }
     (proxy, port)
 }
 
