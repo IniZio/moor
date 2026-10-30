@@ -23,6 +23,7 @@ mod events;
 mod machine;
 mod pane;
 mod pins;
+mod said;
 mod target;
 
 use super::run;

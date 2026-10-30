@@ -220,6 +220,21 @@ impl Store {
         rows.next().transpose()
     }
 
+    /// The box's newest event of `kind`, however long ago; none when it has had none.
+    pub(crate) fn newest_event_of(
+        &self,
+        id: BoxId,
+        kind: &str,
+    ) -> Result<Option<EventRow>, StoreError> {
+        let conn = self.reader()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, box, kind, payload, ts FROM events \
+             WHERE box = ?1 AND kind = ?2 ORDER BY id DESC LIMIT 1",
+        )?;
+        let mut rows = stmt.query_and_then((id.get(), kind), event_from_row)?;
+        rows.next().transpose()
+    }
+
     /// When Box `id`'s machine last came up, by acquire or wake.
     pub(crate) fn awake_since(&self, id: BoxId) -> Result<Option<Ts>, StoreError> {
         let conn = self.reader()?;

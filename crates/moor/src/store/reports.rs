@@ -99,10 +99,6 @@ impl Store {
     }
 
     /// Every stored Report version of the Box, by kind then version.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "read by show --reports, not yet wired")
-    )]
     pub(crate) fn reports(&self, box_id: BoxId) -> Result<Vec<ReportRow>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(

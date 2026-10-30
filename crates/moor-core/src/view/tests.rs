@@ -36,6 +36,7 @@ fn sample_box() -> BoxView {
         updated_at: "2026-01-01T00:00:00Z".into(),
         attention: Vec::new(),
         held_machine: None,
+        said: None,
     }
 }
 
