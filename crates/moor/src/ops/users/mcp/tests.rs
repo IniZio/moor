@@ -145,3 +145,28 @@ fn a_bad_url_or_name_is_refused_before_anything_is_stored() {
         .unwrap()
         .is_empty());
 }
+
+#[test]
+fn every_box_gets_the_machine_server_only_when_the_service_is_set() {
+    let mut f = fixture();
+    let user = enrolled(&f, "slack:T1:UA");
+    assert!(!for_box(&f.cx, Some(user))
+        .unwrap()
+        .servers
+        .contains_key("machine"));
+
+    let mut config = moor_core::config::UserConfig::default();
+    config.machines.service = Some(moor_core::config::MachineService {
+        host: "machine.moor.internal".to_owned(),
+        upstream: "127.0.0.1:7700".parse().unwrap(),
+    });
+    f.cx = f.cx.with_config(config);
+    for who in [Some(user), None] {
+        let servers = for_box(&f.cx, who).unwrap().servers;
+        assert_eq!(
+            servers["machine"].url.as_deref(),
+            Some("http://machine.moor.internal/mcp"),
+            "{who:?}"
+        );
+    }
+}

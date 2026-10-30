@@ -1,3 +1,5 @@
+#![allow(clippy::indexing_slicing, reason = "test assertions")]
+
 use std::net::SocketAddr;
 
 use super::{err, ok};
@@ -39,4 +41,27 @@ fn a_service_host_that_is_not_a_dns_name_is_refused() {
         ));
         assert_eq!(e.path, "machines.service.host", "{host}");
     }
+}
+
+#[test]
+fn the_machine_service_is_an_mcp_server_every_box_gets() {
+    let cfg = ok("machines: {service: {host: machine.moor.internal, upstream: '127.0.0.1:7700'}}");
+    let shared = cfg.shared_mcp();
+    let machine = &shared["machine"];
+    assert_eq!(
+        machine.url.as_deref(),
+        Some("http://machine.moor.internal/mcp")
+    );
+    assert_eq!(machine.kind.as_deref(), Some("http"));
+    assert!(ok("").shared_mcp().is_empty());
+
+    let own = ok(
+        "mcp_servers: {machine: {url: 'https://mine.example.com/mcp'}}\n\
+         machines: {service: {host: machine.moor.internal, upstream: '127.0.0.1:7700'}}",
+    );
+    assert_eq!(
+        own.shared_mcp()["machine"].url.as_deref(),
+        Some("https://mine.example.com/mcp"),
+        "an operator entry of that name stays"
+    );
 }

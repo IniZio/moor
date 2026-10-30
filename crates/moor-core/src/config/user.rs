@@ -36,6 +36,9 @@ pub use surface::{HerdrConfig, SurfaceConfig, SurfaceKind};
 /// herdr session used when `surface.herdr.session` is unset.
 const DEFAULT_HERDR_SESSION: &str = "moor";
 
+/// The name a Box's agent knows the machine service's MCP server by.
+const MACHINE_MCP: &str = "machine";
+
 /// Idle time before a Box sleeps when `box.sleep_after` is unset.
 pub const DEFAULT_SLEEP_AFTER: Duration = Duration::from_mins(30);
 
@@ -318,6 +321,18 @@ impl UserConfig {
     #[must_use]
     pub fn provider(&self) -> Option<&str> {
         self.box_.provider.as_deref()
+    }
+
+    /// The MCP servers every Box gets: `mcp_servers`, plus the machine service's server when
+    /// `machines.service` is set and no entry already takes its name.
+    #[must_use]
+    pub fn shared_mcp(&self) -> BTreeMap<String, McpServer> {
+        let mut out = self.mcp_servers.clone();
+        if let Some(s) = &self.machines.service {
+            out.entry(MACHINE_MCP.to_owned())
+                .or_insert_with(|| s.mcp_server());
+        }
+        out
     }
 
     /// The Proxy rules a Box gets: `proxy.rules` plus one per MCP server in `mcp` whose header

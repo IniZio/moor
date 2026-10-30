@@ -5,6 +5,7 @@ use std::net::SocketAddr;
 
 use serde::{Deserialize, Deserializer};
 
+use super::McpServer;
 use crate::config::{ConfigError, SyncConfig};
 
 /// `machines:` section.
@@ -33,6 +34,16 @@ impl MachineService {
     #[must_use]
     pub fn serves(&self, host: &str) -> bool {
         host.eq_ignore_ascii_case(&self.host)
+    }
+
+    /// The service's MCP server, reached over plain `http://` so the Proxy can route it.
+    #[must_use]
+    pub fn mcp_server(&self) -> McpServer {
+        McpServer {
+            kind: Some("http".to_owned()),
+            url: Some(format!("http://{}/mcp", self.host)),
+            ..McpServer::default()
+        }
     }
 
     /// `host` is a DNS name.
