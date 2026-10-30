@@ -150,7 +150,10 @@ fn a_git_subdir_source_reads_its_repo() {
 fn profile_marketplace_needs_no_declaration_and_adds_no_proxy_repo() {
     let m =
         parse("claude:\n  plugins: [lint@profile]\ncodex:\n  plugins: [fmt@profile]\n").unwrap();
-    assert_eq!(m.claude.plugins[0].marketplace, PROFILE_MARKETPLACE);
+    assert_eq!(
+        m.claude.plugins.first().map(|p| p.marketplace.as_str()),
+        Some(PROFILE_MARKETPLACE)
+    );
     assert!(repos(&m).is_empty());
 }
 
