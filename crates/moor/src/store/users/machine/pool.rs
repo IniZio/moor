@@ -10,8 +10,10 @@ use crate::store::{Store, StoreError};
 pub(crate) struct PoolHost {
     /// The crabbox provider it offers Boxes on; none for an ordinary machine.
     pub(crate) pool: Option<String>,
-    /// Whether its agent holds a link now. A machine reached over ssh has no agent to lose, so
-    /// it counts as online.
+    /// Whether it was enrolled with `moor-machine-agent`, the only way the controller reaches
+    /// a pool host.
+    pub(crate) enrolled: bool,
+    /// Whether its agent holds a link now.
     pub(crate) online: bool,
 }
 
@@ -30,7 +32,7 @@ impl Store {
             return Ok(None);
         };
         let online = match id {
-            None => true,
+            None => false,
             Some(id) => conn
                 .query_row(
                     "SELECT online FROM machine_links WHERE machine_id = ?",
@@ -44,6 +46,7 @@ impl Store {
         };
         Ok(Some(PoolHost {
             pool: machine.pool,
+            enrolled: id.is_some(),
             online,
         }))
     }

@@ -97,7 +97,7 @@ fn a_usable_host_is_still_refused_until_its_driver_lands() {
 }
 
 #[test]
-fn a_machine_reached_over_ssh_counts_as_online() {
+fn a_machine_reached_over_ssh_is_refused_as_not_enrolled() {
     let w = world_on("cloudhypervisor@hv1");
     let m = UserMachine::parse("hv1", "me@box:22", &[])
         .and_then(|m| m.with_pool("cloudhypervisor"))
@@ -106,7 +106,7 @@ fn a_machine_reached_over_ssh_counts_as_online() {
         .unwrap()
         .set_user_machine(REQUESTER_USER, &m)
         .unwrap();
-    assert!(refusal(&w).contains("not supported yet"));
+    assert!(refusal(&w).contains("not enrolled with moor-machine-agent"));
 }
 
 #[test]
