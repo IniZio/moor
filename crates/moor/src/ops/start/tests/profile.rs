@@ -172,8 +172,13 @@ fn a_marketplace_named_unlike_its_key_drops_its_plugins() {
     let events = profile_events(&w, id);
     assert_eq!(events.get(1).unwrap().0, "profile_failed");
     assert_eq!(
-        events.get(1).unwrap().1["detail"],
-        "marketplace tools is named kit"
+        events
+            .get(1)
+            .unwrap()
+            .1
+            .get("detail")
+            .and_then(serde_json::Value::as_str),
+        Some("marketplace tools is named kit")
     );
     let got = w.cx.store().unwrap().box_profile(id).unwrap().unwrap();
     assert_eq!(got.reads, [profile_repo(), ForgeRepo::new("acme", "tools")]);
