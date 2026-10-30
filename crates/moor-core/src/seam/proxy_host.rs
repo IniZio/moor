@@ -83,6 +83,12 @@ pub trait ProxyHost: Send + Sync {
     /// Returns [`ProxyHostError::Failed`] when the Proxy cannot be made ready.
     fn ensure(&self, spec: &ProxySpec) -> Result<ProxyEndpoint, ProxyHostError>;
 
+    /// Starts the Box's Proxy again from the spec its last `ensure` saved.
+    ///
+    /// # Errors
+    /// Returns [`ProxyHostError::Failed`] when no spec was saved or the Proxy cannot be made ready.
+    fn restart(&self, box_id: BoxId) -> Result<(), ProxyHostError>;
+
     /// Reports the state of the Box's Proxy.
     ///
     /// # Errors
