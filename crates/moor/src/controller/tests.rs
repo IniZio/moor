@@ -146,6 +146,7 @@ mod operator_only;
 mod run_cancel;
 mod run_grant;
 mod run_output;
+mod runner_socket;
 mod users;
 
 #[test]

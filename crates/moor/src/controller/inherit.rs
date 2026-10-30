@@ -82,6 +82,19 @@ impl Sockets {
         Ok(listener)
     }
 
+    /// [`Sockets::listen`] for a socket a service manager may not know of: a fresh bind when
+    /// `name` was not passed.
+    pub(super) fn listen_if_passed(
+        &mut self,
+        name: &str,
+        path: &Path,
+    ) -> Result<UnixListener, String> {
+        match self {
+            Self::Passed(passed) if passed.contains_key(name) => self.listen(name, path),
+            _ => super::bind(path).map_err(|e| format!("cannot bind {}: {e}", path.display())),
+        }
+    }
+
     /// Refuses any passed socket no [`Sockets::listen`] claimed.
     pub(super) fn finish(self) -> Result<(), String> {
         match self {

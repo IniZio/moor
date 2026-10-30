@@ -12,7 +12,7 @@ use moor_core::user::Caller;
 use super::inherit::Sockets;
 use super::{mkdir, Stop, USAGE};
 use crate::env::Env;
-use crate::front_dir;
+use crate::{front_dir, runner_dir};
 
 /// Listens on `<state>/fronts/<namespace>/front` for each front, taking the socket passed
 /// in as `front-<namespace>` when sockets were passed: each socket 0600 in 0700 dirs.
@@ -47,6 +47,44 @@ pub(super) fn bind_fronts(
                 .map_err(failed)
         })
         .collect()
+}
+
+/// Listens on `<state>/runner/runner.sock` for the machine runner, taking the socket passed in
+/// as `runner` when one was passed: 0600 in a 0700 dir.
+pub(super) fn bind_runner(env: &Env, sockets: &mut Sockets) -> Result<UnixListener, Stop> {
+    let failed = |message: String| Stop { code: 1, message };
+    let state_dir = env.state_dir().ok_or_else(|| Stop {
+        code: USAGE,
+        message:
+            "the machine runner's socket needs a state directory: set state_dir or MOOR_STATE_DIR"
+                .into(),
+    })?;
+    let dir = runner_dir::of(&state_dir);
+    mkdir(&dir)
+        .and_then(|()| fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)))
+        .map_err(|e| failed(format!("cannot prepare {}: {e}", dir.display())))?;
+    sockets
+        .listen_if_passed("runner", &dir.join(runner_dir::SOCKET))
+        .map_err(failed)
+}
+
+/// Which of the controller's sockets a connection arrived on.
+pub(super) enum On {
+    /// The controller socket, whose peer uid says who is calling.
+    Controller,
+    /// Front `ns`'s socket.
+    Front(String),
+    /// The machine runner's socket.
+    Runner,
+}
+
+/// Whom a connection on `on` speaks for.
+pub(super) fn caller(on: &On, stream: &UnixStream) -> Result<Caller, String> {
+    match on {
+        On::Controller => local_caller(stream, rustix::process::geteuid().as_raw()),
+        On::Front(ns) => Ok(Caller::Front(ns.clone())),
+        On::Runner => Ok(Caller::Runner),
+    }
 }
 
 /// Whom a connection on the controller socket speaks for, from the peer's uid: the operator

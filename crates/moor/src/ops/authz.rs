@@ -37,10 +37,15 @@ pub(crate) const LINKS_OPERATOR_ONLY: &str =
 pub(crate) const TARGETS_OPERATOR_ONLY: &str =
     "machine-targets lists every user's machines, which is operator-only";
 
-/// The refusal for a `machine-hold` from anyone but the operator: only the machine runner,
-/// trusting the Box its Proxy named, claims a machine for a Box.
+/// The refusal for a `machine-hold` from anyone but the runner and the operator: only the
+/// machine runner, trusting the Box its Proxy named, claims a machine for a Box.
 pub(crate) const HOLD_OPERATOR_ONLY: &str =
     "machine-hold is the machine runner's, which is operator-only";
+
+/// The refusal for any other request on the machine runner's socket.
+pub(crate) const NOT_THE_RUNNERS: &str =
+    "the machine runner's socket serves only show, machine-hold, machine-keys, machine-links, \
+     machine-targets, box-mirror and box-put";
 
 /// Whose Boxes `caller` may see, asserting `asserted`. Only the controller socket's own uid
 /// is the operator; a front socket is a user at most, whatever it asserts.
@@ -76,6 +81,12 @@ pub(crate) fn authorize(
     asserted: Option<&Identity>,
     request: &Request,
 ) -> Result<Grant, CommandError> {
+    if matches!(caller, Ok(Caller::Runner)) {
+        return runners(request).map(|()| Grant {
+            viewer: Viewer::Operator,
+            pins: Pins::new(),
+        });
+    }
     let viewer = viewer(cx, caller, asserted)?;
     let mut pins = Pins::new();
     if viewer != Viewer::Operator {
@@ -90,6 +101,21 @@ pub(crate) fn authorize(
         }
     }
     Ok(Grant { viewer, pins })
+}
+
+/// Refuses every request the machine runner does not send; it sends those for every user's
+/// Boxes and machines, as the operator would.
+fn runners(request: &Request) -> Result<(), CommandError> {
+    match request {
+        Request::Show(_)
+        | Request::MachineHold(_)
+        | Request::MachineKeys {}
+        | Request::MachineLinks(_)
+        | Request::MachineTargets {}
+        | Request::BoxMirror(_)
+        | Request::BoxPut(_) => Ok(()),
+        _ => Err(CommandError::new(ErrorKind::Refused, NOT_THE_RUNNERS)),
+    }
 }
 
 /// Why only the operator may send `request`, when it touches the controller host or every
