@@ -237,14 +237,14 @@ fn all_events() -> Vec<Event> {
         Event::BoxProgress {
             text: s("waiting for SSH: port 22 closed"),
         },
-        Event::ProfileResolved {
+        Event::Profile(ProfileEvent::ProfileResolved {
             repo: crate::name::ForgeRepo::new("o", "p"),
             sha: s("abc"),
-        },
-        Event::ProfileFailed {
+        }),
+        Event::Profile(ProfileEvent::ProfileFailed {
             step: ProfileStep::Fetch,
             detail: s("d"),
-        },
+        }),
     ]
 }
 
@@ -328,8 +328,10 @@ const fn event_index(e: &Event) -> usize {
             MachineEvent::MachineRefused { .. } => 62,
         },
         Event::BoxProgress { .. } => 63,
-        Event::ProfileResolved { .. } => 64,
-        Event::ProfileFailed { .. } => 65,
+        Event::Profile(p) => match p {
+            ProfileEvent::ProfileResolved { .. } => 64,
+            ProfileEvent::ProfileFailed { .. } => 65,
+        },
     }
 }
 
@@ -538,4 +540,29 @@ fn machine_waiting_and_refused_payloads() {
     });
     assert_eq!(refused.kind(), "machine_refused");
     assert_eq!(refused.payload(), serde_json::json!({"reason": "no"}));
+}
+
+#[test]
+fn profile_events_serialize_flat() {
+    let resolved = Event::Profile(ProfileEvent::ProfileResolved {
+        repo: crate::name::ForgeRepo::new("o", "p"),
+        sha: "abc".to_owned(),
+    });
+    assert_eq!(
+        serde_json::to_string(&resolved).unwrap(),
+        r#"{"kind":"profile_resolved","repo":"o/p","sha":"abc"}"#
+    );
+    assert_eq!(resolved.kind(), "profile_resolved");
+    let failed = Event::Profile(ProfileEvent::ProfileFailed {
+        step: ProfileStep::Fetch,
+        detail: "d".to_owned(),
+    });
+    assert_eq!(
+        serde_json::to_string(&failed).unwrap(),
+        r#"{"kind":"profile_failed","step":"fetch","detail":"d"}"#
+    );
+    assert_eq!(
+        failed.payload(),
+        serde_json::json!({"step":"fetch","detail":"d"})
+    );
 }

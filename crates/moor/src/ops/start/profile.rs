@@ -45,7 +45,10 @@ pub(crate) fn gather(cx: &Cx, user: UserId) -> Result<Option<Gathered>, CommandE
         Err(e) => return Ok(Some(failed(e.error.to_string()))),
     };
     let at = source.git_ref.as_deref();
-    let (sha, manifest) = match cx.forge().file_at(&source.repo, at, MANIFEST_FILE, &token) {
+    let (sha, manifest) = match cx
+        .forge()
+        .read_file_at(&source.repo, at, MANIFEST_FILE, &token)
+    {
         Ok(found) => found,
         Err(e) => return Ok(Some(failed(format!("{}: {e}", source.repo)))),
     };
@@ -98,7 +101,10 @@ fn plugin_repos(
         if wanted.is_empty() {
             continue;
         }
-        let sources = match cx.forge().file_at(market, None, MARKETPLACE_FILE, token) {
+        let sources = match cx
+            .forge()
+            .read_file_at(market, None, MARKETPLACE_FILE, token)
+        {
             Ok((_, Some(json))) => profile::plugin_sources(&json, name, &wanted),
             Ok((_, None)) => Err(format!(
                 "marketplace {name}: {market} has no {MARKETPLACE_FILE}"

@@ -1,7 +1,7 @@
 //! Conversion between a decision's events and stored events.
 
 use super::ExtraEvent;
-use crate::domain::event::Event;
+use crate::domain::event::{Event, ProfileEvent};
 
 impl From<ExtraEvent> for Event {
     #[allow(clippy::too_many_lines, reason = "one arm per event variant")]
@@ -40,8 +40,12 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::SetupFailed { line } => Self::SetupFailed { line },
             ExtraEvent::SetupFinished { ms, ok } => Self::SetupFinished { ms, ok },
             ExtraEvent::Cloned { ms } => Self::Cloned { ms },
-            ExtraEvent::ProfileResolved { repo, sha } => Self::ProfileResolved { repo, sha },
-            ExtraEvent::ProfileFailed { step, detail } => Self::ProfileFailed { step, detail },
+            ExtraEvent::ProfileResolved { repo, sha } => {
+                Self::Profile(ProfileEvent::ProfileResolved { repo, sha })
+            }
+            ExtraEvent::ProfileFailed { step, detail } => {
+                Self::Profile(ProfileEvent::ProfileFailed { step, detail })
+            }
             ExtraEvent::Checked { credentials } => Self::Checked { credentials },
             ExtraEvent::RunStarted { run } => Self::RunStarted { run },
             ExtraEvent::Attached => Self::Attached,
@@ -144,8 +148,12 @@ impl TryFrom<Event> for ExtraEvent {
             Event::SetupFailed { line } => Ok(Self::SetupFailed { line }),
             Event::SetupFinished { ms, ok } => Ok(Self::SetupFinished { ms, ok }),
             Event::Cloned { ms } => Ok(Self::Cloned { ms }),
-            Event::ProfileResolved { repo, sha } => Ok(Self::ProfileResolved { repo, sha }),
-            Event::ProfileFailed { step, detail } => Ok(Self::ProfileFailed { step, detail }),
+            Event::Profile(ProfileEvent::ProfileResolved { repo, sha }) => {
+                Ok(Self::ProfileResolved { repo, sha })
+            }
+            Event::Profile(ProfileEvent::ProfileFailed { step, detail }) => {
+                Ok(Self::ProfileFailed { step, detail })
+            }
             Event::Checked { credentials } => Ok(Self::Checked { credentials }),
             Event::RunStarted { run } => Ok(Self::RunStarted { run }),
             Event::Attached => Ok(Self::Attached),

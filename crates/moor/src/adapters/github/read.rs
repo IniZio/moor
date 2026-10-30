@@ -224,7 +224,7 @@ struct Object {
     mcp_json: Option<Entry>,
     /// `.claude/settings.json` at a commit.
     claude_settings: Option<Entry>,
-    /// The one file a [`file_at`] read asks for.
+    /// The one file a [`read_file_at`] read asks for.
     file: Option<Entry>,
 }
 
@@ -378,7 +378,7 @@ fn author(viewer: Viewer) -> Result<GitAuthor, ForgeError> {
 
 mod file;
 mod spoof;
-pub(super) use file::file_at;
+pub(super) use file::read_file_at;
 use spoof::spoofs;
 
 #[cfg(test)]

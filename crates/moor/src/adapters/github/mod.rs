@@ -51,13 +51,13 @@ impl Forge for GitHub {
         read::read(&self.api, self.timeout, repo, base, branch, token)
     }
 
-    fn file_at(
+    fn read_file_at(
         &self,
         repo: &ForgeRepo,
         at: Option<&str>,
         path: &'static str,
         token: &Secret,
     ) -> Result<(Sha, Option<String>), ForgeError> {
-        read::file_at(&self.api, self.timeout, repo, at, path, token)
+        read::read_file_at(&self.api, self.timeout, repo, at, path, token)
     }
 }

@@ -23,7 +23,7 @@ fragment commit on GitObject {
 
 /// Reads `path` in `repo` at `at` (the default branch when `None`) from the GraphQL endpoint
 /// `api` as the account of `token`, with the commit `at` resolved to.
-pub(in crate::adapters::github) fn file_at(
+pub(in crate::adapters::github) fn read_file_at(
     api: &str,
     timeout: Duration,
     repo: &ForgeRepo,
