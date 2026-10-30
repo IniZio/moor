@@ -33,6 +33,9 @@ pub enum PoolOp {
         /// `moor-<id>`; none for a list.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         slug: Option<String>,
+        /// The OpenSSH public key an authorize lets in; none for every other verb.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
     },
     /// [`Op::Dial`].
     Dial {
@@ -44,7 +47,7 @@ pub enum PoolOp {
 impl From<PoolOp> for Op {
     fn from(op: PoolOp) -> Self {
         match op {
-            PoolOp::Lease { verb, slug } => Self::Lease { verb, slug },
+            PoolOp::Lease { verb, slug, key } => Self::Lease { verb, slug, key },
             PoolOp::Dial { slug } => Self::Dial { slug },
         }
     }
@@ -81,8 +84,37 @@ pub async fn lease(
     slug: Option<&str>,
 ) -> Result<lease::Answer, String> {
     let slug = slug.map(str::to_owned);
-    let (_, reply) = ask(socket, machine_id, PoolOp::Lease { verb, slug }).await?;
-    match reply {
+    leased(
+        socket,
+        machine_id,
+        PoolOp::Lease {
+            verb,
+            slug,
+            key: None,
+        },
+    )
+    .await
+}
+
+/// Asks the broker at `socket` to let OpenSSH public `key` sign in to `slug`'s VM on machine
+/// `machine_id`.
+pub async fn authorize(
+    socket: &Path,
+    machine_id: i64,
+    slug: &str,
+    key: &str,
+) -> Result<lease::Answer, String> {
+    let op = PoolOp::Lease {
+        verb: lease::Verb::Authorize,
+        slug: Some(slug.to_owned()),
+        key: Some(key.to_owned()),
+    };
+    leased(socket, machine_id, op).await
+}
+
+/// Sends lease `op` to machine `machine_id`; its answer.
+async fn leased(socket: &Path, machine_id: i64, op: PoolOp) -> Result<lease::Answer, String> {
+    match ask(socket, machine_id, op).await?.1 {
         Reply::Leased(answer) => Ok(answer),
         other => Err(refusal(machine_id, other)),
     }

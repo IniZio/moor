@@ -90,7 +90,9 @@ pub(crate) async fn serve(machine: &Machine, link: &Link, mut ch: Channel) {
 /// Serves a lease or a dial for `pool`.
 async fn serve_pool(home: &Path, pool: &Pool, ch: Channel, op: Op) {
     let reply = match op {
-        Op::Lease { verb, slug } => pool::lease(home, pool, verb, slug.as_deref()).await,
+        Op::Lease { verb, slug, key } => {
+            pool::lease(home, pool, verb, slug.as_deref(), key.as_deref()).await
+        }
         Op::Dial { slug } => match pool::dial(home, pool, &slug).await {
             Ok(sshd) => return dial(ch, sshd).await,
             Err(reason) => refused(reason),

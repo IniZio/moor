@@ -34,9 +34,16 @@ pub struct Pool {
     pub crabbox: PathBuf,
 }
 
-/// Does `verb` to the lease `slug`, or lists the leases, under `home`.
-pub async fn lease(home: &Path, pool: &Pool, verb: Verb, slug: Option<&str>) -> Reply {
-    match answer(home, pool, verb, slug).await {
+/// Does `verb` to the lease `slug`, or lists the leases, under `home`; an authorize lets `key`
+/// in.
+pub async fn lease(
+    home: &Path,
+    pool: &Pool,
+    verb: Verb,
+    slug: Option<&str>,
+    key: Option<&str>,
+) -> Reply {
+    match answer(home, pool, verb, slug, key).await {
         Ok(answer) => Reply::Leased(answer),
         Err(reason) => Reply::Refused { reason },
     }
@@ -48,6 +55,7 @@ async fn answer(
     pool: &Pool,
     verb: Verb,
     slug: Option<&str>,
+    key: Option<&str>,
 ) -> Result<Answer, String> {
     match (verb, slug.map(checked).transpose()?) {
         (Verb::List, None) => Ok(Answer::Leases {
@@ -65,6 +73,7 @@ async fn answer(
                 },
                 verb,
                 id,
+                key,
             )
             .await
         }
@@ -72,8 +81,17 @@ async fn answer(
 }
 
 /// Does `verb` to lease `id`.
-async fn act(lease: &Crabbox<'_>, verb: Verb, id: i64) -> Result<Answer, String> {
+async fn act(
+    lease: &Crabbox<'_>,
+    verb: Verb,
+    id: i64,
+    key: Option<&str>,
+) -> Result<Answer, String> {
     let ran = match verb {
+        Verb::Authorize => {
+            let key = key.ok_or("authorize names no key")?;
+            return reach::authorize(lease, key).await;
+        }
         Verb::Warmup => {
             room(lease.home, lease.pool, id).await?;
             lease.run("warmup", "--slug", BOOT, &[0]).await

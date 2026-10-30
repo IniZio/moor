@@ -7,6 +7,7 @@ use std::path::Path;
 use std::process::Stdio;
 
 use moor_client::link::lease::Answer;
+use moor_core::boxscript::quote;
 use moor_core::ssh::pin::{self, KnownHosts};
 use moor_core::ssh::split_words;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
@@ -29,6 +30,8 @@ struct Route {
     proxy: Option<String>,
     /// The known-hosts files, in ssh's order.
     files: Vec<String>,
+    /// crabbox's words, which pass the pin rules.
+    words: Vec<String>,
 }
 
 /// The lease's login user and host keys.
@@ -71,6 +74,35 @@ pub(super) async fn info(lease: &Crabbox<'_>) -> Result<Answer, String> {
         user: route.user,
         host_keys,
     })
+}
+
+/// Appends OpenSSH public `key` to the VM's `authorized_keys` through crabbox's own words, once.
+/// The key is parsed and printed afresh, so no text of the request reaches the VM's shell.
+pub(super) async fn authorize(lease: &Crabbox<'_>, key: &str) -> Result<Answer, String> {
+    let key = ssh_key::PublicKey::from_openssh(key)
+        .and_then(|k| k.to_openssh())
+        .map_err(|e| format!("not an OpenSSH public key: {e}"))?;
+    let route = route(lease).await?;
+    let k = quote(&key);
+    let script = format!(
+        "umask 077; mkdir -p ~/.ssh && touch ~/.ssh/authorized_keys && \
+         {{ grep -qxF {k} ~/.ssh/authorized_keys || printf '%s\\n' {k} >> ~/.ssh/authorized_keys; }}"
+    );
+    let ran = Command::new("ssh")
+        .args(&route.words)
+        .arg(script)
+        .env("HOME", lease.home)
+        .stdin(Stdio::null())
+        .kill_on_drop(true)
+        .output();
+    let out = tokio::time::timeout(CALL, ran)
+        .await
+        .map_err(|_| "the key install ran too long".to_owned())?
+        .map_err(|e| format!("cannot run ssh: {e}"))?;
+    if !out.status.success() {
+        return Err(format!("the key install failed ({:?})", out.status.code()));
+    }
+    Ok(Answer::Done)
 }
 
 /// A byte pipe to a lease's sshd.
@@ -178,6 +210,7 @@ async fn route(lease: &Crabbox<'_>) -> Result<Route, String> {
         proxy: get("proxycommand").filter(|p| p != "none"),
         hostname,
         files,
+        words,
     })
 }
 

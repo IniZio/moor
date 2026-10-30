@@ -159,7 +159,7 @@ fn main() -> ExitCode {
         }
         Command::Lease { verb, slug, pool } => {
             return on_pool(pool, |rt, home, pool| {
-                let reply = rt.block_on(lease(&home, &pool, verb, slug.as_deref()));
+                let reply = rt.block_on(lease(&home, &pool, verb, slug.as_deref(), None));
                 let line = serde_json::to_string(&reply).map_err(|e| e.to_string())?;
                 let _ = writeln!(std::io::stdout(), "{line}");
                 match reply {
