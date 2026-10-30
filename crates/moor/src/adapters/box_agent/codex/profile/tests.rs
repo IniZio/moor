@@ -100,6 +100,16 @@ fn instructions_and_skills_land_where_codex_reads_them() {
     }
 }
 
+fn assert_user_lines_kept_once(text: &str) {
+    assert_eq!(text.matches("# >>> moor-profile >>>").count(), 1, "{text}");
+    assert_eq!(text.matches("# <<< moor-profile <<<").count(), 1, "{text}");
+    assert!(text.contains("approval_policy = \"never\"\n"), "{text}");
+    assert!(
+        text.contains("[projects.\"/w\"]\ntrust_level = \"trusted\"\n"),
+        "{text}"
+    );
+}
+
 #[test]
 fn the_block_is_replaced_not_duplicated_and_user_lines_stay() {
     let f = Fixture::new();
@@ -111,13 +121,7 @@ fn the_block_is_replaced_not_duplicated_and_user_lines_stay() {
         assert!(f.run(&model_only(), "").status.success());
     }
     let text = f.read("home/.codex/config.toml");
-    assert_eq!(text.matches("# >>> moor-profile >>>").count(), 1, "{text}");
-    assert_eq!(text.matches("# <<< moor-profile <<<").count(), 1, "{text}");
-    assert!(text.contains("approval_policy = \"never\"\n"), "{text}");
-    assert!(
-        text.contains("[projects.\"/w\"]\ntrust_level = \"trusted\"\n"),
-        "{text}"
-    );
+    assert_user_lines_kept_once(&text);
     f.put(
         "profile/codex/config.toml",
         "[features]\nshell_tool = true\n",
@@ -185,4 +189,45 @@ fn a_failed_plugin_is_recorded_and_the_rest_still_run() {
         "plugin lint@tools exit 7\n"
     );
     assert!(f.read("log").ends_with("plugin add fmt@local-mk\n"));
+}
+
+#[test]
+fn fragment_tables_never_swallow_the_persons_later_top_level_keys() {
+    let f = Fixture::new();
+    f.put(
+        "home/.codex/config.toml",
+        "approval_policy = \"never\"\n[projects.\"/w\"]\ntrust_level = \"trusted\"\n",
+    );
+    f.put(
+        "profile/codex/config.toml",
+        "sandbox_mode = \"read-only\"\n[features]\nx = true\n[tui]\ny = 1\n",
+    );
+    assert!(f.run(&model_only(), "").status.success());
+    let first = f.read("home/.codex/config.toml");
+    assert_fragment_in_place(&f.config());
+    assert!(f.run(&model_only(), "").status.success());
+    assert_fragment_in_place(&f.config());
+    assert_eq!(f.read("home/.codex/config.toml"), first);
+    let (head, tail) = first.split_once("# <<< moor-profile <<<\n").unwrap();
+    f.put(
+        "home/.codex/config.toml",
+        &format!("{head}# <<< moor-profile <<<\nlater = 1\n{tail}"),
+    );
+    assert!(f.run(&model_only(), "").status.success());
+    let cfg = f.config();
+    assert_eq!(cfg["later"].as_integer(), Some(1));
+    assert!(cfg["tui"].get("later").is_none());
+}
+
+fn assert_fragment_in_place(cfg: &toml::Value) {
+    assert_eq!(cfg["model"].as_str(), Some("gpt-5.5"));
+    assert_eq!(cfg["sandbox_mode"].as_str(), Some("read-only"));
+    assert_eq!(cfg["approval_policy"].as_str(), Some("never"));
+    assert_eq!(cfg["features"]["x"].as_bool(), Some(true));
+    assert_eq!(cfg["tui"]["y"].as_integer(), Some(1));
+    assert_eq!(
+        cfg["projects"]["/w"]["trust_level"].as_str(),
+        Some("trusted")
+    );
+    assert!(cfg["projects"]["/w"].get("sandbox_mode").is_none());
 }

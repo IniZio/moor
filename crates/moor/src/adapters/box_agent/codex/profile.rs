@@ -1,5 +1,7 @@
 //! The Codex profile writer: `~/.codex` and `~/.agents/skills` from the person's profile.
 
+use std::fmt::Write as _;
+
 use moor_core::boxscript::quote;
 use moor_core::name::{BoxPath, NameError};
 use moor_core::profile::{Manifest, PROFILE_MARKETPLACE};
@@ -13,15 +15,22 @@ use crate::adapters::box_agent::profile_writer::{
 #[cfg(test)]
 mod tests;
 
+/// Opens the block of top-level keys.
 const BEGIN: &str = "# >>> moor-profile >>>";
+/// Closes the block of top-level keys.
 const END: &str = "# <<< moor-profile <<<";
+/// Opens the block of tables.
+const TABLES_BEGIN: &str = "# >>> moor-profile tables >>>";
+/// Closes the block of tables.
+const TABLES_END: &str = "# <<< moor-profile tables <<<";
 
-/// Rewrites the fenced block of `$cfg` from `$blk`: the old block goes, everything else stays,
-/// and the new one is put first so its top-level keys stay top-level above any table.
+/// Rewrites both fenced blocks of `$cfg`: the old ones go, everything else stays. TOML cannot
+/// reopen the root table, so the top-level keys go first and the tables go last, where no
+/// later key of the person's can fall into them.
 const REPLACE_BLOCK: &str = r#"rest="$cfg.moor-rest"; : > "$rest"
-[ -f "$cfg" ] && { awk -v b="$begin" -v e="$end" '$0 == b { skip = 1; next } $0 == e { skip = 0; next } !skip' "$cfg" > "$rest" || fail config $?; }
-cat "$blk" "$rest" > "$cfg.moor-tmp" && mv "$cfg.moor-tmp" "$cfg" || fail config $?
-rm -f "$rest" "$blk""#;
+[ -f "$cfg" ] && { awk -v b="$begin" -v e="$end" -v tb="$tbegin" -v te="$tend" '$0 == b || $0 == tb { skip = 1; next } $0 == e || $0 == te { skip = 0; next } !skip' "$cfg" > "$rest" || fail config $?; }
+cat "$blk" "$rest" "$tblk" > "$cfg.moor-tmp" && mv "$cfg.moor-tmp" "$cfg" || fail config $?
+rm -f "$rest" "$blk" "$tblk""#;
 
 impl ProfileWriter for Codex {
     fn write(&self, ctx: &ProfileCtx<'_>) -> Result<BoxSetup, NameError> {
@@ -29,13 +38,15 @@ impl ProfileWriter for Codex {
         let agents_skills = BoxPath::under(ctx.home.as_str(), ".agents/skills")?;
         let failures = BoxPath::under(ctx.workdir.as_str(), FAILURES_FILE)?;
         let vars = format!(
-            "d={}; c={}; k={}; f={}; cfg=\"$c/config.toml\"; begin={}; end={}",
+            "d={}; c={}; k={}; f={}; cfg=\"$c/config.toml\"; begin={}; end={}; tbegin={}; tend={}",
             quote(ctx.profile_dir.as_str()),
             quote(codex_dir.as_str()),
             quote(agents_skills.as_str()),
             quote(failures.as_str()),
             quote(BEGIN),
             quote(END),
+            quote(TABLES_BEGIN),
+            quote(TABLES_END),
         );
         let setup = format!(
             "mkdir -p \"$c\" \"$k\" {} && : > \"$f\"",
@@ -64,12 +75,13 @@ impl ProfileWriter for Codex {
     }
 }
 
-/// Builds the new block in `$blk`: the profile's model, then its `codex/config.toml` fragment
-/// without a `model` of its own at the top level, which would repeat the key.
+/// Builds `$blk` (the profile's model, then the top-level keys of its `codex/config.toml`
+/// fragment minus a `model` of its own, which would repeat the key) and `$tblk` (the fragment's
+/// tables, from its first table header on).
 fn config_block(manifest: &Manifest) -> String {
     let mut lines = vec![
-        "blk=\"$cfg.moor-block\"".to_owned(),
-        "echo \"$begin\" > \"$blk\"".to_owned(),
+        "blk=\"$cfg.moor-block\"; tblk=\"$cfg.moor-tables\"".to_owned(),
+        "echo \"$begin\" > \"$blk\"; : > \"$tblk\"".to_owned(),
     ];
     let has_model = manifest.codex.model.is_some();
     if let Some(model) = &manifest.codex.model {
@@ -78,15 +90,18 @@ fn config_block(manifest: &Manifest) -> String {
             quote(&format!("model = {}", toml_string(model)))
         ));
     }
-    let drop_model = if has_model {
-        r#"awk '/^\[/ { t = 1 } t || $0 !~ /^model[ \t]*=/' "$d/codex/config.toml""#
+    let top = if has_model {
+        r#"awk '/^\[/ { t = 1 } !t && $0 !~ /^model[ \t]*=/' "$d/codex/config.toml""#
     } else {
-        r#"cat "$d/codex/config.toml""#
+        r#"awk '/^\[/ { t = 1 } !t' "$d/codex/config.toml""#
     };
     lines.push(format!(
-        "[ -f \"$d/codex/config.toml\" ] && {{ {drop_model} >> \"$blk\"; echo >> \"$blk\"; }}"
+        "[ -f \"$d/codex/config.toml\" ] && {{ {top} >> \"$blk\"; awk '/^\\[/ {{ t = 1 }} t' \"$d/codex/config.toml\" > \"$tblk\"; }}"
     ));
     lines.push("echo \"$end\" >> \"$blk\"".to_owned());
+    lines.push(
+        "[ -s \"$tblk\" ] && { { echo \"$tbegin\"; cat \"$tblk\"; echo \"$tend\"; } > \"$tblk.x\" && mv \"$tblk.x\" \"$tblk\"; }".to_owned(),
+    );
     lines.join("\n")
 }
 
@@ -97,7 +112,9 @@ fn toml_string(text: &str) -> String {
         match ch {
             '"' => out.push_str("\\\""),
             '\\' => out.push_str("\\\\"),
-            c if c.is_control() => out.push_str(&format!("\\u{:04X}", u32::from(c))),
+            c if c.is_control() => {
+                let _ = write!(out, "\\u{:04X}", u32::from(c));
+            }
             c => out.push(c),
         }
     }
