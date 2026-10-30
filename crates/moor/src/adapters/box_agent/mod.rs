@@ -8,6 +8,11 @@ mod launch;
 
 pub(crate) use launch::detach::relay_argv;
 mod probe;
+#[allow(
+    dead_code,
+    reason = "the launch script calls the writers in a later change"
+)]
+mod profile_writer;
 mod proxy_env;
 mod steer;
 mod transcript;
