@@ -57,6 +57,7 @@ mod info;
 mod link;
 mod pull;
 mod relay;
+mod route;
 mod rsh;
 mod sync;
 
@@ -176,8 +177,9 @@ impl Runner {
             Arc::clone(locks.entry(caller.box_id.get()).or_default())
         };
         let _held = lock.lock().await;
+        let mut caller = caller;
         self.hooks
-            .before_sync(&caller)
+            .before_sync(&mut caller, Some(&progress))
             .await
             .map_err(|e| internal(&e))?;
         let (client, mirrors) = (self.client.clone(), self.mirrors.clone());
@@ -207,7 +209,13 @@ impl Runner {
         context: RequestContext<RoleServer>,
         Parameters(args): Parameters<PullArgs>,
     ) -> Result<Json<PullOutput>, ErrorData> {
-        let caller = caller(&context)?;
+        let mut caller = caller(&context)?;
+        if caller.kind.provider().is_some() {
+            self.hooks
+                .facts(&mut caller, Some(&Progress::of(&context)))
+                .await
+                .map_err(|e| internal(&e))?;
+        }
         let stage = self.mirrors.with_file_name("pulls");
         let client = self.client.clone();
         let pull = pull::serve(client, self.agents.clone(), stage, caller, args);
@@ -230,14 +238,19 @@ impl Runner {
         &self,
         Extension(parts): Extension<http::request::Parts>,
     ) -> Result<Json<MachineInfo>, ErrorData> {
-        let caller = Caller::from_headers(&parts.headers)?;
-        let facts = self.hooks.facts(&caller).await.map_err(|e| internal(&e))?;
+        let mut caller = Caller::from_headers(&parts.headers)?;
+        let facts = self
+            .hooks
+            .facts(&mut caller, None)
+            .await
+            .map_err(|e| internal(&e))?;
         let notice = self.hooks.notice(&caller);
         Ok(Json(MachineInfo {
             box_id: caller.box_id.get(),
+            port_offset: caller.port_offset(),
+            kind: caller.vm_host(),
             machine: caller.machine,
             slot: caller.slot,
-            port_offset: 10 * u32::from(caller.slot),
             facts,
             sync_exclude: caller.sync_exclude,
             notice,
@@ -261,7 +274,7 @@ impl Runner {
         context: RequestContext<RoleServer>,
         Parameters(args): Parameters<ExecArgs>,
     ) -> Result<Json<ExecOutput>, ErrorData> {
-        let caller = caller(&context)?;
+        let mut caller = caller(&context)?;
         let timeout = exec::bounded(
             "timeout_secs",
             args.timeout_secs.unwrap_or(exec::DEFAULT_TIMEOUT_SECS),
@@ -287,7 +300,11 @@ impl Runner {
             async move { progress.note(reason).await }
         };
         let run = async {
-            let facts = self.hooks.facts(&caller).await.map_err(|e| internal(&e))?;
+            let facts = self
+                .hooks
+                .facts(&mut caller, Some(&progress))
+                .await
+                .map_err(|e| internal(&e))?;
             let _held = self
                 .holds
                 .take(&caller, wanted, Duration::from_secs(wait), waiting)

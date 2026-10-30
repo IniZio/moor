@@ -9,6 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use super::{box_env, open_boxes, read, tail, write, Facts, Hooks, Record};
 use moor_client::link::ops::Hook;
 
+use crate::beat::Progress;
 use crate::caller::{Caller, Reach};
 use crate::holds::Holds;
 use crate::relay::Relays;
@@ -35,8 +36,10 @@ impl Hooks {
         };
         relays.end_box(id).await;
         holds.release_box(id);
-        let env = box_env(id, record.slot, &record.facts);
-        self.hook(id, &record.reach, Hook::Suspend, &env).await?;
+        let env = box_env(id, record.slot, record.kind(), &record.facts);
+        let route = record.route();
+        self.hook(id, &record.reach, &route, Hook::Suspend, &env)
+            .await?;
         record.suspended_at = Some(now());
         write(&path, &record).map_err(|e| format!("could not note the suspend: {e}"))
     }
@@ -140,13 +143,20 @@ impl Hooks {
     }
 
     /// Before a sync: makes room, and prepares a Box that was suspended or moved slot.
-    pub(crate) async fn before_sync(&self, caller: &Caller) -> Result<(), String> {
+    pub(crate) async fn before_sync(
+        &self,
+        caller: &mut Caller,
+        progress: Option<&Progress>,
+    ) -> Result<(), String> {
+        if caller.kind.provider().is_some() {
+            return self.facts(caller, progress).await.map(drop);
+        }
         self.guard(caller).await?;
         self.note(caller).await?;
         let stale = read(&self.record(caller.box_id.get()))?
             .is_some_and(|r| r.prepared && !r.is_current(caller));
         if stale {
-            self.facts(caller).await?;
+            self.facts(caller, progress).await?;
         }
         Ok(())
     }

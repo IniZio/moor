@@ -349,6 +349,43 @@ An evicted Box's next call prepares it again. Until the Box syncs,
 `machine_info` carries a `notice`. The notice says that the runner removed the
 Box's files on the machine while it slept, so the Box must `sync` again.
 
+## VM hosts
+
+A machine enrolled as a VM host gives each Box that claims it a VM of its own.
+crabbox and the host's provider adapter run on the host. The Proxy sends
+`X-Moor-Machine-Kind: vm-host` and the provider in `X-Moor-Machine-Vm`.
+
+The runner reaches the VM through the host, with the same ssh target, key and
+`known_hosts` as for any machine. On the host, `crabbox ssh --provider P --id
+moor-<box id>` prints the ssh words for the VM, and the runner runs
+`ssh <host> ssh <words> <command>`. So the VM's key never leaves the host.
+`exec`, `sync`, `pull`, the relays, `prepare` and `suspend` all run in the VM.
+
+The Box's first call that needs the machine boots the VM. This is the same call
+that runs `prepare` on other machines. The runner runs
+`crabbox warmup --provider P --slug moor-<box id>` on the host, from
+`~/moor-state/<box id>/lease`. While it boots, the call sends progress such as
+`booting moor-12 on hv: 40 s`. The runner then asks for the VM's ssh words and
+reads them with `ssh -G` on the host. Host key checking must stay on, as for a
+Box on crabbox: `StrictHostKeyChecking` yes or accept-new, and a real
+known-hosts file, which accept-new must be able to write. If the words fail
+the check, the runner deletes the VM and the call fails with the reason. Then
+`prepare` runs in the VM. Inside the VM the ports are the repo's own, so
+`machine_info` and `machine_claim` return `port_offset` 0 and `kind`
+`vm-host`. Every hook sees `MOOR_MACHINE_KIND`, which is `physical` or
+`vm-host`.
+
+The Box's record notes the VM before the boot starts and keeps the ssh words
+once the VM is ready. If the runner stops mid-boot, the next call deletes the
+VM by its slug and boots it again. A failed crabbox call fails the call with
+the tail of crabbox's output.
+
+When the Box closes, the sweep runs
+`crabbox stop --provider P --id moor-<box id>` on the host instead of
+`release`, since what `prepare` made goes with the VM. Then it removes
+`~/moor/<box id>` and `~/moor-state/<box id>` on the host, the record and the
+host mirror.
+
 ## Relays
 
 A machine can run its own MCP servers over stdio, such as Argent

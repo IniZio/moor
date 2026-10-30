@@ -17,6 +17,7 @@ use tokio::io::AsyncReadExt;
 
 use crate::caller::{Caller, Reach};
 use crate::link::{self, Answer};
+use crate::route::Route;
 use crate::Agents;
 
 static CALLS: AtomicU64 = AtomicU64::new(0);
@@ -126,6 +127,14 @@ fn over_ssh(ssh: &str, caller: &Caller, path: &str, to: &Path) -> Result<(), Str
     };
     let out = Command::new("rsync")
         .args(["-L", "-e", "ssh -o BatchMode=yes"])
+        .args(match &caller.route {
+            Route::Host => Vec::new(),
+            // -s keeps the path out of the remote command, which two shells would split.
+            route @ Route::Vm(_) => vec![
+                "-s".to_owned(),
+                format!("--rsync-path={}", route.rsync_path("rsync")),
+            ],
+        })
         .arg(format!("{ssh}:{remote}"))
         .arg(to)
         .output()

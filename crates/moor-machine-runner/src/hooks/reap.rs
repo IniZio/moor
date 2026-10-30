@@ -17,6 +17,7 @@ use moor_client::link::ops::Hook;
 
 use crate::caller::Reach;
 use crate::exec;
+use crate::route::Route;
 
 /// Shell lines that give a command a state dir of its own and a `TMPDIR` inside it, so what the
 /// Box's tools write there goes with the Box.
@@ -118,7 +119,7 @@ impl Hooks {
         // No glob: the machine's login shell may be zsh, which fails on a pattern that matches
         // nothing.
         let script = "cd && find moor moor-state -mindepth 1 -maxdepth 1 2>/dev/null; :";
-        let out = exec::run(target, script, self.timeout)
+        let out = exec::run(target, &Route::Host, script, self.timeout)
             .await
             .map_err(|e| format!("could not run the remote shell: {e}"))?;
         if out.exit_code != Some(0) {
@@ -142,7 +143,8 @@ impl Hooks {
             ssh: target.to_owned(),
         };
         let env = [("MOOR_BOX".to_owned(), id.to_string())];
-        self.hook(id, &reach, Hook::Release, &env).await?;
+        self.hook(id, &reach, &Route::Host, Hook::Release, &env)
+            .await?;
         self.remove_on_machine(&reach, id).await
     }
 

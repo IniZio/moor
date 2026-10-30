@@ -16,6 +16,9 @@ pub(crate) struct MachineInfo {
     pub(crate) slot: u16,
     /// Add this to a repo's port for the Box's port on the machine: 10 times the slot.
     pub(crate) port_offset: u32,
+    /// `vm-host` when the Box has a VM of its own on the machine, whose ports are the repo's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) kind: Option<&'static str>,
     /// What the machine's operator set up for this Box, such as its own device.
     pub(crate) facts: Facts,
     /// rsync patterns every sync leaves alone; a sync's own `exclude` adds to them.

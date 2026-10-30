@@ -2,10 +2,13 @@
 
 use http::HeaderMap;
 use moor_core::box_key::BoxKey;
+use moor_core::config::MachineKind;
 use moor_core::config::{check_exclude, check_ssh};
 use moor_core::BoxId;
 use rmcp::ErrorData;
 use serde::{Deserialize, Serialize};
+
+use crate::route::Route;
 
 /// Header carrying the calling Box's numeric store id.
 const BOX: &str = "X-Moor-Box";
@@ -19,6 +22,10 @@ const SLOT: &str = "X-Moor-Machine-Slot";
 const EXCLUDE: &str = "X-Moor-Machine-Exclude";
 /// Header carrying the machine's enrolled id when its agent links in; the ssh one is then unused.
 const MACHINE_ID: &str = "X-Moor-Machine-Id";
+/// Header carrying `vm-host` when the Box gets a VM on the machine; optional, `physical` when absent.
+const KIND: &str = "X-Moor-Machine-Kind";
+/// Header carrying a VM host's crabbox provider.
+const VM: &str = "X-Moor-Machine-Vm";
 /// Header carrying why the Box holds no machine slot; set instead of the machine headers.
 const MISSING: &str = "X-Moor-Machine-Missing";
 /// Highest slot: its ports, the repo's plus ten per slot, must stay below 65536.
@@ -37,6 +44,10 @@ pub(crate) struct Caller {
     pub(crate) slot: u16,
     /// rsync patterns every sync leaves alone, from the Box's config.
     pub(crate) sync_exclude: Vec<String>,
+    /// The machine itself, or a VM host that leases the Box a VM.
+    pub(crate) kind: MachineKind,
+    /// Where commands land once ssh reaches the machine; into the VM once it is ready.
+    pub(crate) route: Route,
 }
 
 impl Caller {
@@ -87,12 +98,15 @@ impl Caller {
                         .map(|()| list)
                 })?,
         };
+        let kind = kind(headers)?;
         Ok(Self {
             box_id,
             machine,
             reach,
             slot,
             sync_exclude,
+            kind,
+            route: Route::Host,
         })
     }
 
@@ -114,6 +128,19 @@ impl Caller {
     /// The calling Box's id, which every request carries, with a machine or without.
     pub(crate) fn box_of(headers: &HeaderMap) -> Result<BoxId, ErrorData> {
         box_id(headers)
+    }
+
+    /// What to add to a repo's port: 10 times the slot, or none in a VM of the Box's own.
+    pub(crate) fn port_offset(&self) -> u32 {
+        match self.kind {
+            MachineKind::Physical => 10 * u32::from(self.slot),
+            MachineKind::VmHost { .. } => 0,
+        }
+    }
+
+    /// `vm-host` for a Box with a VM on the machine, which tool results name; none otherwise.
+    pub(crate) fn vm_host(&self) -> Option<&'static str> {
+        self.kind.provider().map(|_| self.kind.name().as_str())
     }
 
     /// The Box's copy on the machine, relative to the machine user's home.
@@ -139,6 +166,23 @@ pub(crate) enum Reach {
         /// Such as `user@host`.
         ssh: String,
     },
+}
+
+/// The machine's kind from the request headers: physical unless they say `vm-host`.
+fn kind(headers: &HeaderMap) -> Result<MachineKind, ErrorData> {
+    match headers.get(KIND).map(|v| v.to_str().map(str::trim)) {
+        None | Some(Ok("physical")) => Ok(MachineKind::Physical),
+        Some(Ok("vm-host")) => {
+            let provider = headers.get(VM).and_then(|v| v.to_str().ok()).map(str::trim);
+            match provider.filter(|p| !p.is_empty()) {
+                Some(p) => Ok(MachineKind::VmHost {
+                    provider: p.to_owned(),
+                }),
+                None => Err(refused(format!("missing header {VM}"))),
+            }
+        }
+        Some(other) => Err(refused(format!("header {KIND} is not a kind: {other:?}"))),
+    }
 }
 
 /// The machine's enrolled id from the request headers, when its agent links in.

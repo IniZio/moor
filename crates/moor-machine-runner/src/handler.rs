@@ -28,8 +28,8 @@ impl ServerHandler for Runner {
     ) -> Result<ListToolsResult, ErrorData> {
         let mut tools = router().list_all();
         if !self.relays.is_empty() && missing(&context)?.is_none() {
-            let caller = caller(&context)?;
-            match self.hooks.facts(&caller).await {
+            let mut caller = caller(&context)?;
+            match self.hooks.facts(&mut caller, None).await {
                 Ok(facts) => {
                     let own = own_names();
                     tools.extend(self.relays.tools(&caller, &facts, &own).await);
@@ -61,8 +61,13 @@ impl ServerHandler for Runner {
                 .call(ToolCallContext::new(self, request, context))
                 .await;
         }
-        let caller = caller(&context)?;
-        let facts = self.hooks.facts(&caller).await.map_err(|e| internal(&e))?;
+        let mut caller = caller(&context)?;
+        let progress = crate::beat::Progress::of(&context);
+        let facts = self
+            .hooks
+            .facts(&mut caller, Some(&progress))
+            .await
+            .map_err(|e| internal(&e))?;
         let own = own_names();
         self.relays
             .call(&caller, &facts, &own, request, context)

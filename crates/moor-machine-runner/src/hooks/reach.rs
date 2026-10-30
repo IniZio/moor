@@ -6,6 +6,7 @@ use super::{succeeded, Hooks};
 use crate::caller::Reach;
 use crate::exec::{self, ExecOutput};
 use crate::link::{self, Answer};
+use crate::route::Route;
 
 impl Hooks {
     /// Runs hook `hook` for Box `id` with `env` in the Box's copy: over ssh the runner's command
@@ -15,6 +16,7 @@ impl Hooks {
         &self,
         id: i64,
         reach: &Reach,
+        route: &Route,
         hook: Hook,
         env: &[(String, String)],
     ) -> Result<Option<ExecOutput>, String> {
@@ -34,7 +36,7 @@ impl Hooks {
                     return Ok(None);
                 };
                 let body = ops::in_box(id, &command);
-                let out = exec::run(ssh, &exec::script(env, &body), self.timeout)
+                let out = exec::run(ssh, route, &exec::script(env, &body), self.timeout)
                     .await
                     .map_err(|e| format!("could not run ssh: {e}"))?;
                 return succeeded(out).map(Some);
@@ -69,7 +71,7 @@ impl Hooks {
     ) -> Result<ExecOutput, String> {
         let (machine_id, machine) = match reach {
             Reach::Ssh { ssh } => {
-                return exec::run(ssh, script, self.timeout)
+                return exec::run(ssh, &Route::Host, script, self.timeout)
                     .await
                     .map_err(|e| format!("could not run the remote shell: {e}"));
             }

@@ -24,14 +24,21 @@ use serde::{Deserialize, Serialize};
 
 use moor_client::link::ops::Hook;
 
+use moor_core::config::{MachineKind, MachineKindName};
+
+use crate::beat::Progress;
 use crate::caller::{Caller, Reach};
 use crate::exec::ExecOutput;
 use crate::holds::Holds;
 use crate::relay::Relays;
+use crate::route::Route;
 
+mod env;
 mod reach;
 mod reap;
 mod sleep;
+mod vm;
+pub(crate) use env::{box_env, fact_env};
 pub(crate) use reap::state_prelude;
 
 /// What `prepare` printed about a Box, such as `device`.
@@ -86,6 +93,9 @@ struct Record {
     /// Whether the Box's files on the machine were removed while it slept; until its next sync.
     #[serde(default)]
     evicted: bool,
+    /// The Box's VM on a VM host; none on a physical machine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    vm: Option<vm::Vm>,
 }
 
 impl Record {
@@ -103,25 +113,53 @@ impl Record {
             prepared,
             suspended_at: None,
             evicted: false,
+            vm: None,
         }
+    }
+
+    /// Whether the Box has a VM on the machine.
+    fn kind(&self) -> MachineKindName {
+        if self.vm.is_some() {
+            MachineKindName::VmHost
+        } else {
+            MachineKindName::Physical
+        }
+    }
+
+    /// Where the Box's hooks run: in its VM once it has one.
+    fn route(&self) -> Route {
+        self.vm.as_ref().map_or(Route::Host, vm::Vm::route)
     }
 }
 
 impl Hooks {
     /// The caller's facts, running `prepare` first if the Box has no record yet, was suspended,
-    /// or is in another slot than the record says.
-    pub(crate) async fn facts(&self, caller: &Caller) -> Result<Facts, String> {
+    /// or is in another slot than the record says. On a VM host, the Box's VM boots first when
+    /// it has none, and the caller's route then leads into it.
+    pub(crate) async fn facts(
+        &self,
+        caller: &mut Caller,
+        progress: Option<&Progress>,
+    ) -> Result<Facts, String> {
         let id = caller.box_id.get();
         let lock = self.lock_for(id);
         let _held = lock.lock().await;
+        let mut booted = false;
+        if let MachineKind::VmHost { provider } = &caller.kind {
+            let (words, fresh) = self.boot(caller, provider, progress).await?;
+            caller.route = Route::Vm(words);
+            booted = fresh;
+        }
         let path = self.record(id);
         let old = read(&path)?;
-        if let Some(record) = old.as_ref().filter(|r| r.is_current(caller)) {
+        if let Some(record) = old.as_ref().filter(|r| !booted && r.is_current(caller)) {
             return Ok(record.facts.clone());
         }
-        self.guard(caller).await?;
-        let env = box_env(id, caller.slot, &Facts::new());
-        let out = self.hook(id, &caller.reach, Hook::Prepare, &env);
+        if caller.kind.provider().is_none() {
+            self.guard(caller).await?;
+        }
+        let env = box_env(id, caller.slot, caller.kind.name(), &Facts::new());
+        let out = self.hook(id, &caller.reach, &caller.route, Hook::Prepare, &env);
         let facts = match out.await.map_err(|e| format!("prepare: {e}"))? {
             None => Facts::new(),
             Some(out) => {
@@ -135,7 +173,10 @@ impl Hooks {
             }
         };
         let mut record = Record::new(caller, facts, true);
-        record.evicted = old.is_some_and(|r| r.evicted);
+        if let Some(old) = old {
+            record.evicted = old.evicted;
+            record.vm = old.vm;
+        }
         write(&path, &record).map_err(|e| format!("could not keep the Box's facts: {e}"))?;
         Ok(record.facts)
     }
@@ -207,9 +248,13 @@ impl Hooks {
 
     /// Runs `release` for a prepared Box, then removes its copy and state dir on the machine.
     async fn release_files(&self, id: i64, record: &Record) -> Result<(), String> {
-        if record.prepared {
-            let env = box_env(id, record.slot, &record.facts);
-            self.hook(id, &record.reach, Hook::Release, &env).await?;
+        if let Some(vm) = &record.vm {
+            // release is skipped: what prepare made lives in the VM, which goes whole.
+            self.stop(&record.reach, id, vm).await?;
+        } else if record.prepared {
+            let env = box_env(id, record.slot, record.kind(), &record.facts);
+            self.hook(id, &record.reach, &Route::Host, Hook::Release, &env)
+                .await?;
         }
         self.remove_on_machine(&record.reach, id).await
     }
@@ -233,40 +278,6 @@ impl Hooks {
         }
         Ok(ids)
     }
-}
-
-/// What a command run for Box `id` in `slot` sees: its id, slot, port offset and facts.
-pub(crate) fn box_env(id: i64, slot: u16, facts: &Facts) -> Vec<(String, String)> {
-    let mut env = vec![
-        ("MOOR_BOX".to_owned(), id.to_string()),
-        ("MOOR_SLOT".to_owned(), slot.to_string()),
-        (
-            "MOOR_PORT_OFFSET".to_owned(),
-            (10 * u32::from(slot)).to_string(),
-        ),
-    ];
-    env.extend(fact_env(facts));
-    env
-}
-
-/// `facts` as env: `MOOR_FACT_<KEY>`, the key uppercased with every other character as `_`.
-pub(crate) fn fact_env(facts: &Facts) -> Vec<(String, String)> {
-    facts
-        .iter()
-        .map(|(k, v)| {
-            let key: String = k
-                .chars()
-                .map(|c| {
-                    if c.is_ascii_alphanumeric() {
-                        c.to_ascii_uppercase()
-                    } else {
-                        '_'
-                    }
-                })
-                .collect();
-            (format!("MOOR_FACT_{key}"), v.clone())
-        })
-        .collect()
 }
 
 /// Every `every`, ends idle relay sessions and sweeps the Boxes that are no longer open.

@@ -25,7 +25,8 @@ impl Relays {
         facts: &Facts,
         taken: &[String],
     ) -> Result<Session, String> {
-        let env = hooks::box_env(caller.box_id.get(), caller.slot, facts);
+        let kind = caller.kind.name();
+        let env = hooks::box_env(caller.box_id.get(), caller.slot, kind, facts);
         let (service, child) = match &caller.reach {
             Reach::Ssh { ssh } => {
                 let mut child = Self::over_ssh(caller, ssh, relay, &env)?;
@@ -96,7 +97,7 @@ impl Relays {
         );
         Command::new("ssh")
             .args(["-o", "BatchMode=yes", "--", ssh])
-            .arg(exec::script(env, &body))
+            .arg(caller.route.remote(&exec::script(env, &body)))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .kill_on_drop(true)

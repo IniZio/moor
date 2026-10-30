@@ -114,9 +114,12 @@ fn reach(
 ) -> Result<(String, Option<Syncing>), String> {
     match &caller.reach {
         Reach::Ssh { ssh } => {
-            rsync
-                .args(["-e", "ssh -o BatchMode=yes"])
-                .arg(format!("--rsync-path=mkdir -p {remote} && rsync"));
+            rsync.args(["-e", "ssh -o BatchMode=yes"]).arg(format!(
+                "--rsync-path={}",
+                caller
+                    .route
+                    .rsync_path(&format!("mkdir -p {remote} && rsync"))
+            ));
             Ok((format!("{ssh}:{remote}/"), None))
         }
         Reach::Linked {

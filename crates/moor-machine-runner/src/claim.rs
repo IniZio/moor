@@ -5,6 +5,7 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use moor_client::Client;
+use moor_core::config::MachineKind;
 use moor_core::request::{HoldOp, HoldValue, MachineHoldReq, Request};
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
@@ -18,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::beat::Progress;
 use crate::caller::{Caller, Reach};
 use crate::hooks::Facts;
+use crate::route::Route;
 use crate::Runner;
 
 /// Longest `wait_secs` a claim may ask for.
@@ -51,6 +53,9 @@ struct Claimed {
     slot: u16,
     /// Add this to a repo's port for the Box's port on the machine: 10 times the slot.
     port_offset: u32,
+    /// `vm-host` when the Box has a VM of its own on the machine.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kind: Option<&'static str>,
     /// The forwarded ports, moved by the slot.
     ports: Vec<u16>,
     /// What the machine's operator set up for this Box, as `machine_info` gives them.
@@ -90,7 +95,7 @@ impl Runner {
             }
         };
         let claimed = match held {
-            Ok(caller) => self.claimed(caller).await,
+            Ok(caller) => self.claimed(caller, &progress).await,
             Err(reason) => return Ok(failed(reason)),
         };
         let claimed = match claimed {
@@ -139,9 +144,13 @@ impl Runner {
 impl Runner {
     /// The answer to a claim that holds `caller`'s slot, with the Box's facts there, or why the
     /// machine can't be used.
-    async fn claimed(&self, caller: (Caller, Vec<u16>)) -> Result<CallToolResult, String> {
-        let (caller, ports) = caller;
-        match self.hooks.facts(&caller).await {
+    async fn claimed(
+        &self,
+        caller: (Caller, Vec<u16>),
+        progress: &Progress,
+    ) -> Result<CallToolResult, String> {
+        let (mut caller, ports) = caller;
+        match self.hooks.facts(&mut caller, Some(progress)).await {
             Ok(facts) => {
                 // Starting a relay takes seconds; started here, the client's re-list after the
                 // claim finds its tools at once instead of after a later call.
@@ -149,7 +158,8 @@ impl Runner {
                     .tools(&caller, &facts, &crate::own_names())
                     .await;
                 Ok(CallToolResult::structured(serde_json::json!(Claimed {
-                    port_offset: 10 * u32::from(caller.slot),
+                    port_offset: caller.port_offset(),
+                    kind: caller.vm_host(),
                     machine: caller.machine,
                     slot: caller.slot,
                     ports,
@@ -189,7 +199,8 @@ async fn claim(
                 machine_id,
                 slot,
                 ports,
-                ..
+                kind,
+                vm_provider,
             } => {
                 let sync_exclude = Vec::new();
                 let reach = match machine_id {
@@ -205,6 +216,8 @@ async fn claim(
                     reach,
                     slot,
                     sync_exclude,
+                    kind: MachineKind::from_parts(kind, vm_provider.as_deref())?,
+                    route: Route::Host,
                 };
                 return Ok((caller, ports));
             }

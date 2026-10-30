@@ -20,6 +20,9 @@ const FAKE_SSH: &str = r#"#!/bin/sh
 while [ $# -gt 0 ]; do
   case "$1" in
     -o|-l|-p|-i|-F) shift 2 ;;
+    -G) cat "$HOME/.ssh-G" 2>/dev/null ||
+          printf 'stricthostkeychecking yes\nuserknownhostsfile %s/.ssh/known_hosts\n' "$HOME"
+        exit 0 ;;
     --) shift; break ;;
     -*) shift ;;
     *) break ;;

@@ -13,6 +13,7 @@ use tokio::sync::oneshot;
 
 use crate::caller::Reach;
 use crate::link;
+use crate::route::Route;
 
 /// Timeout when the call names none.
 pub(crate) const DEFAULT_TIMEOUT_SECS: u64 = 600;
@@ -122,9 +123,14 @@ pub(crate) fn script(env: &[(String, String)], body: &str) -> String {
     parts.concat()
 }
 
-/// Runs `script` at the ssh target `ssh` through the login shell, within `timeout`; the script
+/// Runs `script` at the ssh target `ssh`, at the end of `route`, through the login shell, within `timeout`; the script
 /// ends when this call does.
-pub(crate) async fn run(ssh: &str, script: &str, timeout: Duration) -> io::Result<ExecOutput> {
+pub(crate) async fn run(
+    ssh: &str,
+    route: &Route,
+    script: &str,
+    timeout: Duration,
+) -> io::Result<ExecOutput> {
     let mut end = String::from("MOOR_END");
     while script.lines().any(|line| line == end) {
         end.push('_');
@@ -132,7 +138,7 @@ pub(crate) async fn run(ssh: &str, script: &str, timeout: Duration) -> io::Resul
     let remote = format!("exec /bin/sh -c '{WRAPPER}' 3<<'{end}'\n{script}\n{end}\n");
     let (mut reader, writer) = io::pipe()?;
     let mut child = Command::new("ssh")
-        .args(["-o", "BatchMode=yes", "--", ssh, &remote])
+        .args(["-o", "BatchMode=yes", "--", ssh, &route.remote(&remote)])
         .stdin(Stdio::piped())
         .stdout(writer.try_clone()?)
         .stderr(writer)
@@ -215,7 +221,7 @@ pub(crate) async fn on_machine(
     let machine_id = match &caller.reach {
         Reach::Ssh { ssh } => {
             let body = ops::in_box(caller.box_id.get(), command);
-            return run(ssh, &script(&env, &body), timeout)
+            return run(ssh, &caller.route, &script(&env, &body), timeout)
                 .await
                 .map_err(|e| format!("could not run ssh: {e}"));
         }
