@@ -10,7 +10,7 @@ use crate::testing::engine::FakeEngine;
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
 use moor_core::seam::driver::ExecOutcome;
 
-const HEAD: &str = "1111111111111111111111111111111111111111";
+pub(super) const HEAD: &str = "1111111111111111111111111111111111111111";
 const PIN: &str = "2222222222222222222222222222222222222222";
 
 fn profile_repo() -> ForgeRepo {
@@ -24,7 +24,7 @@ fn requester(w: &World) -> UserId {
     row.unwrap().unwrap().user.unwrap()
 }
 
-fn set_profile(w: &World, git_ref: Option<&str>) {
+pub(super) fn set_profile(w: &World, git_ref: Option<&str>) {
     let user = requester(w);
     let source = ProfileSource {
         repo: profile_repo(),
@@ -36,7 +36,7 @@ fn set_profile(w: &World, git_ref: Option<&str>) {
         .unwrap();
 }
 
-fn world_answering(at: Option<&str>, sha: &str, manifest: Option<&str>) -> World {
+pub(super) fn world_answering(at: Option<&str>, sha: &str, manifest: Option<&str>) -> World {
     answering(FakeDriver::new(), at, sha, manifest)
 }
 
@@ -335,48 +335,4 @@ fn a_relaunch_reuses_the_stored_commit_without_reading_the_forge() {
     let got = w.cx.store().unwrap().box_profile(id).unwrap().unwrap();
     assert_eq!(got.sha.as_str(), HEAD);
     assert!(git_paths(&fake).contains(&"POST /ann/profile.git/git-upload-pack".to_owned()));
-}
-
-/// A world whose user config asks for `sonnet`, whose requester's profile asks for `opus`, and
-/// whose launches the returned engine records.
-fn model_world(manifest: Option<&str>) -> (World, Arc<FakeEngine>) {
-    let mut w = world_answering(None, HEAD, manifest);
-    set_profile(&w, None);
-    let mut config = w.cx.config().clone();
-    config.agent.model = Some("sonnet".into());
-    let engine = Arc::new(FakeEngine::new());
-    w.cx = w.cx.with_config(config).with_engine(engine.clone());
-    (w, engine)
-}
-
-fn launched_model(engine: &FakeEngine) -> Option<String> {
-    let launches = engine.launches();
-    assert_eq!(launches.len(), 1);
-    launches.into_iter().next().and_then(|l| l.model)
-}
-
-#[test]
-fn the_profile_model_beats_the_user_config() {
-    let (w, engine) = model_world(Some("claude: {model: opus}\n"));
-    run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(launched_model(&engine).as_deref(), Some("opus"));
-    assert!(engine.launches().iter().all(|l| l.profile.is_some()));
-}
-
-#[test]
-fn the_model_flag_beats_the_profile_model() {
-    let (w, engine) = model_world(Some("claude: {model: opus}\n"));
-    let flagged = StartReq {
-        model: Some("haiku".into()),
-        ..req("demo")
-    };
-    run(&w.cx, &flagged).unwrap();
-    assert_eq!(launched_model(&engine).as_deref(), Some("haiku"));
-}
-
-#[test]
-fn a_profile_without_a_model_keeps_the_user_config_model() {
-    let (w, engine) = model_world(None);
-    run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(launched_model(&engine).as_deref(), Some("sonnet"));
 }

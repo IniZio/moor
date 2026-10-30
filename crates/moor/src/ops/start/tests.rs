@@ -40,6 +40,7 @@ mod machine;
 mod others;
 mod parent;
 mod profile;
+mod profile_model;
 mod progress;
 mod prompt_watch;
 mod promptless;
