@@ -19,6 +19,7 @@ use tempfile::TempDir;
 use super::super::Claude;
 
 mod ask;
+mod background;
 mod bypass;
 mod doing;
 mod first_run;

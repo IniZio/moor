@@ -42,6 +42,7 @@ pub(crate) fn agent_view(reading: &Reading) -> Option<AgentView> {
             exit_code: None,
             question: None,
             options: Vec::new(),
+            waiting_on: Vec::new(),
             reason: Some(failure.clone()),
         });
     }
@@ -51,6 +52,10 @@ pub(crate) fn agent_view(reading: &Reading) -> Option<AgentView> {
         AgentState::NeedsInput { question, options } => (None, question.clone(), options.clone()),
         _ => (None, None, Vec::new()),
     };
+    let waiting_on = match &activity.state {
+        AgentState::Waiting { on } => on.clone(),
+        _ => Vec::new(),
+    };
     Some(AgentView {
         launched: true,
         pane: reading.pane.as_str().to_owned(),
@@ -59,6 +64,7 @@ pub(crate) fn agent_view(reading: &Reading) -> Option<AgentView> {
         exit_code,
         question,
         options,
+        waiting_on,
         reason: None,
     })
 }

@@ -104,7 +104,7 @@ To get it into your own checkout, run `git fetch origin BRANCH` there.
 | Flag | Effect |
 | --- | --- |
 | `--events N` | Add the last `N` events. |
-| `--agent` | Add the agent state. |
+| `--agent` | Add the agent state: `starting`, `working`, `needs_input`, `idle`, `exited`, `unknown`, or `waiting`. `waiting` means the agent ended its turn but waits on background work it started, such as a backgrounded command, a monitor or a subagent; the Box counts as working, and `agent.waiting_on` names each piece. |
 | `--reports` | Add the Box's reports. |
 | `--pane` | Add the end of the agent's terminal pane. |
 | `--session ID` | Show one Session and its child Sessions instead of a Box. |

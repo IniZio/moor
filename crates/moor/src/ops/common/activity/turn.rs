@@ -26,7 +26,9 @@ pub(super) fn note_turn_done(
             signal: match c.record.kind {
                 HookKind::Idle => HookSignal::Idle,
                 HookKind::Blocked => HookSignal::Blocked,
-                HookKind::Starting { .. } | HookKind::Busy => HookSignal::Other,
+                HookKind::Starting { .. } | HookKind::Busy | HookKind::Waiting { .. } => {
+                    HookSignal::Other
+                }
             },
             at: c.record.at,
             turn: c.record.turn,

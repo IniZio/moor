@@ -14,6 +14,20 @@ mod install;
 mod launch;
 mod profile;
 
+/// The background work a stop record names, one line per piece; empty when it names none.
+fn background(record: &Value) -> Vec<String> {
+    record
+        .get("background")
+        .and_then(Value::as_array)
+        .map(|b| {
+            b.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Parses the state file Claude Code's hooks write.
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct Claude;
@@ -23,13 +37,19 @@ impl AgentAdapter for Claude {
         let value: Value = serde_json::from_slice(raw).ok()?;
         let text = |key: &str| value.get(key).and_then(Value::as_str);
         let idle_prompt = text("notification_type") == Some("idle_prompt");
+        let on = background(&value);
+        let idle = if on.is_empty() {
+            HookKind::Idle
+        } else {
+            HookKind::Waiting { on }
+        };
         let kind = match text("state")? {
-            _ if idle_prompt => HookKind::Idle,
+            _ if idle_prompt => idle,
             "starting" => HookKind::Starting {
                 launch: text("launch").map(str::to_owned),
             },
             "working" => HookKind::Busy,
-            "idle" => HookKind::Idle,
+            "idle" => idle,
             "waiting_input" => HookKind::Blocked,
             _ => return None,
         };
@@ -47,7 +67,7 @@ impl AgentAdapter for Claude {
             .and_then(Value::as_str);
         let message = match kind {
             HookKind::Blocked => question.or_else(|| text("message")),
-            HookKind::Idle => text("last_assistant_message"),
+            HookKind::Idle | HookKind::Waiting { .. } => text("last_assistant_message"),
             HookKind::Starting { .. } | HookKind::Busy => None,
         }
         .map(str::to_owned);

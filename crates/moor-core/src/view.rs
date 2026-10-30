@@ -58,6 +58,8 @@ pub struct AgentView {
     pub question: Option<String>,
     /// The numbered choices the prompt offers; empty when none.
     pub options: Vec<String>,
+    /// The background work an agent in `waiting` waits on; empty in any other state.
+    pub waiting_on: Vec<String>,
     /// Why the launch failed, when it did.
     pub reason: Option<LaunchFailure>,
 }

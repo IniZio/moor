@@ -32,6 +32,11 @@ pub enum AgentState {
     },
     /// Done and waiting for input.
     Idle,
+    /// Ended its turn but waits on background work it started.
+    Waiting {
+        /// What it waits on, one line per piece.
+        on: Vec<String>,
+    },
     /// The agent process ended.
     Exited {
         /// Its exit code.
@@ -45,7 +50,10 @@ impl AgentState {
     /// Whether the agent should be treated as busy: starting, working or unknown.
     #[must_use]
     pub const fn busy(&self) -> bool {
-        matches!(self, Self::Starting | Self::Working | Self::Unknown)
+        matches!(
+            self,
+            Self::Starting | Self::Working | Self::Waiting { .. } | Self::Unknown
+        )
     }
 
     /// The name shown to users.
@@ -56,6 +64,7 @@ impl AgentState {
             Self::Working => "working",
             Self::NeedsInput { .. } => "needs_input",
             Self::Idle => "idle",
+            Self::Waiting { .. } => "waiting",
             Self::Exited { .. } => "exited",
             Self::Unknown => "unknown",
         }
@@ -256,6 +265,7 @@ fn from_record(
             },
             source,
         )),
+        HookKind::Waiting { on } => Some(act(AgentState::Waiting { on: on.clone() }, source)),
         HookKind::Idle if background_running(tail) => Some(act(AgentState::Working, Source::Pane)),
         HookKind::Idle => Some(act(AgentState::Idle, source)),
         HookKind::Starting { .. } => first_run

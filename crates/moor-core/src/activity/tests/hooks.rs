@@ -156,3 +156,21 @@ fn blocked_hook_without_a_usable_message_falls_back_to_the_pane_prompt() {
     Case::new("blank message, prompt", blank(Some(" ")), ask())
         .expect(waiting("Pick one?"), Src::Hooks);
 }
+
+#[test]
+fn a_waiting_hook_is_busy_and_never_quiets() {
+    let on = || K::Waiting {
+        on: vec!["gh run watch".to_owned()],
+    };
+    let case = Case::new("waiting", fresh(on()), PaneRead::Absent);
+    let got = case.got();
+    assert_eq!(
+        got.state,
+        S::Waiting {
+            on: vec!["gh run watch".to_owned()]
+        }
+    );
+    assert_eq!(got.state.as_str(), "waiting");
+    assert!(got.state.busy());
+    assert!(!crate::activity::may_apply_quiet(&got, Some(&case.probes)));
+}

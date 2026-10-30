@@ -480,3 +480,20 @@ fn transcript_script_finds_the_sessions_of_a_workdir_reached_through_a_symlink()
     );
     assert!(real.join(".moor/t.tgz").exists());
 }
+
+#[test]
+fn idle_with_background_work_is_waiting_and_with_none_is_idle() {
+    let raw = r#"{"state":"idle","last_assistant_message":"Watching.","background":["gh run watch"],"ts":1}"#;
+    let rec = parse(raw).unwrap();
+    assert_eq!(
+        rec.kind,
+        HookKind::Waiting {
+            on: vec!["gh run watch".to_owned()]
+        }
+    );
+    assert_eq!(rec.message.as_deref(), Some("Watching."));
+    assert_eq!(
+        kind(r#"{"state":"idle","background":[],"ts":1}"#),
+        Some(HookKind::Idle)
+    );
+}

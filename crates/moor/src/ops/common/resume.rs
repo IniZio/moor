@@ -14,7 +14,7 @@ const AGENT: &str = "claude";
 /// The pane status that shows `state`.
 pub(crate) const fn pane_status(state: &AgentState) -> PaneStatus {
     match state {
-        AgentState::Working => PaneStatus::Working,
+        AgentState::Working | AgentState::Waiting { .. } => PaneStatus::Working,
         AgentState::Idle => PaneStatus::Idle,
         AgentState::NeedsInput { .. } => PaneStatus::Blocked,
         _ => PaneStatus::Unknown,
