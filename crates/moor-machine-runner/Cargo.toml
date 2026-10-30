@@ -48,6 +48,7 @@ ssh-key = { version = "0.6", default-features = false, features = [
 tokio = { version = "1", features = [
   "rt-multi-thread",
   "macros",
+  "fs",
   "net",
   "process",
   "io-util",
