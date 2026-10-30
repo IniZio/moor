@@ -29,6 +29,8 @@ pub struct Machine {
     pub hooks: PathBuf,
     /// The pool it serves, when it is a pool host.
     pub pool: Option<Pool>,
+    /// Whether it runs `exec` scripts; off unless the operator asked for it.
+    pub allow_exec: bool,
 }
 
 impl Machine {
@@ -43,6 +45,7 @@ impl Machine {
             hooks: config.join("moor-machine-agent/hooks"),
             home,
             pool: None,
+            allow_exec: false,
         }
     }
 
@@ -59,7 +62,8 @@ impl Machine {
 
 /// Serves the request that opens `ch`, when this machine's mode allows it, and notes it in
 /// `recent`. Every agent serves a status, which is read-only; past that, this match is the
-/// allow-list: a pool host serves only lease and dial, any other machine everything else.
+/// allow-list: a pool host serves only lease and dial, any other machine everything else, and
+/// `exec` only when it was started with `--allow-exec`.
 pub(crate) async fn serve(machine: &Machine, link: &Link, recent: &Recent, mut ch: Channel) {
     let op = match ops::read_line::<_, Op>(&mut ch).await {
         Ok(op) => op,
@@ -88,16 +92,28 @@ async fn dispatch(machine: &Machine, link: &Link, ch: Channel, op: Op) -> Option
             | Op::Sync { .. }
             | Op::Pull { .. }
             | Op::Listen { .. }),
-        ) => serve_machine(machine, link, ch, op).await,
+        ) if machine.allow_exec || !matches!(op, Op::Exec { .. }) => {
+            serve_machine(machine, link, ch, op).await
+        }
         (pool, op) => {
-            let host = if pool.is_some() { "a" } else { "not a" };
-            let why = format!(
-                "this machine is {host} pool host, so it does not serve {}",
-                kind(&op)
-            );
+            let why = not_served(pool.is_some(), &op);
             end(ch, refused(why.clone())).await;
             Some(why)
         }
+    }
+}
+
+/// Why this machine does not serve `op`.
+fn not_served(pool_host: bool, op: &Op) -> String {
+    match (pool_host, op) {
+        (true, _) => format!("a pool host does not serve {}", kind(op)),
+        (false, Op::Exec { .. }) => {
+            "this machine was not started with --allow-exec, so it does not serve exec".to_owned()
+        }
+        (false, _) => format!(
+            "this machine is not a pool host, so it does not serve {}",
+            kind(op)
+        ),
     }
 }
 

@@ -71,6 +71,7 @@ impl Linked {
             shell: PathBuf::from("/bin/sh"),
             hooks,
             pool: None,
+            allow_exec: true,
         };
         let agent = tokio::runtime::Runtime::new().unwrap();
         agent.spawn(async move { run(&state_dir, machine, &|_| {}).await });

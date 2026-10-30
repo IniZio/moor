@@ -62,6 +62,7 @@ impl Host {
             shell: PathBuf::from("/bin/sh"),
             hooks: rig.dir().join("hooks"),
             pool: Some(pool),
+            allow_exec: false,
         };
         let agent = tokio::runtime::Runtime::new().unwrap();
         agent.spawn(async move { run(&state_dir, machine, &|_| {}).await });

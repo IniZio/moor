@@ -54,6 +54,9 @@ enum Command {
         /// Serve a pool.
         #[command(flatten)]
         pool: PoolFlags,
+        /// Run `exec` scripts the server sends; without it they are refused.
+        #[arg(long, conflicts_with = "pool")]
+        allow_exec: bool,
     },
     /// Does a lease verb on this host and prints the answer as JSON.
     Lease {
@@ -150,9 +153,10 @@ fn main() -> ExitCode {
             };
             return enroll_here(&req, paste);
         }
-        Command::Run { pool } => {
+        Command::Run { pool, allow_exec } => {
             let machine = Machine {
                 pool: pool.pool(),
+                allow_exec,
                 ..Machine::from_env()
             };
             runtime().and_then(|rt| rt.block_on(run(&state_dir(), machine, &|line| say(line))))

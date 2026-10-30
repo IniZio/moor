@@ -126,6 +126,7 @@ mod tests {
             shell: PathBuf::from("/bin/sh"),
             hooks: PathBuf::from("/nonexistent"),
             pool,
+            allow_exec: false,
         }
     }
 
