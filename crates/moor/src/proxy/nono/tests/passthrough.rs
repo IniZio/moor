@@ -26,7 +26,7 @@ fn hdr_rule(port: u16, allow: &str) -> ResolvedRule {
          inject: {{form: 'Bearer {{secret}}'}}\n      allow: [{allow}]\n"
     );
     let user = parse_user("u.yaml", &yaml).unwrap();
-    let mut rule = resolve_rules(&user.proxy, None)
+    let mut rule = resolve_rules(&user.proxy, None, &[])
         .unwrap()
         .into_iter()
         .find(|r| r.name == "hdr")

@@ -48,6 +48,8 @@ github-git:
     - "GET /{repo}.git/info/refs"
     - "POST /{repo}.git/git-upload-pack"
     - "POST /{repo}.git/git-receive-pack"
+    - "GET /{read_repo}.git/info/refs"
+    - "POST /{read_repo}.git/git-upload-pack"
 github-uploads:
   hosts: [uploads.github.com]
   credential: github

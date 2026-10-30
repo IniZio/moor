@@ -45,7 +45,14 @@ pub(crate) fn proxy(
     let user = requester(cx, box_id)?;
     let vault_key = cx.vault_key().map_err(|e| e.error.to_string())?;
     let mcp = crate::ops::users::mcp::for_box(cx, Some(user)).map_err(|e| e.error.to_string())?;
-    let plan = plan(cx, repo, &mcp.servers)?;
+    let reads = cx
+        .store()
+        .map_err(|e| e.error.to_string())?
+        .box_profile(box_id)
+        .map_err(|e| e.to_string())?
+        .map(|p| p.reads)
+        .unwrap_or_default();
+    let plan = plan(cx, repo, &mcp.servers, &reads)?;
     let repo_env: Vec<(String, String)> = cfg.env.clone().into_iter().collect();
     let spec = ProxySpec {
         box_id,

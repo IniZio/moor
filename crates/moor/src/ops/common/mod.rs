@@ -17,6 +17,7 @@ pub(crate) mod host_path;
 pub(crate) mod identity;
 pub(crate) mod link;
 pub(crate) mod park;
+pub(crate) mod profile_fetch;
 pub(crate) mod promote;
 pub(crate) mod provision;
 pub(crate) mod provisioning;

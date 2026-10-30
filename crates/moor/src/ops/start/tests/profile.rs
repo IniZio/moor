@@ -6,6 +6,9 @@ use moor_core::Sha;
 
 use super::setup::{kinds, warning_codes};
 use super::*;
+use crate::testing::engine::FakeEngine;
+use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
+use moor_core::seam::driver::ExecOutcome;
 
 const HEAD: &str = "1111111111111111111111111111111111111111";
 const PIN: &str = "2222222222222222222222222222222222222222";
@@ -34,7 +37,11 @@ fn set_profile(w: &World, git_ref: Option<&str>) {
 }
 
 fn world_answering(at: Option<&str>, sha: &str, manifest: Option<&str>) -> World {
-    let mut w = world(FakeDriver::new());
+    answering(FakeDriver::new(), at, sha, manifest)
+}
+
+fn answering(driver: FakeDriver, at: Option<&str>, sha: &str, manifest: Option<&str>) -> World {
+    let mut w = world(driver);
     let forge = FakeForge::new().with_file(
         profile_repo(),
         at,
@@ -210,4 +217,122 @@ fn with_marketplace(named: &str) -> (World, BoxId) {
     set_profile(&w, None);
     let id = started(&w);
     (w, id)
+}
+
+fn fetches(w: &World) -> Vec<String> {
+    w.driver
+        .execs()
+        .into_iter()
+        .map(|(_, spec, _)| spec.argv.join(" "))
+        .filter(|argv| argv.contains(".moor-profile/person"))
+        .collect()
+}
+
+fn with_proxy(mut w: World) -> (World, FakeProxyHost) {
+    let fake = FakeProxyHost::new();
+    w.cx = w.cx.with_proxy_host(Arc::new(fake.clone()));
+    (w, fake)
+}
+
+fn git_paths(fake: &FakeProxyHost) -> Vec<String> {
+    let spec = fake
+        .calls()
+        .into_iter()
+        .filter_map(|c| match c {
+            ProxyHostCall::Ensure(spec) => Some(spec),
+            _ => None,
+        })
+        .next_back()
+        .unwrap();
+    let git = spec.rules.iter().find(|r| r.name == "github-git").unwrap();
+    git.endpoint_rules
+        .iter()
+        .map(|e| format!("{} {}", e.method, e.path))
+        .collect()
+}
+
+#[test]
+fn the_box_fetches_exactly_the_resolved_commit() {
+    let w = world_answering(None, HEAD, None);
+    set_profile(&w, None);
+    started(&w);
+    let got = fetches(&w);
+    assert_eq!(got.len(), 1, "{got:?}");
+    let script = got.first().unwrap();
+    assert!(
+        script.contains("'https://github.com/ann/profile.git'"),
+        "{script}"
+    );
+    assert!(
+        script.contains(&format!("--depth 1 origin '{HEAD}'")),
+        "{script}"
+    );
+}
+
+#[test]
+fn a_box_without_a_profile_fetches_nothing() {
+    let w = world(FakeDriver::new());
+    started(&w);
+    assert!(fetches(&w).is_empty());
+}
+
+#[test]
+fn a_failed_fetch_is_reported_and_the_box_still_starts() {
+    let failing =
+        FakeDriver::new().exec_ends_when(".moor-profile/person", ExecOutcome::Exited { code: 128 });
+    let w = answering(failing, None, HEAD, None);
+    set_profile(&w, None);
+    w.cx.take_warnings();
+    let v = run(&w.cx, &req("demo")).unwrap();
+    assert_eq!((v.boxed.lifecycle, v.boxed.session_state), state::WORKING);
+    let events = profile_events(&w, BoxId::new(v.boxed.id));
+    let kinds: Vec<&str> = events.iter().map(|(k, _)| k.as_str()).collect();
+    assert_eq!(kinds, ["profile_resolved", "profile_failed"]);
+    let step = events.last().unwrap().1.get("step").cloned();
+    assert_eq!(step, Some(serde_json::json!("fetch")));
+    assert!(warning_codes(&w).contains(&"profile_failed".to_owned()));
+}
+
+#[test]
+fn the_proxy_lets_the_box_read_but_never_push_its_profile() {
+    let (w, fake) = with_proxy(world_answering(None, HEAD, None));
+    set_profile(&w, None);
+    run(&w.cx, &req("demo")).unwrap();
+    let paths = git_paths(&fake);
+    assert!(
+        paths.contains(&"GET /ann/profile.git/info/refs".to_owned()),
+        "{paths:?}"
+    );
+    assert!(
+        paths.contains(&"POST /ann/profile.git/git-upload-pack".to_owned()),
+        "{paths:?}"
+    );
+    assert!(
+        !paths
+            .iter()
+            .any(|p| p.contains("ann/profile.git/git-receive-pack")),
+        "{paths:?}"
+    );
+}
+
+#[test]
+fn a_relaunch_reuses_the_stored_commit_without_reading_the_forge() {
+    let engine = Arc::new(
+        FakeEngine::new()
+            .launch_result(Ok(super::relaunch::session("p-1")))
+            .launch_result(Ok(super::relaunch::session("p-2"))),
+    );
+    let (mut w, fake) = with_proxy(world_answering(None, HEAD, None));
+    w.cx = w.cx.with_engine(engine.clone());
+    set_profile(&w, None);
+    let first = run(&w.cx, &req("demo")).unwrap();
+    let asked = w.forge.files_asked().len();
+    super::relaunch::gone(&w);
+    run(&w.cx, &req("demo")).unwrap();
+    assert_eq!(engine.launches().len(), 2);
+    assert_eq!(w.forge.files_asked().len(), asked);
+    let id = BoxId::new(first.boxed.id);
+    let got = w.cx.store().unwrap().box_profile(id).unwrap().unwrap();
+    assert_eq!(got.sha.as_str(), HEAD);
+    assert!(git_paths(&fake).contains(&"POST /ann/profile.git/git-upload-pack".to_owned()));
 }

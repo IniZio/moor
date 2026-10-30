@@ -98,7 +98,7 @@ pub struct ToolRule {
     ///
     /// `METHODS` is `*` or `GET|POST`-style; in the path `*` matches one
     /// segment and `**` any number. `{repo}` and `{repo:urlenc}` are filled
-    /// from the Box repo.
+    /// from the Box repo; an entry with `{read_repo}` repeats per repo the Box may only read.
     pub allow: Vec<String>,
     /// Box environment variables; values may use the repo placeholders.
     pub box_env: BTreeMap<String, String>,

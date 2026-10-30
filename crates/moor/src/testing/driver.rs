@@ -40,6 +40,8 @@ struct State {
     copy_content: Option<Vec<u8>>,
     copy_symlink: Option<PathBuf>,
     exec_results: VecDeque<Result<ExecOutcome, DriverError>>,
+    /// Outcomes that end any `exec` whose argv mentions the needle.
+    exec_ends: Vec<(String, ExecOutcome)>,
     exec_stdout: VecDeque<String>,
     artifact_index: VecDeque<String>,
     execs: Vec<(BoxHandle, ExecSpec, Deadline)>,
@@ -89,6 +91,12 @@ impl FakeDriver {
         rs: impl IntoIterator<Item = Result<ExecOutcome, DriverError>>,
     ) -> Self {
         self.st().exec_results.extend(rs);
+        self
+    }
+
+    /// Ends every `exec` whose argv mentions `needle` with `outcome`, whatever is queued.
+    pub(crate) fn exec_ends_when(self, needle: &str, outcome: ExecOutcome) -> Self {
+        self.st().exec_ends.push((needle.to_owned(), outcome));
         self
     }
 
@@ -206,6 +214,10 @@ impl Driver for FakeDriver {
         }
         if let (Some(Output::Log(path)), Some(text)) = (&spec.output, s.log_text(spec)) {
             write_bytes(path, text.as_bytes())?;
+        }
+        let argv = spec.argv.join(" ");
+        if let Some((_, out)) = s.exec_ends.iter().find(|(n, _)| argv.contains(n.as_str())) {
+            return Ok(*out);
         }
         let out = s
             .exec_results

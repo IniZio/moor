@@ -4,6 +4,10 @@
 pub(super) const FORM_SLOTS: &[&str] = &["secret"];
 /// Placeholders `allow` paths and `box_env` values may use.
 pub(super) const REPO_SLOTS: &[&str] = &["repo", "repo:urlenc"];
+/// Placeholders `allow` paths may use: the repo slots plus one repo the Box may only read.
+pub(super) const ALLOW_SLOTS: &[&str] = &["repo", "repo:urlenc", "read_repo"];
+/// The slot an allow entry repeats once per read-only repo.
+pub(super) const READ_REPO: &str = "{read_repo}";
 
 /// Whether `s` names the `{repo}` or `{repo:urlenc}` slot.
 pub(super) fn uses_repo(s: &str) -> bool {
@@ -39,6 +43,11 @@ pub(super) fn fill_repo(s: &str, owner: &str, name: &str) -> String {
     let plain = format!("{owner}/{name}");
     s.replace("{repo:urlenc}", &percent_encode(&plain))
         .replace("{repo}", &plain)
+}
+
+/// Replaces `{read_repo}` with `owner/name`.
+pub(super) fn fill_read_repo(s: &str, owner: &str, name: &str) -> String {
+    s.replace(READ_REPO, &format!("{owner}/{name}"))
 }
 
 /// Percent-encodes every byte outside the RFC 3986 unreserved set.

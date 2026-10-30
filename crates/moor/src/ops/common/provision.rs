@@ -17,7 +17,6 @@ use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, ProviderId};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::agent_install;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::cache;
 use crate::ops::common::capacity;
@@ -25,6 +24,7 @@ use crate::ops::common::dotfiles::{self, DotfilesRun};
 use crate::ops::common::facts::{provider_caps, provider_of, require_reverse_tunnel, settings_of};
 use crate::ops::common::setup;
 use crate::ops::common::view::box_view;
+use crate::ops::common::{agent_install, profile_fetch};
 use crate::store::lease::LeaseKind;
 use crate::store::{BoxRow, Store};
 
@@ -307,6 +307,7 @@ fn run_and_record(
     {
         cx.warn(agent_install::warning(&reason));
     }
+    profile_fetch::apply(cx, store, (target.handle, target.provider), id, cfg, &proxy)?;
     let mut done = Decision::new(id);
     if let DotfilesRun::Failed { tail } = &dotfiles {
         done = done.event(ExtraEvent::SetupFailed {
