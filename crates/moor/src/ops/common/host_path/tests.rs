@@ -125,14 +125,11 @@ fn the_open_follows_no_link_swapped_in_after_the_check() {
 fn the_open_does_not_wait_on_a_fifo() {
     let f = fx();
     let root = f.root.canonicalize().expect("real");
-    rustix::fs::mknodat(
-        rustix::fs::CWD,
-        root.join("pulls/fifo"),
-        rustix::fs::FileType::Fifo,
-        rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
-        0,
-    )
-    .expect("fifo");
+    let made = std::process::Command::new("mkfifo")
+        .arg(root.join("pulls/fifo"))
+        .status()
+        .expect("mkfifo runs");
+    assert!(made.success(), "fifo");
     let file = walk(&root, Path::new("pulls/fifo")).expect("opened");
     assert!(!file.metadata().expect("meta").is_file());
 }
