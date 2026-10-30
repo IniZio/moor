@@ -7,6 +7,7 @@ use moor_core::{BoxId, BoxName, BoxTarget, ErrorKind, Request};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::host_path;
 use crate::store::{BoxRow, SessionRecord, Store};
 
 /// The one refusal for a Box the caller may not act on and for a Box that does not exist, so
@@ -82,7 +83,7 @@ pub(crate) fn authorize(
     request: &Request,
 ) -> Result<Grant, CommandError> {
     if matches!(caller, Ok(Caller::Runner)) {
-        return runners(request).map(|()| Grant {
+        return runners(cx, request).map(|()| Grant {
             viewer: Viewer::Operator,
             pins: Pins::new(),
         });
@@ -104,16 +105,25 @@ pub(crate) fn authorize(
 }
 
 /// Refuses every request the machine runner does not send; it sends those for every user's
-/// Boxes and machines, as the operator would.
-fn runners(request: &Request) -> Result<(), CommandError> {
+/// Boxes and machines, as the operator would, but names host paths only in its own directory.
+fn runners(cx: &Cx, request: &Request) -> Result<(), CommandError> {
+    let own = |what: &str, path: &str| {
+        let root = cx.env().runner_state().ok_or_else(|| {
+            CommandError::new(
+                ErrorKind::Refused,
+                "the machine runner has no state directory",
+            )
+        })?;
+        host_path::inside(what, path, root).map(drop)
+    };
     match request {
         Request::Show(_)
         | Request::MachineHold(_)
         | Request::MachineKeys {}
         | Request::MachineLinks(_)
-        | Request::MachineTargets {}
-        | Request::BoxMirror(_)
-        | Request::BoxPut(_) => Ok(()),
+        | Request::MachineTargets {} => Ok(()),
+        Request::BoxMirror(req) => own("the destination", &req.dest),
+        Request::BoxPut(req) => own("the source", &req.src),
         _ => Err(CommandError::new(ErrorKind::Refused, NOT_THE_RUNNERS)),
     }
 }

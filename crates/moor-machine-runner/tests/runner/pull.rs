@@ -27,7 +27,9 @@ fn a_pulled_file_reaches_the_controller_as_a_box_put() {
     assert_eq!(req["id"], 7);
     assert_eq!(req["dest"], "out/build.log");
     assert_eq!(bytes, b"built ok");
-    assert!(!std::path::Path::new(req["src"].as_str().unwrap()).exists());
+    let src = std::path::Path::new(req["src"].as_str().unwrap());
+    assert!(src.starts_with(rig.state()), "{}", src.display());
+    assert!(!src.exists());
 }
 
 #[test]

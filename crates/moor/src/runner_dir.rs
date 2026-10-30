@@ -11,3 +11,8 @@ pub(crate) const SOCKET: &str = "runner.sock";
 pub(crate) fn of(state_dir: &Path) -> PathBuf {
     state_dir.join("runner")
 }
+
+/// The machine runner's state directory: `configured`, else `<state>/machine-runner`.
+pub(crate) fn state(state_dir: Option<&Path>, configured: Option<PathBuf>) -> Option<PathBuf> {
+    configured.or_else(|| state_dir.map(|dir| dir.join("machine-runner")))
+}

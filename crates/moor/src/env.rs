@@ -17,6 +17,8 @@ pub struct Env {
     vars: BTreeMap<String, String>,
     /// The controller's vault key file, when a controller runs this.
     vault_key: Option<PathBuf>,
+    /// The machine runner's state directory, when a controller runs this.
+    runner_state: Option<PathBuf>,
     /// Set when whoever asked for the request is gone; its streamed children then stop.
     cancel: Cancel,
     /// The rules each front's Proxy serves, by namespace, when a controller runs this.
@@ -111,6 +113,19 @@ impl Env {
     #[must_use]
     pub fn vault_key(&self) -> Option<&Path> {
         self.vault_key.as_deref()
+    }
+
+    /// Set the machine runner's state directory.
+    #[must_use]
+    pub fn with_runner_state(mut self, dir: Option<PathBuf>) -> Self {
+        self.runner_state = dir;
+        self
+    }
+
+    /// The machine runner's state directory; `None` outside a controller.
+    #[must_use]
+    pub fn runner_state(&self) -> Option<&Path> {
+        self.runner_state.as_deref()
     }
 
     /// Set the rules each front's Proxy serves, by namespace.

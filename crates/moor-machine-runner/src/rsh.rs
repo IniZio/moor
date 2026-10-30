@@ -67,13 +67,14 @@ pub(crate) struct Rsh {
     pub(crate) syncs: Syncs,
 }
 
-/// Serves helpers on a socket under `state_dir` when the runner takes agent links.
+/// Makes `state_dir`, where the controller writes the runner's mirrors, and serves helpers on a
+/// socket under it when the runner takes agent links.
 pub(crate) fn listen(state_dir: &Path, agents: Option<&Agents>) -> io::Result<Option<Rsh>> {
+    std::fs::create_dir_all(state_dir)?;
     let Some(agents) = agents else {
         return Ok(None);
     };
     let socket = state_dir.join("rsh.sock");
-    std::fs::create_dir_all(state_dir)?;
     let _ = std::fs::remove_file(&socket);
     let listener = UnixListener::bind(&socket)?;
     let syncs = Syncs::default();

@@ -33,6 +33,7 @@ use drain::{Admitted, Drain, Handler};
 use inherit::Sockets;
 
 use crate::env::{Env, CONTROLLER_LOCK};
+use crate::runner_dir;
 use crate::vault::{Vault, VAULT_KEY};
 use crate::Moor;
 
@@ -163,6 +164,12 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         message: e.error.to_string(),
     })?;
     let (vault, key) = open_vault(&env, config)?;
+    let runner = cfg
+        .runner_state_dir
+        .as_deref()
+        .map(|d| env.expand_home(Path::new(d)));
+    let runner = runner_dir::state(env.state_dir().as_deref(), runner);
+    let env = env.with_runner_state(runner);
     let (env, proxy) = front_proxy::plan(env.with_vault_key(key), &cfg.fronts).map_err(refused)?;
     let state_lock = env
         .state_dir()
