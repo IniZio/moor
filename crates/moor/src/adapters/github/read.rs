@@ -376,85 +376,10 @@ fn author(viewer: Viewer) -> Result<GitAuthor, ForgeError> {
     Ok(GitAuthor { name, email })
 }
 
-/// Unicode format characters (category Cf) and the line and paragraph separators (Zl, Zp), as
-/// of Unicode 15.1: bidi overrides, zero-width marks and the BOM can make an author name read as
-/// other text.
-const FORMAT_CHARS: &[(char, char)] = &[
-    ('\u{ad}', '\u{ad}'),
-    ('\u{600}', '\u{605}'),
-    ('\u{61c}', '\u{61c}'),
-    ('\u{6dd}', '\u{6dd}'),
-    ('\u{70f}', '\u{70f}'),
-    ('\u{890}', '\u{891}'),
-    ('\u{8e2}', '\u{8e2}'),
-    ('\u{180e}', '\u{180e}'),
-    ('\u{200b}', '\u{200f}'),
-    ('\u{2028}', '\u{202e}'),
-    ('\u{2060}', '\u{2064}'),
-    ('\u{2066}', '\u{206f}'),
-    ('\u{feff}', '\u{feff}'),
-    ('\u{fff9}', '\u{fffb}'),
-    ('\u{110bd}', '\u{110bd}'),
-    ('\u{110cd}', '\u{110cd}'),
-    ('\u{13430}', '\u{1343f}'),
-    ('\u{1bca0}', '\u{1bca3}'),
-    ('\u{1d173}', '\u{1d17a}'),
-    ('\u{e0001}', '\u{e0001}'),
-    ('\u{e0020}', '\u{e007f}'),
-];
-
-/// Whether `c` is a control, format or separator character a profile name must not carry.
-fn spoofs(c: char) -> bool {
-    c.is_control() || FORMAT_CHARS.iter().any(|&(lo, hi)| (lo..=hi).contains(&c))
-}
-
-/// Asks for the commit a ref names, or the default branch head, and one file there.
-const FILE_QUERY: &str = r"query($owner: String!, $name: String!, $at: String!, $hasAt: Boolean!, $path: String!) {
-  repository(owner: $owner, name: $name) {
-    defaultBranchRef @skip(if: $hasAt) { target { ...at } }
-    object(expression: $at) @include(if: $hasAt) { ...at }
-  }
-}
-fragment at on GitObject { ...commit ... on Tag { target { ...commit } } }
-fragment commit on GitObject {
-  __typename
-  oid
-  ... on Commit { file(path: $path) { object { __typename ... on Blob { byteSize isBinary text } } } }
-}";
-
-/// Reads `path` in `repo` at `at` (the default branch when `None`) from the GraphQL endpoint
-/// `api` as the account of `token`, with the commit `at` resolved to.
-pub(super) fn file_at(
-    api: &str,
-    timeout: Duration,
-    repo: &ForgeRepo,
-    at: Option<&str>,
-    path: &'static str,
-    token: &Secret,
-) -> Result<(Sha, Option<String>), ForgeError> {
-    let auth = bearer(token)?;
-    let body = serde_json::json!({
-        "query": FILE_QUERY,
-        "variables": {
-            "owner": repo.owner,
-            "name": repo.name,
-            "at": at.unwrap_or_default(),
-            "hasAt": at.is_some(),
-            "path": path,
-        },
-    });
-    let (status, reply) = post(api, timeout, &auth, &body.to_string())?;
-    match status {
-        200 => {
-            let reply = serde_json::from_slice(&reply).map_err(|_| unexpected_shape())?;
-            let (_, mut found) = visible(reply)?;
-            let commit = commit_at(&mut found, at)?;
-            Ok((full_sha(commit.oid.as_deref())?, text(commit.file, path)?))
-        }
-        401 => Err(ForgeError::Rejected),
-        s => Err(ForgeError::Unavailable(format!("GitHub answered HTTP {s}"))),
-    }
-}
+mod file;
+mod spoof;
+pub(super) use file::file_at;
+use spoof::spoofs;
 
 #[cfg(test)]
 mod tests;
