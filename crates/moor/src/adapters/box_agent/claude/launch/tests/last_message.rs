@@ -1,7 +1,7 @@
 //! The agent's last message, kept in the hook record from the stop until the next prompt.
 
 use moor_core::activity::HookKind;
-use moor_core::seam::agent_profile::AgentProfile;
+use moor_core::seam::agent_adapter::AgentAdapter;
 use serde_json::json;
 use tempfile::TempDir;
 

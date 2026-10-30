@@ -2,7 +2,7 @@
 
 use std::fs;
 
-use moor_core::seam::agent_profile::AgentProfile;
+use moor_core::seam::agent_adapter::AgentAdapter;
 use serde_json::json;
 use tempfile::TempDir;
 

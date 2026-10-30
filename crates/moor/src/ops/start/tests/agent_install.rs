@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::config::{AgentConfig, DotfilesConfig, UserConfig};
-use moor_core::seam::agent_profile::AgentInstall;
+use moor_core::seam::agent_adapter::AgentInstall;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::seam::proxy_host::ProxyHostError;

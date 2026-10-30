@@ -2,7 +2,7 @@
 
 use moor_core::boxscript::quote;
 use moor_core::name::{BoxPath, NameError};
-use moor_core::seam::agent_profile::{BoxFile, BoxSetup, EnvVar, Key, LaunchCtx};
+use moor_core::seam::agent_adapter::{BoxFile, BoxSetup, EnvVar, Key, LaunchCtx};
 use moor_core::seam::engine::LaunchPrompt;
 use moor_core::Secret;
 use serde_json::{json, Value};

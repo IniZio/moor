@@ -8,7 +8,7 @@ use crate::activity::Probes;
 use crate::box_key::BoxKey;
 use crate::config::McpServer;
 use crate::name::{BoxHandle, BoxId, BoxName, BoxPath, NameError};
-use crate::seam::agent_profile::{AgentInstall, PromptMatch, ProxyAddr};
+use crate::seam::agent_adapter::{AgentInstall, PromptMatch, ProxyAddr};
 use crate::seam::driver::DriverError;
 use crate::seam::proc::Deadline;
 use crate::seam::surface::{PaneRef, WorkspaceRef};

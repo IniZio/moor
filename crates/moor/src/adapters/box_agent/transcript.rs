@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use moor_core::boxscript::quote;
 use moor_core::name::BoxPath;
-use moor_core::seam::agent_profile::{AgentProfile, NOTHING_TO_ARCHIVE};
+use moor_core::seam::agent_adapter::{AgentAdapter, NOTHING_TO_ARCHIVE};
 use moor_core::seam::driver::{BoxStep, Driver, DriverError, ExecOutcome, StepDone};
 use moor_core::seam::engine::{EngineError, SessionRef};
 use moor_core::seam::proc::{Deadline, OUTPUT_CAP};
@@ -109,7 +109,7 @@ fn streamed(done: Option<Result<StepDone, DriverError>>) -> Result<Option<Vec<u8
 /// One batch builds the archive and prints it as base64; an archive over the cap is copied out.
 pub(super) fn save(
     driver: &dyn Driver,
-    profile: &dyn AgentProfile,
+    profile: &dyn AgentAdapter,
     s: &SessionRef,
     dest: &Path,
 ) -> Result<(), EngineError> {

@@ -1,7 +1,7 @@
 //! Claude Code's install on a Box that lacks it: Anthropic's native installer.
 
 use moor_core::boxscript::quote;
-use moor_core::seam::agent_profile::AgentInstall;
+use moor_core::seam::agent_adapter::AgentInstall;
 use moor_core::seam::proc::Tool;
 
 use super::super::launch::AGENT_PATH_LINE;

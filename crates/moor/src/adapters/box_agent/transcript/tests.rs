@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::seam::agent_profile::NOTHING_TO_ARCHIVE;
+use moor_core::seam::agent_adapter::NOTHING_TO_ARCHIVE;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::seam::engine::{Engine, EngineError, SessionRef};

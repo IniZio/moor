@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes};
-use moor_core::seam::agent_profile::FirstRunPrompt;
+use moor_core::seam::agent_adapter::FirstRunPrompt;
 use moor_core::seam::clock::Ts;
 use moor_core::StartReq;
 

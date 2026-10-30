@@ -2,7 +2,7 @@
 
 use moor_core::boxscript::quote;
 use moor_core::name::{BoxPath, NameError};
-use moor_core::seam::agent_profile::{BoxSetup, LaunchCtx};
+use moor_core::seam::agent_adapter::{BoxSetup, LaunchCtx};
 use serde_json::{json, Value};
 
 use super::interpreters;

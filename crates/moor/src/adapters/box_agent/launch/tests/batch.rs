@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use moor_core::seam::agent_profile::ProxyAddr;
+use moor_core::seam::agent_adapter::ProxyAddr;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::seam::engine::{Engine, EngineError, LaunchPrompt, LaunchReq};

@@ -1,6 +1,6 @@
 //! The Box's MCP servers in Claude Code's forms: the `--mcp-config` value.
 
-use moor_core::seam::agent_profile::LaunchCtx;
+use moor_core::seam::agent_adapter::LaunchCtx;
 use serde_json::{json, Value};
 
 /// The Box's MCP servers in Claude Code's `mcpServers` form.

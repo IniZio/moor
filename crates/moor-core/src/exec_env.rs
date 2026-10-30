@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use crate::boxscript::quote;
 use crate::name::BoxPath;
-use crate::seam::agent_profile::ProxyAddr;
+use crate::seam::agent_adapter::ProxyAddr;
 use crate::seam::proc::Deadline;
 
 pub use egress::EGRESS_FAILED;

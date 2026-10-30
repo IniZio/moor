@@ -5,7 +5,7 @@ use std::time::Duration;
 use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionInput;
-use moor_core::seam::agent_profile::FirstRunPrompt;
+use moor_core::seam::agent_adapter::FirstRunPrompt;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::ExecOutcome;
 use moor_core::seam::engine::{EngineError, LaunchPrompt};

@@ -2,8 +2,8 @@
 
 use moor_core::activity::{HookKind, HookRecord};
 use moor_core::name::NameError;
-use moor_core::seam::agent_profile::{
-    AgentInstall, AgentProfile, BoxSetup, EnvVar, FirstRunPrompt, Key, LaunchCtx, PromptMatch,
+use moor_core::seam::agent_adapter::{
+    AgentAdapter, AgentInstall, BoxSetup, EnvVar, FirstRunPrompt, Key, LaunchCtx, PromptMatch,
     NOTHING_TO_ARCHIVE,
 };
 use moor_core::seam::clock::Ts;
@@ -17,7 +17,7 @@ mod launch;
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct Claude;
 
-impl AgentProfile for Claude {
+impl AgentAdapter for Claude {
     fn parse_hook(&self, raw: &[u8]) -> Option<HookRecord> {
         let value: Value = serde_json::from_slice(raw).ok()?;
         let text = |key: &str| value.get(key).and_then(Value::as_str);

@@ -1,5 +1,5 @@
 use moor_core::activity::{HookKind, HookRecord};
-use moor_core::seam::agent_profile::{AgentProfile, FirstRunPrompt, Key, NOTHING_TO_ARCHIVE};
+use moor_core::seam::agent_adapter::{AgentAdapter, FirstRunPrompt, Key, NOTHING_TO_ARCHIVE};
 use moor_core::seam::clock::Ts;
 
 use super::Claude;

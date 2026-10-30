@@ -21,7 +21,7 @@ pub enum Layer {
     User,
     /// A built-in default.
     Default,
-    /// The agent profile.
+    /// The agent adapter.
     Agent,
     /// Read from the forge: the account of the requester's GitHub token.
     Forge,

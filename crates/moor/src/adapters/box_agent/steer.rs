@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use moor_core::seam::agent_profile::{AgentProfile, Key as AgentKey};
+use moor_core::seam::agent_adapter::{AgentAdapter, Key as AgentKey};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::engine::{EngineError, SessionRef, Steer, SteerOutcome};
 use moor_core::seam::proc::Deadline;
@@ -18,7 +18,7 @@ const TAIL_CHARS: usize = 24;
 /// Sends `steer` to the agent's pane; the text is typed once.
 pub(super) fn steer(
     surface: &dyn Surface,
-    profile: &dyn AgentProfile,
+    profile: &dyn AgentAdapter,
     clock: &dyn Clock,
     s: &SessionRef,
     steer: &Steer,

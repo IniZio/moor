@@ -5,7 +5,7 @@ use std::time::Duration;
 use moor_core::boxscript::{command_line, quote};
 use moor_core::exec_env::ExecEnv;
 use moor_core::name::{BoxPath, NameError};
-use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, LaunchCtx, ProxyAddr};
+use moor_core::seam::agent_adapter::{AgentAdapter, BoxSetup, LaunchCtx, ProxyAddr};
 use moor_core::seam::driver::{BoxStep, Driver, ExecOutcome, ExecSpec, StepDone};
 use moor_core::seam::engine::{EngineError, LaunchNotice, LaunchReq, SessionRef};
 use moor_core::seam::proc::{Deadline, Tool};
@@ -54,7 +54,7 @@ fn fail(step: &'static str, e: &impl ToString) -> Failure {
 pub(super) fn launch(
     driver: &dyn Driver,
     surface: &dyn Surface,
-    profile: &dyn AgentProfile,
+    profile: &dyn AgentAdapter,
     req: &LaunchReq,
     release: &GhRelease,
 ) -> Result<SessionRef, EngineError> {
@@ -184,7 +184,7 @@ struct Launch<'a> {
     /// Opens the tab.
     surface: &'a dyn Surface,
     /// Builds the agent's arguments and hook files.
-    profile: &'a dyn AgentProfile,
+    profile: &'a dyn AgentAdapter,
     /// The launch asked for.
     req: &'a LaunchReq,
     /// What the profile needs.

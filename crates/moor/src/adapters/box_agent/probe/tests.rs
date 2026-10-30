@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus};
 use moor_core::name::NameError;
-use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, EnvVar, Key, LaunchCtx, PromptMatch};
+use moor_core::seam::agent_adapter::{AgentAdapter, BoxSetup, EnvVar, Key, LaunchCtx, PromptMatch};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::engine::{Engine, SessionRef};
@@ -19,7 +19,7 @@ use crate::testing::surface::FakeSurface;
 
 struct Stub;
 
-impl AgentProfile for Stub {
+impl AgentAdapter for Stub {
     fn parse_hook(&self, raw: &[u8]) -> Option<HookRecord> {
         let kind = match raw {
             b"busy" => HookKind::Busy,

@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneRead, Probes};
 use moor_core::name::BoxName;
 use moor_core::name::BoxPath;
-use moor_core::seam::agent_profile::{AgentInstall, FirstRunPrompt, PromptMatch};
+use moor_core::seam::agent_adapter::{AgentInstall, FirstRunPrompt, PromptMatch};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::engine::{
     AgentFate, Engine, EngineError, LaunchReq, SessionRef, Steer, SteerOutcome,
