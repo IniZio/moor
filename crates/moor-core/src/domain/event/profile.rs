@@ -12,6 +12,8 @@ pub enum ProfileStep {
     Manifest,
     /// Fetching the profile into the Box.
     Fetch,
+    /// Installing a piece of the profile in the Box at launch.
+    Install,
 }
 
 /// The profile resolved to a commit, or a step of getting it into the Box failed.
