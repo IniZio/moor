@@ -252,7 +252,6 @@ impl ProxyHost for DetachedSupervisor {
         }
     }
 
-    /// Classify the Box's proxy row without starting or changing anything.
     fn restart(&self, box_id: BoxId) -> Result<(), ProxyHostError> {
         let state = self.state_dir.as_deref().ok_or_else(|| {
             ProxyHostError::Failed("the state directory is not usable".to_owned())
@@ -263,6 +262,7 @@ impl ProxyHost for DetachedSupervisor {
         self.ensure(&spec).map(drop)
     }
 
+    /// Classify the Box's proxy row without starting or changing anything.
     fn status(&self, box_id: BoxId) -> Result<ProxyStatus, ProxyHostError> {
         let failed = |e: &StoreError| {
             ProxyHostError::Failed(format!("the proxy state could not be used: {e}"))
