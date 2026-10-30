@@ -60,6 +60,7 @@ nono = { version = "=0.80.0", default-features = false }
 nix = { version = "0.31", default-features = false, features = [
   "net",
   "sched",
+  "socket",
 ] }
 tokio = { version = "1", default-features = false, features = [
   "rt-multi-thread",

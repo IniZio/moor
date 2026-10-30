@@ -63,10 +63,12 @@ pub(super) fn local_caller(stream: &UnixStream, own: u32) -> Result<Caller, Stri
         .map_err(|e| format!("cannot read the peer's uid: {e}"))
 }
 
-/// The uid of the process at the other end of `stream`.
+/// The uid of the process at the other end of `stream`. rustix's `socket_peercred` cannot hold
+/// the pid 0 the kernel reports for a peer in another pid namespace, such as a sibling container.
 #[cfg(target_os = "linux")]
 fn peer_uid(stream: &UnixStream) -> io::Result<u32> {
-    Ok(rustix::net::sockopt::socket_peercred(stream)?.uid.as_raw())
+    use nix::sys::socket::{getsockopt, sockopt::PeerCredentials};
+    Ok(getsockopt(stream, PeerCredentials)?.uid())
 }
 
 /// The uid of the process at the other end of `stream`.
