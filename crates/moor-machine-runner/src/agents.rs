@@ -112,8 +112,8 @@ where
     let Ok(mut ws) = link::accept(stream).await else {
         return;
     };
-    let machine_id = match admit(&mut ws, client).await {
-        Ok(id) => id,
+    let (machine_id, version) = match admit(&mut ws, client).await {
+        Ok(admitted) => admitted,
         Err(answer) => {
             if let Some(frame) = answer {
                 let _ = link::send(&mut ws, &frame).await;
@@ -128,7 +128,7 @@ where
     if link::send(&mut ws, &welcome).await.is_err() {
         return;
     }
-    let (generation, replaced, asks) = links.up(machine_id);
+    let (generation, replaced, asks) = links.up(machine_id, version);
     eprintln!("machine {machine_id} linked");
     let socket = link::carry(ws, link::KEEPALIVE);
     let why = tokio::select! {
@@ -142,8 +142,12 @@ where
     eprintln!("machine {machine_id} unlinked: {why}");
 }
 
-/// The machine whose agent proved itself on `ws`, or the frame to answer before closing.
-async fn admit<S>(ws: &mut WebSocketStream<S>, client: &Client) -> Result<i64, Option<Frame>>
+/// The machine whose agent proved itself on `ws` and the agent's release, or the frame to
+/// answer before closing.
+async fn admit<S>(
+    ws: &mut WebSocketStream<S>,
+    client: &Client,
+) -> Result<(i64, String), Option<Frame>>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
@@ -160,7 +164,7 @@ where
     let Some(Frame::Hello {
         machine_id,
         protocol: link::PROTOCOL,
-        ..
+        version,
     }) = hello
     else {
         return Err(Some(Frame::UpdateRequired {
@@ -187,7 +191,7 @@ where
             let signed = link::signed(&nonce, machine_id, time);
             key.verify(link::NAMESPACE, &signed, sig).is_ok()
         })
-        .map(|_| machine_id)
+        .map(|_| (machine_id, version))
         .ok_or_else(|| {
             refused(format!(
                 "the proof is not signed by machine {machine_id}'s key"
@@ -253,9 +257,13 @@ struct Held {
 }
 
 impl Links {
-    /// Marks `machine_id` online, ending its previous link; the new link's generation, what
-    /// resolves once a newer link replaces it, and the asks for its streams.
-    fn up(&self, machine_id: i64) -> (u64, oneshot::Receiver<()>, mpsc::Receiver<Asked>) {
+    /// Marks `machine_id` online with agent `version`, ending its previous link; the new link's
+    /// generation, what resolves once a newer link replaces it, and the asks for its streams.
+    fn up(
+        &self,
+        machine_id: i64,
+        version: String,
+    ) -> (u64, oneshot::Receiver<()>, mpsc::Receiver<Asked>) {
         let generation = {
             let mut next = self.next.lock().unwrap_or_else(PoisonError::into_inner);
             *next += 1;
@@ -267,6 +275,8 @@ impl Links {
             machine_id,
             online: true,
             since: now(),
+            version: Some(version),
+            protocol: Some(link::PROTOCOL),
         };
         self.change(|held| {
             held.insert(
@@ -302,7 +312,7 @@ impl Links {
         let mut held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
         edit(&mut held);
         self.report
-            .send_replace(held.values().map(|h| h.link).collect());
+            .send_replace(held.values().map(|h| h.link.clone()).collect());
     }
 }
 

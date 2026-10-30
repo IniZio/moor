@@ -96,10 +96,13 @@ pub(super) fn remove(
 
 /// `machine-list`: names, ssh targets, labels and capacities.
 pub(super) fn list(store: &Store, user: UserId) -> Result<serde_json::Value, CommandError> {
+    let mut links: std::collections::BTreeMap<_, _> =
+        store.user_machine_links(user)?.into_iter().collect();
     let machines = store
         .user_machines(user)?
         .into_iter()
         .map(|m| MachineView {
+            link: links.remove(&m.name),
             name: m.name,
             ssh: m.ssh,
             labels: m.labels,

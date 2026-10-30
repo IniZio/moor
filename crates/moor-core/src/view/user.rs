@@ -70,6 +70,10 @@ pub struct MachineView {
     /// The crabbox provider it offers Boxes on, when it hosts a Box pool.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pool: Option<String>,
+    /// Its agent's link: online or not, since when, and the agent's release. None until its
+    /// agent first links.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<crate::request::MachineLink>,
 }
 
 /// Value of `machine-list`.

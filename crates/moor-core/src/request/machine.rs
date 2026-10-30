@@ -62,8 +62,9 @@ pub struct MachineLinksReq {
     pub links: Vec<MachineLink>,
 }
 
-/// Whether an enrolled machine's agent holds a link to the runner, and since when.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Whether an enrolled machine's agent holds a link to the runner, since when, and what it
+/// speaks.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MachineLink {
     /// The enrolled machine.
@@ -72,6 +73,12 @@ pub struct MachineLink {
     pub online: bool,
     /// When the link came up or went down.
     pub since: Ts,
+    /// The agent's release, from its last link.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// The link protocol it spoke.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol: Option<u32>,
 }
 
 /// The capacity of a machine added without one.

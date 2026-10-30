@@ -289,6 +289,36 @@ mod hold;
 mod machine;
 
 #[test]
+fn a_link_keeps_its_agent_version_and_names_its_machine() {
+    use moor_core::config::EnrolledMachine;
+    use moor_core::request::MachineLink;
+    use moor_core::seam::clock::Ts;
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let (alice, _) = store.enroll(&id("authgear:a"), None).unwrap();
+    let (bob, _) = store.enroll(&id("authgear:b"), None).unwrap();
+    let key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl";
+    let m = EnrolledMachine::parse("host", key, &[], 1).unwrap();
+    let machine_id = store.enroll_machine(alice, &m).unwrap();
+    let link = MachineLink {
+        machine_id,
+        online: true,
+        since: Ts::from_millis(5),
+        version: Some("0.9.1".to_owned()),
+        protocol: Some(1),
+    };
+    let held = store
+        .set_machine_links(std::slice::from_ref(&link))
+        .unwrap();
+    assert_eq!(held, vec![link.clone()]);
+    assert_eq!(
+        store.user_machine_links(alice).unwrap(),
+        vec![("host".to_owned(), link)]
+    );
+    assert_eq!(store.user_machine_links(bob).unwrap(), vec![]);
+}
+
+#[test]
 fn machine_links_are_replaced_whole_and_skip_unknown_machines() {
     use moor_core::config::EnrolledMachine;
     use moor_core::request::MachineLink;
@@ -309,6 +339,8 @@ fn machine_links_are_replaced_whole_and_skip_unknown_machines() {
         machine_id,
         online,
         since: Ts::from_millis(since),
+        version: None,
+        protocol: None,
     };
     let held = store
         .set_machine_links(&[link(one, true, 5), link(two, false, 6), link(999, true, 7)])
