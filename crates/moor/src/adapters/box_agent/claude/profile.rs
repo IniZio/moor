@@ -2,21 +2,19 @@
 
 use moor_core::boxscript::quote;
 use moor_core::name::{BoxPath, NameError};
-use moor_core::profile::Manifest;
+use moor_core::profile::{Manifest, PROFILE_MARKETPLACE};
 use moor_core::seam::agent_adapter::BoxSetup;
 use moor_core::seam::proc::Tool;
 
 use super::launch::{interpreters, parent};
 use super::Claude;
-use crate::adapters::box_agent::profile_writer::{ProfileCtx, ProfileWriter, FAILURES_FILE};
+use crate::adapters::box_agent::profile_writer::{
+    ProfileCtx, ProfileWriter, FAILURES_FILE, FAIL_FN, MARKETPLACE_NAME_FN,
+};
 
 mod merge;
 #[cfg(test)]
 mod tests;
-
-/// Records a failed step as one line and goes on. Called `fail <what> $?` right after the command.
-const FAIL_FN: &str =
-    r#"fail() { echo "moor: profile: $1 exit $2" >&2; printf '%s exit %s\n' "$1" "$2" >> "$f"; }"#;
 
 /// Copies each person skill, then links each repo skill over it of the same name, so the repo wins.
 /// A directory without a `SKILL.md` is not a skill.
@@ -86,13 +84,33 @@ fn plugins(manifest: &Manifest) -> String {
             quote(&format!("marketplace {name}")),
         ));
     }
+    let uses_profile = manifest
+        .claude
+        .plugins
+        .iter()
+        .any(|p| p.marketplace == PROFILE_MARKETPLACE);
+    if uses_profile {
+        lines.push(MARKETPLACE_NAME_FN.to_owned());
+        lines.push(format!(
+            "pm=$(mkt_name \"$d/.claude-plugin/marketplace.json\") && [ -n \"$pm\" ] || pm=\n\
+[ -n \"$pm\" ] && {{ {claude} plugin marketplace add \"$d\" </dev/null >/dev/null 2>&1 || fail {} $?; }}",
+            quote(&format!("marketplace {PROFILE_MARKETPLACE}")),
+        ));
+    }
     for plugin in &manifest.claude.plugins {
         let id = format!("{}@{}", plugin.name, plugin.marketplace);
-        lines.push(format!(
-            "{claude} plugin install {} </dev/null >/dev/null 2>&1 || fail {} $?",
-            quote(&id),
-            quote(&format!("plugin {id}")),
-        ));
+        let what = quote(&format!("plugin {id}"));
+        if plugin.marketplace == PROFILE_MARKETPLACE {
+            lines.push(format!(
+                "if [ -n \"$pm\" ]; then {claude} plugin install {}\"@$pm\" </dev/null >/dev/null 2>&1 || fail {what} $?; else fail {what} 1; fi",
+                quote(&plugin.name),
+            ));
+        } else {
+            lines.push(format!(
+                "{claude} plugin install {} </dev/null >/dev/null 2>&1 || fail {what} $?",
+                quote(&id),
+            ));
+        }
     }
     lines.join("\n")
 }

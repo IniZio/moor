@@ -28,3 +28,21 @@ pub(crate) trait ProfileWriter {
 /// Under `<workdir>`: one line per profile step that failed, `<what> exit <code>`, rewritten
 /// on every run.
 pub(crate) const FAILURES_FILE: &str = ".moor/profile-failures";
+
+/// Records a failed step as one line and goes on. Called `fail <what> $?` right after the command.
+pub(crate) const FAIL_FN: &str =
+    r#"fail() { echo "moor: profile: $1 exit $2" >&2; printf '%s exit %s\n' "$1" "$2" >> "$f"; }"#;
+
+/// Copies each person skill under `$1`, replacing one of the same name. A directory without a
+/// `SKILL.md` is not a skill.
+pub(crate) const COPY_SKILLS: &str = r#"for s in "$d"/skills/*/; do
+  s=${s%/}; [ -f "$s/SKILL.md" ] || continue; n=${s##*/}
+  rm -rf "$1/$n"; cp -R "$s" "$1/$n" || fail "skill $n" $?
+done"#;
+
+/// Reads the `name` of a marketplace manifest, `$1`, with whichever of python or node exists.
+pub(crate) const MARKETPLACE_NAME_FN: &str = r#"mkt_name() {
+  if command -v python3 >/dev/null 2>&1; then python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["name"])' "$1"
+  elif command -v node >/dev/null 2>&1; then node -e 'console.log(require(process.argv[1]).name)' "$1"
+  else return 1; fi 2>/dev/null
+}"#;

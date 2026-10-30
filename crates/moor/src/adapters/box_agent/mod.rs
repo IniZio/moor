@@ -3,6 +3,11 @@
 mod agent_env;
 mod brief;
 pub(crate) mod claude;
+#[allow(
+    dead_code,
+    reason = "the launch script calls the writers in a later change"
+)]
+mod codex;
 pub(crate) mod gh_release;
 mod launch;
 

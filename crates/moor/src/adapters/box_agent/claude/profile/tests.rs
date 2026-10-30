@@ -208,3 +208,25 @@ fn a_failed_install_is_recorded_and_the_rest_still_run() {
     );
     assert!(f.read("log").ends_with("plugin install fmt@tools\n"));
 }
+
+#[test]
+fn the_profile_marketplace_is_the_checkout_and_plugins_install_under_its_own_name() {
+    if !has_interpreter() {
+        return;
+    }
+    let f = Fixture::new();
+    f.put(
+        "profile/.claude-plugin/marketplace.json",
+        r#"{"name": "mine", "plugins": [{"name": "x", "source": "./x"}]}"#,
+    );
+    let m = profile::parse("claude:\n  plugins: [lint@profile]\n").unwrap();
+    assert!(f.run(&m, "").status.success());
+    assert_eq!(
+        f.read("log"),
+        format!(
+            "plugin marketplace add {}\nplugin install lint@mine\n",
+            f.path("profile").display()
+        )
+    );
+    assert_eq!(f.read("work/.moor/profile-failures"), "");
+}

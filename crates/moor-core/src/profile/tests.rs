@@ -96,7 +96,7 @@ fn plugin_must_name_a_declared_marketplace() {
 fn unknown_keys_are_refused() {
     assert!(err("gemini: {}\n").contains("gemini"));
     assert!(err("claude:\n  effort: high\n").contains("effort"));
-    assert!(err("codex:\n  plugins: []\n").contains("plugins"));
+    assert!(err("codex:\n  effort: high\n").contains("effort"));
 }
 
 #[test]
@@ -144,4 +144,34 @@ fn a_git_subdir_source_reads_its_repo() {
         plugin_sources(json, "tools", &["sub"]).unwrap(),
         [ForgeRepo::new("acme", "mono")]
     );
+}
+
+#[test]
+fn profile_marketplace_needs_no_declaration_and_adds_no_proxy_repo() {
+    let m =
+        parse("claude:\n  plugins: [lint@profile]\ncodex:\n  plugins: [fmt@profile]\n").unwrap();
+    assert_eq!(m.claude.plugins[0].marketplace, PROFILE_MARKETPLACE);
+    assert!(repos(&m).is_empty());
+}
+
+#[test]
+fn profile_cannot_be_declared_as_a_marketplace() {
+    let e = err("codex:\n  marketplaces:\n    profile: https://github.com/acme/tools\n");
+    assert!(e.contains("codex.marketplaces.profile"), "{e}");
+}
+
+#[test]
+fn codex_plugins_follow_the_same_rules_as_claude() {
+    let m = parse(
+        "codex:\n  marketplaces:\n    tools: https://github.com/acme/agent-tools\n  plugins: [lint@tools]\n",
+    )
+    .unwrap();
+    assert_eq!(repos(&m), vec![ForgeRepo::new("acme", "agent-tools")]);
+    let e = err("codex:\n  plugins: [lint@nowhere]\n");
+    assert!(
+        e.contains("codex.plugins[0]") && e.contains("nowhere"),
+        "{e}"
+    );
+    let e = err("codex:\n  marketplaces:\n    t: https://example.com/a/b\n");
+    assert!(e.contains("codex.marketplaces"), "{e}");
 }
