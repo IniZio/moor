@@ -17,6 +17,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::process::Command;
 use tokio::sync::oneshot;
 
+use super::lease;
+
 /// Longest request or answer line.
 const MAX_LINE: usize = 1 << 20;
 /// Bytes of output kept, from the end.
@@ -120,6 +122,19 @@ pub enum Op {
         /// Machine ports, at most [`crate::forward::MAX_PORTS`].
         ports: Vec<u16>,
     },
+    /// Act on a pool lease; only a pool host serves it.
+    Lease {
+        /// What to do.
+        verb: lease::Verb,
+        /// `moor-<id>`; none for a list.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        slug: Option<String>,
+    },
+    /// Carry the stream to and from the sshd of a pool lease's VM; only a pool host serves it.
+    Dial {
+        /// `moor-<id>`.
+        slug: String,
+    },
 }
 
 /// A Box lifecycle hook, a file of that name in the agent's hooks dir.
@@ -152,8 +167,10 @@ impl Hook {
 pub enum Reply {
     /// The exec or hook ended.
     Ran(Ran),
-    /// The relay runs; its stdio follows on the stream.
+    /// The relay runs, or the dial reached the VM; its bytes follow on the stream.
     Started,
+    /// What a lease request came to.
+    Leased(lease::Answer),
     /// The machine has no such hook or relay.
     Missing,
     /// The pulled file's `bytes` follow on the stream.

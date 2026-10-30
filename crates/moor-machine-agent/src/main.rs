@@ -6,7 +6,12 @@ use std::sync::mpsc::Sender;
 
 use clap::{Parser, Subcommand};
 use moor_client::oidc::{Console, Ui, REDIRECT_PORT};
-use moor_machine_agent::{enroll, run, state_dir, Enroll, Machine};
+use std::path::PathBuf;
+
+use moor_client::link::lease::Verb;
+use moor_client::link::ops::Reply;
+use moor_machine_agent::pool::{dial, lease, splice};
+use moor_machine_agent::{enroll, run, state_dir, Enroll, Machine, Pool};
 
 /// Command line.
 #[derive(Parser)]
@@ -45,7 +50,61 @@ enum Command {
         new_key: bool,
     },
     /// Keeps this enrolled machine linked to its server until stopped.
-    Run,
+    Run {
+        /// Serve a pool.
+        #[command(flatten)]
+        pool: PoolFlags,
+    },
+    /// Does a lease verb on this host and prints the answer as JSON.
+    Lease {
+        /// warmup, info, pause, resume, stop or list.
+        #[arg(value_parser = verb)]
+        verb: Verb,
+        /// `moor-<id>`; none for list.
+        slug: Option<String>,
+        /// The pool.
+        #[command(flatten)]
+        pool: PoolFlags,
+    },
+    /// Carries stdin and stdout to a lease's sshd, as an ssh `ProxyCommand`.
+    Dial {
+        /// `moor-<id>`.
+        slug: String,
+        /// The pool.
+        #[command(flatten)]
+        pool: PoolFlags,
+    },
+}
+
+/// The pool a host serves.
+#[derive(clap::Args)]
+struct PoolFlags {
+    /// Serve VM leases from this crabbox provider, and nothing else.
+    #[arg(long)]
+    pool: Option<String>,
+    /// Refuse a warmup once this many leases exist.
+    #[arg(long, requires = "pool")]
+    pool_max: Option<usize>,
+    /// The crabbox program.
+    #[arg(long, default_value = "crabbox", requires = "pool")]
+    crabbox: PathBuf,
+}
+
+impl PoolFlags {
+    /// The pool, when one is named.
+    fn pool(self) -> Option<Pool> {
+        Some(Pool {
+            provider: self.pool?,
+            max: self.pool_max,
+            crabbox: self.crabbox,
+        })
+    }
+}
+
+/// A lease verb by its wire name.
+fn verb(s: &str) -> Result<Verb, String> {
+    serde_json::from_value(serde_json::Value::from(s))
+        .map_err(|_| format!("{s:?} is not a lease verb"))
 }
 
 /// The console, with or without the browser.
@@ -91,16 +150,67 @@ fn main() -> ExitCode {
             };
             return enroll_here(&req, paste);
         }
-        Command::Run => tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|e| format!("cannot start: {e}"))
-            .and_then(|rt| rt.block_on(run(&state_dir(), Machine::from_env(), &|line| say(line)))),
+        Command::Run { pool } => {
+            let machine = Machine {
+                pool: pool.pool(),
+                ..Machine::from_env()
+            };
+            runtime().and_then(|rt| rt.block_on(run(&state_dir(), machine, &|line| say(line))))
+        }
+        Command::Lease { verb, slug, pool } => {
+            return on_pool(pool, |rt, home, pool| {
+                let reply = rt.block_on(lease(&home, &pool, verb, slug.as_deref()));
+                let line = serde_json::to_string(&reply).map_err(|e| e.to_string())?;
+                let _ = writeln!(std::io::stdout(), "{line}");
+                match reply {
+                    Reply::Refused { .. } => Err(String::new()),
+                    _ => Ok(()),
+                }
+            });
+        }
+        Command::Dial { slug, pool } => {
+            return on_pool(pool, |rt, home, pool| {
+                rt.block_on(async {
+                    let sshd = dial(&home, &pool, &slug).await?;
+                    let stdio = tokio::io::join(tokio::io::stdin(), tokio::io::stdout());
+                    splice(sshd, stdio).await;
+                    Ok(())
+                })
+            });
+        }
     };
     if let Err(e) = ended {
         say(&e);
     }
     ExitCode::FAILURE
+}
+
+/// A runtime for the agent's async work.
+fn runtime() -> Result<tokio::runtime::Runtime, String> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| format!("cannot start: {e}"))
+}
+
+/// Runs `work` for the named pool in this account's home; an empty error was already shown.
+fn on_pool(
+    flags: PoolFlags,
+    work: impl FnOnce(&tokio::runtime::Runtime, PathBuf, Pool) -> Result<(), String>,
+) -> ExitCode {
+    let Some(pool) = flags.pool() else {
+        say("--pool names the crabbox provider to use");
+        return ExitCode::FAILURE;
+    };
+    match runtime().and_then(|rt| work(&rt, Machine::from_env().home, pool)) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            if !e.is_empty() {
+                say(&e);
+            }
+            ExitCode::FAILURE
+        }
+    }
 }
 
 /// Writes `line` to stderr, where the agent logs.

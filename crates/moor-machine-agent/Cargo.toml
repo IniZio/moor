@@ -29,6 +29,7 @@ tokio = { version = "1", features = [
   "rt",
   "fs",
   "time",
+  "io-std",
   "io-util",
   "macros",
   "net",
