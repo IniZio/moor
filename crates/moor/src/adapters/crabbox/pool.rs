@@ -19,8 +19,6 @@ use super::{handle_of, pin, split_handle, Crabbox};
 /// How the controller reaches pool hosts: by enrolled machine id, through the runner's links
 /// broker.
 pub(crate) trait PoolHosts: Send + Sync {
-    /// The enrolled machine id of pool host `host`, or why there is none.
-    fn machine(&self, host: &str) -> Result<i64, String>;
     /// Asks machine `machine_id` to do `verb` to `slug`; an authorize carries public `key`.
     fn lease(
         &self,
@@ -66,6 +64,31 @@ fn host_of(provider: &str) -> Option<(String, String)> {
     Some((id.base().to_owned(), id.host()?.to_owned()))
 }
 
+/// `<provider>/<machine id>/moor-<box id>`: a pool Box's handle carries its host's machine.
+fn pool_handle(provider: &str, machine: i64, slug: &str) -> BoxHandle {
+    handle_of(provider, &format!("{machine}/{slug}"))
+}
+
+/// The handle `req` gets: its host's machine is known before the Box exists.
+pub(super) fn planned(req: &AcquireReq) -> Result<BoxHandle, DriverError> {
+    let machine = req.pool_machine.ok_or_else(|| {
+        failed(format!(
+            "provider {} names a host, but the Box has no machine there",
+            req.provider.as_str()
+        ))
+    })?;
+    let slug = format!("moor-{}", req.box_id.get());
+    Ok(pool_handle(req.provider.as_str(), machine, &slug))
+}
+
+/// The machine id and lease slug of a pool handle's name part, parsed strictly.
+fn parse_name(name: &str) -> Option<(i64, &str)> {
+    let (machine, slug) = name.split_once('/')?;
+    let digits = !machine.is_empty() && machine.bytes().all(|b| b.is_ascii_digit());
+    let machine = machine.parse().ok().filter(|_| digits)?;
+    slug_id(slug).is_some().then_some((machine, slug))
+}
+
 /// Whether `handle` names a pool Box.
 pub(super) fn is_pool(handle: &BoxHandle) -> bool {
     split_handle(handle).0.and_then(host_of).is_some()
@@ -87,10 +110,6 @@ pub(super) const CAPS: DriverCaps = DriverCaps {
 
 impl Crabbox {
     /// Reaches pool hosts through `hosts`.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "wired once the driver learns a Box's owner")
-    )]
     pub(crate) fn with_pool_hosts(mut self, hosts: std::sync::Arc<dyn PoolHosts>) -> Self {
         self.pool_hosts = Some(hosts);
         self
@@ -98,15 +117,15 @@ impl Crabbox {
 
     /// The pool Box behind `handle`.
     fn placed<'a>(&'a self, handle: &'a BoxHandle) -> Result<Placed<'a>, DriverError> {
-        let (provider, slug) = split_handle(handle);
-        let (_, host) = provider
+        let (provider, name) = split_handle(handle);
+        let (machine, slug) = provider
             .and_then(host_of)
-            .ok_or_else(|| failed("not a pool Box"))?;
+            .and_then(|_| parse_name(name))
+            .ok_or_else(|| failed(format!("{} is not a pool Box", handle.as_str())))?;
         let hosts = self
             .pool_hosts
             .as_deref()
             .ok_or_else(|| failed("this controller reaches no pool hosts"))?;
-        let machine = hosts.machine(&host).map_err(failed)?;
         Ok(Placed {
             hosts,
             machine,
@@ -159,8 +178,7 @@ impl Crabbox {
 /// Leases a VM for `req` on its host and lets the controller's key in; a failure after the
 /// warmup stops the lease.
 pub(super) fn acquire(cb: &Crabbox, req: &AcquireReq) -> Result<Acquired, DriverError> {
-    let slug = format!("moor-{}", req.box_id.get());
-    let handle = handle_of(req.provider.as_str(), &slug);
+    let handle = planned(req)?;
     let placed = cb.placed(&handle)?;
     cb.forget_targets(&handle);
     placed.done(Verb::Warmup, None)?;
@@ -294,24 +312,14 @@ pub(super) fn wake(cb: &Crabbox, handle: &BoxHandle) -> Result<(), DriverError> 
     }
 }
 
-/// The host's `moor-<id>` leases.
-pub(super) fn list(cb: &Crabbox, provider: &ProviderId) -> Result<Vec<BoxListing>, DriverError> {
-    let probe = handle_of(provider.as_str(), "moor-0");
-    let placed = cb.placed(&probe)?;
-    let leases = match placed.hosts.lease(placed.machine, Verb::List, None, None) {
-        Ok(Answer::Leases { leases }) => leases,
-        Ok(other) => return Err(unexpected(Verb::List, &other)),
-        Err(e) => return Err(failed(e)),
-    };
-    Ok(leases
-        .into_iter()
-        .filter(|l| slug_id(&l.slug).is_some())
-        .map(|l| BoxListing {
-            handle: handle_of(provider.as_str(), &l.slug),
-            provider: Some(provider.clone()),
-            asleep: l.state == "paused",
-        })
-        .collect())
+/// Not listable: one provider name can be a host of each of several users.
+pub(super) const fn list(
+    _cb: &Crabbox,
+    _provider: &ProviderId,
+) -> Result<Vec<BoxListing>, DriverError> {
+    Err(DriverError::Unsupported(
+        "a pool host's leases are not listed by provider",
+    ))
 }
 
 /// A failure saying `why`.
@@ -325,6 +333,8 @@ fn failed(why: impl Into<String>) -> DriverError {
 fn unexpected(verb: Verb, answer: &Answer) -> DriverError {
     failed(format!("the host answered {verb:?} with {answer:?}"))
 }
+
+mod links;
 
 #[cfg(test)]
 mod tests;

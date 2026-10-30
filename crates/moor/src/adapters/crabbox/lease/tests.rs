@@ -21,6 +21,7 @@ const SLUG: &str = "moor-7-ab12cd";
 
 fn req() -> AcquireReq {
     AcquireReq {
+        pool_machine: None,
         provider: ProviderId::new("pauser"),
         box_id: BoxId::new(7),
         name: BoxName::parse_allow_bare("t7").unwrap(),

@@ -10,6 +10,7 @@ use super::{FakeDriver, TunnelCall, TunnelReply};
 
 fn boxed(fake: &FakeDriver) -> BoxHandle {
     let got = fake.acquire(&AcquireReq {
+        pool_machine: None,
         provider: ProviderId::new("fake"),
         box_id: BoxId::new(1),
         name: BoxName::parse_allow_bare("t1").unwrap(),

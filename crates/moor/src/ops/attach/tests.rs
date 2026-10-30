@@ -49,6 +49,7 @@ fn ready_box(dir: &std::path::Path) -> (Cx, Vec<String>, String) {
         .unwrap();
     let got = driver
         .acquire(&AcquireReq {
+            pool_machine: None,
             provider,
             box_id: id,
             name,

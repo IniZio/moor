@@ -48,6 +48,7 @@ fn rig_on(dir: &Path, driver: FakeDriver, clock: Arc<FakeClock>) -> Rig {
     );
     let got = driver
         .acquire(&AcquireReq {
+            pool_machine: None,
             provider: ProviderId::new("p"),
             box_id: BoxId::new(1),
             name: BoxName::parse_allow_bare("demo").unwrap(),

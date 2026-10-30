@@ -86,14 +86,12 @@ fn an_offline_or_never_linked_host_is_refused() {
 }
 
 #[test]
-fn a_usable_host_is_still_refused_until_its_driver_lands() {
+fn a_usable_host_goes_on_to_acquire() {
     let w = world_on("cloudhypervisor@hv1");
     enrolled(&w, Some("cloudhypervisor"), Some(true));
-    let msg = refusal(&w);
-    assert!(
-        msg.contains("Boxes on your own host (hv1) are not supported yet"),
-        "{msg}"
-    );
+    let _ = start::run(&w.cx, &req("demo"));
+    let calls = w.driver.calls();
+    assert!(calls.iter().any(|c| c.starts_with("acquire")), "{calls:?}");
 }
 
 #[test]

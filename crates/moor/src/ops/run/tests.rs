@@ -4,8 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::boxscript::{command_line, shell_argv};
-use moor_core::domain::box_state::SetupOutcome;
-use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange};
 use moor_core::domain::session_state::{SessionInput, SessionState};
@@ -177,6 +176,7 @@ pub(in crate::ops::run) fn ready_repo(driver: FakeDriver, yaml: Option<&str>) ->
     let got = f
         .driver
         .acquire(&AcquireReq {
+            pool_machine: None,
             provider,
             box_id: f.id,
             name: BoxName::parse_allow_bare("t").unwrap(),

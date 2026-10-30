@@ -194,6 +194,7 @@ fn working_box(store: &Store, driver: &FakeDriver, name: &str) -> BoxId {
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let got = driver
         .acquire(&AcquireReq {
+            pool_machine: None,
             provider: ProviderId::new("p"),
             box_id: id,
             name: BoxName::parse_allow_bare(name).unwrap(),

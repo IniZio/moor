@@ -33,6 +33,7 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
             .run_stdout("Linux x86_64"),
     );
     d.acquire(&AcquireReq {
+        pool_machine: None,
         provider: ProviderId::new("fake"),
         box_id: BoxId::new(1),
         name: box_name("t1"),
@@ -319,6 +320,7 @@ fn a_failed_cleanup_is_named_in_the_error() {
 fn a_box_without_a_home_fails_before_delivering() {
     let d = Arc::new(FakeDriver::new().peek_text("box-1", &environ_path(), "PATH=/usr/bin\0"));
     d.acquire(&AcquireReq {
+        pool_machine: None,
         provider: ProviderId::new("fake"),
         box_id: BoxId::new(1),
         name: box_name("t1"),

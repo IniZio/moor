@@ -100,6 +100,7 @@ fn ready(cx: &Cx, n: &str) -> BoxId {
     let got = cx
         .driver()
         .acquire(&AcquireReq {
+            pool_machine: None,
             provider: ProviderId::new("p"),
             box_id: id,
             name: name(n),

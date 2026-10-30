@@ -8,11 +8,10 @@ use crate::store::{Store, StoreError};
 /// A machine of a user, as a Box pool host.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PoolHost {
+    /// Its enrolled machine id; none for a machine reached over ssh.
+    pub(crate) id: Option<i64>,
     /// The crabbox provider it offers Boxes on; none for an ordinary machine.
     pub(crate) pool: Option<String>,
-    /// Whether it was enrolled with `moor-machine-agent`, the only way the controller reaches
-    /// a pool host.
-    pub(crate) enrolled: bool,
     /// Whether its agent holds a link now.
     pub(crate) online: bool,
 }
@@ -45,8 +44,8 @@ impl Store {
                 })?,
         };
         Ok(Some(PoolHost {
+            id,
             pool: machine.pool,
-            enrolled: id.is_some(),
             online,
         }))
     }

@@ -60,6 +60,7 @@ fn fx_with(driver: FakeDriver, ready: bool) -> Fx {
     if ready {
         let got = driver
             .acquire(&AcquireReq {
+                pool_machine: None,
                 provider,
                 box_id: id,
                 name,

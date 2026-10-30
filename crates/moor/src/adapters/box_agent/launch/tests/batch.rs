@@ -33,6 +33,7 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
             .run_stdout("Linux x86_64"),
     );
     d.acquire(&AcquireReq {
+        pool_machine: None,
         provider: ProviderId::new("fake"),
         box_id: BoxId::new(1),
         name: BoxName::parse_allow_bare("t1").unwrap(),
@@ -184,6 +185,7 @@ fn the_agent_check_names_the_program_and_the_launch_path() {
 fn a_launch_with_no_environ_reports_the_home_step() {
     let d = Arc::new(FakeDriver::new().run_stdout("Linux x86_64"));
     d.acquire(&AcquireReq {
+        pool_machine: None,
         provider: ProviderId::new("fake"),
         box_id: BoxId::new(1),
         name: BoxName::parse_allow_bare("t1").unwrap(),

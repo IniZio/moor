@@ -52,6 +52,7 @@ fn session(pane: &str) -> SessionRef {
 
 fn acquire_req(provider: ProviderId, box_id: BoxId, name: BoxName) -> AcquireReq {
     AcquireReq {
+        pool_machine: None,
         provider,
         box_id,
         name,

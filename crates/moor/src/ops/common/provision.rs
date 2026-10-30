@@ -11,7 +11,7 @@ use moor_core::domain::decision::{
     BoxRepo, Decision, ExtraEvent, Field, Fields, Intent, IntentChange,
 };
 use moor_core::domain::session_state::SessionInput;
-use moor_core::seam::driver::{AcquireReq, Acquired, DriverError, Released};
+use moor_core::seam::driver::{AcquireReq, Acquired, DriverCaps, DriverError, Released};
 use moor_core::seam::rng::Rng;
 use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, ProviderId};
 
@@ -25,6 +25,7 @@ use crate::ops::common::facts::{provider_caps, provider_of, require_reverse_tunn
 use crate::ops::common::setup;
 use crate::ops::common::view::box_view;
 use crate::ops::common::{agent_install, profile_fetch};
+use crate::ops::start::pool::placement;
 use crate::store::lease::LeaseKind;
 use crate::store::{BoxRow, Store};
 
@@ -174,14 +175,7 @@ pub(crate) fn provision(
     } else {
         store.apply(requested)?;
     }
-    let req = AcquireReq {
-        cache: cache::for_start(cx, store, &started, cfg, &provider, caps),
-        provider,
-        box_id: id,
-        name: started.name,
-        class: Some(cfg.size.value.as_str().to_owned()),
-        nonce: nonce(cx.rng()),
-    };
+    let req = acquire_req(cx, store, &started, cfg, provider, caps)?;
     // The record exists before the Box does; a failed acquire leaves it `planned`.
     let planned = cx.driver().planned_handle(&req);
     let root = store.plan_lease(id, LeaseKind::BoxRoot, planned.as_str())?;
@@ -197,6 +191,26 @@ pub(crate) fn provision(
         }
         Err(e) => Err(failed(cx, store, id, entry, &req, e)),
     }
+}
+
+/// What the driver is asked for `started` on `provider`.
+fn acquire_req(
+    cx: &Cx,
+    store: &Store,
+    started: &BoxRow,
+    cfg: &BoxSettings,
+    provider: ProviderId,
+    caps: DriverCaps,
+) -> Result<AcquireReq, CommandError> {
+    Ok(AcquireReq {
+        pool_machine: placement(store, started.user, provider.as_str())?,
+        cache: cache::for_start(cx, store, started, cfg, &provider, caps),
+        provider,
+        box_id: started.id,
+        name: started.name.clone(),
+        class: Some(cfg.size.value.as_str().to_owned()),
+        nonce: nonce(cx.rng()),
+    })
 }
 
 /// Six lowercase hex chars drawn from the RNG, so each attempt differs.

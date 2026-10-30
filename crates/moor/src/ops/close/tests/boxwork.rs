@@ -202,6 +202,7 @@ fn fx_setup_failed() -> Fx {
         .unwrap();
     let got = driver
         .acquire(&AcquireReq {
+            pool_machine: None,
             provider,
             box_id: id,
             name: BoxName::parse_allow_bare("t").unwrap(),
