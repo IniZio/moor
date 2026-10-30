@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::name::ProfileSource;
 use crate::request::SecretValue;
 use crate::user::{Email, Identity, SecretName, UserId};
 
@@ -46,6 +47,13 @@ pub struct McpChangeValue {
     /// The address to open to sign in, when the server asked for OAuth.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sign_in: Option<String>,
+}
+
+/// Value of `profile-set`, `profile-show` and `profile-remove`: the profile repo now recorded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProfileValue {
+    /// The repo and ref, or `None` when none is set.
+    pub source: Option<ProfileSource>,
 }
 
 /// One of a user's machines as `machine-list` shows it.

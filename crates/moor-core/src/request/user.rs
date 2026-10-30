@@ -6,11 +6,12 @@ use std::fmt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::{MachineAddReq, MachineEnrollReq, MachineRemoveReq, Request, StartReq};
+use crate::name::ProfileSource;
 use crate::secret::Secret;
 use crate::user::{Email, Identity, SecretName};
 
 mod mcp;
-pub use mcp::{McpAddReq, McpOAuthFinishReq, McpRemoveReq};
+pub use mcp::{McpAddReq, McpOAuthFinishReq, McpRemoveReq, ProfileSetReq};
 
 /// Arguments of a user request that needs only the identity it acts as.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -184,6 +185,15 @@ pub enum UserCmd {
     },
     /// The caller's user's MCP servers.
     McpList,
+    /// Record the caller's user's agent profile repo, replacing any earlier one.
+    ProfileSet {
+        /// The repo, and the ref to read it at.
+        source: ProfileSource,
+    },
+    /// The caller's user's agent profile repo.
+    ProfileShow,
+    /// Clear the caller's user's agent profile repo.
+    ProfileRemove,
     /// Finish signing in to one of the caller's user's MCP servers.
     McpOAuthFinish {
         /// The `state` the sign-in started with.
@@ -249,6 +259,9 @@ impl UserCmd {
             Self::McpRemove { .. } => "mcp-remove",
             Self::McpList => "mcp-list",
             Self::McpOAuthFinish { .. } => "mcp-oauth-finish",
+            Self::ProfileSet { .. } => "profile-set",
+            Self::ProfileShow => "profile-show",
+            Self::ProfileRemove => "profile-remove",
             Self::MachineEnroll { .. } => "machine-enroll",
             Self::MachineAdd { .. } => "machine-add",
             Self::MachineRemove { .. } => "machine-remove",
@@ -290,6 +303,9 @@ impl Request {
             ),
             Self::McpRemove(r) => (r.identity, UserCmd::McpRemove { name: r.name }),
             Self::McpList(r) => (r.identity, UserCmd::McpList),
+            Self::ProfileSet(r) => (r.identity, UserCmd::ProfileSet { source: r.source }),
+            Self::ProfileShow(r) => (r.identity, UserCmd::ProfileShow),
+            Self::ProfileRemove(r) => (r.identity, UserCmd::ProfileRemove),
             Self::McpOAuthFinish(r) => (
                 r.identity,
                 UserCmd::McpOAuthFinish {
@@ -358,6 +374,9 @@ impl Request {
             | Self::Enroll(EnrollReq { identity, .. })
             | Self::SecretNames(AsReq { identity })
             | Self::McpList(AsReq { identity })
+            | Self::ProfileShow(AsReq { identity })
+            | Self::ProfileRemove(AsReq { identity })
+            | Self::ProfileSet(ProfileSetReq { identity, .. })
             | Self::MachineList(AsReq { identity })
             | Self::MachineAdd(MachineAddReq { identity, .. })
             | Self::MachineRemove(MachineRemoveReq { identity, .. })

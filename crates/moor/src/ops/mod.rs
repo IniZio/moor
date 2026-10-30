@@ -48,6 +48,7 @@ mod tests;
 const RAW_BYTES: &str = "artifact-read sends raw bytes, so only the controller socket serves it";
 
 /// Route a request to its op.
+#[expect(clippy::too_many_lines, reason = "one arm per request kind")]
 pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, CommandError> {
     match req {
         Request::Version {} => version_value(),
@@ -67,6 +68,9 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         | Request::McpAdd(_)
         | Request::McpRemove(_)
         | Request::McpList(_)
+        | Request::ProfileSet(_)
+        | Request::ProfileShow(_)
+        | Request::ProfileRemove(_)
         | Request::McpOAuthFinish(_)
         | Request::MachineAdd(_)
         | Request::MachineRemove(_)

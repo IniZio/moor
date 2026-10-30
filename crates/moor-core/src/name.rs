@@ -301,6 +301,8 @@ impl Sha {
 
 mod forge;
 pub use forge::{ForgeRepo, GitAuthor, RepoNameError};
+mod profile_source;
+pub use profile_source::{ProfileSource, ProfileSourceError};
 
 #[cfg(test)]
 mod tests;

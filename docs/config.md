@@ -130,6 +130,31 @@ oauth:
       client_secret: "..."   # optional; users never see it
 ```
 
+### Per-user agent profile
+
+A teammate can name a GitHub repo as their agent profile:
+
+```sh
+moor user profile set https://github.com/alice/agent-profile       # tracks the default branch
+moor user profile set https://github.com/alice/agent-profile#v2    # a branch, tag or sha
+moor user profile show
+moor user profile rm
+```
+
+Only `https://github.com/OWNER/NAME` addresses are accepted. moor stores the
+address and the ref, never a credential; the repo is read with the user's own
+`github` secret. The repo may hold:
+
+```
+moor-profile.yaml        # model, plugin marketplaces and plugins per agent
+AGENTS.md                # agent-neutral instructions
+skills/<name>/SKILL.md   # Agent Skills
+claude/settings.json     # merged into ~/.claude/settings.json
+codex/config.toml        # merged into ~/.codex/config.toml
+```
+
+Each new Box reads the profile when it starts.
+
 ### Per-user machines
 
 A teammate can register machines of their own, with labels. An example is a

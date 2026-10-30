@@ -19,8 +19,8 @@ use super::fronts::{ask, refused};
 pub(super) fn nameless(kind: &str) -> Option<Value> {
     Some(match kind {
         "start-needs" | "env" | "repos" | "whoami" | "enroll" | "secret-names" | "version"
-        | "proxy-lease" | "proxy-status" | "mcp-list" | "machine-list" | "machine-targets"
-        | "machine-keys" => json!({"cmd": kind}),
+        | "proxy-lease" | "proxy-status" | "mcp-list" | "profile-show" | "profile-remove"
+        | "machine-list" | "machine-targets" | "machine-keys" => json!({"cmd": kind}),
         "machine-links" => json!({"cmd": kind, "links": []}),
         "proxy-release" => json!({"cmd": kind, "token": "t"}),
         "session-binding" => json!({"cmd": kind, "front": "slack", "key": "k"}),
@@ -28,6 +28,7 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
         "secret-set" => json!({"cmd": kind, "name": "n", "value": "v"}),
         "secret-delete" | "mcp-remove" | "machine-remove" => json!({"cmd": kind, "name": "n"}),
         "machine-enroll" => json!({"cmd": kind, "name": "n", "pubkey": "k"}),
+        "profile-set" => json!({"cmd": kind, "source": "https://github.com/alice/agent"}),
         "mcp-add" => json!({"cmd": kind, "name": "n", "url": "https://example.com/mcp"}),
         "machine-add" => json!({"cmd": kind, "name": "n", "ssh": "u@h"}),
         "mcp-oauth-finish" => json!({"cmd": kind, "state": "s", "code": "c"}),

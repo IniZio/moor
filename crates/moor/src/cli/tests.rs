@@ -322,6 +322,12 @@ fn user_verbs_assert_no_identity_so_the_socket_supplies_local() {
         (&["user", "enroll"][..], "enroll"),
         (&["user", "secret", "rm", "claude"][..], "secret-delete"),
         (&["user", "secret", "ls"][..], "secret-names"),
+        (
+            &["user", "profile", "set", "https://github.com/alice/agent"][..],
+            "profile-set",
+        ),
+        (&["user", "profile", "show"][..], "profile-show"),
+        (&["user", "profile", "rm"][..], "profile-remove"),
     ] {
         let req = parsed_request(args);
         assert_eq!(req.cmd(), cmd);
@@ -343,4 +349,20 @@ fn secret_set_takes_only_a_name_and_reads_the_value_from_stdin() {
         unreachable!("expected secret-set")
     };
     assert_eq!(value.secret().expose(), b"tok");
+}
+
+#[test]
+fn profile_set_takes_a_github_url_with_an_optional_ref() {
+    let req = parsed_request(&[
+        "user",
+        "profile",
+        "set",
+        "https://github.com/alice/agent.git#v2",
+    ]);
+    let Ok((None, moor_core::request::UserCmd::ProfileSet { source })) = req.into_user() else {
+        unreachable!("expected profile-set")
+    };
+    assert_eq!(source.to_string(), "https://github.com/alice/agent#v2");
+    let o = done(&["user", "profile", "set", "https://gitlab.com/alice/agent"]);
+    assert_eq!(o.code, 2, "{}", o.stdout);
 }

@@ -13,8 +13,10 @@ use crate::vault::Vault;
 
 mod machine;
 pub(crate) mod mcp;
+mod profile;
 
 /// Run `cmd` as `who`.
+#[expect(clippy::too_many_lines, reason = "one arm per user command")]
 pub(crate) fn run(
     cx: &Cx,
     vault: &Vault,
@@ -61,6 +63,9 @@ pub(crate) fn run(
         UserCmd::McpRemove { name } => mcp::remove(store, enrolled(store, who)?, name),
         UserCmd::McpOAuthFinish { .. } => mcp::oauth::finish(cx, vault, enrolled(store, who)?, cmd),
         UserCmd::McpList => mcp::list(store, enrolled(store, who)?),
+        UserCmd::ProfileSet { source } => profile::set(store, enrolled(store, who)?, source),
+        UserCmd::ProfileShow => profile::show(store, enrolled(store, who)?),
+        UserCmd::ProfileRemove => profile::remove(store, enrolled(store, who)?),
         UserCmd::MachineEnroll {
             email,
             name,
