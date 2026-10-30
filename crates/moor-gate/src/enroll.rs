@@ -1,4 +1,4 @@
-//! `POST /machines/enroll`: a machine agent trades its owner's id token for a machine id.
+//! `POST /machines/enroll`: a machine agent trades its owner's access token for a machine id.
 
 use std::io::Read;
 use std::net::TcpStream;
@@ -19,8 +19,8 @@ const BODY_MAX: usize = 16 * 1024;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Enrollment {
-    /// The owner's OIDC id token for the gate's client.
-    id_token: String,
+    /// The owner's access token for the gate's client, as `/front` takes it.
+    access_token: String,
     /// The agent's ed25519 public key as an OpenSSH line.
     pubkey: String,
     /// The machine's name.
@@ -47,7 +47,7 @@ pub(crate) fn handle(mut stream: TcpStream, leftover: Vec<u8>, length: Option<us
     respond(&mut stream, status, "application/json", &body.to_string());
 }
 
-/// Reads the body, verifies its id token, and enrolls the machine as that token's person.
+/// Reads the body, verifies its access token, and enrolls the machine as that token's person.
 fn enroll(
     stream: &mut TcpStream,
     mut body: Vec<u8>,
@@ -74,7 +74,7 @@ fn enroll(
     })?;
     let person = gate
         .verifier
-        .verify_id_token(&got.id_token)
+        .verify(&got.access_token)
         .map_err(|why| ("401 Unauthorized", why))?;
     let request = Request::MachineEnroll(MachineEnrollReq {
         identity: None,

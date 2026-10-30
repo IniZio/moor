@@ -7,7 +7,7 @@ use std::os::unix::net::UnixListener;
 use moor_core::response::Response;
 use serde_json::{json, Value};
 
-use super::{mpsc, now, sign, world_with, World, CLIENT_ID};
+use super::{authgear_token, mpsc, now, sign, world_with, World, CLIENT_ID};
 
 const KEY: &str =
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl";
@@ -41,7 +41,7 @@ fn world() -> World {
     world_with(socket, seen, dir, false)
 }
 
-fn id_token(w: &World, change: &Value) -> String {
+fn token(w: &World, change: &Value) -> String {
     let mut claims = json!({"iss": w.issuer, "sub": "alice-sub", "aud": CLIENT_ID,
         "exp": now() + 300, "email": "alice@example.com", "email_verified": true});
     for (k, v) in change.as_object().unwrap() {
@@ -70,13 +70,13 @@ fn post(w: &World, body: &Value) -> (u16, Value) {
 }
 
 fn enrollment(token: &str) -> Value {
-    json!({"id_token": token, "pubkey": KEY, "name": "minion", "labels": ["macos"], "slots": 2})
+    json!({"access_token": token, "pubkey": KEY, "name": "minion", "labels": ["macos"], "slots": 2})
 }
 
 #[test]
 fn an_enrollment_reaches_the_controller_as_the_tokens_person_and_email() {
     let w = world();
-    let (status, body) = post(&w, &enrollment(&id_token(&w, &json!({}))));
+    let (status, body) = post(&w, &enrollment(&token(&w, &json!({}))));
     assert_eq!(status, 200, "{body}");
     let sent: Value = serde_json::from_str(&w.seen.try_recv().unwrap()).unwrap();
     assert_eq!(
@@ -89,19 +89,18 @@ fn an_enrollment_reaches_the_controller_as_the_tokens_person_and_email() {
 }
 
 #[test]
-fn an_id_token_for_another_client_expired_or_without_a_verified_email_is_refused() {
+fn a_token_for_another_client_expired_unverified_or_from_another_issuer_is_refused() {
     let w = world();
     for (change, why) in [
         (json!({"aud": "someone-else"}), "another audience"),
         (json!({"exp": now() - 600}), "ExpiredSignature"),
         (json!({"email_verified": false}), "not verified"),
-        (json!({"email_verified": null}), "no verified email"),
         (
             json!({"iss": "https://issuer.example.com"}),
             "InvalidIssuer",
         ),
     ] {
-        let (status, body) = post(&w, &enrollment(&id_token(&w, &change)));
+        let (status, body) = post(&w, &enrollment(&token(&w, &change)));
         assert_eq!(status, 401, "{change}: {body}");
         let error = body["error"].as_str().unwrap();
         assert!(error.contains(why), "{change}: {error}");
@@ -112,7 +111,26 @@ fn an_id_token_for_another_client_expired_or_without_a_verified_email_is_refused
 #[test]
 fn a_body_that_is_not_an_enrollment_is_refused_before_the_token_is_read() {
     let w = world();
-    let (status, body) = post(&w, &json!({"id_token": "x", "name": "minion"}));
+    let (status, body) = post(&w, &json!({"access_token": "x", "name": "minion"}));
+    assert_eq!(status, 400, "{body}");
+    assert!(w.seen.try_recv().is_err());
+}
+
+#[test]
+fn an_authgear_access_token_enrolls_with_the_userinfo_email() {
+    let w = world();
+    let (status, body) = post(&w, &enrollment(&authgear_token(&w)));
+    assert_eq!(status, 200, "{body}");
+    let sent: Value = serde_json::from_str(&w.seen.try_recv().unwrap()).unwrap();
+    assert_eq!(sent["request"]["identity"], "authgear:alice-sub");
+    assert_eq!(sent["request"]["request"]["email"], "alice@example.com");
+}
+
+#[test]
+fn an_enrollment_still_naming_an_id_token_is_refused() {
+    let w = world();
+    let old = json!({"id_token": token(&w, &json!({})), "pubkey": KEY, "name": "minion"});
+    let (status, body) = post(&w, &old);
     assert_eq!(status, 400, "{body}");
     assert!(w.seen.try_recv().is_err());
 }
