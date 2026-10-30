@@ -14,6 +14,8 @@ pub enum ProfileStep {
     Fetch,
     /// Installing a piece of the profile in the Box at launch.
     Install,
+    /// Running the profile's own `setup.sh` in the Box.
+    Setup,
 }
 
 /// The profile resolved to a commit, or a step of getting it into the Box failed.

@@ -1,8 +1,9 @@
 //! Checks the requester's agent profile out in the Box, at the commit resolved at start.
 
+use std::path::Path;
 use std::time::Duration;
 
-use moor_core::boxscript::profile::{fetch_script, FAILURES_FILE};
+use moor_core::boxscript::profile::{fetch_script, setup_script, FAILURES_FILE};
 use moor_core::config::BoxSettings;
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::event::ProfileStep;
@@ -16,13 +17,17 @@ use crate::ops::common::activity::session_ref;
 use crate::ops::common::agent_install;
 use crate::ops::common::box_exec::{BoxProxy, Site};
 use crate::ops::common::dotfiles::{private_log, tail};
+use crate::ops::common::setup::log_dir;
 use crate::store::{BoxRow, Store};
 
 /// Wall-clock allowance for the shallow fetch.
 const FETCH_DEADLINE: Duration = Duration::from_mins(2);
 
-/// Fetches the profile Box `id` resolved, if any, through its Proxy; a failure is recorded and
-/// warned, never returned.
+/// Wall-clock allowance for the profile's own `setup.sh`.
+const SETUP_DEADLINE: Duration = agent_install::INSTALL_DEADLINE;
+
+/// Fetches the profile Box `id` resolved, if any, through its Proxy, then runs its `setup.sh`;
+/// a failure is recorded and warned, never returned.
 ///
 /// # Errors
 /// [`CommandError`] when the store cannot be read or written.
@@ -48,34 +53,49 @@ pub(crate) fn apply(
         workdir: None,
     };
     let script = fetch_script(&url, profile.sha.as_str());
-    match run(cx, &site, cfg, proxy, script, id) {
+    let fetch_log = cx
+        .state_dir()
+        .map(|d| d.join("profile-fetch").join(format!("{}.log", id.get())));
+    let fetched = fetch_log
+        .map_err(|e| e.error.to_string())
+        .and_then(|log| run(cx, &site, (cfg, proxy), (script, &log), FETCH_DEADLINE));
+    if let Err(detail) = fetched {
+        return failed(cx, store, id, ProfileStep::Fetch, detail);
+    }
+    let setup_log = cx
+        .state_dir()
+        .map(|d| log_dir(d, id).join("profile-setup.log"))
+        .map_err(|e| e.error.to_string());
+    match setup_log.and_then(|log| {
+        run(
+            cx,
+            &site,
+            (cfg, proxy),
+            (setup_script(), &log),
+            SETUP_DEADLINE,
+        )
+    }) {
         Ok(()) => Ok(()),
-        Err(detail) => failed(cx, store, id, ProfileStep::Fetch, detail),
+        Err(detail) => failed(cx, store, id, ProfileStep::Setup, detail),
     }
 }
 
-/// Runs the fetch `script` in the Box, logging under the state dir; the error says why it failed.
+/// Runs `script` in the Box, logging to `log`; the error says why it failed.
 fn run(
     cx: &Cx,
     site: &Site<'_>,
-    cfg: &BoxSettings,
-    proxy: Option<&BoxProxy>,
-    script: String,
-    id: BoxId,
+    (cfg, proxy): (&BoxSettings, Option<&BoxProxy>),
+    (script, log): (String, &Path),
+    deadline: Duration,
 ) -> Result<(), String> {
-    let log = cx
-        .state_dir()
-        .map_err(|e| e.error.to_string())?
-        .join("profile-fetch")
-        .join(format!("{}.log", id.get()));
-    private_log(&log).map_err(|e| format!("could not create the fetch log: {e}"))?;
-    let reason = match agent_install::run(cx, site, cfg, proxy, script, &log, FETCH_DEADLINE) {
+    private_log(log).map_err(|e| format!("could not create the log: {e}"))?;
+    let reason = match agent_install::run(cx, site, cfg, proxy, script, log, deadline) {
         Ok(ExecOutcome::Exited { code: 0 }) => return Ok(()),
         Ok(ExecOutcome::Exited { code }) => format!("exit {code}"),
         Ok(ExecOutcome::Interrupted) => "interrupted".to_owned(),
         Err(e) => e,
     };
-    let logged = std::fs::read_to_string(&log)
+    let logged = std::fs::read_to_string(log)
         .map(|s| tail(&s))
         .unwrap_or_default();
     Err(if logged.is_empty() {
@@ -101,8 +121,9 @@ pub(crate) fn failed(
         ProfileStep::Manifest => "has a bad manifest or marketplace",
         ProfileStep::Fetch => "could not be fetched into the Box",
         ProfileStep::Install => "was only partly installed",
+        ProfileStep::Setup => "had a setup.sh that did not finish",
     };
-    let after = if step == ProfileStep::Install {
+    let after = if matches!(step, ProfileStep::Install | ProfileStep::Setup) {
         "the agent runs without that part"
     } else {
         "the Box starts without it"

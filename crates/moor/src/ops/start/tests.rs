@@ -42,6 +42,7 @@ mod parent;
 mod profile;
 mod profile_install;
 mod profile_model;
+mod profile_setup;
 mod progress;
 mod prompt_watch;
 mod promptless;

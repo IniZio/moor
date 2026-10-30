@@ -40,7 +40,12 @@ pub(super) fn world_answering(at: Option<&str>, sha: &str, manifest: Option<&str
     answering(FakeDriver::new(), at, sha, manifest)
 }
 
-fn answering(driver: FakeDriver, at: Option<&str>, sha: &str, manifest: Option<&str>) -> World {
+pub(super) fn answering(
+    driver: FakeDriver,
+    at: Option<&str>,
+    sha: &str,
+    manifest: Option<&str>,
+) -> World {
     let mut w = world(driver);
     let forge = FakeForge::new().with_file(
         profile_repo(),
@@ -224,7 +229,7 @@ fn fetches(w: &World) -> Vec<String> {
         .execs()
         .into_iter()
         .map(|(_, spec, _)| spec.argv.join(" "))
-        .filter(|argv| argv.contains(".moor-profile/person"))
+        .filter(|argv| argv.contains("git fetch"))
         .collect()
 }
 
