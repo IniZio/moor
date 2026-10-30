@@ -7,7 +7,8 @@ use super::*;
 use crate::adapters::box_agent::launch::AGENT_PATH_LINE;
 use crate::adapters::box_agent::profile_writer::FAILURES_FILE;
 
-const MANIFEST: &str = "claude:\n  marketplaces:\n    m: https://github.com/acme/market\n  plugins:\n    - p@m\n";
+const MANIFEST: &str =
+    "claude:\n  marketplaces:\n    m: https://github.com/acme/market\n  plugins:\n    - p@m\n";
 
 fn launched(req: impl FnOnce(&FakeSurface) -> LaunchReq) -> String {
     let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
@@ -16,7 +17,7 @@ fn launched(req: impl FnOnce(&FakeSurface) -> LaunchReq) -> String {
 }
 
 fn at(script: &str, needle: &str) -> usize {
-    script.find(needle).unwrap_or_else(|| panic!("{needle} missing from {script}"))
+    script.find(needle).expect(needle)
 }
 
 #[test]
@@ -34,8 +35,14 @@ fn the_profile_writers_run_after_the_path_and_proxy_and_before_the_agent() {
     let kept = at(&script, &format!("mv '/work/box-1/{FAILURES_FILE}.all'"));
     let agent = script.rfind("'claude'").unwrap();
     assert!(kept < agent && codex < kept, "{script}");
-    assert!(starting < path && path < proxy && proxy < truncate, "{script}");
-    assert!(truncate < claude && claude < codex && codex < agent, "{script}");
+    assert!(
+        starting < path && path < proxy && proxy < truncate,
+        "{script}"
+    );
+    assert!(
+        truncate < claude && claude < codex && codex < agent,
+        "{script}"
+    );
 }
 
 #[test]

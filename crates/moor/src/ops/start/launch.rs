@@ -125,7 +125,10 @@ pub(super) fn with_profile(
     });
     let flag = cfg.model.as_ref().filter(|m| m.source == Layer::Flag);
     let config = cfg.model.as_ref().filter(|m| m.source != Layer::Flag);
-    let profile = launch.profile.as_ref().and_then(|m| m.claude.model.as_deref());
+    let profile = launch
+        .profile
+        .as_ref()
+        .and_then(|m| m.claude.model.as_deref());
     launch.model = moor_core::profile::model(
         flag.map(|m| m.value.as_str()),
         profile,
