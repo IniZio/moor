@@ -101,7 +101,7 @@ fn held(store: &Store, user: UserId) -> Result<BTreeSet<SecretName>, CommandErro
 /// The MCP servers a Box started by `user` gets: the shared ones merged with the user's own,
 /// less any whose key the user lacks. A Box with no user gets the shared ones it can resolve.
 pub(crate) fn for_box(cx: &Cx, user: Option<UserId>) -> Result<BoxMcp, CommandError> {
-    let shared = &cx.config().mcp_servers;
+    let shared = &cx.config().shared_mcp();
     let Some(user) = user else {
         return Ok(box_mcp(shared, (&[], &BTreeSet::new()), &BTreeSet::new()));
     };

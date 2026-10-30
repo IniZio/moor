@@ -170,6 +170,9 @@ Box that holds no machine at that moment. `upstream` must be a loopback address
 and port, or moor refuses the config. Without `machines.service`, `host` is a
 host like any other.
 
+Every Box's agent also gets the service as the MCP server `machine`, at
+`http://<host>/mcp`. An entry named `machine` in `mcp_servers` replaces it.
+
 ### Sync excludes
 
 `machines.sync` in the user config and `machine.sync` in `.moor.yaml` name what

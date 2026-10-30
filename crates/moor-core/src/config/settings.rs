@@ -164,7 +164,7 @@ impl BoxSettings {
             size,
             credentials: plan_credentials(user, r),
             box_credentials: r.box_credentials.clone(),
-            mcp: user.mcp_servers.clone(),
+            mcp: user.shared_mcp(),
             dotfiles: user.dotfiles.clone(),
             setup: r.setup.clone(),
             teardown: r.teardown.clone(),
