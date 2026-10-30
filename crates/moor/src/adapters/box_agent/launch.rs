@@ -6,17 +6,17 @@ use moor_core::boxscript::{command_line, quote};
 use moor_core::exec_env::ExecEnv;
 use moor_core::name::{BoxPath, NameError};
 use moor_core::seam::agent_adapter::{AgentAdapter, BoxSetup, LaunchCtx, ProxyAddr};
-use moor_core::seam::driver::{BoxStep, Driver, ExecOutcome, ExecSpec, StepDone};
+use moor_core::seam::driver::{BoxStep, Driver, ExecOutcome, ExecSpec};
 use moor_core::seam::engine::{EngineError, LaunchNotice, LaunchReq, SessionRef};
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::seam::surface::{PaneCmd, PaneRef, Surface};
 
-use self::install::StepResult;
+use self::environ::{box_user, home_in};
 use self::steps::Plan;
 use super::agent_env;
-use super::profile_writer::FAILURES_FILE;
 use super::gh_release::GhRelease;
 use super::probe::HOOK_FILE;
+use super::profile_writer::FAILURES_FILE;
 use super::proxy_env;
 
 /// Where the brief lands, relative to the Box workdir.
@@ -131,30 +131,6 @@ pub(super) fn dirs(d: &dyn Driver, req: &LaunchReq) -> Result<(BoxPath, BoxPath)
         Err(e) => return Err(failed(fail("home", &e))),
     };
     dirs_in(&home_in(&text).map_err(failed)?, req).map_err(failed)
-}
-
-/// The Box user's home, and whether that user is root, read from the environment of a process on
-/// the Box.
-fn box_user(peeked: Option<StepResult>) -> Result<(BoxPath, bool), Failure> {
-    let text = match peeked {
-        Some(Ok(StepDone::Peeked(Some(text)))) => text,
-        Some(Err(e)) => return Err(fail("home", &e)),
-        _ => return Err(fail("home", &"the Box has no process environment")),
-    };
-    Ok((home_in(&text)?, environ_var(&text, "USER") == Some("root")))
-}
-
-/// The value of `name` in NUL-separated process environment `text`.
-fn environ_var<'a>(text: &'a str, name: &str) -> Option<&'a str> {
-    let prefix = format!("{name}=");
-    text.split('\0').find_map(|kv| kv.strip_prefix(&prefix))
-}
-
-/// The Box user's home from NUL-separated process environment `text`.
-fn home_in(text: &str) -> Result<BoxPath, Failure> {
-    let home = environ_var(text, "HOME")
-        .ok_or_else(|| fail("home", &"the Box user has no home directory"))?;
-    BoxPath::restore(home).map_err(|e| fail("home", &e))
 }
 
 /// Looks the Box user up, and reads the Box platform when the launch has a forge Proxy, in one batch.
@@ -390,6 +366,7 @@ fn remove_cred(
 }
 
 pub(super) mod detach;
+mod environ;
 mod gh;
 mod install;
 mod steps;
