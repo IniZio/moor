@@ -1,11 +1,8 @@
 //! Running a hook or one of the runner's own scripts on a machine, over ssh or its agent link.
 
-use moor_core::box_key::BoxKey;
-use moor_core::BoxId;
+use moor_client::link::ops::{self, Hook, Op};
 
-use moor_client::link::ops::{Hook, Op};
-
-use super::{state_prelude, succeeded, Hooks};
+use super::{succeeded, Hooks};
 use crate::caller::Reach;
 use crate::exec::{self, ExecOutput};
 use crate::link::{self, Answer};
@@ -36,9 +33,7 @@ impl Hooks {
                 let Some(command) = command else {
                     return Ok(None);
                 };
-                let dir = BoxKey::new(BoxId::new(id)).machine_dir();
-                let prelude = state_prelude(id);
-                let body = format!("{prelude}mkdir -p ~/{dir} && cd ~/{dir} && {command}");
+                let body = ops::in_box(id, &command);
                 let out = exec::run(ssh, &exec::script(env, &body), self.timeout)
                     .await
                     .map_err(|e| format!("could not run ssh: {e}"))?;

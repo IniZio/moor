@@ -237,13 +237,16 @@ pub fn script(env: &[(String, String)], body: &str) -> String {
 
 /// `body` run in Box `id`'s dir under the home, with a state dir of its own and a `TMPDIR` in
 /// it, so what the Box's tools write there goes with the Box.
+///
+/// `body` starts its own line: after `cd ... &&`, a trailing `&` in it would background the `cd`
+/// too, in a subshell that keeps ssh's output open for as long as the job runs.
 #[must_use]
 pub fn in_box(id: i64, body: &str) -> String {
     let key = BoxKey::new(BoxId::new(id));
     let (dir, state) = (key.machine_dir(), key.machine_state_dir());
     format!(
         "export MOOR_STATE_DIR=\"$HOME/{state}\"; export TMPDIR=\"$MOOR_STATE_DIR/tmp\"; \
-         mkdir -p \"$TMPDIR\" || exit 1; mkdir -p ~/{dir} && cd ~/{dir} && {body}"
+         mkdir -p \"$TMPDIR\" || exit 1; mkdir -p ~/{dir} && cd ~/{dir} || exit 1\n{body}"
     )
 }
 
@@ -353,3 +356,6 @@ const fn has_single_quote(s: &str) -> bool {
     }
     false
 }
+
+#[cfg(test)]
+mod tests;

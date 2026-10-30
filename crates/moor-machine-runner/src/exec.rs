@@ -214,8 +214,7 @@ pub(crate) async fn on_machine(
     let env = crate::hooks::fact_env(facts);
     let machine_id = match &caller.reach {
         Reach::Ssh { ssh } => {
-            let prelude = crate::hooks::state_prelude(caller.box_id.get());
-            let body = format!("{prelude}cd ~/{} && {command}", caller.remote_dir());
+            let body = ops::in_box(caller.box_id.get(), command);
             return run(ssh, &script(&env, &body), timeout)
                 .await
                 .map_err(|e| format!("could not run ssh: {e}"));
