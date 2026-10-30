@@ -14,6 +14,7 @@ mod mirror;
 mod parse;
 mod peek;
 mod pin;
+mod pool;
 mod progress;
 mod put;
 mod retry;
@@ -44,8 +45,9 @@ use moor_core::seam::proc::{Deadline, Proc, ProcOutput, ProcSpec, Tool};
 use moor_core::seam::rng::Rng;
 
 use caps::size_of;
-use errors::{map_error, unreadable, Op};
+use errors::{map_error, Op};
 use handle::{handle_of, slug, split_handle, static_env, target_args};
+pub(crate) use pool::PoolHosts;
 
 /// Time allowed for a warmup.
 const ACQUIRE_DEADLINE: Duration = Duration::from_mins(15);
@@ -90,6 +92,8 @@ pub(crate) struct Crabbox {
     links: Option<link::Dirs>,
     /// `<state>/leases`, which holds each lease's dir; none when moor keeps no state.
     leases: Option<PathBuf>,
+    /// How pool hosts are reached; none when this controller reaches none.
+    pool_hosts: Option<Arc<dyn PoolHosts>>,
     /// Keeps a test driver's state dir alive.
     #[cfg(test)]
     scratch: Option<Arc<tempfile::TempDir>>,
@@ -111,6 +115,7 @@ impl Crabbox {
             targets: Mutex::new(HashMap::new()),
             links: None,
             leases: None,
+            pool_hosts: None,
             #[cfg(test)]
             scratch: None,
         }
@@ -185,6 +190,9 @@ impl Crabbox {
 
 impl Driver for Crabbox {
     fn caps(&self, provider: &ProviderId) -> Result<DriverCaps, DriverError> {
+        if pool::is_pool_provider(provider) {
+            return Ok(pool::CAPS);
+        }
         self.require_version()?;
         let spec = Self::spec(QUICK_DEADLINE).args(["providers", "--json", "--configured"]);
         let out = self.call(Op::Caps, None, &spec)?;
@@ -208,21 +216,7 @@ impl Driver for Crabbox {
     }
 
     fn release(&self, handle: &BoxHandle) -> Result<Released, DriverError> {
-        self.require_version()?;
-        let spec = Self::spec(QUICK_DEADLINE)
-            .arg("stop")
-            .args(target_args(handle))
-            .arg("--delete");
-        let spec = self.at_lease(spec, handle)?;
-        let result = self.call(Op::Release, split_handle(handle).0, &spec);
-        self.forget_targets(handle);
-        let released = match result {
-            Ok(_) => Released::Deleted,
-            Err(DriverError::NotFound) => Released::AlreadyGone,
-            Err(e) => return Err(e),
-        };
-        self.drop_lease_dir(handle);
-        Ok(released)
+        self.stop(handle)
     }
 
     fn manual_release(&self, handle: &BoxHandle) -> Option<String> {
@@ -230,22 +224,7 @@ impl Driver for Crabbox {
     }
 
     fn list(&self, provider: &ProviderId) -> Result<Vec<BoxListing>, DriverError> {
-        self.require_version()?;
-        let p = provider.as_str();
-        if p == STATIC_PROVIDER {
-            return Err(DriverError::Unsupported("box provider has no inventory"));
-        }
-        let spec = Self::spec(LIST_DEADLINE).args(["list", "--provider", p, "--json"]);
-        let out = self.call(Op::List, None, &spec)?;
-        let items = parse::parse_list(&out.stdout).map_err(|_| unreadable("list"))?;
-        Ok(items
-            .into_iter()
-            .map(|i| BoxListing {
-                handle: handle_of(p, &i.name),
-                provider: Some(provider.clone()),
-                asleep: i.asleep,
-            })
-            .collect())
+        self.inventory(provider)
     }
 
     /// Refused: only crabbox's warmup reports where a Box's workdir is, and moor never

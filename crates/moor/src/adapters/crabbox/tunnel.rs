@@ -63,6 +63,9 @@ pub(super) fn reverse_tunnel(
     box_port: u16,
     socket: &Path,
 ) -> Result<Box<dyn TunnelHandle>, DriverError> {
+    if super::pool::is_pool(handle) {
+        return Err(DriverError::Unsupported("a pool Box has no tunnel yet"));
+    }
     let mut forward = OsString::from(format!("{box_port}:"));
     forward.push(socket);
     let spec = cb.at_lease(
@@ -84,6 +87,9 @@ pub(super) fn local_tunnel(
     handle: &BoxHandle,
     box_port: u16,
 ) -> Result<LocalTunnel, DriverError> {
+    if super::pool::is_pool(handle) {
+        return Err(DriverError::Unsupported("a pool Box has no tunnel yet"));
+    }
     let spec = cb.at_lease(
         Crabbox::spec(TUNNEL_READY_DEADLINE)
             .arg("tunnel")

@@ -19,6 +19,9 @@ const NO_PROVIDER: &str = "the box has no known provider, so moor cannot tell ho
 
 /// Sleeps the Box as its provider's facts allow.
 pub(super) fn sleep(cb: &Crabbox, handle: &BoxHandle) -> Result<SleepOutcome, DriverError> {
+    if super::pool::is_pool(handle) {
+        return super::pool::sleep(cb, handle);
+    }
     let Some(provider) = split_handle(handle).0 else {
         return Ok(SleepOutcome::CannotSleep(NO_PROVIDER.to_owned()));
     };
@@ -48,6 +51,9 @@ pub(super) fn sleep(cb: &Crabbox, handle: &BoxHandle) -> Result<SleepOutcome, Dr
 
 /// Wakes the Box as its provider's facts allow; a native sleeper needs no call.
 pub(super) fn wake(cb: &Crabbox, handle: &BoxHandle) -> Result<(), DriverError> {
+    if super::pool::is_pool(handle) {
+        return super::pool::wake(cb, handle);
+    }
     let Some(provider) = split_handle(handle).0 else {
         return Err(DriverError::Unsupported(
             "box has no known provider to wake",

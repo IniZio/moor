@@ -15,6 +15,9 @@ pub(super) fn acquire(
     req: &AcquireReq,
     note: &mut dyn FnMut(&str),
 ) -> Result<Acquired, DriverError> {
+    if super::pool::is_pool_provider(&req.provider) {
+        return super::pool::acquire(cb, req);
+    }
     cb.require_version()?;
     let provider = req.provider.as_str();
     let name = slug(req);

@@ -19,6 +19,9 @@ const TOUCH_GAP_MS: i64 = 5 * 60 * 1000;
 /// Touches the lease of the Box behind `handle`, unless this driver touched it in the last
 /// [`TOUCH_GAP_MS`].
 pub(super) fn heartbeat(cb: &Crabbox, handle: &BoxHandle) -> Result<(), DriverError> {
+    if super::pool::is_pool(handle) {
+        return Ok(());
+    }
     let now = cb.clock.now().as_millis();
     let last = cb
         .touched
