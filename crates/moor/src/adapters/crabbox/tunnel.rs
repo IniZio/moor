@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use moor_core::name::BoxHandle;
 use moor_core::seam::driver::{DriverError, LocalTunnel, TunnelFailure, TunnelHandle};
-use moor_core::seam::proc::{ChildHandle, Deadline, FirstLineError, ProcSpec};
+use moor_core::seam::proc::{ChildHandle, Deadline, FirstLineError, ProcSpec, Tool};
 use serde::Deserialize;
 
 use super::{target_args, Crabbox};
@@ -64,7 +64,7 @@ pub(super) fn reverse_tunnel(
     socket: &Path,
 ) -> Result<Box<dyn TunnelHandle>, DriverError> {
     if super::pool::is_pool(handle) {
-        return Err(DriverError::Unsupported("a pool Box has no tunnel yet"));
+        return pool_reverse(cb, handle, box_port, socket);
     }
     let mut forward = OsString::from(format!("{box_port}:"));
     forward.push(socket);
@@ -121,6 +121,41 @@ pub(super) fn local_tunnel(
             }),
         })
     })
+}
+
+/// The reverse tunnel of a pool Box: ssh over the words moor built for it, since crabbox runs
+/// on the user's host. ssh prints nothing once a forward is up, so the Box side says `ready`
+/// when its port listens.
+fn pool_reverse(
+    cb: &Crabbox,
+    handle: &BoxHandle,
+    box_port: u16,
+    socket: &Path,
+) -> Result<Box<dyn TunnelHandle>, DriverError> {
+    let mut forward = OsString::from(format!("127.0.0.1:{box_port}:"));
+    forward.push(socket);
+    let wait = format!(
+        "until ss -Hltn 'sport = :{box_port}' | grep -q .; do sleep 0.2; done; \
+         echo ready; exec sleep 2147483647"
+    );
+    let spec = ProcSpec::new(Tool::Ssh, Deadline(TUNNEL_READY_DEADLINE))
+        .args(["-T", "-o", "ExitOnForwardFailure=yes", "-R"])
+        .arg(forward)
+        .args(super::peek::ssh_target(cb, handle)?)
+        .arg(wait);
+    let mut child = cb
+        .proc
+        .spawn_child(&spec)
+        .map_err(|_| DriverError::Unavailable("ssh could not be started".to_owned()))?;
+    match child.first_line(Deadline(TUNNEL_READY_DEADLINE)) {
+        Ok(line) if line.trim() == "ready" => Ok(Box::new(Tunnel {
+            child: Mutex::new(child),
+        })),
+        Ok(_) => Err(DriverError::Failed {
+            summary: UNEXPECTED_READY.to_owned(),
+        }),
+        Err(e) => Err(ready_error(e)),
+    }
 }
 
 /// Spawns the tunnel child once and waits for its ready line.

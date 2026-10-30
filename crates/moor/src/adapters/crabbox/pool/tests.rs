@@ -214,5 +214,5 @@ fn an_acquire_with_no_pool_machine_fails_and_caps_need_no_crabbox() {
     assert!(err.contains("no machine there"), "{err}");
     assert!(host.verbs().is_empty());
     let caps = cb.caps(&ProviderId::new("external@hv")).unwrap();
-    assert!(!caps.reverse_tunnel && caps.wake);
+    assert!(caps.reverse_tunnel && caps.wake);
 }
