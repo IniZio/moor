@@ -361,7 +361,9 @@ fn an_enrolled_machine_forwards_through_the_runner_and_never_dials_ssh() {
     let w = World::new([]);
     let (user, id) = enrolled_mini_beside_ssh_mini(&w);
     claim_mini(&w, user, vec![8081]);
-    let runner = FakeRunner::listen(&w.dir.path().join("machine-forwards.sock"));
+    let dir = crate::runner_dir::of(w.dir.path());
+    std::fs::create_dir_all(&dir).unwrap();
+    let runner = FakeRunner::listen(&dir.join(moor_client::forward::SOCKET));
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
     assert!(run.tick().is_none());

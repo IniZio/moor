@@ -55,12 +55,12 @@ claim.
 Start the runner next to the controller, as the same host user:
 
 ```sh
-moor-machine-runner --socket /path/to/moor.sock --state-dir ~/.local/state/moor-machine-runner
+moor-machine-runner --socket <state dir>/runner/runner.sock --state-dir ~/.local/state/moor-machine-runner
 ```
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
-| `--socket` | `$MOOR_SOCKET` | The controller's operator socket. |
+| `--socket` | `$MOOR_RUNNER_SOCKET` | The controller's socket for the runner, `<state dir>/runner/runner.sock`. It serves only the requests the runner sends: `show`, `machine-hold`, `machine-keys`, `machine-links`, `machine-targets`, `box-mirror` and `box-put`. The runner needs no access to the controller's own socket. |
 | `--state-dir` | | Where the runner keeps one host mirror and one record for each Box. |
 | `--listen` | `127.0.0.1:7700` | The address the Proxy routes to. |
 | `--service-host` | `machine.moor.internal` | The `Host` the Proxy passes through. The runner accepts it in addition to the loopback names. |
@@ -265,7 +265,7 @@ directory with the Box, so release has to undo only what lives elsewhere.
 This example is for iOS work, where each Box gets its own simulator:
 
 ```sh
-moor-machine-runner --socket /path/to/moor.sock \
+moor-machine-runner --socket <state dir>/runner/runner.sock \
   --state-dir ~/.local/state/moor-machine-runner \
   --prepare '~/bin/moor-prepare' --release '~/bin/moor-release'
 ```
@@ -395,7 +395,7 @@ For the iOS example above, each Box drives only its own simulator through
 Argent:
 
 ```sh
-moor-machine-runner --socket /path/to/moor.sock \
+moor-machine-runner --socket <state dir>/runner/runner.sock \
   --state-dir ~/.local/state/moor-machine-runner \
   --prepare '~/bin/moor-prepare' --release '~/bin/moor-release' \
   --relay argent='argent mcp' \

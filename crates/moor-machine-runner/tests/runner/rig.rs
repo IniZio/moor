@@ -160,7 +160,7 @@ impl Rig {
         let holds = Arc::new(Mutex::new(FakeHolds::default()));
         let link = FakeLink::default();
         fake_controller(
-            &dir.path().join("c.sock"),
+            &dir.path().join("runner.sock"),
             tree.clone(),
             Fake {
                 open: Arc::clone(&open),
@@ -404,7 +404,7 @@ fn spawn(dir: &Path, args: &[String]) -> (Child, u16, Option<u16>) {
     );
     let mut runner = Command::new(env!("CARGO_BIN_EXE_moor-machine-runner"))
         .args(["--listen", "127.0.0.1:0", "--socket"])
-        .arg(dir.join("c.sock"))
+        .arg(dir.join("runner.sock"))
         .arg("--state-dir")
         .arg(dir.join("state"))
         .args(args)

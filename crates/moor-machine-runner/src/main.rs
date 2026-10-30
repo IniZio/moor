@@ -21,8 +21,8 @@ struct Args {
     /// The Host the Box's Proxy passes through.
     #[arg(long, default_value = "machine.moor.internal")]
     service_host: String,
-    /// The controller's operator socket.
-    #[arg(long, env = "MOOR_SOCKET")]
+    /// The controller's socket for the machine runner, `<state>/runner/runner.sock`.
+    #[arg(long, env = "MOOR_RUNNER_SOCKET")]
     socket: PathBuf,
     /// Directory for the runner's per-Box host mirrors.
     #[arg(long)]
@@ -181,7 +181,7 @@ async fn take_links(addr: SocketAddr, socket: &Path) -> Result<Agents, String> {
     Ok(agents)
 }
 
-/// Listens beside the controller's `socket` for the supervisors' forward requests, readable
+/// Listens beside the runner's `socket` to the controller for the supervisors' forward requests, readable
 /// only by this user; the listener and this user's uid.
 fn forward_socket(socket: &Path) -> Result<(tokio::net::UnixListener, u32), String> {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
