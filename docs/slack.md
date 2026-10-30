@@ -304,20 +304,13 @@ with a personal API key that has only Read permission:
 
 ## Your own machines
 
-Each person can register their own machines with `/moor machine add`. The form
-asks for these fields:
-
-- a name
-- an ssh target, such as `moor@minion`
-- optional labels, separated by commas
-- an optional capacity, which is how many Boxes can use the machine at once
-  and is 1 when empty
-
-The front sends the form to the controller as you. The host's own ssh key
-reaches the machine, so moor stores no secret. If the controller refuses the
-machine, for example because it does not know the host's key, the form shows
-the controller's reason word for word. `/moor machine list` and
-`/moor machine remove NAME` answer only you and cover only your own machines.
+Each person enrolls their own machines from the machine itself, with
+`moor-machine-agent enroll --server <url> --name <name>`, then keeps
+`moor-machine-agent run --allow-exec` running there. See
+[Enrolling a machine](machines.md#enrolling-a-machine). `/moor machine add`
+replies with these steps. moor stores only the machine's public key.
+`/moor machine list` and `/moor machine remove NAME` answer only you and cover
+only your own machines.
 
 ## Your agent profile
 
@@ -341,7 +334,7 @@ a URL that is not on github.com, is shown word for word. `/moor profile` and
 | `/moor mcp add` | anyone | any channel | Opens a private form for an MCP server of yours with the fields Name, URL, and Key. See [Your own MCP servers](#your-own-mcp-servers). |
 | `/moor mcp list` | anyone | any channel | Shows only you each server's name, URL, and whether a key is stored. It never shows a key. |
 | `/moor mcp remove NAME` | anyone | any channel | Removes that server and its key, and tells only you. |
-| `/moor machine add` | anyone | any channel | Opens a private form for a machine of yours with the fields Name, SSH target, Labels, and Capacity. See [Your own machines](#your-own-machines). |
+| `/moor machine add` | anyone | any channel | Replies, only to you, with how to enroll a machine of yours. See [Your own machines](#your-own-machines). |
 | `/moor machine list` | anyone | any channel | Shows only you each machine's name, ssh target, and labels. |
 | `/moor machine remove NAME` | anyone | any channel | Removes that machine, and tells only you whether there was one. |
 | `/moor profile` | anyone | any channel | Shows only you your agent profile repo and ref, or that none is set. |

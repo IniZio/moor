@@ -173,22 +173,28 @@ command -v bun >/dev/null || curl -fsSL https://bun.sh/install | bash
 
 ### Per-user machines
 
-A teammate can register machines of their own, with labels. An example is a
-Mac that builds iOS apps:
+A teammate can enroll machines of their own, with labels. An example is a Mac
+that builds iOS apps. On the Mac:
 
 ```sh
-moor user machine add mac --ssh dev@mac.example.com:22 --label macos --label ios-sim
+moor-machine-agent enroll --server https://moor.example.com --name mac --labels macos,ios-sim
+moor-machine-agent run --allow-exec
+```
+
+Then, anywhere the teammate uses moor:
+
+```sh
 moor user machine ls
 moor user machine rm mac
 ```
 
-Adding a name again replaces that machine. Names match `[a-z][a-z0-9_-]*`, 64
-bytes at most. Labels match `[a-z0-9][a-z0-9-]*`, 32 bytes at most. A machine
-has at most 16 labels, which moor stores sorted and without repeats. The target
-is `user@host` or `user@host:port`, where the host is a DNS name, an IPv4
-address, or a bracketed IPv6 address. moor stores no credential. The host's own
-ssh key or ssh agent reaches the machine. A Box gets a machine only through the
-repo's `machine.labels` in [`.moor.yaml`](#mooryaml).
+Enrolling a name again replaces that machine and its key. Names match
+`[a-z][a-z0-9_-]*`, 64 bytes at most. Labels match `[a-z0-9][a-z0-9-]*`, 32
+bytes at most. A machine has at most 16 labels, which moor stores sorted and
+without repeats. moor stores only the machine's public key. The machine dials
+out to moor, so it needs no open port. A Box gets a machine only through the
+repo's `machine.labels` in [`.moor.yaml`](#mooryaml). See
+[Enrolling a machine](machines.md#enrolling-a-machine).
 
 ### Box pool hosts
 
@@ -226,8 +232,8 @@ machines:
 A plain `http://` request from a Box to `host`, on any port, goes through that
 Box's Proxy to `upstream`. The Proxy drops every `X-Moor-*` header that the Box
 sent. It then adds `X-Moor-Box` (the Box id), `X-Moor-Machine` (the machine's
-name), and `X-Moor-Machine-Ssh` (its ssh target), so the service can trust
-them. The Proxy answers 403 to a CONNECT to `host`, and to any request from a
+name), and `X-Moor-Machine-Id` (its id from enrollment), so the service can
+trust them. The Proxy answers 403 to a CONNECT to `host`, and to any request from a
 Box that holds no machine at that moment. `upstream` must be a loopback address
 and port, or moor refuses the config. Without `machines.service`, `host` is a
 host like any other.
@@ -361,7 +367,7 @@ A repo's `.moor.yaml` configures its Boxes.
 | `compose.project_prefix` | string | A prefix for compose project names. |
 | `box.size` | `small`, `medium`, `large`, or `xlarge` | The Box size. It wins over the user's `box.size`. |
 | `box_credentials` | list of names | Secrets that the Box's user must hold for a `start`. moor does not put them into the Box. |
-| `machine.labels`, `machine.ports` | lists | Attach one of the requester's own machines (`moor user machine add`) that has every label. The Box gets a slot `k` on that machine. Each listed port `p` is moved to `p + 10·k`, and served at that number on both the Box and the machine's loopback, over ssh from the host. Slot 0 keeps the listed numbers. Without a free matching machine, the Box starts without one and the start says why. |
+| `machine.labels`, `machine.ports` | lists | Attach one of the requester's own enrolled machines that has every label. The Box gets a slot `k` on that machine. Each listed port `p` is moved to `p + 10·k`, and served at that number on both the Box and the machine's loopback, over the machine's link. Slot 0 keeps the listed numbers. Without a free matching machine, the Box starts without one and the start says why. |
 | `machine.sync.presets`, `machine.sync.exclude` | `true`, `false`, or preset names to drop, and a list of rsync patterns | Paths that the machine runner's `sync` neither copies to the machine nor deletes there. See [Sync excludes](#sync-excludes). |
 | `cache` | map | Which presets to keep and which other directories to keep across Boxes. See [Cache volumes](#cache-volumes). |
 

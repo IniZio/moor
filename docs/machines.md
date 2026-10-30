@@ -1,7 +1,9 @@
 # Machines
 
-A machine is one of a user's own computers that a Box can use. The host reaches
-it over ssh. The host holds the machine's key, and the Box never does.
+A machine is one of a user's own computers that a Box can use. The machine runs
+`moor-machine-agent`, which dials out to the host and serves the Box's calls
+over that link. The host never logs in to the machine, and the Box never
+reaches it directly. See [Enrolling a machine](#enrolling-a-machine).
 
 ## Machine runner
 
@@ -14,7 +16,7 @@ to name the caller.
 | --- | --- |
 | `X-Moor-Box` | the Box's numeric store id |
 | `X-Moor-Machine` | the attached machine's name |
-| `X-Moor-Machine-Ssh` | the machine's ssh target, such as `moor@minion` |
+| `X-Moor-Machine-Id` | the machine's id from enrollment |
 | `X-Moor-Machine-Slot` | the Box's slot on the machine, 0 to 6553 |
 
 If a request misses a header or has a malformed one, it gets an MCP error that
@@ -55,24 +57,22 @@ claim.
 Start the runner next to the controller, as the same host user:
 
 ```sh
-moor-machine-runner --socket <state dir>/runner/runner.sock --state-dir ~/.local/state/moor-machine-runner
+moor-machine-runner --socket <state dir>/runner/runner.sock \
+  --state-dir ~/.local/state/moor-machine-runner --agents 0.0.0.0:7701
 ```
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
-| `--socket` | `$MOOR_RUNNER_SOCKET` | The controller's socket for the runner, `<state dir>/runner/runner.sock`. It serves only the requests the runner sends: `show`, `machine-hold`, `machine-keys`, `machine-links`, `machine-targets`, `box-mirror` and `box-put`. The runner needs no access to the controller's own socket. |
+| `--socket` | `$MOOR_RUNNER_SOCKET` | The controller's socket for the runner, `<state dir>/runner/runner.sock`. It serves only the requests the runner sends: `show`, `machine-hold`, `machine-keys`, `machine-links`, `box-mirror` and `box-put`. The runner needs no access to the controller's own socket. |
 | `--state-dir` | | Where the runner keeps one host mirror and one record for each Box. |
 | `--listen` | `127.0.0.1:7700` | The address the Proxy routes to. |
+| `--agents ADDR` | none | Where machine agents dial in, at `/machines/link`. Without it, no machine can be reached. |
 | `--service-host` | `machine.moor.internal` | The `Host` the Proxy passes through. The runner accepts it in addition to the loopback names. |
 | `--resource NAME=CAP` | none | A capped resource that each machine has, such as `build=1`. Repeat the flag for more. |
-| `--prepare CMD` | none | Runs on the machine before a Box's first `exec` or `machine_info`. See [Per-Box setup](#per-box-setup). |
-| `--release CMD` | none | Runs on the machine after a prepared Box is no longer open, before the runner removes the Box's copy there. |
-| `--suspend CMD` | none | Runs on the machine when a prepared Box falls asleep. See [Sleeping Boxes](#sleeping-boxes). |
 | `--min-free-gb` | `20` | The free GB a machine needs before the runner prepares or syncs a Box there. Below it, the runner removes sleeping Boxes' files, oldest first. 0 turns it off. See [Disk guard](#disk-guard). |
 | `--hook-timeout-secs` | `600` | How long `prepare`, `suspend`, or `release` can run. |
-| `--reconcile-secs` | `60` | How often the runner lists each machine's `~/moor` and `~/moor-state` for Boxes it has no record of. |
 | `--sweep-secs` | `60` | How often the runner looks for prepared Boxes that are no longer open, and for idle relay sessions. |
-| `--relay NAME=CMD` | none | A stdio MCP server on the machine. The runner lists its tools as `NAME_<tool>`. Repeat the flag for more. See [Relays](#relays). |
+| `--relay NAME` | none | A stdio MCP server that the machine's own relay file `NAME` starts. The runner lists its tools as `NAME_<tool>`. Repeat the flag for more. See [Relays](#relays). |
 | `--force-arg NAME.ARG=FACT` | none | On every call to a tool of relay NAME, sets argument ARG to the Box's fact FACT and hides ARG from the Box. Repeat the flag for more. |
 | `--hide-tool NAME.TOOL` | none | Leaves the tool TOOL of relay NAME out of the listing and refuses calls to it. Repeat the flag for more. |
 | `--relay-idle-secs` | `1800` | How long a relay session can go without a call before it ends. |
@@ -83,8 +83,8 @@ once. The runner counts a resource for each machine name across all Boxes.
 Only the runner process tracks holds, so a runner restart frees them all. With
 no `--resource` flags, the runner holds nothing.
 
-The runner uses the host's `ssh` and `rsync` in batch mode, with the host
-user's own key and `known_hosts`. It stores and passes no secret.
+The runner stores and passes no secret. It reaches each machine only through
+the link its agent opened.
 
 ## Seeing a machine's state
 
@@ -142,7 +142,7 @@ After a claim is held, the runner sends `notifications/tools/list_changed`. The
 client then lists the tools again and sees the machine's relayed tools, which
 the list leaves out while the Box holds no machine.
 
-`machine_release` takes no arguments. It runs the `--suspend` command for the
+`machine_release` takes no arguments. It runs the machine's `suspend` hook for the
 Box first, as when the Box falls asleep, and then gives the slot back. The
 Box's files on the machine stay until the Box closes, so a later claim finds
 them. It returns `{"released": "mac"}`, or `{"released": null}` when the Box
@@ -153,8 +153,8 @@ held no machine.
 `sync` copies the Box's work tree to `~/moor/<box id>` on the machine in two
 hops. First, the runner asks the controller for a
 [`box-mirror`](cli.md#box-mirror) into `<state dir>/mirrors/<box id>` on the
-host. Then it runs `rsync -a --delete --exclude=.git` over ssh from that mirror
-to the machine. Both hops send only what changed since the last sync. Files
+host. Then it runs `rsync -a --delete --exclude=.git` over the link from that
+mirror to the machine. Both hops send only what changed since the last sync. Files
 that are gone from the Box also go from the machine. The hops leave out `.git`
 and every pattern in the Box's [sync excludes](config.md#sync-excludes). The
 Proxy sends those patterns in `X-Moor-Machine-Exclude`. By default they leave
@@ -177,20 +177,21 @@ something the machine made, such as a screenshot that a relayed tool saved, or
 a build log. `path` is absolute on the machine or relative to
 `~/moor/<box id>`. `dest` is relative to the work tree. It cannot be empty or
 absolute, or contain `..`. The runner copies the file to a staging file on the
-host with rsync over ssh. Then it asks the controller to write the file with
+host over the link. Then it asks the controller to write the file with
 [`box-put`](cli.md#box-put). The file can be at most 32 MiB. The file replaces
 an existing file at `dest`. `pull` returns `dest` and `bytes`.
 
 `exec` takes `command` and `timeout_secs` (default 600, at most 3600). It runs
-`cd ~/moor/<box id> && <command>` on the machine through the machine user's
-login shell, so that user's `PATH` applies. It returns these fields:
+`<command>` in `~/moor/<box id>` on the machine through the machine user's
+login shell, so that user's `PATH` applies. The machine's agent runs it only
+when it was started with `--allow-exec`. It returns these fields:
 
 - `exit_code`
 - `output`, the last 64 KiB of combined stdout and stderr
 - `truncated`, when the runner cut earlier output
 - `timed_out`
 
-When a command runs past its timeout, the runner kills its ssh. The call
+When a command runs past its timeout, the agent kills it. The call
 returns `timed_out: true` and no exit code.
 
 `exec` also takes `hold`, a list of resource names, and `hold_wait_secs`
@@ -210,11 +211,14 @@ machine on the repo's port plus `port_offset`.
 ## Per-Box setup
 
 Boxes that share a machine can each need their own things on it, such as their
-own simulator device or build folder, removed when the Box closes. The operator
-supplies two commands for this. The runner does not know what they make.
+own simulator device or build folder, removed when the Box closes. The
+machine's owner supplies hooks for this: executable files named `prepare`,
+`suspend` and `release` in `~/.config/moor-machine-agent/hooks/` on the machine
+(under `$XDG_CONFIG_HOME` when it is set). The runner does not know what they
+make, and a missing hook is skipped.
 
-`--prepare CMD` runs before a Box's first `exec` or `machine_info`. The runner
-runs it on the machine over ssh, through the machine user's login shell. It
+`prepare` runs before a Box's first `exec` or `machine_info`. The agent runs it
+through the machine user's login shell. It
 runs in `~/moor/<box id>`, which the runner makes if it is missing. These
 variables are set:
 
@@ -238,15 +242,15 @@ anything on stderr. CMD fails if it exits non-zero, runs past
 fails with the tail of its output, and the runner keeps nothing. The Box's next
 call runs CMD again. Two calls of one Box never run it at the same time.
 
-The runner keeps the facts, with the Box's ssh target and slot, in
+The runner keeps the facts, with the Box's machine and slot, in
 `<state dir>/boxes/<box id>.json`. So a restarted runner does not prepare the
 Box again. `machine_info` returns the facts as `facts`. Every `exec` command
 sees each fact as `MOOR_FACT_<KEY>`. The key is in uppercase, and every
 character that is not a letter or a digit becomes `_`. So `device` is
-`MOOR_FACT_DEVICE`. With no `--prepare`, the facts are empty and the runner
+`MOOR_FACT_DEVICE`. With no `prepare` hook, the facts are empty and the runner
 still keeps the record.
 
-`--release CMD` runs after a prepared Box is no longer open. It runs in the
+`release` runs after a prepared Box is no longer open. It runs in the
 same place as `prepare`, with the same variables and the `MOOR_FACT_*`
 variables. A `sync` also leaves a record, so the runner cleans up a Box that
 only synced too. Every `--sweep-secs`, the runner asks the controller for the
@@ -261,38 +265,20 @@ If a step fails, the runner keeps the rest, prints the tail of the output to
 stderr, and tries again on the next sweep. If the runner cannot ask the
 controller, it releases nothing.
 
-The sweep also cleans up Boxes that the runner has no record of. This happens
-after the state dir is lost, after a crash between a copy and its record, or
-after someone removes a record by hand. At start, and then every
-`--reconcile-secs` (default 60), the runner asks the controller for every
-enrolled machine's ssh target, whatever user it belongs to. The request is
-`machine-targets`, which only the operator socket can send. If the controller
-cannot answer, the runner skips and logs that pass. It never sweeps a shorter
-list as if it were the full list. For each listed machine, one ssh call lists
-the entries under `~/moor` and `~/moor-state`. An entry gets cleaned up when
-its name is a plain decimal Box id, the Box is not open, and the runner has no
-record of it. The runner runs `release` for it with `MOOR_BOX`,
-`MOOR_STATE_DIR`, and `TMPDIR` set, and no `MOOR_SLOT`, `MOOR_PORT_OFFSET`, or
-`MOOR_FACT_*`. Then it removes both directories. On every sweep, the runner
-removes mirrors under `<state dir>/mirrors` of closed Boxes with no record. It
-never touches entries with any other name, or the files of an open Box. The
-runner logs a failing step and tries it again on the next pass. So `release`
-must work in a run with no facts, and for a Box whose `prepare` never ran.
+Removing a Box's files and reading the machine's free space are commands the
+runner sends with `exec`, so a machine that Boxes claim runs its agent with
+`--allow-exec`. Files of a Box that the runner has no record of, such as after
+its state dir was lost, stay on the machine until someone removes them.
 
 `sync` runs `rsync --delete` into `~/moor/<box id>`, so the next sync removes
 anything that prepare puts there. Put per-Box folders, such as a build's
 derived data, under `$MOOR_STATE_DIR` instead. The runner removes that
 directory with the Box, so release has to undo only what lives elsewhere.
 
-This example is for iOS work, where each Box gets its own simulator:
+This example is for iOS work, where each Box gets its own simulator. The hooks
+live on the Mac, in `~/.config/moor-machine-agent/hooks/`.
 
-```sh
-moor-machine-runner --socket <state dir>/runner/runner.sock \
-  --state-dir ~/.local/state/moor-machine-runner \
-  --prepare '~/bin/moor-prepare' --release '~/bin/moor-release'
-```
-
-`~/bin/moor-prepare` on the machine:
+`prepare`:
 
 ```sh
 #!/bin/sh
@@ -303,7 +289,7 @@ udid=$(xcrun simctl list devices | sed -n "s/.*moor-$MOOR_BOX (\([0-9A-F-]*\)).*
 printf '{"device": "%s", "metro_port": "%s"}\n' "$udid" "$((8081 + MOOR_PORT_OFFSET))"
 ```
 
-`~/bin/moor-suspend` on the machine:
+`suspend`:
 
 ```sh
 #!/bin/sh
@@ -311,7 +297,7 @@ xcrun simctl shutdown "$MOOR_FACT_DEVICE" 2>/dev/null
 exit 0
 ```
 
-`~/bin/moor-release` on the machine:
+`release`:
 
 ```sh
 #!/bin/sh
@@ -329,12 +315,12 @@ reply) frees its slot. Its processes on the machine should stop, but its files
 stay. On each sweep, the runner looks for recorded, prepared Boxes that are
 asleep and not yet suspended. For each one, the runner ends the Box's relay
 sessions and frees the capped resources that its calls hold, even for a call
-that still runs. Then it runs `--suspend CMD`. CMD runs where `release` runs,
+that still runs. Then it runs the `suspend` hook, where `release` runs,
 with the same variables, `MOOR_FACT_*` included, and the slot the Box had. Use
-it to stop what `prepare` started, such as a simulator. Only after CMD
+it to stop what `prepare` started, such as a simulator. Only after the hook
 succeeds does the runner write the time in the Box's record as `suspended_at`.
 The runner logs a failing suspend and runs it again on the next sweep. With no
-`--suspend`, the runner still marks the Box, so the steps below apply.
+`suspend` hook, the runner still marks the Box, so the steps below apply.
 
 When the Box wakes, it can get a different slot, because the controller gives
 it the lowest free slot on the same machine. The Box's next `exec`,
@@ -351,8 +337,8 @@ on `MOOR_PORT_OFFSET`.
 
 `--min-free-gb N` (default 20, and 0 turns it off) keeps the machine from
 filling up. Before it runs `prepare` for a Box, and before every `sync`, the
-runner reads the free space in the machine user's home with one remote call,
-`df -Pk ~`. If the free space is below the floor, the runner takes the
+runner reads the free space in the machine user's home with `df -Pk ~`, sent
+with `exec`. If the free space is below the floor, the runner takes the
 machine's suspended Boxes that the controller still lists as asleep, oldest
 `suspended_at` first. For each one, it runs `release`, removes
 `~/moor/<box id>` and `~/moor-state/<box id>`, and reads the free space again.
@@ -371,7 +357,9 @@ Box's files on the machine while it slept, so the Box must `sync` again.
 ## Relays
 
 A machine can run its own MCP servers over stdio, such as Argent
-(`argent mcp`) for driving simulators. `--relay NAME=CMD` lists such a server's
+(`argent mcp`) for driving simulators. The machine's owner puts an executable
+file `relays/NAME` in its hooks dir that starts the server, such as
+`exec argent mcp`. `--relay NAME` lists that server's
 tools to every Box, next to `sync`, `exec`, and `machine_info`. NAME matches
 `[a-z][a-z0-9-]*`.
 
@@ -406,8 +394,8 @@ error that says it is hidden. Use it for tools that change what every Box on
 the machine shares.
 
 The runner keeps one MCP session for each Box and relay. The session starts on
-the Box's first call of a relayed tool or tool listing, after prepare, as
-`ssh <target> 'cd ~/moor/<box id> && exec "$SHELL" -lc CMD'`. `MOOR_BOX`,
+the Box's first call of a relayed tool or tool listing, after prepare. The
+agent runs the relay file in `~/moor/<box id>` through the login shell. `MOOR_BOX`,
 `MOOR_SLOT`, `MOOR_PORT_OFFSET`, and the `MOOR_FACT_*` variables are set. The
 session ends when the sweep releases the Box, before release runs. It also ends
 after `--relay-idle-secs` without a call, or when the server exits. Ending the
@@ -418,9 +406,8 @@ Argent:
 
 ```sh
 moor-machine-runner --socket <state dir>/runner/runner.sock \
-  --state-dir ~/.local/state/moor-machine-runner \
-  --prepare '~/bin/moor-prepare' --release '~/bin/moor-release' \
-  --relay argent='argent mcp' \
+  --state-dir ~/.local/state/moor-machine-runner --agents 0.0.0.0:7701 \
+  --relay argent \
   --force-arg argent.udid=device --force-arg argent.device_id=device \
   --force-arg argent.device=device --force-arg argent.devices=device \
   --force-arg argent.port=metro_port \
@@ -436,13 +423,28 @@ simulator that prepare made for that Box. The runner does not offer
 `update-argent` and `dismiss-update`, because they change the install that
 every Box shares.
 
-## Linked machines
+## Enrolling a machine
 
-A machine behind NAT can run `moor-machine-agent run` instead of taking ssh
-from the runner. The agent dials the runner and serves the Box's calls over
-that link. It runs a script that the runner sends with `exec` only when it is
-started with `--allow-exec`, so a controller that someone else takes over
-cannot run commands on the machine unless its owner allowed that. `sync`,
-`pull`, the hooks and the relays work without the flag. A pool host, started
-with `--pool`, never runs `exec`, and the agent refuses `--allow-exec` with
+The machine's owner installs `moor-machine-agent` on it and enrolls it once.
+Enrolling signs the owner in through the browser and makes a key that only
+this machine holds:
+
+```sh
+moor-machine-agent enroll --server https://moor.example.com --name mac --labels macos,ios-sim
+```
+
+Then keep the agent running, for example as a launch agent or a systemd user
+service:
+
+```sh
+moor-machine-agent run --allow-exec
+```
+
+The agent dials the runner and serves the Box's calls over that link. It runs
+a command that the runner sends with `exec` only when it is started with
+`--allow-exec`, so a controller that someone else takes over cannot run
+commands on the machine unless its owner allowed that. `sync`, `pull`, the
+hooks and the relays work without the flag, but the `exec` tool, the disk
+guard and removing a closed Box's files need it. A pool host, started with
+`--pool`, never runs `exec`, and the agent refuses `--allow-exec` with
 `--pool`.
