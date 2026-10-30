@@ -43,6 +43,13 @@ fn home() -> tempfile::TempDir {
     home
 }
 
+/// A home with lease moor-7 warmed, as every verb but warmup needs.
+fn warmed() -> tempfile::TempDir {
+    let home = home();
+    assert!(lease(home.path(), &["warmup", "moor-7"]).0);
+    home
+}
+
 const DONE: fn() -> Value = || json!({"reply": "leased", "answer": "done"});
 
 #[test]
@@ -55,7 +62,7 @@ fn each_verb_runs_crabbox_with_the_agents_provider_from_the_lease_dir() {
             "{verb}"
         );
     }
-    let dir = home.path().join("moor-state/7/lease");
+    let dir = home.path().join("moor-pool/7/lease");
     let want = format!(
         "{0} warmup --provider fake --slug moor-7\n{0} pause --provider fake --id moor-7\n\
          {0} resume --provider fake --id moor-7\n{0} stop --provider fake --id moor-7\n",
@@ -81,7 +88,7 @@ fn stopping_a_lease_already_gone_succeeds() {
 
 #[test]
 fn pausing_on_a_provider_that_cannot_answers_unsupported() {
-    let home = home();
+    let home = warmed();
     std::fs::write(home.path().join("no-pause"), "").unwrap();
     let want = json!({"reply": "leased", "answer": "unsupported"});
     assert_eq!(lease(home.path(), &["pause", "moor-7"]), (true, want));
@@ -89,7 +96,7 @@ fn pausing_on_a_provider_that_cannot_answers_unsupported() {
 
 #[test]
 fn info_gives_the_login_user_and_host_key_only() {
-    let home = home();
+    let home = warmed();
     let want = json!({"reply": "leased", "answer": "info", "user": "vm",
         "host_keys": [fake_crabbox::HOST_KEY]});
     assert_eq!(lease(home.path(), &["info", "moor-7"]), (true, want));
@@ -97,7 +104,7 @@ fn info_gives_the_login_user_and_host_key_only() {
 
 #[test]
 fn info_refuses_words_that_turn_host_key_checking_off() {
-    let home = home();
+    let home = warmed();
     std::fs::write(home.path().join("loose"), "").unwrap();
     let (ok, answer) = lease(home.path(), &["info", "moor-7"]);
     assert!(!ok);
@@ -153,7 +160,7 @@ fn pool_max_refuses_a_warmup_past_it() {
 
 #[test]
 fn dial_carries_bytes_both_ways_through_the_proxy_command() {
-    let home = home();
+    let home = warmed();
     let mut child = agent(home.path(), &["dial", "moor-7"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

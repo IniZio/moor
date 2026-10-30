@@ -120,6 +120,8 @@ async fn a_lease_goes_through_the_broker_to_the_pool_host_and_back() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_dial_through_the_broker_carries_bytes_both_ways() {
     let host = Host::start();
+    let warmed = broker::lease(&host.socket(), MACHINE_ID, Verb::Warmup, Some("moor-7")).await;
+    assert_eq!(warmed, Ok(Answer::Done));
     let mut vm = broker::dial(&host.socket(), MACHINE_ID, "moor-7")
         .await
         .unwrap();

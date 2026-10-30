@@ -101,7 +101,7 @@ async fn act(
         Verb::Resume => lease.run("resume", "--id", CALL, &[0]).await,
         Verb::Stop => {
             let gone = lease.run("stop", "--id", CALL, &[0, GONE]).await;
-            let _ = tokio::fs::remove_dir_all(lease_dir(lease.home, id)).await;
+            let _ = tokio::fs::remove_dir_all(box_dir(lease.home, id)).await;
             gone
         }
         Verb::List => return Err("list names no slug".to_owned()),
@@ -173,9 +173,13 @@ async fn list(home: &Path, pool: &Pool) -> Result<Vec<Lease>, String> {
         .collect())
 }
 
-/// Box `id`'s lease dir, which crabbox runs from.
-fn lease_dir(home: &Path, id: i64) -> PathBuf {
-    home.join(format!("moor-state/{id}/lease"))
+/// Where the pool keeps its leases' dirs: apart from the `moor-state` of Boxes that hold this
+/// account as a machine, whose ids come from other controllers.
+const POOL_DIR: &str = "moor-pool";
+
+/// Everything the host keeps for Box `id`'s lease.
+fn box_dir(home: &Path, id: i64) -> PathBuf {
+    home.join(POOL_DIR).join(id.to_string())
 }
 
 /// crabbox on this host, for one lease or, with no id, for the pool.
@@ -198,13 +202,16 @@ impl Crabbox<'_> {
         within: Duration,
         ok: &[i32],
     ) -> Result<String, String> {
-        let base = self.home.join("moor-state");
-        let ceiling = self
-            .id
-            .map_or_else(|| base.clone(), |id| base.join(id.to_string()));
-        let dir = self
-            .id
-            .map_or_else(|| ceiling.clone(), |_| ceiling.join("lease"));
+        let base = self.home.join(POOL_DIR);
+        let mine = self.id.map(|id| box_dir(self.home, id));
+        // Only a warmup makes a lease's dir, so a call on a lease that is gone leaves nothing
+        // behind; crabbox itself says whether the lease exists.
+        let (dir, ceiling) = match mine {
+            Some(mine) if verb == "warmup" || mine.join("lease").is_dir() => {
+                (mine.join("lease"), mine)
+            }
+            _ => (base.clone(), base),
+        };
         std::fs::create_dir_all(&dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
         let mut cmd = Command::new(&self.pool.crabbox);
         cmd.args([verb, "--provider", &self.pool.provider, flag]);
