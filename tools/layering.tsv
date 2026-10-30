@@ -15,7 +15,7 @@ moor_core::cache	moor_core::box_key,moor_core::boxscript,moor_core::exec_env,moo
 moor_core::config	moor_core::cache,moor_core::name,moor_core::secret,moor_core::user
 moor_core::controller	moor_core::name,moor_core::request,moor_core::response,moor_core::user
 moor_core::graphql_scope	
-moor_core::seam	moor_core::activity,moor_core::boxscript,moor_core::box_key,moor_core::cache,moor_core::domain,moor_core::name,moor_core::secret,moor_core::config,moor_core::user,moor_core::shape
+moor_core::seam	moor_core::activity,moor_core::profile,moor_core::boxscript,moor_core::box_key,moor_core::cache,moor_core::domain,moor_core::name,moor_core::secret,moor_core::config,moor_core::user,moor_core::shape
 moor_core::view	moor_core::domain,moor_core::name,moor_core::config,moor_core::request,moor_core::user
 moor::env	
 moor::error	moor::env,moor::store

@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use moor_core::boxscript::profile::fetch_script;
+use moor_core::boxscript::profile::{fetch_script, FAILURES_FILE};
 use moor_core::config::BoxSettings;
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::event::ProfileStep;
@@ -10,7 +10,6 @@ use moor_core::name::BoxPath;
 use moor_core::seam::driver::ExecOutcome;
 use moor_core::{BoxHandle, BoxId, Warning};
 
-use crate::adapters::box_agent::FAILURES_FILE;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::activity::session_ref;
