@@ -70,6 +70,7 @@ impl Linked {
             home: rig.remote.clone(),
             shell: PathBuf::from("/bin/sh"),
             hooks,
+            pool: None,
         };
         let agent = tokio::runtime::Runtime::new().unwrap();
         agent.spawn(async move { run(&state_dir, machine, &|_| {}).await });

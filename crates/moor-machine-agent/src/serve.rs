@@ -12,6 +12,7 @@ use tokio::process::Command;
 
 use crate::files;
 use crate::listen::{self, Link};
+use crate::pool::{self, Pool};
 
 /// How long a relay may take to exit once its stdin closes, before it is killed.
 const RELAY_EXIT: Duration = Duration::from_secs(5);
@@ -25,6 +26,8 @@ pub struct Machine {
     pub shell: PathBuf,
     /// `prepare`, `suspend`, `release`, and `relays/<name>`.
     pub hooks: PathBuf,
+    /// The pool it serves, when it is a pool host.
+    pub pool: Option<Pool>,
 }
 
 impl Machine {
@@ -38,6 +41,7 @@ impl Machine {
             shell: std::env::var_os("SHELL").map_or_else(|| "/bin/sh".into(), PathBuf::from),
             hooks: config.join("moor-machine-agent/hooks"),
             home,
+            pool: None,
         }
     }
 
@@ -52,25 +56,93 @@ impl Machine {
     }
 }
 
-/// Serves the request that opens `ch`.
+/// Serves the request that opens `ch`, when this machine's mode allows it. This match is the
+/// allow-list: a pool host serves only lease and dial, any other machine everything else.
 pub(crate) async fn serve(machine: &Machine, link: &Link, mut ch: Channel) {
-    let reply = match ops::read_line::<_, Op>(&mut ch).await {
-        Err(e) => refused(e),
-        Ok(Op::Sync { box_id, argv }) => return files::sync(machine, ch, box_id, &argv).await,
-        Ok(Op::Pull { box_id, path }) => return files::pull(machine, ch, box_id, &path).await,
-        Ok(op) => match start(machine, op) {
-            Ok(Start::Run(script, timeout)) => return ran(machine, ch, &script, timeout).await,
-            Ok(Start::Relay(script)) => return relay(machine, ch, &script).await,
+    let op = match ops::read_line::<_, Op>(&mut ch).await {
+        Ok(op) => op,
+        Err(e) => return end(ch, refused(e)).await,
+    };
+    match (machine.pool.as_ref(), op) {
+        (Some(pool), op @ (Op::Lease { .. } | Op::Dial { .. })) => {
+            serve_pool(&machine.home, pool, ch, op).await;
+        }
+        (
+            None,
+            op @ (Op::Exec { .. }
+            | Op::Hook { .. }
+            | Op::Relay { .. }
+            | Op::Sync { .. }
+            | Op::Pull { .. }
+            | Op::Listen { .. }),
+        ) => serve_machine(machine, link, ch, op).await,
+        (pool, op) => {
+            let host = if pool.is_some() { "a" } else { "not a" };
+            let why = format!(
+                "this machine is {host} pool host, so it does not serve {}",
+                kind(&op)
+            );
+            end(ch, refused(why)).await;
+        }
+    }
+}
+
+/// Serves a lease or a dial for `pool`.
+async fn serve_pool(home: &Path, pool: &Pool, ch: Channel, op: Op) {
+    let reply = match op {
+        Op::Lease { verb, slug } => pool::lease(home, pool, verb, slug.as_deref()).await,
+        Op::Dial { slug } => match pool::dial(home, pool, &slug).await {
+            Ok(sshd) => return dial(ch, sshd).await,
+            Err(reason) => refused(reason),
+        },
+        other => refused(format!("{} is not a pool op", kind(&other))),
+    };
+    end(ch, reply).await;
+}
+
+/// Serves an op of a machine that is not a pool host.
+async fn serve_machine(machine: &Machine, link: &Link, ch: Channel, op: Op) {
+    match op {
+        Op::Sync { box_id, argv } => files::sync(machine, ch, box_id, &argv).await,
+        Op::Pull { box_id, path } => files::pull(machine, ch, box_id, &path).await,
+        op => match start(machine, op) {
+            Ok(Start::Run(script, timeout)) => ran(machine, ch, &script, timeout).await,
+            Ok(Start::Relay(script)) => relay(machine, ch, &script).await,
             Ok(Start::Listen {
                 box_id,
                 listen,
                 ports,
-            }) => return listen::serve(ch, link, box_id, listen, &ports).await,
-            Err(reply) => reply,
+            }) => listen::serve(ch, link, box_id, listen, &ports).await,
+            Err(reply) => end(ch, reply).await,
         },
-    };
+    }
+}
+
+/// Answers `reply` on `ch` and closes it.
+async fn end(mut ch: Channel, reply: Reply) {
     let _ = ops::write_line(&mut ch, &reply).await;
     let _ = ch.shutdown().await;
+}
+
+/// The op's name on the wire.
+const fn kind(op: &Op) -> &'static str {
+    match op {
+        Op::Exec { .. } => "exec",
+        Op::Hook { .. } => "hook",
+        Op::Relay { .. } => "relay",
+        Op::Sync { .. } => "sync",
+        Op::Pull { .. } => "pull",
+        Op::Listen { .. } => "listen",
+        Op::Lease { .. } => "lease",
+        Op::Dial { .. } => "dial",
+    }
+}
+
+/// Tells the runner the dial reached the VM, then carries its bytes.
+async fn dial(mut ch: Channel, sshd: pool::Sshd) {
+    if ops::write_line(&mut ch, &Reply::Started).await.is_ok() {
+        pool::splice(sshd, ch).await;
+    }
 }
 
 /// What a request starts.
@@ -124,7 +196,9 @@ fn start(machine: &Machine, op: Op) -> Result<Start, Reply> {
             let body = format!("exec \"$SHELL\" -lc {}", ops::quote(&ops::quote(&path)));
             Ok(Start::Relay(ops::script(&env, &ops::in_box(box_id, &body))))
         }
-        Op::Sync { .. } | Op::Pull { .. } => Err(refused("not a command".to_owned())),
+        Op::Sync { .. } | Op::Pull { .. } | Op::Lease { .. } | Op::Dial { .. } => {
+            Err(refused("not a command".to_owned()))
+        }
         Op::Listen {
             box_id,
             listen,
