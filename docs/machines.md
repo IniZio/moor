@@ -435,3 +435,14 @@ each one. Prepare prints both facts as
 simulator that prepare made for that Box. The runner does not offer
 `update-argent` and `dismiss-update`, because they change the install that
 every Box shares.
+
+## Linked machines
+
+A machine behind NAT can run `moor-machine-agent run` instead of taking ssh
+from the runner. The agent dials the runner and serves the Box's calls over
+that link. It runs a script that the runner sends with `exec` only when it is
+started with `--allow-exec`, so a controller that someone else takes over
+cannot run commands on the machine unless its owner allowed that. `sync`,
+`pull`, the hooks and the relays work without the flag. A pool host, started
+with `--pool`, never runs `exec`, and the agent refuses `--allow-exec` with
+`--pool`.
