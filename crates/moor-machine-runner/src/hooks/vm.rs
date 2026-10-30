@@ -17,7 +17,6 @@ use super::{read, tail, write, Facts, Hooks, Record};
 use crate::beat::Progress;
 use crate::caller::{Caller, Reach};
 use crate::exec::{quote, ExecOutput};
-use crate::route::Route;
 
 /// How often a boot reports how long it has run.
 const BOOT_BEAT: Duration = Duration::from_secs(10);
@@ -46,11 +45,6 @@ impl Vm {
             words: None,
             paused: false,
         }
-    }
-
-    /// The route into the VM; a VM that never got its words has none, so commands stay on the host.
-    pub(super) fn route(&self) -> Route {
-        self.words.clone().map_or(Route::Host, Route::Vm)
     }
 
     /// `crabbox <verb> --provider P <name flag> S`, then `more`.

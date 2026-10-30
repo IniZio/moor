@@ -170,8 +170,7 @@ impl Hooks {
             ssh: target.to_owned(),
         };
         let env = [("MOOR_BOX".to_owned(), id.to_string())];
-        self.hook(id, &reach, &Route::Host, Hook::Release, &env)
-            .await?;
+        self.hook(id, &reach, Hook::Release, &env).await?;
         self.remove_on_machine(&reach, id).await
     }
 

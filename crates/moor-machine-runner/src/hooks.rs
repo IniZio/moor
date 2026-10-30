@@ -129,11 +129,6 @@ impl Record {
             MachineKindName::Physical
         }
     }
-
-    /// Where the Box's hooks run: in its VM once it has one.
-    fn route(&self) -> Route {
-        self.vm.as_ref().map_or(Route::Host, vm::Vm::route)
-    }
 }
 
 impl Hooks {
@@ -160,22 +155,12 @@ impl Hooks {
         if let Some(record) = old.as_ref().filter(|r| !booted && r.is_current(caller)) {
             return Ok(record.facts.clone());
         }
-        if caller.kind.provider().is_none() {
+        // The hooks set up the machine itself; a VM is fresh per Box and goes whole on close.
+        let facts = if caller.kind.provider().is_some() {
+            Facts::new()
+        } else {
             self.guard(caller).await?;
-        }
-        let env = box_env(id, caller.slot, caller.kind.name(), &Facts::new());
-        let out = self.hook(id, &caller.reach, &caller.route, Hook::Prepare, &env);
-        let facts = match out.await.map_err(|e| format!("prepare: {e}"))? {
-            None => Facts::new(),
-            Some(out) => {
-                let last = out.output.lines().rev().find(|l| !l.trim().is_empty());
-                serde_json::from_str(last.unwrap_or_default()).map_err(|e| {
-                    format!(
-                        "prepare's last line is not a JSON object of strings ({e}): {}",
-                        tail(&out)
-                    )
-                })?
-            }
+            self.prepare(caller).await?
         };
         let mut record = Record::new(caller, facts, true);
         if let Some(old) = old {
@@ -184,6 +169,23 @@ impl Hooks {
         }
         write(&path, &record).map_err(|e| format!("could not keep the Box's facts: {e}"))?;
         Ok(record.facts)
+    }
+
+    /// Runs `prepare` for the caller's Box and reads the facts from its last line.
+    async fn prepare(&self, caller: &Caller) -> Result<Facts, String> {
+        let id = caller.box_id.get();
+        let env = box_env(id, caller.slot, caller.kind.name(), &Facts::new());
+        let out = self.hook(id, &caller.reach, Hook::Prepare, &env);
+        let Some(out) = out.await.map_err(|e| format!("prepare: {e}"))? else {
+            return Ok(Facts::new());
+        };
+        let last = out.output.lines().rev().find(|l| !l.trim().is_empty());
+        serde_json::from_str(last.unwrap_or_default()).map_err(|e| {
+            format!(
+                "prepare's last line is not a JSON object of strings ({e}): {}",
+                tail(&out)
+            )
+        })
     }
 
     /// Leaves a record for the caller's Box when it has none, so a sweep finds it once closed.
@@ -255,12 +257,10 @@ impl Hooks {
     async fn release_files(&self, id: i64, record: &Record) -> Result<(), String> {
         if let Some(vm) = &record.vm {
             self.vm_forwards.end(id);
-            // release is skipped: what prepare made lives in the VM, which goes whole.
             self.stop(&record.reach, id, vm).await?;
         } else if record.prepared {
             let env = box_env(id, record.slot, record.kind(), &record.facts);
-            self.hook(id, &record.reach, &Route::Host, Hook::Release, &env)
-                .await?;
+            self.hook(id, &record.reach, Hook::Release, &env).await?;
         }
         self.remove_on_machine(&record.reach, id).await
     }

@@ -16,7 +16,6 @@ impl Hooks {
         &self,
         id: i64,
         reach: &Reach,
-        route: &Route,
         hook: Hook,
         env: &[(String, String)],
     ) -> Result<Option<ExecOutput>, String> {
@@ -36,7 +35,7 @@ impl Hooks {
                     return Ok(None);
                 };
                 let body = ops::in_box(id, &command);
-                let out = exec::run(ssh, route, &exec::script(env, &body), self.timeout)
+                let out = exec::run(ssh, &Route::Host, &exec::script(env, &body), self.timeout)
                     .await
                     .map_err(|e| format!("could not run ssh: {e}"))?;
                 return succeeded(out).map(Some);

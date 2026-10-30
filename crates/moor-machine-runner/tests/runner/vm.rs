@@ -106,10 +106,7 @@ fn a_vm_host_claim_boots_once_and_exec_runs_in_the_vm() {
     assert!(calls
         .iter()
         .any(|c| c.ends_with("ssh --provider external --id moor-7")));
-    assert_eq!(
-        lines(&vm.join("prepared")),
-        [format!("{} vm-host 0", vm.display())]
-    );
+    assert!(!vm.join("prepared").exists());
     assert!(!rig.remote.join("prepared").exists());
 }
 
@@ -217,7 +214,7 @@ fn suspended_record(rig: &Rig) -> serde_json::Value {
 }
 
 #[test]
-fn suspending_runs_the_hook_then_pauses_the_vm_and_waking_resumes_it() {
+fn suspending_pauses_the_vm_without_the_hook_and_waking_resumes_it() {
     let rig = Rig::with_args(&[
         "--prepare",
         PREPARE,
@@ -231,7 +228,8 @@ fn suspending_runs_the_hook_then_pauses_the_vm_and_waking_resumes_it() {
     rig.call_with("exec", json!({"command": "true"}), &VM_HOST)
         .unwrap();
     suspend(&rig);
-    assert_eq!(lines(&vm.join("suspended")), ["7"]);
+    assert!(!vm.join("suspended").exists());
+    assert!(!rig.remote.join("suspended").exists());
     assert_eq!(
         verbs(&rig).last().unwrap(),
         "pause",
@@ -248,7 +246,7 @@ fn suspending_runs_the_hook_then_pauses_the_vm_and_waking_resumes_it() {
         "{:?}",
         crabbox_calls(&rig)
     );
-    assert_eq!(lines(&vm.join("prepared")).len(), 2);
+    assert!(!vm.join("prepared").exists());
     assert!(suspended_record(&rig)["vm"].get("paused").is_none());
 }
 

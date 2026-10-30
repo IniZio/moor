@@ -36,13 +36,12 @@ impl Hooks {
         };
         relays.end_box(id).await;
         holds.release_box(id);
-        let env = box_env(id, record.slot, record.kind(), &record.facts);
-        let route = record.route();
-        self.hook(id, &record.reach, &route, Hook::Suspend, &env)
-            .await?;
-        self.vm_forwards.end(id);
         if let Some(vm) = record.vm.as_mut() {
+            self.vm_forwards.end(id);
             vm.paused = self.pause(&record.reach, id, vm).await;
+        } else {
+            let env = box_env(id, record.slot, record.kind(), &record.facts);
+            self.hook(id, &record.reach, Hook::Suspend, &env).await?;
         }
         record.suspended_at = Some(now());
         write(&path, &record).map_err(|e| format!("could not note the suspend: {e}"))

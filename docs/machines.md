@@ -359,7 +359,13 @@ The runner reaches the VM through the host, with the same ssh target, key and
 `known_hosts` as for any machine. On the host, `crabbox ssh --provider P --id
 moor-<box id>` prints the ssh words for the VM, and the runner runs
 `ssh <host> ssh <words> <command>`. So the VM's key never leaves the host.
-`exec`, `sync`, `pull`, the relays, `prepare` and `suspend` all run in the VM.
+`exec`, `sync`, `pull` and the relays run in the VM.
+
+The runner's `prepare`, `suspend` and `release` commands never run for a Box
+on a VM host. They set up the machine itself, such as a simulator on a Mac,
+while the VM is the Box's own and goes whole when the Box closes. So the Box's
+facts are empty. Setup a VM needs belongs in the provider's image or the Box's
+profile.
 
 The Box's first call that needs the machine boots the VM. This is the same call
 that runs `prepare` on other machines. The runner runs
@@ -369,11 +375,10 @@ that runs `prepare` on other machines. The runner runs
 reads them with `ssh -G` on the host. Host key checking must stay on, as for a
 Box on crabbox: `StrictHostKeyChecking` yes or accept-new, and a real
 known-hosts file, which accept-new must be able to write. If the words fail
-the check, the runner deletes the VM and the call fails with the reason. Then
-`prepare` runs in the VM. Inside the VM the ports are the repo's own, so
-`machine_info` and `machine_claim` return `port_offset` 0 and `kind`
-`vm-host`. Every hook sees `MOOR_MACHINE_KIND`, which is `physical` or
-`vm-host`.
+the check, the runner deletes the VM and the call fails with the reason.
+Inside the VM the ports are the repo's own, so `machine_info` and
+`machine_claim` return `port_offset` 0 and `kind` `vm-host`. The relays see
+`MOOR_MACHINE_KIND`, which is `physical` or `vm-host`.
 
 The Box's record notes the VM before the boot starts and keeps the ssh words
 once the VM is ready. If the runner stops mid-boot, the next call deletes the
@@ -381,19 +386,18 @@ VM by its slug and boots it again. A failed crabbox call fails the call with
 the tail of crabbox's output.
 
 When the Box closes, the sweep runs
-`crabbox stop --provider P --id moor-<box id>` on the host instead of
-`release`, since what `prepare` made goes with the VM. Then it removes
+`crabbox stop --provider P --id moor-<box id>` on the host. Then it removes
 `~/moor/<box id>` and `~/moor-state/<box id>` on the host, the record and the
 host mirror.
 
 ### Sleeping VMs
 
-When the Box sleeps, the runner runs `suspend` in the VM, then
+When the Box sleeps, the runner runs
 `crabbox pause --provider P --id moor-<box id>` on the host. A provider that
 cannot pause, or a pause that fails, leaves the VM running. The suspend still
 succeeds. The Box's next call runs `crabbox resume` and checks the VM's ssh
 words again, since a resumed VM may answer with other ones. Words that fail the
-check delete the VM, as at boot. Then `prepare` runs again in the VM.
+check delete the VM, as at boot.
 
 ### Ports in the VM
 
