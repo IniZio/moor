@@ -386,6 +386,32 @@ When the Box closes, the sweep runs
 `~/moor/<box id>` and `~/moor-state/<box id>` on the host, the record and the
 host mirror.
 
+### Sleeping VMs
+
+When the Box sleeps, the runner runs `suspend` in the VM, then
+`crabbox pause --provider P --id moor-<box id>` on the host. A provider that
+cannot pause, or a pause that fails, leaves the VM running. The suspend still
+succeeds. The Box's next call runs `crabbox resume` and checks the VM's ssh
+words again, since a resumed VM may answer with other ones. Words that fail the
+check delete the VM, as at boot. Then `prepare` runs again in the VM.
+
+### Ports in the VM
+
+The Proxy sends the Box's ports in `X-Moor-Machine-Ports`, moved by the slot as
+on any machine. The controller serves them on the host's loopback. Once the VM
+is ready, the runner keeps one ssh per Box open from the host into the VM,
+`ssh <words> -N -R <port>:127.0.0.1:<port + 10 × slot>`. So each port is the
+repo's own on the VM's loopback. If that ssh ends, the runner starts it again,
+waiting from 1 s up to 60 s. It ends when the Box sleeps or closes, or the
+runner stops.
+
+### Orphan VMs
+
+The reconcile pass also runs `crabbox list --provider P --json` on each VM
+host. It deletes each `moor-<box id>` lease whose Box is closed and has no
+record, then removes `~/moor-state/<box id>` on the host. It leaves every other
+lease alone. A host whose leases cannot be listed waits for the next pass.
+
 ## Relays
 
 A machine can run its own MCP servers over stdio, such as Argent

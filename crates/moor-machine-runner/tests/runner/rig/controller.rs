@@ -162,13 +162,17 @@ fn reply(writer: &mut impl Write, id: &str, envelope: Response) {
     writeln!(writer, "{}", serde_json::to_string(&frame).unwrap()).unwrap();
 }
 
-/// `machine-targets` answered with `targets`, or failed when there are none.
+/// `machine-targets` answered with `targets`, or failed when there are none; `ssh#provider`
+/// lists a VM host.
 fn targets_envelope(targets: Option<Vec<String>>) -> Response {
     match targets {
         Some(targets) => {
             let rows: Vec<_> = targets
                 .into_iter()
-                .map(|ssh| json!({"ssh": ssh, "kind": "physical"}))
+                .map(|t| match t.split_once('#') {
+                    Some((ssh, vm)) => json!({"ssh": ssh, "kind": "vm-host", "vm_provider": vm}),
+                    None => json!({"ssh": t, "kind": "physical"}),
+                })
                 .collect();
             Response::ok("machine-targets", Some(json!({ "targets": rows })))
         }

@@ -3,6 +3,7 @@
 //! per Box, so a VM a crashed boot left behind is found by name and deleted.
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::time::Duration;
 
 use moor_core::box_key::BoxKey;
@@ -31,9 +32,22 @@ pub(super) struct Vm {
     /// ssh words from the host into the VM, kept only after they passed the pin check.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     words: Option<Vec<String>>,
+    /// Whether `crabbox pause` succeeded while the Box slept, so its wake resumes it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(super) paused: bool,
 }
 
 impl Vm {
+    /// The VM crabbox names `moor-<id>` with `provider`, not yet booted.
+    pub(super) fn planned(provider: &str, id: i64) -> Self {
+        Self {
+            provider: provider.to_owned(),
+            slug: format!("moor-{id}"),
+            words: None,
+            paused: false,
+        }
+    }
+
     /// The route into the VM; a VM that never got its words has none, so commands stay on the host.
     pub(super) fn route(&self) -> Route {
         self.words.clone().map_or(Route::Host, Route::Vm)
@@ -58,7 +72,10 @@ impl Hooks {
     ) -> Result<(Vec<String>, bool), String> {
         let id = caller.box_id.get();
         let path = self.record(id);
-        let old = read(&path)?;
+        let mut old = read(&path)?;
+        if let Some(record) = old.take_if(|r| r.vm.as_ref().is_some_and(|v| v.paused)) {
+            return self.wake(caller, &path, record).await.map(|w| (w, false));
+        }
         let planned = match old.as_ref().and_then(|r| r.vm.as_ref()) {
             Some(Vm {
                 words: Some(words), ..
@@ -73,15 +90,11 @@ impl Hooks {
             ));
         }
         if let Some(vm) = &planned {
-            // A VM that never got made cannot be stopped; a warmup with its slug then fails
-            // loudly if it still exists, so this error is not the one to report.
-            let _ = self.stop(&caller.reach, id, vm).await;
+            self.stop(&caller.reach, id, vm)
+                .await
+                .map_err(|e| format!("could not delete the half-booted {}: {e}", vm.slug))?;
         }
-        let vm = Vm {
-            provider: provider.to_owned(),
-            slug: format!("moor-{id}"),
-            words: None,
-        };
+        let vm = Vm::planned(provider, id);
         let mut record = old.unwrap_or_else(|| Record::new(caller, Facts::new(), false));
         record.prepared = false;
         record.vm = Some(vm.clone());
@@ -93,6 +106,41 @@ impl Hooks {
             done = warmup => done?,
             () = beat(progress, &what) => unreachable!("a beat never ends"),
         };
+        let words = self.checked_words(caller, &path, record, vm).await?;
+        Ok((words, true))
+    }
+
+    /// Resumes the caller's paused VM, then reads and checks its words again, since a resumed
+    /// VM may answer with other ssh options.
+    async fn wake(
+        &self,
+        caller: &Caller,
+        path: &Path,
+        record: Record,
+    ) -> Result<Vec<String>, String> {
+        let id = caller.box_id.get();
+        let vm = record.vm.clone().ok_or("the Box has no VM to resume")?;
+        self.crabbox(&caller.reach, id, &vm.args("resume", "--id", &[]))
+            .await
+            .map_err(|e| format!("could not resume {}: {e}", vm.slug))?;
+        let vm = Vm {
+            words: None,
+            paused: false,
+            ..vm
+        };
+        self.checked_words(caller, path, record, vm).await
+    }
+
+    /// The words `crabbox ssh` prints for `vm`, kept in the record once they pass the pin
+    /// check; a VM whose words fail it is deleted.
+    async fn checked_words(
+        &self,
+        caller: &Caller,
+        path: &Path,
+        mut record: Record,
+        vm: Vm,
+    ) -> Result<Vec<String>, String> {
+        let id = caller.box_id.get();
         let printed = self
             .crabbox(&caller.reach, id, &vm.args("ssh", "--id", &[]))
             .await?;
@@ -103,26 +151,75 @@ impl Hooks {
                 .await
                 .map_err(|e| format!("{refusal}; deleting the VM failed too: {e}"))?;
             record.vm = None;
-            write(&path, &record).map_err(|e| format!("{refusal}; {e}"))?;
+            write(path, &record).map_err(|e| format!("{refusal}; {e}"))?;
             return Err(refusal);
         }
         record.vm = Some(Vm {
             words: Some(words.clone()),
             ..vm
         });
-        write(&path, &record).map_err(|e| format!("could not keep the VM's words: {e}"))?;
-        Ok((words, true))
+        write(path, &record).map_err(|e| format!("could not keep the VM's words: {e}"))?;
+        Ok(words)
     }
 
-    /// Deletes the Box's VM on the host.
+    /// Pauses the Box's VM; whether it paused. A provider that cannot pause, or a pause that
+    /// fails, leaves the VM running, which only costs the host its resources.
+    pub(super) async fn pause(&self, reach: &Reach, id: i64, vm: &Vm) -> bool {
+        match self
+            .crabbox(reach, id, &vm.args("pause", "--id", &[]))
+            .await
+        {
+            Ok(_) => true,
+            Err(e) if e.contains("does not support pause") => {
+                eprintln!(
+                    "moor-machine-runner: provider {} cannot pause {}; it keeps running",
+                    vm.provider, vm.slug
+                );
+                false
+            }
+            Err(e) => {
+                eprintln!("moor-machine-runner: {} keeps running: {e}", vm.slug);
+                false
+            }
+        }
+    }
+
+    /// The Box ids of the `moor-<id>` leases `crabbox list` shows for `provider` on `reach`.
+    pub(super) async fn leases(
+        &self,
+        reach: &Reach,
+        provider: &str,
+    ) -> Result<std::collections::BTreeSet<i64>, String> {
+        let script = format!("crabbox list --provider {} --json", quote(provider));
+        let out = self.helper(0, reach, &script).await?;
+        if out.exit_code != Some(0) {
+            return Err(format!("crabbox list failed: {}", tail(&out)));
+        }
+        lease_ids(&out.output)
+    }
+
+    /// Deletes the Box's VM on the host; a VM already gone counts as deleted.
     pub(super) async fn stop(&self, reach: &Reach, id: i64, vm: &Vm) -> Result<(), String> {
         let args = vm.args("stop", "--id", &[]);
-        self.crabbox(reach, id, &args).await.map(drop)
+        self.crabbox_exiting(reach, id, &args, &[0, GONE])
+            .await
+            .map(drop)
     }
 
     /// Runs crabbox with `args` on the host, from Box `id`'s lease dir; its output when it
     /// exits 0, else an error quoting the tail.
     async fn crabbox(&self, reach: &Reach, id: i64, args: &[String]) -> Result<ExecOutput, String> {
+        self.crabbox_exiting(reach, id, args, &[0]).await
+    }
+
+    /// Runs crabbox like [`Self::crabbox`], taking any exit code in `ok` as success.
+    async fn crabbox_exiting(
+        &self,
+        reach: &Reach,
+        id: i64,
+        args: &[String],
+        ok: &[i32],
+    ) -> Result<ExecOutput, String> {
         let state = BoxKey::new(BoxId::new(id)).machine_state_dir();
         let words: Vec<String> = args.iter().map(|a| quote(a)).collect();
         let script = format!(
@@ -132,7 +229,7 @@ impl Hooks {
         );
         let out = self.helper(id, reach, &script).await?;
         match out.exit_code {
-            Some(0) => Ok(out),
+            Some(code) if ok.contains(&code) => Ok(out),
             code => Err(format!(
                 "crabbox {} failed ({code:?}): {}",
                 args[0],
@@ -174,6 +271,26 @@ fn ssh_words(printed: &ExecOutput) -> Result<Vec<String>, String> {
         .map(|w| w[1..].to_vec())
         .ok_or_else(|| format!("crabbox ssh printed no ssh line: {}", tail(printed)))
 }
+
+/// The Box ids in `crabbox list --json` output: leases whose slug is `moor-<id>`. A lease
+/// names its slug in `labels.slug`, `slug` or `name`, by provider.
+fn lease_ids(json: &str) -> Result<std::collections::BTreeSet<i64>, String> {
+    let leases: Vec<serde_json::Value> = serde_json::from_str(json.trim())
+        .map_err(|e| format!("crabbox list printed no JSON list: {e}"))?;
+    Ok(leases
+        .iter()
+        .filter_map(|l| {
+            [&l["labels"]["slug"], &l["slug"], &l["name"]]
+                .into_iter()
+                .find_map(serde_json::Value::as_str)
+        })
+        .filter_map(|slug| slug.strip_prefix("moor-"))
+        .filter_map(super::reap::box_id)
+        .collect())
+}
+
+/// The exit code of `crabbox stop` for a lease that is already gone.
+const GONE: i32 = 4;
 
 /// Prints `moor-known-hosts dev|w|ro FILE` for each known-hosts file in `$o`.
 const PROBE: &str = r#"for f in $(printf '%s\n' "$o" | sed -n 's/^userknownhostsfile //p'); do

@@ -202,7 +202,6 @@ async fn claim(
                 kind,
                 vm_provider,
             } => {
-                let sync_exclude = Vec::new();
                 let reach = match machine_id {
                     Some(machine_id) => Reach::Linked {
                         machine_id,
@@ -215,9 +214,10 @@ async fn claim(
                     machine,
                     reach,
                     slot,
-                    sync_exclude,
+                    sync_exclude: Vec::new(),
                     kind: MachineKind::from_parts(kind, vm_provider.as_deref())?,
                     route: Route::Host,
+                    ports: ports.clone(),
                 };
                 return Ok((caller, ports));
             }

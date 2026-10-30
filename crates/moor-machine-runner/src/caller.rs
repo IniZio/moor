@@ -26,6 +26,8 @@ const MACHINE_ID: &str = "X-Moor-Machine-Id";
 const KIND: &str = "X-Moor-Machine-Kind";
 /// Header carrying a VM host's crabbox provider.
 const VM: &str = "X-Moor-Machine-Vm";
+/// Header naming the Box ports the controller serves on the machine, moved by the slot.
+const PORTS: &str = "X-Moor-Machine-Ports";
 /// Header carrying why the Box holds no machine slot; set instead of the machine headers.
 const MISSING: &str = "X-Moor-Machine-Missing";
 /// Highest slot: its ports, the repo's plus ten per slot, must stay below 65536.
@@ -48,6 +50,8 @@ pub(crate) struct Caller {
     pub(crate) kind: MachineKind,
     /// Where commands land once ssh reaches the machine; into the VM once it is ready.
     pub(crate) route: Route,
+    /// The Box ports served on the machine's loopback, moved by the slot.
+    pub(crate) ports: Vec<u16>,
 }
 
 impl Caller {
@@ -99,6 +103,7 @@ impl Caller {
                 })?,
         };
         let kind = kind(headers)?;
+        let ports = ports(headers)?;
         Ok(Self {
             box_id,
             machine,
@@ -107,6 +112,7 @@ impl Caller {
             sync_exclude,
             kind,
             route: Route::Host,
+            ports,
         })
     }
 
@@ -136,6 +142,15 @@ impl Caller {
             MachineKind::Physical => 10 * u32::from(self.slot),
             MachineKind::VmHost { .. } => 0,
         }
+    }
+
+    /// Each served port with the repo's own port it carries in the Box's VM: `(vm, host)`.
+    pub(crate) fn vm_ports(&self) -> Vec<(u16, u16)> {
+        let offset = 10 * self.slot;
+        self.ports
+            .iter()
+            .filter_map(|p| p.checked_sub(offset).map(|vm| (vm, *p)))
+            .collect()
     }
 
     /// `vm-host` for a Box with a VM on the machine, which tool results name; none otherwise.
@@ -216,4 +231,17 @@ fn box_id(headers: &HeaderMap) -> Result<BoxId, ErrorData> {
 /// An MCP error for a request the runner will not serve.
 fn refused(message: String) -> ErrorData {
     ErrorData::invalid_request(message, None)
+}
+
+/// The ports in the ports header; none when it is missing.
+fn ports(headers: &HeaderMap) -> Result<Vec<u16>, ErrorData> {
+    let Some(raw) = headers.get(PORTS).and_then(|v| v.to_str().ok()) else {
+        return Ok(Vec::new());
+    };
+    raw.split(',')
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(|p| p.parse::<u16>().ok().filter(|p| *p > 0))
+        .collect::<Option<Vec<u16>>>()
+        .ok_or_else(|| refused(format!("header {PORTS} is not a list of ports: {raw}")))
 }

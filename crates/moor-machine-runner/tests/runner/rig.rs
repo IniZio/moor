@@ -20,6 +20,8 @@ const FAKE_SSH: &str = r#"#!/bin/sh
 while [ $# -gt 0 ]; do
   case "$1" in
     -o|-l|-p|-i|-F) shift 2 ;;
+    -R|-L) fwd="$fwd $1 $2"; shift 2 ;;
+    -N) hold=1; shift ;;
     -G) cat "$HOME/.ssh-G" 2>/dev/null ||
           printf 'stricthostkeychecking yes\nuserknownhostsfile %s/.ssh/known_hosts\n' "$HOME"
         exit 0 ;;
@@ -32,6 +34,11 @@ home="$FAKE_REMOTE_HOME"
 [ -d "$FAKE_REMOTES/$1" ] && home="$FAKE_REMOTES/$1"
 shift
 cd "$home" || exit 255
+if [ -n "$hold" ]; then
+  echo "up$fwd" >> "$home/forwards"
+  trap 'echo "down$fwd" >> "$home/forwards"; exit 0' TERM
+  while :; do sleep 1 & wait $!; done
+fi
 fifo=$(mktemp -u "$home/.ssh-in.XXXXXX") && mkfifo "$fifo" || exit 255
 exec 3<&0
 cat <&3 >"$fifo" 3<&- &

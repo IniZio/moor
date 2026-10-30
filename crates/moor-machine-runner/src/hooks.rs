@@ -34,11 +34,13 @@ use crate::relay::Relays;
 use crate::route::Route;
 
 mod env;
+mod forward;
 mod reach;
 mod reap;
 mod sleep;
 mod vm;
 pub(crate) use env::{box_env, fact_env};
+pub(crate) use forward::VmForwards;
 pub(crate) use reap::state_prelude;
 
 /// What `prepare` printed about a Box, such as `device`.
@@ -73,6 +75,8 @@ pub(crate) struct Hooks {
     pub(crate) preparing: Mutex<HashMap<i64, Arc<tokio::sync::Mutex<()>>>>,
     /// The links that carry hooks for enrolled machines, whose own hooks then run by name.
     pub(crate) agents: Option<crate::Agents>,
+    /// The forwards from VM hosts' loopback into their Boxes' VMs.
+    pub(crate) vm_forwards: VmForwards,
 }
 
 /// What the runner keeps about a prepared Box: where it is, for `release`, and its facts.
@@ -147,6 +151,7 @@ impl Hooks {
         let mut booted = false;
         if let MachineKind::VmHost { provider } = &caller.kind {
             let (words, fresh) = self.boot(caller, provider, progress).await?;
+            self.vm_forwards.start(caller, &words);
             caller.route = Route::Vm(words);
             booted = fresh;
         }
@@ -249,6 +254,7 @@ impl Hooks {
     /// Runs `release` for a prepared Box, then removes its copy and state dir on the machine.
     async fn release_files(&self, id: i64, record: &Record) -> Result<(), String> {
         if let Some(vm) = &record.vm {
+            self.vm_forwards.end(id);
             // release is skipped: what prepare made lives in the VM, which goes whole.
             self.stop(&record.reach, id, vm).await?;
         } else if record.prepared {

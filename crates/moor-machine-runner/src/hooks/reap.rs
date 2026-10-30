@@ -7,11 +7,12 @@ use tokio::time::Instant;
 
 use moor_core::box_key::BoxKey;
 use moor_core::request::Request;
-use moor_core::view::user::MachineTargetsValue;
+use moor_core::view::user::{MachineTarget, MachineTargetsValue};
 use moor_core::BoxId;
 
 use moor_client::Client;
 
+use super::vm::Vm;
 use super::{open_boxes, tail, Hooks};
 use moor_client::link::ops::Hook;
 
@@ -30,7 +31,7 @@ pub(crate) fn state_prelude(id: i64) -> String {
 }
 
 /// The Box id a directory is named for, or none for any other name.
-fn box_id(name: &str) -> Option<i64> {
+pub(super) fn box_id(name: &str) -> Option<i64> {
     let id: i64 = name.parse().ok().filter(|id| *id > 0)?;
     (id.to_string() == name).then_some(id)
 }
@@ -62,7 +63,16 @@ impl Hooks {
                 eprintln!("moor-machine-runner: cannot remove the mirror of Box {id}: {e}");
             }
         }
-        for (target, ids) in &found {
+        for (target, provider, ids) in &found.leases {
+            for id in ids.iter().filter(|id| orphan(id)) {
+                if let Err(e) = self.stop_orphan(target, provider, *id).await {
+                    eprintln!(
+                        "moor-machine-runner: deleting the VM of Box {id} on {target} failed: {e}"
+                    );
+                }
+            }
+        }
+        for (target, ids) in &found.files {
             for id in ids.iter().filter(|id| orphan(id)) {
                 if let Err(e) = self.release_orphan(target, *id).await {
                     eprintln!("moor-machine-runner: clean-up of Box {id} on {target} failed: {e}");
@@ -71,13 +81,22 @@ impl Hooks {
         }
     }
 
+    /// Deletes the VM of a Box without a record, then its state dir the stop made on the host.
+    async fn stop_orphan(&self, target: &str, provider: &str, id: i64) -> Result<(), String> {
+        let reach = Reach::Ssh {
+            ssh: target.to_owned(),
+        };
+        self.stop(&reach, id, &Vm::planned(provider, id)).await?;
+        self.remove_on_machine(&reach, id).await
+    }
+
     /// The Box ids named on each machine the controller lists, when a listing is due; none
     /// otherwise. A machine that cannot be listed is logged and left for the next pass.
     ///
     /// # Errors
     /// Why the controller's list of machines could not be had.
-    async fn machine_files(&self, client: &Client) -> Result<Vec<(String, BTreeSet<i64>)>, String> {
-        let mut found = Vec::new();
+    async fn machine_files(&self, client: &Client) -> Result<Found, String> {
+        let mut found = Found::default();
         if !self.listing_due() {
             return Ok(found);
         }
@@ -86,9 +105,17 @@ impl Hooks {
             .await
             .map_err(|e| e.to_string())??;
         for target in targets {
-            match self.listing(&target).await {
-                Ok(ids) => found.push((target, ids)),
-                Err(e) => eprintln!("moor-machine-runner: cannot list the files on {target}: {e}"),
+            let ssh = target.ssh;
+            if let Some(provider) = target.vm_provider {
+                let reach = Reach::Ssh { ssh: ssh.clone() };
+                match self.leases(&reach, &provider).await {
+                    Ok(ids) => found.leases.push((ssh.clone(), provider, ids)),
+                    Err(e) => eprintln!("moor-machine-runner: cannot list the VMs on {ssh}: {e}"),
+                }
+            }
+            match self.listing(&ssh).await {
+                Ok(ids) => found.files.push((ssh, ids)),
+                Err(e) => eprintln!("moor-machine-runner: cannot list the files on {ssh}: {e}"),
             }
         }
         Ok(found)
@@ -164,9 +191,18 @@ impl Hooks {
     }
 }
 
-/// The ssh target of every machine reached over ssh, whichever user it belongs to. A machine
-/// whose agent links in has none and is skipped: its orphans wait for clean-up over the link.
-fn machine_targets(client: &Client) -> Result<BTreeSet<String>, String> {
+/// What a reconcile pass found on the machines.
+#[derive(Default)]
+struct Found {
+    /// The Box ids named by files, per ssh target.
+    files: Vec<(String, BTreeSet<i64>)>,
+    /// The Box ids of `moor-<id>` VMs, per VM host's ssh target and provider.
+    leases: Vec<(String, String, BTreeSet<i64>)>,
+}
+
+/// Every machine reached over ssh, whichever user it belongs to. A machine whose agent links
+/// in has no ssh target and is skipped: its orphans wait for clean-up over the link.
+fn machine_targets(client: &Client) -> Result<Vec<MachineTarget>, String> {
     let response = client
         .request(Request::MachineTargets {}, |_| {})
         .map_err(|e| format!("the controller did not list the machines: {e}"))?;
@@ -182,7 +218,6 @@ fn machine_targets(client: &Client) -> Result<BTreeSet<String>, String> {
     Ok(listed
         .targets
         .into_iter()
-        .map(|t| t.ssh)
-        .filter(|t| !t.is_empty())
+        .filter(|t| !t.ssh.is_empty())
         .collect())
 }

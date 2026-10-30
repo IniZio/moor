@@ -66,7 +66,6 @@ mod sync;
 /// # Errors
 /// Returns the error that stopped the listener.
 pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
-    let mirrors = config.state_dir.join("mirrors");
     let hooks = Arc::new(Hooks {
         prepare: config.prepare,
         release: config.release,
@@ -75,10 +74,11 @@ pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
         client: Client::new(&config.socket),
         timeout: config.hook_timeout,
         boxes: config.state_dir.join("boxes"),
-        mirrors: mirrors.clone(),
+        mirrors: config.state_dir.join("mirrors"),
         reconcile: config.reconcile,
         listed: Mutex::default(),
         preparing: Mutex::default(),
+        vm_forwards: hooks::VmForwards::default(),
         agents: config.agents.clone(),
     });
     let relays = Arc::new(Relays::new(
@@ -91,7 +91,7 @@ pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
     let runner = Runner {
         rsh: rsh::listen(&config.state_dir, config.agents.as_ref())?,
         client: Client::new(&config.socket),
-        mirrors,
+        mirrors: hooks.mirrors.clone(),
         syncing: Arc::default(),
         holds: Arc::clone(&holds),
         hooks: Arc::clone(&hooks),

@@ -40,6 +40,10 @@ impl Hooks {
         let route = record.route();
         self.hook(id, &record.reach, &route, Hook::Suspend, &env)
             .await?;
+        self.vm_forwards.end(id);
+        if let Some(vm) = record.vm.as_mut() {
+            vm.paused = self.pause(&record.reach, id, vm).await;
+        }
         record.suspended_at = Some(now());
         write(&path, &record).map_err(|e| format!("could not note the suspend: {e}"))
     }
