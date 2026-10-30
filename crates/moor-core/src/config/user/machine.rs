@@ -4,11 +4,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 use serde::{Deserialize, Serialize};
 
-use kind::check_vm_provider;
-pub use kind::{MachineKind, MachineKindName};
 pub use pick::{pick_machine, unslot_ports, MachinePick};
-
-mod kind;
 
 mod pick;
 
@@ -35,9 +31,9 @@ pub struct UserMachine {
     /// How many Boxes may hold the machine at once, each in its own port slot; at least 1.
     #[serde(default = "one")]
     pub capacity: u16,
-    /// Whether Boxes hold the machine itself or a VM leased on it.
+    /// The crabbox provider this machine offers Boxes on, when it hosts a Box pool.
     #[serde(default)]
-    pub kind: MachineKind,
+    pub pool: Option<String>,
 }
 
 /// The capacity of a machine added without one.
@@ -65,21 +61,18 @@ impl UserMachine {
             ssh: ssh.to_owned(),
             labels,
             capacity: 1,
-            kind: MachineKind::Physical,
+            pool: None,
         })
     }
 
-    /// The machine as a VM host whose crabbox leases VMs through `provider`; `capacity` then
-    /// counts concurrent VMs.
+    /// The machine as a Box pool host offering Boxes through crabbox provider `pool`.
     ///
     /// # Errors
-    /// When `provider` is not a crabbox provider name.
-    pub fn with_vm_host(self, provider: &str) -> Result<Self, String> {
-        check_vm_provider(provider)?;
+    /// When `pool` is not a crabbox provider name.
+    pub fn with_pool(self, pool: &str) -> Result<Self, String> {
+        check_pool(pool)?;
         Ok(Self {
-            kind: MachineKind::VmHost {
-                provider: provider.to_owned(),
-            },
+            pool: Some(pool.to_owned()),
             ..self
         })
     }
@@ -107,6 +100,8 @@ pub struct EnrolledMachine {
     pub labels: Vec<String>,
     /// How many Boxes may hold it at once.
     pub capacity: u16,
+    /// The crabbox provider it offers Boxes on, when it hosts a Box pool.
+    pub pool: Option<String>,
 }
 
 impl EnrolledMachine {
@@ -128,7 +123,42 @@ impl EnrolledMachine {
             pubkey: pubkey.to_owned(),
             labels: checked.labels,
             capacity: checked.capacity,
+            pool: None,
         })
+    }
+
+    /// The machine as a Box pool host offering Boxes through crabbox provider `pool`.
+    ///
+    /// # Errors
+    /// When `pool` is not a crabbox provider name.
+    pub fn with_pool(self, pool: &str) -> Result<Self, String> {
+        check_pool(pool)?;
+        Ok(Self {
+            pool: Some(pool.to_owned()),
+            ..self
+        })
+    }
+}
+
+/// Longest crabbox provider name.
+const POOL_MAX: usize = 64;
+
+/// `[a-z][a-z0-9-]*` in at most 64 bytes, as crabbox names a provider.
+///
+/// # Errors
+/// Why `pool` is not accepted, naming `--pool`.
+fn check_pool(pool: &str) -> Result<(), String> {
+    let ok = pool.len() <= POOL_MAX
+        && pool.starts_with(|c: char| c.is_ascii_lowercase())
+        && pool
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+    if ok {
+        Ok(())
+    } else {
+        Err(format!(
+            "--pool provider `{pool}` must match [a-z][a-z0-9-]* in at most {POOL_MAX} bytes"
+        ))
     }
 }
 

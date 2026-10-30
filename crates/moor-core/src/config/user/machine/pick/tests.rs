@@ -8,30 +8,6 @@ fn machine(name: &str, labels: &[&str]) -> UserMachine {
     UserMachine::parse(name, "dev@mac.example", &labels).expect("valid machine")
 }
 
-fn vm_host(name: &str, labels: &[&str]) -> UserMachine {
-    machine(name, labels).with_vm_host("external").unwrap()
-}
-
-#[test]
-fn matches_vm_hosts_and_physical_machines_by_labels_alike() {
-    let own = [
-        machine("air", &["macos"]),
-        vm_host("hv", &["android-emu"]),
-        vm_host("hv2", &["macos"]),
-    ];
-    assert_eq!(
-        pick_machine(&want(&["android-emu"], &[8081]), &own, &held(&[])),
-        attach(own.get(1).unwrap(), 0, &[8081])
-    );
-    assert_eq!(
-        pick_machine(&want(&["macos"], &[]), &own, &held(&[("air", 0, "a")])),
-        attach(own.get(2).unwrap(), 0, &[])
-    );
-    let full = held(&[("air", 0, "a"), ("hv2", 0, "b")]);
-    let pick = pick_machine(&want(&["macos"], &[]), &own, &full);
-    assert!(matches!(pick, MachinePick::LeftOut { .. }), "{pick:?}");
-}
-
 fn want(labels: &[&str], ports: &[u16]) -> RepoMachine {
     RepoMachine {
         labels: labels.iter().map(|l| (*l).to_owned()).collect(),

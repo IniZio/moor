@@ -1,6 +1,8 @@
 //! Tests for name validation.
 
-use super::{next_box_name, BoxHandle, BoxId, BoxName, BoxPath, SessionId, Sha};
+use super::{
+    next_box_name, BoxHandle, BoxId, BoxName, BoxPath, NameError, ProviderId, SessionId, Sha,
+};
 
 /// Valid Box names parse.
 #[test]
@@ -177,4 +179,24 @@ fn parse_rejects_double_dash() {
 fn parse_allow_bare_keeps_double_dash() {
     assert!(BoxName::parse_allow_bare("a--b").is_ok());
     assert!(BoxName::parse("a--b").is_err());
+}
+
+#[test]
+fn a_provider_id_splits_into_base_and_host() {
+    let p = ProviderId::parse("cloudhypervisor@hv1").unwrap();
+    assert_eq!((p.base(), p.host()), ("cloudhypervisor", Some("hv1")));
+    let bare = ProviderId::parse("agent37").unwrap();
+    assert_eq!((bare.base(), bare.host()), ("agent37", None));
+    assert_eq!(p.as_str(), "cloudhypervisor@hv1");
+}
+
+#[test]
+fn a_provider_id_has_at_most_one_at_and_no_empty_side() {
+    for bad in ["", "@hv1", "ch@", "@", "a@b@c", "a@@b"] {
+        assert_eq!(
+            ProviderId::parse(bad),
+            Err(NameError::Provider(bad.to_owned())),
+            "{bad:?}"
+        );
+    }
 }

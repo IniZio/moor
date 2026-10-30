@@ -162,6 +162,8 @@ pub enum UserCmd {
         labels: Vec<String>,
         /// How many Boxes may hold it at once.
         capacity: u16,
+        /// The crabbox provider the machine offers Boxes on.
+        pool: Option<String>,
     },
     /// Add or replace one of the caller's user's machines.
     MachineAdd {
@@ -173,8 +175,8 @@ pub enum UserCmd {
         labels: Vec<String>,
         /// How many Boxes may hold it at once.
         capacity: u16,
-        /// The crabbox provider that makes it a VM host.
-        vm: Option<String>,
+        /// The crabbox provider the machine offers Boxes on.
+        pool: Option<String>,
     },
     /// Remove one of the caller's user's machines.
     MachineRemove {
@@ -272,6 +274,7 @@ impl Request {
                     pubkey: r.pubkey,
                     labels: r.labels,
                     capacity: r.capacity,
+                    pool: r.pool,
                 },
             ),
             Self::MachineRemove(r) => (r.identity, UserCmd::MachineRemove { name: r.name }),
@@ -344,7 +347,7 @@ fn machine_add(r: MachineAddReq) -> (Option<Identity>, UserCmd) {
             ssh: r.ssh,
             labels: r.labels,
             capacity: r.capacity,
-            vm: r.vm,
+            pool: r.pool,
         },
     )
 }

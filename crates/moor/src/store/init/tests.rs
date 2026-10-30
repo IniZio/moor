@@ -149,34 +149,51 @@ fn fresh_store() -> Connection {
 }
 
 #[test]
-fn fresh_store_has_machine_kind_columns_that_tie_the_provider_to_vm_hosts() {
-    let conn = fresh_store();
-    let insert = |kind: &str, provider: &str| {
-        conn.execute_batch(&format!(
-            "INSERT INTO users (id, created_at) VALUES (1, 1) ON CONFLICT DO NOTHING;
-             INSERT INTO user_machines (user, name, ssh, labels, capacity, kind, vm_provider, \
-             created_at, updated_at) VALUES (1, lower(hex(randomblob(4))), 'u@h', '[]', 1, '{kind}', \
-             {provider}, 1, 1);"
-        ))
-    };
-    assert!(insert("physical", "NULL").is_ok());
-    assert!(insert("vm-host", "'external'").is_ok());
-    assert!(insert("vm-host", "NULL").is_err());
-    assert!(insert("physical", "'external'").is_err());
-    assert!(insert("bogus", "NULL").is_err());
+fn a_file_at_migration_22_drops_the_machine_kind_and_keeps_its_machines() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("moor.db");
+    let mut conn = Connection::open(&path).unwrap();
+    let all = super::schema().unwrap();
+    let up_to_22 = all.get(..22).unwrap();
+    moor_migrate::migrate(&mut conn, up_to_22, |_| Ok(moor_migrate::Legacy::Empty)).unwrap();
     conn.execute_batch(
-        "INSERT INTO user_machines (user, name, ssh, labels, capacity, created_at, updated_at) \
-         VALUES (1, 'old', 'u@h', '[]', 1, 1, 1);",
+        "INSERT INTO users (id, created_at) VALUES (1, 1);
+         INSERT INTO user_machines (user, name, ssh, labels, capacity, kind, vm_provider, \
+         created_at, updated_at) VALUES (1, 'hv', 'u@h', '[]', 2, 'vm-host', 'external', 1, 1);",
     )
     .unwrap();
-    let kind: String = conn
+    init_schema(&mut conn, &path).unwrap();
+    let columns = |table: &str| -> Vec<String> {
+        let mut stmt = conn
+            .prepare("SELECT name FROM pragma_table_info(?) ORDER BY cid")
+            .unwrap();
+        let rows = stmt.query_map([table], |r| r.get(0)).unwrap();
+        rows.map(Result::unwrap).collect()
+    };
+    for table in ["user_machines", "user_machines_v2"] {
+        let cols = columns(table);
+        assert!(
+            cols.contains(&"pool_provider".to_owned()),
+            "{table}: {cols:?}"
+        );
+        assert!(!cols.contains(&"kind".to_owned()), "{table}: {cols:?}");
+        assert!(
+            !cols.contains(&"vm_provider".to_owned()),
+            "{table}: {cols:?}"
+        );
+    }
+    let (capacity, pool): (u16, Option<String>) = conn
         .query_row(
-            "SELECT kind FROM user_machines WHERE name = 'old'",
+            "SELECT capacity, pool_provider FROM user_machines WHERE name = 'hv'",
             [],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .unwrap();
-    assert_eq!(kind, "physical", "a row added without a kind is physical");
+    assert_eq!(
+        (capacity, pool),
+        (2, None),
+        "the row stays, as an ordinary machine"
+    );
 }
 
 #[test]
@@ -329,6 +346,7 @@ fn applied_migrations_are_never_edited() {
             (20, 17_939_743_571_477_548_879),
             (21, 11_768_997_959_363_115_407),
             (22, 7_963_545_269_253_560_683),
+            (23, 3_791_705_829_165_739_481),
         ],
         "a schema change is a new migration file; an applied one must not change"
     );

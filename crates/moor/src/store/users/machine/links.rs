@@ -67,7 +67,7 @@ pub(super) fn enrolled_in(
     user: UserId,
 ) -> Result<Vec<(i64, moor_core::config::UserMachine)>, StoreError> {
     let mut stmt = conn.prepare(
-        "SELECT machine_id, name, labels, capacity FROM user_machines_v2 WHERE user = ? \
+        "SELECT machine_id, name, labels, capacity, pool_provider FROM user_machines_v2 WHERE user = ? \
          ORDER BY name",
     )?;
     let rows = stmt.query_and_then([user.get()], |r| {
@@ -79,7 +79,7 @@ pub(super) fn enrolled_in(
             ssh: String::new(),
             labels,
             capacity: r.get(3)?,
-            kind: moor_core::config::MachineKind::Physical,
+            pool: r.get(4)?,
         };
         Ok((id, machine))
     })?;

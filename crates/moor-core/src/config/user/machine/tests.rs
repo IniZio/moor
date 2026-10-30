@@ -107,15 +107,14 @@ fn at_most_sixteen_distinct_labels() {
 }
 
 #[test]
-fn a_vm_provider_matches_crabbox_provider_names() {
+fn a_pool_provider_matches_crabbox_provider_names() {
     let m = UserMachine::parse("hv", "u@h", &[]).unwrap();
     for ok in ["external", "a", "aws-spot2", &"a".repeat(64)] {
-        let host = m.clone().with_vm_host(ok).unwrap();
-        assert_eq!(host.kind.provider(), Some(ok));
+        assert_eq!(m.clone().with_pool(ok).unwrap().pool.as_deref(), Some(ok));
     }
-    for bad in ["", "Ext", "9a", "a_b", "-a", "a b", &"a".repeat(65)] {
-        let err = m.clone().with_vm_host(bad).unwrap_err();
-        assert!(err.contains("--vm"), "{bad:?}: {err}");
+    for bad in ["", "Ext", "9a", "a_b", "-a", "a b", "a@b", &"a".repeat(65)] {
+        let err = m.clone().with_pool(bad).unwrap_err();
+        assert!(err.contains("--pool"), "{bad:?}: {err}");
     }
-    assert_eq!(m.kind.provider(), None);
+    assert_eq!(m.pool, None);
 }

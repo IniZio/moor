@@ -15,7 +15,7 @@ file means every key takes its default, except `box.provider`, which has none.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `box.provider` | string | none | The crabbox provider for new Boxes. `moor start` of a new Box fails until it is set. Existing Boxes keep the provider they started on. A repo cannot set it. |
+| `box.provider` | string | none | The crabbox provider for new Boxes, or `<provider>@<machine>` for a [Box pool host](#box-pool-hosts) of your own. `moor start` of a new Box fails until it is set. Existing Boxes keep the provider they started on. A repo cannot set it. |
 | `box.size` | `small`, `medium`, `large`, or `xlarge` | `small` | The Box size. A `.moor.yaml` value wins over this one. |
 | `box.max_boxes` | integer, at least 1 | none | The most live Boxes at once. |
 | `box.sleep_after` | duration such as `30s`, `45m`, `2h`, or `1d` | `30m` | How long a Box stays idle before moor puts it to sleep. |
@@ -190,18 +190,25 @@ address, or a bracketed IPv6 address. moor stores no credential. The host's own
 ssh key or ssh agent reaches the machine. A Box gets a machine only through the
 repo's `machine.labels` in [`.moor.yaml`](#mooryaml).
 
-A machine can be a VM host: it runs crabbox with a provider adapter, and each
-Box claim gets its own VM leased on it.
+### Box pool hosts
+
+A machine of your own can run your Boxes, instead of a shared provider. The
+host runs crabbox with a provider adapter, such as cloud-hypervisor, and each
+Box gets its own VM there. Enroll the host with the provider it offers:
 
 ```sh
-moor user machine add hv --ssh me@box:22 --label android-emu --vm external --capacity 3
+moor-machine-agent enroll --server https://moor.example.com --name hv --pool cloudhypervisor
 ```
 
-`--vm PROVIDER` makes the machine a VM host. The provider matches
-`[a-z][a-z0-9-]*`, 64 bytes at most, like a crabbox provider name. On a VM host,
-`capacity` is the most VMs that run at once. `moor user machine ls` shows each
-machine's kind and provider. A VM host matches a repo's `machine.labels` the
-same way a physical machine does.
+`moor user machine add hv --ssh me@hv:22 --pool cloudhypervisor` does the same
+for a machine reached over ssh. The provider matches `[a-z][a-z0-9-]*`, 64
+bytes at most. `moor user machine ls` shows each machine's pool.
+
+Then set `box.provider: cloudhypervisor@hv`. `moor start` refuses,
+with the reason, when `hv` is not one of your machines, offers another
+provider or no pool, or its agent is not linked. It never falls back to
+another provider. Running the Box on the host is not supported yet, so a host
+that passes these checks is refused too.
 
 ### The machine service
 
@@ -218,10 +225,9 @@ machines:
 A plain `http://` request from a Box to `host`, on any port, goes through that
 Box's Proxy to `upstream`. The Proxy drops every `X-Moor-*` header that the Box
 sent. It then adds `X-Moor-Box` (the Box id), `X-Moor-Machine` (the machine's
-name), `X-Moor-Machine-Ssh` (its ssh target), and `X-Moor-Machine-Kind`,
-`X-Moor-Machine-Vm` and `X-Moor-Machine-Ports` (see [machines](machines.md)),
-so the service can trust them. The Proxy answers 403 to a CONNECT to `host`,
-and to any request from a Box that holds no machine at that moment. `upstream` must be a loopback address
+name), and `X-Moor-Machine-Ssh` (its ssh target), so the service can trust
+them. The Proxy answers 403 to a CONNECT to `host`, and to any request from a
+Box that holds no machine at that moment. `upstream` must be a loopback address
 and port, or moor refuses the config. Without `machines.service`, `host` is a
 host like any other.
 

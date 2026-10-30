@@ -17,6 +17,9 @@ pub enum NameError {
     /// The path inside the box is absolute, empty or contains `..`.
     #[error("invalid box path `{0}`: must be relative, non-empty and free of `..`")]
     RelPath(String),
+    /// The provider id has more than one `@`, or an empty side.
+    #[error("invalid provider `{0}`: use <provider> or <provider>@<machine>, each side non-empty")]
+    Provider(String),
 }
 
 /// A repo registry name becomes a directory name, so it must not carry path syntax.
@@ -268,10 +271,39 @@ impl ProviderId {
         Self(s.into())
     }
 
+    /// Validates a provider id: `<provider>`, or `<provider>@<host>` naming a machine of the
+    /// user that hosts the Box.
+    ///
+    /// # Errors
+    /// Returns [`NameError::Provider`] for an empty id, more than one `@`, or an empty side.
+    pub fn parse(s: &str) -> Result<Self, NameError> {
+        let mut parts = s.split('@');
+        let ok = parts.next().is_some_and(|base| !base.is_empty())
+            && parts.next().is_none_or(|host| !host.is_empty())
+            && parts.next().is_none();
+        if ok {
+            Ok(Self(s.to_owned()))
+        } else {
+            Err(NameError::Provider(s.to_owned()))
+        }
+    }
+
     /// Returns the id text.
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// The provider before any `@`.
+    #[must_use]
+    pub fn base(&self) -> &str {
+        self.0.split_once('@').map_or(&self.0, |(base, _)| base)
+    }
+
+    /// The machine after the `@`; none when the id names no host.
+    #[must_use]
+    pub fn host(&self) -> Option<&str> {
+        self.0.split_once('@').map(|(_, host)| host)
     }
 }
 

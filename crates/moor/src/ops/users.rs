@@ -72,12 +72,13 @@ pub(crate) fn run(
             pubkey,
             labels,
             capacity,
+            pool,
         } => machine::enroll(
             store,
             who,
             email.as_ref(),
             (name, pubkey, labels),
-            *capacity,
+            (*capacity, pool.as_deref()),
         ),
         UserCmd::MachineAdd { .. } | UserCmd::MachineRemove { .. } | UserCmd::MachineList => {
             machine::run(store, enrolled(store, who)?, cmd)

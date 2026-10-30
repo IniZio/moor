@@ -255,7 +255,7 @@ fn an_asleep_box_runs_the_machines_suspend_hook_with_its_facts() {
 fn a_claim_held_on_an_enrolled_machine_prepares_it_over_the_link() {
     let m = Linked::start(&[]);
     let held = json!({"state": "held", "machine": "minion", "ssh": "", "machine_id": MACHINE_ID,
-        "slot": 0, "ports": [8081], "kind": "physical"});
+        "slot": 0, "ports": [8081]});
     hold_answers(&m, vec![held]);
     let got = m
         .rig

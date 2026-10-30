@@ -84,11 +84,7 @@ fn machine_targets_lists_every_users_machines_to_the_operator_only() {
     let listed = ask(main, &json!({"cmd": "machine-targets"}));
     assert_eq!(
         listed["value"]["targets"],
-        json!([
-            {"ssh": "a@one", "kind": "physical"},
-            {"ssh": "b@three", "kind": "physical"},
-            {"ssh": "b@two", "kind": "physical"},
-        ]),
+        json!(["a@one", "b@three", "b@two"]),
         "{listed}"
     );
     refused(

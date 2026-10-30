@@ -33,6 +33,8 @@ pub struct Enroll {
     pub labels: Vec<String>,
     /// How many Boxes may hold the machine at once.
     pub slots: u16,
+    /// The crabbox provider the machine offers Boxes on, when it hosts a Box pool.
+    pub pool: Option<String>,
     /// Replace the machine's key instead of keeping it.
     pub new_key: bool,
 }
@@ -104,7 +106,7 @@ pub fn enroll(req: &Enroll, dir: &Path, port: u16, ui: &mut dyn Ui) -> Result<St
         .map_err(|e| format!("cannot encode the public key: {e}"))?;
     let signed = oidc::sign_in(&req.server, port, ui)?;
     let body = json!({"access_token": signed.access_token, "pubkey": pubkey, "name": req.name,
-        "labels": req.labels, "slots": req.slots});
+        "labels": req.labels, "slots": req.slots, "pool": req.pool});
     let got: Enrolled =
         Http::new().post_json(&format!("{}/machines/enroll", signed.server), &body)?;
     let state = State {
