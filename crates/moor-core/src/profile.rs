@@ -169,7 +169,7 @@ pub fn plugin_sources(json: &str, key: &str, wanted: &[&str]) -> Result<Vec<Forg
                 .get("repo")
                 .and_then(serde_json::Value::as_str)
                 .and_then(|r| ForgeRepo::parse(r).ok()),
-            Some("url") => source
+            Some("url" | "git-subdir") => source
                 .get("url")
                 .and_then(serde_json::Value::as_str)
                 .and_then(ForgeRepo::from_github_url),

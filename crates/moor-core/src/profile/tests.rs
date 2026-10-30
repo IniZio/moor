@@ -135,3 +135,13 @@ fn plugin_sources_are_the_github_repos_of_the_named_plugins() {
         "marketplace kit is named tools"
     );
 }
+
+#[test]
+fn a_git_subdir_source_reads_its_repo() {
+    let json = r#"{"name":"tools","plugins":[
+      {"name":"sub","source":{"source":"git-subdir","url":"https://github.com/acme/mono.git","path":"plugins/sub"}}]}"#;
+    assert_eq!(
+        plugin_sources(json, "tools", &["sub"]).unwrap(),
+        [ForgeRepo::new("acme", "mono")]
+    );
+}
