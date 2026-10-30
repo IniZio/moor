@@ -68,6 +68,12 @@ fn every_user_request_round_trips_and_splits() {
             json!({"cmd": "enroll", "email": "alice@example.com"}),
             "enroll",
         ),
+        (
+            json!({"cmd": "profile-set", "source": "https://github.com/alice/agent#v2"}),
+            "profile-set",
+        ),
+        (json!({"cmd": "profile-show"}), "profile-show"),
+        (json!({"cmd": "profile-remove"}), "profile-remove"),
     ] {
         let req: Request = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(req.cmd(), cmd);

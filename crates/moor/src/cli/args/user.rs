@@ -2,9 +2,10 @@
 
 use clap::{Args, Subcommand};
 use moor_core::config::OAuthCallback;
+use moor_core::name::ProfileSource;
 use moor_core::request::{
     AsReq, EnrollReq, MachineAddReq, MachineRemoveReq, McpAddReq, McpOAuthFinishReq, McpRemoveReq,
-    SecretDeleteReq,
+    ProfileSetReq, SecretDeleteReq,
 };
 use moor_core::user::SecretName;
 use moor_core::Request;
@@ -25,6 +26,29 @@ pub(super) enum UserCli {
     /// Your user's own machines, reached over ssh with this host's own key.
     #[command(subcommand)]
     Machine(MachineCli),
+    /// The git repo that is your agent profile.
+    #[command(subcommand)]
+    Profile(ProfileCli),
+}
+
+/// Subcommands of `user profile`.
+#[derive(Debug, Subcommand)]
+pub(super) enum ProfileCli {
+    /// Record `https://github.com/OWNER/NAME[#REF]` as your profile. Without `#REF` it tracks
+    /// the repo's default branch.
+    Set(ProfileSetArg),
+    /// Show your profile repo.
+    Show,
+    /// Clear your profile repo.
+    Rm,
+}
+
+/// Arguments of `user profile set`.
+#[derive(Debug, Args)]
+pub(super) struct ProfileSetArg {
+    /// The repo, as `https://github.com/OWNER/NAME`, then `#` and a branch, tag or sha to pin.
+    #[arg(value_parser = ProfileSource::parse)]
+    source: ProfileSource,
 }
 
 /// Subcommands of `user secret`.
@@ -149,6 +173,12 @@ impl UserCli {
                 code: a.url.code,
                 iss: a.url.iss,
             }),
+            Self::Profile(ProfileCli::Set(a)) => Request::ProfileSet(ProfileSetReq {
+                identity: None,
+                source: a.source,
+            }),
+            Self::Profile(ProfileCli::Show) => Request::ProfileShow(AS_CALLER),
+            Self::Profile(ProfileCli::Rm) => Request::ProfileRemove(AS_CALLER),
             Self::Machine(MachineCli::Add(a)) => Request::MachineAdd(MachineAddReq {
                 identity: None,
                 name: a.name,

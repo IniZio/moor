@@ -79,6 +79,7 @@ fn structured_text(cmd: &str, value: &Value) -> Option<String> {
         "start" => start_text(value),
         "close" => close_text(value),
         "wait" => wait_text(value),
+        "profile-set" | "profile-show" | "profile-remove" => profile_line(value),
         "end-session" => end_session_line(value),
         "open-session" => open_session_line(value),
         "open-host-session" | "update-host-session" | "end-host-session" => {
@@ -86,6 +87,15 @@ fn structured_text(cmd: &str, value: &Value) -> Option<String> {
         }
         _ => None,
     }
+}
+
+/// The profile repo a `profile-*` reply names, or that none is set.
+fn profile_line(value: &Value) -> Option<String> {
+    let source = value.get("source")?;
+    Some(source.as_str().map_or_else(
+        || "no profile set\n".to_owned(),
+        |url| format!("profile: {url}\n"),
+    ))
 }
 
 /// `(name (#id), lifecycle/session_state)` for a Box, or `None` when a part is missing.

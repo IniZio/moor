@@ -1,8 +1,9 @@
-//! Arguments of the `mcp-*` requests.
+//! Arguments of the `mcp-*` and `profile-set` requests.
 
 use serde::{Deserialize, Serialize};
 
 use super::SecretValue;
+use crate::name::ProfileSource;
 use crate::user::Identity;
 
 /// Arguments of `mcp-add`.
@@ -49,4 +50,15 @@ pub struct McpOAuthFinishReq {
     /// The issuer the authorization server named, when it named one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub iss: Option<String>,
+}
+
+/// Arguments of `profile-set`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProfileSetReq {
+    /// The identity asserted; the controller socket's own peer when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<Identity>,
+    /// The repo, and the ref to read it at.
+    pub source: ProfileSource,
 }

@@ -29,8 +29,8 @@ pub use session::{EndSessionReq, OpenSessionReq, SessionsReq, ShowSessionReq};
 pub use target::BoxTarget;
 mod user;
 pub use user::{
-    ActAsReq, AsReq, EnrollReq, McpAddReq, McpOAuthFinishReq, McpRemoveReq, ProxyReleaseReq,
-    SecretDeleteReq, SecretSetReq, SecretValue, StartNeedsReq, UserCmd,
+    ActAsReq, AsReq, EnrollReq, McpAddReq, McpOAuthFinishReq, McpRemoveReq, ProfileSetReq,
+    ProxyReleaseReq, SecretDeleteReq, SecretSetReq, SecretValue, StartNeedsReq, UserCmd,
 };
 mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
@@ -115,6 +115,12 @@ pub enum Request {
     McpRemove(McpRemoveReq),
     /// List the caller's user's MCP servers; never their keys.
     McpList(AsReq),
+    /// Record the caller's user's agent profile repo, replacing any earlier one.
+    ProfileSet(ProfileSetReq),
+    /// Show the caller's user's agent profile repo.
+    ProfileShow(AsReq),
+    /// Clear the caller's user's agent profile repo.
+    ProfileRemove(AsReq),
     /// Finish signing the caller's user in to one of their MCP servers.
     #[serde(rename = "mcp-oauth-finish")]
     McpOAuthFinish(McpOAuthFinishReq),
@@ -190,6 +196,9 @@ impl Request {
             Self::McpAdd(_) => "mcp-add",
             Self::McpRemove(_) => "mcp-remove",
             Self::McpList(_) => "mcp-list",
+            Self::ProfileSet(_) => "profile-set",
+            Self::ProfileShow(_) => "profile-show",
+            Self::ProfileRemove(_) => "profile-remove",
             Self::McpOAuthFinish(_) => "mcp-oauth-finish",
             Self::MachineAdd(_) => "machine-add",
             Self::MachineRemove(_) => "machine-remove",
