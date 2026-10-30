@@ -13,7 +13,7 @@ fn add(name: &str, ssh: &str, labels: &[&str]) -> UserCmd {
         ssh: ssh.to_owned(),
         labels: labels.iter().map(|l| (*l).to_owned()).collect(),
         capacity: 1,
-        vm: None,
+        pool: None,
     }
 }
 
@@ -45,8 +45,8 @@ fn add_list_and_remove() {
     assert_eq!(
         listed,
         json!({"machines": [
-            {"name": "amd", "ssh": "ci@10.0.0.2", "labels": [], "capacity": 1, "kind": "physical"},
-            {"name": "mac", "ssh": "dev@mac.local:2222", "labels": ["ios-sim", "macos"], "capacity": 1, "kind": "physical"},
+            {"name": "amd", "ssh": "ci@10.0.0.2", "labels": [], "capacity": 1},
+            {"name": "mac", "ssh": "dev@mac.local:2222", "labels": ["ios-sim", "macos"], "capacity": 1},
         ]})
     );
 
@@ -77,7 +77,7 @@ fn adding_the_same_name_replaces_it() {
     let listed = as_user(&f, "slack:T1:UA", &UserCmd::MachineList).unwrap();
     assert_eq!(
         listed,
-        json!({"machines": [{"name": "mac", "ssh": "dev@new.local:22", "labels": ["ios-sim"], "capacity": 1, "kind": "physical"}]})
+        json!({"machines": [{"name": "mac", "ssh": "dev@new.local:22", "labels": ["ios-sim"], "capacity": 1}]})
     );
 }
 
@@ -163,6 +163,7 @@ fn machine_enroll(email: Option<&str>, name: &str, pubkey: &str, capacity: u16) 
         pubkey: pubkey.to_owned(),
         labels: vec!["macos".to_owned()],
         capacity,
+        pool: None,
     }
 }
 
@@ -206,48 +207,41 @@ fn machine_enroll_refuses_a_key_that_is_not_one_ed25519_public_key_and_a_bad_nam
     );
 }
 
-fn add_vm(name: &str, vm: &str) -> UserCmd {
-    UserCmd::MachineAdd {
-        name: name.to_owned(),
-        ssh: "me@box:22".to_owned(),
-        labels: vec!["android-emu".to_owned()],
-        capacity: 3,
-        vm: Some(vm.to_owned()),
+#[test]
+fn a_pool_provider_is_stored_listed_and_refused_when_malformed() {
+    let f = fixture();
+    enroll(&f, "slack:T1:UA");
+    let mut cmd = add("hv", "me@box:22", &["android-emu"]);
+    if let UserCmd::MachineAdd { pool, .. } = &mut cmd {
+        *pool = Some("cloudhypervisor".to_owned());
     }
+    as_user(&f, "slack:T1:UA", &cmd).unwrap();
+    as_user(&f, "slack:T1:UA", &add("mac", "dev@mac.local", &[])).unwrap();
+    let listed = as_user(&f, "slack:T1:UA", &UserCmd::MachineList).unwrap();
+    assert_eq!(listed["machines"][0]["pool"], "cloudhypervisor");
+    assert!(listed["machines"][1].get("pool").is_none());
+    if let UserCmd::MachineAdd { pool, .. } = &mut cmd {
+        *pool = Some("Cloud_Hypervisor".to_owned());
+    }
+    let err = as_user(&f, "slack:T1:UA", &cmd).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Usage);
+    assert!(err.error.to_string().contains("--pool"), "{err:?}");
 }
 
 #[test]
-fn a_vm_host_is_stored_and_listed_with_its_kind_and_provider() {
+fn an_enrolled_machine_keeps_its_pool_provider() {
     let f = fixture();
-    enroll(&f, "slack:T1:UA");
-    as_user(&f, "slack:T1:UA", &add_vm("hv", "external")).unwrap();
-    let listed = as_user(&f, "slack:T1:UA", &UserCmd::MachineList).unwrap();
-    assert_eq!(
-        listed,
-        json!({"machines": [{
-            "name": "hv", "ssh": "me@box:22", "labels": ["android-emu"], "capacity": 3,
-            "kind": "vm-host", "vm_provider": "external"
-        }]})
-    );
-    let again = as_user(&f, "slack:T1:UA", &add("hv", "me@box:22", &[])).unwrap();
-    assert_eq!(again, json!({"name": "hv", "changed": true}));
-    let listed = as_user(&f, "slack:T1:UA", &UserCmd::MachineList).unwrap();
-    assert_eq!(listed["machines"][0]["kind"], "physical");
-    assert!(listed["machines"][0].get("vm_provider").is_none());
-}
-
-#[test]
-fn a_bad_vm_provider_is_refused_naming_the_flag() {
-    let f = fixture();
-    enroll(&f, "slack:T1:UA");
-    for bad in ["Ext", "9x", "a_b", "", "has space"] {
-        let err = as_user(&f, "slack:T1:UA", &add_vm("hv", bad)).unwrap_err();
-        assert_eq!(err.kind, ErrorKind::Usage, "{bad:?}");
-        let text = err.error.to_string();
-        assert!(text.contains("--vm"), "{bad:?}: {text}");
+    let mut cmd = machine_enroll(Some("alice@example.com"), "hv1", KEY, 2);
+    if let UserCmd::MachineEnroll { pool, .. } = &mut cmd {
+        *pool = Some("cloudhypervisor".to_owned());
     }
-    let long = "a".repeat(65);
-    assert!(as_user(&f, "slack:T1:UA", &add_vm("hv", &long)).is_err());
-    let listed = as_user(&f, "slack:T1:UA", &UserCmd::MachineList).unwrap();
-    assert_eq!(listed["machines"].as_array().unwrap().len(), 0);
+    as_user(&f, "authgear:alice-sub", &cmd).unwrap();
+    let listed = as_user(&f, "authgear:alice-sub", &UserCmd::MachineList).unwrap();
+    assert_eq!(listed["machines"][0]["name"], "hv1");
+    assert_eq!(listed["machines"][0]["pool"], "cloudhypervisor");
+    if let UserCmd::MachineEnroll { pool, .. } = &mut cmd {
+        *pool = Some("9bad".to_owned());
+    }
+    let err = as_user(&f, "authgear:alice-sub", &cmd).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Usage);
 }

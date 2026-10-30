@@ -5,7 +5,7 @@ use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use moor_core::config::{MachineKind, MachineService};
+use moor_core::config::MachineService;
 use moor_core::{BoxId, Secret};
 use tempfile::TempDir;
 
@@ -46,7 +46,6 @@ struct Rig {
     upstream: Receiver<String>,
     holds: Arc<AtomicBool>,
     missing: Arc<Mutex<String>>,
-    kind: Arc<Mutex<MachineKind>>,
 }
 
 fn rig() -> Rig {
@@ -56,8 +55,6 @@ fn rig() -> Rig {
     let flag = Arc::clone(&holds);
     let missing = Arc::new(Mutex::new(NO_CLAIM.to_owned()));
     let why = Arc::clone(&missing);
-    let kind = Arc::new(Mutex::new(MachineKind::Physical));
-    let held_kind = Arc::clone(&kind);
     let route = MachineRoute {
         service: MachineService {
             host: HOST.to_owned(),
@@ -71,8 +68,6 @@ fn rig() -> Rig {
                     ssh: "dev@mac.example.com:22".to_owned(),
                     machine_id: None,
                     slot: 1,
-                    kind: held_kind.lock().unwrap().clone(),
-                    ports: vec![8081, 8090],
                     sync_exclude: vec!["node_modules".to_owned(), "app/build".to_owned()],
                 })
             } else {
@@ -99,7 +94,6 @@ fn rig() -> Rig {
         upstream,
         holds,
         missing,
-        kind,
     }
 }
 
@@ -165,66 +159,9 @@ fn identity_headers_the_box_sends_are_replaced() {
             "X-Moor-Machine: mac",
             "X-Moor-Machine-Ssh: dev@mac.example.com:22",
             "X-Moor-Machine-Slot: 1",
-            "X-Moor-Machine-Exclude: [\"node_modules\",\"app/build\"]",
-            "X-Moor-Machine-Kind: physical",
-            "X-Moor-Machine-Ports: 8081,8090"
+            "X-Moor-Machine-Exclude: [\"node_modules\",\"app/build\"]"
         ]
     );
-}
-
-fn own_headers(head: &str) -> Vec<&str> {
-    head.split("\r\n")
-        .filter(|l| l.to_ascii_lowercase().starts_with("x-moor-machine-"))
-        .collect()
-}
-
-#[test]
-fn a_vm_host_slot_is_marked_with_its_kind_provider_and_ports() {
-    let rig = rig();
-    *rig.kind.lock().unwrap() = MachineKind::VmHost {
-        provider: "external".to_owned(),
-    };
-    rig.send(&format!(
-        "GET http://{HOST}/mcp HTTP/1.1\r\nHost: {HOST}\r\n\r\n"
-    ));
-    let head = rig.upstream.recv_timeout(WAIT).unwrap();
-    let own = own_headers(&head);
-    for line in [
-        "X-Moor-Machine-Kind: vm-host",
-        "X-Moor-Machine-Vm: external",
-        "X-Moor-Machine-Ports: 8081,8090",
-    ] {
-        assert!(own.contains(&line), "{line} missing from {own:?}");
-    }
-}
-
-#[test]
-fn a_physical_machine_has_no_vm_header() {
-    let rig = rig();
-    rig.send(&format!(
-        "GET http://{HOST}/mcp HTTP/1.1\r\nHost: {HOST}\r\n\r\n"
-    ));
-    let head = rig.upstream.recv_timeout(WAIT).unwrap();
-    let own = own_headers(&head);
-    assert!(own.contains(&"X-Moor-Machine-Kind: physical"), "{own:?}");
-    assert!(
-        !own.iter().any(|l| l.starts_with("X-Moor-Machine-Vm")),
-        "{own:?}"
-    );
-}
-
-#[test]
-fn kind_vm_and_ports_headers_the_box_sends_are_dropped() {
-    let rig = rig();
-    rig.send(&format!(
-        "GET http://{HOST}/mcp HTTP/1.1\r\nHost: {HOST}\r\nX-Moor-Machine-Kind: vm-host\r\nx-moor-machine-vm: forged\r\nX-MOOR-MACHINE-PORTS: 1\r\n\r\n"
-    ));
-    let head = rig.upstream.recv_timeout(WAIT).unwrap();
-    let own = own_headers(&head);
-    assert!(own.contains(&"X-Moor-Machine-Kind: physical"), "{own:?}");
-    assert!(own.contains(&"X-Moor-Machine-Ports: 8081,8090"), "{own:?}");
-    assert!(!head.to_ascii_lowercase().contains("forged"), "{head}");
-    assert!(!head.contains("vm-host"), "{head}");
 }
 
 #[test]

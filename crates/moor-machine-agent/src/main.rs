@@ -34,6 +34,9 @@ enum Command {
         /// How many Boxes may hold this machine at once.
         #[arg(long, default_value_t = 1)]
         slots: u16,
+        /// Offer Boxes on this machine through crabbox PROVIDER, such as `cloudhypervisor`.
+        #[arg(long, value_name = "PROVIDER")]
+        pool: Option<String>,
         /// Do not open a browser; paste the address the sign-in ends on.
         #[arg(long)]
         paste: bool,
@@ -74,6 +77,7 @@ fn main() -> ExitCode {
             name,
             labels,
             slots,
+            pool,
             paste,
             new_key,
         } => {
@@ -82,6 +86,7 @@ fn main() -> ExitCode {
                 name,
                 labels,
                 slots,
+                pool,
                 new_key,
             };
             return enroll_here(&req, paste);

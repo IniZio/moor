@@ -31,6 +31,7 @@ use crate::store::{BoxRow, Store, StoreError};
 
 mod launch;
 mod needs;
+mod pool;
 mod preflight;
 mod profile;
 mod relaunch;
@@ -91,6 +92,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     let repo_cfg = repo_config_of(facts.repo.as_ref(), facts.base.as_deref())?;
     let cfg = resolved(cx, repo_cfg.as_ref(), &flags);
     let provider = provider_of(&cfg)?;
+    pool::check(store, user, provider)?;
     require_reverse_tunnel(provider, provider_caps(cx, provider)?)?;
     if let Some(reason) = preflight::rejection(cx, &cfg, &facts.files, user)? {
         return reject(cx, store, (req, user), &facts, &reason);

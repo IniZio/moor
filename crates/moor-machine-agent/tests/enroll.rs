@@ -122,6 +122,7 @@ fn request(w: &World, new_key: bool) -> Enroll {
         name: "minion".to_owned(),
         labels: vec!["macos".to_owned()],
         slots: 2,
+        pool: None,
         new_key,
     }
 }

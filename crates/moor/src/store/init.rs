@@ -122,6 +122,10 @@ const FILES: &[(&str, &str)] = &[
         "V22__machine_kind.sql",
         include_str!("../../migrations/V22__machine_kind.sql"),
     ),
+    (
+        "V23__machine_pool.sql",
+        include_str!("../../migrations/V23__machine_pool.sql"),
+    ),
 ];
 
 /// moor.db's migrations, oldest first.

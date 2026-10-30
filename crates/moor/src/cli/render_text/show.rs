@@ -176,16 +176,6 @@ fn held_machine_line(out: &mut String, view: &Value) {
         _ => format!("attached: {name} slot {slot} ports {}", ports.join(",")),
     };
     let _ = writeln!(out, "{line}");
-    if let Some(kind) = m.get("kind").and_then(Value::as_str) {
-        match m.get("vm_provider").and_then(Value::as_str) {
-            Some(provider) => {
-                let _ = writeln!(out, "kind:     {kind} ({provider})");
-            }
-            None => {
-                let _ = writeln!(out, "kind:     {kind}");
-            }
-        }
-    }
 }
 
 /// The detail block for one Box.

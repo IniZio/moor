@@ -39,6 +39,7 @@ mod lease_handle;
 mod machine;
 mod others;
 mod parent;
+mod pool;
 mod profile;
 mod profile_install;
 mod profile_model;

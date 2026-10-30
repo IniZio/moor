@@ -24,8 +24,8 @@ pub(super) fn run(
             ssh,
             labels,
             capacity,
-            vm,
-        } => add(store, user, name, ssh, labels, (*capacity, vm.as_deref())),
+            pool,
+        } => add(store, user, name, ssh, labels, (*capacity, pool.as_deref())),
         UserCmd::MachineRemove { name } => remove(store, user, name),
         UserCmd::MachineList => list(store, user),
         _ => Err(CommandError::new(ErrorKind::Usage, "not a machine request")),
@@ -39,12 +39,12 @@ pub(super) fn add(
     name: &str,
     ssh: &str,
     labels: &[String],
-    (capacity, vm): (u16, Option<&str>),
+    (capacity, pool): (u16, Option<&str>),
 ) -> Result<serde_json::Value, CommandError> {
     let machine = UserMachine::parse(name, ssh, labels)
         .and_then(|m| m.with_capacity(capacity))
-        .and_then(|m| match vm {
-            Some(provider) => m.with_vm_host(provider),
+        .and_then(|m| match pool {
+            Some(provider) => m.with_pool(provider),
             None => Ok(m),
         })
         .map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
@@ -62,9 +62,13 @@ pub(super) fn enroll(
     who: &Identity,
     email: Option<&Email>,
     (name, pubkey, labels): (&str, &str, &[String]),
-    capacity: u16,
+    (capacity, pool): (u16, Option<&str>),
 ) -> Result<serde_json::Value, CommandError> {
     let machine = EnrolledMachine::parse(name, pubkey, labels, capacity)
+        .and_then(|m| match pool {
+            Some(provider) => m.with_pool(provider),
+            None => Ok(m),
+        })
         .map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
     let (user, _) = store.enroll(who, email)?;
     let machine_id = store.enroll_machine(user, &machine)?;
@@ -100,8 +104,7 @@ pub(super) fn list(store: &Store, user: UserId) -> Result<serde_json::Value, Com
             ssh: m.ssh,
             labels: m.labels,
             capacity: m.capacity,
-            kind: m.kind.name(),
-            vm_provider: m.kind.provider().map(str::to_owned),
+            pool: m.pool,
         })
         .collect();
     to_value(&MachineListValue { machines })

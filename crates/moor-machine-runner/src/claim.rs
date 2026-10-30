@@ -189,7 +189,6 @@ async fn claim(
                 machine_id,
                 slot,
                 ports,
-                ..
             } => {
                 let sync_exclude = Vec::new();
                 let reach = match machine_id {

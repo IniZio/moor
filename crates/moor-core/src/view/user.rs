@@ -2,7 +2,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::MachineKindName;
 use crate::name::ProfileSource;
 use crate::request::SecretValue;
 use crate::user::{Email, Identity, SecretName, UserId};
@@ -66,13 +65,11 @@ pub struct MachineView {
     pub ssh: String,
     /// Its labels, sorted.
     pub labels: Vec<String>,
-    /// How many Boxes may hold it at once; on a VM host, how many VMs may run at once.
+    /// How many Boxes may hold it at once.
     pub capacity: u16,
-    /// Whether Boxes hold the machine or a VM on it.
-    pub kind: MachineKindName,
-    /// The crabbox provider of a VM host.
+    /// The crabbox provider it offers Boxes on, when it hosts a Box pool.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub vm_provider: Option<String>,
+    pub pool: Option<String>,
 }
 
 /// Value of `machine-list`.
@@ -85,20 +82,8 @@ pub struct MachineListValue {
 /// Value of `machine-targets`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MachineTargetsValue {
-    /// The distinct machines reached over ssh, sorted by ssh target.
-    pub targets: Vec<MachineTarget>,
-}
-
-/// One machine reached over ssh, as `machine-targets` lists it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MachineTarget {
-    /// Its ssh target.
-    pub ssh: String,
-    /// Whether Boxes hold the machine or a VM on it.
-    pub kind: MachineKindName,
-    /// The crabbox provider of a VM host.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub vm_provider: Option<String>,
+    /// The distinct ssh targets of every user's machines, sorted.
+    pub targets: Vec<String>,
 }
 
 /// Value of `machine-keys`.

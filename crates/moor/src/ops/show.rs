@@ -95,8 +95,6 @@ fn held_machine(
     let Some(h) = store.claimed_machine(id)? else {
         return Ok(place.map(|p| HeldMachineView {
             name: p.name,
-            kind: None,
-            vm_provider: None,
             slot: 0,
             ports: p.ports,
             state: MachineHoldState::Waiting,
@@ -109,8 +107,6 @@ fn held_machine(
     };
     Ok(Some(HeldMachineView {
         name: h.machine.name,
-        kind: Some(h.machine.kind.name()),
-        vm_provider: h.machine.kind.provider().map(str::to_owned),
         slot: h.slot,
         ports: h.ports,
         position: place

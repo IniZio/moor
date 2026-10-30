@@ -11,7 +11,6 @@ mod user;
 pub use controller::{parse_controller, ControllerConfig, FrontEntry};
 pub use repo::{parse_repo, RepoBox, RepoCompose, RepoConfig, RepoMachine};
 
-pub use user::machine::{MachineKind, MachineKindName};
 pub use user::{
     box_mcp, check_ssh, parse_user, pick_machine, unslot_ports, AgentConfig, BoxConfig, BoxMcp,
     BoxSize, ControllerClientConfig, DotfilesConfig, DriverConfig, EnrolledMachine, HerdrConfig,

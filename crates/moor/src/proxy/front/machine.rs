@@ -9,7 +9,7 @@ use std::net::{Shutdown, TcpStream};
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
 
-use moor_core::config::{MachineKind, MachineService};
+use moor_core::config::MachineService;
 use moor_core::BoxId;
 
 use super::{plain, refuse, splice, Head, TARGET_TIMEOUT};
@@ -48,10 +48,6 @@ pub(crate) struct Held {
     pub(crate) machine_id: Option<i64>,
     /// The Box's port slot on the machine.
     pub(crate) slot: u16,
-    /// Whether the Box holds the machine or a VM on it.
-    pub(crate) kind: MachineKind,
-    /// The Box's ports forwarded to the machine, moved by the slot.
-    pub(crate) ports: Vec<u16>,
     /// rsync patterns a sync to the machine leaves alone.
     pub(crate) sync_exclude: Vec<String>,
 }
@@ -128,16 +124,12 @@ fn marked(request: &[u8], slot: &Hold) -> Option<Vec<u8>> {
             ("X-Moor-Machine-Missing", reason.clone()),
         ],
     };
-    if let Hold::Held(held) = slot {
-        if let Some(id) = held.machine_id {
-            own.push(("X-Moor-Machine-Id", id.to_string()));
-        }
-        own.push(("X-Moor-Machine-Kind", held.kind.name().as_str().to_owned()));
-        if let Some(provider) = held.kind.provider() {
-            own.push(("X-Moor-Machine-Vm", provider.to_owned()));
-        }
-        let ports: Vec<String> = held.ports.iter().map(u16::to_string).collect();
-        own.push(("X-Moor-Machine-Ports", ports.join(",")));
+    if let Hold::Held(Held {
+        machine_id: Some(id),
+        ..
+    }) = slot
+    {
+        own.push(("X-Moor-Machine-Id", id.to_string()));
     }
     if own
         .iter()

@@ -31,6 +31,9 @@ struct Enrollment {
     /// How many Boxes may hold the machine at once.
     #[serde(default = "one")]
     slots: u16,
+    /// The crabbox provider the machine offers Boxes on, when it hosts a Box pool.
+    #[serde(default)]
+    pool: Option<String>,
 }
 
 /// The slot count of an agent that names none.
@@ -83,6 +86,7 @@ fn enroll(
         pubkey: got.pubkey,
         labels: got.labels,
         capacity: got.slots,
+        pool: got.pool,
     });
     let acting = rewrite::act(request, &person).map_err(|why| ("403 Forbidden", why))?;
     let reply = Client::new(&gate.front_socket)
