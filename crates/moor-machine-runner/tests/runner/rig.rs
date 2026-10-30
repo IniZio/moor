@@ -9,49 +9,17 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 mod controller;
+mod machine;
 use controller::{fake_controller, Fake};
 
-/// Stands in for `ssh`: runs the remote command locally, in `$FAKE_REMOTES/<target>` when that
-/// exists and else in `$FAKE_REMOTE_HOME`, the way sshd
-/// hands it to the remote user's shell. As with sshd, the command is not this process: killing
-/// it leaves the command running, and the command's stdin is a pipe that ends when this
-/// process's own stdin does.
-const FAKE_SSH: &str = r#"#!/bin/sh
-while [ $# -gt 0 ]; do
-  case "$1" in
-    -o|-l|-p|-i|-F) shift 2 ;;
-    --) shift; break ;;
-    -*) shift ;;
-    *) break ;;
-  esac
-done
-home="$FAKE_REMOTE_HOME"
-[ -d "$FAKE_REMOTES/$1" ] && home="$FAKE_REMOTES/$1"
-shift
-cd "$home" || exit 255
-fifo=$(mktemp -u "$home/.ssh-in.XXXXXX") && mkfifo "$fifo" || exit 255
-exec 3<&0
-cat <&3 >"$fifo" 3<&- &
-exec 3<&-
-HOME="$home" SHELL=/bin/sh /bin/sh -c "$*" <"$fifo"
-code=$?
-rm -f "$fifo"
-exit "$code"
-"#;
+/// The enrolled id of machine `minion`, whose agent links in.
+pub const MACHINE_ID: i64 = 7;
 
-/// Stands in for `df -Pk`: reports the free KiB kept in `$FAKE_REMOTE_HOME/.free-kb`, plenty
-/// when there is none, so a test sets the machine's disk by writing that file.
-const FAKE_DF: &str = r#"#!/bin/sh
-kb=$(cat "$FAKE_REMOTE_HOME/.free-kb" 2>/dev/null || echo 999999999)
-echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
-echo "/dev/fake 1000000000 1 $kb 1% $HOME"
-"#;
-
-/// The headers the Box's Proxy sets for Box 7 in slot 0 of machine `minion`.
+/// The headers the Box's Proxy sets for Box 7 in slot 0 of `minion`.
 pub const HEADERS: [(&str, &str); 4] = [
     ("X-Moor-Box", "7"),
     ("X-Moor-Machine", "minion"),
-    ("X-Moor-Machine-Ssh", "moor@minion"),
+    ("X-Moor-Machine-Id", "7"),
     ("X-Moor-Machine-Slot", "0"),
 ];
 
@@ -65,27 +33,13 @@ pub fn caller(
     [
         ("X-Moor-Box", id),
         ("X-Moor-Machine", machine),
-        ("X-Moor-Machine-Ssh", "moor@minion"),
+        ("X-Moor-Machine-Id", "7"),
         ("X-Moor-Machine-Slot", "0"),
     ]
 }
 
-/// The enrolled id of machine `minion` when its agent links in.
-pub const MACHINE_ID: i64 = 7;
-
-/// The headers the Box's Proxy sets for Box 7 in slot 0 of `minion` once its agent links in.
-pub const LINKED: [(&str, &str); 4] = [
-    ("X-Moor-Box", "7"),
-    ("X-Moor-Machine", "minion"),
-    ("X-Moor-Machine-Id", "7"),
-    ("X-Moor-Machine-Slot", "0"),
-];
-
 /// `box-put` requests with the bytes of their `src`.
 pub type Puts = Arc<Mutex<Vec<(Value, Vec<u8>)>>>;
-
-/// The machines' ssh targets `machine-targets` lists, or none to refuse it.
-pub type Targets = Arc<Mutex<Option<Vec<String>>>>;
 
 /// The fake controller's `machine-hold`: the answers it gives claims, in turn, the last one
 /// again and again, and each request it served, with whether `~/suspended` existed by then.
@@ -110,18 +64,18 @@ pub struct Rig {
     pub mirror_excludes: Arc<Mutex<Vec<Value>>>,
     /// Each `box-put` request the fake controller served, with the bytes of its `src`.
     pub puts: Puts,
-    /// The ssh targets the fake controller lists as enrolled; none refuses the listing.
-    pub targets: Targets,
     /// The fake controller's `machine-hold`.
     pub holds: Arc<Mutex<FakeHolds>>,
     /// The fake controller's side of an agent link.
     pub link: FakeLink,
-    /// The port the runner takes agent links on, when started with `--agents`.
-    pub agents: Option<u16>,
+    /// The port the runner takes agent links on.
+    pub agents: u16,
+    /// The fake machine's agent, linked while it runs.
+    pub machine_agent: Option<tokio::runtime::Runtime>,
     args: Vec<String>,
     port: u16,
-    runner: Child,
-    agent: ureq::Agent,
+    runner: Runner,
+    http: ureq::Agent,
 }
 
 impl Rig {
@@ -140,23 +94,16 @@ impl Rig {
         let dir = moor_testkit::short_tempdir("mrun").unwrap();
         let bin = dir.path().join("bin");
         moor_testkit::write_host_guards(&bin).unwrap();
-        moor_testkit::write_executable(&bin.join("ssh"), FAKE_SSH).unwrap();
-        moor_testkit::write_executable(&bin.join("df"), FAKE_DF).unwrap();
+        moor_testkit::write_executable(&bin.join("ssh"), machine::NO_SSH).unwrap();
         let tree = dir.path().join("box");
         let remote = dir.path().join("remote");
         std::fs::create_dir_all(&tree).unwrap();
-        std::fs::create_dir_all(&remote).unwrap();
+        std::fs::create_dir_all(remote.join("moor/7")).unwrap();
+        std::fs::create_dir_all(machine::hooks_dir(dir.path())).unwrap();
         let open = Arc::new(Mutex::new(vec![7]));
         let asleep = Arc::new(Mutex::new(Vec::new()));
         let mirror_excludes = Arc::new(Mutex::new(Vec::new()));
         let puts = Arc::new(Mutex::new(Vec::new()));
-        // An enrolled machine has no ssh target, so a runner its agent links to lists none.
-        let ssh_targets = if args.contains(&"--agents") {
-            Vec::new()
-        } else {
-            vec!["moor@minion".to_owned()]
-        };
-        let targets = Arc::new(Mutex::new(Some(ssh_targets)));
         let holds = Arc::new(Mutex::new(FakeHolds::default()));
         let link = FakeLink::default();
         fake_controller(
@@ -167,19 +114,19 @@ impl Rig {
                 asleep: Arc::clone(&asleep),
                 mirror_excludes: Arc::clone(&mirror_excludes),
                 puts: Arc::clone(&puts),
-                targets: Arc::clone(&targets),
                 holds: Arc::clone(&holds),
                 link: link.clone(),
             },
         );
         let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
         let (runner, port, agents) = spawn(dir.path(), &args);
-        let agent = ureq::Agent::config_builder()
+        let machine_agent = machine::start_agent(dir.path(), &remote, agents, &link);
+        let http = ureq::Agent::config_builder()
             .http_status_as_error(false)
             .timeout_global(Some(Duration::from_secs(60)))
             .build()
             .into();
-        Self {
+        let rig = Self {
             dir,
             tree,
             remote,
@@ -187,21 +134,22 @@ impl Rig {
             asleep,
             mirror_excludes,
             puts,
-            targets,
             holds,
             link,
             agents,
+            machine_agent: Some(machine_agent),
             args,
             port,
             runner,
-            agent,
-        }
+            http,
+        };
+        rig.online(true);
+        rig
     }
 
     /// Stops the runner and starts a new one with the same flags and state dir.
     pub fn restart(&mut self) {
-        let _ = self.runner.kill();
-        let _ = self.runner.wait();
+        self.runner = Runner(None);
         (self.runner, self.port, self.agents) = spawn(self.dir.path(), &self.args);
     }
 
@@ -215,13 +163,33 @@ impl Rig {
         self.dir.path().join("state")
     }
 
-    /// The home on machine `target`, which the fake controller now lists as enrolled.
-    pub fn machine(&self, target: &str) -> PathBuf {
-        let home = self.dir.path().join("remotes").join(target);
-        std::fs::create_dir_all(&home).unwrap();
-        let mut targets = self.targets.lock().unwrap();
-        targets.get_or_insert_with(Vec::new).push(target.to_owned());
-        home
+    /// Writes the fake machine's hook file `name`, such as `prepare` or `relays/fake`, running
+    /// `script`.
+    pub fn hook(&self, name: &str, script: &str) {
+        let path = machine::hooks_dir(self.dir()).join(name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        moor_testkit::write_executable(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
+    }
+
+    /// Waits until the runner has told the controller the machine is `online`.
+    pub fn online(&self, online: bool) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        loop {
+            let links = self.link.links.lock().unwrap().clone();
+            if links.is_some_and(|l| l[0]["machine_id"] == MACHINE_ID && l[0]["online"] == online) {
+                return;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "timed out waiting: online={online}"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+
+    /// Whether anything ran `ssh`.
+    pub fn ssh_ran(&self) -> bool {
+        self.dir().join("bin/ssh.ran").exists()
     }
 
     /// Sets the free space the fake machine reports, in KiB.
@@ -364,7 +332,7 @@ impl Rig {
         session: Option<&str>,
     ) -> (Value, Option<String>, Vec<Value>) {
         let mut req = self
-            .agent
+            .http
             .post(format!("http://127.0.0.1:{}/mcp", self.port))
             .header("Content-Type", "application/json")
             .header("Accept", "application/json, text/event-stream");
@@ -395,42 +363,53 @@ impl Rig {
 }
 
 /// Starts a runner in the rig at `dir`; it, the port it listens on, and the one it takes agent
-/// links on when `args` ask for one.
-fn spawn(dir: &Path, args: &[String]) -> (Child, u16, Option<u16>) {
+/// links on.
+fn spawn(dir: &Path, args: &[String]) -> (Runner, u16, u16) {
     let path = format!(
         "{}:{}",
         dir.join("bin").display(),
         std::env::var("PATH").unwrap()
     );
-    let mut runner = Command::new(env!("CARGO_BIN_EXE_moor-machine-runner"))
+    // The runner reports its links on each sweep, so the rig sweeps every second by default.
+    let sweep: &[&str] = if args.iter().any(|a| a == "--sweep-secs") {
+        &[]
+    } else {
+        &["--sweep-secs", "1"]
+    };
+    let child = Command::new(env!("CARGO_BIN_EXE_moor-machine-runner"))
         .args(["--listen", "127.0.0.1:0", "--socket"])
         .arg(dir.join("runner.sock"))
         .arg("--state-dir")
         .arg(dir.join("state"))
+        .args(["--agents", "127.0.0.1:0"])
+        .args(sweep)
         .args(args)
         .env("PATH", path)
-        .env("FAKE_REMOTE_HOME", dir.join("remote"))
-        .env("FAKE_REMOTES", dir.join("remotes"))
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    let mut stderr = BufReader::new(runner.stderr.take().unwrap());
+    let mut runner = Runner(Some(child));
+    let stderr = runner.0.as_mut().and_then(|c| c.stderr.take());
+    let mut stderr = BufReader::new(stderr.unwrap());
     let mut line = String::new();
     stderr.read_line(&mut line).unwrap();
     let port = line.trim().rsplit(':').next().unwrap().parse().unwrap();
-    let agents = args.iter().any(|a| a == "--agents").then(|| {
-        line.clear();
-        stderr.read_line(&mut line).unwrap();
-        line.trim().rsplit(':').next().unwrap().parse().unwrap()
-    });
+    line.clear();
+    stderr.read_line(&mut line).unwrap();
+    let agents = line.trim().rsplit(':').next().unwrap().parse().unwrap();
     std::thread::spawn(move || std::io::copy(&mut stderr, &mut std::io::sink()));
     (runner, port, agents)
 }
 
-impl Drop for Rig {
+/// A runner process, killed when dropped, so a rig that panics part-way never leaves it behind.
+struct Runner(Option<Child>);
+
+impl Drop for Runner {
     fn drop(&mut self) {
-        let _ = self.runner.kill();
-        let _ = self.runner.wait();
+        if let Some(mut child) = self.0.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }
 

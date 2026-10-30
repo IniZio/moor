@@ -32,8 +32,6 @@ mod tools;
 pub struct Relay {
     /// Prefix of its tools' names: `[a-z][a-z0-9-]*`.
     pub name: String,
-    /// Command run on the machine, in the Box's copy, through the login shell.
-    pub command: String,
     /// Argument name to the fact it is set from on every call, such as `udid` = `device`.
     pub forced: BTreeMap<String, String>,
     /// Names, on the relay, of tools left out of the listing and refused when called.
@@ -317,9 +315,9 @@ impl Relays {
 }
 
 impl Session {
-    /// Whether its server still runs.
+    /// Whether its server still runs: its link closes when the server exits.
     fn alive(&mut self) -> bool {
-        !self.service.is_closed()
+        !self.service.is_closed() && !self.service.peer().is_transport_closed()
     }
 
     /// Closes the session.

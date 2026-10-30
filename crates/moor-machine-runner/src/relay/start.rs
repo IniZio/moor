@@ -1,4 +1,4 @@
-//! Starting a relay's server on the caller's machine, over ssh or its agent link.
+//! Starting a relay's server on the caller's machine, over its agent link.
 
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};

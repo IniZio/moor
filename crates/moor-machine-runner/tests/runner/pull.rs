@@ -33,9 +33,9 @@ fn a_pulled_file_reaches_the_controller_as_a_box_put() {
 }
 
 #[test]
-fn an_absolute_machine_path_is_pulled_as_is() {
+fn an_absolute_path_in_the_box_copy_is_pulled_as_is() {
     let rig = Rig::start();
-    let shot = rig.remote.join("shots/1.png");
+    let shot = rig.copy().join("shots/1.png");
     std::fs::create_dir_all(shot.parent().unwrap()).unwrap();
     std::fs::write(&shot, "png").unwrap();
     let args = json!({"path": shot.display().to_string(), "dest": "1.png"});

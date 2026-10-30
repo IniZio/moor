@@ -8,13 +8,11 @@ const MISSING: [(&str, &str); 2] = [("X-Moor-Box", "7"), ("X-Moor-Machine-Missin
 
 /// A runner with a prepare hook and a relay, both of which leave a mark on the machine.
 fn marked() -> Rig {
-    let relay = format!("fake={}", env!("CARGO_BIN_EXE_fake-mcp"));
-    Rig::with_args(&[
-        "--prepare",
-        "echo x >> ~/prepared; echo '{}'",
-        "--relay",
-        &relay,
-    ])
+    let rig = Rig::with_args(&["--relay", "fake"]);
+    rig.hook("prepare", "echo x >> ~/prepared; echo '{}'");
+    let fake = env!("CARGO_BIN_EXE_fake-mcp");
+    rig.hook("relays/fake", &format!("exec '{fake}'"));
+    rig
 }
 
 fn names(tools: &[Value]) -> Vec<String> {
@@ -55,7 +53,8 @@ fn every_call_answers_the_reason_as_a_tool_error_and_touches_nothing() {
             "{tool}"
         );
     }
-    assert!(std::fs::read_dir(&rig.remote).unwrap().next().is_none());
+    assert!(!rig.remote.join("ran").exists());
+    assert!(std::fs::read_dir(rig.copy()).unwrap().next().is_none());
     assert!(rig.puts.lock().unwrap().is_empty());
     assert!(rig.mirror_excludes.lock().unwrap().is_empty());
 }

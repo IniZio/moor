@@ -7,11 +7,10 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 
 use moor_core::controller::{ServerFrame, PROTOCOL};
-use moor_core::response::{ErrorView, Response};
-use moor_core::ErrorKind;
+use moor_core::response::Response;
 use serde_json::{json, Value};
 
-use super::{FakeHolds, FakeLink, Puts, Targets, MACHINE_ID};
+use super::{FakeHolds, FakeLink, Puts, MACHINE_ID};
 
 /// What a `machine-hold` claim is answered: the next of `answers`, or slot 0 on minion.
 fn hold_answer(holds: &mut FakeHolds, req: &Value, suspended: bool) -> Value {
@@ -58,7 +57,6 @@ pub(super) struct Fake {
     pub(super) asleep: Arc<Mutex<Vec<i64>>>,
     pub(super) mirror_excludes: Arc<Mutex<Vec<Value>>>,
     pub(super) puts: Puts,
-    pub(super) targets: Targets,
     pub(super) holds: Arc<Mutex<FakeHolds>>,
     pub(super) link: FakeLink,
 }
@@ -101,8 +99,6 @@ fn answer(frame: &Value, tree: &Path, fake: &Fake) -> Response {
     if req["cmd"] == "show" {
         let value = show_value(&fake.open.lock().unwrap(), &fake.asleep.lock().unwrap());
         Response::ok("show", Some(value))
-    } else if req["cmd"] == "machine-targets" {
-        targets_envelope(fake.targets.lock().unwrap().clone())
     } else if req["cmd"] == "machine-keys" {
         let pubkey = fake.link.pubkey.lock().unwrap().clone();
         let machines: Vec<Value> = pubkey
@@ -160,23 +156,6 @@ fn reply(writer: &mut impl Write, id: &str, envelope: Response) {
         envelope,
     };
     writeln!(writer, "{}", serde_json::to_string(&frame).unwrap()).unwrap();
-}
-
-/// `machine-targets` answered with `targets`, or failed when there are none.
-fn targets_envelope(targets: Option<Vec<String>>) -> Response {
-    match targets {
-        Some(targets) => Response::ok("machine-targets", Some(json!({ "targets": targets }))),
-        None => Response::err(
-            "machine-targets",
-            ErrorView {
-                kind: ErrorKind::Internal,
-                message: "the store is down".to_owned(),
-                hints: Vec::new(),
-                context: Vec::new(),
-                detail: None,
-            },
-        ),
-    }
 }
 
 /// The request inside a client frame: the object that names a `cmd`.

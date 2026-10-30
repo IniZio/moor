@@ -18,14 +18,9 @@ fn fake() -> PathBuf {
 }
 
 fn relayed(extra: &[&str]) -> Rig {
-    let relay = format!("fake={}", fake().display());
     let mut args = vec![
-        "--prepare",
-        PREPARE,
-        "--release",
-        RELEASE,
         "--relay",
-        &relay,
+        "fake",
         "--force-arg",
         "fake.udid=device",
         "--force-arg",
@@ -40,7 +35,11 @@ fn relayed(extra: &[&str]) -> Rig {
         "1",
     ];
     args.extend_from_slice(extra);
-    Rig::with_args(&args)
+    let rig = Rig::with_args(&args);
+    rig.hook("prepare", PREPARE);
+    rig.hook("release", RELEASE);
+    rig.hook("relays/fake", &format!("exec '{}'", fake().display()));
+    rig
 }
 
 fn lines(rig: &Rig, file: &str) -> Vec<String> {
@@ -178,15 +177,6 @@ fn a_crashed_server_starts_again_on_the_next_call() {
         .unwrap();
     assert!(killed.success());
     gone_within_6s(pid);
-    let fifo_gone = || {
-        std::fs::read_dir(&rig.remote).unwrap().all(|e| {
-            !e.unwrap()
-                .file_name()
-                .to_string_lossy()
-                .starts_with(".ssh-in")
-        })
-    };
-    eventually("the fake ssh exits", fifo_gone);
     std::thread::sleep(Duration::from_millis(300));
     assert_eq!(tap(&rig, &HEADERS).unwrap()["udid"], "dev-7");
     assert_eq!(lines(&rig, "fake-starts").len(), 2);
@@ -257,7 +247,7 @@ fn a_hidden_tool_is_not_listed_and_a_call_to_it_is_refused() {
 fn a_claim_starts_the_relays_before_it_answers() {
     let rig = relayed(&[]);
     rig.holds.lock().unwrap().answers = vec![json!({"state": "held", "machine": "minion",
-        "ssh": "moor@minion", "slot": 0, "ports": []})]
+        "machine_id": 7, "slot": 0, "ports": []})]
     .into();
     let missing = [
         ("X-Moor-Box", "7"),

@@ -12,13 +12,16 @@ fn waiting() -> Value {
 }
 
 fn held() -> Value {
-    json!({"state": "held", "machine": "minion", "ssh": "moor@minion", "slot": 0,
+    json!({"state": "held", "machine": "minion", "machine_id": 7, "slot": 0,
         "ports": [8081]})
 }
 
 /// A rig whose fake controller answers claims with `answers`, in turn.
-fn answering(args: &[&str], answers: Vec<Value>) -> Rig {
-    let rig = Rig::with_args(args);
+fn answering(hooks: &[(&str, &str)], answers: Vec<Value>) -> Rig {
+    let rig = Rig::start();
+    for (name, script) in hooks {
+        rig.hook(name, script);
+    }
     rig.holds.lock().unwrap().answers = answers.into();
     rig
 }
@@ -100,7 +103,7 @@ fn a_wait_over_an_hour_is_refused_with_the_reason() {
 fn release_suspends_the_box_first_and_a_new_claim_does_not_sync() {
     let suspend = "echo s >> ~/suspended";
     let rig = answering(
-        &["--prepare", "echo '{}'", "--suspend", suspend],
+        &[("prepare", "echo '{}'"), ("suspend", suspend)],
         vec![held()],
     );
     rig.call_with("machine_claim", json!({}), &MISSING).unwrap();
