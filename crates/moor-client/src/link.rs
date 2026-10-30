@@ -20,6 +20,7 @@ use tokio_util::compat::{Compat, FuturesAsyncReadCompatExt, TokioAsyncReadCompat
 pub mod broker;
 pub mod lease;
 pub mod ops;
+pub mod status;
 
 /// Where the runner accepts links.
 pub const PATH: &str = "/machines/link";

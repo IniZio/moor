@@ -1,5 +1,6 @@
 //! The links broker: the controller, and ssh through `moor link-dial`, reach a pool host's
-//! leases over the link this runner holds, through a socket only this user may open.
+//! leases, or any agent's status, over the link this runner holds, through a socket only this
+//! user may open.
 
 use std::io;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
@@ -59,7 +60,7 @@ async fn carry(mut conn: UnixStream, agents: &Agents) {
         Ok(ask) => relay(agents, ask).await,
         Err(e) => (
             Brokered::Refused {
-                reason: format!("the broker carries one lease or dial: {e}"),
+                reason: format!("the broker carries one lease, dial or status: {e}"),
             },
             None,
         ),

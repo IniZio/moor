@@ -142,7 +142,7 @@ async fn room(home: &Path, pool: &Pool, id: i64) -> Result<(), String> {
 
 /// The `moor-<id>` leases `crabbox list` shows. A lease names its slug in `labels.slug`, `slug`
 /// or `name`, and its state in `state` or `status`, by provider.
-async fn list(home: &Path, pool: &Pool) -> Result<Vec<Lease>, String> {
+pub(crate) async fn list(home: &Path, pool: &Pool) -> Result<Vec<Lease>, String> {
     let printed = Crabbox {
         home,
         pool,

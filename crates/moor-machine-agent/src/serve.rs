@@ -1,5 +1,5 @@
 //! What the agent does with each stream the runner opens: an exec, a hook, or a relay, in the
-//! Box's dir under this account's home.
+//! Box's dir under this account's home; a lease or dial on a pool host; or a status.
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -13,6 +13,7 @@ use tokio::process::Command;
 use crate::files;
 use crate::listen::{self, Link};
 use crate::pool::{self, Pool};
+use crate::status::{self, Recent};
 
 /// How long a relay may take to exit once its stdin closes, before it is killed.
 const RELAY_EXIT: Duration = Duration::from_secs(5);
@@ -56,16 +57,28 @@ impl Machine {
     }
 }
 
-/// Serves the request that opens `ch`, when this machine's mode allows it. This match is the
+/// Serves the request that opens `ch`, when this machine's mode allows it, and notes it in
+/// `recent`. Every agent serves a status, which is read-only; past that, this match is the
 /// allow-list: a pool host serves only lease and dial, any other machine everything else.
-pub(crate) async fn serve(machine: &Machine, link: &Link, mut ch: Channel) {
+pub(crate) async fn serve(machine: &Machine, link: &Link, recent: &Recent, mut ch: Channel) {
     let op = match ops::read_line::<_, Op>(&mut ch).await {
         Ok(op) => op,
         Err(e) => return end(ch, refused(e)).await,
     };
+    if op == Op::Status {
+        let reply = Reply::Status(Box::new(status::status(machine, recent).await));
+        return end(ch, reply).await;
+    }
+    let (name, target) = (kind(&op), target(&op));
+    let failed = dispatch(machine, link, ch, op).await;
+    recent.record(name, target, failed.as_deref());
+}
+
+/// Serves `op` when this machine's mode allows it; why it failed.
+async fn dispatch(machine: &Machine, link: &Link, ch: Channel, op: Op) -> Option<String> {
     match (machine.pool.as_ref(), op) {
         (Some(pool), op @ (Op::Lease { .. } | Op::Dial { .. })) => {
-            serve_pool(&machine.home, pool, ch, op).await;
+            serve_pool(&machine.home, pool, ch, op).await
         }
         (
             None,
@@ -82,28 +95,34 @@ pub(crate) async fn serve(machine: &Machine, link: &Link, mut ch: Channel) {
                 "this machine is {host} pool host, so it does not serve {}",
                 kind(&op)
             );
-            end(ch, refused(why)).await;
+            end(ch, refused(why.clone())).await;
+            Some(why)
         }
     }
 }
 
-/// Serves a lease or a dial for `pool`.
-async fn serve_pool(home: &Path, pool: &Pool, ch: Channel, op: Op) {
+/// Serves a lease or a dial for `pool`; why it failed.
+async fn serve_pool(home: &Path, pool: &Pool, ch: Channel, op: Op) -> Option<String> {
     let reply = match op {
         Op::Lease { verb, slug, key } => {
             pool::lease(home, pool, verb, slug.as_deref(), key.as_deref()).await
         }
         Op::Dial { slug } => match pool::dial(home, pool, &slug).await {
-            Ok(sshd) => return dial(ch, sshd).await,
+            Ok(sshd) => {
+                dial(ch, sshd).await;
+                return None;
+            }
             Err(reason) => refused(reason),
         },
         other => refused(format!("{} is not a pool op", kind(&other))),
     };
+    let failed = refusal(&reply);
     end(ch, reply).await;
+    failed
 }
 
-/// Serves an op of a machine that is not a pool host.
-async fn serve_machine(machine: &Machine, link: &Link, ch: Channel, op: Op) {
+/// Serves an op of a machine that is not a pool host; why it was refused.
+async fn serve_machine(machine: &Machine, link: &Link, ch: Channel, op: Op) -> Option<String> {
     match op {
         Op::Sync { box_id, argv } => files::sync(machine, ch, box_id, &argv).await,
         Op::Pull { box_id, path } => files::pull(machine, ch, box_id, &path).await,
@@ -115,8 +134,36 @@ async fn serve_machine(machine: &Machine, link: &Link, ch: Channel, op: Op) {
                 listen,
                 ports,
             }) => listen::serve(ch, link, box_id, listen, &ports).await,
-            Err(reply) => end(ch, reply).await,
+            Err(reply) => {
+                let failed = refusal(&reply);
+                end(ch, reply).await;
+                return failed;
+            }
         },
+    }
+    None
+}
+
+/// Why `reply` refused its op.
+fn refusal(reply: &Reply) -> Option<String> {
+    match reply {
+        Reply::Refused { reason } => Some(reason.clone()),
+        _ => None,
+    }
+}
+
+/// The Box id or lease slug `op` names.
+fn target(op: &Op) -> Option<String> {
+    match op {
+        Op::Exec { box_id, .. }
+        | Op::Hook { box_id, .. }
+        | Op::Relay { box_id, .. }
+        | Op::Sync { box_id, .. }
+        | Op::Pull { box_id, .. }
+        | Op::Listen { box_id, .. } => Some(box_id.to_string()),
+        Op::Lease { slug, .. } => slug.clone(),
+        Op::Dial { slug } => Some(slug.clone()),
+        Op::Status => None,
     }
 }
 
@@ -137,6 +184,7 @@ const fn kind(op: &Op) -> &'static str {
         Op::Listen { .. } => "listen",
         Op::Lease { .. } => "lease",
         Op::Dial { .. } => "dial",
+        Op::Status => "status",
     }
 }
 
@@ -198,7 +246,7 @@ fn start(machine: &Machine, op: Op) -> Result<Start, Reply> {
             let body = format!("exec \"$SHELL\" -lc {}", ops::quote(&ops::quote(&path)));
             Ok(Start::Relay(ops::script(&env, &ops::in_box(box_id, &body))))
         }
-        Op::Sync { .. } | Op::Pull { .. } | Op::Lease { .. } | Op::Dial { .. } => {
+        Op::Sync { .. } | Op::Pull { .. } | Op::Lease { .. } | Op::Dial { .. } | Op::Status => {
             Err(refused("not a command".to_owned()))
         }
         Op::Listen {

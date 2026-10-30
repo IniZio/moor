@@ -137,7 +137,7 @@ async fn a_dial_through_the_broker_carries_bytes_both_ways() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn the_broker_refuses_every_op_but_lease_and_dial() {
+async fn the_broker_refuses_every_op_but_lease_dial_and_status() {
     let host = Host::start();
     let marker = host.home.join("ran");
     let exec = format!(
@@ -155,6 +155,36 @@ async fn the_broker_refuses_every_op_but_lease_and_dial() {
     }
     assert!(!marker.exists());
     assert_eq!(fake_crabbox::calls(&host.home), "");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pool_host_reports_its_status_through_the_broker() {
+    let host = Host::start();
+    let warmed = broker::lease(&host.socket(), MACHINE_ID, Verb::Warmup, Some("moor-7")).await;
+    assert_eq!(warmed, Ok(Answer::Done));
+    let bad = broker::lease(&host.socket(), MACHINE_ID, Verb::Info, Some("box-1")).await;
+    assert!(bad.is_err());
+    let leases = r#"[{"name":"moor-7","state":"running"}]"#;
+    std::fs::write(host.home.join("leases.json"), leases).unwrap();
+    let status = broker::status(&host.socket(), MACHINE_ID).await.unwrap();
+    assert_eq!(status.protocol, moor_client::link::PROTOCOL);
+    assert!(!status.version.is_empty());
+    let pool = status.pool.unwrap();
+    assert_eq!(pool.provider, "fake");
+    assert_eq!(pool.leases.len(), 1, "{pool:?}");
+    assert_eq!(pool.leases[0].slug, "moor-7");
+    let ops: Vec<_> = status
+        .recent
+        .iter()
+        .map(|s| (s.op.as_str(), s.target.as_deref(), s.error.is_some()))
+        .collect();
+    assert_eq!(
+        ops,
+        [
+            ("lease", Some("moor-7"), false),
+            ("lease", Some("box-1"), true)
+        ]
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

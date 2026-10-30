@@ -1,5 +1,7 @@
-//! The machine runner's links broker: a local socket through which the controller asks a pool
-//! host, over the link the runner holds, for a lease or a dial into a lease's VM.
+//! The machine runner's links broker, a local socket to the agents linked to the runner.
+//!
+//! Through it the controller asks a pool host for a lease or a dial into a lease's VM, and any
+//! agent for its status.
 
 use std::path::Path;
 
@@ -8,6 +10,7 @@ use tokio::net::UnixStream;
 
 use super::lease;
 use super::ops::{self, Op, Reply};
+use super::status::Status;
 
 /// The broker's socket, beside the runner's socket to the controller.
 pub const SOCKET: &str = "links.sock";
@@ -42,6 +45,8 @@ pub enum PoolOp {
         /// `moor-<id>`.
         slug: String,
     },
+    /// [`Op::Status`].
+    Status,
 }
 
 impl From<PoolOp> for Op {
@@ -49,6 +54,7 @@ impl From<PoolOp> for Op {
         match op {
             PoolOp::Lease { verb, slug, key } => Self::Lease { verb, slug, key },
             PoolOp::Dial { slug } => Self::Dial { slug },
+            PoolOp::Status => Self::Status,
         }
     }
 }
@@ -126,6 +132,14 @@ pub async fn dial(socket: &Path, machine_id: i64, slug: &str) -> Result<UnixStre
     match ask(socket, machine_id, PoolOp::Dial { slug }).await? {
         (conn, Reply::Started) => Ok(conn),
         (_, other) => Err(refusal(machine_id, other)),
+    }
+}
+
+/// Asks the broker at `socket` for machine `machine_id`'s status.
+pub async fn status(socket: &Path, machine_id: i64) -> Result<Status, String> {
+    match ask(socket, machine_id, PoolOp::Status).await?.1 {
+        Reply::Status(status) => Ok(*status),
+        other => Err(refusal(machine_id, other)),
     }
 }
 

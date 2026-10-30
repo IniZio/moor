@@ -138,6 +138,8 @@ pub enum Op {
         /// `moor-<id>`.
         slug: String,
     },
+    /// Report the agent's state; read-only, so every agent serves it.
+    Status,
 }
 
 /// A Box lifecycle hook, a file of that name in the agent's hooks dir.
@@ -183,6 +185,8 @@ pub enum Reply {
     },
     /// Every port of the listen is bound; the agent holds them until the stream closes.
     Listening,
+    /// The agent's state.
+    Status(Box<super::status::Status>),
     /// The request was not served.
     Refused {
         /// Why.

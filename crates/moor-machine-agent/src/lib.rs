@@ -23,6 +23,7 @@ mod files;
 mod listen;
 pub mod pool;
 mod serve;
+mod status;
 
 /// What `enroll` asks for.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -139,6 +140,7 @@ pub async fn run(dir: &Path, machine: Machine, log: &(dyn Fn(&str) + Sync)) -> R
     let key = read_key(&dir.join(KEY))?
         .ok_or_else(|| format!("{} has no key; enroll first", dir.display()))?;
     let boxes = listen::Boxes::new(state.slots);
+    let recent = Arc::new(status::Recent::default());
     let mut wait = FIRST_WAIT;
     loop {
         match connect(&state, &key).await {
@@ -152,7 +154,10 @@ pub async fn run(dir: &Path, machine: Machine, log: &(dyn Fn(&str) + Sync)) -> R
                 };
                 let why = link::drive(socket, link::Mode::Client, asks, |ch| {
                     let (machine, streams) = (Arc::clone(&machine), streams.clone());
-                    tokio::spawn(async move { serve::serve(&machine, &streams, ch).await });
+                    let recent = Arc::clone(&recent);
+                    tokio::spawn(
+                        async move { serve::serve(&machine, &streams, &recent, ch).await },
+                    );
                 })
                 .await;
                 log(&format!("{why}; dialing again in {}s", wait.as_secs()));
@@ -226,7 +231,7 @@ fn turned(frame: Frame) -> Turned {
     clippy::disallowed_methods,
     reason = "the proof carries wall-clock time"
 )]
-fn unix_now() -> i64 {
+pub(crate) fn unix_now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
