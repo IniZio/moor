@@ -1,5 +1,8 @@
 //! A user's own machines: `machine-add`, `machine-remove`, `machine-list`.
 
+use std::future::Future;
+
+use moor_client::link::broker;
 use moor_core::config::{EnrolledMachine, UserMachine};
 use moor_core::request::UserCmd;
 use moor_core::user::{Email, Identity, UserId};
@@ -9,6 +12,7 @@ use moor_core::view::user::{
 use moor_core::ErrorKind;
 
 use super::to_value;
+use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::Store;
 
@@ -113,5 +117,52 @@ pub(super) fn list(store: &Store, user: UserId) -> Result<serde_json::Value, Com
     to_value(&MachineListValue { machines })
 }
 
+/// `machine-status`: ask the agent of `user`'s machine `name` for its status through the
+/// runner's links broker. Another user's machine is as unknown as one that does not exist.
+pub(super) fn status(
+    cx: &Cx,
+    user: UserId,
+    name: &str,
+) -> Result<serde_json::Value, CommandError> {
+    let store = cx.store()?;
+    let refused = |reason: String| CommandError::new(ErrorKind::Refused, reason);
+    if !store.user_machines(user)?.iter().any(|m| m.name == name) {
+        return Err(refused(format!("you have no machine named {name}")));
+    }
+    let link = store
+        .user_machine_links(user)?
+        .into_iter()
+        .find_map(|(n, link)| (n == name).then_some(link))
+        .ok_or_else(|| refused(format!("machine {name} has no agent linked")))?;
+    if !link.online {
+        return Err(refused(format!(
+            "machine {name} is offline since {}",
+            crate::stamp::utc(link.since.as_millis() / 1000)
+        )));
+    }
+    let socket = crate::runner_dir::of(cx.state_dir()?).join(broker::SOCKET);
+    let status = blocking(broker::status(&socket, link.machine_id))
+        .map_err(|e| CommandError::new(ErrorKind::Failed, format!("machine {name}: {e}")))?;
+    to_value(&status)
+}
+
+/// Runs `call` to completion on a runtime of its own, off any runtime the caller is on.
+fn blocking<T: Send>(call: impl Future<Output = Result<T, String>> + Send) -> Result<T, String> {
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| e.to_string())?
+                .block_on(call)
+        })
+        .join()
+        .unwrap_or_else(|_| Err("the links broker call panicked".to_owned()))
+    })
+}
+
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod status_tests;

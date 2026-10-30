@@ -83,6 +83,7 @@ pub(crate) fn run(
         UserCmd::MachineAdd { .. } | UserCmd::MachineRemove { .. } | UserCmd::MachineList => {
             machine::run(store, enrolled(store, who)?, cmd)
         }
+        UserCmd::MachineStatus { name } => machine::status(cx, enrolled(store, who)?, name),
         UserCmd::ProxyLease => super::front_proxy::lease(cx, store, who),
         UserCmd::ProxyRelease { token } => super::front_proxy::release(cx, store, who, token),
         UserCmd::ProxyStatus => super::front_proxy::status(cx, who),

@@ -3,7 +3,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{MachineAddReq, MachineEnrollReq, MachineRemoveReq, Request, StartReq};
+use super::{
+    MachineAddReq, MachineEnrollReq, MachineRemoveReq, MachineStatusReq, Request, StartReq,
+};
 use crate::name::ProfileSource;
 use crate::user::{Email, Identity, SecretName};
 
@@ -185,6 +187,11 @@ pub enum UserCmd {
     },
     /// The caller's user's machines.
     MachineList,
+    /// Ask one of the caller's user's machine agents for its status.
+    MachineStatus {
+        /// The machine's name.
+        name: String,
+    },
     /// Lease the front Proxy for the caller's user.
     ProxyLease,
     /// End the lease of `token`.
@@ -217,6 +224,7 @@ impl UserCmd {
             Self::MachineAdd { .. } => "machine-add",
             Self::MachineRemove { .. } => "machine-remove",
             Self::MachineList => "machine-list",
+            Self::MachineStatus { .. } => "machine-status",
             Self::ProxyLease => "proxy-lease",
             Self::ProxyRelease { .. } => "proxy-release",
             Self::ProxyStatus => "proxy-status",
@@ -279,6 +287,7 @@ impl Request {
             ),
             Self::MachineRemove(r) => (r.identity, UserCmd::MachineRemove { name: r.name }),
             Self::MachineList(r) => (r.identity, UserCmd::MachineList),
+            Self::MachineStatus(r) => (r.identity, UserCmd::MachineStatus { name: r.name }),
             Self::ProxyLease(r) => (r.identity, UserCmd::ProxyLease),
             Self::ProxyRelease(r) => (r.identity, UserCmd::ProxyRelease { token: r.token }),
             Self::ProxyStatus(r) => (r.identity, UserCmd::ProxyStatus),
@@ -324,6 +333,7 @@ impl Request {
             | Self::MachineList(AsReq { identity })
             | Self::MachineAdd(MachineAddReq { identity, .. })
             | Self::MachineRemove(MachineRemoveReq { identity, .. })
+            | Self::MachineStatus(MachineStatusReq { identity, .. })
             | Self::MachineEnroll(MachineEnrollReq { identity, .. })
             | Self::McpAdd(McpAddReq { identity, .. })
             | Self::McpRemove(McpRemoveReq { identity, .. })

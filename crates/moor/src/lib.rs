@@ -17,6 +17,7 @@ mod moor;
 mod ops;
 mod proxy;
 mod runner_dir;
+mod stamp;
 mod store;
 #[cfg(test)]
 mod testing;

@@ -76,6 +76,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         | Request::MachineRemove(_)
         | Request::MachineEnroll(_)
         | Request::MachineList(_)
+        | Request::MachineStatus(_)
         | Request::ProxyLease(_)
         | Request::ProxyRelease(_)
         | Request::ProxyStatus(_)) => Err(socket_only(&req)),

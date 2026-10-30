@@ -106,6 +106,17 @@ pub struct MachineRemoveReq {
     pub name: String,
 }
 
+/// Arguments of `machine-status`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MachineStatusReq {
+    /// The identity asserted; the controller socket's own peer when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<Identity>,
+    /// The machine's name.
+    pub name: String,
+}
+
 /// Arguments of `machine-hold`: a Box claims one of its user's machines or lets go of it. The
 /// machine runner sends it over the operator socket for the Box its Proxy named.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

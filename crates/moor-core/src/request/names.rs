@@ -110,6 +110,7 @@ impl Request {
             | Self::MachineRemove(_)
             | Self::MachineEnroll(_)
             | Self::MachineList(_)
+            | Self::MachineStatus(_)
             | Self::MachineTargets {}
             | Self::MachineKeys {}
             | Self::MachineLinks(_)
