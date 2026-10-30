@@ -51,6 +51,11 @@ o = {"state": sys.argv[1], "event": sys.argv[2], "ts": int(time.time() * 1000)}
 for k in ("session_id", "message", "notification_type", "last_assistant_message"):
     if isinstance(d.get(k), str):
         o[k] = d[k]
+bg = d.get("background_tasks")
+if isinstance(bg, list):
+    run = [t for t in bg if isinstance(t, dict) and t.get("status", "running") == "running"]
+    names = [str(t.get("description") or t.get("type") or t.get("id") or "")[:200] for t in run]
+    o["background"] = [n for n in names if n][:10]
 try:
     p = json.load(open(sys.argv[3] + "/agent-state.json"))
     if not isinstance(p, dict):
@@ -64,6 +69,8 @@ elif isinstance(p.get("turn"), int):
 if sys.argv[2] == "Notification" and "last_assistant_message" not in o:
     if p.get("state") == "idle" and isinstance(p.get("last_assistant_message"), str):
         o["last_assistant_message"] = p["last_assistant_message"]
+    if p.get("state") == "idle" and isinstance(p.get("background"), list):
+        o["background"] = p["background"]
 ti = d.get("tool_input")
 if isinstance(ti, dict) and isinstance(ti.get("questions"), list):
     o["questions"] = ti["questions"]
@@ -81,6 +88,13 @@ const o = { state: process.argv[1], event: process.argv[2], ts: Date.now() };
 for (const k of ["session_id", "message", "notification_type", "last_assistant_message"]) {
   if (typeof d[k] === "string") o[k] = d[k];
 }
+if (Array.isArray(d.background_tasks)) {
+  o.background = d.background_tasks
+    .filter((t) => t && typeof t === "object" && (t.status === undefined || t.status === "running"))
+    .map((t) => String(t.description || t.type || t.id || "").slice(0, 200))
+    .filter((n) => n)
+    .slice(0, 10);
+}
 let p = {};
 try { p = JSON.parse(require("fs").readFileSync(process.argv[3] + "/agent-state.json", "utf8")); } catch (e) {}
 if (p === null || typeof p !== "object") p = {};
@@ -88,6 +102,7 @@ if (process.argv[2] === "UserPromptSubmit") o.turn = o.ts;
 else if (Number.isInteger(p.turn)) o.turn = p.turn;
 if (process.argv[2] === "Notification" && !("last_assistant_message" in o)) {
   if (p.state === "idle" && typeof p.last_assistant_message === "string") o.last_assistant_message = p.last_assistant_message;
+  if (p.state === "idle" && Array.isArray(p.background)) o.background = p.background;
 }
 const ti = d.tool_input;
 if (ti && typeof ti === "object" && Array.isArray(ti.questions)) o.questions = ti.questions;

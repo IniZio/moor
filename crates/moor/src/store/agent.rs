@@ -221,16 +221,22 @@ fn session_from_row(r: &Row<'_>) -> rusqlite::Result<SessionRow> {
 
 /// The stored form of a hook report.
 fn record_json(rec: &HookRecord) -> Value {
+    let on = match &rec.kind {
+        HookKind::Waiting { on } => on.as_slice(),
+        _ => &[],
+    };
     let kind = match &rec.kind {
         HookKind::Starting { .. } => "starting",
         HookKind::Busy => "busy",
         HookKind::Idle => "idle",
         HookKind::Blocked => "blocked",
+        HookKind::Waiting { .. } => "waiting",
     };
     json!({
         "kind": kind,
         "message": rec.message,
         "options": rec.options,
+        "on": on,
         "doing": rec.doing,
         "session_id": rec.session_id,
         "at": rec.at.as_millis(),
@@ -246,6 +252,17 @@ fn record_from_json(v: &Value) -> Result<HookRecord, StoreError> {
         Some("busy") => HookKind::Busy,
         Some("idle") => HookKind::Idle,
         Some("blocked") => HookKind::Blocked,
+        Some("waiting") => HookKind::Waiting {
+            on: v["on"]
+                .as_array()
+                .map(|o| {
+                    o.iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                })
+                .unwrap_or_default(),
+        },
         _ => return Err(bad("unknown kind")),
     };
     Ok(HookRecord {

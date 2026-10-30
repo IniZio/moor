@@ -16,6 +16,11 @@ pub enum HookKind {
     Idle,
     /// The agent waits on an answer.
     Blocked,
+    /// The agent ended its turn but waits on background work it started; `on` names each piece.
+    Waiting {
+        /// What it waits on, one line per piece.
+        on: Vec<String>,
+    },
 }
 
 /// One hook report, neutral across agents.

@@ -378,3 +378,23 @@ fn a_hook_report_keeps_its_doing_line_through_the_cache() {
     store.put_hook(id, &record).unwrap();
     assert_eq!(store.hook(id).unwrap().unwrap().record, record);
 }
+
+#[test]
+fn a_waiting_hook_keeps_what_it_waits_on() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let id = add(&store, "t");
+    let record = HookRecord {
+        kind: HookKind::Waiting {
+            on: vec!["gh run watch".to_owned(), "tests".to_owned()],
+        },
+        session_id: None,
+        message: Some("Watching.".to_owned()),
+        options: Vec::new(),
+        doing: None,
+        at: Ts::from_millis(500),
+        turn: None,
+    };
+    store.put_hook(id, &record).unwrap();
+    assert_eq!(store.hook(id).unwrap().unwrap().record, record);
+}

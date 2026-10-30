@@ -12,7 +12,7 @@ use super::Turns;
 use crate::db::{BoxState, Db};
 
 /// Agent states, as `show` names them, that keep a thread's host Session open.
-const BUSY: [&str; 4] = ["starting", "working", "needs_input", "unknown"];
+const BUSY: [&str; 5] = ["starting", "working", "waiting", "needs_input", "unknown"];
 
 impl Turns {
     /// Ends the host Session of every thread quiet since `idle_secs` ago.

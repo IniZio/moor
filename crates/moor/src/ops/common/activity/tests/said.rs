@@ -77,3 +77,40 @@ fn going_quiet_without_a_hook_message_says_nothing() {
         vec![("idled".to_owned(), serde_json::json!({}))]
     );
 }
+
+#[test]
+fn a_waiting_hook_keeps_the_box_working_and_says_nothing_until_it_idles() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut probes = hook(HookKind::Idle);
+    let waiting = HookRecord {
+        message: Some("Watching.".to_owned()),
+        ..rec(HookKind::Waiting {
+            on: vec!["gh run watch".to_owned()],
+        })
+    };
+    probes.hook = HookRead::Fresh(waiting);
+    let engine = Arc::new(FakeEngine::new().probes(SESSION, probes));
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = working_box(&cx, true);
+    settle(&cx, cx.store().unwrap(), &row(&cx, id), &run_once(&cx, id)).unwrap();
+    settle(&cx, cx.store().unwrap(), &row(&cx, id), &run_once(&cx, id)).unwrap();
+    assert_eq!(said_then_idled(&cx, id), Vec::new());
+    let mut probes = hook(HookKind::Idle);
+    probes.hook = HookRead::Fresh(HookRecord {
+        message: Some("Done.".to_owned()),
+        ..rec(HookKind::Idle)
+    });
+    engine.set_probes(SESSION, probes);
+    settle(&cx, cx.store().unwrap(), &row(&cx, id), &run_once(&cx, id)).unwrap();
+    settle(&cx, cx.store().unwrap(), &row(&cx, id), &run_once(&cx, id)).unwrap();
+    assert_eq!(
+        said_then_idled(&cx, id),
+        vec![
+            (
+                "agent_said".to_owned(),
+                serde_json::json!({"text": "Done."})
+            ),
+            ("idled".to_owned(), serde_json::json!({}))
+        ]
+    );
+}
