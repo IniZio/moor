@@ -12,6 +12,7 @@ use serde_json::Value;
 mod doing;
 mod install;
 mod launch;
+mod profile;
 
 /// Parses the state file Claude Code's hooks write.
 #[derive(Debug, Default, Clone, Copy)]

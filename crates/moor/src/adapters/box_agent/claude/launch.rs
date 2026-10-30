@@ -256,12 +256,12 @@ pub(super) fn hook_writer(ctx: &LaunchCtx) -> Result<BoxSetup, NameError> {
 }
 
 /// The directory part of an absolute path.
-fn parent(path: &str) -> String {
+pub(super) fn parent(path: &str) -> String {
     path.rsplit_once('/').map_or("/", |(dir, _)| dir).to_owned()
 }
 
 /// Shell that runs the python or node form of a script, else `fallback`; fails when none can.
-fn interpreters(py: &str, js: &str, args: &str, fallback: &str) -> String {
+pub(super) fn interpreters(py: &str, js: &str, args: &str, fallback: &str) -> String {
     format!(
         "if command -v python3 >/dev/null 2>&1; then python3 -c {py} {args}; \
 elif command -v node >/dev/null 2>&1; then node -e {js} {args}; \
