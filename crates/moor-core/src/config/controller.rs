@@ -18,6 +18,10 @@ pub struct ControllerConfig {
     pub socket: Option<String>,
     /// moor state directory override; `~` allowed. None means the process default.
     pub state_dir: Option<String>,
+    /// The machine runner's own state directory, the runner's `--state-dir`; `~` allowed. The
+    /// host paths the runner's `box-mirror` and `box-put` name must lie inside it. None means
+    /// `<state dir>/machine-runner`.
+    pub runner_state_dir: Option<String>,
     /// Seconds between passes that settle every open Box's agent state; must be above 0.
     /// None means 5.
     pub settle_every_secs: Option<u64>,
@@ -109,9 +113,22 @@ impl ControllerConfig {
 /// mistyped values and empty paths; the error path names the key.
 pub fn parse_controller(file: &str, text: &str) -> Result<ControllerConfig, ConfigError> {
     let cfg: ControllerConfig = parse_strict(file, text)?;
-    for (key, value) in [("socket", &cfg.socket), ("state_dir", &cfg.state_dir)] {
+    for (key, value) in [
+        ("socket", &cfg.socket),
+        ("state_dir", &cfg.state_dir),
+        ("runner_state_dir", &cfg.runner_state_dir),
+    ] {
         if value.as_deref().is_some_and(|v| v.trim().is_empty()) {
             return Err(ConfigError::new(key, "must not be empty").in_file(file));
+        }
+    }
+    if let Some(dir) = cfg.runner_state_dir.as_deref() {
+        if !(dir.starts_with('/') || dir.starts_with("~/")) {
+            return Err(ConfigError::new(
+                "runner_state_dir",
+                "must be absolute or start with `~/`",
+            )
+            .in_file(file));
         }
     }
     if cfg.settle_every_secs == Some(0) {

@@ -247,3 +247,24 @@ fn a_front_lists_tcp_ports_and_no_port_zero() {
         "fronts.web.ports[0]"
     );
 }
+
+#[test]
+fn the_runner_state_dir_is_an_absolute_or_home_path() {
+    let ok = |text: &str| {
+        parse_controller("c.yaml", text)
+            .unwrap_or_else(|e| panic!("{e}"))
+            .runner_state_dir
+    };
+    assert_eq!(ok(""), None);
+    assert_eq!(
+        ok("runner_state_dir: /var/lib/runner\n").as_deref(),
+        Some("/var/lib/runner")
+    );
+    assert_eq!(
+        ok("runner_state_dir: ~/runner\n").as_deref(),
+        Some("~/runner")
+    );
+    for bad in ["runner_state_dir: runner\n", "runner_state_dir: ' '\n"] {
+        assert_eq!(err(bad).path, "runner_state_dir", "{bad}");
+    }
+}

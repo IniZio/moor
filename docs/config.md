@@ -492,6 +492,7 @@ because moor keeps them in the Proxy, not in the Box.
 | `state_dir` | path | the same state directory as the CLI | The state directory. `~` is allowed. |
 | `settle_every_secs` | integer, above 0 | 5 | Seconds between passes that update each open Box's agent state. |
 | `drain_timeout_secs` | integer | 600 | Seconds a SIGTERM waits for in-flight requests. See [Stopping the controller](#stopping-the-controller). |
+| `runner_state_dir` | path | `<state dir>/machine-runner` | The machine runner's `--state-dir`. The host paths the runner's `box-mirror` and `box-put` name must resolve inside it; the controller refuses any other. `~` is allowed. |
 | `fronts` | map | empty | Fronts that each get their own socket, and that the controller runs when they have a `command`. |
 
 The controller refuses a config that has a `web`, `slack`, or `repos` key.
