@@ -60,6 +60,10 @@ impl TryFrom<String> for PluginRef {
     }
 }
 
+/// The marketplace name that stands for the profile repo itself. The manifest cannot see the
+/// checkout, so it never declares this one; the writers point it at the checkout.
+pub const PROFILE_MARKETPLACE: &str = "profile";
+
 /// The `claude:` section.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
@@ -78,6 +82,10 @@ pub struct ClaudeSection {
 pub struct CodexSection {
     /// Model passed to Codex.
     pub model: Option<String>,
+    /// Marketplace name to its GitHub repo.
+    pub marketplaces: BTreeMap<String, GithubRepo>,
+    /// Plugins to install; each names a declared marketplace.
+    pub plugins: Vec<PluginRef>,
 }
 
 /// The parsed `moor-profile.yaml`. Build it with [`parse`].
@@ -97,27 +105,56 @@ pub struct Manifest {
 /// plugin without a marketplace, or a plugin naming a marketplace the file does not declare.
 pub fn parse(text: &str) -> Result<Manifest, ProfileError> {
     let manifest: Manifest = parse_strict(MANIFEST_FILE, text)?;
-    for (i, plugin) in manifest.claude.plugins.iter().enumerate() {
-        if !manifest
-            .claude
-            .marketplaces
-            .contains_key(&plugin.marketplace)
-        {
-            return Err(ConfigError::new(
-                format!("claude.plugins[{i}]"),
-                format!("marketplace `{}` is not declared", plugin.marketplace),
-            )
-            .in_file(MANIFEST_FILE));
-        }
-    }
+    check_plugins(
+        "claude",
+        &manifest.claude.marketplaces,
+        &manifest.claude.plugins,
+    )?;
+    check_plugins(
+        "codex",
+        &manifest.codex.marketplaces,
+        &manifest.codex.plugins,
+    )?;
     Ok(manifest)
 }
 
-/// The marketplace repos the Proxy must allow for this manifest, each once, in name order.
+/// Refuses a plugin in `section` that names a marketplace neither declared nor the profile's own.
+fn check_plugins(
+    section: &str,
+    marketplaces: &BTreeMap<String, GithubRepo>,
+    plugins: &[PluginRef],
+) -> Result<(), ProfileError> {
+    let fail = |path: String, msg: String| ConfigError::new(path, msg).in_file(MANIFEST_FILE);
+    if marketplaces.contains_key(PROFILE_MARKETPLACE) {
+        return Err(fail(
+            format!("{section}.marketplaces.{PROFILE_MARKETPLACE}"),
+            "`profile` is reserved for the profile repo itself".to_owned(),
+        ));
+    }
+    for (i, plugin) in plugins.iter().enumerate() {
+        if plugin.marketplace != PROFILE_MARKETPLACE
+            && !marketplaces.contains_key(&plugin.marketplace)
+        {
+            return Err(fail(
+                format!("{section}.plugins[{i}]"),
+                format!("marketplace `{}` is not declared", plugin.marketplace),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The marketplace repos the Proxy must allow for this manifest, each once: Claude's in name order,
+/// then Codex's. The `profile` marketplace is the profile repo, which the Proxy already allows.
 #[must_use]
 pub fn repos(manifest: &Manifest) -> Vec<ForgeRepo> {
     let mut out: Vec<ForgeRepo> = Vec::new();
-    for GithubRepo(repo) in manifest.claude.marketplaces.values() {
+    let all = manifest
+        .claude
+        .marketplaces
+        .values()
+        .chain(manifest.codex.marketplaces.values());
+    for GithubRepo(repo) in all {
         if !out.contains(repo) {
             out.push(repo.clone());
         }
