@@ -40,6 +40,13 @@ pub(super) enum Action {
     ControllerServe(PathBuf),
     /// `controller attach [--socket <path>]`: bridge stdio to the controller socket.
     ControllerAttach(Option<PathBuf>),
+    /// Hidden `link-dial <machine-id> <slug>`: bridge stdio to a pool lease's sshd.
+    LinkDial {
+        /// The pool host's machine id.
+        machine_id: i64,
+        /// The lease.
+        slug: String,
+    },
     /// `user secret set <name>`: read the value from stdin and store it.
     SecretSetStdin(moor_core::user::SecretName),
     /// `events`: print the event stream as JSON lines.

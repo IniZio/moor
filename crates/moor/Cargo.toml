@@ -18,7 +18,7 @@ pty-surface = ["dep:ghostty-vt"]
 [dependencies]
 ghostty-vt = { version = "=0.8.0", default-features = false, optional = true }
 moor-core = { path = "../moor-core" }
-moor-client = { path = "../moor-client" }
+moor-client = { path = "../moor-client", features = ["link"] }
 clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
@@ -64,6 +64,7 @@ nix = { version = "0.31", default-features = false, features = [
 ] }
 tokio = { version = "1", default-features = false, features = [
   "rt-multi-thread",
+  "net",
 ] }
 portable-pty = "0.9"
 

@@ -12,6 +12,7 @@ mod cx;
 pub mod env;
 pub mod error;
 mod front_dir;
+pub mod link_dial;
 mod moor;
 mod ops;
 mod proxy;

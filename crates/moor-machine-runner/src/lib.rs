@@ -39,12 +39,14 @@ use crate::relay::Relays;
 use crate::sync::{SyncArgs, SyncOutput};
 
 pub use crate::agents::{serve_agents, Agents};
+pub use crate::broker::{bind_broker, serve_broker};
 pub use crate::forwards::serve_forwards;
 pub use crate::rsh::rsh;
 pub use crate::{config::Config, relay::Relay};
 
 mod agents;
 mod beat;
+mod broker;
 mod caller;
 mod claim;
 mod config;
