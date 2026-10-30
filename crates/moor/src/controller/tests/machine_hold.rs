@@ -77,7 +77,7 @@ fn a_claim_with_a_free_slot_holds_it_with_the_repos_ports() {
     assert_eq!(
         got["value"],
         json!({"state": "held", "machine": "mini", "ssh": "dev@mac", "slot": 0,
-            "ports": [5432, 8080]}),
+            "ports": [5432, 8080], "kind": "physical"}),
         "{got}"
     );
     assert_eq!(
@@ -252,6 +252,8 @@ fn a_request_and_its_values_round_trip_on_the_wire() {
             machine_id: None,
             slot: 1,
             ports: vec![8090],
+            kind: moor_core::config::MachineKindName::Physical,
+            vm_provider: None,
         },
         HoldValue::Waiting {
             position: 2,

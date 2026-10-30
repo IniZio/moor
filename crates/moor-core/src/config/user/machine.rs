@@ -4,7 +4,11 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 
 use serde::{Deserialize, Serialize};
 
+use kind::check_vm_provider;
+pub use kind::{MachineKind, MachineKindName};
 pub use pick::{pick_machine, unslot_ports, MachinePick};
+
+mod kind;
 
 mod pick;
 
@@ -31,6 +35,9 @@ pub struct UserMachine {
     /// How many Boxes may hold the machine at once, each in its own port slot; at least 1.
     #[serde(default = "one")]
     pub capacity: u16,
+    /// Whether Boxes hold the machine itself or a VM leased on it.
+    #[serde(default)]
+    pub kind: MachineKind,
 }
 
 /// The capacity of a machine added without one.
@@ -58,6 +65,22 @@ impl UserMachine {
             ssh: ssh.to_owned(),
             labels,
             capacity: 1,
+            kind: MachineKind::Physical,
+        })
+    }
+
+    /// The machine as a VM host whose crabbox leases VMs through `provider`; `capacity` then
+    /// counts concurrent VMs.
+    ///
+    /// # Errors
+    /// When `provider` is not a crabbox provider name.
+    pub fn with_vm_host(self, provider: &str) -> Result<Self, String> {
+        check_vm_provider(provider)?;
+        Ok(Self {
+            kind: MachineKind::VmHost {
+                provider: provider.to_owned(),
+            },
+            ..self
         })
     }
 

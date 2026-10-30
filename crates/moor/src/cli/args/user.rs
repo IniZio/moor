@@ -109,6 +109,10 @@ pub(super) struct MachineAddArgs {
     /// How many Boxes may hold the machine at once; slot k moves each port up by 10·k.
     #[arg(long, default_value_t = 1)]
     capacity: u16,
+    /// Make the machine a VM host: each Box gets a VM leased through crabbox PROVIDER, and
+    /// `--capacity` counts concurrent VMs.
+    #[arg(long, value_name = "PROVIDER")]
+    vm: Option<String>,
 }
 
 /// Arguments of `user mcp add`.
@@ -185,6 +189,7 @@ impl UserCli {
                 ssh: a.ssh,
                 labels: a.labels,
                 capacity: a.capacity,
+                vm: a.vm,
             }),
             Self::Machine(MachineCli::Rm(a)) => Request::MachineRemove(MachineRemoveReq {
                 identity: None,

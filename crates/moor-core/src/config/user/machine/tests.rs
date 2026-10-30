@@ -105,3 +105,17 @@ fn at_most_sixteen_distinct_labels() {
     let repeated: Vec<String> = (0..20).map(|_| "same".to_owned()).collect();
     assert!(UserMachine::parse("m", "u@h", &repeated).is_ok());
 }
+
+#[test]
+fn a_vm_provider_matches_crabbox_provider_names() {
+    let m = UserMachine::parse("hv", "u@h", &[]).unwrap();
+    for ok in ["external", "a", "aws-spot2", &"a".repeat(64)] {
+        let host = m.clone().with_vm_host(ok).unwrap();
+        assert_eq!(host.kind.provider(), Some(ok));
+    }
+    for bad in ["", "Ext", "9a", "a_b", "-a", "a b", &"a".repeat(65)] {
+        let err = m.clone().with_vm_host(bad).unwrap_err();
+        assert!(err.contains("--vm"), "{bad:?}: {err}");
+    }
+    assert_eq!(m.kind.provider(), None);
+}

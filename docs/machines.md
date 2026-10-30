@@ -7,7 +7,7 @@ it over ssh. The host holds the machine's key, and the Box never does.
 
 `moor-machine-runner` is an MCP server on the host. An agent in a Box reaches it
 at `http://machine.moor.internal/mcp`. The Box's Proxy routes that host to the
-runner and sets four headers on every request. The runner trusts these headers
+runner and sets these headers on every request. The runner trusts these headers
 to name the caller.
 
 | Header | Value |
@@ -16,6 +16,9 @@ to name the caller.
 | `X-Moor-Machine` | the attached machine's name |
 | `X-Moor-Machine-Ssh` | the machine's ssh target, such as `moor@minion` |
 | `X-Moor-Machine-Slot` | the Box's slot on the machine, 0 to 6553 |
+| `X-Moor-Machine-Kind` | `physical`, or `vm-host` when the Box gets a VM on the machine |
+| `X-Moor-Machine-Vm` | the VM host's crabbox provider; sent only for `vm-host` |
+| `X-Moor-Machine-Ports` | the Box's forwarded ports, comma-separated, already moved by the slot |
 
 If a request misses a header or has a malformed one, it gets an MCP error that
 names the header.

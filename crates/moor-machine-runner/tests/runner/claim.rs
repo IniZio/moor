@@ -13,7 +13,7 @@ fn waiting() -> Value {
 
 fn held() -> Value {
     json!({"state": "held", "machine": "minion", "ssh": "moor@minion", "slot": 0,
-        "ports": [8081]})
+        "ports": [8081], "kind": "physical"})
 }
 
 /// A rig whose fake controller answers claims with `answers`, in turn.

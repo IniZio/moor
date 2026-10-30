@@ -180,6 +180,7 @@ fn machine_targets(client: &Client) -> Result<BTreeSet<String>, String> {
     Ok(listed
         .targets
         .into_iter()
+        .map(|t| t.ssh)
         .filter(|t| !t.is_empty())
         .collect())
 }

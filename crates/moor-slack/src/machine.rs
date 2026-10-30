@@ -156,6 +156,7 @@ pub(crate) fn submission(sub: &TokenSubmission, call: &mut Call<'_>) -> Value {
         ssh,
         labels: labels(&field(sub, "labels")),
         capacity,
+        vm: None,
     };
     let enroll = Request::Enroll(EnrollReq {
         identity: None,

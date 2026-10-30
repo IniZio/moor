@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::config::MachineKindName;
 use crate::name::BoxId;
 use crate::seam::clock::Ts;
 use crate::user::{Email, Identity};
@@ -23,6 +24,9 @@ pub struct MachineAddReq {
     /// How many Boxes may hold it at once, each in its own port slot.
     #[serde(default = "one", skip_serializing_if = "is_one")]
     pub capacity: u16,
+    /// The crabbox provider that makes this a VM host; none for a physical machine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vm: Option<String>,
 }
 
 /// Arguments of `machine-enroll`: a machine agent adds or replaces its machine.
@@ -158,6 +162,11 @@ pub enum HoldValue {
         slot: u16,
         /// The forwarded ports, moved by the slot.
         ports: Vec<u16>,
+        /// Whether the Box holds the machine or a VM on it.
+        kind: MachineKindName,
+        /// The crabbox provider of a VM host.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        vm_provider: Option<String>,
     },
     /// The want is recorded; `position` counts from 1 among the user's waiters.
     Waiting {
