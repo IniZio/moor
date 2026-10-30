@@ -93,7 +93,7 @@ pub fn state_dir() -> PathBuf {
 /// returns to loopback `port`; 0 takes any free one), and saves the controller's answer.
 ///
 /// # Errors
-/// The key or state cannot be read or written, the sign-in fails or grants no id token, or
+/// The key or state cannot be read or written, the sign-in fails, or
 /// the server refuses the enrollment.
 pub fn enroll(req: &Enroll, dir: &Path, port: u16, ui: &mut dyn Ui) -> Result<State, String> {
     private_dir(dir).map_err(|e| format!("cannot prepare {}: {e}", dir.display()))?;
@@ -103,10 +103,7 @@ pub fn enroll(req: &Enroll, dir: &Path, port: u16, ui: &mut dyn Ui) -> Result<St
         .to_openssh()
         .map_err(|e| format!("cannot encode the public key: {e}"))?;
     let signed = oidc::sign_in(&req.server, port, ui)?;
-    let id_token = signed
-        .id_token
-        .ok_or("the sign-in returned no id token; the openid scope is needed")?;
-    let body = json!({"id_token": id_token, "pubkey": pubkey, "name": req.name,
+    let body = json!({"access_token": signed.access_token, "pubkey": pubkey, "name": req.name,
         "labels": req.labels, "slots": req.slots});
     let got: Enrolled =
         Http::new().post_json(&format!("{}/machines/enroll", signed.server), &body)?;

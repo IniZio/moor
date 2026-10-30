@@ -1,5 +1,5 @@
 //! An OIDC issuer on loopback: discovery, JWKS, userinfo, and an authorize endpoint that
-//! approves at once and a PKCE token endpoint whose id tokens carry [`Issuer::id_claims`].
+//! approves at once and a PKCE token endpoint whose access and id tokens carry [`Issuer::id_claims`].
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -176,8 +176,9 @@ impl Issuer {
         claims["iss"] = json!(self.base);
         claims["aud"] = json!(self.client_id);
         claims["exp"] = json!(now() + 300);
-        let answer = json!({"access_token": "access-0", "token_type": "Bearer",
-            "expires_in": 3600, "refresh_token": "refresh-0", "id_token": self.sign(&claims)});
+        let token = self.sign(&claims);
+        let answer = json!({"access_token": token, "token_type": "Bearer",
+            "expires_in": 3600, "refresh_token": "refresh-0", "id_token": token});
         (200, String::new(), answer)
     }
 }
