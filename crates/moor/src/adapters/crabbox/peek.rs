@@ -11,6 +11,7 @@ use moor_core::boxscript::quote;
 use moor_core::name::{BoxHandle, BoxPath};
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::{Deadline, ProcError, ProcSpec, Tool};
+use moor_core::ssh::split_words;
 
 use super::errors::{map_error, Op};
 use super::{link, split_handle, target_args, Crabbox, LOOKUP_DEADLINE};
@@ -115,46 +116,6 @@ impl Crabbox {
             })
         })
     }
-}
-
-/// Splits one line of single-quoted shell words; `None` when a quote is left open.
-fn split_words(line: &str) -> Option<Vec<String>> {
-    let mut words = Vec::new();
-    let mut cur = String::new();
-    let mut started = false;
-    let mut quoted = false;
-    let mut chars = line.chars();
-    while let Some(c) = chars.next() {
-        match (quoted, c) {
-            (true, '\'') => quoted = false,
-            (true, _) => cur.push(c),
-            (false, '\'') => {
-                quoted = true;
-                started = true;
-            }
-            (false, '\\') => {
-                cur.push(chars.next()?);
-                started = true;
-            }
-            (false, c) if c.is_whitespace() => {
-                if started {
-                    words.push(std::mem::take(&mut cur));
-                    started = false;
-                }
-            }
-            (false, _) => {
-                cur.push(c);
-                started = true;
-            }
-        }
-    }
-    if quoted {
-        return None;
-    }
-    if started {
-        words.push(cur);
-    }
-    Some(words)
 }
 
 #[cfg(test)]
