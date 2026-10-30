@@ -3,7 +3,7 @@ use std::path::Path;
 
 use moor_core::ErrorKind;
 
-use super::inside;
+use super::{inside, open_beneath, walk};
 
 struct Fx {
     _tmp: tempfile::TempDir,
@@ -98,3 +98,41 @@ fn a_missing_root_refuses_everything() {
     refused(&f.root.join("x"), &f.outside.join("nope"), "cannot resolve");
 }
 
+#[test]
+fn the_open_reads_a_file_inside_the_root() {
+    let f = fx();
+    let mut got = String::new();
+    std::io::Read::read_to_string(
+        &mut open_beneath("the source", &s(&f.root.join("pulls/1-0")), &f.root).expect("open"),
+        &mut got,
+    )
+    .expect("read");
+    assert_eq!(got, "x");
+}
+
+#[test]
+fn the_open_follows_no_link_swapped_in_after_the_check() {
+    let f = fx();
+    let root = f.root.canonicalize().expect("real");
+    symlink(root.join("pulls/1-0"), root.join("pulls/2-0")).expect("file link");
+    symlink(&f.outside, root.join("mirrors")).expect("dir link");
+    walk(&root, Path::new("pulls/1-0")).expect("plain file");
+    walk(&root, Path::new("pulls/2-0")).expect_err("a link to a file");
+    walk(&root, Path::new("mirrors/vault.key")).expect_err("a link to a directory");
+}
+
+#[test]
+fn the_open_does_not_wait_on_a_fifo() {
+    let f = fx();
+    let root = f.root.canonicalize().expect("real");
+    rustix::fs::mknodat(
+        rustix::fs::CWD,
+        root.join("pulls/fifo"),
+        rustix::fs::FileType::Fifo,
+        rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
+        0,
+    )
+    .expect("fifo");
+    let file = walk(&root, Path::new("pulls/fifo")).expect("opened");
+    assert!(!file.metadata().expect("meta").is_file());
+}

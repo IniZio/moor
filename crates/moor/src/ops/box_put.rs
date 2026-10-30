@@ -2,6 +2,9 @@
 //!
 //! Holds the Box lock for the write, as `box-mirror` does for its copy.
 
+use std::io::Read;
+use std::os::unix::fs::OpenOptionsExt;
+
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::name::BoxPath;
 use moor_core::view::run::PutValue;
@@ -10,7 +13,7 @@ use moor_core::{BoxPutReq, ErrorKind};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
-use crate::ops::common::host_path::absolute;
+use crate::ops::common::host_path::{absolute, open_beneath};
 use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::wake::wake_and_revive;
 use crate::ops::cp::usable_handle;
@@ -34,24 +37,7 @@ pub(crate) fn run(cx: &Cx, req: &BoxPutReq) -> Result<PutValue, CommandError> {
             req.dest
         ))
     })?;
-    let src = absolute("the source", &req.src)?;
-    let meta = std::fs::metadata(&src)
-        .map_err(|e| usage(format!("cannot read the source {}: {e}", src.display())))?;
-    if !meta.is_file() {
-        return Err(usage(format!(
-            "the source {} is not a regular file",
-            src.display()
-        )));
-    }
-    if meta.len() > MAX_BYTES {
-        return Err(usage(format!(
-            "the source {} is {} bytes, over the {MAX_BYTES} byte limit",
-            src.display(),
-            meta.len()
-        )));
-    }
-    let bytes = std::fs::read(&src)
-        .map_err(|e| usage(format!("cannot read the source {}: {e}", src.display())))?;
+    let bytes = read_source(cx, req)?;
 
     let store = cx.store()?;
     let id = req.id;
@@ -85,6 +71,42 @@ pub(crate) fn run(cx: &Cx, req: &BoxPutReq) -> Result<PutValue, CommandError> {
         bytes: n,
         confirmation: format!("wrote {n} bytes to {}", to.as_str()),
     })
+}
+
+/// The bytes of the request's source, opened beneath the host directory the request is held
+/// to when it has one.
+fn read_source(cx: &Cx, req: &BoxPutReq) -> Result<Vec<u8>, CommandError> {
+    let src = absolute("the source", &req.src)?;
+    let cannot =
+        |e: std::io::Error| usage(format!("cannot read the source {}: {e}", src.display()));
+    let mut file = match cx.host_dir() {
+        Some(root) => open_beneath("the source", &req.src, root)?,
+        None => std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(rustix::fs::OFlags::NONBLOCK.bits().cast_signed())
+            .open(&src)
+            .map_err(cannot)?,
+    };
+    let meta = file.metadata().map_err(cannot)?;
+    if !meta.is_file() {
+        return Err(usage(format!(
+            "the source {} is not a regular file",
+            src.display()
+        )));
+    }
+    if meta.len() > MAX_BYTES {
+        return Err(usage(format!(
+            "the source {} is {} bytes, over the {MAX_BYTES} byte limit",
+            src.display(),
+            meta.len()
+        )));
+    }
+    let mut bytes = Vec::new();
+    file.by_ref()
+        .take(MAX_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(cannot)?;
+    Ok(bytes)
 }
 
 #[cfg(test)]
