@@ -10,8 +10,8 @@ use std::fs::{self, DirBuilder};
 use std::os::unix::fs::DirBuilderExt;
 use std::path::PathBuf;
 
-use moor_core::name::BoxHandle;
-use moor_core::seam::driver::DriverError;
+use moor_core::name::{BoxHandle, ProviderId};
+use moor_core::seam::driver::{BoxListing, DriverError, Released};
 use moor_core::seam::proc::ProcSpec;
 
 use super::{split_handle, static_env, target_args, Crabbox};
@@ -73,6 +73,52 @@ impl Crabbox {
         if let Ok(dir) = self.lease_dir(handle) {
             let _ = fs::remove_dir_all(dir);
         }
+    }
+
+    /// Deletes the lease of `handle`; a pool Box's through its host.
+    pub(super) fn stop(&self, handle: &BoxHandle) -> Result<Released, DriverError> {
+        if super::pool::is_pool(handle) {
+            return super::pool::release(self, handle);
+        }
+        self.require_version()?;
+        let spec = Self::spec(super::QUICK_DEADLINE)
+            .arg("stop")
+            .args(target_args(handle))
+            .arg("--delete");
+        let spec = self.at_lease(spec, handle)?;
+        let result = self.call(super::errors::Op::Release, split_handle(handle).0, &spec);
+        self.forget_targets(handle);
+        let released = match result {
+            Ok(_) => Released::Deleted,
+            Err(DriverError::NotFound) => Released::AlreadyGone,
+            Err(e) => return Err(e),
+        };
+        self.drop_lease_dir(handle);
+        Ok(released)
+    }
+
+    /// The provider's Boxes; a pool host's through its agent.
+    pub(super) fn inventory(&self, provider: &ProviderId) -> Result<Vec<BoxListing>, DriverError> {
+        if super::pool::is_pool_provider(provider) {
+            return super::pool::list(self, provider);
+        }
+        self.require_version()?;
+        let p = provider.as_str();
+        if p == super::STATIC_PROVIDER {
+            return Err(DriverError::Unsupported("box provider has no inventory"));
+        }
+        let spec = Self::spec(super::LIST_DEADLINE).args(["list", "--provider", p, "--json"]);
+        let out = self.call(super::errors::Op::List, None, &spec)?;
+        let items =
+            super::parse::parse_list(&out.stdout).map_err(|_| super::errors::unreadable("list"))?;
+        Ok(items
+            .into_iter()
+            .map(|i| BoxListing {
+                handle: super::handle_of(p, &i.name),
+                provider: Some(provider.clone()),
+                asleep: i.asleep,
+            })
+            .collect())
     }
 
     /// The command a person runs to release `handle` by hand.

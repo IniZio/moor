@@ -56,6 +56,9 @@ pub(super) fn ssh_target(cb: &Crabbox, handle: &BoxHandle) -> Result<Vec<String>
     if let Some(words) = cb.targets.lock().ok().and_then(|m| m.get(&key).cloned()) {
         return Ok(words);
     }
+    if super::pool::is_pool(handle) {
+        return super::pool::target(cb, handle).map(|(_, words)| words);
+    }
     if let Some(words) = cb.link(handle).and_then(|l| l.saved()) {
         if let Ok(mut map) = cb.targets.lock() {
             map.insert(key, words.clone());
