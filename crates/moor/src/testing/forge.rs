@@ -16,7 +16,7 @@ struct State {
     files_asked: Vec<(ForgeRepo, Option<String>, &'static str)>,
 }
 
-/// What `file_at` answers: the commit and the file's text there.
+/// What `read_file_at` answers: the commit and the file's text there.
 pub(crate) type FileAnswer = Result<(Sha, Option<String>), ForgeError>;
 
 /// One `read` the fake answered.
@@ -84,7 +84,7 @@ impl FakeForge {
         self.lock().reads.insert(repo, answer);
     }
 
-    /// Answers `file_at` of `path` in `repo` at `at` with `answer`.
+    /// Answers `read_file_at` of `path` in `repo` at `at` with `answer`.
     pub(crate) fn with_file(
         self,
         repo: ForgeRepo,
@@ -98,7 +98,7 @@ impl FakeForge {
         self
     }
 
-    /// Every `file_at` asked so far, as repo, ref and path, in order.
+    /// Every `read_file_at` asked so far, as repo, ref and path, in order.
     pub(crate) fn files_asked(&self) -> Vec<(ForgeRepo, Option<String>, &'static str)> {
         self.lock().files_asked.clone()
     }
@@ -147,7 +147,7 @@ impl Forge for FakeForge {
             .unwrap_or(Err(ForgeError::NotVisible))
     }
 
-    fn file_at(
+    fn read_file_at(
         &self,
         repo: &ForgeRepo,
         at: Option<&str>,

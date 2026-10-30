@@ -73,7 +73,7 @@ pub trait Forge: Send + Sync {
     ///
     /// # Errors
     /// Returns the [`ForgeError`] that says why the repo, the ref or the file cannot be read.
-    fn file_at(
+    fn read_file_at(
         &self,
         repo: &ForgeRepo,
         at: Option<&str>,
