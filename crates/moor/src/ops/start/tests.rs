@@ -37,6 +37,7 @@ mod lease;
 mod lease_dirs;
 mod lease_handle;
 mod machine;
+mod named_node;
 mod others;
 mod parent;
 mod placement;
@@ -150,6 +151,7 @@ fn req(name: &str) -> StartReq {
         issue: None,
         base: None,
         model: None,
+        node: None,
         no_agent: false,
         resume: false,
         repo: None,

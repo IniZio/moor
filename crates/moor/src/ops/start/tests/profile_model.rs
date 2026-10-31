@@ -40,6 +40,7 @@ fn the_model_flag_beats_the_profile_model() {
     let (w, engine) = model_world(Some("claude: {model: opus}\n"));
     let flagged = StartReq {
         model: Some("haiku".into()),
+        node: None,
         ..req("demo")
     };
     run(&w.cx, &flagged).unwrap();
@@ -75,6 +76,7 @@ fn a_relaunch_keeps_the_stored_profile_model() {
 fn a_relaunch_with_a_model_flag_uses_the_flag() {
     let flagged = StartReq {
         model: Some("haiku".into()),
+        node: None,
         ..req("demo")
     };
     let got = relaunched_models(&flagged);

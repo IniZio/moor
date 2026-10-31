@@ -519,3 +519,17 @@ fn start_box_tells_the_client_to_follow_it_with_box_status() {
     assert!(described("start_box").contains("box_status"));
     assert!(described("list_boxes").contains("why it failed or what it is waiting on"));
 }
+
+#[test]
+fn start_box_passes_the_node_to_the_start() {
+    let m = mcp();
+    let token = m.token("alice-sub", &m.url(), "moor:read moor:write");
+    let result = m.call(
+        &token,
+        "start_box",
+        json!({"repo": "acme/web", "name": "web/fix", "prompt": "fix it", "node": "hv"}),
+    );
+    assert_ne!(result["isError"], true, "{result}");
+    let sent = m.requests();
+    assert_eq!(sent[0]["request"]["request"]["node"], "hv", "{sent:?}");
+}

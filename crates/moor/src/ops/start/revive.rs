@@ -110,6 +110,7 @@ fn revive(
         issue: None,
         base: None,
         model: None,
+        node: None,
         no_agent: false,
         resume: cause == "steer",
         repo: None,

@@ -73,6 +73,7 @@ fn started(db: &Db, event_id: &str, thread: &str) -> SlackBox {
         repo: "acme/api".into(),
         prompt: "fix the flaky test".into(),
         base: None,
+        node: None,
         requested_by: "U1".into(),
         parent: Some(SessionId::new(100)),
         state: BoxState::Starting,

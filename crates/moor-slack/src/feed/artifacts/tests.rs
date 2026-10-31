@@ -294,6 +294,7 @@ fn other_thread_box(db: &Db) {
         repo: "acme/app".into(),
         prompt: "fix it".into(),
         base: None,
+        node: None,
         requested_by: "U1".into(),
         parent: None,
         state: crate::db::BoxState::Starting,

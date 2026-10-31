@@ -8,7 +8,7 @@ use super::Db;
 
 /// Columns of a Box row, in the order [`box_row`] reads them.
 const BOX_COLUMNS: &str = "b.channel, b.thread_ts, b.box_name, b.repo, b.prompt, b.requested_by, \
-     b.state, b.box_id, b.branch, b.parent, b.status_ts, b.status_text, b.base, b.discard FROM slack_boxes b";
+     b.state, b.box_id, b.branch, b.parent, b.status_ts, b.status_text, b.base, b.discard, b.node FROM slack_boxes b";
 
 /// Where a Box stands.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,6 +55,8 @@ pub(crate) struct SlackBox {
     pub(crate) prompt: String,
     /// The branch or ref the Box starts from, when the thread named one.
     pub(crate) base: Option<String>,
+    /// The node the thread named; none for the requester's default.
+    pub(crate) node: Option<String>,
     /// Slack user id of the person who asked for the Box.
     pub(crate) requested_by: String,
     /// The host Session of the thread when the Box was asked for, which becomes its parent.
@@ -155,8 +157,8 @@ impl Db {
     pub(crate) fn insert_starting(&self, boxed: &SlackBox, now: i64) -> rusqlite::Result<()> {
         self.conn.execute(
             "INSERT INTO slack_boxes \
-             (box_name, channel, thread_ts, n, repo, prompt, base, requested_by, parent, state, created_at) \
-             SELECT ?1, ?2, ?3, coalesce(max(n), 0) + 1, ?4, ?5, ?6, ?7, ?8, 'starting', ?9 \
+             (box_name, channel, thread_ts, n, repo, prompt, base, node, requested_by, parent, state, created_at) \
+             SELECT ?1, ?2, ?3, coalesce(max(n), 0) + 1, ?4, ?5, ?6, ?7, ?8, ?9, 'starting', ?10 \
              FROM slack_boxes WHERE channel = ?2 AND thread_ts = ?3",
             params![
                 boxed.box_name.as_str(),
@@ -165,6 +167,7 @@ impl Db {
                 boxed.repo,
                 boxed.prompt,
                 boxed.base,
+                boxed.node,
                 boxed.requested_by,
                 boxed.parent.map(SessionId::get),
                 now
@@ -257,6 +260,7 @@ fn box_row(r: &Row<'_>) -> rusqlite::Result<SlackBox> {
         repo: r.get(3)?,
         prompt: r.get(4)?,
         base: r.get(12)?,
+        node: r.get(14)?,
         requested_by: r.get(5)?,
         parent: r.get::<_, Option<i64>>(9)?.map(SessionId::new),
         state,

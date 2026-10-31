@@ -166,6 +166,7 @@ fn start_req(name: &str) -> StartReq {
         issue: None,
         base: None,
         model: None,
+        node: None,
         no_agent: false,
         resume: false,
         repo: None,

@@ -19,6 +19,7 @@ fn starting(thread_ts: &str, name: &str, owner: &str) -> SlackBox {
         repo: "api".into(),
         prompt: "fix it".into(),
         base: None,
+        node: None,
         requested_by: owner.into(),
         parent: None,
         state: BoxState::Starting,
@@ -354,7 +355,8 @@ fn applied_migrations_are_never_edited() {
         [
             (1, 8_754_816_789_016_865_323),
             (2, 6_043_544_592_493_671_438),
-            (3, 10_676_293_054_036_308_522)
+            (3, 10_676_293_054_036_308_522),
+            (4, 14_359_854_395_702_897_262)
         ],
         "a schema change is a new migration file; an applied one must not change"
     );

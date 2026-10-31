@@ -4,13 +4,14 @@
 //! setup, then the dotfiles, before the agent launches.
 //! It launches the agent for a Working Box; without a prompt or issue the agent waits for a prompt.
 
-use moor_core::config::Flags;
+use moor_core::config::{Flags, RepoConfig};
 use moor_core::decide::schedule::BoxSpec;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{BoxRepo, Decision, ExtraEvent, Field, Fields, NewBox};
 use moor_core::domain::event::CheckedCred;
 use moor_core::domain::session_state::SessionInput;
+use moor_core::name::NodeName;
 use moor_core::seam::forge::RepoFiles;
 use moor_core::seam::surface::workspace_label;
 use moor_core::user::UserId;
@@ -92,7 +93,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     };
     let repo_cfg = repo_config_of(facts.repo.as_ref(), facts.base.as_deref())?;
     let cfg = resolved(cx, repo_cfg.as_ref(), &flags);
-    let spec = spec_of(req);
+    let spec = spec_of(req, repo_cfg.as_ref())?;
     let note = node::preflight(cx, user, &cfg, &spec)?;
     if let Some(reason) = preflight::rejection(cx, &cfg, &facts.files, user)? {
         return reject(cx, store, (req, user), &facts, &reason);
@@ -151,12 +152,18 @@ fn settled(
     Ok(v)
 }
 
-/// What the start asks of a node.
-const fn spec_of(_req: &StartReq) -> BoxSpec {
-    BoxSpec {
-        labels: Vec::new(),
-        node: None,
-    }
+/// What the start asks of a node: the labels its repo requires, and the node the requester named.
+fn spec_of(req: &StartReq, repo: Option<&RepoConfig>) -> Result<BoxSpec, CommandError> {
+    let node = req
+        .node
+        .as_deref()
+        .map(NodeName::parse)
+        .transpose()
+        .map_err(|e| CommandError::new(ErrorKind::Refused, e.to_string()))?;
+    Ok(BoxSpec {
+        labels: repo.map(|r| r.node.labels.clone()).unwrap_or_default(),
+        node,
+    })
 }
 
 /// Records a rejected Box, with no Workspace, and fails with the outcome.
