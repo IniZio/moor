@@ -236,3 +236,5 @@ fn an_enrolled_machine_keeps_its_pool_provider() {
     let err = as_user(&f, "authgear:alice-sub", &cmd).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Usage);
 }
+
+mod status;

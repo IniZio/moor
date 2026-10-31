@@ -34,7 +34,7 @@ use crate::adapters::pty::PtySurface;
 use crate::adapters::rng::SystemRng;
 use crate::adapters::sockets::socket_dir;
 use crate::config_load::load_user;
-use crate::cx::{Cx, CxParts};
+use crate::cx::{Cx, CxParts, MachineLinks};
 use crate::env::Env;
 use crate::error::CommandError;
 use crate::proxy::adopt;
@@ -236,6 +236,20 @@ fn surface(
     }
 }
 
+/// The Box Proxies' supervisor, keeping its state under `state_dir`.
+fn proxy_host(
+    env: &Env,
+    proc: &Arc<dyn Proc>,
+    clock: Arc<dyn Clock>,
+    rng: &Arc<dyn Rng>,
+    state_dir: Option<PathBuf>,
+) -> Arc<DetachedSupervisor> {
+    Arc::new(
+        DetachedSupervisor::new(Arc::clone(proc), clock, Arc::clone(rng), state_dir)
+            .sharing(env.shared::<Store>().cloned()),
+    )
+}
+
 /// Real adapters from the environment, not yet assembled into a context, and the warning
 /// when calls to a Box cannot share an ssh connection through control sockets in `sockets`.
 fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), CommandError> {
@@ -253,6 +267,7 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
         state_dir.clone(),
     )?;
     let rng: Arc<dyn Rng> = Arc::new(SystemRng);
+    let links = state_dir.as_deref().map(links::under);
     let crabbox = Crabbox::new(
         Arc::clone(&proc),
         Arc::clone(&clock) as Arc<dyn Clock>,
@@ -260,7 +275,7 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
     )
     .with_lookup_deadlines(lookup_deadlines(&config.drivers))
     .with_state_dir(state_dir.clone(), sockets)
-    .with_runner_links(state_dir.as_deref())
+    .with_pool_hosts(links.clone().map(|l| l as _))
     .sharing_no_probe(Arc::clone(&NO_PROBE));
     let link_warning = crabbox.link_warning();
     let driver: Arc<dyn Driver> = Arc::new(crabbox);
@@ -274,15 +289,7 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
             env.xdg("XDG_CACHE_HOME", ".cache", "moor"),
         )),
     );
-    let proxy_host = Arc::new(
-        DetachedSupervisor::new(
-            Arc::clone(&proc),
-            Arc::clone(&clock) as Arc<dyn Clock>,
-            Arc::clone(&rng),
-            state_dir.clone(),
-        )
-        .sharing(env.shared::<Store>().cloned()),
-    );
+    let proxy_host = proxy_host(env, &proc, Arc::clone(&clock) as _, &rng, state_dir.clone());
     let parts = CxParts {
         state_dir,
         clock,
@@ -293,6 +300,7 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
         proc: Arc::clone(&proc),
         forge: Arc::new(GitHub::new()),
         proxy_host,
+        machine_links: links.map(|l| l as Arc<dyn MachineLinks>),
         config,
         env: env.clone(),
         prompt_window: prompt_window(env),
@@ -384,6 +392,8 @@ fn tool_paths(config: &UserConfig) -> ToolPaths {
         git: t.git.clone(),
     }
 }
+
+mod links;
 
 #[cfg(test)]
 mod tests;

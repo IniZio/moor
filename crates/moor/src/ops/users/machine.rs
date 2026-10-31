@@ -1,8 +1,5 @@
 //! A user's own machines: `machine-remove`, `machine-list`.
 
-use std::future::Future;
-
-use moor_client::link::broker;
 use moor_core::config::EnrolledMachine;
 use moor_core::request::UserCmd;
 use moor_core::user::{Email, Identity, UserId};
@@ -105,29 +102,14 @@ pub(super) fn status(cx: &Cx, user: UserId, name: &str) -> Result<serde_json::Va
             crate::stamp::utc(link.since.as_millis() / 1000)
         )));
     }
-    let socket = crate::runner_dir::of(cx.state_dir()?).join(broker::SOCKET);
-    let status = blocking(broker::status(&socket, link.machine_id))
+    let links = cx
+        .machine_links()
+        .ok_or_else(|| refused("this controller has no machine runner to ask".to_owned()))?;
+    let status = links
+        .status(link.machine_id)
         .map_err(|e| CommandError::new(ErrorKind::Failed, format!("machine {name}: {e}")))?;
     to_value(&status)
 }
 
-/// Runs `call` to completion on a runtime of its own, off any runtime the caller is on.
-fn blocking<T: Send>(call: impl Future<Output = Result<T, String>> + Send) -> Result<T, String> {
-    std::thread::scope(|s| {
-        s.spawn(|| {
-            tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(|e| e.to_string())?
-                .block_on(call)
-        })
-        .join()
-        .unwrap_or_else(|_| Err("the links broker call panicked".to_owned()))
-    })
-}
-
 #[cfg(test)]
 mod tests;
-
-#[cfg(test)]
-mod status_tests;

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use moor_client::link::status::Status;
 use moor_core::config::UserConfig;
 use moor_core::request::Pins;
 use moor_core::seam::clock::Clock;
@@ -21,6 +22,15 @@ use moor_core::{ErrorKind, Warning};
 use crate::env::Env;
 use crate::error::CommandError;
 use crate::store::{Store, STORE_FILE};
+
+/// The agents linked to the controller's machine runner.
+pub(crate) trait MachineLinks: Send + Sync {
+    /// Machine `machine_id`'s agent status.
+    ///
+    /// # Errors
+    /// Why the agent could not be asked.
+    fn status(&self, machine_id: i64) -> Result<Status, String>;
+}
 
 /// State shared by one command run.
 pub(crate) struct Cx {
@@ -44,6 +54,8 @@ pub(crate) struct Cx {
     forge: Arc<dyn Forge>,
     /// Credential proxy host.
     proxy_host: Arc<dyn ProxyHost>,
+    /// The machine runner's agent links; `None` without a state dir.
+    machine_links: Option<Arc<dyn MachineLinks>>,
     /// User configuration.
     config: UserConfig,
     /// Host environment snapshot.
@@ -84,6 +96,8 @@ pub(crate) struct CxParts {
     pub forge: Arc<dyn Forge>,
     /// Credential proxy host.
     pub proxy_host: Arc<dyn ProxyHost>,
+    /// The machine runner's agent links.
+    pub machine_links: Option<Arc<dyn MachineLinks>>,
     /// User configuration.
     pub config: UserConfig,
     /// Host environment snapshot.
@@ -106,6 +120,7 @@ impl Cx {
             proc: p.proc,
             forge: p.forge,
             proxy_host: p.proxy_host,
+            machine_links: p.machine_links,
             config: p.config,
             env: p.env,
             prompt_window: p.prompt_window,
@@ -202,6 +217,18 @@ impl Cx {
     /// Credential proxy host.
     pub(crate) fn proxy_host(&self) -> &dyn ProxyHost {
         self.proxy_host.as_ref()
+    }
+
+    /// The machine runner's agent links, when there is a runner to reach.
+    pub(crate) fn machine_links(&self) -> Option<&dyn MachineLinks> {
+        self.machine_links.as_deref()
+    }
+
+    /// This context with `links` as the machine runner's agent links.
+    #[cfg(test)]
+    pub(crate) fn with_machine_links(mut self, links: Arc<dyn MachineLinks>) -> Self {
+        self.machine_links = Some(links);
+        self
     }
 
     /// This context with `host` in place of the current proxy host.

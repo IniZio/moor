@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use moor_client::link::lease::{slug_id, Answer, Verb};
-use moor_core::box_key::WORK_ROOT;
+use moor_core::box_key::{BoxKey, WORK_ROOT};
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, DriverCaps, DriverError, Released, SleepKind, SleepOutcome,
@@ -59,7 +59,7 @@ impl Placed<'_> {
 }
 
 /// The base provider and host of `provider` when it names a host.
-fn host_of(provider: &str) -> Option<(String, String)> {
+fn pool_provider(provider: &str) -> Option<(String, String)> {
     let id = ProviderId::parse(provider).ok()?;
     Some((id.base().to_owned(), id.host()?.to_owned()))
 }
@@ -77,7 +77,7 @@ pub(super) fn planned(req: &AcquireReq) -> Result<BoxHandle, DriverError> {
             req.provider.as_str()
         ))
     })?;
-    let slug = format!("moor-{}", req.box_id.get());
+    let slug = BoxKey::new(req.box_id).pool_slug();
     Ok(pool_handle(req.provider.as_str(), machine, &slug))
 }
 
@@ -91,12 +91,12 @@ fn parse_name(name: &str) -> Option<(i64, &str)> {
 
 /// Whether `handle` names a pool Box.
 pub(super) fn is_pool(handle: &BoxHandle) -> bool {
-    split_handle(handle).0.and_then(host_of).is_some()
+    split_handle(handle).0.and_then(pool_provider).is_some()
 }
 
 /// Whether `provider` names a host.
 pub(super) fn is_pool_provider(provider: &ProviderId) -> bool {
-    host_of(provider.as_str()).is_some()
+    pool_provider(provider.as_str()).is_some()
 }
 
 /// A pool VM pauses and resumes through its host, and its reverse tunnel is ssh over moor's own
@@ -110,9 +110,9 @@ pub(super) const CAPS: DriverCaps = DriverCaps {
 };
 
 impl Crabbox {
-    /// Reaches pool hosts through `hosts`.
-    pub(crate) fn with_pool_hosts(mut self, hosts: std::sync::Arc<dyn PoolHosts>) -> Self {
-        self.pool_hosts = Some(hosts);
+    /// Reaches pool hosts through `hosts`; none refuses every pool Box.
+    pub(crate) fn with_pool_hosts(mut self, hosts: Option<std::sync::Arc<dyn PoolHosts>>) -> Self {
+        self.pool_hosts = hosts;
         self
     }
 
@@ -120,7 +120,7 @@ impl Crabbox {
     fn placed<'a>(&'a self, handle: &'a BoxHandle) -> Result<Placed<'a>, DriverError> {
         let (provider, name) = split_handle(handle);
         let (machine, slug) = provider
-            .and_then(host_of)
+            .and_then(pool_provider)
             .and_then(|_| parse_name(name))
             .ok_or_else(|| failed(format!("{} is not a pool Box", handle.as_str())))?;
         let hosts = self
@@ -334,8 +334,6 @@ fn failed(why: impl Into<String>) -> DriverError {
 fn unexpected(verb: Verb, answer: &Answer) -> DriverError {
     failed(format!("the host answered {verb:?} with {answer:?}"))
 }
-
-mod links;
 
 #[cfg(test)]
 mod tests;
