@@ -135,6 +135,10 @@ Move the file aside and start again with a fresh one.
   the agent waits on, and the last lines of its pane. `restart_agent` ends the
   agent's session and resumes it. If there is no session to resume, it starts
   the Box's prompt over.
+- `close_box` sends the same close as `moor close`. When the Box holds unpushed
+  commits or uncommitted files, or could not be checked for them, the close is
+  refused and the thread is asked to confirm. After the starter confirms in the
+  thread, `close_box` with `discard` sends it again with the CLI's `--force`.
 - `start_box` takes an optional `node`: a node the person may use, shared or
   their own. Without it the Box runs on their default. The thread's Box row keeps
   the choice, so a retried start asks for the same node. See [Nodes](nodes.md).
