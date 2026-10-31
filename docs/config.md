@@ -206,13 +206,12 @@ Box gets its own VM there. Enroll the host with the provider it offers:
 moor-machine-agent enroll --server https://moor.example.com --name hv --pool cloudhypervisor
 ```
 
-A pool host is reached only through its agent's link, never over ssh. The
-provider matches `[a-z][a-z0-9-]*`, 64 bytes at most. `moor user machine ls`
-shows each machine's pool.
+The provider matches `[a-z][a-z0-9-]*`, 64 bytes at most. `moor user machine
+ls` shows each machine's pool.
 
 Then set `box.provider: cloudhypervisor@hv`. `moor start` refuses, with the
 reason, when `hv` is not one of your machines, offers another provider or no
-pool, was not enrolled with `moor-machine-agent`, or its agent is not linked.
+pool, or its agent is not linked.
 It never falls back to another provider. moor reaches the Box's VM through the
 host's agent, and sleeping the Box pauses the VM. Reverse tunnels and cache
 volumes do not reach Boxes on a pool host yet.
