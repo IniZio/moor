@@ -5,6 +5,7 @@
 //! It launches the agent for a Working Box; without a prompt or issue the agent waits for a prompt.
 
 use moor_core::config::Flags;
+use moor_core::decide::schedule::BoxSpec;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{BoxRepo, Decision, ExtraEvent, Field, Fields, NewBox};
@@ -19,9 +20,9 @@ use moor_core::{BoxId, ErrorKind, SessionId, StartReq, Warning};
 use super::common::activity;
 use super::common::autosleep;
 use super::common::boxlock::{self, BoxLock};
-use super::common::facts::{
-    provider_caps, provider_of, repo_config_of, require_reverse_tunnel, resolved, settings_of,
-};
+use super::common::facts::{repo_config_of, resolved, settings_of};
+use super::common::node;
+use super::common::promote::promote_waiting;
 use super::common::provision::{provision, reprovision, reread, Entry, Provisioned};
 use super::common::provisioning::dead_provisioning;
 use super::host_session::refuse_invalid;
@@ -31,7 +32,6 @@ use crate::store::{BoxRow, Store, StoreError};
 
 mod launch;
 mod needs;
-pub(crate) mod pool;
 mod preflight;
 mod profile;
 mod profile_env;
@@ -42,7 +42,7 @@ mod response;
 mod revive;
 mod watch;
 
-use response::{queued_view, set_agent, set_provisioned, view, with_provider};
+use response::{queued_view, set_agent, set_provisioned, view};
 
 pub(crate) use launch::begin_seeded;
 pub(crate) use needs::run as needs;
@@ -92,9 +92,8 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     };
     let repo_cfg = repo_config_of(facts.repo.as_ref(), facts.base.as_deref())?;
     let cfg = resolved(cx, repo_cfg.as_ref(), &flags);
-    let provider = provider_of(&cfg)?;
-    pool::placement(store, Some(user), provider)?;
-    require_reverse_tunnel(provider, provider_caps(cx, provider)?)?;
+    let spec = spec_of(req);
+    let note = node::preflight(cx, user, &cfg, &spec)?;
     if let Some(reason) = preflight::rejection(cx, &cfg, &facts.files, user)? {
         return reject(cx, store, (req, user), &facts, &reason);
     }
@@ -112,6 +111,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         Ok(id) => id,
         Err(e) => return raced(cx, store, (req, user), e),
     };
+    store.set_box_spec(id, &spec)?;
     if let Some(gathered) = facts.profile.take() {
         profile::record(cx, store, id, gathered)?;
     }
@@ -126,11 +126,37 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         (done, agent)
     };
     let agent = watch::run(cx, store, id, agent);
-    let row = reread(store, id)?;
-    let mut v = queued_view(cx, &row, false, provider_of(&cfg).ok());
+    let mut v = settled(cx, store, id, note)?;
     set_provisioned(&mut v, &done);
     set_agent(&mut v, agent);
     Ok(v)
+}
+
+/// The view of a start that has run, naming the personal node it started on, once the Boxes
+/// pending on its node have had their turn.
+fn settled(
+    cx: &Cx,
+    store: &Store,
+    id: BoxId,
+    note: Option<String>,
+) -> Result<StartView, CommandError> {
+    if let Some(on) = store.box_spec(id)?.node {
+        promote_waiting(cx, store, &on, "start");
+    }
+    let row = reread(store, id)?;
+    let mut v = queued_view(cx, &row, false);
+    if row.lifecycle != BoxLifecycle::Pending {
+        v.warnings_inline.extend(note);
+    }
+    Ok(v)
+}
+
+/// What the start asks of a node.
+const fn spec_of(_req: &StartReq) -> BoxSpec {
+    BoxSpec {
+        labels: Vec::new(),
+        node: None,
+    }
 }
 
 /// Records a rejected Box, with no Workspace, and fails with the outcome.
@@ -218,7 +244,7 @@ fn attach(
     let agent = relaunch::run(cx, store, req, row.id, (setup_exit, recreated), &settings)?;
     let agent = watch::run(cx, store, row.id, agent);
     let row = &reread(store, row.id)?;
-    let mut v = with_provider(cx, row, true)?;
+    let mut v = queued_view(cx, row, true);
     if let Some(p) = reprovisioned {
         set_provisioned(&mut v, &p);
     }

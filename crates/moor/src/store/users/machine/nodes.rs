@@ -6,50 +6,58 @@ use std::collections::{BTreeMap, HashMap};
 use moor_core::config::NodeConfig;
 use moor_core::decide::capacity::counts;
 use moor_core::decide::schedule::{Node, Online, Scope};
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::name::NodeName;
 use moor_core::user::UserId;
 
 use crate::store::{Store, StoreError};
 
-/// Boxes holding a slot per provider id, counted the way admission counts them.
-fn live_per_provider(conn: &rusqlite::Connection) -> Result<HashMap<String, usize>, StoreError> {
+/// Boxes per node name.
+type Counts = HashMap<String, usize>;
+
+/// Per node: Boxes holding a slot, counted the way admission counts them, and Boxes pending.
+fn per_node(conn: &rusqlite::Connection) -> Result<(Counts, Counts), StoreError> {
     let mut stmt = conn.prepare(
-        "SELECT provider, driver_state, COUNT(*) FROM boxes \
-         WHERE provider IS NOT NULL GROUP BY provider, driver_state",
+        "SELECT node, driver_state, state, COUNT(*) FROM boxes \
+         WHERE node IS NOT NULL GROUP BY node, driver_state, state",
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
             r.get::<_, String>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, i64>(2)?,
+            r.get::<_, Option<String>>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, i64>(3)?,
         ))
     })?;
-    let mut out = HashMap::new();
+    let (mut live, mut pending) = (HashMap::new(), HashMap::new());
     for row in rows {
-        let (provider, state, n) = row?;
-        if BoxState::parse(&state).is_some_and(counts) {
-            *out.entry(provider).or_default() += usize::try_from(n).unwrap_or(0);
+        let (node, driver, state, n) = row?;
+        let n = usize::try_from(n).unwrap_or(0);
+        if driver.and_then(|d| BoxState::parse(&d)).is_some_and(counts) {
+            *live.entry(node.clone()).or_default() += n;
+        }
+        if state == BoxLifecycle::Pending.as_str() {
+            *pending.entry(node).or_default() += n;
         }
     }
-    Ok(out)
+    Ok((live, pending))
 }
 
 impl Store {
-    /// The `shared` nodes and every personal node, with the Boxes holding a slot on each.
-    /// `waiting` counts Pending Boxes by the provider id they ask for.
+    /// The `shared` nodes and every personal node, with the Boxes holding a slot on or pending
+    /// for each.
     ///
     /// A personal node is named for its machine; a machine whose name is not a valid node name
     /// is left out.
     pub(crate) fn nodes(
         &self,
         shared: &BTreeMap<String, NodeConfig>,
-        waiting: &HashMap<String, usize>,
     ) -> Result<Vec<Node>, StoreError> {
         let conn = self.reader()?;
-        let live = live_per_provider(&conn)?;
-        let held = |p: &str| live.get(p).copied().unwrap_or(0);
-        let pending = |p: &str| waiting.get(p).copied().unwrap_or(0);
+        let (live, waiting) = per_node(&conn)?;
+        let held = |n: &str| live.get(n).copied().unwrap_or(0);
+        let pending = |n: &str| waiting.get(n).copied().unwrap_or(0);
         let mut nodes: Vec<Node> = shared
             .iter()
             .filter_map(|(name, cfg)| {
@@ -60,8 +68,8 @@ impl Store {
                     labels: cfg.labels.clone(),
                     max_boxes: cfg.max_boxes.map(|m| m.get() as usize),
                     online: Online::Online,
-                    used: held(&cfg.runtime),
-                    waiting: pending(&cfg.runtime),
+                    used: held(name),
+                    waiting: pending(name),
                 })
             })
             .collect();
@@ -84,9 +92,9 @@ impl Store {
                     since: since.unwrap_or(enrolled_at) / 1000,
                 },
             };
-            let provider = format!("{runtime}@{name}");
             let (machine_id, owner) = (r.get(0)?, UserId::new(r.get(1)?));
             let max_boxes = r.get::<_, Option<u32>>(8)?.map(|m| m as usize);
+            let (used, waiting) = (held(&name), pending(&name));
             Ok::<_, StoreError>(NodeName::parse(&name).ok().map(|name| Node {
                 name,
                 scope: Scope::Personal {
@@ -98,8 +106,8 @@ impl Store {
                 labels,
                 max_boxes,
                 online,
-                used: held(&provider),
-                waiting: pending(&provider),
+                used,
+                waiting,
             }))
         })?;
         for row in rows {

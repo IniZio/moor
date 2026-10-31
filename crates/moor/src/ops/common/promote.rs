@@ -1,38 +1,29 @@
-//! Promotes Boxes waiting for a machine into the slots a closed one freed.
+//! Starts Boxes pending on a node once it has room for them.
 
-use std::collections::HashMap;
 use std::time::Duration;
 
 use moor_core::config::{BoxSettings, Flags};
-use moor_core::decide::capacity::promote_order;
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::user::UserId;
-use moor_core::{BoxId, BoxName, ProviderId, Warning};
+use moor_core::name::NodeName;
+use moor_core::{BoxId, BoxName, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::BoxLock;
-use crate::ops::common::capacity;
-use crate::ops::common::facts::{provider_of, settings_of};
+use crate::ops::common::facts::settings_of;
 use crate::ops::common::provision::{provision, reread, Entry};
 use crate::store::Store;
 
 /// How long `close` waits for a waiter's Box lock before skipping that waiter.
 pub(crate) const PROMOTE_WAIT: Duration = Duration::from_secs(1);
 
-/// Promotes the oldest boxes waiting for a Box of `provider` into its free slots.
+/// Starts the Boxes pending on `node`, oldest first, while it has room for them.
 ///
-/// Returns the names of the boxes that left waiting with a Box acquired, in promotion
-/// order. Promotion is best effort: a Box that cannot be promoted, or an error
-/// that stops the pass, becomes a warning and the pass ends with what it did.
-pub(crate) fn promote_waiting(
-    cx: &Cx,
-    store: &Store,
-    provider: &ProviderId,
-    op: &str,
-) -> Vec<BoxName> {
+/// Returns the names of the Boxes that left Pending, in order. Best effort: a Box that cannot
+/// be started, or an error that stops the pass, becomes a warning and the pass ends with what it did.
+pub(crate) fn promote_waiting(cx: &Cx, store: &Store, node: &NodeName, op: &str) -> Vec<BoxName> {
     let mut promoted = Vec::new();
-    if let Err(e) = promote_into(cx, store, provider, op, &mut promoted) {
+    if let Err(e) = promote_into(cx, store, node, op, &mut promoted) {
         cx.warn(Warning {
             code: "promote_failed".to_owned(),
             message: format!("cannot promote waiting Boxes: {}", e.error),
@@ -45,43 +36,29 @@ pub(crate) fn promote_waiting(
 fn promote_into(
     cx: &Cx,
     store: &Store,
-    provider: &ProviderId,
+    node: &NodeName,
     op: &str,
     promoted: &mut Vec<BoxName>,
 ) -> Result<(), CommandError> {
-    let Some(lim) = capacity::limit(cx.config(), provider.as_str()) else {
-        return Ok(());
-    };
-    let mut cfgs: HashMap<BoxId, (BoxName, Option<UserId>, BoxSettings)> = HashMap::new();
-    for row in store.waiting_boxes()? {
-        match settings_of(cx, &row, &Flags::default()) {
-            Ok(cfg) if provider_of(&cfg).is_ok_and(|p| p == provider.as_str()) => {
-                cfgs.insert(row.id, (row.name.clone(), row.user, cfg));
-            }
-            Ok(_) => {}
-            Err(e) => cx.for_box(row.user, || {
-                cx.warn(Warning {
-                    code: "promote_skipped".to_owned(),
-                    message: format!("cannot promote {}: {}", row.name.as_str(), e.error),
-                });
-            }),
-        }
-    }
-    let held = store
-        .box_rows_live()?
-        .iter()
-        .filter(|(_, b)| b.provider == *provider)
-        .count();
-    let free = usize::try_from(lim.max.get())
-        .unwrap_or(usize::MAX)
-        .saturating_sub(held);
-    let ids: Vec<BoxId> = cfgs.keys().copied().collect();
-    let free = u32::try_from(free).unwrap_or(u32::MAX);
-    for id in promote_order(&ids, free) {
-        let Some((name, owner, cfg)) = cfgs.get(&id) else {
+    for id in store.pending_on(node)? {
+        let Some(row) = store.box_row(id)? else {
             continue;
         };
-        if let Some(name) = cx.for_box(*owner, || promote_one(cx, store, id, name, op, cfg))? {
+        let cfg = match settings_of(cx, &row, &Flags::default()) {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                cx.for_box(row.user, || {
+                    cx.warn(Warning {
+                        code: "promote_skipped".to_owned(),
+                        message: format!("cannot promote {}: {}", row.name.as_str(), e.error),
+                    });
+                });
+                continue;
+            }
+        };
+        if let Some(name) =
+            cx.for_box(row.user, || promote_one(cx, store, id, &row.name, op, &cfg))?
+        {
             promoted.push(name);
         }
     }

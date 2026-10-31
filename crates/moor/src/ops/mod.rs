@@ -1,6 +1,6 @@
 //! Command operations: one op per request.
 
-use moor_core::view::user::{MachineKeysValue, MachineLinksValue};
+use moor_core::view::user::MachineKeysValue;
 use moor_core::{ErrorKind, Request};
 
 use crate::cx::Cx;
@@ -82,9 +82,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::MachineKeys {} => to_value(&MachineKeysValue {
             machines: cx.store()?.machine_keys()?,
         }),
-        Request::MachineLinks(r) => to_value(&MachineLinksValue {
-            links: cx.store()?.set_machine_links(&r.links)?,
-        }),
+        Request::MachineLinks(r) => to_value(&nodes::set_links(cx, &r.links)?),
         Request::NodeList(_) => to_value(&nodes::list(cx)?),
         Request::Sessions(r) => to_value(&sessions::run(cx, &r)?),
         Request::Close(r) => to_value(&close::run(cx, &r)?),

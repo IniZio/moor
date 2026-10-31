@@ -30,6 +30,7 @@ mod agent;
 mod apply;
 pub(crate) mod artifacts;
 mod bindings;
+mod box_node;
 pub(crate) mod box_profile;
 mod driver_row;
 mod error;
