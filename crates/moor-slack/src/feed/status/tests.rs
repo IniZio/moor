@@ -19,6 +19,7 @@ fn fed(state: RowState, ts: Option<&str>, text: Option<&str>) -> FedBox {
             repo: "acme/app".into(),
             prompt: "fix it".into(),
             base: None,
+            provider: None,
             requested_by: "U1".into(),
             parent: None,
             state,

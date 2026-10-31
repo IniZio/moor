@@ -236,6 +236,10 @@ pub struct StartReq {
     /// Agent model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// One of the requester's own Box pool hosts, `<provider>@<machine>`, in place of the
+    /// operator's `box.provider` for this Box.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
     /// Skip starting an agent.
     #[serde(default)]
     pub no_agent: bool,

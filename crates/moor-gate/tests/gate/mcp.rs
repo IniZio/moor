@@ -393,6 +393,24 @@ fn start_box_sends_a_start_as_the_person() {
 }
 
 #[test]
+fn start_box_passes_the_named_pool_host_through() {
+    let m = mcp();
+    let token = m.token("alice-sub", &m.url(), "moor:read moor:write");
+    let result = m.call(
+        &token,
+        "start_box",
+        json!({"repo": "acme/web", "name": "web/fix", "provider": "external@engine-03"}),
+    );
+    assert_ne!(result["isError"], true, "{result}");
+    let sent = m.requests();
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(
+        sent[0]["request"]["request"]["provider"], "external@engine-03",
+        "{sent:?}"
+    );
+}
+
+#[test]
 fn start_box_returns_while_the_start_is_still_running() {
     let m = mcp();
     let token = m.token("alice-sub", &m.url(), "moor:read moor:write");

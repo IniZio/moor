@@ -91,7 +91,8 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         model: req.model.clone(),
     };
     let repo_cfg = repo_config_of(facts.repo.as_ref(), facts.base.as_deref())?;
-    let cfg = resolved(cx, repo_cfg.as_ref(), &flags);
+    let mut cfg = resolved(cx, repo_cfg.as_ref(), &flags);
+    pool::apply_request(&mut cfg, req.provider.as_deref())?;
     let provider = provider_of(&cfg)?;
     pool::placement(store, Some(user), provider)?;
     require_reverse_tunnel(provider, provider_caps(cx, provider)?)?;

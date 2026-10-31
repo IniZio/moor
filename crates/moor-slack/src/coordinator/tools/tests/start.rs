@@ -66,6 +66,7 @@ fn start(prompt: &str, repo: Option<&str>) -> Call {
         prompt: prompt.into(),
         repo: repo.map(str::to_owned),
         base: None,
+        provider: None,
     }
 }
 
@@ -74,6 +75,7 @@ fn start_from(prompt: &str, base: &str) -> Call {
         prompt: prompt.into(),
         repo: Some("acme/api".into()),
         base: Some(base.to_owned()),
+        provider: None,
     }
 }
 
@@ -124,10 +126,31 @@ fn start_box_reads_base_from_the_tool_arguments() {
         prompt: "g".into(),
         repo: None,
         base: Some("moor-setup".into()),
+        provider: None,
     };
     assert_eq!(Call::parse("start_box", &args), Ok(with));
     let args = serde_json::json!({"prompt": "g"});
     assert_eq!(Call::parse("start_box", &args), Ok(start("g", None)));
+}
+
+#[test]
+fn start_box_stores_the_pool_host_it_is_given() {
+    let args = serde_json::json!({"prompt": "g", "provider": " external@engine-03 "});
+    let provider = Some("external@engine-03".to_owned());
+    let on_host = Call::StartBox {
+        prompt: "g".into(),
+        repo: None,
+        base: None,
+        provider,
+    };
+    assert_eq!(Call::parse("start_box", &args), Ok(on_host.clone()));
+    let dir = tempfile::tempdir().unwrap();
+    let db = fresh_thread(dir.path(), Some("acme/web"));
+    turn_of(&db, "U1", "Ev1");
+    let started = start_with(&db, &on_host, 2);
+    assert!(!started.is_error, "{started:?}");
+    let [row] = db.thread_boxes("C1", "1.0").unwrap().try_into().unwrap();
+    assert_eq!(row.provider.as_deref(), Some("external@engine-03"));
 }
 
 #[test]

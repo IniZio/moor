@@ -32,6 +32,10 @@ fn schema() -> Result<Vec<Migration>, moor_migrate::Error> {
             "V3__user_emails.sql",
             include_str!("../migrations/V3__user_emails.sql"),
         ),
+        (
+            "V4__box_provider.sql",
+            include_str!("../migrations/V4__box_provider.sql"),
+        ),
     ])
 }
 

@@ -209,6 +209,7 @@ fn start_req(box_name: &str, prompt: Option<&str>, repo: &str, parent: i64) -> R
         issue: None,
         base: None,
         model: None,
+        provider: None,
         no_agent: false,
         resume: false,
         repo: Some(ForgeRepo::parse(repo).unwrap()),

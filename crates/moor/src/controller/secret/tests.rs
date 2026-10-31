@@ -94,6 +94,7 @@ fn start() -> Request {
         issue: None,
         base: None,
         model: None,
+        provider: None,
         no_agent: false,
         resume: false,
         repo: None,

@@ -251,6 +251,7 @@ fn start_request(row: &SlackBox, repo: ForgeRepo) -> Request {
         issue: None,
         base: row.base.clone(),
         model: None,
+        provider: row.provider.clone(),
         no_agent: false,
         resume: false,
         repo: Some(repo),

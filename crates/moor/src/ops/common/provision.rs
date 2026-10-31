@@ -19,7 +19,6 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::cache;
-use crate::ops::common::capacity;
 use crate::ops::common::dotfiles::{self, DotfilesRun};
 use crate::ops::common::facts::{provider_caps, provider_of, require_reverse_tunnel, settings_of};
 use crate::ops::common::setup;
@@ -30,6 +29,7 @@ use crate::store::lease::LeaseKind;
 use crate::store::{BoxRow, Store};
 
 use self::acquired::record_acquired;
+use self::admit::admit;
 use self::clone::{clone_with_proxy, SetupProxy};
 use self::delivered::record_delivered;
 pub(crate) use self::lease::{hold_root, hold_workdir, planned_root};
@@ -155,25 +155,8 @@ pub(crate) fn provision(
         .intent(IntentChange::Set(Intent::Provisioning {
             pid: std::process::id(),
         }));
-    if matches!(entry, Entry::Fresh | Entry::Waiting) {
-        let mut full = false;
-        store.apply_admitting(&provider, |holders| {
-            let Some(lim) = capacity::full(cx.config(), &provider, holders) else {
-                return Some(requested);
-            };
-            full = true;
-            (entry == Entry::Fresh).then(|| {
-                let queued = BoxLifecycleInput::AtCapacity {
-                    max_boxes: lim.max.get(),
-                };
-                Decision::new(id).lifecycle(queued)
-            })
-        })?;
-        if full {
-            return Ok(Provisioned::skipped());
-        }
-    } else {
-        store.apply(requested)?;
+    if !admit(cx, store, (id, entry), cfg, &provider, requested)? {
+        return Ok(Provisioned::skipped());
     }
     let req = acquire_req(cx, store, &started, cfg, provider, caps)?;
     // The record exists before the Box does; a failed acquire leaves it `planned`.
@@ -387,6 +370,7 @@ fn failed(
 }
 
 mod acquired;
+mod admit;
 mod clone;
 mod delivered;
 pub(crate) mod interrupted;

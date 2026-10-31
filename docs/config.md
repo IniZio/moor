@@ -239,7 +239,18 @@ ls` shows each machine's pool.
 Then set `box.provider: cloudhypervisor@hv`. `moor start` refuses, with the
 reason, when `hv` is not one of your machines, offers another provider or no
 pool, or its agent is not linked.
-It never falls back to another provider. moor reaches the Box's VM through the
+It never falls back to another provider.
+
+A start can name the host itself, for one Box, in place of `box.provider`: `moor
+start --provider cloudhypervisor@hv`, the `provider` argument of the MCP
+`start_box`, or the `provider` argument of the Slack coordinator's `start_box`.
+The same checks apply. A request may only name one of your own pool hosts, as
+`<provider>@<machine>`; a provider without a machine is refused, so the
+operator's providers stay the operator's choice. A Box that has to wait for a
+free slot cannot be queued on a named host, so such a start is refused at the
+limit.
+
+moor reaches the Box's VM through the
 host's agent, and sleeping the Box pauses the VM. Cache volumes do not reach
 Boxes on a pool host yet.
 

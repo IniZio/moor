@@ -69,6 +69,7 @@ fn start_with_all_flags() {
             issue: Some("I-1".into()),
             base: Some("main".into()),
             model: Some("haiku".into()),
+            provider: None,
             no_agent: true,
             resume: true,
             repo: None,
@@ -76,6 +77,14 @@ fn start_with_all_flags() {
             identity: None,
         })
     );
+}
+
+#[test]
+fn start_provider_flag() {
+    assert!(matches!(
+        req(&["start", "t", "--provider", "external@engine-03"]),
+        Request::Start(s) if s.provider.as_deref() == Some("external@engine-03")
+    ));
 }
 
 #[test]

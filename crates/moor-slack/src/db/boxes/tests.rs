@@ -14,6 +14,7 @@ fn asked(name: &str, by: &str) -> SlackBox {
         repo: "acme/api".into(),
         prompt: format!("prompt of {name}"),
         base: None,
+        provider: None,
         requested_by: by.into(),
         parent: None,
         state: BoxState::Starting,

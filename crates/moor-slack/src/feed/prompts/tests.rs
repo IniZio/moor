@@ -44,6 +44,7 @@ fn bound_box(db: &Db) -> SlackBox {
         repo: "acme/app".into(),
         prompt: "fix it".into(),
         base: None,
+        provider: None,
         requested_by: "U1".into(),
         parent: None,
         state: BoxState::Starting,

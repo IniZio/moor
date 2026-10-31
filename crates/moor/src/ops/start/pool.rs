@@ -3,6 +3,7 @@
 //! fails the start with the reason.
 
 use moor_core::box_key::PoolSeat;
+use moor_core::config::{BoxSettings, Layer, Sourced};
 use moor_core::user::UserId;
 use moor_core::{ErrorKind, ProviderId};
 
@@ -49,4 +50,35 @@ pub(crate) fn placement(
         machine: found.id,
         controller: store.controller_id()?,
     }))
+}
+
+/// Puts the pool host a request names in place of `box.provider` for this Box; a request that
+/// names none changes nothing.
+///
+/// # Errors
+/// Refused when `requested` is malformed or names no machine: the operator's providers are not
+/// the requester's to choose.
+pub(crate) fn apply_request(
+    cfg: &mut BoxSettings,
+    requested: Option<&str>,
+) -> Result<(), CommandError> {
+    let Some(requested) = requested else {
+        return Ok(());
+    };
+    let id = ProviderId::parse(requested)
+        .map_err(|e| CommandError::new(ErrorKind::Refused, e.to_string()))?;
+    if id.host().is_none() {
+        return Err(CommandError::new(
+            ErrorKind::Refused,
+            format!(
+                "a start may only name one of your own pool hosts, such as external@engine-03; \
+                 {requested} names no machine"
+            ),
+        ));
+    }
+    cfg.provider = Some(Sourced {
+        value: requested.to_owned(),
+        source: Layer::Flag,
+    });
+    Ok(())
 }

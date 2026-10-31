@@ -17,6 +17,8 @@ pub(crate) enum Call {
         repo: Option<String>,
         /// The branch or ref to start from, when given.
         base: Option<String>,
+        /// The Box pool host to run on, when given.
+        provider: Option<String>,
     },
     /// `steer_box`.
     SteerBox {
@@ -86,6 +88,7 @@ impl Call {
                 prompt: text("prompt")?,
                 repo: text("repo").ok(),
                 base: text("base").ok(),
+                provider: text("provider").ok(),
             }),
             "steer_box" => Ok(Self::SteerBox {
                 box_name: boxed()?,

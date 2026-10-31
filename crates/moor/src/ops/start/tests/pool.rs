@@ -4,7 +4,10 @@
 use moor_core::config::{parse_user, EnrolledMachine};
 use moor_core::request::MachineLink;
 use moor_core::seam::clock::Ts;
+use moor_core::user::{Identity, UserId};
+use moor_core::view::StartView;
 use moor_core::ErrorKind;
+use moor_core::StartReq;
 
 use super::{req, world_with, World};
 use crate::ops::start;
@@ -20,12 +23,16 @@ fn world_on(provider: &str) -> World {
 }
 
 fn enrolled(w: &World, pool: Option<&str>, online: Option<bool>) {
+    enrolled_by(w, REQUESTER_USER, pool, online);
+}
+
+fn enrolled_by(w: &World, user: UserId, pool: Option<&str>, online: Option<bool>) {
     let store = w.cx.store().unwrap();
     let mut m = EnrolledMachine::parse("hv1", KEY, &[], 2).unwrap();
     if let Some(p) = pool {
         m = m.with_pool(p).unwrap();
     }
-    let machine_id = store.enroll_machine(REQUESTER_USER, &m).unwrap();
+    let machine_id = store.enroll_machine(user, &m).unwrap();
     if let Some(online) = online {
         let link = MachineLink {
             machine_id,
@@ -101,4 +108,103 @@ fn a_malformed_host_qualified_provider_is_refused() {
     let w = world_on("a@b@c");
     let msg = refusal(&w);
     assert!(msg.contains("a@b@c"), "{msg}");
+}
+
+fn held(v: &StartView) -> &str {
+    v.boxed.driver.as_ref().map_or("", |d| d.provider.as_str())
+}
+
+fn naming(provider: &str) -> StartReq {
+    StartReq {
+        provider: Some(provider.to_owned()),
+        ..req("demo")
+    }
+}
+
+#[test]
+fn a_request_naming_the_requesters_linked_host_replaces_the_configured_provider() {
+    let w = world_on("shared");
+    enrolled(&w, Some("cloudhypervisor"), Some(true));
+    let v = start::run(&w.cx, &naming("cloudhypervisor@hv1")).unwrap();
+    assert_eq!(held(&v), "cloudhypervisor@hv1");
+    let asked: Vec<String> = w
+        .driver
+        .acquired_providers()
+        .iter()
+        .map(|p| p.as_str().to_owned())
+        .collect();
+    assert_eq!(asked, ["cloudhypervisor@hv1"]);
+}
+
+#[test]
+fn a_request_naming_another_users_host_is_refused() {
+    let w = world_on("shared");
+    let (other, _) =
+        w.cx.store()
+            .unwrap()
+            .enroll(&Identity::local(2000), None)
+            .unwrap();
+    enrolled_by(&w, other, Some("cloudhypervisor"), Some(true));
+    let e = start::run(&w.cx, &naming("cloudhypervisor@hv1")).unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Refused, "{e:?}");
+    assert!(
+        e.error.to_string().contains("not one of your machines"),
+        "{e:?}"
+    );
+    assert_eq!(w.driver.calls(), Vec::<String>::new(), "no driver call");
+}
+
+#[test]
+fn a_request_naming_a_provider_with_no_machine_is_refused() {
+    let w = world_on("shared");
+    enrolled(&w, Some("cloudhypervisor"), Some(true));
+    for provider in ["cloudhypervisor", "a@b@c"] {
+        let e = start::run(&w.cx, &naming(provider)).unwrap_err();
+        assert_eq!(e.kind, ErrorKind::Refused, "{provider}: {e:?}");
+    }
+    let e = start::run(&w.cx, &naming("external")).unwrap_err();
+    assert!(
+        e.error.to_string().contains("one of your own pool hosts"),
+        "{e:?}"
+    );
+    assert_eq!(w.driver.calls(), Vec::<String>::new(), "no driver call");
+}
+
+#[test]
+fn a_request_naming_a_host_that_is_offline_or_offers_another_pool_is_refused_without_fallback() {
+    let w = world_on("shared");
+    enrolled(&w, Some("firecracker"), Some(false));
+    let e = start::run(&w.cx, &naming("cloudhypervisor@hv1")).unwrap_err();
+    assert!(e.error.to_string().contains("firecracker"), "{e:?}");
+    assert_eq!(w.driver.calls(), Vec::<String>::new(), "no driver call");
+}
+
+#[test]
+fn a_request_naming_no_provider_uses_the_configured_one() {
+    let w = world_on("shared");
+    enrolled(&w, Some("cloudhypervisor"), Some(true));
+    let v = start::run(&w.cx, &req("demo")).unwrap();
+    assert_eq!(held(&v), "shared");
+}
+
+#[test]
+fn a_request_naming_a_full_host_is_refused_rather_than_queued() {
+    let config = parse_user("config.yaml", "box: {provider: 'shared', max_boxes: 1}").unwrap();
+    let w = world_with(FakeDriver::new(), config);
+    enrolled(&w, Some("cloudhypervisor"), Some(true));
+    start::run(&w.cx, &naming("cloudhypervisor@hv1")).unwrap();
+    let second = StartReq {
+        provider: Some("cloudhypervisor@hv1".to_owned()),
+        ..req("other")
+    };
+    let e = start::run(&w.cx, &second).unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Refused, "{e:?}");
+    assert!(e.error.to_string().contains("Box limit"), "{e:?}");
+    let asked = w.driver.acquired_providers().len();
+    assert_eq!(asked, 1, "the second start never reached the driver");
+    let store = w.cx.store().unwrap();
+    let waiting = store.waiting_boxes().unwrap();
+    assert!(waiting.is_empty(), "nothing waits for a slot: {waiting:?}");
+    let left = store.open_box_by_name(&second.name).unwrap();
+    assert!(left.is_none(), "the refused Box is not left open: {left:?}");
 }

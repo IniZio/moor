@@ -5,7 +5,7 @@ use std::sync::Arc;
 use moor_core::cache::CachePlan;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Output};
-use moor_core::BoxHandle;
+use moor_core::{BoxHandle, ProviderId};
 
 use super::{CopyCall, FakeDriver, State};
 
@@ -77,6 +77,11 @@ impl FakeDriver {
     /// The cache plan of every `acquire` so far, in call order.
     pub(crate) fn acquired_plans(&self) -> Vec<CachePlan> {
         self.st().cache.plans.clone()
+    }
+
+    /// The provider every `acquire` so far asked, in call order.
+    pub(crate) fn acquired_providers(&self) -> Vec<ProviderId> {
+        self.st().providers.iter().map(|(_, p)| p.clone()).collect()
     }
 
     /// The nonce of every `acquire` so far, in call order.

@@ -30,7 +30,7 @@ read.
 | Tool | Arguments |
 | --- | --- |
 | `list_boxes` | none |
-| `start_box` | `repo` as `owner/name`; optional `name`, `prompt`, `base`, `wait` |
+| `start_box` | `repo` as `owner/name`; optional `name`, `prompt`, `base`, `provider`, `wait` |
 | `box_status` | `box` |
 | `send_to_box` | `box`, `text` |
 | `close_box` | `box` |

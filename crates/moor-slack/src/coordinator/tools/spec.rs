@@ -31,7 +31,8 @@ pub(crate) const SPECS: [Spec; 10] = [
                 "properties": {
                     "prompt": {"type": "string", "description": "What the Box's agent should do, in plain words."},
                     "repo": {"type": "string", "description": "One of the channel's repos as owner/name; leave it out for the channel's default."},
-                    "base": {"type": "string", "description": "A branch or ref to start from; leave it out for the repo's default branch."}
+                    "base": {"type": "string", "description": "A branch or ref to start from; leave it out for the repo's default branch."},
+                    "provider": {"type": "string", "description": "One of your own Box pool hosts, as `<provider>@<machine>`, e.g. `external@engine-03`; the operator's default when left out."}
                 },
                 "required": ["prompt"],
                 "additionalProperties": false

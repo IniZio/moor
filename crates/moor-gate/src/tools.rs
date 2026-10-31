@@ -43,6 +43,9 @@ struct StartArgs {
     prompt: Option<String>,
     /// The revision to branch from; the repo's default branch when left out.
     base: Option<String>,
+    /// One of your own Box pool hosts, as `<provider>@<machine>`, e.g. `external@engine-03`; the
+    /// operator's default when left out.
+    provider: Option<String>,
     /// Wait for setup and the agent launch to finish before returning; false by default, so
     /// the call returns once the Box exists and `box_status` shows its progress.
     wait: Option<bool>,
@@ -259,6 +262,7 @@ fn start_request(args: StartArgs) -> Result<ControllerRequest, String> {
         issue: None,
         base: args.base,
         model: None,
+        provider: args.provider,
         no_agent: false,
         resume: false,
         repo: Some(repo),

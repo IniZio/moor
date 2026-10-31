@@ -38,6 +38,25 @@ fn the_start_carries_the_base_the_box_row_recorded() {
 }
 
 #[test]
+fn the_start_carries_the_pool_host_the_box_row_recorded() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db(dir.path());
+    let mut row = recorded_start(&db);
+    db.forget_starting(&row.box_name).unwrap();
+    row.provider = Some("external@engine-03".into());
+    db.insert_starting(&row, 1_000).unwrap();
+    let row = db.thread_boxes("C1", "10.5").unwrap().remove(0);
+    let seen = attempt_with(&db, &row, Attempt::First, &mut |req| match req {
+        Request::Start(s) => named("start", s.name.as_str()),
+        _ => refused("show", "unexpected"),
+    });
+    let Some(Request::Start(req)) = seen.calls.first() else {
+        panic!("no start: {:?}", cmds(&seen));
+    };
+    assert_eq!(req.provider.as_deref(), Some("external@engine-03"));
+}
+
+#[test]
 fn a_base_the_forge_cannot_resolve_reaches_the_thread_as_a_refusal() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());

@@ -219,6 +219,9 @@ struct StartArgs {
     /// Agent model.
     #[arg(long)]
     model: Option<String>,
+    /// One of your own Box pool hosts for this Box, such as external@engine-03.
+    #[arg(long, value_name = "PROVIDER@MACHINE")]
+    provider: Option<String>,
     /// Do not launch an agent.
     #[arg(long)]
     no_agent: bool,
@@ -239,6 +242,7 @@ impl From<StartArgs> for StartReq {
             base: a.base,
             repo: a.repo,
             model: a.model,
+            provider: a.provider,
             no_agent: a.no_agent,
             resume: a.resume,
             parent: a.parent.map(SessionId::new),
