@@ -195,3 +195,60 @@ fn two_starts_racing_for_one_free_slot_bind_one_and_leave_one_pending() {
     assert_eq!(got, [false, true]);
     assert_eq!(w.driver.calls(), ["acquire"]);
 }
+
+const VOLUMES: &str = "cache: {volumes: [{name: sdk, path: /opt/sdk}]}\n";
+
+fn planned_volumes(w: &World) -> Option<usize> {
+    w.forge.answer(
+        super::repo(),
+        Ok(super::repo_at(super::BASE, Some(VOLUMES))),
+    );
+    start::run(&w.cx, &super::repo_req("demo")).unwrap();
+    w.driver.acquired_plans().first().map(|p| p.volumes().len())
+}
+
+fn cached_world(features: &[&str], online: bool) -> World {
+    let yaml = "nodes: {ci: {runtime: local-container}}\nbox: {node: ci}";
+    let driver = FakeDriver::new().cache_volumes();
+    let w = world_with(driver, parse_user("config.yaml", yaml).unwrap());
+    let id = enrolled(&w, "hv", None, None);
+    let link = MachineLink {
+        machine_id: id,
+        online,
+        since: Ts::from_millis(1),
+        version: None,
+        protocol: None,
+        max_boxes: None,
+        cache_gb: None,
+        features: features.iter().map(|f| (*f).to_owned()).collect(),
+    };
+    nodes::set_links(&w.cx, &[link]).unwrap();
+    w
+}
+
+#[test]
+fn a_personal_node_that_reports_cache_volumes_gets_them() {
+    let w = cached_world(&["cache-volume"], true);
+    assert!(planned_volumes(&w) > Some(0));
+}
+
+#[test]
+fn a_personal_node_that_does_not_report_cache_volumes_starts_cold() {
+    for features in [&["other"][..], &[]] {
+        let w = cached_world(features, true);
+        assert_eq!(planned_volumes(&w), Some(0), "{features:?}");
+    }
+}
+
+#[test]
+fn a_shared_node_keeps_the_runtimes_own_cache_volumes() {
+    let w = world_with(
+        FakeDriver::new().cache_volumes(),
+        parse_user(
+            "config.yaml",
+            "nodes: {ci: {runtime: local-container}}\nbox: {node: ci}",
+        )
+        .unwrap(),
+    );
+    assert!(planned_volumes(&w) > Some(0));
+}
