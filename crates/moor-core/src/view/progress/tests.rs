@@ -29,10 +29,10 @@ fn time_at(unix: i64) -> String {
 fn each_setup_step_reads_as_words_with_its_time_since_the_start() {
     let events = [
         event("started", json!({}), 0),
-        event("waiting_for_box", json!({"max_boxes": 2}), 0),
+        event("pending", json!({"max_boxes": 2}), 0),
         event("box_requested", json!({}), 3),
         event("box_ready", json!({}), 20),
-        event("setting_up", json!({"from": "waiting_for_box"}), 21),
+        event("setting_up", json!({"from": "pending"}), 21),
         event("cloned", json!({"ms": 12_400}), 33),
         event("setup_finished", json!({"ms": 40_000, "ok": true}), 75),
     ];

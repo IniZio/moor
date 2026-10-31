@@ -108,7 +108,7 @@ fn promote_one(
         }
     };
     let row = reread(store, id)?;
-    if row.lifecycle != BoxLifecycle::WaitingForBox || row.intent.is_some() {
+    if row.lifecycle != BoxLifecycle::Pending || row.intent.is_some() {
         return Ok(None);
     }
     if let Err(e) = provision(cx, store, id, Entry::Waiting, cfg) {
@@ -119,5 +119,5 @@ fn promote_one(
         return Ok(None);
     }
     let after = reread(store, id)?;
-    Ok((after.lifecycle != BoxLifecycle::WaitingForBox).then_some(after.name))
+    Ok((after.lifecycle != BoxLifecycle::Pending).then_some(after.name))
 }

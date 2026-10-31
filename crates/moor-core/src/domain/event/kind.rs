@@ -6,7 +6,7 @@ use super::Event;
 pub const ASSERTED_KINDS: [&str; 20] = [
     "started",
     "rejected",
-    "waiting_for_box",
+    "pending",
     "setting_up",
     "working",
     "setup_failed",
@@ -34,7 +34,7 @@ impl Event {
         match self {
             Self::Started => "started",
             Self::Rejected { .. } => "rejected",
-            Self::WaitingForBox { .. } => "waiting_for_box",
+            Self::Pending { .. } => "pending",
             Self::SettingUp { .. } => "setting_up",
             Self::Working => "working",
             Self::SetupFailed { .. } => "setup_failed",

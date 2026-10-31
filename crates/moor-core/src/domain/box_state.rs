@@ -40,7 +40,7 @@ pub enum BoxLifecycle {
     /// Preflight failed; terminal, no machine.
     Rejected,
     /// Admitted but the Box capacity is full.
-    WaitingForBox,
+    Pending,
     /// The machine is being acquired and set up.
     SettingUp,
     /// Acquire, credential, dotfiles or sync setup failed.
@@ -58,7 +58,7 @@ impl BoxLifecycle {
     pub const ALL: [Self; 8] = [
         Self::Checking,
         Self::Rejected,
-        Self::WaitingForBox,
+        Self::Pending,
         Self::SettingUp,
         Self::SetupFailed,
         Self::Ready,
@@ -72,7 +72,7 @@ impl BoxLifecycle {
         match self {
             Self::Checking => "checking",
             Self::Rejected => "rejected",
-            Self::WaitingForBox => "waiting_for_box",
+            Self::Pending => "pending",
             Self::SettingUp => "setting_up",
             Self::SetupFailed => "setup_failed",
             Self::Ready => "ready",
@@ -121,9 +121,9 @@ impl BoxLifecycle {
         use BoxLifecycleInput as I;
         let to = match (self, input) {
             (Self::Checking, I::Rejected { .. }) => Self::Rejected,
-            (Self::Checking, I::AtCapacity { .. }) => Self::WaitingForBox,
+            (Self::Checking, I::AtCapacity { .. }) => Self::Pending,
             (Self::Checking, I::Admitted)
-            | (Self::WaitingForBox, I::Promoted)
+            | (Self::Pending, I::Promoted)
             | (Self::SetupFailed, I::Retry) => Self::SettingUp,
             (Self::SettingUp, I::Ready { .. }) | (Self::Asleep, I::Wake) => Self::Ready,
             (Self::SettingUp, I::SetupFailed { .. }) => Self::SetupFailed,

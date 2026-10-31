@@ -17,7 +17,7 @@ pub enum Event {
         reason: String,
     },
     /// The Box waits for a free slot.
-    WaitingForBox {
+    Pending {
         /// The capacity limit that was hit.
         max_boxes: u32,
     },

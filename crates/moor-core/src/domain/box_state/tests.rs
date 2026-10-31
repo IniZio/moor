@@ -37,13 +37,9 @@ fn legal() -> Vec<(BoxLifecycle, BoxLifecycleInput, BoxLifecycle)> {
     let x = || "x".to_owned();
     let mut table = vec![
         (S::Checking, I::Rejected { reason: x() }, S::Rejected),
-        (
-            S::Checking,
-            I::AtCapacity { max_boxes: 3 },
-            S::WaitingForBox,
-        ),
+        (S::Checking, I::AtCapacity { max_boxes: 3 }, S::Pending),
         (S::Checking, I::Admitted, S::SettingUp),
-        (S::WaitingForBox, I::Promoted, S::SettingUp),
+        (S::Pending, I::Promoted, S::SettingUp),
         (
             S::SettingUp,
             I::Ready {

@@ -67,9 +67,9 @@ fn payload_carries_fields() {
         serde_json::json!({"run": 7, "exit": null, "interrupted": false, "error": "busy"})
     );
     let e = Event::Closed {
-        from: BoxLifecycle::WaitingForBox,
+        from: BoxLifecycle::Pending,
     };
-    assert_eq!(e.payload(), serde_json::json!({"from": "waiting_for_box"}));
+    assert_eq!(e.payload(), serde_json::json!({"from": "pending"}));
 }
 
 #[test]

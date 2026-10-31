@@ -54,7 +54,7 @@ impl Stage {
     fn of(lifecycle: &str) -> Self {
         match lifecycle {
             "setup_failed" | "rejected" | "closed" => Self::Failed,
-            "checking" | "waiting_for_box" | "setting_up" => Self::Starting,
+            "checking" | "pending" | "setting_up" => Self::Starting,
             _ => Self::Settled,
         }
     }

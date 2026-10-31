@@ -157,6 +157,10 @@ const FILES: &[(&str, &str)] = &[
         "V25__drop_ssh_machines.sql",
         include_str!("../../migrations/V25__drop_ssh_machines.sql"),
     ),
+    (
+        "V26__box_pending.sql",
+        include_str!("../../migrations/V26__box_pending.sql"),
+    ),
 ];
 
 /// moor.db's migrations, oldest first.

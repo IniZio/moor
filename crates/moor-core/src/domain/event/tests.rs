@@ -7,7 +7,7 @@ use crate::name::BoxHandle;
 const PINNED_KINDS: [&str; 20] = [
     "started",
     "rejected",
-    "waiting_for_box",
+    "pending",
     "setting_up",
     "working",
     "setup_failed",
@@ -37,7 +37,7 @@ fn all_events() -> Vec<Event> {
     vec![
         Event::Started,
         Event::Rejected { reason: s("r") },
-        Event::WaitingForBox { max_boxes: 2 },
+        Event::Pending { max_boxes: 2 },
         Event::SettingUp {
             from: BoxLifecycle::Checking,
         },
@@ -264,7 +264,7 @@ const fn event_index(e: &Event) -> usize {
     match e {
         Event::Started => 0,
         Event::Rejected { .. } => 1,
-        Event::WaitingForBox { .. } => 2,
+        Event::Pending { .. } => 2,
         Event::SettingUp { .. } => 3,
         Event::Working => 4,
         Event::SetupFailed { .. } => 5,

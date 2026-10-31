@@ -214,7 +214,7 @@ impl TryFrom<Event> for ExtraEvent {
             }
             e @ (Event::Started
             | Event::Rejected { .. }
-            | Event::WaitingForBox { .. }
+            | Event::Pending { .. }
             | Event::SettingUp { .. }
             | Event::Working
             | Event::CredentialFailed { .. }

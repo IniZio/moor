@@ -119,7 +119,7 @@ fn entry_for(row: &BoxRow) -> Option<Entry> {
     let box_state = row.boxed.as_ref().map(|b| b.state);
     match (row.lifecycle, box_state) {
         (BoxLifecycle::Checking, None) if row.intent.is_none() => Some(Entry::Fresh),
-        (BoxLifecycle::WaitingForBox, None) if row.intent.is_none() => Some(Entry::Waiting),
+        (BoxLifecycle::Pending, None) if row.intent.is_none() => Some(Entry::Waiting),
         (BoxLifecycle::SetupFailed, Some(BoxState::Failed | BoxState::Gone)) => Some(Entry::Retry),
         (BoxLifecycle::Ready, Some(BoxState::Failed | BoxState::Gone)) => Some(Entry::Stay),
         _ => None,

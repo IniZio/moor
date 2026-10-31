@@ -112,7 +112,7 @@ fn acquired() -> BoxInput {
 }
 
 #[test]
-fn waiting_boxes_returns_waiting_for_box_in_id_order() {
+fn waiting_boxes_returns_pending_in_id_order() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let d = add(&store, "d");
@@ -131,9 +131,7 @@ fn waiting_boxes_returns_waiting_for_box_in_id_order() {
     }
     let waiting = store.waiting_boxes().unwrap();
     assert_eq!(waiting.iter().map(|t| t.id).collect::<Vec<_>>(), [d, b, a]);
-    assert!(waiting
-        .iter()
-        .all(|t| t.lifecycle == BoxLifecycle::WaitingForBox));
+    assert!(waiting.iter().all(|t| t.lifecycle == BoxLifecycle::Pending));
 }
 
 #[test]

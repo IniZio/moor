@@ -191,11 +191,7 @@ impl Store {
     /// Boxes queued for a box, oldest id first.
     pub(crate) fn waiting_boxes(&self) -> Result<Vec<BoxRow>, StoreError> {
         let tail = "WHERE b.state = ?1 ORDER BY b.id";
-        query_boxes(
-            &self.reader()?,
-            tail,
-            [BoxLifecycle::WaitingForBox.as_str()],
-        )
+        query_boxes(&self.reader()?, tail, [BoxLifecycle::Pending.as_str()])
     }
 }
 

@@ -18,7 +18,7 @@ pub fn lifecycle_events(
         BoxLifecycleInput::Rejected { reason } => vec![Event::Rejected {
             reason: reason.clone(),
         }],
-        BoxLifecycleInput::AtCapacity { max_boxes } => vec![Event::WaitingForBox {
+        BoxLifecycleInput::AtCapacity { max_boxes } => vec![Event::Pending {
             max_boxes: *max_boxes,
         }],
         BoxLifecycleInput::Admitted | BoxLifecycleInput::Promoted | BoxLifecycleInput::Retry => {

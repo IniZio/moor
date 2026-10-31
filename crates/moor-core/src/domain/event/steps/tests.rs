@@ -28,14 +28,14 @@ fn lifecycle_events_table() {
     assert_eq!(
         ev(
             Some(L::Checking),
-            L::WaitingForBox,
+            L::Pending,
             &I::AtCapacity { max_boxes: 3 }
         ),
-        vec![Event::WaitingForBox { max_boxes: 3 }]
+        vec![Event::Pending { max_boxes: 3 }]
     );
     for (from, input) in [
         (L::Checking, I::Admitted),
-        (L::WaitingForBox, I::Promoted),
+        (L::Pending, I::Promoted),
         (L::SetupFailed, I::Retry),
     ] {
         assert_eq!(

@@ -585,10 +585,7 @@ fn two_boxes_racing_for_the_last_slot_cannot_both_be_admitted() {
     });
     let states = [a, b].map(|id| store.box_row(id).unwrap().unwrap().lifecycle);
     assert_eq!(admitted.map(|x| x.is_some()), [true, true]);
-    assert_eq!(
-        states,
-        [BoxLifecycle::SettingUp, BoxLifecycle::WaitingForBox]
-    );
+    assert_eq!(states, [BoxLifecycle::SettingUp, BoxLifecycle::Pending]);
     assert_eq!(
         live_holders_in(&store.reader().unwrap(), &provider)
             .unwrap()
