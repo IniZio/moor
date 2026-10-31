@@ -7,8 +7,8 @@ use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use moor_client::link::lease::{slug_id, Answer, Verb};
-use moor_core::box_key::{BoxKey, WORK_ROOT};
+use moor_client::link::lease::{Answer, Verb};
+use moor_core::box_key::{parse_pool_slug, BoxKey, WORK_ROOT};
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, DriverCaps, DriverError, Released, SleepKind, SleepOutcome,
@@ -37,7 +37,7 @@ struct Placed<'a> {
     hosts: &'a dyn PoolHosts,
     /// The host's enrolled machine id.
     machine: i64,
-    /// `moor-<id>`.
+    /// `moor-<controller>-<id>`.
     slug: &'a str,
 }
 
@@ -64,21 +64,21 @@ fn pool_provider(provider: &str) -> Option<(String, String)> {
     Some((id.base().to_owned(), id.host()?.to_owned()))
 }
 
-/// `<provider>/<machine id>/moor-<box id>`: a pool Box's handle carries its host's machine.
+/// `<provider>/<machine id>/moor-<controller>-<box id>`: a pool Box's handle carries its host's machine.
 fn pool_handle(provider: &str, machine: i64, slug: &str) -> BoxHandle {
     handle_of(provider, &format!("{machine}/{slug}"))
 }
 
 /// The handle `req` gets: its host's machine is known before the Box exists.
 pub(super) fn planned(req: &AcquireReq) -> Result<BoxHandle, DriverError> {
-    let machine = req.pool_machine.ok_or_else(|| {
+    let seat = req.pool_machine.as_ref().ok_or_else(|| {
         failed(format!(
             "provider {} names a host, but the Box has no machine there",
             req.provider.as_str()
         ))
     })?;
-    let slug = BoxKey::new(req.box_id).pool_slug();
-    Ok(pool_handle(req.provider.as_str(), machine, &slug))
+    let slug = BoxKey::new(req.box_id).pool_slug(&seat.controller);
+    Ok(pool_handle(req.provider.as_str(), seat.machine, &slug))
 }
 
 /// The machine id and lease slug of a pool handle's name part, parsed strictly.
@@ -86,7 +86,7 @@ fn parse_name(name: &str) -> Option<(i64, &str)> {
     let (machine, slug) = name.split_once('/')?;
     let digits = !machine.is_empty() && machine.bytes().all(|b| b.is_ascii_digit());
     let machine = machine.parse().ok().filter(|_| digits)?;
-    slug_id(slug).is_some().then_some((machine, slug))
+    parse_pool_slug(slug).is_some().then_some((machine, slug))
 }
 
 /// Whether `handle` names a pool Box.
@@ -122,7 +122,12 @@ impl Crabbox {
         let (machine, slug) = provider
             .and_then(pool_provider)
             .and_then(|_| parse_name(name))
-            .ok_or_else(|| failed(format!("{} is not a pool Box", handle.as_str())))?;
+            .ok_or_else(|| {
+                failed(format!(
+                    "{} is not a pool Box: its lease slug is not moor-<controller>-<id>",
+                    handle.as_str()
+                ))
+            })?;
         let hosts = self
             .pool_hosts
             .as_deref()

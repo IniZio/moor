@@ -33,7 +33,7 @@ pub enum PoolOp {
     Lease {
         /// What to do.
         verb: lease::Verb,
-        /// `moor-<id>`; none for a list.
+        /// `moor-<controller>-<id>`; none for a list.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         slug: Option<String>,
         /// The OpenSSH public key an authorize lets in; none for every other verb.
@@ -42,7 +42,7 @@ pub enum PoolOp {
     },
     /// [`Op::Dial`].
     Dial {
-        /// `moor-<id>`.
+        /// `moor-<controller>-<id>`.
         slug: String,
     },
     /// [`Op::Status`].

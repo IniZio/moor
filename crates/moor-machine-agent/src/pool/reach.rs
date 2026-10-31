@@ -115,11 +115,11 @@ pub enum Sshd {
 
 /// Opens a pipe to the sshd of lease `slug` under `home`.
 pub async fn dial(home: &Path, pool: &super::Pool, slug: &str) -> Result<Sshd, String> {
-    let id = super::checked(slug)?;
+    let slug = super::checked(slug)?;
     let route = route(&Crabbox {
         home,
         pool,
-        id: Some(id),
+        slug: Some(slug),
     })
     .await?;
     let Some(proxy) = route.proxy.as_deref() else {

@@ -115,14 +115,14 @@ async fn raw(socket: &Path, line: &str) -> serde_json::Value {
 async fn a_lease_goes_through_the_broker_to_the_pool_host_and_back() {
     let host = Host::start();
     let socket = host.socket();
-    let answer = broker::lease(&socket, MACHINE_ID, Verb::Warmup, Some("moor-7")).await;
+    let answer = broker::lease(&socket, MACHINE_ID, Verb::Warmup, Some("moor-1a2b3c4d-7")).await;
     assert_eq!(answer, Ok(Answer::Done));
     let calls = fake_crabbox::calls(&host.home);
     assert!(
-        calls.ends_with(" warmup --provider fake --slug moor-7\n"),
+        calls.ends_with(" warmup --provider fake --slug moor-1a2b3c4d-7\n"),
         "{calls}"
     );
-    let answer = broker::lease(&socket, MACHINE_ID, Verb::Info, Some("moor-7")).await;
+    let answer = broker::lease(&socket, MACHINE_ID, Verb::Info, Some("moor-1a2b3c4d-7")).await;
     let Ok(Answer::Info { user, host_keys }) = answer else {
         panic!("{answer:?}");
     };
@@ -133,9 +133,15 @@ async fn a_lease_goes_through_the_broker_to_the_pool_host_and_back() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_dial_through_the_broker_carries_bytes_both_ways() {
     let host = Host::start();
-    let warmed = broker::lease(&host.socket(), MACHINE_ID, Verb::Warmup, Some("moor-7")).await;
+    let warmed = broker::lease(
+        &host.socket(),
+        MACHINE_ID,
+        Verb::Warmup,
+        Some("moor-1a2b3c4d-7"),
+    )
+    .await;
     assert_eq!(warmed, Ok(Answer::Done));
-    let mut vm = broker::dial(&host.socket(), MACHINE_ID, "moor-7")
+    let mut vm = broker::dial(&host.socket(), MACHINE_ID, "moor-1a2b3c4d-7")
         .await
         .unwrap();
     for hello in [&b"SSH-2.0-hello\n"[..], b"second\n"] {
@@ -173,11 +179,17 @@ async fn the_broker_refuses_every_op_but_lease_dial_and_status() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_pool_host_reports_its_status_through_the_broker() {
     let host = Host::start();
-    let warmed = broker::lease(&host.socket(), MACHINE_ID, Verb::Warmup, Some("moor-7")).await;
+    let warmed = broker::lease(
+        &host.socket(),
+        MACHINE_ID,
+        Verb::Warmup,
+        Some("moor-1a2b3c4d-7"),
+    )
+    .await;
     assert_eq!(warmed, Ok(Answer::Done));
     let bad = broker::lease(&host.socket(), MACHINE_ID, Verb::Info, Some("box-1")).await;
     assert!(bad.is_err());
-    let leases = r#"[{"name":"moor-7","state":"running"}]"#;
+    let leases = r#"[{"name":"moor-1a2b3c4d-7","state":"running"}]"#;
     std::fs::write(host.home.join("leases.json"), leases).unwrap();
     let status = broker::status(&host.socket(), MACHINE_ID).await.unwrap();
     assert_eq!(status.protocol, moor_client::link::PROTOCOL);
@@ -185,7 +197,7 @@ async fn a_pool_host_reports_its_status_through_the_broker() {
     let pool = status.pool.unwrap();
     assert_eq!(pool.provider, "fake");
     assert_eq!(pool.leases.len(), 1, "{pool:?}");
-    assert_eq!(pool.leases[0].slug, "moor-7");
+    assert_eq!(pool.leases[0].slug, "moor-1a2b3c4d-7");
     let ops: Vec<_> = status
         .recent
         .iter()
@@ -194,7 +206,7 @@ async fn a_pool_host_reports_its_status_through_the_broker() {
     assert_eq!(
         ops,
         [
-            ("lease", Some("moor-7"), false),
+            ("lease", Some("moor-1a2b3c4d-7"), false),
             ("lease", Some("box-1"), true)
         ]
     );
@@ -205,7 +217,7 @@ async fn a_machine_with_no_link_is_named_offline() {
     let host = Host::start();
     let answer = raw(
         &host.socket(),
-        "{\"machine_id\":99,\"op\":{\"op\":\"dial\",\"slug\":\"moor-7\"}}\n",
+        "{\"machine_id\":99,\"op\":{\"op\":\"dial\",\"slug\":\"moor-1a2b3c4d-7\"}}\n",
     )
     .await;
     assert_eq!(answer["broker"], "offline", "{answer}");

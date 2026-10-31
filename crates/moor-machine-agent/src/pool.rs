@@ -5,10 +5,9 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
-use moor_client::link::lease::{slug_id, Answer, Lease, Verb};
+use moor_client::link::lease::{Answer, Lease, Verb};
 use moor_client::link::ops::Reply;
-use moor_core::box_key::BoxKey;
-use moor_core::name::BoxId;
+use moor_core::box_key::parse_pool_slug;
 use tokio::process::Command;
 
 pub use reach::{dial, splice, Sshd};
@@ -66,15 +65,15 @@ async fn answer(
         (Verb::List, Some(_)) | (_, None) => {
             Err("list names no slug; every other verb names one".to_owned())
         }
-        (verb, Some(id)) => {
+        (verb, Some(slug)) => {
             act(
                 &Crabbox {
                     home,
                     pool,
-                    id: Some(id),
+                    slug: Some(slug),
                 },
                 verb,
-                id,
+                slug,
                 key,
             )
             .await
@@ -82,11 +81,11 @@ async fn answer(
     }
 }
 
-/// Does `verb` to lease `id`.
+/// Does `verb` to lease `slug`.
 async fn act(
     lease: &Crabbox<'_>,
     verb: Verb,
-    id: i64,
+    slug: &str,
     key: Option<&str>,
 ) -> Result<Answer, String> {
     let ran = match verb {
@@ -95,7 +94,7 @@ async fn act(
             return reach::authorize(lease, key).await;
         }
         Verb::Warmup => {
-            room(lease.home, lease.pool, id).await?;
+            room(lease.home, lease.pool, slug).await?;
             lease.run("warmup", "--slug", BOOT, &[0]).await
         }
         Verb::Info => return reach::info(lease).await,
@@ -103,7 +102,7 @@ async fn act(
         Verb::Resume => lease.run("resume", "--id", CALL, &[0]).await,
         Verb::Stop => {
             let gone = lease.run("stop", "--id", CALL, &[0, GONE]).await;
-            let _ = tokio::fs::remove_dir_all(box_dir(lease.home, id)).await;
+            let _ = tokio::fs::remove_dir_all(box_dir(lease.home, slug)).await;
             gone
         }
         Verb::List => return Err("list names no slug".to_owned()),
@@ -113,29 +112,25 @@ async fn act(
         Err(e) if verb == Verb::Pause && e.contains("does not support pause") => {
             Ok(Answer::Unsupported)
         }
-        Err(e) if verb == Verb::Stop && e.contains(&format!("lease moor-{id} not found")) => {
+        Err(e) if verb == Verb::Stop && e.contains(&format!("lease {slug} not found")) => {
             Ok(Answer::Done)
         }
         Err(e) => Err(e),
     }
 }
 
-/// The lease slug of Box `id`.
-fn slug_of(id: i64) -> String {
-    BoxKey::new(BoxId::new(id)).pool_slug()
+/// `slug` itself, when it is a well-formed `moor-<controller>-<id>` slug.
+fn checked(slug: &str) -> Result<&str, String> {
+    parse_pool_slug(slug)
+        .map(|_| slug)
+        .ok_or_else(|| format!("{slug:?} is not a moor-<controller>-<id> slug"))
 }
 
-/// The Box id of `slug`, when it is `moor-<id>`.
-fn checked(slug: &str) -> Result<i64, String> {
-    slug_id(slug).ok_or_else(|| format!("{slug:?} is not a moor-<id> slug"))
-}
-
-/// Ok unless booting `id` would pass the pool's most leases.
-async fn room(home: &Path, pool: &Pool, id: i64) -> Result<(), String> {
+/// Ok unless booting `slug` would pass the pool's most leases.
+async fn room(home: &Path, pool: &Pool, slug: &str) -> Result<(), String> {
     let Some(max) = pool.max else {
         return Ok(());
     };
-    let slug = slug_of(id);
     let others = list(home, pool)
         .await?
         .iter()
@@ -147,13 +142,13 @@ async fn room(home: &Path, pool: &Pool, id: i64) -> Result<(), String> {
     Ok(())
 }
 
-/// The `moor-<id>` leases `crabbox list` shows. A lease names its slug in `labels.slug`, `slug`
+/// The `moor-<controller>-<id>` leases `crabbox list` shows. A lease names its slug in `labels.slug`, `slug`
 /// or `name`, and its state in `state` or `status`, by provider.
 pub(crate) async fn list(home: &Path, pool: &Pool) -> Result<Vec<Lease>, String> {
     let printed = Crabbox {
         home,
         pool,
-        id: None,
+        slug: None,
     }
     .run("list", "--json", CALL, &[0])
     .await?;
@@ -166,7 +161,7 @@ pub(crate) async fn list(home: &Path, pool: &Pool) -> Result<Vec<Lease>, String>
                 .into_iter()
                 .flatten()
                 .find_map(serde_json::Value::as_str)
-                .filter(|s| slug_id(s).is_some())?;
+                .filter(|s| parse_pool_slug(s).is_some())?;
             let state = [l.get("state"), l.get("status")]
                 .into_iter()
                 .flatten()
@@ -184,23 +179,23 @@ pub(crate) async fn list(home: &Path, pool: &Pool) -> Result<Vec<Lease>, String>
 /// account as a machine, whose ids come from other controllers.
 const POOL_DIR: &str = "moor-pool";
 
-/// Everything the host keeps for Box `id`'s lease.
-fn box_dir(home: &Path, id: i64) -> PathBuf {
-    home.join(POOL_DIR).join(id.to_string())
+/// Everything the host keeps for the lease `slug`, which checked has made safe as a dir name.
+fn box_dir(home: &Path, slug: &str) -> PathBuf {
+    home.join(POOL_DIR).join(slug)
 }
 
-/// crabbox on this host, for one lease or, with no id, for the pool.
+/// crabbox on this host, for one lease or, with no slug, for the pool.
 struct Crabbox<'a> {
     /// The account's home.
     home: &'a Path,
     /// The pool.
     pool: &'a Pool,
-    /// The lease's Box id.
-    id: Option<i64>,
+    /// The lease's slug.
+    slug: Option<&'a str>,
 }
 
 impl Crabbox<'_> {
-    /// Runs `crabbox VERB --provider P FLAG moor-<id>`, or `FLAG` alone with no id, within
+    /// Runs `crabbox VERB --provider P FLAG SLUG`, or `FLAG` alone with no slug, within
     /// `within`; its stdout when it exits with a code in `ok`.
     async fn run(
         &self,
@@ -210,7 +205,7 @@ impl Crabbox<'_> {
         ok: &[i32],
     ) -> Result<String, String> {
         let base = self.home.join(POOL_DIR);
-        let mine = self.id.map(|id| box_dir(self.home, id));
+        let mine = self.slug.map(|slug| box_dir(self.home, slug));
         // Only a warmup makes a lease's dir, so a call on a lease that is gone leaves nothing
         // behind; crabbox itself says whether the lease exists.
         let (dir, ceiling) = match mine {
@@ -222,8 +217,8 @@ impl Crabbox<'_> {
         std::fs::create_dir_all(&dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
         let mut cmd = Command::new(&self.pool.crabbox);
         cmd.args([verb, "--provider", &self.pool.provider, flag]);
-        if let Some(id) = self.id {
-            cmd.arg(slug_of(id));
+        if let Some(slug) = self.slug {
+            cmd.arg(slug);
         }
         cmd.current_dir(&dir)
             .env("HOME", self.home)

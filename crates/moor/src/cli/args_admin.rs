@@ -69,7 +69,7 @@ pub(super) struct ControllerAttachArgs {
 pub(super) struct LinkDialArgs {
     /// The pool host's machine id.
     machine_id: i64,
-    /// The lease, `moor-<id>`.
+    /// The lease, `moor-<controller>-<id>`.
     slug: String,
 }
 

@@ -40,7 +40,7 @@ pub enum Answer {
         /// The VM's host public keys, each `type base64`.
         host_keys: Vec<String>,
     },
-    /// The pool's `moor-<id>` leases.
+    /// The pool's `moor-<controller>-<id>` leases.
     Leases {
         /// Each lease.
         leases: Vec<Lease>,
@@ -50,16 +50,8 @@ pub enum Answer {
 /// One lease in a list.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Lease {
-    /// `moor-<id>`.
+    /// `moor-<controller>-<id>`.
     pub slug: String,
     /// What the provider says of it, such as `running` or `paused`.
     pub state: String,
-}
-
-/// The Box id a slug `moor-<id>` names; `None` for any other text.
-#[must_use]
-pub fn slug_id(slug: &str) -> Option<i64> {
-    let digits = slug.strip_prefix("moor-")?;
-    let id: i64 = digits.parse().ok().filter(|id| *id > 0)?;
-    (id.to_string() == digits).then_some(id)
 }
