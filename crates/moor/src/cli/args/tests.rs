@@ -69,6 +69,7 @@ fn start_with_all_flags() {
             issue: Some("I-1".into()),
             base: Some("main".into()),
             model: Some("haiku".into()),
+            node: None,
             no_agent: true,
             resume: true,
             repo: None,
@@ -488,4 +489,12 @@ fn node_ls_asks_for_the_callers_nodes() {
         Ok((_, Action::Request(Request::NodeList(r)))) if r.identity.is_none()
     ));
     assert!(run(&["node"]).is_err());
+}
+
+#[test]
+fn start_node_flag() {
+    assert!(matches!(
+        req(&["start", "t", "--node", "hv"]),
+        Request::Start(s) if s.node.as_deref() == Some("hv")
+    ));
 }

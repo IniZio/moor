@@ -239,6 +239,7 @@ fn start(
             issue: None,
             base: None,
             model: None,
+            node: None,
             no_agent: false,
             resume: false,
             repo: Some(repo),

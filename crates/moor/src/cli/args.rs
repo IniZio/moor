@@ -225,6 +225,9 @@ struct StartArgs {
     /// Agent model.
     #[arg(long)]
     model: Option<String>,
+    /// A node of yours to run the Box on, in place of your default; see `moor node ls`.
+    #[arg(long, value_name = "NODE")]
+    node: Option<String>,
     /// Do not launch an agent.
     #[arg(long)]
     no_agent: bool,
@@ -245,6 +248,7 @@ impl From<StartArgs> for StartReq {
             base: a.base,
             repo: a.repo,
             model: a.model,
+            node: a.node,
             no_agent: a.no_agent,
             resume: a.resume,
             parent: a.parent.map(SessionId::new),

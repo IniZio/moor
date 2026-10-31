@@ -66,6 +66,7 @@ fn start(prompt: &str, repo: Option<&str>) -> Call {
         prompt: prompt.into(),
         repo: repo.map(str::to_owned),
         base: None,
+        node: None,
     }
 }
 
@@ -74,6 +75,7 @@ fn start_from(prompt: &str, base: &str) -> Call {
         prompt: prompt.into(),
         repo: Some("acme/api".into()),
         base: Some(base.to_owned()),
+        node: None,
     }
 }
 
@@ -124,6 +126,7 @@ fn start_box_reads_base_from_the_tool_arguments() {
         prompt: "g".into(),
         repo: None,
         base: Some("moor-setup".into()),
+        node: None,
     };
     assert_eq!(Call::parse("start_box", &args), Ok(with));
     let args = serde_json::json!({"prompt": "g"});
@@ -245,4 +248,25 @@ fn a_rerun_after_a_start_refuses_a_second_start_and_names_the_box() {
         "{again:?}"
     );
     assert_eq!(db.thread_boxes("C1", "1.0").unwrap().len(), 1);
+}
+
+#[test]
+fn start_box_reads_the_node_and_records_it_on_the_row() {
+    let args = serde_json::json!({"prompt": "g", "node": "hv"});
+    let Ok(Call::StartBox { node, .. }) = Call::parse("start_box", &args) else {
+        panic!("not a start_box");
+    };
+    assert_eq!(node.as_deref(), Some("hv"));
+    let dir = tempfile::tempdir().unwrap();
+    let db = fresh_thread(dir.path(), Some("acme/web"));
+    turn_of(&db, "U1", "Ev1");
+    let call = Call::StartBox {
+        prompt: "g".into(),
+        repo: None,
+        base: None,
+        node: node.clone(),
+    };
+    assert!(!start_with(&db, &call, 1).is_error);
+    let [row] = db.thread_boxes("C1", "1.0").unwrap().try_into().unwrap();
+    assert_eq!(row.node, node);
 }

@@ -74,6 +74,7 @@ fn the_check_pins_the_open_box_a_start_attaches_to() {
         issue: None,
         base: None,
         model: None,
+        node: None,
         no_agent: false,
         resume: false,
         repo: None,
