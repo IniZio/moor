@@ -59,6 +59,9 @@ async fn features(pool: &Pool) -> Vec<String> {
     let Ok(Ok(out)) = tokio::time::timeout(CALL, cmd.output()).await else {
         return Vec::new();
     };
+    if !out.status.success() {
+        return Vec::new();
+    }
     let Ok(described) = serde_json::from_slice::<serde_json::Value>(&out.stdout) else {
         return Vec::new();
     };
