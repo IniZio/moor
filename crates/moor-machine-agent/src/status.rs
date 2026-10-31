@@ -176,6 +176,7 @@ mod tests {
         let pool = Pool {
             provider: "fake".to_owned(),
             max: None,
+            cache_gb: None,
             crabbox,
         };
         let status = status(&machine(Some(pool)), &Recent::default()).await;

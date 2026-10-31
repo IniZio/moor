@@ -306,6 +306,9 @@ fn a_link_keeps_its_agent_version_and_names_its_machine() {
         since: Ts::from_millis(5),
         version: Some("0.9.1".to_owned()),
         protocol: Some(1),
+        max_boxes: Some(4),
+        cache_gb: Some(50),
+        features: vec!["cache-volume".to_owned(), "ssh".to_owned()],
     };
     let held = store
         .set_machine_links(std::slice::from_ref(&link))
@@ -341,6 +344,9 @@ fn machine_links_are_replaced_whole_and_skip_unknown_machines() {
         since: Ts::from_millis(since),
         version: None,
         protocol: None,
+        max_boxes: None,
+        cache_gb: None,
+        features: Vec::new(),
     };
     let held = store
         .set_machine_links(&[link(one, true, 5), link(two, false, 6), link(999, true, 7)])

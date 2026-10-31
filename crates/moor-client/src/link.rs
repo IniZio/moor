@@ -32,6 +32,20 @@ pub const NAMESPACE: &str = "moor-machine-link";
 /// How often each end pings; three silent periods end the link.
 pub const KEEPALIVE: Duration = Duration::from_secs(15);
 
+/// What a Box-hosting machine reports about itself in its hello.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Offer {
+    /// The most Boxes it will hold at once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_boxes: Option<u32>,
+    /// The disk, in GB, it sets aside for caches; reported, not enforced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_gb: Option<u32>,
+    /// What its crabbox provider supports, such as `cache-volume`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub features: Vec<String>,
+}
+
 /// The frames before the socket carries yamux, one JSON text message each.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -44,6 +58,9 @@ pub enum Frame {
         protocol: u32,
         /// The agent's release.
         version: String,
+        /// What the machine offers, when it hosts Boxes.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        offer: Option<Offer>,
     },
     /// Runner: what the agent signs.
     Challenge {

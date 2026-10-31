@@ -135,7 +135,7 @@ const POOL_MAX: usize = 64;
 /// `[a-z][a-z0-9-]*` in at most 64 bytes, as crabbox names a provider.
 ///
 /// # Errors
-/// Why `pool` is not accepted, naming `--pool`.
+/// Why `pool` is not accepted, naming `--runtime`.
 fn check_pool(pool: &str) -> Result<(), String> {
     let ok = pool.len() <= POOL_MAX
         && pool.starts_with(|c: char| c.is_ascii_lowercase())
@@ -146,7 +146,7 @@ fn check_pool(pool: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!(
-            "--pool provider `{pool}` must match [a-z][a-z0-9-]* in at most {POOL_MAX} bytes"
+            "--runtime provider `{pool}` must match [a-z][a-z0-9-]* in at most {POOL_MAX} bytes"
         ))
     }
 }

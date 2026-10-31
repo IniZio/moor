@@ -166,7 +166,7 @@ pub async fn run_with(
     let recent = Arc::new(status::Recent::default());
     let mut wait = FIRST_WAIT;
     loop {
-        match connect(&state, &key).await {
+        match connect(&state, &key, &machine).await {
             Ok(socket) => {
                 log(&format!("linked to {}", state.server));
                 wait = FIRST_WAIT;
@@ -242,12 +242,17 @@ enum Turned {
 }
 
 /// Dials `state`'s server and proves the machine with `key`; the socket yamux runs on.
-async fn connect(state: &State, key: &PrivateKey) -> Result<link::Socket, Turned> {
+async fn connect(
+    state: &State,
+    key: &PrivateKey,
+    machine: &Machine,
+) -> Result<link::Socket, Turned> {
     let mut ws = link::dial(&state.server).await.map_err(Turned::Failed)?;
     let hello = Frame::Hello {
         machine_id: state.machine_id,
         protocol: link::PROTOCOL,
         version: VERSION.to_owned(),
+        offer: pool::offer(machine).await,
     };
     link::send(&mut ws, &hello).await.map_err(Turned::Failed)?;
     let nonce = match link::recv(&mut ws, ANSWER).await.map_err(Turned::Failed)? {

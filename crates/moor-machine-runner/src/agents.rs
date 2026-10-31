@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use futures_util::StreamExt;
-use moor_client::link::{self, Asked, Channel, Frame, WebSocketStream};
+use moor_client::link::{self, Asked, Channel, Frame, Offer, WebSocketStream};
 use moor_client::Client;
 use moor_core::request::{MachineLink, MachineLinksReq, Request};
 use moor_core::view::user::MachineKeysValue;
@@ -133,7 +133,7 @@ where
     let Ok(mut ws) = link::accept(stream).await else {
         return;
     };
-    let (machine_id, version) = match admit(&mut ws, client).await {
+    let (machine_id, version, offer) = match admit(&mut ws, client).await {
         Ok(admitted) => admitted,
         Err(answer) => {
             if let Some(frame) = answer {
@@ -149,7 +149,7 @@ where
     if link::send(&mut ws, &welcome).await.is_err() {
         return;
     }
-    let (generation, replaced, asks) = links.up(machine_id, version);
+    let (generation, replaced, asks) = links.up(machine_id, version, offer);
     eprintln!("machine {machine_id} linked");
     let socket = link::carry(ws, link::KEEPALIVE);
     let why = tokio::select! {
@@ -168,7 +168,7 @@ where
 async fn admit<S>(
     ws: &mut WebSocketStream<S>,
     client: &Client,
-) -> Result<(i64, String), Option<Frame>>
+) -> Result<(i64, String, Offer), Option<Frame>>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
@@ -186,6 +186,7 @@ where
         machine_id,
         protocol: link::PROTOCOL,
         version,
+        offer,
     }) = hello
     else {
         return Err(Some(Frame::UpdateRequired {
@@ -212,7 +213,7 @@ where
             let signed = link::signed(&nonce, machine_id, time);
             key.verify(link::NAMESPACE, &signed, sig).is_ok()
         })
-        .map(|_| (machine_id, version))
+        .map(|_| (machine_id, version, offer.unwrap_or_default()))
         .ok_or_else(|| {
             refused(format!(
                 "the proof is not signed by machine {machine_id}'s key"
@@ -286,6 +287,7 @@ impl Links {
         &self,
         machine_id: i64,
         version: String,
+        offer: Offer,
     ) -> (u64, oneshot::Receiver<()>, mpsc::Receiver<Asked>) {
         let generation = {
             let mut next = self.next.lock().unwrap_or_else(PoisonError::into_inner);
@@ -300,6 +302,9 @@ impl Links {
             since: now(),
             version: Some(version),
             protocol: Some(link::PROTOCOL),
+            max_boxes: offer.max_boxes,
+            cache_gb: offer.cache_gb,
+            features: offer.features,
         };
         self.change(|held| {
             held.insert(

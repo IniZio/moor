@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use moor_client::link::lease::{Answer, Lease, Verb};
 use moor_client::link::ops::Reply;
+use moor_client::link::Offer;
 use moor_core::box_key::parse_pool_slug;
 use tokio::process::Command;
 
@@ -31,8 +32,42 @@ pub struct Pool {
     pub provider: String,
     /// The most `moor-*` leases a warmup may leave on the host.
     pub max: Option<usize>,
+    /// The disk, in GB, reported as set aside for caches; nothing enforces it.
+    pub cache_gb: Option<u32>,
     /// The crabbox program.
     pub crabbox: PathBuf,
+}
+
+/// What this agent tells the server it offers; none when it serves no pool.
+///
+/// The features are empty when crabbox cannot say.
+pub async fn offer(machine: &crate::Machine) -> Option<Offer> {
+    let pool = machine.pool.as_ref()?;
+    Some(Offer {
+        max_boxes: pool.max.and_then(|m| u32::try_from(m).ok()),
+        cache_gb: pool.cache_gb,
+        features: features(pool).await,
+    })
+}
+
+/// The features `crabbox providers describe` lists for the pool's provider.
+async fn features(pool: &Pool) -> Vec<String> {
+    let mut cmd = Command::new(&pool.crabbox);
+    cmd.args(["providers", "describe", &pool.provider, "--json"])
+        .stdin(Stdio::null())
+        .kill_on_drop(true);
+    let Ok(Ok(out)) = tokio::time::timeout(CALL, cmd.output()).await else {
+        return Vec::new();
+    };
+    let Ok(described) = serde_json::from_slice::<serde_json::Value>(&out.stdout) else {
+        return Vec::new();
+    };
+    let mut features: Vec<String> = described
+        .pointer("/capabilities/features")
+        .and_then(|f| serde_json::from_value(f.clone()).ok())
+        .unwrap_or_default();
+    features.sort();
+    features
 }
 
 /// Does `verb` to the lease `slug`, or lists the leases, under `home`; an authorize lets `key`

@@ -50,7 +50,7 @@ fn a_pool_provider_matches_crabbox_provider_names() {
     }
     for bad in ["", "Ext", "9a", "a_b", "-a", "a b", "a@b", &"a".repeat(65)] {
         let err = m.clone().with_pool(bad).unwrap_err();
-        assert!(err.contains("--pool"), "{bad:?}: {err}");
+        assert!(err.contains("--runtime"), "{bad:?}: {err}");
     }
     assert_eq!(m.pool, None);
 }

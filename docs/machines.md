@@ -455,8 +455,8 @@ a command that the runner sends with `exec` only when it is started with
 commands on the machine unless its owner allowed that. `sync`, `pull`, the
 hooks and the relays work without the flag, but the `exec` tool, the disk
 guard and removing a closed Box's files need it. A pool host, started with
-`--pool`, never runs `exec`, and the agent refuses `--allow-exec` with
-`--pool`.
+`--runtime`, never runs `exec`, and the agent refuses `--allow-exec` with
+`--runtime`.
 
 When the server needs another release of the agent, `run` exits and names the
 command to fix it, `moor-machine-agent update --version 1.2.3`. That command

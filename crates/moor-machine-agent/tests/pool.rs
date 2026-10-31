@@ -20,7 +20,7 @@ fn agent(home: &Path, args: &[&str]) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_moor-machine-agent"));
     let crabbox = home.join("crabbox");
     cmd.args(args)
-        .args(["--pool", "fake", "--crabbox"])
+        .args(["--runtime", "fake", "--crabbox"])
         .arg(crabbox)
         .env("HOME", home)
         .env_remove("XDG_CONFIG_HOME");
@@ -167,14 +167,14 @@ fn pool_max_refuses_a_warmup_past_it() {
     std::fs::write(home.path().join("leases.json"), leases.to_string()).unwrap();
     let (ok, answer) = lease(
         home.path(),
-        &["warmup", "moor-1a2b3c4d-9", "--pool-max", "2"],
+        &["warmup", "moor-1a2b3c4d-9", "--max-boxes", "2"],
     );
     assert!(!ok);
     assert_eq!(answer["reply"], "refused");
     assert!(!fake_crabbox::calls(home.path()).contains("warmup"));
     let again = lease(
         home.path(),
-        &["warmup", "moor-1a2b3c4d-8", "--pool-max", "2"],
+        &["warmup", "moor-1a2b3c4d-8", "--max-boxes", "2"],
     );
     assert_eq!(again, (true, DONE()), "a lease already counted may warm up");
 }

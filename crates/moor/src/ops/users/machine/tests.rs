@@ -216,7 +216,7 @@ fn a_pool_provider_is_stored_listed_and_refused_when_malformed() {
     }
     let err = as_user(&f, "slack:T1:UA", &cmd).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Usage);
-    assert!(err.error.to_string().contains("--pool"), "{err:?}");
+    assert!(err.error.to_string().contains("--runtime"), "{err:?}");
 }
 
 #[test]

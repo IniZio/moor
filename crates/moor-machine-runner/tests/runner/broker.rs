@@ -72,6 +72,7 @@ impl Host {
         let pool = Pool {
             provider: "fake".to_owned(),
             max: None,
+            cache_gb: None,
             crabbox: fake_crabbox::install(&home),
         };
         let machine = Machine {

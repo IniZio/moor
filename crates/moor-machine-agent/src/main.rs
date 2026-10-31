@@ -41,7 +41,7 @@ enum Command {
         slots: u16,
         /// Offer Boxes on this machine through crabbox PROVIDER, such as `cloudhypervisor`.
         #[arg(long, value_name = "PROVIDER")]
-        pool: Option<String>,
+        runtime: Option<String>,
         /// Do not open a browser; paste the address the sign-in ends on.
         #[arg(long)]
         paste: bool,
@@ -51,11 +51,14 @@ enum Command {
     },
     /// Keeps this enrolled machine linked to its server until stopped.
     Run {
-        /// Serve a pool.
+        /// Serve Boxes from a crabbox runtime.
         #[command(flatten)]
         pool: PoolFlags,
+        /// Tell the server how many GB of disk caches may use; reported, not enforced.
+        #[arg(long, value_name = "GB", requires = "runtime")]
+        cache_gb: Option<u32>,
         /// Run `exec` scripts the server sends; without it they are refused.
-        #[arg(long, conflicts_with = "pool")]
+        #[arg(long, conflicts_with = "runtime")]
         allow_exec: bool,
         /// When the server needs another release, install it and restart in place.
         #[arg(long)]
@@ -92,22 +95,23 @@ enum Command {
 #[derive(clap::Args)]
 struct PoolFlags {
     /// Serve VM leases from this crabbox provider, and nothing else.
-    #[arg(long)]
-    pool: Option<String>,
-    /// Refuse a warmup once this many leases exist.
-    #[arg(long, requires = "pool")]
-    pool_max: Option<usize>,
+    #[arg(long, value_name = "PROVIDER")]
+    runtime: Option<String>,
+    /// Refuse a warmup once this many leases exist, and tell the server this is the most.
+    #[arg(long, requires = "runtime")]
+    max_boxes: Option<usize>,
     /// The crabbox program.
-    #[arg(long, default_value = "crabbox", requires = "pool")]
+    #[arg(long, default_value = "crabbox", requires = "runtime")]
     crabbox: PathBuf,
 }
 
 impl PoolFlags {
     /// The pool, when one is named.
-    fn pool(self) -> Option<Pool> {
+    fn pool(self, cache_gb: Option<u32>) -> Option<Pool> {
         Some(Pool {
-            provider: self.pool?,
-            max: self.pool_max,
+            provider: self.runtime?,
+            max: self.max_boxes,
+            cache_gb,
             crabbox: self.crabbox,
         })
     }
@@ -148,7 +152,7 @@ fn main() -> ExitCode {
             name,
             labels,
             slots,
-            pool,
+            runtime,
             paste,
             new_key,
         } => {
@@ -157,16 +161,17 @@ fn main() -> ExitCode {
                 name,
                 labels,
                 slots,
-                pool,
+                pool: runtime,
                 new_key,
             };
             return enroll_here(&req, paste);
         }
         Command::Run {
             pool,
+            cache_gb,
             allow_exec,
             auto_update,
-        } => run_here(pool, allow_exec, auto_update),
+        } => run_here(pool, cache_gb, allow_exec, auto_update),
         Command::Update { version } => return update_here(&version),
         Command::Lease { verb, slug, pool } => {
             return on_pool(pool, |rt, home, pool| {
@@ -197,9 +202,14 @@ fn main() -> ExitCode {
 }
 
 /// Keeps this machine linked until the server or the host stops it.
-fn run_here(pool: PoolFlags, allow_exec: bool, auto_update: bool) -> Result<(), String> {
+fn run_here(
+    pool: PoolFlags,
+    cache_gb: Option<u32>,
+    allow_exec: bool,
+    auto_update: bool,
+) -> Result<(), String> {
     let machine = Machine {
-        pool: pool.pool(),
+        pool: pool.pool(cache_gb),
         allow_exec,
         ..Machine::from_env()
     };
@@ -236,7 +246,7 @@ fn on_pool(
     flags: PoolFlags,
     work: impl FnOnce(&tokio::runtime::Runtime, PathBuf, Pool) -> Result<(), String>,
 ) -> ExitCode {
-    let Some(pool) = flags.pool() else {
+    let Some(pool) = flags.pool(None) else {
         say("--pool names the crabbox provider to use");
         return ExitCode::FAILURE;
     };

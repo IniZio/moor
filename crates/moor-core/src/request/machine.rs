@@ -57,6 +57,15 @@ pub struct MachineLink {
     /// The link protocol it spoke.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub protocol: Option<u32>,
+    /// The most Boxes its agent said it will hold.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_boxes: Option<u32>,
+    /// The cache disk, in GB, its agent set aside.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_gb: Option<u32>,
+    /// What its crabbox provider supports.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub features: Vec<String>,
 }
 
 /// The capacity of a machine added without one.
