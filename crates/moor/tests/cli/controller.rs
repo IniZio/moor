@@ -402,3 +402,40 @@ fn sigint_stops_the_controller_at_once_without_a_drain() {
     let mut rest = String::new();
     assert_eq!(idle.reader.read_line(&mut rest).unwrap(), 0, "{rest:?}");
 }
+
+/// Spawns `serve` with `yaml` as the user config.
+fn serve_with_user_config(yaml: &str) -> (Child, Sandbox) {
+    let sandbox = Sandbox::new();
+    let dir = sandbox.root.join("home/.config/moor");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("config.yaml"), yaml).unwrap();
+    let child = sandbox
+        .serve()
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    (child, sandbox)
+}
+
+#[test]
+fn serve_with_a_removed_user_config_key_exits_naming_it() {
+    let (mut child, sandbox) = serve_with_user_config("box: {provider: external}\n");
+    let code = exit_within_five_seconds(&mut child);
+    let stderr = std::io::read_to_string(child.stderr.take().unwrap()).unwrap();
+    assert!(code.is_some_and(|c| c != 0), "{code:?} {stderr}");
+    assert!(stderr.contains("box.provider"), "{stderr}");
+    assert!(!stderr.contains("listening on"), "{stderr}");
+    assert!(!sandbox.socket.exists(), "the socket was left behind");
+}
+
+#[test]
+fn serve_with_a_valid_nodes_config_listens() {
+    let (mut child, _sandbox) = serve_with_user_config("nodes: {local: {runtime: local}}\n");
+    let mut lines = BufReader::new(child.stderr.take().unwrap()).lines();
+    let listening = lines.any(|l| l.is_ok_and(|l| l.contains("listening on")));
+    let _ = child.kill();
+    let _ = child.wait();
+    assert!(listening, "the controller never reported listening");
+}
