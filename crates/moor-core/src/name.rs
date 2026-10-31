@@ -17,6 +17,9 @@ pub enum NameError {
     /// The path inside the box is absolute, empty or contains `..`.
     #[error("invalid box path `{0}`: must be relative, non-empty and free of `..`")]
     RelPath(String),
+    /// The node name is not `[a-z][a-z0-9-]*` of 1-40 bytes.
+    #[error("invalid node name `{0}`: use 1-40 lowercase letters, digits or '-', starting with a letter")]
+    NodeName(String),
     /// The provider id has more than one `@`, or an empty side.
     #[error("invalid provider `{0}`: use <provider> or <provider>@<machine>, each side non-empty")]
     Provider(String),
@@ -136,6 +139,40 @@ impl<'de> serde::Deserialize<'de> for BoxName {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let s = String::deserialize(d)?;
         Self::parse_allow_bare(&s).map_err(serde::de::Error::custom)
+    }
+}
+
+/// A node's name: `[a-z][a-z0-9-]*`, at most 40 bytes.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct NodeName(String);
+
+impl NodeName {
+    /// Validates and wraps a node name.
+    ///
+    /// # Errors
+    /// Returns [`NameError::NodeName`] when `s` breaks the name rule.
+    pub fn parse(s: &str) -> Result<Self, NameError> {
+        let mut bytes = s.bytes();
+        let ok = bytes.next().is_some_and(|b| b.is_ascii_lowercase())
+            && s.len() <= 40
+            && bytes.all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+        if ok {
+            Ok(Self(s.to_owned()))
+        } else {
+            Err(NameError::NodeName(s.to_owned()))
+        }
+    }
+
+    /// The name as written.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for NodeName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
     }
 }
 
