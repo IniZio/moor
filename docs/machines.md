@@ -448,3 +448,13 @@ hooks and the relays work without the flag, but the `exec` tool, the disk
 guard and removing a closed Box's files need it. A pool host, started with
 `--pool`, never runs `exec`, and the agent refuses `--allow-exec` with
 `--pool`.
+
+When the server needs another release of the agent, `run` exits and names the
+command to fix it, `moor-machine-agent update --version 1.2.3`. That command
+downloads the release's tarball for this OS and CPU from the project's GitHub
+releases, checks it against the published `.sha256` (refusing a mismatch),
+replaces the running binary in place and prints the old and new versions.
+`MOOR_AGENT_RELEASES` points it at a mirror of the releases instead. Start
+`run` with `--auto-update` to have the agent do that itself and restart with
+the same arguments; it is off unless the machine's owner asks for it, and a
+failed update is logged with its reason and ends the agent.

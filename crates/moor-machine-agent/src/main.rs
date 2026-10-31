@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use moor_client::link::lease::Verb;
 use moor_client::link::ops::Reply;
 use moor_machine_agent::pool::{dial, lease, splice};
-use moor_machine_agent::{enroll, run, state_dir, Enroll, Machine, Pool};
+use moor_machine_agent::{enroll, run_with, state_dir, update, Enroll, Machine, Pool};
 
 /// Command line.
 #[derive(Parser)]
@@ -57,6 +57,15 @@ enum Command {
         /// Run `exec` scripts the server sends; without it they are refused.
         #[arg(long, conflicts_with = "pool")]
         allow_exec: bool,
+        /// When the server needs another release, install it and restart in place.
+        #[arg(long)]
+        auto_update: bool,
+    },
+    /// Installs a release of this agent in place of the running one.
+    Update {
+        /// The release, such as `1.2.3`.
+        #[arg(long)]
+        version: String,
     },
     /// Does a lease verb on this host and prints the answer as JSON.
     Lease {
@@ -153,14 +162,12 @@ fn main() -> ExitCode {
             };
             return enroll_here(&req, paste);
         }
-        Command::Run { pool, allow_exec } => {
-            let machine = Machine {
-                pool: pool.pool(),
-                allow_exec,
-                ..Machine::from_env()
-            };
-            runtime().and_then(|rt| rt.block_on(run(&state_dir(), machine, &|line| say(line))))
-        }
+        Command::Run {
+            pool,
+            allow_exec,
+            auto_update,
+        } => run_here(pool, allow_exec, auto_update),
+        Command::Update { version } => return update_here(&version),
         Command::Lease { verb, slug, pool } => {
             return on_pool(pool, |rt, home, pool| {
                 let reply = rt.block_on(lease(&home, &pool, verb, slug.as_deref(), None));
@@ -187,6 +194,33 @@ fn main() -> ExitCode {
         say(&e);
     }
     ExitCode::FAILURE
+}
+
+/// Keeps this machine linked until the server or the host stops it.
+fn run_here(pool: PoolFlags, allow_exec: bool, auto_update: bool) -> Result<(), String> {
+    let machine = Machine {
+        pool: pool.pool(),
+        allow_exec,
+        ..Machine::from_env()
+    };
+    let rt = runtime()?;
+    rt.block_on(run_with(&state_dir(), machine, auto_update, &|line| {
+        say(line);
+    }))
+}
+
+/// Installs release `version` in place of this executable and says what changed.
+fn update_here(version: &str) -> ExitCode {
+    match update(version) {
+        Ok(done) => {
+            say(&format!("updated from {} to {}", done.from, done.to));
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            say(&e);
+            ExitCode::FAILURE
+        }
+    }
 }
 
 /// A runtime for the agent's async work.

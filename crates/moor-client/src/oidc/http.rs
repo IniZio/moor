@@ -11,13 +11,25 @@ use ureq::{http, Agent};
 /// The most a discovery or token response may hold.
 const BODY_LIMIT: u64 = 1 << 20;
 
-/// An HTTP client that follows no redirect and hands back every status.
+/// An HTTP client that hands back every status; only a download client follows redirects.
 pub struct Http(Agent);
 
 impl Http {
     /// A client trusting the platform's roots.
     #[must_use]
     pub fn new() -> Self {
+        Self::build(Duration::from_secs(15), 0)
+    }
+
+    /// A client for downloads that gives up after `timeout` and follows redirects, over
+    /// `https` only: release hosts answer from a storage host, and the caller checks what comes.
+    #[must_use]
+    pub fn downloads(timeout: Duration) -> Self {
+        Self::build(timeout, 5)
+    }
+
+    /// A client trusting the platform's roots.
+    fn build(timeout: Duration, redirects: u32) -> Self {
         let tls = TlsConfig::builder()
             .provider(TlsProvider::Rustls)
             .root_certs(RootCerts::PlatformVerifier)
@@ -25,9 +37,10 @@ impl Http {
             .build();
         let config = Agent::config_builder()
             .tls_config(tls)
-            .timeout_global(Some(Duration::from_secs(15)))
+            .timeout_global(Some(timeout))
             .http_status_as_error(false)
-            .max_redirects(0)
+            .max_redirects(redirects)
+            .https_only(redirects > 0)
             .build();
         Self(Agent::new_with_config(config))
     }
@@ -50,6 +63,27 @@ impl Http {
         }
         let bytes = read(resp.body_mut()).map_err(|e| format!("{url}: {e}"))?;
         serde_json::from_slice(&bytes).map_err(|e| format!("{url}: {e}"))
+    }
+
+    /// The body at `url`, at most `limit` bytes.
+    ///
+    /// # Errors
+    /// As [`Http::get_json`]; a body over `limit` is an error too.
+    pub fn get_bytes(&self, url: &str, limit: u64) -> Result<Vec<u8>, String> {
+        secure(url)?;
+        let mut resp = self
+            .0
+            .get(url)
+            .call()
+            .map_err(|e| format!("cannot reach {url}: {e}"))?;
+        if !resp.status().is_success() {
+            return Err(format!("{url} answered {}", resp.status()));
+        }
+        resp.body_mut()
+            .with_config()
+            .limit(limit)
+            .read_to_vec()
+            .map_err(|e| format!("{url}: {e}"))
     }
 
     /// Posts `body` as JSON to `url` and reads the JSON answer.
