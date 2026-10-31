@@ -22,6 +22,7 @@ use crate::testing::clock::FakeClock;
 
 mod controller_id;
 mod events_after;
+mod node_count;
 mod open_boxes;
 mod poison;
 mod rules;
