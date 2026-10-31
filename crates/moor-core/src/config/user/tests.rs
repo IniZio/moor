@@ -486,3 +486,47 @@ fn surface_kind_names_parse_as_the_config_spells_them() {
     assert_eq!(SurfaceKind::parse("Pty"), None);
     assert_eq!(SurfaceKind::parse(""), None);
 }
+
+#[test]
+fn nodes_parse_with_their_fields() {
+    let c = ok("nodes: {ci: {runtime: external, labels: [linux], max_boxes: 5}}\nbox: {node: ci}");
+    let ci = c.nodes.get("ci").unwrap();
+    assert_eq!(ci.runtime, "external");
+    assert_eq!(ci.labels, vec!["linux".to_owned()]);
+    assert_eq!(ci.max_boxes, NonZeroU32::new(5));
+    assert_eq!(c.default_node(), Some("ci"));
+}
+
+#[test]
+fn a_sole_node_is_the_default_without_box_node() {
+    let c = ok("nodes: {ci: {runtime: external}}");
+    assert_eq!(c.default_node(), Some("ci"));
+    assert_eq!(ok("{}").default_node(), None);
+}
+
+#[test]
+fn several_nodes_need_box_node() {
+    let two = "nodes: {a: {runtime: x}, b: {runtime: y}}";
+    assert_eq!(err(two).path, "box.node");
+    assert_eq!(
+        ok(&format!("{two}\nbox: {{node: b}}")).default_node(),
+        Some("b")
+    );
+}
+
+#[test]
+fn node_rejects() {
+    check_rejects(&[
+        ("nodes: {Bad: {runtime: x}}", "nodes.Bad"),
+        ("nodes: {'a b': {runtime: x}}", "nodes.a b"),
+        ("nodes: {ci: {runtime: ''}}", "nodes.ci.runtime"),
+        ("nodes: {ci: {}}", "nodes.ci.runtime"),
+        (
+            "nodes: {ci: {runtime: x, max_boxes: 0}}",
+            "nodes.ci.max_boxes",
+        ),
+        ("nodes: {ci: {runtime: x, nope: 1}}", "nodes.ci.nope"),
+        ("nodes: {ci: {runtime: x}}\nbox: {node: other}", "box.node"),
+        ("box: {node: ci}", "box.node"),
+    ]);
+}

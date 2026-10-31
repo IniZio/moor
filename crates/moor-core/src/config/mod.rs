@@ -14,7 +14,7 @@ pub use repo::{parse_repo, RepoBox, RepoCompose, RepoConfig, RepoMachine};
 pub use user::{
     box_mcp, parse_user, pick_machine, unslot_ports, AgentConfig, BoxConfig, BoxMcp, BoxSize,
     ControllerClientConfig, DotfilesConfig, DriverConfig, EnrolledMachine, HerdrConfig,
-    MachinePick, MachineService, MachinesConfig, McpServer, OAuthCallback, OAuthClient,
+    MachinePick, MachineService, MachinesConfig, McpServer, NodeConfig, OAuthCallback, OAuthClient,
     OAuthConfig, SurfaceConfig, SurfaceKind, ToolsConfig, UserConfig, UserMachine, UserMcp,
     DEFAULT_HEADER, DEFAULT_SLEEP_AFTER,
 };
