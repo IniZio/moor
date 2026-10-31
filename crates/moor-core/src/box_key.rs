@@ -42,6 +42,13 @@ impl BoxKey {
         format!("moor-{}", self.0.get())
     }
 
+    /// The lease slug of a Box on a user's pool host, `moor-{id}`; the host's agent reads the
+    /// id back from it.
+    #[must_use]
+    pub fn pool_slug(self) -> String {
+        format!("moor-{}", self.0.get())
+    }
+
     /// The credential directory under the Box home, `.moor-cred-{id}-{nonce}`.
     #[must_use]
     pub fn cred_dir(self, nonce: &str) -> String {

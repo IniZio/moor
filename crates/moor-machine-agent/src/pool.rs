@@ -7,6 +7,8 @@ use std::time::Duration;
 
 use moor_client::link::lease::{slug_id, Answer, Lease, Verb};
 use moor_client::link::ops::Reply;
+use moor_core::box_key::BoxKey;
+use moor_core::name::BoxId;
 use tokio::process::Command;
 
 pub use reach::{dial, splice, Sshd};
@@ -118,6 +120,11 @@ async fn act(
     }
 }
 
+/// The lease slug of Box `id`.
+fn slug_of(id: i64) -> String {
+    BoxKey::new(BoxId::new(id)).pool_slug()
+}
+
 /// The Box id of `slug`, when it is `moor-<id>`.
 fn checked(slug: &str) -> Result<i64, String> {
     slug_id(slug).ok_or_else(|| format!("{slug:?} is not a moor-<id> slug"))
@@ -128,7 +135,7 @@ async fn room(home: &Path, pool: &Pool, id: i64) -> Result<(), String> {
     let Some(max) = pool.max else {
         return Ok(());
     };
-    let slug = format!("moor-{id}");
+    let slug = slug_of(id);
     let others = list(home, pool)
         .await?
         .iter()
@@ -216,7 +223,7 @@ impl Crabbox<'_> {
         let mut cmd = Command::new(&self.pool.crabbox);
         cmd.args([verb, "--provider", &self.pool.provider, flag]);
         if let Some(id) = self.id {
-            cmd.arg(format!("moor-{id}"));
+            cmd.arg(slug_of(id));
         }
         cmd.current_dir(&dir)
             .env("HOME", self.home)

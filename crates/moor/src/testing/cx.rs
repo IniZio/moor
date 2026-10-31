@@ -125,6 +125,7 @@ impl Cx {
             engine: Arc::new(FakeEngine::new()),
             forge: Arc::new(FakeForge::new()),
             proxy_host: Arc::new(FakeProxyHost::new()),
+            machine_links: None,
             proc,
             config,
             env: Env::default(),

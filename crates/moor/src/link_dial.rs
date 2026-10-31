@@ -3,10 +3,8 @@
 
 use std::io::{Read, Write};
 
-use moor_client::link::broker;
-
 use crate::env::Env;
-use crate::runner_dir;
+use crate::proxy::links::RunnerLinks;
 
 /// [`link_dial`] on the process's own stdio, as ssh runs a `ProxyCommand`.
 #[must_use]
@@ -38,18 +36,7 @@ pub fn link_dial(
         );
         return 1;
     };
-    let path = runner_dir::of(&dir).join(broker::SOCKET);
-    let dialed = tokio::runtime::Builder::new_current_thread()
-        .enable_io()
-        .build()
-        .map_err(|e| e.to_string())
-        .and_then(|rt| rt.block_on(broker::dial(&path, machine_id, slug)))
-        .and_then(|conn| {
-            let conn = conn.into_std().map_err(|e| e.to_string())?;
-            conn.set_nonblocking(false).map_err(|e| e.to_string())?;
-            Ok(conn)
-        });
-    let result = match dialed {
+    let result = match RunnerLinks::under(&dir).dial(machine_id, slug) {
         Ok(conn) => {
             crate::controller::attach::bridge(conn, input, output).map_err(|e| e.to_string())
         }

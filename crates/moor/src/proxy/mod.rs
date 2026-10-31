@@ -14,6 +14,7 @@ pub(crate) mod front;
 pub(crate) mod fronts;
 pub(crate) mod graphql;
 pub(crate) mod guard;
+pub(crate) mod links;
 pub(crate) mod nono;
 pub(crate) mod supervisor;
 

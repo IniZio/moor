@@ -5,14 +5,14 @@
     reason = "tests"
 )]
 
-use moor_client::link::broker::{Ask, Brokered, PoolOp};
-use moor_client::link::ops::{self, Reply};
+use std::sync::{Arc, Mutex};
+
 use moor_client::link::status::Status;
 use moor_core::request::{MachineLink, UserCmd};
 use moor_core::seam::clock::Ts;
 use moor_core::ErrorKind;
-use tokio::net::UnixListener;
 
+use crate::cx::MachineLinks;
 use crate::ops::users::run;
 use crate::ops::users::tests::{fixture, id, Fixture};
 
@@ -62,42 +62,27 @@ fn sample() -> Status {
     }
 }
 
-/// Serves one broker request on the runner socket under the fixture's state dir and returns
-/// the request it saw.
-fn broker(f: &Fixture) -> std::thread::JoinHandle<Ask> {
-    let dir = f.cx.state_dir().unwrap().join("runner");
-    std::fs::create_dir_all(&dir).unwrap();
-    let listener = std::os::unix::net::UnixListener::bind(dir.join("links.sock")).unwrap();
-    listener.set_nonblocking(true).unwrap();
-    std::thread::spawn(move || {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async {
-                let listener = UnixListener::from_std(listener).unwrap();
-                let (mut conn, _) = listener.accept().await.unwrap();
-                let ask: Ask = ops::read_line(&mut conn).await.unwrap();
-                let reply = Brokered::Agent {
-                    reply: Reply::Status(Box::new(sample())),
-                };
-                ops::write_line(&mut conn, &reply).await.unwrap();
-                ask
-            })
-    })
+/// Machine links that answer every status with [`sample`] and note whom they asked.
+#[derive(Default)]
+struct Asked(Mutex<Vec<i64>>);
+
+impl MachineLinks for Asked {
+    fn status(&self, machine_id: i64) -> Result<Status, String> {
+        self.0.lock().unwrap().push(machine_id);
+        Ok(sample())
+    }
 }
 
 #[test]
 fn the_owner_gets_the_agents_status() {
-    let f = fixture();
+    let mut f = fixture();
+    let asked = Arc::new(Asked::default());
+    f.cx = f.cx.with_machine_links(Arc::clone(&asked) as _);
     let machine_id = linked(&f, "authgear:a", "minion", true);
-    let served = broker(&f);
     let got = run(&f.cx, &f.vault, &id("authgear:a"), &status_cmd("minion")).unwrap();
     assert_eq!(got["version"], "1.2.3");
     assert_eq!(got["free_disk_gb"], 40);
-    let ask = served.join().unwrap();
-    assert_eq!(ask.machine_id, machine_id);
-    assert_eq!(ask.op, PoolOp::Status);
+    assert_eq!(*asked.0.lock().unwrap(), vec![machine_id]);
 }
 
 #[test]

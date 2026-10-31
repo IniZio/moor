@@ -81,7 +81,7 @@ fn rig() -> (Arc<FakeHost>, Crabbox) {
     let host = Arc::new(FakeHost::default());
     host.answer(Verb::Info, Ok(info("crabbox", HOST_KEY)));
     let cb = Crabbox::fake(Arc::new(ScriptedProc::new()))
-        .with_pool_hosts(Arc::clone(&host) as Arc<dyn PoolHosts>);
+        .with_pool_hosts(Some(Arc::clone(&host) as Arc<dyn PoolHosts>));
     (host, cb)
 }
 
