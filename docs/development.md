@@ -16,7 +16,23 @@
 [layering](../tools/layering), checks that each module uses only the modules
 that [layering.tsv](../tools/layering.tsv) lists for it. Each row is a
 `module` and its comma-separated `allowed` modules. An empty list allows
-none, and a module with no row has no limit.
+none, and a module with no row has no limit. A row `extern:<crate>` confines
+an outside crate to the modules it lists: to use it elsewhere, keep that code
+in an allowed module and give the caller a trait, as `moor::wire` does. The
+check skips `#[cfg(test)]` items, `tests.rs` files and `tests/` directories,
+but not a file such as `status_tests.rs`.
+
+Each failing check prints a `fix:` line. In short:
+
+- `removed-names`: a retired name came back. Use what replaced it. The old
+  name of the removed work-unit concept is banned in every file; a name moor
+  must read from another tool, such as a hook's JSON field, goes in
+  [removed-names.allow](../tools/removed-names.allow) as that exact string.
+- `box-key`: a name derived from a Box id was built by hand. Build it with a
+  `BoxKey` method in
+  [box_key.rs](../crates/moor-core/src/box_key.rs).
+- `layering`: a module used one its row does not list. Either the row should
+  allow it, or the code belongs elsewhere.
 
 ## Database migrations
 

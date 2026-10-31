@@ -49,7 +49,7 @@ removed_names() {
   cat > "$d/$f"
   local rc=0 out
   out="$(MOOR_SCAN_ROOT="$d" "$root/tools/removed-names.sh" 2>&1)" || rc=$?
-  if { [ "$2" = pass ] && [ "$rc" -ne 0 ]; } || { [ "$2" = fail ] && [ "$rc" -eq 0 ]; }; then
+  if { [ "$2" = pass ] && [ "$rc" -ne 0 ]; } || { [ "$2" = fail ] && { [ "$rc" -eq 0 ] || ! grep -q '^fix: ' <<<"$out"; }; }; then
     echo "lint-selftest: $1 FAILED (expected $2)"; echo "$out"; exit 1
   fi
   echo "lint-selftest: $1 ok"
