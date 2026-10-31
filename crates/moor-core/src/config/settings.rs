@@ -83,6 +83,8 @@ pub struct BoxSettings {
     pub model: Option<Sourced<String>>,
     /// Box provider: the user config only, never the repo; `None` when it names none.
     pub provider: Option<Sourced<String>>,
+    /// Shared node: the user config only, never the repo; `box.node`, else the only node.
+    pub node: Option<Sourced<String>>,
     /// Box size: repo > user > default `small`.
     pub size: Sourced<BoxSize>,
     /// Sorted union of box credential names and MCP refs.
@@ -152,6 +154,9 @@ impl BoxSettings {
             .provider
             .as_ref()
             .map(|p| Sourced::new(p.clone(), Layer::User));
+        let node = user
+            .default_node()
+            .map(|n| Sourced::new(n.to_owned(), Layer::User));
         let size = match (r.box_.size, user.box_.size) {
             (Some(s), _) => Sourced::new(s, Layer::Repo),
             (None, Some(s)) => Sourced::new(s, Layer::User),
@@ -161,6 +166,7 @@ impl BoxSettings {
         Self {
             model,
             provider,
+            node,
             size,
             credentials: plan_credentials(user, r),
             box_credentials: r.box_credentials.clone(),

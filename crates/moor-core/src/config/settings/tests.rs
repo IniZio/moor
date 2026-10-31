@@ -156,3 +156,13 @@ mcp_servers:
     assert_eq!(s.mcp.keys().collect::<Vec<_>>(), ["docs", "sim"]);
     assert!(s.credentials.iter().any(|c| c.name == "sim_key"));
 }
+
+#[test]
+fn node_never_from_repo() {
+    let u = "nodes: {a: {runtime: x}, b: {runtime: y}}\nbox: {node: b}";
+    let s = resolve(u, Some("{}"), &Flags::default());
+    assert_eq!(s.node, Some(Sourced::new("b".to_string(), Layer::User)));
+    let s = resolve("nodes: {a: {runtime: x}}", None, &Flags::default());
+    assert_eq!(s.node, Some(Sourced::new("a".to_string(), Layer::User)));
+    assert!(parse_repo("r.yaml", "box: {node: a}").is_err());
+}

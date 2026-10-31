@@ -6,10 +6,12 @@ mod controller;
 mod creds;
 mod duration;
 mod machine;
+mod nodes;
 mod oauth;
 mod own_mcp;
 mod service;
 mod surface;
+mod tools;
 
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
@@ -26,10 +28,12 @@ pub use creds::McpServer;
 use duration::{duration_or, parse_duration};
 pub(crate) use machine::check_label;
 pub use machine::{pick_machine, unslot_ports, EnrolledMachine, MachinePick, UserMachine};
+pub use nodes::NodeConfig;
 pub use oauth::{OAuthCallback, OAuthClient, OAuthConfig};
 pub use own_mcp::{box_mcp, BoxMcp, UserMcp, DEFAULT_HEADER};
 pub use service::{MachineService, MachinesConfig};
 pub use surface::{HerdrConfig, SurfaceConfig, SurfaceKind};
+pub use tools::ToolsConfig;
 
 /// herdr session used when `surface.herdr.session` is unset.
 const DEFAULT_HERDR_SESSION: &str = "moor";
@@ -86,6 +90,8 @@ impl BoxSize {
 pub struct BoxConfig {
     /// Box provider id (free string).
     pub provider: Option<String>,
+    /// The shared node new Boxes run on; a key of `nodes`.
+    pub node: Option<String>,
     /// Box size class.
     pub size: Option<BoxSize>,
     /// Cap on live Boxes (at least 1).
@@ -235,28 +241,12 @@ impl DotfilesConfig {
     }
 }
 
-/// `tools:` section: absolute or PATH-relative program overrides.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub struct ToolsConfig {
-    /// `crabbox` program.
-    pub crabbox: Option<PathBuf>,
-    /// `herdr` program.
-    pub herdr: Option<PathBuf>,
-    /// `claude` program.
-    pub claude: Option<PathBuf>,
-    /// `gh` program.
-    pub gh: Option<PathBuf>,
-    /// `ssh` program.
-    pub ssh: Option<PathBuf>,
-    /// `git` program.
-    pub git: Option<PathBuf>,
-}
-
 /// The user config.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct UserConfig {
+    /// Shared nodes by name.
+    pub nodes: BTreeMap<String, NodeConfig>,
     /// Per-provider limits.
     pub drivers: BTreeMap<String, DriverConfig>,
     /// Removed key, kept only so a stale config gets a pointed error; `None` in any config
@@ -363,6 +353,7 @@ impl UserConfig {
             }
         }
         self.box_.validate()?;
+        self.validate_nodes()?;
         for (name, d) in &self.drivers {
             d.validate(name)?;
         }
