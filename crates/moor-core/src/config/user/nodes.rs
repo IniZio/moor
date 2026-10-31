@@ -30,6 +30,13 @@ impl NodeConfig {
                 "runtime must name a crabbox provider",
             ));
         }
+        if self.runtime.contains('@') {
+            return Err(ConfigError::new(
+                format!("nodes.{name}.runtime"),
+                "runtime must be a bare provider id; a machine is a personal node, \
+                 enrolled with `moor-machine-agent --runtime`",
+            ));
+        }
         Ok(())
     }
 }

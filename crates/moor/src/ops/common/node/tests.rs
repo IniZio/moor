@@ -10,11 +10,9 @@ use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
 use super::{backfill, configured};
 use crate::cx::Cx;
-use crate::ops::common::facts::resolved;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
-use moor_core::config::Flags;
 use moor_core::user::UserId;
 
 const KEY: &str =
@@ -120,14 +118,6 @@ fn a_plain_provider_shared_by_several_nodes_goes_to_the_default() {
 }
 
 #[test]
-fn a_config_without_nodes_names_the_node_for_the_provider() {
-    let w = world("box: {provider: local-container}");
-    let id = legacy(&w, "a", "local-container", "h");
-    run(&w);
-    assert_eq!(node_of(&w, id).as_deref(), Some("local-container"));
-}
-
-#[test]
 fn a_box_matching_no_node_stays_unplaced_with_a_warning() {
     let w = world(TWO);
     let id = legacy(&w, "a", "gone", "h");
@@ -154,8 +144,7 @@ fn backfilling_twice_changes_nothing_more() {
 fn a_backfilled_box_counts_toward_its_nodes_capacity() {
     let w = world(TWO);
     legacy(&w, "a", "other", "h");
-    let settings = resolved(&w.cx, None, &Flags::default());
-    let (shared, _) = configured(w.cx.config(), &settings).unwrap();
+    let (shared, _) = configured(w.cx.config()).unwrap();
     let used = |w: &World| {
         let all = w.cx.store().unwrap().nodes(&shared).unwrap();
         all.iter().find(|n| n.name.as_str() == "vm").unwrap().used

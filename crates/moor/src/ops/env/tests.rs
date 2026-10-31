@@ -218,7 +218,7 @@ fn no_repo_adds_no_identity_rows() {
 #[test]
 fn a_config_naming_no_provider_shows_the_provider_as_unset() {
     let d = tempfile::tempdir().unwrap();
-    let cx = Cx::fake_without_provider(
+    let cx = Cx::fake_without_nodes(
         d.path(),
         Arc::new(FakeDriver::new()),
         Arc::new(FakeSurface::new()),

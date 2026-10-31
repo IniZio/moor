@@ -5,7 +5,7 @@ use std::sync::Arc;
 use super::is_working;
 
 use moor_core::boxscript::setup::setup_script;
-use moor_core::config::{BoxConfig, DriverConfig, UserConfig};
+use moor_core::config::{NodeConfig, UserConfig};
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
@@ -41,23 +41,12 @@ struct World {
 
 fn limit(n: u32) -> UserConfig {
     UserConfig {
-        box_: BoxConfig {
-            max_boxes: NonZeroU32::new(n),
-            ..BoxConfig::default()
-        },
-        ..UserConfig::default()
-    }
-}
-
-fn driver_limit(n: u32) -> UserConfig {
-    UserConfig {
-        drivers: BTreeMap::from([(
+        nodes: BTreeMap::from([(
             PROVIDER.to_owned(),
-            DriverConfig {
+            NodeConfig {
+                runtime: PROVIDER.to_owned(),
+                labels: Vec::new(),
                 max_boxes: NonZeroU32::new(n),
-                lookup_timeout_secs: None,
-                strip_env: Vec::new(),
-                cache_volumes: None,
             },
         )]),
         ..UserConfig::default()
@@ -296,14 +285,6 @@ fn a_waiter_on_a_provider_without_reverse_tunnel_is_not_provisioned() {
     assert!(v.promoted.is_empty());
     assert_eq!(acquires(&w), 0);
     assert!(!is_working(&row_of(&w, id)));
-}
-
-#[test]
-fn driver_limit_frees_a_slot_for_the_waiter_too() {
-    let w = world(driver_limit(1), FakeDriver::new());
-    queue(&w, "first");
-    let v = close_holder(&w);
-    assert_eq!(v.promoted, ["first"]);
 }
 
 #[test]

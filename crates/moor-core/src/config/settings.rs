@@ -81,7 +81,7 @@ pub struct CredPlan {
 pub struct BoxSettings {
     /// Agent model: flag > user.
     pub model: Option<Sourced<String>>,
-    /// Box provider: the user config only, never the repo; `None` when it names none.
+    /// Runtime of the default node: the user config only, never the repo; `None` when it names none.
     pub provider: Option<Sourced<String>>,
     /// Shared node: the user config only, never the repo; `box.node`, else the only node.
     pub node: Option<Sourced<String>>,
@@ -149,14 +149,13 @@ impl BoxSettings {
             (None, Some(m)) => Some(Sourced::new(m.clone(), Layer::User)),
             (None, None) => None,
         };
-        let provider = user
-            .box_
-            .provider
-            .as_ref()
-            .map(|p| Sourced::new(p.clone(), Layer::User));
         let node = user
             .default_node()
             .map(|n| Sourced::new(n.to_owned(), Layer::User));
+        let provider = node.as_ref().and_then(|n| {
+            let runtime = &user.nodes.get(&n.value)?.runtime;
+            Some(Sourced::new(runtime.clone(), Layer::User))
+        });
         let size = match (r.box_.size, user.box_.size) {
             (Some(s), _) => Sourced::new(s, Layer::Repo),
             (None, Some(s)) => Sourced::new(s, Layer::User),

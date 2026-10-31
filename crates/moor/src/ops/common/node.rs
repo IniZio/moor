@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use moor_core::box_key::PoolSeat;
-use moor_core::config::{BoxSettings, Flags, NodeConfig, UserConfig};
+use moor_core::config::{NodeConfig, UserConfig};
 use moor_core::decide::schedule::{schedule, BoxSpec, Node, Scope, Verdict};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
@@ -15,28 +15,24 @@ use moor_core::{ErrorKind, ProviderId};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::facts::{provider_caps, provider_of, require_reverse_tunnel, resolved};
+use crate::ops::common::facts::{provider_caps, require_reverse_tunnel};
 use crate::store::{BoxRow, DriverRow, Store};
 
-/// The shared nodes and the default one. A config without `nodes:` gets one shared node built
-/// from `box.provider`, named for it, limited by `drivers.<provider>.max_boxes` or `box.max_boxes`.
+/// The shared nodes and the default one.
 ///
 /// # Errors
-/// No node is configured and `box.provider` is unset, or several are and `box.node` is unset.
+/// No node is configured, or several are and `box.node` is unset.
 pub(crate) fn configured(
     user: &UserConfig,
-    settings: &BoxSettings,
 ) -> Result<(BTreeMap<String, NodeConfig>, NodeName), CommandError> {
     if user.nodes.is_empty() {
-        let provider = provider_of(settings)?;
-        let name = NodeName::parse(provider).unwrap_or_else(|_| name("default"));
-        let node = NodeConfig {
-            runtime: provider.to_owned(),
-            labels: Vec::new(),
-            max_boxes: (user.drivers.get(provider).and_then(|d| d.max_boxes))
-                .or(user.box_.max_boxes),
-        };
-        return Ok((BTreeMap::from([(name.to_string(), node)]), name));
+        return Err(CommandError::new(
+            ErrorKind::Refused,
+            "no nodes are configured, so moor cannot start a new Box: set `nodes: {name: {runtime: <provider>}}` in the user \
+             config ($MOOR_CONFIG, else $XDG_CONFIG_HOME/moor/config.yaml, else \
+             ~/.config/moor/config.yaml)",
+        )
+        .with_hint("for example `nodes: {local: {runtime: local-container}}`"));
     }
     let default = user
         .default_node()
@@ -50,20 +46,24 @@ pub(crate) fn configured(
     Ok((user.nodes.clone(), default))
 }
 
-/// A node name known to be valid.
-fn name(s: &str) -> NodeName {
-    NodeName::parse(s).unwrap_or_else(|e| unreachable!("{s}: {e}"))
+/// The runtime of the default shared node.
+///
+/// # Errors
+/// [`configured`]'s errors.
+pub(crate) fn default_runtime(cx: &Cx) -> Result<ProviderId, CommandError> {
+    let (shared, default) = configured(cx.config())?;
+    shared
+        .get(default.as_str())
+        .map(|n| ProviderId::new(n.runtime.as_str()))
+        .ok_or_else(|| CommandError::new(ErrorKind::Refused, "box.node names no configured node"))
 }
 
 /// Every node with the Boxes on it, and the default shared node.
 ///
 /// # Errors
 /// [`configured`]'s errors, or a store failure.
-pub(crate) fn nodes(
-    cx: &Cx,
-    settings: &BoxSettings,
-) -> Result<(Vec<Node>, NodeName), CommandError> {
-    let (shared, default) = configured(cx.config(), settings)?;
+pub(crate) fn nodes(cx: &Cx) -> Result<(Vec<Node>, NodeName), CommandError> {
+    let (shared, default) = configured(cx.config())?;
     Ok((cx.store()?.nodes(&shared)?, default))
 }
 
@@ -118,12 +118,11 @@ pub(crate) fn seat_of(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
-    settings: &BoxSettings,
 ) -> Result<Option<PoolSeat>, CommandError> {
     let Some(want) = store.box_spec(row.id)?.node else {
         return Ok(None);
     };
-    let shared = configured(cx.config(), settings).map_or_else(|_| BTreeMap::new(), |(s, _)| s);
+    let shared = configured(cx.config()).map_or_else(|_| BTreeMap::new(), |(s, _)| s);
     let all = store.nodes(&shared)?;
     all.iter()
         .find(|n| n.name == want)
@@ -150,11 +149,10 @@ pub(crate) fn admit(
     cx: &Cx,
     store: &Store,
     (row, fresh): (&BoxRow, bool),
-    settings: &BoxSettings,
     requested: impl FnOnce(&ProviderId) -> Decision,
 ) -> Result<Option<Bound>, CommandError> {
     let spec = store.box_spec(row.id)?;
-    let (all, default) = nodes(cx, settings)?;
+    let (all, default) = nodes(cx)?;
     let picked = match verdict(cx, (&all, &default), row.user, &spec) {
         Verdict::Fail { reason } if fresh => {
             return Err(CommandError::new(ErrorKind::Refused, reason));
@@ -214,10 +212,9 @@ pub(crate) fn admit(
 pub(crate) fn preflight(
     cx: &Cx,
     user: UserId,
-    settings: &BoxSettings,
     spec: &BoxSpec,
 ) -> Result<Option<String>, CommandError> {
-    let (all, default) = nodes(cx, settings)?;
+    let (all, default) = nodes(cx)?;
     let picked = match verdict(cx, (&all, &default), Some(user), spec) {
         Verdict::Fail { reason } => return Err(CommandError::new(ErrorKind::Refused, reason)),
         Verdict::Bind { node, .. } | Verdict::Pending { node, .. } => node,
@@ -274,8 +271,7 @@ fn legacy_node(all: &[Node], default: Option<&NodeName>, held: &DriverRow) -> Op
 /// # Errors
 /// A store failure.
 pub(crate) fn backfill(cx: &Cx, store: &Store) -> Result<(), CommandError> {
-    let settings = resolved(cx, None, &Flags::default());
-    let (shared, default) = match configured(cx.config(), &settings) {
+    let (shared, default) = match configured(cx.config()) {
         Ok((shared, default)) => (shared, Some(default)),
         Err(_) => (BTreeMap::new(), None),
     };

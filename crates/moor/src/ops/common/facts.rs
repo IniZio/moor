@@ -51,21 +51,6 @@ pub(crate) fn resolved(cx: &Cx, repo: Option<&RepoConfig>, flags: &Flags) -> Box
     BoxSettings::resolve(cx.config(), repo, flags)
 }
 
-/// The provider new Boxes use, from the user config.
-///
-/// # Errors
-/// The user config sets no `box.provider`.
-pub(crate) fn provider_of(cfg: &BoxSettings) -> Result<&str, CommandError> {
-    cfg.provider.as_ref().map(|p| p.value.as_str()).ok_or_else(|| {
-        CommandError::new(
-            ErrorKind::Refused,
-            "box.provider is not set, so moor cannot start a new Box: set it in the user config \
-             ($MOOR_CONFIG, else $XDG_CONFIG_HOME/moor/config.yaml, else ~/.config/moor/config.yaml)",
-        )
-        .with_hint("for example `box: {provider: local-container}`")
-    })
-}
-
 /// The capabilities of the settings' provider.
 ///
 /// # Errors

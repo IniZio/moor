@@ -20,7 +20,7 @@ use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::cache;
 use crate::ops::common::dotfiles::{self, DotfilesRun};
-use crate::ops::common::facts::{provider_caps, provider_of, require_reverse_tunnel, settings_of};
+use crate::ops::common::facts::{provider_caps, require_reverse_tunnel, settings_of};
 use crate::ops::common::node::{self, Bound};
 use crate::ops::common::setup;
 use crate::ops::common::view::box_view;
@@ -152,20 +152,20 @@ pub(crate) fn provision(
     };
     let bound = if matches!(entry, Entry::Fresh | Entry::Waiting) {
         let fresh = (&started, entry == Entry::Fresh);
-        match node::admit(cx, store, fresh, cfg, requested)? {
+        match node::admit(cx, store, fresh, requested)? {
             Some(bound) => bound,
             None => return Ok(Provisioned::skipped()),
         }
     } else {
         let provider = match started.boxed.as_ref() {
             Some(held) => held.provider.clone(),
-            None => ProviderId::new(provider_of(cfg)?),
+            None => node::default_runtime(cx)?,
         };
         let caps =
             require_reverse_tunnel(provider.as_str(), provider_caps(cx, provider.as_str())?)?;
         store.apply(requested(&provider))?;
         Bound {
-            seat: node::seat_of(cx, store, &started, cfg)?,
+            seat: node::seat_of(cx, store, &started)?,
             provider,
             caps,
         }
