@@ -36,6 +36,7 @@ fn warmup(cache: Option<super::lease::Cache>) -> super::Op {
         slug: Some("moor-1a2b3c4d-7".to_owned()),
         key: None,
         cache,
+        class: None,
     }
 }
 
@@ -65,4 +66,18 @@ fn a_lease_carries_its_cache_both_ways() {
     let json = serde_json::to_string(&op).unwrap();
     assert!(json.contains(r#""sizeGB":4"#), "{json}");
     assert_eq!(serde_json::from_str::<super::Op>(&json).unwrap(), op);
+}
+
+#[test]
+fn a_warmup_carries_its_class_and_names_none_without_one() {
+    let mut op = warmup(None);
+    if let super::Op::Lease { class, .. } = &mut op {
+        *class = Some("fast".to_owned());
+    }
+    let json = serde_json::to_string(&op).unwrap();
+    assert!(json.ends_with(r#","class":"fast"}"#), "{json}");
+    assert_eq!(serde_json::from_str::<super::Op>(&json).unwrap(), op);
+    assert!(!serde_json::to_string(&warmup(None))
+        .unwrap()
+        .contains("class"));
 }

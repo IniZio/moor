@@ -61,7 +61,9 @@ fn the_dial_command_quotes_paths_for_the_shell_and_ssh() {
 fn a_missing_broker_is_an_error_not_a_panic() {
     let dir = tempfile::tempdir().unwrap();
     let links = links(dir.path());
-    assert!(links.lease(1, Verb::List, None, None, None).is_err());
+    assert!(links
+        .lease(1, Verb::List, None, None, &Boot::default())
+        .is_err());
     assert!(links.status(1).is_err());
 }
 

@@ -7,7 +7,7 @@ use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use moor_client::link::lease::{Answer, Cache, Verb};
+use moor_client::link::lease::{Answer, Boot, Verb};
 use moor_core::box_key::{parse_pool_slug, BoxKey, WORK_ROOT};
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::driver::{
@@ -20,14 +20,14 @@ use super::{handle_of, pin, split_handle, Crabbox};
 /// broker.
 pub(crate) trait PoolHosts: Send + Sync {
     /// Asks machine `machine_id` to do `verb` to `slug`; an authorize carries public `key`, a
-    /// warmup the `cache` it mounts.
+    /// warmup the `boot` it boots with.
     fn lease(
         &self,
         machine_id: i64,
         verb: Verb,
         slug: Option<&str>,
         key: Option<&str>,
-        cache: Option<&Cache>,
+        boot: &Boot,
     ) -> Result<Answer, String>;
     /// The ssh `ProxyCommand` that dials `slug`'s sshd on machine `machine_id`.
     fn dial_command(&self, machine_id: i64, slug: &str) -> String;
@@ -47,16 +47,16 @@ impl Placed<'_> {
     /// Does `verb` to the lease.
     fn ask(&self, verb: Verb, key: Option<&str>) -> Result<Answer, DriverError> {
         self.hosts
-            .lease(self.machine, verb, Some(self.slug), key, None)
+            .lease(self.machine, verb, Some(self.slug), key, &Boot::default())
             .map_err(failed)
     }
 
-    /// Boots the lease's VM with `cache` mounted.
-    fn warmup(&self, cache: Option<&Cache>) -> Result<(), DriverError> {
+    /// Boots the lease's VM with `boot`.
+    fn warmup(&self, boot: &Boot) -> Result<(), DriverError> {
         let verb = Verb::Warmup;
         match self
             .hosts
-            .lease(self.machine, verb, Some(self.slug), None, cache)
+            .lease(self.machine, verb, Some(self.slug), None, boot)
         {
             Ok(Answer::Done) => Ok(()),
             Ok(other) => Err(unexpected(verb, &other)),
@@ -202,7 +202,17 @@ pub(super) fn acquire(cb: &Crabbox, req: &AcquireReq) -> Result<Acquired, Driver
     let handle = planned(req)?;
     let placed = cb.placed(&handle)?;
     cb.forget_targets(&handle);
-    placed.warmup(super::cache::lease(&req.cache).as_ref())?;
+    // A Box with no size leaves the class to the host's provider, as an older agent knows no
+    // class to take.
+    let class = req
+        .class
+        .as_deref()
+        .map(|size| super::size_of(Some(size)))
+        .transpose()?;
+    placed.warmup(&Boot {
+        cache: super::cache::lease(&req.cache),
+        class: class.map(str::to_owned),
+    })?;
     let reached = cb.controller_key().and_then(|key| {
         let public = fs::read_to_string(key.with_extension("pub"))
             .map_err(|e| failed(format!("cannot read the controller's public key: {e}")))?;

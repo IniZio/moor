@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_client::link::lease::{Answer, Cache, Verb};
+use moor_client::link::lease::{Answer, Boot, Verb};
 use moor_client::link::status::Status;
 
 use crate::adapters::crabbox::PoolHosts;
@@ -25,9 +25,9 @@ impl PoolHosts for Links {
         verb: Verb,
         slug: Option<&str>,
         key: Option<&str>,
-        cache: Option<&Cache>,
+        boot: &Boot,
     ) -> Result<Answer, String> {
-        self.0.lease(machine_id, verb, slug, key, cache)
+        self.0.lease(machine_id, verb, slug, key, boot)
     }
 
     fn dial_command(&self, machine_id: i64, slug: &str) -> String {
