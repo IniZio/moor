@@ -41,6 +41,7 @@ mod others;
 mod parent;
 mod pool;
 mod profile;
+mod profile_env;
 mod profile_install;
 mod profile_model;
 mod profile_setup;

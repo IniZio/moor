@@ -146,7 +146,7 @@ address and the ref, never a credential; the repo is read with the user's own
 `github` secret. The repo may hold:
 
 ```
-moor-profile.yaml        # model, plugin marketplaces and plugins per agent
+moor-profile.yaml        # model, plugin marketplaces, plugins and env per agent
 AGENTS.md                # agent-neutral instructions
 skills/<name>/SKILL.md   # Agent Skills
 claude/settings.json     # merged into ~/.claude/settings.json
@@ -155,6 +155,33 @@ setup.sh                 # installs the tools the profile's plugins need
 ```
 
 Each new Box reads the profile when it starts.
+
+An agent section of `moor-profile.yaml` can set `env`, environment variables the
+agent process starts with. This is the way to set one a tool reads only at
+process start, which the agent's own `settings.json` `env` is too late for. For
+example, to preload a script into every Box's Claude Code under Bun:
+
+```yaml
+claude:
+  env:
+    BUN_OPTIONS: "--preload={profile}/claude/no-agent-summary.js"
+```
+
+- Values are literal strings. `{home}` becomes the Box user's home and
+  `{profile}` the profile checkout (`~/.moor-profile/person`, as an absolute
+  path). Nothing else is expanded and the value is quoted, so `$(...)`, backticks
+  and `$VAR` stay as written. Quote values that YAML would read as a number or a
+  boolean.
+- The names follow the same rules as the repo's `env` in
+  [`.moor.yaml`](#mooryaml): a name that looks like a credential (it contains
+  `TOKEN`, `SECRET`, `KEY`, `PASSWORD`, `PASSWD` or `CREDENTIAL`), `PATH`, and
+  the other names moor sets itself or that can load code into the agent are
+  refused. A refused name is dropped with a profile warning, and the Box still
+  starts.
+- When the repo's `env` sets the same name, the repo's value replaces the
+  profile's. The two are never merged, so a repo's `BUN_OPTIONS` drops the
+  profile's flags. moor drops the profile's value with a profile warning that
+  names the variable, so an override is never silent.
 
 When the repo has a `setup.sh` at its root, each new Box runs `sh setup.sh` once
 after fetching the profile, from the checkout (`~/.moor-profile/person`), as the

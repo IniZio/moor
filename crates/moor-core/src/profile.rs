@@ -74,6 +74,9 @@ pub struct ClaudeSection {
     pub marketplaces: BTreeMap<String, GithubRepo>,
     /// Plugins to install; each names a declared marketplace.
     pub plugins: Vec<PluginRef>,
+    /// Environment variables the agent process starts with: literal values, where `{home}` and
+    /// `{profile}` stand for the Box user's home and the profile checkout.
+    pub env: BTreeMap<String, String>,
 }
 
 /// The `codex:` section.

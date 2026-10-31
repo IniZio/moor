@@ -34,6 +34,7 @@ mod needs;
 pub(crate) mod pool;
 mod preflight;
 mod profile;
+mod profile_env;
 mod relaunch;
 mod reopen;
 pub(crate) mod repo;

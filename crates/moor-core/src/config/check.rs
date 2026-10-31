@@ -59,6 +59,13 @@ pub fn credential_like_env(s: &str) -> bool {
     MARKS.iter().any(|m| upper.contains(m))
 }
 
+/// True when a repo or profile `env` may not hand the variable `s` to the agent, because it looks
+/// like a credential or is set by moor.
+#[must_use]
+pub fn agent_env_refused(s: &str) -> bool {
+    credential_like_env(s) || agent_env_reserved(s)
+}
+
 /// True when `s` is set by moor for the agent, or can load code into the agent's shell or
 /// runtime, so a repo `env` may not set it.
 ///

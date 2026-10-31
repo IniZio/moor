@@ -15,6 +15,7 @@ use moor_core::seam::surface::{PaneRef, WorkspaceRef};
 use moor_core::view::{AgentLaunchView, LaunchFailure};
 use moor_core::{BoxId, StartReq, Warning};
 
+use super::profile_env;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::box_exec;
@@ -166,6 +167,7 @@ pub(super) fn begin(
         proxy.rule_env.clone(),
     );
     let mut launch = launch.clone();
+    profile_env::settle(cx, store, id, launch.profile.as_mut(), &proxy.addr.box_env)?;
     launch.proxy = Some(Arc::new(proxy.addr));
     let launch = &launch;
     let leases = match plan_dirs(cx, store, id, launch)? {

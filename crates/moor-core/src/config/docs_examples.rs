@@ -9,6 +9,7 @@ enum Kind {
     User,
     Repo,
     Controller,
+    Profile,
 }
 
 struct Block {
@@ -26,9 +27,12 @@ fn kind_of(heading: &str) -> Option<Kind> {
     }
 }
 
-/// Each yaml fence, classified by the nearest preceding `## ` heading.
+/// Each yaml fence, classified by the nearest preceding `## ` heading, except that the
+/// per-user agent profile's `### ` section holds `moor-profile.yaml` examples, which the
+/// profile's own tests parse.
 fn yaml_blocks() -> Vec<Block> {
     let mut blocks = Vec::new();
+    let mut section = None;
     let mut kind = None;
     let mut open: Option<Block> = None;
     for (i, line) in DOC.lines().enumerate() {
@@ -46,7 +50,14 @@ fn yaml_blocks() -> Vec<Block> {
                 text: String::new(),
             });
         } else if let Some(heading) = line.strip_prefix("## ") {
-            kind = kind_of(heading.trim());
+            section = kind_of(heading.trim());
+            kind = section;
+        } else if let Some(heading) = line.strip_prefix("### ") {
+            kind = if heading.trim() == "Per-user agent profile" {
+                Some(Kind::Profile)
+            } else {
+                section
+            };
         }
     }
     assert!(open.is_none(), "docs/config.md ends inside a yaml fence");
@@ -68,6 +79,7 @@ fn every_yaml_example_in_config_md_parses() {
                 Some(Kind::Controller) => {
                     parse_controller(file, &b.text).err().map(|e| e.to_string())
                 }
+                Some(Kind::Profile) => None,
             };
             err.map(|e| format!("docs/config.md:{} ({:?}): {e}", b.line, b.kind))
         })
