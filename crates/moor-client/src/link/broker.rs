@@ -42,6 +42,9 @@ pub enum PoolOp {
         /// The cache volumes a warmup mounts; none for every other verb.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cache: Option<lease::Cache>,
+        /// The machine class a warmup boots; none for every other verb.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        class: Option<String>,
     },
     /// [`Op::Dial`].
     Dial {
@@ -60,11 +63,13 @@ impl From<PoolOp> for Op {
                 slug,
                 key,
                 cache,
+                class,
             } => Self::Lease {
                 verb,
                 slug,
                 key,
                 cache,
+                class,
             },
             PoolOp::Dial { slug } => Self::Dial { slug },
             PoolOp::Status => Self::Status,
@@ -96,13 +101,13 @@ pub enum Brokered {
 }
 
 /// Asks the broker at `socket` to do `verb` to `slug` on machine `machine_id`; a warmup
-/// mounts `cache`.
+/// boots with `boot`.
 pub async fn lease(
     socket: &Path,
     machine_id: i64,
     verb: lease::Verb,
     slug: Option<&str>,
-    cache: Option<lease::Cache>,
+    boot: lease::Boot,
 ) -> Result<lease::Answer, String> {
     let slug = slug.map(str::to_owned);
     leased(
@@ -112,7 +117,8 @@ pub async fn lease(
             verb,
             slug,
             key: None,
-            cache,
+            cache: boot.cache,
+            class: boot.class,
         },
     )
     .await
@@ -131,6 +137,7 @@ pub async fn authorize(
         slug: Some(slug.to_owned()),
         key: Some(key.to_owned()),
         cache: None,
+        class: None,
     };
     leased(socket, machine_id, op).await
 }

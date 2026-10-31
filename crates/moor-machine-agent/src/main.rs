@@ -8,7 +8,7 @@ use clap::{Parser, Subcommand};
 use moor_client::oidc::{Console, Ui, REDIRECT_PORT};
 use std::path::PathBuf;
 
-use moor_client::link::lease::{Cache, Verb};
+use moor_client::link::lease::{Boot, Cache, Verb};
 use moor_client::link::ops::Reply;
 use moor_machine_agent::pool::{dial, lease, splice};
 use moor_machine_agent::{enroll, run_with, state_dir, update, Enroll, Machine, Pool};
@@ -80,6 +80,9 @@ enum Command {
         /// The cache volumes a warmup mounts, as the link carries them in JSON.
         #[arg(long, value_parser = cache)]
         cache: Option<Cache>,
+        /// crabbox's machine class a warmup boots.
+        #[arg(long)]
+        class: Option<String>,
         /// The pool.
         #[command(flatten)]
         pool: PoolFlags,
@@ -185,8 +188,9 @@ fn main() -> ExitCode {
             verb,
             slug,
             cache,
+            class,
             pool,
-        } => return lease_here(pool, verb, slug.as_deref(), cache.as_ref()),
+        } => return lease_here(pool, verb, slug.as_deref(), &Boot { cache, class }),
         Command::Dial { slug, pool } => {
             return on_pool(pool, |rt, home, pool| {
                 rt.block_on(async {
@@ -244,10 +248,10 @@ fn runtime() -> Result<tokio::runtime::Runtime, String> {
         .map_err(|e| format!("cannot start: {e}"))
 }
 
-/// Does `verb` to lease `slug` here, with `cache` on a warmup, and prints the answer.
-fn lease_here(flags: PoolFlags, verb: Verb, slug: Option<&str>, cache: Option<&Cache>) -> ExitCode {
+/// Does `verb` to lease `slug` here, with `boot` on a warmup, and prints the answer.
+fn lease_here(flags: PoolFlags, verb: Verb, slug: Option<&str>, boot: &Boot) -> ExitCode {
     on_pool(flags, |rt, home, pool| {
-        let reply = rt.block_on(lease(&home, &pool, verb, slug, None, cache));
+        let reply = rt.block_on(lease(&home, &pool, verb, slug, None, boot));
         let line = serde_json::to_string(&reply).map_err(|e| e.to_string())?;
         let _ = writeln!(std::io::stdout(), "{line}");
         match reply {

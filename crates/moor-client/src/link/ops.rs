@@ -135,6 +135,9 @@ pub enum Op {
         /// The cache volumes a warmup mounts; none for every other verb.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cache: Option<lease::Cache>,
+        /// The machine class a warmup boots; none for every other verb.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        class: Option<String>,
     },
     /// Carry the stream to and from the sshd of a pool lease's VM; only a pool host serves it.
     Dial {

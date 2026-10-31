@@ -9,7 +9,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
-use moor_client::link::lease::{Answer, Cache, Verb};
+use moor_client::link::lease::{Answer, Boot, Cache, Verb};
 use moor_core::box_key::{ControllerId, PoolSeat};
 use moor_core::cache::{CacheLayers, CachePlan, CacheSalt};
 use moor_core::config::parse_repo;
@@ -37,6 +37,7 @@ struct FakeHost {
     asked: Mutex<Vec<Asked>>,
     machines: Mutex<Vec<i64>>,
     caches: Mutex<Vec<Option<Cache>>>,
+    classes: Mutex<Vec<Option<String>>>,
 }
 
 impl FakeHost {
@@ -59,10 +60,11 @@ impl PoolHosts for FakeHost {
         verb: Verb,
         slug: Option<&str>,
         key: Option<&str>,
-        cache: Option<&Cache>,
+        boot: &Boot,
     ) -> Result<Answer, String> {
         self.machines.lock().unwrap().push(machine_id);
-        self.caches.lock().unwrap().push(cache.cloned());
+        self.caches.lock().unwrap().push(boot.cache.clone());
+        self.classes.lock().unwrap().push(boot.class.clone());
         self.asked
             .lock()
             .unwrap()
@@ -367,4 +369,49 @@ fn acquire_of_a_cold_box_sends_no_cache() {
     let (host, cb) = rig();
     cb.acquire(&req()).unwrap();
     assert!(host.caches.lock().unwrap().iter().all(Option::is_none));
+}
+
+#[test]
+fn a_sized_box_boots_the_class_its_size_asks_for() {
+    let (host, cb) = rig();
+    let mut sized = req();
+    sized.class = Some("medium".to_owned());
+    cb.acquire(&sized).unwrap();
+    let classes = host.classes.lock().unwrap().clone();
+    assert_eq!(classes[0].as_deref(), Some("fast"));
+    assert!(classes[1..].iter().all(Option::is_none), "{classes:?}");
+}
+
+#[test]
+fn a_box_with_no_size_leaves_the_class_to_the_host() {
+    let (host, cb) = rig();
+    cb.acquire(&req()).unwrap();
+    assert!(host.classes.lock().unwrap().iter().all(Option::is_none));
+}
+
+#[test]
+fn an_unknown_size_fails_before_any_lease() {
+    let (host, cb) = rig();
+    let mut sized = req();
+    sized.class = Some("huge".to_owned());
+    let err = cb.acquire(&sized).unwrap_err();
+    assert!(err.to_string().contains("unknown box size"), "{err}");
+    assert!(host.verbs().is_empty());
+}
+
+#[test]
+fn a_class_the_host_refuses_fails_the_acquire_with_its_reason() {
+    let (host, cb) = rig();
+    host.answer(
+        Verb::Warmup,
+        Err("crabbox warmup failed (Some(2)): unknown class fast".to_owned()),
+    );
+    let mut sized = req();
+    sized.class = Some("medium".to_owned());
+    let err = cb.acquire(&sized).unwrap_err();
+    assert!(err.to_string().contains("unknown class fast"), "{err}");
+    assert_eq!(
+        host.verbs().iter().filter(|v| **v == Verb::Warmup).count(),
+        1
+    );
 }

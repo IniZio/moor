@@ -306,3 +306,65 @@ fn only_a_warmup_takes_a_cache() {
     assert!(!ok);
     assert_eq!(answer["reason"], "only a warmup mounts a cache");
 }
+
+#[test]
+fn a_warmup_boots_the_class_it_names() {
+    let home = home();
+    let got = lease(
+        home.path(),
+        &["warmup", "moor-1a2b3c4d-7", "--class", "fast"],
+    );
+    assert_eq!(got, (true, DONE()));
+    let calls = fake_crabbox::calls(home.path());
+    assert!(
+        calls.ends_with(" warmup --provider fake --class fast --slug moor-1a2b3c4d-7\n"),
+        "{calls}"
+    );
+}
+
+#[test]
+fn a_bad_class_is_refused_before_crabbox_runs() {
+    let long = "c".repeat(33);
+    for class in [
+        "", "--help", "-x", "Fast", "a b", "../x", "a/b", "fast;rm", &long,
+    ] {
+        let home = home();
+        let flag = format!("--class={class}");
+        let (ok, answer) = lease(home.path(), &["warmup", "moor-1a2b3c4d-7", &flag]);
+        assert!(!ok, "{class:?}: {answer}");
+        assert!(
+            answer["reason"].as_str().unwrap().contains("machine class"),
+            "{class:?}: {answer}"
+        );
+        assert!(
+            fake_crabbox::calls(home.path()).is_empty(),
+            "{class:?}: crabbox ran"
+        );
+    }
+}
+
+#[test]
+fn only_a_warmup_takes_a_class() {
+    let home = warmed();
+    let (ok, answer) = lease(
+        home.path(),
+        &["pause", "moor-1a2b3c4d-7", "--class", "fast"],
+    );
+    assert!(!ok);
+    assert_eq!(answer["reason"], "only a warmup boots a machine class");
+}
+
+#[test]
+fn a_class_crabbox_rejects_fails_the_warmup_without_a_retry() {
+    let home = home();
+    std::fs::write(home.path().join("no-class"), "").unwrap();
+    let (ok, answer) = lease(
+        home.path(),
+        &["warmup", "moor-1a2b3c4d-7", "--class", "beast"],
+    );
+    assert!(!ok);
+    let reason = answer["reason"].as_str().unwrap();
+    assert!(reason.contains("unknown class for provider"), "{reason}");
+    let calls = fake_crabbox::calls(home.path());
+    assert_eq!(calls.lines().count(), 1, "{calls}");
+}

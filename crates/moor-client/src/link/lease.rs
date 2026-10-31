@@ -56,6 +56,15 @@ pub struct Lease {
     pub state: String,
 }
 
+/// What a warmup boots its VM with, beyond its slug.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Boot {
+    /// The cache volumes it mounts.
+    pub cache: Option<Cache>,
+    /// crabbox's machine class; none leaves it to the provider.
+    pub class: Option<String>,
+}
+
 /// The cache volumes a warmup mounts, as crabbox reads them from `CRABBOX_CACHE_VOLUMES` and
 /// `CRABBOX_CACHE_SCOPE`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
