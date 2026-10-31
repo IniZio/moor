@@ -15,6 +15,7 @@ fn main() -> ExitCode {
             for line in bad {
                 eprintln!("{line}");
             }
+            eprintln!("{}", layering::FIX);
             ExitCode::FAILURE
         }
         Err(e) => {

@@ -42,6 +42,7 @@ hits=$( { grep "${scan[@]}" -wF "${word_args[@]}" crates/ || true
 if [ -n "$hits" ]; then
   echo "removed-names: removed names found"
   echo "$hits"
+  echo "fix: the name was retired; use what replaced it (git log -S'<name>' shows the change), or pick a new name"
   exit 1
 fi
 
@@ -54,6 +55,7 @@ flag_hits=$(grep -rnIF -e '--no-sync' -e '--sync' -e '--trust-moor-yaml' \
 if [ -n "$flag_hits" ]; then
   echo "removed-names: removed run flags found"
   echo "$flag_hits"
+  echo "fix: these run flags were removed; drop them from the docs and code"
   exit 1
 fi
 
@@ -84,6 +86,7 @@ task_hits=$(grep -rniI --exclude-dir=target --exclude=Cargo.lock -e task "${targ
 if [ -n "$task_hits" ]; then
   echo "removed-names: the removed Task concept found"
   echo "$task_hits"
+  echo "fix: rename moor's own identifiers; a name moor must read from another tool goes in tools/removed-names.allow as that exact string, with a comment naming its source"
   exit 1
 fi
 echo "removed-names: ok"

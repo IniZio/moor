@@ -1,5 +1,10 @@
 //! Module layering check: which crate modules may name which others.
 
+/// How to clear a failure, printed after the violations.
+pub const FIX: &str = "fix: add the used module to the user's row in tools/layering.tsv when the use belongs there; \
+for a confined extern crate, keep that code in the allowed module and hand the caller a trait (see moor::wire). \
+Only #[cfg(test)] items, tests.rs files and tests/ directories are skipped.";
+
 mod confine;
 
 pub use confine::{escapes, Confine};

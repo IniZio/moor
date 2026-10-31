@@ -26,6 +26,7 @@ hits=$(scan crates/)
 if [ -n "$hits" ]; then
   echo "box-key: identifiers built outside the BoxKey seam"
   echo "$hits"
+  echo "fix: build the name with a moor_core::box_key::BoxKey method, adding one there if none fits"
   exit 1
 fi
 echo "box-key: ok"
