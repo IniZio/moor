@@ -21,7 +21,7 @@ box:
 `runtime` is the crabbox provider the node's Boxes run on, `labels` are what a
 Box may require of the node, and `max_boxes` caps its live Boxes. `box.node`
 names the default shared node; it is required when `nodes` has more than one
-entry. A config with no `nodes` has one shared node built from `box.provider`.
+entry. The controller needs at least one node to start Boxes.
 
 A personal node is a machine its owner enrolled with a runtime. Only its owner
 can use it. The node is named for the machine and is online while the machine's
