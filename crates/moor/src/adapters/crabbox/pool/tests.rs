@@ -12,11 +12,14 @@ use std::sync::{Arc, Mutex};
 use moor_client::link::lease::{Answer, Verb};
 use moor_core::box_key::{ControllerId, PoolSeat};
 use moor_core::name::{BoxHandle, BoxId, ProviderId};
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, Released, SleepOutcome};
+use moor_core::seam::driver::{
+    AcquireReq, Driver, DriverError, Released, SleepOutcome, TunnelFailure,
+};
+use moor_core::seam::proc::Tool;
 
 use super::PoolHosts;
 use crate::adapters::crabbox::Crabbox;
-use crate::testing::proc::ScriptedProc;
+use crate::testing::proc::{ChildReply, ScriptedProc};
 
 const HOST_KEY: &str =
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFFFDh4nOGugXrBRSnPSMPjAYOcCtjIpXx11b21eJfMv";
@@ -79,10 +82,13 @@ fn info(user: &str, key: &str) -> Answer {
 }
 
 fn rig() -> (Arc<FakeHost>, Crabbox) {
+    rig_on(Arc::new(ScriptedProc::new()))
+}
+
+fn rig_on(proc: Arc<ScriptedProc>) -> (Arc<FakeHost>, Crabbox) {
     let host = Arc::new(FakeHost::default());
     host.answer(Verb::Info, Ok(info("crabbox", HOST_KEY)));
-    let cb = Crabbox::fake(Arc::new(ScriptedProc::new()))
-        .with_pool_hosts(Some(Arc::clone(&host) as Arc<dyn PoolHosts>));
+    let cb = Crabbox::fake(proc).with_pool_hosts(Some(Arc::clone(&host) as Arc<dyn PoolHosts>));
     (host, cb)
 }
 
@@ -221,4 +227,98 @@ fn an_acquire_with_no_pool_machine_fails_and_caps_need_no_crabbox() {
     assert!(host.verbs().is_empty());
     let caps = cb.caps(&ProviderId::new("external@hv")).unwrap();
     assert!(caps.reverse_tunnel && caps.wake);
+}
+
+/// A pool Box whose ssh child answers `replies` in order, the last one repeating.
+fn tunnel_rig(replies: &[ChildReply]) -> (Arc<ScriptedProc>, Crabbox) {
+    let p = Arc::new(ScriptedProc::new());
+    let (last, first) = replies.split_last().unwrap();
+    for r in first {
+        p.once_child(Tool::Ssh, &["-T"], r.clone());
+    }
+    p.on_child(Tool::Ssh, &["-T"], last.clone());
+    let (_, cb) = rig_on(Arc::clone(&p));
+    (p, cb)
+}
+
+fn refused() -> ChildReply {
+    ChildReply::Exit {
+        code: 255,
+        stderr: "bind [127.0.0.1]:41000: Address already in use\n\
+                 Could not request local forwarding."
+            .to_owned(),
+    }
+}
+
+fn ssh_spawns(p: &ScriptedProc) -> usize {
+    p.calls().len()
+}
+
+#[test]
+fn a_pool_local_tunnel_forwards_a_host_port_over_the_pool_words() {
+    let (p, cb) = tunnel_rig(&[ChildReply::Ready("ready".to_owned())]);
+    let t = cb.local_tunnel(&handle(), 8080).unwrap();
+    let args = p.calls()[0].args.clone();
+    let words = args.join(" ");
+    assert_ne!(t.host_port, 0);
+    let forward = format!("-L 127.0.0.1:{}:127.0.0.1:8080 ", t.host_port);
+    for want in [
+        "-T",
+        "ExitOnForwardFailure=yes",
+        forward.as_str(),
+        "IdentitiesOnly=yes",
+        "ProxyCommand=moor link-dial 42 moor-1a2b3c4d-9101",
+        "crabbox@moor-1a2b3c4d-9101",
+    ] {
+        assert!(words.contains(want), "{want} in {words}");
+    }
+    assert!(t.tunnel.alive());
+    let pid = t.tunnel.pid();
+    drop(t);
+    assert_eq!(p.dropped(), [pid]);
+}
+
+#[test]
+fn a_pool_local_tunnel_that_loses_its_port_tries_a_second_one() {
+    let (p, cb) = tunnel_rig(&[refused(), ChildReply::Ready("ready".to_owned())]);
+    let t = cb.local_tunnel(&handle(), 8080).unwrap();
+    assert!(t.tunnel.alive());
+    assert_eq!(ssh_spawns(&p), 2);
+}
+
+#[test]
+fn a_pool_local_tunnel_that_cannot_forward_is_an_error_after_one_retry() {
+    let (p, cb) = tunnel_rig(&[refused()]);
+    let err = cb.local_tunnel(&handle(), 8080).unwrap_err();
+    assert!(
+        matches!(
+            err,
+            DriverError::Tunnel {
+                failure: TunnelFailure::Exited {
+                    code: Some(255),
+                    ..
+                },
+                ..
+            }
+        ),
+        "{err:?}"
+    );
+    assert_eq!(ssh_spawns(&p), 2);
+}
+
+#[test]
+fn a_pool_local_tunnel_failing_for_another_reason_is_not_retried() {
+    for reply in [
+        ChildReply::Exit {
+            code: 255,
+            stderr: "Permission denied (publickey).".to_owned(),
+        },
+        ChildReply::Hang,
+        ChildReply::Ready("nothing like it".to_owned()),
+    ] {
+        let (p, cb) = tunnel_rig(&[reply]);
+        assert!(cb.local_tunnel(&handle(), 8080).is_err());
+        assert_eq!(ssh_spawns(&p), 1);
+        assert_eq!(p.dropped().len(), 1);
+    }
 }
