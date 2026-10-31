@@ -10,10 +10,15 @@ use moor_core::cache::{not_kept, seal_failed, AgentCache, CacheLayers, CachePlan
 use moor_core::config::{BoxSettings, DriverConfig};
 use moor_core::seam::driver::{BoxStep, DriverCaps, ExecOutcome, StepDone};
 use moor_core::seam::proc::Deadline;
+use moor_core::user::UserId;
 use moor_core::{BoxHandle, ProviderId, Warning};
 
 use crate::cx::Cx;
+use crate::ops::common::node::seat_of;
 use crate::store::{BoxRow, Store};
+
+/// The feature a machine's agent reports when its crabbox mounts cache volumes.
+const CACHE_VOLUME: &str = "cache-volume";
 
 /// Time allowed for the seal script; pruning a large Docker data root takes a while.
 const SEAL_DEADLINE: Duration = Duration::from_mins(5);
@@ -45,6 +50,19 @@ fn layers(cx: &Cx, cfg: &BoxSettings) -> CacheLayers {
     }
 }
 
+/// Whether the personal machine `row` is placed on is linked now and reports crabbox cache
+/// volumes; a machine that is offline, unlinked or not the owner's has none.
+fn machine_mounts(cx: &Cx, store: &Store, row: &BoxRow, user: UserId) -> bool {
+    let Ok(Some(seat)) = seat_of(cx, store, row) else {
+        return false;
+    };
+    store.user_machine_links(user).is_ok_and(|links| {
+        links.iter().any(|(_, l)| {
+            l.machine_id == seat.machine && l.online && l.features.iter().any(|f| f == CACHE_VOLUME)
+        })
+    })
+}
+
 /// The plan for `row` on `provider`, or why the Box starts cold.
 fn plan(
     cx: &Cx,
@@ -52,15 +70,19 @@ fn plan(
     row: &BoxRow,
     cfg: &BoxSettings,
     provider: &ProviderId,
-    caps: DriverCaps,
+    mut caps: DriverCaps,
 ) -> Result<CachePlan, Cold> {
     let drivers = &cx.config().drivers;
     let on = drivers
         .get(provider.as_str())
+        .or_else(|| drivers.get(provider.base()))
         .is_none_or(DriverConfig::cache_volumes);
     let Some(user) = row.user.filter(|_| on) else {
         return Err(Cold::Off);
     };
+    if provider.host().is_some() {
+        caps.cache_volumes = machine_mounts(cx, store, row, user);
+    }
     let repo = row.repo.as_ref().map(|r| &r.repo);
     let refused = |e: &dyn std::fmt::Display| Cold::Refused(e.to_string());
     let layers = layers(cx, cfg);
