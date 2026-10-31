@@ -1,4 +1,7 @@
+use moor_core::response::{CloseRefusal, ErrorDetail, ErrorKind, ErrorView};
 use serde_json::json;
+
+use crate::error::Error;
 
 use super::{label, parse_list, parse_one, parse_watched, Activity, Phase};
 
@@ -75,12 +78,56 @@ fn waking_a_box_sends_the_core_wake_request() {
 }
 
 #[test]
-fn closing_a_box_sends_the_core_close_request_without_force() {
-    let parsed = super::request(super::close_wire("fix")).unwrap();
+fn closing_a_box_sends_the_core_close_request_with_the_force_asked() {
+    for force in [false, true] {
+        let parsed = super::request(super::close_wire("fix", force)).unwrap();
+        assert_eq!(
+            serde_json::to_value(parsed).unwrap(),
+            json!({"cmd": "close", "box": "fix", "force": force})
+        );
+    }
+}
+
+fn refusal(detail: Option<ErrorDetail>) -> ErrorView {
+    ErrorView {
+        kind: ErrorKind::Refused,
+        message: "the Box holds work; run `moor close fix --force`".to_owned(),
+        hints: Vec::new(),
+        context: Vec::new(),
+        detail,
+    }
+}
+
+#[test]
+fn a_close_refused_for_unsaved_or_unchecked_work_can_be_forced() {
+    let unsaved = CloseRefusal::Unsaved {
+        branch: "moor/fix".to_owned(),
+        ahead: 2,
+        dirty: 1,
+    };
+    let e = super::close_refused("fix", refusal(Some(ErrorDetail::CloseRefused(unsaved))));
     assert_eq!(
-        serde_json::to_value(parsed).unwrap(),
-        json!({"cmd": "close", "box": "fix", "force": false})
+        e.to_string(),
+        "fix holds 2 unpushed commit(s) and 1 uncommitted file(s); \
+         [discard & close] closes it anyway"
     );
+    let unchecked = CloseRefusal::Unchecked {
+        reason: "asleep".to_owned(),
+    };
+    let e = super::close_refused("fix", refusal(Some(ErrorDetail::CloseRefused(unchecked))));
+    assert!(matches!(e, Error::WouldDiscard(_)), "{e}");
+    assert!(!e.to_string().contains("--force"), "{e}");
+}
+
+#[test]
+fn any_other_refused_close_is_a_plain_refusal() {
+    let e = super::close_refused("fix", refusal(None));
+    assert!(matches!(e, Error::Refused(_)), "{e}");
+    let closed = Some(ErrorDetail::CloseRefused(CloseRefusal::AlreadyClosed));
+    assert!(matches!(
+        super::close_refused("fix", refusal(closed)),
+        Error::Refused(_)
+    ));
 }
 
 #[test]

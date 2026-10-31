@@ -33,7 +33,11 @@ read.
 | `start_box` | `repo` as `owner/name`; optional `name`, `prompt`, `base`, `node`, `wait` |
 | `box_status` | `box` |
 | `send_to_box` | `box`, `text` |
-| `close_box` | `box` |
+| `close_box` | `box`; optional `force` |
+
+`close_box` refuses a Box that holds unpushed commits or uncommitted files, or
+that could not be checked for them. `force: true` closes it anyway and discards
+that work, the same as `moor close --force`. It is false by default.
 
 `node` is a node you may use, a shared one or one of your own; omit it for your
 default. See [Nodes](nodes.md).

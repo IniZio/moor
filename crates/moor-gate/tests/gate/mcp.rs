@@ -533,3 +533,48 @@ fn start_box_passes_the_node_to_the_start() {
     let sent = m.requests();
     assert_eq!(sent[0]["request"]["request"]["node"], "hv", "{sent:?}");
 }
+
+#[test]
+fn close_box_refuses_unsaved_work_unless_force_is_set() {
+    let m = mcp();
+    let token = m.token("alice-sub", &m.url(), "moor:read moor:write");
+    for (args, force) in [
+        (json!({"box": "web/fix"}), false),
+        (json!({"box": "web/fix", "force": false}), false),
+        (json!({"box": "web/fix", "force": true}), true),
+    ] {
+        let result = m.call(&token, "close_box", args);
+        assert_ne!(result["isError"], true, "{result}");
+        let sent = m.requests();
+        assert_eq!(sent.len(), 1, "{sent:?}");
+        assert_eq!(
+            sent[0]["request"],
+            json!({"cmd": "as", "identity": "authgear:alice-sub", "request": {
+                "cmd": "close", "box": "web/fix", "force": force}})
+        );
+    }
+}
+
+#[test]
+fn close_box_lists_force_as_an_optional_boolean() {
+    let m = mcp();
+    let token = m.token("alice-sub", &m.url(), "moor:read");
+    let reply = m.rpc(&token, "tools/list", json!({}));
+    let close = reply["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "close_box")
+        .unwrap();
+    let schema = &close["inputSchema"];
+    assert_eq!(schema["required"], json!(["box"]), "{schema}");
+    let force = &schema["properties"]["force"];
+    assert!(
+        force["type"] == "boolean" || force["type"] == json!(["boolean", "null"]),
+        "{schema}"
+    );
+    assert!(
+        close["description"].as_str().unwrap().contains("force"),
+        "{close}"
+    );
+}

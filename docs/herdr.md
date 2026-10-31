@@ -169,6 +169,9 @@ each open Box is one row: its label `◈ repo/name`, its state icon and words, a
 - `[close]` closes the Box on the controller. The first click turns it into `[confirm close]`;
   a second click within four seconds closes the Box and removes its workspace from the sidebar.
   Otherwise it turns back. A Box closed anywhere else keeps its workspace, marked `✕`.
+- `[discard & close]` shows on a Box whose close was refused because it holds unpushed commits or
+  uncommitted files, or could not be checked for them. It confirms the same way, through
+  `[confirm discard]`, then closes the Box as `moor close --force` does and discards that work.
 
 The list refreshes every 2 seconds. The line under the top row says what the last click did, or
 why it failed.
@@ -179,6 +182,7 @@ why it failed.
 | Enter | Attach the selected Box. |
 | `w` | Wake the selected Box, when it is asleep. |
 | `c` | Close the selected Box. Press it again within four seconds to confirm. |
+| `d` | Discard and close the selected Box, after its close was refused. Press it again to confirm. |
 | `n` | New Box. |
 | `r` | Refresh now. |
 | `q` | Close the panel. |
