@@ -23,6 +23,33 @@ file means every key takes its default, except `box.provider`, which has none.
 | `box.max_awake` | duration | `2h` | How long any Box stays awake, counted from its last start or wake, before moor puts it to sleep, even while its agent works. A steer or a message wakes the Box and the agent resumes. |
 | `box.launch_timeout` | duration such as `30s`, `3m`, or `1h` | `3m` | How long a Box's agent may take to start a session, or to reach a first-run screen, before moor records `launch_timed_out`, warns, and counts the Box as quiet so it can sleep. Restart the agent to try again. After 3 relaunches in 10 minutes, moor stops restarting an agent on its own. It refuses the next relaunch with a message and records `relaunch_capped`. |
 
+### Nodes
+
+A node is a place that runs Boxes. List the shared ones, which every user may
+use, under `nodes`:
+
+```yaml
+nodes:
+  fast:
+    runtime: cloudhypervisor
+    labels: [big]
+    max_boxes: 8
+box:
+  node: fast
+```
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `nodes.<name>.runtime` | string | required | The crabbox provider the node's Boxes run on. |
+| `nodes.<name>.labels` | list of strings | none | Labels a Box may require of the node. |
+| `nodes.<name>.max_boxes` | integer, at least 1 | none | The most live Boxes on the node; unlimited when unset. |
+| `box.node` | string | the only node | The shared node new Boxes run on. Required when `nodes` has more than one entry, and it must name one. |
+
+A node name matches `[a-z][a-z0-9-]*`. A [Box pool host](#box-pool-hosts)
+enrolled with `--runtime` is a personal node, named for its machine and
+usable only by its owner. It is online while its agent is linked.
+`moor node ls` shows each node's runtime, link, load and labels.
+
 ### `drivers`
 
 `drivers.<provider>` holds settings for one provider. See

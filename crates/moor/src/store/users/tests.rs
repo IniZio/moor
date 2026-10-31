@@ -287,6 +287,7 @@ fn a_sealed_value_copied_into_another_row_is_refused() {
 
 mod hold;
 mod machine;
+mod nodes;
 
 #[test]
 fn a_link_keeps_its_agent_version_and_names_its_machine() {

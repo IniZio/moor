@@ -205,6 +205,7 @@ controller.
 | `moor user secret set NAME` | Stores secret `NAME`. moor reads the value from stdin, never from the arguments. |
 | `moor user secret rm NAME` | Deletes secret `NAME`. |
 | `moor user secret ls` | Lists the names of your secrets. |
+| `moor node ls` | Lists the shared nodes and your own: name, scope, runtime, online or offline since, used and capacity, waiting Boxes and labels. |
 | `moor whoami` | Shows your identity, its user, and that user's linked identities. |
 
 ## Other commands

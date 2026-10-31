@@ -4,6 +4,7 @@ pub mod attach;
 pub mod binding;
 pub mod env;
 pub mod machine;
+pub mod node;
 pub mod progress;
 pub mod run;
 pub mod session;

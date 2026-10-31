@@ -480,3 +480,12 @@ fn machine_status_names_one_machine() {
     ));
     assert!(run(&["user", "machine", "status"]).is_err());
 }
+
+#[test]
+fn node_ls_asks_for_the_callers_nodes() {
+    assert!(matches!(
+        run(&["node", "ls"]),
+        Ok((_, Action::Request(Request::NodeList(r)))) if r.identity.is_none()
+    ));
+    assert!(run(&["node"]).is_err());
+}

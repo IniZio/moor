@@ -7,6 +7,7 @@ use moor_core::{ExitClass, Response};
 use serde_json::Value;
 
 mod machine;
+mod node;
 mod show;
 
 /// Renders `resp` as `(stdout, stderr)` text; warnings are dropped when `quiet`.
@@ -75,6 +76,7 @@ fn structured_text(cmd: &str, value: &Value) -> Option<String> {
         "env" => serde_json::from_value::<EnvView>(value.clone())
             .ok()
             .map(|view| env_text(&view)),
+        "node-list" => node::list_text(value),
         "machine-list" => machine::list_text(value),
         "machine-status" => machine::status_text(value),
         "show" => show::show_text(value),
