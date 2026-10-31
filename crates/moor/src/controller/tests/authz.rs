@@ -194,7 +194,9 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
         | "mcp-list" | "profile-set" | "profile-show" | "profile-remove" | "mcp-oauth-finish"
         | "machine-remove" | "machine-enroll" | "machine-list" | "machine-status"
         | "machine-keys" | "machine-links" | "box-mirror" | "box-put" | "machine-hold" | "in"
-        | "version" | "proxy-lease" | "proxy-release" | "proxy-status" => return Names::Nothing,
+        | "version" | "proxy-lease" | "proxy-release" | "proxy-status" | "node-list" => {
+            return Names::Nothing
+        }
         _ => return Names::Unknown,
     })
 }

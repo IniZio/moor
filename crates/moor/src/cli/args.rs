@@ -13,6 +13,7 @@ use super::args_probe::Flags;
 use super::GlobalOpts;
 use box_ops::{BoxArg, CloseArgs, CpArgs};
 use events::EventsArgs;
+use node::NodeCmd;
 use session::SessionCmd;
 use user::UserCli;
 use wait::WaitArgs;
@@ -20,6 +21,7 @@ use wait_events::WaitEventsArgs;
 
 mod box_ops;
 mod events;
+mod node;
 mod session;
 #[cfg(test)]
 mod tests;
@@ -147,6 +149,9 @@ enum Cmd {
     /// Your moor user and its secrets (dev tool).
     #[command(subcommand)]
     User(UserCli),
+    /// The nodes Boxes run on.
+    #[command(subcommand)]
+    Node(NodeCmd),
     /// Show your identity, its user and that user's linked identities.
     Whoami,
     /// Admin verbs.
@@ -189,6 +194,7 @@ impl Cmd {
                 }
             }
             Self::User(u) => u.into_action(),
+            Self::Node(n) => Action::Request(n.into()),
             Self::Whoami => Action::Request(Request::Whoami(moor_core::request::AsReq {
                 identity: None,
             })),

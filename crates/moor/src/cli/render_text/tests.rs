@@ -515,3 +515,24 @@ fn machine_status_lists_fields_leases_and_recent_ops_newest_first() {
          1970-01-01T00:00:00Z lease moor-7 ok\n"
     );
 }
+
+#[test]
+fn node_ls_shows_scope_link_load_and_labels() {
+    let v = json!({"nodes": [
+        {"name": "fast", "scope": "shared", "runtime": "static", "online": true,
+         "used": 1, "waiting": 2, "max_boxes": 4, "labels": ["big", "gpu"]},
+        {"name": "mini", "scope": "personal", "owner": 3, "runtime": "cloudhypervisor",
+         "online": false, "offline_since": 0, "used": 0, "waiting": 0, "labels": []},
+    ]});
+    let (out, _) = render(&Response::ok("node-list", Some(v)), false);
+    assert_eq!(
+        out,
+        "fast  shared  static  online  1/4  2 waiting  big,gpu\n\
+         mini  personal  cloudhypervisor  offline since 1970-01-01T00:00:00Z  0/-\n"
+    );
+    let (none, _) = render(
+        &Response::ok("node-list", Some(json!({"nodes": []}))),
+        false,
+    );
+    assert_eq!(none, "no nodes\n");
+}

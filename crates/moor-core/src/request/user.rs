@@ -314,6 +314,7 @@ impl Request {
             | Self::ProfileRemove(AsReq { identity })
             | Self::ProfileSet(ProfileSetReq { identity, .. })
             | Self::MachineList(AsReq { identity })
+            | Self::NodeList(AsReq { identity })
             | Self::MachineRemove(MachineRemoveReq { identity, .. })
             | Self::MachineStatus(MachineStatusReq { identity, .. })
             | Self::MachineEnroll(MachineEnrollReq { identity, .. })
