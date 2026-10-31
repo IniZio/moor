@@ -28,6 +28,7 @@ struct Fake {
     boxes: Vec<Shown>,
     calls: Vec<String>,
     opens: usize,
+    unsaved: Vec<String>,
 }
 
 impl Ops for Fake {
@@ -46,8 +47,14 @@ impl Ops for Fake {
         Ok(())
     }
 
-    fn close(&mut self, name: &str) -> Result<(), Error> {
-        self.calls.push(format!("close {name}"));
+    fn close(&mut self, name: &str, force: bool) -> Result<(), Error> {
+        let forced = if force { " --force" } else { "" };
+        self.calls.push(format!("close {name}{forced}"));
+        if !force && self.unsaved.iter().any(|u| u == name) {
+            return Err(Error::WouldDiscard(format!(
+                "{name} holds 1 unpushed commit(s)"
+            )));
+        }
         self.boxes.retain(|b| b.name != name);
         Ok(())
     }
@@ -71,6 +78,7 @@ fn fake() -> Fake {
         ],
         calls: Vec::new(),
         opens: 0,
+        unsaved: Vec::new(),
     }
 }
 
@@ -94,6 +102,10 @@ fn screen(panel: &Panel, now: Instant) -> Vec<String> {
         })
         .map(|s| s.trim_end().to_owned())
         .collect()
+}
+
+fn close(name: &str) -> Button {
+    Button::Close(name.to_owned())
 }
 
 fn column_of(panel: &Panel, row: u16, text: &str, now: Instant) -> u16 {
@@ -125,7 +137,7 @@ fn each_box_is_a_row_with_its_label_state_and_buttons() {
 fn an_armed_close_reads_confirm_close() {
     let now = clock();
     let mut panel = loaded(&mut fake());
-    panel.confirm.press("fix", now);
+    panel.confirm.press(&close("fix"), now);
     assert!(screen(&panel, now)
         .get(3)
         .unwrap()
@@ -187,24 +199,24 @@ fn a_live_box_has_no_wake_button() {
 fn close_confirms_only_on_a_second_press_of_the_same_box_within_the_window() {
     let t0 = clock();
     let mut c = Confirm::default();
-    assert!(!c.press("fix", t0));
-    assert_eq!(c.armed(t0), Some("fix"));
-    assert!(c.press("fix", t0 + Duration::from_secs(1)));
+    assert!(!c.press(&close("fix"), t0));
+    assert_eq!(c.armed(t0), Some(&close("fix")));
+    assert!(c.press(&close("fix"), t0 + Duration::from_secs(1)));
     assert_eq!(c.armed(t0 + Duration::from_secs(1)), None);
 
-    assert!(!c.press("fix", t0));
-    assert!(!c.press("nap", t0), "another Box re-arms instead");
-    assert_eq!(c.armed(t0), Some("nap"));
+    assert!(!c.press(&close("fix"), t0));
+    assert!(!c.press(&close("nap"), t0), "another Box re-arms instead");
+    assert_eq!(c.armed(t0), Some(&close("nap")));
 }
 
 #[test]
 fn an_armed_close_disarms_once_its_window_passes() {
     let t0 = clock();
     let mut late = Confirm::default();
-    assert!(!late.press("fix", t0));
+    assert!(!late.press(&close("fix"), t0));
     assert_eq!(late.armed(t0 + CONFIRM_WINDOW), None, "the window disarms");
     assert!(
-        !late.press("fix", t0 + CONFIRM_WINDOW),
+        !late.press(&close("fix"), t0 + CONFIRM_WINDOW),
         "a late press arms again"
     );
 }
@@ -284,11 +296,17 @@ fn arming_a_close_redraws_without_waiting_on_the_controller() {
 fn a_second_press_right_after_arming_is_not_a_confirm() {
     let t0 = clock();
     let mut c = Confirm::default();
-    assert!(!c.press("fix", t0));
+    assert!(!c.press(&close("fix"), t0));
     let soon = t0 + CONFIRM_MIN / 3;
-    assert!(!c.press("fix", soon), "a double click does not close");
-    assert_eq!(c.armed(soon), Some("fix"));
-    assert!(c.press("fix", t0 + CONFIRM_MIN), "the arming time stands");
+    assert!(
+        !c.press(&close("fix"), soon),
+        "a double click does not close"
+    );
+    assert_eq!(c.armed(soon), Some(&close("fix")));
+    assert!(
+        c.press(&close("fix"), t0 + CONFIRM_MIN),
+        "the arming time stands"
+    );
 }
 
 #[test]
@@ -305,4 +323,86 @@ fn the_confirm_prompt_goes_when_its_window_passes() {
         .get(3)
         .unwrap()
         .ends_with("[attach] [close]"));
+}
+
+#[test]
+fn a_close_refused_for_unsaved_work_offers_discard_and_close() {
+    let now = clock();
+    let mut ops = fake();
+    ops.unsaved.push("fix".to_owned());
+    let mut panel = loaded(&mut ops);
+    panel.handle(Input::Key('c'), now, &mut ops);
+    panel.handle(Input::Key('c'), now + Duration::from_secs(1), &mut ops);
+    assert_eq!(ops.calls, ["close fix"], "the first close is not forced");
+    let later = now + CONFIRM_WINDOW * 2;
+    let rows = screen(&panel, later);
+    assert_eq!(
+        rows.get(1).unwrap(),
+        "fix holds 1 unpushed commit(s); [discard & close] closes it anyway"
+    );
+    assert!(
+        rows.get(3)
+            .unwrap()
+            .ends_with("[attach] [close] [discard & close]"),
+        "{rows:?}"
+    );
+    assert!(
+        rows.get(5).unwrap().ends_with("[wake] [close]"),
+        "only the refused Box"
+    );
+}
+
+#[test]
+fn discard_and_close_forces_the_close_only_on_a_second_press() {
+    let now = clock();
+    let mut ops = fake();
+    ops.unsaved.push("fix".to_owned());
+    let mut panel = loaded(&mut ops);
+    panel.discardable = Some("fix".to_owned());
+    let row = FIRST_BOX_ROW + 1;
+    let col = column_of(&panel, row, "[discard & close]", now);
+    panel.handle(Input::Click { col, row }, now, &mut ops);
+    assert!(ops.calls.is_empty());
+    let rows = screen(&panel, now);
+    assert_eq!(
+        rows.get(1).unwrap(),
+        "Discard fix's unsaved work and close it? Press [confirm discard] again."
+    );
+    assert!(
+        rows.get(3).unwrap().ends_with("[close] [confirm discard]"),
+        "{rows:?}"
+    );
+    let col = column_of(&panel, row, "[confirm discard]", now);
+    panel.handle(
+        Input::Click { col, row },
+        now + Duration::from_secs(1),
+        &mut ops,
+    );
+    assert_eq!(ops.calls, ["close fix --force"]);
+    assert_eq!(panel.boxes.len(), 1);
+    assert_eq!(panel.discardable, None);
+}
+
+#[test]
+fn an_armed_close_does_not_confirm_a_discard() {
+    let t0 = clock();
+    let mut c = Confirm::default();
+    assert!(!c.press(&close("fix"), t0));
+    let discard = Button::Discard("fix".to_owned());
+    assert!(!c.press(&discard, t0 + Duration::from_secs(1)));
+    assert_eq!(c.armed(t0 + Duration::from_secs(1)), Some(&discard));
+}
+
+#[test]
+fn d_discards_only_a_box_whose_close_was_refused() {
+    let now = clock();
+    let mut ops = fake();
+    let mut panel = loaded(&mut ops);
+    panel.handle(Input::Key('d'), now, &mut ops);
+    panel.handle(Input::Key('d'), now + Duration::from_secs(1), &mut ops);
+    assert!(ops.calls.is_empty());
+    panel.discardable = Some("fix".to_owned());
+    panel.handle(Input::Key('d'), now, &mut ops);
+    panel.handle(Input::Key('d'), now + Duration::from_secs(1), &mut ops);
+    assert_eq!(ops.calls, ["close fix --force"]);
 }

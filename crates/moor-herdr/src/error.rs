@@ -30,6 +30,10 @@ pub enum Error {
     /// The controller answered with an error.
     #[error("controller: {0}")]
     Refused(String),
+    /// The controller refused a close that would discard work, or could not check for it; a
+    /// forced close goes ahead.
+    #[error("{0}; [discard & close] closes it anyway")]
+    WouldDiscard(String),
     /// The controller refused a start for secrets the person has not stored.
     #[error("controller: log in first: missing {}", missing(.0))]
     LoginRequired(Box<StartNeedsValue>),
