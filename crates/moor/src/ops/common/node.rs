@@ -3,19 +3,20 @@
 use std::collections::BTreeMap;
 
 use moor_core::box_key::PoolSeat;
-use moor_core::config::{BoxSettings, NodeConfig, UserConfig};
+use moor_core::config::{BoxSettings, Flags, NodeConfig, UserConfig};
 use moor_core::decide::schedule::{schedule, BoxSpec, Node, Scope, Verdict};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::name::NodeName;
+use moor_core::response::Warning;
 use moor_core::seam::driver::DriverCaps;
 use moor_core::user::UserId;
 use moor_core::{ErrorKind, ProviderId};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::facts::{provider_caps, provider_of, require_reverse_tunnel};
-use crate::store::{BoxRow, Store};
+use crate::ops::common::facts::{provider_caps, provider_of, require_reverse_tunnel, resolved};
+use crate::store::{BoxRow, DriverRow, Store};
 
 /// The shared nodes and the default one. A config without `nodes:` gets one shared node built
 /// from `box.provider`, named for it, limited by `drivers.<provider>.max_boxes` or `box.max_boxes`.
@@ -229,3 +230,76 @@ pub(crate) fn preflight(
     Ok(matches!(node.scope, Scope::Personal { .. })
         .then(|| format!("starting on your node {}", node.name)))
 }
+
+/// The node a live Box started before nodes existed was on, by its provider and handle.
+fn legacy_node(all: &[Node], default: Option<&NodeName>, held: &DriverRow) -> Option<NodeName> {
+    let personal = |keep: &dyn Fn(&Node) -> bool| {
+        all.iter()
+            .find(|n| matches!(n.scope, Scope::Personal { .. }) && keep(n))
+            .map(|n| n.name.clone())
+    };
+    if let Some(host) = held.provider.host() {
+        return personal(&|n| n.name.as_str() == host);
+    }
+    let handle = held.handle.as_ref().map(|h| h.as_str().to_owned());
+    let mut parts = handle.as_deref().unwrap_or_default().split('/');
+    if let (Some(_), Some(machine), Some(slug)) = (parts.next(), parts.next(), parts.next()) {
+        let machine = machine
+            .parse::<i64>()
+            .ok()
+            .filter(|_| slug.starts_with("moor-"));
+        if let Some(machine) = machine {
+            return personal(
+                &|n| matches!(n.scope, Scope::Personal { machine_id, .. } if machine_id == machine),
+            );
+        }
+    }
+    let same: Vec<&Node> = all
+        .iter()
+        .filter(|n| n.scope == Scope::Shared && n.runtime == held.provider.as_str())
+        .collect();
+    match same.as_slice() {
+        [only] => Some(only.name.clone()),
+        [] => None,
+        many => many
+            .iter()
+            .find(|n| Some(&n.name) == default)
+            .map(|n| n.name.clone()),
+    }
+}
+
+/// Puts each live Box that predates node placement on the node it ran on, so it counts toward
+/// that node's capacity. A Box that matches no node stays unplaced, with a warning.
+///
+/// # Errors
+/// A store failure.
+pub(crate) fn backfill(cx: &Cx, store: &Store) -> Result<(), CommandError> {
+    let settings = resolved(cx, None, &Flags::default());
+    let (shared, default) = match configured(cx.config(), &settings) {
+        Ok((shared, default)) => (shared, Some(default)),
+        Err(_) => (BTreeMap::new(), None),
+    };
+    let all = store.nodes(&shared)?;
+    for (id, held) in store.box_rows_live()? {
+        if store.box_spec(id)?.node.is_some() {
+            continue;
+        }
+        match legacy_node(&all, default.as_ref(), &held) {
+            Some(node) => {
+                store.place_unplaced(id, &node)?;
+            }
+            None => cx.warn(Warning {
+                code: "node_unknown".to_owned(),
+                message: format!(
+                    "Box {} runs on {}, which matches no node, so it counts toward none",
+                    id.get(),
+                    held.provider.as_str()
+                ),
+            }),
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests;

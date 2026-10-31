@@ -60,6 +60,15 @@ impl Store {
         Ok(())
     }
 
+    /// Puts Box `id` on `node` when it is on none; returns whether it was.
+    pub(crate) fn place_unplaced(&self, id: BoxId, node: &NodeName) -> Result<bool, StoreError> {
+        let n = self.writer().execute(
+            "UPDATE boxes SET node = ?1 WHERE id = ?2 AND node IS NULL",
+            params![node.as_str(), id.get()],
+        )?;
+        Ok(n > 0)
+    }
+
     /// Pending Boxes waiting for `node`, oldest first.
     pub(crate) fn pending_on(&self, node: &NodeName) -> Result<Vec<BoxId>, StoreError> {
         let conn = self.reader()?;
