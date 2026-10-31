@@ -6,6 +6,7 @@ use crate::user::UserId;
 
 const ME: UserId = UserId::new(1);
 const YOU: UserId = UserId::new(2);
+const NOW: i64 = 11 * 3600;
 
 fn name(s: &str) -> NodeName {
     NodeName::parse(s).unwrap()
@@ -48,7 +49,7 @@ fn spec(labels: &[&str], node: Option<&str>) -> BoxSpec {
 }
 
 fn run(nodes: &[Node], s: &BoxSpec) -> Verdict {
-    schedule(nodes, ME, &name("ci"), s)
+    schedule(nodes, ME, &name("ci"), s, NOW)
 }
 
 fn bound(node: &str, machine_id: Option<i64>) -> Verdict {
@@ -162,29 +163,29 @@ fn named_node_lacking_labels_fails() {
 fn offline_first_node_fails_with_skip_hint() {
     let mut hv = mine("hv", 7, 100);
     hv.online = Online::Offline {
-        since: 10 * 3600 + 12 * 60,
+        since: NOW - 12 * 60,
     };
     let r = fail(run(&[hv, ci()], &spec(&[], None)));
     assert_eq!(
         r,
-        "hv is offline since 10:12: start moor-machine-agent on it, or start with --node ci"
+        "hv is offline for 12m: start moor-machine-agent on it, or start with --node ci"
     );
 }
 
 #[test]
 fn offline_default_node_has_no_skip_hint() {
     let mut c = ci();
-    c.online = Online::Offline { since: 3600 };
+    c.online = Online::Offline { since: NOW - 3600 };
     let r = fail(run(&[c], &spec(&[], None)));
-    assert_eq!(r, "ci is offline since 01:00: wait for it to come back");
+    assert_eq!(r, "ci is offline for 1h: wait for it to come back");
 }
 
 #[test]
 fn offline_named_node_fails_without_falling_through() {
     let mut hv = mine("hv", 7, 100);
-    hv.online = Online::Offline { since: 0 };
+    hv.online = Online::Offline { since: NOW };
     let r = fail(run(&[hv, ci()], &spec(&[], Some("hv"))));
-    assert!(r.starts_with("hv is offline since 00:00"), "{r}");
+    assert!(r.starts_with("hv is offline for 0m"), "{r}");
 }
 
 #[test]

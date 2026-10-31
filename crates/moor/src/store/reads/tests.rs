@@ -8,11 +8,11 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
-use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
+use moor_core::{BoxId, BoxName, ProviderId};
 
 use crate::testing::clock::FakeClock;
 
-use super::{live_holders_in, Store};
+use super::Store;
 
 /// Open a store in a temp dir.
 fn open(dir: &std::path::Path) -> Store {
@@ -88,29 +88,6 @@ fn box_rows_live_skips_deleted_boxes() {
     assert_eq!(got, [(live, BoxState::Starting)]);
 }
 
-/// Request a box for `id` on `provider`.
-fn request(store: &Store, id: BoxId, provider: &str) {
-    let fields = Fields {
-        box_provider: Field::Set(ProviderId::new(provider)),
-        ..Fields::default()
-    };
-    let d = Decision::new(id)
-        .lifecycle(BoxLifecycleInput::Admitted)
-        .box_input(BoxInput::Requested)
-        .set(fields);
-    store.apply(d).unwrap();
-}
-
-fn box_input(store: &Store, id: BoxId, input: BoxInput) {
-    store.apply(Decision::new(id).box_input(input)).unwrap();
-}
-
-fn acquired() -> BoxInput {
-    BoxInput::Acquired {
-        handle: BoxHandle::new("h"),
-    }
-}
-
 #[test]
 fn waiting_boxes_returns_pending_in_id_order() {
     let dir = tempfile::tempdir().unwrap();
@@ -134,41 +111,6 @@ fn waiting_boxes_returns_pending_in_id_order() {
     assert!(waiting.iter().all(|t| t.lifecycle == BoxLifecycle::Pending));
 }
 
-#[test]
-fn live_holders_lists_only_the_providers_live_boxes_in_id_order() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = open(dir.path());
-    let p = ProviderId::new("p");
-    assert!(live_holders_in(&store.reader().unwrap(), &p)
-        .unwrap()
-        .is_empty());
-
-    let [starting, ready, failed, deleted, other] =
-        ["e", "b", "c", "d", "a"].map(|n| add(&store, n));
-    for id in [starting, ready, failed, deleted] {
-        request(&store, id, "p");
-    }
-    request(&store, other, "q");
-    for id in [ready, deleted] {
-        box_input(&store, id, acquired());
-    }
-    box_input(&store, deleted, BoxInput::Released);
-    let cause = "x".into();
-    let fail = BoxInput::AcquireFailed {
-        attempted: None,
-        cause,
-    };
-    box_input(&store, failed, fail);
-
-    let holders = live_holders_in(&store.reader().unwrap(), &p).unwrap();
-    assert_eq!(
-        holders.iter().map(|t| t.id).collect::<Vec<_>>(),
-        [starting, ready]
-    );
-    assert!(holders.iter().all(|t| t.boxed.is_some()));
-}
-
-/// Insert a raw event row and return its id.
 fn event(store: &Store, id: BoxId, kind: &str, payload: &str, ts: i64) -> i64 {
     let conn = store.writer();
     conn.execute(

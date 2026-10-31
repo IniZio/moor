@@ -133,6 +133,11 @@ fn move_box_to(w: &World, id: BoxId, provider: &str) {
         .unwrap()
         .apply(Decision::new(id).set(set))
         .unwrap();
+    let spec = moor_core::decide::schedule::BoxSpec {
+        labels: Vec::new(),
+        node: moor_core::name::NodeName::parse(provider).ok(),
+    };
+    w.cx.store().unwrap().set_box_spec(id, &spec).unwrap();
 }
 
 /// Starts `holder` under the limit, so one Box is live.
@@ -186,33 +191,29 @@ fn queued_start_records_the_limit_and_keeps_the_workspace() {
 }
 
 #[test]
-fn queued_start_warns_with_the_box_config_key() {
-    let (w, _) = with_live_box(box_limit(1));
-    let v = run(&w.cx, &req("waiter")).unwrap();
-    assert!(v
-        .warnings_inline
-        .iter()
-        .any(|m| m.contains("box.max_boxes")));
-}
-
-#[test]
-fn queued_start_warns_with_the_driver_config_key() {
-    let config = UserConfig {
+fn queued_start_is_pending_on_its_node_with_the_schedulers_reason() {
+    let by_driver = UserConfig {
         drivers: driver_limit(PROVIDER, 1),
         ..UserConfig::default()
     };
-    let (w, _) = with_live_box(config);
-    let v = run(&w.cx, &req("waiter")).unwrap();
-    assert!(v.queued);
-    let key = format!("drivers.{PROVIDER}.max_boxes");
-    assert!(v.warnings_inline.iter().any(|m| m.contains(&key)));
-    let events =
-        w.cx.store()
-            .unwrap()
-            .events(BoxId::new(v.boxed.id), 50)
-            .unwrap();
-    let ev = events.iter().find(|e| e.kind == "pending").unwrap();
-    assert_eq!(ev.payload.get("max_boxes"), Some(&json!(1)));
+    for config in [box_limit(1), by_driver] {
+        let (w, _) = with_live_box(config);
+        let v = run(&w.cx, &req("waiter")).unwrap();
+        assert!(v.queued);
+        let id = BoxId::new(v.boxed.id);
+        let store = w.cx.store().unwrap();
+        let node = store.box_spec(id).unwrap().node.map(|n| n.to_string());
+        assert_eq!(node.as_deref(), Some(PROVIDER));
+        let reason = store.box_row(id).unwrap().unwrap().state_reason;
+        let want = format!("{PROVIDER} is full (1 of 1 Boxes)");
+        assert!(
+            reason.as_deref().is_some_and(|r| r.contains(&want)),
+            "{reason:?}"
+        );
+        let events = store.events(id, 50).unwrap();
+        let ev = events.iter().find(|e| e.kind == "pending").unwrap();
+        assert_eq!(ev.payload.get("max_boxes"), Some(&json!(1)));
+    }
 }
 
 #[test]

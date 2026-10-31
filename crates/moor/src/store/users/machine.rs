@@ -18,7 +18,6 @@ mod fixture;
 mod hold;
 mod links;
 mod nodes;
-mod pool;
 mod row;
 
 use hold::ClaimState;

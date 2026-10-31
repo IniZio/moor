@@ -1,17 +1,18 @@
 //! The node read: shared nodes from config, personal nodes from enrolled machines.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
 use moor_core::config::{EnrolledMachine, NodeConfig};
-use moor_core::decide::schedule::{Node, Online, Scope};
+use moor_core::decide::schedule::{BoxSpec, Node, Online, Scope};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::name::NodeName;
 use moor_core::request::MachineLink;
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Identity, UserId};
-use moor_core::ProviderId;
+use moor_core::{BoxId, ProviderId};
 
 use crate::store::tests::{new_box, open};
 use crate::store::Store;
@@ -19,7 +20,22 @@ use crate::store::Store;
 const KEY: &str =
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl";
 
-fn hold(store: &Store, name: &str, provider: &str) {
+fn on_node(store: &Store, id: BoxId, node: &str) {
+    let spec = BoxSpec {
+        labels: Vec::new(),
+        node: NodeName::parse(node).ok(),
+    };
+    store.set_box_spec(id, &spec).unwrap();
+}
+
+fn wait(store: &Store, name: &str, node: &str) {
+    let id = new_box(store, name);
+    let d = Decision::new(id).lifecycle(BoxLifecycleInput::AtCapacity { max_boxes: 1 });
+    store.apply(d).unwrap();
+    on_node(store, id, node);
+}
+
+fn hold(store: &Store, name: &str, node: &str, provider: &str) {
     let id = new_box(store, name);
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
@@ -29,6 +45,7 @@ fn hold(store: &Store, name: &str, provider: &str) {
             ..Fields::default()
         });
     store.apply(d).unwrap();
+    on_node(store, id, node);
 }
 
 fn pool(store: &Store, user: UserId, name: &str, runtime: &str) -> i64 {
@@ -80,8 +97,11 @@ fn shared_and_personal_nodes_carry_their_link_and_counts() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let alice = alice_with_machines(&store);
-    hold(&store, "one", "static");
-    hold(&store, "two", "cloudhypervisor@mini");
+    hold(&store, "one", "fast", "static");
+    hold(&store, "two", "mini", "cloudhypervisor@mini");
+    for name in ["w1", "w2", "w3"] {
+        wait(&store, name, "mini");
+    }
     let shared = BTreeMap::from([(
         "fast".to_owned(),
         NodeConfig {
@@ -90,9 +110,8 @@ fn shared_and_personal_nodes_carry_their_link_and_counts() {
             max_boxes: NonZeroU32::new(2),
         },
     )]);
-    let waiting = HashMap::from([("cloudhypervisor@mini".to_owned(), 3)]);
 
-    let nodes = store.nodes(&shared, &waiting).unwrap();
+    let nodes = store.nodes(&shared).unwrap();
 
     assert_eq!(nodes.len(), 3, "a machine without a runtime is no node");
     let fast = find(&nodes, "fast");

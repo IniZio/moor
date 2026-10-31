@@ -11,7 +11,7 @@ use moor_core::domain::decision::{
     BoxRepo, Decision, ExtraEvent, Field, Fields, Intent, IntentChange,
 };
 use moor_core::domain::session_state::SessionInput;
-use moor_core::seam::driver::{AcquireReq, Acquired, DriverCaps, DriverError, Released};
+use moor_core::seam::driver::{AcquireReq, Acquired, DriverError, Released};
 use moor_core::seam::rng::Rng;
 use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, ProviderId};
 
@@ -19,13 +19,12 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::cache;
-use crate::ops::common::capacity;
 use crate::ops::common::dotfiles::{self, DotfilesRun};
 use crate::ops::common::facts::{provider_caps, provider_of, require_reverse_tunnel, settings_of};
+use crate::ops::common::node::{self, Bound};
 use crate::ops::common::setup;
 use crate::ops::common::view::box_view;
 use crate::ops::common::{agent_install, profile_fetch};
-use crate::ops::start::pool::placement;
 use crate::store::lease::LeaseKind;
 use crate::store::{BoxRow, Store};
 
@@ -138,44 +137,40 @@ pub(crate) fn provision(
     cfg: &BoxSettings,
 ) -> Result<Provisioned, CommandError> {
     let started = reread(store, id)?;
-    let provider = match started.boxed.as_ref() {
-        Some(held) => held.provider.clone(),
-        None => ProviderId::new(provider_of(cfg)?),
-    };
-    let caps = require_reverse_tunnel(provider.as_str(), provider_caps(cx, provider.as_str())?)?;
-    let mut requested = Decision::new(id);
-    requested.lifecycle_input = entry.begin();
-    let requested = requested
-        .box_input(BoxInput::Requested)
-        .set(Fields {
-            box_provider: Field::Set(provider.clone()),
-            box_handle: Field::Clear,
-            ..Fields::default()
-        })
-        .intent(IntentChange::Set(Intent::Provisioning {
-            pid: std::process::id(),
-        }));
-    if matches!(entry, Entry::Fresh | Entry::Waiting) {
-        let mut full = false;
-        store.apply_admitting(&provider, |holders| {
-            let Some(lim) = capacity::full(cx.config(), &provider, holders) else {
-                return Some(requested);
-            };
-            full = true;
-            (entry == Entry::Fresh).then(|| {
-                let queued = BoxLifecycleInput::AtCapacity {
-                    max_boxes: lim.max.get(),
-                };
-                Decision::new(id).lifecycle(queued)
+    let requested = |provider: &ProviderId| {
+        let mut d = Decision::new(id);
+        d.lifecycle_input = entry.begin();
+        d.box_input(BoxInput::Requested)
+            .set(Fields {
+                box_provider: Field::Set(provider.clone()),
+                box_handle: Field::Clear,
+                ..Fields::default()
             })
-        })?;
-        if full {
-            return Ok(Provisioned::skipped());
+            .intent(IntentChange::Set(Intent::Provisioning {
+                pid: std::process::id(),
+            }))
+    };
+    let bound = if matches!(entry, Entry::Fresh | Entry::Waiting) {
+        let fresh = (&started, entry == Entry::Fresh);
+        match node::admit(cx, store, fresh, cfg, requested)? {
+            Some(bound) => bound,
+            None => return Ok(Provisioned::skipped()),
         }
     } else {
-        store.apply(requested)?;
-    }
-    let req = acquire_req(cx, store, &started, cfg, provider, caps)?;
+        let provider = match started.boxed.as_ref() {
+            Some(held) => held.provider.clone(),
+            None => ProviderId::new(provider_of(cfg)?),
+        };
+        let caps =
+            require_reverse_tunnel(provider.as_str(), provider_caps(cx, provider.as_str())?)?;
+        store.apply(requested(&provider))?;
+        Bound {
+            seat: node::seat_of(cx, store, &started, cfg)?,
+            provider,
+            caps,
+        }
+    };
+    let req = acquire_req(cx, store, &started, cfg, bound);
     // The record exists before the Box does; a failed acquire leaves it `planned`.
     let planned = cx.driver().planned_handle(&req);
     let root = store.plan_lease(id, LeaseKind::BoxRoot, planned.as_str())?;
@@ -199,18 +194,23 @@ fn acquire_req(
     store: &Store,
     started: &BoxRow,
     cfg: &BoxSettings,
-    provider: ProviderId,
-    caps: DriverCaps,
-) -> Result<AcquireReq, CommandError> {
-    Ok(AcquireReq {
-        pool_machine: placement(store, started.user, provider.as_str())?,
+    bound: Bound,
+) -> AcquireReq {
+    let Bound {
+        provider,
+        caps,
+        seat,
+        ..
+    } = bound;
+    AcquireReq {
+        pool_machine: seat,
         cache: cache::for_start(cx, store, started, cfg, &provider, caps),
         provider,
         box_id: started.id,
         name: started.name.clone(),
         class: Some(cfg.size.value.as_str().to_owned()),
         nonce: nonce(cx.rng()),
-    })
+    }
 }
 
 /// Six lowercase hex chars drawn from the RNG, so each attempt differs.

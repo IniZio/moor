@@ -28,8 +28,9 @@ mod rules;
 mod turns;
 
 use super::apply::Applied;
-use super::reads::live_holders_in;
+use super::box_node::live_on_node_in;
 use super::{NewRun, RunOutcome, Store, StoreError};
+use moor_core::name::NodeName;
 
 /// Open a store in a temp dir with a fake clock.
 pub(super) fn open(dir: &Path) -> (Store, Arc<FakeClock>) {
@@ -530,13 +531,17 @@ fn intent_set_clear_and_run_lifecycle() {
     assert!(matches!(err, StoreError::Invalid(_)), "{err:?}");
 }
 
-/// Claim the only slot of provider `p` for `id`, or queue the box when it is taken.
+/// The node the racing Boxes share.
+fn node_p() -> NodeName {
+    NodeName::parse("p").unwrap()
+}
+
+/// Claim the only slot of node `p` for `id`, or queue the box when it is taken.
 fn claim_last_slot(store: &Store, id: BoxId) -> Option<Applied> {
-    let provider = ProviderId::new("p");
     store
-        .apply_admitting(&provider, |holders| {
+        .apply_admitting(id, &node_p(), |used| {
             let d = Decision::new(id);
-            Some(if holders.is_empty() {
+            Some(if used == 0 {
                 d.lifecycle(BoxLifecycleInput::Admitted)
                     .box_input(BoxInput::Requested)
                     .set(self::provider())
@@ -559,7 +564,7 @@ fn two_boxes_racing_for_the_last_slot_cannot_both_be_admitted() {
         Arc::new(FakeClock::new(Ts::from_millis(1_000_000))),
     )
     .unwrap();
-    let provider = ProviderId::new("p");
+    let node = node_p();
     let (lock_held, rival_may_claim) = std::sync::mpsc::channel::<()>();
     let admitted = std::thread::scope(|s| {
         let rival_store = &rival_store;
@@ -568,8 +573,8 @@ fn two_boxes_racing_for_the_last_slot_cannot_both_be_admitted() {
             claim_last_slot(rival_store, b)
         });
         let first = store
-            .apply_admitting(&provider, |holders| {
-                assert!(holders.is_empty());
+            .apply_admitting(a, &node, |used| {
+                assert_eq!(used, 0);
                 lock_held.send(()).unwrap();
                 std::thread::sleep(Duration::from_millis(300));
                 Some(
@@ -586,10 +591,5 @@ fn two_boxes_racing_for_the_last_slot_cannot_both_be_admitted() {
     let states = [a, b].map(|id| store.box_row(id).unwrap().unwrap().lifecycle);
     assert_eq!(admitted.map(|x| x.is_some()), [true, true]);
     assert_eq!(states, [BoxLifecycle::SettingUp, BoxLifecycle::Pending]);
-    assert_eq!(
-        live_holders_in(&store.reader().unwrap(), &provider)
-            .unwrap()
-            .len(),
-        1
-    );
+    assert_eq!(live_on_node_in(&store.reader().unwrap(), &node).unwrap(), 1);
 }

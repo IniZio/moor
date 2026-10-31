@@ -165,6 +165,10 @@ const FILES: &[(&str, &str)] = &[
         "V27__machine_link_node.sql",
         include_str!("../../migrations/V27__machine_link_node.sql"),
     ),
+    (
+        "V28__box_node.sql",
+        include_str!("../../migrations/V28__box_node.sql"),
+    ),
 ];
 
 /// moor.db's migrations, oldest first.

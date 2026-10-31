@@ -1,37 +1,47 @@
 //! `node-list`: the nodes the caller may start Boxes on.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use moor_core::config::Flags;
 use moor_core::decide::schedule::{Node, Online, Scope};
+use moor_core::request::MachineLink;
 use moor_core::user::Viewer;
 use moor_core::view::node::{NodeListValue, NodeScope, NodeView};
+use moor_core::view::user::MachineLinksValue;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::facts::{provider_of, settings_of};
+use crate::ops::common::facts::resolved;
+use crate::ops::common::node::configured;
+use crate::ops::common::promote::promote_waiting;
 
-/// Pending Boxes per provider id, by the provider their settings ask for. A Box whose settings
-/// no longer resolve waits on no node.
-fn waiting(cx: &Cx) -> Result<HashMap<String, usize>, CommandError> {
-    let mut out = HashMap::new();
-    for row in cx.store()?.waiting_boxes()? {
-        let Ok(cfg) = settings_of(cx, &row, &Flags::default()) else {
-            continue;
-        };
-        if let Ok(provider) = provider_of(&cfg) {
-            *out.entry(provider.to_owned()).or_default() += 1;
-        }
-    }
-    Ok(out)
-}
-
-/// Every node, shared and personal.
+/// Every node, shared and personal; with no node configured, only the personal ones.
 ///
 /// # Errors
 /// A store failure.
 pub(crate) fn all(cx: &Cx) -> Result<Vec<Node>, CommandError> {
-    Ok(cx.store()?.nodes(&cx.config().nodes, &waiting(cx)?)?)
+    let settings = resolved(cx, None, &Flags::default());
+    let shared = configured(cx.config(), &settings).map_or_else(|_| BTreeMap::new(), |(s, _)| s);
+    Ok(cx.store()?.nodes(&shared)?)
+}
+
+/// `machine-links`: records the agent links, then starts the Boxes pending on each personal node
+/// whose link is up.
+///
+/// # Errors
+/// A store failure.
+pub(crate) fn set_links(cx: &Cx, links: &[MachineLink]) -> Result<MachineLinksValue, CommandError> {
+    let store = cx.store()?;
+    let links = store.set_machine_links(links)?;
+    for node in all(cx)? {
+        let Scope::Personal { machine_id, .. } = node.scope else {
+            continue;
+        };
+        if links.iter().any(|l| l.online && l.machine_id == machine_id) {
+            promote_waiting(cx, store, &node.name, "link");
+        }
+    }
+    Ok(MachineLinksValue { links })
 }
 
 /// The nodes `viewer` sees: shared ones, plus its own personal ones; the operator sees all.

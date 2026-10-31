@@ -146,7 +146,17 @@ fn insert_holder(cx: &Cx, handle: BoxHandle) -> BoxId {
         .session(SessionInput::Started)
         .box_input(BoxInput::Acquired { handle });
     store.apply(d).unwrap();
+    on_provider_node(cx, id, PROVIDER);
     id
+}
+
+/// Records `id` on the node a config without `nodes:` builds from `provider`.
+fn on_provider_node(cx: &Cx, id: BoxId, provider: &str) {
+    let spec = moor_core::decide::schedule::BoxSpec {
+        labels: Vec::new(),
+        node: moor_core::name::NodeName::parse(provider).ok(),
+    };
+    cx.store().unwrap().set_box_spec(id, &spec).unwrap();
 }
 
 fn start_req(name: &str) -> StartReq {
@@ -342,6 +352,7 @@ fn a_waiter_is_not_promoted_when_the_freed_box_was_of_another_provider() {
         .unwrap()
         .apply(Decision::new(w.holder).set(set))
         .unwrap();
+    on_provider_node(&w.cx, w.holder, "other-provider");
     let v = close_holder(&w);
     assert!(v.box_deleted);
     assert!(v.promoted.is_empty());

@@ -106,10 +106,14 @@ fn names(nodes: &[&Node]) -> String {
     list.join(", ")
 }
 
-/// `HH:MM` (UTC) of a unix time.
-fn clock(secs: i64) -> String {
-    let day = secs.rem_euclid(86_400);
-    format!("{:02}:{:02}", day / 3600, day % 3600 / 60)
+/// How long ago `since` was at `now`, both unix seconds, in its largest whole unit: `12m`, `3h`, `2d`.
+fn ago(since: i64, now: i64) -> String {
+    let secs = now.saturating_sub(since).max(0);
+    match secs {
+        s if s < 3600 => format!("{}m", s / 60),
+        s if s < 86_400 => format!("{}h", s / 3600),
+        s => format!("{}d", s / 86_400),
+    }
 }
 
 /// The failure for a name that is not among the requester's visible nodes.
@@ -132,9 +136,15 @@ fn unknown(want: &NodeName, visible: &[&Node], requester: UserId) -> Verdict {
 }
 
 /// Picks the node for a new Box. Only the first node in order is tried: an offline or full
-/// node never sends the Box to another one.
+/// node never sends the Box to another one. `now` is unix seconds.
 #[must_use]
-pub fn schedule(nodes: &[Node], requester: UserId, default: &NodeName, spec: &BoxSpec) -> Verdict {
+pub fn schedule(
+    nodes: &[Node],
+    requester: UserId,
+    default: &NodeName,
+    spec: &BoxSpec,
+    now: i64,
+) -> Verdict {
     let visible: Vec<&Node> = nodes
         .iter()
         .filter(|n| n.scope == Scope::Shared || owned_by(n, requester))
@@ -183,7 +193,7 @@ pub fn schedule(nodes: &[Node], requester: UserId, default: &NodeName, spec: &Bo
                 "no node can host this Box: shared default `{default}` does not exist"
             ))
         },
-        |first| place(first, default),
+        |first| place(first, default, now),
     )
 }
 
@@ -218,14 +228,14 @@ fn ordered<'a>(nodes: &[&'a Node], requester: UserId, default: Option<&NodeName>
 }
 
 /// Judges the first node in order: offline fails, full waits, otherwise binds.
-fn place(n: &Node, default: &NodeName) -> Verdict {
+fn place(n: &Node, default: &NodeName, now: i64) -> Verdict {
     if let Online::Offline { since } = n.online {
-        let at = clock(since);
+        let at = ago(since, now);
         return fail(if &n.name == default {
-            format!("{} is offline since {at}: wait for it to come back", n.name)
+            format!("{} is offline for {at}: wait for it to come back", n.name)
         } else {
             format!(
-                "{} is offline since {at}: start moor-machine-agent on it, or start with --node {default}",
+                "{} is offline for {at}: start moor-machine-agent on it, or start with --node {default}",
                 n.name
             )
         });

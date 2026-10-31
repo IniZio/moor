@@ -6,7 +6,7 @@ use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::request::Pins;
 use moor_core::seam::clock::Ts;
-use moor_core::{BoxId, BoxName, ProviderId, SessionId};
+use moor_core::{BoxId, BoxName, SessionId};
 use rusqlite::{Connection, OptionalExtension};
 
 use super::{
@@ -30,16 +30,6 @@ const LIVE_STATES: [&str; 3] = [
     BoxState::Ready.as_str(),
     BoxState::Asleep.as_str(),
 ];
-
-/// Boxes holding a live Box of `provider` as seen on `conn`, oldest id first.
-pub(super) fn live_holders_in(
-    conn: &Connection,
-    provider: &ProviderId,
-) -> Result<Vec<BoxRow>, StoreError> {
-    let tail = "WHERE b.provider = ?1 AND b.driver_state IN (?2, ?3, ?4) ORDER BY b.id";
-    let [a, b, c] = LIVE_STATES;
-    query_boxes(conn, tail, (provider.as_str(), a, b, c))
-}
 
 /// An event with the name of the Box that owns it.
 #[derive(Debug, Clone, PartialEq)]
@@ -189,6 +179,7 @@ impl Store {
     }
 
     /// Boxes queued for a box, oldest id first.
+    #[cfg(test)]
     pub(crate) fn waiting_boxes(&self) -> Result<Vec<BoxRow>, StoreError> {
         let tail = "WHERE b.state = ?1 ORDER BY b.id";
         query_boxes(&self.reader()?, tail, [BoxLifecycle::Pending.as_str()])

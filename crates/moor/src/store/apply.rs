@@ -16,9 +16,9 @@ mod steps;
 pub(super) use self::sql::update;
 use self::sql::{branch_taken, field_value, text, Sets};
 use self::steps::{step_box, Parts};
-use super::reads::live_holders_in;
-use super::{BoxRow, DriverRow, Store, StoreError};
-use moor_core::ProviderId;
+use super::box_node::live_on_node_in;
+use super::{DriverRow, Store, StoreError};
+use moor_core::name::NodeName;
 
 /// Result of a committed `apply`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,22 +55,28 @@ impl Store {
         Ok(applied)
     }
 
-    /// Read the live holders of `provider`, let `decide` pick a decision from them, and apply it.
+    /// Count the Boxes holding a slot on `node`, let `decide` pick a decision for Box `id` from
+    /// that count, apply it and record `node` as the Box's.
     ///
     /// The read and the write share one transaction, so no other writer can claim a slot between them.
     /// `decide` returns `None` to write nothing. It runs under the writer lock, so it must not block.
     pub(crate) fn apply_admitting(
         &self,
-        provider: &ProviderId,
-        decide: impl FnOnce(Vec<BoxRow>) -> Option<Decision>,
+        id: BoxId,
+        node: &NodeName,
+        decide: impl FnOnce(usize) -> Option<Decision>,
     ) -> Result<Option<Applied>, StoreError> {
         let now = self.now();
         let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let Some(d) = decide(live_holders_in(&tx, provider)?) else {
+        let Some(d) = decide(live_on_node_in(&tx, node)?) else {
             return Ok(None);
         };
         let applied = apply_in(&tx, now, d)?;
+        tx.execute(
+            "UPDATE boxes SET node = ?1 WHERE id = ?2",
+            params![node.as_str(), id.get()],
+        )?;
         tx.commit()?;
         drop(conn);
         Ok(Some(applied))
