@@ -123,6 +123,8 @@ This guide starts one Box from a git repo on your machine. You need:
   the exit codes, and the `--json` envelope.
 - [Configuration reference](docs/config.md): the user config, `.moor.yaml`,
   the controller config, and the vault key.
+- [Nodes](docs/nodes.md): where Boxes run, how the scheduler picks a node, and
+  how to name one or require labels.
 - [Box providers and the Proxy](docs/providers.md): providers, Box image
   requirements, and how a Box reaches its Proxy.
 - [Set up the Slack front](docs/slack.md): run `moor-slack` and configure its

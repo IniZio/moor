@@ -135,6 +135,9 @@ Move the file aside and start again with a fresh one.
   the agent waits on, and the last lines of its pane. `restart_agent` ends the
   agent's session and resumes it. If there is no session to resume, it starts
   the Box's prompt over.
+- `start_box` takes an optional `node`: a node the person may use, shared or
+  their own. Without it the Box runs on their default. The thread's Box row keeps
+  the choice, so a retried start asks for the same node. See [Nodes](nodes.md).
 - Each Box's Session is a child Session of the thread's host Session. The
   Box's name is `slack-<thread ts>-<n>`, with each `.` in the thread
   timestamp replaced by `-`.
