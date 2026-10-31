@@ -63,7 +63,7 @@ enum Command {
         /// warmup, info, pause, resume, stop or list.
         #[arg(value_parser = verb)]
         verb: Verb,
-        /// `moor-<id>`; none for list.
+        /// `moor-<controller>-<id>`; none for list.
         slug: Option<String>,
         /// The pool.
         #[command(flatten)]
@@ -71,7 +71,7 @@ enum Command {
     },
     /// Carries stdin and stdout to a lease's sshd, as an ssh `ProxyCommand`.
     Dial {
-        /// `moor-<id>`.
+        /// `moor-<controller>-<id>`.
         slug: String,
         /// The pool.
         #[command(flatten)]

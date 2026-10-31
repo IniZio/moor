@@ -525,7 +525,7 @@ async fn a_machine_that_is_no_pool_host_refuses_lease_and_dial() {
     fake_crabbox::install(home.path());
     for op in [
         json!({"op": "lease", "verb": "list"}),
-        json!({"op": "dial", "slug": "moor-7"}),
+        json!({"op": "dial", "slug": "moor-1a2b3c4d-7"}),
     ] {
         let reply = ask(&w, &op).await.1;
         assert!(refused(&reply), "{op}: {reply:?}");
@@ -537,22 +537,24 @@ async fn a_machine_that_is_no_pool_host_refuses_lease_and_dial() {
 async fn a_lease_uses_the_hosts_provider_and_a_request_cannot_name_one() {
     let (w, home) = (world().await, tempfile::tempdir().unwrap());
     let _agent = pool_host(&w, home.path()).await;
-    let named = json!({"op": "lease", "verb": "warmup", "slug": "moor-7", "provider": "evil"});
+    let named =
+        json!({"op": "lease", "verb": "warmup", "slug": "moor-1a2b3c4d-7", "provider": "evil"});
     assert!(refused(&ask(&w, &named).await.1));
     assert_eq!(fake_crabbox::calls(home.path()), "");
-    let op = json!({"op": "lease", "verb": "warmup", "slug": "moor-7"});
+    let op = json!({"op": "lease", "verb": "warmup", "slug": "moor-1a2b3c4d-7"});
     let reply = ask(&w, &op).await.1;
     assert_eq!(reply, Reply::Leased(moor_client::link::lease::Answer::Done));
-    assert!(fake_crabbox::calls(home.path()).ends_with(" warmup --provider fake --slug moor-7\n"));
+    assert!(fake_crabbox::calls(home.path())
+        .ends_with(" warmup --provider fake --slug moor-1a2b3c4d-7\n"));
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_dial_carries_the_stream_to_the_vms_sshd_and_back() {
     let (w, home) = (world().await, tempfile::tempdir().unwrap());
     let _agent = pool_host(&w, home.path()).await;
-    let warmup = json!({"op": "lease", "verb": "warmup", "slug": "moor-7"});
+    let warmup = json!({"op": "lease", "verb": "warmup", "slug": "moor-1a2b3c4d-7"});
     assert!(!refused(&ask(&w, &warmup).await.1));
-    let (mut ch, reply) = ask(&w, &json!({"op": "dial", "slug": "moor-7"})).await;
+    let (mut ch, reply) = ask(&w, &json!({"op": "dial", "slug": "moor-1a2b3c4d-7"})).await;
     assert_eq!(reply, Reply::Started);
     ch.write_all(b"SSH-2.0-hello\n").await.unwrap();
     let mut back = [0u8; 14];
@@ -567,12 +569,12 @@ async fn a_dial_carries_the_stream_to_the_vms_sshd_and_back() {
 async fn a_call_on_a_lease_never_warmed_leaves_no_dir_on_the_host() {
     let (w, home) = (world().await, tempfile::tempdir().unwrap());
     let _agent = pool_host(&w, home.path()).await;
-    let info = json!({"op": "lease", "verb": "info", "slug": "moor-7"});
+    let info = json!({"op": "lease", "verb": "info", "slug": "moor-1a2b3c4d-7"});
     ask(&w, &info).await;
-    let stop = json!({"op": "lease", "verb": "stop", "slug": "moor-7"});
+    let stop = json!({"op": "lease", "verb": "stop", "slug": "moor-1a2b3c4d-7"});
     assert_eq!(
         ask(&w, &stop).await.1,
         Reply::Leased(moor_client::link::lease::Answer::Done)
     );
-    assert!(!home.path().join("moor-pool/7").exists());
+    assert!(!home.path().join("moor-pool/moor-1a2b3c4d-7").exists());
 }

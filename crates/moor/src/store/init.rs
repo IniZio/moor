@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+use moor_core::box_key::ControllerId;
 use moor_core::cache::CacheSalt;
 use moor_migrate::{Legacy, Migration};
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
@@ -26,6 +27,28 @@ impl Store {
             })?
         };
         parsed_opt("meta cache_salt", &stored, CacheSalt::from_hex)
+    }
+}
+
+impl Store {
+    /// This store's controller id, made on first use and never changed: Box ids restart with a
+    /// fresh store, so the id lives and dies with the database that numbers them.
+    pub(crate) fn controller_id(&self) -> Result<ControllerId, StoreError> {
+        let mut fresh = [0u8; 4];
+        getrandom::fill(&mut fresh).map_err(|e| {
+            StoreError::Corrupt(format!("no randomness for the controller id: {e}"))
+        })?;
+        let stored: String = {
+            let conn = self.writer();
+            conn.execute(
+                "INSERT INTO meta (k, v) VALUES ('controller_id', ?) ON CONFLICT (k) DO NOTHING",
+                [ControllerId::from_bytes(fresh).as_str()],
+            )?;
+            conn.query_row("SELECT v FROM meta WHERE k = 'controller_id'", [], |r| {
+                r.get(0)
+            })?
+        };
+        parsed_opt("meta controller_id", &stored, ControllerId::parse)
     }
 }
 

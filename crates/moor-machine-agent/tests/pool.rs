@@ -43,10 +43,10 @@ fn home() -> tempfile::TempDir {
     home
 }
 
-/// A home with lease moor-7 warmed, as every verb but warmup needs.
+/// A home with lease moor-1a2b3c4d-7 warmed, as every verb but warmup needs.
 fn warmed() -> tempfile::TempDir {
     let home = home();
-    assert!(lease(home.path(), &["warmup", "moor-7"]).0);
+    assert!(lease(home.path(), &["warmup", "moor-1a2b3c4d-7"]).0);
     home
 }
 
@@ -57,15 +57,15 @@ fn each_verb_runs_crabbox_with_the_agents_provider_from_the_lease_dir() {
     let home = home();
     for verb in ["warmup", "pause", "resume", "stop"] {
         assert_eq!(
-            lease(home.path(), &[verb, "moor-7"]),
+            lease(home.path(), &[verb, "moor-1a2b3c4d-7"]),
             (true, DONE()),
             "{verb}"
         );
     }
-    let dir = home.path().join("moor-pool/7/lease");
+    let dir = home.path().join("moor-pool/moor-1a2b3c4d-7/lease");
     let want = format!(
-        "{0} warmup --provider fake --slug moor-7\n{0} pause --provider fake --id moor-7\n\
-         {0} resume --provider fake --id moor-7\n{0} stop --provider fake --id moor-7\n",
+        "{0} warmup --provider fake --slug moor-1a2b3c4d-7\n{0} pause --provider fake --id moor-1a2b3c4d-7\n\
+         {0} resume --provider fake --id moor-1a2b3c4d-7\n{0} stop --provider fake --id moor-1a2b3c4d-7\n",
         dir.display()
     );
     assert_eq!(fake_crabbox::calls(home.path()), want);
@@ -76,11 +76,14 @@ fn each_verb_runs_crabbox_with_the_agents_provider_from_the_lease_dir() {
 fn stopping_a_lease_already_gone_succeeds() {
     let home = home();
     std::fs::write(home.path().join("stop-gone"), "").unwrap();
-    assert_eq!(lease(home.path(), &["stop", "moor-7"]), (true, DONE()));
+    assert_eq!(
+        lease(home.path(), &["stop", "moor-1a2b3c4d-7"]),
+        (true, DONE())
+    );
     std::fs::remove_file(home.path().join("stop-gone")).unwrap();
     std::fs::write(home.path().join("stop-missing"), "").unwrap();
     assert_eq!(
-        lease(home.path(), &["stop", "moor-7"]),
+        lease(home.path(), &["stop", "moor-1a2b3c4d-7"]),
         (true, DONE()),
         "external's not-found"
     );
@@ -91,7 +94,10 @@ fn pausing_on_a_provider_that_cannot_answers_unsupported() {
     let home = warmed();
     std::fs::write(home.path().join("no-pause"), "").unwrap();
     let want = json!({"reply": "leased", "answer": "unsupported"});
-    assert_eq!(lease(home.path(), &["pause", "moor-7"]), (true, want));
+    assert_eq!(
+        lease(home.path(), &["pause", "moor-1a2b3c4d-7"]),
+        (true, want)
+    );
 }
 
 #[test]
@@ -99,35 +105,44 @@ fn info_gives_the_login_user_and_host_key_only() {
     let home = warmed();
     let want = json!({"reply": "leased", "answer": "info", "user": "vm",
         "host_keys": [fake_crabbox::HOST_KEY]});
-    assert_eq!(lease(home.path(), &["info", "moor-7"]), (true, want));
+    assert_eq!(
+        lease(home.path(), &["info", "moor-1a2b3c4d-7"]),
+        (true, want)
+    );
 }
 
 #[test]
 fn info_refuses_words_that_turn_host_key_checking_off() {
     let home = warmed();
     std::fs::write(home.path().join("loose"), "").unwrap();
-    let (ok, answer) = lease(home.path(), &["info", "moor-7"]);
+    let (ok, answer) = lease(home.path(), &["info", "moor-1a2b3c4d-7"]);
     assert!(!ok);
     assert_eq!(answer["reply"], "refused");
     assert!(answer["reason"].as_str().unwrap().contains("checking off"));
 }
 
 #[test]
-fn a_slug_other_than_moor_id_never_reaches_crabbox() {
+fn a_slug_other_than_moor_controller_id_never_reaches_crabbox() {
     let home = home();
     for slug in [
-        "moor-7;id",
+        "moor-1a2b3c4d-7;id",
         "moor-07",
+        "moor-7",
+        "moor-1a2b3c4d-07",
+        "moor-1a2b3c4d-",
+        "moor-1A2B3C4D-7",
+        "moor-1a2b3c4-7",
+        "moor-1a2b3c4d5-7",
         "moor-",
         "moor--1",
         "box-7",
-        "../moor-7",
+        "../moor-1a2b3c4d-7",
     ] {
         let (ok, answer) = lease(home.path(), &["warmup", slug]);
         assert!(!ok, "{slug}");
         assert_eq!(answer["reply"], "refused", "{slug}");
     }
-    let (ok, _) = lease(home.path(), &["list", "moor-7"]);
+    let (ok, _) = lease(home.path(), &["list", "moor-1a2b3c4d-7"]);
     assert!(!ok, "list takes no slug");
     assert_eq!(fake_crabbox::calls(home.path()), "");
 }
@@ -135,11 +150,11 @@ fn a_slug_other_than_moor_id_never_reaches_crabbox() {
 #[test]
 fn list_gives_the_moor_leases_and_their_states() {
     let home = home();
-    let leases = json!([{"labels": {"slug": "moor-7"}, "state": "running"},
-        {"slug": "moor-8", "status": "paused"}, {"name": "other", "state": "running"}]);
+    let leases = json!([{"labels": {"slug": "moor-1a2b3c4d-7"}, "state": "running"},
+        {"slug": "moor-1a2b3c4d-8", "status": "paused"}, {"name": "other", "state": "running"}]);
     std::fs::write(home.path().join("leases.json"), leases.to_string()).unwrap();
     let want = json!({"reply": "leased", "answer": "leases", "leases": [
-        {"slug": "moor-7", "state": "running"}, {"slug": "moor-8", "state": "paused"}]});
+        {"slug": "moor-1a2b3c4d-7", "state": "running"}, {"slug": "moor-1a2b3c4d-8", "state": "paused"}]});
     assert_eq!(lease(home.path(), &["list"]), (true, want));
     let log = fake_crabbox::calls(home.path());
     assert!(log.ends_with(" list --provider fake --json\n"), "{log}");
@@ -148,20 +163,42 @@ fn list_gives_the_moor_leases_and_their_states() {
 #[test]
 fn pool_max_refuses_a_warmup_past_it() {
     let home = home();
-    let leases = json!([{"slug": "moor-7"}, {"slug": "moor-8"}]);
+    let leases = json!([{"slug": "moor-1a2b3c4d-7"}, {"slug": "moor-1a2b3c4d-8"}]);
     std::fs::write(home.path().join("leases.json"), leases.to_string()).unwrap();
-    let (ok, answer) = lease(home.path(), &["warmup", "moor-9", "--pool-max", "2"]);
+    let (ok, answer) = lease(
+        home.path(),
+        &["warmup", "moor-1a2b3c4d-9", "--pool-max", "2"],
+    );
     assert!(!ok);
     assert_eq!(answer["reply"], "refused");
     assert!(!fake_crabbox::calls(home.path()).contains("warmup"));
-    let again = lease(home.path(), &["warmup", "moor-8", "--pool-max", "2"]);
+    let again = lease(
+        home.path(),
+        &["warmup", "moor-1a2b3c4d-8", "--pool-max", "2"],
+    );
     assert_eq!(again, (true, DONE()), "a lease already counted may warm up");
+}
+
+#[test]
+fn two_controllers_with_the_same_box_id_keep_separate_lease_dirs() {
+    let home = home();
+    for slug in ["moor-1a2b3c4d-7", "moor-5e6f7a8b-7"] {
+        assert!(lease(home.path(), &["warmup", slug]).0);
+        assert!(home
+            .path()
+            .join("moor-pool")
+            .join(slug)
+            .join("lease")
+            .is_dir());
+    }
+    assert!(lease(home.path(), &["stop", "moor-1a2b3c4d-7"]).0);
+    assert!(home.path().join("moor-pool/moor-5e6f7a8b-7").is_dir());
 }
 
 #[test]
 fn dial_carries_bytes_both_ways_through_the_proxy_command() {
     let home = warmed();
-    let mut child = agent(home.path(), &["dial", "moor-7"])
+    let mut child = agent(home.path(), &["dial", "moor-1a2b3c4d-7"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()

@@ -126,7 +126,7 @@ pub enum Op {
     Lease {
         /// What to do.
         verb: lease::Verb,
-        /// `moor-<id>`; none for a list.
+        /// `moor-<controller>-<id>`; none for a list.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         slug: Option<String>,
         /// The OpenSSH public key an authorize lets in; none for every other verb.
@@ -135,7 +135,7 @@ pub enum Op {
     },
     /// Carry the stream to and from the sshd of a pool lease's VM; only a pool host serves it.
     Dial {
-        /// `moor-<id>`.
+        /// `moor-<controller>-<id>`.
         slug: String,
     },
     /// Report the agent's state; read-only, so every agent serves it.

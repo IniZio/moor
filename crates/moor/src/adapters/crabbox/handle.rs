@@ -9,9 +9,6 @@ use super::{DEFAULT_SSH_PORT, STATIC_PROVIDER};
 
 /// Per-Box crabbox slug, `moor-{id}-{nonce}`; the Box name never enters it.
 pub(super) fn slug(req: &AcquireReq) -> String {
-    if super::pool::is_pool_provider(&req.provider) {
-        return BoxKey::new(req.box_id).pool_slug();
-    }
     BoxKey::new(req.box_id).slug(&req.nonce)
 }
 

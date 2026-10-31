@@ -14,6 +14,44 @@ fn slug_carries_id_and_nonce() {
 }
 
 #[test]
+fn pool_slug_carries_controller_and_id_and_parses_back() {
+    let ctl = ControllerId::from_bytes([0x1a, 0x2b, 0x3c, 0x4d]);
+    let slug = key(7).pool_slug(&ctl);
+    assert_eq!(slug, "moor-1a2b3c4d-7");
+    assert_eq!(parse_pool_slug(&slug), Some((ctl, BoxId::new(7))));
+}
+
+#[test]
+fn controller_ids_are_zero_padded_lowercase_hex() {
+    assert_eq!(
+        ControllerId::from_bytes([0, 0, 0, 0xab]).as_str(),
+        "000000ab"
+    );
+}
+
+#[test]
+fn only_a_well_formed_pool_slug_parses() {
+    for bad in [
+        "moor-7",
+        "moor-1a2b3c4d",
+        "moor-1a2b3c4d-",
+        "moor-1a2b3c4d-0",
+        "moor-1a2b3c4d-07",
+        "moor-1a2b3c4d--7",
+        "moor-1a2b3c4d-7-x",
+        "moor-1A2B3C4D-7",
+        "moor-1a2b3c4-7",
+        "moor-1a2b3c4d5-7",
+        "moor-1a2b3c4g-7",
+        "box-1a2b3c4d-7",
+        "../moor-1a2b3c4d-7",
+        "moor-1a2b3c4d-7/x",
+    ] {
+        assert_eq!(parse_pool_slug(bad), None, "{bad}");
+    }
+}
+
+#[test]
 fn cred_and_tmp_dirs_carry_id_and_nonce() {
     assert_eq!(key(7).cred_dir("n"), ".moor-cred-7-n");
     assert_eq!(key(7).tmp_dir("n"), ".moor-tmp-7-n");

@@ -20,6 +20,7 @@ use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 
 use crate::testing::clock::FakeClock;
 
+mod controller_id;
 mod events_after;
 mod open_boxes;
 mod poison;

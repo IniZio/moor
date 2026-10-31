@@ -2,13 +2,14 @@
 //! requester's own. There is no fallback to another provider: a host that cannot take the Box
 //! fails the start with the reason.
 
+use moor_core::box_key::PoolSeat;
 use moor_core::user::UserId;
 use moor_core::{ErrorKind, ProviderId};
 
 use crate::error::CommandError;
 use crate::store::Store;
 
-/// The enrolled machine that takes `user`'s Box on `provider`; `None` when `provider` names no
+/// The enrolled machine and controller id that place `user`'s Box on `provider`; `None` when `provider` names no
 /// host.
 ///
 /// # Errors
@@ -18,7 +19,7 @@ pub(crate) fn placement(
     store: &Store,
     user: Option<UserId>,
     provider: &str,
-) -> Result<Option<i64>, CommandError> {
+) -> Result<Option<PoolSeat>, CommandError> {
     let id = ProviderId::parse(provider)
         .map_err(|e| CommandError::new(ErrorKind::Refused, e.to_string()))?;
     let Some(host) = id.host() else {
@@ -44,5 +45,8 @@ pub(crate) fn placement(
     if !found.online {
         return refuse(format!("{host} is offline: start moor-machine-agent on it"));
     }
-    Ok(Some(found.id))
+    Ok(Some(PoolSeat {
+        machine: found.id,
+        controller: store.controller_id()?,
+    }))
 }

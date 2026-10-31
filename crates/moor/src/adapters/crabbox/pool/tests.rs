@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use moor_client::link::lease::{Answer, Verb};
+use moor_core::box_key::{ControllerId, PoolSeat};
 use moor_core::name::{BoxHandle, BoxId, ProviderId};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, Released, SleepOutcome};
 
@@ -88,12 +89,15 @@ fn rig() -> (Arc<FakeHost>, Crabbox) {
 fn req() -> AcquireReq {
     let mut req = crate::adapters::crabbox::tests::req("external@hv", None);
     req.box_id = BoxId::new(9101);
-    req.pool_machine = Some(42);
+    req.pool_machine = Some(PoolSeat {
+        machine: 42,
+        controller: ControllerId::from_bytes([0x1a, 0x2b, 0x3c, 0x4d]),
+    });
     req
 }
 
 fn handle() -> BoxHandle {
-    BoxHandle::new("external@hv/42/moor-9101")
+    BoxHandle::new("external@hv/42/moor-1a2b3c4d-9101")
 }
 
 #[test]
@@ -107,21 +111,21 @@ fn acquire_warms_up_lets_the_key_in_and_builds_its_own_words() {
     let key = asked[1].2.clone().unwrap();
     assert!(key.starts_with("ssh-ed25519 "), "{key}");
     assert!(!key.contains("PRIVATE"), "only the public key leaves");
-    assert_eq!(asked[1].1.as_deref(), Some("moor-9101"));
+    assert_eq!(asked[1].1.as_deref(), Some("moor-1a2b3c4d-9101"));
 
     let words = cb.connect_argv(&handle()).unwrap().join(" ");
     for want in [
         "IdentitiesOnly=yes",
         "StrictHostKeyChecking=yes",
-        "HostKeyAlias=moor-9101",
-        "ProxyCommand=moor link-dial 42 moor-9101",
-        "crabbox@moor-9101",
+        "HostKeyAlias=moor-1a2b3c4d-9101",
+        "ProxyCommand=moor link-dial 42 moor-1a2b3c4d-9101",
+        "crabbox@moor-1a2b3c4d-9101",
     ] {
         assert!(words.contains(want), "{want} in {words}");
     }
     let known = words.split("UserKnownHostsFile=").nth(1).unwrap();
     let known = std::fs::read_to_string(known.split(' ').next().unwrap()).unwrap();
-    assert_eq!(known, format!("moor-9101 {HOST_KEY}\n"));
+    assert_eq!(known, format!("moor-1a2b3c4d-9101 {HOST_KEY}\n"));
 }
 
 #[test]
@@ -173,7 +177,7 @@ fn the_planned_handle_names_the_host_machine() {
 #[test]
 fn every_later_op_reaches_the_machine_its_handle_names() {
     let (host, cb) = rig();
-    let on_seven = BoxHandle::new("external@hv/7/moor-9101");
+    let on_seven = BoxHandle::new("external@hv/7/moor-1a2b3c4d-9101");
     cb.sleep(&on_seven).unwrap();
     cb.release(&on_seven).unwrap();
     cb.connect_argv(&on_seven).unwrap();
@@ -184,13 +188,15 @@ fn every_later_op_reaches_the_machine_its_handle_names() {
 fn a_handle_without_a_well_formed_machine_and_slug_is_refused_unasked() {
     let (host, cb) = rig();
     for bad in [
-        "external@hv/moor-9101",
-        "external@hv/+42/moor-9101",
-        "external@hv//moor-9101",
-        "external@hv/4x/moor-9101",
+        "external@hv/moor-1a2b3c4d-9101",
+        "external@hv/+42/moor-1a2b3c4d-9101",
+        "external@hv//moor-1a2b3c4d-9101",
+        "external@hv/4x/moor-1a2b3c4d-9101",
         "external@hv/42/other",
-        "external@hv/42/moor-9101/x",
-        "external/42/moor-9101",
+        "external@hv/42/moor-9101",
+        "external@hv/42/moor-1A2B3C4D-9101",
+        "external@hv/42/moor-1a2b3c4d-9101/x",
+        "external/42/moor-1a2b3c4d-9101",
     ] {
         assert!(cb.release(&BoxHandle::new(bad)).is_err(), "{bad}");
     }
