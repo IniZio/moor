@@ -1,6 +1,9 @@
 //! The environment the Box agent starts with: crabbox's own names are cleared and the agent's own set.
 
+use std::collections::BTreeMap;
+
 use moor_core::boxscript::quote;
+use moor_core::name::BoxPath;
 
 /// The variable that makes Claude Code accept bypassPermissions as root.
 pub(super) const ROOT_SANDBOX_VAR: &str = "IS_SANDBOX";
@@ -57,6 +60,30 @@ pub(super) fn export_lines(
         lines.push(format!("export {ROOT_SANDBOX_VAR}=1"));
     }
     Ok(lines)
+}
+
+/// `export` lines for a profile's `env`, each value quoted so it stays literal, with `{home}` and
+/// `{profile}` replaced by the Box user's `home` and the profile checkout `profile`. A name in
+/// `strip_env` is skipped, as in [`export_lines`].
+#[expect(
+    clippy::literal_string_with_formatting_args,
+    reason = "{home} and {profile} are the profile's placeholders, not format arguments"
+)]
+pub(super) fn profile_lines(
+    env: &BTreeMap<String, String>,
+    (home, profile): (&BoxPath, &BoxPath),
+    strip_env: &[String],
+) -> Result<Vec<String>, String> {
+    let vars: Vec<(String, String)> = env
+        .iter()
+        .map(|(name, value)| {
+            let value = value
+                .replace("{home}", home.as_str())
+                .replace("{profile}", profile.as_str());
+            (name.clone(), value)
+        })
+        .collect();
+    export_lines(&vars, false, strip_env)
 }
 
 #[cfg(test)]

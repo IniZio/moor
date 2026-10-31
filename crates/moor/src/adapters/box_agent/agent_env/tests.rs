@@ -1,6 +1,10 @@
 use std::process::Command;
 
-use super::{clear_lines, export_lines, ROOT_SANDBOX_VAR};
+use std::collections::BTreeMap;
+
+use moor_core::name::BoxPath;
+
+use super::{clear_lines, export_lines, profile_lines, ROOT_SANDBOX_VAR};
 
 fn pair(n: &str, v: &str) -> (String, String) {
     (n.to_owned(), v.to_owned())
@@ -123,4 +127,72 @@ fn quoted_values_round_trip_through_sh() {
         .join("\n");
     script.push_str("\nprintf %s \"$V\"");
     assert_eq!(sh(&script, &[]), value);
+}
+
+fn profile_env(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+    pairs.iter().map(|(n, v)| pair(n, v)).collect()
+}
+
+fn dirs() -> (BoxPath, BoxPath) {
+    let home = BoxPath::restore("/home/box").unwrap();
+    let profile = BoxPath::restore("/home/box/.moor-profile/person").unwrap();
+    (home, profile)
+}
+
+#[test]
+#[expect(
+    clippy::literal_string_with_formatting_args,
+    reason = "the profile's placeholders"
+)]
+fn profile_lines_fill_the_home_and_profile_placeholders() {
+    let (home, profile) = dirs();
+    let env = profile_env(&[
+        ("BUN_OPTIONS", "--preload={profile}/claude/x.js"),
+        ("H", "{home}/b"),
+    ]);
+    let lines = profile_lines(&env, (&home, &profile), &[]).unwrap();
+    assert_eq!(
+        lines,
+        [
+            "export BUN_OPTIONS='--preload=/home/box/.moor-profile/person/claude/x.js'",
+            "export H='/home/box/b'",
+        ]
+    );
+}
+
+#[test]
+#[expect(
+    clippy::literal_string_with_formatting_args,
+    reason = "the profile's placeholders"
+)]
+fn a_profile_value_stays_literal_under_sh() {
+    let dir = tempfile::tempdir().unwrap();
+    let (home, profile) = dirs();
+    let env = profile_env(&[("V", "$(touch x) `touch y` $HOME {home}")]);
+    let mut script = profile_lines(&env, (&home, &profile), &[])
+        .unwrap()
+        .join("\n");
+    script.push_str("\nprintf %s \"$V\"");
+    let out = Command::new("sh")
+        .arg("-c")
+        .arg(script)
+        .current_dir(dir.path())
+        .env_clear()
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8(out.stdout).unwrap(),
+        "$(touch x) `touch y` $HOME /home/box"
+    );
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn profile_lines_skip_stripped_names_and_refuse_bad_ones() {
+    let (home, profile) = dirs();
+    let env = profile_env(&[("A", "1"), ("B", "2")]);
+    let lines = profile_lines(&env, (&home, &profile), &["A".to_owned()]).unwrap();
+    assert_eq!(lines, ["export B='2'"]);
+    let bad = profile_env(&[("A;rm", "1")]);
+    assert!(profile_lines(&bad, (&home, &profile), &[]).is_err());
 }

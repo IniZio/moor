@@ -106,3 +106,19 @@ fn repo_env_may_set_nono_and_other_xdg_names() {
     assert!(!agent_env_reserved("NONO_PROFILE"));
     assert!(!agent_env_reserved("XDG_DATA_HOME"));
 }
+
+#[test]
+fn a_refused_agent_env_name_is_a_credential_or_one_moor_sets() {
+    for name in [
+        "PATH",
+        "NODE_OPTIONS",
+        "LD_PRELOAD",
+        "DEPLOY_TOKEN",
+        "api_key",
+    ] {
+        assert!(agent_env_refused(name), "{name}");
+    }
+    for name in ["BUN_OPTIONS", "APP_MODE"] {
+        assert!(!agent_env_refused(name), "{name}");
+    }
+}

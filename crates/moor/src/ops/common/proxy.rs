@@ -1,6 +1,6 @@
 //! The Proxy plan of a Box: its repo's tool rules and the env they give the Box.
 
-use moor_core::config::check::{agent_env_reserved, credential_like_env};
+use moor_core::config::check::agent_env_refused;
 use moor_core::config::proxy::{resolve_rules, ResolvedRule};
 use std::collections::BTreeMap;
 
@@ -27,7 +27,7 @@ pub(crate) fn agent_env(cx: &Cx, settings: &BoxSettings) -> Vec<(String, String)
     let (kept, dropped): (Vec<_>, Vec<_>) = settings
         .env
         .iter()
-        .partition(|(name, _)| !(credential_like_env(name) || agent_env_reserved(name)));
+        .partition(|(name, _)| !agent_env_refused(name));
     for (name, _) in dropped {
         cx.warn(Warning {
             code: "agent_env_dropped".to_owned(),

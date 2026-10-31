@@ -93,6 +93,33 @@ fn plugin_must_name_a_declared_marketplace() {
 }
 
 #[test]
+fn each_agent_section_takes_an_env_map_of_literal_values() {
+    let m = parse(
+        "claude:\n  env:\n    BUN_OPTIONS: \"--preload={profile}/claude/a.js\"\n    HOME_NOTE: \"{home}/x $(touch x)\"\n",
+    )
+    .unwrap();
+    let claude: Vec<_> = m.claude.env.iter().collect();
+    assert_eq!(
+        claude,
+        [
+            (
+                &"BUN_OPTIONS".to_owned(),
+                &"--preload={profile}/claude/a.js".to_owned()
+            ),
+            (&"HOME_NOTE".to_owned(), &"{home}/x $(touch x)".to_owned()),
+        ]
+    );
+    assert!(err("claude:\n  env: {A: 1}\n").contains("claude.env.A"));
+    assert!(err("claude:\n  env: [A]\n").contains("claude.env"));
+}
+
+#[test]
+fn a_refused_env_name_still_parses_so_the_launch_can_drop_it() {
+    let m = parse("claude:\n  env: {PATH: x, API_TOKEN: y, BUN_OPTIONS: z}\n").unwrap();
+    assert_eq!(m.claude.env.len(), 3);
+}
+
+#[test]
 fn unknown_keys_are_refused() {
     assert!(err("gemini: {}\n").contains("gemini"));
     assert!(err("claude:\n  effort: high\n").contains("effort"));
@@ -177,4 +204,23 @@ fn codex_plugins_follow_the_same_rules_as_claude() {
     );
     let e = err("codex:\n  marketplaces:\n    t: https://example.com/a/b\n");
     assert!(e.contains("codex.marketplaces"), "{e}");
+}
+
+#[test]
+fn every_yaml_example_in_the_profile_docs_parses() {
+    let doc = include_str!("../../../../docs/config.md");
+    let (_, after) = doc
+        .split_once("### Per-user agent profile\n")
+        .expect("the profile section");
+    let section = after.split_once("\n#").map_or(after, |(s, _)| s);
+    let blocks: Vec<&str> = section
+        .split("```yaml\n")
+        .skip(1)
+        .filter_map(|b| b.split("```").next())
+        .collect();
+    assert!(!blocks.is_empty(), "no yaml example in the profile section");
+    for block in blocks {
+        let parsed = parse(block);
+        assert!(parsed.is_ok(), "{parsed:?}\n{block}");
+    }
 }

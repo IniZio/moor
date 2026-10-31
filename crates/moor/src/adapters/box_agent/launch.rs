@@ -213,6 +213,7 @@ impl Launch<'_> {
         let lines = self.proxy_lines()?;
         let env = agent_env::export_lines(&exec.vars, self.root, &exec.unset);
         let env = env.map_err(|e| fail("script", &e))?;
+        let env = [self.profile_env_lines(&exec.unset)?, env].concat();
         script_stripping(
             (self.cred, self.tmp, &req.nonce),
             ctx,

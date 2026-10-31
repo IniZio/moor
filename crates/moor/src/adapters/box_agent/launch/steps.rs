@@ -8,6 +8,7 @@ use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, StepDone};
 use moor_core::seam::engine::LaunchNotice;
 use moor_core::seam::proc::{Deadline, Tool};
 
+use super::super::agent_env;
 use super::super::brief::{render, BriefInput};
 use super::super::claude::Claude;
 use super::super::codex::Codex;
@@ -145,6 +146,17 @@ impl Launch<'_> {
             .iter()
             .map(|w| w.write(&ctx).map_err(|e| fail("profile", &e)))
             .collect()
+    }
+
+    /// The script lines that export the profile's `env`; none when the Box has no profile.
+    pub(super) fn profile_env_lines(&self, strip_env: &[String]) -> Result<Vec<String>, Failure> {
+        let Some(manifest) = &self.req.profile else {
+            return Ok(Vec::new());
+        };
+        let home = &self.ctx.home;
+        let dir = BoxPath::under(home.as_str(), PROFILE_DIR).map_err(|e| fail("profile", &e))?;
+        agent_env::profile_lines(&manifest.claude.env, (home, &dir), strip_env)
+            .map_err(|e| fail("script", &e))
     }
 
     /// Adds every step after the platform to `plan`, in the order a failure is reported; on an error
