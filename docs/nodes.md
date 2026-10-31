@@ -21,7 +21,8 @@ box:
 `runtime` is the crabbox provider the node's Boxes run on, `labels` are what a
 Box may require of the node, and `max_boxes` caps its live Boxes. `box.node`
 names the default shared node; it is required when `nodes` has more than one
-entry. The controller needs at least one node to start Boxes.
+entry. Shared nodes are optional. Without one, Boxes start only on personal
+nodes.
 
 A personal node is a machine its owner enrolled with a runtime. Only its owner
 can use it. The node is named for the machine and is online while the machine's
@@ -37,8 +38,8 @@ moor-machine-agent run --runtime cloudhypervisor --max-boxes 4
 Without `--node`, the scheduler tries your personal nodes first, in the order
 you enrolled them, and then the default shared node. It tries only the first
 one in that order. An offline node refuses the start and says how long it has
-been offline, and the message names the shared node you can pick with
-`--node`. A full node does not send the Box elsewhere.
+been offline. When a shared node exists, the message names it so you can pick
+it with `--node`. A full node does not send the Box elsewhere.
 
 ## Pending
 

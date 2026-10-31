@@ -536,5 +536,12 @@ fn node_rejects() {
         ("nodes: {ci: {runtime: x, nope: 1}}", "nodes.ci.nope"),
         ("nodes: {ci: {runtime: x}}\nbox: {node: other}", "box.node"),
         ("box: {node: ci}", "box.node"),
+        ("nodes: {}\nbox: {node: ci}", "box.node"),
     ]);
+}
+
+#[test]
+fn no_shared_node_is_a_valid_config() {
+    assert_eq!(ok("nodes: {}").default_node(), None);
+    assert!(ok("{}").nodes.is_empty());
 }

@@ -1,7 +1,5 @@
 //! `node-list`: the nodes the caller may start Boxes on.
 
-use std::collections::BTreeMap;
-
 use moor_core::decide::schedule::{Node, Online, Scope};
 use moor_core::request::MachineLink;
 use moor_core::user::Viewer;
@@ -13,12 +11,12 @@ use crate::error::CommandError;
 use crate::ops::common::node::configured;
 use crate::ops::common::promote::promote_waiting;
 
-/// Every node, shared and personal; with no node configured, only the personal ones.
+/// Every node, shared and personal.
 ///
 /// # Errors
 /// A store failure.
 pub(crate) fn all(cx: &Cx) -> Result<Vec<Node>, CommandError> {
-    let shared = configured(cx.config()).map_or_else(|_| BTreeMap::new(), |(s, _)| s);
+    let (shared, _) = configured(cx.config());
     Ok(cx.store()?.nodes(&shared)?)
 }
 
