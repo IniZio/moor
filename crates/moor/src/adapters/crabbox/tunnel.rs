@@ -4,6 +4,7 @@
 //! long-lived child; the returned handle owns it and dropping the handle kills it.
 
 use std::ffi::OsString;
+use std::net::{Ipv4Addr, TcpListener};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
@@ -21,6 +22,14 @@ const TUNNEL_READY_DEADLINE: Duration = Duration::from_secs(30);
 
 /// Failure summary when the ready line is not the one requested.
 const UNEXPECTED_READY: &str = "reverse tunnel printed an unexpected ready line";
+
+/// What the Box side of a pool tunnel runs once ssh has set up its forward: it says `ready`,
+/// then holds the session open.
+const HOLD: &str = "echo ready; exec sleep 2147483647";
+
+/// What ssh prints when a `-L` listener could not be bound, which `ExitOnForwardFailure` turns
+/// into an exit.
+const FORWARD_REFUSED: &str = "Could not request local forwarding";
 
 /// The one stdout line crabbox prints once the Box-side port accepts.
 #[derive(Deserialize)]
@@ -88,7 +97,7 @@ pub(super) fn local_tunnel(
     box_port: u16,
 ) -> Result<LocalTunnel, DriverError> {
     if super::pool::is_pool(handle) {
-        return Err(DriverError::Unsupported("a pool Box has no tunnel yet"));
+        return pool_local(cb, handle, box_port);
     }
     let spec = cb.at_lease(
         Crabbox::spec(TUNNEL_READY_DEADLINE)
@@ -134,18 +143,54 @@ fn pool_reverse(
 ) -> Result<Box<dyn TunnelHandle>, DriverError> {
     let mut forward = OsString::from(format!("127.0.0.1:{box_port}:"));
     forward.push(socket);
-    let wait = format!(
-        "until ss -Hltn 'sport = :{box_port}' | grep -q .; do sleep 0.2; done; \
-         echo ready; exec sleep 2147483647"
-    );
+    let wait =
+        format!("until ss -Hltn 'sport = :{box_port}' | grep -q .; do sleep 0.2; done; {HOLD}");
     let spec = ProcSpec::new(Tool::Ssh, Deadline(TUNNEL_READY_DEADLINE))
         .args(["-T", "-o", "ExitOnForwardFailure=yes", "-R"])
         .arg(forward)
         .args(super::peek::ssh_target(cb, handle)?)
         .arg(wait);
+    pool_open(cb, &spec)
+}
+
+/// The local tunnel of a pool Box. ssh cannot report a port it picked, so moor binds port 0 to
+/// learn a free one and hands it to ssh, which can lose it to another process in between. ssh
+/// then exits before it runs `ready`, so a lost port is never mistaken for a tunnel, and a
+/// second port is tried once.
+fn pool_local(cb: &Crabbox, handle: &BoxHandle, box_port: u16) -> Result<LocalTunnel, DriverError> {
+    let attempt = || {
+        let host_port = free_loopback_port()?;
+        let spec = ProcSpec::new(Tool::Ssh, Deadline(TUNNEL_READY_DEADLINE))
+            .args(["-T", "-o", "ExitOnForwardFailure=yes", "-L"])
+            .arg(format!("127.0.0.1:{host_port}:127.0.0.1:{box_port}"))
+            .args(super::peek::ssh_target(cb, handle)?)
+            .arg(HOLD);
+        pool_open(cb, &spec).map(|tunnel| LocalTunnel { host_port, tunnel })
+    };
+    match attempt() {
+        Err(DriverError::Tunnel {
+            failure: TunnelFailure::Exited { .. },
+            stderr_tail,
+        }) if stderr_tail.contains(FORWARD_REFUSED) => attempt(),
+        other => other,
+    }
+}
+
+/// A loopback port nothing listens on right now.
+fn free_loopback_port() -> Result<u16, DriverError> {
+    TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .and_then(|l| l.local_addr())
+        .map(|a| a.port())
+        .map_err(|_| DriverError::Failed {
+            summary: "no free local port for the tunnel".to_owned(),
+        })
+}
+
+/// Runs the pool tunnel `spec` as a child and waits for the Box side to say `ready`.
+fn pool_open(cb: &Crabbox, spec: &ProcSpec) -> Result<Box<dyn TunnelHandle>, DriverError> {
     let mut child = cb
         .proc
-        .spawn_child(&spec)
+        .spawn_child(spec)
         .map_err(|_| DriverError::Unavailable("ssh could not be started".to_owned()))?;
     match child.first_line(Deadline(TUNNEL_READY_DEADLINE)) {
         Ok(line) if line.trim() == "ready" => Ok(Box::new(Tunnel {
