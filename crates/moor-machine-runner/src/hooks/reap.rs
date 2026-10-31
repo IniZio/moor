@@ -3,14 +3,13 @@
 
 use std::collections::{BTreeSet, HashSet};
 
-use moor_core::box_key::BoxKey;
-use moor_core::BoxId;
-
+use moor_client::link::ops::Op;
 use moor_client::Client;
 
-use super::{open_boxes, tail, Hooks};
+use super::{open_boxes, Hooks};
 
 use crate::caller::Reach;
+use crate::link::{self, Answer};
 
 /// The Box id a directory is named for, or none for any other name.
 fn box_id(name: &str) -> Option<i64> {
@@ -51,18 +50,23 @@ impl Hooks {
             .collect()
     }
 
-    /// Removes Box `id`'s copy and state dir on the machine.
+    /// Removes Box `id`'s copy and state dir on the machine, over a link op every ordinary
+    /// machine serves, `--allow-exec` or not.
     pub(super) async fn remove_on_machine(&self, reach: &Reach, id: i64) -> Result<(), String> {
-        let key = BoxKey::new(BoxId::new(id));
-        let (copy, state) = (key.machine_dir(), key.machine_state_dir());
-        let script = format!("cd && rm -rf -- {copy} {state}");
-        let out = self.helper(id, reach, &script).await?;
-        match out.exit_code {
-            Some(0) => Ok(()),
-            _ => Err(format!(
-                "could not remove {copy} and {state}: {}",
-                tail(&out)
-            )),
+        let Reach {
+            machine_id,
+            machine,
+        } = reach;
+        let op = Op::Remove { box_id: id };
+        match link::send(self.agents.as_ref(), machine, *machine_id, &op).await? {
+            Answer::Swept(swept) => match swept.errors.into_iter().next() {
+                None => Ok(()),
+                Some(failed) => Err(format!(
+                    "could not remove the files of Box {id}: {}",
+                    failed.reason
+                )),
+            },
+            _ => Err(format!("machine {machine} answered no remove")),
         }
     }
 }

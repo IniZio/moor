@@ -20,13 +20,14 @@ echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
 echo "/dev/fake 1000000000 1 $kb 1% $HOME"
 "#;
 
-/// Starts the agent of machine `minion` linking to the runner's agent port; it runs until the
-/// returned runtime drops.
+/// Starts the agent of machine `minion` linking to the runner's agent port, sweeping folders
+/// older than `sweep_grace`; it runs until the returned runtime drops.
 pub(super) fn start_agent(
     dir: &Path,
     remote: &Path,
     port: u16,
     link: &FakeLink,
+    sweep_grace: std::time::Duration,
 ) -> tokio::runtime::Runtime {
     let tools = dir.join("machine-bin");
     std::fs::create_dir_all(&tools).unwrap();
@@ -58,6 +59,7 @@ pub(super) fn start_agent(
         hooks: hooks_dir(dir),
         pool: None,
         allow_exec: true,
+        sweep_grace,
     };
     let agent = tokio::runtime::Runtime::new().unwrap();
     agent.spawn(async move { run(&state_dir, machine, &|_| {}).await });

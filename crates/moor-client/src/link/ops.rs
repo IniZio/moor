@@ -138,6 +138,18 @@ pub enum Op {
         /// `moor-<controller>-<id>`.
         slug: String,
     },
+    /// Remove the folders of every Box not in `keep`, after its `release` hook; a pool host
+    /// removes nothing, its leases being its own to clean up.
+    Sweep {
+        /// The Boxes still open, whose folders stay.
+        keep: Vec<i64>,
+    },
+    /// Remove one Box's folders without running any hook, its `release` having run already; a
+    /// pool host does not serve it.
+    Remove {
+        /// The Box.
+        box_id: i64,
+    },
     /// Report the agent's state; read-only, so every agent serves it.
     Status,
 }
@@ -187,6 +199,8 @@ pub enum Reply {
     Listening,
     /// The agent's state.
     Status(Box<super::status::Status>),
+    /// What a sweep or a remove removed.
+    Swept(super::sweep::Swept),
     /// The request was not served.
     Refused {
         /// Why.

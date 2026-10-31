@@ -1,6 +1,7 @@
 //! Requests over a linked machine's agent link: one stream each.
 
 use moor_client::link::ops::{self, Op, Ran, Reply};
+use moor_client::link::sweep::Swept;
 
 use crate::Agents;
 use moor_client::link::Channel;
@@ -15,6 +16,8 @@ pub(crate) enum Answer {
     Missing,
     /// The pulled file's bytes follow on the stream.
     Sending(Channel, u64),
+    /// What a sweep removed.
+    Swept(Swept),
 }
 
 /// Sends `op` to machine `machine_id`, named `machine` in errors, and reads its answer.
@@ -39,6 +42,7 @@ pub(crate) async fn send(
         Reply::Missing => Ok(Answer::Missing),
         Reply::Sending { bytes } => Ok(Answer::Sending(stream, bytes)),
         Reply::Refused { reason } => Err(format!("machine {machine} refused: {reason}")),
+        Reply::Swept(swept) => Ok(Answer::Swept(swept)),
         Reply::Listening | Reply::Leased(_) | Reply::Status(_) => {
             Err(format!("machine {machine} answered something else"))
         }

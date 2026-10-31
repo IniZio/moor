@@ -34,7 +34,7 @@ impl Relays {
         {
             Answer::Started(stream) => stream,
             Answer::Missing => return Err(format!("machine {} has no such relay", caller.machine)),
-            Answer::Ran(_) | Answer::Sending(..) => {
+            Answer::Ran(_) | Answer::Sending(..) | Answer::Swept(_) => {
                 return Err(format!(
                     "machine {} ran the relay as a command",
                     caller.machine

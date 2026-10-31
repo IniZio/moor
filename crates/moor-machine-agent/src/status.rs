@@ -127,6 +127,7 @@ mod tests {
             hooks: PathBuf::from("/nonexistent"),
             pool,
             allow_exec: false,
+            sweep_grace: std::time::Duration::ZERO,
         }
     }
 

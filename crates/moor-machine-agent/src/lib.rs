@@ -28,6 +28,7 @@ pub mod pool;
 mod release;
 mod serve;
 mod status;
+mod sweep;
 
 /// What `enroll` asks for.
 #[derive(Debug, Clone, PartialEq, Eq)]

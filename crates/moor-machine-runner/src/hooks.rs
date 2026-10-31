@@ -207,7 +207,7 @@ impl Hooks {
     }
 
     /// The ids of the Boxes with a record.
-    fn prepared(&self) -> io::Result<Vec<i64>> {
+    pub(super) fn prepared(&self) -> io::Result<Vec<i64>> {
         let entries = match std::fs::read_dir(&self.boxes) {
             Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
             entries => entries?,

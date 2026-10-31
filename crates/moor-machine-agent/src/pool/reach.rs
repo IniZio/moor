@@ -7,6 +7,8 @@ use std::path::Path;
 use std::process::Stdio;
 
 use moor_client::link::lease::Answer;
+use moor_client::link::ops::{self, Reply};
+use moor_client::link::Channel;
 use moor_core::boxscript::quote;
 use moor_core::ssh::pin::{self, KnownHosts};
 use moor_core::ssh::split_words;
@@ -139,6 +141,13 @@ pub async fn dial(home: &Path, pool: &super::Pool, slug: &str) -> Result<Sshd, S
         .spawn()
         .map(Sshd::Proxy)
         .map_err(|e| format!("cannot start the proxy command: {e}"))
+}
+
+/// Tells the runner the dial reached the VM, then carries its bytes.
+pub async fn carry(mut ch: Channel, sshd: Sshd) {
+    if ops::write_line(&mut ch, &Reply::Started).await.is_ok() {
+        splice(sshd, ch).await;
+    }
 }
 
 /// Carries bytes between `stream` and `sshd` until both directions end.
