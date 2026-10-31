@@ -1,6 +1,7 @@
 //! `moor controller serve`: a long-running process answering moor requests on a Unix socket.
 
 pub mod attach;
+mod check;
 mod conn;
 mod drain;
 mod front_proxy;
@@ -27,7 +28,6 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use moor_core::config::{parse_controller, ControllerConfig};
-use moor_core::ErrorKind;
 
 use drain::{Admitted, Drain, Handler};
 use inherit::Sockets;
@@ -155,14 +155,7 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         None => state_socket(&env)
             .ok_or_else(|| failed("no state directory: set state_dir or MOOR_STATE_DIR".into()))?,
     };
-    let env = Moor::open_store(env).map_err(|e| Stop {
-        code: match e.kind {
-            ErrorKind::Refused => REFUSED,
-            ErrorKind::Usage => USAGE,
-            _ => 1,
-        },
-        message: e.error.to_string(),
-    })?;
+    let env = check::open(env)?;
     let (vault, key) = open_vault(&env, config)?;
     let runner = cfg
         .runner_state_dir
