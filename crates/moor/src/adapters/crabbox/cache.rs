@@ -1,8 +1,8 @@
 //! The cache plan as crabbox reads it: `CRABBOX_CACHE_VOLUMES`, a JSON array, on warmup only.
 
-use moor_core::cache::{CachePath, CachePlan};
+use moor_client::link::lease::{Cache, CacheVolume};
+use moor_core::cache::CachePlan;
 use moor_core::seam::proc::ProcSpec;
-use serde::Serialize;
 
 /// The env key crabbox reads cache volumes from.
 const KEY: &str = "CRABBOX_CACHE_VOLUMES";
@@ -10,44 +10,37 @@ const KEY: &str = "CRABBOX_CACHE_VOLUMES";
 /// The env key crabbox reads the Box's cache scope from.
 const SCOPE_KEY: &str = "CRABBOX_CACHE_SCOPE";
 
-/// One volume in crabbox's `CacheVolumeConfig` shape, extended with `group`, `paths`
-/// and `sealed`.
-#[derive(Serialize)]
-struct Wire<'a> {
-    /// Scope id; the volumes of one group share one store.
-    group: &'a str,
-    /// Name, a subdirectory of the group's store.
-    name: &'a str,
-    /// `<group>-<name>`.
-    key: &'a str,
-    /// Box paths, `~/` for the login home.
-    paths: Vec<&'a str>,
-    /// Size hint; 0 is the adapter's default.
-    #[serde(rename = "sizeGB")]
-    size_gb: u32,
-    /// The volume has a seal; the provider keeps it only with the seal's marker in each path.
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    sealed: bool,
+/// The plan's volumes in crabbox's shape; none for a cold Box.
+fn volumes(plan: &CachePlan) -> Vec<CacheVolume> {
+    plan.volumes()
+        .iter()
+        .map(|v| CacheVolume {
+            group: v.group.clone(),
+            name: v.name.as_str().to_owned(),
+            key: v.key.clone(),
+            paths: v.paths.iter().map(|p| p.as_str().to_owned()).collect(),
+            size_gb: v.size_gb.map_or(0, std::num::NonZeroU32::get),
+            sealed: !v.seal().is_empty(),
+        })
+        .collect()
 }
 
 /// The `CRABBOX_CACHE_VOLUMES` value for `plan`; none for a cold Box.
 pub(super) fn env_value(plan: &CachePlan) -> Option<String> {
-    let wire: Vec<Wire<'_>> = plan
-        .volumes()
-        .iter()
-        .map(|v| Wire {
-            group: &v.group,
-            name: v.name.as_str(),
-            key: &v.key,
-            paths: v.paths.iter().map(CachePath::as_str).collect(),
-            size_gb: v.size_gb.map_or(0, std::num::NonZeroU32::get),
-            sealed: !v.seal().is_empty(),
-        })
-        .collect();
+    let wire = volumes(plan);
     if wire.is_empty() {
         return None;
     }
     serde_json::to_string(&wire).ok()
+}
+
+/// The plan as a pool host's warmup takes it; none for a cold Box.
+pub(super) fn lease(plan: &CachePlan) -> Option<Cache> {
+    let volumes = volumes(plan);
+    (!volumes.is_empty()).then(|| Cache {
+        volumes,
+        scope: plan.scope().map(str::to_owned),
+    })
 }
 
 /// `spec` with the plan's volumes and scope in its env, when there are any.

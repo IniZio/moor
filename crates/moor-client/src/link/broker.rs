@@ -39,6 +39,9 @@ pub enum PoolOp {
         /// The OpenSSH public key an authorize lets in; none for every other verb.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         key: Option<String>,
+        /// The cache volumes a warmup mounts; none for every other verb.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<lease::Cache>,
     },
     /// [`Op::Dial`].
     Dial {
@@ -52,7 +55,17 @@ pub enum PoolOp {
 impl From<PoolOp> for Op {
     fn from(op: PoolOp) -> Self {
         match op {
-            PoolOp::Lease { verb, slug, key } => Self::Lease { verb, slug, key },
+            PoolOp::Lease {
+                verb,
+                slug,
+                key,
+                cache,
+            } => Self::Lease {
+                verb,
+                slug,
+                key,
+                cache,
+            },
             PoolOp::Dial { slug } => Self::Dial { slug },
             PoolOp::Status => Self::Status,
         }
@@ -82,12 +95,14 @@ pub enum Brokered {
     },
 }
 
-/// Asks the broker at `socket` to do `verb` to `slug` on machine `machine_id`.
+/// Asks the broker at `socket` to do `verb` to `slug` on machine `machine_id`; a warmup
+/// mounts `cache`.
 pub async fn lease(
     socket: &Path,
     machine_id: i64,
     verb: lease::Verb,
     slug: Option<&str>,
+    cache: Option<lease::Cache>,
 ) -> Result<lease::Answer, String> {
     let slug = slug.map(str::to_owned);
     leased(
@@ -97,6 +112,7 @@ pub async fn lease(
             verb,
             slug,
             key: None,
+            cache,
         },
     )
     .await
@@ -114,6 +130,7 @@ pub async fn authorize(
         verb: lease::Verb::Authorize,
         slug: Some(slug.to_owned()),
         key: Some(key.to_owned()),
+        cache: None,
     };
     leased(socket, machine_id, op).await
 }

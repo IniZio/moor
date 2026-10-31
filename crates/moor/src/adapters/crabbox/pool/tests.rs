@@ -9,13 +9,16 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
-use moor_client::link::lease::{Answer, Verb};
+use moor_client::link::lease::{Answer, Cache, Verb};
 use moor_core::box_key::{ControllerId, PoolSeat};
+use moor_core::cache::{CacheLayers, CachePlan, CacheSalt};
+use moor_core::config::parse_repo;
 use moor_core::name::{BoxHandle, BoxId, ProviderId};
 use moor_core::seam::driver::{
     AcquireReq, Driver, DriverError, Released, SleepOutcome, TunnelFailure,
 };
 use moor_core::seam::proc::Tool;
+use moor_core::user::UserId;
 
 use super::PoolHosts;
 use crate::adapters::crabbox::Crabbox;
@@ -33,6 +36,7 @@ struct FakeHost {
     answers: Mutex<BTreeMap<String, Result<Answer, String>>>,
     asked: Mutex<Vec<Asked>>,
     machines: Mutex<Vec<i64>>,
+    caches: Mutex<Vec<Option<Cache>>>,
 }
 
 impl FakeHost {
@@ -55,8 +59,10 @@ impl PoolHosts for FakeHost {
         verb: Verb,
         slug: Option<&str>,
         key: Option<&str>,
+        cache: Option<&Cache>,
     ) -> Result<Answer, String> {
         self.machines.lock().unwrap().push(machine_id);
+        self.caches.lock().unwrap().push(cache.cloned());
         self.asked
             .lock()
             .unwrap()
@@ -321,4 +327,44 @@ fn a_pool_local_tunnel_failing_for_another_reason_is_not_retried() {
         assert_eq!(ssh_spawns(&p), 1);
         assert_eq!(p.dropped().len(), 1);
     }
+}
+
+#[test]
+fn acquire_hands_the_box_cache_to_the_host_warmup_only() {
+    let (host, cb) = rig();
+    let mut req = req();
+    let repo = moor_core::name::ForgeRepo {
+        owner: "o".to_owned(),
+        name: "r".to_owned(),
+    };
+    let layers = CacheLayers {
+        repo: parse_repo(".moor.yaml", "cache: {presets: [rust]}")
+            .unwrap()
+            .cache,
+        ..CacheLayers::default()
+    };
+    req.cache = CachePlan::build(
+        UserId::new(1),
+        Some(&repo),
+        &layers,
+        &CacheSalt::new([3; 64]),
+    )
+    .unwrap();
+    cb.acquire(&req).unwrap();
+
+    let caches = host.caches.lock().unwrap().clone();
+    let sent = caches[0].clone().expect("the warmup carries the cache");
+    assert_eq!(
+        serde_json::to_string(&sent.volumes).ok(),
+        super::super::cache::env_value(&req.cache)
+    );
+    assert_eq!(sent.scope.as_deref(), req.cache.scope());
+    assert!(caches[1..].iter().all(Option::is_none), "{caches:?}");
+}
+
+#[test]
+fn acquire_of_a_cold_box_sends_no_cache() {
+    let (host, cb) = rig();
+    cb.acquire(&req()).unwrap();
+    assert!(host.caches.lock().unwrap().iter().all(Option::is_none));
 }

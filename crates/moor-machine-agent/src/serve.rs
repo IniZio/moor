@@ -131,9 +131,7 @@ fn not_served(pool_host: bool, op: &Op) -> String {
 /// Serves a lease or a dial for `pool`; why it failed.
 async fn serve_pool(home: &Path, pool: &Pool, ch: Channel, op: Op) -> Option<String> {
     let reply = match op {
-        Op::Lease { verb, slug, key } => {
-            pool::lease(home, pool, verb, slug.as_deref(), key.as_deref()).await
-        }
+        op @ Op::Lease { .. } => pool::lease_op(home, pool, op).await,
         Op::Dial { slug } => match pool::dial(home, pool, &slug).await {
             Ok(sshd) => {
                 pool::carry(ch, sshd).await;

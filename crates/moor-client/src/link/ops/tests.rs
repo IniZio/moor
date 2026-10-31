@@ -29,3 +29,40 @@ fn in_box_closes_its_output_while_a_job_its_body_started_runs_on() {
     assert_eq!(out.as_deref(), Ok("started\n"));
     assert!(home.path().join("moor/7").is_dir());
 }
+
+fn warmup(cache: Option<super::lease::Cache>) -> super::Op {
+    super::Op::Lease {
+        verb: super::lease::Verb::Warmup,
+        slug: Some("moor-1a2b3c4d-7".to_owned()),
+        key: None,
+        cache,
+    }
+}
+
+#[test]
+fn a_lease_without_cache_reads_as_an_older_agent_wrote_it() {
+    let old = r#"{"op":"lease","verb":"warmup","slug":"moor-1a2b3c4d-7"}"#;
+    assert_eq!(
+        serde_json::from_str::<super::Op>(old).unwrap(),
+        warmup(None)
+    );
+    assert_eq!(serde_json::to_string(&warmup(None)).unwrap(), old);
+}
+
+#[test]
+fn a_lease_carries_its_cache_both_ways() {
+    let op = warmup(Some(super::lease::Cache {
+        volumes: vec![super::lease::CacheVolume {
+            group: "0123456789abcdef".to_owned(),
+            name: "cargo".to_owned(),
+            key: "0123456789abcdef-cargo".to_owned(),
+            paths: vec!["~/.cargo/registry".to_owned()],
+            size_gb: 4,
+            sealed: true,
+        }],
+        scope: Some("0123456789abcdef".to_owned()),
+    }));
+    let json = serde_json::to_string(&op).unwrap();
+    assert!(json.contains(r#""sizeGB":4"#), "{json}");
+    assert_eq!(serde_json::from_str::<super::Op>(&json).unwrap(), op);
+}
