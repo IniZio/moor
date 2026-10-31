@@ -6,7 +6,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use moor_core::boxscript::quote;
-use moor_core::config::BoxSettings;
+use moor_core::config::{BoxSettings, DotfilesConfig};
+use moor_core::domain::event::PostCloneStep;
 use moor_core::exec_env::Purpose;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Output, ProcSpec, Tool};
@@ -15,6 +16,8 @@ use moor_core::{BoxHandle, BoxId, BoxPath};
 
 use crate::cx::Cx;
 use crate::ops::common::box_exec::{self, BoxProxy, Site};
+use crate::ops::common::step::{exec_failure, timed_result};
+use crate::store::Store;
 
 /// Wall-clock allowance for the install step inside the Box.
 pub(crate) const DOTFILES_DEADLINE: Duration = Duration::from_mins(15);
@@ -132,7 +135,7 @@ fn install(
     };
     cx.driver()
         .exec(site.handle, &exec, Deadline(DOTFILES_DEADLINE))
-        .map_err(|e| e.to_string())
+        .map_err(|e| exec_failure("dotfiles install", &e))
 }
 
 /// Packs the configured dotfiles on the host, uploads them, and runs the install script in
@@ -145,6 +148,7 @@ fn install(
 /// the Proxy went; an `Err` fails the step before anything is packed.
 pub(crate) fn apply(
     cx: &Cx,
+    store: &Store,
     (handle, provider): (&BoxHandle, &str),
     id: BoxId,
     cfg: &BoxSettings,
@@ -157,6 +161,20 @@ pub(crate) fn apply(
     let proxy = proxy
         .as_ref()
         .map_err(|e| fail(format!("the Proxy could not start: {e}")))?;
+    timed_result(cx, store, id, PostCloneStep::Dotfiles, || {
+        deliver(cx, (handle, provider), id, cfg, (d, proxy.as_ref()))
+    })
+}
+
+/// Packs `d`, uploads it and runs its install script in the Box.
+fn deliver(
+    cx: &Cx,
+    (handle, provider): (&BoxHandle, &str),
+    id: BoxId,
+    cfg: &BoxSettings,
+    (d, proxy): (&DotfilesConfig, Option<&BoxProxy>),
+) -> Result<DotfilesRun, DotfilesFailed> {
+    let fail = |tail: String| DotfilesFailed { tail };
     let started = cx.clock().instant();
     let src = cx.env().expand_home(&d.path);
     let spec = ProcSpec::new(Tool::Sh, Deadline(TAR_DEADLINE))
@@ -186,7 +204,7 @@ pub(crate) fn apply(
         provider,
         workdir: None,
     };
-    let reason = match install(cx, &site, cfg, proxy.as_ref(), script, &log) {
+    let reason = match install(cx, &site, cfg, proxy, script, &log) {
         Ok(ExecOutcome::Exited { code: 0 }) => {
             let elapsed = cx.clock().instant().saturating_duration_since(started);
             let ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);

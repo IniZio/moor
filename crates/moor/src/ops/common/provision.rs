@@ -296,15 +296,15 @@ fn run_and_record(
     }
     record_delivered(store, id, cloned.delivered)?;
     let run = run_through_proxy(cx, store, id, target, cfg, &proxy);
-    let dotfiles = match dotfiles::apply(cx, (target.handle, target.provider), id, cfg, &proxy) {
+    let at = (target.handle, target.provider);
+    let dotfiles = match dotfiles::apply(cx, store, at, id, cfg, &proxy) {
         Ok(d) => d,
         Err(f) => dotfiles_warned(cx, f),
     };
-    if let Err(reason) = agent_install::apply(cx, (target.handle, target.provider), id, cfg, &proxy)
-    {
+    if let Err(reason) = agent_install::apply(cx, store, at, id, cfg, &proxy) {
         cx.warn(agent_install::warning(&reason));
     }
-    profile_fetch::apply(cx, store, (target.handle, target.provider), id, cfg, &proxy)?;
+    profile_fetch::apply(cx, store, at, id, cfg, &proxy)?;
     let mut done = Decision::new(id);
     if let DotfilesRun::Failed { tail } = &dotfiles {
         done = done.event(ExtraEvent::SetupFailed {

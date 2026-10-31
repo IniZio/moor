@@ -33,18 +33,6 @@ pub enum Event {
         /// The failing output line or cause.
         line: String,
     },
-    /// The repo setup script ended.
-    SetupFinished {
-        /// Time the script took, in milliseconds.
-        ms: u64,
-        /// Whether every line passed.
-        ok: bool,
-    },
-    /// The repo was cloned in the Box.
-    Cloned {
-        /// Time the clone, with the git identity set inside it, took in milliseconds.
-        ms: u64,
-    },
     /// A credential could not be delivered.
     CredentialFailed {
         /// Which credential failed.
@@ -378,18 +366,23 @@ pub enum Event {
     /// The requester's agent profile resolved, or a step of fetching it failed.
     #[serde(untagged)]
     Profile(ProfileEvent),
+    /// A timed part of setting the Box up ended, or a step after the clone began.
+    #[serde(untagged)]
+    Timing(TimingEvent),
 }
 
 pub use boxes::box_events;
 pub use checked::CheckedCred;
 pub use kind::ASSERTED_KINDS;
 pub use machine::MachineEvent;
+pub use post_clone::{PostCloneStep, TimingEvent};
 pub use profile::{ProfileEvent, ProfileStep};
 pub use steps::{lifecycle_events, session_events};
 mod boxes;
 mod checked;
 mod kind;
 mod machine;
+mod post_clone;
 mod profile;
 #[cfg(test)]
 mod proxy_tests;

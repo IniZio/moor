@@ -144,7 +144,7 @@ fn all_events() -> Vec<Event> {
             box_port: 1,
             reason: s("r"),
         },
-        Event::SetupFinished { ms: 5, ok: true },
+        Event::Timing(TimingEvent::SetupFinished { ms: 5, ok: true }),
         Event::EgressRefused {
             host: s("h"),
             rule: Some(s("r")),
@@ -189,7 +189,7 @@ fn all_events() -> Vec<Event> {
             host: s("h"),
             rule: None,
         },
-        Event::Cloned { ms: 7 },
+        Event::Timing(TimingEvent::Cloned { ms: 7 }),
         Event::AgentSaid { text: s("done") },
         Event::LaunchTimedOut { after_secs: 180 },
         Event::RelaunchCapped {
@@ -244,6 +244,14 @@ fn all_events() -> Vec<Event> {
         Event::Profile(ProfileEvent::ProfileFailed {
             step: ProfileStep::Fetch,
             detail: s("d"),
+        }),
+        Event::Timing(TimingEvent::StepStarted {
+            step: PostCloneStep::Dotfiles,
+        }),
+        Event::Timing(TimingEvent::StepFinished {
+            step: PostCloneStep::AgentInstall,
+            ms: 7,
+            ok: false,
         }),
     ]
 }
@@ -300,7 +308,7 @@ const fn event_index(e: &Event) -> usize {
         Event::Steered { .. } => 35,
         Event::ProxyStarted { .. } => 36,
         Event::TunnelRestarted { .. } => 37,
-        Event::SetupFinished { .. } => 38,
+        Event::Timing(TimingEvent::SetupFinished { .. }) => 38,
         Event::EgressRefused { .. } => 39,
         Event::CredentialWithheld { .. } => 40,
         Event::ProxyCredentialFailed { .. } => 41,
@@ -311,7 +319,7 @@ const fn event_index(e: &Event) -> usize {
         Event::TurnDone { .. } => 46,
         Event::ArtifactPublished { .. } => 47,
         Event::EgressAborted { .. } => 48,
-        Event::Cloned { .. } => 49,
+        Event::Timing(TimingEvent::Cloned { .. }) => 49,
         Event::AgentSaid { .. } => 50,
         Event::LaunchTimedOut { .. } => 51,
         Event::RelaunchCapped { .. } => 52,
@@ -332,6 +340,8 @@ const fn event_index(e: &Event) -> usize {
             ProfileEvent::ProfileResolved { .. } => 64,
             ProfileEvent::ProfileFailed { .. } => 65,
         },
+        Event::Timing(TimingEvent::StepStarted { .. }) => 66,
+        Event::Timing(TimingEvent::StepFinished { .. }) => 67,
     }
 }
 
@@ -339,7 +349,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 66);
+    assert_eq!(all.len(), 68);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
@@ -564,5 +574,19 @@ fn profile_events_serialize_flat() {
     assert_eq!(
         failed.payload(),
         serde_json::json!({"step":"fetch","detail":"d"})
+    );
+}
+
+#[test]
+fn a_post_clone_step_serializes_its_name_and_timing() {
+    let done = Event::Timing(TimingEvent::StepFinished {
+        step: PostCloneStep::AgentInstall,
+        ms: 41_000,
+        ok: true,
+    });
+    assert_eq!(done.kind(), "step_finished");
+    assert_eq!(
+        done.payload(),
+        serde_json::json!({"step": "agent_install", "ms": 41_000, "ok": true})
     );
 }
