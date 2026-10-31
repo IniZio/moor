@@ -159,7 +159,7 @@ pub(crate) fn provision(
     } else {
         let provider = match started.boxed.as_ref() {
             Some(held) => held.provider.clone(),
-            None => node::default_runtime(cx)?,
+            None => node::runtime_of(cx, store, &started)?,
         };
         let caps =
             require_reverse_tunnel(provider.as_str(), provider_caps(cx, provider.as_str())?)?;

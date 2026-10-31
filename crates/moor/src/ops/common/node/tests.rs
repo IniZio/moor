@@ -8,7 +8,9 @@ use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
-use super::{backfill, configured};
+use moor_core::decide::schedule::BoxSpec;
+
+use super::{backfill, configured, preflight, runtime_of};
 use crate::cx::Cx;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
@@ -31,6 +33,17 @@ fn world(yaml: &str) -> World {
         Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
         parse_user("config.yaml", yaml).unwrap(),
+    );
+    World { cx, _dir: dir }
+}
+
+fn world_without_nodes() -> World {
+    let dir = tempfile::tempdir().unwrap();
+    let cx = Cx::fake_without_nodes(
+        dir.path(),
+        Arc::new(FakeDriver::new()),
+        Arc::new(FakeSurface::new()),
+        Arc::new(ScriptedProc::new()),
     );
     World { cx, _dir: dir }
 }
@@ -144,7 +157,7 @@ fn backfilling_twice_changes_nothing_more() {
 fn a_backfilled_box_counts_toward_its_nodes_capacity() {
     let w = world(TWO);
     legacy(&w, "a", "other", "h");
-    let (shared, _) = configured(w.cx.config()).unwrap();
+    let (shared, _) = configured(w.cx.config());
     let used = |w: &World| {
         let all = w.cx.store().unwrap().nodes(&shared).unwrap();
         all.iter().find(|n| n.name.as_str() == "vm").unwrap().used
@@ -152,4 +165,50 @@ fn a_backfilled_box_counts_toward_its_nodes_capacity() {
     assert_eq!(used(&w), 0);
     run(&w);
     assert_eq!(used(&w), 1);
+}
+
+#[test]
+fn with_no_shared_node_a_host_provider_still_goes_to_its_machine() {
+    let w = world_without_nodes();
+    enroll(&w, "mini");
+    let id = legacy(&w, "a", "cloudhypervisor@mini", "h");
+    run(&w);
+    assert_eq!(node_of(&w, id).as_deref(), Some("mini"));
+}
+
+#[test]
+fn with_no_node_at_all_a_start_is_refused_saying_how_to_get_one() {
+    let w = world_without_nodes();
+    let spec = BoxSpec {
+        labels: Vec::new(),
+        node: None,
+    };
+    let e = preflight(&w.cx, UserId::new(1), &spec).unwrap_err();
+    let msg = e.error.to_string();
+    assert!(
+        msg.contains("enroll a machine with moor-machine-agent"),
+        "{msg}"
+    );
+}
+
+#[test]
+fn a_box_started_again_goes_back_to_its_personal_node() {
+    let w = world_without_nodes();
+    enroll(&w, "mini");
+    let id = legacy(&w, "a", "cloudhypervisor@mini", "h");
+    run(&w);
+    let store = w.cx.store().unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
+    let got = runtime_of(&w.cx, store, &row).unwrap();
+    assert_eq!(got.as_str(), "cloudhypervisor@mini");
+}
+
+#[test]
+fn a_box_on_no_node_with_no_shared_node_cannot_start_again() {
+    let w = world_without_nodes();
+    let id = legacy(&w, "a", "gone", "h");
+    let store = w.cx.store().unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
+    let e = runtime_of(&w.cx, store, &row).unwrap_err();
+    assert!(e.error.to_string().contains("no shared node"), "{e:?}");
 }

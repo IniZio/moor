@@ -49,7 +49,11 @@ fn spec(labels: &[&str], node: Option<&str>) -> BoxSpec {
 }
 
 fn run(nodes: &[Node], s: &BoxSpec) -> Verdict {
-    schedule(nodes, ME, &name("ci"), s, NOW)
+    schedule(nodes, ME, Some(&name("ci")), s, NOW)
+}
+
+fn run_without_shared(nodes: &[Node], s: &BoxSpec) -> Verdict {
+    schedule(nodes, ME, None, s, NOW)
 }
 
 fn bound(node: &str, machine_id: Option<i64>) -> Verdict {
@@ -242,4 +246,67 @@ fn no_candidates_at_all_fails() {
         r,
         "no node can host this Box: shared default `ci` does not exist"
     );
+}
+
+const ENROLL: &str =
+    "no node can host this Box: enroll a machine with moor-machine-agent enroll --runtime <provider>";
+
+#[test]
+fn without_a_shared_node_the_first_personal_node_binds() {
+    let nodes = [mine("late", 8, 300), mine("hv", 7, 100)];
+    assert_eq!(
+        run_without_shared(&nodes, &spec(&[], None)),
+        bound("hv", Some(7))
+    );
+}
+
+#[test]
+fn without_any_node_the_reason_says_how_to_get_one() {
+    assert_eq!(fail(run_without_shared(&[], &spec(&[], None))), ENROLL);
+    assert_eq!(fail(run_without_shared(&[], &spec(&["gpu"], None))), ENROLL);
+}
+
+#[test]
+fn without_a_shared_node_other_users_nodes_do_not_count() {
+    let theirs = node(
+        "theirs",
+        Scope::Personal {
+            owner: YOU,
+            machine_id: 3,
+            enrolled_at: 1,
+        },
+        &["linux"],
+    );
+    assert_eq!(
+        fail(run_without_shared(&[theirs], &spec(&[], None))),
+        ENROLL
+    );
+}
+
+#[test]
+fn without_a_shared_node_own_nodes_lacking_labels_list_them() {
+    let r = fail(run_without_shared(
+        &[mine("hv", 7, 100)],
+        &spec(&["gpu"], None),
+    ));
+    assert_eq!(r, "no node has labels gpu: hv has linux");
+}
+
+#[test]
+fn without_a_shared_node_an_unknown_name_says_shared_none() {
+    let r = fail(run_without_shared(
+        &[mine("hv", 7, 100)],
+        &spec(&[], Some("nope")),
+    ));
+    assert_eq!(r, "no node named nope: yours are hv; shared: none");
+}
+
+#[test]
+fn without_a_shared_node_an_offline_node_offers_no_other_node() {
+    let mut hv = mine("hv", 7, 100);
+    hv.online = Online::Offline {
+        since: NOW - 12 * 60,
+    };
+    let r = fail(run_without_shared(&[hv], &spec(&[], None)));
+    assert_eq!(r, "hv is offline for 12m: start moor-machine-agent on it");
 }

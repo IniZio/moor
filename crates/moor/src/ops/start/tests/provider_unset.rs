@@ -8,16 +8,15 @@ use crate::ops::start;
 use crate::testing::driver::FakeDriver;
 
 #[test]
-fn a_start_with_no_nodes_fails_before_any_driver_call_and_names_the_setting() {
+fn a_start_with_no_node_fails_before_any_driver_call_and_says_how_to_get_one() {
     let w = super::world_without_nodes(FakeDriver::new());
     let e = start::run(&w.cx, &req("demo")).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Refused);
     let msg = e.error.to_string();
     assert!(
-        msg.contains("nodes: {name: {runtime: <provider>}}"),
+        msg.contains("enroll a machine with moor-machine-agent enroll --runtime"),
         "{msg}"
     );
-    assert!(msg.contains("config.yaml"), "{msg}");
     assert_eq!(w.driver.calls(), Vec::<String>::new());
 }
 

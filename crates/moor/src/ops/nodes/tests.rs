@@ -112,3 +112,14 @@ fn the_operator_sees_every_node() {
     let all: Vec<String> = names(&cx).into_iter().map(|n| n.0).collect();
     assert_eq!(all, ["fast", "mini", "rack"]);
 }
+
+#[test]
+fn with_no_shared_node_a_user_sees_only_its_own_nodes() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = cx(dir.path()).with_config(UserConfig::default());
+    assert!(list(&base).unwrap().nodes.is_empty());
+    let (alice, _) = enroll(&base, "authgear:a", "mini", true);
+    let listed = list(&base.with_viewer(Viewer::User(alice))).unwrap().nodes;
+    let seen: Vec<_> = listed.iter().map(|n| (n.name.as_str(), n.scope)).collect();
+    assert_eq!(seen, [("mini", NodeScope::Personal)]);
+}

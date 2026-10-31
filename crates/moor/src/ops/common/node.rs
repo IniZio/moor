@@ -18,52 +18,18 @@ use crate::error::CommandError;
 use crate::ops::common::facts::{provider_caps, require_reverse_tunnel};
 use crate::store::{BoxRow, DriverRow, Store};
 
-/// The shared nodes and the default one.
-///
-/// # Errors
-/// No node is configured, or several are and `box.node` is unset.
-pub(crate) fn configured(
-    user: &UserConfig,
-) -> Result<(BTreeMap<String, NodeConfig>, NodeName), CommandError> {
-    if user.nodes.is_empty() {
-        return Err(CommandError::new(
-            ErrorKind::Refused,
-            "no nodes are configured, so moor cannot start a new Box: set `nodes: {name: {runtime: <provider>}}` in the user \
-             config ($MOOR_CONFIG, else $XDG_CONFIG_HOME/moor/config.yaml, else \
-             ~/.config/moor/config.yaml)",
-        )
-        .with_hint("for example `nodes: {local: {runtime: local-container}}`"));
-    }
-    let default = user
-        .default_node()
-        .and_then(|n| NodeName::parse(n).ok())
-        .ok_or_else(|| {
-            CommandError::new(
-                ErrorKind::Refused,
-                "box.node is not set, so moor cannot pick among the configured nodes",
-            )
-        })?;
-    Ok((user.nodes.clone(), default))
+/// The shared nodes and the default one; with none configured, Boxes run only on personal nodes.
+pub(crate) fn configured(user: &UserConfig) -> (BTreeMap<String, NodeConfig>, Option<NodeName>) {
+    let default = user.default_node().and_then(|n| NodeName::parse(n).ok());
+    (user.nodes.clone(), default)
 }
 
-/// The runtime of the default shared node.
+/// Every node with the Boxes on it, and the default shared node if one is configured.
 ///
 /// # Errors
-/// [`configured`]'s errors.
-pub(crate) fn default_runtime(cx: &Cx) -> Result<ProviderId, CommandError> {
-    let (shared, default) = configured(cx.config())?;
-    shared
-        .get(default.as_str())
-        .map(|n| ProviderId::new(n.runtime.as_str()))
-        .ok_or_else(|| CommandError::new(ErrorKind::Refused, "box.node names no configured node"))
-}
-
-/// Every node with the Boxes on it, and the default shared node.
-///
-/// # Errors
-/// [`configured`]'s errors, or a store failure.
-pub(crate) fn nodes(cx: &Cx) -> Result<(Vec<Node>, NodeName), CommandError> {
-    let (shared, default) = configured(cx.config())?;
+/// A store failure.
+pub(crate) fn nodes(cx: &Cx) -> Result<(Vec<Node>, Option<NodeName>), CommandError> {
+    let (shared, default) = configured(cx.config());
     Ok((cx.store()?.nodes(&shared)?, default))
 }
 
@@ -75,7 +41,7 @@ fn now(cx: &Cx) -> i64 {
 /// The verdict for a Box of `user` asking `spec`; a Box with no owner sees only shared nodes.
 pub(crate) fn verdict(
     cx: &Cx,
-    (nodes, default): (&[Node], &NodeName),
+    (nodes, default): (&[Node], Option<&NodeName>),
     user: Option<UserId>,
     spec: &BoxSpec,
 ) -> Verdict {
@@ -110,6 +76,37 @@ fn seat(store: &Store, node: &Node) -> Result<Option<PoolSeat>, CommandError> {
     }
 }
 
+/// The node `row` was placed on, if it still exists.
+fn recorded(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Option<Node>, CommandError> {
+    let Some(want) = store.box_spec(row.id)?.node else {
+        return Ok(None);
+    };
+    let (shared, _) = configured(cx.config());
+    Ok(store.nodes(&shared)?.into_iter().find(|n| n.name == want))
+}
+
+/// The provider id for `row` acquired again with no provider held: its recorded node's, else
+/// the default shared node's runtime.
+///
+/// # Errors
+/// Neither exists, or a store failure.
+pub(crate) fn runtime_of(cx: &Cx, store: &Store, row: &BoxRow) -> Result<ProviderId, CommandError> {
+    if let Some(node) = recorded(cx, store, row)? {
+        return Ok(runtime_id(&node));
+    }
+    let (shared, default) = configured(cx.config());
+    default
+        .and_then(|d| shared.get(d.as_str()))
+        .map(|n| ProviderId::new(n.runtime.as_str()))
+        .ok_or_else(|| {
+            CommandError::new(
+                ErrorKind::Refused,
+                "this Box is on no node and no shared node is configured to start it on",
+            )
+            .with_hint("close it and start a new Box")
+        })
+}
+
 /// The machine seat for `row`'s recorded node, for a Box acquired again on its provider.
 ///
 /// # Errors
@@ -119,14 +116,7 @@ pub(crate) fn seat_of(
     store: &Store,
     row: &BoxRow,
 ) -> Result<Option<PoolSeat>, CommandError> {
-    let Some(want) = store.box_spec(row.id)?.node else {
-        return Ok(None);
-    };
-    let shared = configured(cx.config()).map_or_else(|_| BTreeMap::new(), |(s, _)| s);
-    let all = store.nodes(&shared)?;
-    all.iter()
-        .find(|n| n.name == want)
-        .map_or_else(|| Ok(None), |n| seat(store, n))
+    recorded(cx, store, row)?.map_or_else(|| Ok(None), |n| seat(store, &n))
 }
 
 /// A Box admitted onto a node.
@@ -153,7 +143,7 @@ pub(crate) fn admit(
 ) -> Result<Option<Bound>, CommandError> {
     let spec = store.box_spec(row.id)?;
     let (all, default) = nodes(cx)?;
-    let picked = match verdict(cx, (&all, &default), row.user, &spec) {
+    let picked = match verdict(cx, (&all, default.as_ref()), row.user, &spec) {
         Verdict::Fail { reason } if fresh => {
             return Err(CommandError::new(ErrorKind::Refused, reason));
         }
@@ -175,7 +165,7 @@ pub(crate) fn admit(
             used,
             ..node.clone()
         };
-        match verdict(cx, (&[now], &default), row.user, &on_it) {
+        match verdict(cx, (&[now], default.as_ref()), row.user, &on_it) {
             Verdict::Bind { .. } => {
                 bound = true;
                 Some(requested(&provider))
@@ -215,7 +205,7 @@ pub(crate) fn preflight(
     spec: &BoxSpec,
 ) -> Result<Option<String>, CommandError> {
     let (all, default) = nodes(cx)?;
-    let picked = match verdict(cx, (&all, &default), Some(user), spec) {
+    let picked = match verdict(cx, (&all, default.as_ref()), Some(user), spec) {
         Verdict::Fail { reason } => return Err(CommandError::new(ErrorKind::Refused, reason)),
         Verdict::Bind { node, .. } | Verdict::Pending { node, .. } => node,
     };
@@ -271,10 +261,7 @@ fn legacy_node(all: &[Node], default: Option<&NodeName>, held: &DriverRow) -> Op
 /// # Errors
 /// A store failure.
 pub(crate) fn backfill(cx: &Cx, store: &Store) -> Result<(), CommandError> {
-    let (shared, default) = match configured(cx.config()) {
-        Ok((shared, default)) => (shared, Some(default)),
-        Err(_) => (BTreeMap::new(), None),
-    };
+    let (shared, default) = configured(cx.config());
     let all = store.nodes(&shared)?;
     for (id, held) in store.box_rows_live()? {
         if store.box_spec(id)?.node.is_some() {

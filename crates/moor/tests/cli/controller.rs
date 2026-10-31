@@ -431,6 +431,21 @@ fn serve_with_a_removed_user_config_key_exits_naming_it() {
 }
 
 #[test]
+fn serve_with_no_shared_node_listens() {
+    for yaml in ["{}\n", "nodes: {}\n"] {
+        let (mut child, _sandbox) = serve_with_user_config(yaml);
+        let mut lines = BufReader::new(child.stderr.take().unwrap()).lines();
+        let listening = lines.any(|l| l.is_ok_and(|l| l.contains("listening on")));
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(
+            listening,
+            "the controller never reported listening with {yaml:?}"
+        );
+    }
+}
+
+#[test]
 fn serve_with_a_valid_nodes_config_listens() {
     let (mut child, _sandbox) = serve_with_user_config("nodes: {local: {runtime: local}}\n");
     let mut lines = BufReader::new(child.stderr.take().unwrap()).lines();
