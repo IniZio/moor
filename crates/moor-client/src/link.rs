@@ -23,6 +23,9 @@ pub mod ops;
 pub mod status;
 pub mod sweep;
 
+#[cfg(test)]
+mod tests;
+
 /// Where the runner accepts links.
 pub const PATH: &str = "/machines/link";
 /// The link protocol both ends speak; an agent on any other gets `update-required`.

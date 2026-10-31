@@ -20,6 +20,7 @@ done
 case "$1" in
   ssh) strict=yes; [ -e "$HOME/loose" ] && strict=no
     echo "ssh '-F' '/dev/null' '-o' 'StrictHostKeyChecking=$strict' '-o' 'UserKnownHostsFile=$HOME/kh' '-o' 'ProxyCommand=cat' 'vm@vm7'" ;;
+  providers) cat "$(dirname "$0")/describe.json" 2>/dev/null ;;
   list) cat "$HOME/leases.json" 2>/dev/null || echo '[]' ;;
   pause) if [ -e "$HOME/no-pause" ]; then
       echo "provider=$3 does not support pause" >&2; exit 2
