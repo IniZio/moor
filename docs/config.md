@@ -1,7 +1,8 @@
 # Configuration reference
 
 moor reads three YAML files. moor rejects unknown keys in each file. An empty
-file means every key takes its default, except `box.provider`, which has none.
+file means every key takes its default, except `nodes`: `moor start` of a new Box
+fails until one node is configured, or one of your own machines is enrolled.
 
 | File | Who writes it | Where it is |
 | --- | --- | --- |
@@ -15,9 +16,7 @@ file means every key takes its default, except `box.provider`, which has none.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `box.provider` | string | none | The crabbox provider for new Boxes, or `<provider>@<machine>` for a [Box pool host](#box-pool-hosts) of your own. `moor start` of a new Box fails until it is set. Existing Boxes keep the provider they started on. A repo cannot set it. |
 | `box.size` | `small`, `medium`, `large`, or `xlarge` | `small` | The Box size. A `.moor.yaml` value wins over this one. |
-| `box.max_boxes` | integer, at least 1 | none | The most live Boxes at once. |
 | `box.sleep_after` | duration such as `30s`, `45m`, `2h`, or `1d` | `30m` | How long a Box stays idle before moor puts it to sleep. |
 | `box.sleep_after_blocked` | duration | `5m` | How long a Box stays idle while its agent waits on an unanswered prompt or a first-run screen before moor puts it to sleep. The shorter of this and `box.sleep_after` applies. An answer, a steer, or a message wakes the Box. |
 | `box.max_awake` | duration | `2h` | How long any Box stays awake, counted from its last start or wake, before moor puts it to sleep, even while its agent works. A steer or a message wakes the Box and the agent resumes. |
@@ -43,21 +42,26 @@ box:
 | `nodes.<name>.runtime` | string | required | The crabbox provider the node's Boxes run on. |
 | `nodes.<name>.labels` | list of strings | none | Labels a Box may require of the node. |
 | `nodes.<name>.max_boxes` | integer, at least 1 | none | The most live Boxes on the node; unlimited when unset. |
-| `box.node` | string | the only node | The shared node new Boxes run on. Required when `nodes` has more than one entry, and it must name one. |
+| `box.node` | string | the only node | The shared node new Boxes run on. Required when `nodes` has more than one entry, and it must name one. A repo cannot set it. |
 
-A node name matches `[a-z][a-z0-9-]*`. A [Box pool host](#box-pool-hosts)
-enrolled with `--runtime` is a personal node, named for its machine and
-usable only by its owner. It is online while its agent is linked.
+A node name matches `[a-z][a-z0-9-]*`. `runtime` is a bare crabbox provider id.
+`nodes` is required for a shared node: a config without it, and without an
+enrolled [personal node](#personal-nodes), cannot start a new Box. Existing
+Boxes stay on the node they started on.
 `moor node ls` shows each node's runtime, link, load and labels.
+
+The keys `box.provider`, `box.max_boxes` and `drivers.<provider>.max_boxes`
+were removed. moor rejects them and names the node key that replaces them:
+`nodes: {name: {runtime: <provider>, max_boxes: N}}`.
 
 ### `drivers`
 
-`drivers.<provider>` holds settings for one provider. See
+`drivers.<provider>` holds settings for one runtime. To limit its Boxes, set
+`max_boxes` on a [node](#nodes). See
 [Box providers](providers.md) for how providers work.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `max_boxes` | integer, at least 1 | none | The most live Boxes on this provider. It wins over `box.max_boxes`. |
 | `lookup_timeout_secs` | integer, at least 1 | 5, or 20 for `external` | How long moor waits for crabbox to look up a Box's ssh target. |
 | `strip_env` | list of variable names | empty | Variables that the provider puts in the Box. moor removes them from every command it runs there. |
 | `cache_volumes` | boolean | `true` | Whether this provider's Boxes get [cache volumes](#cache-volumes). `false` starts every Box on the provider cold, with no warning. |
@@ -250,31 +254,32 @@ out to moor, so it needs no open port. A Box gets a machine only through the
 repo's `machine.labels` in [`.moor.yaml`](#mooryaml). See
 [Enrolling a machine](machines.md#enrolling-a-machine).
 
-### Box pool hosts
+### Personal nodes
 
-A machine of your own can run your Boxes, instead of a shared provider. The
-host runs crabbox with a provider adapter, such as cloud-hypervisor, and each
-Box gets its own VM there. Enroll the host with the provider it offers:
+A machine of your own can run your Boxes as a personal node, which only you
+can use. The host runs crabbox with a provider adapter, such as
+cloud-hypervisor, and each Box gets its own VM there. Enroll the host with the
+runtime it offers:
 
 ```sh
 moor-machine-agent enroll --server https://moor.example.com --name hv --runtime cloudhypervisor
 ```
 
-The provider matches `[a-z][a-z0-9-]*`, 64 bytes at most. `moor user machine
-ls` shows each machine's pool.
+The runtime matches `[a-z][a-z0-9-]*`, 64 bytes at most. The node is named for
+the machine, and is online while its agent is linked. `moor user machine ls`
+shows each machine's pool.
 
-`moor-machine-agent run --runtime PROVIDER` serves the pool. `--max-boxes N`
+`moor-machine-agent run --runtime RUNTIME` serves the node. `--max-boxes N`
 caps the Boxes the host holds, and `--cache-gb N` says how much disk caches
 may use. On each link the agent reports both, with the features its crabbox
 provider declares, such as `cache-volume`; the server stores them and does not
 act on them yet.
 
-Then set `box.provider: cloudhypervisor@hv`. `moor start` refuses, with the
-reason, when `hv` is not one of your machines, offers another provider or no
-pool, or its agent is not linked.
-It never falls back to another provider. moor reaches the Box's VM through the
+A start tries your personal nodes before the shared ones, so no config key is
+needed. `moor start` refuses, with the reason, when a node you named is not
+yours, or its agent is not linked. moor reaches the Box's VM through the
 host's agent, and sleeping the Box pauses the VM. Cache volumes do not reach
-Boxes on a pool host yet.
+Boxes on a personal node yet.
 
 ### The machine service
 

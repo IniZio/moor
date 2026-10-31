@@ -65,19 +65,19 @@ release the Box by hand, run `crabbox stop --provider PROVIDER --id SLUG
 
 ## Choose the provider
 
-To use an external provider, set `box.provider` and cap its live Boxes with
-`drivers.external.max_boxes`:
+A provider runs Boxes through a node. To use an external provider, declare a
+node with that runtime and cap its live Boxes with `max_boxes`:
 
 ```yaml
-box:
-  provider: external
-drivers:
-  external:
+nodes:
+  ci:
+    runtime: external
     max_boxes: 5
 ```
 
 Set `max_boxes` to the number of instances that your provider account
-allows.
+allows. See [Nodes](config.md#nodes) for labels and for choosing among several
+nodes.
 
 `drivers.<provider>.lookup_timeout_secs` sets how many seconds moor waits for
 crabbox to look up a Box's ssh target. The default is 5, or 20 for

@@ -78,12 +78,12 @@ This guide starts one Box from a git repo on your machine. You need:
    A Box's Proxy adds these secrets to the agent's requests. Nothing comes
    from your shell or your user config.
 
-4. Name the provider for new Boxes in your user config. moor has no default
-   provider, and `moor start` refuses until `box.provider` is set:
+4. Name a node for new Boxes in your user config. moor has no default
+   node, and `moor start` refuses until `nodes` is set:
 
    ```sh
    mkdir -p ~/.config/moor
-   printf 'box:\n  provider: local-container\n' > ~/.config/moor/config.yaml
+   printf 'nodes:\n  local:\n    runtime: local-container\n' > ~/.config/moor/config.yaml
    ```
 
 5. In your repo, preview the settings a Box would get:

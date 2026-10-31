@@ -99,8 +99,8 @@ mac  not linked  -
 ```
 
 `moor user machine status NAME` asks that machine's agent for its version, OS,
-CPU architecture and free disk. A machine that hosts a Box pool also reports
-its provider, its crabbox version and its leases, one `slug state` line each.
+CPU architecture and free disk. A machine that is a personal node also reports
+its runtime, its crabbox version and its leases, one `slug state` line each.
 Last come the agent's last 50 operations, newest first, each with its time,
 name, target and whether it succeeded. Add `--json` for the same data as JSON.
 
@@ -442,6 +442,9 @@ this machine holds:
 moor-machine-agent enroll --server https://moor.example.com --name mac --labels macos,ios-sim
 ```
 
+To run your own Boxes on the machine, enroll it with `--runtime PROVIDER`. It
+becomes a personal node; see [Personal nodes](config.md#personal-nodes).
+
 Then keep the agent running, for example as a launch agent or a systemd user
 service:
 
@@ -454,7 +457,7 @@ a command that the runner sends with `exec` only when it is started with
 `--allow-exec`, so a controller that someone else takes over cannot run
 commands on the machine unless its owner allowed that. `sync`, `pull`, the
 hooks and the relays work without the flag, but the `exec` tool, the disk
-guard and removing a closed Box's files need it. A pool host, started with
+guard and removing a closed Box's files need it. A personal node, started with
 `--runtime`, never runs `exec`, and the agent refuses `--allow-exec` with
 `--runtime`.
 
