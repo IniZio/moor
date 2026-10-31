@@ -14,6 +14,7 @@ echo "$PWD $*" >> "$HOME/crabbox.log"
 [ -n "$CRABBOX_CACHE_VOLUMES" ] && printf '%s %s\n' "$CRABBOX_CACHE_SCOPE" "$CRABBOX_CACHE_VOLUMES" >> "$HOME/cache.env"
 for a in "$@"; do
   case "$a" in
+    --class) [ -e "$HOME/no-class" ] && { echo "unknown class for provider" >&2; exit 2; } ;;
     --provider|--id|--slug|--json) ;;
     --*) echo "flag provided but not defined: $a" >&2; exit 2 ;;
   esac

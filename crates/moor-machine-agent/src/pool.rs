@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
-use moor_client::link::lease::{Answer, Cache, Lease, Verb};
+use moor_client::link::lease::{Answer, Boot, Lease, Verb};
 use moor_client::link::ops::{Op, Reply};
 use moor_client::link::Offer;
 use moor_core::box_key::parse_pool_slug;
@@ -75,16 +75,16 @@ async fn features(pool: &Pool) -> Vec<String> {
 }
 
 /// Does `verb` to the lease `slug`, or lists the leases, under `home`; an authorize lets `key`
-/// in, a warmup mounts `cache`.
+/// in, a warmup boots with `boot`.
 pub async fn lease(
     home: &Path,
     pool: &Pool,
     verb: Verb,
     slug: Option<&str>,
     key: Option<&str>,
-    cache: Option<&Cache>,
+    boot: &Boot,
 ) -> Reply {
-    match answer(home, pool, verb, slug, key, cache).await {
+    match answer(home, pool, verb, slug, key, boot).await {
         Ok(answer) => Reply::Leased(answer),
         Err(reason) => Reply::Refused { reason },
     }
@@ -98,16 +98,10 @@ pub async fn lease_op(home: &Path, pool: &Pool, op: Op) -> Reply {
             slug,
             key,
             cache,
+            class,
         } => {
-            lease(
-                home,
-                pool,
-                verb,
-                slug.as_deref(),
-                key.as_deref(),
-                cache.as_ref(),
-            )
-            .await
+            let boot = Boot { cache, class };
+            lease(home, pool, verb, slug.as_deref(), key.as_deref(), &boot).await
         }
         _ => Reply::Refused {
             reason: "not a lease".to_owned(),
@@ -122,10 +116,13 @@ async fn answer(
     verb: Verb,
     slug: Option<&str>,
     key: Option<&str>,
-    cache: Option<&Cache>,
+    boot: &Boot,
 ) -> Result<Answer, String> {
-    if cache.is_some() && verb != Verb::Warmup {
+    if boot.cache.is_some() && verb != Verb::Warmup {
         return Err("only a warmup mounts a cache".to_owned());
+    }
+    if boot.class.is_some() && verb != Verb::Warmup {
+        return Err("only a warmup boots a machine class".to_owned());
     }
     match (verb, slug.map(checked).transpose()?) {
         (Verb::List, None) => Ok(Answer::Leases {
@@ -144,7 +141,7 @@ async fn answer(
                 verb,
                 slug,
                 key,
-                cache,
+                boot,
             )
             .await
         }
@@ -157,18 +154,14 @@ async fn act(
     verb: Verb,
     slug: &str,
     key: Option<&str>,
-    cache: Option<&Cache>,
+    boot: &Boot,
 ) -> Result<Answer, String> {
     let ran = match verb {
         Verb::Authorize => {
             let key = key.ok_or("authorize names no key")?;
             return reach::authorize(lease, key).await;
         }
-        Verb::Warmup => {
-            let env = cache.map(cache::env).transpose()?.unwrap_or_default();
-            room(lease.home, lease.pool, slug).await?;
-            lease.run_with("warmup", "--slug", BOOT, &[0], &env).await
-        }
+        Verb::Warmup => warmup(lease, slug, boot).await,
         Verb::Info => return reach::info(lease).await,
         Verb::Pause => lease.run("pause", "--id", CALL, &[0]).await,
         Verb::Resume => lease.run("resume", "--id", CALL, &[0]).await,
@@ -191,11 +184,38 @@ async fn act(
     }
 }
 
+/// Boots lease `slug` with `boot`; a bad cache or class stops it before crabbox runs.
+async fn warmup(lease: &Crabbox<'_>, slug: &str, boot: &Boot) -> Result<String, String> {
+    let env = boot.cache.as_ref().map(cache::env).transpose()?;
+    let class = boot.class.as_deref().map(checked_class).transpose()?;
+    let flags = class.map_or_else(|| vec!["--slug"], |c| vec!["--class", c, "--slug"]);
+    room(lease.home, lease.pool, slug).await?;
+    let env = env.unwrap_or_default();
+    lease.run_with("warmup", &flags, BOOT, &[0], &env).await
+}
+
 /// `slug` itself, when it is a well-formed `moor-<controller>-<id>` slug.
 fn checked(slug: &str) -> Result<&str, String> {
     parse_pool_slug(slug)
         .map(|_| slug)
         .ok_or_else(|| format!("{slug:?} is not a moor-<controller>-<id> slug"))
+}
+
+/// `class` itself, when it is a token crabbox can take as a machine class: lowercase letters,
+/// digits, `.`, `_` and `-`, starting with a letter or digit, at most 32 bytes.
+fn checked_class(class: &str) -> Result<&str, String> {
+    let token = class
+        .bytes()
+        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-'));
+    let leads = class
+        .bytes()
+        .next()
+        .is_some_and(|b| b.is_ascii_alphanumeric());
+    if token && leads && class.len() <= 32 {
+        Ok(class)
+    } else {
+        Err(format!("{class:?} is not a machine class"))
+    }
 }
 
 /// Ok unless booting `slug` would pass the pool's most leases.
@@ -276,14 +296,14 @@ impl Crabbox<'_> {
         within: Duration,
         ok: &[i32],
     ) -> Result<String, String> {
-        self.run_with(verb, flag, within, ok, &[]).await
+        self.run_with(verb, &[flag], within, ok, &[]).await
     }
 
-    /// [`Self::run`] with `env` added to crabbox's.
+    /// [`Self::run`] with `flags` in place of its one flag and `env` added to crabbox's.
     async fn run_with(
         &self,
         verb: &str,
-        flag: &str,
+        flags: &[&str],
         within: Duration,
         ok: &[i32],
         env: &[(&str, String)],
@@ -300,7 +320,8 @@ impl Crabbox<'_> {
         };
         std::fs::create_dir_all(&dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
         let mut cmd = Command::new(&self.pool.crabbox);
-        cmd.args([verb, "--provider", &self.pool.provider, flag]);
+        cmd.args([verb, "--provider", &self.pool.provider])
+            .args(flags);
         if let Some(slug) = self.slug {
             cmd.arg(slug);
         }
