@@ -8,7 +8,7 @@ use tempfile::TempDir;
 use super::super::super::Claude;
 use super::{ctx, forced, install, run_hook_on, state_file, Interp};
 
-fn check_only_running_tasks_are_kept(path: Option<&str>) {
+fn check_only_running_background_work_is_kept(path: Option<&str>) {
     let t = TempDir::new().unwrap();
     let c = ctx(t.path());
     install(&Claude.hook_writer(&c).unwrap());
@@ -54,11 +54,11 @@ fn check_only_running_tasks_are_kept(path: Option<&str>) {
 }
 
 #[test]
-fn only_running_background_tasks_are_kept_with_python3_only() {
-    forced(Interp::Python, check_only_running_tasks_are_kept);
+fn only_running_background_work_is_kept_with_python3_only() {
+    forced(Interp::Python, check_only_running_background_work_is_kept);
 }
 
 #[test]
-fn only_running_background_tasks_are_kept_with_node_only() {
-    forced(Interp::Node, check_only_running_tasks_are_kept);
+fn only_running_background_work_is_kept_with_node_only() {
+    forced(Interp::Node, check_only_running_background_work_is_kept);
 }
