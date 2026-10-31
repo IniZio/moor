@@ -337,7 +337,7 @@ fn start_says_attached_and_queued() {
     let v = json!({"box": lifecycle_box("alpha", "ready", Some("ready")), "attached": true});
     let (out, _) = render(&Response::ok("start", Some(v)), false);
     assert!(out.starts_with("attached alpha (#7): ready/idle, box ready\n"));
-    let v = json!({"box": lifecycle_box("alpha", "waiting_for_box", None), "queued": true});
+    let v = json!({"box": lifecycle_box("alpha", "pending", None), "queued": true});
     let (out, _) = render(&Response::ok("start", Some(v)), false);
     assert_eq!(out, "queued alpha (#7): waiting for a free box\n");
 }

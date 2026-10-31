@@ -148,10 +148,10 @@ fn start_queues_when_box_limit_reached() {
     let (w, _) = with_live_box(box_limit(1));
     let v = run(&w.cx, &req("waiter")).unwrap();
     assert!(v.queued);
-    assert_eq!(v.boxed.lifecycle, BoxLifecycle::WaitingForBox);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Pending);
     assert_eq!(
         lifecycle_of(&w, BoxId::new(v.boxed.id)),
-        BoxLifecycle::WaitingForBox
+        BoxLifecycle::Pending
     );
 }
 
@@ -159,7 +159,7 @@ fn start_queues_when_box_limit_reached() {
 fn queued_start_records_no_session() {
     let (w, _) = with_live_box(box_limit(1));
     let v = run(&w.cx, &req("waiter")).unwrap();
-    assert_eq!(v.boxed.lifecycle, BoxLifecycle::WaitingForBox);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Pending);
     let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
     assert!(store.live_session(id).unwrap().is_none());
@@ -177,8 +177,8 @@ fn queued_start_records_the_limit_and_keeps_the_workspace() {
             .unwrap();
     let ev = events
         .iter()
-        .find(|e| e.kind == "waiting_for_box")
-        .expect("waiting_for_box event");
+        .find(|e| e.kind == "pending")
+        .expect("pending event");
     assert_eq!(ev.payload.get("max_boxes"), Some(&json!(1)));
     let calls = w.surface.calls();
     assert!(calls.contains(&"ensure_workspace moor:waiter".to_owned()));
@@ -211,7 +211,7 @@ fn queued_start_warns_with_the_driver_config_key() {
             .unwrap()
             .events(BoxId::new(v.boxed.id), 50)
             .unwrap();
-    let ev = events.iter().find(|e| e.kind == "waiting_for_box").unwrap();
+    let ev = events.iter().find(|e| e.kind == "pending").unwrap();
     assert_eq!(ev.payload.get("max_boxes"), Some(&json!(1)));
 }
 
@@ -221,7 +221,7 @@ fn start_again_while_still_full_keeps_waiting() {
     run(&w.cx, &req("waiter")).unwrap();
     let again = run(&w.cx, &req("waiter")).unwrap();
     assert!(again.queued);
-    assert_eq!(again.boxed.lifecycle, BoxLifecycle::WaitingForBox);
+    assert_eq!(again.boxed.lifecycle, BoxLifecycle::Pending);
     assert_eq!(w.driver.calls(), ["acquire"]);
 }
 
@@ -235,7 +235,7 @@ fn start_again_after_a_box_is_freed_promotes_the_waiting_box() {
     free_box(&w, holder);
     let v = run(&w.cx, &req("waiter")).unwrap();
     assert!(!v.queued);
-    assert_ne!(lifecycle_of(&w, id), BoxLifecycle::WaitingForBox);
+    assert_ne!(lifecycle_of(&w, id), BoxLifecycle::Pending);
     assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
 }
 
@@ -257,7 +257,7 @@ fn start_again_after_the_holder_closes_promotes_the_waiting_box() {
         .unwrap();
     let v = run(&w.cx, &req("waiter")).unwrap();
     assert!(!v.queued);
-    assert_ne!(lifecycle_of(&w, id), BoxLifecycle::WaitingForBox);
+    assert_ne!(lifecycle_of(&w, id), BoxLifecycle::Pending);
     assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
 }
 
@@ -335,6 +335,6 @@ fn asleep_box_still_counts_toward_the_limit() {
         .unwrap();
     let v = run(&w.cx, &req("waiter")).unwrap();
     assert!(v.queued);
-    assert_eq!(v.boxed.lifecycle, BoxLifecycle::WaitingForBox);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Pending);
     assert_eq!(w.driver.calls(), ["acquire"]);
 }

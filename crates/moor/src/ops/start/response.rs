@@ -26,7 +26,7 @@ pub(super) fn with_provider(
     row: &BoxRow,
     attached: bool,
 ) -> Result<StartView, CommandError> {
-    if row.lifecycle != BoxLifecycle::WaitingForBox {
+    if row.lifecycle != BoxLifecycle::Pending {
         return Ok(view(cx, row, attached));
     }
     let cfg = settings_of(cx, row, &Flags::default())?;
@@ -59,7 +59,7 @@ pub(super) fn view(cx: &Cx, row: &BoxRow, attached: bool) -> StartView {
     StartView {
         boxed: view,
         attached,
-        queued: row.lifecycle == BoxLifecycle::WaitingForBox,
+        queued: row.lifecycle == BoxLifecycle::Pending,
         promoted: Vec::new(),
         work_tree: None,
         setup: SetupView::default(),

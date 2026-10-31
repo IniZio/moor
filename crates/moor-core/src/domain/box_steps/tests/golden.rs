@@ -69,7 +69,7 @@ fn table() -> Vec<Row> {
             P::Starting,
             Some(at_cap()),
             None,
-            Want::Ok(B::WaitingForBox, P::Starting),
+            Want::Ok(B::Pending, P::Starting),
         ),
         row(
             B::Checking,
@@ -79,7 +79,7 @@ fn table() -> Vec<Row> {
             Want::Ok(B::SettingUp, P::Starting),
         ),
         row(
-            B::WaitingForBox,
+            B::Pending,
             P::Starting,
             Some(L::Promoted),
             None,

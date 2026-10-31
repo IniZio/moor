@@ -229,7 +229,7 @@ fn close_promotes_the_oldest_waiter_of_the_provider() {
     let v = close_holder(&w);
     assert!(v.box_deleted);
     assert_eq!(v.promoted, ["first"]);
-    assert_eq!(lifecycle_of(&w, second), BoxLifecycle::WaitingForBox);
+    assert_eq!(lifecycle_of(&w, second), BoxLifecycle::Pending);
 }
 
 #[test]
@@ -238,8 +238,8 @@ fn a_younger_waiter_stays_queued_when_one_slot_frees() {
     let first = queue(&w, "first");
     let second = queue(&w, "second");
     close_holder(&w);
-    assert_ne!(lifecycle_of(&w, first), BoxLifecycle::WaitingForBox);
-    assert_eq!(lifecycle_of(&w, second), BoxLifecycle::WaitingForBox);
+    assert_ne!(lifecycle_of(&w, first), BoxLifecycle::Pending);
+    assert_eq!(lifecycle_of(&w, second), BoxLifecycle::Pending);
     assert_eq!(acquires(&w), 1);
 }
 
@@ -250,7 +250,7 @@ fn promoted_box_goes_through_setting_up_and_gets_a_ready_box() {
     close_holder(&w);
     let seen = kinds(&w, id);
     let at = |k: &str| seen.iter().position(|s| s == k);
-    assert!(at("waiting_for_box") < at("setting_up"), "{seen:?}");
+    assert!(at("pending") < at("setting_up"), "{seen:?}");
     assert!(at("setting_up") < at("working"), "{seen:?}");
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert!(is_working(&row));
@@ -326,7 +326,7 @@ fn show_does_not_promote_a_waiter_when_a_slot_is_free() {
         pane: false,
     };
     show::run(&w.cx, &req).unwrap();
-    assert_eq!(lifecycle_of(&w, id), BoxLifecycle::WaitingForBox);
+    assert_eq!(lifecycle_of(&w, id), BoxLifecycle::Pending);
     assert_eq!(acquires(&w), 0);
 }
 
@@ -345,7 +345,7 @@ fn a_waiter_is_not_promoted_when_the_freed_box_was_of_another_provider() {
     let v = close_holder(&w);
     assert!(v.box_deleted);
     assert!(v.promoted.is_empty());
-    assert_eq!(lifecycle_of(&w, id), BoxLifecycle::WaitingForBox);
+    assert_eq!(lifecycle_of(&w, id), BoxLifecycle::Pending);
     assert_eq!(acquires(&w), 0);
 }
 
@@ -355,7 +355,7 @@ fn nothing_is_promoted_without_a_configured_limit() {
     let id = waiting_directly(&w, "first");
     let v = close_holder(&w);
     assert!(v.promoted.is_empty());
-    assert_eq!(lifecycle_of(&w, id), BoxLifecycle::WaitingForBox);
+    assert_eq!(lifecycle_of(&w, id), BoxLifecycle::Pending);
     assert_eq!(acquires(&w), 0);
 }
 
@@ -386,7 +386,7 @@ fn a_waiter_whose_box_lock_is_held_is_skipped_with_a_warning() {
     let skipped = warnings.iter().find(|x| x.code == "promote_skipped");
     let message = &skipped.expect("promote_skipped warning").message;
     assert!(message.starts_with("cannot promote first:"), "{message}");
-    assert_eq!(lifecycle_of(&w, id), BoxLifecycle::WaitingForBox);
+    assert_eq!(lifecycle_of(&w, id), BoxLifecycle::Pending);
     assert_eq!(acquires(&w), 0);
 }
 
@@ -395,11 +395,8 @@ fn a_store_read_error_during_promotion_is_a_warning_not_a_failed_close() {
     let w = world(limit(1), FakeDriver::new());
     queue(&w, "first");
     let db = rusqlite::Connection::open(w.cx.state_dir().unwrap().join("moor.db")).unwrap();
-    db.execute(
-        "UPDATE boxes SET name = '' WHERE state = 'waiting_for_box'",
-        [],
-    )
-    .unwrap();
+    db.execute("UPDATE boxes SET name = '' WHERE state = 'pending'", [])
+        .unwrap();
     let v = close_holder(&w);
     assert!(v.box_deleted);
     assert!(v.promoted.is_empty());
@@ -460,7 +457,7 @@ fn a_close_names_only_the_promoted_boxes_its_caller_may_see() {
     w.cx = w.cx.with_viewer(Viewer::User(user));
     let v = close_holder(&w);
     assert!(v.promoted.is_empty(), "{:?}", v.promoted);
-    assert_ne!(lifecycle_of(&w, first), BoxLifecycle::WaitingForBox);
+    assert_ne!(lifecycle_of(&w, first), BoxLifecycle::Pending);
 }
 
 #[test]

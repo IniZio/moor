@@ -23,7 +23,7 @@ pub(super) struct Target {
 pub(super) fn target(store: &Store, row: &BoxRow) -> Result<Target, CommandError> {
     let name = row.name.as_str();
     let failed = |msg: String| CommandError::new(ErrorKind::Failed, msg);
-    if row.lifecycle == BoxLifecycle::WaitingForBox {
+    if row.lifecycle == BoxLifecycle::Pending {
         return Err(CommandError::new(
             ErrorKind::Refused,
             format!("{name} is waiting for a free box"),

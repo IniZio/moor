@@ -152,7 +152,7 @@ impl Row {
                 Phase::Closed
             }
             BoxLifecycle::Asleep => Phase::Asleep,
-            BoxLifecycle::Checking | BoxLifecycle::WaitingForBox | BoxLifecycle::SettingUp => {
+            BoxLifecycle::Checking | BoxLifecycle::Pending | BoxLifecycle::SettingUp => {
                 Phase::Starting
             }
             _ if self

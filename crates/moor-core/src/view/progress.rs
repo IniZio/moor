@@ -89,7 +89,7 @@ fn step(kind: &str, payload: &Value) -> Option<String> {
             .map_or_else(String::new, |ms| format!(" in {}", span(ms / 1000)))
     };
     Some(match kind {
-        "waiting_for_box" => "waiting for a machine slot".to_owned(),
+        "pending" => "waiting for a machine slot".to_owned(),
         "box_requested" => "machine requested".to_owned(),
         "box_progress" => text("text").to_owned(),
         "box_ready" => "machine ready".to_owned(),
