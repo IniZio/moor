@@ -4,4 +4,8 @@ setup:
   - 'command -v cc >/dev/null || if [ "$(id -u)" = 0 ]; then apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq build-essential; else sudo -n apt-get update -qq && sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq build-essential; fi'
   - '[ -x "$HOME/.cargo/bin/rustup" ] || curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain none --profile minimal'
   - PATH="$HOME/.cargo/bin:$PATH" rustup toolchain install
-  - 'for b in cargo rustc rustup rustfmt cargo-fmt cargo-clippy clippy-driver; do if [ "$(id -u)" = 0 ]; then ln -sf "$HOME/.cargo/bin/$b" "/usr/local/bin/$b"; else sudo -n ln -sf "$HOME/.cargo/bin/$b" "/usr/local/bin/$b"; fi; done'
+  - '[ -x "$HOME/.cargo/bin/cargo-binstall" ] || curl --proto "=https" --tlsv1.2 -LsSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash'
+  - 'PATH="$HOME/.cargo/bin:$PATH" cargo binstall -y --locked --disable-telemetry $(make -s print-tool-versions | tr , " " | sed "s/taplo@/taplo-cli@/; s/typos@/typos-cli@/")'
+  - PATH="$HOME/.cargo/bin:$PATH" make setup
+  - 'for b in cargo rustc rustup rustfmt cargo-fmt cargo-clippy clippy-driver cargo-binstall cargo-deny cargo-machete cargo-nextest taplo typos; do if [ "$(id -u)" = 0 ]; then ln -sf "$HOME/.cargo/bin/$b" "/usr/local/bin/$b"; else sudo -n ln -sf "$HOME/.cargo/bin/$b" "/usr/local/bin/$b"; fi; done'
+  - '[ ! -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ] || if [ "$(id -u)" = 0 ]; then sysctl -qw kernel.apparmor_restrict_unprivileged_userns=0; else sudo -n sysctl -qw kernel.apparmor_restrict_unprivileged_userns=0; fi'
