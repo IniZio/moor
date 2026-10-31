@@ -57,6 +57,16 @@ struct BoxArgs {
     r#box: String,
 }
 
+/// Arguments of `close_box`.
+#[derive(Deserialize, JsonSchema)]
+struct CloseArgs {
+    /// The Box's name, as `list_boxes` shows it.
+    r#box: String,
+    /// Close even when the Box holds unpushed commits or uncommitted files, or could not be
+    /// checked for them, discarding that work. False by default, like the CLI's `--force`.
+    force: Option<bool>,
+}
+
 /// Arguments of `send_to_box`.
 #[derive(Deserialize, JsonSchema)]
 struct SendArgs {
@@ -153,18 +163,19 @@ impl Tools {
 
     /// Closes a Box.
     #[tool(
-        description = "Close one of your Boxes. The controller refuses while work is \
-                       unfinished. Needs the moor:write scope."
+        description = "Close one of your Boxes. The controller refuses while the Box holds \
+                       work that is not pushed, or when it cannot check; pass force=true to \
+                       close anyway and discard that work. Needs the moor:write scope."
     )]
     async fn close_box(
         &self,
         context: RequestContext<RoleServer>,
-        Parameters(args): Parameters<BoxArgs>,
+        Parameters(args): Parameters<CloseArgs>,
     ) -> CallToolResult {
         let request = target(&args.r#box).map(|target| {
             ControllerRequest::Close(CloseReq {
                 target,
-                force: false,
+                force: args.force.unwrap_or(false),
             })
         });
         self.run(&context, WRITE, request, Reply::AsIs).await
