@@ -45,6 +45,9 @@ fn linked(f: &Fixture, who: &str, name: &str, online: bool) -> i64 {
             since: Ts::from_millis(1_000_000),
             version: Some("1.2.3".into()),
             protocol: Some(2),
+            max_boxes: None,
+            cache_gb: None,
+            features: Vec::new(),
         }])
         .unwrap();
     machine_id

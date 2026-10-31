@@ -138,15 +138,21 @@ async fn reported(w: &World, online: bool) {
     }
 }
 
+/// A hello from `machine_id` speaking `protocol`.
+fn hello(machine_id: i64, protocol: u32) -> Frame {
+    Frame::Hello {
+        machine_id,
+        protocol,
+        version: "test".to_owned(),
+        offer: None,
+    }
+}
+
 /// Dials, says hello as `machine_id`, and answers the challenge by
 /// signing with `key`; the socket, the proof, and what the runner answered it.
 async fn handshake(w: &World, machine_id: i64, key: &PrivateKey) -> (link::Dialed, Frame, Frame) {
     let mut ws = link::dial(&w.server).await.unwrap();
-    let hello = Frame::Hello {
-        machine_id,
-        protocol: link::PROTOCOL,
-        version: "test".to_owned(),
-    };
+    let hello = hello(machine_id, link::PROTOCOL);
     link::send(&mut ws, &hello).await.unwrap();
     let Frame::Challenge { nonce } = link::recv(&mut ws, Duration::from_secs(5)).await.unwrap()
     else {
@@ -226,11 +232,7 @@ async fn a_proof_replayed_on_a_new_link_is_refused() {
     let (_, proof, first) = handshake(&w, MACHINE, &w.key).await;
     assert!(matches!(first, Frame::Welcome { .. }), "{first:?}");
     let mut ws = link::dial(&w.server).await.unwrap();
-    let hello = Frame::Hello {
-        machine_id: MACHINE,
-        protocol: link::PROTOCOL,
-        version: "test".to_owned(),
-    };
+    let hello = hello(MACHINE, link::PROTOCOL);
     link::send(&mut ws, &hello).await.unwrap();
     let challenge = link::recv(&mut ws, Duration::from_secs(5)).await.unwrap();
     assert!(
@@ -256,11 +258,7 @@ async fn a_machine_that_is_not_enrolled_is_refused() {
 async fn an_agent_on_another_protocol_gets_update_required_and_nothing_else() {
     let w = world().await;
     let mut ws = link::dial(&w.server).await.unwrap();
-    let hello = Frame::Hello {
-        machine_id: MACHINE,
-        protocol: link::PROTOCOL + 1,
-        version: "test".to_owned(),
-    };
+    let hello = hello(MACHINE, link::PROTOCOL + 1);
     link::send(&mut ws, &hello).await.unwrap();
     let answer = link::recv(&mut ws, Duration::from_secs(5)).await.unwrap();
     assert!(matches!(answer, Frame::UpdateRequired { .. }), "{answer:?}");
@@ -494,6 +492,7 @@ async fn pool_host(w: &World, home: &Path) -> tempfile::TempDir {
     let pool = moor_machine_agent::Pool {
         provider: "fake".to_owned(),
         max: None,
+        cache_gb: None,
         crabbox: fake_crabbox::install(home),
     };
     linked_as(w, home, Some(pool), false).await

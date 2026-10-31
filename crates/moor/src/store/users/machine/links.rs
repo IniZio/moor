@@ -37,13 +37,18 @@ impl Store {
         tx.execute("DELETE FROM machine_links", [])?;
         for link in links {
             tx.execute(
-                "INSERT OR REPLACE INTO machine_links (machine_id, online, since, version, protocol) \
-                 SELECT machine_id, ?, ?, ?, ? FROM user_machines_v2 WHERE machine_id = ?",
+                "INSERT OR REPLACE INTO machine_links (machine_id, online, since, version, protocol, \
+                 max_boxes, cache_gb, pool_features) \
+                 SELECT machine_id, ?, ?, ?, ?, ?, ?, ? FROM user_machines_v2 WHERE machine_id = ?",
                 params![
                     link.online,
                     link.since.as_millis(),
                     link.version,
                     link.protocol,
+                    link.max_boxes,
+                    link.cache_gb,
+                    serde_json::to_string(&link.features)
+                        .map_err(|e| StoreError::Corrupt(format!("link features: {e}")))?,
                     link.machine_id
                 ],
             )?;
@@ -65,13 +70,14 @@ impl Store {
     ) -> Result<Vec<(String, MachineLink)>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(&format!("SELECT {LINK_COLUMNS} WHERE m.user = ?"))?;
-        let rows = stmt.query_map([user.get()], |r| Ok((r.get(5)?, link_row(r)?)))?;
+        let rows = stmt.query_map([user.get()], |r| Ok((r.get(8)?, link_row(r)?)))?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
 }
 
 /// The columns [`link_row`] reads, then the machine's name once `user_machines_v2 m` is joined.
-const LINK_COLUMNS: &str = "machine_id, online, since, version, protocol, m.name \
+const LINK_COLUMNS: &str =
+    "machine_id, online, since, version, protocol, max_boxes, cache_gb, pool_features, m.name \
      FROM machine_links LEFT JOIN user_machines_v2 m USING (machine_id)";
 
 /// One `machine_links` row.
@@ -82,6 +88,11 @@ fn link_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<MachineLink> {
         since: Ts::from_millis(r.get(2)?),
         version: r.get(3)?,
         protocol: r.get(4)?,
+        max_boxes: r.get(5)?,
+        cache_gb: r.get(6)?,
+        features: serde_json::from_str(&r.get::<_, String>(7)?).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(7, rusqlite::types::Type::Text, Box::new(e))
+        })?,
     })
 }
 

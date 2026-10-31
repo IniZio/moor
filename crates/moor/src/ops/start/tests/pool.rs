@@ -33,6 +33,9 @@ fn enrolled(w: &World, pool: Option<&str>, online: Option<bool>) {
             since: Ts::from_millis(1),
             version: None,
             protocol: None,
+            max_boxes: None,
+            cache_gb: None,
+            features: Vec::new(),
         };
         store.set_machine_links(&[link]).unwrap();
     }

@@ -230,11 +230,17 @@ host runs crabbox with a provider adapter, such as cloud-hypervisor, and each
 Box gets its own VM there. Enroll the host with the provider it offers:
 
 ```sh
-moor-machine-agent enroll --server https://moor.example.com --name hv --pool cloudhypervisor
+moor-machine-agent enroll --server https://moor.example.com --name hv --runtime cloudhypervisor
 ```
 
 The provider matches `[a-z][a-z0-9-]*`, 64 bytes at most. `moor user machine
 ls` shows each machine's pool.
+
+`moor-machine-agent run --runtime PROVIDER` serves the pool. `--max-boxes N`
+caps the Boxes the host holds, and `--cache-gb N` says how much disk caches
+may use. On each link the agent reports both, with the features its crabbox
+provider declares, such as `cache-volume`; the server stores them and does not
+act on them yet.
 
 Then set `box.provider: cloudhypervisor@hv`. `moor start` refuses, with the
 reason, when `hv` is not one of your machines, offers another provider or no
