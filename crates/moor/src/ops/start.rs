@@ -94,7 +94,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     let repo_cfg = repo_config_of(facts.repo.as_ref(), facts.base.as_deref())?;
     let cfg = resolved(cx, repo_cfg.as_ref(), &flags);
     let spec = spec_of(req, repo_cfg.as_ref())?;
-    let note = node::preflight(cx, user, &cfg, &spec)?;
+    let note = node::preflight(cx, user, &spec)?;
     if let Some(reason) = preflight::rejection(cx, &cfg, &facts.files, user)? {
         return reject(cx, store, (req, user), &facts, &reason);
     }

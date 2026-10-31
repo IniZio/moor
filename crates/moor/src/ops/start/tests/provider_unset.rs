@@ -8,23 +8,26 @@ use crate::ops::start;
 use crate::testing::driver::FakeDriver;
 
 #[test]
-fn a_start_with_no_provider_fails_before_any_driver_call_and_names_the_setting() {
-    let w = super::world_without_provider(FakeDriver::new());
+fn a_start_with_no_nodes_fails_before_any_driver_call_and_names_the_setting() {
+    let w = super::world_without_nodes(FakeDriver::new());
     let e = start::run(&w.cx, &req("demo")).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Refused);
     let msg = e.error.to_string();
-    assert!(msg.contains("box.provider"), "{msg}");
+    assert!(
+        msg.contains("nodes: {name: {runtime: <provider>}}"),
+        "{msg}"
+    );
     assert!(msg.contains("config.yaml"), "{msg}");
     assert_eq!(w.driver.calls(), Vec::<String>::new());
 }
 
 #[test]
 fn a_box_started_with_a_provider_still_attaches_and_closes_when_the_config_drops_it() {
-    let config = parse_user("config.yaml", "box: {provider: p}").unwrap();
+    let config = parse_user("config.yaml", "nodes: {p: {runtime: p}}").unwrap();
     let w = world_with(FakeDriver::new(), config);
     let v = start::run(&w.cx, &req("demo")).unwrap();
 
-    let later = Cx::fake_without_provider(
+    let later = Cx::fake_without_nodes(
         w.dir.path(),
         w.driver.clone(),
         w.surface.clone(),
@@ -46,7 +49,7 @@ fn a_box_started_with_a_provider_still_attaches_and_closes_when_the_config_drops
 
 /// A Box whose first acquire failed on provider `a`, and a start of it again under `later`.
 fn restarted_after_failed_acquire(later: impl FnOnce(&super::World) -> crate::cx::Cx) -> String {
-    let config = parse_user("config.yaml", "box: {provider: a}").unwrap();
+    let config = parse_user("config.yaml", "nodes: {a: {runtime: a}}").unwrap();
     let w = world_with(
         FakeDriver::new().fail_acquire(moor_core::seam::driver::DriverError::Failed {
             summary: "boom".into(),
@@ -72,7 +75,7 @@ fn restarted_after_failed_acquire(later: impl FnOnce(&super::World) -> crate::cx
 #[test]
 fn a_box_provisioned_again_stays_on_its_own_provider_when_the_config_drops_it() {
     let provider = restarted_after_failed_acquire(|w| {
-        Cx::fake_without_provider(
+        Cx::fake_without_nodes(
             w.dir.path(),
             w.driver.clone(),
             w.surface.clone(),
@@ -86,7 +89,7 @@ fn a_box_provisioned_again_stays_on_its_own_provider_when_the_config_drops_it() 
 #[test]
 fn a_box_provisioned_again_stays_on_its_own_provider_when_the_config_names_another() {
     let provider = restarted_after_failed_acquire(|w| {
-        let config = parse_user("config.yaml", "box: {provider: b}").unwrap();
+        let config = parse_user("config.yaml", "nodes: {b: {runtime: b}}").unwrap();
         Cx::fake_with(
             w.dir.path(),
             w.driver.clone(),

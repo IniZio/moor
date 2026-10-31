@@ -7,6 +7,7 @@ use std::time::Duration;
 use super::*;
 
 mod mcp;
+mod removed;
 mod service;
 
 fn err(doc: &str) -> ConfigError {
@@ -63,7 +64,7 @@ fn leading_zero_text_needs_quotes() {
 fn defaults() {
     let c = UserConfig::default();
     assert_eq!(c.herdr_session(), "moor");
-    assert_eq!(c.provider(), None);
+    assert!(c.nodes.is_empty());
     assert_eq!(BoxSize::default(), BoxSize::Small);
     assert_eq!(c.box_.size, None);
 }
@@ -83,15 +84,20 @@ fn sleep_after_defaults_and_parses() {
 }
 
 #[test]
-fn provider_session_and_tools_parse() {
-    let c = ok(
-        "box: {provider: static, size: large, max_boxes: 3, sleep_after: 30m}\n\
+fn a_single_node_parses_as_the_default() {
+    let c = ok("nodes: {static: {runtime: static, max_boxes: 3}}");
+    assert_eq!(c.default_node(), Some("static"));
+    let node = c.nodes.get("static").expect("the static node");
+    assert_eq!(node.runtime, "static");
+    assert_eq!(node.max_boxes, NonZeroU32::new(3));
+}
+
+#[test]
+fn box_session_and_tools_parse() {
+    let c = ok("box: {size: large, sleep_after: 30m}\n\
          surface: {herdr: {session: work}}\n\
-         tools: {crabbox: /opt/crabbox, git: git2}\n",
-    );
-    assert_eq!(c.provider(), Some("static"));
+         tools: {crabbox: /opt/crabbox, git: git2}\n");
     assert_eq!(c.box_.size, Some(BoxSize::Large));
-    assert_eq!(c.box_.max_boxes, NonZeroU32::new(3));
     assert_eq!(c.box_.sleep_after.as_deref(), Some("30m"));
     assert_eq!(c.herdr_session(), "work");
     assert_eq!(c.surface.kind, None);
@@ -104,8 +110,8 @@ fn provider_session_and_tools_parse() {
 fn accepted_docs() {
     let docs = [
         "box: {size: small}",
-        "box: {size: xlarge, provider: custom-provider}",
-        "drivers: {crabbox: {max_boxes: 2}}",
+        "box: {size: xlarge}\nnodes: {x: {runtime: custom-provider}}",
+        "drivers: {crabbox: {strip_env: [A]}}",
         "drivers: {crabbox: {lookup_timeout_secs: 30}}",
         "dotfiles: {path: /abs, install: install.sh}",
         "dotfiles: {path: ~/dots}",
@@ -241,8 +247,10 @@ fn display_names_file_and_key_path() {
 #[test]
 fn zero_counts_are_rejected_by_type() {
     for (doc, path) in [
-        ("box: {max_boxes: 0}", "box.max_boxes"),
-        ("drivers: {c: {max_boxes: 0}}", "drivers.c.max_boxes"),
+        (
+            "nodes: {c: {runtime: x, max_boxes: 0}}",
+            "nodes.c.max_boxes",
+        ),
         (
             "drivers: {c: {lookup_timeout_secs: 0}}",
             "drivers.c.lookup_timeout_secs",

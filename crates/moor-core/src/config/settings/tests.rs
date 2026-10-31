@@ -68,7 +68,7 @@ fn agent_install_is_on_unless_the_user_turns_it_off() {
 fn provider_never_from_repo() {
     let s = resolve("{}", Some("{}"), &Flags::default());
     assert_eq!(s.provider, None);
-    let s = resolve("box: {provider: p}", None, &Flags::default());
+    let s = resolve("nodes: {p: {runtime: p}}", None, &Flags::default());
     assert_eq!(s.provider, Some(Sourced::new("p".to_string(), Layer::User)));
 }
 
@@ -93,7 +93,7 @@ fn size_decision_58() {
         );
     }
     let s = resolve(
-        "box: {provider: p, size: small}",
+        "nodes: {p: {runtime: p}}\nbox: {size: small}",
         Some("box: {size: large}"),
         &Flags::default(),
     );

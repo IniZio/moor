@@ -4,6 +4,7 @@
 
 mod controller;
 mod creds;
+mod driver;
 mod duration;
 mod machine;
 mod nodes;
@@ -14,7 +15,6 @@ mod surface;
 mod tools;
 
 use std::collections::BTreeMap;
-use std::num::NonZeroU32;
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
@@ -25,6 +25,7 @@ use super::{check, parse_strict, ConfigError};
 use crate::cache::CacheConfig;
 pub use controller::ControllerClientConfig;
 pub use creds::McpServer;
+pub use driver::DriverConfig;
 use duration::{duration_or, parse_duration};
 pub(crate) use machine::check_label;
 pub use machine::{pick_machine, unslot_ports, EnrolledMachine, MachinePick, UserMachine};
@@ -88,14 +89,26 @@ impl BoxSize {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct BoxConfig {
-    /// Box provider id (free string).
-    pub provider: Option<String>,
+    /// Removed key, kept only so a stale config gets a pointed error; `None` in any config
+    /// that validates.
+    #[serde(default, deserialize_with = "super::controller::present_key")]
+    #[allow(
+        clippy::option_option,
+        reason = "outer Some means the key was present, even when null"
+    )]
+    pub provider: Option<Option<serde_json::Value>>,
     /// The shared node new Boxes run on; a key of `nodes`.
     pub node: Option<String>,
     /// Box size class.
     pub size: Option<BoxSize>,
-    /// Cap on live Boxes (at least 1).
-    pub max_boxes: Option<NonZeroU32>,
+    /// Removed key, kept only so a stale config gets a pointed error; `None` in any config
+    /// that validates.
+    #[serde(default, deserialize_with = "super::controller::present_key")]
+    #[allow(
+        clippy::option_option,
+        reason = "outer Some means the key was present, even when null"
+    )]
+    pub max_boxes: Option<Option<serde_json::Value>>,
     /// Idle time before a Box sleeps.
     pub sleep_after: Option<String>,
     /// Idle time before a Box waiting on a prompt or a first-run screen sleeps.
@@ -146,8 +159,20 @@ impl BoxConfig {
         )
     }
 
-    /// Each sleep timer parses as a duration.
+    /// Each sleep timer parses as a duration, and no removed key is set.
     fn validate(&self) -> Result<(), ConfigError> {
+        if self.provider.is_some() {
+            return Err(ConfigError::new(
+                "box.provider",
+                "was removed; declare the provider as a node: `nodes: {name: {runtime: <provider>}}`",
+            ));
+        }
+        if self.max_boxes.is_some() {
+            return Err(ConfigError::new(
+                "box.max_boxes",
+                "was removed; limit a node instead: `nodes: {name: {runtime: <provider>, max_boxes: N}}`",
+            ));
+        }
         for (key, value) in [
             ("box.sleep_after", &self.sleep_after),
             ("box.sleep_after_blocked", &self.sleep_after_blocked),
@@ -157,39 +182,6 @@ impl BoxConfig {
             if let Some(t) = value {
                 parse_duration(t).map_err(|why| ConfigError::new(key, why))?;
             }
-        }
-        Ok(())
-    }
-}
-
-/// `drivers.<name>:` section.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub struct DriverConfig {
-    /// Cap on live Boxes for this provider (at least 1).
-    pub max_boxes: Option<NonZeroU32>,
-    /// Seconds allowed to look up a Box's ssh target (at least 1); 5 by default,
-    /// 20 for the `external` provider.
-    pub lookup_timeout_secs: Option<NonZeroU32>,
-    /// Environment variable names the provider's platform puts in the Box.
-    /// moor removes them from every Box exec: setup, teardown, `moor run` and the agent.
-    pub strip_env: Vec<String>,
-    /// Whether this provider's Boxes get cache volumes; on by default.
-    pub cache_volumes: Option<bool>,
-}
-
-impl DriverConfig {
-    /// Whether this provider's Boxes get cache volumes.
-    #[must_use]
-    pub fn cache_volumes(&self) -> bool {
-        self.cache_volumes.unwrap_or(true)
-    }
-
-    /// Every `strip_env` entry is a valid variable name.
-    fn validate(&self, provider: &str) -> Result<(), ConfigError> {
-        for (i, name) in self.strip_env.iter().enumerate() {
-            let here = format!("drivers.{provider}.strip_env[{i}]");
-            check::env_name(name).map_err(|why| ConfigError::new(here, why))?;
         }
         Ok(())
     }
@@ -303,12 +295,6 @@ impl UserConfig {
             .session
             .as_deref()
             .unwrap_or(DEFAULT_HERDR_SESSION)
-    }
-
-    /// The configured Box provider, if any.
-    #[must_use]
-    pub fn provider(&self) -> Option<&str> {
-        self.box_.provider.as_deref()
     }
 
     /// The MCP servers every Box gets: `mcp_servers`, plus the machine service's server when

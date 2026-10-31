@@ -2,7 +2,6 @@
 
 use std::collections::BTreeMap;
 
-use moor_core::config::Flags;
 use moor_core::decide::schedule::{Node, Online, Scope};
 use moor_core::request::MachineLink;
 use moor_core::user::Viewer;
@@ -11,7 +10,6 @@ use moor_core::view::user::MachineLinksValue;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::facts::resolved;
 use crate::ops::common::node::configured;
 use crate::ops::common::promote::promote_waiting;
 
@@ -20,8 +18,7 @@ use crate::ops::common::promote::promote_waiting;
 /// # Errors
 /// A store failure.
 pub(crate) fn all(cx: &Cx) -> Result<Vec<Node>, CommandError> {
-    let settings = resolved(cx, None, &Flags::default());
-    let shared = configured(cx.config(), &settings).map_or_else(|_| BTreeMap::new(), |(s, _)| s);
+    let shared = configured(cx.config()).map_or_else(|_| BTreeMap::new(), |(s, _)| s);
     Ok(cx.store()?.nodes(&shared)?)
 }
 

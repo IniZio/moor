@@ -27,7 +27,7 @@ names=(
   repo_cache repo_overlay overlay_config known_repo trust_moor_yaml settings_at_base load_repo
   main_repo_config main_checkout fetch_default fetch_branch clone_repo commit_of file_at
   'Identity::of(cx' 'Layer::Git' 'proxy::origin'
-  DirectHost check_direct direct_hosts RepoProxy WaitingForBox '--pool-max'
+  DirectHost check_direct direct_hosts RepoProxy WaitingForBox '--pool-max' provider_of
 )
 # Plain identifiers match as whole words, so `in_dir` does not hit `builtin_direct`.
 # Entries holding punctuation or spaces cannot be whole words; they stay fixed substrings.

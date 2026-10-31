@@ -3,7 +3,7 @@ use std::num::NonZeroU32;
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::config::{BoxConfig, DriverConfig, UserConfig};
+use moor_core::config::{NodeConfig, UserConfig};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
@@ -71,24 +71,16 @@ fn limit(n: u32) -> NonZeroU32 {
 
 fn box_limit(n: u32) -> UserConfig {
     UserConfig {
-        box_: BoxConfig {
-            max_boxes: Some(limit(n)),
-            ..BoxConfig::default()
-        },
+        nodes: BTreeMap::from([(
+            PROVIDER.to_owned(),
+            NodeConfig {
+                runtime: PROVIDER.to_owned(),
+                labels: Vec::new(),
+                max_boxes: Some(limit(n)),
+            },
+        )]),
         ..UserConfig::default()
     }
-}
-
-fn driver_limit(provider: &str, n: u32) -> BTreeMap<String, DriverConfig> {
-    BTreeMap::from([(
-        provider.to_owned(),
-        DriverConfig {
-            max_boxes: Some(limit(n)),
-            lookup_timeout_secs: None,
-            strip_env: Vec::new(),
-            cache_volumes: None,
-        },
-    )])
 }
 
 fn req(name: &str) -> StartReq {
@@ -193,12 +185,8 @@ fn queued_start_records_the_limit_and_keeps_the_workspace() {
 
 #[test]
 fn queued_start_is_pending_on_its_node_with_the_schedulers_reason() {
-    let by_driver = UserConfig {
-        drivers: driver_limit(PROVIDER, 1),
-        ..UserConfig::default()
-    };
-    for config in [box_limit(1), by_driver] {
-        let (w, _) = with_live_box(config);
+    {
+        let (w, _) = with_live_box(box_limit(1));
         let v = run(&w.cx, &req("waiter")).unwrap();
         assert!(v.queued);
         let id = BoxId::new(v.boxed.id);
@@ -288,44 +276,6 @@ fn limit_ignores_live_boxes_of_another_provider() {
     assert!(!v.queued);
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
-}
-
-#[test]
-fn driver_limit_ignores_live_boxes_of_another_provider() {
-    let config = UserConfig {
-        drivers: driver_limit(PROVIDER, 1),
-        ..UserConfig::default()
-    };
-    let (w, holder) = with_live_box(config);
-    move_box_to(&w, holder, "other-provider");
-    let v = run(&w.cx, &req("second")).unwrap();
-    assert!(!v.queued);
-    assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
-}
-
-#[test]
-fn driver_limit_overrides_the_box_limit() {
-    let config = UserConfig {
-        drivers: driver_limit(PROVIDER, 2),
-        ..box_limit(1)
-    };
-    let (w, _) = with_live_box(config);
-    let v = run(&w.cx, &req("second")).unwrap();
-    assert!(!v.queued);
-    assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
-    assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
-}
-
-#[test]
-fn driver_limit_of_one_queues_despite_a_larger_box_limit() {
-    let config = UserConfig {
-        drivers: driver_limit(PROVIDER, 1),
-        ..box_limit(5)
-    };
-    let (w, _) = with_live_box(config);
-    let v = run(&w.cx, &req("second")).unwrap();
-    assert!(v.queued);
-    assert_eq!(w.driver.calls(), ["acquire"]);
 }
 
 #[test]

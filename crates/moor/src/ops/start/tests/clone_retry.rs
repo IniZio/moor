@@ -185,7 +185,7 @@ fn a_retry_in_the_kept_box_is_refused_while_another_op_holds_the_lock() {
 fn the_retry_in_the_kept_box_uses_the_providers_the_box_is_on_not_the_configs() {
     let yaml = |provider: &str| {
         let text = format!(
-            "box: {{provider: {provider}}}\ndrivers: {{a: {{strip_env: [TOKEN_OF_A]}}, b: {{strip_env: [TOKEN_OF_B]}}}}"
+            "nodes: {{{provider}: {{runtime: {provider}}}}}\ndrivers: {{a: {{strip_env: [TOKEN_OF_A]}}, b: {{strip_env: [TOKEN_OF_B]}}}}"
         );
         moor_core::config::parse_user("config.yaml", &text).unwrap()
     };

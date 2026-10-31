@@ -274,7 +274,7 @@ fn env_view() -> super::env::EnvView {
     super::env::EnvView::new(
         "/r".into(),
         &settings(
-            "box: {provider: docker, size: medium}",
+            "nodes: {docker: {runtime: docker}}\nbox: {size: medium}",
             Some("box: {size: large}"),
         ),
         env_items(),

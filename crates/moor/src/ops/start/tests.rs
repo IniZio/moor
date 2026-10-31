@@ -84,9 +84,9 @@ fn world(driver: FakeDriver) -> World {
 }
 
 /// Builds a world whose user config names no `box.provider`.
-fn world_without_provider(driver: FakeDriver) -> World {
+fn world_without_nodes(driver: FakeDriver) -> World {
     let mut w = world_with(driver, UserConfig::default());
-    w.cx = Cx::fake_without_provider(
+    w.cx = Cx::fake_without_nodes(
         w.dir.path(),
         w.driver.clone(),
         w.surface.clone(),

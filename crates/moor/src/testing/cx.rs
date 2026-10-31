@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::config::UserConfig;
+use moor_core::config::{NodeConfig, UserConfig};
 use moor_core::domain::decision::{BoxRepo, Decision, NewBox};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::Driver;
@@ -78,8 +78,8 @@ impl Cx {
         )
     }
 
-    /// Test context like [`Cx::fake`] over a user config that names no `box.provider`.
-    pub(crate) fn fake_without_provider(
+    /// Test context like [`Cx::fake`] over a user config that names no `nodes`.
+    pub(crate) fn fake_without_nodes(
         state_dir: &Path,
         driver: Arc<dyn Driver>,
         surface: Arc<dyn Surface>,
@@ -95,18 +95,24 @@ impl Cx {
         with_requester(cx, state_dir)
     }
 
-    /// The context over fakes, before it acts as anyone. A config that names no provider gets
-    /// `local-container`, so tests need not repeat it.
+    /// The context over fakes, before it acts as anyone. A config that names no node gets
+    /// a `local-container` one, so tests need not repeat it.
     fn bare(
         state_dir: &Path,
         fakes: (Arc<dyn Driver>, Arc<dyn Surface>, Arc<dyn Proc>),
         mut config: UserConfig,
         clock: Arc<FakeClock>,
     ) -> Self {
-        config
-            .box_
-            .provider
-            .get_or_insert_with(|| "local-container".to_owned());
+        if config.nodes.is_empty() {
+            config.nodes.insert(
+                "local-container".to_owned(),
+                NodeConfig {
+                    runtime: "local-container".to_owned(),
+                    labels: Vec::new(),
+                    max_boxes: None,
+                },
+            );
+        }
         Self::over_fakes(state_dir, fakes, config, clock)
     }
 
