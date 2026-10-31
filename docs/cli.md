@@ -59,6 +59,7 @@ The state directory holds `moor.db`. It is the first of `--state-dir`,
 | `--base REF` | The ref on GitHub the Box branch starts from. The default is the repo's default branch. |
 | `--repo OWNER/NAME\|URL` | The GitHub repo the Box clones, as `OWNER/NAME` or a github.com URL, instead of the current checkout's `origin`. |
 | `--model MODEL` | The agent model. |
+| `--node NAME` | One of your nodes, or a shared one, in place of your default. See [Nodes](nodes.md). |
 | `--no-agent` | Do not start an agent. |
 | `--resume` | Resume the agent's stored session. |
 | `--parent ID` | The parent Session. The default is `$MOOR_SESSION`. |

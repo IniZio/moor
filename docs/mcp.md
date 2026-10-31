@@ -30,10 +30,13 @@ read.
 | Tool | Arguments |
 | --- | --- |
 | `list_boxes` | none |
-| `start_box` | `repo` as `owner/name`; optional `name`, `prompt`, `base`, `wait` |
+| `start_box` | `repo` as `owner/name`; optional `name`, `prompt`, `base`, `node`, `wait` |
 | `box_status` | `box` |
 | `send_to_box` | `box`, `text` |
 | `close_box` | `box` |
+
+`node` is a node you may use, a shared one or one of your own; omit it for your
+default. See [Nodes](nodes.md).
 
 ### What `box_status` returns
 
