@@ -4,6 +4,7 @@ use moor_client::Client;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::session_state::SessionState;
 use moor_core::request::Request;
+use moor_core::response::{CloseRefusal, ErrorDetail, ErrorView};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -255,17 +256,29 @@ fn wake_wire(name: &str) -> Value {
     json!({"cmd": "wake", "box": name})
 }
 
-/// Closes Box `name` on the controller, the way `moor close` does without `--force`.
-pub fn close(client: &Client, name: &str) -> Result<(), Error> {
-    let reply = client.request(request(close_wire(name))?, |_| {})?;
-    reply
-        .error
-        .map_or(Ok(()), |e| Err(Error::Refused(e.message)))
+/// Closes Box `name` on the controller, with `force` meaning what the CLI's `--force` does.
+pub fn close(client: &Client, name: &str, force: bool) -> Result<(), Error> {
+    let reply = client.request(request(close_wire(name, force))?, |_| {})?;
+    reply.error.map_or(Ok(()), |e| Err(close_refused(name, e)))
 }
 
 /// The wire form of the request that closes Box `name`.
-fn close_wire(name: &str) -> Value {
-    json!({"cmd": "close", "box": name})
+fn close_wire(name: &str, force: bool) -> Value {
+    json!({"cmd": "close", "box": name, "force": force})
+}
+
+/// The error for a refused close of `name`, read from the refusal's kind and never its text.
+fn close_refused(name: &str, e: ErrorView) -> Error {
+    let why = match e.detail {
+        Some(ErrorDetail::CloseRefused(CloseRefusal::Unsaved { ahead, dirty, .. })) => {
+            format!("{name} holds {ahead} unpushed commit(s) and {dirty} uncommitted file(s)")
+        }
+        Some(ErrorDetail::CloseRefused(CloseRefusal::Unchecked { .. })) => {
+            format!("{name} could not be checked for unsaved work")
+        }
+        _ => return Error::Refused(e.message),
+    };
+    Error::WouldDiscard(why)
 }
 
 /// A request from its wire form, so the front states only the fields it sets.

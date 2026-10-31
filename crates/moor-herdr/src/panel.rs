@@ -38,6 +38,8 @@ pub enum Button {
     Wake(String),
     /// Close Box `name`; the first press only arms it.
     Close(String),
+    /// Close Box `name` and discard its unsaved work; the first press only arms it.
+    Discard(String),
 }
 
 /// The calls the panel makes on the controller and herdr.
@@ -48,42 +50,42 @@ pub trait Ops {
     fn attach(&mut self, name: &str) -> Result<(), Error>;
     /// Wakes Box `name`.
     fn wake(&mut self, name: &str) -> Result<(), Error>;
-    /// Closes Box `name` on the controller.
-    fn close(&mut self, name: &str) -> Result<(), Error>;
+    /// Closes Box `name` on the controller; `force` discards its unsaved work.
+    fn close(&mut self, name: &str, force: bool) -> Result<(), Error>;
     /// Opens the picker popup.
     fn new_box(&mut self) -> Result<(), Error>;
     /// Opens the popup that stores the person's tokens.
     fn connect(&mut self) -> Result<(), Error>;
 }
 
-/// A close waiting for its second press.
+/// A close or discard waiting for its second press.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Confirm {
-    /// The Box armed, and when.
-    armed: Option<(String, Instant)>,
+    /// The button armed, and when.
+    armed: Option<(Button, Instant)>,
 }
 
 impl Confirm {
-    /// Presses close on `name`: `true` when this press confirms an armed close of the same Box.
-    pub fn press(&mut self, name: &str, now: Instant) -> bool {
+    /// Presses `button`: `true` when this press confirms the same armed button.
+    pub fn press(&mut self, button: &Button, now: Instant) -> bool {
         let too_soon = self.armed.as_ref().is_some_and(|(armed, at)| {
-            armed == name && now.saturating_duration_since(*at) < CONFIRM_MIN
+            armed == button && now.saturating_duration_since(*at) < CONFIRM_MIN
         });
         if too_soon {
             return false;
         }
-        let confirmed = self.armed(now) == Some(name);
-        self.armed = (!confirmed).then(|| (name.to_owned(), now));
+        let confirmed = self.armed(now) == Some(button);
+        self.armed = (!confirmed).then(|| (button.clone(), now));
         confirmed
     }
 
-    /// The Box armed at `now`, if its window is still open.
+    /// The button armed at `now`, if its window is still open.
     #[must_use]
-    pub fn armed(&self, now: Instant) -> Option<&str> {
+    pub fn armed(&self, now: Instant) -> Option<&Button> {
         self.armed
             .as_ref()
             .filter(|(_, at)| now.saturating_duration_since(*at) < CONFIRM_WINDOW)
-            .map(|(name, _)| name.as_str())
+            .map(|(button, _)| button)
     }
 }
 
@@ -161,6 +163,8 @@ pub struct Panel {
     pub selected: usize,
     /// A close waiting for its second press.
     pub confirm: Confirm,
+    /// The Box whose last close was refused for work a forced close discards.
+    pub discardable: Option<String>,
     /// What the last action did, or why it failed.
     pub note: String,
     /// Set once the person asked to leave.
@@ -179,6 +183,11 @@ impl Panel {
             .and_then(|n| self.boxes.iter().position(|b| b.name == n))
             .unwrap_or(self.selected)
             .min(self.boxes.len().saturating_sub(1));
+        if let Some(name) = &self.discardable {
+            if !self.boxes.iter().any(|b| &b.name == name) {
+                self.discardable = None;
+            }
+        }
     }
 
     /// The lines drawn, top to bottom; a click lands on the piece under it.
@@ -192,10 +201,13 @@ impl Panel {
                 Piece::text(" "),
                 Piece::button("connect", Button::Connect),
             ],
-            vec![Piece::text(self.confirm.armed(now).map_or_else(
-                || self.note.clone(),
-                |name| format!("Close {name}? Press [confirm close] again."),
-            ))],
+            vec![Piece::text(match self.confirm.armed(now) {
+                Some(Button::Close(name)) => format!("Close {name}? Press [confirm close] again."),
+                Some(Button::Discard(name)) => format!(
+                    "Discard {name}'s unsaved work and close it? Press [confirm discard] again."
+                ),
+                _ => self.note.clone(),
+            })],
         ];
         if self.boxes.is_empty() {
             lines.push(vec![Piece::text("No open Boxes.")]);
@@ -221,15 +233,22 @@ impl Panel {
                     Piece::button("wake", Button::Wake(b.name.clone())),
                 ]);
             }
-            let close = if armed == Some(b.name.as_str()) {
+            let close = Button::Close(b.name.clone());
+            let words = if armed == Some(&close) {
                 "confirm close"
             } else {
                 "close"
             };
-            row.extend([
-                Piece::text(" "),
-                Piece::button(close, Button::Close(b.name.clone())),
-            ]);
+            row.extend([Piece::text(" "), Piece::button(words, close)]);
+            if self.discardable.as_ref() == Some(&b.name) {
+                let discard = Button::Discard(b.name.clone());
+                let words = if armed == Some(&discard) {
+                    "confirm discard"
+                } else {
+                    "discard & close"
+                };
+                row.extend([Piece::text(" "), Piece::button(words, discard)]);
+            }
             lines.push(row);
         }
         lines
@@ -264,6 +283,9 @@ impl Panel {
                 .filter(|b| b.phase == Phase::Asleep)
                 .map(|b| Button::Wake(b.name.clone())),
             'c' => name().map(Button::Close),
+            'd' => name()
+                .filter(|n| self.discardable.as_ref() == Some(n))
+                .map(Button::Discard),
             _ => None,
         }
     }
@@ -301,14 +323,24 @@ impl Panel {
             Button::Connect => ops.connect().map(|()| String::new()),
             Button::Attach(name) => ops.attach(name).map(|()| format!("Attached {name}.")),
             Button::Wake(name) => ops.wake(name).map(|()| format!("Waking {name}...")),
-            Button::Close(name) if !self.confirm.press(name, now) => {
+            Button::Close(_) | Button::Discard(_) if !self.confirm.press(button, now) => {
                 self.note.clear();
                 return;
             }
-            Button::Close(name) => ops.close(name).map(|()| format!("Closed {name}.")),
+            Button::Close(name) | Button::Discard(name) => {
+                let force = matches!(button, Button::Discard(_));
+                let closed = ops.close(name, force);
+                self.discardable = matches!(closed, Err(Error::WouldDiscard(_)))
+                    .then(|| name.clone())
+                    .or_else(|| self.discardable.take().filter(|d| d != name));
+                closed.map(|()| format!("Closed {name}."))
+            }
         };
         self.note = done.unwrap_or_else(|e| e.to_string());
-        if matches!(button, Button::Wake(_) | Button::Close(_)) {
+        if matches!(
+            button,
+            Button::Wake(_) | Button::Close(_) | Button::Discard(_)
+        ) {
             self.refresh(ops);
         }
     }

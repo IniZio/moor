@@ -66,12 +66,12 @@ impl Ops for Live<'_> {
         boxes::wake(&self.client, name)
     }
 
-    fn close(&mut self, name: &str) -> Result<(), Error> {
+    fn close(&mut self, name: &str, force: bool) -> Result<(), Error> {
         let label = open_boxes(&self.client)?
             .iter()
             .find(|b| b.name == name)
             .map(Shown::label);
-        boxes::close(&self.client, name)?;
+        boxes::close(&self.client, name, force)?;
         // A close from the panel is the user dismissing the card as well.
         let Some(label) = label else { return Ok(()) };
         for space in self
