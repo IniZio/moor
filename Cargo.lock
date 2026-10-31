@@ -3171,15 +3171,20 @@ name = "moor-machine-agent"
 version = "0.2.0"
 dependencies = [
  "clap",
+ "flate2",
  "moor-client",
  "moor-core",
  "moor-gate",
  "moor-machine-runner",
  "moor-testkit",
  "rusqlite",
+ "self-replace",
+ "semver",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "ssh-key",
+ "tar",
  "tempfile",
  "tokio",
  "ureq",
@@ -4875,6 +4880,17 @@ checksum = "6ce2691df843ecc5d231c0b14ece2acc3efb62c0a398c7e1d875f3983ce020e3"
 dependencies = [
  "core-foundation-sys",
  "libc",
+]
+
+[[package]]
+name = "self-replace"
+version = "1.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "609c5606d9d357b26e4ee1a7a01beac396628d0fa01ebbade2a09cefb88e65af"
+dependencies = [
+ "fastrand",
+ "tempfile",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
