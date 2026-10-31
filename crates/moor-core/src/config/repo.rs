@@ -31,6 +31,14 @@ pub struct RepoBox {
     pub size: Option<BoxSize>,
 }
 
+/// `node:` section: what a node running the Box must offer. A repo never names a node.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct RepoNode {
+    /// Labels the node must carry.
+    pub labels: Vec<String>,
+}
+
 /// The repo config. Build it with [`parse_repo`].
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
@@ -54,6 +62,8 @@ pub struct RepoConfig {
     pub cache: CacheConfig,
     /// `machine:` section: what a user's machine attached to the Box must offer.
     pub machine: Option<RepoMachine>,
+    /// `node:` section.
+    pub node: RepoNode,
 }
 
 /// Parses and validates a `.moor.yaml` document.
@@ -84,6 +94,7 @@ impl RepoConfig {
             ),
             ("cache", self.cache != other.cache),
             ("machine", self.machine != other.machine),
+            ("node", self.node != other.node),
         ]
         .into_iter()
         .filter_map(|(key, changed)| changed.then_some(key))
@@ -100,11 +111,21 @@ impl RepoConfig {
         self.machine
             .as_ref()
             .map_or(Ok(()), RepoMachine::validate)?;
+        self.validate_node()?;
         for name in self.env.keys() {
             let path = format!("env.{name}");
             check::env_name(name)
                 .and_then(|()| check::not_reserved_env(name))
                 .map_err(|r| ConfigError::new(path, r))?;
+        }
+        Ok(())
+    }
+
+    /// Each `node.labels` entry is a valid label.
+    fn validate_node(&self) -> Result<(), ConfigError> {
+        for (i, label) in self.node.labels.iter().enumerate() {
+            super::user::check_label(label)
+                .map_err(|m| ConfigError::new(format!("node.labels[{i}]"), m))?;
         }
         Ok(())
     }

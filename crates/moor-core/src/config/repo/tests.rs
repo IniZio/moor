@@ -299,3 +299,17 @@ fn machine_section_rejects_bad_entries() {
         "unknown field",
     );
 }
+
+#[test]
+fn node_labels_are_checked() {
+    assert_eq!(
+        ok("node: {labels: [gpu, linux-x64]}").node.labels,
+        ["gpu", "linux-x64"]
+    );
+    rejects("node: {labels: [GPU]}", "node.labels[0]", "label `GPU`");
+}
+
+#[test]
+fn a_repo_cannot_name_a_node() {
+    rejects("node: {name: hv}", "node.name", "unknown field");
+}
