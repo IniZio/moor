@@ -1,6 +1,6 @@
 //! Events a decision may carry, and their conversion to and from stored events.
 
-use crate::domain::event::{CheckedCred, ProfileStep, TurnOutcome};
+use crate::domain::event::{CheckedCred, PostCloneStep, ProfileStep, TurnOutcome};
 use crate::name::RunId;
 
 /// An event a caller may pass; every other kind is derived from state steps.
@@ -74,6 +74,20 @@ pub enum ExtraEvent {
         /// Time the script took, in milliseconds.
         ms: u64,
         /// Whether every line passed.
+        ok: bool,
+    },
+    /// A step after the clone began.
+    StepStarted {
+        /// Which step.
+        step: PostCloneStep,
+    },
+    /// A step after the clone ended.
+    StepFinished {
+        /// Which step.
+        step: PostCloneStep,
+        /// Time the step took, in milliseconds.
+        ms: u64,
+        /// Whether the step succeeded.
         ok: bool,
     },
     /// The repo was cloned in the Box.

@@ -88,6 +88,15 @@ fn step(kind: &str, payload: &Value) -> Option<String> {
             .and_then(Value::as_u64)
             .map_or_else(String::new, |ms| format!(" in {}", span(ms / 1000)))
     };
+    let ran_for = || {
+        span(
+            payload
+                .get("ms")
+                .and_then(Value::as_u64)
+                .unwrap_or_default()
+                / 1000,
+        )
+    };
     Some(match kind {
         "pending" => "waiting for a machine slot".to_owned(),
         "box_requested" => "machine requested".to_owned(),
@@ -96,6 +105,24 @@ fn step(kind: &str, payload: &Value) -> Option<String> {
         "box_failed" => format!("machine failed: {}", text("error")),
         "setting_up" => "setting up".to_owned(),
         "cloned" => format!("cloned{}", took()),
+        "step_started" => match text("step") {
+            "dotfiles" => "installing dotfiles",
+            "agent_install" => "installing the agent",
+            _ => "setting up the agent profile",
+        }
+        .to_owned(),
+        "step_finished" => {
+            let (done, failed) = match text("step") {
+                "dotfiles" => ("dotfiles", "dotfiles failed"),
+                "agent_install" => ("agent installed", "agent install failed"),
+                _ => ("agent profile set up", "agent profile setup failed"),
+            };
+            if payload.get("ok").and_then(Value::as_bool) == Some(false) {
+                format!("{failed} after {}", ran_for())
+            } else {
+                format!("{done} in {}", ran_for())
+            }
+        }
         "setup_finished" if payload.get("ok").and_then(Value::as_bool) == Some(false) => {
             format!("setup finished with failures{}", took())
         }

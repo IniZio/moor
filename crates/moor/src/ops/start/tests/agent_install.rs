@@ -260,3 +260,71 @@ fn a_provider_without_cache_volumes_warns_nothing_about_the_install_dir() {
         .iter()
         .all(|x| !x.code.starts_with("cache_")));
 }
+
+/// The step events of Box 1, oldest first, as `kind` and payload.
+pub(super) fn step_events(w: &World, id: BoxId) -> Vec<(String, serde_json::Value)> {
+    let events = w.cx.store().unwrap().events(id, 50).unwrap();
+    events
+        .into_iter()
+        .filter(|e| e.kind.starts_with("step_"))
+        .map(|e| (e.kind, e.payload))
+        .collect()
+}
+
+#[test]
+fn the_install_records_when_it_starts_and_how_it_ended() {
+    let (w, _) = install_world("setup: [a]\n", None, true, FakeDriver::new());
+    run(&w.cx, &prompt_req()).unwrap();
+    assert_eq!(
+        step_events(&w, BoxId::new(1)),
+        [
+            (
+                "step_started".to_owned(),
+                serde_json::json!({"step": "agent_install"})
+            ),
+            (
+                "step_finished".to_owned(),
+                serde_json::json!({"step": "agent_install", "ms": 0, "ok": true})
+            ),
+        ]
+    );
+}
+
+#[test]
+fn a_failed_install_records_ok_false() {
+    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(2))]);
+    let (w, _) = install_world("setup: [a]\n", None, true, driver);
+    run(&w.cx, &prompt_req()).unwrap();
+    let last = step_events(&w, BoxId::new(1)).pop().unwrap();
+    assert_eq!(
+        last.1,
+        serde_json::json!({"step": "agent_install", "ms": 0, "ok": false})
+    );
+}
+
+#[test]
+fn an_install_that_hits_its_deadline_warns_with_the_step_and_the_limit() {
+    let driver = FakeDriver::new().exec_results([
+        Ok(exit(0)),
+        Ok(exit(0)),
+        Err(DriverError::Timeout(Duration::from_mins(10))),
+    ]);
+    let (w, _) = install_world("setup: [a]\n", None, true, driver);
+    run(&w.cx, &prompt_req()).unwrap();
+    let warnings = w.cx.take_warnings();
+    let warn = warnings
+        .iter()
+        .find(|x| x.code == "agent_install_failed")
+        .unwrap();
+    assert!(
+        warn.message.contains("agent install ran past 10m"),
+        "{warn:?}"
+    );
+}
+
+#[test]
+fn an_install_that_does_not_run_records_no_step() {
+    let (w, _) = install_world("setup: [a]\n", Some(false), true, FakeDriver::new());
+    run(&w.cx, &prompt_req()).unwrap();
+    assert!(step_events(&w, BoxId::new(1)).is_empty());
+}

@@ -1,7 +1,7 @@
 //! Conversion between a decision's events and stored events.
 
 use super::ExtraEvent;
-use crate::domain::event::{Event, ProfileEvent};
+use crate::domain::event::{Event, ProfileEvent, TimingEvent};
 
 impl From<ExtraEvent> for Event {
     #[allow(clippy::too_many_lines, reason = "one arm per event variant")]
@@ -38,8 +38,14 @@ impl From<ExtraEvent> for Event {
                 cause,
             },
             ExtraEvent::SetupFailed { line } => Self::SetupFailed { line },
-            ExtraEvent::SetupFinished { ms, ok } => Self::SetupFinished { ms, ok },
-            ExtraEvent::Cloned { ms } => Self::Cloned { ms },
+            ExtraEvent::SetupFinished { ms, ok } => {
+                Self::Timing(TimingEvent::SetupFinished { ms, ok })
+            }
+            ExtraEvent::Cloned { ms } => Self::Timing(TimingEvent::Cloned { ms }),
+            ExtraEvent::StepStarted { step } => Self::Timing(TimingEvent::StepStarted { step }),
+            ExtraEvent::StepFinished { step, ms, ok } => {
+                Self::Timing(TimingEvent::StepFinished { step, ms, ok })
+            }
             ExtraEvent::ProfileResolved { repo, sha } => {
                 Self::Profile(ProfileEvent::ProfileResolved { repo, sha })
             }
@@ -146,8 +152,14 @@ impl TryFrom<Event> for ExtraEvent {
                 cause,
             }),
             Event::SetupFailed { line } => Ok(Self::SetupFailed { line }),
-            Event::SetupFinished { ms, ok } => Ok(Self::SetupFinished { ms, ok }),
-            Event::Cloned { ms } => Ok(Self::Cloned { ms }),
+            Event::Timing(TimingEvent::SetupFinished { ms, ok }) => {
+                Ok(Self::SetupFinished { ms, ok })
+            }
+            Event::Timing(TimingEvent::Cloned { ms }) => Ok(Self::Cloned { ms }),
+            Event::Timing(TimingEvent::StepStarted { step }) => Ok(Self::StepStarted { step }),
+            Event::Timing(TimingEvent::StepFinished { step, ms, ok }) => {
+                Ok(Self::StepFinished { step, ms, ok })
+            }
             Event::Profile(ProfileEvent::ProfileResolved { repo, sha }) => {
                 Ok(Self::ProfileResolved { repo, sha })
             }

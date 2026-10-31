@@ -6,7 +6,7 @@ use std::time::Duration;
 use moor_core::boxscript::profile::{fetch_script, setup_script, FAILURES_FILE};
 use moor_core::config::BoxSettings;
 use moor_core::domain::decision::{Decision, ExtraEvent};
-use moor_core::domain::event::ProfileStep;
+use moor_core::domain::event::{PostCloneStep, ProfileStep};
 use moor_core::name::BoxPath;
 use moor_core::seam::driver::ExecOutcome;
 use moor_core::{BoxHandle, BoxId, Warning};
@@ -18,6 +18,8 @@ use crate::ops::common::agent_install;
 use crate::ops::common::box_exec::{BoxProxy, Site};
 use crate::ops::common::dotfiles::{private_log, tail};
 use crate::ops::common::setup::log_dir;
+use crate::ops::common::step::timed;
+use crate::store::box_profile::BoxProfile;
 use crate::store::{BoxRow, Store};
 
 /// Wall-clock allowance for the shallow fetch.
@@ -46,6 +48,23 @@ pub(crate) fn apply(
         Ok(proxy) => proxy.as_ref(),
         Err(reason) => return failed(cx, store, id, ProfileStep::Fetch, reason.clone()),
     };
+    let ran = timed(cx, store, id, PostCloneStep::Profile, || {
+        let out = fetch_and_setup(cx, store, (handle, provider), id, (cfg, proxy), &profile);
+        let ok = matches!(out, Ok(true));
+        (out, ok)
+    });
+    ran.map(|_| ())
+}
+
+/// Fetches the profile into the Box and runs its `setup.sh`; whether both went well.
+fn fetch_and_setup(
+    cx: &Cx,
+    store: &Store,
+    (handle, provider): (&BoxHandle, &str),
+    id: BoxId,
+    (cfg, proxy): (&BoxSettings, Option<&BoxProxy>),
+    profile: &BoxProfile,
+) -> Result<bool, CommandError> {
     let url = format!("https://github.com/{}.git", profile.repo);
     let site = Site {
         handle,
@@ -56,11 +75,18 @@ pub(crate) fn apply(
     let fetch_log = cx
         .state_dir()
         .map(|d| d.join("profile-fetch").join(format!("{}.log", id.get())));
-    let fetched = fetch_log
-        .map_err(|e| e.error.to_string())
-        .and_then(|log| run(cx, &site, (cfg, proxy), (script, &log), FETCH_DEADLINE));
+    let fetched = fetch_log.map_err(|e| e.error.to_string()).and_then(|log| {
+        run(
+            cx,
+            &site,
+            (cfg, proxy),
+            (script, &log),
+            ("profile fetch", FETCH_DEADLINE),
+        )
+    });
     if let Err(detail) = fetched {
-        return failed(cx, store, id, ProfileStep::Fetch, detail);
+        failed(cx, store, id, ProfileStep::Fetch, detail)?;
+        return Ok(false);
     }
     let setup_log = cx
         .state_dir()
@@ -72,11 +98,14 @@ pub(crate) fn apply(
             &site,
             (cfg, proxy),
             (setup_script(), &log),
-            SETUP_DEADLINE,
+            ("profile setup.sh", SETUP_DEADLINE),
         )
     }) {
-        Ok(()) => Ok(()),
-        Err(detail) => failed(cx, store, id, ProfileStep::Setup, detail),
+        Ok(()) => Ok(true),
+        Err(detail) => {
+            failed(cx, store, id, ProfileStep::Setup, detail)?;
+            Ok(false)
+        }
     }
 }
 
@@ -86,10 +115,10 @@ fn run(
     site: &Site<'_>,
     (cfg, proxy): (&BoxSettings, Option<&BoxProxy>),
     (script, log): (String, &Path),
-    deadline: Duration,
+    limit: (&str, Duration),
 ) -> Result<(), String> {
     private_log(log).map_err(|e| format!("could not create the log: {e}"))?;
-    let reason = match agent_install::run(cx, site, cfg, proxy, script, log, deadline) {
+    let reason = match agent_install::run(cx, site, cfg, proxy, script, log, limit) {
         Ok(ExecOutcome::Exited { code: 0 }) => return Ok(()),
         Ok(ExecOutcome::Exited { code }) => format!("exit {code}"),
         Ok(ExecOutcome::Interrupted) => "interrupted".to_owned(),

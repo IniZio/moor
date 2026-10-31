@@ -144,3 +144,40 @@ fn a_relaunch_does_not_run_setup_sh_again() {
     run(&w.cx, &req("demo")).unwrap();
     assert_eq!(setup_execs(&w).len(), 1);
 }
+
+#[test]
+fn the_profile_records_one_step_around_its_fetch_and_setup() {
+    let w = world_answering(None, HEAD, None);
+    set_profile(&w, None);
+    let id = started(&w);
+    let kinds: Vec<_> = super::agent_install::step_events(&w, id)
+        .into_iter()
+        .map(|e| e.1)
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            serde_json::json!({"step": "profile"}),
+            serde_json::json!({"step": "profile", "ms": 0, "ok": true}),
+        ]
+    );
+}
+
+#[test]
+fn a_failing_setup_sh_ends_the_profile_step_not_ok() {
+    let driver = FakeDriver::new().exec_ends_when(MARK, ExecOutcome::Exited { code: 3 });
+    let w = world_answering_with(driver);
+    let id = started(&w);
+    let last = super::agent_install::step_events(&w, id).pop().unwrap();
+    assert_eq!(
+        last.1,
+        serde_json::json!({"step": "profile", "ms": 0, "ok": false})
+    );
+}
+
+#[test]
+fn a_box_without_a_profile_records_no_profile_step() {
+    let w = world(FakeDriver::new());
+    let id = started(&w);
+    assert!(super::agent_install::step_events(&w, id).is_empty());
+}

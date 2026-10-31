@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use super::{failure, Happened, Progress};
+use super::{failure, latest, Happened, Progress};
 
 const T0: i64 = 1_793_000_000;
 
@@ -107,5 +107,47 @@ fn a_setup_failure_explains_a_down_box_until_it_is_closed() {
     assert_eq!(
         failure(&[event("rejected", json!({"reason": "no repo"}), 0)]).as_deref(),
         Some("rejected: no repo")
+    );
+}
+
+#[test]
+fn post_clone_steps_name_what_runs_and_how_long_it_took() {
+    let events = [
+        event("started", json!({}), 0),
+        event("cloned", json!({"ms": 10_000}), 10),
+        event("step_started", json!({"step": "dotfiles"}), 11),
+        event(
+            "step_finished",
+            json!({"step": "dotfiles", "ms": 192_000, "ok": true}),
+            203,
+        ),
+        event("step_started", json!({"step": "agent_install"}), 203),
+    ];
+    let p = Progress::of(&events, T0 + 210);
+    assert_eq!(
+        p.steps,
+        [
+            "   +10s  cloned in 10s",
+            "   +11s  installing dotfiles",
+            "+3m 23s  dotfiles in 3m 12s",
+            "+3m 23s  installing the agent",
+        ]
+    );
+    assert_eq!(latest(&events).as_deref(), Some("installing the agent"));
+}
+
+#[test]
+fn a_failed_post_clone_step_says_how_long_it_ran() {
+    let events = [
+        event("started", json!({}), 0),
+        event(
+            "step_finished",
+            json!({"step": "agent_install", "ms": 41_000, "ok": false}),
+            41,
+        ),
+    ];
+    assert_eq!(
+        latest(&events).as_deref(),
+        Some("agent install failed after 41s")
     );
 }

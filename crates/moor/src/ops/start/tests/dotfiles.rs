@@ -6,7 +6,7 @@ use std::time::Duration;
 use moor_core::boxscript::quote;
 use moor_core::config::{DotfilesConfig, UserConfig};
 use moor_core::domain::boxes::BoxState;
-use moor_core::seam::driver::ExecOutcome;
+use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::seam::proxy_host::ProxyHostError;
 use moor_core::view::{DotfilesView, StartView};
@@ -352,4 +352,65 @@ fn dotfiles_fail_when_the_proxy_cannot_start() {
     assert!(dotfiles_execs(&w).is_empty());
     assert!(w.proc.calls().iter().all(|c| c.tool != Tool::Sh));
     assert!(engine.launches().is_empty());
+}
+
+#[test]
+fn dotfiles_record_a_start_and_an_end_as_each_returns() {
+    let src = tempfile::tempdir().unwrap();
+    let (w, _) = dotfiles_world("setup: [a]\n", Some(src.path()), None, FakeDriver::new());
+    started(&w);
+    assert_eq!(
+        super::agent_install::step_events(&w, BoxId::new(1)),
+        [
+            (
+                "step_started".to_owned(),
+                serde_json::json!({"step": "dotfiles"})
+            ),
+            (
+                "step_finished".to_owned(),
+                serde_json::json!({"step": "dotfiles", "ms": 0, "ok": true})
+            ),
+        ]
+    );
+}
+
+#[test]
+fn failed_dotfiles_record_ok_false() {
+    let (w, _, _src) = failed_start();
+    run(&w.cx, &prompt_req()).unwrap();
+    let last = super::agent_install::step_events(&w, BoxId::new(1))
+        .pop()
+        .unwrap();
+    assert_eq!(
+        last.1,
+        serde_json::json!({"step": "dotfiles", "ms": 0, "ok": false})
+    );
+}
+
+#[test]
+fn dotfiles_that_hit_their_deadline_warn_with_the_step_and_the_limit() {
+    let src = tempfile::tempdir().unwrap();
+    let driver = FakeDriver::new().exec_results([
+        Ok(exit(0)),
+        Ok(exit(0)),
+        Err(DriverError::Timeout(Duration::from_mins(15))),
+    ]);
+    let (w, _) = dotfiles_world("setup: [a]\n", Some(src.path()), None, driver);
+    run(&w.cx, &prompt_req()).unwrap();
+    let warnings = w.cx.take_warnings();
+    let warn = warnings
+        .iter()
+        .find(|x| x.code == "dotfiles_failed")
+        .unwrap();
+    assert!(
+        warn.message.contains("dotfiles install ran past 15m"),
+        "{warn:?}"
+    );
+}
+
+#[test]
+fn without_dotfiles_config_no_step_is_recorded() {
+    let (w, _) = dotfiles_world("setup: [a]\n", None, None, FakeDriver::new());
+    started(&w);
+    assert!(super::agent_install::step_events(&w, BoxId::new(1)).is_empty());
 }

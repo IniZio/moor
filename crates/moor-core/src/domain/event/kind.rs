@@ -38,8 +38,6 @@ impl Event {
             Self::SettingUp { .. } => "setting_up",
             Self::Working => "working",
             Self::SetupFailed { .. } => "setup_failed",
-            Self::SetupFinished { .. } => "setup_finished",
-            Self::Cloned { .. } => "cloned",
             Self::CredentialFailed { .. } => "credential_failed",
             Self::Idled => "idled",
             Self::Busy => "busy",
@@ -92,6 +90,7 @@ impl Event {
             Self::ArtifactPublished { .. } => "artifact_published",
             Self::Machine(m) => m.kind(),
             Self::Profile(p) => p.kind(),
+            Self::Timing(t) => t.kind(),
         }
     }
 
