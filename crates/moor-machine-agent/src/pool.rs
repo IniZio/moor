@@ -11,7 +11,7 @@ use moor_core::box_key::BoxKey;
 use moor_core::name::BoxId;
 use tokio::process::Command;
 
-pub use reach::{dial, splice, Sshd};
+pub use reach::{carry, dial, splice, Sshd};
 
 mod reach;
 

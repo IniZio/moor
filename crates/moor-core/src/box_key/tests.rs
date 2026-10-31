@@ -20,6 +20,26 @@ fn cred_and_tmp_dirs_carry_id_and_nonce() {
 }
 
 #[test]
+fn dir_names_parse_only_plain_positive_ids() {
+    assert_eq!(BoxKey::from_dir_name("7"), Some(key(7)));
+    assert_eq!(BoxKey::from_dir_name("120"), Some(key(120)));
+    for junk in [
+        "",
+        "0",
+        "-3",
+        "+7",
+        "07",
+        "7.bak",
+        " 7",
+        "7 ",
+        "x",
+        "99999999999999999999",
+    ] {
+        assert_eq!(BoxKey::from_dir_name(junk), None, "{junk:?}");
+    }
+}
+
+#[test]
 fn branch_flattens_slashes() {
     assert_eq!(branch(&name("moor/7")), "moor/moor--7");
     assert_eq!(branch(&name("web/fix-bug")), "moor/web--fix-bug");

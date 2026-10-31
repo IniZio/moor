@@ -4,10 +4,11 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use moor_core::controller::{ServerFrame, PROTOCOL};
-use moor_core::response::Response;
+use moor_core::response::{ErrorKind, ErrorView, Response};
 use serde_json::{json, Value};
 
 use super::{FakeHolds, FakeLink, Puts, MACHINE_ID};
@@ -59,6 +60,8 @@ pub(super) struct Fake {
     pub(super) puts: Puts,
     pub(super) holds: Arc<Mutex<FakeHolds>>,
     pub(super) link: FakeLink,
+    pub(super) show_fails: Arc<AtomicBool>,
+    pub(super) shows_refused: Arc<AtomicUsize>,
 }
 
 /// Serves `box-mirror` the way the controller does, from `tree`, with a local rsync, and
@@ -96,7 +99,17 @@ fn serve_connection(stream: UnixStream, tree: &Path, fake: &Fake) {
 /// The fake controller's answer to one request `frame`.
 fn answer(frame: &Value, tree: &Path, fake: &Fake) -> Response {
     let req = request(frame).unwrap();
-    if req["cmd"] == "show" {
+    if req["cmd"] == "show" && fake.show_fails.load(Ordering::SeqCst) {
+        fake.shows_refused.fetch_add(1, Ordering::SeqCst);
+        let error = ErrorView {
+            kind: ErrorKind::Failed,
+            message: "the store is busy".to_owned(),
+            hints: Vec::new(),
+            context: Vec::new(),
+            detail: None,
+        };
+        Response::err("show", error)
+    } else if req["cmd"] == "show" {
         let value = show_value(&fake.open.lock().unwrap(), &fake.asleep.lock().unwrap());
         Response::ok("show", Some(value))
     } else if req["cmd"] == "machine-keys" {

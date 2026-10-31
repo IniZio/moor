@@ -31,6 +31,21 @@ impl Drop for Host {
     }
 }
 
+/// Writes pool host `hv1`'s enrolled state and `key` into `state_dir`, for `server`.
+fn enroll(state_dir: &Path, server: String, key: &PrivateKey) {
+    let state = State {
+        server,
+        machine_id: MACHINE_ID,
+        owner: "ada@example.com".to_owned(),
+        name: "hv1".to_owned(),
+        slots: 1,
+    };
+    let state_json = serde_json::to_string(&state).unwrap();
+    std::fs::write(state_dir.join("state.json"), state_json).unwrap();
+    let text = key.to_openssh(LineEnding::LF).unwrap();
+    std::fs::write(state_dir.join("id_ed25519"), text.as_bytes()).unwrap();
+}
+
 impl Host {
     /// A runner taking links, and a pool host serving provider `fake` linked to it.
     fn start() -> Self {
@@ -53,17 +68,7 @@ impl Host {
         let home = rig.dir().join("pool-home");
         std::fs::create_dir_all(&state_dir).unwrap();
         std::fs::create_dir_all(&home).unwrap();
-        let state = State {
-            server: format!("http://127.0.0.1:{}", rig.agents),
-            machine_id: MACHINE_ID,
-            owner: "ada@example.com".to_owned(),
-            name: "hv1".to_owned(),
-            slots: 1,
-        };
-        let state_json = serde_json::to_string(&state).unwrap();
-        std::fs::write(state_dir.join("state.json"), state_json).unwrap();
-        let text = key.to_openssh(LineEnding::LF).unwrap();
-        std::fs::write(state_dir.join("id_ed25519"), text.as_bytes()).unwrap();
+        enroll(&state_dir, format!("http://127.0.0.1:{}", rig.agents), &key);
         let pool = Pool {
             provider: "fake".to_owned(),
             max: None,
@@ -75,6 +80,7 @@ impl Host {
             hooks: rig.dir().join("hooks"),
             pool: Some(pool),
             allow_exec: false,
+            sweep_grace: Duration::ZERO,
         };
         let agent = tokio::runtime::Runtime::new().unwrap();
         agent.spawn(async move { run(&state_dir, machine, &|_| {}).await });

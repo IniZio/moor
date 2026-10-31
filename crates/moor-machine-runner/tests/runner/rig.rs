@@ -3,6 +3,7 @@
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -11,6 +12,23 @@ use serde_json::{json, Value};
 mod controller;
 mod machine;
 use controller::{fake_controller, Fake};
+
+/// Starts the fake controller on the rig at `dir`, listing `open` as open, or refusing to list
+/// when `listing_fails`; what it shares with the test.
+fn start_controller(dir: &Path, tree: &Path, listing_fails: bool, open: &[i64]) -> Fake {
+    let fake = Fake {
+        open: Arc::new(Mutex::new(open.to_vec())),
+        asleep: Arc::new(Mutex::new(Vec::new())),
+        mirror_excludes: Arc::new(Mutex::new(Vec::new())),
+        puts: Arc::new(Mutex::new(Vec::new())),
+        holds: Arc::new(Mutex::new(FakeHolds::default())),
+        link: FakeLink::default(),
+        show_fails: Arc::new(AtomicBool::new(listing_fails)),
+        shows_refused: Arc::new(AtomicUsize::new(0)),
+    };
+    fake_controller(&dir.join("runner.sock"), tree.to_owned(), fake.clone());
+    fake
+}
 
 /// The enrolled id of machine `minion`, whose agent links in.
 pub const MACHINE_ID: i64 = 7;
@@ -68,6 +86,10 @@ pub struct Rig {
     pub holds: Arc<Mutex<FakeHolds>>,
     /// The fake controller's side of an agent link.
     pub link: FakeLink,
+    /// While set, the fake controller refuses `show`, so the open Boxes cannot be listed.
+    pub show_fails: Arc<AtomicBool>,
+    /// How many `show` requests the fake controller refused.
+    pub shows_refused: Arc<AtomicUsize>,
     /// The port the runner takes agent links on.
     pub agents: u16,
     /// The fake machine's agent, linked while it runs.
@@ -91,6 +113,28 @@ impl Rig {
 
     /// A runner started with `args` besides the ones every rig passes.
     pub fn with_args(args: &[&str]) -> Self {
+        Self::build(
+            args,
+            false,
+            &[7],
+            moor_machine_agent::Machine::from_env().sweep_grace,
+        )
+    }
+
+    /// A runner whose controller refuses to list the open Boxes from the start, with a closed
+    /// Box 9's folders already on the machine. This and [`Self::with_open`] sweep folders of any
+    /// age; every other rig only folders older than the agent's grace, so none of its own.
+    pub fn listing_fails() -> Self {
+        Self::build(&[], true, &[7], Duration::ZERO)
+    }
+
+    /// A runner whose controller lists the Boxes `open` as open from the start, so no first
+    /// sweep can have listed fewer.
+    pub fn with_open(open: &[i64]) -> Self {
+        Self::build(&[], false, open, Duration::ZERO)
+    }
+
+    fn build(args: &[&str], listing_fails: bool, open: &[i64], sweep_grace: Duration) -> Self {
         let dir = moor_testkit::short_tempdir("mrun").unwrap();
         let bin = dir.path().join("bin");
         moor_testkit::write_host_guards(&bin).unwrap();
@@ -99,33 +143,31 @@ impl Rig {
         let remote = dir.path().join("remote");
         std::fs::create_dir_all(&tree).unwrap();
         std::fs::create_dir_all(remote.join("moor/7")).unwrap();
+        if listing_fails {
+            std::fs::create_dir_all(remote.join("moor/9")).unwrap();
+            std::fs::create_dir_all(remote.join("moor-state/9")).unwrap();
+        }
         std::fs::create_dir_all(machine::hooks_dir(dir.path())).unwrap();
-        let open = Arc::new(Mutex::new(vec![7]));
-        let asleep = Arc::new(Mutex::new(Vec::new()));
-        let mirror_excludes = Arc::new(Mutex::new(Vec::new()));
-        let puts = Arc::new(Mutex::new(Vec::new()));
-        let holds = Arc::new(Mutex::new(FakeHolds::default()));
-        let link = FakeLink::default();
-        fake_controller(
-            &dir.path().join("runner.sock"),
-            tree.clone(),
-            Fake {
-                open: Arc::clone(&open),
-                asleep: Arc::clone(&asleep),
-                mirror_excludes: Arc::clone(&mirror_excludes),
-                puts: Arc::clone(&puts),
-                holds: Arc::clone(&holds),
-                link: link.clone(),
-            },
-        );
+        let fake = start_controller(dir.path(), &tree, listing_fails, open);
         let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
         let (runner, port, agents) = spawn(dir.path(), &args);
-        let machine_agent = machine::start_agent(dir.path(), &remote, agents, &link);
+        let machine_agent =
+            machine::start_agent(dir.path(), &remote, agents, &fake.link, sweep_grace);
         let http = ureq::Agent::config_builder()
             .http_status_as_error(false)
             .timeout_global(Some(Duration::from_secs(60)))
             .build()
             .into();
+        let Fake {
+            open,
+            asleep,
+            mirror_excludes,
+            puts,
+            holds,
+            link,
+            show_fails,
+            shows_refused,
+        } = fake;
         let rig = Self {
             dir,
             tree,
@@ -136,6 +178,8 @@ impl Rig {
             puts,
             holds,
             link,
+            show_fails,
+            shows_refused,
             agents,
             machine_agent: Some(machine_agent),
             args,

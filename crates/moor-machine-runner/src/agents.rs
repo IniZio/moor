@@ -16,7 +16,7 @@ use ssh_key::rand_core::{OsRng, RngCore};
 use ssh_key::{PublicKey, SshSig};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::sync::{mpsc, oneshot, watch, Notify};
 
 use crate::claim::now;
 use crate::forwards::{accepted, Routes};
@@ -59,6 +59,7 @@ impl Agents {
             held: Mutex::default(),
             report: tx,
             next: Mutex::new(0),
+            fresh: Notify::new(),
         });
         Self {
             client,
@@ -84,6 +85,26 @@ impl Agents {
         let gone = || format!("machine {machine_id}'s link closed");
         asks.send(ask).await.map_err(|_| gone())?;
         opened.await.map_err(|_| gone())?
+    }
+}
+
+impl Agents {
+    /// The machines whose agents hold a link now.
+    pub(crate) fn online(&self) -> Vec<i64> {
+        let held = self
+            .links
+            .held
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        held.iter()
+            .filter(|(_, h)| h.asks.is_some())
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
+    /// Resolves once an agent has linked since this last resolved.
+    pub(crate) async fn linked(&self) {
+        self.links.fresh.notified().await;
     }
 }
 
@@ -242,6 +263,8 @@ struct Links {
     report: watch::Sender<Vec<MachineLink>>,
     /// The generation the next link gets.
     next: Mutex<u64>,
+    /// Woken by each new link; holds one wake-up for a waiter that comes later.
+    fresh: Notify,
 }
 
 /// One machine's link state.
@@ -289,6 +312,7 @@ impl Links {
                 },
             );
         });
+        self.fresh.notify_one();
         (generation, replaced, asks)
     }
 

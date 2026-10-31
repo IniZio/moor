@@ -21,6 +21,7 @@ pub mod broker;
 pub mod lease;
 pub mod ops;
 pub mod status;
+pub mod sweep;
 
 /// Where the runner accepts links.
 pub const PATH: &str = "/machines/link";

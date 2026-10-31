@@ -1,11 +1,13 @@
 //! What the agent does with each stream the runner opens: an exec, a hook, or a relay, in the
-//! Box's dir under this account's home; a lease or dial on a pool host; or a status.
+//! Box's dir under this account's home; a sweep of closed Boxes' dirs; a lease or dial on a
+//! pool host; or a status.
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
-use moor_client::link::ops::{self, Op, Reply, MAX_TIMEOUT_SECS};
+use moor_client::link::ops::{self, Hook, Op, Reply, MAX_TIMEOUT_SECS};
+use moor_client::link::sweep::Swept;
 use moor_client::link::Channel;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
@@ -14,6 +16,7 @@ use crate::files;
 use crate::listen::{self, Link};
 use crate::pool::{self, Pool};
 use crate::status::{self, Recent};
+use crate::sweep;
 
 /// How long a relay may take to exit once its stdin closes, before it is killed.
 const RELAY_EXIT: Duration = Duration::from_secs(5);
@@ -31,6 +34,8 @@ pub struct Machine {
     pub pool: Option<Pool>,
     /// Whether it runs `exec` scripts; off unless the operator asked for it.
     pub allow_exec: bool,
+    /// How old a Box's folders must be before a sweep may remove them.
+    pub sweep_grace: Duration,
 }
 
 impl Machine {
@@ -46,11 +51,12 @@ impl Machine {
             home,
             pool: None,
             allow_exec: false,
+            sweep_grace: sweep::GRACE,
         }
     }
 
     /// `/bin/sh -c`, in the home with this machine's home and shell.
-    fn carrier(&self) -> Command {
+    pub(crate) fn carrier(&self) -> Command {
         let mut sh = Command::new("/bin/sh");
         sh.current_dir(&self.home)
             .env("HOME", &self.home)
@@ -73,6 +79,9 @@ pub(crate) async fn serve(machine: &Machine, link: &Link, recent: &Recent, mut c
         let reply = Reply::Status(Box::new(status::status(machine, recent).await));
         return end(ch, reply).await;
     }
+    if machine.pool.is_some() && matches!(op, Op::Sweep { .. }) {
+        return end(ch, Reply::Swept(Swept::default())).await;
+    }
     let (name, target) = (kind(&op), target(&op));
     let failed = dispatch(machine, link, ch, op).await;
     recent.record(name, target, failed.as_deref());
@@ -91,7 +100,9 @@ async fn dispatch(machine: &Machine, link: &Link, ch: Channel, op: Op) -> Option
             | Op::Relay { .. }
             | Op::Sync { .. }
             | Op::Pull { .. }
-            | Op::Listen { .. }),
+            | Op::Listen { .. }
+            | Op::Sweep { .. }
+            | Op::Remove { .. }),
         ) if machine.allow_exec || !matches!(op, Op::Exec { .. }) => {
             serve_machine(machine, link, ch, op).await
         }
@@ -125,7 +136,7 @@ async fn serve_pool(home: &Path, pool: &Pool, ch: Channel, op: Op) -> Option<Str
         }
         Op::Dial { slug } => match pool::dial(home, pool, &slug).await {
             Ok(sshd) => {
-                dial(ch, sshd).await;
+                pool::carry(ch, sshd).await;
                 return None;
             }
             Err(reason) => refused(reason),
@@ -142,6 +153,8 @@ async fn serve_machine(machine: &Machine, link: &Link, ch: Channel, op: Op) -> O
     match op {
         Op::Sync { box_id, argv } => files::sync(machine, ch, box_id, &argv).await,
         Op::Pull { box_id, path } => files::pull(machine, ch, box_id, &path).await,
+        Op::Sweep { keep } => return sweep::serve(machine, ch, &keep).await,
+        Op::Remove { box_id } => return sweep::serve_remove(machine, ch, box_id).await,
         op => match start(machine, op) {
             Ok(Start::Run(script, timeout)) => ran(machine, ch, &script, timeout).await,
             Ok(Start::Relay(script)) => relay(machine, ch, &script).await,
@@ -176,15 +189,16 @@ fn target(op: &Op) -> Option<String> {
         | Op::Relay { box_id, .. }
         | Op::Sync { box_id, .. }
         | Op::Pull { box_id, .. }
-        | Op::Listen { box_id, .. } => Some(box_id.to_string()),
+        | Op::Listen { box_id, .. }
+        | Op::Remove { box_id } => Some(box_id.to_string()),
         Op::Lease { slug, .. } => slug.clone(),
         Op::Dial { slug } => Some(slug.clone()),
-        Op::Status => None,
+        Op::Sweep { .. } | Op::Status => None,
     }
 }
 
 /// Answers `reply` on `ch` and closes it.
-async fn end(mut ch: Channel, reply: Reply) {
+pub(crate) async fn end(mut ch: Channel, reply: Reply) {
     let _ = ops::write_line(&mut ch, &reply).await;
     let _ = ch.shutdown().await;
 }
@@ -200,14 +214,9 @@ const fn kind(op: &Op) -> &'static str {
         Op::Listen { .. } => "listen",
         Op::Lease { .. } => "lease",
         Op::Dial { .. } => "dial",
+        Op::Sweep { .. } => "sweep",
+        Op::Remove { .. } => "remove",
         Op::Status => "status",
-    }
-}
-
-/// Tells the runner the dial reached the VM, then carries its bytes.
-async fn dial(mut ch: Channel, sshd: pool::Sshd) {
-    if ops::write_line(&mut ch, &Reply::Started).await.is_ok() {
-        pool::splice(sshd, ch).await;
     }
 }
 
@@ -250,9 +259,8 @@ fn start(machine: &Machine, op: Op) -> Result<Start, Reply> {
             timeout_secs,
         } => {
             let timeout = checked(box_id, timeout_secs).map_err(refused)?;
-            let path = file(&machine.hooks.join(hook.file())).ok_or(Reply::Missing)?;
-            let body = ops::in_box(box_id, &captured(&path));
-            Ok(Start::Run(ops::script(&env, &body), timeout))
+            let script = hook_script(machine, box_id, hook, &env).ok_or(Reply::Missing)?;
+            Ok(Start::Run(script, timeout))
         }
         Op::Relay { box_id, name, env } => {
             checked(box_id, 1)
@@ -262,9 +270,13 @@ fn start(machine: &Machine, op: Op) -> Result<Start, Reply> {
             let body = format!("exec \"$SHELL\" -lc {}", ops::quote(&ops::quote(&path)));
             Ok(Start::Relay(ops::script(&env, &ops::in_box(box_id, &body))))
         }
-        Op::Sync { .. } | Op::Pull { .. } | Op::Lease { .. } | Op::Dial { .. } | Op::Status => {
-            Err(refused("not a command".to_owned()))
-        }
+        Op::Sync { .. }
+        | Op::Pull { .. }
+        | Op::Sweep { .. }
+        | Op::Remove { .. }
+        | Op::Lease { .. }
+        | Op::Dial { .. }
+        | Op::Status => Err(refused("not a command".to_owned())),
         Op::Listen {
             box_id,
             listen,
@@ -275,6 +287,18 @@ fn start(machine: &Machine, op: Op) -> Result<Start, Reply> {
             ports,
         }),
     }
+}
+
+/// The script that runs the machine's `hook` for Box `box_id` with `env`; none when the machine
+/// has no such hook.
+pub(crate) fn hook_script(
+    machine: &Machine,
+    box_id: i64,
+    hook: Hook,
+    env: &[(String, String)],
+) -> Option<String> {
+    let path = file(&machine.hooks.join(hook.file()))?;
+    Some(ops::script(env, &ops::in_box(box_id, &captured(&path))))
 }
 
 /// A `refused` reply giving `reason`.

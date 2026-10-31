@@ -287,14 +287,20 @@ async fn linked_as(
     pool: Option<moor_machine_agent::Pool>,
     allow_exec: bool,
 ) -> tempfile::TempDir {
-    let dir = agent_dir(w, MACHINE, &w.key);
     let machine = moor_machine_agent::Machine {
         home: home.to_owned(),
         shell: "/bin/sh".into(),
         hooks: home.join("hooks"),
         pool,
         allow_exec,
+        sweep_grace: Duration::ZERO,
     };
+    linked_machine(w, machine).await
+}
+
+/// Links an agent serving `machine`.
+async fn linked_machine(w: &World, machine: moor_machine_agent::Machine) -> tempfile::TempDir {
+    let dir = agent_dir(w, MACHINE, &w.key);
     let state = dir.path().to_owned();
     tokio::spawn(async move { run(&state, machine, &|_| {}).await });
     reported(w, true).await;
@@ -510,12 +516,20 @@ async fn a_pool_host_refuses_every_op_but_lease_and_dial() {
         json!({"op": "sync", "box_id": 7, "argv": ["rsync", "--server", "."]}),
         json!({"op": "pull", "box_id": 7, "path": "x"}),
         json!({"op": "listen", "box_id": 7, "listen": 1, "ports": [8080]}),
+        json!({"op": "remove", "box_id": 3}),
     ];
+    std::fs::create_dir_all(home.path().join("moor/3")).unwrap();
     for op in &ops {
         let reply = ask(&w, op).await.1;
         assert!(refused(&reply), "{op}: {reply:?}");
     }
     assert!(!marker.exists());
+    let swept = swept(ask(&w, &json!({"op": "sweep", "keep": []})).await.1);
+    assert_eq!((swept.removed, swept.errors), (vec![], vec![]));
+    assert!(
+        home.path().join("moor/3").is_dir(),
+        "a pool host sweeps nothing"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -576,3 +590,7 @@ async fn a_call_on_a_lease_never_warmed_leaves_no_dir_on_the_host() {
     );
     assert!(!home.path().join("moor-pool/7").exists());
 }
+
+#[path = "link/sweep.rs"]
+mod sweep;
+use sweep::swept;

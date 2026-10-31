@@ -49,6 +49,7 @@ mod beat;
 mod broker;
 mod caller;
 mod claim;
+mod cleanup;
 mod config;
 mod exec;
 mod forwards;
@@ -95,6 +96,7 @@ pub async fn serve(listener: TcpListener, config: Config) -> io::Result<()> {
         beat: config.keep_alive,
         agents: config.agents,
     };
+    cleanup::spawn(config.sweep, &runner.client, runner.agents.clone(), &hooks);
     hooks::spawn_sweep(config.sweep, runner.client.clone(), hooks, relays, holds);
     let http = StreamableHttpServerConfig::default()
         .with_allowed_hosts([

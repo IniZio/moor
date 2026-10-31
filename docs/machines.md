@@ -265,6 +265,15 @@ If a step fails, the runner keeps the rest, prints the tail of the output to
 stderr, and tries again on the next sweep. If the runner cannot ask the
 controller, it releases nothing.
 
+Besides that, every sweep and right after an agent links, the runner sends each
+linked ordinary machine the open Boxes, and the agent removes every other
+`~/moor/<box id>` and `~/moor-state/<box id>` it finds, after that Box's
+`release` hook (which sees `MOOR_BOX` only). It does this with or without
+`--allow-exec`, never follows a symlink, and skips names that are not plain
+ids and Boxes the runner has a record for. If the runner cannot list the open
+Boxes, it sends nothing. A Box whose release fails keeps its folders until the
+next sweep.
+
 Removing a Box's files and reading the machine's free space are commands the
 runner sends with `exec`, so a machine that Boxes claim runs its agent with
 `--allow-exec`. Files of a Box that the runner has no record of, such as after

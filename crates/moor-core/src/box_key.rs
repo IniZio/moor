@@ -30,6 +30,14 @@ impl BoxKey {
         self.0
     }
 
+    /// The key of the Box a directory under `moor` or `moor-state` is named for: only a plain
+    /// positive decimal id, so `07`, `+7` and `7.bak` name none.
+    #[must_use]
+    pub fn from_dir_name(name: &str) -> Option<Self> {
+        let id: i64 = name.parse().ok().filter(|id| *id > 0)?;
+        (id.to_string() == name).then(|| Self::new(BoxId::new(id)))
+    }
+
     /// The crabbox slug, `moor-{id}-{nonce}`.
     #[must_use]
     pub fn slug(self, nonce: &str) -> String {
