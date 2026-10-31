@@ -49,6 +49,11 @@ fn enroll(state_dir: &Path, server: String, key: &PrivateKey) {
 impl Host {
     /// A runner taking links, and a pool host serving provider `fake` linked to it.
     fn start() -> Self {
+        Self::start_with(None, None, None)
+    }
+
+    /// As `start`, with the pool's `max`, `cache_gb`, and what `providers describe` prints.
+    fn start_with(max: Option<usize>, cache_gb: Option<u32>, describe: Option<&str>) -> Self {
         let mut rig = Rig::start();
         // The rig links an ordinary machine under the same id; the pool host replaces it.
         if let Some(agent) = rig.machine_agent.take() {
@@ -68,11 +73,14 @@ impl Host {
         let home = rig.dir().join("pool-home");
         std::fs::create_dir_all(&state_dir).unwrap();
         std::fs::create_dir_all(&home).unwrap();
+        if let Some(describe) = describe {
+            std::fs::write(home.join("describe.json"), describe).unwrap();
+        }
         enroll(&state_dir, format!("http://127.0.0.1:{}", rig.agents), &key);
         let pool = Pool {
             provider: "fake".to_owned(),
-            max: None,
-            cache_gb: None,
+            max,
+            cache_gb,
             crabbox: fake_crabbox::install(&home),
         };
         let machine = Machine {
@@ -116,6 +124,20 @@ async fn raw(socket: &Path, line: &str) -> serde_json::Value {
     let mut answer = String::new();
     conn.read_line(&mut answer).await.unwrap();
     serde_json::from_str(&answer).unwrap()
+}
+
+#[test]
+fn a_pool_hosts_offer_reaches_its_reported_link() {
+    let describe = r#"{"capabilities":{"features":["snapshots","cache-volume"]}}"#;
+    let host = Host::start_with(Some(3), Some(50), Some(describe));
+    let links = host.rig.link.links.lock().unwrap().clone().unwrap();
+    let link = &links[0];
+    assert_eq!(link["max_boxes"], 3);
+    assert_eq!(link["cache_gb"], 50);
+    assert_eq!(
+        link["features"],
+        serde_json::json!(["cache-volume", "snapshots"])
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
