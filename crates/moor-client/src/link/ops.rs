@@ -60,7 +60,7 @@ code=$?
 kill "$watch" 2>/dev/null
 exit "$code"
 "#;
-const _: () = assert!(!has_single_quote(WRAPPER));
+const _: () = assert!(!quote::has_single_quote(WRAPPER));
 
 /// The runner's request, the first line of a stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -132,6 +132,9 @@ pub enum Op {
         /// The OpenSSH public key an authorize lets in; none for every other verb.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         key: Option<String>,
+        /// The cache volumes a warmup mounts; none for every other verb.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cache: Option<lease::Cache>,
     },
     /// Carry the stream to and from the sshd of a pool lease's VM; only a pool host serves it.
     Dial {
@@ -381,19 +384,7 @@ impl Tail {
     }
 }
 
-/// Whether `s` holds a `'`.
-#[expect(clippy::indexing_slicing, reason = "i stays below the length")]
-const fn has_single_quote(s: &str) -> bool {
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'\'' {
-            return true;
-        }
-        i += 1;
-    }
-    false
-}
+mod quote;
 
 #[cfg(test)]
 mod tests;

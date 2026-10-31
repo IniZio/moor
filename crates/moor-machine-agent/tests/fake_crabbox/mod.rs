@@ -11,6 +11,7 @@ pub(crate) const HOST_KEY: &str =
 
 const SCRIPT: &str = r#"#!/bin/sh
 echo "$PWD $*" >> "$HOME/crabbox.log"
+[ -n "$CRABBOX_CACHE_VOLUMES" ] && printf '%s %s\n' "$CRABBOX_CACHE_SCOPE" "$CRABBOX_CACHE_VOLUMES" >> "$HOME/cache.env"
 for a in "$@"; do
   case "$a" in
     --provider|--id|--slug|--json) ;;

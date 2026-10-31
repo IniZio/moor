@@ -6,7 +6,7 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 
 use moor_client::link::broker;
-use moor_client::link::lease::{Answer, Verb};
+use moor_client::link::lease::{Answer, Cache, Verb};
 use moor_client::link::status::Status;
 use moor_core::boxscript::quote;
 
@@ -33,7 +33,7 @@ impl RunnerLinks {
     }
 
     /// Asks machine `machine_id`'s agent to run `verb` on lease `slug`, installing `key` for
-    /// an authorize.
+    /// an authorize and mounting `cache` on a warmup.
     ///
     /// # Errors
     /// The broker or the agent's failure.
@@ -43,13 +43,20 @@ impl RunnerLinks {
         verb: Verb,
         slug: Option<&str>,
         key: Option<&str>,
+        cache: Option<&Cache>,
     ) -> Result<Answer, String> {
         match (verb, slug, key) {
             (Verb::Authorize, Some(slug), Some(key)) => {
                 blocking(broker::authorize(&self.socket, machine_id, slug, key))
             }
             (Verb::Authorize, ..) => Err("an authorize needs a lease and a key".to_owned()),
-            _ => blocking(broker::lease(&self.socket, machine_id, verb, slug)),
+            _ => blocking(broker::lease(
+                &self.socket,
+                machine_id,
+                verb,
+                slug,
+                cache.cloned(),
+            )),
         }
     }
 

@@ -5,14 +5,15 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
-use moor_client::link::lease::{Answer, Lease, Verb};
-use moor_client::link::ops::Reply;
+use moor_client::link::lease::{Answer, Cache, Lease, Verb};
+use moor_client::link::ops::{Op, Reply};
 use moor_client::link::Offer;
 use moor_core::box_key::parse_pool_slug;
 use tokio::process::Command;
 
 pub use reach::{carry, dial, splice, Sshd};
 
+mod cache;
 mod reach;
 
 /// How long a VM may take to boot.
@@ -74,17 +75,43 @@ async fn features(pool: &Pool) -> Vec<String> {
 }
 
 /// Does `verb` to the lease `slug`, or lists the leases, under `home`; an authorize lets `key`
-/// in.
+/// in, a warmup mounts `cache`.
 pub async fn lease(
     home: &Path,
     pool: &Pool,
     verb: Verb,
     slug: Option<&str>,
     key: Option<&str>,
+    cache: Option<&Cache>,
 ) -> Reply {
-    match answer(home, pool, verb, slug, key).await {
+    match answer(home, pool, verb, slug, key, cache).await {
         Ok(answer) => Reply::Leased(answer),
         Err(reason) => Reply::Refused { reason },
+    }
+}
+
+/// Serves a lease op; anything else is refused.
+pub async fn lease_op(home: &Path, pool: &Pool, op: Op) -> Reply {
+    match op {
+        Op::Lease {
+            verb,
+            slug,
+            key,
+            cache,
+        } => {
+            lease(
+                home,
+                pool,
+                verb,
+                slug.as_deref(),
+                key.as_deref(),
+                cache.as_ref(),
+            )
+            .await
+        }
+        _ => Reply::Refused {
+            reason: "not a lease".to_owned(),
+        },
     }
 }
 
@@ -95,7 +122,11 @@ async fn answer(
     verb: Verb,
     slug: Option<&str>,
     key: Option<&str>,
+    cache: Option<&Cache>,
 ) -> Result<Answer, String> {
+    if cache.is_some() && verb != Verb::Warmup {
+        return Err("only a warmup mounts a cache".to_owned());
+    }
     match (verb, slug.map(checked).transpose()?) {
         (Verb::List, None) => Ok(Answer::Leases {
             leases: list(home, pool).await?,
@@ -113,6 +144,7 @@ async fn answer(
                 verb,
                 slug,
                 key,
+                cache,
             )
             .await
         }
@@ -125,6 +157,7 @@ async fn act(
     verb: Verb,
     slug: &str,
     key: Option<&str>,
+    cache: Option<&Cache>,
 ) -> Result<Answer, String> {
     let ran = match verb {
         Verb::Authorize => {
@@ -132,8 +165,9 @@ async fn act(
             return reach::authorize(lease, key).await;
         }
         Verb::Warmup => {
+            let env = cache.map(cache::env).transpose()?.unwrap_or_default();
             room(lease.home, lease.pool, slug).await?;
-            lease.run("warmup", "--slug", BOOT, &[0]).await
+            lease.run_with("warmup", "--slug", BOOT, &[0], &env).await
         }
         Verb::Info => return reach::info(lease).await,
         Verb::Pause => lease.run("pause", "--id", CALL, &[0]).await,
@@ -242,6 +276,18 @@ impl Crabbox<'_> {
         within: Duration,
         ok: &[i32],
     ) -> Result<String, String> {
+        self.run_with(verb, flag, within, ok, &[]).await
+    }
+
+    /// [`Self::run`] with `env` added to crabbox's.
+    async fn run_with(
+        &self,
+        verb: &str,
+        flag: &str,
+        within: Duration,
+        ok: &[i32],
+        env: &[(&str, String)],
+    ) -> Result<String, String> {
         let base = self.home.join(POOL_DIR);
         let mine = self.slug.map(|slug| box_dir(self.home, slug));
         // Only a warmup makes a lease's dir, so a call on a lease that is gone leaves nothing
@@ -261,6 +307,7 @@ impl Crabbox<'_> {
         cmd.current_dir(&dir)
             .env("HOME", self.home)
             .env("GIT_CEILING_DIRECTORIES", ceiling)
+            .envs(env.iter().map(|(k, v)| (k, v)))
             .stdin(Stdio::null())
             .kill_on_drop(true);
         let out = tokio::time::timeout(within, cmd.output())

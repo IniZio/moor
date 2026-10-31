@@ -144,14 +144,28 @@ fn a_pool_hosts_offer_reaches_its_reported_link() {
 async fn a_lease_goes_through_the_broker_to_the_pool_host_and_back() {
     let host = Host::start();
     let socket = host.socket();
-    let answer = broker::lease(&socket, MACHINE_ID, Verb::Warmup, Some("moor-1a2b3c4d-7")).await;
+    let answer = broker::lease(
+        &socket,
+        MACHINE_ID,
+        Verb::Warmup,
+        Some("moor-1a2b3c4d-7"),
+        None,
+    )
+    .await;
     assert_eq!(answer, Ok(Answer::Done));
     let calls = fake_crabbox::calls(&host.home);
     assert!(
         calls.ends_with(" warmup --provider fake --slug moor-1a2b3c4d-7\n"),
         "{calls}"
     );
-    let answer = broker::lease(&socket, MACHINE_ID, Verb::Info, Some("moor-1a2b3c4d-7")).await;
+    let answer = broker::lease(
+        &socket,
+        MACHINE_ID,
+        Verb::Info,
+        Some("moor-1a2b3c4d-7"),
+        None,
+    )
+    .await;
     let Ok(Answer::Info { user, host_keys }) = answer else {
         panic!("{answer:?}");
     };
@@ -167,6 +181,7 @@ async fn a_dial_through_the_broker_carries_bytes_both_ways() {
         MACHINE_ID,
         Verb::Warmup,
         Some("moor-1a2b3c4d-7"),
+        None,
     )
     .await;
     assert_eq!(warmed, Ok(Answer::Done));
@@ -213,10 +228,11 @@ async fn a_pool_host_reports_its_status_through_the_broker() {
         MACHINE_ID,
         Verb::Warmup,
         Some("moor-1a2b3c4d-7"),
+        None,
     )
     .await;
     assert_eq!(warmed, Ok(Answer::Done));
-    let bad = broker::lease(&host.socket(), MACHINE_ID, Verb::Info, Some("box-1")).await;
+    let bad = broker::lease(&host.socket(), MACHINE_ID, Verb::Info, Some("box-1"), None).await;
     assert!(bad.is_err());
     let leases = r#"[{"name":"moor-1a2b3c4d-7","state":"running"}]"#;
     std::fs::write(host.home.join("leases.json"), leases).unwrap();
@@ -251,7 +267,7 @@ async fn a_machine_with_no_link_is_named_offline() {
     .await;
     assert_eq!(answer["broker"], "offline", "{answer}");
     assert_eq!(answer["machine_id"], 99);
-    let err = broker::lease(&host.socket(), 99, Verb::List, None)
+    let err = broker::lease(&host.socket(), 99, Verb::List, None, None)
         .await
         .unwrap_err();
     assert!(err.contains("machine 99 is offline"), "{err}");

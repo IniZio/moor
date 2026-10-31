@@ -8,7 +8,7 @@ use clap::{Parser, Subcommand};
 use moor_client::oidc::{Console, Ui, REDIRECT_PORT};
 use std::path::PathBuf;
 
-use moor_client::link::lease::Verb;
+use moor_client::link::lease::{Cache, Verb};
 use moor_client::link::ops::Reply;
 use moor_machine_agent::pool::{dial, lease, splice};
 use moor_machine_agent::{enroll, run_with, state_dir, update, Enroll, Machine, Pool};
@@ -77,6 +77,9 @@ enum Command {
         verb: Verb,
         /// `moor-<controller>-<id>`; none for list.
         slug: Option<String>,
+        /// The cache volumes a warmup mounts, as the link carries them in JSON.
+        #[arg(long, value_parser = cache)]
+        cache: Option<Cache>,
         /// The pool.
         #[command(flatten)]
         pool: PoolFlags,
@@ -115,6 +118,11 @@ impl PoolFlags {
             crabbox: self.crabbox,
         })
     }
+}
+
+/// A lease cache from its JSON.
+fn cache(s: &str) -> Result<Cache, String> {
+    serde_json::from_str(s).map_err(|e| format!("not a lease cache: {e}"))
 }
 
 /// A lease verb by its wire name.
@@ -173,17 +181,12 @@ fn main() -> ExitCode {
             auto_update,
         } => run_here(pool, cache_gb, allow_exec, auto_update),
         Command::Update { version } => return update_here(&version),
-        Command::Lease { verb, slug, pool } => {
-            return on_pool(pool, |rt, home, pool| {
-                let reply = rt.block_on(lease(&home, &pool, verb, slug.as_deref(), None));
-                let line = serde_json::to_string(&reply).map_err(|e| e.to_string())?;
-                let _ = writeln!(std::io::stdout(), "{line}");
-                match reply {
-                    Reply::Refused { .. } => Err(String::new()),
-                    _ => Ok(()),
-                }
-            });
-        }
+        Command::Lease {
+            verb,
+            slug,
+            cache,
+            pool,
+        } => return lease_here(pool, verb, slug.as_deref(), cache.as_ref()),
         Command::Dial { slug, pool } => {
             return on_pool(pool, |rt, home, pool| {
                 rt.block_on(async {
@@ -239,6 +242,19 @@ fn runtime() -> Result<tokio::runtime::Runtime, String> {
         .enable_all()
         .build()
         .map_err(|e| format!("cannot start: {e}"))
+}
+
+/// Does `verb` to lease `slug` here, with `cache` on a warmup, and prints the answer.
+fn lease_here(flags: PoolFlags, verb: Verb, slug: Option<&str>, cache: Option<&Cache>) -> ExitCode {
+    on_pool(flags, |rt, home, pool| {
+        let reply = rt.block_on(lease(&home, &pool, verb, slug, None, cache));
+        let line = serde_json::to_string(&reply).map_err(|e| e.to_string())?;
+        let _ = writeln!(std::io::stdout(), "{line}");
+        match reply {
+            Reply::Refused { .. } => Err(String::new()),
+            _ => Ok(()),
+        }
+    })
 }
 
 /// Runs `work` for the named pool in this account's home; an empty error was already shown.

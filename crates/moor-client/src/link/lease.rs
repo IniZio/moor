@@ -55,3 +55,36 @@ pub struct Lease {
     /// What the provider says of it, such as `running` or `paused`.
     pub state: String,
 }
+
+/// The cache volumes a warmup mounts, as crabbox reads them from `CRABBOX_CACHE_VOLUMES` and
+/// `CRABBOX_CACHE_SCOPE`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Cache {
+    /// The volumes, in crabbox's JSON shape.
+    pub volumes: Vec<CacheVolume>,
+    /// The Box's scope, 16 lowercase hex digits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+}
+
+/// One volume in crabbox's `CacheVolumeConfig` shape, extended with `group`, `paths` and
+/// `sealed`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CacheVolume {
+    /// Scope id; the volumes of one group share one store.
+    pub group: String,
+    /// Name, a subdirectory of the group's store.
+    pub name: String,
+    /// `<group>-<name>`.
+    pub key: String,
+    /// Box paths, `~/` for the login home.
+    pub paths: Vec<String>,
+    /// Size hint; 0 is the adapter's default.
+    #[serde(rename = "sizeGB", default)]
+    pub size_gb: u32,
+    /// The volume has a seal; the provider keeps it only with the seal's marker in each path.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub sealed: bool,
+}

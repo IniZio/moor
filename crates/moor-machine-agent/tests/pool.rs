@@ -230,3 +230,79 @@ fn a_pool_host_cannot_also_allow_exec() {
     let err = String::from_utf8(out.stderr).unwrap();
     assert!(err.contains("--allow-exec"), "{err}");
 }
+
+const SCOPE: &str = "0123456789abcdef";
+
+fn cache(name: &str, path: &str) -> Value {
+    json!({
+        "volumes": [{
+            "group": SCOPE,
+            "name": name,
+            "key": format!("{SCOPE}-{name}"),
+            "paths": [path],
+            "sizeGB": 4,
+        }],
+        "scope": SCOPE,
+    })
+}
+
+#[test]
+fn a_warmup_hands_its_cache_to_crabbox() {
+    let home = home();
+    let spec = cache("cargo", "~/.cargo/registry");
+    let got = lease(
+        home.path(),
+        &["warmup", "moor-1a2b3c4d-7", "--cache", &spec.to_string()],
+    );
+    assert_eq!(got, (true, DONE()));
+    let env = std::fs::read_to_string(home.path().join("cache.env")).unwrap();
+    let volumes: Value =
+        serde_json::from_str(env.strip_prefix(&format!("{SCOPE} ")).unwrap()).unwrap();
+    assert_eq!(volumes, spec["volumes"]);
+}
+
+#[test]
+fn a_bad_cache_is_refused_before_crabbox_runs() {
+    let mut big = cache("cargo", "/opt/sdk");
+    big["volumes"] = Value::Array(vec![big["volumes"][0].clone(); 33]);
+    let mut huge = cache("cargo", "/opt/sdk");
+    huge["volumes"][0]["sizeGB"] = json!(5000);
+    let mut extra = cache("cargo", "/opt/sdk");
+    extra["volumes"][0]["mount"] = json!("/");
+    let mut scope = cache("cargo", "/opt/sdk");
+    scope["scope"] = json!("../../etc");
+    let mut key = cache("cargo", "/opt/sdk");
+    key["volumes"][0]["group"] = json!("..");
+    key["volumes"][0]["key"] = json!("..-cargo");
+    for (why, spec) in [
+        ("traversal", cache("cargo", "/opt/../etc")),
+        ("relative", cache("cargo", "etc/shadow")),
+        ("host root", cache("cargo", "/etc")),
+        ("bad name", cache("Cargo/x", "/opt/sdk")),
+        ("too many", big),
+        ("oversize", huge),
+        ("unknown field", extra),
+        ("bad scope", scope),
+        ("dot group", key),
+    ] {
+        let home = home();
+        let (ok, answer) = lease(
+            home.path(),
+            &["warmup", "moor-1a2b3c4d-7", "--cache", &spec.to_string()],
+        );
+        assert!(!ok, "{why}: {answer}");
+        assert!(
+            fake_crabbox::calls(home.path()).is_empty(),
+            "{why}: crabbox ran"
+        );
+    }
+}
+
+#[test]
+fn only_a_warmup_takes_a_cache() {
+    let home = warmed();
+    let spec = cache("cargo", "/opt/sdk").to_string();
+    let (ok, answer) = lease(home.path(), &["pause", "moor-1a2b3c4d-7", "--cache", &spec]);
+    assert!(!ok);
+    assert_eq!(answer["reason"], "only a warmup mounts a cache");
+}
