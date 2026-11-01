@@ -257,7 +257,7 @@ fn host_listeners(tag: &str, root: &std::path::Path) -> Vec<(PathBuf, UnixListen
     let runtime = PathBuf::from(format!("/run/user/{}", rustix::process::getuid().as_raw()));
     let lxd = root.join("var/lib/x");
     fs::create_dir_all(&lxd).unwrap();
-    [std::env::temp_dir(), runtime]
+    [PathBuf::from("/tmp"), runtime]
         .into_iter()
         .map(|dir| dir.join(format!("moor-{tag}.sock")))
         .chain([lxd.join("unix.socket")])

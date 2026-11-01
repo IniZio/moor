@@ -164,11 +164,15 @@ fn a_front_sees_only_the_listed_devices_on_a_read_only_dev() {
 
 #[test]
 fn a_state_dir_under_tmp_is_refused() {
-    let dir = crate::fresh_dir("undertmp");
+    let dir = tempfile::Builder::new()
+        .prefix("moor-cli-undertmp-")
+        .tempdir_in("/tmp")
+        .unwrap();
+    let dir = dir.path();
     let writable = dir.display().to_string();
     let me = std::process::id().to_string();
     let out = shim(
-        &dir,
+        dir,
         &["--parent", &me, "--writable", &writable, "--", "true"],
     );
     assert!(!out.status.success());
