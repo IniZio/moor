@@ -45,21 +45,7 @@ pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>) {
     let path = path.split('?').next().unwrap_or_default();
     match (req.method, path) {
         (Some("GET"), "/.well-known/moor") => {
-            let mut doc = serde_json::json!({
-                "issuer": gate.verifier.issuer(),
-                "client_id": gate.verifier.client_id(),
-                "scopes": ["openid", "email", "offline_access"],
-            });
-            if let Some(mcp) = &gate.mcp {
-                doc["resource"] = mcp.resource_url().into();
-                doc["scopes"] = serde_json::json!([
-                    "openid",
-                    "email",
-                    "offline_access",
-                    crate::mcp::READ,
-                    crate::mcp::WRITE
-                ]);
-            }
+            let doc = moor_metadata(gate);
             respond(&mut stream, "200 OK", "application/json", &doc.to_string());
         }
         (Some("GET"), p) if p.starts_with(crate::mcp::METADATA_PATH) && gate.mcp.is_some() => {
@@ -219,4 +205,18 @@ pub(crate) fn respond(stream: &mut TcpStream, status: &str, content_type: &str, 
         "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     );
+}
+
+/// What `/.well-known/moor` publishes: where to sign in, and the MCP resource when served.
+fn moor_metadata(gate: &Gate) -> serde_json::Value {
+    let mut scopes = vec!["openid", "email", "offline_access"];
+    let mut doc = serde_json::Map::new();
+    doc.insert("issuer".into(), gate.verifier.issuer().into());
+    doc.insert("client_id".into(), gate.verifier.client_id().into());
+    if let Some(mcp) = &gate.mcp {
+        scopes.extend([crate::mcp::READ, crate::mcp::WRITE]);
+        doc.insert("resource".into(), mcp.resource_url().into());
+    }
+    doc.insert("scopes".into(), scopes.into());
+    doc.into()
 }
