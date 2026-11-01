@@ -3224,6 +3224,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "moor-notify"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "hex",
+ "hmac 0.12.1",
+ "moor-client",
+ "moor-core",
+ "moor-testkit",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "ureq",
+]
+
+[[package]]
 name = "moor-slack"
 version = "0.2.0"
 dependencies = [
