@@ -1,5 +1,4 @@
 #!/bin/sh
-# Print Claude Code's stored OAuth access token for the moor gate.
 url=${MOOR_URL:-$MOOR_MCP_URL}
 [ -n "$url" ] || { echo "moor token: set MOOR_URL to the gate's /mcp URL" >&2; exit 1; }
 if [ "$(uname -s)" = Darwin ]; then
