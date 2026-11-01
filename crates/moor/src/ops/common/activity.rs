@@ -281,9 +281,9 @@ fn step(cx: &Cx, store: &Store, row: &BoxRow, reading: &Reading) -> Result<bool,
     if row.intent.is_some() {
         return Ok(false);
     }
-    if let (SessionInput::AgentQuiet, Some(text)) = (&input, &reading.said) {
-        let text = text.clone();
-        store.apply(Decision::new(row.id).event(ExtraEvent::AgentSaid { text }))?;
+    let quiet = input == SessionInput::AgentQuiet;
+    if !said::record(store, row, quiet, reading.said.as_deref())? {
+        return Ok(false);
     }
     let mut decision = Decision::new(row.id).session(input.clone());
     let timed_out = reading
