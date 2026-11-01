@@ -4,7 +4,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
+use ureq::unversioned::transport::DefaultConnector;
 use ureq::Agent;
+
+use crate::guard::{NotPublic, PublicOnly, Reach, NOT_PUBLIC};
 
 use crate::sign::signature;
 
@@ -40,7 +43,8 @@ pub enum Answer {
     Taken,
     /// No answer, a timeout, 408, 429 or 5xx: worth another attempt.
     Retry(String),
-    /// Any other status: another attempt would get the same.
+    /// Any other status, or an address that is not public: another attempt would get the
+    /// same, for this reason.
     Refused(String),
 }
 
@@ -51,7 +55,7 @@ impl Answer {
         match status {
             200..=299 => Self::Taken,
             408 | 429 | 500..=599 => Self::Retry(format!("HTTP {status}")),
-            _ => Self::Refused(format!("HTTP {status}")),
+            _ => Self::Refused(format!("HTTP {status}, not retried")),
         }
     }
 }
@@ -70,7 +74,7 @@ pub fn with_retries(
     for attempt in 1..=retry.attempts.max(1) {
         match post() {
             Answer::Taken => return Ok(attempt),
-            Answer::Refused(why) => return Err(format!("{why}, not retried")),
+            Answer::Refused(why) => return Err(why),
             Answer::Retry(why) if attempt >= retry.attempts => {
                 return Err(format!("{why} after {attempt} attempts"));
             }
@@ -105,10 +109,10 @@ pub struct Endpoint {
 }
 
 impl Endpoint {
-    /// An endpoint for `url` signed with `secret`. It goes through the proxy the environment
-    /// names, as every front's egress does.
+    /// An endpoint for `url` signed with `secret` that connects only to addresses `reach`
+    /// allows. It goes through the proxy the environment names, if any.
     #[must_use]
-    pub fn new(url: String, secret: Vec<u8>) -> Self {
+    pub fn new(url: String, secret: Vec<u8>, reach: Reach) -> Self {
         let tls = TlsConfig::builder()
             .provider(TlsProvider::Rustls)
             .root_certs(RootCerts::PlatformVerifier)
@@ -119,11 +123,13 @@ impl Endpoint {
             .http_status_as_error(false)
             .timeout_global(Some(POST_TIMEOUT))
             .build();
-        Self {
-            agent: Agent::new_with_config(config),
-            url,
-            secret,
-        }
+        let agent = match reach {
+            Reach::Public => {
+                Agent::with_parts(config, DefaultConnector::default(), PublicOnly::default())
+            }
+            Reach::Any => Agent::new_with_config(config),
+        };
+        Self { agent, url, secret }
     }
 
     /// Posts `body` once, as event `kind` with delivery id `delivery`, signed at `now`.
@@ -144,6 +150,9 @@ impl Endpoint {
             .send(body);
         match sent {
             Ok(response) => Answer::of_status(response.status().as_u16()),
+            Err(ureq::Error::Other(e)) if e.is::<NotPublic>() => {
+                Answer::Refused(NOT_PUBLIC.to_owned())
+            }
             Err(e) => Answer::Retry(describe(&e).to_owned()),
         }
     }

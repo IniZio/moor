@@ -130,7 +130,7 @@ fn a_real_controller_lets_the_front_claim_a_users_webhooks() {
     std::thread::sleep(Duration::from_millis(500));
     assert!(front.is_running(), "{:#?}", front.lines());
     assert!(
-        front.lines().is_empty(),
+        front.lines().iter().all(|l| l.contains("--allow-private")),
         "no controller error: {:#?}",
         front.lines()
     );

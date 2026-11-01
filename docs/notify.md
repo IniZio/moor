@@ -46,9 +46,14 @@ show a webhook's events and health, and `remove_webhook` and `moor user webhook
 rm ID` remove one. A URL must be `https://`, or `http://` on `127.0.0.1`,
 `[::1]` or `localhost`.
 
-When it runs under the controller, the front's POSTs go through the front's
-egress proxy. That proxy refuses private and loopback addresses, so the
-receiver must be public. A front that you run yourself has no such limit.
+The front posts only to public addresses. Before each attempt it looks up the
+URL's host and refuses the delivery if any address is loopback, private,
+link-local, shared, multicast or otherwise not globally routable. It then
+connects to the address it checked, and it checks each redirect the same way.
+A refused delivery fails at once with `refused: address not public`. With an
+egress proxy set, the proxy looks up the host, so the proxy must refuse such
+addresses. Pass `--allow-private` to a front you run yourself to post to a
+local receiver; the front logs a warning when it starts.
 
 The usual events are these; a webhook can name others that the controller
 stores:

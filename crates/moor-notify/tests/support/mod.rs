@@ -20,15 +20,26 @@ pub(crate) struct Front {
 }
 
 impl Front {
-    /// Runs the front on `socket`, polling every 20 ms, with no proxy in its environment so
-    /// it reaches the loopback receiver directly.
+    /// Runs the front on `socket`, polling every 20 ms, with no proxy in its environment and
+    /// `--allow-private` so it reaches the loopback receiver directly.
     pub(crate) fn start(socket: &Path) -> Self {
+        Self::spawn(socket, &["--allow-private"])
+    }
+
+    /// Runs the front on `socket` with its address guard on, as in production.
+    pub(crate) fn guarded(socket: &Path) -> Self {
+        Self::spawn(socket, &[])
+    }
+
+    /// Runs the front on `socket` with `extra` arguments.
+    fn spawn(socket: &Path, extra: &[&str]) -> Self {
         let mut child = Command::new(env!("CARGO_BIN_EXE_moor-notify"))
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
             .arg("--socket")
             .arg(socket)
             .args(["--poll-ms", "20"])
+            .args(extra)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())

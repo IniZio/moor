@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::time::Duration;
 
 use super::{with_retries, Answer, Endpoint, Retry};
+use crate::guard::Reach;
 
 /// Three attempts, 1s then 2s apart, capped at 3s.
 const RETRY: Retry = Retry {
@@ -76,7 +77,7 @@ fn gives_up_after_the_last_attempt() {
 
 #[test]
 fn a_refusal_is_not_retried() {
-    let (got, slept) = run(vec![Answer::Refused("HTTP 404".into())], RETRY);
+    let (got, slept) = run(vec![Answer::of_status(404)], RETRY);
     assert_eq!(got.unwrap_err(), "HTTP 404, not retried");
     assert!(slept.is_empty());
 }
@@ -86,6 +87,7 @@ fn the_logged_url_drops_path_query_and_user() {
     let endpoint = Endpoint::new(
         "https://me:pw@hooks.example.com:8443/t/0ken?k=v".to_owned(),
         b"k".to_vec(),
+        Reach::Public,
     );
     assert_eq!(endpoint.shown(), "https://hooks.example.com:8443");
 }

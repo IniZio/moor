@@ -15,6 +15,7 @@ use moor_core::response::{ExitClass, Response};
 use moor_core::view::user::{WebhookClaimValue, WebhookDeliveryView};
 
 use crate::deliver::{with_retries, Endpoint, Retry};
+use crate::guard::Reach;
 use crate::Log;
 
 /// First wait before asking the controller again after a failure.
@@ -34,6 +35,8 @@ pub struct Options {
     pub in_flight: usize,
     /// How each delivery is retried.
     pub retry: Retry,
+    /// Which addresses a delivery may connect to.
+    pub reach: Reach,
 }
 
 impl Default for Options {
@@ -44,6 +47,7 @@ impl Default for Options {
             lease: Duration::from_secs(600),
             in_flight: 32,
             retry: Retry::default(),
+            reach: Reach::Public,
         }
     }
 }
@@ -90,9 +94,9 @@ pub fn run(client: &Client, options: &Options, log: &Log) -> Result<(), String> 
                 for delivery in claimed.deliveries {
                     busy.fetch_add(1, Ordering::SeqCst);
                     let (client, log, busy) = (client.clone(), Arc::clone(log), Arc::clone(&busy));
-                    let retry = options.retry;
+                    let options = *options;
                     thread::spawn(move || {
-                        deliver(&client, &delivery, retry, &log);
+                        deliver(&client, &delivery, &options, &log);
                         busy.fetch_sub(1, Ordering::SeqCst);
                     });
                 }
@@ -102,7 +106,7 @@ pub fn run(client: &Client, options: &Options, log: &Log) -> Result<(), String> 
 }
 
 /// Posts `delivery` with retries and reports the outcome until the controller takes it.
-fn deliver(client: &Client, delivery: &WebhookDeliveryView, retry: Retry, log: &Log) {
+fn deliver(client: &Client, delivery: &WebhookDeliveryView, options: &Options, log: &Log) {
     let what = format!("{} (delivery {})", delivery.event, delivery.delivery);
     let outcome = match serde_json::to_vec(&delivery.body) {
         Err(e) => WebhookOutcome::Failed {
@@ -112,9 +116,10 @@ fn deliver(client: &Client, delivery: &WebhookDeliveryView, retry: Retry, log: &
             let endpoint = Endpoint::new(
                 delivery.url.clone(),
                 delivery.key.secret().expose().to_vec(),
+                options.reach,
             );
             let posted = with_retries(
-                retry,
+                options.retry,
                 || endpoint.post(&delivery.event, delivery.delivery, &body, now()),
                 &thread::sleep,
             );
