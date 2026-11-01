@@ -65,7 +65,7 @@ enum Change {
     clippy::unused_async_trait_impl,
     reason = "the generated handlers are async whether or not they await"
 )]
-#[tool_handler(router = (Self::tool_router() + Self::webhook_router()))]
+#[tool_handler(router = (Self::tool_router() + Self::webhook_router() + Self::events_router()))]
 impl ServerHandler for Tools {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(
@@ -272,7 +272,7 @@ fn follow(
 }
 
 /// A client acting as `person`, once the controller knows their identity and email.
-fn enrolled(socket: &Path, person: &Person) -> Result<Client, String> {
+pub(super) fn enrolled(socket: &Path, person: &Person) -> Result<Client, String> {
     let enroll = ControllerRequest::Enroll(EnrollReq {
         identity: None,
         email: None,

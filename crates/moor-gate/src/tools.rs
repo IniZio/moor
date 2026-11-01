@@ -21,6 +21,7 @@ use serde_json::Value;
 use crate::mcp::{Auth, READ, WRITE};
 use crate::{rewrite, Person};
 
+mod events;
 mod listen;
 mod reply;
 mod webhook;
