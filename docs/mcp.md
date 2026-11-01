@@ -19,8 +19,8 @@ that person's Boxes.
 
 | Scope | Allows |
 | --- | --- |
-| `moor:read` | `list_boxes`, `box_status`, the Box resources, `subscriptions/listen` |
-| `moor:write` | `start_box`, `send_to_box`, `close_box` |
+| `moor:read` | `list_boxes`, `box_status`, `list_webhooks`, the Box resources, `subscriptions/listen` |
+| `moor:write` | `start_box`, `send_to_box`, `close_box`, `add_webhook`, `remove_webhook` |
 
 A token without `moor:write` gets an error from the write tools and can still
 read.
@@ -34,10 +34,18 @@ read.
 | `box_status` | `box` |
 | `send_to_box` | `box`, `text` |
 | `close_box` | `box`; optional `force` |
+| `add_webhook` | `url` (https); optional `events` |
+| `list_webhooks` | none |
+| `remove_webhook` | `id` |
 
 `close_box` refuses a Box that holds unpushed commits or uncommitted files, or
 that could not be checked for them. `force: true` closes it anyway and discards
 that work, the same as `moor close --force`. It is false by default.
+
+A webhook receives signed POSTs of your Box events. `add_webhook` returns the
+webhook's `id` and its HMAC `key`, shown only once; `list_webhooks` shows each
+webhook's url, events and delivery health, never the key. See
+[Notifications](notify.md) for the receiving side.
 
 `node` is a node you may use, a shared one or one of your own; omit it for your
 default. See [Nodes](nodes.md).
