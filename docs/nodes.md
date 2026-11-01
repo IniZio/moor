@@ -33,6 +33,21 @@ moor-machine-agent enroll --server https://moor.example.com --name hv --runtime 
 moor-machine-agent run --runtime cloudhypervisor --max-boxes 4
 ```
 
+## Memory
+
+A personal node's agent reports the host's memory when it links. The scheduler
+admits a Box only if its size fits in the memory left after the host reserve:
+small takes 4 GiB, medium 8 GiB, large 16 GiB and xlarge 32 GiB. Running and
+asleep Boxes both hold their memory. A Box that does not fit is Pending with
+`NODE has X GiB free of Y GiB; this Box needs Z GiB`.
+
+`--reserve-mib` sets the reserve kept back for the host. It defaults to 4096 MiB
+plus 10% of the host's memory:
+
+```sh
+moor-machine-agent run --runtime cloudhypervisor --reserve-mib 8192
+```
+
 ## Which node a start gets
 
 Without `--node`, the scheduler tries your personal nodes first, in the order
@@ -43,7 +58,7 @@ it with `--node`. A full node does not send the Box elsewhere.
 
 ## Pending
 
-A start on a node that is full waits there. The Box is Pending, with the reason
+A start on a node that is full, by Box count or by memory, waits there. The Box is Pending, with the reason
 in its status, and it starts when a Box on that node closes or the node's link
 comes back. Boxes on a node start in the order they asked.
 
