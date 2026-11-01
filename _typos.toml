@@ -2,6 +2,8 @@
 UDID = "UDID"
 udid = "udid"
 nd = "nd"
+passt = "passt"
+PASST = "PASST"
 
 [files]
 extend-exclude = [

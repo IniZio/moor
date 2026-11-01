@@ -61,6 +61,18 @@ defaulted columns, and ship a data patch separately from the schema change.
 Migrations run before the new code uses them, and a deploy never moves a
 database back.
 
+## Developing moor inside a moor Box
+
+Running a Box from inside a Box needs `/dev/kvm`, because the inner Box is a
+cloud-hypervisor VM. The node's VM provides it as `root:kvm` with mode `0660`,
+so the Box user must be in the `kvm` group. The repo's `.moor.yaml` sizes the
+Box `large` and runs `tools/box-nested-kvm.sh`, which adds the user to `kvm` and
+installs pinned `cloud-hypervisor`, `passt`, `crabbox` and
+`crabbox-cloudhypervisor` into the `nested-kvm` cache volume. A Box on a host
+without `/dev/kvm` skips the script. A new group applies to new logins, so
+start a command that opens `/dev/kvm` in a Box session that already exists with
+`sg kvm -c '<command>'`.
+
 ## Build and test
 
 `make setup` installs the pinned tools. [rust-toolchain.toml](../rust-toolchain.toml) pins the Rust toolchain.
