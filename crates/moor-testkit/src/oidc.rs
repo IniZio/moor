@@ -229,7 +229,9 @@ impl Issuer {
     fn tokens(&self, refresh: &str) -> Value {
         let mut claims = self.id_claims.lock().unwrap().clone();
         claims["iss"] = json!(self.base);
-        claims["aud"] = json!(self.client_id);
+        if claims.get("aud").is_none() {
+            claims["aud"] = json!(self.client_id);
+        }
         claims["exp"] = json!(now() + 300);
         let token = self.sign(&claims);
         json!({"access_token": token, "token_type": "Bearer",

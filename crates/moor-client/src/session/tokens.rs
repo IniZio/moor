@@ -196,6 +196,14 @@ impl Tokens {
             .map(|c| c.access_token)
     }
 
+    /// A fresh access token even when the saved one looks valid, for a server that refused it.
+    ///
+    /// # Errors
+    /// Not signed in, or the refresh fails.
+    pub fn renew(&self) -> Result<String, String> {
+        self.refreshed(|_| false).map(|c| c.access_token)
+    }
+
     /// The saved sign-in, refreshed under the lock unless `keep` accepts it as saved.
     fn refreshed(&self, keep: impl Fn(&Credentials) -> bool) -> Result<Credentials, String> {
         let _lock = self
