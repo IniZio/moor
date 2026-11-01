@@ -220,10 +220,16 @@ pub(super) fn acquire(cb: &Crabbox, req: &AcquireReq) -> Result<Acquired, Driver
         let (user, _) = target(cb, &handle)?;
         Ok(user)
     });
+    let workdir = |user: &str| {
+        let root = format!("{}/{WORK_ROOT}", home_of(user));
+        match req.cache.work_tree() {
+            Some(tree) => format!("{root}/{tree}"),
+            None => root,
+        }
+    };
     match reached {
         Ok(user) => Ok(Acquired {
-            workdir: BoxPath::restore(&format!("{}/{WORK_ROOT}", home_of(&user)))
-                .map_err(|e| failed(e.to_string()))?,
+            workdir: BoxPath::restore(&workdir(&user)).map_err(|e| failed(e.to_string()))?,
             handle,
         }),
         Err(e) => {

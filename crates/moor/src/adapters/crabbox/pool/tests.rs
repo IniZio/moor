@@ -365,6 +365,33 @@ fn acquire_hands_the_box_cache_to_the_host_warmup_only() {
 }
 
 #[test]
+fn a_box_that_keeps_its_work_tree_works_in_the_cached_tree() {
+    let (_host, cb) = rig();
+    let mut req = req();
+    let repo = moor_core::name::ForgeRepo {
+        owner: "o".to_owned(),
+        name: "r".to_owned(),
+    };
+    req.cache = CachePlan::build(
+        UserId::new(1),
+        Some(&repo),
+        &CacheLayers::default(),
+        &CacheSalt::new([3; 64]),
+    )
+    .unwrap();
+    let tree = req
+        .cache
+        .volumes()
+        .iter()
+        .find(|v| v.name.as_str() == "worktree");
+    let mounted = tree.expect("the plan keeps the work tree").paths[0].as_str();
+    assert_eq!(mounted, "~/moor/repos/r");
+
+    let got = cb.acquire(&req).unwrap();
+    assert_eq!(got.workdir.as_str(), "/home/crabbox/moor/repos/r");
+}
+
+#[test]
 fn acquire_of_a_cold_box_sends_no_cache() {
     let (host, cb) = rig();
     cb.acquire(&req()).unwrap();
