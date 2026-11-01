@@ -97,6 +97,16 @@ fn a_claim_carries_the_url_the_plain_key_and_a_moor_notify_body() {
 }
 
 #[test]
+fn a_body_names_the_offset_of_its_event_in_the_log() {
+    let w = world();
+    let got = claimed(&w);
+    let [one] = got.deliveries.as_slice() else {
+        panic!("{got:?}")
+    };
+    assert_eq!(one.body["offset"], w.store.last_event_id().unwrap());
+}
+
+#[test]
 fn reports_fill_the_health_webhook_list_shows_and_refuse_an_unknown_delivery() {
     let w = world();
     let delivery = claimed(&w).deliveries[0].delivery;

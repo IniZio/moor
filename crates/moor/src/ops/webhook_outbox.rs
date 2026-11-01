@@ -85,6 +85,7 @@ fn body(store: &Store, row: &ClaimedDelivery) -> Result<Value, CommandError> {
     let mut body = json!({
         "schema": SCHEMA,
         "delivery": row.delivery,
+        "offset": row.event,
         "event": row.kind,
         "ts": row.ts,
         "box": boxed.as_ref().map(|b| b.name.as_str().to_owned()),

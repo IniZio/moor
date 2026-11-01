@@ -25,6 +25,8 @@ pub(crate) struct ClaimedDelivery {
     pub(crate) url: String,
     /// The webhook's sealed key.
     pub(crate) sealed_key: Vec<u8>,
+    /// The event's id in the event log, which is its offset.
+    pub(crate) event: i64,
     /// The event's Box.
     pub(crate) box_id: BoxId,
     /// The event's Session, when it had one.
@@ -82,7 +84,7 @@ impl Store {
                 params![until, id],
             )?;
             claimed.push(tx.query_row(
-                "SELECT d.id, w.id, w.user, w.url, w.key, e.box, e.session, e.kind, e.payload, \
+                "SELECT d.id, w.id, w.user, w.url, w.key, e.id, e.box, e.session, e.kind, e.payload, \
                  e.ts FROM webhook_deliveries d JOIN user_webhooks w ON w.id = d.webhook \
                  JOIN events e ON e.id = d.event WHERE d.id = ?",
                 [id],
@@ -93,11 +95,12 @@ impl Store {
                         user: UserId::new(r.get(2)?),
                         url: r.get(3)?,
                         sealed_key: r.get(4)?,
-                        box_id: BoxId::new(r.get(5)?),
-                        session: r.get(6)?,
-                        kind: r.get(7)?,
-                        payload: r.get(8)?,
-                        ts: r.get(9)?,
+                        event: r.get(5)?,
+                        box_id: BoxId::new(r.get(6)?),
+                        session: r.get(7)?,
+                        kind: r.get(8)?,
+                        payload: r.get(9)?,
+                        ts: r.get(10)?,
                     })
                 },
             )?);
