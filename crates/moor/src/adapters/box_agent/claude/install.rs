@@ -27,7 +27,8 @@ const CHECK: &str =
 /// newest version there that runs, and downloads nothing.
 ///
 /// The installer is downloaded to a private temp file first, so a failed download fails the step
-/// instead of feeding a half-read script to a shell.
+/// instead of feeding a half-read script to a shell. It reads no stdin: `claude install` waits on
+/// an open stdin after it installs, and the exec's stdin stays open.
 fn script() -> String {
     let program = quote(Tool::Agent.program());
     let url = quote(INSTALLER_URL);
@@ -56,7 +57,7 @@ fn script() -> String {
         ),
         "t=$(mktemp) || exit 1".to_owned(),
         "trap 'rm -f \"$t\"' EXIT".to_owned(),
-        format!("curl -fsSL {url} -o \"$t\" && bash \"$t\" || exit 1"),
+        format!("curl -fsSL {url} -o \"$t\" && bash \"$t\" </dev/null || exit 1"),
         format!("command -v {program} >/dev/null 2>&1"),
     ]
     .join("\n")
