@@ -40,6 +40,9 @@ struct Wellknown {
     client_id: String,
     /// The scopes to ask for.
     scopes: Vec<String>,
+    /// The resource the tokens are for, which an OAuth 2 resource indicator names.
+    #[serde(default)]
+    resource: Option<String>,
 }
 
 /// The parts of the issuer's OIDC discovery document a sign-in needs.
@@ -208,13 +211,17 @@ fn authorize(found: &Wellknown, provider: &Provider, port: u16) -> Result<Pendin
     let redirect = format!("http://localhost:{port}/callback");
     let (challenge, verifier) = PkceCodeChallenge::new_random_sha256();
     let auth = AuthUrl::new(provider.authorization_endpoint.clone()).map_err(|e| e.to_string())?;
-    let (url, state) = OidcClient::new(ClientId::new(found.client_id.clone()))
+    let client = OidcClient::new(ClientId::new(found.client_id.clone()))
         .set_auth_uri(auth)
-        .set_redirect_uri(RedirectUrl::new(redirect.clone()).map_err(|e| e.to_string())?)
+        .set_redirect_uri(RedirectUrl::new(redirect.clone()).map_err(|e| e.to_string())?);
+    let mut request = client
         .authorize_url(CsrfToken::new_random)
         .add_scopes(found.scopes.iter().cloned().map(Scope::new))
-        .set_pkce_challenge(challenge)
-        .url();
+        .set_pkce_challenge(challenge);
+    if let Some(resource) = &found.resource {
+        request = request.add_extra_param("resource", resource);
+    }
+    let (url, state) = request.url();
     Ok(Pending {
         url,
         state,

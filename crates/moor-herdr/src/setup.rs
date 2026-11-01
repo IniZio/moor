@@ -12,11 +12,24 @@ pub const NEW_ACTION: &str = "new";
 /// The plugin action that `prefix+m` runs to open the Boxes panel.
 pub const PANEL_ACTION: &str = "panel";
 
+/// Where the plugin keeps its state, which keeps its path across updates.
+#[must_use]
+pub fn state_dir() -> std::path::PathBuf {
+    if let Some(dir) = std::env::var_os("HERDR_PLUGIN_STATE_DIR") {
+        return dir.into();
+    }
+    let state = std::env::var_os("XDG_STATE_HOME").map_or_else(
+        || std::path::Path::new(&std::env::var_os("HOME").unwrap_or_default()).join(".local/state"),
+        std::path::PathBuf::from,
+    );
+    state.join("herdr/plugins/moor")
+}
+
 /// The copy of the plugin's default-shell wrapper that the plugin's build installs into its
 /// state dir, which keeps its path across plugin updates.
 #[must_use]
 pub fn shell_path() -> String {
-    crate::auth::state_dir()
+    state_dir()
         .join("shell.sh")
         .to_string_lossy()
         .into_owned()

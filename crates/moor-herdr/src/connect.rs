@@ -11,8 +11,8 @@ use moor_core::user::SecretName;
 use moor_core::view::user::{SecretNamesValue, StartNeedsValue};
 use serde_json::{json, Value};
 
-use crate::auth::login::{self, Ui};
-use crate::auth::{normalize, Store, Tokens};
+use moor_client::oidc::Ui;
+use moor_client::session::{self, normalize, Store, Tokens};
 use crate::boxes::request;
 use crate::error::Error;
 use crate::picker::Prompt;
@@ -84,14 +84,17 @@ pub fn sign_in(
     ui: &mut dyn Ui,
     now: i64,
 ) -> Result<(), Error> {
-    login::run(server, port, store, ui, now).map_err(Error::Usage)?;
+    session::login(server, port, store, ui, now).map_err(Error::Usage)?;
     let server = normalize(server);
     ui.say(&format!("Signed in to {server}."));
-    let tokens = Arc::new(Tokens::new(store.clone(), &server));
+    let tokens = Arc::new(Tokens::new(store.clone(), &server).login_with(LOGIN));
     Client::remote(server, tokens)
         .enroll()
         .map_err(|e| Error::Usage(format!("signed in, but moor did not answer: {e}")))
 }
+
+/// The command that signs the plugin in, named when a sign-in is missing or ended.
+pub const LOGIN: &str = "moor-herdr login";
 
 /// How the person is asked for the secret `name`: what it is and where to get it.
 #[must_use]

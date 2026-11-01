@@ -9,8 +9,8 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use moor_client::Client;
-use moor_herdr::auth::login::{self, Console};
-use moor_herdr::auth::{self, Store, Tokens};
+use moor_client::oidc::{Console, REDIRECT_PORT};
+use moor_client::session::{self, Store, Tokens};
 use moor_herdr::boxes::open_boxes;
 use moor_herdr::error::Error;
 use moor_herdr::herdr::Cli;
@@ -102,7 +102,7 @@ impl Link {
     /// The link the command line and environment name; a server wins over a socket.
     fn of(args: &Args) -> Result<Self, Error> {
         match (&args.server, &args.socket) {
-            (Some(server), _) => Ok(Self::Server(auth::normalize(server))),
+            (Some(server), _) => Ok(Self::Server(session::normalize(server))),
             (None, Some(socket)) => Ok(Self::Socket(socket.clone())),
             (None, None) => Err(Error::Usage(
                 "no controller: set MOOR_HERDR_SERVER (or pass --server), or MOOR_HERDR_SOCKET for a local socket"
@@ -117,7 +117,7 @@ impl Link {
             Self::Socket(socket) => Client::new(socket),
             Self::Server(server) => Client::remote(
                 server.clone(),
-                Arc::new(Tokens::new(Store::new(auth::state_dir()), server)),
+                Arc::new(Tokens::new(Store::user(), server).login_with(connect::LOGIN)),
             ),
         }
     }
@@ -152,7 +152,7 @@ fn run(args: &Args) -> Result<(), Error> {
             shell::run(link.map(|l| (l.client(), l.present())), *login)
         }
         Cmd::Login => sign_in(args),
-        Cmd::Logout => sign_out(),
+        Cmd::Logout => sign_out(args),
         Cmd::Attach { name } => relay::run(&Link::of(args)?.client(), name),
         Cmd::Sync { every } => sync(&Link::of(args)?, *every),
         Cmd::New { workspace } => new(&Link::of(args)?, workspace),
@@ -179,16 +179,21 @@ fn sign_in(args: &Args) -> Result<(), Error> {
     };
     connect::sign_in(
         server,
-        login::REDIRECT_PORT,
-        &Store::new(auth::state_dir()),
+        REDIRECT_PORT,
+        &Store::user(),
         &mut Console,
-        auth::unix_now(),
+        session::unix_now(),
     )
 }
 
 /// Deletes the saved credentials.
-fn sign_out() -> Result<(), Error> {
-    let gone = Store::new(auth::state_dir()).delete()?;
+fn sign_out(args: &Args) -> Result<(), Error> {
+    let Some(server) = &args.server else {
+        return Err(Error::Usage(
+            "no server: pass --server https://<host> or set MOOR_HERDR_SERVER".to_owned(),
+        ));
+    };
+    let gone = session::logout(&Store::user(), server).map_err(Error::Usage)?;
     writeln!(
         io::stderr(),
         "{}",
