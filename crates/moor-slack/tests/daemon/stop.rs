@@ -47,6 +47,7 @@ fn working() -> (Rig, FakeController, std::path::PathBuf, String) {
         },
         |p| p.ts.clone(),
     );
+    rig.wait_status_message(BOX_NAME, &ts);
     (rig, controller, bin, ts)
 }
 
