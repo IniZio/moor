@@ -35,6 +35,8 @@ pub struct Pool {
     pub provider: String,
     /// The most `moor-*` leases a warmup may leave on the host.
     pub max: Option<usize>,
+    /// The memory, in MiB, kept for the host; none means the server's default.
+    pub reserve_mib: Option<u64>,
     /// The disk, in GB, reported as set aside for caches; nothing enforces it.
     pub cache_gb: Option<u32>,
     /// The crabbox program.
@@ -50,7 +52,31 @@ pub async fn offer(machine: &crate::Machine) -> Option<Offer> {
         max_boxes: pool.max.and_then(|m| u32::try_from(m).ok()),
         cache_gb: pool.cache_gb,
         features: features(pool).await,
+        mem_mib: host_mem_mib(),
+        cpus: std::thread::available_parallelism()
+            .ok()
+            .and_then(|n| u32::try_from(n.get()).ok()),
+        reserve_mib: pool.reserve_mib,
     })
+}
+
+/// The host's total memory from `/proc/meminfo`; none off Linux.
+fn host_mem_mib() -> Option<u64> {
+    let info = std::fs::read_to_string("/proc/meminfo").ok()?;
+    mem_total_mib(&info)
+}
+
+/// `MemTotal` of a `/proc/meminfo` text, in MiB.
+fn mem_total_mib(info: &str) -> Option<u64> {
+    let kib: u64 = info
+        .lines()
+        .find_map(|l| l.strip_prefix("MemTotal:"))?
+        .trim()
+        .trim_end_matches("kB")
+        .trim()
+        .parse()
+        .ok()?;
+    Some(kib / 1024)
 }
 
 /// The features `crabbox providers describe --configured` lists for the pool's provider.

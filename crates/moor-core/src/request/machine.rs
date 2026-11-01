@@ -66,6 +66,15 @@ pub struct MachineLink {
     /// What its crabbox provider supports.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub features: Vec<String>,
+    /// The host's total memory, in MiB.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mem_mib: Option<u64>,
+    /// The host's CPUs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpus: Option<u32>,
+    /// The memory, in MiB, kept for the host rather than its Boxes; none means the default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reserve_mib: Option<u64>,
 }
 
 /// The capacity of a machine added without one.
