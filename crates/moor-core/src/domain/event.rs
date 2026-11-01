@@ -373,7 +373,7 @@ pub enum Event {
 
 pub use boxes::box_events;
 pub use checked::CheckedCred;
-pub use kind::ASSERTED_KINDS;
+pub use kind::{ASSERTED_KINDS, EVENT_KINDS};
 pub use machine::MachineEvent;
 pub use post_clone::{PostCloneStep, TimingEvent};
 pub use profile::{ProfileEvent, ProfileStep};

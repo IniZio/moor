@@ -5,7 +5,7 @@ use moor_core::config::OAuthCallback;
 use moor_core::name::ProfileSource;
 use moor_core::request::{
     AsReq, EnrollReq, MachineRemoveReq, MachineStatusReq, McpAddReq, McpOAuthFinishReq,
-    McpRemoveReq, ProfileSetReq, SecretDeleteReq,
+    McpRemoveReq, ProfileSetReq, SecretDeleteReq, WebhookAddReq, WebhookRemoveReq,
 };
 use moor_core::user::SecretName;
 use moor_core::Request;
@@ -29,6 +29,37 @@ pub(super) enum UserCli {
     /// The git repo that is your agent profile.
     #[command(subcommand)]
     Profile(ProfileCli),
+    /// Your user's webhooks, each posting Box events to a URL signed with its own key.
+    #[command(subcommand)]
+    Webhook(WebhookCli),
+}
+
+/// Subcommands of `user webhook`.
+#[derive(Debug, Subcommand)]
+pub(super) enum WebhookCli {
+    /// Add a webhook at URL; its HMAC key is printed once and cannot be shown again.
+    Add(WebhookAddArgs),
+    /// List your webhooks.
+    Ls,
+    /// Remove webhook ID.
+    Rm(WebhookIdArg),
+}
+
+/// Arguments of `user webhook add`.
+#[derive(Debug, Args)]
+pub(super) struct WebhookAddArgs {
+    /// Where each event is posted: `https://`, or `http://` on the loopback.
+    url: String,
+    /// An event kind to post; repeat for several. Without any, the usual attention events.
+    #[arg(long = "event", value_name = "KIND")]
+    events: Vec<String>,
+}
+
+/// A webhook's id.
+#[derive(Debug, Args)]
+pub(super) struct WebhookIdArg {
+    /// Webhook id, as `ls` shows it.
+    id: i64,
 }
 
 /// Subcommands of `user profile`.
@@ -163,6 +194,16 @@ impl UserCli {
             }),
             Self::Profile(ProfileCli::Show) => Request::ProfileShow(AS_CALLER),
             Self::Profile(ProfileCli::Rm) => Request::ProfileRemove(AS_CALLER),
+            Self::Webhook(WebhookCli::Add(a)) => Request::WebhookAdd(WebhookAddReq {
+                identity: None,
+                url: a.url,
+                events: (!a.events.is_empty()).then_some(a.events),
+            }),
+            Self::Webhook(WebhookCli::Ls) => Request::WebhookList(AS_CALLER),
+            Self::Webhook(WebhookCli::Rm(a)) => Request::WebhookRemove(WebhookRemoveReq {
+                identity: None,
+                id: a.id,
+            }),
             Self::Machine(MachineCli::Rm(a)) => Request::MachineRemove(MachineRemoveReq {
                 identity: None,
                 name: a.name,

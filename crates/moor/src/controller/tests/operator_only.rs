@@ -20,7 +20,7 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
     Some(match kind {
         "start-needs" | "env" | "repos" | "whoami" | "enroll" | "secret-names" | "version"
         | "proxy-lease" | "proxy-status" | "mcp-list" | "profile-show" | "profile-remove"
-        | "machine-list" | "machine-keys" | "node-list" => json!({"cmd": kind}),
+        | "machine-list" | "machine-keys" | "node-list" | "webhook-list" => json!({"cmd": kind}),
         "machine-links" => json!({"cmd": kind, "links": []}),
         "proxy-release" => json!({"cmd": kind, "token": "t"}),
         "session-binding" => json!({"cmd": kind, "front": "slack", "key": "k"}),
@@ -31,6 +31,8 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
         }
         "machine-enroll" => json!({"cmd": kind, "name": "n", "pubkey": "k"}),
         "profile-set" => json!({"cmd": kind, "source": "https://github.com/alice/agent"}),
+        "webhook-add" => json!({"cmd": kind, "url": "https://example.com/h"}),
+        "webhook-remove" => json!({"cmd": kind, "id": 1}),
         "mcp-add" => json!({"cmd": kind, "name": "n", "url": "https://example.com/mcp"}),
         "mcp-oauth-finish" => json!({"cmd": kind, "state": "s", "code": "c"}),
         "box-mirror" => json!({"cmd": kind, "id": 1, "dest": "/d"}),

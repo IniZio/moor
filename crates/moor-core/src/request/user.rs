@@ -9,8 +9,10 @@ use crate::user::{Email, Identity, SecretName};
 
 mod mcp;
 mod secret_value;
+mod webhook;
 pub use mcp::{McpAddReq, McpOAuthFinishReq, McpRemoveReq, ProfileSetReq};
 pub use secret_value::SecretValue;
+pub use webhook::{WebhookAddReq, WebhookRemoveReq};
 
 /// Arguments of a user request that needs only the identity it acts as.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -141,6 +143,20 @@ pub enum UserCmd {
     ProfileShow,
     /// Clear the caller's user's agent profile repo.
     ProfileRemove,
+    /// Add a webhook for the caller's user.
+    WebhookAdd {
+        /// The `https://` URL each event is posted to.
+        url: String,
+        /// The event kinds to post; the defaults when absent.
+        events: Option<Vec<String>>,
+    },
+    /// The caller's user's webhooks.
+    WebhookList,
+    /// Remove one of the caller's user's webhooks.
+    WebhookRemove {
+        /// The webhook's id.
+        id: i64,
+    },
     /// Finish signing in to one of the caller's user's MCP servers.
     McpOAuthFinish {
         /// The `state` the sign-in started with.
@@ -205,6 +221,9 @@ impl UserCmd {
             Self::ProfileSet { .. } => "profile-set",
             Self::ProfileShow => "profile-show",
             Self::ProfileRemove => "profile-remove",
+            Self::WebhookAdd { .. } => "webhook-add",
+            Self::WebhookList => "webhook-list",
+            Self::WebhookRemove { .. } => "webhook-remove",
             Self::MachineEnroll { .. } => "machine-enroll",
             Self::MachineRemove { .. } => "machine-remove",
             Self::MachineList => "machine-list",
@@ -222,6 +241,7 @@ impl Request {
     ///
     /// # Errors
     /// The request itself, when it is not a user request.
+    #[expect(clippy::too_many_lines, reason = "one arm per user command")]
     pub fn into_user(self) -> Result<(Option<Identity>, UserCmd), Box<Self>> {
         Ok(match self {
             Self::Whoami(r) => (r.identity, UserCmd::Whoami),
@@ -249,6 +269,15 @@ impl Request {
             Self::ProfileSet(r) => (r.identity, UserCmd::ProfileSet { source: r.source }),
             Self::ProfileShow(r) => (r.identity, UserCmd::ProfileShow),
             Self::ProfileRemove(r) => (r.identity, UserCmd::ProfileRemove),
+            Self::WebhookAdd(r) => (
+                r.identity,
+                UserCmd::WebhookAdd {
+                    url: r.url,
+                    events: r.events,
+                },
+            ),
+            Self::WebhookList(r) => (r.identity, UserCmd::WebhookList),
+            Self::WebhookRemove(r) => (r.identity, UserCmd::WebhookRemove { id: r.id }),
             Self::McpOAuthFinish(r) => (
                 r.identity,
                 UserCmd::McpOAuthFinish {
@@ -312,6 +341,9 @@ impl Request {
             | Self::McpList(AsReq { identity })
             | Self::ProfileShow(AsReq { identity })
             | Self::ProfileRemove(AsReq { identity })
+            | Self::WebhookList(AsReq { identity })
+            | Self::WebhookAdd(WebhookAddReq { identity, .. })
+            | Self::WebhookRemove(WebhookRemoveReq { identity, .. })
             | Self::ProfileSet(ProfileSetReq { identity, .. })
             | Self::MachineList(AsReq { identity })
             | Self::NodeList(AsReq { identity })

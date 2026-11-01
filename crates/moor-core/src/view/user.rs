@@ -215,3 +215,45 @@ pub struct ProxyStatusValue {
     /// True when the front's Proxy accepts connections.
     pub running: bool,
 }
+
+/// Value of `webhook-add`: the new webhook and its HMAC key, which is shown only now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebhookAddValue {
+    /// The webhook's id.
+    pub id: i64,
+    /// The HMAC key, 64 lowercase hex characters; never returned again.
+    pub key: String,
+}
+
+/// One of a user's webhooks as `webhook-list` shows it; the key is never part of it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebhookView {
+    /// The webhook's id.
+    pub id: i64,
+    /// Where each event is posted.
+    pub url: String,
+    /// The event kinds it posts.
+    pub events: Vec<String>,
+    /// When it was added, in unix milliseconds.
+    pub created_at: i64,
+    /// When a post last succeeded.
+    pub last_ok_at: Option<i64>,
+    /// Since when posts have been failing.
+    pub failing_since: Option<i64>,
+    /// The last post's error.
+    pub last_error: Option<String>,
+}
+
+/// Value of `webhook-list`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebhookListValue {
+    /// The caller's webhooks, oldest first.
+    pub webhooks: Vec<WebhookView>,
+}
+
+/// Value of `webhook-remove`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebhookRemoveValue {
+    /// The id removed.
+    pub id: i64,
+}

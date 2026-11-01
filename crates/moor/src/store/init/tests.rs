@@ -271,7 +271,7 @@ fn an_adopted_file_gains_the_tables_older_builds_made_on_open() {
 }
 
 /// Tables that migrations after V2 create; a file migrated forward gains them empty.
-const ADDED_AFTER_V2: [&str; 9] = [
+const ADDED_AFTER_V2: [&str; 10] = [
     "user_mcp_servers",
     "user_machines",
     "box_machines",
@@ -281,6 +281,7 @@ const ADDED_AFTER_V2: [&str; 9] = [
     "machine_links",
     "user_profiles",
     "box_profiles",
+    "user_webhooks",
 ];
 
 fn tables(conn: &Connection) -> Vec<(String, i64)> {
@@ -366,6 +367,7 @@ fn applied_migrations_are_never_edited() {
             (26, 3_428_420_664_019_286_055),
             (27, 3_595_403_917_716_739_991),
             (28, 15_139_138_266_510_386_969),
+            (29, 1_449_077_588_297_046_841),
         ],
         "a schema change is a new migration file; an applied one must not change"
     );

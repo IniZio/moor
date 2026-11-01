@@ -115,3 +115,14 @@ fn proxy_started_payload_has_exactly_its_keys() {
     keys.sort_unstable();
     assert_eq!(keys, ["box_port", "handle", "pid"]);
 }
+
+#[test]
+fn every_event_kind_is_listed_once() {
+    for e in all_events() {
+        assert!(EVENT_KINDS.contains(&e.kind()), "{e:?}");
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for k in EVENT_KINDS {
+        assert!(seen.insert(k), "{k} is listed twice");
+    }
+}
