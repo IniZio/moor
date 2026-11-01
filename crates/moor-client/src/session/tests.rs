@@ -20,7 +20,11 @@ fn a_herdr_sign_in_is_imported_once_and_stays_gone_after_logout() {
     let dir = tempfile::tempdir().unwrap();
     let old = dir.path().join("herdr/credentials.json");
     std::fs::create_dir_all(old.parent().unwrap()).unwrap();
-    std::fs::write(&old, serde_json::to_vec(&creds("https://moor.example/")).unwrap()).unwrap();
+    std::fs::write(
+        &old,
+        serde_json::to_vec(&creds("https://moor.example/")).unwrap(),
+    )
+    .unwrap();
     let store = Store {
         dir: dir.path().join("moor"),
         legacy: Some(old),

@@ -8,9 +8,9 @@ use std::thread;
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
-use moor_client::Client;
 use moor_client::oidc::{Console, REDIRECT_PORT};
 use moor_client::session::{self, Store, Tokens};
+use moor_client::Client;
 use moor_herdr::boxes::open_boxes;
 use moor_herdr::error::Error;
 use moor_herdr::herdr::Cli;
