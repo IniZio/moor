@@ -139,7 +139,10 @@ fn sleep(f: &Fx) {
     store
         .apply(
             Decision::new(f.id)
-                .lifecycle(BoxLifecycleInput::Sleep { auto: false })
+                .lifecycle(BoxLifecycleInput::Sleep {
+                    auto: false,
+                    reason: None,
+                })
                 .box_input(BoxInput::Sleep),
         )
         .unwrap();
@@ -238,7 +241,10 @@ fn asleep_box_with_ready_machine_wakes_only_the_box() {
         .apply(Decision::new(f.id).session(SessionInput::AgentQuiet))
         .unwrap();
     store
-        .apply(Decision::new(f.id).lifecycle(BoxLifecycleInput::Sleep { auto: false }))
+        .apply(Decision::new(f.id).lifecycle(BoxLifecycleInput::Sleep {
+            auto: false,
+            reason: None,
+        }))
         .unwrap();
     assert_eq!(row(&f).lifecycle, BoxLifecycle::Asleep);
     let ready_before = kinds(&f).iter().filter(|k| *k == "box_ready").count();
@@ -332,7 +338,10 @@ fn waking_only_the_box_does_not_look_the_workdir_up() {
         .apply(Decision::new(f.id).session(SessionInput::AgentQuiet))
         .unwrap();
     store
-        .apply(Decision::new(f.id).lifecycle(BoxLifecycleInput::Sleep { auto: false }))
+        .apply(Decision::new(f.id).lifecycle(BoxLifecycleInput::Sleep {
+            auto: false,
+            reason: None,
+        }))
         .unwrap();
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
     assert_eq!(workdir_calls(&f), 0);
@@ -421,7 +430,10 @@ fn waking_only_the_box_does_not_probe_the_agent() {
         .apply(Decision::new(f.id).session(SessionInput::AgentQuiet))
         .unwrap();
     store
-        .apply(Decision::new(f.id).lifecycle(BoxLifecycleInput::Sleep { auto: false }))
+        .apply(Decision::new(f.id).lifecycle(BoxLifecycleInput::Sleep {
+            auto: false,
+            reason: None,
+        }))
         .unwrap();
     f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
     assert!(wake_and_revive(&f.cx, store, &row(&f)).unwrap());

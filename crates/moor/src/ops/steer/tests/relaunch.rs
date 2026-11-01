@@ -203,7 +203,10 @@ fn an_asleep_box_gets_no_new_session_from_a_steer_relaunch() {
 /// Puts the machine and Box to sleep after the Session ended.
 fn put_to_sleep_ended(f: &Fx) {
     let d = Decision::new(f.id)
-        .lifecycle(moor_core::domain::box_state::BoxLifecycleInput::Sleep { auto: false })
+        .lifecycle(moor_core::domain::box_state::BoxLifecycleInput::Sleep {
+            auto: false,
+            reason: None,
+        })
         .box_input(moor_core::domain::boxes::BoxInput::Sleep);
     f.cx.store().unwrap().apply(d).unwrap();
 }

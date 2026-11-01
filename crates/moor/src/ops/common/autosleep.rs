@@ -83,7 +83,10 @@ fn try_sleep(cx: &Cx, store: &Store, id: BoxId, blocked: bool) -> Result<(), Com
     }
     let decision = match sleep_parked(cx, store, id, &handle)? {
         SleepOutcome::Slept | SleepOutcome::Native => Decision::new(id)
-            .lifecycle(BoxLifecycleInput::Sleep { auto: true })
+            .lifecycle(BoxLifecycleInput::Sleep {
+                auto: true,
+                reason: None,
+            })
             .box_input(BoxInput::Sleep)
             .set(Fields {
                 box_sleep_reason: Field::Clear,

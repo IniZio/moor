@@ -282,7 +282,7 @@ fn an_asleep_box_wakes_before_the_send() {
     let quiet = Decision::new(f.id).session(SessionInput::AgentQuiet);
     store.apply(quiet).unwrap();
     let d = Decision::new(f.id)
-        .lifecycle(BoxLifecycleInput::Sleep { auto: false })
+        .lifecycle(BoxLifecycleInput::sleep(false))
         .box_input(BoxInput::Sleep);
     store.apply(d).unwrap();
     run(&f.cx, &text("hi")).unwrap();
@@ -469,7 +469,7 @@ fn put_to_sleep(f: &Fx) {
     let quiet = Decision::new(f.id).session(SessionInput::AgentQuiet);
     store.apply(quiet).unwrap();
     let d = Decision::new(f.id)
-        .lifecycle(BoxLifecycleInput::Sleep { auto: false })
+        .lifecycle(BoxLifecycleInput::sleep(false))
         .box_input(BoxInput::Sleep);
     store.apply(d).unwrap();
 }

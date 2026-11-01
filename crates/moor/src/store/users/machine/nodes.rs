@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use moor_core::config::NodeConfig;
-use moor_core::decide::capacity::{counts, holds_memory};
+use moor_core::decide::capacity::{counts, holds_memory, PauseFrees};
 use moor_core::decide::schedule::{Memory, Node, Online, Scope};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
@@ -15,8 +15,10 @@ use crate::store::{Store, StoreError};
 
 /// Boxes per node name.
 type Counts = HashMap<String, usize>;
-/// MiB per node name.
-type Mib = HashMap<String, u64>;
+/// What a node's Boxes hold: each one's machine state and MiB.
+type Held<'m> = &'m [(BoxState, u64)];
+/// Per node name, the MiB its Boxes were given by their machine state.
+type Mib = HashMap<String, Vec<(BoxState, u64)>>;
 
 /// Per node: Boxes holding a slot, counted the way admission counts them, Boxes pending, and
 /// the MiB its Boxes holding memory were given.
@@ -40,8 +42,10 @@ fn per_node(conn: &rusqlite::Connection) -> Result<(Counts, Counts, Mib), StoreE
         let (node, driver, state, n, mib) = row?;
         let n = usize::try_from(n).unwrap_or(0);
         let driver = driver.and_then(|d| BoxState::parse(&d));
-        if driver.is_some_and(holds_memory) {
-            *held.entry(node.clone()).or_default() += u64::try_from(mib).unwrap_or(0);
+        if let Some(d) = driver {
+            held.entry(node.clone())
+                .or_insert_with(Vec::new)
+                .push((d, u64::try_from(mib).unwrap_or(0)));
         }
         if driver.is_some_and(counts) {
             *live.entry(node.clone()).or_default() += n;
@@ -54,20 +58,29 @@ fn per_node(conn: &rusqlite::Connection) -> Result<(Counts, Counts, Mib), StoreE
 }
 
 /// A node's memory from what its link reported (`total`, `reserve`, in MiB) and what its Boxes hold.
-fn memory_of(total: Option<i64>, reserve: Option<i64>, used_mib: u64) -> Option<Memory> {
+fn memory_of(
+    (total, reserve): (Option<i64>, Option<i64>),
+    held: &[(BoxState, u64)],
+    pause_frees: PauseFrees,
+) -> Option<Memory> {
     let mib = |m: i64| u64::try_from(m).ok();
     Some(Memory {
         total_mib: total.and_then(mib)?,
         reserve_mib: reserve.and_then(mib),
-        used_mib,
+        used_mib: held
+            .iter()
+            .filter(|(s, _)| holds_memory(*s, pause_frees))
+            .map(|(_, m)| m)
+            .sum(),
+        pause_frees,
     })
 }
 
 /// One personal node from a `user_machines_v2` row joined with its link; `load` gives a node's
 /// live Boxes, pending Boxes and held MiB by name.
-fn personal(
+fn personal<'m>(
     r: &rusqlite::Row<'_>,
-    load: &dyn Fn(&str) -> (usize, usize, u64),
+    load: &dyn Fn(&str) -> (usize, usize, Held<'m>),
 ) -> Result<Option<Node>, StoreError> {
     let name: String = r.get(2)?;
     let labels: String = r.get(3)?;
@@ -83,8 +96,12 @@ fn personal(
     };
     let (machine_id, owner) = (r.get(0)?, UserId::new(r.get(1)?));
     let max_boxes = r.get::<_, Option<u32>>(8)?.map(|m| m as usize);
-    let (used, waiting, held_mib) = load(&name);
-    let memory = memory_of(r.get(9)?, r.get(10)?, held_mib);
+    let (used, waiting, held) = load(&name);
+    let features: Option<String> = r.get(11)?;
+    let frees = features
+        .and_then(|f| serde_json::from_str::<Vec<String>>(&f).ok())
+        .map_or_else(PauseFrees::default, |f| PauseFrees::of(&f));
+    let memory = memory_of((r.get(9)?, r.get(10)?), held, frees);
     Ok(NodeName::parse(&name).ok().map(|name| Node {
         name,
         scope: Scope::Personal {
@@ -134,13 +151,17 @@ impl Store {
             .collect();
         let mut stmt = conn.prepare(
             "SELECT m.machine_id, m.user, m.name, m.labels, m.pool_provider, m.enrolled_at, \
-             l.online, l.since, l.max_boxes, l.mem_mib, l.reserve_mib \
+             l.online, l.since, l.max_boxes, l.mem_mib, l.reserve_mib, l.pool_features \
              FROM user_machines_v2 m LEFT JOIN machine_links l USING (machine_id) \
              WHERE m.pool_provider IS NOT NULL ORDER BY m.enrolled_at, m.machine_id",
         )?;
         let rows = stmt.query_and_then([], |r| {
             personal(r, &|n| {
-                (held(n), pending(n), mem.get(n).copied().unwrap_or(0))
+                (
+                    held(n),
+                    pending(n),
+                    mem.get(n).map_or(&[][..], Vec::as_slice),
+                )
             })
         })?;
         for row in rows {

@@ -241,7 +241,10 @@ fn idle_since_clears_when_idle_goes_to_sleep() {
     let id = working(&store, "t");
     step(&store, id, SessionInput::AgentQuiet);
     store
-        .apply(Decision::new(id).lifecycle(BoxLifecycleInput::Sleep { auto: false }))
+        .apply(Decision::new(id).lifecycle(BoxLifecycleInput::Sleep {
+            auto: false,
+            reason: None,
+        }))
         .unwrap();
     assert_eq!(idle_since(&store, id), None);
 }

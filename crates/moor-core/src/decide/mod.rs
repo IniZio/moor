@@ -4,6 +4,7 @@ pub mod capacity;
 pub mod close;
 pub mod gate;
 pub mod intent;
+pub mod preempt;
 pub mod reconcile;
 pub mod schedule;
 pub mod sleep;

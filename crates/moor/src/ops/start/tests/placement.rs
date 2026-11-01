@@ -321,3 +321,197 @@ fn a_close_that_frees_memory_starts_the_pending_box() {
     .unwrap();
     assert_eq!(closed.promoted, ["waiter"]);
 }
+
+/// A node whose pause frees memory, with room for `boxes` small Boxes after its reserve.
+fn suspending_world(boxes: u64) -> World {
+    let w = world();
+    let hv = enrolled(&w, "hv", Some(true), None);
+    let link = MachineLink {
+        machine_id: hv,
+        online: true,
+        since: Ts::from_millis(1),
+        version: None,
+        protocol: None,
+        max_boxes: None,
+        cache_gb: None,
+        features: vec!["pause-frees-memory".to_owned()],
+        mem_mib: Some(4096 + boxes * 4096),
+        cpus: None,
+        reserve_mib: Some(4096),
+    };
+    nodes::set_links(&w.cx, &[link]).unwrap();
+    w
+}
+
+fn started(w: &World, name: &str) -> BoxId {
+    let v = start::run(&w.cx, &req(name)).unwrap();
+    assert!(!v.queued, "{name} should fit");
+    BoxId::new(v.boxed.id)
+}
+
+fn apply(w: &World, d: moor_core::domain::decision::Decision) {
+    w.cx.store().unwrap().apply(d).unwrap();
+}
+
+/// Settles `id`'s agent Idle, then lets a minute pass so later Boxes are idle for less.
+fn idle(w: &World, id: BoxId) {
+    use moor_core::domain::session_state::SessionInput;
+    apply(
+        w,
+        moor_core::domain::decision::Decision::new(id).session(SessionInput::AgentQuiet),
+    );
+    w.cx.clock().sleep(std::time::Duration::from_secs(60));
+}
+
+/// Makes the agents of `ids` report Idle, so a start's settle pass keeps idle Boxes idle.
+fn agents_report_idle(mut w: World, ids: &[BoxId]) -> World {
+    use moor_core::activity::{HookKind, HookRead, HookRecord, PaneRead, Probes};
+    let idle = Probes {
+        hook: HookRead::Fresh(HookRecord {
+            kind: HookKind::Idle,
+            session_id: None,
+            message: None,
+            options: Vec::new(),
+            doing: None,
+            at: w.cx.clock().now(),
+            turn: None,
+        }),
+        pane: PaneRead::Absent,
+    };
+    let engine = ids
+        .iter()
+        .fold(crate::testing::engine::FakeEngine::new(), |e, id| {
+            e.probes(&format!("moor-{}", id.get()), idle.clone())
+        });
+    w.cx = w.cx.with_engine(std::sync::Arc::new(engine));
+    w
+}
+
+fn put_to_sleep(w: &World, id: BoxId) {
+    use moor_core::domain::box_state::BoxLifecycleInput;
+    apply(
+        w,
+        moor_core::domain::decision::Decision::new(id)
+            .lifecycle(BoxLifecycleInput::Sleep {
+                auto: false,
+                reason: None,
+            })
+            .box_input(moor_core::domain::boxes::BoxInput::Sleep),
+    );
+}
+
+fn lifecycle(w: &World, id: BoxId) -> moor_core::domain::box_state::BoxLifecycle {
+    w.cx.store()
+        .unwrap()
+        .box_row(id)
+        .unwrap()
+        .unwrap()
+        .lifecycle
+}
+
+fn asleep_reason(w: &World, id: BoxId) -> Option<String> {
+    let ev =
+        w.cx.store()
+            .unwrap()
+            .newest_event_of(id, "asleep")
+            .unwrap()?;
+    ev.payload
+        .get("reason")
+        .and_then(|r| r.as_str())
+        .map(str::to_owned)
+}
+
+#[test]
+fn an_asleep_box_on_a_node_whose_pause_frees_memory_holds_none() {
+    let w = suspending_world(1);
+    let holder = started(&w, "holder");
+    put_to_sleep(&w, holder);
+    started(&w, "waiter");
+}
+
+#[test]
+fn a_start_on_a_full_node_suspends_its_longest_idle_box_and_says_why() {
+    use moor_core::domain::box_state::BoxLifecycle;
+    let w = suspending_world(2);
+    let (a, b) = (started(&w, "a"), started(&w, "b"));
+    idle(&w, a);
+    idle(&w, b);
+    let w = agents_report_idle(w, &[a, b]);
+    started(&w, "c");
+    assert_eq!(lifecycle(&w, a), BoxLifecycle::Asleep);
+    assert_eq!(lifecycle(&w, b), BoxLifecycle::Ready);
+    assert_eq!(asleep_reason(&w, a).as_deref(), Some("made room for c"));
+    let row = w.cx.store().unwrap().box_row(a).unwrap().unwrap();
+    assert_eq!(row.state_reason.as_deref(), Some("made room for c"));
+}
+
+#[test]
+fn a_working_box_is_never_suspended_and_the_start_waits() {
+    use moor_core::domain::box_state::BoxLifecycle;
+    let w = suspending_world(1);
+    let busy = started(&w, "busy");
+    let waiter = start::run(&w.cx, &req("waiter")).unwrap();
+    assert!(waiter.queued);
+    assert_eq!(lifecycle(&w, busy), BoxLifecycle::Ready);
+}
+
+#[test]
+fn suspending_every_idle_box_still_short_suspends_none() {
+    use moor_core::domain::box_state::BoxLifecycle;
+    let w = suspending_world(2);
+    let (a, busy) = (started(&w, "a"), started(&w, "busy"));
+    idle(&w, a);
+    let w = agents_report_idle(w, &[a]);
+    let store = w.cx.store().unwrap();
+    let mut spec = store.box_spec(busy).unwrap();
+    spec.mem_mib = 6144;
+    store.set_box_spec(busy, &spec).unwrap();
+    let waiter = start::run(&w.cx, &req("waiter")).unwrap();
+    assert!(waiter.queued);
+    assert_eq!(lifecycle(&w, a), BoxLifecycle::Ready);
+    let row = store.box_row(BoxId::new(waiter.boxed.id)).unwrap().unwrap();
+    let reason = row.state_reason.unwrap_or_default();
+    assert!(reason.contains("hv has 0 GiB free of 8 GiB"), "{reason}");
+}
+
+#[test]
+fn waking_a_suspended_box_suspends_an_idle_one_to_make_room() {
+    use moor_core::domain::box_state::BoxLifecycle;
+    let w = suspending_world(1);
+    let a = started(&w, "a");
+    put_to_sleep(&w, a);
+    let b = started(&w, "b");
+    idle(&w, b);
+    crate::ops::wake::run(
+        &w.cx,
+        &moor_core::BoxReq {
+            box_name: w.cx.store().unwrap().box_row(a).unwrap().unwrap().name,
+        },
+    )
+    .unwrap();
+    assert_eq!(lifecycle(&w, a), BoxLifecycle::Ready);
+    assert_eq!(lifecycle(&w, b), BoxLifecycle::Asleep);
+    assert_eq!(asleep_reason(&w, b).as_deref(), Some("made room for a"));
+}
+
+#[test]
+fn a_wake_with_no_idle_box_to_suspend_is_refused_and_stays_asleep() {
+    use moor_core::domain::box_state::BoxLifecycle;
+    let w = suspending_world(1);
+    let a = started(&w, "a");
+    put_to_sleep(&w, a);
+    started(&w, "busy");
+    let err = crate::ops::wake::run(
+        &w.cx,
+        &moor_core::BoxReq {
+            box_name: w.cx.store().unwrap().box_row(a).unwrap().unwrap().name,
+        },
+    )
+    .unwrap_err();
+    assert!(
+        err.error.to_string().contains("hv has 0 GiB free"),
+        "{}",
+        err.error
+    );
+    assert_eq!(lifecycle(&w, a), BoxLifecycle::Asleep);
+}

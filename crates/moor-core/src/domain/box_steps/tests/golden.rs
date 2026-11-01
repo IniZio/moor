@@ -54,7 +54,7 @@ fn rejected() -> L {
 #[allow(clippy::too_many_lines, reason = "one row per transition")]
 fn table() -> Vec<Row> {
     let at_cap = || L::AtCapacity { max_boxes: 1 };
-    let sleep = |auto| Some(L::Sleep { auto });
+    let sleep = |auto| Some(L::Sleep { auto, reason: None });
     let mut rows = vec![
         // Box-only steps.
         row(
@@ -372,12 +372,32 @@ fn golden_box_events_name_the_state_left() {
         vec![Event::Closed { from: B::Ready }]
     );
     assert_eq!(
-        lifecycle_events(Some(B::Ready), B::Asleep, &L::Sleep { auto: true }),
-        vec![Event::Asleep { auto: true }]
+        lifecycle_events(
+            Some(B::Ready),
+            B::Asleep,
+            &L::Sleep {
+                auto: true,
+                reason: None
+            }
+        ),
+        vec![Event::Asleep {
+            auto: true,
+            reason: None
+        }]
     );
     assert_eq!(
-        lifecycle_events(Some(B::Ready), B::Asleep, &L::Sleep { auto: false }),
-        vec![Event::Asleep { auto: false }]
+        lifecycle_events(
+            Some(B::Ready),
+            B::Asleep,
+            &L::Sleep {
+                auto: false,
+                reason: None
+            }
+        ),
+        vec![Event::Asleep {
+            auto: false,
+            reason: None
+        }]
     );
     assert_eq!(
         lifecycle_events(Some(B::Asleep), B::Ready, &L::Wake),

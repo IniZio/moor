@@ -152,7 +152,10 @@ fn sleep_is_refused_while_another_session_works() {
         )
         .unwrap();
     let err = store
-        .apply(Decision::new(id).lifecycle(BoxLifecycleInput::Sleep { auto: true }))
+        .apply(Decision::new(id).lifecycle(BoxLifecycleInput::Sleep {
+            auto: true,
+            reason: None,
+        }))
         .unwrap_err();
     assert!(
         matches!(err, StoreError::SleepBlocked { busy: 1 }),
@@ -225,7 +228,10 @@ fn ended_other_sessions_do_not_block_sleep() {
         .apply(Decision::new(id).session(SessionInput::AgentQuiet))
         .unwrap();
     store
-        .apply(Decision::new(id).lifecycle(BoxLifecycleInput::Sleep { auto: true }))
+        .apply(Decision::new(id).lifecycle(BoxLifecycleInput::Sleep {
+            auto: true,
+            reason: None,
+        }))
         .unwrap();
     assert_eq!(states(&store, id).0, "asleep");
 }

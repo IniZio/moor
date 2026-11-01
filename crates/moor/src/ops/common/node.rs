@@ -16,6 +16,7 @@ use moor_core::{ErrorKind, ProviderId};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::facts::{provider_caps, require_reverse_tunnel};
+use crate::ops::common::room;
 use crate::store::{BoxRow, DriverRow, Store};
 
 /// The shared nodes and the default one; with none configured, Boxes run only on personal nodes.
@@ -77,7 +78,7 @@ fn seat(store: &Store, node: &Node) -> Result<Option<PoolSeat>, CommandError> {
 }
 
 /// The node `row` was placed on, if it still exists.
-fn recorded(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Option<Node>, CommandError> {
+pub(crate) fn recorded(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Option<Node>, CommandError> {
     let Some(want) = store.box_spec(row.id)?.node else {
         return Ok(None);
     };
@@ -129,6 +130,26 @@ pub(crate) struct Bound {
     pub(crate) seat: Option<PoolSeat>,
 }
 
+/// `node`, re-read after suspending idle Boxes to fit `want` MiB for the Box named `for_box`.
+fn made_room(
+    cx: &Cx,
+    store: &Store,
+    node: Node,
+    (want, for_box): (u64, &str),
+) -> Result<Node, CommandError> {
+    if node.memory.is_none_or(|m| m.free_mib() >= want)
+        || !room::make_room_on(cx, store, &node, want, for_box)?
+    {
+        return Ok(node);
+    }
+    let name = node.name.clone();
+    Ok(nodes(cx)?
+        .0
+        .into_iter()
+        .find(|n| n.name == name)
+        .unwrap_or(node))
+}
+
 /// Schedules `row` and, in the transaction that counts its node, admits it with the decision
 /// `requested` builds, or leaves it Pending there. `None` when it waits. A fresh Box that no node
 /// can host is refused; a Pending one stays Pending.
@@ -150,9 +171,10 @@ pub(crate) fn admit(
         Verdict::Fail { .. } => return Ok(None),
         Verdict::Bind { node, .. } | Verdict::Pending { node, .. } => node,
     };
-    let Some(node) = all.into_iter().find(|n| n.name == picked) else {
+    let Some(mut node) = all.into_iter().find(|n| n.name == picked) else {
         return Ok(None);
     };
+    node = made_room(cx, store, node, (spec.mem_mib, row.name.as_str()))?;
     let provider = runtime_id(&node);
     let caps = require_reverse_tunnel(provider.as_str(), provider_caps(cx, provider.as_str())?)?;
     let on_it = BoxSpec {

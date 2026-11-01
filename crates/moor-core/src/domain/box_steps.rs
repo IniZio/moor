@@ -37,13 +37,15 @@ pub fn apply(
     let ready = lifecycle == BoxLifecycle::Ready;
     let mut primary = primary;
     match l {
-        BoxLifecycleInput::Sleep { auto: true } if ready && !primary.is_quiet() => {
+        BoxLifecycleInput::Sleep { auto: true, .. } if ready && !primary.is_quiet() => {
             return Err(StepError::Illegal(Illegal {
                 from: lifecycle.as_str().to_owned(),
                 input: l.name().to_owned(),
             }));
         }
-        BoxLifecycleInput::Sleep { auto: false } if ready && primary == SessionState::Working => {
+        BoxLifecycleInput::Sleep { auto: false, .. }
+            if ready && primary == SessionState::Working =>
+        {
             primary = primary.step(&SessionInput::AgentQuiet)?;
         }
         _ => {}

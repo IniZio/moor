@@ -91,7 +91,10 @@ fn asleep(f: &Fx) {
         .apply(Decision::new(f.id).session(SessionInput::AgentQuiet))
         .unwrap();
     let d = Decision::new(f.id)
-        .lifecycle(BoxLifecycleInput::Sleep { auto: false })
+        .lifecycle(BoxLifecycleInput::Sleep {
+            auto: false,
+            reason: None,
+        })
         .box_input(BoxInput::Sleep);
     store.apply(d).unwrap();
 }

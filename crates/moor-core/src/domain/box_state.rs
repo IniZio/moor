@@ -186,6 +186,8 @@ pub enum BoxLifecycleInput {
     Sleep {
         /// True when the sleep comes from age, false when by command.
         auto: bool,
+        /// Why moor slept it, when not for age or by command.
+        reason: Option<String>,
     },
     /// The Box wakes.
     Wake,
@@ -194,6 +196,12 @@ pub enum BoxLifecycleInput {
 }
 
 impl BoxLifecycleInput {
+    /// A sleep with no reason beyond age (`auto`) or command.
+    #[must_use]
+    pub const fn sleep(auto: bool) -> Self {
+        Self::Sleep { auto, reason: None }
+    }
+
     /// The `snake_case` variant name.
     #[must_use]
     pub const fn name(&self) -> &'static str {

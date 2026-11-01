@@ -68,7 +68,10 @@ pub(super) fn put_to_sleep(f: &Fx) {
     store
         .apply(
             Decision::new(f.id)
-                .lifecycle(BoxLifecycleInput::Sleep { auto: false })
+                .lifecycle(BoxLifecycleInput::Sleep {
+                    auto: false,
+                    reason: None,
+                })
                 .box_input(BoxInput::Sleep),
         )
         .unwrap();

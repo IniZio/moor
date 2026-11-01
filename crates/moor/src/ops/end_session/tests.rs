@@ -232,7 +232,10 @@ fn an_asleep_box_wakes_before_the_session_ends() {
     let quiet = Decision::new(f.id).session(SessionInput::AgentQuiet);
     store.apply(quiet).unwrap();
     let d = Decision::new(f.id)
-        .lifecycle(BoxLifecycleInput::Sleep { auto: false })
+        .lifecycle(BoxLifecycleInput::Sleep {
+            auto: false,
+            reason: None,
+        })
         .box_input(BoxInput::Sleep);
     store.apply(d).unwrap();
     run(&f.cx, &req()).unwrap();
