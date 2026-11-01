@@ -102,6 +102,11 @@ impl Mcp {
         })
     }
 
+    /// The public URL of `/mcp`.
+    pub(crate) fn resource_url(&self) -> &str {
+        &self.resource_url
+    }
+
     /// The RFC 9728 document for this resource.
     pub(crate) fn metadata(&self, issuer: &str) -> String {
         serde_json::json!({
