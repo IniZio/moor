@@ -126,7 +126,7 @@ COPY --from=planner /recipe.json recipe.json
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/usr/local/cargo/git \
     features=""; \
     if [ -n "$MOOR_FEATURES" ]; then features="--features $(echo "$MOOR_FEATURES" | sed 's#\([^,]\+\)#moor/\1#g')"; fi; \
-    pkgs="-p moor -p moor-slack -p moor-machine-runner"; \
+    pkgs="-p moor -p moor-slack -p moor-notify -p moor-machine-runner"; \
     if grep -q '"moor-gate"' recipe.json; then pkgs="$pkgs -p moor-gate"; fi; \
     cargo chef cook --release --locked --recipe-path recipe.json $pkgs $features
 
@@ -137,7 +137,7 @@ ENV MOOR_COMMIT=${MOOR_COMMIT}
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/usr/local/cargo/git \
     features=""; \
     if [ -n "$MOOR_FEATURES" ]; then features="--features $(echo "$MOOR_FEATURES" | sed 's#\([^,]\+\)#moor/\1#g')"; fi; \
-    bins="moor moor-slack moor-machine-runner"; \
+    bins="moor moor-slack moor-notify moor-machine-runner"; \
     if [ -d crates/moor-gate ]; then bins="$bins moor-gate"; fi; \
     cargo build --release --locked $(for b in $bins; do printf -- '-p %s ' "$b"; done) $features \
  && for b in $bins; do install -D "target/release/$b" "/out/$b"; done
