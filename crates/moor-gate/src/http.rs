@@ -67,6 +67,9 @@ pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>) {
                 mcp.serve(stream, prefix, gate);
             }
         }
+        (Some("GET"), "/events") if gate.mcp.is_some() => {
+            crate::events_http::serve(stream, req.path.unwrap_or_default(), &req, gate);
+        }
         (_, p) if p.starts_with("/auth/") && login.is_some() => {
             auth(stream, leftover, &req, gate, login);
         }
@@ -174,7 +177,7 @@ fn read_head(reader: &mut BufReader<TcpStream>) -> Option<Vec<u8>> {
 }
 
 /// The value of header `name`, matched without case.
-fn header<'a>(req: &'a httparse::Request<'_, '_>, name: &str) -> Option<&'a str> {
+pub(crate) fn header<'a>(req: &'a httparse::Request<'_, '_>, name: &str) -> Option<&'a str> {
     req.headers
         .iter()
         .find(|h| h.name.eq_ignore_ascii_case(name))
