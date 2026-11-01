@@ -37,9 +37,16 @@ moor-machine-agent run --runtime cloudhypervisor --max-boxes 4
 
 A personal node's agent reports the host's memory when it links. The scheduler
 admits a Box only if its size fits in the memory left after the host reserve:
-small takes 4 GiB, medium 8 GiB, large 16 GiB and xlarge 32 GiB. Running and
-asleep Boxes both hold their memory. A Box that does not fit is Pending with
-`NODE has X GiB free of Y GiB; this Box needs Z GiB`.
+small takes 4 GiB, medium 8 GiB, large 16 GiB and xlarge 32 GiB. Running Boxes
+hold their memory, and so do asleep ones, except on a node whose provider
+reports `pause-frees-memory`: there an asleep Box holds none. A Box that does
+not fit is Pending with `NODE has X GiB free of Y GiB; this Box needs Z GiB`.
+
+On a node that frees memory when it pauses, a start or wake that does not fit
+suspends the node's longest-idle Boxes to make room. It never suspends a Box
+that is working, one waiting on a question, or one still starting. If the idle
+Boxes together do not free enough, none is suspended and the Box stays Pending.
+A suspended Box's status says which Box it made room for.
 
 `--reserve-mib` sets the reserve kept back for the host. It defaults to 4096 MiB
 plus 10% of the host's memory:
