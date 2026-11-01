@@ -202,3 +202,21 @@ fn alive(pid: i32) -> bool {
     rustix::process::Pid::from_raw(pid)
         .is_some_and(|p| rustix::process::test_kill_process(p).is_ok())
 }
+
+#[test]
+fn a_new_surface_never_reuses_a_handle_an_earlier_one_gave_out() {
+    let before = PtySurface::default();
+    let after = PtySurface::default();
+    let (old_ws, new_ws) = (
+        before.ensure_workspace("moor:t").expect("workspace"),
+        after.ensure_workspace("moor:t").expect("workspace"),
+    );
+    assert_ne!(old_ws, new_ws);
+    let (old, new) = (
+        open(&before, "exec sleep 600"),
+        open(&after, "exec sleep 600"),
+    );
+    assert_ne!(old, new);
+    assert_eq!(after.close_pane(&old), Err(SurfaceError::NotFound));
+    assert!(after.pane_obs(&new, DEADLINE).is_ok());
+}

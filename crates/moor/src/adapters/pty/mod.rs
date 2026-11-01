@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::seam::proc::Deadline;
@@ -48,8 +49,9 @@ struct Pane {
 }
 
 /// Surface whose panes are pseudo-terminals owned by this process.
-#[derive(Default)]
 pub(crate) struct PtySurface {
+    /// Marks this surface's handles so none equals a handle an earlier boot stored.
+    boot: String,
     /// Workspace labels to their handles.
     workspaces: Mutex<BTreeMap<String, WorkspaceRef>>,
     /// Open panes by handle.
@@ -83,6 +85,23 @@ const fn key_bytes(key: Key) -> Option<u8> {
     }
 }
 
+impl Default for PtySurface {
+    fn default() -> Self {
+        static SURFACES: AtomicU64 = AtomicU64::new(0);
+        let started = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos());
+        let nth = SURFACES.fetch_add(1, Ordering::Relaxed);
+        Self {
+            boot: format!("{started:x}-{nth}"),
+            workspaces: Mutex::default(),
+            panes: Mutex::default(),
+            seq: AtomicU64::default(),
+            cwd: None,
+        }
+    }
+}
+
 impl PtySurface {
     /// Starts new panes in `cwd`.
     pub(crate) fn with_cwd(mut self, cwd: Option<PathBuf>) -> Self {
@@ -92,7 +111,8 @@ impl PtySurface {
 
     /// A fresh handle text starting with `prefix`.
     fn next_id(&self, prefix: &str) -> String {
-        format!("{prefix}-{}", self.seq.fetch_add(1, Ordering::Relaxed) + 1)
+        let n = self.seq.fetch_add(1, Ordering::Relaxed) + 1;
+        format!("{prefix}-{}-{n}", self.boot)
     }
 
     /// Writes `bytes` to `pane`'s input.
