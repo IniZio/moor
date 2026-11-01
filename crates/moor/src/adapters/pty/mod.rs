@@ -10,7 +10,6 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::seam::proc::Deadline;
@@ -88,12 +87,12 @@ const fn key_bytes(key: Key) -> Option<u8> {
 impl Default for PtySurface {
     fn default() -> Self {
         static SURFACES: AtomicU64 = AtomicU64::new(0);
-        let started = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.as_nanos());
+        let mut nonce = [0u8; 8];
+        // A failed read leaves zeros; the per-process counter still separates surfaces.
+        let _ = getrandom::fill(&mut nonce);
         let nth = SURFACES.fetch_add(1, Ordering::Relaxed);
         Self {
-            boot: format!("{started:x}-{nth}"),
+            boot: format!("{:x}-{nth}", u64::from_le_bytes(nonce)),
             workspaces: Mutex::default(),
             panes: Mutex::default(),
             seq: AtomicU64::default(),
