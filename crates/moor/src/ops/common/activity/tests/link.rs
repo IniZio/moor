@@ -97,7 +97,10 @@ fn an_ended_agent_ends_the_session_with_the_exit_the_box_kept() {
 
 #[test]
 fn a_box_that_stays_unreachable_ends_the_session_and_says_so() {
-    let (cx, engine, id) = settle_exited((0..4).map(|_| unreachable()).collect());
+    let (cx, engine, id) = settle_exited((0..8).map(|_| unreachable()).collect());
+    cx.clock().sleep(std::time::Duration::from_secs(600));
+    let reading = run_once(&cx, id);
+    settle(&cx, cx.store().unwrap(), &row(&cx, id), &reading).unwrap();
     let seen = kinds(&cx, id, WATCHED);
     let lost = seen.iter().find(|(k, _)| k == "agent_unreachable").unwrap();
     assert_eq!(lost.1.get("attempts").unwrap(), 4);
