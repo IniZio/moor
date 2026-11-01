@@ -14,6 +14,8 @@ use super::http::{
 use super::tunnel::{dial, parse_authority, splice};
 use super::upstream::TlsStream;
 use super::{Shared, EGRESS_RULE, GUARD_CATEGORY, SCOPE_CATEGORY};
+use crate::proxy::chain;
+use crate::proxy::guard::Route as Path;
 
 /// Read and write timeout on the client socket.
 const TIMEOUT: Duration = Duration::from_secs(60);
@@ -112,16 +114,23 @@ fn raw_tunnel(
     port: u16,
     pending: &[u8],
 ) -> Result<(), ()> {
-    let Ok(addrs) = shared.guard.resolve(host, port) else {
+    let Ok(route) = shared.guard.route(host, port) else {
         drop(write_refusal(tcp, 403, "moor: destination not allowed"));
         drain(tcp);
         shared.refuse_host(host, EGRESS_RULE, "CONNECT", GUARD_CATEGORY);
         return Err(());
     };
-    let Some(upstream) = dial(&addrs) else {
-        drop(write_refusal(tcp, 502, "moor: upstream unavailable"));
-        drain(tcp);
-        return Err(());
+    let dialled = match route {
+        Path::Direct(addrs) => dial(&addrs).ok_or_else(|| "moor: upstream unavailable".to_owned()),
+        Path::Proxy(proxy) => chain::connect(proxy, host, port).map_err(|e| format!("moor: {e}")),
+    };
+    let upstream = match dialled {
+        Ok(upstream) => upstream,
+        Err(msg) => {
+            drop(write_refusal(tcp, 502, &msg));
+            drain(tcp);
+            return Err(());
+        }
     };
     tcp.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
         .map_err(drop)?;

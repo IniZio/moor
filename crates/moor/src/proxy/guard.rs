@@ -9,6 +9,8 @@
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
 
+use super::chain::Proxy;
+
 /// IPv4 ranges that are not globally routable, as (network, prefix length).
 const V4_NON_PUBLIC: [(u32, u32); 15] = [
     (0x0000_0000, 8),  // 0.0.0.0/8 this network
@@ -109,8 +111,22 @@ pub(crate) enum GuardError {
 pub(crate) struct Guard {
     /// Loopback addresses tests may reach.
     exempt: Vec<SocketAddr>,
+    /// Proxy from the standard proxy env that names not on `NO_PROXY` are reached through.
+    proxy: Option<Proxy>,
 }
 
+/// How to reach a destination the guard allowed.
+pub(crate) enum Route<'a> {
+    /// Dial one of these vetted addresses.
+    Direct(Vec<SocketAddr>),
+    /// Tunnel through this proxy, which resolves the name.
+    Proxy(&'a Proxy),
+}
+
+#[expect(
+    clippy::missing_fields_in_debug,
+    reason = "messages omit where traffic goes"
+)]
 impl fmt::Debug for Guard {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Guard")
@@ -122,7 +138,40 @@ impl fmt::Debug for Guard {
 impl Guard {
     /// `exempt`: loopback addresses tests may reach; empty in production.
     pub(crate) const fn new(exempt: Vec<SocketAddr>) -> Self {
-        Self { exempt }
+        Self {
+            exempt,
+            proxy: None,
+        }
+    }
+
+    /// Reaches names through `proxy` unless its `NO_PROXY` list matches them.
+    pub(crate) fn with_proxy(mut self, proxy: Option<Proxy>) -> Self {
+        self.proxy = proxy;
+        self
+    }
+
+    /// Decides how to reach `host:port`. IP literals are vetted even when proxied; names a
+    /// proxy carries are resolved and vetted by that proxy.
+    pub(crate) fn route(&self, host: &str, port: u16) -> Result<Route<'_>, GuardError> {
+        let bare = host
+            .strip_prefix('[')
+            .and_then(|h| h.strip_suffix(']'))
+            .unwrap_or(host);
+        let uri = if bare.contains(':') {
+            format!("https://[{bare}]/")
+        } else {
+            format!("https://{bare}/")
+        };
+        let bypass = |p: &Proxy| uri.parse().is_ok_and(|u| p.is_no_proxy(&u));
+        match self.proxy.as_ref().filter(|p| !bypass(p)) {
+            None => self.resolve(host, port).map(Route::Direct),
+            Some(proxy) => {
+                if bare.parse::<IpAddr>().is_ok() {
+                    self.resolve(host, port)?;
+                }
+                Ok(Route::Proxy(proxy))
+            }
+        }
     }
 
     /// Whether `addr` is loopback and shares a port with a loopback exemption.

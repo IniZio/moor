@@ -10,7 +10,8 @@ use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, ServerName};
 use rustls::{ClientConfig, ClientConnection, RootCertStore, StreamOwned};
 
-use crate::proxy::guard::{Guard, GuardError};
+use crate::proxy::chain;
+use crate::proxy::guard::{Guard, GuardError, Route};
 
 /// How long a TCP connect may take.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -162,10 +163,18 @@ impl Upstream {
     fn dial_tcp(&self) -> Result<TcpStream, UpstreamError> {
         let addrs: Vec<SocketAddr> = match self.dial {
             Some(addr) => vec![addr],
-            None => self
-                .guard
-                .resolve(&self.host, self.port)
-                .map_err(UpstreamError::Guard)?,
+            None => match self.guard.route(&self.host, self.port) {
+                Ok(Route::Direct(addrs)) => addrs,
+                Ok(Route::Proxy(proxy)) => {
+                    return chain::connect(proxy, &self.host, self.port).map_err(|source| {
+                        UpstreamError::Connect {
+                            addr: format!("{}:{}", self.host, self.port),
+                            source,
+                        }
+                    })
+                }
+                Err(e) => return Err(UpstreamError::Guard(e)),
+            },
         };
         let mut last = None;
         for addr in addrs {
