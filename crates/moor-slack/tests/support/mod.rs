@@ -225,6 +225,28 @@ impl Rig {
         panic!("Box {name} never reached {state}");
     }
 
+    /// Polls `slack.db` until Box `name` records `ts` as its status message, which the daemon
+    /// does only once Slack answered the post: a press on it before then finds no Box. Fails
+    /// after ten seconds.
+    pub(crate) fn wait_status_message(&self, name: &str, ts: &str) {
+        let db = rusqlite::Connection::open(self.path("state-slack/slack.db")).unwrap();
+        for _ in 0..500 {
+            let found: Option<String> = db
+                .query_row(
+                    "SELECT status_ts FROM slack_boxes WHERE box_name = ?1",
+                    [name],
+                    |r| r.get(0),
+                )
+                .ok()
+                .flatten();
+            if found.as_deref() == Some(ts) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        panic!("Box {name} never recorded status message {ts}");
+    }
+
     /// Has the scripted controller lease its front Proxy to `user` with `token` as the lease,
     /// as it does once `/moor login` stored a Claude token; the fake `claude` answers by it.
     pub(crate) fn link_token(&self, user: &str, token: &str) {
