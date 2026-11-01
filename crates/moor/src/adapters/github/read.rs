@@ -107,8 +107,8 @@ fn bearer(token: &Secret) -> Result<Zeroizing<String>, ForgeError> {
     Ok(auth)
 }
 
-/// Posts `body` to `api` directly, without redirects or an env proxy, and returns the status and
-/// body.
+/// Posts `body` to `api` without redirects, through the standard proxy env when set, and returns
+/// the status and body.
 fn post(
     api: &str,
     timeout: Duration,
@@ -125,7 +125,6 @@ fn post(
         .timeout_global(Some(timeout))
         .http_status_as_error(false)
         .max_redirects(0)
-        .proxy(None)
         .build();
     let unavailable = |e: ureq::Error| ForgeError::Unavailable(format!("cannot reach GitHub: {e}"));
     let mut response = Agent::new_with_config(config)

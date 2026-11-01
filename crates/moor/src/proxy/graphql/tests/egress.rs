@@ -3,6 +3,7 @@
 use std::net::{Ipv4Addr, TcpListener};
 
 use super::*;
+use crate::proxy::chain::fake::{Answer, FakeProxy};
 use crate::proxy::graphql::{EGRESS_RULE, GUARD_CATEGORY};
 
 /// Loopback listener that records how many connections it accepted.
@@ -184,4 +185,60 @@ fn a_silent_upstream_ends_the_tunnel_when_it_goes_idle() {
         ),
     }
     assert!(rig.refusals(0).is_empty());
+}
+
+fn env_proxy(fake: &FakeProxy, no_proxy: &str) -> ureq::Proxy {
+    let mut builder = ureq::Proxy::builder(ureq::ProxyProtocol::Http)
+        .host("127.0.0.1")
+        .port(fake.addr.port());
+    if !no_proxy.is_empty() {
+        builder = builder.no_proxy(no_proxy);
+    }
+    builder.build().unwrap()
+}
+
+#[test]
+fn raw_tunnels_go_through_the_env_proxy() {
+    let echo = probe(true);
+    let fake = FakeProxy::start(Answer::Tunnel(Some(echo.addr)));
+    let guard = Guard::default().with_proxy(Some(env_proxy(&fake, "")));
+    let rig = rig_with(fixed(json_reply("200 OK", OK_BODY)), guard);
+    let (mut tcp, status) = raw_connect(rig.filter.addr(), "example.test:443").unwrap();
+    assert_eq!(status, 200);
+    tcp.write_all(b"ping").unwrap();
+    let mut buf = [0u8; 4];
+    tcp.read_exact(&mut buf).unwrap();
+    assert_eq!(&buf, b"ping");
+    assert_eq!(fake.seen(), ["CONNECT example.test:443 HTTP/1.1"]);
+}
+
+#[test]
+fn no_proxy_targets_are_dialled_directly() {
+    let echo = probe(true);
+    let fake = FakeProxy::start(Answer::Tunnel(None));
+    let guard = Guard::new(vec![echo.addr]).with_proxy(Some(env_proxy(&fake, "127.0.0.1")));
+    let rig = rig_with(fixed(json_reply("200 OK", OK_BODY)), guard);
+    let (mut tcp, status) = raw_connect(rig.filter.addr(), &echo.addr.to_string()).unwrap();
+    assert_eq!(status, 200);
+    tcp.write_all(b"ping").unwrap();
+    let mut buf = [0u8; 4];
+    tcp.read_exact(&mut buf).unwrap();
+    assert_eq!(&buf, b"ping");
+    assert!(fake.seen().is_empty(), "{:?}", fake.seen());
+}
+
+#[test]
+fn a_proxy_refusing_connect_fails_the_tunnel_without_a_direct_dial() {
+    let echo = probe(true);
+    let fake = FakeProxy::start(Answer::Refuse);
+    let guard = Guard::new(vec![echo.addr]).with_proxy(Some(env_proxy(&fake, "")));
+    let rig = rig_with(fixed(json_reply("200 OK", OK_BODY)), guard);
+    let (mut tcp, status) = raw_connect(rig.filter.addr(), &echo.addr.to_string()).unwrap();
+    assert_eq!(status, 502);
+    let mut rest = String::new();
+    let _ = tcp.read_to_string(&mut rest);
+    assert!(rest.contains("403"), "{rest}");
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(echo.accepted.load(Ordering::SeqCst), 0);
+    assert_eq!(fake.seen().len(), 1);
 }

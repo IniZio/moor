@@ -9,6 +9,7 @@
 //! serves the controller's fronts rather than Boxes.
 
 pub(crate) mod adopt;
+pub(crate) mod chain;
 pub(crate) mod detached;
 pub(crate) mod front;
 pub(crate) mod fronts;

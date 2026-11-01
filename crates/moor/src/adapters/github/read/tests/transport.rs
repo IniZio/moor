@@ -11,6 +11,7 @@ use moor_core::Secret;
 
 use super::{assert_no_token_fragment, github, token, FakeApi, TOKEN};
 use crate::adapters::github::GitHub;
+use crate::proxy::chain::fake::{Answer, FakeProxy};
 
 /// A read timeout short enough that a test waiting it out stays fast.
 const SHORT: Duration = Duration::from_secs(2);
@@ -105,7 +106,7 @@ fn redirect_is_not_followed_and_its_location_is_not_shown() {
     );
 }
 
-/// Body of the child process run by [`env_proxies_are_ignored`].
+/// Body of the child process run by [`read_under`].
 #[test]
 #[ignore = "runs only as the child of another test"]
 fn read_under_env_proxies() {
@@ -113,11 +114,9 @@ fn read_under_env_proxies() {
     read_with(&api.url, SHORT, &token()).unwrap();
 }
 
-#[test]
-fn env_proxies_are_ignored() {
-    let proxy = TcpListener::bind("127.0.0.1:0").unwrap();
-    proxy.set_nonblocking(true).unwrap();
-    let proxy_url = format!("http://{}", proxy.local_addr().unwrap());
+/// Runs [`read_under_env_proxies`] in a child with every proxy variable set to `proxy` and
+/// `NO_PROXY` set to `no_proxy`.
+fn read_under(proxy: &FakeProxy, no_proxy: &str) {
     let mut child = Command::new(std::env::current_exe().unwrap());
     child.args([
         "--ignored",
@@ -126,12 +125,12 @@ fn env_proxies_are_ignored() {
     ]);
     for var in ["ALL_PROXY", "HTTPS_PROXY", "HTTP_PROXY"] {
         child
-            .env(var, &proxy_url)
-            .env(var.to_ascii_lowercase(), &proxy_url);
+            .env(var, proxy.url())
+            .env(var.to_ascii_lowercase(), proxy.url());
     }
     let out = child
-        .env_remove("NO_PROXY")
-        .env_remove("no_proxy")
+        .env("NO_PROXY", no_proxy)
+        .env("no_proxy", no_proxy)
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -139,7 +138,24 @@ fn env_proxies_are_ignored() {
         out.status.success() && stdout.contains("1 passed"),
         "{stdout}"
     );
-    assert!(proxy.accept().is_err(), "the read went through the proxy");
+}
+
+#[test]
+fn reads_go_through_the_env_proxy() {
+    let proxy = FakeProxy::start(Answer::Tunnel(None));
+    read_under(&proxy, "");
+    let seen = proxy.seen();
+    assert!(
+        seen.len() == 1 && seen.iter().all(|l| l.starts_with("CONNECT 127.0.0.1:")),
+        "{seen:?}"
+    );
+}
+
+#[test]
+fn no_proxy_hosts_are_read_directly() {
+    let proxy = FakeProxy::start(Answer::Refuse);
+    read_under(&proxy, "127.0.0.1");
+    assert!(proxy.seen().is_empty(), "{:?}", proxy.seen());
 }
 
 #[test]

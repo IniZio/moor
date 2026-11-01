@@ -1,5 +1,6 @@
 //! Tests for address classification and destination vetting.
 
+use super::super::chain::{Proxy, ProxyProtocol};
 use super::*;
 
 #[test]
@@ -160,4 +161,41 @@ fn messages_omit_addresses() {
         Guard::new(vec![SocketAddr::from(([127, 0, 0, 1], 1))])
     );
     assert_eq!(text, "Guard { exempt: 1 }");
+}
+
+fn env_like(no_proxy: &str) -> Proxy {
+    Proxy::builder(ProxyProtocol::Http)
+        .host("127.0.0.1")
+        .port(3128)
+        .no_proxy(no_proxy)
+        .build()
+        .unwrap()
+}
+
+#[test]
+fn names_go_through_the_proxy_unless_no_proxy_matches() {
+    let guard = Guard::default().with_proxy(Some(env_like("1.1.1.1")));
+    assert!(matches!(
+        guard.route("api.github.com", 443),
+        Ok(Route::Proxy(_))
+    ));
+    assert!(matches!(guard.route("1.1.1.1", 443), Ok(Route::Direct(_))));
+}
+
+#[test]
+fn private_literals_are_refused_even_through_the_proxy() {
+    let guard = Guard::default().with_proxy(Some(env_like("example.com")));
+    for host in ["10.0.0.1", "127.0.0.1", "[::1]"] {
+        assert!(
+            matches!(guard.route(host, 443), Err(GuardError::NotPublic { .. })),
+            "{host}"
+        );
+    }
+    assert!(matches!(guard.route("1.1.1.1", 443), Ok(Route::Proxy(_))));
+}
+
+#[test]
+fn without_a_proxy_every_route_is_direct() {
+    let guard = Guard::default();
+    assert!(matches!(guard.route("1.1.1.1", 443), Ok(Route::Direct(_))));
 }

@@ -139,3 +139,38 @@ fn guard_refuses_loopback_name() {
         "{err}"
     );
 }
+
+fn via(fake: &crate::proxy::chain::fake::FakeProxy) -> Guard {
+    let proxy = ureq::Proxy::new(&fake.url()).unwrap();
+    Guard::default().with_proxy(Some(proxy))
+}
+
+#[test]
+fn handshake_goes_through_the_env_proxy() {
+    use crate::proxy::chain::fake::{Answer, FakeProxy};
+    let server = start();
+    let fake = FakeProxy::start(Answer::Tunnel(Some(server.addr)));
+    let up = Upstream::new("api.github.com", 443, None, Some(&server.ca))
+        .unwrap()
+        .with_guard(via(&fake));
+    let mut tls = up.connect().unwrap();
+    tls.write_all(b"ping").unwrap();
+    let mut reply = [0u8; 4];
+    tls.read_exact(&mut reply).unwrap();
+    assert_eq!(&reply, b"PING");
+    assert_eq!(fake.seen(), ["CONNECT api.github.com:443 HTTP/1.1"]);
+}
+
+#[test]
+fn a_proxy_refusing_connect_is_a_clear_error() {
+    use crate::proxy::chain::fake::{Answer, FakeProxy};
+    let fake = FakeProxy::start(Answer::Refuse);
+    let up = Upstream::new("api.github.com", 443, None, None)
+        .unwrap()
+        .with_guard(via(&fake));
+    let err = up.connect().unwrap_err().to_string();
+    assert!(
+        err.contains("403") && err.contains("api.github.com:443"),
+        "{err}"
+    );
+}

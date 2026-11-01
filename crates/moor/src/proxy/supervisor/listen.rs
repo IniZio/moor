@@ -12,6 +12,7 @@ use moor_core::{BoxId, Secret};
 use super::machine::hold_of;
 use super::run::say;
 use super::Deps;
+use crate::proxy::chain::Proxy;
 use crate::proxy::detached::base64url;
 use crate::proxy::front::{Front, FrontSocket, MachineRoute};
 use crate::proxy::graphql::upstream::Upstream;
@@ -148,7 +149,7 @@ fn start_filter(
         .find(|r| lists_host(r, GITHUB_API_HOST))
         .map_or_else(|| "egress".to_owned(), |r| r.name.clone());
     let fail = |err: &dyn std::fmt::Display| format!("cannot start the GraphQL filter: {err}");
-    let guard = Guard::new(deps.guard_exempt.clone());
+    let guard = Guard::new(deps.guard_exempt.clone()).with_proxy(Proxy::try_from_env());
     let upstream = Upstream::new(
         GITHUB_API_HOST,
         443,
