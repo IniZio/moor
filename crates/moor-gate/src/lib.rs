@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 mod api_token;
 mod enroll;
+mod events_http;
 mod http;
 mod login;
 mod mcp;

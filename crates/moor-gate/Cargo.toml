@@ -16,6 +16,7 @@ path = "src/main.rs"
 moor-core = { path = "../moor-core" }
 moor-client = { path = "../moor-client" }
 bytes = "1"
+form_urlencoded = "1"
 http = "1"
 http-body-util = "0.1"
 hyper = { version = "1", features = ["server", "http1"] }

@@ -8,7 +8,7 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
 use moor_core::controller::ServerFrame;
-use moor_core::response::Response;
+use moor_core::response::{ErrorKind, ErrorView, Response};
 use moor_core::BoxId;
 use serde_json::{json, Value};
 
@@ -44,6 +44,38 @@ pub(super) fn serve_controller(path: &std::path::Path) -> Arc<Mutex<Fake>> {
     fake
 }
 
+/// A `moor_` token with the read scope only.
+pub(super) const READ_API_TOKEN: &str = "moor_rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr";
+
+/// A `moor_` token with the write scope only.
+pub(super) const WRITE_API_TOKEN: &str = "moor_wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww";
+
+/// The scopes the fake controller grants `token`, if it knows it.
+fn api_token_scopes(token: &str) -> Option<Vec<&'static str>> {
+    match token {
+        READ_API_TOKEN => Some(vec!["moor:read"]),
+        WRITE_API_TOKEN => Some(vec!["moor:write"]),
+        _ => None,
+    }
+}
+
+/// The controller's answer to resolving `token`.
+fn resolve_envelope(token: &str) -> Response {
+    let Some(scopes) = api_token_scopes(token) else {
+        let error = ErrorView {
+            kind: ErrorKind::Usage,
+            message: "unknown API token".to_owned(),
+            hints: vec![],
+            context: vec![],
+            detail: None,
+        };
+        return Response::err("api-token-resolve", error);
+    };
+    let value = json!({"identity": "authgear:bot-sub", "email": "bot@example.com",
+        "scopes": scopes});
+    Response::ok("api-token-resolve", Some(value))
+}
+
 /// Answers one connection's frames.
 fn answer(stream: UnixStream, fake: &Mutex<Fake>) {
     let mut reply = stream.try_clone().unwrap();
@@ -60,6 +92,12 @@ fn answer(stream: UnixStream, fake: &Mutex<Fake>) {
                 if !follow {
                     return;
                 }
+            }
+            _ if frame["request"]["cmd"] == "api-token-resolve" => {
+                let token = frame["request"]["token"].as_str().unwrap_or_default();
+                let envelope = resolve_envelope(token);
+                let out = json!({"frame": "response", "id": frame["id"], "envelope": envelope});
+                writeln!(reply, "{out}").unwrap();
             }
             _ => {
                 let inner = &frame["request"]["request"];

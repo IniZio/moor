@@ -169,7 +169,20 @@ impl Mcp {
         req: &Request<Incoming>,
         gate: &Gate,
     ) -> Result<(Person, Vec<String>), Failure> {
-        let Some(token) = bearer(req) else {
+        let value = req
+            .headers()
+            .get(header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok());
+        self.authenticate_header(value, gate)
+    }
+
+    /// Like [`Self::authenticate`], from the value of an `Authorization` header.
+    pub(crate) fn authenticate_header(
+        &self,
+        authorization: Option<&str>,
+        gate: &Gate,
+    ) -> Result<(Person, Vec<String>), Failure> {
+        let Some(token) = authorization.and_then(bearer) else {
             return Err(Failure::Refused(
                 "send an access token as Authorization: Bearer <token>".to_owned(),
             ));
@@ -187,9 +200,19 @@ impl Mcp {
             .map_err(Failure::Refused)
     }
 
+    /// The `WWW-Authenticate` challenge that points a client at the metadata document.
+    pub(crate) fn challenge(&self) -> String {
+        format!("Bearer resource_metadata=\"{}\"", self.metadata_url())
+    }
+
+    /// The controller's front socket.
+    pub(crate) fn front_socket(&self) -> &std::path::Path {
+        &self.front_socket
+    }
+
     /// The 401 that points a client at the metadata document.
     fn unauthorized(&self, why: &str) -> Response<Body> {
-        let challenge = format!("Bearer resource_metadata=\"{}\"", self.metadata_url());
+        let challenge = self.challenge();
         let mut res = Response::new(Full::new(Bytes::from(format!("{why}\n"))).boxed());
         *res.status_mut() = StatusCode::UNAUTHORIZED;
         if let Ok(value) = challenge.parse() {
@@ -199,13 +222,9 @@ impl Mcp {
     }
 }
 
-/// The bearer token of `req`.
-fn bearer(req: &Request<Incoming>) -> Option<&str> {
-    req.headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(str::trim)
+/// The bearer token in the value of an `Authorization` header.
+fn bearer(value: &str) -> Option<&str> {
+    value.strip_prefix("Bearer ").map(str::trim)
 }
 
 /// Who a request speaks for and what it may do; set by the gate, never by the client.
