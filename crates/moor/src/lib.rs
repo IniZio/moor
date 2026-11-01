@@ -13,6 +13,7 @@ pub mod env;
 pub mod error;
 mod front_dir;
 pub mod link_dial;
+pub mod mcp_relay;
 mod moor;
 mod ops;
 mod proxy;
