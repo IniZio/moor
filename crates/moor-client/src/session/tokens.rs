@@ -5,10 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use oauth2::basic::{BasicClient, BasicErrorResponseType};
-use oauth2::{
-    ClientId, RefreshToken, RequestTokenError, RevocationUrl, StandardRevocableToken,
-    TokenResponse, TokenUrl,
-};
+use oauth2::url::form_urlencoded;
+use oauth2::{ClientId, RefreshToken, RequestTokenError, SyncHttpClient, TokenResponse, TokenUrl};
 use serde::Deserialize;
 
 use super::{normalize, Credentials, Store};
@@ -105,6 +103,7 @@ pub fn logout(store: &Store, server: &str) -> Result<bool, String> {
 }
 
 /// Revokes `creds`' refresh token, ignoring any failure: the sign-in is forgotten either way.
+/// Posted by hand, since the oauth2 crate refuses a revocation URL that is not https.
 fn revoke(creds: &Credentials) {
     let http = Http::new();
     let at = format!(
@@ -117,15 +116,16 @@ fn revoke(creds: &Credentials) {
     else {
         return;
     };
-    let Ok(url) = RevocationUrl::new(endpoint) else {
-        return;
-    };
-    let token = StandardRevocableToken::RefreshToken(RefreshToken::new(creds.refresh_token.clone()));
-    if let Ok(request) = BasicClient::new(ClientId::new(creds.client_id.clone()))
-        .set_revocation_url(url)
-        .revoke_token(token)
+    let body = form_urlencoded::Serializer::new(String::new())
+        .append_pair("token", &creds.refresh_token)
+        .append_pair("token_type_hint", "refresh_token")
+        .append_pair("client_id", &creds.client_id)
+        .finish();
+    if let Ok(request) = oauth2::http::Request::post(endpoint)
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .body(body.into_bytes())
     {
-        let _ = request.request(&http);
+        let _ = http.call(request);
     }
 }
 
