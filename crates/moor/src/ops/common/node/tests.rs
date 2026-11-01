@@ -182,6 +182,7 @@ fn with_no_node_at_all_a_start_is_refused_saying_how_to_get_one() {
     let spec = BoxSpec {
         labels: Vec::new(),
         node: None,
+        mem_mib: 0,
     };
     let e = preflight(&w.cx, UserId::new(1), &spec).unwrap_err();
     let msg = e.error.to_string();

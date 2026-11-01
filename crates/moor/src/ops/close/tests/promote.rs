@@ -144,6 +144,7 @@ fn on_provider_node(cx: &Cx, id: BoxId, provider: &str) {
     let spec = moor_core::decide::schedule::BoxSpec {
         labels: Vec::new(),
         node: moor_core::name::NodeName::parse(provider).ok(),
+        mem_mib: 0,
     };
     cx.store().unwrap().set_box_spec(id, &spec).unwrap();
 }

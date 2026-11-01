@@ -4,6 +4,8 @@ use std::fmt::Write as _;
 
 use serde_json::Value;
 
+use moor_core::decide::schedule::gib;
+
 use crate::stamp;
 
 /// `online`, or `offline since` when the node went down.
@@ -24,7 +26,14 @@ fn load_text(n: &Value) -> Option<String> {
         .get("max_boxes")
         .and_then(Value::as_u64)
         .map_or_else(|| "-".to_owned(), |m| m.to_string());
-    Some(format!("{used}/{cap}"))
+    let mem = match (
+        n.get("mem_used_mib").and_then(Value::as_u64),
+        n.get("mem_offered_mib").and_then(Value::as_u64),
+    ) {
+        (Some(u), Some(o)) => format!("  {}/{} mem", gib(u), gib(o)),
+        _ => String::new(),
+    };
+    Some(format!("{used}/{cap}{mem}"))
 }
 
 /// One line per node: name, scope, runtime, link state, used/capacity and labels.

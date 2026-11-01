@@ -46,6 +46,13 @@ pub const fn counts(state: BoxState) -> bool {
     )
 }
 
+/// Whether a Box in `state` holds its guest memory on the host. An asleep Box is a paused VM,
+/// which keeps its memory.
+#[must_use]
+pub const fn holds_memory(state: BoxState) -> bool {
+    counts(state)
+}
+
 /// Decides whether one more Box fits under the limit.
 #[must_use]
 pub fn admit(f: &CapacityFacts) -> Admission {

@@ -54,6 +54,9 @@ fn enroll(cx: &Cx, who: &str, machine: &str, online: bool) -> (UserId, MachineLi
         max_boxes: None,
         cache_gb: None,
         features: Vec::new(),
+        mem_mib: None,
+        cpus: None,
+        reserve_mib: None,
     };
     (user, link)
 }

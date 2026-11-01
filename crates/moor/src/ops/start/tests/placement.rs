@@ -47,6 +47,9 @@ fn link(w: &World, machine_id: i64, online: bool, max_boxes: Option<u32>) {
         max_boxes,
         cache_gb: None,
         features: Vec::new(),
+        mem_mib: None,
+        cpus: None,
+        reserve_mib: None,
     };
     nodes::set_links(&w.cx, &[link]).unwrap();
 }
@@ -129,6 +132,7 @@ fn a_close_starts_the_oldest_pending_box_of_its_node_only() {
             &moor_core::decide::schedule::BoxSpec {
                 labels: Vec::new(),
                 node: moor_core::name::NodeName::parse("big").ok(),
+                mem_mib: 0,
             },
         )
         .unwrap();
@@ -221,6 +225,9 @@ fn cached_world(features: &[&str], online: bool) -> World {
         max_boxes: None,
         cache_gb: None,
         features: features.iter().map(|f| (*f).to_owned()).collect(),
+        mem_mib: None,
+        cpus: None,
+        reserve_mib: None,
     };
     nodes::set_links(&w.cx, &[link]).unwrap();
     w
@@ -251,4 +258,66 @@ fn a_shared_node_keeps_the_runtimes_own_cache_volumes() {
         .unwrap(),
     );
     assert!(planned_volumes(&w) > Some(0));
+}
+
+/// Links machine `machine_id` online with `mem_mib` of host memory and a `reserve_mib` reserve.
+fn link_memory(w: &World, machine_id: i64, mem_mib: u64, reserve_mib: u64) {
+    let link = MachineLink {
+        machine_id,
+        online: true,
+        since: Ts::from_millis(1),
+        version: None,
+        protocol: None,
+        max_boxes: None,
+        cache_gb: None,
+        features: Vec::new(),
+        mem_mib: Some(mem_mib),
+        cpus: None,
+        reserve_mib: Some(reserve_mib),
+    };
+    nodes::set_links(&w.cx, &[link]).unwrap();
+}
+
+/// A node with room for exactly one small Box (4 GiB) after its reserve.
+fn one_small_box_world() -> World {
+    let w = world();
+    let hv = enrolled(&w, "hv", Some(true), None);
+    link_memory(&w, hv, 8192, 4096);
+    w
+}
+
+#[test]
+fn an_asleep_box_still_counts_against_its_nodes_memory() {
+    let w = one_small_box_world();
+    let holder = start::run(&w.cx, &req("holder")).unwrap();
+    assert!(!holder.queued);
+    w.cx.store()
+        .unwrap()
+        .apply(
+            moor_core::domain::decision::Decision::new(BoxId::new(holder.boxed.id))
+                .box_input(moor_core::domain::boxes::BoxInput::Sleep),
+        )
+        .unwrap();
+    let waiter = start::run(&w.cx, &req("waiter")).unwrap();
+    assert!(waiter.queued);
+    let row = w.cx.store().unwrap().box_row(BoxId::new(waiter.boxed.id));
+    let reason = row.unwrap().unwrap().state_reason.unwrap_or_default();
+    assert!(reason.contains("hv has 0 GiB free of 4 GiB"), "{reason}");
+}
+
+#[test]
+fn a_close_that_frees_memory_starts_the_pending_box() {
+    let w = one_small_box_world();
+    start::run(&w.cx, &req("holder")).unwrap();
+    let waiter = start::run(&w.cx, &req("waiter")).unwrap();
+    assert!(waiter.queued);
+    let closed = close::run(
+        &w.cx,
+        &CloseReq {
+            target: BoxName::parse_allow_bare("holder").unwrap().into(),
+            force: true,
+        },
+    )
+    .unwrap();
+    assert_eq!(closed.promoted, ["waiter"]);
 }

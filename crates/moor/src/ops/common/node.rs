@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use moor_core::box_key::PoolSeat;
 use moor_core::config::{NodeConfig, UserConfig};
-use moor_core::decide::schedule::{schedule, BoxSpec, Node, Scope, Verdict};
+use moor_core::decide::schedule::{schedule, BoxSpec, Memory, Node, Scope, Verdict};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::name::NodeName;
@@ -158,11 +158,13 @@ pub(crate) fn admit(
     let on_it = BoxSpec {
         labels: spec.labels,
         node: Some(node.name.clone()),
+        mem_mib: spec.mem_mib,
     };
     let mut bound = false;
-    store.apply_admitting(row.id, &node.name, |used| {
+    store.apply_admitting(row.id, &node.name, |(used, used_mib)| {
         let now = Node {
             used,
+            memory: node.memory.map(|m| Memory { used_mib, ..m }),
             ..node.clone()
         };
         match verdict(cx, (&[now], default.as_ref()), row.user, &on_it) {

@@ -50,6 +50,55 @@ pub struct Node {
     pub used: usize,
     /// Boxes already pending on it.
     pub waiting: usize,
+    /// Its host memory; `None` when its agent does not report it, so only the count limits it.
+    pub memory: Option<Memory>,
+}
+
+/// The memory a node's host offers its Boxes, in MiB.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Memory {
+    /// The host's total memory.
+    pub total_mib: u64,
+    /// What stays with the host; `None` means [`default_reserve_mib`].
+    pub reserve_mib: Option<u64>,
+    /// What its Boxes holding memory were given.
+    pub used_mib: u64,
+}
+
+/// The host's share when none is configured: 4 GiB plus a tenth of `total_mib`.
+#[must_use]
+pub const fn default_reserve_mib(total_mib: u64) -> u64 {
+    4096 + total_mib / 10
+}
+
+impl Memory {
+    /// What Boxes may use in all: the total less the reserve.
+    #[must_use]
+    pub const fn offered_mib(&self) -> u64 {
+        let reserve = match self.reserve_mib {
+            Some(r) => r,
+            None => default_reserve_mib(self.total_mib),
+        };
+        self.total_mib.saturating_sub(reserve)
+    }
+
+    /// What is left for another Box.
+    #[must_use]
+    pub const fn free_mib(&self) -> u64 {
+        self.offered_mib().saturating_sub(self.used_mib)
+    }
+}
+
+/// `mib` as GiB for a message: whole when it divides evenly, else one decimal.
+#[must_use]
+pub fn gib(mib: u64) -> String {
+    if mib.is_multiple_of(1024) {
+        format!("{} GiB", mib / 1024)
+    } else {
+        #[expect(clippy::cast_precision_loss, reason = "a message rounds it anyway")]
+        let g = mib as f64 / 1024.0;
+        format!("{g:.1} GiB")
+    }
 }
 
 /// What a new Box asks of a node.
@@ -59,6 +108,8 @@ pub struct BoxSpec {
     pub labels: Vec<String>,
     /// The node the user named, if any.
     pub node: Option<NodeName>,
+    /// The guest memory it is given, in MiB.
+    pub mem_mib: u64,
 }
 
 /// The scheduler's answer.
@@ -203,9 +254,10 @@ pub fn schedule(
             .filter(|n| n.scope != Scope::Shared || Some(&n.name) == default)
             .collect()
     };
-    order
-        .first()
-        .map_or_else(|| nowhere(default), |first| place(first, default, now))
+    order.first().map_or_else(
+        || nowhere(default),
+        |first| place(first, spec.mem_mib, default, now),
+    )
 }
 
 /// Personal nodes by enrollment then machine id, then the shared ones with the default first.
@@ -233,8 +285,8 @@ fn ordered<'a>(nodes: &[&'a Node], requester: UserId, default: Option<&NodeName>
     mine
 }
 
-/// Judges the first node in order: offline fails, full waits, otherwise binds.
-fn place(n: &Node, default: Option<&NodeName>, now: i64) -> Verdict {
+/// Judges the first node in order: offline fails, full by count or memory waits, otherwise binds.
+fn place(n: &Node, mem_mib: u64, default: Option<&NodeName>, now: i64) -> Verdict {
     if let Online::Offline { since } = n.online {
         let at = ago(since, now);
         return fail(match default {
@@ -259,13 +311,30 @@ fn place(n: &Node, default: Option<&NodeName>, now: i64) -> Verdict {
                 n.name, n.used, n.waiting
             ),
         },
-        _ => Verdict::Bind {
-            node: n.name.clone(),
-            runtime: n.runtime.clone(),
-            machine_id: match n.scope {
-                Scope::Personal { machine_id, .. } => Some(machine_id),
-                Scope::Shared => None,
+        _ => match n.memory {
+            Some(m) if m.free_mib() < mem_mib => Verdict::Pending {
+                node: n.name.clone(),
+                reason: format!(
+                    "{} has {} free of {}; this Box needs {}",
+                    n.name,
+                    gib(m.free_mib()),
+                    gib(m.offered_mib()),
+                    gib(mem_mib)
+                ),
             },
+            _ => bind(n),
+        },
+    }
+}
+
+/// Binds the Box to `n`.
+fn bind(n: &Node) -> Verdict {
+    Verdict::Bind {
+        node: n.name.clone(),
+        runtime: n.runtime.clone(),
+        machine_id: match n.scope {
+            Scope::Personal { machine_id, .. } => Some(machine_id),
+            Scope::Shared => None,
         },
     }
 }

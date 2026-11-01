@@ -24,6 +24,7 @@ fn on_node(store: &Store, id: BoxId, node: &str) {
     let spec = BoxSpec {
         labels: Vec::new(),
         node: NodeName::parse(node).ok(),
+        mem_mib: 0,
     };
     store.set_box_spec(id, &spec).unwrap();
 }
@@ -77,6 +78,9 @@ fn alice_with_machines(store: &Store) -> UserId {
             max_boxes: Some(4),
             cache_gb: None,
             features: Vec::new(),
+            mem_mib: None,
+            cpus: None,
+            reserve_mib: None,
         }])
         .unwrap();
     alice

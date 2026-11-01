@@ -55,8 +55,8 @@ impl Store {
         Ok(applied)
     }
 
-    /// Count the Boxes holding a slot on `node`, let `decide` pick a decision for Box `id` from
-    /// that count, apply it and record `node` as the Box's.
+    /// Count the Boxes holding a slot on `node` and the MiB its Boxes hold, let `decide` pick a
+    /// decision for Box `id` from those, apply it and record `node` as the Box's.
     ///
     /// The read and the write share one transaction, so no other writer can claim a slot between them.
     /// `decide` returns `None` to write nothing. It runs under the writer lock, so it must not block.
@@ -64,7 +64,7 @@ impl Store {
         &self,
         id: BoxId,
         node: &NodeName,
-        decide: impl FnOnce(usize) -> Option<Decision>,
+        decide: impl FnOnce((usize, u64)) -> Option<Decision>,
     ) -> Result<Option<Applied>, StoreError> {
         let now = self.now();
         let mut conn = self.writer();

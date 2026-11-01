@@ -540,7 +540,7 @@ fn node_p() -> NodeName {
 /// Claim the only slot of node `p` for `id`, or queue the box when it is taken.
 fn claim_last_slot(store: &Store, id: BoxId) -> Option<Applied> {
     store
-        .apply_admitting(id, &node_p(), |used| {
+        .apply_admitting(id, &node_p(), |(used, _)| {
             let d = Decision::new(id);
             Some(if used == 0 {
                 d.lifecycle(BoxLifecycleInput::Admitted)
@@ -574,7 +574,7 @@ fn two_boxes_racing_for_the_last_slot_cannot_both_be_admitted() {
             claim_last_slot(rival_store, b)
         });
         let first = store
-            .apply_admitting(a, &node, |used| {
+            .apply_admitting(a, &node, |(used, _)| {
                 assert_eq!(used, 0);
                 lock_held.send(()).unwrap();
                 std::thread::sleep(Duration::from_millis(300));
@@ -592,5 +592,8 @@ fn two_boxes_racing_for_the_last_slot_cannot_both_be_admitted() {
     let states = [a, b].map(|id| store.box_row(id).unwrap().unwrap().lifecycle);
     assert_eq!(admitted.map(|x| x.is_some()), [true, true]);
     assert_eq!(states, [BoxLifecycle::SettingUp, BoxLifecycle::Pending]);
-    assert_eq!(live_on_node_in(&store.reader().unwrap(), &node).unwrap(), 1);
+    assert_eq!(
+        live_on_node_in(&store.reader().unwrap(), &node).unwrap().0,
+        1
+    );
 }

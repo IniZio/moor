@@ -83,6 +83,17 @@ impl BoxSize {
             Self::Xlarge => "xlarge",
         }
     }
+
+    /// The guest memory, in MiB, a Box of this size is given.
+    #[must_use]
+    pub const fn mem_mib(self) -> u64 {
+        match self {
+            Self::Small => 4096,
+            Self::Medium => 8192,
+            Self::Large => 16_384,
+            Self::Xlarge => 32_768,
+        }
+    }
 }
 
 /// `box:` section.
