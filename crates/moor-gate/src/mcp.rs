@@ -50,11 +50,25 @@ pub struct Mcp {
 }
 
 impl Mcp {
-    /// An MCP surface at `resource_url` whose tools act on `front_socket`.
+    /// An MCP surface at `resource_url` whose tools act on `front_socket`, on a gate without
+    /// browser sign-in.
     ///
     /// # Errors
     /// When the URL has no host or the async runtime cannot start.
     pub fn new(resource_url: &str, front_socket: PathBuf) -> Result<Self, String> {
+        Self::with_setup(resource_url, front_socket, None)
+    }
+
+    /// An MCP surface like [`Mcp::new`] whose webhook replies link to the setup page at
+    /// `public_url` when the gate serves browser sign-in there.
+    ///
+    /// # Errors
+    /// When the URL has no host or the async runtime cannot start.
+    pub fn with_setup(
+        resource_url: &str,
+        front_socket: PathBuf,
+        public_url: Option<&str>,
+    ) -> Result<Self, String> {
         let host = resource_url
             .split_once("://")
             .map(|(_, rest)| rest)
@@ -68,6 +82,7 @@ impl Mcp {
             .with_json_response(true);
         let tools = Tools {
             front_socket: front_socket.clone(),
+            public_url: public_url.map(|url| url.trim_end_matches('/').into()),
         };
         let service = StreamableHttpService::new(
             move || Ok(tools.clone()),

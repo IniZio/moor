@@ -38,13 +38,36 @@ refusal. To run the front yourself, leave out `command` and start
 long the front waits before it claims again when nothing was queued (1000 by
 default).
 
-Each user adds their own webhooks. With the gate, call `add_webhook` with the
-URL and, if you want, the event kinds. The tool shows the key once. From a
-terminal, run `moor user webhook add URL [--event KIND]...`, which prints the
-key once. Give the receiver the key. `list_webhooks` and `moor user webhook ls`
-show a webhook's events and health, and `remove_webhook` and `moor user webhook
-rm ID` remove one. A URL must be `https://`, or `http://` on `127.0.0.1`,
-`[::1]` or `localhost`.
+### Set up a webhook
+
+Each user adds their own webhooks. A webhook's secrets pass only between that
+person and moor, never through an agent or a chat:
+
+1. Call `add_webhook` on the gate with the URL and, if you want, the event
+   kinds. Pass `header` when the receiver wants its own token in a header,
+   such as a Grok bot that checks `Authorization`. The tool returns the
+   webhook's `id` and a `setup_url`, and no secret. From a terminal, `moor user
+   webhook add URL [--event KIND]...` adds one the same way.
+2. Open `setup_url` in a browser and sign in. The page needs the gate's
+   browser sign-in, so the gate must run with `--public-url`; without it the
+   tool says so and gives no link.
+3. Save the signing key the page shows and give it to the receiver, which
+   checks `X-Moor-Signature` with it. If the webhook has a header, enter its
+   value on the page, such as `Bearer …`. The page never shows that value
+   again.
+4. Press **Finish setup**. The webhook is now active, and deliveries start
+   with the next event.
+
+The key is shown only until setup finishes. Until then the webhook delivers
+nothing, and `list_webhooks` shows it as waiting for secret with its
+`setup_url`. To change the key or the header value, remove the webhook and add
+it again.
+
+`list_webhooks` and `moor user webhook ls` show a webhook's events, state and
+health, and `remove_webhook` and `moor user webhook rm ID` remove one. A URL
+must be `https://`, or `http://` on `127.0.0.1`, `[::1]` or `localhost`.
+
+### Which addresses get posts
 
 The front posts only to public addresses. Before each attempt it looks up the
 URL's host and refuses the delivery if any address is loopback, private,

@@ -4,13 +4,14 @@
 use moor_core::request::{Request as ControllerRequest, ShowReq};
 use moor_core::view::progress::{self, Happened, Progress};
 use serde_json::{json, Value};
+use std::sync::Arc;
 
 use super::target;
 
 mod webhook;
 
 /// What a tool adds to the controller's answer so a model can tell the user what is going on.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) enum Reply {
     /// Nothing.
     AsIs,
@@ -20,10 +21,10 @@ pub(super) enum Reply {
     Detailed,
     /// Each Box's status.
     Listed,
-    /// A new webhook: its key is shown once.
-    WebhookAdded,
-    /// Each webhook's health in words.
-    WebhooksListed,
+    /// A new webhook: where its person sets it up, given the gate's public origin.
+    WebhookAdded(Option<Arc<str>>),
+    /// Each webhook's state and health in words, and setup links given the public origin.
+    WebhooksListed(Option<Arc<str>>),
 }
 
 impl Reply {
@@ -38,8 +39,8 @@ impl Reply {
             Self::Started => started(value),
             Self::Detailed => detailed(value),
             Self::Listed => listed(value, ask),
-            Self::WebhookAdded => webhook::added(value),
-            Self::WebhooksListed => webhook::listed(value, now()),
+            Self::WebhookAdded(origin) => webhook::added(value, origin.as_deref()),
+            Self::WebhooksListed(origin) => webhook::listed(value, origin.as_deref(), now()),
         }
     }
 }

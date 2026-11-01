@@ -457,3 +457,4 @@ mod events_http;
 mod listen;
 mod login;
 mod mcp;
+mod setup;

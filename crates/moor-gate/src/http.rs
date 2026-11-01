@@ -1,5 +1,5 @@
 //! The gate's HTTP surface: the metadata document, the `/front` upgrade, machine enrollment,
-//! and 404 for the rest.
+//! the pages behind browser sign-in, and 404 for the rest.
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
@@ -10,7 +10,7 @@ use tungstenite::handshake::derive_accept_key;
 use tungstenite::protocol::Role;
 use tungstenite::WebSocket;
 
-use crate::login::routes;
+use crate::login::{routes, setup};
 use crate::{log, relay, Gate, Login};
 
 /// Longest request head the gate reads.
@@ -70,8 +70,8 @@ pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>) {
         (Some("GET"), "/events") if gate.mcp.is_some() => {
             crate::events_http::serve(stream, req.path.unwrap_or_default(), &req, gate);
         }
-        (_, p) if p.starts_with("/auth/") && login.is_some() => {
-            auth(stream, leftover, &req, gate, login);
+        (_, p) if behind_sign_in(p) && login.is_some() => {
+            browser(stream, leftover, &req, gate, login);
         }
         (Some("GET"), "/front") => front(stream, leftover, &req, gate),
         (Some("POST"), "/machines/enroll") => {
@@ -82,8 +82,13 @@ pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>) {
     }
 }
 
-/// Hands a `/auth/*` request to browser sign-in.
-fn auth(
+/// Whether `path` is a page behind browser sign-in.
+fn behind_sign_in(path: &str) -> bool {
+    path.starts_with("/auth/") || path.starts_with("/webhooks/")
+}
+
+/// Serves a page behind browser sign-in: sign-in itself, or webhook setup.
+fn browser(
     stream: TcpStream,
     leftover: Vec<u8>,
     req: &httparse::Request<'_, '_>,
@@ -100,7 +105,11 @@ fn auth(
         length: header(req, "content-length").and_then(|v| v.trim().parse().ok()),
         leftover,
     };
-    routes::handle(stream, req, gate, login);
+    if req.target.starts_with("/auth/") {
+        routes::handle(stream, req, gate, login);
+    } else {
+        setup::handle(stream, req, gate, login);
+    }
 }
 
 /// Checks the bearer token, then upgrades and relays to the controller's front socket.

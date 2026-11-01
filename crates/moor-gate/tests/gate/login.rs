@@ -18,10 +18,10 @@ const PAGE_HEADERS: [&str; 4] = [
     "Cache-Control: no-store\r\n",
 ];
 
-struct Reply {
-    status: u16,
+pub(super) struct Reply {
+    pub(super) status: u16,
     head: String,
-    body: String,
+    pub(super) body: String,
 }
 
 impl Reply {
@@ -32,7 +32,7 @@ impl Reply {
         })
     }
 
-    fn location(&self) -> &str {
+    pub(super) fn location(&self) -> &str {
         self.header("location").unwrap()
     }
 }
@@ -52,7 +52,7 @@ fn gate() -> (String, Issuer) {
     (addr, issuer)
 }
 
-fn send(addr: &str, method: &str, target: &str, extra: &str, body: &str) -> Reply {
+pub(super) fn send(addr: &str, method: &str, target: &str, extra: &str, body: &str) -> Reply {
     let mut stream = TcpStream::connect(addr).unwrap();
     write!(
         stream,
@@ -71,7 +71,7 @@ fn send(addr: &str, method: &str, target: &str, extra: &str, body: &str) -> Repl
     }
 }
 
-fn get(addr: &str, target: &str, cookie: Option<&str>) -> Reply {
+pub(super) fn get(addr: &str, target: &str, cookie: Option<&str>) -> Reply {
     let extra = cookie.map_or_else(String::new, |c| format!("Cookie: {c}\r\n"));
     send(addr, "GET", target, &extra, "")
 }
@@ -98,7 +98,7 @@ fn approve(authorize: &str) -> String {
 }
 
 /// Signs in, landing on `/auth/me`: the session cookie pair.
-fn sign_in(addr: &str) -> String {
+pub(super) fn sign_in(addr: &str) -> String {
     let start = get(addr, "/auth/login?return=/auth/me", None);
     let landed = get(addr, &approve(start.location()), None);
     assert_eq!(landed.status, 302, "{}", landed.body);
@@ -106,13 +106,13 @@ fn sign_in(addr: &str) -> String {
     cookie.split(';').next().unwrap().to_owned()
 }
 
-fn assert_page_headers(reply: &Reply) {
+pub(super) fn assert_page_headers(reply: &Reply) {
     for h in PAGE_HEADERS {
         assert!(reply.head.contains(h), "{h} missing from {}", reply.head);
     }
 }
 
-fn csrf(page: &Reply) -> String {
+pub(super) fn csrf(page: &Reply) -> String {
     let (_, rest) = page.body.split_once("name=\"csrf\" value=\"").unwrap();
     rest.split('"').next().unwrap().to_owned()
 }

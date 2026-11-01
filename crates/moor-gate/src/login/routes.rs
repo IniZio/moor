@@ -152,7 +152,7 @@ fn failed(stream: &mut TcpStream, why: &str) {
 }
 
 /// A `302` to `location`, with `extra` headers.
-fn redirect(stream: &mut TcpStream, location: &str, extra: &str) {
+pub(super) fn redirect(stream: &mut TcpStream, location: &str, extra: &str) {
     page(
         stream,
         "302 Found",
@@ -162,7 +162,7 @@ fn redirect(stream: &mut TcpStream, location: &str, extra: &str) {
 }
 
 /// Writes one HTML page around the already-escaped `body`, with [`PAGE_HEADERS`] and `extra`.
-fn page(stream: &mut TcpStream, status: &str, extra: &str, body: &str) {
+pub(super) fn page(stream: &mut TcpStream, status: &str, extra: &str, body: &str) {
     let html = format!("<!doctype html><meta charset=\"utf-8\"><title>moor</title><p>{body}</p>\n");
     let _ = write!(
         stream,
@@ -172,7 +172,7 @@ fn page(stream: &mut TcpStream, status: &str, extra: &str, body: &str) {
 }
 
 /// `text` safe inside HTML text and quoted attributes.
-fn escape(text: &str) -> String {
+pub(super) fn escape(text: &str) -> String {
     text.chars().fold(String::new(), |mut out, c| {
         match c {
             '&' => out.push_str("&amp;"),
@@ -187,7 +187,7 @@ fn escape(text: &str) -> String {
 }
 
 /// The form-encoded body, when it fits and arrives whole.
-fn read_form(
+pub(super) fn read_form(
     stream: &mut TcpStream,
     mut body: Vec<u8>,
     length: Option<usize>,
