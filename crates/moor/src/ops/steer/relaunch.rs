@@ -18,7 +18,17 @@ const RELAUNCH_GUARD: Duration = Duration::from_secs(60);
 /// Recent events searched for the last relaunch.
 const RECENT_EVENTS: usize = 50;
 
-/// Relaunches the gone agent of `target`, resuming its stored agent session.
+/// How a gone agent was brought back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Revived {
+    /// A new pane attached to the agent, which never stopped.
+    Reattached,
+    /// A new agent started, by this steer or by another op.
+    Relaunched,
+}
+
+/// Relaunches the gone agent of `target`, resuming its stored agent session, or attaches a new
+/// pane when the agent still runs on the Box.
 ///
 /// An agent that another op relaunched while this one waited for the Box lock is left to run.
 ///
@@ -31,17 +41,18 @@ pub(super) fn once(
     store: &Store,
     (id, name): (BoxId, &str),
     mut gone: Gone,
-) -> Result<(), CommandError> {
+) -> Result<Revived, CommandError> {
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "steer", boxlock::WAIT)?;
     let live = store.live_session(id)?;
     let live_id = live.as_ref().map(|l| l.id);
     if live_id.is_some() && live_id != gone.launch.as_ref().map(|l| l.id) {
-        return Ok(());
+        return Ok(Revived::Relaunched);
     }
     if let (Some(launch), Some(row)) = (live, store.box_row(id)?) {
         match link::recover(cx, store, &row, &launch, gone.code)? {
-            Fate::Reattached => return Ok(()),
+            Fate::Reattached => return Ok(Revived::Reattached),
             Fate::Ended(exit) => gone.code = exit,
+            Fate::Unreachable => return Err(unreachable(name)),
         }
     }
     if relaunched_recently(cx, store, id)? {
@@ -49,7 +60,7 @@ pub(super) fn once(
     }
     let view = revive_for_steer(cx, store, id)?;
     if view.launched {
-        return Ok(());
+        return Ok(Revived::Relaunched);
     }
     gone.finish(cx, store, id)?;
     Err(match view.reason {
@@ -62,6 +73,22 @@ pub(super) fn once(
         ),
         None => gone.error,
     })
+}
+
+/// The refusal while the Box of `name` does not answer; the session waits for a later try.
+fn unreachable(name: &str) -> CommandError {
+    CommandError::new(
+        ErrorKind::Failed,
+        format!("could not reach the Box of {name} to find its agent; its session is kept, so try again"),
+    )
+}
+
+/// The refusal for an agent that lost each pane moor attached to it; its session is kept.
+pub(super) fn lost_again(name: &str) -> CommandError {
+    CommandError::new(
+        ErrorKind::Failed,
+        format!("the agent of Box {name} still runs but lost each new pane moor attached to it; its session is kept, so try again"),
+    )
 }
 
 /// Ends the launch and Session of an agent that ended again soon after its relaunch, and the error.

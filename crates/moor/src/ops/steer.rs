@@ -62,10 +62,21 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
     if req.interrupt {
         return Err(gone.error);
     }
-    relaunch::once(cx, store, target, gone)?;
-    match attempt(cx, store, req, target)? {
-        Attempt::Sent(v) => Ok(v),
-        Attempt::Gone(again) => Err(relaunch::ended_again(cx, store, target, &again)?),
+    let mut revived = relaunch::once(cx, store, target, gone)?;
+    let mut reattached_again = false;
+    loop {
+        let again = match attempt(cx, store, req, target)? {
+            Attempt::Sent(v) => return Ok(v),
+            Attempt::Gone(again) => again,
+        };
+        match revived {
+            Revived::Relaunched => return Err(relaunch::ended_again(cx, store, target, &again)?),
+            Revived::Reattached if reattached_again => return Err(relaunch::lost_again(target.1)),
+            Revived::Reattached => {
+                reattached_again = true;
+                revived = relaunch::once(cx, store, target, again)?;
+            }
+        }
     }
 }
 
@@ -362,6 +373,7 @@ mod relaunch;
 
 use choose::choose;
 use record::{record, Mark};
+use relaunch::Revived;
 
 #[cfg(test)]
 mod tests;
