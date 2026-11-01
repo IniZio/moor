@@ -34,6 +34,8 @@ use reply::Reply;
 pub(crate) struct Tools {
     /// The controller's front socket for the gate's namespace.
     pub(crate) front_socket: PathBuf,
+    /// The gate's public origin when it serves browser sign-in, for webhook setup links.
+    pub(crate) public_url: Option<std::sync::Arc<str>>,
 }
 
 /// Arguments of `start_box`.
@@ -327,15 +329,15 @@ fn send_early(
         artifacts: false,
         pane: false,
     });
-    if send(socket, person, show.clone(), Reply::AsIs).is_ok() {
+    if act_as(socket, person, show.clone()).is_ok() {
         // The Box exists already: this start attaches or is refused as busy, and either answer
         // comes from the controller, so wait for it.
         return send(socket, person, request, reply);
     }
     let (tx, rx) = std::sync::mpsc::channel();
-    let (path, who) = (socket.to_path_buf(), person.clone());
+    let (path, who, done) = (socket.to_path_buf(), person.clone(), reply.clone());
     std::thread::spawn(move || {
-        let _ = tx.send(send(&path, &who, request, reply));
+        let _ = tx.send(send(&path, &who, request, done));
     });
     for _ in 0..EARLY_POLLS {
         match rx.recv_timeout(EARLY_POLL) {
@@ -345,11 +347,20 @@ fn send_early(
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
         }
-        if let Ok(shown) = send(socket, person, show.clone(), reply) {
+        if let Ok(shown) = send(socket, person, show.clone(), reply.clone()) {
             return Ok(shown);
         }
     }
     Err("the Box did not appear in time; check box_status".to_owned())
+}
+
+/// Enrolls `person`, then runs `request` as them; the controller's value as is, or why not.
+pub(crate) fn act_as(
+    socket: &std::path::Path,
+    person: &Person,
+    request: ControllerRequest,
+) -> Result<Value, String> {
+    send(socket, person, request, Reply::AsIs)
 }
 
 /// Enrolls `person`, then runs `request` as them; the controller's value, or why not.

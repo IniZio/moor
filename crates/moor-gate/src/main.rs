@@ -48,7 +48,7 @@ fn main() -> ExitCode {
     };
     let mcp = match args
         .mcp_resource_url
-        .map(|url| Mcp::new(&url, args.front_socket.clone()))
+        .map(|url| Mcp::with_setup(&url, args.front_socket.clone(), args.public_url.as_deref()))
         .transpose()
     {
         Ok(mcp) => mcp,

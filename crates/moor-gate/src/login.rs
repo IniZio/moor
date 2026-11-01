@@ -2,6 +2,7 @@
 //! in-memory sessions keyed by a cookie, for pages that must only reach a signed-in person.
 
 pub(crate) mod routes;
+pub(crate) mod setup;
 #[cfg(test)]
 mod tests;
 

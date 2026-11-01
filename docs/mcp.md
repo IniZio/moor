@@ -34,7 +34,7 @@ read.
 | `box_status` | `box` |
 | `send_to_box` | `box`, `text` |
 | `close_box` | `box`; optional `force` |
-| `add_webhook` | `url` (https); optional `events` |
+| `add_webhook` | `url` (https); optional `events`, `header` (such as `Authorization`) |
 | `list_webhooks` | none |
 | `list_events` | optional `after`, `kinds`, `box`, `limit`, `wait_seconds` |
 | `remove_webhook` | `id` |
@@ -44,8 +44,13 @@ that could not be checked for them. `force: true` closes it anyway and discards
 that work, the same as `moor close --force`. It is false by default.
 
 A webhook receives signed POSTs of your Box events. `add_webhook` returns the
-webhook's `id` and its HMAC `key`, shown only once; `list_webhooks` shows each
-webhook's url, events and delivery health, never the key. See
+webhook's `id` and a `setup_url` and never a secret. The person opens the link
+in a browser to see the HMAC key and enter the value of the `header`, if one
+was given; nothing is delivered until then. Without `--public-url` the gate
+serves no setup page, and the tool says so instead of giving a link.
+`list_webhooks` shows each webhook's url, events, state, delivery health and,
+while it waits for setup, its `setup_url`, never the key. See
+[Set up a webhook](notify.md#set-up-a-webhook) and
 [Notifications](notify.md) for the receiving side.
 
 `node` is a node you may use, a shared one or one of your own; omit it for your

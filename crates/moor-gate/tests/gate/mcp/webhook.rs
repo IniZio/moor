@@ -8,7 +8,7 @@ use super::mcp;
 /// The one webhook `webhook-list` answers, failing since a while.
 pub(super) fn listed() -> Value {
     json!({"webhooks": [{"id": 7, "url": "https://hooks.example/moor",
-        "events": ["box_ready"], "created_at": 1, "last_ok_at": null,
+        "events": ["box_ready"], "state": "active", "created_at": 1, "last_ok_at": null,
         "failing_since": 5000, "last_error": "http 500"}]})
 }
 
