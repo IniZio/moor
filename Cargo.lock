@@ -3167,6 +3167,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "moor-listen"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "jsonwebtoken",
+ "moor-core",
+ "moor-gate",
+ "moor-testkit",
+ "rustls",
+ "serde_json",
+ "tempfile",
+ "ureq",
+]
+
+[[package]]
 name = "moor-machine-agent"
 version = "0.2.0"
 dependencies = [
