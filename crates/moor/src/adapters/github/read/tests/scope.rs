@@ -21,7 +21,11 @@ fn verdict(base: Option<&str>) -> Verdict {
 
 #[test]
 fn read_of_the_box_repo_passes_the_scope_filter() {
-    for base in [None, Some("refs/heads/main"), Some("0123456789abcdef0123456789abcdef01234567")] {
+    for base in [
+        None,
+        Some("refs/heads/main"),
+        Some("0123456789abcdef0123456789abcdef01234567"),
+    ] {
         assert_eq!(verdict(base), Verdict::Allow, "{base:?}");
     }
 }
@@ -32,5 +36,8 @@ fn read_of_another_repo_is_not_allowed() {
         "query": QUERY,
         "variables": {"owner": "x", "name": "y", "branch": "refs/heads/b", "base": "", "hasBase": false},
     });
-    assert_ne!(judge(body.to_string().as_bytes(), &RepoRef::new("o", "n")), Verdict::Allow);
+    assert_ne!(
+        judge(body.to_string().as_bytes(), &RepoRef::new("o", "n")),
+        Verdict::Allow
+    );
 }

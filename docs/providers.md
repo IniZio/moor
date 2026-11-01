@@ -237,3 +237,14 @@ variables. moor supports only apt. On a Box image with no `apt-get`, install
 command stops before it runs, and the reason starts with `the egress proxy
 could not start`. A Box setup that stops this way fails with that reason.
 moor never sends all Box traffic through the Proxy instead.
+
+## moor behind a proxy
+
+moor honours `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY` and `NO_PROXY`, and
+their lowercase forms, for its own upstream connections: the controller's
+GitHub reads, and each Box Proxy's connections to GitHub and to other allowed
+hosts. A host that `NO_PROXY` lists is dialled directly. A controller running
+inside a Box therefore reaches GitHub through that Box's Proxy, which adds
+the credential, so no credential enters either Box. moor supports only a
+plain `http://` proxy without credentials. When the proxy refuses a
+connection, the connection fails; moor does not fall back to a direct dial.
