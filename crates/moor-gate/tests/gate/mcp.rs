@@ -13,6 +13,8 @@ use std::sync::atomic::Ordering;
 
 use super::{claims, mpsc, now, sign, world_with, World};
 
+mod webhook;
+
 fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
     let listener = UnixListener::bind(path).unwrap();
     let (tx, rx) = mpsc::channel();
@@ -47,7 +49,14 @@ fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
                         writeln!(reply, "{}", not_found(&frame["id"])).unwrap();
                         continue;
                     }
+                    if let Some(refusal) = webhook::refusal(cmd, inner, &frame["id"]) {
+                        writeln!(reply, "{refusal}").unwrap();
+                        continue;
+                    }
                     let value = match cmd {
+                        "webhook-add" => json!({"id": 7, "key": "ab".repeat(32)}),
+                        "webhook-remove" => json!({"id": inner["id"]}),
+                        "webhook-list" => webhook::listed(),
                         "show" if inner["box"].is_string() => shown(&inner["box"]),
                         "show" => {
                             json!({"boxes": [{"name": format!("repo/{}", who.replace(':', "-")),
@@ -326,9 +335,12 @@ fn the_tools_are_listed() {
     assert_eq!(
         names,
         [
+            "add_webhook",
             "box_status",
             "close_box",
             "list_boxes",
+            "list_webhooks",
+            "remove_webhook",
             "send_to_box",
             "start_box"
         ]

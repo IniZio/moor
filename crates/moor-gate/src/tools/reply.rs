@@ -7,6 +7,8 @@ use serde_json::{json, Value};
 
 use super::target;
 
+mod webhook;
+
 /// What a tool adds to the controller's answer so a model can tell the user what is going on.
 #[derive(Clone, Copy)]
 pub(super) enum Reply {
@@ -18,6 +20,10 @@ pub(super) enum Reply {
     Detailed,
     /// Each Box's status.
     Listed,
+    /// A new webhook: its key is shown once.
+    WebhookAdded,
+    /// Each webhook's health in words.
+    WebhooksListed,
 }
 
 impl Reply {
@@ -32,6 +38,8 @@ impl Reply {
             Self::Started => started(value),
             Self::Detailed => detailed(value),
             Self::Listed => listed(value, ask),
+            Self::WebhookAdded => webhook::added(value),
+            Self::WebhooksListed => webhook::listed(value, now()),
         }
     }
 }
