@@ -10,7 +10,7 @@ ZIG_VERSION := 0.17.0
 ZIG_SHA256 := 1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026
 PTY := --features moor/pty-surface
 
-.PHONY: help coverage setup secret audit lint format test unit ci unit-nextest unit-doc build deploy overlap lint-pty unit-pty
+.PHONY: help coverage setup secret audit lint format test unit ci unit-nextest unit-doc build deploy overlap lint-pty unit-pty nested-e2e
 
 help:
 	@echo "targets: setup secret audit lint lint-pty format test unit-pty ci build deploy"
@@ -88,6 +88,10 @@ unit-pty:
 
 deploy:
 	@echo "deploy: CLI, nothing to deploy"
+
+# Needs /dev/kvm and the tools from tools/box-nested-kvm.sh; see docs/development.md.
+nested-e2e:
+	tools/nested-e2e.sh
 
 # Single source of the pins for CI's install-action step.
 .PHONY: print-tool-versions print-zig
