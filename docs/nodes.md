@@ -35,18 +35,26 @@ moor-machine-agent run --runtime cloudhypervisor --max-boxes 4
 
 ## Memory
 
-A personal node's agent reports the host's memory when it links. The scheduler
-admits a Box only if its size fits in the memory left after the host reserve:
-small takes 4 GiB, medium 8 GiB, large 16 GiB and xlarge 32 GiB. Running Boxes
-hold their memory; asleep Boxes hold none, on every node. A provider that cannot
-pause a Box and free its memory cannot sleep it, so that Box stays running. A Box that does
-not fit is Pending with `NODE has X GiB free of Y GiB; this Box needs Z GiB`.
+Workload memory is not predictable, so a Box's size only sizes its VM; it does
+not decide whether the Box fits. A personal node's agent reports the host's
+`MemAvailable`, `MemTotal` and memory pressure (PSI `some avg10`) when it links
+and every 10 seconds. A node has room for one more Box when:
 
-On any node, a start or wake that does not fit
-suspends the node's longest-idle Boxes to make room. It never suspends a Box
-that is working, one waiting on a question, or one still starting. If the idle
-Boxes together do not free enough, none is suspended and the Box stays Pending.
-A suspended Box's status says which Box it made room for.
+- its last report is under 60 seconds old,
+- `MemAvailable` less the host reserve, less 2 GiB for each Box still setting up
+  there, leaves at least 2 GiB, and
+- PSI `some avg10` is under 10, or the host has no PSI.
+
+A Box that does not fit is Pending with `waiting for capacity on NODE: X GiB
+free, needs 2 GiB`, `memory pressure on NODE`, or `no recent memory report from
+NODE`. A node whose agent never reports memory admits by Box count alone.
+
+When a start does not fit, the node suspends its one longest-idle Box and the
+start waits for the next report. It never suspends a Box that is working, one
+waiting on a question, or one still starting. With no idle Box, nothing is
+suspended. A suspended Box's status says which Box it made room for. A wake that
+does not fit makes room the same way, leaves its Box Pending with the reason,
+and a later report with room wakes it.
 
 `--reserve-mib` sets the reserve kept back for the host. It defaults to 4096 MiB
 plus 10% of the host's memory:
@@ -66,13 +74,15 @@ it with `--node`. A full node does not send the Box elsewhere.
 ## Pending
 
 A start on a node that is full, by Box count or by memory, waits there. The Box is Pending, with the reason
-in its status, and it starts when a Box on that node closes or the node's link
-comes back. Boxes on a node start in the order they asked.
+in its status, and it starts when a Box on that node closes, the node's link
+comes back, or a memory report shows room. Boxes on a node start in the order
+they asked; a memory report starts at most one, and the next report counts it.
 
 ## Choosing a node
 
 `moor node ls` lists the shared nodes and your own: name, scope, runtime, online
-or offline since, used and capacity, and labels.
+or offline since, used and capacity, free memory, PSI and the age of the last
+memory report, and labels.
 
 ```sh
 timeout 600 moor start fix-typo --node hv
