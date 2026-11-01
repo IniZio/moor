@@ -186,14 +186,24 @@ impl Tokens {
         creds.expires_at - (self.clock)() > MARGIN
     }
 
-    /// Refreshes the saved sign-in unless another process just did.
-    fn refreshed(&self) -> Result<Credentials, String> {
+    /// An access token other than `rejected`, which the server refused: the saved one when
+    /// another process already replaced it, else one refreshed now.
+    ///
+    /// # Errors
+    /// Says why there is none, such as that the sign-in ended.
+    pub fn renewed(&self, rejected: &str) -> Result<String, String> {
+        self.refreshed(|c| c.access_token != rejected)
+            .map(|c| c.access_token)
+    }
+
+    /// The saved sign-in, refreshed under the lock unless `keep` accepts it as saved.
+    fn refreshed(&self, keep: impl Fn(&Credentials) -> bool) -> Result<Credentials, String> {
         let _lock = self
             .store
             .lock()
             .map_err(|e| format!("cannot lock the credentials: {e}"))?;
         let creds = self.saved()?;
-        if self.fresh(&creds) {
+        if keep(&creds) {
             return Ok(creds);
         }
         let next = self.refresh(&creds)?;
@@ -245,6 +255,6 @@ impl TokenSource for Tokens {
         if self.fresh(&creds) {
             return Ok(creds.access_token);
         }
-        self.refreshed().map(|c| c.access_token)
+        self.refreshed(|c| self.fresh(c)).map(|c| c.access_token)
     }
 }
