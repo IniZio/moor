@@ -10,13 +10,13 @@ use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use moor_client::{Client, Redial};
-use moor_core::request::{ApiTokenResolveReq, Request, SecretValue};
+use moor_core::request::{ApiTokenResolveReq, EnrollReq, Request, SecretValue};
 use moor_core::response::ExitClass;
 use moor_core::view::user::ApiTokenResolveValue;
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
 
-use crate::Person;
+use crate::{rewrite, Person};
 
 /// How every API token's text starts.
 pub(crate) const PREFIX: &str = "moor_";
@@ -126,4 +126,19 @@ pub(crate) fn ask<T: DeserializeOwned>(socket: &Path, request: Request) -> Resul
     }
     serde_json::from_value(reply.value.unwrap_or_default())
         .map_err(|e| Failure::Unavailable(format!("the controller's answer is unreadable: {e}")))
+}
+
+/// Enrolls `person`, then sends `request` as them.
+pub(crate) fn ask_as<T: DeserializeOwned>(
+    socket: &Path,
+    person: &Person,
+    request: Request,
+) -> Result<T, Failure> {
+    let enroll = Request::Enroll(EnrollReq {
+        identity: None,
+        email: None,
+    });
+    let act = |r| rewrite::act(r, person).map_err(Failure::Refused);
+    ask::<serde_json::Value>(socket, act(enroll)?)?;
+    ask(socket, act(request)?)
 }

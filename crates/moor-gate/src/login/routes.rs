@@ -1,4 +1,4 @@
-//! The `/auth/*` routes and the headers every page they serve carries.
+//! The `/auth/*` and `/tokens` routes and the headers every page they serve carries.
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -6,6 +6,8 @@ use std::net::TcpStream;
 use std::time::Instant;
 
 use oauth2::url::form_urlencoded;
+
+mod tokens;
 
 use super::{check_csrf, csrf_token, Login, Session};
 use crate::{log, Gate};
@@ -69,6 +71,14 @@ pub(crate) fn handle(mut stream: TcpStream, req: Request<'_>, gate: &Gate, login
         ("POST", "/auth/logout") => {
             let form = read_form(&mut stream, req.leftover, req.length);
             logout(&mut stream, login, session, form.as_ref());
+        }
+        (method, p) if p == "/tokens" || p.starts_with("/tokens/") => {
+            let form = if method == "POST" {
+                read_form(&mut stream, req.leftover, req.length)
+            } else {
+                None
+            };
+            tokens::handle(&mut stream, method, p, session, form.as_ref(), gate);
         }
         _ => page(&mut stream, "404 Not Found", "", "Not found."),
     }

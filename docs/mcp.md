@@ -245,3 +245,24 @@ Open `https://<host>/auth/me` to check it. It sends you through the provider and
 then shows the email you signed in as. A session lasts 15 minutes and lives only
 in the gate's memory, so a restart signs everyone out. Run one gate replica: a
 sign-in that starts on one replica cannot finish on another.
+
+## Tokens for bots
+
+A sign-in token lasts about an hour, which suits a person's agent but not a bot
+that runs for weeks. Give a bot an API token instead.
+
+1. Open `https://<gate>/tokens` and sign in. This page needs browser sign-in,
+   so it is there only when the gate runs with `--public-url`.
+2. Name the token and pick its scopes. `moor:read` is checked by default; add
+   `moor:write` only for a bot that starts, steers or closes Boxes. The
+   [scopes](#scopes) work as they do for a signed-in agent.
+3. Copy the token. The gate shows it once and keeps only its last four
+   characters, which the page lists to tell tokens apart.
+
+Any MCP client then sends it as `Authorization: Bearer moor_…` to
+`https://<gate>/mcp`. Each call acts as the person who made the token. Only
+`/mcp` accepts API tokens: `/front` and `/machines/enroll` still need a sign-in
+token.
+
+Revoke a token from the same page. The gate remembers a token it has checked for
+30 seconds, so a revoked token keeps working for up to 30 seconds more.

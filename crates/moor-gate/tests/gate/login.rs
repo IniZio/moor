@@ -11,6 +11,8 @@ use moor_testkit::oidc::Issuer;
 
 use super::CLIENT_ID;
 
+mod tokens;
+
 const PAGE_HEADERS: [&str; 4] = [
     "Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'\r\n",
     "X-Content-Type-Options: nosniff\r\n",

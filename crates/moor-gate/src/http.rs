@@ -67,7 +67,7 @@ pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>) {
                 mcp.serve(stream, prefix, gate);
             }
         }
-        (_, p) if p.starts_with("/auth/") && login.is_some() => {
+        (_, p) if signed_in_page(p) && login.is_some() => {
             auth(stream, leftover, &req, gate, login);
         }
         (Some("GET"), "/front") => front(stream, leftover, &req, gate),
@@ -79,7 +79,12 @@ pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>) {
     }
 }
 
-/// Hands a `/auth/*` request to browser sign-in.
+/// Whether `path` is a page behind browser sign-in.
+fn signed_in_page(path: &str) -> bool {
+    path.starts_with("/auth/") || path == "/tokens" || path.starts_with("/tokens/")
+}
+
+/// Hands a `/auth/*` or `/tokens` request to browser sign-in.
 fn auth(
     stream: TcpStream,
     leftover: Vec<u8>,
