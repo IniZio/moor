@@ -293,3 +293,34 @@ fn a_steer_to_an_agent_that_outlived_its_pane_reattaches_and_never_relaunches() 
     assert_eq!(kinds.len(), 2, "{kinds:?}");
     assert!(!kinds.contains(&"session_ended".to_owned()), "{kinds:?}");
 }
+
+#[test]
+fn a_pane_lost_again_right_after_a_reattach_is_reattached_again() {
+    let running = || Ok(moor_core::seam::engine::AgentFate::Running);
+    let engine = FakeEngine::new()
+        .steer_result(Err(EngineError::PaneGone))
+        .steer_result(Err(EngineError::PaneGone))
+        .fates(vec![running(), running()]);
+    let f = resumable(engine);
+    let v = run(&f.cx, &text("hi")).unwrap();
+    assert_eq!(v.sent, "hi");
+    assert!(f.engine.launches().is_empty(), "no second agent");
+    assert_eq!(f.engine.reattached().len(), 2);
+    assert_ne!(session_state(&f), SessionState::Ended);
+}
+
+#[test]
+fn a_pane_lost_after_every_reattach_fails_the_steer_without_naming_a_relaunch() {
+    let running = || Ok(moor_core::seam::engine::AgentFate::Running);
+    let engine = FakeEngine::new()
+        .steer_result(Err(EngineError::PaneGone))
+        .steer_result(Err(EngineError::PaneGone))
+        .steer_result(Err(EngineError::PaneGone))
+        .fates(vec![running(), running()]);
+    let f = resumable(engine);
+    let err = run(&f.cx, &text("hi")).unwrap_err();
+    let message = err.error.to_string();
+    assert!(!message.contains("of its relaunch"), "{message}");
+    assert!(f.engine.launches().is_empty(), "no second agent");
+    assert_ne!(session_state(&f), SessionState::Ended);
+}
