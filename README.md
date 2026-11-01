@@ -130,7 +130,9 @@ This guide starts one Box from a git repo on your machine. You need:
 - [Set up the Slack front](docs/slack.md): run `moor-slack` and configure its
   Slack app.
 - [Run the web front](docs/web.md): run `moor-web` on the controller host.
-- [Get told when a Box idles](docs/notify.md): post Box events to a webhook
-  with `moor-notify`.
+- [Use your Boxes from an agent over MCP](docs/mcp.md): the gate's tools, and
+  the Box resources an MCP client listens on to learn when a Box idles.
+- [Get told by webhook](docs/notify.md): post Box events to a URL with
+  `moor-notify`.
 - [Development](docs/development.md): the crate layout, the build, and the
   checks.

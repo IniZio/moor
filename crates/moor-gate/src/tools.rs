@@ -11,9 +11,9 @@ use moor_core::request::{
 use moor_core::response::{ExitClass, Response as ControllerResponse};
 use moor_core::view::progress;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{CallToolResult, ContentBlock, ServerCapabilities, ServerConfig};
+use rmcp::model::{CallToolResult, ContentBlock};
 use rmcp::service::RequestContext;
-use rmcp::{tool, tool_handler, tool_router, RoleServer, ServerHandler};
+use rmcp::{tool, tool_router, RoleServer};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
@@ -21,6 +21,7 @@ use serde_json::Value;
 use crate::mcp::{Auth, READ, WRITE};
 use crate::{rewrite, Person};
 
+mod listen;
 mod reply;
 
 use reply::Reply;
@@ -85,15 +86,8 @@ impl Tools {
                        scope."
     )]
     async fn list_boxes(&self, context: RequestContext<RoleServer>) -> CallToolResult {
-        let request = ControllerRequest::Show(ShowReq {
-            target: None,
-            events: None,
-            agent: false,
-            reports: false,
-            artifacts: false,
-            pane: false,
-        });
-        self.run(&context, READ, Ok(request), Reply::Listed).await
+        self.run(&context, READ, Ok(show_all()), Reply::Listed)
+            .await
     }
 
     /// Starts a Box.
@@ -130,16 +124,7 @@ impl Tools {
         context: RequestContext<RoleServer>,
         Parameters(args): Parameters<BoxArgs>,
     ) -> CallToolResult {
-        let request = target(&args.r#box).map(|target| {
-            ControllerRequest::Show(ShowReq {
-                target: Some(target),
-                events: Some(progress::EVENTS),
-                agent: true,
-                reports: true,
-                artifacts: true,
-                pane: false,
-            })
-        });
+        let request = target(&args.r#box).map(status_request);
         self.run(&context, READ, request, Reply::Detailed).await
     }
 
@@ -203,19 +188,10 @@ impl Tools {
         reply: Reply,
         sender: SendFn,
     ) -> CallToolResult {
-        let auth = context
-            .extensions
-            .get::<http::request::Parts>()
-            .and_then(|parts| parts.extensions.get::<Auth>())
-            .cloned();
-        let Some(auth) = auth else {
-            return failed("the request carries no verified identity".to_owned());
+        let auth = match auth_for(context, scope) {
+            Ok(auth) => auth,
+            Err(why) => return failed(why),
         };
-        if !auth.scopes.iter().any(|s| s == scope) {
-            return failed(format!(
-                "this tool needs the {scope} scope; sign in again with it"
-            ));
-        }
         let request = match request {
             Ok(request) => request,
             Err(why) => return failed(why),
@@ -232,15 +208,44 @@ impl Tools {
     }
 }
 
-#[allow(
-    clippy::unused_async_trait_impl,
-    reason = "the generated handlers are async whether or not they await"
-)]
-#[tool_handler]
-impl ServerHandler for Tools {
-    fn get_info(&self) -> ServerConfig {
-        ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
+/// The verified caller of `context`, when its token grants `scope`.
+fn auth_for(context: &RequestContext<RoleServer>, scope: &str) -> Result<Auth, String> {
+    let auth = context
+        .extensions
+        .get::<http::request::Parts>()
+        .and_then(|parts| parts.extensions.get::<Auth>())
+        .cloned()
+        .ok_or_else(|| "the request carries no verified identity".to_owned())?;
+    if !auth.scopes.iter().any(|s| s == scope) {
+        return Err(format!(
+            "this needs the {scope} scope; sign in again with it"
+        ));
     }
+    Ok(auth)
+}
+
+/// The `show` of every open Box that `list_boxes` sends.
+const fn show_all() -> ControllerRequest {
+    ControllerRequest::Show(ShowReq {
+        target: None,
+        events: None,
+        agent: false,
+        reports: false,
+        artifacts: false,
+        pane: false,
+    })
+}
+
+/// The `show` of one Box that `box_status` and a resource read send.
+const fn status_request(target: BoxTarget) -> ControllerRequest {
+    ControllerRequest::Show(ShowReq {
+        target: Some(target),
+        events: Some(progress::EVENTS),
+        agent: true,
+        reports: true,
+        artifacts: true,
+        pane: false,
+    })
 }
 
 /// A failed tool call carrying `why`.

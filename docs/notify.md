@@ -1,8 +1,10 @@
 # Get told when a Box idles
 
-`moor-notify` is a front that posts a person's Box events to a webhook. A client
-that starts Boxes over [MCP](mcp.md) and walks away can wait for a POST instead
-of polling `list_boxes` or `box_status`. The front decides nothing. Each POST
+`moor-notify` is a front that posts a person's Box events to a webhook. It is
+for a receiver that does not hold an MCP stream open, such as a CI job or a
+chat bot. An MCP client can use
+[`subscriptions/listen`](mcp.md#get-told-instead-of-polling) on the gate
+instead. The front decides nothing. Each POST
 carries one event as the controller stored it, plus the fields `box_status`
 already returns. Without the front, moor sends nothing.
 
@@ -148,9 +150,9 @@ first start for a hook, it begins at the newest event and posts no history.
 Without a state dir, every start is a first start. A front that stops between a
 POST and the save posts that event again, so dedupe on `X-Moor-Delivery`.
 
-## Stop polling from an MCP client
+## Stop polling
 
 1. Add a hook with your sign-in email and a URL that wakes your automation.
-2. Start Boxes with `start_box` as before.
+2. Start Boxes from MCP, Slack or another front, as before.
 3. On each POST, read `event`, `box` and `agent_said`. Call `box_status` or
    `send_to_box` only for the Box in the POST.

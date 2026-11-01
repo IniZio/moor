@@ -19,7 +19,7 @@ that person's Boxes.
 
 | Scope | Allows |
 | --- | --- |
-| `moor:read` | `list_boxes`, `box_status` |
+| `moor:read` | `list_boxes`, `box_status`, the Box resources, `subscriptions/listen` |
 | `moor:write` | `start_box`, `send_to_box`, `close_box` |
 
 A token without `moor:write` gets an error from the write tools and can still
@@ -60,12 +60,6 @@ a Box is done:
 Artifacts and Reports are saved after each of the agent's turns, so they show
 up once the turn ends.
 
-### Getting told instead of polling
-
-To learn when a Box idles or fails without calling `box_status` on a timer, set
-up a webhook with [moor-notify](notify.md). It posts each such event with the
-Box's name, lifecycle and `agent_said`.
-
 ### Starting without blocking
 
 A start clones the repo, runs setup and launches the agent, which takes minutes.
@@ -83,6 +77,53 @@ and answers as the controller does, so a start that collides with another
 start of the same name gets the controller's busy error, with or without `wait`.
 A start the controller refuses before the Box exists (bad repo, no capacity)
 returns that error directly.
+
+## Get told instead of polling
+
+Each of your open Boxes is a resource. Its URI is `moor://box/<name>`, such as
+`moor://box/app/fix-login`. `resources/list` returns one entry per Box, with
+the Box's one-line status as its description. `resources/read` returns the same
+JSON as `box_status`, as `application/json` text.
+
+A client on MCP 2026-07-28 sends `subscriptions/listen` once and keeps the
+stream open:
+
+```json
+{"jsonrpc": "2.0", "id": 7, "method": "subscriptions/listen", "params": {
+  "notifications": {
+    "resourcesListChanged": true,
+    "resourceSubscriptions": ["moor://box/app/fix-login"]
+  }}}
+```
+
+The gate acknowledges the URIs it accepts, which are the `moor://box/` ones.
+Then it follows your events on the controller from that moment:
+
+| Event of a Box | Notification |
+| --- | --- |
+| `idled`, `busy`, `needs_input` | `notifications/resources/updated` for its URI |
+| `setup_failed`, `session_failed`, `launch_timed_out`, `box_failed` | `notifications/resources/updated` for its URI |
+| `relaunched`, `relaunch_capped` | `notifications/resources/updated` for its URI |
+| `box_ready`, `asleep`, `woke`, `closed` | `notifications/resources/updated` for its URI |
+| `started`, `closed`, `box_deleted` | `notifications/resources/list_changed` |
+
+A notification names only the resource. Read the resource to see what happened.
+Its `events`, `status` and `agent_said` say it. To follow a Box that started
+after the stream opened, open a second listen that names its URI.
+
+The stream ends when the client cancels the request or disconnects. It also
+ends with an error when the controller ends the watch. Events that happen while
+no stream is open are not replayed. After a reconnect, list and read the Boxes
+again, then listen again. A client on an older MCP version gets
+`method not found`. It can poll `box_status`, or use the
+[webhook front](notify.md), which keeps a cursor and posts each event to a URL.
+An ingress in front of the gate must let a response stream stay open.
+
+To replace a cron that polls:
+
+1. Call `start_box`, and note the Box name.
+2. Listen on `moor://box/<name>`.
+3. On each `updated`, read the resource and act on `status` and `agent_said`.
 
 ## Operator setup
 
