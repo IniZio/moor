@@ -669,6 +669,9 @@ fronts:
   slack: {}
 ```
 
+[moor-notify](notify.md), which posts Box events to a webhook, runs as the
+`notify` front.
+
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `command` | list of strings, not empty | none | The program and arguments the controller runs as this front. Without it, start the front yourself. |

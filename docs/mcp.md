@@ -60,6 +60,12 @@ a Box is done:
 Artifacts and Reports are saved after each of the agent's turns, so they show
 up once the turn ends.
 
+### Getting told instead of polling
+
+To learn when a Box idles or fails without calling `box_status` on a timer, set
+up a webhook with [moor-notify](notify.md). It posts each such event with the
+Box's name, lifecycle and `agent_said`.
+
 ### Starting without blocking
 
 A start clones the repo, runs setup and launches the agent, which takes minutes.
