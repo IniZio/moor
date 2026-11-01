@@ -22,8 +22,8 @@ use base64::Engine;
 use moor_client::TokenSource;
 use moor_core::controller::PROTOCOL;
 use moor_core::response::Response;
-use moor_herdr::auth::login::{self, Ui};
-use moor_herdr::auth::{Credentials, Store, Tokens};
+use moor_client::oidc::Ui;
+use moor_client::session::{self, Credentials, Store, Tokens};
 use moor_herdr::connect;
 use oauth2::url::Url;
 use sha2::{Digest, Sha256};
@@ -288,7 +288,7 @@ const fn person(via_loopback: bool) -> Person {
 }
 
 fn sign_in(fake: &Fake, store: &Store, mut who: Person) -> Result<(), String> {
-    login::run(&fake.base, 0, store, &mut who, NOW)
+    session::login(&fake.base, 0, store, &mut who, NOW).map(drop)
 }
 
 fn saved(fake: &Fake, expires_at: i64) -> Credentials {
@@ -300,6 +300,7 @@ fn saved(fake: &Fake, expires_at: i64) -> Credentials {
         refresh_token: "refresh-0".to_owned(),
         access_token: "access-0".to_owned(),
         expires_at,
+        email: None,
     }
 }
 
@@ -314,7 +315,7 @@ fn pasting_the_callback_completes_login_and_saves_0600_credentials() {
         "http://localhost:1/callback?code=x&state=other".to_owned(),
     ];
     sign_in(&fake, &store, who).unwrap();
-    let creds = store.read().unwrap().unwrap();
+    let creds = store.read(&fake.base).unwrap().unwrap();
     assert_eq!(creds.server, fake.base);
     assert_eq!(creds.access_token, "access-0");
     assert_eq!(creds.refresh_token, "refresh-0");
@@ -350,7 +351,7 @@ fn a_front_that_refuses_after_sign_in_is_reported_and_keeps_the_sign_in() {
             .contains("signed in, but moor did not answer"),
         "{err}"
     );
-    assert!(store.read().unwrap().is_some());
+    assert!(store.read(&fake.base).unwrap().is_some());
 }
 
 #[test]
@@ -359,16 +360,16 @@ fn the_browser_returning_to_the_loopback_completes_login() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::new(dir.path());
     sign_in(&fake, &store, person(true)).unwrap();
-    assert_eq!(store.read().unwrap().unwrap().access_token, "access-0");
+    assert_eq!(store.read(&fake.base).unwrap().unwrap().access_token, "access-0");
 }
 
 #[test]
 fn an_unreachable_server_saves_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::new(dir.path());
-    let err = login::run("http://127.0.0.1:1", 0, &store, &mut person(false), NOW).unwrap_err();
+    let err = session::login("http://127.0.0.1:1", 0, &store, &mut person(false), NOW).unwrap_err();
     assert!(err.contains("cannot reach"), "{err}");
-    assert!(store.read().unwrap().is_none());
+    assert!(store.read("http://127.0.0.1:1").unwrap().is_none());
 }
 
 #[test]
@@ -402,7 +403,7 @@ fn two_processes_refreshing_together_refresh_once() {
     let got = [one.join().unwrap(), two.join().unwrap()];
     assert_eq!(got, ["access-1", "access-1"]);
     assert_eq!(fake.state.lock().unwrap().refreshes, 1);
-    let creds = Store::new(dir.path()).read().unwrap().unwrap();
+    let creds = Store::new(dir.path()).read(&fake.base).unwrap().unwrap();
     assert_eq!(
         (creds.refresh_token.as_str(), creds.expires_at),
         ("refresh-1", NOW + 3600)
@@ -420,6 +421,7 @@ fn credentials_for_another_server_or_none_say_to_log_in() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::new(dir.path());
     let none = Tokens::with_clock(store.clone(), &fake.base, || NOW)
+        .login_with(connect::LOGIN)
         .bearer()
         .unwrap_err();
     assert!(none.contains("moor-herdr login"), "{none}");
@@ -431,8 +433,8 @@ fn credentials_for_another_server_or_none_say_to_log_in() {
         other.contains("signed in to") && other.contains("example.com"),
         "{other}"
     );
-    assert!(store.delete().unwrap());
-    assert!(!store.delete().unwrap());
+    assert!(store.delete(&fake.base).unwrap());
+    assert!(!store.delete(&fake.base).unwrap());
 }
 
 #[test]

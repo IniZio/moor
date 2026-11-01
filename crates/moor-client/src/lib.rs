@@ -31,6 +31,7 @@ pub mod forward;
 #[cfg(feature = "link")]
 pub mod link;
 pub mod oidc;
+pub mod session;
 mod redial;
 mod remote;
 mod stream;

@@ -1,5 +1,6 @@
 //! An OIDC issuer on loopback: discovery, JWKS, userinfo, and an authorize endpoint that
-//! approves at once and a PKCE token endpoint whose access and id tokens carry [`Issuer::id_claims`].
+//! approves at once, a PKCE and refresh token endpoint whose access and id tokens carry
+//! [`Issuer::id_claims`], a revocation endpoint, and the `/.well-known/moor` a gate serves.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -39,6 +40,14 @@ pub struct Issuer {
     pub userinfo: Arc<Mutex<(u16, Value)>>,
     /// Userinfo requests that carried a bearer token.
     pub userinfo_calls: Arc<AtomicUsize>,
+    /// The refresh token it accepts now; each refresh replaces it.
+    pub refresh: Arc<Mutex<String>>,
+    /// Refresh grants it answered.
+    pub refreshes: Arc<AtomicUsize>,
+    /// Tokens sent to the revocation endpoint.
+    pub revoked: Arc<Mutex<Vec<String>>>,
+    /// The query of each authorize request.
+    pub authorized: Arc<Mutex<Vec<HashMap<String, String>>>>,
 }
 
 /// Unix seconds now.
@@ -73,6 +82,10 @@ impl Issuer {
                 json!({"sub": "alice-sub", "email": "Alice@Example.com", "email_verified": true}),
             ))),
             userinfo_calls: Arc::new(AtomicUsize::new(0)),
+            refresh: Arc::new(Mutex::new("refresh-0".to_owned())),
+            refreshes: Arc::new(AtomicUsize::new(0)),
+            revoked: Arc::new(Mutex::new(Vec::new())),
+            authorized: Arc::new(Mutex::new(Vec::new())),
         };
         let served = issuer.clone();
         std::thread::spawn(move || {
@@ -134,7 +147,19 @@ impl Issuer {
                 let (status, body) = self.userinfo.lock().unwrap().clone();
                 (status, String::new(), body)
             }
+            "/.well-known/moor" => (
+                200,
+                String::new(),
+                json!({"issuer": base, "client_id": self.client_id, "resource": format!("{base}/mcp"),
+                    "scopes": ["openid", "email", "offline_access", "moor:read", "moor:write"]}),
+            ),
+            "/revoke" => {
+                let token = form(&body).remove("token").unwrap_or_default();
+                self.revoked.lock().unwrap().push(token);
+                (200, String::new(), json!({}))
+            }
             "/authorize" => {
+                self.authorized.lock().unwrap().push(query.clone());
                 let code = format!("code-{}", codes.len());
                 codes.insert(code.clone(), query["code_challenge"].clone());
                 let back = format!(
@@ -150,6 +175,7 @@ impl Issuer {
                 json!({"issuer": base, "authorization_endpoint": format!("{base}/authorize"),
                     "token_endpoint": format!("{base}/token"), "jwks_uri": format!("{base}/jwks"),
                     "userinfo_endpoint": format!("{base}/userinfo"),
+                    "revocation_endpoint": format!("{base}/revoke"),
                     "code_challenge_methods_supported": ["S256"]}),
             ),
         };
@@ -164,6 +190,9 @@ impl Issuer {
         form: &HashMap<String, String>,
         codes: &mut HashMap<String, String>,
     ) -> (u16, String, Value) {
+        if form.get("grant_type").map(String::as_str) == Some("refresh_token") {
+            return self.refreshed(form);
+        }
         let challenge = codes.remove(form.get("code").map_or("", String::as_str));
         let verifier = form.get("code_verifier").map_or("", String::as_str);
         let matches = challenge.is_some_and(|c| {
@@ -172,14 +201,30 @@ impl Issuer {
         if !matches || form.get("client_id") != Some(&self.client_id) {
             return (400, String::new(), json!({"error": "invalid_grant"}));
         }
+        let refresh = self.refresh.lock().unwrap().clone();
+        (200, String::new(), self.tokens(&refresh))
+    }
+
+    /// Trades the current refresh token for new tokens and a new refresh token.
+    fn refreshed(&self, form: &HashMap<String, String>) -> (u16, String, Value) {
+        let mut current = self.refresh.lock().unwrap();
+        if form.get("refresh_token") != Some(&*current) || form.get("client_id") != Some(&self.client_id) {
+            return (400, String::new(), json!({"error": "invalid_grant"}));
+        }
+        let n = self.refreshes.fetch_add(1, Ordering::SeqCst) + 1;
+        *current = format!("refresh-{n}");
+        (200, String::new(), self.tokens(&current))
+    }
+
+    /// A token response carrying `refresh`.
+    fn tokens(&self, refresh: &str) -> Value {
         let mut claims = self.id_claims.lock().unwrap().clone();
         claims["iss"] = json!(self.base);
         claims["aud"] = json!(self.client_id);
         claims["exp"] = json!(now() + 300);
         let token = self.sign(&claims);
-        let answer = json!({"access_token": token, "token_type": "Bearer",
-            "expires_in": 3600, "refresh_token": "refresh-0", "id_token": token});
-        (200, String::new(), answer)
+        json!({"access_token": token, "token_type": "Bearer",
+            "expires_in": 3600, "refresh_token": refresh, "id_token": token})
     }
 }
 
