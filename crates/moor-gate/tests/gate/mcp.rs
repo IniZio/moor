@@ -339,6 +339,7 @@ fn the_tools_are_listed() {
             "box_status",
             "close_box",
             "list_boxes",
+            "list_events",
             "list_webhooks",
             "remove_webhook",
             "send_to_box",

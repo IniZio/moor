@@ -19,7 +19,7 @@ that person's Boxes.
 
 | Scope | Allows |
 | --- | --- |
-| `moor:read` | `list_boxes`, `box_status`, `list_webhooks`, the Box resources, `subscriptions/listen` |
+| `moor:read` | `list_boxes`, `box_status`, `list_webhooks`, `list_events`, the Box resources, `subscriptions/listen` |
 | `moor:write` | `start_box`, `send_to_box`, `close_box`, `add_webhook`, `remove_webhook` |
 
 A token without `moor:write` gets an error from the write tools and can still
@@ -36,6 +36,7 @@ read.
 | `close_box` | `box`; optional `force` |
 | `add_webhook` | `url` (https); optional `events` |
 | `list_webhooks` | none |
+| `list_events` | optional `after`, `kinds`, `box`, `limit`, `wait_seconds` |
 | `remove_webhook` | `id` |
 
 `close_box` refuses a Box that holds unpushed commits or uncommitted files, or
@@ -85,6 +86,51 @@ and answers as the controller does, so a start that collides with another
 start of the same name gets the controller's busy error, with or without `wait`.
 A start the controller refuses before the Box exists (bad repo, no capacity)
 returns that error directly.
+
+## Read events from an offset
+
+`list_events` reads your Box events from the event log, the way a Kafka
+consumer fetches. It suits a client that polls, such as a bot, and a webhook
+receiver that wants to catch up after downtime.
+
+| Argument | Meaning |
+| --- | --- |
+| `after` | Return events with an offset greater than this. Default 0, the start of the log. |
+| `kinds`, `box` | Only these event kinds, only this Box. |
+| `limit` | Most events to return. Default 50, at most 100. |
+| `wait_seconds` | When nothing is past `after`, wait up to this long for an event. Default 0, at most 30. |
+
+It returns `{"events": [...], "next": 14, "caught_up": true}`. Each event has
+`offset`, `kind`, `box`, `box_id`, `session`, `ts` and `data`. Pass `next` as
+`after` in the next call. `caught_up` is true when the call reached the end of
+the log.
+
+The rules, in plain words:
+
+- You keep the offset. The server remembers nothing about you: no
+  acknowledgement, no read marks, no groups. Reading changes nothing.
+- The same `after` and filters return the same events in the same order, so a
+  call you repeat after a crash is safe.
+- Offsets increase but skip. Events of other users share the log, so the
+  offsets you see have gaps. Never count on `after + 1` being the next event.
+- `next` is the last offset returned. When nothing was returned it is the end
+  of the log, so the next call does not scan again. It is never less than
+  `after`.
+- Events are retained indefinitely. Nothing deletes them today.
+
+A polling loop:
+
+```text
+after = 0
+loop:
+  result = list_events(after=after, wait_seconds=30)
+  handle(result.events); after = result.next   # save after before you handle the next batch
+```
+
+Every webhook body carries the event's `offset`. After downtime, call
+`list_events` with `after` set to the last offset you handled, and process what
+it returns before you trust new deliveries. A delivery you already handled
+carries an offset you have seen, so skip it.
 
 ## Get told instead of polling
 
