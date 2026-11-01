@@ -387,6 +387,27 @@ fn the_metadata_names_the_issuer_and_client() {
 }
 
 #[test]
+fn the_metadata_names_the_mcp_resource_and_its_scopes_when_mcp_is_served() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = dir.path().join("authgear.sock");
+    let seen = serve_controller(&socket);
+    let w = world_with(socket, seen, dir, true);
+    let res = http_get(&w, "/.well-known/moor");
+    let body: Value = serde_json::from_str(res.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    assert_eq!(body["resource"], json!(format!("http://{}/mcp", w.gate)));
+    assert_eq!(
+        body["scopes"],
+        json!([
+            "openid",
+            "email",
+            "offline_access",
+            "moor:read",
+            "moor:write"
+        ])
+    );
+}
+
+#[test]
 fn any_other_path_is_404() {
     let w = world();
     for path in ["/", "/mcp", "/front/x", "/.well-known/openid-configuration"] {

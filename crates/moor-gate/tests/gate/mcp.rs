@@ -286,18 +286,6 @@ fn an_unauthenticated_call_gets_401_pointing_at_the_resource_metadata() {
 }
 
 #[test]
-fn the_moor_metadata_names_the_mcp_resource_and_its_scopes() {
-    let m = mcp();
-    let res = super::http_get(&m.world, "/.well-known/moor");
-    let body: Value = serde_json::from_str(res.split("\r\n\r\n").nth(1).unwrap()).unwrap();
-    assert_eq!(body["resource"], json!(m.url()));
-    assert_eq!(
-        body["scopes"],
-        json!(["openid", "email", "offline_access", "moor:read", "moor:write"])
-    );
-}
-
-#[test]
 fn a_token_for_another_audience_is_refused() {
     let m = mcp();
     let front = m.token("alice-sub", super::CLIENT_ID, "moor:read moor:write");
