@@ -1,0 +1,7 @@
+[
+  {
+    "name": "moor-boxes",
+    "command": "\"${CLAUDE_PLUGIN_ROOT}\"/bin/listen",
+    "description": "Box events from moor"
+  }
+]

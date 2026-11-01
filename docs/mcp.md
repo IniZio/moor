@@ -147,6 +147,28 @@ To replace a cron that polls:
 2. Listen on `moor://box/<name>`.
 3. On each `updated`, read the resource and act on `status` and `agent_said`.
 
+## Get told inside Claude Code
+
+The `moor` plugin in [`agents/claude`](../agents/README.md) connects Claude Code
+to the gate and prints a line in the session when a Box idles, needs input or
+fails.
+
+```sh
+export MOOR_URL=https://<host>/mcp   # before starting claude
+cargo install --git https://github.com/IniZio/moor moor-listen
+```
+
+Then, inside Claude Code:
+
+```text
+/plugin marketplace add IniZio/moor
+/plugin install moor@moor
+```
+
+Sign in to the `moor` server from `/mcp`. The plugin reuses that sign-in for the
+listener, so there is no second login. It needs `jq` on Linux. macOS Keychain
+lookup is not supported yet.
+
 ## Operator setup
 
 Start the gate with `--mcp-resource-url https://<host>/mcp` (or
