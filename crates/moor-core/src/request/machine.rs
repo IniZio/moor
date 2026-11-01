@@ -75,6 +75,24 @@ pub struct MachineLink {
     /// The memory, in MiB, kept for the host rather than its Boxes; none means the default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reserve_mib: Option<u64>,
+    /// Its agent's latest live memory report; none from an agent that never sent one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<MemoryReport>,
+}
+
+/// A machine's host memory as its agent last reported it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MemoryReport {
+    /// When the runner received it.
+    pub at: Ts,
+    /// `MemAvailable`, in MiB.
+    pub available_mib: u64,
+    /// `MemTotal`, in MiB.
+    pub total_mib: u64,
+    /// PSI `some avg10`, in hundredths; none when the host has no PSI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub psi_centi: Option<u32>,
 }
 
 /// The capacity of a machine added without one.

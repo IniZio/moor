@@ -133,10 +133,12 @@ async fn up(agents: &Agents, req: &Forward) -> Result<(Channel, Route), String> 
 }
 
 /// Pipes a connection machine `machine_id`'s agent accepted to the host port routed for it.
-pub(crate) async fn accepted(mut ch: Channel, machine_id: i64, routes: &Routes) {
-    let Ok(accepted) = ops::read_line::<_, Accepted>(&mut ch).await else {
-        return;
-    };
+pub(crate) async fn accepted(
+    mut ch: Channel,
+    machine_id: i64,
+    accepted: Accepted,
+    routes: &Routes,
+) {
     let Some(host) = routes.host_port(machine_id, accepted) else {
         return;
     };

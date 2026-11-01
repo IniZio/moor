@@ -185,6 +185,10 @@ const FILES: &[(&str, &str)] = &[
         "V32__node_memory.sql",
         include_str!("../../migrations/V32__node_memory.sql"),
     ),
+    (
+        "V33__node_live_memory.sql",
+        include_str!("../../migrations/V33__node_live_memory.sql"),
+    ),
 ];
 
 /// moor.db's migrations, oldest first.

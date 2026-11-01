@@ -1,6 +1,8 @@
 //! Which enrolled machines hold a link to the runner, and the keys they prove themselves with.
 
-use moor_core::request::MachineLink;
+use std::collections::HashMap;
+
+use moor_core::request::{MachineLink, MemoryReport};
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::view::user::MachineKey;
@@ -34,12 +36,26 @@ impl Store {
     ) -> Result<Vec<MachineLink>, StoreError> {
         let mut conn = self.writer();
         let tx = conn.transaction()?;
+        // A relinked agent has not reported yet, but its node still reports memory.
+        let reported: HashMap<i64, MemoryReport> = {
+            let mut stmt = tx.prepare(&format!(
+                "SELECT {LINK_COLUMNS} WHERE mem_available_mib IS NOT NULL"
+            ))?;
+            let rows = stmt.query_map([], link_row)?;
+            rows.filter_map(|l| l.map(|l| l.memory.map(|m| (l.machine_id, m))).transpose())
+                .collect::<Result<_, _>>()?
+        };
         tx.execute("DELETE FROM machine_links", [])?;
         for link in links {
+            let memory = link
+                .memory
+                .or_else(|| reported.get(&link.machine_id).copied());
             tx.execute(
                 "INSERT OR REPLACE INTO machine_links (machine_id, online, since, version, protocol, \
-                 max_boxes, cache_gb, pool_features, mem_mib, cpus, reserve_mib) \
-                 SELECT machine_id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM user_machines_v2 WHERE machine_id = ?",
+                 max_boxes, cache_gb, pool_features, mem_mib, cpus, reserve_mib, mem_available_mib, \
+                 psi_centi, reported_at) \
+                 SELECT machine_id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM user_machines_v2 \
+                 WHERE machine_id = ?",
                 params![
                     link.online,
                     link.since.as_millis(),
@@ -52,6 +68,9 @@ impl Store {
                     link.mem_mib.and_then(|m| i64::try_from(m).ok()),
                     link.cpus,
                     link.reserve_mib.and_then(|m| i64::try_from(m).ok()),
+                    memory.and_then(|m| i64::try_from(m.available_mib).ok()),
+                    memory.and_then(|m| m.psi_centi),
+                    memory.map(|m| m.at.as_millis()),
                     link.machine_id
                 ],
             )?;
@@ -73,7 +92,7 @@ impl Store {
     ) -> Result<Vec<(String, MachineLink)>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(&format!("SELECT {LINK_COLUMNS} WHERE m.user = ?"))?;
-        let rows = stmt.query_map([user.get()], |r| Ok((r.get(11)?, link_row(r)?)))?;
+        let rows = stmt.query_map([user.get()], |r| Ok((r.get(14)?, link_row(r)?)))?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
 }
@@ -81,7 +100,7 @@ impl Store {
 /// The columns [`link_row`] reads, then the machine's name once `user_machines_v2 m` is joined.
 const LINK_COLUMNS: &str =
     "machine_id, online, since, version, protocol, max_boxes, cache_gb, pool_features, mem_mib, cpus, \
-     reserve_mib, m.name \
+     reserve_mib, mem_available_mib, psi_centi, reported_at, m.name \
      FROM machine_links LEFT JOIN user_machines_v2 m USING (machine_id)";
 
 /// One `machine_links` row.
@@ -100,6 +119,15 @@ fn link_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<MachineLink> {
         mem_mib: mib(r.get(8)?),
         cpus: r.get(9)?,
         reserve_mib: mib(r.get(10)?),
+        memory: match (mib(r.get(11)?), r.get::<_, Option<i64>>(13)?) {
+            (Some(available_mib), Some(at)) => Some(MemoryReport {
+                at: Ts::from_millis(at),
+                available_mib,
+                total_mib: mib(r.get(8)?).unwrap_or(0),
+                psi_centi: r.get(12)?,
+            }),
+            _ => None,
+        },
     })
 }
 
