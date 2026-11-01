@@ -66,7 +66,7 @@ moor_tree_refresh() {{
   git remote | while read -r r; do [ "$r" = origin ] || git remote remove "$r"; done
   git for-each-ref --format='%(refname)' | grep -vxF -- {local} | grep -v -e '^refs/remotes/origin/' -e '^refs/tags/' |
     while read -r r; do git update-ref --no-deref -d "$r"; done
-  rm -f -- .git/ORIG_HEAD .git/REBASE_HEAD
+  rm -f -- .git/ORIG_HEAD .git/REBASE_HEAD .git/BISECT_EXPECTED_REV
   git reflog expire --expire=now --all && git worktree prune || {{ moor_tree_cold 'git could not drop old refs'; return 0; }}
   if [ -f .gitmodules ] && git submodule status --recursive 2>/dev/null | grep -q '^[ +U]'; then
     {{ git submodule sync -q --recursive && git submodule update -q --init --recursive --force &&
