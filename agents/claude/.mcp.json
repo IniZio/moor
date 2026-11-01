@@ -1,8 +1,7 @@
 {
   "mcpServers": {
     "moor": {
-      "type": "http",
-      "url": "${MOOR_URL}"
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/mcp"
     }
   }
 }

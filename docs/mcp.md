@@ -319,8 +319,9 @@ to the gate and prints a line in the session when a Box idles, needs input or
 fails.
 
 ```sh
-export MOOR_URL=https://<host>/mcp   # before starting claude
-cargo install --git https://github.com/IniZio/moor moor-listen
+cargo install --git https://github.com/IniZio/moor moor
+moor login --server https://<host>       # once; opens the browser
+export MOOR_SERVER=https://<host>        # before starting claude, or in settings env
 ```
 
 Then, inside Claude Code:
@@ -330,9 +331,9 @@ Then, inside Claude Code:
 /plugin install moor@moor
 ```
 
-Sign in to the `moor` server from `/mcp`. The plugin reuses that sign-in for the
-listener, so there is no second login. It needs `jq` on Linux. macOS Keychain
-lookup is not supported yet.
+The plugin starts `moor mcp` for its tools and `moor listen` for Box lines.
+Both use the one sign-in and renew it themselves, so nothing goes stale while
+the session is quiet. There is no sign-in step in `/mcp`.
 
 ## Operator setup
 

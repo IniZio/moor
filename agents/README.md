@@ -30,7 +30,7 @@ core stays agent-neutral; everything specific to an agent lives in its folder.
 
 ## Claude Code
 
-`.mcp.json` reads the `/mcp` URL from `MOOR_URL`. The monitor runs
-`moor listen --server "$MOOR_SERVER"`, falling back to `MOOR_URL`, and needs
-`moor login --server ...` run once. Install steps are in
+`.mcp.json` starts `moor mcp --server "$MOOR_SERVER"` over stdio, and the
+monitor runs `moor listen --server "$MOOR_SERVER"` (both fall back to `MOOR_URL`).
+Both use the sign-in from `moor login --server ...`, run once. Install steps are in
 [docs/mcp.md](../docs/mcp.md#get-told-inside-claude-code).
