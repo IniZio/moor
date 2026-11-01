@@ -37,6 +37,42 @@ async fn features_come_from_the_describe_json_sorted() {
     assert_eq!((offer.max_boxes, offer.cache_gb), (Some(3), Some(50)));
 }
 
+/// A crabbox that records its arguments beside itself, and fails as an older one does when
+/// `reject` is set.
+fn recording_crabbox(dir: &Path, reject: bool) -> std::path::PathBuf {
+    let path = dir.join("crabbox");
+    let script = format!(
+        "#!/bin/sh\necho \"$*\" > \"$(dirname \"$0\")/args\"\n{}echo '{{\"capabilities\":{{\"features\":[\"cache-volume\"]}}}}'\n",
+        if reject {
+            "echo 'flag provided but not defined: -configured' >&2\nexit 2\n"
+        } else {
+            ""
+        }
+    );
+    std::fs::write(&path, script).unwrap();
+    std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    path
+}
+
+#[tokio::test]
+async fn features_are_asked_for_with_the_configured_flag() {
+    let home = tempfile::tempdir().unwrap();
+    let crabbox = recording_crabbox(home.path(), false);
+    let offer = pool::offer(&machine(&crabbox)).await.unwrap();
+    assert_eq!(offer.features, ["cache-volume"]);
+    let args = std::fs::read_to_string(home.path().join("args")).unwrap();
+    assert_eq!(args.trim(), "providers describe fake --configured --json");
+}
+
+#[tokio::test]
+async fn a_crabbox_that_rejects_the_configured_flag_leaves_features_empty() {
+    let home = tempfile::tempdir().unwrap();
+    let crabbox = recording_crabbox(home.path(), true);
+    let offer = pool::offer(&machine(&crabbox)).await.unwrap();
+    assert!(offer.features.is_empty());
+    assert_eq!((offer.max_boxes, offer.cache_gb), (Some(3), Some(50)));
+}
+
 #[tokio::test]
 async fn a_describe_that_is_not_json_or_lacks_features_leaves_them_empty() {
     let home = tempfile::tempdir().unwrap();
