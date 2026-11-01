@@ -45,6 +45,8 @@ struct Fake {
     plans: VecDeque<Plan>,
     /// Listens asked for so far.
     listens: usize,
+    /// Box reads asked for so far.
+    reads: usize,
     /// Live listen streams, to push notifications down.
     live: Vec<TcpStream>,
 }
@@ -101,7 +103,8 @@ fn serve(stream: TcpStream, fake: &Shared) {
         "resources/read" => {
             let uri = req["params"]["uri"].as_str().unwrap();
             let name = uri.strip_prefix("moor://box/").unwrap();
-            let f = fake.lock().unwrap();
+            let mut f = fake.lock().unwrap();
+            f.reads += 1;
             let status =
                 json!({"events": f.events.get(name), "agent_said": {"text": f.said.get(name)}});
             drop(f);
@@ -183,13 +186,24 @@ impl Gate {
     }
 
     fn wait_listens(&self, n: usize) {
+        self.wait_until("listens", n, |f| f.listens);
+    }
+
+    fn wait_reads(&self, n: usize) {
+        self.wait_until("reads", n, |f| f.reads);
+    }
+
+    fn wait_until(&self, what: &str, n: usize, count: fn(&Fake) -> usize) {
         for _ in 0..1500 {
-            if self.listens() >= n {
+            if count(&self.fake.lock().unwrap()) >= n {
                 return;
             }
             sleep(Duration::from_millis(10));
         }
-        panic!("only {} listens, wanted {n}", self.listens());
+        panic!(
+            "only {} {what}, wanted {n}",
+            count(&self.fake.lock().unwrap())
+        );
     }
 
     /// Box `name` gets a new event, told to no stream.
@@ -311,7 +325,9 @@ fn a_box_that_idled_while_disconnected_is_said_once_after_reconnect() {
         &[Plan::CloseAfter(Duration::from_millis(500)), Plan::Keep],
     );
     let listen = gate.listen(45_000);
-    gate.wait_listens(1);
+    // Two reads before the first listen, two more on its acknowledgement; a later event is
+    // one the first stream never tells.
+    gate.wait_reads(4);
     gate.quietly("repo/a", 3, "idled", "Done.");
     assert_eq!(listen.line(), "moor: box repo/a idled: Done.");
     assert_eq!(gate.listens(), 2);
