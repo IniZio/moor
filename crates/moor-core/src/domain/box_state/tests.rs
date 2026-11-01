@@ -26,7 +26,10 @@ fn all_inputs() -> Vec<BoxLifecycleInput> {
             which: None,
         },
         I::Retry,
-        I::Sleep { auto: false },
+        I::Sleep {
+            auto: false,
+            reason: None,
+        },
         I::Wake,
         I::Close,
     ]
@@ -71,8 +74,22 @@ fn legal() -> Vec<(BoxLifecycle, BoxLifecycleInput, BoxLifecycle)> {
             S::SetupFailed,
         ),
         (S::SetupFailed, I::Retry, S::SettingUp),
-        (S::Ready, I::Sleep { auto: false }, S::Asleep),
-        (S::Ready, I::Sleep { auto: true }, S::Asleep),
+        (
+            S::Ready,
+            I::Sleep {
+                auto: false,
+                reason: None,
+            },
+            S::Asleep,
+        ),
+        (
+            S::Ready,
+            I::Sleep {
+                auto: true,
+                reason: None,
+            },
+            S::Asleep,
+        ),
         (S::Asleep, I::Wake, S::Ready),
     ];
     for state in S::ALL.into_iter().filter(|st| st.is_live()) {
@@ -123,8 +140,20 @@ fn every_other_pair_is_illegal() {
 fn auto_does_not_change_the_sleep_result() {
     for sessions in [vec![SS::Idle], vec![SS::Working]] {
         assert_eq!(
-            S::Ready.step(&sessions, &I::Sleep { auto: true }),
-            S::Ready.step(&sessions, &I::Sleep { auto: false })
+            S::Ready.step(
+                &sessions,
+                &I::Sleep {
+                    auto: true,
+                    reason: None
+                }
+            ),
+            S::Ready.step(
+                &sessions,
+                &I::Sleep {
+                    auto: false,
+                    reason: None
+                }
+            )
         );
     }
 }
@@ -137,7 +166,10 @@ fn legal_table_has_expected_size() {
 #[test]
 fn sleep_is_refused_while_any_session_is_not_idle() {
     for busy in [SS::Starting, SS::Working] {
-        let input = I::Sleep { auto: false };
+        let input = I::Sleep {
+            auto: false,
+            reason: None,
+        };
         assert_eq!(
             S::Ready.step(&[SS::Idle, busy], &input),
             Err(StepError::SleepBlocked { busy: 1 }),
@@ -148,7 +180,10 @@ fn sleep_is_refused_while_any_session_is_not_idle() {
 
 #[test]
 fn blocked_sleep_differs_from_sleep_in_the_wrong_state() {
-    let input = I::Sleep { auto: false };
+    let input = I::Sleep {
+        auto: false,
+        reason: None,
+    };
     let sessions = [SS::Working, SS::Starting, SS::Idle, SS::Ended];
     assert_eq!(
         S::Ready.step(&sessions, &input),

@@ -49,7 +49,10 @@ fn all_events() -> Vec<Event> {
         },
         Event::Idled,
         Event::Busy,
-        Event::Asleep { auto: true },
+        Event::Asleep {
+            auto: true,
+            reason: None,
+        },
         Event::Woke,
         Event::Closed {
             from: BoxLifecycle::Ready,

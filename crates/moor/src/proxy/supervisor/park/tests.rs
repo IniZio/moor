@@ -121,7 +121,10 @@ fn sleep_box(w: &World) {
     let quiet = Decision::new(w.id).session(SessionInput::AgentQuiet);
     w.store.apply(quiet).unwrap();
     let d = Decision::new(w.id)
-        .lifecycle(BoxLifecycleInput::Sleep { auto: false })
+        .lifecycle(BoxLifecycleInput::Sleep {
+            auto: false,
+            reason: None,
+        })
         .box_input(BoxInput::Sleep);
     w.store.apply(d).unwrap();
 }

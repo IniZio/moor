@@ -190,7 +190,10 @@ fn an_asleep_box_is_refused_and_opens_nothing() {
     let quiet = Decision::new(f.id).session(SessionInput::AgentQuiet);
     store.apply(quiet).unwrap();
     let d = Decision::new(f.id)
-        .lifecycle(BoxLifecycleInput::Sleep { auto: false })
+        .lifecycle(BoxLifecycleInput::Sleep {
+            auto: false,
+            reason: None,
+        })
         .box_input(BoxInput::Sleep);
     store.apply(d).unwrap();
     let err = run(&f.cx, &req()).unwrap_err();

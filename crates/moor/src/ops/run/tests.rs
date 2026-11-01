@@ -384,7 +384,7 @@ fn sleep(f: &Fx) {
     store
         .apply(
             Decision::new(f.id)
-                .lifecycle(BoxLifecycleInput::Sleep { auto: false })
+                .lifecycle(BoxLifecycleInput::sleep(false))
                 .box_input(BoxInput::Sleep),
         )
         .unwrap();

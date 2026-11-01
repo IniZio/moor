@@ -16,6 +16,7 @@ use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::park::restore_tunnel;
 use crate::ops::common::provision::recorded_workdir;
+use crate::ops::common::room::room_to_wake;
 use crate::ops::common::view::{box_view, hide_unsupported_box_sleep};
 use crate::ops::start::revive_after_wake;
 use crate::store::{BoxRow, Store};
@@ -92,6 +93,7 @@ fn wake(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Woke, CommandError> {
             let handle = b.handle.as_ref().ok_or_else(|| {
                 CommandError::new(ErrorKind::Refused, "the Box has not been acquired")
             })?;
+            room_to_wake(cx, store, row)?;
             cx.driver().wake(handle)?;
             if b.workdir
                 .as_deref()

@@ -67,7 +67,10 @@ fn sleep_box(cx: &Cx, row: &BoxRow) -> Result<(), CommandError> {
             };
             store.apply(
                 Decision::new(row.id)
-                    .lifecycle(BoxLifecycleInput::Sleep { auto: false })
+                    .lifecycle(BoxLifecycleInput::Sleep {
+                        auto: false,
+                        reason: None,
+                    })
                     .box_input(BoxInput::Sleep)
                     .set(fields),
             )?;

@@ -48,6 +48,9 @@ pub enum Event {
     Asleep {
         /// True when the sleep timer fired, false for an explicit command.
         auto: bool,
+        /// Why moor slept it, such as making room for another Box.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
     },
     /// The box woke.
     Woke,
