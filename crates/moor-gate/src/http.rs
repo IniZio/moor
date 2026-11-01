@@ -10,7 +10,8 @@ use tungstenite::handshake::derive_accept_key;
 use tungstenite::protocol::Role;
 use tungstenite::WebSocket;
 
-use crate::{log, relay, Gate};
+use crate::login::routes;
+use crate::{log, relay, Gate, Login};
 
 /// Longest request head the gate reads.
 const HEAD_MAX: usize = 16 * 1024;
@@ -19,7 +20,7 @@ const HEAD_MAX: usize = 16 * 1024;
 const HEAD_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Serves one HTTP connection.
-pub(crate) fn handle(stream: TcpStream, gate: &Gate) {
+pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>) {
     if stream.set_read_timeout(Some(HEAD_TIMEOUT)).is_err() {
         return;
     }
@@ -66,6 +67,9 @@ pub(crate) fn handle(stream: TcpStream, gate: &Gate) {
                 mcp.serve(stream, prefix, gate);
             }
         }
+        (_, p) if p.starts_with("/auth/") && login.is_some() => {
+            auth(stream, leftover, &req, gate, login);
+        }
         (Some("GET"), "/front") => front(stream, leftover, &req, gate),
         (Some("POST"), "/machines/enroll") => {
             let length = header(&req, "content-length").and_then(|v| v.trim().parse().ok());
@@ -73,6 +77,27 @@ pub(crate) fn handle(stream: TcpStream, gate: &Gate) {
         }
         _ => respond(&mut stream, "404 Not Found", "text/plain", "not found\n"),
     }
+}
+
+/// Hands a `/auth/*` request to browser sign-in.
+fn auth(
+    stream: TcpStream,
+    leftover: Vec<u8>,
+    req: &httparse::Request<'_, '_>,
+    gate: &Gate,
+    login: Option<&Login>,
+) {
+    let (Some(login), Some(method)) = (login, req.method) else {
+        return;
+    };
+    let req = routes::Request {
+        method,
+        target: req.path.unwrap_or_default(),
+        cookies: headers_named(req, "cookie"),
+        length: header(req, "content-length").and_then(|v| v.trim().parse().ok()),
+        leftover,
+    };
+    routes::handle(stream, req, gate, login);
 }
 
 /// Checks the bearer token, then upgrades and relays to the controller's front socket.
@@ -154,6 +179,15 @@ fn header<'a>(req: &'a httparse::Request<'_, '_>, name: &str) -> Option<&'a str>
         .iter()
         .find(|h| h.name.eq_ignore_ascii_case(name))
         .and_then(|h| std::str::from_utf8(h.value).ok())
+}
+
+/// Every value of header `name`, matched without case.
+fn headers_named<'a>(req: &'a httparse::Request<'_, '_>, name: &str) -> Vec<&'a str> {
+    req.headers
+        .iter()
+        .filter(|h| h.name.eq_ignore_ascii_case(name))
+        .filter_map(|h| std::str::from_utf8(h.value).ok())
+        .collect()
 }
 
 /// Writes a whole response and lets the connection close.

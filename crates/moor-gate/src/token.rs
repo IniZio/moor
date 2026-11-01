@@ -286,7 +286,7 @@ impl Verifier {
     }
 
     /// The URL `field` of the issuer's discovery document, remembering its userinfo endpoint.
-    fn discover(&self, field: &str) -> Result<String, String> {
+    pub(crate) fn discover(&self, field: &str) -> Result<String, String> {
         let discovery = format!(
             "{}/.well-known/openid-configuration",
             self.issuer.trim_end_matches('/')

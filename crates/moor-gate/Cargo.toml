@@ -36,6 +36,7 @@ tokio = { version = "1", features = [
 clap = { version = "4", features = ["derive", "env"] }
 httparse = "1"
 jsonwebtoken = { version = "9", default-features = false }
+oauth2 = { version = "5", default-features = false }
 rustix = { version = "1", features = ["event"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

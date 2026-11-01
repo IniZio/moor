@@ -9,12 +9,14 @@ use std::sync::Arc;
 
 mod enroll;
 mod http;
+mod login;
 mod mcp;
 mod relay;
 mod rewrite;
 mod token;
 mod tools;
 
+pub use login::Login;
 pub use mcp::Mcp;
 pub use token::{Person, Verifier};
 
@@ -36,10 +38,23 @@ pub struct Gate {
 /// # Errors
 /// The listener's accept failure.
 pub fn serve(listener: &TcpListener, gate: &Arc<Gate>) -> io::Result<()> {
+    serve_with(listener, gate, None)
+}
+
+/// Serves `listener` like [`serve`], with browser sign-in at `/auth/*` when `login` is given.
+///
+/// # Errors
+/// The listener's accept failure.
+pub fn serve_with(
+    listener: &TcpListener,
+    gate: &Arc<Gate>,
+    login: Option<&Arc<Login>>,
+) -> io::Result<()> {
     loop {
         let (stream, _) = listener.accept()?;
         let gate = Arc::clone(gate);
-        std::thread::spawn(move || http::handle(stream, &gate));
+        let login = login.cloned();
+        std::thread::spawn(move || http::handle(stream, &gate, login.as_deref()));
     }
 }
 
