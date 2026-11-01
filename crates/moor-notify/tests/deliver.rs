@@ -13,6 +13,7 @@
 use std::process::Command;
 
 use moor_core::request::WebhookOutcome;
+use moor_notify::guard::NOT_PUBLIC;
 use moor_notify::sign::signature;
 use serde_json::Value;
 
@@ -156,4 +157,49 @@ fn a_refused_claim_stops_the_front_with_the_controllers_message() {
     assert!(!out.status.success());
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("needs `webhooks: true`"), "{stderr}");
+}
+
+/// Runs a guarded front against a delivery to `url` and checks it is refused unsent.
+fn assert_refused_unsent(url: impl Fn(&str) -> String) {
+    let dir = moor_testkit::short_tempdir("notify").unwrap();
+    let socket = dir.path().join("front");
+    let controller = FakeController::serve(&socket);
+    let receiver = Receiver::start(&[]);
+    controller.queue(5, 1, &url(&receiver.url), KEY, "idled");
+    let front = Front::guarded(&socket);
+
+    controller.wait_until("the report", |s| !s.reports.is_empty());
+    assert_eq!(
+        controller.seen(|s| s.reports.clone()),
+        [(
+            5,
+            WebhookOutcome::Failed {
+                reason: NOT_PUBLIC.to_owned()
+            }
+        )]
+    );
+    assert!(receiver.posted().is_empty(), "nothing reached the receiver");
+    assert!(
+        !front.lines().iter().any(|l| l.contains("--allow-private")),
+        "no warning when the guard is on"
+    );
+}
+
+#[test]
+fn a_loopback_address_is_refused_without_allow_private() {
+    assert_refused_unsent(str::to_owned);
+}
+
+#[test]
+fn a_host_name_that_resolves_to_loopback_is_refused() {
+    assert_refused_unsent(|url| url.replace("127.0.0.1", "localhost"));
+}
+
+#[test]
+fn allow_private_logs_a_warning() {
+    let dir = moor_testkit::short_tempdir("notify").unwrap();
+    let socket = dir.path().join("front");
+    let _controller = FakeController::serve(&socket);
+    let front = Front::start(&socket);
+    front.wait_for_line("warning: --allow-private is on");
 }

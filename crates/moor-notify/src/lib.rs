@@ -8,6 +8,7 @@ use std::io::{self, Write as _};
 use std::sync::Arc;
 
 pub mod deliver;
+pub mod guard;
 pub mod sign;
 pub mod work;
 
