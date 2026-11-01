@@ -46,29 +46,11 @@ pub const fn counts(state: BoxState) -> bool {
     )
 }
 
-/// Whether a Box in `state` holds its guest memory on a host whose pause `frees` memory or not.
-/// An asleep Box keeps its memory unless its host suspends it to disk.
+/// Whether a Box in `state` holds its guest memory. Asleep Boxes hold none: a provider that
+/// cannot free a paused Box's memory stops the Box instead of pausing it.
 #[must_use]
-pub const fn holds_memory(state: BoxState, frees: PauseFrees) -> bool {
-    match state {
-        BoxState::Asleep => !frees.0,
-        _ => counts(state),
-    }
-}
-
-/// Whether a node's provider frees a Box's memory when it pauses the Box.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct PauseFrees(pub bool);
-
-/// The provider feature a node reports when pausing a Box frees its memory.
-pub const PAUSE_FREES_MEMORY: &str = "pause-frees-memory";
-
-impl PauseFrees {
-    /// Read from the features a node's provider reports.
-    #[must_use]
-    pub fn of(features: &[String]) -> Self {
-        Self(features.iter().any(|f| f == PAUSE_FREES_MEMORY))
-    }
+pub const fn holds_memory(state: BoxState) -> bool {
+    matches!(state, BoxState::Starting | BoxState::Ready)
 }
 
 /// Decides whether one more Box fits under the limit.

@@ -1,6 +1,5 @@
 //! The node scheduler: which node hosts a new Box, or why none can.
 
-use crate::decide::capacity::PauseFrees;
 use crate::name::NodeName;
 use crate::user::UserId;
 
@@ -64,8 +63,6 @@ pub struct Memory {
     pub reserve_mib: Option<u64>,
     /// What its Boxes holding memory were given.
     pub used_mib: u64,
-    /// Whether pausing a Box on it frees the Box's memory.
-    pub pause_frees: PauseFrees,
 }
 
 /// The host's share when none is configured: 4 GiB plus a tenth of `total_mib`.
