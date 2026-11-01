@@ -2,8 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::name::ForgeRepo;
-use crate::name::{BoxName, SessionId};
+use crate::name::{BoxName, ForgeRepo, SessionId};
 use crate::user::Identity;
 
 mod artifacts;
@@ -12,6 +11,8 @@ mod attach;
 pub use attach::AttachReq;
 mod binding;
 pub use binding::{BindSessionReq, SessionBindingReq};
+mod env;
+pub use env::EnvReq;
 mod files;
 pub use files::{BoxMirrorReq, BoxPutReq, CpReq};
 mod host_session;
@@ -31,7 +32,7 @@ mod user;
 pub use user::{
     ActAsReq, AsReq, EnrollReq, McpAddReq, McpOAuthFinishReq, McpRemoveReq, ProfileSetReq,
     ProxyReleaseReq, SecretDeleteReq, SecretSetReq, SecretValue, StartNeedsReq, UserCmd,
-    WebhookAddReq, WebhookRemoveReq,
+    WebhookAddReq, WebhookRemoveReq, WebhookSetupFinishReq, WebhookSetupShowReq,
 };
 mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
@@ -124,8 +125,12 @@ pub enum Request {
     ProfileShow(AsReq),
     /// Clear the caller's user's agent profile repo.
     ProfileRemove(AsReq),
-    /// Add a webhook for the caller's user; the reply holds its HMAC key, shown only once.
+    /// Add a webhook for the caller's user, waiting for its person to set it up.
     WebhookAdd(WebhookAddReq),
+    /// One of the caller's user's webhooks for its setup page, with its key while waiting.
+    WebhookSetupShow(WebhookSetupShowReq),
+    /// Store a webhook's header value, if it has a header, and start its deliveries.
+    WebhookSetupFinish(WebhookSetupFinishReq),
     /// List the caller's user's webhooks; never their keys.
     WebhookList(AsReq),
     /// Remove one of the caller's user's webhooks.
@@ -214,6 +219,8 @@ impl Request {
             Self::ProfileShow(_) => "profile-show",
             Self::ProfileRemove(_) => "profile-remove",
             Self::WebhookAdd(_) => "webhook-add",
+            Self::WebhookSetupShow(_) => "webhook-setup-show",
+            Self::WebhookSetupFinish(_) => "webhook-setup-finish",
             Self::WebhookList(_) => "webhook-list",
             Self::WebhookRemove(_) => "webhook-remove",
             Self::McpOAuthFinish(_) => "mcp-oauth-finish",
@@ -380,18 +387,6 @@ pub struct GateReq {
     /// Command to run for the gate.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
-}
-
-/// Arguments of `env`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct EnvReq {
-    /// Repo whose layer to show, read through the forge like a start.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub repo: Option<ForgeRepo>,
-    /// Commit or ref to read the repo at; the default branch when absent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base: Option<String>,
 }
 
 #[cfg(test)]

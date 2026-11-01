@@ -181,6 +181,8 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         | Request::ProfileShow(_)
         | Request::ProfileRemove(_)
         | Request::WebhookAdd(_)
+        | Request::WebhookSetupShow(_)
+        | Request::WebhookSetupFinish(_)
         | Request::WebhookList(_)
         | Request::WebhookRemove(_)
         | Request::McpOAuthFinish(_)

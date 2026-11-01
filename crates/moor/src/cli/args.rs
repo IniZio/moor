@@ -49,8 +49,8 @@ pub(super) enum Action {
         /// The lease.
         slug: String,
     },
-    /// `user secret set <name>`: read the value from stdin and store it.
-    SecretSetStdin(moor_core::user::SecretName),
+    /// A request that carries a secret read from stdin, never from argv.
+    Stdin(super::StdinRequest),
     /// `events`: print the event stream as JSON lines.
     Events {
         /// Only events after this id.

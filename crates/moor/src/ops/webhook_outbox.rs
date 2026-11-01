@@ -5,13 +5,15 @@ use std::time::Duration;
 
 use moor_core::request::{SecretValue, WebhookClaimReq, WebhookOutcome, WebhookReportReq};
 use moor_core::user::Caller;
-use moor_core::view::user::{WebhookClaimValue, WebhookDeliveryView, WebhookReportValue};
+use moor_core::view::user::{
+    WebhookClaimValue, WebhookDeliveryView, WebhookHeader, WebhookReportValue,
+};
 use moor_core::ErrorKind;
 use serde_json::{json, Value};
 
 use super::to_value;
 use crate::error::CommandError;
-use crate::store::{webhook_key_name, ClaimedDelivery, Store};
+use crate::store::{webhook_header_name, webhook_key_name, ClaimedDelivery, Store};
 use crate::vault::Vault;
 
 /// The refusal for any caller but a front whose config sets `webhooks: true`.
@@ -45,14 +47,26 @@ pub(crate) fn claim(
     let lease = Duration::from_millis(req.lease_ms);
     let mut deliveries = Vec::new();
     for row in store.claim_webhook_deliveries(req.limit.min(MAX_CLAIM), lease)? {
-        let key = vault
-            .open(row.user, &webhook_key_name(row.webhook)?, &row.sealed_key)
-            .map_err(|e| CommandError::new(ErrorKind::Internal, e.to_string()))?;
+        let open = |name, sealed| {
+            vault
+                .open(row.user, &name, sealed)
+                .map(|plain| SecretValue::new(plain.expose().to_vec()))
+                .map_err(|e| CommandError::new(ErrorKind::Internal, e.to_string()))
+        };
+        let key = open(webhook_key_name(row.webhook)?, &row.sealed_key)?;
+        let header = match &row.header {
+            Some((name, sealed)) => Some(WebhookHeader {
+                name: name.clone(),
+                value: open(webhook_header_name(row.webhook)?, sealed)?,
+            }),
+            None => None,
+        };
         deliveries.push(WebhookDeliveryView {
             delivery: row.delivery,
             webhook: row.webhook,
             url: row.url.clone(),
-            key: SecretValue::new(key.expose().to_vec()),
+            key,
+            header,
             event: row.kind.clone(),
             body: body(store, &row)?,
         });

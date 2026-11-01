@@ -62,7 +62,7 @@ pub(crate) use runs::{NewRun, RunOutcome, RunRow};
 pub(crate) use sessions::SessionRecord;
 pub(crate) use users::machine::MachineWake;
 pub(crate) use users::mcp_oauth::{GrantRow, SignIn};
-pub(crate) use users::webhook::key_name as webhook_key_name;
+pub(crate) use users::webhook::{header_name as webhook_header_name, key_name as webhook_key_name};
 mod webhook_outbox;
 pub(crate) use webhook_outbox::ClaimedDelivery;
 

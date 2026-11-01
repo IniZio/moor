@@ -25,6 +25,8 @@ pub(crate) struct ClaimedDelivery {
     pub(crate) url: String,
     /// The webhook's sealed key.
     pub(crate) sealed_key: Vec<u8>,
+    /// The receiver's header name and its sealed value, when the webhook has one.
+    pub(crate) header: Option<(String, Vec<u8>)>,
     /// The event's id in the event log, which is its offset.
     pub(crate) event: i64,
     /// The event's Box.
@@ -39,8 +41,8 @@ pub(crate) struct ClaimedDelivery {
     pub(crate) ts: i64,
 }
 
-/// Queues event `event` of kind `kind` on Box `id` for every webhook of the Box's user that
-/// names that kind, inside the event's own transaction.
+/// Queues event `event` of kind `kind` on Box `id` for every active webhook of the Box's user
+/// that names that kind, inside the event's own transaction.
 pub(super) fn enqueue(
     tx: &Transaction<'_>,
     id: BoxId,
@@ -49,7 +51,7 @@ pub(super) fn enqueue(
 ) -> Result<(), StoreError> {
     tx.execute(
         "INSERT INTO webhook_deliveries (webhook, event) SELECT w.id, ?2 FROM user_webhooks w \
-         JOIN boxes b ON b.user = w.user WHERE b.id = ?1 \
+         JOIN boxes b ON b.user = w.user WHERE b.id = ?1 AND w.state = 'active' \
          AND EXISTS (SELECT 1 FROM json_each(w.events) WHERE value = ?3) ORDER BY w.id",
         params![id.get(), event, kind],
     )?;
@@ -85,7 +87,7 @@ impl Store {
             )?;
             claimed.push(tx.query_row(
                 "SELECT d.id, w.id, w.user, w.url, w.key, e.id, e.box, e.session, e.kind, e.payload, \
-                 e.ts FROM webhook_deliveries d JOIN user_webhooks w ON w.id = d.webhook \
+                 e.ts, w.header, w.header_value FROM webhook_deliveries d JOIN user_webhooks w ON w.id = d.webhook \
                  JOIN events e ON e.id = d.event WHERE d.id = ?",
                 [id],
                 |r| {
@@ -95,6 +97,7 @@ impl Store {
                         user: UserId::new(r.get(2)?),
                         url: r.get(3)?,
                         sealed_key: r.get(4)?,
+                        header: r.get::<_, Option<String>>(11)?.zip(r.get(12)?),
                         event: r.get(5)?,
                         box_id: BoxId::new(r.get(6)?),
                         session: r.get(7)?,

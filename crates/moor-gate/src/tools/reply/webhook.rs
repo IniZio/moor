@@ -4,14 +4,15 @@
 use moor_core::view::progress;
 use serde_json::{json, Value};
 
-/// Says plainly, next to the new webhook's `key`, that it is shown only once.
+/// Says plainly that the new webhook delivers nothing until its person sets it up.
 pub(super) fn added(value: &mut Value) {
     if let Some(reply) = value.as_object_mut() {
         reply.insert(
             "note".to_owned(),
             json!(
-                "This key is shown only this once; save it now. It is the HMAC key that signs \
-                 each POST, in the X-Moor-Signature header, so the receiver can check it."
+                "The webhook is waiting for its secret and delivers nothing yet. Its person \
+                 sees the signing key and sets any header value away from this chat, never \
+                 through a tool."
             ),
         );
     }

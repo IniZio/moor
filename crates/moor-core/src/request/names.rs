@@ -106,6 +106,8 @@ impl Request {
             | Self::ProfileShow(_)
             | Self::ProfileRemove(_)
             | Self::WebhookAdd(_)
+            | Self::WebhookSetupShow(_)
+            | Self::WebhookSetupFinish(_)
             | Self::WebhookList(_)
             | Self::WebhookRemove(_)
             | Self::McpOAuthFinish(_)

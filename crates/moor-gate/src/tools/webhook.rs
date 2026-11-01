@@ -34,7 +34,7 @@ impl Tools {
     /// Adds a webhook.
     #[tool(
         description = "Add a webhook: moor then POSTs your Box events, signed with an HMAC key, \
-                       to an https URL. Returns the webhook's id and its key, shown only once. \
+                       to an https URL. Returns the webhook's id; no secret passes through here. \
                        Needs the moor:write scope."
     )]
     async fn add_webhook(
@@ -46,6 +46,7 @@ impl Tools {
             identity: None,
             url: args.url,
             events: args.events,
+            header: None,
         });
         self.run(&context, WRITE, Ok(request), Reply::WebhookAdded)
             .await

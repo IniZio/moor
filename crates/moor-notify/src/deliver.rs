@@ -98,7 +98,8 @@ const fn describe(error: &ureq::Error) -> &'static str {
     }
 }
 
-/// One hook's endpoint: where to post and the key that signs each body.
+/// One hook's endpoint: where to post, the key that signs each body, and any header of the
+/// receiver's own.
 pub struct Endpoint {
     /// The HTTP client.
     agent: Agent,
@@ -106,6 +107,8 @@ pub struct Endpoint {
     url: String,
     /// The HMAC key.
     secret: Vec<u8>,
+    /// The receiver's own header, as name and value.
+    header: Option<(String, Vec<u8>)>,
 }
 
 impl Endpoint {
@@ -130,15 +133,31 @@ impl Endpoint {
             }
             Reach::Any => Agent::new_with_config(config),
         };
-        Self { agent, url, secret }
+        Self {
+            agent,
+            url,
+            secret,
+            header: None,
+        }
+    }
+
+    /// The endpoint, also sending `name: value` on every post.
+    #[must_use]
+    pub fn with_header(self, name: String, value: Vec<u8>) -> Self {
+        Self {
+            header: Some((name, value)),
+            ..self
+        }
     }
 
     /// Posts `body` once, as event `kind` with delivery id `delivery`, signed at `now`.
     #[must_use]
     pub fn post(&self, kind: &str, delivery: i64, body: &[u8], now: u64) -> Answer {
-        let sent = self
-            .agent
-            .post(&self.url)
+        let mut request = self.agent.post(&self.url);
+        if let Some((name, value)) = &self.header {
+            request = request.header(name.as_str(), value.as_slice());
+        }
+        let sent = request
             .header("Content-Type", "application/json")
             .header(
                 "User-Agent",

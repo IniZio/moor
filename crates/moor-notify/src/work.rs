@@ -113,11 +113,15 @@ fn deliver(client: &Client, delivery: &WebhookDeliveryView, options: &Options, l
             reason: format!("unserializable body: {e}"),
         },
         Ok(body) => {
-            let endpoint = Endpoint::new(
+            let mut endpoint = Endpoint::new(
                 delivery.url.clone(),
                 delivery.key.secret().expose().to_vec(),
                 options.reach,
             );
+            if let Some(header) = &delivery.header {
+                let value = header.value.secret().expose().to_vec();
+                endpoint = endpoint.with_header(header.name.clone(), value);
+            }
             let posted = with_retries(
                 options.retry,
                 || endpoint.post(&delivery.event, delivery.delivery, &body, now()),

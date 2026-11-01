@@ -98,12 +98,12 @@ pub enum Parsed {
         /// Keep streaming.
         follow: bool,
     },
-    /// Read a secret value from stdin and store it as this name with `secret-set`.
-    SecretSetStdin {
+    /// Read a secret from stdin and send the request it completes.
+    Stdin {
         /// Global options.
         opts: GlobalOpts,
-        /// The secret's name.
-        name: moor_core::user::SecretName,
+        /// The request stdin completes.
+        then: StdinRequest,
     },
     /// Nothing to run; print this.
     Done(Output),
@@ -119,7 +119,7 @@ pub fn parse(args: Vec<OsString>) -> Parsed {
         Ok((opts, Action::ProxyServe(box_id))) => Parsed::ProxyServe { opts, box_id },
         Ok((opts, Action::ControllerServe(config))) => Parsed::ControllerServe { opts, config },
         Ok((opts, Action::ControllerAttach(socket))) => Parsed::ControllerAttach { opts, socket },
-        Ok((opts, Action::SecretSetStdin(name))) => Parsed::SecretSetStdin { opts, name },
+        Ok((opts, Action::Stdin(then))) => Parsed::Stdin { opts, then },
         Ok((opts, Action::LinkDial { machine_id, slug })) => Parsed::LinkDial {
             opts,
             machine_id,
@@ -160,17 +160,45 @@ pub fn parse_call(stdin: &str) -> Result<Request, Output> {
     })
 }
 
-/// The `secret-set` request for `name` with `stdin` as its value, less trailing line breaks.
-#[must_use]
-pub fn secret_set(name: moor_core::user::SecretName, mut stdin: Vec<u8>) -> Request {
-    while stdin.last().is_some_and(|b| matches!(b, b'\n' | b'\r')) {
-        stdin.pop();
+/// A request whose secret is read from stdin, so it never shows in argv.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StdinRequest {
+    /// `secret-set` of this name.
+    SecretSet(moor_core::user::SecretName),
+    /// `webhook-setup-finish` of this webhook; empty stdin gives no header value.
+    WebhookFinish(i64),
+}
+
+impl StdinRequest {
+    /// The request, with `stdin` less trailing line breaks as its secret.
+    #[must_use]
+    pub fn request(self, mut stdin: Vec<u8>) -> Request {
+        use moor_core::request::{SecretSetReq, SecretValue, WebhookSetupFinishReq};
+        while stdin.last().is_some_and(|b| matches!(b, b'\n' | b'\r')) {
+            stdin.pop();
+        }
+        match self {
+            Self::SecretSet(name) => Request::SecretSet(SecretSetReq {
+                identity: None,
+                name,
+                value: SecretValue::new(stdin),
+            }),
+            Self::WebhookFinish(id) => Request::WebhookSetupFinish(WebhookSetupFinishReq {
+                identity: None,
+                id,
+                header_value: (!stdin.is_empty()).then(|| SecretValue::new(stdin)),
+            }),
+        }
     }
-    Request::SecretSet(moor_core::request::SecretSetReq {
-        identity: None,
-        name,
-        value: moor_core::request::SecretValue::new(stdin),
-    })
+
+    /// The request's kind, for an error before it is built.
+    #[must_use]
+    pub const fn cmd(&self) -> &'static str {
+        match self {
+            Self::SecretSet(_) => "secret-set",
+            Self::WebhookFinish(_) => "webhook-setup-finish",
+        }
+    }
 }
 
 /// Marks a text-mode `run` request to stream program output to the terminal.

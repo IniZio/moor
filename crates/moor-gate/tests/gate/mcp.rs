@@ -54,7 +54,7 @@ fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
                         continue;
                     }
                     let value = match cmd {
-                        "webhook-add" => json!({"id": 7, "key": "ab".repeat(32)}),
+                        "webhook-add" => json!({"id": 7, "state": "waiting_for_secret"}),
                         "webhook-remove" => json!({"id": inner["id"]}),
                         "webhook-list" => webhook::listed(),
                         "show" if inner["box"].is_string() => shown(&inner["box"]),
