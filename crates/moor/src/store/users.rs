@@ -7,6 +7,7 @@ use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use super::{parsed, Store, StoreError};
 use crate::vault::Vault;
 
+pub(crate) mod api_token;
 pub(super) mod front_leases;
 pub(super) mod machine;
 mod mcp;

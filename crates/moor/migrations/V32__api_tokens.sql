@@ -1,0 +1,1 @@
+CREATE TABLE api_tokens (id INTEGER PRIMARY KEY, user INTEGER NOT NULL REFERENCES users(id), name TEXT NOT NULL, scopes TEXT NOT NULL, hash BLOB NOT NULL UNIQUE, hint TEXT NOT NULL, created_at INTEGER NOT NULL, last_used_at INTEGER, UNIQUE (user, name));

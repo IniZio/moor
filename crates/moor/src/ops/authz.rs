@@ -138,6 +138,7 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         Request::WebhookClaim(_) | Request::WebhookReport(_) => {
             Some(crate::ops::webhook_outbox::FRONT_ONLY)
         }
+        Request::ApiTokenResolve(_) => Some(crate::ops::users::api_token::FRONT_ONLY),
         Request::BoxMirror(_) => Some(MIRROR_OPERATOR_ONLY),
         Request::BoxPut(_) => Some(PUT_OPERATOR_ONLY),
         Request::Env(_) => Some(ENV_OPERATOR_ONLY),
@@ -185,6 +186,9 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         | Request::WebhookSetupFinish(_)
         | Request::WebhookList(_)
         | Request::WebhookRemove(_)
+        | Request::ApiTokenCreate(_)
+        | Request::ApiTokenList(_)
+        | Request::ApiTokenRevoke(_)
         | Request::McpOAuthFinish(_)
         | Request::MachineRemove(_)
         | Request::MachineEnroll(_)

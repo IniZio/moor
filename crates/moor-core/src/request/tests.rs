@@ -1,6 +1,7 @@
 //! Tests for the request model.
 
 use super::*;
+use crate::name::{ForgeRepo, SessionId};
 use serde_json::json;
 
 /// Valid Box name.

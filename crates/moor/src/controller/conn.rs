@@ -103,17 +103,8 @@ fn answer(
     if matches!(request, Request::Version {}) {
         return Some(Moor::version());
     }
-    let runner = matches!(peer.caller, Ok(Caller::Runner));
-    if !runner
-        && matches!(
-            request,
-            Request::WebhookClaim(_) | Request::WebhookReport(_)
-        )
-    {
-        return Some(match Moor::from_env(env) {
-            Ok(moor) => moor.call_webhook_outbox(&peer.caller, &peer.vault, &request),
-            Err(e) => e.into_response(cmd, vec![]),
-        });
+    if let Some(response) = answer_for_no_one(env, peer, &request) {
+        return Some(response);
     }
     let grant =
         match Moor::from_env(env).and_then(|m| m.authorize(&peer.caller, asserted, &request)) {
@@ -134,6 +125,21 @@ fn answer(
             },
         },
     }
+}
+
+/// Answer a front's request for no identity (webhook outbox, `api-token-resolve`), else `None`.
+fn answer_for_no_one(env: &Env, peer: &Peer, request: &Request) -> Option<Response> {
+    let resolve = match request {
+        _ if matches!(peer.caller, Ok(Caller::Runner)) => return None,
+        Request::WebhookClaim(_) | Request::WebhookReport(_) => None,
+        Request::ApiTokenResolve(req) => Some(&req.token),
+        _ => return None,
+    };
+    Some(match (Moor::from_env(env), resolve) {
+        (Ok(moor), Some(token)) => moor.resolve_api_token(&peer.caller, token),
+        (Ok(moor), None) => moor.call_webhook_outbox(&peer.caller, &peer.vault, request),
+        (Err(e), _) => e.into_response(request.cmd(), vec![]),
+    })
 }
 
 /// Answer `request`, writing its frames to `out`; `None` when `peer`'s drain began before a wait

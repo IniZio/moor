@@ -8,7 +8,7 @@ use crate::error::CommandError;
 use crate::ops;
 use crate::vault::Vault;
 use crate::wire;
-use moor_core::request::{Grant, UserCmd};
+use moor_core::request::{Grant, SecretValue, UserCmd};
 use moor_core::seam::checkout::Checkout;
 use moor_core::user::{Caller, Identity, Viewer};
 use moor_core::{ArtifactReadReq, BoxId, ErrorKind, Request, Response, RunReq};
@@ -230,6 +230,24 @@ impl Moor {
             }
         };
         match run() {
+            Ok(value) => Response::ok(name, Some(value)),
+            Err(e) => e.into_response(name, vec![]),
+        }
+    }
+
+    /// Run `api-token-resolve` for `caller`, which must be a front; a token's owner is not yet
+    /// known, so it asserts no identity.
+    pub(crate) fn resolve_api_token(
+        &self,
+        caller: &Result<Caller, String>,
+        token: &SecretValue,
+    ) -> Response {
+        let name = "api-token-resolve";
+        match self
+            .cx
+            .store()
+            .and_then(|store| ops::users::api_token::resolve(store, caller, token))
+        {
             Ok(value) => Response::ok(name, Some(value)),
             Err(e) => e.into_response(name, vec![]),
         }

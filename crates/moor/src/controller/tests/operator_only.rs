@@ -20,7 +20,12 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
     Some(match kind {
         "start-needs" | "env" | "repos" | "whoami" | "enroll" | "secret-names" | "version"
         | "proxy-lease" | "proxy-status" | "mcp-list" | "profile-show" | "profile-remove"
-        | "machine-list" | "machine-keys" | "node-list" | "webhook-list" => json!({"cmd": kind}),
+        | "machine-list" | "machine-keys" | "node-list" | "webhook-list" | "api-token-list" => {
+            json!({"cmd": kind})
+        }
+        "api-token-create" => json!({"cmd": kind, "name": "bot", "scopes": ["moor:read"]}),
+        "api-token-revoke" => json!({"cmd": kind, "id": 1}),
+        "api-token-resolve" => json!({"cmd": kind, "token": "moor_x"}),
         "machine-links" => json!({"cmd": kind, "links": []}),
         "proxy-release" => json!({"cmd": kind, "token": "t"}),
         "session-binding" => json!({"cmd": kind, "front": "slack", "key": "k"}),
@@ -68,6 +73,8 @@ fn every_front_request_but_version_and_the_webhook_outbox_must_assert_an_identit
             assert_eq!(got["class"], "ok", "{got}");
         } else if kind.starts_with("webhook-claim") || kind.starts_with("webhook-report") {
             refused(&got, "`webhooks: true`");
+        } else if kind == "api-token-resolve" {
+            refused(&got, "unknown API token");
         } else {
             refused(&got, "the slack front socket must assert an identity");
         }

@@ -271,7 +271,8 @@ fn an_adopted_file_gains_the_tables_older_builds_made_on_open() {
 }
 
 /// Tables that migrations after V2 create; a file migrated forward gains them empty.
-const ADDED_AFTER_V2: [&str; 11] = [
+const ADDED_AFTER_V2: [&str; 12] = [
+    "api_tokens",
     "user_mcp_servers",
     "user_machines",
     "box_machines",
@@ -371,6 +372,7 @@ fn applied_migrations_are_never_edited() {
             (29, 1_449_077_588_297_046_841),
             (30, 5_788_739_600_723_699_175),
             (31, 5_476_622_767_297_956_497),
+            (32, 17_269_698_817_308_495_086),
         ],
         "a schema change is a new migration file; an applied one must not change"
     );

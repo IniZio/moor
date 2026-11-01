@@ -78,6 +78,9 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         | Request::WebhookSetupFinish(_)
         | Request::WebhookList(_)
         | Request::WebhookRemove(_)
+        | Request::ApiTokenCreate(_)
+        | Request::ApiTokenList(_)
+        | Request::ApiTokenRevoke(_)
         | Request::McpOAuthFinish(_)
         | Request::MachineRemove(_)
         | Request::MachineEnroll(_)
@@ -89,6 +92,10 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::WebhookClaim(_) | Request::WebhookReport(_) => Err(CommandError::new(
             ErrorKind::Refused,
             webhook_outbox::FRONT_ONLY,
+        )),
+        Request::ApiTokenResolve(_) => Err(CommandError::new(
+            ErrorKind::Refused,
+            crate::ops::users::api_token::FRONT_ONLY,
         )),
         Request::MachineKeys {} => to_value(&MachineKeysValue {
             machines: cx.store()?.machine_keys()?,

@@ -2,8 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::name::{BoxName, ForgeRepo, SessionId};
-use crate::user::Identity;
+use crate::name::BoxName;
 
 mod artifacts;
 pub use artifacts::{ArtifactReadReq, ArtifactsReq};
@@ -25,14 +24,17 @@ pub use machine::{
 mod names;
 pub use names::{Grant, Named, Pins};
 mod session;
+mod start;
+pub use start::StartReq;
 mod target;
 pub use session::{EndSessionReq, OpenSessionReq, SessionsReq, ShowSessionReq};
 pub use target::BoxTarget;
 mod user;
 pub use user::{
-    ActAsReq, AsReq, EnrollReq, McpAddReq, McpOAuthFinishReq, McpRemoveReq, ProfileSetReq,
-    ProxyReleaseReq, SecretDeleteReq, SecretSetReq, SecretValue, StartNeedsReq, UserCmd,
-    WebhookAddReq, WebhookRemoveReq, WebhookSetupFinishReq, WebhookSetupShowReq,
+    ActAsReq, ApiTokenCmd, ApiTokenCreateReq, ApiTokenResolveReq, ApiTokenRevokeReq, AsReq,
+    EnrollReq, McpAddReq, McpOAuthFinishReq, McpRemoveReq, ProfileSetReq, ProxyReleaseReq,
+    SecretDeleteReq, SecretSetReq, SecretValue, StartNeedsReq, UserCmd, WebhookAddReq,
+    WebhookRemoveReq, WebhookSetupFinishReq, WebhookSetupShowReq,
 };
 mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
@@ -135,6 +137,14 @@ pub enum Request {
     WebhookList(AsReq),
     /// Remove one of the caller's user's webhooks.
     WebhookRemove(WebhookRemoveReq),
+    /// Mint an API token for the caller's user; the reply is the only place its text exists.
+    ApiTokenCreate(ApiTokenCreateReq),
+    /// List the caller's user's API tokens; never their text.
+    ApiTokenList(AsReq),
+    /// Revoke one of the caller's user's API tokens.
+    ApiTokenRevoke(ApiTokenRevokeReq),
+    /// The owner and scopes of an API token, in the calling front's namespace; a front only.
+    ApiTokenResolve(ApiTokenResolveReq),
     /// Finish signing the caller's user in to one of their MCP servers.
     #[serde(rename = "mcp-oauth-finish")]
     McpOAuthFinish(McpOAuthFinishReq),
@@ -223,6 +233,10 @@ impl Request {
             Self::WebhookSetupFinish(_) => "webhook-setup-finish",
             Self::WebhookList(_) => "webhook-list",
             Self::WebhookRemove(_) => "webhook-remove",
+            Self::ApiTokenCreate(_) => "api-token-create",
+            Self::ApiTokenList(_) => "api-token-list",
+            Self::ApiTokenRevoke(_) => "api-token-revoke",
+            Self::ApiTokenResolve(_) => "api-token-resolve",
             Self::McpOAuthFinish(_) => "mcp-oauth-finish",
             Self::MachineRemove(_) => "machine-remove",
             Self::MachineEnroll(_) => "machine-enroll",
@@ -241,48 +255,6 @@ impl Request {
             Self::Version {} => "version",
         }
     }
-}
-
-/// Arguments of `start`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[allow(
-    clippy::struct_excessive_bools,
-    reason = "JSON wire shape is a public contract"
-)]
-pub struct StartReq {
-    /// Box name.
-    pub name: BoxName,
-    /// Prompt text.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prompt: Option<String>,
-    /// Issue reference.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub issue: Option<String>,
-    /// Base revision.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base: Option<String>,
-    /// Agent model.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
-    /// One of the requester's nodes to run the Box on, in place of their default.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node: Option<String>,
-    /// Skip starting an agent.
-    #[serde(default)]
-    pub no_agent: bool,
-    /// Resume the agent's stored session instead of starting a fresh one.
-    #[serde(default)]
-    pub resume: bool,
-    /// The repo the Box clones; a Box with no repo starts with an empty workdir.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub repo: Option<ForgeRepo>,
-    /// Parent Session of the Session this request opens.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parent: Option<SessionId>,
-    /// The identity the Box acts for; the controller socket's own peer when absent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub identity: Option<Identity>,
 }
 
 /// Arguments of `run`.

@@ -6,6 +6,11 @@ use crate::name::ProfileSource;
 use crate::request::SecretValue;
 use crate::user::{Email, Identity, SecretName, UserId};
 
+mod api_token;
+pub use api_token::{
+    ApiTokenCreateValue, ApiTokenListValue, ApiTokenResolveValue, ApiTokenRevokeValue, ApiTokenView,
+};
+
 /// One of a user's MCP servers as `mcp-list` shows it; never its key.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpServerView {

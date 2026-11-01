@@ -7,10 +7,14 @@ use super::{MachineEnrollReq, MachineRemoveReq, MachineStatusReq, Request, Start
 use crate::name::ProfileSource;
 use crate::user::{Email, Identity, SecretName};
 
+mod api_token;
 mod mcp;
+mod plain;
 mod secret_value;
 mod webhook;
+pub use api_token::{ApiTokenCmd, ApiTokenCreateReq, ApiTokenResolveReq, ApiTokenRevokeReq};
 pub use mcp::{McpAddReq, McpOAuthFinishReq, McpRemoveReq, ProfileSetReq};
+pub use plain::{EnrollReq, ProxyReleaseReq, SecretDeleteReq, SecretSetReq};
 pub use secret_value::SecretValue;
 pub use webhook::{WebhookAddReq, WebhookRemoveReq, WebhookSetupFinishReq, WebhookSetupShowReq};
 
@@ -21,53 +25,6 @@ pub struct AsReq {
     /// The identity asserted; the controller socket's own peer when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<Identity>,
-}
-
-/// Arguments of `secret-set`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SecretSetReq {
-    /// The identity asserted; the controller socket's own peer when absent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub identity: Option<Identity>,
-    /// The secret's name.
-    pub name: SecretName,
-    /// The secret's value.
-    pub value: SecretValue,
-}
-
-/// Arguments of `secret-delete`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SecretDeleteReq {
-    /// The identity asserted; the controller socket's own peer when absent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub identity: Option<Identity>,
-    /// The secret's name.
-    pub name: SecretName,
-}
-
-/// Arguments of `enroll`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct EnrollReq {
-    /// The identity asserted; the controller socket's own peer when absent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub identity: Option<Identity>,
-    /// The email the front verified for that identity; only a front socket may send one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub email: Option<Email>,
-}
-
-/// Arguments of `proxy-release`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ProxyReleaseReq {
-    /// The identity asserted; the controller socket's own peer when absent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub identity: Option<Identity>,
-    /// The token `proxy-lease` granted.
-    pub token: SecretValue,
 }
 
 /// Arguments of `as`: another request, acting as the identity a front asserts for it.
@@ -171,6 +128,8 @@ pub enum UserCmd {
         /// The webhook's id.
         id: i64,
     },
+    /// Mint, list or revoke the caller's user's API tokens.
+    ApiToken(ApiTokenCmd),
     /// Finish signing in to one of the caller's user's MCP servers.
     McpOAuthFinish {
         /// The `state` the sign-in started with.
@@ -240,6 +199,7 @@ impl UserCmd {
             Self::WebhookSetupFinish { .. } => "webhook-setup-finish",
             Self::WebhookList => "webhook-list",
             Self::WebhookRemove { .. } => "webhook-remove",
+            Self::ApiToken(c) => c.cmd(),
             Self::MachineEnroll { .. } => "machine-enroll",
             Self::MachineRemove { .. } => "machine-remove",
             Self::MachineList => "machine-list",
@@ -303,6 +263,18 @@ impl Request {
             ),
             Self::WebhookList(r) => (r.identity, UserCmd::WebhookList),
             Self::WebhookRemove(r) => (r.identity, UserCmd::WebhookRemove { id: r.id }),
+            Self::ApiTokenCreate(r) => {
+                let (name, scopes) = (r.name, r.scopes);
+                (
+                    r.identity,
+                    UserCmd::ApiToken(ApiTokenCmd::Create { name, scopes }),
+                )
+            }
+            Self::ApiTokenList(r) => (r.identity, UserCmd::ApiToken(ApiTokenCmd::List)),
+            Self::ApiTokenRevoke(r) => (
+                r.identity,
+                UserCmd::ApiToken(ApiTokenCmd::Revoke { id: r.id }),
+            ),
             Self::McpOAuthFinish(r) => (
                 r.identity,
                 UserCmd::McpOAuthFinish {
@@ -367,6 +339,9 @@ impl Request {
             | Self::ProfileShow(AsReq { identity })
             | Self::ProfileRemove(AsReq { identity })
             | Self::WebhookList(AsReq { identity })
+            | Self::ApiTokenList(AsReq { identity })
+            | Self::ApiTokenCreate(ApiTokenCreateReq { identity, .. })
+            | Self::ApiTokenRevoke(ApiTokenRevokeReq { identity, .. })
             | Self::WebhookAdd(WebhookAddReq { identity, .. })
             | Self::WebhookRemove(WebhookRemoveReq { identity, .. })
             | Self::WebhookSetupShow(WebhookSetupShowReq { identity, .. })

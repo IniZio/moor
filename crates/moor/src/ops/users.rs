@@ -11,6 +11,7 @@ use crate::error::CommandError;
 use crate::store::Store;
 use crate::vault::Vault;
 
+pub(crate) mod api_token;
 mod machine;
 pub(crate) mod mcp;
 mod profile;
@@ -82,6 +83,7 @@ pub(crate) fn run(
             let user = enrolled(store, who)?;
             webhook::setup_finish(store, vault, user, *id, header_value.as_ref())
         }
+        UserCmd::ApiToken(c) => api_token::run(store, enrolled(store, who)?, c),
         UserCmd::WebhookList => webhook::list(store, enrolled(store, who)?),
         UserCmd::WebhookRemove { id } => webhook::remove(store, enrolled(store, who)?, *id),
         UserCmd::McpOAuthFinish { .. } => mcp::oauth::finish(cx, vault, enrolled(store, who)?, cmd),
