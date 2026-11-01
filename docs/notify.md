@@ -1,72 +1,57 @@
 # Get told when a Box idles
 
-`moor-notify` is a front that posts a person's Box events to a webhook. It is
-for a receiver that does not hold an MCP stream open, such as a CI job or a
-chat bot. An MCP client can use
+`moor-notify` is a front that posts a person's Box events to webhooks that
+person added. It is for a receiver that does not hold an MCP stream open, such
+as a CI job or a chat bot. An MCP client can use
 [`subscriptions/listen`](mcp.md#get-told-instead-of-polling) on the gate
-instead. The front decides nothing. Each POST
-carries one event as the controller stored it, plus the fields `box_status`
-already returns. Without the front, moor sends nothing.
+instead. The front decides nothing. The controller queues one delivery per
+event and webhook, with the body built. The front claims, signs, posts and
+reports. Without the front, moor queues deliveries and sends nothing.
 
 ```mermaid
 sequenceDiagram
     participant C as controller
     participant N as moor-notify
     participant R as your receiver
-    N->>C: enroll notify:<email> with <email>
-    N->>C: watch the hook's event kinds
-    C-->>N: event idled, Box app/fix
-    N->>C: show app/fix
+    N->>C: webhook-claim
+    C-->>N: delivery idled, url, key, body
     N->>R: POST, signed
     R-->>N: 2xx
+    N->>C: webhook-report delivered
 ```
 
 ## Set it up
 
-1. Make a key that only you can read:
+The operator enables the front once, in the controller config:
 
-   ```sh
-   mkdir -p ~/.config/moor-notify
-   install -m 600 /dev/null ~/.config/moor-notify/alice.key
-   openssl rand -hex 32 > ~/.config/moor-notify/alice.key
-   ```
+```yaml
+fronts:
+  notify:
+    command: [moor-notify]
+    webhooks: true
+```
 
-   Give the receiver the same key.
+`webhooks: true` lets the front claim and report deliveries for every user. The
+controller refuses both from any other front, and `moor-notify` exits with that
+refusal. To run the front yourself, leave out `command` and start
+`moor-notify --socket <state dir>/fronts/notify/front`. `--poll-ms` sets how
+long the front waits before it claims again when nothing was queued (1000 by
+default).
 
-2. Write `~/.config/moor-notify/hooks.yaml`:
+Each user adds their own webhooks. With the gate, call `add_webhook` with the
+URL and, if you want, the event kinds. The tool shows the key once. From a
+terminal, run `moor user webhook add URL [--event KIND]...`, which prints the
+key once. Give the receiver the key. `list_webhooks` and `moor user webhook ls`
+show a webhook's events and health, and `remove_webhook` and `moor user webhook
+rm ID` remove one. A URL must be `https://`, or `http://` on `127.0.0.1`,
+`[::1]` or `localhost`.
 
-   ```yaml
-   hooks:
-     - email: alice@example.com
-       url: https://hooks.example.com/moor
-       secret_file: /home/me/.config/moor-notify/alice.key
-       events: [idled, setup_failed, relaunch_capped]
-   ```
+When it runs under the controller, the front's POSTs go through the front's
+egress proxy. That proxy refuses private and loopback addresses, so the
+receiver must be public. A front that you run yourself has no such limit.
 
-3. Add a `notify` entry under `fronts` in the controller config, and give the
-   front a state dir so it remembers how far it got:
-
-   ```yaml
-   fronts:
-     notify:
-       command: [moor-notify, --config, /home/me/.config/moor-notify/hooks.yaml]
-       state_dir: /home/me/.local/state/moor-notify
-       read_only: [/home/me/.config/moor-notify]
-   ```
-
-   The controller then runs the front. To run it yourself instead, leave out
-   `command` and start
-   `moor-notify --socket <state dir>/fronts/notify/front --config FILE --state-dir DIR`.
-
-| Key | Type | Default | Meaning |
-| --- | --- | --- | --- |
-| `hooks` | list, not empty | none | One entry per webhook. |
-| `hooks[].email` | email | none | The person whose Boxes the hook follows. It must be the verified email that person signs in with on the gate or Slack. |
-| `hooks[].url` | URL | none | Where each event is posted. It must be `https://`, or `http://` on `127.0.0.1`, `[::1]` or `localhost`. |
-| `hooks[].secret_file` | path | none | A mode 0600 file that holds the HMAC key. Trailing whitespace is dropped. |
-| `hooks[].events` | list of event kinds | see below | The kinds to post. Any kind that the controller stores is allowed. |
-
-The default `events` are these:
+The usual events are these; a webhook can name others that the controller
+stores:
 
 | Kind | When |
 | --- | --- |
@@ -80,17 +65,9 @@ The default `events` are these:
 Add `relaunched` to hear about each automatic restart of the agent, or
 `closed` and `asleep` for those changes.
 
-The front acts as `notify:<email>` and enrolls that identity with the email.
-Identities with the same email are one moor user. So the hook sees the Boxes
-that the person started from any front that knows that email, such as the MCP
-gate or Slack, and no others. When it runs
-under the controller, the front's POSTs go through the front's egress proxy.
-That proxy refuses private and loopback addresses, so the receiver must be
-public. A front that you run yourself has no such limit.
-
 ## What is posted
 
-Each event is one `POST` with a JSON body:
+Each delivery is one `POST` with a JSON body, which the controller builds:
 
 ```json
 {
@@ -111,7 +88,7 @@ Each event is one `POST` with a JSON body:
 | Field | Meaning |
 | --- | --- |
 | `schema` | `moor.notify/1`. A change to the shape gets a new value. |
-| `delivery` | The event's cursor. It is unique and increases. |
+| `delivery` | The delivery's id. It is unique per webhook and event. |
 | `event` | The event kind. |
 | `ts` | When the controller stored the event, in unix milliseconds. |
 | `box`, `box_id`, `session` | The Box's name and id, and the Session id. |
@@ -132,27 +109,31 @@ body. Compare it with the header in constant time. Refuse a timestamp that is
 more than a few minutes old.
 
 ```sh
-printf '%s.%s' "$timestamp" "$body" | openssl dgst -sha256 -hmac "$(cat alice.key)"
+printf '%s.%s' "$timestamp" "$body" | openssl dgst -sha256 -hmac "$key"
 ```
 
 ## Delivery
 
-The front posts the events of one hook one at a time, in cursor order. A 2xx
-answer ends the event. A connection failure, a timeout, 408, 429 or a 5xx gets
-up to 8 attempts, 2 s apart at first and doubling to at most 60 s. Any other
-status is not retried. When the front gives up on an event, it writes
-`<email>: gave up on <kind> of Box <name> (delivery <n>): <reason>` to its log
-and goes on to the next event.
+The controller hands the front at most one delivery per webhook at a time, in
+the order the events happened, so a receiver sees one webhook's events in
+order. Different webhooks are posted at the same time. A 2xx answer ends a
+delivery. A connection failure, a timeout, 408, 429 or a 5xx gets up to 8
+attempts, 2 s apart at first and doubling to at most 60 s. Any other status is
+not retried. The front then reports the outcome, and the controller hands out
+that webhook's next delivery. When the front gives up, it reports a short
+reason such as `HTTP 410, not retried`, which `list_webhooks` shows as the
+webhook's health. The reason never holds the URL or the key. The front also
+writes the gave-up line to its log, with the URL's host only.
 
-The front saves the last cursor of each hook in `cursors.json` in its state
-dir. After a restart it posts the events that came while it was down. On its
-first start for a hook, it begins at the newest event and posts no history.
-Without a state dir, every start is a first start. A front that stops between a
-POST and the save posts that event again, so dedupe on `X-Moor-Delivery`.
+A claim is a ten minute lease. If the front stops after a POST and before its
+report, or cannot reach the controller to report, the lease ends and the
+controller hands the same delivery out again. The front keeps trying a report
+until the controller takes it. So a delivery can arrive twice. Dedupe on
+`X-Moor-Delivery`.
 
 ## Stop polling
 
-1. Add a hook with your sign-in email and a URL that wakes your automation.
+1. Add a webhook with a URL that wakes your automation.
 2. Start Boxes from MCP, Slack or another front, as before.
 3. On each POST, read `event`, `box` and `agent_said`. Call `box_status` or
    `send_to_box` only for the Box in the POST.

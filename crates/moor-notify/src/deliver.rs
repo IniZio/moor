@@ -1,4 +1,4 @@
-//! Posting one event to a hook's URL, with retries and backoff.
+//! Posting one delivery to a webhook's URL, with retries and backoff.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -83,6 +83,17 @@ pub fn with_retries(
     Err("no attempt was made".to_owned())
 }
 
+/// A short reason for a failed attempt that never names the URL, which may hold a token.
+const fn describe(error: &ureq::Error) -> &'static str {
+    match error {
+        ureq::Error::Timeout(_) => "timed out",
+        ureq::Error::Io(_) | ureq::Error::ConnectionFailed | ureq::Error::HostNotFound => {
+            "connection failed"
+        }
+        _ => "request failed",
+    }
+}
+
 /// One hook's endpoint: where to post and the key that signs each body.
 pub struct Endpoint {
     /// The HTTP client.
@@ -133,7 +144,7 @@ impl Endpoint {
             .send(body);
         match sent {
             Ok(response) => Answer::of_status(response.status().as_u16()),
-            Err(e) => Answer::Retry(e.to_string()),
+            Err(e) => Answer::Retry(describe(&e).to_owned()),
         }
     }
 
