@@ -114,3 +114,47 @@ fn a_waiting_hook_keeps_the_box_working_and_says_nothing_until_it_idles() {
         ]
     );
 }
+
+#[test]
+fn a_long_last_message_keeps_its_start_too() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut probes = hook(HookKind::Idle);
+    let long = format!("Summary: disk full.\n{}PR https://x/9", "a".repeat(20_000));
+    probes.hook = HookRead::Fresh(HookRecord {
+        message: Some(long),
+        ..rec(HookKind::Idle)
+    });
+    let engine = Arc::new(FakeEngine::new().probes(SESSION, probes));
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = working_box(&cx, true);
+    settle(&cx, cx.store().unwrap(), &row(&cx, id), &run_once(&cx, id)).unwrap();
+    let said = said_then_idled(&cx, id);
+    let text = said
+        .first()
+        .and_then(|(_, p)| p.get("text")?.as_str())
+        .unwrap();
+    assert!(text.starts_with("Summary: disk full.\n"), "{text}");
+    assert!(text.ends_with("PR https://x/9"), "{text}");
+}
+
+#[test]
+fn two_settles_from_one_read_record_the_message_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut probes = hook(HookKind::Idle);
+    probes.hook = HookRead::Fresh(HookRecord {
+        message: Some("Done.".to_owned()),
+        ..rec(HookKind::Idle)
+    });
+    let engine = Arc::new(FakeEngine::new().probes(SESSION, probes));
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = working_box(&cx, true);
+    let stale = row(&cx, id);
+    let r = run_once(&cx, id);
+    settle(&cx, cx.store().unwrap(), &stale, &r).unwrap();
+    settle(&cx, cx.store().unwrap(), &stale, &r).unwrap();
+    let said: Vec<_> = said_then_idled(&cx, id)
+        .into_iter()
+        .filter(|(k, _)| k == "agent_said")
+        .collect();
+    assert_eq!(said.len(), 1, "{said:?}");
+}
