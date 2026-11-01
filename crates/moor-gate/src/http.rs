@@ -45,11 +45,21 @@ pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>) {
     let path = path.split('?').next().unwrap_or_default();
     match (req.method, path) {
         (Some("GET"), "/.well-known/moor") => {
-            let doc = serde_json::json!({
+            let mut doc = serde_json::json!({
                 "issuer": gate.verifier.issuer(),
                 "client_id": gate.verifier.client_id(),
                 "scopes": ["openid", "email", "offline_access"],
             });
+            if let Some(mcp) = &gate.mcp {
+                doc["resource"] = mcp.resource_url().into();
+                doc["scopes"] = serde_json::json!([
+                    "openid",
+                    "email",
+                    "offline_access",
+                    crate::mcp::READ,
+                    crate::mcp::WRITE
+                ]);
+            }
             respond(&mut stream, "200 OK", "application/json", &doc.to_string());
         }
         (Some("GET"), p) if p.starts_with(crate::mcp::METADATA_PATH) && gate.mcp.is_some() => {
