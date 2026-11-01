@@ -35,6 +35,8 @@ pub use user::{
 };
 mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
+mod webhook_outbox;
+pub use webhook_outbox::{WebhookClaimReq, WebhookOutcome, WebhookReportReq};
 
 /// One moor command with its arguments.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -155,6 +157,10 @@ pub enum Request {
     ProxyRelease(ProxyReleaseReq),
     /// Whether the front Proxy is running.
     ProxyStatus(AsReq),
+    /// Lease the oldest pending webhook deliveries; only a front with `webhooks: true`.
+    WebhookClaim(WebhookClaimReq),
+    /// End a claimed webhook delivery with its outcome; only a front with `webhooks: true`.
+    WebhookReport(WebhookReportReq),
     /// Run another request as an identity a front asserts.
     As(ActAsReq),
     /// Print version information.
@@ -164,6 +170,7 @@ pub enum Request {
 impl Request {
     /// The command name; equals the serde tag.
     #[must_use]
+    #[expect(clippy::too_many_lines, reason = "one arm per request")]
     pub const fn cmd(&self) -> &'static str {
         match self {
             Self::Start(_) => "start",
@@ -219,6 +226,8 @@ impl Request {
             Self::MachineLinks(_) => "machine-links",
             Self::MachineHold(_) => "machine-hold",
             Self::ProxyLease(_) => "proxy-lease",
+            Self::WebhookClaim(_) => "webhook-claim",
+            Self::WebhookReport(_) => "webhook-report",
             Self::ProxyRelease(_) => "proxy-release",
             Self::ProxyStatus(_) => "proxy-status",
             Self::As(_) => "as",

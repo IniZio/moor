@@ -164,6 +164,13 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
     let runner = runner_dir::state(env.state_dir().as_deref(), runner);
     let env = env.with_runner_state(runner);
     let (env, proxy) = front_proxy::plan(env.with_vault_key(key), &cfg.fronts).map_err(refused)?;
+    let env = env.with_front_webhooks(
+        cfg.fronts
+            .iter()
+            .filter(|(_, front)| front.webhooks)
+            .map(|(ns, _)| ns.clone())
+            .collect(),
+    );
     let state_lock = env
         .state_dir()
         .map(|dir| take_lock(&dir.join(CONTROLLER_LOCK), &socket))

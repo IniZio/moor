@@ -65,6 +65,9 @@ pub struct FrontEntry {
     /// Names of the rules the front's Proxy serves to the users it leases for, such as `claude`.
     #[serde(default)]
     pub proxy_rules: Vec<String>,
+    /// Whether the front may claim and report the users' webhook deliveries.
+    #[serde(default)]
+    pub webhooks: bool,
     /// TCP ports a client on the host reaches the front on at `127.0.0.1`, where the front
     /// listens on the same port inside its own network namespace.
     #[serde(default)]

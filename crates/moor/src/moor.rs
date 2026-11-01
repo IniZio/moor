@@ -208,6 +208,33 @@ impl Moor {
         }
     }
 
+    /// Run `webhook-claim` or `webhook-report` for `caller`, which must be a front whose config
+    /// sets `webhooks: true`; it acts for every user, so it asserts no identity.
+    pub(crate) fn call_webhook_outbox(
+        &self,
+        caller: &Result<Caller, String>,
+        vault: &Vault,
+        request: &Request,
+    ) -> Response {
+        let name = request.cmd();
+        let run = || {
+            ops::webhook_outbox::permit(|ns| self.cx.env().front_webhooks(ns), caller)?;
+            let store = self.cx.store()?;
+            match request {
+                Request::WebhookClaim(req) => ops::webhook_outbox::claim(store, vault, req),
+                Request::WebhookReport(req) => ops::webhook_outbox::report(store, req),
+                _ => Err(CommandError::new(
+                    ErrorKind::Internal,
+                    "not a webhook request",
+                )),
+            }
+        };
+        match run() {
+            Ok(value) => Response::ok(name, Some(value)),
+            Err(e) => e.into_response(name, vec![]),
+        }
+    }
+
     /// Run `artifact-read`, passing the Artifact's bytes to `out` piece by piece, then answer
     /// with what was sent.
     pub fn read_artifact(

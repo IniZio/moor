@@ -36,6 +36,7 @@ mod version;
 mod wait;
 mod wait_events;
 mod wake;
+pub(crate) mod webhook_outbox;
 
 #[cfg(test)]
 pub(crate) use run::tests as run_fixture;
@@ -83,6 +84,10 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         | Request::ProxyLease(_)
         | Request::ProxyRelease(_)
         | Request::ProxyStatus(_)) => Err(socket_only(&req)),
+        Request::WebhookClaim(_) | Request::WebhookReport(_) => Err(CommandError::new(
+            ErrorKind::Refused,
+            webhook_outbox::FRONT_ONLY,
+        )),
         Request::MachineKeys {} => to_value(&MachineKeysValue {
             machines: cx.store()?.machine_keys()?,
         }),

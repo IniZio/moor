@@ -361,7 +361,9 @@ pub(super) fn insert_event(
          (SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1), ?2, ?3, ?4)",
         params![id.get(), e.kind(), e.payload().to_string(), now.as_millis()],
     )?;
-    Ok(tx.last_insert_rowid())
+    let event = tx.last_insert_rowid();
+    super::webhook_outbox::enqueue(tx, id, event, e.kind())?;
+    Ok(event)
 }
 
 #[cfg(test)]

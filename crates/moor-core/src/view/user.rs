@@ -257,3 +257,34 @@ pub struct WebhookRemoveValue {
     /// The id removed.
     pub id: i64,
 }
+
+/// One webhook delivery `webhook-claim` leased to the caller. `Debug` redacts the key.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebhookDeliveryView {
+    /// The delivery's id, which `webhook-report` names.
+    pub delivery: i64,
+    /// The webhook it is for.
+    pub webhook: i64,
+    /// Where to post `body`.
+    pub url: String,
+    /// The webhook's HMAC key, to sign `body` with at send time.
+    pub key: SecretValue,
+    /// The event kind.
+    pub event: String,
+    /// The `moor.notify/1` JSON object to post.
+    pub body: serde_json::Value,
+}
+
+/// Value of `webhook-claim`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebhookClaimValue {
+    /// The leased deliveries, oldest first.
+    pub deliveries: Vec<WebhookDeliveryView>,
+}
+
+/// Value of `webhook-report`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebhookReportValue {
+    /// The delivery ended.
+    pub delivery: i64,
+}

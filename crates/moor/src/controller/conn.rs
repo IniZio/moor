@@ -103,6 +103,18 @@ fn answer(
     if matches!(request, Request::Version {}) {
         return Some(Moor::version());
     }
+    let runner = matches!(peer.caller, Ok(Caller::Runner));
+    if !runner
+        && matches!(
+            request,
+            Request::WebhookClaim(_) | Request::WebhookReport(_)
+        )
+    {
+        return Some(match Moor::from_env(env) {
+            Ok(moor) => moor.call_webhook_outbox(&peer.caller, &peer.vault, &request),
+            Err(e) => e.into_response(cmd, vec![]),
+        });
+    }
     let grant =
         match Moor::from_env(env).and_then(|m| m.authorize(&peer.caller, asserted, &request)) {
             Ok(grant) => grant,

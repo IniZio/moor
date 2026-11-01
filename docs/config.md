@@ -679,8 +679,16 @@ fronts:
 | `ports` | list of TCP ports, 1 to 65535 | empty | Ports a client on the host reaches the front on at `127.0.0.1`. The front listens on the same port inside its own network namespace. The controller forwards each port from the host's `127.0.0.1` only, never its other addresses, and nothing else reaches the front from outside. The controller does not guess the ports from `command`. On macOS the front shares the host's network, so the key changes nothing there. |
 | `read_only` | list of absolute real paths | empty | Files or directories outside the system directories that the front may read, such as a config or token file under `HOME`. |
 | `proxy_rules` | list of rule names | empty | The rules the front Proxy serves to this front. The only rule is `claude`. It injects the user's `claude` secret on `POST /v1/messages`, `GET /api/claude_code/settings`, and `GET /api/claude_code/policy_limits` at `api.anthropic.com`. |
+| `webhooks` | bool | `false` | Whether this front delivers the users' webhooks. Only such a front may send `webhook-claim`, which leases the oldest pending delivery of each webhook with its URL, key and body, and `webhook-report`, which ends a delivery and records its outcome on the webhook. |
 
 #### The front Proxy
+
+When an event is written for a Box, the same transaction queues one delivery
+for each webhook of the Box's user that names the event's kind. A webhook has at
+most one delivery leased at a time, and gets its deliveries oldest first. A
+lease the front does not report on in time ends, and the next claim hands the
+delivery out again. Deliveries wait until a front with `webhooks: true` claims
+them.
 
 When an entry lists `proxy_rules`, with or without a `command`, the controller
 runs `moor proxy serve-fronts` as a child, and starts it again with backoff

@@ -194,8 +194,10 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
         | "mcp-list" | "profile-set" | "profile-show" | "profile-remove" | "mcp-oauth-finish"
         | "machine-remove" | "machine-enroll" | "machine-list" | "machine-status"
         | "machine-keys" | "machine-links" | "webhook-add" | "webhook-list" | "webhook-remove"
-        | "box-mirror" | "box-put" | "machine-hold" | "in" | "version" | "proxy-lease"
-        | "proxy-release" | "proxy-status" | "node-list" => return Names::Nothing,
+        | "webhook-claim" | "webhook-report" | "box-mirror" | "box-put" | "machine-hold" | "in"
+        | "version" | "proxy-lease" | "proxy-release" | "proxy-status" | "node-list" => {
+            return Names::Nothing
+        }
         _ => return Names::Unknown,
     })
 }
