@@ -31,6 +31,7 @@ fn all_inputs() -> Vec<BoxLifecycleInput> {
             reason: None,
         },
         I::Wake,
+        I::WaitForRoom,
         I::Close,
     ]
 }
@@ -74,23 +75,11 @@ fn legal() -> Vec<(BoxLifecycle, BoxLifecycleInput, BoxLifecycle)> {
             S::SetupFailed,
         ),
         (S::SetupFailed, I::Retry, S::SettingUp),
-        (
-            S::Ready,
-            I::Sleep {
-                auto: false,
-                reason: None,
-            },
-            S::Asleep,
-        ),
-        (
-            S::Ready,
-            I::Sleep {
-                auto: true,
-                reason: None,
-            },
-            S::Asleep,
-        ),
+        (S::Ready, I::sleep(false), S::Asleep),
+        (S::Ready, I::sleep(true), S::Asleep),
         (S::Asleep, I::Wake, S::Ready),
+        (S::Asleep, I::WaitForRoom, S::Pending),
+        (S::Pending, I::Wake, S::Ready),
     ];
     for state in S::ALL.into_iter().filter(|st| st.is_live()) {
         table.push((state, I::Close, S::Closed));
@@ -160,7 +149,7 @@ fn auto_does_not_change_the_sleep_result() {
 
 #[test]
 fn legal_table_has_expected_size() {
-    assert_eq!(legal().len(), 12 + 6);
+    assert_eq!(legal().len(), 14 + 6);
 }
 
 #[test]

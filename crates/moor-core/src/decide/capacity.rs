@@ -46,13 +46,6 @@ pub const fn counts(state: BoxState) -> bool {
     )
 }
 
-/// Whether a Box in `state` holds its guest memory. Asleep Boxes hold none: a provider that
-/// cannot free a paused Box's memory stops the Box instead of pausing it.
-#[must_use]
-pub const fn holds_memory(state: BoxState) -> bool {
-    matches!(state, BoxState::Starting | BoxState::Ready)
-}
-
 /// Decides whether one more Box fits under the limit.
 #[must_use]
 pub fn admit(f: &CapacityFacts) -> Admission {

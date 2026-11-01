@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use moor_core::config::NodeConfig;
-use moor_core::decide::capacity::{counts, holds_memory};
+use moor_core::decide::capacity::counts;
 use moor_core::decide::schedule::{Memory, Node, Online, Scope};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
@@ -15,17 +15,12 @@ use crate::store::{Store, StoreError};
 
 /// Boxes per node name.
 type Counts = HashMap<String, usize>;
-/// What a node's Boxes hold: each one's machine state and MiB.
-type Held<'m> = &'m [(BoxState, u64)];
-/// Per node name, the MiB its Boxes were given by their machine state.
-type Mib = HashMap<String, Vec<(BoxState, u64)>>;
 
 /// Per node: Boxes holding a slot, counted the way admission counts them, Boxes pending, and
-/// the MiB its Boxes holding memory were given.
-fn per_node(conn: &rusqlite::Connection) -> Result<(Counts, Counts, Mib), StoreError> {
+/// Boxes setting up.
+fn per_node(conn: &rusqlite::Connection) -> Result<(Counts, Counts, Counts), StoreError> {
     let mut stmt = conn.prepare(
-        "SELECT node, driver_state, state, COUNT(*), \
-         COALESCE(SUM(COALESCE(node_mem_mib, mem_mib, 0)), 0) FROM boxes \
+        "SELECT node, driver_state, state, COUNT(*) FROM boxes \
          WHERE node IS NOT NULL GROUP BY node, driver_state, state",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -34,51 +29,30 @@ fn per_node(conn: &rusqlite::Connection) -> Result<(Counts, Counts, Mib), StoreE
             r.get::<_, Option<String>>(1)?,
             r.get::<_, String>(2)?,
             r.get::<_, i64>(3)?,
-            r.get::<_, i64>(4)?,
         ))
     })?;
-    let (mut live, mut pending, mut held) = (HashMap::new(), HashMap::new(), HashMap::new());
+    let (mut live, mut pending, mut starting) = (HashMap::new(), HashMap::new(), HashMap::new());
     for row in rows {
-        let (node, driver, state, n, mib) = row?;
+        let (node, driver, state, n) = row?;
         let n = usize::try_from(n).unwrap_or(0);
-        let driver = driver.and_then(|d| BoxState::parse(&d));
-        if let Some(d) = driver {
-            held.entry(node.clone())
-                .or_insert_with(Vec::new)
-                .push((d, u64::try_from(mib).unwrap_or(0)));
-        }
-        if driver.is_some_and(counts) {
+        if driver.and_then(|d| BoxState::parse(&d)).is_some_and(counts) {
             *live.entry(node.clone()).or_default() += n;
         }
         if state == BoxLifecycle::Pending.as_str() {
-            *pending.entry(node).or_default() += n;
+            *pending.entry(node.clone()).or_default() += n;
+        }
+        if state == BoxLifecycle::SettingUp.as_str() {
+            *starting.entry(node).or_default() += n;
         }
     }
-    Ok((live, pending, held))
-}
-
-/// A node's memory from what its link reported (`total`, `reserve`, in MiB) and what its Boxes hold.
-fn memory_of(
-    (total, reserve): (Option<i64>, Option<i64>),
-    held: &[(BoxState, u64)],
-) -> Option<Memory> {
-    let mib = |m: i64| u64::try_from(m).ok();
-    Some(Memory {
-        total_mib: total.and_then(mib)?,
-        reserve_mib: reserve.and_then(mib),
-        used_mib: held
-            .iter()
-            .filter(|(s, _)| holds_memory(*s))
-            .map(|(_, m)| m)
-            .sum(),
-    })
+    Ok((live, pending, starting))
 }
 
 /// One personal node from a `user_machines_v2` row joined with its link; `load` gives a node's
-/// live Boxes, pending Boxes and held MiB by name.
-fn personal<'m>(
+/// live, pending and setting-up Boxes by name.
+fn personal(
     r: &rusqlite::Row<'_>,
-    load: &dyn Fn(&str) -> (usize, usize, Held<'m>),
+    load: &dyn Fn(&str) -> (usize, usize, usize),
 ) -> Result<Option<Node>, StoreError> {
     let name: String = r.get(2)?;
     let labels: String = r.get(3)?;
@@ -94,8 +68,22 @@ fn personal<'m>(
     };
     let (machine_id, owner) = (r.get(0)?, UserId::new(r.get(1)?));
     let max_boxes = r.get::<_, Option<u32>>(8)?.map(|m| m as usize);
-    let (used, waiting, held) = load(&name);
-    let memory = memory_of((r.get(9)?, r.get(10)?), held);
+    let (used, waiting, starting) = load(&name);
+    let mib = |i: usize| {
+        r.get::<_, Option<i64>>(i)
+            .map(|m| m.and_then(|m| u64::try_from(m).ok()))
+    };
+    let memory = match (mib(11)?, r.get::<_, Option<i64>>(13)?) {
+        (Some(available_mib), Some(at)) => Some(Memory {
+            total_mib: mib(9)?.unwrap_or(0),
+            reserve_mib: mib(10)?,
+            available_mib,
+            psi_centi: r.get(12)?,
+            reported_at: at / 1000,
+            starting,
+        }),
+        _ => None,
+    };
     Ok(NodeName::parse(&name).ok().map(|name| Node {
         name,
         scope: Scope::Personal {
@@ -124,7 +112,7 @@ impl Store {
         shared: &BTreeMap<String, NodeConfig>,
     ) -> Result<Vec<Node>, StoreError> {
         let conn = self.reader()?;
-        let (live, waiting, mem) = per_node(&conn)?;
+        let (live, waiting, starting) = per_node(&conn)?;
         let held = |n: &str| live.get(n).copied().unwrap_or(0);
         let pending = |n: &str| waiting.get(n).copied().unwrap_or(0);
         let mut nodes: Vec<Node> = shared
@@ -145,17 +133,14 @@ impl Store {
             .collect();
         let mut stmt = conn.prepare(
             "SELECT m.machine_id, m.user, m.name, m.labels, m.pool_provider, m.enrolled_at, \
-             l.online, l.since, l.max_boxes, l.mem_mib, l.reserve_mib \
+             l.online, l.since, l.max_boxes, l.mem_mib, l.reserve_mib, l.mem_available_mib, \
+             l.psi_centi, l.reported_at \
              FROM user_machines_v2 m LEFT JOIN machine_links l USING (machine_id) \
              WHERE m.pool_provider IS NOT NULL ORDER BY m.enrolled_at, m.machine_id",
         )?;
         let rows = stmt.query_and_then([], |r| {
             personal(r, &|n| {
-                (
-                    held(n),
-                    pending(n),
-                    mem.get(n).map_or(&[][..], Vec::as_slice),
-                )
+                (held(n), pending(n), starting.get(n).copied().unwrap_or(0))
             })
         })?;
         for row in rows {

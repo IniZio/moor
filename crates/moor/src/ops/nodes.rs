@@ -8,7 +8,7 @@ use moor_core::view::user::MachineLinksValue;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::node::configured;
+use crate::ops::common::node::{configured, now};
 use crate::ops::common::promote::promote_waiting;
 
 /// Every node, shared and personal.
@@ -52,7 +52,7 @@ fn visible(nodes: Vec<Node>, viewer: Viewer) -> Vec<Node> {
 }
 
 /// The wire form of `node`.
-fn view(node: &Node) -> NodeView {
+fn view(node: &Node, now: i64) -> NodeView {
     let (scope, owner) = match &node.scope {
         Scope::Shared => (NodeScope::Shared, None),
         Scope::Personal { owner, .. } => (NodeScope::Personal, Some(*owner)),
@@ -71,8 +71,9 @@ fn view(node: &Node) -> NodeView {
         used: node.used,
         waiting: node.waiting,
         max_boxes: node.max_boxes,
-        mem_used_mib: node.memory.map(|m| m.used_mib),
-        mem_offered_mib: node.memory.map(|m| m.offered_mib()),
+        mem_free_mib: node.memory.map(|m| m.free_mib()),
+        mem_psi_centi: node.memory.and_then(|m| m.psi_centi),
+        mem_report_age_secs: node.memory.map(|m| now.saturating_sub(m.reported_at)),
         labels: node.labels.clone(),
     }
 }
@@ -85,7 +86,7 @@ pub(crate) fn list(cx: &Cx) -> Result<NodeListValue, CommandError> {
     let mut nodes = visible(all(cx)?, cx.viewer());
     nodes.sort_by_key(|n| (matches!(n.scope, Scope::Personal { .. }), n.name.clone()));
     Ok(NodeListValue {
-        nodes: nodes.iter().map(view).collect(),
+        nodes: nodes.iter().map(|n| view(n, now(cx))).collect(),
     })
 }
 

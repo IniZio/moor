@@ -1,6 +1,6 @@
 //! The node a Box asked for or holds, and the labels it requires of one.
 
-use moor_core::decide::capacity::{counts, holds_memory};
+use moor_core::decide::capacity::counts;
 use moor_core::decide::schedule::BoxSpec;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
@@ -10,48 +10,43 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use super::{Store, StoreError};
 
-/// Boxes holding a slot on `node` as seen on `conn`, counted the way admission counts them.
+/// Boxes holding a slot on `node` as seen on `conn`, counted the way admission counts them,
+/// and Boxes setting up there.
 pub(super) fn live_on_node_in(
     conn: &Connection,
     node: &NodeName,
-) -> Result<(usize, u64), StoreError> {
+) -> Result<(usize, usize), StoreError> {
     let mut stmt = conn.prepare(
-        "SELECT driver_state, COUNT(*), COALESCE(SUM(COALESCE(node_mem_mib, mem_mib, 0)), 0) \
-         FROM boxes WHERE node = ?1 AND driver_state IS NOT NULL GROUP BY driver_state",
+        "SELECT driver_state, state, COUNT(*) FROM boxes WHERE node = ?1 GROUP BY driver_state, state",
     )?;
     let rows = stmt.query_map([node.as_str()], |r| {
         Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, i64>(1)?,
+            r.get::<_, Option<String>>(0)?,
+            r.get::<_, String>(1)?,
             r.get::<_, i64>(2)?,
         ))
     })?;
-    let (mut used, mut mib) = (0, 0);
+    let (mut used, mut starting) = (0, 0);
     for row in rows {
-        let (state, n, m) = row?;
-        let state = BoxState::parse(&state);
-        if state.is_some_and(counts) {
-            used += usize::try_from(n).unwrap_or(0);
+        let (driver, state, n) = row?;
+        let n = usize::try_from(n).unwrap_or(0);
+        if driver.and_then(|d| BoxState::parse(&d)).is_some_and(counts) {
+            used += n;
         }
-        if state.is_some_and(holds_memory) {
-            mib += u64::try_from(m).unwrap_or(0);
+        if state == BoxLifecycle::SettingUp.as_str() {
+            starting += n;
         }
     }
-    Ok((used, mib))
+    Ok((used, starting))
 }
 
 impl Store {
-    /// The Boxes whose lifecycle is Ready on `node`, with the MiB each was given.
-    pub(crate) fn ready_on(&self, node: &NodeName) -> Result<Vec<(BoxId, u64)>, StoreError> {
+    /// The Boxes whose lifecycle is Ready on `node`.
+    pub(crate) fn ready_on(&self, node: &NodeName) -> Result<Vec<BoxId>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt = conn.prepare(
-            "SELECT id, COALESCE(node_mem_mib, mem_mib, 0) FROM boxes WHERE node = ?1 AND state = ?2",
-        )?;
+        let mut stmt = conn.prepare("SELECT id FROM boxes WHERE node = ?1 AND state = ?2")?;
         let rows = stmt.query_map(params![node.as_str(), BoxLifecycle::Ready.as_str()], |r| {
-            Ok((
-                BoxId::new(r.get(0)?),
-                u64::try_from(r.get::<_, i64>(1)?).unwrap_or(0),
-            ))
+            Ok(BoxId::new(r.get(0)?))
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
     }

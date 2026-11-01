@@ -35,7 +35,7 @@ pub(crate) fn nodes(cx: &Cx) -> Result<(Vec<Node>, Option<NodeName>), CommandErr
 }
 
 /// Unix seconds now.
-fn now(cx: &Cx) -> i64 {
+pub(crate) fn now(cx: &Cx) -> i64 {
     cx.clock().now().as_millis() / 1000
 }
 
@@ -130,26 +130,6 @@ pub(crate) struct Bound {
     pub(crate) seat: Option<PoolSeat>,
 }
 
-/// `node`, re-read after suspending idle Boxes to fit `want` MiB for the Box named `for_box`.
-fn made_room(
-    cx: &Cx,
-    store: &Store,
-    node: Node,
-    (want, for_box): (u64, &str),
-) -> Result<Node, CommandError> {
-    if node.memory.is_none_or(|m| m.free_mib() >= want)
-        || !room::make_room_on(cx, store, &node, want, for_box)?
-    {
-        return Ok(node);
-    }
-    let name = node.name.clone();
-    Ok(nodes(cx)?
-        .0
-        .into_iter()
-        .find(|n| n.name == name)
-        .unwrap_or(node))
-}
-
 /// Schedules `row` and, in the transaction that counts its node, admits it with the decision
 /// `requested` builds, or leaves it Pending there. `None` when it waits. A fresh Box that no node
 /// can host is refused; a Pending one stays Pending.
@@ -171,10 +151,12 @@ pub(crate) fn admit(
         Verdict::Fail { .. } => return Ok(None),
         Verdict::Bind { node, .. } | Verdict::Pending { node, .. } => node,
     };
-    let Some(mut node) = all.into_iter().find(|n| n.name == picked) else {
+    let Some(node) = all.into_iter().find(|n| n.name == picked) else {
         return Ok(None);
     };
-    node = made_room(cx, store, node, (spec.mem_mib, row.name.as_str()))?;
+    if fresh {
+        room::make_room_on(cx, store, &node, row.name.as_str())?;
+    }
     let provider = runtime_id(&node);
     let caps = require_reverse_tunnel(provider.as_str(), provider_caps(cx, provider.as_str())?)?;
     let on_it = BoxSpec {
@@ -183,10 +165,10 @@ pub(crate) fn admit(
         mem_mib: spec.mem_mib,
     };
     let mut bound = false;
-    store.apply_admitting(row.id, &node.name, |(used, used_mib)| {
+    store.apply_admitting(row.id, &node.name, |(used, starting)| {
         let now = Node {
             used,
-            memory: node.memory.map(|m| Memory { used_mib, ..m }),
+            memory: node.memory.map(|m| Memory { starting, ..m }),
             ..node.clone()
         };
         match verdict(cx, (&[now], default.as_ref()), row.user, &on_it) {

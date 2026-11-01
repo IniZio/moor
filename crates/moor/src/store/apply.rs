@@ -64,7 +64,7 @@ impl Store {
         &self,
         id: BoxId,
         node: &NodeName,
-        decide: impl FnOnce((usize, u64)) -> Option<Decision>,
+        decide: impl FnOnce((usize, usize)) -> Option<Decision>,
     ) -> Result<Option<Applied>, StoreError> {
         let now = self.now();
         let mut conn = self.writer();

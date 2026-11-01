@@ -315,23 +315,23 @@ fn without_a_shared_node_an_offline_node_offers_no_other_node() {
 
 const GIB: u64 = 1024;
 
-/// `hv` with `total` GiB, a 4 GiB reserve unless given, and `used` GiB held by its Boxes.
-fn sized(total: u64, reserve: Option<u64>, used: u64) -> Node {
+/// `hv` reporting `available` GiB at `NOW`, a 4 GiB reserve, and `starting` Boxes booting.
+fn live(available: u64, starting: usize) -> Node {
     Node {
         memory: Some(Memory {
-            total_mib: total * GIB,
-            reserve_mib: Some(reserve.map_or(4 * GIB, |r| r * GIB)),
-            used_mib: used * GIB,
+            total_mib: 64 * GIB,
+            reserve_mib: Some(4 * GIB),
+            available_mib: available * GIB,
+            psi_centi: None,
+            reported_at: NOW,
+            starting,
         }),
         ..mine("hv", 1, 1)
     }
 }
 
-fn needing(gib: u64) -> BoxSpec {
-    BoxSpec {
-        mem_mib: gib * GIB,
-        ..spec(&[], None)
-    }
+fn judged(n: Node) -> Verdict {
+    schedule(&[n], ME, None, &spec(&[], None), NOW)
 }
 
 fn pending(v: Verdict) -> String {
@@ -342,52 +342,67 @@ fn pending(v: Verdict) -> String {
 }
 
 #[test]
-fn node_with_room_for_the_box_memory_binds() {
+fn node_with_headroom_binds() {
+    assert_eq!(judged(live(6, 0)), bound("hv", Some(1)));
+}
+
+#[test]
+fn node_below_the_boot_floor_waits_naming_what_is_free() {
     assert_eq!(
-        run(&[sized(30, None, 10)], &needing(16)),
-        bound("hv", Some(1))
+        pending(judged(live(5, 0))),
+        "waiting for capacity on hv: 1 GiB free, needs 2 GiB"
     );
 }
 
 #[test]
-fn node_short_of_memory_is_pending_naming_the_shortfall() {
+fn each_starting_box_takes_a_boot_floor_from_the_headroom() {
+    assert_eq!(judged(live(8, 1)), bound("hv", Some(1)));
     assert_eq!(
-        pending(run(&[sized(30, None, 20)], &needing(16))),
-        "hv has 6 GiB free of 26 GiB; this Box needs 16 GiB"
+        pending(judged(live(8, 2))),
+        "waiting for capacity on hv: 0 GiB free, needs 2 GiB"
     );
 }
 
 #[test]
-fn the_reserve_is_taken_from_the_total() {
-    assert_eq!(
-        run(&[sized(30, Some(0), 14)], &needing(16)),
-        bound("hv", Some(1))
-    );
-    assert!(pending(run(&[sized(30, Some(1), 14)], &needing(16))).contains("15 GiB free of 29 GiB"));
+fn memory_pressure_refuses_however_much_is_free() {
+    let mut n = live(32, 0);
+    let m = n.memory.as_mut().expect("memory");
+    m.psi_centi = Some(999);
+    assert_eq!(judged(n.clone()), bound("hv", Some(1)));
+    n.memory.as_mut().expect("memory").psi_centi = Some(1000);
+    assert_eq!(pending(judged(n)), "memory pressure on hv");
+}
+
+#[test]
+fn a_report_older_than_a_minute_refuses() {
+    let mut n = live(32, 0);
+    n.memory.as_mut().expect("memory").reported_at = NOW - 60;
+    assert_eq!(judged(n.clone()), bound("hv", Some(1)));
+    n.memory.as_mut().expect("memory").reported_at = NOW - 61;
+    assert_eq!(pending(judged(n)), "no recent memory report from hv");
 }
 
 #[test]
 fn default_reserve_is_4_gib_plus_a_tenth() {
-    let m = Memory {
-        total_mib: 30 * GIB,
-        reserve_mib: None,
-        used_mib: 0,
-    };
-    assert_eq!(m.offered_mib(), 30 * GIB - 4 * GIB - 3 * GIB);
+    let mut n = live(10, 0);
+    let m = n.memory.as_mut().expect("memory");
+    m.reserve_mib = None;
+    m.total_mib = 30 * GIB;
+    assert_eq!(m.free_mib(), 10 * GIB - 4 * GIB - 3 * GIB);
 }
 
 #[test]
-fn node_with_unknown_memory_admits_by_count_only() {
+fn a_node_that_never_reported_memory_admits_by_count_only() {
     let mut n = mine("hv", 1, 1);
     n.max_boxes = Some(4);
     n.used = 3;
-    assert_eq!(run(&[n], &needing(1024)), bound("hv", Some(1)));
+    assert_eq!(judged(n), bound("hv", Some(1)));
 }
 
 #[test]
-fn a_full_count_still_waits_on_a_node_with_memory() {
-    let mut n = sized(64, None, 0);
+fn a_full_count_still_waits_on_a_node_with_headroom() {
+    let mut n = live(64, 0);
     n.max_boxes = Some(1);
     n.used = 1;
-    assert!(pending(run(&[n], &needing(4))).contains("is full"));
+    assert!(pending(judged(n)).contains("is full"));
 }
