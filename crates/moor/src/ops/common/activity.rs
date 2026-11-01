@@ -5,9 +5,7 @@ use std::time::Duration;
 use moor_core::activity::{
     decide, may_apply_quiet, Activity, AgentState, HookRead, PaneRead, PaneStatus, Probes,
 };
-use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
-use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Deadline;
@@ -22,9 +20,9 @@ use crate::ops::common::link::{self, Fate};
 use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::resume;
 use crate::ops::common::transcript;
-use crate::store::{BoxRow, Store, StoreError};
+use crate::store::{BoxRow, Store};
 
-use launch::{launch_overdue, warn_launch_timed_out};
+use launch::launch_overdue;
 use stored::stored_hook;
 
 /// Allowance for the hook file read and for the pane observation in one probe. The pane read takes up
@@ -39,7 +37,10 @@ pub(crate) enum PaneLiveness {
     Live,
     /// The pane exists and shows the agent ended.
     Exited,
-    /// There is no pane: it vanished, was never recorded, or the Box has no agent.
+    /// The pane the launch recorded no longer exists, as after a controller restart; the agent
+    /// may still run on the Box.
+    Lost,
+    /// There is no pane: none was recorded, or the Box has no agent.
     Gone,
 }
 
@@ -49,7 +50,7 @@ impl PaneLiveness {
         match self {
             Self::Live => "live",
             Self::Exited => "exited",
-            Self::Gone => "gone",
+            Self::Lost | Self::Gone => "gone",
         }
     }
 }
@@ -242,66 +243,27 @@ pub(crate) fn settle(
     reading: &Reading,
 ) -> Result<(), CommandError> {
     let turn_done = turn::note_turn_done(store, row, reading)?;
-    if let (PaneLiveness::Exited, Some(probed)) = (reading.pane, reading.session) {
-        if let Some(Fate::Ended(exit)) = link::after_pane_end(cx, store, row, reading, probed)? {
-            transcript::save_on_exit(cx, store, row, probed)?;
-            end_exited_session(cx, store, row, exit, probed)?;
+    let lost = reading.pane == PaneLiveness::Lost;
+    if let (PaneLiveness::Exited | PaneLiveness::Lost, Some(probed)) =
+        (reading.pane, reading.session)
+    {
+        match link::after_pane_end(cx, store, row, reading, probed)? {
+            Some(Fate::Ended(exit)) => {
+                transcript::save_on_exit(cx, store, row, probed)?;
+                end_exited_session(cx, store, row, exit, probed)?;
+            }
+            // A lost pane says nothing of the agent, which still runs: idling on it drops what the agent says next.
+            Some(Fate::Reattached | Fate::Unreachable) if lost => return Ok(()),
+            _ => {}
         }
     }
     register_session(cx, store, row, reading)?;
     needs_input::note_needs_input(store, row, reading)?;
-    let went_quiet = step(cx, store, row, reading)?;
+    let went_quiet = quiet::step(cx, store, row, reading)?;
     if (turn_done || went_quiet) && reading.pane != PaneLiveness::Exited {
         transcript::save_on_turn(cx, store, row)?;
     }
     Ok(())
-}
-
-/// Steps the Box between Working and Idle to match `reading`; true when it went Idle.
-fn step(cx: &Cx, store: &Store, row: &BoxRow, reading: &Reading) -> Result<bool, CommandError> {
-    // A steered turn ends only on its `turn_done`: a hook report older than the steer is no answer.
-    let turn_open = store.unanswered_steer(row.id)?.is_some();
-    let input = match (row.lifecycle == BoxLifecycle::Ready, row.session.is_quiet()) {
-        (true, false) if !reading.busy() && reading.may_quiet && !turn_open => {
-            SessionInput::AgentQuiet
-        }
-        (true, true) if reading.busy() => SessionInput::AgentBusy,
-        _ => return Ok(false),
-    };
-    // An op that owns the Box decides where the Box goes; hold the lock across the write.
-    let Ok(_held) = BoxLock::acquire(
-        cx.clock(),
-        cx.state_dir()?,
-        row.id,
-        "settle",
-        Duration::ZERO,
-    ) else {
-        return Ok(false);
-    };
-    if row.intent.is_some() {
-        return Ok(false);
-    }
-    let quiet = input == SessionInput::AgentQuiet;
-    if !said::record(store, row, quiet, reading.said.as_deref())? {
-        return Ok(false);
-    }
-    let mut decision = Decision::new(row.id).session(input.clone());
-    let timed_out = reading
-        .launch_overdue
-        .filter(|_| input == SessionInput::AgentQuiet);
-    if let Some(after_secs) = timed_out {
-        decision = decision.event(ExtraEvent::LaunchTimedOut { after_secs });
-    }
-    match store.apply(decision) {
-        Ok(_) => {
-            if let Some(after_secs) = timed_out {
-                warn_launch_timed_out(cx, row, after_secs);
-            }
-            Ok(input == SessionInput::AgentQuiet)
-        }
-        Err(StoreError::Illegal(_)) => Ok(false),
-        Err(e) => Err(e.into()),
-    }
 }
 
 /// Ends the current session of an agent that ended with `exit`, once its transcript is saved.
@@ -383,7 +345,8 @@ fn warn(cx: &Cx, message: String) {
 /// Pane liveness from the raw pane read and the decided state.
 const fn liveness(pane: &PaneRead, activity: &Activity) -> PaneLiveness {
     match pane {
-        PaneRead::Gone | PaneRead::Absent => PaneLiveness::Gone,
+        PaneRead::Gone => PaneLiveness::Lost,
+        PaneRead::Absent => PaneLiveness::Gone,
         _ if matches!(activity.state, AgentState::Exited { .. }) => PaneLiveness::Exited,
         _ => PaneLiveness::Live,
     }
@@ -392,6 +355,7 @@ const fn liveness(pane: &PaneRead, activity: &Activity) -> PaneLiveness {
 mod doing;
 mod launch;
 mod needs_input;
+mod quiet;
 mod said;
 mod stored;
 mod turn;

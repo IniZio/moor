@@ -230,7 +230,7 @@ fn run_in_flight_with_a_gone_pane_is_busy_and_not_quiet() {
     let r = run_once(&cx, id);
     assert!(r.busy());
     assert!(!r.may_quiet);
-    assert_eq!(r.pane, PaneLiveness::Gone);
+    assert_eq!(r.pane, PaneLiveness::Lost);
 }
 
 #[test]
@@ -342,7 +342,7 @@ fn cache_row_that_is_not_json_degrades_with_a_warning() {
 #[test]
 fn pane_liveness_tells_gone_from_exited_from_live() {
     let cases = [
-        (PaneRead::Gone, PaneLiveness::Gone),
+        (PaneRead::Gone, PaneLiveness::Lost),
         (PaneRead::Absent, PaneLiveness::Gone),
         (PaneRead::TimedOut, PaneLiveness::Live),
         (
@@ -576,5 +576,6 @@ mod doing;
 mod exit;
 mod link;
 mod needs_input;
+mod restart;
 mod said;
 mod turn;
