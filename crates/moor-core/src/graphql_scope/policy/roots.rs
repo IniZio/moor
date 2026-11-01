@@ -7,7 +7,7 @@ use super::super::Reason;
 use super::{deny_field, Policy};
 
 /// Subfields of `viewer` that are allowed.
-const VIEWER_FIELDS: &[&str] = &["login", "id", "__typename"];
+const VIEWER_FIELDS: &[&str] = &["login", "id", "databaseId", "name", "__typename"];
 
 /// Arguments `search` may carry.
 const SEARCH_ARGS: &[&str] = &["query", "type", "first", "last", "after", "before"];

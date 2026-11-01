@@ -92,9 +92,10 @@ pub(super) const SHAPES: &[Shape] = &[
         links: &[
             ("owner", C("actor")),
             ("parent", C("parent")),
-            ("defaultBranchRef", C("ref")),
-            ("ref", C("ref")),
-            ("refs", N("ref")),
+            ("defaultBranchRef", C("boxref")),
+            ("ref", C("boxref")),
+            ("refs", N("boxref")),
+            ("object", C("boxobject")),
             ("pullRequest", C("pr")),
             ("pullRequests", N("pr")),
             ("labels", N("label")),
@@ -186,6 +187,47 @@ pub(super) const SHAPES: &[Shape] = &[
             ("statusCheckRollup", C("rollup")),
             ("authors", N("gitactor")),
         ],
+    },
+    // The Box can already fetch every file of its own repo, so its own commits may show files.
+    Shape {
+        name: "boxref",
+        leaves: &["id", "name", "prefix"],
+        links: &[
+            ("target", C("boxobject")),
+            ("associatedPullRequests", N("prref")),
+            ("rules", N("rule")),
+            ("branchProtectionRule", C("protection")),
+        ],
+    },
+    Shape {
+        name: "boxobject",
+        leaves: &[
+            "id",
+            "oid",
+            "abbreviatedOid",
+            "message",
+            "messageHeadline",
+            "messageBody",
+            "committedDate",
+            "authoredDate",
+            "url",
+        ],
+        links: &[
+            ("statusCheckRollup", C("rollup")),
+            ("authors", N("gitactor")),
+            ("file", C("treeentry")),
+            ("target", C("boxobject")),
+        ],
+    },
+    Shape {
+        name: "treeentry",
+        leaves: &[],
+        links: &[("object", C("blob"))],
+    },
+    Shape {
+        name: "blob",
+        leaves: &["byteSize", "isBinary", "text"],
+        links: &[],
     },
     Shape {
         name: "gitactor",
