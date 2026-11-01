@@ -169,6 +169,10 @@ const FILES: &[(&str, &str)] = &[
         "V28__box_node.sql",
         include_str!("../../migrations/V28__box_node.sql"),
     ),
+    (
+        "V29__webhooks.sql",
+        include_str!("../../migrations/V29__webhooks.sql"),
+    ),
 ];
 
 /// moor.db's migrations, oldest first.

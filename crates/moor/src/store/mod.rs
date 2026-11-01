@@ -62,6 +62,8 @@ pub(crate) use runs::{NewRun, RunOutcome, RunRow};
 pub(crate) use sessions::SessionRecord;
 pub(crate) use users::machine::MachineWake;
 pub(crate) use users::mcp_oauth::{GrantRow, SignIn};
+#[cfg(test)]
+pub(crate) use users::webhook::key_name as webhook_key_name;
 
 /// How long a connection waits on a lock before `SQLITE_BUSY`.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);

@@ -14,6 +14,7 @@ use crate::vault::Vault;
 mod machine;
 pub(crate) mod mcp;
 mod profile;
+mod webhook;
 
 /// Run `cmd` as `who`.
 #[expect(clippy::too_many_lines, reason = "one arm per user command")]
@@ -61,6 +62,12 @@ pub(crate) fn run(
             )
         }
         UserCmd::McpRemove { name } => mcp::remove(store, enrolled(store, who)?, name),
+        UserCmd::WebhookAdd { url, events } => {
+            let user = enrolled(store, who)?;
+            webhook::add(store, vault, user, url, events.as_deref())
+        }
+        UserCmd::WebhookList => webhook::list(store, enrolled(store, who)?),
+        UserCmd::WebhookRemove { id } => webhook::remove(store, enrolled(store, who)?, *id),
         UserCmd::McpOAuthFinish { .. } => mcp::oauth::finish(cx, vault, enrolled(store, who)?, cmd),
         UserCmd::McpList => mcp::list(store, enrolled(store, who)?),
         UserCmd::ProfileSet { source } => profile::set(store, enrolled(store, who)?, source),

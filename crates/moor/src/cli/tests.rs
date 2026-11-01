@@ -366,3 +366,35 @@ fn profile_set_takes_a_github_url_with_an_optional_ref() {
     let o = done(&["user", "profile", "set", "https://gitlab.com/alice/agent"]);
     assert_eq!(o.code, 2, "{}", o.stdout);
 }
+
+#[test]
+fn webhook_add_ls_and_rm_build_their_requests() {
+    use moor_core::request::UserCmd;
+    let req = parsed_request(&[
+        "user",
+        "webhook",
+        "add",
+        "https://x.example/h",
+        "--event",
+        "idled",
+        "--event",
+        "closed",
+    ]);
+    let Ok((None, UserCmd::WebhookAdd { url, events })) = req.into_user() else {
+        unreachable!("expected webhook-add")
+    };
+    assert_eq!(url, "https://x.example/h");
+    assert_eq!(events, Some(vec!["idled".to_owned(), "closed".to_owned()]));
+    let bare = parsed_request(&["user", "webhook", "add", "https://x.example/h"]);
+    assert!(matches!(
+        bare.into_user(),
+        Ok((None, UserCmd::WebhookAdd { events: None, .. }))
+    ));
+    let ls = parsed_request(&["user", "webhook", "ls"]);
+    assert!(matches!(ls.into_user(), Ok((None, UserCmd::WebhookList))));
+    let rm = parsed_request(&["user", "webhook", "rm", "7"]);
+    assert!(matches!(
+        rm.into_user(),
+        Ok((None, UserCmd::WebhookRemove { id: 7 }))
+    ));
+}

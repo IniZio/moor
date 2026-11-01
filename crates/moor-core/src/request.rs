@@ -31,6 +31,7 @@ mod user;
 pub use user::{
     ActAsReq, AsReq, EnrollReq, McpAddReq, McpOAuthFinishReq, McpRemoveReq, ProfileSetReq,
     ProxyReleaseReq, SecretDeleteReq, SecretSetReq, SecretValue, StartNeedsReq, UserCmd,
+    WebhookAddReq, WebhookRemoveReq,
 };
 mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
@@ -121,6 +122,12 @@ pub enum Request {
     ProfileShow(AsReq),
     /// Clear the caller's user's agent profile repo.
     ProfileRemove(AsReq),
+    /// Add a webhook for the caller's user; the reply holds its HMAC key, shown only once.
+    WebhookAdd(WebhookAddReq),
+    /// List the caller's user's webhooks; never their keys.
+    WebhookList(AsReq),
+    /// Remove one of the caller's user's webhooks.
+    WebhookRemove(WebhookRemoveReq),
     /// Finish signing the caller's user in to one of their MCP servers.
     #[serde(rename = "mcp-oauth-finish")]
     McpOAuthFinish(McpOAuthFinishReq),
@@ -199,6 +206,9 @@ impl Request {
             Self::ProfileSet(_) => "profile-set",
             Self::ProfileShow(_) => "profile-show",
             Self::ProfileRemove(_) => "profile-remove",
+            Self::WebhookAdd(_) => "webhook-add",
+            Self::WebhookList(_) => "webhook-list",
+            Self::WebhookRemove(_) => "webhook-remove",
             Self::McpOAuthFinish(_) => "mcp-oauth-finish",
             Self::MachineRemove(_) => "machine-remove",
             Self::MachineEnroll(_) => "machine-enroll",
