@@ -46,6 +46,9 @@ fn main() -> ExitCode {
     if let Some(code) = front_shim(&args) {
         return code;
     }
+    if let Some(out) = moor::sign_in::run(&args) {
+        return emit(&out);
+    }
     let env = Env::capture();
     let output = match cli::parse(args) {
         Parsed::Done(out) => out,
