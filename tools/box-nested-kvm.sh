@@ -1,9 +1,4 @@
 #!/bin/sh
-# Make a Box able to run cloud-hypervisor VMs: the Box user gets /dev/kvm through
-# the kvm group, and cloud-hypervisor, passt, crabbox and the crabbox
-# cloud-hypervisor adapter are installed from pinned sources. Everything
-# downloaded or built lives in $NESTED (a cache volume), so a second Box only
-# links it. Each step is skipped when its stamp already names the pinned version.
 set -eu
 
 CH_VERSION=v52.0
@@ -59,8 +54,6 @@ if [ -n "$need" ]; then
 	as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $need
 fi
 
-# /dev/kvm is root:kvm 0660. A new group applies to new logins; a command that
-# needs it in an existing session runs under `sg kvm -c '...'`.
 if [ -e /dev/kvm ]; then
 	user=$(id -un)
 	id -nG "$user" | tr ' ' '\n' | grep -qx kvm || as_root usermod -aG kvm "$user"
@@ -108,7 +101,6 @@ fi
 link_bin crabbox
 
 if ! fresh crabbox-cloudhypervisor "$ADAPTER_REV"; then
-	# The adapter builds with the repo's toolchain, named from the repo directory.
 	toolchain=$(rustup show active-toolchain | cut -d' ' -f1)
 	src=$(mktemp -d)
 	git_rev "$src" https://github.com/IniZio/crabbox-cloudhypervisor "$ADAPTER_REV"
