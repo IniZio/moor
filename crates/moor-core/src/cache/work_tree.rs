@@ -5,7 +5,7 @@ use std::num::NonZeroU32;
 
 use serde::Deserialize;
 
-use super::{CacheName, CachePath, OnFail, Volume};
+use super::{CacheError, CacheName, CachePath, OnFail, Volume};
 use crate::box_key::WORK_ROOT;
 
 /// The volume's name.
@@ -67,6 +67,22 @@ impl CachePath {
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b"._-+@".contains(&b));
         ok.then(|| Self(format!("~/{}", dir(name))))
+    }
+
+    /// Validates `s` as a path of the volume `volume`: the work tree volume's own
+    /// `~/moor/repos/<name>`, else whatever [`CachePath::parse`] takes.
+    ///
+    /// # Errors
+    /// [`CacheError`] when [`CachePath::parse`] refuses `s` and it is not the work tree's path.
+    pub fn of_volume(volume: &CacheName, s: &str) -> Result<Self, CacheError> {
+        let tree = (volume.as_str() == NAME)
+            .then(|| s.strip_prefix(&format!("~/{WORK_ROOT}/{REPOS}/")))
+            .flatten()
+            .and_then(Self::work_tree);
+        match tree {
+            Some(path) if path.0 == s => Ok(path),
+            _ => Self::parse(s),
+        }
     }
 }
 

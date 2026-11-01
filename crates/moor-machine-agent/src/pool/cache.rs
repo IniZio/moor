@@ -57,7 +57,7 @@ fn volume(v: &CacheVolume) -> Result<(), String> {
             v.group
         ));
     }
-    CacheName::parse(&v.name).map_err(|e| e.to_string())?;
+    let name = CacheName::parse(&v.name).map_err(|e| e.to_string())?;
     if v.key != format!("{}-{}", v.group, v.name) {
         return Err("key must be <group>-<name>".to_owned());
     }
@@ -65,7 +65,7 @@ fn volume(v: &CacheVolume) -> Result<(), String> {
         return Err(format!("a volume spans 1 to {MOST_PATHS} paths"));
     }
     for path in &v.paths {
-        CachePath::parse(path).map_err(|e| e.to_string())?;
+        CachePath::of_volume(&name, path).map_err(|e| e.to_string())?;
     }
     if v.size_gb > MOST_GB {
         return Err(format!("sizeGB is at most {MOST_GB}"));
