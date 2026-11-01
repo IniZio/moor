@@ -49,6 +49,10 @@ The state directory holds `moor.db`. It is the first of `--state-dir`,
 | `moor sleep NAME` | Puts the Box's machine to sleep. |
 | `moor wake NAME` | Wakes a sleeping Box. |
 | `moor close NAME` | Closes the Box and releases its machine. |
+| `moor login --server URL` | Signs you in to a moor server in the browser and saves the sign-in for every local moor client. `--no-browser` prints the address and reads the address the browser ends on, pasted. `URL` is the server's origin or its `/mcp` address; `--server` defaults to `MOOR_SERVER`. See [Sign in once](mcp.md#sign-in-once). |
+| `moor logout --server URL` | Forgets the sign-in to that server and revokes it at the identity provider. |
+| `moor status [--server URL]` | Shows who is signed in to that server, or to each one, and how long the access token has left. It never prints a token. |
+| `moor token --server URL` | Prints a fresh access token, refreshing it first when needed. `--headers` prints `{"Authorization":"Bearer …"}` for a headers helper. Exits 1 when you are not signed in. |
 
 ### `moor start` flags
 

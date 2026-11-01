@@ -23,6 +23,7 @@ moor::vault
 moor::front_dir	
 moor::runner_dir	
 moor::stamp	
+moor::sign_in	moor::cli
 moor::store	moor::env,moor::vault
 moor::adapters::proc	moor::env
 moor::adapters::clock	moor::env

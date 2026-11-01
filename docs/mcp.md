@@ -15,6 +15,21 @@ the moor CLI or a copy of your credentials.
 Every call acts as the person who signed in, so an agent sees and changes only
 that person's Boxes.
 
+## Sign in once
+
+Local tools that talk to moor share one sign-in per server. Run
+
+```sh
+moor login --server https://<host>
+```
+
+once. The herdr plugin, the event listener and your own scripts then use that
+sign-in, and its access token refreshes on its own. A script gets a current
+token from `moor token --server https://<host>`. Claude Code's
+`headersHelper` can run `moor token --server https://<host> --headers`.
+`moor status` shows who is signed in. `moor logout` forgets the sign-in and
+revokes it, so no copy of it keeps working.
+
 ## Scopes
 
 | Scope | Allows |
