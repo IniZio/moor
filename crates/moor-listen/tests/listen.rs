@@ -171,11 +171,12 @@ impl World {
         panic!("the gate never opened {n} live watches");
     }
 
-    /// The token command: counts its runs in `runs`, and gives a bad token while `bad` exists.
+    /// The token command: counts its runs in `runs`, gives a bad token while `bad` exists and
+    /// fails while `down` exists.
     fn token_cmd(&self) -> String {
         let script = self.dir.path().join("token.sh");
         let body = format!(
-            "#!/bin/sh\necho run >> {d}/runs\nif [ -e {d}/bad ]; then printf bad; else printf %s {t}; fi\n",
+            "#!/bin/sh\necho run >> {d}/runs\n[ -e {d}/down ] && exit 1\nif [ -e {d}/bad ]; then printf bad; else printf %s {t}; fi\n",
             d = self.dir.path().display(),
             t = self.token
         );
@@ -186,6 +187,19 @@ impl World {
     /// How often the token command has run.
     fn runs(&self) -> usize {
         std::fs::read_to_string(self.dir.path().join("runs")).map_or(0, |s| s.lines().count())
+    }
+
+    /// Drops every live watch with the token command failing, so the first reconnect fails.
+    fn drop_watches(&self) {
+        std::fs::write(self.dir.path().join("down"), "").unwrap();
+        for live in self.fake.lock().unwrap().live.drain(..) {
+            live.shutdown(std::net::Shutdown::Both).unwrap();
+        }
+    }
+
+    /// Lets the token command work again.
+    fn come_back(&self) {
+        std::fs::remove_file(self.dir.path().join("down")).unwrap();
     }
 
     /// Starts `moor-listen` on this gate.
@@ -263,14 +277,13 @@ fn a_dropped_stream_prints_lost_then_reconnected() {
     let world = world(&["repo/a"]);
     let listen = world.listen();
     world.wait_live(1);
-    for live in world.fake.lock().unwrap().live.drain(..) {
-        live.shutdown(std::net::Shutdown::Both).unwrap();
-    }
+    world.drop_watches();
     let lost = listen.line();
     assert!(
         lost.starts_with("moor-listen: stream lost (") && lost.ends_with("); reconnecting"),
         "{lost}"
     );
+    world.come_back();
     assert_eq!(listen.line(), "moor-listen: reconnected");
     world.wait_live(1);
     world.happen("repo/a", 1, "idled", "Back.");
@@ -295,10 +308,9 @@ fn the_token_command_reruns_on_reconnect() {
     world.wait_live(1);
     let before = world.runs();
     assert!(before >= 1);
-    for live in world.fake.lock().unwrap().live.drain(..) {
-        live.shutdown(std::net::Shutdown::Both).unwrap();
-    }
+    world.drop_watches();
     listen.line();
+    world.come_back();
     assert_eq!(listen.line(), "moor-listen: reconnected");
     assert!(world.runs() > before, "{} runs", world.runs());
 }

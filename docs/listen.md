@@ -21,11 +21,13 @@ One line per event, flushed at once:
 | Line | When |
 | --- | --- |
 | `moor: box <name> <event>: <agent_said>` | The Box's newest `idled`, `needs_input`, `setup_failed`, `session_failed`, `launch_timed_out`, `box_failed`, `relaunch_capped` or `closed` event. `agent_said` is the first line of what the agent said, cut at 200 characters, and the `: ...` is left out when there is none. Each event prints once. |
-| `moor-listen: stream lost (<reason>); reconnecting` | The stream ended or failed. Printed once per outage; it retries after 2 s, doubling to 60 s. |
-| `moor-listen: reconnected` | The stream is back. |
+| `moor-listen: stream lost (<reason>); reconnecting` | The stream ended, failed or sent nothing for 45 s, and the first reconnect failed too. A drop that reconnects at once prints nothing. Printed once per outage; it retries after 2 s, doubling to 60 s. |
+| `moor-listen: reconnected` | The stream is back after a `stream lost` line. |
 | `moor-listen: token rejected; call any moor tool so the client refreshes it` | The gate answered 401 or 403. It reruns the token command every 60 s. |
 
-Events from before the first connect are not printed. `busy` and the other
+Events from before the first connect are not printed. After every reconnect
+it reads each Box again and prints the events it missed while no stream was
+open, so a drop loses nothing. `busy` and the other
 events are skipped. stderr is for debugging.
 
 ## Example
