@@ -16,10 +16,12 @@ use super::support::controller::FakeController;
 use super::support::slack_fake::{APP_TOKEN, BOT_TOKEN, TEAM};
 use super::support::{Rig, BOX_NAME, CHANNEL, TS, USER};
 
-/// A daemon whose thread [`TS`] runs Box [`BOX_NAME`], so `slack.db` holds it.
+/// A daemon whose thread [`TS`] runs Box [`BOX_NAME`], so `slack.db` holds it, with the turn
+/// that started the Box ended.
 fn thread_with_a_box() -> (Rig, FakeController) {
     let (rig, controller, _bin) = Rig::start_boxes();
     rig.open_thread_with_a_box();
+    rig.wait_replies(1);
     (rig, controller)
 }
 
