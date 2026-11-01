@@ -86,10 +86,30 @@ the Box's one-line status as its description. `resources/read` returns the same
 JSON as `box_status`, as `application/json` text.
 
 A client on MCP 2026-07-28 sends `subscriptions/listen` once and keeps the
-stream open:
+stream open. It needs no `initialize` and no session. Every POST, listen
+included, carries these headers:
+
+- `MCP-Protocol-Version: 2026-07-28`
+- `Mcp-Method: <method>`, and `Mcp-Name: <uri>` for `resources/read`
+- `Accept: application/json, text/event-stream`
+
+and these fields in `params._meta`:
+
+- `io.modelcontextprotocol/protocolVersion`: `"2026-07-28"`
+- `io.modelcontextprotocol/clientInfo`: `{"name": ..., "version": ...}`
+- `io.modelcontextprotocol/clientCapabilities`: `{}`
+
+`initialize` still answers `2025-11-25`. Do not take that answer as proof that
+listen is missing: the 2026-07-28 methods work without it. The gate sends an
+SSE comment every 15 s to keep the stream alive.
 
 ```json
 {"jsonrpc": "2.0", "id": 7, "method": "subscriptions/listen", "params": {
+  "_meta": {
+    "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+    "io.modelcontextprotocol/clientInfo": {"name": "me", "version": "1"},
+    "io.modelcontextprotocol/clientCapabilities": {}
+  },
   "notifications": {
     "resourcesListChanged": true,
     "resourceSubscriptions": ["moor://box/app/fix-login"]
@@ -107,7 +127,7 @@ Then it follows your events on the controller from that moment:
 | `box_ready`, `asleep`, `woke`, `closed` | `notifications/resources/updated` for its URI |
 | `started`, `closed`, `box_deleted` | `notifications/resources/list_changed` |
 
-A notification names only the resource. Read the resource to see what happened.
+A notification names only the resource (`params.uri`). Read the resource to see what happened.
 Its `events`, `status` and `agent_said` say it. To follow a Box that started
 after the stream opened, open a second listen that names its URI.
 
@@ -118,6 +138,8 @@ again, then listen again. A client on an older MCP version gets
 `method not found`. It can poll `box_status`, or use the
 [webhook front](notify.md), which keeps a cursor and posts each event to a URL.
 An ingress in front of the gate must let a response stream stay open.
+
+[`moor-listen`](listen.md) does all of this and prints a line per event.
 
 To replace a cron that polls:
 

@@ -9,6 +9,7 @@
 | [moor-migrate](../crates/moor-migrate) | Forward-only schema migrations for the `SQLite` databases, run by [refinery](https://github.com/rust-db/refinery). |
 | [moor-client](../crates/moor-client) | A client for the controller socket that fronts use. |
 | [moor-slack](../crates/moor-slack) | The Slack front. |
+| [moor-listen](../crates/moor-listen) | Holds the gate's listen stream open and prints a line per Box event. |
 | [moor-notify](../crates/moor-notify) | The webhook front: posts a person's Box events to a URL. |
 | [moor-web](../crates/moor-web) | The web front. |
 | [moor-testkit](../crates/moor-testkit) | Helpers that the other crates' tests share. |
