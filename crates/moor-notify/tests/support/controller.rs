@@ -29,6 +29,8 @@ pub(crate) struct Queued {
     pub(crate) event: String,
     /// The body to post.
     pub(crate) body: Value,
+    /// The receiver's own header, as name and value.
+    pub(crate) header: Option<(String, String)>,
 }
 
 /// What clients sent.
@@ -86,7 +88,17 @@ impl FakeController {
             event: event.to_owned(),
             body: json!({"schema": "moor.notify/1", "delivery": delivery, "event": event,
                          "box": "app/fix", "data": {"n": delivery}}),
+            header: None,
         });
+    }
+
+    /// Gives queued delivery `delivery` the receiver's own header `name: value`.
+    pub(crate) fn header(&self, delivery: i64, name: &str, value: &str) {
+        for d in &mut self.lock().queue {
+            if d.delivery == delivery {
+                d.header = Some((name.to_owned(), value.to_owned()));
+            }
+        }
     }
 
     /// Refuses every claim with `message`.
@@ -160,8 +172,12 @@ fn answer(request: Request, inner: &mut Inner) -> Response {
             let deliveries: Vec<Value> = handed
                 .iter()
                 .map(|d| {
-                    json!({"delivery": d.delivery, "webhook": d.webhook, "url": d.url,
-                           "key": d.key, "event": d.event, "body": d.body})
+                    let mut one = json!({"delivery": d.delivery, "webhook": d.webhook,
+                        "url": d.url, "key": d.key, "event": d.event, "body": d.body});
+                    if let (Some((name, value)), Some(out)) = (&d.header, one.as_object_mut()) {
+                        out.insert("header".to_owned(), json!({"name": name, "value": value}));
+                    }
+                    one
                 })
                 .collect();
             inner.leased.extend(handed);

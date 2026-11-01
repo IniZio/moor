@@ -60,6 +60,10 @@ fn posts_a_signed_delivery_and_reports_it_delivered() {
     assert_eq!(post.headers["content-type"], "application/json");
     assert_eq!(post.headers["x-moor-event"], "idled");
     assert_eq!(post.headers["x-moor-delivery"], "41");
+    assert!(
+        !post.headers.contains_key("authorization"),
+        "no header unless set"
+    );
     assert_eq!(body(post)["schema"], "moor.notify/1");
     assert_eq!(body(post)["event"], "idled");
     assert_eq!(body(post)["data"]["n"], 41);
@@ -75,12 +79,13 @@ fn posts_a_signed_delivery_and_reports_it_delivered() {
 }
 
 #[test]
-fn a_500_is_posted_again_and_then_reported_delivered() {
+fn a_500_is_posted_again_with_the_receivers_header_and_then_reported_delivered() {
     let dir = moor_testkit::short_tempdir("notify").unwrap();
     let socket = dir.path().join("front");
     let controller = FakeController::serve(&socket);
     let receiver = Receiver::start(&[500]);
     controller.queue(7, 1, &receiver.url, KEY, "idled");
+    controller.header(7, "Authorization", "Bearer grok-123");
     let _front = Front::start(&socket);
 
     let posted = receiver.wait_for(2);
@@ -89,6 +94,8 @@ fn a_500_is_posted_again_and_then_reported_delivered() {
     for post in &posted {
         assert_signed(post);
         assert_eq!(post.headers["x-moor-delivery"], "7");
+        assert_eq!(post.headers["authorization"], "Bearer grok-123");
+        assert_eq!(post.headers["content-type"], "application/json");
     }
     assert_eq!(posted[0].body, posted[1].body, "the same bytes both times");
     controller.wait_until("the report", |s| !s.reports.is_empty());

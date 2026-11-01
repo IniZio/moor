@@ -6,11 +6,13 @@ use moor_core::name::ProfileSource;
 use moor_core::request::{
     AsReq, EnrollReq, MachineRemoveReq, MachineStatusReq, McpAddReq, McpOAuthFinishReq,
     McpRemoveReq, ProfileSetReq, SecretDeleteReq, WebhookAddReq, WebhookRemoveReq,
+    WebhookSetupShowReq,
 };
 use moor_core::user::SecretName;
 use moor_core::Request;
 
 use super::Action;
+use crate::cli::StdinRequest;
 
 /// Subcommands of `user`; each acts as the caller's `local:<uid>` identity.
 #[derive(Debug, Subcommand)]
@@ -37,8 +39,13 @@ pub(super) enum UserCli {
 /// Subcommands of `user webhook`.
 #[derive(Debug, Subcommand)]
 pub(super) enum WebhookCli {
-    /// Add a webhook at URL; its HMAC key is printed once and cannot be shown again.
+    /// Add a webhook at URL; it posts nothing until `setup` has shown its key and `finish`
+    /// has run.
     Add(WebhookAddArgs),
+    /// Show webhook ID's setup, with its HMAC key until it is finished.
+    Setup(WebhookIdArg),
+    /// Finish setting up webhook ID, reading its header's value, if it has a header, from stdin.
+    Finish(WebhookIdArg),
     /// List your webhooks.
     Ls,
     /// Remove webhook ID.
@@ -53,6 +60,9 @@ pub(super) struct WebhookAddArgs {
     /// An event kind to post; repeat for several. Without any, the usual attention events.
     #[arg(long = "event", value_name = "KIND")]
     events: Vec<String>,
+    /// A header the receiver wants its own token in: `Authorization` or an `X-` name.
+    #[arg(long, value_name = "NAME")]
+    header: Option<String>,
 }
 
 /// A webhook's id.
@@ -164,7 +174,9 @@ impl UserCli {
                 identity: None,
                 email: None,
             }),
-            Self::Secret(SecretCli::Set(a)) => return Action::SecretSetStdin(a.name),
+            Self::Secret(SecretCli::Set(a)) => {
+                return Action::Stdin(StdinRequest::SecretSet(a.name))
+            }
             Self::Secret(SecretCli::Rm(a)) => Request::SecretDelete(SecretDeleteReq {
                 identity: None,
                 name: a.name,
@@ -194,16 +206,7 @@ impl UserCli {
             }),
             Self::Profile(ProfileCli::Show) => Request::ProfileShow(AS_CALLER),
             Self::Profile(ProfileCli::Rm) => Request::ProfileRemove(AS_CALLER),
-            Self::Webhook(WebhookCli::Add(a)) => Request::WebhookAdd(WebhookAddReq {
-                identity: None,
-                url: a.url,
-                events: (!a.events.is_empty()).then_some(a.events),
-            }),
-            Self::Webhook(WebhookCli::Ls) => Request::WebhookList(AS_CALLER),
-            Self::Webhook(WebhookCli::Rm(a)) => Request::WebhookRemove(WebhookRemoveReq {
-                identity: None,
-                id: a.id,
-            }),
+            Self::Webhook(cli) => return cli.into_action(),
             Self::Machine(MachineCli::Rm(a)) => Request::MachineRemove(MachineRemoveReq {
                 identity: None,
                 name: a.name,
@@ -212,6 +215,30 @@ impl UserCli {
             Self::Machine(MachineCli::Status(a)) => Request::MachineStatus(MachineStatusReq {
                 identity: None,
                 name: a.name,
+            }),
+        })
+    }
+}
+
+impl WebhookCli {
+    /// Convert the parsed verb into an action.
+    fn into_action(self) -> Action {
+        Action::Request(match self {
+            Self::Add(a) => Request::WebhookAdd(WebhookAddReq {
+                identity: None,
+                url: a.url,
+                events: (!a.events.is_empty()).then_some(a.events),
+                header: a.header,
+            }),
+            Self::Setup(a) => Request::WebhookSetupShow(WebhookSetupShowReq {
+                identity: None,
+                id: a.id,
+            }),
+            Self::Finish(a) => return Action::Stdin(StdinRequest::WebhookFinish(a.id)),
+            Self::Ls => Request::WebhookList(AS_CALLER),
+            Self::Rm(a) => Request::WebhookRemove(WebhookRemoveReq {
+                identity: None,
+                id: a.id,
             }),
         })
     }

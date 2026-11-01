@@ -12,7 +12,7 @@ mod secret_value;
 mod webhook;
 pub use mcp::{McpAddReq, McpOAuthFinishReq, McpRemoveReq, ProfileSetReq};
 pub use secret_value::SecretValue;
-pub use webhook::{WebhookAddReq, WebhookRemoveReq};
+pub use webhook::{WebhookAddReq, WebhookRemoveReq, WebhookSetupFinishReq, WebhookSetupShowReq};
 
 /// Arguments of a user request that needs only the identity it acts as.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -149,6 +149,20 @@ pub enum UserCmd {
         url: String,
         /// The event kinds to post; the defaults when absent.
         events: Option<Vec<String>>,
+        /// The header the receiver wants its own token in.
+        header: Option<String>,
+    },
+    /// One of the caller's user's webhooks as its setup page shows it.
+    WebhookSetupShow {
+        /// The webhook's id.
+        id: i64,
+    },
+    /// Finish setting up one of the caller's user's webhooks.
+    WebhookSetupFinish {
+        /// The webhook's id.
+        id: i64,
+        /// The value of the webhook's header, when it has one.
+        header_value: Option<SecretValue>,
     },
     /// The caller's user's webhooks.
     WebhookList,
@@ -222,6 +236,8 @@ impl UserCmd {
             Self::ProfileShow => "profile-show",
             Self::ProfileRemove => "profile-remove",
             Self::WebhookAdd { .. } => "webhook-add",
+            Self::WebhookSetupShow { .. } => "webhook-setup-show",
+            Self::WebhookSetupFinish { .. } => "webhook-setup-finish",
             Self::WebhookList => "webhook-list",
             Self::WebhookRemove { .. } => "webhook-remove",
             Self::MachineEnroll { .. } => "machine-enroll",
@@ -274,6 +290,15 @@ impl Request {
                 UserCmd::WebhookAdd {
                     url: r.url,
                     events: r.events,
+                    header: r.header,
+                },
+            ),
+            Self::WebhookSetupShow(r) => (r.identity, UserCmd::WebhookSetupShow { id: r.id }),
+            Self::WebhookSetupFinish(r) => (
+                r.identity,
+                UserCmd::WebhookSetupFinish {
+                    id: r.id,
+                    header_value: r.header_value,
                 },
             ),
             Self::WebhookList(r) => (r.identity, UserCmd::WebhookList),
@@ -344,6 +369,8 @@ impl Request {
             | Self::WebhookList(AsReq { identity })
             | Self::WebhookAdd(WebhookAddReq { identity, .. })
             | Self::WebhookRemove(WebhookRemoveReq { identity, .. })
+            | Self::WebhookSetupShow(WebhookSetupShowReq { identity, .. })
+            | Self::WebhookSetupFinish(WebhookSetupFinishReq { identity, .. })
             | Self::ProfileSet(ProfileSetReq { identity, .. })
             | Self::MachineList(AsReq { identity })
             | Self::NodeList(AsReq { identity })

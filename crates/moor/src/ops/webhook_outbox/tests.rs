@@ -31,8 +31,13 @@ struct World {
     webhook: i64,
 }
 
-/// Alice's webhook on every `started` event, and one Box of hers that started.
+/// Alice's active webhook on every `started` event, and one Box of hers that started.
 fn world() -> World {
+    world_with(None)
+}
+
+/// As `world`, with the webhook sending the receiver's own header when one is given.
+fn world_with(header: Option<(&str, &str)>) -> World {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
@@ -44,9 +49,19 @@ fn world() -> World {
     let events = ["started".to_owned()];
     let key = Secret::new(b"the-key".to_vec());
     let webhook = store
-        .add_user_webhook(&vault, alice, ("https://example.com/h", &events), &key, 10)
+        .add_user_webhook(
+            &vault,
+            alice,
+            ("https://example.com/h", &events, header.map(|h| h.0)),
+            &key,
+            10,
+        )
         .unwrap()
         .unwrap();
+    let value = header.map(|h| Secret::new(h.1.as_bytes().to_vec()));
+    assert!(store
+        .activate_user_webhook(&vault, alice, webhook, value.as_ref())
+        .unwrap());
     let name = BoxName::parse_allow_bare("a").unwrap();
     store
         .apply(Decision::insert(NewBox { name, repo: None }).requester(alice))
@@ -94,6 +109,23 @@ fn a_claim_carries_the_url_the_plain_key_and_a_moor_notify_body() {
         body["lifecycle"].is_string() && body["session_state"].is_string(),
         "{body}"
     );
+}
+
+#[test]
+fn a_claim_carries_the_receivers_header_with_its_value_redacted_from_debug() {
+    let w = world_with(Some(("Authorization", "Bearer grok-123")));
+    let got = claimed(&w);
+    let [one] = got.deliveries.as_slice() else {
+        panic!("{got:?}")
+    };
+    let wire = serde_json::to_value(one).unwrap();
+    assert_eq!(
+        wire["header"],
+        json!({"name": "Authorization", "value": "Bearer grok-123"})
+    );
+    assert!(!format!("{one:?}").contains("grok-123"));
+    let plain = serde_json::to_value(&claimed(&world()).deliveries).unwrap();
+    assert!(plain[0].get("header").is_none(), "{plain}");
 }
 
 #[test]

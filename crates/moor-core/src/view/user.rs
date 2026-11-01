@@ -216,13 +216,68 @@ pub struct ProxyStatusValue {
     pub running: bool,
 }
 
-/// Value of `webhook-add`: the new webhook and its HMAC key, which is shown only now.
+/// Where a webhook is in its setup. It posts nothing until its person has seen its signing
+/// key, and given the value of the header the receiver wants, on the gate's setup page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WebhookState {
+    /// Added; the signing key is still shown by `webhook-setup-show`.
+    WaitingForSecret,
+    /// Set up; events are queued for it.
+    Active,
+}
+
+impl WebhookState {
+    /// The state's wire and storage name.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::WaitingForSecret => "waiting_for_secret",
+            Self::Active => "active",
+        }
+    }
+
+    /// The state named `s`, as `as_str` writes it.
+    #[must_use]
+    pub fn parse(s: &str) -> Option<Self> {
+        [Self::WaitingForSecret, Self::Active]
+            .into_iter()
+            .find(|state| state.as_str() == s)
+    }
+}
+
+/// Value of `webhook-add`: the new webhook, waiting for its person to set it up.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WebhookAddValue {
     /// The webhook's id.
     pub id: i64,
-    /// The HMAC key, 64 lowercase hex characters; never returned again.
-    pub key: String,
+    /// Always `waiting_for_secret`.
+    pub state: WebhookState,
+}
+
+/// Value of `webhook-setup-show`, for the setup page. `Debug` redacts the key.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebhookSetupValue {
+    /// The webhook's id.
+    pub id: i64,
+    /// Where each event is posted.
+    pub url: String,
+    /// The header the receiver wants its own token in, if any.
+    pub header: Option<String>,
+    /// Where the webhook is in its setup.
+    pub state: WebhookState,
+    /// The HMAC key, 64 lowercase hex characters; only while waiting for setup.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<SecretValue>,
+}
+
+/// Value of `webhook-setup-finish`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebhookSetupFinishValue {
+    /// The webhook's id.
+    pub id: i64,
+    /// Always `active`.
+    pub state: WebhookState,
 }
 
 /// One of a user's webhooks as `webhook-list` shows it; the key is never part of it.
@@ -234,6 +289,10 @@ pub struct WebhookView {
     pub url: String,
     /// The event kinds it posts.
     pub events: Vec<String>,
+    /// Where it is in its setup.
+    pub state: WebhookState,
+    /// The header the receiver wants its own token in; never the token.
+    pub header: Option<String>,
     /// When it was added, in unix milliseconds.
     pub created_at: i64,
     /// When a post last succeeded.
@@ -258,7 +317,16 @@ pub struct WebhookRemoveValue {
     pub id: i64,
 }
 
-/// One webhook delivery `webhook-claim` leased to the caller. `Debug` redacts the key.
+/// The header a receiver wants on each post, with its value. `Debug` redacts the value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebhookHeader {
+    /// The header's name, as its person gave it.
+    pub name: String,
+    /// The header's value.
+    pub value: SecretValue,
+}
+
+/// One webhook delivery `webhook-claim` leased to the caller. `Debug` redacts the secrets.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WebhookDeliveryView {
     /// The delivery's id, which `webhook-report` names.
@@ -269,6 +337,9 @@ pub struct WebhookDeliveryView {
     pub url: String,
     /// The webhook's HMAC key, to sign `body` with at send time.
     pub key: SecretValue,
+    /// The receiver's own header, to send on every attempt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub header: Option<WebhookHeader>,
     /// The event kind.
     pub event: String,
     /// The `moor.notify/1` JSON object to post.

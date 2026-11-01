@@ -338,13 +338,12 @@ fn user_verbs_assert_no_identity_so_the_socket_supplies_local() {
 
 #[test]
 fn secret_set_takes_only_a_name_and_reads_the_value_from_stdin() {
-    let Parsed::SecretSetStdin { name, .. } = parse(argv(&["user", "secret", "set", "claude"]))
-    else {
-        unreachable!("expected SecretSetStdin")
+    let Parsed::Stdin { then, .. } = parse(argv(&["user", "secret", "set", "claude"])) else {
+        unreachable!("expected a stdin request")
     };
     let o = done(&["--json", "user", "secret", "set", "claude", "the-value"]);
     assert_eq!(o.code, 2, "{}", o.stdout);
-    let req = super::secret_set(name, b"tok\r\n\n".to_vec());
+    let req = then.request(b"tok\r\n\n".to_vec());
     let Ok((None, moor_core::request::UserCmd::SecretSet { value, .. })) = req.into_user() else {
         unreachable!("expected secret-set")
     };
@@ -380,11 +379,20 @@ fn webhook_add_ls_and_rm_build_their_requests() {
         "--event",
         "closed",
     ]);
-    let Ok((None, UserCmd::WebhookAdd { url, events })) = req.into_user() else {
+    let Ok((
+        None,
+        UserCmd::WebhookAdd {
+            url,
+            events,
+            header,
+        },
+    )) = req.into_user()
+    else {
         unreachable!("expected webhook-add")
     };
     assert_eq!(url, "https://x.example/h");
     assert_eq!(events, Some(vec!["idled".to_owned(), "closed".to_owned()]));
+    assert_eq!(header, None);
     let bare = parsed_request(&["user", "webhook", "add", "https://x.example/h"]);
     assert!(matches!(
         bare.into_user(),
@@ -396,5 +404,53 @@ fn webhook_add_ls_and_rm_build_their_requests() {
     assert!(matches!(
         rm.into_user(),
         Ok((None, UserCmd::WebhookRemove { id: 7 }))
+    ));
+}
+
+#[test]
+fn webhook_header_setup_and_finish_keep_the_header_value_out_of_argv() {
+    use moor_core::request::UserCmd;
+    let req = parsed_request(&[
+        "user",
+        "webhook",
+        "add",
+        "https://x.example/h",
+        "--header",
+        "Authorization",
+    ]);
+    assert!(matches!(
+        req.into_user(),
+        Ok((None, UserCmd::WebhookAdd { header: Some(h), .. })) if h == "Authorization"
+    ));
+    let setup = parsed_request(&["user", "webhook", "setup", "3"]);
+    assert!(matches!(
+        setup.into_user(),
+        Ok((None, UserCmd::WebhookSetupShow { id: 3 }))
+    ));
+    let o = done(&["--json", "user", "webhook", "finish", "3", "the-token"]);
+    assert_eq!(o.code, 2, "{}", o.stdout);
+    let Parsed::Stdin { then, .. } = parse(argv(&["user", "webhook", "finish", "3"])) else {
+        unreachable!("expected a stdin request")
+    };
+    let Ok((
+        None,
+        UserCmd::WebhookSetupFinish {
+            id: 3,
+            header_value: Some(v),
+        },
+    )) = then.clone().request(b"Bearer t\n".to_vec()).into_user()
+    else {
+        unreachable!("expected webhook-setup-finish with a value")
+    };
+    assert_eq!(v.secret().expose(), b"Bearer t");
+    assert!(matches!(
+        then.request(b"\n".to_vec()).into_user(),
+        Ok((
+            None,
+            UserCmd::WebhookSetupFinish {
+                id: 3,
+                header_value: None
+            }
+        ))
     ));
 }

@@ -189,6 +189,7 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
         "bind-session" => {
             json!({"cmd": kind, "front": "slack", "key": "k", "session": session, "owner": "o"})
         }
+        "webhook-setup-show" | "webhook-setup-finish" => return Names::Nothing,
         "start-needs" | "session-binding" | "gate" | "env" | "repos" | "whoami" | "enroll"
         | "secret-set" | "secret-delete" | "secret-names" | "as" | "mcp-add" | "mcp-remove"
         | "mcp-list" | "profile-set" | "profile-show" | "profile-remove" | "mcp-oauth-finish"

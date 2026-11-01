@@ -47,14 +47,25 @@ impl World {
             .0
     }
 
-    fn webhook(&self, user: UserId, events: &[&str]) -> i64 {
+    /// A webhook of `user` on `events`, still waiting for setup.
+    fn waiting_webhook(&self, user: UserId, events: &[&str]) -> i64 {
         let events: Vec<String> = events.iter().map(|&k| k.to_owned()).collect();
         let key = Secret::new(b"k".to_vec());
-        let pair = ("https://example.com/h", events.as_slice());
+        let row = ("https://example.com/h", events.as_slice(), None);
         self.store
-            .add_user_webhook(&self.vault, user, pair, &key, 10)
+            .add_user_webhook(&self.vault, user, row, &key, 10)
             .unwrap()
             .unwrap()
+    }
+
+    /// An active webhook of `user` on `events`.
+    fn webhook(&self, user: UserId, events: &[&str]) -> i64 {
+        let id = self.waiting_webhook(user, events);
+        let store = &self.store;
+        assert!(store
+            .activate_user_webhook(&self.vault, user, id, None)
+            .unwrap());
+        id
     }
 
     /// A Box for `user` that has written three events, and their ids.
@@ -95,6 +106,22 @@ fn an_event_queues_one_delivery_per_matching_webhook_of_the_box_owner() {
     let events = w.new_box("a", alice);
     assert!(!events.is_empty());
     let want: Vec<(i64, i64)> = events.iter().map(|&e| (all, e)).collect();
+    assert_eq!(w.store.webhook_deliveries().unwrap(), want);
+}
+
+#[test]
+fn a_webhook_waiting_for_setup_queues_nothing_until_it_is_active() {
+    let w = world();
+    let alice = w.user("local:2000");
+    let id = w.waiting_webhook(alice, &EVENT_KINDS);
+    assert!(!w.new_box("a", alice).is_empty());
+    assert_eq!(w.store.webhook_deliveries().unwrap(), []);
+    assert!(w
+        .store
+        .activate_user_webhook(&w.vault, alice, id, None)
+        .unwrap());
+    let later = w.new_box("b", alice);
+    let want: Vec<(i64, i64)> = later.iter().map(|&e| (id, e)).collect();
     assert_eq!(w.store.webhook_deliveries().unwrap(), want);
 }
 

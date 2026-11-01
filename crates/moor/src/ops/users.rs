@@ -62,9 +62,25 @@ pub(crate) fn run(
             )
         }
         UserCmd::McpRemove { name } => mcp::remove(store, enrolled(store, who)?, name),
-        UserCmd::WebhookAdd { url, events } => {
+        UserCmd::WebhookAdd {
+            url,
+            events,
+            header,
+        } => {
             let user = enrolled(store, who)?;
-            webhook::add(store, vault, user, url, events.as_deref())
+            webhook::add(
+                store,
+                vault,
+                user,
+                (url, events.as_deref(), header.as_deref()),
+            )
+        }
+        UserCmd::WebhookSetupShow { id } => {
+            webhook::setup_show(store, vault, enrolled(store, who)?, *id)
+        }
+        UserCmd::WebhookSetupFinish { id, header_value } => {
+            let user = enrolled(store, who)?;
+            webhook::setup_finish(store, vault, user, *id, header_value.as_ref())
         }
         UserCmd::WebhookList => webhook::list(store, enrolled(store, who)?),
         UserCmd::WebhookRemove { id } => webhook::remove(store, enrolled(store, who)?, *id),

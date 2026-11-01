@@ -28,7 +28,7 @@ pub(super) fn refusal(cmd: &str, inner: &Value, id: &Value) -> Option<Value> {
 }
 
 #[test]
-fn add_webhook_sends_webhook_add_and_shows_the_key_once() {
+fn add_webhook_sends_webhook_add_and_never_shows_a_secret() {
     let m = mcp();
     let token = m.token("alice-sub", &m.url(), "moor:read moor:write");
     let result = m.call(
@@ -38,9 +38,8 @@ fn add_webhook_sends_webhook_add_and_shows_the_key_once() {
     );
     assert_ne!(result["isError"], true, "{result}");
     let text = result["content"][0]["text"].as_str().unwrap();
-    assert!(text.contains(&"ab".repeat(32)), "{text}");
-    assert!(text.contains("only this once"), "{text}");
-    assert!(text.contains("X-Moor-Signature"), "{text}");
+    assert!(result["structuredContent"].get("key").is_none(), "{result}");
+    assert!(text.contains("waiting for its secret"), "{text}");
     assert_eq!(result["structuredContent"]["id"], 7);
     let sent = m.requests();
     assert_eq!(

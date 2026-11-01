@@ -32,7 +32,9 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
         "machine-enroll" => json!({"cmd": kind, "name": "n", "pubkey": "k"}),
         "profile-set" => json!({"cmd": kind, "source": "https://github.com/alice/agent"}),
         "webhook-add" => json!({"cmd": kind, "url": "https://example.com/h"}),
-        "webhook-remove" => json!({"cmd": kind, "id": 1}),
+        "webhook-remove" | "webhook-setup-show" | "webhook-setup-finish" => {
+            json!({"cmd": kind, "id": 1})
+        }
         "webhook-claim" => json!({"cmd": kind, "limit": 1, "lease_ms": 1}),
         "webhook-report" => json!({"cmd": kind, "delivery": 1, "outcome": "delivered"}),
         "mcp-add" => json!({"cmd": kind, "name": "n", "url": "https://example.com/mcp"}),

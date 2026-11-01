@@ -124,7 +124,15 @@ fn a_real_controller_lets_the_front_claim_a_users_webhooks() {
         &["user", "webhook", "add", &receiver.url],
     );
     assert_eq!(added["class"], "ok", "{added}");
-    assert_eq!(added["value"]["key"].as_str().map(str::len), Some(64));
+    assert_eq!(added["value"]["state"], "waiting_for_secret", "{added}");
+    assert!(added["value"].get("key").is_none(), "{added}");
+    let id = added["value"]["id"].to_string();
+    let setup = moor(dir.path(), &socket, &["user", "webhook", "setup", &id]);
+    assert_eq!(
+        setup["value"]["key"].as_str().map(str::len),
+        Some(64),
+        "{setup}"
+    );
 
     let mut front = Front::start(&front_socket);
     std::thread::sleep(Duration::from_millis(500));

@@ -74,6 +74,8 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         | Request::ProfileShow(_)
         | Request::ProfileRemove(_)
         | Request::WebhookAdd(_)
+        | Request::WebhookSetupShow(_)
+        | Request::WebhookSetupFinish(_)
         | Request::WebhookList(_)
         | Request::WebhookRemove(_)
         | Request::McpOAuthFinish(_)
