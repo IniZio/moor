@@ -29,10 +29,7 @@ pub fn state_dir() -> std::path::PathBuf {
 /// state dir, which keeps its path across plugin updates.
 #[must_use]
 pub fn shell_path() -> String {
-    state_dir()
-        .join("shell.sh")
-        .to_string_lossy()
-        .into_owned()
+    state_dir().join("shell.sh").to_string_lossy().into_owned()
 }
 
 /// The config snippet: sidebar rows that set Boxes apart, the key rebind, and the default

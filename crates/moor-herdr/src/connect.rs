@@ -11,11 +11,11 @@ use moor_core::user::SecretName;
 use moor_core::view::user::{SecretNamesValue, StartNeedsValue};
 use serde_json::{json, Value};
 
-use moor_client::oidc::Ui;
-use moor_client::session::{self, normalize, Store, Tokens};
 use crate::boxes::request;
 use crate::error::Error;
 use crate::picker::Prompt;
+use moor_client::oidc::Ui;
+use moor_client::session::{self, normalize, Store, Tokens};
 
 /// The controller calls that store a person's secrets, each as the person signed in.
 pub trait Vault {
