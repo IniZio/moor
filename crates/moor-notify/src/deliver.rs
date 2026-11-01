@@ -121,6 +121,7 @@ impl Endpoint {
         let config = Agent::config_builder()
             .tls_config(tls)
             .http_status_as_error(false)
+            .max_redirects(0)
             .timeout_global(Some(POST_TIMEOUT))
             .build();
         let agent = match reach {
