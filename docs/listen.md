@@ -25,6 +25,13 @@ One line per event, flushed at once:
 | `moor-listen: reconnected` | The stream is back after a `stream lost` line. |
 | `moor-listen: token rejected; call any moor tool so the client refreshes it` | The gate answered 401 or 403. It reruns the token command every 60 s. |
 
+A sign-in token expires, so a listener whose client is idle gets rejected once
+it does. Give a long-running listener an API token instead: create a
+`moor:read` token at `https://<gate>/tokens` and have `--token-cmd` print it. The
+Claude Code plugin prints `MOOR_TOKEN` when it is set to one; set it in the
+`env` of your Claude Code settings. See
+[Tokens for bots](mcp.md#tokens-for-bots).
+
 Events from before the first connect are not printed. After every reconnect
 it reads each Box again and prints the events it missed while no stream was
 open, so a drop loses nothing. `busy` and the other

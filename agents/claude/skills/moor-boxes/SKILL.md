@@ -25,6 +25,8 @@ loop; wait for the next line.
   after `reconnected`.
 - `moor-listen: token rejected; call any moor tool so the client refreshes it`:
   call `list_boxes` once. If the line comes back, tell the user to sign in to
-  moor again from `/mcp`.
+  moor again from `/mcp`. If it comes back about hourly, tell them to create a
+  `moor:read` token at `https://<gate>/tokens` and set it as `MOOR_TOKEN` in
+  the `env` of their Claude Code settings.
 - `moor-listen: not installed` or `set MOOR_URL`: tell the user the one step the
   line names.

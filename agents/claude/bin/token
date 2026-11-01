@@ -1,4 +1,5 @@
 #!/bin/sh
+case ${MOOR_TOKEN:-} in moor_*) printf '%s\n' "$MOOR_TOKEN"; exit 0 ;; esac
 url=${MOOR_URL:-$MOOR_MCP_URL}
 [ -n "$url" ] || { echo "moor token: set MOOR_URL to the gate's /mcp URL" >&2; exit 1; }
 if [ "$(uname -s)" = Darwin ]; then

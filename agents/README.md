@@ -32,4 +32,7 @@ core stays agent-neutral; everything specific to an agent lives in its folder.
 
 The URL comes from the `MOOR_URL` environment variable, which both `.mcp.json`
 and the monitor read. Install steps are in
-[docs/mcp.md](../docs/mcp.md#get-told-inside-claude-code).
+[docs/mcp.md](../docs/mcp.md#get-told-inside-claude-code). The listener's token
+command prints `MOOR_TOKEN` when it holds a `moor_` API token, so a quiet session
+is not rejected when its sign-in expires; otherwise it reads Claude Code's
+stored sign-in.

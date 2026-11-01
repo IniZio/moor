@@ -223,6 +223,19 @@ Sign in to the `moor` server from `/mcp`. The plugin reuses that sign-in for the
 listener, so there is no second login. It needs `jq` on Linux. macOS Keychain
 lookup is not supported yet.
 
+Claude Code refreshes that sign-in only when a moor tool is called, so a quiet
+session's listener prints `token rejected` about once an hour. To stop that,
+create a `moor:read` token at `https://<host>/tokens` (see
+[Tokens for bots](#tokens-for-bots)) and set it as `MOOR_TOKEN` in the `env` of
+your Claude Code settings:
+
+```json
+{ "env": { "MOOR_TOKEN": "moor_…" } }
+```
+
+The listener then uses that token, which does not expire. Without `MOOR_TOKEN`
+it falls back to the sign-in.
+
 ## Operator setup
 
 Start the gate with `--mcp-resource-url https://<host>/mcp` (or
