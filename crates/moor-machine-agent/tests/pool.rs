@@ -262,6 +262,17 @@ fn a_warmup_hands_its_cache_to_crabbox() {
 }
 
 #[test]
+fn a_warmup_keeps_the_work_tree_below_the_work_root() {
+    let home = home();
+    let spec = cache("worktree", "~/moor/repos/moor");
+    let got = lease(
+        home.path(),
+        &["warmup", "moor-1a2b3c4d-7", "--cache", &spec.to_string()],
+    );
+    assert_eq!(got, (true, DONE()));
+}
+
+#[test]
 fn a_bad_cache_is_refused_before_crabbox_runs() {
     let mut big = cache("cargo", "/opt/sdk");
     big["volumes"] = Value::Array(vec![big["volumes"][0].clone(); 33]);
@@ -278,6 +289,9 @@ fn a_bad_cache_is_refused_before_crabbox_runs() {
         ("traversal", cache("cargo", "/opt/../etc")),
         ("relative", cache("cargo", "etc/shadow")),
         ("host root", cache("cargo", "/etc")),
+        ("work root", cache("cargo", "~/moor/repos/moor")),
+        ("work tree elsewhere", cache("worktree", "~/moor/x")),
+        ("work tree root", cache("worktree", "~/moor/repos")),
         ("bad name", cache("Cargo/x", "/opt/sdk")),
         ("too many", big),
         ("oversize", huge),
