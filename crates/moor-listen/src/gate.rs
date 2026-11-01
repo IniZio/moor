@@ -9,13 +9,15 @@ use serde_json::{json, Value};
 use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
 use ureq::Agent;
 
+use crate::idle::Idle;
 use crate::sse::Messages;
 
 /// The MCP version whose `subscriptions/listen` the gate serves.
 const PROTOCOL: &str = "2026-07-28";
 
-/// The gate sends a keepalive every 15 s, so three missed ones mean the stream is dead.
-const SILENCE: Duration = Duration::from_secs(45);
+/// Longest a listen stream lives. It bounds how long a given-up reader thread lingers, and the
+/// reconnect it forces prints nothing.
+const LIFE: Duration = Duration::from_secs(600);
 
 /// Time limit of one call and of connecting.
 const CALL: Duration = Duration::from_secs(30);
@@ -47,11 +49,13 @@ pub(crate) struct Gate {
     url: String,
     /// Shell command whose stdout is the bearer token.
     token_cmd: String,
+    /// Silence after which a listen stream counts as dead.
+    idle: Duration,
 }
 
 impl Gate {
     /// A gate client; nothing is sent yet.
-    pub(crate) fn new(url: String, token_cmd: String) -> Self {
+    pub(crate) fn new(url: String, token_cmd: String, idle: Duration) -> Self {
         let tls = TlsConfig::builder()
             .provider(TlsProvider::Rustls)
             .root_certs(RootCerts::PlatformVerifier)
@@ -66,6 +70,7 @@ impl Gate {
             agent: Agent::new_with_config(config),
             url,
             token_cmd,
+            idle,
         }
     }
 
@@ -113,11 +118,11 @@ impl Gate {
         if let Some(uri) = params.get("uri").and_then(Value::as_str) {
             req = req.header("Mcp-Name", uri);
         }
-        let silence = if long { SILENCE } else { CALL };
+        let limit = if long { LIFE } else { CALL };
         let body = json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params});
         let res = req
             .config()
-            .timeout_recv_body(Some(silence))
+            .timeout_recv_body(Some(limit))
             .timeout_recv_response(Some(CALL))
             .build()
             .send(body.to_string())
@@ -133,7 +138,9 @@ impl Gate {
             .and_then(|v| v.to_str().ok())
             .is_some_and(|v| v.starts_with("text/event-stream"));
         let mut body = res.into_body();
-        let reader: Box<dyn Read + Send> = if events {
+        let reader: Box<dyn Read + Send> = if events && long {
+            Box::new(Idle::new(body.into_reader(), self.idle))
+        } else if events {
             Box::new(body.into_reader())
         } else {
             // A plain JSON answer reads as one event, so callers parse one shape.

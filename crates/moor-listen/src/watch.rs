@@ -42,14 +42,22 @@ enum Ended {
     Lost(Fail),
 }
 
+/// A stream that went and has not come back.
+struct Outage {
+    /// Why it went, in words for a log line.
+    why: String,
+    /// Whether a line told the reader about it.
+    told: bool,
+}
+
 /// What carries over between connections.
 struct State {
     /// Events already said, as `uri#id`.
     said: HashSet<String>,
     /// Whether the first connection has not yet listed the Boxes.
     first: bool,
-    /// Whether the outage is known to the reader.
-    down: bool,
+    /// The outage under way, if any.
+    outage: Option<Outage>,
 }
 
 /// Runs until `say` fails, which is when nobody reads the lines any more.
@@ -57,7 +65,7 @@ pub(crate) fn run(gate: &Gate, say: &mut dyn FnMut(&str) -> io::Result<()>) -> i
     let mut state = State {
         said: HashSet::new(),
         first: true,
-        down: false,
+        outage: None,
     };
     let mut wait = FIRST;
     loop {
@@ -67,23 +75,48 @@ pub(crate) fn run(gate: &Gate, say: &mut dyn FnMut(&str) -> io::Result<()>) -> i
         };
         let pause = match lost {
             Fail::Rejected => {
-                if !state.down {
+                if !state.outage.as_ref().is_some_and(|o| o.told) {
                     say("moor-listen: token rejected; call any moor tool so the client refreshes it")?;
                 }
+                state.outage = Some(Outage {
+                    why: "token rejected".to_owned(),
+                    told: true,
+                });
                 LONGEST
             }
             Fail::Other(why) => {
-                if !state.down {
-                    say(&format!("moor-listen: stream lost ({why}); reconnecting"))?;
+                if state.outage.is_none() {
+                    wait = FIRST;
                 }
+                went(&mut state, why, say)?;
                 let now = wait;
                 wait = (wait * 2).min(LONGEST);
                 now
             }
         };
-        state.down = true;
         sleep(pause);
     }
+}
+
+/// Notes a lost stream. The first loss stays quiet, since the reconnect usually works; a
+/// failed reconnect tells the reader.
+fn went(
+    state: &mut State,
+    why: String,
+    say: &mut dyn FnMut(&str) -> io::Result<()>,
+) -> io::Result<()> {
+    match &mut state.outage {
+        None => state.outage = Some(Outage { why, told: false }),
+        Some(outage) if !outage.told => {
+            say(&format!(
+                "moor-listen: stream lost ({}); reconnecting",
+                outage.why
+            ))?;
+            outage.told = true;
+        }
+        Some(_) => {}
+    }
+    Ok(())
 }
 
 /// One connection: until the stream ends or the Boxes change.
@@ -93,13 +126,23 @@ fn session(
     say: &mut dyn FnMut(&str) -> io::Result<()>,
 ) -> io::Result<Ended> {
     match connect(gate, state) {
-        Ok((token, stream)) => follow(gate, &token, stream, state, say),
+        Ok(open) => follow(gate, open, state, say),
         Err(lost) => Ok(Ended::Lost(lost)),
     }
 }
 
+/// A listen that is open, with what it was opened with.
+struct Open {
+    /// The token it signed in with.
+    token: String,
+    /// The Boxes it listens on.
+    uris: Vec<String>,
+    /// Its messages.
+    stream: Stream,
+}
+
 /// Signs in, lists the Boxes and opens the listen.
-fn connect(gate: &Gate, state: &mut State) -> Result<(String, Stream), Fail> {
+fn connect(gate: &Gate, state: &mut State) -> Result<Open, Fail> {
     let token = gate.token()?;
     let listed = gate.call(&token, "resources/list", json!({}))?;
     let uris: Vec<String> = listed
@@ -121,42 +164,66 @@ fn connect(gate: &Gate, state: &mut State) -> Result<(String, Stream), Fail> {
         state.first = false;
     }
     let stream = gate.listen(&token, &uris)?;
-    Ok((token, stream))
+    Ok(Open {
+        token,
+        uris,
+        stream,
+    })
 }
 
 /// Says what the stream announces, until it ends.
 fn follow(
     gate: &Gate,
-    token: &str,
-    stream: Stream,
+    open: Open,
     state: &mut State,
     say: &mut dyn FnMut(&str) -> io::Result<()>,
 ) -> io::Result<Ended> {
+    let Open {
+        token,
+        uris,
+        stream,
+    } = open;
     for message in stream {
         let message = match message {
             Ok(m) => m,
             Err(e) => return Ok(Ended::Lost(Fail::Other(e.to_string()))),
         };
         match message.get("method").and_then(Value::as_str) {
-            Some("notifications/subscriptions/acknowledged") if state.down => {
-                state.down = false;
-                say("moor-listen: reconnected")?;
+            Some("notifications/subscriptions/acknowledged") => {
+                if state.outage.take().is_some_and(|o| o.told) {
+                    say("moor-listen: reconnected")?;
+                }
+                // Boxes may have changed while no stream was open.
+                for uri in &uris {
+                    tell(gate, &token, uri, state, say)?;
+                }
             }
             Some("notifications/resources/list_changed") => return Ok(Ended::Relist),
             Some("notifications/resources/updated") => {
-                let Some(uri) = message.pointer("/params/uri").and_then(Value::as_str) else {
-                    continue;
-                };
-                if let Some((key, line)) = news(gate, token, uri) {
-                    if state.said.insert(key) {
-                        say(&line)?;
-                    }
+                if let Some(uri) = message.pointer("/params/uri").and_then(Value::as_str) {
+                    tell(gate, &token, uri, state, say)?;
                 }
             }
             _ => {}
         }
     }
     Ok(Ended::Lost(Fail::Other("stream ended".to_owned())))
+}
+
+/// Says the newest event of the Box at `uri` worth a line, unless it was said already.
+fn tell(
+    gate: &Gate,
+    token: &str,
+    uri: &str,
+    state: &mut State,
+    say: &mut dyn FnMut(&str) -> io::Result<()>,
+) -> io::Result<()> {
+    if let Some((key, line)) = news(gate, token, uri) {
+        if state.said.insert(key) {
+            say(&line)?;
+        }
+    }
+    Ok(())
 }
 
 /// The line for the newest event of the Box at `uri` that is worth one, with a key that is the

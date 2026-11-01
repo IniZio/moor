@@ -2,11 +2,13 @@
 //! line per Box event worth waking for. It knows nothing of whoever reads its stdout.
 
 mod gate;
+mod idle;
 mod sse;
 mod watch;
 
 use std::io::{self, Write};
 use std::process::ExitCode;
+use std::time::Duration;
 
 use clap::Parser;
 
@@ -20,6 +22,9 @@ struct Args {
     /// Shell command whose stdout is the bearer token; it runs before every connect.
     #[arg(long, env = "MOOR_TOKEN_CMD")]
     token_cmd: String,
+    /// Silence on the stream, in milliseconds, after which it counts as dead.
+    #[arg(long, hide = true, default_value_t = 45_000)]
+    idle_ms: u64,
 }
 
 /// Writes `line` to `out` and flushes, so a reader sees it at once.
@@ -30,7 +35,11 @@ fn emit(out: &mut impl Write, line: &str) -> io::Result<()> {
 
 fn main() -> ExitCode {
     let args = Args::parse();
-    let gate = gate::Gate::new(args.url, args.token_cmd);
+    let gate = gate::Gate::new(
+        args.url,
+        args.token_cmd,
+        Duration::from_millis(args.idle_ms),
+    );
     let mut stdout = io::stdout().lock();
     // The loop only ends when stdout is gone.
     let Err(why) = watch::run(&gate, &mut |line| emit(&mut stdout, line)) else {
