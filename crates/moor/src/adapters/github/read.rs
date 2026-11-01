@@ -40,7 +40,7 @@ const ERROR_TYPES_SHOWN: usize = 3;
 const NAME_CAP: usize = 255;
 
 /// Asks for the viewer, the repo's permission, the Box branch tip and the files at one commit.
-const QUERY: &str = r#"query($owner: String!, $name: String!, $branch: String!, $base: String!, $hasBase: Boolean!) {
+pub(super) const QUERY: &str = r#"query($owner: String!, $name: String!, $branch: String!, $base: String!, $hasBase: Boolean!) {
   viewer { login databaseId name }
   repository(owner: $owner, name: $name) {
     viewerPermission
