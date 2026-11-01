@@ -19,11 +19,11 @@ use std::time::Duration;
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use moor_client::oidc::Ui;
+use moor_client::session::{self, Credentials, Store, Tokens};
 use moor_client::TokenSource;
 use moor_core::controller::PROTOCOL;
 use moor_core::response::Response;
-use moor_client::oidc::Ui;
-use moor_client::session::{self, Credentials, Store, Tokens};
 use moor_herdr::connect;
 use oauth2::url::Url;
 use sha2::{Digest, Sha256};
@@ -360,7 +360,10 @@ fn the_browser_returning_to_the_loopback_completes_login() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::new(dir.path());
     sign_in(&fake, &store, person(true)).unwrap();
-    assert_eq!(store.read(&fake.base).unwrap().unwrap().access_token, "access-0");
+    assert_eq!(
+        store.read(&fake.base).unwrap().unwrap().access_token,
+        "access-0"
+    );
 }
 
 #[test]

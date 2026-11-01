@@ -1,6 +1,8 @@
-//! An OIDC issuer on loopback: discovery, JWKS, userinfo, and an authorize endpoint that
-//! approves at once, a PKCE and refresh token endpoint whose access and id tokens carry
-//! [`Issuer::id_claims`], a revocation endpoint, and the `/.well-known/moor` a gate serves.
+//! An OIDC issuer on loopback that also answers as a moor server.
+//!
+//! It serves discovery, JWKS, userinfo, an authorize endpoint that approves at once, a PKCE
+//! and refresh token endpoint whose tokens carry [`Issuer::id_claims`], a revocation endpoint,
+//! and the `/.well-known/moor` a gate serves.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -147,17 +149,8 @@ impl Issuer {
                 let (status, body) = self.userinfo.lock().unwrap().clone();
                 (status, String::new(), body)
             }
-            "/.well-known/moor" => (
-                200,
-                String::new(),
-                json!({"issuer": base, "client_id": self.client_id, "resource": format!("{base}/mcp"),
-                    "scopes": ["openid", "email", "offline_access", "moor:read", "moor:write"]}),
-            ),
-            "/revoke" => {
-                let token = form(&body).remove("token").unwrap_or_default();
-                self.revoked.lock().unwrap().push(token);
-                (200, String::new(), json!({}))
-            }
+            "/.well-known/moor" => (200, String::new(), self.moor_metadata()),
+            "/revoke" => self.revoke(&body),
             "/authorize" => {
                 self.authorized.lock().unwrap().push(query.clone());
                 let code = format!("code-{}", codes.len());
@@ -184,6 +177,20 @@ impl Issuer {
         let _ = write!(stream, "HTTP/1.1 {status} X\r\n{extra}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
     }
 
+    /// What a gate serving MCP publishes at `/.well-known/moor`.
+    fn moor_metadata(&self) -> Value {
+        let base = &self.base;
+        json!({"issuer": base, "client_id": self.client_id, "resource": format!("{base}/mcp"),
+            "scopes": ["openid", "email", "offline_access", "moor:read", "moor:write"]})
+    }
+
+    /// Records the token a revocation request names.
+    fn revoke(&self, body: &[u8]) -> (u16, String, Value) {
+        let token = form(body).remove("token").unwrap_or_default();
+        self.revoked.lock().unwrap().push(token);
+        (200, String::new(), json!({}))
+    }
+
     /// Trades a code whose verifier matches its challenge for tokens.
     fn token(
         &self,
@@ -208,7 +215,9 @@ impl Issuer {
     /// Trades the current refresh token for new tokens and a new refresh token.
     fn refreshed(&self, form: &HashMap<String, String>) -> (u16, String, Value) {
         let mut current = self.refresh.lock().unwrap();
-        if form.get("refresh_token") != Some(&*current) || form.get("client_id") != Some(&self.client_id) {
+        if form.get("refresh_token") != Some(&*current)
+            || form.get("client_id") != Some(&self.client_id)
+        {
             return (400, String::new(), json!({"error": "invalid_grant"}));
         }
         let n = self.refreshes.fetch_add(1, Ordering::SeqCst) + 1;
