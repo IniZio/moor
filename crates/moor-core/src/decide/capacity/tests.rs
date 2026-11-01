@@ -2,7 +2,7 @@
 
 use std::num::NonZeroU32;
 
-use super::{admit, holds_memory, promote_order, Admission, CapacityFacts, HeldBox, PauseFrees};
+use super::{admit, holds_memory, promote_order, Admission, CapacityFacts, HeldBox};
 use crate::domain::boxes::BoxState;
 use crate::name::BoxId;
 
@@ -93,21 +93,8 @@ fn promote_with_no_free_slots_is_empty() {
 }
 
 #[test]
-fn asleep_holds_no_memory_where_pause_frees_it() {
-    assert!(!holds_memory(BoxState::Asleep, PauseFrees(true)));
-    assert!(holds_memory(BoxState::Ready, PauseFrees(true)));
-    assert!(holds_memory(BoxState::Starting, PauseFrees(true)));
-}
-
-#[test]
-fn asleep_still_holds_memory_where_pause_keeps_it() {
-    assert!(holds_memory(BoxState::Asleep, PauseFrees(false)));
-}
-
-#[test]
-fn pause_frees_is_read_from_the_reported_features() {
-    let f =
-        |names: &[&str]| PauseFrees::of(&names.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>());
-    assert_eq!(f(&["cache-volume", "pause-frees-memory"]), PauseFrees(true));
-    assert_eq!(f(&["pause-keeps-memory"]), PauseFrees(false));
+fn asleep_holds_no_memory() {
+    assert!(!holds_memory(BoxState::Asleep));
+    assert!(holds_memory(BoxState::Ready));
+    assert!(holds_memory(BoxState::Starting));
 }

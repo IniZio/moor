@@ -1,7 +1,6 @@
 //! Tests for the node scheduler.
 
 use super::{schedule, BoxSpec, Memory, Node, Online, Scope, Verdict};
-use crate::decide::capacity::PauseFrees;
 use crate::name::NodeName;
 use crate::user::UserId;
 
@@ -323,7 +322,6 @@ fn sized(total: u64, reserve: Option<u64>, used: u64) -> Node {
             total_mib: total * GIB,
             reserve_mib: Some(reserve.map_or(4 * GIB, |r| r * GIB)),
             used_mib: used * GIB,
-            pause_frees: PauseFrees::default(),
         }),
         ..mine("hv", 1, 1)
     }
@@ -374,7 +372,6 @@ fn default_reserve_is_4_gib_plus_a_tenth() {
         total_mib: 30 * GIB,
         reserve_mib: None,
         used_mib: 0,
-        pause_frees: PauseFrees::default(),
     };
     assert_eq!(m.offered_mib(), 30 * GIB - 4 * GIB - 3 * GIB);
 }

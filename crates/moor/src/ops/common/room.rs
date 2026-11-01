@@ -1,4 +1,4 @@
-//! Making room on a full node whose pause frees memory, by suspending its longest-idle Boxes.
+//! Making room on a full node, by suspending its longest-idle Boxes.
 
 use std::time::Duration;
 
@@ -18,8 +18,8 @@ use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::node::{recorded, verdict};
 use crate::store::{BoxRow, Store};
 
-/// Suspends Boxes on `node` until one needing `need_mib` fits, when its pause frees memory and
-/// its Box count has room. False when it still does not fit; then nothing more is suspended.
+/// Suspends Boxes on `node` until one needing `need_mib` fits, when its Box count
+/// has room. False when it still does not fit; then nothing more is suspended.
 pub(crate) fn make_room_on(
     cx: &Cx,
     store: &Store,
@@ -27,7 +27,7 @@ pub(crate) fn make_room_on(
     need_mib: u64,
     for_box: &str,
 ) -> Result<bool, CommandError> {
-    let Some(m) = node.memory.filter(|m| m.pause_frees.0) else {
+    let Some(m) = node.memory else {
         return Ok(false);
     };
     if node.max_boxes.is_some_and(|max| node.used >= max) {
@@ -113,13 +113,13 @@ fn suspend(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bool, Comm
     Ok(true)
 }
 
-/// Before an asleep Box on a node whose pause frees memory resumes: makes room for it there, or
+/// Before an asleep Box resumes: makes room for it there, or
 /// refuses with the node's shortfall.
 pub(crate) fn room_to_wake(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
     let Some(node) = recorded(cx, store, row)? else {
         return Ok(());
     };
-    let Some(m) = node.memory.filter(|m| m.pause_frees.0) else {
+    let Some(m) = node.memory else {
         return Ok(());
     };
     let spec = store.box_spec(row.id)?;

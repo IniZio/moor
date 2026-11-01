@@ -287,25 +287,6 @@ fn one_small_box_world() -> World {
 }
 
 #[test]
-fn an_asleep_box_still_counts_against_its_nodes_memory() {
-    let w = one_small_box_world();
-    let holder = start::run(&w.cx, &req("holder")).unwrap();
-    assert!(!holder.queued);
-    w.cx.store()
-        .unwrap()
-        .apply(
-            moor_core::domain::decision::Decision::new(BoxId::new(holder.boxed.id))
-                .box_input(moor_core::domain::boxes::BoxInput::Sleep),
-        )
-        .unwrap();
-    let waiter = start::run(&w.cx, &req("waiter")).unwrap();
-    assert!(waiter.queued);
-    let row = w.cx.store().unwrap().box_row(BoxId::new(waiter.boxed.id));
-    let reason = row.unwrap().unwrap().state_reason.unwrap_or_default();
-    assert!(reason.contains("hv has 0 GiB free of 4 GiB"), "{reason}");
-}
-
-#[test]
 fn a_close_that_frees_memory_starts_the_pending_box() {
     let w = one_small_box_world();
     start::run(&w.cx, &req("holder")).unwrap();
@@ -322,9 +303,15 @@ fn a_close_that_frees_memory_starts_the_pending_box() {
     assert_eq!(closed.promoted, ["waiter"]);
 }
 
-/// A node whose pause frees memory, with room for `boxes` small Boxes after its reserve.
+/// A node that reports no features, with room for `boxes` small Boxes after its reserve.
 fn suspending_world(boxes: u64) -> World {
-    let w = world();
+    suspending_world_with(FakeDriver::new(), boxes)
+}
+
+fn suspending_world_with(driver: FakeDriver, boxes: u64) -> World {
+    let yaml = "nodes: {ci: {runtime: local-container, max_boxes: 1}, \
+                big: {runtime: local-container, max_boxes: 1}}\nbox: {node: ci}";
+    let w = world_with(driver, parse_user("config.yaml", yaml).unwrap());
     let hv = enrolled(&w, "hv", Some(true), None);
     let link = MachineLink {
         machine_id: hv,
@@ -334,7 +321,7 @@ fn suspending_world(boxes: u64) -> World {
         protocol: None,
         max_boxes: None,
         cache_gb: None,
-        features: vec!["pause-frees-memory".to_owned()],
+        features: vec![],
         mem_mib: Some(4096 + boxes * 4096),
         cpus: None,
         reserve_mib: Some(4096),
@@ -422,7 +409,7 @@ fn asleep_reason(w: &World, id: BoxId) -> Option<String> {
 }
 
 #[test]
-fn an_asleep_box_on_a_node_whose_pause_frees_memory_holds_none() {
+fn an_asleep_box_holds_no_memory_on_a_node_reporting_no_features() {
     let w = suspending_world(1);
     let holder = started(&w, "holder");
     put_to_sleep(&w, holder);
@@ -514,4 +501,26 @@ fn a_wake_with_no_idle_box_to_suspend_is_refused_and_stays_asleep() {
         err.error
     );
     assert_eq!(lifecycle(&w, a), BoxLifecycle::Asleep);
+}
+
+#[test]
+fn sleeping_on_a_provider_without_pause_leaves_no_asleep_box_holding_memory() {
+    use moor_core::domain::box_state::BoxLifecycle;
+    use moor_core::seam::driver::SleepOutcome;
+    let driver = FakeDriver::new().sleep_outcome(SleepOutcome::CannotSleep(
+        "provider cannot sleep a box".into(),
+    ));
+    let w = suspending_world_with(driver, 1);
+    let holder = started(&w, "holder");
+    let err = crate::ops::sleep::run(
+        &w.cx,
+        &moor_core::BoxReq {
+            box_name: BoxName::parse_allow_bare("holder").unwrap(),
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused);
+    // Still running and counted as running, so the node stays full: never asleep with memory held.
+    assert_eq!(lifecycle(&w, holder), BoxLifecycle::Ready);
+    assert!(start::run(&w.cx, &req("waiter")).unwrap().queued);
 }

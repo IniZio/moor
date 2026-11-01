@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use moor_core::config::NodeConfig;
-use moor_core::decide::capacity::{counts, holds_memory, PauseFrees};
+use moor_core::decide::capacity::{counts, holds_memory};
 use moor_core::decide::schedule::{Memory, Node, Online, Scope};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
@@ -61,7 +61,6 @@ fn per_node(conn: &rusqlite::Connection) -> Result<(Counts, Counts, Mib), StoreE
 fn memory_of(
     (total, reserve): (Option<i64>, Option<i64>),
     held: &[(BoxState, u64)],
-    pause_frees: PauseFrees,
 ) -> Option<Memory> {
     let mib = |m: i64| u64::try_from(m).ok();
     Some(Memory {
@@ -69,10 +68,9 @@ fn memory_of(
         reserve_mib: reserve.and_then(mib),
         used_mib: held
             .iter()
-            .filter(|(s, _)| holds_memory(*s, pause_frees))
+            .filter(|(s, _)| holds_memory(*s))
             .map(|(_, m)| m)
             .sum(),
-        pause_frees,
     })
 }
 
@@ -97,11 +95,7 @@ fn personal<'m>(
     let (machine_id, owner) = (r.get(0)?, UserId::new(r.get(1)?));
     let max_boxes = r.get::<_, Option<u32>>(8)?.map(|m| m as usize);
     let (used, waiting, held) = load(&name);
-    let features: Option<String> = r.get(11)?;
-    let frees = features
-        .and_then(|f| serde_json::from_str::<Vec<String>>(&f).ok())
-        .map_or_else(PauseFrees::default, |f| PauseFrees::of(&f));
-    let memory = memory_of((r.get(9)?, r.get(10)?), held, frees);
+    let memory = memory_of((r.get(9)?, r.get(10)?), held);
     Ok(NodeName::parse(&name).ok().map(|name| Node {
         name,
         scope: Scope::Personal {
@@ -151,7 +145,7 @@ impl Store {
             .collect();
         let mut stmt = conn.prepare(
             "SELECT m.machine_id, m.user, m.name, m.labels, m.pool_provider, m.enrolled_at, \
-             l.online, l.since, l.max_boxes, l.mem_mib, l.reserve_mib, l.pool_features \
+             l.online, l.since, l.max_boxes, l.mem_mib, l.reserve_mib \
              FROM user_machines_v2 m LEFT JOIN machine_links l USING (machine_id) \
              WHERE m.pool_provider IS NOT NULL ORDER BY m.enrolled_at, m.machine_id",
         )?;

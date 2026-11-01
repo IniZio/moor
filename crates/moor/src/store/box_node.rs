@@ -1,6 +1,6 @@
 //! The node a Box asked for or holds, and the labels it requires of one.
 
-use moor_core::decide::capacity::{counts, holds_memory, PauseFrees};
+use moor_core::decide::capacity::{counts, holds_memory};
 use moor_core::decide::schedule::BoxSpec;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
@@ -26,7 +26,6 @@ pub(super) fn live_on_node_in(
             r.get::<_, i64>(2)?,
         ))
     })?;
-    let frees = pause_frees_in(conn, node)?;
     let (mut used, mut mib) = (0, 0);
     for row in rows {
         let (state, n, m) = row?;
@@ -34,26 +33,11 @@ pub(super) fn live_on_node_in(
         if state.is_some_and(counts) {
             used += usize::try_from(n).unwrap_or(0);
         }
-        if state.is_some_and(|s| holds_memory(s, frees)) {
+        if state.is_some_and(holds_memory) {
             mib += u64::try_from(m).unwrap_or(0);
         }
     }
     Ok((used, mib))
-}
-
-/// Whether pausing a Box on personal node `node` frees its memory, from its link's features.
-pub(super) fn pause_frees_in(conn: &Connection, node: &NodeName) -> Result<PauseFrees, StoreError> {
-    let features: Option<String> = conn
-        .query_row(
-            "SELECT l.pool_features FROM user_machines_v2 m JOIN machine_links l USING (machine_id) \
-             WHERE m.name = ?1",
-            [node.as_str()],
-            |r| r.get(0),
-        )
-        .optional()?;
-    Ok(features
-        .and_then(|f| serde_json::from_str::<Vec<String>>(&f).ok())
-        .map_or_else(PauseFrees::default, |f| PauseFrees::of(&f)))
 }
 
 impl Store {
