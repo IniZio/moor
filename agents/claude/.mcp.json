@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "moor": {
+      "type": "http",
+      "url": "${MOOR_URL}"
+    }
+  }
+}

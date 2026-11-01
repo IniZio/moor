@@ -1,0 +1,11 @@
+#!/bin/sh
+here=$(cd "$(dirname "$0")" && pwd)
+if [ -z "$MOOR_URL" ]; then
+  echo "moor-listen: set MOOR_URL to your gate's /mcp URL, then restart Claude Code"
+  exit 0
+fi
+if ! command -v moor-listen >/dev/null 2>&1; then
+  echo "moor-listen: not installed; run: cargo install --git https://github.com/IniZio/moor moor-listen"
+  exit 0
+fi
+exec moor-listen --url "$MOOR_URL" --token-cmd "sh '$here/token'"
