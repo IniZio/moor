@@ -30,6 +30,66 @@ token from `moor token --server https://<host>`. Claude Code's
 `moor status` shows who is signed in. `moor logout` forgets the sign-in and
 revokes it, so no copy of it keeps working.
 
+## Use moor from any agent tool
+
+Agent tools differ in how they sign in to a remote MCP server, but every one of
+them runs local stdio servers. `moor mcp` is one. It relays each message to
+`https://<host>/mcp` with a fresh access token from your sign-in, so the tool
+never holds a token and never needs a restart when one expires. Sign in once:
+
+```sh
+moor login --server https://moor.oursky.codes
+```
+
+Then add `moor mcp` to your tool. `--server` falls back to `MOOR_SERVER`. If
+you are not signed in, the server still starts, and each call answers with the
+`moor login` command to run. When the gate refuses a token, `moor mcp`
+refreshes it once and retries the call.
+
+The snippets below follow each tool's own documentation. None was checked by
+running the tool.
+
+Claude Code, in `.mcp.json`:
+
+```json
+{"mcpServers": {"moor": {
+  "command": "moor", "args": ["mcp", "--server", "https://moor.oursky.codes"]}}}
+```
+
+Codex, in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.moor]
+command = "moor"
+args = ["mcp", "--server", "https://moor.oursky.codes"]
+```
+
+Cursor, in `~/.cursor/mcp.json` or `.cursor/mcp.json`:
+
+```json
+{"mcpServers": {"moor": {
+  "command": "moor", "args": ["mcp", "--server", "https://moor.oursky.codes"]}}}
+```
+
+opencode, in `opencode.json`:
+
+```json
+{"mcp": {"moor": {"type": "local", "enabled": true,
+  "command": ["moor", "mcp", "--server", "https://moor.oursky.codes"]}}}
+```
+
+pi has no MCP support of its own. Install `pi-mcp-adapter` and give it the same
+`mcpServers` entry as Cursor.
+
+Claude Code can also reach the gate directly over HTTP, running `moor token`
+for a fresh header before it connects:
+
+```json
+{"mcpServers": {"moor": {"type": "http",
+  "url": "https://moor.oursky.codes/mcp",
+  "headersHelper": "moor token --server https://moor.oursky.codes --headers"}}}
+```
+
 ## Scopes
 
 | Scope | Allows |

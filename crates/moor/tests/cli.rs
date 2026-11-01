@@ -27,6 +27,8 @@ mod fronts_macos;
 #[cfg(target_os = "linux")]
 #[path = "cli/inherited.rs"]
 mod inherited;
+#[path = "cli/mcp.rs"]
+mod mcp;
 #[path = "cli/redial_e2e.rs"]
 mod redial_e2e;
 #[path = "cli/run_output.rs"]

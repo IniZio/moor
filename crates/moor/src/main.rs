@@ -43,7 +43,7 @@ fn front_shim(args: &[std::ffi::OsString]) -> Option<ExitCode> {
 /// Parse argv, run the request, print the rendered output, return its exit code.
 fn main() -> ExitCode {
     let args = Env::args();
-    if let Some(code) = front_shim(&args) {
+    if let Some(code) = front_shim(&args).or_else(|| moor::mcp_relay::run(&args)) {
         return code;
     }
     if let Some(out) = moor::sign_in::run(&args) {
