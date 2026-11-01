@@ -35,6 +35,36 @@ pub const NAMESPACE: &str = "moor-machine-link";
 /// How often each end pings; three silent periods end the link.
 pub const KEEPALIVE: Duration = Duration::from_secs(15);
 
+/// How often an agent hosting Boxes reports its host's memory.
+pub const REPORT_EVERY: Duration = Duration::from_secs(10);
+
+/// Agent: its host's memory now.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Report {
+    /// `MemAvailable` from `/proc/meminfo`, in MiB.
+    pub mem_available_mib: u64,
+    /// `MemTotal` from `/proc/meminfo`, in MiB.
+    pub mem_total_mib: u64,
+    /// The `some avg10` of `/proc/pressure/memory`; none when the host has no PSI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub psi_some_avg10: Option<f64>,
+}
+
+/// Each line of a stream the agent opens: the connection it accepted for a listen, or one of
+/// its memory reports, which it keeps sending on that stream.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Opened {
+    /// A connection for a listen; the stream then carries it.
+    Accepted(crate::forward::Accepted),
+    /// A memory report.
+    Report {
+        /// The report.
+        report: Report,
+    },
+}
+
 /// What a Box-hosting machine reports about itself in its hello.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Offer {

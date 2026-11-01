@@ -16,7 +16,11 @@ use tokio::process::Command;
 pub use reach::{carry, dial, splice, Sshd};
 
 mod cache;
+mod memory;
 mod reach;
+
+use memory::host_mem_mib;
+pub(crate) use memory::send_reports;
 
 /// How long a VM may take to boot.
 const BOOT: Duration = Duration::from_mins(15);
@@ -58,25 +62,6 @@ pub async fn offer(machine: &crate::Machine) -> Option<Offer> {
             .and_then(|n| u32::try_from(n.get()).ok()),
         reserve_mib: pool.reserve_mib,
     })
-}
-
-/// The host's total memory from `/proc/meminfo`; none off Linux.
-fn host_mem_mib() -> Option<u64> {
-    let info = std::fs::read_to_string("/proc/meminfo").ok()?;
-    mem_total_mib(&info)
-}
-
-/// `MemTotal` of a `/proc/meminfo` text, in MiB.
-fn mem_total_mib(info: &str) -> Option<u64> {
-    let kib: u64 = info
-        .lines()
-        .find_map(|l| l.strip_prefix("MemTotal:"))?
-        .trim()
-        .trim_end_matches("kB")
-        .trim()
-        .parse()
-        .ok()?;
-    Some(kib / 1024)
 }
 
 /// The features `crabbox providers describe --configured` lists for the pool's provider.

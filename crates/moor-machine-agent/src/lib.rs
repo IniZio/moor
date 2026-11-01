@@ -171,6 +171,10 @@ pub async fn run_with(
                 log(&format!("linked to {}", state.server));
                 wait = FIRST_WAIT;
                 let (open, asks) = mpsc::channel(16);
+                let reporting = machine
+                    .pool
+                    .is_some()
+                    .then(|| tokio::spawn(report_on(open.clone())));
                 let streams = listen::Link {
                     open,
                     boxes: Arc::clone(&boxes),
@@ -183,6 +187,9 @@ pub async fn run_with(
                     );
                 })
                 .await;
+                if let Some(r) = reporting {
+                    r.abort();
+                }
                 log(&format!("{why}; dialing again in {}s", wait.as_secs()));
             }
             Err(Turned::Update(version)) => {
@@ -274,6 +281,17 @@ async fn connect(
     match link::recv(&mut ws, ANSWER).await.map_err(Turned::Failed)? {
         Frame::Welcome { .. } => Ok(link::carry(ws, link::KEEPALIVE)),
         other => Err(turned(other)),
+    }
+}
+
+/// Opens a stream to the runner on `open` and sends the host's memory reports on it.
+async fn report_on(open: mpsc::Sender<link::Asked>) {
+    let (ask, opened) = tokio::sync::oneshot::channel();
+    if open.send(ask).await.is_err() {
+        return;
+    }
+    if let Ok(Ok(stream)) = opened.await {
+        pool::send_reports(stream, Path::new("/proc")).await;
     }
 }
 

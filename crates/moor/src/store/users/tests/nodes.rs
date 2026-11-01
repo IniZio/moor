@@ -81,6 +81,7 @@ fn alice_with_machines(store: &Store) -> UserId {
             mem_mib: None,
             cpus: None,
             reserve_mib: None,
+            memory: None,
         }])
         .unwrap();
     alice

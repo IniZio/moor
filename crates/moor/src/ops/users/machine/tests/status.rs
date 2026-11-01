@@ -51,6 +51,7 @@ fn linked(f: &Fixture, who: &str, name: &str, online: bool) -> i64 {
             mem_mib: None,
             cpus: None,
             reserve_mib: None,
+            memory: None,
         }])
         .unwrap();
     machine_id

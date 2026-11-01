@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use futures_util::StreamExt;
-use moor_client::link::{self, Asked, Channel, Frame, Offer, WebSocketStream};
+use moor_client::link::{self, ops, Asked, Channel, Frame, Offer, Opened, Report, WebSocketStream};
 use moor_client::Client;
 use moor_core::request::{MachineLink, MachineLinksReq, Request};
 use moor_core::view::user::MachineKeysValue;
@@ -20,6 +20,8 @@ use tokio::sync::{mpsc, oneshot, watch, Notify};
 
 use crate::claim::now;
 use crate::forwards::{accepted, Routes};
+
+mod memory;
 
 /// The runner's release, which an agent told to update must become.
 const VERSION: &str = match option_env!("MOOR_VERSION") {
@@ -121,12 +123,12 @@ pub async fn serve_agents(listener: TcpListener, agents: Agents) -> io::Result<(
     loop {
         let (stream, _) = listener.accept().await?;
         let (client, links, routes) = (client.clone(), Arc::clone(&links), Arc::clone(&routes));
-        tokio::spawn(async move { serve_link(stream, &client, &links, routes).await });
+        tokio::spawn(async move { serve_link(stream, &client, links, routes).await });
     }
 }
 
 /// One agent's link, from the upgrade until it drops or a newer link replaces it.
-async fn serve_link<S>(stream: S, client: &Client, links: &Links, routes: Arc<Routes>)
+async fn serve_link<S>(stream: S, client: &Client, links: Arc<Links>, routes: Arc<Routes>)
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
@@ -154,13 +156,25 @@ where
     let socket = link::carry(ws, link::KEEPALIVE);
     let why = tokio::select! {
         why = link::drive(socket, link::Mode::Server, asks, |ch| {
-            let routes = Arc::clone(&routes);
-            tokio::spawn(async move { accepted(ch, machine_id, &routes).await });
+            let (routes, links) = (Arc::clone(&routes), Arc::clone(&links));
+            tokio::spawn(async move { opened(ch, (machine_id, generation), &routes, &links).await });
         }) => why,
         _ = replaced => "a newer link replaced it".to_owned(),
     };
     links.down(machine_id, generation);
     eprintln!("machine {machine_id} unlinked: {why}");
+}
+
+/// A stream the agent of a link opened: a listen's connection, or its memory reports.
+async fn opened(mut ch: Channel, link: (i64, u64), routes: &Routes, links: &Links) {
+    let (machine_id, generation) = link;
+    loop {
+        match ops::read_line::<_, Opened>(&mut ch).await {
+            Ok(Opened::Accepted(a)) => return accepted(ch, machine_id, a, routes).await,
+            Ok(Opened::Report { report }) => links.reported(machine_id, generation, &report),
+            Err(_) => return,
+        }
+    }
 }
 
 /// The machine whose agent proved itself on `ws` and the agent's release, or the frame to
@@ -308,8 +322,12 @@ impl Links {
             mem_mib: offer.mem_mib,
             cpus: offer.cpus,
             reserve_mib: offer.reserve_mib,
+            memory: None,
         };
         self.change(|held| {
+            // Kept across a relink, so the node stays one that reports memory.
+            let memory = held.get(&machine_id).and_then(|h| h.link.memory);
+            let link = MachineLink { memory, ..link };
             held.insert(
                 machine_id,
                 Held {
@@ -335,6 +353,19 @@ impl Links {
                 h.link.since = now();
                 h.end = None;
                 h.asks = None;
+            }
+        });
+    }
+
+    /// Records `report` from `machine_id`'s link `generation`, unless a newer link holds it.
+    fn reported(&self, machine_id: i64, generation: u64, report: &Report) {
+        self.change(|held| {
+            if let Some(h) = held
+                .get_mut(&machine_id)
+                .filter(|h| h.generation == generation)
+            {
+                h.link.mem_mib = Some(report.mem_total_mib);
+                h.link.memory = Some(memory::received(report));
             }
         });
     }
