@@ -1,8 +1,10 @@
 //! A pool host: boots, pauses and deletes VM leases with the host's own crabbox, and carries
 //! dials to a lease's sshd. The provider is the agent's own; a request names only the slug.
 
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use moor_client::link::lease::{Answer, Boot, Lease, Verb};
@@ -51,16 +53,38 @@ pub async fn offer(machine: &crate::Machine) -> Option<Offer> {
     })
 }
 
-/// The features `crabbox providers describe` lists for the pool's provider.
+/// The features `crabbox providers describe --configured` lists for the pool's provider.
+///
+/// Without `--configured` crabbox leaves out what the operator's config turns on, such as
+/// cache volumes. A crabbox too old for the flag fails, so the pool offers no features; the
+/// first such failure is logged with crabbox's own words.
 async fn features(pool: &Pool) -> Vec<String> {
+    static WARNED: AtomicBool = AtomicBool::new(false);
     let mut cmd = Command::new(&pool.crabbox);
-    cmd.args(["providers", "describe", &pool.provider, "--json"])
-        .stdin(Stdio::null())
-        .kill_on_drop(true);
+    cmd.args([
+        "providers",
+        "describe",
+        &pool.provider,
+        "--configured",
+        "--json",
+    ])
+    .stdin(Stdio::null())
+    .kill_on_drop(true);
     let Ok(Ok(out)) = tokio::time::timeout(CALL, cmd.output()).await else {
         return Vec::new();
     };
     if !out.status.success() {
+        if !WARNED.swap(true, Ordering::Relaxed) {
+            let err = String::from_utf8_lossy(&out.stderr);
+            let cut = err.len().saturating_sub(TAIL);
+            let tail = err.get(cut..).unwrap_or(&err).trim();
+            let _ = writeln!(
+                std::io::stderr(),
+                "moor-machine-agent: crabbox providers describe failed ({:?}), so this pool offers no features; \
+                 an older crabbox may lack --configured: {tail}",
+                out.status.code()
+            );
+        }
         return Vec::new();
     }
     let Ok(described) = serde_json::from_slice::<serde_json::Value>(&out.stdout) else {

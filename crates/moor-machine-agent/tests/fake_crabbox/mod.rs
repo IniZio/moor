@@ -15,7 +15,7 @@ echo "$PWD $*" >> "$HOME/crabbox.log"
 for a in "$@"; do
   case "$a" in
     --class) [ -e "$HOME/no-class" ] && { echo "unknown class for provider" >&2; exit 2; } ;;
-    --provider|--id|--slug|--json) ;;
+    --provider|--id|--slug|--json|--configured) ;;
     --*) echo "flag provided but not defined: $a" >&2; exit 2 ;;
   esac
 done
