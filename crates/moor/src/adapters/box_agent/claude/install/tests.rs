@@ -58,15 +58,32 @@ impl TestBox {
 
     /// Runs the install script; returns stderr and the exit code.
     fn run(&self, env: &[(&str, &str)]) -> (String, i32) {
-        let out = std::process::Command::new(self.home.path().join("bin/sh"))
+        self.run_with_stdin(env, "")
+    }
+
+    /// Runs the install script with `stdin` on its standard input.
+    fn run_with_stdin(&self, env: &[(&str, &str)], stdin: &str) -> (String, i32) {
+        use std::io::Write as _;
+        use std::process::Stdio;
+        let mut child = std::process::Command::new(self.home.path().join("bin/sh"))
             .args(["-c", &script()])
             .env_clear()
             .env("HOME", self.home.path())
             .env("PATH", self.home.path().join("bin"))
             .env("TMPDIR", self.home.path())
             .envs(env.iter().copied())
-            .output()
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
             .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(stdin.as_bytes())
+            .unwrap();
+        let out = child.wait_with_output().unwrap();
         (
             String::from_utf8(out.stderr).unwrap(),
             out.status.code().unwrap(),
@@ -116,6 +133,13 @@ fn a_box_without_the_agent_runs_the_official_installer() {
     );
     assert_eq!(lines.next(), Some("ran"));
     assert!(b.leftovers().is_empty());
+}
+
+#[test]
+fn the_installer_reads_nothing_from_the_exec_stdin() {
+    let b = TestBox::new("cat >>\"$HOME/log\"\n");
+    b.run_with_stdin(&[], "leaked\n");
+    assert!(!b.log().contains("leaked"), "{}", b.log());
 }
 
 #[test]
