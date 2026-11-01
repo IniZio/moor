@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 mod enroll;
+mod events_http;
 mod http;
 mod login;
 mod mcp;

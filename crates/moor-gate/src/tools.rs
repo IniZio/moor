@@ -22,6 +22,7 @@ use crate::mcp::{Auth, READ, WRITE};
 use crate::{rewrite, Person};
 
 mod events;
+pub(crate) use events::{fetch, EventsArgs};
 mod listen;
 mod reply;
 mod webhook;

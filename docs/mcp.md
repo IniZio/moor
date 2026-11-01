@@ -132,6 +132,37 @@ Every webhook body carries the event's `offset`. After downtime, call
 it returns before you trust new deliveries. A delivery you already handled
 carries an offset you have seen, so skip it.
 
+### Poll over HTTP
+
+Code that is not an MCP client can read the same events with `GET /events`. It
+takes the same Authgear access token as `/mcp`, with the `moor:read` scope, and
+the arguments as query parameters: `after`, `kind` (repeat it for several),
+`box`, `limit` and `wait_seconds`. The body is the `list_events` result.
+
+A bot gets its token by signing in to Authgear as an OAuth client: it runs the
+authorization code flow with PKCE once, asking for the scope
+`openid offline_access moor:read` and the gate's `/mcp` URL as the resource. It
+then trades its refresh token for a new access token, which lives about an
+hour. `/.well-known/oauth-protected-resource` on the gate names the issuer.
+
+```sh
+curl -H "Authorization: Bearer $ACCESS_TOKEN" "https://<host>/events?after=0&wait_seconds=30"
+```
+
+A loop that keeps `next` in a file and prints each event:
+
+```sh
+while :; do
+  r=$(curl -sf -H "Authorization: Bearer $ACCESS_TOKEN" \
+    "https://<host>/events?after=$(cat next 2>/dev/null || echo 0)&wait_seconds=30") || { sleep 5; continue; }
+  echo "$r" | jq -c '.events[]'; echo "$r" | jq .next > next
+done
+```
+
+A missing or bad token gets 401, a token without `moor:read` gets 403, and a
+bad parameter gets 400 with `{"error": "..."}`. Every webhook body carries the
+event's `offset`, so a receiver can pass it as `after` to catch up.
+
 ## Get told instead of polling
 
 Each of your open Boxes is a resource. Its URI is `moor://box/<name>`, such as

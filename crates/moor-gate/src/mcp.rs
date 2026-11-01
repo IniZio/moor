@@ -45,6 +45,8 @@ pub struct Mcp {
     runtime: Runtime,
     /// The MCP service, shared by every connection so sessions survive reconnects.
     service: StreamableHttpService<Tools, LocalSessionManager>,
+    /// The controller's front socket.
+    front_socket: PathBuf,
 }
 
 impl Mcp {
@@ -64,7 +66,9 @@ impl Mcp {
             .with_allowed_hosts(hosts)
             .with_legacy_session_mode(false)
             .with_json_response(true);
-        let tools = Tools { front_socket };
+        let tools = Tools {
+            front_socket: front_socket.clone(),
+        };
         let service = StreamableHttpService::new(
             move || Ok(tools.clone()),
             Arc::new(LocalSessionManager::default()),
@@ -79,6 +83,7 @@ impl Mcp {
             resource_url: resource_url.to_owned(),
             runtime,
             service,
+            front_socket,
         })
     }
 
@@ -126,13 +131,11 @@ impl Mcp {
 
     /// Checks the request's token, then lets the MCP service answer it.
     async fn route(&self, mut req: Request<Incoming>, gate: &Gate) -> Response<Body> {
-        let verified = bearer(&req)
-            .ok_or_else(|| "send an access token as Authorization: Bearer <token>".to_owned())
-            .and_then(|token| {
-                tokio::task::block_in_place(|| {
-                    gate.verifier.verify_resource(token, &self.resource_url)
-                })
-            });
+        let authorization = req
+            .headers()
+            .get(header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok());
+        let verified = tokio::task::block_in_place(|| self.authenticate(authorization, gate));
         match verified {
             Ok((person, scopes)) => {
                 req.extensions_mut().insert(Auth { person, scopes });
@@ -153,9 +156,31 @@ impl Mcp {
         }
     }
 
+    /// Who an `Authorization` header speaks for and the scopes it grants, or why it is refused.
+    pub(crate) fn authenticate(
+        &self,
+        authorization: Option<&str>,
+        gate: &Gate,
+    ) -> Result<(Person, Vec<String>), String> {
+        let token = authorization
+            .and_then(bearer)
+            .ok_or_else(|| "send an access token as Authorization: Bearer <token>".to_owned())?;
+        gate.verifier.verify_resource(token, &self.resource_url)
+    }
+
+    /// The `WWW-Authenticate` challenge that points a client at the metadata document.
+    pub(crate) fn challenge(&self) -> String {
+        format!("Bearer resource_metadata=\"{}\"", self.metadata_url())
+    }
+
+    /// The controller's front socket.
+    pub(crate) fn front_socket(&self) -> &std::path::Path {
+        &self.front_socket
+    }
+
     /// The 401 that points a client at the metadata document.
     fn unauthorized(&self, why: &str) -> Response<Body> {
-        let challenge = format!("Bearer resource_metadata=\"{}\"", self.metadata_url());
+        let challenge = self.challenge();
         let mut res = Response::new(Full::new(Bytes::from(format!("{why}\n"))).boxed());
         *res.status_mut() = StatusCode::UNAUTHORIZED;
         if let Ok(value) = challenge.parse() {
@@ -165,13 +190,9 @@ impl Mcp {
     }
 }
 
-/// The bearer token of `req`.
-fn bearer(req: &Request<Incoming>) -> Option<&str> {
-    req.headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(str::trim)
+/// The bearer token in the value of an `Authorization` header.
+fn bearer(value: &str) -> Option<&str> {
+    value.strip_prefix("Bearer ").map(str::trim)
 }
 
 /// Who a request speaks for and what it may do; set by the gate, never by the client.

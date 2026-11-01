@@ -33,18 +33,18 @@ const MAX_WAIT: u64 = 30;
 
 /// Arguments of `list_events`.
 #[derive(Deserialize, JsonSchema)]
-struct EventsArgs {
+pub(crate) struct EventsArgs {
     /// Return events with an offset greater than this; 0 (the start of the log) by default.
-    after: Option<i64>,
+    pub(crate) after: Option<i64>,
     /// Only these event kinds.
-    kinds: Option<Vec<String>>,
+    pub(crate) kinds: Option<Vec<String>>,
     /// Only this Box's events, by name.
-    r#box: Option<String>,
+    pub(crate) r#box: Option<String>,
     /// Most events to return: 50 by default, 100 at most.
-    limit: Option<usize>,
+    pub(crate) limit: Option<usize>,
     /// When nothing is past `after`, wait up to this many seconds for an event: 0 by default,
     /// 30 at most.
-    wait_seconds: Option<u64>,
+    pub(crate) wait_seconds: Option<u64>,
 }
 
 #[tool_router(router = events_router, vis = "pub(super)")]
@@ -76,7 +76,7 @@ impl Tools {
 }
 
 /// One watch of `person`'s events from `args.after`, as the JSON `list_events` returns.
-fn fetch(socket: &Path, person: &Person, args: EventsArgs) -> Result<Value, String> {
+pub(crate) fn fetch(socket: &Path, person: &Person, args: EventsArgs) -> Result<Value, String> {
     let after = args.after.unwrap_or(0).max(0);
     let limit = args.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
     let wait = Duration::from_secs(args.wait_seconds.unwrap_or(0).min(MAX_WAIT));
