@@ -34,6 +34,7 @@ pub mod oidc;
 mod redial;
 mod remote;
 pub mod session;
+pub mod sse;
 mod stream;
 mod watch;
 
