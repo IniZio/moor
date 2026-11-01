@@ -30,7 +30,7 @@ use crate::ops::common::wake::wake_and_revive;
 use crate::store::{BoxRow, NewRun, RunOutcome, Store, StoreError};
 
 mod detached;
-mod follow;
+pub(crate) mod follow;
 mod ready;
 mod record;
 

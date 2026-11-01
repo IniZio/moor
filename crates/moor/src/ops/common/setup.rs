@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use moor_core::boxscript::setup::setup_script;
 use moor_core::config::BoxSettings;
 use moor_core::domain::box_state::SetupOutcome;
+use moor_core::domain::decision::ExtraEvent;
 use moor_core::exec_env::{prelude_stop, Purpose};
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Output;
@@ -16,6 +17,8 @@ use moor_core::{BoxHandle, BoxId, BoxPath, Warning};
 
 use crate::cx::Cx;
 use crate::ops::common::box_exec::{self, BoxProxy, Site};
+
+use lines::follow_lines;
 
 /// How many trailing log lines a failure warning carries.
 const LOG_TAIL_LINES: usize = 20;
@@ -119,7 +122,7 @@ impl SetupRun {
 /// the Box, including the Proxy variables when `proxy` is set.
 #[allow(
     clippy::too_many_arguments,
-    reason = "the Box, its provider and workdir, log dir, settings and Proxy"
+    reason = "the Box, its provider and workdir, log dir, settings, Proxy and progress sink"
 )]
 pub(crate) fn run_setup(
     cx: &Cx,
@@ -129,6 +132,7 @@ pub(crate) fn run_setup(
     log_dir: &Path,
     cfg: &BoxSettings,
     proxy: Option<&BoxProxy>,
+    on_line: &(dyn Fn(ExtraEvent) + Sync),
 ) -> SetupRun {
     if cfg.setup.is_empty() {
         return SetupRun::Skipped;
@@ -140,7 +144,11 @@ pub(crate) fn run_setup(
     };
     let started = cx.clock().instant();
     let output = log_dir.join(OUTPUT_FILE);
-    let result = exec_script(cx, &site, cfg, proxy, &output);
+    // A log left by an earlier attempt would announce lines this run has not reached.
+    let _ = std::fs::remove_file(&output);
+    let result = follow_lines(cx, cfg, &output, on_line, || {
+        exec_script(cx, &site, cfg, proxy, &output)
+    });
     let elapsed = cx.clock().instant().saturating_duration_since(started);
     let ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
     if let Some(stop) = read_stop(&output) {
@@ -358,6 +366,8 @@ fn failed_step(log: &str, steps: usize) -> usize {
         .count();
     announced.clamp(1, steps.max(1)) - 1
 }
+
+mod lines;
 
 #[cfg(test)]
 mod tests;

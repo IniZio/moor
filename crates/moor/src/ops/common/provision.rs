@@ -29,7 +29,7 @@ use crate::store::lease::LeaseKind;
 use crate::store::{BoxRow, Store};
 
 use self::acquired::record_acquired;
-use self::clone::{clone_with_proxy, SetupProxy};
+use self::clone::clone_with_proxy;
 use self::delivered::record_delivered;
 pub(crate) use self::lease::{hold_root, hold_workdir, planned_root};
 use self::outcome::dotfiles_warned;
@@ -37,6 +37,7 @@ pub(crate) use self::outcome::Provisioned;
 use self::progress::progress;
 use self::rerun::note_setup_not_rerun;
 use self::retry::{kept_box_retry, retry_in_box};
+use self::setup_run::run_through_proxy;
 
 /// Re-reads a Box row that must exist.
 ///
@@ -250,34 +251,6 @@ impl<'a> SetupTarget<'a> {
     }
 }
 
-/// Runs the setup lines through the Proxy; a Proxy that will not start fails the setup.
-fn run_through_proxy(
-    cx: &Cx,
-    store: &Store,
-    id: BoxId,
-    target: &SetupTarget<'_>,
-    cfg: &BoxSettings,
-    proxy: &SetupProxy,
-) -> setup::SetupRun {
-    match proxy {
-        Ok(proxy) => setup::run_setup(
-            cx,
-            target.handle,
-            target.provider,
-            target.workdir,
-            target.log_dir,
-            cfg,
-            proxy.as_ref(),
-        ),
-        // Dotfiles report their own Proxy failure; no setup line was meant to run.
-        Err(_) if cfg.setup.is_empty() => setup::SetupRun::Skipped,
-        Err(reason) => {
-            let name = store.box_row(id).ok().flatten().map(|r| r.name);
-            setup::proxy_failed(cx, name.as_ref().map_or("<box>", |n| n.as_str()), reason)
-        }
-    }
-}
-
 /// Runs repo setup in a Box under the setup intent and records how it ended, clearing the intent.
 ///
 /// `advance` moves the Box on to working; a Box already working gets a `setup_failed` event
@@ -395,5 +368,6 @@ mod outcome;
 mod progress;
 mod rerun;
 mod retry;
+mod setup_run;
 #[cfg(test)]
 mod tests;

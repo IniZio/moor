@@ -47,12 +47,25 @@ pub(crate) fn timed_result<T, E>(
 
 /// Writes `event` for Box `id`.
 fn record(cx: &Cx, store: &Store, id: BoxId, event: ExtraEvent) {
-    if let Err(e) = store.apply(Decision::new(id).event(event)) {
-        cx.warn(Warning {
-            code: "step_event_failed".to_owned(),
-            message: format!("could not record setup progress: {e}"),
-        });
+    if let Err(e) = try_record(store, id, event) {
+        warn_unrecorded(cx, &e);
     }
+}
+
+/// Writes `event` for Box `id`, naming the failure; for a caller that has no [`Cx`] to warn on.
+pub(crate) fn try_record(store: &Store, id: BoxId, event: ExtraEvent) -> Result<(), String> {
+    store
+        .apply(Decision::new(id).event(event))
+        .map(drop)
+        .map_err(|e| e.to_string())
+}
+
+/// Warns that progress could not be written.
+pub(crate) fn warn_unrecorded(cx: &Cx, reason: &str) {
+    cx.warn(Warning {
+        code: "step_event_failed".to_owned(),
+        message: format!("could not record setup progress: {reason}"),
+    });
 }
 
 /// Why `what` could not run to an exit: names the step and the limit when the deadline hit.

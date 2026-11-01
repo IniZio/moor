@@ -53,6 +53,7 @@ fn setup_gets_the_proxy_and_ca_variables_the_agent_gets() {
         d.path(),
         &cfg(&["a"], &[("A", "1")]),
         Some(&proxy),
+        &|_| {},
     );
     let (_, spec, _) = r
         .driver
@@ -123,6 +124,7 @@ fn with_a_proxy_setup_still_gets_reserved_and_credential_like_repo_env() {
         d.path(),
         &cfg(&["a"], &[("A", "1"), RESERVED, CREDENTIAL_LIKE]),
         Some(&proxy),
+        &|_| {},
     );
     let (_, spec, _) = r
         .driver

@@ -151,3 +151,34 @@ fn a_failed_post_clone_step_says_how_long_it_ran() {
         Some("agent install failed after 41s")
     );
 }
+
+#[test]
+fn each_setup_line_shows_when_it_starts_and_when_it_ends() {
+    let events = [
+        event("started", json!({}), 0),
+        event(
+            "setup_line_started",
+            json!({"index": 3, "total": 6, "line": "rustup toolchain install"}),
+            5,
+        ),
+        event(
+            "setup_line_finished",
+            json!({"index": 3, "total": 6, "ms": 12_000, "ok": true}),
+            17,
+        ),
+        event(
+            "setup_line_finished",
+            json!({"index": 4, "total": 6, "ms": 3_000, "ok": false}),
+            20,
+        ),
+    ];
+    let p = Progress::of(&events, T0 + 21);
+    assert_eq!(
+        p.steps,
+        [
+            "    +5s  setup 3/6: rustup toolchain install",
+            "   +17s  setup 3/6 done in 12s",
+            "   +20s  setup 4/6 failed after 3s",
+        ]
+    );
+}

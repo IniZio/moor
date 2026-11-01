@@ -328,3 +328,36 @@ fn an_install_that_does_not_run_records_no_step() {
     run(&w.cx, &prompt_req()).unwrap();
     assert!(step_events(&w, BoxId::new(1)).is_empty());
 }
+
+#[test]
+fn each_repo_setup_line_is_recorded_as_it_starts_and_ends() {
+    let driver = FakeDriver::new().exec_stdout(["", "moor setup: $ a\nmoor setup: $ b\n"]);
+    let (w, _) = install_world("setup: [a, b]\n", None, false, driver);
+    run(&w.cx, &prompt_req()).unwrap();
+    let events = w.cx.store().unwrap().events(BoxId::new(1), 50).unwrap();
+    let lines: Vec<_> = (events.into_iter())
+        .filter(|e| e.kind.starts_with("setup_line_"))
+        .map(|e| (e.kind, e.payload))
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            (
+                "setup_line_started".to_owned(),
+                serde_json::json!({"index": 1, "total": 2, "line": "a"})
+            ),
+            (
+                "setup_line_finished".to_owned(),
+                serde_json::json!({"index": 1, "total": 2, "ms": 0, "ok": true})
+            ),
+            (
+                "setup_line_started".to_owned(),
+                serde_json::json!({"index": 2, "total": 2, "line": "b"})
+            ),
+            (
+                "setup_line_finished".to_owned(),
+                serde_json::json!({"index": 2, "total": 2, "ms": 0, "ok": true})
+            ),
+        ]
+    );
+}

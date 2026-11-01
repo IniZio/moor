@@ -90,6 +90,26 @@ pub enum ExtraEvent {
         /// Whether the step succeeded.
         ok: bool,
     },
+    /// One of the repo's `setup:` lines began.
+    SetupLineStarted {
+        /// Position of the line, counting from 1.
+        index: u32,
+        /// How many lines the repo declares.
+        total: u32,
+        /// The line, cut to a length a status line can hold.
+        line: String,
+    },
+    /// One of the repo's `setup:` lines ended.
+    SetupLineFinished {
+        /// Position of the line, counting from 1.
+        index: u32,
+        /// How many lines the repo declares.
+        total: u32,
+        /// Time the line took, in milliseconds.
+        ms: u64,
+        /// Whether the line exited 0.
+        ok: bool,
+    },
     /// The repo was cloned in the Box.
     Cloned {
         /// Time the clone, with the git identity set inside it, took in milliseconds.

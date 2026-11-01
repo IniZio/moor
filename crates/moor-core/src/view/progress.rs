@@ -88,15 +88,12 @@ fn step(kind: &str, payload: &Value) -> Option<String> {
             .and_then(Value::as_u64)
             .map_or_else(String::new, |ms| format!(" in {}", span(ms / 1000)))
     };
-    let ran_for = || {
-        span(
-            payload
-                .get("ms")
-                .and_then(Value::as_u64)
-                .unwrap_or_default()
-                / 1000,
-        )
-    };
+    if kind.starts_with("setup_line_") {
+        return setup_line(kind, payload);
+    }
+    if kind.starts_with("step_") {
+        return post_clone_step(kind, payload);
+    }
     Some(match kind {
         "pending" => "waiting for a machine slot".to_owned(),
         "box_requested" => "machine requested".to_owned(),
@@ -105,24 +102,6 @@ fn step(kind: &str, payload: &Value) -> Option<String> {
         "box_failed" => format!("machine failed: {}", text("error")),
         "setting_up" => "setting up".to_owned(),
         "cloned" => format!("cloned{}", took()),
-        "step_started" => match text("step") {
-            "dotfiles" => "installing dotfiles",
-            "agent_install" => "installing the agent",
-            _ => "setting up the agent profile",
-        }
-        .to_owned(),
-        "step_finished" => {
-            let (done, failed) = match text("step") {
-                "dotfiles" => ("dotfiles", "dotfiles failed"),
-                "agent_install" => ("agent installed", "agent install failed"),
-                _ => ("agent profile set up", "agent profile setup failed"),
-            };
-            if payload.get("ok").and_then(Value::as_bool) == Some(false) {
-                format!("{failed} after {}", ran_for())
-            } else {
-                format!("{done} in {}", ran_for())
-            }
-        }
         "setup_finished" if payload.get("ok").and_then(Value::as_bool) == Some(false) => {
             format!("setup finished with failures{}", took())
         }
@@ -140,6 +119,73 @@ fn step(kind: &str, payload: &Value) -> Option<String> {
         "agent_prompt_blocked" => format!("the agent waits at a prompt: {}", text("prompt")),
         _ => return None,
     })
+}
+
+/// A step after the clone, starting or ending.
+fn post_clone_step(kind: &str, payload: &Value) -> Option<String> {
+    let name = payload
+        .get("step")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let secs = span(
+        payload
+            .get("ms")
+            .and_then(Value::as_u64)
+            .unwrap_or_default()
+            / 1000,
+    );
+    Some(match kind {
+        "step_started" => match name {
+            "dotfiles" => "installing dotfiles",
+            "agent_install" => "installing the agent",
+            _ => "setting up the agent profile",
+        }
+        .to_owned(),
+        "step_finished" => {
+            let (done, failed) = match name {
+                "dotfiles" => ("dotfiles", "dotfiles failed"),
+                "agent_install" => ("agent installed", "agent install failed"),
+                _ => ("agent profile set up", "agent profile setup failed"),
+            };
+            if payload.get("ok").and_then(Value::as_bool) == Some(false) {
+                format!("{failed} after {secs}")
+            } else {
+                format!("{done} in {secs}")
+            }
+        }
+        _ => return None,
+    })
+}
+
+/// A repo `setup:` line's start or end as a step.
+fn setup_line(kind: &str, payload: &Value) -> Option<String> {
+    let place = position(payload);
+    let secs = span(
+        payload
+            .get("ms")
+            .and_then(Value::as_u64)
+            .unwrap_or_default()
+            / 1000,
+    );
+    let ok = payload.get("ok").and_then(Value::as_bool) != Some(false);
+    Some(match kind {
+        "setup_line_started" => {
+            let line = payload
+                .get("line")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            format!("setup {place}: {line}")
+        }
+        "setup_line_finished" if ok => format!("setup {place} done in {secs}"),
+        "setup_line_finished" => format!("setup {place} failed after {secs}"),
+        _ => return None,
+    })
+}
+
+/// A setup line's place in the list, as `3/6`.
+fn position(payload: &Value) -> String {
+    let n = |key: &str| payload.get(key).and_then(Value::as_u64).unwrap_or_default();
+    format!("{}/{}", n("index"), n("total"))
 }
 
 /// `secs` as `12s` or `1m 05s`.

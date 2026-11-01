@@ -20,7 +20,7 @@ const POLL: Duration = Duration::from_millis(50);
 ///
 /// Returns once `work` has returned and the log is read to its end. Without a log or a sink
 /// it only runs `work`.
-pub(super) fn during<T>(
+pub(crate) fn during<T>(
     output: Option<&Output>,
     sink: Option<Sink<'_>>,
     work: impl FnOnce() -> T,
