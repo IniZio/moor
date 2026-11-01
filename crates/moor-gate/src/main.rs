@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use clap::Parser;
-use moor_gate::{Gate, Mcp, Verifier};
+use moor_gate::{Gate, Login, Mcp, Verifier};
 
 /// The remote front: OIDC access tokens in, the controller's front socket out.
 #[derive(Parser)]
@@ -31,6 +31,10 @@ struct Args {
     /// name it in `aud`. `/mcp` is off without it.
     #[arg(long, env = "MOOR_GATE_MCP_RESOURCE_URL")]
     mcp_resource_url: Option<String>,
+    /// The gate's public origin, such as `https://moor.example.com`; browser sign-in at
+    /// `/auth/*` is off without it, and the issuer must allow `<public-url>/auth/callback`.
+    #[arg(long, env = "MOOR_GATE_PUBLIC_URL")]
+    public_url: Option<String>,
 }
 
 fn main() -> ExitCode {
@@ -53,12 +57,19 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let login = match args.public_url.as_deref().map(Login::new).transpose() {
+        Ok(login) => login.map(Arc::new),
+        Err(why) => {
+            moor_gate_log(&why);
+            return ExitCode::FAILURE;
+        }
+    };
     let gate = Arc::new(Gate {
         front_socket: args.front_socket,
         mcp,
         verifier: Verifier::new(args.issuer, args.client_id, args.jwks_url),
     });
-    match moor_gate::serve(&listener, &gate) {
+    match moor_gate::serve_with(&listener, &gate, login.as_ref()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             moor_gate_log(&format!("accept failed: {e}"));

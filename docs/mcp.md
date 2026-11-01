@@ -231,3 +231,17 @@ must issue access tokens for that URL as the audience, with the scopes above, an
 must register clients on its own; the gate does not. The gate answers
 `/.well-known/oauth-protected-resource` with the provider and the scopes, so a
 client finds its way without configuration.
+
+## Browser sign-in
+
+Some setup, such as creating API tokens, must be done by a person in a browser,
+never by an agent. Start the gate with `--public-url https://<host>` (or
+`MOOR_GATE_PUBLIC_URL`) to turn on browser sign-in at `/auth/*`. Without it those
+paths answer 404. Register exactly `https://<host>/auth/callback` as a redirect
+URI on the gate's client (`--client-id`); the gate signs in as a public client
+with PKCE and asks for the `openid email` scopes.
+
+Open `https://<host>/auth/me` to check it. It sends you through the provider and
+then shows the email you signed in as. A session lasts 15 minutes and lives only
+in the gate's memory, so a restart signs everyone out. Run one gate replica: a
+sign-in that starts on one replica cannot finish on another.

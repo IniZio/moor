@@ -3132,6 +3132,7 @@ dependencies = [
  "moor-client",
  "moor-core",
  "moor-testkit",
+ "oauth2",
  "rmcp",
  "rusqlite",
  "rustix",
