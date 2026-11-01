@@ -71,6 +71,8 @@ fn view(node: &Node) -> NodeView {
         used: node.used,
         waiting: node.waiting,
         max_boxes: node.max_boxes,
+        mem_used_mib: node.memory.map(|m| m.used_mib),
+        mem_offered_mib: node.memory.map(|m| m.offered_mib()),
         labels: node.labels.clone(),
     }
 }

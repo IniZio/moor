@@ -48,6 +48,9 @@ fn linked(f: &Fixture, who: &str, name: &str, online: bool) -> i64 {
             max_boxes: None,
             cache_gb: None,
             features: Vec::new(),
+            mem_mib: None,
+            cpus: None,
+            reserve_mib: None,
         }])
         .unwrap();
     machine_id

@@ -1,6 +1,6 @@
 //! Tests for the node scheduler.
 
-use super::{schedule, BoxSpec, Node, Online, Scope, Verdict};
+use super::{schedule, BoxSpec, Memory, Node, Online, Scope, Verdict};
 use crate::name::NodeName;
 use crate::user::UserId;
 
@@ -22,6 +22,7 @@ fn node(n: &str, scope: Scope, labels: &[&str]) -> Node {
         online: Online::Online,
         used: 0,
         waiting: 0,
+        memory: None,
     }
 }
 
@@ -45,6 +46,7 @@ fn spec(labels: &[&str], node: Option<&str>) -> BoxSpec {
     BoxSpec {
         labels: labels.iter().map(|l| (*l).to_owned()).collect(),
         node: node.map(name),
+        mem_mib: 4096,
     }
 }
 
@@ -309,4 +311,83 @@ fn without_a_shared_node_an_offline_node_offers_no_other_node() {
     };
     let r = fail(run_without_shared(&[hv], &spec(&[], None)));
     assert_eq!(r, "hv is offline for 12m: start moor-machine-agent on it");
+}
+
+const GIB: u64 = 1024;
+
+/// `hv` with `total` GiB, a 4 GiB reserve unless given, and `used` GiB held by its Boxes.
+fn sized(total: u64, reserve: Option<u64>, used: u64) -> Node {
+    Node {
+        memory: Some(Memory {
+            total_mib: total * GIB,
+            reserve_mib: Some(reserve.map_or(4 * GIB, |r| r * GIB)),
+            used_mib: used * GIB,
+        }),
+        ..mine("hv", 1, 1)
+    }
+}
+
+fn needing(gib: u64) -> BoxSpec {
+    BoxSpec {
+        mem_mib: gib * GIB,
+        ..spec(&[], None)
+    }
+}
+
+fn pending(v: Verdict) -> String {
+    match v {
+        Verdict::Pending { reason, .. } => reason,
+        other => format!("not Pending: {other:?}"),
+    }
+}
+
+#[test]
+fn node_with_room_for_the_box_memory_binds() {
+    assert_eq!(
+        run(&[sized(30, None, 10)], &needing(16)),
+        bound("hv", Some(1))
+    );
+}
+
+#[test]
+fn node_short_of_memory_is_pending_naming_the_shortfall() {
+    assert_eq!(
+        pending(run(&[sized(30, None, 20)], &needing(16))),
+        "hv has 6 GiB free of 26 GiB; this Box needs 16 GiB"
+    );
+}
+
+#[test]
+fn the_reserve_is_taken_from_the_total() {
+    assert_eq!(
+        run(&[sized(30, Some(0), 14)], &needing(16)),
+        bound("hv", Some(1))
+    );
+    assert!(pending(run(&[sized(30, Some(1), 14)], &needing(16))).contains("15 GiB free of 29 GiB"));
+}
+
+#[test]
+fn default_reserve_is_4_gib_plus_a_tenth() {
+    let m = Memory {
+        total_mib: 30 * GIB,
+        reserve_mib: None,
+        used_mib: 0,
+    };
+    assert_eq!(m.offered_mib(), 30 * GIB - 4 * GIB - 3 * GIB);
+}
+
+#[test]
+fn node_with_unknown_memory_admits_by_count_only() {
+    let mut n = mine("hv", 1, 1);
+    n.max_boxes = Some(4);
+    n.used = 3;
+    assert_eq!(run(&[n], &needing(1024)), bound("hv", Some(1)));
+}
+
+#[test]
+fn a_full_count_still_waits_on_a_node_with_memory() {
+    let mut n = sized(64, None, 0);
+    n.max_boxes = Some(1);
+    n.used = 1;
+    assert!(pending(run(&[n], &needing(4))).contains("is full"));
 }

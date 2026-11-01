@@ -181,6 +181,10 @@ const FILES: &[(&str, &str)] = &[
         "V31__webhook_setup.sql",
         include_str!("../../migrations/V31__webhook_setup.sql"),
     ),
+    (
+        "V32__node_memory.sql",
+        include_str!("../../migrations/V32__node_memory.sql"),
+    ),
 ];
 
 /// moor.db's migrations, oldest first.

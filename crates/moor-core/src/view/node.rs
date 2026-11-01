@@ -49,6 +49,12 @@ pub struct NodeView {
     /// Most Boxes it hosts; none means no limit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_boxes: Option<usize>,
+    /// MiB its Boxes hold, when its host reports memory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mem_used_mib: Option<u64>,
+    /// MiB its host offers Boxes, when it reports memory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mem_offered_mib: Option<u64>,
     /// Its labels.
     pub labels: Vec<String>,
 }

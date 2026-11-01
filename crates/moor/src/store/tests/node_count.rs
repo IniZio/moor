@@ -13,7 +13,7 @@ use super::{live_on_node_in, new_box, node_p, open, provider};
 fn a_node_counts_its_starting_and_ready_boxes_only() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    let count = |node: &NodeName| live_on_node_in(&store.reader().unwrap(), node).unwrap();
+    let count = |node: &NodeName| live_on_node_in(&store.reader().unwrap(), node).unwrap().0;
     assert_eq!(count(&node_p()), 0);
 
     let [starting, ready, failed, released, other] =
@@ -28,6 +28,7 @@ fn a_node_counts_its_starting_and_ready_boxes_only() {
         let spec = BoxSpec {
             labels: Vec::new(),
             node: NodeName::parse(node).ok(),
+            mem_mib: 0,
         };
         store.set_box_spec(id, &spec).unwrap();
     }

@@ -93,7 +93,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     };
     let repo_cfg = repo_config_of(facts.repo.as_ref(), facts.base.as_deref())?;
     let cfg = resolved(cx, repo_cfg.as_ref(), &flags);
-    let spec = spec_of(req, repo_cfg.as_ref())?;
+    let spec = spec_of(req, repo_cfg.as_ref(), cfg.size.value.mem_mib())?;
     let note = node::preflight(cx, user, &spec)?;
     if let Some(reason) = preflight::rejection(cx, &cfg, &facts.files, user)? {
         return reject(cx, store, (req, user), &facts, &reason);
@@ -152,8 +152,13 @@ fn settled(
     Ok(v)
 }
 
-/// What the start asks of a node: the labels its repo requires, and the node the requester named.
-fn spec_of(req: &StartReq, repo: Option<&RepoConfig>) -> Result<BoxSpec, CommandError> {
+/// What the start asks of a node: the labels its repo requires, the node the requester named,
+/// and the memory its size is given.
+fn spec_of(
+    req: &StartReq,
+    repo: Option<&RepoConfig>,
+    mem_mib: u64,
+) -> Result<BoxSpec, CommandError> {
     let node = req
         .node
         .as_deref()
@@ -163,6 +168,7 @@ fn spec_of(req: &StartReq, repo: Option<&RepoConfig>) -> Result<BoxSpec, Command
     Ok(BoxSpec {
         labels: repo.map(|r| r.node.labels.clone()).unwrap_or_default(),
         node,
+        mem_mib,
     })
 }
 
