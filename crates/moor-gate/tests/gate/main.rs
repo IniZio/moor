@@ -452,4 +452,5 @@ fn a_real_controller_enrolls_the_token_email() {
 }
 
 mod enroll;
+mod listen;
 mod mcp;
