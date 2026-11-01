@@ -28,10 +28,14 @@ fn a_hello_with_an_offer_round_trips() {
             max_boxes: Some(4),
             cache_gb: Some(20),
             features: vec!["cache-volume".to_owned()],
+            mem_mib: Some(31_232),
+            cpus: Some(16),
+            reserve_mib: None,
         }),
     };
     let text = serde_json::to_string(&frame).unwrap();
     assert!(text.contains("\"max_boxes\":4"), "{text}");
+    assert!(text.contains("\"mem_mib\":31232"), "{text}");
     let back: Frame = serde_json::from_str(&text).unwrap();
     assert_eq!(serde_json::to_string(&back).unwrap(), text);
     let Frame::Hello { offer, .. } = back else {

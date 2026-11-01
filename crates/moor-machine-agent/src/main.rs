@@ -106,6 +106,9 @@ struct PoolFlags {
     /// Refuse a warmup once this many leases exist, and tell the server this is the most.
     #[arg(long, requires = "runtime")]
     max_boxes: Option<usize>,
+    /// Keep this many MiB of memory for the host; Boxes get the rest. Default: 4096 plus a tenth.
+    #[arg(long, value_name = "MIB", requires = "runtime")]
+    reserve_mib: Option<u64>,
     /// The crabbox program.
     #[arg(long, default_value = "crabbox", requires = "runtime")]
     crabbox: PathBuf,
@@ -117,6 +120,7 @@ impl PoolFlags {
         Some(Pool {
             provider: self.runtime?,
             max: self.max_boxes,
+            reserve_mib: self.reserve_mib,
             cache_gb,
             crabbox: self.crabbox,
         })

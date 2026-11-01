@@ -47,6 +47,15 @@ pub struct Offer {
     /// What its crabbox provider supports, such as `cache-volume`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub features: Vec<String>,
+    /// The host's total memory, in MiB.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mem_mib: Option<u64>,
+    /// The host's CPUs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpus: Option<u32>,
+    /// The memory, in MiB, kept for the host rather than its Boxes; none means the default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reserve_mib: Option<u64>,
 }
 
 /// The frames before the socket carries yamux, one JSON text message each.

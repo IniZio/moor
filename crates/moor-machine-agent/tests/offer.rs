@@ -20,6 +20,7 @@ fn machine(crabbox: &Path) -> Machine {
     machine.pool = Some(Pool {
         provider: "fake".to_owned(),
         max: Some(3),
+        reserve_mib: None,
         cache_gb: Some(50),
         crabbox: crabbox.to_owned(),
     });
@@ -35,6 +36,21 @@ async fn features_come_from_the_describe_json_sorted() {
     let offer = pool::offer(&machine(&crabbox)).await.unwrap();
     assert_eq!(offer.features, ["cache-volume", "snapshots"]);
     assert_eq!((offer.max_boxes, offer.cache_gb), (Some(3), Some(50)));
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn the_offer_reports_host_memory_cpus_and_the_reserve() {
+    let home = tempfile::tempdir().unwrap();
+    let crabbox = fake_crabbox::install(home.path());
+    let mut m = machine(&crabbox);
+    if let Some(p) = m.pool.as_mut() {
+        p.reserve_mib = Some(2048);
+    }
+    let offer = pool::offer(&m).await.unwrap();
+    assert!(offer.mem_mib.is_some_and(|m| m > 0), "{offer:?}");
+    assert!(offer.cpus.is_some_and(|c| c > 0), "{offer:?}");
+    assert_eq!(offer.reserve_mib, Some(2048));
 }
 
 /// A crabbox that records its arguments beside itself, and fails as an older one does when

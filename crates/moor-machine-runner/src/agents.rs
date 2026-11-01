@@ -305,6 +305,9 @@ impl Links {
             max_boxes: offer.max_boxes,
             cache_gb: offer.cache_gb,
             features: offer.features,
+            mem_mib: offer.mem_mib,
+            cpus: offer.cpus,
+            reserve_mib: offer.reserve_mib,
         };
         self.change(|held| {
             held.insert(

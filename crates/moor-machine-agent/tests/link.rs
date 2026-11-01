@@ -492,6 +492,7 @@ async fn pool_host(w: &World, home: &Path) -> tempfile::TempDir {
     let pool = moor_machine_agent::Pool {
         provider: "fake".to_owned(),
         max: None,
+        reserve_mib: None,
         cache_gb: None,
         crabbox: fake_crabbox::install(home),
     };

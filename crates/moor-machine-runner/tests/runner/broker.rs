@@ -80,6 +80,7 @@ impl Host {
         let pool = Pool {
             provider: "fake".to_owned(),
             max,
+            reserve_mib: None,
             cache_gb,
             crabbox: fake_crabbox::install(&home),
         };
