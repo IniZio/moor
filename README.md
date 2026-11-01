@@ -134,5 +134,7 @@ This guide starts one Box from a git repo on your machine. You need:
   the Box resources an MCP client listens on to learn when a Box idles.
 - [Get told by webhook](docs/notify.md): post Box events to a URL with
   `moor-notify`.
+- [Get told by a line on stdout](docs/listen.md): `moor-listen` prints each
+  Box event that needs you.
 - [Development](docs/development.md): the crate layout, the build, and the
   checks.
