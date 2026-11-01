@@ -254,11 +254,10 @@ fn a_500_mib_artifact_streams_through_in_bounded_memory() {
         .iter()
         .zip(before.iter().zip(peak))
     {
-        eprintln!(
-            "{who}: rss before {b} KiB, peak during {p} KiB, growth {} KiB",
-            p - b
-        );
-        assert!(p - b <= GROWTH_KIB, "{who} grew {} KiB", p - b);
+        // RSS counters are per-CPU estimates, so the peak can read a little below the start.
+        let growth = p.saturating_sub(*b);
+        eprintln!("{who}: rss before {b} KiB, peak during {p} KiB, growth {growth} KiB");
+        assert!(growth <= GROWTH_KIB, "{who} grew {growth} KiB");
     }
 }
 
