@@ -134,3 +134,12 @@ fn an_enrollment_still_naming_an_id_token_is_refused() {
     assert_eq!(status, 400, "{body}");
     assert!(w.seen.try_recv().is_err());
 }
+
+#[test]
+fn an_api_token_cannot_enroll_a_machine() {
+    let w = world();
+    let token = "moor_rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr";
+    let (status, body) = post(&w, &enrollment(token));
+    assert_eq!(status, 401, "{body}");
+    assert!(w.seen.try_recv().is_err(), "nothing reached the controller");
+}

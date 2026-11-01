@@ -7,6 +7,7 @@ use std::net::TcpListener;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+mod api_token;
 mod enroll;
 mod http;
 mod login;

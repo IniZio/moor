@@ -13,8 +13,10 @@ use std::sync::atomic::Ordering;
 
 use super::{claims, mpsc, now, sign, world_with, World};
 
+mod api_token;
 mod webhook;
 
+#[allow(clippy::too_many_lines, reason = "one fake answers every tool")]
 fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
     let listener = UnixListener::bind(path).unwrap();
     let (tx, rx) = mpsc::channel();
@@ -49,7 +51,10 @@ fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
                         writeln!(reply, "{}", not_found(&frame["id"])).unwrap();
                         continue;
                     }
-                    if let Some(refusal) = webhook::refusal(cmd, inner, &frame["id"]) {
+                    let early = api_token::resolved(&frame);
+                    if let Some(refusal) =
+                        early.or_else(|| webhook::refusal(cmd, inner, &frame["id"]))
+                    {
                         writeln!(reply, "{refusal}").unwrap();
                         continue;
                     }

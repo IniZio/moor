@@ -22,6 +22,7 @@ use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, Stream
 use tokio::io::{join, split, AsyncReadExt};
 use tokio::runtime::Runtime;
 
+use crate::api_token::{self, Failure};
 use crate::tools::Tools;
 use crate::{log, Gate, Person};
 
@@ -45,6 +46,10 @@ pub struct Mcp {
     runtime: Runtime,
     /// The MCP service, shared by every connection so sessions survive reconnects.
     service: StreamableHttpService<Tools, LocalSessionManager>,
+    /// The controller's front socket, which resolves API tokens.
+    front_socket: PathBuf,
+    /// API tokens resolved lately.
+    tokens: api_token::Cache,
 }
 
 impl Mcp {
@@ -64,7 +69,9 @@ impl Mcp {
             .with_allowed_hosts(hosts)
             .with_legacy_session_mode(false)
             .with_json_response(true);
-        let tools = Tools { front_socket };
+        let tools = Tools {
+            front_socket: front_socket.clone(),
+        };
         let service = StreamableHttpService::new(
             move || Ok(tools.clone()),
             Arc::new(LocalSessionManager::default()),
@@ -79,6 +86,8 @@ impl Mcp {
             resource_url: resource_url.to_owned(),
             runtime,
             service,
+            front_socket,
+            tokens: api_token::Cache::default(),
         })
     }
 
@@ -126,14 +135,7 @@ impl Mcp {
 
     /// Checks the request's token, then lets the MCP service answer it.
     async fn route(&self, mut req: Request<Incoming>, gate: &Gate) -> Response<Body> {
-        let verified = bearer(&req)
-            .ok_or_else(|| "send an access token as Authorization: Bearer <token>".to_owned())
-            .and_then(|token| {
-                tokio::task::block_in_place(|| {
-                    gate.verifier.verify_resource(token, &self.resource_url)
-                })
-            });
-        match verified {
+        match tokio::task::block_in_place(|| self.authenticate(&req, gate)) {
             Ok((person, scopes)) => {
                 req.extensions_mut().insert(Auth { person, scopes });
                 match TowerToHyperService::new(self.service.clone())
@@ -144,13 +146,45 @@ impl Mcp {
                     Err(never) => match never {},
                 }
             }
-            Err(why) => {
+            Err(Failure::Refused(why)) => {
                 if !why.starts_with("send an access token") {
                     log(&format!("/mcp refused a token: {why}"));
                 }
                 self.unauthorized(&why)
             }
+            Err(Failure::Unavailable(why)) => {
+                log(&format!("/mcp cannot resolve an API token: {why}"));
+                let body = Full::new(Bytes::from("the controller is unreachable\n")).boxed();
+                let mut res = Response::new(body);
+                *res.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
+                res
+            }
         }
+    }
+
+    /// Who the request's token speaks for and what it may do: an API token asks the
+    /// controller, any other token must verify against the issuer.
+    fn authenticate(
+        &self,
+        req: &Request<Incoming>,
+        gate: &Gate,
+    ) -> Result<(Person, Vec<String>), Failure> {
+        let Some(token) = bearer(req) else {
+            return Err(Failure::Refused(
+                "send an access token as Authorization: Bearer <token>".to_owned(),
+            ));
+        };
+        if token.starts_with(api_token::PREFIX) {
+            #[allow(
+                clippy::disallowed_methods,
+                reason = "API-token cache expiry; the cache takes the time as an argument"
+            )]
+            let now = std::time::Instant::now();
+            return self.tokens.resolve(&self.front_socket, token, now);
+        }
+        gate.verifier
+            .verify_resource(token, &self.resource_url)
+            .map_err(Failure::Refused)
     }
 
     /// The 401 that points a client at the metadata document.
