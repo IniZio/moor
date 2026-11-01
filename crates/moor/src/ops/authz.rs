@@ -131,9 +131,13 @@ fn runners(cx: &Cx, request: &Request) -> Result<(), CommandError> {
 /// Why only the operator may send `request`, when it touches the controller host or every
 /// user's data. Every kind is listed, so a new kind must declare its reach here before it
 /// compiles.
+#[expect(clippy::too_many_lines, reason = "one arm per request")]
 const fn host_only(request: &Request) -> Option<&'static str> {
     match request {
         Request::Cp(_) => Some(CP_OPERATOR_ONLY),
+        Request::WebhookClaim(_) | Request::WebhookReport(_) => {
+            Some(crate::ops::webhook_outbox::FRONT_ONLY)
+        }
         Request::BoxMirror(_) => Some(MIRROR_OPERATOR_ONLY),
         Request::BoxPut(_) => Some(PUT_OPERATOR_ONLY),
         Request::Env(_) => Some(ENV_OPERATOR_ONLY),

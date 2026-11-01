@@ -33,6 +33,8 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
         "profile-set" => json!({"cmd": kind, "source": "https://github.com/alice/agent"}),
         "webhook-add" => json!({"cmd": kind, "url": "https://example.com/h"}),
         "webhook-remove" => json!({"cmd": kind, "id": 1}),
+        "webhook-claim" => json!({"cmd": kind, "limit": 1, "lease_ms": 1}),
+        "webhook-report" => json!({"cmd": kind, "delivery": 1, "outcome": "delivered"}),
         "mcp-add" => json!({"cmd": kind, "name": "n", "url": "https://example.com/mcp"}),
         "mcp-oauth-finish" => json!({"cmd": kind, "state": "s", "code": "c"}),
         "box-mirror" => json!({"cmd": kind, "id": 1, "dest": "/d"}),
@@ -44,7 +46,7 @@ pub(super) fn nameless(kind: &str) -> Option<Value> {
 }
 
 #[test]
-fn every_front_request_but_version_must_assert_an_identity() {
+fn every_front_request_but_version_and_the_webhook_outbox_must_assert_an_identity() {
     let world = World::new();
     let slack = world.slack();
     let mut unknown = Vec::new();
@@ -62,6 +64,8 @@ fn every_front_request_but_version_must_assert_an_identity() {
         let got = ask(&slack, &request);
         if kind == "version" {
             assert_eq!(got["class"], "ok", "{got}");
+        } else if kind.starts_with("webhook-claim") || kind.starts_with("webhook-report") {
+            refused(&got, "`webhooks: true`");
         } else {
             refused(&got, "the slack front socket must assert an identity");
         }

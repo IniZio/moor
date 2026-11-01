@@ -92,12 +92,21 @@ impl Store {
             })?)
     }
 
-    /// Deletes `user`'s webhook `id`; true when it was theirs.
+    /// Deletes `user`'s webhook `id` and its pending deliveries; true when it was theirs.
     pub(crate) fn delete_user_webhook(&self, user: UserId, id: i64) -> Result<bool, StoreError> {
-        let gone = self.writer().execute(
+        let mut writer = self.writer();
+        let tx = writer.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute(
+            "DELETE FROM webhook_deliveries WHERE webhook = \
+             (SELECT id FROM user_webhooks WHERE id = ? AND user = ?)",
+            params![id, user.get()],
+        )?;
+        let gone = tx.execute(
             "DELETE FROM user_webhooks WHERE id = ? AND user = ?",
             params![id, user.get()],
         )?;
+        tx.commit()?;
+        drop(writer);
         Ok(gone == 1)
     }
 }

@@ -75,7 +75,7 @@ fn reports_of(store: &Store, box_id: BoxId) -> Result<Vec<ReportView>, CommandEr
 }
 
 /// The agent's newest message of the Box, whenever it said it.
-fn said_of(store: &Store, box_id: BoxId) -> Result<Option<SaidView>, CommandError> {
+pub(crate) fn said_of(store: &Store, box_id: BoxId) -> Result<Option<SaidView>, CommandError> {
     Ok(store.newest_event_of(box_id, "agent_said")?.and_then(|e| {
         Some(SaidView {
             text: e.payload.get("text")?.as_str()?.to_owned(),

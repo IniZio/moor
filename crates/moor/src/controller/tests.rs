@@ -148,6 +148,7 @@ mod run_grant;
 mod run_output;
 mod runner_socket;
 mod users;
+mod webhook_front;
 
 #[test]
 fn first_start_creates_the_vault_key_beside_the_config() {

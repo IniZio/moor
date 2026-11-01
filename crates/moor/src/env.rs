@@ -1,7 +1,7 @@
 //! Process environment and argv access; the only reader of either.
 
 use std::any::Any;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -23,6 +23,8 @@ pub struct Env {
     cancel: Cancel,
     /// The rules each front's Proxy serves, by namespace, when a controller runs this.
     front_proxies: Arc<BTreeMap<String, Vec<String>>>,
+    /// The fronts that deliver the users' webhooks, by namespace.
+    front_webhooks: Arc<BTreeSet<String>>,
     /// What the controller opened once for every request and tick, such as the state store.
     shared: Option<Arc<dyn Any + Send + Sync>>,
 }
@@ -138,6 +140,18 @@ impl Env {
     /// The names of the rules front `ns`'s Proxy serves; none when it has no Proxy.
     pub(crate) fn front_proxy_rules(&self, ns: &str) -> &[String] {
         self.front_proxies.get(ns).map_or(&[], Vec::as_slice)
+    }
+
+    /// Set the fronts that deliver the users' webhooks, by namespace.
+    #[must_use]
+    pub fn with_front_webhooks(mut self, fronts: BTreeSet<String>) -> Self {
+        self.front_webhooks = Arc::new(fronts);
+        self
+    }
+
+    /// Whether front `ns` delivers the users' webhooks.
+    pub(crate) fn front_webhooks(&self, ns: &str) -> bool {
+        self.front_webhooks.contains(ns)
     }
 
     /// Share `value` with every request and tick that runs in this environment.

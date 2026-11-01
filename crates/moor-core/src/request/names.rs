@@ -119,6 +119,8 @@ impl Request {
             | Self::ProxyLease(_)
             | Self::ProxyRelease(_)
             | Self::ProxyStatus(_)
+            | Self::WebhookClaim(_)
+            | Self::WebhookReport(_)
             | Self::Version {} => Vec::new(),
         }
     }
