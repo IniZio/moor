@@ -23,8 +23,10 @@ loop; wait for the next line.
 - `moor-listen: stream lost (...); reconnecting` and `moor-listen: reconnected`:
   nothing to do. Events during the gap may be missed, so call `list_boxes` once
   after `reconnected`.
-- `moor-listen: token rejected; call any moor tool so the client refreshes it`:
-  call `list_boxes` once. If the line comes back, tell the user to sign in to
-  moor again from `/mcp`.
-- `moor-listen: not installed` or `set MOOR_URL`: tell the user the one step the
-  line names.
+- `moor-listen: not signed in to <origin>; run moor login --server <origin>`:
+  tell the user to run that command once. The listener picks the sign-in up
+  within a minute.
+- `moor-listen: token rejected; ...`: tell the user to run
+  `moor login --server <origin>` again.
+- `moor-listen: moor is not installed` or `set MOOR_SERVER`: tell the user the
+  one step the line names.

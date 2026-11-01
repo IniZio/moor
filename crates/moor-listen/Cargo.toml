@@ -5,6 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
+moor-client = { path = "../moor-client" }
 clap = { version = "4", features = ["derive", "env"] }
 serde_json = "1"
 ureq = { version = "3", default-features = false, features = [

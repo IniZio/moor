@@ -1,11 +1,13 @@
 #!/bin/sh
-here=$(cd "$(dirname "$0")" && pwd)
-if [ -z "$MOOR_URL" ]; then
-  echo "moor-listen: set MOOR_URL to your gate's /mcp URL, then restart Claude Code"
+server=${MOOR_SERVER:-$MOOR_URL}
+if [ -z "$server" ]; then
+  echo "moor-listen: set MOOR_SERVER to your moor server, then restart Claude Code"
   exit 0
 fi
-if ! command -v moor-listen >/dev/null 2>&1; then
-  echo "moor-listen: not installed; run: cargo install --git https://github.com/IniZio/moor moor-listen"
+if ! command -v moor >/dev/null 2>&1; then
+  echo "moor-listen: moor is not installed; run: cargo install --git https://github.com/IniZio/moor moor"
   exit 0
 fi
-exec moor-listen --url "$MOOR_URL" --token-cmd "sh '$here/token'"
+server=${server%/}
+server=${server%/mcp}
+exec moor listen --server "$server"

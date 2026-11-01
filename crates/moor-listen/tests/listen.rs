@@ -48,6 +48,8 @@ struct World {
     token: String,
     fake: Arc<Mutex<Fake>>,
     dir: tempfile::TempDir,
+    /// The OIDC issuer a saved sign-in refreshes against.
+    issuer: Issuer,
 }
 
 fn answer(stream: UnixStream, fake: &Mutex<Fake>) {
@@ -104,9 +106,8 @@ fn world(boxes: &[&str]) -> World {
             std::thread::spawn(move || answer(stream, &fake));
         }
     });
-    let Issuer {
-        base: issuer, key, ..
-    } = Issuer::start(CLIENT_ID);
+    let oidc = Issuer::start(CLIENT_ID);
+    let (issuer, key) = (oidc.base.clone(), oidc.key.clone());
     let tcp = TcpListener::bind("127.0.0.1:0").unwrap();
     let gate = tcp.local_addr().unwrap().to_string();
     let url = format!("http://{gate}/mcp");
@@ -127,6 +128,7 @@ fn world(boxes: &[&str]) -> World {
         token,
         fake,
         dir,
+        issuer: oidc,
     }
 }
 
@@ -313,4 +315,107 @@ fn the_token_command_reruns_on_reconnect() {
     world.come_back();
     assert_eq!(listen.line(), "moor-listen: reconnected");
     assert!(world.runs() > before, "{} runs", world.runs());
+}
+
+/// Sets what the issuer's refreshed tokens say, so the gate takes them.
+fn issuer_signs_for_gate(world: &World) {
+    let url = format!("http://{}/mcp", world.gate);
+    *world.issuer.id_claims.lock().unwrap() = json!({"aud": url, "sub": "alice-sub",
+        "scope": "moor:read", "email": "Alice@Example.com", "email_verified": true});
+}
+
+/// A sign-in to this world's gate holding `access`, which expires at `expires_at`.
+fn signed_in(world: &World, access: &str, expires_at: i64) -> moor_client::session::Store {
+    let store = moor_client::session::Store::new(world.dir.path().join("state"));
+    store
+        .write(&moor_client::session::Credentials {
+            server: format!("http://{}", world.gate),
+            issuer: world.issuer.base.clone(),
+            client_id: CLIENT_ID.to_owned(),
+            token_endpoint: format!("{}/token", world.issuer.base),
+            refresh_token: "refresh-0".to_owned(),
+            access_token: access.to_owned(),
+            expires_at,
+            email: None,
+        })
+        .unwrap();
+    store
+}
+
+/// `moor listen` as the library runs it, with the lines it says.
+fn listen_with_session(world: &World, store: moor_client::session::Store) -> Listen {
+    let listen = moor_listen::Listen {
+        url: format!("http://{}/mcp", world.gate),
+        bearer: Box::new(moor_listen::Session::new(
+            store,
+            &format!("http://{}", world.gate),
+        )),
+        idle: Duration::from_secs(45),
+        signed_out: Duration::from_millis(100),
+    };
+    let (tx, lines) = mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = listen.run(&mut |line| {
+            tx.send(line.to_owned())
+                .map_err(|_| std::io::ErrorKind::BrokenPipe.into())
+        });
+    });
+    Listen {
+        child: Command::new("true").spawn().unwrap(),
+        lines,
+    }
+}
+
+#[test]
+fn an_expired_session_refreshes_and_connects() {
+    let world = world(&["repo/a"]);
+    issuer_signs_for_gate(&world);
+    let listen = listen_with_session(&world, signed_in(&world, "stale", 0));
+    world.wait_live(1);
+    world.happen("repo/a", 1, "idled", "Fresh.");
+    assert_eq!(listen.line(), "moor: box repo/a idled: Fresh.");
+    assert_eq!(
+        world
+            .issuer
+            .refreshes
+            .load(std::sync::atomic::Ordering::SeqCst),
+        1
+    );
+}
+
+#[test]
+fn a_token_the_gate_refuses_is_refreshed_once() {
+    let world = world(&["repo/a"]);
+    issuer_signs_for_gate(&world);
+    let far = i64::try_from(now()).unwrap() + 3000;
+    let listen = listen_with_session(&world, signed_in(&world, "revoked", far));
+    world.wait_live(1);
+    world.happen("repo/a", 1, "idled", "Renewed.");
+    assert_eq!(listen.line(), "moor: box repo/a idled: Renewed.");
+    assert_eq!(
+        world
+            .issuer
+            .refreshes
+            .load(std::sync::atomic::Ordering::SeqCst),
+        1
+    );
+}
+
+#[test]
+fn not_signed_in_says_so_once_and_connects_after_a_login() {
+    let world = world(&["repo/a"]);
+    issuer_signs_for_gate(&world);
+    let state = world.dir.path().join("state");
+    let origin = format!("http://{}", world.gate);
+    let listen = listen_with_session(&world, moor_client::session::Store::new(&state));
+    assert_eq!(
+        listen.line(),
+        format!("moor-listen: not signed in to {origin}; run moor login --server {origin}")
+    );
+    std::thread::sleep(Duration::from_millis(400));
+    signed_in(&world, "stale", 0);
+    assert_eq!(listen.line(), "moor-listen: reconnected");
+    world.wait_live(1);
+    world.happen("repo/a", 1, "idled", "Welcome.");
+    assert_eq!(listen.line(), "moor: box repo/a idled: Welcome.");
 }

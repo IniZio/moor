@@ -8,7 +8,8 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
-use crate::gate::{Fail, Gate, Stream};
+use crate::gate::{Gate, Stream};
+use crate::token::Fail;
 
 /// Every Box resource's URI starts with this.
 const PREFIX: &str = "moor://box/";
@@ -60,8 +61,13 @@ struct State {
     outage: Option<Outage>,
 }
 
-/// Runs until `say` fails, which is when nobody reads the lines any more.
-pub(crate) fn run(gate: &Gate, say: &mut dyn FnMut(&str) -> io::Result<()>) -> io::Result<()> {
+/// Runs until `say` fails, which is when nobody reads the lines any more. `signed_out` is how
+/// long to wait before looking again for a sign-in.
+pub(crate) fn run(
+    gate: &Gate,
+    signed_out: Duration,
+    say: &mut dyn FnMut(&str) -> io::Result<()>,
+) -> io::Result<()> {
     let mut state = State {
         said: HashSet::new(),
         first: true,
@@ -83,6 +89,18 @@ pub(crate) fn run(gate: &Gate, say: &mut dyn FnMut(&str) -> io::Result<()>) -> i
                     told: true,
                 });
                 LONGEST
+            }
+            Fail::SignedOut(server) => {
+                if !state.outage.as_ref().is_some_and(|o| o.told) {
+                    say(&format!(
+                        "moor-listen: not signed in to {server}; run moor login --server {server}"
+                    ))?;
+                }
+                state.outage = Some(Outage {
+                    why: "not signed in".to_owned(),
+                    told: true,
+                });
+                signed_out
             }
             Fail::Other(why) => {
                 if state.outage.is_none() {
@@ -143,8 +161,15 @@ struct Open {
 
 /// Signs in, lists the Boxes and opens the listen.
 fn connect(gate: &Gate, state: &mut State) -> Result<Open, Fail> {
-    let token = gate.token()?;
-    let listed = gate.call(&token, "resources/list", json!({}))?;
+    let mut token = gate.token()?;
+    let listed = match gate.call(&token, "resources/list", json!({})) {
+        // A token the gate refused may only be stale; ask for a new one once.
+        Err(Fail::Rejected) => {
+            token = gate.renew()?;
+            gate.call(&token, "resources/list", json!({}))?
+        }
+        other => other?,
+    };
     let uris: Vec<String> = listed
         .get("resources")
         .and_then(Value::as_array)

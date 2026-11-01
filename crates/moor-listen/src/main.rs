@@ -1,16 +1,12 @@
-//! `moor-listen`: holds a `subscriptions/listen` stream open on the moor gate and prints one
-//! line per Box event worth waking for. It knows nothing of whoever reads its stdout.
-
-mod gate;
-mod idle;
-mod sse;
-mod watch;
+//! `moor-listen`: the listener with a shell command for its token. `moor listen` is the same
+//! listener signed in with `moor login`.
 
 use std::io::{self, Write};
 use std::process::ExitCode;
 use std::time::Duration;
 
 use clap::Parser;
+use moor_listen::{Listen, Shell};
 
 /// Prints a line when a Box needs attention.
 #[derive(Parser)]
@@ -35,14 +31,15 @@ fn emit(out: &mut impl Write, line: &str) -> io::Result<()> {
 
 fn main() -> ExitCode {
     let args = Args::parse();
-    let gate = gate::Gate::new(
-        args.url,
-        args.token_cmd,
-        Duration::from_millis(args.idle_ms),
-    );
+    let listen = Listen {
+        url: args.url,
+        bearer: Box::new(Shell(args.token_cmd)),
+        idle: Duration::from_millis(args.idle_ms),
+        signed_out: Listen::SIGNED_OUT,
+    };
     let mut stdout = io::stdout().lock();
     // The loop only ends when stdout is gone.
-    let Err(why) = watch::run(&gate, &mut |line| emit(&mut stdout, line)) else {
+    let Err(why) = listen.run(&mut |line| emit(&mut stdout, line)) else {
         return ExitCode::SUCCESS;
     };
     let _ = emit(&mut io::stderr(), &format!("moor-listen: {why}"));

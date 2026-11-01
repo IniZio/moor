@@ -3048,6 +3048,7 @@ dependencies = [
  "ghostty-vt",
  "moor-client",
  "moor-core",
+ "moor-listen",
  "moor-migrate",
  "moor-testkit",
  "netlink-packet-core",
@@ -3175,6 +3176,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "jsonwebtoken",
+ "moor-client",
  "moor-core",
  "moor-gate",
  "moor-testkit",

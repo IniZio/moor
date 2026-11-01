@@ -40,13 +40,21 @@ fn front_shim(args: &[std::ffi::OsString]) -> Option<ExitCode> {
     })))
 }
 
+/// Writes `line` to stdout and flushes, so a reader of `moor listen` sees it at once.
+fn say(line: &str) -> std::io::Result<()> {
+    let mut out = std::io::stdout().lock();
+    writeln!(out, "{line}")?;
+    out.flush()
+}
+
 /// Parse argv, run the request, print the rendered output, return its exit code.
 fn main() -> ExitCode {
     let args = Env::args();
     if let Some(code) = front_shim(&args).or_else(|| moor::mcp_relay::run(&args)) {
         return code;
     }
-    if let Some(out) = moor::sign_in::run(&args) {
+    if let Some(out) = moor::sign_in::run(&args).or_else(|| moor::listen_cmd::run(&args, &mut say))
+    {
         return emit(&out);
     }
     let env = Env::capture();

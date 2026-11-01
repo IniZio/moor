@@ -1,7 +1,6 @@
-//! One MCP gate: JSON-RPC calls and the listen stream, with a bearer token from a command.
+//! One MCP gate: JSON-RPC calls and the listen stream, with a bearer token from a [`Bearer`].
 
 use std::io::{BufReader, Cursor, Read};
-use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,6 +10,7 @@ use ureq::Agent;
 
 use crate::idle::Idle;
 use crate::sse::Messages;
+use crate::token::{Bearer, Fail};
 
 /// The MCP version whose `subscriptions/listen` the gate serves.
 const PROTOCOL: &str = "2026-07-28";
@@ -22,40 +22,24 @@ const LIFE: Duration = Duration::from_secs(600);
 /// Time limit of one call and of connecting.
 const CALL: Duration = Duration::from_secs(30);
 
-/// Why a request did not get through.
-#[derive(Debug)]
-pub(crate) enum Fail {
-    /// The gate refused the token (401 or 403).
-    Rejected,
-    /// Anything else, in words for a log line.
-    Other(String),
-}
-
-impl Fail {
-    /// Wraps `why` as an ordinary failure.
-    fn other(why: &impl ToString) -> Self {
-        Self::Other(why.to_string())
-    }
-}
-
 /// A messages stream of an open listen.
 pub(crate) type Stream = Messages<BufReader<Box<dyn Read + Send>>>;
 
-/// The gate at `url`, signed in by whatever `token_cmd` prints.
+/// The gate at `url`, signed in by `bearer`.
 pub(crate) struct Gate {
     /// HTTP client; carries TLS.
     agent: Agent,
     /// The `/mcp` endpoint.
     url: String,
-    /// Shell command whose stdout is the bearer token.
-    token_cmd: String,
+    /// Where tokens come from.
+    bearer: Box<dyn Bearer>,
     /// Silence after which a listen stream counts as dead.
     idle: Duration,
 }
 
 impl Gate {
     /// A gate client; nothing is sent yet.
-    pub(crate) fn new(url: String, token_cmd: String, idle: Duration) -> Self {
+    pub(crate) fn new(url: String, bearer: Box<dyn Bearer>, idle: Duration) -> Self {
         let tls = TlsConfig::builder()
             .provider(TlsProvider::Rustls)
             .root_certs(RootCerts::PlatformVerifier)
@@ -69,25 +53,19 @@ impl Gate {
         Self {
             agent: Agent::new_with_config(config),
             url,
-            token_cmd,
+            bearer,
             idle,
         }
     }
 
-    /// Runs the token command afresh; its output is never logged.
+    /// The token to connect with.
     pub(crate) fn token(&self) -> Result<String, Fail> {
-        let out = Command::new("sh")
-            .args(["-c", &self.token_cmd])
-            .stdin(std::process::Stdio::null())
-            .stderr(std::process::Stdio::inherit())
-            .output()
-            .map_err(|e| Fail::other(&e))?;
-        let token = String::from_utf8_lossy(&out.stdout).trim().to_owned();
-        if out.status.success() && !token.is_empty() {
-            Ok(token)
-        } else {
-            Err(Fail::other(&"the token command gave no token"))
-        }
+        self.bearer.bearer()
+    }
+
+    /// A new token, after the gate refused the last.
+    pub(crate) fn renew(&self) -> Result<String, Fail> {
+        self.bearer.renew()
     }
 
     /// POSTs `method`; the answer is the first message that has an `id`, or the stream.
