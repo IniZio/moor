@@ -21,6 +21,7 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
 
+mod lines;
 mod output;
 mod proxy;
 mod warning;
@@ -84,7 +85,7 @@ fn run_setup(
     cfg: &BoxSettings,
 ) -> SetupRun {
     let logs = super::log_dir(state, BoxId::new(1));
-    run_setup_with(cx, handle, "p", workdir, &logs, cfg, None)
+    run_setup_with(cx, handle, "p", workdir, &logs, cfg, None, &|_| {})
 }
 
 fn exits(codes: &[i32]) -> Vec<Result<ExecOutcome, DriverError>> {

@@ -391,3 +391,5 @@ mod relaunch_tests;
 mod steps;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod timing_tests;

@@ -41,6 +41,7 @@ fn setup_spec(f: &Fx) -> ExecSpec {
         f.dir.path(),
         &cfg,
         proxy.as_ref(),
+        &|_| {},
     );
     f.driver.execs().remove(before).1
 }

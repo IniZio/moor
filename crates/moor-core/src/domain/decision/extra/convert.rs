@@ -46,6 +46,20 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::StepFinished { step, ms, ok } => {
                 Self::Timing(TimingEvent::StepFinished { step, ms, ok })
             }
+            ExtraEvent::SetupLineStarted { index, total, line } => {
+                Self::Timing(TimingEvent::SetupLineStarted { index, total, line })
+            }
+            ExtraEvent::SetupLineFinished {
+                index,
+                total,
+                ms,
+                ok,
+            } => Self::Timing(TimingEvent::SetupLineFinished {
+                index,
+                total,
+                ms,
+                ok,
+            }),
             ExtraEvent::ProfileResolved { repo, sha } => {
                 Self::Profile(ProfileEvent::ProfileResolved { repo, sha })
             }
@@ -160,6 +174,20 @@ impl TryFrom<Event> for ExtraEvent {
             Event::Timing(TimingEvent::StepFinished { step, ms, ok }) => {
                 Ok(Self::StepFinished { step, ms, ok })
             }
+            Event::Timing(TimingEvent::SetupLineStarted { index, total, line }) => {
+                Ok(Self::SetupLineStarted { index, total, line })
+            }
+            Event::Timing(TimingEvent::SetupLineFinished {
+                index,
+                total,
+                ms,
+                ok,
+            }) => Ok(Self::SetupLineFinished {
+                index,
+                total,
+                ms,
+                ok,
+            }),
             Event::Profile(ProfileEvent::ProfileResolved { repo, sha }) => {
                 Ok(Self::ProfileResolved { repo, sha })
             }

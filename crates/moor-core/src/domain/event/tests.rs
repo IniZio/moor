@@ -253,6 +253,17 @@ fn all_events() -> Vec<Event> {
             ms: 7,
             ok: false,
         }),
+        Event::Timing(TimingEvent::SetupLineStarted {
+            index: 3,
+            total: 6,
+            line: s("make setup"),
+        }),
+        Event::Timing(TimingEvent::SetupLineFinished {
+            index: 3,
+            total: 6,
+            ms: 12_000,
+            ok: true,
+        }),
     ]
 }
 
@@ -342,6 +353,8 @@ const fn event_index(e: &Event) -> usize {
         },
         Event::Timing(TimingEvent::StepStarted { .. }) => 66,
         Event::Timing(TimingEvent::StepFinished { .. }) => 67,
+        Event::Timing(TimingEvent::SetupLineStarted { .. }) => 68,
+        Event::Timing(TimingEvent::SetupLineFinished { .. }) => 69,
     }
 }
 
@@ -349,7 +362,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 68);
+    assert_eq!(all.len(), 70);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
@@ -574,19 +587,5 @@ fn profile_events_serialize_flat() {
     assert_eq!(
         failed.payload(),
         serde_json::json!({"step":"fetch","detail":"d"})
-    );
-}
-
-#[test]
-fn a_post_clone_step_serializes_its_name_and_timing() {
-    let done = Event::Timing(TimingEvent::StepFinished {
-        step: PostCloneStep::AgentInstall,
-        ms: 41_000,
-        ok: true,
-    });
-    assert_eq!(done.kind(), "step_finished");
-    assert_eq!(
-        done.payload(),
-        serde_json::json!({"step": "agent_install", "ms": 41_000, "ok": true})
     );
 }
