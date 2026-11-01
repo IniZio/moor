@@ -1,5 +1,9 @@
 //! `moor-notify` against a real `moor controller serve` with a `notify` front socket: the
-//! controller takes the front's identity and email, and serves its watches.
+//! controller answers its claims only when the front's config sets `webhooks: true`.
+//!
+//! A Box event needs a GitHub clone, which a test cannot make, so nothing here is posted:
+//! the tests prove the front claims without refusal and is refused without the setting. The
+//! signed POST itself is proved against the scripted controller in `deliver.rs`.
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -23,7 +27,7 @@ use std::time::Duration;
 mod support;
 
 use support::receiver::Receiver;
-use support::{write_config, Front};
+use support::Front;
 
 /// The `moor` binary next to `moor-notify`, built when it is missing; this crate must not
 /// depend on the `moor` crate, so cargo does not build it for these tests.
@@ -46,14 +50,14 @@ struct Controller(Child);
 
 impl Controller {
     /// Starts it with its state under `root` and waits for its `notify` front socket.
-    fn start(root: &Path) -> (Self, PathBuf) {
+    fn start(root: &Path, front_config: &str) -> (Self, PathBuf) {
         let socket = root.join("c.sock");
         let state = root.join("state");
         let config = root.join("c.yaml");
         std::fs::write(
             &config,
             format!(
-                "socket: {}\nstate_dir: {}\nfronts:\n  notify: {{}}\n",
+                "socket: {}\nstate_dir: {}\nfronts:\n  notify: {front_config}\n",
                 socket.display(),
                 state.display()
             ),
@@ -89,19 +93,56 @@ impl Drop for Controller {
     }
 }
 
+/// Runs `moor` with `args` as a local user of the controller at `socket`, and returns the
+/// JSON envelope it printed.
+fn moor(root: &Path, socket: &Path, args: &[&str]) -> serde_json::Value {
+    let out = Command::new(moor_bin())
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("HOME", root.join("home"))
+        .env("MOOR_CONTROLLER", socket)
+        .arg("--json")
+        .args(args)
+        .output()
+        .unwrap();
+    serde_json::from_slice(&out.stdout).unwrap()
+}
+
 #[test]
-fn a_real_controller_enrolls_the_front_and_serves_its_watch() {
+fn a_real_controller_lets_the_front_claim_a_users_webhooks() {
     let dir = moor_testkit::short_tempdir("notify-real").unwrap();
-    let (_controller, socket) = Controller::start(dir.path());
+    let (_controller, front_socket) = Controller::start(dir.path(), "{webhooks: true}");
     let receiver = Receiver::start(&[]);
-    let config = write_config(dir.path(), "a@example.com", &receiver.url, None);
-    let state = dir.path().join("notify-state");
-    std::fs::create_dir(&state).unwrap();
-    let front = Front::start(&socket, &config, &state);
-    front.wait_for_line("a@example.com: posting idled, setup_failed");
+    let socket = dir.path().join("c.sock");
+    assert_eq!(
+        moor(dir.path(), &socket, &["user", "enroll"])["class"],
+        "ok"
+    );
+    let added = moor(
+        dir.path(),
+        &socket,
+        &["user", "webhook", "add", &receiver.url],
+    );
+    assert_eq!(added["class"], "ok", "{added}");
+    assert_eq!(added["value"]["key"].as_str().map(str::len), Some(64));
+
+    let mut front = Front::start(&front_socket);
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(front.is_running(), "{:#?}", front.lines());
     assert!(
-        !front.lines().iter().any(|l| l.contains("controller:")),
+        front.lines().is_empty(),
         "no controller error: {:#?}",
         front.lines()
     );
+    assert!(receiver.posted().is_empty(), "no event, so no POST");
+}
+
+#[test]
+fn a_front_without_webhooks_true_is_refused_and_exits() {
+    let dir = moor_testkit::short_tempdir("notify-real").unwrap();
+    let (_controller, front_socket) = Controller::start(dir.path(), "{}");
+    let mut front = Front::start(&front_socket);
+    let line = front.wait_for_line("webhooks: true");
+    assert!(line.starts_with("moor-notify: "), "{line}");
+    assert!(!front.wait_for_exit().success());
 }

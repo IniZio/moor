@@ -1,7 +1,7 @@
-//! A scripted controller on a Unix socket: it answers the hello, `enroll` and `show`, ends a
-//! backlog watch caught up at [`TIP`] or the last event, and sends each event to every live
-//! watch. It records what it is sent.
+//! A scripted controller on a Unix socket: it answers the hello, hands queued deliveries to
+//! `webhook-claim` (one per webhook until it is reported) and records every claim and report.
 
+use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
@@ -10,34 +10,36 @@ use std::thread;
 use std::time::Duration;
 
 use moor_core::controller::{parse_frame, ClientFrame, ServerFrame};
-use moor_core::request::Request;
-use moor_core::response::Response;
-use moor_core::{BoxId, SessionId};
+use moor_core::request::{Request, WebhookOutcome};
+use moor_core::response::{ErrorKind, ErrorView, Response};
 use serde_json::{json, Value};
 
-/// Cursor a backlog watch is caught up to while no event was emitted.
-pub(crate) const TIP: i64 = 10;
-
-/// One watch a client opened.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Opened {
-    /// The cursor it resumes after.
-    pub(crate) since: i64,
-    /// Whether it follows.
-    pub(crate) follow: bool,
-    /// The kinds it asked for.
-    pub(crate) kinds: Option<Vec<String>>,
-    /// The identity it asserted.
-    pub(crate) identity: Option<String>,
+/// One queued delivery.
+#[derive(Clone)]
+pub(crate) struct Queued {
+    /// The delivery's id.
+    pub(crate) delivery: i64,
+    /// The webhook it is for.
+    pub(crate) webhook: i64,
+    /// Where to post.
+    pub(crate) url: String,
+    /// The HMAC key.
+    pub(crate) key: String,
+    /// The event kind.
+    pub(crate) event: String,
+    /// The body to post.
+    pub(crate) body: Value,
 }
 
 /// What clients sent.
 #[derive(Default)]
 pub(crate) struct Seen {
-    /// Every watch, in order.
-    pub(crate) watches: Vec<Opened>,
-    /// The command and asserted identity of every request, in order.
-    pub(crate) requests: Vec<(String, Option<String>)>,
+    /// The `(limit, lease_ms)` of every claim.
+    pub(crate) claims: Vec<(u32, u64)>,
+    /// Every report, in order.
+    pub(crate) reports: Vec<(i64, WebhookOutcome)>,
+    /// Whether any request asserted an identity.
+    pub(crate) asserted_identity: bool,
 }
 
 /// State shared with the connection threads.
@@ -45,10 +47,12 @@ pub(crate) struct Seen {
 struct Inner {
     /// What clients sent.
     seen: Seen,
-    /// Every event emitted, oldest first.
-    events: Vec<ServerFrame>,
-    /// Each live watch.
-    live: Vec<UnixStream>,
+    /// Deliveries not yet claimed, oldest first.
+    queue: Vec<Queued>,
+    /// Deliveries claimed and not yet reported.
+    leased: Vec<Queued>,
+    /// When set, `webhook-claim` is refused with this message.
+    refuse: Option<String>,
 }
 
 /// A running scripted controller.
@@ -72,25 +76,22 @@ impl FakeController {
         Self { inner }
     }
 
-    /// Stores an event of `kind` for Box 7 `app/fix` and sends it to every live watch.
-    pub(crate) fn emit(&self, kind: &str, payload: Value) -> i64 {
-        let mut inner = self.lock();
-        let cursor = TIP + 1 + i64::try_from(inner.events.len()).unwrap();
-        let frame = ServerFrame::Event {
-            cursor,
-            r#box: Some("app/fix".to_owned()),
-            box_id: Some(BoxId::new(7)),
-            session: Some(SessionId::new(3)),
-            kind: kind.to_owned(),
-            payload,
-            ts: 1_700_000_000_000 + cursor,
-        };
-        let line = frame.to_line();
-        inner.events.push(frame);
-        inner
-            .live
-            .retain_mut(|stream| stream.write_all(line.as_bytes()).is_ok());
-        cursor
+    /// Queues an `event` delivery for webhook `webhook` at `url`, signed with `key`.
+    pub(crate) fn queue(&self, delivery: i64, webhook: i64, url: &str, key: &str, event: &str) {
+        self.lock().queue.push(Queued {
+            delivery,
+            webhook,
+            url: url.to_owned(),
+            key: key.to_owned(),
+            event: event.to_owned(),
+            body: json!({"schema": "moor.notify/1", "delivery": delivery, "event": event,
+                         "box": "app/fix", "data": {"n": delivery}}),
+        });
+    }
+
+    /// Refuses every claim with `message`.
+    pub(crate) fn refuse_claims(&self, message: &str) {
+        self.lock().refuse = Some(message.to_owned());
     }
 
     /// Reads what clients sent so far.
@@ -98,9 +99,9 @@ impl FakeController {
         read(&self.lock().seen)
     }
 
-    /// Waits until `done` holds for what clients sent; fails the test after 10 s.
+    /// Waits until `done` holds for what clients sent; fails the test after 30 s.
     pub(crate) fn wait_until(&self, what: &str, done: impl Fn(&Seen) -> bool) {
-        for _ in 0..500 {
+        for _ in 0..1500 {
             if self.seen(&done) {
                 return;
             }
@@ -115,7 +116,7 @@ impl FakeController {
     }
 }
 
-/// Serves one connection until the client leaves, or a backlog watch is caught up.
+/// Serves one connection until the client leaves.
 fn serve(stream: UnixStream, inner: &Mutex<Inner>) {
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut writer = stream;
@@ -123,83 +124,72 @@ fn serve(stream: UnixStream, inner: &Mutex<Inner>) {
     while reader.read_line(&mut line).unwrap_or(0) > 0 {
         let frame = parse_frame(line.trim_end()).unwrap();
         line.clear();
-        let mut inner = inner.lock().unwrap();
         let reply = match frame {
             ClientFrame::Hello { protocol } => ServerFrame::Hello { protocol },
             ClientFrame::Request { id, request } => {
-                let envelope = answer(*request, &mut inner);
+                let envelope = answer(*request, &mut inner.lock().unwrap());
                 ServerFrame::Response { id, envelope }
             }
-            ClientFrame::Watch {
-                since,
-                kinds,
-                follow,
-                identity,
-                ..
-            } => {
-                inner.seen.watches.push(Opened {
-                    since,
-                    follow,
-                    kinds,
-                    identity: identity.map(|i| i.to_string()),
-                });
-                let backlog: String = inner
-                    .events
-                    .iter()
-                    .filter(|f| matches!(f, ServerFrame::Event { cursor, .. } if *cursor > since))
-                    .map(ServerFrame::to_line)
-                    .collect();
-                if follow {
-                    if writer.write_all(backlog.as_bytes()).is_ok() {
-                        inner.live.push(writer.try_clone().unwrap());
-                    }
-                    continue;
-                }
-                let tip = TIP + i64::try_from(inner.events.len()).unwrap();
-                let _ = writer.write_all(backlog.as_bytes());
-                let _ =
-                    writer.write_all(ServerFrame::CaughtUp { cursor: tip }.to_line().as_bytes());
-                return;
-            }
-            ClientFrame::Bytes { .. } | ClientFrame::Resize { .. } => return,
+            _ => return,
         };
-        drop(inner);
         if writer.write_all(reply.to_line().as_bytes()).is_err() {
             return;
         }
     }
 }
 
-/// The answer to `request`, recorded with the identity it asserted.
+/// The answer to `request`, recorded.
 fn answer(request: Request, inner: &mut Inner) -> Response {
-    let (identity, request) = match request {
-        Request::As(act) => (Some(act.identity.to_string()), *act.request),
-        bare => (None, bare),
-    };
-    let cmd = match &request {
-        Request::Enroll(enroll) => {
-            assert_eq!(
-                enroll.email.as_ref().map(|e| e.as_str().to_owned()),
-                identity
-                    .as_deref()
-                    .and_then(|i| i.strip_prefix("notify:"))
-                    .map(str::to_owned),
-                "enroll sends the hook's email"
-            );
-            "enroll"
+    match request {
+        Request::WebhookClaim(claim) => {
+            inner.seen.claims.push((claim.limit, claim.lease_ms));
+            if let Some(why) = &inner.refuse {
+                return refusal("webhook-claim", why);
+            }
+            let mut busy: HashSet<i64> = inner.leased.iter().map(|d| d.webhook).collect();
+            let mut handed = Vec::new();
+            let mut kept = Vec::new();
+            for d in std::mem::take(&mut inner.queue) {
+                if handed.len() < claim.limit as usize && busy.insert(d.webhook) {
+                    handed.push(d);
+                } else {
+                    kept.push(d);
+                }
+            }
+            inner.queue = kept;
+            let deliveries: Vec<Value> = handed
+                .iter()
+                .map(|d| {
+                    json!({"delivery": d.delivery, "webhook": d.webhook, "url": d.url,
+                           "key": d.key, "event": d.event, "body": d.body})
+                })
+                .collect();
+            inner.leased.extend(handed);
+            Response::ok("webhook-claim", Some(json!({"deliveries": deliveries})))
         }
-        Request::Show(_) => "show",
+        Request::WebhookReport(report) => {
+            inner.leased.retain(|d| d.delivery != report.delivery);
+            inner.seen.reports.push((report.delivery, report.outcome));
+            Response::ok("webhook-report", Some(json!({"delivery": report.delivery})))
+        }
+        Request::As(_) => {
+            inner.seen.asserted_identity = true;
+            refusal("as", "the front asserts no identity")
+        }
         other => panic!("unexpected request {other:?}"),
-    };
-    inner.seen.requests.push((cmd.to_owned(), identity));
-    let value = match cmd {
-        "show" => json!({"box": {
-            "name": "app/fix",
-            "lifecycle": "ready",
-            "session_state": "idle",
-            "said": {"text": "Opened the PR.", "at": "2026-11-01T00:00:00Z"},
-        }}),
-        _ => json!({}),
-    };
-    Response::ok(cmd, Some(value))
+    }
+}
+
+/// A refusal of `cmd` with `message`.
+fn refusal(cmd: &str, message: &str) -> Response {
+    Response::err(
+        cmd,
+        ErrorView {
+            kind: ErrorKind::Refused,
+            message: message.to_owned(),
+            hints: Vec::new(),
+            context: Vec::new(),
+            detail: None,
+        },
+    )
 }

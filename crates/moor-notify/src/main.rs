@@ -2,10 +2,13 @@
 
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::time::Duration;
 
 use clap::Parser;
+use moor_client::Client;
+use moor_notify::work::{self, Options};
 
-/// Posts each configured user's Box events to their webhook.
+/// Posts the controller's queued webhook deliveries.
 #[derive(Parser)]
 #[command(name = "moor-notify", version)]
 struct Args {
@@ -13,19 +16,19 @@ struct Args {
     /// controller sets when it runs the front.
     #[arg(long, env = "MOOR_FRONT_SOCKET")]
     socket: PathBuf,
-    /// The hooks file.
-    #[arg(long, env = "MOOR_NOTIFY_CONFIG")]
-    config: PathBuf,
-    /// Where each hook's cursor is kept; defaults to `$MOOR_FRONT_STATE_DIR`. Without one,
-    /// each start posts only events newer than itself.
-    #[arg(long, env = "MOOR_FRONT_STATE_DIR")]
-    state_dir: Option<PathBuf>,
+    /// How long to wait, in milliseconds, before claiming again after a claim found nothing.
+    #[arg(long, default_value_t = 1000)]
+    poll_ms: u64,
 }
 
 fn main() -> ExitCode {
     let args = Args::parse();
     let log = moor_notify::stderr_log();
-    match moor_notify::serve(&args.socket, &args.config, args.state_dir, &log) {
+    let options = Options {
+        poll: Duration::from_millis(args.poll_ms),
+        ..Options::default()
+    };
+    match work::run(&Client::new(&args.socket), &options, &log) {
         Ok(()) => ExitCode::SUCCESS,
         Err(why) => {
             log(&why);

@@ -2,8 +2,7 @@
 //! and a webhook receiver.
 
 use std::io::{BufRead, BufReader};
-use std::os::unix::fs::PermissionsExt as _;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -11,30 +10,6 @@ use std::time::Duration;
 
 pub(crate) mod controller;
 pub(crate) mod receiver;
-
-/// The HMAC key every test hook signs with.
-pub(crate) const KEY: &str = "test-key";
-
-/// Writes a hooks file for `email` posting `events` (the defaults when none) to `url`, with
-/// its key file beside it, and returns the config path.
-pub(crate) fn write_config(dir: &Path, email: &str, url: &str, events: Option<&str>) -> PathBuf {
-    let key = dir.join("key");
-    std::fs::write(&key, format!("{KEY}\n")).unwrap();
-    std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
-    let events = events
-        .map(|e| format!("    events: {e}\n"))
-        .unwrap_or_default();
-    let config = dir.join("notify.yaml");
-    std::fs::write(
-        &config,
-        format!(
-            "hooks:\n  - email: {email}\n    url: {url}\n    secret_file: {}\n{events}",
-            key.display()
-        ),
-    )
-    .unwrap();
-    config
-}
 
 /// A running `moor-notify`, killed on drop, with every stderr line it wrote.
 pub(crate) struct Front {
@@ -45,18 +20,15 @@ pub(crate) struct Front {
 }
 
 impl Front {
-    /// Runs the front on `socket` with `config` and state under `state`, with no proxy in its
-    /// environment so it reaches the loopback receiver directly.
-    pub(crate) fn start(socket: &Path, config: &Path, state: &Path) -> Self {
+    /// Runs the front on `socket`, polling every 20 ms, with no proxy in its environment so
+    /// it reaches the loopback receiver directly.
+    pub(crate) fn start(socket: &Path) -> Self {
         let mut child = Command::new(env!("CARGO_BIN_EXE_moor-notify"))
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
             .arg("--socket")
             .arg(socket)
-            .arg("--config")
-            .arg(config)
-            .arg("--state-dir")
-            .arg(state)
+            .args(["--poll-ms", "20"])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
@@ -82,6 +54,22 @@ impl Front {
             thread::sleep(Duration::from_millis(20));
         }
         panic!("no log line with {text:?} in {:#?}", self.lines());
+    }
+
+    /// Whether the process is still running.
+    pub(crate) fn is_running(&mut self) -> bool {
+        self.child.try_wait().unwrap().is_none()
+    }
+
+    /// Waits for the process to exit and returns how; fails the test after 30 s.
+    pub(crate) fn wait_for_exit(&mut self) -> std::process::ExitStatus {
+        for _ in 0..1500 {
+            if let Some(status) = self.child.try_wait().unwrap() {
+                return status;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        panic!("the front never exited");
     }
 
     /// Every log line so far.
