@@ -27,10 +27,16 @@ fn load_text(n: &Value) -> Option<String> {
         .and_then(Value::as_u64)
         .map_or_else(|| "-".to_owned(), |m| m.to_string());
     let mem = match (
-        n.get("mem_used_mib").and_then(Value::as_u64),
-        n.get("mem_offered_mib").and_then(Value::as_u64),
+        n.get("mem_free_mib").and_then(Value::as_u64),
+        n.get("mem_report_age_secs").and_then(Value::as_i64),
     ) {
-        (Some(u), Some(o)) => format!("  {}/{} mem", gib(u), gib(o)),
+        (Some(free), Some(age)) => {
+            let psi = n
+                .get("mem_psi_centi")
+                .and_then(Value::as_u64)
+                .map_or_else(String::new, |p| format!(" psi {}.{:02}", p / 100, p % 100));
+            format!("  {} free{psi} {age}s ago", gib(free))
+        }
         _ => String::new(),
     };
     Some(format!("{used}/{cap}{mem}"))

@@ -4,20 +4,23 @@ use std::time::Duration;
 
 use moor_core::config::{BoxSettings, Flags};
 use moor_core::domain::box_state::BoxLifecycle;
+use moor_core::domain::boxes::BoxState;
 use moor_core::name::NodeName;
-use moor_core::{BoxId, BoxName, Warning};
+use moor_core::{BoxId, BoxName, ErrorKind, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::facts::settings_of;
 use crate::ops::common::provision::{provision, reread, Entry};
+use crate::ops::common::wake::wake_and_revive;
 use crate::store::Store;
 
 /// How long `close` waits for a waiter's Box lock before skipping that waiter.
 pub(crate) const PROMOTE_WAIT: Duration = Duration::from_secs(1);
 
-/// Starts the Boxes pending on `node`, oldest first, while it has room for them.
+/// Starts the Boxes pending on `node`, or wakes the asleep ones waiting for room, oldest first,
+/// while it has room for them.
 ///
 /// Returns the names of the Boxes that left Pending, in order. Best effort: a Box that cannot
 /// be started, or an error that stops the pass, becomes a warning and the pass ends with what it did.
@@ -40,6 +43,8 @@ fn promote_into(
     op: &str,
     promoted: &mut Vec<BoxName>,
 ) -> Result<(), CommandError> {
+    let (all, _) = crate::ops::common::node::nodes(cx)?;
+    let reports_memory = all.iter().any(|n| &n.name == node && n.memory.is_some());
     for id in store.pending_on(node)? {
         let Some(row) = store.box_row(id)? else {
             continue;
@@ -60,6 +65,10 @@ fn promote_into(
             cx.for_box(row.user, || promote_one(cx, store, id, &row.name, op, &cfg))?
         {
             promoted.push(name);
+            // A Box that came up since the node's last report is not in it yet; the next report counts it.
+            if reports_memory {
+                break;
+            }
         }
     }
     Ok(())
@@ -88,11 +97,24 @@ fn promote_one(
     if row.lifecycle != BoxLifecycle::Pending || row.intent.is_some() {
         return Ok(None);
     }
-    if let Err(e) = provision(cx, store, id, Entry::Waiting, cfg) {
-        cx.warn(Warning {
-            code: "promote_failed".to_owned(),
-            message: format!("cannot promote {}: {}", row.name.as_str(), e.error),
-        });
+    let asleep = row
+        .boxed
+        .as_ref()
+        .is_some_and(|b| b.state == BoxState::Asleep);
+    let started = if asleep {
+        wake_and_revive(cx, store, &row).map(|_| ())
+    } else {
+        provision(cx, store, id, Entry::Waiting, cfg).map(|_| ())
+    };
+    if let Err(e) = started {
+        let still_waits =
+            e.kind == ErrorKind::Refused && reread(store, id)?.lifecycle == BoxLifecycle::Pending;
+        if !still_waits {
+            cx.warn(Warning {
+                code: "promote_failed".to_owned(),
+                message: format!("cannot promote {}: {}", row.name.as_str(), e.error),
+            });
+        }
         return Ok(None);
     }
     let after = reread(store, id)?;

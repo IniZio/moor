@@ -52,6 +52,7 @@ pub fn lifecycle_events(
             reason: reason.clone(),
         }],
         BoxLifecycleInput::Wake => vec![Event::Woke],
+        BoxLifecycleInput::WaitForRoom => vec![],
         BoxLifecycleInput::Close => vec![Event::Closed { from: origin }],
     }
 }

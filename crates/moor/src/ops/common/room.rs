@@ -2,67 +2,50 @@
 
 use std::time::Duration;
 
-use moor_core::decide::preempt::{make_room, suspendable, Resident, Room};
-use moor_core::decide::schedule::{BoxSpec, Node, Verdict};
+use moor_core::decide::preempt::{longest_idle, suspendable, Resident};
+use moor_core::decide::schedule::{Node, Shortfall};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::name::BoxId;
 use moor_core::seam::driver::SleepOutcome;
-use moor_core::ErrorKind;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::autosleep::{sleep_handle, sleep_parked};
 use crate::ops::common::boxlock::BoxLock;
-use crate::ops::common::node::{recorded, verdict};
+use crate::ops::common::node::{now, recorded};
 use crate::store::{BoxRow, Store};
 
-/// Suspends Boxes on `node` until one needing `need_mib` fits, when its Box count
-/// has room. False when it still does not fit; then nothing more is suspended.
+/// Suspends the longest-idle Box on `node` when it is short of memory, so that a Box waiting
+/// for it starts once the node reports the memory freed. Nothing when its report is stale, its
+/// Box count is full, or no Box there is idle.
 pub(crate) fn make_room_on(
     cx: &Cx,
     store: &Store,
     node: &Node,
-    need_mib: u64,
     for_box: &str,
-) -> Result<bool, CommandError> {
-    let Some(m) = node.memory else {
-        return Ok(false);
-    };
-    if node.max_boxes.is_some_and(|max| node.used >= max) {
-        return Ok(false);
+) -> Result<(), CommandError> {
+    let short = node.memory.and_then(|m| m.shortfall(now(cx)));
+    if !matches!(short, Some(Shortfall::Low { .. } | Shortfall::Pressure))
+        || node.max_boxes.is_some_and(|max| node.used >= max)
+    {
+        return Ok(());
     }
-    let residents = residents(store, node)?;
-    // An over-committed node must first win back what it holds beyond its offer.
-    let over_mib = m.used_mib.saturating_sub(m.offered_mib());
-    match make_room(m.free_mib(), need_mib.saturating_add(over_mib), &residents) {
-        Room::Fits => Ok(true),
-        Room::Short => Ok(false),
-        Room::Suspend(ids) => {
-            for id in ids {
-                if !suspend(cx, store, id, &format!("made room for {for_box}"))? {
-                    return Ok(false);
-                }
-            }
-            Ok(true)
-        }
-    }
-}
-
-/// The Boxes up on `node`, as the preemption decider sees them.
-fn residents(store: &Store, node: &Node) -> Result<Vec<Resident>, CommandError> {
-    let mut out = Vec::new();
-    for (id, mem_mib) in store.ready_on(&node.name)? {
+    let mut residents = Vec::new();
+    for id in store.ready_on(&node.name)? {
         if let Some(row) = store.box_row(id)? {
-            out.push(resident(store, &row, mem_mib)?);
+            residents.push(resident(store, &row)?);
         }
     }
-    Ok(out)
+    if let Some(id) = longest_idle(&residents) {
+        suspend(cx, store, id, &format!("made room for {for_box}"))?;
+    }
+    Ok(())
 }
 
 /// A Box on a node as the suspend choice sees it.
-fn resident(store: &Store, row: &BoxRow, mem_mib: u64) -> Result<Resident, CommandError> {
+fn resident(store: &Store, row: &BoxRow) -> Result<Resident, CommandError> {
     let needs_input = store
         .last_waiting_marker(row.id)?
         .is_some_and(|e| e.kind == "needs_input");
@@ -72,7 +55,6 @@ fn resident(store: &Store, row: &BoxRow, mem_mib: u64) -> Result<Resident, Comma
         session: row.session,
         needs_input,
         idle_since: row.idle_since,
-        mem_mib,
     })
 }
 
@@ -85,7 +67,7 @@ fn suspend(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bool, Comm
     let Some(row) = store.box_row(id)? else {
         return Ok(false);
     };
-    if row.lifecycle != BoxLifecycle::Ready || !suspendable(&resident(store, &row, 0)?) {
+    if row.lifecycle != BoxLifecycle::Ready || !suspendable(&resident(store, &row)?) {
         return Ok(false);
     }
     let Ok(handle) = sleep_handle(cx, &row) else {
@@ -113,29 +95,19 @@ fn suspend(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bool, Comm
     Ok(true)
 }
 
-/// Before an asleep Box resumes: makes room for it there, or
-/// refuses with the node's shortfall.
-pub(crate) fn room_to_wake(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
+/// Before an asleep Box resumes: why its node has no room for it, after suspending an idle Box
+/// there to make some; `None` when it may wake now.
+pub(crate) fn room_to_wake(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+) -> Result<Option<String>, CommandError> {
     let Some(node) = recorded(cx, store, row)? else {
-        return Ok(());
+        return Ok(None);
     };
-    let Some(m) = node.memory else {
-        return Ok(());
+    let Some(short) = node.memory.and_then(|m| m.shortfall(now(cx))) else {
+        return Ok(None);
     };
-    let spec = store.box_spec(row.id)?;
-    if m.free_mib() >= spec.mem_mib
-        || make_room_on(cx, store, &node, spec.mem_mib, row.name.as_str())?
-    {
-        return Ok(());
-    }
-    let on_it = BoxSpec {
-        node: Some(node.name.clone()),
-        ..spec
-    };
-    let reason = match verdict(cx, (&[node], None), row.user, &on_it) {
-        Verdict::Pending { reason, .. } | Verdict::Fail { reason } => reason,
-        Verdict::Bind { node, .. } => format!("{node} has no idle Box to suspend for this one"),
-    };
-    Err(CommandError::new(ErrorKind::Refused, reason)
-        .with_hint("close or finish a Box on that node, then wake this one"))
+    make_room_on(cx, store, &node, row.name.as_str())?;
+    Ok(Some(short.reason(&node.name)))
 }

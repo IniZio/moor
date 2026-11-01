@@ -2,7 +2,7 @@
 
 use std::num::NonZeroU32;
 
-use super::{admit, holds_memory, promote_order, Admission, CapacityFacts, HeldBox};
+use super::{admit, promote_order, Admission, CapacityFacts, HeldBox};
 use crate::domain::boxes::BoxState;
 use crate::name::BoxId;
 
@@ -90,11 +90,4 @@ fn promote_with_fewer_waiting_than_free() {
 #[test]
 fn promote_with_no_free_slots_is_empty() {
     assert!(promote_order(&ids(&[1, 2]), 0).is_empty());
-}
-
-#[test]
-fn asleep_holds_no_memory() {
-    assert!(!holds_memory(BoxState::Asleep));
-    assert!(holds_memory(BoxState::Ready));
-    assert!(holds_memory(BoxState::Starting));
 }

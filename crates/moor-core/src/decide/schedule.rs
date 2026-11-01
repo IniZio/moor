@@ -50,20 +50,33 @@ pub struct Node {
     pub used: usize,
     /// Boxes already pending on it.
     pub waiting: usize,
-    /// Its host memory; `None` when its agent does not report it, so only the count limits it.
+    /// Its live memory; `None` when its agent has never reported it, so only the count limits it.
     pub memory: Option<Memory>,
 }
 
-/// The memory a node's host offers its Boxes, in MiB.
+/// A node's latest live memory report and the Boxes booting on it, in MiB.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Memory {
     /// The host's total memory.
     pub total_mib: u64,
     /// What stays with the host; `None` means [`default_reserve_mib`].
     pub reserve_mib: Option<u64>,
-    /// What its Boxes holding memory were given.
-    pub used_mib: u64,
+    /// The host's `MemAvailable` when it last reported.
+    pub available_mib: u64,
+    /// The host's memory pressure, PSI `some avg10` in hundredths; `None` when it has no PSI.
+    pub psi_centi: Option<u32>,
+    /// When it last reported, unix seconds.
+    pub reported_at: i64,
+    /// Boxes Starting on it.
+    pub starting: usize,
 }
+
+/// What one more Box must find free to boot.
+pub const BOOT_FLOOR_MIB: u64 = 2048;
+/// How old a memory report may be before the node starts nothing more.
+pub const REPORT_FRESH_SECS: i64 = 60;
+/// PSI `some avg10`, in hundredths, at and above which the node starts nothing more.
+pub const PSI_LIMIT_CENTI: u32 = 1000;
 
 /// The host's share when none is configured: 4 GiB plus a tenth of `total_mib`.
 #[must_use]
@@ -71,21 +84,67 @@ pub const fn default_reserve_mib(total_mib: u64) -> u64 {
     4096 + total_mib / 10
 }
 
-impl Memory {
-    /// What Boxes may use in all: the total less the reserve.
+/// Why a node has no room for one more Box.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Shortfall {
+    /// Its last memory report is too old.
+    Stale,
+    /// Its host is under memory pressure.
+    Pressure,
+    /// Too little is free.
+    Low {
+        /// What is free for another Box.
+        free_mib: u64,
+    },
+}
+
+impl Shortfall {
+    /// Why a Box waits for `node`, for the user.
     #[must_use]
-    pub const fn offered_mib(&self) -> u64 {
-        let reserve = match self.reserve_mib {
+    pub fn reason(&self, node: &NodeName) -> String {
+        match self {
+            Self::Stale => format!("no recent memory report from {node}"),
+            Self::Pressure => format!("memory pressure on {node}"),
+            Self::Low { free_mib } => format!(
+                "waiting for capacity on {node}: {} free, needs {}",
+                gib(*free_mib),
+                gib(BOOT_FLOOR_MIB)
+            ),
+        }
+    }
+}
+
+impl Memory {
+    /// What stays with the host.
+    #[must_use]
+    pub const fn reserve(&self) -> u64 {
+        match self.reserve_mib {
             Some(r) => r,
             None => default_reserve_mib(self.total_mib),
-        };
-        self.total_mib.saturating_sub(reserve)
+        }
     }
 
-    /// What is left for another Box.
+    /// What is free for another Box: available less the reserve and a boot floor per Box
+    /// Starting, since a booting guest has not shown up in the report yet.
     #[must_use]
     pub const fn free_mib(&self) -> u64 {
-        self.offered_mib().saturating_sub(self.used_mib)
+        let booting = BOOT_FLOOR_MIB.saturating_mul(self.starting as u64);
+        self.available_mib
+            .saturating_sub(self.reserve())
+            .saturating_sub(booting)
+    }
+
+    /// Why one more Box does not fit at `now`, unix seconds; `None` when it does.
+    #[must_use]
+    pub fn shortfall(&self, now: i64) -> Option<Shortfall> {
+        if now.saturating_sub(self.reported_at) > REPORT_FRESH_SECS {
+            return Some(Shortfall::Stale);
+        }
+        if self.psi_centi.is_some_and(|p| p >= PSI_LIMIT_CENTI) {
+            return Some(Shortfall::Pressure);
+        }
+        let free_mib = self.free_mib();
+        (free_mib < BOOT_FLOOR_MIB).then_some(Shortfall::Low { free_mib })
     }
 }
 
@@ -254,10 +313,9 @@ pub fn schedule(
             .filter(|n| n.scope != Scope::Shared || Some(&n.name) == default)
             .collect()
     };
-    order.first().map_or_else(
-        || nowhere(default),
-        |first| place(first, spec.mem_mib, default, now),
-    )
+    order
+        .first()
+        .map_or_else(|| nowhere(default), |first| place(first, default, now))
 }
 
 /// Personal nodes by enrollment then machine id, then the shared ones with the default first.
@@ -286,7 +344,7 @@ fn ordered<'a>(nodes: &[&'a Node], requester: UserId, default: Option<&NodeName>
 }
 
 /// Judges the first node in order: offline fails, full by count or memory waits, otherwise binds.
-fn place(n: &Node, mem_mib: u64, default: Option<&NodeName>, now: i64) -> Verdict {
+fn place(n: &Node, default: Option<&NodeName>, now: i64) -> Verdict {
     if let Online::Offline { since } = n.online {
         let at = ago(since, now);
         return fail(match default {
@@ -311,19 +369,13 @@ fn place(n: &Node, mem_mib: u64, default: Option<&NodeName>, now: i64) -> Verdic
                 n.name, n.used, n.waiting
             ),
         },
-        _ => match n.memory {
-            Some(m) if m.free_mib() < mem_mib => Verdict::Pending {
+        _ => n.memory.and_then(|m| m.shortfall(now)).map_or_else(
+            || bind(n),
+            |short| Verdict::Pending {
                 node: n.name.clone(),
-                reason: format!(
-                    "{} has {} free of {}; this Box needs {}",
-                    n.name,
-                    gib(m.free_mib()),
-                    gib(m.offered_mib()),
-                    gib(mem_mib)
-                ),
+                reason: short.reason(&n.name),
             },
-            _ => bind(n),
-        },
+        ),
     }
 }
 

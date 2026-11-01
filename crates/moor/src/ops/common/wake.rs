@@ -73,11 +73,12 @@ struct Woke {
 
 /// Wake the Box and machine when Asleep and report what was woken.
 fn wake(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Woke, CommandError> {
-    let row_asleep = row.lifecycle == BoxLifecycle::Asleep;
     let box_asleep = row
         .boxed
         .as_ref()
         .is_some_and(|b| b.state == BoxState::Asleep);
+    let row_asleep = row.lifecycle == BoxLifecycle::Asleep
+        || (row.lifecycle == BoxLifecycle::Pending && box_asleep);
     if !row_asleep && !box_asleep {
         return Ok(Woke {
             any: false,
@@ -93,7 +94,9 @@ fn wake(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Woke, CommandError> {
             let handle = b.handle.as_ref().ok_or_else(|| {
                 CommandError::new(ErrorKind::Refused, "the Box has not been acquired")
             })?;
-            room_to_wake(cx, store, row)?;
+            if let Some(reason) = room_to_wake(cx, store, row)? {
+                return Err(wait_for_room(store, row, reason)?);
+            }
             cx.driver().wake(handle)?;
             if b.workdir
                 .as_deref()
@@ -123,6 +126,24 @@ fn wake(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Woke, CommandError> {
         any: true,
         box_resumed: box_asleep,
     })
+}
+
+/// Leaves an asleep Box Pending for `reason` until its node has room; a promotion wakes it then.
+fn wait_for_room(
+    store: &Store,
+    row: &BoxRow,
+    reason: String,
+) -> Result<CommandError, CommandError> {
+    let mut d = Decision::new(row.id).set(Fields {
+        state_reason: Field::Set(reason.clone()),
+        ..Fields::default()
+    });
+    if row.lifecycle == BoxLifecycle::Asleep {
+        d = d.lifecycle(BoxLifecycleInput::WaitForRoom);
+    }
+    store.apply(d)?;
+    Ok(CommandError::new(ErrorKind::Refused, reason)
+        .with_hint("it wakes on its own once its node has room"))
 }
 
 /// Wake the open Box named by `req` under its Box lock and build the value.

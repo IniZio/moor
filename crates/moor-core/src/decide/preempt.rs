@@ -18,19 +18,6 @@ pub struct Resident {
     pub needs_input: bool,
     /// When it last became Idle.
     pub idle_since: Option<Ts>,
-    /// The guest memory it holds, in MiB.
-    pub mem_mib: u64,
-}
-
-/// How a node short of memory makes room for one more Box.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Room {
-    /// It fits without suspending anything.
-    Fits,
-    /// Suspending these Boxes, longest idle first, frees enough.
-    Suspend(Vec<BoxId>),
-    /// Even suspending every idle Box would not free enough, so none is suspended.
-    Short,
 }
 
 /// Whether suspending `r` cannot lose work: it is up and its agent waits on nothing.
@@ -42,24 +29,14 @@ pub fn suspendable(r: &Resident) -> bool {
         && r.idle_since.is_some()
 }
 
-/// Picks the fewest longest-idle Boxes whose memory lets `need_mib` fit in `free_mib`.
+/// The Box that has been idle longest among those whose suspension cannot lose work.
 #[must_use]
-pub fn make_room(free_mib: u64, need_mib: u64, residents: &[Resident]) -> Room {
-    if free_mib >= need_mib {
-        return Room::Fits;
-    }
-    let mut idle: Vec<&Resident> = residents.iter().filter(|r| suspendable(r)).collect();
-    idle.sort_by_key(|r| (r.idle_since.map(Ts::as_millis), r.id));
-    let mut free = free_mib;
-    let mut picked = Vec::new();
-    for r in idle {
-        picked.push(r.id);
-        free = free.saturating_add(r.mem_mib);
-        if free >= need_mib {
-            return Room::Suspend(picked);
-        }
-    }
-    Room::Short
+pub fn longest_idle(residents: &[Resident]) -> Option<BoxId> {
+    residents
+        .iter()
+        .filter(|r| suspendable(r))
+        .min_by_key(|r| (r.idle_since.map(Ts::as_millis), r.id))
+        .map(|r| r.id)
 }
 
 #[cfg(test)]

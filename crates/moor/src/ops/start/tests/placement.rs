@@ -50,6 +50,7 @@ fn link(w: &World, machine_id: i64, online: bool, max_boxes: Option<u32>) {
         mem_mib: None,
         cpus: None,
         reserve_mib: None,
+        memory: None,
     };
     nodes::set_links(&w.cx, &[link]).unwrap();
 }
@@ -228,6 +229,7 @@ fn cached_world(features: &[&str], online: bool) -> World {
         mem_mib: None,
         cpus: None,
         reserve_mib: None,
+        memory: None,
     };
     nodes::set_links(&w.cx, &[link]).unwrap();
     w
@@ -260,59 +262,8 @@ fn a_shared_node_keeps_the_runtimes_own_cache_volumes() {
     assert!(planned_volumes(&w) > Some(0));
 }
 
-/// Links machine `machine_id` online with `mem_mib` of host memory and a `reserve_mib` reserve.
-fn link_memory(w: &World, machine_id: i64, mem_mib: u64, reserve_mib: u64) {
-    let link = MachineLink {
-        machine_id,
-        online: true,
-        since: Ts::from_millis(1),
-        version: None,
-        protocol: None,
-        max_boxes: None,
-        cache_gb: None,
-        features: Vec::new(),
-        mem_mib: Some(mem_mib),
-        cpus: None,
-        reserve_mib: Some(reserve_mib),
-    };
-    nodes::set_links(&w.cx, &[link]).unwrap();
-}
-
-/// A node with room for exactly one small Box (4 GiB) after its reserve.
-fn one_small_box_world() -> World {
-    let w = world();
-    let hv = enrolled(&w, "hv", Some(true), None);
-    link_memory(&w, hv, 8192, 4096);
-    w
-}
-
-#[test]
-fn a_close_that_frees_memory_starts_the_pending_box() {
-    let w = one_small_box_world();
-    start::run(&w.cx, &req("holder")).unwrap();
-    let waiter = start::run(&w.cx, &req("waiter")).unwrap();
-    assert!(waiter.queued);
-    let closed = close::run(
-        &w.cx,
-        &CloseReq {
-            target: BoxName::parse_allow_bare("holder").unwrap().into(),
-            force: true,
-        },
-    )
-    .unwrap();
-    assert_eq!(closed.promoted, ["waiter"]);
-}
-
-/// A node that reports no features, with room for `boxes` small Boxes after its reserve.
-fn suspending_world(boxes: u64) -> World {
-    suspending_world_with(FakeDriver::new(), boxes)
-}
-
-fn suspending_world_with(driver: FakeDriver, boxes: u64) -> World {
-    let yaml = "nodes: {ci: {runtime: local-container, max_boxes: 1}, \
-                big: {runtime: local-container, max_boxes: 1}}\nbox: {node: ci}";
-    let w = world_with(driver, parse_user("config.yaml", yaml).unwrap());
-    let hv = enrolled(&w, "hv", Some(true), None);
+/// Links machine `hv` online with a 4 GiB reserve, reporting `available_mib` and `psi_centi` now.
+fn report(w: &World, hv: i64, available_mib: u64, psi_centi: Option<u32>) {
     let link = MachineLink {
         machine_id: hv,
         online: true,
@@ -322,13 +273,31 @@ fn suspending_world_with(driver: FakeDriver, boxes: u64) -> World {
         max_boxes: None,
         cache_gb: None,
         features: vec![],
-        mem_mib: Some(4096 + boxes * 4096),
+        mem_mib: Some(65_536),
         cpus: None,
         reserve_mib: Some(4096),
+        memory: Some(moor_core::request::MemoryReport {
+            at: w.cx.clock().now(),
+            available_mib,
+            total_mib: 65_536,
+            psi_centi,
+        }),
     };
     nodes::set_links(&w.cx, &[link]).unwrap();
-    w
 }
+
+/// A personal node `hv` that has just reported `available_mib`.
+fn live_world(available_mib: u64) -> (World, i64) {
+    let yaml = "nodes: {ci: {runtime: local-container, max_boxes: 1}}\nbox: {node: ci}";
+    let w = world_with(FakeDriver::new(), parse_user("config.yaml", yaml).unwrap());
+    let hv = enrolled(&w, "hv", Some(true), None);
+    report(&w, hv, available_mib, None);
+    (w, hv)
+}
+
+/// Room for one Box after the 4 GiB reserve, and short of one.
+const ROOM: u64 = 4096 + 2048;
+const SHORT: u64 = 4096 + 1024;
 
 fn started(w: &World, name: &str) -> BoxId {
     let v = start::run(&w.cx, &req(name)).unwrap();
@@ -336,18 +305,27 @@ fn started(w: &World, name: &str) -> BoxId {
     BoxId::new(v.boxed.id)
 }
 
+/// Starts `name`, which must wait; its Pending reason.
+fn waits(w: &World, name: &str) -> (BoxId, String) {
+    let v = start::run(&w.cx, &req(name)).unwrap();
+    assert!(v.queued, "{name} should wait");
+    let id = BoxId::new(v.boxed.id);
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
+    (id, row.state_reason.unwrap_or_default())
+}
+
 fn apply(w: &World, d: moor_core::domain::decision::Decision) {
     w.cx.store().unwrap().apply(d).unwrap();
 }
 
-/// Settles `id`'s agent Idle, then lets a minute pass so later Boxes are idle for less.
+/// Settles `id`'s agent Idle, then lets a few seconds pass so later Boxes are idle for less.
 fn idle(w: &World, id: BoxId) {
     use moor_core::domain::session_state::SessionInput;
     apply(
         w,
         moor_core::domain::decision::Decision::new(id).session(SessionInput::AgentQuiet),
     );
-    w.cx.clock().sleep(std::time::Duration::from_secs(60));
+    w.cx.clock().sleep(std::time::Duration::from_secs(5));
 }
 
 /// Makes the agents of `ids` report Idle, so a start's settle pass keeps idle Boxes idle.
@@ -409,85 +387,92 @@ fn asleep_reason(w: &World, id: BoxId) -> Option<String> {
 }
 
 #[test]
-fn an_asleep_box_holds_no_memory_on_a_node_reporting_no_features() {
-    let w = suspending_world(1);
-    let holder = started(&w, "holder");
-    put_to_sleep(&w, holder);
-    started(&w, "waiter");
+fn a_start_binds_with_headroom_and_waits_below_the_boot_floor() {
+    let (w, hv) = live_world(ROOM);
+    started(&w, "a");
+    report(&w, hv, SHORT, None);
+    let (_, reason) = waits(&w, "b");
+    assert_eq!(
+        reason,
+        "waiting for capacity on hv: 1 GiB free, needs 2 GiB"
+    );
 }
 
 #[test]
-fn a_start_on_a_full_node_suspends_its_longest_idle_box_and_says_why() {
+fn memory_pressure_makes_a_start_wait() {
+    let (w, hv) = live_world(ROOM);
+    report(&w, hv, 32_768, Some(1000));
+    assert_eq!(waits(&w, "a").1, "memory pressure on hv");
+}
+
+#[test]
+fn a_report_older_than_a_minute_makes_a_start_wait() {
+    let (w, _) = live_world(32_768);
+    w.cx.clock().sleep(std::time::Duration::from_secs(61));
+    assert_eq!(waits(&w, "a").1, "no recent memory report from hv");
+}
+
+#[test]
+fn a_node_whose_agent_never_reports_memory_admits_by_count() {
+    let w = world();
+    let hv = enrolled(&w, "hv", Some(true), Some(1));
+    link(&w, hv, true, Some(1));
+    started(&w, "a");
+    assert!(waits(&w, "b").1.contains("is full"));
+}
+
+#[test]
+fn a_report_with_room_starts_the_oldest_pending_box_one_at_a_time() {
     use moor_core::domain::box_state::BoxLifecycle;
-    let w = suspending_world(2);
+    let (w, hv) = live_world(SHORT);
+    let (first, _) = waits(&w, "first");
+    let (second, _) = waits(&w, "second");
+    report(&w, hv, 32_768, None);
+    assert_eq!(lifecycle(&w, first), BoxLifecycle::Ready);
+    assert_eq!(lifecycle(&w, second), BoxLifecycle::Pending);
+    report(&w, hv, 32_768, None);
+    assert_eq!(lifecycle(&w, second), BoxLifecycle::Ready);
+}
+
+#[test]
+fn no_room_suspends_exactly_the_longest_idle_box_and_the_start_waits() {
+    use moor_core::domain::box_state::BoxLifecycle;
+    let (w, hv) = live_world(32_768);
     let (a, b) = (started(&w, "a"), started(&w, "b"));
     idle(&w, a);
     idle(&w, b);
     let w = agents_report_idle(w, &[a, b]);
-    started(&w, "c");
+    report(&w, hv, SHORT, None);
+    let (_, reason) = waits(&w, "c");
+    assert_eq!(
+        reason,
+        "waiting for capacity on hv: 1 GiB free, needs 2 GiB"
+    );
     assert_eq!(lifecycle(&w, a), BoxLifecycle::Asleep);
     assert_eq!(lifecycle(&w, b), BoxLifecycle::Ready);
     assert_eq!(asleep_reason(&w, a).as_deref(), Some("made room for c"));
-    let row = w.cx.store().unwrap().box_row(a).unwrap().unwrap();
-    assert_eq!(row.state_reason.as_deref(), Some("made room for c"));
 }
 
 #[test]
-fn a_working_box_is_never_suspended_and_the_start_waits() {
+fn no_idle_box_leaves_the_start_waiting_and_suspends_nothing() {
     use moor_core::domain::box_state::BoxLifecycle;
-    let w = suspending_world(1);
+    let (w, hv) = live_world(32_768);
     let busy = started(&w, "busy");
-    let waiter = start::run(&w.cx, &req("waiter")).unwrap();
-    assert!(waiter.queued);
+    report(&w, hv, SHORT, None);
+    waits(&w, "waiter");
     assert_eq!(lifecycle(&w, busy), BoxLifecycle::Ready);
 }
 
 #[test]
-fn suspending_every_idle_box_still_short_suspends_none() {
+fn a_wake_without_room_suspends_an_idle_box_waits_and_a_report_with_room_wakes_it() {
     use moor_core::domain::box_state::BoxLifecycle;
-    let w = suspending_world(2);
-    let (a, busy) = (started(&w, "a"), started(&w, "busy"));
-    idle(&w, a);
-    let w = agents_report_idle(w, &[a]);
-    let store = w.cx.store().unwrap();
-    let mut spec = store.box_spec(busy).unwrap();
-    spec.mem_mib = 6144;
-    store.set_box_spec(busy, &spec).unwrap();
-    let waiter = start::run(&w.cx, &req("waiter")).unwrap();
-    assert!(waiter.queued);
-    assert_eq!(lifecycle(&w, a), BoxLifecycle::Ready);
-    let row = store.box_row(BoxId::new(waiter.boxed.id)).unwrap().unwrap();
-    let reason = row.state_reason.unwrap_or_default();
-    assert!(reason.contains("hv has 0 GiB free of 8 GiB"), "{reason}");
-}
-
-#[test]
-fn waking_a_suspended_box_suspends_an_idle_one_to_make_room() {
-    use moor_core::domain::box_state::BoxLifecycle;
-    let w = suspending_world(1);
+    let (w, hv) = live_world(32_768);
     let a = started(&w, "a");
     put_to_sleep(&w, a);
     let b = started(&w, "b");
     idle(&w, b);
-    crate::ops::wake::run(
-        &w.cx,
-        &moor_core::BoxReq {
-            box_name: w.cx.store().unwrap().box_row(a).unwrap().unwrap().name,
-        },
-    )
-    .unwrap();
-    assert_eq!(lifecycle(&w, a), BoxLifecycle::Ready);
-    assert_eq!(lifecycle(&w, b), BoxLifecycle::Asleep);
-    assert_eq!(asleep_reason(&w, b).as_deref(), Some("made room for a"));
-}
-
-#[test]
-fn a_wake_with_no_idle_box_to_suspend_is_refused_and_stays_asleep() {
-    use moor_core::domain::box_state::BoxLifecycle;
-    let w = suspending_world(1);
-    let a = started(&w, "a");
-    put_to_sleep(&w, a);
-    started(&w, "busy");
+    let w = agents_report_idle(w, &[b]);
+    report(&w, hv, SHORT, None);
     let err = crate::ops::wake::run(
         &w.cx,
         &moor_core::BoxReq {
@@ -495,32 +480,12 @@ fn a_wake_with_no_idle_box_to_suspend_is_refused_and_stays_asleep() {
         },
     )
     .unwrap_err();
-    assert!(
-        err.error.to_string().contains("hv has 0 GiB free"),
-        "{}",
-        err.error
-    );
-    assert_eq!(lifecycle(&w, a), BoxLifecycle::Asleep);
-}
-
-#[test]
-fn sleeping_on_a_provider_without_pause_leaves_no_asleep_box_holding_memory() {
-    use moor_core::domain::box_state::BoxLifecycle;
-    use moor_core::seam::driver::SleepOutcome;
-    let driver = FakeDriver::new().sleep_outcome(SleepOutcome::CannotSleep(
-        "provider cannot sleep a box".into(),
-    ));
-    let w = suspending_world_with(driver, 1);
-    let holder = started(&w, "holder");
-    let err = crate::ops::sleep::run(
-        &w.cx,
-        &moor_core::BoxReq {
-            box_name: BoxName::parse_allow_bare("holder").unwrap(),
-        },
-    )
-    .unwrap_err();
-    assert_eq!(err.kind, ErrorKind::Refused);
-    // Still running and counted as running, so the node stays full: never asleep with memory held.
-    assert_eq!(lifecycle(&w, holder), BoxLifecycle::Ready);
-    assert!(start::run(&w.cx, &req("waiter")).unwrap().queued);
+    let reason = "waiting for capacity on hv: 1 GiB free, needs 2 GiB";
+    assert_eq!(err.error.to_string(), reason);
+    assert_eq!(lifecycle(&w, a), BoxLifecycle::Pending);
+    let row = w.cx.store().unwrap().box_row(a).unwrap().unwrap();
+    assert_eq!(row.state_reason.as_deref(), Some(reason));
+    assert_eq!(asleep_reason(&w, b).as_deref(), Some("made room for a"));
+    report(&w, hv, 32_768, None);
+    assert_eq!(lifecycle(&w, a), BoxLifecycle::Ready);
 }
