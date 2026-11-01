@@ -118,3 +118,18 @@ if ! fresh crabbox-cloudhypervisor "$ADAPTER_REV"; then
 	done_step crabbox-cloudhypervisor "$ADAPTER_REV"
 fi
 link_bin crabbox-cloudhypervisor
+
+# The pty surface (`--features moor/pty-surface`) builds with Zig; the Makefile pins it.
+read -r ZIG_VERSION ZIG_SHA256 <<EOF
+$(make -s -C "$(dirname "$0")/.." print-zig)
+EOF
+if ! fresh zig "$ZIG_VERSION"; then
+	fetch "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz" \
+		"$ZIG_SHA256" "$NESTED/dl/zig-$ZIG_VERSION.tar.xz"
+	rm -rf "$NESTED/zig"
+	mkdir -p "$NESTED/zig"
+	tar -xJf "$NESTED/dl/zig-$ZIG_VERSION.tar.xz" -C "$NESTED/zig" --strip-components=1
+	ln -sf "$NESTED/zig/zig" "$BIN/zig"
+	done_step zig "$ZIG_VERSION"
+fi
+link_bin zig
