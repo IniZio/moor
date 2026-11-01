@@ -11,7 +11,7 @@ creds=${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json
 command -v jq >/dev/null 2>&1 || { echo "moor token: jq is required" >&2; exit 1; }
 token=$(jq -r --arg url "${url%/}" '
   [.mcpOAuth // {} | to_entries[]
-   | select((.value.serverUrl // "" | rtrimstr("/")) == $url)
-   | .value.accessToken // empty][0] // empty' "$creds") || token=
+   | select((.value.serverUrl // "" | rtrimstr("/")) == $url) | .value
+   | select(.accessToken)] | sort_by(.expiresAt // 0) | last | .accessToken // empty' "$creds") || token=
 [ -n "$token" ] || { echo "moor token: no token for $url; sign in to moor from /mcp" >&2; exit 1; }
 printf '%s\n' "$token"
