@@ -144,12 +144,15 @@ jobs:
           # Every release names its own tag; there is no moving one.
           tags: ghcr.io/inizio/moor:${{ steps.version.outputs.version }}
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
-          build-args: MOOR_COMMIT=${{ steps.version.outputs.commit }}
+          build-args: |
+            MOOR_COMMIT=${{ steps.version.outputs.commit }}
+            MOOR_VERSION=${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   gitops:
-    needs: [release, image]
+    # The agent tarballs must be up before the controller that sends agents to them.
+    needs: [release, build, image]
     # The release environment keeps the deploy key away from pull requests.
     if: github.event_name == 'push' && needs.release.outputs.tag != ''
     runs-on: ubuntu-latest
