@@ -54,7 +54,7 @@ enum Command {
         /// Serve Boxes from a crabbox runtime.
         #[command(flatten)]
         pool: PoolFlags,
-        /// Tell the server how many GB of disk caches may use; reported, not enforced.
+        /// Tell the server how many GB of disk caches may use; reported, and handed to crabbox as its cache store cap.
         #[arg(long, value_name = "GB", requires = "runtime")]
         cache_gb: Option<u32>,
         /// Run `exec` scripts the server sends; without it they are refused.

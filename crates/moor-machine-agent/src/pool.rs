@@ -18,9 +18,11 @@ pub use reach::{carry, dial, splice, Sshd};
 mod cache;
 mod memory;
 mod reach;
+mod sweep;
 
 use memory::host_mem_mib;
 pub(crate) use memory::send_reports;
+pub(crate) use sweep::sweep;
 
 /// How long a VM may take to boot.
 const BOOT: Duration = Duration::from_mins(15);
@@ -29,6 +31,8 @@ const CALL: Duration = Duration::from_mins(2);
 /// The exit code of `crabbox stop` for a lease that is already gone; the external provider
 /// exits 1 instead, saying the lease is not found.
 const GONE: i32 = 4;
+/// The variable that caps the size of crabbox's cache store, in GB.
+const CACHE_CAP: &str = "CRABBOX_CACHE_STORE_MAX_GB";
 /// Bytes of crabbox's stderr an error quotes, from the end.
 const TAIL: usize = 2048;
 
@@ -41,7 +45,8 @@ pub struct Pool {
     pub max: Option<usize>,
     /// The memory, in MiB, kept for the host; none means the server's default.
     pub reserve_mib: Option<u64>,
-    /// The disk, in GB, reported as set aside for caches; nothing enforces it.
+    /// The disk, in GB, set aside for caches: reported to the server and handed to crabbox as
+    /// `CRABBOX_CACHE_STORE_MAX_GB` on every call.
     pub cache_gb: Option<u32>,
     /// The crabbox program.
     pub crabbox: PathBuf,
@@ -81,6 +86,9 @@ async fn features(pool: &Pool) -> Vec<String> {
     ])
     .stdin(Stdio::null())
     .kill_on_drop(true);
+    if let Some(gb) = pool.cache_gb {
+        cmd.env(CACHE_CAP, gb.to_string());
+    }
     let Ok(Ok(out)) = tokio::time::timeout(CALL, cmd.output()).await else {
         return Vec::new();
     };
@@ -364,6 +372,7 @@ impl Crabbox<'_> {
             .env("HOME", self.home)
             .env("GIT_CEILING_DIRECTORIES", ceiling)
             .envs(env.iter().map(|(k, v)| (k, v)))
+            .envs(self.pool.cache_gb.map(|gb| (CACHE_CAP, gb.to_string())))
             .stdin(Stdio::null())
             .kill_on_drop(true);
         let out = tokio::time::timeout(within, cmd.output())

@@ -145,7 +145,7 @@ pub enum Op {
         slug: String,
     },
     /// Remove the folders of every Box not in `keep`, after its `release` hook; a pool host
-    /// removes nothing, its leases being its own to clean up.
+    /// instead stops the leases of Boxes not in `keep`.
     Sweep {
         /// The Boxes still open, whose folders stay.
         keep: Vec<i64>,

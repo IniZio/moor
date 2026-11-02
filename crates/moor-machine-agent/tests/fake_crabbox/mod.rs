@@ -12,6 +12,7 @@ pub(crate) const HOST_KEY: &str =
 const SCRIPT: &str = r#"#!/bin/sh
 echo "$PWD $*" >> "$HOME/crabbox.log"
 [ -n "$CRABBOX_CACHE_VOLUMES" ] && printf '%s %s\n' "$CRABBOX_CACHE_SCOPE" "$CRABBOX_CACHE_VOLUMES" >> "$HOME/cache.env"
+echo "$1 ${CRABBOX_CACHE_STORE_MAX_GB-unset}" >> "$HOME/cap.log"
 for a in "$@"; do
   case "$a" in
     --class) [ -e "$HOME/no-class" ] && { echo "unknown class for provider" >&2; exit 2; } ;;
@@ -27,7 +28,8 @@ case "$1" in
   pause) if [ -e "$HOME/no-pause" ]; then
       echo "provider=$3 does not support pause" >&2; exit 2
     fi ;;
-  stop) if [ -e "$HOME/stop-gone" ]; then echo "lease not found" >&2; exit 4; fi
+  stop) if [ -e "$HOME/stop-fail" ]; then echo "provider exploded" >&2; exit 2; fi
+    if [ -e "$HOME/stop-gone" ]; then echo "lease not found" >&2; exit 4; fi
     if [ -e "$HOME/stop-missing" ]; then echo "lease $5 not found" >&2; exit 1; fi ;;
 esac
 exit 0
