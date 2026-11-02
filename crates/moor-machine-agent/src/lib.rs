@@ -174,7 +174,7 @@ pub async fn run_with(
                 let reporting = machine
                     .pool
                     .is_some()
-                    .then(|| tokio::spawn(report_on(open.clone())));
+                    .then(|| tokio::spawn(report_on(open.clone(), machine.home.clone())));
                 let streams = listen::Link {
                     open,
                     boxes: Arc::clone(&boxes),
@@ -285,13 +285,13 @@ async fn connect(
 }
 
 /// Opens a stream to the runner on `open` and sends the host's memory reports on it.
-async fn report_on(open: mpsc::Sender<link::Asked>) {
+async fn report_on(open: mpsc::Sender<link::Asked>, home: PathBuf) {
     let (ask, opened) = tokio::sync::oneshot::channel();
     if open.send(ask).await.is_err() {
         return;
     }
     if let Ok(Ok(stream)) = opened.await {
-        pool::send_reports(stream, Path::new("/proc")).await;
+        pool::send_reports(stream, Path::new("/proc"), Some(&home)).await;
     }
 }
 

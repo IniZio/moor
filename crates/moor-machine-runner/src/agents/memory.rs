@@ -11,6 +11,8 @@ pub(super) fn received(report: &Report) -> MemoryReport {
         total_mib: report.mem_total_mib,
         psi_centi: report.psi_some_avg10.map(centi),
         psi_full_centi: report.psi_full_avg10.map(centi),
+        disk_free_mib: report.disk_free_mib,
+        disk_total_mib: report.disk_total_mib,
     }
 }
 
