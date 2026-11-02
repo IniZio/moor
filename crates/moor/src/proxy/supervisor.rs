@@ -2,7 +2,8 @@
 //!
 //! It claims the lease on the Box's proxy row, starts the nono proxy, opens the reverse
 //! tunnel into the machine and marks the row ready. It then heartbeats until the Box closes, the
-//! lease is lost, the tunnel or the front socket is lost for good, or a signal arrives.
+//! lease is lost, the front socket is lost for good, or a signal arrives. A dead tunnel is retried
+//! for as long as the Box stays open.
 
 mod bind;
 mod listen;

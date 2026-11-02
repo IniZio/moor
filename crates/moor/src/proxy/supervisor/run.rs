@@ -15,6 +15,7 @@ use super::bind;
 use super::listen::{listen, Live};
 use super::machine::MachineSlot;
 use super::park::{parked_tunnel, starts_parked};
+use super::tunnel::OutageSlot;
 use super::{Deps, Sink, LEASE};
 use crate::proxy::detached::read_spec;
 use crate::store::{BoxRow, Fenced, Lease, ReadyProc};
@@ -28,8 +29,6 @@ pub(super) enum Stop {
     Closed,
     /// Another supervisor took the lease.
     LostLease,
-    /// The tunnel into the Box exited.
-    TunnelDead,
     /// The front socket could not be bound again.
     FrontLost,
     /// A store error made it give up.
@@ -56,6 +55,8 @@ pub(super) struct Running<'d> {
     pub(super) box_port: u16,
     /// The user's machine attached to the Box.
     pub(super) machine: RefCell<MachineSlot>,
+    /// Set while the tunnel stays down past the quick restarts.
+    pub(super) outage: OutageSlot,
 }
 
 /// Writes one `moor proxy: ` line to `sink`, ignoring write errors and a poisoned lock.
@@ -158,6 +159,10 @@ fn asleep(row: &BoxRow) -> bool {
 }
 
 /// Opens the first tunnel into the Box, reporting a failure.
+///
+/// A Box that had a tunnel before is being served again, often by a supervisor the controller
+/// restarted while the machine's link is still down. Its failed open yields the dead stand-in, so
+/// the restart path keeps trying; only a new Box's failure refuses the start.
 fn open_tunnel(
     deps: &Deps<'_>,
     (handle, box_port, socket): (&BoxHandle, u16, &Path),
@@ -179,7 +184,7 @@ fn open_tunnel(
                 &deps.stderr,
                 format_args!("cannot open the tunnel into the box: {err}"),
             );
-            None
+            (!fresh).then(parked_tunnel)
         }
     }
 }
@@ -238,6 +243,7 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, box_id: BoxId) -> Result<Running<'d>
         handle,
         box_port,
         machine: RefCell::default(),
+        outage: OutageSlot::default(),
     };
     if parked {
         // Answers a pending request: Parked is acked, Up reopens the tunnel.
@@ -343,6 +349,7 @@ impl Running<'_> {
             return Some(Stop::FrontLost);
         }
         if self.parked.get() || self.tunnel.borrow().alive() {
+            self.outage.set(None);
             return None;
         }
         self.revive()

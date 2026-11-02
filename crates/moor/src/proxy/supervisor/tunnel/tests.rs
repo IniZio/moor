@@ -48,8 +48,31 @@ fn crashed_tunnel_is_restarted_and_recorded_once() {
     assert_eq!(events_of(&w, "tunnel_restarted"), 1);
 }
 
+/// Ticks the way `serve` does until `opens` tunnels have been asked for.
+fn tick_until_opened(w: &World, run: &super::super::Running<'_>, opens: usize) -> Option<Stop> {
+    for _ in 0..200 {
+        if let stop @ Some(_) = run.tick() {
+            return stop;
+        }
+        if w.driver.tunnels().len() >= opens {
+            return None;
+        }
+        w.clock.sleep(TICK);
+    }
+    Some(Stop::Failed)
+}
+
+/// The reason recorded with each tunnel restart.
+fn restart_reasons(w: &World) -> Vec<String> {
+    let events = w.store.events(w.id, 50).unwrap();
+    let restarts = events.into_iter().filter(|e| e.kind == "tunnel_restarted");
+    restarts
+        .filter_map(|e| Some(e.payload.get("reason")?.as_str()?.to_owned()))
+        .collect()
+}
+
 #[test]
-fn five_failed_restarts_exit_one_keep_the_row_and_release_the_lease() {
+fn quick_restarts_failing_keep_the_supervisor_and_its_lease() {
     let w = World::new(unrestartable());
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
@@ -58,13 +81,75 @@ fn five_failed_restarts_exit_one_keep_the_row_and_release_the_lease() {
     w.driver.end_tunnel(FIRST_TUNNEL_PID);
     let stop = run.tick();
 
-    assert!(matches!(stop, Some(Stop::TunnelDead)));
+    assert_eq!(stop, None);
     assert_eq!(slept_since(&w, began), 31_000);
     assert_eq!(w.driver.tunnels().len(), 6);
-    assert_eq!(run.finish(Stop::TunnelDead), 1);
-    assert_eq!(w.row().lease_owner, None);
+    assert_eq!(w.row().lease_owner.as_deref(), Some(run.owner()));
     assert_eq!(events_of(&w, "tunnel_restarted"), 0);
-    assert!(w.stderr().contains("did not restart after 5 attempts"));
+    assert!(w.stderr().contains("retrying every 30 s"));
+}
+
+#[test]
+fn tunnel_comes_back_after_an_outage_longer_than_the_quick_restarts() {
+    let fail = || TunnelReply::EarlyExit {
+        code: 1,
+        stderr: "machine 2 is not linked".into(),
+    };
+    let mut replies = unrestartable();
+    replies.extend(std::iter::repeat_n(fail(), 3));
+    let w = World::new(replies);
+    let deps = w.deps();
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+    let began = w.clock.now().as_millis();
+
+    w.driver.end_tunnel(FIRST_TUNNEL_PID);
+    let stop = tick_until_opened(&w, &run, 10);
+
+    assert_eq!(stop, None);
+    assert_eq!(w.driver.tunnels().len(), 10);
+    assert!(slept_since(&w, began) >= 31_000 + 4 * 30_000);
+    assert_eq!(w.row().lease_owner.as_deref(), Some(run.owner()));
+    let reasons = restart_reasons(&w);
+    assert_eq!(reasons, ["tunnel exited; back after 151 s"]);
+    assert!(run.tick().is_none());
+    assert_eq!(w.driver.tunnels().len(), 10);
+}
+
+#[test]
+fn box_closed_during_an_outage_stops_the_supervisor() {
+    let mut replies = unrestartable();
+    replies.extend(unrestartable().into_iter().skip(1));
+    let w = World::new(replies);
+    let deps = w.deps();
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+
+    w.driver.end_tunnel(FIRST_TUNNEL_PID);
+    assert_eq!(run.tick(), None);
+    w.clock.sleep(TICK);
+    w.close_box();
+    let stop = run.tick();
+
+    assert_eq!(stop, Some(Stop::Closed));
+    assert_eq!(run.finish(Stop::Closed), 0);
+    assert!(w.store.proxy(w.id).unwrap().is_none());
+}
+
+#[test]
+fn lost_lease_during_an_outage_stops_the_supervisor() {
+    let mut replies = unrestartable();
+    replies.extend(unrestartable().into_iter().skip(1));
+    let w = World::new(replies);
+    let deps = w.deps();
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+
+    w.driver.end_tunnel(FIRST_TUNNEL_PID);
+    assert_eq!(run.tick(), None);
+    w.clock.sleep(LEASE);
+    let taken = w.store.claim_lease(w.id, "other-owner", LEASE).unwrap();
+    assert!(matches!(taken, Lease::Claimed));
+
+    assert_eq!(run.tick(), Some(Stop::LostLease));
+    assert_eq!(w.row().lease_owner.as_deref(), Some("other-owner"));
 }
 
 #[test]
@@ -375,4 +460,34 @@ fn slow_tunnel_open_keeps_the_lease_against_a_concurrent_reserve() {
     assert!(matches!(got, Some(Reserve::Leased { .. })), "{got:?}");
     let run = started.map_err(|c| format!("exit {c}")).unwrap();
     assert_eq!(w.row().lease_owner.as_deref(), Some(run.owner()));
+}
+
+#[test]
+fn restarted_supervisor_rides_out_a_link_that_is_still_down() {
+    let fail = || TunnelReply::EarlyExit {
+        code: 1,
+        stderr: "machine 2 is not linked".into(),
+    };
+    let w = World::new([fail(), fail()]);
+    w.store.note_tunnel_opened(w.id).unwrap();
+    let deps = w.deps();
+
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+
+    assert!(w.row().ready);
+    assert_eq!(run.tick(), None);
+    assert_eq!(w.driver.tunnels().len(), 3);
+    assert_eq!(restart_reasons(&w).len(), 1);
+}
+
+#[test]
+fn first_tunnel_of_a_new_box_failing_still_refuses_the_start() {
+    let fail = TunnelReply::EarlyExit {
+        code: 1,
+        stderr: "refused".into(),
+    };
+    let w = World::new([fail]);
+    let deps = w.deps();
+
+    assert_eq!(start(&deps, w.id).err(), Some(1));
 }

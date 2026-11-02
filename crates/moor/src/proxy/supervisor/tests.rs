@@ -387,7 +387,7 @@ fn lost_lease_exits_one_and_leaves_the_new_owners_row_untouched() {
 }
 
 #[test]
-fn dead_tunnel_releases_the_lease_keeps_the_row_and_exits_one() {
+fn dead_tunnel_keeps_the_lease_and_the_row_ready() {
     let w = World::new(unrestartable());
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
@@ -395,10 +395,10 @@ fn dead_tunnel_releases_the_lease_keeps_the_row_and_exits_one() {
     w.driver.end_tunnel(FIRST_TUNNEL_PID);
     let stop = run.tick();
 
-    assert!(matches!(stop, Some(Stop::TunnelDead)));
-    assert_eq!(run.finish(Stop::TunnelDead), 1);
+    assert_eq!(stop, None);
     let row = w.row();
-    assert_eq!(row.lease_owner, None);
+    assert_eq!(row.lease_owner.as_deref(), Some(run.owner()));
+    assert!(row.ready);
     assert!(w.stderr().to_lowercase().contains("tunnel"));
 }
 
