@@ -25,6 +25,7 @@ mod events_after;
 mod node_count;
 mod open_boxes;
 mod poison;
+mod repos;
 mod rules;
 mod turns;
 

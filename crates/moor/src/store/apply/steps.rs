@@ -97,14 +97,15 @@ fn insert_box(
     }
     let repo = new.repo.as_ref();
     tx.execute(
-        "INSERT INTO boxes (name, repo, repo_config, author_name, author_email, user, state, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO boxes (name, repo, repo_config, author_name, author_email, other_repos, user, state, \
+         created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             new.name.as_str(),
             repo.map(|r| r.repo.to_string()),
             repo.and_then(|r| r.moor_yaml.as_deref()),
             repo.map(|r| r.author.name.as_str()),
             repo.map(|r| r.author.email.as_str()),
+            repo.and_then(crate::store::repo::others_column),
             requester.map(UserId::get),
             lifecycle.as_str(),
             now.as_millis(),

@@ -27,6 +27,7 @@ pub(crate) fn run(cx: &Cx, req: &EnvReq) -> Result<EnvView, CommandError> {
                 repo: r.clone(),
                 moor_yaml: at.files.moor_yaml.clone(),
                 author: at.author,
+                others: Vec::new(),
             };
             (r.to_string(), Some((boxed, at.base, at.files)))
         }

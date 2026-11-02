@@ -375,6 +375,7 @@ fn applied_migrations_are_never_edited() {
             (32, 13_558_891_813_560_289_575),
             (33, 13_028_294_842_806_854_699),
             (34, 18_056_672_443_583_506_460),
+            (35, 4_147_411_064_939_266_913),
         ],
         "a schema change is a new migration file; an applied one must not change"
     );
@@ -393,12 +394,11 @@ fn a_file_at_migration_2_gains_user_mcp_servers_and_keeps_its_rows() {
          INSERT INTO user_secrets (user, name, value, updated_at) VALUES (7, 'claude', x'00', 1);",
     )
     .unwrap();
-    let before = tables(&conn);
+    let mut before = tables(&conn);
     init_schema(&mut conn, &path).unwrap();
     let mut after = tables(&conn);
     assert!(after.contains(&("user_mcp_servers".into(), 0)), "{after:?}");
     after.retain(|(t, _)| !ADDED_AFTER_V2.contains(&t.as_str()) && t != "refinery_schema_history");
-    let mut before = before;
     before.retain(|(t, _)| {
         !ADDED_AFTER_V2.contains(&t.as_str()) && t != "refinery_schema_history" && t != "link_codes"
     });

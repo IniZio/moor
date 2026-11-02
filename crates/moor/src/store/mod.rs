@@ -74,7 +74,7 @@ const BOX_SELECT: &str = "SELECT b.id, b.name, b.repo, b.issue, b.prompt, b.base
     s.workspace_id, s.agent_session_id, b.state, b.state_reason, b.intent_kind, b.intent_pid, b.intent_run, \
     b.intent_at, b.setup_failed_at, b.created_at, b.updated_at, b.provider, b.handle, b.driver_state, \
     b.attempted_handle, b.workdir, b.egress, b.sleep_reason, b.driver_updated_at, b.idle_since, b.launch_failure, \
-    s.state, b.user, b.repo_config, b.author_name, b.author_email, b.cpus, b.mem_mib FROM boxes b LEFT JOIN sessions s ON s.box = b.id \
+    s.state, b.user, b.repo_config, b.author_name, b.author_email, b.cpus, b.mem_mib, b.other_repos FROM boxes b LEFT JOIN sessions s ON s.box = b.id \
     AND s.ordinal = (SELECT MAX(ordinal) FROM sessions WHERE box = b.id)";
 
 /// Box row joined to a box.
