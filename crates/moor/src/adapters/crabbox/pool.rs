@@ -36,6 +36,10 @@ pub(crate) trait PoolHosts: Send + Sync {
     fn dial_command(&self, machine_id: i64, slug: &str) -> String;
 }
 
+/// Env var holding the seconds the ssh call running the dial `ProxyCommand` waits; ssh hands
+/// its env down to the command.
+pub(crate) const DIAL_WITHIN: &str = "MOOR_DIAL_WITHIN";
+
 /// A pool Box: its host's machine and its lease.
 struct Placed<'a> {
     /// The hosts seam.

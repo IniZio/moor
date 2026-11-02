@@ -189,7 +189,7 @@ async fn a_dial_through_the_broker_carries_bytes_both_ways() {
     )
     .await;
     assert_eq!(warmed, Ok(Answer::Done));
-    let mut vm = broker::dial(&host.socket(), MACHINE_ID, "moor-1a2b3c4d-7")
+    let mut vm = broker::dial(&host.socket(), MACHINE_ID, "moor-1a2b3c4d-7", None)
         .await
         .unwrap();
     for hello in [&b"SSH-2.0-hello\n"[..], b"second\n"] {

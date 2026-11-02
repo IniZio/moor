@@ -47,7 +47,7 @@ use moor_core::seam::rng::Rng;
 use caps::size_of;
 use errors::{map_error, Op};
 use handle::{handle_of, slug, split_handle, static_env, target_args};
-pub(crate) use pool::PoolHosts;
+pub(crate) use pool::{PoolHosts, DIAL_WITHIN};
 
 /// Time allowed for a warmup.
 const ACQUIRE_DEADLINE: Duration = Duration::from_mins(15);
