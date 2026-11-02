@@ -63,6 +63,18 @@ fn has_any(hay: &str, needles: &[&str]) -> bool {
     needles.iter().any(|n| hay.contains(n))
 }
 
+/// Classifies lowercase stderr of `op` into a typed error, when it names one.
+///
+/// A provider other than crabbox's own reports a lease it never made or already dropped as
+/// `lease <id> not found` under whatever exit code its command uses, so for a release the words
+/// decide.
+fn classify(op: Op, code: i32, text: &str) -> Option<DriverError> {
+    if matches!(op, Op::Release) && text.contains("lease") && text.contains("not found") {
+        return Some(DriverError::NotFound);
+    }
+    classify_text(code, text)
+}
+
 /// Classifies lowercase stderr into a typed error, when it names one.
 fn classify_text(code: i32, text: &str) -> Option<DriverError> {
     if code == EXIT_REFUSED && text.contains("not found") {
@@ -236,7 +248,7 @@ pub(super) fn map_error(op: Op, provider: Option<&str>, e: &ProcError) -> Driver
         },
         ProcError::NonZero {
             code, stderr_tail, ..
-        } => classify_text(*code, &stderr_tail.to_lowercase()).unwrap_or_else(|| {
+        } => classify(op, *code, &stderr_tail.to_lowercase()).unwrap_or_else(|| {
             let tail = stderr_suffix(op, stderr_tail);
             let summary = match *code {
                 EXIT_CONFIG => format!("{what} failed (crabbox configuration problem){tail}"),
