@@ -34,6 +34,7 @@ mod box_node;
 pub(crate) mod box_profile;
 mod driver_row;
 mod error;
+mod events_of;
 pub(crate) use bindings::Binding;
 mod follow;
 #[cfg(test)]
