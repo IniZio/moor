@@ -41,7 +41,18 @@ pub fn run(env: &Env, target: &Target, request: Request, opts: &GlobalOpts) -> R
     };
     let result = super::call(env, target, &request, progress, output);
     match result {
-        Ok(resp) if interactive => attach(env, resp),
+        Ok(resp) if interactive => {
+            let resp = attach(env, resp);
+            if let (Request::Connect(t), true) = (&request, resp.error.is_none()) {
+                if has_no_focus(&resp) {
+                    progress(&format!(
+                        "{} is awake; its agent's terminal is on the controller, open it in moor-herdr",
+                        t.box_name.as_str()
+                    ));
+                }
+            }
+            resp
+        }
         Ok(resp) => resp,
         Err(e) => super::failure_response(request.cmd(), &e),
     }
@@ -53,11 +64,17 @@ fn attach(env: &Env, mut resp: Response) -> Response {
     if resp.error.is_some() {
         return resp;
     }
-    let Some(value) = resp.value.clone() else {
+    let Some(value) = resp.value.as_ref() else {
         return failed("controller returned no connect command");
     };
-    let tool = value.get("tool").and_then(|v| v.as_str()).unwrap_or("");
-    let args: Vec<String> = value
+    let Some(focus) = value.get("focus") else {
+        return failed("controller returned no connect command");
+    };
+    if focus.is_null() {
+        return resp;
+    }
+    let tool = focus.get("tool").and_then(|v| v.as_str()).unwrap_or("");
+    let args: Vec<String> = focus
         .get("args")
         .and_then(|v| v.as_array())
         .map(|a| {
@@ -76,6 +93,14 @@ fn attach(env: &Env, mut resp: Response) -> Response {
         Ok(status) => failed(&format!("`{}` exited with {status}", shown.trim_end())),
         Err(e) => failed(&format!("cannot run `{}`: {e}", shown.trim_end())),
     }
+}
+
+/// Whether the controller answered `connect` with no command to run.
+fn has_no_focus(resp: &Response) -> bool {
+    resp.value
+        .as_ref()
+        .and_then(|v| v.get("focus"))
+        .is_some_and(serde_json::Value::is_null)
 }
 
 #[cfg(test)]

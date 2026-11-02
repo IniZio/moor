@@ -14,7 +14,8 @@ use std::thread;
 use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{
-    Key, PaneCmd, PaneRef, ResumeOutcome, ResumeReg, Surface, SurfaceError, WorkspaceRef,
+    FocusCommand, Key, PaneCmd, PaneRef, ResumeOutcome, ResumeReg, Surface, SurfaceError,
+    WorkspaceRef,
 };
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 
@@ -191,6 +192,10 @@ impl Surface for PtySurface {
         workspaces.insert(label.to_owned(), ws.clone());
         drop(workspaces);
         Ok(ws)
+    }
+
+    fn focus_command(&self, _ws: &WorkspaceRef) -> Option<FocusCommand> {
+        None
     }
 
     fn focus_workspace(&self, _ws: &WorkspaceRef) -> Result<(), SurfaceError> {

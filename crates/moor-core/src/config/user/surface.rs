@@ -31,6 +31,15 @@ pub enum SurfaceKind {
 }
 
 impl SurfaceKind {
+    /// The name `surface.kind` spells this kind as.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Herdr => "herdr",
+            Self::Pty => "pty",
+        }
+    }
+
     /// The kind `name` spells as `surface.kind` does; `None` for any other text.
     #[must_use]
     pub fn parse(name: &str) -> Option<Self> {

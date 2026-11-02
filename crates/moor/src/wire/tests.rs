@@ -258,6 +258,28 @@ fn the_config_surface_wins_over_the_environment() {
     );
 }
 
+fn override_warning(config: Option<SurfaceKind>, env: &[(&str, &str)]) -> Option<Warning> {
+    let mut c = UserConfig::default();
+    c.surface.kind = config;
+    surface_override_warning(&c, &Env::from_pairs(env.iter().copied()))
+}
+
+#[test]
+fn a_config_surface_that_overrides_the_environment_warns_naming_both() {
+    let w = override_warning(Some(SurfaceKind::Herdr), &[(SURFACE_ENV, "pty")]).unwrap();
+    assert!(w.message.contains("herdr"), "{}", w.message);
+    assert!(w.message.contains("pty"), "{}", w.message);
+    assert!(w.message.contains("MOOR_SURFACE"), "{}", w.message);
+}
+
+#[test]
+fn no_surface_override_warning_when_the_kinds_agree_or_the_environment_is_unset() {
+    assert!(override_warning(Some(SurfaceKind::Pty), &[(SURFACE_ENV, "pty")]).is_none());
+    assert!(override_warning(Some(SurfaceKind::Pty), &[]).is_none());
+    assert!(override_warning(Some(SurfaceKind::Pty), &[(SURFACE_ENV, " ")]).is_none());
+    assert!(override_warning(None, &[(SURFACE_ENV, "pty")]).is_none());
+}
+
 #[test]
 fn an_unknown_surface_in_the_environment_is_a_usage_error() {
     let e = kind_of(None, &[(SURFACE_ENV, "tmux")]).unwrap_err();
@@ -349,4 +371,23 @@ fn the_pty_surface_types_into_a_pane_with_no_herdr_server() {
     assert_eq!(tail.matches("hello from mcp").count(), 2, "{tail}");
     s.close_pane(&pane).unwrap();
     assert!(calls.calls().iter().all(|c| c.tool != Tool::Herdr));
+}
+
+#[test]
+fn the_startup_override_line_reads_the_user_config_file() {
+    let home = tempfile::tempdir().unwrap();
+    let config = home.path().join("config.yaml");
+    std::fs::write(&config, "surface:\n  kind: herdr\n").unwrap();
+    let root = home.path().to_str().unwrap();
+    let env = |surface: &'static str| {
+        Env::from_pairs([
+            ("HOME", root),
+            ("XDG_CONFIG_HOME", root),
+            ("MOOR_CONFIG", config.to_str().unwrap()),
+            (SURFACE_ENV, surface),
+        ])
+    };
+    let line = surface_override(&env("pty")).unwrap();
+    assert!(line.contains("surface.kind herdr"), "{line}");
+    assert_eq!(surface_override(&env("herdr")), None);
 }

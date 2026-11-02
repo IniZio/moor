@@ -10,12 +10,15 @@ use std::time::Duration;
 use moor_core::BoxId;
 use signal_hook::consts::{SIGINT, SIGTERM};
 
-use moor_core::config::{DriverConfig, SurfaceKind, UserConfig};
+#[cfg(test)]
+use moor_core::config::SurfaceKind;
+use moor_core::config::{DriverConfig, UserConfig};
 use moor_core::seam::checkout::Checkout;
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::proc::Proc;
 use moor_core::seam::rng::Rng;
+#[cfg(test)]
 use moor_core::seam::surface::Surface;
 use moor_core::{ErrorKind, Warning};
 
@@ -175,67 +178,6 @@ pub(crate) fn reconcile_proxies(env: &Env) -> Vec<String> {
 /// request and tick, so the answer is kept for the whole process: crabbox is asked once.
 static NO_PROBE: LazyLock<Arc<OnceLock<bool>>> = LazyLock::new(Arc::default);
 
-/// The process's one pty surface: its panes must outlive each request's wiring.
-#[cfg(feature = "pty-surface")]
-fn pty_surface(state_dir: Option<PathBuf>) -> Arc<dyn Surface> {
-    static PTY: OnceLock<Arc<PtySurface>> = OnceLock::new();
-    let pty = PTY.get_or_init(|| Arc::new(PtySurface::default().with_cwd(state_dir)));
-    Arc::clone(pty) as Arc<dyn Surface>
-}
-
-/// The environment variable that picks the Surface when the config sets no `surface.kind`.
-const SURFACE_ENV: &str = "MOOR_SURFACE";
-
-/// The Surface kind `config` sets, else the one [`SURFACE_ENV`] names, else herdr.
-fn surface_kind(config: &UserConfig, env: &Env) -> Result<SurfaceKind, CommandError> {
-    if let Some(kind) = config.surface.kind {
-        return Ok(kind);
-    }
-    match env.get(SURFACE_ENV).map(str::trim) {
-        None | Some("") => Ok(SurfaceKind::Herdr),
-        Some(name) => SurfaceKind::parse(name).ok_or_else(|| {
-            CommandError::new(
-                ErrorKind::Usage,
-                format!("{SURFACE_ENV} is {name}, but it must be herdr or pty"),
-            )
-        }),
-    }
-}
-
-/// The Surface of `kind`.
-#[cfg_attr(
-    feature = "pty-surface",
-    allow(
-        clippy::unnecessary_wraps,
-        reason = "a build without the feature refuses `pty`"
-    )
-)]
-fn surface(
-    kind: SurfaceKind,
-    config: &UserConfig,
-    proc: &Arc<dyn Proc>,
-    extra_env: Vec<(String, String)>,
-    clock: Arc<dyn Clock>,
-    state_dir: Option<PathBuf>,
-) -> Result<Arc<dyn Surface>, CommandError> {
-    match kind {
-        SurfaceKind::Herdr => Ok(Arc::new(herdr(
-            proc,
-            config.herdr_session(),
-            extra_env,
-            clock,
-            state_dir,
-        ))),
-        #[cfg(feature = "pty-surface")]
-        SurfaceKind::Pty => Ok(pty_surface(state_dir)),
-        #[cfg(not(feature = "pty-surface"))]
-        SurfaceKind::Pty => Err(CommandError::new(
-            ErrorKind::Usage,
-            "the surface is pty, but this moor was built without the pty-surface feature",
-        )),
-    }
-}
-
 /// The Box Proxies' supervisor, keeping its state under `state_dir`.
 fn proxy_host(
     env: &Env,
@@ -394,6 +336,17 @@ fn tool_paths(config: &UserConfig) -> ToolPaths {
 }
 
 mod links;
+mod surface_pick;
+
+#[cfg(test)]
+use surface_pick::SURFACE_ENV;
+use surface_pick::{surface, surface_kind, surface_override_warning};
+
+/// The controller's startup line when the user config's `surface.kind` overrides a different
+/// `$MOOR_SURFACE`; a config that fails to load is reported by the first request instead.
+pub(crate) fn surface_override(env: &Env) -> Option<String> {
+    surface_override_warning(&load_user(env).ok()?, env).map(|w| format!("surface: {}", w.message))
+}
 
 #[cfg(test)]
 mod tests;

@@ -2,7 +2,7 @@
 
 use crate::activity::{PaneObs, PaneStatus};
 use crate::name::BoxName;
-use crate::seam::proc::Deadline;
+use crate::seam::proc::{Deadline, Tool};
 
 /// An opaque handle to a Workspace.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -73,6 +73,26 @@ pub enum ResumeOutcome {
     Rejected(String),
 }
 
+/// A program and arguments a client runs on its own machine.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct FocusCommand {
+    /// Logical program name; the client resolves the binary itself.
+    pub tool: &'static str,
+    /// Arguments for the tool.
+    pub args: Vec<String>,
+}
+
+impl FocusCommand {
+    /// `tool` run with `args`.
+    #[must_use]
+    pub fn new(tool: Tool, args: &[&str]) -> Self {
+        Self {
+            tool: tool.program(),
+            args: args.iter().map(|a| (*a).to_owned()).collect(),
+        }
+    }
+}
+
 /// A key press sent to a pane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Key {
@@ -138,6 +158,9 @@ pub trait Surface: Send + Sync {
     /// # Errors
     /// Returns a [`SurfaceError`] when the Workspace cannot be focused.
     fn focus_workspace(&self, ws: &WorkspaceRef) -> Result<(), SurfaceError>;
+
+    /// The command a client runs to bring `ws` to the front, `None` when the surface has none.
+    fn focus_command(&self, ws: &WorkspaceRef) -> Option<FocusCommand>;
 
     /// Opens a pane running `cmd` in `ws`.
     ///

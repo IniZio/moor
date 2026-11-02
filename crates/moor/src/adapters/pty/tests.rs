@@ -220,3 +220,10 @@ fn a_new_surface_never_reuses_a_handle_an_earlier_one_gave_out() {
     assert_eq!(after.close_pane(&old), Err(SurfaceError::NotFound));
     assert!(after.pane_obs(&new, DEADLINE).is_ok());
 }
+
+#[test]
+fn the_pty_surface_has_no_client_side_focus_command() {
+    let s = PtySurface::default();
+    let ws = s.ensure_workspace("moor:t").expect("workspace");
+    assert_eq!(s.focus_command(&ws), None);
+}

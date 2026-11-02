@@ -9,9 +9,10 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::activity::{PaneObs, PaneStatus};
-use moor_core::seam::proc::Deadline;
+use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::seam::surface::{
-    Key, PaneCmd, PaneRef, ResumeOutcome, ResumeReg, Surface, SurfaceError, WorkspaceRef,
+    FocusCommand, Key, PaneCmd, PaneRef, ResumeOutcome, ResumeReg, Surface, SurfaceError,
+    WorkspaceRef,
 };
 
 #[derive(Default)]
@@ -27,6 +28,7 @@ struct State {
     fail_close_pane: Option<SurfaceError>,
     fail_close_ws: Option<SurfaceError>,
     fail_focus_ws: Option<SurfaceError>,
+    no_focus_command: bool,
     resume_reply: Option<ResumeOutcome>,
     on_pane_obs: Option<Arc<dyn Fn() + Send + Sync>>,
 }
@@ -85,6 +87,12 @@ impl FakeSurface {
     /// The next `focus_workspace` fails once with `e`.
     pub(crate) fn fail_focus_workspace(self, e: SurfaceError) -> Self {
         self.st().fail_focus_ws = Some(e);
+        self
+    }
+
+    /// `focus_command` answers `None`, as a surface with no client-side focus does.
+    pub(crate) fn without_focus_command(self) -> Self {
+        self.st().no_focus_command = true;
         self
     }
 
@@ -245,6 +253,16 @@ impl Surface for FakeSurface {
             return Err(e);
         }
         Ok(())
+    }
+
+    fn focus_command(&self, ws: &WorkspaceRef) -> Option<FocusCommand> {
+        if self.st().no_focus_command {
+            return None;
+        }
+        Some(FocusCommand::new(
+            Tool::Herdr,
+            &["workspace", "focus", ws.as_str()],
+        ))
     }
 
     fn close_workspace(&self, ws: &WorkspaceRef) -> Result<(), SurfaceError> {

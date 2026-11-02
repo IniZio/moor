@@ -2,8 +2,7 @@
 //!
 //! Holds the Box lock while the Box resumes.
 
-use moor_core::seam::proc::Tool;
-use moor_core::seam::surface::WorkspaceRef;
+use moor_core::seam::surface::{FocusCommand, WorkspaceRef};
 use moor_core::view::sleep::SleepValue;
 use moor_core::{BoxReq, ErrorKind};
 
@@ -24,13 +23,11 @@ pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<SleepValue, CommandError> {
     })
 }
 
-/// Result of `connect`: the command the client runs to focus the Workspace.
+/// Result of `connect`: the command the client runs to focus the Workspace, if any.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct ConnectValue {
-    /// Logical program name; the client resolves the binary itself.
-    pub tool: &'static str,
-    /// Arguments for `tool`.
-    pub args: Vec<String>,
+    /// What the client runs; `None` when the surface has no client-side focus.
+    pub focus: Option<FocusCommand>,
     /// Whether this call resumed the Box.
     pub woke: bool,
 }
@@ -48,10 +45,7 @@ pub(crate) fn connect(cx: &Cx, req: &BoxReq) -> Result<ConnectValue, CommandErro
     })?;
     let workspace = workspace.unwrap_or_default();
     Ok(ConnectValue {
-        tool: Tool::Herdr.program(),
-        args: ["workspace", "focus", workspace.as_str()]
-            .map(str::to_owned)
-            .to_vec(),
+        focus: cx.surface().focus_command(&WorkspaceRef::new(workspace)),
         woke: slept.woke,
     })
 }

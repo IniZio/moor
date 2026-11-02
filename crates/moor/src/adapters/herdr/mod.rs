@@ -17,7 +17,8 @@ use moor_core::activity::PaneObs;
 use moor_core::seam::clock::Clock;
 use moor_core::seam::proc::{Deadline, Proc, ProcSpec, Tool};
 use moor_core::seam::surface::{
-    Key, PaneCmd, PaneRef, ResumeOutcome, ResumeReg, Surface, SurfaceError, WorkspaceRef,
+    FocusCommand, Key, PaneCmd, PaneRef, ResumeOutcome, ResumeReg, Surface, SurfaceError,
+    WorkspaceRef,
 };
 
 use self::errors::{map_error, HerdrFailure};
@@ -225,6 +226,13 @@ impl Surface for Herdr {
 
     fn pane_obs(&self, pane: &PaneRef, deadline: Deadline) -> Result<PaneObs, SurfaceError> {
         self.observe(pane, deadline)
+    }
+
+    fn focus_command(&self, ws: &WorkspaceRef) -> Option<FocusCommand> {
+        Some(FocusCommand::new(
+            Tool::Herdr,
+            &["workspace", "focus", ws.as_str()],
+        ))
     }
 
     fn focus_workspace(&self, ws: &WorkspaceRef) -> Result<(), SurfaceError> {

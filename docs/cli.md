@@ -45,7 +45,7 @@ The state directory holds `moor.db`. It is the first of `--state-dir`,
 | `moor steer NAME TEXT` | Sends text to the Box's agent. `--menu N` sends a menu choice instead. |
 | `moor end NAME` | Ends the agent Session and keeps the Box open. |
 | `moor cp NAME SRC DEST` | Copies a file or directory from the Box's machine to the host. |
-| `moor open NAME` | Wakes the Box if it sleeps, then focuses its herdr workspace. |
+| `moor open NAME` | Wakes the Box if it sleeps. With the herdr surface it then focuses the Box's herdr workspace; with the pty surface it only wakes the Box. |
 | `moor sleep NAME` | Puts the Box's machine to sleep. |
 | `moor wake NAME` | Wakes a sleeping Box. |
 | `moor close NAME` | Closes the Box and releases its machine. |
