@@ -301,8 +301,11 @@ fn a_front_left_by_a_crashed_controller_is_stopped_on_the_next_start() {
         (setup.starts("slow") == 2).then_some(())
     });
     assert!(!alive(leftover.id()), "{}", setup.log());
-    let (shim, recorded) = setup.recorded("slow").unwrap();
-    assert_ne!(shim, leftover.id());
+    let (shim, recorded) = wait_for("the next front's pid", || {
+        setup
+            .recorded("slow")
+            .filter(|(pid, _)| *pid != leftover.id())
+    });
     assert_eq!(start_time(shim), Some(recorded));
     kill_process(pid_of(&next), Signal::TERM).unwrap();
     assert!(exit_within(&mut next, Duration::from_secs(20)).is_some());
