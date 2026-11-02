@@ -1,7 +1,7 @@
 //! Conversion between a decision's events and stored events.
 
 use super::ExtraEvent;
-use crate::domain::event::{Event, ProfileEvent, TimingEvent};
+use crate::domain::event::{Event, ProfileEvent, StallEvent, TimingEvent};
 
 impl From<ExtraEvent> for Event {
     #[allow(clippy::too_many_lines, reason = "one arm per event variant")]
@@ -79,6 +79,12 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::NeedsInput { question, options } => Self::NeedsInput { question, options },
             ExtraEvent::AgentUnreachable { attempts, error } => {
                 Self::AgentUnreachable { attempts, error }
+            }
+            ExtraEvent::AgentStalled { doing, quiet_secs } => {
+                Self::Stall(StallEvent::AgentStalled { doing, quiet_secs })
+            }
+            ExtraEvent::AgentResumed { quiet_secs } => {
+                Self::Stall(StallEvent::AgentResumed { quiet_secs })
             }
             ExtraEvent::AgentPromptCheckFailed { pane, error } => {
                 Self::AgentPromptCheckFailed { pane, error }
@@ -207,6 +213,12 @@ impl TryFrom<Event> for ExtraEvent {
             Event::NeedsInput { question, options } => Ok(Self::NeedsInput { question, options }),
             Event::AgentUnreachable { attempts, error } => {
                 Ok(Self::AgentUnreachable { attempts, error })
+            }
+            Event::Stall(StallEvent::AgentStalled { doing, quiet_secs }) => {
+                Ok(Self::AgentStalled { doing, quiet_secs })
+            }
+            Event::Stall(StallEvent::AgentResumed { quiet_secs }) => {
+                Ok(Self::AgentResumed { quiet_secs })
             }
             Event::AgentPromptCheckFailed { pane, error } => {
                 Ok(Self::AgentPromptCheckFailed { pane, error })

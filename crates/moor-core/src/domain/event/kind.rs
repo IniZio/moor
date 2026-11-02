@@ -2,6 +2,9 @@
 
 use super::Event;
 
+mod stall;
+pub use stall::StallEvent;
+
 /// The event kinds the event tests pin. Frozen.
 pub const ASSERTED_KINDS: [&str; 20] = [
     "started",
@@ -27,7 +30,7 @@ pub const ASSERTED_KINDS: [&str; 20] = [
 ];
 
 /// Every event kind name an [`Event`] can carry.
-pub const EVENT_KINDS: [&str; 70] = [
+pub const EVENT_KINDS: [&str; 72] = [
     "started",
     "rejected",
     "pending",
@@ -82,6 +85,8 @@ pub const EVENT_KINDS: [&str; 70] = [
     "agent_link_lost",
     "agent_link_restored",
     "agent_unreachable",
+    "agent_stalled",
+    "agent_resumed",
     "turn_done",
     "artifact_published",
     "machine_attached",
@@ -164,6 +169,7 @@ impl Event {
             Self::ArtifactPublished { .. } => "artifact_published",
             Self::Machine(m) => m.kind(),
             Self::Profile(p) => p.kind(),
+            Self::Stall(s) => s.kind(),
             Self::Timing(t) => t.kind(),
         }
     }

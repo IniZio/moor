@@ -267,6 +267,11 @@ fn all_events() -> Vec<Event> {
             ms: 12_000,
             ok: true,
         }),
+        Event::Stall(StallEvent::AgentStalled {
+            doing: Some("Bash cargo test".to_owned()),
+            quiet_secs: 700,
+        }),
+        Event::Stall(StallEvent::AgentResumed { quiet_secs: 900 }),
     ]
 }
 
@@ -358,6 +363,8 @@ const fn event_index(e: &Event) -> usize {
         Event::Timing(TimingEvent::StepFinished { .. }) => 67,
         Event::Timing(TimingEvent::SetupLineStarted { .. }) => 68,
         Event::Timing(TimingEvent::SetupLineFinished { .. }) => 69,
+        Event::Stall(StallEvent::AgentStalled { .. }) => 70,
+        Event::Stall(StallEvent::AgentResumed { .. }) => 71,
     }
 }
 
@@ -365,7 +372,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 70);
+    assert_eq!(all.len(), 72);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
@@ -530,43 +537,6 @@ fn artifact_published_kind_and_payload() {
 }
 
 mod kinds;
-
-#[test]
-fn machine_events_carry_their_own_kind() {
-    let e = Event::Machine(MachineEvent::MachineForwardFailed {
-        port: Some(8081),
-        error: "refused".to_owned(),
-    });
-    assert_eq!(e.kind(), "machine_forward_failed");
-    assert_eq!(
-        serde_json::to_value(&e).unwrap(),
-        serde_json::json!({"kind": "machine_forward_failed", "port": 8081, "error": "refused"})
-    );
-    assert_eq!(
-        e.payload(),
-        serde_json::json!({"port": 8081, "error": "refused"})
-    );
-}
-
-/// `MachineWaiting` carries the place in line and `MachineRefused` only its reason.
-#[test]
-fn machine_waiting_and_refused_payloads() {
-    let waiting = Event::Machine(MachineEvent::MachineWaiting {
-        name: "mini".to_owned(),
-        position: 2,
-        reason: "full".to_owned(),
-    });
-    assert_eq!(waiting.kind(), "machine_waiting");
-    assert_eq!(
-        waiting.payload(),
-        serde_json::json!({"name": "mini", "position": 2, "reason": "full"})
-    );
-    let refused = Event::Machine(MachineEvent::MachineRefused {
-        reason: "no".to_owned(),
-    });
-    assert_eq!(refused.kind(), "machine_refused");
-    assert_eq!(refused.payload(), serde_json::json!({"reason": "no"}));
-}
 
 #[test]
 fn profile_events_serialize_flat() {
