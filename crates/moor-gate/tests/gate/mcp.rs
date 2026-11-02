@@ -13,6 +13,7 @@ use std::sync::atomic::Ordering;
 
 use super::{claims, mpsc, now, sign, world_with, World};
 
+mod inspect;
 mod webhook;
 
 fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
@@ -49,8 +50,8 @@ fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
                         writeln!(reply, "{}", not_found(&frame["id"])).unwrap();
                         continue;
                     }
-                    if let Some(refusal) = webhook::refusal(cmd, inner, &frame["id"]) {
-                        writeln!(reply, "{refusal}").unwrap();
+                    if let Some(early) = inspect::early(cmd, inner, &frame["id"]) {
+                        writeln!(reply, "{early}").unwrap();
                         continue;
                     }
                     let value = match cmd {
@@ -338,6 +339,7 @@ fn the_tools_are_listed() {
             "add_webhook",
             "box_status",
             "close_box",
+            "inspect_box",
             "list_boxes",
             "list_events",
             "list_webhooks",
