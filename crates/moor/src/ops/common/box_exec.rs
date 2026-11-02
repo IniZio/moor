@@ -42,7 +42,7 @@ pub(crate) fn proxy(
     repo: Option<&ForgeRepo>,
     cfg: &BoxSettings,
 ) -> Result<BoxProxy, String> {
-    let user = requester(cx, box_id)?;
+    let (user, others) = requester(cx, box_id)?;
     let vault_key = cx.vault_key().map_err(|e| e.error.to_string())?;
     let mcp = crate::ops::users::mcp::for_box(cx, Some(user)).map_err(|e| e.error.to_string())?;
     let reads = cx
@@ -52,12 +52,14 @@ pub(crate) fn proxy(
         .map_err(|e| e.to_string())?
         .map(|p| p.reads)
         .unwrap_or_default();
-    let plan = plan(cx, repo, &mcp.servers, &reads)?;
+    let repos: Vec<ForgeRepo> = repo.into_iter().cloned().chain(others).collect();
+    let plan = plan(cx, &repos, &mcp.servers, &reads)?;
     let repo_env: Vec<(String, String)> = cfg.env.clone().into_iter().collect();
     let spec = ProxySpec {
         box_id,
         box_handle: handle,
-        box_repo: plan.repo,
+        box_repo: plan.repos.first().cloned(),
+        other_repos: plan.repos.get(1..).unwrap_or_default().to_vec(),
         rules: plan.rules,
         user,
         vault_key: vault_key.to_path_buf(),
@@ -83,15 +85,22 @@ pub(crate) fn proxy(
     Ok(BoxProxy { addr, rule_env })
 }
 
-/// The user the Box acts for, read from its row.
-fn requester(cx: &Cx, box_id: BoxId) -> Result<UserId, String> {
+/// The user the Box acts for and the repos it lists after its primary, read from its row.
+fn requester(cx: &Cx, box_id: BoxId) -> Result<(UserId, Vec<ForgeRepo>), String> {
     let row = cx
         .store()
         .map_err(|e| e.error.to_string())?
         .box_row(box_id)
         .map_err(|e| e.to_string())?;
-    row.and_then(|r| r.user)
-        .ok_or_else(|| format!("Box {} acts for no user", box_id.get()))
+    let user = row
+        .as_ref()
+        .and_then(|r| r.user)
+        .ok_or_else(|| format!("Box {} acts for no user", box_id.get()))?;
+    let others = row
+        .and_then(|r| r.repo)
+        .map(|r| r.others.into_iter().map(|l| l.repo).collect())
+        .unwrap_or_default();
+    Ok((user, others))
 }
 
 /// Whether a rule sends GitHub through the Proxy with the user's GitHub secret.

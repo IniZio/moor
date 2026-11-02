@@ -42,9 +42,9 @@ const MAX_REFUSALS: usize = 1024;
 pub(crate) struct FilterSpec {
     /// The Box CA the filter presents to nono.
     pub(crate) ca: EphemeralCa,
-    /// The Box repo, if known; without it every GraphQL request goes out
-    /// without its credential.
-    pub(crate) repo: Option<RepoRef>,
+    /// The Box repos, the primary first; with none every GraphQL request goes
+    /// out without its credential.
+    pub(crate) repos: Vec<RepoRef>,
     /// The only host the filter tunnels to, such as `api.github.com`.
     pub(crate) host: String,
     /// The port of that host, such as 443.
@@ -86,8 +86,8 @@ pub(crate) enum FilterError {
 
 /// State shared by the acceptor and every connection thread.
 pub(super) struct Shared {
-    /// The Box repo, if known.
-    pub(super) repo: Option<RepoRef>,
+    /// The Box repos, the primary first.
+    pub(super) repos: Vec<RepoRef>,
     /// The only tunnel host.
     pub(super) host: String,
     /// The only tunnel port.
@@ -195,7 +195,7 @@ impl GraphqlFilter {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).map_err(FilterError::Listen)?;
         let addr = listener.local_addr().map_err(FilterError::Listen)?;
         let shared = Arc::new(Shared {
-            repo: spec.repo,
+            repos: spec.repos,
             host: spec.host,
             port: spec.port,
             rule: spec.rule,

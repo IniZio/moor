@@ -1,0 +1,234 @@
+[
+  {
+    "name": "claude",
+    "hosts": [
+      "api.anthropic.com"
+    ],
+    "credential": "claude",
+    "inject": {
+      "Header": {
+        "header": "Authorization",
+        "form": "Bearer {secret}"
+      }
+    },
+    "endpoint_rules": [],
+    "box_env": {
+      "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+      "CLAUDE_CODE_OAUTH_TOKEN": "moor-proxy"
+    }
+  },
+  {
+    "name": "github-api",
+    "hosts": [
+      "api.github.com"
+    ],
+    "credential": "github",
+    "inject": {
+      "Header": {
+        "header": "Authorization",
+        "form": "token {secret}"
+      }
+    },
+    "endpoint_rules": [
+      {
+        "method": "GET",
+        "path": "/repos/acme/widgets"
+      },
+      {
+        "method": "GET",
+        "path": "/repos/acme/widgets/pulls"
+      },
+      {
+        "method": "POST",
+        "path": "/repos/acme/widgets/pulls"
+      },
+      {
+        "method": "GET",
+        "path": "/repos/acme/widgets/pulls/*"
+      },
+      {
+        "method": "PATCH",
+        "path": "/repos/acme/widgets/pulls/*"
+      },
+      {
+        "method": "GET",
+        "path": "/repos/acme/widgets/pulls/*/files"
+      },
+      {
+        "method": "GET",
+        "path": "/repos/acme/widgets/pulls/*/commits"
+      },
+      {
+        "method": "GET",
+        "path": "/repos/acme/widgets/pulls/*/comments"
+      },
+      {
+        "method": "GET",
+        "path": "/repos/acme/widgets/pulls/*/reviews"
+      },
+      {
+        "method": "POST",
+        "path": "/repos/acme/widgets/pulls/*/reviews"
+      },
+      {
+        "method": "POST",
+        "path": "/repos/acme/widgets/pulls/*/requested_reviewers"
+      },
+      {
+        "method": "DELETE",
+        "path": "/repos/acme/widgets/pulls/*/requested_reviewers"
+      },
+      {
+        "method": "PUT",
+        "path": "/repos/acme/widgets/pulls/*/update-branch"
+      },
+      {
+        "method": "GET",
+        "path": "/repos/acme/widgets/issues/*/comments"
+      },
+      {
+        "method": "POST",
+        "path": "/repos/acme/widgets/issues/*/comments"
+      },
+      {
+        "method": "GET",
+        "path": "/repos/acme/widgets/commits/*/check-runs"
+      },
+      {
+        "method": "GET",
+        "path": "/repos/acme/widgets/commits/*/status"
+      },
+      {
+        "method": "GET",
+        "path": "/repos/acme/widgets/actions/**"
+      },
+      {
+        "method": "GET",
+        "path": "/repos/acme/widgets/check-runs/*/annotations"
+      },
+      {
+        "method": "GET",
+        "path": "/rate_limit"
+      },
+      {
+        "method": "GET",
+        "path": "/repos/acme/widgets/stacks"
+      },
+      {
+        "method": "POST",
+        "path": "/repos/acme/widgets/stacks"
+      },
+      {
+        "method": "GET",
+        "path": "/repos/acme/widgets/stacks/*"
+      },
+      {
+        "method": "POST",
+        "path": "/repos/acme/widgets/stacks/*/add"
+      },
+      {
+        "method": "POST",
+        "path": "/repos/acme/widgets/stacks/*/unstack"
+      },
+      {
+        "method": "POST",
+        "path": "/graphql"
+      }
+    ],
+    "box_env": {
+      "GH_NO_UPDATE_NOTIFIER": "1",
+      "GH_REPO": "acme/widgets",
+      "GH_TELEMETRY": "disabled",
+      "GH_TOKEN": "gho_moor-proxy"
+    }
+  },
+  {
+    "name": "github-git",
+    "hosts": [
+      "github.com"
+    ],
+    "credential": "github",
+    "inject": {
+      "BasicAuth": {
+        "user": "x-access-token"
+      }
+    },
+    "endpoint_rules": [
+      {
+        "method": "GET",
+        "path": "/acme/widgets.git/info/refs"
+      },
+      {
+        "method": "POST",
+        "path": "/acme/widgets.git/git-upload-pack"
+      },
+      {
+        "method": "POST",
+        "path": "/acme/widgets.git/git-receive-pack"
+      },
+      {
+        "method": "GET",
+        "path": "/me/profile.git/info/refs"
+      },
+      {
+        "method": "GET",
+        "path": "/acme/agent-tools.git/info/refs"
+      },
+      {
+        "method": "POST",
+        "path": "/me/profile.git/git-upload-pack"
+      },
+      {
+        "method": "POST",
+        "path": "/acme/agent-tools.git/git-upload-pack"
+      }
+    ],
+    "box_env": {}
+  },
+  {
+    "name": "github-uploads",
+    "hosts": [
+      "uploads.github.com"
+    ],
+    "credential": "github",
+    "inject": {
+      "Header": {
+        "header": "Authorization",
+        "form": "token {secret}"
+      }
+    },
+    "endpoint_rules": [
+      {
+        "method": "POST",
+        "path": "/user-attachments/assets"
+      }
+    ],
+    "box_env": {}
+  },
+  {
+    "name": "gitlab",
+    "hosts": [
+      "gitlab.com"
+    ],
+    "credential": "gitlab",
+    "inject": {
+      "Header": {
+        "header": "PRIVATE-TOKEN",
+        "form": "{secret}"
+      }
+    },
+    "endpoint_rules": [
+      {
+        "method": "GET",
+        "path": "/api/v4/projects/acme%2Fwidgets/merge_requests/**"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v4/projects/acme%2Fwidgets/merge_requests/**"
+      }
+    ],
+    "box_env": {
+      "GL_REPO": "acme/widgets"
+    }
+  }
+]

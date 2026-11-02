@@ -13,10 +13,10 @@ use crate::cx::Cx;
 /// Log lines kept when a start fails.
 pub(crate) const TAIL_LINES: usize = 20;
 
-/// What the proxy needs to know about a Box: its repo, tool rules.
+/// What the proxy needs to know about a Box: its repos, tool rules.
 pub(crate) struct ProxyPlan {
-    /// The Box's repo.
-    pub(crate) repo: Option<ForgeRepo>,
+    /// The Box's repos, the primary first; empty when it has none.
+    pub(crate) repos: Vec<ForgeRepo>,
     /// The tool rules with `{repo}` resolved.
     pub(crate) rules: Vec<ResolvedRule>,
 }
@@ -39,25 +39,23 @@ pub(crate) fn agent_env(cx: &Cx, settings: &BoxSettings) -> Vec<(String, String)
         .collect()
 }
 
-/// Resolves the proxy plan of a Box of `repo` with the MCP servers `mcp`, which may also
+/// Resolves the proxy plan of a Box of `repos` (the primary first) with the MCP servers `mcp`, which may also
 /// fetch the repos in `reads`.
 ///
 /// # Errors
 /// The message of a rule that does not resolve.
 pub(crate) fn plan(
     cx: &Cx,
-    repo: Option<&ForgeRepo>,
+    repos: &[ForgeRepo],
     mcp: &BTreeMap<String, McpServer>,
     reads: &[ForgeRepo],
 ) -> Result<ProxyPlan, String> {
-    let repo = repo.cloned();
-    let rules = resolve_rules(
-        &cx.config().box_proxy(mcp),
-        repo.as_ref().map(|r| (r.owner.as_str(), r.name.as_str())),
-        reads,
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(ProxyPlan { repo, rules })
+    let rules =
+        resolve_rules(&cx.config().box_proxy(mcp), repos, reads).map_err(|e| e.to_string())?;
+    Ok(ProxyPlan {
+        repos: repos.to_vec(),
+        rules,
+    })
 }
 
 /// The non-secret Box env of `rules` in rule order; a later rule's value replaces an earlier one.

@@ -264,13 +264,18 @@ fn rig(f: Responder) -> Rig {
 
 /// Starts a filter that vets other destinations with `guard`.
 fn rig_with(f: Responder, guard: Guard) -> Rig {
+    rig_for(f, guard, vec![box_repo()])
+}
+
+/// Starts a filter for a Box of `repos`.
+fn rig_for(f: Responder, guard: Guard, repos: Vec<RepoRef>) -> Rig {
     let ca = EphemeralCa::generate().unwrap();
     let ca_pem = ca.cert_pem().to_owned();
     let up = Up::start(f);
     let upstream = Upstream::new("api.github.com", 443, Some(up.addr), Some(&up.ca)).unwrap();
     let filter = GraphqlFilter::start(FilterSpec {
         ca,
-        repo: Some(box_repo()),
+        repos,
         host: "api.github.com".to_owned(),
         port: 443,
         rule: RULE.to_owned(),

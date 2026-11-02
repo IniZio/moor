@@ -81,6 +81,7 @@ impl World {
         let mut spec = ProxySpec {
             box_id: id,
             box_handle: None,
+            other_repos: Vec::new(),
             box_repo: Some(ForgeRepo::new("o", "n")),
             rules: Vec::new(),
             user: moor_core::user::UserId::new(1),
