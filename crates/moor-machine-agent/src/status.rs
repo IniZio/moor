@@ -167,12 +167,7 @@ mod tests {
         let script = format!(
             "#!/bin/sh\ncase \"$1\" in --version) echo 'crabbox {long}'; echo second;; *) echo '[]';; esac\n"
         );
-        std::fs::write(&crabbox, script).unwrap();
-        std::fs::set_permissions(
-            &crabbox,
-            std::os::unix::fs::PermissionsExt::from_mode(0o755),
-        )
-        .unwrap();
+        moor_testkit::write_executable(&crabbox, script).unwrap();
         let pool = Pool {
             provider: "fake".to_owned(),
             max: None,
