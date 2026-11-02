@@ -119,6 +119,14 @@ build() {
 	done
 }
 
+open_prs() {
+	timeout 60 gh api "repos/$GH_REPO_NAME/pulls?state=open&head=${GH_REPO_NAME%%/*}:$BRANCH" --jq '.[].number' 2>/dev/null
+}
+
+remote_branch() {
+	timeout 60 git ls-remote "https://github.com/$GH_REPO_NAME.git" "refs/heads/$BRANCH" 2>/dev/null
+}
+
 STARTED=
 cleanup() {
 	local rc=$?
@@ -132,15 +140,18 @@ cleanup() {
 		# A Box still starting refuses to close; stop_ours then takes its VM down.
 		timeout 120 moor close "$NAME" --force >>"$OUT/run.log" 2>&1
 	fi
-	local pr
-	pr=$(timeout 60 gh pr list -R "$GH_REPO_NAME" --head "$BRANCH" --state open --json url -q '.[].url' 2>/dev/null)
-	for url in $pr; do
-		log "closing $url"
-		timeout 60 gh pr close "$url" -R "$GH_REPO_NAME" --delete-branch >>"$OUT/run.log" 2>&1
+	local n
+	for n in $(open_prs); do
+		log "closing PR #$n"
+		timeout 60 gh api -X PATCH "repos/$GH_REPO_NAME/pulls/$n" -f state=closed >>"$OUT/run.log" 2>&1
 	done
-	if timeout 60 gh api "repos/$GH_REPO_NAME/git/ref/heads/$BRANCH" >/dev/null 2>&1; then
+	if [ -n "$(remote_branch)" ]; then
 		log "deleting branch $BRANCH"
-		timeout 60 gh api -X DELETE "repos/$GH_REPO_NAME/git/refs/heads/$BRANCH" >>"$OUT/run.log" 2>&1
+		timeout 120 git push -q "https://github.com/$GH_REPO_NAME.git" --delete "$BRANCH" >>"$OUT/run.log" 2>&1
+	fi
+	if [ -n "$(open_prs)" ] || [ -n "$(remote_branch)" ]; then
+		log "PR or branch $BRANCH is still on $GH_REPO_NAME"
+		[ "$rc" = 0 ] && rc=1
 	fi
 	stop_ours
 	# Lease disks are per run; base images stay in $NESTED.
