@@ -14,8 +14,8 @@ core stays agent-neutral; everything specific to an agent lives in its folder.
 - **`moor listen`.** It holds a `subscriptions/listen` stream open and prints one
   line per Box event (`moor: box <name> <event>: <what the Box said>`), plus
   `moor-listen: ...` lines about the stream and the sign-in. It takes `--server`
-  (env `MOOR_SERVER`) and uses the sign-in that `moor login --server ...` saved.
-  Install the full `moor` binary and sign in once.
+  (env `MOOR_SERVER`) and `--box <name>` to watch only that Box, and uses the
+  sign-in that `moor login --server ...` saved. Install the full `moor` binary and sign in once.
 - **A skill** that tells the agent what to do with each line.
 
 ## Add an agent
@@ -23,14 +23,16 @@ core stays agent-neutral; everything specific to an agent lives in its folder.
 1. Create `agents/<agent>/` beside `claude/`.
 2. Register the gate's `/mcp` URL in the agent's own config format. Take the URL
    from the user; never hardcode a deployment.
-3. Run `moor listen --server <origin>` the way the agent runs background
-   watchers. The user runs `moor login --server <origin>` once.
+3. Run `moor listen --server <origin> --box <name>` the way the agent runs
+   background watchers, once the agent has started or been asked to watch that
+   Box. The user runs `moor login --server <origin>` once.
 4. Port the skill's table of events to the agent's instruction format.
 5. Add a row to the table above.
 
 ## Claude Code
 
-`.mcp.json` starts `moor mcp --server "$MOOR_SERVER"` over stdio, and the
-monitor runs `moor listen --server "$MOOR_SERVER"` (both fall back to `MOOR_URL`).
-Both use the sign-in from `moor login --server ...`, run once. Install steps are in
+`.mcp.json` starts `moor mcp --server "$MOOR_SERVER"` over stdio. The
+`moor-boxes` skill has Claude run `moor listen --box <name>` in the background for
+each Box it starts or is asked to watch; no listener runs until then. Both use
+the sign-in from `moor login --server ...`, run once. Install steps are in
 [docs/mcp.md](../docs/mcp.md#get-told-inside-claude-code).

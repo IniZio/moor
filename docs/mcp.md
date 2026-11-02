@@ -377,8 +377,8 @@ To replace a cron that polls:
 ## Get told inside Claude Code
 
 The `moor` plugin in [`agents/claude`](../agents/README.md) connects Claude Code
-to the gate and prints a line in the session when a Box idles, needs input or
-fails.
+to the gate. For each Box it starts or is asked to watch, it prints a line in the
+session when that Box idles, needs input or fails.
 
 ```sh
 cargo install --git https://github.com/IniZio/moor moor
@@ -393,8 +393,9 @@ Then, inside Claude Code:
 /plugin install moor@moor
 ```
 
-The plugin starts `moor mcp` for its tools and `moor listen` for Box lines.
-Both use the one sign-in and renew it themselves, so nothing goes stale while
+The plugin starts `moor mcp` for its tools. When Claude starts a Box, or you ask
+it to watch one, it runs `moor listen --box <name>` in the background; sessions
+that never start a Box get no Box lines. Both use the one sign-in and renew it themselves, so nothing goes stale while
 the session is quiet. There is no sign-in step in `/mcp`.
 
 ## Operator setup
