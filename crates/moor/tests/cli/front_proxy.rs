@@ -44,6 +44,9 @@ impl Served {
         let mut served = Self::serve("");
         let dir = served.root.join("state/fronts/probe");
         wait_until("the front's CA", &served, || dir.join("ca.pem").exists());
+        wait_until("the Proxy", &served, || {
+            served.log().contains("serving 1 fronts")
+        });
         served.outside = Some(
             Command::new(env!("CARGO_BIN_EXE_moor"))
                 .arg("front-run")
