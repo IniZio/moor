@@ -133,13 +133,15 @@ fn not_served(pool_host: bool, op: &Op) -> String {
 async fn serve_pool(home: &Path, pool: &Pool, ch: Channel, op: Op) -> Option<String> {
     let reply = match op {
         op @ Op::Lease { .. } => pool::lease_op(home, pool, op).await,
-        Op::Dial { slug } => match pool::dial(home, pool, &slug).await {
-            Ok(sshd) => {
-                pool::carry(ch, sshd).await;
-                return None;
+        Op::Dial { slug, timeout_secs } => {
+            match pool::dial(home, pool, &slug, timeout_secs.map(Duration::from_secs)).await {
+                Ok(sshd) => {
+                    pool::carry(ch, sshd).await;
+                    return None;
+                }
+                Err(reason) => refused(reason),
             }
-            Err(reason) => refused(reason),
-        },
+        }
         other => refused(format!("{} is not a pool op", kind(&other))),
     };
     let failed = refusal(&reply);
@@ -191,7 +193,7 @@ fn target(op: &Op) -> Option<String> {
         | Op::Listen { box_id, .. }
         | Op::Remove { box_id } => Some(box_id.to_string()),
         Op::Lease { slug, .. } => slug.clone(),
-        Op::Dial { slug } => Some(slug.clone()),
+        Op::Dial { slug, .. } => Some(slug.clone()),
         Op::Sweep { .. } | Op::Status => None,
     }
 }

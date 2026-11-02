@@ -5,6 +5,7 @@ use std::fs::OpenOptions;
 use std::os::unix::fs::FileTypeExt;
 use std::path::Path;
 use std::process::Stdio;
+use std::time::Duration;
 
 use moor_client::link::lease::Answer;
 use moor_client::link::ops::{self, Reply};
@@ -38,7 +39,7 @@ struct Route {
 
 /// The lease's login user and host keys.
 pub(super) async fn info(lease: &Crabbox<'_>) -> Result<Answer, String> {
-    let route = route(lease).await?;
+    let route = route(lease, CALL).await?;
     let mut names = vec![route.alias.clone()];
     if route.port != "22" {
         names.push(format!("[{}]:{}", route.alias, route.port));
@@ -84,7 +85,7 @@ pub(super) async fn authorize(lease: &Crabbox<'_>, key: &str) -> Result<Answer, 
     let key = ssh_key::PublicKey::from_openssh(key)
         .and_then(|k| k.to_openssh())
         .map_err(|e| format!("not an OpenSSH public key: {e}"))?;
-    let route = route(lease).await?;
+    let route = route(lease, CALL).await?;
     let k = quote(&key);
     let script = format!(
         "umask 077; mkdir -p ~/.ssh && touch ~/.ssh/authorized_keys && \
@@ -115,15 +116,21 @@ pub enum Sshd {
     Tcp(TcpStream),
 }
 
-/// Opens a pipe to the sshd of lease `slug` under `home`.
-pub async fn dial(home: &Path, pool: &super::Pool, slug: &str) -> Result<Sshd, String> {
+/// Opens a pipe to the sshd of lease `slug` under `home`, finding it within `within` or
+/// crabbox's usual limit, whichever is shorter.
+pub async fn dial(
+    home: &Path,
+    pool: &super::Pool,
+    slug: &str,
+    within: Option<Duration>,
+) -> Result<Sshd, String> {
     let slug = super::checked(slug)?;
-    let route = route(&Crabbox {
+    let lease = Crabbox {
         home,
         pool,
         slug: Some(slug),
-    })
-    .await?;
+    };
+    let route = route(&lease, within.map_or(CALL, |w| w.min(CALL))).await?;
     let Some(proxy) = route.proxy.as_deref() else {
         let addr = format!("{}:{}", route.hostname, route.port);
         return TcpStream::connect(&addr)
@@ -174,8 +181,8 @@ pub async fn splice<S: AsyncRead + AsyncWrite + Unpin>(sshd: Sshd, mut stream: S
 }
 
 /// The lease's words from `crabbox ssh`, resolved by `ssh -G`, once they pin the host key.
-async fn route(lease: &Crabbox<'_>) -> Result<Route, String> {
-    let printed = lease.run("ssh", "--id", CALL, &[0]).await?;
+async fn route(lease: &Crabbox<'_>, within: Duration) -> Result<Route, String> {
+    let printed = lease.run("ssh", "--id", within, &[0]).await?;
     let words = printed
         .lines()
         .filter_map(split_words)
