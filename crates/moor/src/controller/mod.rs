@@ -70,6 +70,7 @@ pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u
         }
     };
     log(&sink, &format!("listening on {}", running.socket.display()));
+    Moor::surface_override(&running.env).inspect(|line| log(&sink, line));
     for line in Moor::reconcile_proxies(&running.env) {
         log(&sink, &format!("proxy: {line}"));
     }

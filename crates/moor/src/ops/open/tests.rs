@@ -281,8 +281,24 @@ fn connect_wakes_and_returns_focus_command_without_focusing() {
     assert!(focuses(&f).is_empty());
     assert_eq!(
         serde_json::to_value(&v).unwrap(),
-        serde_json::json!({"tool":"herdr","args":["workspace","focus","ws-9"],"woke":true})
+        serde_json::json!({"focus":{"tool":"herdr","args":["workspace","focus","ws-9"]},"woke":true})
     );
+}
+
+#[test]
+fn connect_returns_no_focus_when_the_surface_has_none() {
+    let f = fx_surfaced(
+        FakeDriver::new(),
+        FakeSurface::new().without_focus_command(),
+        Some("ws-9"),
+    );
+    asleep(&f);
+    let v = connect(&f.cx, &req()).unwrap();
+    assert_eq!(
+        serde_json::to_value(&v).unwrap(),
+        serde_json::json!({"focus":null,"woke":true})
+    );
+    assert!(focuses(&f).is_empty());
 }
 
 #[test]
