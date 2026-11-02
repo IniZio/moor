@@ -11,6 +11,7 @@ use crate::name::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 use crate::seam::proc::Deadline;
 
 mod batch;
+mod caps;
 mod display;
 mod error;
 mod exec;
@@ -18,40 +19,11 @@ mod run;
 mod tunnel;
 
 pub use batch::{run_each, BoxStep, StepDone};
+pub use caps::{DriverCaps, SleepKind};
 pub use error::DriverError;
 pub use exec::{ExecOutcome, ExecSpec};
 pub use run::{Cancelled, FollowEnd, Followed, Launched, RunEnd, RunOutcome};
 pub use tunnel::{LocalTunnel, TunnelFailure, TunnelHandle};
-
-/// How a provider keeps an idle Box cheap.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SleepKind {
-    /// The Driver suspends the Box.
-    Suspend,
-    /// The provider sleeps the Box on its own.
-    Native,
-    /// The Box cannot sleep.
-    None,
-}
-
-/// Facts about a provider, as data.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(
-    clippy::struct_excessive_bools,
-    reason = "independent provider facts, each a yes or no"
-)]
-pub struct DriverCaps {
-    /// Sleep style.
-    pub sleep: SleepKind,
-    /// Whether a sleeping Box can wake.
-    pub wake: bool,
-    /// Box-to-host tunnel support.
-    pub reverse_tunnel: bool,
-    /// Whether the Box reports a working directory.
-    pub has_workdir: bool,
-    /// Whether the provider keeps cache volumes across Boxes.
-    pub cache_volumes: bool,
-}
 
 /// A request for a new Box.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -172,6 +144,16 @@ pub trait Driver: Send + Sync {
     /// # Errors
     /// Returns a [`DriverError`] when the provider cannot be queried.
     fn list(&self, provider: &ProviderId) -> Result<Vec<BoxListing>, DriverError>;
+
+    /// Lists those of `handles` the Driver still knows, for a provider [`Driver::list`] cannot
+    /// inventory. A handle left out may simply be unknown, so it never counts as missing.
+    ///
+    /// # Errors
+    /// Returns a [`DriverError`] when the Boxes cannot be queried.
+    fn list_handles(&self, handles: &[BoxHandle]) -> Result<Vec<BoxListing>, DriverError> {
+        let _ = handles;
+        Err(DriverError::Unsupported("the provider lists no handles"))
+    }
 
     /// Returns the Box's working directory.
     ///

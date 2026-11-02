@@ -9,7 +9,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
-use moor_client::link::lease::{Answer, Boot, Cache, Verb};
+use moor_client::link::lease::{Answer, Boot, Cache, Lease, Verb};
 use moor_core::box_key::{ControllerId, PoolSeat};
 use moor_core::cache::{CacheLayers, CachePlan, CacheSalt};
 use moor_core::config::parse_repo;
@@ -215,6 +215,42 @@ fn a_handle_without_a_well_formed_machine_and_slug_is_refused_unasked() {
         assert!(cb.release(&BoxHandle::new(bad)).is_err(), "{bad}");
     }
     assert!(host.verbs().is_empty());
+}
+
+#[test]
+fn a_host_lists_its_stopped_leases_asleep_and_leaves_unknown_ones_out() {
+    let (host, cb) = rig();
+    let lease = |slug: &str, state: &str| Lease {
+        slug: slug.to_owned(),
+        state: state.to_owned(),
+    };
+    host.answer(
+        Verb::List,
+        Ok(Answer::Leases {
+            leases: vec![
+                lease("moor-1a2b3c4d-9101", "stopped"),
+                lease("moor-1a2b3c4d-9102", "ready"),
+            ],
+        }),
+    );
+    let running = BoxHandle::new("external@hv/42/moor-1a2b3c4d-9102");
+    let unknown = BoxHandle::new("external@hv/42/moor-1a2b3c4d-9103");
+    let listed = cb
+        .list_handles(&[handle(), running.clone(), unknown])
+        .unwrap();
+    let got: Vec<_> = listed
+        .iter()
+        .map(|l| (l.handle.clone(), l.asleep))
+        .collect();
+    assert_eq!(got, [(handle(), true), (running, false)]);
+    assert_eq!(host.verbs(), [Verb::List]);
+}
+
+#[test]
+fn an_unreachable_host_lists_none_of_its_leases() {
+    let (host, cb) = rig();
+    host.answer(Verb::List, Err("not linked".to_owned()));
+    assert!(cb.list_handles(&[handle()]).unwrap().is_empty());
 }
 
 #[test]

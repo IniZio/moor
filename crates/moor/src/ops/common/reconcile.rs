@@ -1,8 +1,9 @@
 //! Reconcile stored Boxes against what the Driver still lists.
 
-use moor_core::decide::reconcile::{reconcile, BoxFact};
-use moor_core::domain::boxes::BoxState;
-use moor_core::domain::decision::{Decision, ExtraEvent};
+use moor_core::decide::reconcile::{reconcile, stopped, BoxFact};
+use moor_core::domain::boxes::{BoxInput, BoxState};
+use moor_core::domain::decision::{BoxTarget, Decision, ExtraEvent};
+use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::DriverError;
 use moor_core::{ProviderId, Warning};
 
@@ -29,9 +30,11 @@ fn by_provider(
     groups
 }
 
-/// Mark Boxes the Driver no longer lists as Gone; never provisions.
+/// Mark Boxes the Driver no longer lists as Gone, and Ready Boxes it lists stopped as Asleep;
+/// never provisions.
 ///
-/// A provider that cannot be inventoried is skipped silently; a provider
+/// A provider that cannot be inventoried is asked about its rows' handles instead, which only
+/// sleeps stopped Boxes; one that cannot answer that either is skipped silently. A provider
 /// whose listing fails is skipped with a warning; an apply that
 /// loses a race with another command is ignored.
 pub(crate) fn run(cx: &Cx) {
@@ -43,10 +46,17 @@ pub(crate) fn run(cx: &Cx) {
         match cx.driver().list(&provider) {
             Ok(listing) => {
                 for d in reconcile(&facts, &listing) {
-                    let _ = store.apply(d);
+                    apply(store, d);
                 }
             }
-            Err(DriverError::Unsupported(_)) => {}
+            Err(DriverError::Unsupported(_)) => {
+                let handles: Vec<_> = facts.iter().filter_map(|f| f.handle.clone()).collect();
+                if let Ok(listing) = cx.driver().list_handles(&handles) {
+                    for d in stopped(&facts, &listing) {
+                        apply(store, d);
+                    }
+                }
+            }
             Err(e) => {
                 note_starting(store, &facts, &e);
                 cx.warn(Warning {
@@ -59,6 +69,14 @@ pub(crate) fn run(cx: &Cx) {
             }
         }
     }
+}
+
+/// Applies `d`; a sleep first quiets the Box's Session, whose agent stopped with the machine.
+fn apply(store: &Store, d: Decision) {
+    if let (Some(BoxInput::Sleep), BoxTarget::Existing(id)) = (&d.box_input, &d.target) {
+        let _ = store.apply(Decision::new(*id).session(SessionInput::AgentQuiet));
+    }
+    let _ = store.apply(d);
 }
 
 /// Tells each starting Box in `facts` that listing its provider fails, once per distinct error,

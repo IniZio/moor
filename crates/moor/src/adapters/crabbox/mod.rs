@@ -231,6 +231,13 @@ impl Driver for Crabbox {
         self.inventory(provider)
     }
 
+    fn list_handles(&self, handles: &[BoxHandle]) -> Result<Vec<BoxListing>, DriverError> {
+        if !handles.iter().any(pool::is_pool) {
+            return Err(DriverError::Unsupported("only a pool host lists by handle"));
+        }
+        Ok(pool::list_handles(self, handles))
+    }
+
     /// Refused: only crabbox's warmup reports where a Box's workdir is, and moor never
     /// searches the Box for one by name.
     fn workdir(&self, _handle: &BoxHandle) -> Result<BoxPath, DriverError> {

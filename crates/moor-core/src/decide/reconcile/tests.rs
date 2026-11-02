@@ -1,6 +1,7 @@
 //! Tests for the reconcile decider.
 
-use super::{reconcile, BoxFact};
+use super::{reconcile, stopped, BoxFact};
+use crate::domain::box_state::BoxLifecycleInput;
 use crate::domain::boxes::{BoxInput, BoxState};
 use crate::domain::decision::BoxTarget;
 use crate::name::{BoxHandle, BoxId};
@@ -42,13 +43,36 @@ fn missing_ready_and_asleep_become_gone() {
 }
 
 #[test]
-fn listed_boxes_are_untouched_even_on_sleep_mismatch() {
+fn listed_running_boxes_are_untouched() {
     let rows = [
         fact(1, BoxState::Ready, Some("a")),
         fact(2, BoxState::Asleep, Some("b")),
     ];
-    let out = reconcile(&rows, &[listed("a", true), listed("b", false)]);
+    let out = reconcile(&rows, &[listed("a", false), listed("b", false)]);
     assert!(out.is_empty());
+}
+
+#[test]
+fn a_ready_box_listed_stopped_sleeps_and_keeps_its_machine() {
+    let rows = [
+        fact(1, BoxState::Ready, Some("a")),
+        fact(2, BoxState::Asleep, Some("b")),
+    ];
+    let out = reconcile(&rows, &[listed("a", true), listed("b", true)]);
+    assert_eq!(out.len(), 1, "one decision, got {out:?}");
+    let slept = out.first().expect("one decision");
+    assert_eq!(slept.target, BoxTarget::Existing(BoxId::new(1)));
+    assert_eq!(slept.box_input, Some(BoxInput::Sleep));
+    assert!(matches!(
+        slept.lifecycle_input,
+        Some(BoxLifecycleInput::Sleep { auto: true, .. })
+    ));
+}
+
+#[test]
+fn stopped_never_marks_a_missing_box_gone() {
+    let rows = [fact(1, BoxState::Ready, Some("a"))];
+    assert!(stopped(&rows, &[]).is_empty());
 }
 
 #[test]

@@ -11,10 +11,13 @@ use moor_client::link::lease::{Answer, Boot, Verb};
 use moor_core::box_key::{parse_pool_slug, BoxKey, WORK_ROOT};
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::driver::{
-    AcquireReq, Acquired, BoxListing, DriverCaps, DriverError, Released, SleepKind, SleepOutcome,
+    AcquireReq, Acquired, DriverCaps, DriverError, Released, SleepKind, SleepOutcome,
 };
 
 use super::{handle_of, pin, split_handle, Crabbox};
+
+mod list;
+pub(in crate::adapters::crabbox) use list::{list, list_handles};
 
 /// How the controller reaches pool hosts: by enrolled machine id, through the runner's links
 /// broker.
@@ -347,16 +350,6 @@ pub(super) fn wake(cb: &Crabbox, handle: &BoxHandle) -> Result<(), DriverError> 
         Answer::Unsupported => Err(DriverError::Unsupported("provider cannot wake a box")),
         other => Err(unexpected(Verb::Resume, &other)),
     }
-}
-
-/// Not listable: one provider name can be a host of each of several users.
-pub(super) const fn list(
-    _cb: &Crabbox,
-    _provider: &ProviderId,
-) -> Result<Vec<BoxListing>, DriverError> {
-    Err(DriverError::Unsupported(
-        "a pool host's leases are not listed by provider",
-    ))
 }
 
 /// A failure saying `why`.
