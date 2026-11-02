@@ -454,3 +454,63 @@ fn webhook_header_setup_and_finish_keep_the_header_value_out_of_argv() {
         ))
     ));
 }
+
+#[test]
+fn inspect_parses_its_options() {
+    let name = moor_core::BoxName::parse_allow_bare("app/x").expect("name");
+    assert_eq!(
+        request(&["inspect", "app/x", "--lines", "10", "--said", "2"]),
+        Request::Inspect(moor_core::request::InspectReq {
+            target: name.clone().into(),
+            lines: Some(10),
+            said: Some(2),
+        })
+    );
+    assert_eq!(
+        request(&["inspect", "app/x"]),
+        Request::Inspect(moor_core::request::InspectReq {
+            target: name.into(),
+            lines: None,
+            said: None,
+        })
+    );
+}
+
+fn inspect_text(value: serde_json::Value) -> String {
+    render(
+        &Response::ok("inspect", Some(value)),
+        &GlobalOpts::default(),
+    )
+    .stdout
+}
+
+#[test]
+fn inspect_text_lays_out_header_stuck_said_and_pane() {
+    let out = inspect_text(serde_json::json!({
+        "box": "app/x", "lifecycle": "ready", "session": "working",
+        "agent": {"launched": true, "pane": "live", "state": "working", "source": "hook"},
+        "pane": {"tail": "$ cargo test\nrunning\n", "status": "live"},
+        "said": [
+            {"text": "first", "at": "2026-11-02T10:00:00Z"},
+            {"text": "second\nmore", "at": "2026-11-02T10:05:00Z"}
+        ],
+        "stuck": {"kind": "stalled", "since": "2026-11-02T10:06:00Z",
+                  "detail": "no hook report for 10 min while cargo test"}
+    }));
+    assert_eq!(
+        out,
+        "app/x · ready · agent working (hook)\n\
+         stuck: stalled since 2026-11-02T10:06:00Z: no hook report for 10 min while cargo test\n\
+         said:\n  2026-11-02T10:00:00Z  first\n  2026-11-02T10:05:00Z  second\n                        more\n\
+         pane (live, last 2 lines):\n$ cargo test\nrunning\n"
+    );
+}
+
+#[test]
+fn inspect_text_with_nothing_else_is_only_the_header() {
+    let out = inspect_text(serde_json::json!({
+        "box": "app/x", "lifecycle": "asleep", "session": "idle",
+        "agent": null, "pane": null, "said": [], "stuck": null
+    }));
+    assert_eq!(out, "app/x · asleep\n");
+}

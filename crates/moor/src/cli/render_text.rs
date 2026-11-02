@@ -6,6 +6,7 @@ use moor_core::view::env::{EnvCredential, EnvRow, EnvView};
 use moor_core::{ExitClass, Response};
 use serde_json::Value;
 
+mod inspect;
 mod machine;
 mod node;
 mod show;
@@ -79,6 +80,7 @@ fn structured_text(cmd: &str, value: &Value) -> Option<String> {
         "node-list" => node::list_text(value),
         "machine-list" => machine::list_text(value),
         "machine-status" => machine::status_text(value),
+        "inspect" => inspect::inspect_text(value),
         "show" => show::show_text(value),
         "show-session" => show::session_text(value),
         "start" => start_text(value),
