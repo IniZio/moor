@@ -68,13 +68,19 @@ impl RunnerLinks {
         blocking(broker::status(&self.socket, machine_id))
     }
 
-    /// A blocking stream to the sshd of lease `slug` on machine `machine_id`.
+    /// A blocking stream to the sshd of lease `slug` on machine `machine_id`, found within
+    /// `timeout_secs` when given.
     ///
     /// # Errors
     /// The broker or the agent's failure.
-    pub(crate) fn dial(&self, machine_id: i64, slug: &str) -> Result<UnixStream, String> {
+    pub(crate) fn dial(
+        &self,
+        machine_id: i64,
+        slug: &str,
+        timeout_secs: Option<u64>,
+    ) -> Result<UnixStream, String> {
         let conn = blocking(async {
-            let conn = broker::dial(&self.socket, machine_id, slug).await?;
+            let conn = broker::dial(&self.socket, machine_id, slug, timeout_secs).await?;
             conn.into_std().map_err(|e| e.to_string())
         })?;
         conn.set_nonblocking(false).map_err(|e| e.to_string())?;

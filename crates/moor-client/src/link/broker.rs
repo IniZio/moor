@@ -153,13 +153,16 @@ async fn leased(socket: &Path, machine_id: i64, op: PoolOp) -> Result<lease::Ans
     }
 }
 
-/// Asks the broker at `socket` to dial `slug`'s sshd on machine `machine_id`; the stream to it.
-pub async fn dial(socket: &Path, machine_id: i64, slug: &str) -> Result<UnixStream, String> {
+/// Asks the broker at `socket` to dial `slug`'s sshd on machine `machine_id`, finding it within
+/// `timeout_secs` when given; the stream to it.
+pub async fn dial(
+    socket: &Path,
+    machine_id: i64,
+    slug: &str,
+    timeout_secs: Option<u64>,
+) -> Result<UnixStream, String> {
     let slug = slug.to_owned();
-    let op = PoolOp::Dial {
-        slug,
-        timeout_secs: None,
-    };
+    let op = PoolOp::Dial { slug, timeout_secs };
     match ask(socket, machine_id, op).await? {
         (conn, Reply::Started) => Ok(conn),
         (_, other) => Err(refusal(machine_id, other)),

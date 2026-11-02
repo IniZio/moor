@@ -383,3 +383,19 @@ fn the_last_exit_line_wins() {
     let stderr = "gate-0-exit 1\ncommand output\ngate-0-exit 7\n";
     assert_eq!(super::reported_exit(stderr, "gate-0-exit"), Some(7));
 }
+
+#[test]
+fn the_ssh_call_hands_its_deadline_in_whole_seconds_to_a_lease_dial() {
+    let lab = lab();
+    let within = |ms| {
+        let deadline = Deadline(Duration::from_millis(ms));
+        let wrapped = super::wrapped(&lab.cb, &handle(), &sh("true"), deadline).unwrap();
+        let env = wrapped.proc.env.extra;
+        env.into_iter()
+            .find(|(k, _)| k == "MOOR_DIAL_WITHIN")
+            .map(|(_, v)| v)
+    };
+    assert_eq!(within(20_000).as_deref(), Some("20"));
+    assert_eq!(within(1_500).as_deref(), Some("2"));
+    assert_eq!(within(0).as_deref(), Some("1"));
+}

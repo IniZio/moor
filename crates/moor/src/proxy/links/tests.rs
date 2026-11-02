@@ -81,3 +81,32 @@ fn status_asks_the_broker_for_the_machine() {
     assert_eq!(ask.machine_id, 7);
     assert_eq!(ask.op, PoolOp::Status);
 }
+
+#[test]
+fn link_dial_sends_the_deadline_ssh_handed_it_with_the_dial() {
+    let dir = tempfile::tempdir().unwrap();
+    let served = broker_once(
+        dir.path(),
+        Brokered::Agent {
+            reply: Reply::Refused {
+                reason: "no VM".into(),
+            },
+        },
+    );
+    let env = crate::env::Env::from_pairs([
+        ("MOOR_STATE_DIR", dir.path().to_str().unwrap()),
+        ("MOOR_DIAL_WITHIN", "7"),
+    ]);
+    let mut stderr = Vec::new();
+    let code =
+        crate::link_dial::link_dial(&env, 3, "moor-7", std::io::empty(), Vec::new(), &mut stderr);
+    assert_eq!(code, 1, "{}", String::from_utf8_lossy(&stderr));
+    let ask = served.join().unwrap();
+    assert_eq!(
+        ask.op,
+        PoolOp::Dial {
+            slug: "moor-7".into(),
+            timeout_secs: Some(7),
+        }
+    );
+}

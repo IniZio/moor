@@ -104,7 +104,9 @@ pub(super) fn wrapped(
         remote.push(' ');
         remote.push_str(&quote(word));
     }
+    let within = deadline.0.as_secs() + u64::from(deadline.0.subsec_nanos() > 0);
     let proc = ProcSpec::new(Tool::Ssh, deadline)
+        .env(super::DIAL_WITHIN, within.max(1).to_string())
         .args(words)
         .arg(remote)
         .stdin(Stdin::Bytes(env));

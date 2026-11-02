@@ -3,6 +3,7 @@
 
 use std::io::{Read, Write};
 
+use crate::adapters::crabbox::DIAL_WITHIN;
 use crate::env::Env;
 use crate::proxy::links::RunnerLinks;
 
@@ -36,7 +37,8 @@ pub fn link_dial(
         );
         return 1;
     };
-    let result = match RunnerLinks::under(&dir).dial(machine_id, slug) {
+    let within = env.get(DIAL_WITHIN).and_then(|s| s.parse().ok());
+    let result = match RunnerLinks::under(&dir).dial(machine_id, slug, within) {
         Ok(conn) => {
             crate::controller::attach::bridge(conn, input, output).map_err(|e| e.to_string())
         }
