@@ -13,10 +13,15 @@ use futures_util::future::join_all;
 use moor_client::link::ops::{self, Op};
 use moor_client::link::sweep::Swept;
 use moor_client::Client;
+use moor_core::request::Request;
+use moor_core::view::user::MachineKeysValue;
 
 use crate::hooks::{open_boxes, Hooks};
 use crate::link::{self, Answer};
 use crate::Agents;
+
+#[cfg(test)]
+mod tests;
 
 /// Longest one machine's sweep may take, release hooks included.
 const LIMIT: Duration = Duration::from_secs(ops::MAX_TIMEOUT_SECS);
@@ -59,12 +64,48 @@ async fn sweep(client: &Client, agents: &Agents, hooks: &Hooks) {
     let mut keep: Vec<i64> = open.all.into_iter().chain(recorded).collect();
     keep.sort_unstable();
     keep.dedup();
-    join_all(machines.into_iter().map(|id| machine(agents, id, &keep))).await;
+    let asks = client.clone();
+    let keys = match tokio::task::spawn_blocking(move || machine_keys(&asks)).await {
+        Ok(Ok(keys)) => Some(keys),
+        Ok(Err(e)) => {
+            eprintln!("moor-machine-runner: pool hosts not swept: {e}");
+            None
+        }
+        Err(e) => {
+            eprintln!("moor-machine-runner: pool hosts not swept: {e}");
+            None
+        }
+    };
+    let sweep = op(keep, keys);
+    join_all(machines.into_iter().map(|id| machine(agents, id, &sweep))).await;
+}
+
+/// The sweep for `keep`, naming the controller `keys` came from so a pool host shared with
+/// other controllers stops only this one's leases.
+fn op(keep: Vec<i64>, keys: Option<serde_json::Value>) -> Op {
+    let controller = keys
+        .and_then(|v| serde_json::from_value::<MachineKeysValue>(v).ok())
+        .and_then(|keys| keys.controller);
+    Op::Sweep { keep, controller }
+}
+
+/// The controller's `machine-keys` answer, which carries its id.
+fn machine_keys(client: &Client) -> Result<serde_json::Value, String> {
+    let response = client
+        .request(Request::MachineKeys {}, |_| {})
+        .map_err(|e| format!("the controller did not say its id: {e}"))?;
+    if let Some(error) = response.error {
+        return Err(format!(
+            "the controller did not say its id: {}",
+            error.message
+        ));
+    }
+    Ok(response.value.unwrap_or_default())
 }
 
 /// Sweeps machine `id` and says what came of it.
-async fn machine(agents: &Agents, id: i64, keep: &[i64]) {
-    match tokio::time::timeout(LIMIT, ask(agents, id, keep)).await {
+async fn machine(agents: &Agents, id: i64, sweep: &Op) {
+    match tokio::time::timeout(LIMIT, ask(agents, id, sweep)).await {
         Ok(Ok(swept)) => {
             for failed in &swept.errors {
                 eprintln!(
@@ -85,11 +126,8 @@ async fn machine(agents: &Agents, id: i64, keep: &[i64]) {
 }
 
 /// What machine `id` removed; a pool host removes nothing.
-async fn ask(agents: &Agents, id: i64, keep: &[i64]) -> Result<Swept, String> {
-    let sweep = Op::Sweep {
-        keep: keep.to_vec(),
-    };
-    match link::send(Some(agents), &id.to_string(), id, &sweep).await? {
+async fn ask(agents: &Agents, id: i64, sweep: &Op) -> Result<Swept, String> {
+    match link::send(Some(agents), &id.to_string(), id, sweep).await? {
         Answer::Swept(swept) => Ok(swept),
         _ => Err("it answered no sweep".to_owned()),
     }

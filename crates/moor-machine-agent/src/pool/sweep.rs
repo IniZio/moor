@@ -7,17 +7,27 @@ use std::time::Duration;
 use moor_client::link::lease::{Answer, Boot, Verb};
 use moor_client::link::ops::Reply;
 use moor_client::link::sweep::{Failed, Swept};
-use moor_core::box_key::parse_pool_slug;
+use moor_core::box_key::{parse_pool_slug, ControllerId};
 
 use super::{box_dir, lease, list, Crabbox, Pool, CALL};
 
-/// Stops each lease of the pool whose Box is not in `keep` and whose dir is older than `grace`,
-/// whatever its state, then has crabbox clear what stopped leases leave behind.
+/// Stops each of `controller`'s leases on the pool whose Box is not in `keep` and whose dir is older than `grace`,
+/// whatever its state, then has crabbox clear what stopped leases leave behind. With no
+/// controller it stops nothing: the pool's other leases belong to controllers it cannot tell apart.
 ///
 /// The runner lists the open Boxes before the pool is looked at, so a lease booted in between
 /// is missing from `keep`; its dir is younger than the grace, which is what spares it.
-pub(crate) async fn sweep(home: &Path, pool: &Pool, keep: &[i64], grace: Duration) -> Swept {
+pub(crate) async fn sweep(
+    home: &Path,
+    pool: &Pool,
+    controller: Option<&ControllerId>,
+    keep: &[i64],
+    grace: Duration,
+) -> Swept {
     let mut swept = Swept::default();
+    let Some(controller) = controller else {
+        return swept;
+    };
     let leases = match list(home, pool).await {
         Ok(leases) => leases,
         Err(reason) => {
@@ -28,9 +38,12 @@ pub(crate) async fn sweep(home: &Path, pool: &Pool, keep: &[i64], grace: Duratio
     let since =
         crate::unix_now().saturating_sub(i64::try_from(grace.as_secs()).unwrap_or(i64::MAX));
     for found in leases {
-        let Some((_, id)) = parse_pool_slug(&found.slug) else {
+        let Some((owner, id)) = parse_pool_slug(&found.slug) else {
             continue;
         };
+        if owner != *controller {
+            continue;
+        }
         let id = id.get();
         // A lease always has its dir, made before it boots; one without is long past the grace.
         let young =

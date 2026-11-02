@@ -9,7 +9,7 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use moor_core::box_key::BoxKey;
+use moor_core::box_key::{BoxKey, ControllerId};
 use moor_core::BoxId;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -149,6 +149,10 @@ pub enum Op {
     Sweep {
         /// The Boxes still open, whose folders stay.
         keep: Vec<i64>,
+        /// The sending controller, whose leases alone a pool host may stop; a pool host given
+        /// none stops nothing, since its other leases belong to controllers it cannot tell apart.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        controller: Option<ControllerId>,
     },
     /// Remove one Box's folders without running any hook, its `release` having run already; a
     /// pool host does not serve it.

@@ -3,6 +3,8 @@
 //! The Box name is for display and lookup only: slugs and directories
 //! come from the id, so a name with `/` or of any legal length is safe.
 
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
 use crate::name::{BoxId, BoxName};
 
 /// The directory under the Box login home that holds every Box workdir.
@@ -35,6 +37,23 @@ impl ControllerId {
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl Serialize for ControllerId {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for ControllerId {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(d)?;
+        Self::parse(&text).ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "a controller id is eight lowercase hex chars, not {text:?}"
+            ))
+        })
     }
 }
 
