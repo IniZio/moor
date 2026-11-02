@@ -134,7 +134,10 @@ COPY . .
 # The build context carries no .git, so the commit comes in as an argument.
 ARG MOOR_COMMIT=unknown
 ENV MOOR_COMMIT=${MOOR_COMMIT}
+# The release, without its v; empty leaves the build unstamped, so it lets in agents of any release.
+ARG MOOR_VERSION=
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/usr/local/cargo/git \
+    if [ -n "$MOOR_VERSION" ]; then export MOOR_VERSION; else unset MOOR_VERSION; fi; \
     features=""; \
     if [ -n "$MOOR_FEATURES" ]; then features="--features $(echo "$MOOR_FEATURES" | sed 's#\([^,]\+\)#moor/\1#g')"; fi; \
     bins="moor moor-slack moor-notify moor-machine-runner"; \
