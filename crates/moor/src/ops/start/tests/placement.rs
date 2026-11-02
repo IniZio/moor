@@ -489,3 +489,24 @@ fn a_wake_without_room_suspends_an_idle_box_waits_and_a_report_with_room_wakes_i
     report(&w, hv, 32_768, None);
     assert_eq!(lifecycle(&w, a), BoxLifecycle::Ready);
 }
+
+#[test]
+fn starting_an_asleep_box_without_room_queues_it_with_the_reason_and_keeps_the_prompt() {
+    use moor_core::domain::box_state::BoxLifecycle;
+    let (w, hv) = live_world(32_768);
+    let a = started(&w, "a");
+    put_to_sleep(&w, a);
+    report(&w, hv, SHORT, None);
+    let name = w.cx.store().unwrap().box_row(a).unwrap().unwrap().name;
+    let req = moor_core::StartReq {
+        prompt: Some("carry on".into()),
+        ..req(name.as_str())
+    };
+    let v = start::run(&w.cx, &req).unwrap();
+    let reason = "waiting for capacity on hv: 1 GiB free, needs 2 GiB";
+    assert!(v.attached && v.queued);
+    assert!(v.warnings_inline.iter().any(|x| x == reason));
+    assert_eq!(lifecycle(&w, a), BoxLifecycle::Pending);
+    let row = w.cx.store().unwrap().box_row(a).unwrap().unwrap();
+    assert_eq!(row.prompt.as_deref(), Some("carry on"));
+}

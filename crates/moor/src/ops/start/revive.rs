@@ -98,7 +98,7 @@ fn revive(
         return Ok(AgentLaunchView::default());
     }
     check_cap(cx, store, row)?;
-    super::wake_idle(store, id)?;
+    super::asleep::wake_idle(store, id)?;
     await_tunnel(cx, store, id);
     let resumable = row
         .agent_session_id

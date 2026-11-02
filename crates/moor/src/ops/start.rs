@@ -10,7 +10,6 @@ use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{BoxRepo, Decision, ExtraEvent, Field, Fields, NewBox};
 use moor_core::domain::event::CheckedCred;
-use moor_core::domain::session_state::SessionInput;
 use moor_core::name::NodeName;
 use moor_core::seam::forge::RepoFiles;
 use moor_core::seam::surface::workspace_label;
@@ -31,6 +30,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{BoxRow, Store, StoreError};
 
+mod asleep;
 mod launch;
 mod needs;
 mod preflight;
@@ -250,10 +250,13 @@ fn attach(
         row.boxed.as_ref().map(|b| b.state),
         Some(BoxState::Failed | BoxState::Gone)
     );
+    if asleep::wake(cx, store, req, row.id)? == asleep::Woken::Queued {
+        return Ok(queued_view(cx, &reread(store, row.id)?, true));
+    }
     if relaunch::asks_for_agent(req) {
         reopen::ended_session(store, row.id, req.parent.map(SessionId::get))?;
     }
-    wake_idle(store, row.id)?;
+    asleep::wake_idle(store, row.id)?;
     let agent = relaunch::run(cx, store, req, row.id, (setup_exit, recreated), &settings)?;
     let agent = watch::run(cx, store, row.id, agent);
     let row = &reread(store, row.id)?;
@@ -263,18 +266,6 @@ fn attach(
     }
     set_agent(&mut v, agent);
     Ok(v)
-}
-
-/// Moves an Idle Box being started to Working, so the launch check sees a Working Box.
-fn wake_idle(store: &Store, id: BoxId) -> Result<(), CommandError> {
-    let row = reread(store, id)?;
-    if !(row.lifecycle == BoxLifecycle::Ready && row.session.is_quiet()) {
-        return Ok(());
-    }
-    match store.apply(Decision::new(id).session(SessionInput::AgentBusy)) {
-        Ok(_) | Err(StoreError::Illegal(_)) => Ok(()),
-        Err(e) => Err(e.into()),
-    }
 }
 
 /// Moves each open Box with a ready machine between Working and Idle, until `draining`.

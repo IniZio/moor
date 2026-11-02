@@ -19,6 +19,7 @@ use crate::testing::{box_name, driver::FakeDriver};
 
 mod activity;
 mod agent_install;
+mod asleep;
 mod branch_owner;
 mod cache;
 mod capacity;
