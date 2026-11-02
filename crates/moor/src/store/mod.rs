@@ -147,6 +147,17 @@ pub(crate) struct BoxRow {
     pub(crate) boxed: Option<DriverRow>,
 }
 
+impl BoxRow {
+    /// Whether the Box or its machine is asleep.
+    pub(crate) fn asleep(&self) -> bool {
+        self.lifecycle == BoxLifecycle::Asleep
+            || self
+                .boxed
+                .as_ref()
+                .is_some_and(|b| b.state == BoxState::Asleep)
+    }
+}
+
 /// Event row.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct EventRow {

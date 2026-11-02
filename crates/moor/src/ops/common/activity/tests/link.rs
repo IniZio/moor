@@ -2,7 +2,10 @@
 
 use std::sync::Arc;
 
+use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::engine::{AgentFate, EngineError};
 use moor_core::BoxId;
 
@@ -124,4 +127,39 @@ fn a_box_reached_on_a_later_try_reattaches() {
         .iter()
         .any(|(k, _)| k == "agent_unreachable" || k == "session_ended"));
     assert_eq!(engine.reattached().len(), 1);
+}
+
+#[test]
+fn the_agent_of_an_asleep_box_ends_without_asking_the_box() {
+    let dir = tempfile::tempdir().unwrap().keep();
+    let engine = Arc::new(
+        FakeEngine::new()
+            .probes(SESSION, exited_probes())
+            .transcript_text("abc")
+            .fates(vec![unreachable(); 8]),
+    );
+    let (cx, _) = cx(&dir, &engine);
+    let id = attached_box(&cx);
+    let store = cx.store().unwrap();
+    store
+        .apply(Decision::new(id).session(SessionInput::AgentQuiet))
+        .unwrap();
+    let sleep = BoxLifecycleInput::Sleep {
+        auto: true,
+        reason: None,
+    };
+    store
+        .apply(
+            Decision::new(id)
+                .lifecycle(sleep)
+                .box_input(BoxInput::Sleep),
+        )
+        .unwrap();
+    let reading = run_once(&cx, id);
+    settle(&cx, store, &row(&cx, id), &reading).unwrap();
+    let seen = kinds(&cx, id, WATCHED);
+    assert!(!seen.iter().any(|(k, _)| k == "agent_unreachable"));
+    let ended = seen.iter().find(|(k, _)| k == "session_ended").unwrap();
+    assert_eq!(ended.1.get("exit").unwrap(), 1);
+    assert_eq!(engine.fates_left(), 8);
 }

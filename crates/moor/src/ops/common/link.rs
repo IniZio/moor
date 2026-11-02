@@ -38,7 +38,8 @@ pub(crate) enum Fate {
 /// Asks the Box what became of the agent of `launch`, whose pane ended with `pane_exit`, and
 /// attaches a new pane when it still runs. Each round of tries the Box does not answer gets an
 /// `agent_unreachable` event; the agent counts as ended once the Box has not answered for
-/// `UNREACHABLE_FOR`. The caller holds the Box lock.
+/// `UNREACHABLE_FOR`. An asleep Box has no VM to ask, so its agent counts as ended at once and
+/// waking the Box launches a new one. The caller holds the Box lock.
 ///
 /// # Errors
 /// A store failure.
@@ -49,6 +50,9 @@ pub(crate) fn recover(
     launch: &SessionRow,
     pane_exit: Option<i32>,
 ) -> Result<Fate, CommandError> {
+    if row.asleep() {
+        return Ok(Fate::Ended(pane_exit));
+    }
     let Some(sref) = session_ref(row, launch.session_ref.clone(), launch.pane.clone()) else {
         return Ok(Fate::Ended(pane_exit));
     };
