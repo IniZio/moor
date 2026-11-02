@@ -153,7 +153,7 @@ impl World {
     /// Mark the Box closed and its machine released.
     pub(super) fn close_box(&self) {
         let d = Decision::new(self.id)
-            .lifecycle(BoxLifecycleInput::Close)
+            .lifecycle(BoxLifecycleInput::Close { reason: None })
             .session(SessionInput::End)
             .box_input(BoxInput::Released);
         self.store.apply(d).unwrap();

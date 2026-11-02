@@ -17,6 +17,15 @@ pub struct CloseReq {
     pub force: bool,
 }
 
+/// Arguments of `close-failed`.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CloseFailedReq {
+    /// Close despite unfinished work.
+    #[serde(default)]
+    pub force: bool,
+}
+
 /// Arguments of commands that take only a box.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

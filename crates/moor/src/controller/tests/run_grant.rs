@@ -40,7 +40,7 @@ fn a_streamed_run_acts_on_the_box_its_grant_pinned() {
     };
     let (mine, checked) = open(1000);
     let close = Decision::new(checked)
-        .lifecycle(BoxLifecycleInput::Close)
+        .lifecycle(BoxLifecycleInput::Close { reason: None })
         .session(SessionInput::End);
     store.apply(close).unwrap();
     let (_, theirs) = open(2000);

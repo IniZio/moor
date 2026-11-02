@@ -296,7 +296,7 @@ fn closed_box_with_a_release_failed_box_is_refused_without_a_copy() {
     store
         .apply(
             Decision::new(f.id)
-                .lifecycle(BoxLifecycleInput::Close)
+                .lifecycle(BoxLifecycleInput::Close { reason: None })
                 .session(SessionInput::End),
         )
         .unwrap();

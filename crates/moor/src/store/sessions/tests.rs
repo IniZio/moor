@@ -157,7 +157,7 @@ fn closing_a_box_ends_every_session() {
     store
         .apply(
             Decision::new(id)
-                .lifecycle(BoxLifecycleInput::Close)
+                .lifecycle(BoxLifecycleInput::Close { reason: None })
                 .session(SessionInput::End),
         )
         .unwrap();

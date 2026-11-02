@@ -33,7 +33,7 @@ fn closed_name_can_be_reused() {
     store
         .apply(
             Decision::new(id)
-                .lifecycle(BoxLifecycleInput::Close)
+                .lifecycle(BoxLifecycleInput::Close { reason: None })
                 .session(SessionInput::End),
         )
         .unwrap();
@@ -297,7 +297,7 @@ fn closing_a_ready_box_records_the_box_state_as_from() {
     store
         .apply(
             Decision::new(id)
-                .lifecycle(BoxLifecycleInput::Close)
+                .lifecycle(BoxLifecycleInput::Close { reason: None })
                 .session(SessionInput::End),
         )
         .unwrap();
@@ -321,7 +321,7 @@ fn separate_close_inputs_match_the_combined_close() {
     combined
         .apply(
             Decision::new(a)
-                .lifecycle(BoxLifecycleInput::Close)
+                .lifecycle(BoxLifecycleInput::Close { reason: None })
                 .session(SessionInput::End),
         )
         .unwrap();
@@ -332,7 +332,7 @@ fn separate_close_inputs_match_the_combined_close() {
     split
         .apply(
             Decision::new(b)
-                .lifecycle(BoxLifecycleInput::Close)
+                .lifecycle(BoxLifecycleInput::Close { reason: None })
                 .session(SessionInput::End),
         )
         .unwrap();
@@ -403,7 +403,7 @@ fn the_branch_of_a_closed_box_can_be_taken_again() {
     store
         .apply(
             Decision::new(a)
-                .lifecycle(BoxLifecycleInput::Close)
+                .lifecycle(BoxLifecycleInput::Close { reason: None })
                 .session(SessionInput::End),
         )
         .unwrap();

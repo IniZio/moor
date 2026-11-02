@@ -178,8 +178,8 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
         "open-session" => on_box(json!({"seed": "go"})),
         "cp" => on_box(json!({"src": "a", "dest": "b"})),
         "artifact-read" => on_box(json!({"name": "n", "offset": 0, "len": 1})),
-        "end-session" | "show" | "inspect" | "close" | "open" | "sleep" | "wake" | "connect"
-        | "artifacts" => on_box(json!({})),
+        "end-session" | "show" | "inspect" | "close" | "open" | "sleep" | "wake" | "retry"
+        | "connect" | "artifacts" => on_box(json!({})),
         "show-session" | "update-host-session" | "end-host-session" => {
             json!({"cmd": kind, "session": session})
         }
@@ -188,7 +188,7 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
         "bind-session" => {
             json!({"cmd": kind, "front": "slack", "key": "k", "session": session, "owner": "o"})
         }
-        "webhook-setup-show" | "webhook-setup-finish" => return Names::Nothing,
+        "webhook-setup-show" | "webhook-setup-finish" | "close-failed" => return Names::Nothing,
         "start-needs" | "session-binding" | "gate" | "env" | "repos" | "whoami" | "enroll"
         | "secret-set" | "secret-delete" | "secret-names" | "as" | "mcp-add" | "mcp-remove"
         | "mcp-list" | "profile-set" | "profile-show" | "profile-remove" | "mcp-oauth-finish"
@@ -223,7 +223,7 @@ fn every_request_kind_that_names_a_box_is_refused_for_another_user() {
         unknown.is_empty(),
         "say whether these new request kinds name a Box: {unknown:?}"
     );
-    assert_eq!(checked, 24, "{kinds:?}");
+    assert_eq!(checked, 25, "{kinds:?}");
 }
 
 #[test]

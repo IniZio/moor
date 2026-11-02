@@ -96,6 +96,7 @@ fn derived_events_are_refused() {
     for e in [
         Event::Closed {
             from: BoxLifecycle::Ready,
+            reason: None,
         },
         Event::BoxReady,
         Event::BoxFailed {

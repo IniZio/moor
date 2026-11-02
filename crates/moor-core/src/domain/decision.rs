@@ -280,7 +280,7 @@ impl Decision {
     /// use moor_core::domain::box_state::BoxLifecycle;
     /// use moor_core::name::BoxId;
     ///
-    /// let _ = Decision::new(BoxId::new(1)).event(Event::Closed { from: BoxLifecycle::Ready });
+    /// let _ = Decision::new(BoxId::new(1)).event(Event::Closed { from: BoxLifecycle::Ready, reason: None });
     /// ```
     #[must_use]
     pub fn event(mut self, e: ExtraEvent) -> Self {

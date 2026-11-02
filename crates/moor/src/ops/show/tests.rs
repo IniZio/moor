@@ -128,7 +128,7 @@ fn show_lists_open_boxes_with_no_selection() {
     add(&cx, "b");
     let closed = add(&cx, "c");
     let close = Decision::new(closed)
-        .lifecycle(BoxLifecycleInput::Close)
+        .lifecycle(BoxLifecycleInput::Close { reason: None })
         .session(SessionInput::End);
     cx.store().unwrap().apply(close).unwrap();
     let v = run(&cx, &req(None, None)).unwrap();

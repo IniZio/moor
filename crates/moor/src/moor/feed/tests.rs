@@ -111,7 +111,7 @@ fn each_event_frame_carries_its_box_id_when_names_repeat() {
     let cx = engine_cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
     let old = working(&cx, &driver, "alpha", "s1");
     let close = Decision::new(old)
-        .lifecycle(BoxLifecycleInput::Close)
+        .lifecycle(BoxLifecycleInput::Close { reason: None })
         .session(SessionInput::End);
     cx.store().unwrap().apply(close).unwrap();
     let newer = working(&cx, &driver, "alpha", "s2");

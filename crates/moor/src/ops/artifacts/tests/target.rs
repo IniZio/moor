@@ -12,7 +12,7 @@ use crate::ops::artifacts::list;
 
 fn close(cx: &Cx, id: BoxId) {
     let close = Decision::new(id)
-        .lifecycle(BoxLifecycleInput::Close)
+        .lifecycle(BoxLifecycleInput::Close { reason: None })
         .session(SessionInput::End);
     cx.store().unwrap().apply(close).unwrap();
 }

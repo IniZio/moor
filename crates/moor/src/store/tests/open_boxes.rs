@@ -14,7 +14,7 @@ fn open_boxes_excludes_closed_and_rejected() {
     store
         .apply(
             Decision::new(closed)
-                .lifecycle(BoxLifecycleInput::Close)
+                .lifecycle(BoxLifecycleInput::Close { reason: None })
                 .session(SessionInput::End),
         )
         .unwrap();
@@ -40,7 +40,7 @@ fn a_pinned_name_means_only_its_pinned_box_after_another_of_that_name_opens() {
     let (store, clock) = open(dir.path());
     let first = new_box(&store, "a");
     let close = Decision::new(first)
-        .lifecycle(BoxLifecycleInput::Close)
+        .lifecycle(BoxLifecycleInput::Close { reason: None })
         .session(SessionInput::End);
     store.apply(close).unwrap();
     let name = crate::testing::box_name("a");

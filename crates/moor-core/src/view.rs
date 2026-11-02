@@ -2,6 +2,7 @@
 
 pub mod attach;
 pub mod binding;
+pub mod close_failed;
 pub mod env;
 pub mod inspect;
 pub mod machine;

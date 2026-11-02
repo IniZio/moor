@@ -268,3 +268,14 @@ fn the_runner_state_dir_is_an_absolute_or_home_path() {
         assert_eq!(err(bad).path, "runner_state_dir", "{bad}");
     }
 }
+
+#[test]
+fn setup_failed_close_defaults_to_a_day_and_zero_turns_it_off() {
+    assert_eq!(
+        ControllerConfig::default().close_setup_failed_after(),
+        Some(std::time::Duration::from_hours(24))
+    );
+    let off = parse_controller("c.yaml", "close_setup_failed_after_secs: 0\n")
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(off.close_setup_failed_after(), None);
+}

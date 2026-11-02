@@ -242,7 +242,7 @@ fn start_again_after_the_holder_closes_promotes_the_waiting_box() {
     store
         .apply(
             Decision::new(holder)
-                .lifecycle(BoxLifecycleInput::Close)
+                .lifecycle(BoxLifecycleInput::Close { reason: None })
                 .session(SessionInput::End)
                 .box_input(BoxInput::Released),
         )

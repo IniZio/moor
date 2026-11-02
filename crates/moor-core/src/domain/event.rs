@@ -57,6 +57,9 @@ pub enum Event {
     Closed {
         /// The state the box left.
         from: BoxLifecycle,
+        /// Why moor closed it, when a person did not ask.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
     },
     /// A box was requested.
     BoxRequested,
@@ -187,8 +190,7 @@ pub enum Event {
         /// The message, cut to its end when long.
         text: String,
     },
-    /// What the agent is doing now: a tool and a short argument, one line. At most one per Box
-    /// in thirty seconds, and only when the line changed.
+    /// What the agent is doing now: a tool and a short argument, one line. At most one per Box in thirty seconds, and only when the line changed.
     AgentDoing {
         /// The line, at most 80 characters.
         text: String,
@@ -270,13 +272,11 @@ pub enum Event {
         method: Option<String>,
         /// Why the Proxy refused the connection, as the Proxy names it.
         category: Option<String>,
-        /// What ended an intercepted TLS handshake: `unknown_ca_alert`,
-        /// `other_alert:<name>` or `other`.
+        /// What ended an intercepted TLS handshake: `unknown_ca_alert`, `other_alert:<name>` or `other`.
         #[serde(skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
     },
-    /// A client in the Box hung up during an intercepted TLS handshake without
-    /// sending an alert; the Proxy refused nothing.
+    /// A client in the Box hung up during an intercepted TLS handshake without sending an alert; the Proxy refused nothing.
     EgressAborted {
         /// The host the connection was for.
         host: String,
@@ -291,8 +291,7 @@ pub enum Event {
         rule: String,
         /// The HTTP method of the request.
         method: String,
-        /// A templated allow entry such as `GET /repos/{repo}/pulls/*` that would let
-        /// the request through; never a raw path, query, header, body or token.
+        /// A templated allow entry such as `GET /repos/{repo}/pulls/*` that would let the request through; never a raw path, query, header, body or token.
         shape: Option<String>,
     },
     /// The Proxy could not obtain the credential of a tool rule.
@@ -385,6 +384,7 @@ pub use profile::{ProfileEvent, ProfileStep};
 pub use steps::{lifecycle_events, session_events};
 mod boxes;
 mod checked;
+pub mod close_reason;
 mod kind;
 mod machine;
 mod post_clone;
