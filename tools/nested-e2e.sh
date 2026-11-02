@@ -6,6 +6,8 @@ D=${NESTED_E2E_DIR:-$REPO_DIR/.moor/dev/nested-e2e}
 NAME=${NESTED_E2E_NAME:-nested-e2e-$(date +%s)}
 GH_REPO_NAME=${NESTED_E2E_REPO:-IniZio/moor}
 NESTED=${NESTED:-$HOME/.cache/moor-nested}
+# The inner Box runs the repo's whole setup, nested-KVM tools included, before its agent starts.
+START_TIMEOUT=${NESTED_E2E_START_TIMEOUT:-3600}
 PROMPT="Create the file NESTED.md with the text ok, commit, push your branch, and open a draft PR titled 'test: nested Box check (close me)'"
 BRANCH=moor/$NAME
 STATE=$D/state
@@ -84,6 +86,7 @@ build() {
 
 STARTED=
 EVENTS_PID=
+CTL_PGID=
 cleanup() {
 	local rc=$?
 	trap - EXIT INT TERM
@@ -104,20 +107,29 @@ cleanup() {
 		gh api -X DELETE "repos/$GH_REPO_NAME/git/refs/heads/$BRANCH" >>"$OUT/run.log" 2>&1
 	fi
 	[ -n "$EVENTS_PID" ] && kill "$EVENTS_PID" 2>/dev/null
-	pkill -TERM -f "controller serve --config $CTL/controller.yaml"
-	for _ in $(seq 1 30); do
-		pgrep -f "controller serve --config $CTL/controller.yaml" >/dev/null || break
-		sleep 1
-	done
+	if [ -n "$CTL_PGID" ]; then
+		kill -TERM -- "-$CTL_PGID" 2>/dev/null
+		for _ in $(seq 1 30); do
+			pgrep -g "$CTL_PGID" >/dev/null || break
+			sleep 1
+		done
+		if pgrep -g "$CTL_PGID" >/dev/null; then
+			log "killing controller group $CTL_PGID: $(pgrep -g "$CTL_PGID" | tr '\n' ' ')"
+			kill -KILL -- "-$CTL_PGID" 2>/dev/null
+			sleep 1
+		fi
+	fi
 	local left
 	left=$(pgrep -f "cloud-hypervisor.*$D/run|passt.*$D/run|crabbox-cloudhypervisor.*$D/ch-state")
 	if [ -n "$left" ]; then
 		log "killing leftover VM processes: $(echo $left)"
 		kill $left
 		[ "$rc" = 0 ] && rc=1
+		sleep 2
 	fi
-	log "pgrep -af cloud-hypervisor: $(pgrep -af cloud-hypervisor || echo none)"
-	log "pgrep -a moor: $(pgrep -a moor || echo none)"
+	# Lease disks are per run; base images stay in $NESTED.
+	rm -rf "$D/ch-state/leases" "$D/run"
+	log "left running: $(pgrep -ax "cloud-hypervisor|passt|moor|crabbox-cloudhypervisor" | tr "\n" ";" || true)"
 	log "exit $rc"
 	exit "$rc"
 }
@@ -132,6 +144,8 @@ for _ in $(seq 1 30); do
 	[ -S "$CTL/controller.sock" ] && break
 	sleep 1
 done
+ctl_pid=$(pgrep -f "controller serve --config $CTL/controller.yaml" | head -1)
+CTL_PGID=$(ps -o pgid= -p "$ctl_pid" | tr -d ' ')
 moor user enroll >/dev/null
 for secret in github claude; do
 	moor user secret ls | grep -q "\"$secret\"" || printf '%s' "$secret" | moor user secret set "$secret" >/dev/null
@@ -141,7 +155,7 @@ EVENTS_PID=$!
 
 log "starting Box $NAME on $GH_REPO_NAME"
 STARTED=1
-timeout 1800 moor start "$NAME" --repo "$GH_REPO_NAME" --prompt "$PROMPT" | tee "$OUT/start.txt"
+timeout "$START_TIMEOUT" moor start "$NAME" --repo "$GH_REPO_NAME" --prompt "$PROMPT" | tee "$OUT/start.txt"
 timeout 120 moor run "$NAME" -- sh -c "systemd-detect-virt; grep -c -E 'vmx|svm' /proc/cpuinfo" | tee "$OUT/virt.txt"
 log "waiting for the agent"
 timeout 2000 moor wait "$NAME" --for done --timeout 1800
