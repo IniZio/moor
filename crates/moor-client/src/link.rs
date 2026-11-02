@@ -37,7 +37,7 @@ pub const KEEPALIVE: Duration = Duration::from_secs(15);
 pub const REPORT_EVERY: Duration = Duration::from_secs(10);
 
 /// Agent: its host's memory now.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Report {
     /// `MemAvailable` from `/proc/meminfo`, in MiB.
     pub mem_available_mib: u64,
@@ -55,11 +55,24 @@ pub struct Report {
     /// Size of that filesystem, in MiB.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disk_total_mib: Option<u64>,
+    /// The memory the host's VMs hold, for each lease whose provider says; leases it cannot tell
+    /// are left out.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub boxes: Vec<BoxMemory>,
+}
+
+/// The host memory one lease's VM holds now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BoxMemory {
+    /// `moor-<controller>-<id>`.
+    pub slug: String,
+    /// MiB of the host the VM holds; 0 when it is suspended to disk.
+    pub host_memory_mib: u64,
 }
 
 /// Each line of a stream the agent opens: the connection it accepted for a listen, or one of
 /// its memory reports, which it keeps sending on that stream.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Opened {
     /// A connection for a listen; the stream then carries it.

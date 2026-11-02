@@ -43,6 +43,7 @@ fn a_report_reads_available_total_and_both_psi_avg10s() {
             psi_full_avg10: Some(1.0),
             disk_free_mib: None,
             disk_total_mib: None,
+            boxes: Vec::new(),
         })
     );
 }
@@ -64,7 +65,7 @@ async fn the_agent_sends_a_report_at_once_on_its_stream() {
     let (near, mut far) = tokio::io::duplex(4096);
     let sending = tokio::spawn({
         let dir = dir.clone();
-        async move { send_reports(near, &dir, None).await }
+        async move { send_reports(near, &dir, None, None).await }
     });
     let first: Opened = read_line(&mut far).await.unwrap();
     assert_eq!(
@@ -77,6 +78,7 @@ async fn the_agent_sends_a_report_at_once_on_its_stream() {
                 psi_full_avg10: None,
                 disk_free_mib: None,
                 disk_total_mib: None,
+                boxes: Vec::new(),
             }
         }
     );

@@ -1,7 +1,8 @@
 //! A machine agent's memory report as the controller records it.
 
 use moor_client::link::Report;
-use moor_core::request::MemoryReport;
+use moor_core::box_key::parse_pool_slug;
+use moor_core::request::{BoxHostMemory, MemoryReport};
 
 /// `report`, received now.
 pub(super) fn received(report: &Report) -> MemoryReport {
@@ -24,4 +25,21 @@ pub(super) fn received(report: &Report) -> MemoryReport {
 )]
 fn centi(psi: f64) -> u32 {
     (psi.clamp(0.0, 100.0) * 100.0).round() as u32
+}
+
+/// What `report` says its machine's Boxes hold; a slug that is not a pool lease's is dropped.
+pub(super) fn box_memory(machine_id: i64, report: &Report) -> Vec<BoxHostMemory> {
+    report
+        .boxes
+        .iter()
+        .filter_map(|b| {
+            let (controller, box_id) = parse_pool_slug(&b.slug)?;
+            Some(BoxHostMemory {
+                machine_id,
+                controller,
+                box_id,
+                host_memory_mib: b.host_memory_mib,
+            })
+        })
+        .collect()
 }

@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use moor_client::link::lease::{Answer, Boot, Lease, Verb};
 use moor_client::link::ops::{Op, Reply};
-use moor_client::link::Offer;
+use moor_client::link::{BoxMemory, Offer};
 use moor_core::box_key::parse_pool_slug;
 use tokio::process::Command;
 
@@ -18,10 +18,12 @@ pub use reach::{carry, dial, splice, Sshd};
 mod cache;
 mod memory;
 mod reach;
+mod rows;
 mod sweep;
 
 use memory::host_mem_mib;
 pub(crate) use memory::send_reports;
+use rows::{held_memory, leases};
 pub(crate) use sweep::sweep;
 
 /// How long a VM may take to boot.
@@ -277,9 +279,8 @@ async fn room(home: &Path, pool: &Pool, slug: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// The `moor-<controller>-<id>` leases `crabbox list` shows. A lease names its slug in `labels.slug`, `slug`
-/// or `name`, and its state in `state` or `status`, by provider.
-pub(crate) async fn list(home: &Path, pool: &Pool) -> Result<Vec<Lease>, String> {
+/// The rows of `crabbox list --json`.
+async fn rows(home: &Path, pool: &Pool) -> Result<Vec<serde_json::Value>, String> {
     let printed = Crabbox {
         home,
         pool,
@@ -287,27 +288,19 @@ pub(crate) async fn list(home: &Path, pool: &Pool) -> Result<Vec<Lease>, String>
     }
     .run("list", "--json", CALL, &[0])
     .await?;
-    let leases: Vec<serde_json::Value> = serde_json::from_str(printed.trim())
-        .map_err(|e| format!("crabbox list printed no JSON list: {e}"))?;
-    Ok(leases
-        .iter()
-        .filter_map(|l| {
-            let slug = [l.pointer("/labels/slug"), l.get("slug"), l.get("name")]
-                .into_iter()
-                .flatten()
-                .find_map(serde_json::Value::as_str)
-                .filter(|s| parse_pool_slug(s).is_some())?;
-            let state = [l.get("state"), l.get("status")]
-                .into_iter()
-                .flatten()
-                .find_map(serde_json::Value::as_str)
-                .unwrap_or("unknown");
-            Some(Lease {
-                slug: slug.to_owned(),
-                state: state.to_owned(),
-            })
-        })
-        .collect())
+    serde_json::from_str(printed.trim())
+        .map_err(|e| format!("crabbox list printed no JSON list: {e}"))
+}
+
+/// The `moor-<controller>-<id>` leases `crabbox list` shows. A lease names its state in `state` or
+/// `status`, by provider.
+pub(crate) async fn list(home: &Path, pool: &Pool) -> Result<Vec<Lease>, String> {
+    Ok(leases(&rows(home, pool).await?))
+}
+
+/// The host memory each pool lease holds, from the rows whose provider reports `hostMemoryMiB`.
+pub(crate) async fn box_memory(home: &Path, pool: &Pool) -> Result<Vec<BoxMemory>, String> {
+    Ok(held_memory(&rows(home, pool).await?))
 }
 
 /// Where the pool keeps its leases' dirs: apart from the `moor-state` of Boxes that hold this
@@ -392,3 +385,6 @@ impl Crabbox<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -1,0 +1,1 @@
+CREATE TABLE machine_box_memory (machine_id INTEGER NOT NULL REFERENCES user_machines_v2(machine_id) ON DELETE CASCADE, box_id INTEGER NOT NULL, host_memory_mib INTEGER NOT NULL, PRIMARY KEY (machine_id, box_id));

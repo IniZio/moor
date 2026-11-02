@@ -76,7 +76,12 @@ fn visible(nodes: Vec<Node>, viewer: Viewer) -> Vec<Node> {
 }
 
 /// The wire form of `node`.
-fn view(node: &Node, now: i64, pressure_since: Option<i64>) -> NodeView {
+fn view(
+    node: &Node,
+    now: i64,
+    pressure_since: Option<i64>,
+    box_memory_mib: Option<u64>,
+) -> NodeView {
     let (scope, owner) = match &node.scope {
         Scope::Shared => (NodeScope::Shared, None),
         Scope::Personal { owner, .. } => (NodeScope::Personal, Some(*owner)),
@@ -100,6 +105,7 @@ fn view(node: &Node, now: i64, pressure_since: Option<i64>) -> NodeView {
         mem_psi_centi: node.memory.and_then(|m| m.psi_centi),
         mem_report_age_secs: node.memory.map(|m| now.saturating_sub(m.reported_at)),
         pressure_since,
+        box_memory_mib,
         labels: node.labels.clone(),
     }
 }
@@ -112,10 +118,17 @@ pub(crate) fn list(cx: &Cx) -> Result<NodeListValue, CommandError> {
     let mut nodes = visible(all(cx)?, cx.viewer());
     nodes.sort_by_key(|n| (matches!(n.scope, Scope::Personal { .. }), n.name.clone()));
     let since = cx.store()?.pressure_since()?;
+    let held = cx.store()?.box_memory_totals()?;
     Ok(NodeListValue {
         nodes: nodes
             .iter()
-            .map(|n| view(n, now(cx), since.get(n.name.as_str()).copied()))
+            .map(|n| {
+                let boxes = match n.scope {
+                    Scope::Personal { machine_id, .. } => held.get(&machine_id).copied(),
+                    Scope::Shared => None,
+                };
+                view(n, now(cx), since.get(n.name.as_str()).copied(), boxes)
+            })
             .collect(),
     })
 }

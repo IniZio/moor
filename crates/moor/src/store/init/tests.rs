@@ -271,7 +271,7 @@ fn an_adopted_file_gains_the_tables_older_builds_made_on_open() {
 }
 
 /// Tables that migrations after V2 create; a file migrated forward gains them empty.
-const ADDED_AFTER_V2: [&str; 12] = [
+const ADDED_AFTER_V2: [&str; 13] = [
     "user_mcp_servers",
     "user_machines",
     "box_machines",
@@ -284,6 +284,7 @@ const ADDED_AFTER_V2: [&str; 12] = [
     "user_webhooks",
     "webhook_deliveries",
     "node_pressure",
+    "machine_box_memory",
 ];
 
 fn tables(conn: &Connection) -> Vec<(String, i64)> {

@@ -98,7 +98,10 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
             machines: cx.store()?.machine_keys()?,
             controller: Some(cx.store()?.controller_id()?),
         }),
-        Request::MachineLinks(r) => to_value(&nodes::set_links(cx, &r.links)?),
+        Request::MachineLinks(r) => {
+            cx.store()?.set_box_memory(&r.box_memory)?;
+            to_value(&nodes::set_links(cx, &r.links)?)
+        }
         Request::NodeList(_) => to_value(&nodes::list(cx)?),
         Request::Sessions(r) => to_value(&sessions::run(cx, &r)?),
         Request::Close(r) => to_value(&close::run(cx, &r)?),

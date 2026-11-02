@@ -70,3 +70,38 @@ fn a_hello_with_a_field_this_build_does_not_know_still_reads() {
     let frame: Frame = serde_json::from_value(hello).unwrap();
     assert!(matches!(frame, Frame::Hello { machine_id: 7, .. }));
 }
+
+#[test]
+fn a_report_without_the_per_box_list_reads_as_empty_and_writes_none() {
+    let opened = json!({"report": {"mem_available_mib": 1, "mem_total_mib": 2}});
+    let opened: super::Opened = serde_json::from_value(opened).unwrap();
+    let super::Opened::Report { report } = &opened else {
+        panic!("not a report: {opened:?}");
+    };
+    assert!(report.boxes.is_empty());
+    assert!(!serde_json::to_string(&opened).unwrap().contains("boxes"));
+}
+
+#[test]
+fn a_report_with_the_per_box_list_round_trips() {
+    let opened = super::Opened::Report {
+        report: super::Report {
+            mem_available_mib: 1,
+            mem_total_mib: 2,
+            psi_some_avg10: None,
+            psi_full_avg10: None,
+            disk_free_mib: None,
+            disk_total_mib: None,
+            boxes: vec![super::BoxMemory {
+                slug: "moor-0badcafe-7".to_owned(),
+                host_memory_mib: 1536,
+            }],
+        },
+    };
+    let text = serde_json::to_string(&opened).unwrap();
+    assert!(text.contains("\"host_memory_mib\":1536"), "{text}");
+    assert_eq!(
+        serde_json::from_str::<super::Opened>(&text).unwrap(),
+        opened
+    );
+}

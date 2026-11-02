@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use moor_core::config::{EnrolledMachine, NodeConfig, UserConfig};
-use moor_core::request::MachineLink;
+use moor_core::name::BoxId;
+use moor_core::request::{BoxHostMemory, MachineLink};
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Identity, UserId, Viewer};
 use moor_core::view::node::NodeScope;
@@ -126,4 +127,72 @@ fn with_no_shared_node_a_user_sees_only_its_own_nodes() {
     let listed = list(&base.with_viewer(Viewer::User(alice))).unwrap().nodes;
     let seen: Vec<_> = listed.iter().map(|n| (n.name.as_str(), n.scope)).collect();
     assert_eq!(seen, [("mini", NodeScope::Personal)]);
+}
+
+fn held(cx: &Cx, node: &str) -> Option<u64> {
+    list(cx)
+        .unwrap()
+        .nodes
+        .into_iter()
+        .find(|n| n.name == node)
+        .unwrap()
+        .box_memory_mib
+}
+
+fn on(cx: &Cx, machine_id: i64, box_id: i64, host_memory_mib: u64) -> BoxHostMemory {
+    BoxHostMemory {
+        machine_id,
+        controller: cx.store().unwrap().controller_id().unwrap(),
+        box_id: BoxId::new(box_id),
+        host_memory_mib,
+    }
+}
+
+#[test]
+fn a_node_shows_the_sum_its_boxes_hold_and_a_later_report_without_one_drops_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, _, _) = two_users(dir.path());
+    assert_eq!(held(&cx, "mini"), None);
+    let id = cx
+        .store()
+        .unwrap()
+        .machine_keys()
+        .unwrap()
+        .first()
+        .unwrap()
+        .machine_id;
+    let store = cx.store().unwrap();
+    store
+        .set_box_memory(&[on(&cx, id, 1, 2048), on(&cx, id, 2, 0), on(&cx, id, 3, 512)])
+        .unwrap();
+    assert_eq!(held(&cx, "mini"), Some(2560));
+    assert_eq!(held(&cx, "fast"), None);
+    store.set_box_memory(&[on(&cx, id, 2, 0)]).unwrap();
+    assert_eq!(held(&cx, "mini"), Some(0));
+    store.set_box_memory(&[]).unwrap();
+    assert_eq!(held(&cx, "mini"), None);
+}
+
+#[test]
+fn memory_for_a_machine_that_is_not_enrolled_is_not_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, _, _) = two_users(dir.path());
+    cx.store()
+        .unwrap()
+        .set_box_memory(&[on(&cx, 999, 1, 100)])
+        .unwrap();
+    assert!(cx.store().unwrap().box_memory_totals().unwrap().is_empty());
+}
+
+#[test]
+fn memory_for_a_box_another_controller_named_is_not_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, _, _) = two_users(dir.path());
+    let store = cx.store().unwrap();
+    let id = store.machine_keys().unwrap().first().unwrap().machine_id;
+    let mut other = on(&cx, id, 1, 4096);
+    other.controller = moor_core::box_key::ControllerId::parse("ffffffff").unwrap();
+    assert_ne!(other.controller, store.controller_id().unwrap());
+    store.set_box_memory(&[other, on(&cx, id, 2, 512)]).unwrap();
+    assert_eq!(held(&cx, "mini"), Some(512));
 }
