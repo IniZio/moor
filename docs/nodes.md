@@ -53,9 +53,13 @@ NODE`. A node whose agent never reports memory admits by Box count alone.
 When a start does not fit, the node suspends its one longest-idle Box and the
 start waits for the next report. It never suspends a Box that is working, one
 waiting on a question, or one still starting. With no idle Box, nothing is
-suspended. A suspended Box's status says which Box it made room for. A wake that
-does not fit makes room the same way, leaves its Box Pending with the reason,
-and a later report with room wakes it.
+suspended. A suspended Box's status says which Box it made room for. While a
+Box waits for capacity on a node, each memory report there also suspends its
+longest-idle Box, at most one per 30 seconds, by the same rules, with the status
+`made room for BOX`. A Box still working holds the memory it has touched, since
+a guest's size is fixed while it runs. A wake that does not fit makes room the
+same way, leaves its Box Pending with the reason, and a later report with room
+wakes it.
 
 `--reserve-mib` sets the reserve kept back for the host. It defaults to 4096 MiB
 plus 10% of the host's memory:

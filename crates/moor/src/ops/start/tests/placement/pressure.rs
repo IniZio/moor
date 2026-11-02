@@ -186,3 +186,37 @@ fn the_node_list_shows_sustained_pressure_while_it_lasts() {
     tick(&w, hv, 32_768, 0, 0);
     assert_eq!(since(&w), None);
 }
+
+#[test]
+fn a_box_that_goes_idle_while_a_start_waits_is_suspended_on_the_next_report_and_the_waiter_starts()
+{
+    use moor_core::domain::box_state::BoxLifecycle;
+    let (w, hv) = live_world(32_768);
+    let (a, b) = (started(&w, "a"), started(&w, "b"));
+    report(&w, hv, SHORT, None);
+    let (c, _) = waits(&w, "c");
+    assert_eq!(lifecycle(&w, a), BoxLifecycle::Ready, "nothing idle yet");
+    let (w, _) = agents_report(w, &[a], &[b]);
+    idle(&w, a);
+    tick(&w, hv, SHORT, 0, 0);
+    assert_eq!(lifecycle(&w, a), BoxLifecycle::Asleep);
+    assert_eq!(lifecycle(&w, b), BoxLifecycle::Ready);
+    assert_eq!(asleep_reason(&w, a).as_deref(), Some("made room for c"));
+    tick(&w, hv, 32_768, 0, 0);
+    assert_eq!(lifecycle(&w, c), BoxLifecycle::Ready);
+}
+
+#[test]
+fn a_short_node_with_nothing_waiting_keeps_its_idle_boxes_up() {
+    use moor_core::domain::box_state::BoxLifecycle;
+    let (w, hv) = live_world(32_768);
+    let (a, b) = (started(&w, "a"), started(&w, "b"));
+    idle(&w, a);
+    idle(&w, b);
+    let (w, _) = agents_report(w, &[a, b], &[]);
+    for _ in 0..4 {
+        tick(&w, hv, SHORT, 0, 0);
+    }
+    assert_eq!(lifecycle(&w, a), BoxLifecycle::Ready);
+    assert_eq!(lifecycle(&w, b), BoxLifecycle::Ready);
+}

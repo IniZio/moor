@@ -40,6 +40,24 @@ pub struct Candidate {
     pub started_at: i64,
 }
 
+/// What a node's waiting Boxes ask of it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Demand {
+    /// Whether the node is short of memory for another Box.
+    pub short: bool,
+    /// The Box that has waited longest for the node.
+    pub waiter: Option<String>,
+}
+
+/// When the node last suspended a Box and what time it is, both unix seconds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Cooldown {
+    /// The node's last suspension.
+    pub suspended_at: Option<i64>,
+    /// Now.
+    pub now: i64,
+}
+
 /// The one Box to suspend.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Suspend {
@@ -79,23 +97,27 @@ pub fn critical(last: &Reading) -> bool {
 
 /// The Box to suspend on `node` after its latest report, if any.
 ///
-/// The longest-idle one under pressure, else, when the host is critical, the most recently
-/// started working one. `suspended_at` is the node's last suspension and `now` the time, both unix seconds.
+/// The longest-idle one under pressure or when a Box waits on a short node, else, when the host is
+/// critical, the most recently started working one. Nothing within [`COOLDOWN_SECS`] of the last
+/// suspension.
 #[must_use]
 pub fn relieve(
     node: &NodeName,
     readings: &[Reading],
     reserve_mib: u64,
     boxes: &[Candidate],
-    suspended_at: Option<i64>,
-    now: i64,
+    cooldown: Cooldown,
+    demand: &Demand,
 ) -> Option<Suspend> {
+    let Cooldown { suspended_at, now } = cooldown;
     let last = readings.last()?;
     if suspended_at.is_some_and(|at| now.saturating_sub(at) < COOLDOWN_SECS) {
         return None;
     }
     let critical = critical(last);
-    if !sustained(readings, reserve_mib) && !critical {
+    let pressed = sustained(readings, reserve_mib) || critical;
+    let waiter = demand.waiter.as_deref().filter(|_| demand.short);
+    if !pressed && waiter.is_none() {
         return None;
     }
     let residents: Vec<Resident> = boxes.iter().map(|c| c.resident.clone()).collect();
@@ -103,7 +125,10 @@ pub fn relieve(
         return Some(Suspend {
             id,
             last_resort: false,
-            reason: format!("memory pressure on {node}"),
+            reason: match waiter {
+                Some(w) if !pressed => format!("made room for {w}"),
+                _ => format!("memory pressure on {node}"),
+            },
         });
     }
     if !critical {

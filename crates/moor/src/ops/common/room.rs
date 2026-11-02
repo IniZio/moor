@@ -4,7 +4,9 @@
 use std::time::Duration;
 
 use moor_core::decide::preempt::{longest_idle, suspendable, Resident};
-use moor_core::decide::pressure::{relieve, sustained, working, Candidate, Reading};
+use moor_core::decide::pressure::{
+    relieve, sustained, working, Candidate, Cooldown, Demand, Reading,
+};
 use moor_core::decide::schedule::{Node, Shortfall};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxInput;
@@ -149,8 +151,11 @@ pub(crate) fn on_report(
         &p.readings,
         reserve,
         &boxes,
-        p.suspended_at,
-        now,
+        Cooldown {
+            suspended_at: p.suspended_at,
+            now,
+        },
+        &demand(store, node, memory.shortfall(now))?,
     );
     if let Some(s) = pick {
         let done = if s.last_resort {
@@ -167,6 +172,18 @@ pub(crate) fn on_report(
     }
     store.set_pressure(&node.name, &p)?;
     Ok(())
+}
+
+/// What the Boxes waiting on `node` ask of it, given its memory `short`fall. Nothing when its Box
+/// count is full, since a suspension would not help them.
+fn demand(store: &Store, node: &Node, short: Option<Shortfall>) -> Result<Demand, CommandError> {
+    let short = matches!(short, Some(Shortfall::Low { .. } | Shortfall::Pressure))
+        && node.max_boxes.is_none_or(|max| node.used < max);
+    let waiter = match store.pending_on(&node.name)?.first() {
+        Some(id) if short => store.box_row(*id)?.map(|row| row.name.as_str().to_owned()),
+        _ => None,
+    };
+    Ok(Demand { short, waiter })
 }
 
 /// Suspends working Box `id` for `reason` and leaves it waiting for room, if it still works and
