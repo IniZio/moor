@@ -191,6 +191,15 @@ impl Store {
         Ok(changed > 0)
     }
 
+    /// Delete every lease row of `box_id`; call only once its machine is released or never
+    /// existed. Returns how many rows were deleted.
+    pub(crate) fn drop_box_leases(&self, box_id: BoxId) -> Result<usize, StoreError> {
+        let conn = self.writer();
+        let changed = conn.execute("DELETE FROM box_lease WHERE box = ?", [box_id.get()])?;
+        drop(conn);
+        Ok(changed)
+    }
+
     /// Leases of `box_id`, by id.
     pub(crate) fn leases(&self, box_id: BoxId) -> Result<Vec<LeaseRow>, StoreError> {
         let conn = self.reader()?;

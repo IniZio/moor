@@ -175,7 +175,7 @@ fn unchecked_refusal_leaves_the_force_flag_to_the_cli_hint() {
 }
 
 /// A Box whose machine is up but whose setup failed before its agent launched.
-fn fx_setup_failed() -> Fx {
+pub(super) fn fx_setup_failed() -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
     let surface = Arc::new(surface());
