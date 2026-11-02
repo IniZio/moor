@@ -51,6 +51,17 @@ impl Gate {
     fn seen(&self) -> Vec<Seen> {
         self.seen.lock().unwrap().clone()
     }
+
+    /// Waits until the gate has received a `method` message.
+    fn wait_for(&self, method: &str) {
+        for _ in 0..1000 {
+            if self.seen().iter().any(|s| s.body["method"] == method) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("the gate never received {method}");
+    }
 }
 
 fn answer(mut stream: TcpStream, seen: &Mutex<Vec<Seen>>, refuse: fn(&str) -> bool) {
@@ -94,13 +105,14 @@ fn answer(mut stream: TcpStream, seen: &Mutex<Vec<Seen>>, refuse: fn(&str) -> bo
     reply(&mut stream, "200 OK", "application/json", &message);
 }
 
+/// Writes one response; `moor mcp` exits on stdin's end without waiting for answers still in
+/// flight, so the peer may already be gone.
 fn reply(stream: &mut TcpStream, status: &str, kind: &str, body: &str) {
-    write!(
+    let _ = write!(
         stream,
         "HTTP/1.1 {status}\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
-    )
-    .unwrap();
+    );
 }
 
 /// Opens an event stream with one notification and keeps it open, as a live listen does.
@@ -213,6 +225,8 @@ fn tools_list_round_trips_with_the_saved_token() {
     assert_eq!(init["id"], 1);
     assert_eq!(init["result"]["protocolVersion"], "2025-11-25");
     mcp.send(&json!({"jsonrpc": "2.0", "method": "notifications/initialized"}));
+    // `moor mcp` relays each line on its own thread, so it may send the next request first.
+    gate.wait_for("notifications/initialized");
     let tools = mcp.ask(&request(2, "tools/list", &json!({})));
     assert_eq!(
         tools,
