@@ -219,6 +219,9 @@ fn release_removes_the_lease_dir_once_the_lease_is_gone() {
     let (got, kept) = released(stop_fails(4, "lease not found\n"));
     assert_eq!(got, Ok(Released::AlreadyGone));
     assert!(!kept);
+    let (got, kept) = released(stop_fails(1, "lease moor-1-ab12cd not found\n"));
+    assert_eq!(got, Ok(Released::AlreadyGone));
+    assert!(!kept);
 }
 
 #[test]

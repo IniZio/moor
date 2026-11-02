@@ -214,3 +214,32 @@ fn claim_race_text_after_a_remote_exit_is_not_a_race() {
     let e = nz(2, "claim changed\nremote command exited 2\n");
     assert!(!is_claim_race(&e));
 }
+
+#[test]
+fn a_release_naming_a_lease_not_found_is_gone_whatever_the_exit_code() {
+    for code in [1, 4, 7] {
+        let e = nz(code, "Lease moor-1-ec42b6 not found\n");
+        assert_eq!(
+            map_error(Op::Release, Some("external"), &e),
+            DriverError::NotFound
+        );
+    }
+}
+
+#[test]
+fn only_a_release_reads_a_lease_not_found_that_way() {
+    let e = nz(1, "lease moor-1-ec42b6 not found");
+    assert!(matches!(
+        map_error(Op::Target, None, &e),
+        DriverError::Failed { .. }
+    ));
+}
+
+#[test]
+fn another_release_error_still_fails_the_release() {
+    let e = nz(1, "provider api returned 500");
+    assert!(matches!(
+        map_error(Op::Release, Some("external"), &e),
+        DriverError::Failed { .. }
+    ));
+}
