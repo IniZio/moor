@@ -36,6 +36,66 @@ fn the_agents_message_survives_the_event_trim() {
     assert_eq!(value["artifacts"], json!([{"name": "shot.png"}]));
 }
 
+/// A ready Box whose events are `kinds`, in order, each with `payload`.
+fn with_events(events: &[(&str, Value)]) -> Value {
+    let events: Vec<Value> = events
+        .iter()
+        .enumerate()
+        .map(|(n, (kind, payload))| {
+            json!({"kind": kind, "payload": payload, "ts": format!("2026-10-29T10:0{n}:00Z")})
+        })
+        .collect();
+    json!({"box": {"lifecycle": "ready"}, "events": events})
+}
+
+#[test]
+fn a_refused_egress_marks_the_box_stuck_in_the_status_line() {
+    let mut value = with_events(&[(
+        "egress_refused",
+        json!({"host": "api.example.com", "rule": "example"}),
+    )]);
+    detailed(&mut value);
+    assert_eq!(value["stuck"]["kind"], "egress_refused");
+    assert_eq!(value["stuck"]["since"], "2026-10-29T10:00:00Z");
+    assert_eq!(
+        value["stuck"]["detail"],
+        "refused api.example.com (rule example)"
+    );
+    assert_eq!(value["status"], "ready · stuck: egress_refused");
+}
+
+#[test]
+fn a_finished_turn_after_it_clears_stuck() {
+    let mut value = with_events(&[
+        ("egress_refused", json!({"host": "api.example.com"})),
+        ("turn_done", json!({"steer": 1, "outcome": "done"})),
+    ]);
+    detailed(&mut value);
+    assert_eq!(value["stuck"], Value::Null);
+    assert_eq!(value["status"], "ready");
+}
+
+#[test]
+fn stuck_is_judged_before_the_events_are_trimmed() {
+    let mut events = vec![("agent_stalled", json!({"doing": null, "quiet_secs": 700}))];
+    events.extend((0..9).map(|n| ("agent_doing", json!({"text": format!("{n}")}))));
+    let mut value = with_events(&events);
+    detailed(&mut value);
+    assert_eq!(value["events"].as_array().unwrap().len(), 5);
+    assert_eq!(value["stuck"]["kind"], "stalled");
+}
+
+#[test]
+fn a_waiting_stuck_box_reads_waiting_then_stuck() {
+    let mut value = with_events(&[("agent_unreachable", json!({"attempts": 3, "error": "x"}))]);
+    value["box"]["agent"] = json!({"state": "waiting", "waiting_on": ["CI"]});
+    detailed(&mut value);
+    assert_eq!(
+        value["status"],
+        "ready · waiting on CI · stuck: agent_unreachable"
+    );
+}
+
 #[test]
 fn a_box_whose_agent_said_nothing_has_no_agent_said() {
     let mut value = json!({"box": {"lifecycle": "ready"}, "events": []});

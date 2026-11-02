@@ -3,6 +3,7 @@
 
 use moor_core::request::{Request as ControllerRequest, ShowReq};
 use moor_core::view::progress::{self, Happened, Progress};
+use moor_core::view::stuck::stuck_of;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
@@ -160,7 +161,12 @@ fn detailed(value: &mut Value) {
         status(&lifecycle, &events),
         reply.get("box").and_then(|b| b.get("agent")),
     );
+    let stuck = stuck_of(&events);
+    let line = stuck
+        .as_ref()
+        .map_or_else(|| line.clone(), |s| format!("{line} · stuck: {}", s.kind));
     reply.insert("status".to_owned(), json!(line));
+    reply.insert("stuck".to_owned(), json!(stuck));
     // The trim below may drop the agent's message, so it gets a key of its own.
     if let Some(said) = reply.get("box").and_then(|b| b.get("said")).cloned() {
         reply.insert("agent_said".to_owned(), said);
