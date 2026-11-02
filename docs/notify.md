@@ -92,7 +92,12 @@ stores:
 | `agent_stalled` | The agent reported busy, then sent no report for 10 minutes while no `moor run` was in flight. Sent once per stall. |
 
 Add `relaunched` to hear about each automatic restart of the agent, or
-`closed` and `asleep` for those changes. Add `agent_resumed` to hear when a
+`closed` and `asleep` for those changes. A `closed` event's `data` has `from`,
+the lifecycle the Box left, and a `reason` when moor closed the Box and no
+person asked. `setup_failed_expired` means the controller closed a Box whose
+setup had failed for longer than `close_setup_failed_after_secs`.
+`close_failed` means `moor close-failed` closed it. A close that a person asked
+for with `moor close` has no `reason`. Add `agent_resumed` to hear when a
 stalled agent reports again.
 
 ## What is posted

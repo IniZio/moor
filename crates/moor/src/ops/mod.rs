@@ -13,7 +13,7 @@ mod binding;
 mod box_mirror;
 mod box_put;
 mod close;
-mod close_failed;
+pub(crate) mod close_failed;
 pub(crate) mod common;
 mod cp;
 mod end_session;

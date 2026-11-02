@@ -5,7 +5,7 @@ use std::thread;
 use std::time::Duration;
 
 use super::drain::Drain;
-use super::{log, Sink};
+use super::{log, Running, Sink};
 use crate::env::Env;
 use crate::vault::Vault;
 use crate::Moor;
@@ -14,14 +14,20 @@ use crate::Moor;
 ///
 /// Each tick wires fresh adapters so config and tool changes apply; a failure is
 /// logged to `sink` and the next tick still runs.
-pub(super) fn spawn(env: &Env, every: Duration, drain: &Arc<Drain>, sink: &Sink) {
-    let env = env.clone();
-    passes(every, drain, sink, move |draining| {
-        match Moor::from_env(&env) {
-            Ok(moor) => moor.settle_open(draining),
+///
+/// A Box that has been `setup_failed` for `close_after` is closed by the pass; `None` keeps them.
+pub(super) fn spawn(running: &Running, drain: &Arc<Drain>, sink: &Sink) {
+    let env = Env::clone(&running.env);
+    let close_after = running.close_setup_failed_after;
+    passes(
+        running.settle_every,
+        drain,
+        sink,
+        move |draining| match Moor::from_env(&env) {
+            Ok(moor) => moor.settle_open_closing(draining, close_after),
             Err(e) => vec![e.error.to_string()],
-        }
-    });
+        },
+    );
 }
 
 /// Refreshes users' OAuth MCP access tokens near expiry each `every`, on its own thread so a
