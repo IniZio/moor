@@ -21,7 +21,7 @@ fn newest_events_of_returns_the_last_n_oldest_first() {
     let rows = store.newest_events_of(a, "agent_said", 2).unwrap();
     let texts: Vec<_> = rows
         .iter()
-        .map(|r| r.payload["text"].as_str().unwrap())
+        .map(|r| r.payload.get("text").and_then(|t| t.as_str()).unwrap())
         .collect();
     assert_eq!(texts, ["two", "three"]);
     assert!(rows.iter().all(|r| r.box_id == a && r.kind == "agent_said"));
