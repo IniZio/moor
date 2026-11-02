@@ -23,6 +23,7 @@ mod events;
 mod machine;
 mod pane;
 mod pins;
+mod reconcile;
 mod said;
 mod target;
 

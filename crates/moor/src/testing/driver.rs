@@ -26,6 +26,8 @@ pub(crate) use tunnel::TunnelReply;
 struct State {
     next: u32,
     live: Vec<String>,
+    stopped: Vec<String>,
+    by_handle: bool,
     providers: Vec<(String, ProviderId)>,
     calls: Vec<String>,
     rec: script::Rec,
@@ -84,16 +86,6 @@ impl FakeDriver {
     fn st(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
-
-    /// Makes `handle` vanish, as if deleted behind moor's back.
-    pub(crate) fn forget(&self, handle: &BoxHandle) {
-        self.st().live.retain(|h| h != handle.as_str());
-    }
-
-    /// Calls so far, like `acquire`, `release box-1` or `exec box-1`.
-    pub(crate) fn calls(&self) -> Vec<String> {
-        self.st().calls.clone()
-    }
 }
 
 impl Driver for FakeDriver {
@@ -144,6 +136,9 @@ impl Driver for FakeDriver {
     fn list(&self, provider: &ProviderId) -> Result<Vec<BoxListing>, DriverError> {
         let mut s = self.st();
         s.note("list".to_owned());
+        if s.by_handle {
+            return Err(DriverError::Unsupported("listed by handle"));
+        }
         if let Some(e) = s.fail_list.take().or_else(|| s.fail_list_always.clone()) {
             return Err(e);
         }
@@ -153,9 +148,13 @@ impl Driver for FakeDriver {
             .map(|(h, _)| BoxListing {
                 handle: BoxHandle::new(h.clone()),
                 provider: Some(provider.clone()),
-                asleep: false,
+                asleep: s.stopped.contains(h),
             })
             .collect())
+    }
+
+    fn list_handles(&self, handles: &[BoxHandle]) -> Result<Vec<BoxListing>, DriverError> {
+        self.listed_handles(handles)
     }
 
     fn reverse_tunnel(&self, h: &BoxHandle, bp: u16, socket: &Path) -> tunnel::Opened {

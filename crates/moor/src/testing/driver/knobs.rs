@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use moor_core::cache::CachePlan;
-use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{BoxListing, DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Output};
 use moor_core::BoxHandle;
 
@@ -41,6 +41,47 @@ pub(super) struct CacheState {
 }
 
 impl FakeDriver {
+    /// Makes `handle` vanish, as if deleted behind moor's back.
+    pub(crate) fn forget(&self, handle: &BoxHandle) {
+        self.st().live.retain(|h| h != handle.as_str());
+    }
+
+    /// Stops `handle`'s machine behind moor's back, keeping its disk, as a host restart does.
+    pub(crate) fn stop_behind(&self, handle: &BoxHandle) {
+        self.st().stopped.push(handle.as_str().to_owned());
+    }
+
+    /// `list` is unsupported and `list_handles` answers instead, as for a pool host's Boxes.
+    pub(crate) fn listed_by_handle(self) -> Self {
+        self.st().by_handle = true;
+        self
+    }
+
+    /// Calls so far, like `acquire`, `release box-1` or `exec box-1`.
+    pub(crate) fn calls(&self) -> Vec<String> {
+        self.st().calls.clone()
+    }
+
+    /// What `list_handles` answers: the live handles among `handles`, asleep when stopped.
+    pub(super) fn listed_handles(
+        &self,
+        handles: &[BoxHandle],
+    ) -> Result<Vec<BoxListing>, DriverError> {
+        let s = self.st();
+        if !s.by_handle {
+            return Err(DriverError::Unsupported("listed by provider"));
+        }
+        Ok(handles
+            .iter()
+            .filter(|h| s.live.iter().any(|l| l == h.as_str()))
+            .map(|h| BoxListing {
+                handle: h.clone(),
+                provider: None,
+                asleep: s.stopped.iter().any(|l| l == h.as_str()),
+            })
+            .collect())
+    }
+
     /// Queues scripted `exec` results, served in order; then exit code 0.
     pub(crate) fn exec_results(
         self,
