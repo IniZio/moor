@@ -200,8 +200,7 @@ fn start_sleeps_an_idle_box_past_the_threshold() {
         probes(w, Some(HookKind::Idle), PaneStatus::Unknown)
     });
     w.cx.clock().sleep(Duration::from_mins(31));
-    let v = run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Asleep);
+    run(&w.cx, &super::agentless_req("other")).unwrap();
     assert_eq!(row(&w, id).lifecycle, BoxLifecycle::Asleep);
 }
 

@@ -141,7 +141,7 @@ fn on_live(cx: &Cx, store: &Store, req: &StartReq, row: &BoxRow, session: &Sessi
 }
 
 /// Stores a given prompt on the Box, replacing any it holds, so the launch sends it.
-fn store_prompt(store: &Store, req: &StartReq, id: BoxId) -> Result<(), CommandError> {
+pub(super) fn store_prompt(store: &Store, req: &StartReq, id: BoxId) -> Result<(), CommandError> {
     let Some(g) = &req.prompt else {
         return Ok(());
     };
