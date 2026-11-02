@@ -1,13 +1,22 @@
 #!/bin/bash
+# Starts a Box inside a cloud-hypervisor VM on this Box and checks that its agent
+# opens a draft PR. Before running it:
+# - Start this Box with `--also IniZio/moor-nested-check`, or with another scratch
+#   repo that you then name in NESTED_E2E_REPO. The Proxy only has credentials for
+#   repos this Box was started with.
+# - The Box owner needs write access to that repo: the inner agent pushes a branch
+#   and opens a draft PR there, which this script closes and deletes.
+# - The node needs nested KVM (/dev/kvm in this Box), and the tools from
+#   tools/box-nested-kvm.sh.
 set -euo pipefail
 
 REPO_DIR=$(git rev-parse --show-toplevel)
 D=${NESTED_E2E_DIR:-$REPO_DIR/.moor/dev/nested-e2e}
 NAME=${NESTED_E2E_NAME:-nested-e2e-$(date +%s)}
-GH_REPO_NAME=${NESTED_E2E_REPO:-IniZio/moor}
+# A repo without .moor.yaml, so the inner Box has no setup to run.
+GH_REPO_NAME=${NESTED_E2E_REPO:-IniZio/moor-nested-check}
 NESTED=${NESTED:-$HOME/.cache/moor-nested}
-# The inner Box runs the repo's whole setup, nested-KVM tools included, before its agent starts.
-START_TIMEOUT=${NESTED_E2E_START_TIMEOUT:-3600}
+START_TIMEOUT=${NESTED_E2E_START_TIMEOUT:-600}
 PROMPT="Create the file NESTED.md with the text ok, commit, push your branch, and open a draft PR titled 'test: nested Box check (close me)'"
 BRANCH=moor/$NAME
 STATE=$D/state
@@ -106,7 +115,20 @@ socket: $CTL/controller.sock
 state_dir: $STATE
 EOF
 
+# built: target/debug/moor is newer than every tracked file.
+built() {
+	local bin=$REPO_DIR/target/debug/moor
+	[ -x "$bin" ] || return 1
+	[ -z "$(cd "$REPO_DIR" && git ls-files -z |
+		xargs -0 sh -c 'bin=$1; shift; find -L "$@" -maxdepth 0 -newer "$bin" -print -quit' sh "$bin" 2>/dev/null)" ]
+}
+
 build() {
+	if built; then
+		log "build skipped: target/debug/moor is newer than every tracked file"
+		return 0
+	fi
+	log "building with the pty surface"
 	local tries=0
 	until timeout 2400 cargo build --workspace --locked --features moor/pty-surface >"$OUT/build.log" 2>&1; do
 		tries=$((tries + 1))
@@ -164,7 +186,6 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-log "building with the pty surface"
 build
 sg kvm -c "exec setsid moor controller serve --config $CTL/controller.yaml" >"$OUT/controller.log" 2>&1 </dev/null &
 for _ in $(seq 1 30); do
