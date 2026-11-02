@@ -57,6 +57,8 @@ pub struct ClosePlan {
     pub close_workspace: bool,
     /// The decision to apply when no release runs.
     pub decision_close: Decision,
+    /// Why moor closes the Box when a person did not ask; the release verdict records it too.
+    pub reason: Option<String>,
 }
 
 /// Why a close is refused.
@@ -150,6 +152,18 @@ pub const fn needs_box_check(lifecycle: BoxLifecycle, session: SessionState) -> 
 /// [`Refusal::UnsavedInBox`] for work only in the Box, and [`Refusal::BoxUnchecked`] when the Box could
 /// not be checked.
 pub fn close_gate(f: &CloseFacts, force: bool) -> Result<ClosePlan, Refusal> {
+    close_gate_with_reason(f, force, None)
+}
+
+/// [`close_gate`] for a close that moor starts for `reason`, which the `closed` event records.
+///
+/// # Errors
+/// The same refusals as [`close_gate`].
+pub fn close_gate_with_reason(
+    f: &CloseFacts,
+    force: bool,
+    reason: Option<String>,
+) -> Result<ClosePlan, Refusal> {
     if !f.lifecycle.is_live() {
         return Err(Refusal::AlreadyClosed);
     }
@@ -175,8 +189,11 @@ pub fn close_gate(f: &CloseFacts, force: bool) -> Result<ClosePlan, Refusal> {
         release_box: f.has_handle && f.box_state.is_some_and(releasable),
         close_workspace: true,
         decision_close: Decision::new(f.box_id)
-            .lifecycle(BoxLifecycleInput::Close { reason: None })
+            .lifecycle(BoxLifecycleInput::Close {
+                reason: reason.clone(),
+            })
             .session(SessionInput::End),
+        reason,
     })
 }
 
@@ -199,8 +216,19 @@ const fn releasable(s: BoxState) -> bool {
 /// only a `ReleaseFailed` Box, already marked for manual release, does not hold the close back.
 #[must_use]
 pub fn release_outcome(box_id: BoxId, box_state: BoxState, r: ReleaseResult) -> ReleaseVerdict {
+    release_outcome_with_reason(box_id, box_state, r, None)
+}
+
+/// [`release_outcome`] for a close that moor starts for `reason`.
+#[must_use]
+pub fn release_outcome_with_reason(
+    box_id: BoxId,
+    box_state: BoxState,
+    r: ReleaseResult,
+    reason: Option<String>,
+) -> ReleaseVerdict {
     let close = Decision::new(box_id)
-        .lifecycle(BoxLifecycleInput::Close { reason: None })
+        .lifecycle(BoxLifecycleInput::Close { reason })
         .session(SessionInput::End);
     match r {
         ReleaseResult::Deleted | ReleaseResult::AlreadyGone => ReleaseVerdict {
