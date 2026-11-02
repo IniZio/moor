@@ -21,6 +21,7 @@ fails until one node is configured, or one of your own machines is enrolled.
 | `box.sleep_after_blocked` | duration | `5m` | How long a Box stays idle while its agent waits on an unanswered prompt or a first-run screen before moor puts it to sleep. The shorter of this and `box.sleep_after` applies. An answer, a steer, or a message wakes the Box. |
 | `box.max_awake` | duration | `2h` | How long any Box stays awake, counted from its last start or wake, before moor puts it to sleep, even while its agent works. A steer or a message wakes the Box and the agent resumes. |
 | `box.launch_timeout` | duration such as `30s`, `3m`, or `1h` | `3m` | How long a Box's agent may take to start a session, or to reach a first-run screen, before moor records `launch_timed_out`, warns, and counts the Box as quiet so it can sleep. Restart the agent to try again. After 3 relaunches in 10 minutes, moor stops restarting an agent on its own. It refuses the next relaunch with a message and records `relaunch_capped`. |
+| `box.also` | list of `OWNER/NAME` | none | Repos a new Box clones beside its first repo when the start lists none. See [Several repos in one Box](cli.md#several-repos-in-one-box). |
 
 ### Nodes
 

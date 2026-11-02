@@ -256,6 +256,7 @@ fn start_request(row: &SlackBox, repo: ForgeRepo) -> Request {
         resume: false,
         repo: Some(repo),
         parent: row.parent,
+        also: None,
         identity: None,
     })
 }

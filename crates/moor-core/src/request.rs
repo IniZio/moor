@@ -277,6 +277,9 @@ pub struct StartReq {
     /// The repo the Box clones; a Box with no repo starts with an empty workdir.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<ForgeRepo>,
+    /// Repos the Box clones beside `repo`, in order; `box.also` in the user config when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub also: Option<Vec<ForgeRepo>>,
     /// Parent Session of the Session this request opens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<SessionId>,

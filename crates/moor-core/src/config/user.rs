@@ -23,6 +23,7 @@ use serde::Deserialize;
 use super::proxy::{injected, ProxyConfig};
 use super::{check, parse_strict, ConfigError};
 use crate::cache::CacheConfig;
+use crate::name::ForgeRepo;
 pub use controller::ControllerClientConfig;
 pub use creds::McpServer;
 pub use driver::DriverConfig;
@@ -128,6 +129,8 @@ pub struct BoxConfig {
     pub max_awake: Option<String>,
     /// Time an agent launch may take before the Box counts as quiet.
     pub launch_timeout: Option<String>,
+    /// Repos a new Box clones beside its primary repo when the start names none.
+    pub also: Vec<ForgeRepo>,
 }
 
 impl BoxConfig {

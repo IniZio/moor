@@ -214,6 +214,7 @@ fn start_req(box_name: &str, prompt: Option<&str>, repo: &str, parent: i64) -> R
         resume: false,
         repo: Some(ForgeRepo::parse(repo).unwrap()),
         parent: Some(SessionId::new(parent)),
+        also: None,
         identity: None,
     })
 }

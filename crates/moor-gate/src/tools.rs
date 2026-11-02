@@ -4,9 +4,9 @@
 use std::path::PathBuf;
 
 use moor_client::Client;
-use moor_core::name::{BoxName, ForgeRepo};
+use moor_core::name::BoxName;
 use moor_core::request::{
-    BoxTarget, CloseReq, EnrollReq, Request as ControllerRequest, ShowReq, StartReq, SteerReq,
+    BoxTarget, CloseReq, EnrollReq, Request as ControllerRequest, ShowReq, SteerReq,
 };
 use moor_core::response::{ExitClass, Response as ControllerResponse};
 use moor_core::view::progress;
@@ -25,9 +25,11 @@ mod events;
 pub(crate) use events::{fetch, EventsArgs};
 mod listen;
 mod reply;
+mod start;
 mod webhook;
 
 use reply::Reply;
+use start::start_request;
 
 /// The tools; one copy per MCP session.
 #[derive(Clone)]
@@ -43,6 +45,9 @@ pub(crate) struct Tools {
 struct StartArgs {
     /// The repo to clone, as `owner/name`.
     repo: String,
+    /// More repos to clone beside `repo`, each as `owner/name` and each one you can push to;
+    /// your configured `box.also` when left out, none when empty.
+    also: Option<Vec<String>>,
     /// A name for the Box; one is made up when left out.
     name: Option<String>,
     /// What the Box's agent should do first.
@@ -263,39 +268,6 @@ fn target(name: &str) -> Result<BoxTarget, String> {
     BoxName::parse_allow_bare(name)
         .map(Into::into)
         .map_err(|e| e.to_string())
-}
-
-/// The controller request that starts the Box `args` asks for.
-fn start_request(args: StartArgs) -> Result<ControllerRequest, String> {
-    let repo = ForgeRepo::parse(&args.repo)
-        .map_err(|_| format!("{} is not a repo; give it as owner/name", args.repo))?;
-    let name = match args.name {
-        Some(name) => name,
-        None => format!("{}/mcp-{:08x}", repo.name.to_lowercase(), random()),
-    };
-    let name = BoxName::parse_allow_bare(&name).map_err(|e| {
-        format!("{e}; pass name as <repo>/<label> in lowercase letters, digits and dashes")
-    })?;
-    Ok(ControllerRequest::Start(StartReq {
-        name,
-        prompt: args.prompt,
-        issue: None,
-        base: args.base,
-        model: None,
-        node: args.node,
-        no_agent: false,
-        resume: false,
-        repo: Some(repo),
-        parent: None,
-        identity: None,
-    }))
-}
-
-/// 32 random bits, for a Box name no one chose.
-fn random() -> u32 {
-    use std::hash::{BuildHasher, Hasher, RandomState};
-    let bits = RandomState::new().build_hasher().finish();
-    u32::try_from(bits & u64::from(u32::MAX)).unwrap_or_default()
 }
 
 /// The shape of [`send`] and [`send_early`].

@@ -232,6 +232,7 @@ fn attach(
     user: UserId,
 ) -> Result<StartView, CommandError> {
     preflight::check_owner(row, user)?;
+    repo::check_kept(req, row)?;
     relaunch::check_resume(req, row)?;
     dead_provisioning(cx, row)?;
     let reprovisioned = reprovision(cx, store, row, "start")?;
@@ -303,6 +304,7 @@ fn settle_one(cx: &Cx, store: &Store, row: &BoxRow) {
 /// Reads the repo the Box starts from through the forge; changes nothing.
 fn gather(cx: &Cx, req: &StartReq, user: UserId) -> Result<Facts, CommandError> {
     let profile = profile::gather(cx, user)?;
+    repo::check_first(req)?;
     let Some(repo) = &req.repo else {
         return Ok(Facts {
             repo: None,
@@ -313,12 +315,14 @@ fn gather(cx: &Cx, req: &StartReq, user: UserId) -> Result<Facts, CommandError> 
     };
     let branch = moor_core::box_key::branch(&req.name);
     let at = repo::read(cx, user, repo, req.base.as_deref(), &branch)?;
+    let also = req.also.as_deref().unwrap_or(&cx.config().box_.also);
+    let others = repo::others(cx, user, repo, also, &branch)?;
     Ok(Facts {
         repo: Some(BoxRepo {
             repo: repo.clone(),
             moor_yaml: at.files.moor_yaml.clone(),
             author: at.author,
-            others: Vec::new(),
+            others,
         }),
         base: Some(at.base.as_str().to_owned()),
         files: at.files,

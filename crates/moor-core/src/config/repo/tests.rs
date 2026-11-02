@@ -313,3 +313,14 @@ fn node_labels_are_checked() {
 fn a_repo_cannot_name_a_node() {
     rejects("node: {name: hv}", "node.name", "unknown field");
 }
+
+#[test]
+fn a_repo_config_cannot_list_more_repos() {
+    for text in [
+        "also: [o/lib]\n",
+        "repos: [o/lib]\n",
+        "box: {also: [o/lib]}\n",
+    ] {
+        assert!(parse_repo("m.yaml", text).is_err(), "{text}");
+    }
+}
