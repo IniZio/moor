@@ -13,6 +13,7 @@ use super::args_probe::Flags;
 use super::GlobalOpts;
 use box_ops::{BoxArg, CloseArgs, CpArgs};
 use events::EventsArgs;
+use inspect::InspectArgs;
 use node::NodeCmd;
 use session::SessionCmd;
 use user::UserCli;
@@ -21,6 +22,7 @@ use wait_events::WaitEventsArgs;
 
 mod box_ops;
 mod events;
+mod inspect;
 mod node;
 mod session;
 #[cfg(test)]
@@ -131,6 +133,8 @@ enum Cmd {
     /// Show one Box or all open Boxes.
     #[command(visible_alias = "list")]
     Show(ShowArgs),
+    /// Look at one Box to tell working from stuck.
+    Inspect(InspectArgs),
     /// Close a Box.
     Close(CloseArgs),
     /// Copy a file to or from the Box.
@@ -179,6 +183,7 @@ impl Cmd {
                 session: SessionId::new(session),
             })),
             Self::Show(a) => Action::Request(Request::Show(a.into())),
+            Self::Inspect(a) => Action::Request(Request::Inspect(a.into())),
             Self::Close(a) => Action::Request(Request::Close(a.into())),
             Self::Cp(a) => Action::Request(Request::Cp(a.into())),
             Self::Open(a) => Action::Request(Request::Open(a.into())),
