@@ -95,6 +95,7 @@ fn rows(handle: BoxHandle) -> (BoxRow, DriverRow) {
         intent: None,
         intent_at: None,
         setup_failed_at: None,
+        steps_pending_at: None,
         idle_since: None,
         launch_failure: None,
         created_at: Ts::from_millis(0),

@@ -42,6 +42,8 @@ pub struct Fields {
     pub state_reason: Field<String>,
     /// When setup failed, in milliseconds since the epoch.
     pub setup_failed_at: Field<i64>,
+    /// When the setup lines passed and the steps after them began; cleared once those steps ran.
+    pub steps_pending_at: Field<i64>,
     /// The recorded launch failure, as JSON.
     pub launch_failure: Field<String>,
     /// Box provider.
