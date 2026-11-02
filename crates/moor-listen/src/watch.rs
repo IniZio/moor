@@ -15,9 +15,11 @@ use crate::token::Fail;
 const PREFIX: &str = "moor://box/";
 
 /// Events worth a line; the rest (busy, ready, asleep) are noise to a reader.
-const WORTH: [&str; 8] = [
+const WORTH: [&str; 10] = [
     "idled",
     "needs_input",
+    "agent_stalled",
+    "agent_resumed",
     "setup_failed",
     "session_failed",
     "launch_timed_out",
@@ -273,9 +275,27 @@ fn news(gate: &Gate, token: &str, uri: &str) -> Option<(String, String)> {
         .map(str::trim)
         .filter(|t| !t.is_empty())
         .map(|t| t.chars().take(SAID).collect::<String>());
-    let line = said.map_or_else(
-        || format!("moor: box {name} {kind}"),
-        |said| format!("moor: box {name} {kind}: {said}"),
-    );
+    let line = quiet_line(name, kind, event.get("payload")).unwrap_or_else(|| {
+        said.map_or_else(
+            || format!("moor: box {name} {kind}"),
+            |said| format!("moor: box {name} {kind}: {said}"),
+        )
+    });
     Some((key, line))
+}
+
+/// The line for a stall or its end, from the event's payload; none for other kinds.
+fn quiet_line(name: &str, kind: &str, payload: Option<&Value>) -> Option<String> {
+    let mins = payload?.get("quiet_secs")?.as_u64()? / 60;
+    match kind {
+        "agent_stalled" => {
+            let doing = payload?.get("doing").and_then(Value::as_str);
+            Some(doing.filter(|d| !d.is_empty()).map_or_else(
+                || format!("moor: box {name} stalled: no progress for {mins} min"),
+                |d| format!("moor: box {name} stalled: no progress for {mins} min while {d}"),
+            ))
+        }
+        "agent_resumed" => Some(format!("moor: box {name} resumed after {mins} min")),
+        _ => None,
+    }
 }

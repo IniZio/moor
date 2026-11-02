@@ -529,3 +529,48 @@ fn a_turn_with_no_activity_line_yet_counts_from_its_start() {
     assert!(!render("b", &v, 599).contains("No new activity"));
     assert!(render("b", &v, 600).contains("No new activity for 10m. It may be stuck."));
 }
+
+#[test]
+fn a_stalled_agent_shows_how_long_and_what_it_was_doing() {
+    let v = folded(&[
+        ("working", json!({})),
+        (
+            "agent_stalled",
+            json!({"doing": "Bash: cargo test", "quiet_secs": 725}),
+        ),
+    ]);
+    assert!(
+        render("b", &v, 0).ends_with("\nstalled: no progress for 12 min while `Bash: cargo test`")
+    );
+}
+
+#[test]
+fn a_stall_without_a_doing_line_names_only_the_time() {
+    let v = folded(&[
+        ("working", json!({})),
+        ("agent_stalled", json!({"quiet_secs": 600})),
+    ]);
+    assert!(render("b", &v, 0).ends_with("\nstalled: no progress for 10 min"));
+}
+
+#[test]
+fn a_resumed_agent_replaces_the_stall_line() {
+    let v = folded(&[
+        ("working", json!({})),
+        ("agent_stalled", json!({"quiet_secs": 600})),
+        ("agent_resumed", json!({"quiet_secs": 1500})),
+    ]);
+    let text = render("b", &v, 0);
+    assert!(text.ends_with("\nresumed after 25 min"), "{text}");
+    assert!(!text.contains("stalled"), "{text}");
+}
+
+#[test]
+fn a_change_of_state_clears_the_stall_line() {
+    let v = folded(&[
+        ("working", json!({})),
+        ("agent_stalled", json!({"quiet_secs": 600})),
+        ("idled", json!({})),
+    ]);
+    assert!(!render("b", &v, 0).contains("stalled"));
+}

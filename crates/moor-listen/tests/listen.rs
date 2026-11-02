@@ -146,6 +146,19 @@ impl World {
         self.emit(id, Some(name), kind);
     }
 
+    /// Like `happen`, for an event that carries `payload` and no agent message.
+    fn happen_with(&self, name: &str, id: i64, kind: &str, payload: Value) {
+        {
+            let mut f = self.fake.lock().unwrap();
+            f.events
+                .entry(name.to_owned())
+                .or_default()
+                .push(json!({"id": id, "kind": kind, "payload": payload, "ts": "t"}));
+            f.said.insert(name.to_owned(), String::new());
+        }
+        self.emit(id, Some(name), kind);
+    }
+
     /// Sends an event to every live watch.
     fn emit(&self, cursor: i64, name: Option<&str>, kind: &str) {
         let frame = moor_core::controller::ServerFrame::Event {
@@ -250,6 +263,28 @@ fn idled_prints_the_line_with_the_first_line_of_agent_said() {
     world.wait_live(1);
     world.happen("repo/a", 1, "idled", "Opened the PR.\nSecond line.");
     assert_eq!(listen.line(), "moor: box repo/a idled: Opened the PR.");
+}
+
+#[test]
+fn a_stall_prints_how_long_and_what_the_agent_was_doing() {
+    let world = world(&["repo/a"]);
+    let listen = world.listen();
+    world.wait_live(1);
+    let payload = json!({"doing": "Bash: cargo test", "quiet_secs": 725});
+    world.happen_with("repo/a", 1, "agent_stalled", payload);
+    assert_eq!(
+        listen.line(),
+        "moor: box repo/a stalled: no progress for 12 min while Bash: cargo test"
+    );
+}
+
+#[test]
+fn a_resume_prints_how_long_the_stall_lasted() {
+    let world = world(&["repo/a"]);
+    let listen = world.listen();
+    world.wait_live(1);
+    world.happen_with("repo/a", 1, "agent_resumed", json!({"quiet_secs": 1500}));
+    assert_eq!(listen.line(), "moor: box repo/a resumed after 25 min");
 }
 
 #[test]

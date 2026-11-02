@@ -91,6 +91,8 @@ pub(super) struct View {
     pub(super) blocked: Option<(String, i64)>,
     /// The latest thing the provider reported while bringing the machine up, or why it failed.
     pub(super) machine_note: Option<String>,
+    /// The agent's stall report, until it ends or the state changes.
+    quiet: Option<stalled::Quiet>,
 }
 
 impl View {
@@ -108,6 +110,7 @@ impl View {
         if self.state != before {
             self.doing = None;
         }
+        stalled::track(&mut self.quiet, kind, payload, self.state != before);
         if kind == "agent_doing" {
             let text = payload.get("text").and_then(Value::as_str);
             self.doing = text.filter(|t| !t.is_empty()).map(str::to_owned);
@@ -251,6 +254,7 @@ pub(super) fn render(name: &str, view: &View, now: i64) -> String {
             minutes(quiet)
         );
     }
+    stalled::append(&mut text, view.quiet.as_ref());
     if let Some(hint) = stuck_hint(view, now) {
         let _ = write!(text, "\n{hint}");
     }
@@ -375,5 +379,6 @@ impl Planner {
 }
 
 mod machine;
+mod stalled;
 #[cfg(test)]
 mod tests;
