@@ -21,6 +21,39 @@ export PATH=$REPO_DIR/target/debug:$PATH
 
 log() { printf 'nested-e2e: %s\n' "$*" | tee -a "$OUT/run.log" >&2; }
 
+# Processes of this setup: moor and the VM tools whose command line names $D, or
+# whose environment carries this state dir (`moor proxy serve` names neither).
+ours() {
+	local pid
+	for pid in $(pgrep -f "^([^ ]*/)?(cloud-hypervisor|passt|moor|crabbox-cloudhypervisor) "); do
+		if grep -qF "$D/" "/proc/$pid/cmdline" 2>/dev/null ||
+			tr '\0' '\n' <"/proc/$pid/environ" 2>/dev/null | grep -qxF "MOOR_STATE_DIR=$STATE"; then
+			echo "$pid"
+		fi
+	done
+}
+
+# stop_ours: TERM, then KILL whatever is still up after 15s.
+stop_ours() {
+	local pids
+	pids=$(ours)
+	[ -z "$pids" ] && return 0
+	# shellcheck disable=SC2086
+	kill $pids 2>/dev/null || true
+	for _ in $(seq 1 15); do
+		[ -z "$(ours)" ] && return 0
+		sleep 1
+	done
+	pids=$(ours)
+	log "killing $(echo $pids)"
+	# shellcheck disable=SC2086
+	kill -KILL $pids 2>/dev/null || true
+	sleep 1
+}
+
+mkdir -p "$OUT"
+# A run killed outright (SIGKILL, reboot) leaves its controller and VM behind.
+stop_ours
 # Each run starts clean: a Box left in state from an earlier run would hold the node.
 rm -rf "$STATE" "$D/ch-state" "$D/run"
 mkdir -p "$STATE" "$CTL" "$OUT" "$D/ch-state" "$D/run" "$XDG_CONFIG_HOME/crabbox"
@@ -87,51 +120,32 @@ build() {
 }
 
 STARTED=
-EVENTS_PID=
-CTL_PGID=
 cleanup() {
 	local rc=$?
-	trap - EXIT INT TERM
+	# Finish cleaning up even when a second Ctrl-C arrives.
+	trap '' INT TERM
+	trap - EXIT
 	set +e
 	if [ -n "$STARTED" ]; then
-		moor events --box "$NAME" >"$OUT/events.jsonl" 2>/dev/null
+		timeout 60 moor events --box "$NAME" >"$OUT/events.jsonl" 2>/dev/null
 		log "closing Box $NAME"
-		timeout 600 moor close "$NAME" --force >>"$OUT/run.log" 2>&1
+		# A Box still starting refuses to close; stop_ours then takes its VM down.
+		timeout 120 moor close "$NAME" --force >>"$OUT/run.log" 2>&1
 	fi
 	local pr
-	pr=$(gh pr list -R "$GH_REPO_NAME" --head "$BRANCH" --state open --json url -q '.[].url' 2>/dev/null)
+	pr=$(timeout 60 gh pr list -R "$GH_REPO_NAME" --head "$BRANCH" --state open --json url -q '.[].url' 2>/dev/null)
 	for url in $pr; do
 		log "closing $url"
-		gh pr close "$url" -R "$GH_REPO_NAME" --delete-branch >>"$OUT/run.log" 2>&1
+		timeout 60 gh pr close "$url" -R "$GH_REPO_NAME" --delete-branch >>"$OUT/run.log" 2>&1
 	done
-	if gh api "repos/$GH_REPO_NAME/git/ref/heads/$BRANCH" >/dev/null 2>&1; then
+	if timeout 60 gh api "repos/$GH_REPO_NAME/git/ref/heads/$BRANCH" >/dev/null 2>&1; then
 		log "deleting branch $BRANCH"
-		gh api -X DELETE "repos/$GH_REPO_NAME/git/refs/heads/$BRANCH" >>"$OUT/run.log" 2>&1
+		timeout 60 gh api -X DELETE "repos/$GH_REPO_NAME/git/refs/heads/$BRANCH" >>"$OUT/run.log" 2>&1
 	fi
-	[ -n "$EVENTS_PID" ] && kill "$EVENTS_PID" 2>/dev/null
-	if [ -n "$CTL_PGID" ]; then
-		kill -TERM -- "-$CTL_PGID" 2>/dev/null
-		for _ in $(seq 1 30); do
-			pgrep -g "$CTL_PGID" >/dev/null || break
-			sleep 1
-		done
-		if pgrep -g "$CTL_PGID" >/dev/null; then
-			log "killing controller group $CTL_PGID: $(pgrep -g "$CTL_PGID" | tr '\n' ' ')"
-			kill -KILL -- "-$CTL_PGID" 2>/dev/null
-			sleep 1
-		fi
-	fi
-	local left
-	left=$(pgrep -f "cloud-hypervisor.*$D/run|passt.*$D/run|crabbox-cloudhypervisor.*$D/ch-state")
-	if [ -n "$left" ]; then
-		log "killing leftover VM processes: $(echo $left)"
-		kill $left
-		[ "$rc" = 0 ] && rc=1
-		sleep 2
-	fi
+	stop_ours
 	# Lease disks are per run; base images stay in $NESTED.
 	rm -rf "$D/ch-state/leases" "$D/run"
-	log "left running: $(pgrep -af "^([^ ]*/)?(cloud-hypervisor|passt|moor|crabbox-cloudhypervisor) " | tr '\n' ';')"
+	log "left running: $(ours | tr '\n' ' ')"
 	log "exit $rc"
 	exit "$rc"
 }
@@ -146,21 +160,18 @@ for _ in $(seq 1 30); do
 	[ -S "$CTL/controller.sock" ] && break
 	sleep 1
 done
-ctl_pid=$(pgrep -f "controller serve --config $CTL/controller.yaml" | head -1)
-CTL_PGID=$(ps -o pgid= -p "$ctl_pid" | tr -d ' ')
 moor user enroll >/dev/null
 for secret in github claude; do
 	moor user secret ls | grep -q "\"$secret\"" || printf '%s' "$secret" | moor user secret set "$secret" >/dev/null
 done
 moor events --follow >"$OUT/events-follow.jsonl" 2>&1 &
-EVENTS_PID=$!
 
 log "starting Box $NAME on $GH_REPO_NAME"
 STARTED=1
-timeout "$START_TIMEOUT" moor start "$NAME" --repo "$GH_REPO_NAME" --prompt "$PROMPT" | tee "$OUT/start.txt"
-timeout 120 moor run "$NAME" -- sh -c "systemd-detect-virt; grep -c -E 'vmx|svm' /proc/cpuinfo" | tee "$OUT/virt.txt"
+timeout --foreground "$START_TIMEOUT" moor start "$NAME" --repo "$GH_REPO_NAME" --prompt "$PROMPT" | tee "$OUT/start.txt"
+timeout --foreground 120 moor run "$NAME" -- sh -c "systemd-detect-virt; grep -c -E 'vmx|svm' /proc/cpuinfo" | tee "$OUT/virt.txt"
 log "waiting for the agent"
-timeout 2000 moor wait "$NAME" --for done --timeout 1800
+timeout --foreground 2000 moor wait "$NAME" --for done --timeout 1800
 moor show "$NAME" --agent --events 100 --pane >"$OUT/show.txt"
 url=$(gh pr list -R "$GH_REPO_NAME" --head "$BRANCH" --state open --json url,isDraft,title \
 	-q '.[] | select(.isDraft and .title == "test: nested Box check (close me)") | .url')
