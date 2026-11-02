@@ -98,12 +98,17 @@ fn steps(w: &World) -> Vec<String> {
 #[test]
 fn every_listed_repo_is_cloned_on_the_box_branch_and_set_up_in_its_own_tree() {
     let (w, done) = provisioned(FakeDriver::new(), lib_and_deploy());
+    let mut ran = steps(&w);
+    // The other repos clone at the same time, so their relative order is not fixed.
+    if let Some(others) = ran.get_mut(1..3) {
+        others.sort();
+    }
     assert_eq!(
-        steps(&w),
+        ran,
         [
             "clone o/n in n",
-            "clone o/lib in lib",
             "clone o/deploy in deploy",
+            "clone o/lib in lib",
             "setup n-setup in n",
             "setup lib-setup in lib",
             "setup deploy-setup in deploy",
@@ -160,4 +165,49 @@ fn a_listed_repo_whose_tree_is_taken_fails_the_start_naming_both_repos() {
         "{:?}",
         steps(&w)
     );
+}
+
+#[test]
+fn the_other_repos_are_cloned_at_the_same_time() {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    let driver = FakeDriver::new();
+    let started = Arc::new(AtomicUsize::new(0));
+    let waited_in_vain = Arc::new(AtomicBool::new(false));
+    let (seen, lost) = (started, waited_in_vain.clone());
+    // The primary's clone is the first exec; the first other clone holds until the second begins.
+    driver.on_exec(move || {
+        if seen.fetch_add(1, Ordering::SeqCst) + 1 != 2 {
+            return;
+        }
+        for _ in 0..600 {
+            if seen.load(Ordering::SeqCst) >= 3 {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        lost.store(true, Ordering::SeqCst);
+    });
+    let (_w, done) = provisioned(driver, lib_and_deploy());
+    assert!(
+        !waited_in_vain.load(Ordering::SeqCst),
+        "the second clone did not start while the first was running"
+    );
+    assert!(!done.setup.failed(), "{:?}", done.setup);
+}
+
+#[test]
+fn every_failed_clone_is_named_with_its_reason_in_listed_order() {
+    let driver = FakeDriver::new()
+        .exec_ends_when("o/lib.git", ExecOutcome::Exited { code: 1 })
+        .exec_ends_when("o/deploy.git", ExecOutcome::Exited { code: 7 });
+    let (_w, done) = reprovisioned(driver, lib_and_deploy());
+    let shown = done.err().unwrap_or_default();
+    let lib = shown.find("o/lib: ");
+    let deploy = shown.find("o/deploy: ");
+    assert!(lib.is_some() && deploy.is_some(), "{shown}");
+    assert!(lib < deploy, "{shown}");
+    assert!(shown.contains("; "), "{shown}");
 }

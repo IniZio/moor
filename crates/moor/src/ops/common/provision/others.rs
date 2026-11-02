@@ -5,18 +5,19 @@ use moor_core::boxscript::quote;
 use moor_core::config::{parse_repo, BoxSettings};
 use moor_core::domain::decision::{ExtraEvent, ListedRepo};
 use moor_core::exec_env::Purpose;
-use moor_core::seam::driver::{ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{Driver, ExecOutcome, ExecSpec};
 use moor_core::seam::forge::ForgeRepo;
-use moor_core::seam::proc::Output;
-use moor_core::{BoxId, BoxPath, Warning};
+use moor_core::seam::proc::{Deadline, Output};
+use moor_core::{BoxHandle, BoxId, BoxPath, Warning};
 
-use super::clone::{clone_log, with_tail, SetupProxy};
+use super::clone::{clone_log_of, with_tail, SetupProxy};
 use super::setup_run::run_through_proxy;
 use super::SetupTarget;
 use crate::cx::Cx;
 use crate::ops::common::box_exec::{self, Site};
 use crate::ops::common::setup::SetupRun;
 use crate::store::Store;
+use std::path::PathBuf;
 
 /// A listed repo other than the primary one, and the work tree it gets beside the primary's.
 pub(super) struct OtherTree<'a> {
@@ -51,8 +52,8 @@ pub(super) fn trees<'a>(target: &SetupTarget<'a>) -> Result<Vec<OtherTree<'a>>, 
     Ok(out)
 }
 
-/// Clones each other repo into its work tree on the Box `branch`, in listed order; the reason
-/// names the repo whose clone failed.
+/// Clones each other repo into its work tree on the Box `branch`, all at once; the reason names
+/// every repo whose clone failed, in listed order.
 pub(super) fn clone_others(
     cx: &Cx,
     id: BoxId,
@@ -61,28 +62,80 @@ pub(super) fn clone_others(
     proxy: &SetupProxy,
     branch: &str,
 ) -> Result<(), String> {
-    for tree in trees(target)? {
-        let at = SetupTarget {
-            workdir: &tree.workdir,
-            tree_of: Some(&tree.listed.repo),
-            ..*target
-        };
-        clone_other(cx, id, &at, cfg, proxy, branch)
-            .map_err(|e| format!("{}: {e}", tree.listed.repo))?;
+    let jobs: Vec<(String, Result<CloneJob, String>)> = trees(target)?
+        .into_iter()
+        .map(|tree| {
+            let at = SetupTarget {
+                workdir: &tree.workdir,
+                tree_of: Some(&tree.listed.repo),
+                ..*target
+            };
+            let log = at
+                .tree_of
+                .and_then(|repo| clone_log_of(cx, id, &repo.name).ok());
+            let job = prepare_clone(cx, &at, log, cfg, proxy, branch);
+            (tree.listed.repo.to_string(), job)
+        })
+        .collect();
+    let driver = cx.driver();
+    let handle = target.handle;
+    let results: Vec<(String, Result<(), String>)> = if jobs.len() < 2 {
+        jobs.into_iter()
+            .map(|(name, job)| (name, job.and_then(|job| run_clone(driver, handle, &job))))
+            .collect()
+    } else {
+        std::thread::scope(|scope| {
+            let mut running = Vec::new();
+            for (name, job) in jobs {
+                let handle = job.map(|job| scope.spawn(move || run_clone(driver, handle, &job)));
+                running.push((name, handle));
+            }
+            running
+                .into_iter()
+                .map(|(name, handle)| {
+                    let result = handle.and_then(|h| {
+                        h.join()
+                            .unwrap_or_else(|_| Err("the clone thread panicked".to_owned()))
+                    });
+                    (name, result)
+                })
+                .collect()
+        })
+    };
+    let failed: Vec<String> = results
+        .into_iter()
+        .filter_map(|(name, r)| r.err().map(|e| format!("{name}: {e}")))
+        .collect();
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(failed.join("; "))
     }
-    Ok(())
 }
 
-/// Clones the repo `at` holds into its tree, from its default branch when the remote has no Box
-/// branch.
-fn clone_other(
+/// One other repo's clone, ready to run without the context.
+struct CloneJob {
+    /// The exec that clones.
+    spec: ExecSpec,
+    /// Its time limit.
+    deadline: Deadline,
+    /// The remote it clones.
+    url: String,
+    /// The Box branch it checks out.
+    branch: String,
+    /// The host file its output streams into.
+    log: Option<PathBuf>,
+}
+
+/// The clone of the repo `at` holds, from its default branch when the remote has no Box branch.
+fn prepare_clone(
     cx: &Cx,
-    id: BoxId,
     at: &SetupTarget<'_>,
+    log: Option<PathBuf>,
     cfg: &BoxSettings,
     proxy: &SetupProxy,
     branch: &str,
-) -> Result<(), String> {
+) -> Result<CloneJob, String> {
     let url = at.tree_of.map(ForgeRepo::clone_url).unwrap_or_default();
     let checkout = Checkout {
         url: &url,
@@ -102,19 +155,34 @@ fn clone_other(
     };
     let proxy = proxy.as_ref().ok().and_then(Option::as_ref);
     let exec = box_exec::prepare(cx, &site, proxy, cfg, Purpose::Clone)?;
-    let log = clone_log(cx, id).ok();
     let spec = ExecSpec {
         argv: exec.argv(vec!["sh".to_owned(), "-c".to_owned(), script]),
         env: exec.vars(),
         cwd: exec.cwd(),
         output: log.clone().map(Output::Log),
     };
-    let outcome = cx.driver().exec(at.handle, &spec, exec.deadline());
-    let text = log.as_deref().map(|log| {
+    Ok(CloneJob {
+        spec,
+        deadline: exec.deadline(),
+        url,
+        branch: branch.to_owned(),
+        log,
+    })
+}
+
+/// Runs `job` and reads back, then removes, its log.
+fn run_clone(driver: &dyn Driver, handle: &BoxHandle, job: &CloneJob) -> Result<(), String> {
+    let outcome = driver.exec(handle, &job.spec, job.deadline);
+    let text = job.log.as_deref().map(|log| {
         let text = std::fs::read_to_string(log).unwrap_or_default();
         let _ = std::fs::remove_file(log);
         text
     });
+    let checkout = Checkout {
+        url: &job.url,
+        base: "HEAD",
+        branch: &job.branch,
+    };
     let reason = match outcome {
         Ok(ExecOutcome::Exited { code: 0 }) => return Ok(()),
         Ok(ExecOutcome::Exited { code }) => {

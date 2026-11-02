@@ -294,8 +294,19 @@ pub(super) fn with_tail(reason: String, text: &str) -> String {
 
 /// A private host file in the state dir for the clone exec's output of Box `id`.
 pub(super) fn clone_log(cx: &Cx, id: BoxId) -> Result<PathBuf, String> {
+    clone_log_at(cx, format!("{}.log", id.get()))
+}
+
+/// A private host file for the output of the clone of repo `name` in Box `id`, apart from the
+/// primary's and every other repo's.
+pub(super) fn clone_log_of(cx: &Cx, id: BoxId, name: &str) -> Result<PathBuf, String> {
+    clone_log_at(cx, format!("{}-{name}.log", id.get()))
+}
+
+/// The private log `file` in the state dir's clone directory.
+fn clone_log_at(cx: &Cx, file: String) -> Result<PathBuf, String> {
     let dir = cx.state_dir().map_err(|e| e.error.to_string())?;
-    let log = dir.join("clone").join(format!("{}.log", id.get()));
+    let log = dir.join("clone").join(file);
     dotfiles::private_log(&log).map_err(|e| format!("could not create the clone log: {e}"))?;
     Ok(log)
 }
