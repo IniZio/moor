@@ -139,6 +139,8 @@ build() {
 			return 1
 		fi
 	done
+	# Cargo leaves the binary alone when no Rust changed, so mark it current.
+	touch "$REPO_DIR/target/debug/moor"
 }
 
 open_prs() {
