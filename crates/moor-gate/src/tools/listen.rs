@@ -29,10 +29,12 @@ use crate::{rewrite, Person};
 pub(crate) const PREFIX: &str = "moor://box/";
 
 /// Kinds after which a Box's resource reads differently.
-const UPDATED: [&str; 13] = [
+const UPDATED: [&str; 15] = [
     "idled",
     "busy",
     "needs_input",
+    "agent_stalled",
+    "agent_resumed",
     "setup_failed",
     "session_failed",
     "launch_timed_out",
@@ -65,7 +67,7 @@ enum Change {
     clippy::unused_async_trait_impl,
     reason = "the generated handlers are async whether or not they await"
 )]
-#[tool_handler(router = (Self::tool_router() + Self::webhook_router() + Self::events_router()))]
+#[tool_handler(router = (Self::tool_router() + Self::webhook_router() + Self::events_router() + Self::inspect_router()))]
 impl ServerHandler for Tools {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(
