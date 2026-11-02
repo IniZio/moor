@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 
 /// An agent's answer to [`super::ops::Op::Sweep`].
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Swept {
     /// The Boxes whose folders are gone.
     pub removed: Vec<i64>,
@@ -14,7 +13,6 @@ pub struct Swept {
 
 /// One Box a sweep could not clean up.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Failed {
     /// The Box.
     pub box_id: i64,

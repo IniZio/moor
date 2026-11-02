@@ -38,7 +38,8 @@ moor-machine-agent run --runtime cloudhypervisor --max-boxes 4
 Workload memory is not predictable, so a Box's size only sizes its VM; it does
 not decide whether the Box fits. A personal node's agent reports the host's
 `MemAvailable`, `MemTotal` and memory pressure (PSI `some avg10`) when it links
-and every 10 seconds. A node has room for one more Box when:
+and every 10 seconds. Reports and replies on the link ignore fields the reader does not know, so a
+new report field needs no version bump; requests stay strict. A node has room for one more Box when:
 
 - its last report is under 60 seconds old,
 - `MemAvailable` less the host reserve, less 2 GiB for each Box still setting up

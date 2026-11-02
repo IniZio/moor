@@ -40,7 +40,6 @@ pub const REPORT_EVERY: Duration = Duration::from_secs(10);
 
 /// Agent: its host's memory now.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Report {
     /// `MemAvailable` from `/proc/meminfo`, in MiB.
     pub mem_available_mib: u64,
@@ -90,7 +89,7 @@ pub struct Offer {
 
 /// The frames before the socket carries yamux, one JSON text message each.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 pub enum Frame {
     /// Agent: which machine dials, and what it speaks.
     Hello {

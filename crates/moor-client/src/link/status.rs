@@ -14,7 +14,6 @@ pub const MAX_CRABBOX: usize = 100;
 
 /// An agent's answer to [`super::ops::Op::Status`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Status {
     /// The agent's release.
     pub version: String,
@@ -35,7 +34,6 @@ pub struct Status {
 
 /// A pool host's part of a status.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct PoolStatus {
     /// The crabbox provider its leases use.
     pub provider: String,
@@ -50,7 +48,6 @@ pub struct PoolStatus {
 
 /// One op the agent served.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Served {
     /// The op's name on the wire.
     pub op: String,
