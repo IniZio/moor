@@ -93,6 +93,9 @@ pub struct MemoryReport {
     /// PSI `some avg10`, in hundredths; none when the host has no PSI.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub psi_centi: Option<u32>,
+    /// PSI `full avg10`, in hundredths; none when the host has no PSI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub psi_full_centi: Option<u32>,
 }
 
 /// The capacity of a machine added without one.

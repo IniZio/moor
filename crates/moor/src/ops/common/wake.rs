@@ -9,11 +9,12 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::view::sleep::SleepValue;
-use moor_core::{BoxReq, ErrorKind};
+use moor_core::{BoxReq, ErrorKind, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
+use crate::ops::common::node::now;
 use crate::ops::common::park::restore_tunnel;
 use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::room::room_to_wake;
@@ -49,8 +50,34 @@ pub(crate) fn wake_and_revive(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bo
     let woke = wake_with_tunnel(cx, store, row)?;
     if woke.box_resumed {
         revive_after_wake(cx, store, row.id)?;
+        tell_after_last_resort(cx, store, row)?;
     }
     Ok(woke.any)
+}
+
+/// Tells the agent of a Box suspended as a last resort, once, what the suspension dropped.
+fn tell_after_last_resort(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
+    let Some(at) = store.resume_first(row.id)? else {
+        return Ok(());
+    };
+    let secs = now(cx).saturating_sub(at);
+    let text = format!(
+        "This Box was suspended for {secs}s because host memory was critical. Its processes and \
+         files are intact, but network connections open at that moment were dropped (API calls, \
+         downloads, git pushes). Re-run anything that failed."
+    );
+    if let Err(e) = crate::ops::steer::tell(cx, store, row, text) {
+        cx.warn(Warning {
+            code: "note_failed".to_owned(),
+            message: format!(
+                "cannot tell {} about its suspension: {}",
+                row.name.as_str(),
+                e.error
+            ),
+        });
+    }
+    store.set_resume_first(row.id, None)?;
+    Ok(())
 }
 
 /// Wake the Box and machine, then restore the tunnel when the machine was resumed.
@@ -108,9 +135,11 @@ fn wake(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Woke, CommandError> {
     }
     let mut d = Decision::new(row.id);
     if row_asleep {
-        d = d
-            .lifecycle(BoxLifecycleInput::Wake)
-            .session(SessionInput::AgentBusy);
+        d = d.lifecycle(BoxLifecycleInput::Wake);
+        // A Box suspended mid-turn wakes with its Session still Working.
+        if row.session.is_quiet() {
+            d = d.session(SessionInput::AgentBusy);
+        }
     }
     if box_asleep {
         d = d.box_input(BoxInput::Wake);

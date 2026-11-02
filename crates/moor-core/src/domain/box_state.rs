@@ -121,9 +121,9 @@ impl BoxLifecycle {
         use BoxLifecycleInput as I;
         let to = match (self, input) {
             (Self::Checking, I::Rejected { .. }) => Self::Rejected,
-            (Self::Checking, I::AtCapacity { .. }) | (Self::Asleep, I::WaitForRoom) => {
-                Self::Pending
-            }
+            (Self::Checking, I::AtCapacity { .. })
+            | (Self::Asleep, I::WaitForRoom)
+            | (Self::Ready, I::Suspend { .. }) => Self::Pending,
             (Self::Checking, I::Admitted)
             | (Self::Pending, I::Promoted)
             | (Self::SetupFailed, I::Retry) => Self::SettingUp,
@@ -197,6 +197,12 @@ pub enum BoxLifecycleInput {
     Wake,
     /// An asleep Box waits for room on its node before it wakes.
     WaitForRoom,
+    /// A Box is suspended mid-work to relieve its node, whatever its Sessions do, and waits for
+    /// room to wake.
+    Suspend {
+        /// Why.
+        reason: String,
+    },
     /// The Box closes.
     Close,
 }
@@ -223,6 +229,7 @@ impl BoxLifecycleInput {
             Self::Sleep { .. } => "sleep",
             Self::Wake => "wake",
             Self::WaitForRoom => "wait_for_room",
+            Self::Suspend { .. } => "suspend",
             Self::Close => "close",
         }
     }

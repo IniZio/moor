@@ -58,10 +58,14 @@ pub fn sustained(readings: &[Reading], reserve_mib: u64) -> bool {
     let Some(last) = readings.last() else {
         return false;
     };
-    let held = readings.len() >= SUSTAINED_REPORTS
-        && readings[readings.len() - SUSTAINED_REPORTS..]
-            .iter()
-            .all(|r| r.psi_some_centi.is_some_and(|p| p >= SUSTAINED_PSI_CENTI));
+    let held = readings
+        .len()
+        .checked_sub(SUSTAINED_REPORTS)
+        .and_then(|start| readings.get(start..))
+        .is_some_and(|tail| {
+            tail.iter()
+                .all(|r| r.psi_some_centi.is_some_and(|p| p >= SUSTAINED_PSI_CENTI))
+        });
     held || last.available_mib < reserve_mib
 }
 
@@ -73,9 +77,10 @@ pub fn critical(last: &Reading) -> bool {
         || last.available_mib < CRITICAL_AVAILABLE_MIB
 }
 
-/// The Box to suspend on `node` after its latest report, if any: the longest-idle one under
-/// pressure, else, when the host is critical, the most recently started working one.
-/// `suspended_at` is the node's last suspension and `now` the time, both unix seconds.
+/// The Box to suspend on `node` after its latest report, if any.
+///
+/// The longest-idle one under pressure, else, when the host is critical, the most recently
+/// started working one. `suspended_at` is the node's last suspension and `now` the time, both unix seconds.
 #[must_use]
 pub fn relieve(
     node: &NodeName,

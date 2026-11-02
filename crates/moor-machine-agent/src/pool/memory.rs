@@ -23,14 +23,15 @@ fn report(proc: &Path) -> Option<Report> {
     Some(Report {
         mem_available_mib: meminfo_mib(&info, "MemAvailable:")?,
         mem_total_mib: meminfo_mib(&info, "MemTotal:")?,
-        psi_some_avg10: psi.as_deref().and_then(some_avg10),
+        psi_some_avg10: psi.as_deref().and_then(|p| avg10(p, "some ")),
+        psi_full_avg10: psi.as_deref().and_then(|p| avg10(p, "full ")),
     })
 }
 
-/// The `avg10` of the `some` line of a PSI file.
-fn some_avg10(psi: &str) -> Option<f64> {
+/// The `avg10` of the `line` line (`some ` or `full `) of a PSI file.
+fn avg10(psi: &str, line: &str) -> Option<f64> {
     psi.lines()
-        .find_map(|l| l.strip_prefix("some "))?
+        .find_map(|l| l.strip_prefix(line))?
         .split_whitespace()
         .find_map(|f| f.strip_prefix("avg10="))?
         .parse()

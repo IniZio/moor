@@ -1,8 +1,10 @@
-//! Making room on a full node, by suspending its longest-idle Boxes.
+//! Making room on a full node, by suspending its longest-idle Boxes, and relieving a node under
+//! memory pressure.
 
 use std::time::Duration;
 
 use moor_core::decide::preempt::{longest_idle, suspendable, Resident};
+use moor_core::decide::pressure::{relieve, sustained, working, Candidate, Reading};
 use moor_core::decide::schedule::{Node, Shortfall};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxInput;
@@ -15,6 +17,7 @@ use crate::error::CommandError;
 use crate::ops::common::autosleep::{sleep_handle, sleep_parked};
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::node::{now, recorded};
+use crate::ops::common::park::{park_tunnel, restore_tunnel};
 use crate::store::{BoxRow, Store};
 
 /// Suspends the longest-idle Box on `node` when it is short of memory, so that a Box waiting
@@ -110,4 +113,98 @@ pub(crate) fn room_to_wake(
     };
     make_room_on(cx, store, &node, row.name.as_str())?;
     Ok(Some(short.reason(&node.name)))
+}
+
+/// On a new memory report from `node`: keeps it, tracks whether pressure is sustained, and
+/// suspends at most one Box there to relieve it. A working Box suspended as a last resort waits
+/// for room and resumes first.
+pub(crate) fn on_report(
+    cx: &Cx,
+    store: &Store,
+    node: &Node,
+    reading: Reading,
+) -> Result<(), CommandError> {
+    let Some(memory) = node.memory else {
+        return Ok(());
+    };
+    let mut p = store.pressure(&node.name)?;
+    if p.readings.last().is_some_and(|r| r.at >= reading.at) {
+        return Ok(());
+    }
+    p.readings.push(reading);
+    let now = now(cx);
+    let reserve = memory.reserve();
+    p.high_since = sustained(&p.readings, reserve).then(|| p.high_since.unwrap_or(now));
+    let mut boxes = Vec::new();
+    for id in store.ready_on(&node.name)? {
+        if let Some(row) = store.box_row(id)? {
+            boxes.push(Candidate {
+                resident: resident(store, &row)?,
+                started_at: row.created_at.as_millis() / 1000,
+            });
+        }
+    }
+    let pick = relieve(
+        &node.name,
+        &p.readings,
+        reserve,
+        &boxes,
+        p.suspended_at,
+        now,
+    );
+    if let Some(s) = pick {
+        let done = if s.last_resort {
+            suspend_working(cx, store, s.id, &s.reason)?
+        } else {
+            suspend(cx, store, s.id, &s.reason)?
+        };
+        if done {
+            p.suspended_at = Some(now);
+            if s.last_resort {
+                store.set_resume_first(s.id, Some(now))?;
+            }
+        }
+    }
+    store.set_pressure(&node.name, &p)?;
+    Ok(())
+}
+
+/// Suspends working Box `id` for `reason` and leaves it waiting for room, if it still works and
+/// its lock is free; false otherwise. Its agent pane stays open, since the suspension keeps the
+/// agent's process.
+fn suspend_working(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bool, CommandError> {
+    let Ok(_held) = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "sleep", Duration::ZERO)
+    else {
+        return Ok(false);
+    };
+    let Some(row) = store.box_row(id)? else {
+        return Ok(false);
+    };
+    if !working(&resident(store, &row)?) {
+        return Ok(false);
+    }
+    let Ok(handle) = sleep_handle(cx, &row) else {
+        return Ok(false);
+    };
+    park_tunnel(cx, store, id)?;
+    if !matches!(
+        cx.driver().sleep(&handle),
+        Ok(SleepOutcome::Slept | SleepOutcome::Native)
+    ) {
+        restore_tunnel(cx, store, id, true)?;
+        return Ok(false);
+    }
+    store.apply(
+        Decision::new(id)
+            .lifecycle(BoxLifecycleInput::Suspend {
+                reason: reason.to_owned(),
+            })
+            .box_input(BoxInput::Sleep)
+            .set(Fields {
+                box_sleep_reason: Field::Clear,
+                state_reason: Field::Set(reason.to_owned()),
+                ..Fields::default()
+            }),
+    )?;
+    Ok(true)
 }

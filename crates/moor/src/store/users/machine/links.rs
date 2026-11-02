@@ -53,8 +53,8 @@ impl Store {
             tx.execute(
                 "INSERT OR REPLACE INTO machine_links (machine_id, online, since, version, protocol, \
                  max_boxes, cache_gb, pool_features, mem_mib, cpus, reserve_mib, mem_available_mib, \
-                 psi_centi, reported_at) \
-                 SELECT machine_id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM user_machines_v2 \
+                 psi_centi, reported_at, psi_full_centi) \
+                 SELECT machine_id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM user_machines_v2 \
                  WHERE machine_id = ?",
                 params![
                     link.online,
@@ -71,6 +71,7 @@ impl Store {
                     memory.and_then(|m| i64::try_from(m.available_mib).ok()),
                     memory.and_then(|m| m.psi_centi),
                     memory.map(|m| m.at.as_millis()),
+                    memory.and_then(|m| m.psi_full_centi),
                     link.machine_id
                 ],
             )?;
@@ -92,7 +93,7 @@ impl Store {
     ) -> Result<Vec<(String, MachineLink)>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(&format!("SELECT {LINK_COLUMNS} WHERE m.user = ?"))?;
-        let rows = stmt.query_map([user.get()], |r| Ok((r.get(14)?, link_row(r)?)))?;
+        let rows = stmt.query_map([user.get()], |r| Ok((r.get(15)?, link_row(r)?)))?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
 }
@@ -100,7 +101,7 @@ impl Store {
 /// The columns [`link_row`] reads, then the machine's name once `user_machines_v2 m` is joined.
 const LINK_COLUMNS: &str =
     "machine_id, online, since, version, protocol, max_boxes, cache_gb, pool_features, mem_mib, cpus, \
-     reserve_mib, mem_available_mib, psi_centi, reported_at, m.name \
+     reserve_mib, mem_available_mib, psi_centi, reported_at, psi_full_centi, m.name \
      FROM machine_links LEFT JOIN user_machines_v2 m USING (machine_id)";
 
 /// One `machine_links` row.
@@ -125,6 +126,7 @@ fn link_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<MachineLink> {
                 available_mib,
                 total_mib: mib(r.get(8)?).unwrap_or(0),
                 psi_centi: r.get(12)?,
+                psi_full_centi: r.get(14)?,
             }),
             _ => None,
         },

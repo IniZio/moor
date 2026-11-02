@@ -264,6 +264,11 @@ fn a_shared_node_keeps_the_runtimes_own_cache_volumes() {
 
 /// Links machine `hv` online with a 4 GiB reserve, reporting `available_mib` and `psi_centi` now.
 fn report(w: &World, hv: i64, available_mib: u64, psi_centi: Option<u32>) {
+    report_psi(w, hv, available_mib, psi_centi, None);
+}
+
+/// Like [`report`], with PSI `full` as well.
+fn report_psi(w: &World, hv: i64, available_mib: u64, psi_centi: Option<u32>, full: Option<u32>) {
     let link = MachineLink {
         machine_id: hv,
         online: true,
@@ -281,6 +286,7 @@ fn report(w: &World, hv: i64, available_mib: u64, psi_centi: Option<u32>) {
             available_mib,
             total_mib: 65_536,
             psi_centi,
+            psi_full_centi: full,
         }),
     };
     nodes::set_links(&w.cx, &[link]).unwrap();
@@ -510,3 +516,5 @@ fn starting_an_asleep_box_without_room_queues_it_with_the_reason_and_keeps_the_p
     let row = w.cx.store().unwrap().box_row(a).unwrap().unwrap();
     assert_eq!(row.prompt.as_deref(), Some("carry on"));
 }
+
+mod pressure;

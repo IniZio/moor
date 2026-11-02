@@ -48,6 +48,9 @@ pub struct Report {
     /// The `some avg10` of `/proc/pressure/memory`; none when the host has no PSI.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub psi_some_avg10: Option<f64>,
+    /// The `full avg10` of `/proc/pressure/memory`; none when the host has no PSI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub psi_full_avg10: Option<f64>,
 }
 
 /// Each line of a stream the agent opens: the connection it accepted for a listen, or one of

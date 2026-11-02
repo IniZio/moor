@@ -42,6 +42,7 @@ pub(crate) mod host;
 mod init;
 pub(crate) mod lease;
 mod open;
+mod pressure;
 mod proxy;
 pub(super) mod reads;
 mod repo;

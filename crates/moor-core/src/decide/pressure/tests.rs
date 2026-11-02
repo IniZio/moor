@@ -68,9 +68,14 @@ fn psi_counts_as_sustained_only_on_the_third_report_in_a_row() {
     let boxes = [idle(1, 10)];
     assert_eq!(pick(&pressed(2), &boxes, None), None);
     let mut broken = pressed(3);
-    broken[1].psi_some_centi = Some(999);
+    if let Some(r) = broken.get_mut(1) {
+        r.psi_some_centi = Some(999);
+    }
     assert_eq!(pick(&broken, &boxes, None), None);
-    assert_eq!(pick(&pressed(3), &boxes, None).map(|s| s.id), Some(BoxId::new(1)));
+    assert_eq!(
+        pick(&pressed(3), &boxes, None).map(|s| s.id),
+        Some(BoxId::new(1))
+    );
 }
 
 #[test]
@@ -95,7 +100,7 @@ fn suspends_exactly_the_longest_idle_box_with_the_pressure_reason() {
 #[test]
 fn a_suspension_holds_the_next_one_off_for_the_cooldown() {
     let readings = pressed(4);
-    let now = readings[3].at;
+    let now = readings.last().map_or(0, |r| r.at);
     let boxes = [idle(1, 10)];
     assert_eq!(pick(&readings, &boxes, Some(now - COOLDOWN_SECS + 1)), None);
     assert!(pick(&readings, &boxes, Some(now - COOLDOWN_SECS)).is_some());
