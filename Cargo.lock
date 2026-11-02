@@ -3198,6 +3198,7 @@ dependencies = [
  "moor-machine-runner",
  "moor-testkit",
  "rusqlite",
+ "rustix",
  "self-replace",
  "semver",
  "serde",

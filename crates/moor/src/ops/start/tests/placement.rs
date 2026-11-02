@@ -287,6 +287,8 @@ fn report_psi(w: &World, hv: i64, available_mib: u64, psi_centi: Option<u32>, fu
             total_mib: 65_536,
             psi_centi,
             psi_full_centi: full,
+            disk_free_mib: None,
+            disk_total_mib: None,
         }),
     };
     nodes::set_links(&w.cx, &[link]).unwrap();

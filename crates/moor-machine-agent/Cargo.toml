@@ -19,6 +19,7 @@ moor-core = { path = "../moor-core" }
 clap = { version = "4", features = ["derive", "env"] }
 flate2 = "1"
 self-replace = "1"
+rustix = { version = "1", features = ["fs"] }
 semver = "1"
 sha2 = "0.10"
 tar = "0.4"

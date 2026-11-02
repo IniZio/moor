@@ -96,6 +96,12 @@ pub struct MemoryReport {
     /// PSI `full avg10`, in hundredths; none when the host has no PSI.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub psi_full_centi: Option<u32>,
+    /// MiB free on the filesystem holding the agent's home; none from an agent that cannot tell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disk_free_mib: Option<u64>,
+    /// MiB the filesystem holds in all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disk_total_mib: Option<u64>,
 }
 
 /// The capacity of a machine added without one.

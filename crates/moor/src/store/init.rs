@@ -197,6 +197,10 @@ const FILES: &[(&str, &str)] = &[
         "V35__box_other_repos.sql",
         include_str!("../../migrations/V35__box_other_repos.sql"),
     ),
+    (
+        "V36__node_disk.sql",
+        include_str!("../../migrations/V36__node_disk.sql"),
+    ),
 ];
 
 /// moor.db's migrations, oldest first.

@@ -51,6 +51,12 @@ pub struct Report {
     /// The `full avg10` of `/proc/pressure/memory`; none when the host has no PSI.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub psi_full_avg10: Option<f64>,
+    /// MiB free on the filesystem holding the agent's home; none when it cannot tell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disk_free_mib: Option<u64>,
+    /// Size of that filesystem, in MiB.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disk_total_mib: Option<u64>,
 }
 
 /// Each line of a stream the agent opens: the connection it accepted for a listen, or one of
