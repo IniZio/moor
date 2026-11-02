@@ -178,13 +178,23 @@ fn held_machine_line(out: &mut String, view: &Value) {
     let _ = writeln!(out, "{line}");
 }
 
+/// The Box's primary repo, then each other repo it lists, comma separated.
+fn repos(view: &Value) -> String {
+    let others = view.get("other_repos").and_then(Value::as_array);
+    let listed = others.into_iter().flatten().filter_map(Value::as_str);
+    std::iter::once(field(view, "repo"))
+        .chain(listed)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// The detail block for one Box.
 fn detail(view: &Value, value: &Value) -> Option<String> {
     let mut out = String::new();
     let _ = writeln!(out, "name:     {}", view.get("name")?.as_str()?);
     let _ = writeln!(out, "lifecycle: {}", field(view, "lifecycle"));
     let _ = writeln!(out, "session:   {}", field(view, "session_state"));
-    let _ = writeln!(out, "repo:     {}", field(view, "repo"));
+    let _ = writeln!(out, "repo:     {}", repos(view));
     let _ = writeln!(out, "branch:   {}", field(view, "branch"));
     match view.get("driver").filter(|b| !b.is_null()) {
         Some(b) => {

@@ -53,6 +53,16 @@ fn detail_with_box() {
 }
 
 #[test]
+fn detail_lists_every_repo_of_a_multi_repo_box() {
+    let mut t = row("alpha", true);
+    let fields = t.as_object_mut().unwrap();
+    fields.insert("repo".into(), json!("o/a"));
+    fields.insert("other_repos".into(), json!(["o/b", "o/c"]));
+    let out = show(json!({"box": t}));
+    assert!(out.contains("\nrepo:     o/a, o/b, o/c\n"), "{out}");
+}
+
+#[test]
 fn detail_shows_the_delivered_cpus_and_memory_after_the_box_line() {
     let mut t = row("alpha", true);
     let driver = t

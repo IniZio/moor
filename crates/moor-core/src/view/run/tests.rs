@@ -14,6 +14,7 @@ fn sample_box() -> BoxView {
         id: 1,
         name: "t".into(),
         repo: Some(crate::seam::forge::ForgeRepo::new("o", "r")),
+        other_repos: Vec::new(),
         issue: None,
         prompt: None,
         lifecycle: BoxLifecycle::Ready,

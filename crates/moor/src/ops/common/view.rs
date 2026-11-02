@@ -125,6 +125,11 @@ pub(crate) fn box_view_with_run(
         id: row.id.get(),
         name: row.name.as_str().to_owned(),
         repo: row.repo.as_ref().map(|r| r.repo.clone()),
+        other_repos: row
+            .repo
+            .iter()
+            .flat_map(|r| r.others.iter().map(|o| o.repo.clone()))
+            .collect(),
         issue: row.issue.clone(),
         prompt: row.prompt.clone(),
         lifecycle: row.lifecycle,

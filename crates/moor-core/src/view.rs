@@ -132,6 +132,9 @@ pub struct BoxView {
     pub name: String,
     /// The repo the Box clones, as `OWNER/NAME`; `None` for a Box with no repo.
     pub repo: Option<crate::name::ForgeRepo>,
+    /// The repos listed after the primary one, in listed order; omitted for a Box of one repo.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub other_repos: Vec<crate::name::ForgeRepo>,
     /// Issue reference.
     pub issue: Option<String>,
     /// Prompt text.

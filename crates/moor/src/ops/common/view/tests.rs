@@ -259,3 +259,41 @@ fn agent_view_gone_pane_string() {
     assert_eq!(v.state, "unknown");
     assert_eq!(v.source, "timeout");
 }
+
+#[test]
+fn box_view_lists_the_other_repos_in_order_and_omits_none() {
+    use moor_core::domain::decision::ListedRepo;
+    use moor_core::seam::forge::ForgeRepo;
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
+    let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
+    let mut two = crate::testing::cx::box_repo(None);
+    two.others = ["b", "c"]
+        .map(|n| ListedRepo {
+            repo: ForgeRepo::new("o", n),
+            moor_yaml: None,
+        })
+        .to_vec();
+    let mut views = Vec::new();
+    for (name, repo) in [("one", crate::testing::cx::box_repo(None)), ("two", two)] {
+        let nt = NewBox {
+            name: BoxName::parse_allow_bare(name).unwrap(),
+            repo: Some(repo),
+        };
+        let id = store.apply(Decision::insert(nt)).unwrap().box_id;
+        views.push(box_view(
+            &store.box_row(id).unwrap().unwrap(),
+            &UserConfig::default(),
+        ));
+    }
+    let [one, two] = <[_; 2]>::try_from(views).unwrap();
+    assert_eq!(
+        two.repo.as_ref().map(ToString::to_string).as_deref(),
+        Some("o/n")
+    );
+    let listed: Vec<String> = two.other_repos.iter().map(ToString::to_string).collect();
+    assert_eq!(listed, ["o/b", "o/c"]);
+    assert!(one.other_repos.is_empty());
+    let json = serde_json::to_value(&one).unwrap();
+    assert!(json.get("other_repos").is_none());
+}
