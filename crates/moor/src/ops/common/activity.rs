@@ -242,20 +242,24 @@ pub(crate) fn settle(
     row: &BoxRow,
     reading: &Reading,
 ) -> Result<(), CommandError> {
-    let turn_done = turn::note_turn_done(store, row, reading)?;
-    let lost = reading.pane == PaneLiveness::Lost;
-    if let (PaneLiveness::Exited | PaneLiveness::Lost, Some(probed)) =
-        (reading.pane, reading.session)
-    {
-        match link::after_pane_end(cx, store, row, reading, probed)? {
-            Some(Fate::Ended(exit)) => {
-                transcript::save_on_exit(cx, store, row, probed)?;
-                end_exited_session(cx, store, row, exit, probed)?;
-            }
-            // A lost pane says nothing of the agent, which still runs: idling on it drops what the agent says next.
-            Some(Fate::Reattached | Fate::Unreachable) if lost => return Ok(()),
-            _ => {}
+    let fate = match (reading.pane, reading.session) {
+        (PaneLiveness::Exited | PaneLiveness::Lost, Some(probed)) => {
+            link::after_pane_end(cx, store, row, reading, probed)?.map(|f| (f, probed))
         }
+        _ => None,
+    };
+    // A reattached agent still runs its turn: closing the turn or idling on the old pane drops what it says next.
+    if matches!(fate, Some((Fate::Reattached, _))) {
+        return Ok(());
+    }
+    let turn_done = turn::note_turn_done(store, row, reading)?;
+    match fate {
+        Some((Fate::Ended(exit), probed)) => {
+            transcript::save_on_exit(cx, store, row, probed)?;
+            end_exited_session(cx, store, row, exit, probed)?;
+        }
+        Some((Fate::Unreachable, _)) if reading.pane == PaneLiveness::Lost => return Ok(()),
+        _ => {}
     }
     register_session(cx, store, row, reading)?;
     needs_input::note_needs_input(store, row, reading)?;

@@ -21,7 +21,7 @@ fn fx(probes: Probes) -> (tempfile::TempDir, Cx, BoxId) {
     (dir, cx, id)
 }
 
-fn steer(cx: &Cx, id: BoxId) -> i64 {
+pub(super) fn steer(cx: &Cx, id: BoxId) -> i64 {
     steer_after(cx, id, None)
 }
 
