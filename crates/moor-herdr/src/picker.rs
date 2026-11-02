@@ -111,7 +111,9 @@ impl Controller for Client {
     fn start(&self, start: &Start) -> Result<(), Error> {
         let req = start_request(start)?;
         let open = |c: &Self| {
-            open_box(c, &start.name).is_ok_and(|b| b.is_some_and(|b| b.phase != Phase::Closed))
+            open_box(c, &start.name).is_ok_and(|b| {
+                b.is_some_and(|b| !matches!(b.phase, Phase::Closed | Phase::SetupFailed))
+            })
         };
         // A Box already open under this name is the controller's refusal to make, not a start.
         let taken = open(self);

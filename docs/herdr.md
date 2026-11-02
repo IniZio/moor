@@ -124,7 +124,7 @@ default_shell = "/path/to/moor/crates/moor-herdr/herdr/bin/shell.sh"
 An installed plugin names the `shell.sh` in its state dir; `moor-herdr herdr-setup` names the checkout's `bin/shell.sh`.
 
 Every Box workspace carries `env=BOX`, which the second row shows in colour. It also carries
-`state`: empty while the Box is up, `…` while it is being set up, `◐` asleep, `◌` while it waits for a slot on the machine it claims, `✕` closed.
+`state`: empty while the Box is up, `…` while it is being set up, `◐` asleep, `◌` while it waits for a slot on the machine it claims, `✕` closed, `⚠` setup failed.
 While the Box is up, herdr's own agent dot shows working, waiting or idle.
 
 ## New work
@@ -151,7 +151,7 @@ the same relay the agent's pane uses. `exit` or `ctrl+]` ends it and closes the 
 
 Every other pane gets your own shell: `MOOR_HERDR_HOST_SHELL` from the plugin's `env` file,
 else `$SHELL`, else `/bin/sh`. The Box's own agent pane stays a host shell too, since sync runs
-the attach in it. When the Box is asleep, still being set up, closed or unreachable, or no
+the attach in it. When the Box is asleep, still being set up, closed, failed its setup or unreachable, or no
 controller is running, the pane says so on one line and gives you a local shell instead.
 
 ## Panel
@@ -164,7 +164,7 @@ The top row has `[+ New Box]`, which opens the same popup as `prefix+c`, `[refre
 which shows which tokens are set and takes a new value for any you type. Below it
 each open Box is one row: its label `◈ repo/name`, its state icon and words, and its buttons.
 
-- `[attach]` brings the Box's workspace to the front, making it first if herdr has none.
+- `[attach]` brings the Box's workspace to the front, making it first if herdr has none. A Box whose setup failed has none: its row reads `⚠ setup failed · [close]`, and `moor retry` runs its setup again.
 - `[wake]`, shown only on an asleep Box, wakes it.
 - `[close]` closes the Box on the controller. The first click turns it into `[confirm close]`;
   a second click within four seconds closes the Box and removes its workspace from the sidebar.
@@ -192,5 +192,5 @@ why it failed.
 | Where | Key | Does |
 | --- | --- | --- |
 | Attached | `ctrl+]` | Detach. The agent keeps running. |
-| Card | `r` or Enter | Attach again. On an asleep Box, wake it first. On a closed Box, say it is closed. |
+| Card | `r` or Enter | Attach again. On an asleep Box, wake it first. On a closed Box, say it is closed. On a Box whose setup failed, say to close it or run `moor retry`. The card reads `setup failed · close it in the Boxes panel or run moor retry NAME`. |
 | Card | `q` | Close the pane. |

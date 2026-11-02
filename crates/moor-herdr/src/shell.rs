@@ -87,6 +87,7 @@ fn on(b: &Shown) -> Target {
         Phase::Starting => "is still being set up",
         Phase::WaitingForMachine => "waits for a slot on its machine",
         Phase::Closed => "is closed",
+        Phase::SetupFailed => "failed its setup",
     };
     Target::Fallback(format!("Box {} {why}", b.name))
 }

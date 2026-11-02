@@ -151,6 +151,7 @@ pub const fn phase_words(phase: Phase) -> &'static str {
         Phase::WaitingForMachine => "waiting for a machine",
         Phase::Asleep => "asleep",
         Phase::Closed => "closed",
+        Phase::SetupFailed => "setup failed",
     }
 }
 
@@ -219,39 +220,53 @@ impl Panel {
                 text: format!("{mark} {}", b.label()),
                 button: Some(Button::Select(i)),
             }]);
-            let icon = match b.phase.icon() {
-                "" => "●",
-                icon => icon,
-            };
-            let mut row = vec![
-                Piece::text(format!("    {icon} {}  ", phase_words(b.phase))),
-                Piece::button("attach", Button::Attach(b.name.clone())),
-            ];
-            if b.phase == Phase::Asleep {
-                row.extend([
-                    Piece::text(" "),
-                    Piece::button("wake", Button::Wake(b.name.clone())),
-                ]);
-            }
-            let close = Button::Close(b.name.clone());
-            let words = if armed == Some(&close) {
-                "confirm close"
-            } else {
-                "close"
-            };
-            row.extend([Piece::text(" "), Piece::button(words, close)]);
-            if self.discardable.as_ref() == Some(&b.name) {
-                let discard = Button::Discard(b.name.clone());
-                let words = if armed == Some(&discard) {
-                    "confirm discard"
-                } else {
-                    "discard & close"
-                };
-                row.extend([Piece::text(" "), Piece::button(words, discard)]);
-            }
-            lines.push(row);
+            lines.push(self.box_row(b, armed));
         }
         lines
+    }
+
+    /// The second line of `b`'s entry: its state and the buttons that apply to it.
+    fn box_row(&self, b: &Shown, armed: Option<&Button>) -> Vec<Piece> {
+        let icon = match b.phase.icon() {
+            "" => "●",
+            icon => icon,
+        };
+        let mut row = if b.phase == Phase::SetupFailed {
+            // Nothing came up to attach to; closing is the way out.
+            vec![Piece::text(format!(
+                "    {icon} {} · ",
+                phase_words(b.phase)
+            ))]
+        } else {
+            vec![
+                Piece::text(format!("    {icon} {}  ", phase_words(b.phase))),
+                Piece::button("attach", Button::Attach(b.name.clone())),
+                Piece::text(" "),
+            ]
+        };
+        if b.phase == Phase::Asleep {
+            row.extend([
+                Piece::button("wake", Button::Wake(b.name.clone())),
+                Piece::text(" "),
+            ]);
+        }
+        let close = Button::Close(b.name.clone());
+        let words = if armed == Some(&close) {
+            "confirm close"
+        } else {
+            "close"
+        };
+        row.push(Piece::button(words, close));
+        if self.discardable.as_ref() == Some(&b.name) {
+            let discard = Button::Discard(b.name.clone());
+            let words = if armed == Some(&discard) {
+                "confirm discard"
+            } else {
+                "discard & close"
+            };
+            row.extend([Piece::text(" "), Piece::button(words, discard)]);
+        }
+        row
     }
 
     /// The button drawn at (`col`, `row`).

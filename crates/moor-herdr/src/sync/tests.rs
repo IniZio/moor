@@ -120,6 +120,17 @@ fn a_box_that_closed_keeps_its_workspace_marked_closed() {
 }
 
 #[test]
+fn a_setup_failed_box_workspace_is_tagged_with_the_warning() {
+    let mut herdr = Fake::default();
+    herdr.sync(&[fix(WORKING)]);
+    assert_eq!(
+        herdr.sync(&[fix(Phase::SetupFailed)]),
+        ["tag w1 env=BOX,state=⚠", "agent w1:p1 unknown"]
+    );
+    assert!(herdr.sync(&[fix(Phase::SetupFailed)]).is_empty());
+}
+
+#[test]
 fn a_state_change_retags_and_moves_the_agent_dot() {
     let mut herdr = Fake::default();
     herdr.sync(&[fix(WORKING)]);

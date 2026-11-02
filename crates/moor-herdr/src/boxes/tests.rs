@@ -36,6 +36,8 @@ fn each_lifecycle_reads_as_the_phase_the_sidebar_shows() {
         waiting,
         row("asleep", "idle"),
         row("closed", "ended"),
+        row("setup_failed", "ended"),
+        row("rejected", "ended"),
     ];
     let phases: Vec<Phase> = parse_list(json!({ "boxes": boxes }))
         .unwrap()
@@ -50,6 +52,8 @@ fn each_lifecycle_reads_as_the_phase_the_sidebar_shows() {
             Phase::Live(Activity::Waiting),
             Phase::WaitingForMachine,
             Phase::Asleep,
+            Phase::Closed,
+            Phase::SetupFailed,
             Phase::Closed,
         ]
     );
