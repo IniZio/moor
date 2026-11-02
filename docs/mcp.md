@@ -95,7 +95,7 @@ for a fresh header before it connects:
 | Scope | Allows |
 | --- | --- |
 | `moor:read` | `list_boxes`, `box_status`, `inspect_box`, `list_webhooks`, `list_events`, the Box resources, `subscriptions/listen` |
-| `moor:write` | `start_box`, `send_to_box`, `close_box`, `add_webhook`, `remove_webhook` |
+| `moor:write` | `start_box`, `send_to_box`, `close_box`, `retry_box`, `close_failed_boxes`, `add_webhook`, `remove_webhook` |
 
 A token without `moor:write` gets an error from the write tools and can still
 read.
@@ -110,6 +110,8 @@ read.
 | `inspect_box` | `box`; optional `lines`, `said` |
 | `send_to_box` | `box`, `text` |
 | `close_box` | `box`; optional `force` |
+| `retry_box` | `box` |
+| `close_failed_boxes` | optional `force` |
 | `add_webhook` | `url` (https); optional `events`, `header` (such as `Authorization`) |
 | `list_webhooks` | none |
 | `list_events` | optional `after`, `kinds`, `box`, `limit`, `wait_seconds` |
@@ -118,6 +120,15 @@ read.
 `close_box` refuses a Box that holds unpushed commits or uncommitted files, or
 that could not be checked for them. `force: true` closes it anyway and discards
 that work, the same as `moor close --force`. It is false by default.
+
+`retry_box` re-runs setup on a Box whose setup failed, the same as `moor retry`.
+It refuses a Box in any other state. It returns when the retry finishes; follow
+it with `box_status`.
+
+`close_failed_boxes` closes every one of your Boxes whose setup failed, the same
+as `moor close-failed`. It answers with the Boxes it closed and, for each Box it
+could not close, why. `force: true` closes a Box that holds unpushed work too.
+It is false by default.
 
 A webhook receives signed POSTs of your Box events. `add_webhook` returns the
 webhook's `id` and a `setup_url` and never a secret. The person opens the link
