@@ -27,7 +27,7 @@ pub struct Forward {
 
 /// The runner's answer to a [`Forward`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case", tag = "reply", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", tag = "reply")]
 pub enum Forwarding {
     /// The agent listens on every port; the runner closes the connection once it stops.
     Up,
@@ -40,7 +40,6 @@ pub enum Forwarding {
 
 /// The first line of a stream the agent opens: a connection it accepted for a listen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Accepted {
     /// The listen's id, as its request gave it.
     pub listen: u64,

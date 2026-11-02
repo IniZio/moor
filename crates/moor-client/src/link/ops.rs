@@ -186,7 +186,7 @@ impl Hook {
 
 /// The agent's answer, the line after the request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case", tag = "reply", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", tag = "reply")]
 pub enum Reply {
     /// The exec or hook ended.
     Ran(Ran),

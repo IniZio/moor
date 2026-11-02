@@ -79,7 +79,7 @@ impl From<PoolOp> for Op {
 
 /// The broker's answer, one line; after a dial the agent started, the VM's bytes follow.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case", tag = "broker", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", tag = "broker")]
 pub enum Brokered {
     /// The agent's reply.
     Agent {

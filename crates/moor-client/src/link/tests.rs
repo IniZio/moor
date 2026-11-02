@@ -48,3 +48,26 @@ fn a_hello_with_an_offer_round_trips() {
 fn an_empty_offer_leaves_out_every_field() {
     assert_eq!(serde_json::to_string(&Offer::default()).unwrap(), "{}");
 }
+
+#[test]
+fn a_report_with_a_field_this_build_does_not_know_still_reads() {
+    let opened = json!({"report": {
+        "mem_available_mib": 1024,
+        "mem_total_mib": 4096,
+        "swap_used_mib": 12,
+    }});
+    let opened: super::Opened = serde_json::from_value(opened).unwrap();
+    let super::Opened::Report { report } = opened else {
+        panic!("not a report: {opened:?}");
+    };
+    assert_eq!(report.mem_total_mib, 4096);
+}
+
+#[test]
+fn a_hello_with_a_field_this_build_does_not_know_still_reads() {
+    let hello = json!({"hello": {
+        "machine_id": 7, "protocol": 1, "version": "9.9.9", "boot_id": "abc",
+    }});
+    let frame: Frame = serde_json::from_value(hello).unwrap();
+    assert!(matches!(frame, Frame::Hello { machine_id: 7, .. }));
+}
