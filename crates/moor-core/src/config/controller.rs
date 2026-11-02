@@ -28,6 +28,9 @@ pub struct ControllerConfig {
     /// Seconds a SIGTERM waits for in-flight requests before the controller exits anyway.
     /// None means 600.
     pub drain_timeout_secs: Option<u64>,
+    /// Seconds a Box may sit in `setup_failed` before the controller closes it; 0 turns the
+    /// close off. None means 86400.
+    pub close_setup_failed_after_secs: Option<u64>,
     /// Removed key, kept only so a stale config gets a pointed error.
     /// Double option so a present-but-null `web:` still counts as present.
     #[serde(default, deserialize_with = "present_key")]
@@ -92,6 +95,9 @@ const PROXY_LOG_NAME: &str = "proxy";
 /// Seconds between settle passes when the config does not say.
 const DEFAULT_SETTLE_SECS: u64 = 5;
 
+/// Seconds a `setup_failed` Box is kept before the controller closes it when the config does not say.
+const DEFAULT_CLOSE_SETUP_FAILED_SECS: u64 = 86_400;
+
 /// Seconds a drain waits when the config does not say: long enough for a `start` to finish.
 const DEFAULT_DRAIN_SECS: u64 = 600;
 
@@ -100,6 +106,16 @@ impl ControllerConfig {
     #[must_use]
     pub fn settle_every(&self) -> Duration {
         Duration::from_secs(self.settle_every_secs.unwrap_or(DEFAULT_SETTLE_SECS))
+    }
+
+    /// How long a Box may stay `setup_failed` before the controller closes it; None when closing
+    /// is off.
+    #[must_use]
+    pub fn close_setup_failed_after(&self) -> Option<Duration> {
+        let secs = self
+            .close_setup_failed_after_secs
+            .unwrap_or(DEFAULT_CLOSE_SETUP_FAILED_SECS);
+        (secs > 0).then(|| Duration::from_secs(secs))
     }
 
     /// How long a SIGTERM waits for in-flight requests.

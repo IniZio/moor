@@ -77,7 +77,7 @@ impl Request {
             Self::BoxMirror(r) => vec![Named::Box(r.id.into())],
             Self::BoxPut(r) => vec![Named::Box(r.id.into())],
             Self::MachineHold(r) => vec![Named::Box(r.id.into())],
-            Self::Open(r) | Self::Sleep(r) | Self::Wake(r) | Self::Connect(r) => {
+            Self::Open(r) | Self::Sleep(r) | Self::Wake(r) | Self::Retry(r) | Self::Connect(r) => {
                 vec![named(&r.box_name)]
             }
             Self::WaitEvents(r) => r.boxes.iter().map(named).collect(),
@@ -92,6 +92,7 @@ impl Request {
             Self::BindSession(r) => session(r.session),
             Self::As(r) => r.request.names(),
             Self::StartNeeds(_)
+            | Self::CloseFailed(_)
             | Self::SessionBinding(_)
             | Self::Gate(_)
             | Self::Env(_)

@@ -10,7 +10,7 @@ pub use artifacts::{ArtifactReadReq, ArtifactsReq};
 mod attach;
 pub use attach::AttachReq;
 mod basic;
-pub use basic::{BoxReq, CloseReq, GateReq};
+pub use basic::{BoxReq, CloseFailedReq, CloseReq, GateReq};
 mod binding;
 pub use binding::{BindSessionReq, SessionBindingReq};
 mod env;
@@ -95,6 +95,10 @@ pub enum Request {
     Sleep(BoxReq),
     /// Wake a box.
     Wake(BoxReq),
+    /// Re-run setup on a Box whose setup failed.
+    Retry(BoxReq),
+    /// Close every Box whose setup failed that the caller may act on.
+    CloseFailed(CloseFailedReq),
     /// Wake a box and return the command that attaches to its workspace; the caller runs it.
     Connect(BoxReq),
     /// Relay the agent's terminal on the Box both ways over this connection until either side
@@ -208,6 +212,8 @@ impl Request {
             Self::Open(_) => "open",
             Self::Sleep(_) => "sleep",
             Self::Wake(_) => "wake",
+            Self::Retry(_) => "retry",
+            Self::CloseFailed(_) => "close-failed",
             Self::Connect(_) => "connect",
             Self::Attach(_) => "attach",
             Self::Gate(_) => "gate",

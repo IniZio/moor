@@ -142,7 +142,7 @@ fn closing_an_asleep_box_removes_its_claim() {
     m.store.sleep_machine(a).unwrap();
 
     let close = Decision::new(a)
-        .lifecycle(BoxLifecycleInput::Close)
+        .lifecycle(BoxLifecycleInput::Close { reason: None })
         .session(SessionInput::End);
     m.store.apply(close).unwrap();
 

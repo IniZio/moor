@@ -34,7 +34,7 @@ fn close(store: &Store, id: BoxId) {
     store
         .apply(
             Decision::new(id)
-                .lifecycle(BoxLifecycleInput::Close)
+                .lifecycle(BoxLifecycleInput::Close { reason: None })
                 .session(SessionInput::End),
         )
         .unwrap();

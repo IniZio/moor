@@ -264,7 +264,7 @@ fn restart_of_a_closed_name_creates_a_new_box() {
         .unwrap()
         .apply(
             Decision::new(id)
-                .lifecycle(BoxLifecycleInput::Close)
+                .lifecycle(BoxLifecycleInput::Close { reason: None })
                 .session(SessionInput::End)
                 .box_input(BoxInput::Released),
         )

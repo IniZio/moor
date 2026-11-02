@@ -205,7 +205,7 @@ fn full_lifecycle_rows_and_events() {
     assert_eq!((b.state, b.handle), (BoxState::Ready, Some(handle)));
 
     let d = Decision::new(id)
-        .lifecycle(BoxLifecycleInput::Close)
+        .lifecycle(BoxLifecycleInput::Close { reason: None })
         .session(SessionInput::End)
         .box_input(BoxInput::Released)
         .event(ExtraEvent::Copied {
@@ -281,7 +281,7 @@ fn unknown_existing_id_is_not_found() {
     let err = store
         .apply(
             Decision::new(BoxId::new(42))
-                .lifecycle(BoxLifecycleInput::Close)
+                .lifecycle(BoxLifecycleInput::Close { reason: None })
                 .session(SessionInput::End),
         )
         .unwrap_err();
@@ -313,7 +313,7 @@ fn readers_are_not_blocked_by_an_open_writer() {
     store
         .apply(
             Decision::new(id)
-                .lifecycle(BoxLifecycleInput::Close)
+                .lifecycle(BoxLifecycleInput::Close { reason: None })
                 .session(SessionInput::End),
         )
         .unwrap();

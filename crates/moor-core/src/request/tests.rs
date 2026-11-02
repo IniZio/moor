@@ -72,6 +72,8 @@ fn with_args() -> Vec<Request> {
         Request::Open(t()),
         Request::Sleep(t()),
         Request::Wake(t()),
+        Request::Retry(t()),
+        Request::CloseFailed(CloseFailedReq { force: true }),
         Request::Connect(t()),
     ]
 }
@@ -97,7 +99,7 @@ fn all() -> Vec<Request> {
 #[test]
 fn cmd_equals_serde_tag_and_roundtrips() {
     let reqs = all();
-    assert_eq!(reqs.len(), 16);
+    assert_eq!(reqs.len(), 18);
     for r in reqs {
         let text = serde_json::to_string(&r).unwrap();
         assert!(

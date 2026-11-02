@@ -118,7 +118,7 @@ fn close(w: &World, v: &StartView) {
         .unwrap()
         .apply(
             Decision::new(BoxId::new(v.boxed.id))
-                .lifecycle(BoxLifecycleInput::Close)
+                .lifecycle(BoxLifecycleInput::Close { reason: None })
                 .session(SessionInput::End)
                 .box_input(BoxInput::Released),
         )

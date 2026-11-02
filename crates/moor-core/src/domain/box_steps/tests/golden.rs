@@ -252,28 +252,28 @@ fn table() -> Vec<Row> {
         row(
             B::Ready,
             P::Working,
-            Some(L::Close),
+            Some(L::Close { reason: None }),
             Some(S::End),
             Want::Ok(B::Closed, P::Ended),
         ),
         row(
             B::Ready,
             P::Ended,
-            Some(L::Close),
+            Some(L::Close { reason: None }),
             Some(S::End),
             Want::Ok(B::Closed, P::Ended),
         ),
         row(
             B::Asleep,
             P::Idle,
-            Some(L::Close),
+            Some(L::Close { reason: None }),
             Some(S::End),
             Want::Ok(B::Closed, P::Ended),
         ),
         row(
             B::Closed,
             P::Ended,
-            Some(L::Close),
+            Some(L::Close { reason: None }),
             Some(S::End),
             Want::Illegal,
         ),
@@ -368,8 +368,11 @@ fn golden_box_events_name_the_state_left() {
         vec![Event::SettingUp { from: B::Checking }]
     );
     assert_eq!(
-        lifecycle_events(Some(B::Ready), B::Closed, &L::Close),
-        vec![Event::Closed { from: B::Ready }]
+        lifecycle_events(Some(B::Ready), B::Closed, &L::Close { reason: None }),
+        vec![Event::Closed {
+            from: B::Ready,
+            reason: None
+        }]
     );
     assert_eq!(
         lifecycle_events(

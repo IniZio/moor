@@ -21,7 +21,7 @@ fn to(target: BoxTarget) -> SteerReq {
 fn close_and_reuse_the_name(f: &Fx) -> BoxId {
     let store = f.cx.store().unwrap();
     let close = Decision::new(f.id)
-        .lifecycle(BoxLifecycleInput::Close)
+        .lifecycle(BoxLifecycleInput::Close { reason: None })
         .session(SessionInput::End);
     store.apply(close).unwrap();
     store
@@ -71,7 +71,7 @@ fn by_id_a_closed_box_is_refused_while_a_newer_box_holds_its_name() {
 fn by_name_a_closed_box_is_refused_as_before() {
     let f = fx();
     let close = Decision::new(f.id)
-        .lifecycle(BoxLifecycleInput::Close)
+        .lifecycle(BoxLifecycleInput::Close { reason: None })
         .session(SessionInput::End);
     f.cx.store().unwrap().apply(close).unwrap();
     let err = run(&f.cx, &text("hi")).unwrap_err();

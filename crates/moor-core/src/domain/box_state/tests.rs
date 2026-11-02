@@ -32,7 +32,7 @@ fn all_inputs() -> Vec<BoxLifecycleInput> {
         },
         I::Wake,
         I::WaitForRoom,
-        I::Close,
+        I::Close { reason: None },
     ]
 }
 
@@ -82,7 +82,7 @@ fn legal() -> Vec<(BoxLifecycle, BoxLifecycleInput, BoxLifecycle)> {
         (S::Pending, I::Wake, S::Ready),
     ];
     for state in S::ALL.into_iter().filter(|st| st.is_live()) {
-        table.push((state, I::Close, S::Closed));
+        table.push((state, I::Close { reason: None }, S::Closed));
     }
     table
 }

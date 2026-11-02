@@ -118,7 +118,7 @@ fn an_unknown_box_id_is_refused() {
 #[test]
 fn a_closed_box_is_refused() {
     let f = fx();
-    let close = Decision::new(f.id).lifecycle(BoxLifecycleInput::Close);
+    let close = Decision::new(f.id).lifecycle(BoxLifecycleInput::Close { reason: None });
     f.cx.store().unwrap().apply(close).unwrap();
     let err = run(&f.cx, &req(&f, f.id)).unwrap_err();
     assert!(err.error.to_string().contains("no open Box"), "{err:?}");

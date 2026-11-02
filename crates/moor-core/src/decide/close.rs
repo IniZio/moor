@@ -175,7 +175,7 @@ pub fn close_gate(f: &CloseFacts, force: bool) -> Result<ClosePlan, Refusal> {
         release_box: f.has_handle && f.box_state.is_some_and(releasable),
         close_workspace: true,
         decision_close: Decision::new(f.box_id)
-            .lifecycle(BoxLifecycleInput::Close)
+            .lifecycle(BoxLifecycleInput::Close { reason: None })
             .session(SessionInput::End),
     })
 }
@@ -200,7 +200,7 @@ const fn releasable(s: BoxState) -> bool {
 #[must_use]
 pub fn release_outcome(box_id: BoxId, box_state: BoxState, r: ReleaseResult) -> ReleaseVerdict {
     let close = Decision::new(box_id)
-        .lifecycle(BoxLifecycleInput::Close)
+        .lifecycle(BoxLifecycleInput::Close { reason: None })
         .session(SessionInput::End);
     match r {
         ReleaseResult::Deleted | ReleaseResult::AlreadyGone => ReleaseVerdict {

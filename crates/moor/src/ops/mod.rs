@@ -13,6 +13,7 @@ mod binding;
 mod box_mirror;
 mod box_put;
 mod close;
+mod close_failed;
 pub(crate) mod common;
 mod cp;
 mod end_session;
@@ -25,6 +26,7 @@ pub(crate) mod machine_hold;
 mod nodes;
 mod open;
 mod open_session;
+mod retry;
 mod run;
 mod sessions;
 pub(crate) mod show;
@@ -111,6 +113,8 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::MachineHold(r) => to_value(&machine_hold::run(cx, &r)?),
         Request::Sleep(r) => to_value(&sleep::run(cx, &r)?),
         Request::Wake(r) => to_value(&wake::run(cx, &r)?),
+        Request::Retry(r) => to_value(&retry::run(cx, &r)?),
+        Request::CloseFailed(r) => to_value(&close_failed::run(cx, &r)?),
         Request::Open(r) => to_value(&open::run(cx, &r)?),
         Request::Connect(r) => to_value(&open::connect(cx, &r)?),
         Request::Steer(r) => to_value(&steer::run(cx, &r)?),

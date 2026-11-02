@@ -56,6 +56,7 @@ fn all_events() -> Vec<Event> {
         Event::Woke,
         Event::Closed {
             from: BoxLifecycle::Ready,
+            reason: None,
         },
         Event::BoxRequested,
         Event::BoxReady,

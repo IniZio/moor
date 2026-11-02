@@ -141,7 +141,7 @@ impl BoxLifecycle {
                 }
                 Self::Asleep
             }
-            (state, I::Close) if state.is_live() => Self::Closed,
+            (state, I::Close { .. }) if state.is_live() => Self::Closed,
             _ => {
                 return Err(StepError::Illegal(Illegal {
                     from: self.as_str().to_owned(),
@@ -204,7 +204,10 @@ pub enum BoxLifecycleInput {
         reason: String,
     },
     /// The Box closes.
-    Close,
+    Close {
+        /// Why moor closed it, when a person did not ask.
+        reason: Option<String>,
+    },
 }
 
 impl BoxLifecycleInput {
@@ -230,7 +233,7 @@ impl BoxLifecycleInput {
             Self::Wake => "wake",
             Self::WaitForRoom => "wait_for_room",
             Self::Suspend { .. } => "suspend",
-            Self::Close => "close",
+            Self::Close { .. } => "close",
         }
     }
 }

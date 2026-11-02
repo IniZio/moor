@@ -173,7 +173,7 @@ fn clean_ready_box_is_released_and_closed() {
     assert!(plan.release_box && plan.close_workspace);
     assert_eq!(
         plan.decision_close.lifecycle_input,
-        Some(BoxLifecycleInput::Close)
+        Some(BoxLifecycleInput::Close { reason: None })
     );
     assert_eq!(plan.decision_close.session_input, Some(SessionInput::End));
 }

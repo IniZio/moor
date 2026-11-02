@@ -109,12 +109,18 @@ fn lifecycle_events_table_rest() {
     }
     assert_eq!(ev(Some(L::Asleep), L::Ready, &I::Wake), vec![Event::Woke]);
     assert_eq!(
-        ev(Some(L::Ready), L::Closed, &I::Close),
-        vec![Event::Closed { from: L::Ready }]
+        ev(Some(L::Ready), L::Closed, &I::Close { reason: None }),
+        vec![Event::Closed {
+            from: L::Ready,
+            reason: None
+        }]
     );
     assert_eq!(
-        ev(None, L::Closed, &I::Close),
-        vec![Event::Closed { from: L::Closed }]
+        ev(None, L::Closed, &I::Close { reason: None }),
+        vec![Event::Closed {
+            from: L::Closed,
+            reason: None
+        }]
     );
 }
 

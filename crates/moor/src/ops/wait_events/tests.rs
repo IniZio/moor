@@ -344,7 +344,7 @@ fn a_closed_box_fails_before_waiting() {
         .unwrap()
         .apply(
             Decision::new(id)
-                .lifecycle(BoxLifecycleInput::Close)
+                .lifecycle(BoxLifecycleInput::Close { reason: None })
                 .session(SessionInput::End),
         )
         .unwrap();
