@@ -9,6 +9,7 @@ fn sample_box() -> BoxView {
         id: 7,
         name: "t".into(),
         repo: Some(crate::seam::forge::ForgeRepo::new("o", "r")),
+        other_repos: Vec::new(),
         issue: None,
         prompt: Some("g".into()),
         lifecycle: BoxLifecycle::Ready,
@@ -469,4 +470,16 @@ fn the_work_tree_state_is_typed_from_the_outcome() {
     ] {
         assert_eq!(WorkTreeView::parse(text), want, "{text:?}");
     }
+}
+
+#[test]
+fn other_repos_follow_the_primary_in_listed_order() {
+    let mut t = sample_box();
+    t.other_repos = vec![
+        crate::seam::forge::ForgeRepo::new("o", "b"),
+        crate::seam::forge::ForgeRepo::new("p", "c"),
+    ];
+    let v = serde_json::to_value(t).ok().unwrap();
+    assert_eq!(v.get("repo"), Some(&json!("o/r")));
+    assert_eq!(v.get("other_repos"), Some(&json!(["o/b", "p/c"])));
 }
