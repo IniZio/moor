@@ -578,4 +578,5 @@ mod link;
 mod needs_input;
 mod restart;
 mod said;
+mod stall;
 mod turn;
