@@ -191,6 +191,11 @@ impl FakeEngine {
         self
     }
 
+    /// Fates not yet asked for.
+    pub(crate) fn fates_left(&self) -> usize {
+        self.st().fates.len()
+    }
+
     /// Every reattach so far, as (session id, new pane).
     pub(crate) fn reattached(&self) -> Vec<(String, String)> {
         self.st().reattached.clone()

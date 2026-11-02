@@ -1,8 +1,6 @@
 //! `end-session`: end the Box's live agent Session and keep the Box open for a later one.
 
 use moor_core::decide::transcript::Trigger;
-use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxState;
 use moor_core::domain::session_state::SessionState;
 use moor_core::request::EndSessionReq;
 use moor_core::view::session::EndSessionValue;
@@ -44,7 +42,7 @@ pub(crate) fn run(cx: &Cx, req: &EndSessionReq) -> Result<EndSessionValue, Comma
         "end-session",
         boxlock::WAIT,
     )?;
-    if asleep(&reload()?) {
+    if reload()?.asleep() {
         wake_and_revive(cx, store, &reload()?)?;
     }
     let row = reload()?;
@@ -86,15 +84,6 @@ fn reword(e: CommandError, name: &str) -> CommandError {
     CommandError::new(e.kind, text).with_hint(format!(
         "try `moor end {name}` again, or close the pane by hand"
     ))
-}
-
-/// Whether the Box or its machine is asleep.
-fn asleep(row: &BoxRow) -> bool {
-    row.lifecycle == BoxLifecycle::Asleep
-        || row
-            .boxed
-            .as_ref()
-            .is_some_and(|b| b.state == BoxState::Asleep)
 }
 
 #[cfg(test)]

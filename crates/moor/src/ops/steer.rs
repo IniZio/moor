@@ -6,8 +6,6 @@ use std::time::Duration;
 
 use moor_core::activity::{Activity, AgentState, Source};
 use moor_core::decide::transcript::Trigger;
-use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::engine::{EngineError, SessionRef, Steer, SteerOutcome};
@@ -42,10 +40,10 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
     })?;
     let target = (found.id, found.name.as_str());
     let row = reload(store, target)?;
-    if store.live_session(target.0)?.is_none() && asleep(&row) {
+    if store.live_session(target.0)?.is_none() && row.asleep() {
         return Err(no_agent(target.1));
     }
-    if asleep(&row) {
+    if row.asleep() {
         let _held = BoxLock::acquire(
             cx.clock(),
             cx.state_dir()?,
@@ -260,15 +258,6 @@ fn exited(
         answered_menu: false,
         steer,
     })
-}
-
-/// Whether the Box or its machine is asleep.
-fn asleep(row: &BoxRow) -> bool {
-    row.lifecycle == BoxLifecycle::Asleep
-        || row
-            .boxed
-            .as_ref()
-            .is_some_and(|b| b.state == BoxState::Asleep)
 }
 
 /// The command that starts the agent again.
