@@ -294,6 +294,33 @@ fn report_psi(w: &World, hv: i64, available_mib: u64, psi_centi: Option<u32>, fu
     nodes::set_links(&w.cx, &[link]).unwrap();
 }
 
+/// Like [`report`] with plenty of memory, plus `free` of `total` GiB of disk.
+fn report_disk(w: &World, hv: i64, disk: Option<(u64, u64)>) {
+    let link = MachineLink {
+        machine_id: hv,
+        online: true,
+        since: Ts::from_millis(1),
+        version: None,
+        protocol: None,
+        max_boxes: None,
+        cache_gb: None,
+        features: vec![],
+        mem_mib: Some(65_536),
+        cpus: None,
+        reserve_mib: Some(4096),
+        memory: Some(moor_core::request::MemoryReport {
+            at: w.cx.clock().now(),
+            available_mib: 32_768,
+            total_mib: 65_536,
+            psi_centi: None,
+            psi_full_centi: None,
+            disk_free_mib: disk.map(|d| d.0 * 1024),
+            disk_total_mib: disk.map(|d| d.1 * 1024),
+        }),
+    };
+    nodes::set_links(&w.cx, &[link]).unwrap();
+}
+
 /// A personal node `hv` that has just reported `available_mib`.
 fn live_world(available_mib: u64) -> (World, i64) {
     let yaml = "nodes: {ci: {runtime: local-container, max_boxes: 1}}\nbox: {node: ci}";
@@ -520,3 +547,47 @@ fn starting_an_asleep_box_without_room_queues_it_with_the_reason_and_keeps_the_p
 }
 
 mod pressure;
+
+#[test]
+fn a_node_short_of_disk_makes_a_start_wait_with_a_disk_reason() {
+    let (w, hv) = live_world(32_768);
+    report_disk(&w, hv, Some((15, 100)));
+    assert_eq!(
+        waits(&w, "a").1,
+        "low disk on hv: 15 GiB free, needs 20 GiB"
+    );
+    let shown = nodes::list(&w.cx).unwrap();
+    let hv = shown.nodes.iter().find(|n| n.name == "hv").unwrap();
+    assert_eq!(hv.disk_free_mib, Some(15 * 1024));
+}
+
+#[test]
+fn a_node_above_the_disk_floor_admits_a_start() {
+    let (w, hv) = live_world(32_768);
+    report_disk(&w, hv, Some((40, 100)));
+    started(&w, "a");
+}
+
+#[test]
+fn a_node_that_reports_no_disk_admits_a_start() {
+    let (w, hv) = live_world(32_768);
+    report_disk(&w, hv, None);
+    started(&w, "a");
+}
+
+#[test]
+fn waking_an_asleep_box_onto_a_node_short_of_disk_queues_it_with_the_reason() {
+    use moor_core::domain::box_state::BoxLifecycle;
+    let (w, hv) = live_world(32_768);
+    let a = started(&w, "a");
+    put_to_sleep(&w, a);
+    report_disk(&w, hv, Some((15, 100)));
+    let name = w.cx.store().unwrap().box_row(a).unwrap().unwrap().name;
+    let v = start::run(&w.cx, &req(name.as_str())).unwrap();
+    assert!(v.queued);
+    assert!(v
+        .warnings_inline
+        .iter()
+        .any(|x| x == "low disk on hv: 15 GiB free, needs 20 GiB"));
+    assert_eq!(lifecycle(&w, a), BoxLifecycle::Pending);
+}

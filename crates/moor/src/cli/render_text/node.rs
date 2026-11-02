@@ -39,13 +39,17 @@ fn load_text(n: &Value) -> Option<String> {
         }
         _ => String::new(),
     };
+    let disk = n
+        .get("disk_free_mib")
+        .and_then(Value::as_u64)
+        .map_or_else(String::new, |d| format!("  {} disk free", gib(d)));
     let pressure = n
         .get("pressure_since")
         .and_then(Value::as_i64)
         .map_or_else(String::new, |t| {
             format!("  pressure: high since {}", stamp::utc(t))
         });
-    Some(format!("{used}/{cap}{mem}{pressure}"))
+    Some(format!("{used}/{cap}{mem}{disk}{pressure}"))
 }
 
 /// One line per node: name, scope, runtime, link state, used/capacity and labels.
