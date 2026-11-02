@@ -21,6 +21,9 @@ struct Args {
     /// Silence on the stream, in milliseconds, after which it counts as dead.
     #[arg(long, hide = true, default_value_t = 45_000)]
     idle_ms: u64,
+    /// Watch only this Box; repeat for several. Without it every Box is watched.
+    #[arg(long = "box", value_name = "NAME")]
+    boxes: Vec<String>,
 }
 
 /// Writes `line` to `out` and flushes, so a reader sees it at once.
@@ -36,9 +39,10 @@ fn main() -> ExitCode {
         bearer: Box::new(Shell(args.token_cmd)),
         idle: Duration::from_millis(args.idle_ms),
         signed_out: Listen::SIGNED_OUT,
+        only: args.boxes,
     };
     let mut stdout = io::stdout().lock();
-    // The loop only ends when stdout is gone.
+    // The loop ends when stdout is gone or every named Box has closed.
     let Err(why) = listen.run(&mut |line| emit(&mut stdout, line)) else {
         return ExitCode::SUCCESS;
     };

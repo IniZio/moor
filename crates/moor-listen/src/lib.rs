@@ -22,6 +22,8 @@ pub struct Listen {
     pub idle: Duration,
     /// How long to wait before looking again for a sign-in.
     pub signed_out: Duration,
+    /// Names of the only Boxes to watch; empty watches every Box the login can see.
+    pub only: Vec<String>,
 }
 
 impl Listen {
@@ -31,12 +33,13 @@ impl Listen {
     /// How long to wait for a sign-in, unless told otherwise.
     pub const SIGNED_OUT: Duration = Duration::from_secs(60);
 
-    /// Runs until `say` fails, which is when nobody reads the lines any more.
+    /// Runs until `say` fails, which is when nobody reads the lines any more, or, when `only`
+    /// names Boxes, until all of them have closed.
     ///
     /// # Errors
     /// `say` failed.
     pub fn run(self, say: &mut dyn FnMut(&str) -> io::Result<()>) -> io::Result<()> {
         let gate = gate::Gate::new(self.url, self.bearer, self.idle);
-        watch::run(&gate, self.signed_out, say)
+        watch::run(&gate, self.signed_out, self.only, say)
     }
 }

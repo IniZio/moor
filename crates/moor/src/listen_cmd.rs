@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use clap::Parser;
 use moor_client::session::{normalize, Store};
+use moor_core::BoxName;
 use moor_listen::{Listen, Session};
 
 use crate::cli::Output;
@@ -24,6 +25,16 @@ struct Args {
     /// Milliseconds between looks for a sign-in while there is none.
     #[arg(long, hide = true, default_value_t = 60_000)]
     signed_out_ms: u64,
+    /// Watch only this Box; repeat for several. Without it every Box is watched.
+    #[arg(long = "box", value_name = "NAME", value_parser = box_name)]
+    boxes: Vec<String>,
+}
+
+/// Checks a Box name the way the rest of `moor` does.
+fn box_name(s: &str) -> Result<String, String> {
+    BoxName::parse_allow_bare(s)
+        .map(|n| n.as_str().to_owned())
+        .map_err(|e| e.to_string())
 }
 
 /// Runs `moor listen`, saying each line through `say`; `None` when `args` names another command.
@@ -44,8 +55,9 @@ pub fn run(args: &[OsString], say: &mut dyn FnMut(&str) -> io::Result<()>) -> Op
         bearer: Box::new(Session::new(Store::user(), &origin)),
         idle: Duration::from_millis(parsed.idle_ms),
         signed_out: Duration::from_millis(parsed.signed_out_ms),
+        only: parsed.boxes,
     };
-    // The loop only ends when nobody reads the lines any more.
+    // The loop ends when nobody reads the lines any more or every named Box has closed.
     Some(match listen.run(say) {
         Ok(()) => done(String::new(), String::new(), 0),
         Err(why) => done(String::new(), format!("moor-listen: {why}\n"), 1),
