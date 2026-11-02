@@ -593,6 +593,8 @@ async fn a_call_on_a_lease_never_warmed_leaves_no_dir_on_the_host() {
     assert!(!home.path().join("moor-pool/moor-1a2b3c4d-7").exists());
 }
 
+#[path = "link/pool_sweep.rs"]
+mod pool_sweep;
 #[path = "link/sweep.rs"]
 mod sweep;
 use sweep::swept;

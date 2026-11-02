@@ -7,7 +7,6 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use moor_client::link::ops::{self, Hook, Op, Reply, MAX_TIMEOUT_SECS};
-use moor_client::link::sweep::Swept;
 use moor_client::link::Channel;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
@@ -79,8 +78,9 @@ pub(crate) async fn serve(machine: &Machine, link: &Link, recent: &Recent, mut c
         let reply = Reply::Status(Box::new(status::status(machine, recent).await));
         return end(ch, reply).await;
     }
-    if machine.pool.is_some() && matches!(op, Op::Sweep { .. }) {
-        return end(ch, Reply::Swept(Swept::default())).await;
+    if let (Some(pool), Op::Sweep { keep }) = (&machine.pool, &op) {
+        let swept = pool::sweep(&machine.home, pool, keep, machine.sweep_grace).await;
+        return end(ch, Reply::Swept(swept)).await;
     }
     let (name, target) = (kind(&op), target(&op));
     let failed = dispatch(machine, link, ch, op).await;
