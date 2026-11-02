@@ -55,7 +55,7 @@ mkdir -p "$OUT"
 # A run killed outright (SIGKILL, reboot) leaves its controller and VM behind.
 stop_ours
 # Each run starts clean: a Box left in state from an earlier run would hold the node.
-rm -rf "$STATE" "$D/ch-state" "$D/run"
+rm -rf "$STATE" "$D/ch-state" "$D/run" "$OUT"
 mkdir -p "$STATE" "$CTL" "$OUT" "$D/ch-state" "$D/run" "$XDG_CONFIG_HOME/crabbox"
 : >"$OUT/run.log"
 chmod 700 "$STATE" "$CTL" "$XDG_CONFIG_HOME"
