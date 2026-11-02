@@ -563,3 +563,25 @@ fn node_ls_shows_scope_link_load_and_labels() {
     );
     assert_eq!(none, "no nodes\n");
 }
+
+#[test]
+fn node_ls_shows_what_the_boxes_hold_only_when_a_box_reported_it() {
+    let node = |held: Option<u64>| {
+        let n = json!({"name": "mini", "scope": "personal", "runtime": "cloudhypervisor",
+            "online": true, "used": 2, "waiting": 0, "labels": [], "box_memory_mib": held});
+        render(
+            &Response::ok("node-list", Some(json!({"nodes": [n]}))),
+            false,
+        )
+        .0
+    };
+    assert_eq!(
+        node(Some(6349)),
+        "mini  personal  cloudhypervisor  online  2/-  Boxes hold 6.2 GiB\n"
+    );
+    assert_eq!(
+        node(Some(0)),
+        "mini  personal  cloudhypervisor  online  2/-  Boxes hold 0 GiB\n"
+    );
+    assert_eq!(node(None), "mini  personal  cloudhypervisor  online  2/-\n");
+}

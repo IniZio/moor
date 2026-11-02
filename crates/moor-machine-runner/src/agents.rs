@@ -10,7 +10,7 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use moor_client::link::{self, ops, Asked, Channel, Frame, Offer, Opened, Report, WebSocketStream};
 use moor_client::Client;
-use moor_core::request::{MachineLink, MachineLinksReq, Request};
+use moor_core::request::{BoxHostMemory, MachineLink, MachineLinksReq, Request};
 use moor_core::view::user::MachineKeysValue;
 use ssh_key::rand_core::{OsRng, RngCore};
 use ssh_key::{PublicKey, SshSig};
@@ -52,7 +52,10 @@ impl Agents {
     #[must_use]
     pub fn new(socket: &Path) -> Self {
         let client = Client::new(socket);
-        let (tx, rx) = watch::channel(Vec::new());
+        let (tx, rx) = watch::channel(MachineLinksReq {
+            links: Vec::new(),
+            box_memory: Vec::new(),
+        });
         tokio::spawn(report(client.clone(), rx));
         let links = Arc::new(Links {
             held: Mutex::default(),
@@ -258,7 +261,7 @@ struct Links {
     /// By machine id.
     held: Mutex<BTreeMap<i64, Held>>,
     /// The whole set, which `report` sends to the controller after every change.
-    report: watch::Sender<Vec<MachineLink>>,
+    report: watch::Sender<MachineLinksReq>,
     /// The generation the next link gets.
     next: Mutex<u64>,
     /// Woken by each new link; holds one wake-up for a waiter that comes later.
@@ -269,6 +272,8 @@ struct Links {
 struct Held {
     /// What the controller is told.
     link: MachineLink,
+    /// The host memory its Boxes hold by its latest report; none before one, or once it is down.
+    box_memory: Vec<BoxHostMemory>,
     /// Which link set it, so an older link ending leaves a newer one online.
     generation: u64,
     /// Dropping it ends the link that set it.
@@ -315,6 +320,7 @@ impl Links {
                 machine_id,
                 Held {
                     link,
+                    box_memory: Vec::new(),
                     generation,
                     end: Some(end),
                     asks: Some(ask),
@@ -334,6 +340,7 @@ impl Links {
             {
                 h.link.online = false;
                 h.link.since = now();
+                h.box_memory.clear();
                 h.end = None;
                 h.asks = None;
             }
@@ -349,6 +356,7 @@ impl Links {
             {
                 h.link.mem_mib = Some(report.mem_total_mib);
                 h.link.memory = Some(memory::received(report));
+                h.box_memory = memory::box_memory(machine_id, report);
             }
         });
     }
@@ -357,19 +365,20 @@ impl Links {
     fn change(&self, edit: impl FnOnce(&mut BTreeMap<i64, Held>)) {
         let mut held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
         edit(&mut held);
-        self.report
-            .send_replace(held.values().map(|h| h.link.clone()).collect());
+        self.report.send_replace(MachineLinksReq {
+            links: held.values().map(|h| h.link.clone()).collect(),
+            box_memory: held.values().flat_map(|h| h.box_memory.clone()).collect(),
+        });
     }
 }
 
 /// Sends the latest set as `machine-links` after every change, again until the controller
 /// takes it.
-async fn report(client: Client, mut rx: watch::Receiver<Vec<MachineLink>>) {
+async fn report(client: Client, mut rx: watch::Receiver<MachineLinksReq>) {
     while rx.changed().await.is_ok() {
         loop {
-            let links = rx.borrow_and_update().clone();
+            let request = Request::MachineLinks(rx.borrow_and_update().clone());
             let client = client.clone();
-            let request = Request::MachineLinks(MachineLinksReq { links });
             let sent = tokio::task::spawn_blocking(move || client.request(request, |_| {})).await;
             if matches!(sent, Ok(Ok(ref r)) if r.error.is_none()) {
                 break;
@@ -378,3 +387,6 @@ async fn report(client: Client, mut rx: watch::Receiver<Vec<MachineLink>>) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

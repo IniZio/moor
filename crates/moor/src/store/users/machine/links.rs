@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use moor_core::request::{MachineLink, MemoryReport};
+use moor_core::request::{BoxHostMemory, MachineLink, MemoryReport};
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::view::user::MachineKey;
@@ -86,6 +86,41 @@ impl Store {
         tx.commit()?;
         drop(conn);
         Ok(held)
+    }
+
+    /// Replaces the stored per-Box host memory with `boxes`, dropping any for a machine that is not
+    /// enrolled or a Box another controller named.
+    pub(crate) fn set_box_memory(&self, boxes: &[BoxHostMemory]) -> Result<(), StoreError> {
+        let own = self.controller_id()?;
+        let mut conn = self.writer();
+        let tx = conn.transaction()?;
+        tx.execute("DELETE FROM machine_box_memory", [])?;
+        for b in boxes.iter().filter(|b| b.controller == own) {
+            tx.execute(
+                "INSERT OR REPLACE INTO machine_box_memory (machine_id, box_id, host_memory_mib) \
+                 SELECT machine_id, ?, ? FROM user_machines_v2 WHERE machine_id = ?",
+                params![
+                    b.box_id.get(),
+                    i64::try_from(b.host_memory_mib).unwrap_or(i64::MAX),
+                    b.machine_id
+                ],
+            )?;
+        }
+        tx.commit()?;
+        drop(conn);
+        Ok(())
+    }
+
+    /// The MiB of host memory the Boxes of each machine that reported any hold, by machine id.
+    pub(crate) fn box_memory_totals(&self) -> Result<HashMap<i64, u64>, StoreError> {
+        let conn = self.reader()?;
+        let mut stmt = conn.prepare(
+            "SELECT machine_id, SUM(host_memory_mib) FROM machine_box_memory GROUP BY machine_id",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((r.get::<_, i64>(0)?, mib(r.get(1)?).unwrap_or(0)))
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
     }
 
     /// The stored link of each of `user`'s machines that has one, by machine name.

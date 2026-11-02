@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::box_key::ControllerId;
 use crate::name::BoxId;
 use crate::seam::clock::Ts;
 use crate::user::{Email, Identity};
@@ -38,6 +39,24 @@ pub struct MachineEnrollReq {
 pub struct MachineLinksReq {
     /// Every machine the runner has seen since it started; any other is offline.
     pub links: Vec<MachineLink>,
+    /// The host memory each Box's VM holds, for the Boxes whose provider says; a Box left out has
+    /// none recorded.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub box_memory: Vec<BoxHostMemory>,
+}
+
+/// The host memory one Box's VM holds on a machine, as its agent last reported.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BoxHostMemory {
+    /// The machine hosting the Box.
+    pub machine_id: i64,
+    /// The controller that named the Box's lease; a host shared by controllers lists them all.
+    pub controller: ControllerId,
+    /// The Box.
+    pub box_id: BoxId,
+    /// MiB of the host it holds; 0 when its VM is suspended to disk.
+    pub host_memory_mib: u64,
 }
 
 /// Whether an enrolled machine's agent holds a link to the runner, since when, and what it

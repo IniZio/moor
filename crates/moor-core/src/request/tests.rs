@@ -467,3 +467,34 @@ fn wait_events_roundtrips_from_json() {
     let back: Request = serde_json::from_str(&serde_json::to_string(&r).unwrap()).unwrap();
     assert_eq!(back, r);
 }
+
+#[test]
+fn machine_links_without_box_memory_read_and_write_none() {
+    let req: MachineLinksReq = serde_json::from_value(json!({"links": []})).unwrap();
+    assert!(req.box_memory.is_empty());
+    assert_eq!(serde_json::to_value(&req).unwrap(), json!({"links": []}));
+}
+
+#[test]
+fn machine_links_with_box_memory_round_trip() {
+    let req = MachineLinksReq {
+        links: Vec::new(),
+        box_memory: vec![BoxHostMemory {
+            machine_id: 3,
+            controller: crate::box_key::ControllerId::parse("0a1b2c3d").unwrap(),
+            box_id: crate::name::BoxId::new(9),
+            host_memory_mib: 1536,
+        }],
+    };
+    let back: MachineLinksReq =
+        serde_json::from_value(serde_json::to_value(&req).unwrap()).unwrap();
+    assert_eq!(back, req);
+}
+
+#[test]
+fn box_memory_and_memory_reports_still_refuse_unknown_fields() {
+    let box_memory = json!({"machine_id": 3, "controller": "0a1b2c3d", "box_id": 9, "host_memory_mib": 1, "extra": 1});
+    assert!(serde_json::from_value::<BoxHostMemory>(box_memory).is_err());
+    let report = json!({"at": 1, "available_mib": 1, "total_mib": 2, "extra": 1});
+    assert!(serde_json::from_value::<MemoryReport>(report).is_err());
+}

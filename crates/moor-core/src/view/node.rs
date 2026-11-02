@@ -64,6 +64,9 @@ pub struct NodeView {
     /// Since when its host has been under sustained memory pressure, unix seconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pressure_since: Option<i64>,
+    /// MiB of its host the Boxes it hosts hold by their last reports; none when no Box reported one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub box_memory_mib: Option<u64>,
     /// Its labels.
     pub labels: Vec<String>,
 }
