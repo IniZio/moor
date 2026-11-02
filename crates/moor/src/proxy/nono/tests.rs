@@ -320,7 +320,7 @@ fn github_uploads_route_admits_only_the_asset_post() {
     let rules = moor_core::config::proxy::resolve_rules(
         &ProxyConfig::default(),
         &[moor_core::seam::forge::ForgeRepo::new("o", "w")],
-        &[],
+        false,
     )
     .unwrap();
     let cfg = cfg_for(&rules, None);

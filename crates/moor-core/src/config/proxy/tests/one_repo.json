@@ -156,31 +156,15 @@
     "endpoint_rules": [
       {
         "method": "GET",
-        "path": "/acme/widgets.git/info/refs"
+        "path": "/*/*.git/info/refs"
       },
       {
         "method": "POST",
-        "path": "/acme/widgets.git/git-upload-pack"
+        "path": "/*/*.git/git-upload-pack"
       },
       {
         "method": "POST",
         "path": "/acme/widgets.git/git-receive-pack"
-      },
-      {
-        "method": "GET",
-        "path": "/me/profile.git/info/refs"
-      },
-      {
-        "method": "GET",
-        "path": "/acme/agent-tools.git/info/refs"
-      },
-      {
-        "method": "POST",
-        "path": "/me/profile.git/git-upload-pack"
-      },
-      {
-        "method": "POST",
-        "path": "/acme/agent-tools.git/git-upload-pack"
       }
     ],
     "box_env": {}

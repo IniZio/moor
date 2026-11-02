@@ -39,8 +39,8 @@ pub(crate) fn agent_env(cx: &Cx, settings: &BoxSettings) -> Vec<(String, String)
         .collect()
 }
 
-/// Resolves the proxy plan of a Box of `repos` (the primary first) with the MCP servers `mcp`, which may also
-/// fetch the repos in `reads`.
+/// Resolves the proxy plan of a Box of `repos` (the primary first) with the MCP servers `mcp`;
+/// a Box with no repo keeps git fetch access only when `fetch_without_repo` is set.
 ///
 /// # Errors
 /// The message of a rule that does not resolve.
@@ -48,10 +48,10 @@ pub(crate) fn plan(
     cx: &Cx,
     repos: &[ForgeRepo],
     mcp: &BTreeMap<String, McpServer>,
-    reads: &[ForgeRepo],
+    fetch_without_repo: bool,
 ) -> Result<ProxyPlan, String> {
-    let rules =
-        resolve_rules(&cx.config().box_proxy(mcp), repos, reads).map_err(|e| e.to_string())?;
+    let rules = resolve_rules(&cx.config().box_proxy(mcp), repos, fetch_without_repo)
+        .map_err(|e| e.to_string())?;
     Ok(ProxyPlan {
         repos: repos.to_vec(),
         rules,

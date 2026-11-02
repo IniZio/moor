@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::template::{check_slots, fill_read_repo, fill_repo, uses_repo, ALLOW_SLOTS, READ_REPO};
+use super::template::{check_slots, fill_any_repo, fill_repo, uses_repo, ALLOW_SLOTS, ANY_REPO};
 use super::{parse_rules, ProxyConfig, ToolRule, DEFAULT_HEADER};
 use crate::config::ConfigError;
 use crate::name::ForgeRepo;
@@ -70,7 +70,7 @@ pub fn front_rules() -> Vec<ResolvedRule> {
     let rules = parse_rules("fronts.yaml", FRONT_DEFAULTS).unwrap_or_default();
     rules
         .into_iter()
-        .filter_map(|(name, rule)| resolve_one(name, &rule, &[], &[]).ok())
+        .filter_map(|(name, rule)| resolve_one(name, &rule, &[]).ok())
         .collect()
 }
 
@@ -98,9 +98,9 @@ fn parse_allow(entry: &str) -> Result<Allow, String> {
         return Err(bad());
     }
     check_slots(path, ALLOW_SLOTS)?;
-    if path.contains(READ_REPO) && path.contains("receive-pack") {
+    if path.contains(ANY_REPO) && path.contains("receive-pack") {
         return Err(format!(
-            "{READ_REPO} names a repo the Box may only read, got {entry:?}"
+            "{ANY_REPO} may only fetch; push needs {{repo}}, got {entry:?}"
         ));
     }
     let list = if any {
@@ -128,13 +128,13 @@ pub(super) fn validate_allow(allow: &[String], at: &str) -> Result<(), ConfigErr
     Ok(())
 }
 
-/// Defaults overlaid with the user's rules, filled for the Box's `repos` and `reads`.
+/// Defaults overlaid with the user's rules, filled for the Box's `repos`.
 ///
 /// A user rule named like a default extends it: see `ToolRule::over`. An allow entry with
-/// `{repo}` repeats once per repo in `repos`, and one with `{read_repo}` once per repo in
-/// `reads`; `box_env` names only the first repo. Rules that use `{repo}` are left out when
-/// `repos` is empty, unless they list a read entry and `reads` is not empty, in which case
-/// only their `{repo}` entries are. Rules come out sorted by name.
+/// `{repo}` repeats once per repo in `repos`, and `{any_repo}` matches any one repo;
+/// `box_env` names only the first repo. Rules that use `{repo}` are left out when `repos` is
+/// empty, unless they list an `{any_repo}` entry and `fetch_without_repo` is set, in which
+/// case only their `{repo}` entries are. Rules come out sorted by name.
 ///
 /// # Errors
 /// Returns [`ConfigError`] when the repo owner or name has characters outside
@@ -142,20 +142,20 @@ pub(super) fn validate_allow(allow: &[String], at: &str) -> Result<(), ConfigErr
 pub fn resolve_rules(
     user: &ProxyConfig,
     repos: &[ForgeRepo],
-    reads: &[ForgeRepo],
+    fetch_without_repo: bool,
 ) -> Result<Vec<ResolvedRule>, ConfigError> {
-    for r in repos.iter().chain(reads) {
+    for r in repos {
         check_repo_part("owner", &r.owner)?;
         check_repo_part("name", &r.name)?;
     }
     let merged = user.merged_rules();
     let mut out = Vec::new();
     for (name, rule) in merged {
-        let serves_reads = !reads.is_empty() && rule.allow.iter().any(|a| a.contains(READ_REPO));
-        if repos.is_empty() && (rule.requires_repo || (rule.needs_repo() && !serves_reads)) {
+        let serves_any = fetch_without_repo && rule.allow.iter().any(|a| a.contains(ANY_REPO));
+        if repos.is_empty() && (rule.requires_repo || (rule.needs_repo() && !serves_any)) {
             continue;
         }
-        out.push(resolve_one(name, &rule, repos, reads)?);
+        out.push(resolve_one(name, &rule, repos)?);
     }
     Ok(out)
 }
@@ -177,30 +177,17 @@ fn check_repo_part(what: &str, v: &str) -> Result<(), ConfigError> {
     }
 }
 
-/// `path` once per read repo if it names `{read_repo}`, then each of those once per Box repo
-/// if it names `{repo}`.
-fn expand_path(path: String, repos: &[ForgeRepo], reads: &[ForgeRepo]) -> Vec<String> {
-    let read_paths = if path.contains(READ_REPO) {
-        reads
+/// `path` once per Box repo if it names `{repo}`, with `{any_repo}` as a glob.
+fn expand_path(path: &str, repos: &[ForgeRepo]) -> Vec<String> {
+    let path = fill_any_repo(path);
+    if uses_repo(&path) {
+        repos
             .iter()
-            .map(|r| fill_read_repo(&path, &r.owner, &r.name))
+            .map(|r| fill_repo(&path, &r.owner, &r.name))
             .collect()
     } else {
         vec![path]
-    };
-    read_paths
-        .into_iter()
-        .flat_map(|p| {
-            if uses_repo(&p) {
-                repos
-                    .iter()
-                    .map(|r| fill_repo(&p, &r.owner, &r.name))
-                    .collect()
-            } else {
-                vec![p]
-            }
-        })
-        .collect()
+    }
 }
 
 /// Fills one rule.
@@ -208,7 +195,6 @@ fn resolve_one(
     name: String,
     rule: &ToolRule,
     repos: &[ForgeRepo],
-    reads: &[ForgeRepo],
 ) -> Result<ResolvedRule, ConfigError> {
     let at = format!("proxy.rules.{name}");
     rule.validate(&at)?;
@@ -220,7 +206,7 @@ fn resolve_one(
             Allow::Any => {}
             Allow::Rule(_, path) if repos.is_empty() && uses_repo(&path) => {}
             Allow::Rule(methods, path) => {
-                for path in expand_path(path, repos, reads) {
+                for path in expand_path(&path, repos) {
                     endpoint_rules.extend(methods.iter().map(|method| EndpointRule {
                         method: method.clone(),
                         path: path.clone(),

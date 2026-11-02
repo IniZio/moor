@@ -87,7 +87,6 @@ fn an_unpinned_profile_records_the_default_branch_head() {
     let id = started(&w);
     let got = w.cx.store().unwrap().box_profile(id).unwrap().unwrap();
     assert_eq!(got.sha.as_str(), HEAD);
-    assert_eq!(got.reads, [profile_repo()]);
     let events = profile_events(&w, id);
     assert_eq!(events.len(), 1);
     assert_eq!(events.first().unwrap().0, "profile_resolved");
@@ -162,66 +161,16 @@ fn an_unresolvable_profile_is_reported_and_the_box_still_starts() {
 }
 
 #[test]
-fn marketplaces_and_their_plugin_sources_join_the_reads() {
-    let (w, id) = with_marketplace("tools");
+fn a_marketplace_in_the_manifest_costs_no_forge_read() {
+    let manifest = "claude:\n  marketplaces: {tools: https://github.com/acme/tools}\n  plugins: [lint@tools]\n";
+    let w = world_answering(None, HEAD, Some(manifest));
+    set_profile(&w, None);
+    let id = started(&w);
     assert!(profile_events(&w, id)
         .iter()
         .all(|(k, _)| k == "profile_resolved"));
-    let got = w.cx.store().unwrap().box_profile(id).unwrap().unwrap();
-    assert_eq!(
-        got.reads,
-        [
-            profile_repo(),
-            ForgeRepo::new("acme", "tools"),
-            ForgeRepo::new("acme", "lint")
-        ]
-    );
-}
-
-#[test]
-fn a_marketplace_named_unlike_its_key_drops_its_plugins() {
-    let (w, id) = with_marketplace("kit");
-    let events = profile_events(&w, id);
-    assert_eq!(events.get(1).unwrap().0, "profile_failed");
-    assert_eq!(
-        events
-            .get(1)
-            .unwrap()
-            .1
-            .get("detail")
-            .and_then(serde_json::Value::as_str),
-        Some("marketplace tools is named kit")
-    );
-    let got = w.cx.store().unwrap().box_profile(id).unwrap().unwrap();
-    assert_eq!(got.reads, [profile_repo(), ForgeRepo::new("acme", "tools")]);
-}
-
-/// Starts a Box whose profile names `lint@tools`, with the `tools` marketplace calling itself
-/// `named`.
-fn with_marketplace(named: &str) -> (World, BoxId) {
-    let manifest = "claude:\n  marketplaces: {tools: https://github.com/acme/tools}\n  plugins: [lint@tools]\n";
-    let market = format!(
-        r#"{{"name":"{named}","plugins":[{{"name":"lint","source":{{"source":"github","repo":"acme/lint"}}}}]}}"#
-    );
-    let mut w = world_answering(None, HEAD, Some(manifest));
-    let forge = FakeForge::new()
-        .with_file(
-            profile_repo(),
-            None,
-            "moor-profile.yaml",
-            Ok((Sha::parse(HEAD).unwrap(), Some(manifest.to_owned()))),
-        )
-        .with_file(
-            ForgeRepo::new("acme", "tools"),
-            None,
-            ".claude-plugin/marketplace.json",
-            Ok((Sha::parse(PIN).unwrap(), Some(market))),
-        );
-    w.forge = Arc::new(forge);
-    w.cx = w.cx.with_forge(w.forge.clone());
-    set_profile(&w, None);
-    let id = started(&w);
-    (w, id)
+    let asked = w.forge.files_asked();
+    assert_eq!(asked.len(), 1, "{asked:?}");
 }
 
 fn fetches(w: &World) -> Vec<String> {
@@ -299,23 +248,16 @@ fn a_failed_fetch_is_reported_and_the_box_still_starts() {
 }
 
 #[test]
-fn the_proxy_lets_the_box_read_but_never_push_its_profile() {
+fn the_proxy_lets_the_box_fetch_any_repo_but_never_push_its_profile() {
     let (w, fake) = with_proxy(world_answering(None, HEAD, None));
     set_profile(&w, None);
     run(&w.cx, &req("demo")).unwrap();
     let paths = git_paths(&fake);
+    for want in ["GET /*/*.git/info/refs", "POST /*/*.git/git-upload-pack"] {
+        assert!(paths.contains(&want.to_owned()), "{paths:?}");
+    }
     assert!(
-        paths.contains(&"GET /ann/profile.git/info/refs".to_owned()),
-        "{paths:?}"
-    );
-    assert!(
-        paths.contains(&"POST /ann/profile.git/git-upload-pack".to_owned()),
-        "{paths:?}"
-    );
-    assert!(
-        !paths
-            .iter()
-            .any(|p| p.contains("ann/profile.git/git-receive-pack")),
+        !paths.iter().any(|p| p.contains("ann/profile")),
         "{paths:?}"
     );
 }
@@ -339,5 +281,5 @@ fn a_relaunch_reuses_the_stored_commit_without_reading_the_forge() {
     let id = BoxId::new(first.boxed.id);
     let got = w.cx.store().unwrap().box_profile(id).unwrap().unwrap();
     assert_eq!(got.sha.as_str(), HEAD);
-    assert!(git_paths(&fake).contains(&"POST /ann/profile.git/git-upload-pack".to_owned()));
+    assert!(git_paths(&fake).contains(&"POST /*/*.git/git-upload-pack".to_owned()));
 }

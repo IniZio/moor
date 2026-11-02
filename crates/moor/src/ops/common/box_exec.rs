@@ -45,15 +45,15 @@ pub(crate) fn proxy(
     let (user, others) = requester(cx, box_id)?;
     let vault_key = cx.vault_key().map_err(|e| e.error.to_string())?;
     let mcp = crate::ops::users::mcp::for_box(cx, Some(user)).map_err(|e| e.error.to_string())?;
-    let reads = cx
+    // A Box with a profile fetches its profile checkout even when it has no repo.
+    let has_profile = cx
         .store()
         .map_err(|e| e.error.to_string())?
         .box_profile(box_id)
         .map_err(|e| e.to_string())?
-        .map(|p| p.reads)
-        .unwrap_or_default();
+        .is_some();
     let repos: Vec<ForgeRepo> = repo.into_iter().cloned().chain(others).collect();
-    let plan = plan(cx, &repos, &mcp.servers, &reads)?;
+    let plan = plan(cx, &repos, &mcp.servers, has_profile)?;
     let repo_env: Vec<(String, String)> = cfg.env.clone().into_iter().collect();
     let spec = ProxySpec {
         box_id,
