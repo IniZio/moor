@@ -259,6 +259,7 @@ pub(crate) fn settle(
     }
     register_session(cx, store, row, reading)?;
     needs_input::note_needs_input(store, row, reading)?;
+    stall::note_stall(store, row, reading, cx.clock().now())?;
     let went_quiet = quiet::step(cx, store, row, reading)?;
     if (turn_done || went_quiet) && reading.pane != PaneLiveness::Exited {
         transcript::save_on_turn(cx, store, row)?;
@@ -357,6 +358,7 @@ mod launch;
 mod needs_input;
 mod quiet;
 mod said;
+mod stall;
 mod stored;
 mod turn;
 
