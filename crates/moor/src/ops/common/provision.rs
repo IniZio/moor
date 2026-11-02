@@ -37,7 +37,7 @@ use self::others::set_up_all;
 use self::outcome::dotfiles_warned;
 pub(crate) use self::outcome::Provisioned;
 use self::progress::progress;
-use self::rerun::note_setup_not_rerun;
+use self::rerun::start_ready;
 use self::retry::{kept_box_retry, retry_in_box};
 
 /// Re-reads a Box row that must exist.
@@ -102,7 +102,7 @@ pub(crate) fn reprovision(
     }
     let Some(entry) = entry else {
         if ready {
-            note_setup_not_rerun(cx, store, &row)?;
+            start_ready(cx, store, &row)?;
         }
         return Ok(None);
     };
@@ -273,15 +273,14 @@ fn run_and_record(
     }
     record_delivered(store, id, cloned.delivered)?;
     let run = set_up_all(cx, store, id, target, cfg, &proxy);
-    let at = (target.handle, target.provider);
-    let dotfiles = match dotfiles::apply(cx, store, at, id, cfg, &proxy) {
-        Ok(d) => d,
-        Err(f) => dotfiles_warned(cx, f),
-    };
-    if let Err(reason) = agent_install::apply(cx, store, at, id, cfg, &proxy) {
-        cx.warn(agent_install::warning(&reason));
+    if !run.failed() {
+        store.apply(Decision::new(id).set(Fields {
+            setup_failed_at: Field::Clear,
+            steps_pending_at: Field::Set(cx.clock().now().as_millis()),
+            ..Fields::default()
+        }))?;
     }
-    profile_fetch::apply(cx, store, at, id, cfg, &proxy)?;
+    let dotfiles = after_setup(cx, store, (target.handle, target.provider), id, cfg, &proxy)?;
     let mut done = Decision::new(id);
     if let DotfilesRun::Failed { tail } = &dotfiles {
         done = done.event(ExtraEvent::SetupFailed {
@@ -314,6 +313,7 @@ fn run_and_record(
     let done = done
         .set(Fields {
             setup_failed_at: failed_at,
+            steps_pending_at: Field::Clear,
             ..Fields::default()
         })
         .intent(IntentChange::Clear);
@@ -323,6 +323,26 @@ fn run_and_record(
         dotfiles,
         work_tree: cloned.work_tree,
     })
+}
+
+/// Runs the steps after the setup lines; a failed agent install is warned and the start goes on.
+pub(super) fn after_setup(
+    cx: &Cx,
+    store: &Store,
+    at: (&BoxHandle, &str),
+    id: BoxId,
+    cfg: &BoxSettings,
+    proxy: &clone::SetupProxy,
+) -> Result<DotfilesRun, CommandError> {
+    let dotfiles = match dotfiles::apply(cx, store, at, id, cfg, proxy) {
+        Ok(d) => d,
+        Err(f) => dotfiles_warned(cx, f),
+    };
+    if let Err(reason) = agent_install::apply(cx, store, at, id, cfg, proxy) {
+        cx.warn(agent_install::warning(&reason));
+    }
+    profile_fetch::apply(cx, store, at, id, cfg, proxy)?;
+    Ok(dotfiles)
 }
 
 /// Records a failed acquire; returns the error, carrying the Box row, to report.

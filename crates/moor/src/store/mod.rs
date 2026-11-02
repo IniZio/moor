@@ -74,7 +74,7 @@ const BOX_SELECT: &str = "SELECT b.id, b.name, b.repo, b.issue, b.prompt, b.base
     s.workspace_id, s.agent_session_id, b.state, b.state_reason, b.intent_kind, b.intent_pid, b.intent_run, \
     b.intent_at, b.setup_failed_at, b.created_at, b.updated_at, b.provider, b.handle, b.driver_state, \
     b.attempted_handle, b.workdir, b.egress, b.sleep_reason, b.driver_updated_at, b.idle_since, b.launch_failure, \
-    s.state, b.user, b.repo_config, b.author_name, b.author_email, b.cpus, b.mem_mib, b.other_repos FROM boxes b LEFT JOIN sessions s ON s.box = b.id \
+    s.state, b.user, b.repo_config, b.author_name, b.author_email, b.cpus, b.mem_mib, b.other_repos, b.steps_pending_at FROM boxes b LEFT JOIN sessions s ON s.box = b.id \
     AND s.ordinal = (SELECT MAX(ordinal) FROM sessions WHERE box = b.id)";
 
 /// Box row joined to a box.
@@ -135,6 +135,8 @@ pub(crate) struct BoxRow {
     pub(crate) intent_at: Option<Ts>,
     /// When setup last failed, if it has.
     pub(crate) setup_failed_at: Option<Ts>,
+    /// When the steps after the setup lines began, while they have not all run.
+    pub(crate) steps_pending_at: Option<Ts>,
     /// When the box last became Idle; none while it is not Idle.
     pub(crate) idle_since: Option<Ts>,
     /// Why the last agent launch failed; cleared by a launch that succeeds.
@@ -351,6 +353,7 @@ fn box_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
         intent: intent_from(row.get(11)?, row.get(12)?, row.get(13)?)?,
         intent_at: row.get::<_, Option<i64>>(14)?.map(Ts::from_millis),
         setup_failed_at: row.get::<_, Option<i64>>(15)?.map(Ts::from_millis),
+        steps_pending_at: row.get::<_, Option<i64>>(36)?.map(Ts::from_millis),
         created_at: Ts::from_millis(row.get(16)?),
         updated_at: Ts::from_millis(row.get(17)?),
         idle_since: row.get::<_, Option<i64>>(26)?.map(Ts::from_millis),

@@ -3,15 +3,17 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::config::{AgentConfig, DotfilesConfig, UserConfig};
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::seam::agent_adapter::AgentInstall;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::seam::proxy_host::ProxyHostError;
 use moor_core::{BoxId, StartReq};
 
-use super::setup::unwrapped;
+use super::setup::{argvs, script_argv, unwrapped};
 use super::state::WORKING;
 use super::{repo_req, script_base_yaml, world_with, World};
+use crate::ops::common::provision::interrupted::fail_interrupted;
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
@@ -360,4 +362,65 @@ fn each_repo_setup_line_is_recorded_as_it_starts_and_ends() {
             ),
         ]
     );
+}
+
+/// A world whose first start died in the agent install after its setup line passed, then restarted.
+fn install_cut_off() -> (World, Arc<FakeEngine>) {
+    let (w, engine) = install_world("setup: [a]\n", None, true, FakeDriver::new());
+    let execs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    w.driver.on_exec(move || {
+        if execs.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 2 {
+            std::panic::resume_unwind(Box::new("process died mid-install"));
+        }
+    });
+    let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        drop(run(&w.cx, &prompt_req()));
+    }));
+    assert!(crashed.is_err());
+    w.driver.on_exec(|| {});
+    assert_eq!(w.driver.execs().len(), 2, "clone, setup");
+    fail_interrupted(&w.cx, w.cx.store().unwrap()).unwrap();
+    (w, engine)
+}
+
+#[test]
+fn a_restart_during_the_install_is_not_a_failed_setup() {
+    let (w, engine) = install_cut_off();
+    assert!(engine.launches().is_empty());
+    let row =
+        w.cx.store()
+            .unwrap()
+            .box_row(BoxId::new(1))
+            .unwrap()
+            .unwrap();
+    assert_eq!(row.lifecycle, BoxLifecycle::Ready);
+    assert_eq!(row.intent, None);
+    assert_eq!(row.setup_failed_at, None);
+    let events = w.cx.store().unwrap().events(BoxId::new(1), 50).unwrap();
+    assert!(
+        events.iter().all(|e| e.kind != "setup_failed"),
+        "{events:?}"
+    );
+}
+
+#[test]
+fn a_start_after_a_restart_during_the_install_installs_then_launches() {
+    let (w, engine) = install_cut_off();
+    drop(w.cx.take_warnings());
+    let v = run(&w.cx, &prompt_req()).unwrap();
+    assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
+    assert_eq!(installs(&w).len(), 1);
+    assert_eq!(engine.launches().len(), 1);
+    let line = script_argv(&["a"]);
+    let lines = argvs(&w).into_iter().filter(|a| *a == line).count();
+    assert_eq!(lines, 1, "the setup line is not run again");
+    let codes: Vec<_> = w.cx.take_warnings().into_iter().map(|x| x.code).collect();
+    assert!(!codes.iter().any(|c| c == "setup_not_rerun"), "{codes:?}");
+    let row =
+        w.cx.store()
+            .unwrap()
+            .box_row(BoxId::new(1))
+            .unwrap()
+            .unwrap();
+    assert_eq!(row.setup_failed_at, None);
 }
