@@ -15,7 +15,8 @@ loop; wait for the next line.
 | Event | What to do |
 | --- | --- |
 | `idled`, `needs_input` | Read `moor://box/<name>` or call `box_status`. Act on it with `send_to_box` if the answer is clear, otherwise tell the user what the Box asks. |
-| `setup_failed`, `session_failed`, `launch_timed_out`, `box_failed`, `relaunch_capped` | Report it to the user with the Box name and the line. Do not restart or close the Box unless asked. |
+| `setup_failed` | Report it to the user with the Box name and the line, and offer `retry_box` to run setup again or `close_box` to give it up. Do neither unless asked. When several Boxes failed setup, `close_failed_boxes` closes them all. |
+| `session_failed`, `launch_timed_out`, `box_failed`, `relaunch_capped` | Report it to the user with the Box name and the line. Do not restart or close the Box unless asked. |
 | `closed` | Mention it only if the user was waiting on that Box. |
 
 ## Listener lines

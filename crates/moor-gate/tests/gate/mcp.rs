@@ -339,11 +339,13 @@ fn the_tools_are_listed() {
             "add_webhook",
             "box_status",
             "close_box",
+            "close_failed_boxes",
             "inspect_box",
             "list_boxes",
             "list_events",
             "list_webhooks",
             "remove_webhook",
+            "retry_box",
             "send_to_box",
             "start_box"
         ]
@@ -593,3 +595,5 @@ fn close_box_lists_force_as_an_optional_boolean() {
         "{close}"
     );
 }
+
+mod failed;
