@@ -143,7 +143,7 @@ cleanup() {
 	local n
 	for n in $(open_prs); do
 		log "closing PR #$n"
-		timeout 60 gh api -X PATCH "repos/$GH_REPO_NAME/pulls/$n" -f state=closed >>"$OUT/run.log" 2>&1
+		timeout 60 gh api -X PATCH "repos/$GH_REPO_NAME/pulls/$n" -f state=closed 2>>"$OUT/run.log" >/dev/null
 	done
 	if [ -n "$(remote_branch)" ]; then
 		log "deleting branch $BRANCH"
