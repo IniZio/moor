@@ -21,6 +21,8 @@ export PATH=$REPO_DIR/target/debug:$PATH
 
 log() { printf 'nested-e2e: %s\n' "$*" | tee -a "$OUT/run.log" >&2; }
 
+# Each run starts clean: a Box left in state from an earlier run would hold the node.
+rm -rf "$STATE" "$D/ch-state" "$D/run"
 mkdir -p "$STATE" "$CTL" "$OUT" "$D/ch-state" "$D/run" "$XDG_CONFIG_HOME/crabbox"
 : >"$OUT/run.log"
 chmod 700 "$STATE" "$CTL" "$XDG_CONFIG_HOME"
@@ -129,7 +131,7 @@ cleanup() {
 	fi
 	# Lease disks are per run; base images stay in $NESTED.
 	rm -rf "$D/ch-state/leases" "$D/run"
-	log "left running: $(pgrep -ax "cloud-hypervisor|passt|moor|crabbox-cloudhypervisor" | tr "\n" ";" || true)"
+	log "left running: $(pgrep -af "^([^ ]*/)?(cloud-hypervisor|passt|moor|crabbox-cloudhypervisor) " | tr '\n' ';')"
 	log "exit $rc"
 	exit "$rc"
 }
