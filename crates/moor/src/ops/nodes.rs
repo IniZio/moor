@@ -96,6 +96,7 @@ fn view(node: &Node, now: i64, pressure_since: Option<i64>) -> NodeView {
         waiting: node.waiting,
         max_boxes: node.max_boxes,
         mem_free_mib: node.memory.map(|m| m.free_mib()),
+        disk_free_mib: node.memory.and_then(|m| m.disk_free_mib),
         mem_psi_centi: node.memory.and_then(|m| m.psi_centi),
         mem_report_age_secs: node.memory.map(|m| now.saturating_sub(m.reported_at)),
         pressure_since,

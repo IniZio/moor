@@ -325,9 +325,36 @@ fn live(available: u64, starting: usize) -> Node {
             psi_centi: None,
             reported_at: NOW,
             starting,
+            disk_free_mib: None,
+            disk_total_mib: None,
         }),
         ..mine("hv", 1, 1)
     }
+}
+
+/// `hv` with room in memory and `free` of `total` GiB of disk.
+fn with_disk(free: u64, total: u64) -> Node {
+    let mut n = live(32, 0);
+    if let Some(m) = n.memory.as_mut() {
+        m.disk_free_mib = Some(free * GIB);
+        m.disk_total_mib = Some(total * GIB);
+    }
+    n
+}
+
+#[test]
+fn disk_below_the_larger_of_a_tenth_and_twenty_gib_makes_a_start_wait() {
+    let r = pending(judged(with_disk(19, 100)));
+    assert_eq!(r, "low disk on hv: 19 GiB free, needs 20 GiB");
+    let r = pending(judged(with_disk(150, 2000)));
+    assert_eq!(r, "low disk on hv: 150 GiB free, needs 200 GiB");
+}
+
+#[test]
+fn disk_at_or_above_the_floor_or_unreported_is_admitted() {
+    assert!(matches!(judged(with_disk(20, 100)), Verdict::Bind { .. }));
+    assert!(matches!(judged(with_disk(200, 2000)), Verdict::Bind { .. }));
+    assert!(matches!(judged(live(32, 0)), Verdict::Bind { .. }));
 }
 
 fn judged(n: Node) -> Verdict {

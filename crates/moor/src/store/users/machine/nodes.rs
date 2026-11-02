@@ -79,6 +79,8 @@ fn personal(
             reserve_mib: mib(10)?,
             available_mib,
             psi_centi: r.get(12)?,
+            disk_free_mib: mib(14)?,
+            disk_total_mib: mib(15)?,
             reported_at: at / 1000,
             starting,
         }),
@@ -134,7 +136,7 @@ impl Store {
         let mut stmt = conn.prepare(
             "SELECT m.machine_id, m.user, m.name, m.labels, m.pool_provider, m.enrolled_at, \
              l.online, l.since, l.max_boxes, l.mem_mib, l.reserve_mib, l.mem_available_mib, \
-             l.psi_centi, l.reported_at \
+             l.psi_centi, l.reported_at, l.disk_free_mib, l.disk_total_mib \
              FROM user_machines_v2 m LEFT JOIN machine_links l USING (machine_id) \
              WHERE m.pool_provider IS NOT NULL ORDER BY m.enrolled_at, m.machine_id",
         )?;
