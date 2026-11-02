@@ -318,6 +318,7 @@ fn gather(cx: &Cx, req: &StartReq, user: UserId) -> Result<Facts, CommandError> 
             repo: repo.clone(),
             moor_yaml: at.files.moor_yaml.clone(),
             author: at.author,
+            others: Vec::new(),
         }),
         base: Some(at.base.as_str().to_owned()),
         files: at.files,

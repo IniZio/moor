@@ -166,6 +166,7 @@ pub(crate) fn box_repo(moor_yaml: Option<&str>) -> BoxRepo {
             name: "Ann Dev".to_owned(),
             email: "1+ann@users.noreply.github.com".to_owned(),
         },
+        others: Vec::new(),
     }
 }
 

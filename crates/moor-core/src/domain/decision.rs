@@ -143,6 +143,19 @@ pub struct BoxRepo {
     pub moor_yaml: Option<String>,
     /// The commit identity the clone sets in the Box.
     pub author: GitAuthor,
+    /// The repos listed after this one, in the order the person listed them; empty for a
+    /// Box of one repo. This first repo stays primary: it names the branch and holds the
+    /// default work tree.
+    pub others: Vec<ListedRepo>,
+}
+
+/// A Box repo other than its primary one, with its config at the base.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListedRepo {
+    /// The repo on github.com.
+    pub repo: ForgeRepo,
+    /// The exact `.moor.yaml` text at the base; `None` when the base has no such file.
+    pub moor_yaml: Option<String>,
 }
 
 /// The Box a decision applies to.
