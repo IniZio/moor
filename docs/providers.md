@@ -119,6 +119,11 @@ Box to sleep after it has been idle for `box.sleep_after`. Sleep pauses the
 instance and wake resumes it. A provider with neither `pause-resume` nor
 `native-sleep` cannot sleep, so its Boxes stay up.
 
+A sleeping Box frees host memory only if the provider takes its VM out of RAM.
+`crabbox-cloudhypervisor` suspends a paused VM to disk from commit `8f4f94c`.
+Before that it pauses the VM in memory, which frees none, so a Box suspended to
+make room on a node frees nothing there.
+
 ## Cache volumes
 
 A provider with the `cache-volume` feature in `crabbox providers --json
