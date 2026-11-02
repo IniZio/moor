@@ -3254,7 +3254,6 @@ dependencies = [
  "moor-core",
  "moor-testkit",
  "rustls",
- "serde",
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
