@@ -64,6 +64,29 @@ plus 10% of the host's memory:
 moor-machine-agent run --runtime cloudhypervisor --reserve-mib 8192
 ```
 
+## Pressure relief
+
+Boxes already running can still run a node short of memory. Each report also
+checks for that, and suspends at most one Box per node, with at least 30
+seconds between suspensions there.
+
+Pressure is sustained when PSI `some avg10` is 10 or more on three reports in a
+row, or when `MemAvailable` falls below the host reserve. The node then
+suspends its longest-idle Box, with the status `memory pressure on NODE`. It
+never suspends a working Box for sustained pressure. The node list shows since
+when pressure has lasted.
+
+Memory is critical when PSI `full avg10` is 5 or more, or `MemAvailable` falls
+below 1024 MiB. An idle Box goes first then too. When none is left, the node
+suspends the Box that started most recently among the working ones, as a last
+resort, with the status `last-resort suspend: memory critical on NODE`. That
+Box waits Pending and resumes before any other Box waiting on the node. When it
+wakes, its agent is told once that it was suspended, for how long, and that
+network connections open at that moment were dropped. Its processes and files
+are intact, though its wall clock jumps.
+
+Every Box still finishes. Pressure only decides when it runs.
+
 ## Which node a start gets
 
 Without `--node`, the scheduler tries your personal nodes first, in the order
@@ -77,7 +100,8 @@ it with `--node`. A full node does not send the Box elsewhere.
 A start on a node that is full, by Box count or by memory, waits there. The Box is Pending, with the reason
 in its status, and it starts when a Box on that node closes, the node's link
 comes back, or a memory report shows room. Boxes on a node start in the order
-they asked; a memory report starts at most one, and the next report counts it.
+they asked, after any Box suspended as a last resort; a memory report starts at
+most one, and the next report counts it.
 
 ## Choosing a node
 
