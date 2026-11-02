@@ -17,8 +17,6 @@ pub const MAX_CRABBOX: usize = 100;
 pub struct Status {
     /// The agent's release.
     pub version: String,
-    /// The link protocol it speaks.
-    pub protocol: u32,
     /// Its OS, as Rust names it.
     pub os: String,
     /// Its CPU architecture, as Rust names it.

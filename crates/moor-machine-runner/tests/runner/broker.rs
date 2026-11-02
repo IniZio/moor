@@ -248,7 +248,6 @@ async fn a_pool_host_reports_its_status_through_the_broker() {
     let leases = r#"[{"name":"moor-1a2b3c4d-7","state":"running"}]"#;
     std::fs::write(host.home.join("leases.json"), leases).unwrap();
     let status = broker::status(&host.socket(), MACHINE_ID).await.unwrap();
-    assert_eq!(status.protocol, moor_client::link::PROTOCOL);
     assert!(!status.version.is_empty());
     let pool = status.pool.unwrap();
     assert_eq!(pool.provider, "fake");

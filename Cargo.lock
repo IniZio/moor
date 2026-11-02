@@ -3192,6 +3192,7 @@ version = "0.2.0"
 dependencies = [
  "clap",
  "flate2",
+ "futures-util",
  "moor-client",
  "moor-core",
  "moor-gate",
@@ -3208,6 +3209,7 @@ dependencies = [
  "tar",
  "tempfile",
  "tokio",
+ "tungstenite",
  "ureq",
 ]
 

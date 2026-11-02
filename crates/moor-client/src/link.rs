@@ -28,8 +28,6 @@ mod tests;
 
 /// Where the runner accepts links.
 pub const PATH: &str = "/machines/link";
-/// The link protocol both ends speak; an agent on any other gets `update-required`.
-pub const PROTOCOL: u32 = 1;
 /// The sshsig namespace of the agent's proof, so no other signature by its key passes.
 pub const NAMESPACE: &str = "moor-machine-link";
 /// How often each end pings; three silent periods end the link.
@@ -100,12 +98,10 @@ pub struct Offer {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Frame {
-    /// Agent: which machine dials, and what it speaks.
+    /// Agent: which machine dials, and which release it runs.
     Hello {
         /// The id enrollment gave the machine.
         machine_id: i64,
-        /// The agent's [`PROTOCOL`].
-        protocol: u32,
         /// The agent's release.
         version: String,
         /// What the machine offers, when it hosts Boxes.
@@ -129,7 +125,7 @@ pub enum Frame {
         /// The server's release.
         version: String,
     },
-    /// Runner: the agent must become this release. Every protocol keeps this frame's shape,
+    /// Runner: the agent must become this release. Every release keeps this frame's shape,
     /// since an agent too old to speak anything else still has to read it.
     UpdateRequired {
         /// The server's release.

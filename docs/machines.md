@@ -463,6 +463,11 @@ guard and removing a closed Box's files need it. A personal node, started with
 `--runtime`, never runs `exec`, and the agent refuses `--allow-exec` with
 `--runtime`.
 
+A released controller lets in only an agent of its own release. An agent on
+any other release, older or newer, is told to become the controller's, so each
+deploy of a new release updates every agent. A controller built from source
+without a release lets in an agent of any release.
+
 When the server needs another release of the agent, `run` exits and names the
 command to fix it, `moor-machine-agent update --version 1.2.3`. That command
 downloads the release's tarball for this OS and CPU from the project's GitHub
