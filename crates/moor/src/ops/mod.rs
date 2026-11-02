@@ -20,6 +20,7 @@ pub(crate) mod env;
 mod front_proxy;
 mod gate;
 pub(crate) mod host_session;
+mod inspect;
 pub(crate) mod machine_hold;
 mod nodes;
 mod open;
@@ -57,6 +58,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::Start(r) => to_value(&start::run(cx, &r)?),
         Request::StartNeeds(r) => to_value(&start::needs(cx, &r)?),
         Request::Show(r) => to_value(&show::run(cx, &r)?),
+        Request::Inspect(r) => to_value(&inspect::run(cx, &r)?),
         Request::ShowSession(r) => to_value(&show_session::run(cx, &r)?),
         Request::Artifacts(r) => to_value(&artifacts::list(cx, &r)?),
         req @ (Request::ArtifactRead(_)
