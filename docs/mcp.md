@@ -94,7 +94,7 @@ for a fresh header before it connects:
 
 | Scope | Allows |
 | --- | --- |
-| `moor:read` | `list_boxes`, `box_status`, `list_webhooks`, `list_events`, the Box resources, `subscriptions/listen` |
+| `moor:read` | `list_boxes`, `box_status`, `inspect_box`, `list_webhooks`, `list_events`, the Box resources, `subscriptions/listen` |
 | `moor:write` | `start_box`, `send_to_box`, `close_box`, `add_webhook`, `remove_webhook` |
 
 A token without `moor:write` gets an error from the write tools and can still
@@ -107,6 +107,7 @@ read.
 | `list_boxes` | none |
 | `start_box` | `repo` as `owner/name`; optional `also` (more repos, each `owner/name`), `name`, `prompt`, `base`, `node`, `wait` |
 | `box_status` | `box` |
+| `inspect_box` | `box`; optional `lines`, `said` |
 | `send_to_box` | `box`, `text` |
 | `close_box` | `box`; optional `force` |
 | `add_webhook` | `url` (https); optional `events`, `header` (such as `Authorization`) |
@@ -144,6 +145,14 @@ a Box is done:
   came after it; absent when it has said nothing.
 - `artifacts`: the latest version of each published artifact.
 - `reports`: the latest version of each Report the agent wrote.
+- `stuck`: `{kind, since, detail}` when the Box shows a sign of being stuck,
+  else `null`. `kind` is `stalled`, `egress_refused`, `egress_aborted`,
+  `credential_withheld`, `proxy_credential_failed`, `agent_rate_limited`,
+  `agent_unreachable` or `agent_link_lost`. `since` is when it began and
+  `detail` says what happened in one line. A later `agent_resumed`,
+  `turn_done`, `idled`, `needs_input`, new session, link or credential
+  recovery, or close clears it. While it is set, `status` ends with
+  `· stuck: <kind>`, as in `ready · stuck: stalled`.
 - `events`: the last five raw events.
 
 Artifacts and Reports are saved after each of the agent's turns, so they show
@@ -166,6 +175,47 @@ and answers as the controller does, so a start that collides with another
 start of the same name gets the controller's busy error, with or without `wait`.
 A start the controller refuses before the Box exists (bad repo, no capacity)
 returns that error directly.
+
+## What a coordinator can and cannot see
+
+A lifecycle of `ready` and a stream of events are not proof that an agent is
+making progress. A `ready` Box can sit on a hung tool call, a refused request
+or an unanswered question for hours. Use the tools below to judge it, and ask
+the agent when they do not settle it.
+
+| Tool | What it shows |
+| --- | --- |
+| `box_status` | The lifecycle, the `status` line, `stuck`, the agent's newest message, the last five raw events, artifacts and Reports. |
+| `list_events` | Every event of your Boxes from an offset you keep, including `agent_stalled` and the egress and credential events. |
+| `inspect_box` | The tail of the agent's terminal, the agent's recent messages, its state and `stuck`. |
+| Artifacts | What the agent published: screenshots, logs and files. |
+
+`inspect_box` takes `box` and optionally `lines` (40 by default, at most 200)
+and `said` (5 by default, at most 20). It returns `pane`, the last `lines` lines
+of the agent's terminal with a `status` of `live`, `exited` or `gone`. It also
+returns `said`, the agent's newest messages with the oldest first, `agent` as
+`list_boxes` shows it, and `stuck`. It reads only. It starts nothing, steers
+nothing and changes nothing about the Box, so you can call it as often as you
+like. It works on a Box you may act on and answers as if any other did not exist.
+
+The stall signal comes from the agent's hooks. Claude Code writes one on every
+tool call, prompt and stop. When the hooks say the agent is busy and nothing
+has been written for ten minutes, with no `moor run` in flight, moor records
+`agent_stalled` once, with what the agent was doing. When a hook writes again,
+it records `agent_resumed`. moor notices at the next read of the Box, which is
+a `list_boxes`, a listen stream or a webhook that watches it. An agent
+without hooks never stalls by this rule. A long turn that makes tool calls is
+not stalled, and a tool call that runs for more than ten minutes is: look at
+`doing` in the event, and at the pane, before you act.
+
+The pane is a snapshot of the terminal, not the transcript. It shows what is on
+screen now, so a long output may have scrolled away, and a full-screen program
+fills it with drawing. It is the best way to see a prompt the agent waits on.
+
+Nothing here shows the environment of the host, the Proxy's own log, the
+agent's private reasoning or the Boxes of other users. The egress and
+credential events say that a request was refused or withheld, and for which
+host and rule, but never carry a token, a path, a query or a body.
 
 ## Read events from an offset
 
@@ -287,6 +337,7 @@ Then it follows your events on the controller from that moment:
 | Event of a Box | Notification |
 | --- | --- |
 | `idled`, `busy`, `needs_input` | `notifications/resources/updated` for its URI |
+| `agent_stalled`, `agent_resumed` | `notifications/resources/updated` for its URI |
 | `setup_failed`, `session_failed`, `launch_timed_out`, `box_failed` | `notifications/resources/updated` for its URI |
 | `relaunched`, `relaunch_capped` | `notifications/resources/updated` for its URI |
 | `box_ready`, `asleep`, `woke`, `closed` | `notifications/resources/updated` for its URI |
