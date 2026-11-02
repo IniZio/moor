@@ -2,7 +2,6 @@
 #![allow(clippy::unwrap_used, reason = "tests")]
 //! and prints words whose proxy command echoes, so a dial gets back what it sends.
 
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 /// The VM's host key in the fake's known-hosts file.
@@ -36,8 +35,7 @@ exit 0
 /// Writes the fake into `home` with the VM's known-hosts file; its path.
 pub(crate) fn install(home: &Path) -> PathBuf {
     let path = home.join("crabbox");
-    std::fs::write(&path, SCRIPT).unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    moor_testkit::write_executable(&path, SCRIPT).unwrap();
     std::fs::write(home.join("kh"), format!("vm7 {HOST_KEY}\n")).unwrap();
     path
 }

@@ -24,7 +24,6 @@ use moor_machine_agent::{run, State};
 use serde_json::{json, Value};
 use ssh_key::rand_core::OsRng;
 use ssh_key::{Algorithm, HashAlg, LineEnding, PrivateKey};
-use std::os::unix::fs::PermissionsExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 mod fake_crabbox;
@@ -325,8 +324,7 @@ fn ran(reply: Reply) -> ops::Ran {
 
 fn hook_file(path: &Path, text: &str) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(path, text).unwrap();
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    moor_testkit::write_executable(path, text).unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]

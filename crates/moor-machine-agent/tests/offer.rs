@@ -65,8 +65,7 @@ fn recording_crabbox(dir: &Path, reject: bool) -> std::path::PathBuf {
             ""
         }
     );
-    std::fs::write(&path, script).unwrap();
-    std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    moor_testkit::write_executable(&path, script).unwrap();
     path
 }
 
@@ -105,14 +104,9 @@ async fn a_describe_that_is_not_json_or_lacks_features_leaves_them_empty() {
 async fn a_crabbox_that_fails_or_is_missing_leaves_features_empty() {
     let home = tempfile::tempdir().unwrap();
     let failing = home.path().join("failing");
-    std::fs::write(
+    moor_testkit::write_executable(
         &failing,
         "#!/bin/sh\necho '{\"capabilities\":{\"features\":[\"a\"]}}'\nexit 1\n",
-    )
-    .unwrap();
-    std::fs::set_permissions(
-        &failing,
-        std::os::unix::fs::PermissionsExt::from_mode(0o755),
     )
     .unwrap();
     for crabbox in [failing, home.path().join("absent")] {
