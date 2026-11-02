@@ -272,7 +272,9 @@ linked ordinary machine the open Boxes, and the agent removes every other
 `--allow-exec`, never follows a symlink, and skips names that are not plain
 ids and Boxes the runner has a record for. If the runner cannot list the open
 Boxes, it sends nothing. A Box whose release fails keeps its folders until the
-next sweep.
+next sweep. A pool host instead stops the leases of unlisted Boxes, but only
+those the sending controller named; leases of other controllers that share the
+host stay, and a sweep from a controller that does not say its id stops nothing.
 
 Removing a Box's files and reading the machine's free space are commands the
 runner sends with `exec`, so a machine that Boxes claim runs its agent with

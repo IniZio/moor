@@ -78,8 +78,9 @@ pub(crate) async fn serve(machine: &Machine, link: &Link, recent: &Recent, mut c
         let reply = Reply::Status(Box::new(status::status(machine, recent).await));
         return end(ch, reply).await;
     }
-    if let (Some(pool), Op::Sweep { keep }) = (&machine.pool, &op) {
-        let swept = pool::sweep(&machine.home, pool, keep, machine.sweep_grace).await;
+    if let (Some(pool), Op::Sweep { keep, controller }) = (&machine.pool, &op) {
+        let (home, grace) = (&machine.home, machine.sweep_grace);
+        let swept = pool::sweep(home, pool, controller.as_ref(), keep, grace).await;
         return end(ch, Reply::Swept(swept)).await;
     }
     let (name, target) = (kind(&op), target(&op));
@@ -151,7 +152,7 @@ async fn serve_machine(machine: &Machine, link: &Link, ch: Channel, op: Op) -> O
     match op {
         Op::Sync { box_id, argv } => files::sync(machine, ch, box_id, &argv).await,
         Op::Pull { box_id, path } => files::pull(machine, ch, box_id, &path).await,
-        Op::Sweep { keep } => return sweep::serve(machine, ch, &keep).await,
+        Op::Sweep { keep, .. } => return sweep::serve(machine, ch, &keep).await,
         Op::Remove { box_id } => return sweep::serve_remove(machine, ch, box_id).await,
         op => match start(machine, op) {
             Ok(Start::Run(script, timeout)) => ran(machine, ch, &script, timeout).await,

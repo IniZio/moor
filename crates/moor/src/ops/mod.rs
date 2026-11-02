@@ -92,6 +92,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         )),
         Request::MachineKeys {} => to_value(&MachineKeysValue {
             machines: cx.store()?.machine_keys()?,
+            controller: Some(cx.store()?.controller_id()?),
         }),
         Request::MachineLinks(r) => to_value(&nodes::set_links(cx, &r.links)?),
         Request::NodeList(_) => to_value(&nodes::list(cx)?),

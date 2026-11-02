@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::box_key::ControllerId;
 use crate::name::ProfileSource;
 use crate::request::SecretValue;
 use crate::user::{Email, Identity, SecretName, UserId};
@@ -86,6 +87,9 @@ pub struct MachineListValue {
 pub struct MachineKeysValue {
     /// Every enrolled machine, by id.
     pub machines: Vec<MachineKey>,
+    /// The controller's id, which names its leases on pool hosts other controllers share.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub controller: Option<ControllerId>,
 }
 
 /// An enrolled machine and the key its agent signs with.
