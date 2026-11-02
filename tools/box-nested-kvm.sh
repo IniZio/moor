@@ -7,8 +7,8 @@ PASST_REV=a9c61ffaf15347b8dfcc2347c5440e4b0e82333b
 PASST_SHA256=cf4746812d3e2461f7582b7b8089591ce4e8b9d1f45beb28d9c177c365346907
 GO_VERSION=go1.27.3
 GO_SHA256=65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40
-CRABBOX_REV=29d565154a364ff77aa03328f31aba8bc55a3a08
-CRABBOX_VERSION=0.79.1-moor.9
+CRABBOX_COMMIT=7a6ef44bf738b1bf145e9d007bd83efc0f3a7d5e
+CRABBOX_VERSION=0.79.1-moor.13
 ADAPTER_REV=d8d8af4974583a2363f26cd58a4d4b1c7a938426
 
 NESTED=${NESTED:-$HOME/.cache/moor-nested}
@@ -88,15 +88,15 @@ git_rev() {
 	git -C "$1" checkout -q FETCH_HEAD
 }
 
-if ! fresh crabbox "$CRABBOX_REV-$CRABBOX_VERSION"; then
+if ! fresh crabbox "$CRABBOX_COMMIT-$CRABBOX_VERSION"; then
 	fetch "https://go.dev/dl/$GO_VERSION.linux-amd64.tar.gz" "$GO_SHA256" "$NESTED/dl/$GO_VERSION.linux-amd64.tar.gz"
 	gosrc=$(mktemp -d)
 	tar -xzf "$NESTED/dl/$GO_VERSION.linux-amd64.tar.gz" -C "$gosrc"
 	src=$(mktemp -d)
-	git_rev "$src" https://github.com/IniZio/crabbox "$CRABBOX_REV"
+	git_rev "$src" https://github.com/IniZio/crabbox "$CRABBOX_COMMIT"
 	(cd "$src" && PATH="$gosrc/go/bin:$PATH" GOTOOLCHAIN=local timeout 900 go build -trimpath -ldflags "-X github.com/openclaw/crabbox/internal/cli.version=$CRABBOX_VERSION" -o "$BIN/crabbox" ./cmd/crabbox)
 	rm -rf "$src" "$gosrc"
-	done_step crabbox "$CRABBOX_REV-$CRABBOX_VERSION"
+	done_step crabbox "$CRABBOX_COMMIT-$CRABBOX_VERSION"
 fi
 link_bin crabbox
 
