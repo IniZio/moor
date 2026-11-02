@@ -29,6 +29,14 @@ fn classes_map_to_codes() {
 }
 
 #[test]
+fn close_failed_exits_non_zero_only_when_a_close_failed() {
+    let ok = json!({"closed": ["a"], "failed": []});
+    let bad = json!({"closed": [], "failed": [{"box": "b", "error": "e"}]});
+    assert_eq!(code(&Response::ok("close-failed", Some(ok))), 0);
+    assert_eq!(code(&Response::ok("close-failed", Some(bad))), 1);
+}
+
+#[test]
 fn run_failed_and_refused_are_125() {
     assert_eq!(code(&err("run", ErrorKind::Failed)), 125);
     assert_eq!(code(&err("run", ErrorKind::Internal)), 125);

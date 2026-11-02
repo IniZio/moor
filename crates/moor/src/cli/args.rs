@@ -11,7 +11,7 @@ use moor_core::{BoxId, BoxName, Request, RunReq, SessionId, ShowReq, StartReq, S
 use super::args_admin::{AdminCmd, GateCmd};
 use super::args_probe::Flags;
 use super::GlobalOpts;
-use box_ops::{BoxArg, CloseArgs, CpArgs};
+use box_ops::{BoxArg, CloseArgs, CloseFailedArgs, CpArgs};
 use events::EventsArgs;
 use inspect::InspectArgs;
 use node::NodeCmd;
@@ -137,6 +137,8 @@ enum Cmd {
     Inspect(InspectArgs),
     /// Close a Box.
     Close(CloseArgs),
+    /// Close every Box whose setup failed.
+    CloseFailed(CloseFailedArgs),
     /// Copy a file to or from the Box.
     Cp(CpArgs),
     /// Focus the Box's Workspace.
@@ -145,6 +147,8 @@ enum Cmd {
     Sleep(BoxArg),
     /// Wake a sleeping Box.
     Wake(BoxArg),
+    /// Re-run setup on a Box whose setup failed.
+    Retry(BoxArg),
     /// Check a gate; record one with `moor run --record <name>`.
     #[command(subcommand)]
     Gate(GateCmd),
@@ -185,10 +189,12 @@ impl Cmd {
             Self::Show(a) => Action::Request(Request::Show(a.into())),
             Self::Inspect(a) => Action::Request(Request::Inspect(a.into())),
             Self::Close(a) => Action::Request(Request::Close(a.into())),
+            Self::CloseFailed(a) => Action::Request(Request::CloseFailed(a.into())),
             Self::Cp(a) => Action::Request(Request::Cp(a.into())),
             Self::Open(a) => Action::Request(Request::Open(a.into())),
             Self::Sleep(a) => Action::Request(Request::Sleep(a.into())),
             Self::Wake(a) => Action::Request(Request::Wake(a.into())),
+            Self::Retry(a) => Action::Request(Request::Retry(a.into())),
             Self::Gate(g) => Action::Request(Request::Gate(g.into())),
             Self::Events(a) => {
                 let (since, filter, follow) = a.into_parts();

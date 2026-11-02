@@ -50,6 +50,8 @@ The state directory holds `moor.db`. It is the first of `--state-dir`,
 | `moor sleep NAME` | Puts the Box's machine to sleep. |
 | `moor wake NAME` | Wakes a sleeping Box. |
 | `moor close NAME` | Closes the Box and releases its machine. |
+| `moor retry NAME` | Runs the setup of a Box whose setup failed again. |
+| `moor close-failed` | Closes every Box of yours whose setup failed. |
 | `moor login --server URL` | Signs you in to a moor server in the browser and saves the sign-in for every local moor client. `--no-browser` prints the address and reads the address the browser ends on, pasted. `URL` is the server's origin or its `/mcp` address; `--server` defaults to `MOOR_SERVER`. See [Sign in once](mcp.md#sign-in-once). |
 | `moor logout --server URL` | Forgets the sign-in to that server and revokes it at the identity provider. |
 | `moor status [--server URL]` | Shows who is signed in to that server, or to each one, and how long the access token has left. It never prints a token. |
@@ -185,6 +187,24 @@ a host checkout into a Box.
 
 moor creates no host worktree for a Box, so `moor close` checks only the
 Box checkout for unsaved work.
+
+### `moor retry`
+
+`moor retry NAME` runs the Box's setup again on the machine it already has,
+and prints the Box as a start does. It refuses a Box whose setup did not fail,
+and says which state the Box is in. If setup fails again, the Box stays in
+`setup_failed`.
+
+### `moor close-failed`
+
+`moor close-failed` closes every Box you may act on whose setup failed, then
+lists each Box it closed and each it could not close, with the error. It prints
+`no setup_failed Boxes` when there is none. It exits 1 when any close failed.
+`--force` closes despite unsaved work, as `moor close --force` does.
+
+`moor retry` and `moor close-failed` act only on Boxes whose lifecycle is
+`setup_failed`. A Ready Box whose `setup:` line failed is usable, keeps its
+`setup_not_rerun` warning, and neither command touches it.
 
 ### `moor cp` paths
 

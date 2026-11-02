@@ -264,6 +264,33 @@ fn start_prints_name_state_box_and_how_to_open() {
 }
 
 #[test]
+fn close_failed_lists_closed_and_failed_boxes() {
+    let v = json!({"closed": ["a", "b"], "failed": [{"box": "c", "error": "unfinished work"}]});
+    let (out, _) = render(&Response::ok("close-failed", Some(v)), false);
+    assert_eq!(
+        out,
+        "closed a\nclosed b\ncould not close c: unfinished work\n"
+    );
+}
+
+#[test]
+fn close_failed_says_when_there_is_nothing_to_close() {
+    let v = json!({"closed": [], "failed": []});
+    let (out, _) = render(&Response::ok("close-failed", Some(v)), false);
+    assert_eq!(out, "no setup_failed Boxes\n");
+}
+
+#[test]
+fn retry_prints_like_start_with_its_own_verb() {
+    let v = json!({"box": lifecycle_box("alpha", "ready", Some("ready")), "attached": false});
+    let (out, _) = render(&Response::ok("retry", Some(v)), false);
+    assert_eq!(
+        out,
+        "retried alpha (#7): ready/idle, box ready\nopen it with: moor open alpha\n"
+    );
+}
+
+#[test]
 fn start_says_setup_failed_and_keeps_the_open_hint() {
     let v = json!({
         "box": lifecycle_box("alpha", "ready", Some("ready")),
