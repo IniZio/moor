@@ -1,15 +1,18 @@
 //! `node-list`: the nodes the caller may start Boxes on.
 
+use moor_core::decide::pressure::Reading;
 use moor_core::decide::schedule::{Node, Online, Scope};
 use moor_core::request::MachineLink;
 use moor_core::user::Viewer;
 use moor_core::view::node::{NodeListValue, NodeScope, NodeView};
 use moor_core::view::user::MachineLinksValue;
+use moor_core::Warning;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::node::{configured, now};
 use crate::ops::common::promote::promote_waiting;
+use crate::ops::common::room::on_report;
 
 /// Every node, shared and personal.
 ///
@@ -20,8 +23,8 @@ pub(crate) fn all(cx: &Cx) -> Result<Vec<Node>, CommandError> {
     Ok(cx.store()?.nodes(&shared)?)
 }
 
-/// `machine-links`: records the agent links, then starts the Boxes pending on each personal node
-/// whose link is up.
+/// `machine-links`: records the agent links, relieves each personal node under memory pressure,
+/// then starts the Boxes pending on each personal node whose link is up.
 ///
 /// # Errors
 /// A store failure.
@@ -32,9 +35,30 @@ pub(crate) fn set_links(cx: &Cx, links: &[MachineLink]) -> Result<MachineLinksVa
         let Scope::Personal { machine_id, .. } = node.scope else {
             continue;
         };
-        if links.iter().any(|l| l.online && l.machine_id == machine_id) {
-            promote_waiting(cx, store, &node.name, "link");
+        let Some(link) = links
+            .iter()
+            .find(|l| l.online && l.machine_id == machine_id)
+        else {
+            continue;
+        };
+        if let Some(m) = link.memory {
+            let reading = Reading {
+                at: m.at.as_millis() / 1000,
+                available_mib: m.available_mib,
+                psi_some_centi: m.psi_centi,
+                psi_full_centi: m.psi_full_centi,
+            };
+            if let Err(e) = on_report(cx, store, &node, reading) {
+                cx.warn(Warning {
+                    code: "pressure_failed".to_owned(),
+                    message: format!(
+                        "cannot relieve memory pressure on {}: {}",
+                        node.name, e.error
+                    ),
+                });
+            }
         }
+        promote_waiting(cx, store, &node.name, "link");
     }
     Ok(MachineLinksValue { links })
 }
@@ -52,7 +76,7 @@ fn visible(nodes: Vec<Node>, viewer: Viewer) -> Vec<Node> {
 }
 
 /// The wire form of `node`.
-fn view(node: &Node, now: i64) -> NodeView {
+fn view(node: &Node, now: i64, pressure_since: Option<i64>) -> NodeView {
     let (scope, owner) = match &node.scope {
         Scope::Shared => (NodeScope::Shared, None),
         Scope::Personal { owner, .. } => (NodeScope::Personal, Some(*owner)),
@@ -74,6 +98,7 @@ fn view(node: &Node, now: i64) -> NodeView {
         mem_free_mib: node.memory.map(|m| m.free_mib()),
         mem_psi_centi: node.memory.and_then(|m| m.psi_centi),
         mem_report_age_secs: node.memory.map(|m| now.saturating_sub(m.reported_at)),
+        pressure_since,
         labels: node.labels.clone(),
     }
 }
@@ -85,8 +110,12 @@ fn view(node: &Node, now: i64) -> NodeView {
 pub(crate) fn list(cx: &Cx) -> Result<NodeListValue, CommandError> {
     let mut nodes = visible(all(cx)?, cx.viewer());
     nodes.sort_by_key(|n| (matches!(n.scope, Scope::Personal { .. }), n.name.clone()));
+    let since = cx.store()?.pressure_since()?;
     Ok(NodeListValue {
-        nodes: nodes.iter().map(|n| view(n, now(cx))).collect(),
+        nodes: nodes
+            .iter()
+            .map(|n| view(n, now(cx), since.get(n.name.as_str()).copied()))
+            .collect(),
     })
 }
 

@@ -58,6 +58,9 @@ pub struct NodeView {
     /// Seconds since its last memory report.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mem_report_age_secs: Option<i64>,
+    /// Since when its host has been under sustained memory pressure, unix seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pressure_since: Option<i64>,
     /// Its labels.
     pub labels: Vec<String>,
 }

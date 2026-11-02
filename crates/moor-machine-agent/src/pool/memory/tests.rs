@@ -28,7 +28,7 @@ fn scratch(name: &str) -> std::path::PathBuf {
 }
 
 #[test]
-fn a_report_reads_available_total_and_some_avg10() {
+fn a_report_reads_available_total_and_both_psi_avg10s() {
     let dir = scratch("psi");
     fake_proc(
         &dir,
@@ -40,6 +40,7 @@ fn a_report_reads_available_total_and_some_avg10() {
             mem_available_mib: 8000,
             mem_total_mib: 32000,
             psi_some_avg10: Some(12.5),
+            psi_full_avg10: Some(1.0),
         })
     );
 }
@@ -71,6 +72,7 @@ async fn the_agent_sends_a_report_at_once_on_its_stream() {
                 mem_available_mib: 8000,
                 mem_total_mib: 32000,
                 psi_some_avg10: Some(0.0),
+                psi_full_avg10: None,
             }
         }
     );

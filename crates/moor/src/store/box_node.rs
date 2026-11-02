@@ -96,11 +96,13 @@ impl Store {
         Ok(n > 0)
     }
 
-    /// Pending Boxes waiting for `node`, oldest first.
+    /// Pending Boxes waiting for `node`: those suspended as a last resort first, then oldest first.
     pub(crate) fn pending_on(&self, node: &NodeName) -> Result<Vec<BoxId>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt =
-            conn.prepare("SELECT id FROM boxes WHERE node = ?1 AND state = ?2 ORDER BY id")?;
+        let mut stmt = conn.prepare(
+            "SELECT id FROM boxes WHERE node = ?1 AND state = ?2 \
+                 ORDER BY resume_first_at IS NULL, id",
+        )?;
         let rows = stmt.query_map(
             params![node.as_str(), BoxLifecycle::Pending.as_str()],
             |r| r.get::<_, i64>(0),

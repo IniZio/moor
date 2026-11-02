@@ -80,6 +80,20 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
     }
 }
 
+/// Sends `text` to the live agent of awake Box `row`, the way a steer does.
+pub(crate) fn tell(cx: &Cx, store: &Store, row: &BoxRow, text: String) -> Result<(), CommandError> {
+    let req = SteerReq {
+        target: moor_core::request::BoxTarget::Id(row.id),
+        text: Some(text),
+        menu: None,
+        interrupt: false,
+    };
+    match attempt(cx, store, &req, (row.id, row.name.as_str()))? {
+        Attempt::Sent(_) => Ok(()),
+        Attempt::Gone(gone) => Err(gone.error),
+    }
+}
+
 /// The refusal for a Box with no agent to steer.
 fn no_agent(name: &str) -> CommandError {
     CommandError::new(
