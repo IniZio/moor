@@ -17,6 +17,12 @@ nothing else to set up.
 | Flag | Environment | Meaning |
 | --- | --- | --- |
 | `--server` | `MOOR_SERVER` | The server's origin, or its `/mcp` address. |
+| `--box` | | Watch only this Box; repeat for several. Without it every Box the login can see is watched. |
+
+With `--box`, a Box that starts later under another name is ignored, and the
+listener exits 0 once every named Box has printed `closed`. A named Box the
+server does not list prints `moor-listen: no Box named <name> is visible; waiting
+for it`, and the listener picks it up if it appears.
 
 The `moor-listen` binary is the same listener for a token that does not come
 from `moor login`:
@@ -28,6 +34,7 @@ moor-listen --url https://moor.example.com/mcp --token-cmd 'cat ~/.config/moor/t
 | Flag | Environment | Meaning |
 | --- | --- | --- |
 | `--url` | `MOOR_MCP_URL` | The gate's `/mcp` endpoint. |
+| `--box` | | As above. |
 | `--token-cmd` | `MOOR_TOKEN_CMD` | Shell command (`sh -c`) whose trimmed stdout is the bearer token. It runs before every connect, and its output is never logged. |
 
 ## Output

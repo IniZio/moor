@@ -219,9 +219,15 @@ impl World {
 
     /// Starts `moor-listen` on this gate.
     fn listen(&self) -> Listen {
+        self.listen_only(&[])
+    }
+
+    /// Starts `moor-listen` on this gate, watching only the Boxes in `only`.
+    fn listen_only(&self, only: &[&str]) -> Listen {
         let mut child = Command::new(env!("CARGO_BIN_EXE_moor-listen"))
             .args(["--url", &format!("http://{}/mcp", self.gate)])
             .args(["--token-cmd", &self.token_cmd()])
+            .args(only.iter().flat_map(|name| ["--box", name]))
             .stdout(Stdio::piped())
             .spawn()
             .unwrap();
@@ -387,6 +393,7 @@ fn listen_with_session(world: &World, store: moor_client::session::Store) -> Lis
         )),
         idle: Duration::from_secs(45),
         signed_out: Duration::from_millis(100),
+        only: Vec::new(),
     };
     let (tx, lines) = mpsc::channel();
     std::thread::spawn(move || {
@@ -453,4 +460,58 @@ fn not_signed_in_says_so_once_and_connects_after_a_login() {
     world.wait_live(1);
     world.happen("repo/a", 1, "idled", "Welcome.");
     assert_eq!(listen.line(), "moor: box repo/a idled: Welcome.");
+}
+
+#[test]
+fn box_flag_prints_only_the_named_boxes() {
+    let world = world(&["repo/a", "repo/b"]);
+    let listen = world.listen_only(&["repo/b"]);
+    world.wait_live(1);
+    world.happen("repo/a", 1, "needs_input", "");
+    world.happen("repo/b", 2, "idled", "Mine.");
+    assert_eq!(listen.line(), "moor: box repo/b idled: Mine.");
+}
+
+#[test]
+fn box_flag_ignores_a_box_started_after_open() {
+    let world = world(&["repo/a"]);
+    let listen = world.listen_only(&["repo/a"]);
+    world.wait_live(1);
+    world.fake.lock().unwrap().boxes.push("repo/c".to_owned());
+    world.emit(1, Some("repo/c"), "started");
+    world.wait_live(2);
+    world.happen("repo/c", 2, "idled", "Not yours.");
+    world.happen("repo/a", 3, "idled", "Yours.");
+    assert_eq!(listen.line(), "moor: box repo/a idled: Yours.");
+}
+
+#[test]
+fn box_flag_names_a_box_the_server_does_not_list() {
+    let world = world(&["repo/a"]);
+    let listen = world.listen_only(&["repo/nope"]);
+    assert_eq!(
+        listen.line(),
+        "moor-listen: no Box named repo/nope is visible; waiting for it"
+    );
+}
+
+#[test]
+fn box_flag_exits_once_every_named_box_has_closed() {
+    let world = world(&["repo/a", "repo/b", "repo/c"]);
+    let mut listen = world.listen_only(&["repo/a", "repo/b"]);
+    world.wait_live(1);
+    world.happen("repo/a", 1, "closed", "");
+    assert_eq!(listen.line(), "moor: box repo/a closed");
+    assert!(listen.child.try_wait().unwrap().is_none(), "exited early");
+    world.happen("repo/c", 2, "closed", "");
+    world.happen("repo/b", 3, "closed", "");
+    assert_eq!(listen.line(), "moor: box repo/b closed");
+    for _ in 0..500 {
+        if let Some(status) = listen.child.try_wait().unwrap() {
+            assert!(status.success());
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    panic!("moor-listen kept running after every named Box closed");
 }

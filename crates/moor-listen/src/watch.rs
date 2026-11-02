@@ -43,6 +43,8 @@ enum Ended {
     Relist,
     /// The stream is gone.
     Lost(Fail),
+    /// Every Box asked for has closed; nothing is left to watch.
+    Done,
 }
 
 /// A stream that went and has not come back.
@@ -61,24 +63,43 @@ struct State {
     first: bool,
     /// The outage under way, if any.
     outage: Option<Outage>,
+    /// Names of the only Boxes to watch; empty watches them all.
+    only: Vec<String>,
+    /// Watched Boxes whose `closed` has been said.
+    closed: HashSet<String>,
+    /// Watched Boxes already reported as not visible.
+    missing: HashSet<String>,
 }
 
-/// Runs until `say` fails, which is when nobody reads the lines any more. `signed_out` is how
-/// long to wait before looking again for a sign-in.
+impl State {
+    /// Whether Boxes were asked for by name and each has closed.
+    fn finished(&self) -> bool {
+        !self.only.is_empty() && self.only.iter().all(|n| self.closed.contains(n))
+    }
+}
+
+/// Runs until `say` fails, which is when nobody reads the lines any more, or until every Box in
+/// `only` has closed. An empty `only` watches every Box. `signed_out` is how long to wait before
+/// looking again for a sign-in.
 pub(crate) fn run(
     gate: &Gate,
     signed_out: Duration,
+    only: Vec<String>,
     say: &mut dyn FnMut(&str) -> io::Result<()>,
 ) -> io::Result<()> {
     let mut state = State {
         said: HashSet::new(),
         first: true,
         outage: None,
+        only,
+        closed: HashSet::new(),
+        missing: HashSet::new(),
     };
     let mut wait = FIRST;
     loop {
         let lost = match session(gate, &mut state, say)? {
             Ended::Relist => continue,
+            Ended::Done => return Ok(()),
             Ended::Lost(lost) => lost,
         };
         let pause = match lost {
@@ -146,7 +167,16 @@ fn session(
     say: &mut dyn FnMut(&str) -> io::Result<()>,
 ) -> io::Result<Ended> {
     match connect(gate, state) {
-        Ok(open) => follow(gate, open, state, say),
+        Ok(open) => {
+            for name in &open.absent {
+                if state.missing.insert(name.clone()) {
+                    say(&format!(
+                        "moor-listen: no Box named {name} is visible; waiting for it"
+                    ))?;
+                }
+            }
+            follow(gate, open, state, say)
+        }
         Err(lost) => Ok(Ended::Lost(lost)),
     }
 }
@@ -159,6 +189,8 @@ struct Open {
     uris: Vec<String>,
     /// Its messages.
     stream: Stream,
+    /// Asked-for Boxes the server did not list and that have not closed.
+    absent: Vec<String>,
 }
 
 /// Signs in, lists the Boxes and opens the listen.
@@ -179,12 +211,24 @@ fn connect(gate: &Gate, state: &mut State) -> Result<Open, Fail> {
         .flatten()
         .filter_map(|r| r.get("uri")?.as_str())
         .filter(|u| u.starts_with(PREFIX))
+        .filter(|u| {
+            state.only.is_empty() || state.only.iter().any(|n| u.strip_prefix(PREFIX) == Some(n))
+        })
         .map(str::to_owned)
+        .collect();
+    // A closed Box leaves the list, so only the others count as absent.
+    let absent = state
+        .only
+        .iter()
+        .filter(|n| {
+            !state.closed.contains(*n) && !uris.iter().any(|u| u.strip_prefix(PREFIX) == Some(n))
+        })
+        .cloned()
         .collect();
     if state.first {
         // What happened before this run started is history, not news.
         for uri in &uris {
-            if let Some((key, _)) = news(gate, &token, uri) {
+            if let Some((key, ..)) = news(gate, &token, uri) {
                 state.said.insert(key);
             }
         }
@@ -195,6 +239,7 @@ fn connect(gate: &Gate, state: &mut State) -> Result<Open, Fail> {
         token,
         uris,
         stream,
+        absent,
     })
 }
 
@@ -209,6 +254,7 @@ fn follow(
         token,
         uris,
         stream,
+        ..
     } = open;
     for message in stream {
         let message = match message {
@@ -233,6 +279,9 @@ fn follow(
             }
             _ => {}
         }
+        if state.finished() {
+            return Ok(Ended::Done);
+        }
     }
     Ok(Ended::Lost(Fail::Other("stream ended".to_owned())))
 }
@@ -245,17 +294,22 @@ fn tell(
     state: &mut State,
     say: &mut dyn FnMut(&str) -> io::Result<()>,
 ) -> io::Result<()> {
-    if let Some((key, line)) = news(gate, token, uri) {
+    if let Some((key, line, closed)) = news(gate, token, uri) {
         if state.said.insert(key) {
             say(&line)?;
+            if closed {
+                state
+                    .closed
+                    .insert(uri.strip_prefix(PREFIX).unwrap_or(uri).to_owned());
+            }
         }
     }
     Ok(())
 }
 
 /// The line for the newest event of the Box at `uri` that is worth one, with a key that is the
-/// same for the same event. A Box that cannot be read says nothing: it may be gone.
-fn news(gate: &Gate, token: &str, uri: &str) -> Option<(String, String)> {
+/// same for the same event, and whether that event is the Box closing. A Box that cannot be read says nothing: it may be gone.
+fn news(gate: &Gate, token: &str, uri: &str) -> Option<(String, String, bool)> {
     let read = gate
         .call(token, "resources/read", json!({"uri": uri}))
         .ok()?;
@@ -281,7 +335,7 @@ fn news(gate: &Gate, token: &str, uri: &str) -> Option<(String, String)> {
             |said| format!("moor: box {name} {kind}: {said}"),
         )
     });
-    Some((key, line))
+    Some((key, line, kind == "closed"))
 }
 
 /// The line for a stall or its end, from the event's payload; none for other kinds.
