@@ -56,7 +56,14 @@ pub(crate) fn gather(cx: &Cx, user: UserId) -> Result<Option<Gathered>, CommandE
     let mut reads = vec![source.repo.clone()];
     if let Some(text) = &manifest {
         match profile::parse(text) {
-            Ok(m) => failures.extend(plugin_repos(cx, &m, &token, &mut reads)),
+            Ok(m) => {
+                for repo in &m.reads {
+                    if !reads.contains(repo) {
+                        reads.push(repo.clone());
+                    }
+                }
+                failures.extend(plugin_repos(cx, &m, &token, &mut reads));
+            }
             Err(e) => failures.push((ProfileStep::Manifest, e.to_string())),
         }
     }

@@ -127,6 +127,27 @@ fn unknown_keys_are_refused() {
 }
 
 #[test]
+fn reads_lists_repos_the_box_may_fetch() {
+    let m = parse("reads:\n  - acme/handbook\n  - acme/docs\n").unwrap();
+    assert_eq!(
+        m.reads,
+        [
+            ForgeRepo::new("acme", "handbook"),
+            ForgeRepo::new("acme", "docs")
+        ]
+    );
+    assert!(parse("claude: {}\n").unwrap().reads.is_empty());
+}
+
+#[test]
+fn a_reads_entry_must_be_owner_slash_name() {
+    for bad in ["acme", "acme/a/b", "https://github.com/acme/docs", "a b/c"] {
+        let e = err(&format!("reads:\n  - \"{bad}\"\n"));
+        assert!(e.contains("reads"), "{bad}: {e}");
+    }
+}
+
+#[test]
 fn model_order_is_flag_then_profile_then_config() {
     let cases = [
         (Some("f"), Some("p"), Some("c"), Some("f")),

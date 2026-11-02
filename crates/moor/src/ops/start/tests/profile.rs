@@ -179,6 +179,23 @@ fn marketplaces_and_their_plugin_sources_join_the_reads() {
 }
 
 #[test]
+fn declared_reads_join_the_reads_once() {
+    let manifest = "reads: [acme/handbook, acme/tools]\nclaude:\n  marketplaces: {tools: https://github.com/acme/tools}\n";
+    let w = world_answering(None, HEAD, Some(manifest));
+    set_profile(&w, None);
+    let id = started(&w);
+    let got = w.cx.store().unwrap().box_profile(id).unwrap().unwrap();
+    assert_eq!(
+        got.reads,
+        [
+            profile_repo(),
+            ForgeRepo::new("acme", "handbook"),
+            ForgeRepo::new("acme", "tools")
+        ]
+    );
+}
+
+#[test]
 fn a_marketplace_named_unlike_its_key_drops_its_plugins() {
     let (w, id) = with_marketplace("kit");
     let events = profile_events(&w, id);

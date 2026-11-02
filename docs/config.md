@@ -215,6 +215,20 @@ claude:
   profile's flags. moor drops the profile's value with a profile warning that
   names the variable, so an override is never silent.
 
+`moor-profile.yaml` can also list repos the Box may read over git, for plugins
+that pull a private repo at session start:
+
+```yaml
+reads:
+  - oursky/handbook
+  - oursky/handbook-dev
+```
+
+These repos become readable over git from the Box, with the user's own GitHub
+token, read-only: the Box can fetch and clone them but never push. Each entry
+is `owner/name`. The profile repo and the repos of the profile's marketplaces
+and plugins are already readable and need no entry.
+
 When the repo has a `setup.sh` at its root, each new Box runs `sh setup.sh` once
 after fetching the profile, from the checkout (`~/.moor-profile/person`), as the
 Box user, with the same environment and Proxy as the repo's `setup` commands and

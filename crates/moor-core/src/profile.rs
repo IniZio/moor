@@ -95,6 +95,8 @@ pub struct CodexSection {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct Manifest {
+    /// Extra GitHub repos, as `owner/name`, the Box may read over git.
+    pub reads: Vec<ForgeRepo>,
     /// `claude:` section.
     pub claude: ClaudeSection,
     /// `codex:` section.
@@ -104,7 +106,7 @@ pub struct Manifest {
 /// Parses and validates a `moor-profile.yaml` document. An empty document is an empty manifest.
 ///
 /// # Errors
-/// [`ProfileError`] for bad YAML, unknown keys, a marketplace that is not a GitHub repo URL, a
+/// [`ProfileError`] for bad YAML, unknown keys, a `reads` entry that is not `owner/name`, a marketplace that is not a GitHub repo URL, a
 /// plugin without a marketplace, or a plugin naming a marketplace the file does not declare.
 pub fn parse(text: &str) -> Result<Manifest, ProfileError> {
     let manifest: Manifest = parse_strict(MANIFEST_FILE, text)?;
