@@ -89,9 +89,11 @@ stores:
 | `launch_timed_out` | The agent did not start in time. |
 | `relaunch_capped` | The agent ended too often, so moor does not start it again. |
 | `box_failed` | The machine for the Box could not be made. |
+| `agent_stalled` | The agent reported busy, then sent no report for 10 minutes while no `moor run` was in flight. Sent once per stall. |
 
 Add `relaunched` to hear about each automatic restart of the agent, or
-`closed` and `asleep` for those changes.
+`closed` and `asleep` for those changes. Add `agent_resumed` to hear when a
+stalled agent reports again.
 
 ## What is posted
 
