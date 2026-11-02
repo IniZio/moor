@@ -107,6 +107,7 @@ impl Upstream {
     ) -> Result<Self, UpstreamError> {
         ServerName::try_from(host.to_owned()).map_err(|_| UpstreamError::Host(host.to_owned()))?;
         let mut roots = RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        roots.add_parsable_certificates(rustls_native_certs::load_native_certs().certs);
         if let Some(path) = extra_root {
             for cert in load_pem(path)? {
                 roots.add(cert).map_err(|e| UpstreamError::Roots {

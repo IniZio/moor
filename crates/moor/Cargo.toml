@@ -28,6 +28,7 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 moor-migrate = { path = "../moor-migrate" }
 thiserror = "2"
 webpki-roots = "1"
+rustls-native-certs = "0.8"
 time = { version = "0.3", features = ["formatting", "parsing"] }
 rustix = { version = "1", features = [
   "event",
