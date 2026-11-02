@@ -10,7 +10,7 @@ use super::{Frame, Offer};
 
 #[test]
 fn a_hello_without_an_offer_reads_as_none() {
-    let hello = json!({"hello": {"machine_id": 7, "protocol": 1, "version": "0.1.0"}});
+    let hello = json!({"hello": {"machine_id": 7, "version": "0.1.0"}});
     let frame: Frame = serde_json::from_value(hello).unwrap();
     let Frame::Hello { offer, .. } = frame else {
         panic!("not a hello: {frame:?}");
@@ -22,7 +22,6 @@ fn a_hello_without_an_offer_reads_as_none() {
 fn a_hello_with_an_offer_round_trips() {
     let frame = Frame::Hello {
         machine_id: 7,
-        protocol: 1,
         version: "0.1.0".to_owned(),
         offer: Some(Offer {
             max_boxes: Some(4),

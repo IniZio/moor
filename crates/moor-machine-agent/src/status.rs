@@ -6,7 +6,6 @@ use std::process::Stdio;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
-use moor_client::link;
 use moor_client::link::status::{
     clip, PoolStatus, Served, Status, MAX_CRABBOX, MAX_ERROR, MAX_RECENT,
 };
@@ -53,7 +52,6 @@ pub(crate) async fn status(machine: &Machine, recent: &Recent) -> Status {
     };
     Status {
         version: crate::VERSION.to_owned(),
-        protocol: link::PROTOCOL,
         os: std::env::consts::OS.to_owned(),
         arch: std::env::consts::ARCH.to_owned(),
         free_disk_gb: free_gb(&machine.home).await,
@@ -152,7 +150,6 @@ mod tests {
         recent.record("hook", Some("7".to_owned()), None);
         let status = status(&machine(None), &recent).await;
         assert_eq!(status.version, crate::VERSION);
-        assert_eq!(status.protocol, link::PROTOCOL);
         assert_eq!(status.os, std::env::consts::OS);
         assert!(status.free_disk_gb.is_some());
         assert_eq!(status.pool, None);

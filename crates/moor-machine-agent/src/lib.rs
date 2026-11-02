@@ -257,7 +257,6 @@ async fn connect(
     let mut ws = link::dial(&state.server).await.map_err(Turned::Failed)?;
     let hello = Frame::Hello {
         machine_id: state.machine_id,
-        protocol: link::PROTOCOL,
         version: VERSION.to_owned(),
         offer: pool::offer(machine).await,
     };

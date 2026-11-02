@@ -17,7 +17,6 @@ fn links(state_dir: &Path) -> RunnerLinks {
 fn sample() -> Status {
     Status {
         version: "1.2.3".into(),
-        protocol: 2,
         os: "linux".into(),
         arch: "x86_64".into(),
         free_disk_gb: Some(40),

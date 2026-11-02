@@ -20,14 +20,11 @@ use tokio::sync::{mpsc, oneshot, watch, Notify};
 
 use crate::claim::now;
 use crate::forwards::{accepted, Routes};
+use hello::{judge, STAMPED, VERSION};
 
+mod hello;
 mod memory;
 
-/// The runner's release, which an agent told to update must become.
-const VERSION: &str = match option_env!("MOOR_VERSION") {
-    Some(v) => v,
-    None => env!("CARGO_PKG_VERSION"),
-};
 /// How long each handshake frame may take to arrive.
 const ANSWER: Duration = Duration::from_secs(10);
 /// How long a failed `machine-links` report waits before it is sent again.
@@ -192,21 +189,7 @@ where
         .flatten()
         .and_then(Result::ok)
         .ok_or(None)?;
-    let hello = first
-        .to_text()
-        .ok()
-        .and_then(|text| serde_json::from_str::<Frame>(text).ok());
-    let Some(Frame::Hello {
-        machine_id,
-        protocol: link::PROTOCOL,
-        version,
-        offer,
-    }) = hello
-    else {
-        return Err(Some(Frame::UpdateRequired {
-            version: VERSION.to_owned(),
-        }));
-    };
+    let (machine_id, version, offer) = judge(STAMPED, first.to_text().unwrap_or_default())?;
     let mut bytes = [0u8; 32];
     OsRng.fill_bytes(&mut bytes);
     let nonce = bytes.iter().fold(String::new(), |mut hex, b| {
@@ -227,7 +210,7 @@ where
             let signed = link::signed(&nonce, machine_id, time);
             key.verify(link::NAMESPACE, &signed, sig).is_ok()
         })
-        .map(|_| (machine_id, version, offer.unwrap_or_default()))
+        .map(|_| (machine_id, version, offer))
         .ok_or_else(|| {
             refused(format!(
                 "the proof is not signed by machine {machine_id}'s key"
@@ -315,7 +298,7 @@ impl Links {
             online: true,
             since: now(),
             version: Some(version),
-            protocol: Some(link::PROTOCOL),
+            protocol: None,
             max_boxes: offer.max_boxes,
             cache_gb: offer.cache_gb,
             features: offer.features,
