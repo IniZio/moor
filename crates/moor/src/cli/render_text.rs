@@ -6,6 +6,7 @@ use moor_core::view::env::{EnvCredential, EnvRow, EnvView};
 use moor_core::{ExitClass, Response};
 use serde_json::Value;
 
+mod close_failed;
 mod inspect;
 mod machine;
 mod node;
@@ -83,8 +84,10 @@ fn structured_text(cmd: &str, value: &Value) -> Option<String> {
         "inspect" => inspect::inspect_text(value),
         "show" => show::show_text(value),
         "show-session" => show::session_text(value),
-        "start" => start_text(value),
+        "start" => start_text(value, "started"),
+        "retry" => start_text(value, "retried"),
         "close" => close_text(value),
+        "close-failed" => close_failed::text(value),
         "wait" => wait_text(value),
         "profile-set" | "profile-show" | "profile-remove" => profile_line(value),
         "end-session" => end_session_line(value),
@@ -128,7 +131,7 @@ fn promoted_line(value: &Value, out: &mut String) {
 }
 
 /// Text form of `start`: a status line, how to open a Box that has a machine, then notes.
-fn start_text(value: &Value) -> Option<String> {
+fn start_text(value: &Value, fresh_verb: &str) -> Option<String> {
     let (head, state) = box_head(value, "box")?;
     let flag = |key| value.get(key).and_then(Value::as_bool).unwrap_or(false);
     let view = value.get("box")?;
@@ -139,7 +142,7 @@ fn start_text(value: &Value) -> Option<String> {
         let verb = if flag("attached") {
             "attached"
         } else {
-            "started"
+            fresh_verb
         };
         let box_text = box_state.map_or_else(|| "no box".to_owned(), |s| format!("box {s}"));
         let setup = value.get("setup");

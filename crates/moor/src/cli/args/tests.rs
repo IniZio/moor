@@ -3,7 +3,7 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use moor_core::request::{EndSessionReq, OpenHostSessionReq, OpenSessionReq};
+use moor_core::request::{CloseFailedReq, EndSessionReq, OpenHostSessionReq, OpenSessionReq};
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::{
     BoxId, BoxName, BoxReq, CloseReq, CpReq, EnvReq, GateReq, Request, RunReq, ShowReq, StartReq,
@@ -351,6 +351,15 @@ fn box_verbs() {
     assert_eq!(req(&["open", "t1"]), Request::Open(box_req("t1")));
     assert_eq!(req(&["sleep", "t1"]), Request::Sleep(box_req("t1")));
     assert_eq!(req(&["wake", "t1"]), Request::Wake(box_req("t1")));
+    assert_eq!(req(&["retry", "t1"]), Request::Retry(box_req("t1")));
+    assert_eq!(
+        req(&["close-failed"]),
+        Request::CloseFailed(CloseFailedReq { force: false })
+    );
+    assert_eq!(
+        req(&["close-failed", "--force"]),
+        Request::CloseFailed(CloseFailedReq { force: true })
+    );
 }
 
 #[test]

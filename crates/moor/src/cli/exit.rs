@@ -16,6 +16,7 @@ pub(crate) fn code(resp: &Response) -> u8 {
     let is_run = resp.cmd == "run";
     match resp.class {
         ExitClass::Ok if resp.cmd == "wait" && wait_timed_out(resp) => WAIT_TIMED_OUT,
+        ExitClass::Ok if resp.cmd == "close-failed" && has_failures(resp) => 1,
         ExitClass::Ok if is_run => run_exit(resp),
         ExitClass::Ok => 0,
         ExitClass::Failed | ExitClass::Refused | ExitClass::Usage if is_run => RUN_NOT_STARTED,
@@ -23,6 +24,15 @@ pub(crate) fn code(resp: &Response) -> u8 {
         ExitClass::Usage => 2,
         ExitClass::Refused => 3,
     }
+}
+
+/// True when a `close-failed` value lists a Box it could not close.
+fn has_failures(resp: &Response) -> bool {
+    resp.value
+        .as_ref()
+        .and_then(|v| v.get("failed"))
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|f| !f.is_empty())
 }
 
 /// True when a `wait` value reports `timed_out`.

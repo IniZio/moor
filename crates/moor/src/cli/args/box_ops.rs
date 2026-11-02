@@ -1,6 +1,7 @@
 //! Arguments of the Box-scoped verbs that take only a name plus a flag or path.
 
 use clap::Args;
+use moor_core::request::CloseFailedReq;
 use moor_core::{BoxName, BoxReq, CloseReq, CpReq};
 
 use super::box_name;
@@ -14,6 +15,20 @@ pub(super) struct CloseArgs {
     /// Close despite unsaved work.
     #[arg(long)]
     pub(super) force: bool,
+}
+
+/// Arguments of `close-failed`.
+#[derive(Debug, Args)]
+pub(super) struct CloseFailedArgs {
+    /// Close despite unsaved work.
+    #[arg(long)]
+    pub(super) force: bool,
+}
+
+impl From<CloseFailedArgs> for CloseFailedReq {
+    fn from(a: CloseFailedArgs) -> Self {
+        Self { force: a.force }
+    }
 }
 
 impl From<CloseArgs> for CloseReq {
