@@ -224,6 +224,8 @@ fn assert_watch(fake: &Mutex<Fake>) {
     let kinds = watches[1]["kinds"].as_array().unwrap();
     for kind in [
         "idled",
+        "agent_stalled",
+        "agent_resumed",
         "setup_failed",
         "relaunch_capped",
         "started",
