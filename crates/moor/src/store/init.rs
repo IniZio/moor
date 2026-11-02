@@ -205,6 +205,10 @@ const FILES: &[(&str, &str)] = &[
         "V37__box_steps_pending.sql",
         include_str!("../../migrations/V37__box_steps_pending.sql"),
     ),
+    (
+        "V38__box_profile_drop_reads.sql",
+        include_str!("../../migrations/V38__box_profile_drop_reads.sql"),
+    ),
 ];
 
 /// moor.db's migrations, oldest first.

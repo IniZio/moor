@@ -24,7 +24,7 @@ pub(super) fn uploads_rule(host: String) -> ResolvedRule {
     let rules = resolve_rules(
         &ProxyConfig::default(),
         &[moor_core::seam::forge::ForgeRepo::new("o", "r")],
-        &[],
+        false,
     )
     .unwrap();
     let mut rule = rules

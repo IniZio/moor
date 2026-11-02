@@ -349,7 +349,7 @@ rule adds to that default.
 | `inject.header` | string | The header that carries the credential. The default is `Authorization`. |
 | `inject.form` | string | The header value. `{secret}` stands for the credential. |
 | `inject.basic_user` | string | The HTTP Basic auth user. moor sends the credential as the password. A rule takes `form` or `basic_user`, not both. |
-| `allow` | list | `*` for any request, or `METHODS /path` entries such as `GET\|POST /repos/{repo}/pulls`. In a path, `*` matches one segment and `**` matches any number. |
+| `allow` | list | `*` for any request, or `METHODS /path` entries such as `GET\|POST /repos/{repo}/pulls`. In a path, `*` matches one segment and `**` matches any number. `{repo}` names each of the Box's repos, and `{any_repo}` matches any one `owner/name` for fetches only. |
 | `box_env` | map | Environment variables for the Box. Values can use `{repo}`. |
 | `requires_repo` | boolean | If true, moor drops the rule for a Box with no repo. |
 
@@ -374,6 +374,13 @@ The default rules are `claude` for `api.anthropic.com`, which injects the
 [defaults.yaml](../crates/moor-core/src/config/proxy/defaults.yaml). A user
 rule that extends a default cannot set `hosts` or `credential`. Its `allow`
 entries come after the default's, and its `box_env` values win.
+
+The Box can fetch and clone any GitHub repo the user's `github` token can read.
+It can push only to the Box's own repos. The `github-git` rule allows
+`GET /{any_repo}.git/info/refs` and `POST /{any_repo}.git/git-upload-pack` for
+every repo and `POST /{repo}.git/git-receive-pack` for the Box's repos alone.
+A Box with no repo gets git access only when it has a profile, and then it can
+only fetch.
 
 Only the hosts of these rules go through the Proxy. The Box reaches every
 other host directly. See

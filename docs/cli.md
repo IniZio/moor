@@ -113,9 +113,9 @@ The Box clones its repo itself, through its Proxy, from
 `https://github.com/OWNER/NAME.git`. The clone is partial
 (`--filter=blob:none`). It has the full history and fetches file contents when
 a command first needs them. A retried setup keeps the Box branch where it is,
-so it never resets commits made in the Box. moor does not support submodules
-or Git LFS objects from other private repos, because the Proxy adds the user's
-token only for the Box's own repo.
+so it never resets commits made in the Box. The Proxy adds the user's token to a
+fetch of any GitHub repo that token can read, but to a push of the Box's repos
+only. moor does not support Git LFS objects.
 
 Work leaves the Box when the agent runs `git push origin HEAD:refs/heads/BRANCH`.
 To get it into your own checkout, run `git fetch origin BRANCH` there.
