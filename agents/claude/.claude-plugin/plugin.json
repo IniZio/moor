@@ -1,7 +1,7 @@
 {
   "name": "moor",
-  "version": "0.2.0",
-  "description": "Drive your moor Boxes from Claude Code and get told when one needs you.",
+  "version": "0.3.0",
+  "description": "Drive your moor Boxes from Claude Code and watch the ones you start.",
   "author": { "name": "IniZio" },
   "repository": "https://github.com/IniZio/moor"
 }

@@ -6,7 +6,7 @@
     {
       "name": "moor",
       "source": "./agents/claude",
-      "description": "Drive your moor Boxes from Claude Code and get told when one needs you."
+      "description": "Drive your moor Boxes from Claude Code and watch the ones you start."
     }
   ]
 }
