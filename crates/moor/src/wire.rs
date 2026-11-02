@@ -32,8 +32,6 @@ use crate::adapters::github::GitHub;
 use crate::adapters::herdr::Herdr;
 pub(crate) use crate::adapters::proc::leave_signals_to_controller;
 use crate::adapters::proc::{SystemProc, ToolPaths};
-#[cfg(feature = "pty-surface")]
-use crate::adapters::pty::PtySurface;
 use crate::adapters::rng::SystemRng;
 use crate::adapters::sockets::socket_dir;
 use crate::config_load::load_user;
