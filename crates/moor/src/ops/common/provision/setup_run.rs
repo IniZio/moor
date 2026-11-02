@@ -6,6 +6,7 @@ use moor_core::config::BoxSettings;
 use moor_core::BoxId;
 
 use super::clone::SetupProxy;
+use super::others::named;
 use super::SetupTarget;
 use crate::cx::Cx;
 use crate::ops::common::{setup, step};
@@ -34,7 +35,7 @@ pub(super) fn run_through_proxy(
                 cfg,
                 proxy.as_ref(),
                 &|event| {
-                    if let Err(e) = step::try_record(store, id, event) {
+                    if let Err(e) = step::try_record(store, id, named(event, target.tree_of)) {
                         unrecorded
                             .lock()
                             .unwrap_or_else(PoisonError::into_inner)

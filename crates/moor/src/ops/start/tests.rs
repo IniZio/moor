@@ -56,6 +56,7 @@ mod proxy;
 mod relaunch;
 mod relaunch_sessions;
 mod repo;
+mod repos;
 mod requester;
 mod rerun;
 mod resources;

@@ -15,6 +15,7 @@ use moor_core::shape::Shape;
 use moor_core::view::WorkTreeView;
 use moor_core::{box_key, BoxId, ProviderId, Warning};
 
+use super::others::clone_others;
 use super::outcome::clone_failed;
 use super::SetupTarget;
 use crate::cx::Cx;
@@ -96,7 +97,10 @@ pub(super) fn clone_with_proxy(
     let result = match (&plan, &proxy) {
         (Some(_), Err(reason)) => Err(format!("the Proxy could not start: {reason}")),
         _ if job.is_empty() => return Ok((Cloned::default(), proxy)),
-        _ => clone(cx, target, cfg, &job, &proxy),
+        _ => clone(cx, target, cfg, &job, &proxy).and_then(|done| {
+            let branch = plan.as_ref().map(|p| p.branch.as_str()).unwrap_or_default();
+            clone_others(cx, id, target, cfg, &proxy, branch).map(|()| done)
+        }),
     };
     match result {
         Ok((ms, delivered, work_tree)) => {
@@ -272,7 +276,7 @@ fn report(
 }
 
 /// `reason`, then the last lines of the exec's output that are not the identity's exit lines.
-fn with_tail(reason: String, text: &str) -> String {
+pub(super) fn with_tail(reason: String, text: &str) -> String {
     let lines: Vec<&str> = text
         .lines()
         .filter(|l| {
@@ -289,7 +293,7 @@ fn with_tail(reason: String, text: &str) -> String {
 }
 
 /// A private host file in the state dir for the clone exec's output of Box `id`.
-fn clone_log(cx: &Cx, id: BoxId) -> Result<PathBuf, String> {
+pub(super) fn clone_log(cx: &Cx, id: BoxId) -> Result<PathBuf, String> {
     let dir = cx.state_dir().map_err(|e| e.error.to_string())?;
     let log = dir.join("clone").join(format!("{}.log", id.get()));
     dotfiles::private_log(&log).map_err(|e| format!("could not create the clone log: {e}"))?;
