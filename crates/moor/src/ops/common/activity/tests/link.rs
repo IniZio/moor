@@ -10,7 +10,8 @@ use moor_core::seam::engine::{AgentFate, EngineError};
 use moor_core::BoxId;
 
 use super::exit::exited_probes;
-use super::{cx, row, run_once, working_box, SESSION};
+use super::turn::steer;
+use super::{cx, is_working, row, run_once, working_box, SESSION};
 use crate::cx::Cx;
 use crate::ops::common::activity::settle;
 use crate::testing::engine::FakeEngine;
@@ -30,6 +31,14 @@ fn attached_box(cx: &Cx) -> BoxId {
 
 /// Settles one reading of a Box whose pane ended with exit 1, given what the Box answers.
 fn settle_exited(fates: Vec<Result<AgentFate, EngineError>>) -> (Cx, Arc<FakeEngine>, BoxId) {
+    settle_exited_after(fates, |_, _| {})
+}
+
+/// As [`settle_exited`], with `before` run on the Box ahead of the reading.
+fn settle_exited_after(
+    fates: Vec<Result<AgentFate, EngineError>>,
+    before: impl FnOnce(&Cx, BoxId),
+) -> (Cx, Arc<FakeEngine>, BoxId) {
     let dir = tempfile::tempdir().unwrap().keep();
     let engine = Arc::new(
         FakeEngine::new()
@@ -39,6 +48,7 @@ fn settle_exited(fates: Vec<Result<AgentFate, EngineError>>) -> (Cx, Arc<FakeEng
     );
     let (cx, _) = cx(&dir, &engine);
     let id = attached_box(&cx);
+    before(&cx, id);
     let reading = run_once(&cx, id);
     settle(&cx, cx.store().unwrap(), &row(&cx, id), &reading).unwrap();
     (cx, engine, id)
@@ -85,6 +95,23 @@ fn a_running_agent_gets_a_new_pane_and_keeps_its_session() {
     assert_eq!(live.pane.as_deref(), Some("reattached-1"));
     assert_eq!(engine.reattached().len(), 1);
     assert!(engine.transcripts().is_empty());
+}
+
+#[test]
+fn a_reattached_agent_stays_working() {
+    let (cx, _, id) = settle_exited(vec![Ok(AgentFate::Running)]);
+    assert!(kinds(&cx, id, &["idled"]).is_empty());
+    assert!(is_working(&row(&cx, id)));
+}
+
+#[test]
+fn a_reattached_agent_keeps_its_steered_turn_open() {
+    let (cx, _, id) = settle_exited_after(vec![Ok(AgentFate::Running)], |cx, id| {
+        steer(cx, id);
+    });
+    assert!(kinds(&cx, id, &["turn_done"]).is_empty());
+    let store = cx.store().unwrap();
+    assert!(store.unanswered_steer(id).unwrap().is_some());
 }
 
 #[test]
