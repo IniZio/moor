@@ -54,6 +54,7 @@ pub(super) fn retry_in_box(
         workdir: &workdir,
         repo: row.repo.as_ref(),
         log_dir: &log_dir,
+        tree_of: None,
     };
     run_and_record(cx, store, row.id, true, &target, cfg)
 }
