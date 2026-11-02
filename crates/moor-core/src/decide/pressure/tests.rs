@@ -1,4 +1,4 @@
-use super::{relieve, Candidate, Reading, Suspend, COOLDOWN_SECS};
+use super::{relieve, Candidate, Cooldown, Demand, Reading, Suspend, COOLDOWN_SECS};
 use crate::decide::preempt::Resident;
 use crate::domain::box_state::BoxLifecycle;
 use crate::domain::session_state::SessionState;
@@ -60,7 +60,42 @@ fn starting(id: i64) -> Candidate {
 
 fn pick(readings: &[Reading], boxes: &[Candidate], suspended_at: Option<i64>) -> Option<Suspend> {
     let now = readings.last().map_or(0, |r| r.at);
-    relieve(&node(), readings, RESERVE, boxes, suspended_at, now)
+    relieve(
+        &node(),
+        readings,
+        RESERVE,
+        boxes,
+        Cooldown { suspended_at, now },
+        &Demand::default(),
+    )
+}
+
+fn crowded(waiter: Option<&str>) -> Demand {
+    Demand {
+        short: true,
+        waiter: waiter.map(str::to_owned),
+    }
+}
+
+fn pick_for(
+    demand: &Demand,
+    readings: &[Reading],
+    boxes: &[Candidate],
+    suspended_at: Option<i64>,
+) -> Option<Suspend> {
+    let now = readings.last().map_or(0, |r| r.at);
+    relieve(
+        &node(),
+        readings,
+        RESERVE,
+        boxes,
+        Cooldown { suspended_at, now },
+        demand,
+    )
+}
+
+fn quiet() -> Vec<Reading> {
+    vec![reading(100, PLENTY, 0, 0)]
 }
 
 #[test]
@@ -141,4 +176,56 @@ fn critical_never_picks_a_waiting_or_starting_box() {
 fn critical_respects_the_cooldown() {
     let boxes = [working(1, 10)];
     assert_eq!(pick(&[reading(100, 512, 0, 0)], &boxes, Some(90)), None);
+}
+
+#[test]
+fn a_short_node_with_a_waiter_suspends_the_longest_idle_box_without_pressure() {
+    let boxes = [idle(1, 50), idle(2, 10)];
+    assert_eq!(
+        pick_for(&crowded(Some("c")), &quiet(), &boxes, None),
+        Some(Suspend {
+            id: BoxId::new(2),
+            last_resort: false,
+            reason: "made room for c".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn a_short_node_with_no_waiter_and_no_pressure_suspends_nothing() {
+    let boxes = [idle(1, 50), idle(2, 10)];
+    assert_eq!(pick_for(&crowded(None), &quiet(), &boxes, None), None);
+}
+
+#[test]
+fn a_node_with_room_and_a_waiter_suspends_nothing() {
+    let boxes = [idle(1, 50), idle(2, 10)];
+    let demand = Demand {
+        short: false,
+        waiter: Some("c".to_owned()),
+    };
+    assert_eq!(pick_for(&demand, &quiet(), &boxes, None), None);
+}
+
+#[test]
+fn a_waiter_never_gets_a_working_box_suspended() {
+    let boxes = [working(1, 10), waiting(2), starting(3)];
+    assert_eq!(pick_for(&crowded(Some("c")), &quiet(), &boxes, None), None);
+}
+
+#[test]
+fn the_cooldown_holds_a_waiter_suspension_off_too() {
+    let boxes = [idle(1, 10)];
+    let demand = crowded(Some("c"));
+    assert_eq!(
+        pick_for(&demand, &quiet(), &boxes, Some(100 - COOLDOWN_SECS + 1)),
+        None
+    );
+    assert!(pick_for(&demand, &quiet(), &boxes, Some(100 - COOLDOWN_SECS)).is_some());
+}
+
+#[test]
+fn pressure_wins_the_reason_when_both_hold() {
+    let got = pick_for(&crowded(Some("c")), &pressed(3), &[idle(1, 10)], None).unwrap();
+    assert_eq!(got.reason, "memory pressure on hv");
 }
