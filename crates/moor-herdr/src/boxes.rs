@@ -38,6 +38,8 @@ pub enum Phase {
     Asleep,
     /// Gone for good, or never came up.
     Closed,
+    /// Setup failed; the Box waits to be retried or closed.
+    SetupFailed,
 }
 
 impl Phase {
@@ -50,6 +52,7 @@ impl Phase {
             Self::WaitingForMachine => "◌",
             Self::Asleep => "◐",
             Self::Closed => "✕",
+            Self::SetupFailed => "⚠",
         }
     }
 
@@ -60,7 +63,11 @@ impl Phase {
             Self::Live(Activity::Working) => "working",
             Self::Live(Activity::Waiting) => "blocked",
             Self::Live(Activity::Idle) => "idle",
-            Self::Starting | Self::WaitingForMachine | Self::Asleep | Self::Closed => "unknown",
+            Self::Starting
+            | Self::WaitingForMachine
+            | Self::Asleep
+            | Self::Closed
+            | Self::SetupFailed => "unknown",
         }
     }
 }
@@ -149,9 +156,8 @@ impl Row {
     /// Where the Box is in its life.
     fn phase(&self) -> Phase {
         match self.lifecycle {
-            BoxLifecycle::Closed | BoxLifecycle::Rejected | BoxLifecycle::SetupFailed => {
-                Phase::Closed
-            }
+            BoxLifecycle::Closed | BoxLifecycle::Rejected => Phase::Closed,
+            BoxLifecycle::SetupFailed => Phase::SetupFailed,
             BoxLifecycle::Asleep => Phase::Asleep,
             BoxLifecycle::Checking | BoxLifecycle::Pending | BoxLifecycle::SettingUp => {
                 Phase::Starting

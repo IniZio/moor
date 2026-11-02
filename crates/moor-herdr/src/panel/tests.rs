@@ -243,6 +243,48 @@ fn clicking_close_twice_closes_the_box_and_once_does_not() {
 }
 
 #[test]
+fn a_setup_failed_box_offers_only_close() {
+    let now = clock();
+    let mut ops = Fake {
+        boxes: vec![shown("bad", "acme/app", Phase::SetupFailed)],
+        ..Fake::default()
+    };
+    let panel = loaded(&mut ops);
+    assert_eq!(
+        screen(&panel, now).get(3).map(String::as_str),
+        Some("    ⚠ setup failed · [close]")
+    );
+}
+
+#[test]
+fn closing_a_setup_failed_box_sends_close_and_the_row_stays_gone() {
+    let now = clock();
+    let mut ops = Fake {
+        boxes: vec![shown("bad", "acme/app", Phase::SetupFailed)],
+        ..Fake::default()
+    };
+    let mut panel = loaded(&mut ops);
+    let row = FIRST_BOX_ROW + 1;
+    let col = column_of(&panel, row, "[close]", now);
+    panel.handle(Input::Click { col, row }, now, &mut ops);
+    assert!(ops.calls.is_empty());
+    assert!(screen(&panel, now)
+        .get(3)
+        .is_some_and(|l| l.ends_with("[confirm close]")));
+    panel.handle(
+        Input::Click { col, row },
+        now + Duration::from_secs(1),
+        &mut ops,
+    );
+    assert_eq!(ops.calls, ["close bad"]);
+    panel.refresh(&mut ops);
+    assert!(panel.boxes.is_empty());
+    assert!(screen(&panel, now)
+        .iter()
+        .all(|l| !l.contains("setup failed")));
+}
+
+#[test]
 fn each_button_calls_its_operation() {
     let now = clock();
     let mut ops = fake();

@@ -82,6 +82,32 @@ fn r_on_a_closed_box_says_so_and_offers_nothing() {
 }
 
 #[test]
+fn a_setup_failed_box_says_so_and_points_at_close_or_retry() {
+    for key in *b"rR\r" {
+        assert_eq!(
+            Card::SetupFailed("fix".into()).key(key),
+            Choice::Note("setup failed: close it or run moor retry")
+        );
+    }
+    assert!(!Card::SetupFailed("fix".into()).reattaches());
+    assert_eq!(
+        Card::SetupFailed("fix".into())
+            .lines("◈ app/fix")
+            .get(2)
+            .map(String::as_str),
+        Some("setup failed · close it in the Boxes panel or run moor retry fix")
+    );
+}
+
+#[test]
+fn a_setup_failed_phase_makes_the_setup_failed_card() {
+    assert_eq!(
+        Card::after(&Ended::Skipped, Some(&shown(Phase::SetupFailed)), None),
+        Card::SetupFailed("fix".into())
+    );
+}
+
+#[test]
 fn q_closes_the_pane_from_every_card_and_other_keys_do_nothing() {
     for card in [
         Card::Asleep,

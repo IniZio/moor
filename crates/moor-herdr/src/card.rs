@@ -51,6 +51,8 @@ pub enum Card {
         /// The failure that left the Box down, when one did.
         why: Option<String>,
     },
+    /// Setup failed; the Box waits to be retried or closed. Holds the Box's name.
+    SetupFailed(String),
     /// The Box is paused.
     Asleep,
     /// The Box is still being set up; the pane attaches once it is up.
@@ -71,6 +73,9 @@ impl Card {
     pub fn after(ended: &Ended, now: Option<&Shown>, branch: Option<String>) -> Self {
         match now.map(|b| b.phase) {
             None | Some(Phase::Closed) => Self::Closed { branch, why: None },
+            Some(Phase::SetupFailed) => {
+                Self::SetupFailed(now.map(|b| b.name.clone()).unwrap_or_default())
+            }
             Some(Phase::Asleep) => Self::Asleep,
             Some(Phase::Starting) => Self::Starting(Progress::default()),
             Some(Phase::Live(_) | Phase::WaitingForMachine) => match ended {
@@ -91,6 +96,9 @@ impl Card {
             (b'r' | b'R' | b'\r', Self::Closed { .. }) => {
                 Choice::Note("closed: there is nothing to attach")
             }
+            (b'r' | b'R' | b'\r', Self::SetupFailed(_)) => {
+                Choice::Note("setup failed: close it or run moor retry")
+            }
             (b'r' | b'R' | b'\r', Self::Starting(_)) => Choice::Stay,
             (b'r' | b'R' | b'\r', Self::Asleep) => Choice::Wake,
             (b'r' | b'R' | b'\r', _) => Choice::Attach,
@@ -101,7 +109,10 @@ impl Card {
     /// Whether `r` attaches again from this card.
     #[must_use]
     pub const fn reattaches(&self) -> bool {
-        !matches!(self, Self::Closed { .. } | Self::Starting(_))
+        !matches!(
+            self,
+            Self::Closed { .. } | Self::SetupFailed(_) | Self::Starting(_)
+        )
     }
 
     /// The card's lines under the Box's `label`.
@@ -113,6 +124,9 @@ impl Card {
                 branch: Some(b), ..
             } => format!("closed · branch {b} · PR: gh pr view {b}"),
             Self::Closed { branch: None, .. } => "closed".to_owned(),
+            Self::SetupFailed(name) => {
+                format!("setup failed · close it in the Boxes panel or run moor retry {name}")
+            }
             Self::Asleep => "asleep · r wakes it and attaches".to_owned(),
             Self::Starting(p) => p.elapsed.map_or_else(
                 || "starting · attaches when it's up".to_owned(),
