@@ -143,6 +143,9 @@ pub enum Op {
     Dial {
         /// `moor-<controller>-<id>`.
         slug: String,
+        /// How long the caller waits for the VM's sshd; the agent's own limit when none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        timeout_secs: Option<u64>,
     },
     /// Remove the folders of every Box not in `keep`, after its `release` hook; a pool host
     /// instead stops the leases of Boxes not in `keep`.

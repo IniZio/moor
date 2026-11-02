@@ -20,7 +20,8 @@ for a in "$@"; do
   esac
 done
 case "$1" in
-  ssh) strict=yes; [ -e "$HOME/loose" ] && strict=no
+  ssh) [ -e "$HOME/slow-ssh" ] && exec sleep 300
+    strict=yes; [ -e "$HOME/loose" ] && strict=no
     echo "ssh '-F' '/dev/null' '-o' 'StrictHostKeyChecking=$strict' '-o' 'UserKnownHostsFile=$HOME/kh' '-o' 'ProxyCommand=cat' 'vm@vm7'" ;;
   providers) cat "$(dirname "$0")/describe.json" 2>/dev/null ;;
   list) cat "$HOME/leases.json" 2>/dev/null || echo '[]' ;;

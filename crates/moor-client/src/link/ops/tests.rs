@@ -81,3 +81,24 @@ fn a_warmup_carries_its_class_and_names_none_without_one() {
         .unwrap()
         .contains("class"));
 }
+
+#[test]
+fn a_dial_takes_a_timeout_and_still_refuses_an_unknown_field() {
+    use crate::link::broker::PoolOp;
+    let plain = r#"{"op":"dial","slug":"moor-1a2b3c4d-7"}"#;
+    let timed = r#"{"op":"dial","slug":"moor-1a2b3c4d-7","timeout_secs":20}"#;
+    let stray = r#"{"op":"dial","slug":"moor-1a2b3c4d-7","deadline":20}"#;
+    for (json, sent) in [(plain, None), (timed, Some(20))] {
+        let op: super::Op = serde_json::from_str(json).unwrap();
+        let back = serde_json::to_value(&op).unwrap();
+        assert_eq!(
+            back.get("timeout_secs").and_then(serde_json::Value::as_u64),
+            sent
+        );
+        assert_eq!(serde_json::to_string(&op).unwrap(), json);
+        let pooled: PoolOp = serde_json::from_str(json).unwrap();
+        assert_eq!(super::Op::from(pooled), op);
+    }
+    assert!(serde_json::from_str::<super::Op>(stray).is_err());
+    assert!(serde_json::from_str::<PoolOp>(stray).is_err());
+}

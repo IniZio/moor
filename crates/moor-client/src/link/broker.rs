@@ -50,6 +50,9 @@ pub enum PoolOp {
     Dial {
         /// `moor-<controller>-<id>`.
         slug: String,
+        /// How long the caller waits for the VM's sshd; the agent's own limit when none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        timeout_secs: Option<u64>,
     },
     /// [`Op::Status`].
     Status,
@@ -71,7 +74,7 @@ impl From<PoolOp> for Op {
                 cache,
                 class,
             },
-            PoolOp::Dial { slug } => Self::Dial { slug },
+            PoolOp::Dial { slug, timeout_secs } => Self::Dial { slug, timeout_secs },
             PoolOp::Status => Self::Status,
         }
     }
@@ -153,7 +156,11 @@ async fn leased(socket: &Path, machine_id: i64, op: PoolOp) -> Result<lease::Ans
 /// Asks the broker at `socket` to dial `slug`'s sshd on machine `machine_id`; the stream to it.
 pub async fn dial(socket: &Path, machine_id: i64, slug: &str) -> Result<UnixStream, String> {
     let slug = slug.to_owned();
-    match ask(socket, machine_id, PoolOp::Dial { slug }).await? {
+    let op = PoolOp::Dial {
+        slug,
+        timeout_secs: None,
+    };
+    match ask(socket, machine_id, op).await? {
         (conn, Reply::Started) => Ok(conn),
         (_, other) => Err(refusal(machine_id, other)),
     }

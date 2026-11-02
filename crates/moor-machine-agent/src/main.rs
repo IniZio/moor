@@ -198,7 +198,7 @@ fn main() -> ExitCode {
         Command::Dial { slug, pool } => {
             return on_pool(pool, |rt, home, pool| {
                 rt.block_on(async {
-                    let sshd = dial(&home, &pool, &slug).await?;
+                    let sshd = dial(&home, &pool, &slug, None).await?;
                     let stdio = tokio::io::join(tokio::io::stdin(), tokio::io::stdout());
                     splice(sshd, stdio).await;
                     Ok(())
