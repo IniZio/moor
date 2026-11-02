@@ -1,6 +1,6 @@
 //! The `agent_stalled` and `agent_resumed` events, written once per stall.
 
-use moor_core::activity::{stalled_for, HookKind};
+use moor_core::activity::{stalled_for, Activity, AgentState, HookKind, Source};
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::seam::clock::Ts;
 
@@ -11,7 +11,8 @@ use crate::store::{BoxRow, Store};
 /// Append `agent_stalled` when the agent's hook reported busy and has gone quiet, and
 /// `agent_resumed` when a report arrives after one.
 ///
-/// A run in flight keeps the agent busy by itself, so it is never a stall.
+/// A run in flight keeps the agent busy by itself, so it is never a stall. Neither is a Box whose
+/// hook could not be read: the agent behind a broken probe may be fine.
 pub(super) fn note_stall(
     store: &Store,
     row: &BoxRow,
@@ -32,7 +33,14 @@ pub(super) fn note_stall(
             .is_none_or(|r| r.id < s.id),
         None => false,
     };
-    let quiet = (record.kind == HookKind::Busy)
+    let hooked = matches!(
+        reading.activity,
+        Some(Activity {
+            state: AgentState::Working,
+            source: Source::Hooks | Source::HooksCached,
+        })
+    );
+    let quiet = (hooked && record.kind == HookKind::Busy)
         .then(|| stalled_for(record.at, now))
         .flatten();
     match (quiet, stalled) {

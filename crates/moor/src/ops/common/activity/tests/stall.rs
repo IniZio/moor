@@ -35,10 +35,16 @@ impl Rig {
     }
 
     fn pass(&self, in_flight: bool) {
-        let activity = Activity {
-            state: AgentState::Working,
-            source: Source::Hooks,
-        };
+        self.pass_with(
+            Activity {
+                state: AgentState::Working,
+                source: Source::Hooks,
+            },
+            in_flight,
+        );
+    }
+
+    fn pass_with(&self, activity: Activity, in_flight: bool) {
         let r = Reading::new(Some(activity), PaneLiveness::Live, false, in_flight);
         settle(
             &self.cx,
@@ -122,4 +128,16 @@ fn a_second_stall_after_a_resume_is_written_again() {
     rig.clock.sleep(11 * MINUTE);
     rig.pass(false);
     assert_eq!(rig.events("agent_stalled").len(), 2);
+}
+
+#[test]
+fn an_unreadable_hook_is_not_a_stall() {
+    let (_dir, rig) = rig();
+    rig.hooked(HookKind::Busy, 11 * MINUTE, None);
+    let unknown = Activity {
+        state: AgentState::Unknown,
+        source: Source::Timeout,
+    };
+    rig.pass_with(unknown, false);
+    assert!(rig.events("agent_stalled").is_empty());
 }
