@@ -20,7 +20,7 @@ pub(super) enum Gate {
     /// Forward the request head and these exact body bytes.
     Forward(Vec<u8>),
     /// Forward the request without its credential, with these exact body
-    /// bytes. The request is outside the Box repo or could not be judged.
+    /// bytes. The request is outside the Box repos or could not be judged.
     Anonymous(Vec<u8>),
     /// Refuse with this status and message; the reason is recorded.
     Refuse(u16, String),
@@ -47,16 +47,15 @@ pub(super) fn gate(shared: &Shared, head: &Head, r: &mut impl BufRead) -> Gate {
         }
         Err(_) => return Gate::Abort,
     };
-    let Some(repo) = shared.repo.as_ref() else {
-        return Gate::Anonymous(body.raw);
+    let in_scope = |repo: &RepoRef| match judge(&body.decoded, repo) {
+        Verdict::Allow => true,
+        Verdict::Deny(_) => false,
+        Verdict::NeedsNodeCheck(ids) => nodes_listed(shared, head, &ids) == Some(true),
     };
-    match judge(&body.decoded, repo) {
-        Verdict::Allow => Gate::Forward(body.raw),
-        Verdict::Deny(_) => Gate::Anonymous(body.raw),
-        Verdict::NeedsNodeCheck(ids) => match nodes_in_repo(shared, head, repo, &ids) {
-            Some(true) => Gate::Forward(body.raw),
-            Some(false) | None => Gate::Anonymous(body.raw),
-        },
+    if shared.repos.iter().any(in_scope) {
+        Gate::Forward(body.raw)
+    } else {
+        Gate::Anonymous(body.raw)
     }
 }
 
@@ -89,8 +88,8 @@ pub(super) fn without_credential(head: &Head, injected: &[String]) -> Head {
     }
 }
 
-/// Whether every id belongs to `repo`, asking upstream about uncached ones.
-fn nodes_in_repo(shared: &Shared, head: &Head, repo: &RepoRef, ids: &[NodeId]) -> Option<bool> {
+/// Whether every id belongs to a listed repo, asking upstream about uncached ones.
+fn nodes_listed(shared: &Shared, head: &Head, ids: &[NodeId]) -> Option<bool> {
     let uncached: Vec<NodeId> = ids
         .iter()
         .filter(|id| shared.cache.get(id).is_none())
@@ -98,7 +97,7 @@ fn nodes_in_repo(shared: &Shared, head: &Head, repo: &RepoRef, ids: &[NodeId]) -
         .collect();
     if !uncached.is_empty() {
         let auth = head.header("authorization")?;
-        let verdicts = lookup(shared, repo, auth, &uncached)?;
+        let verdicts = lookup(shared, auth, &uncached)?;
         for (id, belongs) in uncached.iter().zip(verdicts) {
             shared.cache.put(id, belongs);
         }
@@ -106,8 +105,8 @@ fn nodes_in_repo(shared: &Shared, head: &Head, repo: &RepoRef, ids: &[NodeId]) -
     Some(ids.iter().all(|id| shared.cache.get(id) == Some(true)))
 }
 
-/// Asks upstream, on a new connection, which of `ids` are in `repo`.
-fn lookup(shared: &Shared, repo: &RepoRef, auth: &str, ids: &[NodeId]) -> Option<Vec<bool>> {
+/// Asks upstream, on a new connection, which of `ids` are in a listed repo.
+fn lookup(shared: &Shared, auth: &str, ids: &[NodeId]) -> Option<Vec<bool>> {
     let mut conn = BufReader::new(shared.upstream.connect().ok()?);
     let request = lookup_request(shared.upstream.host(), auth, ids);
     conn.get_mut().write_all(&request).ok()?;
@@ -118,5 +117,5 @@ fn lookup(shared: &Shared, repo: &RepoRef, auth: &str, ids: &[NodeId]) -> Option
     }
     let framing = response_framing(&head, "POST").ok()?;
     let body = read_body(&mut conn, &framing, MAX_LOOKUP).ok()?;
-    resolve(&body.decoded, ids, repo)
+    resolve(&body.decoded, ids, &shared.repos)
 }

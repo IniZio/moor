@@ -9,6 +9,7 @@ fn spec(id: i64) -> ProxySpec {
     ProxySpec {
         box_id: BoxId::new(id),
         box_handle: None,
+        other_repos: Vec::new(),
         box_repo: None,
         rules: Vec::new(),
         user: moor_core::user::UserId::new(1),

@@ -233,3 +233,74 @@ fn only_requests_forwarded_without_credential_are_reported_as_withheld() {
     assert_eq!(rig.filter.drain_withheld(), ["POST"]);
     assert!(rig.filter.drain_withheld().is_empty());
 }
+
+/// A filter for a Box of `IniZio/moor` that also lists `IniZio/lib`.
+fn two_repo_rig(f: Responder) -> Rig {
+    rig_for(
+        f,
+        Guard::default(),
+        vec![box_repo(), RepoRef::new("IniZio", "lib")],
+    )
+}
+
+#[test]
+fn listed_repo_query_gets_the_credential() {
+    let rig = two_repo_rig(standard(nodes_reply(&[])));
+    let sent = post("/graphql", &repo_query("IniZio", "lib", "Q"));
+    assert_eq!(rig.client().call(&sent).status(), 200);
+    let seen = rig.requests();
+    assert!(seen.first().is_some_and(|w| w.raw == sent && has_token(w)));
+}
+
+#[test]
+fn unlisted_repo_query_stays_anonymous_with_two_repos() {
+    let rig = two_repo_rig(standard(nodes_reply(&[])));
+    let sent = post("/graphql", &repo_query("IniZio", "other", "Q"));
+    assert_eq!(rig.client().call(&sent).status(), 200);
+    let seen = rig.requests();
+    assert_eq!(seen.len(), 1);
+    assert_anonymous(seen.first().unwrap());
+}
+
+#[test]
+fn node_id_of_a_listed_repo_is_forwarded_with_the_credential() {
+    let rig = two_repo_rig(standard(nodes_reply(&["IniZio/lib"])));
+    let sent = post("/graphql", &create_pr("R_lib"));
+    assert_eq!(rig.client().call(&sent).status(), 200);
+    let seen = rig.requests();
+    assert!(seen.get(1).is_some_and(|w| w.raw == sent && has_token(w)));
+}
+
+#[test]
+fn node_id_of_an_unlisted_repo_stays_anonymous_with_two_repos() {
+    let rig = two_repo_rig(standard(nodes_reply(&["IniZio/other"])));
+    let resp = rig.client().call(&post("/graphql", &create_pr("R_other")));
+    assert_eq!(resp.status(), 200);
+    let seen = rig.requests();
+    assert_eq!(seen.len(), 2);
+    assert_anonymous(seen.get(1).unwrap());
+}
+
+#[test]
+fn query_touching_a_listed_and_an_unlisted_repo_stays_anonymous() {
+    let rig = two_repo_rig(standard(nodes_reply(&[])));
+    let query = "query { a: repository(owner: \"IniZio\", name: \"lib\") { id } \
+                 b: repository(owner: \"IniZio\", name: \"other\") { id } }";
+    let sent = post("/graphql", &json!({ "query": query }).to_string());
+    assert_eq!(rig.client().call(&sent).status(), 200);
+    let seen = rig.requests();
+    assert_eq!(seen.len(), 1);
+    assert_anonymous(seen.first().unwrap());
+}
+
+#[test]
+fn node_ids_split_across_a_listed_and_an_unlisted_repo_stay_anonymous() {
+    let rig = two_repo_rig(standard(nodes_reply(&["IniZio/lib", "IniZio/other"])));
+    let query = "query($a: ID!, $b: ID!) { a: node(id: $a) { id } b: node(id: $b) { id } }";
+    let body = json!({ "query": query, "variables": { "a": "R_lib", "b": "R_other" } });
+    let resp = rig.client().call(&post("/graphql", &body.to_string()));
+    assert_eq!(resp.status(), 200);
+    let seen = rig.requests();
+    assert_eq!(seen.len(), 2);
+    assert_anonymous(seen.get(1).unwrap());
+}

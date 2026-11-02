@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use moor_core::config::parse_user;
 use moor_core::config::proxy::{resolve_rules, ResolvedRule};
+use moor_core::seam::forge::ForgeRepo;
 use moor_core::{BoxId, Secret};
 use tempfile::TempDir;
 use ureq::Agent;
@@ -19,14 +20,15 @@ const BOX_ID: BoxId = BoxId::new(7);
 /// How npm asks a registry for a scoped package's metadata.
 const SCOPED: &str = "/@fortawesome%2ffontawesome-pro";
 
-/// The `hdr` rule as a user config with this `allow` list resolves it, served on `localhost:<port>`.
-fn hdr_rule(port: u16, allow: &str) -> ResolvedRule {
+/// The `hdr` rule as a user config with this `allow` list resolves it for a Box of `repos`,
+/// served on `localhost:<port>`.
+fn hdr_rule(port: u16, allow: &str, repos: &[ForgeRepo]) -> ResolvedRule {
     let yaml = format!(
         "proxy:\n  rules:\n    hdr:\n      hosts: [npm.example.com]\n      credential: token\n      \
          inject: {{form: 'Bearer {{secret}}'}}\n      allow: [{allow}]\n"
     );
     let user = parse_user("u.yaml", &yaml).unwrap();
-    let mut rule = resolve_rules(&user.proxy, None, &[])
+    let mut rule = resolve_rules(&user.proxy, repos, &[])
         .unwrap()
         .into_iter()
         .find(|r| r.name == "hdr")
@@ -50,9 +52,14 @@ struct Rig {
 impl Rig {
     /// Starts the proxy for a rule with `allow`; `only_rules` makes it a front Proxy.
     fn start(allow: &str, only_rules: bool) -> Self {
+        Self::start_for(allow, only_rules, &[])
+    }
+
+    /// Starts the proxy for a rule with `allow` resolved for a Box of `repos`.
+    fn start_for(allow: &str, only_rules: bool, repos: &[ForgeRepo]) -> Self {
         let dir = TempDir::new().unwrap();
         let up = upstream::start(dir.path());
-        let rules = vec![hdr_rule(up.port, allow)];
+        let rules = vec![hdr_rule(up.port, allow, repos)];
         let source = RuleSource {
             config_key: "credentials.TOKEN".to_owned(),
             fetch: Arc::new(|| Ok(Secret::new(SECRET.as_bytes().to_vec()))),
@@ -207,4 +214,20 @@ fn front_proxy_any_request_rule_still_refuses_an_unlisted_host() {
         seen.authorization.as_deref(),
         Some(format!("Bearer {SECRET}").as_str())
     );
+}
+
+#[test]
+fn every_listed_repo_gets_the_credential_and_an_unlisted_one_does_not() {
+    let repos = [ForgeRepo::new("a", "app"), ForgeRepo::new("a", "lib")];
+    let bearer = format!("Bearer {SECRET}");
+    for (path, want) in [
+        ("/repos/a/app/pulls", Some(bearer.as_str())),
+        ("/repos/a/lib/pulls", Some(bearer.as_str())),
+        ("/repos/a/other/pulls", None),
+    ] {
+        let rig = Rig::start_for("'GET /repos/{repo}/pulls'", false, &repos);
+        let (status, seen) = rig.fetch(path);
+        assert_eq!(status, Ok(200), "{path}");
+        assert_eq!(seen.authorization.as_deref(), want, "{path}: {}", seen.head);
+    }
 }

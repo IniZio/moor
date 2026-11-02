@@ -33,10 +33,10 @@ pub(crate) fn lookup_body(ids: &[NodeId]) -> Vec<u8> {
     serde_json::to_vec(&json!({ "query": QUERY, "variables": { "ids": ids } })).unwrap_or_default()
 }
 
-/// Reads per-id membership of `repo` from a lookup response, in `ids` order.
+/// Reads per-id membership of any of `repos` from a lookup response, in `ids` order.
 ///
 /// Returns `None` when the body is not a usable answer.
-pub(crate) fn resolve(body: &[u8], ids: &[NodeId], repo: &RepoRef) -> Option<Vec<bool>> {
+pub(crate) fn resolve(body: &[u8], ids: &[NodeId], repos: &[RepoRef]) -> Option<Vec<bool>> {
     let root: Value = serde_json::from_slice(body).ok()?;
     if root.get("errors").is_some() {
         return None;
@@ -45,11 +45,11 @@ pub(crate) fn resolve(body: &[u8], ids: &[NodeId], repo: &RepoRef) -> Option<Vec
     if nodes.len() != ids.len() {
         return None;
     }
-    Some(nodes.iter().map(|node| in_repo(node, repo)).collect())
+    Some(nodes.iter().map(|node| in_repos(node, repos)).collect())
 }
 
-/// Whether one looked-up node is, or belongs to, `repo`.
-fn in_repo(node: &Value, repo: &RepoRef) -> bool {
+/// Whether one looked-up node is, or belongs to, one of `repos`.
+fn in_repos(node: &Value, repos: &[RepoRef]) -> bool {
     let name = match node.get("__typename").and_then(Value::as_str) {
         Some("Repository") => node.get("nameWithOwner"),
         Some("PullRequest" | "Issue") => {
@@ -59,7 +59,9 @@ fn in_repo(node: &Value, repo: &RepoRef) -> bool {
     };
     name.and_then(Value::as_str).is_some_and(|full| {
         full.split_once('/').is_some_and(|(owner, name)| {
-            owner.eq_ignore_ascii_case(&repo.owner) && name.eq_ignore_ascii_case(&repo.name)
+            repos.iter().any(|repo| {
+                owner.eq_ignore_ascii_case(&repo.owner) && name.eq_ignore_ascii_case(&repo.name)
+            })
         })
     })
 }
@@ -79,7 +81,7 @@ impl NodeCache {
         self.lock().get(id.as_str()).copied()
     }
 
-    /// Records whether `id` belongs to the Box repository.
+    /// Records whether `id` belongs to one of the Box repositories.
     pub(crate) fn put(&self, id: &NodeId, belongs: bool) {
         self.lock().insert(id.as_str().to_owned(), belongs);
     }

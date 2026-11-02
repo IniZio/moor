@@ -78,7 +78,10 @@ fn box_repo_nodes_resolve_true() {
         { "__typename": "PullRequest", "repository": { "nameWithOwner": "IniZio/moor" } },
         { "__typename": "Issue", "repository": { "nameWithOwner": "IniZio/moor" } },
     ]));
-    assert_eq!(resolve(&body, &ids, &repo()), Some(vec![true, true, true]));
+    assert_eq!(
+        resolve(&body, &ids, &[repo()]),
+        Some(vec![true, true, true])
+    );
 }
 
 #[test]
@@ -91,7 +94,7 @@ fn other_null_and_unknown_nodes_resolve_false() {
         { "__typename": "User", "nameWithOwner": "IniZio/moor" },
     ]));
     assert_eq!(
-        resolve(&body, &ids, &repo()),
+        resolve(&body, &ids, &[repo()]),
         Some(vec![false, false, false, false])
     );
 }
@@ -102,21 +105,21 @@ fn names_compare_case_insensitively() {
     let body = answer(&json!([
         { "__typename": "Repository", "nameWithOwner": "inizio/MOOR" },
     ]));
-    assert_eq!(resolve(&body, &ids, &repo()), Some(vec![true]));
+    assert_eq!(resolve(&body, &ids, &[repo()]), Some(vec![true]));
 }
 
 #[test]
 fn unusable_bodies_resolve_to_none() {
     let ids = ids(&["A", "B"]);
     let ok = json!([null, null]);
-    assert_eq!(resolve(b"not json", &ids, &repo()), None);
-    assert_eq!(resolve(b"{}", &ids, &repo()), None);
+    assert_eq!(resolve(b"not json", &ids, &[repo()]), None);
+    assert_eq!(resolve(b"{}", &ids, &[repo()]), None);
     let errors =
         serde_json::to_vec(&json!({ "data": { "nodes": ok }, "errors": [{ "message": "x" }] }))
             .unwrap();
-    assert_eq!(resolve(&errors, &ids, &repo()), None);
-    assert_eq!(resolve(&answer(&json!([null])), &ids, &repo()), None);
-    assert_eq!(resolve(&answer(&json!("nodes")), &ids, &repo()), None);
+    assert_eq!(resolve(&errors, &ids, &[repo()]), None);
+    assert_eq!(resolve(&answer(&json!([null])), &ids, &[repo()]), None);
+    assert_eq!(resolve(&answer(&json!("nodes")), &ids, &[repo()]), None);
 }
 
 #[test]
@@ -133,4 +136,16 @@ fn cache_remembers_verdicts() {
     assert_eq!(cache.get(b), Some(false));
     assert_eq!(cache.get(c), None);
     assert_eq!(format!("{cache:?}"), "NodeCache { entries: 2 }");
+}
+
+#[test]
+fn nodes_of_any_listed_repo_resolve_true() {
+    let ids = ids(&["A", "B", "C"]);
+    let body = answer(&json!([
+        { "__typename": "Repository", "nameWithOwner": "IniZio/lib" },
+        { "__typename": "Issue", "repository": { "nameWithOwner": "IniZio/moor" } },
+        { "__typename": "Repository", "nameWithOwner": "IniZio/other" },
+    ]));
+    let listed = [repo(), RepoRef::new("IniZio", "lib")];
+    assert_eq!(resolve(&body, &ids, &listed), Some(vec![true, true, false]));
 }

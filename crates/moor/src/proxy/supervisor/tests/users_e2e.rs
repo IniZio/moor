@@ -157,6 +157,7 @@ fn two() -> Two {
             let spec = ProxySpec {
                 box_id: id,
                 box_handle: Some(handle.clone()),
+                other_repos: Vec::new(),
                 box_repo: None,
                 rules: vec![claude_rule(up.port)],
                 user,

@@ -218,6 +218,7 @@ fn serve_injects_the_credential_audits_requests_and_stops() {
     let spec = ProxySpec {
         box_id: id,
         box_handle: Some(handle),
+        other_repos: Vec::new(),
         box_repo: None,
         rules: vec![rule(up.port)],
         user: moor_core::user::UserId::new(1),

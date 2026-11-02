@@ -161,10 +161,12 @@ fn start_filter(
     let ephemeral = ca.ephemeral().map_err(|err| fail(&err))?;
     GraphqlFilter::start(FilterSpec {
         ca: ephemeral,
-        repo: spec
+        repos: spec
             .box_repo
-            .as_ref()
-            .map(|r| RepoRef::new(&r.owner, &r.name)),
+            .iter()
+            .chain(&spec.other_repos)
+            .map(|r| RepoRef::new(&r.owner, &r.name))
+            .collect(),
         host: GITHUB_API_HOST.to_owned(),
         port: 443,
         rule,
