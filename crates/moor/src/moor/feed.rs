@@ -1,6 +1,10 @@
 //! Event stream and settle pass for the controller, behind the `Moor` facade.
 
+use std::time::Duration;
+
 use moor_core::controller::ServerFrame;
+use moor_core::domain::box_state::BoxLifecycle;
+use moor_core::domain::event::close_reason::CLOSE_REASON_SETUP_FAILED_EXPIRED;
 use moor_core::SessionId;
 
 use super::Moor;
@@ -54,7 +58,18 @@ impl Moor {
     ///
     /// Autosleep runs with it, so an agent idle past its limit sleeps without a client. Each
     /// Box is skipped once `draining` returns true; one already begun finishes first.
+    #[cfg(test)]
     pub(crate) fn settle_open(&self, draining: &dyn Fn() -> bool) -> Vec<String> {
+        self.settle_open_closing(draining, None)
+    }
+
+    /// `settle_open`, which also closes each Box that has stayed `setup_failed` for
+    /// `close_after`; `None` closes none.
+    pub(crate) fn settle_open_closing(
+        &self,
+        draining: &dyn Fn() -> bool,
+        close_after: Option<Duration>,
+    ) -> Vec<String> {
         let mut out = Vec::new();
         match self.cx.store() {
             Ok(store) => {
@@ -63,10 +78,61 @@ impl Moor {
                 }
                 ops::common::artifacts::collect_due(&self.cx, store, draining);
                 ops::common::artifacts::collect_working(&self.cx, store, draining);
+                if let Some(after) = close_after {
+                    out.extend(self.close_expired_setup_failed(store, after, draining));
+                }
             }
             Err(e) => out.push(e.error.to_string()),
         }
         out.extend(self.cx.take_warnings().into_iter().map(|w| w.message));
+        out
+    }
+
+    /// Closes each open Box whose setup failed at least `after` ago, once per call.
+    ///
+    /// Setup never handed such a Box to anyone, so the close is forced. A Box with no failure
+    /// time is left alone, and one that will not close is reported, not retried until the next
+    /// pass.
+    fn close_expired_setup_failed(
+        &self,
+        store: &crate::store::Store,
+        after: Duration,
+        draining: &dyn Fn() -> bool,
+    ) -> Vec<String> {
+        let now = self.cx.clock().now().as_millis();
+        let after_ms = i64::try_from(after.as_millis()).unwrap_or(i64::MAX);
+        let rows = match store.open_boxes() {
+            Ok(rows) => rows,
+            Err(e) => return vec![e.to_string()],
+        };
+        let mut out = Vec::new();
+        for row in rows {
+            let expired = row.lifecycle == BoxLifecycle::SetupFailed
+                && row
+                    .setup_failed_at
+                    .is_some_and(|at| at.as_millis().saturating_add(after_ms) <= now);
+            if !expired {
+                continue;
+            }
+            if draining() {
+                break;
+            }
+            let view = self.cx.for_box(row.user, || {
+                ops::close_failed::close_setup_failed(
+                    &self.cx,
+                    std::slice::from_ref(&row),
+                    CLOSE_REASON_SETUP_FAILED_EXPIRED,
+                    true,
+                )
+            });
+            out.extend(view.failed.into_iter().map(|f| {
+                format!(
+                    "could not close setup_failed Box {}: {}",
+                    f.r#box.as_str(),
+                    f.error
+                )
+            }));
+        }
         out
     }
 

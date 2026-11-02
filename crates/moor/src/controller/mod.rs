@@ -33,7 +33,6 @@ use drain::{Admitted, Drain, Handler};
 use inherit::Sockets;
 
 use crate::env::{Env, CONTROLLER_LOCK};
-use crate::runner_dir;
 use crate::vault::{Vault, VAULT_KEY};
 use crate::Moor;
 
@@ -85,7 +84,7 @@ pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u
     let mut fronts = running.supervise_fronts((shim, vec!["front-shim".into()]), &sink);
     let drain = Arc::new(Drain::default());
     drain.end_fronts_with_drain(fronts.terminator(running.drain_timeout));
-    settle::spawn(&running.env, running.settle_every, &drain, &sink);
+    settle::spawn(&running, &drain, &sink);
     settle::spawn_oauth(
         &running.env,
         &running.vault,
@@ -131,6 +130,8 @@ struct Running {
     env: Arc<Env>,
     /// Time between settle passes.
     settle_every: Duration,
+    /// How long a Box may stay `setup_failed` before the settle pass closes it; none keeps them.
+    close_setup_failed_after: Option<Duration>,
     /// How long a drain waits for in-flight requests.
     drain_timeout: Duration,
 }
@@ -158,12 +159,7 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
     };
     let env = check::open(env)?;
     let (vault, key) = open_vault(&env, config)?;
-    let runner = cfg
-        .runner_state_dir
-        .as_deref()
-        .map(|d| env.expand_home(Path::new(d)));
-    let runner = runner_dir::state(env.state_dir().as_deref(), runner);
-    let env = env.with_runner_state(runner);
+    let env = check::with_runner_state(env, &cfg);
     let (env, proxy) = front_proxy::plan(env.with_vault_key(key), &cfg.fronts).map_err(refused)?;
     let env = env.with_front_webhooks(
         cfg.fronts
@@ -195,6 +191,7 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         _state_lock: state_lock,
         env: Arc::new(env),
         settle_every: cfg.settle_every(),
+        close_setup_failed_after: cfg.close_setup_failed_after(),
         drain_timeout: cfg.drain_timeout(),
     })
 }

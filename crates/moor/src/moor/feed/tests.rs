@@ -14,6 +14,8 @@ use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::{BoxId, BoxName, ProviderId};
 
+mod expire;
+
 use super::Moor;
 use crate::cx::Cx;
 use crate::testing::driver::FakeDriver;

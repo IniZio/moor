@@ -624,11 +624,28 @@ because moor keeps them in the Proxy, not in the Box.
 | `socket` | path | `<state dir>/controller.sock` | The controller socket. `~` is allowed. |
 | `state_dir` | path | the same state directory as the CLI | The state directory. `~` is allowed. |
 | `settle_every_secs` | integer, above 0 | 5 | Seconds between passes that update each open Box's agent state. |
+| `close_setup_failed_after_secs` | integer | 86400 | Seconds a Box may stay `setup_failed` before the settle pass closes it. 0 turns the close off. See [Closing failed Boxes](#closing-failed-boxes). |
 | `drain_timeout_secs` | integer | 600 | Seconds a SIGTERM waits for in-flight requests. See [Stopping the controller](#stopping-the-controller). |
 | `runner_state_dir` | path | `<state dir>/machine-runner` | The machine runner's `--state-dir`. The host paths the runner's `box-mirror` and `box-put` name must resolve inside it; the controller refuses any other. `~` is allowed. |
 | `fronts` | map | empty | Fronts that each get their own socket, and that the controller runs when they have a `command`. |
 
 The controller refuses a config that has a `web`, `slack`, or `repos` key.
+
+### Closing failed Boxes
+
+A Box whose lifecycle is `setup_failed` holds a machine that nothing uses: its
+machine, clone or credentials could not be set up, so no one worked in it. The
+settle pass closes such a Box once `close_setup_failed_after_secs` have passed
+since setup failed, which is a day unless the config says otherwise. A retry
+that fails again restarts that clock. The close is forced, releases the
+machine, drops the Box's lease rows, and records a `closed` event with the
+reason `setup_failed_expired`. A Box that will not close is logged as a
+`settle:` line, and the next pass tries it again.
+
+Only a `setup_failed` Box is closed this way. A Ready Box whose `setup:` line
+failed is usable: it keeps its `setup_not_rerun` warning and is never closed
+by this pass. Set the key to 0 to keep failed Boxes until someone closes them
+by hand or with `moor close-failed`.
 
 ### Stopping the controller
 
