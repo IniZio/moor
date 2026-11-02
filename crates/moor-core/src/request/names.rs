@@ -69,6 +69,7 @@ impl Request {
             Self::EndSession(r) => bare(&r.box_name).into_iter().collect(),
             Self::OpenHostSession(r) => r.parent.map(Named::Session).into_iter().collect(),
             Self::Sessions(r) => r.parent.map(Named::Session).into_iter().collect(),
+            Self::Inspect(r) => target(&r.target),
             Self::Show(r) => r.target.iter().map(|t| Named::Box(t.clone())).collect(),
             Self::Run(r) => vec![named(&r.box_name)],
             Self::Wait(r) => vec![named(&r.box_name)],

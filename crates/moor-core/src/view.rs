@@ -3,6 +3,7 @@
 pub mod attach;
 pub mod binding;
 pub mod env;
+pub mod inspect;
 pub mod machine;
 pub mod node;
 pub mod progress;
@@ -10,8 +11,10 @@ pub mod run;
 pub mod session;
 pub mod sleep;
 pub mod steer;
+pub mod stuck;
 pub mod user;
 pub use attach::{AttachEnd, AttachView};
+pub use inspect::{InspectView, StuckView};
 pub use machine::{HeldMachineView, MachineHoldState};
 
 use crate::domain::box_state::BoxLifecycle;

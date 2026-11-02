@@ -3,10 +3,9 @@
 use crate::domain::box_state::BoxLifecycle;
 pub use crate::domain::turn::TurnOutcome;
 use crate::name::RunId;
-use serde::Serialize;
 
 /// One recorded fact about a box, serialized with its `kind` tag.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Event {
     /// The box row was created.
@@ -369,6 +368,9 @@ pub enum Event {
     /// The requester's agent profile resolved, or a step of fetching it failed.
     #[serde(untagged)]
     Profile(ProfileEvent),
+    /// The agent stalled, or reported again after it had.
+    #[serde(untagged)]
+    Stall(StallEvent),
     /// A timed part of setting the Box up ended, or a step after the clone began.
     #[serde(untagged)]
     Timing(TimingEvent),
@@ -376,7 +378,7 @@ pub enum Event {
 
 pub use boxes::box_events;
 pub use checked::CheckedCred;
-pub use kind::{ASSERTED_KINDS, EVENT_KINDS};
+pub use kind::{StallEvent, ASSERTED_KINDS, EVENT_KINDS};
 pub use machine::MachineEvent;
 pub use post_clone::{PostCloneStep, TimingEvent};
 pub use profile::{ProfileEvent, ProfileStep};

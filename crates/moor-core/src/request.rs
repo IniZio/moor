@@ -9,12 +9,16 @@ mod artifacts;
 pub use artifacts::{ArtifactReadReq, ArtifactsReq};
 mod attach;
 pub use attach::AttachReq;
+mod basic;
+pub use basic::{BoxReq, CloseReq, GateReq};
 mod binding;
 pub use binding::{BindSessionReq, SessionBindingReq};
 mod env;
 pub use env::EnvReq;
 mod files;
 pub use files::{BoxMirrorReq, BoxPutReq, CpReq};
+mod inspect;
+pub use inspect::InspectReq;
 mod host_session;
 pub use host_session::{EndHostSessionReq, OpenHostSessionReq, UpdateHostSessionReq};
 mod machine;
@@ -75,6 +79,8 @@ pub enum Request {
     Sessions(SessionsReq),
     /// Show boxes or one box.
     Show(ShowReq),
+    /// Look at a stuck-looking Box: its pane, recent messages and why it is stuck.
+    Inspect(InspectReq),
     /// Close a box.
     Close(CloseReq),
     /// Copy a file into a box.
@@ -194,6 +200,7 @@ impl Request {
             Self::ShowSession(_) => "show-session",
             Self::Sessions(_) => "sessions",
             Self::Show(_) => "show",
+            Self::Inspect(_) => "inspect",
             Self::Close(_) => "close",
             Self::Cp(_) => "cp",
             Self::BoxMirror(_) => "box-mirror",
@@ -356,40 +363,6 @@ pub struct ShowReq {
     /// Include pane contents.
     #[serde(default)]
     pub pane: bool,
-}
-
-/// Arguments of `close`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CloseReq {
-    /// The Box: by name, the newest open Box of that name, else the newest closed one.
-    #[serde(rename = "box")]
-    pub target: BoxTarget,
-    /// Close despite unfinished work.
-    #[serde(default)]
-    pub force: bool,
-}
-
-/// Arguments of commands that take only a box.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BoxReq {
-    /// Box name.
-    #[serde(rename = "box")]
-    pub box_name: BoxName,
-}
-
-/// Arguments of `gate`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct GateReq {
-    /// Commit sha.
-    pub sha: String,
-    /// Gate name.
-    pub name: String,
-    /// Command to run for the gate.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub command: Option<String>,
 }
 
 #[cfg(test)]

@@ -184,6 +184,18 @@ pub enum ExtraEvent {
         /// The last error.
         error: String,
     },
+    /// The agent's hook reported busy and then went quiet for too long.
+    AgentStalled {
+        /// What the agent was doing at its last report.
+        doing: Option<String>,
+        /// Whole seconds since that report.
+        quiet_secs: u64,
+    },
+    /// The agent reported again after a stall.
+    AgentResumed {
+        /// Whole seconds the agent had been quiet.
+        quiet_secs: u64,
+    },
     /// Reading the agent's pane for first-run prompts failed.
     AgentPromptCheckFailed {
         /// The agent's pane.

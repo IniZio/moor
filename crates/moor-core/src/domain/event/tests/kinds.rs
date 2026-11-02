@@ -126,3 +126,56 @@ fn every_event_kind_is_listed_once() {
         assert!(seen.insert(k), "{k} is listed twice");
     }
 }
+
+#[test]
+fn machine_events_carry_their_own_kind() {
+    let e = Event::Machine(MachineEvent::MachineForwardFailed {
+        port: Some(8081),
+        error: "refused".to_owned(),
+    });
+    assert_eq!(e.kind(), "machine_forward_failed");
+    assert_eq!(
+        serde_json::to_value(&e).unwrap(),
+        serde_json::json!({"kind": "machine_forward_failed", "port": 8081, "error": "refused"})
+    );
+    assert_eq!(
+        e.payload(),
+        serde_json::json!({"port": 8081, "error": "refused"})
+    );
+}
+
+/// `MachineWaiting` carries the place in line and `MachineRefused` only its reason.
+#[test]
+fn machine_waiting_and_refused_payloads() {
+    let waiting = Event::Machine(MachineEvent::MachineWaiting {
+        name: "mini".to_owned(),
+        position: 2,
+        reason: "full".to_owned(),
+    });
+    assert_eq!(waiting.kind(), "machine_waiting");
+    assert_eq!(
+        waiting.payload(),
+        serde_json::json!({"name": "mini", "position": 2, "reason": "full"})
+    );
+    let refused = Event::Machine(MachineEvent::MachineRefused {
+        reason: "no".to_owned(),
+    });
+    assert_eq!(refused.kind(), "machine_refused");
+    assert_eq!(refused.payload(), serde_json::json!({"reason": "no"}));
+}
+
+#[test]
+fn stall_events_carry_their_own_kind() {
+    let stalled = Event::Stall(StallEvent::AgentStalled {
+        doing: Some("Bash sleep".to_owned()),
+        quiet_secs: 700,
+    });
+    assert_eq!(stalled.kind(), "agent_stalled");
+    assert_eq!(
+        serde_json::to_value(&stalled).unwrap(),
+        serde_json::json!({"kind": "agent_stalled", "doing": "Bash sleep", "quiet_secs": 700})
+    );
+    let resumed = Event::Stall(StallEvent::AgentResumed { quiet_secs: 900 });
+    assert_eq!(resumed.kind(), "agent_resumed");
+    assert_eq!(resumed.payload(), serde_json::json!({"quiet_secs": 900}));
+}
