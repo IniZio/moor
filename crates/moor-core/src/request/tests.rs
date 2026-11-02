@@ -25,6 +25,7 @@ fn with_args() -> Vec<Request> {
             resume: false,
             repo: None,
             parent: None,
+            also: None,
             identity: None,
         }),
         Request::Run(RunReq {
@@ -430,6 +431,7 @@ fn parent_is_omitted_when_none() {
         resume: false,
         repo: None,
         parent: None,
+        also: None,
         identity: None,
     };
     assert!(!serde_json::to_string(&start)

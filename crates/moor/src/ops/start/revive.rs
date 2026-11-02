@@ -115,6 +115,7 @@ fn revive(
         resume: cause == "steer",
         repo: None,
         parent: None,
+        also: None,
         identity: None,
     };
     let settings = || settings_of(cx, row, &Flags::default());

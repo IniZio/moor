@@ -1,12 +1,14 @@
 //! What a new Box's repo holds at its base, read through the forge before any machine exists.
 
 use moor_core::config::proxy::GITHUB_SECRET;
+use moor_core::domain::decision::ListedRepo;
 use moor_core::seam::forge::{ForgeError, ForgeRepo, RepoAt};
 use moor_core::user::{SecretName, UserId};
-use moor_core::{ErrorDetail, ErrorKind, Secret, Warning};
+use moor_core::{ErrorDetail, ErrorKind, Secret, StartReq, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::store::BoxRow;
 use crate::vault::Vault;
 
 /// Reads `repo` at `base` as `user`'s GitHub account, with the tip of the Box `branch`.
@@ -43,6 +45,96 @@ pub(crate) fn read(
         });
     }
     Ok(at)
+}
+
+/// The repos listed beside `primary`, each with its `.moor.yaml` on its default branch.
+///
+/// # Errors
+/// Usage for a repo listed twice or two repos of one name, which would share a folder;
+/// Refused for a repo the account cannot push to; otherwise as [`fetch`].
+pub(crate) fn others(
+    cx: &Cx,
+    user: UserId,
+    primary: &ForgeRepo,
+    also: &[ForgeRepo],
+    branch: &str,
+) -> Result<Vec<ListedRepo>, CommandError> {
+    let mut seen = vec![primary];
+    for r in also {
+        if let Some(prev) = seen.iter().find(|s| s.name.eq_ignore_ascii_case(&r.name)) {
+            let why = if *prev == r {
+                format!("{r} is listed twice")
+            } else {
+                format!("{prev} and {r} are both named {}", r.name)
+            };
+            return Err(CommandError::new(ErrorKind::Usage, why)
+                .with_hint("each repo of a Box needs its own name, as each gets its own folder"));
+        }
+        seen.push(r);
+    }
+    also.iter()
+        .map(|r| {
+            let at = fetch(cx, user, r, None, branch)?;
+            if !at.can_push {
+                return Err(CommandError::new(
+                    ErrorKind::Refused,
+                    format!("your GitHub account cannot push to {r}"),
+                )
+                .with_hint("list only repos you can push to beside the first one"));
+            }
+            Ok(ListedRepo {
+                repo: r.clone(),
+                moor_yaml: at.files.moor_yaml,
+            })
+        })
+        .collect()
+}
+
+/// Refuses a start that lists other repos without a first one for them to sit beside.
+///
+/// # Errors
+/// Usage when `req` lists other repos and names no repo.
+pub(crate) fn check_first(req: &StartReq) -> Result<(), CommandError> {
+    if req.repo.is_some() || req.also.as_ref().is_none_or(Vec::is_empty) {
+        return Ok(());
+    }
+    Err(CommandError::new(
+        ErrorKind::Usage,
+        "other repos need a first repo to sit beside",
+    )
+    .with_hint("name it with --repo OWNER/NAME"))
+}
+
+/// Refuses a start of open Box `row` that lists other repos than the ones it holds.
+///
+/// # Errors
+/// Refused when `req` lists repos and they differ from the Box's.
+pub(crate) fn check_kept(req: &StartReq, row: &BoxRow) -> Result<(), CommandError> {
+    let Some(also) = &req.also else {
+        return Ok(());
+    };
+    let held: Vec<&ForgeRepo> = row
+        .repo
+        .iter()
+        .flat_map(|r| r.others.iter().map(|o| &o.repo))
+        .collect();
+    if also.iter().eq(held.iter().copied()) {
+        return Ok(());
+    }
+    let names: Vec<String> = held.iter().map(ToString::to_string).collect();
+    let holds = if names.is_empty() {
+        "no other repo".to_owned()
+    } else {
+        names.join(", ")
+    };
+    Err(CommandError::new(
+        ErrorKind::Refused,
+        format!(
+            "open Box {} holds {holds} beside its repo; its repos stay as it started",
+            row.name.as_str()
+        ),
+    )
+    .with_hint("close it and start a new Box to change its repos"))
 }
 
 /// Reads `repo` at `base` as `user`'s GitHub account, with no check on what it finds.

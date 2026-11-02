@@ -74,6 +74,7 @@ fn start_with_all_flags() {
             resume: true,
             repo: None,
             parent: None,
+            also: None,
             identity: None,
         })
     );
@@ -84,6 +85,18 @@ fn start_repo_flag() {
     assert!(matches!(
         req(&["start", "t", "--repo", "o/doorlock-app"]),
         Request::Start(s) if s.repo == Some(ForgeRepo::new("o", "doorlock-app"))
+    ));
+}
+
+#[test]
+fn start_also_flag_repeats_and_is_absent_when_unused() {
+    assert!(matches!(
+        req(&["start", "t", "--repo", "o/a", "--also", "o/lib", "--also", "p/deploy"]),
+        Request::Start(s) if s.also == Some(vec![ForgeRepo::new("o", "lib"), ForgeRepo::new("p", "deploy")])
+    ));
+    assert!(matches!(
+        req(&["start", "t", "--repo", "o/a"]),
+        Request::Start(s) if s.also.is_none()
     ));
 }
 

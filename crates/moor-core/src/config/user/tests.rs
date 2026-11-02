@@ -545,3 +545,14 @@ fn no_shared_node_is_a_valid_config() {
     assert_eq!(ok("nodes: {}").default_node(), None);
     assert!(ok("{}").nodes.is_empty());
 }
+
+#[test]
+fn box_also_lists_repos_by_owner_and_name() {
+    assert!(ok("").box_.also.is_empty());
+    let c = ok("box: {also: [o/lib, p/deploy]}");
+    assert_eq!(
+        c.box_.also,
+        vec![ForgeRepo::new("o", "lib"), ForgeRepo::new("p", "deploy")]
+    );
+    err("box: {also: [lib]}");
+}

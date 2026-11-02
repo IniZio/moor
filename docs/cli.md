@@ -62,6 +62,7 @@ The state directory holds `moor.db`. It is the first of `--state-dir`,
 | `--issue REF` | An issue reference for the Box. |
 | `--base REF` | The ref on GitHub the Box branch starts from. The default is the repo's default branch. |
 | `--repo OWNER/NAME\|URL` | The GitHub repo the Box clones, as `OWNER/NAME` or a github.com URL, instead of the current checkout's `origin`. |
+| `--also OWNER/NAME\|URL` | Another repo the Box clones beside the first one. Repeat it for more. Any use replaces `box.also` from your config. |
 | `--model MODEL` | The agent model. |
 | `--node NAME` | One of your nodes, or a shared one, in place of your default. See [Nodes](nodes.md). |
 | `--no-agent` | Do not start an agent. |
@@ -73,6 +74,18 @@ directory and sends that repo as `OWNER/NAME`. It refuses an `origin` that is
 not a github.com repo. Outside a checkout it sends no repo, and the Box starts
 with an empty workdir. The controller never reads a directory on its host for
 a start.
+
+### Several repos in one Box
+
+`--also` lists repos the Box clones beside the first, in order; the first stays
+primary and names the branch. Without `--also`, a start uses `box.also` from
+your config. MCP `start_box` takes the same list as `also`, where an empty list
+means none. Before any machine exists, the controller reads each listed repo's
+`.moor.yaml` on its default branch. It refuses a repo your GitHub account
+cannot push to, naming it, and refuses a repo listed twice or two repos with
+the same name, since each gets a folder of that name. Starting an open Box
+with a different list is refused: its repos stay as it started. A
+`.moor.yaml` cannot list repos.
 
 Before any machine exists, the controller reads these from the GitHub API
 with the requester's own `github` secret:

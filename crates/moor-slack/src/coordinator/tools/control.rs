@@ -201,6 +201,7 @@ fn start_request(b: &SlackBox, repo: &ForgeRepo, resume: bool) -> Request {
         resume,
         repo: Some(repo.clone()),
         parent: b.parent,
+        also: None,
         identity: None,
     })
 }

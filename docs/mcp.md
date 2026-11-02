@@ -105,7 +105,7 @@ read.
 | Tool | Arguments |
 | --- | --- |
 | `list_boxes` | none |
-| `start_box` | `repo` as `owner/name`; optional `name`, `prompt`, `base`, `node`, `wait` |
+| `start_box` | `repo` as `owner/name`; optional `also` (more repos, each `owner/name`), `name`, `prompt`, `base`, `node`, `wait` |
 | `box_status` | `box` |
 | `send_to_box` | `box`, `text` |
 | `close_box` | `box`; optional `force` |

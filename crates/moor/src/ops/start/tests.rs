@@ -19,6 +19,7 @@ use crate::testing::{box_name, driver::FakeDriver};
 
 mod activity;
 mod agent_install;
+mod also;
 mod asleep;
 mod branch_owner;
 mod cache;
@@ -157,6 +158,7 @@ fn req(name: &str) -> StartReq {
         resume: false,
         repo: None,
         parent: None,
+        also: None,
         identity: None,
     }
 }

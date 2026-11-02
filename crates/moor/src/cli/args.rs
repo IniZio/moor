@@ -222,6 +222,10 @@ struct StartArgs {
     /// Repo to clone, as OWNER/NAME or a github.com URL; the current checkout's origin when absent.
     #[arg(long, value_name = "OWNER/NAME|URL", value_parser = super::caller::repo_arg)]
     repo: Option<moor_core::seam::forge::ForgeRepo>,
+    /// Another repo to clone beside `--repo`, as OWNER/NAME or a github.com URL; repeat for
+    /// more. Any use replaces `box.also` from your config.
+    #[arg(long, value_name = "OWNER/NAME|URL", value_parser = super::caller::repo_arg)]
+    also: Vec<moor_core::seam::forge::ForgeRepo>,
     /// Agent model.
     #[arg(long)]
     model: Option<String>,
@@ -252,6 +256,7 @@ impl From<StartArgs> for StartReq {
             no_agent: a.no_agent,
             resume: a.resume,
             parent: a.parent.map(SessionId::new),
+            also: (!a.also.is_empty()).then_some(a.also),
             identity: None,
         }
     }
