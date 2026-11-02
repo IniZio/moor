@@ -160,6 +160,7 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         | Request::ShowSession(_)
         | Request::Sessions(_)
         | Request::Show(_)
+        | Request::Inspect(_)
         | Request::Close(_)
         | Request::Open(_)
         | Request::Sleep(_)
