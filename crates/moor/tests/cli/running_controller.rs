@@ -52,7 +52,8 @@ fn migration_files() -> Vec<(String, String)> {
         .map(|e| {
             let path = e.unwrap().path();
             let name = path.file_name().unwrap().to_str().unwrap().to_owned();
-            let version = name[1..name.find("__").unwrap()].parse().unwrap();
+            let (version, _) = name.strip_prefix('V').unwrap().split_once("__").unwrap();
+            let version = version.parse().unwrap();
             (version, name, std::fs::read_to_string(&path).unwrap())
         })
         .collect();
@@ -63,7 +64,8 @@ fn migration_files() -> Vec<(String, String)> {
 /// Writes a store one migration behind this build; returns that migration and the latest.
 fn store_one_behind(state: &Path) -> (i64, i64) {
     let files = migration_files();
-    let older: Vec<(&str, &str)> = files[..files.len() - 1]
+    let (_, older) = files.split_last().unwrap();
+    let older: Vec<(&str, &str)> = older
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect();

@@ -81,6 +81,18 @@ pub fn check(
     }
 }
 
+/// True when the file records every migration in `set`, so [`migrate`] would change nothing.
+pub fn is_latest(conn: &Connection, set: &[Migration]) -> Result<bool, Error> {
+    if !has_history(conn)? {
+        return Ok(false);
+    }
+    let found: Option<i64> =
+        conn.query_row(&format!("SELECT MAX(version) FROM {HISTORY}"), [], |r| {
+            r.get(0)
+        })?;
+    Ok(found == Some(latest(set)))
+}
+
 /// Bring the file to the latest migration in `set` inside one `BEGIN IMMEDIATE` transaction,
 /// so a second process opening the file waits for the whole run and never sees half of it.
 pub fn migrate(

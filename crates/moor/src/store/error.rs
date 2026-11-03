@@ -38,6 +38,21 @@ pub(crate) enum StoreError {
         /// What the migration run refused.
         source: moor_migrate::Error,
     },
+    /// The db needs migrating and a running controller owns its state dir.
+    #[error(
+        "the state database {} is older than this moor, and the controller running on its \
+         state dir (pid {pid}) owns it; set MOOR_CONTROLLER={socket} to talk to that \
+         controller, or stop it before running this moor on the state dir",
+        db.display()
+    )]
+    Owned {
+        /// The database file.
+        db: PathBuf,
+        /// The running controller's pid, as its lock file records it.
+        pid: String,
+        /// The running controller's socket, as its lock file records it.
+        socket: String,
+    },
     /// A box input or box input was illegal in the current state.
     #[error("{0}")]
     Illegal(#[from] moor_core::domain::Illegal),

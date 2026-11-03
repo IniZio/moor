@@ -1,5 +1,6 @@
 //! Schema creation and stored-value parsing helpers.
 
+use std::fs::{self, File, TryLockError};
 use std::path::Path;
 
 use moor_core::box_key::ControllerId;
@@ -9,6 +10,7 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
 use super::open::sibling;
 use super::{Store, StoreError};
+use crate::env::CONTROLLER_LOCK;
 
 impl Store {
     /// This state dir's cache key salt, made on first use and never changed.
@@ -249,6 +251,44 @@ pub(super) fn refuse_other_version(db: &Path) -> Result<(), StoreError> {
 /// Bring the db to the latest migration; one process migrates while others wait.
 pub(super) fn migrate(conn: &mut Connection, db: &Path) -> Result<(), StoreError> {
     moor_migrate::migrate(conn, &schema()?, legacy).map_err(|e| refused(db, e))
+}
+
+/// The state dir's controller lock when `db` needs migrating, to hold while it migrates, so a
+/// running controller's db never moves past the schema that controller and its Proxy know.
+pub(super) fn claim_migration(conn: &Connection, db: &Path) -> Result<Option<File>, StoreError> {
+    if moor_migrate::is_latest(conn, &schema()?).map_err(|e| refused(db, e))? {
+        return Ok(None);
+    }
+    owner_lock(db)
+}
+
+/// The controller lock beside `db`, held until dropped; none when this process is the
+/// controller holding it. Another holder is a refusal naming its pid and socket.
+fn owner_lock(db: &Path) -> Result<Option<File>, StoreError> {
+    let path = db.with_file_name(CONTROLLER_LOCK);
+    let file = File::options()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .read(true)
+        .open(&path)?;
+    match file.try_lock() {
+        Ok(()) => Ok(Some(file)),
+        Err(TryLockError::WouldBlock) => {
+            let held = fs::read_to_string(&path).unwrap_or_default();
+            let mut lines = held.lines();
+            let pid = lines.next().unwrap_or("?").to_owned();
+            if pid == std::process::id().to_string() {
+                return Ok(None);
+            }
+            Err(StoreError::Owned {
+                db: db.to_path_buf(),
+                pid,
+                socket: lines.next().unwrap_or("?").to_owned(),
+            })
+        }
+        Err(TryLockError::Error(e)) => Err(e.into()),
+    }
 }
 
 /// What a db without a migration history holds, read from its `meta` schema version.
