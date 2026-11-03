@@ -1,5 +1,7 @@
 //! Tests for session rows, the hook cache and `idle_since`.
 
+use crate::store::testing::open_store;
+use crate::store::testing::sqlite_only;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,7 +24,7 @@ use crate::store::{Store, StoreError};
 /// Open a store in a temp dir with a fake clock.
 fn open(dir: &Path) -> (Store, Arc<FakeClock>) {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    let store = Store::open(&dir.join("moor.db"), clock.clone()).unwrap();
+    let store = open_store(&dir.join("moor.db"), clock.clone());
     (store, clock)
 }
 
@@ -185,6 +187,7 @@ fn has_session_stays_true_once_a_session_began() {
 
 #[test]
 fn end_session_records_outcome_once() {
+    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
     let id = add(&store, "t");
@@ -236,6 +239,7 @@ fn begin_session_on_unknown_box_is_not_found() {
 
 #[test]
 fn hook_cache_round_trips_every_kind_and_keeps_the_latest() {
+    sqlite_only!("uses SQLite's JSON functions, not yet written for Postgres");
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
     let id = add(&store, "t");
@@ -324,6 +328,7 @@ fn rejected_step_leaves_idle_since_unchanged() {
 
 #[test]
 fn hook_cache_reads_a_legacy_blocked_row_as_its_message() {
+    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = add(&store, "t");
@@ -395,6 +400,7 @@ fn begin_session_records_the_current_box_session() {
 
 #[test]
 fn hook_follows_the_current_session() {
+    sqlite_only!("uses SQLite's JSON functions, not yet written for Postgres");
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = add(&store, "t");
@@ -430,6 +436,7 @@ fn hook_follows_the_current_session() {
 
 #[test]
 fn a_hook_report_keeps_its_doing_line_through_the_cache() {
+    sqlite_only!("uses SQLite's JSON functions, not yet written for Postgres");
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = working(&store, "t");
@@ -448,6 +455,7 @@ fn a_hook_report_keeps_its_doing_line_through_the_cache() {
 
 #[test]
 fn a_waiting_hook_keeps_what_it_waits_on() {
+    sqlite_only!("uses SQLite's JSON functions, not yet written for Postgres");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let id = add(&store, "t");

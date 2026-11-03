@@ -62,7 +62,8 @@ impl Store {
         let conn = self.writer();
         conn.execute(
             "INSERT INTO artifact_cursors (box, through) VALUES (?1, ?2) \
-             ON CONFLICT(box) DO UPDATE SET through = MAX(through, excluded.through)",
+             ON CONFLICT(box) DO UPDATE SET through = CASE WHEN excluded.through > artifact_cursors.through \
+             THEN excluded.through ELSE artifact_cursors.through END",
             params![id.get(), through],
         )?;
         drop(conn);

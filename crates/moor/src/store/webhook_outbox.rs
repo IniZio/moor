@@ -7,7 +7,9 @@ use moor_core::user::UserId;
 use moor_core::BoxId;
 
 use super::{Store, StoreError};
-use crate::store::db::{params, DbExt as _, OptionalExtension as _, TransactionBehavior, Tx};
+use crate::store::db::{
+    params, Backend, Db as _, DbExt as _, OptionalExtension as _, TransactionBehavior, Tx,
+};
 
 /// Longest `last_error` kept, in characters.
 const MAX_ERROR_CHARS: usize = 200;
@@ -44,10 +46,16 @@ pub(crate) struct ClaimedDelivery {
 /// Queues event `event` of kind `kind` on Box `id` for every active webhook of the Box's user
 /// that names that kind, inside the event's own transaction.
 pub(super) fn enqueue(tx: &Tx<'_>, id: BoxId, event: i64, kind: &str) -> Result<(), StoreError> {
+    let kinds = match tx.backend() {
+        Backend::Sqlite => "json_each(w.events)",
+        Backend::Postgres => "json_array_elements_text(w.events::json) AS e(value)",
+    };
     tx.execute(
-        "INSERT INTO webhook_deliveries (webhook, event) SELECT w.id, ?2 FROM user_webhooks w \
-         JOIN boxes b ON b.user = w.user WHERE b.id = ?1 AND w.state = 'active' \
-         AND EXISTS (SELECT 1 FROM json_each(w.events) WHERE value = ?3) ORDER BY w.id",
+        &format!(
+            "INSERT INTO webhook_deliveries (webhook, event) SELECT w.id, ?2 FROM user_webhooks w \
+             JOIN boxes b ON b.user = w.user WHERE b.id = ?1 AND w.state = 'active' \
+             AND EXISTS (SELECT 1 FROM {kinds} WHERE value = ?3) ORDER BY w.id"
+        ),
         params![id.get(), event, kind],
     )?;
     Ok(())

@@ -1,6 +1,7 @@
 //! Tests for the Box lease records.
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
+use crate::store::testing::open_store;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -26,7 +27,7 @@ const ALL: [LeaseKind; 9] = [
 
 fn open(dir: &Path) -> Store {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    Store::open(&dir.join("moor.db"), clock).unwrap()
+    open_store(&dir.join("moor.db"), clock)
 }
 
 fn add(store: &Store, name: &str) -> BoxId {

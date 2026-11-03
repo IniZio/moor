@@ -5,6 +5,7 @@
     reason = "test assertions index claimed rows"
 )]
 
+use crate::store::testing::open_store;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -29,7 +30,7 @@ struct World {
 fn world() -> World {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
-    let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
+    let store = open_store(&dir.path().join("moor.db"), clock.clone());
     let vault = Vault::load_or_create(&dir.path().join("vault.key")).unwrap();
     World {
         _dir: dir,

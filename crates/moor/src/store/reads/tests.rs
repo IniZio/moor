@@ -1,5 +1,7 @@
 //! Tests for name lookups and live-box scans.
 
+use crate::store::testing::open_store;
+use crate::store::testing::sqlite_only;
 use moor_core::decide::turn::SteerMark;
 use std::sync::Arc;
 
@@ -18,7 +20,7 @@ use super::Store;
 /// Open a store in a temp dir.
 fn open(dir: &std::path::Path) -> Store {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1)));
-    Store::open(&dir.join("moor.db"), clock).unwrap()
+    open_store(&dir.join("moor.db"), clock)
 }
 
 /// Insert a box by name.
@@ -124,6 +126,7 @@ fn event(store: &Store, id: BoxId, kind: &str, payload: &str, ts: i64) -> i64 {
 
 #[test]
 fn unanswered_steer_is_the_newest_steer_without_turn_done() {
+    sqlite_only!("uses SQLite's JSON functions, not yet written for Postgres");
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let id = add(&store, "a");
@@ -141,6 +144,7 @@ fn unanswered_steer_is_the_newest_steer_without_turn_done() {
 
 #[test]
 fn unanswered_steer_reads_the_hook_time_before_the_send() {
+    sqlite_only!("uses SQLite's JSON functions, not yet written for Postgres");
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let id = add(&store, "a");
@@ -163,6 +167,7 @@ fn unanswered_steer_reads_the_hook_time_before_the_send() {
 
 #[test]
 fn answered_newest_steer_yields_none_even_with_older_unanswered() {
+    sqlite_only!("uses SQLite's JSON functions, not yet written for Postgres");
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let id = add(&store, "a");
@@ -180,6 +185,7 @@ fn answered_newest_steer_yields_none_even_with_older_unanswered() {
 
 #[test]
 fn no_steer_yields_none() {
+    sqlite_only!("uses SQLite's JSON functions, not yet written for Postgres");
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let id = add(&store, "a");

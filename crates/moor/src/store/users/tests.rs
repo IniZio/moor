@@ -1,5 +1,6 @@
 //! Tests for users, identities and sealed user secrets.
 
+use crate::store::testing::sqlite_only;
 use moor_core::user::{Email, Identity, SecretName, UserId};
 use moor_core::Secret;
 
@@ -113,6 +114,7 @@ fn a_known_identity_never_takes_an_email_another_user_holds() {
 
 #[test]
 fn the_database_refuses_two_users_with_one_email() {
+    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     store
@@ -249,6 +251,7 @@ fn setting_a_secret_again_replaces_it() {
 
 #[test]
 fn a_sealed_value_copied_into_another_row_is_refused() {
+    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let vault = Vault::load_or_create(&dir.path().join("vault.key")).unwrap();

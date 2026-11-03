@@ -1,5 +1,7 @@
 //! Tests for tunnel park requests and acks.
 
+use crate::store::testing::open_store;
+use crate::store::testing::sqlite_only;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -16,7 +18,7 @@ use crate::testing::rng::FakeRng;
 /// Open a store in a temp dir.
 fn open(dir: &Path) -> Store {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    Store::open(&dir.join("moor.db"), clock).unwrap()
+    open_store(&dir.join("moor.db"), clock)
 }
 
 /// Insert a box by name.
@@ -128,6 +130,7 @@ fn boxes_are_isolated() {
 
 #[test]
 fn unparsable_values_are_corrupt() {
+    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let t = add(&store, "a");

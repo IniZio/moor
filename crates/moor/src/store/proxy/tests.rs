@@ -1,5 +1,7 @@
 //! Tests for proxy rows, the supervisor lease and proxy events.
 
+use crate::store::testing::open_store;
+use crate::store::testing::sqlite_only;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -23,7 +25,7 @@ const JUST_UNDER: Duration = Duration::from_millis(29_999);
 /// Open a store in a temp dir with a fake clock.
 fn open(dir: &Path) -> (Store, Arc<FakeClock>) {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    let store = Store::open(&dir.join("moor.db"), clock.clone()).unwrap();
+    let store = open_store(&dir.join("moor.db"), clock.clone());
     (store, clock)
 }
 
@@ -112,6 +114,7 @@ fn reserve_skips_port_held_by_another_box() {
 
 #[test]
 fn rereserve_keeps_port_and_resets_the_row() {
+    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let (store, clock, id) = reserved(dir.path());
     let first = store.proxy(id).unwrap().unwrap().box_port;

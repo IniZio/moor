@@ -104,7 +104,7 @@ dev-db:
 
 unit-pg:
 	MOOR_TEST_POSTGRES_URL='$(PG_URL)' cargo nextest run --workspace --all-targets --locked --run-ignored only -E 'package(moor-schema)'
-	MOOR_TEST_POSTGRES_URL='$(PG_URL)' cargo nextest run --locked -p moor --lib -E 'test(/^store::db::/)'
+	MOOR_TEST_POSTGRES_URL='$(PG_URL)' cargo nextest run --locked -p moor --lib -E 'test(/^store::/)'
 
 overlap:
 	@set -f; tools/stack-overlap.sh --pretty '$(BASE)' $(if $(HEAD),'$(HEAD)') $(if $(FILES),--files $(FILES))

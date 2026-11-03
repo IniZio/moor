@@ -4,6 +4,8 @@
     reason = "tests time real elapsed durations"
 )]
 
+use crate::store::testing::open_store;
+use crate::store::testing::sqlite_only;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -39,7 +41,7 @@ use moor_core::name::NodeName;
 /// Open a store in a temp dir with a fake clock.
 pub(super) fn open(dir: &Path) -> (Store, Arc<FakeClock>) {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
-    let store = Store::open(&dir.join("state").join("moor.db"), clock.clone()).unwrap();
+    let store = open_store(&dir.join("state").join("moor.db"), clock.clone());
     (store, clock)
 }
 
@@ -88,6 +90,7 @@ fn count(path: &Path, table: &str) -> i64 {
 
 #[test]
 fn open_creates_wal_file_with_schema_version() {
+    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("state").join("moor.db");
     drop(open(dir.path()));
@@ -110,6 +113,7 @@ fn open_creates_wal_file_with_schema_version() {
 
 #[test]
 fn primary_session_row_exists_for_each_box() {
+    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let id = new_box(&store, "t");
@@ -126,6 +130,7 @@ fn primary_session_row_exists_for_each_box() {
 
 #[test]
 fn a_state_dir_from_another_schema_version_is_refused_and_kept() {
+    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("state").join("moor.db");
     let (store, _) = open(dir.path());
@@ -156,6 +161,7 @@ fn a_state_dir_from_another_schema_version_is_refused_and_kept() {
 
 #[test]
 fn a_state_dir_from_before_the_cloned_event_is_refused() {
+    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("state").join("moor.db");
     drop(open(dir.path()));
@@ -234,6 +240,7 @@ fn full_lifecycle_rows_and_events() {
 
 #[test]
 fn new_box_with_illegal_box_input_leaves_nothing() {
+    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let d = insert("t")
@@ -290,6 +297,7 @@ fn unknown_existing_id_is_not_found() {
 
 #[test]
 fn readers_are_not_blocked_by_an_open_writer() {
+    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let id = new_box(&store, "t");
@@ -321,6 +329,7 @@ fn readers_are_not_blocked_by_an_open_writer() {
 
 #[test]
 fn box_fields_without_a_box_roll_back_the_box_step() {
+    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let id = new_box(&store, "t");
@@ -480,11 +489,10 @@ fn two_boxes_racing_for_the_last_slot_cannot_both_be_admitted() {
     let (a, b) = (new_box(&store, "a"), new_box(&store, "b"));
     // A second store on the same file stands in for a second `moor start` process:
     // only SQLite's write lock, not the in-process writer mutex, can separate the two.
-    let rival_store = Store::open(
+    let rival_store = open_store(
         &dir.path().join("state").join("moor.db"),
         Arc::new(FakeClock::new(Ts::from_millis(1_000_000))),
-    )
-    .unwrap();
+    );
     let node = node_p();
     let (lock_held, rival_may_claim) = std::sync::mpsc::channel::<()>();
     let admitted = std::thread::scope(|s| {

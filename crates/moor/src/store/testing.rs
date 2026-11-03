@@ -18,6 +18,22 @@ const POSTGRES_URL: &str = "MOOR_TEST_POSTGRES_URL";
 /// How long a test's schema is kept before a later test drops it.
 const KEEP_SECS: u64 = 3600;
 
+/// Whether store tests run on Postgres.
+pub(crate) fn on_postgres() -> bool {
+    std::env::var_os(POSTGRES_URL).is_some()
+}
+
+/// Skip the rest of the calling test when store tests run on Postgres, printing why.
+macro_rules! sqlite_only {
+    ($why:literal) => {
+        if $crate::store::testing::on_postgres() {
+            eprintln!("skipped on Postgres: {}", $why);
+            return;
+        }
+    };
+}
+pub(crate) use sqlite_only;
+
 /// A store for a test: the `SQLite` file `path`, or on Postgres the schema for `path`, with
 /// `path`'s directory as its state dir.
 pub(crate) fn open_store(path: &Path, clock: Arc<dyn Clock>) -> Store {

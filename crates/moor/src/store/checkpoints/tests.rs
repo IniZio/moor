@@ -1,5 +1,6 @@
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
+use crate::store::testing::open_store;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -10,7 +11,6 @@ use moor_core::ProviderId;
 
 use super::evict::{EvictReason, Evictable};
 use super::Lineage;
-use crate::store::Store;
 use crate::testing::clock::FakeClock;
 use crate::testing::cx::REQUESTER_USER;
 
@@ -45,7 +45,7 @@ fn of(repo: &str, keys: &[LayerKey]) -> Lineage {
 fn a_layer_s_checkpoint_is_found_by_provider_and_key_and_its_use_is_kept() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
+    let store = open_store(&dir.path().join("moor.db"), clock.clone());
     let keys = chain(REQUESTER_USER, "o/n", "abc", &["a".to_owned()]);
     let local = ProviderId::new("local");
     store
@@ -77,7 +77,7 @@ fn a_layer_s_checkpoint_is_found_by_provider_and_key_and_its_use_is_kept() {
 fn a_layer_saved_again_replaces_its_checkpoint() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
+    let store = open_store(&dir.path().join("moor.db"), clock);
     let keys = chain(REQUESTER_USER, "o/n", "abc", &[]);
     let key = &keys[0];
     let local = ProviderId::new("local");
@@ -97,7 +97,7 @@ fn a_layer_saved_again_replaces_its_checkpoint() {
 fn checkpoints_go_superseded_chains_first_then_least_recently_used() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
+    let store = open_store(&dir.path().join("moor.db"), clock.clone());
     let local = ProviderId::new("local");
     let old = chain(REQUESTER_USER, "o/n", "aaa", &["a".to_owned()]);
     let other = chain(REQUESTER_USER, "o/other", "aaa", &[]);
@@ -141,7 +141,7 @@ fn checkpoints_go_superseded_chains_first_then_least_recently_used() {
 fn a_checkpoint_goes_only_once_none_is_a_delta_over_it() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
+    let store = open_store(&dir.path().join("moor.db"), clock.clone());
     let local = ProviderId::new("local");
     let keys = chain(
         REQUESTER_USER,
@@ -182,7 +182,7 @@ fn a_checkpoint_goes_only_once_none_is_a_delta_over_it() {
 fn a_claimed_checkpoint_stays_tracked_but_unusable_until_forgotten() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
+    let store = open_store(&dir.path().join("moor.db"), clock);
     let local = ProviderId::new("local");
     let keys = chain(REQUESTER_USER, "o/n", "aaa", &[]);
     store
@@ -207,7 +207,7 @@ fn a_claimed_checkpoint_stays_tracked_but_unusable_until_forgotten() {
 fn a_layer_saved_again_while_its_old_checkpoint_goes_tracks_both() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
+    let store = open_store(&dir.path().join("moor.db"), clock);
     let local = ProviderId::new("local");
     let keys = chain(REQUESTER_USER, "o/n", "aaa", &[]);
     let lineage = of("o/n", &keys);
@@ -235,7 +235,7 @@ fn a_layer_saved_again_while_its_old_checkpoint_goes_tracks_both() {
 fn an_unclaimed_checkpoint_is_used_again_and_not_forgotten() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
+    let store = open_store(&dir.path().join("moor.db"), clock);
     let local = ProviderId::new("local");
     let keys = chain(REQUESTER_USER, "o/n", "aaa", &[]);
     store

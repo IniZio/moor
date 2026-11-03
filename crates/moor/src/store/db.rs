@@ -11,6 +11,7 @@ use std::sync::MutexGuard;
 use rusqlite::types::{FromSql, FromSqlError, Value, ValueRef};
 use rusqlite::{Connection, OpenFlags};
 
+pub(crate) use moor_migrate::Backend;
 pub(crate) use rusqlite::{params, ToSql, TransactionBehavior};
 
 mod params;
@@ -92,6 +93,8 @@ pub(crate) trait Db {
     fn execute_values(&self, sql: &str, params: Vec<Value>) -> Result<usize>;
     /// Run `sql` with `params` bound; every row it returned.
     fn query_values(&self, sql: &str, params: Vec<Value>) -> Result<Rows>;
+    /// The database it runs on, for the few statements written per backend.
+    fn backend(&self) -> Backend;
 }
 
 /// A column of a row: its position, or its name.
@@ -347,6 +350,13 @@ impl Db for Conn {
             Self::Postgres(c) => c.query(sql, &params),
         }
     }
+
+    fn backend(&self) -> Backend {
+        match self {
+            Self::Sqlite(_) => Backend::Sqlite,
+            Self::Postgres(_) => Backend::Postgres,
+        }
+    }
 }
 
 impl Db for Tx<'_> {
@@ -363,6 +373,13 @@ impl Db for Tx<'_> {
             Self::Postgres(tx) => tx.query(sql, &params),
         }
     }
+
+    fn backend(&self) -> Backend {
+        match self {
+            Self::Sqlite(_) => Backend::Sqlite,
+            Self::Postgres(_) => Backend::Postgres,
+        }
+    }
 }
 
 impl Db for MutexGuard<'_, Conn> {
@@ -372,6 +389,10 @@ impl Db for MutexGuard<'_, Conn> {
 
     fn query_values(&self, sql: &str, params: Vec<Value>) -> Result<Rows> {
         (**self).query_values(sql, params)
+    }
+
+    fn backend(&self) -> Backend {
+        (**self).backend()
     }
 }
 

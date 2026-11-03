@@ -1,5 +1,6 @@
 //! Tests for versioned Artifact storage.
 
+use crate::store::testing::open_store;
 use std::fs;
 use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::Path;
@@ -16,7 +17,7 @@ use crate::testing::clock::FakeClock;
 /// Open a store in `dir` with a fake clock.
 fn open(dir: &Path) -> Store {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    Store::open(&dir.join("moor.db"), clock).unwrap()
+    open_store(&dir.join("moor.db"), clock)
 }
 
 /// Insert a box by name.

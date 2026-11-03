@@ -1,5 +1,6 @@
 //! Tests for recording proxy audit events.
 
+use crate::store::testing::open_store;
 use std::sync::Arc;
 
 use moor_core::domain::decision::{Decision, NewBox};
@@ -14,7 +15,7 @@ use crate::testing::clock::FakeClock;
 /// A store in a temp dir with one box.
 fn setup(dir: &std::path::Path) -> (Store, BoxId) {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    let store = Store::open(&dir.join("moor.db"), clock).unwrap();
+    let store = open_store(&dir.join("moor.db"), clock);
     let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: None,

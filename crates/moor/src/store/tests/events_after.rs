@@ -1,3 +1,4 @@
+use crate::store::testing::sqlite_only;
 use std::path::Path;
 
 use moor_core::domain::decision::{Decision, ExtraEvent};
@@ -71,6 +72,7 @@ fn events_after_limit_caps_and_resuming_leaves_no_gap() {
 
 #[test]
 fn events_after_names_the_session_started_at_or_before_each_event() {
+    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = new_box(&store, "alpha");
@@ -112,6 +114,7 @@ fn events_after_names_the_old_session_for_its_end_in_a_same_millisecond_relaunch
 
 #[test]
 fn events_after_puts_an_event_at_a_session_start_in_that_session() {
+    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = new_box(&store, "alpha");

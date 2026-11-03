@@ -1,9 +1,11 @@
+use crate::store::testing::sqlite_only;
 use moor_core::domain::event::TurnOutcome;
 
 use super::{new_box, open};
 
 #[test]
 fn a_steer_gets_one_turn_done_however_often_it_is_recorded() {
+    sqlite_only!("uses SQLite's JSON functions, not yet written for Postgres");
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = new_box(&store, "alpha");

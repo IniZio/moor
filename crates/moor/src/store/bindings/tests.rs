@@ -2,6 +2,7 @@
 
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
+use crate::store::testing::sqlite_only;
 use moor_core::BoxId;
 
 use crate::store::db::DbExt as _;
@@ -20,6 +21,7 @@ fn box_session(store: &Store, id: BoxId) -> i64 {
 
 #[test]
 fn host_session_binds_and_resolves_back() {
+    sqlite_only!("orders by SQLite's rowid, which Postgres tables lack");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let session = store.open_host_session("/w", None, None).unwrap();
@@ -34,6 +36,7 @@ fn host_session_binds_and_resolves_back() {
 
 #[test]
 fn box_session_binds_with_its_box_name() {
+    sqlite_only!("orders by SQLite's rowid, which Postgres tables lack");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let id = new_box(&store, "acme/1");
@@ -46,6 +49,7 @@ fn box_session_binds_with_its_box_name() {
 
 #[test]
 fn unbound_key_resolves_to_nothing() {
+    sqlite_only!("orders by SQLite's rowid, which Postgres tables lack");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     assert!(store.binding("cli", "missing").unwrap().is_none());
@@ -53,6 +57,7 @@ fn unbound_key_resolves_to_nothing() {
 
 #[test]
 fn second_bind_on_a_key_keeps_the_first() {
+    sqlite_only!("orders by SQLite's rowid, which Postgres tables lack");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let first = store.open_host_session("/a", None, None).unwrap();
@@ -66,6 +71,7 @@ fn second_bind_on_a_key_keeps_the_first() {
 
 #[test]
 fn unknown_session_is_refused() {
+    sqlite_only!("orders by SQLite's rowid, which Postgres tables lack");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let err = store.bind_session("cli", "k1", 9999, "U1").unwrap_err();
@@ -75,6 +81,7 @@ fn unknown_session_is_refused() {
 
 #[test]
 fn ended_session_is_refused() {
+    sqlite_only!("orders by SQLite's rowid, which Postgres tables lack");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let session = store.open_host_session("/w", None, None).unwrap();
@@ -96,6 +103,7 @@ fn end(store: &Store, session: i64) {
 
 #[test]
 fn a_second_session_binds_once_the_first_has_ended() {
+    sqlite_only!("orders by SQLite's rowid, which Postgres tables lack");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let first = store.open_host_session("/a", None, None).unwrap();
@@ -110,6 +118,7 @@ fn a_second_session_binds_once_the_first_has_ended() {
 
 #[test]
 fn every_session_a_key_had_keeps_its_binding() {
+    sqlite_only!("orders by SQLite's rowid, which Postgres tables lack");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let first = store.open_host_session("/a", None, None).unwrap();
@@ -128,6 +137,7 @@ fn every_session_a_key_had_keeps_its_binding() {
 
 #[test]
 fn with_no_live_session_the_newest_binding_is_found() {
+    sqlite_only!("orders by SQLite's rowid, which Postgres tables lack");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let first = store.open_host_session("/a", None, None).unwrap();
@@ -141,6 +151,7 @@ fn with_no_live_session_the_newest_binding_is_found() {
 
 #[test]
 fn binding_the_same_session_again_changes_nothing() {
+    sqlite_only!("orders by SQLite's rowid, which Postgres tables lack");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let session = store.open_host_session("/a", None, None).unwrap();
