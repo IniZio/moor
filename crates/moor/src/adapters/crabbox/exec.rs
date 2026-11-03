@@ -135,6 +135,16 @@ pub(super) fn touching_lease<T>(
     command: impl FnOnce() -> T,
 ) -> T {
     let _ = touch::heartbeat(cb, handle);
+    while_touching(cb, handle, command)
+}
+
+/// Runs `command`, touching the lease of the Box behind `handle` every `cb.touch_every` while
+/// it runs.
+pub(super) fn while_touching<T>(
+    cb: &Crabbox,
+    handle: &BoxHandle,
+    command: impl FnOnce() -> T,
+) -> T {
     let (ended, wait) = mpsc::channel::<()>();
     thread::scope(|s| {
         s.spawn(move || {

@@ -1,6 +1,9 @@
 //! Runs one command in a Box with its stdio streamed byte for byte over ssh, without a terminal
 //! or an escape character, so no byte the caller sends is taken as an ssh command.
 
+use std::io::{self, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Once;
 use std::time::Duration;
 
 use moor_core::boxscript::quote;
@@ -8,9 +11,9 @@ use moor_core::name::BoxHandle;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Piped, Pipes, ProcError, ProcSpec, Stdin, Tool};
 
-use super::exec::{env_file, touching_lease};
+use super::exec::{env_file, while_touching};
 use super::peek::ssh_target;
-use super::{link, Crabbox, DIAL_WITHIN};
+use super::{link, touch, Crabbox, DIAL_WITHIN};
 
 /// How long the ssh dial and the kill of a left command may take.
 const SHORT: Duration = Duration::from_secs(30);
@@ -34,6 +37,10 @@ test "$r" -eq 0 || { echo "moor: the command env did not load" >&2; exit 1; }
 "$@""#;
 
 /// Runs `spec` in the Box behind `handle` with its stdio on `pipes`.
+///
+/// The Box's shared ssh master holds the command's stdio, so killing the local client neither
+/// ends the command nor closes its output: once the caller is gone the command's process group
+/// is hung up, which ends the session and closes the output.
 pub(super) fn run(
     cb: &Crabbox,
     handle: &BoxHandle,
@@ -62,24 +69,58 @@ pub(super) fn run(
         .args(link::args(cb, handle, ssh_target(cb, handle)?)?)
         .arg(remote)
         .stdin(Stdin::Bytes(env));
-    let ended = touching_lease(cb, handle, || cb.proc.run_piped(&proc, pipes));
+    let Pipes {
+        stdin,
+        stdout,
+        stderr,
+        stop,
+    } = pipes;
+    let failed = AtomicBool::new(false);
+    let hung_up = Once::new();
+    let left = || {
+        let gone = stop() || failed.load(Ordering::SeqCst);
+        if gone {
+            hung_up.call_once(|| kill(cb, handle, &group));
+        }
+        gone
+    };
+    let pipes = Pipes {
+        stdin,
+        stdout: &mut Watched(stdout, &failed),
+        stderr: &mut Watched(stderr, &failed),
+        stop: &left,
+    };
+    let _ = touch::send_detached(cb, handle);
+    let ended = while_touching(cb, handle, || cb.proc.run_piped(&proc, pipes));
     match ended {
         Ok(Piped {
             code: Some(code),
             stopped: false,
         }) => Ok(ExecOutcome::Exited { code }),
-        Ok(Piped { stopped, .. }) => {
-            if stopped {
-                kill(cb, handle, &group);
-            }
-            Ok(ExecOutcome::Interrupted)
-        }
+        Ok(_) => Ok(ExecOutcome::Interrupted),
         Err(ProcError::Spawn(e)) => Err(DriverError::Unavailable(format!(
             "ssh could not be started: {e}"
         ))),
         Err(e) => Err(DriverError::Failed {
             summary: e.to_string(),
         }),
+    }
+}
+
+/// An output stream of the command that marks `failed` once the caller stops taking it.
+struct Watched<'a, 'w>(&'w mut (dyn Write + Send), &'a AtomicBool);
+
+impl Write for Watched<'_, '_> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .write(buf)
+            .inspect_err(|_| self.1.store(true, Ordering::SeqCst))
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.0
+            .flush()
+            .inspect_err(|_| self.1.store(true, Ordering::SeqCst))
     }
 }
 

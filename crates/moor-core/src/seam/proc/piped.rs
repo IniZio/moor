@@ -68,7 +68,7 @@ pub fn pump(mut child: Child, preamble: Vec<u8>, pipes: Pipes<'_>) -> io::Result
         let (gone, stopped, child) = (&gone, &stopped, &child);
         s.spawn(move || {
             while wait.recv_timeout(STOP_POLL) == Err(RecvTimeoutError::Timeout) {
-                if gone.load(Ordering::SeqCst) || stop() {
+                if stop() || gone.load(Ordering::SeqCst) {
                     stopped.store(true, Ordering::SeqCst);
                     let _ = lock(child).kill();
                     return;
