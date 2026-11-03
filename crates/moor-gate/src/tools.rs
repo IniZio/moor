@@ -21,6 +21,7 @@ use serde_json::Value;
 use crate::mcp::{Auth, READ, WRITE};
 use crate::{rewrite, Person};
 
+mod artifact;
 mod events;
 pub(crate) use events::{fetch, EventsArgs};
 pub(crate) use listen::client_down;

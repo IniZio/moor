@@ -77,6 +77,9 @@ pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>, stre
         (Some("GET"), "/events") if gate.mcp.is_some() => {
             crate::events_http::serve(stream, req.path.unwrap_or_default(), &req, gate, streams);
         }
+        (Some("GET"), p) if p.starts_with(crate::artifacts_http::PREFIX) && gate.mcp.is_some() => {
+            crate::artifacts_http::serve(stream, p, &req, gate);
+        }
         (_, p) if behind_sign_in(p) && login.is_some() => {
             browser(stream, leftover, &req, gate, login);
         }

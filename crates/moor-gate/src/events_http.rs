@@ -12,7 +12,7 @@ use crate::http::header;
 use crate::mcp::READ;
 use crate::streams::Streams;
 use crate::tools::{fetch, EventsArgs};
-use crate::{log, Gate};
+use crate::{log, Gate, Mcp, Person};
 
 /// Answers one `GET /events` whose request line target is `target`.
 pub(crate) fn serve(
@@ -22,29 +22,9 @@ pub(crate) fn serve(
     gate: &Gate,
     streams: &Streams,
 ) {
-    let Some(mcp) = &gate.mcp else {
+    let Some((mcp, person)) = reader(&mut stream, req, gate, "/events") else {
         return;
     };
-    let authorization = header(req, "authorization");
-    let (person, scopes) = match mcp.authenticate(authorization, gate) {
-        Ok(who) => who,
-        Err(why) => {
-            if authorization.is_some() {
-                log(&format!("/events refused a token: {why}"));
-            }
-            let challenge = mcp.challenge();
-            return reply(
-                &mut stream,
-                "401 Unauthorized",
-                Some(&challenge),
-                &error(&why),
-            );
-        }
-    };
-    if !scopes.iter().any(|s| s == READ) {
-        let why = format!("this needs the {READ} scope");
-        return reply(&mut stream, "403 Forbidden", None, &error(&why));
-    }
     let query = target.split_once('?').map_or("", |(_, q)| q);
     let args = match parse(query) {
         Ok(args) => args,
@@ -57,6 +37,35 @@ pub(crate) fn serve(
         Err(why) if why.down => crate::http::unavailable(&mut stream),
         Err(why) => reply(&mut stream, "502 Bad Gateway", None, &error(&why.why)),
     }
+}
+
+/// Who a request to `route` speaks for when its token grants `moor:read`; otherwise answers
+/// 401 or 403 and gives none.
+pub(crate) fn reader<'g>(
+    stream: &mut TcpStream,
+    req: &httparse::Request<'_, '_>,
+    gate: &'g Gate,
+    route: &str,
+) -> Option<(&'g Mcp, Person)> {
+    let mcp = gate.mcp.as_ref()?;
+    let authorization = header(req, "authorization");
+    let (person, scopes) = match mcp.authenticate(authorization, gate) {
+        Ok(who) => who,
+        Err(why) => {
+            if authorization.is_some() {
+                log(&format!("{route} refused a token: {why}"));
+            }
+            let challenge = mcp.challenge();
+            reply(stream, "401 Unauthorized", Some(&challenge), &error(&why));
+            return None;
+        }
+    };
+    if !scopes.iter().any(|s| s == READ) {
+        let why = format!("this needs the {READ} scope");
+        reply(stream, "403 Forbidden", None, &error(&why));
+        return None;
+    }
+    Some((mcp, person))
 }
 
 /// The query's parameters as `list_events` arguments, or the parameter that is wrong.
@@ -95,12 +104,12 @@ fn number<T: FromStr>(name: &str, value: &str) -> Result<T, String> {
 }
 
 /// The JSON body of an error.
-fn error(why: &str) -> String {
+pub(crate) fn error(why: &str) -> String {
     json!({ "error": why }).to_string()
 }
 
 /// Writes a whole JSON response, never cached, and lets the connection close.
-fn reply(stream: &mut TcpStream, status: &str, challenge: Option<&str>, body: &str) {
+pub(crate) fn reply(stream: &mut TcpStream, status: &str, challenge: Option<&str>, body: &str) {
     let extra = challenge.map_or_else(String::new, |c| format!("WWW-Authenticate: {c}\r\n"));
     let _ = write!(
         stream,
