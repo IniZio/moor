@@ -88,7 +88,17 @@ jobs:
           sudo apt-get update -q && sudo apt-get install -y -q musl-tools
           target=${{ matrix.target }}
           echo "CC_${target//-/_}=musl-gcc" >> "$GITHUB_ENV"
-      - run: MOOR_VERSION=${TAG#v} cargo build $(for b in $BINS; do printf -- '-p %s ' "$b"; done) --release --locked --target ${{ matrix.target }}
+      - name: Install Zig, pinned by version and checksum, for libghostty-vt
+        run: |
+          case $(uname -m) in arm64 | aarch64) arch=aarch64 ;; *) arch=x86_64 ;; esac
+          case $(uname -s) in Darwin) os=macos ;; *) os=linux ;; esac
+          read -r version sha < <(make -s print-zig ZIG_PLATFORM=$arch-$os)
+          curl -fsSLo "$RUNNER_TEMP/zig.tar.xz" "https://ziglang.org/download/$version/zig-$arch-$os-$version.tar.xz"
+          echo "$sha  $RUNNER_TEMP/zig.tar.xz" | shasum -a 256 -c -
+          mkdir -p "$RUNNER_TEMP/zig"
+          tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP/zig" --strip-components=1
+          echo "ZIG=$RUNNER_TEMP/zig/zig" >> "$GITHUB_ENV"
+      - run: MOOR_VERSION=${TAG#v} cargo build $(for b in $BINS; do printf -- '-p %s ' "$b"; done) --features moor/pty-surface --release --locked --target ${{ matrix.target }}
       - name: Package
         run: |
           mkdir -p dist

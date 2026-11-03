@@ -8,6 +8,12 @@ LLVM_COV_VERSION := 0.9.1
 # and downloads Ghostty's pinned source.
 ZIG_VERSION := 0.17.0
 ZIG_SHA256 := 1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026
+# The same release for the other runners the release build installs it on.
+ZIG_SHA256_x86_64-linux := $(ZIG_SHA256)
+ZIG_SHA256_aarch64-linux := 9e8d11661d4ae3bd57702a3832781e23ad151dde5798e16a5ccd503f65234ff8
+ZIG_SHA256_x86_64-macos := 4f9a1c5269aa17ebda5e6d3c2b89d6cbf36f7d2b22a0306e9ab98f25f95529c6
+ZIG_SHA256_aarch64-macos := b607e9b9234790a008116ae5bdb71c6243b84b9fb42a53a9e70fde41c06c536a
+ZIG_PLATFORM ?= x86_64-linux
 PTY := --features moor/pty-surface
 
 .PHONY: help coverage setup secret audit lint format test unit ci unit-nextest unit-doc build deploy overlap lint-pty unit-pty nested-e2e
@@ -96,7 +102,7 @@ nested-e2e:
 # Single source of the pins for CI's install-action step.
 .PHONY: print-tool-versions print-zig
 print-zig:
-	@echo "$(ZIG_VERSION) $(ZIG_SHA256)"
+	@echo "$(ZIG_VERSION) $(ZIG_SHA256_$(ZIG_PLATFORM))"
 
 print-tool-versions:
 	@echo "cargo-deny@$(DENY_VERSION),cargo-machete@$(MACHETE_VERSION),cargo-nextest@$(NEXTEST_VERSION),taplo@$(TAPLO_VERSION),typos@$(TYPOS_VERSION)"
