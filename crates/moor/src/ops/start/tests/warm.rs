@@ -4,9 +4,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use moor_core::boxscript::clone::AT_BASE;
 use moor_core::config::UserConfig;
 use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::driver::{DriverError, ExecOutcome};
+use moor_core::user::Identity;
 use moor_core::{BoxId, StartReq};
 use serde_json::Value;
 
@@ -15,8 +17,10 @@ use crate::cx::Cx;
 use crate::ops::start::run;
 use crate::store::BoxRow;
 use crate::testing::clock::FakeClock;
+use crate::testing::cx::{put_secret, requester};
 use crate::testing::driver::FakeDriver;
 use crate::testing::forge::repo_at;
+use crate::vault::Vault;
 
 const LINES: &str = "setup: [one-a, two-b, three-c]\n";
 
@@ -175,4 +179,54 @@ fn without_checkpoints_a_second_box_runs_its_whole_setup() {
     assert!(["one-a", "two-b", "three-c"]
         .iter()
         .all(|l| joined[0].contains(l)));
+}
+
+fn bob() -> Identity {
+    Identity::local(2000)
+}
+
+/// Enrolls [`bob`] with the secrets a start needs.
+fn enroll_bob(w: &World) {
+    let store = w.cx.store().unwrap();
+    let (user, _) = store.enroll(&bob(), None).unwrap();
+    let vault = Vault::load_or_create(w.cx.vault_key().unwrap()).unwrap();
+    for name in ["claude", "github"] {
+        put_secret(store, &vault, user, name, &format!("{name}-of-2000"));
+    }
+}
+
+#[test]
+fn a_new_box_never_starts_from_a_checkpoint_another_users_box_saved() {
+    let (mut w, _) = after_a_partial_setup(FakeDriver::new());
+    enroll_bob(&w);
+    w.cx = w.cx.with_requester(bob());
+    let bobs = start(&w, "bobs", "abc123", LINES);
+    assert!(events(&w, bobs, "warm_started").is_empty());
+    assert!(!w.driver.calls().iter().any(|c| c.starts_with("fork")));
+    assert_eq!(lines_on(&w, bobs), ["one-a", "two-b", "three-c"]);
+    w.cx = w.cx.with_requester(requester());
+    let alices = start(&w, "alices", "abc123", LINES);
+    assert_eq!(events(&w, alices, "warm_started").len(), 1);
+}
+
+/// Starts a Box whose first line differs, so it forks only the clone and checkpoints the slow
+/// `two-b` above it, with its clone printing `clone_says`; returns the checkpoints it saved.
+fn warm_box_saved(clone_says: &str) -> Vec<String> {
+    let (w, _) = after_a_partial_setup(FakeDriver::new());
+    let before = w.driver.checkpoint_names();
+    w.driver.push_exec_stdout(clone_says);
+    let warm = start(&w, "warm", "abc123", "setup: [one-z, two-b, three-c]\n");
+    assert_eq!(events(&w, warm, "warm_started").len(), 1);
+    let after = w.driver.checkpoint_names();
+    after.into_iter().filter(|n| !before.contains(n)).collect()
+}
+
+#[test]
+fn a_warm_box_whose_clone_did_not_report_the_base_saves_no_checkpoint() {
+    assert_eq!(warm_box_saved("\n"), Vec::<String>::new());
+}
+
+#[test]
+fn a_warm_box_whose_clone_reported_the_base_saves_checkpoints() {
+    assert!(!warm_box_saved(&format!("{AT_BASE}\n")).is_empty());
 }
