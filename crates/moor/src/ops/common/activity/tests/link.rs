@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use moor_core::config::AgentHolder;
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
@@ -14,10 +15,16 @@ use super::turn::steer;
 use super::{cx, is_working, row, run_once, working_box, SESSION};
 use crate::cx::Cx;
 use crate::ops::common::activity::settle;
+use crate::ops::common::agent_stop::stop_agent;
 use crate::testing::engine::FakeEngine;
 
 /// A working Box in workspace `ws` whose live session runs in pane `p1`.
 fn attached_box(cx: &Cx) -> BoxId {
+    attached_box_under(cx, AgentHolder::Hc)
+}
+
+/// As [`attached_box`], with the agent's terminal held by `kind`.
+fn attached_box_under(cx: &Cx, kind: AgentHolder) -> BoxId {
     let id = working_box(cx, false);
     let store = cx.store().unwrap();
     let set = Fields {
@@ -25,7 +32,7 @@ fn attached_box(cx: &Cx) -> BoxId {
         ..Fields::default()
     };
     store.apply(Decision::new(id).set(set)).unwrap();
-    store.begin_session(id, SESSION, Some("p1")).unwrap();
+    store.begin_session(id, SESSION, Some("p1"), kind).unwrap();
     id
 }
 
@@ -95,6 +102,58 @@ fn a_running_agent_gets_a_new_pane_and_keeps_its_session() {
     assert_eq!(live.pane.as_deref(), Some("reattached-1"));
     assert_eq!(engine.reattached().len(), 1);
     assert!(engine.transcripts().is_empty());
+}
+
+/// The calls reaching the agent launched under `launched` (`None`: before holders were
+/// recorded) from a controller that now launches under `configured`.
+fn asked_after_the_holder_changed(
+    launched: Option<AgentHolder>,
+    configured: AgentHolder,
+) -> Vec<(&'static str, AgentHolder)> {
+    let dir = tempfile::tempdir().unwrap().keep();
+    let engine = Arc::new(
+        FakeEngine::new()
+            .probes(SESSION, exited_probes())
+            .fates(vec![Ok(AgentFate::Running)]),
+    );
+    let (cx, _) = cx(&dir, &engine);
+    let id = attached_box_under(&cx, launched.unwrap_or(configured));
+    if launched.is_none() {
+        cx.store().unwrap().forget_holders(id).unwrap();
+    }
+    engine.set_holder(configured);
+    let reading = run_once(&cx, id);
+    let store = cx.store().unwrap();
+    settle(&cx, store, &row(&cx, id), &reading).unwrap();
+    stop_agent(&cx, store, &row(&cx, id), None).unwrap();
+    engine.asked()
+}
+
+#[test]
+fn a_box_launched_under_tmux_stays_with_tmux_after_the_controller_switches_to_hc() {
+    let tmux = AgentHolder::Tmux;
+    assert_eq!(
+        asked_after_the_holder_changed(Some(tmux), AgentHolder::Hc),
+        [("fate", tmux), ("reattach", tmux), ("stop", tmux)]
+    );
+}
+
+#[test]
+fn a_box_launched_under_hc_stays_with_hc_after_the_controller_switches_to_tmux() {
+    let hc = AgentHolder::Hc;
+    assert_eq!(
+        asked_after_the_holder_changed(Some(hc), AgentHolder::Tmux),
+        [("fate", hc), ("reattach", hc), ("stop", hc)]
+    );
+}
+
+#[test]
+fn a_box_launched_before_holders_were_recorded_is_held_by_tmux() {
+    let tmux = AgentHolder::Tmux;
+    assert_eq!(
+        asked_after_the_holder_changed(None, AgentHolder::Hc),
+        [("fate", tmux), ("reattach", tmux), ("stop", tmux)]
+    );
 }
 
 #[test]

@@ -11,7 +11,7 @@ use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::PaneRef;
 use moor_core::view::LaunchFailure;
-use moor_core::Warning;
+use moor_core::{BoxHandle, BoxPath, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -20,7 +20,7 @@ use crate::ops::common::link::{self, Fate};
 use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::resume;
 use crate::ops::common::transcript;
-use crate::store::{BoxRow, Store};
+use crate::store::{BoxRow, SessionRow, Store};
 
 use launch::launch_overdue;
 use stored::stored_hook;
@@ -164,7 +164,7 @@ pub(crate) fn read(
         ));
     };
     let probed_pane = session.pane.clone();
-    let Some(sref) = session_ref(row, session.session_ref, session.pane) else {
+    let Some(sref) = session_ref(row, &session) else {
         return Ok(Reading::none(in_flight));
     };
     let cache = stored_hook(cx, store, row.id)?;
@@ -333,17 +333,23 @@ fn register_session(
     )
 }
 
-/// The session as the Engine needs it; none when the Box cannot be reached.
-///
-pub(crate) fn session_ref(row: &BoxRow, id: String, pane: Option<String>) -> Option<SessionRef> {
-    let b = row.boxed.as_ref()?;
+/// The agent `launch` as the Engine needs it; none when the Box cannot be reached.
+pub(crate) fn session_ref(row: &BoxRow, launch: &SessionRow) -> Option<SessionRef> {
+    let (handle, workdir) = box_place(row)?;
     Some(SessionRef {
-        id,
-        handle: b.handle.clone()?,
-        workdir: recorded_workdir(b.workdir.as_deref()?)?,
-        pane: pane.map(PaneRef::new),
+        id: launch.session_ref.clone(),
+        handle,
+        workdir,
+        pane: launch.pane.clone().map(PaneRef::new),
+        holder: launch.holder,
         warnings: Vec::new(),
     })
+}
+
+/// The Box machine of `row` and its recorded workdir; none when the Box cannot be reached.
+pub(crate) fn box_place(row: &BoxRow) -> Option<(BoxHandle, BoxPath)> {
+    let b = row.boxed.as_ref()?;
+    Some((b.handle.clone()?, recorded_workdir(b.workdir.as_deref()?)?))
 }
 
 /// Record a warning about the agent read.

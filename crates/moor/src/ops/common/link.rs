@@ -53,7 +53,7 @@ pub(crate) fn recover(
     if row.asleep() {
         return Ok(Fate::Ended(pane_exit));
     }
-    let Some(sref) = session_ref(row, launch.session_ref.clone(), launch.pane.clone()) else {
+    let Some(sref) = session_ref(row, launch) else {
         return Ok(Fate::Ended(pane_exit));
     };
     let mut attempt = 0;

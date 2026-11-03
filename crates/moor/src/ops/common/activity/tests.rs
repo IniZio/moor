@@ -96,7 +96,9 @@ fn working_box(cx: &Cx, session: bool) -> BoxId {
         });
     store.apply(d).unwrap();
     if session {
-        store.begin_session(id, SESSION, None).unwrap();
+        store
+            .begin_session(id, SESSION, None, moor_core::config::AgentHolder::Hc)
+            .unwrap();
     }
     id
 }
@@ -253,7 +255,9 @@ fn run_in_flight_with_an_unreachable_box_is_busy_and_not_quiet() {
             ..Fields::default()
         });
     store.apply(d).unwrap();
-    store.begin_session(id, SESSION, None).unwrap();
+    store
+        .begin_session(id, SESSION, None, moor_core::config::AgentHolder::Hc)
+        .unwrap();
     let _claim = begin(&cx, id);
     let r = run_once(&cx, id);
     assert_eq!(r.activity, None);
@@ -544,7 +548,7 @@ fn the_stored_pane_reaches_the_probe() {
     let id = working_box(&cx, false);
     cx.store()
         .unwrap()
-        .begin_session(id, SESSION, Some("p1"))
+        .begin_session(id, SESSION, Some("p1"), moor_core::config::AgentHolder::Hc)
         .unwrap();
     run_once(&cx, id);
     assert_eq!(

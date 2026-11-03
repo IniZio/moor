@@ -10,8 +10,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneRead, Probes};
-use moor_core::name::BoxName;
-use moor_core::name::BoxPath;
+use moor_core::config::AgentHolder;
+use moor_core::name::{BoxName, BoxPath};
 use moor_core::seam::agent_adapter::{AgentInstall, FirstRunPrompt, PromptMatch};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::engine::{
@@ -47,6 +47,8 @@ struct State {
     reattached: Vec<(String, String)>,
     /// Probes a session reads from once a steer is sent to it.
     after_steer: Vec<(String, Probes)>,
+    holder: AgentHolder,
+    asked: Vec<(&'static str, AgentHolder)>,
 }
 
 /// The launch a scripted starting marker names to stand for the latest launch's own marker.
@@ -205,6 +207,16 @@ impl FakeEngine {
         self.st().transcripts.clone()
     }
 
+    /// Launches from now on put the agent under `kind`, as after an `agent.holder` change.
+    pub(crate) fn set_holder(&self, kind: AgentHolder) {
+        self.st().holder = kind;
+    }
+
+    /// The calls that reached a running agent, in order, each with the holder it asked.
+    pub(crate) fn asked(&self) -> Vec<(&'static str, AgentHolder)> {
+        self.st().asked.clone()
+    }
+
     /// Every launch request so far, in call order.
     pub(crate) fn launches(&self) -> Vec<LaunchReq> {
         self.st().launches.clone()
@@ -286,9 +298,20 @@ impl Engine for FakeEngine {
                 handle: req.handle.clone(),
                 workdir: req.workdir.clone(),
                 pane: Some(PaneRef::new("p-1")),
+                holder: st.holder,
                 warnings: Vec::new(),
             })
         })
+    }
+
+    fn relay_argv(&self, holder: AgentHolder, connect: &[String]) -> Option<Vec<String>> {
+        self.st().asked.push(("relay", holder));
+        Some([connect, &[format!("relay {}", holder.name())]].concat())
+    }
+
+    fn stop(&self, s: &SessionRef) -> Result<(), EngineError> {
+        self.st().asked.push(("stop", s.holder));
+        Ok(())
     }
 
     fn launch_dirs(&self, req: &LaunchReq) -> Result<Option<(BoxPath, BoxPath)>, EngineError> {
@@ -328,7 +351,8 @@ impl Engine for FakeEngine {
         }))
     }
 
-    fn agent_fate(&self, _s: &SessionRef, _deadline: Deadline) -> Result<AgentFate, EngineError> {
+    fn agent_fate(&self, s: &SessionRef, _deadline: Deadline) -> Result<AgentFate, EngineError> {
+        self.st().asked.push(("fate", s.holder));
         self.st()
             .fates
             .pop_front()
@@ -342,6 +366,7 @@ impl Engine for FakeEngine {
         _name: &BoxName,
     ) -> Result<PaneRef, EngineError> {
         let mut st = self.st();
+        st.asked.push(("reattach", s.holder));
         let pane = format!("reattached-{}", st.reattached.len() + 1);
         st.reattached.push((s.id.clone(), pane.clone()));
         Ok(PaneRef::new(pane))

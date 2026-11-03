@@ -46,6 +46,7 @@ fn session(pane: &str) -> SessionRef {
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         pane: Some(PaneRef::new(pane)),
+        holder: moor_core::config::AgentHolder::Hc,
         warnings: Vec::new(),
     }
 }
@@ -350,7 +351,14 @@ fn waking_only_the_box_does_not_look_the_workdir_up() {
 /// Gives the Box a live agent session in pane `p-1` that can be resumed.
 fn with_agent(f: &Fx) {
     let store = f.cx.store().unwrap();
-    store.begin_session(f.id, "agent-1", Some("p-1")).unwrap();
+    store
+        .begin_session(
+            f.id,
+            "agent-1",
+            Some("p-1"),
+            moor_core::config::AgentHolder::Hc,
+        )
+        .unwrap();
     let set = Fields {
         agent_session_id: Field::Set("agent-1".into()),
         workspace_id: Field::Set("ws-1".into()),

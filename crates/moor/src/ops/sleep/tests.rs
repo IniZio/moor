@@ -479,7 +479,12 @@ fn with_agent_pane(f: &Fx) {
     f.surface.have_pane("p-1");
     f.cx.store()
         .unwrap()
-        .begin_session(f.id, "agent-1", Some("p-1"))
+        .begin_session(
+            f.id,
+            "agent-1",
+            Some("p-1"),
+            moor_core::config::AgentHolder::Hc,
+        )
         .unwrap();
 }
 
@@ -510,7 +515,12 @@ fn sleep_with_the_pane_already_gone_still_sleeps() {
     let f = idle();
     f.cx.store()
         .unwrap()
-        .begin_session(f.id, "agent-1", Some("p-1"))
+        .begin_session(
+            f.id,
+            "agent-1",
+            Some("p-1"),
+            moor_core::config::AgentHolder::Hc,
+        )
         .unwrap();
     run(&f.cx, &req()).unwrap();
     assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));

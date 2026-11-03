@@ -47,7 +47,14 @@ fn restarted(stored: &str, fates: Vec<Result<AgentFate, EngineError>>) -> Fx {
         ..Fields::default()
     };
     store.apply(Decision::new(id).set(set)).unwrap();
-    store.begin_session(id, SESSION, Some(stored)).unwrap();
+    store
+        .begin_session(
+            id,
+            SESSION,
+            Some(stored),
+            moor_core::config::AgentHolder::Hc,
+        )
+        .unwrap();
     Fx {
         cx,
         engine,

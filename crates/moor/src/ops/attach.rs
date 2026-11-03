@@ -57,7 +57,7 @@ pub(crate) fn argv(cx: &Cx, req: &AttachReq) -> Result<Vec<String>, CommandError
         return Ok(argv);
     }
     cx.engine()
-        .relay_argv(&connect)
+        .relay_argv(store.agent_holder(row.id)?, &connect)
         .ok_or_else(|| refused("runs an agent with no terminal to attach to"))
 }
 

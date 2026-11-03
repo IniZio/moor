@@ -2,16 +2,18 @@
 
 use std::sync::Arc;
 
+use moor_core::config::AgentHolder;
 use moor_core::domain::box_state::{BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver};
-use moor_core::{AttachReq, BoxName, ProviderId};
+use moor_core::{AttachReq, BoxId, BoxName, ProviderId};
 
 use super::argv;
 use crate::cx::Cx;
 use crate::testing::driver::FakeDriver;
+use crate::testing::engine::FakeEngine;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
 
@@ -101,4 +103,40 @@ fn an_agent_attach_never_opens_a_shell() {
         .map(|a| a.join(" "))
         .unwrap_or_default();
     assert!(!got.contains("SHELL"), "{got}");
+}
+
+/// What an agent attach relays, for an agent launched under `launched` (`None`: before holders
+/// were recorded) when the controller now launches under `configured`.
+fn relayed_holder(launched: Option<AgentHolder>, configured: AgentHolder) -> String {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, _, _) = ready_box(dir.path());
+    let engine = Arc::new(FakeEngine::new());
+    engine.set_holder(configured);
+    let cx = cx.with_engine(engine);
+    let store = cx.store().unwrap();
+    let id = BoxId::new(1);
+    store
+        .begin_session(id, "s1", None, launched.unwrap_or(configured))
+        .unwrap();
+    if launched.is_none() {
+        store.forget_holders(id).unwrap();
+    }
+    argv(&cx, &req(false)).unwrap().pop().unwrap()
+}
+
+#[test]
+fn an_agent_attach_relays_through_the_holder_the_agent_began_under() {
+    assert_eq!(
+        relayed_holder(Some(AgentHolder::Tmux), AgentHolder::Hc),
+        "relay tmux"
+    );
+    assert_eq!(
+        relayed_holder(Some(AgentHolder::Hc), AgentHolder::Tmux),
+        "relay hc"
+    );
+}
+
+#[test]
+fn an_agent_attach_relays_through_tmux_when_the_agent_began_before_holders_were_recorded() {
+    assert_eq!(relayed_holder(None, AgentHolder::Hc), "relay tmux");
 }

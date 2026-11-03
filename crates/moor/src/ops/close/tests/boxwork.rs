@@ -387,7 +387,12 @@ fn close_refuses_when_the_agent_writes_between_the_probe_and_the_stop() {
     let f = fx_probe(Some("ahead=0 dirty=0"));
     f.cx.store()
         .unwrap()
-        .begin_session(f.id, "s-1", Some("p-gone"))
+        .begin_session(
+            f.id,
+            "s-1",
+            Some("p-gone"),
+            moor_core::config::AgentHolder::Hc,
+        )
         .unwrap();
     let driver = f.driver.clone();
     let runs = std::sync::atomic::AtomicU32::new(0);
@@ -416,7 +421,12 @@ fn force_does_not_probe_before_or_after_stopping_the_agent() {
     let f = fx_probe(Some("ahead=4 dirty=1"));
     f.cx.store()
         .unwrap()
-        .begin_session(f.id, "s-1", Some("p-gone"))
+        .begin_session(
+            f.id,
+            "s-1",
+            Some("p-gone"),
+            moor_core::config::AgentHolder::Hc,
+        )
         .unwrap();
     let v = run(&f.cx, &req(true)).unwrap();
     assert!(v.agent_stopped);
@@ -452,7 +462,12 @@ fn an_unreadable_first_probe_refuses_before_the_agent_is_stopped() {
     let f = fx_probe(None);
     f.cx.store()
         .unwrap()
-        .begin_session(f.id, "s-1", Some("p-live"))
+        .begin_session(
+            f.id,
+            "s-1",
+            Some("p-live"),
+            moor_core::config::AgentHolder::Hc,
+        )
         .unwrap();
     let t = text(&refused(&f));
     assert!(!t.contains("the agent was stopped"), "{t}");

@@ -9,12 +9,11 @@ use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::event::{PostCloneStep, ProfileStep};
 use moor_core::name::BoxPath;
 use moor_core::seam::driver::ExecOutcome;
-use moor_core::seam::engine::SessionRef;
 use moor_core::{BoxHandle, BoxId, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::activity::session_ref;
+use crate::ops::common::activity::box_place;
 use crate::ops::common::agent_install;
 use crate::ops::common::box_exec::{BoxProxy, Site};
 use crate::ops::common::dotfiles::{private_log, tail};
@@ -175,13 +174,13 @@ pub(crate) fn installs(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), Comma
     if store.box_profile(row.id)?.is_none() {
         return Ok(());
     }
-    let Some(session) = session_ref(row, String::new(), None) else {
+    let Some(place) = box_place(row) else {
         return Ok(());
     };
-    let path = BoxPath::under(session.workdir.as_str(), FAILURES_FILE);
+    let path = BoxPath::under(place.1.as_str(), FAILURES_FILE);
     let read = path.map_err(|e| e.to_string()).and_then(|p| {
         cx.driver()
-            .peek_file(&session.handle, &p)
+            .peek_file(&place.0, &p)
             .map_err(|e| e.to_string())
     });
     let text = match read {
@@ -197,17 +196,22 @@ pub(crate) fn installs(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), Comma
     for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
         failed(cx, store, row.id, ProfileStep::Install, line.to_owned())?;
     }
-    record_plugin_time(cx, store, row, &session);
+    record_plugin_time(cx, store, row, &place);
     Ok(())
 }
 
 /// Records the time the launch script spent in its profile writers as one `plugins` step, when it
 /// left any timings. The script writes them on the Box, so this is the only way to see them.
-fn record_plugin_time(cx: &Cx, store: &Store, row: &BoxRow, session: &SessionRef) {
-    let Ok(path) = BoxPath::under(session.workdir.as_str(), PLUGIN_SECS_FILE) else {
+fn record_plugin_time(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    (handle, workdir): &(BoxHandle, BoxPath),
+) {
+    let Ok(path) = BoxPath::under(workdir.as_str(), PLUGIN_SECS_FILE) else {
         return;
     };
-    let Ok(Some(text)) = cx.driver().peek_file(&session.handle, &path) else {
+    let Ok(Some(text)) = cx.driver().peek_file(handle, &path) else {
         return;
     };
     let Some(ms) = plugin_ms(&text) else {

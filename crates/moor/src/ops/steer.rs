@@ -183,8 +183,7 @@ fn attempt(
     let Some(session) = store.live_session(id)? else {
         return Ok(Attempt::Gone(Gone::new(name, None, None)));
     };
-    let sref = session_ref(&row, session.session_ref.clone(), session.pane.clone())
-        .ok_or_else(|| no_agent(name))?;
+    let sref = session_ref(&row, &session).ok_or_else(|| no_agent(name))?;
     let reading = activity::read(cx, store, &row, cx.clock().now(), activity::PROBE_DEADLINE)?;
     if reading.hook_unread {
         let msg = format!(

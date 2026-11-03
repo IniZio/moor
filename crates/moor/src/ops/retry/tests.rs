@@ -191,6 +191,7 @@ fn pane_session() -> SessionRef {
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         pane: Some(PaneRef::new("p-1")),
+        holder: moor_core::config::AgentHolder::Hc,
         warnings: Vec::new(),
     }
 }

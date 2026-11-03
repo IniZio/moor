@@ -2,12 +2,14 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::time::Duration;
 
 use moor_core::config::AgentHolder;
 use moor_core::seam::agent_adapter::{AgentAdapter, BoxSetup, LaunchCtx, ProxyAddr};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::seam::engine::{Engine, EngineError, LaunchPrompt, LaunchReq};
+use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{Surface, SurfaceError};
 use moor_core::{BoxHandle, BoxId, BoxPath, ProviderId};
 
@@ -250,6 +252,49 @@ fn by_default_herdr_core_holds_the_agent_running_the_script_file_under_sh() {
     );
     assert!(remote.contains(&want), "{remote}");
     assert!(!remote.contains("tmux"), "{remote}");
+}
+
+/// The holder an agent launched under `launched` records, and the Box commands that reach it.
+fn commands_for(launched: AgentHolder, configured: AgentHolder) -> (AgentHolder, String) {
+    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
+    let sref = agent(&d, &s).holding(launched).launch(&req(&s)).unwrap();
+    let before = d.execs().len();
+    let kit = agent(&d, &s).holding(configured);
+    kit.agent_fate(&sref, Deadline(Duration::from_secs(1)))
+        .unwrap();
+    kit.stop(&sref).unwrap();
+    let mut cmds: Vec<String> = d
+        .execs()
+        .iter()
+        .skip(before)
+        .map(|(_, spec, _)| spec.argv.join(" "))
+        .collect();
+    cmds.extend(kit.relay_argv(sref.holder, &["ssh".into()]).unwrap());
+    (sref.holder, cmds.join("\n"))
+}
+
+#[test]
+fn an_agent_launched_under_tmux_is_reached_through_tmux_by_a_kit_that_launches_under_hc() {
+    let (recorded, cmds) = commands_for(AgentHolder::Tmux, AgentHolder::Hc);
+    assert_eq!(recorded, AgentHolder::Tmux);
+    for want in [
+        "tmux has-session",
+        "tmux kill-session",
+        "tmux attach-session",
+    ] {
+        assert!(cmds.contains(want), "{want}: {cmds}");
+    }
+    assert!(!cmds.contains("herdr-core"), "{cmds}");
+}
+
+#[test]
+fn an_agent_launched_under_hc_is_reached_through_hc_by_a_kit_that_launches_under_tmux() {
+    let (recorded, cmds) = commands_for(AgentHolder::Hc, AgentHolder::Tmux);
+    assert_eq!(recorded, AgentHolder::Hc);
+    for want in ["herdr-core get", "herdr-core kill", "herdr-core attach"] {
+        assert!(cmds.contains(want), "{want}: {cmds}");
+    }
+    assert!(!cmds.contains("tmux"), "{cmds}");
 }
 
 #[test]
