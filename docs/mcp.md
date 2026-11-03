@@ -94,7 +94,7 @@ for a fresh header before it connects:
 
 | Scope | Allows |
 | --- | --- |
-| `moor:read` | `list_boxes`, `box_status`, `inspect_box`, `list_webhooks`, `list_events`, the Box resources, `subscriptions/listen` |
+| `moor:read` | `list_boxes`, `box_status`, `inspect_box`, `get_artifact`, `list_webhooks`, `list_events`, `GET /events`, `GET /boxes/.../artifacts/...`, the Box resources, `subscriptions/listen` |
 | `moor:write` | `start_box`, `send_to_box`, `close_box`, `retry_box`, `close_failed_boxes`, `add_webhook`, `remove_webhook` |
 
 A token without `moor:write` gets an error from the write tools and can still
@@ -108,6 +108,7 @@ read.
 | `start_box` | `repo` as `owner/name`; optional `also` (more repos, each `owner/name`), `name`, `prompt`, `base`, `node`, `wait` |
 | `box_status` | `box` |
 | `inspect_box` | `box`; optional `lines`, `said` |
+| `get_artifact` | `box`, `name`; optional `version` |
 | `send_to_box` | `box`, `text` |
 | `close_box` | `box`; optional `force` |
 | `retry_box` | `box` |
@@ -176,6 +177,47 @@ a Box is done:
 Artifacts and Reports are saved after each of the agent's turns, so they show
 up once the turn ends.
 
+### Fetching an artifact
+
+`get_artifact` returns the bytes of one artifact a Box published, by `box`,
+`name` and optionally `version`; without `version` it returns the newest. The
+first content block is the artifact's record as JSON: `box`, `name`, `version`,
+`content_type`, `size`, `sha256`, `created_at` and `path`. The second holds the
+bytes, base64 encoded: an image block when `content_type` starts with `image/`,
+otherwise an embedded resource blob with that MIME type.
+
+The tool returns bytes inline up to 4 MiB. Over that it returns only the record,
+and `path` is where to download the bytes over HTTP:
+
+```sh
+curl -H "Authorization: Bearer $ACCESS_TOKEN" -o shot.png \
+  "https://<host>/boxes/repo/my-box/artifacts/shot.png/2"
+```
+
+`GET /boxes/{box}/artifacts/{name}` returns the newest version, and
+`GET /boxes/{box}/artifacts/{name}/{version}` returns that version. The Box
+name keeps its slash, written as is or as `%2F`. The token needs `moor:read`.
+The body is streamed with no size cap. The response carries the recorded
+`Content-Type`, the `Content-Length` and an `ETag` holding the recorded
+sha256. Errors come back as JSON with an `error` field:
+
+| Status | When |
+| --- | --- |
+| 401 | No token, or a token that does not verify. |
+| 403 | The token lacks `moor:read`. |
+| 404 | No such Box, artifact name or version. |
+| 409 | The stored bytes do not hash to the recorded sha256. |
+| 410 | The artifact is recorded but its stored bytes are gone. |
+
+Both forms hash the stored file before they send any of it. A file that does not
+match its recorded sha256 is never served. The tool fails with a message that
+names both hashes, and HTTP answers 409.
+
+The controller copies each artifact out of the Box into its own state directory.
+Closing a Box collects its artifacts one last time and deletes none of them.
+moor never removes stored artifacts, so a closed Box's artifacts stay
+available until someone removes them from the controller's state directory.
+
 ### Starting without blocking
 
 A start clones the repo, runs setup and launches the agent, which takes minutes.
@@ -206,7 +248,7 @@ the agent when they do not settle it.
 | `box_status` | The lifecycle, the `status` line, `stuck`, the agent's newest message, the last five raw events, artifacts and Reports. |
 | `list_events` | Every event of your Boxes from an offset you keep, including `agent_stalled` and the egress and credential events. A start's `step_finished` events carry `{step, ms, ok}` for `dotfiles`, `agent_install`, `profile`, `acquire`, `proxy`, `clone_others`, `launch` and `plugins`. |
 | `inspect_box` | The tail of the agent's terminal, the agent's recent messages, its state and `stuck`. |
-| Artifacts | What the agent published: screenshots, logs and files. |
+| `get_artifact` | The bytes of an artifact the agent published: a screenshot, a log or a file. |
 
 `inspect_box` takes `box` and optionally `lines` (40 by default, at most 200)
 and `said` (5 by default, at most 20). It returns `pane`, the last `lines` lines
