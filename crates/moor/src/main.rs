@@ -51,7 +51,6 @@ fn say(line: &str) -> std::io::Result<()> {
 }
 
 /// Parse argv, run the request, print the rendered output, return its exit code.
-#[expect(clippy::too_many_lines, reason = "one arm per command")]
 fn main() -> ExitCode {
     let args = Env::args();
     if let Some(code) = front_shim(&args).or_else(|| moor::mcp_relay::run(&args)) {
