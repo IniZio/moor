@@ -29,9 +29,16 @@ fn stored() -> Vec<(&'static str, u32, &'static str, String, Vec<u8>)> {
         ("notes.txt", 1, "text/plain", sha('1'), b"one".to_vec()),
         ("notes.txt", 2, "text/plain", sha('2'), b"two".to_vec()),
         ("shot.png", 1, "image/png", sha('3'), PNG.to_vec()),
-        ("big.bin", 1, "application/octet-stream", sha('4'), big),
+        (
+            "big.bin",
+            1,
+            "application/octet-stream",
+            sha('4'),
+            big.clone(),
+        ),
         ("gone.txt", 1, "text/plain", sha('5'), b"gone".to_vec()),
         ("bad.txt", 1, "text/plain", sha('6'), b"bad".to_vec()),
+        ("bad.bin", 1, "application/octet-stream", sha('7'), big),
     ]
 }
 
@@ -111,8 +118,9 @@ fn answer(cmd: &str, inner: &Value, reply: &mut impl Write, id: &str) -> Respons
             );
             Response::err(cmd, e)
         }
-        "bad.txt" => {
-            let why = "artifact bad.txt v1 does not match its recorded sha256";
+        "bad.txt" | "bad.bin" => {
+            write_bytes(reply, id, &bytes).unwrap();
+            let why = "artifact does not match its recorded sha256";
             Response::err(
                 cmd,
                 error(ErrorKind::Failed, why, Some(ErrorDetail::ArtifactMismatch)),
@@ -249,6 +257,25 @@ fn bytes_that_are_gone_are_410_and_bytes_that_miss_their_sha256_are_409() {
     let bad = get(&world, Some(&token), "/boxes/repo/a/artifacts/bad.txt");
     assert_eq!(bad.status, 409);
     assert!(bad.error().contains("sha256"), "{}", bad.error());
+}
+
+#[test]
+fn a_large_body_that_misses_its_sha256_never_arrives_whole() {
+    let (world, _seen) = world();
+    let token = token(&world, "moor:read");
+    let mut conn = std::net::TcpStream::connect(&world.gate).unwrap();
+    write!(
+        conn,
+        "GET /boxes/repo/a/artifacts/bad.bin HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer {token}\r\n\r\n"
+    )
+    .unwrap();
+    let mut all = Vec::new();
+    std::io::Read::read_to_end(&mut conn, &mut all).unwrap();
+    let split = all.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
+    let head = String::from_utf8_lossy(&all[..split]);
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+    assert!(head.contains(&format!("Content-Length: {BIG}")), "{head}");
+    assert_eq!(all.len() - split, BIG - 1);
 }
 
 #[test]

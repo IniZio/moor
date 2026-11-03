@@ -1,5 +1,7 @@
 //! `get_artifact`: one Artifact a Box published, inline up to [`ARTIFACT_INLINE_MAX`] bytes.
 
+use crate::artifact::ARTIFACT_INLINE_MAX;
+
 use std::path::Path;
 
 use base64::prelude::{Engine, BASE64_STANDARD};
@@ -15,10 +17,6 @@ use super::{auth_for, failed, Tools};
 use crate::artifact::{self, Found, Wanted};
 use crate::mcp::READ;
 use crate::Person;
-
-/// The largest Artifact `get_artifact` returns inline; a larger one comes back as its record
-/// and the HTTP path that downloads it.
-pub(crate) const ARTIFACT_INLINE_MAX: u64 = 4 * 1024 * 1024;
 
 /// Arguments of `get_artifact`.
 #[derive(Deserialize, JsonSchema)]

@@ -176,7 +176,7 @@ fn each_piece_is_read_from_disk_only_after_the_last_was_sent() {
         .join(t.get().to_string())
         .join("v1/big.bin");
     let mut got: Vec<Vec<u8>> = Vec::new();
-    read(
+    let changed = read(
         &cx,
         &read_req("a", "big.bin", None, 0, u64::MAX),
         &mut |p| {
@@ -187,9 +187,13 @@ fn each_piece_is_read_from_disk_only_after_the_last_was_sent() {
             Ok(())
         },
     )
-    .unwrap();
+    .unwrap_err();
     let firsts: Vec<Option<u8>> = got.iter().map(|p| p.first().copied()).collect();
     assert_eq!(firsts, [Some(1), Some(2), Some(2)]);
+    assert_eq!(
+        changed.detail.as_deref(),
+        Some(&moor_core::response::ErrorDetail::ArtifactMismatch)
+    );
 }
 
 #[test]

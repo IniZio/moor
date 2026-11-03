@@ -206,12 +206,15 @@ sha256. Errors come back as JSON with an `error` field:
 | 401 | No token, or a token that does not verify. |
 | 403 | The token lacks `moor:read`. |
 | 404 | No such Box, artifact name or version. |
-| 409 | The stored bytes do not hash to the recorded sha256. |
+| 409 | The stored bytes do not hash to the recorded sha256, for an artifact up to 4 MiB. |
 | 410 | The artifact is recorded but its stored bytes are gone. |
 
-Both forms hash the stored file before they send any of it. A file that does not
-match its recorded sha256 is never served. The tool fails with a message that
-names both hashes, and HTTP answers 409.
+The controller hashes the stored file as it sends it, so a file that does not
+match its recorded sha256 never arrives whole. The tool fails with a message
+that names both hashes. Over HTTP, the gate holds back up to 4 MiB before it
+answers, so a mismatched artifact of that size or smaller gets 409. A larger
+one has already started with 200, so the gate closes the connection one byte
+short of `Content-Length` and the client sees a truncated body.
 
 The controller copies each artifact out of the Box into its own state directory.
 Closing a Box collects its artifacts one last time and deletes none of them.
