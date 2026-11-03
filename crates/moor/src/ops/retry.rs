@@ -37,7 +37,7 @@ pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<StartView, CommandError> {
         )
         .with_hint(format!("wake it with `moor wake {name}`, then retry")));
     };
-    let agent = if provisioned.setup.failed() {
+    let agent = if provisioned.failed_step().is_some() {
         AgentLaunchView::default()
     } else {
         let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, row.id, "retry", boxlock::WAIT)?;
@@ -53,7 +53,7 @@ pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<StartView, CommandError> {
 fn view(cx: &Cx, row: &BoxRow, p: &Provisioned, agent: AgentLaunchView) -> StartView {
     let mut boxed = box_view(row, cx.config());
     hide_unsupported_sleep(&mut boxed, cx);
-    let failed = p.setup.failed();
+    let failed = p.failed_step();
     StartView {
         attached: true,
         queued: row.lifecycle == BoxLifecycle::Pending,
@@ -63,10 +63,8 @@ fn view(cx: &Cx, row: &BoxRow, p: &Provisioned, agent: AgentLaunchView) -> Start
         dotfiles: p.dotfiles.view(),
         agent,
         warnings_inline: Vec::new(),
-        failed_step: failed.then(|| "setup".to_owned()),
-        handle: failed
-            .then(|| boxed.driver.as_ref().and_then(|b| b.handle.clone()))
-            .flatten(),
+        failed_step: failed.map(str::to_owned),
+        handle: failed.and_then(|_| boxed.driver.as_ref().and_then(|b| b.handle.clone())),
         boxed,
     }
 }

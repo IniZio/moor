@@ -1,13 +1,12 @@
 //! What provisioning ran in a Box, and how a failed step is recorded and reported.
 
-use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, IntentChange};
+use moor_core::domain::decision::{Decision, Field, Fields, IntentChange};
 use moor_core::view::WorkTreeView;
 use moor_core::BoxId;
 use moor_core::ErrorKind;
 use moor_core::{BoxHandle, Warning};
 
-use super::reread;
+use super::{reread, step_failed};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::dotfiles::{DotfilesFailed, DotfilesRun};
@@ -23,6 +22,8 @@ pub(crate) struct Provisioned {
     pub(crate) dotfiles: DotfilesRun,
     /// How the kept work tree started; none when the Box keeps none or already refreshed it.
     pub(crate) work_tree: Option<WorkTreeView>,
+    /// Whether the agent install failed after every setup line passed.
+    pub(crate) install_failed: bool,
 }
 
 impl Provisioned {
@@ -32,14 +33,25 @@ impl Provisioned {
             setup: SetupRun::Skipped,
             dotfiles: DotfilesRun::Skipped,
             work_tree: None,
+            install_failed: false,
+        }
+    }
+
+    /// The step that held the Box in setup-failed, if one did.
+    pub(crate) const fn failed_step(&self) -> Option<&'static str> {
+        if self.setup.failed() {
+            Some("setup")
+        } else if self.install_failed {
+            Some("agent_install")
+        } else {
+            None
         }
     }
 }
 
 /// Records a failed clone and returns the error, carrying the Box row, to report.
 ///
-/// The Box is kept and the agent does not start. `advance` moves the Box to setup-failed; a
-/// Box already working gets a `setup_failed` event instead.
+/// The Box is kept, moves to setup-failed, working or not, and the agent does not start.
 pub(super) fn clone_failed(
     cx: &Cx,
     store: &Store,
@@ -48,18 +60,7 @@ pub(super) fn clone_failed(
     handle: &BoxHandle,
     reason: String,
 ) -> CommandError {
-    let mut done = Decision::new(id);
-    if advance {
-        done.lifecycle_input = Some(BoxLifecycleInput::SetupFailed {
-            cause: reason.clone(),
-            which: None,
-        });
-    } else {
-        done = done.event(ExtraEvent::SetupFailed {
-            line: reason.clone(),
-        });
-    }
-    let done = done
+    let done = step_failed(Decision::new(id), advance, reason.clone())
         .set(Fields {
             setup_failed_at: Field::Set(cx.clock().now().as_millis()),
             ..Fields::default()

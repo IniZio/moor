@@ -46,13 +46,14 @@ pub(super) fn view(cx: &Cx, row: &BoxRow, attached: bool) -> StartView {
     }
 }
 
-/// Puts what provisioning ran in the view; a failed setup line also names the step and the Box.
+/// Puts what provisioning ran in the view; a failed setup line or agent install also names the
+/// step and the Box.
 pub(super) fn set_provisioned(v: &mut StartView, p: &Provisioned) {
     v.setup = p.setup.view();
     v.dotfiles = p.dotfiles.view();
     v.work_tree.clone_from(&p.work_tree);
-    if p.setup.failed() {
-        v.failed_step = Some("setup".to_owned());
+    if let Some(step) = p.failed_step() {
+        v.failed_step = Some(step.to_owned());
         v.handle = v.boxed.driver.as_ref().and_then(|b| b.handle.clone());
     }
 }

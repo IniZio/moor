@@ -162,14 +162,15 @@ fn log_writer(w: &World) {
 }
 
 #[test]
-fn a_failed_install_warns_with_the_log_tail_and_the_start_goes_on() {
+fn a_failed_install_warns_with_the_log_tail_and_holds_the_box_in_setup_failed() {
     let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1))]);
     let (w, engine) = install_world("setup: [a]\n", None, true, driver);
     log_writer(&w);
     let v = run(&w.cx, &prompt_req()).unwrap();
-    assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::SetupFailed);
+    assert_eq!(v.failed_step.as_deref(), Some("agent_install"));
     assert!(v.setup.ok);
-    assert_eq!(engine.launches().len(), 1);
+    assert!(engine.launches().is_empty());
     let warnings = w.cx.take_warnings();
     let warn = warnings
         .iter()
@@ -183,7 +184,9 @@ fn a_failed_install_warns_with_the_log_tail_and_the_start_goes_on() {
     assert!(warn.message.contains("row-25") && warn.message.contains("row-06"));
     assert!(!warn.message.contains("row-05"), "{warn:?}");
     let events = w.cx.store().unwrap().events(BoxId::new(1), 50).unwrap();
-    assert!(events.iter().all(|e| e.kind != "setup_failed"));
+    let failed = events.iter().find(|e| e.kind == "setup_failed").unwrap();
+    let line = failed.payload.get("line").and_then(|l| l.as_str()).unwrap();
+    assert!(line.starts_with("agent install: exit 1\n") && line.contains("row-25"));
 }
 
 #[test]
@@ -195,7 +198,7 @@ fn an_install_that_cannot_run_warns_with_the_driver_error() {
     ]);
     let (w, engine) = install_world("setup: [a]\n", None, true, driver);
     run(&w.cx, &prompt_req()).unwrap();
-    assert_eq!(engine.launches().len(), 1);
+    assert!(engine.launches().is_empty());
     let warnings = w.cx.take_warnings();
     let warn = warnings
         .iter()
@@ -443,4 +446,18 @@ fn a_start_after_a_restart_during_the_install_installs_then_launches() {
             .unwrap()
             .unwrap();
     assert_eq!(row.setup_failed_at, None);
+}
+
+#[test]
+fn a_failed_install_after_a_restart_holds_the_box_in_setup_failed() {
+    let (w, engine) = install_cut_off();
+    w.driver.push_exec_result(Ok(exit(1)));
+    let v = run(&w.cx, &prompt_req()).unwrap();
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::SetupFailed);
+    assert_eq!(installs(&w).len(), 1);
+    assert!(engine.launches().is_empty());
+    let events = w.cx.store().unwrap().events(BoxId::new(1), 50).unwrap();
+    let failed = events.iter().find(|e| e.kind == "setup_failed").unwrap();
+    let line = failed.payload.get("line").and_then(|l| l.as_str()).unwrap();
+    assert!(line.starts_with("agent install: exit 1"), "{line}");
 }

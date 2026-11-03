@@ -226,8 +226,8 @@ pub(crate) fn nonce(rng: &dyn Rng) -> String {
 
 /// Runs repo setup in a Box under the setup intent and records how it ended, clearing the intent.
 ///
-/// `advance` moves the Box on to working; a failed line moves any Box to setup-failed, one that
-/// was already working included.
+/// `advance` moves the Box on to working; a failed line or agent install moves any Box to
+/// setup-failed, one that was already working included.
 fn run_and_record(
     cx: &Cx,
     store: &Store,
@@ -253,8 +253,8 @@ fn run_and_record(
         }))?;
     }
     // A Box failing a line gets no agent, so the steps that prepare one wait for the retry.
-    let dotfiles = if run.failed() {
-        DotfilesRun::Skipped
+    let (dotfiles, installed) = if run.failed() {
+        (DotfilesRun::Skipped, Ok(()))
     } else {
         after_setup(cx, store, (target.handle, target.provider), id, cfg, &proxy)?
     };
@@ -270,13 +270,17 @@ fn run_and_record(
             ok: !run.failed(),
         });
     }
-    let done = setup_ended(done, advance, run.outcome());
-    let failed_at = if run.failed() {
+    let install_failed = installed.is_err();
+    let outcome = match (run.outcome(), installed) {
+        (SetupOutcome::Ok, Err(cause)) => SetupOutcome::Failed { line: cause },
+        (outcome, _) => outcome,
+    };
+    let failed_at = if matches!(outcome, SetupOutcome::Failed { .. }) {
         Field::Set(cx.clock().now().as_millis())
     } else {
         Field::Clear
     };
-    let done = done
+    let done = setup_ended(done, advance, outcome)
         .set(Fields {
             setup_failed_at: failed_at,
             steps_pending_at: Field::Clear,
@@ -288,10 +292,11 @@ fn run_and_record(
         setup: run,
         dotfiles,
         work_tree: cloned.work_tree,
+        install_failed,
     })
 }
 
-/// Adds how setup ended to `done`: `advance` moves the Box to working, and a failed line moves it
+/// Adds how setup ended to `done`: `advance` moves the Box to working, and a failed step moves it
 /// to setup-failed, from working too.
 fn setup_ended(done: Decision, advance: bool, outcome: SetupOutcome) -> Decision {
     match (advance, outcome) {
@@ -300,19 +305,25 @@ fn setup_ended(done: Decision, advance: bool, outcome: SetupOutcome) -> Decision
                 setup: SetupOutcome::Ok,
             })
             .session(SessionInput::Started),
-        (true, SetupOutcome::Failed { line }) => done.lifecycle(BoxLifecycleInput::SetupFailed {
-            cause: line,
-            which: None,
-        }),
-        // The agent died with the old machine, so its Session ends and a retry starts a new one.
-        (false, SetupOutcome::Failed { line }) => done
-            .lifecycle(BoxLifecycleInput::MachineLostSetupFailed { cause: line })
-            .session(SessionInput::End),
+        (_, SetupOutcome::Failed { line }) => step_failed(done, advance, line),
         (false, SetupOutcome::Ok) => done,
     }
 }
 
-/// Runs the steps after the setup lines; a failed agent install is warned and the start goes on.
+/// Moves the Box to setup-failed for a failed step of coming up, `cause` naming the step and its
+/// error; `advance` says the Box was being set up rather than already working.
+pub(super) fn step_failed(done: Decision, advance: bool, cause: String) -> Decision {
+    if advance {
+        return done.lifecycle(BoxLifecycleInput::SetupFailed { cause, which: None });
+    }
+    // The working Box's agent has no machine or no install, so its Session ends and a retry
+    // starts a new one.
+    done.lifecycle(BoxLifecycleInput::WorkingSetupFailed { cause })
+        .session(SessionInput::End)
+}
+
+/// Runs the steps after the setup lines. A failed agent install is warned and returned as the
+/// Box's failed step, and the profile, which needs the agent, waits for the retry.
 pub(super) fn after_setup(
     cx: &Cx,
     store: &Store,
@@ -320,16 +331,17 @@ pub(super) fn after_setup(
     id: BoxId,
     cfg: &BoxSettings,
     proxy: &clone::SetupProxy,
-) -> Result<DotfilesRun, CommandError> {
+) -> Result<(DotfilesRun, Result<(), String>), CommandError> {
     let dotfiles = match dotfiles::apply(cx, store, at, id, cfg, proxy) {
         Ok(d) => d,
         Err(f) => dotfiles_warned(cx, f),
     };
     if let Err(reason) = agent_install::apply(cx, store, at, id, cfg, proxy) {
         cx.warn(agent_install::warning(&reason));
+        return Ok((dotfiles, Err(format!("agent install: {reason}"))));
     }
     profile_fetch::apply(cx, store, at, id, cfg, proxy)?;
-    Ok(dotfiles)
+    Ok((dotfiles, Ok(())))
 }
 
 mod acquired;

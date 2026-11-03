@@ -144,6 +144,7 @@ pub(crate) fn launch_after_retry(
     store: &Store,
     id: BoxId,
 ) -> Result<AgentLaunchView, CommandError> {
+    reopen::ended_session(store, id, None)?;
     let row = reread(store, id)?;
     let req = StartReq {
         name: row.name.clone(),
