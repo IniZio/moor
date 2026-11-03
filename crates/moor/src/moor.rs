@@ -137,7 +137,7 @@ impl Moor {
     ///
     /// # Errors
     /// [`CommandError`] when the command could not start.
-    pub(crate) fn exec(
+    pub fn exec(
         &self,
         req: &moor_core::ExecReq,
         pipes: moor_core::seam::proc::Pipes<'_>,

@@ -126,6 +126,25 @@ fn run_with_trailing_command() {
 }
 
 #[test]
+fn exec_takes_a_trailing_command_and_forwards_a_terminal_only_with_i() {
+    let parsed = |args: &[&str]| match run(args).expect("parses").1 {
+        Action::Exec(req, interactive) => Some((req.target.to_string(), req.argv, interactive)),
+        _ => None,
+    };
+    let (target, argv, interactive) =
+        parsed(&["exec", "t1", "--", "sh", "-c", "exit 7"]).expect("an exec");
+    assert_eq!(target, "t1");
+    assert_eq!(argv, ["sh", "-c", "exit 7"]);
+    assert!(!interactive);
+    assert!(
+        parsed(&["exec", "-i", "t1", "--", "cat"])
+            .expect("an exec")
+            .2
+    );
+    assert!(run(&["exec", "t1"]).is_err());
+}
+
+#[test]
 fn run_usage_error_exit_code() {
     let argv = ["moor", "run", "t1", "--record"].map(OsString::from);
     let crate::cli::Parsed::Done(o) = crate::cli::parse(argv.to_vec()) else {

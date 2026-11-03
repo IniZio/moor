@@ -105,6 +105,15 @@ pub enum Parsed {
         /// Keep streaming.
         follow: bool,
     },
+    /// Run a command in a Box with this process's stdio streamed to it.
+    Exec {
+        /// Global options.
+        opts: GlobalOpts,
+        /// The command and its Box.
+        req: moor_core::ExecReq,
+        /// Forward stdin even from a terminal.
+        interactive: bool,
+    },
     /// Read a secret from stdin and send the request it completes.
     Stdin {
         /// Global options.
@@ -127,6 +136,11 @@ pub fn parse(args: Vec<OsString>) -> Parsed {
         Ok((opts, Action::ControllerServe(config))) => Parsed::ControllerServe { opts, config },
         Ok((opts, Action::ControllerAttach(socket))) => Parsed::ControllerAttach { opts, socket },
         Ok((opts, Action::Stdin(then))) => Parsed::Stdin { opts, then },
+        Ok((opts, Action::Exec(req, interactive))) => Parsed::Exec {
+            opts,
+            req,
+            interactive,
+        },
         Ok((opts, Action::LinkDial { machine_id, slug })) => Parsed::LinkDial {
             opts,
             machine_id,

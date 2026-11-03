@@ -3,13 +3,16 @@
 //! daemon, which stream lines live.
 #![forbid(unsafe_code)]
 
-use std::io::{Read, Write};
+use std::io::{IsTerminal, Read, Write};
 use std::process::ExitCode;
 
 use moor::cli::{self, GlobalOpts, Invocation, Output, Parsed};
+use moor::client::ExecIo;
 use moor::env::Env;
 use moor::moor_core::controller::WatchFilter;
-use moor::moor_core::{Request, Response};
+use moor::moor_core::seam::proc::Pipes;
+use moor::moor_core::view::ExecView;
+use moor::moor_core::{ExecReq, Request, Response};
 use moor::Moor;
 
 /// Runs `moor front-shim`, the controller's wrapper around each front, `moor front-run`, the
@@ -63,16 +66,7 @@ fn main() -> ExitCode {
         Parsed::Done(out) => out,
         Parsed::Request(inv) => run(env, inv),
         Parsed::CallStdin(opts) => run_call(env, opts),
-        Parsed::Stdin { opts, then } => {
-            let mut value = Vec::new();
-            if let Err(e) = std::io::stdin().read_to_end(&mut value) {
-                let resp = moor::error::CommandError::new(moor::moor_core::ErrorKind::Failed, e)
-                    .into_response(then.cmd(), vec![]);
-                return emit(&cli::render(&resp, &opts));
-            }
-            let request = then.request(value);
-            run(env, Invocation { opts, request })
-        }
+        Parsed::Stdin { opts, then } => run_stdin(env, opts, then),
         Parsed::ProxyServe { opts, box_id } => {
             let env = scoped(env, &opts);
             return ExitCode::from(moor::serve_proxy(&env, box_id, std::io::stderr()));
@@ -91,6 +85,11 @@ fn main() -> ExitCode {
                 std::io::stderr(),
             ));
         }
+        Parsed::Exec {
+            opts,
+            req,
+            interactive: i,
+        } => return run_exec(&scoped(env, &opts), req, i),
         Parsed::LinkDial {
             opts,
             machine_id,
@@ -141,6 +140,59 @@ fn run_events(env: &Env, since: i64, filter: &WatchFilter, follow: bool) -> Exit
             ExitCode::FAILURE
         }
     }
+}
+
+/// Runs `moor exec` with this process's stdio. The command's exit code is ours; moor's own
+/// failure, or a command ended without one, exits 255 as ssh does.
+fn run_exec(env: &Env, req: ExecReq, interactive: bool) -> ExitCode {
+    let stdin = std::io::stdin();
+    let stdin =
+        (interactive || !stdin.is_terminal()).then(|| Box::new(stdin) as Box<dyn Read + Send>);
+    let (mut stdout, mut stderr) = (std::io::stdout(), std::io::stderr());
+    let resp = if let Some(target) = moor::client::configured_target(env) {
+        let io = ExecIo {
+            stdin,
+            stdout: &mut stdout,
+            stderr: &mut stderr,
+        };
+        moor::client::exec(env, &target, req, io)
+            .unwrap_or_else(|e| moor::client::failure_response("exec", &e))
+    } else {
+        let pipes = Pipes {
+            stdin: stdin.unwrap_or_else(|| Box::new(std::io::empty())),
+            stdout: &mut stdout,
+            stderr: &mut stderr,
+            stop: &|| false,
+        };
+        match Moor::from_env(env).and_then(|moor| moor.exec(&req, pipes)) {
+            Ok(view) => Response::ok("exec", serde_json::to_value(view).ok()),
+            Err(e) => e.into_response("exec", vec![]),
+        }
+    };
+    let exit = resp
+        .value
+        .clone()
+        .and_then(|v| serde_json::from_value::<ExecView>(v).ok());
+    match exit.and_then(|v| v.exit) {
+        Some(code) if resp.error.is_none() => ExitCode::from(u8::try_from(code).unwrap_or(255)),
+        _ => {
+            let text = cli::render(&resp, &GlobalOpts::default());
+            let _ = std::io::stderr().write_all(text.stderr.as_bytes());
+            ExitCode::from(255)
+        }
+    }
+}
+
+/// Read the secret `then` needs from stdin, then run the request it completes.
+fn run_stdin(env: Env, opts: GlobalOpts, then: cli::StdinRequest) -> Output {
+    let mut value = Vec::new();
+    if let Err(e) = std::io::stdin().read_to_end(&mut value) {
+        let resp = moor::error::CommandError::new(moor::moor_core::ErrorKind::Failed, e)
+            .into_response(then.cmd(), vec![]);
+        return cli::render(&resp, &opts);
+    }
+    let request = then.request(value);
+    run(env, Invocation { opts, request })
 }
 
 /// Read a request from stdin and run it; always JSON output.

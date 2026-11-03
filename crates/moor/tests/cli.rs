@@ -13,6 +13,8 @@ mod client_cwd;
 mod controller;
 #[path = "cli/events.rs"]
 mod events;
+#[path = "cli/exec.rs"]
+mod exec;
 #[path = "cli/front_drain.rs"]
 mod front_drain;
 #[cfg(target_os = "linux")]
