@@ -124,6 +124,28 @@ A sleeping Box frees host memory only if the provider takes its VM out of RAM.
 Before that it pauses the VM in memory, which frees none, so a Box suspended to
 make room on a node frees nothing there.
 
+## Use the cloud-hypervisor provider
+
+[crabbox-cloudhypervisor](https://github.com/IniZio/crabbox-cloudhypervisor)
+runs each Box as a cloud-hypervisor VM. Two settings in the crabbox user config
+make it faster and let moor checkpoint a Box:
+
+```yaml
+external:
+  capabilities: { checkpoints: true }
+  config: { bootTemplate: true }
+```
+
+- `capabilities.checkpoints` gives the provider the `workspace-checkpoint` and
+  `workspace-fork` features. Only the trusted user config can turn it on.
+- `bootTemplate` restores a new VM from a snapshot of a provisioned guest, so a
+  Box is ready in about 4 s instead of 41 s. The first VM of each size builds
+  the template and takes a few seconds longer. Put `cacheDir` on a filesystem
+  that reflinks, such as btrfs or XFS. Elsewhere each VM copies the template
+  disk in full, which is slower but works. moor cannot promise a reflink
+  filesystem on a user's host, so `bootTemplate` stays opt-in and
+  `tools/nested-e2e.sh` turns it on.
+
 ## Cache volumes
 
 A provider with the `cache-volume` feature in `crabbox providers --json
