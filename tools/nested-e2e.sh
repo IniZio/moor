@@ -1,13 +1,4 @@
 #!/bin/bash
-# Starts a Box inside a cloud-hypervisor VM on this Box and checks that its agent
-# opens a draft PR. Before running it:
-# - Start this Box with `--also IniZio/moor-nested-check`, or with another scratch
-#   repo that you then name in NESTED_E2E_REPO. The Proxy only has credentials for
-#   repos this Box was started with.
-# - The Box owner needs write access to that repo: the inner agent pushes a branch
-#   and opens a draft PR there, which this script closes and deletes.
-# - The node needs nested KVM (/dev/kvm in this Box), and the tools from
-#   tools/box-nested-kvm.sh.
 set -euo pipefail
 
 REPO_DIR=$(git rev-parse --show-toplevel)
@@ -30,8 +21,6 @@ export PATH=$REPO_DIR/target/debug:$PATH
 
 log() { printf 'nested-e2e: %s\n' "$*" | tee -a "$OUT/run.log" >&2; }
 
-# Processes of this setup: moor and the VM tools whose command line names $D, or
-# whose environment carries this state dir (`moor proxy serve` names neither).
 ours() {
 	local pid
 	for pid in $(pgrep -f "^([^ ]*/)?(cloud-hypervisor|passt|moor|crabbox-cloudhypervisor) "); do
