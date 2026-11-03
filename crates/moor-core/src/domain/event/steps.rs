@@ -30,7 +30,8 @@ pub fn lifecycle_events(
                 vec![Event::Working, Event::SetupFailed { line: line.clone() }]
             }
         },
-        BoxLifecycleInput::SetupFailed { cause, which: None } => {
+        BoxLifecycleInput::MachineLostSetupFailed { cause }
+        | BoxLifecycleInput::SetupFailed { cause, which: None } => {
             vec![Event::SetupFailed {
                 line: cause.clone(),
             }]

@@ -226,8 +226,8 @@ pub(crate) fn nonce(rng: &dyn Rng) -> String {
 
 /// Runs repo setup in a Box under the setup intent and records how it ended, clearing the intent.
 ///
-/// `advance` moves the Box on to working, or to setup-failed when a line failed; a Box already
-/// working gets a `setup_failed` event instead.
+/// `advance` moves the Box on to working; a failed line moves any Box to setup-failed, one that
+/// was already working included.
 fn run_and_record(
     cx: &Cx,
     store: &Store,
@@ -253,7 +253,7 @@ fn run_and_record(
         }))?;
     }
     // A Box failing a line gets no agent, so the steps that prepare one wait for the retry.
-    let dotfiles = if advance && run.failed() {
+    let dotfiles = if run.failed() {
         DotfilesRun::Skipped
     } else {
         after_setup(cx, store, (target.handle, target.provider), id, cfg, &proxy)?
@@ -291,8 +291,8 @@ fn run_and_record(
     })
 }
 
-/// Adds how setup ended to `done`: `advance` moves the Box to working or setup-failed, and a Box
-/// already working gets only a `setup_failed` event.
+/// Adds how setup ended to `done`: `advance` moves the Box to working, and a failed line moves it
+/// to setup-failed, from working too.
 fn setup_ended(done: Decision, advance: bool, outcome: SetupOutcome) -> Decision {
     match (advance, outcome) {
         (true, SetupOutcome::Ok) => done
@@ -304,7 +304,10 @@ fn setup_ended(done: Decision, advance: bool, outcome: SetupOutcome) -> Decision
             cause: line,
             which: None,
         }),
-        (false, SetupOutcome::Failed { line }) => done.event(ExtraEvent::SetupFailed { line }),
+        // The agent died with the old machine, so its Session ends and a retry starts a new one.
+        (false, SetupOutcome::Failed { line }) => done
+            .lifecycle(BoxLifecycleInput::MachineLostSetupFailed { cause: line })
+            .session(SessionInput::End),
         (false, SetupOutcome::Ok) => done,
     }
 }

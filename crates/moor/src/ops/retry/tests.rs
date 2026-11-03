@@ -71,6 +71,24 @@ fn started(w: &World) -> BoxId {
     started_with(w, None)
 }
 
+/// The request `started_with` sends, with no prompt.
+fn start_req() -> StartReq {
+    StartReq {
+        name: name(),
+        prompt: None,
+        issue: None,
+        base: None,
+        model: None,
+        node: None,
+        no_agent: true,
+        resume: false,
+        repo: Some(ForgeRepo::new("o", "n")),
+        parent: None,
+        also: None,
+        identity: None,
+    }
+}
+
 /// Starts `demo` with no agent but `prompt` stored, and returns its id.
 fn started_with(w: &World, prompt: Option<&str>) -> BoxId {
     let req = StartReq {
@@ -426,4 +444,59 @@ fn a_retry_after_a_failed_line_without_checkpoints_reruns_in_the_kept_machine_an
     assert_eq!(calls.iter().filter(|c| *c == "acquire").count(), 1);
     let prompts: Vec<_> = engine.launches().into_iter().map(|l| l.prompt).collect();
     assert_eq!(prompts, [LaunchPrompt::Text("fix it".into())]);
+}
+
+/// The number of machines acquired so far.
+fn acquires(w: &World) -> usize {
+    w.driver.calls().iter().filter(|c| *c == "acquire").count()
+}
+
+/// A working Box with checkpoints whose machine is lost and whose relaunch fails `run-two`.
+fn relaunch_failing_a_line() -> (World, Arc<FakeEngine>, BoxId) {
+    let driver = FakeDriver::new().with_checkpoints().exec_results([
+        Ok(exit(0)),
+        Ok(exit(0)),
+        Ok(exit(0)),
+        Ok(exit(0)),
+        Ok(exit(0)),
+        Ok(exit(1)),
+    ]);
+    let (w, engine) = yaml_world_with_engine(TWO_LINES, driver);
+    let id = started_with(&w, Some("fix it"));
+    assert_eq!(row(&w, id).lifecycle, BoxLifecycle::Ready);
+    w.cx.store()
+        .unwrap()
+        .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
+        .unwrap();
+    let _ = crate::ops::start::run(&w.cx, &start_req());
+    (w, engine, id)
+}
+
+#[test]
+fn a_ready_box_whose_relaunch_fails_a_line_holds_in_setup_failed_with_no_agent() {
+    let (w, engine, id) = relaunch_failing_a_line();
+    let after = row(&w, id);
+    assert_eq!(after.lifecycle, BoxLifecycle::SetupFailed);
+    assert!(after.intent.is_none());
+    assert_eq!(failed_line(&w, id).as_deref(), Some("run-two"));
+    assert_eq!(acquires(&w), 2, "one relaunch");
+    assert!(engine.launches().is_empty(), "no agent on the new machine");
+}
+
+#[test]
+fn a_retry_of_a_ready_box_whose_relaunch_failed_a_line_resumes_from_the_deepest_checkpoint() {
+    let (w, _engine, id) = relaunch_failing_a_line();
+    let v = run(&w.cx, &req()).unwrap();
+    assert!(v.setup.ran && v.setup.ok);
+    let ready = row(&w, id);
+    let on = (ready.lifecycle, ready.boxed.unwrap().handle);
+    assert_eq!(on, (BoxLifecycle::Ready, Some(BoxHandle::new("box-3"))));
+    assert_eq!(acquires(&w), 2, "the retry relaunches nothing");
+    assert!(w.driver.calls().iter().any(|c| c.starts_with("fork ")));
+    let on_fork = setup_execs(&w).into_iter().filter(|(h, _)| h == "box-3");
+    assert_eq!(
+        on_fork.count(),
+        0,
+        "the deepest checkpoint covers every line"
+    );
 }
