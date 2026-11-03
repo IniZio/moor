@@ -33,7 +33,8 @@ pub(super) const TAIL_LINES: usize = 10;
 
 /// Launches the agent when the Box is Working with a ready machine and no live session.
 ///
-/// `setup_exit` is the exit code of a setup that just failed; the agent still launches then.
+/// `setup_exit` is the exit code of a setup that just failed in a Box that was already working;
+/// a Box whose setup failed is not working, so its agent waits for a retry.
 /// A launch that fails is recorded on the Box, which stays Working with no session, and
 /// is reported in the view; a later launch that succeeds clears it. `settings` yields the
 /// Box's settings, which supply both the model and the proxy's egress.
@@ -74,7 +75,11 @@ fn not_working(cx: &Cx, store: &Store, row: &BoxRow) -> Result<AgentLaunchView, 
         .boxed
         .as_ref()
         .is_some_and(|b| b.state == BoxState::Ready);
-    if !ready || (row.lifecycle == BoxLifecycle::Ready && !row.session.is_quiet()) {
+    let waits_for_retry = row.lifecycle == BoxLifecycle::SetupFailed;
+    if !ready
+        || waits_for_retry
+        || (row.lifecycle == BoxLifecycle::Ready && !row.session.is_quiet())
+    {
         return Ok(AgentLaunchView::default());
     }
     let e = EngineError::Failed {

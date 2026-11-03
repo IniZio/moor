@@ -37,7 +37,9 @@ pub(super) fn start_ready(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), Co
     }
     let name = row.name.as_str();
     let by_hand = format!("`moor start` does not re-run it; run each `setup:` line by hand with `moor run {name} -- '<line>'`");
-    let message = if row.intent.is_some() {
+    let message = if row.intent.is_some() && row.lifecycle == BoxLifecycle::SettingUp {
+        format!("setup was interrupted; retry it with `moor retry {name}`")
+    } else if row.intent.is_some() {
         format!("setup was interrupted; {by_hand}")
     } else if let (BoxLifecycle::Ready, Some(at)) = (row.lifecycle, row.setup_failed_at) {
         format!("setup failed at {}; {by_hand}", rfc3339(at))
@@ -81,8 +83,9 @@ fn finish_steps(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError
     Ok(())
 }
 
-/// Records a dead setup as failed, as a failed setup run would, without running anything; once
-/// every line had passed, the Box is ready and only the later steps stay pending.
+/// Records a dead setup as failed, as a failed setup run would, without running anything, so the
+/// Box waits for a retry; once every line had passed, the Box is ready and only the later steps
+/// stay pending.
 pub(super) fn record_interrupted(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
     if row.steps_pending_at.is_some() {
         let mut done = Decision::new(row.id).intent(IntentChange::Clear);
@@ -99,11 +102,10 @@ pub(super) fn record_interrupted(cx: &Cx, store: &Store, row: &BoxRow) -> Result
     let line = "setup was interrupted".to_owned();
     let mut done = Decision::new(row.id);
     if row.lifecycle == BoxLifecycle::SettingUp {
-        done = done
-            .lifecycle(BoxLifecycleInput::Ready {
-                setup: SetupOutcome::Failed { line },
-            })
-            .session(SessionInput::Started);
+        done = done.lifecycle(BoxLifecycleInput::SetupFailed {
+            cause: line,
+            which: None,
+        });
     } else {
         done = done.event(ExtraEvent::SetupFailed { line });
     }

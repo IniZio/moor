@@ -5,12 +5,13 @@ use std::time::Duration;
 
 use moor_core::boxscript::quote;
 use moor_core::config::{DotfilesConfig, UserConfig};
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::seam::proxy_host::ProxyHostError;
 use moor_core::view::{DotfilesView, StartView};
-use moor_core::{BoxId, StartReq};
+use moor_core::{BoxId, BoxReq, StartReq};
 
 use super::setup::unwrapped;
 use super::state::WORKING;
@@ -259,17 +260,17 @@ fn without_dotfiles_config_nothing_is_packed_uploaded_or_run() {
 }
 
 #[test]
-fn dotfiles_still_run_when_a_setup_line_fails() {
+fn dotfiles_wait_for_the_retry_when_a_setup_line_fails() {
     let src = tempfile::tempdir().unwrap();
     let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1)), Ok(exit(0))]);
     let (w, engine) = dotfiles_world("setup: [a]\n", Some(src.path()), None, driver);
     let v = started(&w);
-    assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::SetupFailed);
     assert!(v.setup.ran && !v.setup.ok);
-    assert!(v.dotfiles.ran && v.dotfiles.ok);
-    assert_eq!(w.driver.execs().len(), 3);
-    assert_eq!(dotfiles_execs(&w).len(), 1);
-    assert_eq!(engine.launches().len(), 1);
+    assert_eq!(v.dotfiles, DotfilesView::default());
+    assert_eq!(w.driver.execs().len(), 2);
+    assert!(dotfiles_execs(&w).is_empty());
+    assert!(engine.launches().is_empty());
 }
 
 #[test]
@@ -284,17 +285,20 @@ fn the_host_log_and_its_directory_are_owner_only() {
 }
 
 #[test]
-fn a_failed_setup_line_still_fails_setup_when_the_dotfiles_fail_too() {
+fn a_retry_runs_the_dotfiles_a_failed_setup_line_held_back() {
     let src = tempfile::tempdir().unwrap();
-    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1)), Ok(exit(1))]);
+    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]);
     let (w, engine) = dotfiles_world("setup: [make-it]\n", Some(src.path()), None, driver);
-    log_writer(&w);
     let v = run(&w.cx, &prompt_req()).unwrap();
     assert!(v.setup.ran && !v.setup.ok);
-    assert!(v.dotfiles.ran && !v.dotfiles.ok);
+    assert!(!v.dotfiles.ran);
+    let retry = BoxReq {
+        box_name: prompt_req().name,
+    };
+    let again = crate::ops::retry::run(&w.cx, &retry).unwrap();
+    assert!(again.setup.ok && again.dotfiles.ran && again.dotfiles.ok);
+    assert_eq!(dotfiles_execs(&w).len(), 1);
     assert_eq!(engine.launches().len(), 1);
-    let warnings = w.cx.take_warnings();
-    assert!(warnings.iter().any(|x| x.code == "dotfiles_failed"));
 }
 
 #[test]

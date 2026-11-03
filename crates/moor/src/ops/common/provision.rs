@@ -226,8 +226,8 @@ pub(crate) fn nonce(rng: &dyn Rng) -> String {
 
 /// Runs repo setup in a Box under the setup intent and records how it ended, clearing the intent.
 ///
-/// `advance` moves the Box on to working; a Box already working gets a `setup_failed` event
-/// instead.
+/// `advance` moves the Box on to working, or to setup-failed when a line failed; a Box already
+/// working gets a `setup_failed` event instead.
 fn run_and_record(
     cx: &Cx,
     store: &Store,
@@ -252,19 +252,17 @@ fn run_and_record(
             ..Fields::default()
         }))?;
     }
-    let dotfiles = after_setup(cx, store, (target.handle, target.provider), id, cfg, &proxy)?;
+    // A Box failing a line gets no agent, so the steps that prepare one wait for the retry.
+    let dotfiles = if advance && run.failed() {
+        DotfilesRun::Skipped
+    } else {
+        after_setup(cx, store, (target.handle, target.provider), id, cfg, &proxy)?
+    };
     let mut done = Decision::new(id);
     if let DotfilesRun::Failed { tail } = &dotfiles {
         done = done.event(ExtraEvent::SetupFailed {
             line: format!("dotfiles: {tail}"),
         });
-    }
-    if advance {
-        done = done
-            .lifecycle(BoxLifecycleInput::Ready {
-                setup: run.outcome(),
-            })
-            .session(SessionInput::Started);
     }
     if let Some(ms) = run.ms() {
         done = done.event(ExtraEvent::SetupFinished {
@@ -272,11 +270,7 @@ fn run_and_record(
             ok: !run.failed(),
         });
     }
-    if !advance {
-        if let SetupOutcome::Failed { line } = run.outcome() {
-            done = done.event(ExtraEvent::SetupFailed { line });
-        }
-    }
+    let done = setup_ended(done, advance, run.outcome());
     let failed_at = if run.failed() {
         Field::Set(cx.clock().now().as_millis())
     } else {
@@ -295,6 +289,24 @@ fn run_and_record(
         dotfiles,
         work_tree: cloned.work_tree,
     })
+}
+
+/// Adds how setup ended to `done`: `advance` moves the Box to working or setup-failed, and a Box
+/// already working gets only a `setup_failed` event.
+fn setup_ended(done: Decision, advance: bool, outcome: SetupOutcome) -> Decision {
+    match (advance, outcome) {
+        (true, SetupOutcome::Ok) => done
+            .lifecycle(BoxLifecycleInput::Ready {
+                setup: SetupOutcome::Ok,
+            })
+            .session(SessionInput::Started),
+        (true, SetupOutcome::Failed { line }) => done.lifecycle(BoxLifecycleInput::SetupFailed {
+            cause: line,
+            which: None,
+        }),
+        (false, SetupOutcome::Failed { line }) => done.event(ExtraEvent::SetupFailed { line }),
+        (false, SetupOutcome::Ok) => done,
+    }
 }
 
 /// Runs the steps after the setup lines; a failed agent install is warned and the start goes on.

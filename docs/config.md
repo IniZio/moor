@@ -436,7 +436,7 @@ A repo's `.moor.yaml` configures its Boxes.
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `brief` | string, at most 4000 characters | Notes from the repo's author for the Box's agent, such as how to start services, what is installed, and which test users exist. The agent reads the brief verbatim under "This project's Box", marked as coming from `.moor.yaml`. |
-| `setup` | list of shell commands | Commands that run on each new machine. |
+| `setup` | list of shell commands | Commands that run on each new machine. When one fails, the Box goes to `setup_failed` and the agent does not start. The start names the line and shows the end of its log. Run `moor retry NAME` once the line is fixed. |
 | `teardown` | list of shell commands | Commands that run when the Box closes. |
 | `env` | map | Plain environment variables for the Box. `PATH` is reserved. moor does not pass names that look like credentials, or names that moor sets, to the agent. |
 | `compose.project_prefix` | string | A prefix for compose project names. |
@@ -644,7 +644,7 @@ The controller refuses a config that has a `web`, `slack`, or `repos` key.
 ### Closing failed Boxes
 
 A Box whose lifecycle is `setup_failed` holds a machine that nothing uses: its
-machine, clone or credentials could not be set up, so no one worked in it. The
+machine, clone, credentials or a `setup:` line failed, so no agent worked in it. The
 settle pass closes such a Box once `close_setup_failed_after_secs` have passed
 since setup failed, which is a day unless the config says otherwise. A retry
 that fails again restarts that clock. The close is forced, releases the
@@ -652,10 +652,11 @@ machine, drops the Box's lease rows, and records a `closed` event with the
 reason `setup_failed_expired`. A Box that will not close is logged as a
 `settle:` line, and the next pass tries it again.
 
-Only a `setup_failed` Box is closed this way. A Ready Box whose `setup:` line
-failed is usable: it keeps its `setup_not_rerun` warning and is never closed
-by this pass. Set the key to 0 to keep failed Boxes until someone closes them
-by hand or with `moor close-failed`.
+Only a `setup_failed` Box is closed this way. A working Box that lost its
+machine and failed a `setup:` line on the new one stays Ready with its agent:
+it keeps its `setup_not_rerun` warning and is never closed by this pass. Set
+the key to 0 to keep failed Boxes until someone closes them by hand or with
+`moor close-failed`.
 
 ### Stopping the controller
 

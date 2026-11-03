@@ -163,12 +163,12 @@ fn the_repo_clones_in_its_own_exec_before_setup() {
 }
 
 #[test]
-fn a_failing_setup_leaves_a_working_box_and_runs_nothing_more() {
+fn a_failing_setup_line_fails_the_box_and_runs_nothing_more() {
     let driver = FakeDriver::new()
         .exec_results([Ok(exit(0)), Ok(exit(1))])
         .copy_text("moor setup: $ a\nmoor setup: $ b\n");
     let (w, v) = start_with("setup: [a, b, c]\n", driver);
-    assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::SetupFailed);
     assert!(v.setup.ran && !v.setup.ok);
     assert_eq!(v.setup.line.as_deref(), Some("b"));
     assert_eq!(setup_execs(&w).len(), 1);
@@ -177,7 +177,7 @@ fn a_failing_setup_leaves_a_working_box_and_runs_nothing_more() {
     let events = w.cx.store().unwrap().events(id, 50).unwrap();
     let failed = events.iter().find(|e| e.kind == "setup_failed").unwrap();
     assert_eq!(failed.payload.get("line"), Some(&serde_json::json!("b")));
-    assert!(kinds(&w, id).contains(&"working".to_owned()));
+    assert!(!kinds(&w, id).contains(&"working".to_owned()));
 }
 
 #[test]
@@ -200,9 +200,9 @@ fn a_failing_setup_names_the_step_tail_and_box_in_json_and_text() {
         &crate::cli::GlobalOpts::default(),
     )
     .stdout;
-    assert!(out.starts_with("started demo (#1): ready/working, box ready, setup failed\n"));
+    assert!(out.starts_with("started demo (#1): setup_failed/starting, box ready, setup failed\n"));
     assert!(out.contains(
-        "setup failed in Box box-1:\n  moor setup: $ a\n  boom: no such file\nclose it with: moor close demo\n"
+        "setup failed in Box box-1:\n  moor setup: $ a\n  boom: no such file\nretry it with: moor retry demo\nclose it with: moor close demo\n"
     ));
     assert!(out.contains("open it with: moor open demo\n"));
 }
@@ -307,7 +307,7 @@ fn a_timed_out_setup_counts_as_a_failing_line() {
         .exec_results([Ok(exit(0)), Err(DriverError::Timeout(LINE_DEADLINE))])
         .copy_text("moor setup: $ a\nmoor setup: $ b\n");
     let (w, v) = start_with("setup: [a, b, c]\n", driver);
-    assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::SetupFailed);
     assert!(v.setup.ran && !v.setup.ok);
     assert_eq!(v.setup.line.as_deref(), Some("b"));
     assert_eq!(setup_execs(&w).len(), 1);
@@ -456,11 +456,11 @@ fn a_failed_clone_aborts_the_start_without_launching_the_agent() {
 }
 
 #[test]
-fn a_failing_setup_command_after_a_good_clone_still_launches_the_agent() {
+fn a_failing_setup_command_after_a_good_clone_launches_no_agent() {
     let (w, engine, got) = start_recording_launches("setup: [a]\n", [Ok(exit(0)), Ok(exit(1))]);
     let v = got.unwrap();
     assert!(v.setup.ran && !v.setup.ok);
-    assert_eq!(engine.launches().len(), 1);
+    assert_eq!(engine.launches().len(), 0);
     let clones: Vec<_> = w
         .driver
         .execs()

@@ -176,8 +176,13 @@ fn pane_session() -> SessionRef {
 
 /// A world with a failing first setup step whose engine opens a pane on its first launch.
 fn world_with_engine(driver: FakeDriver) -> (World, Arc<FakeEngine>) {
+    yaml_world_with_engine("setup: [a]\n", driver)
+}
+
+/// A world serving `.moor.yaml` text `yaml` whose engine opens a pane on its first launch.
+fn yaml_world_with_engine(yaml: &str, driver: FakeDriver) -> (World, Arc<FakeEngine>) {
     let engine = Arc::new(FakeEngine::new().launch_result(Ok(pane_session())));
-    let mut w = world("setup: [a]\n", driver);
+    let mut w = world(yaml, driver);
     w.cx = w.cx.with_engine(engine.clone());
     (w, engine)
 }
@@ -348,4 +353,77 @@ fn a_failed_fork_runs_setup_again_in_the_kept_machine() {
         2,
         "both lines ran in the kept machine"
     );
+}
+
+/// The `line` of Box `id`'s latest `setup_failed` event.
+fn failed_line(w: &World, id: BoxId) -> Option<String> {
+    let store = w.cx.store().unwrap();
+    let event = store
+        .newest_events_of(id, "setup_failed", 1)
+        .unwrap()
+        .pop()?;
+    Some(event.payload.get("line")?.as_str()?.to_owned())
+}
+
+#[test]
+fn a_failed_setup_line_leaves_the_box_setup_failed_and_names_the_line() {
+    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]);
+    let w = world(TWO_LINES, driver.copy_text("moor setup: $ prep-one\n"));
+    let id = started(&w);
+    let after = row(&w, id);
+    assert_eq!(after.lifecycle, BoxLifecycle::SetupFailed);
+    assert!(after.setup_failed_at.is_some() && after.intent.is_none());
+    assert_eq!(failed_line(&w, id).as_deref(), Some("prep-one"));
+}
+
+#[test]
+fn a_retry_after_a_failed_line_forks_the_nearest_layer_replays_from_it_and_launches_the_agent() {
+    let driver =
+        FakeDriver::new()
+            .with_checkpoints()
+            .exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1))]);
+    let (w, engine) = yaml_world_with_engine(TWO_LINES, driver);
+    let id = started_with(&w, Some("fix it"));
+    assert_eq!(row(&w, id).lifecycle, BoxLifecycle::SetupFailed);
+    assert_eq!(failed_line(&w, id).as_deref(), Some("run-two"));
+    saved_layer(&w, id, 1);
+    let v = run(&w.cx, &req()).unwrap();
+    assert!(v.setup.ran && v.setup.ok);
+    assert!(w.driver.calls().iter().any(|c| c.starts_with("fork ")));
+    let after = row(&w, id);
+    let on = (after.lifecycle, after.boxed.unwrap().handle);
+    assert_eq!(on, (BoxLifecycle::Ready, Some(BoxHandle::new("box-2"))));
+    let replayed: Vec<_> = setup_execs(&w)
+        .into_iter()
+        .filter(|(h, _)| h == "box-2")
+        .map(|(_, argv)| (argv.contains("prep-one"), argv.contains("run-two")))
+        .collect();
+    assert_eq!(replayed, [(false, true)], "only the failed line replays");
+    let prompts: Vec<_> = engine.launches().into_iter().map(|l| l.prompt).collect();
+    assert_eq!(prompts, [LaunchPrompt::Text("fix it".into())]);
+}
+
+#[test]
+fn a_retry_after_a_failed_line_without_checkpoints_reruns_in_the_kept_machine_and_launches_the_agent(
+) {
+    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]);
+    let (w, engine) = yaml_world_with_engine(TWO_LINES, driver);
+    let id = started_with(&w, Some("fix it"));
+    assert_eq!(row(&w, id).lifecycle, BoxLifecycle::SetupFailed);
+    assert!(engine.launches().is_empty());
+    let v = run(&w.cx, &req()).unwrap();
+    assert!(v.setup.ok && v.agent.launched);
+    let after = row(&w, id);
+    let on = (after.lifecycle, after.boxed.unwrap().handle);
+    assert_eq!(on, (BoxLifecycle::Ready, Some(BoxHandle::new("box-1"))));
+    let hosts: Vec<_> = setup_execs(&w).into_iter().map(|(h, _)| h).collect();
+    assert_eq!(
+        hosts,
+        ["box-1", "box-1"],
+        "setup ran again in the kept machine"
+    );
+    let calls = w.driver.calls();
+    assert_eq!(calls.iter().filter(|c| *c == "acquire").count(), 1);
+    let prompts: Vec<_> = engine.launches().into_iter().map(|l| l.prompt).collect();
+    assert_eq!(prompts, [LaunchPrompt::Text("fix it".into())]);
 }
