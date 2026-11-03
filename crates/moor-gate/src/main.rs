@@ -4,6 +4,7 @@ use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::time::Duration;
 
 use clap::Parser;
 use moor_gate::{Gate, Login, Mcp, Verifier};
@@ -35,6 +36,9 @@ struct Args {
     /// `/auth/*` is off without it, and the issuer must allow `<public-url>/auth/callback`.
     #[arg(long, env = "MOOR_GATE_PUBLIC_URL")]
     public_url: Option<String>,
+    /// Seconds a SIGTERM waits for connections in flight before the gate exits.
+    #[arg(long, env = "MOOR_GATE_DRAIN_TIMEOUT_SECS", default_value_t = 600)]
+    drain_timeout_secs: u64,
 }
 
 fn main() -> ExitCode {
@@ -69,7 +73,15 @@ fn main() -> ExitCode {
         mcp,
         verifier: Verifier::new(args.issuer, args.client_id, args.jwks_url),
     });
-    match moor_gate::serve_with(&listener, &gate, login.as_ref()) {
+    let wake = match moor_gate::on_termination() {
+        Ok(wake) => wake,
+        Err(e) => {
+            moor_gate_log(&format!("cannot handle SIGTERM: {e}"));
+            return ExitCode::FAILURE;
+        }
+    };
+    let drain = Duration::from_secs(args.drain_timeout_secs);
+    match moor_gate::serve_until(listener, &gate, login.as_ref(), &wake, drain) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             moor_gate_log(&format!("accept failed: {e}"));

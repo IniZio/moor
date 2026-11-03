@@ -12,7 +12,7 @@
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::os::unix::net::UnixListener;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -479,3 +479,88 @@ mod listen;
 mod login;
 mod mcp;
 mod setup;
+
+/// A gate that drains when the returned socket's peer is written to, and the thread serving it.
+fn world_draining() -> (World, UnixStream, std::thread::JoinHandle<()>) {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = dir.path().join("authgear.sock");
+    let seen = serve_controller(&socket);
+    let Issuer {
+        base: issuer,
+        key,
+        userinfo,
+        userinfo_calls,
+        ..
+    } = Issuer::start(CLIENT_ID);
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let gate = listener.local_addr().unwrap().to_string();
+    let config = Arc::new(Gate {
+        front_socket: socket,
+        mcp: None,
+        verifier: Verifier::new(issuer.clone(), CLIENT_ID.to_owned(), None),
+    });
+    let (wake, trigger) = UnixStream::pair().unwrap();
+    let served = std::thread::spawn(move || {
+        moor_gate::serve_until(
+            listener,
+            &config,
+            None,
+            &wake,
+            std::time::Duration::from_secs(30),
+        )
+        .unwrap();
+    });
+    let world = World {
+        issuer,
+        gate,
+        key,
+        userinfo,
+        userinfo_calls,
+        seen,
+        _dir: dir,
+    };
+    (world, trigger, served)
+}
+
+#[test]
+fn a_missing_controller_socket_answers_503_with_retry_after() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, unread) = mpsc::channel();
+    let w = world_on(dir.path().join("absent.sock"), unread, dir);
+    let token = sign(&w.key, &claims(&w));
+    let mut stream = TcpStream::connect(&w.gate).unwrap();
+    write!(
+        stream,
+        "GET /front HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer {token}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n"
+    )
+    .unwrap();
+    let mut out = String::new();
+    stream.read_to_string(&mut out).unwrap();
+    assert!(out.starts_with("HTTP/1.1 503"), "{out}");
+    assert!(out.contains("Retry-After: 5\r\n"), "{out}");
+    assert!(out.contains("\"error\""), "{out}");
+}
+
+#[test]
+fn a_draining_gate_finishes_what_is_in_flight_and_refuses_new_connections() {
+    let (w, mut trigger, served) = world_draining();
+    let mut ws = connect(&w, Some(&sign(&w.key, &claims(&w)))).unwrap();
+    send(&mut ws, &json!({"frame": "hello", "protocol": 15}));
+    assert_eq!(recv(&mut ws), json!({"frame": "hello", "protocol": 15}));
+
+    trigger.write_all(b"x").unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while TcpStream::connect(&w.gate).is_ok() {
+        assert!(std::time::Instant::now() < deadline, "still accepting");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(
+        !served.is_finished(),
+        "the drain must wait for the open request"
+    );
+
+    send(&mut ws, &request("1", json!({"cmd": "whoami"})));
+    assert_eq!(recv(&mut ws)["id"], "1");
+    drop(ws);
+    served.join().unwrap();
+}
