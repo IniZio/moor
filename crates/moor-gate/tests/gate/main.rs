@@ -478,6 +478,7 @@ mod events_http;
 mod listen;
 mod login;
 mod mcp;
+mod secrets;
 mod setup;
 
 /// A gate that drains when the returned socket's peer is written to, and the thread serving it.

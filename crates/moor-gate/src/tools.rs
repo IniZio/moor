@@ -108,7 +108,9 @@ impl Tools {
         description = "Start a Box on a GitHub repo given as owner/name, optionally with a name, \
                        a first prompt for its agent and a base revision. Returns once the Box \
                        exists, while setup continues; follow the start with box_status. Pass \
-                       wait=true to block until setup and the agent launch finish. Needs the \
+                       wait=true to block until setup and the agent launch finish. A refusal \
+                       for missing secrets names them; the person stores them in a browser on \
+                       the gate's /me/secrets page, never through an agent. Needs the \
                        moor:write scope."
     )]
     async fn start_box(
@@ -118,10 +120,11 @@ impl Tools {
     ) -> CallToolResult {
         let wait = args.wait.unwrap_or(false);
         let request = start_request(args);
+        let reply = Reply::Started(self.public_url.clone());
         if wait {
-            return self.run(&context, WRITE, request, Reply::Started).await;
+            return self.run(&context, WRITE, request, reply).await;
         }
-        self.run_with(&context, WRITE, request, Reply::Started, send_early)
+        self.run_with(&context, WRITE, request, reply, send_early)
             .await
     }
 
@@ -350,15 +353,20 @@ fn send(
         identity: None,
         email: None,
     });
-    let ask = |request| {
+    let call = |request| {
         let acting = rewrite::act(request, person)?;
-        let reply = client
+        client
             .request(acting, |_| {})
-            .map_err(|e| format!("the controller is unreachable: {e}"))?;
+            .map_err(|e| format!("the controller is unreachable: {e}"))
+    };
+    let ask = |request| {
+        let reply = call(request)?;
         answer(&reply).map(|()| reply.value.unwrap_or_default())
     };
     ask(enroll)?;
-    let mut value = ask(request)?;
+    let answered = call(request)?;
+    answer(&answered).map_err(|why| reply.refused(why, &answered))?;
+    let mut value = answered.value.unwrap_or_default();
     reply.apply(&mut value, &ask);
     Ok(value)
 }

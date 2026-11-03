@@ -44,7 +44,13 @@ impl Tools {
         let request = BoxName::parse_allow_bare(&args.r#box)
             .map(|box_name| ControllerRequest::Retry(BoxReq { box_name }))
             .map_err(|e| e.to_string());
-        self.run(&context, WRITE, request, Reply::Started).await
+        self.run(
+            &context,
+            WRITE,
+            request,
+            Reply::Started(self.public_url.clone()),
+        )
+        .await
     }
 
     /// Closes every Box whose setup failed.
