@@ -93,6 +93,7 @@ fn streamed(done: Option<Result<StepDone, DriverError>>) -> Result<Option<Vec<u8
             outcome: ExecOutcome::Exited { code },
             ..
         })) => return Err(fail(format!("exit {code}"))),
+        Some(Err(e @ DriverError::Transport { .. })) => return Err(EngineError::Box(e)),
         Some(Err(e)) => return Err(fail(e.to_string())),
         _ => return Err(fail("no result".to_owned())),
     };
@@ -121,7 +122,7 @@ pub(super) fn save(
     );
     let connect = driver
         .connect_argv(&s.handle)
-        .map_err(|e| fail("archive", e.to_string()))?;
+        .map_err(|e| lost_or(e, |e| fail("archive", e.to_string())))?;
     let steps = [
         BoxStep::Run(script),
         BoxStep::Run(stream_script(s.workdir.as_str(), STREAM_CAP)),
@@ -147,6 +148,7 @@ pub(super) fn save(
             ..
         })) => return Err(fail("archive", "interrupted".to_owned())),
         Some(Ok(_)) => return Err(fail("archive", "unexpected result".to_owned())),
+        Some(Err(e @ DriverError::Transport { .. })) => return Err(EngineError::Box(e)),
         Some(Err(e)) => return Err(fail("archive", e.to_string())),
         None => return Err(fail("archive", "no result".to_owned())),
     }
@@ -157,7 +159,15 @@ pub(super) fn save(
         BoxPath::under(s.workdir.as_str(), ARCHIVE).map_err(|e| fail("copy", e.to_string()))?;
     driver
         .copy_out(&s.handle, &from, dest)
-        .map_err(|e| fail("copy", e.to_string()))
+        .map_err(|e| lost_or(e, |e| fail("copy", e.to_string())))
+}
+
+/// The error for `e`: a lost connection stays typed so the caller can tell an outage; anything else is `other`.
+fn lost_or(e: DriverError, other: impl FnOnce(DriverError) -> EngineError) -> EngineError {
+    match e {
+        DriverError::Transport { .. } => EngineError::Box(e),
+        e => other(e),
+    }
 }
 
 #[cfg(test)]

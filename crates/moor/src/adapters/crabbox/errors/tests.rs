@@ -4,7 +4,7 @@ use std::time::Duration;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::{ProcError, Tool};
 
-use super::{is_claim_race, map_error, Op};
+use super::{is_claim_race, map_error, transport_loss, Op};
 
 fn nz(code: i32, stderr: &str) -> ProcError {
     ProcError::NonZero {
@@ -242,4 +242,15 @@ fn another_release_error_still_fails_the_release() {
         map_error(Op::Release, Some("external"), &e),
         DriverError::Failed { .. }
     ));
+}
+
+#[test]
+fn a_machine_that_is_not_linked_is_a_lost_connection() {
+    let got = transport_loss(&nz(255, "machine 2 is not linked"));
+    assert_eq!(
+        got,
+        Some(DriverError::Transport {
+            stderr_tail: "machine 2 is not linked".to_owned()
+        })
+    );
 }

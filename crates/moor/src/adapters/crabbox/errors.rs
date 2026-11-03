@@ -142,13 +142,14 @@ pub(super) fn remote_exit(e: &ProcError) -> Option<i32> {
 
 /// Exit code ssh uses for its own failures; crabbox reports it as the remote command's exit.
 pub(super) const EXIT_SSH: i32 = 255;
-/// Lowercase words ssh prints when the connection to the Box drops or never comes up.
+/// Lowercase words ssh or its proxy print when the connection to the Box drops or never comes up.
 const SSH_LOST: &[&str] = &[
     "closed by remote host",
     "connection reset",
     "broken pipe",
     "kex_exchange_identification",
     "connection timed out",
+    "is not linked",
 ];
 
 /// The transport error when `e` is ssh losing the connection to the Box.

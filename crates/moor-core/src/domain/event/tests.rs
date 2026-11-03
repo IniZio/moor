@@ -127,6 +127,7 @@ fn all_events() -> Vec<Event> {
         Event::TranscriptFailed {
             trigger: s("close"),
             error: s("e"),
+            unlinked: false,
         },
         Event::TranscriptSkipped {
             trigger: s("close"),

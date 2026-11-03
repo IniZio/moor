@@ -218,6 +218,8 @@ pub enum ExtraEvent {
         trigger: String,
         /// What went wrong.
         error: String,
+        /// The Box's machine was not linked; the save is tried again once the link is back.
+        unlinked: bool,
     },
     /// The agent's transcript was not saved because there was nothing to save.
     TranscriptSkipped {
