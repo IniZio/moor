@@ -22,6 +22,7 @@ spec:
     spec:
       hostUsers: false
       automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ add .Values.controller.drainTimeoutSecs 30 }}
       securityContext:
         runAsNonRoot: true
         runAsUser: {{ $uid }}
@@ -153,6 +154,8 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext: {{- include "moor.gateSecurity" . | nindent 12 }}
           command: [moor-gate]
+          env:
+            - { name: MOOR_GATE_DRAIN_TIMEOUT_SECS, value: {{ .Values.controller.drainTimeoutSecs | quote }} }
           args:
             - --listen=0.0.0.0:{{ .Values.gate.port }}
             - --front-socket=/var/lib/moor/front/front

@@ -88,6 +88,8 @@ to turn on:
 
 The pod uses the `Recreate` strategy, so the old controller stops before the
 new one starts. On stop the controller drains for up to
-`controller.drainTimeoutSecs`, but Kubernetes kills the pod at the end of its
-grace period, 30 seconds by default. Read
+`controller.drainTimeoutSecs`, 60 seconds by default, and the gate drains for
+the same time. The pod's grace period is the drain plus 30 seconds, so the
+drain finishes before Kubernetes kills the pod. The new pod starts only after
+the old one is gone, so a longer drain makes each upgrade's outage longer. Read
 [Deploy the controller with systemd](deploy.md) for what a drain waits on.

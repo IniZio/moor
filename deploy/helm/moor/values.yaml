@@ -35,7 +35,8 @@ controller:
   # Per-provider settings, e.g. `external: {strip_env: [X]}`.
   drivers: {}
   settleEverySecs: 5
-  drainTimeoutSecs: 600
+  # Kept short while one pod runs everything: the pod is replaced, not rolled.
+  drainTimeoutSecs: 60
   resources: {}
   # Extra env for the controller container, as a list of {name, value}.
   extraEnv: []
