@@ -26,6 +26,9 @@ fn all_inputs() -> Vec<BoxLifecycleInput> {
             which: None,
         },
         I::Retry,
+        I::MachineLostSetupFailed {
+            cause: "x".to_owned(),
+        },
         I::Sleep {
             auto: false,
             reason: None,
@@ -75,6 +78,11 @@ fn legal() -> Vec<(BoxLifecycle, BoxLifecycleInput, BoxLifecycle)> {
             S::SetupFailed,
         ),
         (S::SetupFailed, I::Retry, S::SettingUp),
+        (
+            S::Ready,
+            I::MachineLostSetupFailed { cause: x() },
+            S::SetupFailed,
+        ),
         (S::Ready, I::sleep(false), S::Asleep),
         (S::Ready, I::sleep(true), S::Asleep),
         (S::Asleep, I::Wake, S::Ready),
@@ -149,7 +157,7 @@ fn auto_does_not_change_the_sleep_result() {
 
 #[test]
 fn legal_table_has_expected_size() {
-    assert_eq!(legal().len(), 14 + 6);
+    assert_eq!(legal().len(), 14 + 7);
 }
 
 #[test]

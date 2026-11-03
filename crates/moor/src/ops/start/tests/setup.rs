@@ -316,18 +316,28 @@ fn a_timed_out_setup_counts_as_a_failing_line() {
 }
 
 #[test]
-fn a_failing_setup_on_a_re_provisioned_working_box_records_the_failing_line() {
+fn a_failing_setup_on_a_re_provisioned_working_box_moves_it_to_setup_failed_with_no_agent() {
     let driver =
         FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(0)), Ok(exit(1))]);
-    let (w, v) = start_with("setup: [a]\n", driver);
+    let mut w = world(driver);
+    script_base_yaml(&w, Some("setup: [a]\n"));
+    let engine = Arc::new(FakeEngine::new());
+    w.cx = w.cx.with_engine(engine.clone());
+    let v = run(&w.cx, &start_req()).unwrap();
+    let launched = engine.launches().len();
     let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
     store
         .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
         .unwrap();
     let again = run(&w.cx, &start_req()).unwrap();
-    assert_eq!((again.boxed.lifecycle, again.boxed.session_state), WORKING);
+    assert_eq!(again.boxed.lifecycle, BoxLifecycle::SetupFailed);
     assert_eq!(again.setup.line.as_deref(), Some("a"));
+    assert_eq!(
+        engine.launches().len(),
+        launched,
+        "no agent on the new machine"
+    );
     let events = store.events(id, 50).unwrap();
     let lines: Vec<_> = events
         .iter()

@@ -131,7 +131,8 @@ impl BoxLifecycle {
             (Self::SettingUp, I::Ready { .. }) | (Self::Asleep | Self::Pending, I::Wake) => {
                 Self::Ready
             }
-            (Self::SettingUp, I::SetupFailed { .. }) => Self::SetupFailed,
+            (Self::SettingUp, I::SetupFailed { .. })
+            | (Self::Ready, I::MachineLostSetupFailed { .. }) => Self::SetupFailed,
             (Self::Ready, I::Sleep { .. }) => {
                 if !box_may_sleep(sessions) {
                     let busy = sessions
@@ -185,6 +186,11 @@ pub enum BoxLifecycleInput {
         /// The credential that failed, when the cause is a credential.
         which: Option<String>,
     },
+    /// A working Box lost its machine and a setup line failed on the machine it got instead.
+    MachineLostSetupFailed {
+        /// The failing output line.
+        cause: String,
+    },
     /// Setup is retried.
     Retry,
     /// The Box sleeps, by age or by command; legal only when every Session is Idle.
@@ -229,6 +235,7 @@ impl BoxLifecycleInput {
             Self::Promoted => "promoted",
             Self::Ready { .. } => "ready",
             Self::SetupFailed { .. } => "setup_failed",
+            Self::MachineLostSetupFailed { .. } => "machine_lost_setup_failed",
             Self::Retry => "retry",
             Self::Sleep { .. } => "sleep",
             Self::Wake => "wake",
