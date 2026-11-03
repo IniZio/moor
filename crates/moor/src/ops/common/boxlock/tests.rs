@@ -134,3 +134,14 @@ fn waiting_on_a_hold_that_never_ends_gives_up_on_the_clock() {
     let ended = interrupt(dir.path(), BoxId::new(8)).unwrap();
     assert!(!wait_ended(&clock, &ended, Duration::ZERO));
 }
+
+#[test]
+fn drop_releases_the_lock_while_a_copy_of_its_fd_is_still_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(Ts::from_millis(0));
+    let held = BoxLock::acquire(&clock, dir.path(), BoxId::new(1), "start", WAIT).unwrap();
+    // A child forked by any thread keeps such a copy until it execs.
+    let _copy = held.file.try_clone().unwrap();
+    drop(held);
+    BoxLock::acquire(&clock, dir.path(), BoxId::new(1), "retry", Duration::ZERO).unwrap();
+}
