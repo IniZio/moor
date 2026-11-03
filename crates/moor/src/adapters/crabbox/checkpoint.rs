@@ -19,6 +19,14 @@ const CHECKPOINT_DEADLINE: Duration = Duration::from_mins(10);
 struct Made {
     /// Checkpoint id, a string or a number.
     id: Value,
+    /// The provider's own record of the checkpoint.
+    #[serde(default)]
+    native: Option<Native>,
+}
+
+/// The provider part of a checkpoint record.
+#[derive(Deserialize)]
+struct Native {
     /// Size on the host.
     #[serde(default)]
     bytes: Option<u64>,
@@ -79,7 +87,7 @@ fn parse_made(text: &str) -> Option<Checkpoint> {
     };
     (!id.is_empty()).then_some(Checkpoint {
         id,
-        bytes: made.bytes,
+        bytes: made.native.and_then(|n| n.bytes),
     })
 }
 
