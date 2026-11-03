@@ -76,3 +76,6 @@ fn key(cols: &[&'static str]) -> IndexCreateStatement {
 fn index(name: &'static str, table: &'static str, cols: &[&'static str]) -> IndexCreateStatement {
     key(cols).name(name).table(table).take()
 }
+
+#[cfg(test)]
+mod tests;
