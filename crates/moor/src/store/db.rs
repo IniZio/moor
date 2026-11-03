@@ -14,9 +14,9 @@ use rusqlite::{Connection, OpenFlags};
 pub(crate) use moor_migrate::Backend;
 pub(crate) use rusqlite::{params, ToSql, TransactionBehavior};
 
+pub(crate) mod json;
 mod params;
 mod postgres;
-
 use params::owned;
 pub(crate) use params::Params;
 

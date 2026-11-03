@@ -9,7 +9,9 @@ use serde_json::{json, Value};
 
 use super::apply::insert_event;
 use super::{load_box, Store, StoreError};
-use crate::store::db::{params, DbExt as _, OptionalExtension, Row, TransactionBehavior};
+use crate::store::db::{
+    self, params, Backend, Db as _, DbExt as _, OptionalExtension, Row, TransactionBehavior,
+};
 
 /// A stored agent session.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -181,12 +183,17 @@ impl Store {
         let now = self.now();
         let json = serde_json::to_string(&record_json(record))?;
         let conn = self.writer();
+        let unchanged = match conn.backend() {
+            Backend::Sqlite => "json_remove(hook_cache.record, '$.reported') = json(?2)",
+            Backend::Postgres => "hook_cache.record::jsonb - 'reported' = ?2::text::jsonb",
+        };
         conn.execute(
-            "INSERT INTO hook_cache (session, record, at) \
-             VALUES ((SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1), ?2, ?3) \
-             ON CONFLICT(session) DO UPDATE SET at = ?3, record = CASE \
-             WHEN json_remove(hook_cache.record, '$.reported') = json(?2) THEN hook_cache.record \
-             ELSE ?2 END",
+            &format!(
+                "INSERT INTO hook_cache (session, record, at) \
+                 VALUES ((SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1), ?2, ?3) \
+                 ON CONFLICT(session) DO UPDATE SET at = ?3, record = CASE \
+                 WHEN {unchanged} THEN hook_cache.record ELSE ?2 END"
+            ),
             params![box_id.get(), json, now.as_millis()],
         )?;
         drop(conn);
@@ -197,10 +204,18 @@ impl Store {
     /// event; a newer report left in its place stays unmarked.
     pub(crate) fn mark_hook_reported(&self, box_id: BoxId, at: Ts) -> Result<(), StoreError> {
         let conn = self.writer();
+        let backend = conn.backend();
+        let marked = match backend {
+            Backend::Sqlite => "json_set(record, '$.reported', json('true'))",
+            Backend::Postgres => "jsonb_set(record::jsonb, '{reported}', 'true')::text",
+        };
         conn.execute(
-            "UPDATE hook_cache SET record = json_set(record, '$.reported', json('true')) \
-             WHERE session = (SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1) \
-             AND json_extract(record, '$.at') = ?2",
+            &format!(
+                "UPDATE hook_cache SET record = {marked} \
+                 WHERE session = (SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1) \
+                 AND {} = ?2",
+                db::json::int(backend, "record", "at")
+            ),
             params![box_id.get(), at.as_millis()],
         )?;
         drop(conn);

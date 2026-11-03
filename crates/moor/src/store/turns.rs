@@ -5,7 +5,7 @@ use moor_core::BoxId;
 
 use super::apply::insert_event;
 use super::{Store, StoreError};
-use crate::store::db::{DbExt as _, TransactionBehavior};
+use crate::store::db::{json, Db as _, DbExt as _, TransactionBehavior};
 
 impl Store {
     /// Write a `turn_done` for `steer` unless the Box already has one for it.
@@ -25,8 +25,11 @@ impl Store {
         let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let answered: bool = tx.query_row(
-            "SELECT EXISTS (SELECT 1 FROM events WHERE box = ?1 AND kind = 'turn_done' \
-             AND json_extract(payload, '$.steer') = ?2)",
+            &format!(
+                "SELECT EXISTS (SELECT 1 FROM events WHERE box = ?1 AND kind = 'turn_done' \
+                 AND {} = ?2)",
+                json::int(tx.backend(), "payload", "steer")
+            ),
             (box_id.get(), steer),
             |r| r.get(0),
         )?;

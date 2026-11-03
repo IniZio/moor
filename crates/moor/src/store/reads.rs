@@ -11,7 +11,7 @@ use moor_core::{BoxId, BoxName, SessionId};
 use super::{
     box_from_row, event_from_row, BoxRow, DriverRow, EventRow, Store, StoreError, BOX_SELECT,
 };
-use crate::store::db::{Db, DbExt as _, OptionalExtension};
+use crate::store::db::{json, Db, DbExt as _, OptionalExtension};
 
 /// Run a box query and map every row.
 fn query_boxes(
@@ -157,14 +157,20 @@ impl Store {
     /// # Errors
     /// Returns [`StoreError`] when the database fails.
     pub(crate) fn unanswered_steer(&self, box_id: BoxId) -> Result<Option<SteerMark>, StoreError> {
-        let row = self
-            .reader()?
+        let conn = self.reader()?;
+        let backend = conn.backend();
+        let row = conn
             .query_row(
-                "SELECT s.id, json_extract(s.payload, '$.hook_before'), \
-                 COALESCE(json_extract(s.payload, '$.new_turn'), 0) FROM events s WHERE s.box = ?1 AND s.kind = 'steered' \
-                 AND s.id = (SELECT MAX(id) FROM events WHERE box = ?1 AND kind = 'steered') \
-                 AND NOT EXISTS (SELECT 1 FROM events d WHERE d.box = ?1 AND d.kind = 'turn_done' \
-                 AND json_extract(d.payload, '$.steer') = s.id)",
+                &format!(
+                    "SELECT s.id, {}, COALESCE({}, 0) FROM events s \
+                     WHERE s.box = ?1 AND s.kind = 'steered' \
+                     AND s.id = (SELECT MAX(id) FROM events WHERE box = ?1 AND kind = 'steered') \
+                     AND NOT EXISTS (SELECT 1 FROM events d WHERE d.box = ?1 AND d.kind = 'turn_done' \
+                     AND {} = s.id)",
+                    json::int(backend, "s.payload", "hook_before"),
+                    json::flag(backend, "s.payload", "new_turn"),
+                    json::int(backend, "d.payload", "steer"),
+                ),
                 [box_id.get()],
                 |r| {
                     Ok(SteerMark {
