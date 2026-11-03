@@ -76,8 +76,11 @@ impl ProfileWriter for Claude {
 fn plugins(manifest: &Manifest) -> String {
     let claude = Tool::Agent.program();
     let mut lines = Vec::new();
-    for (name, repo) in &manifest.claude.marketplaces {
-        let url = format!("https://github.com/{}", repo.0);
+    for (name, source) in &manifest.claude.marketplaces {
+        let mut url = format!("https://github.com/{}", source.repo);
+        if let Some(r) = &source.git_ref {
+            url = format!("{url}#{r}");
+        }
         lines.push(format!(
             "{claude} plugin marketplace add {} </dev/null >/dev/null 2>&1 || fail {} $?",
             quote(&url),

@@ -230,3 +230,17 @@ fn the_profile_marketplace_is_the_checkout_and_plugins_install_under_its_own_nam
     );
     assert_eq!(f.read("work/.moor/profile-failures"), "");
 }
+
+#[test]
+fn a_marketplace_ref_is_kept_in_the_added_source() {
+    let f = Fixture::new();
+    let m = profile::parse(
+        "claude:\n  marketplaces:\n    tools: https://github.com/acme/agent-tools#feat/x\n",
+    )
+    .unwrap();
+    assert!(f.run(&m, "").status.success());
+    assert_eq!(
+        f.read("log"),
+        "plugin marketplace add https://github.com/acme/agent-tools#feat/x\n"
+    );
+}

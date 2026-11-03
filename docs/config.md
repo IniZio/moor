@@ -188,6 +188,9 @@ setup.sh                 # installs the tools the profile's plugins need
 
 Each new Box reads the profile when it starts.
 
+A marketplace under `marketplaces` is `https://github.com/OWNER/NAME`, and a trailing
+`#<ref>` pins a branch, tag or commit.
+
 An agent section of `moor-profile.yaml` can set `env`, environment variables the
 agent process starts with. This is the way to set one a tool reads only at
 process start, which the agent's own `settings.json` `env` is too late for. For
