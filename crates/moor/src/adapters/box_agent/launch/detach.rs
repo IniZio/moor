@@ -1,5 +1,6 @@
-//! The agent runs in a detached tmux session on the Box and the host pane attaches to it, so a
-//! dropped ssh link leaves the agent running and a new pane can attach to it.
+//! The agent runs in a detached terminal on the Box, held by the configured [`Holder`], and the
+//! host pane attaches to it, so a dropped ssh link leaves the agent running and a new pane can
+//! attach to it.
 
 use std::time::Duration;
 
@@ -11,55 +12,47 @@ use moor_core::seam::engine::{AgentFate, EngineError, SessionRef};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneCmd, PaneRef, Surface, WorkspaceRef};
 
-/// The tmux session the agent runs in; a Box runs one agent at a time.
-pub(in crate::adapters::box_agent) const SESSION: &str = "moor-agent";
-/// The agent window's own size, as tmux size flags.
-const WINDOW: &str = "-x 200 -y 50";
+use super::holder::Holder;
+use super::AGENT_PATH_LINE;
+
 /// Where the agent's exit status lands, relative to the Box workdir.
 const EXIT_FILE: &str = ".moor/agent.exit";
-/// The Box command that attaches to the agent's session and exits with the agent's status once
-/// the session is over.
-fn attach(exit_file: &str) -> String {
+
+/// The Box command that attaches to the agent's terminal held by `h` and exits with the agent's
+/// status once the terminal is over. A terminal already over is not attached.
+fn attach(h: &Holder, exit_file: &str) -> String {
     format!(
-        "if tmux has-session -t {SESSION} 2>/dev/null; then tmux attach-session -t {SESSION}; fi; \
-         {}",
+        "{AGENT_PATH_LINE}; if {}; then {}; fi; {}",
+        (h.alive)(),
+        (h.attach)(),
         exited(exit_file)
     )
 }
 
-/// The tmux hook run when a client attaches: it writes the status the agent last printed, kept
-/// in the user option `@moor_status_file`, straight to that client's terminal, so a client that
-/// joins after a change still sees the current state. Unlike the agent's own print it is not
-/// wrapped for passthrough, as it does not travel through tmux.
-const REPLAY_ON_ATTACH: &str = r##"run-shell -b 'f="#{@moor_status_file}"; [ -s "$f" ] && printf "\033]7501;%s\033\134" "$(cat "$f")" > "#{client_tty}" 2>/dev/null; :'"##;
-
-/// The Box command that replaces any agent session with one running the script file at
-/// `script`, then attaches. A Box without tmux refuses to start the agent: on the bare link a
-/// dropped connection would end it again.
-fn start(exit_file: &str, script: &str) -> String {
+/// The Box command that replaces any agent terminal with one held by `h` running the script
+/// file at `script`, then attaches. A Box without the holder refuses to start the agent: on the
+/// bare link a dropped connection would end it again.
+fn start(h: &Holder, exit_file: &str, script: &str) -> String {
     let inner = format!("sh {}; echo $? > {exit_file}", quote(script));
     format!(
-        "if ! command -v tmux >/dev/null 2>&1; then \
-         echo '{NO_TMUX}' >&2; exit {NO_TMUX_EXIT}; fi; \
-         tmux kill-session -t {SESSION} 2>/dev/null; rm -f {exit_file}; \
-         tmux new-session -d -s {SESSION} {WINDOW} {} || exit 1; \
-         tmux set-option -t {SESSION} status off >/dev/null; \
-         tmux set-option -t {SESSION} prefix None >/dev/null; \
-         tmux set-option -t {SESSION} allow-passthrough on >/dev/null 2>&1; \
-         tmux set-option -s escape-time 0 >/dev/null; \
-         tmux set-option -t {SESSION} @moor_status_file \"$(dirname {exit_file})/status-osc\" >/dev/null; \
-         tmux set-hook -t {SESSION} client-attached {} >/dev/null; {}",
-        quote(&inner),
-        quote(REPLAY_ON_ATTACH),
-        attach(exit_file),
+        "{AGENT_PATH_LINE}; if ! command -v {} >/dev/null 2>&1; then \
+         echo {} >&2; exit {NO_HOLDER_EXIT}; fi; {} {}",
+        h.program,
+        quote(&refusal(h)),
+        (h.open)(exit_file, &inner),
+        attach(h, exit_file),
     )
 }
 
-/// What a Box without tmux prints before refusing to start the agent.
-const NO_TMUX: &str =
-    "moor: tmux is not installed on the Box; the agent needs it to outlive a dropped link";
+/// What a Box without the holder `h` prints before refusing to start the agent.
+fn refusal(h: &Holder) -> String {
+    format!(
+        "moor: {} is not installed on the Box; the agent needs it to outlive a dropped link",
+        h.program
+    )
+}
 /// The exit status of that refusal, the shell's command-not-found status.
-const NO_TMUX_EXIT: u8 = 127;
+const NO_HOLDER_EXIT: u8 = 127;
 
 /// The Box command that exits with the agent's recorded status, or 1 when it left none.
 fn exited(exit_file: &str) -> String {
@@ -77,33 +70,27 @@ fn line(connect: &[String], box_cmd: &str) -> String {
 }
 
 /// The pane line that starts the agent script at `script` on the Box. The script travels as a
-/// file, not inside this line: each shell layer between here and tmux would quote it again.
+/// file, not inside this line: each shell layer between here and the holder would quote it again.
 pub(super) fn pane_line(
+    h: &Holder,
     connect: &[String],
     workdir: &str,
     script: &str,
 ) -> Result<String, NameError> {
     let exit_file = quote(BoxPath::under(workdir, EXIT_FILE)?.as_str());
-    Ok(line(connect, &start(&exit_file, script)))
+    Ok(line(connect, &start(h, &exit_file, script)))
 }
 
-/// The command that relays the agent's terminal through `connect`. While a client is attached
-/// the agent's window takes the size of the client that used it last; once the last client
-/// leaves, by detaching or by a dropped link, tmux puts the window back to its own size.
-pub(crate) fn relay_argv(connect: &[String]) -> Vec<String> {
+/// The command that relays the agent's terminal held by `h` through `connect`.
+pub(crate) fn relay_argv(h: &Holder, connect: &[String]) -> Vec<String> {
     let mut argv = connect.to_vec();
-    argv.push(format!(
-        "tmux set-hook -t {SESSION} client-detached \
-         'if -F \"#{{==:#{{session_attached}},0}}\" \"resize-window -t {SESSION} {WINDOW}\"' \
-         >/dev/null 2>&1; \
-         tmux set-option -w -t {SESSION} window-size latest >/dev/null 2>&1; \
-         exec tmux attach-session -t {SESSION}"
-    ));
+    argv.push(format!("{AGENT_PATH_LINE}; {}", (h.relay)()));
     argv
 }
 
 /// Opens a pane in `ws` that attaches to the running agent of `s`.
 pub(in crate::adapters::box_agent) fn reattach(
+    h: &Holder,
     driver: &dyn Driver,
     surface: &dyn Surface,
     s: &SessionRef,
@@ -130,7 +117,7 @@ pub(in crate::adapters::box_agent) fn reattach(
                 argv: vec![
                     "sh".to_owned(),
                     "-c".to_owned(),
-                    line(&connect, &attach(&exit_file)),
+                    line(&connect, &attach(h, &exit_file)),
                 ],
                 env: Vec::new(),
             },
@@ -141,8 +128,9 @@ pub(in crate::adapters::box_agent) fn reattach(
 /// Time allowed for each Box command that tells what became of the agent.
 const FATE_DEADLINE: Duration = Duration::from_secs(20);
 
-/// Asks the Box whether the agent's session still runs and, once it is over, for its status.
+/// Asks the Box whether the agent's terminal still runs and, once it is over, for its status.
 pub(in crate::adapters::box_agent) fn fate(
+    h: &Holder,
     driver: &dyn Driver,
     s: &SessionRef,
     deadline: Deadline,
@@ -164,33 +152,42 @@ pub(in crate::adapters::box_agent) fn fate(
             Err(e) => Err(EngineError::Box(e)),
         }
     };
-    fate_by(run)
+    fate_by(h, run)
 }
 
 /// What became of the agent, told by Box commands that `run` runs in the workdir.
-fn fate_by(run: impl Fn(String) -> Result<i32, EngineError>) -> Result<AgentFate, EngineError> {
-    if run(format!("tmux has-session -t {SESSION} 2>/dev/null"))? == 0 {
+fn fate_by(
+    h: &Holder,
+    run: impl Fn(String) -> Result<i32, EngineError>,
+) -> Result<AgentFate, EngineError> {
+    if run(format!("{AGENT_PATH_LINE}; {}", (h.alive)()))? == 0 {
         return Ok(AgentFate::Running);
     }
     let exit = run(exited(EXIT_FILE))?;
     Ok(AgentFate::Ended { exit: Some(exit) })
 }
 
-/// Time allowed for ending the agent's session on the Box.
+/// The Box command that ends the agent's terminal held by `h`; it succeeds when there is none.
+fn stop_cmd(h: &Holder) -> String {
+    format!(
+        "{AGENT_PATH_LINE}; ! command -v {} >/dev/null 2>&1 || {} 2>/dev/null || true",
+        h.program,
+        (h.kill)()
+    )
+}
+
+/// Time allowed for ending the agent's terminal on the Box.
 const STOP_DEADLINE: Duration = Duration::from_secs(30);
 
-/// Ends the agent's tmux session on the Box, which hangs the agent up; a session already gone
-/// is fine.
+/// Ends the agent's terminal on the Box, which hangs the agent up; a terminal already gone is
+/// fine.
 pub(in crate::adapters::box_agent) fn stop(
+    h: &Holder,
     driver: &dyn Driver,
     s: &SessionRef,
 ) -> Result<(), EngineError> {
     let spec = ExecSpec {
-        argv: vec![
-            "sh".to_owned(),
-            "-c".to_owned(),
-            format!("! command -v tmux >/dev/null 2>&1 || tmux kill-session -t {SESSION} 2>/dev/null || true"),
-        ],
+        argv: vec!["sh".to_owned(), "-c".to_owned(), stop_cmd(h)],
         env: Vec::new(),
         cwd: None,
         output: None,

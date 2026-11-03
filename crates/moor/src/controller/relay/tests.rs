@@ -16,7 +16,7 @@ use moor_core::seam::clock::Clock;
 use moor_core::view::{AttachEnd, AttachView};
 
 use super::{run, Link};
-use crate::adapters::box_agent::relay_argv;
+use crate::adapters::box_agent::{relay_argv, TMUX};
 use crate::adapters::clock::SystemClock;
 
 /// The clock the tests wait on.
@@ -146,7 +146,7 @@ impl Attached {
     /// Starts the relay to `agent` at 120x33.
     fn open(agent: &Agent) -> Self {
         let (client, server) = UnixStream::pair().expect("pair");
-        let argv = relay_argv(&agent.connect());
+        let argv = relay_argv(&TMUX, &agent.connect());
         let stopping = Arc::new(AtomicBool::new(false));
         let stop = Arc::clone(&stopping);
         let relay = thread::spawn(move || {
