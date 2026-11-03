@@ -217,11 +217,11 @@ fn record(tx: Transaction<'_>, f: &Fresh<'_>, box_dir: &Path) -> Result<Artifact
     let content_type = content_type(f.name).to_owned();
     let size = i64::try_from(f.size)
         .map_err(|_| StoreError::Corrupt("artifact size exceeds the column range".to_owned()))?;
-    tx.execute(
+    let id: i64 = tx.query_row(
         "INSERT INTO artifacts (box, session, name, version, kind, content_type, size, sha256, \
          path, created_at) VALUES (?1, \
          (SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1), \
-         ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+         ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) RETURNING id",
         params![
             f.box_id.get(),
             f.name,
@@ -233,8 +233,8 @@ fn record(tx: Transaction<'_>, f: &Fresh<'_>, box_dir: &Path) -> Result<Artifact
             f.path,
             f.now.as_millis()
         ],
+        |r| r.get(0),
     )?;
-    let id = tx.last_insert_rowid();
     let event = Event::ArtifactPublished {
         name: f.name.to_owned(),
         version: f.version,

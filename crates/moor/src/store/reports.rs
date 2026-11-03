@@ -72,12 +72,12 @@ impl Store {
         let path = file.to_string_lossy().into_owned();
         write_private(&file, content)?;
         let stored = tx
-            .execute(
+            .query_row(
                 "INSERT INTO reports (box, kind, version, path, title, created_at) \
-                 VALUES (?, ?, ?, ?, NULL, ?)",
+                 VALUES (?, ?, ?, ?, NULL, ?) RETURNING id",
                 params![box_id.get(), kind, version, path, now.as_millis()],
+                |r| r.get::<_, i64>(0),
             )
-            .map(|_| tx.last_insert_rowid())
             .and_then(|id| tx.commit().map(|()| id));
         let id = match stored {
             Ok(id) => id,

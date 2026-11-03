@@ -70,8 +70,8 @@ impl Store {
         layer: usize,
     ) -> Result<(), StoreError> {
         self.writer().execute(
-            "INSERT OR IGNORE INTO setup_checkpoint_pins (box_id, provider, layer_key, layer) \
-             VALUES (?, ?, ?, ?)",
+            "INSERT INTO setup_checkpoint_pins (box_id, provider, layer_key, layer) \
+             VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING",
             params![
                 id.get(),
                 provider.as_str(),

@@ -15,8 +15,8 @@ impl Store {
         source: &ProfileSource,
     ) -> Result<(), StoreError> {
         self.writer().execute(
-            "INSERT INTO user_profiles (user, repo, git_ref, updated_at) VALUES (?, ?, ?, ?) \
-             ON CONFLICT (user) DO UPDATE SET repo = excluded.repo, git_ref = excluded.git_ref, \
+            "INSERT INTO user_profiles (\"user\", repo, git_ref, updated_at) VALUES (?, ?, ?, ?) \
+             ON CONFLICT (\"user\") DO UPDATE SET repo = excluded.repo, git_ref = excluded.git_ref, \
              updated_at = excluded.updated_at",
             params![
                 user.get(),
@@ -32,7 +32,7 @@ impl Store {
     pub(crate) fn delete_user_profile(&self, user: UserId) -> Result<bool, StoreError> {
         let gone = self
             .writer()
-            .execute("DELETE FROM user_profiles WHERE user = ?", [user.get()])?;
+            .execute("DELETE FROM user_profiles WHERE \"user\" = ?", [user.get()])?;
         Ok(gone == 1)
     }
 
@@ -41,7 +41,7 @@ impl Store {
         let row: Option<(String, Option<String>)> = self
             .reader()?
             .query_row(
-                "SELECT repo, git_ref FROM user_profiles WHERE user = ?",
+                "SELECT repo, git_ref FROM user_profiles WHERE \"user\" = ?",
                 [user.get()],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )

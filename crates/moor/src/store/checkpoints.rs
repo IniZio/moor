@@ -62,13 +62,13 @@ impl Store {
         let chain = lineage.chain.as_str();
         self.writer().execute(
             "INSERT INTO setup_checkpoints (provider, layer_key, checkpoint, repo, bytes, \
-             created_at, last_used_at, user, chain, chain_at, parent) \
+             created_at, last_used_at, \"user\", chain, chain_at, parent) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8, COALESCE((SELECT MIN(chain_at) \
              FROM setup_checkpoints WHERE provider = ?1 AND chain = ?8), ?6), ?9) \
              ON CONFLICT (provider, layer_key) WHERE evicting = 0 DO UPDATE SET \
              checkpoint = excluded.checkpoint, repo = excluded.repo, bytes = excluded.bytes, \
              created_at = excluded.created_at, last_used_at = excluded.last_used_at, \
-             user = excluded.user, chain = excluded.chain, chain_at = excluded.chain_at, \
+             \"user\" = excluded.user, chain = excluded.chain, chain_at = excluded.chain_at, \
              parent = excluded.parent, workdir = NULL, setup_ms = NULL",
             params![
                 provider.as_str(),

@@ -76,8 +76,8 @@ fn insert_binding(
         return Ok(false);
     }
     let added = conn.execute(
-        "INSERT OR IGNORE INTO bindings (front, conv_key, session, owner, created_at) \
-         VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO bindings (front, conv_key, session, owner, created_at) \
+         VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
         params![front, key, session, owner, at],
     )?;
     Ok(added == 1)

@@ -119,12 +119,12 @@ impl Store {
                 box_id.get()
             )));
         }
-        tx.execute(
+        let id: i64 = tx.query_row(
             "INSERT INTO launches (box, session_ref, pane, started_at, session, holder) VALUES (?1, ?2, ?3, ?4, \
-             (SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1), ?5)",
+             (SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1), ?5) RETURNING id",
             params![box_id.get(), session_ref, pane, now.as_millis(), holder.name()],
+            |r| r.get(0),
         )?;
-        let id = tx.last_insert_rowid();
         let started = Event::SessionStarted {
             session: session_ref.to_owned(),
         };

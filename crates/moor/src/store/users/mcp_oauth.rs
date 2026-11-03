@@ -56,7 +56,7 @@ impl Store {
             [self.now().as_millis()],
         )?;
         self.writer().execute(
-            "INSERT INTO mcp_oauth_pending (state, user, name, value, expires_at) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO mcp_oauth_pending (state, \"user\", name, value, expires_at) VALUES (?, ?, ?, ?, ?)",
             params![state, user.get(), name, sealed, expires.as_millis()],
         )?;
         Ok(())
@@ -71,7 +71,7 @@ impl Store {
         Ok(self
             .writer()
             .query_row(
-                "DELETE FROM mcp_oauth_pending WHERE state = ? AND user = ? \
+                "DELETE FROM mcp_oauth_pending WHERE state = ? AND \"user\" = ? \
                  RETURNING name, value, expires_at",
                 params![state, user.get()],
                 |r| {
@@ -93,8 +93,8 @@ impl Store {
         (issued, expires): (Ts, Option<Ts>),
     ) -> Result<(), StoreError> {
         self.writer().execute(
-            "INSERT INTO user_mcp_oauth (user, name, value, expires_at, updated_at) VALUES (?, ?, ?, ?, ?) \
-             ON CONFLICT (user, name) DO UPDATE SET value = excluded.value, \
+            "INSERT INTO user_mcp_oauth (\"user\", name, value, expires_at, updated_at) VALUES (?, ?, ?, ?, ?) \
+             ON CONFLICT (\"user\", name) DO UPDATE SET value = excluded.value, \
              expires_at = excluded.expires_at, updated_at = excluded.updated_at, signed_out_at = NULL",
             params![user.get(), name, sealed, expires.map(Ts::as_millis), issued.as_millis()],
         )?;
@@ -110,7 +110,7 @@ impl Store {
     ) -> Result<bool, StoreError> {
         let n = self.writer().execute(
             "UPDATE user_mcp_oauth SET value = ?, expires_at = ?, updated_at = ? \
-             WHERE user = ? AND name = ? AND updated_at = ? AND signed_out_at IS NULL",
+             WHERE \"user\" = ? AND name = ? AND updated_at = ? AND signed_out_at IS NULL",
             params![
                 sealed,
                 expires.map(Ts::as_millis),
@@ -126,7 +126,7 @@ impl Store {
     /// Marks `user`'s server `name` as needing a new sign-in.
     pub(crate) fn end_user_mcp_oauth(&self, user: UserId, name: &str) -> Result<(), StoreError> {
         self.writer().execute(
-            "UPDATE user_mcp_oauth SET signed_out_at = ?, expires_at = NULL WHERE user = ? AND name = ?",
+            "UPDATE user_mcp_oauth SET signed_out_at = ?, expires_at = NULL WHERE \"user\" = ? AND name = ?",
             params![self.now().as_millis(), user.get(), name],
         )?;
         Ok(())
@@ -136,7 +136,7 @@ impl Store {
     pub(crate) fn expiring_mcp_oauth(&self) -> Result<Vec<GrantRow>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(
-            "SELECT user, name, value, updated_at, expires_at FROM user_mcp_oauth \
+            "SELECT \"user\", name, value, updated_at, expires_at FROM user_mcp_oauth \
              WHERE signed_out_at IS NULL AND expires_at IS NOT NULL",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -158,7 +158,7 @@ impl Store {
     ) -> Result<BTreeMap<String, SignIn>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(
-            "SELECT name, expires_at, signed_out_at IS NOT NULL FROM user_mcp_oauth WHERE user = ?",
+            "SELECT name, expires_at, signed_out_at IS NOT NULL FROM user_mcp_oauth WHERE \"user\" = ?",
         )?;
         let rows = stmt.query_map([user.get()], |r| {
             let ended: bool = r.get(2)?;
@@ -177,7 +177,7 @@ impl Store {
     /// Removes `user`'s grant for server `name`.
     pub(crate) fn delete_user_mcp_oauth(&self, user: UserId, name: &str) -> Result<(), StoreError> {
         self.writer().execute(
-            "DELETE FROM user_mcp_oauth WHERE user = ? AND name = ?",
+            "DELETE FROM user_mcp_oauth WHERE \"user\" = ? AND name = ?",
             params![user.get(), name],
         )?;
         Ok(())

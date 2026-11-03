@@ -15,7 +15,7 @@ impl Store {
     pub(crate) fn machine_keys(&self) -> Result<Vec<MachineKey>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(
-            "SELECT machine_id, user, name, pubkey FROM user_machines_v2 ORDER BY machine_id",
+            "SELECT machine_id, \"user\", name, pubkey FROM user_machines_v2 ORDER BY machine_id",
         )?;
         let rows = stmt.query_map([], |r| {
             Ok(MachineKey {
@@ -51,7 +51,11 @@ impl Store {
                 .memory
                 .or_else(|| reported.get(&link.machine_id).copied());
             tx.execute(
-                "INSERT OR REPLACE INTO machine_links (machine_id, online, since, version, protocol, \
+                "DELETE FROM machine_links WHERE machine_id = ?",
+                [link.machine_id],
+            )?;
+            tx.execute(
+                "INSERT INTO machine_links (machine_id, online, since, version, protocol, \
                  max_boxes, cache_gb, pool_features, mem_mib, cpus, reserve_mib, mem_available_mib, \
                  psi_centi, reported_at, psi_full_centi, disk_free_mib, disk_total_mib) \
                  SELECT machine_id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM user_machines_v2 \
@@ -97,7 +101,11 @@ impl Store {
         tx.execute("DELETE FROM machine_box_memory", [])?;
         for b in boxes.iter().filter(|b| b.controller == own) {
             tx.execute(
-                "INSERT OR REPLACE INTO machine_box_memory (machine_id, box_id, host_memory_mib) \
+                "DELETE FROM machine_box_memory WHERE machine_id = ? AND box_id = ?",
+                params![b.machine_id, b.box_id.get()],
+            )?;
+            tx.execute(
+                "INSERT INTO machine_box_memory (machine_id, box_id, host_memory_mib) \
                  SELECT machine_id, ?, ? FROM user_machines_v2 WHERE machine_id = ?",
                 params![
                     b.box_id.get(),
@@ -183,7 +191,7 @@ pub(super) fn enrolled_in(
     user: UserId,
 ) -> Result<Vec<(i64, moor_core::config::UserMachine)>, StoreError> {
     let mut stmt = conn.prepare(
-        "SELECT machine_id, name, labels, capacity, pool_provider FROM user_machines_v2 WHERE user = ? \
+        "SELECT machine_id, name, labels, capacity, pool_provider FROM user_machines_v2 WHERE \"user\" = ? \
          ORDER BY name",
     )?;
     let rows = stmt.query_and_then([user.get()], |r| {

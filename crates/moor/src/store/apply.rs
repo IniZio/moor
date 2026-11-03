@@ -363,12 +363,12 @@ pub(super) fn insert_event(
     e: &Event,
     now: Ts,
 ) -> Result<i64, StoreError> {
-    tx.execute(
+    let event: i64 = tx.query_row(
         "INSERT INTO events (box, session, kind, payload, ts) VALUES (?1, \
-         (SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1), ?2, ?3, ?4)",
+         (SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1), ?2, ?3, ?4) RETURNING id",
         params![id.get(), e.kind(), e.payload().to_string(), now.as_millis()],
+        |r| r.get(0),
     )?;
-    let event = tx.last_insert_rowid();
     super::webhook_outbox::enqueue(tx, id, event, e.kind())?;
     Ok(event)
 }

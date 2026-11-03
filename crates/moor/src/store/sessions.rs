@@ -97,14 +97,14 @@ impl Store {
             live_parent(&tx, p)?;
         }
         let state = SessionState::Starting;
-        tx.execute(
-            "INSERT INTO sessions (box, ordinal, state, started_at, parent_session, workspace_id) \
-             VALUES (?1, ?2, ?3, ?4, ?5, (SELECT workspace_id FROM sessions WHERE box = ?1 \
-             ORDER BY ordinal DESC LIMIT 1))",
-            (id.get(), ordinal, state.as_str(), now.as_millis(), parent),
-        )?;
         let session = BoxSession {
-            id: tx.last_insert_rowid(),
+            id: tx.query_row(
+                "INSERT INTO sessions (box, ordinal, state, started_at, parent_session, workspace_id) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, (SELECT workspace_id FROM sessions WHERE box = ?1 \
+                 ORDER BY ordinal DESC LIMIT 1)) RETURNING id",
+                (id.get(), ordinal, state.as_str(), now.as_millis(), parent),
+                |r| r.get(0),
+            )?,
             ordinal,
             state,
         };
