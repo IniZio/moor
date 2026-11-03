@@ -1,15 +1,15 @@
 #!/bin/sh
 set -eu
 
-CH_VERSION=v52.0
-CH_SHA256=829af01ff075bb96c4f183905134c453a88d68cbabdc6b87df21098842581ee9
+CH_VERSION=v52.0-moor.1
+CH_SHA256=f0052b204ea9e22b9428845ff6f22b6f7738d1b49e29e00b7e3a2856ab1f098c
 PASST_REV=a9c61ffaf15347b8dfcc2347c5440e4b0e82333b
 PASST_SHA256=cf4746812d3e2461f7582b7b8089591ce4e8b9d1f45beb28d9c177c365346907
 GO_VERSION=go1.27.3
 GO_SHA256=65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40
 CRABBOX_COMMIT=a95faf0d4789145c52681ad892c7a6baff112586
 CRABBOX_VERSION=0.79.1-moor.15
-ADAPTER_REV=cee16673b69d14be3d5311cea820244ec419ed6b
+ADAPTER_REV=6c5c05ba6f6ad2345a3f90affbd143803ec2a869
 
 NESTED=${NESTED:-$HOME/.cache/moor-nested}
 BIN=$NESTED/bin
@@ -60,7 +60,7 @@ if [ -e /dev/kvm ] && [ "$(id -u)" != 0 ]; then
 fi
 
 if ! fresh cloud-hypervisor "$CH_VERSION"; then
-	fetch "https://github.com/cloud-hypervisor/cloud-hypervisor/releases/download/$CH_VERSION/cloud-hypervisor-static" \
+	fetch "https://github.com/IniZio/cloud-hypervisor/releases/download/$CH_VERSION/cloud-hypervisor-static" \
 		"$CH_SHA256" "$NESTED/dl/cloud-hypervisor-$CH_VERSION"
 	install -m 0755 "$NESTED/dl/cloud-hypervisor-$CH_VERSION" "$BIN/cloud-hypervisor"
 	done_step cloud-hypervisor "$CH_VERSION"
