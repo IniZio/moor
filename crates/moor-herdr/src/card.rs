@@ -55,6 +55,8 @@ pub enum Card {
     SetupFailed(String),
     /// The Box is paused.
     Asleep,
+    /// The Box is paused mid-turn.
+    AsleepUnfinished,
     /// The Box is still being set up; the pane attaches once it is up.
     Starting(Progress),
     /// The user detached; the agent keeps running.
@@ -77,6 +79,7 @@ impl Card {
                 Self::SetupFailed(now.map(|b| b.name.clone()).unwrap_or_default())
             }
             Some(Phase::Asleep) => Self::Asleep,
+            Some(Phase::AsleepUnfinished) => Self::AsleepUnfinished,
             Some(Phase::Starting) => Self::Starting(Progress::default()),
             Some(Phase::Live(_) | Phase::WaitingForMachine) => match ended {
                 Ended::Relay(AttachEnd::Client) => Self::Detached,
@@ -100,7 +103,7 @@ impl Card {
                 Choice::Note("setup failed: close it or run moor retry")
             }
             (b'r' | b'R' | b'\r', Self::Starting(_)) => Choice::Stay,
-            (b'r' | b'R' | b'\r', Self::Asleep) => Choice::Wake,
+            (b'r' | b'R' | b'\r', Self::Asleep | Self::AsleepUnfinished) => Choice::Wake,
             (b'r' | b'R' | b'\r', _) => Choice::Attach,
             _ => Choice::Stay,
         }
@@ -128,6 +131,9 @@ impl Card {
                 format!("setup failed · close it in the Boxes panel or run moor retry {name}")
             }
             Self::Asleep => "asleep · r wakes it and attaches".to_owned(),
+            Self::AsleepUnfinished => {
+                "asleep, turn unfinished · r wakes it and resumes the turn".to_owned()
+            }
             Self::Starting(p) => p.elapsed.map_or_else(
                 || "starting · attaches when it's up".to_owned(),
                 |secs| {
@@ -142,7 +148,7 @@ impl Card {
             Self::LinkDropped => "the link to the Box dropped".to_owned(),
             Self::Refused(why) => format!("attach refused: {why}"),
         };
-        let keys = if matches!(self, Self::Asleep) {
+        let keys = if matches!(self, Self::Asleep | Self::AsleepUnfinished) {
             "r wake and attach · q close this pane".to_owned()
         } else if self.reattaches() {
             format!("r attach · q close this pane · {DETACH_KEY} detaches while attached")

@@ -134,6 +134,7 @@ pub(crate) fn box_view_with_run(
         prompt: row.prompt.clone(),
         lifecycle: row.lifecycle,
         session_state: row.session,
+        unfinished_turn: moor_core::view::unfinished_turn(row.lifecycle, row.session),
         state_reason: row.state_reason.clone(),
         base: row.base.clone(),
         branch: row.branch.clone(),

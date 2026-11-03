@@ -166,3 +166,17 @@ fn a_watched_box_comes_with_its_events_oldest_first() {
     let kinds: Vec<_> = events.iter().map(|e| e.kind.as_str()).collect();
     assert_eq!(kinds, ["started", "cloned"]);
 }
+
+#[test]
+fn an_asleep_box_with_an_unfinished_turn_has_its_own_phase() {
+    let phase = |unfinished| {
+        let r = with(
+            row("asleep", "working"),
+            "unfinished_turn",
+            json!(unfinished),
+        );
+        parse_list(json!({ "boxes": [r] })).unwrap().remove(0).phase
+    };
+    assert_eq!(phase(true), Phase::AsleepUnfinished);
+    assert_eq!(phase(false), Phase::Asleep);
+}

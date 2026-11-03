@@ -19,6 +19,7 @@ fn sample_box() -> BoxView {
         prompt: None,
         lifecycle: BoxLifecycle::Ready,
         session_state: SessionState::Working,
+        unfinished_turn: false,
         state_reason: None,
         base: None,
         branch: None,

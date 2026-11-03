@@ -228,3 +228,26 @@ fn detail_says_where_a_waiting_machine_claim_stands_in_line() {
         );
     }
 }
+
+fn unfinished(mut t: Value) -> Value {
+    if let Some(fields) = t.as_object_mut() {
+        fields.insert("lifecycle".into(), json!("asleep"));
+        fields.insert("unfinished_turn".into(), json!(true));
+    }
+    t
+}
+
+#[test]
+fn list_and_detail_say_when_a_box_slept_mid_turn() {
+    let out = show(json!({"boxes": [unfinished(row("alpha", true)), row("b", true)]}));
+    assert!(
+        out.contains("/work\n  asleep, turn unfinished\nb "),
+        "{out}"
+    );
+    let out = show(json!({"box": unfinished(row("alpha", true))}));
+    assert!(
+        out.contains("session:   idle\nasleep, turn unfinished\nrepo:"),
+        "{out}"
+    );
+    assert!(!show(json!({"box": row("alpha", true)})).contains("unfinished"));
+}

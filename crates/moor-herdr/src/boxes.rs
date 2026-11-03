@@ -36,6 +36,8 @@ pub enum Phase {
     WaitingForMachine,
     /// Paused; its files stay.
     Asleep,
+    /// Paused mid-turn; waking it resumes the turn.
+    AsleepUnfinished,
     /// Gone for good, or never came up.
     Closed,
     /// Setup failed; the Box waits to be retried or closed.
@@ -50,10 +52,16 @@ impl Phase {
             Self::Live(_) => "",
             Self::Starting => "…",
             Self::WaitingForMachine => "◌",
-            Self::Asleep => "◐",
+            Self::Asleep | Self::AsleepUnfinished => "◐",
             Self::Closed => "✕",
             Self::SetupFailed => "⚠",
         }
+    }
+
+    /// Whether the Box is paused, with or without a turn left.
+    #[must_use]
+    pub const fn is_asleep(self) -> bool {
+        matches!(self, Self::Asleep | Self::AsleepUnfinished)
     }
 
     /// The state herdr's agent dot shows for the Box's pane.
@@ -66,6 +74,7 @@ impl Phase {
             Self::Starting
             | Self::WaitingForMachine
             | Self::Asleep
+            | Self::AsleepUnfinished
             | Self::Closed
             | Self::SetupFailed => "unknown",
         }
@@ -113,6 +122,9 @@ struct Row {
     branch: Option<String>,
     /// The Box's lifecycle.
     lifecycle: BoxLifecycle,
+    /// The Box is asleep mid-turn.
+    #[serde(default)]
+    unfinished_turn: bool,
     /// The agent's session state.
     session_state: SessionState,
     /// The agent, when the controller read it.
@@ -158,6 +170,7 @@ impl Row {
         match self.lifecycle {
             BoxLifecycle::Closed | BoxLifecycle::Rejected => Phase::Closed,
             BoxLifecycle::SetupFailed => Phase::SetupFailed,
+            BoxLifecycle::Asleep if self.unfinished_turn => Phase::AsleepUnfinished,
             BoxLifecycle::Asleep => Phase::Asleep,
             BoxLifecycle::Checking | BoxLifecycle::Pending | BoxLifecycle::SettingUp => {
                 Phase::Starting

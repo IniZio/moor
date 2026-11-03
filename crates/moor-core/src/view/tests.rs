@@ -14,6 +14,7 @@ fn sample_box() -> BoxView {
         prompt: Some("g".into()),
         lifecycle: BoxLifecycle::Ready,
         session_state: SessionState::Working,
+        unfinished_turn: false,
         state_reason: None,
         base: None,
         branch: Some("b".into()),
@@ -482,4 +483,28 @@ fn other_repos_follow_the_primary_in_listed_order() {
     let v = serde_json::to_value(t).ok().unwrap();
     assert_eq!(v.get("repo"), Some(&json!("o/r")));
     assert_eq!(v.get("other_repos"), Some(&json!(["o/b", "p/c"])));
+}
+
+#[test]
+fn an_asleep_box_with_a_busy_session_has_an_unfinished_turn() {
+    let asleep = BoxLifecycle::Asleep;
+    assert!(unfinished_turn(asleep, SessionState::Working));
+    assert!(unfinished_turn(asleep, SessionState::Starting));
+    assert!(!unfinished_turn(asleep, SessionState::Idle));
+    assert!(!unfinished_turn(asleep, SessionState::Ended));
+    assert!(!unfinished_turn(BoxLifecycle::Ready, SessionState::Working));
+}
+
+#[test]
+fn the_unfinished_turn_shows_on_the_wire_only_when_set() {
+    let mut b = sample_box();
+    assert!(serde_json::to_value(&b)
+        .unwrap()
+        .get("unfinished_turn")
+        .is_none());
+    b.unfinished_turn = true;
+    assert_eq!(
+        serde_json::to_value(&b).unwrap().get("unfinished_turn"),
+        Some(&json!(true))
+    );
 }

@@ -297,3 +297,21 @@ fn box_view_lists_the_other_repos_in_order_and_omits_none() {
     let json = serde_json::to_value(&one).unwrap();
     assert!(json.get("other_repos").is_none());
 }
+
+#[test]
+fn box_view_flags_an_asleep_box_whose_session_is_busy() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(86_400_000)));
+    let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
+    let nt = NewBox {
+        name: BoxName::parse_allow_bare("t").unwrap(),
+        repo: Some(crate::testing::cx::box_repo(None)),
+    };
+    let id = store.apply(Decision::insert(nt)).unwrap().box_id;
+    let mut row = store.box_row(id).unwrap().unwrap();
+    row.lifecycle = moor_core::domain::box_state::BoxLifecycle::Asleep;
+    row.session = moor_core::domain::session_state::SessionState::Working;
+    assert!(box_view(&row, &UserConfig::default()).unfinished_turn);
+    row.session = moor_core::domain::session_state::SessionState::Idle;
+    assert!(!box_view(&row, &UserConfig::default()).unfinished_turn);
+}

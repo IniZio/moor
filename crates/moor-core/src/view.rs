@@ -1,6 +1,7 @@
 //! Typed `value` payloads for `start`, `show` and `close` (JSON wire shape).
 
 pub mod attach;
+pub mod attention;
 pub mod binding;
 pub mod close_failed;
 pub mod env;
@@ -15,8 +16,10 @@ pub mod steer;
 pub mod stuck;
 pub mod user;
 pub use attach::{AttachEnd, AttachView};
+pub use attention::AttentionView;
 pub use inspect::{InspectView, StuckView};
 pub use machine::{HeldMachineView, MachineHoldState};
+pub use sleep::unfinished_turn;
 
 use crate::domain::box_state::BoxLifecycle;
 use crate::domain::boxes::BoxState;
@@ -112,21 +115,6 @@ pub struct DriverView {
     pub sleep: BoxSleepView,
 }
 
-/// A problem with the agent's model account that needs the user.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct AttentionView {
-    /// Problem kind: `agent_rate_limited` or `proxy_credential_rejected`.
-    pub kind: String,
-    /// Credential rule the problem belongs to.
-    pub rule: String,
-    /// Upstream HTTP status.
-    pub status: u16,
-    /// When the limit resets, if known.
-    pub resets_at: Option<String>,
-    /// Human-readable summary.
-    pub message: String,
-}
-
 /// The shared Box row.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct BoxView {
@@ -147,6 +135,9 @@ pub struct BoxView {
     pub lifecycle: BoxLifecycle,
     /// Agent session state.
     pub session_state: SessionState,
+    /// The Box is asleep with its agent mid-turn; waking it resumes the turn.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub unfinished_turn: bool,
     /// Why the Box is in this state.
     pub state_reason: Option<String>,
     /// Base ref.

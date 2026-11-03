@@ -84,6 +84,7 @@ fn on(b: &Shown) -> Target {
     let why = match b.phase {
         Phase::Live(_) => return Target::Box(b.name.clone()),
         Phase::Asleep => "is asleep",
+        Phase::AsleepUnfinished => "is asleep, turn unfinished",
         Phase::Starting => "is still being set up",
         Phase::WaitingForMachine => "waits for a slot on its machine",
         Phase::Closed => "is closed",
