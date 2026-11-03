@@ -488,6 +488,16 @@ fn world_draining() -> (World, UnixStream, std::thread::JoinHandle<()>) {
     let dir = tempfile::tempdir().unwrap();
     let socket = dir.path().join("authgear.sock");
     let seen = serve_controller(&socket);
+    world_draining_on(socket, seen, dir, false)
+}
+
+/// A gate like [`world_draining`] over the controller at `socket`, serving `/mcp` when `mcp`.
+fn world_draining_on(
+    socket: std::path::PathBuf,
+    seen: mpsc::Receiver<String>,
+    dir: tempfile::TempDir,
+    mcp: bool,
+) -> (World, UnixStream, std::thread::JoinHandle<()>) {
     let Issuer {
         base: issuer,
         key,
@@ -497,9 +507,11 @@ fn world_draining() -> (World, UnixStream, std::thread::JoinHandle<()>) {
     } = Issuer::start(CLIENT_ID);
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let gate = listener.local_addr().unwrap().to_string();
+    let mcp =
+        mcp.then(|| moor_gate::Mcp::new(&format!("http://{gate}/mcp"), socket.clone()).unwrap());
     let config = Arc::new(Gate {
         front_socket: socket,
-        mcp: None,
+        mcp,
         verifier: Verifier::new(issuer.clone(), CLIENT_ID.to_owned(), None),
     });
     let (wake, trigger) = UnixStream::pair().unwrap();
