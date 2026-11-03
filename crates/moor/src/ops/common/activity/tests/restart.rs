@@ -118,6 +118,35 @@ fn a_reattach_never_closes_the_pane_it_just_opened() {
 }
 
 #[test]
+fn watchers_that_all_saw_the_lost_pane_reattach_it_once() {
+    let f = restarted("pty-p-1", (0..3).map(|_| Ok(AgentFate::Running)).collect());
+    let readings: Vec<_> = (0..3).map(|_| run_once(&f.cx, f.id)).collect();
+    for reading in &readings {
+        settle(&f.cx, f.cx.store().unwrap(), &row(&f.cx, f.id), reading).unwrap();
+    }
+    assert_eq!(f.engine.reattached().len(), 1);
+    assert_eq!(count(&f, "agent_link_lost"), 1);
+    assert_eq!(count(&f, "agent_link_restored"), 1);
+    assert_eq!(live_pane(&f).as_deref(), Some("reattached-1"));
+    let calls = f.surface.calls();
+    assert!(
+        !calls.contains(&"close_pane reattached-1".to_owned()),
+        "{calls:?}"
+    );
+}
+
+#[test]
+fn a_link_that_fails_twice_before_it_answers_reattaches_once() {
+    let fates = vec![unreachable(), unreachable(), Ok(AgentFate::Running)];
+    let f = restarted("pty-p-1", fates);
+    settle_once(&f);
+    assert_eq!(f.engine.reattached().len(), 1);
+    assert_eq!(count(&f, "agent_link_lost"), 1);
+    assert_eq!(count(&f, "agent_link_restored"), 1);
+    assert_eq!(count(&f, "agent_unreachable"), 0);
+}
+
+#[test]
 fn a_box_unreachable_for_a_moment_keeps_the_session_and_says_so() {
     let f = restarted("pty-p-1", (0..4).map(|_| unreachable()).collect());
     settle_once(&f);
