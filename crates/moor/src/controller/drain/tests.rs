@@ -24,7 +24,7 @@ use serde_json::{json, Value};
 use super::{accept, on_sigterm, serve_until, Admitted, Drain, Handler};
 use crate::adapters::proc::{SystemProc, ToolPaths};
 use crate::controller::conn::serve;
-use crate::controller::progress::{report_while, wait_unless_draining};
+use crate::controller::progress::{report_while, wait_unless_draining, Cadence};
 use crate::controller::Sink;
 use crate::env::Env;
 
@@ -233,10 +233,20 @@ fn a_wait_in_flight_gets_restarting_and_the_connection_closes() {
     let answer: Answer = Arc::new(move |id, request, out, drain| {
         let forever = Arc::clone(&forever);
         began.send(()).ok();
-        wait_unless_draining(request.cmd(), id, QUIET, out, drain, move || {
-            forever.lock().expect("lock").recv().ok();
-            Response::ok("wait", None)
-        })
+        wait_unless_draining(
+            request.cmd(),
+            id,
+            Cadence {
+                interval: QUIET,
+                reminder: QUIET,
+            },
+            out,
+            drain,
+            move || {
+                forever.lock().expect("lock").recv().ok();
+                Response::ok("wait", None)
+            },
+        )
     });
     let mut served = Served::start(dir.path(), answer, WAIT);
     let mut client = Client::connect(&served.socket);

@@ -12,7 +12,7 @@ use moor_core::{ErrorKind, Request, Response, RunReq};
 
 use super::drain::Admitted;
 use super::hangup::Hangup;
-use super::progress::{respond_with_progress, wait_unless_draining, Sink, INTERVAL};
+use super::progress::{respond_with_progress, wait_unless_draining, Sink, INTERVAL, WAIT};
 use super::watch;
 use crate::env::Env;
 use crate::error::CommandError;
@@ -159,7 +159,7 @@ fn respond_unless_draining(
     match request {
         request @ (Request::Wait(_) | Request::WaitEvents(_)) => {
             let (cmd, env) = (request.cmd(), env.clone());
-            wait_unless_draining(cmd, id, INTERVAL, out, peer.conn.drain(), move || {
+            wait_unless_draining(cmd, id, WAIT, out, peer.conn.drain(), move || {
                 respond(&env, acting, request)
             })
         }
