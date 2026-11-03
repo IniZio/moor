@@ -28,6 +28,8 @@ pub(super) enum Op {
     Wake,
     /// Touching a Box's lease.
     Touch,
+    /// Saving a Box's checkpoint.
+    Checkpoint,
 }
 
 impl Op {
@@ -42,6 +44,7 @@ impl Op {
             Self::Target => "box ssh target lookup",
             Self::Sleep => "box sleep",
             Self::Wake => "box wake",
+            Self::Checkpoint => "box checkpoint",
         }
     }
 }

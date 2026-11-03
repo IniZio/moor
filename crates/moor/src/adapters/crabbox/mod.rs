@@ -3,6 +3,7 @@
 mod batch;
 mod cache;
 mod caps;
+mod checkpoint;
 mod connect;
 mod cp;
 mod errors;
@@ -38,9 +39,9 @@ use moor_core::box_key::WORK_ROOT;
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{
-    AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Driver, DriverCaps, DriverError,
-    ExecOutcome, ExecSpec, Followed, Launched, LocalTunnel, MirrorStats, Released, RunEnd,
-    SleepOutcome, StepDone, TunnelHandle,
+    AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Checkpoint, Driver, DriverCaps,
+    DriverError, ExecOutcome, ExecSpec, Followed, Launched, LocalTunnel, MirrorStats, Released,
+    RunEnd, SleepOutcome, StepDone, TunnelHandle,
 };
 use moor_core::seam::proc::{Deadline, Pipes, Proc, ProcOutput, ProcSpec, Tool};
 use moor_core::seam::rng::Rng;
@@ -376,6 +377,16 @@ impl Driver for Crabbox {
 
     fn touch(&self, handle: &BoxHandle) -> Result<(), DriverError> {
         touch::heartbeat(self, handle)
+    }
+
+    fn checkpoint(&self, handle: &BoxHandle, name: &str) -> Result<Checkpoint, DriverError> {
+        self.require_version()?;
+        checkpoint::create(self, handle, name)
+    }
+
+    fn fork(&self, id: &str, req: &AcquireReq) -> Result<BoxHandle, DriverError> {
+        self.require_version()?;
+        checkpoint::fork(self, id, req)
     }
 
     fn reverse_tunnel(

@@ -28,4 +28,6 @@ pub struct DriverCaps {
     pub has_workdir: bool,
     /// Whether the provider keeps cache volumes across Boxes.
     pub cache_volumes: bool,
+    /// Whether the provider saves checkpoints and starts Boxes from them.
+    pub checkpoints: bool,
 }

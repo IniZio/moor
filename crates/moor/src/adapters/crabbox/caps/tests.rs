@@ -53,6 +53,7 @@ fn want(sleep: SleepKind, wake: bool) -> DriverCaps {
         reverse_tunnel: true,
         has_workdir: true,
         cache_volumes: false,
+        checkpoints: false,
     }
 }
 
@@ -161,6 +162,17 @@ fn cache_volumes_come_only_from_the_cache_volume_feature() {
         &ProviderId::new("external"),
     );
     assert!(!off.unwrap().cache_volumes);
+}
+
+#[test]
+fn checkpoints_come_only_from_the_checkpoints_token() {
+    let mut features = EXTERNAL_BASE.to_vec();
+    features.push("checkpoints");
+    let id = ProviderId::new("external");
+    let on = caps_from(&external_json(&features, &["cleanup"]), &id);
+    assert!(on.unwrap().checkpoints);
+    let off = caps_from(&external_json(&EXTERNAL_BASE, &["cleanup"]), &id);
+    assert!(!off.unwrap().checkpoints);
 }
 
 fn driver() -> (Arc<ScriptedProc>, Crabbox) {

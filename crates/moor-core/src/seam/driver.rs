@@ -12,6 +12,7 @@ use crate::seam::proc::{Deadline, Pipes};
 
 mod batch;
 mod caps;
+mod checkpoint;
 mod display;
 mod error;
 mod exec;
@@ -20,6 +21,7 @@ mod tunnel;
 
 pub use batch::{run_each, BoxStep, StepDone};
 pub use caps::{DriverCaps, SleepKind};
+pub use checkpoint::Checkpoint;
 pub use error::DriverError;
 pub use exec::{ExecOutcome, ExecSpec};
 pub use run::{Cancelled, FollowEnd, Followed, Launched, RunEnd, RunOutcome};
@@ -382,6 +384,25 @@ pub trait Driver: Send + Sync {
     /// # Errors
     /// Returns a [`DriverError`] when the resume fails.
     fn wake(&self, handle: &BoxHandle) -> Result<(), DriverError>;
+
+    /// Saves the Box's memory and disk as a checkpoint named `name`; the Box keeps running.
+    ///
+    /// # Errors
+    /// [`DriverError::Unsupported`] without the capability, another [`DriverError`] on failure.
+    fn checkpoint(&self, handle: &BoxHandle, name: &str) -> Result<Checkpoint, DriverError> {
+        let _ = (handle, name);
+        Err(DriverError::Unsupported("checkpoints"))
+    }
+
+    /// Starts a Box for `req` from checkpoint `id`, under [`Driver::planned_handle`]'s handle;
+    /// its disk, and so its workdir, is the checkpointed Box's.
+    ///
+    /// # Errors
+    /// As [`Driver::checkpoint`].
+    fn fork(&self, id: &str, req: &AcquireReq) -> Result<BoxHandle, DriverError> {
+        let _ = (id, req);
+        Err(DriverError::Unsupported("checkpoints"))
+    }
 
     /// Tells the provider the Box is in real use, so it does not expire the Box as idle.
     /// Reads that only look at a Box never call this. A provider without idle expiry ignores it.
