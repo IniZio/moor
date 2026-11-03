@@ -1,4 +1,5 @@
-//! The cache plan as crabbox reads it: `CRABBOX_CACHE_VOLUMES`, a JSON array, on warmup only.
+//! The cache plan as crabbox reads it: `CRABBOX_CACHE_VOLUMES`, a JSON array, on warmup and on
+//! a checkpoint fork.
 
 use moor_client::link::lease::{Cache, CacheVolume};
 use moor_core::cache::CachePlan;

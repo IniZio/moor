@@ -92,7 +92,7 @@ fn a_cold_plan_has_no_env_value() {
 }
 
 #[test]
-fn only_warmup_carries_the_volumes() {
+fn warmup_carries_the_volumes_and_release_does_not() {
     let p = Arc::new(ScriptedProc::new());
     let c = Crabbox::fake(p.clone());
     p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
@@ -119,6 +119,46 @@ fn only_warmup_carries_the_volumes() {
     assert!(
         carried.iter().all(|(op, has)| op == "warmup" || !has),
         "{carried:?}"
+    );
+}
+
+/// What a fork's crabbox call carries, as `(key, value)` for the two cache keys.
+fn fork_env(plan: &CachePlan) -> Vec<(String, String)> {
+    let p = Arc::new(ScriptedProc::new());
+    let c = Crabbox::fake(p.clone());
+    p.on(
+        Tool::Crabbox,
+        &["checkpoint", "fork"],
+        Reply::Ok("{}".to_owned()),
+    );
+    let mut r = req("external", None);
+    r.cache = plan.clone();
+    c.fork("cp-9", &r).unwrap();
+    let call = p.calls().pop().unwrap();
+    assert_eq!(call.args.get(..2).unwrap(), ["checkpoint", "fork"]);
+    call.env
+        .into_iter()
+        .filter(|(k, _)| k.starts_with("CRABBOX_CACHE_"))
+        .collect()
+}
+
+#[test]
+fn a_fork_carries_the_volumes_and_scope_warmup_would() {
+    let p = plan("", "");
+    let got = fork_env(&p);
+    assert_eq!(
+        got,
+        [
+            ("CRABBOX_CACHE_VOLUMES".to_owned(), env_value(&p).unwrap()),
+            (
+                "CRABBOX_CACHE_SCOPE".to_owned(),
+                p.scope().unwrap().to_owned()
+            ),
+        ]
+    );
+    assert!(
+        fork_env(&CachePlan::none()).is_empty(),
+        "a cold Box forks cold"
     );
 }
 

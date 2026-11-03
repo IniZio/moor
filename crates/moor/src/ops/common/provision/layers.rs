@@ -35,6 +35,8 @@ pub(super) struct Layered {
     id: BoxId,
     /// The layer the Box's disk already holds; its lines are not run again.
     from: usize,
+    /// The Box's cache plan, which its checkpoints hold the disks of.
+    cache: CachePlan,
     /// Milliseconds the layers the disk holds took to set up from scratch.
     spent_ms: AtomicU64,
 }
@@ -47,9 +49,15 @@ impl Layered {
     }
 }
 
-/// The layers of Box `row` on `provider`; none when the provider keeps no checkpoints or the
-/// Box has no setup lines, no base commit, no user, or more than one repo.
-pub(super) fn plan(cx: &Cx, row: &BoxRow, provider: &str, cfg: &BoxSettings) -> Option<Layered> {
+/// The layers of Box `row` on `provider` under cache plan `cache`; none when the provider keeps
+/// no checkpoints or the Box has no setup lines, no base commit, no user, or more than one repo.
+pub(super) fn plan(
+    cx: &Cx,
+    row: &BoxRow,
+    provider: &str,
+    cfg: &BoxSettings,
+    cache: &CachePlan,
+) -> Option<Layered> {
     let repo = row.repo.as_ref().filter(|r| r.others.is_empty())?;
     let base = row.base.as_deref()?;
     let user = row.user?;
@@ -57,7 +65,7 @@ pub(super) fn plan(cx: &Cx, row: &BoxRow, provider: &str, cfg: &BoxSettings) -> 
         return None;
     }
     let repo = repo.repo.to_string();
-    let keys = chain(user, &repo, base, &cfg.setup);
+    let keys = chain(user, &repo, base, &cache.identity(), &cfg.setup);
     Some(Layered {
         lineage: Lineage {
             user,
@@ -68,6 +76,7 @@ pub(super) fn plan(cx: &Cx, row: &BoxRow, provider: &str, cfg: &BoxSettings) -> 
         provider: ProviderId::new(provider),
         id: row.id,
         from: 0,
+        cache: cache.clone(),
         spent_ms: AtomicU64::new(0),
     })
 }
@@ -285,7 +294,7 @@ pub(super) fn resume(
         name: row.name.clone(),
         class: Some(cfg.size.value.as_str().to_owned()),
         nonce: nonce(cx.rng()),
-        cache: CachePlan::none(),
+        cache: layered.cache.clone(),
         pool_machine: None,
     };
     // Planned first, so a fork cut short is still found from its record.

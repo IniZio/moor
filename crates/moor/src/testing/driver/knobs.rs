@@ -38,13 +38,15 @@ fn is_artifact_index(spec: &ExecSpec) -> bool {
         if sh == "sh" && c == "-c" && script.contains(".moor/artifacts"))
 }
 
-/// The fake's cache volume capability and the plans and nonces `acquire` received.
+/// The fake's cache volume capability and the plans and nonces `acquire` and `fork` received.
 #[derive(Default)]
 pub(super) struct CacheState {
     /// Whether `caps` reports cache volumes.
     pub(super) on: bool,
     /// The plan of every `acquire`, in call order.
     pub(super) plans: Vec<CachePlan>,
+    /// The plan of every `fork`, in call order.
+    pub(super) forks: Vec<CachePlan>,
     /// The nonce of every `acquire`, in call order.
     pub(super) nonces: Vec<String>,
 }
@@ -127,6 +129,11 @@ impl FakeDriver {
     /// The cache plan of every `acquire` so far, in call order.
     pub(crate) fn acquired_plans(&self) -> Vec<CachePlan> {
         self.st().cache.plans.clone()
+    }
+
+    /// The cache plan of every `fork` so far, in call order.
+    pub(crate) fn forked_plans(&self) -> Vec<CachePlan> {
+        self.st().cache.forks.clone()
     }
 
     /// The nonce of every `acquire` so far, in call order.

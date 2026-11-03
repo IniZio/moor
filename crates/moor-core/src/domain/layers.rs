@@ -41,12 +41,21 @@ impl LayerKey {
     }
 }
 
-/// The key of every layer: the first is `user`'s clone of `repo` at commit `base`, then one per
-/// line. The user is in every key, so no Box starts from a checkpoint another user's Box saved.
+/// The key of every layer: `user`'s clone of `repo` at `base` under cache plan `cache`, then
+/// one per line.
+///
+/// The user is in every key, so no Box starts from a checkpoint another user's Box saved. So is
+/// the cache plan, since a checkpoint holds its cache disks. A Box without cache volumes keeps
+/// the keys of before.
 #[must_use]
-pub fn chain(user: UserId, repo: &str, base: &str, lines: &[String]) -> Vec<LayerKey> {
+pub fn chain(user: UserId, repo: &str, base: &str, cache: &str, lines: &[String]) -> Vec<LayerKey> {
     let user = user.get().to_string();
-    let mut keys = vec![LayerKey::of(&["clone", &user, repo, base])];
+    let clone = if cache.is_empty() {
+        LayerKey::of(&["clone", &user, repo, base])
+    } else {
+        LayerKey::of(&["clone", &user, repo, base, cache])
+    };
+    let mut keys = vec![clone];
     for line in lines {
         let below = keys.last().map_or("", LayerKey::as_str);
         let key = LayerKey::of(&["line", below, line]);

@@ -160,6 +160,31 @@ fn a_failed_fork_sets_the_box_up_from_scratch_and_says_why() {
 }
 
 #[test]
+fn a_fork_carries_the_cache_plan_the_first_box_was_acquired_with() {
+    let (w, _) = after_a_partial_setup(FakeDriver::new().cache_volumes());
+    let second = start(&w, "second", "abc123", LINES);
+    assert_eq!(lines_on(&w, second), ["three-c"]);
+    let acquired = w.driver.acquired_plans();
+    let forked = w.driver.forked_plans();
+    assert_eq!(forked.len(), 1);
+    assert!(
+        !forked[0].volumes().is_empty(),
+        "presets give the Box volumes"
+    );
+    assert_eq!(forked[0], acquired[0]);
+}
+
+#[test]
+fn a_new_box_under_another_cache_plan_does_not_reuse_the_layers() {
+    let (w, _) = after_a_partial_setup(FakeDriver::new().cache_volumes());
+    let yaml = format!("{LINES}cache: {{volumes: [{{name: sdk, path: /opt/sdk}}]}}\n");
+    let other = start(&w, "other", "abc123", &yaml);
+    assert!(events(&w, other, "warm_started").is_empty());
+    assert!(w.driver.forked_plans().is_empty());
+    assert_eq!(lines_on(&w, other), ["one-a", "two-b", "three-c"]);
+}
+
+#[test]
 fn without_checkpoints_a_second_box_runs_its_whole_setup() {
     let w = world(FakeDriver::new());
     start(&w, "first", "abc123", LINES);

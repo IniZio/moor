@@ -144,6 +144,22 @@ pub(crate) fn for_start(
     CachePlan::none()
 }
 
+/// `row`'s plan on `provider`, derived again as the start derived it, without its warnings;
+/// a cold plan when it cannot be.
+pub(crate) fn derived(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    cfg: &BoxSettings,
+    provider: &ProviderId,
+) -> CachePlan {
+    cx.driver()
+        .caps(provider)
+        .ok()
+        .and_then(|caps| plan(cx, store, row, cfg, provider, caps).ok())
+        .unwrap_or_else(CachePlan::none)
+}
+
 /// Whether `row`'s plan on `provider` keeps the work tree, derived again as the start derived it.
 pub(crate) fn keeps_work_tree(
     cx: &Cx,
@@ -152,10 +168,7 @@ pub(crate) fn keeps_work_tree(
     cfg: &BoxSettings,
     provider: &ProviderId,
 ) -> bool {
-    let Ok(caps) = cx.driver().caps(provider) else {
-        return false;
-    };
-    plan(cx, store, row, cfg, provider, caps).is_ok_and(|p| p.work_tree().is_some())
+    derived(cx, store, row, cfg, provider).work_tree().is_some()
 }
 
 /// Runs the seal script of `row`'s plan in the Box, after teardown and before release. A volume

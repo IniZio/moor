@@ -11,7 +11,7 @@ use serde_json::Value;
 
 use super::deadlines::QUICK_DEADLINE;
 use super::errors::{unreadable, Op};
-use super::{caps, handle_of, pool, size_of, slug, split_handle, target_args, Crabbox};
+use super::{cache, caps, handle_of, pool, size_of, slug, split_handle, target_args, Crabbox};
 
 impl Crabbox {
     /// Measures the disk of providers on this host at `dir`, the user's cache dir.
@@ -73,13 +73,14 @@ pub(super) fn create(
 }
 
 /// Starts the lease `req` names from checkpoint `id`, run from that lease's own dir so it is
-/// claimed there; a fork that fails releases what it started.
+/// claimed there, with the Box's cache volumes as warmup gives them; a fork that fails releases
+/// what it started.
 pub(super) fn fork(cb: &Crabbox, id: &str, req: &AcquireReq) -> Result<BoxHandle, DriverError> {
     let provider = req.provider.as_str();
     let name = slug(req);
     let class = size_of(req.class.as_deref())?;
     let handle = handle_of(provider, &name);
-    let spec = Crabbox::spec(CHECKPOINT_DEADLINE)
+    let spec = cache::with_volumes(Crabbox::spec(CHECKPOINT_DEADLINE), &req.cache)
         .args(["checkpoint", "fork", id])
         .args(["--slug", &name, "--class", class, "--json"]);
     let existed = cb.lease_dir(&handle)?.exists();
