@@ -458,7 +458,14 @@ fn a_following_watch_ends_with_restarting_once_the_drain_begins() {
         );
         done.send(()).ok();
     });
-    std::thread::sleep(Duration::from_millis(100));
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !frames(&out).iter().any(|f| f["cursor"] == last) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the watch never sent the stored event"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
     assert!(
         ended.try_recv().is_err(),
         "the watch ended before the drain"
