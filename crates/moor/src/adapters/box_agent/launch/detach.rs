@@ -31,7 +31,7 @@ fn attach(exit_file: &str) -> String {
 /// in the user option `@moor_status_file`, straight to that client's terminal, so a client that
 /// joins after a change still sees the current state. Unlike the agent's own print it is not
 /// wrapped for passthrough, as it does not travel through tmux.
-const REPLAY_ON_ATTACH: &str = r##"run-shell -b 'f="#{@moor_status_file}"; [ -s "$f" ] && printf "\033]7501;state=%s:app=claude\033\134" "$(cat "$f")" > "#{client_tty}" 2>/dev/null; :'"##;
+const REPLAY_ON_ATTACH: &str = r##"run-shell -b 'f="#{@moor_status_file}"; [ -s "$f" ] && printf "\033]7501;%s\033\134" "$(cat "$f")" > "#{client_tty}" 2>/dev/null; :'"##;
 
 /// The Box command that replaces any agent session with one running the script file at
 /// `script`, then attaches. A Box without tmux refuses to start the agent: on the bare link a

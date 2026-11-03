@@ -213,7 +213,11 @@ fn a_client_that_attaches_is_sent_the_status_the_agent_last_printed() {
     tool(&bin, "tmux", &real);
     let work = dir.path().join("w");
     std::fs::create_dir_all(work.join(".moor")).unwrap();
-    std::fs::write(work.join(".moor/status-osc"), "blocked:kind=permission").unwrap();
+    std::fs::write(
+        work.join(".moor/status-osc"),
+        "state=blocked:kind=permission:app=claude",
+    )
+    .unwrap();
     let script = dir.path().join("agent.sh");
     std::fs::write(&script, "sleep 1\n").unwrap();
     let exit_file = work.join(".moor/agent.exit");
