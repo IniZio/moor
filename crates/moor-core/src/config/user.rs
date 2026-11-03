@@ -2,6 +2,7 @@
 //!
 //! Strict: unknown keys fail parsing; [`parse_user`] then validates values.
 
+mod agent;
 mod controller;
 mod creds;
 mod driver;
@@ -24,6 +25,7 @@ use super::proxy::{injected, ProxyConfig};
 use super::{check, parse_strict, ConfigError};
 use crate::cache::CacheConfig;
 use crate::name::ForgeRepo;
+pub use agent::{AgentConfig, AgentHolder};
 pub use controller::ControllerClientConfig;
 pub use creds::McpServer;
 pub use driver::DriverConfig;
@@ -199,16 +201,6 @@ impl BoxConfig {
         }
         Ok(())
     }
-}
-
-/// `agent:` section.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub struct AgentConfig {
-    /// Default model.
-    pub model: Option<String>,
-    /// Whether moor installs the agent on a Box that lacks it; on by default.
-    pub install: Option<bool>,
 }
 
 /// `dotfiles:` section.
