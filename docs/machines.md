@@ -436,7 +436,8 @@ every Box shares.
 
 ## Enrolling a machine
 
-The machine's owner installs `moor-machine-agent` on it and enrolls it once.
+The machine's owner installs `moor-machine-agent` on it
+(`curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | sh -s moor-machine-agent`) and enrolls it once.
 Enrolling signs the owner in through the browser and makes a key that only
 this machine holds:
 

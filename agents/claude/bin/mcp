@@ -5,7 +5,7 @@ if [ -z "$server" ]; then
   exit 1
 fi
 if ! command -v moor >/dev/null 2>&1; then
-  echo "moor mcp: moor is not installed; run: cargo install --git https://github.com/IniZio/moor moor" >&2
+  echo "moor mcp: moor is not installed; run: curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | sh" >&2
   exit 1
 fi
 server=${server%/}
