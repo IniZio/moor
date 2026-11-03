@@ -17,7 +17,7 @@ use serde_json::json;
 
 use crate::boxes::{wake, watch_box, Phase};
 use crate::card::progress::{failure, Happened, EVENTS};
-use crate::card::{Card, Choice, Ended, Progress, DETACH_BYTE};
+use crate::card::{retry_delay, Card, Choice, Ended, Progress, DETACH_BYTE};
 use crate::error::Error;
 
 /// What the pane's loop reacts to.
@@ -86,7 +86,25 @@ fn ended(answer: Result<Response, ClientError>) -> Ended {
         Ok(Response { value, .. }) => value
             .and_then(|v| serde_json::from_value::<AttachView>(v).ok())
             .map_or(Ended::Relay(AttachEnd::Link), |v| Ended::Relay(v.ended_by)),
-        Err(e) => Ended::Refused(e.to_string()),
+        Err(e) => refused(&Error::Client(e)),
+    }
+}
+
+/// How an attach that failed with `e` ended: away when asking again later can work.
+fn refused(e: &Error) -> Ended {
+    if e.server_away() {
+        Ended::Away(e.to_string())
+    } else {
+        Ended::Refused(e.to_string())
+    }
+}
+
+/// The card for a failed `watch_box`, `show` or `wake`.
+fn failed(e: &Error) -> Card {
+    if e.server_away() {
+        Card::Reconnecting
+    } else {
+        Card::Refused(e.to_string())
     }
 }
 
@@ -221,9 +239,14 @@ fn attach_once(client: &Client, name: &str, events: (&Sender<Event>, &Receiver<E
     match attached {
         Ok((screen, keys)) => {
             let _ = io::stdout().write_all(b"\x1b[2J\x1b[H");
-            pump(screen, keys, events, io::stdout())
+            match pump(screen, keys, events, io::stdout()) {
+                Ended::Relay(AttachEnd::Link) => {
+                    Ended::Away("the link to the Box dropped".to_owned())
+                }
+                ended => ended,
+            }
         }
-        Err(e) => Ended::Refused(e.to_string()),
+        Err(e) => refused(&e),
     }
 }
 
@@ -272,8 +295,34 @@ fn card_after(client: &Client, name: &str, ended: &Ended, branch: Option<String>
             }
             card
         }
-        Err(e) => Card::Refused(e.to_string()),
+        Err(e) => failed(&e),
     }
+}
+
+/// How often the retry pause looks for a key.
+const TICK: Duration = Duration::from_millis(100);
+
+/// Waits out the pause before retry number `attempt`; `true` when the user closed the pane
+/// meanwhile. `r` retries at once.
+fn closed_during_retry_pause(rx: &Receiver<Event>, attempt: u32) -> bool {
+    let mut ticks = retry_delay(attempt).as_millis() / TICK.as_millis();
+    while ticks > 0 {
+        match rx.recv_timeout(TICK) {
+            Ok(Event::Keys(bytes)) => {
+                for b in bytes {
+                    match Card::Reconnecting.key(b) {
+                        Choice::Close => return true,
+                        Choice::Attach => return false,
+                        _ => {}
+                    }
+                }
+            }
+            Ok(_) => {}
+            Err(RecvTimeoutError::Timeout) => ticks -= 1,
+            Err(RecvTimeoutError::Disconnected) => return true,
+        }
+    }
+    false
 }
 
 /// Runs the pane for Box `name` until the user closes it from the card.
@@ -281,6 +330,18 @@ pub fn run(client: &Client, name: &str) -> Result<(), Error> {
     let _raw = Raw::enter()?;
     let (tx, rx) = mpsc::channel();
     feed(&tx)?;
+    run_with(client, name, (&tx, &rx), closed_during_retry_pause)
+}
+
+/// [`run`] on the given event channel; `closed_during_pause` waits out the pause before retry
+/// number `attempt` while the server is away and says whether the user closed the pane.
+pub fn run_with(
+    client: &Client,
+    name: &str,
+    (tx, rx): (&Sender<Event>, &Receiver<Event>),
+    mut closed_during_pause: impl FnMut(&Receiver<Event>, u32) -> bool,
+) -> Result<(), Error> {
+    let mut attempt = 0_u32;
     let mut branch = None;
     let mut label = crate::boxes::label(None, name);
     loop {
@@ -292,28 +353,36 @@ pub fn run(client: &Client, name: &str) -> Result<(), Error> {
                 }
                 if before.as_ref().is_some_and(|b| b.phase == Phase::Starting) {
                     draw_starting(&label, &events)?;
-                    if watch_starting(client, name, &label, &rx)? {
+                    if watch_starting(client, name, &label, rx)? {
                         return Ok(());
                     }
                     continue;
                 }
                 let ended = match before.map(|b| b.phase) {
                     Some(Phase::Live(_) | Phase::WaitingForMachine) => {
-                        attach_once(client, name, (&tx, &rx))
+                        attach_once(client, name, (tx, rx))
                     }
                     _ => Ended::Skipped,
                 };
                 card_after(client, name, &ended, branch.clone())
             }
-            Err(e) => Card::Refused(e.to_string()),
+            Err(e) => failed(&e),
         };
         draw(&label, &card, None)?;
-        match choose(&rx, &label, &card)? {
+        if card == Card::Reconnecting {
+            if closed_during_pause(rx, attempt) {
+                return Ok(());
+            }
+            attempt = attempt.saturating_add(1);
+            continue;
+        }
+        attempt = 0;
+        match choose(rx, &label, &card)? {
             Choice::Wake => {
                 if let Err(e) = wake(client, name) {
                     let refused = Card::Refused(format!("wake: {e}"));
                     draw(&label, &refused, None)?;
-                    if choose(&rx, &label, &refused)? == Choice::Close {
+                    if choose(rx, &label, &refused)? == Choice::Close {
                         return Ok(());
                     }
                 }

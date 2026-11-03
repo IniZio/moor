@@ -44,3 +44,22 @@ pub enum Error {
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
+
+impl Error {
+    /// Whether the server could not be reached, or dropped the connection, so that asking
+    /// again once it is back can succeed. A refused sign-in or a bad server setting cannot.
+    #[must_use]
+    pub fn server_away(&self) -> bool {
+        use std::io::ErrorKind::{
+            BrokenPipe, ConnectionAborted, ConnectionRefused, ConnectionReset, UnexpectedEof,
+        };
+        matches!(self, Self::Client(e) if match e {
+            ClientError::Connect { .. } | ClientError::GaveUp { .. } => true,
+            ClientError::Io(io) => matches!(
+                io.kind(),
+                BrokenPipe | ConnectionAborted | ConnectionRefused | ConnectionReset | UnexpectedEof
+            ),
+            _ => false,
+        })
+    }
+}

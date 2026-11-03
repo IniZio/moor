@@ -34,3 +34,21 @@ fn a_client_error_ends_the_relay_with_its_message() {
     let err = ClientError::from(std::io::Error::other("socket gone"));
     assert!(matches!(ended(Err(err)), Ended::Refused(why) if why.contains("socket gone")));
 }
+
+#[test]
+fn a_cut_connection_or_unreachable_server_ends_the_relay_away_but_a_refusal_does_not() {
+    for kind in [
+        std::io::ErrorKind::UnexpectedEof,
+        std::io::ErrorKind::ConnectionReset,
+    ] {
+        let err = ClientError::from(std::io::Error::from(kind));
+        assert!(matches!(ended(Err(err)), Ended::Away(_)));
+    }
+    let gave_up = ClientError::GaveUp {
+        budget: Duration::ZERO,
+        last: Box::new(ClientError::Remote("the server answered 503".into())),
+    };
+    assert!(matches!(ended(Err(gave_up)), Ended::Away(_)));
+    let unauthorized = ClientError::Unauthorized("401".into());
+    assert!(matches!(ended(Err(unauthorized)), Ended::Refused(_)));
+}
