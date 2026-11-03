@@ -80,6 +80,11 @@ jobs:
         run: |
           rustup show active-toolchain || rustup toolchain install
           rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: ${{ matrix.target }}
+          # A pull request reads the develop cache but leaves the 10 GB budget to the pushes.
+          save-if: ${{ github.event_name == 'push' }}
       - name: Install a musl C compiler
         if: endsWith(matrix.target, '-linux-musl')
         run: |
