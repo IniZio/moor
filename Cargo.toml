@@ -16,6 +16,7 @@ members = [
   "crates/moor-web",
   "tools/layering",
   "tools/test-children",
+  "tools/migration-numbers",
   "tools/e2e-budget",
 ]
 exclude = ["target"]

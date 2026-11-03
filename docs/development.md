@@ -24,6 +24,14 @@ in an allowed module and give the caller a trait, as `moor::wire` does. The
 check skips `#[cfg(test)]` items, `tests.rs` files and `tests/` directories,
 but not a file such as `status_tests.rs`.
 
+[migration-numbers](../tools/migration-numbers) compares the store's
+migration list with the base branch's, `origin/develop` unless you pass
+`BASE=<ref>`. A step this branch adds must have a version above the base's
+highest, and a version the base already has must keep its name. Two parallel
+branches that both add the next number fail here, before the second merges,
+because renumbering an applied migration breaks the stores that ran it. In
+CI the base is the pull request's base branch.
+
 Each failing check prints a `fix:` line. In short:
 
 - `removed-names`: a retired name came back. Use what replaced it. The old
@@ -104,7 +112,7 @@ In a Box, keep `~/.cargo/bin` between Boxes with the `cargo-bin` [cache volume](
 | Target | What it runs |
 | --- | --- |
 | `make build` | `cargo build --workspace --release --locked`. |
-| `make lint` | `cargo fmt --check` and `taplo fmt --check`, Clippy with `-D warnings`, the 400-line cap on Rust files, the removed-name, Box-key, and Box-environment checks, the layering and test-children checks, the lint self-tests, `typos`, and `cargo doc` with warnings denied. |
+| `make lint` | `cargo fmt --check` and `taplo fmt --check`, Clippy with `-D warnings`, the 400-line cap on Rust files, the removed-name, Box-key, and Box-environment checks, the layering, test-children, and migration-number checks, the lint self-tests, `typos`, and `cargo doc` with warnings denied. |
 | `make prepush` | `make audit`, then `make lint`. These are the two gates that CI runs before any test. |
 | `make hooks` | Opts in to a pre-push hook. It sets `core.hooksPath` to [tools/git-hooks](../tools/git-hooks), so `git push` first runs `make prepush`. A push that deletes a branch skips it. Push with `MOOR_SKIP_HOOKS=1` to skip the hook. Run `git config --unset core.hooksPath` to opt out. |
 | `make audit` | `cargo deny check` and `cargo machete`. |

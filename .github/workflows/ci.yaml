@@ -62,7 +62,17 @@ jobs:
           version: v${{ steps.helm.outputs.version }}
 
       - run: make setup
+      - name: Fetch the base branch for the migration-number check
+        env:
+          BASE_BRANCH: ${{ github.base_ref || github.ref_name }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+          git -c "http.https://github.com/.extraheader=$auth" fetch --no-tags --depth=1 origin \
+            "+refs/heads/$BASE_BRANCH:refs/remotes/origin/$BASE_BRANCH"
       - run: make lint
+        env:
+          BASE: origin/${{ github.base_ref || github.ref_name }}
       - run: make chart
       - run: make audit
       - name: Allow unprivileged user namespaces for the front tests

@@ -54,6 +54,8 @@ lint:
 	cargo run -q -p layering --locked
 	cargo test -p test-children --locked
 	cargo run -q -p test-children --locked
+	cargo test -p migration-numbers --locked
+	cargo run -q -p migration-numbers --locked -- $(or $(BASE),origin/develop)
 	tools/lint-selftest.sh
 	tools/stack-overlap-selftest.sh
 	tools/gitops-bump-selftest.sh
