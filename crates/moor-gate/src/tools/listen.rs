@@ -144,11 +144,11 @@ impl ServerHandler for Tools {
     async fn listen(&self, context: SubscriptionContext) -> Result<(), ErrorData> {
         let person = person(context.request_context())?;
         let (tx, rx) = mpsc::unbounded_channel();
-        let stop = Arc::new(Mutex::new(Stopper::default()));
-        let (socket, held) = (self.front_socket.clone(), Arc::clone(&stop));
+        let stop = EndsWatch(Arc::new(Mutex::new(Stopper::default())));
+        let (socket, held) = (self.front_socket.clone(), Arc::clone(&stop.0));
         let watching = tokio::task::spawn_blocking(move || follow(&socket, &person, &tx, &held));
         let watch_ended = relay(&context, rx).await;
-        stop.lock().unwrap_or_else(PoisonError::into_inner).stop();
+        drop(stop);
         if !watch_ended {
             return Ok(());
         }
@@ -220,6 +220,16 @@ impl Stopper {
         if let Some(watch) = self.watch.take() {
             watch.stop();
         }
+    }
+}
+
+/// Ends the watch when dropped, so a listen whose future is dropped mid-await, as a shutting
+/// down runtime drops it, leaves no thread blocked on the watch for the runtime to wait on.
+struct EndsWatch(Arc<Mutex<Stopper>>);
+
+impl Drop for EndsWatch {
+    fn drop(&mut self) {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner).stop();
     }
 }
 
