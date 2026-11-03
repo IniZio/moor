@@ -14,9 +14,9 @@ use moor_core::view::ArtifactView;
 
 use crate::{rewrite, Person};
 
-/// The largest Artifact `get_artifact` returns inline, and the most an HTTP download holds
-/// back so that a sha256 mismatch can still be answered with a status.
-pub(crate) const ARTIFACT_INLINE_MAX: u64 = 4 * 1024 * 1024;
+/// The most an HTTP download holds back so that a sha256 mismatch can still be answered with
+/// a status.
+pub(crate) const ARTIFACT_HOLD_BACK_MAX: u64 = 4 * 1024 * 1024;
 
 /// The Artifact a caller asked for.
 pub(crate) struct Wanted {

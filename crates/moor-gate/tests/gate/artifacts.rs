@@ -6,7 +6,6 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixListener;
 use std::sync::{mpsc, Arc, Mutex};
 
-use base64::prelude::{Engine, BASE64_STANDARD};
 use moor_core::controller::write_bytes;
 use moor_core::response::{ErrorDetail, ErrorKind, ErrorView, Response};
 use serde_json::{json, Value};
@@ -15,7 +14,7 @@ use super::listen::{post, token};
 use super::{world_with, World};
 
 const PNG: &[u8] = b"\x89PNG\r\n\x1a\nnot really";
-/// Over the inline cap and many bytes frames long.
+/// Many bytes frames long, and past what the gate holds back before answering.
 const BIG: usize = 5 * 1024 * 1024 + 7;
 
 fn sha(tag: char) -> String {
@@ -305,57 +304,23 @@ fn call(world: &World, scope: &str, args: Value) -> Value {
     }
 }
 
-fn decoded(data: &Value) -> Vec<u8> {
-    BASE64_STANDARD.decode(data.as_str().unwrap()).unwrap()
-}
-
 #[test]
-fn an_image_comes_back_as_an_image_block() {
-    let (world, _seen) = world();
-    let got = call(
-        &world,
-        "moor:read",
-        json!({"box": "repo/a", "name": "shot.png"}),
-    );
-    assert_eq!(got["isError"], false, "{got}");
-    let image = &got["content"][1];
-    assert_eq!(
-        (image["type"].as_str(), image["mimeType"].as_str()),
-        (Some("image"), Some("image/png"))
-    );
-    assert_eq!(decoded(&image["data"]), PNG);
-}
-
-#[test]
-fn a_text_artifact_comes_back_as_a_blob_beside_its_record() {
-    let (world, _seen) = world();
-    let got = call(
-        &world,
-        "moor:read",
-        json!({"box": "repo/a", "name": "notes.txt"}),
-    );
-    let blob = &got["content"][1];
-    assert_eq!(blob["type"], "resource", "{got}");
-    assert_eq!(blob["resource"]["mimeType"], "text/plain");
-    assert_eq!(decoded(&blob["resource"]["blob"]), b"two");
-    let record: Value = serde_json::from_str(got["content"][0]["text"].as_str().unwrap()).unwrap();
-    assert_eq!(record["path"], "/boxes/repo/a/artifacts/notes.txt/2");
-    assert_eq!(record["sha256"], sha('2'));
-}
-
-#[test]
-fn over_the_cap_only_the_record_and_its_path_come_back() {
+fn the_tool_never_returns_the_bytes_for_any_size() {
     let (world, seen) = world();
-    let got = call(
-        &world,
-        "moor:read",
-        json!({"box": "repo/a", "name": "big.bin"}),
-    );
-    assert_eq!(got["isError"], false, "{got}");
-    let record = &got["structuredContent"];
-    assert_eq!(record["size"], BIG);
-    assert_eq!(record["path"], "/boxes/repo/a/artifacts/big.bin/1");
-    assert!(!got.to_string().contains("\"blob\""));
+    for (name, size) in [("shot.png", PNG.len()), ("notes.txt", 3), ("big.bin", BIG)] {
+        let got = call(&world, "moor:read", json!({"box": "repo/a", "name": name}));
+        assert_eq!(got["isError"], false, "{got}");
+        let blocks = got["content"].as_array().unwrap();
+        assert!(
+            blocks
+                .iter()
+                .all(|b| b["type"] == "text" && b["text"].as_str().is_some()),
+            "{got}"
+        );
+        assert!(!got.to_string().contains("\"blob\""), "{name}");
+        assert!(!got.to_string().contains("\"data\""), "{name}");
+        assert_eq!(got["structuredContent"]["size"], size, "{name}");
+    }
     let cmds: Vec<_> = seen
         .lock()
         .unwrap()
@@ -366,21 +331,29 @@ fn over_the_cap_only_the_record_and_its_path_come_back() {
 }
 
 #[test]
-fn the_tool_fails_naming_a_sha256_mismatch_and_needs_the_read_scope() {
+fn the_path_the_tool_returns_downloads_the_recorded_bytes() {
     let (world, _seen) = world();
-    let bad = call(
-        &world,
-        "moor:read",
-        json!({"box": "repo/a", "name": "bad.txt"}),
-    );
-    assert_eq!(bad["isError"], true);
-    assert!(
-        bad["content"][0]["text"]
-            .as_str()
-            .unwrap()
-            .contains("sha256"),
-        "{bad}"
-    );
+    for (name, want) in [
+        ("notes.txt", b"two".to_vec()),
+        ("big.bin", stored()[3].4.clone()),
+    ] {
+        let got = call(&world, "moor:read", json!({"box": "repo/a", "name": name}));
+        let record = &got["structuredContent"];
+        let path = record["path"].as_str().unwrap();
+        let token = token(&world, "moor:read");
+        let fetched = get(&world, Some(&token), path);
+        assert_eq!(fetched.status, 200, "{}", fetched.error());
+        assert_eq!(fetched.body, want, "{name}");
+        assert_eq!(
+            fetched.header("etag"),
+            Some(format!("\"{}\"", record["sha256"].as_str().unwrap()).as_str())
+        );
+    }
+}
+
+#[test]
+fn the_tool_needs_the_read_scope() {
+    let (world, _seen) = world();
     let refused = call(
         &world,
         "moor:write",
