@@ -70,6 +70,7 @@ mod state;
 mod step_timing;
 mod transcript;
 mod user_mcp;
+mod warm;
 mod workdir;
 
 /// A world of fakes plus the context over them.

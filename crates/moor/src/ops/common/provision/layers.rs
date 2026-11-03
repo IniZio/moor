@@ -1,11 +1,14 @@
 //! Setup in layers: on a provider that keeps checkpoints, each setup line runs on its own so the
-//! Box can be checkpointed between lines, and a retry starts from the nearest checkpoint.
+//! Box can be checkpointed between lines. A new Box starts from the deepest checkpoint kept for
+//! its layers, and a retry from the nearest one.
+
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use moor_core::cache::CachePlan;
 use moor_core::config::BoxSettings;
-use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::layers::{chain, checkpoint_after, failed_layer, nearest, LayerKey};
-use moor_core::seam::driver::AcquireReq;
+use moor_core::seam::driver::{AcquireReq, Acquired};
 use moor_core::{BoxHandle, BoxId, ProviderId, Warning};
 
 use super::clone::SetupProxy;
@@ -15,6 +18,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::facts::provider_caps;
 use crate::ops::common::setup::SetupRun;
+use crate::store::checkpoints::Place;
 use crate::store::lease::LeaseKind;
 use crate::store::{BoxRow, Store};
 
@@ -28,6 +32,16 @@ pub(super) struct Layered {
     repo: String,
     /// The layer the Box's disk already holds; its lines are not run again.
     from: usize,
+    /// Milliseconds the layers the disk holds took to set up from scratch.
+    spent_ms: AtomicU64,
+}
+
+impl Layered {
+    /// Marks the disk as holding layer `layer`, which took `ms` to set up from scratch.
+    fn stand_on(&mut self, layer: usize, ms: u64) {
+        self.from = layer;
+        self.spent_ms.store(ms, Ordering::Relaxed);
+    }
 }
 
 /// The layers of Box `row` on `provider`; none when the provider keeps no checkpoints or the
@@ -45,13 +59,74 @@ pub(super) fn plan(cx: &Cx, row: &BoxRow, provider: &str, cfg: &BoxSettings) -> 
         provider: ProviderId::new(provider),
         repo,
         from: 0,
+        spent_ms: AtomicU64::new(0),
     })
 }
 
-/// Checkpoints the fresh clone of a Box whose disk holds no layer yet.
-pub(super) fn after_clone(cx: &Cx, store: &Store, handle: &BoxHandle, layered: &Layered) {
+/// Starts Box `id` on a fork of the deepest layer kept with a place, so only the lines above it
+/// run. None when no layer is kept, or when the fork fails: that is recorded and warned about,
+/// and the Box is acquired and set up from scratch.
+pub(super) fn warm(
+    cx: &Cx,
+    store: &Store,
+    id: BoxId,
+    req: &AcquireReq,
+    layered: &mut Layered,
+) -> Result<Option<Acquired>, CommandError> {
+    let mut deepest = None;
+    for (layer, key) in layered.keys.iter().enumerate().rev() {
+        let row = store.checkpoint(&layered.provider, key)?;
+        if let Some((row, place)) = row.and_then(|r| r.place.clone().map(|p| (r, p))) {
+            deepest = Some((layer, key, row.checkpoint, place));
+            break;
+        }
+    }
+    let Some((layer, key, checkpoint, place)) = deepest else {
+        return Ok(None);
+    };
+    let at = u32::try_from(layer).unwrap_or(u32::MAX);
+    let began = cx.clock().now().as_millis();
+    let handle = match cx.driver().fork(&checkpoint, req) {
+        Ok(handle) => handle,
+        Err(e) => {
+            let error = e.to_string();
+            cx.warn(Warning {
+                code: "checkpoint_failed".to_owned(),
+                message: format!(
+                    "could not start from setup layer {layer}: {error}; setup runs from its start"
+                ),
+            });
+            let failed = ExtraEvent::WarmStartFailed { layer: at, error };
+            store.apply(Decision::new(id).event(failed))?;
+            return Ok(None);
+        }
+    };
+    let fork_ms = u64::try_from(cx.clock().now().as_millis() - began).unwrap_or_default();
+    store.use_checkpoint(&layered.provider, key)?;
+    layered.stand_on(layer, place.setup_ms);
+    let lines = u32::try_from(layered.keys.len() - 1).unwrap_or(u32::MAX);
+    store.apply(Decision::new(id).event(ExtraEvent::WarmStarted {
+        layer: at,
+        layers: lines,
+        saved_ms: place.setup_ms.saturating_sub(fork_ms),
+        fork_ms,
+    }))?;
+    Ok(Some(Acquired {
+        handle,
+        workdir: place.workdir,
+    }))
+}
+
+/// Checkpoints the fresh clone, which took `ms`, of a Box whose disk holds no layer yet.
+pub(super) fn after_clone(cx: &Cx, store: &Store, target: &SetupTarget<'_>, ms: Option<u64>) {
+    let Some(layered) = target.layered else {
+        return;
+    };
     if layered.from == 0 {
-        save(cx, store, handle, layered, 0);
+        layered
+            .spent_ms
+            .store(ms.unwrap_or_default(), Ordering::Relaxed);
+        save(cx, store, target, layered, 0);
     }
 }
 
@@ -84,8 +159,9 @@ pub(super) fn run(
             SetupRun::Ok { ms: took, tail: t } => {
                 ms += took;
                 tail = t;
+                layered.spent_ms.fetch_add(took, Ordering::Relaxed);
                 if checkpoint_after(i + 1, took, total) {
-                    save(cx, store, target.handle, layered, i + 1);
+                    save(cx, store, target, layered, i + 1);
                 }
             }
             SetupRun::Failed {
@@ -107,9 +183,9 @@ pub(super) fn run(
     SetupRun::Ok { ms, tail }
 }
 
-/// Checkpoints `layer` of the Box behind `handle`, unless a checkpoint of it is kept already.
+/// Checkpoints `layer` of the target's Box, unless a checkpoint of it is kept already.
 /// A failed checkpoint is only warned about: setup goes on, and a retry runs the layer again.
-fn save(cx: &Cx, store: &Store, handle: &BoxHandle, layered: &Layered, layer: usize) {
+fn save(cx: &Cx, store: &Store, target: &SetupTarget<'_>, layered: &Layered, layer: usize) {
     let Some(key) = layered.keys.get(layer) else {
         return;
     };
@@ -121,11 +197,16 @@ fn save(cx: &Cx, store: &Store, handle: &BoxHandle, layered: &Layered, layer: us
     }
     let saved = cx
         .driver()
-        .checkpoint(handle, key.as_str())
+        .checkpoint(target.handle, key.as_str())
         .map_err(|e| e.to_string())
         .and_then(|made| {
+            let place = Place {
+                workdir: target.workdir.clone(),
+                setup_ms: layered.spent_ms.load(Ordering::Relaxed),
+            };
             store
                 .record_checkpoint(&layered.provider, key, &layered.repo, &made)
+                .and_then(|()| store.place_checkpoint(&layered.provider, key, &place))
                 .map_err(|e| e.to_string())
         });
     if let Err(e) = saved {
@@ -205,7 +286,7 @@ pub(super) fn resume(
         box_handle: Field::Set(new.clone()),
         ..Fields::default()
     }))?;
-    layered.from = layer;
+    layered.stand_on(layer, saved.place.as_ref().map_or(0, |p| p.setup_ms));
     release_old(cx, store, row, old)?;
     Ok(Some(new))
 }

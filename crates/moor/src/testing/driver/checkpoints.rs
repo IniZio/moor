@@ -19,6 +19,8 @@ pub(super) struct LayerKnobs {
     ends_once: Vec<(String, ExecOutcome)>,
     /// Hooks run before any `exec` whose argv mentions the needle, outside the lock.
     hooks: Vec<(String, Arc<ExecHook>)>,
+    /// The error the next fork ends with, once.
+    fork_fails: Option<DriverError>,
 }
 
 impl State {
@@ -43,6 +45,12 @@ impl FakeDriver {
     /// Offers checkpoints from now on, without consuming the driver.
     pub(crate) fn offer_checkpoints(&self) {
         self.st().layers.on = true;
+    }
+
+    /// Ends the next fork with `e`, once.
+    pub(crate) fn fork_fails_once(self, e: DriverError) -> Self {
+        self.st().layers.fork_fails = Some(e);
+        self
     }
 
     /// Ends the next `exec` whose argv mentions `needle` with `outcome`, once.
@@ -115,6 +123,9 @@ impl FakeDriver {
     pub(super) fn forked(&self, id: &str, req: &AcquireReq) -> Result<BoxHandle, DriverError> {
         let mut s = self.st();
         s.note(format!("fork {id}"));
+        if let Some(e) = s.layers.fork_fails.take() {
+            return Err(e);
+        }
         if !s.layers.made.iter().any(|m| m.0 == id) {
             return Err(DriverError::NotFound);
         }

@@ -173,14 +173,18 @@ pub(crate) fn provision(
     // The record exists before the Box does; a failed acquire leaves it `planned`.
     let planned = cx.driver().planned_handle(&req);
     let root = store.plan_lease(id, LeaseKind::BoxRoot, planned.as_str())?;
-    match acquire_timed(cx, store, id, &req) {
+    let provider = req.provider.as_str();
+    let mut layered = layers::plan(cx, &started, provider, cfg);
+    let warm = match layered.as_mut() {
+        Some(layered) => layers::warm(cx, store, id, &req, layered)?,
+        None => None,
+    };
+    match warm.map_or_else(|| acquire_timed(cx, store, id, &req), Ok) {
         Ok(got) => {
             hold_root(store, id, root, &planned, &got)?;
             record_acquired(store, id, &got)?;
             hold_workdir(store, id, &got)?;
             let log_dir = setup::log_dir(cx.state_dir()?, id);
-            let provider = req.provider.as_str();
-            let layered = layers::plan(cx, &started, provider, cfg);
             let repo = started.repo.as_ref();
             let target = SetupTarget::new(&got, provider, repo, &log_dir, layered.as_ref());
             let done = run_and_record(cx, store, id, entry.begin().is_some(), &target, cfg)?;
@@ -239,9 +243,7 @@ fn run_and_record(
     let (cloned, proxy) = clone_with_proxy(cx, store, id, advance, target, cfg)?;
     // Checkpoints are keyed by the base, so a tree that is not the base unchanged saves none.
     let target = &target.keeping_layers(cloned.at_base);
-    if let Some(layered) = target.layered {
-        layers::after_clone(cx, store, target.handle, layered);
-    }
+    layers::after_clone(cx, store, target, cloned.ms);
     if let Some(ms) = cloned.ms {
         store.apply(Decision::new(id).event(ExtraEvent::Cloned { ms }))?;
     }
