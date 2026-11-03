@@ -73,6 +73,11 @@ pub(super) fn events(w: &World, id: BoxId, kind: &str) -> Vec<Value> {
 /// A world whose first Box passes `one-a` and `two-b`, both slow enough to checkpoint, then
 /// fails `three-c`; the fake's checkpoints are on.
 pub(super) fn after_a_partial_setup(driver: FakeDriver) -> (World, BoxId) {
+    after_a_partial_setup_of(driver, LINES)
+}
+
+/// Like [`after_a_partial_setup`] for a repo whose `.moor.yaml` is `yaml`.
+pub(super) fn after_a_partial_setup_of(driver: FakeDriver, yaml: &str) -> (World, BoxId) {
     let driver = driver
         .with_checkpoints()
         .exec_ends_once_when("three-c", ExecOutcome::Exited { code: 1 });
@@ -90,7 +95,7 @@ pub(super) fn after_a_partial_setup(driver: FakeDriver) -> (World, BoxId) {
     w.driver.on_exec_of("two-b", move || {
         clock.sleep(Duration::from_secs(25));
     });
-    let first = start(&w, "first", "abc123", LINES);
+    let first = start(&w, "first", "abc123", yaml);
     (w, first)
 }
 

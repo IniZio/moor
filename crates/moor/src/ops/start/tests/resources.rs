@@ -109,3 +109,36 @@ fn the_launch_request_carries_the_repo_notes_and_the_delivered_shape() {
     assert_eq!(req.repo_notes.as_deref(), Some("run make emu"));
     assert_eq!(req.shape, Some(shape(4, 7900)));
 }
+
+fn warnings_of(w: &super::World, code: &str) -> Vec<String> {
+    (w.cx.take_warnings().into_iter())
+        .filter(|x| x.code == code)
+        .map(|x| x.message)
+        .collect()
+}
+
+#[test]
+fn a_machine_with_less_memory_than_its_size_promises_is_warned_about() {
+    let driver = FakeDriver::new().exec_stdout([probe(4, 4096)]);
+    let (w, v) = start_with("box:\n  size: large\n", driver);
+    assert_eq!(v.boxed.driver.unwrap().mem_mib, Some(4096));
+    let got = warnings_of(&w, "machine_short");
+    assert_eq!(got.len(), 1, "{got:?}");
+    let msg = got.first().unwrap();
+    assert!(msg.contains("large"), "{msg}");
+    assert!(msg.contains("16384"), "{msg}");
+    assert!(msg.contains("4096"), "{msg}");
+}
+
+#[test]
+fn memory_the_kernel_keeps_back_is_not_a_shortfall() {
+    let driver = FakeDriver::new().exec_stdout([probe(2, 3900)]);
+    let (w, _) = start_with("setup: [a]\n", driver);
+    assert!(warnings_of(&w, "machine_short").is_empty());
+}
+
+#[test]
+fn a_box_with_no_probe_reading_is_not_warned_about() {
+    let (w, _) = start_with("box:\n  size: large\n", FakeDriver::new());
+    assert!(warnings_of(&w, "machine_short").is_empty());
+}

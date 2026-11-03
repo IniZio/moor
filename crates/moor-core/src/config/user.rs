@@ -97,6 +97,15 @@ impl BoxSize {
             Self::Xlarge => 32_768,
         }
     }
+
+    /// The least guest memory, in MiB, that still counts as this size.
+    ///
+    /// The guest kernel keeps some memory back, so a machine reports a little under
+    /// [`mem_mib`](Self::mem_mib).
+    #[must_use]
+    pub const fn least_mem_mib(self) -> u64 {
+        self.mem_mib() / 8 * 7
+    }
 }
 
 /// `box:` section.
