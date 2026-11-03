@@ -12,7 +12,7 @@
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::net::UnixListener;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -474,6 +474,7 @@ fn a_real_controller_enrolls_the_token_email() {
 }
 
 mod artifacts;
+mod drain;
 mod enroll;
 mod events;
 mod events_http;
@@ -482,60 +483,6 @@ mod login;
 mod mcp;
 mod secrets;
 mod setup;
-
-/// A gate that drains when the returned socket's peer is written to, and the thread serving it.
-fn world_draining() -> (World, UnixStream, std::thread::JoinHandle<()>) {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = dir.path().join("authgear.sock");
-    let seen = serve_controller(&socket);
-    world_draining_on(socket, seen, dir, false)
-}
-
-/// A gate like [`world_draining`] over the controller at `socket`, serving `/mcp` when `mcp`.
-fn world_draining_on(
-    socket: std::path::PathBuf,
-    seen: mpsc::Receiver<String>,
-    dir: tempfile::TempDir,
-    mcp: bool,
-) -> (World, UnixStream, std::thread::JoinHandle<()>) {
-    let Issuer {
-        base: issuer,
-        key,
-        userinfo,
-        userinfo_calls,
-        ..
-    } = Issuer::start(CLIENT_ID);
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let gate = listener.local_addr().unwrap().to_string();
-    let mcp =
-        mcp.then(|| moor_gate::Mcp::new(&format!("http://{gate}/mcp"), socket.clone()).unwrap());
-    let config = Arc::new(Gate {
-        front_socket: socket,
-        mcp,
-        verifier: Verifier::new(issuer.clone(), CLIENT_ID.to_owned(), None),
-    });
-    let (wake, trigger) = UnixStream::pair().unwrap();
-    let served = std::thread::spawn(move || {
-        moor_gate::serve_until(
-            listener,
-            &config,
-            None,
-            &wake,
-            std::time::Duration::from_secs(30),
-        )
-        .unwrap();
-    });
-    let world = World {
-        issuer,
-        gate,
-        key,
-        userinfo,
-        userinfo_calls,
-        seen,
-        _dir: dir,
-    };
-    (world, trigger, served)
-}
 
 #[test]
 fn a_missing_controller_socket_answers_503_with_retry_after() {
@@ -554,58 +501,4 @@ fn a_missing_controller_socket_answers_503_with_retry_after() {
     assert!(out.starts_with("HTTP/1.1 503"), "{out}");
     assert!(out.contains("Retry-After: 5\r\n"), "{out}");
     assert!(out.contains("\"error\""), "{out}");
-}
-
-/// Waits until the gate at `addr` no longer accepts connections.
-fn wait_refused(addr: &str) {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while TcpStream::connect(addr).is_ok() {
-        assert!(std::time::Instant::now() < deadline, "still accepting");
-        std::thread::sleep(std::time::Duration::from_millis(20));
-    }
-}
-
-#[test]
-fn a_draining_gate_finishes_a_short_request_and_refuses_new_connections() {
-    let (w, mut trigger, served) = world_draining();
-    let mut stream = TcpStream::connect(&w.gate).unwrap();
-    write!(
-        stream,
-        "POST /machines/enroll HTTP/1.1\r\nHost: x\r\nContent-Length: 2\r\n\r\n{{"
-    )
-    .unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(200));
-
-    trigger.write_all(b"x").unwrap();
-    wait_refused(&w.gate);
-    assert!(
-        !served.is_finished(),
-        "the drain must wait for the open request"
-    );
-
-    stream.write_all(b"}").unwrap();
-    let mut out = String::new();
-    stream.read_to_string(&mut out).unwrap();
-    assert!(out.starts_with("HTTP/1.1 400"), "{out}");
-    served.join().unwrap();
-}
-
-#[test]
-fn a_draining_gate_closes_an_open_front_session_within_the_stream_bound() {
-    let (w, mut trigger, served) = world_draining();
-    let mut ws = connect(&w, Some(&sign(&w.key, &claims(&w)))).unwrap();
-    send(&mut ws, &json!({"frame": "hello", "protocol": 15}));
-    assert_eq!(recv(&mut ws), json!({"frame": "hello", "protocol": 15}));
-
-    let began = std::time::Instant::now();
-    trigger.write_all(b"x").unwrap();
-    wait_refused(&w.gate);
-    assert!(ws.read().is_err() || ws.read().is_err());
-    let bound = std::time::Duration::from_secs(moor_gate::STREAM_DRAIN_SECS);
-    assert!(
-        began.elapsed() < bound * 2,
-        "closed after {:?}",
-        began.elapsed()
-    );
-    served.join().unwrap();
 }

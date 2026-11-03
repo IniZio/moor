@@ -2,19 +2,17 @@
 //! that serves watches: a backlog watch caught up at [`TIP`], and live watches that get each
 //! event the test emits.
 
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::TcpStream;
+use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::{mpsc, Arc, Mutex};
-use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use moor_core::controller::ServerFrame;
 use moor_core::response::Response;
 use moor_core::BoxId;
 use serde_json::{json, Value};
 
-use super::{claims, now, sign, world_draining_on, world_with, World};
+use super::{claims, now, sign, world_with, World};
 
 /// The cursor a backlog watch is caught up to.
 pub(super) const TIP: i64 = 10;
@@ -143,29 +141,6 @@ pub(super) fn world() -> (World, Arc<Mutex<Fake>>) {
     let fake = serve_controller(&socket);
     let (_unused, rx) = mpsc::channel();
     (world_with(socket, rx, dir, true), fake)
-}
-
-/// A draining gate with `/mcp` over the fake controller, the trigger that starts its drain,
-/// and the thread serving it.
-fn world_draining() -> (World, UnixStream, JoinHandle<()>, Arc<Mutex<Fake>>) {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = dir.path().join("authgear.sock");
-    let fake = serve_controller(&socket);
-    let (_unused, rx) = mpsc::channel();
-    let (world, trigger, served) = world_draining_on(socket, rx, dir, true);
-    (world, trigger, served, fake)
-}
-
-/// How long after `began` the gate served by `served` returned, or `None` when it did not
-/// within `bound`.
-fn exited_within(served: &JoinHandle<()>, began: Instant, bound: Duration) -> Option<Duration> {
-    while began.elapsed() < bound {
-        if served.is_finished() {
-            return Some(began.elapsed());
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    None
 }
 
 /// A token for the gate's `/mcp` with `scope`.
@@ -370,99 +345,4 @@ fn a_client_that_leaves_ends_the_controller_watch() {
         std::thread::sleep(Duration::from_millis(10));
     }
     panic!("the gate kept the controller watch after the client left");
-}
-
-#[test]
-fn a_draining_gate_ends_an_open_listen_cleanly_and_exits_at_the_stream_bound() {
-    let (world, mut trigger, served, fake) = world_draining();
-    let token = token(&world, "moor:read");
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .http_status_as_error(false)
-        .build()
-        .into();
-    let meta = json!({
-        "io.modelcontextprotocol/protocolVersion": "2026-07-28",
-        "io.modelcontextprotocol/clientInfo": {"name": "test", "version": "0"},
-        "io.modelcontextprotocol/clientCapabilities": {},
-    });
-    let body = json!({"jsonrpc": "2.0", "id": 1, "method": "subscriptions/listen",
-        "params": {"notifications": {"resourcesListChanged": true}, "_meta": meta}});
-    let res = agent
-        .post(format!("http://{}/mcp", world.gate))
-        .header("Content-Type", "application/json")
-        .header("Accept", "application/json, text/event-stream")
-        .header("Authorization", format!("Bearer {token}"))
-        .header("MCP-Protocol-Version", "2026-07-28")
-        .header("Mcp-Method", "subscriptions/listen")
-        .send(body.to_string())
-        .unwrap();
-    let (ended_tx, ended) = mpsc::channel();
-    std::thread::spawn(move || {
-        let mut text = String::new();
-        let read = res.into_body().into_reader().read_to_string(&mut text);
-        let _ = ended_tx.send((read.map_err(|e| e.to_string()), text));
-    });
-    wait_live(&fake);
-
-    let began = Instant::now();
-    trigger.write_all(b"x").unwrap();
-    let bound = Duration::from_secs(moor_gate::STREAM_DRAIN_SECS + 1);
-    let exited = exited_within(&served, began, bound + Duration::from_secs(5));
-    assert!(
-        exited.is_some_and(|after| after < bound),
-        "the gate exited after {exited:?} with a listen open; the bound is {bound:?}"
-    );
-    let (read, text) = ended.recv_timeout(Duration::from_secs(5)).unwrap();
-    assert!(
-        read.is_ok(),
-        "the listen ended with {read:?} after {text:?}"
-    );
-    assert!(
-        text.contains("notifications/subscriptions/acknowledged"),
-        "{text}"
-    );
-}
-
-#[test]
-fn a_draining_gate_closes_an_idle_mcp_connection_without_waiting_out_the_bound() {
-    let (world, mut trigger, served, _fake) = world_draining();
-    let token = token(&world, "moor:read");
-    let meta = json!({
-        "io.modelcontextprotocol/protocolVersion": "2026-07-28",
-        "io.modelcontextprotocol/clientInfo": {"name": "test", "version": "0"},
-        "io.modelcontextprotocol/clientCapabilities": {},
-    });
-    let body = json!({"jsonrpc": "2.0", "id": 1, "method": "resources/list",
-        "params": {"_meta": meta}})
-    .to_string();
-    let mut conn = TcpStream::connect(&world.gate).unwrap();
-    write!(
-        conn,
-        "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nAccept: application/json, text/event-stream\r\nAuthorization: Bearer {token}\r\nMCP-Protocol-Version: 2026-07-28\r\nMcp-Method: resources/list\r\nContent-Length: {}\r\n\r\n{body}",
-        body.len()
-    )
-    .unwrap();
-    conn.set_read_timeout(Some(Duration::from_secs(10)))
-        .unwrap();
-    let mut answer = Vec::new();
-    let mut buf = [0_u8; 4096];
-    while !String::from_utf8_lossy(&answer).contains("moor://box/repo/b") {
-        let n = conn.read(&mut buf).unwrap();
-        assert!(n > 0, "{}", String::from_utf8_lossy(&answer));
-        answer.extend_from_slice(&buf[..n]);
-    }
-
-    let began = Instant::now();
-    trigger.write_all(b"x").unwrap();
-    let bound = Duration::from_secs(1);
-    let exited = exited_within(&served, began, bound + Duration::from_secs(10));
-    assert!(
-        exited.is_some_and(|after| after < bound),
-        "the gate exited after {exited:?} with an idle /mcp connection open"
-    );
-    assert_eq!(
-        conn.read(&mut buf).unwrap(),
-        0,
-        "the gate closed the connection"
-    );
 }
