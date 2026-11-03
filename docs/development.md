@@ -69,7 +69,9 @@ so the Box user must be in the `kvm` group. The repo's `.moor.yaml` sizes the
 Box `large` and runs `tools/box-nested-kvm.sh`, which adds the user to `kvm` and
 installs pinned `cloud-hypervisor`, `passt`, `crabbox` and
 `crabbox-cloudhypervisor` into the `nested-kvm` cache volume. A Box on a host
-without `/dev/kvm` skips the script. A new group applies to new logins, so
+without `/dev/kvm` skips the script. A Box that runs as root skips the group
+change, because root opens `/dev/kvm` without it and the image may have no
+`kvm` group. A new group applies to new logins, so
 start a command that opens `/dev/kvm` in a Box session that already exists with
 `sg kvm -c '<command>'`.
 

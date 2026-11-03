@@ -54,7 +54,7 @@ if [ -n "$need" ]; then
 	as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $need
 fi
 
-if [ -e /dev/kvm ]; then
+if [ -e /dev/kvm ] && [ "$(id -u)" != 0 ]; then
 	user=$(id -un)
 	id -nG "$user" | tr ' ' '\n' | grep -qx kvm || as_root usermod -aG kvm "$user"
 fi
