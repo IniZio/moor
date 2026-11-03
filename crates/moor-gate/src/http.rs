@@ -60,12 +60,7 @@ pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>, stre
             respond(&mut stream, "200 OK", "application/json", &doc.to_string());
         }
         (Some("GET"), p) if p.starts_with(crate::mcp::METADATA_PATH) && gate.mcp.is_some() => {
-            let doc = gate
-                .mcp
-                .as_ref()
-                .map(|mcp| mcp.metadata(gate.verifier.issuer()))
-                .unwrap_or_default();
-            respond(&mut stream, "200 OK", "application/json", &doc);
+            respond_mcp_metadata(&mut stream, gate);
         }
         (_, "/mcp" | "/mcp/") if gate.mcp.is_some() => {
             if let Some(mcp) = &gate.mcp {
@@ -90,6 +85,16 @@ pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>, stre
         }
         _ => respond(&mut stream, "404 Not Found", "text/plain", "not found\n"),
     }
+}
+
+/// Answers with the MCP server's metadata document.
+fn respond_mcp_metadata(stream: &mut TcpStream, gate: &Gate) {
+    let doc = gate
+        .mcp
+        .as_ref()
+        .map(|mcp| mcp.metadata(gate.verifier.issuer()))
+        .unwrap_or_default();
+    respond(stream, "200 OK", "application/json", &doc);
 }
 
 /// Whether `path` is a page behind browser sign-in.
