@@ -133,6 +133,11 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         None => state_socket(&env)
             .ok_or_else(|| failed("no state directory: set state_dir or MOOR_STATE_DIR".into()))?,
     };
+    // Held before the store opens, so no other moor migrates the db this controller serves.
+    let state_lock = env
+        .state_dir()
+        .map(|dir| take_lock(&dir.join(CONTROLLER_LOCK), &socket))
+        .transpose()?;
     let env = check::open(env)?;
     let (vault, key) = open_vault(&env, config)?;
     let env = check::with_runner_state(env, &cfg);
@@ -144,10 +149,6 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
             .map(|(ns, _)| ns.clone())
             .collect(),
     );
-    let state_lock = env
-        .state_dir()
-        .map(|dir| take_lock(&dir.join(CONTROLLER_LOCK), &socket))
-        .transpose()?;
     let lock = take_socket_lock(&socket)?;
     Moor::end_front_leases(&env).map_err(|e| refused(e.error.to_string()))?;
     let listener = sockets.listen("controller", &socket).map_err(refused)?;

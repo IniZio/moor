@@ -202,7 +202,9 @@ impl Store {
         conn.execute_batch(
             "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;",
         )?;
+        let migrating = init::claim_migration(&conn, path)?;
         init::migrate(&mut conn, path)?;
+        drop(migrating);
         open::tighten(path)?;
         Ok(Self {
             path: path.to_path_buf(),
