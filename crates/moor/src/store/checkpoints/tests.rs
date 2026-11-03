@@ -8,7 +8,7 @@ use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::driver::Checkpoint;
 use moor_core::ProviderId;
 
-use super::evict::EvictReason;
+use super::evict::{EvictReason, Evictable};
 use super::Lineage;
 use crate::store::Store;
 use crate::testing::clock::FakeClock;
@@ -18,7 +18,19 @@ fn made(id: &str) -> Checkpoint {
     Checkpoint {
         id: id.to_owned(),
         bytes: Some(7),
+        parent: None,
     }
+}
+
+fn over(id: &str, parent: &str) -> Checkpoint {
+    Checkpoint {
+        parent: Some(parent.to_owned()),
+        ..made(id)
+    }
+}
+
+fn ids(gone: Vec<Evictable>) -> Vec<String> {
+    gone.into_iter().map(|e| e.checkpoint).collect()
 }
 
 fn of(repo: &str, keys: &[LayerKey]) -> Lineage {
@@ -123,4 +135,120 @@ fn checkpoints_go_superseded_chains_first_then_least_recently_used() {
         .evictable(&ProviderId::new("other"))
         .unwrap()
         .is_empty());
+}
+
+#[test]
+fn a_checkpoint_goes_only_once_none_is_a_delta_over_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
+    let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
+    let local = ProviderId::new("local");
+    let keys = chain(
+        REQUESTER_USER,
+        "o/n",
+        "aaa",
+        &["a".to_owned(), "b".to_owned()],
+    );
+    let lineage = of("o/n", &keys);
+    store
+        .record_checkpoint(&local, &keys[0], &lineage, &made("clone"))
+        .unwrap();
+    clock.sleep(Duration::from_secs(1));
+    store
+        .record_checkpoint(&local, &keys[1], &lineage, &over("line-a", "clone"))
+        .unwrap();
+    clock.sleep(Duration::from_secs(1));
+    store
+        .record_checkpoint(&local, &keys[2], &lineage, &over("line-b", "line-a"))
+        .unwrap();
+    for (left, next) in [
+        (["line-b"].as_slice(), "line-b"),
+        (["line-a"].as_slice(), "line-a"),
+        (["clone"].as_slice(), "clone"),
+    ] {
+        let evictable = store.evictable(&local).unwrap();
+        assert_eq!(
+            ids(evictable.clone()),
+            left,
+            "only the deepest delta may go"
+        );
+        assert!(store.claim_checkpoint(&local, &evictable[0]).unwrap());
+        assert!(store.forget_checkpoint(&local, next).unwrap());
+    }
+    assert!(store.evictable(&local).unwrap().is_empty());
+}
+
+#[test]
+fn a_claimed_checkpoint_stays_tracked_but_unusable_until_forgotten() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
+    let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
+    let local = ProviderId::new("local");
+    let keys = chain(REQUESTER_USER, "o/n", "aaa", &[]);
+    store
+        .record_checkpoint(&local, &keys[0], &of("o/n", &keys), &made("cp-1"))
+        .unwrap();
+    let gone = store.evictable(&local).unwrap().remove(0);
+    assert!(store.claim_checkpoint(&local, &gone).unwrap());
+    assert!(
+        !store.claim_checkpoint(&local, &gone).unwrap(),
+        "claimed once"
+    );
+    assert!(store.evictable(&local).unwrap().is_empty());
+    assert_eq!(store.checkpoint(&local, &keys[0]).unwrap(), None);
+    assert!(!store.use_checkpoint(&local, &keys[0]).unwrap());
+    assert_eq!(ids(store.evicting(&local).unwrap()), ["cp-1"]);
+    assert!(store.forget_checkpoint(&local, "cp-1").unwrap());
+    assert!(store.evicting(&local).unwrap().is_empty());
+    assert!(store.evictable(&local).unwrap().is_empty());
+}
+
+#[test]
+fn a_layer_saved_again_while_its_old_checkpoint_goes_tracks_both() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
+    let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
+    let local = ProviderId::new("local");
+    let keys = chain(REQUESTER_USER, "o/n", "aaa", &[]);
+    let lineage = of("o/n", &keys);
+    store
+        .record_checkpoint(&local, &keys[0], &lineage, &made("cp-1"))
+        .unwrap();
+    let gone = store.evictable(&local).unwrap().remove(0);
+    assert!(store.claim_checkpoint(&local, &gone).unwrap());
+    store
+        .record_checkpoint(&local, &keys[0], &lineage, &made("cp-2"))
+        .unwrap();
+    assert_eq!(ids(store.evicting(&local).unwrap()), ["cp-1"]);
+    assert!(store.forget_checkpoint(&local, "cp-1").unwrap());
+    assert_eq!(
+        store
+            .checkpoint(&local, &keys[0])
+            .unwrap()
+            .unwrap()
+            .checkpoint,
+        "cp-2"
+    );
+}
+
+#[test]
+fn an_unclaimed_checkpoint_is_used_again_and_not_forgotten() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
+    let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
+    let local = ProviderId::new("local");
+    let keys = chain(REQUESTER_USER, "o/n", "aaa", &[]);
+    store
+        .record_checkpoint(&local, &keys[0], &of("o/n", &keys), &made("cp-1"))
+        .unwrap();
+    let gone = store.evictable(&local).unwrap().remove(0);
+    assert!(store.claim_checkpoint(&local, &gone).unwrap());
+    store.unclaim_checkpoint(&local, "cp-1").unwrap();
+    assert!(store.evicting(&local).unwrap().is_empty());
+    assert_eq!(ids(store.evictable(&local).unwrap()), ["cp-1"]);
+    assert!(store.use_checkpoint(&local, &keys[0]).unwrap());
+    assert!(
+        !store.forget_checkpoint(&local, "cp-1").unwrap(),
+        "only a claimed checkpoint is forgotten"
+    );
 }

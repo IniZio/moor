@@ -39,7 +39,8 @@ fn a_checkpoint_names_the_lease_and_layer_and_reads_the_id_and_size() {
         got,
         Checkpoint {
             id: "chk_61359ad7f939edd9".to_owned(),
-            bytes: Some(4096)
+            bytes: Some(4096),
+            parent: None,
         }
     );
     let call = p.calls().pop().unwrap();
@@ -75,6 +76,21 @@ fn a_numeric_id_is_read_and_a_missing_one_is_unreadable() {
         c.checkpoint(&handle, "k"),
         Err(DriverError::Failed { .. })
     ));
+}
+
+#[test]
+fn a_delta_checkpoint_reads_its_parent_and_counts_only_its_own_bytes() {
+    let handle = BoxHandle::new("local/moor-7-ab12cd");
+    let delta = r#"{"id":"chk_2","native":{"parentCheckpointId":"chk_1","uniqueBytes":100,"apparentBytes":5000,"bytes":4096}}"#;
+    let (_, c) = driver("create", Reply::Ok(delta.to_owned()));
+    assert_eq!(
+        c.checkpoint(&handle, "k").unwrap(),
+        Checkpoint {
+            id: "chk_2".to_owned(),
+            bytes: Some(100),
+            parent: Some("chk_1".to_owned()),
+        }
+    );
 }
 
 #[test]

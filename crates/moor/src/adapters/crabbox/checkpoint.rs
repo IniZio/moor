@@ -36,10 +36,17 @@ struct Made {
 
 /// The provider part of a checkpoint record.
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Native {
     /// Size on the host.
     #[serde(default)]
     bytes: Option<u64>,
+    /// What only this checkpoint holds, without the checkpoints it is a delta over.
+    #[serde(default)]
+    unique_bytes: Option<u64>,
+    /// The checkpoint it is a delta over; absent over the base image.
+    #[serde(default)]
+    parent_checkpoint_id: Option<String>,
 }
 
 /// What `checkpoint fork --json` prints of the new lease; unknown fields are ignored.
@@ -132,9 +139,11 @@ fn parse_made(text: &str) -> Option<Checkpoint> {
         Value::Number(n) => n.to_string(),
         _ => return None,
     };
+    let native = made.native;
     (!id.is_empty()).then_some(Checkpoint {
         id,
-        bytes: made.native.and_then(|n| n.bytes),
+        bytes: native.as_ref().and_then(|n| n.unique_bytes.or(n.bytes)),
+        parent: native.and_then(|n| n.parent_checkpoint_id),
     })
 }
 

@@ -49,7 +49,7 @@ pub(crate) struct Lineage {
 
 impl Store {
     /// Records `made` as the checkpoint of layer `key` of `lineage` under `provider`, replacing
-    /// an earlier one and its place.
+    /// an earlier one and its place, unless that one is being deleted.
     pub(crate) fn record_checkpoint(
         &self,
         provider: &ProviderId,
@@ -62,13 +62,14 @@ impl Store {
         let chain = lineage.chain.as_str();
         self.writer().execute(
             "INSERT INTO setup_checkpoints (provider, layer_key, checkpoint, repo, bytes, \
-             created_at, last_used_at, user, chain, chain_at) \
+             created_at, last_used_at, user, chain, chain_at, parent) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8, COALESCE((SELECT MIN(chain_at) \
-             FROM setup_checkpoints WHERE provider = ?1 AND chain = ?8), ?6)) \
-             ON CONFLICT (provider, layer_key) DO UPDATE SET checkpoint = excluded.checkpoint, \
-             repo = excluded.repo, bytes = excluded.bytes, created_at = excluded.created_at, \
-             last_used_at = excluded.last_used_at, user = excluded.user, chain = excluded.chain, \
-             chain_at = excluded.chain_at, workdir = NULL, setup_ms = NULL",
+             FROM setup_checkpoints WHERE provider = ?1 AND chain = ?8), ?6), ?9) \
+             ON CONFLICT (provider, layer_key) WHERE evicting = 0 DO UPDATE SET \
+             checkpoint = excluded.checkpoint, repo = excluded.repo, bytes = excluded.bytes, \
+             created_at = excluded.created_at, last_used_at = excluded.last_used_at, \
+             user = excluded.user, chain = excluded.chain, chain_at = excluded.chain_at, \
+             parent = excluded.parent, workdir = NULL, setup_ms = NULL",
             params![
                 provider.as_str(),
                 key.as_str(),
@@ -77,13 +78,14 @@ impl Store {
                 bytes,
                 now,
                 lineage.user.get(),
-                chain
+                chain,
+                made.parent
             ],
         )?;
         Ok(())
     }
 
-    /// The checkpoint of layer `key` under `provider`, if one is recorded.
+    /// The checkpoint of layer `key` under `provider`, if one is recorded and not being deleted.
     pub(crate) fn checkpoint(
         &self,
         provider: &ProviderId,
@@ -94,7 +96,7 @@ impl Store {
             .query_row(
                 "SELECT checkpoint, repo, bytes, created_at, last_used_at, workdir, setup_ms \
                  FROM setup_checkpoints \
-                 WHERE provider = ? AND layer_key = ?",
+                 WHERE provider = ? AND layer_key = ? AND evicting = 0",
                 params![provider.as_str(), key.as_str()],
                 |r| {
                     Ok(CheckpointRow {
@@ -123,7 +125,7 @@ impl Store {
         let ms = i64::try_from(place.setup_ms).unwrap_or(i64::MAX);
         self.writer().execute(
             "UPDATE setup_checkpoints SET workdir = ?, setup_ms = ? \
-             WHERE provider = ? AND layer_key = ?",
+             WHERE provider = ? AND layer_key = ? AND evicting = 0",
             params![place.workdir.as_str(), ms, provider.as_str(), key.as_str()],
         )?;
         Ok(())
@@ -136,7 +138,8 @@ impl Store {
         key: &LayerKey,
     ) -> Result<bool, StoreError> {
         let changed = self.writer().execute(
-            "UPDATE setup_checkpoints SET last_used_at = ? WHERE provider = ? AND layer_key = ?",
+            "UPDATE setup_checkpoints SET last_used_at = ? \
+             WHERE provider = ? AND layer_key = ? AND evicting = 0",
             params![self.now().as_millis(), provider.as_str(), key.as_str()],
         )?;
         Ok(changed > 0)
