@@ -103,10 +103,8 @@ pub(crate) fn read(
         Ok(_) => return Err(refused()),
         Err(e) => return Err(io_error(row, &e)),
     }
-    if req.offset == 0 && req.len >= row.size {
-        check(&file, row)?;
-    }
-    let (sent, eof) = stream(&file, req, out).map_err(|e| e.into_error(row, req.offset))?;
+    let whole = (req.offset == 0 && req.len >= row.size).then_some(row.sha256.as_str());
+    let (sent, eof) = stream(&file, req, whole, out).map_err(|e| e.into_error(row, req.offset))?;
     Ok(ArtifactReadView {
         offset: req.offset,
         sent,
@@ -124,6 +122,8 @@ enum Stream {
     Io(io::Error),
     /// The receiver refused a piece.
     Out(io::Error),
+    /// Every byte went out, and they hash to this instead of the recorded sha256.
+    Mismatch(String),
 }
 
 impl Stream {
@@ -139,15 +139,26 @@ impl Stream {
                 ErrorKind::Failed,
                 format!("stopped sending artifact {}: {}", row.name, e.kind()),
             ),
+            Self::Mismatch(got) => CommandError::new(
+                ErrorKind::Failed,
+                format!(
+                    "artifact {} v{} does not match its recorded sha256 {}; the stored file \
+                     hashes to {got}",
+                    row.name, row.version, row.sha256
+                ),
+            )
+            .with_detail(ErrorDetail::ArtifactMismatch),
         }
     }
 }
 
 /// Send up to the clamped length from the offset; returns bytes sent and whether that reaches
-/// the end.
+/// the end. With `whole`, the bytes sent must hash to it, so a receiver that holds back the
+/// last piece until the response never passes on a file that does not match.
 fn stream(
     file: &Path,
     req: &ArtifactReadReq,
+    whole: Option<&str>,
     out: &mut dyn FnMut(&[u8]) -> io::Result<()>,
 ) -> Result<(u64, bool), Stream> {
     let mut f = File::open(file).map_err(Stream::Io)?;
@@ -159,37 +170,28 @@ fn stream(
     let mut f = f.take(req.len.min(size - req.offset));
     let mut buf = vec![0; BYTES_MAX];
     let mut sent = 0_u64;
+    let mut digest = Sha256::new();
     loop {
         let n = match f.read(&mut buf) {
             Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
             n => n.map_err(Stream::Io)?,
         };
         let Some(piece) = buf.get(..n).filter(|p| !p.is_empty()) else {
-            return Ok((sent, req.offset + sent >= size));
+            break;
         };
+        if whole.is_some() {
+            digest.update(piece);
+        }
         out(piece).map_err(Stream::Out)?;
         sent += n as u64;
     }
-}
-
-/// Fails before any byte is sent when `file` does not hash to the sha256 `row` records.
-fn check(file: &Path, row: &ArtifactRow) -> Result<(), CommandError> {
-    let mut digest = Sha256::new();
-    File::open(file)
-        .and_then(|mut f| io::copy(&mut f, &mut digest))
-        .map_err(|e| io_error(row, &e))?;
-    let got = format!("{:x}", digest.finalize());
-    if got.eq_ignore_ascii_case(&row.sha256) {
-        return Ok(());
+    if let Some(want) = whole {
+        let got = format!("{:x}", digest.finalize());
+        if !got.eq_ignore_ascii_case(want) {
+            return Err(Stream::Mismatch(got));
+        }
     }
-    Err(CommandError::new(
-        ErrorKind::Failed,
-        format!(
-            "artifact {} v{} does not match its recorded sha256 {}; the stored file hashes to {got}",
-            row.name, row.version, row.sha256
-        ),
-    )
-    .with_detail(ErrorDetail::ArtifactMismatch))
+    Ok((sent, req.offset + sent >= size))
 }
 
 /// Map a file error to a command error that names the Artifact, never its contents.

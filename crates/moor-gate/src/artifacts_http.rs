@@ -7,7 +7,7 @@ use std::net::TcpStream;
 
 use moor_core::view::ArtifactView;
 
-use crate::artifact::{self, Refusal, Wanted};
+use crate::artifact::{self, Refusal, Wanted, ARTIFACT_INLINE_MAX};
 use crate::events_http::{error, reader, reply};
 use crate::{log, Gate};
 
@@ -33,25 +33,61 @@ pub(crate) fn serve(
         Ok(found) => found,
         Err(refusal) => return refuse(&mut stream, &refusal),
     };
-    let mut started = false;
-    let read = artifact::read(socket, &person, &found, |data| {
-        if !started {
-            started = true;
-            head(&mut stream, &found.record)?;
-        }
-        stream.write_all(data)
-    });
+    let mut body = Body {
+        stream: &mut stream,
+        record: &found.record,
+        held: Vec::new(),
+        started: false,
+    };
+    let read = artifact::read(socket, &person, &found, |data| body.push(data));
     match read {
-        Ok(()) if !started => {
-            let _ = head(&mut stream, &found.record);
-        }
-        Ok(()) => {}
-        Err(refusal) if !started => refuse(&mut stream, &refusal),
+        Ok(()) => body.finish(),
+        Err(refusal) if !body.started => refuse(&mut stream, &refusal),
         Err(refusal) => log(&format!(
-            "a download of artifact {} stopped part way: {}",
+            "a download of artifact {} ended short: {}",
             found.record.name,
             refusal.message()
         )),
+    }
+}
+
+/// The body on its way out. Up to [`ARTIFACT_INLINE_MAX`] bytes wait before the head is
+/// written, so a mismatch in a small Artifact is still a 409; past that the last byte waits,
+/// so a body that fails the check never arrives whole.
+struct Body<'a> {
+    /// The connection.
+    stream: &'a mut TcpStream,
+    /// The Artifact being sent.
+    record: &'a ArtifactView,
+    /// Bytes received and not yet written.
+    held: Vec<u8>,
+    /// Whether the head went out.
+    started: bool,
+}
+
+impl Body<'_> {
+    /// Takes one piece from the controller.
+    fn push(&mut self, data: &[u8]) -> io::Result<()> {
+        self.held.extend_from_slice(data);
+        if !self.started && self.held.len() as u64 <= ARTIFACT_INLINE_MAX {
+            return Ok(());
+        }
+        if !self.started {
+            self.started = true;
+            head(self.stream, self.record)?;
+        }
+        let keep = self.held.split_off(self.held.len().saturating_sub(1));
+        self.stream.write_all(&self.held)?;
+        self.held = keep;
+        Ok(())
+    }
+
+    /// Writes what is held once the controller vouched for the whole body.
+    fn finish(self) {
+        if !self.started && head(self.stream, self.record).is_err() {
+            return;
+        }
+        let _ = self.stream.write_all(&self.held);
     }
 }
 

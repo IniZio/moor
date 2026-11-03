@@ -16,22 +16,22 @@ fn stored(dir: &Path, id: BoxId) -> PathBuf {
 }
 
 #[test]
-fn a_whole_read_of_bytes_that_do_not_match_the_record_is_refused_before_sending() {
+fn a_whole_read_of_bytes_that_do_not_match_the_record_fails_after_the_last_piece() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
     let t = new_box(&cx, "a");
     publish(&cx, t, "log.txt", b"one");
     fs::write(stored(dir.path(), t), b"two").unwrap();
-    let mut sent = 0;
-    let e = read(&cx, &read_req("a", "log.txt", None, 0, 99), &mut |_| {
-        sent += 1;
+    let mut sent = Vec::new();
+    let e = read(&cx, &read_req("a", "log.txt", None, 0, 99), &mut |p| {
+        sent.extend_from_slice(p);
         Ok(())
     })
     .unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
     assert_eq!(e.detail.as_deref(), Some(&ErrorDetail::ArtifactMismatch));
     assert!(e.error.to_string().contains("sha256"), "{}", e.error);
-    assert_eq!(sent, 0);
+    assert_eq!(sent, b"two");
 }
 
 #[test]

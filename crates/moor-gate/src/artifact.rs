@@ -1,6 +1,6 @@
 //! One Artifact a Box published, read from the controller as the caller: its record from
-//! `artifacts`, then its bytes from `artifact-read`, which checks them against that record's
-//! sha256 before it sends any.
+//! `artifacts`, then its bytes from `artifact-read`, whose answer after the last byte says
+//! whether they matched that record's sha256.
 
 use std::io;
 use std::path::Path;
@@ -13,6 +13,10 @@ use moor_core::response::{ErrorDetail, ErrorKind, ExitClass, Response};
 use moor_core::view::ArtifactView;
 
 use crate::{rewrite, Person};
+
+/// The largest Artifact `get_artifact` returns inline, and the most an HTTP download holds
+/// back so that a sha256 mismatch can still be answered with a status.
+pub(crate) const ARTIFACT_INLINE_MAX: u64 = 4 * 1024 * 1024;
 
 /// The Artifact a caller asked for.
 pub(crate) struct Wanted {
