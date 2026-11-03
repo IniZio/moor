@@ -7,12 +7,15 @@ use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
 use moor_core::seam::driver::ExecOutcome;
+use moor_core::seam::engine::{LaunchPrompt, SessionRef};
 use moor_core::seam::forge::ForgeRepo;
-use moor_core::{BoxId, BoxName, BoxPath, BoxReq, ErrorKind, StartReq};
+use moor_core::seam::surface::PaneRef;
+use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, BoxReq, ErrorKind, StartReq};
 
 use super::run;
 use crate::cx::Cx;
 use crate::testing::driver::FakeDriver;
+use crate::testing::engine::FakeEngine;
 use crate::testing::forge::{repo_at, FakeForge};
 use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
@@ -57,9 +60,14 @@ fn world(yaml: &str, driver: FakeDriver) -> World {
 
 /// Starts `demo` with no agent, whether or not the start succeeds, and returns its id.
 fn started(w: &World) -> BoxId {
+    started_with(w, None)
+}
+
+/// Starts `demo` with no agent but `prompt` stored, and returns its id.
+fn started_with(w: &World, prompt: Option<&str>) -> BoxId {
     let req = StartReq {
         name: name(),
-        prompt: None,
+        prompt: prompt.map(str::to_owned),
         issue: None,
         base: None,
         model: None,
@@ -145,4 +153,47 @@ fn retry_where_the_machine_is_gone_acquires_a_new_one_and_runs_setup() {
     assert_eq!(row(&w, id).lifecycle, BoxLifecycle::Ready);
     let acquires = w.driver.calls().iter().filter(|c| *c == "acquire").count();
     assert_eq!(acquires, 2);
+}
+
+/// A launched session on pane `p-1`.
+fn pane_session() -> SessionRef {
+    SessionRef {
+        id: String::new(),
+        handle: BoxHandle::new("box-1"),
+        workdir: BoxPath::under("/work", "box-1").unwrap(),
+        pane: Some(PaneRef::new("p-1")),
+        warnings: Vec::new(),
+    }
+}
+
+/// A world with a failing first setup step whose engine opens a pane on its first launch.
+fn world_with_engine(driver: FakeDriver) -> (World, Arc<FakeEngine>) {
+    let engine = Arc::new(FakeEngine::new().launch_result(Ok(pane_session())));
+    let mut w = world("setup: [a]\n", driver);
+    w.cx = w.cx.with_engine(engine.clone());
+    (w, engine)
+}
+
+#[test]
+fn a_successful_retry_launches_the_agent_with_the_stored_prompt() {
+    let (w, engine) = world_with_engine(FakeDriver::new().exec_results([Ok(exit(1))]));
+    let id = started_with(&w, Some("fix it"));
+    assert_eq!(row(&w, id).lifecycle, BoxLifecycle::SetupFailed);
+    assert!(engine.launches().is_empty());
+    let v = run(&w.cx, &req()).unwrap();
+    assert!(v.agent.launched);
+    let launches = engine.launches();
+    assert_eq!(launches.len(), 1);
+    let prompts: Vec<_> = launches.iter().map(|l| l.prompt.clone()).collect();
+    assert_eq!(prompts, [LaunchPrompt::Text("fix it".into())]);
+    assert!(w.cx.store().unwrap().live_session(id).unwrap().is_some());
+}
+
+#[test]
+fn a_retry_whose_setup_fails_again_launches_no_agent() {
+    let (w, engine) = world_with_engine(FakeDriver::new().exec_results([Ok(exit(1)), Ok(exit(1))]));
+    let id = started_with(&w, Some("fix it"));
+    let _ = run(&w.cx, &req());
+    assert!(engine.launches().is_empty());
+    assert_eq!(row(&w, id).lifecycle, BoxLifecycle::SetupFailed);
 }

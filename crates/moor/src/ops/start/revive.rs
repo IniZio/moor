@@ -132,6 +132,38 @@ fn revive(
     Ok(watch::run(cx, store, id, view))
 }
 
+/// Launches the agent of a Box whose retried setup just passed, as a fresh start does: the stored
+/// agent session is resumed, else the stored prompt is the first prompt. The new pane is watched.
+///
+/// The caller holds the Box lock.
+///
+/// # Errors
+/// A store failure, or settings that cannot be resolved.
+pub(crate) fn launch_after_retry(
+    cx: &Cx,
+    store: &Store,
+    id: BoxId,
+) -> Result<AgentLaunchView, CommandError> {
+    let row = reread(store, id)?;
+    let req = StartReq {
+        name: row.name.clone(),
+        prompt: row.prompt.clone(),
+        issue: None,
+        base: None,
+        model: None,
+        node: None,
+        no_agent: false,
+        resume: false,
+        repo: None,
+        parent: None,
+        also: None,
+        identity: None,
+    };
+    let settings = || settings_of(cx, &row, &Flags::default());
+    let view = launch::run(cx, store, &req, id, None, &settings)?;
+    Ok(watch::run(cx, store, id, view))
+}
+
 /// Refuses another automatic relaunch once `RELAUNCH_CAP` have happened within `RELAUNCH_WINDOW`.
 ///
 /// Only the first refusal after a relaunch is recorded as `relaunch_capped`. An explicit
