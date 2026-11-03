@@ -7,7 +7,7 @@ use std::net::TcpStream;
 
 use moor_core::view::ArtifactView;
 
-use crate::artifact::{self, Refusal, Wanted, ARTIFACT_INLINE_MAX};
+use crate::artifact::{self, Refusal, Wanted, ARTIFACT_HOLD_BACK_MAX};
 use crate::events_http::{error, reader, reply};
 use crate::{log, Gate};
 
@@ -51,7 +51,7 @@ pub(crate) fn serve(
     }
 }
 
-/// The body on its way out. Up to [`ARTIFACT_INLINE_MAX`] bytes wait before the head is
+/// The body on its way out. Up to [`ARTIFACT_HOLD_BACK_MAX`] bytes wait before the head is
 /// written, so a mismatch in a small Artifact is still a 409; past that the last byte waits,
 /// so a body that fails the check never arrives whole.
 struct Body<'a> {
@@ -69,7 +69,7 @@ impl Body<'_> {
     /// Takes one piece from the controller.
     fn push(&mut self, data: &[u8]) -> io::Result<()> {
         self.held.extend_from_slice(data);
-        if !self.started && self.held.len() as u64 <= ARTIFACT_INLINE_MAX {
+        if !self.started && self.held.len() as u64 <= ARTIFACT_HOLD_BACK_MAX {
             return Ok(());
         }
         if !self.started {

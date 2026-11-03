@@ -179,15 +179,12 @@ up once the turn ends.
 
 ### Fetching an artifact
 
-`get_artifact` returns the bytes of one artifact a Box published, by `box`,
-`name` and optionally `version`; without `version` it returns the newest. The
-first content block is the artifact's record as JSON: `box`, `name`, `version`,
-`content_type`, `size`, `sha256`, `created_at` and `path`. The second holds the
-bytes, base64 encoded: an image block when `content_type` starts with `image/`,
-otherwise an embedded resource blob with that MIME type.
-
-The tool returns bytes inline up to 4 MiB. Over that it returns only the record,
-and `path` is where to download the bytes over HTTP:
+`get_artifact` looks up one artifact a Box published, by `box`, `name` and
+optionally `version`; without `version` it returns the newest. It never returns
+the bytes, whatever their size or type, so they stay out of the agent's context.
+It returns the record: `box`, `name`, `version`, `content_type`, `size`,
+`sha256`, `created_at` and `path`. `path` is where to download the bytes over
+HTTP:
 
 ```sh
 curl -H "Authorization: Bearer $ACCESS_TOKEN" -o shot.png \
@@ -210,9 +207,7 @@ sha256. Errors come back as JSON with an `error` field:
 | 410 | The artifact is recorded but its stored bytes are gone. |
 
 The controller hashes the stored file as it sends it, so a file that does not
-match its recorded sha256 never arrives whole. The tool fails with a message
-that names both hashes. Over HTTP, the gate holds back up to 4 MiB before it
-answers, so a mismatched artifact of that size or smaller gets 409. A larger
+match its recorded sha256 never arrives whole. The gate holds back up to 4 MiB before it answers, so a mismatched artifact of that size or smaller gets 409. A larger
 one has already started with 200, so the gate closes the connection one byte
 short of `Content-Length` and the client sees a truncated body.
 
@@ -251,7 +246,7 @@ the agent when they do not settle it.
 | `box_status` | The lifecycle, the `status` line, `stuck`, the agent's newest message, the last five raw events, artifacts and Reports. |
 | `list_events` | Every event of your Boxes from an offset you keep, including `agent_stalled` and the egress and credential events. A start's `step_finished` events carry `{step, ms, ok}` for `dotfiles`, `agent_install`, `profile`, `acquire`, `proxy`, `clone_others`, `launch` and `plugins`. |
 | `inspect_box` | The tail of the agent's terminal, the agent's recent messages, its state and `stuck`. |
-| `get_artifact` | The bytes of an artifact the agent published: a screenshot, a log or a file. |
+| `get_artifact` | The record of an artifact the agent published and the path to download its bytes from. Never the bytes. |
 
 `inspect_box` takes `box` and optionally `lines` (40 by default, at most 200)
 and `said` (5 by default, at most 20). It returns `pane`, the last `lines` lines

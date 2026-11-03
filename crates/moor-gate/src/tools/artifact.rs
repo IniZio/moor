@@ -1,12 +1,9 @@
-//! `get_artifact`: one Artifact a Box published, inline up to [`ARTIFACT_INLINE_MAX`] bytes.
-
-use crate::artifact::ARTIFACT_INLINE_MAX;
+//! `get_artifact`: the record of one Artifact a Box published and the path that downloads it.
 
 use std::path::Path;
 
-use base64::prelude::{Engine, BASE64_STANDARD};
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{CallToolResult, ContentBlock, ResourceContents};
+use rmcp::model::CallToolResult;
 use rmcp::service::RequestContext;
 use rmcp::{tool, tool_router, RoleServer};
 use schemars::JsonSchema;
@@ -31,15 +28,14 @@ struct ArtifactArgs {
 
 #[tool_router(router = artifact_router, vis = "pub(super)")]
 impl Tools {
-    /// Fetches one published Artifact.
+    /// Describes one published Artifact.
     #[tool(
-        description = "Fetch an artifact one of your Boxes published, by name and optionally \
-                       version (the newest when left out). An image comes back as an image, \
-                       anything else as a base64 blob, with its record (name, version, \
-                       content_type, size, sha256, path). Over 4 MiB only the record comes \
-                       back; GET its path on this server with your token to download it. Fails \
-                       when the stored bytes do not match the recorded sha256. Needs the \
-                       moor:read scope."
+        description = "Look up an artifact one of your Boxes published, by name and optionally \
+                       version (the newest when left out). Returns only its record (name, \
+                       version, content_type, size, sha256, path), never the bytes, so they \
+                       stay out of your context. To read the content, GET the path on this \
+                       server with your token (Authorization: Bearer) and save the response \
+                       to a file. Needs the moor:read scope."
     )]
     async fn get_artifact(
         &self,
@@ -64,33 +60,7 @@ impl Tools {
 fn fetch(socket: &Path, person: &Person, args: &ArtifactArgs) -> Result<CallToolResult, String> {
     let wanted = Wanted::parse(&args.r#box, &args.name, args.version).map_err(|r| text(&r))?;
     let found = artifact::find(socket, person, &wanted).map_err(|r| text(&r))?;
-    let meta = record(&wanted, &found);
-    if found.record.size > ARTIFACT_INLINE_MAX {
-        return Ok(CallToolResult::structured(meta));
-    }
-    let mut bytes = Vec::new();
-    artifact::read(socket, person, &found, |data| {
-        bytes.extend_from_slice(data);
-        Ok(())
-    })
-    .map_err(|r| text(&r))?;
-    let data = BASE64_STANDARD.encode(&bytes);
-    let content_type = &found.record.content_type;
-    let block = if content_type.starts_with("image/") {
-        ContentBlock::image(data, content_type)
-    } else {
-        let uri = format!(
-            "moor://box/{}/artifacts/{}/{}",
-            wanted.r#box.as_str(),
-            found.record.name,
-            found.record.version
-        );
-        ContentBlock::resource(ResourceContents::blob(data, uri).with_mime_type(content_type))
-    };
-    Ok(CallToolResult::success(vec![
-        ContentBlock::text(meta.to_string()),
-        block,
-    ]))
+    Ok(CallToolResult::structured(record(&wanted, &found)))
 }
 
 /// The record of `found` as the tool shows it, with the path that downloads it.
