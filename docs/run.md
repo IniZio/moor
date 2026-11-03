@@ -83,9 +83,12 @@ moor user enroll
 claude setup-token   # copy the token it prints
 printf '%s' '<the Claude token>' | moor user secret set claude
 gh auth token | moor user secret set github
+moor doctor
 moor start smoke --repo OWNER/NAME --prompt "Say hello and stop"
 ```
 
+`moor doctor` prints one line per check (controller, provider, node, user,
+secrets, surface) with a fix for each that fails.
 `moor start` refuses with every missing secret named, if one is missing.
 Close the Box with `moor close smoke` once it is ready.
 
