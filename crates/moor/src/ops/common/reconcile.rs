@@ -59,10 +59,13 @@ pub(crate) fn run(cx: &Cx) {
             }
             Err(e) => {
                 note_starting(store, &facts, &e);
+                let cause = last_sentence(&e.to_string())
+                    .map(|c| format!(" ({c})"))
+                    .unwrap_or_default();
                 cx.warn(Warning {
                     code: "reconcile_skipped".to_owned(),
                     message: format!(
-                        "could not list boxes for provider {}; box states left as they were",
+                        "could not list boxes for provider {}{cause}; box states left as they were",
                         provider.as_str()
                     ),
                 });
