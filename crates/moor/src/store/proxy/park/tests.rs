@@ -1,7 +1,6 @@
 //! Tests for tunnel park requests and acks.
 
 use crate::store::testing::open_store;
-use crate::store::testing::sqlite_only;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -11,6 +10,7 @@ use moor_core::{BoxId, BoxName};
 
 use super::super::Reserve;
 use super::{TunnelAck, TunnelRequest, TunnelWant};
+use crate::store::db::DbExt as _;
 use crate::store::{Store, StoreError};
 use crate::testing::clock::FakeClock;
 use crate::testing::rng::FakeRng;
@@ -130,11 +130,10 @@ fn boxes_are_isolated() {
 
 #[test]
 fn unparsable_values_are_corrupt() {
-    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let t = add(&store, "a");
-    let conn = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
+    let conn = store.writer();
     for (k, v) in [
         (format!("tunnel_want:{}", t.get()), "sideways 1"),
         (format!("tunnel_ack:{}", t.get()), "up x"),

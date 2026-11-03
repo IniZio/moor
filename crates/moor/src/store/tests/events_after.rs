@@ -1,4 +1,4 @@
-use crate::store::testing::sqlite_only;
+use crate::store::db::DbExt as _;
 use std::path::Path;
 
 use moor_core::domain::decision::{Decision, ExtraEvent};
@@ -72,11 +72,10 @@ fn events_after_limit_caps_and_resuming_leaves_no_gap() {
 
 #[test]
 fn events_after_names_the_session_started_at_or_before_each_event() {
-    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = new_box(&store, "alpha");
-    let raw = rusqlite::Connection::open(dir.path().join("state").join("moor.db")).unwrap();
+    let raw = store.writer();
     raw.execute(
         "INSERT INTO events (box, kind, payload, ts) VALUES (?1, 'early', '{}', 0), (?1, 'late', '{}', 2000000)",
         [id.get()],
@@ -87,6 +86,7 @@ fn events_after_names_the_session_started_at_or_before_each_event() {
             r.get(0)
         })
         .unwrap();
+    drop(raw);
     let all = store.events_after(0, 1000).unwrap();
     let find = |kind: &str| all.iter().find(|e| e.row.kind == kind).unwrap();
     assert_eq!(find("early").session, None);
@@ -114,11 +114,10 @@ fn events_after_names_the_old_session_for_its_end_in_a_same_millisecond_relaunch
 
 #[test]
 fn events_after_puts_an_event_at_a_session_start_in_that_session() {
-    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = new_box(&store, "alpha");
-    let raw = rusqlite::Connection::open(dir.path().join("state").join("moor.db")).unwrap();
+    let raw = store.writer();
     let (session, started): (i64, i64) = raw
         .query_row(
             "SELECT id, started_at FROM sessions WHERE box = ?1",
@@ -131,6 +130,7 @@ fn events_after_puts_an_event_at_a_session_start_in_that_session() {
         (id.get(), started),
     )
     .unwrap();
+    drop(raw);
     let all = store.events_after(0, 1000).unwrap();
     let edge = all.iter().find(|e| e.row.kind == "edge").unwrap();
     assert_eq!(edge.session, Some(SessionId::new(session)));

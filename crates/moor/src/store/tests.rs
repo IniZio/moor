@@ -4,8 +4,8 @@
     reason = "tests time real elapsed durations"
 )]
 
-use crate::store::testing::open_store;
 use crate::store::testing::sqlite_only;
+use crate::store::testing::{open_conn, open_store};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -20,6 +20,7 @@ use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 
+use crate::store::db::{DbExt as _, TransactionBehavior};
 use crate::testing::clock::FakeClock;
 
 mod controller_id;
@@ -82,15 +83,16 @@ fn kinds(store: &Store, id: BoxId) -> Vec<String> {
 }
 
 /// Count rows of a table through a raw connection.
-fn count(path: &Path, table: &str) -> i64 {
-    let c = rusqlite::Connection::open(path).unwrap();
-    c.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
+fn count(store: &Store, table: &str) -> i64 {
+    store
+        .writer()
+        .query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
         .unwrap()
 }
 
 #[test]
 fn open_creates_wal_file_with_schema_version() {
-    sqlite_only!("reads or writes the SQLite file directly");
+    sqlite_only!("checks the SQLite file's journal mode");
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("state").join("moor.db");
     drop(open(dir.path()));
@@ -113,12 +115,11 @@ fn open_creates_wal_file_with_schema_version() {
 
 #[test]
 fn primary_session_row_exists_for_each_box() {
-    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let id = new_box(&store, "t");
-    let raw = rusqlite::Connection::open(dir.path().join("state").join("moor.db")).unwrap();
-    let n: i64 = raw
+    let n: i64 = store
+        .writer()
         .query_row(
             "SELECT count(*) FROM sessions WHERE box = ?1 AND ordinal = 1",
             [id.get()],
@@ -130,7 +131,7 @@ fn primary_session_row_exists_for_each_box() {
 
 #[test]
 fn a_state_dir_from_another_schema_version_is_refused_and_kept() {
-    sqlite_only!("reads or writes the SQLite file directly");
+    sqlite_only!("a store from before migrations is only ever a SQLite file");
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("state").join("moor.db");
     let (store, _) = open(dir.path());
@@ -161,7 +162,7 @@ fn a_state_dir_from_another_schema_version_is_refused_and_kept() {
 
 #[test]
 fn a_state_dir_from_before_the_cloned_event_is_refused() {
-    sqlite_only!("reads or writes the SQLite file directly");
+    sqlite_only!("a store from before migrations is only ever a SQLite file");
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("state").join("moor.db");
     drop(open(dir.path()));
@@ -240,7 +241,6 @@ fn full_lifecycle_rows_and_events() {
 
 #[test]
 fn new_box_with_illegal_box_input_leaves_nothing() {
-    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let d = insert("t")
@@ -250,8 +250,7 @@ fn new_box_with_illegal_box_input_leaves_nothing() {
         .set(provider());
     let err = store.apply(d).unwrap_err();
     assert!(matches!(err, StoreError::Illegal(_)), "{err:?}");
-    let path = dir.path().join("state").join("moor.db");
-    assert_eq!((count(&path, "boxes"), count(&path, "events")), (0, 0));
+    assert_eq!((count(&store, "boxes"), count(&store, "events")), (0, 0));
 }
 
 #[test]
@@ -297,26 +296,28 @@ fn unknown_existing_id_is_not_found() {
 
 #[test]
 fn readers_are_not_blocked_by_an_open_writer() {
-    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let id = new_box(&store, "t");
-    let path = dir.path().join("state").join("moor.db");
-    let raw = rusqlite::Connection::open(&path).unwrap();
-    raw.execute_batch(
-        "BEGIN EXCLUSIVE; UPDATE boxes SET prompt = 'dirty'; \
-         INSERT INTO boxes (name, repo, state, created_at, updated_at) VALUES ('x', 'o/r', 'checking', 0, 0); \
-         INSERT INTO sessions (box, ordinal, state, started_at) \
-         VALUES (last_insert_rowid(), 1, 'starting', 0); \
-         INSERT INTO events (box, kind, payload, ts) VALUES (1, 'busy', '{}', 0);",
-    )
-    .unwrap();
+    let mut raw = open_conn(&dir.path().join("state").join("moor.db"));
+    let tx = raw
+        .transaction_with_behavior(TransactionBehavior::Exclusive)
+        .unwrap();
+    for sql in [
+        "UPDATE boxes SET prompt = 'dirty'",
+        "INSERT INTO boxes (name, repo, state, created_at, updated_at) VALUES ('x', 'o/r', 'checking', 0, 0)",
+        "INSERT INTO sessions (box, ordinal, state, started_at) \
+         VALUES ((SELECT MAX(id) FROM boxes), 1, 'starting', 0)",
+        "INSERT INTO events (box, kind, payload, ts) VALUES (1, 'busy', '{}', 0)",
+    ] {
+        tx.execute(sql, ()).unwrap();
+    }
     let start = Instant::now();
     assert_eq!(store.box_row(id).unwrap().unwrap().prompt, None);
     assert_eq!(store.open_boxes().unwrap().len(), 1);
     assert_eq!(store.events(id, 100).unwrap().len(), 1);
     assert!(start.elapsed() < Duration::from_secs(1));
-    raw.execute_batch("COMMIT").unwrap();
+    tx.commit().unwrap();
     assert_eq!(store.open_boxes().unwrap().len(), 2);
     store
         .apply(
@@ -329,7 +330,6 @@ fn readers_are_not_blocked_by_an_open_writer() {
 
 #[test]
 fn box_fields_without_a_box_roll_back_the_box_step() {
-    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let id = new_box(&store, "t");
@@ -353,9 +353,8 @@ fn box_fields_without_a_box_roll_back_the_box_step() {
     assert_eq!(after, before);
     assert_eq!(after.lifecycle, BoxLifecycle::Checking);
     assert_eq!(kinds(&store, id), events_before);
-    let path = dir.path().join("state").join("moor.db");
     assert_eq!(
-        count(&path, "events"),
+        count(&store, "events"),
         i64::try_from(events_before.len()).unwrap()
     );
 }

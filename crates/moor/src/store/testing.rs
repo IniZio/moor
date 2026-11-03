@@ -10,6 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use moor_core::seam::clock::Clock;
 use postgres::{Client, NoTls};
 
+use super::db::{Conn, PgConn};
 use super::Store;
 
 /// The variable naming the Postgres database store tests run on.
@@ -37,9 +38,25 @@ pub(crate) use sqlite_only;
 /// A store for a test: the `SQLite` file `path`, or on Postgres the schema for `path`, with
 /// `path`'s directory as its state dir.
 pub(crate) fn open_store(path: &Path, clock: Arc<dyn Clock>) -> Store {
-    let Ok(url) = std::env::var(POSTGRES_URL) else {
+    let Some(config) = postgres_config(path) else {
         return Store::open(path, clock).unwrap();
     };
+    let state_dir = path.parent().unwrap_or(path);
+    std::fs::create_dir_all(state_dir).unwrap();
+    Store::open_postgres(config, state_dir, clock).unwrap()
+}
+
+/// A second connection to the store [`open_store`] opened at `path`, beside the store's own.
+pub(crate) fn open_conn(path: &Path) -> Conn {
+    let Some(config) = postgres_config(path) else {
+        return Conn::sqlite(rusqlite::Connection::open(path).unwrap());
+    };
+    Conn::Postgres(Box::new(PgConn::new(config.connect(NoTls).unwrap())))
+}
+
+/// On Postgres, the connection config whose search path is the schema standing for `path`.
+fn postgres_config(path: &Path) -> Option<postgres::Config> {
+    let url = std::env::var(POSTGRES_URL).ok()?;
     let mut config: postgres::Config = url.parse().unwrap();
     let mut admin = config.connect(NoTls).unwrap();
     #[expect(
@@ -53,9 +70,7 @@ pub(crate) fn open_store(path: &Path, clock: Arc<dyn Clock>) -> Store {
     let name = schema_for(&mut admin, path, now);
     sweep(&mut admin, now);
     config.options(format!("-c search_path={name}").as_str());
-    let state_dir = path.parent().unwrap_or(path);
-    std::fs::create_dir_all(state_dir).unwrap();
-    Store::open_postgres(config, state_dir, clock).unwrap()
+    Some(config)
 }
 
 /// The schema standing for `path`, made now if no test has made it yet.

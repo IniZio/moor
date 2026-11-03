@@ -1,7 +1,6 @@
 //! Tests for proxy rows, the supervisor lease and proxy events.
 
 use crate::store::testing::open_store;
-use crate::store::testing::sqlite_only;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -15,6 +14,7 @@ use moor_core::{BoxId, BoxName};
 use super::{
     Fenced, Lease, ReadyProc, Reserve, BOX_PORT_MAX, BOX_PORT_MIN, EGRESS_PORT_MAX, EGRESS_PORT_MIN,
 };
+use crate::store::db::DbExt as _;
 use crate::store::{Store, StoreError};
 use crate::testing::clock::FakeClock;
 use crate::testing::rng::FakeRng;
@@ -114,13 +114,12 @@ fn reserve_skips_port_held_by_another_box() {
 
 #[test]
 fn rereserve_keeps_port_and_resets_the_row() {
-    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let (store, clock, id) = reserved(dir.path());
     let first = store.proxy(id).unwrap().unwrap().box_port;
     assert_eq!(store.claim_lease(id, "A", LEASE).unwrap(), Lease::Claimed);
-    rusqlite::Connection::open(dir.path().join("moor.db"))
-        .unwrap()
+    store
+        .writer()
         .execute(
             "UPDATE proxy SET ready = 1, pid = 77, handle = 'h' WHERE box = ?",
             [id.get()],

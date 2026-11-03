@@ -1,6 +1,5 @@
 //! Tests for users, identities and sealed user secrets.
 
-use crate::store::testing::sqlite_only;
 use moor_core::user::{Email, Identity, SecretName, UserId};
 use moor_core::Secret;
 
@@ -114,13 +113,12 @@ fn a_known_identity_never_takes_an_email_another_user_holds() {
 
 #[test]
 fn the_database_refuses_two_users_with_one_email() {
-    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     store
         .enroll(&id("web:alice"), Some(&email("alice@example.com")))
         .unwrap();
-    let raw = rusqlite::Connection::open(dir.path().join("state").join("moor.db")).unwrap();
+    let raw = store.writer();
     let duplicate = raw.execute(
         "INSERT INTO users (created_at, email) VALUES (1, 'alice@example.com')",
         [],
@@ -251,7 +249,6 @@ fn setting_a_secret_again_replaces_it() {
 
 #[test]
 fn a_sealed_value_copied_into_another_row_is_refused() {
-    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let vault = Vault::load_or_create(&dir.path().join("vault.key")).unwrap();
@@ -262,12 +259,12 @@ fn a_sealed_value_copied_into_another_row_is_refused() {
         let sealed = vault.seal(user, &name(key), &value).unwrap();
         store.set_user_secret(user, &name(key), &sealed).unwrap();
     }
-    let db = rusqlite::Connection::open(dir.path().join("state").join("moor.db")).unwrap();
-    let copied = db
+    let copied = store
+        .writer()
         .execute(
             "UPDATE user_secrets SET value = \
-             (SELECT value FROM user_secrets WHERE user = ?1 AND name = 'claude') \
-             WHERE (user = ?2 AND name = 'claude') OR (user = ?1 AND name = 'github')",
+             (SELECT value FROM user_secrets WHERE \"user\" = ?1 AND name = 'claude') \
+             WHERE (\"user\" = ?2 AND name = 'claude') OR (\"user\" = ?1 AND name = 'github')",
             [alice.get(), bob.get()],
         )
         .unwrap();

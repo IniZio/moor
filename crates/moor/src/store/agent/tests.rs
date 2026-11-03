@@ -1,7 +1,6 @@
 //! Tests for session rows, the hook cache and `idle_since`.
 
 use crate::store::testing::open_store;
-use crate::store::testing::sqlite_only;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -16,7 +15,7 @@ use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
-use crate::store::db::DbExt as _;
+use crate::store::db::{params, DbExt as _};
 use crate::testing::clock::FakeClock;
 
 use crate::store::{Store, StoreError};
@@ -187,7 +186,6 @@ fn has_session_stays_true_once_a_session_began() {
 
 #[test]
 fn end_session_records_outcome_once() {
-    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
     let id = add(&store, "t");
@@ -198,8 +196,8 @@ fn end_session_records_outcome_once() {
     store.end_session(s, Some(3), Some("dg")).unwrap();
     clock.sleep(Duration::from_millis(10));
     store.end_session(s, Some(9), None).unwrap();
-    let c = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
-    let row: (i64, i32, String) = c
+    let row: (i64, i32, String) = store
+        .writer()
         .query_row(
             "SELECT ended_at, exit, transcript_digest FROM launches WHERE id = ?",
             [s],
@@ -239,7 +237,6 @@ fn begin_session_on_unknown_box_is_not_found() {
 
 #[test]
 fn hook_cache_round_trips_every_kind_and_keeps_the_latest() {
-    sqlite_only!("uses SQLite's JSON functions, not yet written for Postgres");
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
     let id = add(&store, "t");
@@ -266,8 +263,8 @@ fn hook_cache_round_trips_every_kind_and_keeps_the_latest() {
         assert_eq!(cache.record, record);
         assert_eq!(cache.at, clock.now());
     }
-    let c = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
-    let n: i64 = c
+    let n: i64 = store
+        .writer()
         .query_row("SELECT count(*) FROM hook_cache", [], |r| r.get(0))
         .unwrap();
     assert_eq!(n, 1);
@@ -328,20 +325,20 @@ fn rejected_step_leaves_idle_since_unchanged() {
 
 #[test]
 fn hook_cache_reads_a_legacy_blocked_row_as_its_message() {
-    sqlite_only!("reads or writes the SQLite file directly");
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = add(&store, "t");
-    let c = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
-    c.execute(
-        "INSERT INTO hook_cache (session, record, at) \
-         VALUES ((SELECT id FROM sessions WHERE box = ?1 AND ordinal = 1), ?2, 1)",
-        rusqlite::params![
-            id.get(),
-            r#"{"kind":"blocked","waiting_for":"X","session_id":null,"at":5}"#
-        ],
-    )
-    .unwrap();
+    store
+        .writer()
+        .execute(
+            "INSERT INTO hook_cache (session, record, at) \
+             VALUES ((SELECT id FROM sessions WHERE box = ?1 AND ordinal = 1), ?2, 1)",
+            params![
+                id.get(),
+                r#"{"kind":"blocked","waiting_for":"X","session_id":null,"at":5}"#
+            ],
+        )
+        .unwrap();
     let rec = store.hook(id).unwrap().unwrap().record;
     assert_eq!(rec.kind, HookKind::Blocked);
     assert_eq!(rec.message.as_deref(), Some("X"));
@@ -400,7 +397,6 @@ fn begin_session_records_the_current_box_session() {
 
 #[test]
 fn hook_follows_the_current_session() {
-    sqlite_only!("uses SQLite's JSON functions, not yet written for Postgres");
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = add(&store, "t");
@@ -436,7 +432,6 @@ fn hook_follows_the_current_session() {
 
 #[test]
 fn a_hook_report_keeps_its_doing_line_through_the_cache() {
-    sqlite_only!("uses SQLite's JSON functions, not yet written for Postgres");
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = working(&store, "t");
@@ -455,7 +450,6 @@ fn a_hook_report_keeps_its_doing_line_through_the_cache() {
 
 #[test]
 fn a_waiting_hook_keeps_what_it_waits_on() {
-    sqlite_only!("uses SQLite's JSON functions, not yet written for Postgres");
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let id = add(&store, "t");
