@@ -212,6 +212,11 @@ impl FakeDriver {
         self
     }
 
+    /// Queues one more text a later non-artifact `exec` writes to its log, without consuming the driver.
+    pub(crate) fn push_exec_stdout(&self, text: impl Into<String>) {
+        self.st().exec_stdout.push_back(text.into());
+    }
+
     /// Queues the listings the artifact index exec writes, served in order. Only an exec whose
     /// `sh -c` script reads `.moor/artifacts` consumes them; it writes an empty file once none remain.
     pub(crate) fn artifact_index(self, out: impl IntoIterator<Item = impl Into<String>>) -> Self {

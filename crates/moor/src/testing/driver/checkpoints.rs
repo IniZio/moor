@@ -40,6 +40,11 @@ impl FakeDriver {
         self
     }
 
+    /// Offers checkpoints from now on, without consuming the driver.
+    pub(crate) fn offer_checkpoints(&self) {
+        self.st().layers.on = true;
+    }
+
     /// Ends the next `exec` whose argv mentions `needle` with `outcome`, once.
     pub(crate) fn exec_ends_once_when(self, needle: &str, outcome: ExecOutcome) -> Self {
         self.st()
