@@ -107,14 +107,9 @@ fn bearer(token: &Secret) -> Result<Zeroizing<String>, ForgeError> {
     Ok(auth)
 }
 
-/// Posts `body` to `api` without redirects, through the standard proxy env when set, and returns
-/// the status and body.
-fn post(
-    api: &str,
-    timeout: Duration,
-    auth: &str,
-    body: &str,
-) -> Result<(u16, Vec<u8>), ForgeError> {
+/// An HTTP agent that verifies TLS with the platform roots, never follows a redirect and returns
+/// a status of 400 or more as a response.
+pub(crate) fn agent(timeout: Duration) -> Agent {
     let tls = TlsConfig::builder()
         .provider(TlsProvider::Rustls)
         .root_certs(RootCerts::PlatformVerifier)
@@ -126,8 +121,20 @@ fn post(
         .http_status_as_error(false)
         .max_redirects(0)
         .build();
+    Agent::new_with_config(config)
+}
+
+/// Posts `body` to `api` without redirects, through the standard proxy env when set, and returns
+/// the status and body.
+fn post(
+    api: &str,
+    timeout: Duration,
+    auth: &str,
+    body: &str,
+) -> Result<(u16, Vec<u8>), ForgeError> {
+    let agent = agent(timeout);
     let unavailable = |e: ureq::Error| ForgeError::Unavailable(format!("cannot reach GitHub: {e}"));
-    let mut response = Agent::new_with_config(config)
+    let mut response = agent
         .post(api)
         .header("Authorization", auth)
         .header("Content-Type", "application/json")
