@@ -3,6 +3,7 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+use moor_testkit::ChildGuard;
 use serde_json::Value;
 
 use super::via_controller::Daemon;
@@ -27,7 +28,7 @@ fn moor(daemon: &Daemon, socket: bool, args: &[&str], stdin: &str) -> Out {
     } else {
         cmd.env("MOOR_CONTROLLER", daemon.root.join("nothing-listens.sock"));
     }
-    let mut child = cmd.spawn().unwrap();
+    let mut child = ChildGuard::new(cmd.spawn().unwrap());
     child
         .stdin
         .take()

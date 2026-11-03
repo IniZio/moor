@@ -17,7 +17,7 @@
 
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 #[allow(
@@ -26,6 +26,7 @@ use std::time::Duration;
 )]
 mod support;
 
+use moor_testkit::ChildGuard;
 use support::receiver::Receiver;
 use support::Front;
 
@@ -46,7 +47,7 @@ fn moor_bin() -> PathBuf {
 }
 
 /// A controller with no repos and no provider, killed on drop.
-struct Controller(Child);
+struct Controller(ChildGuard);
 
 impl Controller {
     /// Starts it with its state under `root` and waits for its `notify` front socket.
@@ -63,18 +64,20 @@ impl Controller {
             ),
         )
         .unwrap();
-        let child = Command::new(moor_bin())
-            .env_clear()
-            .env("PATH", "/usr/bin:/bin")
-            .env("HOME", root.join("home"))
-            .env("MOOR_STATE_DIR", &state)
-            .args(["controller", "serve", "--config"])
-            .arg(&config)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
+        let child = ChildGuard::new(
+            Command::new(moor_bin())
+                .env_clear()
+                .env("PATH", "/usr/bin:/bin")
+                .env("HOME", root.join("home"))
+                .env("MOOR_STATE_DIR", &state)
+                .args(["controller", "serve", "--config"])
+                .arg(&config)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
         let front = state.join("fronts/notify/front");
         for _ in 0..500 {
             if UnixStream::connect(&front).is_ok() {

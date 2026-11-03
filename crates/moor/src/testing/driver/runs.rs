@@ -279,7 +279,7 @@ pub(crate) fn live_in_group(pgid: u32) -> usize {
 
 /// A pid whose process has exited and been reaped.
 pub(crate) fn reaped_pid() -> u32 {
-    let mut child = Command::new("true").spawn().unwrap();
+    let mut child = moor_testkit::ChildGuard::new(Command::new("true").spawn().unwrap());
     let pid = child.id();
     child.wait().unwrap();
     pid

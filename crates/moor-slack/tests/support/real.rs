@@ -3,9 +3,11 @@
 
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 use std::time::Duration;
+
+use moor_testkit::ChildGuard;
 
 /// Path of the `moor` binary, resolved once per test binary.
 static MOOR: OnceLock<PathBuf> = OnceLock::new();
@@ -39,7 +41,7 @@ pub(crate) fn front_socket(root: &Path) -> PathBuf {
 }
 
 /// A running controller, killed on drop.
-pub(crate) struct RealController(Child);
+pub(crate) struct RealController(ChildGuard);
 
 impl RealController {
     /// Starts the controller on `socket` with its state under `root`, and waits until it listens.
@@ -64,18 +66,20 @@ fronts:
             ),
         )
         .unwrap();
-        let child = Command::new(moor_bin())
-            .env_clear()
-            .env("PATH", "/usr/bin:/bin")
-            .env("HOME", root.join("home"))
-            .env("MOOR_STATE_DIR", &state)
-            .args(["controller", "serve", "--config"])
-            .arg(&config)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
+        let child = ChildGuard::new(
+            Command::new(moor_bin())
+                .env_clear()
+                .env("PATH", "/usr/bin:/bin")
+                .env("HOME", root.join("home"))
+                .env("MOOR_STATE_DIR", &state)
+                .args(["controller", "serve", "--config"])
+                .arg(&config)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
         let controller = Self(child);
         let front = front_socket(root);
         for _ in 0..500 {

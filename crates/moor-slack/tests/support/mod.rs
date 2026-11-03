@@ -16,10 +16,11 @@ pub(crate) mod slack_fake;
 use std::io::Write as _;
 use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 use std::time::Duration;
 
 use moor_core::controller::PROTOCOL;
+use moor_testkit::ChildGuard;
 
 use controller::FakeController;
 use github_fake::FakeGitHub;
@@ -59,7 +60,7 @@ pub(crate) struct Rig {
     /// The fake GitHub API the daemon checks pasted tokens with.
     pub(crate) github: FakeGitHub,
     /// The daemon process, once spawned.
-    daemon: Option<Child>,
+    daemon: Option<ChildGuard>,
 }
 
 /// Writes `text` to `path` readable by its owner only.
@@ -452,7 +453,7 @@ impl Rig {
             .stdout(Stdio::null())
             .stderr(std::fs::File::create(self.path("slack.err")).unwrap());
         extra(&mut daemon);
-        self.daemon = Some(daemon.spawn().unwrap());
+        self.daemon = Some(ChildGuard::new(daemon.spawn().unwrap()));
     }
 
     /// Sends SIGTERM to the daemon's exact pid.

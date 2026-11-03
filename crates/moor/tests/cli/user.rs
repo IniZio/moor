@@ -4,6 +4,7 @@
 use std::io::Write as _;
 use std::process::{Command, Stdio};
 
+use moor_testkit::ChildGuard;
 use serde_json::{json, Value};
 
 use super::via_controller::Daemon;
@@ -25,7 +26,7 @@ fn moor(daemon: &Daemon, args: &[&str], input: &str) -> (Value, Vec<String>) {
         .get_args()
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
-    let mut child = cmd.spawn().unwrap();
+    let mut child = ChildGuard::new(cmd.spawn().unwrap());
     child
         .stdin
         .take()

@@ -2,9 +2,10 @@
 
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 
 use moor_migrate::Legacy;
+use moor_testkit::ChildGuard;
 use rusqlite::Connection;
 
 use super::{fresh_dir, Run};
@@ -13,11 +14,11 @@ use super::{fresh_dir, Run};
 const DB: &str = "moor.db";
 
 /// A separate process holding an exclusive flock on a file; killed and reaped on drop.
-struct Holder(Child);
+struct Holder(ChildGuard);
 
 impl Holder {
     fn lock(path: &Path) -> Self {
-        let mut child = Command::new("perl")
+        let child = Command::new("perl")
             .args([
                 "-e",
                 "use Fcntl ':flock'; open(my $f, '>>', $ARGV[0]) or die $!; \
@@ -27,6 +28,7 @@ impl Holder {
             .stdout(Stdio::piped())
             .spawn()
             .unwrap();
+        let mut child = ChildGuard::new(child);
         let mut line = String::new();
         BufReader::new(child.stdout.take().unwrap())
             .read_line(&mut line)

@@ -49,19 +49,22 @@ mod tests {
 
     use super::*;
 
-    fn sleeper() -> std::process::Child {
-        Command::new("sleep")
-            .arg("30")
-            .process_group(0)
-            .spawn()
-            .unwrap()
+    fn sleeper() -> moor_testkit::ChildGuard {
+        moor_testkit::ChildGuard::new(
+            Command::new("sleep")
+                .arg("30")
+                .process_group(0)
+                .spawn()
+                .unwrap(),
+        )
     }
 
     #[test]
     fn leader_is_recognised_and_follower_is_not() {
         let mut child = sleeper();
         assert!(is_group_leader(child.id()));
-        let mut follower = Command::new("sleep").arg("30").spawn().unwrap();
+        let mut follower =
+            moor_testkit::ChildGuard::new(Command::new("sleep").arg("30").spawn().unwrap());
         assert!(!is_group_leader(follower.id()));
         follower.kill().unwrap();
         follower.wait().unwrap();

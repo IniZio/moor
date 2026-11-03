@@ -15,10 +15,11 @@ use std::net::{TcpListener, TcpStream};
 use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use moor::moor_core::controller::PROTOCOL;
+use moor_testkit::ChildGuard;
 use rustix::process::{kill_process, test_kill_process, Pid, Signal};
 use serde_json::Value;
 
@@ -54,7 +55,7 @@ const REFUSED: &str = "Operation not permitted";
 /// Dropping it drains the controller and waits for it to exit.
 struct Controller {
     root: Dir,
-    child: Child,
+    child: ChildGuard,
     /// Unix sockets listening on the host, in `/tmp` and in the hidden home.
     listeners: Vec<(PathBuf, UnixListener)>,
 }
@@ -104,7 +105,7 @@ impl Controller {
             .unwrap();
         let this = Self {
             root,
-            child,
+            child: ChildGuard::new(child),
             listeners,
         };
         let deadline = Instant::now() + Duration::from_secs(20);
@@ -383,7 +384,7 @@ fn a_shim_whose_controller_is_gone_exits_without_running_the_front() {
     let dir = fresh_dir_outside_tmp("orphan");
     let mark = dir.join("ran");
     let touch = format!("touch {}", mark.display());
-    let mut gone = Command::new("true").spawn().unwrap();
+    let mut gone = ChildGuard::new(Command::new("true").spawn().unwrap());
     let gone_pid = gone.id().to_string();
     gone.wait().unwrap();
     let writable = dir.display().to_string();

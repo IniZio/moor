@@ -13,6 +13,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use moor::moor_core::controller::PROTOCOL;
+use moor_testkit::ChildGuard;
 use rustix::process::{kill_process, Pid, Signal};
 
 use super::{fresh_dir_outside_tmp, Dir};
@@ -24,9 +25,9 @@ const CLIENT: &str = include_str!("front_proxy/client.py");
 /// A served controller with one `probe` front whose Proxy serves the claude rule.
 struct Served {
     root: Dir,
-    child: Child,
+    child: ChildGuard,
     /// `moor front-run` running the front, when the controller does not start it.
-    outside: Option<Child>,
+    outside: Option<ChildGuard>,
 }
 
 impl Served {
@@ -47,7 +48,7 @@ impl Served {
         wait_until("the Proxy", &served, || {
             served.log().contains("serving 1 fronts")
         });
-        served.outside = Some(
+        served.outside = Some(ChildGuard::new(
             Command::new(env!("CARGO_BIN_EXE_moor"))
                 .arg("front-run")
                 .arg("--dir")
@@ -59,7 +60,7 @@ impl Served {
                 .stdout(fs::File::create(served.root.join("front-log")).unwrap())
                 .spawn()
                 .unwrap(),
-        );
+        ));
         served
     }
 
@@ -93,7 +94,7 @@ impl Served {
             .unwrap();
         Self {
             root,
-            child,
+            child: ChildGuard::new(child),
             outside: None,
         }
     }

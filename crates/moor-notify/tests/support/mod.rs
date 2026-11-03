@@ -3,10 +3,12 @@
 
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+
+use moor_testkit::ChildGuard;
 
 pub(crate) mod controller;
 pub(crate) mod receiver;
@@ -14,7 +16,7 @@ pub(crate) mod receiver;
 /// A running `moor-notify`, killed on drop, with every stderr line it wrote.
 pub(crate) struct Front {
     /// The process.
-    child: Child,
+    child: ChildGuard,
     /// Its stderr lines so far.
     lines: Arc<Mutex<Vec<String>>>,
 }
@@ -33,18 +35,20 @@ impl Front {
 
     /// Runs the front on `socket` with `extra` arguments.
     fn spawn(socket: &Path, extra: &[&str]) -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_moor-notify"))
-            .env_clear()
-            .env("PATH", "/usr/bin:/bin")
-            .arg("--socket")
-            .arg(socket)
-            .args(["--poll-ms", "20"])
-            .args(extra)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
+        let mut child = ChildGuard::new(
+            Command::new(env!("CARGO_BIN_EXE_moor-notify"))
+                .env_clear()
+                .env("PATH", "/usr/bin:/bin")
+                .arg("--socket")
+                .arg(socket)
+                .args(["--poll-ms", "20"])
+                .args(extra)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap(),
+        );
         let lines = Arc::new(Mutex::new(Vec::new()));
         let stderr = child.stderr.take().unwrap();
         let sink = Arc::clone(&lines);

@@ -2,11 +2,12 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use moor_testkit::ChildGuard;
 use serde_json::{json, Value};
 
 mod controller;
@@ -420,18 +421,20 @@ fn spawn(dir: &Path, args: &[String]) -> (Runner, u16, u16) {
     } else {
         &["--sweep-secs", "1"]
     };
-    let child = Command::new(env!("CARGO_BIN_EXE_moor-machine-runner"))
-        .args(["--listen", "127.0.0.1:0", "--socket"])
-        .arg(dir.join("runner.sock"))
-        .arg("--state-dir")
-        .arg(dir.join("state"))
-        .args(["--agents", "127.0.0.1:0"])
-        .args(sweep)
-        .args(args)
-        .env("PATH", path)
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let child = ChildGuard::new(
+        Command::new(env!("CARGO_BIN_EXE_moor-machine-runner"))
+            .args(["--listen", "127.0.0.1:0", "--socket"])
+            .arg(dir.join("runner.sock"))
+            .arg("--state-dir")
+            .arg(dir.join("state"))
+            .args(["--agents", "127.0.0.1:0"])
+            .args(sweep)
+            .args(args)
+            .env("PATH", path)
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
     let mut runner = Runner(Some(child));
     let stderr = runner.0.as_mut().and_then(|c| c.stderr.take());
     let mut stderr = BufReader::new(stderr.unwrap());
@@ -446,7 +449,7 @@ fn spawn(dir: &Path, args: &[String]) -> (Runner, u16, u16) {
 }
 
 /// A runner process, killed when dropped, so a rig that panics part-way never leaves it behind.
-struct Runner(Option<Child>);
+struct Runner(Option<ChildGuard>);
 
 impl Drop for Runner {
     fn drop(&mut self) {

@@ -79,7 +79,7 @@ fn slow() -> Slow {
 
 /// Records Box 1 as provisioning under a process that no longer exists.
 fn cut_off_start(dir: &tempfile::TempDir) {
-    let mut child = Command::new("true").spawn().expect("spawn");
+    let mut child = moor_testkit::ChildGuard::new(Command::new("true").spawn().expect("spawn"));
     let dead = child.id();
     child.wait().expect("wait");
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));

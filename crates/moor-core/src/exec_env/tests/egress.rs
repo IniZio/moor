@@ -3,7 +3,8 @@
 
 use std::path::{Path, PathBuf};
 
-use moor_testkit::{FakeEgress, FAKE_TINYPROXY};
+use moor_testkit::{ChildGuard, FakeEgress, FAKE_TINYPROXY};
+use rustix::process::{kill_process, Pid, Signal};
 
 use super::super::egress::{config, lines, lines_with, AppArmor, EGRESS_FAILED};
 
@@ -14,6 +15,19 @@ const HOST_TOOLS: &[&str] = &[
     "sh", "cmp", "mkdir", "mv", "rm", "grep", "sed", "sleep", "cat", "tail", "env", "cp", "chmod",
     "flock", "setsid", "readlink", "tee", "true",
 ];
+
+/// Sends `signal` to the process whose pid is in `pid`; nothing for a pid that is not positive.
+fn signal(pid: &str, signal: Signal) {
+    if let Some(pid) = pid
+        .trim()
+        .parse::<i32>()
+        .ok()
+        .filter(|p| *p > 0)
+        .and_then(Pid::from_raw)
+    {
+        let _ = kill_process(pid, signal);
+    }
+}
 
 /// Whether the fake Box has apt and what an install does.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -168,7 +182,7 @@ impl FakeBox {
     /// Kills the placeholder process and closes the port, as a Box that slept and lost tinyproxy.
     fn kill(&self) {
         let pid = std::fs::read_to_string(self.home.join(".moor/egress.pid")).unwrap();
-        let _ = std::process::Command::new("kill").arg(pid.trim()).status();
+        signal(&pid, Signal::TERM);
         self.port.close();
     }
 }
@@ -177,9 +191,7 @@ impl Drop for FakeBox {
     fn drop(&mut self) {
         if let Ok(pid) = std::fs::read_to_string(self.home.join(".moor/egress.pid")) {
             let pid = pid.trim();
-            let _ = std::process::Command::new("kill")
-                .args(["-KILL", pid])
-                .status();
+            signal(pid, Signal::KILL);
             for _ in 0..100 {
                 if !running(pid) {
                     break;
@@ -454,9 +466,7 @@ fn a_restart_that_fails_leaves_the_old_config_so_the_next_command_retries() {
         assert_eq!(b.conf(), old_conf, "attempt {attempt} replaced the config");
         assert_eq!(b.starts(), 1, "{}", b.log());
     }
-    let _ = std::process::Command::new("kill")
-        .args(["-KILL", &old])
-        .status();
+    signal(&old, Signal::KILL);
     b.port.close();
     let (ok, out, err) = b.run_with(&changed);
     assert!(ok, "{out}{err}");
@@ -502,19 +512,21 @@ fn a_pid_file_naming_a_process_that_is_not_tinyproxy_does_not_claim_the_port() {
 fn two_commands_that_start_together_start_one_tinyproxy() {
     let b = FakeBox::new(0, Apt::Missing, true);
     let list = hosts(&["api.anthropic.com", "github.com"]);
-    let first = b
-        .command(&list)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
-    let second = b
-        .command(&list)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
-    for child in [first, second] {
+    let first = ChildGuard::new(
+        b.command(&list)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
+    let second = ChildGuard::new(
+        b.command(&list)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
+    for mut child in [first, second] {
         let (ok, out, err) = FakeBox::outcome(&child.wait_with_output().unwrap());
         assert!(ok, "{out}{err}");
     }

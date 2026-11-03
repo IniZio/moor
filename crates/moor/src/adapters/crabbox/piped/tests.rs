@@ -89,7 +89,7 @@ fn the_kill_script_hangs_up_the_recorded_group() {
     let tmp = tempfile::tempdir().unwrap();
     let group = tmp.path().join("group");
     let (mut cmd, env) = wrapper(&[], "", &group, &["sh", "-c", "sleep 30; echo late"]);
-    let mut child = cmd.spawn().unwrap();
+    let mut child = moor_testkit::ChildGuard::new(cmd.spawn().unwrap());
     std::io::Write::write_all(child.stdin.as_mut().unwrap(), &env).unwrap();
     for _ in 0..200 {
         if std::fs::read_to_string(&group).is_ok_and(|g| !g.trim().is_empty()) {

@@ -14,6 +14,7 @@ members = [
   "crates/moor-testkit",
   "crates/moor-web",
   "tools/layering",
+  "tools/test-children",
   "tools/e2e-budget",
 ]
 exclude = ["target"]

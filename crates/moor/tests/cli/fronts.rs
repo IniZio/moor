@@ -14,10 +14,11 @@ use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use moor::moor_core::controller::PROTOCOL;
+use moor_testkit::ChildGuard;
 use rustix::process::{kill_process, Pid, Signal};
 use serde_json::Value;
 
@@ -100,7 +101,7 @@ const NO_USER_NAMESPACES: [&str; 6] = [
 /// controller and waits for it to exit.
 struct Controller {
     root: Dir,
-    child: Child,
+    child: ChildGuard,
     /// Unix sockets listening on the host, in `/tmp` and in the user's runtime dir.
     listeners: Vec<(PathBuf, UnixListener)>,
 }
@@ -154,6 +155,7 @@ impl Controller {
             .stderr(fs::File::create(root.join("log")).unwrap())
             .spawn()
             .unwrap();
+        let child = ChildGuard::new(child);
         fs::write(root.join("ctl.pid"), child.id().to_string()).unwrap();
         fs::write(root.join("front").join("ctl.pid"), child.id().to_string()).unwrap();
         let this = Self {
@@ -450,7 +452,7 @@ fn a_shim_whose_controller_is_gone_exits_without_running_the_front() {
     let mark = dir.join("ran");
     let touch = format!("touch {}", mark.display());
     let me = std::process::id().to_string();
-    let mut gone = Command::new("true").spawn().unwrap();
+    let mut gone = ChildGuard::new(Command::new("true").spawn().unwrap());
     let gone_pid = gone.id().to_string();
     gone.wait().unwrap();
     let writable = dir.display().to_string();

@@ -198,15 +198,17 @@ fn wrapper_under_dash(tmp: &Path, env: &str, argv: &[&str]) -> (Option<i32>, Str
 fn run_wrapper(tmp: &Path, env: &str, argv: &[&str], ended_first: bool) -> (Option<i32>, String) {
     use std::io::{ErrorKind, Write as _};
     use std::process::{Command, Stdio};
-    let mut child = Command::new("dash")
-        .args(["-c", super::WRAPPER, "sh", "B", "E", "X", ""])
-        .args(argv)
-        .env("TMPDIR", tmp)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let mut child = moor_testkit::ChildGuard::new(
+        Command::new("dash")
+            .args(["-c", super::WRAPPER, "sh", "B", "E", "X", ""])
+            .args(argv)
+            .env("TMPDIR", tmp)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
     let mut stdin = child.stdin.take().unwrap();
     if ended_first {
         child.wait().unwrap();

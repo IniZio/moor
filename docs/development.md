@@ -35,6 +35,12 @@ Each failing check prints a `fix:` line. In short:
   [box_key.rs](../crates/moor-core/src/box_key.rs).
 - `layering`: a module used one its row does not list. Either the row should
   allow it, or the code belongs elsewhere.
+- `test-children`: test code spawned a process and held its `Child` outside
+  `moor_testkit::ChildGuard`, so a panicking test would leave it running.
+  Wrap it with `ChildGuard::new(..)`, or use `.output()` or `.status()`. A
+  file that cannot goes in [test-children.allow](../tools/test-children.allow)
+  with the reason. The check reads `tests/` directories, `tests.rs` files and
+  `#[cfg(test)]` and `#[test]` items.
 
 ## Database migrations
 
@@ -98,7 +104,7 @@ In a Box, keep `~/.cargo/bin` between Boxes with the `cargo-bin` [cache volume](
 | Target | What it runs |
 | --- | --- |
 | `make build` | `cargo build --workspace --release --locked`. |
-| `make lint` | `cargo fmt --check` and `taplo fmt --check`, Clippy with `-D warnings`, the 400-line cap on Rust files, the removed-name, Box-key, and Box-environment checks, the layering check, the lint self-tests, `typos`, and `cargo doc` with warnings denied. |
+| `make lint` | `cargo fmt --check` and `taplo fmt --check`, Clippy with `-D warnings`, the 400-line cap on Rust files, the removed-name, Box-key, and Box-environment checks, the layering and test-children checks, the lint self-tests, `typos`, and `cargo doc` with warnings denied. |
 | `make hooks` | Sets `core.hooksPath` to [tools/git-hooks](../tools/git-hooks), so `git push` first runs the quick lint checks: `cargo fmt` and `taplo fmt`, Clippy, the file-cap, removed-name, Box-key, and Box-environment checks, and the layering check. The lint self-tests, `typos`, and `cargo doc` are left to CI. Push with `MOOR_SKIP_HOOKS=1` to skip the hook. |
 | `make audit` | `cargo deny check` and `cargo machete`. |
 | `make unit` | Every test target of the workspace in one `cargo nextest` run, with the doc tests alongside it. |

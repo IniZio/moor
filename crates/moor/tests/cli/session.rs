@@ -50,12 +50,13 @@ fn ten_token_calls_with_an_expired_token_refresh_once() {
         let call = moor(dir.path())
             .args(["token", "--server", &server])
             .stdout(Stdio::piped())
-            .spawn();
-        calls.push(call.unwrap());
+            .spawn()
+            .unwrap();
+        calls.push(ChildGuard::new(call));
     }
     let tokens: Vec<String> = calls
         .into_iter()
-        .map(|c| {
+        .map(|mut c| {
             let out = c.wait_with_output().unwrap();
             assert!(out.status.success(), "{}", text(&out.stderr));
             text(&out.stdout)

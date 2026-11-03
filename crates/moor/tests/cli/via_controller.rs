@@ -2,9 +2,10 @@
 
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
+use moor_testkit::ChildGuard;
 use serde_json::Value;
 
 use super::fresh_dir;
@@ -14,7 +15,7 @@ pub(crate) struct Daemon {
     pub(crate) root: PathBuf,
     _dir: super::Dir,
     pub(crate) socket: PathBuf,
-    child: Child,
+    child: ChildGuard,
 }
 
 impl Daemon {
@@ -53,7 +54,7 @@ impl Daemon {
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         configure(&mut cmd);
-        let child = cmd.spawn().unwrap();
+        let child = ChildGuard::new(cmd.spawn().unwrap());
         let this = Self {
             root,
             _dir: dir,
@@ -223,6 +224,7 @@ fn a_request_sent_to_a_stale_socket_is_answered_once_a_controller_binds_it() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    let mut client = ChildGuard::new(client);
     std::thread::sleep(Duration::from_secs(2));
     let _daemon = Daemon::start_in(root, |_| {});
     let out = client.wait_with_output().unwrap();

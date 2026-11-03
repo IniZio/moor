@@ -50,6 +50,8 @@ lint:
 	tools/exec-env.sh
 	cargo test -p layering --locked
 	cargo run -q -p layering --locked
+	cargo test -p test-children --locked
+	cargo run -q -p test-children --locked
 	tools/lint-selftest.sh
 	tools/stack-overlap-selftest.sh
 	tools/gitops-bump-selftest.sh

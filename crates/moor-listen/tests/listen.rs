@@ -18,13 +18,14 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use moor_gate::{Gate, Verifier};
 use moor_testkit::oidc::{now, Issuer};
+use moor_testkit::ChildGuard;
 use serde_json::{json, Value};
 
 const CLIENT_ID: &str = "moor-test-client";
@@ -224,13 +225,15 @@ impl World {
 
     /// Starts `moor-listen` on this gate, watching only the Boxes in `only`.
     fn listen_only(&self, only: &[&str]) -> Listen {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_moor-listen"))
-            .args(["--url", &format!("http://{}/mcp", self.gate)])
-            .args(["--token-cmd", &self.token_cmd()])
-            .args(only.iter().flat_map(|name| ["--box", name]))
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
+        let mut child = ChildGuard::new(
+            Command::new(env!("CARGO_BIN_EXE_moor-listen"))
+                .args(["--url", &format!("http://{}/mcp", self.gate)])
+                .args(["--token-cmd", &self.token_cmd()])
+                .args(only.iter().flat_map(|name| ["--box", name]))
+                .stdout(Stdio::piped())
+                .spawn()
+                .unwrap(),
+        );
         let out = child.stdout.take().unwrap();
         let (tx, lines) = mpsc::channel();
         std::thread::spawn(move || {
@@ -244,7 +247,7 @@ impl World {
 
 /// A running `moor-listen` and the lines it printed.
 struct Listen {
-    child: Child,
+    child: ChildGuard,
     lines: mpsc::Receiver<String>,
 }
 
@@ -403,7 +406,7 @@ fn listen_with_session(world: &World, store: moor_client::session::Store) -> Lis
         });
     });
     Listen {
-        child: Command::new("true").spawn().unwrap(),
+        child: ChildGuard::new(Command::new("true").spawn().unwrap()),
         lines,
     }
 }
