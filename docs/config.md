@@ -441,7 +441,7 @@ A repo's `.moor.yaml` configures its Boxes.
 | `teardown` | list of shell commands | Commands that run when the Box closes. |
 | `env` | map | Plain environment variables for the Box. `PATH` is reserved. moor does not pass names that look like credentials, or names that moor sets, to the agent. |
 | `compose.project_prefix` | string | A prefix for compose project names. |
-| `box.size` | `small`, `medium`, `large`, or `xlarge` | The Box size. It wins over the user's `box.size`. |
+| `box.size` | `small`, `medium`, `large`, or `xlarge` | The Box size. It wins over the user's `box.size`. A machine with less than 7/8 of the size's memory (4, 8, 16 or 32 GiB) still starts the Box and warns with `machine_short`. |
 | `box_credentials` | list of names | Secrets that the Box's user must hold for a `start`. moor does not put them into the Box. |
 | `machine.labels`, `machine.ports` | lists | Attach one of the requester's own enrolled machines that has every label. The Box gets a slot `k` on that machine. Each listed port `p` is moved to `p + 10·k`, and served at that number on both the Box and the machine's loopback, over the machine's link. Slot 0 keeps the listed numbers. Without a free matching machine, the Box starts without one and the start says why. |
 | `machine.sync.presets`, `machine.sync.exclude` | `true`, `false`, or preset names to drop, and a list of rsync patterns | Paths that the machine runner's `sync` neither copies to the machine nor deletes there. See [Sync excludes](#sync-excludes). |

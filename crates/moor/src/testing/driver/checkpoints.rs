@@ -262,6 +262,7 @@ impl FakeDriver {
         s.layers.stand(&handle, id);
         s.live.push(handle.clone());
         s.providers.push((handle.clone(), req.provider.clone()));
+        s.cache.classes.push(req.class.clone());
         Ok(BoxHandle::new(handle))
     }
 }
