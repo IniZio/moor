@@ -37,7 +37,7 @@ The state directory holds `moor.db`. It is the first of `--state-dir`,
 
 | Command | What it does |
 | --- | --- |
-| `moor start NAME` | Creates a Box on the branch `moor/NAME` with its herdr workspace and machine, or attaches to the open Box of that name. The agent starts unless you give `--no-agent`. Without `--prompt` or `--issue` it waits for your first prompt, or resumes its stored session on a Box that has one. The Box acts for the moor user of whoever started it, so `start` runs only through a controller, and refuses an open Box of another user. It also refuses when the user lacks a secret the Box needs, naming every missing one. See [Secrets a Box uses](config.md#secrets-a-box-uses). |
+| `moor start NAME` | Creates a Box on the branch `moor/ID-NAME` with its herdr workspace and machine, or attaches to the open Box of that name. The agent starts unless you give `--no-agent`. Without `--prompt` or `--issue` it waits for your first prompt, or resumes its stored session on a Box that has one. The Box acts for the moor user of whoever started it, so `start` runs only through a controller, and refuses an open Box of another user. It also refuses when the user lacks a secret the Box needs, naming every missing one. See [Secrets a Box uses](config.md#secrets-a-box-uses). |
 | `moor show [NAME]` | Shows all open Boxes, or one Box in detail. `list` is an alias. |
 | `moor inspect NAME` | Shows one Box so you can tell working from stuck: its agent state, why it looks stuck, the agent's latest messages and the end of its pane. `--lines N` sets the pane lines (40 by default, at most 200) and `--said N` the messages (5 by default, at most 20). |
 | `moor run NAME -- CMD...` | Runs a command on the Box's machine. |
@@ -98,9 +98,9 @@ with the requester's own `github` secret:
 - the name of the token's account
 
 moor keeps that `.moor.yaml` in the Box's row, and every later command uses
-that copy. The controller refuses a repo that the account cannot read. It also
-refuses a Box whose branch `moor/NAME` already exists on GitHub, unless
-`--base moor/NAME` names it. An account that cannot push gets a warning.
+that copy. The controller refuses a repo that the account cannot read. The Box branch is `moor/ID-NAME`, named by
+the Box id, so a reused name starts a new branch; `--base` names a ref to start from, such as an
+earlier Box's branch. An account that cannot push gets a warning.
 Commits in the Box use the account's profile name, or its login, and its
 GitHub noreply address.
 

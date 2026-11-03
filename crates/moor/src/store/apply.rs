@@ -90,13 +90,16 @@ fn apply_in(tx: &Transaction<'_>, now: Ts, d: Decision) -> Result<Applied, Store
 }
 
 /// Every write of `d`, inside its transaction.
-fn apply_steps(tx: &Transaction<'_>, now: Ts, d: Decision) -> Result<Applied, StoreError> {
+fn apply_steps(tx: &Transaction<'_>, now: Ts, mut d: Decision) -> Result<Applied, StoreError> {
     let steps::Stepped {
         id,
         existing,
         parts,
         from,
     } = step_box(tx, now, &d)?;
+    if let (BoxTarget::New(new), true) = (&d.target, d.branch_by_id) {
+        d.set.branch = Field::Set(moor_core::box_key::branch(id, &new.name));
+    }
     let quiet = Step {
         from: from.map(is_quiet),
         to: is_quiet(parts),

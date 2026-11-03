@@ -41,7 +41,7 @@ pub trait Controller: Vault {
 /// A Box to start. A field left `None` is the controller's default.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Start {
-    /// The Box's name; its branch is `moor/<name>`.
+    /// The Box's name; its branch is `moor/<id>-<name>`.
     pub name: String,
     /// The repo, as `owner/name`.
     pub repo: String,

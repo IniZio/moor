@@ -145,16 +145,13 @@ impl BoxKey {
     }
 }
 
-/// The git branch of a new Box named `name`: `moor/{repo}--{label}`.
+/// The git branch of Box `id` named `name`: `moor/{id}-{repo}--{label}`.
 ///
-/// The `/` of the name becomes `--`, so the branch holds exactly one `/`.
-/// Segments of a `<repo>/<label>` name cannot contain `--`, so the encoding is
-/// reversible and two such names never share a branch. A bare name containing
-/// `--` can share a branch with a `<repo>/<label>` name; that gap closes when
-/// bare names go with the next schema.
+/// The id leads, so a name reused after its Box closed never lands on the old Box's branch. The
+/// `/` of the name becomes `--`, so the branch holds exactly one `/`.
 #[must_use]
-pub fn branch(name: &BoxName) -> String {
-    format!("moor/{}", name.as_str().replace('/', "--"))
+pub fn branch(id: BoxId, name: &BoxName) -> String {
+    format!("moor/{}-{}", id.get(), name.as_str().replace('/', "--"))
 }
 
 #[cfg(test)]

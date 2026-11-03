@@ -9,8 +9,6 @@ use crate::secret::Secret;
 pub struct RepoAt {
     /// Full sha the base ref resolved to.
     pub base: Sha,
-    /// Tip of the Box branch on the forge, when that branch exists.
-    pub branch_tip: Option<Sha>,
     /// Config files read at `base`.
     pub files: RepoFiles,
     /// Commit identity of the token's account.
@@ -55,8 +53,7 @@ pub trait Forge: Send + Sync {
     /// Maps a git origin URL to a forge repo, or `None` when the URL is not on this forge.
     fn repo_of(&self, origin: &str) -> Option<ForgeRepo>;
 
-    /// Reads `repo` at `base` (the default branch when `None`) as the account of `token`, with
-    /// the tip of `branch` when it exists.
+    /// Reads `repo` at `base` (the default branch when `None`) as the account of `token`.
     ///
     /// # Errors
     /// Returns the [`ForgeError`] that says why the repo, base or a config file cannot be read.
@@ -64,7 +61,6 @@ pub trait Forge: Send + Sync {
         &self,
         repo: &ForgeRepo,
         base: Option<&str>,
-        branch: &str,
         token: &Secret,
     ) -> Result<RepoAt, ForgeError>;
 

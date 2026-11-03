@@ -46,10 +46,9 @@ impl Forge for GitHub {
         &self,
         repo: &ForgeRepo,
         base: Option<&str>,
-        branch: &str,
         token: &Secret,
     ) -> Result<RepoAt, ForgeError> {
-        read::read(&self.api, self.timeout, repo, base, branch, token)
+        read::read(&self.api, self.timeout, repo, base, token)
     }
 
     fn read_file_at(

@@ -189,7 +189,8 @@ fn happy_path_makes_a_working_box_with_a_ready_box() {
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), state::WORKING);
     assert_eq!(v.boxed.base, None);
     assert_eq!(v.boxed.workspace.as_deref(), Some("ws-1"));
-    assert_eq!(v.boxed.branch.as_deref(), Some("moor/demo"));
+    let want = format!("moor/{}-demo", v.boxed.id);
+    assert_eq!(v.boxed.branch.as_deref(), Some(want.as_str()));
     let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
     let b = row.unwrap().unwrap().boxed.unwrap();
     assert_eq!(b.state, BoxState::Ready);
