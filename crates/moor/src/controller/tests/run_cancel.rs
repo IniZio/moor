@@ -61,7 +61,7 @@ fn run_leader(home: &Path) -> Option<u32> {
 }
 
 /// A client process holding the only end of a connection that asked for `request`.
-fn client_process(socket: &Path, request: &Request) -> std::process::Child {
+fn client_process(socket: &Path, request: &Request) -> moor_testkit::ChildGuard {
     let mut stream = UnixStream::connect(socket).unwrap();
     let hello = ClientFrame::Hello { protocol: PROTOCOL };
     stream.write_all(hello.to_line().as_bytes()).unwrap();
@@ -76,7 +76,7 @@ fn client_process(socket: &Path, request: &Request) -> std::process::Child {
     stream.write_all(ask.to_line().as_bytes()).unwrap();
     let mut holder = Command::new("sleep");
     holder.arg("30").stdin(Stdio::from(OwnedFd::from(stream)));
-    holder.spawn().unwrap()
+    moor_testkit::ChildGuard::new(holder.spawn().unwrap())
 }
 
 /// An [`Rng`] that always draws `0`: the store takes the port at that offset of each range.

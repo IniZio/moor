@@ -1,7 +1,9 @@
 //! Tests for freeing the Box port before the tunnel binds it.
 
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
+
+use moor_testkit::ChildGuard;
 use std::time::Duration;
 
 use moor_core::seam::driver::DriverError;
@@ -14,12 +16,14 @@ use super::super::{start, LEASE};
 use super::clear_argv;
 use crate::store::TunnelWant;
 
-fn sleeper() -> Child {
-    Command::new("sleep")
-        .arg("60")
-        .stdout(Stdio::null())
-        .spawn()
-        .unwrap()
+fn sleeper() -> ChildGuard {
+    ChildGuard::new(
+        Command::new("sleep")
+            .arg("60")
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap(),
+    )
 }
 
 /// Puts an `ss` on `bin` that records its arguments and lists `users`.

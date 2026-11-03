@@ -198,11 +198,12 @@ fn two_controllers_with_the_same_box_id_keep_separate_lease_dirs() {
 #[test]
 fn dial_carries_bytes_both_ways_through_the_proxy_command() {
     let home = warmed();
-    let mut child = agent(home.path(), &["dial", "moor-1a2b3c4d-7"])
+    let child = agent(home.path(), &["dial", "moor-1a2b3c4d-7"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
+    let mut child = moor_testkit::ChildGuard::new(child);
     child
         .stdin
         .take()

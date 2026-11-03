@@ -1,11 +1,13 @@
-use std::process::{Child, Command};
+use std::process::Command;
+
+use moor_testkit::ChildGuard;
 
 use rustix::process::{Pid, Signal};
 
 use super::{running, Target};
 
-fn sleeper() -> (Child, Pid, String) {
-    let child = Command::new("sleep").arg("600").spawn().expect("spawn");
+fn sleeper() -> (ChildGuard, Pid, String) {
+    let child = ChildGuard::new(Command::new("sleep").arg("600").spawn().expect("spawn"));
     let raw = i32::try_from(child.id()).expect("pid");
     let started = std::fs::read_to_string(format!("/proc/{raw}/stat"))
         .expect("stat")

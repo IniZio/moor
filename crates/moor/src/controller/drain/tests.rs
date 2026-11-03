@@ -455,17 +455,19 @@ fn sigterm_lets_a_streamed_run_finish_and_exits_zero() {
         return;
     }
     let dir = tempfile::tempdir().expect("tmp");
-    let mut child = Command::new(std::env::current_exe().expect("test binary"))
-        .args([
-            "--exact",
-            "controller::drain::tests::sigterm_child",
-            "--nocapture",
-        ])
-        .env(CHILD, dir.path())
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .spawn()
-        .expect("spawn child");
+    let mut child = moor_testkit::ChildGuard::new(
+        Command::new(std::env::current_exe().expect("test binary"))
+            .args([
+                "--exact",
+                "controller::drain::tests::sigterm_child",
+                "--nocapture",
+            ])
+            .env(CHILD, dir.path())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .spawn()
+            .expect("spawn child"),
+    );
     let socket = dir.path().join("c.sock");
     let connected = (0..500).find_map(|_| {
         thread::sleep(Duration::from_millis(10));

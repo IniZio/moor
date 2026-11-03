@@ -5,8 +5,9 @@ use std::fs;
 use std::io::{BufRead as _, BufReader};
 use std::net::{Ipv6Addr, TcpListener, TcpStream};
 use std::os::unix::net::UnixListener;
-use std::process::{Child, ChildStdout, Command, Stdio};
+use std::process::{ChildStdout, Command, Stdio};
 
+use moor_testkit::ChildGuard;
 use rustix::process::{kill_process, Pid, Signal};
 use serde_json::Value;
 
@@ -45,9 +46,12 @@ time.sleep(600)
 
 /// Starts `moor front-shim` as a child of this test, with `flags` and `command`, its stdout
 /// piped; returns it and its stdout lines.
-fn spawn_shim(flags: &[&str], command: &[&str]) -> (Child, std::io::Lines<BufReader<ChildStdout>>) {
+fn spawn_shim(
+    flags: &[&str],
+    command: &[&str],
+) -> (ChildGuard, std::io::Lines<BufReader<ChildStdout>>) {
     let me = std::process::id().to_string();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_moor"))
+    let child = Command::new(env!("CARGO_BIN_EXE_moor"))
         .args(["front-shim", "--parent", &me])
         .args(flags)
         .arg("--")
@@ -58,6 +62,7 @@ fn spawn_shim(flags: &[&str], command: &[&str]) -> (Child, std::io::Lines<BufRea
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
+    let mut child = ChildGuard::new(child);
     let lines = BufReader::new(child.stdout.take().unwrap()).lines();
     (child, lines)
 }
@@ -75,7 +80,7 @@ fn reach(targets: &[String]) -> Value {
 }
 
 /// Kills `child` and reaps it.
-fn kill(mut child: Child) {
+fn kill(mut child: ChildGuard) {
     let pid = Pid::from_raw(i32::try_from(child.id()).unwrap()).unwrap();
     let _ = kill_process(pid, Signal::KILL);
     let _ = child.wait();

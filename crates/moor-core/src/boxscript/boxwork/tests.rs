@@ -298,13 +298,15 @@ fn partial_clone(name: &str, url: &str) -> Repo {
 fn assert_offline_probe(name: &str, url: &str) {
     let r = partial_clone(name, url);
     let script = boxwork_script(&[SHA_A]).unwrap();
-    let mut child = Command::new("sh")
-        .args(["-c", &script])
-        .current_dir(&r.root)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .unwrap();
+    let mut child = moor_testkit::ChildGuard::new(
+        Command::new("sh")
+            .args(["-c", &script])
+            .current_dir(&r.root)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
     let mut status = None;
     for _ in 0..200 {
         status = child.try_wait().unwrap();

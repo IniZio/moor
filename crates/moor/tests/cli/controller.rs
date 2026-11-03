@@ -1,5 +1,6 @@
 //! End-to-end tests for `moor controller serve`: the socket must answer exactly as `moor call`.
 
+use moor_testkit::ChildGuard;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::net::UnixStream;
@@ -237,6 +238,7 @@ fn second_controller_on_another_socket_refuses_to_start() {
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
+        .map(ChildGuard::new)
         .unwrap();
     let code = exit_within_five_seconds(&mut second);
     let mut stderr = String::new();
@@ -300,6 +302,7 @@ fn serve_on_a_state_dir_from_another_schema_version_exits_at_startup() {
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
+        .map(ChildGuard::new)
         .unwrap();
     // 500 polls of 10ms bound the wait at about five seconds.
     let status = (0..500)
@@ -404,7 +407,7 @@ fn sigint_stops_the_controller_at_once_without_a_drain() {
 }
 
 /// Spawns `serve` with `yaml` as the user config.
-fn serve_with_user_config(yaml: &str) -> (Child, Sandbox) {
+fn serve_with_user_config(yaml: &str) -> (ChildGuard, Sandbox) {
     let sandbox = Sandbox::new();
     let dir = sandbox.root.join("home/.config/moor");
     std::fs::create_dir_all(&dir).unwrap();
@@ -415,6 +418,7 @@ fn serve_with_user_config(yaml: &str) -> (Child, Sandbox) {
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
+        .map(ChildGuard::new)
         .unwrap();
     (child, sandbox)
 }

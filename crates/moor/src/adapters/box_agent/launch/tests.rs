@@ -242,11 +242,13 @@ fn the_box_runs_the_script_file_under_sh_not_the_login_shell() {
 fn the_script_is_valid_shell() {
     let (d, _, out) = launch(FakeDriver::new(), FakeSurface::new());
     out.unwrap();
-    let mut sh = Command::new("sh")
-        .arg("-n")
-        .stdin(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let mut sh = moor_testkit::ChildGuard::new(
+        Command::new("sh")
+            .arg("-n")
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
     sh.stdin
         .take()
         .unwrap()

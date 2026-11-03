@@ -9,6 +9,7 @@ use std::process::{Command, Output, Stdio};
 use std::sync::atomic::Ordering;
 
 use moor_testkit::oidc::Issuer;
+use moor_testkit::ChildGuard;
 use serde_json::json;
 
 fn moor(state: &Path) -> Command {
@@ -123,6 +124,7 @@ fn login(state: &Path, issuer: &Issuer) {
         .stdin(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
+        .map(ChildGuard::new)
         .unwrap();
     let prompt = BufReader::new(login.stderr.take().unwrap());
     let authorize = format!("{}/authorize", issuer.base);

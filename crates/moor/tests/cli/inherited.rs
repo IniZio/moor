@@ -1,6 +1,7 @@
 //! `moor controller serve` under socket activation: a holder binds the sockets and starts the
 //! controller with `LISTEN_FDS`, `LISTEN_PID` and `LISTEN_FDNAMES`, as systemd does.
 
+use moor_testkit::ChildGuard;
 use std::fs::{self, File};
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::fd::OwnedFd;
@@ -56,19 +57,19 @@ impl Holder {
 
     /// Starts the controller with every held socket passed in under `names`, the way systemd
     /// does: `LISTEN_PID` is the controller's own pid.
-    fn serve(&self, names: &str) -> Child {
+    fn serve(&self, names: &str) -> ChildGuard {
         self.serve_as(None, &self.listeners.len().to_string(), names)
     }
 
     /// Starts the controller with the sockets passed in, but `LISTEN_PID` naming another process.
-    fn serve_for_another_pid(&self, names: &str) -> Child {
+    fn serve_for_another_pid(&self, names: &str) -> ChildGuard {
         let count = self.listeners.len().to_string();
         self.serve_as(Some(&std::process::id().to_string()), &count, names)
     }
 
     /// Starts the controller with every held socket passed in, `LISTEN_PID` set to `pid` (the
     /// controller's own when `None`), `LISTEN_FDS` to `count` and `LISTEN_FDNAMES` to `names`.
-    fn serve_as(&self, pid: Option<&str>, count: &str, names: &str) -> Child {
+    fn serve_as(&self, pid: Option<&str>, count: &str, names: &str) -> ChildGuard {
         let mut cmd = pid.map_or_else(
             || {
                 let mut cmd = self.command("/bin/sh");
@@ -98,6 +99,7 @@ impl Holder {
             .stdout(Stdio::null())
             .stderr(File::create(self.root.join("stderr")).unwrap())
             .spawn()
+            .map(ChildGuard::new)
             .unwrap()
     }
 

@@ -432,12 +432,13 @@ fn a_real_controller_enrolls_the_token_email() {
         ),
     )
     .unwrap();
-    let mut controller = std::process::Command::new(moor)
+    let controller = std::process::Command::new(moor)
         .args(["controller", "serve", "--config"])
         .arg(root.join("c.yaml"))
         .env("HOME", root)
         .spawn()
         .unwrap();
+    let mut controller = moor_testkit::ChildGuard::new(controller);
     let state = root.join("state");
     let socket = state.join("fronts/authgear/front");
     for _ in 0..200 {

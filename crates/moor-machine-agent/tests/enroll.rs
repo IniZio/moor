@@ -227,12 +227,13 @@ fn a_real_controller_records_the_enrolled_machine() {
         ),
     )
     .unwrap();
-    let mut controller = std::process::Command::new(moor)
+    let controller = std::process::Command::new(moor)
         .args(["controller", "serve", "--config"])
         .arg(root.join("c.yaml"))
         .env("HOME", root)
         .spawn()
         .unwrap();
+    let mut controller = moor_testkit::ChildGuard::new(controller);
     let socket = root.join("state/fronts/authgear/front");
     for _ in 0..200 {
         if socket.exists() {

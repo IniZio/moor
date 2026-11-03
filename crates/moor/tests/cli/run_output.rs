@@ -3,6 +3,7 @@
 
 #![allow(clippy::indexing_slicing, reason = "test code")]
 
+use moor_testkit::ChildGuard;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -141,6 +142,7 @@ fn an_interrupted_run_asks_the_controller_to_stop_and_exits_130() {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
+        .map(ChildGuard::new)
         .unwrap();
     request
         .recv_timeout(Duration::from_secs(10))
@@ -180,6 +182,7 @@ fn a_second_interrupt_exits_130_before_the_controller_answers() {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
+        .map(ChildGuard::new)
         .unwrap();
     let pid = rustix::process::Pid::from_raw(i32::try_from(child.id()).unwrap()).unwrap();
     let interrupt = || rustix::process::kill_process(pid, rustix::process::Signal::INT).unwrap();
@@ -251,6 +254,7 @@ fn large_run_output_streams_with_bounded_client_memory() {
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
+        .map(ChildGuard::new)
         .unwrap();
     pid_tx.send(child.id()).unwrap();
     let mut stdout = child.stdout.take().unwrap();
