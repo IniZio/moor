@@ -227,6 +227,9 @@ fn setup_failure_lines(value: &Value, out: &mut String) {
         let _ = writeln!(out, "  {l}");
     }
     if let Some(name) = value.pointer("/box/name").and_then(Value::as_str) {
+        if value.pointer("/box/lifecycle").and_then(Value::as_str) == Some("setup_failed") {
+            let _ = writeln!(out, "retry it with: moor retry {name}");
+        }
         let _ = writeln!(out, "close it with: moor close {name}");
     }
 }

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::activity::{PaneObs, PaneStatus};
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::agent_adapter::FirstRunPrompt;
@@ -267,7 +268,7 @@ fn no_agent_launches_nothing_with_or_without_a_prompt() {
 }
 
 #[test]
-fn a_failed_setup_still_launches_with_its_exit_code() {
+fn a_failed_setup_line_launches_no_agent() {
     let driver = FakeDriver::new().exec_results([
         Ok(ExecOutcome::Exited { code: 0 }),
         Ok(ExecOutcome::Exited { code: 3 }),
@@ -282,8 +283,13 @@ fn a_failed_setup_still_launches_with_its_exit_code() {
     };
     let v = run(&w.cx, &of_repo).unwrap();
     assert!(!v.setup.ok);
-    assert!(v.agent.launched);
-    assert_eq!(engine.launches().first().unwrap().setup_exit, Some(3));
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::SetupFailed);
+    assert!(
+        !v.agent.launched && v.agent.reason.is_none(),
+        "{:?}",
+        v.agent
+    );
+    assert!(engine.launches().is_empty());
 }
 
 #[test]

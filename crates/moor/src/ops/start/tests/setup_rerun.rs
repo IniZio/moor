@@ -9,7 +9,6 @@ use super::setup::{
     argvs, exit, failed_at_set, failed_setup_with, kinds, script_argv, setup_execs, start_req,
     start_with, warning_codes,
 };
-use super::state::working;
 use super::{script_base_yaml, world, World};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
@@ -31,19 +30,17 @@ fn not_rerun_warning(w: &World) -> Vec<String> {
 const BY_HAND: &str = "`moor start` does not re-run it; run each `setup:` line by hand with `moor run demo -- '<line>'`";
 
 #[test]
-fn start_after_a_failed_setup_does_not_re_run_setup_and_warns() {
+fn start_after_a_failed_setup_line_runs_setup_again_and_warns_nothing() {
     let (w, id) = failed_setup_then(
         "setup: [a]\n",
         [Ok(exit(0)), Ok(exit(1)), Ok(exit(0)), Ok(exit(0))],
     );
     drop(warning_codes(&w));
     let again = run(&w.cx, &start_req()).unwrap();
-    assert!(!again.setup.ran);
-    assert_eq!(argvs(&w), [script_argv(&["a"])]);
-    let [message] = not_rerun_warning(&w).try_into().unwrap();
-    assert!(message.starts_with("setup failed at "));
-    assert!(message.ends_with(BY_HAND), "{message}");
-    assert!(failed_at_set(&w, &again));
+    assert!(again.setup.ran && again.setup.ok);
+    assert_eq!(argvs(&w), [script_argv(&["a"]), script_argv(&["a"])]);
+    assert!(not_rerun_warning(&w).is_empty());
+    assert!(!failed_at_set(&w, &again));
     let failed = kinds(&w, id)
         .iter()
         .filter(|k| *k == "setup_failed")
@@ -52,7 +49,7 @@ fn start_after_a_failed_setup_does_not_re_run_setup_and_warns() {
 }
 
 #[test]
-fn start_after_a_failed_setup_execs_nothing_more_in_the_same_box() {
+fn start_after_a_failed_setup_line_retries_in_the_same_box() {
     let (w, _) = failed_setup_then(
         "setup: [a]\n",
         [Ok(exit(0)), Ok(exit(1)), Ok(exit(0)), Ok(exit(0))],
@@ -60,7 +57,10 @@ fn start_after_a_failed_setup_execs_nothing_more_in_the_same_box() {
     run(&w.cx, &start_req()).unwrap();
     let handles: Vec<_> = w.driver.execs().into_iter().map(|e| e.0).collect();
     let box_1 = BoxHandle::new("box-1");
-    assert_eq!(handles, [box_1.clone(), box_1]);
+    assert_eq!(
+        handles,
+        [box_1.clone(), box_1.clone(), box_1.clone(), box_1]
+    );
 }
 
 #[test]
@@ -184,9 +184,13 @@ fn start_does_not_re_run_setup_for_a_setting_up_box_whose_setup_owner_died() {
     drop(warning_codes(&w));
     let again = run(&w.cx, &start_req()).unwrap();
     assert!(!again.setup.ran);
-    assert_eq!(not_rerun_warning(&w).len(), 1);
+    let [message] = not_rerun_warning(&w).try_into().unwrap();
+    assert_eq!(
+        message,
+        "setup was interrupted; retry it with `moor retry demo`"
+    );
     assert!(failed_at_set(&w, &again));
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(row.intent, None);
-    assert!(working(&row));
+    assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);
 }

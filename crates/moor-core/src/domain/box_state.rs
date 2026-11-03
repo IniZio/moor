@@ -10,7 +10,8 @@ use super::Illegal;
 pub enum SetupOutcome {
     /// Setup passed.
     Ok,
-    /// Setup failed; the Box is still ready, with a warning.
+    /// Setup failed. A Box that was already working stays ready, with a warning; any other Box
+    /// goes to setup-failed instead.
     Failed {
         /// The failing output line.
         line: String,
@@ -43,7 +44,7 @@ pub enum BoxLifecycle {
     Pending,
     /// The machine is being acquired and set up.
     SettingUp,
-    /// Acquire, credential, dotfiles or sync setup failed.
+    /// Acquire, credential, clone or a setup line failed; the agent waits for a retry.
     SetupFailed,
     /// The machine is up and can host Sessions.
     Ready,
@@ -174,10 +175,10 @@ pub enum BoxLifecycleInput {
     Promoted,
     /// The machine is ready.
     Ready {
-        /// How setup ended; a failed setup still leaves the Box Ready, with a warning.
+        /// How setup ended.
         setup: SetupOutcome,
     },
-    /// Acquire, credential, dotfiles or sync setup failed.
+    /// Acquire, credential, clone or a setup line failed.
     SetupFailed {
         /// The failure cause.
         cause: String,

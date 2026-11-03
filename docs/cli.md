@@ -210,8 +210,10 @@ Box checkout for unsaved work.
 ### `moor retry`
 
 `moor retry NAME` runs the Box's setup again on the machine it already has,
-and prints the Box as a start does. It refuses a Box whose setup did not fail,
-and says which state the Box is in. After a successful retry the agent starts
+and prints the Box as a start does. When the provider keeps checkpoints, the
+Box moves to a new machine forked from the newest checkpoint at or below the
+line that failed, and only the lines after that checkpoint run again. It refuses
+a Box whose setup did not fail, and says which state the Box is in. After a successful retry the agent starts
 as it does on a first start, including for a Box whose setup was interrupted by
 a controller restart. If setup fails again, the Box stays in `setup_failed` and
 no agent starts.
@@ -224,8 +226,10 @@ lists each Box it closed and each it could not close, with the error. It prints
 `--force` closes despite unsaved work, as `moor close --force` does.
 
 `moor retry` and `moor close-failed` act only on Boxes whose lifecycle is
-`setup_failed`. A Ready Box whose `setup:` line failed is usable, keeps its
-`setup_not_rerun` warning, and neither command touches it.
+`setup_failed`. A failed `setup:` line puts a new Box there, with no agent. A
+working Box that lost its machine and failed a `setup:` line on the new one
+stays Ready with its agent, keeps its `setup_not_rerun` warning, and neither
+command touches it.
 
 ### `moor cp` paths
 
