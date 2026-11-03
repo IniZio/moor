@@ -4,7 +4,11 @@ use std::time::Duration;
 
 use rusqlite::Connection;
 
-use super::{check, migrate, migrations, Error, Legacy, Migration};
+use sea_query::{ColumnDef, Table};
+
+use super::{
+    check, migrate, migrations, render, steps, Backend, Error, Legacy, Migration, Script, Step,
+};
 
 const V1: (&str, &str) = (
     "V1__baseline.sql",
@@ -164,4 +168,87 @@ fn two_openers_racing_on_a_new_file_migrate_it_once() {
             "each migration recorded once"
         );
     }
+}
+
+/// V1 and V2 squashed into one migration that starts the set at 3.
+const V3: (&str, &str) = ("V3__squashed.sql", "CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT NOT NULL); CREATE TABLE tags (note INTEGER NOT NULL REFERENCES notes(id), tag TEXT NOT NULL);");
+const V4: (&str, &str) = ("V4__more.sql", "CREATE TABLE more (x TEXT);");
+
+#[test]
+fn a_file_through_the_squashed_migrations_is_adopted_at_the_squash() {
+    let dir = tempfile::tempdir().unwrap_or_else(|e| unreachable!("{e}"));
+    let mut conn = open(&dir.path().join("a.db"));
+    assert!(migrate(&mut conn, &set(&[V1, V2]), legacy).is_ok());
+    conn.execute("INSERT INTO notes (body) VALUES ('kept')", [])
+        .unwrap_or_else(|e| unreachable!("{e}"));
+    let squashed = set(&[V3, V4]);
+    assert!(check(&conn, &squashed, legacy).is_ok());
+    assert!(migrate(&mut conn, &squashed, legacy).is_ok());
+    assert_eq!(
+        applied(&conn),
+        [3, 4],
+        "the old history gives way to the squash"
+    );
+    assert_eq!(count(&conn, "notes"), 1, "existing rows kept");
+    assert_eq!(count(&conn, "more"), 0, "the next migration ran");
+}
+
+#[test]
+fn a_file_short_of_the_squashed_migrations_is_refused_and_left_alone() {
+    let dir = tempfile::tempdir().unwrap_or_else(|e| unreachable!("{e}"));
+    let mut conn = open(&dir.path().join("a.db"));
+    assert!(migrate(&mut conn, &set(&[V1]), legacy).is_ok());
+    let squashed = set(&[V3]);
+    let refused = |r: &Result<(), Error>| {
+        matches!(
+            r,
+            Err(Error::Squashed {
+                found: 1,
+                adopts: 2
+            })
+        )
+    };
+    assert!(refused(&check(&conn, &squashed, legacy)));
+    assert!(refused(&migrate(&mut conn, &squashed, legacy)));
+    assert_eq!(applied(&conn), [1]);
+}
+
+#[test]
+fn a_fresh_file_runs_the_squashed_set_from_its_first_migration() {
+    let dir = tempfile::tempdir().unwrap_or_else(|e| unreachable!("{e}"));
+    let mut conn = open(&dir.path().join("a.db"));
+    assert!(migrate(&mut conn, &set(&[V3, V4]), legacy).is_ok());
+    assert_eq!(applied(&conn), [3, 4]);
+    assert_eq!(count(&conn, "tags"), 0, "the squash ran");
+}
+
+fn notes(s: &mut Script) {
+    s.schema(
+        Table::create()
+            .table("notes")
+            .col(ColumnDef::new("id").big_integer().primary_key())
+            .col(ColumnDef::new("body").blob().not_null()),
+    );
+}
+
+#[test]
+fn a_step_renders_once_per_backend_and_runs_as_a_migration() {
+    let step = Step {
+        name: "V1__notes",
+        write: notes,
+    };
+    assert_eq!(
+        render(&step, Backend::Sqlite),
+        "CREATE TABLE \"notes\" ( \"id\" integer PRIMARY KEY, \"body\" blob NOT NULL );\n"
+    );
+    assert_eq!(
+        render(&step, Backend::Postgres),
+        "CREATE TABLE \"notes\" ( \"id\" bigint PRIMARY KEY, \"body\" bytea NOT NULL );\n"
+    );
+    let dir = tempfile::tempdir().unwrap_or_else(|e| unreachable!("{e}"));
+    let mut conn = open(&dir.path().join("a.db"));
+    let set = steps(&[step], Backend::Sqlite).unwrap_or_default();
+    assert!(migrate(&mut conn, &set, legacy).is_ok());
+    assert_eq!(applied(&conn), [1]);
+    assert_eq!(count(&conn, "notes"), 0);
 }

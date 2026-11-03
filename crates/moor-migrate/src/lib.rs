@@ -1,9 +1,14 @@
-//! Forward-only schema migrations for moor's `SQLite` databases, run by `refinery`.
+//! Forward-only schema migrations for moor's databases, run by `refinery`.
 //!
-//! A database's schema is an ordered list of `V<n>__<name>.sql` files. [`migrate`] applies the
-//! ones a file lacks and records each in `refinery_schema_history`. A file made before that
-//! table existed is adopted at the baseline (migration 1) when its old version marker matches
-//! the last pre-migration build, and refused otherwise.
+//! A database's schema is an ordered list of migrations, either `V<n>__<name>.sql` files or
+//! [`Step`]s written once in Rust with `sea-query` and rendered per [`Backend`]. [`migrate`]
+//! applies the ones a file lacks and records each in `refinery_schema_history`. A file made
+//! before that table existed is adopted at the baseline (migration 1) when its old version
+//! marker matches the last pre-migration build, and refused otherwise.
+//!
+//! A set whose first migration is `V<n>` with `n > 1` squashed migrations 1 to `n - 1` into
+//! that one: a file recorded through exactly `n - 1` holds its schema and is adopted at `n`,
+//! and a file recorded through less is refused.
 
 use refinery_core::traits::sync::{Migrate, Query, Transaction};
 use refinery_core::{Runner, Target};
@@ -12,6 +17,10 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 pub use refinery_core::Migration;
+pub use script::{render, steps, Backend, Script, Step};
+pub use sea_query;
+
+mod script;
 
 /// Where refinery records applied migrations.
 const HISTORY: &str = "refinery_schema_history";
@@ -40,6 +49,14 @@ pub enum Error {
         found: i64,
         /// Highest migration this build carries.
         known: i64,
+    },
+    /// The file is recorded at a migration the set squashed away, short of where it starts.
+    #[error("the database is at migration {found} and this build adopts only migration {adopts}")]
+    Squashed {
+        /// Highest migration recorded in the file.
+        found: i64,
+        /// The last migration the set squashed, the only one it adopts.
+        adopts: i64,
     },
     /// A migration file could not be named or an applied one was edited.
     #[error("migration: {0}")]
@@ -73,7 +90,8 @@ pub fn check(
     legacy: impl FnOnce(&Connection) -> rusqlite::Result<Legacy>,
 ) -> Result<(), Error> {
     if has_history(conn)? {
-        return refuse_newer(conn, set);
+        refuse_newer(conn, set)?;
+        return squash_point(conn, set).map(drop);
     }
     match legacy(conn)? {
         Legacy::Other(found) => Err(Error::Unadoptable(found)),
@@ -86,11 +104,7 @@ pub fn is_latest(conn: &Connection, set: &[Migration]) -> Result<bool, Error> {
     if !has_history(conn)? {
         return Ok(false);
     }
-    let found: Option<i64> =
-        conn.query_row(&format!("SELECT MAX(version) FROM {HISTORY}"), [], |r| {
-            r.get(0)
-        })?;
-    Ok(found == Some(latest(set)))
+    Ok(recorded(conn)? == Some(latest(set)))
 }
 
 /// Bring the file to the latest migration in `set` inside one `BEGIN IMMEDIATE` transaction,
@@ -109,6 +123,12 @@ pub fn migrate(
     };
     if has_history(&tx)? {
         refuse_newer(&tx, set)?;
+        if let Some(first) = squash_point(&tx, set)? {
+            tx.execute_batch(&format!("DELETE FROM {HISTORY}"))?;
+            runner()
+                .set_target(Target::FakeVersion(first))
+                .run(&mut Held(&tx))?;
+        }
     } else {
         match legacy(&tx)? {
             Legacy::Other(found) => return Err(Error::Unadoptable(found)),
@@ -134,14 +154,33 @@ fn has_history(conn: &Connection) -> rusqlite::Result<bool> {
     )
 }
 
-/// Refuse a file whose recorded migrations run past `set`.
-fn refuse_newer(conn: &Connection, set: &[Migration]) -> Result<(), Error> {
-    let found: Option<i64> = conn
+/// The highest migration the file records, none for an empty history.
+fn recorded(conn: &Connection) -> rusqlite::Result<Option<i64>> {
+    Ok(conn
         .query_row(&format!("SELECT MAX(version) FROM {HISTORY}"), [], |r| {
             r.get(0)
         })
         .optional()?
-        .flatten();
+        .flatten())
+}
+
+/// The first migration of a squashed `set` when the file is recorded through exactly the
+/// migration before it, so it is adopted there; a file recorded through less is refused.
+fn squash_point(conn: &Connection, set: &[Migration]) -> Result<Option<i32>, Error> {
+    let Some(first) = set.iter().map(Migration::version).min() else {
+        return Ok(None);
+    };
+    let adopts = i64::from(first) - 1;
+    match recorded(conn)? {
+        Some(found) if adopts > 0 && found == adopts => Ok(Some(first)),
+        Some(found) if found < adopts => Err(Error::Squashed { found, adopts }),
+        _ => Ok(None),
+    }
+}
+
+/// Refuse a file whose recorded migrations run past `set`.
+fn refuse_newer(conn: &Connection, set: &[Migration]) -> Result<(), Error> {
+    let found = recorded(conn)?;
     let known = latest(set);
     match found {
         Some(found) if found > known => Err(Error::Newer { found, known }),
