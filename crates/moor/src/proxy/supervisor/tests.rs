@@ -15,6 +15,7 @@ use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::{BoxId, BoxName, ProviderId};
 
+mod also_repos;
 mod front_e2e;
 mod graphql_e2e;
 mod hairpin_e2e;
