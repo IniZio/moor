@@ -556,3 +556,15 @@ fn box_also_lists_repos_by_owner_and_name() {
     );
     err("box: {also: [lib]}");
 }
+
+#[test]
+fn the_agent_holder_is_hc_unless_the_config_names_tmux() {
+    assert_eq!(ok("{}").agent.holder(), AgentHolder::Hc);
+    assert_eq!(ok("agent: {holder: hc}").agent.holder(), AgentHolder::Hc);
+    assert_eq!(
+        ok("agent: {holder: tmux}").agent.holder(),
+        AgentHolder::Tmux
+    );
+    let e = err("agent: {holder: screen}");
+    assert!(e.to_string().contains("agent.holder"), "{e}");
+}
