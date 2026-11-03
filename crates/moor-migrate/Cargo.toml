@@ -10,6 +10,10 @@ refinery-core = { version = "0.10", default-features = false, features = [
 ] }
 time = { version = "0.3", features = ["parsing"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
+sea-query = { version = "1.0.2", default-features = false, features = [
+  "backend-postgres",
+  "backend-sqlite",
+] }
 thiserror = "2"
 
 [dev-dependencies]

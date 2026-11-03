@@ -3247,6 +3247,7 @@ version = "0.2.0"
 dependencies = [
  "refinery-core",
  "rusqlite",
+ "sea-query",
  "tempfile",
  "thiserror 2.0.21",
  "time",
@@ -4881,6 +4882,12 @@ dependencies = [
  "salsa20",
  "sha2 0.10.9",
 ]
+
+[[package]]
+name = "sea-query"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "546040c653a705e60ec65ecd3191a809603734bebbc225775916dea9ae409b31"
 
 [[package]]
 name = "sec1"
