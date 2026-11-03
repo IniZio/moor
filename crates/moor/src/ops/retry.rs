@@ -8,9 +8,11 @@ use moor_core::{BoxReq, BoxTarget, ErrorKind};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::provision::{reprovision, Provisioned};
 use crate::ops::common::target::{resolve, Rule};
 use crate::ops::common::view::{box_view, hide_unsupported_sleep};
+use crate::ops::start::launch_after_retry;
 use crate::store::BoxRow;
 
 /// Run `retry`.
@@ -35,14 +37,20 @@ pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<StartView, CommandError> {
         )
         .with_hint(format!("wake it with `moor wake {name}`, then retry")));
     };
+    let agent = if provisioned.setup.failed() {
+        AgentLaunchView::default()
+    } else {
+        let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, row.id, "retry", boxlock::WAIT)?;
+        launch_after_retry(cx, store, row.id)?
+    };
     let row = store
         .box_row(row.id)?
         .ok_or_else(|| CommandError::new(ErrorKind::Internal, "retried Box vanished"))?;
-    Ok(view(cx, &row, &provisioned))
+    Ok(view(cx, &row, &provisioned, agent))
 }
 
 /// The value `start` gives for an existing Box, with what the retry ran.
-fn view(cx: &Cx, row: &BoxRow, p: &Provisioned) -> StartView {
+fn view(cx: &Cx, row: &BoxRow, p: &Provisioned, agent: AgentLaunchView) -> StartView {
     let mut boxed = box_view(row, cx.config());
     hide_unsupported_sleep(&mut boxed, cx);
     let failed = p.setup.failed();
@@ -53,7 +61,7 @@ fn view(cx: &Cx, row: &BoxRow, p: &Provisioned) -> StartView {
         work_tree: p.work_tree.clone(),
         setup: p.setup.view(),
         dotfiles: p.dotfiles.view(),
-        agent: AgentLaunchView::default(),
+        agent,
         warnings_inline: Vec::new(),
         failed_step: failed.then(|| "setup".to_owned()),
         handle: failed

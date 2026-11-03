@@ -47,7 +47,7 @@ use response::{queued_view, set_agent, set_provisioned, view};
 
 pub(crate) use launch::begin_seeded;
 pub(crate) use needs::run as needs;
-pub(crate) use revive::{revive_after_wake, revive_for_steer};
+pub(crate) use revive::{launch_after_retry, revive_after_wake, revive_for_steer};
 pub(crate) use watch::run as watch_launch;
 
 /// What `start` learns before it changes anything.

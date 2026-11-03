@@ -192,8 +192,10 @@ Box checkout for unsaved work.
 
 `moor retry NAME` runs the Box's setup again on the machine it already has,
 and prints the Box as a start does. It refuses a Box whose setup did not fail,
-and says which state the Box is in. If setup fails again, the Box stays in
-`setup_failed`.
+and says which state the Box is in. After a successful retry the agent starts
+as it does on a first start, including for a Box whose setup was interrupted by
+a controller restart. If setup fails again, the Box stays in `setup_failed` and
+no agent starts.
 
 ### `moor close-failed`
 
