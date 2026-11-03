@@ -102,6 +102,16 @@ fn step(kind: &str, payload: &Value) -> Option<String> {
         "box_failed" => format!("machine failed: {}", text("error")),
         "setting_up" => "setting up".to_owned(),
         "cloned" => format!("cloned{}", took()),
+        "warm_started" => {
+            let saved = span(num(payload, "saved_ms") / 1000);
+            let place = format!("{}/{}", num(payload, "layer"), num(payload, "layers"));
+            format!("started from setup checkpoint {place}, skipping {saved} of setup")
+        }
+        "warm_start_failed" => format!(
+            "could not start from setup checkpoint {}: {}; setting up from scratch",
+            num(payload, "layer"),
+            text("error")
+        ),
         "setup_finished" if payload.get("ok").and_then(Value::as_bool) == Some(false) => {
             format!("setup finished with failures{}", took())
         }
@@ -190,6 +200,11 @@ fn setup_line(kind: &str, payload: &Value) -> Option<String> {
         "setup_line_finished" => format!("setup {place} failed after {secs}"),
         _ => return None,
     })
+}
+
+/// The number at `key` in `payload`; 0 when there is none.
+fn num(payload: &Value, key: &str) -> u64 {
+    payload.get(key).and_then(Value::as_u64).unwrap_or_default()
 }
 
 /// A setup line's place in the list, as `3/6`.

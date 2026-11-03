@@ -30,7 +30,7 @@ pub const ASSERTED_KINDS: [&str; 20] = [
 ];
 
 /// Every event kind name an [`Event`] can carry.
-pub const EVENT_KINDS: [&str; 72] = [
+pub const EVENT_KINDS: [&str; 74] = [
     "started",
     "rejected",
     "pending",
@@ -103,6 +103,8 @@ pub const EVENT_KINDS: [&str; 72] = [
     "step_finished",
     "setup_line_started",
     "setup_line_finished",
+    "warm_started",
+    "warm_start_failed",
 ];
 
 impl Event {

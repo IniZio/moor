@@ -269,6 +269,16 @@ fn all_events() -> Vec<Event> {
             ms: 12_000,
             ok: true,
         }),
+        Event::Timing(TimingEvent::WarmStarted {
+            layer: 2,
+            layers: 5,
+            saved_ms: 400_000,
+            fork_ms: 9_000,
+        }),
+        Event::Timing(TimingEvent::WarmStartFailed {
+            layer: 2,
+            error: s("snapshot missing"),
+        }),
         Event::Stall(StallEvent::AgentStalled {
             doing: Some("Bash cargo test".to_owned()),
             quiet_secs: 700,
@@ -365,8 +375,10 @@ const fn event_index(e: &Event) -> usize {
         Event::Timing(TimingEvent::StepFinished { .. }) => 67,
         Event::Timing(TimingEvent::SetupLineStarted { .. }) => 68,
         Event::Timing(TimingEvent::SetupLineFinished { .. }) => 69,
-        Event::Stall(StallEvent::AgentStalled { .. }) => 70,
-        Event::Stall(StallEvent::AgentResumed { .. }) => 71,
+        Event::Timing(TimingEvent::WarmStarted { .. }) => 70,
+        Event::Timing(TimingEvent::WarmStartFailed { .. }) => 71,
+        Event::Stall(StallEvent::AgentStalled { .. }) => 72,
+        Event::Stall(StallEvent::AgentResumed { .. }) => 73,
     }
 }
 
@@ -374,7 +386,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 72);
+    assert_eq!(all.len(), 74);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
