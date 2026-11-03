@@ -452,6 +452,31 @@ and the teardown all use that copy. A change the agent makes to the file in the
 Box never changes what moor runs. A changed `.moor.yaml` takes effect in the
 next Box after it is pushed.
 
+### Setup checkpoints
+
+On a provider that keeps checkpoints, setup runs in layers. The clone is the
+first layer. Each `setup:` line is the next one. moor checkpoints the machine
+after the clone and after the last line. It also checkpoints after any line
+that ran over 20 seconds.
+
+Each layer has a key. The clone's key covers the repo and the Box's base
+commit. Each line's key covers the key below it and the line's text. Changing
+a line changes its key and every key above it. A new commit changes every key,
+because a line may read any file in the repo. Checkpoints are kept per
+provider. A personal node is its own provider, so a Box on another node never
+uses them.
+
+A new Box starts on a fork of the deepest checkpoint whose key matches its own
+layers, and runs only the lines above it. Its events then hold `warm_started`
+with the layer it started from, the number of lines, the fork's time and the
+setup time it skipped. When the fork fails, the Box is set up from scratch on a
+new machine. Its events hold `warm_start_failed` with the provider's error,
+and the start warns with `checkpoint_failed`.
+
+moor does not see the provider's base image. After changing the image, close
+the Boxes and delete the provider's checkpoints, or new Boxes start from the
+old image.
+
 ### Cache volumes
 
 A cache volume is a directory in the Box that the provider keeps across Boxes,
