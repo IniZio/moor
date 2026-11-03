@@ -84,7 +84,7 @@ jobs:
         with:
           key: ${{ matrix.target }}
           # A pull request reads the develop cache but leaves the 10 GB budget to the pushes.
-          save-if: ${{ github.event_name == 'push' }}
+          save-if: true
       - name: Install a musl C compiler
         if: endsWith(matrix.target, '-linux-musl')
         run: |
@@ -127,7 +127,7 @@ jobs:
 
   image:
     needs: release
-    if: needs.release.outputs.tag != ''
+    if: always() && (needs.release.outputs.tag != '' || github.event_name == 'pull_request')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -136,11 +136,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.release.outputs.tag }}
+          ref: ${{ needs.release.outputs.tag || github.sha }}
           persist-credentials: false
       - id: version
         env:
-          TAG: ${{ needs.release.outputs.tag }}
+          TAG: ${{ needs.release.outputs.tag || 'v0.0.0-probe' }}
         run: |
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -154,21 +154,24 @@ jobs:
         with:
           context: .
           platforms: linux/amd64
-          push: true
+          push: false
           # Every release names its own tag; there is no moving one.
           tags: ghcr.io/inizio/moor:${{ steps.version.outputs.version }}
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
           build-args: |
             MOOR_COMMIT=${{ steps.version.outputs.commit }}
             MOOR_VERSION=${{ steps.version.outputs.version }}
-          cache-from: type=registry,ref=ghcr.io/inizio/moor:buildcache
-          cache-to: type=registry,ref=ghcr.io/inizio/moor:buildcache,mode=max,image-manifest=true,oci-mediatypes=true
-      - id: helm
+          cache-from: type=registry,ref=ghcr.io/inizio/moor:buildcache-probe
+          cache-to: type=registry,ref=ghcr.io/inizio/moor:buildcache-probe,mode=max,image-manifest=true,oci-mediatypes=true
+      - if: github.event_name == 'push'
+        id: helm
         run: echo "version=$(make -s print-helm)" >> "$GITHUB_OUTPUT"
-      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+      - if: github.event_name == 'push'
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: v${{ steps.helm.outputs.version }}
-      - name: Push the chart at the release version
+      - if: github.event_name == 'push'
+        name: Push the chart at the release version
         env:
           VERSION: ${{ steps.version.outputs.version }}
           ACTOR: ${{ github.actor }}
