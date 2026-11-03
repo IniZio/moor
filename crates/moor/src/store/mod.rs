@@ -32,6 +32,7 @@ pub(crate) mod artifacts;
 mod bindings;
 mod box_node;
 pub(crate) mod box_profile;
+pub(crate) mod checkpoints;
 mod driver_row;
 mod error;
 mod events_of;
