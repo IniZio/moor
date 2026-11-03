@@ -16,6 +16,12 @@ pub struct Checkout<'a> {
 /// The line the clone script prints when the Box branch started from an existing branch, not the base.
 pub const FROM_BRANCH: &str = "moor.clone=branch";
 
+/// Whether the clone script's `output` says the Box branch started from an existing branch.
+#[must_use]
+pub fn from_branch(output: &str) -> bool {
+    output.lines().any(|l| l.trim_end() == FROM_BRANCH)
+}
+
 /// The step that stopped the clone script; the discriminant is the script's exit code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CloneStep {
@@ -55,7 +61,7 @@ impl CloneStep {
 /// A rerun converges: a workdir already on the branch is left as it is, a clone that stopped
 /// before its checkout carries on, and a branch that already exists is checked out where it is, so
 /// commits made on it are never lost. A new branch starts from `origin/<branch>` when the remote
-/// has it, else from the base. A URL, base or branch that starts with `-` is refused so git never
+/// has it, else from the base; a branch not started from the base prints [`FROM_BRANCH`]. A URL, base or branch that starts with `-` is refused so git never
 /// reads it as an option.
 ///
 /// crabbox writes `.crabbox/` into the workdir before the script runs, and `git clone` needs an
@@ -71,6 +77,7 @@ pub fn clone_script(c: &Checkout<'_>) -> String {
     let tracking = quote(&format!("refs/remotes/origin/{}", c.branch));
     let from = quote(&format!("origin/{}", c.branch));
     let base_commit = quote(&format!("{}^{{commit}}", c.base));
+    let marker = quote(FROM_BRANCH);
     let [clone, fetch, checkout] =
         [CloneStep::Clone, CloneStep::Base, CloneStep::Checkout].map(|s| s as i32);
     format!(
@@ -90,10 +97,12 @@ if [ "$(git symbolic-ref -q --short HEAD 2>/dev/null)" != {branch} ]; then
   fi
   if git rev-parse -q --verify {local} >/dev/null; then
     git checkout -q {branch} -- || exit {checkout}
+    echo {marker}
   else
     git cat-file -e -- {base_commit} 2>/dev/null || git fetch -q -- origin {base} || exit {fetch}
     if git rev-parse -q --verify {tracking} >/dev/null; then
       from={from}
+      echo {marker}
     else
       from={base}
     fi

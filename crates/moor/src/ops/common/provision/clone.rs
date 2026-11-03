@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use moor_core::boxscript::clone::{clone_script, Checkout, CloneStep};
+use moor_core::boxscript::clone::{clone_script, from_branch, Checkout, CloneStep};
 use moor_core::boxscript::refresh::{outcome, refresh_script};
 use moor_core::boxscript::resources;
 use moor_core::config::BoxSettings;
@@ -38,6 +38,8 @@ pub(super) struct Cloned {
     pub(super) delivered: Option<Shape>,
     /// How the kept work tree started; none when the Box keeps none or already refreshed it.
     pub(super) work_tree: Option<WorkTreeView>,
+    /// Whether the Box branch started from an existing branch rather than the base.
+    pub(super) from_branch: bool,
 }
 
 /// The Proxy setup and dotfiles run through, or why it could not start; `None` when nothing needs it.
@@ -118,15 +120,7 @@ pub(super) fn clone_with_proxy(
         }),
     };
     match result {
-        Ok((ms, delivered, work_tree)) => {
-            let ms = plan.map(|_| ms);
-            let cloned = Cloned {
-                ms,
-                delivered,
-                work_tree,
-            };
-            Ok((cloned, proxy))
-        }
+        Ok(cloned) => Ok((cloned, proxy)),
         Err(reason) => {
             if matches!(proxy, Ok(Some(_))) && !was_up {
                 if let Err(e) = cx.proxy_host().stop(id) {
@@ -191,8 +185,8 @@ impl<'a> Job<'a> {
     }
 }
 
-/// Runs the job's identity lines, clone script and resource probe as one logged exec; returns its
-/// milliseconds and the shape the probe read, or the reason it failed with the log's tail.
+/// Runs the job's identity lines, clone script and resource probe as one logged exec; returns what
+/// it reported, or the reason it failed with the log's tail.
 ///
 /// The probe runs after the clone and the exec still exits with the clone's code, so a failed clone
 /// reports as before.
@@ -202,7 +196,7 @@ fn clone(
     cfg: &BoxSettings,
     job: &Job<'_>,
     proxy: &SetupProxy,
-) -> Result<(u64, Option<Shape>, Option<WorkTreeView>), String> {
+) -> Result<Cloned, String> {
     let log = clone_log(cx, job.id)
         .inspect_err(|e| {
             if job.identity.is_some() {
@@ -216,7 +210,7 @@ fn clone(
     let plan = job.plan;
     let identity = job.identity.as_ref().filter(|_| log.is_some());
     if plan.is_none() && identity.is_none() {
-        return Ok((0, None, None));
+        return Ok(Cloned::default());
     }
     let mut script = identity.map(Identity::script).unwrap_or_default();
     if let Some(plan) = plan {
@@ -252,9 +246,7 @@ fn clone(
     });
     let reason = match outcome {
         Ok(ExecOutcome::Exited { code: 0 }) => {
-            let delivered = text.as_deref().and_then(resources::parse);
-            let tree = report(cx, identity, plan, text.as_deref());
-            return Ok((ms, delivered, tree));
+            return Ok(report(cx, identity, plan, ms, text.as_deref()));
         }
         Ok(ExecOutcome::Exited { code }) => CloneStep::of_exit(code)
             .zip(plan)
@@ -265,14 +257,15 @@ fn clone(
     Err(with_tail(reason, text.as_deref().unwrap_or_default()))
 }
 
-/// Reports what a passing clone exec printed in `text`: a failed identity key, and a refresh that
-/// fell back to a fresh clone. Returns how a kept work tree started.
+/// Reports what a passing clone exec of `ms` printed in `text`: a failed identity key, and a
+/// refresh that fell back to a fresh clone. Returns what the exec told about the Box.
 fn report(
     cx: &Cx,
     identity: Option<&Identity>,
     plan: Option<&Plan>,
+    ms: u64,
     text: Option<&str>,
-) -> Option<WorkTreeView> {
+) -> Cloned {
     if let (Some(identity), Some(text)) = (identity, text) {
         identity.report(cx, text);
     }
@@ -287,7 +280,12 @@ fn report(
             message: format!("the work tree refresh failed: {reason}"),
         });
     }
-    tree
+    Cloned {
+        ms: plan.map(|_| ms),
+        delivered: text.and_then(resources::parse),
+        work_tree: tree,
+        from_branch: text.is_some_and(from_branch),
+    }
 }
 
 /// `reason`, then the last lines of the exec's output that are not the identity's exit lines.
