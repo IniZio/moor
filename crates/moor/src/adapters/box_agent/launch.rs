@@ -11,6 +11,7 @@ use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneCmd, PaneRef, Surface};
 
 use self::environ::{box_user, home_in};
+use self::holder::Holder;
 #[cfg(test)]
 use self::script::script;
 pub(in crate::adapters::box_agent) use self::script::AGENT_PATH_LINE;
@@ -61,7 +62,7 @@ pub(super) fn launch(
     surface: &dyn Surface,
     profile: &dyn AgentAdapter,
     req: &LaunchReq,
-    release: &GhRelease,
+    (release, holder): (&GhRelease, &Holder),
 ) -> Result<SessionRef, EngineError> {
     let connect = driver
         .connect_argv(&req.handle)
@@ -94,6 +95,7 @@ pub(super) fn launch(
         cred: &cred,
         tmp: &tmp,
         release,
+        holder,
         root,
     };
     match launch.deliver(&connect, platform) {
@@ -176,6 +178,8 @@ struct Launch<'a> {
     tmp: &'a BoxPath,
     /// Fetches the pinned `gh` for a Box that lacks it.
     release: &'a GhRelease,
+    /// Holds the agent's terminal on the Box.
+    holder: &'a Holder,
     /// The Box user is root.
     root: bool,
 }
@@ -239,7 +243,7 @@ impl Launch<'_> {
         let warnings = self.execute(connect, &plan)?;
         planned?;
         let script = script_path(self.cred).map_err(|e| fail("script", &e))?;
-        let line = detach::pane_line(connect, ctx.workdir.as_str(), script.as_str())
+        let line = detach::pane_line(self.holder, connect, ctx.workdir.as_str(), script.as_str())
             .map_err(|e| fail("script", &e))?;
         surface
             .open_pane(
@@ -280,6 +284,7 @@ fn remove_cred(
 pub(super) mod detach;
 mod environ;
 mod gh;
+pub(super) mod holder;
 mod install;
 mod script;
 mod steps;

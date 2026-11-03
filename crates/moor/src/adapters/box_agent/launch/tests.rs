@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 
+use moor_core::config::AgentHolder;
 use moor_core::seam::agent_adapter::{AgentAdapter, BoxSetup, LaunchCtx, ProxyAddr};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
@@ -230,12 +231,39 @@ fn script_of(d: &FakeDriver) -> String {
 
 #[test]
 fn the_box_runs_the_script_file_under_sh_not_the_login_shell() {
-    let (_, s, out) = launch(FakeDriver::new(), FakeSurface::new());
-    out.unwrap();
+    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
+    let r = req(&s);
+    agent(&d, &s).holding(AgentHolder::Tmux).launch(&r).unwrap();
     let remote = remote_of(&pane_line(&s));
     let want =
         format!("tmux new-session -d -s moor-agent -x 200 -y 50 'sh '\\''{CRED}/agent.sh'\\'';");
     assert!(remote.contains(&want), "{remote}");
+}
+
+#[test]
+fn by_default_herdr_core_holds_the_agent_running_the_script_file_under_sh() {
+    let (_, s, out) = launch(FakeDriver::new(), FakeSurface::new());
+    out.unwrap();
+    let remote = remote_of(&pane_line(&s));
+    let want = format!(
+        "herdr-core run --bg --no-parent --rm --name moor-agent sh -c 'sh '\\''{CRED}/agent.sh'\\'';"
+    );
+    assert!(remote.contains(&want), "{remote}");
+    assert!(!remote.contains("tmux"), "{remote}");
+}
+
+#[test]
+fn the_install_puts_herdr_core_on_the_box_before_the_agent_unless_tmux_holds_it() {
+    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new()));
+    let claude = Claude.install().unwrap();
+    let hc = agent(&d, &s).agent_install().unwrap();
+    let (own, rest) = hc.script.split_once(&claude.script).unwrap();
+    assert!(own.contains("releases.herdr.dev/core/0.1.16/"), "{own}");
+    assert!(rest.is_empty(), "{rest}");
+    assert_eq!(hc.dirs.last(), claude.dirs.last());
+    assert!(hc.dirs.len() > claude.dirs.len());
+    let tmux = agent(&d, &s).holding(AgentHolder::Tmux).agent_install();
+    assert_eq!(tmux, Some(claude));
 }
 
 #[test]

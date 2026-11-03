@@ -254,7 +254,7 @@ impl Surface for PtySurface {
         self.write(pane, &bytes)
     }
 
-    /// The agent outlives this process in tmux on the Box, and the next `open_pane`
+    /// The agent outlives this process in its holder on the Box, and the next `open_pane`
     /// attaches to it again, so there is nothing to register.
     fn register_resume(
         &self,

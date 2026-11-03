@@ -228,7 +228,8 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
             Arc::new(UreqFetch),
             env.xdg("XDG_CACHE_HOME", ".cache", "moor"),
         )),
-    );
+    )
+    .holding(config.agent.holder());
     let proxy_host = proxy_host(env, &proc, Arc::clone(&clock) as _, &rng, state_dir.clone());
     let parts = CxParts {
         state_dir,

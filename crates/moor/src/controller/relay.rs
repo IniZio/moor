@@ -126,7 +126,7 @@ pub(crate) fn run(argv: &[String], cols: u16, rows: u16, link: Link<'_>) -> io::
         unblock();
         (bytes_out, status)
     });
-    // Dropping the pty writer types a newline and EOF into the pty, which the attached tmux
+    // Dropping the pty writer types a newline and EOF into the pty, which the attached holder
     // client would pass on to the agent, so it goes only after the command is gone.
     drop(keys);
     let ended = shared

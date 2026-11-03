@@ -12,6 +12,9 @@ pub(crate) mod gh_release;
 mod launch;
 
 pub(crate) use launch::detach::relay_argv;
+#[cfg(test)]
+pub(crate) use launch::holder::TMUX;
+pub(crate) use launch::holder::{holder, Holder};
 mod probe;
 #[allow(
     dead_code,
@@ -26,6 +29,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::activity::Probes;
+use moor_core::config::AgentHolder;
 use moor_core::name::{BoxName, BoxPath};
 use moor_core::seam::agent_adapter::{AgentAdapter, AgentInstall, PromptMatch};
 use moor_core::seam::clock::Clock;
@@ -50,6 +54,8 @@ pub(crate) struct BoxAgent {
     clock: Arc<dyn Clock>,
     /// Fetches the pinned gh for a Box that lacks it.
     release: Arc<GhRelease>,
+    /// Holds the agent's terminal on the Box.
+    holder: &'static Holder,
 }
 
 impl BoxAgent {
@@ -67,13 +73,21 @@ impl BoxAgent {
             profile,
             clock,
             release,
+            holder: holder(AgentHolder::default()),
         }
+    }
+
+    /// The same kit with the agent's terminal held by `kind`.
+    #[must_use]
+    pub(crate) fn holding(mut self, kind: AgentHolder) -> Self {
+        self.holder = holder(kind);
+        self
     }
 }
 
 impl Engine for BoxAgent {
     fn relay_argv(&self, connect: &[String]) -> Option<Vec<String>> {
-        Some(relay_argv(connect))
+        Some(relay_argv(self.holder, connect))
     }
 
     fn probe(&self, s: &SessionRef, deadline: Deadline) -> Result<Probes, EngineError> {
@@ -95,7 +109,7 @@ impl Engine for BoxAgent {
     }
 
     fn agent_install(&self) -> Option<AgentInstall> {
-        self.profile.install()
+        launch::holder::with_agent(self.holder, self.profile.install())
     }
 
     fn launch(&self, req: &LaunchReq) -> Result<SessionRef, EngineError> {
@@ -104,7 +118,7 @@ impl Engine for BoxAgent {
             self.surface.as_ref(),
             self.profile.as_ref(),
             req,
-            &self.release,
+            (&self.release, self.holder),
         )
     }
 
@@ -135,11 +149,11 @@ impl Engine for BoxAgent {
     }
 
     fn stop(&self, s: &SessionRef) -> Result<(), EngineError> {
-        launch::detach::stop(self.driver.as_ref(), s)
+        launch::detach::stop(self.holder, self.driver.as_ref(), s)
     }
 
     fn agent_fate(&self, s: &SessionRef, deadline: Deadline) -> Result<AgentFate, EngineError> {
-        launch::detach::fate(self.driver.as_ref(), s, deadline)
+        launch::detach::fate(self.holder, self.driver.as_ref(), s, deadline)
     }
 
     fn reattach(
@@ -148,6 +162,13 @@ impl Engine for BoxAgent {
         ws: &WorkspaceRef,
         name: &BoxName,
     ) -> Result<PaneRef, EngineError> {
-        launch::detach::reattach(self.driver.as_ref(), self.surface.as_ref(), s, ws, name)
+        launch::detach::reattach(
+            self.holder,
+            self.driver.as_ref(),
+            self.surface.as_ref(),
+            s,
+            ws,
+            name,
+        )
     }
 }
