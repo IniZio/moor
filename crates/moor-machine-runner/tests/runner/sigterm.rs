@@ -65,11 +65,12 @@ fn sigterm_ends_the_runner_as_pid_1() {
         .args(["-Urpf", "--kill-child", "--mount-proc"])
         .arg(env!("CARGO_BIN_EXE_moor-machine-runner"));
     let (child, unshare_pid) = start(unshare, dir.path());
-    let children = std::fs::read_to_string(format!(
-        "/proc/{0}/task/{0}/children",
-        unshare_pid.as_raw_nonzero()
-    ))
-    .unwrap();
+    let children = Command::new("pgrep")
+        .arg("-P")
+        .arg(unshare_pid.as_raw_nonzero().to_string())
+        .output()
+        .unwrap();
+    let children = String::from_utf8(children.stdout).unwrap();
     let runner = children.split_whitespace().next().unwrap().parse().unwrap();
     assert_exits_cleanly(child, Pid::from_raw(runner).unwrap());
 }
