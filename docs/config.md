@@ -984,6 +984,10 @@ prints when the agent exits. Inside tmux the sequence goes out in a tmux
 passthrough wrapper, and the agent's session turns `allow-passthrough` on, which
 needs tmux 3.3 or later.
 
+When a client attaches to the agent's session, the Box also writes the agent's
+current state to that client's terminal, so a client that joins after the last
+change shows the status at once, not at the next transition.
+
 ## Secrets a Box uses
 
 Each Proxy rule names the secret it injects. A Box's Proxy injects the
