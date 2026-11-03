@@ -37,6 +37,8 @@ mod mcp;
 mod redial_e2e;
 #[path = "cli/run_output.rs"]
 mod run_output;
+#[path = "cli/running_controller.rs"]
+mod running_controller;
 #[path = "cli/session.rs"]
 mod session;
 #[path = "cli/ssh_controller.rs"]
