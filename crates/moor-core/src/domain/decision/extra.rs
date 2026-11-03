@@ -110,6 +110,24 @@ pub enum ExtraEvent {
         /// Whether the line exited 0.
         ok: bool,
     },
+    /// The Box started on a fork of the deepest setup checkpoint an earlier Box saved.
+    WarmStarted {
+        /// Setup lines the checkpoint already holds; 0 is the clone alone.
+        layer: u32,
+        /// How many lines the repo declares.
+        layers: u32,
+        /// What the clone and those lines took the Box that saved them, less the fork.
+        saved_ms: u64,
+        /// Time the fork took, in milliseconds.
+        fork_ms: u64,
+    },
+    /// The fork of a setup checkpoint failed, so the Box is set up from scratch.
+    WarmStartFailed {
+        /// Setup lines the checkpoint held.
+        layer: u32,
+        /// What the provider said.
+        error: String,
+    },
     /// The repo was cloned in the Box.
     Cloned {
         /// Time the clone, with the git identity set inside it, took in milliseconds.

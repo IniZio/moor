@@ -60,6 +60,20 @@ impl From<ExtraEvent> for Event {
                 ms,
                 ok,
             }),
+            ExtraEvent::WarmStarted {
+                layer,
+                layers,
+                saved_ms,
+                fork_ms,
+            } => Self::Timing(TimingEvent::WarmStarted {
+                layer,
+                layers,
+                saved_ms,
+                fork_ms,
+            }),
+            ExtraEvent::WarmStartFailed { layer, error } => {
+                Self::Timing(TimingEvent::WarmStartFailed { layer, error })
+            }
             ExtraEvent::ProfileResolved { repo, sha } => {
                 Self::Profile(ProfileEvent::ProfileResolved { repo, sha })
             }
@@ -200,6 +214,20 @@ impl TryFrom<Event> for ExtraEvent {
                 ms,
                 ok,
             }),
+            Event::Timing(TimingEvent::WarmStarted {
+                layer,
+                layers,
+                saved_ms,
+                fork_ms,
+            }) => Ok(Self::WarmStarted {
+                layer,
+                layers,
+                saved_ms,
+                fork_ms,
+            }),
+            Event::Timing(TimingEvent::WarmStartFailed { layer, error }) => {
+                Ok(Self::WarmStartFailed { layer, error })
+            }
             Event::Profile(ProfileEvent::ProfileResolved { repo, sha }) => {
                 Ok(Self::ProfileResolved { repo, sha })
             }
