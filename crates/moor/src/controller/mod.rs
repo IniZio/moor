@@ -15,6 +15,7 @@ mod progress;
 mod relay;
 mod serving;
 mod settle;
+mod socket_paths;
 mod watch;
 
 pub use local::watch_local;
@@ -133,6 +134,7 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         None => state_socket(&env)
             .ok_or_else(|| failed("no state directory: set state_dir or MOOR_STATE_DIR".into()))?,
     };
+    socket_paths::check(&socket, &cfg, &env)?;
     // Held before the store opens, so no other moor migrates the db this controller serves.
     let state_lock = env
         .state_dir()

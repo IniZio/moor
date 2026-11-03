@@ -631,7 +631,7 @@ because moor keeps them in the Proxy, not in the Box.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `socket` | path | `<state dir>/controller.sock` | The controller socket. `~` is allowed. |
+| `socket` | path | `<state dir>/controller.sock` | The controller socket. `~` is allowed. The controller refuses to start if this or a socket under the state dir is longer than a Unix socket path allows (107 bytes on Linux, 103 on macOS); use a shorter path. |
 | `state_dir` | path | the same state directory as the CLI | The state directory. `~` is allowed. |
 | `settle_every_secs` | integer, above 0 | 5 | Seconds between passes that update each open Box's agent state. |
 | `close_setup_failed_after_secs` | integer | 86400 | Seconds a Box may stay `setup_failed` before the settle pass closes it. 0 turns the close off. See [Closing failed Boxes](#closing-failed-boxes). |
