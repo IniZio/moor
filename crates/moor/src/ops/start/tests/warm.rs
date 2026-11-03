@@ -6,19 +6,24 @@ use std::time::Duration;
 
 use moor_core::boxscript::clone::AT_BASE;
 use moor_core::config::UserConfig;
+use moor_core::domain::box_state::BoxLifecycle;
+use moor_core::domain::boxes::BoxInput;
+use moor_core::domain::decision::Decision;
 use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::user::Identity;
 use moor_core::{BoxId, StartReq};
 use serde_json::Value;
 
-use super::{agentless_req, repo, world, World};
+use super::relaunch::{gone, session};
+use super::{agentless_req, repo, req, world, World};
 use crate::cx::Cx;
 use crate::ops::start::run;
 use crate::store::BoxRow;
 use crate::testing::clock::FakeClock;
 use crate::testing::cx::{put_secret, requester};
 use crate::testing::driver::FakeDriver;
+use crate::testing::engine::FakeEngine;
 use crate::testing::forge::repo_at;
 use crate::vault::Vault;
 
@@ -229,4 +234,47 @@ fn a_warm_box_whose_clone_did_not_report_the_base_saves_no_checkpoint() {
 #[test]
 fn a_warm_box_whose_clone_reported_the_base_saves_checkpoints() {
     assert!(!warm_box_saved(&format!("{AT_BASE}\n")).is_empty());
+}
+
+#[test]
+fn a_working_box_that_loses_its_machine_relaunches_on_its_deepest_checkpoint_with_its_agent() {
+    let engine = Arc::new(
+        FakeEngine::new()
+            .launch_result(Ok(session("p-1")))
+            .launch_result(Ok(session("p-2"))),
+    );
+    let mut w = world(FakeDriver::new().with_checkpoints());
+    w.cx = w.cx.with_engine(engine.clone());
+    w.forge.answer(repo(), Ok(repo_at("abc123", Some(LINES))));
+    let start_req = StartReq {
+        repo: Some(repo()),
+        prompt: Some("ship it".into()),
+        ..req("demo")
+    };
+    let id = BoxId::new(run(&w.cx, &start_req).unwrap().boxed.id);
+    let first = row(&w, id).boxed.unwrap().handle;
+    w.cx.store()
+        .unwrap()
+        .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
+        .unwrap();
+    gone(&w);
+    let v = run(&w.cx, &start_req).unwrap();
+    assert!(v.setup.ok && v.agent.launched, "{v:?}");
+    let after = row(&w, id);
+    assert_eq!(after.lifecycle, BoxLifecycle::Ready);
+    assert_ne!(after.boxed.unwrap().handle, first);
+    let calls = w.driver.calls();
+    assert_eq!(
+        calls.iter().filter(|c| *c == "acquire").count(),
+        1,
+        "{calls:?}"
+    );
+    let warm = events(&w, id, "warm_started");
+    assert_eq!(warm.len(), 1, "{warm:?}");
+    assert_eq!(
+        warm[0]["layer"], 3,
+        "the deepest checkpoint covers every line"
+    );
+    assert!(lines_on(&w, id).is_empty());
+    assert_eq!(engine.launches().len(), 2);
 }
