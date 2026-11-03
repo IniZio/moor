@@ -38,7 +38,7 @@ them runs local stdio servers. `moor mcp` is one. It relays each message to
 never holds a token and never needs a restart when one expires. Sign in once:
 
 ```sh
-moor login --server https://moor.oursky.codes
+moor login --server https://moor.example.com
 ```
 
 Then add `moor mcp` to your tool. `--server` falls back to `MOOR_SERVER`. If
@@ -53,7 +53,7 @@ Claude Code, in `.mcp.json`:
 
 ```json
 {"mcpServers": {"moor": {
-  "command": "moor", "args": ["mcp", "--server", "https://moor.oursky.codes"]}}}
+  "command": "moor", "args": ["mcp", "--server", "https://moor.example.com"]}}}
 ```
 
 Codex, in `~/.codex/config.toml`:
@@ -61,21 +61,21 @@ Codex, in `~/.codex/config.toml`:
 ```toml
 [mcp_servers.moor]
 command = "moor"
-args = ["mcp", "--server", "https://moor.oursky.codes"]
+args = ["mcp", "--server", "https://moor.example.com"]
 ```
 
 Cursor, in `~/.cursor/mcp.json` or `.cursor/mcp.json`:
 
 ```json
 {"mcpServers": {"moor": {
-  "command": "moor", "args": ["mcp", "--server", "https://moor.oursky.codes"]}}}
+  "command": "moor", "args": ["mcp", "--server", "https://moor.example.com"]}}}
 ```
 
 opencode, in `opencode.json`:
 
 ```json
 {"mcp": {"moor": {"type": "local", "enabled": true,
-  "command": ["moor", "mcp", "--server", "https://moor.oursky.codes"]}}}
+  "command": ["moor", "mcp", "--server", "https://moor.example.com"]}}}
 ```
 
 pi has no MCP support of its own. Install `pi-mcp-adapter` and give it the same
@@ -86,8 +86,8 @@ for a fresh header before it connects:
 
 ```json
 {"mcpServers": {"moor": {"type": "http",
-  "url": "https://moor.oursky.codes/mcp",
-  "headersHelper": "moor token --server https://moor.oursky.codes --headers"}}}
+  "url": "https://moor.example.com/mcp",
+  "headersHelper": "moor token --server https://moor.example.com --headers"}}}
 ```
 
 ## Scopes
