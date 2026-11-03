@@ -1,2 +1,0 @@
-CREATE TABLE box_profiles (box INTEGER NOT NULL PRIMARY KEY REFERENCES boxes(id),
-  repo TEXT NOT NULL, sha TEXT NOT NULL, manifest TEXT, reads TEXT NOT NULL);

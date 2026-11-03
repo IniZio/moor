@@ -1,2 +1,0 @@
-CREATE TABLE box_machines (box INTEGER PRIMARY KEY REFERENCES boxes(id),
-  user INTEGER NOT NULL REFERENCES users(id), machine TEXT NOT NULL, ports TEXT NOT NULL);

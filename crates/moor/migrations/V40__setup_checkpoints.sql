@@ -1,1 +1,0 @@
-CREATE TABLE setup_checkpoints (provider TEXT NOT NULL, layer_key TEXT NOT NULL, checkpoint TEXT NOT NULL, repo TEXT NOT NULL, bytes INTEGER, created_at INTEGER NOT NULL, last_used_at INTEGER NOT NULL, PRIMARY KEY (provider, layer_key));

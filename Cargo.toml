@@ -10,6 +10,7 @@ members = [
   "crates/moor-machine-runner",
   "crates/moor-migrate",
   "crates/moor-notify",
+  "crates/moor-schema",
   "crates/moor-slack",
   "crates/moor-testkit",
   "crates/moor-web",

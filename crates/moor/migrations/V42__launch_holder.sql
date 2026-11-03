@@ -1,1 +1,0 @@
-ALTER TABLE launches ADD COLUMN holder TEXT;

@@ -44,24 +44,24 @@ Each failing check prints a `fix:` line. In short:
 
 ## Database migrations
 
-Each database's schema is an ordered list of `V<n>__<name>.sql` files. The
-files for moor.db are in [crates/moor/migrations](../crates/moor/migrations).
-When moor opens a database, it applies the missing files in one
-`BEGIN IMMEDIATE` transaction and records each one in
+Each database's schema is an ordered list of migrations. moor.db's are written
+once in Rust with sea-query, in [crates/moor-schema](../crates/moor-schema),
+and rendered for SQLite and for Postgres. moor-slack and moor-web still use
+`V<n>__<name>.sql` files. When moor opens a database, it applies the missing
+migrations in one `BEGIN IMMEDIATE` transaction and records each one in
 `refinery_schema_history`. A second process that opens the database waits for
 the whole run.
 
-moor adopts a database that has no migration history as already at
-migration 1 when its old schema version is the last one shipped without
-migrations. It refuses any other database without history. Migration 2 of
-moor.db creates the tables that older builds added on every open, if they are
-missing, so an adopted file that lacks one of them gets it. moor refuses a
-database that holds a migration this build does not know, so an older build
-never reads a newer file.
+moor.db's first migration, `V45__baseline`, replaced the SQL migrations 1 to
+44 with the schema they built. moor adopts a database recorded through
+migration 44 as already at 45, and refuses one recorded through less, or one
+with no migration history that already has tables. Start such a state dir
+afresh. moor refuses a database that holds a migration this build does not
+know, so an older build never reads a newer file.
 
-A schema change is a new migration file. Do not edit an applied migration. A
-test pins the checksum of every file, and refinery refuses a database whose
-applied migration changed. Keep changes additive, as the engineering
+A schema change is a new migration. Do not edit an applied migration. A test
+pins the checksum of every migration as each backend renders it, and refinery
+refuses a database whose applied migration changed. Keep changes additive, as the engineering
 handbook's guide to non-breaking changes asks. Add tables and nullable or
 defaulted columns, and ship a data patch separately from the schema change.
 Migrations run before the new code uses them, and a deploy never moves a

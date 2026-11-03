@@ -5,7 +5,8 @@ use std::path::Path;
 
 use moor_core::box_key::ControllerId;
 use moor_core::cache::CacheSalt;
-use moor_migrate::{Legacy, Migration};
+use moor_migrate::{Backend, Legacy, Migration};
+use moor_schema::STEPS;
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 
 use super::open::sibling;
@@ -54,193 +55,10 @@ impl Store {
     }
 }
 
-/// The pre-migration schema version that migration 1 reproduces; a file at it is adopted.
-pub(super) const BASELINE_VERSION: &str = "16";
-
-/// moor.db's migration files, oldest first. Never edit an applied one; add a new file.
-const FILES: &[(&str, &str)] = &[
-    (
-        "V1__baseline.sql",
-        include_str!("../../migrations/V1__baseline.sql"),
-    ),
-    (
-        "V2__tables_made_on_open.sql",
-        include_str!("../../migrations/V2__tables_made_on_open.sql"),
-    ),
-    (
-        "V3__user_mcp_servers.sql",
-        include_str!("../../migrations/V3__user_mcp_servers.sql"),
-    ),
-    (
-        "V4__binding_history.sql",
-        include_str!("../../migrations/V4__binding_history.sql"),
-    ),
-    (
-        "V5__user_machines.sql",
-        include_str!("../../migrations/V5__user_machines.sql"),
-    ),
-    (
-        "V6__box_machines.sql",
-        include_str!("../../migrations/V6__box_machines.sql"),
-    ),
-    (
-        "V7__machine_slots.sql",
-        include_str!("../../migrations/V7__machine_slots.sql"),
-    ),
-    (
-        "V8__machine_sync_exclude.sql",
-        include_str!("../../migrations/V8__machine_sync_exclude.sql"),
-    ),
-    (
-        "V9__machine_sleep.sql",
-        include_str!("../../migrations/V9__machine_sleep.sql"),
-    ),
-    (
-        "V10__mcp_machine.sql",
-        include_str!("../../migrations/V10__mcp_machine.sql"),
-    ),
-    (
-        "V11__mcp_oauth.sql",
-        include_str!("../../migrations/V11__mcp_oauth.sql"),
-    ),
-    (
-        "V12__mcp_oauth_sign_out.sql",
-        include_str!("../../migrations/V12__mcp_oauth_sign_out.sql"),
-    ),
-    (
-        "V13__drop_mcp_machine.sql",
-        include_str!("../../migrations/V13__drop_mcp_machine.sql"),
-    ),
-    (
-        "V14__machine_claim_state.sql",
-        include_str!("../../migrations/V14__machine_claim_state.sql"),
-    ),
-    (
-        "V15__box_prompt.sql",
-        include_str!("../../migrations/V15__box_prompt.sql"),
-    ),
-    (
-        "V16__user_email.sql",
-        include_str!("../../migrations/V16__user_email.sql"),
-    ),
-    (
-        "V17__user_machines_v2.sql",
-        include_str!("../../migrations/V17__user_machines_v2.sql"),
-    ),
-    (
-        "V18__machine_links.sql",
-        include_str!("../../migrations/V18__machine_links.sql"),
-    ),
-    (
-        "V19__machine_claim_enrolled.sql",
-        include_str!("../../migrations/V19__machine_claim_enrolled.sql"),
-    ),
-    (
-        "V20__user_profile.sql",
-        include_str!("../../migrations/V20__user_profile.sql"),
-    ),
-    (
-        "V21__box_profile.sql",
-        include_str!("../../migrations/V21__box_profile.sql"),
-    ),
-    (
-        "V22__machine_kind.sql",
-        include_str!("../../migrations/V22__machine_kind.sql"),
-    ),
-    (
-        "V23__machine_pool.sql",
-        include_str!("../../migrations/V23__machine_pool.sql"),
-    ),
-    (
-        "V24__machine_link_version.sql",
-        include_str!("../../migrations/V24__machine_link_version.sql"),
-    ),
-    (
-        "V25__drop_ssh_machines.sql",
-        include_str!("../../migrations/V25__drop_ssh_machines.sql"),
-    ),
-    (
-        "V26__box_pending.sql",
-        include_str!("../../migrations/V26__box_pending.sql"),
-    ),
-    (
-        "V27__machine_link_node.sql",
-        include_str!("../../migrations/V27__machine_link_node.sql"),
-    ),
-    (
-        "V28__box_node.sql",
-        include_str!("../../migrations/V28__box_node.sql"),
-    ),
-    (
-        "V29__webhooks.sql",
-        include_str!("../../migrations/V29__webhooks.sql"),
-    ),
-    (
-        "V30__webhook_deliveries.sql",
-        include_str!("../../migrations/V30__webhook_deliveries.sql"),
-    ),
-    (
-        "V31__webhook_setup.sql",
-        include_str!("../../migrations/V31__webhook_setup.sql"),
-    ),
-    (
-        "V32__node_memory.sql",
-        include_str!("../../migrations/V32__node_memory.sql"),
-    ),
-    (
-        "V33__node_live_memory.sql",
-        include_str!("../../migrations/V33__node_live_memory.sql"),
-    ),
-    (
-        "V34__node_pressure.sql",
-        include_str!("../../migrations/V34__node_pressure.sql"),
-    ),
-    (
-        "V35__box_other_repos.sql",
-        include_str!("../../migrations/V35__box_other_repos.sql"),
-    ),
-    (
-        "V36__node_disk.sql",
-        include_str!("../../migrations/V36__node_disk.sql"),
-    ),
-    (
-        "V37__box_steps_pending.sql",
-        include_str!("../../migrations/V37__box_steps_pending.sql"),
-    ),
-    (
-        "V38__box_profile_drop_reads.sql",
-        include_str!("../../migrations/V38__box_profile_drop_reads.sql"),
-    ),
-    (
-        "V39__box_host_memory.sql",
-        include_str!("../../migrations/V39__box_host_memory.sql"),
-    ),
-    (
-        "V40__setup_checkpoints.sql",
-        include_str!("../../migrations/V40__setup_checkpoints.sql"),
-    ),
-    (
-        "V41__setup_checkpoint_place.sql",
-        include_str!("../../migrations/V41__setup_checkpoint_place.sql"),
-    ),
-    (
-        "V42__launch_holder.sql",
-        include_str!("../../migrations/V42__launch_holder.sql"),
-    ),
-    (
-        "V43__setup_checkpoint_evict.sql",
-        include_str!("../../migrations/V43__setup_checkpoint_evict.sql"),
-    ),
-    (
-        "V44__setup_checkpoint_parent.sql",
-        include_str!("../../migrations/V44__setup_checkpoint_parent.sql"),
-    ),
-];
-
 /// moor.db's migrations, oldest first.
 pub(super) fn schema() -> Result<Vec<Migration>, StoreError> {
-    moor_migrate::migrations(FILES)
-        .map_err(|e| StoreError::Corrupt(format!("migration files: {e}")))
+    moor_migrate::steps(STEPS, Backend::Sqlite)
+        .map_err(|e| StoreError::Corrupt(format!("migrations: {e}")))
 }
 
 /// Refuse an existing db this build would not migrate, without writing to it or its directory.
@@ -311,7 +129,8 @@ fn owner_lock(db: &Path) -> Result<Option<File>, StoreError> {
     }
 }
 
-/// What a db without a migration history holds, read from its `meta` schema version.
+/// What a db without a migration history holds: nothing, or a pre-migration store named by its
+/// `meta` schema version, which this moor does not adopt.
 fn legacy(conn: &Connection) -> rusqlite::Result<Legacy> {
     let has_meta: bool = conn.query_row(
         "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta')",
@@ -323,18 +142,19 @@ fn legacy(conn: &Connection) -> rusqlite::Result<Legacy> {
     }
     let sql = "SELECT v FROM meta WHERE k = 'schema_version'";
     let found: Option<String> = conn.query_row(sql, [], |r| r.get(0)).optional()?;
-    Ok(match found {
-        Some(v) if v == BASELINE_VERSION => Legacy::Baseline,
-        other => Legacy::Other(other.unwrap_or_else(|| "none".to_owned())),
-    })
+    Ok(Legacy::Other(found.unwrap_or_else(|| "none".to_owned())))
 }
 
 /// The store error for a db this build will not migrate.
 fn refused(db: &Path, e: moor_migrate::Error) -> StoreError {
     match e {
-        moor_migrate::Error::Unadoptable(found) => StoreError::Schema {
+        moor_migrate::Error::Unadoptable(version) => StoreError::Schema {
             db: db.to_path_buf(),
-            found,
+            found: format!("schema version `{version}`"),
+        },
+        moor_migrate::Error::Squashed { found, .. } => StoreError::Schema {
+            db: db.to_path_buf(),
+            found: format!("migration {found}"),
         },
         moor_migrate::Error::Sqlite(e) => StoreError::Sqlite(e),
         other => StoreError::Migration {
