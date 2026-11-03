@@ -102,11 +102,15 @@ fn replay(fake: &Mutex<Fake>, frame: Value, reply: &mut UnixStream, follow: bool
         };
         if id > since && listed(&kinds, &kind) && listed(&boxes, &name) {
             let event = event_frame(id, &name, &kind);
-            reply.write_all(event.to_line().as_bytes()).unwrap();
+            if reply.write_all(event.to_line().as_bytes()).is_err() {
+                return false;
+            }
         }
     }
     let up = ServerFrame::CaughtUp { cursor };
-    reply.write_all(up.to_line().as_bytes()).unwrap();
+    if reply.write_all(up.to_line().as_bytes()).is_err() {
+        return false;
+    }
     if follow {
         fake.live.push(reply.try_clone().unwrap());
     }
