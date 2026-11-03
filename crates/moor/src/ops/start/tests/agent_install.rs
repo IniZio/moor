@@ -263,12 +263,32 @@ fn a_provider_without_cache_volumes_warns_nothing_about_the_install_dir() {
         .all(|x| !x.code.starts_with("cache_")));
 }
 
-/// The step events of Box 1, oldest first, as `kind` and payload.
+/// Steps that run between the machine and the agent, which have their own tests.
+pub(super) const WHOLE_START_STEPS: [&str; 4] = ["acquire", "proxy", "clone_others", "launch"];
+
+/// The post-clone step events of Box 1, oldest first, as `kind` and payload.
 pub(super) fn step_events(w: &World, id: BoxId) -> Vec<(String, serde_json::Value)> {
+    step_events_where(w, id, |step| !WHOLE_START_STEPS.contains(&step))
+}
+
+/// The step events of Box 1 whose step passes `keep`, oldest first, as `kind` and payload.
+pub(super) fn step_events_where(
+    w: &World,
+    id: BoxId,
+    keep: impl Fn(&str) -> bool,
+) -> Vec<(String, serde_json::Value)> {
     let events = w.cx.store().unwrap().events(id, 50).unwrap();
     events
         .into_iter()
         .filter(|e| e.kind.starts_with("step_"))
+        .filter(|e| {
+            keep(
+                e.payload
+                    .get("step")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default(),
+            )
+        })
         .map(|e| (e.kind, e.payload))
         .collect()
 }

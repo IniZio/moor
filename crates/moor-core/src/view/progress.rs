@@ -138,6 +138,11 @@ fn post_clone_step(kind: &str, payload: &Value) -> Option<String> {
         "step_started" => match name {
             "dotfiles" => "installing dotfiles",
             "agent_install" => "installing the agent",
+            "acquire" => "acquiring the machine",
+            "proxy" => "starting the proxy",
+            "clone_others" => "cloning the other repos",
+            "launch" => "launching the agent",
+            "plugins" => "installing plugins",
             _ => "setting up the agent profile",
         }
         .to_owned(),
@@ -145,6 +150,11 @@ fn post_clone_step(kind: &str, payload: &Value) -> Option<String> {
             let (done, failed) = match name {
                 "dotfiles" => ("dotfiles", "dotfiles failed"),
                 "agent_install" => ("agent installed", "agent install failed"),
+                "acquire" => ("machine acquired", "acquiring the machine failed"),
+                "proxy" => ("proxy up", "proxy failed"),
+                "clone_others" => ("other repos cloned", "cloning the other repos failed"),
+                "launch" => ("agent launched", "agent launch failed"),
+                "plugins" => ("plugins installed", "plugin install failed"),
                 _ => ("agent profile set up", "agent profile setup failed"),
             };
             if payload.get("ok").and_then(Value::as_bool) == Some(false) {

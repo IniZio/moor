@@ -9,6 +9,7 @@ use moor_core::config::{BoxSettings, Flags, Layer};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
+use moor_core::domain::event::PostCloneStep;
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::engine::{EngineError, LaunchPrompt, LaunchReq, SessionRef};
 use moor_core::seam::surface::{PaneRef, WorkspaceRef};
@@ -22,6 +23,7 @@ use crate::ops::common::box_exec;
 use crate::ops::common::facts::{repo_config, settings_of};
 use crate::ops::common::provision::{nonce, recorded_workdir, reread};
 use crate::ops::common::resume;
+use crate::ops::common::step::timed_result;
 use crate::ops::common::view::rfc3339;
 use crate::store::lease::{LeaseId, LeaseKind};
 use crate::store::{BoxRow, Store};
@@ -174,7 +176,10 @@ pub(super) fn begin(
         Ok(leases) => leases,
         Err(e) => return record_failure(cx, store, id, &e),
     };
-    match cx.engine().launch(launch) {
+    let launched = timed_result(cx, store, id, PostCloneStep::Launch, || {
+        cx.engine().launch(launch)
+    });
+    match launched {
         Ok(mut session) => {
             for lease in leases {
                 store.hold_lease(lease)?;
