@@ -133,7 +133,10 @@ fn relaunched(clone_says: &str) -> Vec<String> {
 
 #[test]
 fn a_relaunch_whose_clone_started_from_the_pushed_box_branch_saves_no_checkpoint() {
-    assert_eq!(relaunched(&format!("{FROM_BRANCH}\n")), Vec::<String>::new());
+    assert_eq!(
+        relaunched(&format!("{FROM_BRANCH}\n")),
+        Vec::<String>::new()
+    );
 }
 
 #[test]

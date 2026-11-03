@@ -46,4 +46,12 @@ impl<'a> SetupTarget<'a> {
             layered,
         }
     }
+
+    /// This target, keeping its layers only when `keep`.
+    pub(super) fn keeping_layers(&self, keep: bool) -> Self {
+        Self {
+            layered: self.layered.filter(|_| keep),
+            ..*self
+        }
+    }
 }

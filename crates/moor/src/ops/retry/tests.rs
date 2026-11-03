@@ -18,6 +18,7 @@ use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, BoxReq, ErrorKind, StartReq}
 use super::run;
 use crate::cx::Cx;
 use crate::testing::clock::FakeClock;
+use crate::testing::cx::REQUESTER_USER;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::forge::{repo_at, FakeForge};
@@ -256,7 +257,7 @@ fn saved_layer(w: &World, id: BoxId, layer: usize) {
     let r = row(w, id);
     let boxed = r.boxed.unwrap();
     let lines: Vec<String> = ["prep-one", "run-two"].map(str::to_owned).to_vec();
-    let key = &chain("o/n", r.base.as_deref().unwrap(), &lines)[layer];
+    let key = &chain(REQUESTER_USER, "o/n", r.base.as_deref().unwrap(), &lines)[layer];
     let made = w
         .driver
         .checkpoint(boxed.handle.as_ref().unwrap(), key.as_str())
@@ -285,7 +286,12 @@ fn a_first_run_checkpoints_the_clone_a_slow_line_and_the_last_line_only() {
     let lines: Vec<String> = ["make-slow", "cheap", "last-one"]
         .map(str::to_owned)
         .to_vec();
-    let keys = chain("o/n", row(&w, id).base.as_deref().unwrap(), &lines);
+    let keys = chain(
+        REQUESTER_USER,
+        "o/n",
+        row(&w, id).base.as_deref().unwrap(),
+        &lines,
+    );
     let want: Vec<String> = [0, 1, 3]
         .iter()
         .map(|&i| keys[i].as_str().to_owned())
@@ -352,7 +358,7 @@ fn a_failed_fork_runs_setup_again_in_the_kept_machine() {
     let id = started(&w);
     let before = row(&w, id);
     let provider = before.boxed.unwrap().provider;
-    let clone = &chain("o/n", before.base.as_deref().unwrap(), &[])[0];
+    let clone = &chain(REQUESTER_USER, "o/n", before.base.as_deref().unwrap(), &[])[0];
     let gone = Checkpoint {
         id: "gone".to_owned(),
         bytes: None,

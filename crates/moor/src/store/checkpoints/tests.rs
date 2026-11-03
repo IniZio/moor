@@ -10,6 +10,7 @@ use moor_core::ProviderId;
 
 use crate::store::Store;
 use crate::testing::clock::FakeClock;
+use crate::testing::cx::REQUESTER_USER;
 
 fn made(id: &str) -> Checkpoint {
     Checkpoint {
@@ -23,7 +24,7 @@ fn a_layer_s_checkpoint_is_found_by_provider_and_key_and_its_use_is_kept() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
-    let keys = chain("o/n", "abc", &["a".to_owned()]);
+    let keys = chain(REQUESTER_USER, "o/n", "abc", &["a".to_owned()]);
     let local = ProviderId::new("local");
     store
         .record_checkpoint(&local, &keys[0], "o/n", &made("cp-1"))
@@ -55,7 +56,7 @@ fn a_layer_saved_again_replaces_its_checkpoint() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
-    let key = &chain("o/n", "abc", &[])[0];
+    let key = &chain(REQUESTER_USER, "o/n", "abc", &[])[0];
     let local = ProviderId::new("local");
     store
         .record_checkpoint(&local, key, "o/n", &made("cp-1"))

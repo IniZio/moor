@@ -5,6 +5,8 @@ use std::fmt::Write as _;
 
 use sha2::{Digest as _, Sha256};
 
+use crate::user::UserId;
+
 /// A line that runs longer than this, in milliseconds, is checkpointed after it ends.
 pub const SLOW_LINE_MS: u64 = 20_000;
 
@@ -39,10 +41,12 @@ impl LayerKey {
     }
 }
 
-/// The key of every layer: the first is the clone of `repo` at commit `base`, then one per line.
+/// The key of every layer: the first is `user`'s clone of `repo` at commit `base`, then one per
+/// line. The user is in every key, so no Box starts from a checkpoint another user's Box saved.
 #[must_use]
-pub fn chain(repo: &str, base: &str, lines: &[String]) -> Vec<LayerKey> {
-    let mut keys = vec![LayerKey::of(&["clone", repo, base])];
+pub fn chain(user: UserId, repo: &str, base: &str, lines: &[String]) -> Vec<LayerKey> {
+    let user = user.get().to_string();
+    let mut keys = vec![LayerKey::of(&["clone", &user, repo, base])];
     for line in lines {
         let below = keys.last().map_or("", LayerKey::as_str);
         let key = LayerKey::of(&["line", below, line]);

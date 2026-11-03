@@ -237,6 +237,8 @@ fn run_and_record(
     cfg: &BoxSettings,
 ) -> Result<Provisioned, CommandError> {
     let (cloned, proxy) = clone_with_proxy(cx, store, id, advance, target, cfg)?;
+    // Checkpoints are keyed by the base, so a tree that started from a pushed branch saves none.
+    let target = &target.keeping_layers(!cloned.from_branch);
     if let Some(layered) = target.layered {
         layers::after_clone(cx, store, target.handle, layered);
     }

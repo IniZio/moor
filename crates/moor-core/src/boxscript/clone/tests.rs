@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use super::{clone_script, Checkout, CloneStep};
+use super::{clone_script, from_branch, Checkout, CloneStep};
 
 const BRANCH: &str = "moor/demo";
 
@@ -253,6 +253,24 @@ fn a_branch_on_the_remote_is_checked_out_instead_of_the_base() {
     assert_eq!(r.git(&b, &["symbolic-ref", "--short", "HEAD"]), BRANCH);
     assert_eq!(r.git(&b, &["rev-parse", "HEAD"]), tip);
     assert_eq!(std::fs::read_to_string(b.join("a.txt")).unwrap(), "two\n");
+}
+
+#[test]
+fn only_a_branch_not_started_from_the_base_is_reported() {
+    let said = |r: &Remote| {
+        let url = r.url();
+        let out = r.run_with(&Checkout {
+            url: &url,
+            base: &r.base,
+            branch: BRANCH,
+        });
+        assert!(out.status.success());
+        from_branch(&String::from_utf8(out.stdout).unwrap())
+    };
+    assert!(!said(&Remote::new("from-base")), "a new branch at the base");
+    let pushed = Remote::new("from-branch");
+    pushed.push_branch();
+    assert!(said(&pushed), "a branch the remote already has");
 }
 
 #[test]

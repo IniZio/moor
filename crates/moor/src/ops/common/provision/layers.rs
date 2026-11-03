@@ -31,16 +31,17 @@ pub(super) struct Layered {
 }
 
 /// The layers of Box `row` on `provider`; none when the provider keeps no checkpoints or the
-/// Box has no setup lines, no base commit, or more than one repo.
+/// Box has no setup lines, no base commit, no user, or more than one repo.
 pub(super) fn plan(cx: &Cx, row: &BoxRow, provider: &str, cfg: &BoxSettings) -> Option<Layered> {
     let repo = row.repo.as_ref().filter(|r| r.others.is_empty())?;
     let base = row.base.as_deref()?;
+    let user = row.user?;
     if cfg.setup.is_empty() || !provider_caps(cx, provider).is_ok_and(|c| c.checkpoints) {
         return None;
     }
     let repo = repo.repo.to_string();
     Some(Layered {
-        keys: chain(&repo, base, &cfg.setup),
+        keys: chain(user, &repo, base, &cfg.setup),
         provider: ProviderId::new(provider),
         repo,
         from: 0,
