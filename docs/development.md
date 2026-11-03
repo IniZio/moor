@@ -107,3 +107,94 @@ Base the new branch on the pull requests that it lists.
 
 CI runs `lint`, `audit`, and `unit` in
 [ci.yaml](../.github/workflows/ci.yaml).
+
+## Run a Box from a checkout
+
+This starts one Box from a git repo on your machine with a CLI you built.
+You need:
+
+- the Rust toolchain that `rust-toolchain.toml` pins
+- `herdr` on `PATH`
+- crabbox 0.79.1-moor.6 or a newer `-moor` build of
+  [IniZio/crabbox](https://github.com/IniZio/crabbox) on `PATH`, set up for
+  the `local-container` provider
+- a GitHub token, for a repo on GitHub, such as the one `gh auth token` prints
+- a Claude Code token from `claude setup-token`
+
+1. Build the CLI and check that it runs:
+
+   ```sh
+   cargo build --release --locked -p moor
+   export PATH="$PWD/target/release:$PATH"
+   moor version
+   ```
+
+   The output names the version, the commit, and the envelope schema:
+
+   ```text
+   moor 0.2.0 986432dbfeb4fb9b15471793c1f607ea34108f47 schema=1
+   ```
+
+2. Run a controller, and point the CLI at it. A Box acts for the moor user
+   of whoever starts it, so `moor start` runs only through a controller. Keep
+   the controller config outside the state directory, because the controller
+   keeps its vault key beside the config:
+
+   ```sh
+   mkdir -p ~/.config/moor-controller
+   printf 'socket: ~/.local/state/moor/controller.sock\n' > ~/.config/moor-controller/config.yaml
+   moor controller serve --config ~/.config/moor-controller/config.yaml &
+   export MOOR_CONTROLLER=~/.local/state/moor/controller.sock
+   ```
+
+3. Create your moor user, and store your tokens as its secrets. The CLI acts
+   as your `local:<uid>` identity, and each command reads the value from
+   stdin. You need the `github` secret only for a repo on GitHub:
+
+   ```sh
+   moor user enroll
+   printf '%s' '<the Claude token>' | moor user secret set claude
+   gh auth token | moor user secret set github
+   ```
+
+   A Box's Proxy adds these secrets to the agent's requests. Nothing comes
+   from your shell or your user config.
+
+4. Name a node for new Boxes in your user config. moor has no default
+   node, and `moor start` refuses until `nodes` is set:
+
+   ```sh
+   mkdir -p ~/.config/moor
+   printf 'nodes:\n  local:\n    runtime: local-container\n' > ~/.config/moor/config.yaml
+   ```
+
+5. In your repo, preview the settings a Box would get:
+
+   ```sh
+   cd ~/src/your-repo
+   moor env
+   ```
+
+   Each line names a setting and the layer it came from, such as
+   `box provider  [user]  local-container`.
+
+6. Start a Box with a prompt for the agent:
+
+   ```sh
+   moor start fix-typo --prompt "Fix the typo in the README"
+   ```
+
+   Run it inside a checkout of a GitHub repo, or name one with
+   `--repo OWNER/NAME`. moor creates the herdr workspace and the machine, the
+   machine clones the repo, and then the agent starts.
+
+7. Follow the Box, and close it when the agent is done:
+
+   ```sh
+   moor show fix-typo
+   moor wait fix-typo
+   moor close fix-typo
+   ```
+
+   `moor close` refuses while the Box has unsaved work, unless you add
+   `--force`.
