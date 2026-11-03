@@ -4,11 +4,14 @@ use std::collections::BTreeSet;
 use std::time::Duration;
 
 use moor_core::name::ProviderId;
+use moor_core::request::AsReq;
 use moor_core::seam::driver::SleepKind;
 use moor_core::seam::proc::{Deadline, ProcError, ProcSpec, Tool};
+use moor_core::view::node::{ProviderCheck, ProviderReadyValue};
+use moor_core::Request;
 
 use super::nodes::Read;
-use super::{Check, Inputs};
+use super::{answer, Check, Inputs};
 
 /// Ceiling for `crabbox --version`.
 const DEADLINE_SECS: u64 = 10;
@@ -57,4 +60,45 @@ const fn sleep_word(kind: SleepKind) -> &'static str {
         SleepKind::Native => "native",
         SleepKind::None => "none",
     }
+}
+
+/// One line per provider the controller's nodes name, from the controller's own crabbox.
+pub(super) fn controller(i: &Inputs<'_>) -> Vec<Check> {
+    if i.target.is_none() {
+        return Vec::new();
+    }
+    let ready =
+        match answer::<ProviderReadyValue>(i.ask, Request::ProviderReady(AsReq { identity: None }))
+        {
+            Ok(v) => v,
+            Err(p) => return vec![Check::warn("crabbox", p.detail, p.fix)],
+        };
+    ready
+        .providers
+        .into_iter()
+        .map(|p| {
+            if p.ok {
+                return Check::ok(
+                    "crabbox",
+                    format!("{}: ready on the controller", p.provider),
+                );
+            }
+            let failing: Vec<String> = p.failing.iter().map(describe).collect();
+            Check::fail(
+                "crabbox",
+                format!("{}: {}", p.provider, failing.join(", ")),
+                format!(
+                    "on the controller host, run `crabbox doctor --provider {}`",
+                    p.provider
+                ),
+            )
+        })
+        .collect()
+}
+
+/// A failed check and its hint.
+fn describe(c: &ProviderCheck) -> String {
+    c.hint
+        .as_ref()
+        .map_or_else(|| c.check.clone(), |h| format!("{} ({h})", c.check))
 }

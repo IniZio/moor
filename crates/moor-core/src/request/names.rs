@@ -118,6 +118,7 @@ impl Request {
             | Self::MachineEnroll(_)
             | Self::MachineList(_)
             | Self::NodeList(_)
+            | Self::ProviderReady(_)
             | Self::MachineStatus(_)
             | Self::MachineKeys {}
             | Self::MachineLinks(_)

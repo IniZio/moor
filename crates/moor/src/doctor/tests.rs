@@ -16,6 +16,7 @@ use crate::testing::rng::FakeRng;
 
 mod on_nodes;
 mod on_provider;
+mod on_ready;
 mod on_setup;
 mod on_surface;
 mod on_user;
@@ -51,6 +52,7 @@ pub(super) struct Rig {
     pub script: Script,
     pub proc: Arc<ScriptedProc>,
     pub public_url: Option<String>,
+    pub repo: Option<moor_core::name::ForgeRepo>,
     pub get: Get,
 }
 
@@ -72,6 +74,7 @@ impl Rig {
             script: Box::new(|req| Err(ClientError::Usage(format!("unscripted {}", req.cmd())))),
             proc,
             public_url: None,
+            repo: None,
             get: Box::new(|_| Err("unscripted".to_owned())),
         }
     }
@@ -107,6 +110,7 @@ impl Rig {
             driver: &driver,
             get: &*self.get,
             public_url: self.public_url.as_deref(),
+            repo: self.repo.clone(),
         })
     }
 
@@ -114,14 +118,6 @@ impl Rig {
     pub(super) fn report(&self) -> Vec<Check> {
         self.with(checks)
     }
-}
-
-/// The check named `name` in `report`.
-pub(super) fn named<'a>(report: &'a [Check], name: &str) -> &'a Check {
-    report
-        .iter()
-        .find(|c| c.name == name)
-        .expect("check is in the report")
 }
 
 #[test]
@@ -140,6 +136,7 @@ fn checks_run_in_the_order_of_the_setup_guide() {
             "config",
             "controller",
             "provider",
+            "crabbox",
             "nodes",
             "user",
             "surface"

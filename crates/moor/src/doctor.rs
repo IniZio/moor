@@ -16,6 +16,7 @@ mod user;
 use std::sync::Arc;
 
 use moor_core::config::UserConfig;
+use moor_core::name::ForgeRepo;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::proc::Proc;
 use moor_core::{Request, Response};
@@ -135,6 +136,8 @@ pub(crate) struct Inputs<'a> {
     pub get: &'a dyn Fn(&str) -> Result<u16, String>,
     /// The gate's public URL, when known.
     pub public_url: Option<&'a str>,
+    /// The repo the checkout's origin names, which decides the secrets a start needs.
+    pub repo: Option<ForgeRepo>,
 }
 
 /// Sends `req` and reads its value as `T`.
@@ -178,8 +181,9 @@ pub(crate) fn checks(i: &Inputs<'_>) -> Vec<Check> {
         setup::config(i),
         setup::controller(i),
         provider::check(i, &read),
-        nodes::check(i, &read),
     ];
+    out.extend(provider::controller(i));
+    out.push(nodes::check(i, &read));
     out.extend(user::checks(i));
     out.push(surface::check(i));
     out.extend(gate::check(i));
@@ -203,6 +207,10 @@ pub fn run(env: &Env, opts: &GlobalOpts, public_url: Option<&str>) -> Output {
             |t| client::call(env, t, &req, |_| {}, |_| {}),
         )
     };
+    let repo = std::env::current_dir()
+        .ok()
+        .and_then(|cwd| crate::cli::caller_repo(&cwd, &crate::wire::host_checkout(env)).ok())
+        .flatten();
     let get = http_status;
     let inputs = Inputs {
         env,
@@ -214,6 +222,7 @@ pub fn run(env: &Env, opts: &GlobalOpts, public_url: Option<&str>) -> Output {
         driver: &driver,
         get: &get,
         public_url,
+        repo,
     };
     render::output(&checks(&inputs), opts)
 }

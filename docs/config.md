@@ -1011,6 +1011,16 @@ lacks one of them. The refusal names every missing secret at once, in its
 A person who reaches moor only over MCP stores these secrets in a browser at
 the gate's `/me/secrets` page. See [Browser sign-in](mcp.md#browser-sign-in).
 
+`moor doctor` sends `start-needs` with the checkout's repo and reports each
+need as set or not set. For provider credentials it sends `provider-ready`,
+which runs `crabbox doctor --provider RUNTIME --json` on the controller host
+for each distinct node runtime and answers with the failed checks' `check`,
+`status` and `hint` only:
+
+```json
+{"cmd": "provider-ready"}
+```
+
 `spec.json`, the file the controller writes for each Proxy, names the user and
 the path of `vault.key`. It never holds a secret or the key itself. The Proxy
 loads the key with the same checks as the controller and never creates one.

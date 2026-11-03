@@ -63,7 +63,7 @@ pub fn resolve(request: Request, cwd: &Path, git: &dyn Checkout) -> Result<Resol
 
 /// The github.com repo the checkout at `cwd` pushes to; `None` outside a checkout or without
 /// an origin, so the Box starts with an empty workdir.
-fn caller_repo(cwd: &Path, git: &dyn Checkout) -> Result<Option<ForgeRepo>, String> {
+pub(crate) fn caller_repo(cwd: &Path, git: &dyn Checkout) -> Result<Option<ForgeRepo>, String> {
     git.origin_url(cwd)
         .map(|url| ForgeRepo::from_github_url(&url).ok_or_else(|| NOT_GITHUB.to_owned()))
         .transpose()
