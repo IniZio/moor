@@ -30,6 +30,18 @@ fn world_draining_on(
     dir: tempfile::TempDir,
     mcp: bool,
 ) -> (World, UnixStream, std::thread::JoinHandle<()>) {
+    let (world, trigger, start) = world_unserved_on(socket, seen, dir, mcp);
+    (world, trigger, start())
+}
+
+/// A bound gate that has not started serving, so connections made to it queue in the kernel.
+/// Calling the returned function starts serving.
+fn world_unserved_on(
+    socket: std::path::PathBuf,
+    seen: mpsc::Receiver<String>,
+    dir: tempfile::TempDir,
+    mcp: bool,
+) -> (World, UnixStream, impl FnOnce() -> JoinHandle<()>) {
     let Issuer {
         base: issuer,
         key,
@@ -47,16 +59,18 @@ fn world_draining_on(
         verifier: Verifier::new(issuer.clone(), CLIENT_ID.to_owned(), None),
     });
     let (wake, trigger) = UnixStream::pair().unwrap();
-    let served = std::thread::spawn(move || {
-        moor_gate::serve_until(
-            listener,
-            &config,
-            None,
-            &wake,
-            std::time::Duration::from_secs(30),
-        )
-        .unwrap();
-    });
+    let start = move || {
+        std::thread::spawn(move || {
+            moor_gate::serve_until(
+                listener,
+                &config,
+                None,
+                &wake,
+                std::time::Duration::from_secs(30),
+            )
+            .unwrap();
+        })
+    };
     let world = World {
         issuer,
         gate,
@@ -66,7 +80,7 @@ fn world_draining_on(
         seen,
         _dir: dir,
     };
-    (world, trigger, served)
+    (world, trigger, start)
 }
 
 /// A draining gate with `/mcp` over the fake controller, the trigger that starts its drain,
@@ -120,6 +134,27 @@ fn a_draining_gate_finishes_a_short_request_and_refuses_new_connections() {
     );
 
     stream.write_all(b"}").unwrap();
+    let mut out = String::new();
+    stream.read_to_string(&mut out).unwrap();
+    assert!(out.starts_with("HTTP/1.1 400"), "{out}");
+    served.join().unwrap();
+}
+
+#[test]
+fn a_draining_gate_serves_a_connection_queued_before_the_drain() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = dir.path().join("authgear.sock");
+    let seen = serve_controller(&socket);
+    let (w, mut trigger, start) = world_unserved_on(socket, seen, dir, false);
+    let mut stream = TcpStream::connect(&w.gate).unwrap();
+    write!(
+        stream,
+        "POST /machines/enroll HTTP/1.1\r\nHost: x\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}"
+    )
+    .unwrap();
+    trigger.write_all(b"x").unwrap();
+    let served = start();
+
     let mut out = String::new();
     stream.read_to_string(&mut out).unwrap();
     assert!(out.starts_with("HTTP/1.1 400"), "{out}");
