@@ -35,7 +35,8 @@ pub use token::{Person, Verifier};
 /// The identity namespace the gate asserts; the controller's `fronts` key for this socket.
 pub const NAMESPACE: &str = "authgear";
 
-/// Seconds a drain lets long-lived streams (`/front`, `/events`) run before closing them.
+/// Seconds a drain lets long-lived streams (`/front`, `/events`, `/mcp` SSE) run before
+/// closing them.
 /// Clients reconnect, so a deploy never waits on one.
 pub const STREAM_DRAIN_SECS: u64 = 5;
 
@@ -124,11 +125,17 @@ pub fn serve_until(
         });
     }
     drop(listener);
+    if let Some(mcp) = &gate.mcp {
+        mcp.drain();
+    }
     let (count, ended) = &*live;
     let streams_bound = Duration::from_secs(STREAM_DRAIN_SECS).min(drain_timeout);
     let (mut open, mut timed_out) = wait_for_none(count, ended, streams_bound);
     if open > 0 && timed_out {
         streams.close_all();
+        if let Some(mcp) = &gate.mcp {
+            mcp.end_streams();
+        }
         (open, timed_out) =
             wait_for_none(count, ended, drain_timeout.saturating_sub(streams_bound));
     }

@@ -21,6 +21,7 @@ use rmcp::transport::streamable_http_server::session::local::LocalSessionManager
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 use tokio::io::{join, split, AsyncReadExt};
 use tokio::runtime::Runtime;
+use tokio_util::sync::CancellationToken;
 
 use crate::tools::Tools;
 use crate::{log, Gate, Person};
@@ -47,6 +48,10 @@ pub struct Mcp {
     service: StreamableHttpService<Tools, LocalSessionManager>,
     /// The controller's front socket.
     front_socket: PathBuf,
+    /// Cancelled when the gate drains: each connection ends after the response in flight.
+    draining: CancellationToken,
+    /// Cancelled at the drain's stream bound: every SSE response ends.
+    streams_ended: CancellationToken,
 }
 
 impl Mcp {
@@ -76,7 +81,9 @@ impl Mcp {
             .filter(|host| !host.is_empty())
             .ok_or_else(|| format!("{resource_url} is not an absolute URL"))?;
         let hosts = ["localhost", "127.0.0.1", "::1", host];
+        let streams_ended = CancellationToken::new();
         let config = StreamableHttpServerConfig::default()
+            .with_cancellation_token(streams_ended.clone())
             .with_allowed_hosts(hosts)
             .with_legacy_session_mode(false)
             .with_json_response(true);
@@ -99,6 +106,8 @@ impl Mcp {
             runtime,
             service,
             front_socket,
+            draining: CancellationToken::new(),
+            streams_ended,
         })
     }
 
@@ -145,8 +154,24 @@ impl Mcp {
             let (reader, writer) = split(stream);
             let io = TokioIo::new(join(Cursor::new(prefix).chain(reader), writer));
             let svc = service_fn(|req| async { Ok::<_, Infallible>(self.route(req, gate).await) });
-            let _ = http1::Builder::new().serve_connection(io, svc).await;
+            let conn = http1::Builder::new().serve_connection(io, svc);
+            tokio::pin!(conn);
+            tokio::select! {
+                _ = conn.as_mut() => return,
+                () = self.draining.cancelled() => conn.as_mut().graceful_shutdown(),
+            }
+            let _ = conn.await;
         });
+    }
+
+    /// Stops keeping connections alive: an idle one closes now, a busy one after its response.
+    pub(crate) fn drain(&self) {
+        self.draining.cancel();
+    }
+
+    /// Ends every SSE response, such as a `subscriptions/listen`, with a clean end of stream.
+    pub(crate) fn end_streams(&self) {
+        self.streams_ended.cancel();
     }
 
     /// Checks the request's token, then lets the MCP service answer it.
