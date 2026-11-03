@@ -1,0 +1,3 @@
+# Files the test-children lint skips: one repo-relative path per line, then why.
+# Each must still hold an unguarded spawn, or the lint fails.
+crates/moor-core/src/seam/proc/piped/tests.rs # shell() returns the Child to pump(), which takes it by value and kills and reaps it

@@ -65,7 +65,7 @@ impl Sandbox {
 
     /// `moor call` stdout for `input`, parsed.
     fn call(&self, input: &str) -> Value {
-        let mut child = self
+        let child = self
             .command()
             .arg("call")
             .stdin(Stdio::piped())
@@ -73,6 +73,7 @@ impl Sandbox {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
+        let mut child = ChildGuard::new(child);
         child
             .stdin
             .take()
@@ -86,7 +87,7 @@ impl Sandbox {
 
 /// A running controller, killed on drop.
 struct Controller {
-    child: Child,
+    child: ChildGuard,
 }
 
 impl Controller {
@@ -98,7 +99,9 @@ impl Controller {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        let this = Self { child };
+        let this = Self {
+            child: ChildGuard::new(child),
+        };
         // 500 polls of 10ms bound the wait at about five seconds.
         for _ in 0..500 {
             if UnixStream::connect(&sandbox.socket).is_ok() {

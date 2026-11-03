@@ -15,6 +15,7 @@ use moor_core::controller::{
 use moor_core::seam::proc::{pump, Pipes};
 use moor_core::view::ExecView;
 use moor_core::{Request, Response};
+use moor_testkit::ChildGuard;
 
 use super::fresh_dir;
 
@@ -111,7 +112,7 @@ fn exec(args: &[&str], stdin: &[u8]) -> (Output, Request) {
     let root = fresh_dir("exec");
     let socket: PathBuf = root.0.path().join("c.sock");
     let server = serve_once(&socket);
-    let mut child = Command::new(env!("CARGO_BIN_EXE_moor"))
+    let child = Command::new(env!("CARGO_BIN_EXE_moor"))
         .env_clear()
         .env("PATH", "/usr/bin:/bin")
         .env("HOME", root.0.path())
@@ -123,6 +124,7 @@ fn exec(args: &[&str], stdin: &[u8]) -> (Output, Request) {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    let mut child = ChildGuard::new(child);
     child.stdin.take().unwrap().write_all(stdin).unwrap();
     let out = child.wait_with_output().unwrap();
     (out, server.join().unwrap())

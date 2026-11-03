@@ -248,13 +248,15 @@ fn garbled_output_fails_the_unframed_step() {
 
 /// Runs the generated script under `/bin/sh` the way ssh would.
 fn run_for_real(steps: &[BoxStep]) -> Vec<u8> {
-    let mut child = Command::new("/bin/sh")
-        .arg("-c")
-        .arg(script(steps))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let mut child = moor_testkit::ChildGuard::new(
+        Command::new("/bin/sh")
+            .arg("-c")
+            .arg(script(steps))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
     let mut stdin = child.stdin.take().unwrap();
     let bytes = stdin_bytes(steps);
     let writer = std::thread::spawn(move || {

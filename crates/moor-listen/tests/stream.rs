@@ -15,11 +15,12 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread::{sleep, spawn};
 use std::time::Duration;
 
+use moor_testkit::ChildGuard;
 use serde_json::{json, Value};
 
 /// What one listen does after its acknowledgement.
@@ -227,12 +228,14 @@ impl Gate {
     }
 
     fn listen(&self, idle_ms: u64) -> Listen {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_moor-listen"))
-            .args(["--url", &self.url, "--token-cmd", "printf tok"])
-            .args(["--idle-ms", &idle_ms.to_string()])
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
+        let mut child = ChildGuard::new(
+            Command::new(env!("CARGO_BIN_EXE_moor-listen"))
+                .args(["--url", &self.url, "--token-cmd", "printf tok"])
+                .args(["--idle-ms", &idle_ms.to_string()])
+                .stdout(Stdio::piped())
+                .spawn()
+                .unwrap(),
+        );
         let out = child.stdout.take().unwrap();
         let (tx, lines) = mpsc::channel();
         spawn(move || {
@@ -245,7 +248,7 @@ impl Gate {
 }
 
 struct Listen {
-    child: Child,
+    child: ChildGuard,
     lines: mpsc::Receiver<String>,
 }
 

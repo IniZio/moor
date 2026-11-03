@@ -10,6 +10,7 @@ use std::thread;
 
 use moor_core::controller::{ServerFrame, PROTOCOL};
 use moor_core::Response;
+use moor_testkit::ChildGuard;
 use serde_json::Value;
 
 use super::fresh_dir;
@@ -36,7 +37,7 @@ fn repo(dir: &Path, origin: &str) -> PathBuf {
 
 /// Runs `moor --json <args>` in `cwd` against `socket` with `input` on stdin.
 fn moor_in(cwd: &Path, socket: &Path, args: &[&str], input: &str) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_moor"))
+    let child = Command::new(env!("CARGO_BIN_EXE_moor"))
         .env_clear()
         .env("PATH", "/usr/bin:/bin")
         .env("HOME", cwd.join("home"))
@@ -48,6 +49,7 @@ fn moor_in(cwd: &Path, socket: &Path, args: &[&str], input: &str) -> Output {
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
+    let mut child = ChildGuard::new(child);
     child
         .stdin
         .take()

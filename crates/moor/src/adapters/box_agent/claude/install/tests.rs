@@ -65,18 +65,20 @@ impl TestBox {
     fn run_with_stdin(&self, env: &[(&str, &str)], stdin: &str) -> (String, i32) {
         use std::io::Write as _;
         use std::process::Stdio;
-        let mut child = std::process::Command::new(self.home.path().join("bin/sh"))
-            .args(["-c", &script()])
-            .env_clear()
-            .env("HOME", self.home.path())
-            .env("PATH", self.home.path().join("bin"))
-            .env("TMPDIR", self.home.path())
-            .envs(env.iter().copied())
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
+        let mut child = moor_testkit::ChildGuard::new(
+            std::process::Command::new(self.home.path().join("bin/sh"))
+                .args(["-c", &script()])
+                .env_clear()
+                .env("HOME", self.home.path())
+                .env("PATH", self.home.path().join("bin"))
+                .env("TMPDIR", self.home.path())
+                .envs(env.iter().copied())
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap(),
+        );
         child
             .stdin
             .take()

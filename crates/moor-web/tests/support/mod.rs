@@ -16,11 +16,12 @@ use std::net::TcpStream;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{mpsc, OnceLock};
 use std::time::Duration;
 
+use moor_testkit::ChildGuard;
 use serde_json::{json, Value};
 
 /// Distinguishes the token of each stack within one test binary.
@@ -57,9 +58,9 @@ pub struct Stack {
     /// Private root, removed on drop.
     root: tempfile::TempDir,
     /// The controller process.
-    controller: Child,
+    controller: ChildGuard,
     /// The web daemon process.
-    web: Child,
+    web: ChildGuard,
     /// Controller socket path.
     socket: PathBuf,
     /// Port the web daemon listens on.
@@ -158,23 +159,25 @@ impl Stack {
                 std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
             }
         }
-        let controller = Command::new(moor_bin())
-            .env_clear()
-            .env("PATH", "/usr/bin:/bin")
-            .env("HOME", dir.join("home"))
-            .env("MOOR_STATE_DIR", dir.join("state"))
-            .args(["controller", "serve", "--config"])
-            .arg(&config)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(std::fs::File::create(dir.join("controller.err")).unwrap())
-            .spawn()
-            .unwrap();
+        let controller = ChildGuard::new(
+            Command::new(moor_bin())
+                .env_clear()
+                .env("PATH", "/usr/bin:/bin")
+                .env("HOME", dir.join("home"))
+                .env("MOOR_STATE_DIR", dir.join("state"))
+                .args(["controller", "serve", "--config"])
+                .arg(&config)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(std::fs::File::create(dir.join("controller.err")).unwrap())
+                .spawn()
+                .unwrap(),
+        );
         let stack = Self {
             root,
             controller,
             // Replaced below; a placeholder keeps Drop safe if startup panics.
-            web: Command::new("true").spawn().unwrap(),
+            web: ChildGuard::new(Command::new("true").spawn().unwrap()),
             socket,
             port: 0,
             front_socket: None,
@@ -295,7 +298,7 @@ impl Stack {
                 web.env("MOOR_FRONT_SOCKET", front);
             }
         }
-        let mut web = web.spawn().unwrap();
+        let mut web = ChildGuard::new(web.spawn().unwrap());
         let stdout = web.stdout.take().unwrap();
         self.web = web;
         let (tx, rx) = mpsc::channel();

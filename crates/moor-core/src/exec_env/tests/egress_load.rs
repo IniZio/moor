@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
+use rustix::process::{kill_process, Pid, Signal};
+
 use super::super::egress::lines;
 
 /// Tunnels held open at once: Gradle and the Android plugin open well over a hundred while they
@@ -19,7 +21,15 @@ struct Tinyproxy(PathBuf);
 impl Drop for Tinyproxy {
     fn drop(&mut self) {
         if let Ok(pid) = std::fs::read_to_string(&self.0) {
-            let _ = Command::new("kill").arg(pid.trim()).status();
+            if let Some(pid) = pid
+                .trim()
+                .parse::<i32>()
+                .ok()
+                .filter(|p| *p > 0)
+                .and_then(Pid::from_raw)
+            {
+                let _ = kill_process(pid, Signal::TERM);
+            }
         }
     }
 }

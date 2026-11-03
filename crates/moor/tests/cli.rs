@@ -52,6 +52,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+use moor_testkit::ChildGuard;
 use serde_json::Value;
 
 /// Captured result of one binary run.
@@ -115,7 +116,7 @@ fn run_with_config(args: &[&str], stdin: Option<&str>, config: Option<&str>) -> 
         std::fs::write(dir.join("config.yaml"), text).unwrap();
     }
     let state = fresh_dir("state");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_moor"))
+    let child = Command::new(env!("CARGO_BIN_EXE_moor"))
         .args(args)
         .env_clear()
         .env("PATH", "/usr/bin:/bin")
@@ -126,6 +127,7 @@ fn run_with_config(args: &[&str], stdin: Option<&str>, config: Option<&str>) -> 
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    let mut child = ChildGuard::new(child);
     let mut pipe = child.stdin.take().unwrap();
     if let Some(s) = stdin {
         pipe.write_all(s.as_bytes()).unwrap();

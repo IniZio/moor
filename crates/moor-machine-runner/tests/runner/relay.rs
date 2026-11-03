@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use rustix::process::{kill_process, Pid, Signal};
 use serde_json::{json, Value};
 
 use crate::rig::{caller, Rig, HEADERS};
@@ -171,11 +172,8 @@ fn a_crashed_server_starts_again_on_the_next_call() {
     let rig = relayed(&[]);
     tap(&rig, &HEADERS).unwrap();
     let pid = latest_pid(&rig);
-    let killed = std::process::Command::new("kill")
-        .args(["-KILL", "--", &pid.to_string()])
-        .status()
-        .unwrap();
-    assert!(killed.success());
+    let target = Pid::from_raw(i32::try_from(pid).unwrap()).unwrap();
+    kill_process(target, Signal::KILL).unwrap();
     gone_within_6s(pid);
     std::thread::sleep(Duration::from_millis(300));
     assert_eq!(tap(&rig, &HEADERS).unwrap()["udid"], "dev-7");

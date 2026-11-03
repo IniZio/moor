@@ -1,0 +1,18 @@
+[package]
+name = "test-children"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+proc-macro2 = { version = "1", features = ["span-locations"] }
+syn = { version = "3", features = ["full", "visit"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true
+
+[package.metadata.cargo-machete]
+ignored = ["proc-macro2"]

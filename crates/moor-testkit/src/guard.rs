@@ -1,8 +1,8 @@
 //! A guard that keeps a test's spawned child from outliving the test.
 
-use std::io;
+use std::io::{self, Read};
 use std::ops::{Deref, DerefMut};
-use std::process::{Child, ExitStatus};
+use std::process::{Child, ExitStatus, Output};
 
 use rustix::process::{kill_process, Pid, Signal};
 
@@ -26,6 +26,29 @@ impl ChildGuard {
             let _ = kill_process(pid, Signal::TERM);
         }
         self.0.wait()
+    }
+
+    /// Closes the child's stdin, reads its stdout and stderr to the end and waits for it, like
+    /// [`Child::wait_with_output`] but through the guard, which still kills the child on a panic.
+    pub fn wait_with_output(&mut self) -> io::Result<Output> {
+        drop(self.0.stdin.take());
+        let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+        let (out_pipe, err_pipe) = (self.0.stdout.take(), self.0.stderr.take());
+        let err = std::thread::scope(|scope| {
+            let reader = scope.spawn(|| err_pipe.map_or(Ok(0), |mut p| p.read_to_end(&mut stderr)));
+            let out = out_pipe.map_or(Ok(0), |mut p| p.read_to_end(&mut stdout));
+            let err = reader
+                .join()
+                .unwrap_or_else(|_| Err(io::Error::other("stderr reader panicked")));
+            out.and(err)
+        });
+        let status = self.0.wait()?;
+        err?;
+        Ok(Output {
+            status,
+            stdout,
+            stderr,
+        })
     }
 
     /// The child's pid, which is always positive.
@@ -66,6 +89,7 @@ impl Drop for ChildGuard {
     reason = "test code: a failed setup step should abort the test"
 )]
 mod tests {
+    use std::io::Write;
     use std::panic::{catch_unwind, AssertUnwindSafe};
     use std::process::Command;
 
@@ -95,6 +119,23 @@ mod tests {
         let mut guard = ChildGuard::new(Command::new("sleep").arg("600").spawn().unwrap());
         let status = guard.terminate().unwrap();
         assert!(!status.success());
+    }
+
+    #[test]
+    fn wait_with_output_collects_both_pipes_through_the_guard() {
+        let child = Command::new("sh")
+            .args(["-c", "cat; echo err >&2"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut guard = ChildGuard::new(child);
+        guard.stdin.as_mut().unwrap().write_all(b"in\n").unwrap();
+        let out = guard.wait_with_output().unwrap();
+        assert!(out.status.success());
+        assert_eq!(out.stdout, b"in\n");
+        assert_eq!(out.stderr, b"err\n");
     }
 
     #[test]

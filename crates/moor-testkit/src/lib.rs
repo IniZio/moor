@@ -18,12 +18,14 @@ pub use guard::ChildGuard;
 /// that child execs, and exec of the file fails with `ETXTBSY` for as long as one copy is
 /// open. The child's descriptor exists only in the child, and it is gone when this returns.
 pub fn write_executable(path: &Path, contents: impl AsRef<[u8]>) -> io::Result<()> {
-    let mut child = Command::new("sh")
-        .arg("-c")
-        .arg("cat > \"$0\" && chmod 755 \"$0\"")
-        .arg(path)
-        .stdin(Stdio::piped())
-        .spawn()?;
+    let mut child = ChildGuard::new(
+        Command::new("sh")
+            .arg("-c")
+            .arg("cat > \"$0\" && chmod 755 \"$0\"")
+            .arg(path)
+            .stdin(Stdio::piped())
+            .spawn()?,
+    );
     let fed = child.stdin.take().map_or_else(
         || Err(io::Error::other("no stdin pipe to the writer")),
         |mut stdin| stdin.write_all(contents.as_ref()),

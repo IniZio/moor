@@ -155,7 +155,7 @@ fn wait_bounded(child: &mut Child, secs: u64) -> Option<ExitStatus> {
 
 /// A pid that belonged to a process that has exited and been reaped.
 fn dead_pid() -> u32 {
-    let mut child = Command::new("true").spawn().unwrap();
+    let mut child = ChildGuard::new(Command::new("true").spawn().unwrap());
     let pid = child.id();
     child.wait().unwrap();
     pid
@@ -376,7 +376,7 @@ fn proc_state(pid: u32) -> Option<String> {
 #[test]
 fn a_leader_left_a_zombie_reads_as_gone() {
     // This test is the zombie's parent and reaps it only at the end, as a slow Box init would.
-    let mut leader = Command::new("true").process_group(0).spawn().unwrap();
+    let mut leader = ChildGuard::new(Command::new("true").process_group(0).spawn().unwrap());
     assert!(
         eventually(|| proc_state(leader.id()).as_deref() == Some("Z")),
         "the leader never became a zombie"

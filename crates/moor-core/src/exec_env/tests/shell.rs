@@ -27,12 +27,12 @@ impl TempHome {
 
     /// The prelude lines that write the CA and build the bundle, run under `sh` with this `HOME`,
     /// umask 077 and a `sudo` that always fails; the child prints the bundle path the exports use.
-    fn spawn(&self) -> std::process::Child {
+    fn start(&self) -> moor_testkit::ChildGuard {
         self.spawn_ca(PEM)
     }
 
     /// [`Self::spawn`] with `pem` as the CA.
-    fn spawn_ca(&self, pem: &str) -> std::process::Child {
+    fn spawn_ca(&self, pem: &str) -> moor_testkit::ChildGuard {
         let got = build(&ctx(&[], Some(pem), None), Purpose::Run).unwrap();
         let from = got
             .prelude
@@ -51,13 +51,15 @@ impl TempHome {
             self.0.path().join("bin").display(),
             std::env::var("PATH").unwrap_or_default()
         );
-        std::process::Command::new("sh")
-            .args(["-c", &script])
-            .env("HOME", self.0.path())
-            .env("PATH", path)
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .unwrap()
+        moor_testkit::ChildGuard::new(
+            std::process::Command::new("sh")
+                .args(["-c", &script])
+                .env("HOME", self.0.path())
+                .env("PATH", path)
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .unwrap(),
+        )
     }
 
     /// The whole wrapped exec of `argv`, run with this `HOME` and a `sudo` that always fails.
@@ -83,7 +85,7 @@ impl TempHome {
     }
 
     fn run(&self) -> String {
-        let out = self.spawn().wait_with_output().unwrap();
+        let out = self.start().wait_with_output().unwrap();
         assert!(out.status.success());
         String::from_utf8(out.stdout).unwrap()
     }
@@ -172,8 +174,8 @@ fn a_second_prelude_keeps_an_unchanged_ca_and_replaces_a_stale_one() {
 fn preludes_running_at_once_leave_one_whole_ca() {
     let home = TempHome::new();
     for _ in 0..10 {
-        let children: Vec<_> = (0..4).map(|_| home.spawn()).collect();
-        for child in children {
+        let children: Vec<_> = (0..4).map(|_| home.start()).collect();
+        for mut child in children {
             assert!(child.wait_with_output().unwrap().status.success());
         }
         assert_eq!(home.read("ca.pem"), PEM);
