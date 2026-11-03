@@ -29,6 +29,7 @@ mod clone_retry;
 mod clone_timing;
 mod dead_agent;
 mod dotfiles;
+mod evict;
 mod exited_start;
 mod identity;
 mod interrupted;

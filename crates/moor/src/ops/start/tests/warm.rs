@@ -27,10 +27,10 @@ use crate::testing::engine::FakeEngine;
 use crate::testing::forge::repo_at;
 use crate::vault::Vault;
 
-const LINES: &str = "setup: [one-a, two-b, three-c]\n";
+pub(super) const LINES: &str = "setup: [one-a, two-b, three-c]\n";
 
 /// Starts `name` of the repo at `base` whose `.moor.yaml` is `yaml`, with no agent.
-fn start(w: &World, name: &str, base: &str, yaml: &str) -> BoxId {
+pub(super) fn start(w: &World, name: &str, base: &str, yaml: &str) -> BoxId {
     w.forge.answer(repo(), Ok(repo_at(base, Some(yaml))));
     let req = StartReq {
         repo: Some(repo()),
@@ -64,7 +64,7 @@ fn lines_on(w: &World, id: BoxId) -> Vec<&'static str> {
 }
 
 /// The payloads of Box `id`'s events of `kind`.
-fn events(w: &World, id: BoxId, kind: &str) -> Vec<Value> {
+pub(super) fn events(w: &World, id: BoxId, kind: &str) -> Vec<Value> {
     let store = w.cx.store().unwrap();
     let rows = store.newest_events_of(id, kind, 10).unwrap();
     rows.into_iter().map(|e| e.payload).collect()
@@ -72,7 +72,7 @@ fn events(w: &World, id: BoxId, kind: &str) -> Vec<Value> {
 
 /// A world whose first Box passes `one-a` and `two-b`, both slow enough to checkpoint, then
 /// fails `three-c`; the fake's checkpoints are on.
-fn after_a_partial_setup(driver: FakeDriver) -> (World, BoxId) {
+pub(super) fn after_a_partial_setup(driver: FakeDriver) -> (World, BoxId) {
     let driver = driver
         .with_checkpoints()
         .exec_ends_once_when("three-c", ExecOutcome::Exited { code: 1 });

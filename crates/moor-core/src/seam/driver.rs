@@ -20,7 +20,7 @@ mod types;
 
 pub use batch::{run_each, BoxStep, StepDone};
 pub use caps::{DriverCaps, SleepKind};
-pub use checkpoint::Checkpoint;
+pub use checkpoint::{Checkpoint, CheckpointDisk};
 pub use error::DriverError;
 pub use exec::{ExecOutcome, ExecSpec};
 pub use run::{Cancelled, FollowEnd, Followed, Launched, RunEnd, RunOutcome};
@@ -334,6 +334,27 @@ pub trait Driver: Send + Sync {
     fn fork(&self, id: &str, req: &AcquireReq) -> Result<BoxHandle, DriverError> {
         let _ = (id, req);
         Err(DriverError::Unsupported("checkpoints"))
+    }
+
+    /// Deletes checkpoint `id` and what the provider keeps of it.
+    ///
+    /// # Errors
+    /// As [`Driver::checkpoint`].
+    fn delete_checkpoint(&self, id: &str) -> Result<(), DriverError> {
+        let _ = id;
+        Err(DriverError::Unsupported("checkpoints"))
+    }
+
+    /// The disk `provider` keeps its checkpoints on; none when the provider cannot say.
+    ///
+    /// # Errors
+    /// A [`DriverError`] when the provider cannot be asked.
+    fn checkpoint_disk(
+        &self,
+        provider: &ProviderId,
+    ) -> Result<Option<CheckpointDisk>, DriverError> {
+        let _ = provider;
+        Ok(None)
     }
 
     /// Tells the provider the Box is in real use, so it does not expire the Box as idle.

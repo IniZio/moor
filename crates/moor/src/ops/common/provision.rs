@@ -351,6 +351,7 @@ pub(super) fn after_setup(
 mod acquired;
 mod clone;
 mod delivered;
+mod disk;
 mod failed;
 pub(crate) mod interrupted;
 mod layers;

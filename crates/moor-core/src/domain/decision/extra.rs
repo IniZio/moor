@@ -128,6 +128,21 @@ pub enum ExtraEvent {
         /// What the provider said.
         error: String,
     },
+    /// A setup checkpoint was deleted to keep the provider's disk above its floor.
+    CheckpointEvicted {
+        /// The provider's checkpoint id.
+        checkpoint: String,
+        /// The repo whose setup it held, `OWNER/NAME`.
+        repo: String,
+        /// Its size on the host, when known.
+        bytes: Option<u64>,
+        /// Why it went before others: `superseded` or `least_recently_used`.
+        reason: String,
+        /// Free disk when it was picked, in MiB.
+        free_mib: u64,
+        /// The free disk the floor asks for, in MiB.
+        needs_mib: u64,
+    },
     /// The repo was cloned in the Box.
     Cloned {
         /// Time the clone, with the git identity set inside it, took in milliseconds.

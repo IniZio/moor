@@ -107,6 +107,12 @@ fn step(kind: &str, payload: &Value) -> Option<String> {
             let place = format!("{}/{}", num(payload, "layer"), num(payload, "layers"));
             format!("started from setup checkpoint {place}, skipping {saved} of setup")
         }
+        "checkpoint_evicted" => format!(
+            "deleted setup checkpoint {} of {} ({}) for disk",
+            text("checkpoint"),
+            text("repo"),
+            text("reason")
+        ),
         "warm_start_failed" => format!(
             "could not start from setup checkpoint {}: {}; setting up from scratch",
             num(payload, "layer"),

@@ -74,6 +74,21 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::WarmStartFailed { layer, error } => {
                 Self::Timing(TimingEvent::WarmStartFailed { layer, error })
             }
+            ExtraEvent::CheckpointEvicted {
+                checkpoint,
+                repo,
+                bytes,
+                reason,
+                free_mib,
+                needs_mib,
+            } => Self::Timing(TimingEvent::CheckpointEvicted {
+                checkpoint,
+                repo,
+                bytes,
+                reason,
+                free_mib,
+                needs_mib,
+            }),
             ExtraEvent::ProfileResolved { repo, sha } => {
                 Self::Profile(ProfileEvent::ProfileResolved { repo, sha })
             }
@@ -228,6 +243,21 @@ impl TryFrom<Event> for ExtraEvent {
             Event::Timing(TimingEvent::WarmStartFailed { layer, error }) => {
                 Ok(Self::WarmStartFailed { layer, error })
             }
+            Event::Timing(TimingEvent::CheckpointEvicted {
+                checkpoint,
+                repo,
+                bytes,
+                reason,
+                free_mib,
+                needs_mib,
+            }) => Ok(Self::CheckpointEvicted {
+                checkpoint,
+                repo,
+                bytes,
+                reason,
+                free_mib,
+                needs_mib,
+            }),
             Event::Profile(ProfileEvent::ProfileResolved { repo, sha }) => {
                 Ok(Self::ProfileResolved { repo, sha })
             }
