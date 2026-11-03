@@ -39,6 +39,7 @@ httparse = "1"
 jsonwebtoken = { version = "9", default-features = false }
 oauth2 = { version = "5", default-features = false }
 rustix = { version = "1", features = ["event"] }
+signal-hook = "=0.4.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ureq = { version = "3", default-features = false, features = [

@@ -3144,6 +3144,7 @@ dependencies = [
  "schemars 1.2.3",
  "serde",
  "serde_json",
+ "signal-hook 0.4.4",
  "tempfile",
  "tokio",
  "tungstenite",

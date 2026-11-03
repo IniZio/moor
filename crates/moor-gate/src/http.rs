@@ -1,7 +1,7 @@
 //! The gate's HTTP surface: the metadata document, the `/front` upgrade, machine enrollment,
 //! the pages behind browser sign-in, and 404 for the rest.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
@@ -18,6 +18,9 @@ const HEAD_MAX: usize = 16 * 1024;
 
 /// How long a client may take to send its request head.
 const HEAD_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Seconds a client is told to wait before retrying while the controller is down.
+const RETRY_AFTER_SECS: u32 = 5;
 
 /// Serves one HTTP connection.
 pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>) {
@@ -43,6 +46,10 @@ pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>) {
     }
     let path = req.path.unwrap_or_default();
     let path = path.split('?').next().unwrap_or_default();
+    if needs_controller(req.method, path, gate) && controller_down(gate) {
+        unavailable(&mut stream);
+        return;
+    }
     match (req.method, path) {
         (Some("GET"), "/.well-known/moor") => {
             let doc = moor_metadata(gate);
@@ -137,6 +144,10 @@ fn front(mut stream: TcpStream, leftover: Vec<u8>, req: &httparse::Request<'_, '
     };
     let unix = match UnixStream::connect(&gate.front_socket) {
         Ok(unix) => unix,
+        Err(e) if is_down(&e) => {
+            unavailable(&mut stream);
+            return;
+        }
         Err(e) => {
             log(&format!(
                 "the controller's front socket is unreachable: {e}"
@@ -162,6 +173,39 @@ fn front(mut stream: TcpStream, leftover: Vec<u8>, req: &httparse::Request<'_, '
         WebSocket::from_partially_read(stream, leftover, Role::Server, None),
         &unix,
         &person,
+    );
+}
+
+/// Whether `e` says nothing listens on the controller's socket: it is missing or refuses.
+fn is_down(e: &io::Error) -> bool {
+    matches!(
+        e.kind(),
+        io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
+    )
+}
+
+/// Whether serving `path` starts with a request to the controller.
+fn needs_controller(method: Option<&str>, path: &str, gate: &Gate) -> bool {
+    match (method, path) {
+        (_, "/mcp" | "/mcp/" | "/events") => gate.mcp.is_some(),
+        (Some("POST"), "/machines/enroll") => true,
+        _ => false,
+    }
+}
+
+/// Whether the controller's front socket is missing or refusing connections.
+fn controller_down(gate: &Gate) -> bool {
+    UnixStream::connect(&gate.front_socket).is_err_and(|e| is_down(&e))
+}
+
+/// Answers `503` with `Retry-After` while the controller is away, as a restart makes it.
+fn unavailable(stream: &mut TcpStream) {
+    let body =
+        serde_json::json!({ "error": "the controller is restarting; retry shortly" }).to_string();
+    let _ = write!(
+        stream,
+        "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nRetry-After: {RETRY_AFTER_SECS}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
     );
 }
 
