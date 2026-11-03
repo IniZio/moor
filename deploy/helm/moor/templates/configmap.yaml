@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+  labels: {{- include "moor.labels" . | nindent 4 }}
+data:
+  controller.yaml: |
+    state_dir: /var/lib/moor/pv/state
+    settle_every_secs: {{ .Values.controller.settleEverySecs }}
+    drain_timeout_secs: {{ .Values.controller.drainTimeoutSecs }}
+    {{- if or .Values.slack.enabled .Values.gate.enabled .Values.notify.enabled }}
+    fronts:
+      {{- if .Values.slack.enabled }}
+      slack:
+        proxy_rules: [claude]
+      {{- end }}
+      {{- if .Values.gate.enabled }}
+      authgear: {}
+      {{- end }}
+      {{- if .Values.notify.enabled }}
+      notify:
+        webhooks: true
+      {{- end }}
+    {{- else }}
+    fronts: {}
+    {{- end }}
+  {{- if .Values.slack.enabled }}
+  slack.yaml: |
+    app_token_file: /var/lib/moor/slack/app-token
+    bot_token_file: /var/lib/moor/slack/bot-token
+  {{- end }}
+  config.yaml: |
+    {{- with .Values.controller.nodes }}
+    nodes: {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.controller.defaultNode }}
+    box:
+      node: {{ . }}
+    {{- end }}
+    {{- with .Values.controller.surface }}
+    surface:
+      kind: {{ . }}
+    {{- end }}
+    {{- with .Values.controller.agentModel }}
+    agent:
+      model: {{ . | quote }}
+    {{- end }}
+    {{- if .Values.runner.enabled }}
+    machines:
+      service:
+        host: machine.moor.internal
+        upstream: 127.0.0.1:7700
+    {{- end }}
+    {{- with .Values.controller.drivers }}
+    drivers: {{- toYaml . | nindent 6 }}
+    {{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-public
+  labels: {{- include "moor.labels" . | nindent 4 }}
+data:
+  host: {{ required "host is required" .Values.host | quote }}
+  authgear.issuer: {{ required "authgear.issuer is required" .Values.authgear.issuer | quote }}
+  authgear.clientId: {{ required "authgear.clientId is required" .Values.authgear.clientId | quote }}
+  mcp.resourceUrl: {{ required "mcp.resourceUrl is required" .Values.mcp.resourceUrl | quote }}

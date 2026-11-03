@@ -1,0 +1,10 @@
+apiVersion: v2
+name: moor
+description: The moor controller, its fronts and the machine runner, in one pod.
+type: application
+home: https://github.com/IniZio/moor
+sources:
+  - https://github.com/IniZio/moor
+# The release sets both to its version when it packages the chart.
+version: 0.0.0
+appVersion: "0.0.0"

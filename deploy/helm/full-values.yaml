@@ -1,0 +1,45 @@
+# Layered on required-values.yaml: every optional block on, so each template branch renders.
+image:
+  tag: "1.2.3"
+crabbox:
+  config:
+    external:
+      command: /usr/local/bin/crabbox-agent37
+  sshKey: example-ssh-key
+controller:
+  surface: pty
+  agentModel: opus
+  nodes:
+    cloud: {runtime: external, max_boxes: 1}
+    spare: {runtime: external, max_boxes: 2}
+  defaultNode: cloud
+  drivers:
+    external: {strip_env: [EXAMPLE]}
+  resources: {limits: {memory: 2Gi}}
+  extraEnv:
+    - {name: EXAMPLE, value: "1"}
+slack:
+  enabled: true
+  appToken: xapp-example
+  botToken: xoxb-example
+  resources: {limits: {memory: 256Mi}}
+notify:
+  enabled: true
+  resources: {limits: {memory: 128Mi}}
+runner:
+  enabled: true
+  extraArgs: [--resource=build=1]
+  resources: {limits: {memory: 1Gi}}
+gate:
+  login: true
+  jwksUrl: https://auth.example.com/keys
+  service: {type: NodePort, nodePort: 30443}
+  ingress:
+    enabled: true
+    className: example
+    annotations: {example.com/timeout: "3600"}
+  resources: {limits: {memory: 128Mi}}
+persistence:
+  storageClassName: standard
+podAnnotations:
+  example.com/note: "1"

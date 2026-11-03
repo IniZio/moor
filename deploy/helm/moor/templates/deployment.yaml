@@ -1,0 +1,218 @@
+{{- $uid := int .Values.controller.uid -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels: {{- include "moor.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {{- include "moor.labels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "moor.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum | quote }}
+        checksum/secrets: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum | quote }}
+        {{- range $k, $v := .Values.podAnnotations }}
+        {{ $k }}: {{ $v | quote }}
+        {{- end }}
+    spec:
+      hostUsers: false
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ $uid }}
+        runAsGroup: {{ $uid }}
+        fsGroup: {{ $uid }}
+        # Always re-adds g+rwx to every file on each mount; crabbox refuses state its group can reach,
+        # so state is also mounted by subPath, below the group-writable volume root.
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: config
+          image: {{ include "moor.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          command:
+            - sh
+            - -ec
+            - |
+              cp /src/config/controller.yaml /src/config/config.yaml /var/lib/moor/config/
+              install -m 0600 /src/secrets/vault.key /var/lib/moor/config/vault.key
+              install -m 0600 /src/secrets/agent37-token /var/lib/moor/config/agent37.key
+              for f in crabbox.yaml box-ssh-key; do
+                if [ -e "/src/secrets/$f" ]; then install -m 0600 "/src/secrets/$f" "/var/lib/moor/config/$f"; fi
+              done
+              {{- if .Values.slack.enabled }}
+              cp /src/config/slack.yaml /var/lib/moor/slack/config.yaml
+              install -m 0600 /src/secrets/slack-app-token /var/lib/moor/slack/app-token
+              install -m 0600 /src/secrets/slack-bot-token /var/lib/moor/slack/bot-token
+              {{- end }}
+              {{- if .Values.notify.enabled }}
+              mkdir -p /pv/state/fronts/notify
+              {{- end }}
+              mkdir -p /pv/state/fronts/authgear /pv/state/fronts/slack /pv/state/front-state/slack /pv/state/runner /pv/state/machine-runner
+              chmod -R go-rwx /pv/state
+          volumeMounts:
+            - { name: config-src, mountPath: /src/config, readOnly: true }
+            - { name: secrets-src, mountPath: /src/secrets, readOnly: true }
+            - { name: moor-config, mountPath: /var/lib/moor/config }
+            - { name: slack-config, mountPath: /var/lib/moor/slack }
+            - { name: state, mountPath: /pv }
+      containers:
+        - name: controller
+          image: {{ include "moor.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- include "moor.shimSecurity" . | nindent 12 }}
+          # Every front reads /etc, so the vault key and provider keys live outside it.
+          command: [moor, controller, serve, --config, /var/lib/moor/config/controller.yaml]
+          # crabbox trusts CRABBOX_CONFIG only outside its working dir, which it treats as the repository.
+          workingDir: /var/lib/moor/pv/state
+          env:
+            - name: MOOR_CONFIG
+              value: /var/lib/moor/config/config.yaml
+            - name: MOOR_STATE_DIR
+              value: /var/lib/moor/pv/state
+            # Without it the CLI in the pod runs requests in process instead of asking the controller.
+            - name: MOOR_CONTROLLER
+              value: /var/lib/moor/pv/state/controller.sock
+            # moor passes crabbox only CRABBOX_* and XDG_CONFIG_HOME; leases and per-lease keys must outlive the pod.
+            - name: CRABBOX_CONFIG
+              value: /var/lib/moor/config/crabbox.yaml
+            - name: XDG_CONFIG_HOME
+              value: /var/lib/moor/pv/state/xdg-config
+            {{- with .Values.controller.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          readinessProbe:
+            exec:
+              command: [test, -S, /var/lib/moor/pv/state/controller.sock]
+            periodSeconds: 5
+          {{- with .Values.controller.resources }}
+          resources: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - { name: moor-config, mountPath: /var/lib/moor/config }
+            - { name: state, mountPath: /var/lib/moor/pv/state, subPath: state }
+        {{- if .Values.slack.enabled }}
+        # The controller cannot sandbox a front on every node, so Slack runs beside it and sees
+        # only its own front dir, its config and its state.
+        - name: slack
+          image: {{ include "moor.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- include "moor.gateSecurity" . | nindent 12 }}
+          command:
+            - moor
+            - front-run
+            - --dir
+            - /var/lib/moor/front
+            - --
+            - moor-slack
+            - --config=/var/lib/moor/slack/config.yaml
+            - --state-dir=/var/lib/moor/slack-state
+          env:
+            - { name: HOME, value: /var/lib/moor/slack-state }
+          {{- with .Values.slack.resources }}
+          resources: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - { name: state, mountPath: /var/lib/moor/front, subPath: state/fronts/slack, readOnly: true }
+            - { name: state, mountPath: /var/lib/moor/slack-state, subPath: state/front-state/slack }
+            - { name: slack-config, mountPath: /var/lib/moor/slack, readOnly: true }
+            - { name: slack-tmp, mountPath: /tmp }
+        {{- end }}
+        {{- if .Values.notify.enabled }}
+        # Like Slack, notify runs beside the controller and sees only its own front dir.
+        - name: notify
+          image: {{ include "moor.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- include "moor.gateSecurity" . | nindent 12 }}
+          command:
+            - moor
+            - front-run
+            - --dir
+            - /var/lib/moor/front
+            - --
+            - moor-notify
+          {{- with .Values.notify.resources }}
+          resources: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - { name: state, mountPath: /var/lib/moor/front, subPath: state/fronts/notify, readOnly: true }
+        {{- end }}
+        {{- if .Values.gate.enabled }}
+        - name: gate
+          image: {{ include "moor.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- include "moor.gateSecurity" . | nindent 12 }}
+          command: [moor-gate]
+          args:
+            - --listen=0.0.0.0:{{ .Values.gate.port }}
+            - --front-socket=/var/lib/moor/front/front
+            - --issuer={{ required "authgear.issuer is required" .Values.authgear.issuer }}
+            - --client-id={{ required "authgear.clientId is required" .Values.authgear.clientId }}
+            {{- with .Values.gate.jwksUrl }}
+            - --jwks-url={{ . }}
+            {{- end }}
+            {{- if .Values.mcp.enabled }}
+            - --mcp-resource-url={{ required "mcp.resourceUrl is required" .Values.mcp.resourceUrl }}
+            {{- end }}
+            {{- if .Values.gate.login }}
+            - --public-url=https://{{ required "host is required for gate.login" .Values.host }}
+            {{- end }}
+          ports:
+            - { name: gate, containerPort: {{ .Values.gate.port }} }
+          readinessProbe:
+            httpGet: { path: /.well-known/moor, port: gate }
+            periodSeconds: 5
+          {{- with .Values.gate.resources }}
+          resources: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - { name: state, mountPath: /var/lib/moor/front, subPath: state/fronts/authgear, readOnly: true }
+        {{- end }}
+        {{- if .Values.runner.enabled }}
+        - name: runner
+          image: {{ include "moor.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- include "moor.containerSecurity" . | nindent 12 }}
+          command: [moor-machine-runner]
+          args:
+            - --listen=127.0.0.1:7700
+            - --agents=0.0.0.0:{{ .Values.runner.agentsPort }}
+            - --state-dir=/var/lib/moor/pv/state/machine-runner
+            {{- with .Values.runner.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+            - { name: MOOR_RUNNER_SOCKET, value: /var/lib/moor/pv/state/runner/runner.sock }
+          ports:
+            - { name: agents, containerPort: {{ .Values.runner.agentsPort }} }
+          {{- with .Values.runner.resources }}
+          resources: {{- toYaml . | nindent 12 }}
+          {{- end }}
+          # Only its own socket dir and state: never controller.sock, the vault key or provider keys.
+          volumeMounts:
+            - { name: state, mountPath: /var/lib/moor/pv/state/runner, subPath: state/runner }
+            - { name: state, mountPath: /var/lib/moor/pv/state/machine-runner, subPath: state/machine-runner }
+        {{- end }}
+      volumes:
+        - name: config-src
+          configMap: { name: {{ .Release.Name }}-config }
+        - name: secrets-src
+          secret: { secretName: {{ .Release.Name }}-secrets, defaultMode: 0440 }
+        - name: moor-config
+          emptyDir: { medium: Memory, sizeLimit: 1Mi }
+        - name: slack-config
+          emptyDir: { medium: Memory, sizeLimit: 1Mi }
+        - name: slack-tmp
+          emptyDir: {}
+        - name: state
+          persistentVolumeClaim: { claimName: moor-state }
