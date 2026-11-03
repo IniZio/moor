@@ -1,5 +1,3 @@
-# Local Postgres for the store schema test: `make dev-db` starts it and `make unit-pg` runs the
-# test against it. Put local changes, such as another host port, in docker-compose.override.yaml.
 services:
   postgres:
     image: postgres:17.6
