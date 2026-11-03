@@ -37,7 +37,7 @@ impl Store {
             [self.now().as_millis()],
         )?;
         conn.execute(
-            "INSERT INTO front_leases (token_hash, front, user, expires_at) VALUES (?, ?, ?, ?)",
+            "INSERT INTO front_leases (token_hash, front, \"user\", expires_at) VALUES (?, ?, ?, ?)",
             params![hash(token), front, user.get(), expires.as_millis()],
         )?;
         drop(conn);
@@ -54,7 +54,7 @@ impl Store {
         let user: Option<i64> = self
             .reader()?
             .query_row(
-                "SELECT user FROM front_leases WHERE token_hash = ? AND front = ? AND expires_at > ?",
+                "SELECT \"user\" FROM front_leases WHERE token_hash = ? AND front = ? AND expires_at > ?",
                 params![hash(token), front, self.now().as_millis()],
                 |r| r.get(0),
             )
@@ -70,7 +70,7 @@ impl Store {
         user: UserId,
     ) -> Result<bool, StoreError> {
         let gone = self.writer().execute(
-            "DELETE FROM front_leases WHERE token_hash = ? AND front = ? AND user = ?",
+            "DELETE FROM front_leases WHERE token_hash = ? AND front = ? AND \"user\" = ?",
             params![hash(token), front, user.get()],
         )?;
         Ok(gone == 1)

@@ -120,9 +120,9 @@ impl Store {
             return Err(StoreError::NotFound(box_id));
         }
         let argv = serde_json::to_string(&argv)?;
-        tx.execute(
+        let run = tx.query_row(
             "INSERT INTO runs (box, argv, record, sha, pid, started_at) \
-             VALUES (?, ?, ?, ?, ?, ?)",
+             VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
             params![
                 box_id.get(),
                 argv,
@@ -131,8 +131,8 @@ impl Store {
                 pid,
                 now.as_millis()
             ],
+            |r| r.get(0).map(RunId::new),
         )?;
-        let run = RunId::new(tx.last_insert_rowid());
         let intent = IntentChange::Set(Intent::Running { run, pid });
         let mut sets = intent_sets(intent, now);
         sets.push(("updated_at", Value::Integer(now.as_millis())));

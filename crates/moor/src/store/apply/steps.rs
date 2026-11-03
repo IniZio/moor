@@ -96,9 +96,10 @@ fn insert_box(
         live_parent(tx, p)?;
     }
     let repo = new.repo.as_ref();
-    tx.execute(
-        "INSERT INTO boxes (name, repo, repo_config, author_name, author_email, other_repos, user, state, \
-         created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    let id: i64 = tx
+        .query_row(
+        "INSERT INTO boxes (name, repo, repo_config, author_name, author_email, other_repos, \"user\", state, \
+         created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
         params![
             new.name.as_str(),
             repo.map(|r| r.repo.to_string()),
@@ -111,11 +112,11 @@ fn insert_box(
             now.as_millis(),
             now.as_millis()
         ],
+        |r| r.get(0),
     )
     .map_err(|e| name_taken(e, new))?;
-    let id = tx.last_insert_rowid();
     tx.execute(
-        "INSERT INTO sessions (box, ordinal, state, started_at, parent_session, user) VALUES (?, 1, 'starting', ?, ?, ?)",
+        "INSERT INTO sessions (box, ordinal, state, started_at, parent_session, \"user\") VALUES (?, 1, 'starting', ?, ?, ?)",
         params![
             id,
             now.as_millis(),

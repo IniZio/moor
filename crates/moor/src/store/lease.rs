@@ -151,8 +151,8 @@ impl Store {
         let now = self.now().as_millis();
         let conn = self.writer();
         conn.execute(
-            "INSERT OR IGNORE INTO box_lease (box, kind, key, state, created_at, updated_at) \
-             VALUES (?, ?, ?, 'planned', ?, ?)",
+            "INSERT INTO box_lease (box, kind, key, state, created_at, updated_at) \
+             VALUES (?, ?, ?, 'planned', ?, ?) ON CONFLICT DO NOTHING",
             params![box_id.get(), kind.as_str(), key, now, now],
         )?;
         let id = conn.query_row(

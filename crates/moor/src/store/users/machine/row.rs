@@ -22,7 +22,7 @@ pub(super) struct Claim {
 
 /// The `box_machines` row of `box_id`, read through `conn`.
 pub(super) fn claim_in(conn: &Connection, box_id: BoxId) -> Result<Option<Claim>, StoreError> {
-    let sql = "SELECT user, state, machine, labels, slot, ports, sync_exclude, since, until \
+    let sql = "SELECT \"user\", state, machine, labels, slot, ports, sync_exclude, since, until \
                FROM box_machines WHERE box = ?";
     let row = conn
         .query_row(sql, [box_id.get()], |r| Ok(ClaimRow::read(r)))
@@ -143,7 +143,12 @@ pub(super) fn put_in(conn: &Connection, box_id: BoxId, claim: &Claim) -> Result<
         ),
     };
     conn.execute(
-        "INSERT OR REPLACE INTO box_machines (box, user, state, machine, labels, slot, ports, \
+        "DELETE FROM box_machines WHERE box = ?1 OR (?2 = 'held' AND state = 'held' \
+         AND \"user\" = ?3 AND machine = ?4 AND slot = ?5)",
+        params![box_id.get(), state, claim.user.get(), machine, slot],
+    )?;
+    conn.execute(
+        "INSERT INTO box_machines (box, \"user\", state, machine, labels, slot, ports, \
          sync_exclude, since, until) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             box_id.get(),

@@ -54,26 +54,27 @@ impl Store {
         let mut writer = self.writer();
         let tx = writer.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let held: i64 = tx.query_row(
-            "SELECT COUNT(*) FROM user_webhooks WHERE user = ?",
+            "SELECT COUNT(*) FROM user_webhooks WHERE \"user\" = ?",
             [user.get()],
             |r| r.get(0),
         )?;
         if usize::try_from(held).is_ok_and(|n| n >= max) {
             return Ok(None);
         }
-        tx.execute(
-            "INSERT INTO user_webhooks (user, url, events, header, state, key, created_at) \
-             VALUES (?, ?, ?, ?, ?, x'', ?)",
+        let id: i64 = tx.query_row(
+            "INSERT INTO user_webhooks (\"user\", url, events, header, state, key, created_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
             params![
                 user.get(),
                 url,
                 events,
                 header,
                 WebhookState::WaitingForSecret.as_str(),
+                Vec::<u8>::new(),
                 now
             ],
+            |r| r.get(0),
         )?;
-        let id = tx.last_insert_rowid();
         let sealed = vault.seal(user, &key_name(id)?, key)?;
         tx.execute(
             "UPDATE user_webhooks SET key = ? WHERE id = ?",
@@ -89,7 +90,7 @@ impl Store {
         let reader = self.reader()?;
         let mut stmt = reader.prepare(
             "SELECT id, url, events, created_at, last_ok_at, failing_since, last_error, header, \
-             state FROM user_webhooks WHERE user = ? ORDER BY id",
+             state FROM user_webhooks WHERE \"user\" = ? ORDER BY id",
         )?;
         let rows = stmt.query_map([user.get()], |r| {
             Ok((
@@ -127,7 +128,7 @@ impl Store {
         let row = self
             .reader()?
             .query_row(
-                "SELECT url, header, state, key FROM user_webhooks WHERE id = ? AND user = ?",
+                "SELECT url, header, state, key FROM user_webhooks WHERE id = ? AND \"user\" = ?",
                 params![id, user.get()],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, String>(2)?, r.get(3)?)),
             )
@@ -158,7 +159,7 @@ impl Store {
             .transpose()?;
         let changed = self.writer().execute(
             "UPDATE user_webhooks SET header_value = ?, state = ? \
-             WHERE id = ? AND user = ? AND state = ?",
+             WHERE id = ? AND \"user\" = ? AND state = ?",
             params![
                 sealed,
                 WebhookState::Active.as_str(),
@@ -196,11 +197,11 @@ impl Store {
         let tx = writer.transaction_with_behavior(TransactionBehavior::Immediate)?;
         tx.execute(
             "DELETE FROM webhook_deliveries WHERE webhook = \
-             (SELECT id FROM user_webhooks WHERE id = ? AND user = ?)",
+             (SELECT id FROM user_webhooks WHERE id = ? AND \"user\" = ?)",
             params![id, user.get()],
         )?;
         let gone = tx.execute(
-            "DELETE FROM user_webhooks WHERE id = ? AND user = ?",
+            "DELETE FROM user_webhooks WHERE id = ? AND \"user\" = ?",
             params![id, user.get()],
         )?;
         tx.commit()?;

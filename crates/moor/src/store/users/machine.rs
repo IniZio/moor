@@ -37,8 +37,8 @@ impl Store {
             .map_err(|e| StoreError::Corrupt(format!("machine labels: {e}")))?;
         Ok(self.writer().query_row(
             "INSERT INTO user_machines_v2 \
-             (user, name, pubkey, labels, capacity, pool_provider, enrolled_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (user, name) DO UPDATE SET \
+             (\"user\", name, pubkey, labels, capacity, pool_provider, enrolled_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (\"user\", name) DO UPDATE SET \
              pubkey = excluded.pubkey, labels = excluded.labels, capacity = excluded.capacity, \
              pool_provider = excluded.pool_provider, enrolled_at = excluded.enrolled_at RETURNING machine_id",
             params![
@@ -57,7 +57,7 @@ impl Store {
     /// Removes `user`'s machine `name`; true when there was one.
     pub(crate) fn delete_user_machine(&self, user: UserId, name: &str) -> Result<bool, StoreError> {
         let gone = self.writer().execute(
-            "DELETE FROM user_machines_v2 WHERE user = ? AND name = ?",
+            "DELETE FROM user_machines_v2 WHERE \"user\" = ? AND name = ?",
             params![user.get(), name],
         )?;
         Ok(gone == 1)

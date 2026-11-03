@@ -304,7 +304,7 @@ fn wants_in(conn: &Connection, user: UserId) -> Result<Vec<(BoxId, String)>, Sto
 /// Deletes `user`'s wants whose wait ran out by `now`, each with a `machine_left_out` event.
 fn drop_expired_in(conn: &Transaction<'_>, user: UserId, now: Ts) -> Result<(), StoreError> {
     let mut stmt = conn.prepare(
-        "DELETE FROM box_machines WHERE user = ? AND state = 'wanted' AND until < ? \
+        "DELETE FROM box_machines WHERE \"user\" = ? AND state = 'wanted' AND until < ? \
          RETURNING box, labels",
     )?;
     let rows = stmt.query_map(params![user.get(), now.as_millis()], |r| {

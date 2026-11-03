@@ -52,8 +52,9 @@ impl Store {
         let readings = serde_json::to_string(keep)
             .map_err(|e| StoreError::Corrupt(format!("node {node} readings: {e}")))?;
         self.writer().execute(
-            "INSERT OR REPLACE INTO node_pressure (node, readings, high_since, suspended_at) \
-             VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO node_pressure (node, readings, high_since, suspended_at) \
+             VALUES (?1, ?2, ?3, ?4) ON CONFLICT (node) DO UPDATE SET readings = excluded.readings, \
+             high_since = excluded.high_since, suspended_at = excluded.suspended_at",
             params![node.as_str(), readings, p.high_since, p.suspended_at],
         )?;
         Ok(())

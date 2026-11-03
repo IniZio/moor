@@ -18,7 +18,7 @@ pub(super) mod webhook;
 fn user_of_in(conn: &Connection, identity: &Identity) -> Result<Option<UserId>, StoreError> {
     let id: Option<i64> = conn
         .query_row(
-            "SELECT user FROM identities WHERE identity = ?",
+            "SELECT \"user\" FROM identities WHERE identity = ?",
             [identity.as_str()],
             |r| r.get(0),
         )
@@ -72,7 +72,7 @@ impl Store {
             (user, true)
         };
         tx.execute(
-            "INSERT INTO identities (identity, user, linked_at) VALUES (?, ?, ?)",
+            "INSERT INTO identities (identity, \"user\", linked_at) VALUES (?, ?, ?)",
             params![identity.as_str(), user, now],
         )?;
         tx.commit()?;
@@ -89,7 +89,7 @@ impl Store {
     pub(crate) fn identities(&self, user: UserId) -> Result<Vec<Identity>, StoreError> {
         let conn = self.reader()?;
         let mut stmt =
-            conn.prepare("SELECT identity FROM identities WHERE user = ? ORDER BY identity")?;
+            conn.prepare("SELECT identity FROM identities WHERE \"user\" = ? ORDER BY identity")?;
         let rows = stmt.query_and_then([user.get()], |r| {
             let raw: String = r.get(0)?;
             parsed("identity", &raw, Identity::parse)
@@ -106,8 +106,8 @@ impl Store {
     ) -> Result<(), StoreError> {
         let now = self.now().as_millis();
         self.writer().execute(
-            "INSERT INTO user_secrets (user, name, value, updated_at) VALUES (?, ?, ?, ?) \
-             ON CONFLICT (user, name) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+            "INSERT INTO user_secrets (\"user\", name, value, updated_at) VALUES (?, ?, ?, ?) \
+             ON CONFLICT (\"user\", name) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
             params![user.get(), name.as_str(), sealed, now],
         )?;
         Ok(())
@@ -120,7 +120,7 @@ impl Store {
         name: &SecretName,
     ) -> Result<bool, StoreError> {
         let gone = self.writer().execute(
-            "DELETE FROM user_secrets WHERE user = ? AND name = ?",
+            "DELETE FROM user_secrets WHERE \"user\" = ? AND name = ?",
             params![user.get(), name.as_str()],
         )?;
         Ok(gone == 1)
@@ -130,7 +130,7 @@ impl Store {
     pub(crate) fn user_secret_names(&self, user: UserId) -> Result<Vec<SecretName>, StoreError> {
         let conn = self.reader()?;
         let mut stmt =
-            conn.prepare("SELECT name FROM user_secrets WHERE user = ? ORDER BY name")?;
+            conn.prepare("SELECT name FROM user_secrets WHERE \"user\" = ? ORDER BY name")?;
         let rows = stmt.query_and_then([user.get()], |r| {
             let raw: String = r.get(0)?;
             parsed("secret name", &raw, SecretName::parse)
@@ -149,7 +149,7 @@ impl Store {
         let sealed: Option<Vec<u8>> = self
             .reader()?
             .query_row(
-                "SELECT value FROM user_secrets WHERE user = ? AND name = ?",
+                "SELECT value FROM user_secrets WHERE \"user\" = ? AND name = ?",
                 params![user.get(), name.as_str()],
                 |r| r.get(0),
             )

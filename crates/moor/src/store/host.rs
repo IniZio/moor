@@ -162,12 +162,12 @@ impl Store {
         {
             return Ok((id, dir, false));
         }
-        tx.execute(
-            "INSERT INTO sessions (box, ordinal, state, started_at, workdir, agent, agent_session_id, parent_session, user, host_key) \
-             VALUES (NULL, 1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        let id: i64 = tx.query_row(
+            "INSERT INTO sessions (box, ordinal, state, started_at, workdir, agent, agent_session_id, parent_session, \"user\", host_key) \
+             VALUES (NULL, 1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) RETURNING id",
             (state.as_str(), now.as_millis(), &given, agent, agent_session_id, parent, user_id, key),
+            |r| r.get(0),
         )?;
-        let id = tx.last_insert_rowid();
         let workdir = match workdir {
             HostWorkdir::At(_) => given,
             HostWorkdir::Under(base) => {
@@ -265,7 +265,7 @@ fn live_keyed(
     Ok(conn
         .query_row(
             "SELECT id, workdir FROM sessions WHERE box IS NULL AND host_key = ?1 \
-             AND IFNULL(user, 0) = IFNULL(?2, 0) AND ended_at IS NULL",
+             AND COALESCE(\"user\", 0) = COALESCE(?2, 0) AND ended_at IS NULL",
             (key, user),
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
