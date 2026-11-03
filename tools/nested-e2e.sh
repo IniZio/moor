@@ -81,6 +81,7 @@ external:
   command: $(command -v crabbox-cloudhypervisor)
   capabilities:
     idempotentLeaseId: true
+    checkpoints: true
   connection:
     ssh:
       trustProviderOutput: true
@@ -96,6 +97,7 @@ external:
     stateDir: $D/ch-state
     runtimeDir: $D/run
     cgroup: "off"
+    bootTemplate: true
 EOF
 chmod 600 "$XDG_CONFIG_HOME/crabbox/config.yaml"
 
