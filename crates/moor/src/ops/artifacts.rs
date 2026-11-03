@@ -7,8 +7,10 @@ use std::path::Path;
 use moor_core::artifact::valid_name;
 use moor_core::controller::BYTES_MAX;
 use moor_core::request::{ArtifactReadReq, ArtifactsReq};
+use moor_core::response::ErrorDetail;
 use moor_core::view::{ArtifactReadView, ArtifactView};
 use moor_core::{BoxTarget, ErrorKind};
+use sha2::{Digest, Sha256};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -101,6 +103,9 @@ pub(crate) fn read(
         Ok(_) => return Err(refused()),
         Err(e) => return Err(io_error(row, &e)),
     }
+    if req.offset == 0 && req.len >= row.size {
+        check(&file, row)?;
+    }
     let (sent, eof) = stream(&file, req, out).map_err(|e| e.into_error(row, req.offset))?;
     Ok(ArtifactReadView {
         offset: req.offset,
@@ -167,13 +172,34 @@ fn stream(
     }
 }
 
+/// Fails before any byte is sent when `file` does not hash to the sha256 `row` records.
+fn check(file: &Path, row: &ArtifactRow) -> Result<(), CommandError> {
+    let mut digest = Sha256::new();
+    File::open(file)
+        .and_then(|mut f| io::copy(&mut f, &mut digest))
+        .map_err(|e| io_error(row, &e))?;
+    let got = format!("{:x}", digest.finalize());
+    if got.eq_ignore_ascii_case(&row.sha256) {
+        return Ok(());
+    }
+    Err(CommandError::new(
+        ErrorKind::Failed,
+        format!(
+            "artifact {} v{} does not match its recorded sha256 {}; the stored file hashes to {got}",
+            row.name, row.version, row.sha256
+        ),
+    )
+    .with_detail(ErrorDetail::ArtifactMismatch))
+}
+
 /// Map a file error to a command error that names the Artifact, never its contents.
 fn io_error(row: &ArtifactRow, e: &io::Error) -> CommandError {
     if e.kind() == io::ErrorKind::NotFound {
         return CommandError::new(
             ErrorKind::NotFound,
             format!("artifact {} v{} is missing on disk", row.name, row.version),
-        );
+        )
+        .with_detail(ErrorDetail::ArtifactMissing);
     }
     CommandError::new(
         ErrorKind::Failed,

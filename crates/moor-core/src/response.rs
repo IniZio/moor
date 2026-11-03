@@ -110,6 +110,10 @@ pub enum ErrorDetail {
     LoginRequired,
     /// The Box's provisioning owner died before the Box had a machine.
     ProvisioningDead,
+    /// The Artifact is recorded but its stored bytes are gone.
+    ArtifactMissing,
+    /// The Artifact's stored bytes do not match its recorded sha256.
+    ArtifactMismatch,
 }
 
 /// The envelope every command returns.
