@@ -280,8 +280,6 @@ fn the_tool_server_sends_its_requests_as_the_identity_it_was_started_with() {
     let call = json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
         "params": {"name": "list_boxes", "arguments": {}}});
     send(&mut stdin, &mut stdout, &call).unwrap();
-    // The setup's daemon acts as USER and may still be sending when `before` is taken, so
-    // those late requests are told apart by identity rather than by position.
     let setup = Some(format!("slack:{TEAM}/{USER}"));
     let (sent, acting): (Vec<_>, Vec<_>) = controller.seen(|seen| {
         seen.requests[before..]

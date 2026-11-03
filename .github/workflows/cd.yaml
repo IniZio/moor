@@ -1,7 +1,5 @@
 name: CD
 
-# Every push to main (stable vX.Y.Z) or develop (vX.Y.Z-nightly.N) lets semantic-release decide
-# from the commit types whether to release; the builds run only when it made a tag.
 on:
   push:
     branches: [main, develop]
@@ -164,7 +162,6 @@ jobs:
   gitops:
     # The agent tarballs must be up before the controller that sends agents to them.
     needs: [release, build, image]
-    # The release environment keeps the deploy key away from pull requests.
     if: github.event_name == 'push' && needs.release.outputs.tag != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -172,7 +169,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ needs.release.outputs.tag }}
           persist-credentials: false

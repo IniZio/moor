@@ -4,8 +4,6 @@ NEXTEST_VERSION := 0.9.148
 TAPLO_VERSION := 0.10.0
 TYPOS_VERSION := 1.51.1
 LLVM_COV_VERSION := 0.9.1
-# The pty surface embeds libghostty-vt, whose build runs Zig 0.17 from $ZIG (or PATH)
-# and downloads Ghostty's pinned source.
 ZIG_VERSION := 0.17.0
 ZIG_SHA256 := 1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026
 # The same release for the other runners the release build installs it on.
@@ -54,7 +52,6 @@ lint:
 	typos
 	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked
 
-# Point git at tools/git-hooks, so a push runs the quick lint checks.
 hooks:
 	git config core.hooksPath tools/git-hooks
 
@@ -99,7 +96,6 @@ unit-pty:
 deploy:
 	@echo "deploy: CLI, nothing to deploy"
 
-# Needs /dev/kvm and the tools from tools/box-nested-kvm.sh; see docs/development.md.
 nested-e2e:
 	tools/nested-e2e.sh
 
