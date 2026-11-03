@@ -96,9 +96,14 @@ pub(super) fn controller(i: &Inputs<'_>) -> Vec<Check> {
         .collect()
 }
 
-/// A failed check and its hint.
+/// A failed check with its error class and hint.
 fn describe(c: &ProviderCheck) -> String {
-    c.hint
+    let named = c
+        .class
         .as_ref()
-        .map_or_else(|| c.check.clone(), |h| format!("{} ({h})", c.check))
+        .map_or_else(|| c.check.clone(), |k| format!("{} [{k}]", c.check));
+    match &c.hint {
+        Some(h) => format!("{named} ({h})"),
+        None => named,
+    }
 }

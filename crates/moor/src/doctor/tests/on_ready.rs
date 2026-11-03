@@ -51,3 +51,17 @@ fn a_failed_request_is_one_warning() {
 fn no_controller_adds_no_crabbox_line() {
     assert!(Rig::new().with(provider::controller).is_empty());
 }
+
+#[test]
+fn the_error_class_shows_beside_the_check() {
+    let r = rig(Ok(json!({"providers": [
+        {"provider": "aws", "ok": false, "failing": [
+            {"check": "provider", "status": "failed", "class": "config", "hint": "check_it"}]}
+    ]})));
+    let report = r.with(provider::controller);
+    let found = lines(&report);
+    assert_eq!(
+        found.first().map(|c| c.detail.as_str()),
+        Some("aws: provider [config] (check_it)")
+    );
+}

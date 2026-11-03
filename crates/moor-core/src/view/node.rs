@@ -85,6 +85,9 @@ pub struct ProviderCheck {
     pub check: String,
     /// The check's status.
     pub status: String,
+    /// The short error class crabbox reports, such as `config`, when it does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub class: Option<String>,
     /// What crabbox suggests, when it does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
