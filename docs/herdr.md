@@ -73,7 +73,10 @@ static Linux binaries and macOS binaries, checks that the plugin installs from e
 attaches them to the release with their checksums. Merging `develop` into `main` makes the
 stable release.
 
-After the image is pushed, the `gitops` job records the release in a private deploy repository
+The `image` job also pushes the Helm chart, `deploy/helm/moor`, to
+`oci://ghcr.io/inizio/charts/moor` at the release version.
+
+After the image and chart are pushed, the `gitops` job records the release in a private deploy repository
 over an SSH deploy key. The repository variable `GITOPS_REPO` (`owner/name`) names it and the
 secret `GITOPS_DEPLOY_KEY`, kept in the `release` environment, holds the key; with either unset
 the job prints a notice and succeeds. A nightly tag becomes a commit setting `image.tag` in

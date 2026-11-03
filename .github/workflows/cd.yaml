@@ -158,6 +158,21 @@ jobs:
             MOOR_VERSION=${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - id: helm
+        run: echo "version=$(make -s print-helm)" >> "$GITHUB_OUTPUT"
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v${{ steps.helm.outputs.version }}
+      - name: Push the chart at the release version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ACTOR: ${{ github.actor }}
+          TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$TOKEN" | helm registry login ghcr.io --username "$ACTOR" --password-stdin
+          helm package deploy/helm/moor --version "$VERSION" --app-version "$VERSION" --destination "$RUNNER_TEMP/chart"
+          helm push "$RUNNER_TEMP/chart/moor-$VERSION.tgz" oci://ghcr.io/inizio/charts
 
   gitops:
     # The agent tarballs must be up before the controller that sends agents to them.
