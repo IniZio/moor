@@ -306,9 +306,14 @@ fn deny(event: &NetworkAuditEvent, sink: &dyn EgressSink) {
             return;
         }
     }
-    let reason = (event.denial_category
-        == Some(NetworkAuditDenialCategory::InterceptHandshakeFailed))
-    .then(|| handshake::reason(event.reason.as_deref().unwrap_or_default()));
+    let text = event.reason.as_deref().unwrap_or_default();
+    let reason = match event.denial_category {
+        Some(NetworkAuditDenialCategory::InterceptHandshakeFailed) => Some(handshake::reason(text)),
+        Some(NetworkAuditDenialCategory::UpstreamConnectFailed) => {
+            Some(connect::reason(text).to_owned())
+        }
+        _ => None,
+    };
     if reason.as_deref() == Some(handshake::CLIENT_CLOSED) {
         sink.aborted(&event.target, rule(event));
         return;
@@ -334,6 +339,7 @@ fn category_name(category: &NetworkAuditDenialCategory) -> Option<String> {
     }
 }
 
+mod connect;
 mod handshake;
 mod limits;
 

@@ -139,3 +139,48 @@ fn another_alert_or_an_unknown_ending_is_still_refused() {
         );
     }
 }
+
+#[test]
+fn a_connect_failure_records_a_fixed_word_not_nonos_text() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, log, box_id) = box_sink_parts(dir.path());
+    let sink = BoxSink {
+        log: &log,
+        store: &store,
+        box_id,
+    };
+    let failed = |host: &str, reason: &str| {
+        event(
+            "deny",
+            &json!({"denial_category": "upstream_connect_failed", "target": host, "reason": reason}),
+        )
+    };
+    let events = [
+        failed("a.test", "Connection refused (os error 111)"),
+        failed("b.test", "DNS resolution returned no addresses"),
+        failed("c.test", "connection timed out"),
+        failed("d.test", "Connection reset by peer (os error 104)"),
+        failed("e.test", "TLS handshake failed: invalid peer certificate"),
+        failed("f.test", "token=hunter2 at 10.0.0.7"),
+    ];
+    apply(&events, &Withheld::default(), &sink);
+
+    let rows = store.events(box_id, 100).unwrap();
+    let reason = |host: &str| {
+        rows.iter()
+            .map(|r| &r.payload)
+            .find(|p| p["host"] == host)
+            .unwrap()["reason"]
+            .clone()
+    };
+    for (host, want) in [
+        ("a.test", "refused"),
+        ("b.test", "dns"),
+        ("c.test", "timeout"),
+        ("d.test", "reset"),
+        ("e.test", "tls"),
+        ("f.test", "other"),
+    ] {
+        assert_eq!(reason(host), want, "{host}");
+    }
+}

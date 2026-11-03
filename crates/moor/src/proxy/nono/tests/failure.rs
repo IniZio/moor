@@ -45,3 +45,35 @@ fn an_upstream_refusing_the_connection_is_recorded_as_a_connect_failure() {
         "{found:?}"
     );
 }
+
+#[test]
+fn a_refused_connection_records_its_cause_as_a_fixed_word() {
+    let mut rig = rig();
+    rig.up.close();
+    assert_eq!(get(&rig.client(), &rig.url("/ok")), Ok(502));
+
+    let (store, box_id, log) = rig.store();
+    let sink = BoxSink {
+        log: &log,
+        store: &store,
+        box_id,
+    };
+    let watch = Withheld::default();
+    for _ in 0..100 {
+        audit::apply(&rig.proxy().drain_audit(), &watch, &sink);
+        if kinds(&store, box_id).iter().any(|k| k == "egress_refused") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    let events = store.events(box_id, 100).unwrap();
+    let only = events
+        .iter()
+        .find(|e| e.kind == "egress_refused")
+        .expect("a refusal is recorded");
+    assert_eq!(
+        only.payload.get("reason").and_then(|v| v.as_str()),
+        Some("refused")
+    );
+}
