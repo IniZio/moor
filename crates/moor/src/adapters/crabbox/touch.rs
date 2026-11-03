@@ -37,15 +37,31 @@ pub(super) fn heartbeat(cb: &Crabbox, handle: &BoxHandle) -> Result<(), DriverEr
 /// Sends `crabbox heartbeat` for the Box behind `handle`, from its lease dir.
 pub(super) fn send(cb: &Crabbox, handle: &BoxHandle) -> Result<(), DriverError> {
     let provider = split_handle(handle).0;
-    let spec = Crabbox::spec(cb.lookup_deadline(provider.unwrap_or_default()))
-        .arg("heartbeat")
-        .args(target_args(handle));
-    let spec = cb.at_lease(spec, handle)?;
-    cb.call(Op::Touch, provider, &spec)?;
+    cb.call(Op::Touch, provider, &spec(cb, handle)?)?;
     if let Ok(mut m) = cb.touched.lock() {
         m.insert(handle.as_str().to_owned(), cb.clock.now());
     }
     Ok(())
+}
+
+/// Starts `crabbox heartbeat` for the Box behind `handle` without waiting for it, so a short
+/// command does not wait out a lease lookup it does not need.
+pub(super) fn send_detached(cb: &Crabbox, handle: &BoxHandle) -> Result<(), DriverError> {
+    if super::pool::is_pool(handle) {
+        return Ok(());
+    }
+    cb.proc
+        .spawn_detached(&spec(cb, handle)?)
+        .map_err(|e| DriverError::Unavailable(e.to_string()))
+}
+
+/// The `crabbox heartbeat` call for the Box behind `handle`, from its lease dir.
+fn spec(cb: &Crabbox, handle: &BoxHandle) -> Result<moor_core::seam::proc::ProcSpec, DriverError> {
+    let provider = split_handle(handle).0;
+    let spec = Crabbox::spec(cb.lookup_deadline(provider.unwrap_or_default()))
+        .arg("heartbeat")
+        .args(target_args(handle));
+    cb.at_lease(spec, handle)
 }
 
 #[cfg(test)]
