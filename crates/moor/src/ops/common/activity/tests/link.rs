@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxInput;
-use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::engine::{AgentFate, EngineError};
 use moor_core::BoxId;
@@ -189,4 +189,23 @@ fn the_agent_of_an_asleep_box_ends_without_asking_the_box() {
     let ended = seen.iter().find(|(k, _)| k == "session_ended").unwrap();
     assert_eq!(ended.1.get("exit").unwrap(), 1);
     assert_eq!(engine.fates_left(), 8);
+}
+
+#[test]
+fn a_transcript_that_failed_for_want_of_a_link_is_saved_once_the_agent_is_reattached() {
+    let (cx, engine, id) = settle_exited_after(vec![Ok(AgentFate::Running)], |cx, id| {
+        let failed = ExtraEvent::TranscriptFailed {
+            trigger: "turn".to_owned(),
+            error: "box: machine 2 is not linked".to_owned(),
+            unlinked: true,
+        };
+        let store = cx.store().unwrap();
+        let live = store.live_session(id).unwrap().unwrap();
+        store.set_registered_session(live.id, "agent-1").unwrap();
+        store.apply(Decision::new(id).event(failed)).unwrap();
+    });
+    assert_eq!(engine.transcripts().len(), 1);
+    let saved = kinds(&cx, id, &["transcript_saved"]);
+    assert_eq!(saved.len(), 1);
+    assert_eq!(saved.first().unwrap().1.get("trigger").unwrap(), "turn");
 }

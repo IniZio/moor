@@ -3,6 +3,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use moor_core::seam::driver::DriverError;
 use moor_core::seam::engine::EngineError;
 
 use super::{fx_with, req, run, Fx};
@@ -170,4 +171,21 @@ fn a_failed_close_save_keeps_the_exit_digest() {
     run(&f.cx, &req(false)).unwrap();
     assert_eq!(kinds(&f), ["transcript_saved", "transcript_failed"]);
     assert_eq!(ended_digest(&f).as_deref(), Some(SHA_ABC));
+}
+
+#[test]
+fn close_tries_a_pending_save_once_and_drops_it() {
+    let engine = Arc::new(FakeEngine::new().fail_transcript(EngineError::Box(
+        DriverError::Transport {
+            stderr_tail: "machine 2 is not linked".into(),
+        },
+    )));
+    let f = with_engine(&engine, FakeSurface::new());
+    let store = f.cx.store().unwrap();
+    let sid = store.begin_session(f.id, "s-1", Some("p-1")).unwrap();
+    store.set_registered_session(sid, "agent-1").unwrap();
+    let v = run(&f.cx, &req(false)).unwrap();
+    assert!(v.box_deleted);
+    assert_eq!(engine.transcripts(), ["s-1"]);
+    assert_eq!(kinds(&f), ["transcript_failed"]);
 }

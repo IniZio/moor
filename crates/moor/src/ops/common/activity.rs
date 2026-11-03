@@ -256,6 +256,7 @@ pub(crate) fn settle(
     };
     // A reattached agent still runs its turn: closing the turn or idling on the old pane drops what it says next.
     if matches!(fate, Some((Fate::Reattached, _))) {
+        transcript::save_pending(cx, store, row)?;
         return Ok(());
     }
     let turn_done = turn::note_turn_done(store, row, reading)?;

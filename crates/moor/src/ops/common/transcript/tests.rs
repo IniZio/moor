@@ -7,11 +7,12 @@ use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
+use moor_core::seam::driver::DriverError;
 use moor_core::seam::engine::EngineError;
 use moor_core::{BoxName, ProviderId};
 use serde_json::json;
 
-use super::save;
+use super::{save, save_pending};
 use crate::cx::Cx;
 use crate::store::{BoxRow, SessionRow};
 use crate::testing::driver::FakeDriver;
@@ -214,4 +215,89 @@ fn a_session_unregistered_but_known_to_the_box_is_archived() {
     let row = store.box_row(row.id).unwrap().unwrap();
     assert!(save(&cx, store, &row, &session, Trigger::Close).is_some());
     assert_eq!(engine.transcripts().len(), 1);
+}
+
+fn not_linked() -> EngineError {
+    EngineError::Box(DriverError::Transport {
+        stderr_tail: "machine 2 is not linked".into(),
+    })
+}
+
+fn failed_events(cx: &Cx, row: &BoxRow) -> Vec<serde_json::Value> {
+    let events = cx.store().unwrap().events(row.id, 100).unwrap();
+    events
+        .into_iter()
+        .filter(|e| e.kind == "transcript_failed")
+        .map(|e| e.payload)
+        .collect()
+}
+
+#[test]
+fn a_save_failing_for_want_of_a_link_is_recorded_as_pending() {
+    let (_dir, cx) = fx(FakeEngine::new().fail_transcript(not_linked()));
+    let (row, session) = ready(&cx);
+    assert!(save(&cx, cx.store().unwrap(), &row, &session, Trigger::Turn).is_none());
+    let failed = failed_events(&cx, &row);
+    assert_eq!(failed.len(), 1);
+    assert_eq!(
+        failed.first().and_then(|f| f.get("unlinked")),
+        Some(&json!(true))
+    );
+}
+
+#[test]
+fn a_save_failing_otherwise_is_not_pending() {
+    let engine =
+        FakeEngine::new().fail_transcript(EngineError::Transcript("stream: bad base64".into()));
+    let (_dir, cx) = fx(engine);
+    let (row, session) = ready(&cx);
+    assert!(save(&cx, cx.store().unwrap(), &row, &session, Trigger::Turn).is_none());
+    assert_eq!(
+        failed_events(&cx, &row)
+            .first()
+            .and_then(|f| f.get("unlinked")),
+        Some(&json!(false))
+    );
+    save_pending(&cx, cx.store().unwrap(), &row).unwrap();
+    assert_eq!(failed_events(&cx, &row).len(), 1);
+}
+
+#[test]
+fn a_pending_save_is_made_when_asked_and_stops_being_pending() {
+    let engine = Arc::new(
+        FakeEngine::new()
+            .transcript_text("abc")
+            .fail_transcript(not_linked()),
+    );
+    let (_dir, cx) = fx(FakeEngine::new());
+    let cx = cx.with_engine(engine.clone());
+    let (row, session) = ready(&cx);
+    let store = cx.store().unwrap();
+    save(&cx, store, &row, &session, Trigger::Turn);
+    save_pending(&cx, store, &row).unwrap();
+    save_pending(&cx, store, &row).unwrap();
+    assert_eq!(engine.transcripts().len(), 2);
+    let kinds: Vec<String> = store
+        .events(row.id, 100)
+        .unwrap()
+        .into_iter()
+        .map(|e| e.kind)
+        .collect();
+    assert_eq!(kinds.iter().filter(|k| *k == "transcript_saved").count(), 1);
+}
+
+#[test]
+fn a_pending_save_that_fails_again_stays_pending() {
+    let engine = Arc::new(FakeEngine::new().fail_transcript(not_linked()));
+    let (_dir, cx) = fx(FakeEngine::new());
+    let cx = cx.with_engine(engine.clone());
+    let (row, session) = ready(&cx);
+    let store = cx.store().unwrap();
+    save(&cx, store, &row, &session, Trigger::Turn);
+    engine.fail_next_transcript(not_linked());
+    save_pending(&cx, store, &row).unwrap();
+    assert_eq!(failed_events(&cx, &row).len(), 2);
+    engine.fail_next_transcript(not_linked());
+    save_pending(&cx, store, &row).unwrap();
+    assert_eq!(failed_events(&cx, &row).len(), 3);
 }

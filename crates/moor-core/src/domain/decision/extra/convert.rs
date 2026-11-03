@@ -98,9 +98,15 @@ impl From<ExtraEvent> for Event {
                 path,
                 digest,
             },
-            ExtraEvent::TranscriptFailed { trigger, error } => {
-                Self::TranscriptFailed { trigger, error }
-            }
+            ExtraEvent::TranscriptFailed {
+                trigger,
+                error,
+                unlinked,
+            } => Self::TranscriptFailed {
+                trigger,
+                error,
+                unlinked,
+            },
             ExtraEvent::TranscriptSkipped { trigger, reason } => {
                 Self::TranscriptSkipped { trigger, reason }
             }
@@ -232,9 +238,15 @@ impl TryFrom<Event> for ExtraEvent {
                 path,
                 digest,
             }),
-            Event::TranscriptFailed { trigger, error } => {
-                Ok(Self::TranscriptFailed { trigger, error })
-            }
+            Event::TranscriptFailed {
+                trigger,
+                error,
+                unlinked,
+            } => Ok(Self::TranscriptFailed {
+                trigger,
+                error,
+                unlinked,
+            }),
             Event::TranscriptSkipped { trigger, reason } => {
                 Ok(Self::TranscriptSkipped { trigger, reason })
             }

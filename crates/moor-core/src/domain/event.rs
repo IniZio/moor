@@ -1,8 +1,7 @@
 //! Typed box events. State events are derived from steps, so a row and its event cannot disagree.
 
-use crate::domain::box_state::BoxLifecycle;
 pub use crate::domain::turn::TurnOutcome;
-use crate::name::RunId;
+use crate::{domain::box_state::BoxLifecycle, name::RunId};
 
 /// One recorded fact about a box, serialized with its `kind` tag.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -224,6 +223,8 @@ pub enum Event {
         trigger: String,
         /// What went wrong.
         error: String,
+        /// The Box's machine was not linked; the save is tried again once the link is back.
+        unlinked: bool,
     },
     /// The agent's transcript was not saved because there was nothing to save.
     TranscriptSkipped {
@@ -374,7 +375,6 @@ pub enum Event {
     #[serde(untagged)]
     Timing(TimingEvent),
 }
-
 pub use boxes::box_events;
 pub use checked::CheckedCred;
 pub use kind::{StallEvent, ASSERTED_KINDS, EVENT_KINDS};

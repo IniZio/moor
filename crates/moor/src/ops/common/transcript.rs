@@ -9,6 +9,7 @@ use std::time::Duration;
 use moor_core::decide::transcript::{digest, is_duplicate, next_number, relative_path, Trigger};
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent};
+use moor_core::seam::driver::DriverError;
 use moor_core::seam::engine::{EngineError, SessionRef};
 
 use crate::cx::Cx;
@@ -59,10 +60,8 @@ pub(crate) fn save(
             return Some(saved);
         }
         Err(TryError::NothingToArchive) => skipped(trigger, "nothing to archive"),
-        Err(TryError::Failed(error)) => ExtraEvent::TranscriptFailed {
-            trigger: trigger.name().to_owned(),
-            error,
-        },
+        Err(TryError::Failed(error)) => failed(trigger, error, false),
+        Err(TryError::Unlinked(error)) => failed(trigger, error, true),
     };
     record(store, row, event);
     None
@@ -71,6 +70,15 @@ pub(crate) fn save(
 /// Records that no save was made for `trigger`, with the reason.
 pub(crate) fn record_skipped(store: &Store, row: &BoxRow, trigger: Trigger, reason: &str) {
     record(store, row, skipped(trigger, reason));
+}
+
+/// The event for a save that failed; `unlinked` marks a Box whose machine was out of reach.
+fn failed(trigger: Trigger, error: String, unlinked: bool) -> ExtraEvent {
+    ExtraEvent::TranscriptFailed {
+        trigger: trigger.name().to_owned(),
+        error,
+        unlinked,
+    }
 }
 
 /// The event for a save that found nothing to save.
@@ -87,6 +95,8 @@ enum TryError {
     NothingToArchive,
     /// The archive could not be built, copied or read.
     Failed(String),
+    /// The Box's machine was out of reach, so a later save may work.
+    Unlinked(String),
 }
 
 impl From<String> for TryError {
@@ -173,6 +183,55 @@ pub(crate) fn save_on_turn(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), C
     Ok(())
 }
 
+/// Whether the live session's latest save failed because the Box's machine was not linked.
+fn pending(store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
+    let events = store.events(row.id, usize::MAX)?;
+    let latest = events
+        .iter()
+        .rev()
+        .take_while(|e| e.kind != "session_started")
+        .find(|e| e.kind.starts_with("transcript_"));
+    Ok(latest.is_some_and(|e| {
+        e.kind == "transcript_failed"
+            && e.payload
+                .get("unlinked")
+                .and_then(serde_json::Value::as_bool)
+                == Some(true)
+    }))
+}
+
+/// Saves again the transcript whose last save failed for want of a link, now that the link is
+/// back. The archive holds every turn so far, so one save covers each turn that failed. A failure
+/// for the same reason stays pending; a save equal to the stored one ends the pending state with
+/// a skip, since nothing was lost.
+pub(crate) fn save_pending(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
+    if !pending(store, row)? {
+        return Ok(());
+    }
+    let Ok(_held) = BoxLock::acquire(
+        cx.clock(),
+        cx.state_dir()?,
+        row.id,
+        "transcript",
+        Duration::ZERO,
+    ) else {
+        return Ok(());
+    };
+    let Some(row) = store.box_row(row.id)? else {
+        return Ok(());
+    };
+    let Some(session) = store.live_session(row.id)? else {
+        return Ok(());
+    };
+    if let Some(saved) = save(cx, store, &row, &session, Trigger::Turn) {
+        store.set_transcript_digest(session.id, &saved.digest)?;
+        if pending(store, &row)? {
+            record_skipped(store, &row, Trigger::Turn, "already saved");
+        }
+    }
+    Ok(())
+}
+
 /// Records `event`; a store failure is dropped so the caller carries on.
 fn record(store: &Store, row: &BoxRow, event: ExtraEvent) {
     let _ = store.apply(Decision::new(row.id).event(event));
@@ -196,6 +255,7 @@ fn try_save(
     let dest = dest(cx, relative_path(row.id, session.id, n))?;
     cx.engine().transcript(s, &dest).map_err(|e| match e {
         EngineError::NothingToArchive => TryError::NothingToArchive,
+        EngineError::Box(DriverError::Transport { .. }) => TryError::Unlinked(e.to_string()),
         e => TryError::Failed(e.to_string()),
     })?;
     fs::set_permissions(&dest, Permissions::from_mode(0o600))
