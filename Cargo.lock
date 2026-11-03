@@ -3230,6 +3230,7 @@ dependencies = [
  "moor-machine-agent",
  "moor-testkit",
  "rmcp",
+ "rustix",
  "schemars 1.2.3",
  "serde",
  "serde_json",

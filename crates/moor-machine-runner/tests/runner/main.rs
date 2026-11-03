@@ -28,6 +28,7 @@ mod missing;
 mod pull;
 mod relay;
 mod rig;
+mod sigterm;
 mod sleep;
 mod sweep;
 
