@@ -11,7 +11,8 @@ use std::thread;
 use std::time::Duration;
 
 use moor_core::seam::proc::{
-    ChildHandle, Output, Proc, ProcError, ProcOutput, ProcSpec, Signal as GroupSignal, Tool,
+    ChildHandle, Output, Piped, Pipes, Proc, ProcError, ProcOutput, ProcSpec,
+    Signal as GroupSignal, Tool,
 };
 use rustix::io::Errno;
 use rustix::process::test_kill_process;
@@ -341,6 +342,10 @@ impl Proc for SystemProc {
         Ok(())
     }
 
+    fn run_piped(&self, spec: &ProcSpec, pipes: Pipes<'_>) -> Result<Piped, ProcError> {
+        self.piped(spec, pipes)
+    }
+
     fn spawn_child(&self, spec: &ProcSpec) -> Result<Box<dyn ChildHandle>, ProcError> {
         self.spawn_long_lived(spec)
             .inspect(|_| self.trace.started(spec))
@@ -373,6 +378,7 @@ mod detached;
 mod drain;
 mod env;
 mod grace;
+mod piped;
 pub(crate) mod plain;
 mod reading;
 mod signal;

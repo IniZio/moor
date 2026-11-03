@@ -14,6 +14,7 @@ mod mirror;
 mod parse;
 mod peek;
 mod pin;
+mod piped;
 mod pool;
 mod progress;
 mod put;
@@ -41,7 +42,7 @@ use moor_core::seam::driver::{
     ExecOutcome, ExecSpec, Followed, Launched, LocalTunnel, MirrorStats, Released, RunEnd,
     SleepOutcome, StepDone, TunnelHandle,
 };
-use moor_core::seam::proc::{Deadline, Proc, ProcOutput, ProcSpec, Tool};
+use moor_core::seam::proc::{Deadline, Pipes, Proc, ProcOutput, ProcSpec, Tool};
 use moor_core::seam::rng::Rng;
 
 use caps::size_of;
@@ -344,6 +345,16 @@ impl Driver for Crabbox {
             return vec![Err(e)];
         }
         batch::run(self, handle, connect, steps, deadline)
+    }
+
+    fn exec_piped(
+        &self,
+        handle: &BoxHandle,
+        spec: &ExecSpec,
+        pipes: Pipes<'_>,
+    ) -> Result<ExecOutcome, DriverError> {
+        self.require_version()?;
+        piped::run(self, handle, spec, pipes)
     }
 
     fn connect_argv(&self, handle: &BoxHandle) -> Result<Vec<String>, DriverError> {

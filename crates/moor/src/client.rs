@@ -24,6 +24,7 @@ use crate::config_load::load_user;
 use crate::env::Env;
 use crate::error::CommandError;
 
+mod exec;
 mod interrupt;
 mod redial;
 pub mod remote;
@@ -32,6 +33,7 @@ pub mod watch;
 
 use redial::redialing;
 
+pub use exec::{exec, ExecIo};
 pub use watch::watch;
 
 /// Id carried by the single request of a session.
@@ -150,7 +152,7 @@ fn with_transport<T>(
     env: &Env,
     target: &Target,
     forward: bool,
-    exchange: impl FnOnce(&mut dyn BufRead, &mut dyn Write) -> Result<T, SessionError>,
+    exchange: impl FnOnce(&mut (dyn BufRead + Send), &mut (dyn Write + Send)) -> Result<T, SessionError>,
 ) -> Attempt<T, ClientError> {
     match target {
         Target::Socket(socket) => {

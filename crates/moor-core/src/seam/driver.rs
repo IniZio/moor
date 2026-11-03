@@ -8,7 +8,7 @@ use std::path::Path;
 use crate::box_key::PoolSeat;
 use crate::cache::CachePlan;
 use crate::name::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
-use crate::seam::proc::Deadline;
+use crate::seam::proc::{Deadline, Pipes};
 
 mod batch;
 mod caps;
@@ -172,6 +172,25 @@ pub trait Driver: Send + Sync {
         spec: &ExecSpec,
         deadline: Deadline,
     ) -> Result<ExecOutcome, DriverError>;
+
+    /// Runs `spec` in the Box without a terminal, its stdio streamed through `pipes` byte for
+    /// byte, until it exits or `pipes.stop` kills it; `spec.output` is ignored and no deadline
+    /// applies.
+    ///
+    /// # Errors
+    /// [`DriverError::Unsupported`] when the provider cannot stream a command's stdio; another
+    /// [`DriverError`] when the command cannot be run at all.
+    fn exec_piped(
+        &self,
+        handle: &BoxHandle,
+        spec: &ExecSpec,
+        pipes: Pipes<'_>,
+    ) -> Result<ExecOutcome, DriverError> {
+        let _ = (handle, spec, pipes);
+        Err(DriverError::Unsupported(
+            "streaming a command's stdin and output",
+        ))
+    }
 
     /// Copies a file or directory out of the Box to the host path `to`, or into `to` when it is
     /// a directory. A failed copy leaves nothing at the destination.

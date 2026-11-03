@@ -355,6 +355,27 @@ fn attach_request_and_view_round_trip() {
 }
 
 #[test]
+fn exec_request_frames_and_view_round_trip() {
+    let line = r#"{"cmd":"exec","box":"b","argv":["cat"]}"#;
+    let req: Request = serde_json::from_str(line).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(req.cmd(), "exec");
+    assert_eq!(serde_json::to_string(&req).ok().as_deref(), Some(line));
+    let eof = ClientFrame::Eof { id: "1".to_owned() };
+    assert_eq!(eof.to_line(), "{\"frame\":\"eof\",\"id\":\"1\"}\n");
+    assert_eq!(parse_frame(eof.to_line().trim_end()), Ok(eof));
+    let mut wire = Vec::new();
+    write_stderr(&mut wire, "1", b"oops").unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(wire, b"{\"frame\":\"stderr\",\"id\":\"1\",\"len\":4}\noops");
+    let ended = crate::view::ExecView { exit: Some(7) };
+    assert_eq!(
+        serde_json::to_string(&ended).ok().as_deref(),
+        Some(r#"{"exit":7}"#)
+    );
+    let killed = crate::view::ExecView { exit: None };
+    assert_eq!(serde_json::to_string(&killed).ok().as_deref(), Some("{}"));
+}
+
+#[test]
 fn slow_client_kind_serializes() {
     let got = serde_json::to_string(&FrameErrorKind::SlowClient).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(got, r#""slow-client""#);

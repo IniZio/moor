@@ -103,7 +103,9 @@ fn frame(line: &str, person: &Person) -> Result<(ClientFrame, usize), Box<Server
             0,
         )),
         frame @ ClientFrame::Bytes { len, .. } => Ok((frame, len)),
-        frame @ (ClientFrame::Hello { .. } | ClientFrame::Resize { .. }) => Ok((frame, 0)),
+        frame @ (ClientFrame::Hello { .. }
+        | ClientFrame::Resize { .. }
+        | ClientFrame::Eof { .. }) => Ok((frame, 0)),
     }
 }
 

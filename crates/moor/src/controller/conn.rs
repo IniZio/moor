@@ -4,11 +4,11 @@ use std::io::{BufRead, Write};
 use std::sync::Arc;
 
 use moor_core::controller::{
-    parse_frame, write_bytes, ClientFrame, FrameErrorKind, ServerFrame, WatchFilter, PROTOCOL,
+    parse_frame, ClientFrame, FrameErrorKind, ServerFrame, WatchFilter, PROTOCOL,
 };
 use moor_core::request::{Grant, UserCmd};
 use moor_core::user::{Caller, Identity, Viewer};
-use moor_core::{ArtifactReadReq, ErrorKind, Request, Response, RunReq};
+use moor_core::{ErrorKind, Request, Response, RunReq};
 
 use super::drain::Admitted;
 use super::hangup::Hangup;
@@ -19,10 +19,14 @@ use crate::error::CommandError;
 use crate::vault::Vault;
 use crate::Moor;
 
+mod artifact_read;
 mod attach;
+mod exec;
 mod frames;
 
+use artifact_read::read_artifact;
 use attach::attach;
+use exec::exec;
 use frames::{hello_reply, hello_required, stray};
 
 /// Whom one connection speaks for, the vault key its user requests use, and its place in the
@@ -56,7 +60,12 @@ impl Peer {
 /// Serve frames from `reader` until EOF, an I/O error on either side, or the peer's drain.
 ///
 /// Frame-level problems get an error frame and leave the connection open.
-pub(crate) fn handle(reader: impl BufRead + Send, writer: impl Write, env: &Env, peer: &Peer) {
+pub(crate) fn handle(
+    reader: impl BufRead + Send,
+    writer: impl Write + Send,
+    env: &Env,
+    peer: &Peer,
+) {
     serve(
         reader,
         writer,
@@ -123,6 +132,7 @@ fn answer(
     match request {
         Request::ArtifactRead(req) => Some(read_artifact(env, grant, id, &req, out)),
         Request::Attach(req) => Some(attach(env, peer, grant, id, &req, (input, out))),
+        Request::Exec(req) => Some(exec(env, peer, grant, id, &req, (input, out))),
         request => match request.into_user() {
             Ok((_, cmd)) => Some(answer_user(env, peer, asserted, &cmd)),
             Err(request) => match requester(peer, asserted, &request) {
@@ -172,7 +182,7 @@ fn respond_unless_draining(
 /// drain until its answer is ready. Once the drain of `conn` has begun no further line is
 /// answered: the connection ends with a `restarting` frame that names no request, which also
 /// answers a request half read, unread, or written after the read side shut.
-pub(super) fn serve<W: Write>(
+pub(super) fn serve<W: Write + Send>(
     mut reader: impl BufRead + Send,
     mut writer: W,
     conn: &Admitted,
@@ -206,7 +216,11 @@ pub(super) fn serve<W: Write>(
                 start_watch(&mut writer, frame, &watch);
                 return;
             }
-            Ok(ClientFrame::Bytes { id, .. } | ClientFrame::Resize { id, .. }) => {
+            Ok(
+                ClientFrame::Bytes { id, .. }
+                | ClientFrame::Resize { id, .. }
+                | ClientFrame::Eof { id },
+            ) => {
                 send(&mut writer, &stray(id));
                 return;
             }
@@ -251,7 +265,7 @@ fn start_watch<W: Write>(
 }
 
 /// The reply to `request` sent as `id`, and whether it is the connection's last: an `attach`
-/// that ran hands the connection to its relay.
+/// or `exec` that ran hands the connection to its relay.
 fn request_reply(
     conn: &Admitted,
     answer: &impl Fn(&str, Request, Duplex<'_>) -> Option<Response>,
@@ -259,7 +273,7 @@ fn request_reply(
     request: Request,
     duplex: Duplex<'_>,
 ) -> (ServerFrame, bool) {
-    let attach = matches!(request, Request::Attach(_));
+    let attach = matches!(request, Request::Attach(_) | Request::Exec(_));
     match conn
         .answering()
         .and_then(|_answering| answer(&id, request, duplex))
@@ -291,24 +305,8 @@ pub(super) fn send(writer: &mut (impl Write + ?Sized), frame: &ServerFrame) -> b
     writer.write_all(frame.to_line().as_bytes()).is_ok() && writer.flush().is_ok()
 }
 
-/// Stream an Artifact's bytes as bytes frames for request `id`, then answer.
-fn read_artifact(
-    env: &Env,
-    grant: Grant,
-    id: &str,
-    req: &ArtifactReadReq,
-    out: &mut dyn Write,
-) -> Response {
-    match Moor::from_env(env) {
-        Ok(moor) => moor
-            .granted(grant)
-            .read_artifact(req, &mut |data| write_bytes(out, id, data)),
-        Err(e) => e.into_response("artifact-read", vec![]),
-    }
-}
-
 /// The client's side of one connection: its frames, and where its answers go.
-pub(super) type Duplex<'a> = (&'a mut (dyn BufRead + Send), &'a mut dyn Write);
+pub(super) type Duplex<'a> = (&'a mut (dyn BufRead + Send), &'a mut (dyn Write + Send));
 
 /// Run a user request as the identity this connection may assert.
 fn answer_user(env: &Env, peer: &Peer, asserted: Option<&Identity>, cmd: &UserCmd) -> Response {

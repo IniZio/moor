@@ -10,17 +10,17 @@ use crate::ops::common::provision::recorded_workdir;
 use crate::store::{BoxRow, Store};
 
 /// Where a run executes.
-pub(super) struct Target {
+pub(crate) struct Target {
     /// The Box to run in.
-    pub(super) handle: BoxHandle,
+    pub(crate) handle: BoxHandle,
     /// Working directory in the Box; the driver's default when unrecorded.
-    pub(super) workdir: Option<BoxPath>,
+    pub(crate) workdir: Option<BoxPath>,
 }
 
 /// The Box a run uses, or the reason none can.
 ///
 /// A Box the driver no longer knows is also recorded as a refused run.
-pub(super) fn target(store: &Store, row: &BoxRow) -> Result<Target, CommandError> {
+pub(crate) fn target(store: &Store, row: &BoxRow) -> Result<Target, CommandError> {
     let name = row.name.as_str();
     let failed = |msg: String| CommandError::new(ErrorKind::Failed, msg);
     if row.lifecycle == BoxLifecycle::Pending {
