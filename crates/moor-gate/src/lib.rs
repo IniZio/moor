@@ -3,7 +3,7 @@
 //! acting as that person's identity on every request.
 
 use std::io::{self, Write};
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
@@ -103,6 +103,14 @@ pub fn serve_until(
 ) -> io::Result<()> {
     let live = Arc::new((Mutex::new(0_usize), Condvar::new()));
     let streams = Arc::new(Streams::default());
+    let spawn = |stream: TcpStream| {
+        let (gate, login, held) = (Arc::clone(gate), login.cloned(), Held::new(&live));
+        let streams = Arc::clone(&streams);
+        std::thread::spawn(move || {
+            http::handle(stream, &gate, login.as_deref(), &streams);
+            drop(held);
+        });
+    };
     loop {
         let mut fds = [
             PollFd::new(&listener, PollFlags::IN),
@@ -117,12 +125,18 @@ pub fn serve_until(
             break;
         }
         let (stream, _) = listener.accept()?;
-        let (gate, login, held) = (Arc::clone(gate), login.cloned(), Held::new(&live));
-        let streams = Arc::clone(&streams);
-        std::thread::spawn(move || {
-            http::handle(stream, &gate, login.as_deref(), &streams);
-            drop(held);
-        });
+        spawn(stream);
+    }
+    listener.set_nonblocking(true)?;
+    loop {
+        match listener.accept() {
+            Ok((stream, _)) => {
+                stream.set_nonblocking(false)?;
+                spawn(stream);
+            }
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
+            Err(e) => return Err(e),
+        }
     }
     drop(listener);
     if let Some(mcp) = &gate.mcp {
