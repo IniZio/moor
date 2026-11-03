@@ -49,12 +49,13 @@ osc() {
     working:*|idle:*|done:*) s=$1 ;;
     *) return 0 ;;
   esac
-  [ "$(cat "$d/status-osc" 2>/dev/null)" = "$s" ] && return 0
-  printf %s "$s" > "$d/status-osc" 2>/dev/null
+  p="state=$s:app=claude"
+  [ "$(cat "$d/status-osc" 2>/dev/null)" = "$p" ] && return 0
+  printf %s "$p" > "$d/status-osc" 2>/dev/null
   if [ -n "$TMUX" ]; then
-    printf '\033Ptmux;\033\033]7501;state=%s:app=claude\033\033\\\033\\' "$s"
+    printf '\033Ptmux;\033\033]7501;%s\033\033\\\033\\' "$p"
   else
-    printf '\033]7501;state=%s:app=claude\033\\' "$s"
+    printf '\033]7501;%s\033\\' "$p"
   fi >> "$MOOR_AGENT_TTY" 2>/dev/null || :
 }
 if [ "$2" = SessionEnd ]; then osc "$1" "$2"; exit 0; fi
