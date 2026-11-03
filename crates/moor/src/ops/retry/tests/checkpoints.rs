@@ -140,3 +140,28 @@ fn a_relaunch_whose_clone_did_not_report_the_base_saves_no_checkpoint() {
 fn a_relaunch_whose_clone_started_from_the_base_saves_checkpoints() {
     assert!(!relaunched(&format!("{AT_BASE}\n")).is_empty());
 }
+
+#[test]
+fn a_retry_forks_with_the_cache_plan_the_box_was_acquired_with() {
+    let driver = FakeDriver::new()
+        .with_checkpoints()
+        .cache_volumes()
+        .exec_ends_once_when("run-two", exit(1));
+    let w = world(TWO_LINES, driver);
+    let id = start(&w, "cached");
+    assert_eq!(row(&w, id).lifecycle, BoxLifecycle::SetupFailed);
+    retry(&w, "cached");
+    assert_eq!(
+        lines_on_its_machine(&w, id),
+        [(true, false), (false, true)],
+        "the fork stands on the clone layer"
+    );
+    let acquired = w.driver.acquired_plans();
+    let forked = w.driver.forked_plans();
+    assert_eq!(forked.len(), 1);
+    assert!(
+        !forked[0].volumes().is_empty(),
+        "presets give the Box volumes"
+    );
+    assert_eq!(forked[0], acquired[0]);
+}

@@ -46,7 +46,7 @@ fn a_layer_s_checkpoint_is_found_by_provider_and_key_and_its_use_is_kept() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
-    let keys = chain(REQUESTER_USER, "o/n", "abc", &["a".to_owned()]);
+    let keys = chain(REQUESTER_USER, "o/n", "abc", "", &["a".to_owned()]);
     let local = ProviderId::new("local");
     store
         .record_checkpoint(&local, &keys[0], &of("o/n", &keys), &made("cp-1"))
@@ -78,7 +78,7 @@ fn a_layer_saved_again_replaces_its_checkpoint() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
-    let keys = chain(REQUESTER_USER, "o/n", "abc", &[]);
+    let keys = chain(REQUESTER_USER, "o/n", "abc", "", &[]);
     let key = &keys[0];
     let local = ProviderId::new("local");
     store
@@ -99,9 +99,9 @@ fn checkpoints_go_superseded_chains_first_then_least_recently_used() {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
     let local = ProviderId::new("local");
-    let old = chain(REQUESTER_USER, "o/n", "aaa", &["a".to_owned()]);
-    let other = chain(REQUESTER_USER, "o/other", "aaa", &[]);
-    let new = chain(REQUESTER_USER, "o/n", "bbb", &[]);
+    let old = chain(REQUESTER_USER, "o/n", "aaa", "", &["a".to_owned()]);
+    let other = chain(REQUESTER_USER, "o/other", "aaa", "", &[]);
+    let new = chain(REQUESTER_USER, "o/n", "bbb", "", &[]);
     let save = |keys: &[LayerKey], layer: usize, repo: &str, id: &str| {
         clock.sleep(Duration::from_secs(1));
         store
@@ -147,6 +147,7 @@ fn a_checkpoint_goes_only_once_none_is_a_delta_over_it() {
         REQUESTER_USER,
         "o/n",
         "aaa",
+        "",
         &["a".to_owned(), "b".to_owned()],
     );
     let lineage = of("o/n", &keys);
@@ -184,7 +185,7 @@ fn a_claimed_checkpoint_stays_tracked_but_unusable_until_forgotten() {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let local = ProviderId::new("local");
-    let keys = chain(REQUESTER_USER, "o/n", "aaa", &[]);
+    let keys = chain(REQUESTER_USER, "o/n", "aaa", "", &[]);
     store
         .record_checkpoint(&local, &keys[0], &of("o/n", &keys), &made("cp-1"))
         .unwrap();
@@ -209,7 +210,7 @@ fn a_layer_saved_again_while_its_old_checkpoint_goes_tracks_both() {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let local = ProviderId::new("local");
-    let keys = chain(REQUESTER_USER, "o/n", "aaa", &[]);
+    let keys = chain(REQUESTER_USER, "o/n", "aaa", "", &[]);
     let lineage = of("o/n", &keys);
     store
         .record_checkpoint(&local, &keys[0], &lineage, &made("cp-1"))
@@ -237,7 +238,7 @@ fn an_unclaimed_checkpoint_is_used_again_and_not_forgotten() {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let local = ProviderId::new("local");
-    let keys = chain(REQUESTER_USER, "o/n", "aaa", &[]);
+    let keys = chain(REQUESTER_USER, "o/n", "aaa", "", &[]);
     store
         .record_checkpoint(&local, &keys[0], &of("o/n", &keys), &made("cp-1"))
         .unwrap();

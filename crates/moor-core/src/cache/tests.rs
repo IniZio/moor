@@ -508,3 +508,28 @@ fn the_box_scope_is_the_repo_groups_hash_and_only_a_repo_box_with_volumes_has_on
     assert_eq!(norepo.scope(), None);
     assert_eq!(CachePlan::none().scope(), None);
 }
+
+#[test]
+fn the_identity_names_what_the_provider_keeps_and_is_empty_when_cold() {
+    let rust = plan(&layers("cache: {presets: [rust]}", ""));
+    let npm = plan(&layers("cache: {presets: [npm]}", ""));
+    assert_eq!(CachePlan::none().identity(), "");
+    assert_ne!(rust.identity(), "");
+    assert_eq!(
+        rust.identity(),
+        plan(&layers("cache: {presets: [rust]}", "")).identity()
+    );
+    assert_ne!(rust.identity(), npm.identity());
+    let other_user = CachePlan::build(
+        UserId::new(8),
+        Some(&repo("o", "r")),
+        &layers("cache: {presets: [rust]}", ""),
+        &salt(1),
+    )
+    .unwrap();
+    assert_ne!(
+        rust.identity(),
+        other_user.identity(),
+        "the scope is part of it"
+    );
+}

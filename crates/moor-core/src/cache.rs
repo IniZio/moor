@@ -350,6 +350,28 @@ impl CachePlan {
         self.work_tree.as_deref()
     }
 
+    /// What a provider keeps for this plan: each volume's group, name, paths, size and whether
+    /// it seals, then the scope. Empty for a cold plan. A checkpoint holds the cache disks of
+    /// the plan it was taken under, so only a Box with the same identity can start from it.
+    #[must_use]
+    pub fn identity(&self) -> String {
+        let mut out = String::new();
+        for v in &self.volumes {
+            let paths: Vec<&str> = v.paths.iter().map(CachePath::as_str).collect();
+            let size = v.size_gb.map_or(0, NonZeroU32::get);
+            let sealed = !v.seal.is_empty();
+            let _ = writeln!(
+                out,
+                "{:?}",
+                (&v.group, v.name.as_str(), paths, size, sealed)
+            );
+        }
+        if let Some(scope) = self.scope.as_deref().filter(|_| !out.is_empty()) {
+            let _ = writeln!(out, "scope {scope:?}");
+        }
+        out
+    }
+
     /// Declared volumes left out because they met a sealed preset.
     #[must_use]
     pub fn dropped(&self) -> &[Dropped] {

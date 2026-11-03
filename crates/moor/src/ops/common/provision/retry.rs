@@ -9,7 +9,7 @@ use moor_core::{BoxHandle, BoxPath, ErrorKind};
 use super::{layers, recorded_workdir, run_and_record, Provisioned, SetupTarget};
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::setup;
+use crate::ops::common::{cache, setup};
 use crate::store::{BoxRow, Store};
 
 /// The kept Box's handle and workdir, when the Box failed setup on a machine that is still ready.
@@ -48,7 +48,8 @@ pub(super) fn retry_in_box(
         }));
     store.apply(begin)?;
     let provider = held.provider.as_str();
-    let mut layered = layers::plan(cx, row, provider, cfg);
+    let plan = cache::derived(cx, store, row, cfg, &held.provider);
+    let mut layered = layers::plan(cx, row, provider, cfg, &plan);
     let forked = match layered.as_mut() {
         Some(layered) => layers::resume(cx, store, row, handle, cfg, layered)?,
         None => None,

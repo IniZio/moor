@@ -250,6 +250,7 @@ impl FakeDriver {
     pub(super) fn forked(&self, id: &str, req: &AcquireReq) -> Result<BoxHandle, DriverError> {
         let mut s = self.st();
         s.note(format!("fork {id}"));
+        s.cache.forks.push(req.cache.clone());
         if let Some(e) = s.layers.fork_fails.take() {
             return Err(e);
         }
