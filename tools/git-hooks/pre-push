@@ -1,6 +1,4 @@
 #!/bin/sh
-# Runs the quick `make lint` checks before a push. MOOR_SKIP_HOOKS=1 skips them.
-# The slow tail of `make lint` (cargo doc, the self-tests, typos) is left to CI.
 set -eu
 
 if [ -n "${MOOR_SKIP_HOOKS:-}" ]; then
