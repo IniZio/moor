@@ -33,7 +33,7 @@ impl Store {
     pub(crate) fn box_refs(&self, id: BoxId, kind: &str) -> Result<Vec<String>, StoreError> {
         let conn = self.reader()?;
         let mut stmt =
-            conn.prepare("SELECT value FROM box_refs WHERE box = ?1 AND kind = ?2 ORDER BY rowid")?;
+            conn.prepare("SELECT value FROM box_refs WHERE box = ?1 AND kind = ?2 ORDER BY id")?;
         let rows = stmt.query_map((id.get(), kind), |row| row.get(0))?;
         Ok(rows.collect::<Result<_, _>>()?)
     }

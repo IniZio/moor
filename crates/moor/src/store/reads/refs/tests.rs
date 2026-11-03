@@ -1,6 +1,5 @@
 //! Tests for Box refs.
 
-use crate::store::testing::sqlite_only;
 use crate::store::tests::{new_box, open};
 
 #[test]
@@ -14,7 +13,6 @@ fn add_ref_is_new_once() {
 
 #[test]
 fn refs_listed_by_kind_in_insert_order() {
-    sqlite_only!("orders by SQLite's rowid, which Postgres tables lack");
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = new_box(&store, "acme/1");

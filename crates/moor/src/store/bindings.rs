@@ -28,7 +28,7 @@ const FROM: &str =
     "bindings g JOIN sessions s ON s.id = g.session LEFT JOIN boxes b ON b.id = s.box";
 
 /// Orders a key's bindings newest first.
-const NEWEST: &str = "ORDER BY g.created_at DESC, g.rowid DESC";
+const NEWEST: &str = "ORDER BY g.created_at DESC, g.id DESC";
 
 /// Raw binding row: the Box name is still unparsed text.
 type BindingRow = (String, String, i64, Option<String>, String);
@@ -124,7 +124,7 @@ impl Store {
             .query_row(
                 &format!(
                     "SELECT {COLS} FROM {FROM} WHERE g.front = ? AND g.conv_key = ? \
-                     ORDER BY s.state != 'ended' DESC, g.created_at DESC, g.rowid DESC LIMIT 1"
+                     ORDER BY s.state != 'ended' DESC, g.created_at DESC, g.id DESC LIMIT 1"
                 ),
                 params![front, key],
                 row_of,

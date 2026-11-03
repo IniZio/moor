@@ -7,14 +7,21 @@ use moor_migrate::sea_query::{
 use moor_migrate::{Backend, Script, Step};
 
 mod baseline;
+mod insertion_order;
 
 /// The store's migrations, oldest first. Never edit an applied one; add a new step.
 ///
 /// The baseline squashed the SQL migrations 1 to 44, so a file at 44 is adopted.
-pub const STEPS: &[Step] = &[Step {
-    name: "V45__baseline",
-    write: baseline::write,
-}];
+pub const STEPS: &[Step] = &[
+    Step {
+        name: "V45__baseline",
+        write: baseline::write,
+    },
+    Step {
+        name: "V46__insertion_order",
+        write: insertion_order::write,
+    },
+];
 
 /// A 64-bit integer column: `integer` in `SQLite`, `bigint` in Postgres.
 fn int(name: &'static str) -> ColumnDef {

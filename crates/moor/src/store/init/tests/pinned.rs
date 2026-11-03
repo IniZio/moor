@@ -14,8 +14,14 @@ fn applied_migrations_are_never_edited() {
     assert_eq!(
         (pinned(Backend::Sqlite), pinned(Backend::Postgres)),
         (
-            vec![(45, 1_311_846_121_584_832_248)],
-            vec![(45, 3_089_193_402_876_792_007)]
+            vec![
+                (45, 1_311_846_121_584_832_248),
+                (46, 858_562_308_596_054_046)
+            ],
+            vec![
+                (45, 3_089_193_402_876_792_007),
+                (46, 2_751_851_257_713_979_344)
+            ]
         ),
         "a schema change is a new step, and a sea-query upgrade must not change what an \
          applied one renders"

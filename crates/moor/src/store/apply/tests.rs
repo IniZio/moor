@@ -1,6 +1,5 @@
 //! Tests for the writer: name collisions on insert.
 
-use crate::store::testing::sqlite_only;
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
@@ -86,7 +85,6 @@ fn ready(store: &crate::store::Store) -> moor_core::BoxId {
 
 #[test]
 fn insert_records_the_branch_ref() {
-    sqlite_only!("orders by SQLite's rowid, which Postgres tables lack");
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let mut d = insert("b");
