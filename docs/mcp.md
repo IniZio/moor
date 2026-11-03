@@ -381,7 +381,7 @@ to the gate. For each Box it starts or is asked to watch, it prints a line in th
 session when that Box idles, needs input or fails.
 
 ```sh
-cargo install --git https://github.com/IniZio/moor moor
+curl -fsSL https://github.com/IniZio/moor/releases/latest/download/install.sh | sh
 moor login --server https://<host>       # once; opens the browser
 export MOOR_SERVER=https://<host>        # before starting claude, or in settings env
 ```

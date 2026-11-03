@@ -10,7 +10,7 @@ controller serve` binds its own sockets.
 
 ## Install the units
 
-The units below assume the binaries are in `~/.local/bin`, the controller
+Get the binaries with `install.sh` from the latest release (`sh install.sh moor moor-gate`). The units below assume they are in `~/.local/bin`, the controller
 config is `~/.config/moor/controller.yaml`, and the state directory is the
 default `~/.local/state/moor`. In a user unit, `%S` is that state base,
 `$XDG_STATE_HOME` or `~/.local/state`. Set `XDG_STATE_HOME` to the same value
