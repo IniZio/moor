@@ -1,6 +1,8 @@
 //! The card a Box's pane shows once it is not relaying: herdr removes a pane whose process
 //! exits, so the pane stays and says what happened until the user closes it.
 
+use std::time::Duration;
+
 use moor_core::view::AttachEnd;
 
 use crate::boxes::{Phase, Shown};
@@ -15,6 +17,13 @@ pub const DETACH_KEY: &str = "ctrl+]";
 /// The byte [`DETACH_KEY`] sends.
 pub const DETACH_BYTE: u8 = 0x1d;
 
+/// The pause before retry number `attempt` (from 0) once the server is away: 1 s, doubling to
+/// 10 s.
+#[must_use]
+pub fn retry_delay(attempt: u32) -> Duration {
+    Duration::from_secs(1_u64.checked_shl(attempt).map_or(10, |s| s.min(10)))
+}
+
 /// How the last attach went.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ended {
@@ -24,6 +33,8 @@ pub enum Ended {
     Refused(String),
     /// The Box was not up, so nothing was attached.
     Skipped,
+    /// The server did not answer, or the link to it broke: asking again once it is back works.
+    Away(String),
 }
 
 /// What a key on the card asks the pane to do.
@@ -67,6 +78,8 @@ pub enum Card {
     LinkDropped,
     /// The attach was refused.
     Refused(String),
+    /// The server is away; the pane attaches again by itself once it answers.
+    Reconnecting,
 }
 
 impl Card {
@@ -87,6 +100,7 @@ impl Card {
                 Ended::Relay(AttachEnd::Link) => Self::LinkDropped,
                 Ended::Skipped => Self::Refused("the Box was not up yet; r attaches".to_owned()),
                 Ended::Refused(why) => Self::Refused(why.clone()),
+                Ended::Away(_) => Self::Reconnecting,
             },
         }
     }
@@ -147,9 +161,12 @@ impl Card {
             Self::AgentEnded => "the agent's terminal ended · the Box is still up".to_owned(),
             Self::LinkDropped => "the link to the Box dropped".to_owned(),
             Self::Refused(why) => format!("attach refused: {why}"),
+            Self::Reconnecting => "reconnecting…".to_owned(),
         };
         let keys = if matches!(self, Self::Asleep | Self::AsleepUnfinished) {
             "r wake and attach · q close this pane".to_owned()
+        } else if matches!(self, Self::Reconnecting) {
+            "r retry now · q close this pane".to_owned()
         } else if self.reattaches() {
             format!("r attach · q close this pane · {DETACH_KEY} detaches while attached")
         } else {

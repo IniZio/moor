@@ -1,6 +1,6 @@
 use moor_core::view::AttachEnd;
 
-use super::{Card, Choice, Ended, Progress};
+use super::{retry_delay, Card, Choice, Ended, Progress};
 use crate::boxes::{Activity, Phase, Shown};
 
 fn shown(phase: Phase) -> Shown {
@@ -180,4 +180,43 @@ fn an_asleep_box_with_an_unfinished_turn_says_so_and_wakes_on_r() {
         "◈ moor/fix\n\nasleep, turn unfinished · r wakes it and resumes the turn\n\nr wake and attach · q close this pane"
     );
     assert_eq!(Card::AsleepUnfinished.key(b'r'), Choice::Wake);
+}
+
+#[test]
+fn a_server_away_drop_shows_reconnecting_and_r_retries_at_once() {
+    let away = Ended::Away("connection refused".into());
+    assert_eq!(
+        text(&away, LIVE),
+        "◈ moor/fix\n\nreconnecting…\n\nr retry now · q close this pane"
+    );
+    assert_eq!(Card::Reconnecting.key(b'r'), Choice::Attach);
+    assert_eq!(Card::Reconnecting.key(b'q'), Choice::Close);
+}
+
+#[test]
+fn a_closed_box_ends_the_reconnecting_card() {
+    assert!(matches!(
+        Card::after(&Ended::Away("gone".into()), None, None),
+        Card::Closed { .. }
+    ));
+}
+
+#[test]
+fn a_purposeful_end_does_not_reconnect_and_keeps_the_r_hint() {
+    for ended in [
+        Ended::Relay(AttachEnd::Agent),
+        Ended::Relay(AttachEnd::Client),
+        Ended::Refused("not signed in".into()),
+    ] {
+        let card = Card::after(&ended, Some(&shown(LIVE.unwrap())), None);
+        assert_ne!(card, Card::Reconnecting);
+        assert!(text(&ended, LIVE).ends_with(KEYS));
+    }
+}
+
+#[test]
+fn retries_back_off_one_second_doubling_to_ten() {
+    let secs: Vec<u64> = (0..6).map(|n| retry_delay(n).as_secs()).collect();
+    assert_eq!(secs, [1, 2, 4, 8, 10, 10]);
+    assert_eq!(retry_delay(u32::MAX).as_secs(), 10);
 }
