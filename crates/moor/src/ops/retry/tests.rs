@@ -1,4 +1,5 @@
 //! Tests for `retry`.
+#![allow(clippy::indexing_slicing, reason = "test assertions")]
 
 use std::sync::Arc;
 
@@ -6,7 +7,9 @@ use moor_core::config::UserConfig;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
-use moor_core::seam::driver::ExecOutcome;
+use moor_core::domain::layers::chain;
+use moor_core::seam::clock::{Clock as _, Ts};
+use moor_core::seam::driver::{Checkpoint, Driver as _, ExecOutcome};
 use moor_core::seam::engine::{LaunchPrompt, SessionRef};
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::surface::PaneRef;
@@ -14,6 +17,7 @@ use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, BoxReq, ErrorKind, StartReq}
 
 use super::run;
 use crate::cx::Cx;
+use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::forge::{repo_at, FakeForge};
@@ -24,6 +28,7 @@ struct World {
     _dir: tempfile::TempDir,
     cx: Cx,
     driver: Arc<FakeDriver>,
+    clock: Arc<FakeClock>,
 }
 
 fn name() -> BoxName {
@@ -43,18 +48,21 @@ fn world(yaml: &str, driver: FakeDriver) -> World {
     }));
     let forge = Arc::new(FakeForge::new());
     forge.answer(ForgeRepo::new("o", "n"), Ok(repo_at("abc123", Some(yaml))));
-    let cx = Cx::fake_with(
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(1000)));
+    let cx = Cx::fake_with_clock(
         dir.path(),
         driver.clone(),
         Arc::new(FakeSurface::new()),
         Arc::new(ScriptedProc::new()),
         UserConfig::default(),
+        clock.clone(),
     )
     .with_forge(forge);
     World {
         _dir: dir,
         cx,
         driver,
+        clock,
     }
 }
 
@@ -196,4 +204,148 @@ fn a_retry_whose_setup_fails_again_launches_no_agent() {
     let _ = run(&w.cx, &req());
     assert!(engine.launches().is_empty());
     assert_eq!(row(&w, id).lifecycle, BoxLifecycle::SetupFailed);
+}
+
+/// The setup execs, in order, as the Box they ran on and their script.
+fn setup_execs(w: &World) -> Vec<(String, String)> {
+    w.driver
+        .execs()
+        .into_iter()
+        .filter(|(_, spec, _)| spec.argv.iter().any(|a| a.contains("moor setup: $")))
+        .map(|(h, spec, _)| (h.as_str().to_owned(), spec.argv.join(" ")))
+        .collect()
+}
+
+fn box_roots(w: &World, id: BoxId) -> Vec<String> {
+    let leases = w.cx.store().unwrap().leases(id).unwrap();
+    leases
+        .into_iter()
+        .filter(|l| l.kind == crate::store::lease::LeaseKind::BoxRoot)
+        .map(|l| l.key)
+        .collect()
+}
+
+/// Saves layer `layer` of Box `id`'s chain as a checkpoint of its current machine, as an
+/// earlier Box of the same repo, base and lines would have.
+fn saved_layer(w: &World, id: BoxId, layer: usize) {
+    let r = row(w, id);
+    let boxed = r.boxed.unwrap();
+    let lines: Vec<String> = ["prep-one", "run-two"].map(str::to_owned).to_vec();
+    let key = &chain("o/n", r.base.as_deref().unwrap(), &lines)[layer];
+    let made = w
+        .driver
+        .checkpoint(boxed.handle.as_ref().unwrap(), key.as_str())
+        .unwrap();
+    let store = w.cx.store().unwrap();
+    store
+        .record_checkpoint(&boxed.provider, key, "o/n", &made)
+        .unwrap();
+}
+
+const TWO_LINES: &str = "setup: [prep-one, run-two]\n";
+
+#[test]
+fn a_first_run_checkpoints_the_clone_a_slow_line_and_the_last_line_only() {
+    let w = world(
+        "setup: [make-slow, cheap, last-one]\n",
+        FakeDriver::new().with_checkpoints(),
+    );
+    let clock = w.clock.clone();
+    w.driver.on_exec_of("make-slow", move || {
+        clock.sleep(std::time::Duration::from_secs(21));
+    });
+    let id = started(&w);
+    assert_eq!(row(&w, id).lifecycle, BoxLifecycle::Ready);
+    assert_eq!(setup_execs(&w).len(), 3, "one exec per line");
+    let lines: Vec<String> = ["make-slow", "cheap", "last-one"]
+        .map(str::to_owned)
+        .to_vec();
+    let keys = chain("o/n", row(&w, id).base.as_deref().unwrap(), &lines);
+    let want: Vec<String> = [0, 1, 3]
+        .iter()
+        .map(|&i| keys[i].as_str().to_owned())
+        .collect();
+    assert_eq!(w.driver.checkpoint_names(), want);
+}
+
+#[test]
+fn without_checkpoints_setup_runs_as_one_script_and_a_retry_runs_it_all_again() {
+    let w = world(TWO_LINES, FakeDriver::new().exec_results([Ok(exit(1))]));
+    let id = started(&w);
+    assert_eq!(row(&w, id).lifecycle, BoxLifecycle::SetupFailed);
+    let v = run(&w.cx, &req()).unwrap();
+    assert!(v.setup.ok);
+    let execs = setup_execs(&w);
+    assert_eq!(execs.len(), 1, "{execs:?}");
+    assert!(execs[0].1.contains("prep-one") && execs[0].1.contains("run-two"));
+    let calls = w.driver.calls();
+    assert!(!calls
+        .iter()
+        .any(|c| c.starts_with("checkpoint") || c.starts_with("fork")));
+}
+
+#[test]
+fn a_retry_moves_the_box_to_a_fork_of_the_nearest_layer_and_releases_the_old_machine() {
+    let driver = FakeDriver::new()
+        .with_checkpoints()
+        .exec_results([Ok(exit(1))]);
+    let w = world(TWO_LINES, driver);
+    let id = started(&w);
+    assert_eq!(row(&w, id).lifecycle, BoxLifecycle::SetupFailed);
+    saved_layer(&w, id, 1);
+    let v = run(&w.cx, &req()).unwrap();
+    assert!(v.setup.ran && v.setup.ok);
+    let calls = w.driver.calls();
+    let swapped = ["fork ckpt-1", "release box-1"].map(str::to_owned);
+    assert!(swapped.iter().all(|c| calls.contains(c)), "{calls:?}");
+    let after = row(&w, id);
+    let on = (after.lifecycle, after.boxed.unwrap().handle);
+    assert_eq!(on, (BoxLifecycle::Ready, Some(BoxHandle::new("box-2"))));
+    assert_eq!(box_roots(&w, id), ["box-2"]);
+    let replayed: Vec<_> = setup_execs(&w)
+        .into_iter()
+        .map(|(h, argv)| (h, argv.contains("prep-one"), argv.contains("run-two")))
+        .collect();
+    assert_eq!(
+        replayed,
+        [("box-2".to_owned(), false, true)],
+        "only the line after the layer"
+    );
+    assert_eq!(
+        w.driver.checkpoint_names().len(),
+        2,
+        "the last line is checkpointed"
+    );
+}
+
+#[test]
+fn a_failed_fork_runs_setup_again_in_the_kept_machine() {
+    let driver = FakeDriver::new()
+        .with_checkpoints()
+        .exec_results([Ok(exit(1))]);
+    let w = world(TWO_LINES, driver);
+    let id = started(&w);
+    let before = row(&w, id);
+    let provider = before.boxed.unwrap().provider;
+    let clone = &chain("o/n", before.base.as_deref().unwrap(), &[])[0];
+    let gone = Checkpoint {
+        id: "gone".to_owned(),
+        bytes: None,
+    };
+    let store = w.cx.store().unwrap();
+    store
+        .record_checkpoint(&provider, clone, "o/n", &gone)
+        .unwrap();
+    let v = run(&w.cx, &req()).unwrap();
+    assert!(v.setup.ok);
+    assert_eq!(
+        row(&w, id).boxed.unwrap().handle,
+        Some(BoxHandle::new("box-1"))
+    );
+    assert!(!w.driver.calls().contains(&"release box-1".to_owned()));
+    assert_eq!(
+        setup_execs(&w).len(),
+        2,
+        "both lines ran in the kept machine"
+    );
 }

@@ -11,6 +11,7 @@ use moor_core::seam::proc::{Deadline, Output};
 use moor_core::{BoxHandle, BoxId, BoxPath, Warning};
 
 use super::clone::{clone_log_of, with_tail, SetupProxy};
+use super::layers;
 use super::setup_run::run_through_proxy;
 use super::SetupTarget;
 use crate::cx::Cx;
@@ -204,7 +205,11 @@ pub(super) fn set_up_all(
     cfg: &BoxSettings,
     proxy: &SetupProxy,
 ) -> SetupRun {
-    let run = run_through_proxy(cx, store, id, target, cfg, proxy);
+    let run = if target.layered.is_some() {
+        layers::run(cx, store, id, target, cfg, proxy)
+    } else {
+        run_through_proxy(cx, store, id, target, cfg, proxy, None)
+    };
     let trees = match trees(target) {
         Ok(trees) => trees,
         Err(e) if !run.failed() => return failed_before_run(cx, e),
@@ -232,9 +237,10 @@ pub(super) fn set_up_all(
             workdir: &tree.workdir,
             log_dir: &log_dir,
             tree_of: Some(repo),
+            layered: None,
             ..*target
         };
-        let next = run_through_proxy(cx, store, id, &at, &own, proxy);
+        let next = run_through_proxy(cx, store, id, &at, &own, proxy, None);
         run = combined(run, next, &repo.to_string());
     }
     run

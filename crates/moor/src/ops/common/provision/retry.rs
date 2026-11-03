@@ -6,7 +6,7 @@ use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
 use moor_core::{BoxHandle, BoxPath, ErrorKind};
 
-use super::{recorded_workdir, run_and_record, Provisioned, SetupTarget};
+use super::{layers, recorded_workdir, run_and_record, Provisioned, SetupTarget};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::setup;
@@ -47,14 +47,21 @@ pub(super) fn retry_in_box(
             pid: std::process::id(),
         }));
     store.apply(begin)?;
+    let provider = held.provider.as_str();
+    let mut layered = layers::plan(cx, row, provider, cfg);
+    let forked = match layered.as_mut() {
+        Some(layered) => layers::resume(cx, store, row, handle, cfg, layered)?,
+        None => None,
+    };
     let log_dir = setup::log_dir(cx.state_dir()?, row.id);
     let target = SetupTarget {
-        handle,
-        provider: held.provider.as_str(),
+        handle: forked.as_ref().unwrap_or(handle),
+        provider,
         workdir: &workdir,
         repo: row.repo.as_ref(),
         log_dir: &log_dir,
         tree_of: None,
+        layered: layered.as_ref(),
     };
     run_and_record(cx, store, row.id, true, &target, cfg)
 }

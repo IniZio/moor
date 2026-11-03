@@ -3,6 +3,7 @@
 use std::sync::{Mutex, PoisonError};
 
 use moor_core::config::BoxSettings;
+use moor_core::domain::decision::ExtraEvent;
 use moor_core::BoxId;
 
 use super::clone::SetupProxy;
@@ -13,6 +14,13 @@ use crate::ops::common::{setup, step};
 use crate::store::Store;
 
 /// Runs the setup lines through the Proxy; a Proxy that will not start fails the setup.
+///
+/// `place` is the position from 1 and the total of a single line run apart from the rest, which
+/// its events report in place of their own.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the Box, its store, where setup runs, its settings, Proxy and the line's place"
+)]
 pub(super) fn run_through_proxy(
     cx: &Cx,
     store: &Store,
@@ -20,6 +28,7 @@ pub(super) fn run_through_proxy(
     target: &SetupTarget<'_>,
     cfg: &BoxSettings,
     proxy: &SetupProxy,
+    place: Option<(u32, u32)>,
 ) -> setup::SetupRun {
     match proxy {
         Ok(proxy) => {
@@ -35,7 +44,8 @@ pub(super) fn run_through_proxy(
                 cfg,
                 proxy.as_ref(),
                 &|event| {
-                    if let Err(e) = step::try_record(store, id, named(event, target.tree_of)) {
+                    let event = named(placed(event, place), target.tree_of);
+                    if let Err(e) = step::try_record(store, id, event) {
                         unrecorded
                             .lock()
                             .unwrap_or_else(PoisonError::into_inner)
@@ -57,5 +67,24 @@ pub(super) fn run_through_proxy(
             let name = store.box_row(id).ok().flatten().map(|r| r.name);
             setup::proxy_failed(cx, name.as_ref().map_or("<box>", |n| n.as_str()), reason)
         }
+    }
+}
+
+/// `event` of a line run apart, at `place` among all the lines.
+fn placed(event: ExtraEvent, place: Option<(u32, u32)>) -> ExtraEvent {
+    let Some((index, total)) = place else {
+        return event;
+    };
+    match event {
+        ExtraEvent::SetupLineStarted { line, .. } => {
+            ExtraEvent::SetupLineStarted { index, total, line }
+        }
+        ExtraEvent::SetupLineFinished { ms, ok, .. } => ExtraEvent::SetupLineFinished {
+            index,
+            total,
+            ms,
+            ok,
+        },
+        other => other,
     }
 }
