@@ -92,10 +92,23 @@ fn a_fork_starts_the_lease_moor_planned_from_its_own_dir() {
             "cp-9",
             "--slug",
             "moor-7-ab12cd",
+            "--class",
+            "standard",
             "--json"
         ]
     );
     assert!(call.cwd.unwrap().ends_with("moor-7-ab12cd"));
+}
+
+#[test]
+fn a_fork_takes_the_class_of_the_box_size() {
+    for (size, class) in [("medium", "fast"), ("large", "large"), ("xlarge", "beast")] {
+        let (p, c) = driver("fork", Reply::Ok(FORKED.to_owned()));
+        c.fork("cp-9", &req("local", Some(size))).unwrap();
+        let args = p.calls().pop().unwrap().args;
+        let at = args.iter().position(|a| a == "--class").unwrap();
+        assert_eq!(args.get(at + 1).map(String::as_str), Some(class));
+    }
 }
 
 #[test]
