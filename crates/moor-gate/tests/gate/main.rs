@@ -472,6 +472,7 @@ fn a_real_controller_enrolls_the_token_email() {
     assert_eq!(email, "alice@example.com");
 }
 
+mod artifacts;
 mod enroll;
 mod events;
 mod events_http;
