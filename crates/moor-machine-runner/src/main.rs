@@ -186,6 +186,23 @@ fn forward_socket(socket: &Path) -> Result<(tokio::net::UnixListener, u32), Stri
     Ok((listener, uid))
 }
 
+/// The runner's settings from its flags.
+fn config(args: Args, agents: Option<Agents>, relays: Vec<Relay>) -> Config {
+    Config {
+        agents,
+        socket: args.socket,
+        state_dir: args.state_dir,
+        service_host: args.service_host,
+        resources: args.resources.into_iter().collect(),
+        min_free_gb: args.min_free_gb,
+        hook_timeout: Duration::from_secs(args.hook_timeout_secs),
+        sweep: Duration::from_secs(args.sweep_secs),
+        relays,
+        relay_idle: Duration::from_secs(args.relay_idle_secs),
+        keep_alive: Duration::from_secs(args.keep_alive_secs),
+    }
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let raw: Vec<String> = std::env::args().collect();
@@ -197,6 +214,13 @@ async fn main() -> ExitCode {
         Ok(r) => r,
         Err(e) => {
             eprintln!("moor-machine-runner: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let stopped = match stop_signal() {
+        Ok(stopped) => stopped,
+        Err(e) => {
+            eprintln!("moor-machine-runner: cannot handle SIGTERM: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -220,24 +244,30 @@ async fn main() -> ExitCode {
         },
         None => None,
     };
-    let config = Config {
-        agents: linked,
-        socket: args.socket,
-        state_dir: args.state_dir,
-        service_host: args.service_host,
-        resources: args.resources.into_iter().collect(),
-        min_free_gb: args.min_free_gb,
-        hook_timeout: Duration::from_secs(args.hook_timeout_secs),
-        sweep: Duration::from_secs(args.sweep_secs),
-        relays,
-        relay_idle: Duration::from_secs(args.relay_idle_secs),
-        keep_alive: Duration::from_secs(args.keep_alive_secs),
-    };
-    match serve(listener, config).await {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("moor-machine-runner: {e}");
-            ExitCode::FAILURE
-        }
+    let config = config(args, linked, relays);
+    tokio::select! {
+        served = serve(listener, config) => match served {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("moor-machine-runner: {e}");
+                ExitCode::FAILURE
+            }
+        },
+        () = stopped => ExitCode::SUCCESS,
     }
+}
+
+/// Takes SIGTERM and SIGINT now; the future resolves when either arrives. As pid 1 of a
+/// container the runner gets no default action for either, so without a handler a pod's SIGTERM
+/// goes unanswered until the kubelet kills it.
+fn stop_signal() -> std::io::Result<impl std::future::Future<Output = ()>> {
+    use tokio::signal::unix::{signal, SignalKind};
+    let mut term = signal(SignalKind::terminate())?;
+    let mut int = signal(SignalKind::interrupt())?;
+    Ok(async move {
+        tokio::select! {
+            _ = term.recv() => {}
+            _ = int.recv() => {}
+        }
+    })
 }
