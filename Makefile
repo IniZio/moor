@@ -3,6 +3,7 @@ MACHETE_VERSION := 0.9.2
 NEXTEST_VERSION := 0.9.148
 TAPLO_VERSION := 0.10.0
 TYPOS_VERSION := 1.51.1
+BINSTALL_VERSION := 1.26.2
 LLVM_COV_VERSION := 0.9.1
 ZIG_VERSION := 0.17.0
 HELM_VERSION := 3.21.3
@@ -22,11 +23,12 @@ help:
 
 setup:
 	@rustup show active-toolchain >/dev/null
-	@cargo deny --version 2>/dev/null | grep -q '$(DENY_VERSION)' || cargo install --locked cargo-deny@$(DENY_VERSION)
-	@cargo machete --version 2>/dev/null | grep -q '$(MACHETE_VERSION)' || cargo install --locked cargo-machete@$(MACHETE_VERSION)
-	@cargo nextest --version 2>/dev/null | grep -q '$(NEXTEST_VERSION)' || cargo install --locked cargo-nextest@$(NEXTEST_VERSION)
-	@taplo --version 2>/dev/null | grep -q '$(TAPLO_VERSION)' || cargo install --locked taplo-cli@$(TAPLO_VERSION)
-	@typos --version 2>/dev/null | grep -q '$(TYPOS_VERSION)' || cargo install --locked typos-cli@$(TYPOS_VERSION)
+	@cargo binstall -V 2>/dev/null | grep -qx '$(BINSTALL_VERSION)' || curl --retry 5 -fsSL --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/cargo-bins/cargo-binstall/v$(BINSTALL_VERSION)/install-from-binstall-release.sh | BINSTALL_VERSION=$(BINSTALL_VERSION) sh
+	@cargo deny --version 2>/dev/null | grep -q '$(DENY_VERSION)' || cargo binstall --no-confirm --locked --disable-strategies quick-install cargo-deny@=$(DENY_VERSION)
+	@cargo machete --version 2>/dev/null | grep -q '$(MACHETE_VERSION)' || cargo binstall --no-confirm --locked --disable-strategies quick-install cargo-machete@=$(MACHETE_VERSION)
+	@cargo nextest --version 2>/dev/null | grep -q '$(NEXTEST_VERSION)' || cargo binstall --no-confirm --locked --disable-strategies quick-install cargo-nextest@=$(NEXTEST_VERSION)
+	@taplo --version 2>/dev/null | grep -q '$(TAPLO_VERSION)' || cargo binstall --no-confirm --locked --disable-strategies quick-install taplo-cli@=$(TAPLO_VERSION)
+	@typos --version 2>/dev/null | grep -q '$(TYPOS_VERSION)' || cargo binstall --no-confirm --locked --disable-strategies quick-install typos-cli@=$(TYPOS_VERSION)
 	@helm version --short 2>/dev/null | grep -q '^v$(HELM_VERSION)+' || echo "setup: make chart needs helm $(HELM_VERSION)"
 	@echo "setup: toolchain and pinned tools present"
 
