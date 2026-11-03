@@ -60,3 +60,45 @@ fn an_empty_failures_file_records_nothing() {
     let (details, _) = relaunch_with(Some(""));
     assert!(details.is_empty());
 }
+
+/// Starts a Box with a profile whose timing file holds `secs`, relaunches it, and returns its
+/// `plugins` step events.
+fn plugin_steps(secs: &str) -> Vec<(String, serde_json::Value)> {
+    let engine = FakeEngine::new()
+        .launch_result(Ok(session("p-1")))
+        .launch_result(Ok(session("p-2")));
+    let mut w = world_answering(None, HEAD, None);
+    w.cx = w.cx.with_engine(Arc::new(engine));
+    set_profile(&w, None);
+    let id = BoxId::new(run(&w.cx, &req("demo")).unwrap().boxed.id);
+    let boxed =
+        w.cx.store()
+            .unwrap()
+            .box_row(id)
+            .unwrap()
+            .unwrap()
+            .boxed
+            .unwrap();
+    let path = BoxPath::under(&boxed.workdir.unwrap(), ".moor/profile-steps.secs").unwrap();
+    w.driver
+        .set_peek_text(boxed.handle.unwrap().as_str(), &path, secs);
+    gone(&w);
+    run(&w.cx, &req("demo")).unwrap();
+    super::agent_install::step_events_where(&w, id, |s| s == "plugins")
+}
+
+#[test]
+fn the_plugin_timings_the_script_left_become_one_summed_step() {
+    assert_eq!(
+        plugin_steps("12\n9\n"),
+        [(
+            "step_finished".to_owned(),
+            serde_json::json!({"step": "plugins", "ms": 21_000, "ok": true})
+        )]
+    );
+}
+
+#[test]
+fn a_launch_that_left_no_plugin_timings_records_no_plugins_step() {
+    assert!(plugin_steps("").is_empty());
+}

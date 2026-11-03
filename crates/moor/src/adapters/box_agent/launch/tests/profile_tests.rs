@@ -93,3 +93,20 @@ fn a_profile_without_env_exports_nothing_extra() {
     });
     assert!(!script.contains("BUN_OPTIONS"), "{script}");
 }
+
+#[test]
+fn each_profile_writer_is_timed_into_the_seconds_file() {
+    let script = launched(|s| LaunchReq {
+        profile: Some(parse(MANIFEST).unwrap()),
+        ..req_with_proxy(s)
+    });
+    let secs = "/work/box-1/.moor/profile-steps.secs";
+    assert_eq!(
+        script.matches(&format!(">> '{secs}'")).count(),
+        2,
+        "{script}"
+    );
+    let truncate = at(&script, &format!(": > '{secs}'"));
+    let claude = at(&script, "plugin install 'p@m'");
+    assert!(truncate < claude, "{script}");
+}

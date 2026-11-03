@@ -9,6 +9,9 @@ pub const PROFILE_DIR: &str = ".moor-profile/person";
 /// rewritten on every launch that applies a profile.
 pub const FAILURES_FILE: &str = ".moor/profile-failures";
 
+/// Beside [`FAILURES_FILE`]: one line per profile writer, the seconds the launch script spent in it.
+pub const PLUGIN_SECS_FILE: &str = ".moor/profile-steps.secs";
+
 /// Shell text that leaves `$HOME/.moor-profile/person` at exactly `sha` of `url`.
 ///
 /// A fresh `git init` plus a shallow fetch of the sha works for any commit, branch head or

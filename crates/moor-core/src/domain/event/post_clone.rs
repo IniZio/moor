@@ -12,6 +12,16 @@ pub enum PostCloneStep {
     AgentInstall,
     /// Fetching the agent profile and running its `setup.sh`.
     Profile,
+    /// The driver acquiring the machine.
+    Acquire,
+    /// Starting the Box's Proxy.
+    Proxy,
+    /// Cloning the other listed repos, all at once.
+    CloneOthers,
+    /// The engine launching the agent.
+    Launch,
+    /// The profile writers in the agent's start script, which are mostly marketplace adds and plugin installs.
+    Plugins,
 }
 
 /// How long a part of setting the Box up took, or which step after the clone is running.

@@ -18,6 +18,7 @@ use super::gh_release::GhRelease;
 use super::probe::HOOK_FILE;
 use super::profile_writer::FAILURES_FILE;
 use super::proxy_env;
+use moor_core::boxscript::profile::PLUGIN_SECS_FILE;
 
 /// Where the brief lands, relative to the Box workdir.
 const BRIEF_FILE: &str = ".moor/brief.md";
@@ -334,8 +335,14 @@ fn script_stripping(
         let all = quote(&format!("{}.all", failures.as_str()));
         let failures = quote(failures.as_str());
         lines.push(format!(": > {all}"));
+        let secs = BoxPath::under(workdir, PLUGIN_SECS_FILE)?;
+        lines.push(format!(": > {}", quote(secs.as_str())));
+        // Each writer's time is one line, which the watcher sums into the `plugins` step.
+        let secs = quote(secs.as_str());
         for w in writers {
+            lines.push("t0=$(date +%s)".to_owned());
             lines.push(w.step.clone());
+            lines.push(format!("printf '%s\\n' $(( $(date +%s) - t0 )) >> {secs}"));
             lines.push(format!("cat {failures} >> {all}"));
         }
         lines.push(format!("mv {all} {failures}"));

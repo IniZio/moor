@@ -182,3 +182,26 @@ fn each_setup_line_shows_when_it_starts_and_when_it_ends() {
         ]
     );
 }
+
+#[test]
+fn the_whole_start_steps_read_as_plain_words() {
+    let step = |name: &str, ms: u64, ok: bool| {
+        latest(&[event(
+            "step_finished",
+            json!({"step": name, "ms": ms, "ok": ok}),
+            0,
+        )])
+        .unwrap()
+    };
+    assert_eq!(step("acquire", 58_000, true), "machine acquired in 58s");
+    assert_eq!(step("proxy", 2_000, true), "proxy up in 2s");
+    assert_eq!(
+        step("clone_others", 9_000, true),
+        "other repos cloned in 9s"
+    );
+    assert_eq!(step("launch", 4_000, true), "agent launched in 4s");
+    assert_eq!(step("plugins", 21_000, true), "plugins installed in 21s");
+    assert_eq!(step("proxy", 30_000, false), "proxy failed after 30s");
+    let started = event("step_started", json!({"step": "acquire"}), 0);
+    assert_eq!(latest(&[started]).unwrap(), "acquiring the machine");
+}

@@ -197,7 +197,7 @@ the agent when they do not settle it.
 | Tool | What it shows |
 | --- | --- |
 | `box_status` | The lifecycle, the `status` line, `stuck`, the agent's newest message, the last five raw events, artifacts and Reports. |
-| `list_events` | Every event of your Boxes from an offset you keep, including `agent_stalled` and the egress and credential events. |
+| `list_events` | Every event of your Boxes from an offset you keep, including `agent_stalled` and the egress and credential events. A start's `step_finished` events carry `{step, ms, ok}` for `dotfiles`, `agent_install`, `profile`, `acquire`, `proxy`, `clone_others`, `launch` and `plugins`. |
 | `inspect_box` | The tail of the agent's terminal, the agent's recent messages, its state and `stuck`. |
 | Artifacts | What the agent published: screenshots, logs and files. |
 

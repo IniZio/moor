@@ -3,12 +3,13 @@
 use std::path::Path;
 use std::time::Duration;
 
-use moor_core::boxscript::profile::{fetch_script, setup_script, FAILURES_FILE};
+use moor_core::boxscript::profile::{fetch_script, setup_script, FAILURES_FILE, PLUGIN_SECS_FILE};
 use moor_core::config::BoxSettings;
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::event::{PostCloneStep, ProfileStep};
 use moor_core::name::BoxPath;
 use moor_core::seam::driver::ExecOutcome;
+use moor_core::seam::engine::SessionRef;
 use moor_core::{BoxHandle, BoxId, Warning};
 
 use crate::cx::Cx;
@@ -18,7 +19,7 @@ use crate::ops::common::agent_install;
 use crate::ops::common::box_exec::{BoxProxy, Site};
 use crate::ops::common::dotfiles::{private_log, tail};
 use crate::ops::common::setup::log_dir;
-use crate::ops::common::step::timed;
+use crate::ops::common::step::{timed, try_record, warn_unrecorded};
 use crate::store::box_profile::BoxProfile;
 use crate::store::{BoxRow, Store};
 
@@ -196,5 +197,46 @@ pub(crate) fn installs(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), Comma
     for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
         failed(cx, store, row.id, ProfileStep::Install, line.to_owned())?;
     }
+    record_plugin_time(cx, store, row, &session);
     Ok(())
+}
+
+/// Records the time the launch script spent in its profile writers as one `plugins` step, when it
+/// left any timings. The script writes them on the Box, so this is the only way to see them.
+fn record_plugin_time(cx: &Cx, store: &Store, row: &BoxRow, session: &SessionRef) {
+    let Ok(path) = BoxPath::under(session.workdir.as_str(), PLUGIN_SECS_FILE) else {
+        return;
+    };
+    let Ok(Some(text)) = cx.driver().peek_file(&session.handle, &path) else {
+        return;
+    };
+    let Some(ms) = plugin_ms(&text) else {
+        return;
+    };
+    let step = ExtraEvent::StepFinished {
+        step: PostCloneStep::Plugins,
+        ms,
+        ok: true,
+    };
+    if let Err(e) = try_record(store, row.id, step) {
+        warn_unrecorded(cx, &e);
+    }
+}
+
+/// The milliseconds the whole-second lines of `text` add up to; none when no line is a count.
+fn plugin_ms(text: &str) -> Option<u64> {
+    let secs: Vec<u64> = text.lines().filter_map(|l| l.trim().parse().ok()).collect();
+    (!secs.is_empty()).then(|| secs.iter().sum::<u64>().saturating_mul(1000))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::plugin_ms;
+
+    #[test]
+    fn two_markers_sum_to_one_time_and_noise_is_skipped() {
+        assert_eq!(plugin_ms("12\n9\n"), Some(21_000));
+        assert_eq!(plugin_ms("3\nnot a count\n\n4"), Some(7_000));
+        assert_eq!(plugin_ms(""), None);
+    }
 }

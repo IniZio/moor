@@ -7,6 +7,7 @@ use moor_core::boxscript::clone::{clone_script, Checkout, CloneStep};
 use moor_core::boxscript::refresh::{outcome, refresh_script};
 use moor_core::boxscript::resources;
 use moor_core::config::BoxSettings;
+use moor_core::domain::event::PostCloneStep;
 use moor_core::exec_env::Purpose;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Output;
@@ -25,6 +26,7 @@ use crate::ops::common::cache;
 use crate::ops::common::dotfiles;
 use crate::ops::common::identity::Identity;
 use crate::ops::common::proxy::TAIL_LINES;
+use crate::ops::common::step::timed_result;
 use crate::store::Store;
 
 /// What the clone exec reported about the Box.
@@ -84,13 +86,15 @@ pub(super) fn clone_with_proxy(
     let was_up = wants && matches!(cx.proxy_host().status(id), Ok(ProxyStatus::Ready { .. }));
     let proxy = wants
         .then(|| {
-            box_exec::proxy(
-                cx,
-                id,
-                Some(target.handle.clone()),
-                target.repo.map(|r| &r.repo),
-                cfg,
-            )
+            timed_result(cx, store, id, PostCloneStep::Proxy, || {
+                box_exec::proxy(
+                    cx,
+                    id,
+                    Some(target.handle.clone()),
+                    target.repo.map(|r| &r.repo),
+                    cfg,
+                )
+            })
         })
         .transpose();
     let job = Job::new(id, target, plan.as_ref());
@@ -99,7 +103,18 @@ pub(super) fn clone_with_proxy(
         _ if job.is_empty() => return Ok((Cloned::default(), proxy)),
         _ => clone(cx, target, cfg, &job, &proxy).and_then(|done| {
             let branch = plan.as_ref().map(|p| p.branch.as_str()).unwrap_or_default();
-            clone_others(cx, id, target, cfg, &proxy, branch).map(|()| done)
+            let others = target.repo.is_some_and(|r| !r.others.is_empty());
+            let cloned = |step| {
+                timed_result(cx, store, id, step, || {
+                    clone_others(cx, id, target, cfg, &proxy, branch)
+                })
+            };
+            if others {
+                cloned(PostCloneStep::CloneOthers)
+            } else {
+                clone_others(cx, id, target, cfg, &proxy, branch)
+            }
+            .map(|()| done)
         }),
     };
     match result {

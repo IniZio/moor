@@ -67,6 +67,7 @@ mod settle_busy;
 mod setup;
 mod setup_rerun;
 mod state;
+mod step_timing;
 mod transcript;
 mod user_mcp;
 mod workdir;
