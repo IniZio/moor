@@ -98,3 +98,32 @@ fn a_box_forking_a_checkpoint_keeps_it() {
     assert!(w.driver.calls().contains(&"fork ckpt-2".to_owned()));
     assert_eq!(deleted(&w), ["ckpt-1"]);
 }
+
+#[test]
+fn a_checkpoint_whose_delete_fails_stays_tracked_and_goes_later() {
+    let (w, _) = after_a_partial_setup(roomy());
+    close(&w, "first");
+    w.driver.set_free_mib(DISK_FLOOR_MIB - 15);
+    w.driver.set_deletes_fail(true);
+    let second = start(&w, "second", "def456", LINES);
+    let tried = deleted(&w);
+    let mut once = tried.clone();
+    once.dedup();
+    assert_eq!(tried, once, "each checkpoint is tried once per start");
+    assert!(tried.contains(&"ckpt-1".to_owned()), "{tried:?}");
+    assert!(events(&w, second, "checkpoint_evicted").is_empty());
+    let warned = w.cx.take_warnings();
+    assert!(
+        warned.iter().any(|x| x.code == "checkpoint_delete_failed"),
+        "{warned:?}"
+    );
+    close(&w, "second");
+    w.driver.set_deletes_fail(false);
+    w.driver.set_free_mib(DISK_FLOOR_MIB - 15);
+    let third = start(&w, "third", "fed789", LINES);
+    let told = events(&w, third, "checkpoint_evicted");
+    assert!(
+        told.iter().any(|e| e["checkpoint"] == "ckpt-1"),
+        "the checkpoint left on the disk is still tracked and goes once it can: {told:?}"
+    );
+}
