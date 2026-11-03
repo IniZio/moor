@@ -81,17 +81,36 @@ fn r_on_a_closed_box_says_so_and_offers_nothing() {
     );
 }
 
+/// The card of setup-failed Box `fix`, failing as `why` says.
+fn failed_card(why: Option<&str>) -> Card {
+    Card::SetupFailed {
+        name: "fix".into(),
+        why: why.map(str::to_owned),
+    }
+}
+
+#[test]
+fn a_setup_failed_card_names_the_line_that_failed() {
+    assert_eq!(
+        failed_card(Some("setup failed: make deps"))
+            .lines("◈ app/fix")
+            .get(2)
+            .map(String::as_str),
+        Some("setup failed: make deps · close it in the Boxes panel or run moor retry fix")
+    );
+}
+
 #[test]
 fn a_setup_failed_box_says_so_and_points_at_close_or_retry() {
     for key in *b"rR\r" {
         assert_eq!(
-            Card::SetupFailed("fix".into()).key(key),
+            failed_card(None).key(key),
             Choice::Note("setup failed: close it or run moor retry")
         );
     }
-    assert!(!Card::SetupFailed("fix".into()).reattaches());
+    assert!(!failed_card(None).reattaches());
     assert_eq!(
-        Card::SetupFailed("fix".into())
+        failed_card(None)
             .lines("◈ app/fix")
             .get(2)
             .map(String::as_str),
@@ -103,7 +122,7 @@ fn a_setup_failed_box_says_so_and_points_at_close_or_retry() {
 fn a_setup_failed_phase_makes_the_setup_failed_card() {
     assert_eq!(
         Card::after(&Ended::Skipped, Some(&shown(Phase::SetupFailed)), None),
-        Card::SetupFailed("fix".into())
+        failed_card(None)
     );
 }
 
