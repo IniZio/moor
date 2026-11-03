@@ -973,6 +973,17 @@ three reasons:
 
 After the last client leaves, the agent's window returns to 200x50.
 
+### The agent's status in its terminal
+
+A Claude Code agent prints its status to its own terminal as a Program Status
+Protocol sequence, so any terminal runtime that understands it shows the state
+with no moor-specific client. The form is `ESC ] 7501 ; state=<state>:app=claude ESC \`,
+where `<state>` is `working`, `idle`, `done`, `blocked:kind=permission` or
+`blocked:kind=question`. Each state prints once, when it changes, and `done`
+prints when the agent exits. Inside tmux the sequence goes out in a tmux
+passthrough wrapper, and the agent's session turns `allow-passthrough` on, which
+needs tmux 3.3 or later.
+
 ## Secrets a Box uses
 
 Each Proxy rule names the secret it injects. A Box's Proxy injects the

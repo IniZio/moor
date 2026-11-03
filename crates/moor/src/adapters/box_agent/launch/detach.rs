@@ -39,6 +39,7 @@ fn start(exit_file: &str, script: &str) -> String {
          tmux new-session -d -s {SESSION} {WINDOW} {} || exit 1; \
          tmux set-option -t {SESSION} status off >/dev/null; \
          tmux set-option -t {SESSION} prefix None >/dev/null; \
+         tmux set-option -t {SESSION} allow-passthrough on >/dev/null 2>&1; \
          tmux set-option -s escape-time 0 >/dev/null; {}",
         quote(&inner),
         attach(exit_file),

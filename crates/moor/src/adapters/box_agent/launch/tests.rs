@@ -196,6 +196,7 @@ fn the_script_cleans_up_installs_the_brief_and_starts_the_agent() {
         &format!("export TMPDIR='{TMP}' CLAUDE_CODE_TMPDIR='{TMP}'"),
         &format!("install -m 600 '{CRED}/brief.md' '/work/box-1/.moor/brief.md'"),
         r#""state":"starting","event":"Launch""#,
+        "export MOOR_AGENT_TTY; rm -f '/work/box-1/.moor/status-osc'",
         "> '/work/box-1/.moor/agent-state.json'",
         "settings.json",
         ".claude.json",
@@ -445,3 +446,31 @@ mod profile_tests;
 mod proxy_launch_tests;
 mod scratch_run;
 mod secret_tests;
+
+#[test]
+fn the_script_exports_an_empty_terminal_without_one_and_reports_the_exit() {
+    let (d, _, out) = launch(FakeDriver::new(), FakeSurface::new());
+    out.unwrap();
+    let line = script_of(&d)
+        .lines()
+        .find(|l| l.starts_with("MOOR_AGENT_TTY="))
+        .unwrap()
+        .to_owned();
+    let run = |stdin: Stdio| {
+        let script = format!("{line}\nprintf %s \"$MOOR_AGENT_TTY\"");
+        let out = Command::new("sh")
+            .args(["-c", &script])
+            .stdin(stdin)
+            .output()
+            .unwrap();
+        String::from_utf8(out.stdout).unwrap()
+    };
+    assert_eq!(run(Stdio::null()), "");
+    let script = script_of(&d);
+    assert!(
+        script.ends_with(
+            "moor_rc=$?\nsh '/work/box-1/.moor/hook.sh' done SessionEnd </dev/null\nexit $moor_rc"
+        ),
+        "{script}"
+    );
+}

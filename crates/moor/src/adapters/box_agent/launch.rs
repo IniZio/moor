@@ -22,6 +22,9 @@ use moor_core::boxscript::profile::PLUGIN_SECS_FILE;
 
 /// Where the brief lands, relative to the Box workdir.
 const BRIEF_FILE: &str = ".moor/brief.md";
+/// Where the hook script remembers the last status it printed to the terminal, relative to the
+/// Box workdir; a launch clears it so the first status of the new run prints.
+const STATUS_OSC_FILE: &str = ".moor/status-osc";
 /// The agent script, in the credential directory, which the script removes once it runs.
 const SCRIPT_FILE: &str = "agent.sh";
 /// Time allowed for removing the credential directory.
@@ -311,6 +314,10 @@ fn script_stripping(
             quote(nonce)
         ),
         format!("{} || exit 1", hooks.step),
+        format!(
+            "MOOR_AGENT_TTY=$(tty 2>/dev/null); case $MOOR_AGENT_TTY in /dev/*) ;; *) MOOR_AGENT_TTY= ;; esac; export MOOR_AGENT_TTY; rm -f {}",
+            quote(BoxPath::under(workdir, STATUS_OSC_FILE)?.as_str())
+        ),
         preseed.step.clone(),
         AGENT_PATH_LINE.to_owned(),
         format!("export TMPDIR={tmp} CLAUDE_CODE_TMPDIR={tmp}"),
@@ -348,6 +355,15 @@ fn script_stripping(
         lines.push(format!("mv {all} {failures}"));
     }
     lines.push(format!("cd {} && {}", quote(workdir), command_line(&agent)));
+    if let Some(hook) = hooks.files.first() {
+        // The agent has no end-of-run hook that fires on every exit, so the script reports it.
+        lines.push("moor_rc=$?".to_owned());
+        lines.push(format!(
+            "sh {} done SessionEnd </dev/null",
+            quote(hook.path.as_str())
+        ));
+        lines.push("exit $moor_rc".to_owned());
+    }
     Ok(lines.join("\n"))
 }
 
