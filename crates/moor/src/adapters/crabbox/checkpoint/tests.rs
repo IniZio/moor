@@ -24,19 +24,22 @@ fn fail() -> Reply {
     }
 }
 
+/// What crabbox prints for a checkpoint it made.
+const CREATED: &str = r#"{"captureEstablished":true,"id":"chk_61359ad7f939edd9","name":"after-clone","kind":"external-snapshot","createdAt":"2026-11-03T04:43:14Z","lastUsedAt":"2026-11-03T04:43:14Z","provider":"external","leaseId":"cbx_c1cc0166642e","slug":"base","workdir":"/w/my-app","native":{"provider":"external","imageId":"chk_1","kind":"external-snapshot","name":"after-clone","state":"available","bytes":4096,"direct":true}}"#;
+
+/// What crabbox prints for the lease it forked.
+const FORKED: &str = r#"{"checkpointId":"chk_1","leaseId":"cbx_1b06599bda9e","slug":"moor-7-ab12cd","provider":"external","workdir":"/w/my-app"}"#;
+
 #[test]
 fn a_checkpoint_names_the_lease_and_layer_and_reads_the_id_and_size() {
-    let (p, c) = driver(
-        "create",
-        Reply::Ok(r#"{"id":"cp-9","bytes":42}"#.to_owned()),
-    );
+    let (p, c) = driver("create", Reply::Ok(CREATED.to_owned()));
     let handle = BoxHandle::new("local/moor-7-ab12cd");
     let got = c.checkpoint(&handle, "k1").unwrap();
     assert_eq!(
         got,
         Checkpoint {
-            id: "cp-9".to_owned(),
-            bytes: Some(42)
+            id: "chk_61359ad7f939edd9".to_owned(),
+            bytes: Some(4096)
         }
     );
     let call = p.calls().pop().unwrap();
@@ -67,7 +70,7 @@ fn a_numeric_id_is_read_and_a_missing_one_is_unreadable() {
     let handle = BoxHandle::new("local/moor-7-ab12cd");
     let (_, c) = driver("create", Reply::Ok(r#"{"id":12}"#.to_owned()));
     assert_eq!(c.checkpoint(&handle, "k").unwrap().id, "12");
-    let (_, c) = driver("create", Reply::Ok(r#"{"bytes":1}"#.to_owned()));
+    let (_, c) = driver("create", Reply::Ok(r#"{"native":{"bytes":1}}"#.to_owned()));
     assert!(matches!(
         c.checkpoint(&handle, "k"),
         Err(DriverError::Failed { .. })
@@ -76,7 +79,7 @@ fn a_numeric_id_is_read_and_a_missing_one_is_unreadable() {
 
 #[test]
 fn a_fork_starts_the_lease_moor_planned_from_its_own_dir() {
-    let (p, c) = driver("fork", Reply::Ok(r#"{"slug":"moor-7-ab12cd"}"#.to_owned()));
+    let (p, c) = driver("fork", Reply::Ok(FORKED.to_owned()));
     let r = req("local", None);
     let got = c.fork("cp-9", &r).unwrap();
     assert_eq!(got, c.planned_handle(&r));
@@ -97,7 +100,16 @@ fn a_fork_starts_the_lease_moor_planned_from_its_own_dir() {
 
 #[test]
 fn a_fork_under_another_slug_or_a_failed_one_releases_what_it_started() {
-    for reply in [Reply::Ok(r#"{"slug":"other"}"#.to_owned()), fail()] {
+    let not_found = Reply::Fail {
+        code: 1,
+        stdout: String::new(),
+        stderr: "checkpoint not found".to_owned(),
+    };
+    for reply in [
+        Reply::Ok(r#"{"slug":"other"}"#.to_owned()),
+        fail(),
+        not_found,
+    ] {
         let (p, c) = driver("fork", reply);
         assert!(c.fork("cp-9", &req("local", None)).is_err());
         let stops = p
