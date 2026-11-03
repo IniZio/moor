@@ -52,6 +52,17 @@ pub(crate) enum StoreError {
         /// The running controller's socket, as its lock file records it.
         socket: String,
     },
+    /// `MOOR_DATABASE_URL` does not name a database moor can open.
+    #[error("MOOR_DATABASE_URL: {0}")]
+    Url(String),
+    /// The Postgres database did not answer when the store opened.
+    #[error("cannot reach the store database {at}: {source}")]
+    Unreachable {
+        /// The database, without its password.
+        at: String,
+        /// Why the connection failed.
+        source: crate::store::db::Error,
+    },
     /// A box input or box input was illegal in the current state.
     #[error("{0}")]
     Illegal(#[from] moor_core::domain::Illegal),

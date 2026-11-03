@@ -20,7 +20,7 @@ mod postgres;
 use params::owned;
 pub(crate) use params::Params;
 
-pub(crate) use postgres::PgConn;
+pub(crate) use postgres::{target::Target, PgConn};
 
 /// Why a database operation failed.
 #[derive(Debug, thiserror::Error)]
@@ -29,7 +29,7 @@ pub(crate) enum Error {
     #[error("sqlite: {0}")]
     Sqlite(#[from] rusqlite::Error),
     /// Postgres failed.
-    #[error("postgres: {0}")]
+    #[error("postgres: {e}{cause}", e = .0, cause = std::error::Error::source(.0).map(|c| format!(": {c}")).unwrap_or_default())]
     Postgres(#[from] ::postgres::Error),
 }
 

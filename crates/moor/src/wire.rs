@@ -42,7 +42,7 @@ use crate::proxy::adopt;
 use crate::proxy::detached::DetachedSupervisor;
 use crate::proxy::nono::capture::SecretsFn;
 use crate::proxy::{serve, Deps, Sink};
-use crate::store::{Store, STORE_FILE};
+use crate::store::Store;
 
 /// Host variables herdr needs to find its socket and terminal.
 const HERDR_PASSTHROUGH: [&str; 5] = [
@@ -119,8 +119,20 @@ pub(crate) fn open_store(env: Env) -> Result<Env, CommandError> {
         return Ok(env);
     };
     let clock = SystemClock::from_env(&env).map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
-    let store = Store::open(&state_dir.join(STORE_FILE), Arc::new(clock))?;
+    let store = Store::open_in(&state_dir, env.database_url(), Arc::new(clock))?;
     Ok(env.sharing(store))
+}
+
+/// Opens the store `env` names, which migrates it, for a deploy step that migrates before any
+/// controller starts; the line to print, or why it failed.
+pub fn migrate_store(env: &Env) -> Result<String, String> {
+    let state_dir = env
+        .state_dir()
+        .ok_or("no state directory: set MOOR_STATE_DIR, XDG_STATE_HOME or HOME")?;
+    let clock = SystemClock::from_env(env).map_err(|e| e.to_string())?;
+    let store = Store::open_in(&state_dir, env.database_url(), Arc::new(clock))
+        .map_err(|e| e.to_string())?;
+    Ok(format!("migrated the store in {}", store.location()))
 }
 
 /// Ends every front Proxy lease in the store.
@@ -186,6 +198,7 @@ fn proxy_host(
 ) -> Arc<DetachedSupervisor> {
     Arc::new(
         DetachedSupervisor::new(Arc::clone(proc), clock, Arc::clone(rng), state_dir)
+            .in_database(env.database_url())
             .sharing(env.shared::<Store>().cloned()),
     )
 }

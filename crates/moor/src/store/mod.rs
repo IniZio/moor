@@ -283,6 +283,7 @@ impl Store {
     /// Lock the writer connection. A thread that panicked while holding it left at worst an
     /// open transaction, which rusqlite rolled back during unwind, so the connection is sound.
     pub(super) fn writer(&self) -> MutexGuard<'_, Conn> {
+        source::debug_assert_off_runtime();
         self.writer.lock().unwrap_or_else(PoisonError::into_inner)
     }
 

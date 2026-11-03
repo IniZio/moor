@@ -14,8 +14,9 @@ use moor_core::seam::proxy_host::{
 use moor_core::seam::rng::Rng;
 use moor_core::BoxId;
 
+use crate::env::DATABASE_URL;
 use crate::proxy::nono::ca::load_or_create;
-use crate::store::{ProxyRow, Reserve, Store, StoreError, STORE_FILE};
+use crate::store::{ProxyRow, Reserve, Store, StoreError};
 
 pub(crate) use super::supervisor::LEASE;
 pub(crate) use spec::{read_spec, write_spec};
@@ -50,6 +51,8 @@ pub(crate) struct DetachedSupervisor {
     rng: Arc<dyn Rng>,
     /// The state directory, when one could be resolved.
     state_dir: Option<PathBuf>,
+    /// The Postgres database the store lives in, else the state dir's `moor.db`.
+    database_url: Option<String>,
     /// The state store, opened on first use.
     store: OnceLock<Store>,
 }
@@ -67,8 +70,16 @@ impl DetachedSupervisor {
             clock,
             rng,
             state_dir,
+            database_url: None,
             store: OnceLock::new(),
         }
+    }
+
+    /// This host opening the store in the Postgres database `url`, when there is one.
+    #[must_use]
+    pub(crate) fn in_database(mut self, url: Option<&str>) -> Self {
+        self.database_url = url.map(str::to_owned);
+        self
     }
 
     /// This host using `store` instead of opening its own.
@@ -91,7 +102,7 @@ impl DetachedSupervisor {
                 "no state directory: set MOOR_STATE_DIR, XDG_STATE_HOME or HOME",
             ))
         })?;
-        let store = Store::open(&dir.join(STORE_FILE), Arc::clone(&self.clock))?;
+        let store = Store::open_in(dir, self.database_url.as_deref(), Arc::clone(&self.clock))?;
         Ok(self.store.get_or_init(|| store))
     }
 
@@ -218,10 +229,13 @@ impl ProxyHost for DetachedSupervisor {
             .map_err(|e| store_failed(&e, &log))?;
         let pid = match reserved {
             Reserve::Reserved(_) => {
-                let spec = ProcSpec::new(Tool::MoorSelf, Deadline(WAIT))
+                let mut spec = ProcSpec::new(Tool::MoorSelf, Deadline(WAIT))
                     .args(["proxy", "serve", &box_id.get().to_string()])
                     // The controller may run on a state dir its own config chose.
                     .env("MOOR_STATE_DIR", state.to_string_lossy());
+                if let Some(url) = store.database_url() {
+                    spec = spec.env(DATABASE_URL, url);
+                }
                 let pid = self.proc.spawn_daemon(&spec, &log).map_err(|e| {
                     fail(&format!("the proxy supervisor could not start: {e}"), &log)
                 })?;

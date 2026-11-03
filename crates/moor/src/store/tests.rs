@@ -23,6 +23,7 @@ use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 use crate::store::db::{DbExt as _, TransactionBehavior};
 use crate::testing::clock::FakeClock;
 
+mod connections;
 mod controller_id;
 mod events_after;
 mod events_of;

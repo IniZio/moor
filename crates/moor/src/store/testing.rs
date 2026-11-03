@@ -10,7 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use moor_core::seam::clock::Clock;
 use postgres::{Client, NoTls};
 
-use super::db::{Conn, PgConn};
+use super::db::{Conn, PgConn, Target};
 use super::Store;
 
 /// The variable naming the Postgres database store tests run on.
@@ -35,29 +35,40 @@ macro_rules! sqlite_only {
 }
 pub(crate) use sqlite_only;
 
+/// Skip the rest of the calling test unless store tests run on Postgres, printing why.
+macro_rules! postgres_only {
+    ($why:literal) => {
+        if !$crate::store::testing::on_postgres() {
+            eprintln!("skipped on SQLite: {}", $why);
+            return;
+        }
+    };
+}
+pub(crate) use postgres_only;
+
 /// A store for a test: the `SQLite` file `path`, or on Postgres the schema for `path`, with
 /// `path`'s directory as its state dir.
 pub(crate) fn open_store(path: &Path, clock: Arc<dyn Clock>) -> Store {
-    let Some(config) = postgres_config(path) else {
+    let Some(target) = postgres_target(path) else {
         return Store::open(path, clock).unwrap();
     };
     let state_dir = path.parent().unwrap_or(path);
     std::fs::create_dir_all(state_dir).unwrap();
-    Store::open_postgres(config, state_dir, clock).unwrap()
+    Store::open_postgres(target, state_dir, clock).unwrap()
 }
 
 /// A second connection to the store [`open_store`] opened at `path`, beside the store's own.
 pub(crate) fn open_conn(path: &Path) -> Conn {
-    let Some(config) = postgres_config(path) else {
+    let Some(target) = postgres_target(path) else {
         return Conn::sqlite(rusqlite::Connection::open(path).unwrap());
     };
-    Conn::Postgres(Box::new(PgConn::new(config.connect(NoTls).unwrap())))
+    Conn::Postgres(Box::new(PgConn::connect(Arc::new(target)).unwrap()))
 }
 
-/// On Postgres, the connection config whose search path is the schema standing for `path`.
-fn postgres_config(path: &Path) -> Option<postgres::Config> {
+/// On Postgres, the database whose search path is the schema standing for `path`.
+fn postgres_target(path: &Path) -> Option<Target> {
     let url = std::env::var(POSTGRES_URL).ok()?;
-    let mut config: postgres::Config = url.parse().unwrap();
+    let config: postgres::Config = url.parse().unwrap();
     let mut admin = config.connect(NoTls).unwrap();
     #[expect(
         clippy::disallowed_methods,
@@ -69,8 +80,8 @@ fn postgres_config(path: &Path) -> Option<postgres::Config> {
         .as_secs();
     let name = schema_for(&mut admin, path, now);
     sweep(&mut admin, now);
-    config.options(format!("-c search_path={name}").as_str());
-    Some(config)
+    let sep = if url.contains('?') { '&' } else { '?' };
+    Some(Target::parse(&format!("{url}{sep}options=-c%20search_path%3D{name}")).unwrap())
 }
 
 /// The schema standing for `path`, made now if no test has made it yet.

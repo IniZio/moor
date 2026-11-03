@@ -10,6 +10,10 @@ use std::sync::Arc;
 /// File name, inside the state directory, of the lock that a running controller holds.
 pub(crate) const CONTROLLER_LOCK: &str = "controller.lock";
 
+/// The variable naming the Postgres database the store lives in, in place of the state dir's
+/// `moor.db`.
+pub(crate) const DATABASE_URL: &str = "MOOR_DATABASE_URL";
+
 /// Snapshot of environment variables.
 #[derive(Clone, Default)]
 pub struct Env {
@@ -176,6 +180,11 @@ impl Env {
     /// The stop flag of the request this environment serves.
     pub(crate) const fn cancel(&self) -> &Cancel {
         &self.cancel
+    }
+
+    /// The Postgres URL the store lives in, when set and non-empty.
+    pub(crate) fn database_url(&self) -> Option<&str> {
+        self.non_empty(DATABASE_URL)
     }
 
     /// Resolved state directory, or `None` when no source is set.

@@ -290,6 +290,7 @@ controller.
 | `moor call` | Reads one JSON request from stdin and runs it. The output is always a JSON envelope. |
 | `moor controller serve --config FILE` | Runs the controller. See [the controller config](config.md#controller-config). |
 | `moor controller attach` | Connects stdin and stdout to the controller socket. `--socket PATH` overrides the socket. |
+| `moor store migrate` | Brings the state store to this moor's latest migration and exits. See [The store database](config.md#the-store-database). |
 
 A `moor call` request names the command in `cmd`, in kebab case:
 

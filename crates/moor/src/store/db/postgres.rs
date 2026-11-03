@@ -2,9 +2,10 @@
 //! the type Postgres infers for its parameter, and each column read back as a `SQLite` storage
 //! class, so callers' `ToSql` and `FromSql` conversions behave as they do on `SQLite`.
 
-use std::cell::RefCell;
+use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
 use std::error::Error as StdError;
+use std::sync::Arc;
 
 use bytes::BytesMut;
 use postgres::types::{to_sql_checked, FromSql, IsNull, ToSql, Type};
@@ -12,6 +13,7 @@ use postgres::{Client, GenericClient, Statement, Transaction};
 use rusqlite::types::Value;
 
 use super::{Result, Rows};
+use target::Target;
 
 /// A conversion's failure, as `postgres-types` carries it.
 type Boxed = Box<dyn StdError + Sync + Send>;
@@ -20,8 +22,12 @@ type Boxed = Box<dyn StdError + Sync + Send>;
 /// database never wait on each other.
 const IMMEDIATE_LOCK: &str = "SELECT pg_advisory_xact_lock(hashtext(current_schema()), 1)";
 
-/// A Postgres connection and the statements it has prepared, by their `SQLite` text.
+/// A Postgres connection and the statements it has prepared, by their `SQLite` text. A call
+/// on a connection that closed, as when the server restarted, connects again first; the call
+/// that found it closed failed and is not run again.
 pub(crate) struct PgConn {
+    /// Where it connects.
+    target: Arc<Target>,
     /// The connection.
     client: RefCell<Client>,
     /// Prepared statements, reused for the connection's life.
@@ -37,17 +43,35 @@ pub(crate) struct PgTx<'c> {
 }
 
 impl PgConn {
-    /// Wrap the open connection `client`.
-    pub(crate) fn new(client: Client) -> Self {
-        Self {
-            client: RefCell::new(client),
+    /// A new connection to `target`.
+    pub(crate) fn connect(target: Arc<Target>) -> Result<Self> {
+        Ok(Self {
+            client: RefCell::new(target.connect()?),
+            target,
             prepared: RefCell::default(),
+        })
+    }
+
+    /// Whether the connection has closed.
+    pub(crate) fn is_closed(&self) -> bool {
+        self.client.borrow().is_closed()
+    }
+
+    /// The connection, made again first when it has closed.
+    fn client(&self) -> Result<RefMut<'_, Client>> {
+        if self.is_closed() {
+            *self.client.borrow_mut() = self.target.connect()?;
+            self.prepared.borrow_mut().clear();
         }
+        Ok(self.client.borrow_mut())
     }
 
     /// Begin a transaction; an `immediate` one first takes the store's advisory lock.
     pub(super) fn transaction(&mut self, immediate: bool) -> Result<PgTx<'_>> {
-        let Self { client, prepared } = self;
+        drop(self.client()?);
+        let Self {
+            client, prepared, ..
+        } = self;
         let mut tx = client.get_mut().transaction()?;
         if immediate {
             tx.batch_execute(IMMEDIATE_LOCK)?;
@@ -60,18 +84,18 @@ impl PgConn {
 
     /// Run `sql` with `params`; the rows it changed.
     pub(super) fn execute(&self, sql: &str, params: &[Value]) -> Result<usize> {
-        execute(&mut *self.client.borrow_mut(), &self.prepared, sql, params)
+        execute(&mut *self.client()?, &self.prepared, sql, params)
     }
 
     /// Query `sql` with `params`; every row.
     pub(super) fn query(&self, sql: &str, params: &[Value]) -> Result<Rows> {
-        query(&mut *self.client.borrow_mut(), &self.prepared, sql, params)
+        query(&mut *self.client()?, &self.prepared, sql, params)
     }
 
     /// Run several statements that bind nothing.
     #[cfg(test)]
     pub(super) fn execute_batch(&self, sql: &str) -> Result<()> {
-        Ok(self.client.borrow_mut().batch_execute(sql)?)
+        Ok(self.client()?.batch_execute(sql)?)
     }
 }
 
@@ -293,5 +317,6 @@ fn numeric(raw: &[u8]) -> std::result::Result<Value, Boxed> {
     })
 }
 
+pub(super) mod target;
 #[cfg(test)]
 mod tests;
