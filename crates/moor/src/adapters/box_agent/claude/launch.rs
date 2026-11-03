@@ -33,10 +33,31 @@ WebFetch|WebSearch|Agent|TodoWrite|KillShell|SlashCommand|Skill|mcp__.*";
 /// not end with that block has not caught up, and the payload's text stands.
 /// A question tool's record keeps its questions, and no Notification replaces it: Claude Code
 /// follows the question with a generic permission notice that names nothing it asked.
+/// Each state change is also printed to `MOOR_AGENT_TTY` as an OSC 7501 sequence, once per change:
+/// `osc` holds the one mapping from hook state to terminal state. The launch script runs it with
+/// `done SessionEnd` when the agent exits, which prints without touching the record. Inside tmux
+/// the sequence travels in a passthrough wrapper.
 /// A busy record keeps the tool's name and, cut short, the input fields the `doing` line
 /// reads; never the tool's output or any other input.
 const HOOK_SCRIPT: &str = r#"#!/bin/sh
 d=${0%/*}
+osc() {
+  [ -n "$MOOR_AGENT_TTY" ] && [ -w "$MOOR_AGENT_TTY" ] || return 0
+  case $1:$2 in
+    waiting_input:PreToolUse) s=blocked:kind=question ;;
+    waiting_input:*) s=blocked:kind=permission ;;
+    working:*|idle:*|done:*) s=$1 ;;
+    *) return 0 ;;
+  esac
+  [ "$(cat "$d/status-osc" 2>/dev/null)" = "$s" ] && return 0
+  printf %s "$s" > "$d/status-osc" 2>/dev/null
+  if [ -n "$TMUX" ]; then
+    printf '\033Ptmux;\033\033]7501;state=%s:app=claude\033\033\\\033\\' "$s"
+  else
+    printf '\033]7501;state=%s:app=claude\033\\' "$s"
+  fi >> "$MOOR_AGENT_TTY" 2>/dev/null || :
+}
+if [ "$2" = SessionEnd ]; then osc "$1" "$2"; exit 0; fi
 in=
 if command -v timeout >/dev/null 2>&1; then in=$(timeout 2 head -c 65536 2>/dev/null); fi
 if [ "$2" = Notification ] && grep -q '"state": *"waiting_input", *"event": *"PreToolUse"' "$d/agent-state.json" 2>/dev/null; then exit 0; fi
@@ -173,6 +194,7 @@ else
   else turn=$(sed -n 's/.*"turn": *\([0-9][0-9]*\).*/\1/p' "$d/agent-state.json" 2>/dev/null); fi
   printf '{"state":"%s","event":"%s","ts":%s,"turn":%s}\n' "$1" "$2" "$ts" "${turn:-null}"
 fi > "$t" 2>/dev/null && mv -f "$t" "$d/agent-state.json" || rm -f "$t"
+osc "$1" "$2"
 exit 0
 "#;
 
