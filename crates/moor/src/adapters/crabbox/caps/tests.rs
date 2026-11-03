@@ -165,14 +165,19 @@ fn cache_volumes_come_only_from_the_cache_volume_feature() {
 }
 
 #[test]
-fn checkpoints_come_only_from_the_checkpoints_token() {
-    let mut features = EXTERNAL_BASE.to_vec();
-    features.push("checkpoints");
+fn checkpoints_need_both_the_checkpoint_and_fork_tokens() {
     let id = ProviderId::new("external");
-    let on = caps_from(&external_json(&features, &["cleanup"]), &id);
-    assert!(on.unwrap().checkpoints);
-    let off = caps_from(&external_json(&EXTERNAL_BASE, &["cleanup"]), &id);
-    assert!(!off.unwrap().checkpoints);
+    let with = |extra: &[&'static str]| {
+        let mut features = EXTERNAL_BASE.to_vec();
+        features.extend_from_slice(extra);
+        caps_from(&external_json(&features, &["cleanup"]), &id)
+            .unwrap()
+            .checkpoints
+    };
+    assert!(with(&["workspace-checkpoint", "workspace-fork"]));
+    assert!(!with(&["workspace-checkpoint"]));
+    assert!(!with(&["workspace-fork"]));
+    assert!(!with(&[]));
 }
 
 fn driver() -> (Arc<ScriptedProc>, Crabbox) {
