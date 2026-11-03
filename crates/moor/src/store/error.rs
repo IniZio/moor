@@ -16,18 +16,17 @@ pub(crate) enum StoreError {
     /// The state directory or a database file could not be prepared.
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
-    /// The file predates migrations at a version this build cannot adopt; it is left as found.
+    /// The file is from an older moor at a schema this build cannot adopt; it is left as found.
     #[error(
-        "the state database {} has schema version `{found}` and this moor adopts only `{}`; \
+        "the state database {} is at {found}, older than this moor adopts; \
          use a fresh state dir: set MOOR_STATE_DIR to a new directory, or move the old one away \
          (moor does not delete it)",
-        db.display(),
-        super::init::BASELINE_VERSION
+        db.display()
     )]
     Schema {
         /// The database file.
         db: PathBuf,
-        /// Version found in `meta`.
+        /// The schema it is at: a `meta` version, or the last migration it records.
         found: String,
     },
     /// The file has migrations this build does not know, or an applied one changed.

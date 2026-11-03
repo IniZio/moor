@@ -4,7 +4,6 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use moor_migrate::Legacy;
 use moor_testkit::ChildGuard;
 use rusqlite::Connection;
 
@@ -46,48 +45,23 @@ impl Drop for Holder {
     }
 }
 
-/// Every migration this build carries, oldest first, as `(file name, sql)`.
-fn migration_files() -> Vec<(String, String)> {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
-    let mut files: Vec<(u32, String, String)> = std::fs::read_dir(dir)
-        .unwrap()
-        .map(|e| {
-            let path = e.unwrap().path();
-            let name = path.file_name().unwrap().to_str().unwrap().to_owned();
-            let (version, _) = name.strip_prefix('V').unwrap().split_once("__").unwrap();
-            let version = version.parse().unwrap();
-            (version, name, std::fs::read_to_string(&path).unwrap())
-        })
-        .collect();
-    files.sort_by_key(|(v, _, _)| *v);
-    files.into_iter().map(|(_, n, s)| (n, s)).collect()
-}
-
-/// Writes a store one migration behind this build; returns that migration and the latest.
-fn store_one_behind(state: &Path) -> (i64, i64) {
-    let files = migration_files();
-    let (_, older) = files.split_last().unwrap();
-    let older: Vec<(&str, &str)> = older
-        .iter()
-        .map(|(n, s)| (n.as_str(), s.as_str()))
-        .collect();
-    let set = moor_migrate::migrations(&older).unwrap();
-    let mut conn = Connection::open(state.join(DB)).unwrap();
-    moor_migrate::migrate(&mut conn, &set, |_| Ok(Legacy::Empty)).unwrap();
-    let behind = applied(state);
-    (behind, behind + 1)
-}
-
-/// The highest migration recorded in the state dir's store.
-fn applied(state: &Path) -> i64 {
+/// Writes a store no migration has run on yet, so the first open migrates it.
+fn store_behind(state: &Path) {
     Connection::open(state.join(DB))
         .unwrap()
-        .query_row(
-            "SELECT max(version) FROM refinery_schema_history",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap()
+        .execute_batch("PRAGMA user_version = 0")
+        .unwrap();
+}
+
+/// The highest migration recorded in the state dir's store, none before the first.
+fn applied(state: &Path) -> Option<i64> {
+    let conn = Connection::open(state.join(DB)).unwrap();
+    conn.query_row(
+        "SELECT max(version) FROM refinery_schema_history",
+        [],
+        |r| r.get(0),
+    )
+    .ok()
 }
 
 /// `moor show` run in-process on `state`, with no controller named.
@@ -112,7 +86,7 @@ fn show(state: &Path) -> Run {
 #[test]
 fn a_command_does_not_migrate_a_store_a_running_controller_owns() {
     let state = fresh_dir("state");
-    let (behind, _) = store_one_behind(&state);
+    store_behind(&state);
     let _controller = Holder::lock(&state.join("controller.lock"));
 
     let r = show(&state);
@@ -120,16 +94,16 @@ fn a_command_does_not_migrate_a_store_a_running_controller_owns() {
     assert_ne!(r.code, 0, "stdout={:?} stderr={:?}", r.stdout, r.stderr);
     let said = format!("{}{}", r.stdout, r.stderr);
     assert!(said.contains("MOOR_CONTROLLER"), "{said}");
-    assert_eq!(applied(&state), behind);
+    assert_eq!(applied(&state), None, "left unmigrated");
 }
 
 #[test]
 fn a_command_migrates_a_store_no_controller_owns() {
     let state = fresh_dir("state");
-    let (_, latest) = store_one_behind(&state);
+    store_behind(&state);
 
     let r = show(&state);
 
     assert_eq!(r.code, 0, "stdout={:?} stderr={:?}", r.stdout, r.stderr);
-    assert_eq!(applied(&state), latest);
+    assert!(applied(&state).is_some(), "migrated");
 }

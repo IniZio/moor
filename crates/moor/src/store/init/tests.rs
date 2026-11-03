@@ -149,68 +149,6 @@ fn fresh_store() -> Connection {
 }
 
 #[test]
-fn a_file_at_migration_22_drops_the_machine_kind_and_keeps_its_machines() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("moor.db");
-    let mut conn = Connection::open(&path).unwrap();
-    let all = super::schema().unwrap();
-    let up_to_22 = all.get(..22).unwrap();
-    moor_migrate::migrate(&mut conn, up_to_22, |_| Ok(moor_migrate::Legacy::Empty)).unwrap();
-    conn.execute_batch(
-        "INSERT INTO users (id, created_at) VALUES (1, 1);
-         INSERT INTO user_machines_v2 (user, name, pubkey, labels, capacity, enrolled_at) \
-         VALUES (1, 'hv', 'k', '[]', 2, 1);",
-    )
-    .unwrap();
-    init_schema(&mut conn, &path).unwrap();
-    let columns = |table: &str| -> Vec<String> {
-        let mut stmt = conn
-            .prepare("SELECT name FROM pragma_table_info(?) ORDER BY cid")
-            .unwrap();
-        let rows = stmt.query_map([table], |r| r.get(0)).unwrap();
-        rows.map(Result::unwrap).collect()
-    };
-    let cols = columns("user_machines_v2");
-    assert!(cols.contains(&"pool_provider".to_owned()), "{cols:?}");
-    assert!(!cols.contains(&"kind".to_owned()), "{cols:?}");
-    assert!(!cols.contains(&"vm_provider".to_owned()), "{cols:?}");
-    let (capacity, pool): (u16, Option<String>) = conn
-        .query_row(
-            "SELECT capacity, pool_provider FROM user_machines_v2 WHERE name = 'hv'",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .unwrap();
-    assert_eq!(
-        (capacity, pool),
-        (2, None),
-        "the row stays, as an ordinary machine"
-    );
-}
-
-#[test]
-fn a_file_at_migration_23_loses_its_ssh_machines_and_keeps_the_enrolled_ones() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("moor.db");
-    let mut conn = Connection::open(&path).unwrap();
-    let all = super::schema().unwrap();
-    let up_to_23 = all.get(..23).unwrap();
-    moor_migrate::migrate(&mut conn, up_to_23, |_| Ok(moor_migrate::Legacy::Empty)).unwrap();
-    conn.execute_batch(
-        "INSERT INTO users (id, created_at) VALUES (1, 1);
-         INSERT INTO user_machines (user, name, ssh, labels, created_at, updated_at) \
-         VALUES (1, 'old', 'u@h', '[]', 1, 1);
-         INSERT INTO user_machines_v2 (user, name, pubkey, labels, capacity, enrolled_at) \
-         VALUES (1, 'new', 'k', '[]', 1, 1);",
-    )
-    .unwrap();
-    init_schema(&mut conn, &path).unwrap();
-    let after = tables(&conn);
-    assert!(after.iter().all(|(t, _)| t != "user_machines"), "{after:?}");
-    assert!(after.contains(&("user_machines_v2".into(), 1)), "{after:?}");
-}
-
-#[test]
 fn fresh_store_has_no_front_message_column_or_slack_tables() {
     let conn = fresh_store();
     let columns: Vec<String> = conn
@@ -240,316 +178,60 @@ fn the_cache_salt_is_made_once_per_state_dir() {
     assert_ne!(other, first, "a fresh state dir has its own");
 }
 
-/// A file exactly as the last build before migrations left it: the baseline SQL and no history.
-fn pre_migration_file(dir: &Path) -> std::path::PathBuf {
+/// A file the SQL migrations brought to `through`: their schema and a history ending there.
+fn sql_migrated_file(dir: &Path, through: i32) -> std::path::PathBuf {
     let path = dir.join("moor.db");
-    let conn = Connection::open(&path).unwrap();
-    conn.execute_batch(include_str!("../../../migrations/V1__baseline.sql"))
-        .unwrap();
-    conn.execute_batch(include_str!(
-        "../../../migrations/V2__tables_made_on_open.sql"
-    ))
+    let sql = moor_migrate::render(
+        moor_schema::STEPS.first().unwrap(),
+        moor_migrate::Backend::Sqlite,
+    );
+    let name = format!("V{through}__old");
+    let old = moor_migrate::migrations(&[(name.as_str(), sql.as_str())]).unwrap();
+    let mut conn = Connection::open(&path).unwrap();
+    moor_migrate::migrate(&mut conn, &old, |_| Ok(moor_migrate::Legacy::Empty)).unwrap();
+    conn.execute_batch(
+        "INSERT INTO users (id, created_at) VALUES (1, 1); \
+         INSERT INTO boxes (name, state, created_at, updated_at) VALUES ('kept', 'pending', 1, 1);",
+    )
     .unwrap();
-    conn.execute("INSERT INTO meta (k, v) VALUES ('cache_salt', 'kept')", [])
-        .unwrap();
     path
 }
 
-#[test]
-fn an_adopted_file_gains_the_tables_older_builds_made_on_open() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("moor.db");
-    Connection::open(&path)
-        .unwrap()
-        .execute_batch(include_str!("../../../migrations/V1__baseline.sql"))
-        .unwrap();
-    let mut conn = Connection::open(&path).unwrap();
-    init_schema(&mut conn, &path).unwrap();
-    let names: Vec<String> = tables(&conn).into_iter().map(|(t, _)| t).collect();
-    assert!(names.contains(&"front_leases".to_owned()), "{names:?}");
-    assert_eq!(version(&conn), "16");
-}
-
-/// Tables that migrations after V2 create; a file migrated forward gains them empty.
-const ADDED_AFTER_V2: [&str; 15] = [
-    "user_mcp_servers",
-    "user_machines",
-    "box_machines",
-    "user_mcp_oauth",
-    "mcp_oauth_pending",
-    "user_machines_v2",
-    "machine_links",
-    "user_profiles",
-    "box_profiles",
-    "user_webhooks",
-    "webhook_deliveries",
-    "node_pressure",
-    "machine_box_memory",
-    "setup_checkpoints",
-    "setup_checkpoint_pins",
-];
-
-fn tables(conn: &Connection) -> Vec<(String, i64)> {
+fn history(conn: &Connection) -> Vec<i64> {
     let mut stmt = conn
-        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+        .prepare("SELECT version FROM refinery_schema_history ORDER BY version")
         .unwrap();
-    let names: Vec<String> = stmt
-        .query_map([], |r| r.get(0))
-        .unwrap()
-        .collect::<Result<_, _>>()
-        .unwrap();
-    names
-        .into_iter()
-        .map(|t| {
-            let n = conn
-                .query_row(&format!("SELECT count(*) FROM \"{t}\""), [], |r| r.get(0))
-                .unwrap();
-            (t, n)
-        })
-        .collect()
+    let rows = stmt.query_map([], |r| r.get(0)).unwrap();
+    rows.collect::<Result<_, _>>().unwrap()
 }
 
 #[test]
-fn a_file_from_the_last_build_before_migrations_is_adopted_unchanged() {
+fn a_file_at_the_last_sql_migration_is_adopted_with_its_rows() {
     let dir = tempfile::tempdir().unwrap();
-    let path = pre_migration_file(dir.path());
-    let mut before = tables(&Connection::open(&path).unwrap());
-    before.retain(|(t, _)| t != "link_codes");
+    let path = sql_migrated_file(dir.path(), 44);
     super::refuse_other_version(&path).unwrap();
     let mut conn = Connection::open(&path).unwrap();
     init_schema(&mut conn, &path).unwrap();
-    let mut after = tables(&conn);
-    let history = after
-        .iter()
-        .position(|(t, _)| t == "refinery_schema_history");
-    assert_eq!(
-        history.map(|i| after.remove(i)),
-        Some((
-            "refinery_schema_history".into(),
-            i64::try_from(super::schema().unwrap().len()).unwrap()
-        ))
-    );
-    after.retain(|(t, _)| !ADDED_AFTER_V2.contains(&t.as_str()));
-    assert_eq!(after, before, "every table and row kept");
-    assert_eq!(version(&conn), "16");
-}
-
-#[test]
-fn a_file_at_migration_2_gains_user_mcp_servers_and_keeps_its_rows() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("moor.db");
-    let mut conn = Connection::open(&path).unwrap();
-    let all = super::schema().unwrap();
-    let up_to_2 = all.get(..2).unwrap();
-    moor_migrate::migrate(&mut conn, up_to_2, |_| Ok(moor_migrate::Legacy::Empty)).unwrap();
-    conn.execute_batch(
-        "INSERT INTO users (id, created_at) VALUES (7, 1);
-         INSERT INTO user_secrets (user, name, value, updated_at) VALUES (7, 'claude', x'00', 1);",
-    )
-    .unwrap();
-    let mut before = tables(&conn);
-    init_schema(&mut conn, &path).unwrap();
-    let mut after = tables(&conn);
-    assert!(after.contains(&("user_mcp_servers".into(), 0)), "{after:?}");
-    after.retain(|(t, _)| !ADDED_AFTER_V2.contains(&t.as_str()) && t != "refinery_schema_history");
-    before.retain(|(t, _)| {
-        !ADDED_AFTER_V2.contains(&t.as_str()) && t != "refinery_schema_history" && t != "link_codes"
-    });
-    assert_eq!(after, before, "every table and row kept");
-    let applied: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM refinery_schema_history WHERE version = 3",
-            [],
-            |r| r.get(0),
-        )
+    assert_eq!(history(&conn), [45], "recorded at the baseline");
+    let name: String = conn
+        .query_row("SELECT name FROM boxes", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(applied, 1);
+    assert_eq!(name, "kept");
 }
 
 #[test]
-fn bindings_from_before_history_survive_and_a_key_takes_more_sessions() {
-    let mut conn = Connection::open_in_memory().unwrap();
-    let schema = super::schema().unwrap();
-    let before: Vec<_> = schema.iter().take(2).cloned().collect();
-    moor_migrate::migrate(&mut conn, &before, super::legacy).unwrap();
-    conn.execute_batch(
-        "INSERT INTO sessions (id, ordinal, state, started_at, workdir) VALUES \
-           (1, 0, 'ended', 1, '/a'), (2, 0, 'live', 2, '/b'), (3, 0, 'live', 3, '/c'); \
-         INSERT INTO bindings VALUES ('slack', 't1', 1, 'U1', 10); \
-         INSERT INTO bindings VALUES ('web', 'c1', 2, 'U2', 20);",
-    )
-    .unwrap();
-    init_schema(&mut conn, Path::new("moor.db")).unwrap();
-    let rows = |conn: &Connection| -> Vec<(String, String, i64, String, i64)> {
-        let mut stmt = conn
-            .prepare(
-                "SELECT front, conv_key, session, owner, created_at FROM bindings ORDER BY rowid",
-            )
-            .unwrap();
-        stmt.query_map([], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
-        })
-        .unwrap()
-        .collect::<Result<_, _>>()
-        .unwrap()
-    };
-    assert_eq!(
-        rows(&conn),
-        [
-            ("slack".into(), "t1".into(), 1, "U1".into(), 10),
-            ("web".into(), "c1".into(), 2, "U2".into(), 20)
-        ]
-    );
-    conn.execute(
-        "INSERT INTO bindings VALUES ('slack', 't1', 3, 'U1', 30)",
-        [],
-    )
-    .unwrap();
-    assert_eq!(rows(&conn).len(), 3, "a key holds one row per Session");
-    let index: i64 = count(
-        &conn,
-        "SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = 'bindings_session'",
-    );
-    assert_eq!(index, 1);
-}
-
-#[test]
-fn a_file_at_migration_4_keeps_its_rows_and_ends_without_ssh_machines() {
+fn a_file_short_of_the_last_sql_migration_is_refused_and_left_as_it_is() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("moor.db");
+    let path = sql_migrated_file(dir.path(), 43);
+    let refused = super::refuse_other_version(&path).unwrap_err();
+    assert!(matches!(refused, StoreError::Schema { .. }), "{refused:?}");
     let mut conn = Connection::open(&path).unwrap();
-    let all = super::schema().unwrap();
-    let up_to_4 = all.get(..4).unwrap();
-    moor_migrate::migrate(&mut conn, up_to_4, |_| Ok(moor_migrate::Legacy::Empty)).unwrap();
-    conn.execute_batch(
-        "INSERT INTO users (id, created_at) VALUES (7, 1);
-         INSERT INTO user_secrets (user, name, value, updated_at) VALUES (7, 'claude', x'00', 1);",
-    )
-    .unwrap();
-    let mut before = tables(&conn);
-    before.retain(|(t, _)| {
-        !ADDED_AFTER_V2.contains(&t.as_str()) && t != "refinery_schema_history" && t != "link_codes"
-    });
-    init_schema(&mut conn, &path).unwrap();
-    let mut after = tables(&conn);
-    assert!(after.iter().all(|(t, _)| t != "user_machines"), "{after:?}");
-    after.retain(|(t, _)| !ADDED_AFTER_V2.contains(&t.as_str()) && t != "refinery_schema_history");
-    assert_eq!(after, before, "every table and row kept");
-}
-
-#[test]
-fn a_file_at_migration_8_keeps_its_held_machines_and_lets_asleep_ones_share_a_slot() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("moor.db");
-    let mut conn = Connection::open(&path).unwrap();
-    let all = super::schema().unwrap();
-    let up_to_8 = all.get(..8).unwrap();
-    moor_migrate::migrate(&mut conn, up_to_8, |_| Ok(moor_migrate::Legacy::Empty)).unwrap();
-    conn.execute_batch("PRAGMA foreign_keys = OFF").unwrap();
-    conn.execute(
-        "INSERT INTO box_machines (box, user, machine, ports, slot) VALUES (1, 7, 'mini', '[8081]', 0)",
-        [],
-    )
-    .unwrap();
-
-    let up_to_9 = all.get(..9).unwrap();
-    moor_migrate::migrate(&mut conn, up_to_9, |_| Ok(moor_migrate::Legacy::Empty)).unwrap();
-
-    let asleep = "SELECT COUNT(*) FROM box_machines WHERE box = 1 AND asleep = 0";
-    assert_eq!(
-        count(&conn, asleep),
-        1,
-        "an existing row still holds its slot"
-    );
-    let row = |b: i64, asleep: i64| {
-        conn.execute(
-            "INSERT INTO box_machines (box, user, machine, ports, slot, asleep) \
-             VALUES (?, 7, 'mini', '[8081]', 0, ?)",
-            [b, asleep],
-        )
-    };
-    row(2, 1).unwrap();
-    row(3, 1).unwrap();
-    assert!(row(4, 0).is_err(), "two holding rows never share a slot");
-}
-
-#[test]
-fn a_file_at_migration_10_turns_asleep_rows_asleep_and_the_rest_held() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("moor.db");
-    let mut conn = Connection::open(&path).unwrap();
-    let all = super::schema().unwrap();
-    let up_to_10 = all.get(..10).unwrap();
-    moor_migrate::migrate(&mut conn, up_to_10, |_| Ok(moor_migrate::Legacy::Empty)).unwrap();
-    conn.execute_batch(
-        "PRAGMA foreign_keys = OFF;
-         INSERT INTO box_machines (box, user, machine, ports, slot, sync_exclude, asleep) \
-           VALUES (1, 7, 'mini', '[8081]', 0, '[\"target\"]', 0);
-         INSERT INTO box_machines (box, user, machine, ports, slot, asleep) \
-           VALUES (2, 7, 'mini', '[8091]', 1, 1);",
-    )
-    .unwrap();
-
-    init_schema(&mut conn, &path).unwrap();
-    conn.execute_batch("PRAGMA foreign_keys = OFF").unwrap();
-
-    let rows = claim_rows(&conn);
-    let held = (
-        1,
-        "held".into(),
-        "mini".into(),
-        0,
-        "[8081]".into(),
-        "[\"target\"]".into(),
-        None,
-    );
-    let asleep = (
-        2,
-        "asleep".into(),
-        "mini".into(),
-        1,
-        "[8091]".into(),
-        "[]".into(),
-        None,
-    );
-    assert_eq!(rows, [held, asleep]);
-    let insert = |b: i64, state: &str| {
-        conn.execute(
-            "INSERT INTO box_machines (box, user, state, machine, ports, slot) \
-             VALUES (?, 7, ?, 'mini', '[8081]', 0)",
-            rusqlite::params![b, state],
-        )
-    };
-    insert(3, "asleep").unwrap();
-    insert(4, "wanted").unwrap();
+    let err = init_schema(&mut conn, &path).unwrap_err().to_string();
     assert!(
-        insert(5, "held").is_err(),
-        "two held rows never share a slot"
+        err.contains("migration 43") && err.contains("use a fresh state dir"),
+        "{err}"
     );
-    assert!(insert(6, "gone").is_err(), "only the three states");
-}
-
-/// A `box_machines` row: box, state, machine, slot, ports, sync excludes, until.
-type ClaimRow = (i64, String, String, u16, String, String, Option<i64>);
-
-fn claim_rows(conn: &Connection) -> Vec<ClaimRow> {
-    let sql = "SELECT box, state, machine, slot, ports, sync_exclude, until FROM box_machines \
-               ORDER BY box";
-    let mut stmt = conn.prepare(sql).unwrap();
-    let rows = stmt
-        .query_map([], |r| {
-            Ok((
-                r.get(0)?,
-                r.get(1)?,
-                r.get(2)?,
-                r.get(3)?,
-                r.get(4)?,
-                r.get(5)?,
-                r.get(6)?,
-            ))
-        })
-        .unwrap();
-    rows.collect::<Result<_, _>>().unwrap()
+    assert_eq!(history(&conn), [43]);
 }
 
 mod pinned;

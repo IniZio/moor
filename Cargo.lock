@@ -1559,6 +1559,8 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 name = "e2e-budget"
 version = "0.1.0"
 dependencies = [
+ "moor-migrate",
+ "moor-schema",
  "rusqlite",
  "serde",
  "serde_json",
@@ -3050,6 +3052,7 @@ dependencies = [
  "moor-core",
  "moor-listen",
  "moor-migrate",
+ "moor-schema",
  "moor-testkit",
  "netlink-packet-core",
  "netlink-packet-route",
@@ -3268,6 +3271,13 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
  "ureq",
+]
+
+[[package]]
+name = "moor-schema"
+version = "0.1.0"
+dependencies = [
+ "moor-migrate",
 ]
 
 [[package]]
