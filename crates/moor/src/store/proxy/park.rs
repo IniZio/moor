@@ -4,8 +4,8 @@
 //! a sequence number the supervisor echoes in its ack, which lets the op ignore stale acks.
 
 use moor_core::BoxId;
-use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 
+use crate::store::db::{params, Db, DbExt as _, OptionalExtension, TransactionBehavior};
 use crate::store::{Store, StoreError};
 
 /// The tunnel state an op asks the supervisor for.
@@ -126,14 +126,14 @@ fn decode_request(raw: &str) -> Option<TunnelRequest> {
 }
 
 /// Read one `meta` value.
-fn get(conn: &Connection, key: &str) -> Result<Option<String>, StoreError> {
+fn get(conn: &dyn Db, key: &str) -> Result<Option<String>, StoreError> {
     Ok(conn
         .query_row("SELECT v FROM meta WHERE k = ?", [key], |r| r.get(0))
         .optional()?)
 }
 
 /// Write one `meta` value.
-fn put(conn: &Connection, key: &str, value: &str) -> Result<(), StoreError> {
+fn put(conn: &dyn Db, key: &str, value: &str) -> Result<(), StoreError> {
     conn.execute(
         "INSERT INTO meta (k, v) VALUES (?, ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v",
         params![key, value],
@@ -142,7 +142,7 @@ fn put(conn: &Connection, key: &str, value: &str) -> Result<(), StoreError> {
 }
 
 /// Delete the request and ack rows of `box_id` on `conn`.
-pub(super) fn clear(conn: &Connection, box_id: BoxId) -> Result<(), StoreError> {
+pub(super) fn clear(conn: &dyn Db, box_id: BoxId) -> Result<(), StoreError> {
     conn.execute(
         "DELETE FROM meta WHERE k IN (?, ?, ?)",
         params![want_key(box_id), ack_key(box_id), opened_key(box_id)],

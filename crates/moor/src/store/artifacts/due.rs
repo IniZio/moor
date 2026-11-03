@@ -1,8 +1,8 @@
 //! Durable "collection is due" tracking: a Box is due when a turn ended after its last collection.
 
 use moor_core::BoxId;
-use rusqlite::{params, OptionalExtension};
 
+use crate::store::db::{params, DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
 /// Newest `idled` or `turn_done` event id of the Box bound as `?1`.

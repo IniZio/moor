@@ -9,6 +9,7 @@ use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::Ts;
 use moor_core::BoxName;
 
+use crate::store::db::DbExt as _;
 use crate::testing::clock::FakeClock;
 
 use super::*;

@@ -3,9 +3,9 @@
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::BoxId;
-use rusqlite::{params, Connection, OptionalExtension};
 
 use super::ClaimState;
+use crate::store::db::{params, Db, DbExt as _, OptionalExtension};
 use crate::store::StoreError;
 
 /// A `box_machines` row.
@@ -21,7 +21,7 @@ pub(super) struct Claim {
 }
 
 /// The `box_machines` row of `box_id`, read through `conn`.
-pub(super) fn claim_in(conn: &Connection, box_id: BoxId) -> Result<Option<Claim>, StoreError> {
+pub(super) fn claim_in(conn: &dyn Db, box_id: BoxId) -> Result<Option<Claim>, StoreError> {
     let sql = "SELECT \"user\", state, machine, labels, slot, ports, sync_exclude, since, until \
                FROM box_machines WHERE box = ?";
     let row = conn
@@ -54,7 +54,7 @@ struct ClaimRow {
 
 impl ClaimRow {
     /// The columns `claim_in` selects, in its order.
-    fn read(r: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+    fn read(r: &crate::store::db::Row<'_>) -> rusqlite::Result<Self> {
         Ok(Self {
             user: r.get(0)?,
             state: r.get(1)?,
@@ -110,7 +110,7 @@ fn to_json<T: serde::Serialize + ?Sized>(v: &T) -> Result<String, StoreError> {
 }
 
 /// Writes `claim` as the `box_machines` row of `box_id`.
-pub(super) fn put_in(conn: &Connection, box_id: BoxId, claim: &Claim) -> Result<(), StoreError> {
+pub(super) fn put_in(conn: &dyn Db, box_id: BoxId, claim: &Claim) -> Result<(), StoreError> {
     let (state, machine, labels, slot, since, until) = match &claim.state {
         ClaimState::Wanted {
             labels,

@@ -2,10 +2,10 @@
 
 use moor_core::domain::event::{Event, TurnOutcome};
 use moor_core::BoxId;
-use rusqlite::TransactionBehavior;
 
 use super::apply::insert_event;
 use super::{Store, StoreError};
+use crate::store::db::{DbExt as _, TransactionBehavior};
 
 impl Store {
     /// Write a `turn_done` for `steer` unless the Box already has one for it.

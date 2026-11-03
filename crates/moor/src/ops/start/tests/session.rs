@@ -19,6 +19,7 @@ use super::state::WORKING;
 use super::{repo, req, script_base_yaml, world, World};
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::start::run;
+use crate::store::db::DbExt as _;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;

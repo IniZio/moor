@@ -3,8 +3,8 @@
 
 use moor_core::domain::layers::LayerKey;
 use moor_core::{BoxId, ProviderId};
-use rusqlite::{params, OptionalExtension};
 
+use crate::store::db::{params, DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
 /// Why a checkpoint goes before the ones after it.

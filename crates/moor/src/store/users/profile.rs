@@ -3,8 +3,8 @@
 
 use moor_core::name::{ForgeRepo, ProfileSource};
 use moor_core::user::UserId;
-use rusqlite::{params, OptionalExtension};
 
+use crate::store::db::{params, DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
 impl Store {

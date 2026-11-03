@@ -16,6 +16,7 @@ use super::{req, world, World};
 use crate::ops::common::activity::{read, settle, PROBE_DEADLINE};
 use crate::ops::show;
 use crate::ops::start::run;
+use crate::store::db::DbExt as _;
 use crate::store::BoxRow;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;

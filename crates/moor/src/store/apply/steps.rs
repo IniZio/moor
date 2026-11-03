@@ -7,9 +7,9 @@ use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::BoxId;
-use rusqlite::{params, Transaction};
 
 use super::sql::name_taken;
+use crate::store::db::{params, DbExt as _, Tx};
 use crate::store::{load_box, sessions::live_parent, DriverRow, StoreError};
 
 /// The Box and primary Session states a step leaves behind.
@@ -30,7 +30,7 @@ pub(super) struct Stepped {
 /// Resolve the Box (inserting a new one) and step its lifecycle and primary Session.
 ///
 /// The parts are what the writer stores.
-pub(super) fn step_box(tx: &Transaction<'_>, now: Ts, d: &Decision) -> Result<Stepped, StoreError> {
+pub(super) fn step_box(tx: &Tx<'_>, now: Ts, d: &Decision) -> Result<Stepped, StoreError> {
     let (l, s) = (d.lifecycle_input.as_ref(), d.session_input.as_ref());
     match &d.target {
         BoxTarget::New(new) => {
@@ -72,7 +72,7 @@ pub(super) fn step_box(tx: &Transaction<'_>, now: Ts, d: &Decision) -> Result<St
 }
 
 /// States of the Box's Sessions other than the current one.
-fn read_others(tx: &Transaction<'_>, id: BoxId) -> Result<Vec<SessionState>, StoreError> {
+fn read_others(tx: &Tx<'_>, id: BoxId) -> Result<Vec<SessionState>, StoreError> {
     let mut stmt = tx.prepare("SELECT state FROM sessions WHERE box = ?1 AND ordinal < (SELECT MAX(ordinal) FROM sessions WHERE box = ?1)")?;
     let rows = stmt.query_map(params![id.get()], |r| r.get::<_, String>(0))?;
     rows.map(|s| {
@@ -86,7 +86,7 @@ fn read_others(tx: &Transaction<'_>, id: BoxId) -> Result<Vec<SessionState>, Sto
 /// Insert a fresh Box row for `requester` with its primary Session under `parent_session`. A
 /// primary Session with no parent is a root Session and records the requester too.
 fn insert_box(
-    tx: &Transaction<'_>,
+    tx: &Tx<'_>,
     new: &NewBox,
     lifecycle: BoxLifecycle,
     (parent_session, requester): (Option<i64>, Option<UserId>),

@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
-use rusqlite::{params, OptionalExtension};
 
+use crate::store::db::{params, DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
 /// Where a server's sign-in stands, as `mcp-list` and Box starts read it.

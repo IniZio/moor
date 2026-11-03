@@ -5,9 +5,9 @@ use std::time::Duration;
 
 use moor_core::user::UserId;
 use moor_core::BoxId;
-use rusqlite::{params, OptionalExtension as _, Transaction, TransactionBehavior};
 
 use super::{Store, StoreError};
+use crate::store::db::{params, DbExt as _, OptionalExtension as _, TransactionBehavior, Tx};
 
 /// Longest `last_error` kept, in characters.
 const MAX_ERROR_CHARS: usize = 200;
@@ -43,12 +43,7 @@ pub(crate) struct ClaimedDelivery {
 
 /// Queues event `event` of kind `kind` on Box `id` for every active webhook of the Box's user
 /// that names that kind, inside the event's own transaction.
-pub(super) fn enqueue(
-    tx: &Transaction<'_>,
-    id: BoxId,
-    event: i64,
-    kind: &str,
-) -> Result<(), StoreError> {
+pub(super) fn enqueue(tx: &Tx<'_>, id: BoxId, event: i64, kind: &str) -> Result<(), StoreError> {
     tx.execute(
         "INSERT INTO webhook_deliveries (webhook, event) SELECT w.id, ?2 FROM user_webhooks w \
          JOIN boxes b ON b.user = w.user WHERE b.id = ?1 AND w.state = 'active' \

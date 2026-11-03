@@ -20,6 +20,7 @@ use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
 use super::{read, settle, PaneLiveness, Reading, PROBE_DEADLINE};
 use crate::cx::Cx;
+use crate::store::db::DbExt as _;
 use crate::store::{BoxRow, FollowClaim, NewRun};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;

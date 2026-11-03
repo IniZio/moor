@@ -4,11 +4,11 @@ use moor_core::domain::decision::{BoxRepo, ListedRepo};
 use moor_core::seam::forge::{ForgeRepo, GitAuthor};
 #[cfg(test)]
 use moor_core::BoxId;
-use rusqlite::Row;
 use serde::Deserialize;
 
 use super::init::parsed;
 use super::StoreError;
+use crate::store::db::Row;
 
 /// One entry of the `other_repos` column, a JSON array in listed order.
 #[derive(Deserialize)]
@@ -64,13 +64,14 @@ pub(super) fn others_column(repo: &BoxRepo) -> Option<String> {
 impl super::Store {
     /// Lists `others` after Box `id`'s primary repo, as a start that chose them would.
     pub(crate) fn list_others(&self, id: BoxId, others: Vec<ListedRepo>) -> Result<(), StoreError> {
+        use crate::store::db::DbExt as _;
         let Some(mut repo) = self.box_row(id)?.and_then(|row| row.repo) else {
             return Ok(());
         };
         repo.others = others;
         self.writer().execute(
             "UPDATE boxes SET other_repos = ?1 WHERE id = ?2",
-            rusqlite::params![others_column(&repo), id.get()],
+            crate::store::db::params![others_column(&repo), id.get()],
         )?;
         Ok(())
     }

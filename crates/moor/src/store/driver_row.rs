@@ -3,10 +3,10 @@
 use moor_core::seam::clock::Ts;
 use moor_core::shape::Shape;
 use moor_core::{BoxHandle, ProviderId};
-use rusqlite::Row;
 
 use super::init::parsed_opt;
 use super::{to_u32, DriverRow, StoreError};
+use crate::store::db::Row;
 use moor_core::domain::boxes::BoxState;
 
 /// The delivered CPUs and memory of the joined box, when both are recorded.

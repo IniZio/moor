@@ -5,8 +5,8 @@ use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::Checkpoint;
 use moor_core::user::UserId;
 use moor_core::{BoxPath, ProviderId};
-use rusqlite::{params, OptionalExtension};
 
+use crate::store::db::{params, DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
 /// One setup layer saved under a provider.

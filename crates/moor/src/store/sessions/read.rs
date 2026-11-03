@@ -3,9 +3,9 @@
 use moor_core::domain::session_state::SessionState;
 use moor_core::user::UserId;
 use moor_core::{BoxId, BoxName};
-use rusqlite::{OptionalExtension, Row};
 
 use super::super::{parsed, parsed_opt, Store, StoreError};
+use crate::store::db::{DbExt as _, OptionalExtension, Row};
 
 /// One Session, with the name of its Box when it has one.
 #[derive(Debug, Clone, PartialEq, Eq)]

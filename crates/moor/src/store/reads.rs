@@ -7,17 +7,17 @@ use moor_core::domain::boxes::BoxState;
 use moor_core::request::Pins;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName, SessionId};
-use rusqlite::{Connection, OptionalExtension};
 
 use super::{
     box_from_row, event_from_row, BoxRow, DriverRow, EventRow, Store, StoreError, BOX_SELECT,
 };
+use crate::store::db::{Db, DbExt as _, OptionalExtension};
 
 /// Run a box query and map every row.
 fn query_boxes(
-    conn: &Connection,
+    conn: &dyn Db,
     tail: &str,
-    params: impl rusqlite::Params,
+    params: impl crate::store::db::Params,
 ) -> Result<Vec<BoxRow>, StoreError> {
     let mut stmt = conn.prepare(&format!("{BOX_SELECT} {tail}"))?;
     let rows = stmt.query_and_then(params, box_from_row)?;

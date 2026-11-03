@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
+use db::{Conn, DbExt as _, Row};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{BoxRepo, Intent};
@@ -15,7 +16,7 @@ use moor_core::user::UserId;
 use moor_core::view::LaunchFailure;
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 use repo::repo_from_row;
-use rusqlite::{Connection, OpenFlags, Row};
+use rusqlite::Connection;
 
 use driver_row::driver_from_row;
 use init::{parsed, parsed_opt};
@@ -33,6 +34,7 @@ mod bindings;
 mod box_node;
 pub(crate) mod box_profile;
 pub(crate) mod checkpoints;
+pub(crate) mod db;
 mod driver_row;
 mod error;
 mod events_of;
@@ -183,7 +185,7 @@ pub(crate) struct Store {
     /// Database file, reopened for each read connection.
     path: PathBuf,
     /// The writer connection.
-    writer: Arc<Mutex<Connection>>,
+    writer: Arc<Mutex<Conn>>,
     /// Time source for every timestamp.
     clock: Arc<dyn Clock>,
     /// The Box each name meant when the controller let the request name it. A name lookup
@@ -208,7 +210,7 @@ impl Store {
         open::tighten(path)?;
         Ok(Self {
             path: path.to_path_buf(),
-            writer: Arc::new(Mutex::new(conn)),
+            writer: Arc::new(Mutex::new(Conn::sqlite(conn))),
             clock,
             pins: Pins::new(),
         })
@@ -271,18 +273,13 @@ impl Store {
     }
 
     /// A new read-only connection; never blocks on the writer.
-    pub(super) fn reader(&self) -> Result<Connection, StoreError> {
-        let conn = Connection::open_with_flags(
-            &self.path,
-            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        )?;
-        conn.busy_timeout(BUSY_TIMEOUT)?;
-        Ok(conn)
+    pub(super) fn reader(&self) -> Result<Conn, StoreError> {
+        Ok(Conn::sqlite_reader(&self.path, BUSY_TIMEOUT)?)
     }
 
     /// Lock the writer connection. A thread that panicked while holding it left at worst an
     /// open transaction, which rusqlite rolled back during unwind, so the connection is sound.
-    pub(super) fn writer(&self) -> MutexGuard<'_, Connection> {
+    pub(super) fn writer(&self) -> MutexGuard<'_, Conn> {
         self.writer.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
@@ -293,7 +290,7 @@ impl Store {
 }
 
 /// Load one box joined to its box, on any connection (used inside `apply`'s transaction too).
-pub(super) fn load_box(conn: &Connection, id: BoxId) -> Result<Option<BoxRow>, StoreError> {
+pub(super) fn load_box(conn: &dyn db::Db, id: BoxId) -> Result<Option<BoxRow>, StoreError> {
     let mut stmt = conn.prepare(&format!("{BOX_SELECT} WHERE b.id = ?1"))?;
     let mut rows = stmt.query_and_then([id.get()], box_from_row)?;
     rows.next().transpose()

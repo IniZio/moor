@@ -3,10 +3,10 @@
 use moor_core::domain::event::Event;
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::BoxId;
-use rusqlite::{OptionalExtension, TransactionBehavior};
 
 use super::apply::insert_event;
 use super::{parsed_opt, Store, StoreError};
+use crate::store::db::{Db, DbExt as _, OptionalExtension, TransactionBehavior};
 
 mod read;
 
@@ -29,10 +29,7 @@ pub(crate) struct BoxSession {
 ///
 /// # Errors
 /// Returns [`StoreError::Invalid`] when the Session is unknown or ended, or [`StoreError`] when the database fails.
-pub(in crate::store) fn live_parent(
-    conn: &rusqlite::Connection,
-    parent: i64,
-) -> Result<(), StoreError> {
+pub(in crate::store) fn live_parent(conn: &dyn Db, parent: i64) -> Result<(), StoreError> {
     let row: Option<(String, Option<i64>)> = conn
         .query_row(
             "SELECT state, ended_at FROM sessions WHERE id = ?1",

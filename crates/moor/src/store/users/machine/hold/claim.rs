@@ -6,9 +6,9 @@ use moor_core::domain::event::{Event, MachineEvent};
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::BoxId;
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 
 use super::super::{claim_in, machines_in, named_in, put_in, Claim};
+use crate::store::db::{Db, DbExt as _, OptionalExtension, TransactionBehavior, Tx};
 use moor_core::{HoldOp, HoldValue};
 
 use super::{grant_in, position_in, said_waiting, why_waiting, ClaimState};
@@ -83,7 +83,7 @@ impl Store {
 
 /// Runs a claim inside `tx`: the answer, and whether to keep what it wrote.
 fn claim_tx(
-    tx: &Transaction<'_>,
+    tx: &Tx<'_>,
     (id, user): (BoxId, UserId),
     op: &HoldOp,
     repo: (Option<&RepoMachine>, &[String]),
@@ -184,7 +184,7 @@ fn new_want(
 }
 
 /// The `Held` answer for `id`, which holds a slot.
-fn held_value(conn: &Connection, id: BoxId) -> Result<HoldValue, StoreError> {
+fn held_value(conn: &dyn Db, id: BoxId) -> Result<HoldValue, StoreError> {
     let claim = claim_in(conn, id)?;
     let Some(Claim {
         user,

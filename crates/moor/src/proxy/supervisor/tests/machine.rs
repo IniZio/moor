@@ -13,6 +13,7 @@ use serde_json::Value;
 use super::{start, Stop, World};
 use crate::proxy::front::Hold;
 use crate::proxy::supervisor::machine::hold_of;
+use crate::store::db::DbExt as _;
 use crate::store::TunnelWant;
 
 /// What the machine runner was asked, with the connection it holds the forwards up on.

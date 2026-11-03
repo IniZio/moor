@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use super::{fx, line, row, versions, Fx};
 use crate::ops::common::artifacts::collect_working;
+use crate::store::db::DbExt as _;
 
 fn pass(f: &Fx) {
     collect_working(&f.cx, f.cx.store().unwrap(), &|| false);

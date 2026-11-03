@@ -7,6 +7,7 @@ use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName};
 
+use crate::store::db::DbExt as _;
 use crate::store::Store;
 use crate::testing::clock::FakeClock;
 
@@ -41,12 +42,12 @@ fn update(store: &Store, id: BoxId, sql: &str) {
 /// Insert a raw event row and return its id.
 fn event(store: &Store, id: BoxId, kind: &str) -> i64 {
     let conn = store.writer();
-    conn.execute(
-        "INSERT INTO events (box, kind, payload, ts) VALUES (?1, ?2, '{}', 0)",
+    conn.query_row(
+        "INSERT INTO events (box, kind, payload, ts) VALUES (?1, ?2, '{}', 0) RETURNING id",
         rusqlite::params![id.get(), kind],
+        |r| r.get(0),
     )
-    .unwrap();
-    conn.last_insert_rowid()
+    .unwrap()
 }
 
 #[test]

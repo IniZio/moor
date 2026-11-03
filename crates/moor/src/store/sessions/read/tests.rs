@@ -4,6 +4,7 @@
 use moor_core::domain::session_state::SessionState;
 use moor_core::{BoxId, BoxName};
 
+use crate::store::db::DbExt as _;
 use crate::store::tests::{new_box, open};
 use crate::store::Store;
 

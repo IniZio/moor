@@ -3,6 +3,7 @@
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::session_state::SessionState;
 
+use crate::store::db::DbExt as _;
 use crate::store::BoxRow;
 
 pub(super) const WORKING: (BoxLifecycle, SessionState) =

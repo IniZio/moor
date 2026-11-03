@@ -7,9 +7,9 @@
 
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
-use rusqlite::{params, Connection, Row};
 
 use super::{parsed_opt, Store, StoreError};
+use crate::store::db::{params, Db, DbExt as _, Row};
 
 /// Columns read into a `LeaseRow`, in `row` order.
 const COLUMNS: &str = "id, box, kind, key, state, booted, pgid, sid, root_pid, root_start, \
@@ -225,10 +225,10 @@ impl Store {
         &self,
         id: LeaseId,
         set: &str,
-        args: &[&dyn rusqlite::ToSql],
+        args: &[&dyn crate::store::db::ToSql],
     ) -> Result<bool, StoreError> {
         let now = self.now().as_millis();
-        let mut all: Vec<&dyn rusqlite::ToSql> = args.to_vec();
+        let mut all: Vec<&dyn crate::store::db::ToSql> = args.to_vec();
         all.push(&now);
         all.push(&id.0);
         let conn = self.writer();
@@ -243,9 +243,9 @@ impl Store {
 
 /// Run `sql` and read every row as a `LeaseRow`.
 fn query(
-    conn: &Connection,
+    conn: &dyn Db,
     sql: &str,
-    args: impl rusqlite::Params,
+    args: impl crate::store::db::Params,
 ) -> Result<Vec<LeaseRow>, StoreError> {
     let mut stmt = conn.prepare(sql)?;
     let rows = stmt.query_and_then(args, row)?;

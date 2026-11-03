@@ -8,7 +8,6 @@ use moor_core::domain::session_state::SessionState;
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 use rusqlite::types::Value;
-use rusqlite::{params, Transaction, TransactionBehavior};
 
 mod sql;
 mod steps;
@@ -18,6 +17,7 @@ use self::sql::{branch_taken, field_value, text, Sets};
 use self::steps::{step_box, Parts};
 use super::box_node::live_on_node_in;
 use super::{DriverRow, Store, StoreError};
+use crate::store::db::{params, DbExt as _, TransactionBehavior, Tx};
 use moor_core::name::NodeName;
 
 /// Result of a committed `apply`.
@@ -84,13 +84,13 @@ impl Store {
 }
 
 /// The body of `apply`, inside its transaction; a branch an open Box works on is refused.
-fn apply_in(tx: &Transaction<'_>, now: Ts, d: Decision) -> Result<Applied, StoreError> {
+fn apply_in(tx: &Tx<'_>, now: Ts, d: Decision) -> Result<Applied, StoreError> {
     let branch = d.set.branch.clone();
     apply_steps(tx, now, d).map_err(|e| branch_taken(e, &branch))
 }
 
 /// Every write of `d`, inside its transaction.
-fn apply_steps(tx: &Transaction<'_>, now: Ts, mut d: Decision) -> Result<Applied, StoreError> {
+fn apply_steps(tx: &Tx<'_>, now: Ts, mut d: Decision) -> Result<Applied, StoreError> {
     let steps::Stepped {
         id,
         existing,
@@ -148,7 +148,7 @@ fn apply_steps(tx: &Transaction<'_>, now: Ts, mut d: Decision) -> Result<Applied
 
 /// Step the box state, recording the provider on the first input.
 fn step_driver(
-    tx: &Transaction<'_>,
+    tx: &Tx<'_>,
     now: Ts,
     id: BoxId,
     existing: Option<&DriverRow>,
@@ -180,7 +180,7 @@ fn step_driver(
 
 /// Write box state, fields and intent.
 fn write_box_row(
-    tx: &Transaction<'_>,
+    tx: &Tx<'_>,
     id: BoxId,
     now: Ts,
     d: &Decision,
@@ -238,7 +238,7 @@ fn idle_since_sets(step: &Step<bool>, now: Ts) -> Sets {
 ///
 /// A step out of quiet drops the recorded sleep refusal, so the next Idle stretch asks again.
 fn write_box(
-    tx: &Transaction<'_>,
+    tx: &Tx<'_>,
     id: BoxId,
     now: Ts,
     d: &Decision,
@@ -357,12 +357,7 @@ pub(super) fn intent_sets(change: IntentChange, now: Ts) -> Sets {
 }
 
 /// Insert one event row, stamped with the Box's newest Session, and return its id.
-pub(super) fn insert_event(
-    tx: &Transaction<'_>,
-    id: BoxId,
-    e: &Event,
-    now: Ts,
-) -> Result<i64, StoreError> {
+pub(super) fn insert_event(tx: &Tx<'_>, id: BoxId, e: &Event, now: Ts) -> Result<i64, StoreError> {
     let event: i64 = tx.query_row(
         "INSERT INTO events (box, session, kind, payload, ts) VALUES (?1, \
          (SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1), ?2, ?3, ?4) RETURNING id",

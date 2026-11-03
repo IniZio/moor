@@ -6,9 +6,9 @@ use std::fmt::Write as _;
 
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
-use rusqlite::{params, OptionalExtension};
 use sha2::{Digest, Sha256};
 
+use crate::store::db::{params, DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
 /// The hex SHA-256 of `token`, which is all the store keeps of it.

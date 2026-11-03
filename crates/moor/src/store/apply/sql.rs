@@ -3,9 +3,10 @@
 use moor_core::domain::decision::Field;
 use moor_core::domain::decision::NewBox;
 use rusqlite::types::Value;
-use rusqlite::{ErrorCode, Transaction};
+use rusqlite::ErrorCode;
 
 use super::StoreError;
+use crate::store::db::{DbExt as _, Tx};
 
 /// Column assignments for one UPDATE.
 pub(super) type Sets = Vec<(&'static str, Value)>;
@@ -27,7 +28,7 @@ pub(super) fn text(f: &Field<String>) -> Option<Value> {
 /// Run `UPDATE table SET .. WHERE cond` with static table, column and
 /// condition text; `args` bind the `?` placeholders in `cond`.
 pub(in crate::store) fn update(
-    tx: &Transaction<'_>,
+    tx: &Tx<'_>,
     table: &str,
     cond: &str,
     args: &[i64],
@@ -43,10 +44,7 @@ pub(in crate::store) fn update(
         .join(", ");
     let mut vals: Vec<Value> = sets.iter().map(|(_, v)| v.clone()).collect();
     vals.extend(args.iter().map(|&a| Value::Integer(a)));
-    tx.execute(
-        &format!("UPDATE {table} SET {cols} WHERE {cond}"),
-        rusqlite::params_from_iter(vals),
-    )?;
+    tx.execute(&format!("UPDATE {table} SET {cols} WHERE {cond}"), vals)?;
     Ok(())
 }
 

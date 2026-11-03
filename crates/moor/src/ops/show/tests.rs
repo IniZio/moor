@@ -30,6 +30,7 @@ mod target;
 use super::run;
 use crate::cx::Cx;
 use crate::ops::common::activity::{self, Reading};
+use crate::store::db::DbExt as _;
 use crate::store::{BoxRow, NewRun, Store};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;

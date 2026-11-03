@@ -3,9 +3,9 @@
 use moor_core::attention::{open_limits, Limit};
 use moor_core::domain::event::Event;
 use moor_core::BoxId;
-use rusqlite::TransactionBehavior;
 
 use crate::store::apply::insert_event;
+use crate::store::db::{DbExt as _, TransactionBehavior};
 use crate::store::{load_box, Store, StoreError};
 
 impl Store {

@@ -3,6 +3,7 @@
 use moor_core::user::{Email, Identity, SecretName, UserId};
 use moor_core::Secret;
 
+use crate::store::db::DbExt as _;
 use crate::store::tests::open;
 use crate::store::{Store, StoreError};
 use crate::vault::{Vault, VaultError};

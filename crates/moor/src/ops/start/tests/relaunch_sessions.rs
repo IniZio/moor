@@ -3,6 +3,7 @@ use moor_core::{BoxId, StartReq};
 use super::relaunch::{gone, obs, started};
 use super::req;
 use crate::ops::start::run;
+use crate::store::db::DbExt as _;
 
 /// Each Session's ordinal, state and the launch rows linked to it, by ordinal.
 fn sessions(w: &super::World, id: BoxId) -> Vec<(i64, String, i64)> {
@@ -14,12 +15,10 @@ fn sessions(w: &super::World, id: BoxId) -> Vec<(i64, String, i64)> {
              FROM sessions s WHERE s.box = ? ORDER BY s.ordinal",
         )
         .unwrap();
-    let rows = stmt
-        .query_map([id.get()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+    stmt.query_map([id.get()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .unwrap()
         .collect::<Result<_, _>>()
-        .unwrap();
-    rows
+        .unwrap()
 }
 
 #[test]

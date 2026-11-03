@@ -9,6 +9,7 @@ use moor_core::{BoxId, StartReq};
 use super::relaunch::{gone, session, set_agent_session, started};
 use super::{req, World};
 use crate::ops::start::run;
+use crate::store::db::DbExt as _;
 use crate::testing::engine::FakeEngine;
 
 const SHA_ABC: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";

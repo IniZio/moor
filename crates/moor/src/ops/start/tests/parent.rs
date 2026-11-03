@@ -4,6 +4,7 @@ use moor_core::{ErrorKind, SessionId, StartReq};
 
 use super::{req, world};
 use crate::ops::start::run;
+use crate::store::db::DbExt as _;
 use crate::testing::driver::FakeDriver;
 
 /// A start request for `name` under `parent`.
