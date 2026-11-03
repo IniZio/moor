@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use moor_client::{Client, WatchItem, WatchStop};
+use moor_client::{Client, ClientError, WatchItem, WatchStop};
 use moor_core::controller::WatchFilter;
 use moor_core::request::{EnrollReq, Request as ControllerRequest};
 use rmcp::model::{
@@ -273,8 +273,47 @@ fn follow(
     Ok(())
 }
 
+/// Why a call to the controller failed, and whether the controller was missing or refusing.
+pub(crate) struct Unreachable {
+    /// What to tell the caller.
+    pub(crate) why: String,
+    /// Whether the controller's socket is missing or refuses connections.
+    pub(crate) down: bool,
+}
+
+impl Unreachable {
+    /// The failure of a dial that did not reach a controller.
+    pub(crate) fn from_client(e: &ClientError) -> Self {
+        Self {
+            why: format!("the controller is unreachable: {e}"),
+            down: client_down(e),
+        }
+    }
+}
+
+impl From<String> for Unreachable {
+    fn from(why: String) -> Self {
+        Self { why, down: false }
+    }
+}
+
+impl From<Unreachable> for String {
+    fn from(e: Unreachable) -> Self {
+        e.why
+    }
+}
+
+/// Whether `e` says nothing listens on the controller's socket.
+pub(crate) fn client_down(e: &ClientError) -> bool {
+    match e {
+        ClientError::Connect { source, .. } => crate::http::is_down(source),
+        ClientError::GaveUp { last, .. } => client_down(last),
+        _ => false,
+    }
+}
+
 /// A client acting as `person`, once the controller knows their identity and email.
-pub(super) fn enrolled(socket: &Path, person: &Person) -> Result<Client, String> {
+pub(super) fn enrolled(socket: &Path, person: &Person) -> Result<Client, Unreachable> {
     let enroll = ControllerRequest::Enroll(EnrollReq {
         identity: None,
         email: None,
@@ -282,7 +321,7 @@ pub(super) fn enrolled(socket: &Path, person: &Person) -> Result<Client, String>
     let client = Client::new(PathBuf::from(socket));
     let reply = client
         .request(rewrite::act(enroll, person)?, |_| {})
-        .map_err(|e| format!("the controller is unreachable: {e}"))?;
+        .map_err(|e| Unreachable::from_client(&e))?;
     super::answer(&reply)?;
     Ok(client.acting_as(person.identity.clone()))
 }

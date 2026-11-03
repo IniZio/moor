@@ -9,6 +9,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::Duration;
 
+use streams::Streams;
+
 use rustix::event::{poll, PollFd, PollFlags};
 use rustix::io::Errno;
 use signal_hook::consts::{SIGINT, SIGTERM};
@@ -20,6 +22,7 @@ mod login;
 mod mcp;
 mod relay;
 mod rewrite;
+mod streams;
 mod token;
 mod tools;
 
@@ -29,6 +32,10 @@ pub use token::{Person, Verifier};
 
 /// The identity namespace the gate asserts; the controller's `fronts` key for this socket.
 pub const NAMESPACE: &str = "authgear";
+
+/// Seconds a drain lets long-lived streams (`/front`, `/events`) run before closing them.
+/// Clients reconnect, so a deploy never waits on one.
+pub const STREAM_DRAIN_SECS: u64 = 5;
 
 /// What one gate serves.
 pub struct Gate {
@@ -57,11 +64,13 @@ pub fn serve_with(
     gate: &Arc<Gate>,
     login: Option<&Arc<Login>>,
 ) -> io::Result<()> {
+    let streams = Arc::new(Streams::default());
     loop {
         let (stream, _) = listener.accept()?;
         let gate = Arc::clone(gate);
         let login = login.cloned();
-        std::thread::spawn(move || http::handle(stream, &gate, login.as_deref()));
+        let streams = Arc::clone(&streams);
+        std::thread::spawn(move || http::handle(stream, &gate, login.as_deref(), &streams));
     }
 }
 
@@ -90,6 +99,7 @@ pub fn serve_until(
     drain_timeout: Duration,
 ) -> io::Result<()> {
     let live = Arc::new((Mutex::new(0_usize), Condvar::new()));
+    let streams = Arc::new(Streams::default());
     loop {
         let mut fds = [
             PollFd::new(&listener, PollFlags::IN),
@@ -105,27 +115,40 @@ pub fn serve_until(
         }
         let (stream, _) = listener.accept()?;
         let (gate, login, held) = (Arc::clone(gate), login.cloned(), Held::new(&live));
+        let streams = Arc::clone(&streams);
         std::thread::spawn(move || {
-            http::handle(stream, &gate, login.as_deref());
+            http::handle(stream, &gate, login.as_deref(), &streams);
             drop(held);
         });
     }
     drop(listener);
     let (count, ended) = &*live;
-    let (open, timed_out) = ended
+    let streams_bound = Duration::from_secs(STREAM_DRAIN_SECS).min(drain_timeout);
+    let (mut open, mut timed_out) = wait_for_none(count, ended, streams_bound);
+    if open > 0 && timed_out {
+        streams.close_all();
+        (open, timed_out) =
+            wait_for_none(count, ended, drain_timeout.saturating_sub(streams_bound));
+    }
+    if timed_out {
+        log(&format!("drain timed out with {open} connections open"));
+    }
+    Ok(())
+}
+
+/// Waits up to `bound` for no connection to be left; returns how many are, and whether the
+/// wait ran out.
+fn wait_for_none(count: &Mutex<usize>, ended: &Condvar, bound: Duration) -> (usize, bool) {
+    ended
         .wait_timeout_while(
             count.lock().unwrap_or_else(PoisonError::into_inner),
-            drain_timeout,
+            bound,
             |n| *n > 0,
         )
         .map_or_else(
             |e| (*e.get_ref().0, e.get_ref().1.timed_out()),
             |(held, wait)| (*held, wait.timed_out()),
-        );
-    if timed_out {
-        log(&format!("drain timed out with {open} connections open"));
-    }
-    Ok(())
+        )
 }
 
 /// One connection being served; the drain waits until none are left.

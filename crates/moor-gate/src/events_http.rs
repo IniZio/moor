@@ -10,6 +10,7 @@ use serde_json::json;
 
 use crate::http::header;
 use crate::mcp::READ;
+use crate::streams::Streams;
 use crate::tools::{fetch, EventsArgs};
 use crate::{log, Gate};
 
@@ -19,6 +20,7 @@ pub(crate) fn serve(
     target: &str,
     req: &httparse::Request<'_, '_>,
     gate: &Gate,
+    streams: &Streams,
 ) {
     let Some(mcp) = &gate.mcp else {
         return;
@@ -49,9 +51,11 @@ pub(crate) fn serve(
         Err(why) => return reply(&mut stream, "400 Bad Request", None, &error(&why)),
     };
     let socket = mcp.front_socket();
+    let _held = streams.hold(&stream);
     match fetch(socket, &person, args) {
         Ok(doc) => reply(&mut stream, "200 OK", None, &doc.to_string()),
-        Err(why) => reply(&mut stream, "502 Bad Gateway", None, &error(&why)),
+        Err(why) if why.down => crate::http::unavailable(&mut stream),
+        Err(why) => reply(&mut stream, "502 Bad Gateway", None, &error(&why.why)),
     }
 }
 

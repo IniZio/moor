@@ -541,26 +541,56 @@ fn a_missing_controller_socket_answers_503_with_retry_after() {
     assert!(out.contains("\"error\""), "{out}");
 }
 
-#[test]
-fn a_draining_gate_finishes_what_is_in_flight_and_refuses_new_connections() {
-    let (w, mut trigger, served) = world_draining();
-    let mut ws = connect(&w, Some(&sign(&w.key, &claims(&w)))).unwrap();
-    send(&mut ws, &json!({"frame": "hello", "protocol": 15}));
-    assert_eq!(recv(&mut ws), json!({"frame": "hello", "protocol": 15}));
-
-    trigger.write_all(b"x").unwrap();
+/// Waits until the gate at `addr` no longer accepts connections.
+fn wait_refused(addr: &str) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while TcpStream::connect(&w.gate).is_ok() {
+    while TcpStream::connect(addr).is_ok() {
         assert!(std::time::Instant::now() < deadline, "still accepting");
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
+}
+
+#[test]
+fn a_draining_gate_finishes_a_short_request_and_refuses_new_connections() {
+    let (w, mut trigger, served) = world_draining();
+    let mut stream = TcpStream::connect(&w.gate).unwrap();
+    write!(
+        stream,
+        "POST /machines/enroll HTTP/1.1\r\nHost: x\r\nContent-Length: 2\r\n\r\n{{"
+    )
+    .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(200));
+
+    trigger.write_all(b"x").unwrap();
+    wait_refused(&w.gate);
     assert!(
         !served.is_finished(),
         "the drain must wait for the open request"
     );
 
-    send(&mut ws, &request("1", json!({"cmd": "whoami"})));
-    assert_eq!(recv(&mut ws)["id"], "1");
-    drop(ws);
+    stream.write_all(b"}").unwrap();
+    let mut out = String::new();
+    stream.read_to_string(&mut out).unwrap();
+    assert!(out.starts_with("HTTP/1.1 400"), "{out}");
+    served.join().unwrap();
+}
+
+#[test]
+fn a_draining_gate_closes_an_open_front_session_within_the_stream_bound() {
+    let (w, mut trigger, served) = world_draining();
+    let mut ws = connect(&w, Some(&sign(&w.key, &claims(&w)))).unwrap();
+    send(&mut ws, &json!({"frame": "hello", "protocol": 15}));
+    assert_eq!(recv(&mut ws), json!({"frame": "hello", "protocol": 15}));
+
+    let began = std::time::Instant::now();
+    trigger.write_all(b"x").unwrap();
+    wait_refused(&w.gate);
+    assert!(ws.read().is_err() || ws.read().is_err());
+    let bound = std::time::Duration::from_secs(moor_gate::STREAM_DRAIN_SECS);
+    assert!(
+        began.elapsed() < bound * 2,
+        "closed after {:?}",
+        began.elapsed()
+    );
     served.join().unwrap();
 }
