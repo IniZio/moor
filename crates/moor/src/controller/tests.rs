@@ -148,6 +148,7 @@ mod run_grant;
 mod run_output;
 mod runner_socket;
 mod serve_first;
+mod socket_path_len;
 mod users;
 mod webhook_front;
 
