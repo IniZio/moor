@@ -43,6 +43,7 @@ impl Reading {
             may_quiet,
             run_in_flight,
             session: None,
+            probed_pane: None,
             launch_failure: None,
             launch_overdue: None,
             agent_session: None,

@@ -114,7 +114,8 @@ fn unreachable_since(
 }
 
 /// What became of the agent whose pane `reading` saw end, or `None` when this settle may not
-/// tell: the session is not the probed one, or another operation holds the Box lock.
+/// tell: the session is not the probed one, or another operation holds the Box lock. A session
+/// already moved off the probed pane was reattached by another settle that read the same loss.
 pub(crate) fn after_pane_end(
     cx: &Cx,
     store: &Store,
@@ -122,9 +123,6 @@ pub(crate) fn after_pane_end(
     reading: &Reading,
     probed: i64,
 ) -> Result<Option<Fate>, CommandError> {
-    let Some(launch) = store.live_session(row.id)?.filter(|s| s.id == probed) else {
-        return Ok(None);
-    };
     let Ok(_held) = BoxLock::acquire(
         cx.clock(),
         cx.state_dir()?,
@@ -134,6 +132,12 @@ pub(crate) fn after_pane_end(
     ) else {
         return Ok(None);
     };
+    let Some(launch) = store.live_session(row.id)?.filter(|s| s.id == probed) else {
+        return Ok(None);
+    };
+    if launch.pane != reading.probed_pane {
+        return Ok(Some(Fate::Reattached));
+    }
     let pane_exit = match reading.activity.as_ref().map(|a| &a.state) {
         Some(AgentState::Exited { code }) => Some(*code),
         _ => None,
