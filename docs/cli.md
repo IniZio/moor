@@ -41,6 +41,7 @@ The state directory holds `moor.db`. It is the first of `--state-dir`,
 | `moor show [NAME]` | Shows all open Boxes, or one Box in detail. `list` is an alias. |
 | `moor inspect NAME` | Shows one Box so you can tell working from stuck: its agent state, why it looks stuck, the agent's latest messages and the end of its pane. `--lines N` sets the pane lines (40 by default, at most 200) and `--said N` the messages (5 by default, at most 20). |
 | `moor run NAME -- CMD...` | Runs a command on the Box's machine. |
+| `moor exec NAME [-i] -- CMD...` | Runs a command in the Box with stdin, stdout and stderr passed byte for byte, and exits with its exit code. See [Byte pipe](#byte-pipe-moor-exec). |
 | `moor wait NAME` | Waits until the Box reaches a state. |
 | `moor wait-events NAME...` | Waits for events from one or more Boxes. |
 | `moor steer NAME TEXT` | Sends text to the Box's agent. `--menu N` sends a menu choice instead. |
@@ -162,6 +163,24 @@ a host checkout into a Box.
 | Flag | Effect |
 | --- | --- |
 | `--record NAME` | Record the run as the gate `NAME`, for `moor gate check`. moor reads the Box checkout's HEAD first and records the run under it. It refuses a Box checkout with uncommitted changes. If the command moves HEAD or changes a tracked file, the run fails with "the Box HEAD moved during the record run". New untracked files do not fail it. |
+
+### Byte pipe: `moor exec`
+
+`moor exec` is a transport, not a run. It passes bytes both ways untouched,
+as `ssh -T -e none` does, and keeps no run record or log. It takes no Box
+lock and wakes an asleep Box first.
+
+- Stdin goes to the command until it ends, and then the command's stdin
+  closes. A terminal's stdin goes only with `-i`.
+- Stdout and stderr come back apart and unaltered. There is no terminal,
+  banner, marker or escape character.
+- moor exits with the command's exit code. moor's own failure, or a command
+  killed before it exited, exits 255.
+- When the client goes away, the command is hung up and killed.
+
+The command runs as `moor run` runs it: one `CMD` argument is shell text.
+`--tty` is not supported. A tool that reaches a machine through a command can
+use it, for example `hc machine add --name NAME --via 'moor exec NAME --'`.
 
 ### `moor wait` flags
 
