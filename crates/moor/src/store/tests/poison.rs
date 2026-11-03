@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use super::{new_box, open};
+use crate::store::db::DbExt as _;
 
 #[test]
 #[expect(

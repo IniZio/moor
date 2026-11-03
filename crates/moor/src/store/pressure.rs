@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 use moor_core::decide::pressure::{Reading, SUSTAINED_REPORTS};
 use moor_core::name::{BoxId, NodeName};
-use rusqlite::{params, OptionalExtension};
 
+use crate::store::db::{params, DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
 /// A node's pressure state: its recent reports, oldest first, since when pressure has been

@@ -2,9 +2,9 @@
 
 use moor_core::user::{Email, Identity, SecretName, UserId};
 use moor_core::Secret;
-use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 
 use super::{parsed, Store, StoreError};
+use crate::store::db::{params, Db, DbExt as _, OptionalExtension, TransactionBehavior};
 use crate::vault::Vault;
 
 pub(super) mod front_leases;
@@ -15,7 +15,7 @@ mod profile;
 pub(super) mod webhook;
 
 /// The user `identity` is linked to, on any connection.
-fn user_of_in(conn: &Connection, identity: &Identity) -> Result<Option<UserId>, StoreError> {
+fn user_of_in(conn: &dyn Db, identity: &Identity) -> Result<Option<UserId>, StoreError> {
     let id: Option<i64> = conn
         .query_row(
             "SELECT \"user\" FROM identities WHERE identity = ?",

@@ -11,6 +11,7 @@ use moor_core::domain::boxes::BoxState;
 use moor_core::name::NodeName;
 use moor_core::user::UserId;
 
+use crate::store::db::{Db, DbExt as _};
 use crate::store::{Store, StoreError};
 
 /// Boxes per node name.
@@ -18,7 +19,7 @@ type Counts = HashMap<String, usize>;
 
 /// Per node: Boxes holding a slot, counted the way admission counts them, Boxes pending, and
 /// Boxes setting up.
-fn per_node(conn: &rusqlite::Connection) -> Result<(Counts, Counts, Counts), StoreError> {
+fn per_node(conn: &dyn Db) -> Result<(Counts, Counts, Counts), StoreError> {
     let mut stmt = conn.prepare(
         "SELECT node, driver_state, state, COUNT(*) FROM boxes \
          WHERE node IS NOT NULL GROUP BY node, driver_state, state",
@@ -51,7 +52,7 @@ fn per_node(conn: &rusqlite::Connection) -> Result<(Counts, Counts, Counts), Sto
 /// One personal node from a `user_machines_v2` row joined with its link; `load` gives a node's
 /// live, pending and setting-up Boxes by name.
 fn personal(
-    r: &rusqlite::Row<'_>,
+    r: &crate::store::db::Row<'_>,
     load: &dyn Fn(&str) -> (usize, usize, usize),
 ) -> Result<Option<Node>, StoreError> {
     let name: String = r.get(2)?;

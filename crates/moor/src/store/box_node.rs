@@ -6,14 +6,14 @@ use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::name::NodeName;
 use moor_core::BoxId;
-use rusqlite::{params, Connection, OptionalExtension};
 
 use super::{Store, StoreError};
+use crate::store::db::{params, Db, DbExt as _, OptionalExtension};
 
 /// Boxes holding a slot on `node` as seen on `conn`, counted the way admission counts them,
 /// and Boxes setting up there.
 pub(super) fn live_on_node_in(
-    conn: &Connection,
+    conn: &dyn Db,
     node: &NodeName,
 ) -> Result<(usize, usize), StoreError> {
     let mut stmt = conn.prepare(

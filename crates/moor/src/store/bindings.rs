@@ -1,9 +1,9 @@
 //! Bindings of a front conversation to a Session, host or Box.
 
 use moor_core::BoxName;
-use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
 use super::{parsed, Store, StoreError};
+use crate::store::db::{params, Db, DbExt as _, OptionalExtension, TransactionBehavior};
 
 /// A front conversation bound to a Session.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,7 +34,7 @@ const NEWEST: &str = "ORDER BY g.created_at DESC, g.rowid DESC";
 type BindingRow = (String, String, i64, Option<String>, String);
 
 /// Reads one raw binding row.
-fn row_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<BindingRow> {
+fn row_of(r: &crate::store::db::Row<'_>) -> rusqlite::Result<BindingRow> {
     Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
 }
 
@@ -55,7 +55,7 @@ fn binding_of(row: BindingRow) -> Result<Binding, StoreError> {
 /// Bind (front, key) to `session` unless the key's newest binding names a live Session;
 /// true when this call added a row.
 fn insert_binding(
-    conn: &rusqlite::Connection,
+    conn: &dyn Db,
     front: &str,
     key: &str,
     session: i64,

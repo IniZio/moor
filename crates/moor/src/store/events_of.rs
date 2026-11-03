@@ -3,6 +3,7 @@
 use moor_core::BoxId;
 
 use super::{event_from_row, EventRow, Store, StoreError};
+use crate::store::db::DbExt as _;
 
 impl Store {
     /// The newest `n` events of `kind` for a box, ascending by id; empty when it has had none.

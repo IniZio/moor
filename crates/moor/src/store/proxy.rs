@@ -9,9 +9,9 @@ use std::time::Duration;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::rng::Rng;
 use moor_core::BoxId;
-use rusqlite::{params, Connection, OptionalExtension, Row, TransactionBehavior};
 
 use super::{load_box, to_u32, Store, StoreError};
+use crate::store::db::{params, Db, DbExt as _, OptionalExtension, Row, TransactionBehavior};
 
 /// Lowest box port a proxy may be given.
 pub(crate) const BOX_PORT_MIN: u16 = 20000;
@@ -258,7 +258,7 @@ fn to_port(what: &str, v: i64) -> Result<u16, StoreError> {
 }
 
 /// Whether a row other than `box_id`'s holds `port`.
-fn held_by_other(conn: &Connection, box_id: BoxId, port: u16) -> Result<bool, StoreError> {
+fn held_by_other(conn: &dyn Db, box_id: BoxId, port: u16) -> Result<bool, StoreError> {
     Ok(conn
         .query_row(
             "SELECT 1 FROM proxy WHERE box_port = ? AND box <> ?",
@@ -300,7 +300,7 @@ const EGRESS_PORTS: Ports = Ports {
 
 /// Draw a port of `ports` no row holds from `rng`, falling back to a linear scan from the last
 /// draw.
-fn free_port(conn: &Connection, rng: &dyn Rng, ports: Ports) -> Result<u16, StoreError> {
+fn free_port(conn: &dyn Db, rng: &dyn Rng, ports: Ports) -> Result<u16, StoreError> {
     let span = u32::from(ports.max - ports.min) + 1;
     let at = |offset: u32| ports.min + u16::try_from(offset % span).unwrap_or(0);
     let taken = |port: u16| -> Result<bool, StoreError> {

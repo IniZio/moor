@@ -5,8 +5,8 @@
 use moor_core::user::{SecretName, UserId};
 use moor_core::view::user::{WebhookState, WebhookView};
 use moor_core::Secret;
-use rusqlite::{params, OptionalExtension as _, TransactionBehavior};
 
+use crate::store::db::{params, DbExt as _, OptionalExtension as _, TransactionBehavior};
 use crate::store::{Store, StoreError};
 use crate::vault::Vault;
 

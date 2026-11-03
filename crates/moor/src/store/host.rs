@@ -4,9 +4,9 @@ use std::path::Path;
 
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::user::UserId;
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 
 use super::{parsed_opt, Store, StoreError};
+use crate::store::db::{Db, DbExt as _, OptionalExtension, TransactionBehavior};
 
 /// One host Session row.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,7 +26,7 @@ pub(crate) struct HostRow {
 }
 
 /// Read the host Session `id`; Box Sessions are not host rows.
-fn load(conn: &Connection, id: i64) -> Result<Option<HostRow>, StoreError> {
+fn load(conn: &dyn Db, id: i64) -> Result<Option<HostRow>, StoreError> {
     let raw = conn
         .query_row(
             "SELECT workdir, agent, agent_session_id, state, ended_at FROM sessions \
@@ -58,7 +58,7 @@ fn load(conn: &Connection, id: i64) -> Result<Option<HostRow>, StoreError> {
 }
 
 /// Read a host Session that still runs, or say why it cannot change.
-fn load_live(conn: &Connection, id: i64) -> Result<HostRow, StoreError> {
+fn load_live(conn: &dyn Db, id: i64) -> Result<HostRow, StoreError> {
     let row =
         load(conn, id)?.ok_or_else(|| StoreError::Invalid(format!("no host Session {id}")))?;
     if row.ended_at.is_some() || row.state == SessionState::Ended {
@@ -238,7 +238,7 @@ impl Store {
 }
 
 /// Refuses parent `p` when it is unknown or has ended.
-fn check_parent(conn: &Connection, p: i64) -> Result<(), StoreError> {
+fn check_parent(conn: &dyn Db, p: i64) -> Result<(), StoreError> {
     let row: Option<(String, Option<i64>)> = conn
         .query_row(
             "SELECT state, ended_at FROM sessions WHERE id = ?1",
@@ -258,7 +258,7 @@ fn check_parent(conn: &Connection, p: i64) -> Result<(), StoreError> {
 /// The id and workdir of the live host Session that `user` (none for the operator) opened
 /// with `key`.
 fn live_keyed(
-    conn: &Connection,
+    conn: &dyn Db,
     user: Option<i64>,
     key: &str,
 ) -> Result<Option<(i64, String)>, StoreError> {

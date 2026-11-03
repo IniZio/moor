@@ -7,11 +7,12 @@ use moor_core::box_key::ControllerId;
 use moor_core::cache::CacheSalt;
 use moor_migrate::{Backend, Legacy, Migration};
 use moor_schema::STEPS;
-use rusqlite::{Connection, OpenFlags, OptionalExtension};
+use rusqlite::{Connection, OpenFlags};
 
 use super::open::sibling;
 use super::{Store, StoreError};
 use crate::env::CONTROLLER_LOCK;
+use crate::store::db::{DbExt as _, OptionalExtension};
 
 impl Store {
     /// This state dir's cache key salt, made on first use and never changed.

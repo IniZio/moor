@@ -2,8 +2,8 @@
 
 use moor_core::config::UserMcp;
 use moor_core::user::UserId;
-use rusqlite::params;
 
+use crate::store::db::{params, DbExt as _};
 use crate::store::{Store, StoreError};
 
 impl Store {

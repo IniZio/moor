@@ -10,6 +10,7 @@ use serde_json::json;
 use super::{on_github, repo, repo_req, req, world, World};
 use crate::cx::Cx;
 use crate::ops::start::{needs, run};
+use crate::store::db::DbExt as _;
 use crate::testing::cx::{put_secret, REQUESTER_USER};
 use crate::testing::driver::FakeDriver;
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};

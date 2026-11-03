@@ -21,6 +21,7 @@ use std::time::Duration;
 use super::run;
 use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
+use crate::store::db::DbExt as _;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::{Reply, ScriptedProc};

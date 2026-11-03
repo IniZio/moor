@@ -2,8 +2,8 @@
 
 use moor_core::name::ForgeRepo;
 use moor_core::{BoxId, Sha};
-use rusqlite::{params, OptionalExtension};
 
+use crate::store::db::{params, DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
 /// A profile resolved for one Box.

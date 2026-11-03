@@ -6,8 +6,8 @@ use moor_core::request::{BoxHostMemory, MachineLink, MemoryReport};
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::view::user::MachineKey;
-use rusqlite::params;
 
+use crate::store::db::{params, Db, DbExt as _};
 use crate::store::{Store, StoreError};
 
 impl Store {
@@ -150,7 +150,7 @@ const LINK_COLUMNS: &str =
      FROM machine_links LEFT JOIN user_machines_v2 m USING (machine_id)";
 
 /// One `machine_links` row.
-fn link_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<MachineLink> {
+fn link_row(r: &crate::store::db::Row<'_>) -> rusqlite::Result<MachineLink> {
     Ok(MachineLink {
         machine_id: r.get(0)?,
         online: r.get(1)?,
@@ -187,7 +187,7 @@ fn mib(stored: Option<i64>) -> Option<u64> {
 
 /// `user`'s enrolled machines with their ids.
 pub(super) fn enrolled_in(
-    conn: &rusqlite::Connection,
+    conn: &dyn Db,
     user: UserId,
 ) -> Result<Vec<(i64, moor_core::config::UserMachine)>, StoreError> {
     let mut stmt = conn.prepare(

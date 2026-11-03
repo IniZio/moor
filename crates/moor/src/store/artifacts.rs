@@ -9,9 +9,9 @@ use moor_core::artifact::{content_type, kind_of, valid_name};
 use moor_core::domain::event::Event;
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
-use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior};
 
 use super::{Store, StoreError};
+use crate::store::db::{params, Db, DbExt as _, OptionalExtension, Row, TransactionBehavior, Tx};
 
 /// Columns of an `artifacts` row, in the order `artifact_from_row` reads them.
 const COLUMNS: &str =
@@ -212,7 +212,7 @@ struct Fresh<'a> {
 }
 
 /// Inserts the row and event, rewrites the manifest, and commits.
-fn record(tx: Transaction<'_>, f: &Fresh<'_>, box_dir: &Path) -> Result<ArtifactRow, StoreError> {
+fn record(tx: Tx<'_>, f: &Fresh<'_>, box_dir: &Path) -> Result<ArtifactRow, StoreError> {
     let kind = kind_of(f.name).as_str().to_owned();
     let content_type = content_type(f.name).to_owned();
     let size = i64::try_from(f.size)
@@ -256,7 +256,7 @@ fn record(tx: Transaction<'_>, f: &Fresh<'_>, box_dir: &Path) -> Result<Artifact
 }
 
 /// Newest version per name for the Box, read on `conn`.
-fn latest_in(conn: &rusqlite::Connection, box_id: BoxId) -> Result<Vec<ArtifactRow>, StoreError> {
+fn latest_in(conn: &dyn Db, box_id: BoxId) -> Result<Vec<ArtifactRow>, StoreError> {
     let mut stmt = conn.prepare(&format!(
         "SELECT {COLUMNS} FROM artifacts a WHERE box = ?1 AND version = \
          (SELECT MAX(version) FROM artifacts WHERE box = a.box AND name = a.name) ORDER BY name"

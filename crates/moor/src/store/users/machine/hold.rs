@@ -8,10 +8,10 @@ use moor_core::domain::event::{Event, MachineEvent};
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::BoxId;
-use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 
 use super::{claim_in, held_in, machines_in, owned_in, put_in, Claim};
 use crate::store::apply::insert_event;
+use crate::store::db::{params, Db, DbExt as _, OptionalExtension, TransactionBehavior, Tx};
 use crate::store::{Store, StoreError};
 
 mod claim;
@@ -176,7 +176,7 @@ pub(crate) struct WaitPlace {
 }
 
 /// Whether the newest machine event of `id` is a `machine_waiting` at `position`.
-fn said_waiting(conn: &Connection, id: BoxId, position: u32) -> Result<bool, StoreError> {
+fn said_waiting(conn: &dyn Db, id: BoxId, position: u32) -> Result<bool, StoreError> {
     let last: Option<(String, String)> = conn
         .query_row(
             "SELECT kind, payload FROM events WHERE box = ? AND substr(kind, 1, 8) = 'machine_' \
@@ -194,7 +194,7 @@ fn said_waiting(conn: &Connection, id: BoxId, position: u32) -> Result<bool, Sto
 }
 
 /// Where `id`'s want stands among `user`'s, counting from 1.
-fn position_in(conn: &Connection, id: BoxId, user: UserId) -> Result<u16, StoreError> {
+fn position_in(conn: &dyn Db, id: BoxId, user: UserId) -> Result<u16, StoreError> {
     let wants = wants_in(conn, user)?;
     let place = wants
         .iter()
@@ -205,7 +205,7 @@ fn position_in(conn: &Connection, id: BoxId, user: UserId) -> Result<u16, StoreE
 
 /// Drops `user`'s expired wants, recording `machine_left_out`, then gives each remaining want,
 /// oldest first, the slot `pick_machine` finds free.
-fn grant_in(conn: &Transaction<'_>, user: UserId, now: Ts) -> Result<(), StoreError> {
+fn grant_in(conn: &Tx<'_>, user: UserId, now: Ts) -> Result<(), StoreError> {
     drop_expired_in(conn, user, now)?;
     let owned = owned_in(conn, user)?;
     let own: Vec<UserMachine> = owned.into_iter().map(|(_, m)| m).collect();
@@ -280,7 +280,7 @@ fn pick_for(
 }
 
 /// Why the want `claim` has no slot now.
-fn why_waiting(conn: &Connection, claim: &Claim) -> Result<String, StoreError> {
+fn why_waiting(conn: &dyn Db, claim: &Claim) -> Result<String, StoreError> {
     let own = machines_in(conn, claim.user)?;
     let held = held_in(conn, claim.user)?;
     Ok(match pick_for(&own, &held, claim) {
@@ -292,7 +292,7 @@ fn why_waiting(conn: &Connection, claim: &Claim) -> Result<String, StoreError> {
 }
 
 /// `user`'s wanting Boxes and their names, oldest want first.
-fn wants_in(conn: &Connection, user: UserId) -> Result<Vec<(BoxId, String)>, StoreError> {
+fn wants_in(conn: &dyn Db, user: UserId) -> Result<Vec<(BoxId, String)>, StoreError> {
     let mut stmt = conn.prepare(
         "SELECT m.box, b.name FROM box_machines m JOIN boxes b ON b.id = m.box \
          WHERE m.user = ? AND m.state = 'wanted' ORDER BY m.since, m.box",
@@ -302,7 +302,7 @@ fn wants_in(conn: &Connection, user: UserId) -> Result<Vec<(BoxId, String)>, Sto
 }
 
 /// Deletes `user`'s wants whose wait ran out by `now`, each with a `machine_left_out` event.
-fn drop_expired_in(conn: &Transaction<'_>, user: UserId, now: Ts) -> Result<(), StoreError> {
+fn drop_expired_in(conn: &Tx<'_>, user: UserId, now: Ts) -> Result<(), StoreError> {
     let mut stmt = conn.prepare(
         "DELETE FROM box_machines WHERE \"user\" = ? AND state = 'wanted' AND until < ? \
          RETURNING box, labels",

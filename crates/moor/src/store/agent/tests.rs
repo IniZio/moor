@@ -14,6 +14,7 @@ use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
+use crate::store::db::DbExt as _;
 use crate::testing::clock::FakeClock;
 
 use crate::store::{Store, StoreError};

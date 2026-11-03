@@ -9,6 +9,7 @@ use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, SessionId, StartReq};
 
 use super::{req, world, World};
 use crate::ops::start::run;
+use crate::store::db::DbExt as _;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 

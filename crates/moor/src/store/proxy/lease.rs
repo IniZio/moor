@@ -7,10 +7,10 @@ use std::time::Duration;
 
 use moor_core::domain::event::Event;
 use moor_core::BoxId;
-use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 
 use super::ReadyProc;
 use crate::store::apply::insert_event;
+use crate::store::db::{params, Db, DbExt as _, OptionalExtension, TransactionBehavior};
 use crate::store::{Store, StoreError};
 
 /// Outcome of a lease claim.
@@ -193,7 +193,7 @@ impl Store {
 }
 
 /// Whether `box_id` has a proxy row.
-fn proxy_exists(conn: &Connection, box_id: BoxId) -> Result<bool, StoreError> {
+fn proxy_exists(conn: &dyn Db, box_id: BoxId) -> Result<bool, StoreError> {
     Ok(conn
         .query_row("SELECT 1 FROM proxy WHERE box = ?", [box_id.get()], |_| {
             Ok(())

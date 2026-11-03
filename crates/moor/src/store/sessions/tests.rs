@@ -8,6 +8,7 @@ use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::{BoxId, ProviderId};
 
+use crate::store::db::DbExt as _;
 use crate::store::tests::{new_box, open};
 use crate::store::StoreError;
 use moor_core::seam::clock::Clock;

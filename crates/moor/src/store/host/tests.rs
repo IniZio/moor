@@ -6,6 +6,7 @@ use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionState;
 use moor_core::BoxId;
 
+use crate::store::db::DbExt as _;
 use crate::store::host::{HostWorkdir, NewHost};
 use crate::store::tests::{new_box, open};
 use crate::store::{Store, StoreError};

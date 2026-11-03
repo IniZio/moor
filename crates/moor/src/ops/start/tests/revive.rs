@@ -11,6 +11,7 @@ use super::dead_agent::{ca_stopped, recorded_failure, CA};
 use super::relaunch::{gone, obs, set_agent_session, started};
 use super::World;
 use crate::ops::start::revive_after_wake;
+use crate::store::db::DbExt as _;
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
 
 fn revive(w: &World, id: BoxId) {

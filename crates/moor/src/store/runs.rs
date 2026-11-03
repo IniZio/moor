@@ -5,11 +5,11 @@ use moor_core::domain::event::Event;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, RunId, Sha};
 use rusqlite::types::Value;
-use rusqlite::{params, OptionalExtension, Row, TransactionBehavior};
 
 use super::apply::{insert_event, intent_sets, update};
 use super::follow::{self, FollowClaim};
 use super::{load_box, Store, StoreError};
+use crate::store::db::{params, DbExt as _, OptionalExtension, Row, TransactionBehavior};
 
 /// A run to record.
 #[derive(Debug, Clone, PartialEq, Eq)]

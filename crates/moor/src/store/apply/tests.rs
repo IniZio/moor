@@ -5,6 +5,7 @@ use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::BoxName;
 
+use crate::store::db::DbExt as _;
 use crate::store::tests::open;
 use crate::store::StoreError;
 

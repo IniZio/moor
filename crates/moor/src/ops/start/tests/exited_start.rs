@@ -8,6 +8,7 @@ use super::relaunch::session;
 use super::state::working;
 use super::{req, world, World};
 use crate::ops::start::{run, settle_all};
+use crate::store::db::DbExt as _;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 

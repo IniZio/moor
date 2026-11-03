@@ -7,9 +7,9 @@ use std::path::Path;
 
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
-use rusqlite::{params, OptionalExtension, Row, TransactionBehavior};
 
 use super::{Store, StoreError};
+use crate::store::db::{params, DbExt as _, OptionalExtension, Row, TransactionBehavior};
 
 /// One stored version of a Box's Report.
 #[derive(Debug, Clone, PartialEq, Eq)]

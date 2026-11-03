@@ -8,9 +8,9 @@ use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::view::MachineHoldState;
 use moor_core::BoxId;
-use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use crate::store::apply::insert_event;
+use crate::store::db::{params, Db, DbExt as _, OptionalExtension, Tx};
 use crate::store::{Store, StoreError};
 
 #[cfg(test)]
@@ -149,11 +149,7 @@ impl Store {
 
 /// Frees the machine `box_id` holds as the Box leaves the live states, recording
 /// `machine_detached`, so a close that no supervisor sees still lets the machine go.
-pub(in crate::store) fn release_in(
-    tx: &Transaction<'_>,
-    box_id: BoxId,
-    now: Ts,
-) -> Result<(), StoreError> {
+pub(in crate::store) fn release_in(tx: &Tx<'_>, box_id: BoxId, now: Ts) -> Result<(), StoreError> {
     let name: Option<String> = tx
         .query_row(
             "DELETE FROM box_machines WHERE box = ? RETURNING machine",
@@ -190,18 +186,18 @@ pub(crate) struct HeldMachine {
 }
 
 /// `user`'s machines by name, read through `conn`.
-fn machines_in(conn: &Connection, user: UserId) -> Result<Vec<UserMachine>, StoreError> {
+fn machines_in(conn: &dyn Db, user: UserId) -> Result<Vec<UserMachine>, StoreError> {
     Ok(owned_in(conn, user)?.into_iter().map(|(_, m)| m).collect())
 }
 
 /// `user`'s machines by name with the id each is enrolled under.
-fn owned_in(conn: &Connection, user: UserId) -> Result<Vec<(i64, UserMachine)>, StoreError> {
+fn owned_in(conn: &dyn Db, user: UserId) -> Result<Vec<(i64, UserMachine)>, StoreError> {
     links::enrolled_in(conn, user)
 }
 
 /// `user`'s machine `name` with its enrolled id.
 fn named_in(
-    conn: &Connection,
+    conn: &dyn Db,
     user: UserId,
     name: &str,
 ) -> Result<Option<(i64, UserMachine)>, StoreError> {
@@ -212,7 +208,7 @@ fn named_in(
 
 /// `user`'s machines held by a Box: machine name to its taken slots and the Box in each.
 fn held_in(
-    conn: &Connection,
+    conn: &dyn Db,
     user: UserId,
 ) -> Result<BTreeMap<String, BTreeMap<u16, String>>, StoreError> {
     let mut stmt = conn.prepare(

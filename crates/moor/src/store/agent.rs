@@ -5,11 +5,11 @@ use moor_core::config::AgentHolder;
 use moor_core::domain::event::Event;
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
-use rusqlite::{params, OptionalExtension, Row, TransactionBehavior};
 use serde_json::{json, Value};
 
 use super::apply::insert_event;
 use super::{load_box, Store, StoreError};
+use crate::store::db::{params, DbExt as _, OptionalExtension, Row, TransactionBehavior};
 
 /// A stored agent session.
 #[derive(Debug, Clone, PartialEq, Eq)]

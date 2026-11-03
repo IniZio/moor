@@ -3,6 +3,7 @@
 use moor_core::BoxId;
 
 use super::super::{Store, StoreError};
+use crate::store::db::DbExt as _;
 
 impl Store {
     /// Record a `kind` ref with `value` on Box `id`; true when it was new.
