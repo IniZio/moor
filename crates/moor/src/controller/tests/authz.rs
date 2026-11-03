@@ -160,6 +160,7 @@ pub(super) enum Names {
 }
 
 /// A request of `kind` that names Box `name` or Session `session`.
+#[expect(clippy::too_many_lines, reason = "one arm per request")]
 pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
     let on_box = |extra: Value| {
         let mut req = json!({"cmd": kind, "box": name});
@@ -188,16 +189,48 @@ pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
         "bind-session" => {
             json!({"cmd": kind, "front": "slack", "key": "k", "session": session, "owner": "o"})
         }
-        "webhook-setup-show" | "webhook-setup-finish" | "close-failed" => return Names::Nothing,
-        "start-needs" | "session-binding" | "gate" | "env" | "repos" | "whoami" | "enroll"
-        | "secret-set" | "secret-delete" | "secret-names" | "as" | "mcp-add" | "mcp-remove"
-        | "mcp-list" | "profile-set" | "profile-show" | "profile-remove" | "mcp-oauth-finish"
-        | "machine-remove" | "machine-enroll" | "machine-list" | "machine-status"
-        | "machine-keys" | "machine-links" | "webhook-add" | "webhook-list" | "webhook-remove"
-        | "webhook-claim" | "webhook-report" | "box-mirror" | "box-put" | "machine-hold" | "in"
-        | "version" | "proxy-lease" | "proxy-release" | "proxy-status" | "node-list" => {
-            return Names::Nothing
-        }
+        "webhook-setup-show"
+        | "webhook-setup-finish"
+        | "close-failed"
+        | "start-needs"
+        | "session-binding"
+        | "gate"
+        | "env"
+        | "repos"
+        | "whoami"
+        | "enroll"
+        | "secret-set"
+        | "secret-delete"
+        | "secret-names"
+        | "as"
+        | "mcp-add"
+        | "mcp-remove"
+        | "mcp-list"
+        | "profile-set"
+        | "profile-show"
+        | "profile-remove"
+        | "mcp-oauth-finish"
+        | "machine-remove"
+        | "machine-enroll"
+        | "machine-list"
+        | "machine-status"
+        | "machine-keys"
+        | "machine-links"
+        | "webhook-add"
+        | "webhook-list"
+        | "webhook-remove"
+        | "webhook-claim"
+        | "webhook-report"
+        | "box-mirror"
+        | "box-put"
+        | "machine-hold"
+        | "in"
+        | "version"
+        | "proxy-lease"
+        | "proxy-release"
+        | "proxy-status"
+        | "node-list"
+        | "provider-ready" => return Names::Nothing,
         _ => return Names::Unknown,
     })
 }

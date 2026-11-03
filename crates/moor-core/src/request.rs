@@ -162,6 +162,8 @@ pub enum Request {
     MachineList(AsReq),
     /// List the nodes the caller may start Boxes on; the operator sees every node.
     NodeList(AsReq),
+    /// Ask the controller whether each node runtime's provider credentials are in place.
+    ProviderReady(AsReq),
     /// Ask one of the caller's user's machine agents for its status.
     MachineStatus(MachineStatusReq),
     /// List every enrolled machine's key; the operator's only.
@@ -247,6 +249,7 @@ impl Request {
             Self::MachineEnroll(_) => "machine-enroll",
             Self::MachineList(_) => "machine-list",
             Self::NodeList(_) => "node-list",
+            Self::ProviderReady(_) => "provider-ready",
             Self::MachineStatus(_) => "machine-status",
             Self::MachineKeys {} => "machine-keys",
             Self::MachineLinks(_) => "machine-links",

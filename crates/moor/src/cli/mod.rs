@@ -17,6 +17,7 @@ use clap::error::ErrorKind as ClapKind;
 use moor_core::{ErrorKind, ErrorView, Request, Response, RunReq};
 
 use args::Action;
+pub(crate) use caller::caller_repo;
 pub use caller::{resolve, Resolved};
 
 /// Options shared by every command.

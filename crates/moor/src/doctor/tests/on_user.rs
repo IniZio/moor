@@ -4,6 +4,8 @@ use moor_core::user::Identity;
 use moor_core::user::{SecretName, UserId};
 use moor_core::view::user::{SecretNamesValue, StartNeedsValue};
 
+use serde_json::json;
+
 use super::*;
 
 fn name(s: &str) -> SecretName {
@@ -29,9 +31,9 @@ fn rig(user: Option<i64>, needs: &[&str], missing: &[&str], stored: &[&str]) -> 
 }
 
 #[test]
-fn without_a_controller_all_three_warn() {
+fn without_a_controller_the_user_line_warns() {
     let report = Rig::new().with(user::checks);
-    assert_eq!(report.len(), 3);
+    assert_eq!(report.len(), 1);
     assert!(report.iter().all(|c| c.status == Status::Warn));
 }
 
@@ -42,43 +44,74 @@ fn a_user_who_is_not_enrolled_fails_and_stops_there() {
         return assert_eq!(report.len(), 1);
     };
     assert_eq!(only.status, Status::Fail);
+    assert_eq!(only.detail, "not enrolled");
     assert_eq!(only.fix, "run `moor user enroll`");
 }
 
 #[test]
-fn missing_secrets_are_named_with_both_ways_to_set_them() {
-    let mut r = rig(Some(1), &["github", "claude"], &["github", "claude"], &[]);
+fn an_enrolled_user_is_ok_and_each_need_has_its_own_line() {
+    let mut r = rig(Some(1), &["claude", "github"], &["github"], &["claude"]);
     r.public_url = Some("https://moor.example/".to_owned());
     let report = r.with(user::checks);
-    let u = named(&report, "user");
-    assert_eq!(u.status, Status::Fail);
-    assert_eq!(u.detail, "missing secrets: github, claude");
+    let lines: Vec<_> = report
+        .iter()
+        .map(|c| (c.name, c.status, c.detail.as_str()))
+        .collect();
     assert_eq!(
-        u.fix,
-        "run `moor user secret set github` on the host, or open https://moor.example/me/secrets"
+        lines,
+        [
+            ("user", Status::Ok, "enrolled"),
+            ("secret", Status::Ok, "claude: set"),
+            ("secret", Status::Fail, "github: not set"),
+        ]
     );
-    assert_eq!(named(&report, "github").status, Status::Fail);
-    assert_eq!(named(&report, "claude").status, Status::Fail);
+    let fix = report.last().map(|c| c.fix.as_str()).unwrap_or_default();
+    assert!(fix.contains("moor user secret set github"), "{fix}");
+    assert!(fix.contains("https://moor.example/me/secrets"), "{fix}");
 }
 
 #[test]
 fn without_a_public_url_only_the_cli_way_is_offered() {
     let report = rig(Some(1), &["github"], &["github"], &[]).with(user::checks);
     assert_eq!(
-        named(&report, "user").fix,
-        "run `moor user secret set github` on the host"
+        report.last().map(|c| c.fix.as_str()),
+        Some("run `moor user secret set github` on the host")
     );
 }
 
 #[test]
-fn stored_secrets_pass_the_user_check_and_warn_that_their_values_are_sealed() {
-    let report = rig(Some(1), &["github"], &[], &["github", "claude"]).with(user::checks);
-    assert_eq!(named(&report, "user").status, Status::Ok);
-    for secret in ["github", "claude"] {
-        let c = named(&report, secret);
-        assert_eq!(c.status, Status::Warn, "{c:?}");
-        assert!(c.detail.contains("only the controller can open it"));
-    }
+fn a_need_that_is_missing_is_named_once_each() {
+    let report = rig(Some(1), &["a", "b"], &["a", "b"], &[]).with(user::checks);
+    let fixes: Vec<_> = report.iter().skip(1).map(|c| c.fix.as_str()).collect();
+    let [a, b] = fixes.as_slice() else {
+        return assert_eq!(fixes.len(), 2);
+    };
+    assert!(a.contains("secret set a"));
+    assert!(b.contains("secret set b"));
+}
+
+#[test]
+fn start_needs_carries_the_checkout_repo() {
+    let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let log = std::rc::Rc::clone(&seen);
+    let mut r = rig(Some(1), &[], &[], &[]);
+    r.script = Box::new(move |req| {
+        log.borrow_mut().push(req);
+        answered(
+            "start-needs",
+            json!({"identity": "local:1000", "user": 1, "needs": [], "missing": []}),
+        )
+    });
+    r.repo = Some(moor_core::name::ForgeRepo::parse("acme/demo").unwrap());
+    r.with(user::checks);
+    let sent = seen.borrow().first().cloned();
+    let Some(Request::StartNeeds(req)) = sent else {
+        return assert!(sent.is_some(), "no start-needs sent");
+    };
+    assert_eq!(
+        req.repo.map(|r| r.to_string()),
+        Some("acme/demo".to_owned())
+    );
 }
 
 #[test]

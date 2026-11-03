@@ -27,6 +27,7 @@ pub(crate) mod machine_hold;
 mod nodes;
 mod open;
 mod open_session;
+mod provider_ready;
 mod retry;
 mod run;
 mod sessions;
@@ -105,6 +106,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
             to_value(&nodes::set_links(cx, &r.links)?)
         }
         Request::NodeList(_) => to_value(&nodes::list(cx)?),
+        Request::ProviderReady(_) => to_value(&provider_ready::run(cx)?),
         Request::Sessions(r) => to_value(&sessions::run(cx, &r)?),
         Request::Close(r) => to_value(&close::run(cx, &r)?),
         Request::Gate(r) => to_value(&gate::run(cx, &r)?),
