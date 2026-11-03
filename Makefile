@@ -16,10 +16,10 @@ ZIG_SHA256_aarch64-macos := b607e9b9234790a008116ae5bdb71c6243b84b9fb42a53a9e70f
 ZIG_PLATFORM ?= x86_64-linux
 PTY := --features moor/pty-surface
 
-.PHONY: help coverage setup secret audit lint hooks format test unit ci unit-nextest unit-doc build deploy overlap lint-pty unit-pty nested-e2e chart
+.PHONY: help coverage setup secret audit lint prepush hooks format test unit ci unit-nextest unit-doc build deploy overlap lint-pty unit-pty nested-e2e chart
 
 help:
-	@echo "targets: setup secret audit lint chart lint-pty format test unit-pty ci build deploy"
+	@echo "targets: setup secret audit lint prepush hooks chart lint-pty format test unit-pty ci build deploy"
 
 setup:
 	@rustup show active-toolchain >/dev/null
@@ -68,6 +68,12 @@ chart:
 	helm template moor $(CHART) $(CHART_VALUES) >/dev/null
 	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml >/dev/null
 
+# The two gates that CI runs before any test, so a push that fails one never reaches the tests.
+prepush:
+	$(MAKE) --no-print-directory audit
+	$(MAKE) --no-print-directory lint
+
+# Opt in to running `make prepush` before every `git push`.
 hooks:
 	git config core.hooksPath tools/git-hooks
 

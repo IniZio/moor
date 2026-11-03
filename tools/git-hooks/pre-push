@@ -6,18 +6,22 @@ if [ -n "${MOOR_SKIP_HOOKS:-}" ]; then
   exit 0
 fi
 
+# git lists each ref it pushes on stdin as `<local ref> <local sha> <remote ref> <remote sha>`.
+# Deleting a branch has an all-zero local sha and has nothing to check.
+pushing=
+while read -r _ local_sha _ _; do
+  case "$local_sha" in *[!0]*) pushing=1 ;; esac
+done
+[ -n "$pushing" ] || exit 0
+
 cd "$(git rev-parse --show-toplevel)"
+# git points GIT_DIR and friends at this repository. The lint self-tests make throwaway repositories,
+# and with these set their `git init` would re-initialise this one.
+for var in $(git rev-parse --local-env-vars); do unset "$var"; done
 
-run() {
-  echo "pre-push: $*"
-  "$@" || { echo "pre-push: failed: $*" >&2; echo "pre-push: fix it, or push with MOOR_SKIP_HOOKS=1" >&2; exit 1; }
+echo "pre-push: make prepush"
+make --no-print-directory prepush || {
+  echo "pre-push: make prepush failed; CI runs the same audit and lint and skips the tests when either fails" >&2
+  echo "pre-push: fix it, or push with MOOR_SKIP_HOOKS=1" >&2
+  exit 1
 }
-
-run cargo fmt --all --check
-run taplo fmt --check
-run cargo clippy --workspace --all-targets --locked -- -D warnings
-run tools/file-cap.sh
-run tools/removed-names.sh
-run tools/box-key.sh
-run tools/exec-env.sh
-run cargo run -q -p layering --locked
