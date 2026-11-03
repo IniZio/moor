@@ -13,6 +13,9 @@ pub struct Checkout<'a> {
     pub branch: &'a str,
 }
 
+/// The line the clone script prints when the Box branch started from an existing branch, not the base.
+pub const FROM_BRANCH: &str = "moor.clone=branch";
+
 /// The step that stopped the clone script; the discriminant is the script's exit code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CloneStep {
