@@ -95,6 +95,7 @@ Box's Proxy through `HTTPS_PROXY`, so the inner secrets are placeholders.
 | --- | --- |
 | `make build` | `cargo build --workspace --release --locked`. |
 | `make lint` | `cargo fmt --check` and `taplo fmt --check`, Clippy with `-D warnings`, the 400-line cap on Rust files, the removed-name, Box-key, and Box-environment checks, the layering check, the lint self-tests, `typos`, and `cargo doc` with warnings denied. |
+| `make hooks` | Sets `core.hooksPath` to [tools/git-hooks](../tools/git-hooks), so `git push` first runs the quick lint checks: `cargo fmt` and `taplo fmt`, Clippy, the file-cap, removed-name, Box-key, and Box-environment checks, and the layering check. The lint self-tests, `typos`, and `cargo doc` are left to CI. Push with `MOOR_SKIP_HOOKS=1` to skip the hook. |
 | `make audit` | `cargo deny check` and `cargo machete`. |
 | `make unit` | Every test target of the workspace in one `cargo nextest` run, with the doc tests alongside it. |
 | `make test` | The same as `make unit`. |

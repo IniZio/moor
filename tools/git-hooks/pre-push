@@ -1,0 +1,25 @@
+#!/bin/sh
+# Runs the quick `make lint` checks before a push. MOOR_SKIP_HOOKS=1 skips them.
+# The slow tail of `make lint` (cargo doc, the self-tests, typos) is left to CI.
+set -eu
+
+if [ -n "${MOOR_SKIP_HOOKS:-}" ]; then
+  echo "pre-push: skipped (MOOR_SKIP_HOOKS is set)"
+  exit 0
+fi
+
+cd "$(git rev-parse --show-toplevel)"
+
+run() {
+  echo "pre-push: $*"
+  "$@" || { echo "pre-push: failed: $*" >&2; echo "pre-push: fix it, or push with MOOR_SKIP_HOOKS=1" >&2; exit 1; }
+}
+
+run cargo fmt --all --check
+run taplo fmt --check
+run cargo clippy --workspace --all-targets --locked -- -D warnings
+run tools/file-cap.sh
+run tools/removed-names.sh
+run tools/box-key.sh
+run tools/exec-env.sh
+run cargo run -q -p layering --locked
