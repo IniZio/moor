@@ -179,7 +179,7 @@ fn list_failure_leaves_rows_untouched() {
     assert_eq!(box_state(&cx), BoxState::Ready);
     let warned = cx.take_warnings();
     assert_eq!(warned.len(), 1);
-    assert!(!warned.first().unwrap().message.contains("boom"));
+    assert!(warned.first().unwrap().message.contains("boom"));
 }
 
 #[test]

@@ -90,3 +90,30 @@ fn a_failing_box_list_shows_once_on_a_starting_box_in_plain_words() {
         ]
     );
 }
+
+#[test]
+fn a_failing_box_list_warning_names_the_cause_without_secrets() {
+    let w = world(FakeDriver::new());
+    run(&w.cx, &req("demo")).unwrap();
+    w.driver.fail_list_always(DriverError::Failed {
+        summary: "box list failed (crabbox exit 2)\nprovider=external refuses it token=ab12CD34"
+            .to_owned(),
+    });
+    let settle = Cx::fake_with(
+        w.dir.path(),
+        w.driver.clone(),
+        w.surface.clone(),
+        w.proc.clone(),
+        UserConfig::default(),
+    );
+    reconcile::run(&settle);
+    let warnings = settle.take_warnings();
+    assert_eq!(warnings.len(), 1);
+    let warning = warnings.first().unwrap();
+    assert!(
+        warning.message.contains("provider=external refuses it …"),
+        "{}",
+        warning.message
+    );
+    assert!(!warning.message.contains("ab12CD34"));
+}
