@@ -3125,7 +3125,6 @@ dependencies = [
 name = "moor-gate"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
  "bytes",
  "clap",
  "form_urlencoded",
