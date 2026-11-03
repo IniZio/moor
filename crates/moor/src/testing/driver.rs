@@ -10,9 +10,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::seam::driver::{
-    AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Driver, DriverCaps, DriverError,
-    ExecOutcome, ExecSpec, Followed, MirrorStats, Released, RunEnd, SleepKind, SleepOutcome,
-    StepDone,
+    AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Checkpoint, Driver, DriverCaps,
+    DriverError, ExecOutcome, ExecSpec, Followed, MirrorStats, Released, RunEnd, SleepKind,
+    SleepOutcome, StepDone,
 };
 use moor_core::seam::proc::{Deadline, Output, Pipes};
 use moor_core::{BoxHandle, BoxPath, ProviderId};
@@ -67,6 +67,7 @@ struct State {
     sleep_kind: Option<SleepKind>,
     cache: knobs::CacheState,
     runs: runs::RunState,
+    layers: checkpoints::LayerKnobs,
 }
 
 /// Scripted Driver: boxes `box-1`, `box-2`, ... with workdir `/work/cbx_N/repo`
@@ -186,10 +187,7 @@ impl Driver for FakeDriver {
         spec: &ExecSpec,
         deadline: Deadline,
     ) -> Result<ExecOutcome, DriverError> {
-        let hook = self.st().on_exec.clone();
-        if let Some(hook) = hook {
-            hook();
-        }
+        self.run_exec_hooks(spec);
         let mut s = self.st();
         s.note(format!("exec {}", handle.as_str()));
         s.execs.push((handle.clone(), spec.clone(), deadline));
@@ -200,8 +198,9 @@ impl Driver for FakeDriver {
             write_bytes(path, text.as_bytes())?;
         }
         let argv = spec.argv.join(" ");
-        if let Some((_, out)) = s.exec_ends.iter().find(|(n, _)| argv.contains(n.as_str())) {
-            return Ok(*out);
+        let ends = s.exec_ends.iter().find(|(n, _)| argv.contains(n.as_str()));
+        if let Some(out) = ends.map(|(_, out)| *out).or_else(|| s.end_once(&argv)) {
+            return Ok(out);
         }
         let out = s
             .exec_results
@@ -328,6 +327,14 @@ impl Driver for FakeDriver {
         self.run_stream(handle, dir, names, sink)
     }
 
+    fn checkpoint(&self, handle: &BoxHandle, name: &str) -> Result<Checkpoint, DriverError> {
+        self.checkpointed(handle, name)
+    }
+
+    fn fork(&self, id: &str, req: &AcquireReq) -> Result<BoxHandle, DriverError> {
+        self.forked(id, req)
+    }
+
     fn launch_run(&self, h: &BoxHandle, run: i64, spec: &ExecSpec) -> runs::Launch {
         self.local_launch(h, run, spec)
     }
@@ -387,6 +394,7 @@ impl Driver for FakeDriver {
 }
 
 mod acquire;
+mod checkpoints;
 mod knobs;
 mod piped;
 mod runs;

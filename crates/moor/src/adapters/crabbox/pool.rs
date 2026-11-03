@@ -129,6 +129,7 @@ pub(super) const CAPS: DriverCaps = DriverCaps {
     reverse_tunnel: true,
     has_workdir: true,
     cache_volumes: false,
+    checkpoints: false,
 };
 
 impl Crabbox {

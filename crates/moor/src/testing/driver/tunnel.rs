@@ -145,6 +145,7 @@ impl FakeDriver {
             reverse_tunnel: !st.tunnel.lacks_cap,
             has_workdir: true,
             cache_volumes: st.cache.on,
+            checkpoints: st.layers.on,
         }
     }
 
