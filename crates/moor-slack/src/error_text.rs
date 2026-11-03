@@ -30,7 +30,12 @@ pub(crate) fn error_text(reply: Response) -> String {
         Some(ErrorDetail::ProvisioningDead) => {
             "This Box never finished starting. Close it and start a new one.".to_owned()
         }
-        Some(ErrorDetail::CloseRefused(_)) | None => error.message,
+        Some(
+            ErrorDetail::CloseRefused(_)
+            | ErrorDetail::ArtifactMissing
+            | ErrorDetail::ArtifactMismatch,
+        )
+        | None => error.message,
     }
 }
 

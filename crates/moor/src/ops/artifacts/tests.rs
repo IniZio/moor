@@ -312,4 +312,5 @@ fn a_symlinked_version_dir_is_refused() {
     assert_eq!(e.kind, ErrorKind::Refused);
 }
 
+mod integrity;
 mod target;
