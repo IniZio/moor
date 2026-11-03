@@ -1,0 +1,229 @@
+//! Setup in layers: on a provider that keeps checkpoints, each setup line runs on its own so the
+//! Box can be checkpointed between lines, and a retry starts from the nearest checkpoint.
+
+use moor_core::cache::CachePlan;
+use moor_core::config::BoxSettings;
+use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::layers::{chain, checkpoint_after, failed_layer, nearest, LayerKey};
+use moor_core::seam::driver::AcquireReq;
+use moor_core::{BoxHandle, BoxId, ProviderId, Warning};
+
+use super::clone::SetupProxy;
+use super::setup_run::run_through_proxy;
+use super::{nonce, SetupTarget};
+use crate::cx::Cx;
+use crate::error::CommandError;
+use crate::ops::common::facts::provider_caps;
+use crate::ops::common::setup::SetupRun;
+use crate::store::lease::LeaseKind;
+use crate::store::{BoxRow, Store};
+
+/// A Box's setup layers: their keys, where their checkpoints live and how far its disk is.
+pub(super) struct Layered {
+    /// The clone's key, then one per setup line.
+    keys: Vec<LayerKey>,
+    /// The provider that holds the checkpoints.
+    provider: ProviderId,
+    /// The repo, `OWNER/NAME`.
+    repo: String,
+    /// The layer the Box's disk already holds; its lines are not run again.
+    from: usize,
+}
+
+/// The layers of Box `row` on `provider`; none when the provider keeps no checkpoints or the
+/// Box has no setup lines, no base commit, or more than one repo.
+pub(super) fn plan(cx: &Cx, row: &BoxRow, provider: &str, cfg: &BoxSettings) -> Option<Layered> {
+    let repo = row.repo.as_ref().filter(|r| r.others.is_empty())?;
+    let base = row.base.as_deref()?;
+    if cfg.setup.is_empty() || !provider_caps(cx, provider).is_ok_and(|c| c.checkpoints) {
+        return None;
+    }
+    let repo = repo.repo.to_string();
+    Some(Layered {
+        keys: chain(&repo, base, &cfg.setup),
+        provider: ProviderId::new(provider),
+        repo,
+        from: 0,
+    })
+}
+
+/// Checkpoints the fresh clone of a Box whose disk holds no layer yet.
+pub(super) fn after_clone(cx: &Cx, store: &Store, handle: &BoxHandle, layered: &Layered) {
+    if layered.from == 0 {
+        save(cx, store, handle, layered, 0);
+    }
+}
+
+/// Runs the setup lines the target's disk lacks one exec at a time, checkpointing after each
+/// line [`checkpoint_after`] picks; stops at the first failure. Runs nothing for a target
+/// without layers.
+pub(super) fn run(
+    cx: &Cx,
+    store: &Store,
+    id: BoxId,
+    target: &SetupTarget<'_>,
+    cfg: &BoxSettings,
+    proxy: &SetupProxy,
+) -> SetupRun {
+    let Some(layered) = target.layered else {
+        return SetupRun::Skipped;
+    };
+    let total = cfg.setup.len();
+    let (mut ms, mut tail) = (0, String::new());
+    for (i, line) in cfg.setup.iter().enumerate().skip(layered.from) {
+        let one = BoxSettings {
+            setup: vec![line.clone()],
+            ..cfg.clone()
+        };
+        let place = (
+            u32::try_from(i + 1).unwrap_or(u32::MAX),
+            u32::try_from(total).unwrap_or(u32::MAX),
+        );
+        match run_through_proxy(cx, store, id, target, &one, proxy, Some(place)) {
+            SetupRun::Ok { ms: took, tail: t } => {
+                ms += took;
+                tail = t;
+                if checkpoint_after(i + 1, took, total) {
+                    save(cx, store, target.handle, layered, i + 1);
+                }
+            }
+            SetupRun::Failed {
+                line,
+                exit,
+                ms: took,
+                tail,
+            } => {
+                return SetupRun::Failed {
+                    line,
+                    exit,
+                    ms: ms + took,
+                    tail,
+                }
+            }
+            SetupRun::Skipped => {}
+        }
+    }
+    SetupRun::Ok { ms, tail }
+}
+
+/// Checkpoints `layer` of the Box behind `handle`, unless a checkpoint of it is kept already.
+/// A failed checkpoint is only warned about: setup goes on, and a retry runs the layer again.
+fn save(cx: &Cx, store: &Store, handle: &BoxHandle, layered: &Layered, layer: usize) {
+    let Some(key) = layered.keys.get(layer) else {
+        return;
+    };
+    if store
+        .use_checkpoint(&layered.provider, key)
+        .unwrap_or(false)
+    {
+        return;
+    }
+    let saved = cx
+        .driver()
+        .checkpoint(handle, key.as_str())
+        .map_err(|e| e.to_string())
+        .and_then(|made| {
+            store
+                .record_checkpoint(&layered.provider, key, &layered.repo, &made)
+                .map_err(|e| e.to_string())
+        });
+    if let Err(e) = saved {
+        cx.warn(Warning {
+            code: "checkpoint_failed".to_owned(),
+            message: format!(
+                "could not checkpoint setup layer {layer}: {e}; a retry runs it again"
+            ),
+        });
+    }
+}
+
+/// Moves Box `row` from the machine `old` onto a new one forked from the nearest checkpoint at
+/// or below its failed layer, and releases `old`. Returns the new handle; none when no
+/// checkpoint is kept or the fork fails, and the setup runs in `old` from its start.
+pub(super) fn resume(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    old: &BoxHandle,
+    cfg: &BoxSettings,
+    layered: &mut Layered,
+) -> Result<Option<BoxHandle>, CommandError> {
+    let failed = store
+        .newest_events_of(row.id, "setup_failed", 1)?
+        .pop()
+        .and_then(|e| e.payload.get("line")?.as_str().map(str::to_owned))
+        .map_or(cfg.setup.len(), |line| failed_layer(&cfg.setup, &line));
+    let mut kept = Vec::new();
+    for key in &layered.keys {
+        kept.push(store.checkpoint(&layered.provider, key)?);
+    }
+    let held = |k: &LayerKey| {
+        let at = layered.keys.iter().position(|x| x == k);
+        at.and_then(|i| kept.get(i)).is_some_and(Option::is_some)
+    };
+    let Some(layer) = nearest(&layered.keys, failed, held) else {
+        return Ok(None);
+    };
+    let Some(Some(saved)) = kept.get(layer) else {
+        return Ok(None);
+    };
+    let req = AcquireReq {
+        provider: layered.provider.clone(),
+        box_id: row.id,
+        name: row.name.clone(),
+        class: Some(cfg.size.value.as_str().to_owned()),
+        nonce: nonce(cx.rng()),
+        cache: CachePlan::none(),
+        pool_machine: None,
+    };
+    // Planned first, so a fork cut short is still found from its record.
+    let planned = cx.driver().planned_handle(&req);
+    let root = store.plan_lease(row.id, LeaseKind::BoxRoot, planned.as_str())?;
+    let new = match cx.driver().fork(&saved.checkpoint, &req) {
+        Ok(new) => new,
+        Err(e) => {
+            cx.warn(Warning {
+                code: "checkpoint_failed".to_owned(),
+                message: format!(
+                    "could not start from setup layer {layer}: {e}; setup runs from its start"
+                ),
+            });
+            return Ok(None);
+        }
+    };
+    if new == planned {
+        store.hold_lease(root)?;
+    } else {
+        let actual = store.plan_lease(row.id, LeaseKind::BoxRoot, new.as_str())?;
+        store.hold_lease(actual)?;
+    }
+    if let Some(key) = layered.keys.get(layer) {
+        store.use_checkpoint(&layered.provider, key)?;
+    }
+    store.apply(Decision::new(row.id).set(Fields {
+        box_handle: Field::Set(new.clone()),
+        ..Fields::default()
+    }))?;
+    layered.from = layer;
+    release_old(cx, store, row, old)?;
+    Ok(Some(new))
+}
+
+/// Releases the machine the Box left and drops its lease record; one that will not release
+/// keeps its record and is warned about with how to release it by hand.
+fn release_old(cx: &Cx, store: &Store, row: &BoxRow, old: &BoxHandle) -> Result<(), CommandError> {
+    if let Err(e) = cx.driver().release(old) {
+        let by_hand = cx.driver().manual_release(old).unwrap_or_default();
+        cx.warn(Warning {
+            code: "release_failed".to_owned(),
+            message: format!("could not release the machine the Box left: {e}. {by_hand}"),
+        });
+        return Ok(());
+    }
+    for lease in store.leases(row.id)? {
+        if lease.kind == LeaseKind::BoxRoot && lease.key == old.as_str() {
+            store.drop_lease(lease.id)?;
+        }
+    }
+    Ok(())
+}

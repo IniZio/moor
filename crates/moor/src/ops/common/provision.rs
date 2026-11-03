@@ -1,18 +1,13 @@
 //! Box provisioning shared by the Box ops: acquire a machine for a new Box, or again for a lost one.
 
-use std::path::Path;
-
 use moor_core::config::{BoxSettings, Flags};
 
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{
-    BoxRepo, Decision, ExtraEvent, Field, Fields, Intent, IntentChange,
-};
+use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::seam::driver::{AcquireReq, Acquired};
-use moor_core::seam::forge::ForgeRepo;
+use moor_core::seam::driver::AcquireReq;
 use moor_core::seam::rng::Rng;
 use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, ProviderId};
 
@@ -39,6 +34,7 @@ pub(crate) use self::outcome::Provisioned;
 use self::progress::acquire_timed;
 use self::rerun::start_ready;
 use self::retry::{kept_box_retry, retry_in_box};
+use self::target::SetupTarget;
 
 /// Re-reads a Box row that must exist.
 ///
@@ -183,8 +179,10 @@ pub(crate) fn provision(
             record_acquired(store, id, &got)?;
             hold_workdir(store, id, &got)?;
             let log_dir = setup::log_dir(cx.state_dir()?, id);
-            let target =
-                SetupTarget::new(&got, req.provider.as_str(), started.repo.as_ref(), &log_dir);
+            let provider = req.provider.as_str();
+            let layered = layers::plan(cx, &started, provider, cfg);
+            let repo = started.repo.as_ref();
+            let target = SetupTarget::new(&got, provider, repo, &log_dir, layered.as_ref());
             let done = run_and_record(cx, store, id, entry.begin().is_some(), &target, cfg)?;
             // A Box a forced close is waiting on gets no agent.
             if cx.env().cancel().is_cancelled() {
@@ -226,41 +224,6 @@ pub(crate) fn nonce(rng: &dyn Rng) -> String {
     format!("{:06x}", rng.u32() & 0xFF_FFFF)
 }
 
-/// Where setup runs: the freshly acquired Box, the repo it clones and where its setup log is kept.
-struct SetupTarget<'a> {
-    /// The Box setup runs in.
-    handle: &'a BoxHandle,
-    /// The provider that holds the Box.
-    provider: &'a str,
-    /// Working directory in the Box.
-    workdir: &'a BoxPath,
-    /// The repo the Box clones, with the author it commits as; `None` for an empty workdir.
-    repo: Option<&'a BoxRepo>,
-    /// Host directory for the Box's setup log.
-    log_dir: &'a Path,
-    /// The listed repo whose tree this is, named on its setup steps; `None` for the primary's.
-    tree_of: Option<&'a ForgeRepo>,
-}
-
-impl<'a> SetupTarget<'a> {
-    /// The target for a freshly acquired Box.
-    const fn new(
-        got: &'a Acquired,
-        provider: &'a str,
-        repo: Option<&'a BoxRepo>,
-        log_dir: &'a Path,
-    ) -> Self {
-        Self {
-            handle: &got.handle,
-            provider,
-            workdir: &got.workdir,
-            repo,
-            log_dir,
-            tree_of: None,
-        }
-    }
-}
-
 /// Runs repo setup in a Box under the setup intent and records how it ended, clearing the intent.
 ///
 /// `advance` moves the Box on to working; a Box already working gets a `setup_failed` event
@@ -274,6 +237,9 @@ fn run_and_record(
     cfg: &BoxSettings,
 ) -> Result<Provisioned, CommandError> {
     let (cloned, proxy) = clone_with_proxy(cx, store, id, advance, target, cfg)?;
+    if let Some(layered) = target.layered {
+        layers::after_clone(cx, store, target.handle, layered);
+    }
     if let Some(ms) = cloned.ms {
         store.apply(Decision::new(id).event(ExtraEvent::Cloned { ms }))?;
     }
@@ -356,6 +322,7 @@ mod clone;
 mod delivered;
 mod failed;
 pub(crate) mod interrupted;
+mod layers;
 mod lease;
 mod others;
 mod outcome;
@@ -363,5 +330,6 @@ mod progress;
 mod rerun;
 mod retry;
 mod setup_run;
+mod target;
 #[cfg(test)]
 mod tests;
