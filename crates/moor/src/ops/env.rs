@@ -22,7 +22,7 @@ pub(crate) fn run(cx: &Cx, req: &EnvReq) -> Result<EnvView, CommandError> {
             let user = user.ok_or_else(|| {
                 CommandError::new(ErrorKind::Refused, "log in first: moor user enroll")
             })?;
-            let at = repo::fetch(cx, user, r, req.base.as_deref(), "moor/env")?;
+            let at = repo::fetch(cx, user, r, req.base.as_deref())?;
             let boxed = BoxRepo {
                 repo: r.clone(),
                 moor_yaml: at.files.moor_yaml.clone(),

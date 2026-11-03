@@ -39,12 +39,11 @@ const ERROR_TYPES_SHOWN: usize = 3;
 /// Longest profile name used as the commit author name, in bytes.
 const NAME_CAP: usize = 255;
 
-/// Asks for the viewer, the repo's permission, the Box branch tip and the files at one commit.
-pub(super) const QUERY: &str = r#"query($owner: String!, $name: String!, $branch: String!, $base: String!, $hasBase: Boolean!) {
+/// Asks for the viewer, the repo's permission and the files at one commit.
+pub(super) const QUERY: &str = r#"query($owner: String!, $name: String!, $base: String!, $hasBase: Boolean!) {
   viewer { login databaseId name }
   repository(owner: $owner, name: $name) {
     viewerPermission
-    branch: ref(qualifiedName: $branch) { target { __typename oid } }
     defaultBranchRef @skip(if: $hasBase) { target { ...at } }
     object(expression: $base) @include(if: $hasBase) { ...at }
   }
@@ -67,7 +66,6 @@ pub(super) fn read(
     timeout: Duration,
     repo: &ForgeRepo,
     base: Option<&str>,
-    branch: &str,
     token: &Secret,
 ) -> Result<RepoAt, ForgeError> {
     let auth = bearer(token)?;
@@ -76,11 +74,7 @@ pub(super) fn read(
         "variables": {
             "owner": repo.owner,
             "name": repo.name,
-            "branch": format!("refs/heads/{branch}"),
-            "base": match base {
-                Some(b) if b == branch => format!("refs/heads/{b}"),
-                b => b.unwrap_or_default().to_owned(),
-            },
+            "base": base.unwrap_or_default(),
             "hasBase": base.is_some(),
         },
     });
@@ -191,8 +185,6 @@ struct Viewer {
 struct Repository {
     /// `ADMIN`, `MAINTAIN`, `WRITE`, `TRIAGE` or `READ`.
     viewer_permission: Option<String>,
-    /// The Box branch, absent when it does not exist.
-    branch: Option<Ref>,
     /// The default branch, asked for when no base is given.
     default_branch_ref: Option<Ref>,
     /// The object the base resolves to, asked for when a base is given.
@@ -284,11 +276,6 @@ fn parse(reply: Reply, base: Option<&str>) -> Result<RepoAt, ForgeError> {
     let commit = commit_at(&mut repo, base)?;
     Ok(RepoAt {
         base: full_sha(commit.oid.as_deref())?,
-        branch_tip: repo
-            .branch
-            .and_then(|r| r.target)
-            .map(|t| full_sha(t.oid.as_deref()))
-            .transpose()?,
         files: RepoFiles {
             moor_yaml: text(commit.moor_yaml, ".moor.yaml", FILE_CAP)?,
             mcp_json: text(commit.mcp_json, ".mcp.json", FILE_CAP)?,

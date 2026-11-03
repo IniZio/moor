@@ -147,7 +147,7 @@ fn plan(
     Ok(Some(Plan {
         url: repo.repo.clone_url(),
         base: row.base.unwrap_or_else(|| "HEAD".to_owned()),
-        branch: row.branch.unwrap_or_else(|| box_key::branch(&row.name)),
+        branch: row.branch.unwrap_or_else(|| box_key::branch(id, &row.name)),
         refresh,
     }))
 }

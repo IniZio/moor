@@ -78,27 +78,32 @@ fn dir_names_parse_only_plain_positive_ids() {
 }
 
 #[test]
-fn branch_flattens_slashes() {
-    assert_eq!(branch(&name("moor/7")), "moor/moor--7");
-    assert_eq!(branch(&name("web/fix-bug")), "moor/web--fix-bug");
-    assert_eq!(branch(&name("fix-bug")), "moor/fix-bug");
+fn branch_leads_with_the_id_and_flattens_slashes() {
+    assert_eq!(
+        branch(BoxId::new(104), &name("fix-login")),
+        "moor/104-fix-login"
+    );
+    assert_eq!(
+        branch(BoxId::new(105), &name("app/fix-login")),
+        "moor/105-app--fix-login"
+    );
 }
 
 #[test]
 fn branch_holds_exactly_one_slash() {
     for n in ["moor/7", "web/fix-bug", "fix-bug"] {
-        assert_eq!(branch(&name(n)).matches('/').count(), 1, "{n}");
+        assert_eq!(
+            branch(BoxId::new(1), &name(n)).matches('/').count(),
+            1,
+            "{n}"
+        );
     }
 }
 
 #[test]
-fn branch_is_one_to_one() {
-    let branches = [
-        branch(&name("a-b/c")),
-        branch(&name("a/b-c")),
-        branch(&name("a-b-c")),
-    ];
-    assert_eq!(branches, ["moor/a-b--c", "moor/a--b-c", "moor/a-b-c"]);
+fn a_reused_name_gets_another_branch() {
+    let n = name("fix-bug");
+    assert_ne!(branch(BoxId::new(1), &n), branch(BoxId::new(2), &n));
 }
 
 #[test]

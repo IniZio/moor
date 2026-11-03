@@ -35,10 +35,7 @@ fn a_start_stores_the_forge_repo_base_config_and_author_then_acquires() {
     let reads = w.forge.reads();
     assert_eq!(reads.len(), 1, "{reads:?}");
     let read = reads.first().unwrap();
-    assert_eq!(
-        (read.base.as_deref(), read.branch.as_str()),
-        (None, "moor/demo")
-    );
+    assert_eq!(read.base, None);
     assert_eq!(read.token, TOKEN);
 }
 
@@ -72,54 +69,6 @@ fn a_repo_the_account_cannot_see_is_refused_before_any_machine() {
         .open_box_by_name(&name)
         .unwrap()
         .is_none());
-}
-
-#[test]
-fn a_box_branch_already_on_the_forge_is_refused_unless_base_names_it() {
-    let w = world(FakeDriver::new());
-    let taken = RepoAt {
-        branch_tip: Some(moor_core::Sha::parse("def456").unwrap()),
-        ..repo_at(BASE, None)
-    };
-    w.forge.answer(repo(), Ok(taken));
-    let err = run(&w.cx, &repo_req("demo")).unwrap_err();
-    assert_eq!(err.kind, ErrorKind::Refused);
-    assert_eq!(
-        err.error.to_string(),
-        "branch moor/demo already exists on o/n"
-    );
-    assert!(
-        err.hints.iter().any(|h| h.contains("--base moor/demo")),
-        "{err:?}"
-    );
-    assert!(w.driver.calls().is_empty());
-    let mut again = repo_req("demo");
-    again.base = Some("moor/demo".into());
-    run(&w.cx, &again).unwrap();
-    assert!(w.driver.calls().iter().any(|c| c == "acquire"));
-}
-
-#[test]
-fn only_a_base_of_exactly_the_box_branch_continues_a_taken_branch() {
-    for base in [
-        "refs/heads/moor/demo",
-        "origin/moor/demo",
-        "moor/demo~0",
-        "moor/demo/",
-        "Moor/demo",
-    ] {
-        let w = world(FakeDriver::new());
-        let taken = RepoAt {
-            branch_tip: Some(moor_core::Sha::parse("def456").unwrap()),
-            ..repo_at(BASE, None)
-        };
-        w.forge.answer(repo(), Ok(taken));
-        let mut req = repo_req("demo");
-        req.base = Some(base.into());
-        let err = run(&w.cx, &req).unwrap_err();
-        assert_eq!(err.kind, ErrorKind::Refused, "{base}");
-        assert!(w.driver.calls().is_empty(), "{base}");
-    }
 }
 
 #[test]

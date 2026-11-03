@@ -26,18 +26,15 @@ pub(crate) struct Read {
     pub(crate) repo: ForgeRepo,
     /// The base asked for.
     pub(crate) base: Option<String>,
-    /// The branch asked for.
-    pub(crate) branch: String,
     /// The token's bytes, as text.
     pub(crate) token: String,
 }
 
-/// What a forge answers for a repo at `base` whose `.moor.yaml` is `moor_yaml`, whose Box
-/// branch is new and that the token's account may push to.
+/// What a forge answers for a repo at `base` whose `.moor.yaml` is `moor_yaml`
+/// and that the token's account may push to.
 pub(crate) fn repo_at(base: &str, moor_yaml: Option<&str>) -> RepoAt {
     RepoAt {
         base: Sha::parse(base).expect("hex sha"),
-        branch_tip: None,
         files: RepoFiles {
             moor_yaml: moor_yaml.map(str::to_owned),
             ..RepoFiles::default()
@@ -130,14 +127,12 @@ impl Forge for FakeForge {
         &self,
         repo: &ForgeRepo,
         base: Option<&str>,
-        branch: &str,
         token: &Secret,
     ) -> Result<RepoAt, ForgeError> {
         let mut state = self.lock();
         state.asked.push(Read {
             repo: repo.clone(),
             base: base.map(str::to_owned),
-            branch: branch.to_owned(),
             token: String::from_utf8_lossy(token.expose()).into_owned(),
         });
         state

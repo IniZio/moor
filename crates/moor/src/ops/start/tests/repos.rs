@@ -121,7 +121,8 @@ fn every_listed_repo_is_cloned_on_the_box_branch_and_set_up_in_its_own_tree() {
         .map(|e| script(&e.1))
         .find(|s| s.contains("github.com/o/lib.git"))
         .unwrap();
-    assert!(lib.contains("'moor/demo'"), "{lib}");
+    let branch = "'moor/1-demo'";
+    assert!(lib.contains(branch), "{lib}");
     assert!(!done.setup.failed(), "{:?}", done.setup);
 }
 

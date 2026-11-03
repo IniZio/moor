@@ -69,8 +69,8 @@ fn token() -> Secret {
     Secret::new(TOKEN.as_bytes().to_vec())
 }
 
-fn read_via(api: &FakeApi, base: Option<&str>, branch: &str) -> Result<RepoAt, ForgeError> {
-    GitHub::at(&api.url).read(&ForgeRepo::new("o", "n"), base, branch, &token())
+fn read_via(api: &FakeApi, base: Option<&str>) -> Result<RepoAt, ForgeError> {
+    GitHub::at(&api.url).read(&ForgeRepo::new("o", "n"), base, &token())
 }
 
 fn assert_no_token_fragment(shown: &str) {
@@ -87,7 +87,7 @@ fn viewer_reply(viewer: Value, permission: &str) -> impl FnOnce(&Value) -> (u16,
         let at = commit(DEFAULT_SHA, &[]);
         ok(&json!({"data": {
             "viewer": viewer,
-            "repository": {"viewerPermission": permission, "branch": null, "defaultBranchRef": {"target": at}},
+            "repository": {"viewerPermission": permission, "defaultBranchRef": {"target": at}},
         }}))
     }
 }
@@ -110,7 +110,8 @@ fn commit(oid: &str, files: &[(&str, Value)]) -> Value {
 }
 
 /// Answers like GitHub for a repo `o/n` whose default branch has all three files, whose
-/// annotated tag `v1` points at a commit with only `.moor.yaml`, and whose branch `moor/t` exists.
+/// annotated tag `v1` points at a commit with only `.moor.yaml`, and whose branch `moor/t` is
+/// another commit.
 fn github(vars: &Value, permission: &str) -> (u16, String) {
     let default = commit(
         DEFAULT_SHA,
@@ -128,19 +129,12 @@ fn github(vars: &Value, permission: &str) -> (u16, String) {
             ("claudeSettings", Value::Null),
         ],
     );
-    let branch = match vars["branch"].as_str() {
-        Some("refs/heads/moor/t") => json!({"target": {"__typename": "Commit", "oid": BRANCH_SHA}}),
-        _ => Value::Null,
-    };
-    let mut repo = json!({"viewerPermission": permission, "branch": branch});
+    let mut repo = json!({"viewerPermission": permission});
     if vars["hasBase"] == json!(true) {
         repo["object"] = match vars["base"].as_str() {
             Some("v1") => json!({"__typename": "Tag", "oid": "dd".repeat(20), "target": tagged}),
             Some("main") => default,
-            Some("refs/heads/moor/t") => commit(BRANCH_SHA, &[]),
-            Some("moor/t") => {
-                json!({"__typename": "Tag", "oid": "ee".repeat(20), "target": tagged})
-            }
+            Some("moor/t") => commit(BRANCH_SHA, &[]),
             _ => Value::Null,
         };
     } else {
@@ -161,7 +155,7 @@ fn sha(s: &str) -> Sha {
 #[test]
 fn default_branch_resolves_with_its_files() {
     let api = FakeApi::start(|v| github(v, "WRITE"));
-    let at = read_via(&api, None, "moor/t").unwrap();
+    let at = read_via(&api, None).unwrap();
     assert_eq!(at.base, sha(DEFAULT_SHA));
     assert_eq!(at.files.moor_yaml.as_deref(), Some("setup: make\n"));
     assert_eq!(at.files.mcp_json.as_deref(), Some("{\"mcpServers\":{}}"));
@@ -169,7 +163,6 @@ fn default_branch_resolves_with_its_files() {
         at.files.claude_settings.as_deref(),
         Some("{\"permissions\":{}}")
     );
-    assert_eq!(at.branch_tip, Some(sha(BRANCH_SHA)));
     assert!(at.can_push);
     assert_eq!(
         at.author,
@@ -183,17 +176,16 @@ fn default_branch_resolves_with_its_files() {
 #[test]
 fn given_base_resolves_through_its_tag_with_files_at_that_commit() {
     let api = FakeApi::start(|v| github(v, "READ"));
-    let at = read_via(&api, Some("v1"), "moor/new").unwrap();
+    let at = read_via(&api, Some("v1")).unwrap();
     assert_eq!(at.base, sha(TAGGED_SHA));
     assert_eq!(at.files.moor_yaml.as_deref(), Some("setup: old\n"));
-    assert_eq!(at.branch_tip, None);
     assert!(!at.can_push);
 }
 
 #[test]
 fn missing_files_are_none() {
     let api = FakeApi::start(|v| github(v, "WRITE"));
-    let files = read_via(&api, Some("v1"), "moor/t").unwrap().files;
+    let files = read_via(&api, Some("v1")).unwrap().files;
     assert_eq!(files.mcp_json, None);
     assert_eq!(files.claude_settings, None);
 }
@@ -201,25 +193,21 @@ fn missing_files_are_none() {
 #[test]
 fn base_names_the_requested_ref() {
     let api = FakeApi::start(|v| github(v, "WRITE"));
-    assert_eq!(
-        read_via(&api, Some("main"), "moor/t").unwrap().base,
-        sha(DEFAULT_SHA)
-    );
+    assert_eq!(read_via(&api, Some("main")).unwrap().base, sha(DEFAULT_SHA));
 }
 
 #[test]
-fn a_base_naming_the_box_branch_reads_the_branch_not_a_tag_of_that_name() {
+fn a_base_naming_a_branch_reads_that_branch() {
     let api = FakeApi::start(|v| github(v, "WRITE"));
-    let at = read_via(&api, Some("moor/t"), "moor/t").unwrap();
+    let at = read_via(&api, Some("moor/t")).unwrap();
     assert_eq!(at.base, sha(BRANCH_SHA));
-    assert_eq!(at.branch_tip, Some(sha(BRANCH_SHA)));
 }
 
 #[test]
 fn bad_ref_is_unknown_base() {
     let api = FakeApi::start(|v| github(v, "WRITE"));
     assert_eq!(
-        read_via(&api, Some("no-such-ref"), "moor/t"),
+        read_via(&api, Some("no-such-ref")),
         Err(ForgeError::UnknownBase("no-such-ref".to_owned()))
     );
 }
@@ -232,13 +220,13 @@ fn not_found_is_not_visible() {
             "errors": [{"type": "NOT_FOUND", "path": ["repository"], "message": "Could not resolve to a Repository"}],
         }))
     });
-    assert_eq!(read_via(&api, None, "moor/t"), Err(ForgeError::NotVisible));
+    assert_eq!(read_via(&api, None), Err(ForgeError::NotVisible));
 }
 
 #[test]
 fn http_401_is_rejected() {
     let api = FakeApi::start(|_| (401, json!({"message": "Bad credentials"}).to_string()));
-    assert_eq!(read_via(&api, None, "moor/t"), Err(ForgeError::Rejected));
+    assert_eq!(read_via(&api, None), Err(ForgeError::Rejected));
 }
 
 fn moor_yaml_reply(entry: Value) -> impl FnOnce(&Value) -> (u16, String) + Send {
@@ -246,7 +234,7 @@ fn moor_yaml_reply(entry: Value) -> impl FnOnce(&Value) -> (u16, String) + Send 
         let at = commit(DEFAULT_SHA, &[("moorYaml", entry)]);
         ok(&json!({"data": {
             "viewer": {"login": "octo", "databaseId": 42, "name": null},
-            "repository": {"viewerPermission": "WRITE", "branch": null, "defaultBranchRef": {"target": at}},
+            "repository": {"viewerPermission": "WRITE", "defaultBranchRef": {"target": at}},
         }}))
     }
 }
@@ -257,7 +245,7 @@ fn binary_moor_yaml_is_unreadable() {
         "__typename": "Blob", "byteSize": 10, "isBinary": true, "text": null,
     }})));
     assert_eq!(
-        read_via(&api, None, "moor/t"),
+        read_via(&api, None),
         Err(ForgeError::Unreadable(".moor.yaml"))
     );
 }
@@ -267,7 +255,7 @@ fn oversized_moor_yaml_is_unreadable() {
     let big = "a".repeat(64 * 1024 + 1);
     let api = FakeApi::start(moor_yaml_reply(blob(&big)));
     assert_eq!(
-        read_via(&api, None, "moor/t"),
+        read_via(&api, None),
         Err(ForgeError::Unreadable(".moor.yaml"))
     );
 }
@@ -276,7 +264,7 @@ fn oversized_moor_yaml_is_unreadable() {
 fn moor_yaml_at_the_size_cap_is_read() {
     let max = "a".repeat(64 * 1024);
     let api = FakeApi::start(moor_yaml_reply(blob(&max)));
-    let at = read_via(&api, None, "moor/t").unwrap();
+    let at = read_via(&api, None).unwrap();
     assert_eq!(at.files.moor_yaml.map(|t| t.len()), Some(64 * 1024));
     assert_eq!(
         at.author.name, "octo",
@@ -318,7 +306,7 @@ fn hostile_answers() -> Vec<Answer> {
 fn token_is_sent_only_in_the_authorization_header_and_never_in_errors() {
     for answer in hostile_answers() {
         let api = FakeApi::start(answer);
-        let shown = match read_via(&api, None, "moor/t") {
+        let shown = match read_via(&api, None) {
             Ok(at) => format!("{at:?}"),
             Err(e) => format!("{e} {e:?}"),
         };
@@ -339,7 +327,7 @@ fn other_graphql_errors_are_unavailable() {
         ok(&json!({"data": null, "errors": [{"type": "RATE_LIMITED", "message": "slow down"}]}))
     });
     assert_eq!(
-        read_via(&api, None, "moor/t"),
+        read_via(&api, None),
         Err(ForgeError::Unavailable(
             "GitHub GraphQL errors: RATE_LIMITED".to_owned()
         ))
@@ -363,7 +351,7 @@ fn allow_listed_error_types_are_named() {
         "MAX_NODE_LIMIT_EXCEEDED",
     ] {
         let api = FakeApi::start(errors_reply(&[json!(kind)]));
-        assert_eq!(read_via(&api, None, "moor/t"), graphql_errors(kind));
+        assert_eq!(read_via(&api, None), graphql_errors(kind));
     }
 }
 
@@ -377,7 +365,7 @@ fn other_error_types_are_unknown_and_carry_no_server_bytes() {
         Value::Null,
     ] {
         let api = FakeApi::start(errors_reply(&[kind]));
-        assert_eq!(read_via(&api, None, "moor/t"), graphql_errors("UNKNOWN"));
+        assert_eq!(read_via(&api, None), graphql_errors("UNKNOWN"));
     }
 }
 
@@ -386,7 +374,7 @@ fn error_types_are_deduplicated_and_at_most_three() {
     let kinds = ["FORBIDDEN", "FORBIDDEN", "INTERNAL", "X", "RATE_LIMITED"].map(|k| json!(k));
     let api = FakeApi::start(errors_reply(&kinds));
     assert_eq!(
-        read_via(&api, None, "moor/t"),
+        read_via(&api, None),
         graphql_errors("FORBIDDEN, INTERNAL, UNKNOWN")
     );
 }
@@ -394,19 +382,13 @@ fn error_types_are_deduplicated_and_at_most_three() {
 #[test]
 fn not_found_mixed_with_another_error_is_unavailable() {
     let api = FakeApi::start(errors_reply(&[json!("NOT_FOUND"), json!("FORBIDDEN")]));
-    assert_eq!(
-        read_via(&api, None, "moor/t"),
-        graphql_errors("NOT_FOUND, FORBIDDEN")
-    );
+    assert_eq!(read_via(&api, None), graphql_errors("NOT_FOUND, FORBIDDEN"));
     let api = FakeApi::start(|v| {
         let mut reply: Value = serde_json::from_str(&github(v, "WRITE").1).unwrap();
         reply["errors"] = json!([{"type": "NOT_FOUND"}, {"type": "INTERNAL"}]);
         ok(&reply)
     });
-    assert_eq!(
-        read_via(&api, None, "moor/t"),
-        graphql_errors("NOT_FOUND, INTERNAL")
-    );
+    assert_eq!(read_via(&api, None), graphql_errors("NOT_FOUND, INTERNAL"));
 }
 
 #[test]
@@ -419,7 +401,7 @@ fn only_write_maintain_and_admin_can_push() {
         ("READ", false),
     ] {
         let api = FakeApi::start(move |v| github(v, permission));
-        let at = read_via(&api, None, "moor/t").unwrap();
+        let at = read_via(&api, None).unwrap();
         assert_eq!(at.can_push, can_push, "{permission}");
     }
 }
@@ -430,7 +412,7 @@ fn binary_blob_with_text_is_unreadable() {
         "__typename": "Blob", "byteSize": 3, "isBinary": true, "text": "abc",
     }})));
     assert_eq!(
-        read_via(&api, None, "moor/t"),
+        read_via(&api, None),
         Err(ForgeError::Unreadable(".moor.yaml"))
     );
 }
@@ -438,7 +420,7 @@ fn binary_blob_with_text_is_unreadable() {
 fn author_of(login: &str, name: &Value) -> Result<GitAuthor, ForgeError> {
     let viewer = json!({"login": login, "databaseId": 42, "name": name});
     let api = FakeApi::start(viewer_reply(viewer, "WRITE"));
-    read_via(&api, None, "moor/t").map(|at| at.author)
+    read_via(&api, None).map(|at| at.author)
 }
 
 #[test]

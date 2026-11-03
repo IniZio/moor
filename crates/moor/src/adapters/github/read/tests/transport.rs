@@ -21,7 +21,7 @@ fn read_with(api: &str, timeout: Duration, token: &Secret) -> Result<RepoAt, For
         api: api.to_owned(),
         timeout,
     };
-    github.read(&ForgeRepo::new("o", "n"), None, "moor/t", token)
+    github.read(&ForgeRepo::new("o", "n"), None, token)
 }
 
 /// A loopback server that reads one request, then hands its stream to `reply`.
@@ -54,7 +54,7 @@ fn unreachable_api_error_does_not_carry_the_token() {
     let url = format!("http://{}/graphql", listener.local_addr().unwrap());
     drop(listener);
     let err = GitHub::at(url)
-        .read(&ForgeRepo::new("o", "n"), None, "moor/t", &token())
+        .read(&ForgeRepo::new("o", "n"), None, &token())
         .unwrap_err();
     assert!(matches!(err, ForgeError::Unavailable(_)), "{err:?}");
     assert_no_token_fragment(&format!("{err} {err:?}"));

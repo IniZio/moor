@@ -191,6 +191,8 @@ pub struct Decision {
     pub parent_session: Option<i64>,
     /// The user a Box acts for, for a Decision that inserts a box.
     pub requester: Option<UserId>,
+    /// Name the inserted Box's branch from its new id, for a Decision that inserts a box.
+    pub branch_by_id: bool,
 }
 
 impl Decision {
@@ -218,6 +220,7 @@ impl Decision {
             events: Vec::new(),
             parent_session: None,
             requester: None,
+            branch_by_id: false,
         }
     }
 
@@ -260,6 +263,14 @@ impl Decision {
     #[must_use]
     pub const fn parent_session(mut self, parent: Option<i64>) -> Self {
         self.parent_session = parent;
+        self
+    }
+
+    /// Names the inserted Box's branch from the id the store assigns, in the same write as the
+    /// row; ignored for an existing box.
+    #[must_use]
+    pub const fn branch_by_id(mut self) -> Self {
+        self.branch_by_id = true;
         self
     }
 

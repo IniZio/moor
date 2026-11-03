@@ -1,43 +1,35 @@
-use moor_core::domain::decision::{Decision, Field, Fields};
-use moor_core::{BoxId, ErrorKind};
+use moor_core::{BoxId, BoxName, CloseReq};
 
-use super::{req, world};
-use crate::ops::start::run;
+use super::{agentless_req, world};
+use crate::ops::{close, start::run};
 use crate::testing::driver::FakeDriver;
 
 #[test]
-fn a_branch_that_belongs_to_another_open_box_is_refused() {
+fn start_records_the_box_branch_by_its_id_and_makes_no_worktree() {
     let w = world(FakeDriver::new());
-    let a = run(&w.cx, &req("alpha")).unwrap();
-    let store = w.cx.store().unwrap();
-    let taken = Fields {
-        branch: Field::Set("moor/beta".to_owned()),
-        ..Fields::default()
-    };
-    store
-        .apply(Decision::new(BoxId::new(a.boxed.id)).set(taken))
-        .unwrap();
-    let err = run(&w.cx, &req("beta")).unwrap_err();
-    assert_eq!(err.kind, ErrorKind::Failed);
-    assert!(
-        err.error
-            .to_string()
-            .contains("the branch moor/beta belongs to open Box alpha"),
-        "{}",
-        err.error
-    );
-    assert_eq!(store.open_boxes().unwrap().len(), 1);
-}
-
-#[test]
-fn start_records_the_box_branch_and_makes_no_worktree() {
-    let w = world(FakeDriver::new());
-    let v = run(&w.cx, &super::agentless_req("demo")).unwrap();
-    assert_eq!(v.boxed.branch.as_deref(), Some("moor/demo"));
+    let v = run(&w.cx, &agentless_req("demo")).unwrap();
+    let want = format!("moor/{}-demo", v.boxed.id);
+    assert_eq!(v.boxed.branch.as_deref(), Some(want.as_str()));
     let refs =
         w.cx.store()
             .unwrap()
             .box_refs(BoxId::new(v.boxed.id), "branch");
-    assert_eq!(refs.unwrap(), vec!["moor/demo".to_string()]);
+    assert_eq!(refs.unwrap(), vec![want]);
     assert_eq!(w.surface.calls(), ["ensure_workspace moor:demo"]);
+}
+
+#[test]
+fn a_name_reused_after_its_box_closed_gets_a_new_branch() {
+    let w = world(FakeDriver::new());
+    let first = run(&w.cx, &agentless_req("demo")).unwrap();
+    let req = CloseReq {
+        target: BoxName::parse_allow_bare("demo").unwrap().into(),
+        force: true,
+    };
+    close::run(&w.cx, &req).unwrap();
+    let second = run(&w.cx, &agentless_req("demo")).unwrap();
+    assert_ne!(first.boxed.id, second.boxed.id);
+    assert_ne!(first.boxed.branch, second.boxed.branch);
+    let want = format!("moor/{}-demo", second.boxed.id);
+    assert_eq!(second.boxed.branch.as_deref(), Some(want.as_str()));
 }

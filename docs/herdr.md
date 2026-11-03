@@ -138,8 +138,8 @@ While the Box is up, herdr's own agent dot shows working, waiting or idle.
   asks for a Box name, the branch or ref to start from (empty for the repo's default) and the
   first prompt for its agent. It starts the Box on the controller, shows its workspace and focuses
   it. The first prompt is optional. Leave it empty and the agent waits, so you type its first
-  prompt once you attach. The Box's own branch is `moor/<name>`; give that as the base to continue
-  an earlier Box's branch.
+  prompt once you attach. The Box's own branch is `moor/<id>-<name>`, named by the Box id so a
+  reused name never shares a branch; give an earlier Box's branch as the base to continue it.
 
 The popup closes when the work is started. A failure stays on screen until you press Enter.
 

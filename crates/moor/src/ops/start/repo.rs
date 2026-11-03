@@ -11,31 +11,18 @@ use crate::error::CommandError;
 use crate::store::BoxRow;
 use crate::vault::Vault;
 
-/// Reads `repo` at `base` as `user`'s GitHub account, with the tip of the Box `branch`.
-///
-/// A branch that already exists on the forge is refused unless `base` names it, so a new Box never
-/// silently continues someone else's work. An account that cannot push only warns.
+/// Reads `repo` at `base` as `user`'s GitHub account. An account that cannot push only warns.
 ///
 /// # Errors
-/// Refused for a repo the account cannot see, a rejected or missing token, or a taken branch;
+/// Refused for a repo the account cannot see or a rejected or missing token;
 /// Usage for a base that names no commit; Failed when the forge cannot answer.
 pub(crate) fn read(
     cx: &Cx,
     user: UserId,
     repo: &ForgeRepo,
     base: Option<&str>,
-    branch: &str,
 ) -> Result<RepoAt, CommandError> {
-    let at = fetch(cx, user, repo, base, branch)?;
-    if at.branch_tip.is_some() && base != Some(branch) {
-        return Err(CommandError::new(
-            ErrorKind::Refused,
-            format!("branch {branch} already exists on {repo}"),
-        )
-        .with_hint(format!(
-            "continue it with --base {branch}, or pick another Box name"
-        )));
-    }
+    let at = fetch(cx, user, repo, base)?;
     if !at.can_push {
         cx.warn(Warning {
             code: "repo_read_only".to_owned(),
@@ -57,7 +44,6 @@ pub(crate) fn others(
     user: UserId,
     primary: &ForgeRepo,
     also: &[ForgeRepo],
-    branch: &str,
 ) -> Result<Vec<ListedRepo>, CommandError> {
     let mut seen = vec![primary];
     for r in also {
@@ -74,7 +60,7 @@ pub(crate) fn others(
     }
     also.iter()
         .map(|r| {
-            let at = fetch(cx, user, r, None, branch)?;
+            let at = fetch(cx, user, r, None)?;
             if !at.can_push {
                 return Err(CommandError::new(
                     ErrorKind::Refused,
@@ -140,17 +126,16 @@ pub(crate) fn check_kept(req: &StartReq, row: &BoxRow) -> Result<(), CommandErro
 /// Reads `repo` at `base` as `user`'s GitHub account, with no check on what it finds.
 ///
 /// # Errors
-/// As [`read`], without the branch refusal.
+/// As [`read`], without the push warning.
 pub(crate) fn fetch(
     cx: &Cx,
     user: UserId,
     repo: &ForgeRepo,
     base: Option<&str>,
-    branch: &str,
 ) -> Result<RepoAt, CommandError> {
     let token = github_token(cx, user)?;
     cx.forge()
-        .read(repo, base, branch, &token)
+        .read(repo, base, &token)
         .map_err(|e| refusal(repo, e))
 }
 

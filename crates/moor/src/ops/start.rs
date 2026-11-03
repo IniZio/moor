@@ -64,8 +64,6 @@ struct Facts {
 
 /// Where the Box works.
 struct Placed {
-    /// The branch the Box works on.
-    branch: String,
     /// Workspace id.
     workspace: String,
 }
@@ -313,10 +311,9 @@ fn gather(cx: &Cx, req: &StartReq, user: UserId) -> Result<Facts, CommandError> 
             profile,
         });
     };
-    let branch = moor_core::box_key::branch(&req.name);
-    let at = repo::read(cx, user, repo, req.base.as_deref(), &branch)?;
+    let at = repo::read(cx, user, repo, req.base.as_deref())?;
     let also = req.also.as_deref().unwrap_or(&cx.config().box_.also);
-    let others = repo::others(cx, user, repo, also, &branch)?;
+    let others = repo::others(cx, user, repo, also)?;
     Ok(Facts {
         repo: Some(BoxRepo {
             repo: repo.clone(),
@@ -330,27 +327,10 @@ fn gather(cx: &Cx, req: &StartReq, user: UserId) -> Result<Facts, CommandError> 
     })
 }
 
-/// Names the Box's branch, refusing one an open Box already works on, then ensures the Workspace.
+/// Ensures the Workspace; the branch is named by the Box id, which the store assigns on insert.
 fn place(cx: &Cx, req: &StartReq) -> Result<Placed, CommandError> {
-    let branch = moor_core::box_key::branch(&req.name);
-    let owner = cx
-        .store()?
-        .open_boxes()?
-        .into_iter()
-        .find(|t| t.branch.as_deref() == Some(&branch));
-    if let Some(t) = owner {
-        return Err(CommandError::new(
-            ErrorKind::Failed,
-            format!(
-                "the branch {branch} belongs to open Box {}",
-                t.name.as_str()
-            ),
-        )
-        .with_hint("pick another Box name"));
-    }
     let ws = cx.surface().ensure_workspace(&workspace_label(&req.name))?;
     Ok(Placed {
-        branch,
         workspace: ws.as_str().to_owned(),
     })
 }
@@ -372,7 +352,6 @@ fn insert(
         issue: set_some(req.issue.clone()),
         prompt: set_some(req.prompt.clone()),
         base: set_some(facts.base.clone()),
-        branch: Field::Set(placed.branch.clone()),
         workspace_id: Field::Set(placed.workspace.clone()),
         ..Fields::default()
     };
@@ -381,6 +360,7 @@ fn insert(
         repo: facts.repo.clone(),
     };
     let mut decision = Decision::insert(new)
+        .branch_by_id()
         .set(set)
         .parent_session(req.parent.map(SessionId::get))
         .requester(user);
