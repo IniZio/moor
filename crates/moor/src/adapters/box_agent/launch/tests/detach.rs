@@ -2,6 +2,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use moor_core::boxscript::quote;
 use moor_core::seam::engine::{AgentFate, EngineError};
 
 use super::{attach, fate_by, pane_line, start, NO_TMUX, NO_TMUX_EXIT, SESSION};
@@ -197,6 +198,47 @@ fn the_pane_line_starts_the_agent_through_real_shells_and_tmux() {
     );
     let seen = std::fs::read_to_string(&seen).unwrap_or_default();
     assert_eq!(seen, "it's|$HOME `x`\n", "{stdout}{stderr}");
+}
+
+#[test]
+fn a_client_that_attaches_is_sent_the_status_the_agent_last_printed() {
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join("bin");
+    let server = fake_box(&bin, dir.path());
+    let real = format!(
+        "exec {} -L {} -f /dev/null \"$@\"",
+        server.tmux.display(),
+        server.socket
+    );
+    tool(&bin, "tmux", &real);
+    let work = dir.path().join("w");
+    std::fs::create_dir_all(work.join(".moor")).unwrap();
+    std::fs::write(work.join(".moor/status-osc"), "blocked:kind=permission").unwrap();
+    let script = dir.path().join("agent.sh");
+    std::fs::write(&script, "sleep 1\n").unwrap();
+    let exit_file = work.join(".moor/agent.exit");
+    let cmd = start(
+        &quote(exit_file.to_str().unwrap()),
+        script.to_str().unwrap(),
+    );
+    let out = Command::new("script")
+        .args([
+            "-qefc",
+            &format!("stty cols 80 rows 24; {cmd}"),
+            "/dev/null",
+        ])
+        .current_dir(&work)
+        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+        .env("TERM", "xterm")
+        .env("TMUX_TMPDIR", &server.dir)
+        .env_remove("TMUX")
+        .output()
+        .unwrap();
+    let shown = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        shown.contains("\x1b]7501;state=blocked:kind=permission:app=claude\x1b\\"),
+        "{shown:?}"
+    );
 }
 
 /// What the Box tells of the agent when `tmux has-session` exits `has_session` and the workdir
