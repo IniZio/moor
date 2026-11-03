@@ -142,6 +142,11 @@ while it waits for setup, its `setup_url`, never the key. See
 [Set up a webhook](notify.md#set-up-a-webhook) and
 [Notifications](notify.md) for the receiving side.
 
+`start_box` refuses, before it creates anything, when you lack a secret a Box
+needs. With `--public-url`, the refusal names each missing secret and links
+`https://<host>/me/secrets`, where you store them yourself. Without it the
+refusal names the `moor user secret set` commands an operator runs.
+
 `node` is a node you may use, a shared one or one of your own; omit it for your
 default. See [Nodes](nodes.md).
 
@@ -422,3 +427,15 @@ Open `https://<host>/auth/me` to check it. It sends you through the provider and
 then shows the email you signed in as. A session lasts 15 minutes and lives only
 in the gate's memory, so a restart signs everyone out. Run one gate replica: a
 sign-in that starts on one replica cannot finish on another.
+
+Open `https://<host>/me/secrets` to store the secrets your Boxes use. The page
+lists `claude`, `github` and any other secret your Proxy rules name, each as
+set or not set. It never shows a value. Paste a token into a secret's form and
+save it to set or replace it:
+
+- **claude.** What `claude setup-token` prints on your own machine.
+- **github.** What `gh auth token` prints, or a fine-grained token that can
+  push to the repos you work on.
+
+The page makes you a moor user if you are not one yet, the same as Slack's
+`/moor login`.
