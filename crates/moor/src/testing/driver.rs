@@ -194,18 +194,20 @@ impl Driver for FakeDriver {
         if !s.live.iter().any(|h| h == handle.as_str()) {
             return Err(DriverError::NotFound);
         }
-        if let (Some(Output::Log(path)), Some(text)) = (&spec.output, s.log_text(spec)) {
-            write_bytes(path, text.as_bytes())?;
-        }
+        let scripted = s.log_text(spec);
         let argv = spec.argv.join(" ");
         let ends = s.exec_ends.iter().find(|(n, _)| argv.contains(n.as_str()));
         if let Some(out) = ends.map(|(_, out)| *out).or_else(|| s.end_once(&argv)) {
+            write_log(spec, scripted)?;
             return Ok(out);
         }
         let out = s
             .exec_results
             .pop_front()
             .unwrap_or(Ok(ExecOutcome::Exited { code: 0 }));
+        let passed = matches!(out, Ok(ExecOutcome::Exited { code: 0 }));
+        let text = scripted.or_else(|| passed.then(|| knobs::clone_default(spec)).flatten());
+        write_log(spec, text)?;
         let hook = s.after_exec.clone();
         drop(s);
         if let Some(hook) = hook {
@@ -364,6 +366,14 @@ impl Driver for FakeDriver {
 
     fn wake(&self, handle: &BoxHandle) -> Result<(), DriverError> {
         self.local_wake(handle)
+    }
+}
+
+/// Writes `text` to the log `spec` streams to, if both exist.
+fn write_log(spec: &ExecSpec, text: Option<String>) -> Result<(), DriverError> {
+    match (&spec.output, text) {
+        (Some(Output::Log(path)), Some(text)) => write_bytes(path, text.as_bytes()),
+        _ => Ok(()),
     }
 }
 

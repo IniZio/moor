@@ -1,6 +1,6 @@
 //! Whose setup checkpoints a Box may start from: only those its own user's Boxes saved.
 
-use moor_core::boxscript::clone::FROM_BRANCH;
+use moor_core::boxscript::clone::AT_BASE;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
@@ -132,14 +132,11 @@ fn relaunched(clone_says: &str) -> Vec<String> {
 }
 
 #[test]
-fn a_relaunch_whose_clone_started_from_the_pushed_box_branch_saves_no_checkpoint() {
-    assert_eq!(
-        relaunched(&format!("{FROM_BRANCH}\n")),
-        Vec::<String>::new()
-    );
+fn a_relaunch_whose_clone_did_not_report_the_base_saves_no_checkpoint() {
+    assert_eq!(relaunched("\n"), Vec::<String>::new());
 }
 
 #[test]
 fn a_relaunch_whose_clone_started_from_the_base_saves_checkpoints() {
-    assert!(!relaunched("").is_empty());
+    assert!(!relaunched(&format!("{AT_BASE}\n")).is_empty());
 }

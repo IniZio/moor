@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use super::{clone_script, from_branch, Checkout, CloneStep};
+use super::{at_base, clone_script, Checkout, CloneStep};
 
 const BRANCH: &str = "moor/demo";
 
@@ -255,22 +255,55 @@ fn a_branch_on_the_remote_is_checked_out_instead_of_the_base() {
     assert_eq!(std::fs::read_to_string(b.join("a.txt")).unwrap(), "two\n");
 }
 
+/// Runs the clone script in the Box workdir and says whether it reported the base.
+fn says_base(r: &Remote) -> bool {
+    let url = r.url();
+    let out = r.run_with(&Checkout {
+        url: &url,
+        base: &r.base,
+        branch: BRANCH,
+    });
+    assert!(out.status.success());
+    at_base(&String::from_utf8(out.stdout).unwrap())
+}
+
 #[test]
-fn only_a_branch_not_started_from_the_base_is_reported() {
-    let said = |r: &Remote| {
-        let url = r.url();
-        let out = r.run_with(&Checkout {
-            url: &url,
-            base: &r.base,
-            branch: BRANCH,
-        });
-        assert!(out.status.success());
-        from_branch(&String::from_utf8(out.stdout).unwrap())
-    };
-    assert!(!said(&Remote::new("from-base")), "a new branch at the base");
+fn only_a_work_tree_that_is_the_base_unchanged_is_reported() {
+    assert!(
+        says_base(&Remote::new("from-base")),
+        "a new branch at the base"
+    );
     let pushed = Remote::new("from-branch");
     pushed.push_branch();
-    assert!(said(&pushed), "a branch the remote already has");
+    assert!(!says_base(&pushed), "a branch the remote already has");
+}
+
+#[test]
+fn a_kept_work_tree_is_reported_only_while_it_is_the_base_unchanged() {
+    let r = Remote::new("kept-tree");
+    assert!(says_base(&r), "the first run");
+    assert!(says_base(&r), "a rerun on the Box branch at the base");
+    let b = r.path("box");
+    std::fs::write(b.join("new.txt"), "x\n").unwrap();
+    assert!(!says_base(&r), "an untracked file");
+    std::fs::remove_file(b.join("new.txt")).unwrap();
+    std::fs::write(b.join("a.txt"), "edited\n").unwrap();
+    assert!(!says_base(&r), "an edited file");
+    r.git(&b, &["checkout", "-q", "--", "a.txt"]);
+    assert!(says_base(&r), "clean again");
+    r.commit_in_box();
+    assert!(!says_base(&r), "a commit on the Box branch");
+}
+
+#[test]
+fn an_existing_local_branch_off_the_base_is_not_reported() {
+    let r = Remote::new("local-branch");
+    r.crabbox_files();
+    assert!(says_base(&r));
+    let b = r.path("box");
+    r.commit_in_box();
+    r.git(&b, &["checkout", "-q", "-b", "elsewhere", &r.base]);
+    assert!(!says_base(&r), "the Box branch has the agent's commit");
 }
 
 #[test]
