@@ -9,7 +9,8 @@ use moor_core::response::ExitClass;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::http::respond;
+use crate::http::{respond, UNAVAILABLE};
+use crate::tools::client_down;
 use crate::{rewrite, Gate};
 
 /// Largest request body the route reads.
@@ -45,6 +46,7 @@ const fn one() -> u16 {
 pub(crate) fn handle(mut stream: TcpStream, leftover: Vec<u8>, length: Option<usize>, gate: &Gate) {
     let (status, body) = match enroll(&mut stream, leftover, length, gate) {
         Ok(value) => ("200 OK", value),
+        Err((UNAVAILABLE, _)) => return crate::http::unavailable(&mut stream),
         Err((status, why)) => (status, json!({ "error": why })),
     };
     respond(&mut stream, status, "application/json", &body.to_string());
@@ -93,10 +95,12 @@ fn enroll(
         .request(acting, |_| {})
         .map_err(|e| {
             crate::log(&format!("enrolling a machine failed: {e}"));
-            (
-                "502 Bad Gateway",
-                "the controller is unreachable".to_owned(),
-            )
+            let status = if client_down(&e) {
+                UNAVAILABLE
+            } else {
+                "502 Bad Gateway"
+            };
+            (status, "the controller is unreachable".to_owned())
         })?;
     if reply.class != ExitClass::Ok {
         let why = reply

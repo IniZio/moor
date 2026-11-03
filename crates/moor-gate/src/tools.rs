@@ -23,6 +23,7 @@ use crate::{rewrite, Person};
 
 mod events;
 pub(crate) use events::{fetch, EventsArgs};
+pub(crate) use listen::client_down;
 mod failed;
 mod inspect;
 mod listen;

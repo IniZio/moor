@@ -142,8 +142,9 @@ On the restart, systemd sends SIGTERM and the controller drains, as
    sockets, and it answers the connects that waited in the backlog.
 
 `moor-gate` drains on SIGTERM or SIGINT as well. It stops accepting, lets
-connections in flight end for up to `--drain-timeout-secs`
-(`MOOR_GATE_DRAIN_TIMEOUT_SECS`, 600 by default), and exits 0. While the
+requests in flight end for up to `--drain-timeout-secs`
+(`MOOR_GATE_DRAIN_TIMEOUT_SECS`, 600 by default), closes open `/front` and
+`/events` streams after 5 s so clients reconnect, and exits 0. While the
 controller's front socket is missing or refusing, the gate answers `503` with
 `Retry-After: 5` instead of a bare connection error.
 

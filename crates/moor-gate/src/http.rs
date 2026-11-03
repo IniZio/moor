@@ -11,6 +11,7 @@ use tungstenite::protocol::Role;
 use tungstenite::WebSocket;
 
 use crate::login::{routes, setup};
+use crate::streams::Streams;
 use crate::{log, relay, Gate, Login};
 
 /// Longest request head the gate reads.
@@ -19,11 +20,14 @@ const HEAD_MAX: usize = 16 * 1024;
 /// How long a client may take to send its request head.
 const HEAD_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// The status of a response that tells the client to retry.
+pub(crate) const UNAVAILABLE: &str = "503 Service Unavailable";
+
 /// Seconds a client is told to wait before retrying while the controller is down.
 const RETRY_AFTER_SECS: u32 = 5;
 
 /// Serves one HTTP connection.
-pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>) {
+pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>, streams: &Streams) {
     if stream.set_read_timeout(Some(HEAD_TIMEOUT)).is_err() {
         return;
     }
@@ -46,7 +50,7 @@ pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>) {
     }
     let path = req.path.unwrap_or_default();
     let path = path.split('?').next().unwrap_or_default();
-    if needs_controller(req.method, path, gate) && controller_down(gate) {
+    if needs_controller(path, gate) && controller_down(gate) {
         unavailable(&mut stream);
         return;
     }
@@ -71,12 +75,12 @@ pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>) {
             }
         }
         (Some("GET"), "/events") if gate.mcp.is_some() => {
-            crate::events_http::serve(stream, req.path.unwrap_or_default(), &req, gate);
+            crate::events_http::serve(stream, req.path.unwrap_or_default(), &req, gate, streams);
         }
         (_, p) if behind_sign_in(p) && login.is_some() => {
             browser(stream, leftover, &req, gate, login);
         }
-        (Some("GET"), "/front") => front(stream, leftover, &req, gate),
+        (Some("GET"), "/front") => front(stream, leftover, &req, gate, streams),
         (Some("POST"), "/machines/enroll") => {
             let length = header(&req, "content-length").and_then(|v| v.trim().parse().ok());
             crate::enroll::handle(stream, leftover, length, gate);
@@ -116,7 +120,13 @@ fn browser(
 }
 
 /// Checks the bearer token, then upgrades and relays to the controller's front socket.
-fn front(mut stream: TcpStream, leftover: Vec<u8>, req: &httparse::Request<'_, '_>, gate: &Gate) {
+fn front(
+    mut stream: TcpStream,
+    leftover: Vec<u8>,
+    req: &httparse::Request<'_, '_>,
+    gate: &Gate,
+    streams: &Streams,
+) {
     let person = header(req, "authorization")
         .and_then(|v| v.strip_prefix("Bearer "))
         .ok_or_else(|| "send an access token as Authorization: Bearer <token>".to_owned())
@@ -169,6 +179,7 @@ fn front(mut stream: TcpStream, leftover: Vec<u8>, req: &httparse::Request<'_, '
     if switched.is_err() || stream.set_read_timeout(None).is_err() {
         return;
     }
+    let _held = streams.hold(&stream);
     relay::run(
         WebSocket::from_partially_read(stream, leftover, Role::Server, None),
         &unix,
@@ -177,20 +188,17 @@ fn front(mut stream: TcpStream, leftover: Vec<u8>, req: &httparse::Request<'_, '
 }
 
 /// Whether `e` says nothing listens on the controller's socket: it is missing or refuses.
-fn is_down(e: &io::Error) -> bool {
+pub(crate) fn is_down(e: &io::Error) -> bool {
     matches!(
         e.kind(),
         io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
     )
 }
 
-/// Whether serving `path` starts with a request to the controller.
-fn needs_controller(method: Option<&str>, path: &str, gate: &Gate) -> bool {
-    match (method, path) {
-        (_, "/mcp" | "/mcp/" | "/events") => gate.mcp.is_some(),
-        (Some("POST"), "/machines/enroll") => true,
-        _ => false,
-    }
+/// Whether serving `path` dials the controller only after the response has begun, so the
+/// dial's failure cannot change the status.
+fn needs_controller(path: &str, gate: &Gate) -> bool {
+    matches!(path, "/mcp" | "/mcp/") && gate.mcp.is_some()
 }
 
 /// Whether the controller's front socket is missing or refusing connections.
@@ -199,12 +207,12 @@ fn controller_down(gate: &Gate) -> bool {
 }
 
 /// Answers `503` with `Retry-After` while the controller is away, as a restart makes it.
-fn unavailable(stream: &mut TcpStream) {
+pub(crate) fn unavailable(stream: &mut TcpStream) {
     let body =
         serde_json::json!({ "error": "the controller is restarting; retry shortly" }).to_string();
     let _ = write!(
         stream,
-        "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nRetry-After: {RETRY_AFTER_SECS}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        "HTTP/1.1 {UNAVAILABLE}\r\nContent-Type: application/json\r\nRetry-After: {RETRY_AFTER_SECS}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     );
 }

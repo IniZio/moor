@@ -17,7 +17,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use super::listen::enrolled;
+use super::listen::{enrolled, Unreachable};
 use super::{auth_for, failed, Tools};
 use crate::mcp::READ;
 use crate::Person;
@@ -69,14 +69,18 @@ impl Tools {
         let read = tokio::task::spawn_blocking(move || fetch(&socket, &auth.person, args)).await;
         match read {
             Ok(Ok(value)) => CallToolResult::structured(value),
-            Ok(Err(why)) => failed(why),
+            Ok(Err(why)) => failed(why.why),
             Err(e) => failed(format!("the call did not finish: {e}")),
         }
     }
 }
 
 /// One watch of `person`'s events from `args.after`, as the JSON `list_events` returns.
-pub(crate) fn fetch(socket: &Path, person: &Person, args: EventsArgs) -> Result<Value, String> {
+pub(crate) fn fetch(
+    socket: &Path,
+    person: &Person,
+    args: EventsArgs,
+) -> Result<Value, Unreachable> {
     let after = args.after.unwrap_or(0).max(0);
     let limit = args.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
     let wait = Duration::from_secs(args.wait_seconds.unwrap_or(0).min(MAX_WAIT));
@@ -93,7 +97,7 @@ pub(crate) fn fetch(socket: &Path, person: &Person, args: EventsArgs) -> Result<
     let client = enrolled(socket, person)?;
     let watch = client
         .watch(after, filter, !wait.is_zero())
-        .map_err(|e| format!("the controller is unreachable: {e}"))?;
+        .map_err(|e| Unreachable::from_client(&e))?;
     let stop = watch.stopper();
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
