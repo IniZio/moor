@@ -23,7 +23,7 @@ use rustls::pki_types::PrivateKeyDer;
 use rustls::{ServerConfig, ServerConnection, StreamOwned};
 use ureq::Agent;
 
-use crate::proxy::nono::tests::upstream;
+use crate::proxy::nono::tests::upstream::{self, Upstream};
 use crate::proxy::supervisor::listen::{listen, Live};
 use crate::proxy::supervisor::{Deps, Sink};
 use crate::store::Store;
@@ -245,6 +245,10 @@ pub(super) struct Rig {
     pub(super) ca_pem: String,
     /// How many times the credential source ran.
     pub(super) fetches: Arc<AtomicUsize>,
+    /// Loopback addresses the guard lets the proxy dial.
+    guard_exempt: Vec<SocketAddr>,
+    /// Roots the proxy trusts for its upstreams.
+    upstream_ca: PathBuf,
 }
 
 impl Rig {
@@ -263,10 +267,10 @@ impl Rig {
                     Ok(Some(Secret::new(SECRET.as_bytes().to_vec())))
                 })
             },
-            upstream_ca: Some(self.up.ca_path.clone()),
+            upstream_ca: Some(self.upstream_ca.clone()),
             upstream_dial: Some(self.up.addr),
             machine_service: None,
-            guard_exempt: Vec::new(),
+            guard_exempt: self.guard_exempt.clone(),
             state_dir: self.dir.path(),
             sockets: &self.sockets,
             owner: rustix::process::getuid().as_raw(),
@@ -303,8 +307,37 @@ fn rig() -> Rig {
 
 /// Like `rig`, with `extra` rules after the GitHub one.
 pub(super) fn rig_with(extra: Vec<ResolvedRule>) -> Rig {
+    let repo = ForgeRepo {
+        owner: "o".to_owned(),
+        name: "r".to_owned(),
+    };
+    rig_spec(
+        repo,
+        Vec::new(),
+        std::iter::once(github_rule()).chain(extra).collect(),
+        None,
+    )
+}
+
+/// Starts `listen` for a Box on `repo`, also holding `other`, with exactly `rules`.
+pub(super) fn rig_spec(
+    repo: ForgeRepo,
+    other: Vec<ForgeRepo>,
+    rules: Vec<ResolvedRule>,
+    host: Option<&Upstream>,
+) -> Rig {
     let dir = tempfile::tempdir().unwrap();
     let up = start_github(dir.path());
+    let mut upstream_ca = up.ca_path.clone();
+    let mut guard_exempt = Vec::new();
+    if let Some(host) = host {
+        upstream_ca = dir.path().join("both-ca.pem");
+        let both = [&up.ca_path, &host.ca_path]
+            .map(|p| std::fs::read_to_string(p).unwrap())
+            .concat();
+        std::fs::write(&upstream_ca, both).unwrap();
+        guard_exempt.push(SocketAddr::from((Ipv4Addr::LOCALHOST, host.port)));
+    }
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
     let nt = NewBox {
@@ -315,12 +348,9 @@ pub(super) fn rig_with(extra: Vec<ResolvedRule>) -> Rig {
     let spec = ProxySpec {
         box_id,
         box_handle: None,
-        other_repos: Vec::new(),
-        box_repo: Some(ForgeRepo {
-            owner: "o".to_owned(),
-            name: "r".to_owned(),
-        }),
-        rules: std::iter::once(github_rule()).chain(extra).collect(),
+        other_repos: other,
+        box_repo: Some(repo),
+        rules,
         user: moor_core::user::UserId::new(1),
         vault_key: crate::testing::cx::test_vault_key(dir.path()),
     };
@@ -339,6 +369,8 @@ pub(super) fn rig_with(extra: Vec<ResolvedRule>) -> Rig {
         sockets,
         ca_pem: String::new(),
         fetches: Arc::new(AtomicUsize::new(0)),
+        guard_exempt,
+        upstream_ca,
     };
     let live = listen(&rig.deps(), box_id, &spec).unwrap();
     rig.filter_port = live.graphql_addr().unwrap().port();
@@ -352,7 +384,7 @@ pub(super) fn rig_with(extra: Vec<ResolvedRule>) -> Rig {
 }
 
 /// POSTs a GraphQL query asking for the id of `owner/name`; status and body.
-fn query(client: &Agent, owner: &str, name: &str) -> (u16, String) {
+pub(super) fn query(client: &Agent, owner: &str, name: &str) -> (u16, String) {
     query_answered(client, owner, name, None)
 }
 
