@@ -15,7 +15,7 @@ pub mod sleep;
 pub mod steer;
 pub mod stuck;
 pub mod user;
-pub use attach::{AttachEnd, AttachView};
+pub use attach::{AttachEnd, AttachView, ExecView};
 pub use attention::AttentionView;
 pub use inspect::{InspectView, StuckView};
 pub use machine::{HeldMachineView, MachineHoldState};

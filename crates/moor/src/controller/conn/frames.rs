@@ -2,12 +2,12 @@
 
 use moor_core::controller::{ClientFrame, FrameErrorKind, ServerFrame, PROTOCOL};
 
-/// The error for a bytes or resize frame `id` sent outside a running `attach`.
+/// The error for a bytes, eof or resize frame `id` sent outside a running `attach` or `exec`.
 pub(super) fn stray(id: String) -> ServerFrame {
     ServerFrame::Error {
         id: Some(id),
         kind: FrameErrorKind::Malformed,
-        message: "bytes and resize frames belong to a running attach".to_owned(),
+        message: "bytes, eof and resize frames belong to a running attach or exec".to_owned(),
     }
 }
 

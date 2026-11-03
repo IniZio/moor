@@ -149,7 +149,7 @@ pub(super) fn touching_lease<T>(
 }
 
 /// The env as sh `export` lines, refused when a name is not a shell name.
-fn env_file(env: &[(String, String)]) -> Result<Vec<u8>, DriverError> {
+pub(super) fn env_file(env: &[(String, String)]) -> Result<Vec<u8>, DriverError> {
     let mut text = String::new();
     for (k, v) in env {
         let mut chars = k.chars();

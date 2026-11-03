@@ -14,7 +14,7 @@ use moor_core::seam::driver::{
     ExecOutcome, ExecSpec, Followed, MirrorStats, Released, RunEnd, SleepKind, SleepOutcome,
     StepDone,
 };
-use moor_core::seam::proc::{Deadline, Output};
+use moor_core::seam::proc::{Deadline, Output, Pipes};
 use moor_core::{BoxHandle, BoxPath, ProviderId};
 
 pub(crate) use runs::{eventually, live_in_group, reaped_pid};
@@ -291,6 +291,10 @@ impl Driver for FakeDriver {
         Ok(())
     }
 
+    fn exec_piped(&self, h: &BoxHandle, s: &ExecSpec, p: Pipes) -> piped::Ended {
+        self.piped(h, s, p)
+    }
+
     fn connect_argv(&self, handle: &BoxHandle) -> Result<Vec<String>, DriverError> {
         let mut s = self.st();
         s.note(format!("connect_argv {}", handle.as_str()));
@@ -384,6 +388,7 @@ impl Driver for FakeDriver {
 
 mod acquire;
 mod knobs;
+mod piped;
 mod runs;
 mod script;
 #[cfg(test)]

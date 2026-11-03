@@ -33,12 +33,18 @@ pub enum ClientFrame {
         /// The command to run.
         request: Box<Request>,
     },
-    /// Keystrokes for a running `attach`; exactly `len` raw bytes follow the line.
+    /// Keystrokes for a running `attach`, or stdin for a running `exec`; exactly `len` raw
+    /// bytes follow the line.
     Bytes {
-        /// Id of the `attach` the bytes belong to.
+        /// Id of the `attach` or `exec` the bytes belong to.
         id: String,
         /// Number of raw bytes after the line, at most [`BYTES_MAX`].
         len: usize,
+    },
+    /// The end of a running `exec`'s stdin: the command's stdin closes.
+    Eof {
+        /// Id of the `exec` whose stdin ends.
+        id: String,
     },
     /// The caller's terminal changed size during a running `attach`.
     Resize {
@@ -132,9 +138,17 @@ pub enum ServerFrame {
     /// Raw bytes for a request still running; exactly `len` bytes follow the line.
     ///
     /// `artifact-read` sends the Artifact's content this way, `run` sends the command's
-    /// output as it reaches the run log, and `attach` sends the relayed terminal's output.
+    /// output as it reaches the run log, `attach` sends the relayed terminal's output, and
+    /// `exec` sends the command's stdout.
     Bytes {
         /// Id of the request the bytes belong to.
+        id: String,
+        /// Number of raw bytes after the line, at most [`BYTES_MAX`].
+        len: usize,
+    },
+    /// Raw bytes of a running `exec`'s stderr; exactly `len` bytes follow the line.
+    Stderr {
+        /// Id of the `exec` the bytes belong to.
         id: String,
         /// Number of raw bytes after the line, at most [`BYTES_MAX`].
         len: usize,
@@ -277,12 +291,31 @@ impl ServerFrame {
 /// # Errors
 /// Returns the write error; the frame stream is then broken and the connection must close.
 pub fn write_bytes(out: &mut dyn Write, id: &str, data: &[u8]) -> io::Result<()> {
+    write_chunks(out, data, |len| ServerFrame::Bytes {
+        id: id.to_owned(),
+        len,
+    })
+}
+
+/// Writes `data` as an `exec`'s stderr for request `id`, as [`write_bytes`] does its stdout.
+///
+/// # Errors
+/// As [`write_bytes`].
+pub fn write_stderr(out: &mut dyn Write, id: &str, data: &[u8]) -> io::Result<()> {
+    write_chunks(out, data, |len| ServerFrame::Stderr {
+        id: id.to_owned(),
+        len,
+    })
+}
+
+/// Writes `data` in parts of at most [`BYTES_MAX`] bytes, each after the frame `head` makes.
+fn write_chunks(
+    out: &mut dyn Write,
+    data: &[u8],
+    head: impl Fn(usize) -> ServerFrame,
+) -> io::Result<()> {
     for part in data.chunks(BYTES_MAX) {
-        let head = ServerFrame::Bytes {
-            id: id.to_owned(),
-            len: part.len(),
-        };
-        out.write_all(head.to_line().as_bytes())?;
+        out.write_all(head(part.len()).to_line().as_bytes())?;
         out.write_all(part)?;
     }
     out.flush()

@@ -31,7 +31,7 @@ use crate::store::{BoxRow, NewRun, RunOutcome, Store, StoreError};
 
 mod detached;
 pub(crate) mod follow;
-mod ready;
+pub(crate) mod ready;
 mod record;
 
 pub(super) use follow::Sink;

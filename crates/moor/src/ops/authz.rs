@@ -169,6 +169,7 @@ const fn host_only(request: &Request) -> Option<&'static str> {
         | Request::CloseFailed(_)
         | Request::Connect(_)
         | Request::Attach(_)
+        | Request::Exec(_)
         | Request::Gate(_)
         | Request::Artifacts(_)
         | Request::ArtifactRead(_)

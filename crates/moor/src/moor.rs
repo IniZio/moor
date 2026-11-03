@@ -133,6 +133,18 @@ impl Moor {
         ops::attach::argv(&self.cx, req)
     }
 
+    /// Runs `req` in its Box with the command's stdio on `pipes`.
+    ///
+    /// # Errors
+    /// [`CommandError`] when the command could not start.
+    pub(crate) fn exec(
+        &self,
+        req: &moor_core::ExecReq,
+        pipes: moor_core::seam::proc::Pipes<'_>,
+    ) -> Result<moor_core::view::ExecView, CommandError> {
+        ops::exec::run(&self.cx, req, pipes)
+    }
+
     /// This engine doing only what `grant` lets its request do.
     #[must_use]
     pub(crate) fn granted(self, grant: Grant) -> Self {

@@ -5,11 +5,13 @@ use std::{ffi::OsString, fmt, path::PathBuf, time::Duration};
 mod error;
 mod first_line;
 mod gate;
+mod piped;
 mod signal;
 mod tool;
 pub use error::ProcError;
 pub use first_line::FirstLineError;
 pub use gate::StderrGate;
+pub use piped::{pump, Piped, Pipes};
 pub use signal::{check_group, Signal};
 pub use tool::Tool;
 
@@ -298,6 +300,19 @@ pub trait Proc: Send + Sync {
         Err(ProcError::Spawn(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
             "detached daemons are not supported",
+        )))
+    }
+
+    /// Runs a child with its stdio streamed through `pipes` as [`pump`] does, `spec.stdin`'s
+    /// bytes first on its stdin. `spec.deadline` does not limit it.
+    ///
+    /// # Errors
+    /// [`ProcError::Spawn`] when it cannot start or streaming is unsupported.
+    fn run_piped(&self, spec: &ProcSpec, pipes: Pipes<'_>) -> Result<Piped, ProcError> {
+        let _ = (spec, pipes);
+        Err(ProcError::Spawn(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "this proc cannot stream a child's stdio",
         )))
     }
 

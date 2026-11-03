@@ -15,6 +15,8 @@ mod binding;
 pub use binding::{BindSessionReq, SessionBindingReq};
 mod env;
 pub use env::EnvReq;
+mod exec;
+pub use exec::ExecReq;
 mod files;
 pub use files::{BoxMirrorReq, BoxPutReq, CpReq};
 mod inspect;
@@ -104,6 +106,9 @@ pub enum Request {
     /// Relay the agent's terminal on the Box both ways over this connection until either side
     /// ends it. It takes over the connection: the controller socket closes it after the answer.
     Attach(AttachReq),
+    /// Run a command in the Box with its stdio streamed both ways over this connection until it
+    /// ends. It takes over the connection: the controller socket closes it after the answer.
+    Exec(ExecReq),
     /// Check a gate.
     Gate(GateReq),
     /// Show the layered environment.
@@ -216,6 +221,7 @@ impl Request {
             Self::CloseFailed(_) => "close-failed",
             Self::Connect(_) => "connect",
             Self::Attach(_) => "attach",
+            Self::Exec(_) => "exec",
             Self::Gate(_) => "gate",
             Self::Env(_) => "env",
             Self::Artifacts(_) => "artifacts",

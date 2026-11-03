@@ -22,7 +22,7 @@ pub(super) fn call_ssh<T>(
     env: &Env,
     target: &Target,
     host: &str,
-    exchange: impl FnOnce(&mut dyn BufRead, &mut dyn Write) -> Result<T, SessionError>,
+    exchange: impl FnOnce(&mut (dyn BufRead + Send), &mut (dyn Write + Send)) -> Result<T, SessionError>,
 ) -> Attempt<T, ClientError> {
     let unreachable = |detail: String| ClientError::Unreachable {
         target: target.clone(),

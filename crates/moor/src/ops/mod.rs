@@ -18,6 +18,7 @@ pub(crate) mod common;
 mod cp;
 mod end_session;
 pub(crate) mod env;
+pub(crate) mod exec;
 mod front_proxy;
 mod gate;
 pub(crate) mod host_session;
@@ -65,6 +66,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::Artifacts(r) => to_value(&artifacts::list(cx, &r)?),
         req @ (Request::ArtifactRead(_)
         | Request::Attach(_)
+        | Request::Exec(_)
         | Request::As(_)
         | Request::Whoami(_)
         | Request::Enroll(_)
@@ -138,6 +140,10 @@ fn socket_only(req: &Request) -> CommandError {
         Request::Attach(_) => (
             ErrorKind::Refused,
             "attach relays a terminal both ways, so only the controller socket serves it",
+        ),
+        Request::Exec(_) => (
+            ErrorKind::Refused,
+            "exec streams a command's stdio both ways, so only the controller socket serves it",
         ),
         Request::As(_) => (
             ErrorKind::Usage,
