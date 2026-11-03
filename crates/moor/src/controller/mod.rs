@@ -13,6 +13,7 @@ mod local;
 mod peer;
 mod progress;
 mod relay;
+mod serving;
 mod settle;
 mod watch;
 
@@ -31,6 +32,7 @@ use moor_core::config::{parse_controller, ControllerConfig};
 
 use drain::{Admitted, Drain, Handler};
 use inherit::Sockets;
+use serving::serve_started;
 
 use crate::env::{Env, CONTROLLER_LOCK};
 use crate::vault::{Vault, VAULT_KEY};
@@ -54,7 +56,7 @@ const REFUSED: u8 = 3;
 /// "already running" notice go to `stderr`.
 pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u8 {
     let sink: Sink = Arc::new(Mutex::new(stderr));
-    let mut running = match start(env, config) {
+    let running = match start(env, config) {
         Ok(running) => running,
         Err(stop) => {
             log(&sink, &stop.message);
@@ -68,33 +70,7 @@ pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u
             return 1;
         }
     };
-    log(&sink, &format!("listening on {}", running.socket.display()));
-    Moor::surface_override(&running.env).inspect(|line| log(&sink, line));
-    for line in Moor::reconcile_proxies(&running.env) {
-        log(&sink, &format!("proxy: {line}"));
-    }
-    let interrupted = Moor::from_env(&running.env).map_or_else(
-        |e| vec![e.error.to_string()],
-        |moor| moor.fail_interrupted_starts(),
-    );
-    for line in interrupted {
-        log(&sink, &format!("start: {line}"));
-    }
-    let shim = std::env::current_exe().map_or_else(|_| "/proc/self/exe".into(), OsString::from);
-    let mut fronts = running.supervise_fronts((shim, vec!["front-shim".into()]), &sink);
-    let drain = Arc::new(Drain::default());
-    drain.end_fronts_with_drain(fronts.terminator(running.drain_timeout));
-    settle::spawn(&running, &drain, &sink);
-    settle::spawn_oauth(
-        &running.env,
-        &running.vault,
-        running.settle_every,
-        &drain,
-        &sink,
-    );
-    running.serve_until(&wake, &drain, &sink);
-    fronts.wait();
-    0
+    serve_started(running, &wake, &sink, Moor::reconcile_proxies)
 }
 
 /// Why the controller did not start.

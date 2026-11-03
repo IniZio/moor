@@ -82,6 +82,9 @@ running. systemd logs them as left-over processes when the service starts
 again. `TimeoutStopSec` must be above the config's `drain_timeout_secs`,
 600 by default, or systemd kills the controller in the middle of its drain.
 
+At start the controller answers requests at once and restarts each Box's Proxy
+in the background, so a slow Proxy never holds up the API.
+
 ## What the controller checks
 
 The controller takes the passed sockets by the `sd_listen_fds` protocol. It

@@ -147,6 +147,7 @@ mod run_cancel;
 mod run_grant;
 mod run_output;
 mod runner_socket;
+mod serve_first;
 mod users;
 mod webhook_front;
 
