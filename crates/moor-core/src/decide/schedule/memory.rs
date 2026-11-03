@@ -36,6 +36,17 @@ pub const DISK_FLOOR_PERCENT: u64 = 10;
 /// A node keeps at least this much disk free, in MiB, before it takes another Box.
 pub const DISK_FLOOR_MIB: u64 = 20 * 1024;
 
+/// What a node of `total_mib` keeps free: [`DISK_FLOOR_PERCENT`] of it, at least [`DISK_FLOOR_MIB`].
+#[must_use]
+pub const fn disk_floor_mib(total_mib: u64) -> u64 {
+    let share = total_mib.saturating_mul(DISK_FLOOR_PERCENT) / 100;
+    if share > DISK_FLOOR_MIB {
+        share
+    } else {
+        DISK_FLOOR_MIB
+    }
+}
+
 /// The host's share when none is configured: 4 GiB plus a tenth of `total_mib`.
 #[must_use]
 pub const fn default_reserve_mib(total_mib: u64) -> u64 {
@@ -111,7 +122,7 @@ impl Memory {
     /// [`DISK_FLOOR_MIB`]; `None` when it is above it or the host does not report disk.
     fn disk_shortfall(&self) -> Option<Shortfall> {
         let (free_mib, total_mib) = (self.disk_free_mib?, self.disk_total_mib?);
-        let needs_mib = (total_mib * DISK_FLOOR_PERCENT / 100).max(DISK_FLOOR_MIB);
+        let needs_mib = disk_floor_mib(total_mib);
         (free_mib < needs_mib).then_some(Shortfall::Disk {
             free_mib,
             needs_mib,

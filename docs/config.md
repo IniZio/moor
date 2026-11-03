@@ -474,6 +474,30 @@ setup time it skipped. When the fork fails, the Box is set up from scratch on a
 new machine. Its events hold `warm_start_failed` with the provider's error,
 and the start warns with `checkpoint_failed`.
 
+Checkpoints never fill the node's disk. The floor is the one a node keeps
+before it takes a Box. It is 10% of the filesystem, and at least 20 GiB. Before a Box
+starts or retries, and before moor saves a checkpoint, moor checks the disk
+the provider keeps checkpoints on. While it is below the floor, moor deletes
+checkpoints, one at a time:
+
+1. First, chains of a repo that the same user set up again at another commit
+   after them.
+2. Then the checkpoint used longest ago.
+
+Two kinds are never deleted. One is a checkpoint a pending or setting-up Box
+forked or saved. The other is the deepest checkpoint of a Box whose setup
+failed, since `moor retry` resumes from it. Each deletion adds
+`checkpoint_evicted` to the events of the Box that asked for room. The event
+holds the checkpoint, the repo, its size, the reason (`superseded` or
+`least_recently_used`) and the free and needed MiB. When nothing is left to
+delete, the Box sets up without saving a checkpoint, and warns
+`checkpoint_skipped`.
+
+moor measures that disk only for a provider on the controller's own host, such
+as cloud-hypervisor through the `external` provider. It reads the filesystem
+holding `$XDG_CACHE_HOME`, or `~/.cache`. For a cloud provider, moor has no
+disk to read and deletes no checkpoint.
+
 moor does not see the provider's base image. After changing the image, close
 the Boxes and delete the provider's checkpoints, or new Boxes start from the
 old image.

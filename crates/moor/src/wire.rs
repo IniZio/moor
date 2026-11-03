@@ -215,6 +215,7 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
     )
     .with_lookup_deadlines(lookup_deadlines(&config.drivers))
     .with_state_dir(state_dir.clone(), sockets)
+    .with_checkpoint_dir(env.xdg("XDG_CACHE_HOME", ".cache", ""))
     .with_pool_hosts(links.clone().map(|l| l as _))
     .sharing_no_probe(Arc::clone(&NO_PROBE));
     let link_warning = crabbox.link_warning();

@@ -5,7 +5,7 @@ use crate::user::UserId;
 
 mod memory;
 pub use memory::{
-    default_reserve_mib, gib, Memory, Shortfall, BOOT_FLOOR_MIB, DISK_FLOOR_MIB,
+    default_reserve_mib, disk_floor_mib, gib, Memory, Shortfall, BOOT_FLOOR_MIB, DISK_FLOOR_MIB,
     DISK_FLOOR_PERCENT, PSI_LIMIT_CENTI, REPORT_FRESH_SECS,
 };
 

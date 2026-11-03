@@ -10,9 +10,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::seam::driver::{
-    AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Checkpoint, Driver, DriverCaps,
-    DriverError, ExecOutcome, ExecSpec, Followed, MirrorStats, Released, RunEnd, SleepKind,
-    SleepOutcome, StepDone,
+    AcquireReq, Acquired, BoxListing, BoxStep, Cancelled, Checkpoint, CheckpointDisk, Driver,
+    DriverCaps, DriverError, ExecOutcome, ExecSpec, Followed, MirrorStats, Released, RunEnd,
+    SleepKind, SleepOutcome, StepDone,
 };
 use moor_core::seam::proc::{Deadline, Output, Pipes};
 use moor_core::{BoxHandle, BoxPath, ProviderId};
@@ -331,6 +331,14 @@ impl Driver for FakeDriver {
 
     fn checkpoint(&self, handle: &BoxHandle, name: &str) -> Result<Checkpoint, DriverError> {
         self.checkpointed(handle, name)
+    }
+
+    fn delete_checkpoint(&self, id: &str) -> Result<(), DriverError> {
+        self.deleted(id)
+    }
+
+    fn checkpoint_disk(&self, _: &ProviderId) -> Result<Option<CheckpointDisk>, DriverError> {
+        Ok(self.disk())
     }
 
     fn fork(&self, id: &str, req: &AcquireReq) -> Result<BoxHandle, DriverError> {

@@ -1,15 +1,25 @@
 //! Checkpoints through `crabbox checkpoint`. Every read of its output lives here, since its
 //! field names may still move.
 
+use std::path::Path;
 use std::time::Duration;
 
-use moor_core::name::BoxHandle;
-use moor_core::seam::driver::{AcquireReq, Checkpoint, DriverError};
+use moor_core::name::{BoxHandle, ProviderId};
+use moor_core::seam::driver::{AcquireReq, Checkpoint, CheckpointDisk, DriverError};
 use serde::Deserialize;
 use serde_json::Value;
 
+use super::deadlines::QUICK_DEADLINE;
 use super::errors::{unreadable, Op};
-use super::{handle_of, slug, split_handle, target_args, Crabbox};
+use super::{caps, handle_of, pool, slug, split_handle, target_args, Crabbox};
+
+impl Crabbox {
+    /// Measures the disk of providers on this host at `dir`, the user's cache dir.
+    pub(crate) fn with_checkpoint_dir(mut self, dir: Option<std::path::PathBuf>) -> Self {
+        self.checkpoint_dir = dir;
+        self
+    }
+}
 
 /// Time allowed to save or fork a checkpoint, which copies a Box's memory and disk.
 const CHECKPOINT_DEADLINE: Duration = Duration::from_mins(10);
@@ -75,6 +85,42 @@ pub(super) fn fork(cb: &Crabbox, id: &str, req: &AcquireReq) -> Result<BoxHandle
         Err(failed) => Err(failed),
         Ok(()) => Ok(handle),
     }
+}
+
+/// Deletes checkpoint `id` and the provider's copy of it.
+pub(super) fn delete(cb: &Crabbox, id: &str) -> Result<(), DriverError> {
+    cb.require_version()?;
+    let spec = Crabbox::spec(CHECKPOINT_DEADLINE).args(["checkpoint", "delete", id]);
+    cb.call(Op::Checkpoint, None, &spec).map(drop)
+}
+
+/// A provider's checkpoint disk, when it can be read.
+pub(super) type Disk = Option<CheckpointDisk>;
+
+/// The disk `provider` keeps checkpoints on: this host's, for a provider that runs here.
+pub(super) fn disk(cb: &Crabbox, provider: &ProviderId) -> Result<Disk, DriverError> {
+    let Some(dir) = cb.checkpoint_dir.as_deref() else {
+        return Ok(None);
+    };
+    if pool::is_pool_provider(provider) {
+        return Ok(None);
+    }
+    cb.require_version()?;
+    let spec = Crabbox::spec(QUICK_DEADLINE).args(["providers", "--json", "--configured"]);
+    let out = cb.call(Op::Caps, None, &spec)?;
+    Ok(caps::on_this_host(&out.stdout, provider)
+        .then(|| disk_at(dir))
+        .flatten())
+}
+
+/// The filesystem holding `dir`, or its nearest existing parent; none when none can be read.
+fn disk_at(dir: &Path) -> Option<CheckpointDisk> {
+    let fs = dir.ancestors().find_map(|d| rustix::fs::statvfs(d).ok())?;
+    let mib = |blocks: u64| blocks.saturating_mul(fs.f_frsize) / (1024 * 1024);
+    Some(CheckpointDisk {
+        free_mib: mib(fs.f_bavail),
+        total_mib: mib(fs.f_blocks),
+    })
 }
 
 /// The checkpoint `text` reports; none when it is unreadable or has no id.

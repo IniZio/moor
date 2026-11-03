@@ -86,6 +86,8 @@ pub(crate) struct Crabbox {
     links: Option<link::Dirs>,
     /// `<state>/leases`, which holds each lease's dir; none when moor keeps no state.
     leases: Option<PathBuf>,
+    /// The cache dir a provider on this host keeps its checkpoints under; none when unknown.
+    checkpoint_dir: Option<PathBuf>,
     /// How pool hosts are reached; none when this controller reaches none.
     pool_hosts: Option<Arc<dyn PoolHosts>>,
     /// Keeps a test driver's state dir alive.
@@ -109,6 +111,7 @@ impl Crabbox {
             targets: Mutex::new(HashMap::new()),
             links: None,
             leases: None,
+            checkpoint_dir: None,
             pool_hosts: None,
             #[cfg(test)]
             scratch: None,
@@ -369,6 +372,14 @@ impl Driver for Crabbox {
     fn fork(&self, id: &str, req: &AcquireReq) -> Result<BoxHandle, DriverError> {
         self.require_version()?;
         checkpoint::fork(self, id, req)
+    }
+
+    fn delete_checkpoint(&self, id: &str) -> Result<(), DriverError> {
+        checkpoint::delete(self, id)
+    }
+
+    fn checkpoint_disk(&self, provider: &ProviderId) -> Result<checkpoint::Disk, DriverError> {
+        checkpoint::disk(self, provider)
     }
 
     fn reverse_tunnel(

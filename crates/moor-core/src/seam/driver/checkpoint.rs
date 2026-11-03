@@ -8,3 +8,12 @@ pub struct Checkpoint {
     /// Its size on the host, when the provider reports one.
     pub bytes: Option<u64>,
 }
+
+/// The filesystem a provider keeps its checkpoints on, in MiB.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CheckpointDisk {
+    /// What is free.
+    pub free_mib: u64,
+    /// Its size.
+    pub total_mib: u64,
+}

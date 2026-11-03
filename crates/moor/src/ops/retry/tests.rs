@@ -7,7 +7,7 @@ use moor_core::config::UserConfig;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
-use moor_core::domain::layers::chain;
+use moor_core::domain::layers::{chain, LayerKey};
 use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::driver::{Checkpoint, Driver as _, DriverError, ExecOutcome};
 use moor_core::seam::engine::{LaunchPrompt, SessionRef};
@@ -17,6 +17,7 @@ use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, BoxReq, ErrorKind, StartReq}
 
 use super::run;
 use crate::cx::Cx;
+use crate::store::checkpoints::Lineage;
 use crate::testing::clock::FakeClock;
 use crate::testing::cx::REQUESTER_USER;
 use crate::testing::driver::FakeDriver;
@@ -258,15 +259,25 @@ fn saved_layer(w: &World, id: BoxId, layer: usize) {
     let r = row(w, id);
     let boxed = r.boxed.unwrap();
     let lines: Vec<String> = ["prep-one", "run-two"].map(str::to_owned).to_vec();
-    let key = &chain(REQUESTER_USER, "o/n", r.base.as_deref().unwrap(), &lines)[layer];
+    let keys = chain(REQUESTER_USER, "o/n", r.base.as_deref().unwrap(), &lines);
+    let key = &keys[layer];
     let made = w
         .driver
         .checkpoint(boxed.handle.as_ref().unwrap(), key.as_str())
         .unwrap();
     let store = w.cx.store().unwrap();
     store
-        .record_checkpoint(&boxed.provider, key, "o/n", &made)
+        .record_checkpoint(&boxed.provider, key, &lineage(&keys[0]), &made)
         .unwrap();
+}
+
+/// The requester's chain of `o/n` whose clone layer is `clone`.
+fn lineage(clone: &LayerKey) -> Lineage {
+    Lineage {
+        user: REQUESTER_USER,
+        repo: "o/n".to_owned(),
+        chain: clone.clone(),
+    }
 }
 
 const TWO_LINES: &str = "setup: [prep-one, run-two]\n";
@@ -366,7 +377,7 @@ fn a_failed_fork_runs_setup_again_in_the_kept_machine() {
     };
     let store = w.cx.store().unwrap();
     store
-        .record_checkpoint(&provider, clone, "o/n", &gone)
+        .record_checkpoint(&provider, clone, &lineage(clone), &gone)
         .unwrap();
     let v = run(&w.cx, &req()).unwrap();
     assert!(v.setup.ok);

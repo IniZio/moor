@@ -3,6 +3,7 @@
 use moor_core::domain::layers::LayerKey;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::Checkpoint;
+use moor_core::user::UserId;
 use moor_core::{BoxPath, ProviderId};
 use rusqlite::{params, OptionalExtension};
 
@@ -35,33 +36,48 @@ pub(crate) struct Place {
     pub(crate) setup_ms: u64,
 }
 
+/// Whose setup a checkpoint holds: a user's chain of layers over one repo at one commit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Lineage {
+    /// The user whose Box saved it.
+    pub(crate) user: UserId,
+    /// The repo, `OWNER/NAME`.
+    pub(crate) repo: String,
+    /// The clone layer's key, shared by every layer of the chain.
+    pub(crate) chain: LayerKey,
+}
+
 impl Store {
-    /// Records `made` as the checkpoint of layer `key` of `repo` under `provider`, replacing
+    /// Records `made` as the checkpoint of layer `key` of `lineage` under `provider`, replacing
     /// an earlier one and its place.
     pub(crate) fn record_checkpoint(
         &self,
         provider: &ProviderId,
         key: &LayerKey,
-        repo: &str,
+        lineage: &Lineage,
         made: &Checkpoint,
     ) -> Result<(), StoreError> {
         let now = self.now().as_millis();
         let bytes = made.bytes.map(|b| i64::try_from(b).unwrap_or(i64::MAX));
+        let chain = lineage.chain.as_str();
         self.writer().execute(
-            "INSERT INTO setup_checkpoints \
-             (provider, layer_key, checkpoint, repo, bytes, created_at, last_used_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?) \
+            "INSERT INTO setup_checkpoints (provider, layer_key, checkpoint, repo, bytes, \
+             created_at, last_used_at, user, chain, chain_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8, COALESCE((SELECT MIN(chain_at) \
+             FROM setup_checkpoints WHERE provider = ?1 AND chain = ?8), ?6)) \
              ON CONFLICT (provider, layer_key) DO UPDATE SET checkpoint = excluded.checkpoint, \
              repo = excluded.repo, bytes = excluded.bytes, created_at = excluded.created_at, \
-             last_used_at = excluded.last_used_at, workdir = NULL, setup_ms = NULL",
+             last_used_at = excluded.last_used_at, user = excluded.user, chain = excluded.chain, \
+             chain_at = excluded.chain_at, workdir = NULL, setup_ms = NULL",
             params![
                 provider.as_str(),
                 key.as_str(),
                 made.id,
-                repo,
+                lineage.repo,
                 bytes,
                 now,
-                now
+                lineage.user.get(),
+                chain
             ],
         )?;
         Ok(())
@@ -134,6 +150,8 @@ fn place(workdir: Option<String>, setup_ms: Option<i64>) -> Option<Place> {
         setup_ms: u64::try_from(setup_ms?).ok()?,
     })
 }
+
+mod evict;
 
 #[cfg(test)]
 mod tests;

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use moor_core::name::BoxHandle;
+use moor_core::name::{BoxHandle, ProviderId};
 use moor_core::seam::driver::{Checkpoint, Driver, DriverError};
 use moor_core::seam::proc::Tool;
 
@@ -119,4 +119,35 @@ fn a_fork_under_another_slug_or_a_failed_one_releases_what_it_started() {
             .count();
         assert_eq!(stops, 1);
     }
+}
+
+#[test]
+fn a_delete_names_the_checkpoint() {
+    let (p, c) = driver(
+        "delete",
+        Reply::Ok("checkpoint deleted id=chk_1\n".to_owned()),
+    );
+    c.delete_checkpoint("chk_1").unwrap();
+    assert_eq!(
+        p.calls().pop().unwrap().args,
+        ["checkpoint", "delete", "chk_1"]
+    );
+}
+
+#[test]
+fn the_disk_is_measured_for_a_provider_on_this_host_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = Arc::new(ScriptedProc::new());
+    let providers = r#"[{"provider":"external","category":"external-provider"},
+        {"provider":"hetzner","category":"brokerable-cloud"}]"#;
+    p.on(
+        Tool::Crabbox,
+        &["providers"],
+        Reply::Ok(providers.to_owned()),
+    );
+    let c = Crabbox::fake(p).with_checkpoint_dir(Some(dir.path().join("not-made-yet")));
+    let disk = c.checkpoint_disk(&ProviderId::new("external")).unwrap();
+    assert!(disk.is_some_and(|d| d.total_mib > 0 && d.free_mib <= d.total_mib));
+    let remote = c.checkpoint_disk(&ProviderId::new("hetzner")).unwrap();
+    assert_eq!(remote, None, "a cloud provider's disk is not this host's");
 }
