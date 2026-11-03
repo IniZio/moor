@@ -290,7 +290,7 @@ fn card_after(client: &Client, name: &str, ended: &Ended, branch: Option<String>
     match watch_box(client, name, EVENTS) {
         Ok((now, events)) => {
             let mut card = Card::after(ended, now.as_ref(), branch);
-            if let Card::Closed { why, .. } = &mut card {
+            if let Card::Closed { why, .. } | Card::SetupFailed { why, .. } = &mut card {
                 *why = failure(&events);
             }
             card

@@ -192,6 +192,6 @@ why it failed.
 | Where | Key | Does |
 | --- | --- | --- |
 | Attached | `ctrl+]` | Detach. The agent keeps running. |
-| Card | `r` or Enter | Attach again. On an asleep Box, wake it first. On a closed Box, say it is closed. On a Box whose setup failed, say to close it or run `moor retry`. The card reads `setup failed · close it in the Boxes panel or run moor retry NAME`. |
+| Card | `r` or Enter | Attach again. On an asleep Box, wake it first. On a closed Box, say it is closed. On a Box whose setup failed, say to close it or run `moor retry`. The card reads `setup failed: LINE · close it in the Boxes panel or run moor retry NAME`, naming the line that failed. |
 | Card | none | When the server goes away, the card reads `reconnecting…` and the pane attaches again by itself once the server answers, retrying after 1 s, 2 s, 4 s, 8 s, then every 10 s. `r` retries at once. |
 | Card | `q` | Close the pane. |
