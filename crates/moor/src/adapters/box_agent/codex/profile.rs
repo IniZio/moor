@@ -126,10 +126,14 @@ fn toml_string(text: &str) -> String {
 /// snapshot and writes its own tables outside the block; a failure is recorded and the rest run.
 fn plugins(manifest: &Manifest) -> String {
     let mut lines = Vec::new();
-    for (name, repo) in &manifest.codex.marketplaces {
-        let url = format!("https://github.com/{}", repo.0);
+    for (name, source) in &manifest.codex.marketplaces {
+        let url = format!("https://github.com/{}", source.repo);
+        let pin = source
+            .git_ref
+            .as_ref()
+            .map_or_else(String::new, |r| format!("--ref {} ", quote(r)));
         lines.push(format!(
-            "codex plugin marketplace add {} </dev/null >/dev/null 2>&1 || fail {} $?",
+            "codex plugin marketplace add {pin}{} </dev/null >/dev/null 2>&1 || fail {} $?",
             quote(&url),
             quote(&format!("marketplace {name}")),
         ));

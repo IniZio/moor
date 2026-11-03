@@ -14,7 +14,7 @@ fn full_manifest_parses() {
     assert_eq!(m.codex.model.as_deref(), Some("gpt-5.5"));
     assert_eq!(
         m.claude.marketplaces.get("extra"),
-        Some(&GithubRepo(ForgeRepo::new("acme", "extra")))
+        Some(&GithubRepo::new(ForgeRepo::new("acme", "extra")))
     );
     assert_eq!(
         m.claude.plugins,
@@ -190,4 +190,36 @@ fn every_yaml_example_in_the_profile_docs_parses() {
         let parsed = parse(block);
         assert!(parsed.is_ok(), "{parsed:?}\n{block}");
     }
+}
+
+#[test]
+fn a_marketplace_may_pin_a_ref() {
+    let m = parse(
+        "claude:\n  marketplaces:\n    a: https://github.com/acme/tools#feat/x\n    b: https://github.com/acme/other.git#v1.2\n    c: https://github.com/acme/plain\n",
+    )
+    .unwrap();
+    let got = &m.claude.marketplaces;
+    assert_eq!(got["a"].git_ref.as_deref(), Some("feat/x"));
+    assert_eq!(got["b"].repo, ForgeRepo::new("acme", "other"));
+    assert_eq!(got["b"].git_ref.as_deref(), Some("v1.2"));
+    assert_eq!(got["c"].git_ref, None);
+}
+
+#[test]
+fn a_bad_marketplace_ref_is_refused() {
+    for bad in ["", "-x", "a b"] {
+        let e = err(&format!(
+            "claude:\n  marketplaces:\n    t: \"https://github.com/acme/tools#{bad}\"\n"
+        ));
+        assert!(e.contains("claude.marketplaces.t"), "{bad:?}: {e}");
+    }
+}
+
+#[test]
+fn the_allow_list_ignores_refs() {
+    let m = parse(
+        "claude:\n  marketplaces:\n    a: https://github.com/acme/tools#v1\ncodex:\n  marketplaces:\n    b: https://github.com/acme/tools#v2\n",
+    )
+    .unwrap();
+    assert_eq!(repos(&m), vec![ForgeRepo::new("acme", "tools")]);
 }

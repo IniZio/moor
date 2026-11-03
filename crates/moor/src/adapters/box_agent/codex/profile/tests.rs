@@ -231,3 +231,17 @@ fn assert_fragment_in_place(cfg: &toml::Value) {
     );
     assert!(cfg["projects"]["/w"].get("sandbox_mode").is_none());
 }
+
+#[test]
+fn a_marketplace_ref_is_passed_as_ref() {
+    let f = Fixture::new();
+    let m = profile::parse(
+        "codex:\n  marketplaces:\n    tools: https://github.com/acme/agent-tools#v2\n",
+    )
+    .unwrap();
+    assert!(f.run(&m, "").status.success());
+    assert_eq!(
+        f.read("log"),
+        "plugin marketplace add --ref v2 https://github.com/acme/agent-tools\n"
+    );
+}

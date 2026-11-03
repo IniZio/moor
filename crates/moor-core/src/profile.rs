@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 
 use crate::config::{parse_strict, ConfigError};
-use crate::name::ForgeRepo;
+use crate::name::{ForgeRepo, ProfileSource};
 
 /// Why a manifest was refused; the path names the offending key.
 pub type ProfileError = ConfigError;
@@ -13,22 +13,39 @@ pub type ProfileError = ConfigError;
 /// The file name of the manifest at the root of a profile repo.
 pub const MANIFEST_FILE: &str = "moor-profile.yaml";
 
-/// A GitHub repo written as `https://github.com/<owner>/<repo>`, with an optional `.git`.
+/// A GitHub repo written as `https://github.com/<owner>/<repo>`, with an optional `.git` and an
+/// optional `#<ref>` naming a branch, tag or commit.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "String")]
-pub struct GithubRepo(pub ForgeRepo);
+pub struct GithubRepo {
+    /// The repo on github.com.
+    pub repo: ForgeRepo,
+    /// The branch, tag or sha to install from; the default branch when absent.
+    pub git_ref: Option<String>,
+}
+
+impl GithubRepo {
+    /// A repo at its default branch.
+    #[must_use]
+    pub const fn new(repo: ForgeRepo) -> Self {
+        Self {
+            repo,
+            git_ref: None,
+        }
+    }
+}
 
 impl TryFrom<String> for GithubRepo {
     type Error = String;
 
     fn try_from(url: String) -> Result<Self, Self::Error> {
-        let path = url
-            .strip_prefix("https://github.com/")
-            .ok_or("must be https://github.com/<owner>/<repo>")?;
-        let path = path.strip_suffix(".git").unwrap_or(path);
-        ForgeRepo::parse(path)
-            .map(Self)
-            .map_err(|_| "must be https://github.com/<owner>/<repo>".to_owned())
+        let source = ProfileSource::parse(&url).map_err(|_| {
+            "must be https://github.com/<owner>/<repo>, optionally followed by #<ref>".to_owned()
+        })?;
+        Ok(Self {
+            repo: source.repo,
+            git_ref: source.git_ref,
+        })
     }
 }
 
@@ -70,7 +87,7 @@ pub const PROFILE_MARKETPLACE: &str = "profile";
 pub struct ClaudeSection {
     /// Model passed to Claude Code.
     pub model: Option<String>,
-    /// Marketplace name to its GitHub repo.
+    /// Marketplace name to its GitHub repo and optional ref.
     pub marketplaces: BTreeMap<String, GithubRepo>,
     /// Plugins to install; each names a declared marketplace.
     pub plugins: Vec<PluginRef>,
@@ -85,7 +102,7 @@ pub struct ClaudeSection {
 pub struct CodexSection {
     /// Model passed to Codex.
     pub model: Option<String>,
-    /// Marketplace name to its GitHub repo.
+    /// Marketplace name to its GitHub repo and optional ref.
     pub marketplaces: BTreeMap<String, GithubRepo>,
     /// Plugins to install; each names a declared marketplace.
     pub plugins: Vec<PluginRef>,
@@ -157,7 +174,7 @@ pub fn repos(manifest: &Manifest) -> Vec<ForgeRepo> {
         .marketplaces
         .values()
         .chain(manifest.codex.marketplaces.values());
-    for GithubRepo(repo) in all {
+    for GithubRepo { repo, .. } in all {
         if !out.contains(repo) {
             out.push(repo.clone());
         }
