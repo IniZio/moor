@@ -11,7 +11,7 @@ use moor_core::domain::decision::{
     BoxRepo, Decision, ExtraEvent, Field, Fields, Intent, IntentChange,
 };
 use moor_core::domain::session_state::SessionInput;
-use moor_core::seam::driver::{AcquireReq, Acquired, DriverError, Released};
+use moor_core::seam::driver::{AcquireReq, Acquired};
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::rng::Rng;
 use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, ProviderId};
@@ -24,7 +24,6 @@ use crate::ops::common::dotfiles::{self, DotfilesRun};
 use crate::ops::common::facts::{provider_caps, require_reverse_tunnel, settings_of};
 use crate::ops::common::node::{self, Bound};
 use crate::ops::common::setup;
-use crate::ops::common::view::box_view;
 use crate::ops::common::{agent_install, profile_fetch};
 use crate::store::lease::LeaseKind;
 use crate::store::{BoxRow, Store};
@@ -32,6 +31,7 @@ use crate::store::{BoxRow, Store};
 use self::acquired::record_acquired;
 use self::clone::clone_with_proxy;
 use self::delivered::record_delivered;
+use self::failed::failed;
 pub(crate) use self::lease::{hold_root, hold_workdir, planned_root};
 use self::others::set_up_all;
 use self::outcome::dotfiles_warned;
@@ -93,7 +93,8 @@ pub(crate) fn reprovision(
     if entry_for(row).is_none() && !kept_box_retry(row) && !ready {
         return Ok(None);
     }
-    let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, row.id, op, boxlock::WAIT)?;
+    let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, row.id, op, boxlock::WAIT)?
+        .interruptible(cx.env().cancel());
     let row = reread(store, row.id)?;
     let entry = entry_for(&row);
     if kept_box_retry(&row) {
@@ -184,7 +185,12 @@ pub(crate) fn provision(
             let log_dir = setup::log_dir(cx.state_dir()?, id);
             let target =
                 SetupTarget::new(&got, req.provider.as_str(), started.repo.as_ref(), &log_dir);
-            run_and_record(cx, store, id, entry.begin().is_some(), &target, cfg)
+            let done = run_and_record(cx, store, id, entry.begin().is_some(), &target, cfg)?;
+            // A Box a forced close is waiting on gets no agent.
+            if cx.env().cancel().is_cancelled() {
+                return Err(CommandError::new(ErrorKind::Failed, setup::FORCED_CLOSE));
+            }
+            Ok(done)
         }
         Err(e) => Err(failed(cx, store, id, entry, &req, e)),
     }
@@ -345,47 +351,10 @@ pub(super) fn after_setup(
     Ok(dotfiles)
 }
 
-/// Records a failed acquire; returns the error, carrying the Box row, to report.
-fn failed(
-    cx: &Cx,
-    store: &Store,
-    id: BoxId,
-    entry: Entry,
-    req: &AcquireReq,
-    err: DriverError,
-) -> CommandError {
-    let cause = err.to_string();
-    let attempted: BoxHandle = cx.driver().planned_handle(req);
-    let mut lost = Decision::new(id);
-    lost.lifecycle_input = entry.begin().map(|_| BoxLifecycleInput::SetupFailed {
-        cause: cause.clone(),
-        which: None,
-    });
-    let lost = lost
-        .box_input(BoxInput::AcquireFailed {
-            cause,
-            attempted: Some(attempted.clone()),
-        })
-        .intent(IntentChange::Clear);
-    if let Err(write) = store.apply(lost) {
-        return write.into();
-    }
-    if cx.driver().release(&attempted) == Ok(Released::AlreadyGone) {
-        let gone = Decision::new(id).box_input(BoxInput::DriverMissing);
-        if let Err(write) = store.apply(gone) {
-            return write.into();
-        }
-    }
-    let out = CommandError::from(err);
-    match reread(store, id) {
-        Ok(row) => out.with_value(serde_json::json!({ "box": box_view(&row, cx.config()) })),
-        Err(_) => out,
-    }
-}
-
 mod acquired;
 mod clone;
 mod delivered;
+mod failed;
 pub(crate) mod interrupted;
 mod lease;
 mod others;

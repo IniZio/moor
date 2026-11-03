@@ -6,7 +6,7 @@ use moor_core::config::UserConfig;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
-use moor_core::seam::driver::DriverError;
+use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::{BoxId, BoxName, CloseReq, ErrorKind};
 
 use super::setup::start_req;
@@ -166,4 +166,60 @@ fn close_while_the_acquire_runs_is_refused_and_the_start_keeps_its_machine() {
     let row = box_row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
     assert_eq!(row.boxed.map(|b| b.state), Some(BoxState::Ready));
+}
+
+type Closed = Result<BoxLifecycle, String>;
+
+#[test]
+fn a_forced_close_during_setup_interrupts_the_start_and_closes_the_box() {
+    let mut w = world(FakeDriver::new().exec_ends_when("sdkmanager", ExecOutcome::Interrupted));
+    script_base_yaml(&w, Some("setup: [sdkmanager --install ndk]\n"));
+    let fresh = Cx::fake(
+        w.dir.path(),
+        w.driver.clone(),
+        w.surface.clone(),
+        w.proc.clone(),
+    );
+    let (cx, cancel) = std::mem::replace(&mut w.cx, fresh).cancellable();
+    w.cx = cx;
+    let closer: Arc<Mutex<Option<std::thread::JoinHandle<Closed>>>> = Arc::default();
+    let (dir, driver, surface, proc, slot, stop) = (
+        w.dir.path().to_owned(),
+        w.driver.clone(),
+        w.surface.clone(),
+        w.proc.clone(),
+        closer.clone(),
+        cancel,
+    );
+    w.driver.on_exec(move || {
+        let mut slot = slot.lock().unwrap();
+        if slot.is_none() {
+            let (dir, driver, surface, proc) =
+                (dir.clone(), driver.clone(), surface.clone(), proc.clone());
+            *slot = Some(std::thread::spawn(move || {
+                let other = Cx::fake_with(&dir, driver, surface, proc, UserConfig::default());
+                close_demo_in(&other)
+                    .map(|v| v.boxed.lifecycle)
+                    .map_err(|e| e.error.to_string())
+            }));
+        }
+        drop(slot);
+        while !stop.is_cancelled() {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    });
+    let e = run(&w.cx, &start_req()).unwrap_err();
+    assert_eq!(e.error.to_string(), "setup interrupted by a forced close");
+    let closing = closer.lock().unwrap().take();
+    let outcome = closing.expect("close ran during the setup").join().unwrap();
+    assert_eq!(outcome, Ok(BoxLifecycle::Closed));
+    let events = w.cx.store().unwrap().events(BoxId::new(1), 50).unwrap();
+    let at = |kind: &str| events.iter().find(|e| e.kind == kind).map(|e| e.id);
+    let failed = events.iter().find(|e| e.kind == "setup_failed").unwrap();
+    assert_eq!(
+        failed.payload.get("line"),
+        Some(&serde_json::json!("setup interrupted by a forced close"))
+    );
+    assert!(at("setup_failed") < at("closed"), "{events:?}");
+    assert_eq!(box_row(&w).lifecycle, BoxLifecycle::Closed);
 }

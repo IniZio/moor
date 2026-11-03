@@ -26,6 +26,9 @@ const LOG_TAIL_LINES: usize = 20;
 /// Longest tail line kept, in characters; progress bars can emit huge ones.
 const LOG_LINE_CHARS: usize = 300;
 
+/// Why a setup that a forced close interrupted failed.
+pub(crate) const FORCED_CLOSE: &str = "setup interrupted by a forced close";
+
 /// The host file in the log dir that receives the setup exec's own output, which holds the
 /// prelude's reason when it stops the exec before the script runs.
 const OUTPUT_FILE: &str = "setup-exec.log";
@@ -172,11 +175,14 @@ pub(crate) fn run_setup(
         Err(Failure::Prepare(e)) => (e, None),
         Err(Failure::Exec(e)) => (e.to_string(), None),
     };
-    let line = cfg
-        .setup
-        .get(failed_step(&log, cfg.setup.len()))
-        .cloned()
-        .unwrap_or_default();
+    let line = if cx.env().cancel().is_cancelled() {
+        FORCED_CLOSE.to_owned()
+    } else {
+        cfg.setup
+            .get(failed_step(&log, cfg.setup.len()))
+            .cloned()
+            .unwrap_or_default()
+    };
     cx.warn(Warning {
         code: "setup_failed".to_owned(),
         message: failure_message(&line, &reason, workdir, &log),

@@ -6,7 +6,8 @@ use moor_core::name::BoxId;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::ErrorKind;
 
-use super::BoxLock;
+use super::{interrupt, is_interruptible, wait_ended, BoxLock};
+use crate::cx::Cancel;
 use crate::testing::clock::FakeClock;
 
 const WAIT: Duration = Duration::from_secs(2);
@@ -96,4 +97,40 @@ fn shorter_op_replaces_longer_stale_op() {
     let _held = BoxLock::acquire(&clock, dir.path(), BoxId::new(9), "run", WAIT).unwrap();
     let err = BoxLock::acquire(&clock, dir.path(), BoxId::new(9), "close", WAIT).unwrap_err();
     assert_eq!(err.error.to_string(), "box busy: run in progress");
+}
+
+#[test]
+fn interrupt_stops_the_holder_and_hears_the_hold_end() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(Ts::from_millis(0));
+    let cancel = Cancel::default();
+    let held = BoxLock::acquire(&clock, dir.path(), BoxId::new(4), "start", WAIT)
+        .unwrap()
+        .interruptible(&cancel);
+    assert!(is_interruptible(dir.path(), BoxId::new(4)));
+    let ended = interrupt(dir.path(), BoxId::new(4)).unwrap();
+    assert!(cancel.is_cancelled());
+    drop(held);
+    assert!(wait_ended(&clock, &ended, Duration::ZERO));
+    assert!(!is_interruptible(dir.path(), BoxId::new(4)));
+}
+
+#[test]
+fn a_plain_hold_is_not_interrupted() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(Ts::from_millis(0));
+    let _held = BoxLock::acquire(&clock, dir.path(), BoxId::new(6), "run", WAIT).unwrap();
+    assert!(interrupt(dir.path(), BoxId::new(6)).is_none());
+}
+
+#[test]
+fn waiting_on_a_hold_that_never_ends_gives_up_on_the_clock() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = FakeClock::new(Ts::from_millis(0));
+    let cancel = Cancel::default();
+    let _held = BoxLock::acquire(&clock, dir.path(), BoxId::new(8), "start", WAIT)
+        .unwrap()
+        .interruptible(&cancel);
+    let ended = interrupt(dir.path(), BoxId::new(8)).unwrap();
+    assert!(!wait_ended(&clock, &ended, Duration::ZERO));
 }

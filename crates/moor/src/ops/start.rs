@@ -117,7 +117,8 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         profile::record(cx, store, id, gathered)?;
     }
     let (done, agent) = {
-        let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?;
+        let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?
+            .interruptible(cx.env().cancel());
         let done = if reread(store, id)?.boxed.is_none() {
             provision(cx, store, id, Entry::Fresh, &cfg)?
         } else {
