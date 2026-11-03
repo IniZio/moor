@@ -359,37 +359,11 @@ impl Driver for FakeDriver {
     }
 
     fn sleep(&self, handle: &BoxHandle) -> Result<SleepOutcome, DriverError> {
-        let mut s = self.st();
-        s.note(format!("sleep {}", handle.as_str()));
-        if !s.live.iter().any(|h| h == handle.as_str()) {
-            return Err(DriverError::NotFound);
-        }
-        if let Some(e) = s.fail_sleep.take() {
-            return Err(e);
-        }
-        let (hook, outcome) = (s.on_sleep.clone(), s.sleep_outcome.clone());
-        drop(s);
-        if let Some(hook) = hook {
-            hook();
-        }
-        Ok(outcome.unwrap_or(SleepOutcome::Slept))
+        self.local_sleep(handle)
     }
 
     fn wake(&self, handle: &BoxHandle) -> Result<(), DriverError> {
-        let mut s = self.st();
-        s.note(format!("wake {}", handle.as_str()));
-        if !s.live.iter().any(|h| h == handle.as_str()) {
-            return Err(DriverError::NotFound);
-        }
-        if let Some(e) = s.fail_wake.take() {
-            return Err(e);
-        }
-        let hook = s.on_wake.clone();
-        drop(s);
-        if let Some(hook) = hook {
-            hook();
-        }
-        Ok(())
+        self.local_wake(handle)
     }
 }
 
@@ -399,6 +373,7 @@ mod knobs;
 mod piped;
 mod runs;
 mod script;
+mod sleeps;
 #[cfg(test)]
 mod tests;
 mod tunnel;

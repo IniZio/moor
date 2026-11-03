@@ -6,6 +6,7 @@ mod caps;
 mod checkpoint;
 mod connect;
 mod cp;
+mod deadlines;
 mod errors;
 mod exec;
 mod handle;
@@ -47,20 +48,11 @@ use moor_core::seam::proc::{Deadline, Pipes, Proc, ProcOutput, ProcSpec, Tool};
 use moor_core::seam::rng::Rng;
 
 use caps::size_of;
+use deadlines::{ACQUIRE_DEADLINE, LIST_DEADLINE, LOOKUP_DEADLINE, QUICK_DEADLINE};
 use errors::{map_error, Op};
 use handle::{handle_of, slug, split_handle, static_env, target_args};
 pub(crate) use pool::{PoolHosts, DIAL_WITHIN};
 
-/// Time allowed for a warmup.
-const ACQUIRE_DEADLINE: Duration = Duration::from_mins(15);
-/// Time allowed for a provider inventory listing.
-const LIST_DEADLINE: Duration = Duration::from_secs(5);
-/// Time allowed for every other call.
-const QUICK_DEADLINE: Duration = Duration::from_secs(60);
-/// Time allowed for an ssh target lookup unless the provider has its own.
-const LOOKUP_DEADLINE: Duration = Duration::from_secs(5);
-/// An external provider's ssh lookup runs through the adapter and was measured at ~6 s.
-const EXTERNAL_LOOKUP_DEADLINE: Duration = Duration::from_secs(20);
 /// Env key only the external provider reads; other providers keep crabbox's own work root.
 const WORK_ROOT_KEY: &str = "CRABBOX_EXTERNAL_WORK_ROOT";
 /// Provider whose Boxes share one slug and need the Box id and port in env.
@@ -136,16 +128,6 @@ impl Crabbox {
     pub(crate) fn with_lookup_deadlines(mut self, deadlines: BTreeMap<String, Duration>) -> Self {
         self.lookup_deadlines = deadlines;
         self
-    }
-
-    /// Time allowed for an ssh target lookup on `provider`.
-    pub(super) fn lookup_deadline(&self, provider: &str) -> Duration {
-        let built_in = if provider == "external" {
-            EXTERNAL_LOOKUP_DEADLINE
-        } else {
-            LOOKUP_DEADLINE
-        };
-        *self.lookup_deadlines.get(provider).unwrap_or(&built_in)
     }
 
     /// Refuses a crabbox older than moor supports; asks once and remembers a pass.

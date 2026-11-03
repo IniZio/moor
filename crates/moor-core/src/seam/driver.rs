@@ -5,9 +5,7 @@
 
 use std::path::Path;
 
-use crate::box_key::PoolSeat;
-use crate::cache::CachePlan;
-use crate::name::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
+use crate::name::{BoxHandle, BoxPath, ProviderId};
 use crate::seam::proc::{Deadline, Pipes};
 
 mod batch;
@@ -18,6 +16,7 @@ mod error;
 mod exec;
 mod run;
 mod tunnel;
+mod types;
 
 pub use batch::{run_each, BoxStep, StepDone};
 pub use caps::{DriverCaps, SleepKind};
@@ -26,74 +25,7 @@ pub use error::DriverError;
 pub use exec::{ExecOutcome, ExecSpec};
 pub use run::{Cancelled, FollowEnd, Followed, Launched, RunEnd, RunOutcome};
 pub use tunnel::{LocalTunnel, TunnelFailure, TunnelHandle};
-
-/// A request for a new Box.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AcquireReq {
-    /// Provider to ask.
-    pub provider: ProviderId,
-    /// Source for the per-Box name the adapter derives.
-    pub box_id: BoxId,
-    /// Box name the adapter embeds in the Box name.
-    pub name: BoxName,
-    /// Box size (`small`, `medium`, `large`, `xlarge`); `small` when unset.
-    pub class: Option<String>,
-    /// Random suffix that keeps the Box name unique.
-    pub nonce: String,
-    /// Cache volumes the Box gets; empty for a cold Box.
-    pub cache: CachePlan,
-    /// Where the Box lives, for a provider that names a host.
-    pub pool_machine: Option<PoolSeat>,
-}
-
-/// A Box the Driver has handed over.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Acquired {
-    /// Opaque handle.
-    pub handle: BoxHandle,
-    /// Working directory.
-    pub workdir: BoxPath,
-}
-
-/// Result of releasing a Box.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Released {
-    /// The Box was deleted.
-    Deleted,
-    /// The Box did not exist.
-    AlreadyGone,
-}
-
-/// One Box as the Driver lists it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BoxListing {
-    /// Opaque handle.
-    pub handle: BoxHandle,
-    /// Provider, when known.
-    pub provider: Option<ProviderId>,
-    /// Whether the Box sleeps.
-    pub asleep: bool,
-}
-
-/// What `Driver::sleep` did for a Box.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SleepOutcome {
-    /// The Driver suspended the Box.
-    Slept,
-    /// The provider sleeps the Box on its own; nothing was called.
-    Native,
-    /// The Box stays up; the reason is worded for people.
-    CannotSleep(String),
-}
-
-/// What one mirror sent, from rsync's stats.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MirrorStats {
-    /// Regular files transferred.
-    pub files: u64,
-    /// Bytes that came over the link.
-    pub bytes: u64,
-}
+pub use types::{AcquireReq, Acquired, BoxListing, MirrorStats, Released, SleepOutcome};
 
 /// Boxes, behind whichever provider hub is wired.
 pub trait Driver: Send + Sync {
