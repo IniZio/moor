@@ -51,6 +51,7 @@ jobs:
 
       - run: make setup
       - run: make lint
+      - run: make chart
       - run: make audit
       - name: Allow unprivileged user namespaces for the front tests
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0

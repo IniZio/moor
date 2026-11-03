@@ -51,7 +51,6 @@ lint:
 	tools/lint-selftest.sh
 	tools/stack-overlap-selftest.sh
 	tools/gitops-bump-selftest.sh
-	$(MAKE) --no-print-directory chart
 	typos
 	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked
 
