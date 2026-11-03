@@ -29,6 +29,8 @@ pub(super) struct LayerKnobs {
     hooks: Vec<(String, Arc<ExecHook>)>,
     /// The error the next fork ends with, once.
     fork_fails: Option<DriverError>,
+    /// Whether every delete fails, leaving the checkpoint on the disk.
+    deletes_fail: bool,
 }
 
 impl State {
@@ -59,6 +61,11 @@ impl FakeDriver {
     pub(crate) fn fork_fails_once(self, e: DriverError) -> Self {
         self.st().layers.fork_fails = Some(e);
         self
+    }
+
+    /// Makes every checkpoint delete fail, or succeed again.
+    pub(crate) fn set_deletes_fail(&self, fail: bool) {
+        self.st().layers.deletes_fail = fail;
     }
 
     /// Ends the next `exec` whose argv mentions `needle` with `outcome`, once.
@@ -165,6 +172,9 @@ impl FakeDriver {
     pub(super) fn deleted(&self, id: &str) -> Result<(), DriverError> {
         let mut s = self.st();
         s.note(format!("delete-checkpoint {id}"));
+        if s.layers.deletes_fail {
+            return Err(DriverError::Unavailable("disk busy".to_owned()));
+        }
         let at = s
             .layers
             .made
