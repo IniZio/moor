@@ -196,11 +196,8 @@ fn a_hangup_before_the_brief_is_installed_removes_the_cred_dir() {
     while !b.path("started.install").exists() {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
-    let group = format!("-{}", sh.id());
-    Command::new("kill")
-        .args(["-HUP", "--", &group])
-        .status()
-        .unwrap();
+    let group = rustix::process::Pid::from_raw(i32::try_from(sh.id()).unwrap()).unwrap();
+    rustix::process::kill_process_group(group, rustix::process::Signal::HUP).unwrap();
     assert!(!sh.wait().unwrap().success());
     assert!(!b.agent_started());
     assert!(b.cred_gone());
