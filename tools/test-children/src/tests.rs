@@ -5,6 +5,18 @@ fn lines(src: &str) -> Vec<usize> {
 }
 
 #[test]
+fn a_kill_shellout_in_test_code_is_flagged() {
+    let src = "fn f() { Command::new(\"kill\").args([\"-HUP\", \"--\", &g]).status().unwrap(); }";
+    assert_eq!(
+        kill_shellouts(&syn::parse_file(src).unwrap(), true),
+        vec![1]
+    );
+    assert!(kill_shellouts(&syn::parse_file(src).unwrap(), false).is_empty());
+    let other = "fn f() { Command::new(\"sleep\").status().unwrap(); }";
+    assert!(kill_shellouts(&syn::parse_file(other).unwrap(), true).is_empty());
+}
+
+#[test]
 fn bare_child_binding_is_flagged() {
     assert_eq!(
         lines("fn f() { let c = Command::new(\"x\").spawn().unwrap(); }"),

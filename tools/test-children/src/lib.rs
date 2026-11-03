@@ -14,6 +14,7 @@ use std::collections::{BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use syn::spanned::Spanned;
 use syn::visit::Visit;
 use syn::{
     Attribute, Block, Expr, ExprCall, ExprMethodCall, File, Item, ItemFn, ItemMod, Pat, Stmt,
@@ -84,10 +85,21 @@ fn wraps_later(name: &syn::Ident, stmts: &[Stmt]) -> bool {
     w.1
 }
 
+/// True for `Command::new("kill")`, the procps CLI that reads `-<pid>` as `kill(-1)` when the
+/// pid is not one it expects; tests signal by syscall instead.
+fn is_kill_command(c: &ExprCall) -> bool {
+    let new = matches!(&*c.func, Expr::Path(p) if {
+        let segs: Vec<_> = p.path.segments.iter().map(|s| s.ident.to_string()).collect();
+        matches!(segs.as_slice(), [.., a, b] if a == "Command" && b == "new")
+    });
+    new && matches!(c.args.first(), Some(Expr::Lit(l)) if matches!(&l.lit, syn::Lit::Str(s) if s.value() == "kill"))
+}
+
 struct Finder {
     in_test: bool,
     accepted: HashSet<(usize, usize)>,
     lines: Vec<usize>,
+    kills: Vec<usize>,
 }
 
 impl Finder {
@@ -142,6 +154,9 @@ impl<'ast> Visit<'ast> for Finder {
     }
 
     fn visit_expr_call(&mut self, c: &'ast ExprCall) {
+        if self.in_test && is_kill_command(c) {
+            self.kills.push(c.func.span().start().line);
+        }
         if matches!(&*c.func, Expr::Path(p) if ends_with_guard_new(&p.path)) {
             for arg in &c.args {
                 self.accept(arg);
@@ -172,13 +187,24 @@ impl<'ast> Visit<'ast> for Finder {
 /// `whole_file_is_test` is set and only its `#[cfg(test)]` and `#[test]` items otherwise.
 #[must_use]
 pub fn unguarded_spawns(file: &File, whole_file_is_test: bool) -> Vec<usize> {
+    scan(file, whole_file_is_test).lines
+}
+
+/// Lines of the `Command::new("kill")` calls in the test code of `file`.
+#[must_use]
+pub fn kill_shellouts(file: &File, whole_file_is_test: bool) -> Vec<usize> {
+    scan(file, whole_file_is_test).kills
+}
+
+fn scan(file: &File, whole_file_is_test: bool) -> Finder {
     let mut f = Finder {
         in_test: whole_file_is_test || is_test_attr(&file.attrs),
         accepted: HashSet::new(),
         lines: Vec::new(),
+        kills: Vec::new(),
     };
     f.visit_file(file);
-    f.lines
+    f
 }
 
 /// Files that a `#[cfg(test)] mod name;` declaration in `file` (at `path`) points to.
@@ -284,6 +310,13 @@ pub fn check(root: &Path, allow: &str) -> Result<(usize, Vec<String>), String> {
         let rel = f.strip_prefix(root).unwrap_or(f);
         let lines = unguarded_spawns(ast, whole);
         tested += usize::from(whole);
+        bad.extend(kill_shellouts(ast, whole).into_iter().map(|l| {
+            format!(
+                "test-children: {}:{l} shells out to kill; use rustix::process::kill_process or \
+                 kill_process_group",
+                rel.display()
+            )
+        }));
         if let Some(name) = rel.to_str().filter(|n| allow.contains(n)) {
             if lines.is_empty() {
                 return Err(format!(
