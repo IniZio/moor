@@ -3,8 +3,9 @@ use std::sync::mpsc;
 use std::thread::{self, sleep};
 use std::time::Duration;
 
-use super::{report_while, reports_progress, respond_with_progress};
+use super::{report_while, reports_progress, respond_with_progress, wait_unless_draining, Cadence};
 use crate::controller::conn::operator;
+use crate::controller::drain::Drain;
 use crate::env::Env;
 use moor_core::controller::{parse_server_frame, ServerFrame};
 use moor_core::{BoxName, CloseReq, Request, Response, ShowReq};
@@ -170,4 +171,27 @@ fn box_mirror_and_box_put_report_progress() {
     let put = req(serde_json::json!({"cmd": "box-put", "id": 1, "src": "/s", "dest": "d"}));
     assert!(reports_progress(&mirror));
     assert!(reports_progress(&put));
+}
+
+#[test]
+fn a_long_wait_says_it_is_running_once_then_only_as_a_reminder() {
+    let (interval, reminder) = (Duration::from_millis(200), Duration::from_millis(800));
+    let mut wire = Vec::new();
+    let response = wait_unless_draining(
+        "wait",
+        "r2",
+        Cadence { interval, reminder },
+        &mut wire,
+        &Drain::default(),
+        || {
+            sleep(Duration::from_millis(1750));
+            Response::ok("wait", None)
+        },
+    );
+    assert!(response.is_some());
+    let notes = frames(&wire)
+        .into_iter()
+        .filter(|(f, _)| matches!(f, ServerFrame::Progress { .. }))
+        .count();
+    assert_eq!(notes, 3, "one at the first interval, then one per reminder");
 }

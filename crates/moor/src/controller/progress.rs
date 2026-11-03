@@ -20,6 +20,21 @@ pub(super) type Sink<'a> = &'a mut (dyn FnMut(&[u8]) -> io::Result<()> + Send);
 /// How often a running long verb reports that it is still alive.
 pub(crate) const INTERVAL: Duration = Duration::from_secs(5);
 
+/// How often a wait reports, and how often it repeats once it has.
+#[derive(Clone, Copy)]
+pub(crate) struct Cadence {
+    /// The first report comes after one `interval`.
+    pub(crate) interval: Duration,
+    /// Later reports come this far apart.
+    pub(crate) reminder: Duration,
+}
+
+/// What a wait says and when: once after [`INTERVAL`], then every five minutes.
+pub(crate) const WAIT: Cadence = Cadence {
+    interval: INTERVAL,
+    reminder: Duration::from_secs(300),
+};
+
 /// Output pieces waiting for the connection thread; a slow client holds the run back at this
 /// many, so the controller never buffers more of the output than this.
 const PENDING: usize = 4;
@@ -83,13 +98,14 @@ pub(super) const fn reports_progress(request: &Request) -> bool {
     )
 }
 
-/// Answer a wait that `work` runs on its own thread, with a progress frame about each `interval`.
+/// Answer a wait that `work` runs on its own thread. A progress frame says it is still running
+/// after the first `interval`, then again each `reminder`.
 /// `None` once `drain` begins first: a wait changes nothing, so it is left to end with the
 /// process, and one the drain began before is never started.
 pub(super) fn wait_unless_draining(
     cmd: &str,
     id: &str,
-    interval: Duration,
+    cadence: Cadence,
     out: &mut dyn Write,
     drain: &Drain,
     work: impl FnOnce() -> Response + Send + 'static,
@@ -99,7 +115,9 @@ pub(super) fn wait_unless_draining(
     }
     let (done, answered) = mpsc::channel();
     let worker = thread::spawn(move || done.send(work()).ok());
+    let Cadence { interval, reminder } = cadence;
     let every = (interval.as_millis() / TICK.as_millis()).max(1);
+    let repeat = (reminder.as_millis() / interval.as_millis().max(1)).max(1);
     let mut listening = true;
     let mut ticks = 0_u128;
     loop {
@@ -113,9 +131,12 @@ pub(super) fn wait_unless_draining(
             Err(RecvTimeoutError::Timeout) if drain.begun() => return None,
             Err(RecvTimeoutError::Timeout) => {
                 ticks += 1;
-                if listening && ticks.is_multiple_of(every) {
-                    let secs =
-                        interval.as_secs() * u64::try_from(ticks / every).unwrap_or(u64::MAX);
+                let seen = ticks / every;
+                if listening
+                    && ticks.is_multiple_of(every)
+                    && (seen == 1 || seen.is_multiple_of(repeat))
+                {
+                    let secs = interval.as_secs() * u64::try_from(seen).unwrap_or(u64::MAX);
                     let frame = ServerFrame::Progress {
                         id: id.to_owned(),
                         message: format!("{cmd}: still running ({secs}s)"),
