@@ -84,7 +84,7 @@ jobs:
           echo "58d6861176dc6fe905b58880d5bff07a9959be613a98e5d66b4583b04b6cfa45  $RUNNER_TEMP/hc.tar.gz" | sha256sum -c -
           sudo tar -xzf "$RUNNER_TEMP/hc.tar.gz" -C /usr/local/bin herdr-core
       - run: make unit
-      - name: Check the store schema on Postgres matches SQLite
+      - name: Check the store schema and store tests on Postgres
         run: make unit-pg
       - name: Run the egress proxy under parallel load through a real tinyproxy
         run: |

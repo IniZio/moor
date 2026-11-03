@@ -3,10 +3,9 @@
 use moor_core::domain::decision::Field;
 use moor_core::domain::decision::NewBox;
 use rusqlite::types::Value;
-use rusqlite::ErrorCode;
 
 use super::StoreError;
-use crate::store::db::{DbExt as _, Tx};
+use crate::store::db::{self, DbExt as _, Tx};
 
 /// Column assignments for one UPDATE.
 pub(super) type Sets = Vec<(&'static str, Value)>;
@@ -48,15 +47,11 @@ pub(in crate::store) fn update(
     Ok(())
 }
 
-/// Extended result code for a UNIQUE constraint failure.
-const SQLITE_CONSTRAINT_UNIQUE: i32 = 2067;
-
 /// A UNIQUE failure on the open-branch index is a taken branch; other errors pass through.
 pub(super) fn branch_taken(e: StoreError, branch: &Field<String>) -> StoreError {
     match (&e, branch) {
-        (StoreError::Sqlite(rusqlite::Error::SqliteFailure(f, msg)), Field::Set(branch))
-            if f.extended_code == SQLITE_CONSTRAINT_UNIQUE
-                && msg.as_deref().is_some_and(|m| m.contains("boxes.branch")) =>
+        (StoreError::Db(db), Field::Set(branch))
+            if db.is_unique_violation(|m| m.contains("boxes.branch"), "boxes_open_branch") =>
         {
             StoreError::BranchTaken(branch.clone())
         }
@@ -65,17 +60,13 @@ pub(super) fn branch_taken(e: StoreError, branch: &Field<String>) -> StoreError 
 }
 
 /// A UNIQUE failure on the open-name index is a taken name; other errors pass through.
-pub(super) fn name_taken(e: rusqlite::Error, new: &NewBox) -> StoreError {
-    match &e {
-        rusqlite::Error::SqliteFailure(f, msg)
-            if f.code == ErrorCode::ConstraintViolation
-                && f.extended_code == SQLITE_CONSTRAINT_UNIQUE
-                && msg
-                    .as_deref()
-                    .is_some_and(|m| m.contains("boxes.name") || m.contains("boxes_open")) =>
-        {
-            StoreError::NameTaken(new.name.clone())
-        }
-        _ => e.into(),
+pub(super) fn name_taken(e: db::Error, new: &NewBox) -> StoreError {
+    if e.is_unique_violation(
+        |m| m.contains("boxes.name") || m.contains("boxes_open"),
+        "boxes_open",
+    ) {
+        StoreError::NameTaken(new.name.clone())
+    } else {
+        e.into()
     }
 }

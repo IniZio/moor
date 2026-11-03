@@ -7,9 +7,9 @@ use moor_core::{BoxId, BoxName};
 /// Store failure.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum StoreError {
-    /// `SQLite` failed.
-    #[error("sqlite: {0}")]
-    Sqlite(#[from] rusqlite::Error),
+    /// The database failed.
+    #[error(transparent)]
+    Db(#[from] crate::store::db::Error),
     /// An event payload failed to (de)serialise.
     #[error("json: {0}")]
     Json(#[from] serde_json::Error),
@@ -79,4 +79,10 @@ pub(crate) enum StoreError {
     /// A user secret did not seal or open.
     #[error(transparent)]
     Vault(#[from] crate::vault::VaultError),
+}
+
+impl From<rusqlite::Error> for StoreError {
+    fn from(e: rusqlite::Error) -> Self {
+        Self::Db(e.into())
+    }
 }

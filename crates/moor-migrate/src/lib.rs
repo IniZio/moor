@@ -64,6 +64,9 @@ pub enum Error {
     /// `SQLite` failed.
     #[error("sqlite: {0}")]
     Sqlite(#[from] rusqlite::Error),
+    /// Postgres failed.
+    #[error("postgres: {0}")]
+    Postgres(#[from] postgres::Error),
 }
 
 /// Build the migration list from `(file name, sql)` pairs in version order.
@@ -142,6 +145,22 @@ pub fn migrate(
     }
     runner().run(&mut Held(&tx))?;
     tx.commit()?;
+    Ok(())
+}
+
+/// Bring a Postgres database to the latest migration in `set`, all in one transaction.
+///
+/// An advisory lock on the schema makes a second process wait for the whole run. A database
+/// with migrations `set` lacks, or an applied one changed, is refused.
+pub fn migrate_postgres(client: &mut postgres::Client, set: &[Migration]) -> Result<(), Error> {
+    client.batch_execute("SELECT pg_advisory_lock(hashtext(current_schema()), 0)")?;
+    let run = Runner::new(set)
+        .set_grouped(true)
+        .set_abort_divergent(true)
+        .set_abort_missing(true)
+        .run(client);
+    client.batch_execute("SELECT pg_advisory_unlock(hashtext(current_schema()), 0)")?;
+    run?;
     Ok(())
 }
 

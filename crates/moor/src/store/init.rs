@@ -12,7 +12,8 @@ use rusqlite::{Connection, OpenFlags};
 use super::open::sibling;
 use super::{Store, StoreError};
 use crate::env::CONTROLLER_LOCK;
-use crate::store::db::{DbExt as _, OptionalExtension};
+use crate::store::db::DbExt as _;
+use rusqlite::OptionalExtension as _;
 
 impl Store {
     /// This state dir's cache key salt, made on first use and never changed.
@@ -58,8 +59,20 @@ impl Store {
 
 /// moor.db's migrations, oldest first.
 pub(super) fn schema() -> Result<Vec<Migration>, StoreError> {
-    moor_migrate::steps(STEPS, Backend::Sqlite)
-        .map_err(|e| StoreError::Corrupt(format!("migrations: {e}")))
+    schema_for(Backend::Sqlite)
+}
+
+/// The store's migrations rendered for `backend`, oldest first.
+fn schema_for(backend: Backend) -> Result<Vec<Migration>, StoreError> {
+    moor_migrate::steps(STEPS, backend).map_err(|e| StoreError::Corrupt(format!("migrations: {e}")))
+}
+
+/// Bring the Postgres database `client` is connected to up to the latest migration.
+pub(super) fn migrate_postgres(client: &mut postgres::Client) -> Result<(), StoreError> {
+    moor_migrate::migrate_postgres(client, &schema_for(Backend::Postgres)?).map_err(|e| match e {
+        moor_migrate::Error::Postgres(e) => StoreError::Db(e.into()),
+        other => StoreError::Corrupt(format!("migrations: {other}")),
+    })
 }
 
 /// Refuse an existing db this build would not migrate, without writing to it or its directory.
@@ -157,7 +170,7 @@ fn refused(db: &Path, e: moor_migrate::Error) -> StoreError {
             db: db.to_path_buf(),
             found: format!("migration {found}"),
         },
-        moor_migrate::Error::Sqlite(e) => StoreError::Sqlite(e),
+        moor_migrate::Error::Sqlite(e) => e.into(),
         other => StoreError::Migration {
             db: db.to_path_buf(),
             source: other,

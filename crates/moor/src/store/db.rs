@@ -2,18 +2,80 @@
 //!
 //! A value is one of `SQLite`'s storage classes, and binding and reading convert through
 //! rusqlite's `ToSql` and `FromSql`, so every backend binds and reads a Rust type the way the
-//! `SQLite` store always has.
+//! `SQLite` store always has. SQL is written for `SQLite`; the Postgres backend rewrites its
+//! placeholders.
 
 use std::path::Path;
 use std::sync::MutexGuard;
 
-use rusqlite::types::{FromSql, FromSqlError, ToSqlOutput, Value, ValueRef};
+use rusqlite::types::{FromSql, FromSqlError, Value, ValueRef};
 use rusqlite::{Connection, OpenFlags};
 
-pub(crate) use rusqlite::{params, Error, OptionalExtension, ToSql, TransactionBehavior};
+pub(crate) use rusqlite::{params, ToSql, TransactionBehavior};
+
+mod params;
+mod postgres;
+
+use params::owned;
+pub(crate) use params::Params;
+
+pub(crate) use postgres::PgConn;
+
+/// Why a database operation failed.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum Error {
+    /// `SQLite` failed, or a value did not bind or read under rusqlite's rules, on any backend.
+    #[error("sqlite: {0}")]
+    Sqlite(#[from] rusqlite::Error),
+    /// Postgres failed.
+    #[error("postgres: {0}")]
+    Postgres(#[from] ::postgres::Error),
+}
+
+impl Error {
+    /// Whether this is a unique-constraint failure: on `SQLite` one whose message `sqlite`
+    /// accepts, on Postgres one on the constraint or index named `postgres`.
+    pub(crate) fn is_unique_violation(
+        &self,
+        sqlite: impl Fn(&str) -> bool,
+        postgres: &str,
+    ) -> bool {
+        match self {
+            Self::Sqlite(rusqlite::Error::SqliteFailure(f, msg)) => {
+                f.code == rusqlite::ErrorCode::ConstraintViolation
+                    && f.extended_code == SQLITE_CONSTRAINT_UNIQUE
+                    && msg.as_deref().is_some_and(sqlite)
+            }
+            Self::Sqlite(_) => false,
+            Self::Postgres(e) => e.as_db_error().is_some_and(|db| {
+                *db.code() == ::postgres::error::SqlState::UNIQUE_VIOLATION
+                    && db.constraint() == Some(postgres)
+            }),
+        }
+    }
+}
+
+/// `SQLite`'s extended result code for a UNIQUE constraint failure.
+const SQLITE_CONSTRAINT_UNIQUE: i32 = 2067;
 
 /// A database operation's result.
 pub(crate) type Result<T, E = Error> = std::result::Result<T, E>;
+
+/// `query_row`'s missing row as `None`, as rusqlite's `OptionalExtension` does.
+pub(crate) trait OptionalExtension<T> {
+    /// `Ok(None)` for no row; other results unchanged.
+    fn optional(self) -> Result<Option<T>>;
+}
+
+impl<T> OptionalExtension<T> for Result<T> {
+    fn optional(self) -> Result<Option<T>> {
+        match self {
+            Ok(v) => Ok(Some(v)),
+            Err(Error::Sqlite(rusqlite::Error::QueryReturnedNoRows)) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+}
 
 /// What a query returned: its column names and its rows, in order.
 #[derive(Debug, Default)]
@@ -32,104 +94,28 @@ pub(crate) trait Db {
     fn query_values(&self, sql: &str, params: Vec<Value>) -> Result<Rows>;
 }
 
-/// The values bound to a statement's placeholders, in order.
-pub(crate) trait Params {
-    /// The bound values.
-    fn values(self) -> Result<Vec<Value>>;
-}
-
-/// One bound value, converted the way rusqlite binds it.
-fn bound(p: &(impl ToSql + ?Sized)) -> Result<Value> {
-    Ok(match p.to_sql()? {
-        ToSqlOutput::Borrowed(v) => owned(v)?,
-        ToSqlOutput::Owned(v) => v,
-        _ => return Err(Error::ToSqlConversionFailure("unsupported value".into())),
-    })
-}
-
-impl Params for &[&dyn ToSql] {
-    fn values(self) -> Result<Vec<Value>> {
-        self.iter().map(|p| bound(*p)).collect()
-    }
-}
-
-impl Params for Vec<Value> {
-    fn values(self) -> Result<Vec<Value>> {
-        Ok(self)
-    }
-}
-
-impl Params for () {
-    fn values(self) -> Result<Vec<Value>> {
-        Ok(Vec::new())
-    }
-}
-
-impl Params for [&(dyn ToSql + Send + Sync); 0] {
-    fn values(self) -> Result<Vec<Value>> {
-        Ok(Vec::new())
-    }
-}
-
-/// `Params` for arrays of one to `N` values.
-macro_rules! array_params {
-    ($($n:literal)+) => {$(
-        impl<T: ToSql> Params for [T; $n] {
-            fn values(self) -> Result<Vec<Value>> {
-                self.iter().map(bound).collect()
-            }
-        }
-    )+};
-}
-array_params!(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16);
-
-/// `Params` for tuples of one to sixteen values.
-macro_rules! tuple_params {
-    ($(($($t:ident $i:tt),+))+) => {$(
-        impl<$($t: ToSql),+> Params for ($($t,)+) {
-            fn values(self) -> Result<Vec<Value>> {
-                Ok(vec![$(bound(&self.$i)?),+])
-            }
-        }
-    )+};
-}
-tuple_params! {
-    (A 0)
-    (A 0, B 1)
-    (A 0, B 1, C 2)
-    (A 0, B 1, C 2, D 3)
-    (A 0, B 1, C 2, D 3, E 4)
-    (A 0, B 1, C 2, D 3, E 4, F 5)
-    (A 0, B 1, C 2, D 3, E 4, F 5, G 6)
-    (A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7)
-    (A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8)
-    (A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9)
-    (A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9, K 10)
-    (A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9, K 10, L 11)
-}
-
 /// A column of a row: its position, or its name.
 pub(crate) trait RowIndex {
     /// The column's position in `names`.
-    fn position(self, names: &[String]) -> Result<usize>;
+    fn position(self, names: &[String]) -> rusqlite::Result<usize>;
 }
 
 impl RowIndex for usize {
-    fn position(self, names: &[String]) -> Result<usize> {
+    fn position(self, names: &[String]) -> rusqlite::Result<usize> {
         if self < names.len() {
             Ok(self)
         } else {
-            Err(Error::InvalidColumnIndex(self))
+            Err(rusqlite::Error::InvalidColumnIndex(self))
         }
     }
 }
 
 impl RowIndex for &str {
-    fn position(self, names: &[String]) -> Result<usize> {
+    fn position(self, names: &[String]) -> rusqlite::Result<usize> {
         names
             .iter()
             .position(|n| n.eq_ignore_ascii_case(self))
-            .ok_or_else(|| Error::InvalidColumnName(self.to_owned()))
+            .ok_or_else(|| rusqlite::Error::InvalidColumnName(self.to_owned()))
     }
 }
 
@@ -144,19 +130,20 @@ pub(crate) struct Row<'a> {
 
 impl Row<'_> {
     /// Column `idx` read as `T`, with rusqlite's conversion rules and errors.
-    pub(crate) fn get<I: RowIndex, T: FromSql>(&self, idx: I) -> Result<T> {
+    pub(crate) fn get<I: RowIndex, T: FromSql>(&self, idx: I) -> rusqlite::Result<T> {
+        use rusqlite::Error as E;
         let i = idx.position(self.names)?;
-        let value = self.values.get(i).ok_or(Error::InvalidColumnIndex(i))?;
+        let value = self.values.get(i).ok_or(E::InvalidColumnIndex(i))?;
         let value = ValueRef::from(value);
         T::column_result(value).map_err(|e| match e {
-            FromSqlError::InvalidType => Error::InvalidColumnType(
+            FromSqlError::InvalidType => E::InvalidColumnType(
                 i,
                 self.names.get(i).cloned().unwrap_or_default(),
                 value.data_type(),
             ),
-            FromSqlError::OutOfRange(n) => Error::IntegralValueOutOfRange(i, n),
-            FromSqlError::Utf8Error(e) => Error::Utf8Error(i, e),
-            other => Error::FromSqlConversionFailure(i, value.data_type(), Box::new(other)),
+            FromSqlError::OutOfRange(n) => E::IntegralValueOutOfRange(i, n),
+            FromSqlError::Utf8Error(e) => E::Utf8Error(i, e),
+            other => E::FromSqlConversionFailure(i, value.data_type(), Box::new(other)),
         })
     }
 }
@@ -196,7 +183,7 @@ impl<D: Db + ?Sized> Stmt<'_, D> {
     pub(crate) fn query_map<T, P, F>(&mut self, p: P, f: F) -> Result<Mapped<F>>
     where
         P: Params,
-        F: FnMut(&Row<'_>) -> Result<T>,
+        F: FnMut(&Row<'_>) -> rusqlite::Result<T>,
     {
         self.query_and_then(p, f)
     }
@@ -209,7 +196,6 @@ impl<D: Db + ?Sized> Stmt<'_, D> {
     pub(crate) fn query_and_then<T, E, P, F>(&mut self, p: P, f: F) -> Result<Mapped<F>>
     where
         P: Params,
-        E: From<Error>,
         F: FnMut(&Row<'_>) -> Result<T, E>,
     {
         let Rows { names, rows } = self.db.query_values(&self.sql, p.values()?)?;
@@ -232,14 +218,14 @@ pub(crate) trait DbExt: Db {
     fn query_row<T, P, F>(&self, sql: &str, p: P, f: F) -> Result<T>
     where
         P: Params,
-        F: FnOnce(&Row<'_>) -> Result<T>,
+        F: FnOnce(&Row<'_>) -> rusqlite::Result<T>,
     {
         let Rows { names, rows } = self.query_values(sql, p.values()?)?;
-        let values = rows.first().ok_or(Error::QueryReturnedNoRows)?;
-        f(&Row {
+        let values = rows.first().ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+        Ok(f(&Row {
             names: &names,
             values,
-        })
+        })?)
     }
 
     /// `sql` ready to run.
@@ -254,12 +240,17 @@ pub(crate) trait DbExt: Db {
 impl<D: Db + ?Sized> DbExt for D {}
 
 /// An open connection to the store's database.
-pub(crate) struct Conn(Connection);
+pub(crate) enum Conn {
+    /// A `SQLite` file.
+    Sqlite(Connection),
+    /// A Postgres database.
+    Postgres(Box<PgConn>),
+}
 
 impl Conn {
     /// The `SQLite` connection `conn`, already opened and migrated.
     pub(crate) const fn sqlite(conn: Connection) -> Self {
-        Self(conn)
+        Self::Sqlite(conn)
     }
 
     /// A read-only `SQLite` connection to `path`, waiting `busy` on a lock.
@@ -269,58 +260,62 @@ impl Conn {
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?;
         conn.busy_timeout(busy)?;
-        Ok(Self(conn))
+        Ok(Self::Sqlite(conn))
     }
 
-    /// Begin a transaction that takes the write lock as `behavior` says.
+    /// Begin a transaction that takes the write lock as `behavior` says. On Postgres an
+    /// immediate one holds the store's advisory lock, so immediate transactions run one at a time
+    /// as they do on `SQLite`.
     pub(crate) fn transaction_with_behavior(
         &mut self,
         behavior: TransactionBehavior,
     ) -> Result<Tx<'_>> {
-        self.0.transaction_with_behavior(behavior).map(Tx)
+        match self {
+            Self::Sqlite(c) => Ok(Tx::Sqlite(c.transaction_with_behavior(behavior)?)),
+            Self::Postgres(c) => Ok(Tx::Postgres(
+                c.transaction(matches!(behavior, TransactionBehavior::Immediate))?,
+            )),
+        }
     }
 
     /// Begin a transaction that takes the write lock at its first write.
     pub(crate) fn transaction(&mut self) -> Result<Tx<'_>> {
-        self.0.transaction().map(Tx)
+        self.transaction_with_behavior(TransactionBehavior::Deferred)
     }
 
     /// Run several `;`-separated statements that bind nothing.
     #[cfg(test)]
     pub(crate) fn execute_batch(&self, sql: &str) -> Result<()> {
-        self.0.execute_batch(sql)
+        match self {
+            Self::Sqlite(c) => Ok(c.execute_batch(sql)?),
+            Self::Postgres(c) => c.execute_batch(sql),
+        }
     }
 }
 
 /// An open transaction; dropping it rolls back.
-pub(crate) struct Tx<'c>(rusqlite::Transaction<'c>);
+pub(crate) enum Tx<'c> {
+    /// On a `SQLite` connection.
+    Sqlite(rusqlite::Transaction<'c>),
+    /// On a Postgres connection.
+    Postgres(postgres::PgTx<'c>),
+}
 
 impl Tx<'_> {
     /// Commit it.
     pub(crate) fn commit(self) -> Result<()> {
-        self.0.commit()
+        match self {
+            Self::Sqlite(tx) => Ok(tx.commit()?),
+            Self::Postgres(tx) => tx.commit(),
+        }
     }
-}
-
-/// `v` as an owned value; text that is not UTF-8 is refused as rusqlite refuses it.
-fn owned(v: ValueRef<'_>) -> Result<Value> {
-    Ok(match v {
-        ValueRef::Null => Value::Null,
-        ValueRef::Integer(i) => Value::Integer(i),
-        ValueRef::Real(f) => Value::Real(f),
-        ValueRef::Text(t) => Value::Text(
-            std::str::from_utf8(t)
-                .map_err(|e| Error::ToSqlConversionFailure(e.into()))?
-                .to_owned(),
-        ),
-        ValueRef::Blob(b) => Value::Blob(b.to_vec()),
-    })
 }
 
 /// Run `sql` on the `SQLite` connection `conn`.
 fn sqlite_execute(conn: &Connection, sql: &str, params: Vec<Value>) -> Result<usize> {
-    conn.prepare_cached(sql)?
-        .execute(rusqlite::params_from_iter(params))
+    Ok(conn
+        .prepare_cached(sql)?
+        .execute(rusqlite::params_from_iter(params))?)
 }
 
 /// Query `sql` on the `SQLite` connection `conn`, reading every row.
@@ -332,7 +327,7 @@ fn sqlite_query(conn: &Connection, sql: &str, params: Vec<Value>) -> Result<Rows
     while let Some(row) = rows.next()? {
         let values = (0..names.len())
             .map(|i| owned(row.get_ref(i)?))
-            .collect::<Result<_>>()?;
+            .collect::<rusqlite::Result<_>>()?;
         out.push(values);
     }
     Ok(Rows { names, rows: out })
@@ -340,21 +335,33 @@ fn sqlite_query(conn: &Connection, sql: &str, params: Vec<Value>) -> Result<Rows
 
 impl Db for Conn {
     fn execute_values(&self, sql: &str, params: Vec<Value>) -> Result<usize> {
-        sqlite_execute(&self.0, sql, params)
+        match self {
+            Self::Sqlite(c) => sqlite_execute(c, sql, params),
+            Self::Postgres(c) => c.execute(sql, &params),
+        }
     }
 
     fn query_values(&self, sql: &str, params: Vec<Value>) -> Result<Rows> {
-        sqlite_query(&self.0, sql, params)
+        match self {
+            Self::Sqlite(c) => sqlite_query(c, sql, params),
+            Self::Postgres(c) => c.query(sql, &params),
+        }
     }
 }
 
 impl Db for Tx<'_> {
     fn execute_values(&self, sql: &str, params: Vec<Value>) -> Result<usize> {
-        sqlite_execute(&self.0, sql, params)
+        match self {
+            Self::Sqlite(tx) => sqlite_execute(tx, sql, params),
+            Self::Postgres(tx) => tx.execute(sql, &params),
+        }
     }
 
     fn query_values(&self, sql: &str, params: Vec<Value>) -> Result<Rows> {
-        sqlite_query(&self.0, sql, params)
+        match self {
+            Self::Sqlite(tx) => sqlite_query(tx, sql, params),
+            Self::Postgres(tx) => tx.query(sql, &params),
+        }
     }
 }
 

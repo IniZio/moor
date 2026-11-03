@@ -1,4 +1,5 @@
-//! `SQLite` store (WAL): one writer connection behind a mutex, fresh read-only connections for reads.
+//! The store, on `SQLite` (WAL) or Postgres: one writer connection behind a mutex, fresh
+//! connections for reads.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -20,6 +21,7 @@ use rusqlite::Connection;
 
 use driver_row::driver_from_row;
 use init::{parsed, parsed_opt};
+use source::Source;
 
 pub(crate) use error::StoreError;
 
@@ -53,6 +55,9 @@ mod repo;
 mod reports;
 mod runs;
 mod sessions;
+mod source;
+#[cfg(test)]
+pub(crate) mod testing;
 #[cfg(test)]
 mod tests;
 mod turns;
@@ -182,8 +187,10 @@ pub(crate) struct EventRow {
 /// The store: single writer, many readers. A clone shares the writer connection.
 #[derive(Clone)]
 pub(crate) struct Store {
-    /// Database file, reopened for each read connection.
-    path: PathBuf,
+    /// The database, reopened for each read connection.
+    source: Source,
+    /// The state dir's `runs` directory, which holds this host's run follow claims.
+    runs: PathBuf,
     /// The writer connection.
     writer: Arc<Mutex<Conn>>,
     /// Time source for every timestamp.
@@ -209,7 +216,8 @@ impl Store {
         drop(migrating);
         open::tighten(path)?;
         Ok(Self {
-            path: path.to_path_buf(),
+            source: Source::Sqlite(path.to_path_buf()),
+            runs: path.with_file_name("runs"),
             writer: Arc::new(Mutex::new(Conn::sqlite(conn))),
             clock,
             pins: Pins::new(),
@@ -270,11 +278,6 @@ impl Store {
             )?
             .map(Ts::from_millis);
         Ok(ts)
-    }
-
-    /// A new read-only connection; never blocks on the writer.
-    pub(super) fn reader(&self) -> Result<Conn, StoreError> {
-        Ok(Conn::sqlite_reader(&self.path, BUSY_TIMEOUT)?)
     }
 
     /// Lock the writer connection. A thread that panicked while holding it left at worst an

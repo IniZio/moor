@@ -238,9 +238,7 @@ impl Store {
 
     /// Where the follow claim of `run` lives: `<state>/runs/<id>.follow`.
     fn follow_path(&self, run: RunId) -> std::path::PathBuf {
-        self.path
-            .with_file_name("runs")
-            .join(format!("{}.follow", run.get()))
+        self.runs.join(format!("{}.follow", run.get()))
     }
 
     /// Records `pid` as the process of run `id` and of its Box's running intent.
