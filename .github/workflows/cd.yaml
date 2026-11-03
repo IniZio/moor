@@ -72,6 +72,7 @@ jobs:
       contents: write
     env:
       TAG: ${{ needs.release.outputs.tag || 'v0.0.0-check' }}
+      BINS: moor moor-gate moor-slack moor-web moor-listen moor-herdr moor-machine-agent
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -87,11 +88,11 @@ jobs:
           sudo apt-get update -q && sudo apt-get install -y -q musl-tools
           target=${{ matrix.target }}
           echo "CC_${target//-/_}=musl-gcc" >> "$GITHUB_ENV"
-      - run: MOOR_VERSION=${TAG#v} cargo build -p moor-herdr -p moor-machine-agent --release --locked --target ${{ matrix.target }}
+      - run: MOOR_VERSION=${TAG#v} cargo build $(for b in $BINS; do printf -- '-p %s ' "$b"; done) --release --locked --target ${{ matrix.target }}
       - name: Package
         run: |
           mkdir -p dist
-          for bin in moor-herdr moor-machine-agent; do
+          for bin in $BINS; do
             asset=$bin-${{ matrix.target }}.tar.gz
             tar -czf "dist/$asset" -C target/${{ matrix.target }}/release "$bin"
             (cd dist && shasum -a 256 "$asset" > "$asset.sha256")
@@ -107,7 +108,7 @@ jobs:
           grep -q "default_shell = \"$home/.local/state/herdr/plugins/moor/shell.sh\"" "$home/.config/herdr/plugins/config/moor/herdr-setup.toml"
       - name: Upload
         if: github.event_name == 'push'
-        run: gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY"
+        run: gh release upload "$TAG" dist/* install.sh --clobber --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ github.token }}
 
