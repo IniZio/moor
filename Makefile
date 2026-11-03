@@ -5,6 +5,7 @@ TAPLO_VERSION := 0.10.0
 TYPOS_VERSION := 1.51.1
 LLVM_COV_VERSION := 0.9.1
 ZIG_VERSION := 0.17.0
+HELM_VERSION := 3.21.3
 ZIG_SHA256 := 1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026
 # The same release for the other runners the release build installs it on.
 ZIG_SHA256_x86_64-linux := $(ZIG_SHA256)
@@ -14,10 +15,10 @@ ZIG_SHA256_aarch64-macos := b607e9b9234790a008116ae5bdb71c6243b84b9fb42a53a9e70f
 ZIG_PLATFORM ?= x86_64-linux
 PTY := --features moor/pty-surface
 
-.PHONY: help coverage setup secret audit lint hooks format test unit ci unit-nextest unit-doc build deploy overlap lint-pty unit-pty nested-e2e
+.PHONY: help coverage setup secret audit lint hooks format test unit ci unit-nextest unit-doc build deploy overlap lint-pty unit-pty nested-e2e chart
 
 help:
-	@echo "targets: setup secret audit lint lint-pty format test unit-pty ci build deploy"
+	@echo "targets: setup secret audit lint chart lint-pty format test unit-pty ci build deploy"
 
 setup:
 	@rustup show active-toolchain >/dev/null
@@ -26,6 +27,7 @@ setup:
 	@cargo nextest --version 2>/dev/null | grep -q '$(NEXTEST_VERSION)' || cargo install --locked cargo-nextest@$(NEXTEST_VERSION)
 	@taplo --version 2>/dev/null | grep -q '$(TAPLO_VERSION)' || cargo install --locked taplo-cli@$(TAPLO_VERSION)
 	@typos --version 2>/dev/null | grep -q '$(TYPOS_VERSION)' || cargo install --locked typos-cli@$(TYPOS_VERSION)
+	@helm version --short 2>/dev/null | grep -q '^v$(HELM_VERSION)+' || echo "setup: make chart needs helm $(HELM_VERSION)"
 	@echo "setup: toolchain and pinned tools present"
 
 secret:
@@ -49,8 +51,19 @@ lint:
 	tools/lint-selftest.sh
 	tools/stack-overlap-selftest.sh
 	tools/gitops-bump-selftest.sh
+	$(MAKE) --no-print-directory chart
 	typos
 	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked
+
+# The chart with only its required values, then with every optional block on.
+CHART := deploy/helm/moor
+CHART_VALUES := -f deploy/helm/required-values.yaml
+chart:
+	@command -v helm >/dev/null || { echo "chart: helm $(HELM_VERSION) is not installed"; exit 1; }
+	helm lint --strict $(CHART) $(CHART_VALUES)
+	helm lint --strict $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml
+	helm template moor $(CHART) $(CHART_VALUES) >/dev/null
+	helm template moor $(CHART) $(CHART_VALUES) -f deploy/helm/full-values.yaml >/dev/null
 
 hooks:
 	git config core.hooksPath tools/git-hooks
@@ -100,7 +113,10 @@ nested-e2e:
 	tools/nested-e2e.sh
 
 # Single source of the pins for CI's install-action step.
-.PHONY: print-tool-versions print-zig
+.PHONY: print-tool-versions print-zig print-helm
+print-helm:
+	@echo "$(HELM_VERSION)"
+
 print-zig:
 	@echo "$(ZIG_VERSION) $(ZIG_SHA256_$(ZIG_PLATFORM))"
 

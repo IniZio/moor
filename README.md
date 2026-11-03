@@ -54,7 +54,7 @@ You run moor for a team on one Linux host.
 5. Hand out `https://<host>/mcp`.
 
 On Kubernetes, the Helm chart runs the controller and the gate from the
-release image instead.
+release image instead: [Run moor on Kubernetes](docs/kubernetes.md).
 
 Full steps: [Run moor for a team](docs/run.md).
 
@@ -110,6 +110,8 @@ For operators:
 
 - [Run moor for a team](docs/run.md): one host, end to end.
 - [Deploy with systemd](docs/deploy.md): socket units and upgrades.
+- [Run moor on Kubernetes](docs/kubernetes.md): the Helm chart and the
+  values it needs.
 - [Configuration reference](docs/config.md): the user config, `.moor.yaml`,
   the controller config, and the vault key.
 - [Nodes](docs/nodes.md), [providers and the Proxy](docs/providers.md), and

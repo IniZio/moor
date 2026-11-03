@@ -1,0 +1,11 @@
+# The least an install sets: chart defaults plus every value the chart requires.
+host: moor.example.com
+authgear:
+  issuer: https://auth.example.com
+  clientId: example-client
+mcp:
+  resourceUrl: https://moor.example.com/mcp
+vault:
+  key: AGE-SECRET-KEY-EXAMPLE
+crabbox:
+  agent37Token: example-token

@@ -1,0 +1,59 @@
+{{- if .Values.gate.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-gate
+  labels: {{- include "moor.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.gate.service.type }}
+  selector: {{- include "moor.labels" . | nindent 4 }}
+  ports:
+    - name: gate
+      port: {{ .Values.gate.port }}
+      targetPort: gate
+      {{- with .Values.gate.service.nodePort }}
+      nodePort: {{ . }}
+      {{- end }}
+    {{- if .Values.runner.enabled }}
+    - name: agents
+      port: {{ .Values.runner.agentsPort }}
+      targetPort: agents
+    {{- end }}
+{{- if .Values.gate.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-gate
+  labels: {{- include "moor.labels" . | nindent 4 }}
+  {{- with .Values.gate.ingress.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ required "gate.ingress.className is required" .Values.gate.ingress.className | quote }}
+  rules:
+    - host: {{ required "host is required" .Values.host | quote }}
+      http:
+        paths:
+          {{- $paths := list "/front" "/.well-known/moor" }}
+          {{- if .Values.mcp.enabled }}{{ $paths = concat $paths (list "/mcp" "/.well-known/oauth-protected-resource" "/events") }}{{ end }}
+          {{- if .Values.gate.login }}{{ $paths = concat $paths (list "/auth" "/webhooks") }}{{ end }}
+          {{- if .Values.runner.enabled }}{{ $paths = append $paths "/machines/enroll" }}{{ end }}
+          {{- range $paths }}
+          - path: {{ . }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $.Release.Name }}-gate
+                port: { name: gate }
+          {{- end }}
+          {{- if .Values.runner.enabled }}
+          - path: /machines/link
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $.Release.Name }}-gate
+                port: { name: agents }
+          {{- end }}
+{{- end }}
+{{- end }}

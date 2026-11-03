@@ -42,6 +42,13 @@ jobs:
         with:
           tool: ${{ steps.tools.outputs.list }}
 
+      - id: helm
+        run: echo "version=$(make -s print-helm)" >> "$GITHUB_OUTPUT"
+
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v${{ steps.helm.outputs.version }}
+
       - run: make setup
       - run: make lint
       - run: make audit

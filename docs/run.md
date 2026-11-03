@@ -103,7 +103,8 @@ place to link tokens, run the [Slack front](slack.md) or point them at the
 
 The release image, `ghcr.io/inizio/moor`, holds the controller, the gate,
 the Slack front, crabbox, `herdr` and `gh`. The Helm chart runs the
-controller and the gate from it. The controller config, the node, and the
+controller and the gate from it; [Run moor on Kubernetes](kubernetes.md)
+installs it. The controller config, the node, and the
 gate's flags are the same as above. Read [Deploy the controller with systemd](deploy.md) for how the
 controller drains on a restart, which the chart's stop timeout must allow
 for.

@@ -1,0 +1,88 @@
+image:
+  repository: ghcr.io/inizio/moor
+  # Empty uses the chart's appVersion, the release that published it.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# Public values every install fills by hand; docs/kubernetes.md lists where each comes from.
+host: ""
+authgear:
+  issuer: ""
+  clientId: ""
+mcp:
+  resourceUrl: ""
+
+# Secret values: keep them out of plain values files.
+vault:
+  key: ""
+crabbox:
+  agent37Token: ""
+  # The crabbox config, as a map or as the file text. The provider reads its key from /var/lib/moor/config/agent37.key (keyFile).
+  config: null
+  # ssh private key whose public half the provider account trusts; crabbox reads it at /var/lib/moor/config/box-ssh-key.
+  sshKey: ""
+
+controller:
+  uid: 10001
+  # surface.kind in the controller config. Empty keeps the image default, MOOR_SURFACE=pty; a set value overrides it.
+  surface: ""
+  # agent.model in the controller config: the model a Box's agent starts with. Empty leaves the agent's own default.
+  agentModel: ""
+  # Shared nodes as {name: {runtime, labels, max_boxes}}; empty runs Boxes only on enrolled machines.
+  nodes: {}
+  # box.node: the default shared node; needed only when nodes has more than one entry.
+  defaultNode: ""
+  # Per-provider settings, e.g. `external: {strip_env: [X]}`.
+  drivers: {}
+  settleEverySecs: 5
+  drainTimeoutSecs: 600
+  resources: {}
+  # Extra env for the controller container, as a list of {name, value}.
+  extraEnv: []
+
+slack:
+  enabled: false
+  appToken: ""
+  botToken: ""
+  resources: {}
+
+# moor-notify: delivers the webhooks users add with the gate's add_webhook tool.
+notify:
+  enabled: false
+  resources: {}
+
+runner:
+  enabled: false
+  agentsPort: 7701
+  extraArgs: []
+  resources: {}
+
+# moor-gate: signs people in with authgear.issuer/clientId tokens and relays /front to the controller.
+gate:
+  enabled: true
+  port: 8443
+  # Browser sign-in at /auth: register https://<host>/auth/callback on the Authgear client first.
+  login: false
+  # Empty finds the keys through the issuer's discovery document.
+  jwksUrl: ""
+  service:
+    type: ClusterIP
+    nodePort: null
+  # /front is a WebSocket held open for a whole session: the ingress must allow long-lived
+  # upgrades (raise its read/idle timeouts to hours) or sessions drop when it times them out.
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+  resources: {}
+
+# /mcp for agents acting as a person; resourceUrl is the API resource the issuer mints tokens for.
+mcp:
+  enabled: true
+  resourceUrl: ""
+
+persistence:
+  size: 10Gi
+  storageClassName: ""
+
+podAnnotations: {}
