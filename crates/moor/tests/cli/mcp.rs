@@ -6,13 +6,14 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::Path;
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{ChildStdin, Command, Stdio};
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use moor_testkit::oidc::{now, Issuer};
+use moor_testkit::ChildGuard;
 use serde_json::{json, Value};
 
 /// One request the fake gate received.
@@ -143,7 +144,7 @@ fn signed_in(state: &Path, gate: &Gate, issuer: &Issuer) {
 
 /// A running `moor mcp` and the lines of its stdout.
 struct Mcp {
-    child: Child,
+    child: ChildGuard,
     stdin: Option<ChildStdin>,
     lines: Receiver<String>,
 }
@@ -160,6 +161,7 @@ impl Mcp {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
+            .map(ChildGuard::new)
             .unwrap();
         let stdout = BufReader::new(child.stdout.take().unwrap());
         let (tx, lines) = mpsc::channel();

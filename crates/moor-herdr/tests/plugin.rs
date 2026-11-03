@@ -5,7 +5,9 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
+
+use moor_testkit::ChildGuard;
 use std::thread;
 use std::time::Duration;
 
@@ -53,8 +55,8 @@ fn herdr_setup_names_the_shell_in_herdrs_plugin_state_dir() {
     );
 }
 
-fn run_sh(state: &Path, bin: &Path, args: &[&str]) -> Child {
-    Command::new("sh")
+fn run_sh(state: &Path, bin: &Path, args: &[&str]) -> ChildGuard {
+    let child = Command::new("sh")
         .arg(RUN_SH)
         .args(args)
         .env("HERDR_PLUGIN_STATE_DIR", state)
@@ -64,7 +66,8 @@ fn run_sh(state: &Path, bin: &Path, args: &[&str]) -> Child {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .unwrap()
+        .unwrap();
+    ChildGuard::new(child)
 }
 
 fn failing_stub(dir: &Path) -> std::path::PathBuf {
@@ -79,7 +82,7 @@ fn failing_stub(dir: &Path) -> std::path::PathBuf {
 }
 
 /// Reads the pane's screen up to its prompt, checks it is still waiting, then presses a key.
-fn held_screen(mut child: Child) -> (String, Option<i32>) {
+fn held_screen(mut child: ChildGuard) -> (String, Option<i32>) {
     let mut out = BufReader::new(child.stdout.take().unwrap());
     let mut screen = String::new();
     while !screen.contains("press any key to close") {
@@ -123,9 +126,23 @@ fn a_pane_with_no_binary_says_so_until_a_key() {
 #[test]
 fn an_action_that_fails_exits_without_waiting() {
     let dir = tempfile::tempdir().unwrap();
-    let child = run_sh(dir.path(), &failing_stub(dir.path()), &["sync"]);
-    let out = child.wait_with_output().unwrap();
-    assert_eq!(out.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("not signed in"));
-    assert!(!String::from_utf8_lossy(&out.stdout).contains("press any key"));
+    let mut child = run_sh(dir.path(), &failing_stub(dir.path()), &["sync"]);
+    drop(child.stdin.take());
+    let (mut stdout, mut stderr) = (String::new(), String::new());
+    child
+        .stdout
+        .take()
+        .unwrap()
+        .read_to_string(&mut stdout)
+        .unwrap();
+    child
+        .stderr
+        .take()
+        .unwrap()
+        .read_to_string(&mut stderr)
+        .unwrap();
+    let status = child.wait().unwrap();
+    assert_eq!(status.code(), Some(2));
+    assert!(stderr.contains("not signed in"));
+    assert!(!stdout.contains("press any key"));
 }

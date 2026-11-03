@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
+use moor_testkit::ChildGuard;
 use rustix::process::{kill_process_group, Pid, Signal};
 use serde_json::json;
 
@@ -115,13 +116,13 @@ fn a_turn_cut_off_by_a_restart_runs_once_more_and_posts_its_reply_once() {
 
 /// A process in its own group that runs in the thread's workdir and that the front did not
 /// start, like an operator's shell.
-fn bystander(rig: &Rig) -> std::process::Child {
+fn bystander(rig: &Rig) -> ChildGuard {
     let workdir = rig
         .path("state-slack/threads")
         .join(format!("{CHANNEL}-{TS}"));
     let mut sleep = Command::new("sleep");
     sleep.arg("60").current_dir(workdir).process_group(0);
-    sleep.spawn().unwrap()
+    ChildGuard::new(sleep.spawn().unwrap())
 }
 
 #[test]

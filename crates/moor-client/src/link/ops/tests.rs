@@ -10,13 +10,15 @@ use super::in_box;
 #[test]
 fn in_box_closes_its_output_while_a_job_its_body_started_runs_on() {
     let home = tempfile::tempdir().unwrap();
-    let mut child = Command::new("bash")
-        .args(["-c", &in_box(7, "sleep 5 >/dev/null 2>&1 & echo started")])
-        .env("HOME", home.path())
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let mut child = moor_testkit::ChildGuard::new(
+        Command::new("bash")
+            .args(["-c", &in_box(7, "sleep 5 >/dev/null 2>&1 & echo started")])
+            .env("HOME", home.path())
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
     let mut stdout = child.stdout.take().unwrap();
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {

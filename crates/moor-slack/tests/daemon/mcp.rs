@@ -5,7 +5,9 @@
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::fd::OwnedFd;
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{ChildStdin, ChildStdout, Command, Stdio};
+
+use moor_testkit::ChildGuard;
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -30,7 +32,7 @@ fn thread_with_a_box() -> (Rig, FakeController) {
 fn server(
     rig: &Rig,
     extra: impl FnOnce(&mut Command),
-) -> (Child, ChildStdin, BufReader<ChildStdout>) {
+) -> (ChildGuard, ChildStdin, BufReader<ChildStdout>) {
     server_as(rig, &format!("slack:{TEAM}/{USER}"), extra)
 }
 
@@ -39,7 +41,7 @@ fn server_as(
     rig: &Rig,
     identity: &str,
     extra: impl FnOnce(&mut Command),
-) -> (Child, ChildStdin, BufReader<ChildStdout>) {
+) -> (ChildGuard, ChildStdin, BufReader<ChildStdout>) {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_moor-slack"));
     cmd.arg("mcp")
         .arg("--state-dir")
@@ -55,7 +57,7 @@ fn server_as(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     extra(&mut cmd);
-    let mut child = cmd.spawn().unwrap();
+    let mut child = ChildGuard::new(cmd.spawn().unwrap());
     let stdin = child.stdin.take().unwrap();
     let stdout = BufReader::new(child.stdout.take().unwrap());
     (child, stdin, stdout)
@@ -171,11 +173,11 @@ fn the_tool_server_closes_a_descriptor_it_inherited_before_it_answers() {
 #[test]
 fn a_state_dir_without_slack_db_is_refused_and_left_as_found() {
     let rig = Rig::new();
-    let (child, stdin, _stdout) = server(&rig, |_| {});
+    let (mut child, stdin, _stdout) = server(&rig, |_| {});
     drop(stdin);
-    let out = child.wait_with_output().unwrap();
-    assert!(!out.status.success());
-    let stderr = String::from_utf8_lossy(&out.stderr);
+    let mut stderr = String::new();
+    std::io::Read::read_to_string(&mut child.stderr.take().unwrap(), &mut stderr).unwrap();
+    assert!(!child.wait().unwrap().success());
     assert!(stderr.contains("slack.db does not exist"), "{stderr}");
     assert!(!rig.path("state-slack").exists());
 }
@@ -300,10 +302,10 @@ fn the_tool_server_sends_its_requests_as_the_identity_it_was_started_with() {
 #[test]
 fn the_tool_server_refuses_an_identity_that_is_not_one() {
     let rig = Rig::new();
-    let (child, stdin, _stdout) = server_as(&rig, "no-namespace", |_| {});
+    let (mut child, stdin, _stdout) = server_as(&rig, "no-namespace", |_| {});
     drop(stdin);
-    let out = child.wait_with_output().unwrap();
-    assert!(!out.status.success());
-    let stderr = String::from_utf8_lossy(&out.stderr);
+    let mut stderr = String::new();
+    std::io::Read::read_to_string(&mut child.stderr.take().unwrap(), &mut stderr).unwrap();
+    assert!(!child.wait().unwrap().success());
     assert!(stderr.contains("--as"), "{stderr}");
 }

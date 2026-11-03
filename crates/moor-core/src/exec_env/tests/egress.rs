@@ -479,10 +479,12 @@ fn a_port_held_by_another_process_stops_the_exec_and_starts_nothing() {
 #[test]
 fn a_pid_file_naming_a_process_that_is_not_tinyproxy_does_not_claim_the_port() {
     let b = FakeBox::new(0, Apt::Missing, true);
-    let mut other = std::process::Command::new("sleep")
-        .arg("30")
-        .spawn()
-        .unwrap();
+    let mut other = moor_testkit::ChildGuard::new(
+        std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap(),
+    );
     std::fs::create_dir_all(b.home.join(".moor")).unwrap();
     std::fs::write(b.home.join(".moor/egress.pid"), format!("{}\n", other.id())).unwrap();
     b.port.occupy();

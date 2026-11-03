@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+use moor_testkit::ChildGuard;
 use rustix::process::{kill_process, Pid, Signal};
 
 use super::{fresh_dir_outside_tmp, Dir};
@@ -112,13 +113,13 @@ impl Setup {
     }
 
     /// Serves a controller on this setup; its log is appended to `log`.
-    fn serve(&self) -> Child {
+    fn serve(&self) -> ChildGuard {
         let log = OpenOptions::new()
             .create(true)
             .append(true)
             .open(self.root.join("log"))
             .unwrap();
-        Command::new(env!("CARGO_BIN_EXE_moor"))
+        let child = Command::new(env!("CARGO_BIN_EXE_moor"))
             .args(["controller", "serve", "--config"])
             .arg(self.root.join("c.yaml"))
             .env_clear()
@@ -128,7 +129,8 @@ impl Setup {
             .stdout(Stdio::null())
             .stderr(log)
             .spawn()
-            .unwrap()
+            .unwrap();
+        ChildGuard::new(child)
     }
 
     fn log(&self) -> String {
@@ -215,7 +217,7 @@ fn exit_within(child: &mut Child, within: Duration) -> Option<std::process::Exit
 }
 
 /// Serves until every front in `names` is up, with its pid file written.
-fn serve_until_up(setup: &Setup, names: &[&str]) -> Child {
+fn serve_until_up(setup: &Setup, names: &[&str]) -> ChildGuard {
     let child = setup.serve();
     for name in names {
         wait_for("a front to start", || {
@@ -288,7 +290,7 @@ fn a_front_left_by_a_crashed_controller_is_stopped_on_the_next_start() {
     kill_process(pid_of(&first), Signal::TERM).unwrap();
     assert!(exit_within(&mut first, Duration::from_secs(20)).is_some());
 
-    let mut leftover = Command::new("sleep").arg("600").spawn().unwrap();
+    let mut leftover = ChildGuard::new(Command::new("sleep").arg("600").spawn().unwrap());
     let started = start_time(leftover.id()).unwrap();
     fs::write(
         setup.pid_file("slow"),
@@ -319,7 +321,7 @@ fn a_recycled_pid_with_another_start_time_is_left_alone() {
     kill_process(pid_of(&first), Signal::TERM).unwrap();
     assert!(exit_within(&mut first, Duration::from_secs(20)).is_some());
 
-    let mut bystander = Command::new("sleep").arg("600").spawn().unwrap();
+    let mut bystander = ChildGuard::new(Command::new("sleep").arg("600").spawn().unwrap());
     let real = start_time(bystander.id()).unwrap();
     let other = (real.parse::<u64>().unwrap() + 1).to_string();
     fs::write(
@@ -342,14 +344,16 @@ fn a_recycled_pid_with_another_start_time_is_left_alone() {
 
 /// Starts `python3 -c script args` as a leftover, with a pid file for front `name` naming it
 /// by its real start time. The setup's state dir must exist: run and drain a controller first.
-fn plant_leftover(setup: &Setup, name: &str, script: &str, args: &[&str]) -> Child {
+fn plant_leftover(setup: &Setup, name: &str, script: &str, args: &[&str]) -> ChildGuard {
     let ready = setup.root.join(format!("{name}.leftover-ready"));
-    let leftover = Command::new("python3")
-        .args(["-c", script])
-        .arg(&ready)
-        .args(args)
-        .spawn()
-        .unwrap();
+    let leftover = ChildGuard::new(
+        Command::new("python3")
+            .args(["-c", script])
+            .arg(&ready)
+            .args(args)
+            .spawn()
+            .unwrap(),
+    );
     wait_for("the leftover to be ready", || ready.exists().then_some(()));
     let started = wait_for("the leftover's start time", || start_time(leftover.id()));
     fs::write(

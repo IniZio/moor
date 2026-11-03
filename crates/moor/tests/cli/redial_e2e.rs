@@ -7,6 +7,7 @@
     reason = "the tests time a real binary with the wall clock"
 )]
 
+use moor_testkit::ChildGuard;
 use std::fs::{self, File};
 use std::os::fd::OwnedFd;
 use std::os::unix::fs::PermissionsExt as _;
@@ -58,7 +59,7 @@ impl Held {
         }
     }
 
-    fn serve(&self) -> Child {
+    fn serve(&self) -> ChildGuard {
         let mut cmd = Command::new("/bin/sh");
         cmd.current_dir(&self.root)
             .env_clear()
@@ -79,6 +80,7 @@ impl Held {
             .stdout(Stdio::null())
             .stderr(File::create(self.root.join("stderr")).unwrap())
             .spawn()
+            .map(ChildGuard::new)
             .unwrap()
     }
 

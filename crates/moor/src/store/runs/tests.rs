@@ -131,13 +131,15 @@ fn a_killed_follower_leaves_its_run_interrupted() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let box_id = add(&store, "t");
-    let mut child = Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "store::runs::tests::follow_until_killed"])
-        .env(HOLDER, format!("{}:{}", dir.path().display(), box_id.get()))
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .spawn()
-        .unwrap();
+    let mut child = moor_testkit::ChildGuard::new(
+        Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "store::runs::tests::follow_until_killed"])
+            .env(HOLDER, format!("{}:{}", dir.path().display(), box_id.get()))
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
     let begun = (0..1000).find_map(|_| {
         thread::sleep(Duration::from_millis(10));
         store.last_run(box_id).unwrap()

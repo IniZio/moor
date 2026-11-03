@@ -54,6 +54,7 @@ link = [
 ]
 
 [dev-dependencies]
+moor-testkit = { path = "../moor-testkit" }
 tempfile = "3"
 
 [lints.rust]

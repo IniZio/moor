@@ -10,6 +10,7 @@ use std::sync::mpsc;
 use std::thread::sleep;
 use std::time::Duration;
 
+use moor_testkit::ChildGuard;
 use rustix::process::{kill_process_group, Pid, Signal};
 
 use super::{
@@ -165,12 +166,13 @@ fn command_outlives_a_sigkill_of_the_launching_group() {
     let sb = Scratch::new("survive");
     let command = "printf one; sleep 1; printf two; sleep 1; printf three; exit 7";
     let launcher_script = format!("sh -c {}; sleep 30", quote(&launch_script(RUN, command)));
-    let mut launcher = sb
-        .sh(&launcher_script)
-        .process_group(0)
-        .stdout(Stdio::null())
-        .spawn()
-        .unwrap();
+    let mut launcher = ChildGuard::new(
+        sb.sh(&launcher_script)
+            .process_group(0)
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
     assert!(eventually(|| sb.pid().is_some()), "launch wrote no pid");
     let launcher_group = Pid::from_raw(i32::try_from(launcher.id()).unwrap()).unwrap();
     kill_process_group(launcher_group, Signal::KILL).unwrap();
@@ -207,11 +209,12 @@ fn follow_from_an_offset_prints_exactly_the_rest_and_returns_after_exit() {
     let sb = Scratch::new("follow");
     let full: &[u8] = b"ab\0\xffcd\n\x01ef";
     sb.launch(r"printf 'ab\000\377'; sleep 1; printf 'cd\n\001'; sleep 1; printf ef");
-    let mut follower = sb
-        .sh(&follow_script(RUN, 3))
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let mut follower = ChildGuard::new(
+        sb.sh(&follow_script(RUN, 3))
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
     let mut stdout = follower.stdout.take().unwrap();
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
@@ -311,11 +314,13 @@ fn cancel_refuses_a_pid_it_must_not_signal() {
 
 #[test]
 fn a_pid_reused_by_an_unrelated_group_leader_is_not_the_run() {
-    let mut stranger = Command::new("sleep")
-        .arg("30")
-        .process_group(0)
-        .spawn()
-        .unwrap();
+    let mut stranger = ChildGuard::new(
+        Command::new("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap(),
+    );
     let (boot, start) = ident(stranger.id());
     for (label, recorded) in [
         ("another start time", format!("{boot} 1{start}\n")),
@@ -331,11 +336,12 @@ fn a_pid_reused_by_an_unrelated_group_leader_is_not_the_run() {
         fs::write(sb.run_dir().join("log"), b"partial").unwrap();
 
         assert_eq!(sb.end().outcome, Outcome::Lost, "{label}");
-        let mut follow = sb
-            .sh(&follow_script(RUN, 0))
-            .stdout(Stdio::null())
-            .spawn()
-            .unwrap();
+        let mut follow = ChildGuard::new(
+            sb.sh(&follow_script(RUN, 0))
+                .stdout(Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
         assert_eq!(
             wait_bounded(&mut follow, 5).and_then(|s| s.code()),
             Some(LOST),
@@ -383,11 +389,12 @@ fn a_leader_left_a_zombie_reads_as_gone() {
     fs::write(sb.run_dir().join("log"), b"partial").unwrap();
 
     assert_eq!(sb.end().outcome, Outcome::Lost);
-    let mut follow = sb
-        .sh(&follow_script(RUN, 0))
-        .stdout(Stdio::null())
-        .spawn()
-        .unwrap();
+    let mut follow = ChildGuard::new(
+        sb.sh(&follow_script(RUN, 0))
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
     assert_eq!(
         wait_bounded(&mut follow, 5).and_then(|s| s.code()),
         Some(LOST),

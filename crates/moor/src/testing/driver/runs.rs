@@ -176,11 +176,12 @@ impl FakeDriver {
             let mut s = self.st();
             s.runs.cut_follow.take().or(s.runs.cut_every_follow)
         };
-        let mut child = b
-            .sh(&follow_script(run, from))
-            .stdout(Stdio::piped())
-            .spawn()
-            .map_err(|e| failed(&e.to_string()))?;
+        let mut child = moor_testkit::ChildGuard::new(
+            b.sh(&follow_script(run, from))
+                .stdout(Stdio::piped())
+                .spawn()
+                .map_err(|e| failed(&e.to_string()))?,
+        );
         let mut offset = from;
         let mut buf = [0u8; 8192];
         if let Some(mut r) = child.stdout.take() {

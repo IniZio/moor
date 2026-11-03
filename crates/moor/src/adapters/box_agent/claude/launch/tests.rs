@@ -375,7 +375,8 @@ fn run_hook_on(c: &LaunchCtx, state: &str, event: &str, stdin: Option<&str>, pat
     }
     match stdin {
         Some(text) => {
-            let mut child = cmd.stdin(Stdio::piped()).spawn().unwrap();
+            let mut child =
+                moor_testkit::ChildGuard::new(cmd.stdin(Stdio::piped()).spawn().unwrap());
             child
                 .stdin
                 .take()
@@ -485,12 +486,14 @@ fn hook_does_not_wait_for_a_stdin_that_never_closes() {
     let c = ctx(t.path());
     install(&Claude.hook_writer(&c).unwrap());
     let script = format!("{}/.moor/hook.sh", c.workdir.as_str());
-    let mut child = Command::new("sh")
-        .args([&script, "working", "UserPromptSubmit"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .spawn()
-        .unwrap();
+    let mut child = moor_testkit::ChildGuard::new(
+        Command::new("sh")
+            .args([&script, "working", "UserPromptSubmit"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
     let held = child.stdin.take();
     assert!(child.wait().unwrap().success());
     drop(held);

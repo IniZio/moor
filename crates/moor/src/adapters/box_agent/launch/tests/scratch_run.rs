@@ -91,22 +91,24 @@ impl Scratch {
         .unwrap()
     }
 
-    pub(super) fn spawn(&self, script: &str) -> std::process::Child {
+    pub(super) fn spawn(&self, script: &str) -> moor_testkit::ChildGuard {
         use std::os::unix::process::CommandExt;
         let path = format!(
             "{}:{}",
             self.path("bin").display(),
             std::env::var("PATH").unwrap_or_default()
         );
-        Command::new("sh")
-            .args(["-c", script])
-            .env("PATH", path)
-            .env("HOME", self.path("home"))
-            .env("MARKER", self.path("started"))
-            .env("GH_TOKEN", "parent-token")
-            .process_group(0)
-            .spawn()
-            .unwrap()
+        moor_testkit::ChildGuard::new(
+            Command::new("sh")
+                .args(["-c", script])
+                .env("PATH", path)
+                .env("HOME", self.path("home"))
+                .env("MARKER", self.path("started"))
+                .env("GH_TOKEN", "parent-token")
+                .process_group(0)
+                .spawn()
+                .unwrap(),
+        )
     }
 
     pub(super) fn cred_gone(&self) -> bool {
