@@ -19,6 +19,7 @@ use moor_core::seam::surface::Surface;
 use moor_core::user::{Identity, UserId, Viewer};
 use moor_core::{ErrorKind, Warning};
 
+pub(crate) use crate::env::Cancel;
 use crate::env::Env;
 use crate::error::CommandError;
 use crate::store::{Store, STORE_FILE};

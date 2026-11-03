@@ -119,7 +119,9 @@ read.
 
 `close_box` refuses a Box that holds unpushed commits or uncommitted files, or
 that could not be checked for them. `force: true` closes it anyway and discards
-that work, the same as `moor close --force`. It is false by default.
+that work, the same as `moor close --force`. It is false by default. Like
+`moor close --force`, `force: true` also interrupts a start that is running the
+Box's setup, so a stuck setup does not keep the Box open.
 
 `retry_box` re-runs setup on a Box whose setup failed, the same as `moor retry`.
 It refuses a Box in any other state. It returns when the retry finishes; follow

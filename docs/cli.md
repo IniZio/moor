@@ -183,7 +183,7 @@ a host checkout into a Box.
 
 | Flag | Effect |
 | --- | --- |
-| `--force` | Close even when the Box has unsaved work. Unsaved work is commits that are on no branch on GitHub, and uncommitted files. You lose that work. Without `--force`, `moor close` refuses and says how to push the work with `moor run NAME -- git push origin HEAD:refs/heads/BRANCH`. |
+| `--force` | Close even when the Box has unsaved work. Unsaved work is commits that are on no branch on GitHub, and uncommitted files. You lose that work. Without `--force`, `moor close` refuses and says how to push the work with `moor run NAME -- git push origin HEAD:refs/heads/BRANCH`. `--force` also interrupts a start that is running the Box's setup: the setup is recorded as failed with `setup interrupted by a forced close`, then the Box closes. If that start has not stopped after 30 seconds, the close is refused and the Box is left as it is. |
 
 moor creates no host worktree for a Box, so `moor close` checks only the
 Box checkout for unsaved work.

@@ -59,9 +59,13 @@ pub(crate) fn respond_with_progress(
                 None => run(),
             }
         }
-        request if reports_progress(&request) => report_while(cmd, id, interval, out, |_| {
-            conn::respond(env, acting, request)
-        }),
+        // Each gets its own stop flag, so a forced close interrupting a start stops only it.
+        request if reports_progress(&request) => {
+            let env = env.clone().with_cancel(Cancel::default());
+            report_while(cmd, id, interval, out, |_| {
+                conn::respond(&env, acting, request)
+            })
+        }
         request => conn::respond(env, acting, request),
     }
 }

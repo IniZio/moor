@@ -1,5 +1,7 @@
 //! `moor close`: gate, save the agent's transcript, stop the agent, tear down and release the Box, then close the Workspace.
 
+use std::time::Duration;
+
 use moor_core::config::Flags;
 use moor_core::decide::close::{
     close_gate, close_gate_with_reason, needs_box_check, BoxCheck, CloseFacts, ClosePlan, Refusal,
@@ -7,6 +9,7 @@ use moor_core::decide::close::{
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::{BoxInput, BoxState};
+use moor_core::domain::decision::Intent;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{SurfaceError, WorkspaceRef};
@@ -30,6 +33,9 @@ use crate::ops::common::view::box_view;
 use crate::ops::common::wake::wake_box_if_asleep;
 use crate::store::{BoxRow, DriverRow, Store};
 
+/// How long a forced close waits for the start it interrupted to stop.
+const INTERRUPT_WAIT: Duration = Duration::from_secs(30);
+
 /// Closes a Box: gate, transcript save, agent stop, machine teardown and release, Workspace close.
 ///
 /// The Box lock is held from the gate to the Workspace close and dropped before promotion, which
@@ -50,13 +56,7 @@ pub(crate) fn run_with_reason(
     let store = cx.store()?;
     let first = target::resolve(store, &req.target, Rule::OpenElseLatest)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {}", req.target)))?;
-    let lock = BoxLock::acquire(
-        cx.clock(),
-        cx.state_dir()?,
-        first.id,
-        "close",
-        boxlock::WAIT,
-    )?;
+    let lock = lock(cx, &first, req.force)?;
     let mut row = store.box_row(first.id)?.unwrap_or(first);
     with_planned(store, &mut row)?;
     let box_check = box_check(cx, store, &mut row, req.force)?;
@@ -98,6 +98,41 @@ pub(crate) fn run_with_reason(
         agent_stopped,
         transcript: saved.map(|t| t.path),
         promoted,
+    })
+}
+
+/// Takes the Box lock; under `force`, a start running the Box's setup is interrupted first.
+///
+/// The interrupted start records its setup as failed before it lets go. One that has not
+/// stopped after [`INTERRUPT_WAIT`] is refused, and the Box is left as it is. A start still
+/// acquiring the machine is not interrupted.
+fn lock(cx: &Cx, row: &BoxRow, force: bool) -> Result<BoxLock, CommandError> {
+    let (clock, state) = (cx.clock(), cx.state_dir()?);
+    let name = row.name.as_str();
+    let in_setup = matches!(row.intent, Some(Intent::Setup { .. }));
+    let interrupted = (force && in_setup)
+        .then(|| boxlock::interrupt(state, row.id))
+        .flatten();
+    if let Some(ended) = interrupted {
+        if !boxlock::wait_ended(clock, &ended, INTERRUPT_WAIT) {
+            return Err(CommandError::new(
+                ErrorKind::Refused,
+                format!(
+                    "box busy: the start of {name} did not stop within {}s of the forced close; \
+                     the Box was left as it is",
+                    INTERRUPT_WAIT.as_secs()
+                ),
+            ));
+        }
+    }
+    BoxLock::acquire(clock, state, row.id, "close", boxlock::WAIT).map_err(|e| {
+        if in_setup && boxlock::is_interruptible(state, row.id) {
+            e.with_hint(format!(
+                "`moor close {name} --force` interrupts the start and closes the Box"
+            ))
+        } else {
+            e
+        }
     })
 }
 

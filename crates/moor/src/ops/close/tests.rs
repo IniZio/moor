@@ -19,6 +19,7 @@ use crate::testing::surface::FakeSurface;
 mod agent;
 mod artifacts;
 mod boxwork;
+mod interrupt;
 mod leases;
 mod promote;
 mod proxy;
