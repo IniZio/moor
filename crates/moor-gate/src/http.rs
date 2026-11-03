@@ -10,7 +10,7 @@ use tungstenite::handshake::derive_accept_key;
 use tungstenite::protocol::Role;
 use tungstenite::WebSocket;
 
-use crate::login::{routes, setup};
+use crate::login::{routes, secrets, setup};
 use crate::streams::Streams;
 use crate::{log, relay, Gate, Login};
 
@@ -91,10 +91,10 @@ pub(crate) fn handle(stream: TcpStream, gate: &Gate, login: Option<&Login>, stre
 
 /// Whether `path` is a page behind browser sign-in.
 fn behind_sign_in(path: &str) -> bool {
-    path.starts_with("/auth/") || path.starts_with("/webhooks/")
+    path.starts_with("/auth/") || path.starts_with("/webhooks/") || path == secrets::PATH
 }
 
-/// Serves a page behind browser sign-in: sign-in itself, or webhook setup.
+/// Serves a page behind browser sign-in: sign-in itself, secrets, or webhook setup.
 fn browser(
     stream: TcpStream,
     leftover: Vec<u8>,
@@ -114,6 +114,8 @@ fn browser(
     };
     if req.target.starts_with("/auth/") {
         routes::handle(stream, req, gate, login);
+    } else if req.target.split('?').next() == Some(secrets::PATH) {
+        secrets::handle(stream, req, gate, login);
     } else {
         setup::handle(stream, req, gate, login);
     }

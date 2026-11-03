@@ -2,8 +2,11 @@
 //! doing, in the words the herdr card uses.
 
 use moor_core::request::{Request as ControllerRequest, ShowReq};
+use moor_core::response::{ErrorDetail, Response as ControllerResponse};
+use moor_core::user::SecretName;
 use moor_core::view::progress::{self, Happened, Progress};
 use moor_core::view::stuck::stuck_of;
+use moor_core::view::user::StartNeedsValue;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
@@ -16,8 +19,8 @@ mod webhook;
 pub(super) enum Reply {
     /// Nothing.
     AsIs,
-    /// How to follow the start.
-    Started,
+    /// How to follow the start, and where to store missing secrets given the public origin.
+    Started(Option<Arc<str>>),
     /// One Box's status, failure and steps.
     Detailed,
     /// Each Box's status.
@@ -37,12 +40,38 @@ impl Reply {
     ) {
         match self {
             Self::AsIs => {}
-            Self::Started => started(value),
+            Self::Started(_) => started(value),
             Self::Detailed => detailed(value),
             Self::Listed => listed(value, ask),
             Self::WebhookAdded(origin) => webhook::added(value, origin.as_deref()),
             Self::WebhooksListed(origin) => webhook::listed(value, origin.as_deref(), now()),
         }
+    }
+
+    /// The controller's refusal `why` in this tool's words: a start missing secrets sends the
+    /// person to the secrets page instead of a command only the controller's host can run.
+    pub(super) fn refused(&self, why: String, answered: &ControllerResponse) -> String {
+        let Self::Started(Some(origin)) = self else {
+            return why;
+        };
+        let detail = answered.error.as_ref().and_then(|e| e.detail.as_ref());
+        if !matches!(detail, Some(ErrorDetail::LoginRequired)) {
+            return why;
+        }
+        let needs = answered
+            .value
+            .clone()
+            .and_then(|v| serde_json::from_value::<StartNeedsValue>(v).ok());
+        let Some(needs) = needs.filter(|n| !n.missing.is_empty()) else {
+            return why;
+        };
+        let names: Vec<&str> = needs.missing.iter().map(SecretName::as_str).collect();
+        format!(
+            "missing secrets {}: ask the person to sign in at {origin}{} and store them, \
+             then start again",
+            names.join(", "),
+            crate::login::secrets::PATH
+        )
     }
 }
 
