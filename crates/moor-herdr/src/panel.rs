@@ -150,6 +150,7 @@ pub const fn phase_words(phase: Phase) -> &'static str {
         Phase::Live(Activity::Idle) => "idle",
         Phase::WaitingForMachine => "waiting for a machine",
         Phase::Asleep => "asleep",
+        Phase::AsleepUnfinished => "asleep, turn unfinished",
         Phase::Closed => "closed",
         Phase::SetupFailed => "setup failed",
     }
@@ -244,7 +245,7 @@ impl Panel {
                 Piece::text(" "),
             ]
         };
-        if b.phase == Phase::Asleep {
+        if b.phase.is_asleep() {
             row.extend([
                 Piece::button("wake", Button::Wake(b.name.clone())),
                 Piece::text(" "),
@@ -295,7 +296,7 @@ impl Panel {
             'w' => self
                 .boxes
                 .get(self.selected)
-                .filter(|b| b.phase == Phase::Asleep)
+                .filter(|b| b.phase.is_asleep())
                 .map(|b| Button::Wake(b.name.clone())),
             'c' => name().map(Button::Close),
             'd' => name()

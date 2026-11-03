@@ -64,6 +64,13 @@ fn write_attention(out: &mut String, view: &Value, indent: &str) {
     }
 }
 
+/// An `asleep, turn unfinished` line when the Box slept mid-turn, prefixed by `indent`.
+fn write_unfinished(out: &mut String, view: &Value, indent: &str) {
+    if view.get("unfinished_turn").and_then(Value::as_bool) == Some(true) {
+        let _ = writeln!(out, "{indent}asleep, turn unfinished");
+    }
+}
+
 /// One aligned line per Box, each followed by its attention lines.
 fn list(boxes: &[Value]) -> Option<String> {
     if boxes.is_empty() {
@@ -112,6 +119,7 @@ fn list(boxes: &[Value]) -> Option<String> {
             w4 = widths[4],
         );
         write_attention(&mut out, t, "  ");
+        write_unfinished(&mut out, t, "  ");
     }
     Some(out)
 }
@@ -194,6 +202,7 @@ fn detail(view: &Value, value: &Value) -> Option<String> {
     let _ = writeln!(out, "name:     {}", view.get("name")?.as_str()?);
     let _ = writeln!(out, "lifecycle: {}", field(view, "lifecycle"));
     let _ = writeln!(out, "session:   {}", field(view, "session_state"));
+    write_unfinished(&mut out, view, "");
     let _ = writeln!(out, "repo:     {}", repos(view));
     let _ = writeln!(out, "branch:   {}", field(view, "branch"));
     match view.get("driver").filter(|b| !b.is_null()) {

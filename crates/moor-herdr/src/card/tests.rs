@@ -172,3 +172,12 @@ fn a_box_down_from_a_failure_says_why_instead_of_closed() {
         "◈ moor/fix\n\nsetup failed: exit 1\n\nq close this pane"
     );
 }
+
+#[test]
+fn an_asleep_box_with_an_unfinished_turn_says_so_and_wakes_on_r() {
+    assert_eq!(
+        text(&Ended::Skipped, Some(Phase::AsleepUnfinished)),
+        "◈ moor/fix\n\nasleep, turn unfinished · r wakes it and resumes the turn\n\nr wake and attach · q close this pane"
+    );
+    assert_eq!(Card::AsleepUnfinished.key(b'r'), Choice::Wake);
+}
