@@ -19,6 +19,18 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17.6
+        env:
+          POSTGRES_USER: moor
+          POSTGRES_PASSWORD: moor
+          POSTGRES_DB: moor
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U moor" --health-interval 2s --health-timeout 5s
+          --health-retries 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -62,6 +74,8 @@ jobs:
           echo "58d6861176dc6fe905b58880d5bff07a9959be613a98e5d66b4583b04b6cfa45  $RUNNER_TEMP/hc.tar.gz" | sha256sum -c -
           sudo tar -xzf "$RUNNER_TEMP/hc.tar.gz" -C /usr/local/bin herdr-core
       - run: make unit
+      - name: Check the store schema on Postgres matches SQLite
+        run: make unit-pg
       - name: Run the egress proxy under parallel load through a real tinyproxy
         run: |
           sudo apt-get install -y tinyproxy-bin

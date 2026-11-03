@@ -16,10 +16,13 @@ ZIG_SHA256_aarch64-macos := b607e9b9234790a008116ae5bdb71c6243b84b9fb42a53a9e70f
 ZIG_PLATFORM ?= x86_64-linux
 PTY := --features moor/pty-surface
 
-.PHONY: help coverage setup secret audit lint prepush hooks format test unit ci unit-nextest unit-doc build deploy overlap lint-pty unit-pty nested-e2e chart
+# The Postgres the store schema test runs against, from docker-compose.yaml.
+PG_URL ?= postgres://moor:moor@127.0.0.1:5432/moor
+
+.PHONY: help coverage setup secret audit lint prepush hooks format test unit ci unit-nextest unit-doc build deploy overlap lint-pty unit-pty nested-e2e chart dev-db unit-pg
 
 help:
-	@echo "targets: setup secret audit lint prepush hooks chart lint-pty format test unit-pty ci build deploy"
+	@echo "targets: setup secret audit lint prepush hooks chart lint-pty format test unit-pty unit-pg dev-db ci build deploy"
 
 setup:
 	@rustup show active-toolchain >/dev/null
@@ -94,6 +97,13 @@ unit-doc:
 	cargo test --workspace --doc --locked
 
 test: unit
+
+dev-db:
+	docker compose up -d --wait postgres
+
+# The schema test's Postgres half, which make unit skips; the same build as make unit.
+unit-pg:
+	MOOR_TEST_POSTGRES_URL='$(PG_URL)' cargo nextest run --workspace --all-targets --locked --run-ignored only -E 'package(moor-schema)'
 
 overlap:
 	@set -f; tools/stack-overlap.sh --pretty '$(BASE)' $(if $(HEAD),'$(HEAD)') $(if $(FILES),--files $(FILES))
