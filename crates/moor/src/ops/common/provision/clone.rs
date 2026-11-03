@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use moor_core::boxscript::clone::{clone_script, from_branch, Checkout, CloneStep};
+use moor_core::boxscript::clone::{at_base, clone_script, Checkout, CloneStep};
 use moor_core::boxscript::refresh::{outcome, refresh_script};
 use moor_core::boxscript::resources;
 use moor_core::config::BoxSettings;
@@ -38,8 +38,8 @@ pub(super) struct Cloned {
     pub(super) delivered: Option<Shape>,
     /// How the kept work tree started; none when the Box keeps none or already refreshed it.
     pub(super) work_tree: Option<WorkTreeView>,
-    /// Whether the Box branch started from an existing branch rather than the base.
-    pub(super) from_branch: bool,
+    /// Whether the work tree is the base commit with no changes.
+    pub(super) at_base: bool,
 }
 
 /// The Proxy setup and dotfiles run through, or why it could not start; `None` when nothing needs it.
@@ -284,7 +284,7 @@ fn report(
         ms: plan.map(|_| ms),
         delivered: text.and_then(resources::parse),
         work_tree: tree,
-        from_branch: text.is_some_and(from_branch),
+        at_base: text.is_some_and(at_base),
     }
 }
 

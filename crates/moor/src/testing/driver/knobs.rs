@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use moor_core::boxscript::clone::AT_BASE;
 use moor_core::cache::CachePlan;
 use moor_core::seam::driver::{BoxListing, DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Output};
@@ -21,6 +22,14 @@ impl State {
         }
         self.exec_stdout.pop_front()
     }
+}
+
+/// What a passing clone exec prints when none is scripted: a fresh Box's tree is the base.
+pub(super) fn clone_default(spec: &ExecSpec) -> Option<String> {
+    spec.argv
+        .iter()
+        .any(|a| a.contains(AT_BASE))
+        .then(|| format!("{AT_BASE}\n"))
 }
 
 /// Whether the `sh -c` script of `spec` reads the Box's `.moor/artifacts` directory.
