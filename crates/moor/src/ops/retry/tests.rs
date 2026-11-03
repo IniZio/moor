@@ -374,6 +374,7 @@ fn a_failed_fork_runs_setup_again_in_the_kept_machine() {
     let gone = Checkpoint {
         id: "gone".to_owned(),
         bytes: None,
+        parent: None,
     };
     let store = w.cx.store().unwrap();
     store

@@ -231,6 +231,10 @@ const FILES: &[(&str, &str)] = &[
         "V43__setup_checkpoint_evict.sql",
         include_str!("../../migrations/V43__setup_checkpoint_evict.sql"),
     ),
+    (
+        "V44__setup_checkpoint_parent.sql",
+        include_str!("../../migrations/V44__setup_checkpoint_parent.sql"),
+    ),
 ];
 
 /// moor.db's migrations, oldest first.

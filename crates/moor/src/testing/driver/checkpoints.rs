@@ -15,8 +15,12 @@ use super::{FakeDriver, State};
 pub(super) struct LayerKnobs {
     /// The capability.
     pub(super) on: bool,
-    /// Every checkpoint saved and not deleted, oldest first: id, Box and name.
-    made: Vec<(String, String, String)>,
+    /// Every checkpoint saved and not deleted, oldest first.
+    made: Vec<Saved>,
+    /// Whether each checkpoint is a delta over the one its Box last saved or started from.
+    deltas: bool,
+    /// The checkpoint each live Box's disk is a delta over, by handle.
+    bases: Vec<(String, String)>,
     /// How many checkpoints were ever saved, which numbers the next.
     saved: usize,
     /// The disk the checkpoints live on, when the fake reports one.
@@ -31,6 +35,16 @@ pub(super) struct LayerKnobs {
     fork_fails: Option<DriverError>,
     /// Whether every delete fails, leaving the checkpoint on the disk.
     deletes_fail: bool,
+}
+
+/// A checkpoint the fake keeps.
+struct Saved {
+    /// Its id.
+    id: String,
+    /// The name it was saved under.
+    name: String,
+    /// The checkpoint it is a delta over, when deltas are on.
+    parent: Option<String>,
 }
 
 impl State {
@@ -55,6 +69,13 @@ impl FakeDriver {
     /// Offers checkpoints from now on, without consuming the driver.
     pub(crate) fn offer_checkpoints(&self) {
         self.st().layers.on = true;
+    }
+
+    /// Saves each checkpoint as a delta over the one its Box stands on, which refuses to be
+    /// deleted while a delta over it is kept.
+    pub(crate) fn with_delta_checkpoints(self) -> Self {
+        self.st().layers.deltas = true;
+        self
     }
 
     /// Ends the next fork with `e`, once.
@@ -110,12 +131,17 @@ impl FakeDriver {
 
     /// The ids of the checkpoints kept, oldest first.
     pub(crate) fn checkpoint_ids(&self) -> Vec<String> {
-        self.st().layers.made.iter().map(|m| m.0.clone()).collect()
+        self.st().layers.made.iter().map(|m| m.id.clone()).collect()
     }
 
     /// The names of the checkpoints saved, oldest first.
     pub(crate) fn checkpoint_names(&self) -> Vec<String> {
-        self.st().layers.made.iter().map(|m| m.2.clone()).collect()
+        self.st()
+            .layers
+            .made
+            .iter()
+            .map(|m| m.name.clone())
+            .collect()
     }
 
     /// Runs the hook set up for every exec, then those set up for `spec`'s argv.
@@ -155,8 +181,16 @@ impl FakeDriver {
         }
         s.layers.saved += 1;
         let id = format!("ckpt-{}", s.layers.saved);
-        let made = (id.clone(), handle.as_str().to_owned(), name.to_owned());
-        s.layers.made.push(made);
+        let parent = s
+            .layers
+            .base_of(handle.as_str())
+            .filter(|_| s.layers.deltas);
+        s.layers.stand(handle.as_str(), &id);
+        s.layers.made.push(Saved {
+            id: id.clone(),
+            name: name.to_owned(),
+            parent: parent.clone(),
+        });
         let each = s.layers.each_mib;
         if let Some(d) = s.layers.disk.as_mut() {
             d.free_mib = d.free_mib.saturating_sub(each);
@@ -165,6 +199,7 @@ impl FakeDriver {
         Ok(Checkpoint {
             id,
             bytes: Some(bytes),
+            parent,
         })
     }
 
@@ -179,8 +214,24 @@ impl FakeDriver {
             .layers
             .made
             .iter()
-            .position(|m| m.0 == id)
+            .position(|m| m.id == id)
             .ok_or(DriverError::NotFound)?;
+        let over: Vec<&str> = s
+            .layers
+            .made
+            .iter()
+            .filter(|m| m.parent.as_deref() == Some(id))
+            .map(|m| m.id.as_str())
+            .collect();
+        if !over.is_empty() {
+            return Err(DriverError::Failed {
+                summary: format!(
+                    "cannot delete checkpoint {id}: checkpoints {} are deltas over it; delete \
+                     them first",
+                    over.join(", ")
+                ),
+            });
+        }
         s.layers.made.remove(at);
         let each = s.layers.each_mib;
         if let Some(d) = s.layers.disk.as_mut() {
@@ -202,13 +253,28 @@ impl FakeDriver {
         if let Some(e) = s.layers.fork_fails.take() {
             return Err(e);
         }
-        if !s.layers.made.iter().any(|m| m.0 == id) {
+        if !s.layers.made.iter().any(|m| m.id == id) {
             return Err(DriverError::NotFound);
         }
         s.next += 1;
         let handle = format!("box-{}", s.next);
+        s.layers.stand(&handle, id);
         s.live.push(handle.clone());
         s.providers.push((handle.clone(), req.provider.clone()));
         Ok(BoxHandle::new(handle))
+    }
+}
+
+impl LayerKnobs {
+    /// The checkpoint the Box behind `handle` stands on.
+    fn base_of(&self, handle: &str) -> Option<String> {
+        let base = self.bases.iter().find(|(h, _)| h == handle);
+        base.map(|(_, id)| id.clone())
+    }
+
+    /// Marks the Box behind `handle` as standing on checkpoint `id`.
+    fn stand(&mut self, handle: &str, id: &str) {
+        self.bases.retain(|(h, _)| h != handle);
+        self.bases.push((handle.to_owned(), id.to_owned()));
     }
 }

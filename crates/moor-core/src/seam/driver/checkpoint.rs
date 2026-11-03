@@ -5,8 +5,12 @@
 pub struct Checkpoint {
     /// The provider's id for it.
     pub id: String,
-    /// Its size on the host, when the provider reports one.
+    /// What it adds to the host's disk, when the provider reports it: for a delta over another
+    /// checkpoint, only its own share.
     pub bytes: Option<u64>,
+    /// The checkpoint it is a delta over, which cannot go while this one stays; none over the
+    /// base image.
+    pub parent: Option<String>,
 }
 
 /// The filesystem a provider keeps its checkpoints on, in MiB.

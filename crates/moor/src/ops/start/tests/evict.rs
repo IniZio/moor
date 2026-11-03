@@ -127,3 +127,47 @@ fn a_checkpoint_whose_delete_fails_stays_tracked_and_goes_later() {
         "the checkpoint left on the disk is still tracked and goes once it can: {told:?}"
     );
 }
+
+#[test]
+fn a_checkpoint_goes_only_after_the_delta_over_it() {
+    let (w, _) = after_a_partial_setup(roomy().with_delta_checkpoints());
+    close(&w, "first");
+    w.driver.set_free_mib(DISK_FLOOR_MIB - 15);
+    start(&w, "second", "def456", LINES);
+    let gone = deleted(&w);
+    assert_eq!(
+        gone[..2],
+        ["ckpt-2", "ckpt-1"],
+        "the line's delta goes before the clone under it"
+    );
+    let warned = w.cx.take_warnings();
+    assert!(
+        !warned.iter().any(|x| x.code == "checkpoint_delete_failed"),
+        "{warned:?}"
+    );
+}
+
+#[test]
+fn a_checkpoint_claimed_before_a_crash_stays_tracked_and_the_next_start_deletes_it() {
+    let (w, first) = after_a_partial_setup(roomy());
+    close(&w, "first");
+    let store = w.cx.store().unwrap();
+    let provider = store
+        .box_row(first)
+        .unwrap()
+        .unwrap()
+        .boxed
+        .unwrap()
+        .provider;
+    let evictable = store.evictable(&provider).unwrap();
+    let clone = evictable.iter().find(|e| e.checkpoint == "ckpt-1").unwrap();
+    assert!(store.claim_checkpoint(&provider, clone).unwrap());
+    let second = start(&w, "second", "abc123", LINES);
+    assert_eq!(deleted(&w), ["ckpt-1"]);
+    let told = events(&w, second, "checkpoint_evicted");
+    assert!(
+        told.iter().any(|e| e["checkpoint"] == "ckpt-1"),
+        "the claimed checkpoint was still tracked: {told:?}"
+    );
+    assert!(w.driver.calls().contains(&"fork ckpt-2".to_owned()));
+}
