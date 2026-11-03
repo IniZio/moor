@@ -419,7 +419,7 @@ moor also refuses `proxy.direct` in a user config and a `proxy` key in
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `agent.model` | string | none | The default agent model. `moor start --model` wins over it. |
-| `agent.install` | boolean | `true` | Whether moor installs the agent in a Box that lacks it. `false` leaves the Box as its image and `setup` made it, and the start then fails if the agent is missing. |
+| `agent.install` | boolean | `true` | Whether moor installs the agent in a Box that lacks it. `false` leaves the Box as its image and `setup` made it, and the start then fails if the agent is missing. A failed install puts the Box in `setup_failed` with the installer's error in its `setup_failed` event, and `moor retry NAME` runs the install again. |
 | `dotfiles.path` | absolute path or `~/...` | none | A dotfiles directory that moor installs on each new machine. |
 | `dotfiles.install` | relative path | none | The install script inside `dotfiles.path`. |
 | `surface.kind` | `herdr` or `pty` | `$MOOR_SURFACE`, else `herdr` | What holds each Box agent's pane on the controller. `pty` keeps the panes in pseudo-terminals inside the controller, for a host without herdr; it needs a moor built with the `pty-surface` feature (`make build`, which needs Zig 0.17), and herdr's working or idle guess is then not available. The controller image is built with the feature and sets `MOOR_SURFACE=pty`, so its Boxes need no herdr server unless the config asks for `herdr`. When the config sets a kind that differs from a non-empty `$MOOR_SURFACE`, the config wins and the controller logs a `surface:` line naming both when it starts. Under `pty`, `moor open` only wakes the Box. |
@@ -436,7 +436,7 @@ A repo's `.moor.yaml` configures its Boxes.
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `brief` | string, at most 4000 characters | Notes from the repo's author for the Box's agent, such as how to start services, what is installed, and which test users exist. The agent reads the brief verbatim under "This project's Box", marked as coming from `.moor.yaml`. |
-| `setup` | list of shell commands | Commands that run on each new machine. When one fails, the Box goes to `setup_failed` and the agent does not start. The start names the line and shows the end of its log. Run `moor retry NAME` once the line is fixed. This holds for a working Box that lost its machine and failed a line on the new one. |
+| `setup` | list of shell commands | Commands that run on each new machine. When one fails, the Box goes to `setup_failed` and the agent does not start. The start names the line and shows the end of its log. Run `moor retry NAME` once the line is fixed. This holds for a working Box that lost its machine and failed a line on the new one, and for a failed clone or agent install. |
 | `teardown` | list of shell commands | Commands that run when the Box closes. |
 | `env` | map | Plain environment variables for the Box. `PATH` is reserved. moor does not pass names that look like credentials, or names that moor sets, to the agent. |
 | `compose.project_prefix` | string | A prefix for compose project names. |
@@ -644,7 +644,8 @@ The controller refuses a config that has a `web`, `slack`, or `repos` key.
 ### Closing failed Boxes
 
 A Box whose lifecycle is `setup_failed` holds a machine that nothing uses: its
-machine, clone, credentials or a `setup:` line failed, so no agent worked in it. The
+machine, clone, credentials, a `setup:` line or the agent install failed, so no
+agent worked in it. The
 settle pass closes such a Box once `close_setup_failed_after_secs` have passed
 since setup failed, which is a day unless the config says otherwise. A retry
 that fails again restarts that clock. The close is forced, releases the
@@ -652,8 +653,8 @@ machine, drops the Box's lease rows, and records a `closed` event with the
 reason `setup_failed_expired`. A Box that will not close is logged as a
 `settle:` line, and the next pass tries it again.
 
-A working Box that lost its machine and failed a `setup:` line on the new one
-is a `setup_failed` Box too, so this pass closes it after the same time. Set
+A working Box that lost its machine and failed its clone, a `setup:` line or its
+agent install on the new one is a `setup_failed` Box too, so this pass closes it after the same time. Set
 the key to 0 to keep failed Boxes until someone closes them by hand or with
 `moor close-failed`.
 

@@ -11,7 +11,7 @@ use moor_core::Warning;
 
 use moor_core::config::Flags;
 
-use super::after_setup;
+use super::{after_setup, step_failed};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::box_exec;
@@ -69,17 +69,22 @@ fn finish_steps(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError
         .then(|| box_exec::proxy(cx, row.id, Some(handle.clone()), repo, &cfg))
         .transpose();
     let at = (handle, held.provider.as_str());
-    let dotfiles = after_setup(cx, store, at, row.id, &cfg, &proxy)?;
-    let mut done = Decision::new(row.id).set(Fields {
-        steps_pending_at: Field::Clear,
-        ..Fields::default()
-    });
+    let (dotfiles, installed) = after_setup(cx, store, at, row.id, &cfg, &proxy)?;
+    let mut done = Decision::new(row.id);
     if let DotfilesRun::Failed { tail } = &dotfiles {
         done = done.event(ExtraEvent::SetupFailed {
             line: format!("dotfiles: {tail}"),
         });
     }
-    store.apply(done)?;
+    let mut set = Fields {
+        steps_pending_at: Field::Clear,
+        ..Fields::default()
+    };
+    if let Err(cause) = installed {
+        done = step_failed(done, false, cause);
+        set.setup_failed_at = Field::Set(cx.clock().now().as_millis());
+    }
+    store.apply(done.set(set))?;
     Ok(())
 }
 

@@ -26,7 +26,7 @@ fn all_inputs() -> Vec<BoxLifecycleInput> {
             which: None,
         },
         I::Retry,
-        I::MachineLostSetupFailed {
+        I::WorkingSetupFailed {
             cause: "x".to_owned(),
         },
         I::Sleep {
@@ -80,7 +80,7 @@ fn legal() -> Vec<(BoxLifecycle, BoxLifecycleInput, BoxLifecycle)> {
         (S::SetupFailed, I::Retry, S::SettingUp),
         (
             S::Ready,
-            I::MachineLostSetupFailed { cause: x() },
+            I::WorkingSetupFailed { cause: x() },
             S::SetupFailed,
         ),
         (S::Ready, I::sleep(false), S::Asleep),

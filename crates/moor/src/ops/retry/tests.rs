@@ -24,6 +24,8 @@ use crate::testing::forge::{repo_at, FakeForge};
 use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
 
+mod bring_up;
+
 struct World {
     _dir: tempfile::TempDir,
     cx: Cx,
