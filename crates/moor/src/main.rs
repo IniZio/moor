@@ -48,6 +48,7 @@ fn say(line: &str) -> std::io::Result<()> {
 }
 
 /// Parse argv, run the request, print the rendered output, return its exit code.
+#[expect(clippy::too_many_lines, reason = "one arm per command")]
 fn main() -> ExitCode {
     let args = Env::args();
     if let Some(code) = front_shim(&args).or_else(|| moor::mcp_relay::run(&args)) {
@@ -98,6 +99,7 @@ fn main() -> ExitCode {
             let env = scoped(env, &opts);
             return ExitCode::from(moor::link_dial::on_stdio(&env, machine_id, &slug));
         }
+        Parsed::Doctor { opts, public_url } => doctor(env, &opts, public_url.as_deref()),
         Parsed::Events {
             opts,
             since,
@@ -117,6 +119,11 @@ fn scoped(env: Env, opts: &cli::GlobalOpts) -> Env {
         Some(dir) => env.with_state_dir(dir),
         None => env,
     }
+}
+
+/// The `doctor` report for this host.
+fn doctor(env: Env, opts: &GlobalOpts, public_url: Option<&str>) -> Output {
+    moor::doctor::run(&scoped(env, opts), opts, public_url)
 }
 
 /// Stream events as JSON lines from the configured controller, else the local store.

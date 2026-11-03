@@ -54,7 +54,7 @@ const HERDR_PASSTHROUGH: [&str; 5] = [
 ];
 
 /// The host variables in [`HERDR_PASSTHROUGH`] that `env` sets.
-fn herdr_env(env: &Env) -> Vec<(String, String)> {
+pub(crate) fn herdr_env(env: &Env) -> Vec<(String, String)> {
     HERDR_PASSTHROUGH
         .iter()
         .filter_map(|k| Some(((*k).to_owned(), env.get(k)?.to_owned())))
@@ -321,7 +321,7 @@ fn prompt_window(env: &Env) -> Duration {
 }
 
 /// Tool overrides from config.
-fn tool_paths(config: &UserConfig) -> ToolPaths {
+pub(crate) fn tool_paths(config: &UserConfig) -> ToolPaths {
     let t = &config.tools;
     ToolPaths {
         crabbox: t.crabbox.clone(),
@@ -336,9 +336,10 @@ fn tool_paths(config: &UserConfig) -> ToolPaths {
 mod links;
 mod surface_pick;
 
+pub(crate) use surface_pick::surface_kind;
 #[cfg(test)]
 use surface_pick::SURFACE_ENV;
-use surface_pick::{surface, surface_kind, surface_override_warning};
+use surface_pick::{surface, surface_override_warning};
 
 /// The controller's startup line when the user config's `surface.kind` overrides a different
 /// `$MOOR_SURFACE`; a config that fails to load is reported by the first request instead.

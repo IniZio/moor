@@ -253,6 +253,7 @@ controller.
 
 | Command | What it does |
 | --- | --- |
+| `moor doctor [--public-url URL]` | Checks the setup after install, one line per check: config, controller, crabbox, nodes, your user and secrets, github, claude, surface, and the gate when `--public-url` is given. Each line is `ok`, `warn` or `fail` with the fix beside it. It exits 0 unless a check failed, and with `--json` it prints a list of `{check, status, detail, fix}`. It only reads. The CLI cannot open stored secrets, so `github` and `claude` warn that a stored token is not verified. |
 | `moor version` | Prints the version, the git commit, and the envelope schema version. |
 | `moor env [OWNER/NAME] [--base REF]` | Previews the settings and credentials a Box of that GitHub repo would get, read through GitHub like a start. The default is the current checkout's `origin`. Only the operator may run it. |
 | `moor gate check SHA NAME` | Exits 0 when a run recorded with `moor run --record NAME` passed on commit `SHA`, and 1 when none did. `--command TEXT` counts only runs of exactly that command text. It reads only the runs of Boxes that you may act on. It does not check that `SHA` exists on origin. |

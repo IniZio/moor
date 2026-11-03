@@ -9,7 +9,7 @@ use crate::env::Env;
 use crate::error::CommandError;
 
 /// User config path: `$MOOR_CONFIG`, else XDG, else `$HOME/.config`.
-fn user_path(env: &Env) -> Option<PathBuf> {
+pub(crate) fn user_path(env: &Env) -> Option<PathBuf> {
     if let Some(p) = env.get("MOOR_CONFIG").filter(|v| !v.is_empty()) {
         return Some(PathBuf::from(p));
     }

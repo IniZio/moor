@@ -53,6 +53,11 @@ pub(super) enum Action {
     },
     /// A request that carries a secret read from stdin, never from argv.
     Stdin(super::StdinRequest),
+    /// `doctor`: check the setup and print one line per check.
+    Doctor {
+        /// Public URL of the gate, to check it answers.
+        public_url: Option<String>,
+    },
     /// `events`: print the event stream as JSON lines.
     Events {
         /// Only events after this id.
@@ -160,6 +165,8 @@ enum Cmd {
     /// The nodes Boxes run on.
     #[command(subcommand)]
     Node(NodeCmd),
+    /// Check the setup after install and say how to fix what is wrong.
+    Doctor(DoctorArgs),
     /// Show your identity, its user and that user's linked identities.
     Whoami,
     /// Admin verbs.
@@ -206,12 +213,23 @@ impl Cmd {
             }
             Self::User(u) => u.into_action(),
             Self::Node(n) => Action::Request(n.into()),
+            Self::Doctor(a) => Action::Doctor {
+                public_url: a.public_url,
+            },
             Self::Whoami => Action::Request(Request::Whoami(moor_core::request::AsReq {
                 identity: None,
             })),
             Self::Admin(a) => a.into_action(),
         }
     }
+}
+
+/// Arguments of `doctor`.
+#[derive(Debug, Args)]
+struct DoctorArgs {
+    /// Public URL of the gate (`moor-gate --public-url`), to check it answers.
+    #[arg(long, value_name = "URL")]
+    public_url: Option<String>,
 }
 
 /// Arguments of `start`.

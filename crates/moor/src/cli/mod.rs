@@ -87,6 +87,13 @@ pub enum Parsed {
         /// The lease.
         slug: String,
     },
+    /// Check the setup and print one line per check.
+    Doctor {
+        /// Global options.
+        opts: GlobalOpts,
+        /// Public URL of the gate, to check it answers.
+        public_url: Option<String>,
+    },
     /// Print the event stream as JSON lines.
     Events {
         /// Global options.
@@ -125,6 +132,7 @@ pub fn parse(args: Vec<OsString>) -> Parsed {
             machine_id,
             slug,
         },
+        Ok((opts, Action::Doctor { public_url })) => Parsed::Doctor { opts, public_url },
         Ok((
             opts,
             Action::Events {

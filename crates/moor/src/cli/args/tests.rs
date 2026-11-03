@@ -520,3 +520,16 @@ fn start_node_flag() {
         Request::Start(s) if s.node.as_deref() == Some("hv")
     ));
 }
+
+#[test]
+fn doctor_takes_an_optional_gate_url() {
+    let url = |args: &[&str]| match run(args).expect("parses").1 {
+        Action::Doctor { public_url } => public_url,
+        _ => Some("not doctor".to_owned()),
+    };
+    assert_eq!(url(&["doctor"]), None);
+    assert_eq!(
+        url(&["doctor", "--public-url", "https://moor.example"]).as_deref(),
+        Some("https://moor.example")
+    );
+}

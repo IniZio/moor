@@ -29,7 +29,7 @@ fn pty_surface(state_dir: Option<PathBuf>) -> Arc<dyn Surface> {
 pub(super) const SURFACE_ENV: &str = "MOOR_SURFACE";
 
 /// The Surface kind `config` sets, else the one [`SURFACE_ENV`] names, else herdr.
-pub(super) fn surface_kind(config: &UserConfig, env: &Env) -> Result<SurfaceKind, CommandError> {
+pub(crate) fn surface_kind(config: &UserConfig, env: &Env) -> Result<SurfaceKind, CommandError> {
     if let Some(kind) = config.surface.kind {
         return Ok(kind);
     }

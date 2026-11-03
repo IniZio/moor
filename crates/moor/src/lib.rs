@@ -9,6 +9,8 @@ mod config_load;
 /// The controller daemon: serves Requests on a local socket.
 pub mod controller;
 mod cx;
+/// First-run checks: `moor doctor`.
+pub mod doctor;
 pub mod env;
 pub mod error;
 mod front_dir;
