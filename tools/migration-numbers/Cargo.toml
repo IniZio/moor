@@ -1,0 +1,12 @@
+[package]
+name = "migration-numbers"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+moor-schema = { path = "../../crates/moor-schema" }
+syn = { version = "3", features = ["full", "visit"] }
+
+[lints]
+workspace = true
