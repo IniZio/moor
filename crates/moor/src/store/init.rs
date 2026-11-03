@@ -213,6 +213,10 @@ const FILES: &[(&str, &str)] = &[
         "V39__box_host_memory.sql",
         include_str!("../../migrations/V39__box_host_memory.sql"),
     ),
+    (
+        "V40__setup_checkpoints.sql",
+        include_str!("../../migrations/V40__setup_checkpoints.sql"),
+    ),
 ];
 
 /// moor.db's migrations, oldest first.
