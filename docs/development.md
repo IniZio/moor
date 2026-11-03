@@ -105,7 +105,8 @@ In a Box, keep `~/.cargo/bin` between Boxes with the `cargo-bin` [cache volume](
 | --- | --- |
 | `make build` | `cargo build --workspace --release --locked`. |
 | `make lint` | `cargo fmt --check` and `taplo fmt --check`, Clippy with `-D warnings`, the 400-line cap on Rust files, the removed-name, Box-key, and Box-environment checks, the layering and test-children checks, the lint self-tests, `typos`, and `cargo doc` with warnings denied. |
-| `make hooks` | Sets `core.hooksPath` to [tools/git-hooks](../tools/git-hooks), so `git push` first runs the quick lint checks: `cargo fmt` and `taplo fmt`, Clippy, the file-cap, removed-name, Box-key, and Box-environment checks, and the layering check. The lint self-tests, `typos`, and `cargo doc` are left to CI. Push with `MOOR_SKIP_HOOKS=1` to skip the hook. |
+| `make prepush` | `make audit`, then `make lint`. These are the two gates that CI runs before any test. |
+| `make hooks` | Opts in to a pre-push hook. It sets `core.hooksPath` to [tools/git-hooks](../tools/git-hooks), so `git push` first runs `make prepush`. A push that deletes a branch skips it. Push with `MOOR_SKIP_HOOKS=1` to skip the hook. Run `git config --unset core.hooksPath` to opt out. |
 | `make audit` | `cargo deny check` and `cargo machete`. |
 | `make unit` | Every test target of the workspace in one `cargo nextest` run, with the doc tests alongside it. |
 | `make test` | The same as `make unit`. |
