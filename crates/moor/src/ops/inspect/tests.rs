@@ -81,7 +81,9 @@ fn working(cx: &Cx, driver: &FakeDriver) -> BoxId {
             ..Fields::default()
         });
     store.apply(ready).unwrap();
-    store.begin_session(id, "s-a", None).unwrap();
+    store
+        .begin_session(id, "s-a", None, moor_core::config::AgentHolder::Hc)
+        .unwrap();
     id
 }
 

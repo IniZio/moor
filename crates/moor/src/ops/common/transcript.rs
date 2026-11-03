@@ -46,7 +46,7 @@ pub(crate) fn save(
         record(store, row, skipped(trigger, "no agent session registered"));
         return None;
     }
-    let s = session_ref(row, session.session_ref.clone(), session.pane.clone())?;
+    let s = session_ref(row, session)?;
     let event = match try_save(cx, store, row, session, &s) {
         Ok(None) => return None,
         Ok(Some((saved, false))) => return Some(saved),

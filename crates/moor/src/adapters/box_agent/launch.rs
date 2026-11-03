@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use moor_core::config::AgentHolder;
 use moor_core::exec_env::ExecEnv;
 use moor_core::name::BoxPath;
 use moor_core::seam::agent_adapter::{AgentAdapter, BoxSetup, LaunchCtx, ProxyAddr};
@@ -62,7 +63,7 @@ pub(super) fn launch(
     surface: &dyn Surface,
     profile: &dyn AgentAdapter,
     req: &LaunchReq,
-    (release, holder): (&GhRelease, &Holder),
+    (release, kind): (&GhRelease, AgentHolder),
 ) -> Result<SessionRef, EngineError> {
     let connect = driver
         .connect_argv(&req.handle)
@@ -95,7 +96,7 @@ pub(super) fn launch(
         cred: &cred,
         tmp: &tmp,
         release,
-        holder,
+        holder: holder::holder(kind),
         root,
     };
     match launch.deliver(&connect, platform) {
@@ -104,6 +105,7 @@ pub(super) fn launch(
             handle: req.handle.clone(),
             workdir: req.workdir.clone(),
             pane: Some(pane),
+            holder: kind,
             warnings,
         }),
         Err(mut f) => {

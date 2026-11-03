@@ -32,3 +32,25 @@ pub enum AgentHolder {
     /// tmux, which the Box image brings.
     Tmux,
 }
+
+impl AgentHolder {
+    /// The holder of an agent launched before moor recorded one: every such build used tmux.
+    pub const UNRECORDED: Self = Self::Tmux;
+
+    /// The name the config and the store use.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Hc => "hc",
+            Self::Tmux => "tmux",
+        }
+    }
+
+    /// The holder `name` names, as [`Self::name`] writes it.
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        [Self::Hc, Self::Tmux]
+            .into_iter()
+            .find(|h| h.name() == name)
+    }
+}

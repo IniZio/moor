@@ -257,7 +257,7 @@ fn the_op_settles_a_finished_steered_turn() {
     let id = ready(&cx, "alpha");
     cx.store()
         .unwrap()
-        .begin_session(id, SESSION, None)
+        .begin_session(id, SESSION, None, moor_core::config::AgentHolder::Hc)
         .unwrap();
     steered(&cx, id);
     let mut r = req(&["alpha"], WaitMode::Any);
@@ -292,7 +292,7 @@ fn the_op_settles_a_steered_turn_on_a_box_whose_setup_failed() {
     let id = ready(&cx, "alpha");
     cx.store()
         .unwrap()
-        .begin_session(id, SESSION, None)
+        .begin_session(id, SESSION, None, moor_core::config::AgentHolder::Hc)
         .unwrap();
     cx.store()
         .unwrap()
@@ -316,7 +316,7 @@ fn a_box_that_cannot_settle_warns_once_over_many_polls() {
     let id = ready(&cx, "alpha");
     cx.store()
         .unwrap()
-        .begin_session(id, SESSION, None)
+        .begin_session(id, SESSION, None, moor_core::config::AgentHolder::Hc)
         .unwrap();
     let raw = rusqlite::Connection::open(cx.state_dir().unwrap().join("moor.db")).unwrap();
     raw.execute(

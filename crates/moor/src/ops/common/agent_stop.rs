@@ -22,7 +22,7 @@ pub(crate) fn stop_agent(
     let Some(session) = store.live_session(row.id)? else {
         return Ok(false);
     };
-    let sref = session_ref(row, session.session_ref.clone(), session.pane.clone());
+    let sref = session_ref(row, &session);
     // Best effort: a Box that cannot be reached cannot run the agent on, and a close must still
     // go ahead.
     if let Some(s) = sref {

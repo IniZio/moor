@@ -1,6 +1,7 @@
 //! Agent session rows and the last hook report cached per box.
 
 use moor_core::activity::{HookCache, HookKind, HookRecord};
+use moor_core::config::AgentHolder;
 use moor_core::domain::event::Event;
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
@@ -33,6 +34,8 @@ pub(crate) struct SessionRow {
     pub(crate) registered_agent_session: Option<String>,
     /// The Box's Session current when the agent started.
     pub(crate) session: Option<i64>,
+    /// What holds the agent's terminal on the Box.
+    pub(crate) holder: AgentHolder,
 }
 
 impl Store {
@@ -42,11 +45,37 @@ impl Store {
         Ok(conn
             .query_row(
                 "SELECT id, box, session_ref, pane, started_at, ended_at, exit, transcript_digest, \
-                 registered_agent_session, session FROM launches WHERE box = ? AND ended_at IS NULL ORDER BY id DESC LIMIT 1",
+                 registered_agent_session, session, holder FROM launches WHERE box = ? AND ended_at IS NULL ORDER BY id DESC LIMIT 1",
                 [box_id.get()],
                 session_from_row,
             )
             .optional()?)
+    }
+
+    /// What holds the terminal of the newest agent of `box_id`, ended or not.
+    pub(crate) fn agent_holder(&self, box_id: BoxId) -> Result<AgentHolder, StoreError> {
+        let conn = self.reader()?;
+        let stored: Option<Option<String>> = conn
+            .query_row(
+                "SELECT holder FROM launches WHERE box = ? ORDER BY id DESC LIMIT 1",
+                [box_id.get()],
+                |r| r.get(0),
+            )
+            .optional()?;
+        holder_from(stored.flatten())
+            .map_err(|e| StoreError::Corrupt(format!("launches.holder: {e}")))
+    }
+
+    /// Forget the holders of `box_id`'s sessions, as moor did before it recorded them.
+    #[cfg(test)]
+    pub(crate) fn forget_holders(&self, box_id: BoxId) -> Result<(), StoreError> {
+        let conn = self.writer();
+        conn.execute(
+            "UPDATE launches SET holder = NULL WHERE box = ?",
+            [box_id.get()],
+        )?;
+        drop(conn);
+        Ok(())
     }
 
     /// Whether `box_id` has ever had a session, ended or not.
@@ -62,13 +91,14 @@ impl Store {
             .is_some())
     }
 
-    /// Record the start of a session on `box_id` and its `SessionStarted` event; box state is not
-    /// touched.
+    /// Record the start of a session on `box_id`, held by `holder`, and its `SessionStarted`
+    /// event; box state is not touched.
     pub(crate) fn begin_session(
         &self,
         box_id: BoxId,
         session_ref: &str,
         pane: Option<&str>,
+        holder: AgentHolder,
     ) -> Result<i64, StoreError> {
         let now = self.now();
         let mut conn = self.writer();
@@ -90,9 +120,9 @@ impl Store {
             )));
         }
         tx.execute(
-            "INSERT INTO launches (box, session_ref, pane, started_at, session) VALUES (?1, ?2, ?3, ?4, \
-             (SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1))",
-            params![box_id.get(), session_ref, pane, now.as_millis()],
+            "INSERT INTO launches (box, session_ref, pane, started_at, session, holder) VALUES (?1, ?2, ?3, ?4, \
+             (SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1), ?5)",
+            params![box_id.get(), session_ref, pane, now.as_millis(), holder.name()],
         )?;
         let id = tx.last_insert_rowid();
         let started = Event::SessionStarted {
@@ -216,6 +246,17 @@ fn session_from_row(r: &Row<'_>) -> rusqlite::Result<SessionRow> {
         transcript_digest: r.get(7)?,
         registered_agent_session: r.get(8)?,
         session: r.get(9)?,
+        holder: holder_from(r.get(10)?).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(10, rusqlite::types::Type::Text, e.into())
+        })?,
+    })
+}
+
+/// The holder a `launches.holder` value names. A launch from before moor recorded the holder
+/// has none, and was held by [`AgentHolder::UNRECORDED`].
+fn holder_from(stored: Option<String>) -> Result<AgentHolder, String> {
+    stored.map_or(Ok(AgentHolder::UNRECORDED), |name| {
+        AgentHolder::from_name(&name).ok_or_else(|| format!("unknown holder {name:?}"))
     })
 }
 

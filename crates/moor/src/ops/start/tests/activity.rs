@@ -52,7 +52,9 @@ fn started(idle: bool, probes: impl FnOnce(&World) -> Probes) -> (World, BoxId) 
     let mut w = world(FakeDriver::new());
     let id = BoxId::new(run(&w.cx, &super::agentless_req("demo")).unwrap().boxed.id);
     let store = w.cx.store().unwrap();
-    store.begin_session(id, SESSION, None).unwrap();
+    store
+        .begin_session(id, SESSION, None, moor_core::config::AgentHolder::Hc)
+        .unwrap();
     if idle {
         store
             .apply(Decision::new(id).session(SessionInput::AgentQuiet))
@@ -260,7 +262,7 @@ fn a_box_that_cannot_be_settled_warns_and_the_others_still_settle() {
     let id = BoxId::new(run(&w.cx, &req("demo")).unwrap().boxed.id);
     w.cx.store()
         .unwrap()
-        .begin_session(id, SESSION, None)
+        .begin_session(id, SESSION, None, moor_core::config::AgentHolder::Hc)
         .unwrap();
     let engine = Arc::new(FakeEngine::new().probes(
         SESSION,
@@ -285,7 +287,7 @@ fn hooked() -> (World, BoxId) {
     let id = BoxId::new(run(&w.cx, &req("demo")).unwrap().boxed.id);
     w.cx.store()
         .unwrap()
-        .begin_session(id, SESSION, Some("p-9"))
+        .begin_session(id, SESSION, Some("p-9"), moor_core::config::AgentHolder::Hc)
         .unwrap();
     let mut p = probes(&w, Some(HookKind::Busy), PaneStatus::Working);
     p.hook = HookRead::Fresh(HookRecord {
@@ -373,7 +375,7 @@ fn a_stored_id_is_registered_when_the_hook_is_absent() {
         .unwrap();
     w.cx.store()
         .unwrap()
-        .begin_session(id, SESSION, Some("p-9"))
+        .begin_session(id, SESSION, Some("p-9"), moor_core::config::AgentHolder::Hc)
         .unwrap();
     w.surface.have_pane("p-9");
     run(&w.cx, &req("demo")).unwrap();
@@ -390,7 +392,9 @@ fn an_exited_pane_with_a_stored_id_registers_nothing() {
         p
     });
     let store = w.cx.store().unwrap();
-    store.begin_session(id, SESSION, Some("p-9")).unwrap();
+    store
+        .begin_session(id, SESSION, Some("p-9"), moor_core::config::AgentHolder::Hc)
+        .unwrap();
     let set = Fields {
         agent_session_id: Field::Set("agent-1".into()),
         ..Fields::default()

@@ -69,7 +69,9 @@ fn unregistered(cx: &Cx) -> (BoxRow, SessionRow) {
             handle: moor_core::BoxHandle::new("box-1"),
         });
     store.apply(d).unwrap();
-    store.begin_session(id, "s-1", Some("p-1")).unwrap();
+    store
+        .begin_session(id, "s-1", Some("p-1"), moor_core::config::AgentHolder::Hc)
+        .unwrap();
     (
         store.box_row(id).unwrap().unwrap(),
         store.live_session(id).unwrap().unwrap(),

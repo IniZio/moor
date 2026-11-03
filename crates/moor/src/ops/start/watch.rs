@@ -17,7 +17,7 @@ use crate::error::CommandError;
 use crate::ops::common::activity::session_ref;
 use crate::ops::common::profile_fetch;
 use crate::ops::common::view::rfc3339;
-use crate::store::Store;
+use crate::store::{SessionRow, Store};
 
 /// Time between two reads of the pane while watching.
 const PROMPT_POLL: Duration = Duration::from_millis(500);
@@ -109,11 +109,11 @@ fn poll(cx: &Cx, store: &Store, id: BoxId, nonce: Option<&str>) -> Option<(i64, 
             return None;
         }
     };
-    let pane = live.pane?;
+    let pane = live.pane.clone()?;
     let pane_ref = PaneRef::new(pane.clone());
     let hooks = nonce
         .filter(|_| cx.engine().hooks_quiet_during_first_run())
-        .and_then(|n| Some((hook_reader(store, id, &live.session_ref)?, n)));
+        .and_then(|n| Some((hook_reader(store, id, &live)?, n)));
     let mut marked = false;
     let begin = cx.clock().instant();
     loop {
@@ -164,9 +164,10 @@ fn poll(cx: &Cx, store: &Store, id: BoxId, nonce: Option<&str>) -> Option<(i64, 
 }
 
 /// The session to read the hook file of, with no pane so a probe leaves the pane alone.
-fn hook_reader(store: &Store, id: BoxId, session: &str) -> Option<SessionRef> {
+fn hook_reader(store: &Store, id: BoxId, launch: &SessionRow) -> Option<SessionRef> {
     let row = store.box_row(id).ok().flatten()?;
-    session_ref(&row, session.to_owned(), None)
+    let s = session_ref(&row, launch)?;
+    Some(SessionRef { pane: None, ..s })
 }
 
 /// Whether the agent is past its first-run screens: its hook file shows a report after this
