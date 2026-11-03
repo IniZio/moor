@@ -9,7 +9,7 @@ use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::layers::chain;
 use moor_core::seam::clock::{Clock as _, Ts};
-use moor_core::seam::driver::{Checkpoint, Driver as _, ExecOutcome};
+use moor_core::seam::driver::{Checkpoint, Driver as _, DriverError, ExecOutcome};
 use moor_core::seam::engine::{LaunchPrompt, SessionRef};
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::surface::PaneRef;
@@ -459,16 +459,23 @@ fn acquires(w: &World) -> usize {
     w.driver.calls().iter().filter(|c| *c == "acquire").count()
 }
 
-/// A working Box with checkpoints whose machine is lost and whose relaunch fails `run-two`.
+/// A working Box with checkpoints whose machine is lost; the relaunch cannot fork its deepest
+/// checkpoint, so it sets up from scratch and fails `run-two`.
 fn relaunch_failing_a_line() -> (World, Arc<FakeEngine>, BoxId) {
-    let driver = FakeDriver::new().with_checkpoints().exec_results([
-        Ok(exit(0)),
-        Ok(exit(0)),
-        Ok(exit(0)),
-        Ok(exit(0)),
-        Ok(exit(0)),
-        Ok(exit(1)),
-    ]);
+    let gone = DriverError::Failed {
+        summary: "snapshot missing".to_owned(),
+    };
+    let driver = FakeDriver::new()
+        .with_checkpoints()
+        .fork_fails_once(gone)
+        .exec_results([
+            Ok(exit(0)),
+            Ok(exit(0)),
+            Ok(exit(0)),
+            Ok(exit(0)),
+            Ok(exit(0)),
+            Ok(exit(1)),
+        ]);
     let (w, engine) = yaml_world_with_engine(TWO_LINES, driver);
     let id = started_with(&w, Some("fix it"));
     assert_eq!(row(&w, id).lifecycle, BoxLifecycle::Ready);
@@ -500,7 +507,16 @@ fn a_retry_of_a_ready_box_whose_relaunch_failed_a_line_resumes_from_the_deepest_
     let on = (ready.lifecycle, ready.boxed.unwrap().handle);
     assert_eq!(on, (BoxLifecycle::Ready, Some(BoxHandle::new("box-3"))));
     assert_eq!(acquires(&w), 2, "the retry relaunches nothing");
-    assert!(w.driver.calls().iter().any(|c| c.starts_with("fork ")));
+    let forks = w
+        .driver
+        .calls()
+        .into_iter()
+        .filter(|c| c.starts_with("fork "));
+    assert_eq!(
+        forks.count(),
+        2,
+        "the relaunch's failed fork, then the retry's"
+    );
     let on_fork = setup_execs(&w).into_iter().filter(|(h, _)| h == "box-3");
     assert_eq!(
         on_fork.count(),
