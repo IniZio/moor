@@ -49,6 +49,11 @@ impl Moor {
         wire::open_store(env)
     }
 
+    /// The warning for a state db a newer build migrated, which this build opened unchanged.
+    pub(crate) fn schema_warning(env: &Env) -> Option<String> {
+        wire::schema_warning(env)
+    }
+
     /// Ends every front Proxy lease: a controller that holds the state lock is the only one,
     /// and it restarts every front that held a lease.
     ///

@@ -7,7 +7,8 @@ use rusqlite::Connection;
 use sea_query::{ColumnDef, Table};
 
 use super::{
-    check, migrate, migrations, render, steps, Backend, Error, Legacy, Migration, Script, Step,
+    check, is_latest, migrate, migrations, render, steps, Backend, Error, Legacy, Migration,
+    Outcome, Script, Step,
 };
 
 const V1: (&str, &str) = (
@@ -115,14 +116,35 @@ fn another_old_version_is_refused_and_left_alone() {
 }
 
 #[test]
-fn a_file_from_a_newer_build_is_refused() {
+fn a_file_from_a_newer_build_opens_untouched_and_reports_where_it_stands() {
     let dir = tempfile::tempdir().unwrap_or_else(|e| unreachable!("{e}"));
     let mut conn = open(&dir.path().join("a.db"));
     assert!(migrate(&mut conn, &set(&[V1, V2]), legacy).is_ok());
     let old = set(&[V1]);
-    let newer = |r: &Result<(), Error>| matches!(r, Err(Error::Newer { found: 2, known: 1 }));
-    assert!(newer(&check(&conn, &old, legacy)));
-    assert!(newer(&migrate(&mut conn, &old, legacy)));
+    let ahead = Outcome::Ahead { found: 2, known: 1 };
+    assert_eq!(check(&conn, &old, legacy).ok(), Some(ahead));
+    assert_eq!(migrate(&mut conn, &old, legacy).ok(), Some(ahead));
+    assert_eq!(applied(&conn), [1, 2], "nothing applied or removed");
+    assert_eq!(count(&conn, "tags"), 0, "the newer tables stay");
+    assert!(
+        is_latest(&conn, &old).unwrap_or(false),
+        "nothing left to migrate"
+    );
+}
+
+#[test]
+fn a_file_behind_the_build_still_migrates() {
+    let dir = tempfile::tempdir().unwrap_or_else(|e| unreachable!("{e}"));
+    let mut conn = open(&dir.path().join("a.db"));
+    assert!(migrate(&mut conn, &set(&[V1]), legacy).is_ok());
+    let both = set(&[V1, V2]);
+    assert_eq!(check(&conn, &both, legacy).ok(), Some(Outcome::Current));
+    assert!(!is_latest(&conn, &both).unwrap_or(true));
+    assert_eq!(
+        migrate(&mut conn, &both, legacy).ok(),
+        Some(Outcome::Current)
+    );
+    assert_eq!(applied(&conn), [1, 2]);
 }
 
 #[test]
@@ -152,7 +174,9 @@ fn two_openers_racing_on_a_new_file_migrate_it_once() {
                 std::thread::spawn(move || {
                     let mut conn = open(&path);
                     gate.wait();
-                    migrate(&mut conn, &set, legacy).map_err(|e| e.to_string())
+                    migrate(&mut conn, &set, legacy)
+                        .map(drop)
+                        .map_err(|e| e.to_string())
                 })
             })
             .collect();
@@ -199,7 +223,7 @@ fn a_file_short_of_the_squashed_migrations_is_refused_and_left_alone() {
     let mut conn = open(&dir.path().join("a.db"));
     assert!(migrate(&mut conn, &set(&[V1]), legacy).is_ok());
     let squashed = set(&[V3]);
-    let refused = |r: &Result<(), Error>| {
+    let refused = |r: &Result<Outcome, Error>| {
         matches!(
             r,
             Err(Error::Squashed {

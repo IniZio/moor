@@ -62,8 +62,8 @@ impl Db {
     ///
     /// # Errors
     /// Returns the `SQLite` error text, says to start with a fresh `slack.db` when the file
-    /// predates migrations at a version this build cannot adopt, or refuses a file a newer build
-    /// wrote. A refused file is left exactly as it was found.
+    /// predates migrations at a version this build cannot adopt. A refused file is left exactly as
+    /// it was found, and a file a newer build wrote is opened without changes.
     pub(crate) fn open(path: &Path) -> Result<Self, String> {
         let set = schema().map_err(|e| e.to_string())?;
         if path.exists() {

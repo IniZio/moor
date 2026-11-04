@@ -199,18 +199,20 @@ fn request_row(r: &Row<'_>) -> rusqlite::Result<RequestRow> {
 }
 
 /// Bring the db to the latest migration; one process migrates while others wait. A file from a
-/// newer build, or from before migrations at a later `user_version`, is refused untouched.
+/// newer build is left as found. One from before migrations at a later `user_version` is refused
+/// untouched.
 fn migrate(conn: &mut Connection) -> Result<(), DbError> {
     let set = schema()?;
     let known = moor_migrate::latest(&set);
-    moor_migrate::migrate(conn, &set, legacy).map_err(|e| match e {
-        moor_migrate::Error::Newer { found, known } => DbError::NewerSchema { found, known },
-        moor_migrate::Error::Unadoptable(v) => v.parse().map_or_else(
-            |_| moor_migrate::Error::Unadoptable(v).into(),
-            |found| DbError::NewerSchema { found, known },
-        ),
-        other => other.into(),
-    })
+    moor_migrate::migrate(conn, &set, legacy)
+        .map(drop)
+        .map_err(|e| match e {
+            moor_migrate::Error::Unadoptable(v) => v.parse().map_or_else(
+                |_| moor_migrate::Error::Unadoptable(v).into(),
+                |found| DbError::NewerSchema { found, known },
+            ),
+            other => other.into(),
+        })
 }
 
 /// What a file without a migration history holds, judged by its `user_version`.

@@ -5,7 +5,7 @@ use std::path::Path;
 
 use moor_core::box_key::ControllerId;
 use moor_core::cache::CacheSalt;
-use moor_migrate::{Backend, Legacy, Migration};
+use moor_migrate::{Backend, Legacy, Migration, Outcome};
 use moor_schema::STEPS;
 use rusqlite::{Connection, OpenFlags};
 
@@ -63,12 +63,13 @@ pub(super) fn schema() -> Result<Vec<Migration>, StoreError> {
 }
 
 /// Refuse an existing db this build would not migrate, without writing to it or its directory.
+/// A db a newer build migrated is not refused; the outcome says so.
 ///
 /// A db with no `-wal` file is read as immutable, because a read-only open of a WAL-mode db
 /// creates the `-wal` and `-shm` files.
-pub(super) fn refuse_other_version(db: &Path) -> Result<(), StoreError> {
+pub(super) fn refuse_other_version(db: &Path) -> Result<Outcome, StoreError> {
     if !db.try_exists()? {
-        return Ok(());
+        return Ok(Outcome::Current);
     }
     let escaped = db
         .to_string_lossy()
@@ -87,8 +88,9 @@ pub(super) fn refuse_other_version(db: &Path) -> Result<(), StoreError> {
     moor_migrate::check(&conn, &schema()?, legacy).map_err(|e| refused(db, e))
 }
 
-/// Bring the db to the latest migration; one process migrates while others wait.
-pub(super) fn migrate(conn: &mut Connection, db: &Path) -> Result<(), StoreError> {
+/// Bring the db to the latest migration; one process migrates while others wait. A db a newer
+/// build migrated is left as found.
+pub(super) fn migrate(conn: &mut Connection, db: &Path) -> Result<Outcome, StoreError> {
     moor_migrate::migrate(conn, &schema()?, legacy).map_err(|e| refused(db, e))
 }
 
@@ -158,7 +160,7 @@ fn refused(db: &Path, e: moor_migrate::Error) -> StoreError {
             found: format!("migration {found}"),
         },
         moor_migrate::Error::Sqlite(e) => StoreError::Sqlite(e),
-        other => StoreError::Migration {
+        other @ moor_migrate::Error::Migration(_) => StoreError::Migration {
             db: db.to_path_buf(),
             source: other,
         },

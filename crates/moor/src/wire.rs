@@ -8,6 +8,7 @@ use std::sync::{Arc, LazyLock, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
 use moor_core::BoxId;
+use moor_migrate::Outcome;
 use signal_hook::consts::{SIGINT, SIGTERM};
 
 #[cfg(test)]
@@ -121,6 +122,17 @@ pub(crate) fn open_store(env: Env) -> Result<Env, CommandError> {
     let clock = SystemClock::from_env(&env).map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
     let store = Store::open(&state_dir.join(STORE_FILE), Arc::new(clock))?;
     Ok(env.sharing(store))
+}
+
+/// The warning for a store a newer build migrated, which this build opened unchanged.
+pub(crate) fn schema_warning(env: &Env) -> Option<String> {
+    let Outcome::Ahead { found, known } = env.shared::<Store>()?.schema() else {
+        return None;
+    };
+    Some(format!(
+        "warning: the state database is at migration {found} and this moor knows up to {known}; \
+         leaving it unchanged"
+    ))
 }
 
 /// Ends every front Proxy lease in the store.
