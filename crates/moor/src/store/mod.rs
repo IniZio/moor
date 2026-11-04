@@ -15,6 +15,7 @@ use moor_core::shape::Shape;
 use moor_core::user::UserId;
 use moor_core::view::LaunchFailure;
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
+use moor_migrate::Outcome;
 use repo::repo_from_row;
 use rusqlite::Connection;
 
@@ -191,11 +192,14 @@ pub(crate) struct Store {
     /// The Box each name meant when the controller let the request name it. A name lookup
     /// returns that Box only, so a Box of the same name made later is never acted on.
     pins: Pins,
+    /// Whether a newer build migrated the db past this one.
+    schema: Outcome,
 }
 
 impl Store {
     /// Open (creating if needed) the store at `path`: state dir 0700, db, `-wal` and `-shm` 0600.
     /// A db this build would not migrate is refused before anything writes to it or changes a mode.
+    /// A db a newer build migrated opens unchanged.
     pub(crate) fn open(path: &Path, clock: Arc<dyn Clock>) -> Result<Self, StoreError> {
         init::refuse_other_version(path)?;
         open::prepare(path)?;
@@ -205,7 +209,7 @@ impl Store {
             "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;",
         )?;
         let migrating = init::claim_migration(&conn, path)?;
-        init::migrate(&mut conn, path)?;
+        let schema = init::migrate(&mut conn, path)?;
         drop(migrating);
         open::tighten(path)?;
         Ok(Self {
@@ -213,7 +217,14 @@ impl Store {
             writer: Arc::new(Mutex::new(Conn::sqlite(conn))),
             clock,
             pins: Pins::new(),
+            schema,
         })
+    }
+
+    /// The db's standing against this build's migrations; a db a newer build migrated is opened
+    /// as found, and the caller says so.
+    pub(crate) const fn schema(&self) -> Outcome {
+        self.schema
     }
 
     /// One box by id.

@@ -36,20 +36,27 @@ pub enum Legacy {
     Other(String),
 }
 
+/// Where a database stands against the migrations this build carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outcome {
+    /// The file is at this build's latest migration, or [`migrate`] brought it there.
+    Current,
+    /// A newer build migrated the file past this one. It is left untouched, because the newer
+    /// build ships only changes an older one can still read.
+    Ahead {
+        /// Highest migration recorded in the file.
+        found: i64,
+        /// Highest migration this build carries.
+        known: i64,
+    },
+}
+
 /// Why a database could not be brought to the latest migration.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// A file from before migrations at a version this build cannot adopt.
     #[error("schema version `{0}` predates migrations and is not the adoptable baseline")]
     Unadoptable(String),
-    /// The file has migrations this build does not know, so a newer build wrote it.
-    #[error("the database is at migration {found} and this build knows only up to {known}")]
-    Newer {
-        /// Highest migration recorded in the file.
-        found: i64,
-        /// Highest migration this build carries.
-        known: i64,
-    },
     /// The file is recorded at a migration the set squashed away, short of where it starts.
     #[error("the database is at migration {found} and this build adopts only migration {adopts}")]
     Squashed {
@@ -83,37 +90,43 @@ pub fn latest(set: &[Migration]) -> i64 {
         .unwrap_or(0)
 }
 
-/// Refuse, without writing, a file this build would not migrate.
+/// Refuse, without writing, a file this build would not migrate. A file ahead of `set` is not
+/// refused; the outcome says so.
 pub fn check(
     conn: &Connection,
     set: &[Migration],
     legacy: impl FnOnce(&Connection) -> rusqlite::Result<Legacy>,
-) -> Result<(), Error> {
+) -> Result<Outcome, Error> {
     if has_history(conn)? {
-        refuse_newer(conn, set)?;
-        return squash_point(conn, set).map(drop);
+        if let Some(ahead) = ahead(conn, set)? {
+            return Ok(ahead);
+        }
+        return squash_point(conn, set).map(|_| Outcome::Current);
     }
     match legacy(conn)? {
         Legacy::Other(found) => Err(Error::Unadoptable(found)),
-        Legacy::Empty | Legacy::Baseline => Ok(()),
+        Legacy::Empty | Legacy::Baseline => Ok(Outcome::Current),
     }
 }
 
-/// True when the file records every migration in `set`, so [`migrate`] would change nothing.
+/// True when the file records every migration in `set` or more, so [`migrate`] would change
+/// nothing.
 pub fn is_latest(conn: &Connection, set: &[Migration]) -> Result<bool, Error> {
     if !has_history(conn)? {
         return Ok(false);
     }
-    Ok(recorded(conn)? == Some(latest(set)))
+    Ok(recorded(conn)?.is_some_and(|found| found >= latest(set)))
 }
 
 /// Bring the file to the latest migration in `set` inside one `BEGIN IMMEDIATE` transaction,
 /// so a second process opening the file waits for the whole run and never sees half of it.
+///
+/// A file ahead of `set` is left as found, and the outcome says so.
 pub fn migrate(
     conn: &mut Connection,
     set: &[Migration],
     legacy: impl FnOnce(&Connection) -> rusqlite::Result<Legacy>,
-) -> Result<(), Error> {
+) -> Result<Outcome, Error> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let runner = || {
         Runner::new(set)
@@ -122,7 +135,9 @@ pub fn migrate(
             .set_abort_missing(true)
     };
     if has_history(&tx)? {
-        refuse_newer(&tx, set)?;
+        if let Some(ahead) = ahead(&tx, set)? {
+            return Ok(ahead);
+        }
         if let Some(first) = squash_point(&tx, set)? {
             tx.execute_batch(&format!("DELETE FROM {HISTORY}"))?;
             runner()
@@ -142,7 +157,7 @@ pub fn migrate(
     }
     runner().run(&mut Held(&tx))?;
     tx.commit()?;
-    Ok(())
+    Ok(Outcome::Current)
 }
 
 /// True when the file records migrations.
@@ -178,14 +193,12 @@ fn squash_point(conn: &Connection, set: &[Migration]) -> Result<Option<i32>, Err
     }
 }
 
-/// Refuse a file whose recorded migrations run past `set`.
-fn refuse_newer(conn: &Connection, set: &[Migration]) -> Result<(), Error> {
-    let found = recorded(conn)?;
+/// The outcome for a file whose recorded migrations run past `set`, none for any other file.
+fn ahead(conn: &Connection, set: &[Migration]) -> rusqlite::Result<Option<Outcome>> {
     let known = latest(set);
-    match found {
-        Some(found) if found > known => Err(Error::Newer { found, known }),
-        _ => Ok(()),
-    }
+    Ok(recorded(conn)?
+        .filter(|&found| found > known)
+        .map(|found| Outcome::Ahead { found, known }))
 }
 
 /// refinery's view of a transaction this crate already holds. refinery's own rusqlite driver

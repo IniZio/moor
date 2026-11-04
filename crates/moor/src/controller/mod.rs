@@ -64,6 +64,9 @@ pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u
             return stop.code;
         }
     };
+    if let Some(warning) = Moor::schema_warning(&running.env) {
+        log(&sink, &warning);
+    }
     let wake = match drain::on_sigterm() {
         Ok(wake) => wake,
         Err(e) => {

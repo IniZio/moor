@@ -235,3 +235,30 @@ fn a_file_short_of_the_last_sql_migration_is_refused_and_left_as_it_is() {
 }
 
 mod pinned;
+
+#[test]
+fn a_store_a_newer_build_migrated_opens_unchanged_and_says_so() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state").join("moor.db");
+    drop(crate::store::tests::open(dir.path()));
+    let known = *history(&Connection::open(&path).unwrap()).last().unwrap();
+    let newer = known + 1;
+    let conn = Connection::open(&path).unwrap();
+    conn.execute(
+        "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) \
+         VALUES (?1, 'future', '2030-01-01T00:00:00Z', '1')",
+        [newer],
+    )
+    .unwrap();
+    drop(conn);
+    let (store, _) = crate::store::tests::open(dir.path());
+    assert_eq!(
+        store.schema(),
+        moor_migrate::Outcome::Ahead {
+            found: newer,
+            known
+        }
+    );
+    let after = Connection::open(&path).unwrap();
+    assert_eq!(history(&after).last(), Some(&newer), "history untouched");
+}
