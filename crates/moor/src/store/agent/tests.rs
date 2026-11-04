@@ -14,7 +14,11 @@ use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
-use crate::store::db::DbExt as _;
+use moor_schema::tables::{Boxes, HookCache, Launches, Sessions};
+use sea_query::{Expr, ExprTrait as _, Func, Query};
+
+use crate::store::db::{self, DbExt as _};
+use crate::store::select::newest_session;
 use crate::testing::clock::FakeClock;
 
 use crate::store::{Store, StoreError};
@@ -68,9 +72,25 @@ fn idle_since(store: &Store, id: BoxId) -> Option<i64> {
     store
         .reader()
         .unwrap()
-        .query_row(
-            "SELECT idle_since FROM boxes WHERE id = ?",
-            [id.get()],
+        .row(
+            Query::select()
+                .column(Boxes::IdleSince)
+                .from(Boxes::Table)
+                .and_where(Expr::col(Boxes::Id).eq(id.get())),
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
+/// How many hook reports are cached, across all Boxes.
+fn hook_rows(store: &Store) -> i64 {
+    store
+        .reader()
+        .unwrap()
+        .row(
+            Query::select()
+                .expr(Func::count(Expr::col(HookCache::Session)))
+                .from(HookCache::Table),
             |r| r.get(0),
         )
         .unwrap()
@@ -81,9 +101,11 @@ fn state_cols(store: &Store, id: BoxId) -> (String, i64) {
     store
         .reader()
         .unwrap()
-        .query_row(
-            "SELECT state, updated_at FROM boxes WHERE id = ?",
-            [id.get()],
+        .row(
+            Query::select()
+                .columns([Boxes::State, Boxes::UpdatedAt])
+                .from(Boxes::Table)
+                .and_where(Expr::col(Boxes::Id).eq(id.get())),
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .unwrap()
@@ -195,11 +217,18 @@ fn end_session_records_outcome_once() {
     store.end_session(s, Some(3), Some("dg")).unwrap();
     clock.sleep(Duration::from_millis(10));
     store.end_session(s, Some(9), None).unwrap();
-    let c = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
-    let row: (i64, i32, String) = c
-        .query_row(
-            "SELECT ended_at, exit, transcript_digest FROM launches WHERE id = ?",
-            [s],
+    let row: (i64, i32, String) = store
+        .reader()
+        .unwrap()
+        .row(
+            Query::select()
+                .columns([
+                    Launches::EndedAt,
+                    Launches::Exit,
+                    Launches::TranscriptDigest,
+                ])
+                .from(Launches::Table)
+                .and_where(Expr::col(Launches::Id).eq(s)),
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .unwrap();
@@ -262,11 +291,7 @@ fn hook_cache_round_trips_every_kind_and_keeps_the_latest() {
         assert_eq!(cache.record, record);
         assert_eq!(cache.at, clock.now());
     }
-    let c = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
-    let n: i64 = c
-        .query_row("SELECT count(*) FROM hook_cache", [], |r| r.get(0))
-        .unwrap();
-    assert_eq!(n, 1);
+    assert_eq!(hook_rows(&store), 1);
 }
 
 #[test]
@@ -327,16 +352,25 @@ fn hook_cache_reads_a_legacy_blocked_row_as_its_message() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = add(&store, "t");
-    let c = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
-    c.execute(
-        "INSERT INTO hook_cache (session, record, at) \
-         VALUES ((SELECT id FROM sessions WHERE box = ?1 AND ordinal = 1), ?2, 1)",
-        rusqlite::params![
-            id.get(),
-            r#"{"kind":"blocked","waiting_for":"X","session_id":null,"at":5}"#
-        ],
-    )
-    .unwrap();
+    let first = Query::select()
+        .column(Sessions::Id)
+        .from(Sessions::Table)
+        .and_where(Expr::col(Sessions::Box).eq(id.get()))
+        .and_where(Expr::col(Sessions::Ordinal).eq(1))
+        .take();
+    store
+        .writer()
+        .run(
+            Query::insert()
+                .into_table(HookCache::Table)
+                .columns([HookCache::Session, HookCache::Record, HookCache::At])
+                .values_panic([
+                    db::sub(first),
+                    r#"{"kind":"blocked","waiting_for":"X","session_id":null,"at":5}"#.into(),
+                    1.into(),
+                ]),
+        )
+        .unwrap();
     let rec = store.hook(id).unwrap().unwrap().record;
     assert_eq!(rec.kind, HookKind::Blocked);
     assert_eq!(rec.message.as_deref(), Some("X"));
@@ -345,9 +379,11 @@ fn hook_cache_reads_a_legacy_blocked_row_as_its_message() {
 fn set_session_state(store: &Store, id: BoxId, state: &str) {
     store
         .writer()
-        .execute(
-            "UPDATE sessions SET state = ? WHERE box = ? AND ordinal = (SELECT MAX(ordinal) FROM sessions WHERE box = ?)",
-            (state, id.get(), id.get()),
+        .run(
+            Query::update()
+                .table(Sessions::Table)
+                .value(Sessions::State, state)
+                .and_where(Expr::col(Sessions::Id).eq(db::sub(newest_session(id)))),
         )
         .unwrap();
 }
@@ -414,16 +450,16 @@ fn hook_follows_the_current_session() {
     store.put_hook(id, &record(HookKind::Idle)).unwrap();
     let conn = store.writer();
     let cached: i64 = conn
-        .query_row(
-            "SELECT session FROM hook_cache WHERE session = ?",
-            [second.id],
+        .row(
+            Query::select()
+                .column(HookCache::Session)
+                .from(HookCache::Table)
+                .and_where(Expr::col(HookCache::Session).eq(second.id)),
             |r| r.get(0),
         )
         .unwrap();
-    let total: i64 = conn
-        .query_row("SELECT count(*) FROM hook_cache", [], |r| r.get(0))
-        .unwrap();
     drop(conn);
+    let total = hook_rows(&store);
     assert_eq!((cached, total), (second.id, 2));
     assert_eq!(store.hook(id).unwrap().unwrap().record.kind, HookKind::Idle);
 }

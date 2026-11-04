@@ -1,7 +1,10 @@
 //! Reads of one kind of a Box's events.
 
 use moor_core::BoxId;
+use moor_schema::tables::Events;
+use sea_query::{Expr, ExprTrait as _, Order};
 
+use super::select::{events_of, limit};
 use super::{event_from_row, EventRow, Store, StoreError};
 use crate::store::db::DbExt as _;
 
@@ -13,14 +16,16 @@ impl Store {
         kind: &str,
         n: usize,
     ) -> Result<Vec<EventRow>, StoreError> {
-        let limit = i64::try_from(n).unwrap_or(i64::MAX);
         let conn = self.reader()?;
-        let mut stmt = conn.prepare(
-            "SELECT id, box, kind, payload, ts FROM \
-             (SELECT id, box, kind, payload, ts FROM events \
-              WHERE box = ?1 AND kind = ?2 ORDER BY id DESC LIMIT ?3) ORDER BY id",
+        let rows = conn.rows(
+            events_of(id)
+                .and_where(Expr::col(Events::Kind).eq(kind))
+                .order_by(Events::Id, Order::Desc)
+                .limit(limit(n)),
+            event_from_row,
         )?;
-        let rows = stmt.query_and_then((id.get(), kind, limit), event_from_row)?;
-        rows.collect()
+        let mut newest = rows.collect::<Result<Vec<_>, _>>()?;
+        newest.reverse();
+        Ok(newest)
     }
 }

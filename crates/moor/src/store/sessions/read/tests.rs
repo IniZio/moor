@@ -4,6 +4,9 @@
 use moor_core::domain::session_state::SessionState;
 use moor_core::{BoxId, BoxName};
 
+use moor_schema::tables::Sessions;
+use sea_query::{Expr, ExprTrait as _, Query};
+
 use crate::store::db::DbExt as _;
 use crate::store::tests::{new_box, open};
 use crate::store::Store;
@@ -11,9 +14,11 @@ use crate::store::Store;
 fn end_current(store: &Store, id: BoxId) {
     store
         .writer()
-        .execute(
-            "UPDATE sessions SET state = 'ended' WHERE box = ?",
-            [id.get()],
+        .run(
+            Query::update()
+                .table(Sessions::Table)
+                .value(Sessions::State, "ended")
+                .and_where(Expr::col(Sessions::Box).eq(id.get())),
         )
         .unwrap();
 }
@@ -74,9 +79,11 @@ fn children_list_box_and_host_sessions_oldest_first() {
     let host_child = store.open_host_session("/w2", None, None).unwrap();
     store
         .writer()
-        .execute(
-            "UPDATE sessions SET parent_session = ?1 WHERE id = ?2",
-            (parent, host_child),
+        .run(
+            Query::update()
+                .table(Sessions::Table)
+                .value(Sessions::ParentSession, parent)
+                .and_where(Expr::col(Sessions::Id).eq(host_child)),
         )
         .unwrap();
     let children = store.session_children(parent).unwrap();
@@ -104,7 +111,12 @@ fn live_sessions_skip_ended_ones_and_come_back_in_id_order() {
     let b = store.open_host_session("/b", None, None).unwrap();
     store
         .writer()
-        .execute("UPDATE sessions SET state = 'ended' WHERE id = ?", [gone])
+        .run(
+            Query::update()
+                .table(Sessions::Table)
+                .value(Sessions::State, "ended")
+                .and_where(Expr::col(Sessions::Id).eq(gone)),
+        )
         .unwrap();
     let ids: Vec<i64> = store
         .live_sessions()

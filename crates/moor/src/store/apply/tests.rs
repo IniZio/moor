@@ -4,8 +4,11 @@ use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::BoxName;
+use moor_schema::tables::{BoxRefs, Boxes, Sessions};
+use sea_query::{Expr, ExprTrait as _, Func, Query};
 
-use crate::store::db::DbExt as _;
+use crate::store::db::{self, DbExt as _};
+use crate::store::select::newest_session;
 use crate::store::tests::open;
 use crate::store::StoreError;
 
@@ -45,14 +48,21 @@ fn closed_name_can_be_reused() {
 fn states(store: &crate::store::Store, id: moor_core::BoxId) -> (String, String) {
     let conn = store.writer();
     let b: String = conn
-        .query_row("SELECT state FROM boxes WHERE id = ?", [id.get()], |r| {
-            r.get(0)
-        })
+        .row(
+            Query::select()
+                .column(Boxes::State)
+                .from(Boxes::Table)
+                .and_where(Expr::col(Boxes::Id).eq(id.get())),
+            |r| r.get(0),
+        )
         .unwrap();
     let s: String = conn
-        .query_row(
-            "SELECT state FROM sessions WHERE box = ? AND ordinal = 1",
-            [id.get()],
+        .row(
+            Query::select()
+                .column(Sessions::State)
+                .from(Sessions::Table)
+                .and_where(Expr::col(Sessions::Box).eq(id.get()))
+                .and_where(Expr::col(Sessions::Ordinal).eq(1)),
             |r| r.get(0),
         )
         .unwrap();
@@ -104,22 +114,32 @@ fn failed_insert_leaves_no_box_and_no_branch_ref() {
         matches!(&err, StoreError::Invalid(m) if m == "new box needs box_provider"),
         "{err:?}"
     );
-    for table in ["box_refs", "boxes"] {
-        let n: i64 = store
-            .writer()
-            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(n, 0, "{table} kept rows after a failed insert");
-    }
+    let count = |q: &mut sea_query::SelectStatement| -> i64 {
+        store.writer().row(q.take(), |r| r.get(0)).unwrap()
+    };
+    let refs = count(
+        Query::select()
+            .expr(Func::count(Expr::col(BoxRefs::Box)))
+            .from(BoxRefs::Table),
+    );
+    let boxes = count(
+        Query::select()
+            .expr(Func::count(Expr::col(Boxes::Id)))
+            .from(Boxes::Table),
+    );
+    assert_eq!(refs, 0, "box_refs kept rows after a failed insert");
+    assert_eq!(boxes, 0, "boxes kept rows after a failed insert");
 }
 
 /// Force the highest-ordinal Session into `state`.
 fn set_current_state(store: &crate::store::Store, id: moor_core::BoxId, state: &str) {
     store
         .writer()
-        .execute(
-            "UPDATE sessions SET state = ?2 WHERE box = ?1 AND ordinal = (SELECT MAX(ordinal) FROM sessions WHERE box = ?1)",
-            rusqlite::params![id.get(), state],
+        .run(
+            Query::update()
+                .table(Sessions::Table)
+                .value(Sessions::State, state)
+                .and_where(Expr::col(Sessions::Id).eq(db::sub(newest_session(id)))),
         )
         .unwrap();
 }
@@ -147,9 +167,16 @@ fn sleep_is_refused_while_another_session_works() {
     let id = ready(&store);
     store
         .writer()
-        .execute(
-            "INSERT INTO sessions (box, ordinal, state, started_at) VALUES (?, 2, 'idle', 0)",
-            [id.get()],
+        .run(
+            Query::insert()
+                .into_table(Sessions::Table)
+                .columns([
+                    Sessions::Box,
+                    Sessions::Ordinal,
+                    Sessions::State,
+                    Sessions::StartedAt,
+                ])
+                .values_panic([id.get().into(), 2.into(), "idle".into(), 0.into()]),
         )
         .unwrap();
     let err = store
@@ -172,9 +199,12 @@ fn step_updates_only_the_current_session() {
     let id = ready(&store);
     store
         .writer()
-        .execute(
-            "UPDATE sessions SET state = 'ended' WHERE box = ? AND ordinal = 1",
-            [id.get()],
+        .run(
+            Query::update()
+                .table(Sessions::Table)
+                .value(Sessions::State, "ended")
+                .and_where(Expr::col(Sessions::Box).eq(id.get()))
+                .and_where(Expr::col(Sessions::Ordinal).eq(1)),
         )
         .unwrap();
     store.open_session(id).unwrap();
@@ -198,9 +228,12 @@ fn box_row_reports_the_current_session_state() {
     let id = ready(&store);
     store
         .writer()
-        .execute(
-            "UPDATE sessions SET state = 'ended' WHERE box = ? AND ordinal = 1",
-            [id.get()],
+        .run(
+            Query::update()
+                .table(Sessions::Table)
+                .value(Sessions::State, "ended")
+                .and_where(Expr::col(Sessions::Box).eq(id.get()))
+                .and_where(Expr::col(Sessions::Ordinal).eq(1)),
         )
         .unwrap();
     store.open_session(id).unwrap();
@@ -218,9 +251,12 @@ fn ended_other_sessions_do_not_block_sleep() {
     let id = ready(&store);
     store
         .writer()
-        .execute(
-            "UPDATE sessions SET state = 'ended' WHERE box = ? AND ordinal = 1",
-            [id.get()],
+        .run(
+            Query::update()
+                .table(Sessions::Table)
+                .value(Sessions::State, "ended")
+                .and_where(Expr::col(Sessions::Box).eq(id.get()))
+                .and_where(Expr::col(Sessions::Ordinal).eq(1)),
         )
         .unwrap();
     store.open_session(id).unwrap();
@@ -249,9 +285,11 @@ fn insert_writes_parent_session_on_the_first_session() {
     let plain = store.apply(insert("plain")).unwrap().box_id;
     let conn = store.writer();
     let get = |id: moor_core::BoxId| -> Option<i64> {
-        conn.query_row(
-            "SELECT parent_session FROM sessions WHERE box = ?",
-            [id.get()],
+        conn.row(
+            Query::select()
+                .column(Sessions::ParentSession)
+                .from(Sessions::Table)
+                .and_where(Expr::col(Sessions::Box).eq(id.get())),
             |r| r.get(0),
         )
         .unwrap()
@@ -272,7 +310,12 @@ fn insert_with_an_ended_parent_session_writes_no_box() {
     assert!(matches!(err, StoreError::Invalid(_)), "{err:?}");
     let boxes: i64 = store
         .writer()
-        .query_row("SELECT COUNT(*) FROM boxes", [], |r| r.get(0))
+        .row(
+            Query::select()
+                .expr(Func::count(Expr::col(Boxes::Id)))
+                .from(Boxes::Table),
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(boxes, 0);
 }

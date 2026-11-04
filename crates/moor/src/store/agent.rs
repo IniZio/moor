@@ -1,19 +1,32 @@
 //! Agent session rows and the last hook report cached per box.
 
-use moor_core::activity::{HookCache, HookKind, HookRecord};
 use moor_core::config::AgentHolder;
 use moor_core::domain::event::Event;
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
-use serde_json::{json, Value};
 
-use moor_schema::tables;
-use sea_query::{Expr, ExprTrait as _, OnConflict, Query};
+use moor_schema::tables::{Launches, Sessions};
+use sea_query::{Expr, ExprTrait as _, Order, Query};
 
 use super::apply::insert_event;
 use super::select::newest_session;
 use super::{load_box, Store, StoreError};
-use crate::store::db::{self, params, Db, DbExt as _, OptionalExtension, Row, TransactionBehavior};
+use crate::store::db::{self, DbExt as _, OptionalExtension, Row, TransactionBehavior};
+
+/// The `launches` columns [`session_from_row`] reads, in order.
+const SESSION_COLUMNS: [Launches; 11] = [
+    Launches::Id,
+    Launches::Box,
+    Launches::SessionRef,
+    Launches::Pane,
+    Launches::StartedAt,
+    Launches::EndedAt,
+    Launches::Exit,
+    Launches::TranscriptDigest,
+    Launches::RegisteredAgentSession,
+    Launches::Session,
+    Launches::Holder,
+];
 
 /// A stored agent session.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,10 +60,14 @@ impl Store {
     pub(crate) fn live_session(&self, box_id: BoxId) -> Result<Option<SessionRow>, StoreError> {
         let conn = self.reader()?;
         Ok(conn
-            .query_row(
-                "SELECT id, box, session_ref, pane, started_at, ended_at, exit, transcript_digest, \
-                 registered_agent_session, session, holder FROM launches WHERE box = ? AND ended_at IS NULL ORDER BY id DESC LIMIT 1",
-                [box_id.get()],
+            .row(
+                Query::select()
+                    .columns(SESSION_COLUMNS)
+                    .from(Launches::Table)
+                    .and_where(Expr::col(Launches::Box).eq(box_id.get()))
+                    .and_where(Expr::col(Launches::EndedAt).is_null())
+                    .order_by(Launches::Id, Order::Desc)
+                    .limit(1),
                 session_from_row,
             )
             .optional()?)
@@ -60,9 +77,13 @@ impl Store {
     pub(crate) fn agent_holder(&self, box_id: BoxId) -> Result<AgentHolder, StoreError> {
         let conn = self.reader()?;
         let stored: Option<Option<String>> = conn
-            .query_row(
-                "SELECT holder FROM launches WHERE box = ? ORDER BY id DESC LIMIT 1",
-                [box_id.get()],
+            .row(
+                Query::select()
+                    .column(Launches::Holder)
+                    .from(Launches::Table)
+                    .and_where(Expr::col(Launches::Box).eq(box_id.get()))
+                    .order_by(Launches::Id, Order::Desc)
+                    .limit(1),
                 |r| r.get(0),
             )
             .optional()?;
@@ -74,9 +95,11 @@ impl Store {
     #[cfg(test)]
     pub(crate) fn forget_holders(&self, box_id: BoxId) -> Result<(), StoreError> {
         let conn = self.writer();
-        conn.execute(
-            "UPDATE launches SET holder = NULL WHERE box = ?",
-            [box_id.get()],
+        conn.run(
+            Query::update()
+                .table(Launches::Table)
+                .value(Launches::Holder, Option::<String>::None)
+                .and_where(Expr::col(Launches::Box).eq(box_id.get())),
         )?;
         drop(conn);
         Ok(())
@@ -86,9 +109,12 @@ impl Store {
     pub(crate) fn has_session(&self, box_id: BoxId) -> Result<bool, StoreError> {
         let conn = self.reader()?;
         Ok(conn
-            .query_row(
-                "SELECT 1 FROM launches WHERE box = ? LIMIT 1",
-                [box_id.get()],
+            .row(
+                Query::select()
+                    .column(Launches::Id)
+                    .from(Launches::Table)
+                    .and_where(Expr::col(Launches::Box).eq(box_id.get()))
+                    .limit(1),
                 |_| Ok(()),
             )
             .optional()?
@@ -111,9 +137,13 @@ impl Store {
             return Err(StoreError::NotFound(box_id));
         }
         let current: Option<String> = tx
-            .query_row(
-                "SELECT state FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1",
-                [box_id.get()],
+            .row(
+                Query::select()
+                    .column(Sessions::State)
+                    .from(Sessions::Table)
+                    .and_where(Expr::col(Sessions::Box).eq(box_id.get()))
+                    .order_by(Sessions::Ordinal, Order::Desc)
+                    .limit(1),
                 |row| row.get(0),
             )
             .optional()?;
@@ -123,10 +153,26 @@ impl Store {
                 box_id.get()
             )));
         }
-        let id: i64 = tx.query_row(
-            "INSERT INTO launches (box, session_ref, pane, started_at, session, holder) VALUES (?1, ?2, ?3, ?4, \
-             (SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1), ?5) RETURNING id",
-            params![box_id.get(), session_ref, pane, now.as_millis(), holder.name()],
+        let id: i64 = tx.row(
+            Query::insert()
+                .into_table(Launches::Table)
+                .columns([
+                    Launches::Box,
+                    Launches::SessionRef,
+                    Launches::Pane,
+                    Launches::StartedAt,
+                    Launches::Session,
+                    Launches::Holder,
+                ])
+                .values_panic([
+                    box_id.get().into(),
+                    session_ref.into(),
+                    pane.into(),
+                    now.as_millis().into(),
+                    db::sub(newest_session(box_id)),
+                    holder.name().into(),
+                ])
+                .returning_col(Launches::Id),
             |r| r.get(0),
         )?;
         let started = Event::SessionStarted {
@@ -147,11 +193,16 @@ impl Store {
     ) -> Result<(), StoreError> {
         let now = self.now();
         let conn = self.writer();
-        conn.execute(
-            "UPDATE launches SET ended_at = ?, exit = ?, transcript_digest = COALESCE(?, transcript_digest) \
-             WHERE id = ? AND ended_at IS NULL",
-            params![now.as_millis(), exit, transcript_digest, id],
-        )?;
+        let mut q = Query::update();
+        q.table(Launches::Table)
+            .value(Launches::EndedAt, now.as_millis())
+            .value(Launches::Exit, exit)
+            .and_where(Expr::col(Launches::Id).eq(id))
+            .and_where(Expr::col(Launches::EndedAt).is_null());
+        if let Some(digest) = transcript_digest {
+            q.value(Launches::TranscriptDigest, digest);
+        }
+        conn.run(&mut q)?;
         drop(conn);
         Ok(())
     }
@@ -159,9 +210,11 @@ impl Store {
     /// Keep the agent session id registered for resume against session `id`.
     pub(crate) fn set_registered_session(&self, id: i64, agent: &str) -> Result<(), StoreError> {
         let conn = self.writer();
-        conn.execute(
-            "UPDATE launches SET registered_agent_session = ? WHERE id = ?",
-            params![agent, id],
+        conn.run(
+            Query::update()
+                .table(Launches::Table)
+                .value(Launches::RegisteredAgentSession, agent)
+                .and_where(Expr::col(Launches::Id).eq(id)),
         )?;
         drop(conn);
         Ok(())
@@ -170,104 +223,15 @@ impl Store {
     /// Keep the digest of the transcript saved for a session that is still live.
     pub(crate) fn set_transcript_digest(&self, id: i64, digest: &str) -> Result<(), StoreError> {
         let conn = self.writer();
-        conn.execute(
-            "UPDATE launches SET transcript_digest = ? WHERE id = ? AND ended_at IS NULL",
-            params![digest, id],
-        )?;
-        drop(conn);
-        Ok(())
-    }
-
-    /// Cache `record` as the latest hook report of `box_id`, stamped with the read time.
-    ///
-    /// A record equal to the cached one keeps its reported mark.
-    pub(crate) fn put_hook(&self, box_id: BoxId, record: &HookRecord) -> Result<(), StoreError> {
-        let now = self.now();
-        let record = record_json(record);
-        let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let unchanged = cached_hook(&tx, box_id)?.is_some_and(|mut cached| {
-            if let Some(fields) = cached.as_object_mut() {
-                fields.shift_remove("reported");
-            }
-            cached == record
-        });
-        let mut on_conflict = OnConflict::column(tables::HookCache::Session);
-        on_conflict.update_column(tables::HookCache::At);
-        if !unchanged {
-            on_conflict.update_column(tables::HookCache::Record);
-        }
-        tx.run(
-            Query::insert()
-                .into_table(tables::HookCache::Table)
-                .columns([
-                    tables::HookCache::Session,
-                    tables::HookCache::Record,
-                    tables::HookCache::At,
-                ])
-                .values_panic([
-                    db::sub(newest_session(box_id)),
-                    serde_json::to_string(&record)?.into(),
-                    now.as_millis().into(),
-                ])
-                .on_conflict(on_conflict),
-        )?;
-        tx.commit()?;
-        drop(conn);
-        Ok(())
-    }
-
-    /// Mark the cached hook report of `box_id` written at `at` as reported by a `needs_input`
-    /// event; a newer report left in its place stays unmarked.
-    pub(crate) fn mark_hook_reported(&self, box_id: BoxId, at: Ts) -> Result<(), StoreError> {
-        let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let Some(mut record) = cached_hook(&tx, box_id)? else {
-            return Ok(());
-        };
-        let Some(fields) = record
-            .as_object_mut()
-            .filter(|f| f.get("at").and_then(Value::as_i64) == Some(at.as_millis()))
-        else {
-            return Ok(());
-        };
-        fields.insert("reported".to_owned(), Value::Bool(true));
-        tx.run(
+        conn.run(
             Query::update()
-                .table(tables::HookCache::Table)
-                .value(tables::HookCache::Record, serde_json::to_string(&record)?)
-                .and_where(
-                    Expr::col(tables::HookCache::Session).eq(db::sub(newest_session(box_id))),
-                ),
+                .table(Launches::Table)
+                .value(Launches::TranscriptDigest, digest)
+                .and_where(Expr::col(Launches::Id).eq(id))
+                .and_where(Expr::col(Launches::EndedAt).is_null()),
         )?;
-        tx.commit()?;
         drop(conn);
         Ok(())
-    }
-
-    /// The latest cached hook report of `box_id`.
-    pub(crate) fn hook(&self, box_id: BoxId) -> Result<Option<HookCache>, StoreError> {
-        let conn = self.reader()?;
-        let row: Option<(String, i64)> = conn
-            .query_row(
-                "SELECT h.record, h.at FROM hook_cache h JOIN sessions s ON s.id = h.session \
-                 WHERE s.box = ?1 AND s.ordinal = (SELECT MAX(ordinal) FROM sessions WHERE box = ?1)",
-                [box_id.get()],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()?;
-        row.map(|(json, at)| {
-            let value: Value = serde_json::from_str(&json)?;
-            Ok(HookCache {
-                record: record_from_json(&value)?,
-                at: Ts::from_millis(at),
-                reported: value
-                    .get("reported")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
-            })
-        })
-        .transpose()
     }
 }
 
@@ -298,89 +262,7 @@ fn holder_from(stored: Option<String>) -> Result<AgentHolder, String> {
     })
 }
 
-/// The hook report cached for Box `box_id`'s newest Session, as stored.
-///
-/// Its fields are read and written here rather than in SQL, so no database's JSON functions
-/// are needed.
-fn cached_hook(db: &dyn Db, box_id: BoxId) -> Result<Option<Value>, StoreError> {
-    let q = Query::select()
-        .column(tables::HookCache::Record)
-        .from(tables::HookCache::Table)
-        .and_where(Expr::col(tables::HookCache::Session).eq(db::sub(newest_session(box_id))))
-        .take();
-    let Some(raw) = db.row(q, |r| r.get::<_, String>(0)).optional()? else {
-        return Ok(None);
-    };
-    Ok(Some(serde_json::from_str(&raw)?))
-}
-
-/// The stored form of a hook report.
-fn record_json(rec: &HookRecord) -> Value {
-    let on = match &rec.kind {
-        HookKind::Waiting { on } => on.as_slice(),
-        _ => &[],
-    };
-    let kind = match &rec.kind {
-        HookKind::Starting { .. } => "starting",
-        HookKind::Busy => "busy",
-        HookKind::Idle => "idle",
-        HookKind::Blocked => "blocked",
-        HookKind::Waiting { .. } => "waiting",
-    };
-    json!({
-        "kind": kind,
-        "message": rec.message,
-        "options": rec.options,
-        "on": on,
-        "doing": rec.doing,
-        "session_id": rec.session_id,
-        "at": rec.at.as_millis(),
-        "turn": rec.turn.map(Ts::as_millis),
-    })
-}
-
-/// A hook report from its stored form.
-fn record_from_json(v: &Value) -> Result<HookRecord, StoreError> {
-    let bad = |what: &str| StoreError::Invalid(format!("hook cache: {what}"));
-    let kind = match v["kind"].as_str() {
-        Some("starting") => HookKind::Starting { launch: None },
-        Some("busy") => HookKind::Busy,
-        Some("idle") => HookKind::Idle,
-        Some("blocked") => HookKind::Blocked,
-        Some("waiting") => HookKind::Waiting {
-            on: v["on"]
-                .as_array()
-                .map(|o| {
-                    o.iter()
-                        .filter_map(Value::as_str)
-                        .map(str::to_owned)
-                        .collect()
-                })
-                .unwrap_or_default(),
-        },
-        _ => return Err(bad("unknown kind")),
-    };
-    Ok(HookRecord {
-        kind,
-        session_id: v["session_id"].as_str().map(str::to_owned),
-        message: v["message"]
-            .as_str()
-            .or_else(|| v["waiting_for"].as_str())
-            .map(str::to_owned),
-        options: v["options"]
-            .as_array()
-            .map(|o| {
-                o.iter()
-                    .filter_map(Value::as_str)
-                    .map(str::to_owned)
-                    .collect()
-            })
-            .unwrap_or_default(),
-        doing: v["doing"].as_str().map(str::to_owned),
-        at: Ts::from_millis(v["at"].as_i64().ok_or_else(|| bad("missing at"))?),
-        turn: v["turn"].as_i64().map(Ts::from_millis),
-    })
-}
+mod hook;
 
 #[cfg(test)]
 mod tests;
