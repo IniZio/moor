@@ -220,13 +220,6 @@ impl UniqueKey {
     }
 }
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the controller opens Postgres once its config names a database"
-    )
-)]
 mod postgres;
 mod sqlite;
 

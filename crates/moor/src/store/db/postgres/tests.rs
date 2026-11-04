@@ -1,4 +1,14 @@
-use super::{numeric, Value};
+use std::sync::Arc;
+
+use moor_core::seam::clock::Ts;
+use sea_query::{Expr, ExprTrait as _, Query};
+
+use super::types::numeric;
+use super::Value;
+use crate::store::db::testing::{open_conn, postgres_target};
+use crate::store::db::{Conn, Db, DbExt as _};
+use crate::store::Store;
+use crate::testing::clock::FakeClock;
 
 /// A binary numeric of base-10000 `digits` at `weight`.
 fn raw(weight: i16, negative: bool, scale: u16, digits: &[i16]) -> Vec<u8> {
@@ -57,4 +67,57 @@ fn a_nan_or_short_numeric_is_refused() {
     assert!(numeric(&nan).is_err());
     let short = raw(0, false, 0, &[1]);
     assert!(numeric(short.get(..9).unwrap()).is_err());
+}
+
+/// The server process behind `conn`.
+fn backend_pid(conn: &dyn Db) -> i64 {
+    conn.row(Query::select().expr(Expr::cust("pg_backend_pid()")), |r| {
+        r.get(0)
+    })
+    .unwrap()
+}
+
+#[test]
+fn a_dropped_connection_fails_its_next_call_and_the_one_after_reconnects() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("moor.db");
+    let Some(target) = postgres_target(&path) else {
+        return;
+    };
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
+    let store = Store::open_postgres(&target, dir.path(), clock).unwrap();
+    let names = |store: &Store| {
+        store.reader().and_then(|r| {
+            Ok(r.rows(
+                Query::select()
+                    .column("k")
+                    .from("meta")
+                    .and_where(Expr::col("k").eq("x")),
+                |r| r.get::<_, String>(0),
+            )?
+            .collect::<Result<Vec<_>, _>>()?)
+        })
+    };
+    let writer = backend_pid(&*store.writer());
+    let reader = backend_pid(&store.reader().unwrap());
+    let Conn::Postgres(admin) = open_conn(&path) else {
+        unreachable!("a Postgres connection")
+    };
+    for pid in [writer, reader] {
+        admin
+            .execute_batch(&format!("SELECT pg_terminate_backend({pid}, 5000)"))
+            .unwrap();
+    }
+    let put = || {
+        store.writer().run(
+            Query::insert()
+                .into_table("meta")
+                .columns(["k", "v"])
+                .values_panic(["x".into(), "1".into()]),
+        )
+    };
+    assert!(put().is_err(), "a write on a dropped connection");
+    put().unwrap();
+    assert!(names(&store).is_err(), "a read on a dropped connection");
+    assert_eq!(names(&store).unwrap(), ["x"]);
 }

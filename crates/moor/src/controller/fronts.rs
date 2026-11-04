@@ -19,6 +19,7 @@ use rustix::process::{kill_process, Pid, Signal};
 
 use super::front_proxy::{self, Plan};
 use super::{log, Sink};
+use crate::env::DATABASE_URL;
 
 mod front;
 #[cfg(target_os = "linux")]
@@ -266,9 +267,9 @@ fn kill(child: &mut Child) -> Outcome {
     Outcome::Stopped
 }
 
-/// Starts `front` under `shim` in `/`, with its socket in `MOOR_FRONT_SOCKET`, and relays its
-/// stdout and stderr lines to `sink`. The shim exits with this controller. A front with a
-/// state dir may write it, finds it in `MOOR_FRONT_STATE_DIR` and keeps its temporary files in
+/// Starts `front` under `shim` in `/`, with its socket in `MOOR_FRONT_SOCKET` and without the
+/// store's database URL, which holds its password, and relays its stdout and stderr lines to
+/// `sink`. The shim exits with this controller. A front with a state dir may write it, finds it in `MOOR_FRONT_STATE_DIR` and keeps its temporary files in
 /// its `tmp`. On Linux the socket is on fd 3 and the shim's pid is recorded; macOS has no
 /// `O_PATH`, so there the front dials the socket's path, and the shim leads a process group.
 fn spawn(front: &Front, shim: &Shim, sink: &Sink) -> io::Result<Child> {
@@ -279,6 +280,7 @@ fn spawn(front: &Front, shim: &Shim, sink: &Sink) -> io::Result<Child> {
     command
         .arg("--")
         .args(&front.command)
+        .env_remove(DATABASE_URL)
         .current_dir("/")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

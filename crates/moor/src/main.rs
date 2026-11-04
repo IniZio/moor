@@ -74,6 +74,7 @@ fn main() -> ExitCode {
             let env = scoped(env, &opts);
             return ExitCode::from(moor::controller::serve(&env, &config, std::io::stderr()));
         }
+        Parsed::StoreMigrate { opts } => return migrate_store(&scoped(env, &opts)),
         Parsed::ControllerAttach { opts, socket } => {
             let env = scoped(env, &opts);
             return ExitCode::from(moor::controller::attach::attach(
@@ -109,6 +110,20 @@ fn main() -> ExitCode {
         }
     };
     emit(&output)
+}
+
+/// Runs `moor store migrate`: opens the store, which migrates it, and exits.
+fn migrate_store(env: &Env) -> ExitCode {
+    match moor::migrate_store(env) {
+        Ok(line) => {
+            let _ = say(&line);
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            let _ = writeln!(std::io::stderr(), "moor store migrate: {e}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 /// `env` with the state dir `opts` names, if any.

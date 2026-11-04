@@ -19,6 +19,7 @@ use sea_query::{Asterisk, Expr, ExprTrait as _, Iden, Query};
 use crate::store::db::DbExt as _;
 use crate::testing::clock::FakeClock;
 
+mod connections;
 mod controller_id;
 mod events_after;
 mod events_of;

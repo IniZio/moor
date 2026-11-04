@@ -72,6 +72,11 @@ pub enum Parsed {
         /// Controller config file.
         config: std::path::PathBuf,
     },
+    /// Bring the store's schema to this build's latest migration.
+    StoreMigrate {
+        /// Global options.
+        opts: GlobalOpts,
+    },
     /// Bridge stdin/stdout to the controller socket.
     ControllerAttach {
         /// Global options.
@@ -136,6 +141,7 @@ pub fn parse(args: Vec<OsString>) -> Parsed {
         Ok((opts, Action::ProxyServe(box_id))) => Parsed::ProxyServe { opts, box_id },
         Ok((opts, Action::ControllerServe(config))) => Parsed::ControllerServe { opts, config },
         Ok((opts, Action::ControllerAttach(socket))) => Parsed::ControllerAttach { opts, socket },
+        Ok((opts, Action::StoreMigrate)) => Parsed::StoreMigrate { opts },
         Ok((opts, Action::Stdin(then))) => Parsed::Stdin { opts, then },
         Ok((opts, Action::Exec(req, interactive))) => Parsed::Exec {
             opts,

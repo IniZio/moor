@@ -26,7 +26,11 @@ mod events;
 mod exec;
 mod inspect;
 mod node;
+#[cfg(test)]
+mod parse_ignoring_env;
 mod session;
+#[cfg(test)]
+pub(super) use parse_ignoring_env::parse_ignoring_env;
 #[cfg(test)]
 mod tests;
 mod user;
@@ -46,6 +50,8 @@ pub(super) enum Action {
     ControllerServe(PathBuf),
     /// `controller attach [--socket <path>]`: bridge stdio to the controller socket.
     ControllerAttach(Option<PathBuf>),
+    /// `store migrate`: bring the store's schema to this build's latest migration.
+    StoreMigrate,
     /// Hidden `link-dial <machine-id> <slug>`: bridge stdio to a pool lease's sshd.
     LinkDial {
         /// The pool host's machine id.
@@ -76,26 +82,6 @@ pub(super) enum Action {
 /// Parse argv (program name first) into global options and an action.
 pub(super) fn parse(args: Vec<OsString>) -> Result<(GlobalOpts, Action), clap::Error> {
     let cli = Cli::try_parse_from(args)?;
-    Ok((cli.flags.into(), cli.command.into_action()))
-}
-
-/// `parse` with the `MOOR_SESSION` default of `--parent` ignored, so tests do not
-/// depend on the process environment.
-#[cfg(test)]
-pub(super) fn parse_ignoring_env(args: Vec<OsString>) -> Result<(GlobalOpts, Action), clap::Error> {
-    use clap::{CommandFactory, FromArgMatches};
-    fn strip(cmd: clap::Command) -> clap::Command {
-        cmd.mut_args(|a| {
-            if a.get_id() == "parent" {
-                a.env(None::<&str>)
-            } else {
-                a
-            }
-        })
-        .mut_subcommands(strip)
-    }
-    let matches = strip(Cli::command()).try_get_matches_from(args)?;
-    let cli = Cli::from_arg_matches(&matches)?;
     Ok((cli.flags.into(), cli.command.into_action()))
 }
 

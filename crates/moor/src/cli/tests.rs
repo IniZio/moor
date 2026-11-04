@@ -67,6 +67,14 @@ fn proxy_serve_non_numeric_box_id_is_usage() {
 }
 
 #[test]
+fn store_migrate_parses_with_the_state_dir() {
+    assert!(matches!(
+        parse(argv(&["--state-dir", "/tmp/s", "store", "migrate"])),
+        Parsed::StoreMigrate { opts } if opts.state_dir.as_deref() == Some(std::path::Path::new("/tmp/s"))
+    ));
+}
+
+#[test]
 fn controller_serve_parses_config() {
     assert!(matches!(
         parse(argv(&["controller", "serve", "--config", "/etc/c.yaml"])),

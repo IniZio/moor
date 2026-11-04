@@ -8,7 +8,7 @@ use moor_core::seam::clock::Clock;
 use moor_migrate::Outcome;
 
 use super::db::{self, Opened, Target};
-use super::{init, Store, StoreError, BUSY_TIMEOUT};
+use super::{init, Store, StoreError, BUSY_TIMEOUT, STORE_FILE};
 
 impl Store {
     /// Open (creating if needed) the store at `path`: state dir 0700, db, `-wal` and `-shm` 0600.
@@ -19,16 +19,24 @@ impl Store {
         Ok(Self::with(opened, path.with_file_name("runs"), clock))
     }
 
+    /// Open the store in the Postgres database `url` names, else in `moor.db` in `state_dir`.
+    pub(crate) fn open_in(
+        state_dir: &Path,
+        url: Option<&str>,
+        clock: Arc<dyn Clock>,
+    ) -> Result<Self, StoreError> {
+        match url {
+            None => Self::open(&state_dir.join(STORE_FILE), clock),
+            Some(url) => {
+                let target = Target::parse(url).map_err(StoreError::Url)?;
+                Self::open_postgres(&target, state_dir, clock)
+            }
+        }
+    }
+
     /// Open the store in the Postgres database `target`, bringing its schema to this build's
     /// migrations first. A database a newer build migrated opens unchanged. `state_dir` holds
     /// the files only this host uses.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the controller opens it once its config names a database"
-        )
-    )]
     pub(crate) fn open_postgres(
         target: &Target,
         state_dir: &Path,
@@ -59,5 +67,16 @@ impl Store {
     /// as found, and the caller says so.
     pub(crate) const fn schema(&self) -> Outcome {
         self.schema
+    }
+
+    /// Where the store lives, without a password: the `SQLite` file or the Postgres URL.
+    pub(crate) fn location(&self) -> String {
+        self.readers.location()
+    }
+
+    /// The Postgres URL this store opened, password included, for a child process that opens
+    /// the same store; none on `SQLite`.
+    pub(crate) fn database_url(&self) -> Option<&str> {
+        self.readers.database_url()
     }
 }
