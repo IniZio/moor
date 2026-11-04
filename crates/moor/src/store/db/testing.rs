@@ -27,7 +27,7 @@ pub(crate) fn open_store(path: &Path, clock: Arc<dyn Clock>) -> Store {
     };
     let state_dir = path.parent().unwrap_or(path);
     std::fs::create_dir_all(state_dir).unwrap();
-    Store::open_postgres(&target, state_dir, clock).unwrap()
+    Store::open_postgres(&target, 4, state_dir, clock).unwrap()
 }
 
 /// A second read-write connection to the database [`open_store`] opened at `path`, or to an

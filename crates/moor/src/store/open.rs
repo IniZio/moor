@@ -9,6 +9,39 @@ use moor_migrate::Outcome;
 
 use super::db::{self, Opened, Target};
 use super::{init, Store, StoreError, BUSY_TIMEOUT, STORE_FILE};
+use crate::env::Env;
+
+/// The Postgres database a store lives in.
+#[derive(Debug, Clone)]
+pub(crate) struct Database {
+    /// Its `postgres://` URL, password included.
+    pub(crate) url: String,
+    /// The most read connections the store opens to it.
+    pub(crate) readers: usize,
+}
+
+/// The read connections a store opens when `MOOR_DATABASE_READERS` is unset.
+const DEFAULT_READERS: usize = 4;
+
+impl Database {
+    /// The database `env` names, when `MOOR_DATABASE_URL` is set, with the cap
+    /// `MOOR_DATABASE_READERS` puts on its read connections.
+    pub(crate) fn from_env(env: &Env) -> Result<Option<Self>, StoreError> {
+        let Some(url) = env.database_url() else {
+            return Ok(None);
+        };
+        let readers = match env.database_readers() {
+            None => DEFAULT_READERS,
+            Some(n) => n.parse::<usize>().ok().filter(|n| *n >= 1).ok_or_else(|| {
+                StoreError::Readers(format!("`{n}` is not a whole number of 1 or more"))
+            })?,
+        };
+        Ok(Some(Self {
+            url: url.to_owned(),
+            readers,
+        }))
+    }
+}
 
 impl Store {
     /// Open (creating if needed) the store at `path`: state dir 0700, db, `-wal` and `-shm` 0600.
@@ -22,27 +55,28 @@ impl Store {
     /// Open the store in the Postgres database `url` names, else in `moor.db` in `state_dir`.
     pub(crate) fn open_in(
         state_dir: &Path,
-        url: Option<&str>,
+        database: Option<&Database>,
         clock: Arc<dyn Clock>,
     ) -> Result<Self, StoreError> {
-        match url {
+        match database {
             None => Self::open(&state_dir.join(STORE_FILE), clock),
-            Some(url) => {
-                let target = Target::parse(url).map_err(StoreError::Url)?;
-                Self::open_postgres(&target, state_dir, clock)
+            Some(database) => {
+                let target = Target::parse(&database.url).map_err(StoreError::Url)?;
+                Self::open_postgres(&target, database.readers, state_dir, clock)
             }
         }
     }
 
     /// Open the store in the Postgres database `target`, bringing its schema to this build's
-    /// migrations first. A database a newer build migrated opens unchanged. `state_dir` holds
-    /// the files only this host uses.
+    /// migrations first, opening at most `readers` read connections to it. A database a newer
+    /// build migrated opens unchanged. `state_dir` holds the files only this host uses.
     pub(crate) fn open_postgres(
         target: &Target,
+        readers: usize,
         state_dir: &Path,
         clock: Arc<dyn Clock>,
     ) -> Result<Self, StoreError> {
-        let opened = db::open_postgres(target)?;
+        let opened = db::open_postgres(target, readers)?;
         Ok(Self::with(opened, state_dir.join("runs"), clock))
     }
 
@@ -79,4 +113,12 @@ impl Store {
     pub(crate) fn database_url(&self) -> Option<&str> {
         self.readers.database_url()
     }
+
+    /// The cap on read connections to the Postgres database; none on `SQLite`.
+    pub(crate) fn database_readers(&self) -> Option<usize> {
+        self.readers.cap()
+    }
 }
+
+#[cfg(test)]
+mod tests;

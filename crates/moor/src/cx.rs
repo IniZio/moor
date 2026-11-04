@@ -22,7 +22,7 @@ use moor_core::{ErrorKind, Warning};
 pub(crate) use crate::env::Cancel;
 use crate::env::Env;
 use crate::error::CommandError;
-use crate::store::Store;
+use crate::store::{Database, Store};
 
 /// The agents linked to the controller's machine runner.
 pub(crate) trait MachineLinks: Send + Sync {
@@ -153,7 +153,7 @@ impl Cx {
             Some(shared) => shared.clone(),
             None => Store::open_in(
                 self.state_dir()?,
-                self.env.database_url(),
+                Database::from_env(&self.env)?.as_ref(),
                 Arc::clone(&self.clock),
             )?,
         };

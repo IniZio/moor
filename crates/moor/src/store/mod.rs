@@ -50,6 +50,7 @@ pub(crate) mod host;
 mod init;
 pub(crate) mod lease;
 mod open;
+pub(crate) use open::Database;
 mod pressure;
 mod proxy;
 pub(super) mod reads;
