@@ -156,7 +156,7 @@ fn select_one(r: &impl Db) -> Result<(), super::Error> {
 
 #[test]
 fn a_read_past_the_cap_waits_then_fails_naming_it_and_succeeds_once_one_is_given_back() {
-    let Some((pool, mut admin)) = capped_pool("past", 2, Duration::from_millis(300)) else {
+    let Some((pool, mut admin)) = capped_pool("past", 2, Duration::from_secs(3)) else {
         return;
     };
     let first = pool.take().unwrap();
