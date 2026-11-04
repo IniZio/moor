@@ -15,6 +15,7 @@ use crate::proxy::front::Hold;
 use crate::proxy::supervisor::machine::hold_of;
 use crate::store::db::DbExt as _;
 use crate::store::TunnelWant;
+use sea_query::ExprTrait as _;
 
 /// What the machine runner was asked, with the connection it holds the forwards up on.
 type Asked = Receiver<(Value, UnixStream)>;
@@ -409,7 +410,14 @@ fn a_removed_machine_is_refused() {
     };
     w.store
         .writer()
-        .execute("DELETE FROM user_machines_v2 WHERE machine_id = ?", [id])
+        .run(
+            sea_query::Query::delete()
+                .from_table(moor_schema::tables::UserMachinesV2::Table)
+                .and_where(
+                    sea_query::Expr::col(moor_schema::tables::UserMachinesV2::MachineId).eq(id),
+                )
+                .take(),
+        )
         .unwrap();
     let user = w
         .store

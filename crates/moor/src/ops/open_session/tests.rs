@@ -1,5 +1,8 @@
 //! Tests for `open-session`.
 
+use crate::store::db::DbExt as _;
+use moor_schema::tables::Sessions;
+use sea_query::{Expr, ExprTrait as _, Query};
 use std::sync::Arc;
 
 use moor_core::activity::{PaneObs, PaneStatus};
@@ -241,10 +244,13 @@ fn an_unknown_box_is_not_found() {
 
 /// The `parent_session` column of Session `id`.
 fn parent_of(f: &Fx, id: i64) -> Option<i64> {
-    let raw = rusqlite::Connection::open(f.cx.state_dir().unwrap().join("moor.db")).unwrap();
-    raw.query_row(
-        "SELECT parent_session FROM sessions WHERE id = ?1",
-        [id],
+    let raw =
+        crate::store::db::Conn::open_file(&f.cx.state_dir().unwrap().join("moor.db")).unwrap();
+    raw.row(
+        Query::select()
+            .column(Sessions::ParentSession)
+            .from(Sessions::Table)
+            .and_where(Expr::col(Sessions::Id).eq(id)),
         |r| r.get(0),
     )
     .unwrap()

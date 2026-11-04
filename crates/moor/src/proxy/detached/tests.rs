@@ -16,8 +16,17 @@ use moor_core::seam::proxy_host::{ProxyHost, ProxyHostError, ProxySpec, ProxySta
 use moor_core::{BoxId, BoxName};
 
 use super::{base64url, log_path, tail, DetachedSupervisor, LEASE, TAIL_LINES, WAIT};
+use crate::store::db::DbExt as _;
 use crate::store::{Fenced, ReadyProc, Store, STORE_FILE};
 use crate::testing::clock::FakeClock;
+
+/// `UPDATE proxy SET ready = 1`.
+fn ready() -> sea_query::UpdateStatement {
+    sea_query::Query::update()
+        .table(moor_schema::tables::Proxy::Table)
+        .value(moor_schema::tables::Proxy::Ready, 1_i64)
+        .take()
+}
 use crate::testing::proc::{DaemonCall, ScriptedProc};
 use crate::testing::rng::FakeRng;
 
@@ -127,11 +136,11 @@ impl Fx {
         self.store.claim_lease(self.id, "sup", LEASE).unwrap();
     }
 
-    /// Run `sql` on a raw connection to the database.
-    pub(super) fn exec(&self, sql: &str) {
-        rusqlite::Connection::open(self.dir.path().join(STORE_FILE))
+    /// Run `update` on a raw connection to the database.
+    pub(super) fn exec(&self, update: sea_query::UpdateStatement) {
+        crate::store::db::Conn::open_file(&self.dir.path().join(STORE_FILE))
             .unwrap()
-            .execute(sql, [])
+            .run(update)
             .unwrap();
     }
 
@@ -264,7 +273,7 @@ fn status_is_starting_for_a_live_unready_row() {
 fn status_is_ready_with_the_box_port_for_a_live_ready_row() {
     let f = fx();
     f.leased_row();
-    f.exec("UPDATE proxy SET ready = 1");
+    f.exec(ready());
     let port = f.store.proxy(f.id).unwrap().unwrap().box_port;
     assert_eq!(
         f.sup.status(f.id).unwrap(),
@@ -276,7 +285,7 @@ fn status_is_ready_with_the_box_port_for_a_live_ready_row() {
 fn status_is_stale_after_the_lease_expires() {
     let f = fx();
     f.leased_row();
-    f.exec("UPDATE proxy SET ready = 1");
+    f.exec(ready());
     f.clock.sleep(LEASE + Duration::from_secs(1));
     assert_eq!(f.sup.status(f.id).unwrap(), ProxyStatus::Stale);
 }

@@ -53,6 +53,13 @@ impl Conn {
         self.0.transaction().map(Tx)
     }
 
+    /// A plain read-write connection to the db file at `path`, as a test outside the store
+    /// opens one beside a live store.
+    #[cfg(test)]
+    pub(crate) fn open_file(path: &Path) -> Result<Self> {
+        Connection::open(path).map(Self)
+    }
+
     /// Run several `;`-separated statements that bind nothing.
     #[cfg(test)]
     pub(crate) fn execute_batch(&self, sql: &str) -> Result<()> {

@@ -1,5 +1,8 @@
 //! Tests for the host Session operations.
 
+use crate::store::db::DbExt as _;
+use moor_schema::tables::Sessions;
+use sea_query::{Expr, ExprTrait as _, Query};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -39,11 +42,13 @@ fn a_valid_workdir_registers_a_boxless_working_session() {
     let v = open(&cx, &req("/home/me/proj")).unwrap();
     assert_eq!(v.workdir, "/home/me/proj");
     assert_eq!(v.state, "working");
-    let db = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
+    let db = crate::store::db::Conn::open_file(&dir.path().join("moor.db")).unwrap();
     let (boxed, workdir): (Option<i64>, String) = db
-        .query_row(
-            "SELECT box, workdir FROM sessions WHERE id = ?1",
-            [v.session.get()],
+        .row(
+            Query::select()
+                .columns([Sessions::Box, Sessions::Workdir])
+                .from(Sessions::Table)
+                .and_where(Expr::col(Sessions::Id).eq(v.session.get())),
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .unwrap();
@@ -144,11 +149,13 @@ fn open_with_a_live_parent_records_parent_session() {
     let mut child_req = req("/home/me/proj");
     child_req.parent = Some(parent.session);
     let child = open(&cx, &child_req).unwrap();
-    let db = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
+    let db = crate::store::db::Conn::open_file(&dir.path().join("moor.db")).unwrap();
     let got: Option<i64> = db
-        .query_row(
-            "SELECT parent_session FROM sessions WHERE id = ?1",
-            [child.session.get()],
+        .row(
+            Query::select()
+                .column(Sessions::ParentSession)
+                .from(Sessions::Table)
+                .and_where(Expr::col(Sessions::Id).eq(child.session.get())),
             |r| r.get(0),
         )
         .unwrap();

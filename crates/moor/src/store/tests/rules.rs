@@ -4,29 +4,7 @@ use std::path::{Path, PathBuf};
 
 /// Files outside `store/` that already name `rusqlite`; move one onto `Store` methods and
 /// delete it from here. A file that is not listed must not be added.
-const LEGACY: &[&str] = &[
-    "controller/tests/front_proxy.rs",
-    "controller/tests/users.rs",
-    "controller/watch/tests/parent.rs",
-    "ops/close/tests/promote.rs",
-    "ops/close/tests/transcript.rs",
-    "ops/common/activity/tests.rs",
-    "ops/host_session/tests.rs",
-    "ops/open_session/tests.rs",
-    "ops/run/tests.rs",
-    "ops/sessions/tests.rs",
-    "ops/show_session/tests.rs",
-    "ops/show/tests/events.rs",
-    "ops/start/tests/activity.rs",
-    "ops/start/tests/others.rs",
-    "ops/start/tests/relaunch.rs",
-    "ops/start/tests/repo.rs",
-    "ops/start/tests/transcript.rs",
-    "ops/wait_events/tests.rs",
-    "proxy/adopt/tests.rs",
-    "proxy/detached/tests.rs",
-    "proxy/detached/tests/stop.rs",
-];
+const LEGACY: &[&str] = &[];
 
 fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
     for entry in std::fs::read_dir(dir).unwrap() {

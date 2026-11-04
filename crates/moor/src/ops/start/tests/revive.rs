@@ -13,6 +13,8 @@ use super::World;
 use crate::ops::start::revive_after_wake;
 use crate::store::db::DbExt as _;
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
+use moor_schema::tables::Launches;
+use sea_query::{Expr, ExprTrait as _, Order, Query};
 
 fn revive(w: &World, id: BoxId) {
     revive_after_wake(&w.cx, w.cx.store().unwrap(), id).unwrap();
@@ -61,9 +63,13 @@ fn an_exited_pane_after_wake_relaunches_and_keeps_the_old_exit() {
             .unwrap()
             .reader()
             .unwrap()
-            .query_row(
-                "SELECT exit FROM launches WHERE box = ? ORDER BY id LIMIT 1",
-                [id.get()],
+            .row(
+                Query::select()
+                    .column(Launches::Exit)
+                    .from(Launches::Table)
+                    .and_where(Expr::col(Launches::Box).eq(id.get()))
+                    .order_by(Launches::Id, Order::Asc)
+                    .limit(1),
                 |r| r.get(0),
             )
             .unwrap();

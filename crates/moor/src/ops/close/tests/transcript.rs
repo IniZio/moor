@@ -1,3 +1,6 @@
+use crate::store::db::DbExt as _;
+use moor_schema::tables::Launches;
+use sea_query::{Expr, ExprTrait as _, Query};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -32,10 +35,12 @@ fn kinds(f: &Fx) -> Vec<String> {
 }
 
 fn ended_digest(f: &Fx) -> Option<String> {
-    let c = rusqlite::Connection::open(f.dir.path().join("moor.db")).unwrap();
-    c.query_row(
-        "SELECT transcript_digest FROM launches WHERE box = ?",
-        [f.id.get()],
+    let c = crate::store::db::Conn::open_file(&f.dir.path().join("moor.db")).unwrap();
+    c.row(
+        Query::select()
+            .column(Launches::TranscriptDigest)
+            .from(Launches::Table)
+            .and_where(Expr::col(Launches::Box).eq(f.id.get())),
         |r| r.get(0),
     )
     .unwrap()

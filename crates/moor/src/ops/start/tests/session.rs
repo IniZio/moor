@@ -23,6 +23,8 @@ use crate::store::db::DbExt as _;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
+use moor_schema::tables::Launches;
+use sea_query::{Asterisk, Expr, ExprTrait as _, Query};
 
 /// A start request for `name` with a prompt.
 fn prompt_req(name: &str) -> StartReq {
@@ -43,9 +45,12 @@ fn start_records_one_live_session_and_attach_adds_none() {
         store
             .reader()
             .unwrap()
-            .query_row(
-                "SELECT COUNT(*) FROM launches WHERE box = ? AND ended_at IS NULL",
-                [id.get()],
+            .row(
+                Query::select()
+                    .expr(Expr::col(Asterisk).count())
+                    .from(Launches::Table)
+                    .and_where(Expr::col(Launches::Box).eq(id.get()))
+                    .and_where(Expr::col(Launches::EndedAt).is_null()),
                 |r| r.get(0),
             )
             .unwrap()

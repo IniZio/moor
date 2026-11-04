@@ -6,8 +6,12 @@ use moor_core::seam::clock::Clock as _;
 use moor_core::seam::proc::Signal;
 use moor_core::seam::proxy_host::{ProxyHost, ProxyHostError};
 
+use moor_schema::tables::Proxy;
+use sea_query::{Expr, ExprTrait as _, Query};
+
 use super::{fx, Fx};
 use crate::proxy::detached::LEASE;
+use crate::store::db::{Conn, DbExt as _};
 
 const PID: u32 = 4242;
 
@@ -22,9 +26,16 @@ fn with_proxy(f: &Fx) {
 /// The same row on a host that reports no boot id.
 fn proxy_row(f: &Fx) {
     f.leased_row();
-    f.exec(&format!(
-        "UPDATE proxy SET ready = 1, pid = {PID}, boot_id = '{BOOT}'"
-    ));
+    f.exec(
+        Query::update()
+            .table(Proxy::Table)
+            .values([
+                (Proxy::Ready, 1_i64.into()),
+                (Proxy::Pid, i64::from(PID).into()),
+                (Proxy::BootId, BOOT.into()),
+            ])
+            .take(),
+    );
 }
 
 #[test]
@@ -45,9 +56,14 @@ fn a_supervisor_that_exits_on_the_signal_ends_the_wait_early() {
     let db = f.dir.path().join(crate::store::STORE_FILE);
     let id = f.id.get();
     f.proc.on_signal(move |_, _| {
-        rusqlite::Connection::open(&db)
+        Conn::open_file(&db)
             .unwrap()
-            .execute("DELETE FROM proxy WHERE box = ?", [id])
+            .run(
+                Query::delete()
+                    .from_table(Proxy::Table)
+                    .and_where(Expr::col(Proxy::Box).eq(id))
+                    .take(),
+            )
             .unwrap();
     });
     let start = f.clock.instant();
@@ -67,11 +83,17 @@ fn a_supervisor_that_releases_its_lease_on_the_signal_ends_the_wait_early() {
     let db = f.dir.path().join(crate::store::STORE_FILE);
     let id = f.id.get();
     f.proc.on_signal(move |_, _| {
-        rusqlite::Connection::open(&db)
+        Conn::open_file(&db)
             .unwrap()
-            .execute(
-                "UPDATE proxy SET lease_owner = NULL, lease_heartbeat = NULL WHERE box = ?",
-                [id],
+            .run(
+                Query::update()
+                    .table(Proxy::Table)
+                    .values([
+                        (Proxy::LeaseOwner, Option::<String>::None.into()),
+                        (Proxy::LeaseHeartbeat, Option::<i64>::None.into()),
+                    ])
+                    .and_where(Expr::col(Proxy::Box).eq(id))
+                    .take(),
             )
             .unwrap();
     });
@@ -147,7 +169,12 @@ fn a_row_from_another_boot_sends_no_signal_and_is_removed() {
 fn a_row_without_a_boot_id_is_not_signalled_when_the_host_has_one() {
     let f = fx();
     with_proxy(&f);
-    f.exec("UPDATE proxy SET boot_id = NULL");
+    f.exec(
+        Query::update()
+            .table(Proxy::Table)
+            .value(Proxy::BootId, Option::<String>::None)
+            .take(),
+    );
 
     assert_eq!(f.sup.stop(f.id), Ok(()));
 
@@ -170,7 +197,12 @@ fn a_heartbeat_far_in_the_future_sends_no_signal() {
     let f = fx();
     with_proxy(&f);
     let ahead = f.clock.now().as_millis() + 60_000;
-    f.exec(&format!("UPDATE proxy SET lease_heartbeat = {ahead}"));
+    f.exec(
+        Query::update()
+            .table(Proxy::Table)
+            .value(Proxy::LeaseHeartbeat, ahead)
+            .take(),
+    );
 
     assert_eq!(f.sup.stop(f.id), Ok(()));
 
