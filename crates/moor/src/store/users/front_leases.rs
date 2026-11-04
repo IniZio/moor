@@ -81,6 +81,24 @@ impl Store {
         Ok(user.map(UserId::new))
     }
 
+    /// Whether `user` holds a live lease of `front`'s Proxy.
+    pub(crate) fn front_lease_held(&self, user: UserId, front: &str) -> Result<bool, StoreError> {
+        let found: Option<i64> = self
+            .reader()?
+            .row(
+                Query::select()
+                    .column(FrontLeases::User)
+                    .from(FrontLeases::Table)
+                    .and_where(Expr::col(FrontLeases::User).eq(user.get()))
+                    .and_where(Expr::col(FrontLeases::Front).eq(front))
+                    .and_where(Expr::col(FrontLeases::ExpiresAt).gt(self.now().as_millis()))
+                    .limit(1),
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(found.is_some())
+    }
+
     /// Ends `user`'s lease `token` of `front`; true when it was there.
     pub(crate) fn delete_front_lease(
         &self,

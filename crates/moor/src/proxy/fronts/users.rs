@@ -12,9 +12,9 @@ use moor_core::user::UserId;
 use moor_core::Secret;
 
 use super::Deps;
-use crate::proxy::nono::capture::{sources_for, MoorCapture, SecretsFn};
+use crate::proxy::ledger::FrontsLedger;
+use crate::proxy::nono::capture::{sources_for, MoorCapture, UserSecretsFn};
 use crate::proxy::nono::{build_config, ca, NonoProxy, NonoSpec};
-use crate::vault::Vault;
 
 /// A started nono and the internal token it checks.
 struct Running {
@@ -27,9 +27,7 @@ struct Running {
 /// The nonos of every user a lease has used.
 pub(super) struct Users {
     /// Reads a user's secret.
-    secrets: SecretsFn,
-    /// Opens the secrets.
-    vault: Arc<Vault>,
+    ledger: Arc<FrontsLedger>,
     /// The CA every front trusts.
     ca: Arc<ca::BoxCa>,
     /// Holds each nono's CA bundle dir.
@@ -44,8 +42,7 @@ impl Users {
     /// No nono yet; each starts with `deps`'s secrets and `ca`.
     pub(super) fn new(deps: &Deps, ca: Arc<ca::BoxCa>) -> Self {
         Self {
-            secrets: Arc::clone(&deps.secrets),
-            vault: Arc::clone(&deps.vault),
+            ledger: Arc::clone(&deps.ledger),
             ca,
             state_dir: deps.state_dir.clone(),
             upstream_ca: deps.upstream_ca.clone(),
@@ -94,7 +91,10 @@ impl Users {
             chain: None,
             only_rules: true,
         });
-        let sources = sources_for(rules, &self.secrets, &self.vault, user);
+        let (ledger, front) = (Arc::clone(&self.ledger), ns.to_owned());
+        let secrets: UserSecretsFn =
+            Arc::new(move |name| ledger.secret(&front, user, name).map_err(|e| e.to_string()));
+        let sources = sources_for(rules, &secrets);
         let proxy = NonoProxy::start(cfg, Arc::new(MoorCapture::new(sources))).ok()?;
         Some(Running { proxy, internal })
     }

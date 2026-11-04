@@ -22,6 +22,7 @@ moor::error	moor::env,moor::store
 moor::vault	
 moor::front_dir	
 moor::runner_dir	
+moor::ledger_dir	
 moor::stamp	
 moor::sign_in	moor::cli
 moor::listen_cmd	moor::cli
@@ -39,11 +40,11 @@ moor::adapters::github	moor::adapters::proc
 moor::adapters::creds	moor::adapters::proc,moor::env
 moor::config_load	moor::env,moor::error
 moor::testing	moor::adapters::clock,moor::adapters::git,moor::adapters::creds,moor::cx,moor::env,moor::store,moor::vault
-moor::proxy	moor::front_dir,moor::runner_dir,moor::store,moor::adapters::clock,moor::adapters::sockets,moor::env,moor::vault
+moor::proxy	moor::front_dir,moor::ledger_dir,moor::runner_dir,moor::store,moor::adapters::clock,moor::adapters::sockets,moor::env,moor::vault
 moor::cli	moor::error,moor::stamp
 moor::client	moor::cli,moor::config_load,moor::env,moor::error
-moor::controller	moor::Moor,moor::front_dir,moor::runner_dir,moor::env,moor::error,moor::vault
-moor::wire	moor::config_load,moor::adapters,moor::proxy,moor::store,moor::cx,moor::env,moor::error
+moor::controller	moor::Moor,moor::front_dir,moor::ledger_dir,moor::runner_dir,moor::env,moor::error,moor::vault
+moor::wire	moor::config_load,moor::adapters,moor::proxy,moor::store,moor::cx,moor::env,moor::error,moor::vault
 moor::cx	moor::config_load,moor::store,moor::adapters::git,moor::adapters::creds,moor::env,moor::error
 moor::ops	moor::vault,moor::cx,moor::store,moor::error,moor::adapters::git,moor::adapters::creds,moor::adapters::proc
 moor::moor	moor::vault,moor::cx,moor::wire,moor::ops,moor::store,moor::adapters::clock,moor::error,moor::env

@@ -17,11 +17,9 @@ use std::time::Duration;
 use moor_core::config::proxy::ResolvedRule;
 
 use super::front::{Front, FrontSocket, Route};
+use super::ledger::FrontsLedger;
 use super::nono::ca;
-use super::nono::capture::SecretsFn;
 use super::Sink;
-use crate::store::Store;
-use crate::vault::Vault;
 use users::Users;
 
 /// How often the Proxy checks its stop flag and its sockets.
@@ -32,12 +30,8 @@ const CA_NAME: &str = "moor front proxy";
 
 /// What the front Proxy runs with.
 pub(crate) struct Deps {
-    /// Leases and users' sealed secrets.
-    pub(crate) store: Arc<Store>,
-    /// Reads a user's secret from the store, on every request that needs one.
-    pub(crate) secrets: SecretsFn,
-    /// The vault key that opens those secrets.
-    pub(crate) vault: Arc<Vault>,
+    /// Leases and the secrets of their users, read through the controller on every request.
+    pub(crate) ledger: Arc<FrontsLedger>,
     /// The controller's state dir; the CA and each nono's files live under it.
     pub(crate) state_dir: PathBuf,
     /// The uid that must own each front's directory and socket.
@@ -123,15 +117,15 @@ pub(crate) fn serve(deps: &Deps, fronts: &[(String, Vec<ResolvedRule>)]) -> u8 {
 
 /// Routes a request on front `ns`'s listener to the nono of its lease's user.
 fn route(deps: &Deps, users: &Arc<Users>, ns: &str, rules: &[ResolvedRule]) -> Route {
-    let (store, users, ns, rules) = (
-        Arc::clone(&deps.store),
+    let (ledger, users, ns, rules) = (
+        Arc::clone(&deps.ledger),
         Arc::clone(users),
         ns.to_owned(),
         rules.to_vec(),
     );
     Arc::new(move |head| {
         let token = lease::token(head)?;
-        let user = store.front_lease_user(&token, &ns).ok()??;
+        let user = ledger.lease_user(&token, &ns).ok()??;
         users.nono(&ns, user, &rules)
     })
 }

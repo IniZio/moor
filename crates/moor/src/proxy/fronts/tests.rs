@@ -12,7 +12,8 @@ use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::user::{Identity, UserId};
 
 use super::{ca_dir, serve, socket_path, Deps};
-use crate::proxy::nono::capture::SecretsFn;
+use crate::proxy::ledger::tests::{serve_on, Served as Ledger};
+use crate::proxy::ledger::FrontsLedger;
 use crate::proxy::nono::tests::upstream::{self, Upstream};
 use crate::store::Store;
 use crate::testing::bridge::bridge;
@@ -81,6 +82,7 @@ struct Served {
     bob: UserId,
     port: u16,
     _stop: StopOnDrop,
+    _ledger: Ledger,
 }
 
 impl Served {
@@ -97,17 +99,16 @@ impl Served {
             user
         };
         let (ann, bob) = (enroll("slack:T1:U1", ANN), enroll("slack:T1:U2", BOB));
-        let shared = Arc::clone(&store);
-        let secrets: SecretsFn = Arc::new(move |vault, user, name| {
-            shared
-                .user_secret(vault, user, name)
-                .map_err(|e| e.to_string())
-        });
+        let socket = dir.path().join("ledger.sock");
+        let ledger = serve_on(
+            &socket,
+            (*store).clone(),
+            Arc::new(vault),
+            Some("front-key".to_owned()),
+        );
         let stop = Arc::new(AtomicBool::new(false));
         let deps = Deps {
-            store: Arc::clone(&store),
-            secrets,
-            vault: Arc::new(vault),
+            ledger: Arc::new(FrontsLedger::at(socket, "front-key".to_owned())),
             state_dir: state.clone(),
             owner: rustix::process::getuid().as_raw(),
             upstream_ca: Some(up.ca_path.clone()),
@@ -133,6 +134,7 @@ impl Served {
             bob,
             port,
             _stop: StopOnDrop(stop),
+            _ledger: ledger,
         }
     }
 

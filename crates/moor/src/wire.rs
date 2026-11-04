@@ -375,10 +375,13 @@ pub(crate) fn tool_paths(config: &UserConfig) -> ToolPaths {
     }
 }
 
+mod ledger;
 mod links;
 mod store_copy;
 pub use store_copy::copy_store;
 mod surface_pick;
+
+pub(crate) use ledger::serve_ledger;
 
 pub(crate) use surface_pick::surface_kind;
 #[cfg(test)]

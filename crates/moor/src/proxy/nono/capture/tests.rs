@@ -12,7 +12,7 @@ use nono_proxy::capture::{
     CredentialCaptureBackend, CredentialCaptureMaterial, CredentialCaptureRequest,
 };
 
-use super::{sources_for, FetchFn, MoorCapture, RuleSource, SecretsFn};
+use super::{sources_for, FetchFn, MoorCapture, RuleSource, UserSecretsFn};
 use crate::store::{Store, STORE_FILE};
 use crate::testing::clock::FakeClock;
 use crate::testing::cx::put_secret;
@@ -171,18 +171,18 @@ fn vaulted() -> Vaulted {
 }
 
 impl Vaulted {
-    fn secrets(&self) -> SecretsFn {
-        let store = Arc::clone(&self.store);
-        Arc::new(move |vault, user, name| {
+    fn secrets(&self, user: UserId) -> UserSecretsFn {
+        let (store, vault) = (Arc::clone(&self.store), Arc::clone(&self.vault));
+        Arc::new(move |name| {
             store
-                .user_secret(vault, user, name)
+                .user_secret(&vault, user, name)
                 .map_err(|e| e.to_string())
         })
     }
 
     fn capture_for(&self, user: UserId) -> MoorCapture {
         let rules = [rule("claude", "claude")];
-        MoorCapture::new(sources_for(&rules, &self.secrets(), &self.vault, user))
+        MoorCapture::new(sources_for(&rules, &self.secrets(user)))
     }
 }
 

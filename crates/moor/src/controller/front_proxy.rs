@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{self, Command, Stdio};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
@@ -14,7 +15,7 @@ use super::fronts::{relay_lines, watch, Outcome, Stop, FIRST_BACKOFF, MAX_BACKOF
 use moor_core::config::FrontEntry;
 
 use super::{log, Sink};
-use crate::env::Env;
+use crate::env::{Env, DATABASE_URL, PROXY_KEY};
 use crate::front_dir;
 use crate::Moor;
 
@@ -34,8 +35,8 @@ pub(super) struct Access {
 pub(super) struct Plan {
     /// The controller's state dir.
     state_dir: PathBuf,
-    /// The controller's vault key.
-    vault_key: PathBuf,
+    /// The key it presents on the ledger socket, minted for this controller.
+    key: String,
     /// Each front with a Proxy and the names of its rules.
     fronts: BTreeMap<String, Vec<String>>,
     /// The CA certificate, in PEM form.
@@ -66,10 +67,7 @@ impl Plan {
             return Ok(None);
         }
         let state_dir = env.state_dir().ok_or("a front Proxy needs a state dir")?;
-        let vault_key = env
-            .vault_key()
-            .ok_or("a front Proxy needs the vault key")?
-            .to_owned();
+        let key = mint_key()?;
         for ns in fronts.keys() {
             Moor::prepare_front_proxy_socket(&state_dir, ns)?;
         }
@@ -83,10 +81,15 @@ impl Plan {
         }
         Ok(Some(Self {
             state_dir,
-            vault_key,
+            key,
             fronts,
             ca_pem,
         }))
+    }
+
+    /// The key the Proxy presents on the ledger socket.
+    pub(super) fn key(&self) -> &str {
+        &self.key
     }
 
     /// What front `ns` is given; none when it has no Proxy, and on macOS, whose shim has no
@@ -113,8 +116,8 @@ impl Plan {
             ])
             .arg("--state-dir")
             .arg(&self.state_dir)
-            .arg("--vault-key")
-            .arg(&self.vault_key);
+            .env(PROXY_KEY, &self.key)
+            .env_remove(DATABASE_URL);
         for (ns, rules) in &self.fronts {
             command
                 .arg("--front")
@@ -127,6 +130,16 @@ impl Plan {
             .stderr(Stdio::piped());
         command
     }
+}
+
+/// 32 random bytes as hex.
+fn mint_key() -> Result<String, String> {
+    let mut bytes = [0_u8; 32];
+    getrandom::fill(&mut bytes).map_err(|e| format!("cannot mint the front Proxy key: {e}"))?;
+    Ok(bytes.iter().fold(String::with_capacity(64), |mut out, b| {
+        let _ = write!(out, "{b:02x}");
+        out
+    }))
 }
 
 /// Runs `plan` with `program` until told to stop, restarting it with backoff whenever it exits.

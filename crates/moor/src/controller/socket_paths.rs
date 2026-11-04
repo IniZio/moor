@@ -6,7 +6,7 @@ use moor_core::config::ControllerConfig;
 
 use super::{Stop, REFUSED};
 use crate::env::Env;
-use crate::{front_dir, runner_dir};
+use crate::{front_dir, ledger_dir, runner_dir};
 
 /// The longest socket path in bytes: `sun_path` less its NUL, 107 on Linux and 103 on macOS.
 #[cfg(target_os = "macos")]
@@ -28,6 +28,7 @@ pub(super) fn check(controller: &Path, cfg: &ControllerConfig, env: &Env) -> Res
     )];
     if let Some(state) = env.state_dir() {
         sockets.push((runner_dir::of(&state).join(runner_dir::SOCKET), shorter));
+        sockets.push((ledger_dir::socket(&state), shorter));
         for ns in cfg.fronts.keys() {
             let socket = front_dir::of(&state, ns).join(front_dir::FRONT_SOCKET);
             sockets.push((socket, shorter));

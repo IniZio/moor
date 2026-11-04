@@ -17,6 +17,9 @@ pub(crate) const DATABASE_URL: &str = "MOOR_DATABASE_URL";
 /// The variable capping the read connections the store opens to its Postgres database.
 pub(crate) const DATABASE_READERS: &str = "MOOR_DATABASE_READERS";
 
+/// The variable holding the key a Proxy process presents on the ledger socket.
+pub(crate) const PROXY_KEY: &str = "MOOR_PROXY_KEY";
+
 /// Snapshot of environment variables.
 #[derive(Clone, Default)]
 pub struct Env {

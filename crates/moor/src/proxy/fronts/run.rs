@@ -1,8 +1,8 @@
 //! `moor proxy serve-fronts`: the front Proxy process the controller starts and restarts.
 //!
-//! It takes `--parent PID --state-dir DIR --vault-key PATH` and one `--front NS=RULE[,RULE]`
-//! per front. It stops when the controller `PID` exits, and exits at once when that is not
-//! its parent.
+//! It takes `--parent PID --state-dir DIR` and one `--front NS=RULE[,RULE]` per front, and
+//! the ledger key in `MOOR_PROXY_KEY`. It stops when the controller `PID` exits, and exits at
+//! once when that is not its parent.
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -14,12 +14,9 @@ use rustix::process::{getppid, Pid};
 use signal_hook::consts::{SIGINT, SIGTERM};
 
 use super::{serve, Deps};
-use crate::adapters::clock::SystemClock;
-use crate::env::Env;
-use crate::proxy::nono::capture::SecretsFn;
+use crate::env::{Env, PROXY_KEY};
+use crate::proxy::ledger::FrontsLedger;
 use crate::proxy::Sink;
-use crate::store::{Database, Store};
-use crate::vault::Vault;
 
 /// What the command line asks for.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -28,8 +25,6 @@ pub(crate) struct Args {
     pub(crate) parent: Option<i32>,
     /// The controller's state dir.
     pub(crate) state_dir: Option<PathBuf>,
-    /// The controller's vault key.
-    pub(crate) vault_key: Option<PathBuf>,
     /// Each front and the names of the rules its Proxy serves.
     pub(crate) fronts: Vec<(String, Vec<String>)>,
 }
@@ -47,7 +42,6 @@ impl Args {
                     args.parent = Some(pid.parse().map_err(|_| format!("bad pid {pid}"))?);
                 }
                 "--state-dir" => args.state_dir = Some(value()?.into()),
-                "--vault-key" => args.vault_key = Some(value()?.into()),
                 "--front" => {
                     let front = value()?;
                     let (ns, rules) = front
@@ -77,29 +71,20 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
         return Err(format!("pid {parent} is not this process's parent"));
     }
     let state_dir = args.state_dir.ok_or("--state-dir is required")?;
-    let key = args.vault_key.ok_or("--vault-key is required")?;
-    let vault = Vault::load(&key).map_err(|e| format!("cannot open the vault: {e}"))?;
-    let clock = Arc::new(SystemClock::real());
-    let database = Database::from_env(&Env::capture()).map_err(|e| e.to_string())?;
-    let store =
-        Arc::new(Store::open_in(&state_dir, database.as_ref(), clock).map_err(|e| e.to_string())?);
+    let key = Env::capture()
+        .get(PROXY_KEY)
+        .map(str::to_owned)
+        .ok_or("MOOR_PROXY_KEY is required")?;
+    let ledger = Arc::new(FrontsLedger::new(&state_dir, key));
     let fronts = resolve(&args.fronts)?;
     let stop = Arc::new(AtomicBool::new(false));
     for sig in [SIGTERM, SIGINT] {
         signal_hook::flag::register(sig, Arc::clone(&stop)).map_err(|e| e.to_string())?;
     }
     stop_when_orphaned(parent, &stop)?;
-    let shared = Arc::clone(&store);
-    let secrets: SecretsFn = Arc::new(move |vault, user, name| {
-        shared
-            .user_secret(vault, user, name)
-            .map_err(|e| e.to_string())
-    });
     let stderr: Sink = Arc::new(Mutex::new(std::io::stderr()));
     let deps = Deps {
-        store,
-        secrets,
-        vault: Arc::new(vault),
+        ledger,
         state_dir,
         owner: rustix::process::getuid().as_raw(),
         upstream_ca: None,

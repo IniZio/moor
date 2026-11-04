@@ -9,6 +9,7 @@ pub mod front_shim;
 mod fronts;
 mod hangup;
 mod inherit;
+mod ledger;
 mod local;
 mod peer;
 mod progress;
@@ -96,6 +97,8 @@ struct Running {
     fronts: Vec<(String, UnixListener)>,
     /// The machine runner's socket.
     runner: UnixListener,
+    /// The Proxy processes' ledger socket, and the front Proxy's key on it.
+    ledger: (UnixListener, Option<Arc<str>>),
     /// The fronts that have a command, not yet started.
     commands: Vec<fronts::Front>,
     /// The front Proxy, not yet started; none when no front lists proxy rules.
@@ -159,6 +162,7 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
     let listener = sockets.listen("controller", &socket).map_err(refused)?;
     let fronts = peer::bind_fronts(&env, &mut sockets, &cfg.fronts.keys().collect::<Vec<_>>())?;
     let runner = peer::bind_runner(&env, &mut sockets)?;
+    let ledger = peer::bind_ledger(&env, &mut sockets)?;
     let commands = front_commands(&fronts, &cfg, proxy.as_ref(), &env, &socket).map_err(refused)?;
     sockets.finish().map_err(refused)?;
     Ok(Running {
@@ -166,6 +170,7 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         listener,
         fronts,
         runner,
+        ledger: (ledger, proxy.as_ref().map(|p| Arc::from(p.key()))),
         commands,
         proxy,
         vault: Arc::new(vault),
@@ -317,6 +322,8 @@ impl Running {
             listeners.push((listener, serve(peer::On::Front(ns))));
         }
         listeners.push((self.runner, serve(peer::On::Runner)));
+        let (ledger, key) = self.ledger;
+        listeners.push((ledger, ledger::handler((&self.env, &self.vault), key, sink)));
         match drain::serve_until(&listeners, wake, drain, self.drain_timeout, sink) {
             0 => log(sink, "drained; exiting"),
             left => log(

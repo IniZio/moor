@@ -827,7 +827,9 @@ whenever it exits. The front Proxy listens on
 certificate to `<state dir>/fronts/<namespace>/ca.pem`. The front's shim binds
 a loopback port in the front's network namespace and passes each connection to
 that socket. The front finds the port in `MOOR_FRONT_PROXY_PORT`. The Proxy
-signs with a CA kept in `<state dir>/proxy/fronts`. The front gets the CA
+signs with a CA kept in `<state dir>/proxy/fronts`. It reads leases and the
+users' secrets through the controller's ledger socket, presenting a key the
+controller passes it in `MOOR_PROXY_KEY`. The front gets the CA
 certificate as PEM text in `MOOR_FRONT_PROXY_CA_PEM`, so the front sees no
 controller path. The shim's pid 1 holds the front's directory open and is not
 dumpable, so the front cannot reach the directory through `/proc/1/fd`. The
