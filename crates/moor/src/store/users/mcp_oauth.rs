@@ -5,8 +5,10 @@ use std::collections::BTreeMap;
 
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
+use moor_schema::tables::{McpOauthPending, UserMcpOauth};
+use sea_query::{Expr, ExprTrait as _, OnConflict, Query};
 
-use crate::store::db::{params, DbExt as _, OptionalExtension};
+use crate::store::db::{self, DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
 /// Where a server's sign-in stands, as `mcp-list` and Box starts read it.
@@ -51,13 +53,28 @@ impl Store {
         (name, sealed): (&str, &[u8]),
         expires: Ts,
     ) -> Result<(), StoreError> {
-        self.writer().execute(
-            "DELETE FROM mcp_oauth_pending WHERE expires_at <= ?",
-            [self.now().as_millis()],
+        self.writer().run(
+            Query::delete()
+                .from_table(McpOauthPending::Table)
+                .and_where(Expr::col(McpOauthPending::ExpiresAt).lte(self.now().as_millis())),
         )?;
-        self.writer().execute(
-            "INSERT INTO mcp_oauth_pending (state, \"user\", name, value, expires_at) VALUES (?, ?, ?, ?, ?)",
-            params![state, user.get(), name, sealed, expires.as_millis()],
+        self.writer().run(
+            Query::insert()
+                .into_table(McpOauthPending::Table)
+                .columns([
+                    McpOauthPending::State,
+                    McpOauthPending::User,
+                    McpOauthPending::Name,
+                    McpOauthPending::Value,
+                    McpOauthPending::ExpiresAt,
+                ])
+                .values_panic([
+                    state.into(),
+                    user.get().into(),
+                    name.into(),
+                    sealed.into(),
+                    expires.as_millis().into(),
+                ]),
         )?;
         Ok(())
     }
@@ -70,10 +87,16 @@ impl Store {
     ) -> Result<Option<PendingRow>, StoreError> {
         Ok(self
             .writer()
-            .query_row(
-                "DELETE FROM mcp_oauth_pending WHERE state = ? AND \"user\" = ? \
-                 RETURNING name, value, expires_at",
-                params![state, user.get()],
+            .row(
+                Query::delete()
+                    .from_table(McpOauthPending::Table)
+                    .and_where(Expr::col(McpOauthPending::State).eq(state))
+                    .and_where(Expr::col(McpOauthPending::User).eq(user.get()))
+                    .returning(Query::returning().columns([
+                        McpOauthPending::Name,
+                        McpOauthPending::Value,
+                        McpOauthPending::ExpiresAt,
+                    ])),
                 |r| {
                     Ok(PendingRow {
                         name: r.get(0)?,
@@ -92,11 +115,33 @@ impl Store {
         (name, sealed): (&str, &[u8]),
         (issued, expires): (Ts, Option<Ts>),
     ) -> Result<(), StoreError> {
-        self.writer().execute(
-            "INSERT INTO user_mcp_oauth (\"user\", name, value, expires_at, updated_at) VALUES (?, ?, ?, ?, ?) \
-             ON CONFLICT (\"user\", name) DO UPDATE SET value = excluded.value, \
-             expires_at = excluded.expires_at, updated_at = excluded.updated_at, signed_out_at = NULL",
-            params![user.get(), name, sealed, expires.map(Ts::as_millis), issued.as_millis()],
+        self.writer().run(
+            Query::insert()
+                .into_table(UserMcpOauth::Table)
+                .columns([
+                    UserMcpOauth::User,
+                    UserMcpOauth::Name,
+                    UserMcpOauth::Value,
+                    UserMcpOauth::ExpiresAt,
+                    UserMcpOauth::UpdatedAt,
+                ])
+                .values_panic([
+                    user.get().into(),
+                    name.into(),
+                    sealed.into(),
+                    expires.map(Ts::as_millis).into(),
+                    issued.as_millis().into(),
+                ])
+                .on_conflict(
+                    OnConflict::columns([UserMcpOauth::User, UserMcpOauth::Name])
+                        .update_columns([
+                            UserMcpOauth::Value,
+                            UserMcpOauth::ExpiresAt,
+                            UserMcpOauth::UpdatedAt,
+                        ])
+                        .value(UserMcpOauth::SignedOutAt, Option::<i64>::None)
+                        .to_owned(),
+                ),
         )?;
         Ok(())
     }
@@ -108,26 +153,29 @@ impl Store {
         sealed: &[u8],
         (issued, expires): (Ts, Option<Ts>),
     ) -> Result<bool, StoreError> {
-        let n = self.writer().execute(
-            "UPDATE user_mcp_oauth SET value = ?, expires_at = ?, updated_at = ? \
-             WHERE \"user\" = ? AND name = ? AND updated_at = ? AND signed_out_at IS NULL",
-            params![
-                sealed,
-                expires.map(Ts::as_millis),
-                issued.as_millis(),
-                row.user.get(),
-                row.name,
-                row.issued.as_millis()
-            ],
+        let n = self.writer().run(
+            Query::update()
+                .table(UserMcpOauth::Table)
+                .value(UserMcpOauth::Value, sealed)
+                .value(UserMcpOauth::ExpiresAt, expires.map(Ts::as_millis))
+                .value(UserMcpOauth::UpdatedAt, issued.as_millis())
+                .and_where(Expr::col(UserMcpOauth::User).eq(row.user.get()))
+                .and_where(Expr::col(UserMcpOauth::Name).eq(row.name.as_str()))
+                .and_where(Expr::col(UserMcpOauth::UpdatedAt).eq(row.issued.as_millis()))
+                .and_where(Expr::col(UserMcpOauth::SignedOutAt).is_null()),
         )?;
         Ok(n == 1)
     }
 
     /// Marks `user`'s server `name` as needing a new sign-in.
     pub(crate) fn end_user_mcp_oauth(&self, user: UserId, name: &str) -> Result<(), StoreError> {
-        self.writer().execute(
-            "UPDATE user_mcp_oauth SET signed_out_at = ?, expires_at = NULL WHERE \"user\" = ? AND name = ?",
-            params![self.now().as_millis(), user.get(), name],
+        self.writer().run(
+            Query::update()
+                .table(UserMcpOauth::Table)
+                .value(UserMcpOauth::SignedOutAt, self.now().as_millis())
+                .value(UserMcpOauth::ExpiresAt, Option::<i64>::None)
+                .and_where(Expr::col(UserMcpOauth::User).eq(user.get()))
+                .and_where(Expr::col(UserMcpOauth::Name).eq(name)),
         )?;
         Ok(())
     }
@@ -135,19 +183,28 @@ impl Store {
     /// Every signed-in server whose access token names an expiry, for the refresh pass.
     pub(crate) fn expiring_mcp_oauth(&self) -> Result<Vec<GrantRow>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt = conn.prepare(
-            "SELECT \"user\", name, value, updated_at, expires_at FROM user_mcp_oauth \
-             WHERE signed_out_at IS NULL AND expires_at IS NOT NULL",
+        let rows = conn.rows(
+            Query::select()
+                .columns([
+                    UserMcpOauth::User,
+                    UserMcpOauth::Name,
+                    UserMcpOauth::Value,
+                    UserMcpOauth::UpdatedAt,
+                    UserMcpOauth::ExpiresAt,
+                ])
+                .from(UserMcpOauth::Table)
+                .and_where(Expr::col(UserMcpOauth::SignedOutAt).is_null())
+                .and_where(Expr::col(UserMcpOauth::ExpiresAt).is_not_null()),
+            |r| {
+                Ok::<_, db::Error>(GrantRow {
+                    user: UserId::new(r.get(0)?),
+                    name: r.get(1)?,
+                    sealed: r.get(2)?,
+                    issued: Ts::from_millis(r.get(3)?),
+                    expires: Ts::from_millis(r.get(4)?),
+                })
+            },
         )?;
-        let rows = stmt.query_map([], |r| {
-            Ok(GrantRow {
-                user: UserId::new(r.get(0)?),
-                name: r.get(1)?,
-                sealed: r.get(2)?,
-                issued: Ts::from_millis(r.get(3)?),
-                expires: Ts::from_millis(r.get(4)?),
-            })
-        })?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
@@ -157,28 +214,37 @@ impl Store {
         user: UserId,
     ) -> Result<BTreeMap<String, SignIn>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt = conn.prepare(
-            "SELECT name, expires_at, signed_out_at IS NOT NULL FROM user_mcp_oauth WHERE \"user\" = ?",
+        let rows = conn.rows(
+            Query::select()
+                .columns([
+                    UserMcpOauth::Name,
+                    UserMcpOauth::ExpiresAt,
+                    UserMcpOauth::SignedOutAt,
+                ])
+                .from(UserMcpOauth::Table)
+                .and_where(Expr::col(UserMcpOauth::User).eq(user.get())),
+            |r| {
+                let ended = r.get::<_, Option<i64>>(2)?.is_some();
+                Ok::<_, db::Error>((
+                    r.get(0)?,
+                    if ended {
+                        SignIn::Ended
+                    } else {
+                        SignIn::Until(r.get(1)?)
+                    },
+                ))
+            },
         )?;
-        let rows = stmt.query_map([user.get()], |r| {
-            let ended: bool = r.get(2)?;
-            Ok((
-                r.get(0)?,
-                if ended {
-                    SignIn::Ended
-                } else {
-                    SignIn::Until(r.get(1)?)
-                },
-            ))
-        })?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
     /// Removes `user`'s grant for server `name`.
     pub(crate) fn delete_user_mcp_oauth(&self, user: UserId, name: &str) -> Result<(), StoreError> {
-        self.writer().execute(
-            "DELETE FROM user_mcp_oauth WHERE \"user\" = ? AND name = ?",
-            params![user.get(), name],
+        self.writer().run(
+            Query::delete()
+                .from_table(UserMcpOauth::Table)
+                .and_where(Expr::col(UserMcpOauth::User).eq(user.get()))
+                .and_where(Expr::col(UserMcpOauth::Name).eq(name)),
         )?;
         Ok(())
     }

@@ -6,6 +6,8 @@ use moor_core::domain::event::{Event, MachineEvent};
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::BoxId;
+use moor_schema::tables::BoxMachines;
+use sea_query::{Expr, ExprTrait as _, Query};
 
 use super::super::{claim_in, machines_in, named_in, put_in, Claim};
 use crate::store::db::{Db, DbExt as _, OptionalExtension, TransactionBehavior, Tx};
@@ -59,9 +61,13 @@ impl Store {
         let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let gone: Option<(Option<String>, String)> = tx
-            .query_row(
-                "DELETE FROM box_machines WHERE box = ? RETURNING machine, state",
-                [id.get()],
+            .row(
+                Query::delete()
+                    .from_table(BoxMachines::Table)
+                    .and_where(Expr::col(BoxMachines::Box).eq(id.get()))
+                    .returning(
+                        Query::returning().columns([BoxMachines::Machine, BoxMachines::State]),
+                    ),
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;

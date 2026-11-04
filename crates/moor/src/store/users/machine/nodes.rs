@@ -10,6 +10,8 @@ use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::name::NodeName;
 use moor_core::user::UserId;
+use moor_schema::tables::{Boxes, MachineLinks, UserMachinesV2};
+use sea_query::{Asterisk, Expr, ExprTrait as _, Func, Order, Query, SelectStatement};
 
 use crate::store::db::{Db, DbExt as _};
 use crate::store::{Store, StoreError};
@@ -20,18 +22,22 @@ type Counts = HashMap<String, usize>;
 /// Per node: Boxes holding a slot, counted the way admission counts them, Boxes pending, and
 /// Boxes setting up.
 fn per_node(conn: &dyn Db) -> Result<(Counts, Counts, Counts), StoreError> {
-    let mut stmt = conn.prepare(
-        "SELECT node, driver_state, state, COUNT(*) FROM boxes \
-         WHERE node IS NOT NULL GROUP BY node, driver_state, state",
+    let rows = conn.rows(
+        Query::select()
+            .columns([Boxes::Node, Boxes::DriverState, Boxes::State])
+            .expr(Func::count(Expr::col(Asterisk)))
+            .from(Boxes::Table)
+            .and_where(Expr::col(Boxes::Node).is_not_null())
+            .group_by_columns([Boxes::Node, Boxes::DriverState, Boxes::State]),
+        |r| {
+            Ok::<_, crate::store::db::Error>((
+                r.get::<_, String>(0)?,
+                r.get::<_, Option<String>>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, i64>(3)?,
+            ))
+        },
     )?;
-    let rows = stmt.query_map([], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, Option<String>>(1)?,
-            r.get::<_, String>(2)?,
-            r.get::<_, i64>(3)?,
-        ))
-    })?;
     let (mut live, mut pending, mut starting) = (HashMap::new(), HashMap::new(), HashMap::new());
     for row in rows {
         let (node, driver, state, n) = row?;
@@ -104,6 +110,48 @@ fn personal(
     }))
 }
 
+/// The personal nodes [`personal`] reads: each pooled machine with its link, if it has one.
+fn personal_select() -> SelectStatement {
+    let m = |c| (UserMachinesV2::Table, c);
+    let l = |c| (MachineLinks::Table, c);
+    Query::select()
+        .columns(
+            [
+                UserMachinesV2::MachineId,
+                UserMachinesV2::User,
+                UserMachinesV2::Name,
+                UserMachinesV2::Labels,
+                UserMachinesV2::PoolProvider,
+                UserMachinesV2::EnrolledAt,
+            ]
+            .map(m),
+        )
+        .columns(
+            [
+                MachineLinks::Online,
+                MachineLinks::Since,
+                MachineLinks::MaxBoxes,
+                MachineLinks::MemMib,
+                MachineLinks::ReserveMib,
+                MachineLinks::MemAvailableMib,
+                MachineLinks::PsiCenti,
+                MachineLinks::ReportedAt,
+                MachineLinks::DiskFreeMib,
+                MachineLinks::DiskTotalMib,
+            ]
+            .map(l),
+        )
+        .from(UserMachinesV2::Table)
+        .left_join(
+            MachineLinks::Table,
+            Expr::col(l(MachineLinks::MachineId)).equals(m(UserMachinesV2::MachineId)),
+        )
+        .and_where(Expr::col(m(UserMachinesV2::PoolProvider)).is_not_null())
+        .order_by(m(UserMachinesV2::EnrolledAt), Order::Asc)
+        .order_by(m(UserMachinesV2::MachineId), Order::Asc)
+        .take()
+}
+
 impl Store {
     /// The `shared` nodes and every personal node, with the Boxes holding a slot on or pending
     /// for each.
@@ -134,14 +182,7 @@ impl Store {
                 })
             })
             .collect();
-        let mut stmt = conn.prepare(
-            "SELECT m.machine_id, m.user, m.name, m.labels, m.pool_provider, m.enrolled_at, \
-             l.online, l.since, l.max_boxes, l.mem_mib, l.reserve_mib, l.mem_available_mib, \
-             l.psi_centi, l.reported_at, l.disk_free_mib, l.disk_total_mib \
-             FROM user_machines_v2 m LEFT JOIN machine_links l USING (machine_id) \
-             WHERE m.pool_provider IS NOT NULL ORDER BY m.enrolled_at, m.machine_id",
-        )?;
-        let rows = stmt.query_and_then([], |r| {
+        let rows = conn.rows(personal_select(), |r| {
             personal(r, &|n| {
                 (held(n), pending(n), starting.get(n).copied().unwrap_or(0))
             })

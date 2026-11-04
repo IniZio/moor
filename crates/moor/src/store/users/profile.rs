@@ -3,8 +3,10 @@
 
 use moor_core::name::{ForgeRepo, ProfileSource};
 use moor_core::user::UserId;
+use moor_schema::tables::UserProfiles;
+use sea_query::{Expr, ExprTrait as _, OnConflict, Query};
 
-use crate::store::db::{params, DbExt as _, OptionalExtension};
+use crate::store::db::{DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
 impl Store {
@@ -14,25 +16,41 @@ impl Store {
         user: UserId,
         source: &ProfileSource,
     ) -> Result<(), StoreError> {
-        self.writer().execute(
-            "INSERT INTO user_profiles (\"user\", repo, git_ref, updated_at) VALUES (?, ?, ?, ?) \
-             ON CONFLICT (\"user\") DO UPDATE SET repo = excluded.repo, git_ref = excluded.git_ref, \
-             updated_at = excluded.updated_at",
-            params![
-                user.get(),
-                source.repo.to_string(),
-                source.git_ref,
-                self.now().as_millis()
-            ],
+        self.writer().run(
+            Query::insert()
+                .into_table(UserProfiles::Table)
+                .columns([
+                    UserProfiles::User,
+                    UserProfiles::Repo,
+                    UserProfiles::GitRef,
+                    UserProfiles::UpdatedAt,
+                ])
+                .values_panic([
+                    user.get().into(),
+                    source.repo.to_string().into(),
+                    source.git_ref.as_deref().into(),
+                    self.now().as_millis().into(),
+                ])
+                .on_conflict(
+                    OnConflict::column(UserProfiles::User)
+                        .update_columns([
+                            UserProfiles::Repo,
+                            UserProfiles::GitRef,
+                            UserProfiles::UpdatedAt,
+                        ])
+                        .to_owned(),
+                ),
         )?;
         Ok(())
     }
 
     /// Clears `user`'s profile; true when there was one.
     pub(crate) fn delete_user_profile(&self, user: UserId) -> Result<bool, StoreError> {
-        let gone = self
-            .writer()
-            .execute("DELETE FROM user_profiles WHERE \"user\" = ?", [user.get()])?;
+        let gone = self.writer().run(
+            Query::delete()
+                .from_table(UserProfiles::Table)
+                .and_where(Expr::col(UserProfiles::User).eq(user.get())),
+        )?;
         Ok(gone == 1)
     }
 
@@ -40,9 +58,11 @@ impl Store {
     pub(crate) fn user_profile(&self, user: UserId) -> Result<Option<ProfileSource>, StoreError> {
         let row: Option<(String, Option<String>)> = self
             .reader()?
-            .query_row(
-                "SELECT repo, git_ref FROM user_profiles WHERE \"user\" = ?",
-                [user.get()],
+            .row(
+                Query::select()
+                    .columns([UserProfiles::Repo, UserProfiles::GitRef])
+                    .from(UserProfiles::Table)
+                    .and_where(Expr::col(UserProfiles::User).eq(user.get())),
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;

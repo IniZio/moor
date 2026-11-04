@@ -18,17 +18,3 @@ crates/moor/src/store/runs.rs
 crates/moor/src/store/tests/events_after.rs
 crates/moor/src/store/tests/poison.rs
 crates/moor/src/store/tests.rs
-crates/moor/src/store/users/front_leases.rs
-crates/moor/src/store/users/machine/hold/claim.rs
-crates/moor/src/store/users/machine/hold.rs
-crates/moor/src/store/users/machine/links.rs
-crates/moor/src/store/users/machine/nodes.rs
-crates/moor/src/store/users/machine/row.rs
-crates/moor/src/store/users/machine.rs
-crates/moor/src/store/users/mcp_oauth.rs
-crates/moor/src/store/users/mcp.rs
-crates/moor/src/store/users/profile.rs
-crates/moor/src/store/users.rs
-crates/moor/src/store/users/tests.rs
-crates/moor/src/store/users/webhook.rs
-crates/moor/src/store/webhook_outbox.rs

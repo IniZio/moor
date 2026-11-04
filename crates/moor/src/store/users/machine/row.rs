@@ -3,9 +3,11 @@
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::BoxId;
+use moor_schema::tables::BoxMachines;
+use sea_query::{Expr, ExprTrait as _, Query};
 
 use super::ClaimState;
-use crate::store::db::{params, Db, DbExt as _, OptionalExtension};
+use crate::store::db::{Db, DbExt as _, OptionalExtension};
 use crate::store::StoreError;
 
 /// A `box_machines` row.
@@ -22,10 +24,24 @@ pub(super) struct Claim {
 
 /// The `box_machines` row of `box_id`, read through `conn`.
 pub(super) fn claim_in(conn: &dyn Db, box_id: BoxId) -> Result<Option<Claim>, StoreError> {
-    let sql = "SELECT \"user\", state, machine, labels, slot, ports, sync_exclude, since, until \
-               FROM box_machines WHERE box = ?";
     let row = conn
-        .query_row(sql, [box_id.get()], |r| Ok(ClaimRow::read(r)))
+        .row(
+            Query::select()
+                .columns([
+                    BoxMachines::User,
+                    BoxMachines::State,
+                    BoxMachines::Machine,
+                    BoxMachines::Labels,
+                    BoxMachines::Slot,
+                    BoxMachines::Ports,
+                    BoxMachines::SyncExclude,
+                    BoxMachines::Since,
+                    BoxMachines::Until,
+                ])
+                .from(BoxMachines::Table)
+                .and_where(Expr::col(BoxMachines::Box).eq(box_id.get())),
+            |r| Ok(ClaimRow::read(r)),
+        )
         .optional()?;
     row.transpose()?.map(ClaimRow::parse).transpose()
 }
@@ -109,9 +125,12 @@ fn to_json<T: serde::Serialize + ?Sized>(v: &T) -> Result<String, StoreError> {
     serde_json::to_string(v).map_err(|e| StoreError::Corrupt(format!("box_machines json: {e}")))
 }
 
-/// Writes `claim` as the `box_machines` row of `box_id`.
-pub(super) fn put_in(conn: &dyn Db, box_id: BoxId, claim: &Claim) -> Result<(), StoreError> {
-    let (state, machine, labels, slot, since, until) = match &claim.state {
+/// The `state`, `machine`, `labels`, `slot`, `since` and `until` columns that hold a claim.
+type Columns<'a> = (&'static str, Option<&'a str>, String, u16, i64, Option<i64>);
+
+/// The columns that hold `state`.
+fn columns(state: &ClaimState) -> Result<Columns<'_>, StoreError> {
+    Ok(match state {
         ClaimState::Wanted {
             labels,
             machine,
@@ -141,27 +160,55 @@ pub(super) fn put_in(conn: &dyn Db, box_id: BoxId, claim: &Claim) -> Result<(), 
             0,
             None,
         ),
-    };
-    conn.execute(
-        "DELETE FROM box_machines WHERE box = ?1 OR (?2 = 'held' AND state = 'held' \
-         AND \"user\" = ?3 AND machine = ?4 AND slot = ?5)",
-        params![box_id.get(), state, claim.user.get(), machine, slot],
+    })
+}
+
+/// Writes `claim` as the `box_machines` row of `box_id`.
+pub(super) fn put_in(conn: &dyn Db, box_id: BoxId, claim: &Claim) -> Result<(), StoreError> {
+    let (state, machine, labels, slot, since, until) = columns(&claim.state)?;
+    conn.run(
+        Query::delete()
+            .from_table(BoxMachines::Table)
+            .and_where(Expr::col(BoxMachines::Box).eq(box_id.get())),
     )?;
-    conn.execute(
-        "INSERT INTO box_machines (box, \"user\", state, machine, labels, slot, ports, \
-         sync_exclude, since, until) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        params![
-            box_id.get(),
-            claim.user.get(),
-            state,
-            machine,
-            labels,
-            slot,
-            to_json(&claim.ports)?,
-            to_json(&claim.sync_exclude)?,
-            since,
-            until
-        ],
+    // One statement with an OR over both makes SQLite fail to plan against the held-slot index.
+    if state == "held" {
+        conn.run(
+            Query::delete()
+                .from_table(BoxMachines::Table)
+                .and_where(Expr::col(BoxMachines::State).eq("held"))
+                .and_where(Expr::col(BoxMachines::User).eq(claim.user.get()))
+                .and_where(Expr::col(BoxMachines::Machine).eq(machine))
+                .and_where(Expr::col(BoxMachines::Slot).eq(slot)),
+        )?;
+    }
+    conn.run(
+        Query::insert()
+            .into_table(BoxMachines::Table)
+            .columns([
+                BoxMachines::Box,
+                BoxMachines::User,
+                BoxMachines::State,
+                BoxMachines::Machine,
+                BoxMachines::Labels,
+                BoxMachines::Slot,
+                BoxMachines::Ports,
+                BoxMachines::SyncExclude,
+                BoxMachines::Since,
+                BoxMachines::Until,
+            ])
+            .values_panic([
+                box_id.get().into(),
+                claim.user.get().into(),
+                state.into(),
+                machine.into(),
+                labels.into(),
+                slot.into(),
+                to_json(&claim.ports)?.into(),
+                to_json(&claim.sync_exclude)?.into(),
+                since.into(),
+                until.into(),
+            ]),
     )?;
     Ok(())
 }

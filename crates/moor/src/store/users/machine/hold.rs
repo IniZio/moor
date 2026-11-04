@@ -4,14 +4,16 @@
 use std::collections::BTreeMap;
 
 use moor_core::config::{pick_machine, unslot_ports, MachinePick, RepoMachine, UserMachine};
-use moor_core::domain::event::{Event, MachineEvent};
+use moor_core::domain::event::{Event, MachineEvent, EVENT_KINDS};
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::BoxId;
+use moor_schema::tables::{BoxMachines, Boxes, Events};
+use sea_query::{Expr, ExprTrait as _, Order, Query};
 
 use super::{claim_in, held_in, machines_in, owned_in, put_in, Claim};
 use crate::store::apply::insert_event;
-use crate::store::db::{params, Db, DbExt as _, OptionalExtension, TransactionBehavior, Tx};
+use crate::store::db::{self, Db, DbExt as _, OptionalExtension, TransactionBehavior, Tx};
 use crate::store::{Store, StoreError};
 
 mod claim;
@@ -178,10 +180,20 @@ pub(crate) struct WaitPlace {
 /// Whether the newest machine event of `id` is a `machine_waiting` at `position`.
 fn said_waiting(conn: &dyn Db, id: BoxId, position: u32) -> Result<bool, StoreError> {
     let last: Option<(String, String)> = conn
-        .query_row(
-            "SELECT kind, payload FROM events WHERE box = ? AND substr(kind, 1, 8) = 'machine_' \
-             ORDER BY id DESC LIMIT 1",
-            [id.get()],
+        .row(
+            Query::select()
+                .columns([Events::Kind, Events::Payload])
+                .from(Events::Table)
+                .and_where(Expr::col(Events::Box).eq(id.get()))
+                .and_where(
+                    Expr::col(Events::Kind).is_in(
+                        EVENT_KINDS
+                            .into_iter()
+                            .filter(|k| k.starts_with("machine_")),
+                    ),
+                )
+                .order_by(Events::Id, Order::Desc)
+                .limit(1),
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()?;
@@ -293,25 +305,37 @@ fn why_waiting(conn: &dyn Db, claim: &Claim) -> Result<String, StoreError> {
 
 /// `user`'s wanting Boxes and their names, oldest want first.
 fn wants_in(conn: &dyn Db, user: UserId) -> Result<Vec<(BoxId, String)>, StoreError> {
-    let mut stmt = conn.prepare(
-        "SELECT m.box, b.name FROM box_machines m JOIN boxes b ON b.id = m.box \
-         WHERE m.user = ? AND m.state = 'wanted' ORDER BY m.since, m.box",
+    let m = |c| (BoxMachines::Table, c);
+    let rows = conn.rows(
+        Query::select()
+            .column(m(BoxMachines::Box))
+            .column((Boxes::Table, Boxes::Name))
+            .from(BoxMachines::Table)
+            .inner_join(
+                Boxes::Table,
+                Expr::col((Boxes::Table, Boxes::Id)).equals(m(BoxMachines::Box)),
+            )
+            .and_where(Expr::col(m(BoxMachines::User)).eq(user.get()))
+            .and_where(Expr::col(m(BoxMachines::State)).eq("wanted"))
+            .order_by(m(BoxMachines::Since), Order::Asc)
+            .order_by(m(BoxMachines::Box), Order::Asc),
+        |r| Ok::<_, db::Error>((BoxId::new(r.get(0)?), r.get(1)?)),
     )?;
-    let rows = stmt.query_map([user.get()], |r| Ok((BoxId::new(r.get(0)?), r.get(1)?)))?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
 /// Deletes `user`'s wants whose wait ran out by `now`, each with a `machine_left_out` event.
 fn drop_expired_in(conn: &Tx<'_>, user: UserId, now: Ts) -> Result<(), StoreError> {
-    let mut stmt = conn.prepare(
-        "DELETE FROM box_machines WHERE \"user\" = ? AND state = 'wanted' AND until < ? \
-         RETURNING box, labels",
+    let rows = conn.rows(
+        Query::delete()
+            .from_table(BoxMachines::Table)
+            .and_where(Expr::col(BoxMachines::User).eq(user.get()))
+            .and_where(Expr::col(BoxMachines::State).eq("wanted"))
+            .and_where(Expr::col(BoxMachines::Until).lt(now.as_millis()))
+            .returning(Query::returning().columns([BoxMachines::Box, BoxMachines::Labels])),
+        |r| Ok::<_, db::Error>((BoxId::new(r.get(0)?), r.get::<_, String>(1)?)),
     )?;
-    let rows = stmt.query_map(params![user.get(), now.as_millis()], |r| {
-        Ok((BoxId::new(r.get(0)?), r.get::<_, String>(1)?))
-    })?;
     let gone: Vec<(BoxId, String)> = rows.collect::<Result<_, _>>()?;
-    drop(stmt);
     for (id, labels) in gone {
         let labels: Vec<String> = serde_json::from_str(&labels)
             .map_err(|e| StoreError::Corrupt(format!("box_machines labels: {e}")))?;
