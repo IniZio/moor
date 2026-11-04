@@ -2,6 +2,9 @@
 
 use std::sync::Arc;
 
+use moor_schema::tables::Boxes;
+use sea_query::Query;
+
 use super::{new_box, open};
 use crate::store::db::DbExt as _;
 
@@ -18,10 +21,23 @@ fn a_panic_holding_the_writer_does_not_break_later_writes() {
     let joined = std::thread::spawn(move || {
         let mut conn = held.writer();
         let tx = conn.transaction().unwrap();
-        tx.execute(
-            "INSERT INTO boxes (name, repo, state, created_at, updated_at) \
-             VALUES ('ghost', 'o/r', 'checking', 0, 0)",
-            [],
+        tx.run(
+            Query::insert()
+                .into_table(Boxes::Table)
+                .columns([
+                    Boxes::Name,
+                    Boxes::Repo,
+                    Boxes::State,
+                    Boxes::CreatedAt,
+                    Boxes::UpdatedAt,
+                ])
+                .values_panic([
+                    "ghost".into(),
+                    "o/r".into(),
+                    "checking".into(),
+                    0_i64.into(),
+                    0_i64.into(),
+                ]),
         )
         .unwrap();
         std::panic::resume_unwind(Box::new("panic inside the writer's transaction"));

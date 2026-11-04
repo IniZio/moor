@@ -7,9 +7,11 @@ use std::path::Path;
 
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
+use moor_schema::tables::Reports;
+use sea_query::{Expr, ExprTrait as _, Order, Query};
 
 use super::{Store, StoreError};
-use crate::store::db::{params, DbExt as _, OptionalExtension, Row, TransactionBehavior};
+use crate::store::db::{Db, DbExt as _, OptionalExtension, Row, TransactionBehavior};
 
 /// One stored version of a Box's Report.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,14 +51,7 @@ impl Store {
         let now = self.now();
         let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let latest: Option<(i64, String)> = tx
-            .query_row(
-                "SELECT version, path FROM reports WHERE box = ? AND kind = ? \
-                 ORDER BY version DESC LIMIT 1",
-                params![box_id.get(), kind],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()?;
+        let latest = latest_in(&tx, box_id, kind)?;
         if let Some((_, path)) = &latest {
             if fs::read(path).is_ok_and(|old| old == content.as_bytes()) {
                 return Ok(None);
@@ -71,13 +66,7 @@ impl Store {
         let file = box_dir.join(format!("{kind}.v{version}.md"));
         let path = file.to_string_lossy().into_owned();
         write_private(&file, content)?;
-        let stored = tx
-            .query_row(
-                "INSERT INTO reports (box, kind, version, path, title, created_at) \
-                 VALUES (?, ?, ?, ?, NULL, ?) RETURNING id",
-                params![box_id.get(), kind, version, path, now.as_millis()],
-                |r| r.get::<_, i64>(0),
-            )
+        let stored = insert_in(&tx, box_id, kind, version, &path, now)
             .and_then(|id| tx.commit().map(|()| id));
         let id = match stored {
             Ok(id) => id,
@@ -101,15 +90,72 @@ impl Store {
     /// Every stored Report version of the Box, by kind then version.
     pub(crate) fn reports(&self, box_id: BoxId) -> Result<Vec<ReportRow>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt = conn.prepare(
-            "SELECT id, box, kind, version, path, title, created_at FROM reports \
-             WHERE box = ? ORDER BY kind, version",
-        )?;
-        let rows = stmt
-            .query_map([box_id.get()], report_from_row)?
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(rows)
+        let q = Query::select()
+            .columns([
+                Reports::Id,
+                Reports::Box,
+                Reports::Kind,
+                Reports::Version,
+                Reports::Path,
+                Reports::Title,
+                Reports::CreatedAt,
+            ])
+            .from(Reports::Table)
+            .and_where(Expr::col(Reports::Box).eq(box_id.get()))
+            .order_by(Reports::Kind, Order::Asc)
+            .order_by(Reports::Version, Order::Asc)
+            .take();
+        Ok(conn.rows(q, report_from_row)?.collect::<Result<_, _>>()?)
     }
+}
+
+/// The kind's newest stored version number and file path, if any.
+fn latest_in(db: &dyn Db, box_id: BoxId, kind: &str) -> Result<Option<(i64, String)>, StoreError> {
+    Ok(db
+        .row(
+            Query::select()
+                .columns([Reports::Version, Reports::Path])
+                .from(Reports::Table)
+                .and_where(Expr::col(Reports::Box).eq(box_id.get()))
+                .and_where(Expr::col(Reports::Kind).eq(kind))
+                .order_by(Reports::Version, Order::Desc)
+                .limit(1),
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?)
+}
+
+/// Inserts version `version` of `kind` untitled; its row id.
+fn insert_in(
+    db: &dyn Db,
+    box_id: BoxId,
+    kind: &str,
+    version: i64,
+    path: &str,
+    now: Ts,
+) -> rusqlite::Result<i64> {
+    db.row(
+        Query::insert()
+            .into_table(Reports::Table)
+            .columns([
+                Reports::Box,
+                Reports::Kind,
+                Reports::Version,
+                Reports::Path,
+                Reports::Title,
+                Reports::CreatedAt,
+            ])
+            .values_panic([
+                box_id.get().into(),
+                kind.into(),
+                version.into(),
+                path.into(),
+                None::<String>.into(),
+                now.as_millis().into(),
+            ])
+            .returning_col(Reports::Id),
+        |r| r.get(0),
+    )
 }
 
 /// Writes `content` to `file`, readable by the owner only.

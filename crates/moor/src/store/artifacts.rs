@@ -9,13 +9,35 @@ use moor_core::artifact::{content_type, kind_of, valid_name};
 use moor_core::domain::event::Event;
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
+use moor_schema::tables::Artifacts;
+use sea_query::{Expr, ExprTrait as _, Order, Query, SelectStatement};
 
+use super::select::newest_session;
 use super::{Store, StoreError};
-use crate::store::db::{params, Db, DbExt as _, OptionalExtension, Row, TransactionBehavior, Tx};
+use crate::store::db::{self, Db, DbExt as _, OptionalExtension, Row, TransactionBehavior, Tx};
 
 /// Columns of an `artifacts` row, in the order `artifact_from_row` reads them.
-const COLUMNS: &str =
-    "id, box, session, name, version, kind, content_type, size, sha256, path, created_at";
+const COLUMNS: [Artifacts; 11] = [
+    Artifacts::Id,
+    Artifacts::Box,
+    Artifacts::Session,
+    Artifacts::Name,
+    Artifacts::Version,
+    Artifacts::Kind,
+    Artifacts::ContentType,
+    Artifacts::Size,
+    Artifacts::Sha256,
+    Artifacts::Path,
+    Artifacts::CreatedAt,
+];
+
+/// Every artifact row, with the columns `artifact_from_row` reads.
+fn artifact_select() -> SelectStatement {
+    Query::select()
+        .columns(COLUMNS)
+        .from(Artifacts::Table)
+        .take()
+}
 
 /// One stored version of a file published by a Box.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,10 +146,14 @@ impl Store {
         let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let latest: Option<(i64, String)> = tx
-            .query_row(
-                "SELECT version, sha256 FROM artifacts WHERE box = ? AND name = ? \
-                 ORDER BY version DESC LIMIT 1",
-                params![box_id.get(), name],
+            .row(
+                Query::select()
+                    .columns([Artifacts::Version, Artifacts::Sha256])
+                    .from(Artifacts::Table)
+                    .and_where(Expr::col(Artifacts::Box).eq(box_id.get()))
+                    .and_where(Expr::col(Artifacts::Name).eq(name))
+                    .order_by(Artifacts::Version, Order::Desc)
+                    .limit(1),
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;
@@ -169,13 +195,12 @@ impl Store {
     /// Every stored Artifact version of the Box, by name then version.
     pub(crate) fn artifacts(&self, box_id: BoxId) -> Result<Vec<ArtifactRow>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt = conn.prepare(&format!(
-            "SELECT {COLUMNS} FROM artifacts WHERE box = ? ORDER BY name, version"
-        ))?;
-        let rows = stmt
-            .query_map([box_id.get()], artifact_from_row)?
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(rows)
+        let q = artifact_select()
+            .and_where(Expr::col(Artifacts::Box).eq(box_id.get()))
+            .order_by(Artifacts::Name, Order::Asc)
+            .order_by(Artifacts::Version, Order::Asc)
+            .take();
+        Ok(conn.rows(q, artifact_from_row)?.collect::<Result<_, _>>()?)
     }
 
     /// The newest stored version of each Artifact name of the Box, by name.
@@ -217,22 +242,23 @@ fn record(tx: Tx<'_>, f: &Fresh<'_>, box_dir: &Path) -> Result<ArtifactRow, Stor
     let content_type = content_type(f.name).to_owned();
     let size = i64::try_from(f.size)
         .map_err(|_| StoreError::Corrupt("artifact size exceeds the column range".to_owned()))?;
-    let id: i64 = tx.query_row(
-        "INSERT INTO artifacts (box, session, name, version, kind, content_type, size, sha256, \
-         path, created_at) VALUES (?1, \
-         (SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1), \
-         ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) RETURNING id",
-        params![
-            f.box_id.get(),
-            f.name,
-            f.version,
-            kind,
-            content_type,
-            size,
-            f.sha256,
-            f.path,
-            f.now.as_millis()
-        ],
+    let id: i64 = tx.row(
+        Query::insert()
+            .into_table(Artifacts::Table)
+            .columns(COLUMNS.iter().skip(1).copied())
+            .values_panic([
+                f.box_id.get().into(),
+                db::sub(newest_session(f.box_id)),
+                f.name.into(),
+                f.version.into(),
+                kind.clone().into(),
+                content_type.clone().into(),
+                size.into(),
+                f.sha256.clone().into(),
+                f.path.clone().into(),
+                f.now.as_millis().into(),
+            ])
+            .returning_col(Artifacts::Id),
         |r| r.get(0),
     )?;
     let event = Event::ArtifactPublished {
@@ -246,9 +272,8 @@ fn record(tx: Tx<'_>, f: &Fresh<'_>, box_dir: &Path) -> Result<ArtifactRow, Stor
     super::apply::insert_event(&tx, f.box_id, &event, f.now)?;
     let rows = latest_in(&tx, f.box_id)?;
     manifest::write_manifest(box_dir, &rows, f.now)?;
-    let row = tx.query_row(
-        &format!("SELECT {COLUMNS} FROM artifacts WHERE id = ?"),
-        [id],
+    let row = tx.row(
+        artifact_select().and_where(Expr::col(Artifacts::Id).eq(id)),
         artifact_from_row,
     )?;
     tx.commit()?;
@@ -257,14 +282,20 @@ fn record(tx: Tx<'_>, f: &Fresh<'_>, box_dir: &Path) -> Result<ArtifactRow, Stor
 
 /// Newest version per name for the Box, read on `conn`.
 fn latest_in(conn: &dyn Db, box_id: BoxId) -> Result<Vec<ArtifactRow>, StoreError> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {COLUMNS} FROM artifacts a WHERE box = ?1 AND version = \
-         (SELECT MAX(version) FROM artifacts WHERE box = a.box AND name = a.name) ORDER BY name"
-    ))?;
-    let rows = stmt
-        .query_map([box_id.get()], artifact_from_row)?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows)
+    let newest = Query::select()
+        .expr(Expr::col(("newer", Artifacts::Version)).max())
+        .from_as(Artifacts::Table, "newer")
+        .and_where(Expr::col(("newer", Artifacts::Box)).equals((Artifacts::Table, Artifacts::Box)))
+        .and_where(
+            Expr::col(("newer", Artifacts::Name)).equals((Artifacts::Table, Artifacts::Name)),
+        )
+        .take();
+    let q = artifact_select()
+        .and_where(Expr::col(Artifacts::Box).eq(box_id.get()))
+        .and_where(Expr::col(Artifacts::Version).eq(db::sub(newest)))
+        .order_by(Artifacts::Name, Order::Asc)
+        .take();
+    Ok(conn.rows(q, artifact_from_row)?.collect::<Result<_, _>>()?)
 }
 
 /// Fails when `root` or any existing component down to `to` is a symlink.

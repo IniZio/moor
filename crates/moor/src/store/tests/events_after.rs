@@ -2,10 +2,13 @@ use std::path::Path;
 
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::{BoxId, SessionId};
+use moor_schema::tables::{Events, Sessions};
+use sea_query::{Expr, ExprTrait as _, Query};
 
 use super::super::reads::NamedEvent;
 use super::super::Store;
 use super::{new_box, open};
+use crate::store::db::DbExt as _;
 
 /// Two boxes with interleaved session events, plus every event the store holds.
 fn seeded_events(dir: &Path) -> (Store, BoxId, Vec<NamedEvent>) {
@@ -74,16 +77,31 @@ fn events_after_names_the_session_started_at_or_before_each_event() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = new_box(&store, "alpha");
-    let raw = rusqlite::Connection::open(dir.path().join("state").join("moor.db")).unwrap();
-    raw.execute(
-        "INSERT INTO events (box, kind, payload, ts) VALUES (?1, 'early', '{}', 0), (?1, 'late', '{}', 2000000)",
-        [id.get()],
-    )
-    .unwrap();
-    let session: i64 = raw
-        .query_row("SELECT id FROM sessions WHERE box = ?1", [id.get()], |r| {
-            r.get(0)
-        })
+    store
+        .writer()
+        .run(
+            Query::insert()
+                .into_table(Events::Table)
+                .columns([Events::Box, Events::Kind, Events::Payload, Events::Ts])
+                .values_panic([id.get().into(), "early".into(), "{}".into(), 0_i64.into()])
+                .values_panic([
+                    id.get().into(),
+                    "late".into(),
+                    "{}".into(),
+                    2_000_000_i64.into(),
+                ]),
+        )
+        .unwrap();
+    let session: i64 = store
+        .reader()
+        .unwrap()
+        .row(
+            Query::select()
+                .column(Sessions::Id)
+                .from(Sessions::Table)
+                .and_where(Expr::col(Sessions::Box).eq(id.get())),
+            |r| r.get(0),
+        )
         .unwrap();
     let all = store.events_after(0, 1000).unwrap();
     let find = |kind: &str| all.iter().find(|e| e.row.kind == kind).unwrap();
@@ -115,19 +133,26 @@ fn events_after_puts_an_event_at_a_session_start_in_that_session() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = new_box(&store, "alpha");
-    let raw = rusqlite::Connection::open(dir.path().join("state").join("moor.db")).unwrap();
-    let (session, started): (i64, i64) = raw
-        .query_row(
-            "SELECT id, started_at FROM sessions WHERE box = ?1",
-            [id.get()],
+    let (session, started): (i64, i64) = store
+        .reader()
+        .unwrap()
+        .row(
+            Query::select()
+                .columns([Sessions::Id, Sessions::StartedAt])
+                .from(Sessions::Table)
+                .and_where(Expr::col(Sessions::Box).eq(id.get())),
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .unwrap();
-    raw.execute(
-        "INSERT INTO events (box, kind, payload, ts) VALUES (?1, 'edge', '{}', ?2)",
-        (id.get(), started),
-    )
-    .unwrap();
+    store
+        .writer()
+        .run(
+            Query::insert()
+                .into_table(Events::Table)
+                .columns([Events::Box, Events::Kind, Events::Payload, Events::Ts])
+                .values_panic([id.get().into(), "edge".into(), "{}".into(), started.into()]),
+        )
+        .unwrap();
     let all = store.events_after(0, 1000).unwrap();
     let edge = all.iter().find(|e| e.row.kind == "edge").unwrap();
     assert_eq!(edge.session, Some(SessionId::new(session)));

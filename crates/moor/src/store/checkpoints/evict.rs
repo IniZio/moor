@@ -3,8 +3,10 @@
 
 use moor_core::domain::layers::LayerKey;
 use moor_core::{BoxId, ProviderId};
+use moor_schema::tables::{Boxes, SetupCheckpointPins as Pins, SetupCheckpoints as Checkpoints};
+use sea_query::{DynIden, Expr, ExprTrait as _, IntoIden, OnConflict, Order, Query};
 
-use crate::store::db::{params, DbExt as _, OptionalExtension};
+use crate::store::db::{self, DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
 /// Why a checkpoint goes before the ones after it.
@@ -43,22 +45,66 @@ pub(crate) struct Evictable {
 
 /// True for a checkpoint `c` that a Box holds back: one setting up or waiting to, which may be
 /// forking it, and one whose setup failed, for its deepest checkpoint, where a retry resumes.
-const HELD: &str = "EXISTS (SELECT 1 FROM setup_checkpoint_pins p JOIN boxes b ON b.id = p.box_id \
-     WHERE p.provider = c.provider AND p.layer_key = c.layer_key \
-     AND (b.state IN ('pending', 'setting_up') OR (b.state = 'setup_failed' \
-     AND p.layer = (SELECT MAX(q.layer) FROM setup_checkpoint_pins q \
-     WHERE q.box_id = p.box_id AND q.provider = p.provider))))";
+fn held(c: &DynIden) -> Expr {
+    let deepest = Query::select()
+        .expr(Expr::col(("q", Pins::Layer)).max())
+        .from_as(Pins::Table, "q")
+        .and_where(Expr::col(("q", Pins::BoxId)).equals(("p", Pins::BoxId)))
+        .and_where(Expr::col(("q", Pins::Provider)).equals(("p", Pins::Provider)))
+        .take();
+    let state = Expr::col((Boxes::Table, Boxes::State));
+    let q = Query::select()
+        .expr(Expr::val(1))
+        .from_as(Pins::Table, "p")
+        .inner_join(
+            Boxes::Table,
+            Expr::col((Boxes::Table, Boxes::Id)).equals(("p", Pins::BoxId)),
+        )
+        .and_where(Expr::col(("p", Pins::Provider)).equals((c.clone(), Checkpoints::Provider)))
+        .and_where(Expr::col(("p", Pins::LayerKey)).equals((c.clone(), Checkpoints::LayerKey)))
+        .and_where(
+            state.clone().is_in(["pending", "setting_up"]).or(state
+                .eq("setup_failed")
+                .and(Expr::col(("p", Pins::Layer)).eq(db::sub(deepest)))),
+        )
+        .take();
+    Expr::exists(q)
+}
 
 /// True for a checkpoint `c` that another checkpoint kept on the disk is a delta over, which
 /// the provider refuses to delete first.
-const PARENT: &str = "EXISTS (SELECT 1 FROM setup_checkpoints d \
-     WHERE d.provider = c.provider AND d.parent = c.checkpoint)";
+fn parent(c: &DynIden) -> Expr {
+    let q = Query::select()
+        .expr(Expr::val(1))
+        .from_as(Checkpoints::Table, "d")
+        .and_where(
+            Expr::col(("d", Checkpoints::Provider)).equals((c.clone(), Checkpoints::Provider)),
+        )
+        .and_where(
+            Expr::col(("d", Checkpoints::Parent)).equals((c.clone(), Checkpoints::Checkpoint)),
+        )
+        .take();
+    Expr::exists(q)
+}
 
 /// True for a checkpoint `c` whose user began another chain of the same repo after `c`'s
 /// chain began, as a Box at a newer commit does.
-const SUPERSEDED: &str = "EXISTS (SELECT 1 FROM setup_checkpoints n \
-     WHERE n.provider = c.provider AND n.user = c.user AND n.repo = c.repo \
-     AND n.chain <> c.chain AND n.chain_at > c.chain_at)";
+fn superseded(c: &DynIden) -> Expr {
+    let q = Query::select()
+        .expr(Expr::val(1))
+        .from_as(Checkpoints::Table, "n")
+        .and_where(
+            Expr::col(("n", Checkpoints::Provider)).equals((c.clone(), Checkpoints::Provider)),
+        )
+        .and_where(Expr::col(("n", Checkpoints::User)).equals((c.clone(), Checkpoints::User)))
+        .and_where(Expr::col(("n", Checkpoints::Repo)).equals((c.clone(), Checkpoints::Repo)))
+        .and_where(Expr::col(("n", Checkpoints::Chain)).not_equals((c.clone(), Checkpoints::Chain)))
+        .and_where(
+            Expr::col(("n", Checkpoints::ChainAt)).gt(Expr::col((c.clone(), Checkpoints::ChainAt))),
+        )
+        .take();
+    Expr::exists(q)
+}
 
 impl Store {
     /// Marks layer `layer`, keyed `key`, under `provider` as one Box `id` stands on.
@@ -69,15 +115,17 @@ impl Store {
         key: &LayerKey,
         layer: usize,
     ) -> Result<(), StoreError> {
-        self.writer().execute(
-            "INSERT INTO setup_checkpoint_pins (box_id, provider, layer_key, layer) \
-             VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING",
-            params![
-                id.get(),
-                provider.as_str(),
-                key.as_str(),
-                i64::try_from(layer).unwrap_or(i64::MAX)
-            ],
+        self.writer().run(
+            Query::insert()
+                .into_table(Pins::Table)
+                .columns([Pins::BoxId, Pins::Provider, Pins::LayerKey, Pins::Layer])
+                .values_panic([
+                    id.get().into(),
+                    provider.as_str().into(),
+                    key.as_str().into(),
+                    i64::try_from(layer).unwrap_or(i64::MAX).into(),
+                ])
+                .on_conflict(OnConflict::new().do_nothing().to_owned()),
         )?;
         Ok(())
     }
@@ -85,25 +133,43 @@ impl Store {
     /// The checkpoints under `provider` that may be claimed for deleting: no Box holds them back
     /// and none is a delta over them; superseded chains first, then the least recently used.
     pub(crate) fn evictable(&self, provider: &ProviderId) -> Result<Vec<Evictable>, StoreError> {
-        self.to_evict(provider, &format!("c.evicting = 0 AND NOT {HELD}"))
+        let c = "c".into_iden();
+        let filter = Expr::col((c.clone(), Checkpoints::Evicting))
+            .eq(0)
+            .and(held(&c).not());
+        self.to_evict(provider, filter)
     }
 
     /// The checkpoints under `provider` claimed for deleting and still tracked, as a deleter cut
     /// short leaves them.
     pub(crate) fn evicting(&self, provider: &ProviderId) -> Result<Vec<Evictable>, StoreError> {
-        self.to_evict(provider, "c.evicting = 1")
+        let filter = Expr::col(("c", Checkpoints::Evicting)).eq(1);
+        self.to_evict(provider, filter)
     }
 
     /// The leaf checkpoints under `provider` that `filter` keeps, in the order they go.
-    fn to_evict(&self, provider: &ProviderId, filter: &str) -> Result<Vec<Evictable>, StoreError> {
+    fn to_evict(&self, provider: &ProviderId, filter: Expr) -> Result<Vec<Evictable>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt = conn.prepare(&format!(
-            "SELECT c.layer_key, c.checkpoint, c.repo, c.bytes, {SUPERSEDED} \
-             FROM setup_checkpoints c WHERE c.provider = ? AND {filter} AND NOT {PARENT} \
-             ORDER BY 5 DESC, c.last_used_at, c.created_at"
-        ))?;
-        let rows = stmt.query_map([provider.as_str()], |r| {
-            Ok(Evictable {
+        let c = "c".into_iden();
+        let col = |col| (c.clone(), col);
+        let q = Query::select()
+            .columns([
+                col(Checkpoints::LayerKey),
+                col(Checkpoints::Checkpoint),
+                col(Checkpoints::Repo),
+                col(Checkpoints::Bytes),
+            ])
+            .expr(superseded(&c))
+            .from_as(Checkpoints::Table, c.clone())
+            .and_where(Expr::col(col(Checkpoints::Provider)).eq(provider.as_str()))
+            .and_where(filter)
+            .and_where(parent(&c).not())
+            .order_by_expr(superseded(&c), Order::Desc)
+            .order_by(col(Checkpoints::LastUsedAt), Order::Asc)
+            .order_by(col(Checkpoints::CreatedAt), Order::Asc)
+            .take();
+        let rows = conn.rows(q, |r| {
+            Ok::<_, StoreError>(Evictable {
                 layer_key: r.get(0)?,
                 checkpoint: r.get(1)?,
                 repo: r.get(2)?,
@@ -117,7 +183,7 @@ impl Store {
                 },
             })
         })?;
-        Ok(rows.collect::<Result<_, _>>()?)
+        rows.collect()
     }
 
     /// Marks `gone` as being deleted, unless a Box began holding it back, a delta over it was
@@ -128,13 +194,16 @@ impl Store {
         provider: &ProviderId,
         gone: &Evictable,
     ) -> Result<bool, StoreError> {
-        let changed = self.writer().execute(
-            &format!(
-                "UPDATE setup_checkpoints AS c SET evicting = 1 \
-                 WHERE c.provider = ? AND c.checkpoint = ? AND c.evicting = 0 \
-                 AND NOT {HELD} AND NOT {PARENT}"
-            ),
-            params![provider.as_str(), gone.checkpoint],
+        let c = Checkpoints::Table.into_iden();
+        let changed = self.writer().run(
+            Query::update()
+                .table(Checkpoints::Table)
+                .value(Checkpoints::Evicting, 1)
+                .and_where(Expr::col(Checkpoints::Provider).eq(provider.as_str()))
+                .and_where(Expr::col(Checkpoints::Checkpoint).eq(gone.checkpoint.as_str()))
+                .and_where(Expr::col(Checkpoints::Evicting).eq(0))
+                .and_where(held(&c).not())
+                .and_where(parent(&c).not()),
         )?;
         Ok(changed > 0)
     }
@@ -146,12 +215,24 @@ impl Store {
         provider: &ProviderId,
         checkpoint: &str,
     ) -> Result<(), StoreError> {
-        self.writer().execute(
-            "UPDATE setup_checkpoints SET evicting = 0 \
-             WHERE provider = ? AND checkpoint = ? AND evicting = 1 \
-             AND NOT EXISTS (SELECT 1 FROM setup_checkpoints n WHERE n.provider = ? \
-             AND n.layer_key = setup_checkpoints.layer_key AND n.evicting = 0)",
-            params![provider.as_str(), checkpoint, provider.as_str()],
+        let saved_again = Query::select()
+            .expr(Expr::val(1))
+            .from_as(Checkpoints::Table, "n")
+            .and_where(Expr::col(("n", Checkpoints::Provider)).eq(provider.as_str()))
+            .and_where(
+                Expr::col(("n", Checkpoints::LayerKey))
+                    .equals((Checkpoints::Table, Checkpoints::LayerKey)),
+            )
+            .and_where(Expr::col(("n", Checkpoints::Evicting)).eq(0))
+            .take();
+        self.writer().run(
+            Query::update()
+                .table(Checkpoints::Table)
+                .value(Checkpoints::Evicting, 0)
+                .and_where(Expr::col(Checkpoints::Provider).eq(provider.as_str()))
+                .and_where(Expr::col(Checkpoints::Checkpoint).eq(checkpoint))
+                .and_where(Expr::col(Checkpoints::Evicting).eq(1))
+                .and_where(Expr::exists(saved_again).not()),
         )?;
         Ok(())
     }
@@ -166,19 +247,29 @@ impl Store {
         let mut conn = self.writer();
         let tx = conn.transaction()?;
         let key: Option<String> = tx
-            .query_row(
-                "DELETE FROM setup_checkpoints \
-                 WHERE provider = ? AND checkpoint = ? AND evicting = 1 RETURNING layer_key",
-                params![provider.as_str(), checkpoint],
+            .row(
+                Query::delete()
+                    .from_table(Checkpoints::Table)
+                    .and_where(Expr::col(Checkpoints::Provider).eq(provider.as_str()))
+                    .and_where(Expr::col(Checkpoints::Checkpoint).eq(checkpoint))
+                    .and_where(Expr::col(Checkpoints::Evicting).eq(1))
+                    .returning_col(Checkpoints::LayerKey),
                 |r| r.get(0),
             )
             .optional()?;
         if let Some(key) = &key {
-            tx.execute(
-                "DELETE FROM setup_checkpoint_pins WHERE provider = ?1 AND layer_key = ?2 \
-                 AND NOT EXISTS (SELECT 1 FROM setup_checkpoints \
-                 WHERE provider = ?1 AND layer_key = ?2)",
-                params![provider.as_str(), key],
+            let tracked = Query::select()
+                .expr(Expr::val(1))
+                .from(Checkpoints::Table)
+                .and_where(Expr::col(Checkpoints::Provider).eq(provider.as_str()))
+                .and_where(Expr::col(Checkpoints::LayerKey).eq(key.as_str()))
+                .take();
+            tx.run(
+                Query::delete()
+                    .from_table(Pins::Table)
+                    .and_where(Expr::col(Pins::Provider).eq(provider.as_str()))
+                    .and_where(Expr::col(Pins::LayerKey).eq(key.as_str()))
+                    .and_where(Expr::exists(tracked).not()),
             )?;
         }
         tx.commit()?;

@@ -1,9 +1,11 @@
 //! Bindings of a front conversation to a Session, host or Box.
 
 use moor_core::BoxName;
+use moor_schema::tables::{Bindings, Boxes, Sessions};
+use sea_query::{Expr, ExprTrait as _, OnConflict, Order, Query, SelectStatement};
 
 use super::{parsed, Store, StoreError};
-use crate::store::db::{params, Db, DbExt as _, OptionalExtension, TransactionBehavior};
+use crate::store::db::{Db, DbExt as _, OptionalExtension, TransactionBehavior};
 
 /// A front conversation bound to a Session.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,15 +22,45 @@ pub(crate) struct Binding {
     pub(crate) owner: String,
 }
 
-/// Columns read for a [`Binding`], in [`BindingRow`] order.
-const COLS: &str = "g.front, g.conv_key, g.session, b.name, g.owner";
+/// Whether the binding's Session has not ended.
+fn live() -> Expr {
+    Expr::col((Sessions::Table, Sessions::State)).ne("ended")
+}
 
-/// Joins a binding to its Session and, for a Box Session, the Box.
-const FROM: &str =
-    "bindings g JOIN sessions s ON s.id = g.session LEFT JOIN boxes b ON b.id = s.box";
+/// Bindings joined to their Session and, for a Box Session, the Box.
+fn joined() -> SelectStatement {
+    Query::select()
+        .from(Bindings::Table)
+        .inner_join(
+            Sessions::Table,
+            Expr::col((Sessions::Table, Sessions::Id)).equals((Bindings::Table, Bindings::Session)),
+        )
+        .left_join(
+            Boxes::Table,
+            Expr::col((Boxes::Table, Boxes::Id)).equals((Sessions::Table, Sessions::Box)),
+        )
+        .take()
+}
 
-/// Orders a key's bindings newest first.
-const NEWEST: &str = "ORDER BY g.created_at DESC, g.rowid DESC";
+/// [`joined`] with the columns of a [`Binding`], in [`BindingRow`] order.
+fn binding_select() -> SelectStatement {
+    let b = |c| (Bindings::Table, c);
+    joined()
+        .columns([
+            b(Bindings::Front),
+            b(Bindings::ConvKey),
+            b(Bindings::Session),
+        ])
+        .column((Boxes::Table, Boxes::Name))
+        .column(b(Bindings::Owner))
+        .take()
+}
+
+/// Orders `q`'s bindings newest first.
+fn newest(q: &mut SelectStatement) -> &mut SelectStatement {
+    q.order_by((Bindings::Table, Bindings::CreatedAt), Order::Desc)
+        .order_by((Bindings::Table, Bindings::Id), Order::Desc)
+}
 
 /// Raw binding row: the Box name is still unparsed text.
 type BindingRow = (String, String, i64, Option<String>, String);
@@ -62,23 +94,35 @@ fn insert_binding(
     owner: &str,
     at: i64,
 ) -> Result<bool, StoreError> {
+    let mut newest_binding = joined();
+    newest_binding
+        .expr(live())
+        .and_where(Expr::col((Bindings::Table, Bindings::Front)).eq(front))
+        .and_where(Expr::col((Bindings::Table, Bindings::ConvKey)).eq(key));
     let newest_live: Option<bool> = conn
-        .query_row(
-            &format!(
-                "SELECT s.state != 'ended' FROM {FROM} \
-                 WHERE g.front = ? AND g.conv_key = ? {NEWEST} LIMIT 1"
-            ),
-            params![front, key],
-            |r| r.get(0),
-        )
+        .row(newest(&mut newest_binding).limit(1), |r| r.get(0))
         .optional()?;
     if newest_live == Some(true) {
         return Ok(false);
     }
-    let added = conn.execute(
-        "INSERT INTO bindings (front, conv_key, session, owner, created_at) \
-         VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
-        params![front, key, session, owner, at],
+    let added = conn.run(
+        Query::insert()
+            .into_table(Bindings::Table)
+            .columns([
+                Bindings::Front,
+                Bindings::ConvKey,
+                Bindings::Session,
+                Bindings::Owner,
+                Bindings::CreatedAt,
+            ])
+            .values_panic([
+                front.into(),
+                key.into(),
+                session.into(),
+                owner.into(),
+                at.into(),
+            ])
+            .on_conflict(OnConflict::new().do_nothing().to_owned()),
     )?;
     Ok(added == 1)
 }
@@ -99,9 +143,11 @@ impl Store {
         let mut writer = self.writer();
         let tx = writer.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let state: Option<String> = tx
-            .query_row(
-                "SELECT state FROM sessions WHERE id = ?",
-                params![session],
+            .row(
+                Query::select()
+                    .column(Sessions::State)
+                    .from(Sessions::Table)
+                    .and_where(Expr::col(Sessions::Id).eq(session)),
                 |r| r.get(0),
             )
             .optional()?;
@@ -120,15 +166,16 @@ impl Store {
 
     /// The binding of (front, key): the newest naming a live Session, else the newest.
     pub(crate) fn binding(&self, front: &str, key: &str) -> Result<Option<Binding>, StoreError> {
+        let q = binding_select()
+            .and_where(Expr::col((Bindings::Table, Bindings::Front)).eq(front))
+            .and_where(Expr::col((Bindings::Table, Bindings::ConvKey)).eq(key))
+            .order_by_expr(live(), Order::Desc)
+            .order_by((Bindings::Table, Bindings::CreatedAt), Order::Desc)
+            .order_by((Bindings::Table, Bindings::Id), Order::Desc)
+            .limit(1)
+            .take();
         self.reader()?
-            .query_row(
-                &format!(
-                    "SELECT {COLS} FROM {FROM} WHERE g.front = ? AND g.conv_key = ? \
-                     ORDER BY s.state != 'ended' DESC, g.created_at DESC, g.rowid DESC LIMIT 1"
-                ),
-                params![front, key],
-                row_of,
-            )
+            .row(q, row_of)
             .optional()?
             .map(binding_of)
             .transpose()
@@ -137,12 +184,10 @@ impl Store {
     /// The binding that names Session `session`, if any.
     #[cfg_attr(not(test), expect(dead_code, reason = "no caller outside tests yet"))]
     pub(crate) fn session_binding(&self, session: i64) -> Result<Option<Binding>, StoreError> {
+        let mut q = binding_select();
+        q.and_where(Expr::col((Bindings::Table, Bindings::Session)).eq(session));
         self.reader()?
-            .query_row(
-                &format!("SELECT {COLS} FROM {FROM} WHERE g.session = ? {NEWEST} LIMIT 1"),
-                params![session],
-                row_of,
-            )
+            .row(newest(&mut q).limit(1).take(), row_of)
             .optional()?
             .map(binding_of)
             .transpose()

@@ -1,6 +1,8 @@
 //! Refs a Box carries, such as its branch.
 
 use moor_core::BoxId;
+use moor_schema::tables::BoxRefs;
+use sea_query::{Expr, ExprTrait as _, OnConflict, Order, Query};
 
 use super::super::{Store, StoreError};
 use crate::store::db::DbExt as _;
@@ -18,9 +20,12 @@ impl Store {
         value: &str,
     ) -> Result<bool, StoreError> {
         // ON CONFLICT, not OR IGNORE: OR IGNORE would also swallow the kind CHECK.
-        let changed = self.writer().execute(
-            "INSERT INTO box_refs (box, kind, value) VALUES (?1, ?2, ?3) ON CONFLICT DO NOTHING",
-            (id.get(), kind, value),
+        let changed = self.writer().run(
+            Query::insert()
+                .into_table(BoxRefs::Table)
+                .columns([BoxRefs::Box, BoxRefs::Kind, BoxRefs::Value])
+                .values_panic([id.get().into(), kind.into(), value.into()])
+                .on_conflict(OnConflict::new().do_nothing().to_owned()),
         )?;
         Ok(changed > 0)
     }
@@ -32,10 +37,14 @@ impl Store {
     #[cfg_attr(not(test), expect(dead_code, reason = "no caller outside tests yet"))]
     pub(crate) fn box_refs(&self, id: BoxId, kind: &str) -> Result<Vec<String>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt =
-            conn.prepare("SELECT value FROM box_refs WHERE box = ?1 AND kind = ?2 ORDER BY rowid")?;
-        let rows = stmt.query_map((id.get(), kind), |row| row.get(0))?;
-        Ok(rows.collect::<Result<_, _>>()?)
+        let q = Query::select()
+            .column(BoxRefs::Value)
+            .from(BoxRefs::Table)
+            .and_where(Expr::col(BoxRefs::Box).eq(id.get()))
+            .and_where(Expr::col(BoxRefs::Kind).eq(kind))
+            .order_by(BoxRefs::Id, Order::Asc)
+            .take();
+        Ok(conn.rows(q, |row| row.get(0))?.collect::<Result<_, _>>()?)
     }
 
     /// Boxes carrying a `kind` ref with `value`, ordered by id.
@@ -45,10 +54,15 @@ impl Store {
     #[cfg_attr(not(test), expect(dead_code, reason = "no caller outside tests yet"))]
     pub(crate) fn boxes_by_ref(&self, kind: &str, value: &str) -> Result<Vec<BoxId>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt =
-            conn.prepare("SELECT box FROM box_refs WHERE kind = ?1 AND value = ?2 ORDER BY box")?;
-        let rows = stmt.query_map((kind, value), |row| Ok(BoxId::new(row.get(0)?)))?;
-        Ok(rows.collect::<Result<_, _>>()?)
+        let q = Query::select()
+            .column(BoxRefs::Box)
+            .from(BoxRefs::Table)
+            .and_where(Expr::col(BoxRefs::Kind).eq(kind))
+            .and_where(Expr::col(BoxRefs::Value).eq(value))
+            .order_by(BoxRefs::Box, Order::Asc)
+            .take();
+        let rows = conn.rows(q, |row| Ok::<_, StoreError>(BoxId::new(row.get(0)?)))?;
+        rows.collect()
     }
 }
 

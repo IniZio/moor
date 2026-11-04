@@ -2,8 +2,10 @@
 
 use moor_core::name::ForgeRepo;
 use moor_core::{BoxId, Sha};
+use moor_schema::tables::BoxProfiles;
+use sea_query::{Expr, ExprTrait as _, OnConflict, Query};
 
-use crate::store::db::{params, DbExt as _, OptionalExtension};
+use crate::store::db::{DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
 /// A profile resolved for one Box.
@@ -24,16 +26,30 @@ impl Store {
         id: BoxId,
         profile: &BoxProfile,
     ) -> Result<(), StoreError> {
-        self.writer().execute(
-            "INSERT INTO box_profiles (box, repo, sha, manifest) VALUES (?, ?, ?, ?) \
-             ON CONFLICT (box) DO UPDATE SET repo = excluded.repo, sha = excluded.sha, \
-             manifest = excluded.manifest",
-            params![
-                id.get(),
-                profile.repo.to_string(),
-                profile.sha.as_str(),
-                profile.manifest
-            ],
+        self.writer().run(
+            Query::insert()
+                .into_table(BoxProfiles::Table)
+                .columns([
+                    BoxProfiles::Box,
+                    BoxProfiles::Repo,
+                    BoxProfiles::Sha,
+                    BoxProfiles::Manifest,
+                ])
+                .values_panic([
+                    id.get().into(),
+                    profile.repo.to_string().into(),
+                    profile.sha.as_str().into(),
+                    profile.manifest.clone().into(),
+                ])
+                .on_conflict(
+                    OnConflict::column(BoxProfiles::Box)
+                        .update_columns([
+                            BoxProfiles::Repo,
+                            BoxProfiles::Sha,
+                            BoxProfiles::Manifest,
+                        ])
+                        .to_owned(),
+                ),
         )?;
         Ok(())
     }
@@ -42,9 +58,11 @@ impl Store {
     pub(crate) fn box_profile(&self, id: BoxId) -> Result<Option<BoxProfile>, StoreError> {
         let row: Option<(String, String, Option<String>)> = self
             .reader()?
-            .query_row(
-                "SELECT repo, sha, manifest FROM box_profiles WHERE box = ?",
-                [id.get()],
+            .row(
+                Query::select()
+                    .columns([BoxProfiles::Repo, BoxProfiles::Sha, BoxProfiles::Manifest])
+                    .from(BoxProfiles::Table)
+                    .and_where(Expr::col(BoxProfiles::Box).eq(id.get())),
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()?;
