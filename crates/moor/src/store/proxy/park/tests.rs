@@ -6,9 +6,12 @@ use std::sync::Arc;
 use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName};
+use moor_schema::tables::Meta;
+use sea_query::Query;
 
 use super::super::Reserve;
 use super::{TunnelAck, TunnelRequest, TunnelWant};
+use crate::store::db::DbExt as _;
 use crate::store::{Store, StoreError};
 use crate::testing::clock::FakeClock;
 use crate::testing::rng::FakeRng;
@@ -131,15 +134,20 @@ fn unparsable_values_are_corrupt() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let t = add(&store, "a");
-    let conn = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
     for (k, v) in [
         (format!("tunnel_want:{}", t.get()), "sideways 1"),
         (format!("tunnel_ack:{}", t.get()), "up x"),
     ] {
-        conn.execute("INSERT INTO meta (k, v) VALUES (?, ?)", [k, v.to_owned()])
+        store
+            .writer()
+            .run(
+                Query::insert()
+                    .into_table(Meta::Table)
+                    .columns([Meta::K, Meta::V])
+                    .values_panic([k.into(), v.into()]),
+            )
             .unwrap();
     }
-    drop(conn);
     assert!(matches!(
         store.tunnel_request(t),
         Err(StoreError::Corrupt(_))

@@ -4,8 +4,10 @@
 //! a sequence number the supervisor echoes in its ack, which lets the op ignore stale acks.
 
 use moor_core::BoxId;
+use moor_schema::tables::Meta;
+use sea_query::{Expr, ExprTrait as _, OnConflict, Query};
 
-use crate::store::db::{params, Db, DbExt as _, OptionalExtension, TransactionBehavior};
+use crate::store::db::{Db, DbExt as _, OptionalExtension, TransactionBehavior};
 use crate::store::{Store, StoreError};
 
 /// The tunnel state an op asks the supervisor for.
@@ -128,24 +130,42 @@ fn decode_request(raw: &str) -> Option<TunnelRequest> {
 /// Read one `meta` value.
 fn get(conn: &dyn Db, key: &str) -> Result<Option<String>, StoreError> {
     Ok(conn
-        .query_row("SELECT v FROM meta WHERE k = ?", [key], |r| r.get(0))
+        .row(
+            Query::select()
+                .column(Meta::V)
+                .from(Meta::Table)
+                .and_where(Expr::col(Meta::K).eq(key)),
+            |r| r.get(0),
+        )
         .optional()?)
 }
 
 /// Write one `meta` value.
 fn put(conn: &dyn Db, key: &str, value: &str) -> Result<(), StoreError> {
-    conn.execute(
-        "INSERT INTO meta (k, v) VALUES (?, ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v",
-        params![key, value],
+    conn.run(
+        Query::insert()
+            .into_table(Meta::Table)
+            .columns([Meta::K, Meta::V])
+            .values_panic([key.into(), value.into()])
+            .on_conflict(
+                OnConflict::column(Meta::K)
+                    .update_column(Meta::V)
+                    .to_owned(),
+            ),
     )?;
     Ok(())
 }
 
 /// Delete the request and ack rows of `box_id` on `conn`.
 pub(super) fn clear(conn: &dyn Db, box_id: BoxId) -> Result<(), StoreError> {
-    conn.execute(
-        "DELETE FROM meta WHERE k IN (?, ?, ?)",
-        params![want_key(box_id), ack_key(box_id), opened_key(box_id)],
+    conn.run(
+        Query::delete()
+            .from_table(Meta::Table)
+            .and_where(Expr::col(Meta::K).is_in([
+                want_key(box_id),
+                ack_key(box_id),
+                opened_key(box_id),
+            ])),
     )?;
     Ok(())
 }

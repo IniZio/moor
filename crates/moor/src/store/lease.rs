@@ -7,13 +7,27 @@
 
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
+use moor_schema::tables::BoxLease;
+use sea_query::{Expr, ExprTrait as _, OnConflict, Order, Query, SelectStatement, Value};
 
 use super::{parsed_opt, Store, StoreError};
-use crate::store::db::{params, Db, DbExt as _, Row};
+use crate::store::db::{Db, DbExt as _, Row};
 
 /// Columns read into a `LeaseRow`, in `row` order.
-const COLUMNS: &str = "id, box, kind, key, state, booted, pgid, sid, root_pid, root_start, \
-                       size_at_release, updated_at";
+const COLUMNS: [BoxLease; 12] = [
+    BoxLease::Id,
+    BoxLease::Box,
+    BoxLease::Kind,
+    BoxLease::Key,
+    BoxLease::State,
+    BoxLease::Booted,
+    BoxLease::Pgid,
+    BoxLease::Sid,
+    BoxLease::RootPid,
+    BoxLease::RootStart,
+    BoxLease::SizeAtRelease,
+    BoxLease::UpdatedAt,
+];
 
 /// What a leased resource is; `key` means a path, UDID, project or tag by kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,14 +164,34 @@ impl Store {
     ) -> Result<LeaseId, StoreError> {
         let now = self.now().as_millis();
         let conn = self.writer();
-        conn.execute(
-            "INSERT INTO box_lease (box, kind, key, state, created_at, updated_at) \
-             VALUES (?, ?, ?, 'planned', ?, ?) ON CONFLICT DO NOTHING",
-            params![box_id.get(), kind.as_str(), key, now, now],
+        conn.run(
+            Query::insert()
+                .into_table(BoxLease::Table)
+                .columns([
+                    BoxLease::Box,
+                    BoxLease::Kind,
+                    BoxLease::Key,
+                    BoxLease::State,
+                    BoxLease::CreatedAt,
+                    BoxLease::UpdatedAt,
+                ])
+                .values_panic([
+                    box_id.get().into(),
+                    kind.as_str().into(),
+                    key.into(),
+                    LeaseState::Planned.as_str().into(),
+                    now.into(),
+                    now.into(),
+                ])
+                .on_conflict(OnConflict::new().do_nothing().to_owned()),
         )?;
-        let id = conn.query_row(
-            "SELECT id FROM box_lease WHERE box = ? AND kind = ? AND key = ?",
-            params![box_id.get(), kind.as_str(), key],
+        let id = conn.row(
+            Query::select()
+                .column(BoxLease::Id)
+                .from(BoxLease::Table)
+                .and_where(Expr::col(BoxLease::Box).eq(box_id.get()))
+                .and_where(Expr::col(BoxLease::Kind).eq(kind.as_str()))
+                .and_where(Expr::col(BoxLease::Key).eq(key)),
             |r| r.get(0),
         )?;
         drop(conn);
@@ -166,27 +200,35 @@ impl Store {
 
     /// Mark the resource created; returns whether the row exists.
     pub(crate) fn hold_lease(&self, id: LeaseId) -> Result<bool, StoreError> {
-        self.update(id, "state = ?", params![LeaseState::Held.as_str()])
+        self.update(id, &[(BoxLease::State, LeaseState::Held.as_str().into())])
     }
 
     /// Record whether a simulator is booted; returns whether the row exists.
     pub(crate) fn set_booted(&self, id: LeaseId, booted: bool) -> Result<bool, StoreError> {
-        self.update(id, "booted = ?", params![i64::from(booted)])
+        self.update(id, &[(BoxLease::Booted, i64::from(booted).into())])
     }
 
     /// Record process identity; returns whether the row exists.
     pub(crate) fn record_process(&self, id: LeaseId, ids: ProcessIds) -> Result<bool, StoreError> {
         self.update(
             id,
-            "pgid = ?, sid = ?, root_pid = ?, root_start = ?",
-            params![ids.pgid, ids.sid, ids.root_pid, ids.root_start],
+            &[
+                (BoxLease::Pgid, ids.pgid.into()),
+                (BoxLease::Sid, ids.sid.into()),
+                (BoxLease::RootPid, ids.root_pid.into()),
+                (BoxLease::RootStart, ids.root_start.into()),
+            ],
         )
     }
 
     /// Delete the row; call only after release is verified. Returns whether a row was deleted.
     pub(crate) fn drop_lease(&self, id: LeaseId) -> Result<bool, StoreError> {
         let conn = self.writer();
-        let changed = conn.execute("DELETE FROM box_lease WHERE id = ?", [id.0])?;
+        let changed = conn.run(
+            Query::delete()
+                .from_table(BoxLease::Table)
+                .and_where(Expr::col(BoxLease::Id).eq(id.0)),
+        )?;
         drop(conn);
         Ok(changed > 0)
     }
@@ -195,7 +237,11 @@ impl Store {
     /// existed. Returns how many rows were deleted.
     pub(crate) fn drop_box_leases(&self, box_id: BoxId) -> Result<usize, StoreError> {
         let conn = self.writer();
-        let changed = conn.execute("DELETE FROM box_lease WHERE box = ?", [box_id.get()])?;
+        let changed = conn.run(
+            Query::delete()
+                .from_table(BoxLease::Table)
+                .and_where(Expr::col(BoxLease::Box).eq(box_id.get())),
+        )?;
         drop(conn);
         Ok(changed)
     }
@@ -205,8 +251,11 @@ impl Store {
         let conn = self.reader()?;
         query(
             &conn,
-            &format!("SELECT {COLUMNS} FROM box_lease WHERE box = ? ORDER BY id"),
-            params![box_id.get()],
+            Query::select()
+                .columns(COLUMNS)
+                .from(BoxLease::Table)
+                .and_where(Expr::col(BoxLease::Box).eq(box_id.get()))
+                .order_by(BoxLease::Id, Order::Asc),
         )
     }
 
@@ -215,41 +264,34 @@ impl Store {
         let conn = self.reader()?;
         query(
             &conn,
-            &format!("SELECT {COLUMNS} FROM box_lease ORDER BY id"),
-            params![],
+            Query::select()
+                .columns(COLUMNS)
+                .from(BoxLease::Table)
+                .order_by(BoxLease::Id, Order::Asc),
         )
     }
 
-    /// Apply `set` to the row and stamp `updated_at`; `args` bind the placeholders in `set`.
-    fn update(
-        &self,
-        id: LeaseId,
-        set: &str,
-        args: &[&dyn crate::store::db::ToSql],
-    ) -> Result<bool, StoreError> {
+    /// Assign `sets` on the row and stamp `updated_at`.
+    fn update(&self, id: LeaseId, sets: &[(BoxLease, Value)]) -> Result<bool, StoreError> {
         let now = self.now().as_millis();
-        let mut all: Vec<&dyn crate::store::db::ToSql> = args.to_vec();
-        all.push(&now);
-        all.push(&id.0);
+        let mut q = Query::update();
+        q.table(BoxLease::Table);
+        for (c, v) in sets {
+            q.value(*c, Expr::val(v.clone()));
+        }
         let conn = self.writer();
-        let changed = conn.execute(
-            &format!("UPDATE box_lease SET {set}, updated_at = ? WHERE id = ?"),
-            all.as_slice(),
+        let changed = conn.run(
+            q.value(BoxLease::UpdatedAt, now)
+                .and_where(Expr::col(BoxLease::Id).eq(id.0)),
         )?;
         drop(conn);
         Ok(changed > 0)
     }
 }
 
-/// Run `sql` and read every row as a `LeaseRow`.
-fn query(
-    conn: &dyn Db,
-    sql: &str,
-    args: impl crate::store::db::Params,
-) -> Result<Vec<LeaseRow>, StoreError> {
-    let mut stmt = conn.prepare(sql)?;
-    let rows = stmt.query_and_then(args, row)?;
-    rows.collect()
+/// Run `q` and read every row as a `LeaseRow`.
+fn query(conn: &dyn Db, q: &mut SelectStatement) -> Result<Vec<LeaseRow>, StoreError> {
+    conn.rows(q, row)?.collect()
 }
 
 /// Read one `LeaseRow` laid out as `COLUMNS`.

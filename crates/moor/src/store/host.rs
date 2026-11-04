@@ -3,7 +3,10 @@
 use std::path::Path;
 
 use moor_core::domain::session_state::{SessionInput, SessionState};
+use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
+use moor_schema::tables::Sessions;
+use sea_query::{Expr, ExprTrait as _, Func, Query};
 
 use super::{parsed_opt, Store, StoreError};
 use crate::store::db::{Db, DbExt as _, OptionalExtension, TransactionBehavior};
@@ -28,10 +31,18 @@ pub(crate) struct HostRow {
 /// Read the host Session `id`; Box Sessions are not host rows.
 fn load(conn: &dyn Db, id: i64) -> Result<Option<HostRow>, StoreError> {
     let raw = conn
-        .query_row(
-            "SELECT workdir, agent, agent_session_id, state, ended_at FROM sessions \
-             WHERE id = ?1 AND box IS NULL",
-            [id],
+        .row(
+            Query::select()
+                .columns([
+                    Sessions::Workdir,
+                    Sessions::Agent,
+                    Sessions::AgentSessionId,
+                    Sessions::State,
+                    Sessions::EndedAt,
+                ])
+                .from(Sessions::Table)
+                .and_where(Expr::col(Sessions::Id).eq(id))
+                .and_where(Expr::col(Sessions::Box).is_null()),
             |r| {
                 Ok((
                     r.get::<_, String>(0)?,
@@ -132,11 +143,10 @@ impl Store {
     ) -> Result<(i64, String, bool), StoreError> {
         let NewHost {
             workdir,
-            agent,
-            agent_session_id,
             parent,
             user,
             key,
+            ..
         } = *new;
         let given = match workdir {
             HostWorkdir::At(dir) => dir.to_owned(),
@@ -162,17 +172,17 @@ impl Store {
         {
             return Ok((id, dir, false));
         }
-        let id: i64 = tx.query_row(
-            "INSERT INTO sessions (box, ordinal, state, started_at, workdir, agent, agent_session_id, parent_session, \"user\", host_key) \
-             VALUES (NULL, 1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) RETURNING id",
-            (state.as_str(), now.as_millis(), &given, agent, agent_session_id, parent, user_id, key),
-            |r| r.get(0),
-        )?;
+        let id = insert(&tx, new, &given, state, now, user_id)?;
         let workdir = match workdir {
             HostWorkdir::At(_) => given,
             HostWorkdir::Under(base) => {
                 let own = base.join(id.to_string()).display().to_string();
-                tx.execute("UPDATE sessions SET workdir = ?1 WHERE id = ?2", (&own, id))?;
+                tx.run(
+                    Query::update()
+                        .table(Sessions::Table)
+                        .value(Sessions::Workdir, own.as_str())
+                        .and_where(Expr::col(Sessions::Id).eq(id)),
+                )?;
                 own
             }
         };
@@ -204,11 +214,19 @@ impl Store {
         let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         load_live(&tx, id)?;
-        tx.execute(
-            "UPDATE sessions SET agent = COALESCE(?2, agent), \
-             agent_session_id = COALESCE(?3, agent_session_id) WHERE id = ?1",
-            (id, agent, agent_session_id),
-        )?;
+        let mut update = Query::update();
+        update
+            .table(Sessions::Table)
+            .and_where(Expr::col(Sessions::Id).eq(id));
+        if let Some(a) = agent {
+            update.value(Sessions::Agent, a);
+        }
+        if let Some(a) = agent_session_id {
+            update.value(Sessions::AgentSessionId, a);
+        }
+        if agent.is_some() || agent_session_id.is_some() {
+            tx.run(&mut update)?;
+        }
         let row = load_live(&tx, id)?;
         tx.commit()?;
         drop(conn);
@@ -226,9 +244,12 @@ impl Store {
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let mut row = load_live(&tx, id)?;
         row.state = row.state.step(&SessionInput::End)?;
-        tx.execute(
-            "UPDATE sessions SET state = ?2, ended_at = ?3 WHERE id = ?1",
-            (id, row.state.as_str(), now),
+        tx.run(
+            Query::update()
+                .table(Sessions::Table)
+                .value(Sessions::State, row.state.as_str())
+                .value(Sessions::EndedAt, now)
+                .and_where(Expr::col(Sessions::Id).eq(id)),
         )?;
         tx.commit()?;
         drop(conn);
@@ -237,12 +258,55 @@ impl Store {
     }
 }
 
+/// Insert the host Session `new` working in `workdir`; its id.
+fn insert(
+    conn: &dyn Db,
+    new: &NewHost<'_>,
+    workdir: &str,
+    state: SessionState,
+    now: Ts,
+    user: Option<i64>,
+) -> Result<i64, StoreError> {
+    Ok(conn.row(
+        Query::insert()
+            .into_table(Sessions::Table)
+            .columns([
+                Sessions::Box,
+                Sessions::Ordinal,
+                Sessions::State,
+                Sessions::StartedAt,
+                Sessions::Workdir,
+                Sessions::Agent,
+                Sessions::AgentSessionId,
+                Sessions::ParentSession,
+                Sessions::User,
+                Sessions::HostKey,
+            ])
+            .values_panic([
+                Option::<i64>::None.into(),
+                1.into(),
+                state.as_str().into(),
+                now.as_millis().into(),
+                workdir.into(),
+                new.agent.into(),
+                new.agent_session_id.into(),
+                new.parent.into(),
+                user.into(),
+                new.key.into(),
+            ])
+            .returning_col(Sessions::Id),
+        |r| r.get(0),
+    )?)
+}
+
 /// Refuses parent `p` when it is unknown or has ended.
 fn check_parent(conn: &dyn Db, p: i64) -> Result<(), StoreError> {
     let row: Option<(String, Option<i64>)> = conn
-        .query_row(
-            "SELECT state, ended_at FROM sessions WHERE id = ?1",
-            [p],
+        .row(
+            Query::select()
+                .columns([Sessions::State, Sessions::EndedAt])
+                .from(Sessions::Table)
+                .and_where(Expr::col(Sessions::Id).eq(p)),
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()?;
@@ -263,10 +327,16 @@ fn live_keyed(
     key: &str,
 ) -> Result<Option<(i64, String)>, StoreError> {
     Ok(conn
-        .query_row(
-            "SELECT id, workdir FROM sessions WHERE box IS NULL AND host_key = ?1 \
-             AND COALESCE(\"user\", 0) = COALESCE(?2, 0) AND ended_at IS NULL",
-            (key, user),
+        .row(
+            Query::select()
+                .columns([Sessions::Id, Sessions::Workdir])
+                .from(Sessions::Table)
+                .and_where(Expr::col(Sessions::Box).is_null())
+                .and_where(Expr::col(Sessions::HostKey).eq(key))
+                .and_where(
+                    Func::coalesce([Expr::col(Sessions::User), Expr::val(0)]).eq(user.unwrap_or(0)),
+                )
+                .and_where(Expr::col(Sessions::EndedAt).is_null()),
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()?)

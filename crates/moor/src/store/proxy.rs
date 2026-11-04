@@ -9,9 +9,39 @@ use std::time::Duration;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::rng::Rng;
 use moor_core::BoxId;
+use moor_schema::tables::Proxy;
+use sea_query::{Expr, ExprTrait as _, Order, Query, UpdateStatement};
 
 use super::{load_box, to_u32, Store, StoreError};
-use crate::store::db::{params, Db, DbExt as _, OptionalExtension, Row, TransactionBehavior};
+use crate::store::db::{Db, DbExt as _, OptionalExtension, Row, TransactionBehavior};
+
+/// The columns a proxy row is read with, in the order [`raw_from_row`] reads them.
+const COLUMNS: [Proxy; 9] = [
+    Proxy::Box,
+    Proxy::BoxPort,
+    Proxy::EgressPort,
+    Proxy::Pid,
+    Proxy::Handle,
+    Proxy::Ready,
+    Proxy::LeaseOwner,
+    Proxy::LeaseHeartbeat,
+    Proxy::BootId,
+];
+
+/// Reset the row of `box_id` to unready with no pid, handle or lease.
+fn reset(box_id: BoxId, now: Ts) -> UpdateStatement {
+    Query::update()
+        .table(Proxy::Table)
+        .value(Proxy::Ready, 0)
+        .value(Proxy::Pid, Option::<i64>::None)
+        .value(Proxy::Handle, Option::<String>::None)
+        .value(Proxy::LeaseOwner, Option::<String>::None)
+        .value(Proxy::LeaseHeartbeat, Option::<i64>::None)
+        .value(Proxy::BootId, Option::<String>::None)
+        .value(Proxy::UpdatedAt, now.as_millis())
+        .and_where(Expr::col(Proxy::Box).eq(box_id.get()))
+        .take()
+}
 
 /// Lowest box port a proxy may be given.
 pub(crate) const BOX_PORT_MIN: u16 = 20000;
@@ -107,9 +137,11 @@ impl Store {
             return Err(StoreError::NotFound(box_id));
         }
         let existing: Option<(i64, Option<String>, Option<i64>)> = tx
-            .query_row(
-                "SELECT box_port, lease_owner, lease_heartbeat FROM proxy WHERE box = ?",
-                [box_id.get()],
+            .row(
+                Query::select()
+                    .columns([Proxy::BoxPort, Proxy::LeaseOwner, Proxy::LeaseHeartbeat])
+                    .from(Proxy::Table)
+                    .and_where(Expr::col(Proxy::Box).eq(box_id.get())),
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()?;
@@ -126,18 +158,28 @@ impl Store {
                     return Ok(Reserve::Leased { owner });
                 }
             }
-            tx.execute(
-                "UPDATE proxy SET ready = 0, pid = NULL, handle = NULL, \
-                 lease_owner = NULL, lease_heartbeat = NULL, boot_id = NULL, updated_at = ? WHERE box = ?",
-                params![now.as_millis(), box_id.get()],
-            )?;
+            tx.run(reset(box_id, now))?;
             port
         } else {
             let port = free_port(&tx, rng, BOX_PORTS)?;
             let egress = free_port(&tx, rng, EGRESS_PORTS)?;
-            tx.execute(
-                "INSERT INTO proxy (box, box_port, egress_port, ready, updated_at) VALUES (?, ?, ?, 0, ?)",
-                params![box_id.get(), port, egress, now.as_millis()],
+            tx.run(
+                Query::insert()
+                    .into_table(Proxy::Table)
+                    .columns([
+                        Proxy::Box,
+                        Proxy::BoxPort,
+                        Proxy::EgressPort,
+                        Proxy::Ready,
+                        Proxy::UpdatedAt,
+                    ])
+                    .values_panic([
+                        box_id.get().into(),
+                        port.into(),
+                        egress.into(),
+                        0.into(),
+                        now.as_millis().into(),
+                    ]),
             )?;
             port
         };
@@ -149,10 +191,11 @@ impl Store {
     /// The proxy row of `box_id`, if any.
     pub(crate) fn proxy(&self, box_id: BoxId) -> Result<Option<ProxyRow>, StoreError> {
         let conn = self.reader()?;
-        conn.query_row(
-            "SELECT box, box_port, egress_port, pid, handle, ready, lease_owner, lease_heartbeat, boot_id \
-             FROM proxy WHERE box = ?",
-            [box_id.get()],
+        conn.row(
+            Query::select()
+                .columns(COLUMNS)
+                .from(Proxy::Table)
+                .and_where(Expr::col(Proxy::Box).eq(box_id.get())),
             raw_from_row,
         )
         .optional()?
@@ -163,11 +206,13 @@ impl Store {
     /// Every proxy row, by box ascending.
     pub(crate) fn proxies(&self) -> Result<Vec<ProxyRow>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt = conn.prepare(
-            "SELECT box, box_port, egress_port, pid, handle, ready, lease_owner, lease_heartbeat, boot_id \
-             FROM proxy ORDER BY box",
+        let rows = conn.rows(
+            Query::select()
+                .columns(COLUMNS)
+                .from(Proxy::Table)
+                .order_by(Proxy::Box, Order::Asc),
+            |r| ProxyRow::try_from(raw_from_row(r)?),
         )?;
-        let rows = stmt.query_and_then([], |r| ProxyRow::try_from(raw_from_row(r)?))?;
         rows.collect()
     }
 
@@ -176,11 +221,7 @@ impl Store {
     pub(crate) fn expire_proxy(&self, box_id: BoxId) -> Result<bool, StoreError> {
         let now = self.now();
         let conn = self.writer();
-        let changed = conn.execute(
-            "UPDATE proxy SET ready = 0, pid = NULL, handle = NULL, \
-             lease_owner = NULL, lease_heartbeat = NULL, boot_id = NULL, updated_at = ? WHERE box = ?",
-            params![now.as_millis(), box_id.get()],
-        )?;
+        let changed = conn.run(reset(box_id, now))?;
         drop(conn);
         Ok(changed > 0)
     }
@@ -189,7 +230,11 @@ impl Store {
     pub(crate) fn remove_proxy(&self, box_id: BoxId) -> Result<bool, StoreError> {
         let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let changed = tx.execute("DELETE FROM proxy WHERE box = ?", [box_id.get()])?;
+        let changed = tx.run(
+            Query::delete()
+                .from_table(Proxy::Table)
+                .and_where(Expr::col(Proxy::Box).eq(box_id.get())),
+        )?;
         park::clear(&tx, box_id)?;
         tx.commit()?;
         drop(conn);
@@ -260,9 +305,12 @@ fn to_port(what: &str, v: i64) -> Result<u16, StoreError> {
 /// Whether a row other than `box_id`'s holds `port`.
 fn held_by_other(conn: &dyn Db, box_id: BoxId, port: u16) -> Result<bool, StoreError> {
     Ok(conn
-        .query_row(
-            "SELECT 1 FROM proxy WHERE box_port = ? AND box <> ?",
-            params![port, box_id.get()],
+        .row(
+            Query::select()
+                .column(Proxy::Box)
+                .from(Proxy::Table)
+                .and_where(Expr::col(Proxy::BoxPort).eq(port))
+                .and_where(Expr::col(Proxy::Box).ne(box_id.get())),
             |_| Ok(()),
         )
         .optional()?
@@ -277,7 +325,7 @@ struct Ports {
     /// Highest port (inclusive).
     max: u16,
     /// The `proxy` column.
-    column: &'static str,
+    column: Proxy,
     /// What the error names when the range is full.
     what: &'static str,
 }
@@ -286,7 +334,7 @@ struct Ports {
 const BOX_PORTS: Ports = Ports {
     min: BOX_PORT_MIN,
     max: BOX_PORT_MAX,
-    column: "box_port",
+    column: Proxy::BoxPort,
     what: "box port",
 };
 
@@ -294,7 +342,7 @@ const BOX_PORTS: Ports = Ports {
 const EGRESS_PORTS: Ports = Ports {
     min: EGRESS_PORT_MIN,
     max: EGRESS_PORT_MAX,
-    column: "egress_port",
+    column: Proxy::EgressPort,
     what: "egress port",
 };
 
@@ -304,9 +352,14 @@ fn free_port(conn: &dyn Db, rng: &dyn Rng, ports: Ports) -> Result<u16, StoreErr
     let span = u32::from(ports.max - ports.min) + 1;
     let at = |offset: u32| ports.min + u16::try_from(offset % span).unwrap_or(0);
     let taken = |port: u16| -> Result<bool, StoreError> {
-        let sql = format!("SELECT 1 FROM proxy WHERE {} = ?", ports.column);
         Ok(conn
-            .query_row(&sql, [port], |_| Ok(()))
+            .row(
+                Query::select()
+                    .column(Proxy::Box)
+                    .from(Proxy::Table)
+                    .and_where(Expr::col(ports.column).eq(port)),
+                |_| Ok(()),
+            )
             .optional()?
             .is_some())
     };

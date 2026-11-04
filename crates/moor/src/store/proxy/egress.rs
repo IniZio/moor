@@ -3,6 +3,8 @@
 use moor_core::attention::{open_limits, Limit};
 use moor_core::domain::event::Event;
 use moor_core::BoxId;
+use moor_schema::tables::Events;
+use sea_query::{Expr, ExprTrait as _, Order, Query};
 
 use crate::store::apply::insert_event;
 use crate::store::db::{DbExt as _, TransactionBehavior};
@@ -52,15 +54,22 @@ impl Store {
         box_id: BoxId,
     ) -> Result<Vec<(String, serde_json::Value)>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt = conn.prepare(
-            "SELECT kind, payload FROM events WHERE box = ?1 AND kind IN \
-             ('agent_rate_limited', 'proxy_credential_rejected', 'proxy_credential_recovered') \
-             ORDER BY id",
+        let rows = conn.rows(
+            Query::select()
+                .columns([Events::Kind, Events::Payload])
+                .from(Events::Table)
+                .and_where(Expr::col(Events::Box).eq(box_id.get()))
+                .and_where(Expr::col(Events::Kind).is_in([
+                    "agent_rate_limited",
+                    "proxy_credential_rejected",
+                    "proxy_credential_recovered",
+                ]))
+                .order_by(Events::Id, Order::Asc),
+            |row| {
+                let payload: String = row.get(1)?;
+                Ok::<_, StoreError>((row.get::<_, String>(0)?, serde_json::from_str(&payload)?))
+            },
         )?;
-        let rows = stmt.query_and_then([box_id.get()], |row| {
-            let payload: String = row.get(1)?;
-            Ok::<_, StoreError>((row.get::<_, String>(0)?, serde_json::from_str(&payload)?))
-        })?;
         rows.collect()
     }
 

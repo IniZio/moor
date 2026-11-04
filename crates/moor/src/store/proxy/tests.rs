@@ -9,10 +9,13 @@ use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::rng::Rng;
 use moor_core::{BoxId, BoxName};
+use moor_schema::tables::Proxy;
+use sea_query::{Expr, ExprTrait as _, Query};
 
 use super::{
     Fenced, Lease, ReadyProc, Reserve, BOX_PORT_MAX, BOX_PORT_MIN, EGRESS_PORT_MAX, EGRESS_PORT_MIN,
 };
+use crate::store::db::DbExt as _;
 use crate::store::{Store, StoreError};
 use crate::testing::clock::FakeClock;
 use crate::testing::rng::FakeRng;
@@ -116,11 +119,15 @@ fn rereserve_keeps_port_and_resets_the_row() {
     let (store, clock, id) = reserved(dir.path());
     let first = store.proxy(id).unwrap().unwrap().box_port;
     assert_eq!(store.claim_lease(id, "A", LEASE).unwrap(), Lease::Claimed);
-    rusqlite::Connection::open(dir.path().join("moor.db"))
-        .unwrap()
-        .execute(
-            "UPDATE proxy SET ready = 1, pid = 77, handle = 'h' WHERE box = ?",
-            [id.get()],
+    store
+        .writer()
+        .run(
+            Query::update()
+                .table(Proxy::Table)
+                .value(Proxy::Ready, 1)
+                .value(Proxy::Pid, 77)
+                .value(Proxy::Handle, "h")
+                .and_where(Expr::col(Proxy::Box).eq(id.get())),
         )
         .unwrap();
     clock.sleep(LEASE);

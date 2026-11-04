@@ -5,6 +5,8 @@ use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionState;
 use moor_core::BoxId;
+use moor_schema::tables::{Events, Sessions};
+use sea_query::{Asterisk, Expr, ExprTrait as _, Query};
 
 use crate::store::db::DbExt as _;
 use crate::store::host::{HostWorkdir, NewHost};
@@ -17,9 +19,17 @@ fn row(store: &Store, id: i64) -> Row {
     store
         .reader()
         .unwrap()
-        .query_row(
-            "SELECT box, workdir, state, ended_at, ordinal FROM sessions WHERE id = ?",
-            [id],
+        .row(
+            Query::select()
+                .columns([
+                    Sessions::Box,
+                    Sessions::Workdir,
+                    Sessions::State,
+                    Sessions::EndedAt,
+                    Sessions::Ordinal,
+                ])
+                .from(Sessions::Table)
+                .and_where(Expr::col(Sessions::Id).eq(id)),
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
         )
         .unwrap()
@@ -29,9 +39,11 @@ fn agent_cols(store: &Store, id: i64) -> (Option<String>, Option<String>) {
     store
         .reader()
         .unwrap()
-        .query_row(
-            "SELECT agent, agent_session_id FROM sessions WHERE id = ?",
-            [id],
+        .row(
+            Query::select()
+                .columns([Sessions::Agent, Sessions::AgentSessionId])
+                .from(Sessions::Table)
+                .and_where(Expr::col(Sessions::Id).eq(id)),
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .unwrap()
@@ -74,7 +86,12 @@ fn event_count(store: &Store) -> i64 {
     store
         .reader()
         .unwrap()
-        .query_row("SELECT COUNT(*) FROM events", [], |r| r.get(0))
+        .row(
+            Query::select()
+                .expr(Expr::col(Asterisk).count())
+                .from(Events::Table),
+            |r| r.get(0),
+        )
         .unwrap()
 }
 
@@ -210,9 +227,11 @@ fn parent_col(store: &Store, id: i64) -> Option<i64> {
     store
         .reader()
         .unwrap()
-        .query_row(
-            "SELECT parent_session FROM sessions WHERE id = ?",
-            [id],
+        .row(
+            Query::select()
+                .column(Sessions::ParentSession)
+                .from(Sessions::Table)
+                .and_where(Expr::col(Sessions::Id).eq(id)),
             |r| r.get(0),
         )
         .unwrap()
@@ -222,7 +241,12 @@ fn session_count(store: &Store) -> i64 {
     store
         .reader()
         .unwrap()
-        .query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get(0))
+        .row(
+            Query::select()
+                .expr(Expr::col(Asterisk).count())
+                .from(Sessions::Table),
+            |r| r.get(0),
+        )
         .unwrap()
 }
 
