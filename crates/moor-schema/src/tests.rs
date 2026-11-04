@@ -9,6 +9,7 @@ use moor_migrate::{render, Backend};
 
 use crate::STEPS;
 
+mod insertion_order;
 mod postgres;
 mod sqlite;
 

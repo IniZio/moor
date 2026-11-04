@@ -53,7 +53,7 @@ tables! {
         EndedAt, ParentSession, Workdir, User, HostKey }
     Launches { Id, Box, SessionRef, Pane, StartedAt, EndedAt, Exit, TranscriptDigest,
         RegisteredAgentSession, Session, Holder }
-    BoxRefs { Box, Kind, Value }
+    BoxRefs { Id, Box, Kind, Value }
     Events { Id, Box, Session, Kind, Payload, Ts }
     Runs { Id, Box, Argv, Record, Sha, Pid, StartedAt, FinishedAt, Exit, Interrupted }
     Reports { Id, Box, Session, Kind, Version, Path, Title, CreatedAt }
@@ -64,7 +64,7 @@ tables! {
         CreatedAt, UpdatedAt }
     Artifacts { Id, Box, Session, Name, Version, Kind, ContentType, Size, Sha256, Path, CreatedAt }
     ArtifactCursors { Box, Through }
-    Bindings { Front, ConvKey, Session, Owner, CreatedAt }
+    Bindings { Id, Front, ConvKey, Session, Owner, CreatedAt }
     BoxProfiles { Box, Repo, Sha, Manifest }
     WebhookDeliveries { Id, Webhook, Event, LeasedUntil }
     UserMachinesV2 { MachineId, User, Name, Pubkey, Labels, Capacity, EnrolledAt, PoolProvider }
