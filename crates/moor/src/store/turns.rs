@@ -8,7 +8,7 @@ use sea_query::{Expr, ExprTrait as _, Query};
 use super::apply::insert_event;
 use super::reads::steer_answered;
 use super::{Store, StoreError};
-use crate::store::db::{DbExt as _, TransactionBehavior};
+use crate::store::db::DbExt as _;
 
 impl Store {
     /// Write a `turn_done` for `steer` unless the Box already has one for it.
@@ -26,7 +26,7 @@ impl Store {
     ) -> Result<bool, StoreError> {
         let now = self.now();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         if steer_answered(&tx, box_id, steer)? {
             return Ok(false);
         }
@@ -50,7 +50,7 @@ impl Store {
     ) -> Result<(), StoreError> {
         let now = self.now();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let old: Option<String> = tx.row(
             Query::select()
                 .column(Launches::Pane)

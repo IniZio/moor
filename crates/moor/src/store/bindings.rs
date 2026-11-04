@@ -5,7 +5,7 @@ use moor_schema::tables::{Bindings, Boxes, Sessions};
 use sea_query::{Expr, ExprTrait as _, OnConflict, Order, Query, SelectStatement};
 
 use super::{parsed, Store, StoreError};
-use crate::store::db::{Db, DbExt as _, OptionalExtension, TransactionBehavior};
+use crate::store::db::{Db, DbExt as _, OptionalExtension};
 
 /// A front conversation bound to a Session.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,7 +66,7 @@ fn newest(q: &mut SelectStatement) -> &mut SelectStatement {
 type BindingRow = (String, String, i64, Option<String>, String);
 
 /// Reads one raw binding row.
-fn row_of(r: &crate::store::db::Row<'_>) -> rusqlite::Result<BindingRow> {
+fn row_of(r: &crate::store::db::Row<'_>) -> crate::store::db::Result<BindingRow> {
     Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
 }
 
@@ -141,7 +141,7 @@ impl Store {
     ) -> Result<bool, StoreError> {
         let now = self.now();
         let mut writer = self.writer();
-        let tx = writer.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = writer.immediate()?;
         let state: Option<String> = tx
             .row(
                 Query::select()

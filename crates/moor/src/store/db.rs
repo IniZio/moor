@@ -5,12 +5,11 @@
 //! read back is one of `SQLite`'s storage classes, read through rusqlite's `FromSql`, so every
 //! backend reads a Rust type the way the `SQLite` store always has.
 
-use rusqlite::types::{FromSql, FromSqlError, ToSqlOutput, Value, ValueRef};
-use sea_query::{DeleteStatement, InsertStatement, SelectStatement, UpdateStatement};
+use rusqlite::types::{FromSql, FromSqlError, Value, ValueRef};
+use sea_query::{DeleteStatement, Iden, InsertStatement, SelectStatement, UpdateStatement};
 
-#[cfg(test)]
-pub(crate) use rusqlite::params;
-pub(crate) use rusqlite::{Error, OptionalExtension, ToSql, TransactionBehavior};
+pub(crate) use rusqlite::types::Type;
+pub(crate) use rusqlite::{Error, OptionalExtension};
 
 /// A database operation's result.
 pub(crate) type Result<T, E = Error> = std::result::Result<T, E>;
@@ -67,90 +66,10 @@ pub(crate) fn sub(q: SelectStatement) -> sea_query::Expr {
 
 /// Something SQL runs on: a connection or an open transaction.
 pub(crate) trait Db {
-    /// Run `sql` with `params` bound; the number of rows it changed.
-    fn execute_values(&self, sql: &str, params: Vec<Value>) -> Result<usize>;
-    /// Run `sql` with `params` bound; every row it returned.
-    fn query_values(&self, sql: &str, params: Vec<Value>) -> Result<Rows>;
     /// Run `s`; the number of rows it changed.
     fn run_statement(&self, s: &Statement) -> Result<usize>;
     /// Run `s`; every row it returned.
     fn fetch_statement(&self, s: &Statement) -> Result<Rows>;
-}
-
-/// The values bound to a statement's placeholders, in order.
-pub(crate) trait Params {
-    /// The bound values.
-    fn values(self) -> Result<Vec<Value>>;
-}
-
-/// One bound value, converted the way rusqlite binds it.
-fn bound(p: &(impl ToSql + ?Sized)) -> Result<Value> {
-    Ok(match p.to_sql()? {
-        ToSqlOutput::Borrowed(v) => owned(v)?,
-        ToSqlOutput::Owned(v) => v,
-        _ => return Err(Error::ToSqlConversionFailure("unsupported value".into())),
-    })
-}
-
-impl Params for &[&dyn ToSql] {
-    fn values(self) -> Result<Vec<Value>> {
-        self.iter().map(|p| bound(*p)).collect()
-    }
-}
-
-impl Params for Vec<Value> {
-    fn values(self) -> Result<Vec<Value>> {
-        Ok(self)
-    }
-}
-
-impl Params for () {
-    fn values(self) -> Result<Vec<Value>> {
-        Ok(Vec::new())
-    }
-}
-
-impl Params for [&(dyn ToSql + Send + Sync); 0] {
-    fn values(self) -> Result<Vec<Value>> {
-        Ok(Vec::new())
-    }
-}
-
-/// `Params` for arrays of one to `N` values.
-macro_rules! array_params {
-    ($($n:literal)+) => {$(
-        impl<T: ToSql> Params for [T; $n] {
-            fn values(self) -> Result<Vec<Value>> {
-                self.iter().map(bound).collect()
-            }
-        }
-    )+};
-}
-array_params!(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16);
-
-/// `Params` for tuples of one to sixteen values.
-macro_rules! tuple_params {
-    ($(($($t:ident $i:tt),+))+) => {$(
-        impl<$($t: ToSql),+> Params for ($($t,)+) {
-            fn values(self) -> Result<Vec<Value>> {
-                Ok(vec![$(bound(&self.$i)?),+])
-            }
-        }
-    )+};
-}
-tuple_params! {
-    (A 0)
-    (A 0, B 1)
-    (A 0, B 1, C 2)
-    (A 0, B 1, C 2, D 3)
-    (A 0, B 1, C 2, D 3, E 4)
-    (A 0, B 1, C 2, D 3, E 4, F 5)
-    (A 0, B 1, C 2, D 3, E 4, F 5, G 6)
-    (A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7)
-    (A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8)
-    (A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9)
-    (A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9, K 10)
-    (A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9, K 10, L 11)
 }
 
 /// A column of a row: its position, or its name.
@@ -228,76 +147,8 @@ impl<T, E, F: FnMut(&Row<'_>) -> Result<T, E>> Iterator for Mapped<F> {
     }
 }
 
-/// A statement to run, possibly more than once, on `db`.
-#[cfg(test)]
-pub(crate) struct Stmt<'a, D: ?Sized> {
-    /// Where it runs.
-    db: &'a D,
-    /// Its SQL.
-    sql: String,
-}
-
-#[cfg(test)]
-impl<D: Db + ?Sized> Stmt<'_, D> {
-    /// Run it; the rows mapped lazily by `f`, which reads columns.
-    pub(crate) fn query_map<T, P, F>(&mut self, p: P, f: F) -> Result<Mapped<F>>
-    where
-        P: Params,
-        F: FnMut(&Row<'_>) -> Result<T>,
-    {
-        self.query_and_then(p, f)
-    }
-
-    /// Run it; the rows mapped lazily by `f`, whose error is the caller's.
-    #[expect(
-        clippy::needless_pass_by_ref_mut,
-        reason = "rusqlite's signature, so a statement is still bound `mut` and run more than once"
-    )]
-    pub(crate) fn query_and_then<T, E, P, F>(&mut self, p: P, f: F) -> Result<Mapped<F>>
-    where
-        P: Params,
-        E: From<Error>,
-        F: FnMut(&Row<'_>) -> Result<T, E>,
-    {
-        let Rows { names, rows } = self.db.query_values(&self.sql, p.values()?)?;
-        Ok(Mapped {
-            names,
-            rows: rows.into_iter(),
-            f,
-        })
-    }
-}
-
-/// The calls the store makes on a [`Db`], named as rusqlite names them.
+/// The calls the store makes on a [`Db`].
 pub(crate) trait DbExt: Db {
-    /// Run `sql`; the number of rows it changed.
-    fn execute<P: Params>(&self, sql: &str, p: P) -> Result<usize> {
-        self.execute_values(sql, p.values()?)
-    }
-
-    /// Run `sql`; its first row read by `f`, or `QueryReturnedNoRows`.
-    fn query_row<T, P, F>(&self, sql: &str, p: P, f: F) -> Result<T>
-    where
-        P: Params,
-        F: FnOnce(&Row<'_>) -> Result<T>,
-    {
-        let Rows { names, rows } = self.query_values(sql, p.values()?)?;
-        let values = rows.first().ok_or(Error::QueryReturnedNoRows)?;
-        f(&Row {
-            names: &names,
-            values,
-        })
-    }
-
-    /// `sql` ready to run.
-    #[cfg(test)]
-    fn prepare(&self, sql: &str) -> Result<Stmt<'_, Self>> {
-        Ok(Stmt {
-            db: self,
-            sql: sql.to_owned(),
-        })
-    }
-
     /// Run `s`; the number of rows it changed.
     fn run(&self, s: impl Into<Statement>) -> Result<usize> {
         self.run_statement(&s.into())
@@ -348,9 +199,32 @@ fn owned(v: ValueRef<'_>) -> Result<Value> {
     })
 }
 
+/// A UNIQUE key a write collided with, named by its table and columns as every backend reports
+/// them, so the store tells one taken key from another without reading a backend's error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UniqueKey {
+    /// The table the key is on.
+    pub(crate) table: String,
+    /// The key's columns, in key order.
+    pub(crate) columns: Vec<String>,
+}
+
+impl UniqueKey {
+    /// Whether this is the key on `columns` of `table`.
+    pub(crate) fn is<C: Iden>(&self, table: &impl Iden, columns: &[C]) -> bool {
+        self.table == table.to_string()
+            && self.columns.len() == columns.len()
+            && self
+                .columns
+                .iter()
+                .zip(columns)
+                .all(|(c, want)| *c == want.to_string())
+    }
+}
+
 mod sqlite;
 
-pub(crate) use sqlite::{sqlite_writer, Conn, Tx};
+pub(crate) use sqlite::{unique_violation, Conn, Tx};
 
 #[cfg(test)]
 mod tests;

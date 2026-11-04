@@ -259,7 +259,7 @@ fn link_select() -> SelectStatement {
 }
 
 /// One `machine_links` row.
-fn link_row(r: &crate::store::db::Row<'_>) -> rusqlite::Result<MachineLink> {
+fn link_row(r: &db::Row<'_>) -> db::Result<MachineLink> {
     Ok(MachineLink {
         machine_id: r.get(0)?,
         online: r.get(1)?,
@@ -268,9 +268,8 @@ fn link_row(r: &crate::store::db::Row<'_>) -> rusqlite::Result<MachineLink> {
         protocol: r.get(4)?,
         max_boxes: r.get(5)?,
         cache_gb: r.get(6)?,
-        features: serde_json::from_str(&r.get::<_, String>(7)?).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(7, rusqlite::types::Type::Text, Box::new(e))
-        })?,
+        features: serde_json::from_str(&r.get::<_, String>(7)?)
+            .map_err(|e| db::Error::FromSqlConversionFailure(7, db::Type::Text, Box::new(e)))?,
         mem_mib: mib(r.get(8)?),
         cpus: r.get(9)?,
         reserve_mib: mib(r.get(10)?),

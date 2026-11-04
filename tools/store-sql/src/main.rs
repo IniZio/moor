@@ -1,14 +1,13 @@
-//! `store-sql`: fails when the store writes SQL text or asks which database it runs on.
+//! `store-sql`: fails when moor writes SQL text, asks which database it runs on, or uses rusqlite outside the store's backends.
 
 use std::path::Path;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let allow = std::fs::read_to_string(root.join("tools/store-sql.allow")).unwrap_or_default();
-    match store_sql::check(&root, &allow) {
+    match store_sql::check(&root) {
         Ok((files, bad)) if bad.is_empty() => {
-            println!("store-sql: {files} store files ok");
+            println!("store-sql: {files} files ok");
             ExitCode::SUCCESS
         }
         Ok((_, bad)) => {

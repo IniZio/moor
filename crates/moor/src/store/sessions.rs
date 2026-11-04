@@ -9,7 +9,7 @@ use sea_query::{Expr, ExprTrait as _, Func, Order, Query};
 
 use super::apply::insert_event;
 use super::{parsed_opt, Store, StoreError};
-use crate::store::db::{Db, DbExt as _, OptionalExtension, TransactionBehavior};
+use crate::store::db::{Db, DbExt as _, OptionalExtension};
 
 mod read;
 
@@ -119,7 +119,7 @@ impl Store {
     ) -> Result<BoxSession, StoreError> {
         let now = self.now();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         if !box_exists(&tx, id)? {
             return Err(StoreError::NotFound(id));
         }
@@ -185,7 +185,7 @@ impl Store {
     /// Returns [`StoreError::Illegal`] when the Session is not Starting, or [`StoreError`] when the database fails.
     pub(crate) fn start_session(&self, session: i64) -> Result<(), StoreError> {
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let state: String = tx.row(
             Query::select()
                 .column(Sessions::State)
@@ -222,7 +222,7 @@ impl Store {
     ) -> Result<bool, StoreError> {
         let now = self.now();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         if !box_exists(&tx, id)? {
             return Err(StoreError::NotFound(id));
         }

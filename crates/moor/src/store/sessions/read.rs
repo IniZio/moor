@@ -77,7 +77,7 @@ impl SessionRecord {
     }
 
     /// Read a row of [`select`], parsing its Box name and state.
-    fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Self, StoreError>> {
+    fn from_row(row: &Row<'_>) -> crate::store::db::Result<Result<Self, StoreError>> {
         let name: Option<String> = row.get(1)?;
         let state: String = row.get(7)?;
         let parsed_row = (|| {

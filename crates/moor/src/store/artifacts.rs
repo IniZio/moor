@@ -14,7 +14,7 @@ use sea_query::{Expr, ExprTrait as _, Order, Query, SelectStatement};
 
 use super::select::newest_session;
 use super::{Store, StoreError};
-use crate::store::db::{self, Db, DbExt as _, OptionalExtension, Row, TransactionBehavior, Tx};
+use crate::store::db::{self, Db, DbExt as _, OptionalExtension, Row, Tx};
 
 /// Columns of an `artifacts` row, in the order `artifact_from_row` reads them.
 const COLUMNS: [Artifacts; 11] = [
@@ -144,7 +144,7 @@ impl Store {
         }
         let now = self.now();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let latest: Option<(i64, String)> = tx
             .row(
                 Query::select()
@@ -360,7 +360,7 @@ fn move_private(from: &Path, to: &Path) -> io::Result<()> {
 }
 
 /// Map an `artifacts` row selected in `COLUMNS` order.
-fn artifact_from_row(r: &Row<'_>) -> rusqlite::Result<ArtifactRow> {
+fn artifact_from_row(r: &Row<'_>) -> db::Result<ArtifactRow> {
     let size: i64 = r.get(7)?;
     Ok(ArtifactRow {
         id: r.get(0)?,
@@ -370,7 +370,7 @@ fn artifact_from_row(r: &Row<'_>) -> rusqlite::Result<ArtifactRow> {
         version: r.get(4)?,
         kind: r.get(5)?,
         content_type: r.get(6)?,
-        size: u64::try_from(size).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(7, size))?,
+        size: u64::try_from(size).map_err(|_| db::Error::IntegralValueOutOfRange(7, size))?,
         sha256: r.get(8)?,
         path: r.get(9)?,
         created_at: Ts::from_millis(r.get(10)?),

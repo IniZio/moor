@@ -10,7 +10,7 @@ use moor_schema::tables::{Boxes, Events, UserWebhooks, WebhookDeliveries};
 use sea_query::{Expr, ExprTrait as _, Func, Order, Query, SelectStatement};
 
 use super::{Store, StoreError};
-use crate::store::db::{self, DbExt as _, OptionalExtension as _, TransactionBehavior, Tx};
+use crate::store::db::{self, DbExt as _, OptionalExtension as _, Tx};
 
 /// Longest `last_error` kept, in characters.
 const MAX_ERROR_CHARS: usize = 200;
@@ -155,7 +155,7 @@ impl Store {
         let now = self.now().as_millis();
         let until = now.saturating_add(i64::try_from(lease.as_millis()).unwrap_or(i64::MAX));
         let mut writer = self.writer();
-        let tx = writer.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = writer.immediate()?;
         let ids: Vec<i64> = tx
             .rows(next_deliveries(now, limit), |r| r.get(0))?
             .collect::<Result<_, _>>()?;
@@ -198,7 +198,7 @@ impl Store {
     ) -> Result<bool, StoreError> {
         let now = self.now().as_millis();
         let mut writer = self.writer();
-        let tx = writer.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = writer.immediate()?;
         let Some(webhook) = tx
             .row(
                 Query::delete()

@@ -2,11 +2,10 @@
 
 use moor_core::domain::decision::{Field, Fields, NewBox};
 use moor_schema::tables::{Boxes, Sessions};
-use rusqlite::ErrorCode;
 use sea_query::{Expr, IntoIden, Nullable, UpdateStatement, Value};
 
 use super::StoreError;
-use crate::store::db::{DbExt as _, Tx};
+use crate::store::db::{self, unique_violation, DbExt as _, Tx};
 
 /// Column assignments for one UPDATE, by column of one table.
 pub(in crate::store) type Sets<C> = Vec<(C, Value)>;
@@ -91,15 +90,11 @@ pub(in crate::store) fn update<C: IntoIden + Copy>(
     Ok(())
 }
 
-/// Extended result code for a UNIQUE constraint failure.
-const SQLITE_CONSTRAINT_UNIQUE: i32 = 2067;
-
 /// A UNIQUE failure on the open-branch index is a taken branch; other errors pass through.
 pub(super) fn branch_taken(e: StoreError, branch: &Field<String>) -> StoreError {
     match (&e, branch) {
-        (StoreError::Sqlite(rusqlite::Error::SqliteFailure(f, msg)), Field::Set(branch))
-            if f.extended_code == SQLITE_CONSTRAINT_UNIQUE
-                && msg.as_deref().is_some_and(|m| m.contains("boxes.branch")) =>
+        (StoreError::Db(db), Field::Set(branch))
+            if unique_violation(db).is_some_and(|k| k.is(&Boxes::Table, &[Boxes::Branch])) =>
         {
             StoreError::BranchTaken(branch.clone())
         }
@@ -108,17 +103,10 @@ pub(super) fn branch_taken(e: StoreError, branch: &Field<String>) -> StoreError 
 }
 
 /// A UNIQUE failure on the open-name index is a taken name; other errors pass through.
-pub(super) fn name_taken(e: rusqlite::Error, new: &NewBox) -> StoreError {
-    match &e {
-        rusqlite::Error::SqliteFailure(f, msg)
-            if f.code == ErrorCode::ConstraintViolation
-                && f.extended_code == SQLITE_CONSTRAINT_UNIQUE
-                && msg
-                    .as_deref()
-                    .is_some_and(|m| m.contains("boxes.name") || m.contains("boxes_open")) =>
-        {
-            StoreError::NameTaken(new.name.clone())
-        }
-        _ => e.into(),
+pub(super) fn name_taken(e: db::Error, new: &NewBox) -> StoreError {
+    if unique_violation(&e).is_some_and(|k| k.is(&Boxes::Table, &[Boxes::Name])) {
+        StoreError::NameTaken(new.name.clone())
+    } else {
+        e.into()
     }
 }

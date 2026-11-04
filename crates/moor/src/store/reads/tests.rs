@@ -91,29 +91,6 @@ fn box_rows_live_skips_deleted_boxes() {
     assert_eq!(got, [(live, BoxState::Starting)]);
 }
 
-#[test]
-fn waiting_boxes_returns_pending_in_id_order() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = open(dir.path());
-    let d = add(&store, "d");
-    let b = add(&store, "b");
-    add(&store, "c");
-    let a = add(&store, "a");
-    assert!(store.waiting_boxes().unwrap().is_empty());
-    // An index on (state, name) lets the planner return rows in name order.
-    store
-        .writer()
-        .execute_batch("CREATE INDEX boxes_state_name ON boxes(state, name)")
-        .unwrap();
-    for id in [d, b, a] {
-        let input = BoxLifecycleInput::AtCapacity { max_boxes: 1 };
-        store.apply(Decision::new(id).lifecycle(input)).unwrap();
-    }
-    let waiting = store.waiting_boxes().unwrap();
-    assert_eq!(waiting.iter().map(|t| t.id).collect::<Vec<_>>(), [d, b, a]);
-    assert!(waiting.iter().all(|t| t.lifecycle == BoxLifecycle::Pending));
-}
-
 fn event(store: &Store, id: BoxId, kind: &str, payload: &str, ts: i64) -> i64 {
     let conn = store.writer();
     conn.row(

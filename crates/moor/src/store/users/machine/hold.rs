@@ -13,7 +13,7 @@ use sea_query::{Expr, ExprTrait as _, Order, Query};
 
 use super::{claim_in, held_in, machines_in, owned_in, put_in, Claim};
 use crate::store::apply::insert_event;
-use crate::store::db::{self, Db, DbExt as _, OptionalExtension, TransactionBehavior, Tx};
+use crate::store::db::{self, Db, DbExt as _, OptionalExtension, Tx};
 use crate::store::{Store, StoreError};
 
 mod claim;
@@ -81,7 +81,7 @@ impl Store {
         }
         let now = self.now();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let Some(claim) = claim_in(&tx, id)? else {
             return Ok(MachineWake::Nothing);
         };

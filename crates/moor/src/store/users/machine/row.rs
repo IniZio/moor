@@ -70,7 +70,7 @@ struct ClaimRow {
 
 impl ClaimRow {
     /// The columns `claim_in` selects, in its order.
-    fn read(r: &crate::store::db::Row<'_>) -> rusqlite::Result<Self> {
+    fn read(r: &crate::store::db::Row<'_>) -> crate::store::db::Result<Self> {
         Ok(Self {
             user: r.get(0)?,
             state: r.get(1)?,
