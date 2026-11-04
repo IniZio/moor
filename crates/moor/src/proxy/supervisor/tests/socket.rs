@@ -13,6 +13,7 @@ use moor_core::BoxId;
 
 use super::{start, working_box, Stop, World, LEASE, TICK};
 use crate::proxy::detached::{read_spec, write_spec};
+use crate::proxy::ledger::tests::box_ledger;
 use crate::store::Lease;
 use crate::testing::bridge::bridge;
 use crate::testing::rng::FakeRng;
@@ -219,7 +220,8 @@ fn second_box(w: &World) -> BoxId {
 /// Starts the supervisors of `a` and then `b`, stops `b`, and expects `a`'s tunnel to still
 /// reach a front.
 fn assert_own_sockets(a: (&World, BoxId), b: (&World, BoxId)) {
-    let (deps_a, deps_b) = (a.0.deps(), b.0.deps());
+    let (ledger_a, ledger_b) = (box_ledger(&a.0.store, a.1), box_ledger(&b.0.store, b.1));
+    let (deps_a, deps_b) = (a.0.deps_on(&ledger_a), b.0.deps_on(&ledger_b));
     let run_a = start(&deps_a, a.1)
         .map_err(|c| format!("exit {c}"))
         .unwrap();

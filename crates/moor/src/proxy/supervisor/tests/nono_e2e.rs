@@ -21,6 +21,7 @@ use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, Secret};
 use ureq::Agent;
 
 use crate::proxy::detached::write_spec;
+use crate::proxy::ledger::tests::box_ledger;
 use crate::proxy::nono::tests::upstream::{self, Upstream};
 use crate::proxy::supervisor::{serve, Deps, Sink, LEASE};
 use crate::store::Store;
@@ -222,19 +223,19 @@ fn serve_injects_the_credential_audits_requests_and_stops() {
         box_repo: None,
         rules: vec![rule(up.port)],
         user: moor_core::user::UserId::new(1),
-        vault_key: crate::testing::cx::test_vault_key(dir.path()),
     };
     write_spec(dir.path(), &spec).unwrap();
 
     let stop = Arc::new(AtomicBool::new(false));
     let err: Sink = Arc::new(Mutex::new(Vec::new()));
     let rng = FakeRng::default();
+    let ledger = box_ledger(&store, id);
     let deps = Deps {
-        store: &store,
+        ledger: Arc::clone(&ledger),
         driver: &driver,
         clock,
         rng: &rng,
-        secrets: Arc::new(|_, _, name| {
+        secrets: Arc::new(|name| {
             assert_eq!(name.as_str(), "tool-token");
             Ok(Some(Secret::new(SECRET.as_bytes().to_vec())))
         }),

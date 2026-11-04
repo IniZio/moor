@@ -88,7 +88,7 @@ fn a_child_session_leaves_the_user_to_its_box() {
 }
 
 #[test]
-fn the_proxy_spec_names_the_box_user_and_the_vault_key_path() {
+fn the_proxy_spec_names_the_box_user() {
     let fake = FakeProxyHost::new();
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_proxy_host(Arc::new(fake.clone()));
@@ -109,7 +109,6 @@ fn the_proxy_spec_names_the_box_user_and_the_vault_key_path() {
         })
         .unwrap();
     assert_eq!(spec.user, REQUESTER_USER);
-    assert_eq!(spec.vault_key, w.cx.vault_key().unwrap());
 }
 
 #[test]

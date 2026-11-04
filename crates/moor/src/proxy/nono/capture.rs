@@ -10,7 +10,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use moor_core::config::proxy::{ResolvedInject, ResolvedRule};
-use moor_core::user::{SecretName, UserId};
+use moor_core::user::SecretName;
 use moor_core::Secret;
 use nono_proxy::capture::{
     CredentialCaptureBackend, CredentialCaptureError, CredentialCaptureMaterial,
@@ -18,14 +18,8 @@ use nono_proxy::capture::{
 };
 use zeroize::Zeroizing;
 
-use crate::vault::Vault;
-
 /// Fetches one credential; error text names the secret only.
 pub(crate) type FetchFn = Arc<dyn Fn() -> Result<Secret, String> + Send + Sync>;
-
-/// Reads `user`'s secret `name` with the vault key; `Ok(None)` when the user has none.
-pub(crate) type SecretsFn =
-    Arc<dyn Fn(&Vault, UserId, &SecretName) -> Result<Option<Secret>, String> + Send + Sync>;
 
 /// Reads one user's secret `name`; `Ok(None)` when they have none.
 pub(crate) type UserSecretsFn =

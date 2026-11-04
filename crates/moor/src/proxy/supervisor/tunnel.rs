@@ -118,7 +118,7 @@ impl Running<'_> {
     fn attempt(&self) -> Attempt {
         let opened = bind::open(
             self.deps,
-            (self.box_id, &self.owner),
+            &self.owner,
             &self.handle,
             (self.box_port, self.live.socket()),
             false,
@@ -153,8 +153,8 @@ impl Running<'_> {
     fn record(&self, reason: &str) -> Option<Stop> {
         match self
             .deps
-            .store
-            .tunnel_restarted(self.box_id, &self.owner, self.box_port, reason)
+            .ledger
+            .tunnel_restarted(&self.owner, self.box_port, reason)
         {
             Ok(Fenced::Applied) => None,
             Ok(Fenced::LostLease) => Some(Stop::LostLease),

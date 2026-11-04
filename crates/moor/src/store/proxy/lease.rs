@@ -16,7 +16,7 @@ use crate::store::db::{Db, DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
 /// Outcome of a lease claim.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Lease {
     /// The caller now holds the lease.
     Claimed,
@@ -29,7 +29,7 @@ pub(crate) enum Lease {
 
 /// Outcome of a write fenced by the lease.
 #[must_use]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Fenced {
     /// The write applied.
     Applied,

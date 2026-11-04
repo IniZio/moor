@@ -60,7 +60,7 @@ tables! {
     Reports { Id, Box, Session, Kind, Version, Path, Title, CreatedAt }
     HookCache { Session, Record, At }
     Proxy { Box, BoxPort, EgressPort, Pid, Handle, Ready, LeaseOwner, LeaseHeartbeat, BootId,
-        UpdatedAt }
+        UpdatedAt, KeyHash, Ledger }
     BoxLease { Id, Box, Kind, Key, State, Booted, Pgid, Sid, RootPid, RootStart, SizeAtRelease,
         CreatedAt, UpdatedAt }
     Artifacts { Id, Box, Session, Name, Version, Kind, ContentType, Size, Sha256, Path, CreatedAt }

@@ -20,9 +20,10 @@ use moor_core::user::{Identity, SecretName, UserId};
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 use ureq::Agent;
 
-use crate::proxy::detached::{read_spec, write_spec};
+use crate::proxy::detached::write_spec;
+use crate::proxy::ledger::tests::{box_ledger_with, OnLedger};
 use crate::proxy::nono::ca::ca_dir;
-use crate::proxy::nono::capture::SecretsFn;
+use crate::proxy::nono::capture::UserSecretsFn;
 use crate::proxy::nono::tests::upstream::{self, Upstream};
 use crate::proxy::supervisor::{serve, Deps, Sink, LEASE};
 use crate::store::{Store, STORE_FILE};
@@ -133,7 +134,7 @@ struct Two {
     dir: tempfile::TempDir,
     up: Upstream,
     store: Store,
-    shared: Arc<Store>,
+    ledgers: [OnLedger; 2],
     driver: FakeDriver,
     rng: FakeRng,
     ann: (UserId, BoxId, BoxHandle),
@@ -144,8 +145,7 @@ fn two() -> Two {
     let dir = tempfile::tempdir().unwrap();
     let up = upstream::start(dir.path());
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    let store = Store::open(&dir.path().join(STORE_FILE), clock.clone()).unwrap();
-    let shared = Arc::new(Store::open(&dir.path().join(STORE_FILE), clock).unwrap());
+    let store = Store::open(&dir.path().join(STORE_FILE), clock).unwrap();
     let key = dir.path().join("vault.key");
     let vault = Vault::load_or_create(&key).unwrap();
     let driver = FakeDriver::new().reverse_tunnels();
@@ -161,18 +161,19 @@ fn two() -> Two {
                 box_repo: None,
                 rules: vec![claude_rule(up.port)],
                 user,
-                vault_key: key.clone(),
             };
             write_spec(dir.path(), &spec).unwrap();
             (user, id, handle)
         })
         .into_iter();
     let (ann, bob) = (boxes.next().unwrap(), boxes.next().unwrap());
+    let vault = Arc::new(vault);
+    let ledgers = [ann.1, bob.1].map(|id| box_ledger_with(&store, id, Arc::clone(&vault)));
     Two {
         dir,
         up,
         store,
-        shared,
+        ledgers,
         driver,
         rng: FakeRng::default(),
         ann,
@@ -181,16 +182,24 @@ fn two() -> Two {
 }
 
 impl Two {
-    /// Deps whose secrets come from the store, as `moor proxy serve` wires them.
-    fn deps<'a>(&'a self, sockets: &'a Path, stop: &Arc<AtomicBool>, err: Sink) -> Deps<'a> {
-        let shared = Arc::clone(&self.shared);
-        let secrets: SecretsFn = Arc::new(move |vault, user, name| {
-            shared
-                .user_secret(vault, user, name)
-                .map_err(|e| e.to_string())
-        });
+    /// Deps of the Box `id` whose secrets come through its ledger, as `moor proxy serve` wires
+    /// them.
+    fn deps<'a>(
+        &'a self,
+        id: BoxId,
+        (sockets, stop): (&'a Path, &Arc<AtomicBool>),
+        err: Sink,
+    ) -> Deps<'a> {
+        let ledger = if id == self.ann.1 {
+            &self.ledgers[0]
+        } else {
+            &self.ledgers[1]
+        };
+        let shared = Arc::clone(ledger);
+        let secrets: UserSecretsFn =
+            Arc::new(move |name| shared.secret(name).map_err(|e| e.to_string()));
         Deps {
-            store: &self.store,
+            ledger: Arc::clone(ledger),
             driver: &self.driver,
             clock: Arc::new(FakeClock::new(Ts::from_millis(1_000))),
             rng: &self.rng,
@@ -301,12 +310,12 @@ fn each_users_box_injects_only_that_users_secret_and_a_deleted_one_fails_next() 
     let sockets = t.dir.path().join("s");
     let stop = Arc::new(AtomicBool::new(false));
     let err = Arc::new(Mutex::new(Vec::new()));
-    let deps = t.deps(&sockets, &stop, Arc::clone(&err) as Sink);
+    let deps =
+        [t.ann.1, t.bob.1].map(|id| (id, t.deps(id, (&sockets, &stop), Arc::clone(&err) as Sink)));
     std::thread::scope(|s| {
-        let servers = [t.ann.1, t.bob.1].map(|id| {
-            let deps = &deps;
-            s.spawn(move || serve(deps, id))
-        });
+        let servers = deps
+            .each_ref()
+            .map(|(id, deps)| s.spawn(move || serve(deps, *id)));
         let _guard = StopOnDrop(Arc::clone(&stop));
         let (ann, bob) = (t.client(t.ann.1, &t.ann.2), t.client(t.bob.1, &t.bob.2));
         assert_eq!(get(&ann, &t.up), Ok(200));
@@ -332,30 +341,4 @@ fn each_users_box_injects_only_that_users_secret_and_a_deleted_one_fails_next() 
     );
     let said = err.lock().unwrap().clone();
     assert_nowhere(&t, said);
-}
-
-#[test]
-fn a_proxy_with_a_missing_vault_key_refuses_to_start_and_creates_none() {
-    let t = two();
-    let missing = t.dir.path().join("no-such.key");
-    let spec = ProxySpec {
-        vault_key: missing.clone(),
-        ..read_spec(t.dir.path(), t.ann.1).unwrap()
-    };
-    write_spec(t.dir.path(), &spec).unwrap();
-    let sockets = t.dir.path().join("s");
-    let stop = Arc::new(AtomicBool::new(false));
-    let err = Arc::new(Mutex::new(Vec::new()));
-    let deps = t.deps(&sockets, &stop, Arc::clone(&err) as Sink);
-    let watchdog = Arc::clone(&stop);
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_secs(5));
-        watchdog.store(true, Ordering::Release);
-    });
-    assert_ne!(
-        serve(&deps, t.ann.1),
-        0,
-        "the Proxy started without its vault key"
-    );
-    assert!(!missing.exists(), "the Proxy created a vault key");
 }

@@ -13,6 +13,7 @@ use nono::undo::NetworkAuditEvent;
 use serde_json::{json, Value};
 
 use super::{apply, BoxSink, EgressSink, Refusal, Withheld};
+use crate::proxy::ledger::tests::box_ledger;
 use crate::proxy::ProxyLog;
 use crate::store::Store;
 use crate::testing::clock::FakeClock;
@@ -232,10 +233,10 @@ fn box_sink_parts(dir: &Path) -> (Store, ProxyLog, BoxId) {
 fn box_sink_writes_events_and_a_path_free_log() {
     let dir = tempfile::tempdir().unwrap();
     let (store, log, box_id) = box_sink_parts(dir.path());
+    let ledger = box_ledger(&store, box_id);
     let sink = BoxSink {
         log: &log,
-        store: &store,
-        box_id,
+        ledger: &ledger,
     };
     let events = [
         event(
@@ -293,10 +294,10 @@ fn box_sink_writes_events_and_a_path_free_log() {
 fn box_sink_records_method_and_category_without_the_path() {
     let dir = tempfile::tempdir().unwrap();
     let (store, log, box_id) = box_sink_parts(dir.path());
+    let ledger = box_ledger(&store, box_id);
     let sink = BoxSink {
         log: &log,
-        store: &store,
-        box_id,
+        ledger: &ledger,
     };
     let denied = event(
         "deny",
@@ -333,10 +334,10 @@ fn box_sink_swallows_store_errors() {
     let dir = tempfile::tempdir().unwrap();
     let (store, log, box_id) = box_sink_parts(dir.path());
     let missing = BoxId::new(box_id.get() + 100);
+    let ledger = box_ledger(&store, missing);
     let sink = BoxSink {
         log: &log,
-        store: &store,
-        box_id: missing,
+        ledger: &ledger,
     };
     sink.refused(&Refusal {
         host: "h.test",
@@ -426,10 +427,10 @@ fn non_credential_hosts_and_injected_requests_are_not_withheld() {
 fn withheld_event_and_log_never_hold_the_raw_path() {
     let dir = tempfile::tempdir().unwrap();
     let (store, log, box_id) = box_sink_parts(dir.path());
+    let ledger = box_ledger(&store, box_id);
     let sink = BoxSink {
         log: &log,
-        store: &store,
-        box_id,
+        ledger: &ledger,
     };
     let watch = Withheld::new(&[gh_rule()], Some(ForgeRepo::new("acme", "widgets")));
     apply(

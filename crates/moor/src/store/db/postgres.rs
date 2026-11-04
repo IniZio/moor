@@ -200,11 +200,6 @@ impl Pool {
         &self.target
     }
 
-    /// The most connections it opens.
-    pub(super) const fn cap(&self) -> usize {
-        self.cap as usize
-    }
-
     /// A pool of at most `cap` connections to `target`.
     pub(super) fn new(target: Target, cap: usize) -> Self {
         Self::waiting(target, cap, READ_WAIT)

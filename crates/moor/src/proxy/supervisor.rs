@@ -5,6 +5,7 @@
 //! lease is lost, the front socket is lost for good, or a signal arrives. A dead tunnel is retried
 //! for as long as the Box stays open.
 
+mod beat;
 mod bind;
 mod listen;
 mod machine;
@@ -25,8 +26,8 @@ use moor_core::seam::driver::Driver;
 use moor_core::seam::rng::Rng;
 use moor_core::BoxId;
 
-use super::nono::capture::SecretsFn;
-use crate::store::Store;
+use super::ledger::BoxLedger;
+use super::nono::capture::UserSecretsFn;
 use run::{Running, Stop};
 
 /// How long a lease stays valid without a heartbeat.
@@ -39,16 +40,16 @@ pub(crate) type Sink = Arc<Mutex<dyn Write + Send>>;
 
 /// Everything the supervisor needs from the outside.
 pub(crate) struct Deps<'a> {
-    /// Box and proxy rows.
-    pub(crate) store: &'a Store,
+    /// The Box's store calls, made through the controller.
+    pub(crate) ledger: Arc<BoxLedger>,
     /// Opens the reverse tunnel into the Box.
     pub(crate) driver: &'a dyn Driver,
     /// Source of time and sleeping.
     pub(crate) clock: Arc<dyn Clock>,
     /// Source of the lease owner token.
     pub(crate) rng: &'a dyn Rng,
-    /// Reads a user's secret from the store, on every request that needs one.
-    pub(crate) secrets: SecretsFn,
+    /// Reads the Box user's secret, on every request that needs one.
+    pub(crate) secrets: UserSecretsFn,
     /// Extra upstream root PEM the proxy trusts; `None` in production.
     pub(crate) upstream_ca: Option<PathBuf>,
     /// Address the GraphQL filter dials instead of resolving the GitHub API host; `None` in production.

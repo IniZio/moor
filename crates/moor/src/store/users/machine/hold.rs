@@ -49,7 +49,7 @@ pub(crate) enum ClaimState {
 }
 
 /// What a supervisor tick's grant did for its Box.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum MachineWake {
     /// The Box wants no machine.
     Nothing,

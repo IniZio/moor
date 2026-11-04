@@ -9,20 +9,18 @@ use moor_core::graphql_scope::RepoRef;
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::{BoxId, Secret};
 
-use super::machine::hold_of;
 use super::run::say;
 use super::Deps;
 use crate::proxy::chain::Proxy;
 use crate::proxy::detached::base64url;
-use crate::proxy::front::{Front, FrontSocket, MachineRoute};
+use crate::proxy::front::{Front, FrontSocket, Hold, MachineRoute};
 use crate::proxy::graphql::upstream::Upstream;
 use crate::proxy::graphql::{FilterSpec, GraphqlFilter};
 use crate::proxy::guard::Guard;
 use crate::proxy::nono::audit::{apply, BoxSink, EgressSink, Refusal, Withheld};
-use crate::proxy::nono::capture::{sources_for, MoorCapture, UserSecretsFn};
+use crate::proxy::nono::capture::{sources_for, MoorCapture};
 use crate::proxy::nono::{build_config, ca, Chain, NonoProxy, NonoSpec, GITHUB_API_HOST};
 use crate::proxy::ProxyLog;
-use crate::vault::Vault;
 
 /// A started proxy and what it reports into.
 pub(super) struct Live {
@@ -43,7 +41,7 @@ pub(super) fn listen(deps: &Deps<'_>, box_id: BoxId, spec: &ProxySpec) -> Result
     let ca = ca::load_or_create(deps.state_dir, box_id)
         .map_err(|err| format!("cannot load the proxy CA: {err}"))?;
     let withheld = Withheld::new(&spec.rules, spec.box_repo.clone());
-    let capture = new_capture(deps, spec)?;
+    let capture = new_capture(deps, spec);
     let internal = internal_token()?;
     let graphql = start_filter(deps, spec, &ca)?;
     let ca_pem = ca::cert_path(deps.state_dir, box_id);
@@ -80,7 +78,7 @@ pub(super) fn listen(deps: &Deps<'_>, box_id: BoxId, spec: &ProxySpec) -> Result
         nono_addr,
         socket,
         internal,
-        machine_route(deps, box_id),
+        machine_route(deps),
         Arc::clone(&deps.stderr),
     ) {
         Ok(front) => front,
@@ -99,23 +97,22 @@ pub(super) fn listen(deps: &Deps<'_>, box_id: BoxId, spec: &ProxySpec) -> Result
     })
 }
 
-/// The machine service for `box_id`, reading the machine it holds from the store per request.
-fn machine_route(deps: &Deps<'_>, box_id: BoxId) -> Option<MachineRoute> {
+/// The machine service, reading what the Box holds through the ledger per request.
+fn machine_route(deps: &Deps<'_>) -> Option<MachineRoute> {
     let service = deps.machine_service.clone()?;
-    let store = deps.store.clone();
-    let held = Arc::new(move || hold_of(&store, box_id));
+    let ledger = Arc::clone(&deps.ledger);
+    let held = Arc::new(move || {
+        ledger.hold().unwrap_or_else(|e| Hold::Missing {
+            box_id: ledger.box_id(),
+            reason: format!("the Box's machine could not be read: {e}"),
+        })
+    });
     Some(MachineRoute { service, held })
 }
 
-/// The capture that reads `spec`'s user's secrets on every request, with the vault key the
-/// spec names; a key that fails the vault checks stops the start.
-fn new_capture(deps: &Deps<'_>, spec: &ProxySpec) -> Result<Arc<MoorCapture>, String> {
-    let vault =
-        Vault::load(&spec.vault_key).map_err(|err| format!("cannot open the vault: {err}"))?;
-    let (read, user) = (Arc::clone(&deps.secrets), spec.user);
-    let secrets: UserSecretsFn = Arc::new(move |name| read(&vault, user, name));
-    let sources = sources_for(&spec.rules, &secrets);
-    Ok(Arc::new(MoorCapture::new(sources)))
+/// The capture that reads the Box user's secrets on every request.
+fn new_capture(deps: &Deps<'_>, spec: &ProxySpec) -> Arc<MoorCapture> {
+    Arc::new(MoorCapture::new(sources_for(&spec.rules, &deps.secrets)))
 }
 
 /// A fresh token nono authenticates with: 32 random bytes as base64url text.
@@ -226,11 +223,10 @@ impl Live {
     }
 
     /// Moves the audit events recorded since the last call into the log and the store.
-    pub(super) fn drain(&self, deps: &Deps<'_>, box_id: BoxId) {
+    pub(super) fn drain(&self, deps: &Deps<'_>) {
         let sink = BoxSink {
             log: &self.log,
-            store: deps.store,
-            box_id,
+            ledger: &deps.ledger,
         };
         // The filter notes an excused answer before nono sees it, so every one
         // in this audit batch is noted once the filter is drained after it.

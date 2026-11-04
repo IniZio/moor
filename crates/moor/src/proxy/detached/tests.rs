@@ -123,7 +123,6 @@ impl Fx {
             box_repo: None,
             rules: Vec::new(),
             user: moor_core::user::UserId::new(1),
-            vault_key: "/config/vault.key".into(),
         }
     }
 

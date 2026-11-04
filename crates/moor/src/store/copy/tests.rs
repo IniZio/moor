@@ -162,16 +162,24 @@ fn a_source_not_at_this_builds_latest_migration_is_refused() {
     let path = dir.path().join("moor.db");
     drop(filled(&path));
     let conn = Conn::open_file(&path).unwrap();
+    let latest: i64 = conn
+        .row(
+            Query::select()
+                .expr(Expr::col("version").max())
+                .from("refinery_schema_history"),
+            |r| r.get(0),
+        )
+        .unwrap();
     conn.run(
         Query::delete()
             .from_table("refinery_schema_history")
-            .and_where(Expr::col("version").eq(46)),
+            .and_where(Expr::col("version").eq(latest)),
     )
     .unwrap();
     drop(conn);
     let target = Target::parse("postgres://moor@127.0.0.1:1/none").unwrap();
     let err = copy_to_postgres(&path, &target).unwrap_err().to_string();
-    assert!(err.contains("migration 45"), "{err}");
+    assert!(err.contains(&format!("migration {}", latest - 1)), "{err}");
     assert!(err.contains("moor store migrate"), "{err}");
 }
 

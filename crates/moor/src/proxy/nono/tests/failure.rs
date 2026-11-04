@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use super::e2e::{get, kinds, rig};
+use crate::proxy::ledger::tests::box_ledger;
 use crate::proxy::nono::audit::{self, BoxSink, Withheld};
 
 #[test]
@@ -13,10 +14,10 @@ fn an_upstream_refusing_the_connection_is_recorded_as_a_connect_failure() {
     assert!(rig.up.seen().is_empty());
 
     let (store, box_id, log) = rig.store();
+    let ledger = box_ledger(&store, box_id);
     let sink = BoxSink {
         log: &log,
-        store: &store,
-        box_id,
+        ledger: &ledger,
     };
     let watch = Withheld::default();
     for _ in 0..100 {
@@ -53,10 +54,10 @@ fn a_refused_connection_records_its_cause_as_a_fixed_word() {
     assert_eq!(get(&rig.client(), &rig.url("/ok")), Ok(502));
 
     let (store, box_id, log) = rig.store();
+    let ledger = box_ledger(&store, box_id);
     let sink = BoxSink {
         log: &log,
-        store: &store,
-        box_id,
+        ledger: &ledger,
     };
     let watch = Withheld::default();
     for _ in 0..100 {

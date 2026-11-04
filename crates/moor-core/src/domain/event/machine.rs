@@ -3,7 +3,7 @@
 use serde::Serialize;
 
 /// A machine attached to a Box, left out of it, or its forwards failing or ending.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum MachineEvent {
     /// The machine reaches the Box's ports at the same numbers on its own loopback.

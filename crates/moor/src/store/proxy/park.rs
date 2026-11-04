@@ -11,7 +11,7 @@ use crate::store::db::{Db, DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
 /// The tunnel state an op asks the supervisor for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum TunnelWant {
     /// Kill the tunnel and stop reviving it.
     Parked,
@@ -22,7 +22,7 @@ pub(crate) enum TunnelWant {
 }
 
 /// A stored tunnel request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct TunnelRequest {
     /// The wanted state.
     pub(crate) want: TunnelWant,
@@ -31,7 +31,7 @@ pub(crate) struct TunnelRequest {
 }
 
 /// The supervisor's answer to a tunnel request.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum TunnelAck {
     /// The tunnel is parked.
     Parked {

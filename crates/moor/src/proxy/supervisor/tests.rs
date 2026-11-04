@@ -23,13 +23,15 @@ mod hairpin_e2e;
 mod host_tcp;
 mod machine;
 mod nono_e2e;
+mod outage;
 mod socket;
 mod users_e2e;
 
 use super::{serve, start, Deps, Sink, Stop, LEASE, TICK};
 use crate::proxy::detached::{read_spec, write_spec};
+use crate::proxy::ledger::tests::{box_ledger, OnLedger};
 use crate::proxy::nono::ca::ca_dir;
-use crate::proxy::nono::capture::SecretsFn;
+use crate::proxy::nono::capture::UserSecretsFn;
 use crate::store::{Lease, ProxyRow, Store};
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::{FakeDriver, TunnelReply};
@@ -50,6 +52,8 @@ pub(super) struct World {
     pub(super) clock: Arc<FakeClock>,
     /// Box and proxy storage.
     pub(super) store: Store,
+    /// The Box's ledger, served for the store as the controller serves it.
+    pub(super) ledger: OnLedger,
     /// Fake box driver with reverse tunnels enabled.
     pub(super) driver: FakeDriver,
     /// Random source for port draws.
@@ -79,6 +83,7 @@ impl World {
         let driver = FakeDriver::new().reverse_tunnels().tunnel_replies(replies);
         let id = working_box(&store, &driver, "demo");
         drop(store.reserve(id, &FakeRng::default(), LEASE).unwrap());
+        let ledger = box_ledger(&store, id);
         let mut spec = ProxySpec {
             box_id: id,
             box_handle: None,
@@ -86,7 +91,6 @@ impl World {
             box_repo: Some(ForgeRepo::new("o", "n")),
             rules: Vec::new(),
             user: moor_core::user::UserId::new(1),
-            vault_key: crate::testing::cx::test_vault_key(dir.path()),
         };
         edit(&mut spec);
         write_spec(dir.path(), &spec).unwrap();
@@ -96,6 +100,7 @@ impl World {
             dir,
             clock,
             store,
+            ledger,
             driver,
             rng: FakeRng::default(),
             stop: Arc::new(AtomicBool::new(false)),
@@ -114,16 +119,24 @@ impl World {
         self.deps_full(clock, no_secrets(), None)
     }
 
+    /// Dependencies for the Box `ledger` serves, with no secrets.
+    pub(super) fn deps_on(&self, ledger: &OnLedger) -> Deps<'_> {
+        Deps {
+            ledger: Arc::clone(ledger),
+            ..self.deps()
+        }
+    }
+
     /// Dependencies with the given credential lookup and extra upstream root PEM.
     pub(super) fn deps_full(
         &self,
         clock: Arc<dyn Clock>,
-        secrets: SecretsFn,
+        secrets: UserSecretsFn,
         upstream_ca: Option<PathBuf>,
     ) -> Deps<'_> {
         let err: Sink = self.err.clone();
         Deps {
-            store: &self.store,
+            ledger: Arc::clone(&self.ledger),
             driver: &self.driver,
             clock,
             rng: &self.rng,
@@ -179,8 +192,8 @@ impl World {
 }
 
 /// A secret lookup for a user who has no secrets.
-pub(super) fn no_secrets() -> SecretsFn {
-    Arc::new(|_, _, _| Ok(None))
+pub(super) fn no_secrets() -> UserSecretsFn {
+    Arc::new(|_| Ok(None))
 }
 
 /// Insert a Box named `name` and give it a live machine from `driver`.

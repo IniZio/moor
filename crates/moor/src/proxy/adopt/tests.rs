@@ -13,6 +13,7 @@ use sea_query::{Expr, ExprTrait as _, Query, UpdateStatement};
 
 use super::reconcile;
 use crate::proxy::detached::{write_spec, DetachedSupervisor, LEASE};
+use crate::proxy::ledger::LEDGER;
 use crate::store::db::{Conn, DbExt as _};
 use crate::store::{ReadyProc, Store, STORE_FILE};
 use crate::testing::clock::FakeClock;
@@ -100,7 +101,6 @@ impl Fx {
             box_repo: None,
             rules: Vec::new(),
             user: moor_core::user::UserId::new(1),
-            vault_key: "/config/vault.key".into(),
         }
     }
 
@@ -116,6 +116,9 @@ impl Fx {
         let _ = self
             .store
             .reserve(self.id, &FakeRng::default(), LEASE)
+            .unwrap();
+        self.store
+            .set_proxy_key(self.id, b"old-key", LEDGER)
             .unwrap();
         self.store.claim_lease(self.id, "old", LEASE).unwrap();
         let box_port = self.store.proxy(self.id).unwrap().unwrap().box_port;
@@ -261,4 +264,74 @@ fn a_restarted_proxy_keeps_acting_as_the_user_its_spec_names() {
     assert_eq!(f.proc.daemons().len(), 1);
     let again = crate::proxy::detached::read_spec(f.dir.path(), f.id).unwrap();
     assert_eq!(again, spec);
+}
+
+/// Records a ready Proxy whose supervisor was started to speak `ledger`, or before the ledger
+/// when `None`, and lets it give up its lease when signalled.
+fn record_speaking(f: &Fx, ledger: Option<u32>) {
+    f.record(BOOT);
+    let column = moor_schema::tables::Proxy::Ledger;
+    f.exec(
+        Query::update()
+            .table(moor_schema::tables::Proxy::Table)
+            .value(column, ledger.map(i64::from))
+            .take(),
+    );
+    let state = f.dir.path().to_path_buf();
+    let (shared, id) = (f.clock.clone(), f.id);
+    f.proc.on_signal(move |pid, _| {
+        if pid == PID {
+            let store = Store::open(&state.join(STORE_FILE), shared.clone()).unwrap();
+            store.release(id, "old").unwrap();
+        }
+    });
+}
+
+#[test]
+fn a_live_supervisor_from_before_the_ledger_is_replaced_on_the_same_box_port() {
+    let f = fx();
+    record_speaking(&f, None);
+    let port = f.row().box_port;
+
+    assert_eq!(f.settle(), Vec::<String>::new());
+
+    assert_eq!(f.proc.signals().first().map(|s| s.0), Some(PID));
+    assert_eq!(f.proc.daemons().len(), 1);
+    let row = f.row();
+    assert_eq!(row.box_port, port);
+    assert_eq!(row.ledger, Some(LEDGER));
+    assert_ne!(row.pid, Some(PID));
+}
+
+#[test]
+fn a_live_supervisor_at_another_ledger_protocol_is_replaced() {
+    let f = fx();
+    record_speaking(&f, Some(LEDGER + 1));
+
+    assert_eq!(f.settle(), Vec::<String>::new());
+
+    assert_eq!(f.proc.signals().first().map(|s| s.0), Some(PID));
+    assert_eq!(f.proc.daemons().len(), 1);
+    assert_eq!(f.row().ledger, Some(LEDGER));
+}
+
+#[test]
+fn a_replaced_supervisor_that_outlasts_the_wait_is_reported_and_not_doubled() {
+    let f = fx();
+    f.record(BOOT);
+    f.exec(
+        Query::update()
+            .table(moor_schema::tables::Proxy::Table)
+            .value(moor_schema::tables::Proxy::Ledger, Option::<i64>::None)
+            .take(),
+    );
+
+    let errors = f.settle();
+
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(
+        errors.iter().all(|e| e.contains("did not exit")),
+        "{errors:?}"
+    );
+    assert!(f.proc.daemons().is_empty());
 }

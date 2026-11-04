@@ -138,7 +138,7 @@ fn service() -> Service {
 
 /// Every event payload recorded for the Box, as text, after a drain.
 fn payloads(rig: &Rig) -> Vec<(String, String)> {
-    rig.live.as_ref().unwrap().drain(&rig.deps(), rig.box_id);
+    rig.live.as_ref().unwrap().drain(&rig.deps());
     rig.store
         .events(rig.box_id, 100)
         .unwrap()

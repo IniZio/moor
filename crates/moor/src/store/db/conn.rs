@@ -200,23 +200,6 @@ impl Readers {
         }
     }
 
-    /// The Postgres URL, password included, for a child process that opens the same store;
-    /// none on `SQLite`.
-    pub(crate) fn database_url(&self) -> Option<&str> {
-        match self {
-            Self::Sqlite { .. } => None,
-            Self::Postgres(pool) => Some(pool.target().url()),
-        }
-    }
-
-    /// The most read connections opened to the Postgres database; none on `SQLite`.
-    pub(crate) fn cap(&self) -> Option<usize> {
-        match self {
-            Self::Sqlite { .. } => None,
-            Self::Postgres(pool) => Some(pool.cap()),
-        }
-    }
-
     /// A connection for reads; it never blocks on the writer.
     pub(crate) fn open(&self) -> Result<Reader<'_>> {
         Ok(match self {

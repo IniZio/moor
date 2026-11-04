@@ -16,7 +16,7 @@ use super::{load_box, to_u32, Store, StoreError};
 use crate::store::db::{Db, DbExt as _, OptionalExtension, Row};
 
 /// The columns a proxy row is read with, in the order [`raw_from_row`] reads them.
-const COLUMNS: [Proxy; 9] = [
+const COLUMNS: [Proxy; 10] = [
     Proxy::Box,
     Proxy::BoxPort,
     Proxy::EgressPort,
@@ -26,6 +26,7 @@ const COLUMNS: [Proxy; 9] = [
     Proxy::LeaseOwner,
     Proxy::LeaseHeartbeat,
     Proxy::BootId,
+    Proxy::Ledger,
 ];
 
 /// Reset the row of `box_id` to unready with no pid, handle or lease.
@@ -89,6 +90,8 @@ pub(crate) struct ProxyRow {
     pub(crate) lease_heartbeat: Option<Ts>,
     /// Host boot the supervisor marked the row ready in.
     pub(crate) boot_id: Option<String>,
+    /// The ledger protocol the supervisor was started to speak; none before its key was set.
+    pub(crate) ledger: Option<u32>,
 }
 
 impl fmt::Debug for ProxyRow {
@@ -103,6 +106,7 @@ impl fmt::Debug for ProxyRow {
             .field("lease_owner", &self.lease_owner)
             .field("lease_heartbeat", &self.lease_heartbeat)
             .field("boot_id", &self.boot_id)
+            .field("ledger", &self.ledger)
             .finish()
     }
 }
@@ -262,6 +266,8 @@ struct RawRow {
     lease_heartbeat: Option<i64>,
     /// Boot id column.
     boot_id: Option<String>,
+    /// Ledger column.
+    ledger: Option<i64>,
 }
 
 /// Read a proxy row without range checks.
@@ -276,6 +282,7 @@ fn raw_from_row(r: &Row<'_>) -> crate::store::db::Result<RawRow> {
         lease_owner: r.get(6)?,
         lease_heartbeat: r.get(7)?,
         boot_id: r.get(8)?,
+        ledger: r.get(9)?,
     })
 }
 
@@ -293,6 +300,7 @@ impl TryFrom<RawRow> for ProxyRow {
             lease_owner: r.lease_owner,
             lease_heartbeat: r.lease_heartbeat.map(Ts::from_millis),
             boot_id: r.boot_id,
+            ledger: r.ledger.map(|v| to_u32("proxy ledger", v)).transpose()?,
         })
     }
 }
@@ -381,6 +389,7 @@ fn free_port(conn: &dyn Db, rng: &dyn Rng, ports: Ports) -> Result<u16, StoreErr
 }
 
 mod egress;
+mod key;
 mod lease;
 mod park;
 

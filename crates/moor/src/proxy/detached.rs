@@ -14,13 +14,16 @@ use moor_core::seam::proxy_host::{
 use moor_core::seam::rng::Rng;
 use moor_core::BoxId;
 
-use crate::env::{DATABASE_READERS, DATABASE_URL};
+use crate::env::PROXY_KEY;
+use crate::proxy::ledger::LEDGER;
 use crate::proxy::nono::ca::load_or_create;
 use crate::store::{Database, ProxyRow, Reserve, Store, StoreError};
 
 pub(crate) use super::supervisor::LEASE;
+use spec::mint_key;
 pub(crate) use spec::{read_spec, write_spec};
 
+mod end;
 mod spec;
 
 /// How far ahead of the clock a heartbeat may be and still count as live.
@@ -229,16 +232,15 @@ impl ProxyHost for DetachedSupervisor {
             .map_err(|e| store_failed(&e, &log))?;
         let pid = match reserved {
             Reserve::Reserved(_) => {
-                let mut spec = ProcSpec::new(Tool::MoorSelf, Deadline(WAIT))
+                let key = mint_key().map_err(|e| spec_failed(&e, &log))?;
+                store
+                    .set_proxy_key(box_id, key.as_bytes(), LEDGER)
+                    .map_err(|e| store_failed(&e, &log))?;
+                let spec = ProcSpec::new(Tool::MoorSelf, Deadline(WAIT))
                     .args(["proxy", "serve", &box_id.get().to_string()])
                     // The controller may run on a state dir its own config chose.
-                    .env("MOOR_STATE_DIR", state.to_string_lossy());
-                if let Some(url) = store.database_url() {
-                    spec = spec.env(DATABASE_URL, url);
-                }
-                if let Some(readers) = store.database_readers() {
-                    spec = spec.env(DATABASE_READERS, readers.to_string());
-                }
+                    .env("MOOR_STATE_DIR", state.to_string_lossy())
+                    .env(PROXY_KEY, key.as_str());
                 let pid = self.proc.spawn_daemon(&spec, &log).map_err(|e| {
                     fail(&format!("the proxy supervisor could not start: {e}"), &log)
                 })?;
@@ -324,16 +326,7 @@ impl ProxyHost for DetachedSupervisor {
             }
             Err(e) => return incomplete(format!("the proxy state could not be read: {e}")),
         };
-        // Pids 0 and 1 would address every process or init's group. After a reboot the pid may
-        // belong to an unrelated group even though the heartbeat looks fresh.
-        let pid = row
-            .pid
-            .filter(|p| *p > 1 && self.live(&row) && self.same_boot(&row));
-        let exited = pid.is_none_or(|p| match self.signal_group(p) {
-            Sent::Delivered => self.wait_gone(store, box_id),
-            Sent::Gone => true,
-            Sent::Failed => false,
-        });
+        let exited = self.terminate(store, &row);
         if let Err(e) = store.remove_proxy(box_id) {
             return incomplete(format!("the proxy row could not be removed: {e}"));
         }

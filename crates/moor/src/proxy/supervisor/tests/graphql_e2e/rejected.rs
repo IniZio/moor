@@ -6,7 +6,7 @@ use super::{query_answered, rig_with, Rig};
 
 /// Kinds and payloads of the Box events recorded after draining `rig`.
 fn drained_events(rig: &Rig) -> Vec<(String, String)> {
-    rig.live.as_ref().unwrap().drain(&rig.deps(), rig.box_id);
+    rig.live.as_ref().unwrap().drain(&rig.deps());
     rig.store
         .events(rig.box_id, 100)
         .unwrap()

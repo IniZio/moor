@@ -11,6 +11,8 @@ use super::{Call, Fault, Hello, LEDGER};
 use crate::store::Store;
 use crate::vault::Vault;
 
+mod boxes;
+
 /// The keys the controller started its Proxy processes with.
 #[derive(Debug, Default)]
 pub(crate) struct Keys<'a> {
@@ -20,6 +22,8 @@ pub(crate) struct Keys<'a> {
 
 /// Whom a connection's hello proved it speaks for.
 enum Bound {
+    /// The supervisor of a Box, with the key it presented.
+    Box(moor_core::BoxId, Zeroizing<String>),
     /// The front Proxy.
     Fronts,
 }
@@ -35,7 +39,7 @@ pub(crate) fn serve<G>(
     mut answering: impl FnMut() -> Option<G>,
 ) {
     let Some(line) = next(&mut read) else { return };
-    let bound = match hello(keys, &line) {
+    let bound = match hello(store, keys, &line) {
         Ok(bound) => bound,
         Err(fault) => {
             send(&mut write, &encode(&Err::<(), _>(fault)));
@@ -80,10 +84,20 @@ fn encode<T: Serialize>(reply: &Result<T, Fault>) -> Zeroizing<String> {
 }
 
 /// Whom `line`, a hello, speaks for.
-fn hello(keys: &Keys<'_>, line: &str) -> Result<Bound, Fault> {
+fn hello(store: &Store, keys: &Keys<'_>, line: &str) -> Result<Bound, Fault> {
     let hello: Hello =
         serde_json::from_str(line).map_err(|e| Fault::Refused(format!("bad hello: {e}")))?;
     match hello {
+        Hello::Box { v, box_id, key } => {
+            speaks(v)?;
+            if !store.proxy_key_is(box_id, key.as_bytes())? {
+                return Err(Fault::Refused(format!(
+                    "not the key of Box {}'s supervisor",
+                    box_id.get()
+                )));
+            }
+            Ok(Bound::Box(box_id, Zeroizing::new(key)))
+        }
         Hello::Fronts { v, key } => {
             speaks(v)?;
             let want = keys
@@ -125,6 +139,10 @@ fn answer((store, vault): (&Store, &Vault), bound: &Bound, line: &str) -> Zeroiz
         (Bound::Fronts, Call::FrontSecret { front, user, name }) => {
             encode(&front_secret((store, vault), &front, user, &name))
         }
+        (Bound::Box(box_id, key), call) => boxes::answer((store, vault), (*box_id, key), call),
+        (Bound::Fronts, _) => encode(&Err::<(), _>(Fault::Refused(
+            "the front Proxy makes no Box call".to_owned(),
+        ))),
     }
 }
 
