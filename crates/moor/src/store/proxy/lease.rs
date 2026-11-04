@@ -7,10 +7,12 @@ use std::time::Duration;
 
 use moor_core::domain::event::Event;
 use moor_core::BoxId;
+use moor_schema::tables::Proxy;
+use sea_query::{Expr, ExprTrait as _, Query};
 
 use super::ReadyProc;
 use crate::store::apply::insert_event;
-use crate::store::db::{params, Db, DbExt as _, OptionalExtension, TransactionBehavior};
+use crate::store::db::{Db, DbExt as _, OptionalExtension, TransactionBehavior};
 use crate::store::{Store, StoreError};
 
 /// Outcome of a lease claim.
@@ -47,9 +49,11 @@ impl Store {
         let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let current: Option<(Option<String>, Option<i64>)> = tx
-            .query_row(
-                "SELECT lease_owner, lease_heartbeat FROM proxy WHERE box = ?",
-                [box_id.get()],
+            .row(
+                Query::select()
+                    .columns([Proxy::LeaseOwner, Proxy::LeaseHeartbeat])
+                    .from(Proxy::Table)
+                    .and_where(Expr::col(Proxy::Box).eq(box_id.get())),
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;
@@ -62,9 +66,12 @@ impl Store {
             _ => true,
         };
         let outcome = if free {
-            tx.execute(
-                "UPDATE proxy SET lease_owner = ?, lease_heartbeat = ? WHERE box = ?",
-                params![owner, now, box_id.get()],
+            tx.run(
+                Query::update()
+                    .table(Proxy::Table)
+                    .value(Proxy::LeaseOwner, owner)
+                    .value(Proxy::LeaseHeartbeat, now)
+                    .and_where(Expr::col(Proxy::Box).eq(box_id.get())),
             )?;
             Lease::Claimed
         } else {
@@ -82,9 +89,12 @@ impl Store {
         let now = self.now().as_millis();
         let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let changed = tx.execute(
-            "UPDATE proxy SET lease_heartbeat = ? WHERE box = ? AND lease_owner = ?",
-            params![now, box_id.get(), owner],
+        let changed = tx.run(
+            Query::update()
+                .table(Proxy::Table)
+                .value(Proxy::LeaseHeartbeat, now)
+                .and_where(Expr::col(Proxy::Box).eq(box_id.get()))
+                .and_where(Expr::col(Proxy::LeaseOwner).eq(owner)),
         )?;
         if changed == 0 && !proxy_exists(&tx, box_id)? {
             return Err(StoreError::NotFound(box_id));
@@ -97,9 +107,13 @@ impl Store {
     /// Clear the lease if `owner` holds it; no-op otherwise.
     pub(crate) fn release(&self, box_id: BoxId, owner: &str) -> Result<(), StoreError> {
         let conn = self.writer();
-        conn.execute(
-            "UPDATE proxy SET lease_owner = NULL, lease_heartbeat = NULL WHERE box = ? AND lease_owner = ?",
-            params![box_id.get(), owner],
+        conn.run(
+            Query::update()
+                .table(Proxy::Table)
+                .value(Proxy::LeaseOwner, Option::<String>::None)
+                .value(Proxy::LeaseHeartbeat, Option::<i64>::None)
+                .and_where(Expr::col(Proxy::Box).eq(box_id.get()))
+                .and_where(Expr::col(Proxy::LeaseOwner).eq(owner)),
         )?;
         drop(conn);
         Ok(())
@@ -117,19 +131,17 @@ impl Store {
         let now = self.now();
         let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let changed = tx.execute(
-            "UPDATE proxy SET box_port = ?, pid = ?, handle = ?, ready = 1, boot_id = ?, \
-             updated_at = ? \
-             WHERE box = ? AND lease_owner = ?",
-            params![
-                box_port,
-                proc.pid,
-                proc.handle,
-                proc.boot_id,
-                now.as_millis(),
-                box_id.get(),
-                owner
-            ],
+        let changed = tx.run(
+            Query::update()
+                .table(Proxy::Table)
+                .value(Proxy::BoxPort, box_port)
+                .value(Proxy::Pid, proc.pid)
+                .value(Proxy::Handle, proc.handle)
+                .value(Proxy::Ready, 1)
+                .value(Proxy::BootId, proc.boot_id)
+                .value(Proxy::UpdatedAt, now.as_millis())
+                .and_where(Expr::col(Proxy::Box).eq(box_id.get()))
+                .and_where(Expr::col(Proxy::LeaseOwner).eq(owner)),
         )?;
         if changed == 0 {
             if proxy_exists(&tx, box_id)? {
@@ -174,9 +186,11 @@ impl Store {
         let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let holder: Option<Option<String>> = tx
-            .query_row(
-                "SELECT lease_owner FROM proxy WHERE box = ?",
-                [box_id.get()],
+            .row(
+                Query::select()
+                    .column(Proxy::LeaseOwner)
+                    .from(Proxy::Table)
+                    .and_where(Expr::col(Proxy::Box).eq(box_id.get())),
                 |r| r.get(0),
             )
             .optional()?;
@@ -195,9 +209,13 @@ impl Store {
 /// Whether `box_id` has a proxy row.
 fn proxy_exists(conn: &dyn Db, box_id: BoxId) -> Result<bool, StoreError> {
     Ok(conn
-        .query_row("SELECT 1 FROM proxy WHERE box = ?", [box_id.get()], |_| {
-            Ok(())
-        })
+        .row(
+            Query::select()
+                .column(Proxy::Box)
+                .from(Proxy::Table)
+                .and_where(Expr::col(Proxy::Box).eq(box_id.get())),
+            |_| Ok(()),
+        )
         .optional()?
         .is_some())
 }

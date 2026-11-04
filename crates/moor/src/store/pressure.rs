@@ -5,7 +5,10 @@ use std::collections::HashMap;
 use moor_core::decide::pressure::{Reading, SUSTAINED_REPORTS};
 use moor_core::name::{BoxId, NodeName};
 
-use crate::store::db::{params, DbExt as _, OptionalExtension};
+use moor_schema::tables::{Boxes, NodePressure};
+use sea_query::{Expr, ExprTrait as _, OnConflict, Query};
+
+use crate::store::db::{DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
 /// A node's pressure state: its recent reports, oldest first, since when pressure has been
@@ -25,9 +28,15 @@ impl Store {
     pub(crate) fn pressure(&self, node: &NodeName) -> Result<Pressure, StoreError> {
         let conn = self.reader()?;
         let row: Option<(String, Option<i64>, Option<i64>)> = conn
-            .query_row(
-                "SELECT readings, high_since, suspended_at FROM node_pressure WHERE node = ?1",
-                [node.as_str()],
+            .row(
+                Query::select()
+                    .columns([
+                        NodePressure::Readings,
+                        NodePressure::HighSince,
+                        NodePressure::SuspendedAt,
+                    ])
+                    .from(NodePressure::Table)
+                    .and_where(Expr::col(NodePressure::Node).eq(node.as_str())),
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()?;
@@ -51,11 +60,30 @@ impl Store {
             .unwrap_or_default();
         let readings = serde_json::to_string(keep)
             .map_err(|e| StoreError::Corrupt(format!("node {node} readings: {e}")))?;
-        self.writer().execute(
-            "INSERT INTO node_pressure (node, readings, high_since, suspended_at) \
-             VALUES (?1, ?2, ?3, ?4) ON CONFLICT (node) DO UPDATE SET readings = excluded.readings, \
-             high_since = excluded.high_since, suspended_at = excluded.suspended_at",
-            params![node.as_str(), readings, p.high_since, p.suspended_at],
+        self.writer().run(
+            Query::insert()
+                .into_table(NodePressure::Table)
+                .columns([
+                    NodePressure::Node,
+                    NodePressure::Readings,
+                    NodePressure::HighSince,
+                    NodePressure::SuspendedAt,
+                ])
+                .values_panic([
+                    node.as_str().into(),
+                    readings.into(),
+                    p.high_since.into(),
+                    p.suspended_at.into(),
+                ])
+                .on_conflict(
+                    OnConflict::column(NodePressure::Node)
+                        .update_columns([
+                            NodePressure::Readings,
+                            NodePressure::HighSince,
+                            NodePressure::SuspendedAt,
+                        ])
+                        .to_owned(),
+                ),
         )?;
         Ok(())
     }
@@ -63,17 +91,23 @@ impl Store {
     /// Per node name, since when its pressure has been sustained.
     pub(crate) fn pressure_since(&self) -> Result<HashMap<String, i64>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt = conn
-            .prepare("SELECT node, high_since FROM node_pressure WHERE high_since IS NOT NULL")?;
-        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
-        Ok(rows.collect::<Result<_, _>>()?)
+        let rows = conn.rows(
+            Query::select()
+                .columns([NodePressure::Node, NodePressure::HighSince])
+                .from(NodePressure::Table)
+                .and_where(Expr::col(NodePressure::HighSince).is_not_null()),
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        Ok(rows.collect::<Result<_, crate::store::db::Error>>()?)
     }
 
     /// Marks Box `id` to resume first, as suspended at `at`, unix seconds; `None` clears it.
     pub(crate) fn set_resume_first(&self, id: BoxId, at: Option<i64>) -> Result<(), StoreError> {
-        self.writer().execute(
-            "UPDATE boxes SET resume_first_at = ?1 WHERE id = ?2",
-            params![at, id.get()],
+        self.writer().run(
+            Query::update()
+                .table(Boxes::Table)
+                .value(Boxes::ResumeFirstAt, at)
+                .and_where(Expr::col(Boxes::Id).eq(id.get())),
         )?;
         Ok(())
     }
@@ -82,9 +116,11 @@ impl Store {
     pub(crate) fn resume_first(&self, id: BoxId) -> Result<Option<i64>, StoreError> {
         let conn = self.reader()?;
         let at = conn
-            .query_row(
-                "SELECT resume_first_at FROM boxes WHERE id = ?1",
-                [id.get()],
+            .row(
+                Query::select()
+                    .column(Boxes::ResumeFirstAt)
+                    .from(Boxes::Table)
+                    .and_where(Expr::col(Boxes::Id).eq(id.get())),
                 |r| r.get(0),
             )
             .optional()?;

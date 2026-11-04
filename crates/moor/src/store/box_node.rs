@@ -6,9 +6,11 @@ use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::name::NodeName;
 use moor_core::BoxId;
+use moor_schema::tables::Boxes;
+use sea_query::{Asterisk, Expr, ExprTrait as _, Order, Query};
 
 use super::{Store, StoreError};
-use crate::store::db::{params, Db, DbExt as _, OptionalExtension};
+use crate::store::db::{Db, DbExt as _, OptionalExtension};
 
 /// Boxes holding a slot on `node` as seen on `conn`, counted the way admission counts them,
 /// and Boxes setting up there.
@@ -16,16 +18,21 @@ pub(super) fn live_on_node_in(
     conn: &dyn Db,
     node: &NodeName,
 ) -> Result<(usize, usize), StoreError> {
-    let mut stmt = conn.prepare(
-        "SELECT driver_state, state, COUNT(*) FROM boxes WHERE node = ?1 GROUP BY driver_state, state",
+    let rows = conn.rows(
+        Query::select()
+            .columns([Boxes::DriverState, Boxes::State])
+            .expr(Expr::col(Asterisk).count())
+            .from(Boxes::Table)
+            .and_where(Expr::col(Boxes::Node).eq(node.as_str()))
+            .group_by_columns([Boxes::DriverState, Boxes::State]),
+        |r| {
+            Ok::<_, StoreError>((
+                r.get::<_, Option<String>>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)?,
+            ))
+        },
     )?;
-    let rows = stmt.query_map([node.as_str()], |r| {
-        Ok((
-            r.get::<_, Option<String>>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, i64>(2)?,
-        ))
-    })?;
     let (mut used, mut starting) = (0, 0);
     for row in rows {
         let (driver, state, n) = row?;
@@ -44,20 +51,26 @@ impl Store {
     /// The Boxes whose lifecycle is Ready on `node`.
     pub(crate) fn ready_on(&self, node: &NodeName) -> Result<Vec<BoxId>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt = conn.prepare("SELECT id FROM boxes WHERE node = ?1 AND state = ?2")?;
-        let rows = stmt.query_map(params![node.as_str(), BoxLifecycle::Ready.as_str()], |r| {
-            Ok(BoxId::new(r.get(0)?))
-        })?;
-        Ok(rows.collect::<Result<_, _>>()?)
+        let rows = conn.rows(
+            Query::select()
+                .column(Boxes::Id)
+                .from(Boxes::Table)
+                .and_where(Expr::col(Boxes::Node).eq(node.as_str()))
+                .and_where(Expr::col(Boxes::State).eq(BoxLifecycle::Ready.as_str())),
+            |r| Ok(BoxId::new(r.get(0)?)),
+        )?;
+        Ok(rows.collect::<Result<_, crate::store::db::Error>>()?)
     }
 
     /// What Box `id` asks of a node: the node it named or holds, and its labels.
     pub(crate) fn box_spec(&self, id: BoxId) -> Result<BoxSpec, StoreError> {
         let conn = self.reader()?;
         let found: Option<(Option<String>, String, Option<i64>)> = conn
-            .query_row(
-                "SELECT node, node_labels, node_mem_mib FROM boxes WHERE id = ?1",
-                [id.get()],
+            .row(
+                Query::select()
+                    .columns([Boxes::Node, Boxes::NodeLabels, Boxes::NodeMemMib])
+                    .from(Boxes::Table)
+                    .and_where(Expr::col(Boxes::Id).eq(id.get())),
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()?;
@@ -75,23 +88,28 @@ impl Store {
     pub(crate) fn set_box_spec(&self, id: BoxId, spec: &BoxSpec) -> Result<(), StoreError> {
         let labels = serde_json::to_string(&spec.labels)
             .map_err(|e| StoreError::Corrupt(format!("node labels: {e}")))?;
-        self.writer().execute(
-            "UPDATE boxes SET node = ?1, node_labels = ?2, node_mem_mib = ?3 WHERE id = ?4",
-            params![
-                spec.node.as_ref().map(NodeName::as_str),
-                labels,
-                i64::try_from(spec.mem_mib).unwrap_or(i64::MAX),
-                id.get()
-            ],
+        self.writer().run(
+            Query::update()
+                .table(Boxes::Table)
+                .value(Boxes::Node, spec.node.as_ref().map(NodeName::as_str))
+                .value(Boxes::NodeLabels, labels)
+                .value(
+                    Boxes::NodeMemMib,
+                    i64::try_from(spec.mem_mib).unwrap_or(i64::MAX),
+                )
+                .and_where(Expr::col(Boxes::Id).eq(id.get())),
         )?;
         Ok(())
     }
 
     /// Puts Box `id` on `node` when it is on none; returns whether it was.
     pub(crate) fn place_unplaced(&self, id: BoxId, node: &NodeName) -> Result<bool, StoreError> {
-        let n = self.writer().execute(
-            "UPDATE boxes SET node = ?1 WHERE id = ?2 AND node IS NULL",
-            params![node.as_str(), id.get()],
+        let n = self.writer().run(
+            Query::update()
+                .table(Boxes::Table)
+                .value(Boxes::Node, node.as_str())
+                .and_where(Expr::col(Boxes::Id).eq(id.get()))
+                .and_where(Expr::col(Boxes::Node).is_null()),
         )?;
         Ok(n > 0)
     }
@@ -99,12 +117,14 @@ impl Store {
     /// Pending Boxes waiting for `node`: those suspended as a last resort first, then oldest first.
     pub(crate) fn pending_on(&self, node: &NodeName) -> Result<Vec<BoxId>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt = conn.prepare(
-            "SELECT id FROM boxes WHERE node = ?1 AND state = ?2 \
-                 ORDER BY resume_first_at IS NULL, id",
-        )?;
-        let rows = stmt.query_map(
-            params![node.as_str(), BoxLifecycle::Pending.as_str()],
+        let rows = conn.rows(
+            Query::select()
+                .column(Boxes::Id)
+                .from(Boxes::Table)
+                .and_where(Expr::col(Boxes::Node).eq(node.as_str()))
+                .and_where(Expr::col(Boxes::State).eq(BoxLifecycle::Pending.as_str()))
+                .order_by_expr(Expr::col(Boxes::ResumeFirstAt).is_null(), Order::Asc)
+                .order_by(Boxes::Id, Order::Asc),
             |r| r.get::<_, i64>(0),
         )?;
         rows.map(|r| Ok(BoxId::new(r?))).collect()
