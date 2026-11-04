@@ -65,13 +65,17 @@ impl super::Store {
     /// Lists `others` after Box `id`'s primary repo, as a start that chose them would.
     pub(crate) fn list_others(&self, id: BoxId, others: Vec<ListedRepo>) -> Result<(), StoreError> {
         use crate::store::db::DbExt as _;
+        use moor_schema::tables::Boxes;
+        use sea_query::{Expr, ExprTrait as _, Query};
         let Some(mut repo) = self.box_row(id)?.and_then(|row| row.repo) else {
             return Ok(());
         };
         repo.others = others;
-        self.writer().execute(
-            "UPDATE boxes SET other_repos = ?1 WHERE id = ?2",
-            crate::store::db::params![others_column(&repo), id.get()],
+        self.writer().run(
+            Query::update()
+                .table(Boxes::Table)
+                .value(Boxes::OtherRepos, others_column(&repo))
+                .and_where(Expr::col(Boxes::Id).eq(id.get())),
         )?;
         Ok(())
     }

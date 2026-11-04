@@ -3,6 +3,8 @@
 use moor_core::domain::session_state::SessionState;
 use moor_core::user::UserId;
 use moor_core::{BoxId, BoxName};
+use moor_schema::tables::{Boxes, Sessions};
+use sea_query::{Expr, ExprTrait as _, Order, Query, SelectStatement};
 
 use super::super::{parsed, parsed_opt, Store, StoreError};
 use crate::store::db::{DbExt as _, OptionalExtension, Row};
@@ -38,10 +40,35 @@ pub(crate) struct SessionRecord {
     pub(crate) key: Option<String>,
 }
 
-/// Columns of a Session row, in the order [`SessionRecord::from_row`] reads them.
-const SELECT: &str = "SELECT s.id, b.name, s.ordinal, s.parent_session, s.workdir, s.agent, \
-     s.agent_session_id, s.state, s.started_at, s.ended_at, s.box, s.user, s.host_key \
-     FROM sessions s LEFT JOIN boxes b ON b.id = s.box";
+/// The Session rows, with columns in the order [`SessionRecord::from_row`] reads them.
+fn select() -> SelectStatement {
+    let s = |c| (Sessions::Table, c);
+    Query::select()
+        .column(s(Sessions::Id))
+        .column((Boxes::Table, Boxes::Name))
+        .columns(
+            [
+                Sessions::Ordinal,
+                Sessions::ParentSession,
+                Sessions::Workdir,
+                Sessions::Agent,
+                Sessions::AgentSessionId,
+                Sessions::State,
+                Sessions::StartedAt,
+                Sessions::EndedAt,
+                Sessions::Box,
+                Sessions::User,
+                Sessions::HostKey,
+            ]
+            .map(s),
+        )
+        .from(Sessions::Table)
+        .left_join(
+            Boxes::Table,
+            Expr::col((Boxes::Table, Boxes::Id)).equals(s(Sessions::Box)),
+        )
+        .take()
+}
 
 impl SessionRecord {
     /// Whether the Session has ended.
@@ -49,7 +76,7 @@ impl SessionRecord {
         self.state == SessionState::Ended || self.ended_at.is_some()
     }
 
-    /// Read a row of [`SELECT`], parsing its Box name and state.
+    /// Read a row of [`select`], parsing its Box name and state.
     fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Self, StoreError>> {
         let name: Option<String> = row.get(1)?;
         let state: String = row.get(7)?;
@@ -83,9 +110,8 @@ impl Store {
     /// Returns [`StoreError`] when the database fails or a stored name or state is unknown.
     pub(crate) fn session_row(&self, id: i64) -> Result<Option<SessionRecord>, StoreError> {
         let conn = self.reader()?;
-        conn.query_row(
-            &format!("{SELECT} WHERE s.id = ?1"),
-            [id],
+        conn.row(
+            select().and_where(Expr::col((Sessions::Table, Sessions::Id)).eq(id)),
             SessionRecord::from_row,
         )
         .optional()?
@@ -98,10 +124,15 @@ impl Store {
     /// Returns [`StoreError`] when the database fails or a stored name or state is unknown.
     pub(crate) fn live_sessions(&self) -> Result<Vec<SessionRecord>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt = conn.prepare(&format!(
-            "{SELECT} WHERE s.state <> ?1 AND s.ended_at IS NULL ORDER BY s.id"
-        ))?;
-        let rows = stmt.query_map([SessionState::Ended.as_str()], SessionRecord::from_row)?;
+        let rows = conn.rows(
+            select()
+                .and_where(
+                    Expr::col((Sessions::Table, Sessions::State)).ne(SessionState::Ended.as_str()),
+                )
+                .and_where(Expr::col((Sessions::Table, Sessions::EndedAt)).is_null())
+                .order_by((Sessions::Table, Sessions::Id), Order::Asc),
+            SessionRecord::from_row,
+        )?;
         rows.map(|row| row?).collect()
     }
 
@@ -111,10 +142,12 @@ impl Store {
     /// Returns [`StoreError`] when the database fails or a stored name or state is unknown.
     pub(crate) fn session_children(&self, parent: i64) -> Result<Vec<SessionRecord>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt = conn.prepare(&format!(
-            "{SELECT} WHERE s.parent_session = ?1 ORDER BY s.id"
-        ))?;
-        let rows = stmt.query_map([parent], SessionRecord::from_row)?;
+        let rows = conn.rows(
+            select()
+                .and_where(Expr::col((Sessions::Table, Sessions::ParentSession)).eq(parent))
+                .order_by((Sessions::Table, Sessions::Id), Order::Asc),
+            SessionRecord::from_row,
+        )?;
         rows.map(|row| row?).collect()
     }
 }

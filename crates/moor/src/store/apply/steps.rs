@@ -7,9 +7,11 @@ use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::BoxId;
+use moor_schema::tables::{Boxes, Sessions};
+use sea_query::{Expr, ExprTrait as _, Query};
 
 use super::sql::name_taken;
-use crate::store::db::{params, DbExt as _, Tx};
+use crate::store::db::{self, DbExt as _, Tx};
 use crate::store::{load_box, sessions::live_parent, DriverRow, StoreError};
 
 /// The Box and primary Session states a step leaves behind.
@@ -73,8 +75,19 @@ pub(super) fn step_box(tx: &Tx<'_>, now: Ts, d: &Decision) -> Result<Stepped, St
 
 /// States of the Box's Sessions other than the current one.
 fn read_others(tx: &Tx<'_>, id: BoxId) -> Result<Vec<SessionState>, StoreError> {
-    let mut stmt = tx.prepare("SELECT state FROM sessions WHERE box = ?1 AND ordinal < (SELECT MAX(ordinal) FROM sessions WHERE box = ?1)")?;
-    let rows = stmt.query_map(params![id.get()], |r| r.get::<_, String>(0))?;
+    let newest = Query::select()
+        .expr(Expr::col(Sessions::Ordinal).max())
+        .from(Sessions::Table)
+        .and_where(Expr::col(Sessions::Box).eq(id.get()))
+        .take();
+    let rows = tx.rows(
+        Query::select()
+            .column(Sessions::State)
+            .from(Sessions::Table)
+            .and_where(Expr::col(Sessions::Box).eq(id.get()))
+            .and_where(Expr::col(Sessions::Ordinal).lt(db::sub(newest))),
+        |r| r.get::<_, String>(0),
+    )?;
     rows.map(|s| {
         let s = s?;
         SessionState::parse(&s)
@@ -97,32 +110,59 @@ fn insert_box(
     }
     let repo = new.repo.as_ref();
     let id: i64 = tx
-        .query_row(
-        "INSERT INTO boxes (name, repo, repo_config, author_name, author_email, other_repos, \"user\", state, \
-         created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
-        params![
-            new.name.as_str(),
-            repo.map(|r| r.repo.to_string()),
-            repo.and_then(|r| r.moor_yaml.as_deref()),
-            repo.map(|r| r.author.name.as_str()),
-            repo.map(|r| r.author.email.as_str()),
-            repo.and_then(crate::store::repo::others_column),
-            requester.map(UserId::get),
-            lifecycle.as_str(),
-            now.as_millis(),
-            now.as_millis()
-        ],
-        |r| r.get(0),
-    )
-    .map_err(|e| name_taken(e, new))?;
-    tx.execute(
-        "INSERT INTO sessions (box, ordinal, state, started_at, parent_session, \"user\") VALUES (?, 1, 'starting', ?, ?, ?)",
-        params![
-            id,
-            now.as_millis(),
-            parent_session,
-            requester.filter(|_| parent_session.is_none()).map(UserId::get)
-        ],
+        .row(
+            Query::insert()
+                .into_table(Boxes::Table)
+                .columns([
+                    Boxes::Name,
+                    Boxes::Repo,
+                    Boxes::RepoConfig,
+                    Boxes::AuthorName,
+                    Boxes::AuthorEmail,
+                    Boxes::OtherRepos,
+                    Boxes::User,
+                    Boxes::State,
+                    Boxes::CreatedAt,
+                    Boxes::UpdatedAt,
+                ])
+                .values_panic([
+                    new.name.as_str().into(),
+                    repo.map(|r| r.repo.to_string()).into(),
+                    repo.and_then(|r| r.moor_yaml.as_deref()).into(),
+                    repo.map(|r| r.author.name.as_str()).into(),
+                    repo.map(|r| r.author.email.as_str()).into(),
+                    repo.and_then(crate::store::repo::others_column).into(),
+                    requester.map(UserId::get).into(),
+                    lifecycle.as_str().into(),
+                    now.as_millis().into(),
+                    now.as_millis().into(),
+                ])
+                .returning_col(Boxes::Id),
+            |r| r.get(0),
+        )
+        .map_err(|e| name_taken(e, new))?;
+    tx.run(
+        Query::insert()
+            .into_table(Sessions::Table)
+            .columns([
+                Sessions::Box,
+                Sessions::Ordinal,
+                Sessions::State,
+                Sessions::StartedAt,
+                Sessions::ParentSession,
+                Sessions::User,
+            ])
+            .values_panic([
+                id.into(),
+                1.into(),
+                SessionState::Starting.as_str().into(),
+                now.as_millis().into(),
+                parent_session.into(),
+                requester
+                    .filter(|_| parent_session.is_none())
+                    .map(UserId::get)
+                    .into(),
+            ]),
     )?;
     Ok(BoxId::new(id))
 }

@@ -1,9 +1,5 @@
 # Store files still written in SQL text, skipped by the store-sql lint until converted to sea-query.
 # One repo-relative path per line. A listed file that is clean fails the lint, so this only shrinks.
-crates/moor/src/store/agent.rs
-crates/moor/src/store/agent/tests.rs
-crates/moor/src/store/apply/steps.rs
-crates/moor/src/store/apply/tests.rs
 crates/moor/src/store/artifacts/due/tests.rs
 crates/moor/src/store/artifacts.rs
 crates/moor/src/store/bindings.rs
@@ -12,7 +8,6 @@ crates/moor/src/store/box_node.rs
 crates/moor/src/store/box_profile.rs
 crates/moor/src/store/checkpoints/evict.rs
 crates/moor/src/store/checkpoints.rs
-crates/moor/src/store/events_of.rs
 crates/moor/src/store/host.rs
 crates/moor/src/store/host/tests.rs
 crates/moor/src/store/init.rs
@@ -29,13 +24,8 @@ crates/moor/src/store/proxy.rs
 crates/moor/src/store/proxy/tests.rs
 crates/moor/src/store/reads/refs.rs
 crates/moor/src/store/reads/tests.rs
-crates/moor/src/store/repo.rs
 crates/moor/src/store/reports.rs
 crates/moor/src/store/runs.rs
-crates/moor/src/store/sessions/read.rs
-crates/moor/src/store/sessions/read/tests.rs
-crates/moor/src/store/sessions.rs
-crates/moor/src/store/sessions/tests.rs
 crates/moor/src/store/tests/events_after.rs
 crates/moor/src/store/tests/poison.rs
 crates/moor/src/store/tests.rs

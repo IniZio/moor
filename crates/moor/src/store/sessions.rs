@@ -1,8 +1,11 @@
 //! Sessions of a Box beyond the primary one inserted with it.
 
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::event::Event;
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::BoxId;
+use moor_schema::tables::{Boxes, Launches, Sessions};
+use sea_query::{Expr, ExprTrait as _, Func, Order, Query};
 
 use super::apply::insert_event;
 use super::{parsed_opt, Store, StoreError};
@@ -31,9 +34,11 @@ pub(crate) struct BoxSession {
 /// Returns [`StoreError::Invalid`] when the Session is unknown or ended, or [`StoreError`] when the database fails.
 pub(in crate::store) fn live_parent(conn: &dyn Db, parent: i64) -> Result<(), StoreError> {
     let row: Option<(String, Option<i64>)> = conn
-        .query_row(
-            "SELECT state, ended_at FROM sessions WHERE id = ?1",
-            [parent],
+        .row(
+            Query::select()
+                .columns([Sessions::State, Sessions::EndedAt])
+                .from(Sessions::Table)
+                .and_where(Expr::col(Sessions::Id).eq(parent)),
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()?;
@@ -44,6 +49,55 @@ pub(in crate::store) fn live_parent(conn: &dyn Db, parent: i64) -> Result<(), St
         }
         Some(_) => Ok(()),
     }
+}
+
+/// Whether Box `id` exists, reading through `conn`.
+fn box_exists(conn: &dyn Db, id: BoxId) -> Result<bool, StoreError> {
+    Ok(conn
+        .row(
+            Query::select()
+                .column(Boxes::Id)
+                .from(Boxes::Table)
+                .and_where(Expr::col(Boxes::Id).eq(id.get())),
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+}
+
+/// The state, ordinal and workspace of Box `id`'s newest Session, if it has one.
+fn newest_of(
+    conn: &dyn Db,
+    id: BoxId,
+) -> Result<Option<(String, i64, Option<String>)>, StoreError> {
+    Ok(conn
+        .row(
+            Query::select()
+                .columns([Sessions::State, Sessions::Ordinal, Sessions::WorkspaceId])
+                .from(Sessions::Table)
+                .and_where(Expr::col(Sessions::Box).eq(id.get()))
+                .order_by(Sessions::Ordinal, Order::Desc)
+                .limit(1),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?)
+}
+
+/// Stamp `idle_since` on Box `id` if it is Ready and has none, and mark it updated at `at`.
+fn stamp_idle(conn: &dyn Db, id: BoxId, at: i64) -> Result<(), StoreError> {
+    let idle_since = Expr::case(
+        Expr::col(Boxes::State).eq(BoxLifecycle::Ready.as_str()),
+        Func::coalesce([Expr::col(Boxes::IdleSince), Expr::val(at)]),
+    )
+    .finally(Expr::col(Boxes::IdleSince));
+    conn.run(
+        Query::update()
+            .table(Boxes::Table)
+            .value(Boxes::IdleSince, idle_since)
+            .value(Boxes::UpdatedAt, at)
+            .and_where(Expr::col(Boxes::Id).eq(id.get())),
+    )?;
+    Ok(())
 }
 
 impl Store {
@@ -66,40 +120,47 @@ impl Store {
         let now = self.now();
         let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let exists = tx
-            .query_row("SELECT 1 FROM boxes WHERE id = ?1", [id.get()], |_| Ok(()))
-            .optional()?;
-        if exists.is_none() {
+        if !box_exists(&tx, id)? {
             return Err(StoreError::NotFound(id));
         }
-        let current: Option<String> = tx
-            .query_row(
-                "SELECT state FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1",
-                [id.get()],
-                |row| row.get(0),
-            )
-            .optional()?;
-        if current.is_some_and(|state| state != SessionState::Ended.as_str()) {
+        let newest = newest_of(&tx, id)?;
+        if newest
+            .as_ref()
+            .is_some_and(|(state, ..)| state != SessionState::Ended.as_str())
+        {
             return Err(StoreError::Invalid(format!(
                 "Box {} already has a live Session",
                 id.get()
             )));
         }
-        let ordinal: i64 = tx.query_row(
-            "SELECT COALESCE(MAX(ordinal), 0) + 1 FROM sessions WHERE box = ?1",
-            [id.get()],
-            |row| row.get(0),
-        )?;
+        let (ordinal, workspace) = newest.map_or((1, None), |(_, ordinal, workspace)| {
+            (ordinal + 1, workspace)
+        });
         if let Some(p) = parent {
             live_parent(&tx, p)?;
         }
         let state = SessionState::Starting;
         let session = BoxSession {
-            id: tx.query_row(
-                "INSERT INTO sessions (box, ordinal, state, started_at, parent_session, workspace_id) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, (SELECT workspace_id FROM sessions WHERE box = ?1 \
-                 ORDER BY ordinal DESC LIMIT 1)) RETURNING id",
-                (id.get(), ordinal, state.as_str(), now.as_millis(), parent),
+            id: tx.row(
+                Query::insert()
+                    .into_table(Sessions::Table)
+                    .columns([
+                        Sessions::Box,
+                        Sessions::Ordinal,
+                        Sessions::State,
+                        Sessions::StartedAt,
+                        Sessions::ParentSession,
+                        Sessions::WorkspaceId,
+                    ])
+                    .values_panic([
+                        id.get().into(),
+                        ordinal.into(),
+                        state.as_str().into(),
+                        now.as_millis().into(),
+                        parent.into(),
+                        workspace.into(),
+                    ])
+                    .returning_col(Sessions::Id),
                 |r| r.get(0),
             )?,
             ordinal,
@@ -125,16 +186,20 @@ impl Store {
     pub(crate) fn start_session(&self, session: i64) -> Result<(), StoreError> {
         let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let state: String = tx.query_row(
-            "SELECT state FROM sessions WHERE id = ?1",
-            [session],
+        let state: String = tx.row(
+            Query::select()
+                .column(Sessions::State)
+                .from(Sessions::Table)
+                .and_where(Expr::col(Sessions::Id).eq(session)),
             |row| row.get(0),
         )?;
         let to = parsed_opt("session state", &state, SessionState::parse)?
             .step(&SessionInput::Started)?;
-        tx.execute(
-            "UPDATE sessions SET state = ?1 WHERE id = ?2",
-            (to.as_str(), session),
+        tx.run(
+            Query::update()
+                .table(Sessions::Table)
+                .value(Sessions::State, to.as_str())
+                .and_where(Expr::col(Sessions::Id).eq(session)),
         )?;
         tx.commit()?;
         drop(conn);
@@ -158,16 +223,17 @@ impl Store {
         let now = self.now();
         let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let exists = tx
-            .query_row("SELECT 1 FROM boxes WHERE id = ?1", [id.get()], |_| Ok(()))
-            .optional()?;
-        if exists.is_none() {
+        if !box_exists(&tx, id)? {
             return Err(StoreError::NotFound(id));
         }
         let current: Option<(i64, String)> = tx
-            .query_row(
-                "SELECT id, state FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1",
-                [id.get()],
+            .row(
+                Query::select()
+                    .columns([Sessions::Id, Sessions::State])
+                    .from(Sessions::Table)
+                    .and_where(Expr::col(Sessions::Box).eq(id.get()))
+                    .order_by(Sessions::Ordinal, Order::Desc)
+                    .limit(1),
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()?;
@@ -180,19 +246,22 @@ impl Store {
         }
         let ended = state.step(&SessionInput::End)?;
         let at = now.as_millis();
-        tx.execute(
-            "UPDATE sessions SET state = ?1, ended_at = ?2 WHERE id = ?3",
-            (ended.as_str(), at, session),
+        tx.run(
+            Query::update()
+                .table(Sessions::Table)
+                .value(Sessions::State, ended.as_str())
+                .value(Sessions::EndedAt, at)
+                .and_where(Expr::col(Sessions::Id).eq(session)),
         )?;
-        tx.execute(
-            "UPDATE launches SET ended_at = ?1, exit = ?2 WHERE session = ?3 AND ended_at IS NULL",
-            (at, exit, session),
+        tx.run(
+            Query::update()
+                .table(Launches::Table)
+                .value(Launches::EndedAt, at)
+                .value(Launches::Exit, exit)
+                .and_where(Expr::col(Launches::Session).eq(session))
+                .and_where(Expr::col(Launches::EndedAt).is_null()),
         )?;
-        tx.execute(
-            "UPDATE boxes SET idle_since = CASE WHEN state = 'ready' THEN COALESCE(idle_since, ?1) \
-             ELSE idle_since END, updated_at = ?1 WHERE id = ?2",
-            (at, id.get()),
-        )?;
+        stamp_idle(&tx, id, at)?;
         let event = Event::SessionEnded {
             session,
             cause: cause.to_owned(),
@@ -210,15 +279,20 @@ impl Store {
     /// Returns [`StoreError`] when the database fails or a stored state is unknown.
     pub(crate) fn box_sessions(&self, id: BoxId) -> Result<Vec<BoxSession>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt = conn
-            .prepare("SELECT id, ordinal, state FROM sessions WHERE box = ?1 ORDER BY ordinal")?;
-        let rows = stmt.query_map([id.get()], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, i64>(1)?,
-                row.get::<_, String>(2)?,
-            ))
-        })?;
+        let rows = conn.rows(
+            Query::select()
+                .columns([Sessions::Id, Sessions::Ordinal, Sessions::State])
+                .from(Sessions::Table)
+                .and_where(Expr::col(Sessions::Box).eq(id.get()))
+                .order_by(Sessions::Ordinal, Order::Asc),
+            |row| {
+                Ok::<_, StoreError>((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
+        )?;
         rows.map(|row| {
             let (id, ordinal, state) = row?;
             Ok(BoxSession {
