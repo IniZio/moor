@@ -18,10 +18,6 @@ fn shown_url_hides_the_password_and_the_query() {
             .unwrap();
     assert_eq!(target.shown(), "postgres://moor:***@db:5432/moor");
     assert_eq!(format!("{target:?}"), "postgres://moor:***@db:5432/moor");
-    assert_eq!(
-        target.url(),
-        "postgres://moor:s3cret@db:5432/moor?sslmode=disable&password=other"
-    );
 }
 
 #[test]

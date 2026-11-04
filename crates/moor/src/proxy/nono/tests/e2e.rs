@@ -15,6 +15,7 @@ use tempfile::TempDir;
 use ureq::Agent;
 
 use super::upstream::{self, Upstream};
+use crate::proxy::ledger::tests::box_ledger;
 use crate::proxy::nono::audit::{self, BoxSink, EgressSink, Refusal, Withheld};
 use crate::proxy::nono::capture::{MoorCapture, RuleSource};
 use crate::proxy::nono::{build_config, ca, NonoProxy, NonoSpec};
@@ -358,10 +359,10 @@ fn unlisted_host_is_refused_and_reaches_the_sinks() {
     );
 
     let (store, box_id, log) = rig.store();
+    let ledger = box_ledger(&store, box_id);
     let box_sink = BoxSink {
         log: &log,
-        store: &store,
-        box_id,
+        ledger: &ledger,
     };
     let again = rig.client();
     assert!(get(&again, "https://example.invalid/anything").is_err());
@@ -429,10 +430,10 @@ fn fetch_failure_is_reported_and_never_reaches_upstream() {
     );
 
     let (store, box_id, log) = rig.store();
+    let ledger = box_ledger(&store, box_id);
     let box_sink = BoxSink {
         log: &log,
-        store: &store,
-        box_id,
+        ledger: &ledger,
     };
     box_sink.credential_failed("hdr");
     assert!(
@@ -452,10 +453,10 @@ fn secret_bytes_never_appear_in_logs_debug_or_errors() {
     let rig = rig();
     let agent = rig.client();
     let (store, box_id, log) = rig.store();
+    let ledger = box_ledger(&store, box_id);
     let sink = BoxSink {
         log: &log,
-        store: &store,
-        box_id,
+        ledger: &ledger,
     };
     let mut texts = vec![
         format!("{:?}", rig.proxy()),

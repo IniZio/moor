@@ -12,7 +12,6 @@ use serde_json::Value;
 
 use super::{start, Stop, World};
 use crate::proxy::front::Hold;
-use crate::proxy::supervisor::machine::hold_of;
 use crate::store::db::DbExt as _;
 use crate::store::TunnelWant;
 use sea_query::ExprTrait as _;
@@ -268,7 +267,7 @@ fn a_full_machine_reports_waiting_once_and_wakes_when_a_slot_frees() {
 }
 
 fn missing_reason(w: &World) -> String {
-    match hold_of(&w.store, w.id) {
+    match w.ledger.hold().unwrap() {
         Hold::Missing { reason, .. } => reason,
         Hold::Held(_) => String::new(),
     }
@@ -286,7 +285,7 @@ fn an_asleep_claim_is_released_while_parked_and_waiting_once_asked_up() {
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
     assert!(run.tick().is_none());
-    assert!(matches!(hold_of(&w.store, w.id), Hold::Held(h) if h.name == "mini"));
+    assert!(matches!(w.ledger.hold().unwrap(), Hold::Held(h) if h.name == "mini"));
 
     w.store.request_tunnel(w.id, TunnelWant::Parked).unwrap();
     assert!(run.tick().is_none());
@@ -355,7 +354,7 @@ fn a_claim_released_while_its_forwards_open_is_not_attached() {
 fn a_held_claim_reaches_the_machine_service_before_any_tick() {
     let (w, _asked) = held_machine();
 
-    assert!(matches!(hold_of(&w.store, w.id), Hold::Held(h) if h.name == "mini"));
+    assert!(matches!(w.ledger.hold().unwrap(), Hold::Held(h) if h.name == "mini"));
     assert!(machine_kinds(&w).is_empty(), "no tick has attached it");
 }
 
@@ -377,7 +376,7 @@ fn held_without_runner() -> World {
 #[test]
 fn the_runner_is_asked_for_the_held_machine_and_letting_go_is_noticed() {
     let (w, asked) = held_machine();
-    let id = match hold_of(&w.store, w.id) {
+    let id = match w.ledger.hold().unwrap() {
         Hold::Held(h) => h.machine_id,
         Hold::Missing { reason, .. } => panic!("not held: {reason}"),
     };
@@ -404,7 +403,7 @@ fn the_runner_is_asked_for_the_held_machine_and_letting_go_is_noticed() {
 #[test]
 fn a_removed_machine_is_refused() {
     let w = held_without_runner();
-    let id = match hold_of(&w.store, w.id) {
+    let id = match w.ledger.hold().unwrap() {
         Hold::Held(h) => h.machine_id,
         Hold::Missing { reason, .. } => panic!("not held: {reason}"),
     };

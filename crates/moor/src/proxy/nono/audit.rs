@@ -10,14 +10,13 @@ use std::sync::Mutex;
 use moor_core::config::proxy::{request_shape, ResolvedRule};
 use moor_core::domain::event::Event;
 use moor_core::seam::forge::ForgeRepo;
-use moor_core::BoxId;
 use nono::undo::{NetworkAuditDecision, NetworkAuditDenialCategory, NetworkAuditEvent};
 use serde_json::Value;
 
 use self::limits::Limits;
 use super::rule_of_route;
+use crate::proxy::ledger::BoxLedger;
 use crate::proxy::ProxyLog;
-use crate::store::Store;
 
 /// Where audit outcomes go.
 pub(crate) trait EgressSink {
@@ -184,10 +183,8 @@ fn bare_host(host: &str) -> &str {
 pub(crate) struct BoxSink<'a> {
     /// The Box's request log.
     pub(crate) log: &'a ProxyLog,
-    /// Store receiving the Box's events.
-    pub(crate) store: &'a Store,
-    /// The Box the proxy serves.
-    pub(crate) box_id: BoxId,
+    /// Receives the Box's events, keeping them while the controller is unreachable.
+    pub(crate) ledger: &'a BoxLedger,
 }
 
 impl EgressSink for BoxSink<'_> {
@@ -205,8 +202,7 @@ impl EgressSink for BoxSink<'_> {
             category: r.category.map(str::to_owned),
             reason: r.reason.map(str::to_owned),
         };
-        // Draining must not fail; a lost event is not worth stopping the proxy.
-        let _ = self.store.record_proxy_event(self.box_id, &event);
+        self.ledger.record_event(&event);
     }
 
     fn aborted(&self, host: &str, rule: Option<&str>) {
@@ -214,14 +210,14 @@ impl EgressSink for BoxSink<'_> {
             host: host.to_owned(),
             rule: rule.map(str::to_owned),
         };
-        let _ = self.store.record_proxy_event(self.box_id, &event);
+        self.ledger.record_event(&event);
     }
 
     fn credential_failed(&self, rule: &str) {
         let event = Event::ProxyCredentialFailed {
             rule: rule.to_owned(),
         };
-        let _ = self.store.record_proxy_event(self.box_id, &event);
+        self.ledger.record_event(&event);
     }
 
     fn withheld(&self, host: &str, rule: &str, method: &str, shape: Option<&str>) {
@@ -231,7 +227,7 @@ impl EgressSink for BoxSink<'_> {
             method: method.to_owned(),
             shape: shape.map(str::to_owned),
         };
-        let _ = self.store.record_proxy_event(self.box_id, &event);
+        self.ledger.record_event(&event);
     }
 
     fn withheld_overflow(&self) {
@@ -239,12 +235,11 @@ impl EgressSink for BoxSink<'_> {
     }
 
     fn open_limit(&self, rule: &str) -> Option<u16> {
-        let limits = self.store.open_limits(self.box_id).ok()?;
-        limits.iter().find(|l| l.rule == rule).map(|l| l.status)
+        self.ledger.open_limit(rule).ok()?
     }
 
     fn limit(&self, event: &Event) {
-        let _ = self.store.record_proxy_event(self.box_id, event);
+        self.ledger.record_event(event);
     }
 }
 

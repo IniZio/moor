@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use moor_core::seam::driver::{DriverError, ExecSpec, TunnelHandle};
 use moor_core::seam::proc::Deadline;
-use moor_core::{BoxHandle, BoxId};
+use moor_core::BoxHandle;
 
 use super::run::say;
 use super::{Deps, TICK};
@@ -39,7 +39,7 @@ const POLL: Duration = Duration::from_millis(20);
 
 /// Opens a tunnel serving the front `socket` on `box_port` in the Box.
 ///
-/// The lease `owner` holds on `box_id` is renewed every [`TICK`] while this runs: the port clear
+/// The lease `owner` holds is renewed every [`TICK`] while this runs: the port clear
 /// alone can outlast the lease, and a lapsed lease lets a concurrent `moor run` take the row over.
 ///
 /// Unless `fresh` (no tunnel was ever opened into this Box, or it just cold-booted, so no stale
@@ -47,12 +47,12 @@ const POLL: Duration = Duration::from_millis(20);
 /// port is freed first. A failed or timed-out cleanup is reported and the open goes ahead.
 pub(super) fn open(
     deps: &Deps<'_>,
-    (box_id, owner): (BoxId, &str),
+    owner: &str,
     handle: &BoxHandle,
     (box_port, socket): (u16, &Path),
     fresh: bool,
 ) -> Result<Box<dyn TunnelHandle>, DriverError> {
-    renewing(deps, box_id, owner, || {
+    renewing(deps, owner, || {
         if !fresh {
             clear(deps, handle, box_port);
         }
@@ -64,7 +64,7 @@ pub(super) fn open(
 ///
 /// A failed or refused heartbeat is not reported here: the caller beats again when `work` returns
 /// and acts on the outcome.
-fn renewing<T>(deps: &Deps<'_>, box_id: BoxId, owner: &str, work: impl FnOnce() -> T) -> T {
+fn renewing<T>(deps: &Deps<'_>, owner: &str, work: impl FnOnce() -> T) -> T {
     let (done, gone) = mpsc::channel::<()>();
     std::thread::scope(|scope| {
         scope.spawn(move || {
@@ -73,7 +73,7 @@ fn renewing<T>(deps: &Deps<'_>, box_id: BoxId, owner: &str, work: impl FnOnce() 
             while gone.recv_timeout(POLL) == Err(mpsc::RecvTimeoutError::Timeout) {
                 if deps.clock.instant().saturating_duration_since(last) >= TICK {
                     last = deps.clock.instant();
-                    drop(deps.store.heartbeat(box_id, owner));
+                    drop(deps.ledger.heartbeat(owner));
                 }
             }
         });

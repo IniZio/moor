@@ -3,7 +3,7 @@
 use serde::Serialize;
 
 /// The agent stalled, or reported again after it had.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum StallEvent {
     /// The agent's hook reported busy and then went quiet for too long.

@@ -146,7 +146,7 @@ impl Front {
         assert!(self.claude.seen().is_empty(), "claude host was reached");
         assert!(self.git.seen().is_empty(), "github-git host was reached");
         let rig = &self.rig;
-        rig.live.as_ref().unwrap().drain(&rig.deps(), rig.box_id);
+        rig.live.as_ref().unwrap().drain(&rig.deps());
         let events = rig.store.events(rig.box_id, 100).unwrap();
         let noisy: Vec<_> = events
             .iter()

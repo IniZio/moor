@@ -3,7 +3,7 @@
 use serde::Serialize;
 
 /// One credential an admission check looked at; never carries a value.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
 pub struct CheckedCred {
     /// The credential name.
     pub name: String,

@@ -25,7 +25,7 @@ pub enum PostCloneStep {
 }
 
 /// How long a part of setting the Box up took, or which step after the clone is running.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TimingEvent {
     /// The repo setup script ended.

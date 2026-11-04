@@ -23,6 +23,7 @@ const UNAVAILABLE_BODY: &str = r#"{"message":"moor: the machine service is not a
 pub(crate) type HeldFn = Arc<dyn Fn() -> Hold + Send + Sync>;
 
 /// What a Box holds of the machine service.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Hold {
     /// A slot on a machine.
     Held(Held),
@@ -37,6 +38,7 @@ pub(crate) enum Hold {
 }
 
 /// The machine a Box holds, as the service learns it.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Held {
     /// The Box.
     pub(crate) box_id: BoxId,

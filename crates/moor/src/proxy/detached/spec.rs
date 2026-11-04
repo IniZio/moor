@@ -43,3 +43,10 @@ pub(crate) fn read_spec(state_dir: &Path, box_id: BoxId) -> io::Result<ProxySpec
     let bytes = fs::read(spec_path(state_dir, box_id))?;
     serde_json::from_slice(&bytes).map_err(io::Error::from)
 }
+
+/// A fresh ledger key for one supervisor: 32 random bytes as base64url.
+pub(super) fn mint_key() -> io::Result<zeroize::Zeroizing<String>> {
+    let mut bytes = [0_u8; 32];
+    getrandom::fill(&mut bytes).map_err(io::Error::other)?;
+    Ok(zeroize::Zeroizing::new(super::base64url(&bytes)))
+}

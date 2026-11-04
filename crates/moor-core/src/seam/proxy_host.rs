@@ -1,7 +1,6 @@
 //! Proxy host seam: starts, inspects and stops the Proxy that serves a Box.
 
 use std::fmt;
-use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -27,8 +26,6 @@ pub struct ProxySpec {
     pub rules: Vec<ResolvedRule>,
     /// The user whose secrets the Proxy injects.
     pub user: UserId,
-    /// The vault key file that opens the user's secrets; the key itself never enters the spec.
-    pub vault_key: PathBuf,
 }
 
 /// A running Proxy's address as the Box sees it.

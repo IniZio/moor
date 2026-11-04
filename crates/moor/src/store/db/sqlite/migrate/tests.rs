@@ -203,7 +203,7 @@ fn a_file_at_the_last_sql_migration_is_adopted_with_its_rows() {
     init_schema(&mut conn, &path).unwrap();
     assert_eq!(
         history(&conn),
-        [45, 46],
+        [45, 46, 47],
         "recorded at the baseline, then migrated on"
     );
     let name: String = conn

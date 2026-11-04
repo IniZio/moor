@@ -13,10 +13,13 @@ use std::time::Duration;
 use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::user::{Identity, SecretName, UserId};
 
-use super::{serve, FrontsLedger, Keys, LedgerError};
+use moor_core::BoxId;
+
+use super::{serve, BoxLedger, FrontsLedger, Keys, LedgerError, LEDGER};
 use crate::store::Store;
 use crate::testing::clock::FakeClock;
 use crate::testing::cx::{put_secret, test_vault_key};
+use crate::testing::rng::FakeRng;
 use crate::vault::Vault;
 
 /// A ledger served on a thread, as the controller serves it; dropping it ends the listener
@@ -71,6 +74,80 @@ pub(crate) fn serve_on(
         stop,
         streams,
     }
+}
+
+/// A Box ledger served for `store`'s Box, as a supervisor the controller started reaches it;
+/// it derefs to the [`BoxLedger`], and its controller can be taken down and brought back.
+pub(crate) struct OnLedger {
+    ledger: Arc<BoxLedger>,
+    socket: PathBuf,
+    store: Store,
+    vault: Arc<Vault>,
+    served: Mutex<Option<Served>>,
+    _dir: tempfile::TempDir,
+}
+
+impl std::ops::Deref for OnLedger {
+    type Target = Arc<BoxLedger>;
+
+    fn deref(&self) -> &Arc<BoxLedger> {
+        &self.ledger
+    }
+}
+
+impl OnLedger {
+    /// Stops the controller's end, as a controller that exits does.
+    pub(crate) fn down(&self) {
+        drop(self.served.lock().unwrap().take());
+    }
+
+    /// Serves the ledger again, as a restarted controller does.
+    pub(crate) fn up(&self) {
+        let served = serve_on(
+            &self.socket,
+            self.store.clone(),
+            Arc::clone(&self.vault),
+            None,
+        );
+        *self.served.lock().unwrap() = Some(served);
+    }
+}
+
+/// Serves `store` on a ledger of its own and returns `box_id`'s supervisor's end of it.
+pub(crate) fn box_ledger(store: &Store, box_id: BoxId) -> OnLedger {
+    let dir = tempfile::tempdir().unwrap();
+    let vault = Vault::load(&test_vault_key(dir.path())).unwrap();
+    box_ledger_in(dir, store, box_id, Arc::new(vault))
+}
+
+/// [`box_ledger`], opening the Box user's secrets with `vault`.
+pub(crate) fn box_ledger_with(store: &Store, box_id: BoxId, vault: Arc<Vault>) -> OnLedger {
+    box_ledger_in(tempfile::tempdir().unwrap(), store, box_id, vault)
+}
+
+/// [`box_ledger`] with its socket in `dir`.
+fn box_ledger_in(
+    dir: tempfile::TempDir,
+    store: &Store,
+    box_id: BoxId,
+    vault: Arc<Vault>,
+) -> OnLedger {
+    let socket = dir.path().join("proxy.sock");
+    // A Box the store lacks gets no key, so its calls are refused as a missing Box's are.
+    if matches!(store.proxy(box_id), Ok(None)) {
+        drop(store.reserve(box_id, &FakeRng::default(), crate::proxy::detached::LEASE));
+    }
+    drop(store.set_proxy_key(box_id, b"box-key", LEDGER));
+    let on = OnLedger {
+        ledger: Arc::new(BoxLedger::at(socket.clone(), box_id, "box-key".to_owned())),
+        socket,
+        store: store.clone(),
+        vault,
+        served: Mutex::new(None),
+        _dir: dir,
+    };
+    on.up();
+    on
 }
 
 struct World {
@@ -204,4 +281,74 @@ fn a_call_while_the_controller_is_down_is_unavailable() {
         ledger.lease_user(b"x", "slack"),
         Err(LedgerError::Unavailable(_))
     ));
+}
+
+#[test]
+fn a_box_supervisor_is_answered_only_with_the_current_key_of_its_box() {
+    let w = world();
+    let new = |name: &str| {
+        let nt = moor_core::domain::decision::NewBox {
+            name: moor_core::BoxName::parse_allow_bare(name).unwrap(),
+            repo: None,
+        };
+        let id = w
+            .store
+            .apply(moor_core::domain::decision::Decision::insert(nt));
+        id.unwrap().box_id
+    };
+    let (a, b) = (new("a"), new("b"));
+    let on = box_ledger(&w.store, a);
+    assert_eq!(on.box_port().map(|p| p.is_some()), Ok(true));
+    let refused = |ledger: &BoxLedger| matches!(ledger.box_port(), Err(LedgerError::Refused(_)));
+    let socket = &on.socket;
+    assert!(refused(&BoxLedger::at(
+        socket.clone(),
+        a,
+        "wrong".to_owned()
+    )));
+    assert!(
+        refused(&BoxLedger::at(socket.clone(), b, "box-key".to_owned())),
+        "another Box with this Box's key"
+    );
+    w.store.set_proxy_key(a, b"respawned", LEDGER).unwrap();
+    assert!(refused(&on), "the key of a supervisor that was replaced");
+}
+
+#[test]
+fn audit_events_wait_out_a_controller_that_is_down() {
+    let w = world();
+    let nt = moor_core::domain::decision::NewBox {
+        name: moor_core::BoxName::parse_allow_bare("a").unwrap(),
+        repo: None,
+    };
+    let id = w
+        .store
+        .apply(moor_core::domain::decision::Decision::insert(nt));
+    let id = id.unwrap().box_id;
+    let on = box_ledger(&w.store, id);
+    let refused = |host: &str| moor_core::domain::event::Event::EgressAborted {
+        host: host.to_owned(),
+        rule: None,
+    };
+    let aborted = || {
+        w.store
+            .events(id, 1000)
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.kind == "egress_aborted")
+            .count()
+    };
+    on.record_event(&refused("first"));
+    assert_eq!(aborted(), 1);
+    on.down();
+    for n in 0..300 {
+        on.record_event(&refused(&format!("down-{n}")));
+    }
+    assert_eq!(aborted(), 1, "nothing reaches a controller that is down");
+    assert_eq!(on.dropped(), 44, "past 256 the oldest go");
+    on.up();
+    on.flush();
+    assert_eq!(aborted(), 257);
+    on.flush();
+    assert_eq!(aborted(), 257, "each kept event is delivered once");
 }

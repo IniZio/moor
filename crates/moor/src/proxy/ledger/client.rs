@@ -18,7 +18,7 @@ use crate::ledger_dir;
 const TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Connections to the ledger socket, each opened with the same hello.
-struct Ledger {
+pub(super) struct Ledger {
     /// The ledger socket.
     socket: PathBuf,
     /// The hello line, which carries the key.
@@ -37,7 +37,7 @@ struct Conn {
 
 impl Ledger {
     /// A pool for `socket` that dials on first use.
-    fn new(socket: PathBuf, hello: &Hello) -> Self {
+    pub(super) fn new(socket: PathBuf, hello: &Hello) -> Self {
         let hello = Zeroizing::new(serde_json::to_string(hello).unwrap_or_default());
         Self {
             socket,
@@ -48,9 +48,10 @@ impl Ledger {
 
     /// Makes `call` and decodes its value.
     ///
-    /// An idle connection that fails is retried once on a fresh one, since the controller may
-    /// have restarted since it was last used.
-    fn call<T: DeserializeOwned>(&self, call: &Call) -> Result<T, LedgerError> {
+    /// An idle connection that fails means the controller closed it, so every idle one goes. A
+    /// [`Call::repeatable`] call is then made again on a fresh connection; any other fails, since
+    /// the controller may have applied it before it went away.
+    pub(super) fn call<T: DeserializeOwned>(&self, call: &Call) -> Result<T, LedgerError> {
         let line = Zeroizing::new(
             serde_json::to_string(call).map_err(|e| LedgerError::Refused(e.to_string()))?,
         );
@@ -60,9 +61,20 @@ impl Ledger {
             .unwrap_or_else(PoisonError::into_inner)
             .pop();
         if let Some(mut conn) = pooled {
-            if let Ok(reply) = conn.round::<T>(&line) {
-                self.put(conn);
-                return reply.map_err(LedgerError::from);
+            match conn.round::<T>(&line) {
+                Ok(reply) => {
+                    self.put(conn);
+                    return reply.map_err(LedgerError::from);
+                }
+                Err(e) => {
+                    self.idle
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .clear();
+                    if !call.repeatable() {
+                        return Err(unavailable(&e));
+                    }
+                }
             }
         }
         let mut conn = self.dial()?;

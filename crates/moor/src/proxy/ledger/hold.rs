@@ -1,4 +1,4 @@
-//! What the Box's Proxy tells the machine service about the Box's slot, read per request.
+//! What a Box's Proxy tells the machine service about the Box's slot, read per request.
 
 use moor_core::view::MachineHoldState;
 use moor_core::BoxId;
@@ -10,7 +10,7 @@ use crate::store::{Store, TunnelWant};
 ///
 /// A wanted claim waits for a slot. An asleep claim belongs to a Box that sleeps unless the latest
 /// tunnel request wants the tunnel up: then the Box is awake and its next tick wants the slot.
-pub(in crate::proxy) fn hold_of(store: &Store, box_id: BoxId) -> Hold {
+pub(super) fn hold_of(store: &Store, box_id: BoxId) -> Hold {
     let missing = |reason: String| Hold::Missing { box_id, reason };
     let Ok(claim) = store.claimed_machine(box_id) else {
         return missing("the Box's machine could not be read".to_owned());

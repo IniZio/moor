@@ -8,16 +8,21 @@
 //! [`Fault`], then sends one [`Call`] at a time and reads `Ok` with the call's value or a
 //! [`Fault`].
 
+mod boxes;
+mod call;
 mod client;
+mod hold;
 mod serve;
 #[cfg(test)]
 pub(crate) mod tests;
 
 use std::fmt;
 
-use moor_core::user::{SecretName, UserId};
+use moor_core::BoxId;
 use serde::{Deserialize, Serialize};
 
+pub(crate) use boxes::{BoxLedger, BoxView, MachineWant};
+use call::Call;
 pub(crate) use client::FrontsLedger;
 pub(crate) use serve::{serve, Keys};
 
@@ -30,34 +35,21 @@ pub(crate) const LEDGER: u32 = 1;
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Hello {
+    /// A Box's supervisor, with the key the controller started it with.
+    Box {
+        /// The protocol it speaks.
+        v: u32,
+        /// The Box it serves.
+        box_id: BoxId,
+        /// Its key.
+        key: String,
+    },
     /// The front Proxy, with the key the controller started it with.
     Fronts {
         /// The protocol it speaks.
         v: u32,
         /// Its key.
         key: String,
-    },
-}
-
-/// One store call a Proxy makes.
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum Call {
-    /// The user the live lease `token` of `front` acts for.
-    FrontLeaseUser {
-        /// The lease token the request presented.
-        token: Vec<u8>,
-        /// The front it arrived on.
-        front: String,
-    },
-    /// `user`'s secret `name`, while they hold a live lease of `front`.
-    FrontSecret {
-        /// The front the secret is spent through.
-        front: String,
-        /// Whose secret.
-        user: UserId,
-        /// Which secret.
-        name: SecretName,
     },
 }
 

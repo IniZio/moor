@@ -14,7 +14,7 @@ use crate::store::db::{DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
 /// The hex SHA-256 of `token`, which is all the store keeps of it.
-fn hash(token: &[u8]) -> String {
+pub(in crate::store) fn hash(token: &[u8]) -> String {
     Sha256::digest(token)
         .iter()
         .fold(String::with_capacity(64), |mut out, b| {

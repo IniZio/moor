@@ -25,8 +25,6 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// A Postgres database to connect to.
 #[derive(Clone)]
 pub(crate) struct Target {
-    /// The URL as given, password included, for a child process that opens the same store.
-    url: String,
     /// Connection settings, TLS negotiation included.
     config: Config,
     /// TLS that checks the server as the URL's `sslmode` says.
@@ -108,12 +106,7 @@ impl Target {
             config.connect_timeout(CONNECT_TIMEOUT);
         }
         let tls = tls(mode, root.as_deref()).map_err(|e| format!("{shown}: {e}"))?;
-        Ok(Self {
-            url: url.to_owned(),
-            config,
-            tls,
-            shown,
-        })
+        Ok(Self { config, tls, shown })
     }
 
     /// This database for reads only: every transaction on its connections is read-only.
@@ -130,11 +123,6 @@ impl Target {
     /// A new connection.
     pub(super) fn connect(&self) -> Result<Client, postgres::Error> {
         self.config.connect(self.tls.clone())
-    }
-
-    /// The URL as given, password included.
-    pub(crate) fn url(&self) -> &str {
-        &self.url
     }
 
     /// The URL without its password or query.

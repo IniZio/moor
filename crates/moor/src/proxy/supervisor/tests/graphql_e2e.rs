@@ -23,6 +23,7 @@ use rustls::pki_types::PrivateKeyDer;
 use rustls::{ServerConfig, ServerConnection, StreamOwned};
 use ureq::Agent;
 
+use crate::proxy::ledger::tests::{box_ledger, OnLedger};
 use crate::proxy::nono::tests::upstream::{self, Upstream};
 use crate::proxy::supervisor::listen::{listen, Live};
 use crate::proxy::supervisor::{Deps, Sink};
@@ -223,6 +224,8 @@ pub(super) struct Rig {
     pub(super) dir: tempfile::TempDir,
     /// Box and event store.
     pub(super) store: Store,
+    /// The Box's ledger, served for the store.
+    ledger: OnLedger,
     /// Clock shared with the store.
     clock: Arc<FakeClock>,
     /// Driver the deps need; never used by `listen`.
@@ -256,13 +259,13 @@ impl Rig {
     pub(super) fn deps(&self) -> Deps<'_> {
         let err: Sink = Arc::new(Mutex::new(Vec::new()));
         Deps {
-            store: &self.store,
+            ledger: Arc::clone(&self.ledger),
             driver: &self.driver,
             clock: self.clock.clone(),
             rng: &self.rng,
             secrets: {
                 let fetches = Arc::clone(&self.fetches);
-                Arc::new(move |_, _, _| {
+                Arc::new(move |_| {
                     fetches.fetch_add(1, Ordering::SeqCst);
                     Ok(Some(Secret::new(SECRET.as_bytes().to_vec())))
                 })
@@ -345,6 +348,7 @@ pub(super) fn rig_spec(
         repo: None,
     };
     let box_id = store.apply(Decision::insert(nt)).unwrap().box_id;
+    let ledger = box_ledger(&store, box_id);
     let spec = ProxySpec {
         box_id,
         box_handle: None,
@@ -352,12 +356,12 @@ pub(super) fn rig_spec(
         box_repo: Some(repo),
         rules,
         user: moor_core::user::UserId::new(1),
-        vault_key: crate::testing::cx::test_vault_key(dir.path()),
     };
     let sockets = dir.path().join("s");
     let mut rig = Rig {
         dir,
         store,
+        ledger,
         clock,
         driver: FakeDriver::new(),
         rng: FakeRng::default(),
@@ -435,7 +439,7 @@ fn other_repo_query_reaches_github_without_any_credential() {
     assert_eq!(only.authorization, None);
     assert!(!only.head.contains(SECRET), "{}", only.head);
     assert!(!only.head.contains("placeholder"), "{}", only.head);
-    rig.live.as_ref().unwrap().drain(&rig.deps(), rig.box_id);
+    rig.live.as_ref().unwrap().drain(&rig.deps());
     let refused = rig
         .store
         .events(rig.box_id, 100)

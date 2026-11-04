@@ -5,12 +5,11 @@ use std::fmt::Arguments;
 use std::path::Path;
 use std::sync::PoisonError;
 
-use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::boxes::BoxState;
 use moor_core::seam::driver::TunnelHandle;
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::{BoxHandle, BoxId};
 
+use super::beat::Contact;
 use super::bind;
 use super::listen::{listen, Live};
 use super::machine::MachineSlot;
@@ -18,7 +17,8 @@ use super::park::{parked_tunnel, starts_parked};
 use super::tunnel::OutageSlot;
 use super::{Deps, Sink, LEASE};
 use crate::proxy::detached::read_spec;
-use crate::store::{BoxRow, Fenced, Lease, ReadyProc};
+use crate::proxy::ledger::{BoxView, LedgerError};
+use crate::store::{Fenced, Lease, ReadyProc};
 
 /// Why the supervisor stops.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,6 +33,8 @@ pub(super) enum Stop {
     FrontLost,
     /// A store error made it give up.
     Failed,
+    /// The controller went unanswered for longer than the lease allows.
+    Unreachable,
 }
 
 /// A proxy that is up: lease held, front listening, tunnel open, row ready.
@@ -57,6 +59,8 @@ pub(super) struct Running<'d> {
     pub(super) machine: RefCell<MachineSlot>,
     /// Set while the tunnel stays down past the quick restarts.
     pub(super) outage: OutageSlot,
+    /// When the controller last answered a heartbeat.
+    pub(super) contact: Contact,
 }
 
 /// Writes one `moor proxy: ` line to `sink`, ignoring write errors and a poisoned lock.
@@ -67,14 +71,9 @@ pub(super) fn say(sink: &Sink, args: Arguments<'_>) {
     ));
 }
 
-/// Whether no more work can happen on a Box in `lifecycle`.
-const fn terminal(lifecycle: BoxLifecycle) -> bool {
-    matches!(lifecycle, BoxLifecycle::Closed | BoxLifecycle::Rejected)
-}
-
 /// Gives up the lease; a failure only means the lease expires on its own.
-fn give_up(deps: &Deps<'_>, box_id: BoxId, owner: &str) {
-    if let Err(err) = deps.store.release(box_id, owner) {
+fn give_up(deps: &Deps<'_>, owner: &str) {
+    if let Err(err) = deps.ledger.release(owner) {
         say(
             &deps.stderr,
             format_args!("cannot release the lease: {err}"),
@@ -83,10 +82,10 @@ fn give_up(deps: &Deps<'_>, box_id: BoxId, owner: &str) {
 }
 
 /// Checks the Box, the proxy row, the spec and the machine handle, refusing with exit code 1 when any is missing.
-fn preflight(deps: &Deps<'_>, box_id: BoxId) -> Result<(BoxRow, BoxHandle, ProxySpec), u8> {
+fn preflight(deps: &Deps<'_>, box_id: BoxId) -> Result<(BoxView, BoxHandle, ProxySpec), u8> {
     let sink = &deps.stderr;
-    let box_row = match deps.store.box_row(box_id) {
-        Ok(Some(row)) if !terminal(row.lifecycle) => row,
+    let view = match deps.ledger.view() {
+        Ok(Some(view)) if view.open => view,
         Ok(_) => {
             say(
                 sink,
@@ -100,7 +99,7 @@ fn preflight(deps: &Deps<'_>, box_id: BoxId) -> Result<(BoxRow, BoxHandle, Proxy
         }
     };
     reload(deps, box_id)?;
-    let Some(handle) = box_row.boxed.as_ref().and_then(|b| b.handle.clone()) else {
+    let Some(handle) = view.handle.clone() else {
         say(sink, format_args!("Box {} has no machine", box_id.get()));
         return Err(1);
     };
@@ -108,13 +107,13 @@ fn preflight(deps: &Deps<'_>, box_id: BoxId) -> Result<(BoxRow, BoxHandle, Proxy
         say(sink, format_args!("no proxy spec for Box {}", box_id.get()));
         return Err(1);
     };
-    Ok((box_row, handle, spec))
+    Ok((view, handle, spec))
 }
 
 /// Reads the proxy row's Box port, refusing with exit code 1 when the row is missing.
 fn reload(deps: &Deps<'_>, box_id: BoxId) -> Result<u16, u8> {
-    match deps.store.proxy(box_id) {
-        Ok(Some(row)) => Ok(row.box_port),
+    match deps.ledger.box_port() {
+        Ok(Some(port)) => Ok(port),
         Ok(None) => {
             say(
                 &deps.stderr,
@@ -133,7 +132,7 @@ fn reload(deps: &Deps<'_>, box_id: BoxId) -> Result<u16, u8> {
 }
 
 /// Claims the lease and returns the owner token; `Err(0)` means another supervisor holds it.
-fn claim(deps: &Deps<'_>, box_id: BoxId) -> Result<String, u8> {
+fn claim(deps: &Deps<'_>) -> Result<String, u8> {
     let owner = format!(
         "{:08x}{:08x}{:08x}{:08x}",
         deps.rng.u32(),
@@ -141,7 +140,7 @@ fn claim(deps: &Deps<'_>, box_id: BoxId) -> Result<String, u8> {
         deps.rng.u32(),
         deps.rng.u32()
     );
-    match deps.store.claim_lease(box_id, &owner, LEASE) {
+    match deps.ledger.claim_lease(&owner, LEASE) {
         Ok(Lease::Claimed) => Ok(owner),
         Ok(Lease::Held { .. }) => Err(0),
         Err(err) => {
@@ -149,13 +148,6 @@ fn claim(deps: &Deps<'_>, box_id: BoxId) -> Result<String, u8> {
             Err(1)
         }
     }
-}
-
-/// Whether the Box is stored as Asleep.
-fn asleep(row: &BoxRow) -> bool {
-    row.boxed
-        .as_ref()
-        .is_some_and(|b| b.state == BoxState::Asleep)
 }
 
 /// Opens the first tunnel into the Box, reporting a failure.
@@ -166,18 +158,18 @@ fn asleep(row: &BoxRow) -> bool {
 fn open_tunnel(
     deps: &Deps<'_>,
     (handle, box_port, socket): (&BoxHandle, u16, &Path),
-    (box_id, owner): (BoxId, &str),
+    owner: &str,
 ) -> Option<Box<dyn TunnelHandle>> {
     // A Box that never had a tunnel has no stale listener to clear. A failed read counts as "had one".
-    let fresh = matches!(deps.store.tunnel_opened(box_id), Ok(false));
+    let fresh = matches!(deps.ledger.tunnel_opened(), Ok(false));
     // Set before opening, so a crash mid-open still marks the Box.
-    if let Err(err) = deps.store.note_tunnel_opened(box_id) {
+    if let Err(err) = deps.ledger.note_tunnel_opened() {
         say(
             &deps.stderr,
             format_args!("cannot record the tunnel open: {err}"),
         );
     }
-    match bind::open(deps, (box_id, owner), handle, (box_port, socket), fresh) {
+    match bind::open(deps, owner, handle, (box_port, socket), fresh) {
         Ok(tunnel) => Some(tunnel),
         Err(err) => {
             say(
@@ -194,13 +186,13 @@ fn open_tunnel(
 /// A sleeping machine refuses connections, so a Box that is Asleep or was asked to park starts without a tunnel.
 pub(super) fn begin<'d>(deps: &'d Deps<'d>, box_id: BoxId) -> Result<Running<'d>, u8> {
     let sink = &deps.stderr;
-    let (box_row, handle, spec) = preflight(deps, box_id)?;
-    let owner = claim(deps, box_id)?;
+    let (view, handle, spec) = preflight(deps, box_id)?;
+    let owner = claim(deps)?;
     // Another `moor start` may have re-reserved the row before the claim, so read it again.
     let box_port = match reload(deps, box_id) {
         Ok(found) => found,
         Err(code) => {
-            give_up(deps, box_id, &owner);
+            give_up(deps, &owner);
             return Err(code);
         }
     };
@@ -208,27 +200,27 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, box_id: BoxId) -> Result<Running<'d>
         Ok(live) => live,
         Err(msg) => {
             say(sink, format_args!("{msg}"));
-            give_up(deps, box_id, &owner);
+            give_up(deps, &owner);
             return Err(1);
         }
     };
-    if let Err(code) = renew(deps, box_id, &owner) {
+    if let Err(code) = renew(deps, &owner) {
         live.stop();
         return Err(code);
     }
-    let parked = starts_parked(deps, box_id, asleep(&box_row));
+    let parked = starts_parked(deps, view.asleep);
     let tunnel = if parked {
         parked_tunnel()
     } else {
         let ends = (&handle, box_port, live.socket());
-        let Some(tunnel) = open_tunnel(deps, ends, (box_id, &owner)) else {
+        let Some(tunnel) = open_tunnel(deps, ends, &owner) else {
             live.stop();
-            give_up(deps, box_id, &owner);
+            give_up(deps, &owner);
             return Err(1);
         };
         tunnel
     };
-    if let Err(code) = mark(deps, box_id, &owner, box_port, &handle) {
+    if let Err(code) = mark(deps, &owner, box_port, &handle) {
         drop(tunnel);
         live.stop();
         return Err(code);
@@ -244,6 +236,7 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, box_id: BoxId) -> Result<Running<'d>
         box_port,
         machine: RefCell::default(),
         outage: OutageSlot::default(),
+        contact: Contact::new(deps.clock.instant()),
     };
     if parked {
         // Answers a pending request: Parked is acked, Up reopens the tunnel.
@@ -253,8 +246,8 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, box_id: BoxId) -> Result<Running<'d>
 }
 
 /// Extends the lease during startup; `Err` carries the exit code, with the lease given up unless it was lost.
-fn renew(deps: &Deps<'_>, box_id: BoxId, owner: &str) -> Result<(), u8> {
-    match deps.store.heartbeat(box_id, owner) {
+fn renew(deps: &Deps<'_>, owner: &str) -> Result<(), u8> {
+    match deps.ledger.heartbeat(owner) {
         Ok(true) => Ok(()),
         Ok(false) => {
             say(
@@ -265,23 +258,16 @@ fn renew(deps: &Deps<'_>, box_id: BoxId, owner: &str) -> Result<(), u8> {
         }
         Err(err) => {
             say(&deps.stderr, format_args!("heartbeat failed: {err}"));
-            give_up(deps, box_id, owner);
+            give_up(deps, owner);
             Err(1)
         }
     }
 }
 
 /// Marks the row ready; `Err` carries the exit code, with the lease given up unless it was lost.
-fn mark(
-    deps: &Deps<'_>,
-    box_id: BoxId,
-    owner: &str,
-    box_port: u16,
-    handle: &BoxHandle,
-) -> Result<(), u8> {
-    renew(deps, box_id, owner)?;
-    match deps.store.mark_ready(
-        box_id,
+fn mark(deps: &Deps<'_>, owner: &str, box_port: u16, handle: &BoxHandle) -> Result<(), u8> {
+    renew(deps, owner)?;
+    match deps.ledger.mark_ready(
         owner,
         box_port,
         ReadyProc {
@@ -303,34 +289,34 @@ fn mark(
                 &deps.stderr,
                 format_args!("cannot mark the proxy ready: {err}"),
             );
-            give_up(deps, box_id, owner);
+            give_up(deps, owner);
             Err(1)
         }
     }
 }
 
 impl Running<'_> {
-    /// Extends the lease; `None` means it is still held.
-    pub(super) fn beat(&self) -> Option<Stop> {
-        match self.deps.store.heartbeat(self.box_id, &self.owner) {
-            Ok(true) => None,
-            Ok(false) => Some(Stop::LostLease),
-            Err(err) => {
-                say(&self.deps.stderr, format_args!("heartbeat failed: {err}"));
-                Some(Stop::Failed)
-            }
-        }
-    }
-
     /// Heartbeats and checks the Box, the front socket and the tunnel; `None` means keep running.
     pub(super) fn tick(&self) -> Option<Stop> {
         if let stop @ Some(_) = self.beat() {
             return stop;
         }
-        self.live.drain(self.deps, self.box_id);
-        match self.deps.store.box_row(self.box_id) {
-            Ok(Some(row)) if !terminal(row.lifecycle) => {}
+        self.live.drain(self.deps);
+        let dropped = self.deps.ledger.dropped();
+        if dropped > 0 {
+            say(
+                &self.deps.stderr,
+                format_args!("dropped {dropped} audit events the controller could not take"),
+            );
+        }
+        if !self.contact.reached() {
+            return None;
+        }
+        self.deps.ledger.flush();
+        match self.deps.ledger.view() {
+            Ok(Some(view)) if view.open => {}
             Ok(_) => return Some(Stop::Closed),
+            Err(LedgerError::Unavailable(_)) => return None,
             Err(err) => {
                 say(
                     &self.deps.stderr,
@@ -368,14 +354,14 @@ impl Running<'_> {
             tunnel,
             ..
         } = self;
-        live.drain(deps, box_id);
+        live.drain(deps);
         live.stop();
         drop(tunnel);
         if stop != Stop::LostLease {
-            give_up(deps, box_id, &owner);
+            give_up(deps, &owner);
         }
         if stop == Stop::Closed {
-            if let Err(err) = deps.store.remove_proxy(box_id) {
+            if let Err(err) = deps.ledger.remove_proxy() {
                 say(
                     &deps.stderr,
                     format_args!("cannot remove the proxy row: {err}"),

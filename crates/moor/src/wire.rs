@@ -37,11 +37,12 @@ use crate::adapters::rng::SystemRng;
 use crate::adapters::sockets::socket_dir;
 use crate::config_load::load_user;
 use crate::cx::{Cx, CxParts, MachineLinks};
-use crate::env::Env;
+use crate::env::{Env, PROXY_KEY};
 use crate::error::CommandError;
 use crate::proxy::adopt;
 use crate::proxy::detached::DetachedSupervisor;
-use crate::proxy::nono::capture::SecretsFn;
+use crate::proxy::ledger::BoxLedger;
+use crate::proxy::nono::capture::UserSecretsFn;
 use crate::proxy::{serve, Deps, Sink};
 use crate::store::{Database, Store, StoreError};
 
@@ -315,20 +316,18 @@ fn run_proxy(env: &Env, box_id: BoxId, sink: &Sink) -> Result<u8, String> {
     let clock = Arc::clone(&parts.clock);
     let proc = Arc::clone(&parts.proc);
     let cx = Cx::new(parts);
-    let store = cx.store().map_err(|e| e.error.to_string())?;
     let state_dir = cx.state_dir().map_err(|e| e.error.to_string())?;
+    let key = env.get(PROXY_KEY).ok_or("MOOR_PROXY_KEY is required")?;
+    let ledger = Arc::new(BoxLedger::new(state_dir, box_id, key.to_owned()));
     let stop = Arc::new(AtomicBool::new(false));
     for sig in [SIGTERM, SIGINT] {
         signal_hook::flag::register(sig, Arc::clone(&stop)).map_err(|e| e.to_string())?;
     }
-    let shared = store.clone();
-    let secrets: SecretsFn = Arc::new(move |vault, user, name| {
-        shared
-            .user_secret(vault, user, name)
-            .map_err(|e| e.to_string())
-    });
+    let shared = Arc::clone(&ledger);
+    let secrets: UserSecretsFn =
+        Arc::new(move |name| shared.secret(name).map_err(|e| e.to_string()));
     let deps = Deps {
-        store,
+        ledger,
         driver: cx.driver(),
         clock,
         rng: cx.rng(),

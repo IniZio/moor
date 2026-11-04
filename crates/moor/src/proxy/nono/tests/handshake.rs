@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::e2e::{rig, Rig};
+use crate::proxy::ledger::tests::box_ledger;
 use crate::proxy::nono::audit::{self, BoxSink, Withheld};
 
 /// Opens a CONNECT through the proxy to the header upstream and hands the tunnel to `client`.
@@ -35,10 +36,10 @@ fn handshake_event(client: impl FnOnce(TcpStream)) -> (String, serde_json::Value
     let rig = rig();
     connect_then(&rig, client);
     let (store, box_id, log) = rig.store();
+    let ledger = box_ledger(&store, box_id);
     let sink = BoxSink {
         log: &log,
-        store: &store,
-        box_id,
+        ledger: &ledger,
     };
     let mut found = None;
     for _ in 0..100 {

@@ -9,6 +9,7 @@ use moor_core::seam::proxy_host::ProxyHost;
 use moor_core::BoxId;
 
 use super::detached::{read_spec, DetachedSupervisor};
+use super::ledger::LEDGER;
 use crate::store::{ProxyRow, Store};
 
 /// What the controller does with one recorded Proxy.
@@ -17,6 +18,9 @@ enum Fate {
     Keep,
     /// The Box needs its Proxy but the supervisor is gone: start another on the same port.
     Restart,
+    /// The supervisor runs but was started to speak another ledger protocol, or none: stop it
+    /// and start another on the same port.
+    Replace,
     /// The Box no longer needs a Proxy.
     Stop,
 }
@@ -83,7 +87,11 @@ fn fate(
             .is_some_and(|p| p > 1 && proc.alive(p) && proc.group_leader(p))
         && host.same_boot(row)
         && host.live(row);
-    Some(if ours { Fate::Keep } else { Fate::Restart })
+    Some(match (ours, row.ledger == Some(LEDGER)) {
+        (true, true) => Fate::Keep,
+        (true, false) => Fate::Replace,
+        (false, _) => Fate::Restart,
+    })
 }
 
 /// Carries out `fate` for `box_id`.
@@ -97,14 +105,26 @@ fn settle(
     match fate {
         Fate::Keep => Ok(()),
         Fate::Stop => host.stop(box_id).map_err(|e| e.to_string()),
-        Fate::Restart => {
-            // Without the saved spec the row stays expired, so the next `ensure` restarts it.
-            store.expire_proxy(box_id).map_err(|e| e.to_string())?;
-            let spec = read_spec(state_dir, box_id)
-                .map_err(|e| format!("cannot restart the proxy without its spec: {e}"))?;
-            host.ensure(&spec).map(drop).map_err(|e| e.to_string())
+        Fate::Restart => restart(host, store, state_dir, box_id),
+        Fate::Replace => {
+            host.end(box_id).map_err(|e| e.to_string())?;
+            restart(host, store, state_dir, box_id)
         }
     }
+}
+
+/// Starts another supervisor for `box_id` on the same port.
+fn restart(
+    host: &DetachedSupervisor,
+    store: &Store,
+    state_dir: &Path,
+    box_id: BoxId,
+) -> Result<(), String> {
+    // Without the saved spec the row stays expired, so the next `ensure` restarts it.
+    store.expire_proxy(box_id).map_err(|e| e.to_string())?;
+    let spec = read_spec(state_dir, box_id)
+        .map_err(|e| format!("cannot restart the proxy without its spec: {e}"))?;
+    host.ensure(&spec).map(drop).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

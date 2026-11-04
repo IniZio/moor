@@ -6,10 +6,10 @@ use super::*;
 fn only_a_failed_handshake_denial_records_a_reason() {
     let dir = tempfile::tempdir().unwrap();
     let (store, log, box_id) = box_sink_parts(dir.path());
+    let ledger = box_ledger(&store, box_id);
     let sink = BoxSink {
         log: &log,
-        store: &store,
-        box_id,
+        ledger: &ledger,
     };
     let text = "tls handshake failed: received fatal alert: UnknownCA";
     let events = [
@@ -39,10 +39,10 @@ fn only_a_failed_handshake_denial_records_a_reason() {
 fn a_handshake_the_client_hangs_up_on_is_aborted_and_an_alert_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     let (store, log, box_id) = box_sink_parts(dir.path());
+    let ledger = box_ledger(&store, box_id);
     let sink = BoxSink {
         log: &log,
-        store: &store,
-        box_id,
+        ledger: &ledger,
     };
     let failed = |host: &str, reason: &str| {
         event(
@@ -98,10 +98,10 @@ fn a_handshake_the_client_hangs_up_on_is_aborted_and_an_alert_is_refused() {
 fn another_alert_or_an_unknown_ending_is_still_refused() {
     let dir = tempfile::tempdir().unwrap();
     let (store, log, box_id) = box_sink_parts(dir.path());
+    let ledger = box_ledger(&store, box_id);
     let sink = BoxSink {
         log: &log,
-        store: &store,
-        box_id,
+        ledger: &ledger,
     };
     let failed = |host: &str, reason: &str| {
         event(
@@ -144,10 +144,10 @@ fn another_alert_or_an_unknown_ending_is_still_refused() {
 fn a_connect_failure_records_a_fixed_word_not_nonos_text() {
     let dir = tempfile::tempdir().unwrap();
     let (store, log, box_id) = box_sink_parts(dir.path());
+    let ledger = box_ledger(&store, box_id);
     let sink = BoxSink {
         log: &log,
-        store: &store,
-        box_id,
+        ledger: &ledger,
     };
     let failed = |host: &str, reason: &str| {
         event(

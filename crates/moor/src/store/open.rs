@@ -107,17 +107,6 @@ impl Store {
     pub(crate) fn location(&self) -> String {
         self.readers.location()
     }
-
-    /// The Postgres URL this store opened, password included, for a child process that opens
-    /// the same store; none on `SQLite`.
-    pub(crate) fn database_url(&self) -> Option<&str> {
-        self.readers.database_url()
-    }
-
-    /// The cap on read connections to the Postgres database; none on `SQLite`.
-    pub(crate) fn database_readers(&self) -> Option<usize> {
-        self.readers.cap()
-    }
 }
 
 #[cfg(test)]

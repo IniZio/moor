@@ -19,7 +19,7 @@ pub enum ProfileStep {
 }
 
 /// The profile resolved to a commit, or a step of getting it into the Box failed.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ProfileEvent {
     /// The requester's agent profile resolved to a commit.

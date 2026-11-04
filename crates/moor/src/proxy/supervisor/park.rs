@@ -1,7 +1,6 @@
 //! Parking the reverse tunnel while the Box sleeps and reopening it on wake.
 
 use moor_core::seam::driver::TunnelHandle;
-use moor_core::BoxId;
 
 use super::bind;
 use super::run::{say, Running};
@@ -29,8 +28,8 @@ pub(super) fn parked_tunnel() -> Box<dyn TunnelHandle> {
 /// Whether a starting supervisor leaves the tunnel closed: the Box is asleep or the latest request is Parked.
 ///
 /// A store error is reported and the Box state decides alone.
-pub(super) fn starts_parked(deps: &Deps<'_>, box_id: BoxId, asleep: bool) -> bool {
-    match deps.store.tunnel_request(box_id) {
+pub(super) fn starts_parked(deps: &Deps<'_>, asleep: bool) -> bool {
+    match deps.ledger.tunnel_request() {
         Ok(request) => asleep || request.is_some_and(|r| r.want == TunnelWant::Parked),
         Err(err) => {
             say(
@@ -72,16 +71,16 @@ impl Running<'_> {
 
     /// The current request unless it was already answered.
     fn pending_request(&self) -> Option<TunnelRequest> {
-        let store = self.deps.store;
+        let ledger = &self.deps.ledger;
         let sink = &self.deps.stderr;
-        let request = match store.tunnel_request(self.box_id) {
+        let request = match ledger.tunnel_request() {
             Ok(request) => request?,
             Err(err) => {
                 say(sink, format_args!("cannot read the tunnel request: {err}"));
                 return None;
             }
         };
-        match store.tunnel_ack(self.box_id) {
+        match ledger.tunnel_ack() {
             Ok(Some(ack)) if ack.seq() == request.seq => None,
             Ok(_) => Some(request),
             Err(err) => {
@@ -98,7 +97,7 @@ impl Running<'_> {
     fn reopen(&self, seq: u64, fresh: bool) {
         let opened = bind::open(
             self.deps,
-            (self.box_id, &self.owner),
+            &self.owner,
             &self.handle,
             (self.box_port, self.live.socket()),
             fresh,
@@ -125,7 +124,7 @@ impl Running<'_> {
 
     /// Stores the answer, reporting a failure.
     fn answer(&self, ack: &TunnelAck) {
-        if let Err(err) = self.deps.store.ack_tunnel(self.box_id, ack) {
+        if let Err(err) = self.deps.ledger.ack_tunnel(ack) {
             say(
                 &self.deps.stderr,
                 format_args!("cannot answer the tunnel request: {err}"),

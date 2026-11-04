@@ -84,7 +84,7 @@ impl Also {
     fn refused_recorded(&self) -> bool {
         for _ in 0..100 {
             let rig = &self.rig;
-            rig.live.as_ref().unwrap().drain(&rig.deps(), rig.box_id);
+            rig.live.as_ref().unwrap().drain(&rig.deps());
             let events = rig.store.events(rig.box_id, 100).unwrap();
             if events.iter().any(|e| e.kind == "egress_refused") {
                 return true;

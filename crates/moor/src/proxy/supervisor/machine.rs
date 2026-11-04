@@ -2,14 +2,12 @@
 //! freed while the Box sleeps and granted again when it wakes, let go when the Box closes. A
 //! supervisor that stops on a signal keeps the record, so the next supervisor opens the link again.
 
-mod hold;
 mod link;
 
-use moor_core::domain::event::{Event, MachineEvent};
+use moor_core::domain::event::MachineEvent;
 
 use super::run::{say, Running};
 use crate::store::MachineWake;
-pub(super) use hold::hold_of;
 use link::{keep, ForwardFailed, MachineLink, Via};
 
 /// The link to the attached machine and whether its last open failed.
@@ -32,7 +30,7 @@ impl Running<'_> {
             return;
         }
         self.grant_machine();
-        let want = match self.deps.store.box_machine(self.box_id) {
+        let want = match self.deps.ledger.box_machine() {
             Ok(Some(want)) => want,
             Ok(None) => {
                 self.machine.borrow_mut().link = None;
@@ -46,9 +44,9 @@ impl Running<'_> {
                 return;
             }
         };
-        let (machine, ports, enrolled) = (want.machine, want.ports, want.machine_id);
+        let (name, ports, enrolled) = (want.name, want.ports, want.machine_id);
         let mut slot = self.machine.borrow_mut();
-        let wanted = Some((machine.name.clone(), ports.clone()));
+        let wanted = Some((name.clone(), ports.clone()));
         if slot.opened != wanted {
             slot.link = None;
         }
@@ -56,18 +54,15 @@ impl Running<'_> {
         let event = match keep(&mut slot.link, || self.forwards(&ports, enrolled)) {
             Ok(()) if fresh => {
                 // Opening can take long enough for the Box to release the claim meanwhile.
-                let now = self.deps.store.box_machine(self.box_id);
-                let still = now.ok().flatten().map(|h| (h.machine.name, h.ports));
+                let now = self.deps.ledger.box_machine();
+                let still = now.ok().flatten().map(|h| (h.name, h.ports));
                 if still != wanted {
                     slot.link = None;
                     return;
                 }
                 slot.opened = wanted;
                 slot.failing = false;
-                MachineEvent::MachineAttached {
-                    name: machine.name,
-                    ports,
-                }
+                MachineEvent::MachineAttached { name, ports }
             }
             Ok(()) => return,
             Err(_) if slot.failing => return,
@@ -77,7 +72,7 @@ impl Running<'_> {
             }
         };
         drop(slot);
-        self.record_machine(event);
+        self.record_machine(&event);
     }
 
     /// Opens forwards of `ports` to the machine enrolled under `machine_id`, through the
@@ -95,9 +90,9 @@ impl Running<'_> {
     /// Ends the forwards and frees the slot for another Box, keeping the claim on the machine.
     fn sleep_machine(&self) {
         *self.machine.borrow_mut() = MachineSlot::default();
-        match self.deps.store.sleep_machine(self.box_id) {
+        match self.deps.ledger.sleep_machine() {
             Ok(Some(name)) => {
-                self.record_machine(MachineEvent::MachineDetached { name, asleep: true });
+                self.record_machine(&MachineEvent::MachineDetached { name, asleep: true });
             }
             Ok(None) => {}
             Err(err) => say(
@@ -110,19 +105,14 @@ impl Running<'_> {
     /// Grants the Box's want, an asleep claim wanted again first, saying so when no
     /// slot fits and its place in line changed.
     fn grant_machine(&self) {
-        let event = match self.deps.store.grant_machine(self.box_id) {
+        let event = match self.deps.ledger.grant_machine() {
             Ok(MachineWake::Nothing | MachineWake::Woke) => return,
             Ok(MachineWake::Waiting {
                 name,
                 position,
                 reason,
             }) => {
-                if self
-                    .deps
-                    .store
-                    .waiting_said(self.box_id, position)
-                    .unwrap_or(false)
-                {
+                if self.deps.ledger.waiting_said(position).unwrap_or(false) {
                     return;
                 }
                 MachineEvent::MachineWaiting {
@@ -139,15 +129,15 @@ impl Running<'_> {
                 return;
             }
         };
-        self.record_machine(event);
+        self.record_machine(&event);
     }
 
     /// Ends the forwards and frees the machine for the next Box.
     pub(super) fn let_go_machine(&self) {
         *self.machine.borrow_mut() = MachineSlot::default();
-        let held = self.deps.store.box_machine(self.box_id);
-        let name = held.ok().flatten().map(|h| h.machine.name);
-        match self.deps.store.detach_machine(self.box_id) {
+        let held = self.deps.ledger.box_machine();
+        let name = held.ok().flatten().map(|h| h.name);
+        match self.deps.ledger.detach_machine() {
             Ok(true) => {}
             Ok(false) => return,
             Err(err) => {
@@ -159,7 +149,7 @@ impl Running<'_> {
             }
         }
         if let Some(name) = name {
-            self.record_machine(MachineEvent::MachineDetached {
+            self.record_machine(&MachineEvent::MachineDetached {
                 name,
                 asleep: false,
             });
@@ -167,13 +157,8 @@ impl Running<'_> {
     }
 
     /// Appends `event` to the Box's events while this supervisor holds the lease.
-    fn record_machine(&self, event: MachineEvent) {
-        let event = Event::Machine(event);
-        if let Err(err) = self
-            .deps
-            .store
-            .fenced_event(self.box_id, &self.owner, &event)
-        {
+    fn record_machine(&self, event: &MachineEvent) {
+        if let Err(err) = self.deps.ledger.machine_event(&self.owner, event) {
             say(
                 &self.deps.stderr,
                 format_args!("cannot record {}: {err}", event.kind()),
