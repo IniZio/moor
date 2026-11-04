@@ -3,6 +3,8 @@
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
 use moor_core::BoxId;
+use moor_schema::tables::{Bindings, Sessions};
+use sea_query::{Expr, ExprTrait as _, Query};
 
 use crate::store::db::DbExt as _;
 use crate::store::tests::{new_box, open};
@@ -12,9 +14,13 @@ fn box_session(store: &Store, id: BoxId) -> i64 {
     store
         .reader()
         .unwrap()
-        .query_row("SELECT id FROM sessions WHERE box = ?", [id.get()], |r| {
-            r.get(0)
-        })
+        .row(
+            Query::select()
+                .column(Sessions::Id)
+                .from(Sessions::Table)
+                .and_where(Expr::col(Sessions::Box).eq(id.get())),
+            |r| r.get(0),
+        )
         .unwrap()
 }
 
@@ -80,9 +86,12 @@ fn ended_session_is_refused() {
     let session = store.open_host_session("/w", None, None).unwrap();
     store
         .writer()
-        .execute(
-            "UPDATE sessions SET state = 'ended', ended_at = 1 WHERE id = ?",
-            [session],
+        .run(
+            Query::update()
+                .table(Sessions::Table)
+                .value(Sessions::State, "ended")
+                .value(Sessions::EndedAt, 1)
+                .and_where(Expr::col(Sessions::Id).eq(session)),
         )
         .unwrap();
     let err = store.bind_session("cli", "k1", session, "U1").unwrap_err();
@@ -151,7 +160,12 @@ fn binding_the_same_session_again_changes_nothing() {
     let rows: i64 = store
         .reader()
         .unwrap()
-        .query_row("SELECT COUNT(*) FROM bindings", [], |r| r.get(0))
+        .row(
+            Query::select()
+                .expr(Expr::col(Bindings::Id).count())
+                .from(Bindings::Table),
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(rows, 1);
 }

@@ -5,8 +5,10 @@ use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::Checkpoint;
 use moor_core::user::UserId;
 use moor_core::{BoxPath, ProviderId};
+use moor_schema::tables::SetupCheckpoints as Checkpoints;
+use sea_query::{Expr, ExprTrait as _, Query, Value};
 
-use crate::store::db::{params, DbExt as _, OptionalExtension};
+use crate::store::db::{DbExt as _, OptionalExtension, TransactionBehavior};
 use crate::store::{Store, StoreError};
 
 /// One setup layer saved under a provider.
@@ -60,28 +62,59 @@ impl Store {
         let now = self.now().as_millis();
         let bytes = made.bytes.map(|b| i64::try_from(b).unwrap_or(i64::MAX));
         let chain = lineage.chain.as_str();
-        self.writer().execute(
-            "INSERT INTO setup_checkpoints (provider, layer_key, checkpoint, repo, bytes, \
-             created_at, last_used_at, \"user\", chain, chain_at, parent) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8, COALESCE((SELECT MIN(chain_at) \
-             FROM setup_checkpoints WHERE provider = ?1 AND chain = ?8), ?6), ?9) \
-             ON CONFLICT (provider, layer_key) WHERE evicting = 0 DO UPDATE SET \
-             checkpoint = excluded.checkpoint, repo = excluded.repo, bytes = excluded.bytes, \
-             created_at = excluded.created_at, last_used_at = excluded.last_used_at, \
-             \"user\" = excluded.user, chain = excluded.chain, chain_at = excluded.chain_at, \
-             parent = excluded.parent, workdir = NULL, setup_ms = NULL",
-            params![
-                provider.as_str(),
-                key.as_str(),
-                made.id,
-                lineage.repo,
-                bytes,
-                now,
-                lineage.user.get(),
-                chain,
-                made.parent
-            ],
+        let provider = provider.as_str();
+        let mut conn = self.writer();
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let chain_began = Query::select()
+            .expr(Expr::col(Checkpoints::ChainAt).min())
+            .from(Checkpoints::Table)
+            .and_where(Expr::col(Checkpoints::Provider).eq(provider))
+            .and_where(Expr::col(Checkpoints::Chain).eq(chain))
+            .take();
+        let chain_at = tx
+            .row(chain_began, |r| r.get::<_, Option<i64>>(0))?
+            .unwrap_or(now);
+        let layer: [(Checkpoints, Value); 9] = [
+            (Checkpoints::Checkpoint, made.id.clone().into()),
+            (Checkpoints::Repo, lineage.repo.clone().into()),
+            (Checkpoints::Bytes, bytes.into()),
+            (Checkpoints::CreatedAt, now.into()),
+            (Checkpoints::LastUsedAt, now.into()),
+            (Checkpoints::User, lineage.user.get().into()),
+            (Checkpoints::Chain, chain.into()),
+            (Checkpoints::ChainAt, chain_at.into()),
+            (Checkpoints::Parent, made.parent.clone().into()),
+        ];
+        // The unique index covers only checkpoints not being deleted, and a partial index
+        // cannot be an upsert's target once its predicate is a bound value, so replace or add.
+        let replaced = tx.run(
+            Query::update()
+                .table(Checkpoints::Table)
+                .values(layer.iter().map(|(c, v)| (*c, Expr::val(v.clone()))))
+                .value(Checkpoints::Workdir, Expr::val(None::<String>))
+                .value(Checkpoints::SetupMs, Expr::val(None::<i64>))
+                .and_where(Expr::col(Checkpoints::Provider).eq(provider))
+                .and_where(Expr::col(Checkpoints::LayerKey).eq(key.as_str()))
+                .and_where(Expr::col(Checkpoints::Evicting).eq(0)),
         )?;
+        if replaced == 0 {
+            tx.run(
+                Query::insert()
+                    .into_table(Checkpoints::Table)
+                    .columns(
+                        [Checkpoints::Provider, Checkpoints::LayerKey]
+                            .into_iter()
+                            .chain(layer.iter().map(|(c, _)| *c)),
+                    )
+                    .values_panic(
+                        [provider.into(), key.as_str().into()]
+                            .into_iter()
+                            .chain(layer.into_iter().map(|(_, v)| Expr::val(v))),
+                    ),
+            )?;
+        }
+        tx.commit()?;
+        drop(conn);
         Ok(())
     }
 
@@ -93,11 +126,21 @@ impl Store {
     ) -> Result<Option<CheckpointRow>, StoreError> {
         let row = self
             .reader()?
-            .query_row(
-                "SELECT checkpoint, repo, bytes, created_at, last_used_at, workdir, setup_ms \
-                 FROM setup_checkpoints \
-                 WHERE provider = ? AND layer_key = ? AND evicting = 0",
-                params![provider.as_str(), key.as_str()],
+            .row(
+                Query::select()
+                    .columns([
+                        Checkpoints::Checkpoint,
+                        Checkpoints::Repo,
+                        Checkpoints::Bytes,
+                        Checkpoints::CreatedAt,
+                        Checkpoints::LastUsedAt,
+                        Checkpoints::Workdir,
+                        Checkpoints::SetupMs,
+                    ])
+                    .from(Checkpoints::Table)
+                    .and_where(Expr::col(Checkpoints::Provider).eq(provider.as_str()))
+                    .and_where(Expr::col(Checkpoints::LayerKey).eq(key.as_str()))
+                    .and_where(Expr::col(Checkpoints::Evicting).eq(0)),
                 |r| {
                     Ok(CheckpointRow {
                         checkpoint: r.get(0)?,
@@ -123,10 +166,14 @@ impl Store {
         place: &Place,
     ) -> Result<(), StoreError> {
         let ms = i64::try_from(place.setup_ms).unwrap_or(i64::MAX);
-        self.writer().execute(
-            "UPDATE setup_checkpoints SET workdir = ?, setup_ms = ? \
-             WHERE provider = ? AND layer_key = ? AND evicting = 0",
-            params![place.workdir.as_str(), ms, provider.as_str(), key.as_str()],
+        self.writer().run(
+            Query::update()
+                .table(Checkpoints::Table)
+                .value(Checkpoints::Workdir, place.workdir.as_str())
+                .value(Checkpoints::SetupMs, ms)
+                .and_where(Expr::col(Checkpoints::Provider).eq(provider.as_str()))
+                .and_where(Expr::col(Checkpoints::LayerKey).eq(key.as_str()))
+                .and_where(Expr::col(Checkpoints::Evicting).eq(0)),
         )?;
         Ok(())
     }
@@ -137,10 +184,13 @@ impl Store {
         provider: &ProviderId,
         key: &LayerKey,
     ) -> Result<bool, StoreError> {
-        let changed = self.writer().execute(
-            "UPDATE setup_checkpoints SET last_used_at = ? \
-             WHERE provider = ? AND layer_key = ? AND evicting = 0",
-            params![self.now().as_millis(), provider.as_str(), key.as_str()],
+        let changed = self.writer().run(
+            Query::update()
+                .table(Checkpoints::Table)
+                .value(Checkpoints::LastUsedAt, self.now().as_millis())
+                .and_where(Expr::col(Checkpoints::Provider).eq(provider.as_str()))
+                .and_where(Expr::col(Checkpoints::LayerKey).eq(key.as_str()))
+                .and_where(Expr::col(Checkpoints::Evicting).eq(0)),
         )?;
         Ok(changed > 0)
     }

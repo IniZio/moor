@@ -6,6 +6,8 @@ use std::sync::Arc;
 use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName};
+use moor_schema::tables::{Boxes, Events};
+use sea_query::{Expr, ExprTrait as _, Query, Value};
 
 use crate::store::db::DbExt as _;
 use crate::store::Store;
@@ -24,27 +26,34 @@ fn ready(store: &Store, name: &str) -> BoxId {
         repo: None,
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
-    store
-        .writer()
-        .execute(
-            "UPDATE boxes SET state = 'ready', handle = 'h' WHERE id = ?1",
-            [id.get()],
-        )
-        .unwrap();
+    update(
+        store,
+        id,
+        &[(Boxes::State, "ready".into()), (Boxes::Handle, "h".into())],
+    );
     id
 }
 
-/// Run `sql` against the Box row.
-fn update(store: &Store, id: BoxId, sql: &str) {
-    store.writer().execute(sql, [id.get()]).unwrap();
+/// Assign `sets` on the Box row.
+fn update(store: &Store, id: BoxId, sets: &[(Boxes, Value)]) {
+    let mut q = Query::update();
+    q.table(Boxes::Table)
+        .and_where(Expr::col(Boxes::Id).eq(id.get()));
+    for (col, v) in sets {
+        q.value(*col, Expr::val(v.clone()));
+    }
+    store.writer().run(&mut q).unwrap();
 }
 
 /// Insert a raw event row and return its id.
 fn event(store: &Store, id: BoxId, kind: &str) -> i64 {
     let conn = store.writer();
-    conn.query_row(
-        "INSERT INTO events (box, kind, payload, ts) VALUES (?1, ?2, '{}', 0) RETURNING id",
-        rusqlite::params![id.get(), kind],
+    conn.row(
+        Query::insert()
+            .into_table(Events::Table)
+            .columns([Events::Box, Events::Kind, Events::Payload, Events::Ts])
+            .values_panic([id.get().into(), kind.into(), "{}".into(), 0_i64.into()])
+            .returning_col(Events::Id),
         |r| r.get(0),
     )
     .unwrap()
@@ -102,29 +111,27 @@ fn not_due_unless_ready_with_handle_and_no_intent() {
     let store = open(dir.path());
     let t = ready(&store, "a");
     event(&store, t, "idled");
+    update(&store, t, &[(Boxes::State, "sleeping".into())]);
+    assert!(store.artifacts_due().unwrap().is_empty());
     update(
         &store,
         t,
-        "UPDATE boxes SET state = 'sleeping' WHERE id = ?1",
+        &[
+            (Boxes::State, "ready".into()),
+            (Boxes::Handle, None::<String>.into()),
+        ],
     );
     assert!(store.artifacts_due().unwrap().is_empty());
     update(
         &store,
         t,
-        "UPDATE boxes SET state = 'ready', handle = NULL WHERE id = ?1",
+        &[
+            (Boxes::Handle, "h".into()),
+            (Boxes::IntentKind, "close".into()),
+        ],
     );
     assert!(store.artifacts_due().unwrap().is_empty());
-    update(
-        &store,
-        t,
-        "UPDATE boxes SET handle = 'h', intent_kind = 'close' WHERE id = ?1",
-    );
-    assert!(store.artifacts_due().unwrap().is_empty());
-    update(
-        &store,
-        t,
-        "UPDATE boxes SET intent_kind = NULL WHERE id = ?1",
-    );
+    update(&store, t, &[(Boxes::IntentKind, None::<String>.into())]);
     assert_eq!(store.artifacts_due().unwrap().len(), 1);
 }
 

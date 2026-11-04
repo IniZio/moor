@@ -4,13 +4,13 @@ use moor_core::domain::decision::{Intent, IntentChange};
 use moor_core::domain::event::Event;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, RunId, Sha};
-use moor_schema::tables::Boxes;
-use sea_query::{Expr, ExprTrait as _, Query};
+use moor_schema::tables::{Boxes, Runs};
+use sea_query::{Expr, ExprTrait as _, Order, Query, SelectStatement};
 
 use super::apply::{insert_event, intent_sets, update};
 use super::follow::{self, FollowClaim};
 use super::{load_box, Store, StoreError};
-use crate::store::db::{params, DbExt as _, OptionalExtension, Row, TransactionBehavior};
+use crate::store::db::{DbExt as _, OptionalExtension, Row, TransactionBehavior};
 
 /// A run to record.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,11 +74,26 @@ pub(crate) struct RunRow {
     pub(crate) finished_at: Option<Ts>,
 }
 
-/// Columns read into a [`RunRow`].
-const RUN_SELECT: &str =
-    "SELECT id, box, argv, record, sha, pid, exit, interrupted, started_at, finished_at FROM runs";
+/// Every run, with the columns [`run_from_row`] reads.
+fn run_select() -> SelectStatement {
+    Query::select()
+        .columns([
+            Runs::Id,
+            Runs::Box,
+            Runs::Argv,
+            Runs::Record,
+            Runs::Sha,
+            Runs::Pid,
+            Runs::Exit,
+            Runs::Interrupted,
+            Runs::StartedAt,
+            Runs::FinishedAt,
+        ])
+        .from(Runs::Table)
+        .take()
+}
 
-/// Map a `runs` row selected with [`RUN_SELECT`].
+/// Map a `runs` row selected with [`run_select`].
 fn run_from_row(row: &Row<'_>) -> Result<RunRow, StoreError> {
     let argv: String = row.get("argv")?;
     let sha: Option<String> = row.get("sha")?;
@@ -121,17 +136,26 @@ impl Store {
             return Err(StoreError::NotFound(box_id));
         }
         let argv = serde_json::to_string(&argv)?;
-        let run = tx.query_row(
-            "INSERT INTO runs (box, argv, record, sha, pid, started_at) \
-             VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
-            params![
-                box_id.get(),
-                argv,
-                record,
-                sha.as_ref().map(|s| s.as_str().to_owned()),
-                pid,
-                now.as_millis()
-            ],
+        let run = tx.row(
+            Query::insert()
+                .into_table(Runs::Table)
+                .columns([
+                    Runs::Box,
+                    Runs::Argv,
+                    Runs::Record,
+                    Runs::Sha,
+                    Runs::Pid,
+                    Runs::StartedAt,
+                ])
+                .values_panic([
+                    box_id.get().into(),
+                    argv.into(),
+                    record.into(),
+                    sha.as_ref().map(|s| s.as_str().to_owned()).into(),
+                    pid.into(),
+                    now.as_millis().into(),
+                ])
+                .returning_col(Runs::Id),
             |r| r.get(0).map(RunId::new),
         )?;
         let intent = IntentChange::Set(Intent::Running { run, pid });
@@ -159,17 +183,25 @@ impl Store {
         let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let box_id: Option<i64> = tx
-            .query_row("SELECT box FROM runs WHERE id = ?", [id.get()], |r| {
-                r.get(0)
-            })
+            .row(
+                Query::select()
+                    .column(Runs::Box)
+                    .from(Runs::Table)
+                    .and_where(Expr::col(Runs::Id).eq(id.get())),
+                |r| r.get(0),
+            )
             .optional()?;
         let box_id = BoxId::new(
             box_id.ok_or_else(|| StoreError::Invalid(format!("unknown run {}", id.get())))?,
         );
-        let changed = tx.execute(
-            "UPDATE runs SET finished_at = ?, exit = ?, interrupted = ? \
-             WHERE id = ? AND finished_at IS NULL",
-            params![now.as_millis(), out.exit, out.interrupted, id.get()],
+        let changed = tx.run(
+            Query::update()
+                .table(Runs::Table)
+                .value(Runs::FinishedAt, now.as_millis())
+                .value(Runs::Exit, out.exit)
+                .value(Runs::Interrupted, out.interrupted)
+                .and_where(Expr::col(Runs::Id).eq(id.get()))
+                .and_where(Expr::col(Runs::FinishedAt).is_null()),
         )?;
         if changed == 0 {
             return Ok(());
@@ -224,11 +256,12 @@ impl Store {
     pub(crate) fn in_flight_run(&self, box_id: BoxId) -> Result<Option<RunRow>, StoreError> {
         let open = {
             let conn = self.reader()?;
-            let mut stmt = conn.prepare(&format!(
-                "{RUN_SELECT} WHERE box = ? AND finished_at IS NULL ORDER BY id DESC"
-            ))?;
-            let rows = stmt.query_and_then([box_id.get()], run_from_row)?;
-            rows.collect::<Result<Vec<_>, _>>()?
+            let q = run_select()
+                .and_where(Expr::col(Runs::Box).eq(box_id.get()))
+                .and_where(Expr::col(Runs::FinishedAt).is_null())
+                .order_by(Runs::Id, Order::Desc)
+                .take();
+            conn.rows(q, run_from_row)?.collect::<Result<Vec<_>, _>>()?
         };
         let mut found = None;
         for run in open {
@@ -256,13 +289,18 @@ impl Store {
     pub(crate) fn set_run_pid(&self, id: RunId, pid: u32) -> Result<(), StoreError> {
         let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        tx.execute(
-            "UPDATE runs SET pid = ? WHERE id = ?",
-            params![pid, id.get()],
+        tx.run(
+            Query::update()
+                .table(Runs::Table)
+                .value(Runs::Pid, pid)
+                .and_where(Expr::col(Runs::Id).eq(id.get())),
         )?;
-        tx.execute(
-            "UPDATE boxes SET intent_pid = ? WHERE intent_kind = 'running' AND intent_run = ?",
-            params![pid, id.get()],
+        tx.run(
+            Query::update()
+                .table(Boxes::Table)
+                .value(Boxes::IntentPid, pid)
+                .and_where(Expr::col(Boxes::IntentKind).eq("running"))
+                .and_where(Expr::col(Boxes::IntentRun).eq(id.get())),
         )?;
         tx.commit()?;
         drop(conn);
@@ -272,31 +310,42 @@ impl Store {
     /// Run `id`, in flight or finished.
     pub(crate) fn run(&self, id: RunId) -> Result<Option<RunRow>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt = conn.prepare(&format!("{RUN_SELECT} WHERE id = ?"))?;
-        let mut rows = stmt.query_and_then([id.get()], run_from_row)?;
-        rows.next().transpose()
+        let q = run_select()
+            .and_where(Expr::col(Runs::Id).eq(id.get()))
+            .take();
+        conn.rows(q, run_from_row)?.next().transpose()
     }
 
     /// The box's most recent run, in flight or finished.
     pub(crate) fn last_run(&self, box_id: BoxId) -> Result<Option<RunRow>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt = conn.prepare(&format!(
-            "{RUN_SELECT} WHERE box = ? ORDER BY id DESC LIMIT 1"
-        ))?;
-        let mut rows = stmt.query_and_then([box_id.get()], run_from_row)?;
-        rows.next().transpose()
+        let q = run_select()
+            .and_where(Expr::col(Runs::Box).eq(box_id.get()))
+            .order_by(Runs::Id, Order::Desc)
+            .limit(1)
+            .take();
+        conn.rows(q, run_from_row)?.next().transpose()
     }
 
     /// Finished recorded runs of every gate name whose sha starts with `sha_prefix`, oldest first.
     pub(crate) fn recorded_runs(&self, sha_prefix: &str) -> Result<Vec<RunRow>, StoreError> {
         let prefix = sha_prefix.to_ascii_lowercase();
         let conn = self.reader()?;
-        let mut stmt = conn.prepare(&format!(
-            "{RUN_SELECT} WHERE record IS NOT NULL AND finished_at IS NOT NULL \
-             AND substr(sha, 1, length(?1)) = ?1 ORDER BY id"
-        ))?;
-        let rows = stmt.query_and_then(params![prefix], run_from_row)?;
-        rows.collect()
+        let q = run_select()
+            .and_where(Expr::col(Runs::Record).is_not_null())
+            .and_where(Expr::col(Runs::FinishedAt).is_not_null())
+            .and_where(Expr::col(Runs::Sha).is_not_null())
+            .order_by(Runs::Id, Order::Asc)
+            .take();
+        let runs = conn.rows(q, run_from_row)?.collect::<Result<Vec<_>, _>>()?;
+        Ok(runs
+            .into_iter()
+            .filter(|r| {
+                r.sha
+                    .as_ref()
+                    .is_some_and(|s| s.as_str().starts_with(&prefix))
+            })
+            .collect())
     }
 }
 

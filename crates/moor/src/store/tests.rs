@@ -17,7 +17,10 @@ use moor_core::domain::decision::{
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
+use moor_schema::tables::{Boxes, Events, Sessions};
+use sea_query::{Asterisk, Expr, ExprTrait as _, Iden, Query};
 
+use crate::store::db::DbExt as _;
 use crate::testing::clock::FakeClock;
 
 mod controller_id;
@@ -79,11 +82,13 @@ fn kinds(store: &Store, id: BoxId) -> Vec<String> {
         .collect()
 }
 
-/// Count rows of a table through a raw connection.
-fn count(path: &Path, table: &str) -> i64 {
-    let c = rusqlite::Connection::open(path).unwrap();
-    c.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
-        .unwrap()
+/// Count rows of a table.
+fn count(store: &Store, table: impl Iden + 'static) -> i64 {
+    let q = Query::select()
+        .expr(Expr::col(Asterisk).count())
+        .from(table)
+        .take();
+    store.reader().unwrap().row(q, |r| r.get(0)).unwrap()
 }
 
 #[test]
@@ -113,14 +118,13 @@ fn primary_session_row_exists_for_each_box() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let id = new_box(&store, "t");
-    let raw = rusqlite::Connection::open(dir.path().join("state").join("moor.db")).unwrap();
-    let n: i64 = raw
-        .query_row(
-            "SELECT count(*) FROM sessions WHERE box = ?1 AND ordinal = 1",
-            [id.get()],
-            |r| r.get(0),
-        )
-        .unwrap();
+    let q = Query::select()
+        .expr(Expr::col(Asterisk).count())
+        .from(Sessions::Table)
+        .and_where(Expr::col(Sessions::Box).eq(id.get()))
+        .and_where(Expr::col(Sessions::Ordinal).eq(1))
+        .take();
+    let n: i64 = store.reader().unwrap().row(q, |r| r.get(0)).unwrap();
     assert_eq!(n, 1);
 }
 
@@ -243,8 +247,10 @@ fn new_box_with_illegal_box_input_leaves_nothing() {
         .set(provider());
     let err = store.apply(d).unwrap_err();
     assert!(matches!(err, StoreError::Illegal(_)), "{err:?}");
-    let path = dir.path().join("state").join("moor.db");
-    assert_eq!((count(&path, "boxes"), count(&path, "events")), (0, 0));
+    assert_eq!(
+        (count(&store, Boxes::Table), count(&store, Events::Table)),
+        (0, 0)
+    );
 }
 
 #[test]
@@ -344,9 +350,8 @@ fn box_fields_without_a_box_roll_back_the_box_step() {
     assert_eq!(after, before);
     assert_eq!(after.lifecycle, BoxLifecycle::Checking);
     assert_eq!(kinds(&store, id), events_before);
-    let path = dir.path().join("state").join("moor.db");
     assert_eq!(
-        count(&path, "events"),
+        count(&store, Events::Table),
         i64::try_from(events_before.len()).unwrap()
     );
 }

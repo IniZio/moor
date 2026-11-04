@@ -9,6 +9,8 @@ use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName, ProviderId};
+use moor_schema::tables::Events;
+use sea_query::Query;
 
 use crate::store::db::DbExt as _;
 use crate::testing::clock::FakeClock;
@@ -114,9 +116,12 @@ fn waiting_boxes_returns_pending_in_id_order() {
 
 fn event(store: &Store, id: BoxId, kind: &str, payload: &str, ts: i64) -> i64 {
     let conn = store.writer();
-    conn.query_row(
-        "INSERT INTO events (box, kind, payload, ts) VALUES (?1, ?2, ?3, ?4) RETURNING id",
-        rusqlite::params![id.get(), kind, payload, ts],
+    conn.row(
+        Query::insert()
+            .into_table(Events::Table)
+            .columns([Events::Box, Events::Kind, Events::Payload, Events::Ts])
+            .values_panic([id.get().into(), kind.into(), payload.into(), ts.into()])
+            .returning_col(Events::Id),
         |r| r.get(0),
     )
     .unwrap()
