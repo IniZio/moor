@@ -6,7 +6,10 @@
 
 use std::path::Path;
 
+use sea_query::ExprTrait as _;
 use serde_json::json;
+
+use crate::store::db::DbExt as _;
 
 use super::fronts::{ask, me, refused, Served};
 
@@ -28,9 +31,15 @@ fn a_secret_value_is_in_no_reply_log_event_or_plaintext_db_byte() {
     }
     assert!(!served.log.text().contains(CANARY), "{}", served.log.text());
     let state = served.dir.path().join("state");
-    let db = rusqlite::Connection::open(state.join("moor.db")).expect("db");
+    let db = crate::store::db::Conn::open_file(&state.join("moor.db")).expect("db");
     let events: i64 = db
-        .query_row("SELECT COUNT(*) FROM events", [], |r| r.get(0))
+        .row(
+            sea_query::Query::select()
+                .expr(sea_query::Expr::col(sea_query::Asterisk).count())
+                .from(moor_schema::tables::Events::Table)
+                .take(),
+            |r| r.get(0),
+        )
         .expect("events");
     assert_eq!(events, 0, "user requests record no events");
     drop(db);

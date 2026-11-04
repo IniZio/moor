@@ -71,12 +71,20 @@ fn parent_filter_with_no_children_delivers_nothing() {
 fn parent_filter_keeps_the_viewers_own_boxes_only() {
     let dir = tempfile::tempdir().expect("tempdir");
     let store = open(dir.path());
-    let raw = rusqlite::Connection::open(dir.path().join(STORE_FILE)).expect("raw");
-    raw.execute(
-        "INSERT INTO users (id, created_at) VALUES (1, 0), (2, 0)",
-        [],
-    )
-    .expect("users");
+    let raw = crate::store::db::Conn::open_file(&dir.path().join(STORE_FILE)).expect("raw");
+    {
+        use crate::store::db::DbExt as _;
+        use moor_schema::tables::Users;
+        raw.run(
+            sea_query::Query::insert()
+                .into_table(Users::Table)
+                .columns([Users::Id, Users::CreatedAt])
+                .values_panic([1_i64.into(), 0_i64.into()])
+                .values_panic([2_i64.into(), 0_i64.into()])
+                .take(),
+        )
+        .expect("users");
+    }
     add(&store, "root");
     let parent = store
         .events_after(0, 10)

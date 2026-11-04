@@ -1,5 +1,8 @@
 //! Tests for `show-session`.
 
+use crate::store::db::DbExt as _;
+use moor_schema::tables::Sessions;
+use sea_query::{Expr, ExprTrait as _, Query};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -56,10 +59,12 @@ fn children_list_with_their_box_and_state() {
         .open_host_session("/home/me/proj", None, None)
         .unwrap();
     let child = store.open_host_session("/home/me/c", None, None).unwrap();
-    let db = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
-    db.execute(
-        "UPDATE sessions SET parent_session = ?1 WHERE id = ?2",
-        [parent, child],
+    let db = crate::store::db::Conn::open_file(&dir.path().join("moor.db")).unwrap();
+    db.run(
+        Query::update()
+            .table(Sessions::Table)
+            .value(Sessions::ParentSession, parent)
+            .and_where(Expr::col(Sessions::Id).eq(child)),
     )
     .unwrap();
     let v = run(&cx, &req(parent)).unwrap();

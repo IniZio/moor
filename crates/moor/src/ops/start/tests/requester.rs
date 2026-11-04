@@ -16,15 +16,22 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
 use crate::testing::surface::FakeSurface;
 use crate::vault::Vault;
+use moor_schema::tables::{Boxes, Sessions};
+use sea_query::{Asterisk, Expr, ExprTrait as _, Order, Query};
 
 /// The `user` column of every Session of the Box `id`, in order.
 fn session_users(w: &World, id: i64) -> Vec<Option<i64>> {
     let store = w.cx.store().unwrap();
     let reader = store.reader().unwrap();
-    let mut stmt = reader
-        .prepare("SELECT user FROM sessions WHERE box = ? ORDER BY id")
-        .unwrap();
-    stmt.query_map([id], |r| r.get(0))
+    reader
+        .rows(
+            Query::select()
+                .column(Sessions::User)
+                .from(Sessions::Table)
+                .and_where(Expr::col(Sessions::Box).eq(id))
+                .order_by(Sessions::Id, Order::Asc),
+            |r| r.get(0),
+        )
         .unwrap()
         .map(Result::unwrap)
         .collect()
@@ -36,7 +43,12 @@ fn box_rows(w: &World) -> i64 {
     store
         .reader()
         .unwrap()
-        .query_row("SELECT COUNT(*) FROM boxes", [], |r| r.get(0))
+        .row(
+            Query::select()
+                .expr(Expr::col(Asterisk).count())
+                .from(Boxes::Table),
+            |r| r.get(0),
+        )
         .unwrap()
 }
 

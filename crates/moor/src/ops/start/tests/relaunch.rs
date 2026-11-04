@@ -9,9 +9,12 @@ use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, SessionId, StartReq};
 
 use super::{req, world, World};
 use crate::ops::start::run;
-use crate::store::db::DbExt as _;
+use crate::store::db::{Conn, DbExt as _};
+use crate::testing::db::column_where;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
+use moor_schema::tables::{Launches, Sessions};
+use sea_query::Order;
 
 /// A start request for `demo` with `prompt`.
 fn prompt_req(prompt: &str) -> StartReq {
@@ -84,16 +87,12 @@ fn live_pane(w: &World, id: BoxId) -> Option<String> {
 }
 
 fn exit_of_first_session(w: &World, id: BoxId) -> Option<i32> {
-    w.cx.store()
-        .unwrap()
-        .reader()
-        .unwrap()
-        .query_row(
-            "SELECT exit FROM launches WHERE box = ? ORDER BY id LIMIT 1",
-            [id.get()],
-            |r| r.get(0),
-        )
-        .unwrap()
+    let first = column_where(Launches::Table, Launches::Exit, Launches::Box, id.get())
+        .order_by(Launches::Id, Order::Asc)
+        .limit(1)
+        .take();
+    let reader = w.cx.store().unwrap().reader().unwrap();
+    reader.row(first, |r| r.get(0)).unwrap()
 }
 
 /// Makes `p-1` read as gone.
@@ -131,14 +130,17 @@ fn a_relaunch_records_the_given_parent_session() {
         },
     )
     .unwrap();
-    let raw = rusqlite::Connection::open(w.cx.state_dir().unwrap().join("moor.db")).unwrap();
-    let got: Option<i64> = raw
-        .query_row(
-            "SELECT parent_session FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1",
-            [id.get()],
-            |r| r.get(0),
-        )
-        .unwrap();
+    let raw = Conn::open_file(&w.cx.state_dir().unwrap().join("moor.db")).unwrap();
+    let newest = column_where(
+        Sessions::Table,
+        Sessions::ParentSession,
+        Sessions::Box,
+        id.get(),
+    )
+    .order_by(Sessions::Ordinal, Order::Desc)
+    .limit(1)
+    .take();
+    let got: Option<i64> = raw.row(newest, |r| r.get(0)).unwrap();
     assert_eq!(got, Some(parent));
 }
 

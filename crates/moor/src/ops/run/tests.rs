@@ -1,5 +1,8 @@
 //! Tests for `run`.
 
+use crate::store::db::DbExt as _;
+use crate::testing::db::column_where;
+use moor_schema::tables::Boxes;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -536,13 +539,9 @@ fn unusable_repo_config_leaves_no_run_row() {
 
 /// The Box's `idle_since` column, read over a second connection.
 fn idle_since(f: &Fx) -> Option<i64> {
-    let db = rusqlite::Connection::open(f.dir.path().join("moor.db")).unwrap();
-    db.query_row(
-        "SELECT idle_since FROM boxes WHERE id = ?",
-        [f.id.get()],
-        |r| r.get(0),
-    )
-    .unwrap()
+    let db = crate::store::db::Conn::open_file(&f.dir.path().join("moor.db")).unwrap();
+    let q = column_where(Boxes::Table, Boxes::IdleSince, Boxes::Id, f.id.get());
+    db.row(q, |r| r.get(0)).unwrap()
 }
 
 fn state(f: &Fx) -> (BoxLifecycle, SessionState) {

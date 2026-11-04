@@ -4,21 +4,32 @@ use super::relaunch::{gone, obs, started};
 use super::req;
 use crate::ops::start::run;
 use crate::store::db::DbExt as _;
+use moor_schema::tables::{Events, Launches, Sessions};
+use sea_query::{Asterisk, Expr, ExprTrait as _, Order, Query};
 
 /// Each Session's ordinal, state and the launch rows linked to it, by ordinal.
 fn sessions(w: &super::World, id: BoxId) -> Vec<(i64, String, i64)> {
     let store = w.cx.store().unwrap();
     let conn = store.reader().unwrap();
-    let mut stmt = conn
-        .prepare(
-            "SELECT s.ordinal, s.state, (SELECT COUNT(*) FROM launches l WHERE l.session = s.id) \
-             FROM sessions s WHERE s.box = ? ORDER BY s.ordinal",
+    let launches = Query::select()
+        .expr(Expr::col(Asterisk).count())
+        .from(Launches::Table)
+        .and_where(
+            Expr::col((Launches::Table, Launches::Session)).equals((Sessions::Table, Sessions::Id)),
         )
-        .unwrap();
-    stmt.query_map([id.get()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
-        .unwrap()
-        .collect::<Result<_, _>>()
-        .unwrap()
+        .take();
+    conn.rows(
+        Query::select()
+            .columns([Sessions::Ordinal, Sessions::State])
+            .expr(crate::store::db::sub(launches))
+            .from(Sessions::Table)
+            .and_where(Expr::col(Sessions::Box).eq(id.get()))
+            .order_by(Sessions::Ordinal, Order::Asc),
+        |r| Ok::<_, crate::store::db::Error>((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )
+    .unwrap()
+    .collect::<Result<_, _>>()
+    .unwrap()
 }
 
 #[test]
@@ -44,9 +55,14 @@ fn a_relaunch_ends_the_session_and_opens_the_next() {
     let causes: Vec<String> = store
         .reader()
         .unwrap()
-        .prepare("SELECT payload FROM events WHERE box = ? AND kind = 'session_ended'")
-        .unwrap()
-        .query_map([id.get()], |r| r.get(0))
+        .rows(
+            Query::select()
+                .column(Events::Payload)
+                .from(Events::Table)
+                .and_where(Expr::col(Events::Box).eq(id.get()))
+                .and_where(Expr::col(Events::Kind).eq("session_ended")),
+            |r| r.get(0),
+        )
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();

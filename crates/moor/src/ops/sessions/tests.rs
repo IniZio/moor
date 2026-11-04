@@ -1,6 +1,9 @@
 //! Tests for `sessions`.
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
+use crate::store::db::DbExt as _;
+use moor_schema::tables::{Boxes, Sessions};
+use sea_query::{Expr, ExprTrait as _, Query};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -32,15 +35,17 @@ fn host(cx: &Cx, workdir: &str) -> i64 {
         .unwrap()
 }
 
-fn db(dir: &Path) -> rusqlite::Connection {
-    rusqlite::Connection::open(dir.join("moor.db")).unwrap()
+fn db(dir: &Path) -> crate::store::db::Conn {
+    crate::store::db::Conn::open_file(&dir.join("moor.db")).unwrap()
 }
 
 fn set_parent(dir: &Path, child: i64, parent: i64) {
     db(dir)
-        .execute(
-            "UPDATE sessions SET parent_session = ?1 WHERE id = ?2",
-            [parent, child],
+        .run(
+            Query::update()
+                .table(Sessions::Table)
+                .value(Sessions::ParentSession, parent)
+                .and_where(Expr::col(Sessions::Id).eq(child)),
         )
         .unwrap();
 }
@@ -61,7 +66,12 @@ fn ended_sessions_are_left_out_and_a_host_session_has_no_box() {
     let gone = host(&cx, "/gone");
     let b = host(&cx, "/b");
     db(dir.path())
-        .execute("UPDATE sessions SET state = 'ended' WHERE id = ?1", [gone])
+        .run(
+            Query::update()
+                .table(Sessions::Table)
+                .value(Sessions::State, "ended")
+                .and_where(Expr::col(Sessions::Id).eq(gone)),
+        )
         .unwrap();
     let v = run(&cx, &all()).unwrap();
     assert_eq!(ids(&v), vec![a, b]);
@@ -83,7 +93,12 @@ fn the_parent_filter_returns_direct_live_children_only() {
     set_parent(dir.path(), dead, root);
     set_parent(dir.path(), grand, child);
     db(dir.path())
-        .execute("UPDATE sessions SET state = 'ended' WHERE id = ?1", [dead])
+        .run(
+            Query::update()
+                .table(Sessions::Table)
+                .value(Sessions::State, "ended")
+                .and_where(Expr::col(Sessions::Id).eq(dead)),
+        )
         .unwrap();
     let v = run(
         &cx,
@@ -139,9 +154,16 @@ fn box_child(cx: &Cx, dir: &Path, name: &str, parent: i64) -> i64 {
     };
     cx.store().unwrap().apply(Decision::insert(nt)).unwrap();
     let id: i64 = db(dir)
-        .query_row(
-            "SELECT s.id FROM sessions s JOIN boxes b ON b.id = s.box ORDER BY s.id DESC LIMIT 1",
-            [],
+        .row(
+            Query::select()
+                .column((Sessions::Table, Sessions::Id))
+                .from(Sessions::Table)
+                .inner_join(
+                    Boxes::Table,
+                    Expr::col((Boxes::Table, Boxes::Id)).equals((Sessions::Table, Sessions::Box)),
+                )
+                .order_by((Sessions::Table, Sessions::Id), sea_query::Order::Desc)
+                .limit(1),
             |r| r.get(0),
         )
         .unwrap();

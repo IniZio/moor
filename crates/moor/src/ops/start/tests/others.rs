@@ -6,9 +6,12 @@ use moor_core::BoxId;
 use super::{repo_req, req, script_base_yaml, world};
 use crate::cx::Cx;
 use crate::ops::start::run;
+use crate::store::db::{Conn, DbExt as _};
 use crate::testing::cx::put_secret;
 use crate::testing::driver::FakeDriver;
 use crate::vault::Vault;
+use moor_schema::tables::Runs;
+use sea_query::Query;
 
 /// `cx` acting as local uid 2000, enrolled with the secrets a start needs.
 fn second_user(cx: Cx) -> (Cx, UserId) {
@@ -26,10 +29,12 @@ fn second_user(cx: Cx) -> (Cx, UserId) {
 fn a_start_hides_the_settle_warning_of_a_box_its_caller_may_not_see() {
     let mut w = world(FakeDriver::new());
     let bad = BoxId::new(run(&w.cx, &req("bad")).unwrap().boxed.id);
-    let raw = rusqlite::Connection::open(w.cx.state_dir().unwrap().join("moor.db")).unwrap();
-    raw.execute(
-        "INSERT INTO runs (box, argv, pid, started_at) VALUES (?, 'not json', 1, 1)",
-        [bad.get()],
+    let raw = Conn::open_file(&w.cx.state_dir().unwrap().join("moor.db")).unwrap();
+    raw.run(
+        Query::insert()
+            .into_table(Runs::Table)
+            .columns([Runs::Box, Runs::Argv, Runs::Pid, Runs::StartedAt])
+            .values_panic([bad.get().into(), "not json".into(), 1.into(), 1.into()]),
     )
     .unwrap();
     let (cx, user) = second_user(w.cx);
@@ -55,10 +60,12 @@ fn a_start_shows_the_settle_warning_of_its_callers_own_box() {
     let (cx, user) = second_user(w.cx);
     w.cx = cx.with_viewer(Viewer::User(user));
     let mine = BoxId::new(run(&w.cx, &req("mine")).unwrap().boxed.id);
-    let raw = rusqlite::Connection::open(w.cx.state_dir().unwrap().join("moor.db")).unwrap();
-    raw.execute(
-        "INSERT INTO runs (box, argv, pid, started_at) VALUES (?, 'not json', 1, 1)",
-        [mine.get()],
+    let raw = Conn::open_file(&w.cx.state_dir().unwrap().join("moor.db")).unwrap();
+    raw.run(
+        Query::insert()
+            .into_table(Runs::Table)
+            .columns([Runs::Box, Runs::Argv, Runs::Pid, Runs::StartedAt])
+            .values_panic([mine.get().into(), "not json".into(), 1.into(), 1.into()]),
     )
     .unwrap();
     w.cx.take_warnings();

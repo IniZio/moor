@@ -1,5 +1,8 @@
 //! Tests for `wait-events`.
 
+use crate::store::db::DbExt as _;
+use moor_schema::tables::Runs;
+use sea_query::Query;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -318,10 +321,12 @@ fn a_box_that_cannot_settle_warns_once_over_many_polls() {
         .unwrap()
         .begin_session(id, SESSION, None, moor_core::config::AgentHolder::Hc)
         .unwrap();
-    let raw = rusqlite::Connection::open(cx.state_dir().unwrap().join("moor.db")).unwrap();
-    raw.execute(
-        "INSERT INTO runs (box, argv, pid, started_at) VALUES (?, 'not json', 1, 1)",
-        [id.get()],
+    let raw = crate::store::db::Conn::open_file(&cx.state_dir().unwrap().join("moor.db")).unwrap();
+    raw.run(
+        Query::insert()
+            .into_table(Runs::Table)
+            .columns([Runs::Box, Runs::Argv, Runs::Pid, Runs::StartedAt])
+            .values_panic([id.get().into(), "not json".into(), 1.into(), 1.into()]),
     )
     .unwrap();
     let mut r = req(&["alpha"], WaitMode::Any);

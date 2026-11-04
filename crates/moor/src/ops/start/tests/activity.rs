@@ -16,11 +16,14 @@ use super::{req, world, World};
 use crate::ops::common::activity::{read, settle, PROBE_DEADLINE};
 use crate::ops::show;
 use crate::ops::start::run;
+use crate::store::db::Conn;
 use crate::store::db::DbExt as _;
 use crate::store::BoxRow;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use moor_core::domain::box_state::BoxLifecycle;
+use moor_schema::tables::{Boxes, Launches, Runs};
+use sea_query::{Expr, ExprTrait as _, Query};
 
 const SESSION: &str = "s-1";
 
@@ -76,9 +79,11 @@ fn idle_since(w: &World, id: BoxId) -> Option<i64> {
         .unwrap()
         .reader()
         .unwrap()
-        .query_row(
-            "SELECT idle_since FROM boxes WHERE id = ?",
-            [id.get()],
+        .row(
+            Query::select()
+                .column(Boxes::IdleSince)
+                .from(Boxes::Table)
+                .and_where(Expr::col(Boxes::Id).eq(id.get())),
             |r| r.get(0),
         )
         .unwrap()
@@ -162,9 +167,11 @@ fn newest_session(w: &World, id: BoxId) -> i64 {
         .unwrap()
         .reader()
         .unwrap()
-        .query_row(
-            "SELECT MAX(id) FROM launches WHERE box = ?",
-            [id.get()],
+        .row(
+            Query::select()
+                .expr(Expr::col(Launches::Id).max())
+                .from(Launches::Table)
+                .and_where(Expr::col(Launches::Box).eq(id.get())),
             |r| r.get(0),
         )
         .unwrap()
@@ -270,10 +277,12 @@ fn a_box_that_cannot_be_settled_warns_and_the_others_still_settle() {
         probes(&w, Some(HookKind::Idle), PaneStatus::Unknown),
     ));
     w.cx = w.cx.with_engine(engine);
-    let raw = rusqlite::Connection::open(w.cx.state_dir().unwrap().join("moor.db")).unwrap();
-    raw.execute(
-        "INSERT INTO runs (box, argv, pid, started_at) VALUES (?, 'not json', 1, 1)",
-        [bad.get()],
+    let raw = Conn::open_file(&w.cx.state_dir().unwrap().join("moor.db")).unwrap();
+    raw.run(
+        Query::insert()
+            .into_table(Runs::Table)
+            .columns([Runs::Box, Runs::Argv, Runs::Pid, Runs::StartedAt])
+            .values_panic([bad.get().into(), "not json".into(), 1.into(), 1.into()]),
     )
     .unwrap();
     run(&w.cx, &req("other")).unwrap();

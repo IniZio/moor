@@ -6,8 +6,11 @@ use moor_core::seam::proc::Tool;
 use moor_core::{BoxId, CloseReq, ErrorKind, RunReq};
 
 use super::{repo, repo_req, run, script_base_yaml, world, World, BASE};
+use crate::store::db::{Conn, DbExt as _};
 use crate::testing::driver::FakeDriver;
 use crate::testing::forge::repo_at;
+use moor_schema::tables::Boxes;
+use sea_query::{Asterisk, Expr, ExprTrait as _, Query};
 
 const YAML: &str = "setup: [from-forge]\n";
 
@@ -98,9 +101,14 @@ fn an_unknown_base_is_a_usage_error() {
     assert_eq!(err.kind, ErrorKind::Usage);
     assert!(w.driver.calls().is_empty());
     assert!(w.surface.calls().is_empty());
-    let rows: i64 = rusqlite::Connection::open(w.cx.state_dir().unwrap().join("moor.db"))
+    let rows: i64 = Conn::open_file(&w.cx.state_dir().unwrap().join("moor.db"))
         .unwrap()
-        .query_row("SELECT count(*) FROM boxes", [], |r| r.get(0))
+        .row(
+            Query::select()
+                .expr(Expr::col(Asterisk).count())
+                .from(Boxes::Table),
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(rows, 0);
 }

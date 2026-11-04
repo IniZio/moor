@@ -1,5 +1,9 @@
 //! Tests for the single agent read.
 
+use moor_schema::tables::{Boxes, HookCache, Sessions};
+use sea_query::{Expr, ExprTrait as _, Query};
+
+use crate::testing::db::column_where;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -298,6 +302,24 @@ fn fresh_hook_is_cached_and_a_timeout_keeps_it() {
     assert_eq!(cx.store().unwrap().hook(id).unwrap(), Some(cached));
 }
 
+/// A hook cache row holding `record` for Box `id`'s first session.
+fn cache_row(dir: &Path, id: BoxId, record: &str) {
+    let first = Query::select()
+        .column(Sessions::Id)
+        .from(Sessions::Table)
+        .and_where(Expr::col(Sessions::Box).eq(id.get()))
+        .and_where(Expr::col(Sessions::Ordinal).eq(1))
+        .take();
+    let raw = crate::store::db::Conn::open_file(&dir.join("moor.db")).unwrap();
+    raw.run(
+        Query::insert()
+            .into_table(HookCache::Table)
+            .columns([HookCache::Session, HookCache::Record, HookCache::At])
+            .values_panic([crate::store::db::sub(first), record.into(), 1.into()]),
+    )
+    .unwrap();
+}
+
 #[test]
 fn undecodable_cache_degrades_to_no_cache_with_a_warning() {
     let dir = tempfile::tempdir().unwrap();
@@ -308,12 +330,7 @@ fn undecodable_cache_degrades_to_no_cache_with_a_warning() {
     let engine = Arc::new(FakeEngine::new().probes(SESSION, dropped));
     let (cx, _) = cx(dir.path(), &engine);
     let id = working_box(&cx, true);
-    let raw = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
-    raw.execute(
-        "INSERT INTO hook_cache (session, record, at) VALUES ((SELECT id FROM sessions WHERE box = ?1 AND ordinal = 1), '{\"kind\":\"nope\"}', 1)",
-        [id.get()],
-    )
-    .unwrap();
+    cache_row(dir.path(), id, r#"{"kind":"nope"}"#);
     let r = run_once(&cx, id);
     assert_eq!(state(&r), (AgentState::Unknown, Source::Timeout));
     let warnings = cx.take_warnings();
@@ -330,12 +347,7 @@ fn cache_row_that_is_not_json_degrades_with_a_warning() {
     let engine = Arc::new(FakeEngine::new());
     let (cx, _) = cx(dir.path(), &engine);
     let id = working_box(&cx, true);
-    let raw = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
-    raw.execute(
-        "INSERT INTO hook_cache (session, record, at) VALUES ((SELECT id FROM sessions WHERE box = ?1 AND ordinal = 1), 'not json', 1)",
-        [id.get()],
-    )
-    .unwrap();
+    cache_row(dir.path(), id, "not json");
     run_once(&cx, id);
     let warnings = cx.take_warnings();
     assert_eq!(warnings.len(), 1);
@@ -394,9 +406,8 @@ fn idle_since(cx: &Cx, id: BoxId) -> Option<i64> {
         .unwrap()
         .reader()
         .unwrap()
-        .query_row(
-            "SELECT idle_since FROM boxes WHERE id = ?",
-            [id.get()],
+        .row(
+            column_where(Boxes::Table, Boxes::IdleSince, Boxes::Id, id.get()),
             |r| r.get(0),
         )
         .unwrap()

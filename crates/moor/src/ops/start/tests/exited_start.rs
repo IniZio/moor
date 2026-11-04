@@ -11,6 +11,8 @@ use crate::ops::start::{run, settle_all};
 use crate::store::db::DbExt as _;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
+use moor_schema::tables::{Launches, Sessions};
+use sea_query::{Expr, ExprTrait as _, Order, Query};
 
 fn exited() -> Probes {
     Probes {
@@ -58,16 +60,26 @@ fn exited_agent() -> (World, Arc<FakeEngine>, BoxId) {
 fn sessions(w: &World, id: BoxId) -> (Vec<(i64, String)>, Vec<Option<i64>>) {
     let conn = w.cx.store().unwrap().reader().unwrap();
     let rows = conn
-        .prepare("SELECT ordinal, state FROM sessions WHERE box = ? ORDER BY ordinal")
-        .unwrap()
-        .query_map([id.get()], |r| Ok((r.get(0)?, r.get(1)?)))
+        .rows(
+            Query::select()
+                .columns([Sessions::Ordinal, Sessions::State])
+                .from(Sessions::Table)
+                .and_where(Expr::col(Sessions::Box).eq(id.get()))
+                .order_by(Sessions::Ordinal, Order::Asc),
+            |r| Ok::<_, crate::store::db::Error>((r.get(0)?, r.get(1)?)),
+        )
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();
     let launches = conn
-        .prepare("SELECT session FROM launches WHERE box = ? ORDER BY id")
-        .unwrap()
-        .query_map([id.get()], |r| r.get(0))
+        .rows(
+            Query::select()
+                .column(Launches::Session)
+                .from(Launches::Table)
+                .and_where(Expr::col(Launches::Box).eq(id.get()))
+                .order_by(Launches::Id, Order::Asc),
+            |r| r.get(0),
+        )
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();

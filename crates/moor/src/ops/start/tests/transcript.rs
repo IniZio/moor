@@ -9,8 +9,11 @@ use moor_core::{BoxId, StartReq};
 use super::relaunch::{gone, session, set_agent_session, started};
 use super::{req, World};
 use crate::ops::start::run;
+use crate::store::db::Conn;
 use crate::store::db::DbExt as _;
 use crate::testing::engine::FakeEngine;
+use moor_schema::tables::Launches;
+use sea_query::{Asterisk, Expr, ExprTrait as _, Order, Query};
 
 const SHA_ABC: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
 
@@ -27,9 +30,13 @@ fn first_digest(w: &World, id: BoxId) -> Option<String> {
         .unwrap()
         .reader()
         .unwrap()
-        .query_row(
-            "SELECT transcript_digest FROM launches WHERE box = ? ORDER BY id LIMIT 1",
-            [id.get()],
+        .row(
+            Query::select()
+                .column(Launches::TranscriptDigest)
+                .from(Launches::Table)
+                .and_where(Expr::col(Launches::Box).eq(id.get()))
+                .order_by(Launches::Id, Order::Asc)
+                .limit(1),
             |r| r.get(0),
         )
         .unwrap()
@@ -62,11 +69,13 @@ fn relaunch_saves_the_transcript_before_ending_the_old_session() {
     let live_at_save = Arc::new(AtomicBool::new(false));
     let seen = live_at_save.clone();
     engine.on_transcript(move || {
-        let c = rusqlite::Connection::open(&db).unwrap();
+        let c = Conn::open_file(&db).unwrap();
         let open: i64 = c
-            .query_row(
-                "SELECT COUNT(*) FROM launches WHERE ended_at IS NULL",
-                [],
+            .row(
+                Query::select()
+                    .expr(Expr::col(Asterisk).count())
+                    .from(Launches::Table)
+                    .and_where(Expr::col(Launches::EndedAt).is_null()),
                 |r| r.get(0),
             )
             .unwrap();

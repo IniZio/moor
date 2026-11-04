@@ -1,5 +1,7 @@
 //! Tests for `show` and `reconcile`.
 
+use crate::testing::db::column_where;
+use moor_schema::tables::Boxes;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -400,9 +402,8 @@ fn idle_since(store: &Store, id: BoxId) -> Option<i64> {
     store
         .reader()
         .unwrap()
-        .query_row(
-            "SELECT idle_since FROM boxes WHERE id = ?",
-            [id.get()],
+        .row(
+            column_where(Boxes::Table, Boxes::IdleSince, Boxes::Id, id.get()),
             |r| r.get(0),
         )
         .unwrap()

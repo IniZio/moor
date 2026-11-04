@@ -6,6 +6,8 @@ use super::{req, world};
 use crate::ops::start::run;
 use crate::store::db::DbExt as _;
 use crate::testing::driver::FakeDriver;
+use moor_schema::tables::Sessions;
+use sea_query::{Expr, ExprTrait as _, Order, Query};
 
 /// A start request for `name` under `parent`.
 fn child(name: &str, parent: i64) -> StartReq {
@@ -19,10 +21,15 @@ fn child(name: &str, parent: i64) -> StartReq {
 fn parents(w: &super::World, id: i64) -> Vec<Option<i64>> {
     let store = w.cx.store().unwrap();
     let reader = store.reader().unwrap();
-    let mut stmt = reader
-        .prepare("SELECT parent_session FROM sessions WHERE box = ? ORDER BY id")
-        .unwrap();
-    stmt.query_map([id], |r| r.get(0))
+    reader
+        .rows(
+            Query::select()
+                .column(Sessions::ParentSession)
+                .from(Sessions::Table)
+                .and_where(Expr::col(Sessions::Box).eq(id))
+                .order_by(Sessions::Id, Order::Asc),
+            |r| r.get(0),
+        )
         .unwrap()
         .map(Result::unwrap)
         .collect()

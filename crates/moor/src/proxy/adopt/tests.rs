@@ -8,8 +8,12 @@ use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::proxy_host::{ProxyHost as _, ProxySpec, ProxyStatus};
 use moor_core::{BoxId, BoxName};
 
+use moor_schema::tables::Boxes;
+use sea_query::{Expr, ExprTrait as _, Query, UpdateStatement};
+
 use super::reconcile;
 use crate::proxy::detached::{write_spec, DetachedSupervisor, LEASE};
+use crate::store::db::{Conn, DbExt as _};
 use crate::store::{ReadyProc, Store, STORE_FILE};
 use crate::testing::clock::FakeClock;
 use crate::testing::proc::ScriptedProc;
@@ -56,10 +60,17 @@ fn fx() -> Fx {
         host,
         id,
     };
-    f.exec(&format!(
-        "UPDATE boxes SET provider = 'crabbox', driver_state = 'ready', driver_updated_at = 0 WHERE id = {}",
-        id.get()
-    ));
+    f.exec(
+        Query::update()
+            .table(Boxes::Table)
+            .values([
+                (Boxes::Provider, "crabbox".into()),
+                (Boxes::DriverState, "ready".into()),
+                (Boxes::DriverUpdatedAt, 0_i64.into()),
+            ])
+            .and_where(Expr::col(Boxes::Id).eq(id.get()))
+            .take(),
+    );
     write_spec(f.dir.path(), &f.spec()).unwrap();
     let state = f.dir.path().to_path_buf();
     let shared = f.clock.clone();
@@ -93,10 +104,10 @@ impl Fx {
         }
     }
 
-    fn exec(&self, sql: &str) {
-        rusqlite::Connection::open(self.dir.path().join(STORE_FILE))
+    fn exec(&self, update: UpdateStatement) {
+        Conn::open_file(&self.dir.path().join(STORE_FILE))
             .unwrap()
-            .execute(sql, [])
+            .run(update)
             .unwrap();
     }
 
@@ -207,7 +218,12 @@ fn a_box_without_a_usable_box_has_its_proxy_stopped_not_restarted() {
     let f = fx();
     f.record(BOOT);
     f.clock.sleep(LEASE + Duration::from_secs(1));
-    f.exec("UPDATE boxes SET driver_state = 'deleted'");
+    f.exec(
+        Query::update()
+            .table(Boxes::Table)
+            .value(Boxes::DriverState, "deleted")
+            .take(),
+    );
 
     assert_eq!(f.settle(), Vec::<String>::new());
 

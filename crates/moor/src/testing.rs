@@ -3,6 +3,7 @@
 pub(crate) mod bridge;
 pub(crate) mod clock;
 pub(crate) mod cx;
+pub(crate) mod db;
 pub(crate) mod driver;
 pub(crate) mod engine;
 pub(crate) mod forge;

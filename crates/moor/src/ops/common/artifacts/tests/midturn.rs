@@ -1,5 +1,7 @@
 //! Tests for collecting while the agent's turn is still running.
 
+use moor_schema::tables::Sessions;
+use sea_query::Query;
 use std::time::Duration;
 
 use super::{fx, line, row, versions, Fx};
@@ -77,7 +79,11 @@ fn a_quiet_box_is_not_collected_mid_turn() {
     f.cx.store()
         .unwrap()
         .writer()
-        .execute("UPDATE sessions SET state = 'idle'", [])
+        .run(
+            Query::update()
+                .table(Sessions::Table)
+                .value(Sessions::State, "idle"),
+        )
         .unwrap();
     assert!(row(&f).session.is_quiet());
     let before = calls(&f);
@@ -94,14 +100,22 @@ fn a_new_turn_starts_without_the_old_turns_index() {
     f.cx.store()
         .unwrap()
         .writer()
-        .execute("UPDATE sessions SET state = 'idle'", [])
+        .run(
+            Query::update()
+                .table(Sessions::Table)
+                .value(Sessions::State, "idle"),
+        )
         .unwrap();
     later(&f);
     pass(&f);
     f.cx.store()
         .unwrap()
         .writer()
-        .execute("UPDATE sessions SET state = 'working'", [])
+        .run(
+            Query::update()
+                .table(Sessions::Table)
+                .value(Sessions::State, "working"),
+        )
         .unwrap();
     later(&f);
     f.driver.push_artifact_index(line("a.md", b"hello"));

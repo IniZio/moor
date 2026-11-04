@@ -14,6 +14,8 @@ use moor_core::seam::clock::Ts;
 use moor_core::user::Identity;
 use serde_json::{json, Value};
 
+use crate::store::db::DbExt as _;
+
 use super::fronts::{ask, refused};
 use super::{config, env_with, Buf};
 use crate::controller::{start, Sink};
@@ -76,9 +78,13 @@ impl Served {
     }
 
     fn stored_hashes(&self) -> Vec<String> {
-        let db = rusqlite::Connection::open(self.dir.path().join("state").join("moor.db")).unwrap();
-        let mut stmt = db.prepare("SELECT token_hash FROM front_leases").unwrap();
-        stmt.query_map([], |r| r.get(0))
+        let db = crate::store::db::Conn::open_file(&self.dir.path().join("state").join("moor.db"))
+            .unwrap();
+        let q = sea_query::Query::select()
+            .column(moor_schema::tables::FrontLeases::TokenHash)
+            .from(moor_schema::tables::FrontLeases::Table)
+            .take();
+        db.rows(q, |r| r.get::<_, String>(0))
             .unwrap()
             .map(Result::unwrap)
             .collect()

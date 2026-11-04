@@ -1,5 +1,7 @@
 //! Tests for `steer`.
 
+use crate::testing::db::column_where;
+use moor_schema::tables::Launches;
 use std::sync::Arc;
 
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes};
@@ -347,16 +349,13 @@ fn an_exited_agent_names_its_code() {
         "agent exited 3; relaunch with `moor start t --prompt \"...\"`"
     );
     assert_eq!(err.detail.as_deref(), Some(&ErrorDetail::AgentGone));
+    let q = column_where(Launches::Table, Launches::Exit, Launches::Box, f.id.get());
     let exit: Option<i32> =
         f.cx.store()
             .unwrap()
             .reader()
             .unwrap()
-            .query_row(
-                "SELECT exit FROM launches WHERE box = ?",
-                [f.id.get()],
-                |r| r.get(0),
-            )
+            .row(q, |r| r.get(0))
             .unwrap();
     assert_eq!(exit, Some(3));
 }
@@ -576,15 +575,13 @@ fn an_exited_agent_has_its_transcript_saved_before_the_session_ends() {
         Some(&serde_json::json!("exit"))
     );
     assert!(!live(&f));
-    let digest: Option<String> = store
-        .reader()
-        .unwrap()
-        .query_row(
-            "SELECT transcript_digest FROM launches WHERE box = ?",
-            [f.id.get()],
-            |r| r.get(0),
-        )
-        .unwrap();
+    let q = column_where(
+        Launches::Table,
+        Launches::TranscriptDigest,
+        Launches::Box,
+        f.id.get(),
+    );
+    let digest: Option<String> = store.reader().unwrap().row(q, |r| r.get(0)).unwrap();
     assert_eq!(
         digest.as_deref(),
         Some("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")

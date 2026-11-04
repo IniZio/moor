@@ -1,3 +1,6 @@
+use crate::store::db::DbExt as _;
+use moor_schema::tables::Boxes;
+use sea_query::{Expr, ExprTrait as _, Query};
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -389,9 +392,14 @@ fn a_waiter_whose_box_lock_is_held_is_skipped_with_a_warning() {
 fn a_store_read_error_during_promotion_is_a_warning_not_a_failed_close() {
     let w = world(limit(1), FakeDriver::new());
     queue(&w, "first");
-    let db = rusqlite::Connection::open(w.cx.state_dir().unwrap().join("moor.db")).unwrap();
-    db.execute("UPDATE boxes SET name = '' WHERE state = 'pending'", [])
-        .unwrap();
+    let db = crate::store::db::Conn::open_file(&w.cx.state_dir().unwrap().join("moor.db")).unwrap();
+    db.run(
+        Query::update()
+            .table(Boxes::Table)
+            .value(Boxes::Name, "")
+            .and_where(Expr::col(Boxes::State).eq("pending")),
+    )
+    .unwrap();
     let v = close_holder(&w);
     assert!(v.box_deleted);
     assert!(v.promoted.is_empty());
@@ -471,10 +479,10 @@ fn a_close_hides_the_promote_warning_of_a_box_its_caller_may_not_see() {
     );
 }
 
-/// Runs `sql` with `?` bound to `id` against the world's store.
-fn exec_on(w: &World, sql: &str, id: i64) {
-    let db = rusqlite::Connection::open(w.cx.state_dir().unwrap().join("moor.db")).unwrap();
-    db.execute(sql, [id]).unwrap();
+/// Runs the update `q` against the world's store.
+fn exec_on(w: &World, q: &mut sea_query::UpdateStatement) {
+    let db = crate::store::db::Conn::open_file(&w.cx.state_dir().unwrap().join("moor.db")).unwrap();
+    db.run(q).unwrap();
 }
 
 /// Queues `first` from a repo whose stored `.moor.yaml` no longer parses.
@@ -489,8 +497,10 @@ fn queue_unparsable(w: &World) -> BoxId {
     let id = queue_req(w, &req);
     exec_on(
         w,
-        "UPDATE boxes SET repo_config = 'setup: [' WHERE id = ?",
-        id.get(),
+        Query::update()
+            .table(Boxes::Table)
+            .value(Boxes::RepoConfig, "setup: [")
+            .and_where(Expr::col(Boxes::Id).eq(id.get())),
     );
     id
 }
@@ -521,8 +531,10 @@ fn the_owner_of_a_waiter_sees_its_settings_error() {
     let owner = bystander(&w);
     exec_on(
         &w,
-        &format!("UPDATE boxes SET user = {} WHERE id = ?", owner.get()),
-        id.get(),
+        Query::update()
+            .table(Boxes::Table)
+            .value(Boxes::User, owner.get())
+            .and_where(Expr::col(Boxes::Id).eq(id.get())),
     );
     w.cx = w.cx.with_viewer(Viewer::User(owner));
     close_holder(&w);
@@ -537,8 +549,10 @@ fn the_owner_of_a_waiter_sees_its_promote_warning() {
     let owner = bystander(&w);
     exec_on(
         &w,
-        &format!("UPDATE boxes SET user = {} WHERE id = ?", owner.get()),
-        id.get(),
+        Query::update()
+            .table(Boxes::Table)
+            .value(Boxes::User, owner.get())
+            .and_where(Expr::col(Boxes::Id).eq(id.get())),
     );
     let _held =
         BoxLock::acquire(w.cx.clock(), w.cx.state_dir().unwrap(), id, "start", WAIT).unwrap();
