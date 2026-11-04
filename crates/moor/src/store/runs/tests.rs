@@ -21,7 +21,7 @@ const SHA_B: &str = "abcd00001234567890abcdef1234567890abcdef";
 /// Open a store in a temp dir.
 fn open(dir: &Path) -> Store {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    Store::open(&dir.join("moor.db"), clock).unwrap()
+    crate::store::db::testing::open_store(&dir.join("moor.db"), clock)
 }
 
 /// Insert a box by name.

@@ -45,9 +45,8 @@ fn a_pinned_name_means_only_its_pinned_box_after_another_of_that_name_opens() {
     store.apply(close).unwrap();
     let name = crate::testing::box_name("a");
     let db = dir.path().join("state").join("moor.db");
-    let pinned = super::super::Store::open(&db, clock)
-        .unwrap()
-        .pinned([(name.clone(), first)].into());
+    let pinned =
+        crate::store::db::testing::open_store(&db, clock).pinned([(name.clone(), first)].into());
     let second = new_box(&store, "a");
     assert_eq!(
         store.latest_box_by_name(&name).unwrap().map(|r| r.id),
