@@ -2,22 +2,24 @@
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{BoxTarget, Decision, Field, Fields, IntentChange};
+use moor_core::domain::decision::{BoxTarget, Decision, Field, IntentChange};
 use moor_core::domain::event::{box_events, lifecycle_events, session_events, Event};
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
-use rusqlite::types::Value;
+use moor_schema::tables::{BoxRefs, Boxes, Events, Sessions};
+use sea_query::{Expr, ExprTrait as _, OnConflict, Query, UpdateStatement, Value};
 
 mod sql;
 mod steps;
 
 pub(super) use self::sql::update;
-use self::sql::{branch_taken, field_value, text, Sets};
+use self::sql::{box_field_sets, branch_taken, driver_field_sets, session_field_sets, Sets};
 use self::steps::{step_box, Parts};
 use super::box_node::live_on_node_in;
+use super::select::newest_session;
 use super::{DriverRow, Store, StoreError};
-use crate::store::db::{params, DbExt as _, TransactionBehavior, Tx};
+use crate::store::db::{self, DbExt as _, TransactionBehavior, Tx};
 use moor_core::name::NodeName;
 
 /// Result of a committed `apply`.
@@ -73,10 +75,7 @@ impl Store {
             return Ok(None);
         };
         let applied = apply_in(&tx, now, d)?;
-        tx.execute(
-            "UPDATE boxes SET node = ?1 WHERE id = ?2",
-            params![node.as_str(), id.get()],
-        )?;
+        tx.run(box_update(id).value(Boxes::Node, node.as_str()))?;
         tx.commit()?;
         drop(conn);
         Ok(Some(applied))
@@ -105,9 +104,12 @@ fn apply_steps(tx: &Tx<'_>, now: Ts, mut d: Decision) -> Result<Applied, StoreEr
         to: is_quiet(parts),
     };
     if let (BoxTarget::New(_), Field::Set(branch)) = (&d.target, &d.set.branch) {
-        tx.execute(
-            "INSERT INTO box_refs (box, kind, value) VALUES (?1, 'branch', ?2) ON CONFLICT DO NOTHING",
-            params![id.get(), branch],
+        tx.run(
+            Query::insert()
+                .into_table(BoxRefs::Table)
+                .columns([BoxRefs::Box, BoxRefs::Kind, BoxRefs::Value])
+                .values_panic([id.get().into(), "branch".into(), branch.into()])
+                .on_conflict(OnConflict::new().do_nothing().to_owned()),
         )?;
     }
     let box_step = step_driver(tx, now, id, existing.as_ref(), &d)?;
@@ -171,9 +173,11 @@ fn step_driver(
     let Field::Set(provider) = &d.set.box_provider else {
         return Err(StoreError::Invalid("new box needs box_provider".into()));
     };
-    tx.execute(
-        "UPDATE boxes SET provider = ?, driver_state = ?, driver_updated_at = ? WHERE id = ?",
-        params![provider.as_str(), to.as_str(), now.as_millis(), id.get()],
+    tx.run(
+        box_update(id)
+            .value(Boxes::Provider, provider.as_str())
+            .value(Boxes::DriverState, to.as_str())
+            .value(Boxes::DriverUpdatedAt, now.as_millis()),
     )?;
     Ok(Some(Step { from: None, to }))
 }
@@ -191,27 +195,37 @@ fn write_box_row(
     let mut session = session_field_sets(&d.set);
     let stepped = d.lifecycle_input.is_some() || d.session_input.is_some();
     if stepped {
-        sets.push(("state", Value::Text(lifecycle.as_str().to_owned())));
+        sets.push((Boxes::State, lifecycle.as_str().into()));
         sets.extend(idle_since_sets(step, now));
-        session.push(("state", Value::Text(session_state.as_str().to_owned())));
+        session.push((Sessions::State, session_state.as_str().into()));
         if session_state == SessionState::Ended {
-            session.push(("ended_at", Value::Integer(now.as_millis())));
+            session.push((Sessions::EndedAt, now.as_millis().into()));
         }
     }
     sets.extend(intent_sets(d.intent, now));
-    sets.push(("updated_at", Value::Integer(now.as_millis())));
-    update(tx, "boxes", "id = ?", &[id.get()], &sets)?;
+    sets.push((Boxes::UpdatedAt, now.as_millis().into()));
+    update(tx, &mut box_update(id), &sets)?;
+    let newest = Query::select()
+        .expr(Expr::col(Sessions::Ordinal).max())
+        .from(Sessions::Table)
+        .and_where(Expr::col(Sessions::Box).eq(id.get()))
+        .take();
     update(
         tx,
-        "sessions",
-        "box = ? AND ordinal = (SELECT MAX(ordinal) FROM sessions WHERE box = ?)",
-        &[id.get(), id.get()],
+        Query::update()
+            .table(Sessions::Table)
+            .and_where(Expr::col(Sessions::Box).eq(id.get()))
+            .and_where(Expr::col(Sessions::Ordinal).eq(db::sub(newest))),
         &session,
     )?;
     if stepped && !lifecycle.is_live() {
-        tx.execute(
-            "UPDATE sessions SET state = 'ended', ended_at = ? WHERE box = ? AND state != 'ended'",
-            params![now.as_millis(), id.get()],
+        tx.run(
+            Query::update()
+                .table(Sessions::Table)
+                .value(Sessions::State, "ended")
+                .value(Sessions::EndedAt, now.as_millis())
+                .and_where(Expr::col(Sessions::Box).eq(id.get()))
+                .and_where(Expr::col(Sessions::State).ne("ended")),
         )?;
         super::users::machine::release_in(tx, id, now)?;
     }
@@ -224,12 +238,12 @@ fn is_quiet((lifecycle, session): Parts) -> bool {
 }
 
 /// `idle_since` follows quietness: stamped on becoming quiet, cleared on leaving it.
-fn idle_since_sets(step: &Step<bool>, now: Ts) -> Sets {
+fn idle_since_sets(step: &Step<bool>, now: Ts) -> Sets<Boxes> {
     match (step.from, step.to) {
         (from, true) if from != Some(true) => {
-            vec![("idle_since", Value::Integer(now.as_millis()))]
+            vec![(Boxes::IdleSince, now.as_millis().into())]
         }
-        (Some(true), false) => vec![("idle_since", Value::Null)],
+        (Some(true), false) => vec![(Boxes::IdleSince, Value::BigInt(None))],
         _ => Vec::new(),
     }
 }
@@ -247,10 +261,10 @@ fn write_box(
 ) -> Result<(), StoreError> {
     let mut sets = driver_field_sets(&d.set);
     if quiet.from == Some(true) && !quiet.to {
-        if let Some(i) = sets.iter().position(|(c, _)| *c == "sleep_reason") {
+        if let Some(i) = sets.iter().position(|(c, _)| *c == Boxes::SleepReason) {
             sets.remove(i);
         }
-        sets.push(("sleep_reason", Value::Null));
+        sets.push((Boxes::SleepReason, Value::String(None)));
     }
     let Some(step) = step else {
         if sets.is_empty() {
@@ -261,107 +275,76 @@ fn write_box(
         ));
     };
     if let Some(input) = &d.box_input {
-        sets.push(("driver_state", Value::Text(step.to.as_str().to_owned())));
+        sets.push((Boxes::DriverState, step.to.as_str().into()));
         sets.extend(input_handle_sets(input, &sets));
     }
-    sets.push(("driver_updated_at", Value::Integer(now.as_millis())));
-    update(tx, "boxes", "id = ?", &[id.get()], &sets)
+    sets.push((Boxes::DriverUpdatedAt, now.as_millis().into()));
+    update(tx, &mut box_update(id), &sets)
+}
+
+/// An UPDATE of Box `id`'s row.
+fn box_update(id: BoxId) -> UpdateStatement {
+    Query::update()
+        .table(Boxes::Table)
+        .and_where(Expr::col(Boxes::Id).eq(id.get()))
+        .take()
 }
 
 /// Handles carried by a box input, unless the Fields already set that column.
-fn input_handle_sets(input: &BoxInput, taken: &Sets) -> Sets {
+fn input_handle_sets(input: &BoxInput, taken: &Sets<Boxes>) -> Sets<Boxes> {
     let (col, handle) = match input {
-        BoxInput::Acquired { handle } => ("handle", Some(handle)),
-        BoxInput::AcquireFailed { attempted, .. } => ("attempted_handle", attempted.as_ref()),
+        BoxInput::Acquired { handle } => (Boxes::Handle, Some(handle)),
+        BoxInput::AcquireFailed { attempted, .. } => (Boxes::AttemptedHandle, attempted.as_ref()),
         _ => return Vec::new(),
     };
     match handle {
         Some(h) if !taken.iter().any(|(c, _)| *c == col) => {
-            vec![(col, Value::Text(h.as_str().to_owned()))]
+            vec![(col, h.as_str().into())]
         }
         _ => Vec::new(),
     }
 }
 
-/// Column assignments for the box fields.
-fn box_field_sets(s: &Fields) -> Sets {
-    let all = [
-        ("issue", text(&s.issue)),
-        ("prompt", text(&s.prompt)),
-        ("base", text(&s.base)),
-        ("branch", text(&s.branch)),
-        ("state_reason", text(&s.state_reason)),
-        (
-            "setup_failed_at",
-            field_value(&s.setup_failed_at, |t| Value::Integer(*t)),
-        ),
-        (
-            "steps_pending_at",
-            field_value(&s.steps_pending_at, |t| Value::Integer(*t)),
-        ),
-        ("launch_failure", text(&s.launch_failure)),
-    ];
-    all.into_iter().filter_map(|(c, v)| Some((c, v?))).collect()
-}
-
-/// Column assignments for the primary session fields.
-fn session_field_sets(s: &Fields) -> Sets {
-    let all = [
-        ("workspace_id", text(&s.workspace_id)),
-        ("agent_session_id", text(&s.agent_session_id)),
-    ];
-    all.into_iter().filter_map(|(c, v)| Some((c, v?))).collect()
-}
-
-/// Column assignments for the box fields.
-fn driver_field_sets(s: &Fields) -> Sets {
-    let all = [
-        (
-            "provider",
-            field_value(&s.box_provider, |p| Value::Text(p.as_str().to_owned())),
-        ),
-        (
-            "handle",
-            field_value(&s.box_handle, |h| Value::Text(h.as_str().to_owned())),
-        ),
-        ("workdir", text(&s.box_workdir)),
-        ("egress", text(&s.egress)),
-        ("sleep_reason", text(&s.box_sleep_reason)),
-        ("cpus", field_value(&s.box_cpus, |c| Value::Integer(*c))),
-        (
-            "mem_mib",
-            field_value(&s.box_mem_mib, |m| Value::Integer(*m)),
-        ),
-    ];
-    all.into_iter().filter_map(|(c, v)| Some((c, v?))).collect()
-}
-
 /// Column assignments for an intent change.
-pub(super) fn intent_sets(change: IntentChange, now: Ts) -> Sets {
+pub(super) fn intent_sets(change: IntentChange, now: Ts) -> Sets<Boxes> {
     let (kind, pid, run, at) = match change {
         IntentChange::Keep => return Vec::new(),
-        IntentChange::Clear => (Value::Null, Value::Null, Value::Null, Value::Null),
+        IntentChange::Clear => (None, None, None, None),
         IntentChange::Set(i) => (
-            Value::Text(i.kind().to_owned()),
-            Value::Integer(i64::from(i.pid())),
-            i.run().map_or(Value::Null, |r| Value::Integer(r.get())),
-            Value::Integer(now.as_millis()),
+            Some(i.kind().to_owned()),
+            Some(i64::from(i.pid())),
+            i.run().map(moor_core::RunId::get),
+            Some(now.as_millis()),
         ),
     };
     vec![
-        ("intent_kind", kind),
-        ("intent_pid", pid),
-        ("intent_run", run),
-        ("intent_at", at),
+        (Boxes::IntentKind, kind.into()),
+        (Boxes::IntentPid, pid.into()),
+        (Boxes::IntentRun, run.into()),
+        (Boxes::IntentAt, at.into()),
     ]
 }
 
 /// Insert one event row, stamped with the Box's newest Session, and return its id.
 pub(super) fn insert_event(tx: &Tx<'_>, id: BoxId, e: &Event, now: Ts) -> Result<i64, StoreError> {
-    let event: i64 = tx.query_row(
-        "INSERT INTO events (box, session, kind, payload, ts) VALUES (?1, \
-         (SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1), ?2, ?3, ?4) RETURNING id",
-        params![id.get(), e.kind(), e.payload().to_string(), now.as_millis()],
+    let event: i64 = tx.row(
+        Query::insert()
+            .into_table(Events::Table)
+            .columns([
+                Events::Box,
+                Events::Session,
+                Events::Kind,
+                Events::Payload,
+                Events::Ts,
+            ])
+            .values_panic([
+                id.get().into(),
+                db::sub(newest_session(id)),
+                e.kind().into(),
+                e.payload().to_string().into(),
+                now.as_millis().into(),
+            ])
+            .returning_col(Events::Id),
         |r| r.get(0),
     )?;
     super::webhook_outbox::enqueue(tx, id, event, e.kind())?;

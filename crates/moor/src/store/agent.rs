@@ -7,9 +7,13 @@ use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 use serde_json::{json, Value};
 
+use moor_schema::tables;
+use sea_query::{Expr, ExprTrait as _, OnConflict, Query};
+
 use super::apply::insert_event;
+use super::select::newest_session;
 use super::{load_box, Store, StoreError};
-use crate::store::db::{params, DbExt as _, OptionalExtension, Row, TransactionBehavior};
+use crate::store::db::{self, params, Db, DbExt as _, OptionalExtension, Row, TransactionBehavior};
 
 /// A stored agent session.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -179,16 +183,36 @@ impl Store {
     /// A record equal to the cached one keeps its reported mark.
     pub(crate) fn put_hook(&self, box_id: BoxId, record: &HookRecord) -> Result<(), StoreError> {
         let now = self.now();
-        let json = serde_json::to_string(&record_json(record))?;
-        let conn = self.writer();
-        conn.execute(
-            "INSERT INTO hook_cache (session, record, at) \
-             VALUES ((SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1), ?2, ?3) \
-             ON CONFLICT(session) DO UPDATE SET at = ?3, record = CASE \
-             WHEN json_remove(hook_cache.record, '$.reported') = json(?2) THEN hook_cache.record \
-             ELSE ?2 END",
-            params![box_id.get(), json, now.as_millis()],
+        let record = record_json(record);
+        let mut conn = self.writer();
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let unchanged = cached_hook(&tx, box_id)?.is_some_and(|mut cached| {
+            if let Some(fields) = cached.as_object_mut() {
+                fields.shift_remove("reported");
+            }
+            cached == record
+        });
+        let mut on_conflict = OnConflict::column(tables::HookCache::Session);
+        on_conflict.update_column(tables::HookCache::At);
+        if !unchanged {
+            on_conflict.update_column(tables::HookCache::Record);
+        }
+        tx.run(
+            Query::insert()
+                .into_table(tables::HookCache::Table)
+                .columns([
+                    tables::HookCache::Session,
+                    tables::HookCache::Record,
+                    tables::HookCache::At,
+                ])
+                .values_panic([
+                    db::sub(newest_session(box_id)),
+                    serde_json::to_string(&record)?.into(),
+                    now.as_millis().into(),
+                ])
+                .on_conflict(on_conflict),
         )?;
+        tx.commit()?;
         drop(conn);
         Ok(())
     }
@@ -196,13 +220,27 @@ impl Store {
     /// Mark the cached hook report of `box_id` written at `at` as reported by a `needs_input`
     /// event; a newer report left in its place stays unmarked.
     pub(crate) fn mark_hook_reported(&self, box_id: BoxId, at: Ts) -> Result<(), StoreError> {
-        let conn = self.writer();
-        conn.execute(
-            "UPDATE hook_cache SET record = json_set(record, '$.reported', json('true')) \
-             WHERE session = (SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1) \
-             AND json_extract(record, '$.at') = ?2",
-            params![box_id.get(), at.as_millis()],
+        let mut conn = self.writer();
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let Some(mut record) = cached_hook(&tx, box_id)? else {
+            return Ok(());
+        };
+        let Some(fields) = record
+            .as_object_mut()
+            .filter(|f| f.get("at").and_then(Value::as_i64) == Some(at.as_millis()))
+        else {
+            return Ok(());
+        };
+        fields.insert("reported".to_owned(), Value::Bool(true));
+        tx.run(
+            Query::update()
+                .table(tables::HookCache::Table)
+                .value(tables::HookCache::Record, serde_json::to_string(&record)?)
+                .and_where(
+                    Expr::col(tables::HookCache::Session).eq(db::sub(newest_session(box_id))),
+                ),
         )?;
+        tx.commit()?;
         drop(conn);
         Ok(())
     }
@@ -258,6 +296,22 @@ fn holder_from(stored: Option<String>) -> Result<AgentHolder, String> {
     stored.map_or(Ok(AgentHolder::UNRECORDED), |name| {
         AgentHolder::from_name(&name).ok_or_else(|| format!("unknown holder {name:?}"))
     })
+}
+
+/// The hook report cached for Box `box_id`'s newest Session, as stored.
+///
+/// Its fields are read and written here rather than in SQL, so no database's JSON functions
+/// are needed.
+fn cached_hook(db: &dyn Db, box_id: BoxId) -> Result<Option<Value>, StoreError> {
+    let q = Query::select()
+        .column(tables::HookCache::Record)
+        .from(tables::HookCache::Table)
+        .and_where(Expr::col(tables::HookCache::Session).eq(db::sub(newest_session(box_id))))
+        .take();
+    let Some(raw) = db.row(q, |r| r.get::<_, String>(0)).optional()? else {
+        return Ok(None);
+    };
+    Ok(Some(serde_json::from_str(&raw)?))
 }
 
 /// The stored form of a hook report.
