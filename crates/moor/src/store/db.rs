@@ -64,6 +64,11 @@ statement_from! {
     Delete(DeleteStatement)
 }
 
+/// `q` as a value: the one column of its one row.
+pub(crate) fn sub(q: SelectStatement) -> sea_query::Expr {
+    sea_query::Expr::SubQuery(None, Box::new(q.into()))
+}
+
 /// Something SQL runs on: a connection or an open transaction.
 pub(crate) trait Db {
     /// Run `sql` with `params` bound; the number of rows it changed.
@@ -328,6 +333,17 @@ pub(crate) trait DbExt: Db {
 }
 
 impl<D: Db + ?Sized> DbExt for D {}
+
+/// The `SQLite` writer connection to `path`, in WAL mode with foreign keys on, waiting `busy`
+/// on a lock.
+pub(crate) fn sqlite_writer(path: &Path, busy: std::time::Duration) -> Result<Connection> {
+    let conn = Connection::open(path)?;
+    conn.busy_timeout(busy)?;
+    conn.execute_batch(
+        "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;",
+    )?;
+    Ok(conn)
+}
 
 /// An open connection to the store's database.
 pub(crate) struct Conn(Connection);
