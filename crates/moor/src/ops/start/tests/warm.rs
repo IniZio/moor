@@ -128,6 +128,36 @@ fn a_new_box_forks_the_deepest_matching_layer_and_runs_only_the_lines_after_it()
 }
 
 #[test]
+fn a_cold_start_records_each_checkpoint_it_takes_in_order_with_its_layer() {
+    let (w, first) = after_a_partial_setup(FakeDriver::new());
+    let taken = events(&w, first, "checkpoint_taken");
+    assert_eq!(taken.len(), 2, "{taken:?}");
+    let layers: Vec<_> = taken.iter().map(|t| &t["layer"]).collect();
+    assert_eq!(layers, [&Value::from(0), &Value::from(2)]);
+    let keys: Vec<_> = taken.iter().map(|t| t["key"].as_str().unwrap()).collect();
+    assert_ne!(keys[0], keys[1]);
+    assert_eq!(taken[0]["checkpoint"], "ckpt-1");
+    assert_eq!(taken[1]["checkpoint"], "ckpt-2");
+    assert!(taken.iter().all(|t| t["error"].is_null()), "{taken:?}");
+}
+
+#[test]
+fn a_failed_checkpoint_is_recorded_with_its_error_and_setup_goes_on() {
+    let failure = DriverError::Failed {
+        summary: "disk full".to_owned(),
+    };
+    let (w, first) = after_a_partial_setup(FakeDriver::new().checkpoint_fails_once(failure));
+    let taken = events(&w, first, "checkpoint_taken");
+    assert_eq!(taken.len(), 2, "{taken:?}");
+    let failed = &taken[0];
+    assert_eq!(failed["layer"], 0);
+    assert!(failed["checkpoint"].is_null());
+    assert!(failed["error"].as_str().unwrap().contains("disk full"));
+    assert_eq!(taken[1]["layer"], 2);
+    assert!(taken[1]["error"].is_null());
+}
+
+#[test]
 fn a_new_box_whose_base_or_first_line_changed_does_not_reuse_the_layers_above() {
     let (w, _) = after_a_partial_setup(FakeDriver::new());
     let moved = start(&w, "moved", "def456", LINES);

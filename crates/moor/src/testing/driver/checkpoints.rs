@@ -33,6 +33,8 @@ pub(super) struct LayerKnobs {
     hooks: Vec<(String, Arc<ExecHook>)>,
     /// The error the next fork ends with, once.
     fork_fails: Option<DriverError>,
+    /// The error the next checkpoint ends with, once.
+    checkpoint_fails: Option<DriverError>,
     /// Whether every delete fails, leaving the checkpoint on the disk.
     deletes_fail: bool,
 }
@@ -81,6 +83,12 @@ impl FakeDriver {
     /// Ends the next fork with `e`, once.
     pub(crate) fn fork_fails_once(self, e: DriverError) -> Self {
         self.st().layers.fork_fails = Some(e);
+        self
+    }
+
+    /// Ends the next checkpoint with `e`, once.
+    pub(crate) fn checkpoint_fails_once(self, e: DriverError) -> Self {
+        self.st().layers.checkpoint_fails = Some(e);
         self
     }
 
@@ -178,6 +186,9 @@ impl FakeDriver {
         }
         if !s.live.iter().any(|h| h == handle.as_str()) {
             return Err(DriverError::NotFound);
+        }
+        if let Some(e) = s.layers.checkpoint_fails.take() {
+            return Err(e);
         }
         s.layers.saved += 1;
         let id = format!("ckpt-{}", s.layers.saved);

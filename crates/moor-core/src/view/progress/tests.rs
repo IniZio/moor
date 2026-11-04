@@ -205,3 +205,22 @@ fn the_whole_start_steps_read_as_plain_words() {
     let started = event("step_started", json!({"step": "acquire"}), 0);
     assert_eq!(latest(&[started]).unwrap(), "acquiring the machine");
 }
+
+#[test]
+fn a_checkpoint_says_how_long_it_paused_the_box_or_why_it_failed() {
+    let ok = event(
+        "checkpoint_taken",
+        json!({"layer": 2, "duration_ms": 31_000, "error": null}),
+        0,
+    );
+    assert_eq!(latest(&[ok]).unwrap(), "took setup checkpoint 2 in 31s");
+    let bad = event(
+        "checkpoint_taken",
+        json!({"layer": 0, "duration_ms": 4_000, "error": "disk full"}),
+        0,
+    );
+    assert_eq!(
+        latest(&[bad]).unwrap(),
+        "setup checkpoint 0 failed after 4s: disk full"
+    );
+}

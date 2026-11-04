@@ -228,21 +228,33 @@ fn save(cx: &Cx, store: &Store, target: &SetupTarget<'_>, layered: &Layered, lay
         });
         return;
     }
-    let saved = cx
-        .driver()
-        .checkpoint(target.handle, key.as_str())
-        .map_err(|e| e.to_string())
-        .and_then(|made| {
-            let place = Place {
-                workdir: target.workdir.clone(),
-                setup_ms: layered.spent_ms.load(Ordering::Relaxed),
-            };
-            store
-                .record_checkpoint(&layered.provider, key, &layered.lineage, &made)
-                .and_then(|()| store.place_checkpoint(&layered.provider, key, &place))
-                .and_then(|()| store.pin_checkpoint(layered.id, &layered.provider, key, layer))
-                .map_err(|e| e.to_string())
+    let began = cx.clock().now().as_millis();
+    let taken = cx.driver().checkpoint(target.handle, key.as_str());
+    let duration_ms = u64::try_from(cx.clock().now().as_millis() - began).unwrap_or_default();
+    let told = ExtraEvent::CheckpointTaken {
+        layer: u32::try_from(layer).unwrap_or(u32::MAX),
+        key: key.as_str().to_owned(),
+        checkpoint: taken.as_ref().ok().map(|c| c.id.clone()),
+        duration_ms,
+        error: taken.as_ref().err().map(ToString::to_string),
+    };
+    if let Err(e) = store.apply(Decision::new(layered.id).event(told)) {
+        cx.warn(Warning {
+            code: "checkpoint_unrecorded".to_owned(),
+            message: format!("could not record the checkpoint of setup layer {layer}: {e}"),
         });
+    }
+    let saved = taken.map_err(|e| e.to_string()).and_then(|made| {
+        let place = Place {
+            workdir: target.workdir.clone(),
+            setup_ms: layered.spent_ms.load(Ordering::Relaxed),
+        };
+        store
+            .record_checkpoint(&layered.provider, key, &layered.lineage, &made)
+            .and_then(|()| store.place_checkpoint(&layered.provider, key, &place))
+            .and_then(|()| store.pin_checkpoint(layered.id, &layered.provider, key, layer))
+            .map_err(|e| e.to_string())
+    });
     if let Err(e) = saved {
         cx.warn(Warning {
             code: "checkpoint_failed".to_owned(),
