@@ -37,7 +37,8 @@ use moor_core::name::NodeName;
 /// Open a store in a temp dir with a fake clock.
 pub(super) fn open(dir: &Path) -> (Store, Arc<FakeClock>) {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
-    let store = Store::open(&dir.join("state").join("moor.db"), clock.clone()).unwrap();
+    let store =
+        crate::store::db::testing::open_store(&dir.join("state").join("moor.db"), clock.clone());
     (store, clock)
 }
 
@@ -381,11 +382,10 @@ fn two_boxes_racing_for_the_last_slot_cannot_both_be_admitted() {
     let (a, b) = (new_box(&store, "a"), new_box(&store, "b"));
     // A second store on the same file stands in for a second `moor start` process:
     // only SQLite's write lock, not the in-process writer mutex, can separate the two.
-    let rival_store = Store::open(
+    let rival_store = crate::store::db::testing::open_store(
         &dir.path().join("state").join("moor.db"),
         Arc::new(FakeClock::new(Ts::from_millis(1_000_000))),
-    )
-    .unwrap();
+    );
     let node = node_p();
     let (lock_held, rival_may_claim) = std::sync::mpsc::channel::<()>();
     let admitted = std::thread::scope(|s| {

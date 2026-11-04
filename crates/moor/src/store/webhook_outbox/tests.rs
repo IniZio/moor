@@ -29,7 +29,7 @@ struct World {
 fn world() -> World {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
-    let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
+    let store = crate::store::db::testing::open_store(&dir.path().join("moor.db"), clock.clone());
     let vault = Vault::load_or_create(&dir.path().join("vault.key")).unwrap();
     World {
         _dir: dir,

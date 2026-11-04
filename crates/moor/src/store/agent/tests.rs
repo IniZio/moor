@@ -26,7 +26,7 @@ use crate::store::{Store, StoreError};
 /// Open a store in a temp dir with a fake clock.
 fn open(dir: &Path) -> (Store, Arc<FakeClock>) {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    let store = Store::open(&dir.join("moor.db"), clock.clone()).unwrap();
+    let store = crate::store::db::testing::open_store(&dir.join("moor.db"), clock.clone());
     (store, clock)
 }
 

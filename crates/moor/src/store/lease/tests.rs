@@ -26,7 +26,7 @@ const ALL: [LeaseKind; 9] = [
 
 fn open(dir: &Path) -> Store {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    Store::open(&dir.join("moor.db"), clock).unwrap()
+    crate::store::db::testing::open_store(&dir.join("moor.db"), clock)
 }
 
 fn add(store: &Store, name: &str) -> BoxId {

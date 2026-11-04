@@ -20,7 +20,7 @@ use super::Store;
 /// Open a store in a temp dir.
 fn open(dir: &std::path::Path) -> Store {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1)));
-    Store::open(&dir.join("moor.db"), clock).unwrap()
+    crate::store::db::testing::open_store(&dir.join("moor.db"), clock)
 }
 
 /// Insert a box by name.

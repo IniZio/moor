@@ -16,7 +16,7 @@ use crate::testing::clock::FakeClock;
 /// Open a store in `dir` with a fake clock.
 fn open(dir: &Path) -> Store {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    Store::open(&dir.join("moor.db"), clock).unwrap()
+    crate::store::db::testing::open_store(&dir.join("moor.db"), clock)
 }
 
 /// Insert a Box that is Ready with a handle and no intent.
