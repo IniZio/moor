@@ -4,7 +4,7 @@
 //! Every `.rs` file under `crates/moor/src` is checked, tests too, except the seam's backend
 //! implementations in `store/db.rs` and `store/db/`. A file is flagged for a call to a method that
 //! takes SQL text, a string literal that starts like SQL, `sea-query`'s raw SQL escapes, a
-//! backend's query builder, `backend()` and `Backend`, or any use of `rusqlite`.
+//! backend's query builder, `backend()` and `Backend`, or any use of a database driver.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -15,7 +15,7 @@ use proc_macro2::{Delimiter, TokenStream, TokenTree};
 /// How to clear a failure, printed after the violations.
 pub const FIX: &str = "fix: build the statement with sea-query and run it with run, row or rows \
 from store::db, using the moor_schema::tables identifiers. Work that differs by database belongs in \
-a backend in store/db, and so does everything that names rusqlite.";
+a backend in store/db, and so does everything that names a database driver.";
 
 /// The checked crate's sources, relative to the repo root.
 const SRC: &str = "crates/moor/src";
@@ -44,9 +44,11 @@ const BACKEND_NAMES: [&str; 8] = [
     "cust_with_exprs",
     "custom_keyword",
 ];
-/// The `SQLite` driver and the parts of it a caller would reach for.
-const DRIVER_NAMES: [&str; 5] = [
+/// The database drivers and the parts of them a caller would reach for.
+const DRIVER_NAMES: [&str; 7] = [
     "rusqlite",
+    "postgres",
+    "tokio_postgres",
     "Connection",
     "TransactionBehavior",
     "ErrorCode",
@@ -97,7 +99,7 @@ fn walk(tokens: TokenStream, in_store: bool, found: &mut Vec<Finding>) {
                 } else if BACKEND_NAMES.contains(&name.as_str()) {
                     found.push((line, format!("`{name}` is one database's SQL")));
                 } else if DRIVER_NAMES.contains(&name.as_str()) {
-                    found.push((line, format!("`{name}` is the SQLite driver")));
+                    found.push((line, format!("`{name}` is a database driver")));
                 }
             }
             TokenTree::Literal(lit) => {

@@ -370,7 +370,10 @@ fn artifact_from_row(r: &Row<'_>) -> db::Result<ArtifactRow> {
         version: r.get(4)?,
         kind: r.get(5)?,
         content_type: r.get(6)?,
-        size: u64::try_from(size).map_err(|_| db::Error::IntegralValueOutOfRange(7, size))?,
+        size: u64::try_from(size).map_err(|_| db::Error::OutOfRange {
+            index: 7,
+            value: size,
+        })?,
         sha256: r.get(8)?,
         path: r.get(9)?,
         created_at: Ts::from_millis(r.get(10)?),

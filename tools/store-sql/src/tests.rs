@@ -62,6 +62,12 @@ fn repo(files: &[(&str, &str)]) -> tempfile::TempDir {
 const BAD: &str = "fn f() { conn.execute(\"DELETE FROM t\", []); }";
 
 #[test]
+fn naming_the_postgres_driver_is_flagged() {
+    assert_eq!(lines("fn f(c: &mut postgres::Client) {}"), [1]);
+    assert_eq!(lines("use tokio_postgres::NoTls;"), [1]);
+}
+
+#[test]
 fn naming_the_sqlite_driver_is_flagged() {
     assert_eq!(
         lines("fn f() { let c = rusqlite::Connection::open(p); }"),

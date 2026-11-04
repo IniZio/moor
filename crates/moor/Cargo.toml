@@ -28,8 +28,12 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 moor-migrate = { path = "../moor-migrate" }
 moor-schema = { path = "../moor-schema" }
 sea-query = { version = "1.0.2", default-features = false, features = [
+  "backend-postgres",
   "backend-sqlite",
 ] }
+postgres = "0.19.14"
+bytes = "1"
+url = "2"
 thiserror = "2"
 webpki-roots = "1"
 rustls-native-certs = "0.8"
