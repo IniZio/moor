@@ -8,9 +8,11 @@ use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::view::MachineHoldState;
 use moor_core::BoxId;
+use moor_schema::tables::{BoxMachines, Boxes, UserMachinesV2};
+use sea_query::{Expr, ExprTrait as _, OnConflict, Query};
 
 use crate::store::apply::insert_event;
-use crate::store::db::{params, Db, DbExt as _, OptionalExtension, Tx};
+use crate::store::db::{self, Db, DbExt as _, OptionalExtension, Tx};
 use crate::store::{Store, StoreError};
 
 #[cfg(test)]
@@ -35,30 +37,50 @@ impl Store {
         let now = self.now().as_millis();
         let labels = serde_json::to_string(&machine.labels)
             .map_err(|e| StoreError::Corrupt(format!("machine labels: {e}")))?;
-        Ok(self.writer().query_row(
-            "INSERT INTO user_machines_v2 \
-             (\"user\", name, pubkey, labels, capacity, pool_provider, enrolled_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (\"user\", name) DO UPDATE SET \
-             pubkey = excluded.pubkey, labels = excluded.labels, capacity = excluded.capacity, \
-             pool_provider = excluded.pool_provider, enrolled_at = excluded.enrolled_at RETURNING machine_id",
-            params![
-                user.get(),
-                machine.name,
-                machine.pubkey,
-                labels,
-                machine.capacity,
-                machine.pool,
-                now
-            ],
+        Ok(self.writer().row(
+            Query::insert()
+                .into_table(UserMachinesV2::Table)
+                .columns([
+                    UserMachinesV2::User,
+                    UserMachinesV2::Name,
+                    UserMachinesV2::Pubkey,
+                    UserMachinesV2::Labels,
+                    UserMachinesV2::Capacity,
+                    UserMachinesV2::PoolProvider,
+                    UserMachinesV2::EnrolledAt,
+                ])
+                .values_panic([
+                    user.get().into(),
+                    machine.name.as_str().into(),
+                    machine.pubkey.as_str().into(),
+                    labels.into(),
+                    machine.capacity.into(),
+                    machine.pool.as_deref().into(),
+                    now.into(),
+                ])
+                .on_conflict(
+                    OnConflict::columns([UserMachinesV2::User, UserMachinesV2::Name])
+                        .update_columns([
+                            UserMachinesV2::Pubkey,
+                            UserMachinesV2::Labels,
+                            UserMachinesV2::Capacity,
+                            UserMachinesV2::PoolProvider,
+                            UserMachinesV2::EnrolledAt,
+                        ])
+                        .to_owned(),
+                )
+                .returning_col(UserMachinesV2::MachineId),
             |r| r.get(0),
         )?)
     }
 
     /// Removes `user`'s machine `name`; true when there was one.
     pub(crate) fn delete_user_machine(&self, user: UserId, name: &str) -> Result<bool, StoreError> {
-        let gone = self.writer().execute(
-            "DELETE FROM user_machines_v2 WHERE \"user\" = ? AND name = ?",
-            params![user.get(), name],
+        let gone = self.writer().run(
+            Query::delete()
+                .from_table(UserMachinesV2::Table)
+                .and_where(Expr::col(UserMachinesV2::User).eq(user.get()))
+                .and_where(Expr::col(UserMachinesV2::Name).eq(name)),
         )?;
         Ok(gone == 1)
     }
@@ -70,9 +92,11 @@ impl Store {
 
     /// Lets go of the machine `box_id` holds; true when it held one.
     pub(crate) fn detach_machine(&self, box_id: BoxId) -> Result<bool, StoreError> {
-        let gone = self
-            .writer()
-            .execute("DELETE FROM box_machines WHERE box = ?", [box_id.get()])?;
+        let gone = self.writer().run(
+            Query::delete()
+                .from_table(BoxMachines::Table)
+                .and_where(Expr::col(BoxMachines::Box).eq(box_id.get())),
+        )?;
         Ok(gone == 1)
     }
 
@@ -81,10 +105,13 @@ impl Store {
     pub(crate) fn sleep_machine(&self, box_id: BoxId) -> Result<Option<String>, StoreError> {
         let name = self
             .writer()
-            .query_row(
-                "UPDATE box_machines SET state = 'asleep' WHERE box = ? AND state = 'held' \
-                 RETURNING machine",
-                [box_id.get()],
+            .row(
+                Query::update()
+                    .table(BoxMachines::Table)
+                    .value(BoxMachines::State, "asleep")
+                    .and_where(Expr::col(BoxMachines::Box).eq(box_id.get()))
+                    .and_where(Expr::col(BoxMachines::State).eq("held"))
+                    .returning_col(BoxMachines::Machine),
                 |r| r.get(0),
             )
             .optional()?;
@@ -151,9 +178,11 @@ impl Store {
 /// `machine_detached`, so a close that no supervisor sees still lets the machine go.
 pub(in crate::store) fn release_in(tx: &Tx<'_>, box_id: BoxId, now: Ts) -> Result<(), StoreError> {
     let name: Option<String> = tx
-        .query_row(
-            "DELETE FROM box_machines WHERE box = ? RETURNING machine",
-            [box_id.get()],
+        .row(
+            Query::delete()
+                .from_table(BoxMachines::Table)
+                .and_where(Expr::col(BoxMachines::Box).eq(box_id.get()))
+                .returning_col(BoxMachines::Machine),
             |r| r.get(0),
         )
         .optional()?;
@@ -211,12 +240,21 @@ fn held_in(
     conn: &dyn Db,
     user: UserId,
 ) -> Result<BTreeMap<String, BTreeMap<u16, String>>, StoreError> {
-    let mut stmt = conn.prepare(
-        "SELECT m.machine, m.slot, b.name FROM box_machines m JOIN boxes b ON b.id = m.box \
-         WHERE m.user = ? AND m.state = 'held'",
-    )?;
     let mut held: BTreeMap<String, BTreeMap<u16, String>> = BTreeMap::new();
-    let rows = stmt.query_map([user.get()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+    let rows = conn.rows(
+        Query::select()
+            .column((BoxMachines::Table, BoxMachines::Machine))
+            .column((BoxMachines::Table, BoxMachines::Slot))
+            .column((Boxes::Table, Boxes::Name))
+            .from(BoxMachines::Table)
+            .inner_join(
+                Boxes::Table,
+                Expr::col((Boxes::Table, Boxes::Id)).equals((BoxMachines::Table, BoxMachines::Box)),
+            )
+            .and_where(Expr::col((BoxMachines::Table, BoxMachines::User)).eq(user.get()))
+            .and_where(Expr::col((BoxMachines::Table, BoxMachines::State)).eq("held")),
+        |r| Ok::<_, db::Error>((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )?;
     for row in rows {
         let (machine, slot, name): (String, u16, String) = row?;
         held.entry(machine).or_default().insert(slot, name);

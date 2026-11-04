@@ -2,9 +2,11 @@
 
 use moor_core::user::{Email, Identity, SecretName, UserId};
 use moor_core::Secret;
+use moor_schema::tables::{Identities, UserSecrets, Users};
+use sea_query::{Expr, ExprTrait as _, OnConflict, Order, Query};
 
 use super::{parsed, Store, StoreError};
-use crate::store::db::{params, Db, DbExt as _, OptionalExtension, TransactionBehavior};
+use crate::store::db::{Db, DbExt as _, OptionalExtension, TransactionBehavior};
 use crate::vault::Vault;
 
 pub(super) mod front_leases;
@@ -17,9 +19,11 @@ pub(super) mod webhook;
 /// The user `identity` is linked to, on any connection.
 fn user_of_in(conn: &dyn Db, identity: &Identity) -> Result<Option<UserId>, StoreError> {
     let id: Option<i64> = conn
-        .query_row(
-            "SELECT \"user\" FROM identities WHERE identity = ?",
-            [identity.as_str()],
+        .row(
+            Query::select()
+                .column(Identities::User)
+                .from(Identities::Table)
+                .and_where(Expr::col(Identities::Identity).eq(identity.as_str())),
             |r| r.get(0),
         )
         .optional()?;
@@ -44,10 +48,18 @@ impl Store {
         let tx = writer.transaction_with_behavior(TransactionBehavior::Immediate)?;
         if let Some(user) = user_of_in(&tx, identity)? {
             if let Some(email) = email {
-                tx.execute(
-                    "UPDATE users SET email = ?1 WHERE id = ?2 AND email IS NULL \
-                     AND NOT EXISTS (SELECT 1 FROM users WHERE email = ?1)",
-                    params![email, user.get()],
+                let held = Query::select()
+                    .column(Users::Id)
+                    .from(Users::Table)
+                    .and_where(Expr::col(Users::Email).eq(email))
+                    .take();
+                tx.run(
+                    Query::update()
+                        .table(Users::Table)
+                        .value(Users::Email, email)
+                        .and_where(Expr::col(Users::Id).eq(user.get()))
+                        .and_where(Expr::col(Users::Email).is_null())
+                        .and_where(Expr::exists(held).not()),
                 )?;
             }
             tx.commit()?;
@@ -55,25 +67,34 @@ impl Store {
         }
         let holder: Option<i64> = match email {
             Some(email) => tx
-                .query_row("SELECT id FROM users WHERE email = ?", [email], |r| {
-                    r.get(0)
-                })
+                .row(
+                    Query::select()
+                        .column(Users::Id)
+                        .from(Users::Table)
+                        .and_where(Expr::col(Users::Email).eq(email)),
+                    |r| r.get(0),
+                )
                 .optional()?,
             None => None,
         };
         let (user, created) = if let Some(user) = holder {
             (user, false)
         } else {
-            let user = tx.query_row(
-                "INSERT INTO users (created_at, email) VALUES (?, ?) RETURNING id",
-                params![now, email],
+            let user = tx.row(
+                Query::insert()
+                    .into_table(Users::Table)
+                    .columns([Users::CreatedAt, Users::Email])
+                    .values_panic([now.into(), email.into()])
+                    .returning_col(Users::Id),
                 |r| r.get(0),
             )?;
             (user, true)
         };
-        tx.execute(
-            "INSERT INTO identities (identity, \"user\", linked_at) VALUES (?, ?, ?)",
-            params![identity.as_str(), user, now],
+        tx.run(
+            Query::insert()
+                .into_table(Identities::Table)
+                .columns([Identities::Identity, Identities::User, Identities::LinkedAt])
+                .values_panic([identity.as_str().into(), user.into(), now.into()]),
         )?;
         tx.commit()?;
         drop(writer);
@@ -88,12 +109,17 @@ impl Store {
     /// Every identity linked to `user`, in order.
     pub(crate) fn identities(&self, user: UserId) -> Result<Vec<Identity>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt =
-            conn.prepare("SELECT identity FROM identities WHERE \"user\" = ? ORDER BY identity")?;
-        let rows = stmt.query_and_then([user.get()], |r| {
-            let raw: String = r.get(0)?;
-            parsed("identity", &raw, Identity::parse)
-        })?;
+        let rows = conn.rows(
+            Query::select()
+                .column(Identities::Identity)
+                .from(Identities::Table)
+                .and_where(Expr::col(Identities::User).eq(user.get()))
+                .order_by(Identities::Identity, Order::Asc),
+            |r| {
+                let raw: String = r.get(0)?;
+                parsed("identity", &raw, Identity::parse)
+            },
+        )?;
         rows.collect()
     }
 
@@ -105,10 +131,26 @@ impl Store {
         sealed: &[u8],
     ) -> Result<(), StoreError> {
         let now = self.now().as_millis();
-        self.writer().execute(
-            "INSERT INTO user_secrets (\"user\", name, value, updated_at) VALUES (?, ?, ?, ?) \
-             ON CONFLICT (\"user\", name) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-            params![user.get(), name.as_str(), sealed, now],
+        self.writer().run(
+            Query::insert()
+                .into_table(UserSecrets::Table)
+                .columns([
+                    UserSecrets::User,
+                    UserSecrets::Name,
+                    UserSecrets::Value,
+                    UserSecrets::UpdatedAt,
+                ])
+                .values_panic([
+                    user.get().into(),
+                    name.as_str().into(),
+                    sealed.into(),
+                    now.into(),
+                ])
+                .on_conflict(
+                    OnConflict::columns([UserSecrets::User, UserSecrets::Name])
+                        .update_columns([UserSecrets::Value, UserSecrets::UpdatedAt])
+                        .to_owned(),
+                ),
         )?;
         Ok(())
     }
@@ -119,9 +161,11 @@ impl Store {
         user: UserId,
         name: &SecretName,
     ) -> Result<bool, StoreError> {
-        let gone = self.writer().execute(
-            "DELETE FROM user_secrets WHERE \"user\" = ? AND name = ?",
-            params![user.get(), name.as_str()],
+        let gone = self.writer().run(
+            Query::delete()
+                .from_table(UserSecrets::Table)
+                .and_where(Expr::col(UserSecrets::User).eq(user.get()))
+                .and_where(Expr::col(UserSecrets::Name).eq(name.as_str())),
         )?;
         Ok(gone == 1)
     }
@@ -129,12 +173,17 @@ impl Store {
     /// The names of `user`'s secrets, in order; never their values.
     pub(crate) fn user_secret_names(&self, user: UserId) -> Result<Vec<SecretName>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt =
-            conn.prepare("SELECT name FROM user_secrets WHERE \"user\" = ? ORDER BY name")?;
-        let rows = stmt.query_and_then([user.get()], |r| {
-            let raw: String = r.get(0)?;
-            parsed("secret name", &raw, SecretName::parse)
-        })?;
+        let rows = conn.rows(
+            Query::select()
+                .column(UserSecrets::Name)
+                .from(UserSecrets::Table)
+                .and_where(Expr::col(UserSecrets::User).eq(user.get()))
+                .order_by(UserSecrets::Name, Order::Asc),
+            |r| {
+                let raw: String = r.get(0)?;
+                parsed("secret name", &raw, SecretName::parse)
+            },
+        )?;
         rows.collect()
     }
 
@@ -148,9 +197,12 @@ impl Store {
     ) -> Result<Option<Secret>, StoreError> {
         let sealed: Option<Vec<u8>> = self
             .reader()?
-            .query_row(
-                "SELECT value FROM user_secrets WHERE \"user\" = ? AND name = ?",
-                params![user.get(), name.as_str()],
+            .row(
+                Query::select()
+                    .column(UserSecrets::Value)
+                    .from(UserSecrets::Table)
+                    .and_where(Expr::col(UserSecrets::User).eq(user.get()))
+                    .and_where(Expr::col(UserSecrets::Name).eq(name.as_str())),
                 |r| r.get(0),
             )
             .optional()?;

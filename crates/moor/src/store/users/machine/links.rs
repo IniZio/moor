@@ -6,25 +6,37 @@ use moor_core::request::{BoxHostMemory, MachineLink, MemoryReport};
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
 use moor_core::view::user::MachineKey;
+use moor_schema::tables::{MachineBoxMemory, MachineLinks, UserMachinesV2};
+use sea_query::{
+    Asterisk, Expr, ExprTrait as _, Func, InsertStatement, Order, Query, SelectStatement,
+};
 
-use crate::store::db::{params, Db, DbExt as _};
+use crate::store::db::{self, Db, DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
 impl Store {
     /// Every enrolled machine with the key its agent signs with, by id.
     pub(crate) fn machine_keys(&self) -> Result<Vec<MachineKey>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt = conn.prepare(
-            "SELECT machine_id, \"user\", name, pubkey FROM user_machines_v2 ORDER BY machine_id",
+        let rows = conn.rows(
+            Query::select()
+                .columns([
+                    UserMachinesV2::MachineId,
+                    UserMachinesV2::User,
+                    UserMachinesV2::Name,
+                    UserMachinesV2::Pubkey,
+                ])
+                .from(UserMachinesV2::Table)
+                .order_by(UserMachinesV2::MachineId, Order::Asc),
+            |r| {
+                Ok::<_, db::Error>(MachineKey {
+                    machine_id: r.get(0)?,
+                    user: UserId::new(r.get(1)?),
+                    name: r.get(2)?,
+                    pubkey: r.get(3)?,
+                })
+            },
         )?;
-        let rows = stmt.query_map([], |r| {
-            Ok(MachineKey {
-                machine_id: r.get(0)?,
-                user: UserId::new(r.get(1)?),
-                name: r.get(2)?,
-                pubkey: r.get(3)?,
-            })
-        })?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
@@ -38,53 +50,35 @@ impl Store {
         let tx = conn.transaction()?;
         // A relinked agent has not reported yet, but its node still reports memory.
         let reported: HashMap<i64, MemoryReport> = {
-            let mut stmt = tx.prepare(&format!(
-                "SELECT {LINK_COLUMNS} WHERE mem_available_mib IS NOT NULL"
-            ))?;
-            let rows = stmt.query_map([], link_row)?;
+            let rows = tx.rows(
+                link_select().and_where(
+                    Expr::col((MachineLinks::Table, MachineLinks::MemAvailableMib)).is_not_null(),
+                ),
+                link_row,
+            )?;
             rows.filter_map(|l| l.map(|l| l.memory.map(|m| (l.machine_id, m))).transpose())
                 .collect::<Result<_, _>>()?
         };
-        tx.execute("DELETE FROM machine_links", [])?;
+        tx.run(Query::delete().from_table(MachineLinks::Table))?;
         for link in links {
             let memory = link
                 .memory
                 .or_else(|| reported.get(&link.machine_id).copied());
-            tx.execute(
-                "DELETE FROM machine_links WHERE machine_id = ?",
-                [link.machine_id],
+            tx.run(
+                Query::delete()
+                    .from_table(MachineLinks::Table)
+                    .and_where(Expr::col(MachineLinks::MachineId).eq(link.machine_id)),
             )?;
-            tx.execute(
-                "INSERT INTO machine_links (machine_id, online, since, version, protocol, \
-                 max_boxes, cache_gb, pool_features, mem_mib, cpus, reserve_mib, mem_available_mib, \
-                 psi_centi, reported_at, psi_full_centi, disk_free_mib, disk_total_mib) \
-                 SELECT machine_id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM user_machines_v2 \
-                 WHERE machine_id = ?",
-                params![
-                    link.online,
-                    link.since.as_millis(),
-                    link.version,
-                    link.protocol,
-                    link.max_boxes,
-                    link.cache_gb,
-                    serde_json::to_string(&link.features)
-                        .map_err(|e| StoreError::Corrupt(format!("link features: {e}")))?,
-                    link.mem_mib.and_then(|m| i64::try_from(m).ok()),
-                    link.cpus,
-                    link.reserve_mib.and_then(|m| i64::try_from(m).ok()),
-                    memory.and_then(|m| i64::try_from(m.available_mib).ok()),
-                    memory.and_then(|m| m.psi_centi),
-                    memory.map(|m| m.at.as_millis()),
-                    memory.and_then(|m| m.psi_full_centi),
-                    memory.and_then(|m| m.disk_free_mib.and_then(|d| i64::try_from(d).ok())),
-                    memory.and_then(|m| m.disk_total_mib.and_then(|d| i64::try_from(d).ok())),
-                    link.machine_id
-                ],
-            )?;
+            if !is_enrolled(&tx, link.machine_id)? {
+                continue;
+            }
+            tx.run(link_insert(link, memory)?)?;
         }
         let held = {
-            let mut stmt = tx.prepare(&format!("SELECT {LINK_COLUMNS} ORDER BY machine_id"))?;
-            let rows = stmt.query_map([], link_row)?;
+            let rows = tx.rows(
+                link_select().order_by((MachineLinks::Table, MachineLinks::MachineId), Order::Asc),
+                link_row,
+            )?;
             rows.collect::<Result<Vec<_>, _>>()?
         };
         tx.commit()?;
@@ -98,20 +92,30 @@ impl Store {
         let own = self.controller_id()?;
         let mut conn = self.writer();
         let tx = conn.transaction()?;
-        tx.execute("DELETE FROM machine_box_memory", [])?;
+        tx.run(Query::delete().from_table(MachineBoxMemory::Table))?;
         for b in boxes.iter().filter(|b| b.controller == own) {
-            tx.execute(
-                "DELETE FROM machine_box_memory WHERE machine_id = ? AND box_id = ?",
-                params![b.machine_id, b.box_id.get()],
+            tx.run(
+                Query::delete()
+                    .from_table(MachineBoxMemory::Table)
+                    .and_where(Expr::col(MachineBoxMemory::MachineId).eq(b.machine_id))
+                    .and_where(Expr::col(MachineBoxMemory::BoxId).eq(b.box_id.get())),
             )?;
-            tx.execute(
-                "INSERT INTO machine_box_memory (machine_id, box_id, host_memory_mib) \
-                 SELECT machine_id, ?, ? FROM user_machines_v2 WHERE machine_id = ?",
-                params![
-                    b.box_id.get(),
-                    i64::try_from(b.host_memory_mib).unwrap_or(i64::MAX),
-                    b.machine_id
-                ],
+            if !is_enrolled(&tx, b.machine_id)? {
+                continue;
+            }
+            tx.run(
+                Query::insert()
+                    .into_table(MachineBoxMemory::Table)
+                    .columns([
+                        MachineBoxMemory::MachineId,
+                        MachineBoxMemory::BoxId,
+                        MachineBoxMemory::HostMemoryMib,
+                    ])
+                    .values_panic([
+                        b.machine_id.into(),
+                        b.box_id.get().into(),
+                        i64::try_from(b.host_memory_mib).unwrap_or(i64::MAX).into(),
+                    ]),
             )?;
         }
         tx.commit()?;
@@ -122,12 +126,14 @@ impl Store {
     /// The MiB of host memory the Boxes of each machine that reported any hold, by machine id.
     pub(crate) fn box_memory_totals(&self) -> Result<HashMap<i64, u64>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt = conn.prepare(
-            "SELECT machine_id, SUM(host_memory_mib) FROM machine_box_memory GROUP BY machine_id",
+        let rows = conn.rows(
+            Query::select()
+                .column(MachineBoxMemory::MachineId)
+                .expr(Expr::col(MachineBoxMemory::HostMemoryMib).sum())
+                .from(MachineBoxMemory::Table)
+                .group_by_col(MachineBoxMemory::MachineId),
+            |r| Ok::<_, db::Error>((r.get::<_, i64>(0)?, mib(r.get(1)?).unwrap_or(0))),
         )?;
-        let rows = stmt.query_map([], |r| {
-            Ok((r.get::<_, i64>(0)?, mib(r.get(1)?).unwrap_or(0)))
-        })?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
@@ -137,17 +143,120 @@ impl Store {
         user: UserId,
     ) -> Result<Vec<(String, MachineLink)>, StoreError> {
         let conn = self.reader()?;
-        let mut stmt = conn.prepare(&format!("SELECT {LINK_COLUMNS} WHERE m.user = ?"))?;
-        let rows = stmt.query_map([user.get()], |r| Ok((r.get(17)?, link_row(r)?)))?;
+        let rows = conn.rows(
+            link_select()
+                .and_where(Expr::col((UserMachinesV2::Table, UserMachinesV2::User)).eq(user.get())),
+            |r| Ok::<_, db::Error>((r.get(17)?, link_row(r)?)),
+        )?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
 }
 
-/// The columns [`link_row`] reads, then the machine's name once `user_machines_v2 m` is joined.
-const LINK_COLUMNS: &str =
-    "machine_id, online, since, version, protocol, max_boxes, cache_gb, pool_features, mem_mib, cpus, \
-     reserve_mib, mem_available_mib, psi_centi, reported_at, psi_full_centi, disk_free_mib, disk_total_mib, m.name \
-     FROM machine_links LEFT JOIN user_machines_v2 m USING (machine_id)";
+/// The insert of `link`, with the last `memory` its machine reported.
+fn link_insert(
+    link: &MachineLink,
+    memory: Option<MemoryReport>,
+) -> Result<InsertStatement, StoreError> {
+    Ok(Query::insert()
+        .into_table(MachineLinks::Table)
+        .columns([
+            MachineLinks::MachineId,
+            MachineLinks::Online,
+            MachineLinks::Since,
+            MachineLinks::Version,
+            MachineLinks::Protocol,
+            MachineLinks::MaxBoxes,
+            MachineLinks::CacheGb,
+            MachineLinks::PoolFeatures,
+            MachineLinks::MemMib,
+            MachineLinks::Cpus,
+            MachineLinks::ReserveMib,
+            MachineLinks::MemAvailableMib,
+            MachineLinks::PsiCenti,
+            MachineLinks::ReportedAt,
+            MachineLinks::PsiFullCenti,
+            MachineLinks::DiskFreeMib,
+            MachineLinks::DiskTotalMib,
+        ])
+        .values_panic([
+            link.machine_id.into(),
+            link.online.into(),
+            link.since.as_millis().into(),
+            link.version.clone().into(),
+            link.protocol.into(),
+            link.max_boxes.into(),
+            link.cache_gb.into(),
+            serde_json::to_string(&link.features)
+                .map_err(|e| StoreError::Corrupt(format!("link features: {e}")))?
+                .into(),
+            link.mem_mib.and_then(|m| i64::try_from(m).ok()).into(),
+            link.cpus.into(),
+            link.reserve_mib.and_then(|m| i64::try_from(m).ok()).into(),
+            memory
+                .and_then(|m| i64::try_from(m.available_mib).ok())
+                .into(),
+            memory.and_then(|m| m.psi_centi).into(),
+            memory.map(|m| m.at.as_millis()).into(),
+            memory.and_then(|m| m.psi_full_centi).into(),
+            memory
+                .and_then(|m| m.disk_free_mib.and_then(|d| i64::try_from(d).ok()))
+                .into(),
+            memory
+                .and_then(|m| m.disk_total_mib.and_then(|d| i64::try_from(d).ok()))
+                .into(),
+        ])
+        .take())
+}
+
+/// Whether `machine_id` is an enrolled machine.
+fn is_enrolled(conn: &dyn Db, machine_id: i64) -> Result<bool, StoreError> {
+    let found = conn
+        .row(
+            Query::select()
+                .expr(Func::count(Expr::col(Asterisk)))
+                .from(UserMachinesV2::Table)
+                .and_where(Expr::col(UserMachinesV2::MachineId).eq(machine_id)),
+            |r| r.get::<_, i64>(0),
+        )
+        .optional()?;
+    Ok(found.is_some_and(|n| n > 0))
+}
+
+/// The columns [`link_row`] reads, then the machine's name, from the links and their machines.
+fn link_select() -> SelectStatement {
+    let link = |c| (MachineLinks::Table, c);
+    Query::select()
+        .columns(
+            [
+                MachineLinks::MachineId,
+                MachineLinks::Online,
+                MachineLinks::Since,
+                MachineLinks::Version,
+                MachineLinks::Protocol,
+                MachineLinks::MaxBoxes,
+                MachineLinks::CacheGb,
+                MachineLinks::PoolFeatures,
+                MachineLinks::MemMib,
+                MachineLinks::Cpus,
+                MachineLinks::ReserveMib,
+                MachineLinks::MemAvailableMib,
+                MachineLinks::PsiCenti,
+                MachineLinks::ReportedAt,
+                MachineLinks::PsiFullCenti,
+                MachineLinks::DiskFreeMib,
+                MachineLinks::DiskTotalMib,
+            ]
+            .map(link),
+        )
+        .column((UserMachinesV2::Table, UserMachinesV2::Name))
+        .from(MachineLinks::Table)
+        .left_join(
+            UserMachinesV2::Table,
+            Expr::col((UserMachinesV2::Table, UserMachinesV2::MachineId))
+                .equals(link(MachineLinks::MachineId)),
+        )
+        .take()
+}
 
 /// One `machine_links` row.
 fn link_row(r: &crate::store::db::Row<'_>) -> rusqlite::Result<MachineLink> {
@@ -190,21 +299,30 @@ pub(super) fn enrolled_in(
     conn: &dyn Db,
     user: UserId,
 ) -> Result<Vec<(i64, moor_core::config::UserMachine)>, StoreError> {
-    let mut stmt = conn.prepare(
-        "SELECT machine_id, name, labels, capacity, pool_provider FROM user_machines_v2 WHERE \"user\" = ? \
-         ORDER BY name",
+    let rows = conn.rows(
+        Query::select()
+            .columns([
+                UserMachinesV2::MachineId,
+                UserMachinesV2::Name,
+                UserMachinesV2::Labels,
+                UserMachinesV2::Capacity,
+                UserMachinesV2::PoolProvider,
+            ])
+            .from(UserMachinesV2::Table)
+            .and_where(Expr::col(UserMachinesV2::User).eq(user.get()))
+            .order_by(UserMachinesV2::Name, Order::Asc),
+        |r| {
+            let (id, name, labels): (i64, String, String) = (r.get(0)?, r.get(1)?, r.get(2)?);
+            let labels = serde_json::from_str(&labels)
+                .map_err(|e| StoreError::Corrupt(format!("user_machines_v2 row {name}: {e}")))?;
+            let machine = moor_core::config::UserMachine {
+                name,
+                labels,
+                capacity: r.get(3)?,
+                pool: r.get(4)?,
+            };
+            Ok((id, machine))
+        },
     )?;
-    let rows = stmt.query_and_then([user.get()], |r| {
-        let (id, name, labels): (i64, String, String) = (r.get(0)?, r.get(1)?, r.get(2)?);
-        let labels = serde_json::from_str(&labels)
-            .map_err(|e| StoreError::Corrupt(format!("user_machines_v2 row {name}: {e}")))?;
-        let machine = moor_core::config::UserMachine {
-            name,
-            labels,
-            capacity: r.get(3)?,
-            pool: r.get(4)?,
-        };
-        Ok((id, machine))
-    })?;
     rows.collect()
 }

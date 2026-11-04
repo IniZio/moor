@@ -5,8 +5,10 @@
 use moor_core::user::{SecretName, UserId};
 use moor_core::view::user::{WebhookState, WebhookView};
 use moor_core::Secret;
+use moor_schema::tables::{UserWebhooks, WebhookDeliveries};
+use sea_query::{Expr, ExprTrait as _, Order, Query};
 
-use crate::store::db::{params, DbExt as _, OptionalExtension as _, TransactionBehavior};
+use crate::store::db::{self, DbExt as _, OptionalExtension as _, TransactionBehavior};
 use crate::store::{Store, StoreError};
 use crate::vault::Vault;
 
@@ -53,32 +55,46 @@ impl Store {
         let events = serde_json::to_string(events)?;
         let mut writer = self.writer();
         let tx = writer.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let held: i64 = tx.query_row(
-            "SELECT COUNT(*) FROM user_webhooks WHERE \"user\" = ?",
-            [user.get()],
+        let held: i64 = tx.row(
+            Query::select()
+                .expr(Expr::col(UserWebhooks::Id).count())
+                .from(UserWebhooks::Table)
+                .and_where(Expr::col(UserWebhooks::User).eq(user.get())),
             |r| r.get(0),
         )?;
         if usize::try_from(held).is_ok_and(|n| n >= max) {
             return Ok(None);
         }
-        let id: i64 = tx.query_row(
-            "INSERT INTO user_webhooks (\"user\", url, events, header, state, key, created_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
-            params![
-                user.get(),
-                url,
-                events,
-                header,
-                WebhookState::WaitingForSecret.as_str(),
-                Vec::<u8>::new(),
-                now
-            ],
+        let id: i64 = tx.row(
+            Query::insert()
+                .into_table(UserWebhooks::Table)
+                .columns([
+                    UserWebhooks::User,
+                    UserWebhooks::Url,
+                    UserWebhooks::Events,
+                    UserWebhooks::Header,
+                    UserWebhooks::State,
+                    UserWebhooks::Key,
+                    UserWebhooks::CreatedAt,
+                ])
+                .values_panic([
+                    user.get().into(),
+                    url.into(),
+                    events.into(),
+                    header.into(),
+                    WebhookState::WaitingForSecret.as_str().into(),
+                    Vec::<u8>::new().into(),
+                    now.into(),
+                ])
+                .returning_col(UserWebhooks::Id),
             |r| r.get(0),
         )?;
         let sealed = vault.seal(user, &key_name(id)?, key)?;
-        tx.execute(
-            "UPDATE user_webhooks SET key = ? WHERE id = ?",
-            params![sealed, id],
+        tx.run(
+            Query::update()
+                .table(UserWebhooks::Table)
+                .value(UserWebhooks::Key, sealed)
+                .and_where(Expr::col(UserWebhooks::Id).eq(id)),
         )?;
         tx.commit()?;
         drop(writer);
@@ -88,27 +104,40 @@ impl Store {
     /// `user`'s webhooks, oldest first; never their keys.
     pub(crate) fn user_webhooks(&self, user: UserId) -> Result<Vec<WebhookView>, StoreError> {
         let reader = self.reader()?;
-        let mut stmt = reader.prepare(
-            "SELECT id, url, events, created_at, last_ok_at, failing_since, last_error, header, \
-             state FROM user_webhooks WHERE \"user\" = ? ORDER BY id",
+        let rows = reader.rows(
+            Query::select()
+                .columns([
+                    UserWebhooks::Id,
+                    UserWebhooks::Url,
+                    UserWebhooks::Events,
+                    UserWebhooks::CreatedAt,
+                    UserWebhooks::LastOkAt,
+                    UserWebhooks::FailingSince,
+                    UserWebhooks::LastError,
+                    UserWebhooks::Header,
+                    UserWebhooks::State,
+                ])
+                .from(UserWebhooks::Table)
+                .and_where(Expr::col(UserWebhooks::User).eq(user.get()))
+                .order_by(UserWebhooks::Id, Order::Asc),
+            |r| {
+                Ok::<_, db::Error>((
+                    WebhookView {
+                        id: r.get(0)?,
+                        url: r.get(1)?,
+                        events: Vec::new(),
+                        state: WebhookState::Active,
+                        header: r.get(7)?,
+                        created_at: r.get(3)?,
+                        last_ok_at: r.get(4)?,
+                        failing_since: r.get(5)?,
+                        last_error: r.get(6)?,
+                    },
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(8)?,
+                ))
+            },
         )?;
-        let rows = stmt.query_map([user.get()], |r| {
-            Ok((
-                WebhookView {
-                    id: r.get(0)?,
-                    url: r.get(1)?,
-                    events: Vec::new(),
-                    state: WebhookState::Active,
-                    header: r.get(7)?,
-                    created_at: r.get(3)?,
-                    last_ok_at: r.get(4)?,
-                    failing_since: r.get(5)?,
-                    last_error: r.get(6)?,
-                },
-                r.get::<_, String>(2)?,
-                r.get::<_, String>(8)?,
-            ))
-        })?;
         rows.map(|row| {
             let (mut view, events, state) = row?;
             view.state = state_of(&state)?;
@@ -127,9 +156,17 @@ impl Store {
     ) -> Result<Option<WebhookSetupRow>, StoreError> {
         let row = self
             .reader()?
-            .query_row(
-                "SELECT url, header, state, key FROM user_webhooks WHERE id = ? AND \"user\" = ?",
-                params![id, user.get()],
+            .row(
+                Query::select()
+                    .columns([
+                        UserWebhooks::Url,
+                        UserWebhooks::Header,
+                        UserWebhooks::State,
+                        UserWebhooks::Key,
+                    ])
+                    .from(UserWebhooks::Table)
+                    .and_where(Expr::col(UserWebhooks::Id).eq(id))
+                    .and_where(Expr::col(UserWebhooks::User).eq(user.get())),
                 |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, String>(2)?, r.get(3)?)),
             )
             .optional()?;
@@ -157,16 +194,16 @@ impl Store {
         let sealed = header_value
             .map(|value| vault.seal(user, &name, value))
             .transpose()?;
-        let changed = self.writer().execute(
-            "UPDATE user_webhooks SET header_value = ?, state = ? \
-             WHERE id = ? AND \"user\" = ? AND state = ?",
-            params![
-                sealed,
-                WebhookState::Active.as_str(),
-                id,
-                user.get(),
-                WebhookState::WaitingForSecret.as_str()
-            ],
+        let changed = self.writer().run(
+            Query::update()
+                .table(UserWebhooks::Table)
+                .value(UserWebhooks::HeaderValue, sealed)
+                .value(UserWebhooks::State, WebhookState::Active.as_str())
+                .and_where(Expr::col(UserWebhooks::Id).eq(id))
+                .and_where(Expr::col(UserWebhooks::User).eq(user.get()))
+                .and_where(
+                    Expr::col(UserWebhooks::State).eq(WebhookState::WaitingForSecret.as_str()),
+                ),
         )?;
         Ok(changed == 1)
     }
@@ -174,9 +211,11 @@ impl Store {
     /// The sealed header value stored for webhook `id`.
     #[cfg(test)]
     pub(crate) fn webhook_header_blob(&self, id: i64) -> Result<Vec<u8>, StoreError> {
-        Ok(self.reader()?.query_row(
-            "SELECT header_value FROM user_webhooks WHERE id = ?",
-            [id],
+        Ok(self.reader()?.row(
+            Query::select()
+                .column(UserWebhooks::HeaderValue)
+                .from(UserWebhooks::Table)
+                .and_where(Expr::col(UserWebhooks::Id).eq(id)),
             |r| r.get(0),
         )?)
     }
@@ -184,25 +223,35 @@ impl Store {
     /// The sealed key stored for webhook `id`.
     #[cfg(test)]
     pub(crate) fn webhook_key_blob(&self, id: i64) -> Result<Vec<u8>, StoreError> {
-        Ok(self
-            .reader()?
-            .query_row("SELECT key FROM user_webhooks WHERE id = ?", [id], |r| {
-                r.get(0)
-            })?)
+        Ok(self.reader()?.row(
+            Query::select()
+                .column(UserWebhooks::Key)
+                .from(UserWebhooks::Table)
+                .and_where(Expr::col(UserWebhooks::Id).eq(id)),
+            |r| r.get(0),
+        )?)
     }
 
     /// Deletes `user`'s webhook `id` and its pending deliveries; true when it was theirs.
     pub(crate) fn delete_user_webhook(&self, user: UserId, id: i64) -> Result<bool, StoreError> {
         let mut writer = self.writer();
         let tx = writer.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        tx.execute(
-            "DELETE FROM webhook_deliveries WHERE webhook = \
-             (SELECT id FROM user_webhooks WHERE id = ? AND \"user\" = ?)",
-            params![id, user.get()],
+        let theirs = Query::select()
+            .column(UserWebhooks::Id)
+            .from(UserWebhooks::Table)
+            .and_where(Expr::col(UserWebhooks::Id).eq(id))
+            .and_where(Expr::col(UserWebhooks::User).eq(user.get()))
+            .take();
+        tx.run(
+            Query::delete()
+                .from_table(WebhookDeliveries::Table)
+                .and_where(Expr::col(WebhookDeliveries::Webhook).eq(db::sub(theirs))),
         )?;
-        let gone = tx.execute(
-            "DELETE FROM user_webhooks WHERE id = ? AND \"user\" = ?",
-            params![id, user.get()],
+        let gone = tx.run(
+            Query::delete()
+                .from_table(UserWebhooks::Table)
+                .and_where(Expr::col(UserWebhooks::Id).eq(id))
+                .and_where(Expr::col(UserWebhooks::User).eq(user.get())),
         )?;
         tx.commit()?;
         drop(writer);

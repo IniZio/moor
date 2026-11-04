@@ -2,8 +2,10 @@
 
 use moor_core::user::{Email, Identity, SecretName, UserId};
 use moor_core::Secret;
+use moor_schema::tables::{UserMachinesV2, UserSecrets, Users};
+use sea_query::{Expr, ExprTrait as _, Query};
 
-use crate::store::db::DbExt as _;
+use crate::store::db::{self, DbExt as _};
 use crate::store::tests::open;
 use crate::store::{Store, StoreError};
 use crate::vault::{Vault, VaultError};
@@ -118,16 +120,23 @@ fn the_database_refuses_two_users_with_one_email() {
     store
         .enroll(&id("web:alice"), Some(&email("alice@example.com")))
         .unwrap();
-    let raw = rusqlite::Connection::open(dir.path().join("state").join("moor.db")).unwrap();
-    let duplicate = raw.execute(
-        "INSERT INTO users (created_at, email) VALUES (1, 'alice@example.com')",
-        [],
+    let raw = store.writer();
+    let duplicate = raw.run(
+        Query::insert()
+            .into_table(Users::Table)
+            .columns([Users::CreatedAt, Users::Email])
+            .values_panic([1.into(), "alice@example.com".into()]),
     );
     assert!(duplicate.is_err());
-    raw.execute("INSERT INTO users (created_at) VALUES (1)", [])
+    for _ in 0..2 {
+        raw.run(
+            Query::insert()
+                .into_table(Users::Table)
+                .columns([Users::CreatedAt])
+                .values_panic([1.into()]),
+        )
         .unwrap();
-    raw.execute("INSERT INTO users (created_at) VALUES (1)", [])
-        .unwrap();
+    }
 }
 
 #[test]
@@ -259,13 +268,24 @@ fn a_sealed_value_copied_into_another_row_is_refused() {
         let sealed = vault.seal(user, &name(key), &value).unwrap();
         store.set_user_secret(user, &name(key), &sealed).unwrap();
     }
-    let db = rusqlite::Connection::open(dir.path().join("state").join("moor.db")).unwrap();
-    let copied = db
-        .execute(
-            "UPDATE user_secrets SET value = \
-             (SELECT value FROM user_secrets WHERE user = ?1 AND name = 'claude') \
-             WHERE (user = ?2 AND name = 'claude') OR (user = ?1 AND name = 'github')",
-            [alice.get(), bob.get()],
+    let alices = Query::select()
+        .column(UserSecrets::Value)
+        .from(UserSecrets::Table)
+        .and_where(Expr::col(UserSecrets::User).eq(alice.get()))
+        .and_where(Expr::col(UserSecrets::Name).eq("claude"))
+        .take();
+    let named = |user: UserId, key: &str| {
+        Expr::col(UserSecrets::User)
+            .eq(user.get())
+            .and(Expr::col(UserSecrets::Name).eq(key))
+    };
+    let copied = store
+        .writer()
+        .run(
+            Query::update()
+                .table(UserSecrets::Table)
+                .value(UserSecrets::Value, db::sub(alices))
+                .and_where(named(bob, "claude").or(named(alice, "github"))),
         )
         .unwrap();
     assert_eq!(copied, 2);
@@ -421,23 +441,25 @@ fn enrolling_a_machine_again_replaces_its_key_and_keeps_its_id() {
         .unwrap();
     assert_eq!(again, first, "the same name keeps its id");
     assert_ne!(bobs, first, "names are per user");
-    let row: (String, u16, i64) = store
+    let rows: Vec<(String, u16)> = store
         .reader()
         .unwrap()
-        .query_row(
-            "SELECT pubkey, capacity, count(*) OVER () FROM user_machines_v2 \
-             WHERE machine_id = ?",
-            [first],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        .rows(
+            Query::select()
+                .columns([UserMachinesV2::Pubkey, UserMachinesV2::Capacity])
+                .from(UserMachinesV2::Table)
+                .and_where(Expr::col(UserMachinesV2::MachineId).eq(first)),
+            |r| Ok::<_, db::Error>((r.get(0)?, r.get(1)?)),
         )
+        .unwrap()
+        .collect::<Result<_, _>>()
         .unwrap();
     assert_eq!(
-        row,
-        (
+        rows,
+        [(
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
                 .to_owned(),
-            3,
-            1
-        )
+            3
+        )]
     );
 }

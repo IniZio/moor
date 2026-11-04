@@ -6,9 +6,11 @@ use std::fmt::Write as _;
 
 use moor_core::seam::clock::Ts;
 use moor_core::user::UserId;
+use moor_schema::tables::FrontLeases;
+use sea_query::{Expr, ExprTrait as _, Query};
 use sha2::{Digest, Sha256};
 
-use crate::store::db::{params, DbExt as _, OptionalExtension};
+use crate::store::db::{DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
 /// The hex SHA-256 of `token`, which is all the store keeps of it.
@@ -32,13 +34,26 @@ impl Store {
         expires: Ts,
     ) -> Result<(), StoreError> {
         let conn = self.writer();
-        conn.execute(
-            "DELETE FROM front_leases WHERE expires_at <= ?",
-            [self.now().as_millis()],
+        conn.run(
+            Query::delete()
+                .from_table(FrontLeases::Table)
+                .and_where(Expr::col(FrontLeases::ExpiresAt).lte(self.now().as_millis())),
         )?;
-        conn.execute(
-            "INSERT INTO front_leases (token_hash, front, \"user\", expires_at) VALUES (?, ?, ?, ?)",
-            params![hash(token), front, user.get(), expires.as_millis()],
+        conn.run(
+            Query::insert()
+                .into_table(FrontLeases::Table)
+                .columns([
+                    FrontLeases::TokenHash,
+                    FrontLeases::Front,
+                    FrontLeases::User,
+                    FrontLeases::ExpiresAt,
+                ])
+                .values_panic([
+                    hash(token).into(),
+                    front.into(),
+                    user.get().into(),
+                    expires.as_millis().into(),
+                ]),
         )?;
         drop(conn);
         Ok(())
@@ -53,9 +68,13 @@ impl Store {
     ) -> Result<Option<UserId>, StoreError> {
         let user: Option<i64> = self
             .reader()?
-            .query_row(
-                "SELECT \"user\" FROM front_leases WHERE token_hash = ? AND front = ? AND expires_at > ?",
-                params![hash(token), front, self.now().as_millis()],
+            .row(
+                Query::select()
+                    .column(FrontLeases::User)
+                    .from(FrontLeases::Table)
+                    .and_where(Expr::col(FrontLeases::TokenHash).eq(hash(token)))
+                    .and_where(Expr::col(FrontLeases::Front).eq(front))
+                    .and_where(Expr::col(FrontLeases::ExpiresAt).gt(self.now().as_millis())),
                 |r| r.get(0),
             )
             .optional()?;
@@ -69,16 +88,20 @@ impl Store {
         front: &str,
         user: UserId,
     ) -> Result<bool, StoreError> {
-        let gone = self.writer().execute(
-            "DELETE FROM front_leases WHERE token_hash = ? AND front = ? AND \"user\" = ?",
-            params![hash(token), front, user.get()],
+        let gone = self.writer().run(
+            Query::delete()
+                .from_table(FrontLeases::Table)
+                .and_where(Expr::col(FrontLeases::TokenHash).eq(hash(token)))
+                .and_where(Expr::col(FrontLeases::Front).eq(front))
+                .and_where(Expr::col(FrontLeases::User).eq(user.get())),
         )?;
         Ok(gone == 1)
     }
 
     /// Ends every lease; a controller that starts has restarted every front that held one.
     pub(crate) fn purge_front_leases(&self) -> Result<(), StoreError> {
-        self.writer().execute("DELETE FROM front_leases", [])?;
+        self.writer()
+            .run(Query::delete().from_table(FrontLeases::Table))?;
         Ok(())
     }
 }
