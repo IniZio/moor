@@ -15,9 +15,10 @@ use signal_hook::consts::{SIGINT, SIGTERM};
 
 use super::{serve, Deps};
 use crate::adapters::clock::SystemClock;
+use crate::env::Env;
 use crate::proxy::nono::capture::SecretsFn;
 use crate::proxy::Sink;
-use crate::store::{Store, STORE_FILE};
+use crate::store::Store;
 use crate::vault::Vault;
 
 /// What the command line asks for.
@@ -79,8 +80,9 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
     let key = args.vault_key.ok_or("--vault-key is required")?;
     let vault = Vault::load(&key).map_err(|e| format!("cannot open the vault: {e}"))?;
     let clock = Arc::new(SystemClock::real());
+    let url = Env::capture().database_url().map(str::to_owned);
     let store =
-        Arc::new(Store::open(&state_dir.join(STORE_FILE), clock).map_err(|e| e.to_string())?);
+        Arc::new(Store::open_in(&state_dir, url.as_deref(), clock).map_err(|e| e.to_string())?);
     let fronts = resolve(&args.fronts)?;
     let stop = Arc::new(AtomicBool::new(false));
     for sig in [SIGTERM, SIGINT] {

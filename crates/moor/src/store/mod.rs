@@ -258,12 +258,14 @@ impl Store {
 
     /// A read-only connection; never blocks on the writer.
     pub(super) fn reader(&self) -> Result<Reader<'_>, StoreError> {
+        debug_assert_off_runtime();
         Ok(self.readers.open()?)
     }
 
     /// Lock the writer connection. A thread that panicked while holding it left at worst an
     /// open transaction, which the backend rolled back during unwind, so the connection is sound.
     pub(super) fn writer(&self) -> MutexGuard<'_, Conn> {
+        debug_assert_off_runtime();
         self.writer.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
@@ -271,6 +273,15 @@ impl Store {
     pub(super) fn now(&self) -> Ts {
         self.clock.now()
     }
+}
+
+/// In debug builds, panic when called on a tokio runtime thread. A store call blocks, and the
+/// Postgres client panics there, so this catches such a call in tests on `SQLite` too.
+fn debug_assert_off_runtime() {
+    debug_assert!(
+        tokio::runtime::Handle::try_current().is_err(),
+        "a store call ran on a tokio runtime thread"
+    );
 }
 
 /// Load one box joined to its box, on any connection (used inside `apply`'s transaction too).

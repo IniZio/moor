@@ -391,3 +391,31 @@ fn the_startup_override_line_reads_the_user_config_file() {
     assert!(line.contains("surface.kind herdr"), "{line}");
     assert_eq!(surface_override(&env("herdr")), None);
 }
+
+#[test]
+fn store_migrate_migrates_and_warns_on_a_store_a_newer_build_migrated() {
+    use crate::store::db::testing::open_conn;
+    use crate::store::db::DbExt as _;
+    let dir = tempfile::tempdir().unwrap();
+    let env = Env::from_pairs([("HOME", dir.path().to_str().unwrap())]).with_state_dir(dir.path());
+    let line = migrate_store(&env).unwrap();
+    assert!(line.starts_with("migrated the store in "), "{line}");
+    open_conn(&dir.path().join("moor.db"))
+        .run(
+            sea_query::Query::insert()
+                .into_table("refinery_schema_history")
+                .columns(["version", "name", "applied_on", "checksum"])
+                .values_panic([
+                    10_000.into(),
+                    "future".into(),
+                    "2030-01-01T00:00:00Z".into(),
+                    "1".into(),
+                ]),
+        )
+        .unwrap();
+    let line = migrate_store(&env).unwrap();
+    assert!(
+        line.starts_with("warning: the state database is at migration 10000"),
+        "{line}"
+    );
+}

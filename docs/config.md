@@ -691,6 +691,49 @@ because moor keeps them in the Proxy, not in the Box.
 
 The controller refuses a config that has a `web`, `slack`, or `repos` key.
 
+### The store database
+
+The controller keeps its state in `moor.db`, a SQLite file in the state
+directory. To keep it in a Postgres database instead, set `MOOR_DATABASE_URL`
+to a `postgres://` or `postgresql://` URL. When the variable is unset or empty,
+moor uses `moor.db` as before. The URL holds the database password, so moor
+reads it only from the environment, never from a config file. Pass it from a
+secret. Messages show the URL without its password or query.
+
+Every moor that opens the store reads `MOOR_DATABASE_URL`: the controller,
+`moor store migrate`, and the CLI when no controller is set. The controller
+passes the URL to the Proxy processes it starts, and to no front. On Postgres
+the state directory still holds this host's own files, such as the sockets and
+the Proxy logs, so the controller still needs one.
+
+The URL's query takes libpq's TLS fields:
+
+| Field | Values | Default | Meaning |
+| --- | --- | --- | --- |
+| `sslmode` | `disable`, `prefer`, `require`, `verify-ca`, `verify-full` | `prefer` | `disable` never uses TLS. `prefer` uses TLS when the server offers it, and `require` refuses a server that does not. Neither checks the server's certificate. `verify-ca` also checks that a trusted root signed the certificate. `verify-full` also checks that the certificate names the host in the URL. |
+| `sslrootcert` | path to a PEM file | the system's roots | The roots that may sign the server's certificate. With `require`, setting it checks the certificate as `verify-ca` does, as libpq does. |
+
+moor passes the query's other fields, such as `connect_timeout` or
+`application_name`, to the Postgres client as written. A connection attempt
+gives up after 10 seconds unless `connect_timeout` sets another limit.
+
+moor writes through one connection, and each transaction holds a Postgres
+advisory lock, so writes run one at a time as they do on SQLite. Reads use
+read-only connections, and moor keeps up to 8 of them open between reads. When
+the server closes a connection, for example when Postgres restarts, the call on
+that connection fails and the next call connects again. moor does not retry a
+failed write.
+
+Each moor brings the store to its latest migration when it opens the store, on
+Postgres as on SQLite. When two moors open the store at once, one migrates and
+the other waits on a Postgres advisory lock. A moor older than the store's
+latest migration opens it unchanged and warns. `moor store migrate` opens the
+store, migrates it, prints where the store lives, and exits 0. On a store a
+newer moor migrated, it prints the warning instead and still exits 0. It exits
+1 and says why when it cannot open the store. A deploy can run it with the same
+`MOOR_DATABASE_URL` and `MOOR_STATE_DIR` before the new controllers start, for
+example as a Helm pre-upgrade Job.
+
 ### Closing failed Boxes
 
 A Box whose lifecycle is `setup_failed` holds a machine that nothing uses: its

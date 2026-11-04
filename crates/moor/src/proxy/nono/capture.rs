@@ -37,7 +37,8 @@ pub(crate) struct RuleSource {
     pub(crate) basic_user: Option<String>,
 }
 
-/// Builds one source per resolved rule, each reading `user`'s secret that the rule names.
+/// Builds one source per resolved rule, each reading `user`'s secret that the rule names on a
+/// thread of its own.
 pub(crate) fn sources_for(
     rules: &[ResolvedRule],
     secrets: &SecretsFn,
@@ -53,7 +54,10 @@ pub(crate) fn sources_for(
                 (Arc::clone(secrets), Arc::clone(vault), config_key.clone());
             let fetch: FetchFn = Arc::new(move || {
                 let name = name.as_ref().map_err(Clone::clone)?;
-                secrets(&vault, user, name)?.ok_or_else(|| format!("{key} is not set"))
+                // nono asks on its tokio runtime threads, and a store read must not run there.
+                std::thread::scope(|s| s.spawn(|| secrets(&vault, user, name)).join())
+                    .map_err(|_| format!("{key} could not be read"))??
+                    .ok_or_else(|| format!("{key} is not set"))
             });
             let basic_user = match &rule.inject {
                 ResolvedInject::BasicAuth { user } => Some(user.clone()),

@@ -18,6 +18,9 @@ pub(super) enum AdminCmd {
     /// Controller commands.
     #[command(subcommand)]
     Controller(ControllerCmd),
+    /// State store commands.
+    #[command(subcommand)]
+    Store(StoreCmd),
     /// Bridge stdin/stdout to a pool lease's sshd over its host's link, as an ssh
     /// `ProxyCommand`.
     #[command(hide = true)]
@@ -54,6 +57,13 @@ pub(super) enum ControllerCmd {
     Serve(ControllerServeArgs),
     /// Bridge stdin/stdout to the controller socket (used over ssh).
     Attach(ControllerAttachArgs),
+}
+
+/// Subcommands of `store`.
+#[derive(Debug, Subcommand)]
+pub(super) enum StoreCmd {
+    /// Bring the store's schema to this moor's latest migration, then exit.
+    Migrate,
 }
 
 /// Arguments of `controller attach`.
@@ -99,6 +109,7 @@ impl AdminCmd {
             Self::Proxy(ProxyCmd::Serve(a)) => Action::ProxyServe(BoxId::new(a.box_id)),
             Self::Controller(ControllerCmd::Serve(a)) => Action::ControllerServe(a.config),
             Self::Controller(ControllerCmd::Attach(a)) => Action::ControllerAttach(a.socket),
+            Self::Store(StoreCmd::Migrate) => Action::StoreMigrate,
             Self::LinkDial(a) => Action::LinkDial {
                 machine_id: a.machine_id,
                 slug: a.slug,

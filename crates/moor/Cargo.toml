@@ -32,6 +32,9 @@ sea-query = { version = "1.0.2", default-features = false, features = [
   "backend-sqlite",
 ] }
 postgres = "0.19.14"
+tokio-postgres-rustls = { version = "0.14", default-features = false, features = [
+  "ring",
+] }
 bytes = "1"
 url = "2"
 thiserror = "2"

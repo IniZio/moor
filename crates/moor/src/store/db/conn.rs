@@ -56,13 +56,6 @@ pub(crate) fn open_sqlite(
 
 /// Open the store's Postgres database `target`, migrated to this build's schema; one a newer
 /// build migrated opens unchanged.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the controller opens Postgres once its config names a database"
-    )
-)]
 pub(crate) fn open_postgres(target: &Target) -> Result<Opened, StoreError> {
     let (conn, schema) = postgres::Conn::writer(target)?;
     Ok(Opened {
@@ -178,17 +171,27 @@ pub(crate) enum Readers {
         busy: Duration,
     },
     /// Read-only Postgres connections, kept open between reads.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the controller opens Postgres once its config names a database"
-        )
-    )]
     Postgres(Box<postgres::Pool>),
 }
 
 impl Readers {
+    /// Where the store lives, without a password: the `SQLite` file or the Postgres URL.
+    pub(crate) fn location(&self) -> String {
+        match self {
+            Self::Sqlite { path, .. } => path.display().to_string(),
+            Self::Postgres(pool) => pool.target().shown().to_owned(),
+        }
+    }
+
+    /// The Postgres URL, password included, for a child process that opens the same store;
+    /// none on `SQLite`.
+    pub(crate) fn database_url(&self) -> Option<&str> {
+        match self {
+            Self::Sqlite { .. } => None,
+            Self::Postgres(pool) => Some(pool.target().url()),
+        }
+    }
+
     /// A connection for reads; it never blocks on the writer.
     pub(crate) fn open(&self) -> Result<Reader<'_>> {
         Ok(match self {

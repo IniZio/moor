@@ -2,20 +2,20 @@
 //! bound as its storage class's Postgres type, each column read back as a `SQLite` storage
 //! class, and a store-wide advisory lock standing in for `SQLite`'s write lock.
 
-use std::cell::RefCell;
+use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
 
-use bytes::BytesMut;
 use moor_migrate::{Backend, Outcome};
 use moor_schema::STEPS;
 use postgres::error::{DbError, SqlState};
-use postgres::types::{to_sql_checked, FromSql, IsNull, ToSql, Type};
+use postgres::types::{ToSql, Type};
 use postgres::{Client, GenericClient, Transaction};
 use sea_query::PostgresQueryBuilder;
 
-use super::{Cause, Db, Error, Result, Rows, Statement, UniqueKey, Value};
+use super::{Db, Error, Result, Rows, Statement, UniqueKey, Value};
 use crate::store::StoreError;
+use types::{Bind, Read};
 
 pub(crate) use target::Target;
 
@@ -33,8 +33,12 @@ const IDLE_READERS: usize = 8;
 /// A connection's prepared statements, by their SQL and parameter types.
 type Prepared = RefCell<HashMap<String, postgres::Statement>>;
 
-/// An open connection to the store's Postgres database.
+/// An open connection to the store's Postgres database. A call on a connection that closed, as
+/// when the server restarted, connects again first; the call that found it closed failed and is
+/// not run again.
 pub(crate) struct Conn {
+    /// Where it connects.
+    target: Target,
     /// The connection.
     client: RefCell<Client>,
     /// Statements prepared on it.
@@ -54,14 +58,27 @@ impl Conn {
     pub(super) fn connect(target: &Target) -> Result<Self> {
         Ok(Self {
             client: RefCell::new(target.connect().map_err(error)?),
+            target: target.clone(),
             prepared: RefCell::default(),
         })
+    }
+
+    /// The connection, made again first when it has closed.
+    fn client(&self) -> Result<RefMut<'_, Client>> {
+        if self.client.borrow().is_closed() {
+            *self.client.borrow_mut() = self.target.connect().map_err(error)?;
+            self.prepared.borrow_mut().clear();
+        }
+        Ok(self.client.borrow_mut())
     }
 
     /// The store's writer on `target`, its schema migrated to this build's first. A database a
     /// newer build migrated is left as found, and the outcome says so.
     pub(super) fn writer(target: &Target) -> Result<(Self, Outcome), StoreError> {
-        let conn = Self::connect(target)?;
+        let conn = Self::connect(target).map_err(|source| StoreError::Unreachable {
+            at: target.shown().to_owned(),
+            source,
+        })?;
         let set = moor_migrate::steps(STEPS, Backend::Postgres)
             .map_err(|e| StoreError::Corrupt(format!("migrations: {e}")))?;
         let outcome = moor_migrate::migrate_postgres(&mut conn.client.borrow_mut(), &set)
@@ -71,7 +88,10 @@ impl Conn {
 
     /// Begin a transaction holding the store's write lock.
     pub(super) fn transaction(&mut self) -> Result<Tx<'_>> {
-        let Self { client, prepared } = self;
+        drop(self.client()?);
+        let Self {
+            client, prepared, ..
+        } = self;
         let mut tx = client.get_mut().transaction().map_err(error)?;
         tx.batch_execute(WRITE_LOCK).map_err(error)?;
         Ok(Tx {
@@ -83,7 +103,7 @@ impl Conn {
     /// Run several `;`-separated statements that bind nothing.
     #[cfg(test)]
     pub(super) fn execute_batch(&self, sql: &str) -> Result<()> {
-        self.client.borrow_mut().batch_execute(sql).map_err(error)
+        self.client()?.batch_execute(sql).map_err(error)
     }
 }
 
@@ -96,11 +116,11 @@ impl Tx<'_> {
 
 impl Db for Conn {
     fn run_statement(&self, s: &Statement) -> Result<usize> {
-        execute(&mut *self.client.borrow_mut(), &self.prepared, s)
+        execute(&mut *self.client()?, &self.prepared, s)
     }
 
     fn fetch_statement(&self, s: &Statement) -> Result<Rows> {
-        query(&mut *self.client.borrow_mut(), &self.prepared, s)
+        query(&mut *self.client()?, &self.prepared, s)
     }
 }
 
@@ -123,6 +143,11 @@ pub(crate) struct Pool {
 }
 
 impl Pool {
+    /// Where its connections connect.
+    pub(super) const fn target(&self) -> &Target {
+        &self.target
+    }
+
     /// A pool of connections to `target`.
     pub(super) fn new(target: Target) -> Self {
         Self {
@@ -298,99 +323,7 @@ fn unique_key(db: &DbError) -> Option<UniqueKey> {
     })
 }
 
-/// A value bound as its parameter's type.
-#[derive(Debug)]
-struct Bind<'a>(&'a Value);
-
-impl ToSql for Bind<'_> {
-    fn to_sql(&self, ty: &Type, out: &mut BytesMut) -> std::result::Result<IsNull, Cause> {
-        match (self.0, ty) {
-            (Value::Null, _) => Ok(IsNull::Yes),
-            (Value::Integer(i), &Type::INT8) => i.to_sql(ty, out),
-            (Value::Integer(i), &Type::INT4) => i32::try_from(*i)?.to_sql(ty, out),
-            (Value::Integer(i), &Type::INT2) => i16::try_from(*i)?.to_sql(ty, out),
-            (Value::Integer(i), &Type::BOOL) => (*i != 0).to_sql(ty, out),
-            (Value::Real(f), &Type::FLOAT8) => f.to_sql(ty, out),
-            (Value::Text(s), ty) if <&str as ToSql>::accepts(ty) => s.as_str().to_sql(ty, out),
-            (Value::Blob(b), &Type::BYTEA) => b.as_slice().to_sql(ty, out),
-            (v, ty) => Err(format!("cannot bind {:?} as {ty}", v.kind()).into()),
-        }
-    }
-
-    fn accepts(_: &Type) -> bool {
-        true
-    }
-
-    to_sql_checked!();
-}
-
-/// A column read as the `SQLite` storage class that holds it.
-struct Read(Value);
-
-impl<'a> FromSql<'a> for Read {
-    fn from_sql(ty: &Type, raw: &'a [u8]) -> std::result::Result<Self, Cause> {
-        let value = match *ty {
-            Type::INT8 => Value::Integer(i64::from_sql(ty, raw)?),
-            Type::INT4 => Value::Integer(i32::from_sql(ty, raw)?.into()),
-            Type::INT2 => Value::Integer(i16::from_sql(ty, raw)?.into()),
-            Type::BOOL => Value::Integer(bool::from_sql(ty, raw)?.into()),
-            Type::FLOAT8 => Value::Real(f64::from_sql(ty, raw)?),
-            Type::FLOAT4 => Value::Real(f32::from_sql(ty, raw)?.into()),
-            Type::NUMERIC => numeric(raw)?,
-            Type::BYTEA => Value::Blob(Vec::<u8>::from_sql(ty, raw)?),
-            _ if <String as FromSql>::accepts(ty) => Value::Text(String::from_sql(ty, raw)?),
-            _ => return Err(format!("cannot read a {ty} column").into()),
-        };
-        Ok(Self(value))
-    }
-
-    fn from_sql_null(_: &Type) -> std::result::Result<Self, Cause> {
-        Ok(Self(Value::Null))
-    }
-
-    fn accepts(_: &Type) -> bool {
-        true
-    }
-}
-
-/// A binary `numeric`, as an integer when it is whole and fits, as `SUM` over integers is on
-/// `SQLite`, and as a real otherwise.
-fn numeric(raw: &[u8]) -> std::result::Result<Value, Cause> {
-    let word = |i: usize| -> std::result::Result<i16, Cause> {
-        match raw.get(i * 2..i * 2 + 2) {
-            Some(&[hi, lo]) => Ok(i16::from_be_bytes([hi, lo])),
-            _ => Err("short numeric".into()),
-        }
-    };
-    let ndigits = word(0)?;
-    let weight = i32::from(word(1)?);
-    let negative = match word(2)?.cast_unsigned() {
-        0x0000 => false,
-        0x4000 => true,
-        _ => return Err("numeric is NaN or infinite".into()),
-    };
-    let mut whole = Some(0i64);
-    let mut real = 0f64;
-    for i in 0..i32::from(ndigits) {
-        let d = word(4 + usize::try_from(i)?)?;
-        real += f64::from(d) * 10_000f64.powi(weight - i);
-        if i <= weight {
-            whole = whole.and_then(|n| n.checked_mul(10_000)?.checked_add(i64::from(d)));
-        } else if d != 0 {
-            whole = None;
-        }
-    }
-    for _ in i32::from(ndigits)..=weight {
-        whole = whole.and_then(|n| n.checked_mul(10_000));
-    }
-    Ok(match (whole, negative) {
-        (Some(n), false) => Value::Integer(n),
-        (Some(n), true) => Value::Integer(-n),
-        (None, false) => Value::Real(real),
-        (None, true) => Value::Real(-real),
-    })
-}
-
 mod target;
 #[cfg(test)]
 mod tests;
+mod types;
