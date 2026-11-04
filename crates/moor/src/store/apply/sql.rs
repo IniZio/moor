@@ -1,50 +1,93 @@
 //! Generic column-assignment helpers for the store writer.
 
-use moor_core::domain::decision::Field;
-use moor_core::domain::decision::NewBox;
-use rusqlite::types::Value;
+use moor_core::domain::decision::{Field, Fields, NewBox};
+use moor_schema::tables::{Boxes, Sessions};
 use rusqlite::ErrorCode;
+use sea_query::{Expr, IntoIden, Nullable, UpdateStatement, Value};
 
 use super::StoreError;
 use crate::store::db::{DbExt as _, Tx};
 
-/// Column assignments for one UPDATE.
-pub(super) type Sets = Vec<(&'static str, Value)>;
+/// Column assignments for one UPDATE, by column of one table.
+pub(in crate::store) type Sets<C> = Vec<(C, Value)>;
 
-/// Map a `Field` to a column value: `None` keeps, `Null` clears.
-pub(super) fn field_value<T>(f: &Field<T>, conv: impl Fn(&T) -> Value) -> Option<Value> {
+/// Map a `Field` to a column value: `None` keeps, `Clear` sets the column's type of null.
+fn field_value<T, V: Into<Value> + Nullable>(
+    f: &Field<T>,
+    conv: impl Fn(&T) -> V,
+) -> Option<Value> {
     match f {
         Field::Keep => None,
-        Field::Set(v) => Some(conv(v)),
-        Field::Clear => Some(Value::Null),
+        Field::Set(v) => Some(conv(v).into()),
+        Field::Clear => Some(V::null()),
     }
 }
 
 /// Text field to column value.
-pub(super) fn text(f: &Field<String>) -> Option<Value> {
-    field_value(f, |s| Value::Text(s.clone()))
+fn text(f: &Field<String>) -> Option<Value> {
+    field_value(f, Clone::clone)
 }
 
-/// Run `UPDATE table SET .. WHERE cond` with static table, column and
-/// condition text; `args` bind the `?` placeholders in `cond`.
-pub(in crate::store) fn update(
+/// Column assignments for the box fields.
+pub(super) fn box_field_sets(s: &Fields) -> Sets<Boxes> {
+    let all = [
+        (Boxes::Issue, text(&s.issue)),
+        (Boxes::Prompt, text(&s.prompt)),
+        (Boxes::Base, text(&s.base)),
+        (Boxes::Branch, text(&s.branch)),
+        (Boxes::StateReason, text(&s.state_reason)),
+        (
+            Boxes::SetupFailedAt,
+            field_value(&s.setup_failed_at, |t| *t),
+        ),
+        (
+            Boxes::StepsPendingAt,
+            field_value(&s.steps_pending_at, |t| *t),
+        ),
+        (Boxes::LaunchFailure, text(&s.launch_failure)),
+    ];
+    all.into_iter().filter_map(|(c, v)| Some((c, v?))).collect()
+}
+
+/// Column assignments for the primary session fields.
+pub(super) fn session_field_sets(s: &Fields) -> Sets<Sessions> {
+    let all = [
+        (Sessions::WorkspaceId, text(&s.workspace_id)),
+        (Sessions::AgentSessionId, text(&s.agent_session_id)),
+    ];
+    all.into_iter().filter_map(|(c, v)| Some((c, v?))).collect()
+}
+
+/// Column assignments for the box fields.
+pub(super) fn driver_field_sets(s: &Fields) -> Sets<Boxes> {
+    let all = [
+        (
+            Boxes::Provider,
+            field_value(&s.box_provider, |p| p.as_str().to_owned()),
+        ),
+        (
+            Boxes::Handle,
+            field_value(&s.box_handle, |h| h.as_str().to_owned()),
+        ),
+        (Boxes::Workdir, text(&s.box_workdir)),
+        (Boxes::Egress, text(&s.egress)),
+        (Boxes::SleepReason, text(&s.box_sleep_reason)),
+        (Boxes::Cpus, field_value(&s.box_cpus, |c| *c)),
+        (Boxes::MemMib, field_value(&s.box_mem_mib, |m| *m)),
+    ];
+    all.into_iter().filter_map(|(c, v)| Some((c, v?))).collect()
+}
+
+/// Run the UPDATE `q` with `sets` assigned; nothing when `sets` is empty.
+pub(in crate::store) fn update<C: IntoIden + Copy>(
     tx: &Tx<'_>,
-    table: &str,
-    cond: &str,
-    args: &[i64],
-    sets: &Sets,
+    q: &mut UpdateStatement,
+    sets: &[(C, Value)],
 ) -> Result<(), StoreError> {
     if sets.is_empty() {
         return Ok(());
     }
-    let cols = sets
-        .iter()
-        .map(|(c, _)| format!("{c} = ?"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let mut vals: Vec<Value> = sets.iter().map(|(_, v)| v.clone()).collect();
-    vals.extend(args.iter().map(|&a| Value::Integer(a)));
-    tx.execute(&format!("UPDATE {table} SET {cols} WHERE {cond}"), vals)?;
+    tx.run(q.values(sets.iter().map(|(c, v)| (*c, Expr::val(v.clone())))))?;
     Ok(())
 }
 

@@ -2,11 +2,8 @@
 # One repo-relative path per line. A listed file that is clean fails the lint, so this only shrinks.
 crates/moor/src/store/agent.rs
 crates/moor/src/store/agent/tests.rs
-crates/moor/src/store/apply.rs
-crates/moor/src/store/apply/sql.rs
 crates/moor/src/store/apply/steps.rs
 crates/moor/src/store/apply/tests.rs
-crates/moor/src/store/artifacts/due.rs
 crates/moor/src/store/artifacts/due/tests.rs
 crates/moor/src/store/artifacts.rs
 crates/moor/src/store/bindings.rs

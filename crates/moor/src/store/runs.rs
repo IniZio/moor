@@ -4,7 +4,8 @@ use moor_core::domain::decision::{Intent, IntentChange};
 use moor_core::domain::event::Event;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, RunId, Sha};
-use rusqlite::types::Value;
+use moor_schema::tables::Boxes;
+use sea_query::{Expr, ExprTrait as _, Query};
 
 use super::apply::{insert_event, intent_sets, update};
 use super::follow::{self, FollowClaim};
@@ -135,8 +136,14 @@ impl Store {
         )?;
         let intent = IntentChange::Set(Intent::Running { run, pid });
         let mut sets = intent_sets(intent, now);
-        sets.push(("updated_at", Value::Integer(now.as_millis())));
-        update(&tx, "boxes", "id = ?", &[box_id.get()], &sets)?;
+        sets.push((Boxes::UpdatedAt, now.as_millis().into()));
+        update(
+            &tx,
+            Query::update()
+                .table(Boxes::Table)
+                .and_where(Expr::col(Boxes::Id).eq(box_id.get())),
+            &sets,
+        )?;
         insert_event(&tx, box_id, &Event::RunStarted { run }, now)?;
         let claim = FollowClaim::take(self.follow_path(run))?;
         tx.commit()?;
@@ -168,12 +175,14 @@ impl Store {
             return Ok(());
         }
         let mut clear = intent_sets(IntentChange::Clear, now);
-        clear.push(("updated_at", Value::Integer(now.as_millis())));
+        clear.push((Boxes::UpdatedAt, now.as_millis().into()));
         update(
             &tx,
-            "boxes",
-            "id = ? AND intent_kind = 'running' AND intent_run = ?",
-            &[box_id.get(), id.get()],
+            Query::update()
+                .table(Boxes::Table)
+                .and_where(Expr::col(Boxes::Id).eq(box_id.get()))
+                .and_where(Expr::col(Boxes::IntentKind).eq("running"))
+                .and_where(Expr::col(Boxes::IntentRun).eq(id.get())),
             &clear,
         )?;
         let ran = Event::Ran {

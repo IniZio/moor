@@ -77,6 +77,17 @@ pub(super) fn box_select() -> SelectStatement {
         .take()
 }
 
+/// The id of Box `id`'s newest Session.
+pub(super) fn newest_session(id: BoxId) -> SelectStatement {
+    Query::select()
+        .column(Sessions::Id)
+        .from(Sessions::Table)
+        .and_where(Expr::col(Sessions::Box).eq(id.get()))
+        .order_by(Sessions::Ordinal, Order::Desc)
+        .limit(1)
+        .take()
+}
+
 /// The columns [`event_from_row`] reads, in order.
 pub(super) const EVENT_COLUMNS: [Events; 5] = [
     Events::Id,
