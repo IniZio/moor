@@ -248,8 +248,10 @@ fn session_from_row(r: &Row<'_>) -> db::Result<SessionRow> {
         transcript_digest: r.get(7)?,
         registered_agent_session: r.get(8)?,
         session: r.get(9)?,
-        holder: holder_from(r.get(10)?)
-            .map_err(|e| db::Error::FromSqlConversionFailure(10, db::Type::Text, e.into()))?,
+        holder: holder_from(r.get(10)?).map_err(|e| db::Error::Convert {
+            index: 10,
+            source: e.into(),
+        })?,
     })
 }
 

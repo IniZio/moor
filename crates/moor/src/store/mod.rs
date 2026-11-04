@@ -1,10 +1,11 @@
-//! `SQLite` store (WAL): one writer connection behind a mutex, fresh read-only connections for reads.
+//! The store: one writer connection behind a mutex, read-only connections for reads, on `SQLite`
+//! (WAL) or Postgres behind the [`db`] seam.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use db::{Conn, DbExt as _, Row};
+use db::{Conn, DbExt as _, Reader, Readers, Row};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{BoxRepo, Intent};
@@ -48,6 +49,7 @@ pub(crate) use follow::FollowClaim;
 pub(crate) mod host;
 mod init;
 pub(crate) mod lease;
+mod open;
 mod pressure;
 mod proxy;
 pub(super) mod reads;
@@ -74,7 +76,7 @@ pub(crate) use users::webhook::{header_name as webhook_header_name, key_name as 
 mod webhook_outbox;
 pub(crate) use webhook_outbox::ClaimedDelivery;
 
-/// How long a connection waits on a lock before `SQLITE_BUSY`.
+/// How long a `SQLite` connection waits on a lock before `SQLITE_BUSY`.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// Box row joined to a box.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -177,8 +179,10 @@ pub(crate) struct EventRow {
 /// The store: single writer, many readers. A clone shares the writer connection.
 #[derive(Clone)]
 pub(crate) struct Store {
-    /// Database file, reopened for each read connection.
-    path: PathBuf,
+    /// Where read connections open.
+    readers: Arc<Readers>,
+    /// The state dir's `runs` dir, where follow claims live.
+    runs: PathBuf,
     /// The writer connection.
     writer: Arc<Mutex<Conn>>,
     /// Time source for every timestamp.
@@ -191,26 +195,6 @@ pub(crate) struct Store {
 }
 
 impl Store {
-    /// Open (creating if needed) the store at `path`: state dir 0700, db, `-wal` and `-shm` 0600.
-    /// A db this build would not migrate is refused before anything writes to it or changes a mode.
-    /// A db a newer build migrated opens unchanged.
-    pub(crate) fn open(path: &Path, clock: Arc<dyn Clock>) -> Result<Self, StoreError> {
-        let (conn, schema) = Conn::sqlite_writer(path, BUSY_TIMEOUT, init::owner_lock)?;
-        Ok(Self {
-            path: path.to_path_buf(),
-            writer: Arc::new(Mutex::new(conn)),
-            clock,
-            pins: Pins::new(),
-            schema,
-        })
-    }
-
-    /// The db's standing against this build's migrations; a db a newer build migrated is opened
-    /// as found, and the caller says so.
-    pub(crate) const fn schema(&self) -> Outcome {
-        self.schema
-    }
-
     /// One box by id.
     pub(crate) fn box_row(&self, id: BoxId) -> Result<Option<BoxRow>, StoreError> {
         load_box(&self.reader()?, id)
@@ -272,9 +256,9 @@ impl Store {
         Ok(ts)
     }
 
-    /// A new read-only connection; never blocks on the writer.
-    pub(super) fn reader(&self) -> Result<Conn, StoreError> {
-        Ok(Conn::sqlite_reader(&self.path, BUSY_TIMEOUT)?)
+    /// A read-only connection; never blocks on the writer.
+    pub(super) fn reader(&self) -> Result<Reader<'_>, StoreError> {
+        Ok(self.readers.open()?)
     }
 
     /// Lock the writer connection. A thread that panicked while holding it left at worst an

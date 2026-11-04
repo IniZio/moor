@@ -3113,6 +3113,7 @@ name = "moor"
 version = "0.2.0"
 dependencies = [
  "age",
+ "bytes",
  "clap",
  "command-fds",
  "flate2",
@@ -3132,6 +3133,7 @@ dependencies = [
  "nono-proxy",
  "oauth2",
  "portable-pty",
+ "postgres",
  "rcgen",
  "rusqlite",
  "rustix",
@@ -3150,6 +3152,7 @@ dependencies = [
  "tokio",
  "toml",
  "ureq",
+ "url",
  "webpki-roots",
  "zeroize",
  "zip",
@@ -3319,6 +3322,7 @@ dependencies = [
 name = "moor-migrate"
 version = "0.2.0"
 dependencies = [
+ "postgres",
  "refinery-core",
  "rusqlite",
  "sea-query",
@@ -4618,6 +4622,7 @@ checksum = "c5357919ea1ec6b73b47471c5182cdb8fa09f679b0bcebc435066df5539a8081"
 dependencies = [
  "cfg-if",
  "log",
+ "postgres",
  "regex",
  "rusqlite",
  "siphasher",

@@ -8,7 +8,7 @@ use moor_core::{BoxId, BoxName};
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum StoreError {
     /// The database failed.
-    #[error("sqlite: {0}")]
+    #[error("database: {0}")]
     Db(#[from] crate::store::db::Error),
     /// An event payload failed to (de)serialise.
     #[error("json: {0}")]
@@ -18,22 +18,21 @@ pub(crate) enum StoreError {
     Io(#[from] std::io::Error),
     /// The file is from an older moor at a schema this build cannot adopt; it is left as found.
     #[error(
-        "the state database {} is at {found}, older than this moor adopts; \
+        "the state database {db} is at {found}, older than this moor adopts; \
          use a fresh state dir: set MOOR_STATE_DIR to a new directory, or move the old one away \
-         (moor does not delete it)",
-        db.display()
+         (moor does not delete it)"
     )]
     Schema {
         /// The database file.
-        db: PathBuf,
+        db: String,
         /// The schema it is at: a `meta` version, or the last migration it records.
         found: String,
     },
     /// The file has migrations this build does not know, or an applied one changed.
-    #[error("the state database {} cannot be migrated by this moor: {source}", db.display())]
+    #[error("the state database {db} cannot be migrated by this moor: {source}")]
     Migration {
-        /// The database file.
-        db: PathBuf,
+        /// The database: its file, or its URL without the password.
+        db: String,
         /// What the migration run refused.
         source: moor_migrate::Error,
     },

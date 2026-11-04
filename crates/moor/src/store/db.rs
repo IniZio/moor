@@ -2,17 +2,16 @@
 //!
 //! Each backend renders a [`Statement`] with its own query builder and binds its values, so
 //! the store above this module never writes SQL or asks which database it runs on. A value
-//! read back is one of `SQLite`'s storage classes, read through rusqlite's `FromSql`, so every
-//! backend reads a Rust type the way the `SQLite` store always has.
+//! read back is a [`Value`], one of `SQLite`'s storage classes, so every backend reads a Rust
+//! type the way the `SQLite` store always has, and fails with the same [`Error`].
 
-use rusqlite::types::{FromSql, FromSqlError, Value, ValueRef};
 use sea_query::{DeleteStatement, Iden, InsertStatement, SelectStatement, UpdateStatement};
-
-pub(crate) use rusqlite::types::Type;
-pub(crate) use rusqlite::{Error, OptionalExtension};
 
 /// A database operation's result.
 pub(crate) type Result<T, E = Error> = std::result::Result<T, E>;
+
+/// A failure a backend reports, kept for its message.
+pub(crate) type Cause = Box<dyn std::error::Error + Send + Sync>;
 
 /// What a query returned: its column names and its rows, in order.
 #[derive(Debug, Default)]
@@ -34,6 +33,20 @@ pub(crate) enum Statement {
     Update(UpdateStatement),
     /// A `DELETE`.
     Delete(DeleteStatement),
+}
+
+impl Statement {
+    /// Its SQL as `builder` renders it, and the values its placeholders bind.
+    fn render(&self, builder: impl sea_query::QueryBuilder) -> Result<(String, Vec<Value>)> {
+        let (sql, values) = match self {
+            Self::Select(q) => q.build(builder),
+            Self::Insert(q) => q.build(builder),
+            Self::Update(q) => q.build(builder),
+            Self::Delete(q) => q.build(builder),
+        };
+        let values = values.into_iter().map(bound).collect::<Result<_>>()?;
+        Ok((sql, values))
+    }
 }
 
 /// `From` a statement, owned or as the `&mut` a builder chain ends on.
@@ -83,7 +96,7 @@ impl RowIndex for usize {
         if self < names.len() {
             Ok(self)
         } else {
-            Err(Error::InvalidColumnIndex(self))
+            Err(Error::NoColumn(self.to_string()))
         }
     }
 }
@@ -93,7 +106,7 @@ impl RowIndex for &str {
         names
             .iter()
             .position(|n| n.eq_ignore_ascii_case(self))
-            .ok_or_else(|| Error::InvalidColumnName(self.to_owned()))
+            .ok_or_else(|| Error::NoColumn(self.to_owned()))
     }
 }
 
@@ -107,25 +120,25 @@ pub(crate) struct Row<'a> {
 }
 
 impl Row<'_> {
-    /// Column `idx` read as `T`, with rusqlite's conversion rules and errors.
-    pub(crate) fn get<I: RowIndex, T: FromSql>(&self, idx: I) -> Result<T> {
-        let i = idx.position(self.names)?;
-        let value = self.values.get(i).ok_or(Error::InvalidColumnIndex(i))?;
-        let value = ValueRef::from(value);
-        T::column_result(value).map_err(|e| match e {
-            FromSqlError::InvalidType => Error::InvalidColumnType(
-                i,
-                self.names.get(i).cloned().unwrap_or_default(),
-                value.data_type(),
-            ),
-            FromSqlError::OutOfRange(n) => Error::IntegralValueOutOfRange(i, n),
-            FromSqlError::Utf8Error(e) => Error::Utf8Error(i, e),
-            other => Error::FromSqlConversionFailure(i, value.data_type(), Box::new(other)),
+    /// Column `idx` read as `T`.
+    pub(crate) fn get<I: RowIndex, T: FromValue>(&self, idx: I) -> Result<T> {
+        let index = idx.position(self.names)?;
+        let value = self
+            .values
+            .get(index)
+            .ok_or_else(|| Error::NoColumn(index.to_string()))?;
+        T::from_value(value).map_err(|e| match e {
+            Unread::Type => Error::Type {
+                index,
+                name: self.names.get(index).cloned().unwrap_or_default(),
+                found: value.kind(),
+            },
+            Unread::OutOfRange(value) => Error::OutOfRange { index, value },
         })
     }
 }
 
-/// Rows mapped one at a time as they are taken, like rusqlite's mapped rows.
+/// Rows mapped one at a time as they are taken.
 pub(crate) struct Mapped<F> {
     /// The query's column names.
     names: Vec<String>,
@@ -154,13 +167,13 @@ pub(crate) trait DbExt: Db {
         self.run_statement(&s.into())
     }
 
-    /// Run `s`; its first row read by `f`, or `QueryReturnedNoRows`.
+    /// Run `s`; its first row read by `f`, or [`Error::NoRows`].
     fn row<T, F>(&self, s: impl Into<Statement>, f: F) -> Result<T>
     where
         F: FnOnce(&Row<'_>) -> Result<T>,
     {
         let Rows { names, rows } = self.fetch_statement(&s.into())?;
-        let values = rows.first().ok_or(Error::QueryReturnedNoRows)?;
+        let values = rows.first().ok_or(Error::NoRows)?;
         f(&Row {
             names: &names,
             values,
@@ -183,21 +196,6 @@ pub(crate) trait DbExt: Db {
 }
 
 impl<D: Db + ?Sized> DbExt for D {}
-
-/// `v` as an owned value; text that is not UTF-8 is refused as rusqlite refuses it.
-fn owned(v: ValueRef<'_>) -> Result<Value> {
-    Ok(match v {
-        ValueRef::Null => Value::Null,
-        ValueRef::Integer(i) => Value::Integer(i),
-        ValueRef::Real(f) => Value::Real(f),
-        ValueRef::Text(t) => Value::Text(
-            std::str::from_utf8(t)
-                .map_err(|e| Error::ToSqlConversionFailure(e.into()))?
-                .to_owned(),
-        ),
-        ValueRef::Blob(b) => Value::Blob(b.to_vec()),
-    })
-}
 
 /// A UNIQUE key a write collided with, named by its table and columns as every backend reports
 /// them, so the store tells one taken key from another without reading a backend's error.
@@ -222,9 +220,27 @@ impl UniqueKey {
     }
 }
 
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the controller opens Postgres once its config names a database"
+    )
+)]
+mod postgres;
 mod sqlite;
 
-pub(crate) use sqlite::{unique_violation, Conn, Tx};
+mod conn;
+mod error;
+mod value;
 
+pub(crate) use conn::{open_postgres, open_sqlite, Conn, Opened, Reader, Readers, Tx};
+pub(crate) use error::{Error, OptionalExtension};
+pub(crate) use postgres::Target;
+use value::{bound, Unread};
+pub(crate) use value::{FromValue, Kind, Value};
+
+#[cfg(test)]
+pub(crate) mod testing;
 #[cfg(test)]
 mod tests;

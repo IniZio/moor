@@ -5,7 +5,7 @@ use moor_schema::tables::{Boxes, Sessions};
 use sea_query::{Expr, IntoIden, Nullable, UpdateStatement, Value};
 
 use super::StoreError;
-use crate::store::db::{self, unique_violation, DbExt as _, Tx};
+use crate::store::db::{self, DbExt as _, Tx};
 
 /// Column assignments for one UPDATE, by column of one table.
 pub(in crate::store) type Sets<C> = Vec<(C, Value)>;
@@ -94,7 +94,9 @@ pub(in crate::store) fn update<C: IntoIden + Copy>(
 pub(super) fn branch_taken(e: StoreError, branch: &Field<String>) -> StoreError {
     match (&e, branch) {
         (StoreError::Db(db), Field::Set(branch))
-            if unique_violation(db).is_some_and(|k| k.is(&Boxes::Table, &[Boxes::Branch])) =>
+            if db
+                .unique_key()
+                .is_some_and(|k| k.is(&Boxes::Table, &[Boxes::Branch])) =>
         {
             StoreError::BranchTaken(branch.clone())
         }
@@ -104,7 +106,9 @@ pub(super) fn branch_taken(e: StoreError, branch: &Field<String>) -> StoreError 
 
 /// A UNIQUE failure on the open-name index is a taken name; other errors pass through.
 pub(super) fn name_taken(e: db::Error, new: &NewBox) -> StoreError {
-    if unique_violation(&e).is_some_and(|k| k.is(&Boxes::Table, &[Boxes::Name])) {
+    if e.unique_key()
+        .is_some_and(|k| k.is(&Boxes::Table, &[Boxes::Name]))
+    {
         StoreError::NameTaken(new.name.clone())
     } else {
         e.into()

@@ -71,6 +71,9 @@ pub enum Error {
     /// `SQLite` failed.
     #[error("sqlite: {0}")]
     Sqlite(#[from] rusqlite::Error),
+    /// Postgres failed.
+    #[error("postgres: {0}")]
+    Postgres(#[from] postgres::Error),
 }
 
 /// Build the migration list from `(file name, sql)` pairs in version order.
@@ -157,6 +160,50 @@ pub fn migrate(
     }
     runner().run(&mut Held(&tx))?;
     tx.commit()?;
+    Ok(Outcome::Current)
+}
+
+/// Bring a Postgres database to the latest migration in `set`, all in one transaction.
+///
+/// An advisory lock on the schema makes a second process wait for the whole run. A database a
+/// newer build migrated is left as found, and the outcome says so; one with an applied migration
+/// `set` lacks or changed is refused.
+pub fn migrate_postgres(
+    client: &mut postgres::Client,
+    set: &[Migration],
+) -> Result<Outcome, Error> {
+    client.batch_execute("SELECT pg_advisory_lock(hashtext(current_schema()), 0)")?;
+    let run = migrate_postgres_locked(client, set);
+    let unlock = client.batch_execute("SELECT pg_advisory_unlock(hashtext(current_schema()), 0)");
+    let outcome = run?;
+    unlock?;
+    Ok(outcome)
+}
+
+/// [`migrate_postgres`] once its lock is held.
+fn migrate_postgres_locked(
+    client: &mut postgres::Client,
+    set: &[Migration],
+) -> Result<Outcome, Error> {
+    let has_history: bool = client
+        .query_one(&format!("SELECT to_regclass('{HISTORY}') IS NOT NULL"), &[])?
+        .try_get(0)?;
+    let found = if has_history {
+        client
+            .query_one(&format!("SELECT MAX(version) FROM {HISTORY}"), &[])?
+            .try_get::<_, Option<i32>>(0)?
+    } else {
+        None
+    };
+    let known = latest(set);
+    if let Some(found) = found.map(i64::from).filter(|&found| found > known) {
+        return Ok(Outcome::Ahead { found, known });
+    }
+    Runner::new(set)
+        .set_grouped(true)
+        .set_abort_divergent(true)
+        .set_abort_missing(true)
+        .run(client)?;
     Ok(Outcome::Current)
 }
 

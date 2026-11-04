@@ -6,9 +6,14 @@ use moor_migrate::{Backend, Legacy, Migration, Outcome};
 use moor_schema::STEPS;
 use rusqlite::{Connection, OpenFlags, OptionalExtension as _};
 
+use super::error;
 use super::files::sibling;
-use crate::store::init::refused;
 use crate::store::StoreError;
+
+/// The store error for the db at `db` this build will not migrate.
+fn refused(db: &Path, e: moor_migrate::Error) -> StoreError {
+    crate::store::db::conn::refused(&db.display().to_string(), e)
+}
 
 /// moor.db's migrations, oldest first.
 fn schema() -> Result<Vec<Migration>, StoreError> {
@@ -38,7 +43,8 @@ pub(super) fn refuse_other_version(db: &Path) -> Result<Outcome, StoreError> {
     let conn = Connection::open_with_flags(
         format!("file:{escaped}?mode=ro{immutable}"),
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
-    )?;
+    )
+    .map_err(error)?;
     moor_migrate::check(&conn, &schema()?, legacy).map_err(|e| refused(db, e))
 }
 

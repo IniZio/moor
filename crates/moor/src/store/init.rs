@@ -97,25 +97,6 @@ pub(super) fn owner_lock(db: &Path) -> Result<Option<File>, StoreError> {
     }
 }
 
-/// The store error for a db this build will not migrate.
-pub(super) fn refused(db: &Path, e: moor_migrate::Error) -> StoreError {
-    match e {
-        moor_migrate::Error::Unadoptable(version) => StoreError::Schema {
-            db: db.to_path_buf(),
-            found: format!("schema version `{version}`"),
-        },
-        moor_migrate::Error::Squashed { found, .. } => StoreError::Schema {
-            db: db.to_path_buf(),
-            found: format!("migration {found}"),
-        },
-        moor_migrate::Error::Sqlite(e) => StoreError::Db(e),
-        other @ moor_migrate::Error::Migration(_) => StoreError::Migration {
-            db: db.to_path_buf(),
-            source: other,
-        },
-    }
-}
-
 /// Parse a stored text value, naming the column on failure.
 pub(super) fn parsed<T, E: std::fmt::Display>(
     what: &str,

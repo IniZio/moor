@@ -1,4 +1,4 @@
-//! `store-sql`: fails when moor writes SQL text, asks which database it runs on, or uses rusqlite outside the store's backends.
+//! `store-sql`: fails when moor writes SQL text, asks which database it runs on, or uses a database driver outside the store's backends.
 
 use std::path::Path;
 use std::process::ExitCode;

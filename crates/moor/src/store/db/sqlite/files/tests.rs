@@ -9,6 +9,7 @@ use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::Ts;
 use moor_core::BoxName;
 
+use crate::store::db::Conn;
 use crate::testing::clock::FakeClock;
 
 use super::*;
@@ -191,8 +192,10 @@ fn a_second_open_keeps_the_first_store_locked_against_other_processes() {
         "the WAL of a live store is gone"
     );
     store.apply(insert("b")).unwrap();
-    let check: String = store
-        .writer()
+    let Conn::Sqlite(conn) = &*store.writer() else {
+        unreachable!("a SQLite store")
+    };
+    let check: String = conn
         .0
         .query_row("PRAGMA integrity_check", [], |r| r.get(0))
         .unwrap();
