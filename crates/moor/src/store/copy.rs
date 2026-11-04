@@ -51,7 +51,7 @@ pub(crate) fn copy_to_postgres(source: &Path, target: &Target) -> Result<Vec<Cop
         )));
     }
     let from = from.transaction()?;
-    let mut opened = db::open_postgres(target)?;
+    let mut opened = db::open_postgres(target, 1)?;
     if let moor_migrate::Outcome::Ahead { found, known } = opened.schema {
         return Err(StoreError::Copy(format!(
             "the target is at migration {found}, past this moor's {known}"

@@ -56,7 +56,7 @@ fn copied(dir: &Path) -> Option<(Store, Store, [BoxId; 2])> {
     let counts = copy_to_postgres(&path, &target).unwrap();
     assert!(counts.iter().any(|c| c.table == "events" && c.rows > 0));
     assert!(counts.iter().any(|c| c.table == "bindings" && c.rows == 3));
-    let copy = Store::open_postgres(&target, dir, clock()).unwrap();
+    let copy = Store::open_postgres(&target, 1, dir, clock()).unwrap();
     Some((source, copy, ids))
 }
 
@@ -111,7 +111,7 @@ fn a_copied_store_hands_out_ids_past_the_copied_rows() {
         return;
     };
     copy_to_postgres(&path, &target).unwrap();
-    let copy = Store::open_postgres(&target, dir.path(), clock()).unwrap();
+    let copy = Store::open_postgres(&target, 1, dir.path(), clock()).unwrap();
     let newest = new_box(&copy, "acme/3");
     assert!(newest.get() > second.get(), "a new Box takes a fresh id");
     copy.add_box_ref(newest, "pr", "acme/app#1").unwrap();
@@ -134,7 +134,7 @@ fn a_target_that_holds_rows_is_refused_and_left_alone() {
     let Some(target) = target(dir.path()) else {
         return;
     };
-    let held = Store::open_postgres(&target, dir.path(), clock()).unwrap();
+    let held = Store::open_postgres(&target, 1, dir.path(), clock()).unwrap();
     let id = new_box(&held, "other/1");
     let err = copy_to_postgres(&path, &target).unwrap_err().to_string();
     assert!(err.contains("already holds rows in"), "{err}");
@@ -150,9 +150,9 @@ fn a_migrated_target_with_no_rows_is_copied_into() {
     let Some(target) = target(dir.path()) else {
         return;
     };
-    drop(Store::open_postgres(&target, dir.path(), clock()).unwrap());
+    drop(Store::open_postgres(&target, 1, dir.path(), clock()).unwrap());
     copy_to_postgres(&path, &target).unwrap();
-    let copy = Store::open_postgres(&target, dir.path(), clock()).unwrap();
+    let copy = Store::open_postgres(&target, 1, dir.path(), clock()).unwrap();
     assert_eq!(copy.box_row(first).unwrap(), source.box_row(first).unwrap());
 }
 
