@@ -52,6 +52,11 @@ pub(super) enum Action {
     ControllerAttach(Option<PathBuf>),
     /// `store migrate`: bring the store's schema to this build's latest migration.
     StoreMigrate,
+    /// `store copy`: copy the `SQLite` store into an empty Postgres database.
+    StoreCopy {
+        /// The Postgres URL to copy into.
+        to: String,
+    },
     /// Hidden `link-dial <machine-id> <slug>`: bridge stdio to a pool lease's sshd.
     LinkDial {
         /// The pool host's machine id.

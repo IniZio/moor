@@ -77,6 +77,13 @@ pub enum Parsed {
         /// Global options.
         opts: GlobalOpts,
     },
+    /// Copy the `SQLite` store into an empty Postgres database.
+    StoreCopy {
+        /// Global options.
+        opts: GlobalOpts,
+        /// The Postgres URL to copy into.
+        to: String,
+    },
     /// Bridge stdin/stdout to the controller socket.
     ControllerAttach {
         /// Global options.
@@ -142,6 +149,7 @@ pub fn parse(args: Vec<OsString>) -> Parsed {
         Ok((opts, Action::ControllerServe(config))) => Parsed::ControllerServe { opts, config },
         Ok((opts, Action::ControllerAttach(socket))) => Parsed::ControllerAttach { opts, socket },
         Ok((opts, Action::StoreMigrate)) => Parsed::StoreMigrate { opts },
+        Ok((opts, Action::StoreCopy { to })) => Parsed::StoreCopy { opts, to },
         Ok((opts, Action::Stdin(then))) => Parsed::Stdin { opts, then },
         Ok((opts, Action::Exec(req, interactive))) => Parsed::Exec {
             opts,

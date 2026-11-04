@@ -142,3 +142,19 @@ fn the_query_identifiers_name_every_table_and_column_in_order() {
     let named: BTreeMap<String, Vec<String>> = crate::tables::all().into_iter().collect();
     assert_eq!(named, built);
 }
+
+#[test]
+fn every_table_is_listed_after_the_tables_its_foreign_keys_reference() {
+    let schema = sqlite::schema(&sql(Backend::Sqlite));
+    let order: Vec<String> = crate::tables::all().into_iter().map(|(t, _)| t).collect();
+    for (at, name) in order.iter().enumerate() {
+        for fk in &schema.tables.get(name).unwrap().foreign_keys {
+            let parent = order.iter().position(|t| *t == fk.table);
+            assert!(
+                fk.table == *name || parent.is_some_and(|p| p < at),
+                "{name} references {}, which is not listed before it",
+                fk.table
+            );
+        }
+    }
+}

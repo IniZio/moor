@@ -75,6 +75,24 @@ macro_rules! integer_from_value {
 }
 integer_from_value! { i64 i32 i16 i8 u64 u32 u16 u8 usize }
 
+impl FromValue for Value {
+    fn from_value(v: &Value) -> std::result::Result<Self, Unread> {
+        Ok(v.clone())
+    }
+}
+
+impl From<Value> for sea_query::Value {
+    fn from(v: Value) -> Self {
+        match v {
+            Value::Null => Self::BigInt(None),
+            Value::Integer(i) => i.into(),
+            Value::Real(f) => f.into(),
+            Value::Text(t) => t.into(),
+            Value::Blob(b) => b.into(),
+        }
+    }
+}
+
 impl FromValue for bool {
     fn from_value(v: &Value) -> std::result::Result<Self, Unread> {
         i64::from_value(v).map(|i| i != 0)

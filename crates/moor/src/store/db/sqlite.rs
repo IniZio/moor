@@ -203,6 +203,11 @@ impl Db for Tx<'_> {
     }
 }
 
+/// The latest migration this build carries.
+pub(super) fn latest_migration() -> Result<i64, StoreError> {
+    migrate::latest()
+}
+
 mod files;
 mod migrate;
 

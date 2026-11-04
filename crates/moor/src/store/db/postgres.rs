@@ -112,6 +112,33 @@ impl Tx<'_> {
     pub(super) fn commit(self) -> Result<()> {
         self.tx.into_inner().commit().map_err(error)
     }
+
+    /// Make `column` of `table` assign ids past the largest it holds, when a sequence assigns
+    /// them (a serial or identity column); any other column is left alone. A table with no rows
+    /// keeps its sequence where it is.
+    pub(super) fn continue_ids(&self, table: &str, column: &str) -> Result<()> {
+        let mut tx = self.tx.borrow_mut();
+        let sequence: Option<String> = tx
+            .query_one("SELECT pg_get_serial_sequence($1, $2)", &[&table, &column])
+            .map_err(error)?
+            .try_get(0)
+            .map_err(error)?;
+        let Some(sequence) = sequence else {
+            return Ok(());
+        };
+        let quote = |name: &str| name.replace('"', "\"\"");
+        tx.execute(
+            &format!(
+                "SELECT setval($1::text::regclass, m) \
+                 FROM (SELECT MAX(\"{}\") AS m FROM \"{}\") peak WHERE m IS NOT NULL",
+                quote(column),
+                quote(table),
+            ),
+            &[&sequence],
+        )
+        .map_err(error)?;
+        Ok(())
+    }
 }
 
 impl Db for Conn {

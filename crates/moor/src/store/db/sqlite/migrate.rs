@@ -21,6 +21,11 @@ fn schema() -> Result<Vec<Migration>, StoreError> {
         .map_err(|e| StoreError::Corrupt(format!("migrations: {e}")))
 }
 
+/// The latest migration this build carries.
+pub(super) fn latest() -> Result<i64, StoreError> {
+    Ok(moor_migrate::latest(&schema()?))
+}
+
 /// Refuse an existing db this build would not migrate, without writing to it or its directory.
 /// A db a newer build migrated is not refused; the outcome says so.
 ///

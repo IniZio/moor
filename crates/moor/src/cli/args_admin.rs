@@ -64,6 +64,16 @@ pub(super) enum ControllerCmd {
 pub(super) enum StoreCmd {
     /// Bring the store's schema to this moor's latest migration, then exit.
     Migrate,
+    /// Copy the SQLite store into an empty Postgres database, then exit.
+    Copy(StoreCopyArgs),
+}
+
+/// Arguments of `store copy`.
+#[derive(Debug, Args)]
+pub(super) struct StoreCopyArgs {
+    /// Postgres URL of the empty database to copy into.
+    #[arg(long, value_name = "URL")]
+    to: String,
 }
 
 /// Arguments of `controller attach`.
@@ -110,6 +120,7 @@ impl AdminCmd {
             Self::Controller(ControllerCmd::Serve(a)) => Action::ControllerServe(a.config),
             Self::Controller(ControllerCmd::Attach(a)) => Action::ControllerAttach(a.socket),
             Self::Store(StoreCmd::Migrate) => Action::StoreMigrate,
+            Self::Store(StoreCmd::Copy(a)) => Action::StoreCopy { to: a.to },
             Self::LinkDial(a) => Action::LinkDial {
                 machine_id: a.machine_id,
                 slug: a.slug,
