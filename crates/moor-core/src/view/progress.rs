@@ -107,6 +107,7 @@ fn step(kind: &str, payload: &Value) -> Option<String> {
             let place = format!("{}/{}", num(payload, "layer"), num(payload, "layers"));
             format!("started from setup checkpoint {place}, skipping {saved} of setup")
         }
+        "checkpoint_taken" => checkpoint_taken(payload),
         "checkpoint_evicted" => format!(
             "deleted setup checkpoint {} of {} ({}) for disk",
             text("checkpoint"),
@@ -206,6 +207,16 @@ fn setup_line(kind: &str, payload: &Value) -> Option<String> {
         "setup_line_finished" => format!("setup {place} failed after {secs}"),
         _ => return None,
     })
+}
+
+/// A setup checkpoint taken, or failed, and the time it paused the Box.
+fn checkpoint_taken(payload: &Value) -> String {
+    let layer = num(payload, "layer");
+    let took = span(num(payload, "duration_ms") / 1000);
+    payload.get("error").and_then(Value::as_str).map_or_else(
+        || format!("took setup checkpoint {layer} in {took}"),
+        |error| format!("setup checkpoint {layer} failed after {took}: {error}"),
+    )
 }
 
 /// The number at `key` in `payload`; 0 when there is none.

@@ -74,6 +74,19 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::WarmStartFailed { layer, error } => {
                 Self::Timing(TimingEvent::WarmStartFailed { layer, error })
             }
+            ExtraEvent::CheckpointTaken {
+                layer,
+                key,
+                checkpoint,
+                duration_ms,
+                error,
+            } => Self::Timing(TimingEvent::CheckpointTaken {
+                layer,
+                key,
+                checkpoint,
+                duration_ms,
+                error,
+            }),
             ExtraEvent::CheckpointEvicted {
                 checkpoint,
                 repo,
@@ -243,6 +256,19 @@ impl TryFrom<Event> for ExtraEvent {
             Event::Timing(TimingEvent::WarmStartFailed { layer, error }) => {
                 Ok(Self::WarmStartFailed { layer, error })
             }
+            Event::Timing(TimingEvent::CheckpointTaken {
+                layer,
+                key,
+                checkpoint,
+                duration_ms,
+                error,
+            }) => Ok(Self::CheckpointTaken {
+                layer,
+                key,
+                checkpoint,
+                duration_ms,
+                error,
+            }),
             Event::Timing(TimingEvent::CheckpointEvicted {
                 checkpoint,
                 repo,

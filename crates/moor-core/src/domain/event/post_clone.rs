@@ -92,6 +92,19 @@ pub enum TimingEvent {
         /// What the provider said.
         error: String,
     },
+    /// A setup layer's checkpoint was taken while the Box was paused, or the attempt failed.
+    CheckpointTaken {
+        /// Setup lines the checkpoint holds; 0 is the clone alone.
+        layer: u32,
+        /// The layer's key.
+        key: String,
+        /// The provider's checkpoint id; none when the attempt failed.
+        checkpoint: Option<String>,
+        /// Time the Box was paused for it, in milliseconds.
+        duration_ms: u64,
+        /// What the provider said when the attempt failed.
+        error: Option<String>,
+    },
     /// A setup checkpoint was deleted to keep the provider's disk above its floor.
     CheckpointEvicted {
         /// The provider's checkpoint id.
@@ -122,6 +135,7 @@ impl TimingEvent {
             Self::SetupLineFinished { .. } => "setup_line_finished",
             Self::WarmStarted { .. } => "warm_started",
             Self::WarmStartFailed { .. } => "warm_start_failed",
+            Self::CheckpointTaken { .. } => "checkpoint_taken",
             Self::CheckpointEvicted { .. } => "checkpoint_evicted",
         }
     }
