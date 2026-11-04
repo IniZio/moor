@@ -72,3 +72,31 @@ fn the_hash_is_hex_sha256() {
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     );
 }
+
+#[test]
+fn a_user_holds_a_front_only_while_a_live_lease_of_it_stands() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, clock) = open(dir.path());
+    let (user, _) = store
+        .enroll(&Identity::parse("slack:T1:U1").unwrap(), None)
+        .unwrap();
+    let (other, _) = store
+        .enroll(&Identity::parse("slack:T1:U2").unwrap(), None)
+        .unwrap();
+    assert!(!store.front_lease_held(user, "slack").unwrap(), "no lease");
+    let expires = clock.now().saturating_add(Duration::from_secs(60));
+    store
+        .add_front_lease(b"h1", "slack", user, expires)
+        .unwrap();
+    assert!(store.front_lease_held(user, "slack").unwrap());
+    assert!(
+        !store.front_lease_held(user, "web").unwrap(),
+        "another front"
+    );
+    assert!(
+        !store.front_lease_held(other, "slack").unwrap(),
+        "another user"
+    );
+    clock.sleep(Duration::from_secs(60));
+    assert!(!store.front_lease_held(user, "slack").unwrap(), "expired");
+}

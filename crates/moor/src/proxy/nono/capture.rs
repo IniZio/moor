@@ -27,6 +27,10 @@ pub(crate) type FetchFn = Arc<dyn Fn() -> Result<Secret, String> + Send + Sync>;
 pub(crate) type SecretsFn =
     Arc<dyn Fn(&Vault, UserId, &SecretName) -> Result<Option<Secret>, String> + Send + Sync>;
 
+/// Reads one user's secret `name`; `Ok(None)` when they have none.
+pub(crate) type UserSecretsFn =
+    Arc<dyn Fn(&SecretName) -> Result<Option<Secret>, String> + Send + Sync>;
+
 /// How one rule's credential is obtained.
 pub(crate) struct RuleSource {
     /// What the credential is called; the only thing errors name.
@@ -37,25 +41,22 @@ pub(crate) struct RuleSource {
     pub(crate) basic_user: Option<String>,
 }
 
-/// Builds one source per resolved rule, each reading `user`'s secret that the rule names on a
-/// thread of its own.
+/// Builds one source per resolved rule, each reading the secret that the rule names with
+/// `secrets` on a thread of its own.
 pub(crate) fn sources_for(
     rules: &[ResolvedRule],
-    secrets: &SecretsFn,
-    vault: &Arc<Vault>,
-    user: UserId,
+    secrets: &UserSecretsFn,
 ) -> BTreeMap<String, RuleSource> {
     rules
         .iter()
         .map(|rule| {
             let config_key = format!("secret {}", rule.credential);
             let name = SecretName::parse(&rule.credential);
-            let (secrets, vault, key) =
-                (Arc::clone(secrets), Arc::clone(vault), config_key.clone());
+            let (secrets, key) = (Arc::clone(secrets), config_key.clone());
             let fetch: FetchFn = Arc::new(move || {
                 let name = name.as_ref().map_err(Clone::clone)?;
                 // nono asks on its tokio runtime threads, and a store read must not run there.
-                std::thread::scope(|s| s.spawn(|| secrets(&vault, user, name)).join())
+                std::thread::scope(|s| s.spawn(|| secrets(name)).join())
                     .map_err(|_| format!("{key} could not be read"))??
                     .ok_or_else(|| format!("{key} is not set"))
             });

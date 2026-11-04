@@ -95,7 +95,7 @@ does.
 The controller refuses to start, with exit code 1, when the passed sockets do
 not match the config:
 
-- A passed socket has a name other than `controller`, `runner` or
+- A passed socket has a name other than `controller`, `runner`, `ledger` or
   `front-<namespace>` for a namespace in `fronts`.
 - The config needs a socket that systemd did not pass. Enable the missing
   `moor-front@<namespace>.socket`.
@@ -105,6 +105,11 @@ not match the config:
 
 The machine runner's socket, `<state dir>/runner/runner.sock`, may be passed
 as `runner`. When it is not passed, the controller binds it itself.
+
+The ledger socket, `<state dir>/ledger/proxy.sock`, may be passed as `ledger`.
+When it is not passed, the controller binds it itself. The Proxy processes the
+controller starts make their store calls on it, so they never hold the database
+URL or the vault key. Each presents the key the controller started it with.
 
 The machine runner binds `<state dir>/runner/links.sock` itself, mode 0600, and
 refuses to start when the file is open to the group or to other users. The

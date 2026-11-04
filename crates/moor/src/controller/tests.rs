@@ -141,6 +141,7 @@ mod front_read_only;
 mod fronts;
 mod host_paths;
 mod host_workdirs;
+mod ledger_socket;
 mod machine_hold;
 mod operator_only;
 mod run_cancel;

@@ -12,7 +12,7 @@ use moor_core::user::Caller;
 use super::inherit::Sockets;
 use super::{mkdir, Stop, USAGE};
 use crate::env::Env;
-use crate::{front_dir, runner_dir};
+use crate::{front_dir, ledger_dir, runner_dir};
 
 /// Listens on `<state>/fronts/<namespace>/front` for each front, taking the socket passed
 /// in as `front-<namespace>` when sockets were passed: each socket 0600 in 0700 dirs.
@@ -65,6 +65,24 @@ pub(super) fn bind_runner(env: &Env, sockets: &mut Sockets) -> Result<UnixListen
         .map_err(|e| failed(format!("cannot prepare {}: {e}", dir.display())))?;
     sockets
         .listen_if_passed("runner", &dir.join(runner_dir::SOCKET))
+        .map_err(failed)
+}
+
+/// Listens on `<state>/ledger/proxy.sock` for the Proxy processes' store calls, taking the
+/// socket passed in as `ledger` when one was passed: 0600 in a 0700 dir.
+pub(super) fn bind_ledger(env: &Env, sockets: &mut Sockets) -> Result<UnixListener, Stop> {
+    let failed = |message: String| Stop { code: 1, message };
+    let state_dir = env.state_dir().ok_or_else(|| Stop {
+        code: USAGE,
+        message: "the ledger socket needs a state directory: set state_dir or MOOR_STATE_DIR"
+            .into(),
+    })?;
+    let dir = ledger_dir::of(&state_dir);
+    mkdir(&dir)
+        .and_then(|()| fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)))
+        .map_err(|e| failed(format!("cannot prepare {}: {e}", dir.display())))?;
+    sockets
+        .listen_if_passed("ledger", &ledger_dir::socket(&state_dir))
         .map_err(failed)
 }
 

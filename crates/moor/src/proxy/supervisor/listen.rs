@@ -19,7 +19,7 @@ use crate::proxy::graphql::upstream::Upstream;
 use crate::proxy::graphql::{FilterSpec, GraphqlFilter};
 use crate::proxy::guard::Guard;
 use crate::proxy::nono::audit::{apply, BoxSink, EgressSink, Refusal, Withheld};
-use crate::proxy::nono::capture::{sources_for, MoorCapture};
+use crate::proxy::nono::capture::{sources_for, MoorCapture, UserSecretsFn};
 use crate::proxy::nono::{build_config, ca, Chain, NonoProxy, NonoSpec, GITHUB_API_HOST};
 use crate::proxy::ProxyLog;
 use crate::vault::Vault;
@@ -112,7 +112,9 @@ fn machine_route(deps: &Deps<'_>, box_id: BoxId) -> Option<MachineRoute> {
 fn new_capture(deps: &Deps<'_>, spec: &ProxySpec) -> Result<Arc<MoorCapture>, String> {
     let vault =
         Vault::load(&spec.vault_key).map_err(|err| format!("cannot open the vault: {err}"))?;
-    let sources = sources_for(&spec.rules, &deps.secrets, &Arc::new(vault), spec.user);
+    let (read, user) = (Arc::clone(&deps.secrets), spec.user);
+    let secrets: UserSecretsFn = Arc::new(move |name| read(&vault, user, name));
+    let sources = sources_for(&spec.rules, &secrets);
     Ok(Arc::new(MoorCapture::new(sources)))
 }
 
