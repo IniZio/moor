@@ -700,11 +700,19 @@ moor uses `moor.db` as before. The URL holds the database password, so moor
 reads it only from the environment, never from a config file. Pass it from a
 secret. Messages show the URL without its password or query.
 
+A moor process opens one writer connection and at most `MOOR_DATABASE_READERS`
+read connections to the database, 4 when the variable is unset or empty. It
+takes a whole number of 1 or more and refuses anything else. A read that finds
+every reader in use waits up to 30 seconds, then fails and names the cap, so a
+burst of reads never opens more connections than the cap. Size it so the
+writer plus readers of every moor process on the database, a second controller
+during a rollout included, stays under the database role's connection limit.
+
 Every moor that opens the store reads `MOOR_DATABASE_URL`: the controller,
 `moor store migrate`, and the CLI when no controller is set. The controller
-passes the URL to the Proxy processes it starts, and to no front. On Postgres
-the state directory still holds this host's own files, such as the sockets and
-the Proxy logs, so the controller still needs one.
+passes the URL and the reader cap to the Proxy processes it starts, and to no
+front. On Postgres the state directory still holds this host's own files, such
+as the sockets and the Proxy logs, so the controller still needs one.
 
 The URL's query takes libpq's TLS fields:
 

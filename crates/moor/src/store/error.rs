@@ -54,6 +54,9 @@ pub(crate) enum StoreError {
     /// `MOOR_DATABASE_URL` does not name a database moor can open.
     #[error("MOOR_DATABASE_URL: {0}")]
     Url(String),
+    /// `MOOR_DATABASE_READERS` is not a count of connections.
+    #[error("MOOR_DATABASE_READERS: {0}")]
+    Readers(String),
     /// The Postgres database did not answer when the store opened.
     #[error("cannot reach the store database {at}: {source}")]
     Unreachable {

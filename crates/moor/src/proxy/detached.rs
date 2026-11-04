@@ -14,9 +14,9 @@ use moor_core::seam::proxy_host::{
 use moor_core::seam::rng::Rng;
 use moor_core::BoxId;
 
-use crate::env::DATABASE_URL;
+use crate::env::{DATABASE_READERS, DATABASE_URL};
 use crate::proxy::nono::ca::load_or_create;
-use crate::store::{ProxyRow, Reserve, Store, StoreError};
+use crate::store::{Database, ProxyRow, Reserve, Store, StoreError};
 
 pub(crate) use super::supervisor::LEASE;
 pub(crate) use spec::{read_spec, write_spec};
@@ -52,7 +52,7 @@ pub(crate) struct DetachedSupervisor {
     /// The state directory, when one could be resolved.
     state_dir: Option<PathBuf>,
     /// The Postgres database the store lives in, else the state dir's `moor.db`.
-    database_url: Option<String>,
+    database: Option<Database>,
     /// The state store, opened on first use.
     store: OnceLock<Store>,
 }
@@ -70,15 +70,15 @@ impl DetachedSupervisor {
             clock,
             rng,
             state_dir,
-            database_url: None,
+            database: None,
             store: OnceLock::new(),
         }
     }
 
-    /// This host opening the store in the Postgres database `url`, when there is one.
+    /// This host opening the store in the Postgres `database`, when there is one.
     #[must_use]
-    pub(crate) fn in_database(mut self, url: Option<&str>) -> Self {
-        self.database_url = url.map(str::to_owned);
+    pub(crate) fn in_database(mut self, database: Option<Database>) -> Self {
+        self.database = database;
         self
     }
 
@@ -102,7 +102,7 @@ impl DetachedSupervisor {
                 "no state directory: set MOOR_STATE_DIR, XDG_STATE_HOME or HOME",
             ))
         })?;
-        let store = Store::open_in(dir, self.database_url.as_deref(), Arc::clone(&self.clock))?;
+        let store = Store::open_in(dir, self.database.as_ref(), Arc::clone(&self.clock))?;
         Ok(self.store.get_or_init(|| store))
     }
 
@@ -235,6 +235,9 @@ impl ProxyHost for DetachedSupervisor {
                     .env("MOOR_STATE_DIR", state.to_string_lossy());
                 if let Some(url) = store.database_url() {
                     spec = spec.env(DATABASE_URL, url);
+                }
+                if let Some(readers) = store.database_readers() {
+                    spec = spec.env(DATABASE_READERS, readers.to_string());
                 }
                 let pid = self.proc.spawn_daemon(&spec, &log).map_err(|e| {
                     fail(&format!("the proxy supervisor could not start: {e}"), &log)

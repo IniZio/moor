@@ -43,7 +43,7 @@ use crate::proxy::adopt;
 use crate::proxy::detached::DetachedSupervisor;
 use crate::proxy::nono::capture::SecretsFn;
 use crate::proxy::{serve, Deps, Sink};
-use crate::store::Store;
+use crate::store::{Database, Store, StoreError};
 
 /// Host variables herdr needs to find its socket and terminal.
 const HERDR_PASSTHROUGH: [&str; 5] = [
@@ -120,7 +120,11 @@ pub(crate) fn open_store(env: Env) -> Result<Env, CommandError> {
         return Ok(env);
     };
     let clock = SystemClock::from_env(&env).map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
-    let store = Store::open_in(&state_dir, env.database_url(), Arc::new(clock))?;
+    let store = Store::open_in(
+        &state_dir,
+        Database::from_env(&env)?.as_ref(),
+        Arc::new(clock),
+    )?;
     Ok(env.sharing(store))
 }
 
@@ -149,7 +153,8 @@ pub fn migrate_store(env: &Env) -> Result<String, String> {
         .state_dir()
         .ok_or("no state directory: set MOOR_STATE_DIR, XDG_STATE_HOME or HOME")?;
     let clock = SystemClock::from_env(env).map_err(|e| e.to_string())?;
-    let store = Store::open_in(&state_dir, env.database_url(), Arc::new(clock))
+    let database = Database::from_env(env).map_err(|e| e.to_string())?;
+    let store = Store::open_in(&state_dir, database.as_ref(), Arc::new(clock))
         .map_err(|e| e.to_string())?;
     Ok(match store.schema() {
         Outcome::Current => format!("migrated the store in {}", store.location()),
@@ -217,12 +222,12 @@ fn proxy_host(
     clock: Arc<dyn Clock>,
     rng: &Arc<dyn Rng>,
     state_dir: Option<PathBuf>,
-) -> Arc<DetachedSupervisor> {
-    Arc::new(
+) -> Result<Arc<DetachedSupervisor>, StoreError> {
+    Ok(Arc::new(
         DetachedSupervisor::new(Arc::clone(proc), clock, Arc::clone(rng), state_dir)
-            .in_database(env.database_url())
+            .in_database(Database::from_env(env)?)
             .sharing(env.shared::<Store>().cloned()),
-    )
+    ))
 }
 
 /// Real adapters from the environment, not yet assembled into a context, and the warning
@@ -266,7 +271,7 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
         )),
     )
     .holding(config.agent.holder());
-    let proxy_host = proxy_host(env, &proc, Arc::clone(&clock) as _, &rng, state_dir.clone());
+    let proxy_host = proxy_host(env, &proc, Arc::clone(&clock) as _, &rng, state_dir.clone())?;
     let parts = CxParts {
         state_dir,
         clock,

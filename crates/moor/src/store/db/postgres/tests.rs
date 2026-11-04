@@ -1,10 +1,12 @@
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use moor_core::seam::clock::Ts;
 use sea_query::{Expr, ExprTrait as _, Query};
 
 use super::types::numeric;
-use super::Value;
+use super::{Pool, Target, Value};
 use crate::store::db::testing::{open_conn, postgres_target};
 use crate::store::db::{Conn, Db, DbExt as _};
 use crate::store::Store;
@@ -85,7 +87,7 @@ fn a_dropped_connection_fails_its_next_call_and_the_one_after_reconnects() {
         return;
     };
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
-    let store = Store::open_postgres(&target, dir.path(), clock).unwrap();
+    let store = Store::open_postgres(&target, 4, dir.path(), clock).unwrap();
     let names = |store: &Store| {
         store.reader().and_then(|r| {
             Ok(r.rows(
@@ -120,4 +122,93 @@ fn a_dropped_connection_fails_its_next_call_and_the_one_after_reconnects() {
     put().unwrap();
     assert!(names(&store).is_err(), "a read on a dropped connection");
     assert_eq!(names(&store).unwrap(), ["x"]);
+}
+
+/// A pool of at most `cap` read connections, all named `name` to the server, with the URL's
+/// admin connection that counts them.
+fn capped_pool(name: &str, cap: usize, wait: Duration) -> Option<(Pool, postgres::Client)> {
+    let url = std::env::var("MOOR_TEST_POSTGRES_URL").ok()?;
+    let app = format!("moor_cap_{}_{name}", std::process::id());
+    let sep = if url.contains('?') { '&' } else { '?' };
+    let target = Target::parse(&format!("{url}{sep}application_name={app}")).unwrap();
+    let admin = postgres::Client::connect(&url, postgres::NoTls).unwrap();
+    Some((Pool::waiting(target, cap, wait), admin))
+}
+
+/// The connections open under application `name` of this test process.
+fn open_under(admin: &mut postgres::Client, name: &str) -> i64 {
+    let app = format!("moor_cap_{}_{name}", std::process::id());
+    admin
+        .query_one(
+            "SELECT count(*) FROM pg_stat_activity WHERE application_name = $1",
+            &[&app],
+        )
+        .unwrap()
+        .get(0)
+}
+
+fn select_one(r: &impl Db) -> Result<(), super::Error> {
+    r.row(Query::select().expr(Expr::cust("1")), |r| {
+        r.get::<_, i64>(0)
+    })
+    .map(|_| ())
+}
+
+#[test]
+fn a_read_past_the_cap_waits_then_fails_naming_it_and_succeeds_once_one_is_given_back() {
+    let Some((pool, mut admin)) = capped_pool("past", 2, Duration::from_millis(300)) else {
+        return;
+    };
+    let first = pool.take().unwrap();
+    let second = pool.take().unwrap();
+    select_one(&first).unwrap();
+    select_one(&second).unwrap();
+    let refused = pool.take().err().expect("a third read past the cap of 2");
+    assert!(
+        refused.to_string().contains("MOOR_DATABASE_READERS"),
+        "{refused}"
+    );
+    assert_eq!(open_under(&mut admin, "past"), 2);
+    drop(first);
+    select_one(&pool.take().unwrap()).unwrap();
+    assert_eq!(open_under(&mut admin, "past"), 2);
+    drop(second);
+}
+
+#[test]
+fn concurrent_reads_never_open_more_connections_than_the_cap() {
+    let Some((pool, mut admin)) = capped_pool("burst", 3, Duration::from_secs(30)) else {
+        return;
+    };
+    let most = AtomicI64::new(0);
+    let done = AtomicBool::new(false);
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            let mut admin = {
+                let url = std::env::var("MOOR_TEST_POSTGRES_URL").unwrap();
+                postgres::Client::connect(&url, postgres::NoTls).unwrap()
+            };
+            while !done.load(Ordering::Relaxed) {
+                most.fetch_max(open_under(&mut admin, "burst"), Ordering::Relaxed);
+            }
+        });
+        let readers: Vec<_> = (0..16)
+            .map(|_| {
+                s.spawn(|| {
+                    for _ in 0..10 {
+                        let r = pool.take().unwrap();
+                        select_one(&r).unwrap();
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                })
+            })
+            .collect();
+        for r in readers {
+            r.join().unwrap();
+        }
+        done.store(true, Ordering::Relaxed);
+    });
+    let most = most.load(Ordering::Relaxed);
+    assert!((1..=3).contains(&most), "{most} connections for a cap of 3");
+    assert!(open_under(&mut admin, "burst") <= 3);
 }

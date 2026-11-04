@@ -14,6 +14,9 @@ pub(crate) const CONTROLLER_LOCK: &str = "controller.lock";
 /// `moor.db`.
 pub(crate) const DATABASE_URL: &str = "MOOR_DATABASE_URL";
 
+/// The variable capping the read connections the store opens to its Postgres database.
+pub(crate) const DATABASE_READERS: &str = "MOOR_DATABASE_READERS";
+
 /// Snapshot of environment variables.
 #[derive(Clone, Default)]
 pub struct Env {
@@ -185,6 +188,11 @@ impl Env {
     /// The Postgres URL the store lives in, when set and non-empty.
     pub(crate) fn database_url(&self) -> Option<&str> {
         self.non_empty(DATABASE_URL)
+    }
+
+    /// The cap on the store's read connections to Postgres, when set and non-empty.
+    pub(crate) fn database_readers(&self) -> Option<&str> {
+        self.non_empty(DATABASE_READERS)
     }
 
     /// Resolved state directory, or `None` when no source is set.

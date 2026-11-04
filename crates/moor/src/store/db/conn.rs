@@ -56,11 +56,11 @@ pub(crate) fn open_sqlite(
 
 /// Open the store's Postgres database `target`, migrated to this build's schema; one a newer
 /// build migrated opens unchanged.
-pub(crate) fn open_postgres(target: &Target) -> Result<Opened, StoreError> {
+pub(crate) fn open_postgres(target: &Target, readers: usize) -> Result<Opened, StoreError> {
     let (conn, schema) = postgres::Conn::writer(target)?;
     Ok(Opened {
         writer: Conn::Postgres(Box::new(conn)),
-        readers: Readers::Postgres(Box::new(postgres::Pool::new(target.read_only()))),
+        readers: Readers::Postgres(Box::new(postgres::Pool::new(target.read_only(), readers))),
         schema,
     })
 }
@@ -206,6 +206,14 @@ impl Readers {
         match self {
             Self::Sqlite { .. } => None,
             Self::Postgres(pool) => Some(pool.target().url()),
+        }
+    }
+
+    /// The most read connections opened to the Postgres database; none on `SQLite`.
+    pub(crate) fn cap(&self) -> Option<usize> {
+        match self {
+            Self::Sqlite { .. } => None,
+            Self::Postgres(pool) => Some(pool.cap()),
         }
     }
 

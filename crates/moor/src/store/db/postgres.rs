@@ -4,7 +4,7 @@
 
 use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
-use std::sync::{Mutex, PoisonError};
+use std::time::Duration;
 
 use moor_migrate::{Backend, Outcome};
 use moor_schema::STEPS;
@@ -27,8 +27,8 @@ const WRITE_LOCK: &str = "SELECT pg_advisory_xact_lock(hashtext(current_schema()
 /// The most statements a connection keeps prepared before it forgets them all.
 const PREPARED: usize = 512;
 
-/// The most read connections a pool keeps open between reads.
-const IDLE_READERS: usize = 8;
+/// How long a read waits for a free connection when the pool is at its cap.
+const READ_WAIT: Duration = Duration::from_secs(30);
 
 /// A connection's prepared statements, by their SQL and parameter types.
 type Prepared = RefCell<HashMap<String, postgres::Statement>>;
@@ -161,12 +161,37 @@ impl Db for Tx<'_> {
     }
 }
 
-/// Read-only connections to one database, kept open between reads.
+/// Opens a pool's connections.
+struct Manager(Target);
+
+impl r2d2::ManageConnection for Manager {
+    type Connection = Conn;
+    type Error = Error;
+
+    fn connect(&self) -> Result<Conn> {
+        Conn::connect(&self.0)
+    }
+
+    fn is_valid(&self, _: &mut Conn) -> Result<()> {
+        Ok(())
+    }
+
+    fn has_broken(&self, conn: &mut Conn) -> bool {
+        conn.client.borrow().is_closed()
+    }
+}
+
+/// Read-only connections to one database, kept open between reads. A store never opens more
+/// than its cap, and a read that finds them all held waits for one.
 pub(crate) struct Pool {
     /// Where they connect, read-only.
     target: Target,
-    /// The ones no read holds now.
-    idle: Mutex<Vec<Conn>>,
+    /// The connections, idle and held.
+    conns: r2d2::Pool<Manager>,
+    /// The most connections it opens.
+    cap: u32,
+    /// How long a read waits for a free connection.
+    wait: Duration,
 }
 
 impl Pool {
@@ -175,75 +200,63 @@ impl Pool {
         &self.target
     }
 
-    /// A pool of connections to `target`.
-    pub(super) fn new(target: Target) -> Self {
+    /// The most connections it opens.
+    pub(super) const fn cap(&self) -> usize {
+        self.cap as usize
+    }
+
+    /// A pool of at most `cap` connections to `target`.
+    pub(super) fn new(target: Target, cap: usize) -> Self {
+        Self::waiting(target, cap, READ_WAIT)
+    }
+
+    /// As [`Pool::new`], with a read waiting `wait` for a free connection.
+    pub(super) fn waiting(target: Target, cap: usize, wait: Duration) -> Self {
+        let cap = u32::try_from(cap).unwrap_or(u32::MAX).max(1);
+        let conns = r2d2::Pool::builder()
+            .max_size(cap)
+            .min_idle(Some(0))
+            .connection_timeout(wait)
+            .build_unchecked(Manager(target.clone()));
         Self {
             target,
-            idle: Mutex::default(),
+            conns,
+            cap,
+            wait,
         }
     }
 
-    /// An idle connection, else a new one.
+    /// An idle connection, else a new one while under the cap, else the next one given back.
     pub(super) fn take(&self) -> Result<Pooled<'_>> {
-        let idle = self
-            .idle
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop();
-        let conn = match idle {
-            Some(conn) => conn,
-            None => Conn::connect(&self.target)?,
-        };
-        Ok(Pooled {
-            conn: Some(conn),
-            pool: self,
-        })
-    }
-
-    /// Keep `conn` for the next read. One that closed, as when the server restarted, is dropped
-    /// with every idle one, which closed with it.
-    fn give_back(&self, conn: Conn) {
-        let mut idle = self.idle.lock().unwrap_or_else(PoisonError::into_inner);
-        if conn.client.borrow().is_closed() {
-            idle.clear();
-        } else if idle.len() < IDLE_READERS {
-            idle.push(conn);
-        }
+        let conn = self.conns.get().map_err(|e| {
+            Error::Backend(
+                format!(
+                    "no read connection came free in {:?}, with all {} the store may open in \
+                     use or unreachable (MOOR_DATABASE_READERS sets the number): {e}",
+                    self.wait, self.cap
+                )
+                .into(),
+            )
+        })?;
+        Ok(Pooled { conn, _pool: self })
     }
 }
 
 /// A connection taken from a [`Pool`], given back when dropped.
 pub(crate) struct Pooled<'p> {
-    /// The connection; taken only when this drops.
-    conn: Option<Conn>,
-    /// Where it goes back to.
-    pool: &'p Pool,
-}
-
-impl Pooled<'_> {
     /// The connection.
-    fn conn(&self) -> Result<&Conn> {
-        self.conn
-            .as_ref()
-            .ok_or_else(|| Error::Backend("the reader was given back".into()))
-    }
-}
-
-impl Drop for Pooled<'_> {
-    fn drop(&mut self) {
-        if let Some(conn) = self.conn.take() {
-            self.pool.give_back(conn);
-        }
-    }
+    conn: r2d2::PooledConnection<Manager>,
+    /// The pool it goes back to.
+    _pool: &'p Pool,
 }
 
 impl Db for Pooled<'_> {
     fn run_statement(&self, s: &Statement) -> Result<usize> {
-        self.conn()?.run_statement(s)
+        self.conn.run_statement(s)
     }
 
     fn fetch_statement(&self, s: &Statement) -> Result<Rows> {
-        self.conn()?.fetch_statement(s)
+        self.conn.fetch_statement(s)
     }
 }
 

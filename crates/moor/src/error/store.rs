@@ -17,7 +17,7 @@ impl From<StoreError> for CommandError {
             | StoreError::Migration { .. }
             | StoreError::Owned { .. }
             | StoreError::SleepBlocked { .. } => Self::new(ErrorKind::Refused, e),
-            StoreError::Url(_) => Self::new(ErrorKind::Usage, e),
+            StoreError::Url(_) | StoreError::Readers(_) => Self::new(ErrorKind::Usage, e),
             other => Self::new(ErrorKind::Failed, format!("state store error: {other}")),
         }
     }
