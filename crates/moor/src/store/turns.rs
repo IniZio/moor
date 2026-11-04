@@ -2,8 +2,11 @@
 
 use moor_core::domain::event::{Event, TurnOutcome};
 use moor_core::BoxId;
+use moor_schema::tables::Launches;
+use sea_query::{Expr, ExprTrait as _, Query};
 
 use super::apply::insert_event;
+use super::reads::steer_answered;
 use super::{Store, StoreError};
 use crate::store::db::{DbExt as _, TransactionBehavior};
 
@@ -24,13 +27,7 @@ impl Store {
         let now = self.now();
         let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let answered: bool = tx.query_row(
-            "SELECT EXISTS (SELECT 1 FROM events WHERE box = ?1 AND kind = 'turn_done' \
-             AND json_extract(payload, '$.steer') = ?2)",
-            (box_id.get(), steer),
-            |r| r.get(0),
-        )?;
-        if answered {
+        if steer_answered(&tx, box_id, steer)? {
             return Ok(false);
         }
         insert_event(&tx, box_id, &Event::TurnDone { steer, outcome }, now)?;
@@ -54,13 +51,18 @@ impl Store {
         let now = self.now();
         let mut conn = self.writer();
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let old: Option<String> =
-            tx.query_row("SELECT pane FROM launches WHERE id = ?1", [launch], |r| {
-                r.get(0)
-            })?;
-        tx.execute(
-            "UPDATE launches SET pane = ?1 WHERE id = ?2",
-            (pane, launch),
+        let old: Option<String> = tx.row(
+            Query::select()
+                .column(Launches::Pane)
+                .from(Launches::Table)
+                .and_where(Expr::col(Launches::Id).eq(launch)),
+            |r| r.get(0),
+        )?;
+        tx.run(
+            Query::update()
+                .table(Launches::Table)
+                .value(Launches::Pane, pane)
+                .and_where(Expr::col(Launches::Id).eq(launch)),
         )?;
         insert_event(&tx, box_id, &Event::AgentLinkLost { pane: old, exit }, now)?;
         let restored = Event::AgentLinkRestored {

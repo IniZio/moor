@@ -16,8 +16,9 @@ use moor_core::user::UserId;
 use moor_core::view::LaunchFailure;
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 use moor_migrate::Outcome;
+use moor_schema::tables::{Boxes, Events, Sessions};
 use repo::repo_from_row;
-use rusqlite::Connection;
+use sea_query::{Expr, ExprTrait as _, Order, Query, SelectStatement};
 
 use driver_row::driver_from_row;
 use init::{parsed, parsed_opt};
@@ -74,14 +75,6 @@ pub(crate) use webhook_outbox::ClaimedDelivery;
 
 /// How long a connection waits on a lock before `SQLITE_BUSY`.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
-/// Column list shared by the box reads; session columns come from the current session.
-const BOX_SELECT: &str = "SELECT b.id, b.name, b.repo, b.issue, b.prompt, b.base, b.branch, \
-    s.workspace_id, s.agent_session_id, b.state, b.state_reason, b.intent_kind, b.intent_pid, b.intent_run, \
-    b.intent_at, b.setup_failed_at, b.created_at, b.updated_at, b.provider, b.handle, b.driver_state, \
-    b.attempted_handle, b.workdir, b.egress, b.sleep_reason, b.driver_updated_at, b.idle_since, b.launch_failure, \
-    s.state, b.user, b.repo_config, b.author_name, b.author_email, b.cpus, b.mem_mib, b.other_repos, b.steps_pending_at FROM boxes b LEFT JOIN sessions s ON s.box = b.id \
-    AND s.ordinal = (SELECT MAX(ordinal) FROM sessions WHERE box = b.id)";
-
 /// Box row joined to a box.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DriverRow {
@@ -203,11 +196,7 @@ impl Store {
     pub(crate) fn open(path: &Path, clock: Arc<dyn Clock>) -> Result<Self, StoreError> {
         init::refuse_other_version(path)?;
         open::prepare(path)?;
-        let mut conn = Connection::open(path)?;
-        conn.busy_timeout(BUSY_TIMEOUT)?;
-        conn.execute_batch(
-            "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;",
-        )?;
+        let mut conn = db::sqlite_writer(path, BUSY_TIMEOUT)?;
         let migrating = init::claim_migration(&conn, path)?;
         let schema = init::migrate(&mut conn, path)?;
         drop(migrating);
@@ -234,25 +223,30 @@ impl Store {
 
     /// The last `last` events of a box, ascending by id.
     pub(crate) fn events(&self, id: BoxId, last: usize) -> Result<Vec<EventRow>, StoreError> {
-        let limit = i64::try_from(last).unwrap_or(i64::MAX);
-        let conn = self.reader()?;
-        let mut stmt = conn.prepare(
-            "SELECT id, box, kind, payload, ts FROM \
-             (SELECT id, box, kind, payload, ts FROM events WHERE box = ?1 ORDER BY id DESC LIMIT ?2) ORDER BY id",
+        let recent = events_of(id)
+            .order_by(Events::Id, Order::Desc)
+            .limit(limit(last))
+            .take();
+        let rows = self.reader()?.rows(
+            Query::select()
+                .columns(EVENT_COLUMNS)
+                .from_subquery(recent, "recent")
+                .order_by(Events::Id, Order::Asc),
+            event_from_row,
         )?;
-        let rows = stmt.query_and_then((id.get(), limit), event_from_row)?;
         rows.collect()
     }
 
     /// The box's latest `needs_input`, `busy` or `working` event; none when it has had none.
     pub(crate) fn last_waiting_marker(&self, id: BoxId) -> Result<Option<EventRow>, StoreError> {
-        let conn = self.reader()?;
-        let mut stmt = conn.prepare(
-            "SELECT id, box, kind, payload, ts FROM events \
-             WHERE box = ?1 AND kind IN ('needs_input', 'busy', 'working') ORDER BY id DESC LIMIT 1",
-        )?;
-        let mut rows = stmt.query_and_then([id.get()], event_from_row)?;
-        rows.next().transpose()
+        newest_event(
+            &self.reader()?,
+            events_of(id).and_where(Expr::col(Events::Kind).is_in([
+                "needs_input",
+                "busy",
+                "working",
+            ])),
+        )
     }
 
     /// The box's newest event of `kind`, however long ago; none when it has had none.
@@ -261,22 +255,22 @@ impl Store {
         id: BoxId,
         kind: &str,
     ) -> Result<Option<EventRow>, StoreError> {
-        let conn = self.reader()?;
-        let mut stmt = conn.prepare(
-            "SELECT id, box, kind, payload, ts FROM events \
-             WHERE box = ?1 AND kind = ?2 ORDER BY id DESC LIMIT 1",
-        )?;
-        let mut rows = stmt.query_and_then((id.get(), kind), event_from_row)?;
-        rows.next().transpose()
+        newest_event(
+            &self.reader()?,
+            events_of(id).and_where(Expr::col(Events::Kind).eq(kind)),
+        )
     }
 
     /// When Box `id`'s machine last came up, by acquire or wake.
     pub(crate) fn awake_since(&self, id: BoxId) -> Result<Option<Ts>, StoreError> {
-        let conn = self.reader()?;
-        let ts = conn
-            .query_row(
-                "SELECT MAX(ts) FROM events WHERE box = ?1 AND kind = 'box_ready'",
-                [id.get()],
+        let ts = self
+            .reader()?
+            .row(
+                Query::select()
+                    .expr(Expr::col(Events::Ts).max())
+                    .from(Events::Table)
+                    .and_where(Expr::col(Events::Box).eq(id.get()))
+                    .and_where(Expr::col(Events::Kind).eq("box_ready")),
                 |r| r.get::<_, Option<i64>>(0),
             )?
             .map(Ts::from_millis);
@@ -302,9 +296,115 @@ impl Store {
 
 /// Load one box joined to its box, on any connection (used inside `apply`'s transaction too).
 pub(super) fn load_box(conn: &dyn db::Db, id: BoxId) -> Result<Option<BoxRow>, StoreError> {
-    let mut stmt = conn.prepare(&format!("{BOX_SELECT} WHERE b.id = ?1"))?;
-    let mut rows = stmt.query_and_then([id.get()], box_from_row)?;
-    rows.next().transpose()
+    let q = box_select()
+        .and_where(Expr::col((Boxes::Table, Boxes::Id)).eq(id.get()))
+        .take();
+    conn.rows(q, box_from_row)?.next().transpose()
+}
+
+/// The Box columns a Box read starts with.
+const BOX_HEAD: [Boxes; 7] = [
+    Boxes::Id,
+    Boxes::Name,
+    Boxes::Repo,
+    Boxes::Issue,
+    Boxes::Prompt,
+    Boxes::Base,
+    Boxes::Branch,
+];
+/// The Box columns between the newest Session's ids and its state.
+const BOX_MIDDLE: [Boxes; 19] = [
+    Boxes::State,
+    Boxes::StateReason,
+    Boxes::IntentKind,
+    Boxes::IntentPid,
+    Boxes::IntentRun,
+    Boxes::IntentAt,
+    Boxes::SetupFailedAt,
+    Boxes::CreatedAt,
+    Boxes::UpdatedAt,
+    Boxes::Provider,
+    Boxes::Handle,
+    Boxes::DriverState,
+    Boxes::AttemptedHandle,
+    Boxes::Workdir,
+    Boxes::Egress,
+    Boxes::SleepReason,
+    Boxes::DriverUpdatedAt,
+    Boxes::IdleSince,
+    Boxes::LaunchFailure,
+];
+/// The Box columns a Box read ends with.
+const BOX_TAIL: [Boxes; 8] = [
+    Boxes::User,
+    Boxes::RepoConfig,
+    Boxes::AuthorName,
+    Boxes::AuthorEmail,
+    Boxes::Cpus,
+    Boxes::MemMib,
+    Boxes::OtherRepos,
+    Boxes::StepsPendingAt,
+];
+
+/// The Box reads' columns, in the order [`box_from_row`] reads them; the session columns are
+/// the Box's newest Session's.
+fn box_select() -> SelectStatement {
+    let b = |c| (Boxes::Table, c);
+    let s = |c| (Sessions::Table, c);
+    let newest = Query::select()
+        .expr(Expr::col(("newest", Sessions::Ordinal)).max())
+        .from_as(Sessions::Table, "newest")
+        .and_where(Expr::col(("newest", Sessions::Box)).equals(b(Boxes::Id)))
+        .take();
+    Query::select()
+        .columns(BOX_HEAD.map(b))
+        .columns([Sessions::WorkspaceId, Sessions::AgentSessionId].map(s))
+        .columns(BOX_MIDDLE.map(b))
+        .column(s(Sessions::State))
+        .columns(BOX_TAIL.map(b))
+        .from(Boxes::Table)
+        .left_join(
+            Sessions::Table,
+            Expr::col(s(Sessions::Box))
+                .equals(b(Boxes::Id))
+                .and(Expr::col(s(Sessions::Ordinal)).eq(db::sub(newest))),
+        )
+        .take()
+}
+
+/// The columns [`event_from_row`] reads, in order.
+const EVENT_COLUMNS: [Events; 5] = [
+    Events::Id,
+    Events::Box,
+    Events::Kind,
+    Events::Payload,
+    Events::Ts,
+];
+
+/// Box `id`'s events, with the columns [`event_from_row`] reads.
+fn events_of(id: BoxId) -> SelectStatement {
+    Query::select()
+        .columns(EVENT_COLUMNS)
+        .from(Events::Table)
+        .and_where(Expr::col(Events::Box).eq(id.get()))
+        .take()
+}
+
+/// The newest of the events `q` selects; none when it selects none.
+fn newest_event(
+    conn: &dyn db::Db,
+    q: &mut SelectStatement,
+) -> Result<Option<EventRow>, StoreError> {
+    let q = q.order_by(Events::Id, Order::Desc).limit(1);
+    conn.rows(q, event_from_row)?.next().transpose()
+}
+
+/// A row count as a `LIMIT`, capped where the database's signed integers end.
+fn limit(n: usize) -> u64 {
+    Ord::min(
+        u64::try_from(n).unwrap_or(u64::MAX),
+        i64::MAX.unsigned_abs(),
+    )
 }
 
 /// Convert a stored integer to `u32`.

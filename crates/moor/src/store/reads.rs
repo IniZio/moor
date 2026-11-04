@@ -8,21 +8,39 @@ use moor_core::request::Pins;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName, SessionId};
 
-use super::{
-    box_from_row, event_from_row, BoxRow, DriverRow, EventRow, Store, StoreError, BOX_SELECT,
-};
-use crate::store::db::{Db, DbExt as _, OptionalExtension};
+use moor_schema::tables::{Boxes, Events, Sessions};
+use sea_query::{Expr, ExprTrait as _, Order, Query};
+use serde_json::Value;
 
-/// Run a box query and map every row.
+use super::{
+    box_from_row, box_select, event_from_row, events_of, newest_event, BoxRow, DriverRow, EventRow,
+    Store, StoreError, EVENT_COLUMNS,
+};
+use crate::store::db::{self, Db, DbExt as _};
+
+/// The Box reads' columns where `filter` holds, in `order` by id, every row mapped.
 fn query_boxes(
     conn: &dyn Db,
-    tail: &str,
-    params: impl crate::store::db::Params,
+    filter: Expr,
+    order: Order,
+    limit: Option<u64>,
 ) -> Result<Vec<BoxRow>, StoreError> {
-    let mut stmt = conn.prepare(&format!("{BOX_SELECT} {tail}"))?;
-    let rows = stmt.query_and_then(params, box_from_row)?;
-    rows.collect()
+    let mut q = box_select();
+    q.and_where(filter)
+        .order_by((Boxes::Table, Boxes::Id), order);
+    if let Some(n) = limit {
+        q.limit(n);
+    }
+    conn.rows(q, box_from_row)?.collect()
 }
+
+/// A column of `boxes`, as the Box reads name it.
+const fn b(c: Boxes) -> (Boxes, Boxes) {
+    (Boxes::Table, c)
+}
+
+/// Lifecycles of a Box that is not open.
+const SHUT: [&str; 2] = ["closed", "rejected"];
 
 /// Box states that count toward capacity, as SQL parameters.
 const LIVE_STATES: [&str; 3] = [
@@ -64,15 +82,26 @@ impl Store {
         after: i64,
         limit: usize,
     ) -> Result<Vec<NamedEvent>, StoreError> {
-        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
-        let conn = self.reader()?;
-        let mut stmt = conn.prepare(
-            "SELECT e.id, e.box, e.kind, e.payload, e.ts, b.name, \
-             COALESCE(e.session, (SELECT s.id FROM sessions s WHERE s.box = e.box \
-             AND s.started_at <= e.ts ORDER BY s.ordinal DESC LIMIT 1)) \
-             FROM events e JOIN boxes b ON b.id = e.box WHERE e.id > ?1 ORDER BY e.id LIMIT ?2",
-        )?;
-        let rows = stmt.query_and_then((after, limit), |r| {
+        let e = |c| (Events::Table, c);
+        let started = Query::select()
+            .column(Sessions::Id)
+            .from(Sessions::Table)
+            .and_where(Expr::col(Sessions::Box).equals(e(Events::Box)))
+            .and_where(Expr::col(Sessions::StartedAt).lte(Expr::col(e(Events::Ts))))
+            .order_by(Sessions::Ordinal, Order::Desc)
+            .limit(1)
+            .take();
+        let q = Query::select()
+            .columns(EVENT_COLUMNS.map(e))
+            .column(b(Boxes::Name))
+            .expr(Expr::col(e(Events::Session)).if_null(db::sub(started)))
+            .from(Events::Table)
+            .inner_join(Boxes::Table, Expr::col(b(Boxes::Id)).equals(e(Events::Box)))
+            .and_where(Expr::col(e(Events::Id)).gt(after))
+            .order_by(e(Events::Id), Order::Asc)
+            .limit(super::limit(limit))
+            .take();
+        let rows = self.reader()?.rows(q, |r| {
             Ok(NamedEvent {
                 row: event_from_row(r)?,
                 box_name: r.get(5)?,
@@ -88,29 +117,27 @@ impl Store {
         id: BoxId,
         kind: &str,
     ) -> Result<Option<EventRow>, StoreError> {
-        let conn = self.reader()?;
-        let mut stmt = conn.prepare(
-            "SELECT id, box, kind, payload, ts FROM events WHERE box = ?1 AND kind = ?2 ORDER BY id DESC LIMIT 1",
-        )?;
-        let mut rows = stmt.query_and_then((id.get(), kind), event_from_row)?;
-        rows.next().transpose()
+        newest_event(
+            &self.reader()?,
+            events_of(id).and_where(Expr::col(Events::Kind).eq(kind)),
+        )
     }
 
     /// Highest event id, or 0 when no event is stored.
     pub(crate) fn last_event_id(&self) -> Result<i64, StoreError> {
-        let max: Option<i64> = self
-            .reader()?
-            .query_row("SELECT MAX(id) FROM events", [], |r| r.get(0))?;
+        let max: Option<i64> = self.reader()?.row(
+            Query::select()
+                .expr(Expr::col(Events::Id).max())
+                .from(Events::Table),
+            |r| r.get(0),
+        )?;
         Ok(max.unwrap_or(0))
     }
 
     /// Boxes that are neither closed nor rejected, by id ascending.
     pub(crate) fn open_boxes(&self) -> Result<Vec<BoxRow>, StoreError> {
-        let conn = self.reader()?;
-        let sql = format!("{BOX_SELECT} WHERE b.state NOT IN ('closed', 'rejected') ORDER BY b.id");
-        let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_and_then([], box_from_row)?;
-        rows.collect()
+        let open = Expr::col(b(Boxes::State)).is_not_in(SHUT);
+        query_boxes(&self.reader()?, open, Order::Asc, None)
     }
 
     /// This store with each name in `pins` meaning only its pinned Box.
@@ -127,8 +154,10 @@ impl Store {
                 |r: &BoxRow| !matches!(r.lifecycle, BoxLifecycle::Closed | BoxLifecycle::Rejected);
             return Ok(self.box_row(id)?.filter(open));
         }
-        let tail = "WHERE b.name = ?1 AND b.state NOT IN ('closed', 'rejected') ORDER BY b.id DESC LIMIT 1";
-        let rows = query_boxes(&self.reader()?, tail, [name.as_str()])?;
+        let named = Expr::col(b(Boxes::Name))
+            .eq(name.as_str())
+            .and(Expr::col(b(Boxes::State)).is_not_in(SHUT));
+        let rows = query_boxes(&self.reader()?, named, Order::Desc, Some(1))?;
         Ok(rows.into_iter().next())
     }
 
@@ -137,15 +166,15 @@ impl Store {
         if let Some(&id) = self.pins.get(name) {
             return self.box_row(id);
         }
-        let tail = "WHERE b.name = ?1 ORDER BY b.id DESC LIMIT 1";
-        let rows = query_boxes(&self.reader()?, tail, [name.as_str()])?;
+        let named = Expr::col(b(Boxes::Name)).eq(name.as_str());
+        let rows = query_boxes(&self.reader()?, named, Order::Desc, Some(1))?;
         Ok(rows.into_iter().next())
     }
 
     /// Boxes whose state counts toward capacity (starting, ready, asleep), with their box.
     pub(crate) fn box_rows_live(&self) -> Result<Vec<(BoxId, DriverRow)>, StoreError> {
-        let tail = "WHERE b.driver_state IN (?1, ?2, ?3) ORDER BY b.id";
-        let rows = query_boxes(&self.reader()?, tail, LIVE_STATES)?;
+        let live = Expr::col(b(Boxes::DriverState)).is_in(LIVE_STATES);
+        let rows = query_boxes(&self.reader()?, live, Order::Asc, None)?;
         Ok(rows
             .into_iter()
             .filter_map(|t| t.boxed.map(|b| (t.id, b)))
@@ -157,33 +186,51 @@ impl Store {
     /// # Errors
     /// Returns [`StoreError`] when the database fails.
     pub(crate) fn unanswered_steer(&self, box_id: BoxId) -> Result<Option<SteerMark>, StoreError> {
-        let row = self
-            .reader()?
-            .query_row(
-                "SELECT s.id, json_extract(s.payload, '$.hook_before'), \
-                 COALESCE(json_extract(s.payload, '$.new_turn'), 0) FROM events s WHERE s.box = ?1 AND s.kind = 'steered' \
-                 AND s.id = (SELECT MAX(id) FROM events WHERE box = ?1 AND kind = 'steered') \
-                 AND NOT EXISTS (SELECT 1 FROM events d WHERE d.box = ?1 AND d.kind = 'turn_done' \
-                 AND json_extract(d.payload, '$.steer') = s.id)",
-                [box_id.get()],
-                |r| {
-                    Ok(SteerMark {
-                        id: r.get(0)?,
-                        hook_before: r.get::<_, Option<i64>>(1)?.map(Ts::from_millis),
-                        new_turn: r.get(2)?,
-                    })
-                },
-            )
-            .optional()?;
-        Ok(row)
+        let conn = self.reader()?;
+        let mut steered = events_of(box_id);
+        steered.and_where(Expr::col(Events::Kind).eq("steered"));
+        let Some(steer) = newest_event(&conn, &mut steered)? else {
+            return Ok(None);
+        };
+        if steer_answered(&conn, box_id, steer.id)? {
+            return Ok(None);
+        }
+        Ok(Some(SteerMark {
+            id: steer.id,
+            hook_before: steer
+                .payload
+                .get("hook_before")
+                .and_then(Value::as_i64)
+                .map(Ts::from_millis),
+            new_turn: steer
+                .payload
+                .get("new_turn")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        }))
     }
 
     /// Boxes queued for a box, oldest id first.
     #[cfg(test)]
     pub(crate) fn waiting_boxes(&self) -> Result<Vec<BoxRow>, StoreError> {
-        let tail = "WHERE b.state = ?1 ORDER BY b.id";
-        query_boxes(&self.reader()?, tail, [BoxLifecycle::Pending.as_str()])
+        let pending = Expr::col(b(Boxes::State)).eq(BoxLifecycle::Pending.as_str());
+        query_boxes(&self.reader()?, pending, Order::Asc, None)
     }
+}
+
+/// Whether Box `box_id` has a `turn_done` event answering its `steered` event `steer`.
+///
+/// The payloads are read here rather than in SQL, so no database's JSON functions are needed.
+pub(super) fn steer_answered(conn: &dyn Db, box_id: BoxId, steer: i64) -> Result<bool, StoreError> {
+    let done = events_of(box_id)
+        .and_where(Expr::col(Events::Kind).eq("turn_done"))
+        .take();
+    for row in conn.rows(done, event_from_row)? {
+        if row?.payload.get("steer").and_then(Value::as_i64) == Some(steer) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 mod refs;

@@ -22,7 +22,6 @@ crates/moor/src/store/init.rs
 crates/moor/src/store/init/tests/pinned.rs
 crates/moor/src/store/init/tests.rs
 crates/moor/src/store/lease.rs
-crates/moor/src/store/mod.rs
 crates/moor/src/store/open/tests.rs
 crates/moor/src/store/pressure.rs
 crates/moor/src/store/proxy/egress.rs
@@ -32,7 +31,6 @@ crates/moor/src/store/proxy/park/tests.rs
 crates/moor/src/store/proxy.rs
 crates/moor/src/store/proxy/tests.rs
 crates/moor/src/store/reads/refs.rs
-crates/moor/src/store/reads.rs
 crates/moor/src/store/reads/tests.rs
 crates/moor/src/store/repo.rs
 crates/moor/src/store/reports.rs
@@ -44,7 +42,6 @@ crates/moor/src/store/sessions/tests.rs
 crates/moor/src/store/tests/events_after.rs
 crates/moor/src/store/tests/poison.rs
 crates/moor/src/store/tests.rs
-crates/moor/src/store/turns.rs
 crates/moor/src/store/users/front_leases.rs
 crates/moor/src/store/users/machine/hold/claim.rs
 crates/moor/src/store/users/machine/hold.rs
