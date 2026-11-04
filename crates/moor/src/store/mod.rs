@@ -38,6 +38,7 @@ mod bindings;
 mod box_node;
 pub(crate) mod box_profile;
 pub(crate) mod checkpoints;
+pub(crate) mod copy;
 pub(crate) mod db;
 mod driver_row;
 mod error;

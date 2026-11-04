@@ -30,11 +30,11 @@ mod vault;
 mod wire;
 
 pub use crate::moor::Moor;
-/// Open the state store, which brings its schema to this build's latest migration; returns
-/// the line to print, or why it failed.
-pub use crate::wire::migrate_store;
 /// Run the credential proxy for a Box until a stop signal; returns the exit code.
 pub use crate::wire::serve_proxy;
+/// Open the state store, which brings its schema to this build's latest migration; returns
+/// the line to print, or why it failed.
+pub use crate::wire::{copy_store, migrate_store};
 
 pub use moor_core;
 

@@ -75,6 +75,19 @@ fn store_migrate_parses_with_the_state_dir() {
 }
 
 #[test]
+fn store_copy_parses_the_target_url() {
+    assert!(matches!(
+        parse(argv(&["store", "copy", "--to", "postgres://u@h/db"])),
+        Parsed::StoreCopy { to, .. } if to == "postgres://u@h/db"
+    ));
+}
+
+#[test]
+fn store_copy_without_a_target_is_usage() {
+    assert_eq!(done(&["store", "copy"]).code, 2);
+}
+
+#[test]
 fn controller_serve_parses_config() {
     assert!(matches!(
         parse(argv(&["controller", "serve", "--config", "/etc/c.yaml"])),

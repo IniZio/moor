@@ -62,6 +62,9 @@ pub(crate) enum StoreError {
         /// Why the connection failed.
         source: crate::store::db::Error,
     },
+    /// `moor store copy` refused its source or its target.
+    #[error("{0}")]
+    Copy(String),
     /// A box input or box input was illegal in the current state.
     #[error("{0}")]
     Illegal(#[from] moor_core::domain::Illegal),

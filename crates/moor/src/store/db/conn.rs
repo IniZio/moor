@@ -65,6 +65,13 @@ pub(crate) fn open_postgres(target: &Target) -> Result<Opened, StoreError> {
     })
 }
 
+/// A read-only connection to the `SQLite` file at `path`, which a copy reads without migrating or
+/// locking it, and the latest migration this build carries.
+pub(crate) fn open_sqlite_source(path: &Path, busy: Duration) -> Result<(Conn, i64), StoreError> {
+    let conn = sqlite::Conn::reader(path, busy).map_err(StoreError::Db)?;
+    Ok((Conn::Sqlite(conn), sqlite::latest_migration()?))
+}
+
 impl Conn {
     /// A plain read-write connection to the db file at `path`, as a test outside the store
     /// opens one beside a live store.
@@ -115,6 +122,16 @@ impl Tx<'_> {
         match self {
             Self::Sqlite(tx) => tx.commit(),
             Self::Postgres(tx) => tx.commit(),
+        }
+    }
+
+    /// After rows were inserted with their ids given, make the next id the database assigns to
+    /// `column` of `table` one past the largest it holds, when the database assigns that column's
+    /// ids from a sequence. `SQLite` takes the next id from the rows themselves.
+    pub(crate) fn continue_ids(&self, table: &str, column: &str) -> Result<()> {
+        match self {
+            Self::Sqlite(_) => Ok(()),
+            Self::Postgres(tx) => tx.continue_ids(table, column),
         }
     }
 }

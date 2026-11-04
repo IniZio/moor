@@ -20,10 +20,11 @@ macro_rules! tables {
             }
         )+
 
-        /// Every table with its column names in table order, for the test that holds them to the
-        /// schema.
-        #[cfg(test)]
-        pub(crate) fn all() -> Vec<(String, Vec<String>)> {
+        /// Every table with its column names in table order. A table comes after every table its
+        /// foreign keys reference (a test holds the list to that), so rows inserted in this order
+        /// never break a key.
+        #[must_use]
+        pub fn all() -> Vec<(String, Vec<String>)> {
             vec![$((
                 $table::Table.to_string(),
                 vec![$($table::$col.to_string()),+],

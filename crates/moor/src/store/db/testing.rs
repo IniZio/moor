@@ -40,7 +40,7 @@ pub(crate) fn open_conn(path: &Path) -> Conn {
 }
 
 /// On Postgres, the database whose search path is the schema standing for `path`.
-pub(super) fn postgres_target(path: &Path) -> Option<Target> {
+pub(crate) fn postgres_target(path: &Path) -> Option<Target> {
     let url = std::env::var(POSTGRES_URL).ok()?;
     let mut admin = Client::connect(&url, NoTls).unwrap();
     #[expect(

@@ -75,6 +75,7 @@ fn main() -> ExitCode {
             return ExitCode::from(moor::controller::serve(&env, &config, std::io::stderr()));
         }
         Parsed::StoreMigrate { opts } => return migrate_store(&scoped(env, &opts)),
+        Parsed::StoreCopy { opts, to } => return copy_store(&scoped(env, &opts), &to),
         Parsed::ControllerAttach { opts, socket } => {
             let env = scoped(env, &opts);
             return ExitCode::from(moor::controller::attach::attach(
@@ -121,6 +122,20 @@ fn migrate_store(env: &Env) -> ExitCode {
         }
         Err(e) => {
             let _ = writeln!(std::io::stderr(), "moor store migrate: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Runs `moor store copy`: copies the store into Postgres and exits.
+fn copy_store(env: &Env, to: &str) -> ExitCode {
+    match moor::copy_store(env, to) {
+        Ok(report) => {
+            let _ = say(&report);
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            let _ = writeln!(std::io::stderr(), "moor store copy: {e}");
             ExitCode::FAILURE
         }
     }
