@@ -1,8 +1,0 @@
-# Store files still written in SQL text, skipped by the store-sql lint until converted to sea-query.
-# One repo-relative path per line. A listed file that is clean fails the lint, so this only shrinks.
-crates/moor/src/store/init.rs
-crates/moor/src/store/init/tests/pinned.rs
-crates/moor/src/store/init/tests.rs
-crates/moor/src/store/open/tests.rs
-crates/moor/src/store/reads/tests.rs
-crates/moor/src/store/tests.rs

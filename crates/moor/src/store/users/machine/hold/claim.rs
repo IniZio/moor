@@ -10,7 +10,7 @@ use moor_schema::tables::BoxMachines;
 use sea_query::{Expr, ExprTrait as _, Query};
 
 use super::super::{claim_in, machines_in, named_in, put_in, Claim};
-use crate::store::db::{Db, DbExt as _, OptionalExtension, TransactionBehavior, Tx};
+use crate::store::db::{Db, DbExt as _, OptionalExtension, Tx};
 use moor_core::{HoldOp, HoldValue};
 
 use super::{grant_in, position_in, said_waiting, why_waiting, ClaimState};
@@ -36,7 +36,7 @@ impl Store {
         }
         let now = self.now();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let (value, keep) = claim_tx(&tx, (id, user), op, (repo, exclude), now)?;
         if keep {
             tx.commit()?;
@@ -46,7 +46,7 @@ impl Store {
                 let event = MachineEvent::MachineRefused {
                     reason: reason.clone(),
                 };
-                let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                let tx = conn.immediate()?;
                 insert_event(&tx, id, &Event::Machine(event), now)?;
                 tx.commit()?;
             }
@@ -59,7 +59,7 @@ impl Store {
     fn release_machine(&self, id: BoxId) -> Result<HoldValue, StoreError> {
         let now = self.now();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let gone: Option<(Option<String>, String)> = tx
             .row(
                 Query::delete()

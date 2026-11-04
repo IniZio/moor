@@ -7,7 +7,7 @@ use moor_core::BoxId;
 use moor_schema::tables::Meta;
 use sea_query::{Expr, ExprTrait as _, OnConflict, Query};
 
-use crate::store::db::{Db, DbExt as _, OptionalExtension, TransactionBehavior};
+use crate::store::db::{Db, DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
 /// The tunnel state an op asks the supervisor for.
@@ -180,7 +180,7 @@ impl Store {
     ) -> Result<u64, StoreError> {
         let key = want_key(box_id);
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let prev = match get(&tx, &key)? {
             Some(raw) => {
                 decode_request(&raw)

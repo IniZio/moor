@@ -9,7 +9,7 @@ use moor_schema::tables::Sessions;
 use sea_query::{Expr, ExprTrait as _, Func, Query};
 
 use super::{parsed_opt, Store, StoreError};
-use crate::store::db::{Db, DbExt as _, OptionalExtension, TransactionBehavior};
+use crate::store::db::{Db, DbExt as _, OptionalExtension};
 
 /// One host Session row.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -160,7 +160,7 @@ impl Store {
         let state = SessionState::initial(&SessionInput::Open)?.step(&SessionInput::Started)?;
         let now = self.now();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         if let Some(p) = parent {
             check_parent(&tx, p)?;
         }
@@ -212,7 +212,7 @@ impl Store {
         agent_session_id: Option<&str>,
     ) -> Result<HostRow, StoreError> {
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         load_live(&tx, id)?;
         let mut update = Query::update();
         update
@@ -241,7 +241,7 @@ impl Store {
     pub(crate) fn end_host_session(&self, id: i64) -> Result<HostRow, StoreError> {
         let now = self.now().as_millis();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let mut row = load_live(&tx, id)?;
         row.state = row.state.step(&SessionInput::End)?;
         tx.run(

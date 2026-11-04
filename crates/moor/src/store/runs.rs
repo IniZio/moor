@@ -10,7 +10,7 @@ use sea_query::{Expr, ExprTrait as _, Order, Query, SelectStatement};
 use super::apply::{insert_event, intent_sets, update};
 use super::follow::{self, FollowClaim};
 use super::{load_box, Store, StoreError};
-use crate::store::db::{DbExt as _, OptionalExtension, Row, TransactionBehavior};
+use crate::store::db::{DbExt as _, OptionalExtension, Row};
 
 /// A run to record.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -131,7 +131,7 @@ impl Store {
         } = r;
         let now = self.now();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         if load_box(&tx, box_id)?.is_none() {
             return Err(StoreError::NotFound(box_id));
         }
@@ -181,7 +181,7 @@ impl Store {
     pub(crate) fn finish_run(&self, id: RunId, out: RunOutcome) -> Result<(), StoreError> {
         let now = self.now();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let box_id: Option<i64> = tx
             .row(
                 Query::select()
@@ -235,7 +235,7 @@ impl Store {
     pub(crate) fn refused_run(&self, box_id: BoxId) -> Result<(), StoreError> {
         let now = self.now();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let ran = Event::Ran {
             run: None,
             exit: None,
@@ -288,7 +288,7 @@ impl Store {
     /// Records `pid` as the process of run `id` and of its Box's running intent.
     pub(crate) fn set_run_pid(&self, id: RunId, pid: u32) -> Result<(), StoreError> {
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         tx.run(
             Query::update()
                 .table(Runs::Table)

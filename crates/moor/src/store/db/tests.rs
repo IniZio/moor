@@ -1,63 +1,68 @@
-use rusqlite::types::Type;
 use rusqlite::Connection;
 use sea_query::{Expr, ExprTrait as _, Func, OnConflict, Order, Query};
 
-use super::{params, Conn, DbExt as _, Error, OptionalExtension as _, TransactionBehavior};
+use super::{
+    unique_violation, Conn, Db, DbExt as _, Error, OptionalExtension as _, Type, UniqueKey,
+};
 
 type Read = (i64, bool, Option<String>, Option<Vec<u8>>);
 
 fn conn() -> Conn {
     let conn = Conn::sqlite(Connection::open_in_memory().unwrap());
-    conn.execute(
-        "CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER, s TEXT, b BLOB)",
-        (),
+    conn.execute_batch(
+        "CREATE TABLE t (id INTEGER PRIMARY KEY, n INTEGER, s TEXT, b BLOB); \
+         CREATE UNIQUE INDEX t_s ON t (s);",
     )
     .unwrap();
     conn
 }
 
-#[test]
-fn values_bind_and_read_back_as_rusqlite_converts_them() {
-    let conn = conn();
-    conn.execute(
-        "INSERT INTO t (n, s, b) VALUES (?, ?, ?)",
-        params![true, "text", vec![1u8, 2]],
+fn insert_n(conn: &impl Db, n: i64) {
+    conn.run(
+        Query::insert()
+            .into_table("t")
+            .columns(["n"])
+            .values_panic([n.into()]),
     )
     .unwrap();
-    conn.execute(
-        "INSERT INTO t (n, s, b) VALUES (?1, ?2, ?3)",
-        (7u32, None::<String>, None::<Vec<u8>>),
+}
+
+fn all_n(conn: &impl Db) -> Vec<i64> {
+    conn.rows(
+        Query::select()
+            .column("n")
+            .from("t")
+            .order_by("n", Order::Asc),
+        |r| r.get(0),
     )
-    .unwrap();
-    let rows: Vec<Read> = conn
-        .prepare("SELECT n, n, s, b FROM t ORDER BY id")
-        .unwrap()
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
-        .unwrap()
-        .collect::<Result<_, _>>()
-        .unwrap();
-    assert_eq!(
-        rows,
-        [
-            (1, true, Some("text".to_owned()), Some(vec![1, 2])),
-            (7, true, None, None),
-        ]
-    );
+    .unwrap()
+    .collect::<Result<_, _>>()
+    .unwrap()
 }
 
 #[test]
 fn a_column_of_the_wrong_type_is_refused_with_its_name() {
     let conn = conn();
-    conn.execute("INSERT INTO t (s) VALUES ('x')", []).unwrap();
+    conn.run(
+        Query::insert()
+            .into_table("t")
+            .columns(["s"])
+            .values_panic(["x".into()]),
+    )
+    .unwrap();
     let err = conn
-        .query_row("SELECT s FROM t", [], |r| r.get::<_, i64>(0))
+        .row(Query::select().column("s").from("t"), |r| {
+            r.get::<_, i64>(0)
+        })
         .unwrap_err();
     assert!(
         matches!(&err, Error::InvalidColumnType(0, name, Type::Text) if name == "s"),
         "{err:?}"
     );
     let err = conn
-        .query_row("SELECT -1 AS n", [], |r| r.get::<_, u32>("n"))
+        .row(Query::select().expr_as(Expr::val(-1), "n"), |r| {
+            r.get::<_, u32>("n")
+        })
         .unwrap_err();
     assert!(
         matches!(err, Error::IntegralValueOutOfRange(0, -1)),
@@ -69,7 +74,9 @@ fn a_column_of_the_wrong_type_is_refused_with_its_name() {
 fn no_row_is_an_error_that_optional_turns_into_none() {
     let conn = conn();
     let none = conn
-        .query_row("SELECT n FROM t", [], |r| r.get::<_, i64>(0))
+        .row(Query::select().column("n").from("t"), |r| {
+            r.get::<_, i64>(0)
+        })
         .optional()
         .unwrap();
     assert_eq!(none, None);
@@ -78,14 +85,19 @@ fn no_row_is_an_error_that_optional_turns_into_none() {
 #[test]
 fn rows_are_mapped_only_as_they_are_taken() {
     let conn = conn();
-    conn.execute("INSERT INTO t (n) VALUES (1), (2)", [])
-        .unwrap();
-    let mut stmt = conn.prepare("SELECT n FROM t ORDER BY n").unwrap();
-    let mut rows = stmt
-        .query_and_then([], |r| match r.get::<_, i64>(0)? {
-            1 => Ok(1),
-            n => Err(Error::IntegralValueOutOfRange(0, n)),
-        })
+    insert_n(&conn, 1);
+    insert_n(&conn, 2);
+    let mut rows = conn
+        .rows(
+            Query::select()
+                .column("n")
+                .from("t")
+                .order_by("n", Order::Asc),
+            |r| match r.get::<_, i64>(0)? {
+                1 => Ok(1),
+                n => Err(Error::IntegralValueOutOfRange(0, n)),
+            },
+        )
         .unwrap();
     assert_eq!(rows.next().transpose().unwrap(), Some(1));
 }
@@ -94,22 +106,42 @@ fn rows_are_mapped_only_as_they_are_taken() {
 fn a_dropped_transaction_rolls_back_and_a_committed_one_stays() {
     let mut conn = conn();
     {
-        let tx = conn
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .unwrap();
-        tx.execute("INSERT INTO t (n) VALUES (1)", []).unwrap();
+        let tx = conn.immediate().unwrap();
+        insert_n(&tx, 1);
     }
     let tx = conn.transaction().unwrap();
-    tx.execute("INSERT INTO t (n) VALUES (2)", []).unwrap();
+    insert_n(&tx, 2);
     tx.commit().unwrap();
-    let held: Vec<i64> = conn
-        .prepare("SELECT n FROM t")
-        .unwrap()
-        .query_map([], |r| r.get(0))
-        .unwrap()
-        .collect::<Result<_, _>>()
-        .unwrap();
-    assert_eq!(held, [2]);
+    assert_eq!(all_n(&conn), [2]);
+}
+
+#[test]
+fn a_unique_collision_names_its_table_and_columns() {
+    let conn = conn();
+    let put = |id: i64, s: &str| {
+        conn.run(
+            Query::insert()
+                .into_table("t")
+                .columns(["id", "s"])
+                .values_panic([id.into(), s.into()]),
+        )
+    };
+    put(1, "a").unwrap();
+    let taken = put(2, "a").unwrap_err();
+    let key = unique_violation(&taken).unwrap();
+    assert_eq!(
+        key,
+        UniqueKey {
+            table: "t".into(),
+            columns: vec!["s".into()]
+        }
+    );
+    assert!(key.is(&"t", &["s"]) && !key.is(&"t", &["n"]) && !key.is(&"u", &["s"]));
+    assert_eq!(
+        unique_violation(&put(1, "b").unwrap_err()),
+        None,
+        "a primary key"
+    );
 }
 
 #[test]

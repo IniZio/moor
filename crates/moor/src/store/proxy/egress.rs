@@ -7,7 +7,7 @@ use moor_schema::tables::Events;
 use sea_query::{Expr, ExprTrait as _, Order, Query};
 
 use crate::store::apply::insert_event;
-use crate::store::db::{DbExt as _, TransactionBehavior};
+use crate::store::db::DbExt as _;
 use crate::store::{load_box, Store, StoreError};
 
 impl Store {
@@ -37,7 +37,7 @@ impl Store {
         }
         let now = self.now();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         if load_box(&tx, box_id)?.is_none() {
             return Err(StoreError::NotFound(box_id));
         }

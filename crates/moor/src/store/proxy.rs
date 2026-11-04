@@ -13,7 +13,7 @@ use moor_schema::tables::Proxy;
 use sea_query::{Expr, ExprTrait as _, Order, Query, UpdateStatement};
 
 use super::{load_box, to_u32, Store, StoreError};
-use crate::store::db::{Db, DbExt as _, OptionalExtension, Row, TransactionBehavior};
+use crate::store::db::{Db, DbExt as _, OptionalExtension, Row};
 
 /// The columns a proxy row is read with, in the order [`raw_from_row`] reads them.
 const COLUMNS: [Proxy; 9] = [
@@ -132,7 +132,7 @@ impl Store {
     ) -> Result<Reserve, StoreError> {
         let now = self.now();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         if load_box(&tx, box_id)?.is_none() {
             return Err(StoreError::NotFound(box_id));
         }
@@ -229,7 +229,7 @@ impl Store {
     /// Delete the proxy row of `box_id`; returns whether a row was deleted.
     pub(crate) fn remove_proxy(&self, box_id: BoxId) -> Result<bool, StoreError> {
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let changed = tx.run(
             Query::delete()
                 .from_table(Proxy::Table)
@@ -265,7 +265,7 @@ struct RawRow {
 }
 
 /// Read a proxy row without range checks.
-fn raw_from_row(r: &Row<'_>) -> rusqlite::Result<RawRow> {
+fn raw_from_row(r: &Row<'_>) -> crate::store::db::Result<RawRow> {
     Ok(RawRow {
         box_id: r.get(0)?,
         box_port: r.get(1)?,

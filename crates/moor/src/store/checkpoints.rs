@@ -8,7 +8,7 @@ use moor_core::{BoxPath, ProviderId};
 use moor_schema::tables::SetupCheckpoints as Checkpoints;
 use sea_query::{Expr, ExprTrait as _, Query, Value};
 
-use crate::store::db::{DbExt as _, OptionalExtension, TransactionBehavior};
+use crate::store::db::{DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
 /// One setup layer saved under a provider.
@@ -64,7 +64,7 @@ impl Store {
         let chain = lineage.chain.as_str();
         let provider = provider.as_str();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let chain_began = Query::select()
             .expr(Expr::col(Checkpoints::ChainAt).min())
             .from(Checkpoints::Table)

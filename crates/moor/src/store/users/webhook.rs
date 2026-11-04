@@ -8,7 +8,7 @@ use moor_core::Secret;
 use moor_schema::tables::{UserWebhooks, WebhookDeliveries};
 use sea_query::{Expr, ExprTrait as _, Order, Query};
 
-use crate::store::db::{self, DbExt as _, OptionalExtension as _, TransactionBehavior};
+use crate::store::db::{self, DbExt as _, OptionalExtension as _};
 use crate::store::{Store, StoreError};
 use crate::vault::Vault;
 
@@ -54,7 +54,7 @@ impl Store {
         let now = self.now().as_millis();
         let events = serde_json::to_string(events)?;
         let mut writer = self.writer();
-        let tx = writer.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = writer.immediate()?;
         let held: i64 = tx.row(
             Query::select()
                 .expr(Expr::col(UserWebhooks::Id).count())
@@ -235,7 +235,7 @@ impl Store {
     /// Deletes `user`'s webhook `id` and its pending deliveries; true when it was theirs.
     pub(crate) fn delete_user_webhook(&self, user: UserId, id: i64) -> Result<bool, StoreError> {
         let mut writer = self.writer();
-        let tx = writer.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = writer.immediate()?;
         let theirs = Query::select()
             .column(UserWebhooks::Id)
             .from(UserWebhooks::Table)

@@ -9,7 +9,6 @@ use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::Ts;
 use moor_core::BoxName;
 
-use crate::store::db::DbExt as _;
 use crate::testing::clock::FakeClock;
 
 use super::*;
@@ -80,7 +79,7 @@ fn store_open_leaves_everything_private() {
     let db = dir.join("moor.db");
     touch(&db, 0o644);
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
-    let _store = super::super::Store::open(&db, clock).unwrap();
+    let _store = crate::store::Store::open(&db, clock).unwrap();
     assert_eq!(mode(&dir), 0o700);
     for name in ["moor.db", "moor.db-wal", "moor.db-shm"] {
         assert_eq!(mode(&dir.join(name)), 0o600, "{name}");
@@ -122,9 +121,9 @@ fn store_open_leaves_a_db_at_another_schema_version_as_it_found_it() {
         fs::set_permissions(&db, fs::Permissions::from_mode(0o644)).unwrap();
         let before = snapshot(&dir);
         let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
-        let opened = super::super::Store::open(&db, clock);
+        let opened = crate::store::Store::open(&db, clock);
         assert!(
-            matches!(opened, Err(super::super::StoreError::Schema { .. })),
+            matches!(opened, Err(crate::store::StoreError::Schema { .. })),
             "{journal}: {:?}",
             opened.err()
         );
@@ -168,7 +167,7 @@ fn a_second_open_keeps_the_first_store_locked_against_other_processes() {
     let tmp = tempfile::tempdir().unwrap();
     let db = tmp.path().join("state").join("moor.db");
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
-    let store = super::super::Store::open(&db, clock.clone()).unwrap();
+    let store = crate::store::Store::open(&db, clock.clone()).unwrap();
     let insert = |name: &str| {
         Decision::insert(NewBox {
             name: BoxName::parse_allow_bare(name).unwrap(),
@@ -176,11 +175,11 @@ fn a_second_open_keeps_the_first_store_locked_against_other_processes() {
         })
     };
     store.apply(insert("a")).unwrap();
-    drop(super::super::Store::open(&db, clock).unwrap());
+    drop(crate::store::Store::open(&db, clock).unwrap());
     let child = std::process::Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
-            "store::open::tests::child_finds_the_db_locked_and_closes_a_connection",
+            "store::db::sqlite::files::tests::child_finds_the_db_locked_and_closes_a_connection",
         ])
         .env(CHILD_DB, &db)
         .stdout(std::process::Stdio::null())
@@ -194,6 +193,7 @@ fn a_second_open_keeps_the_first_store_locked_against_other_processes() {
     store.apply(insert("b")).unwrap();
     let check: String = store
         .writer()
+        .0
         .query_row("PRAGMA integrity_check", [], |r| r.get(0))
         .unwrap();
     assert_eq!(check, "ok");

@@ -7,9 +7,9 @@ use moor_core::{BoxId, BoxName};
 /// Store failure.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum StoreError {
-    /// `SQLite` failed.
+    /// The database failed.
     #[error("sqlite: {0}")]
-    Sqlite(#[from] rusqlite::Error),
+    Db(#[from] crate::store::db::Error),
     /// An event payload failed to (de)serialise.
     #[error("json: {0}")]
     Json(#[from] serde_json::Error),

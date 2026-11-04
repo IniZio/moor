@@ -7,7 +7,7 @@ use moor_schema::tables;
 use sea_query::{Expr, ExprTrait as _, OnConflict, Query};
 use serde_json::{json, Value};
 
-use crate::store::db::{self, Db, DbExt as _, OptionalExtension, TransactionBehavior};
+use crate::store::db::{self, Db, DbExt as _, OptionalExtension};
 use crate::store::select::newest_session;
 use crate::store::{Store, StoreError};
 
@@ -19,7 +19,7 @@ impl Store {
         let now = self.now();
         let record = record_json(record);
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let unchanged = cached_hook(&tx, box_id)?.is_some_and(|mut cached| {
             if let Some(fields) = cached.as_object_mut() {
                 fields.shift_remove("reported");
@@ -55,7 +55,7 @@ impl Store {
     /// event; a newer report left in its place stays unmarked.
     pub(crate) fn mark_hook_reported(&self, box_id: BoxId, at: Ts) -> Result<(), StoreError> {
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let Some(mut record) = cached_hook(&tx, box_id)? else {
             return Ok(());
         };

@@ -11,7 +11,7 @@ use moor_schema::tables::Reports;
 use sea_query::{Expr, ExprTrait as _, Order, Query};
 
 use super::{Store, StoreError};
-use crate::store::db::{Db, DbExt as _, OptionalExtension, Row, TransactionBehavior};
+use crate::store::db::{Db, DbExt as _, OptionalExtension, Row};
 
 /// One stored version of a Box's Report.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,7 +50,7 @@ impl Store {
         }
         let now = self.now();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let latest = latest_in(&tx, box_id, kind)?;
         if let Some((_, path)) = &latest {
             if fs::read(path).is_ok_and(|old| old == content.as_bytes()) {
@@ -133,7 +133,7 @@ fn insert_in(
     version: i64,
     path: &str,
     now: Ts,
-) -> rusqlite::Result<i64> {
+) -> crate::store::db::Result<i64> {
     db.row(
         Query::insert()
             .into_table(Reports::Table)
@@ -171,7 +171,7 @@ fn write_private(file: &Path, content: &str) -> io::Result<()> {
 }
 
 /// Map a `reports` row selected in column order.
-fn report_from_row(r: &Row<'_>) -> rusqlite::Result<ReportRow> {
+fn report_from_row(r: &Row<'_>) -> crate::store::db::Result<ReportRow> {
     Ok(ReportRow {
         id: r.get(0)?,
         box_id: BoxId::new(r.get(1)?),

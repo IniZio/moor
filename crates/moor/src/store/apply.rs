@@ -19,7 +19,7 @@ use self::steps::{step_box, Parts};
 use super::box_node::live_on_node_in;
 use super::select::newest_session;
 use super::{DriverRow, Store, StoreError};
-use crate::store::db::{self, DbExt as _, TransactionBehavior, Tx};
+use crate::store::db::{self, DbExt as _, Tx};
 use moor_core::name::NodeName;
 
 /// Result of a committed `apply`.
@@ -50,7 +50,7 @@ impl Store {
     pub(crate) fn apply(&self, d: Decision) -> Result<Applied, StoreError> {
         let now = self.now();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let applied = apply_in(&tx, now, d)?;
         tx.commit()?;
         drop(conn);
@@ -70,7 +70,7 @@ impl Store {
     ) -> Result<Option<Applied>, StoreError> {
         let now = self.now();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let Some(d) = decide(live_on_node_in(&tx, node)?) else {
             return Ok(None);
         };

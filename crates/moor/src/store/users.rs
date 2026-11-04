@@ -6,7 +6,7 @@ use moor_schema::tables::{Identities, UserSecrets, Users};
 use sea_query::{Expr, ExprTrait as _, OnConflict, Order, Query};
 
 use super::{parsed, Store, StoreError};
-use crate::store::db::{Db, DbExt as _, OptionalExtension, TransactionBehavior};
+use crate::store::db::{Db, DbExt as _, OptionalExtension};
 use crate::vault::Vault;
 
 pub(super) mod front_leases;
@@ -45,7 +45,7 @@ impl Store {
         let now = self.now().as_millis();
         let email = email.map(Email::as_str);
         let mut writer = self.writer();
-        let tx = writer.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = writer.immediate()?;
         if let Some(user) = user_of_in(&tx, identity)? {
             if let Some(email) = email {
                 let held = Query::select()

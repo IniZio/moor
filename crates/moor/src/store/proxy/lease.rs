@@ -12,7 +12,7 @@ use sea_query::{Expr, ExprTrait as _, Query};
 
 use super::ReadyProc;
 use crate::store::apply::insert_event;
-use crate::store::db::{Db, DbExt as _, OptionalExtension, TransactionBehavior};
+use crate::store::db::{Db, DbExt as _, OptionalExtension};
 use crate::store::{Store, StoreError};
 
 /// Outcome of a lease claim.
@@ -47,7 +47,7 @@ impl Store {
     ) -> Result<Lease, StoreError> {
         let now = self.now().as_millis();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let current: Option<(Option<String>, Option<i64>)> = tx
             .row(
                 Query::select()
@@ -88,7 +88,7 @@ impl Store {
     pub(crate) fn heartbeat(&self, box_id: BoxId, owner: &str) -> Result<bool, StoreError> {
         let now = self.now().as_millis();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let changed = tx.run(
             Query::update()
                 .table(Proxy::Table)
@@ -130,7 +130,7 @@ impl Store {
     ) -> Result<Fenced, StoreError> {
         let now = self.now();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let changed = tx.run(
             Query::update()
                 .table(Proxy::Table)
@@ -184,7 +184,7 @@ impl Store {
     ) -> Result<Fenced, StoreError> {
         let now = self.now();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let holder: Option<Option<String>> = tx
             .row(
                 Query::select()

@@ -3,7 +3,11 @@ use std::fs;
 use super::*;
 
 fn lines(src: &str) -> Vec<usize> {
-    scan(src).unwrap().into_iter().map(|(l, _)| l).collect()
+    scan(src, true)
+        .unwrap()
+        .into_iter()
+        .map(|(l, _)| l)
+        .collect()
 }
 
 #[test]
@@ -42,7 +46,7 @@ fn sea_query_statements_prose_and_doc_comments_pass() {
     let src = "/// SELECT is what a reader runs.\n\
         fn f() { conn.run(Query::update().table(Boxes::Table).value(Boxes::Node, n)); \
         let e = \"Selected boxes\"; let w = \"WHEREVER\"; let b = self.backend; }";
-    assert!(scan(src).unwrap().is_empty(), "{:?}", scan(src));
+    assert!(scan(src, true).unwrap().is_empty(), "{:?}", scan(src, true));
 }
 
 fn repo(files: &[(&str, &str)]) -> tempfile::TempDir {
@@ -58,32 +62,61 @@ fn repo(files: &[(&str, &str)]) -> tempfile::TempDir {
 const BAD: &str = "fn f() { conn.execute(\"DELETE FROM t\", []); }";
 
 #[test]
-fn the_seam_is_skipped_and_the_rest_of_the_store_is_checked() {
-    let dir = repo(&[
-        ("crates/moor/src/store/db.rs", BAD),
-        ("crates/moor/src/store/db/sqlite.rs", BAD),
-        ("crates/moor/src/store/runs.rs", BAD),
-        ("crates/moor/src/store/runs/tests.rs", "fn ok() {}"),
-    ]);
-    let (checked, bad) = check(dir.path(), "").unwrap();
-    assert_eq!(checked, 2);
-    assert_eq!(bad.len(), 2, "{bad:?}");
-    assert!(bad
-        .iter()
-        .all(|b| b.starts_with("store-sql: crates/moor/src/store/runs.rs:1")));
+fn naming_the_sqlite_driver_is_flagged() {
+    assert_eq!(
+        lines("fn f() { let c = rusqlite::Connection::open(p); }"),
+        [1, 1]
+    );
+    assert_eq!(lines("use crate::store::db::TransactionBehavior;"), [1]);
+    assert_eq!(
+        lines("fn f(e: E) { if let E::SqliteFailure(f, _) = e { f.code == ErrorCode::X; } }"),
+        [1, 1]
+    );
 }
 
 #[test]
-fn a_listed_file_is_skipped_until_it_is_clean() {
-    let listed = "crates/moor/src/store/runs.rs # not converted yet\n";
-    let dir = repo(&[("crates/moor/src/store/runs.rs", BAD)]);
-    assert_eq!(check(dir.path(), listed).unwrap(), (0, Vec::new()));
-    let clean = repo(&[("crates/moor/src/store/runs.rs", "fn ok() {}")]);
-    assert!(check(clean.path(), listed)
-        .unwrap_err()
-        .contains("is clean"));
-    let gone = repo(&[("crates/moor/src/store/other.rs", "fn ok() {}")]);
-    assert!(check(gone.path(), listed)
-        .unwrap_err()
-        .contains("not a store file"));
+fn outside_the_store_only_a_text_method_name_passes() {
+    let src = "fn f() { self.execute(connect, &plan); s.prepare(); }";
+    assert!(scan(src, false).unwrap().is_empty());
+    assert_eq!(lines(src), [1, 1]);
+    let raw = "fn f() { db.execute(\"UPDATE boxes SET a = 1\", []); }";
+    assert_eq!(
+        scan(raw, false).unwrap().len(),
+        1,
+        "the SQL string still is"
+    );
+}
+
+#[test]
+fn a_lone_sql_word_is_not_sql() {
+    assert!(lines("const M: [&str; 2] = [\"DELETE\", \"UPDATE \"];").is_empty());
+}
+
+#[test]
+fn the_seam_is_skipped_and_the_rest_of_the_crate_is_checked() {
+    let dir = repo(&[
+        ("crates/moor/src/store/db.rs", BAD),
+        ("crates/moor/src/store/db/sqlite.rs", BAD),
+        ("crates/moor/src/store/db/sqlite/migrate/tests.rs", BAD),
+        ("crates/moor/src/store/runs.rs", BAD),
+        ("crates/moor/src/store/runs/tests.rs", "fn ok() {}"),
+        ("crates/moor/src/ops/start/tests.rs", BAD),
+        (
+            "crates/moor/src/ops/start.rs",
+            "fn f() { self.execute(a, b); }",
+        ),
+    ]);
+    let (checked, bad) = check(dir.path()).unwrap();
+    assert_eq!(checked, 4);
+    assert_eq!(
+        bad.iter()
+            .map(|b| b.split(": ").nth(1).unwrap())
+            .collect::<Vec<_>>(),
+        [
+            "crates/moor/src/ops/start/tests.rs:1",
+            "crates/moor/src/store/runs.rs:1",
+            "crates/moor/src/store/runs.rs:1"
+        ],
+        "{bad:?}"
+    );
 }

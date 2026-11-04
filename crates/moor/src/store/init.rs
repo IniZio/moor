@@ -1,18 +1,16 @@
-//! Schema creation and stored-value parsing helpers.
+//! The store's once-made `meta` values, its controller lock, and stored-value parsing helpers.
 
 use std::fs::{self, File, TryLockError};
 use std::path::Path;
 
 use moor_core::box_key::ControllerId;
 use moor_core::cache::CacheSalt;
-use moor_migrate::{Backend, Legacy, Migration, Outcome};
-use moor_schema::STEPS;
-use rusqlite::{Connection, OpenFlags};
+use moor_schema::tables::Meta;
+use sea_query::{Expr, ExprTrait as _, OnConflict, Query};
 
-use super::open::sibling;
 use super::{Store, StoreError};
 use crate::env::CONTROLLER_LOCK;
-use crate::store::db::{DbExt as _, OptionalExtension};
+use crate::store::db::{Db, DbExt as _};
 
 impl Store {
     /// This state dir's cache key salt, made on first use and never changed.
@@ -22,13 +20,7 @@ impl Store {
             .map_err(|e| StoreError::Corrupt(format!("no randomness for the cache salt: {e}")))?;
         let stored: String = {
             let conn = self.writer();
-            conn.execute(
-                "INSERT INTO meta (k, v) VALUES ('cache_salt', ?) ON CONFLICT (k) DO NOTHING",
-                [CacheSalt::new(fresh).to_hex()],
-            )?;
-            conn.query_row("SELECT v FROM meta WHERE k = 'cache_salt'", [], |r| {
-                r.get(0)
-            })?
+            meta_once(&*conn, "cache_salt", CacheSalt::new(fresh).to_hex())?
         };
         parsed_opt("meta cache_salt", &stored, CacheSalt::from_hex)
     }
@@ -44,68 +36,41 @@ impl Store {
         })?;
         let stored: String = {
             let conn = self.writer();
-            conn.execute(
-                "INSERT INTO meta (k, v) VALUES ('controller_id', ?) ON CONFLICT (k) DO NOTHING",
-                [ControllerId::from_bytes(fresh).as_str()],
-            )?;
-            conn.query_row("SELECT v FROM meta WHERE k = 'controller_id'", [], |r| {
-                r.get(0)
-            })?
+            meta_once(
+                &*conn,
+                "controller_id",
+                ControllerId::from_bytes(fresh).as_str(),
+            )?
         };
         parsed_opt("meta controller_id", &stored, ControllerId::parse)
     }
 }
 
-/// moor.db's migrations, oldest first.
-pub(super) fn schema() -> Result<Vec<Migration>, StoreError> {
-    moor_migrate::steps(STEPS, Backend::Sqlite)
-        .map_err(|e| StoreError::Corrupt(format!("migrations: {e}")))
-}
-
-/// Refuse an existing db this build would not migrate, without writing to it or its directory.
-/// A db a newer build migrated is not refused; the outcome says so.
-///
-/// A db with no `-wal` file is read as immutable, because a read-only open of a WAL-mode db
-/// creates the `-wal` and `-shm` files.
-pub(super) fn refuse_other_version(db: &Path) -> Result<Outcome, StoreError> {
-    if !db.try_exists()? {
-        return Ok(Outcome::Current);
-    }
-    let escaped = db
-        .to_string_lossy()
-        .replace('%', "%25")
-        .replace('?', "%3f")
-        .replace('#', "%23");
-    let immutable = if sibling(db, "-wal").try_exists()? {
-        ""
-    } else {
-        "&immutable=1"
-    };
-    let conn = Connection::open_with_flags(
-        format!("file:{escaped}?mode=ro{immutable}"),
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
+/// The `meta` value at `k`, set to `fresh` when it has none.
+fn meta_once(
+    conn: &dyn Db,
+    k: &str,
+    fresh: impl Into<sea_query::Value>,
+) -> Result<String, StoreError> {
+    conn.run(
+        Query::insert()
+            .into_table(Meta::Table)
+            .columns([Meta::K, Meta::V])
+            .values_panic([k.into(), Expr::val(fresh)])
+            .on_conflict(OnConflict::column(Meta::K).do_nothing().to_owned()),
     )?;
-    moor_migrate::check(&conn, &schema()?, legacy).map_err(|e| refused(db, e))
-}
-
-/// Bring the db to the latest migration; one process migrates while others wait. A db a newer
-/// build migrated is left as found.
-pub(super) fn migrate(conn: &mut Connection, db: &Path) -> Result<Outcome, StoreError> {
-    moor_migrate::migrate(conn, &schema()?, legacy).map_err(|e| refused(db, e))
-}
-
-/// The state dir's controller lock when `db` needs migrating, to hold while it migrates, so a
-/// running controller's db never moves past the schema that controller and its Proxy know.
-pub(super) fn claim_migration(conn: &Connection, db: &Path) -> Result<Option<File>, StoreError> {
-    if moor_migrate::is_latest(conn, &schema()?).map_err(|e| refused(db, e))? {
-        return Ok(None);
-    }
-    owner_lock(db)
+    Ok(conn.row(
+        Query::select()
+            .column(Meta::V)
+            .from(Meta::Table)
+            .and_where(Expr::col(Meta::K).eq(k)),
+        |r| r.get(0),
+    )?)
 }
 
 /// The controller lock beside `db`, held until dropped; none when this process is the
 /// controller holding it. Another holder is a refusal naming its pid and socket.
-fn owner_lock(db: &Path) -> Result<Option<File>, StoreError> {
+pub(super) fn owner_lock(db: &Path) -> Result<Option<File>, StoreError> {
     let path = db.with_file_name(CONTROLLER_LOCK);
     let file = File::options()
         .create(true)
@@ -132,24 +97,8 @@ fn owner_lock(db: &Path) -> Result<Option<File>, StoreError> {
     }
 }
 
-/// What a db without a migration history holds: nothing, or a pre-migration store named by its
-/// `meta` schema version, which this moor does not adopt.
-fn legacy(conn: &Connection) -> rusqlite::Result<Legacy> {
-    let has_meta: bool = conn.query_row(
-        "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta')",
-        [],
-        |r| r.get(0),
-    )?;
-    if !has_meta {
-        return Ok(Legacy::Empty);
-    }
-    let sql = "SELECT v FROM meta WHERE k = 'schema_version'";
-    let found: Option<String> = conn.query_row(sql, [], |r| r.get(0)).optional()?;
-    Ok(Legacy::Other(found.unwrap_or_else(|| "none".to_owned())))
-}
-
 /// The store error for a db this build will not migrate.
-fn refused(db: &Path, e: moor_migrate::Error) -> StoreError {
+pub(super) fn refused(db: &Path, e: moor_migrate::Error) -> StoreError {
     match e {
         moor_migrate::Error::Unadoptable(version) => StoreError::Schema {
             db: db.to_path_buf(),
@@ -159,7 +108,7 @@ fn refused(db: &Path, e: moor_migrate::Error) -> StoreError {
             db: db.to_path_buf(),
             found: format!("migration {found}"),
         },
-        moor_migrate::Error::Sqlite(e) => StoreError::Sqlite(e),
+        moor_migrate::Error::Sqlite(e) => StoreError::Db(e),
         other @ moor_migrate::Error::Migration(_) => StoreError::Migration {
             db: db.to_path_buf(),
             source: other,

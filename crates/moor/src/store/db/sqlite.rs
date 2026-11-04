@@ -1,56 +1,65 @@
-//! The `SQLite` backend: opening the file, transactions, and rendering and binding statements
-//! with `sea-query`'s `SQLite` builder.
+//! The `SQLite` backend: opening and migrating the file, transactions, rendering and binding
+//! statements with `sea-query`'s `SQLite` builder, and reading its errors.
 
+use std::fs::File;
 use std::path::Path;
 use std::sync::MutexGuard;
+use std::time::Duration;
 
+use moor_migrate::Outcome;
 use rusqlite::types::Value;
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, ErrorCode, OpenFlags};
 use sea_query::SqliteQueryBuilder;
 
-use super::{owned, Db, Error, Result, Rows, Statement, TransactionBehavior};
-
-/// The `SQLite` writer connection to `path`, in WAL mode with foreign keys on, waiting `busy`
-/// on a lock.
-pub(crate) fn sqlite_writer(path: &Path, busy: std::time::Duration) -> Result<Connection> {
-    let conn = Connection::open(path)?;
-    conn.busy_timeout(busy)?;
-    conn.execute_batch(
-        "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;",
-    )?;
-    Ok(conn)
-}
+use super::{owned, Db, Error, Result, Rows, Statement, UniqueKey};
+use crate::store::StoreError;
 
 /// An open connection to the store's database.
 pub(crate) struct Conn(Connection);
 
 impl Conn {
-    /// The `SQLite` connection `conn`, already opened and migrated.
-    pub(crate) const fn sqlite(conn: Connection) -> Self {
+    /// The `SQLite` connection `conn`.
+    #[cfg(test)]
+    pub(super) const fn sqlite(conn: Connection) -> Self {
         Self(conn)
     }
 
+    /// Open (creating if needed) the store's `SQLite` db at `path` as its writer, in WAL mode
+    /// with foreign keys on, waiting `busy` on a lock, and migrated to this build's schema while
+    /// holding what `claim` returns. The state dir ends 0700, the db, `-wal` and `-shm` 0600. A db
+    /// this build would not migrate is refused before anything writes to it or changes a mode; one
+    /// a newer build migrated opens unchanged, and the outcome says so.
+    pub(crate) fn sqlite_writer(
+        path: &Path,
+        busy: Duration,
+        claim: impl FnOnce(&Path) -> Result<Option<File>, StoreError>,
+    ) -> Result<(Self, Outcome), StoreError> {
+        migrate::refuse_other_version(path)?;
+        files::prepare(path)?;
+        let mut conn = Connection::open(path)?;
+        conn.busy_timeout(busy)?;
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;",
+        )?;
+        let migrating = if migrate::is_latest(&conn, path)? {
+            None
+        } else {
+            claim(path)?
+        };
+        let schema = migrate::migrate(&mut conn, path)?;
+        drop(migrating);
+        files::tighten(path)?;
+        Ok((Self(conn), schema))
+    }
+
     /// A read-only `SQLite` connection to `path`, waiting `busy` on a lock.
-    pub(crate) fn sqlite_reader(path: &Path, busy: std::time::Duration) -> Result<Self> {
+    pub(crate) fn sqlite_reader(path: &Path, busy: Duration) -> Result<Self> {
         let conn = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?;
         conn.busy_timeout(busy)?;
         Ok(Self(conn))
-    }
-
-    /// Begin a transaction that takes the write lock as `behavior` says.
-    pub(crate) fn transaction_with_behavior(
-        &mut self,
-        behavior: TransactionBehavior,
-    ) -> Result<Tx<'_>> {
-        self.0.transaction_with_behavior(behavior).map(Tx)
-    }
-
-    /// Begin a transaction that takes the write lock at its first write.
-    pub(crate) fn transaction(&mut self) -> Result<Tx<'_>> {
-        self.0.transaction().map(Tx)
     }
 
     /// A plain read-write connection to the db file at `path`, as a test outside the store
@@ -60,11 +69,51 @@ impl Conn {
         Connection::open(path).map(Self)
     }
 
+    /// Begin a transaction that takes the write lock now, so a read in it is not stale by the
+    /// time it writes.
+    pub(crate) fn immediate(&mut self) -> Result<Tx<'_>> {
+        self.0
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map(Tx)
+    }
+
+    /// Begin a transaction that takes the write lock at its first write.
+    pub(crate) fn transaction(&mut self) -> Result<Tx<'_>> {
+        self.0.transaction().map(Tx)
+    }
+
     /// Run several `;`-separated statements that bind nothing.
     #[cfg(test)]
-    pub(crate) fn execute_batch(&self, sql: &str) -> Result<()> {
+    pub(super) fn execute_batch(&self, sql: &str) -> Result<()> {
         self.0.execute_batch(sql)
     }
+}
+
+/// Extended result code for a UNIQUE constraint failure.
+const SQLITE_CONSTRAINT_UNIQUE: i32 = 2067;
+
+/// The UNIQUE key `e` reports a write collided with; none for any other error. `SQLite` names
+/// the key as `table.column, ..` after a fixed prefix.
+pub(crate) fn unique_violation(e: &Error) -> Option<UniqueKey> {
+    let Error::SqliteFailure(f, Some(msg)) = e else {
+        return None;
+    };
+    if f.code != ErrorCode::ConstraintViolation || f.extended_code != SQLITE_CONSTRAINT_UNIQUE {
+        return None;
+    }
+    let mut table = None;
+    let mut columns = Vec::new();
+    for key in msg.strip_prefix("UNIQUE constraint failed: ")?.split(", ") {
+        let (t, c) = key.split_once('.')?;
+        if *table.get_or_insert(t) != t {
+            return None;
+        }
+        columns.push(c.to_owned());
+    }
+    Some(UniqueKey {
+        table: table?.to_owned(),
+        columns,
+    })
 }
 
 /// An open transaction; dropping it rolls back.
@@ -140,14 +189,6 @@ fn sqlite_query(conn: &Connection, sql: &str, params: Vec<Value>) -> Result<Rows
 }
 
 impl Db for Conn {
-    fn execute_values(&self, sql: &str, params: Vec<Value>) -> Result<usize> {
-        sqlite_execute(&self.0, sql, params)
-    }
-
-    fn query_values(&self, sql: &str, params: Vec<Value>) -> Result<Rows> {
-        sqlite_query(&self.0, sql, params)
-    }
-
     fn run_statement(&self, s: &Statement) -> Result<usize> {
         let (sql, params) = sqlite_render(s)?;
         sqlite_execute(&self.0, &sql, params)
@@ -160,14 +201,6 @@ impl Db for Conn {
 }
 
 impl Db for Tx<'_> {
-    fn execute_values(&self, sql: &str, params: Vec<Value>) -> Result<usize> {
-        sqlite_execute(&self.0, sql, params)
-    }
-
-    fn query_values(&self, sql: &str, params: Vec<Value>) -> Result<Rows> {
-        sqlite_query(&self.0, sql, params)
-    }
-
     fn run_statement(&self, s: &Statement) -> Result<usize> {
         let (sql, params) = sqlite_render(s)?;
         sqlite_execute(&self.0, &sql, params)
@@ -180,14 +213,6 @@ impl Db for Tx<'_> {
 }
 
 impl Db for MutexGuard<'_, Conn> {
-    fn execute_values(&self, sql: &str, params: Vec<Value>) -> Result<usize> {
-        (**self).execute_values(sql, params)
-    }
-
-    fn query_values(&self, sql: &str, params: Vec<Value>) -> Result<Rows> {
-        (**self).query_values(sql, params)
-    }
-
     fn run_statement(&self, s: &Statement) -> Result<usize> {
         (**self).run_statement(s)
     }
@@ -196,3 +221,9 @@ impl Db for MutexGuard<'_, Conn> {
         (**self).fetch_statement(s)
     }
 }
+
+mod files;
+mod migrate;
+
+#[cfg(test)]
+mod tests;

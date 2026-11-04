@@ -48,7 +48,6 @@ pub(crate) use follow::FollowClaim;
 pub(crate) mod host;
 mod init;
 pub(crate) mod lease;
-mod open;
 mod pressure;
 mod proxy;
 pub(super) mod reads;
@@ -196,16 +195,10 @@ impl Store {
     /// A db this build would not migrate is refused before anything writes to it or changes a mode.
     /// A db a newer build migrated opens unchanged.
     pub(crate) fn open(path: &Path, clock: Arc<dyn Clock>) -> Result<Self, StoreError> {
-        init::refuse_other_version(path)?;
-        open::prepare(path)?;
-        let mut conn = db::sqlite_writer(path, BUSY_TIMEOUT)?;
-        let migrating = init::claim_migration(&conn, path)?;
-        let schema = init::migrate(&mut conn, path)?;
-        drop(migrating);
-        open::tighten(path)?;
+        let (conn, schema) = Conn::sqlite_writer(path, BUSY_TIMEOUT, init::owner_lock)?;
         Ok(Self {
             path: path.to_path_buf(),
-            writer: Arc::new(Mutex::new(Conn::sqlite(conn))),
+            writer: Arc::new(Mutex::new(conn)),
             clock,
             pins: Pins::new(),
             schema,
@@ -285,7 +278,7 @@ impl Store {
     }
 
     /// Lock the writer connection. A thread that panicked while holding it left at worst an
-    /// open transaction, which rusqlite rolled back during unwind, so the connection is sound.
+    /// open transaction, which the backend rolled back during unwind, so the connection is sound.
     pub(super) fn writer(&self) -> MutexGuard<'_, Conn> {
         self.writer.lock().unwrap_or_else(PoisonError::into_inner)
     }

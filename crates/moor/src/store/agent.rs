@@ -11,7 +11,7 @@ use sea_query::{Expr, ExprTrait as _, Order, Query};
 use super::apply::insert_event;
 use super::select::newest_session;
 use super::{load_box, Store, StoreError};
-use crate::store::db::{self, DbExt as _, OptionalExtension, Row, TransactionBehavior};
+use crate::store::db::{self, DbExt as _, OptionalExtension, Row};
 
 /// The `launches` columns [`session_from_row`] reads, in order.
 const SESSION_COLUMNS: [Launches; 11] = [
@@ -132,7 +132,7 @@ impl Store {
     ) -> Result<i64, StoreError> {
         let now = self.now();
         let mut conn = self.writer();
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         if load_box(&tx, box_id)?.is_none() {
             return Err(StoreError::NotFound(box_id));
         }
@@ -236,7 +236,7 @@ impl Store {
 }
 
 /// A session from a `launches` row.
-fn session_from_row(r: &Row<'_>) -> rusqlite::Result<SessionRow> {
+fn session_from_row(r: &Row<'_>) -> db::Result<SessionRow> {
     Ok(SessionRow {
         id: r.get(0)?,
         box_id: BoxId::new(r.get(1)?),
@@ -248,9 +248,8 @@ fn session_from_row(r: &Row<'_>) -> rusqlite::Result<SessionRow> {
         transcript_digest: r.get(7)?,
         registered_agent_session: r.get(8)?,
         session: r.get(9)?,
-        holder: holder_from(r.get(10)?).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(10, rusqlite::types::Type::Text, e.into())
-        })?,
+        holder: holder_from(r.get(10)?)
+            .map_err(|e| db::Error::FromSqlConversionFailure(10, db::Type::Text, e.into()))?,
     })
 }
 
