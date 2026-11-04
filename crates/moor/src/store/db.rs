@@ -1,14 +1,18 @@
-//! The store's database seam: SQL text and plain values in, rows of plain values out.
+//! The store's database seam: a `sea-query` statement in, rows of plain values out.
 //!
-//! A value is one of `SQLite`'s storage classes, and binding and reading convert through
-//! rusqlite's `ToSql` and `FromSql`, so every backend binds and reads a Rust type the way the
-//! `SQLite` store always has.
+//! Each backend renders a [`Statement`] with its own query builder and binds its values, so
+//! the store above this module never writes SQL or asks which database it runs on. A value
+//! read back is one of `SQLite`'s storage classes, read through rusqlite's `FromSql`, so every
+//! backend reads a Rust type the way the `SQLite` store always has.
 
 use std::path::Path;
 use std::sync::MutexGuard;
 
 use rusqlite::types::{FromSql, FromSqlError, ToSqlOutput, Value, ValueRef};
 use rusqlite::{Connection, OpenFlags};
+use sea_query::{
+    DeleteStatement, InsertStatement, SelectStatement, SqliteQueryBuilder, UpdateStatement,
+};
 
 pub(crate) use rusqlite::{params, Error, OptionalExtension, ToSql, TransactionBehavior};
 
@@ -24,12 +28,52 @@ pub(crate) struct Rows {
     rows: Vec<Vec<Value>>,
 }
 
+/// A statement the store runs, built with `sea-query` and rendered by the backend.
+#[derive(Debug, Clone)]
+pub(crate) enum Statement {
+    /// A `SELECT`.
+    Select(SelectStatement),
+    /// An `INSERT`, maybe with `ON CONFLICT` or `RETURNING`.
+    Insert(InsertStatement),
+    /// An `UPDATE`.
+    Update(UpdateStatement),
+    /// A `DELETE`.
+    Delete(DeleteStatement),
+}
+
+/// `From` a statement, owned or as the `&mut` a builder chain ends on.
+macro_rules! statement_from {
+    ($($variant:ident($ty:ty))+) => {$(
+        impl From<$ty> for Statement {
+            fn from(s: $ty) -> Self {
+                Self::$variant(s)
+            }
+        }
+
+        impl From<&mut $ty> for Statement {
+            fn from(s: &mut $ty) -> Self {
+                Self::$variant(s.take())
+            }
+        }
+    )+};
+}
+statement_from! {
+    Select(SelectStatement)
+    Insert(InsertStatement)
+    Update(UpdateStatement)
+    Delete(DeleteStatement)
+}
+
 /// Something SQL runs on: a connection or an open transaction.
 pub(crate) trait Db {
     /// Run `sql` with `params` bound; the number of rows it changed.
     fn execute_values(&self, sql: &str, params: Vec<Value>) -> Result<usize>;
     /// Run `sql` with `params` bound; every row it returned.
     fn query_values(&self, sql: &str, params: Vec<Value>) -> Result<Rows>;
+    /// Run `s`; the number of rows it changed.
+    fn run_statement(&self, s: &Statement) -> Result<usize>;
+    /// Run `s`; every row it returned.
+    fn fetch_statement(&self, s: &Statement) -> Result<Rows>;
 }
 
 /// The values bound to a statement's placeholders, in order.
@@ -249,6 +293,38 @@ pub(crate) trait DbExt: Db {
             sql: sql.to_owned(),
         })
     }
+
+    /// Run `s`; the number of rows it changed.
+    fn run(&self, s: impl Into<Statement>) -> Result<usize> {
+        self.run_statement(&s.into())
+    }
+
+    /// Run `s`; its first row read by `f`, or `QueryReturnedNoRows`.
+    fn row<T, F>(&self, s: impl Into<Statement>, f: F) -> Result<T>
+    where
+        F: FnOnce(&Row<'_>) -> Result<T>,
+    {
+        let Rows { names, rows } = self.fetch_statement(&s.into())?;
+        let values = rows.first().ok_or(Error::QueryReturnedNoRows)?;
+        f(&Row {
+            names: &names,
+            values,
+        })
+    }
+
+    /// Run `s`; its rows mapped lazily by `f`, whose error is the caller's.
+    fn rows<T, E, F>(&self, s: impl Into<Statement>, f: F) -> Result<Mapped<F>>
+    where
+        E: From<Error>,
+        F: FnMut(&Row<'_>) -> Result<T, E>,
+    {
+        let Rows { names, rows } = self.fetch_statement(&s.into())?;
+        Ok(Mapped {
+            names,
+            rows: rows.into_iter(),
+            f,
+        })
+    }
 }
 
 impl<D: Db + ?Sized> DbExt for D {}
@@ -317,6 +393,47 @@ fn owned(v: ValueRef<'_>) -> Result<Value> {
     })
 }
 
+/// `s` as `SQLite` SQL and the values its placeholders bind.
+fn sqlite_render(s: &Statement) -> Result<(String, Vec<Value>)> {
+    let (sql, values) = match s {
+        Statement::Select(q) => q.build(SqliteQueryBuilder),
+        Statement::Insert(q) => q.build(SqliteQueryBuilder),
+        Statement::Update(q) => q.build(SqliteQueryBuilder),
+        Statement::Delete(q) => q.build(SqliteQueryBuilder),
+    };
+    let values = values
+        .into_iter()
+        .map(sqlite_value)
+        .collect::<Result<_>>()?;
+    Ok((sql, values))
+}
+
+/// A `sea-query` value as the `SQLite` storage class it binds as.
+fn sqlite_value(v: sea_query::Value) -> Result<Value> {
+    use sea_query::Value as Q;
+    let int = |i: Option<i64>| i.map_or(Value::Null, Value::Integer);
+    Ok(match v {
+        Q::Bool(b) => int(b.map(i64::from)),
+        Q::TinyInt(i) => int(i.map(i64::from)),
+        Q::SmallInt(i) => int(i.map(i64::from)),
+        Q::Int(i) => int(i.map(i64::from)),
+        Q::BigInt(i) => int(i),
+        Q::TinyUnsigned(i) => int(i.map(i64::from)),
+        Q::SmallUnsigned(i) => int(i.map(i64::from)),
+        Q::Unsigned(i) => int(i.map(i64::from)),
+        Q::BigUnsigned(i) => int(i
+            .map(i64::try_from)
+            .transpose()
+            .map_err(|e| Error::ToSqlConversionFailure(e.into()))?),
+        Q::Float(f) => f.map_or(Value::Null, |f| Value::Real(f.into())),
+        Q::Double(f) => f.map_or(Value::Null, Value::Real),
+        Q::String(t) => t.map_or(Value::Null, Value::Text),
+        Q::Char(c) => c.map_or(Value::Null, |c| Value::Text(c.into())),
+        Q::Bytes(b) => b.map_or(Value::Null, Value::Blob),
+        Q::Enum(_) => return Err(Error::ToSqlConversionFailure("enum values".into())),
+    })
+}
+
 /// Run `sql` on the `SQLite` connection `conn`.
 fn sqlite_execute(conn: &Connection, sql: &str, params: Vec<Value>) -> Result<usize> {
     conn.prepare_cached(sql)?
@@ -346,6 +463,16 @@ impl Db for Conn {
     fn query_values(&self, sql: &str, params: Vec<Value>) -> Result<Rows> {
         sqlite_query(&self.0, sql, params)
     }
+
+    fn run_statement(&self, s: &Statement) -> Result<usize> {
+        let (sql, params) = sqlite_render(s)?;
+        sqlite_execute(&self.0, &sql, params)
+    }
+
+    fn fetch_statement(&self, s: &Statement) -> Result<Rows> {
+        let (sql, params) = sqlite_render(s)?;
+        sqlite_query(&self.0, &sql, params)
+    }
 }
 
 impl Db for Tx<'_> {
@@ -356,6 +483,16 @@ impl Db for Tx<'_> {
     fn query_values(&self, sql: &str, params: Vec<Value>) -> Result<Rows> {
         sqlite_query(&self.0, sql, params)
     }
+
+    fn run_statement(&self, s: &Statement) -> Result<usize> {
+        let (sql, params) = sqlite_render(s)?;
+        sqlite_execute(&self.0, &sql, params)
+    }
+
+    fn fetch_statement(&self, s: &Statement) -> Result<Rows> {
+        let (sql, params) = sqlite_render(s)?;
+        sqlite_query(&self.0, &sql, params)
+    }
 }
 
 impl Db for MutexGuard<'_, Conn> {
@@ -365,6 +502,14 @@ impl Db for MutexGuard<'_, Conn> {
 
     fn query_values(&self, sql: &str, params: Vec<Value>) -> Result<Rows> {
         (**self).query_values(sql, params)
+    }
+
+    fn run_statement(&self, s: &Statement) -> Result<usize> {
+        (**self).run_statement(s)
+    }
+
+    fn fetch_statement(&self, s: &Statement) -> Result<Rows> {
+        (**self).fetch_statement(s)
     }
 }
 

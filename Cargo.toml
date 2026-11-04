@@ -17,6 +17,7 @@ members = [
   "tools/layering",
   "tools/test-children",
   "tools/migration-numbers",
+  "tools/store-sql",
   "tools/e2e-budget",
 ]
 exclude = ["target"]

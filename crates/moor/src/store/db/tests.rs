@@ -1,5 +1,6 @@
 use rusqlite::types::Type;
 use rusqlite::Connection;
+use sea_query::{Expr, ExprTrait as _, Func, OnConflict, Order, Query};
 
 use super::{params, Conn, DbExt as _, Error, OptionalExtension as _, TransactionBehavior};
 
@@ -109,4 +110,96 @@ fn a_dropped_transaction_rolls_back_and_a_committed_one_stays() {
         .collect::<Result<_, _>>()
         .unwrap();
     assert_eq!(held, [2]);
+}
+
+#[test]
+fn a_statement_binds_its_values_and_reads_back_by_column() {
+    let conn = conn();
+    let id: i64 = conn
+        .row(
+            Query::insert()
+                .into_table("t")
+                .columns(["n", "s", "b"])
+                .values_panic([true.into(), "text".into(), vec![1u8, 2].into()])
+                .returning_col("id"),
+            |r| r.get(0),
+        )
+        .unwrap();
+    conn.run(
+        Query::insert()
+            .into_table("t")
+            .columns(["n", "s"])
+            .values_panic([7u32.into(), None::<String>.into()]),
+    )
+    .unwrap();
+    let rows: Vec<Read> = conn
+        .rows(
+            Query::select()
+                .columns(["n", "n", "s", "b"])
+                .from("t")
+                .order_by("id", Order::Asc),
+            |r| Ok::<_, Error>((r.get(0)?, r.get(1)?, r.get("s")?, r.get(3)?)),
+        )
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(id, 1);
+    assert_eq!(
+        rows,
+        [
+            (1, true, Some("text".to_owned()), Some(vec![1, 2])),
+            (7, true, None, None),
+        ]
+    );
+}
+
+#[test]
+fn an_upsert_keeps_the_greater_value_and_no_row_is_none() {
+    let conn = conn();
+    let upsert = |n: i64| {
+        conn.run(
+            Query::insert()
+                .into_table("t")
+                .columns(["id", "n"])
+                .values_panic([1.into(), n.into()])
+                .on_conflict(
+                    OnConflict::column("id")
+                        .value(
+                            "n",
+                            Func::greatest([Expr::col("n"), Expr::col(("excluded", "n"))]),
+                        )
+                        .to_owned(),
+                ),
+        )
+        .unwrap();
+    };
+    upsert(5);
+    upsert(3);
+    let read = |id: i64| {
+        conn.row(
+            Query::select()
+                .column("n")
+                .from("t")
+                .and_where(Expr::col("id").eq(id)),
+            |r| r.get::<_, i64>(0),
+        )
+        .optional()
+        .unwrap()
+    };
+    assert_eq!(read(1), Some(5));
+    assert_eq!(read(2), None);
+}
+
+#[test]
+fn a_value_out_of_the_integer_range_is_refused() {
+    let conn = conn();
+    let err = conn
+        .run(
+            Query::insert()
+                .into_table("t")
+                .columns(["n"])
+                .values_panic([u64::MAX.into()]),
+        )
+        .unwrap_err();
+    assert!(matches!(err, Error::ToSqlConversionFailure(_)), "{err:?}");
 }
