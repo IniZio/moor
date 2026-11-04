@@ -8,7 +8,9 @@
 use rusqlite::types::{FromSql, FromSqlError, ToSqlOutput, Value, ValueRef};
 use sea_query::{DeleteStatement, InsertStatement, SelectStatement, UpdateStatement};
 
-pub(crate) use rusqlite::{params, Error, OptionalExtension, ToSql, TransactionBehavior};
+#[cfg(test)]
+pub(crate) use rusqlite::params;
+pub(crate) use rusqlite::{Error, OptionalExtension, ToSql, TransactionBehavior};
 
 /// A database operation's result.
 pub(crate) type Result<T, E = Error> = std::result::Result<T, E>;
@@ -227,6 +229,7 @@ impl<T, E, F: FnMut(&Row<'_>) -> Result<T, E>> Iterator for Mapped<F> {
 }
 
 /// A statement to run, possibly more than once, on `db`.
+#[cfg(test)]
 pub(crate) struct Stmt<'a, D: ?Sized> {
     /// Where it runs.
     db: &'a D,
@@ -234,6 +237,7 @@ pub(crate) struct Stmt<'a, D: ?Sized> {
     sql: String,
 }
 
+#[cfg(test)]
 impl<D: Db + ?Sized> Stmt<'_, D> {
     /// Run it; the rows mapped lazily by `f`, which reads columns.
     pub(crate) fn query_map<T, P, F>(&mut self, p: P, f: F) -> Result<Mapped<F>>
@@ -286,6 +290,7 @@ pub(crate) trait DbExt: Db {
     }
 
     /// `sql` ready to run.
+    #[cfg(test)]
     fn prepare(&self, sql: &str) -> Result<Stmt<'_, Self>> {
         Ok(Stmt {
             db: self,
