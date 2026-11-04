@@ -6,6 +6,9 @@ publish = false
 
 [dependencies]
 moor-migrate = { path = "../moor-migrate" }
+sea-query = { version = "1.0.2", default-features = false, features = [
+  "derive",
+] }
 
 [dev-dependencies]
 postgres = "0.19.14"

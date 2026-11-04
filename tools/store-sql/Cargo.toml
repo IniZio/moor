@@ -1,0 +1,15 @@
+[package]
+name = "store-sql"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+proc-macro2 = { version = "1", features = ["span-locations"] }
+syn = { version = "3", features = ["full"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

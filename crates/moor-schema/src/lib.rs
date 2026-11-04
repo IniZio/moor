@@ -7,6 +7,7 @@ use moor_migrate::sea_query::{
 use moor_migrate::{Backend, Script, Step};
 
 mod baseline;
+pub mod tables;
 
 /// The store's migrations, oldest first. Never edit an applied one; add a new step.
 ///

@@ -124,3 +124,20 @@ fn postgres_builds_the_same_schema_as_sqlite() {
     }
     assert_eq!(pg.meta, lite.meta);
 }
+
+#[test]
+fn the_query_identifiers_name_every_table_and_column_in_order() {
+    let schema = sqlite::schema(&sql(Backend::Sqlite));
+    let built: BTreeMap<String, Vec<String>> = schema
+        .tables
+        .iter()
+        .map(|(name, t)| {
+            (
+                name.clone(),
+                t.columns.iter().map(|c| c.name.clone()).collect(),
+            )
+        })
+        .collect();
+    let named: BTreeMap<String, Vec<String>> = crate::tables::all().into_iter().collect();
+    assert_eq!(named, built);
+}
