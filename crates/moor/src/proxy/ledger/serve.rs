@@ -14,6 +14,7 @@ use crate::vault::Vault;
 
 mod boxes;
 mod start;
+pub(crate) use start::ca as box_ca;
 
 /// The longest hello read; anyone who can reach the TLS listener can send one.
 const HELLO_MAX: u64 = 64 * 1024;

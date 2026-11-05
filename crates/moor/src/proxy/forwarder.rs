@@ -8,7 +8,7 @@ use moor_core::seam::driver::Driver;
 use moor_core::seam::proxy_host::ProxyEndpoint;
 use moor_core::{BoxHandle, BoxId, BoxPath};
 
-use crate::cx::egress::EgressRoute;
+use crate::proxy::route::EgressRoute;
 use crate::proxy::token;
 use crate::store::Store;
 
@@ -37,17 +37,17 @@ pub(crate) struct Delivery<'a> {
     pub(crate) binary: &'a Path,
 }
 
-/// Returns the port tinyproxy sends credential hosts to. On the shared Proxy's routes that is the
-/// forwarder's. Unless the row marks a token delivered, a fresh token is minted, the forwarder and then its config with that token are written into
+/// Returns the port tinyproxy sends credential hosts to: the forwarder's. Unless the row marks a token delivered, a fresh token is minted, the forwarder and then its config with that token are written into
 /// the Box, and the token is marked delivered.
 ///
 /// # Errors
 /// The Box's Proxy has no forward port, or the token cannot be minted or marked, or the
 /// forwarder cannot be read or written.
 pub(crate) fn deliver(to: &Delivery<'_>, ep: &ProxyEndpoint) -> Result<u16, String> {
-    let Some(upstream) = to.route.upstream(ep.box_port) else {
-        return Ok(ep.box_port);
-    };
+    let upstream = to.route.upstream(ep.box_port);
+    if to.key.is_empty() {
+        return Err("MOOR_EGRESS_KEY is not set, so no egress token can be minted".to_owned());
+    }
     let port = ep
         .forward_port
         .ok_or("this Box's Proxy predates the egress forwarder; start the Box again")?;

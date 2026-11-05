@@ -81,7 +81,7 @@ pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u
         running,
         &wake,
         &sink,
-        Moor::proxy_lease(),
+        std::time::Duration::ZERO,
         Moor::reconcile_proxies,
     )
 }
@@ -158,7 +158,7 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         .transpose()?;
     let env = check::open(env)?;
     let (vault, key) = open_vault(&env, config)?;
-    let env = check::with_runner_state(env, &cfg);
+    let env = Moor::prepare_egress(check::with_runner_state(env, &cfg)).map_err(refused)?;
     let (env, proxy) = front_proxy::plan(env.with_vault_key(key), &cfg.fronts).map_err(refused)?;
     let env = env.with_workflow_min_interval(cfg.workflow_min_interval());
     let env = env.with_front_webhooks(cfg.webhook_fronts());

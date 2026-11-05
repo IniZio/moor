@@ -35,16 +35,13 @@ use crate::adapters::proc::{SystemProc, ToolPaths};
 use crate::adapters::rng::SystemRng;
 use crate::adapters::sockets::socket_dir;
 use crate::config_load::load_user;
-use crate::cx::egress::EgressRoute;
 use crate::cx::{Cx, CxParts, MachineLinks};
-use crate::env::{Env, EGRESS_RELAY, PROXY_KEY};
+use crate::env::{Env, PROXY_KEY};
 use crate::error::CommandError;
-use crate::proxy::adopt;
-use crate::proxy::detached::DetachedSupervisor;
 use crate::proxy::ledger::BoxLedger;
 use crate::proxy::nono::capture::UserSecretsFn;
 use crate::proxy::{serve, Deps, Sink};
-use crate::store::{Database, Store, StoreError};
+use crate::store::{Database, Store};
 
 /// Host variables herdr needs to find its socket and terminal.
 const HERDR_PASSTHROUGH: [&str; 5] = [
@@ -188,50 +185,9 @@ pub(crate) fn front_proxy_ca(state_dir: &Path) -> std::io::Result<PathBuf> {
     crate::proxy::fronts::ca_cert(state_dir)
 }
 
-/// Settles the Proxy supervisors recorded in the store `env` shares; one line per failure.
-pub(crate) fn reconcile_proxies(env: &Env) -> Vec<String> {
-    let (Some(state_dir), Some(store)) = (env.state_dir(), env.shared::<Store>()) else {
-        return Vec::new();
-    };
-    let clock = match SystemClock::from_env(env) {
-        Ok(clock) => Arc::new(clock),
-        Err(e) => return vec![e.to_string()],
-    };
-    let config = match load_user(env) {
-        Ok(config) => config,
-        Err(e) => return vec![e.error.to_string()],
-    };
-    let proc: Arc<dyn Proc> = Arc::new(SystemProc::new(env, &tool_paths(&config)));
-    let host = DetachedSupervisor::new(
-        Arc::clone(&proc),
-        clock,
-        Arc::new(SystemRng),
-        Some(state_dir),
-    )
-    .sharing(Some(store.clone()));
-    adopt::reconcile(&host, proc.as_ref(), store)
-}
-
 /// Whether the installed crabbox's `ssh` takes `--no-probe`. The controller wires a driver per
 /// request and tick, so the answer is kept for the whole process: crabbox is asked once.
 static NO_PROBE: LazyLock<Arc<OnceLock<bool>>> = LazyLock::new(Arc::default);
-
-/// The Box Proxies' supervisor, keeping its state under `state_dir`.
-fn proxy_host(
-    env: &Env,
-    proc: &Arc<dyn Proc>,
-    clock: Arc<dyn Clock>,
-    rng: &Arc<dyn Rng>,
-    state_dir: Option<PathBuf>,
-) -> Result<Arc<DetachedSupervisor>, StoreError> {
-    let relay = EgressRoute::from_env(env).ok().and_then(|r| r.relay());
-    Ok(Arc::new(
-        DetachedSupervisor::new(Arc::clone(proc), clock, Arc::clone(rng), state_dir)
-            .relaying(relay)
-            .in_database(Database::from_env(env)?)
-            .sharing(env.shared::<Store>().cloned()),
-    ))
-}
 
 /// Real adapters from the environment, not yet assembled into a context, and the warning
 /// when calls to a Box cannot share an ssh connection through control sockets in `sockets`.
@@ -270,7 +226,7 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
         Arc::clone(&clock) as Arc<dyn Clock>,
     )
     .holding(config.agent.holder());
-    let proxy_host = proxy_host(env, &proc, Arc::clone(&clock) as _, &rng, state_dir.clone())?;
+    let proxy_host = proxy_host(env, &driver, &(Arc::clone(&clock) as Arc<dyn Clock>), &rng);
     let parts = CxParts {
         state_dir,
         clock,
@@ -334,7 +290,7 @@ fn run_proxy(env: &Env, box_id: BoxId, sink: &Sink) -> Result<u8, String> {
         upstream_dial: None,
         guard_exempt: Vec::new(),
         machine_service: cx.config().machines.service.clone(),
-        relay: env.get(EGRESS_RELAY).and_then(|a| a.parse().ok()),
+        relay: None,
         state_dir,
         sockets: &sockets,
         owner: rustix::process::getuid().as_raw(),
@@ -372,14 +328,18 @@ pub(crate) fn tool_paths(config: &UserConfig) -> ToolPaths {
     }
 }
 
+mod egress;
+mod keepers;
 mod ledger;
 mod links;
 mod store_copy;
 pub use store_copy::copy_store;
 mod surface_pick;
 
-pub(crate) use crate::proxy::detached::LEASE as PROXY_LEASE;
-pub(crate) use ledger::{import_proxy_files, serve_egress_ledger, serve_ledger};
+pub(crate) use egress::prepare_egress;
+use keepers::proxy_host;
+pub(crate) use keepers::reconcile_proxies;
+pub(crate) use ledger::{serve_egress_ledger, serve_ledger};
 
 pub(crate) use surface_pick::surface_kind;
 #[cfg(test)]

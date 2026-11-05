@@ -25,7 +25,7 @@ use zeroize::Zeroizing;
 
 use super::boxes::closed;
 use super::wire::authority_ok;
-use super::{Config, Rate, Server, PATH, PLAIN, TARGET};
+use super::{Config, Listen, Rate, Server, PATH, PLAIN, TARGET};
 use crate::proxy::ledger::tests::{serve_on, Served, EGRESS_KEY};
 use crate::proxy::ledger::{BoxView, Endpoint, LedgerError};
 use crate::proxy::nono::ca;
@@ -61,7 +61,7 @@ impl World {
         let (user, _) = store.enroll(&Identity::local(1), None).unwrap();
         put_secret(&store, &vault, user, "tool-token", SECRET);
         let id = ready_box(&store, user);
-        drop(store.reserve(id, &FakeRng::default(), crate::proxy::detached::LEASE));
+        drop(store.reserve(id, &FakeRng::default(), crate::proxy::supervisor::LEASE));
         let token = token::mint(&store, EGRESS_KEY.as_bytes(), id)
             .unwrap()
             .unwrap();
@@ -106,7 +106,7 @@ impl World {
     /// How [`World::server_full`] runs the shared Proxy.
     fn config(&self, burst: f64, lookups: f64, tunnels: usize) -> Config {
         Config {
-            listen: SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
+            listen: Listen::Tcp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))),
             ledger: Endpoint::Unix(self.dir.path().join("proxy.sock")),
             key: Zeroizing::new(EGRESS_KEY.to_owned()),
             work_dir: self.dir.path().join("egress"),
@@ -207,6 +207,14 @@ fn rule(port: u16) -> ResolvedRule {
     }
 }
 
+/// The TCP address `server` listens on.
+fn addr(server: &Server) -> SocketAddr {
+    let Listen::Tcp(addr) = server.listening() else {
+        unreachable!("the test Proxy listens on TCP")
+    };
+    *addr
+}
+
 /// Opens a tunnel to `target` as the forwarder does; the HTTP status of a refusal.
 fn open(server: &Server, token: &str, target: &str) -> Result<WebSocket<TcpStream>, u16> {
     open_as(server, token, target, false)
@@ -219,7 +227,7 @@ fn open_as(
     target: &str,
     plain: bool,
 ) -> Result<WebSocket<TcpStream>, u16> {
-    let url = format!("ws://{}{PATH}", server.addr());
+    let url = format!("ws://{}{PATH}", addr(server));
     let mut req = url.into_client_request().unwrap();
     let headers = req.headers_mut();
     headers.insert("authorization", format!("Bearer {token}").parse().unwrap());
@@ -227,7 +235,7 @@ fn open_as(
     if plain {
         headers.insert(PLAIN, "1".parse().unwrap());
     }
-    let stream = TcpStream::connect(server.addr()).map_err(|_| 0_u16)?;
+    let stream = TcpStream::connect(addr(server)).map_err(|_| 0_u16)?;
     stream
         .set_read_timeout(Some(Duration::from_secs(10)))
         .unwrap();
@@ -358,7 +366,7 @@ fn a_token_past_its_rate_is_refused() {
 fn a_drain_lets_an_open_tunnel_finish_and_refuses_a_new_one() {
     let w = World::new();
     let server = w.server(10.0);
-    let addr = server.addr();
+    let addr = addr(&server);
     let tunnel = open(&server, &w.token, &w.target()).unwrap();
     std::thread::scope(|s| {
         let drained = s.spawn(|| server.drain(Duration::from_secs(20)));
@@ -525,7 +533,7 @@ fn a_503_names_no_detail_and_the_log_does() {
     let mut w = World::new();
     let server = w.server(10.0);
     drop(w.ledger.take());
-    let mut raw = TcpStream::connect(server.addr()).unwrap();
+    let mut raw = TcpStream::connect(addr(&server)).unwrap();
     write!(
         raw,
         "GET {PATH} HTTP/1.1\r\nHost: x\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\

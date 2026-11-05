@@ -3,7 +3,6 @@
 use std::io::{Read, Write};
 
 use crate::env::{Env, EGRESS_KEY};
-use crate::proxy::adopt;
 use crate::proxy::ledger::{serve, Keys};
 use crate::store::Store;
 use crate::vault::Vault;
@@ -40,12 +39,4 @@ pub(crate) fn serve_egress_ledger((env, vault): (&Env, &Vault), stream: impl Rea
 /// The shared egress Proxy's key; none while it is off.
 fn egress_key(env: &Env) -> Option<&str> {
     env.get(EGRESS_KEY).filter(|k| !k.is_empty())
-}
-
-/// Moves the spec and CA files Proxies were started from into their rows; one line per failure.
-pub(crate) fn import_proxy_files(env: &Env, vault: &Vault) -> Vec<String> {
-    match (env.state_dir(), env.shared::<Store>()) {
-        (Some(state_dir), Some(store)) => adopt::import(store, vault, &state_dir),
-        _ => Vec::new(),
-    }
 }

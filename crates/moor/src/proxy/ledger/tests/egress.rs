@@ -24,7 +24,7 @@ fn box_with_token(w: &World, name: &str, token: &[u8]) -> BoxId {
     let id = w.store.apply(Decision::insert(nt)).unwrap().box_id;
     drop(
         w.store
-            .reserve(id, &FakeRng::default(), crate::proxy::detached::LEASE),
+            .reserve(id, &FakeRng::default(), crate::proxy::supervisor::LEASE),
     );
     assert!(w.store.set_egress_token(id, token).unwrap());
     id
@@ -88,7 +88,7 @@ fn the_egress_proxy_reads_only_secrets_its_rules_name_and_only_while_the_box_is_
         .box_id;
     drop(
         w.store
-            .reserve(a, &FakeRng::default(), crate::proxy::detached::LEASE),
+            .reserve(a, &FakeRng::default(), crate::proxy::supervisor::LEASE),
     );
     let rule = ResolvedRule {
         name: "claude".to_owned(),

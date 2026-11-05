@@ -202,7 +202,7 @@ fn the_tls_ledger_needs_the_egress_key_and_a_readable_certificate() {
     let dir = tempfile::tempdir().unwrap();
     pki(dir.path(), "ctl", true);
     let cfg = tls_config(dir.path(), "");
-    let Err(stop) = start(&env_with(dir.path(), &[]), &cfg) else {
+    let Err(stop) = start(&env_with(dir.path(), &[("MOOR_EGRESS_KEY", "")]), &cfg) else {
         panic!("started a TLS ledger without the egress key");
     };
     assert!(stop.message.contains("MOOR_EGRESS_KEY"), "{}", stop.message);

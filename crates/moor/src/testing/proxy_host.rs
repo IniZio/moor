@@ -22,6 +22,8 @@ pub(crate) enum ProxyHostCall {
     Restart(BoxId),
     Status(BoxId),
     Stop(BoxId),
+    Park(BoxId),
+    Restore(BoxId),
 }
 
 struct State {
@@ -123,7 +125,7 @@ impl ProxyHost for FakeProxyHost {
         Ok(ProxyEndpoint {
             box_port: s.box_port,
             egress_port: s.egress_port,
-            forward_port: None,
+            forward_port: Some(s.box_port),
             ca_pem: String::new(),
         })
     }
@@ -147,6 +149,17 @@ impl ProxyHost for FakeProxyHost {
         let mut s = self.lock();
         s.calls.push(ProxyHostCall::Stop(box_id));
         s.stop_error.clone().map_or(Ok(()), Err)
+    }
+
+    fn park(&self, box_id: BoxId) -> Result<(), ProxyHostError> {
+        self.lock().calls.push(ProxyHostCall::Park(box_id));
+        Ok(())
+    }
+
+    fn restore(&self, box_id: BoxId) -> Result<(), ProxyHostError> {
+        let mut s = self.lock();
+        s.calls.push(ProxyHostCall::Restore(box_id));
+        s.ensure_error.clone().map_or(Ok(()), Err)
     }
 }
 

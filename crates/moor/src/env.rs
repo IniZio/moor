@@ -21,22 +21,18 @@ pub(crate) const DATABASE_READERS: &str = "MOOR_DATABASE_READERS";
 /// The variable holding the key a Proxy process presents on the ledger socket.
 pub(crate) const PROXY_KEY: &str = "MOOR_PROXY_KEY";
 
-/// The variable holding the key the shared egress Proxy presents on the ledger socket. The
-/// controller and the shared Proxy are given the same one; unset, the shared Proxy is off.
+/// The variable holding the key the shared egress Proxy presents on the ledger socket and signs
+/// Box tokens with. The controller and the shared Proxy are given the same one; unset, a
+/// controller makes one and keeps it in its state dir.
 pub(crate) const EGRESS_KEY: &str = "MOOR_EGRESS_KEY";
 
-/// The variable naming the shared egress Proxy's `/egress` address, `ws://` or `wss://`, that
-/// Boxes reach it on once `MOOR_EGRESS_KEY` is set. A loopback `ws://` address is the
-/// controller host's, reached over each Box's tunnel.
+/// The variable naming the shared egress Proxy's `/egress` address, `wss://`, that Boxes dial.
+/// Unset, the controller runs the shared Proxy itself and each Box reaches it over its tunnel.
 pub(crate) const EGRESS_URL: &str = "MOOR_EGRESS_URL";
 
 /// The variable naming the egress forwarder binary the controller delivers into Boxes; unset,
 /// `moor-egress-forward` beside `moor`.
 pub(crate) const EGRESS_FORWARD_BIN: &str = "MOOR_EGRESS_FORWARD_BIN";
-
-/// The variable telling a Box's Proxy supervisor to relay its tunnel to the shared egress Proxy
-/// at this loopback address instead of serving CONNECT itself.
-pub(crate) const EGRESS_RELAY: &str = "MOOR_EGRESS_RELAY";
 
 /// Snapshot of environment variables.
 #[derive(Clone, Default)]
@@ -131,6 +127,15 @@ impl Env {
             "MOOR_STATE_DIR".to_owned(),
             dir.to_string_lossy().into_owned(),
         );
+        self
+    }
+
+    /// Set the shared egress Proxy's key, unless the environment already names one.
+    #[must_use]
+    pub(crate) fn with_egress_key(mut self, key: &str) -> Self {
+        if self.get(EGRESS_KEY).is_none_or(str::is_empty) {
+            self.vars.insert(EGRESS_KEY.to_owned(), key.to_owned());
+        }
         self
     }
 

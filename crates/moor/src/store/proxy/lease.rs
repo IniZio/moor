@@ -206,6 +206,22 @@ impl Store {
     }
 }
 
+impl Store {
+    /// Appends `event` for `box_id` while it has a proxy row; false when it has none.
+    pub(crate) fn proxy_row_event(&self, box_id: BoxId, event: &Event) -> Result<bool, StoreError> {
+        let now = self.now();
+        let mut conn = self.writer();
+        let tx = conn.immediate()?;
+        if !proxy_exists(&tx, box_id)? {
+            return Ok(false);
+        }
+        insert_event(&tx, box_id, event, now)?;
+        tx.commit()?;
+        drop(conn);
+        Ok(true)
+    }
+}
+
 /// Whether `box_id` has a proxy row.
 fn proxy_exists(conn: &dyn Db, box_id: BoxId) -> Result<bool, StoreError> {
     Ok(conn

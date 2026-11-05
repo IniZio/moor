@@ -6,6 +6,7 @@
 use std::time::Duration;
 
 use futures_util::{SinkExt as _, StreamExt as _};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
@@ -28,6 +29,11 @@ const HEAD_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_MESSAGE: usize = 1 << 20;
 /// Bytes read from the target per message.
 const CHUNK: usize = 16 * 1024;
+
+/// A connection the Proxy serves: TCP, or its Unix socket.
+pub(super) trait Peer: AsyncRead + AsyncWrite + Unpin + Send {}
+
+impl<T: AsyncRead + AsyncWrite + Unpin + Send> Peer for T {}
 
 /// What the forwarder asked for.
 struct Ask {
@@ -66,7 +72,7 @@ struct Open {
 }
 
 /// Serves one connection to its end.
-pub(super) async fn serve(mut stream: TcpStream, shared: &Shared) {
+pub(super) async fn serve<S: Peer>(mut stream: S, shared: &Shared) {
     let Some((head, _)) = read_head(&mut stream).await else {
         return;
     };
@@ -79,7 +85,7 @@ pub(super) async fn serve(mut stream: TcpStream, shared: &Shared) {
 
 /// Opens the CONNECT into the Box's proxy, or the connection to the machine service, upgrades
 /// the connection and relays the tunnel.
-async fn tunnel(mut stream: TcpStream, shared: &Shared, ask: &Open) {
+async fn tunnel<S: Peer>(mut stream: S, shared: &Shared, ask: &Open) {
     let service = shared.machine.as_ref().filter(|_| ask.machine);
     let opened = match service {
         Some(service) => TcpStream::connect(service.upstream)
@@ -107,8 +113,8 @@ async fn tunnel(mut stream: TcpStream, shared: &Shared, ask: &Open) {
 /// Reads the plain request from `ws` and writes it to `upstream` in origin form, marked with what
 /// the Box of `machine` holds; a request that is not one plain request for `target` gets a 403
 /// in the tunnel. Whether the tunnel goes on.
-async fn send_plain(
-    ws: &mut WebSocketStream<TcpStream>,
+async fn send_plain<S: Peer>(
+    ws: &mut WebSocketStream<S>,
     upstream: &mut TcpStream,
     target: &str,
     machine: Option<&Route>,
@@ -127,7 +133,7 @@ async fn send_plain(
 }
 
 /// The plain request head the forwarder sends first, and the bytes after it.
-async fn ws_head(ws: &mut WebSocketStream<TcpStream>) -> Option<(Vec<u8>, Vec<u8>)> {
+async fn ws_head<S: Peer>(ws: &mut WebSocketStream<S>) -> Option<(Vec<u8>, Vec<u8>)> {
     let read = async {
         let mut buf = Vec::new();
         loop {
@@ -149,7 +155,7 @@ async fn ws_head(ws: &mut WebSocketStream<TcpStream>) -> Option<(Vec<u8>, Vec<u8
 }
 
 /// Answers `101` and wraps the connection as the tunnel's WebSocket.
-async fn upgrade(mut stream: TcpStream, key: &str) -> Option<WebSocketStream<TcpStream>> {
+async fn upgrade<S: Peer>(mut stream: S, key: &str) -> Option<WebSocketStream<S>> {
     let accept = derive_accept_key(key.as_bytes());
     let switching = format!(
         "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\
@@ -231,7 +237,7 @@ async fn open(route: &Route, target: &str) -> Result<(TcpStream, Vec<u8>), u16> 
 }
 
 /// Copies tunnel bytes both ways until each side ends; `rest` came after the CONNECT answer.
-async fn relay(ws: WebSocketStream<TcpStream>, upstream: TcpStream, rest: Vec<u8>) {
+async fn relay<S: Peer>(ws: WebSocketStream<S>, upstream: TcpStream, rest: Vec<u8>) {
     let (mut ws_tx, mut ws_rx) = ws.split();
     let (mut up_rx, mut up_tx) = upstream.into_split();
     let down = async {
@@ -270,7 +276,7 @@ async fn relay(ws: WebSocketStream<TcpStream>, upstream: TcpStream, rest: Vec<u8
 }
 
 /// Answers `status` with `body` and closes.
-async fn answer(stream: &mut TcpStream, status: u16, body: &str) {
+async fn answer<S: Peer>(stream: &mut S, status: u16, body: &str) {
     let reason = match status {
         200 => "OK",
         400 => "Bad Request",
@@ -296,7 +302,7 @@ async fn answer(stream: &mut TcpStream, status: u16, body: &str) {
 }
 
 /// Reads up to the blank line ending a head; the head and the bytes read past it.
-async fn read_head(stream: &mut TcpStream) -> Option<(Vec<u8>, Vec<u8>)> {
+async fn read_head<S: AsyncRead + Unpin>(stream: &mut S) -> Option<(Vec<u8>, Vec<u8>)> {
     let read = async {
         let mut buf = Vec::new();
         let mut chunk = [0_u8; 2048];

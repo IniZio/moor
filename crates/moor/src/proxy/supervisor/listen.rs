@@ -14,7 +14,6 @@ use moor_core::{BoxId, Secret};
 use super::run::say;
 use super::Deps;
 use crate::proxy::chain::Proxy;
-use crate::proxy::detached::base64url;
 use crate::proxy::front::{hold_or_missing, Front, FrontSocket, MachineRoute};
 use crate::proxy::graphql::upstream::Upstream;
 use crate::proxy::graphql::{FilterSpec, GraphqlFilter};
@@ -23,6 +22,7 @@ use crate::proxy::ledger::BoxLedger;
 use crate::proxy::nono::audit::{apply, BoxSink, EgressSink, Refusal, Withheld};
 use crate::proxy::nono::capture::{sources_for, MoorCapture, UserSecretsFn};
 use crate::proxy::nono::{build_config, ca, Chain, NonoProxy, NonoSpec, GITHUB_API_HOST};
+use crate::proxy::token::base64url;
 use crate::proxy::ProxyLog;
 
 /// What a Box's engine needs from the process that runs it.

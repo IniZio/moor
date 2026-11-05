@@ -175,6 +175,8 @@ fn fake_egress(dir: &Path, store: &Store, id: BoxId) -> moor_testkit::FakeEgress
     )
     .unwrap();
     proxy_ready(store, id, &Draw(u32::from(egress.port() - EGRESS_PORT_MIN)));
+    assert!(store.set_egress_token(id, b"t").unwrap());
+    assert!(store.note_egress_token_delivered(id, b"t").unwrap());
     egress
 }
 

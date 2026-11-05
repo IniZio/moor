@@ -103,18 +103,16 @@ impl Moor {
         wire::serve_egress_ledger((env, vault), stream);
     }
 
-    /// Moves the spec and CA files Proxies were started from into their rows; one line per
-    /// failure.
-    pub(crate) fn import_proxy_files(env: &Env, vault: &Vault) -> Vec<String> {
-        wire::import_proxy_files(env, vault)
+    /// `env` with the shared egress Proxy's key, and the controller's own Proxy running unless
+    /// `MOOR_EGRESS_URL` names another.
+    ///
+    /// # Errors
+    /// The key cannot be read or made, or the Proxy did not start.
+    pub(crate) fn prepare_egress(env: Env) -> Result<Env, String> {
+        wire::prepare_egress(env)
     }
 
-    /// How long a Box Proxy's lease lasts without a heartbeat.
-    pub(crate) const fn proxy_lease() -> std::time::Duration {
-        wire::PROXY_LEASE
-    }
-
-    /// Settles the Proxy supervisors recorded in the state store; one line per failure.
+    /// Starts a keeper for each open Box recorded in the state store; one line per failure.
     #[must_use]
     pub fn reconcile_proxies(env: &Env) -> Vec<String> {
         wire::reconcile_proxies(env)

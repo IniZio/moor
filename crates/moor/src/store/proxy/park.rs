@@ -103,6 +103,7 @@ fn opened_key(box_id: BoxId) -> String {
 }
 
 /// Stored form of a request.
+#[cfg(test)]
 fn encode_request(want: TunnelWant, seq: u64) -> String {
     let word = match want {
         TunnelWant::Parked => "parked",
@@ -173,6 +174,7 @@ pub(super) fn clear(conn: &dyn Db, box_id: BoxId) -> Result<(), StoreError> {
 impl Store {
     /// Records the wanted tunnel state; the sequence number is the previous request's plus one, or
     /// 1 when there is none. Returns it.
+    #[cfg(test)]
     pub(crate) fn request_tunnel(
         &self,
         box_id: BoxId,

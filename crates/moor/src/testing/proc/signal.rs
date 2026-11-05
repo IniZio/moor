@@ -35,26 +35,6 @@ impl ScriptedProc {
         self
     }
 
-    /// Runs `hook` whenever a group signal is delivered, as a group member reacting to it.
-    pub(crate) fn on_signal(&self, hook: impl Fn(u32, Signal) + Send + Sync + 'static) -> &Self {
-        *self
-            .signals
-            .hook
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(Box::new(hook));
-        self
-    }
-
-    /// Marks `pid` as alive but belonging to another process's group.
-    pub(crate) fn follower(&self, pid: u32) -> &Self {
-        self.signals
-            .followers
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(pid);
-        self
-    }
-
     pub(super) fn is_follower(&self, pid: u32) -> bool {
         self.signals
             .followers

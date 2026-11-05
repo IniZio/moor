@@ -27,7 +27,7 @@ pub(crate) use boxes::{BoxLedger, BoxView, CaPair, MachineWant};
 use call::Call;
 pub(crate) use client::{EgressLedger, FrontsLedger};
 pub(crate) use endpoint::Endpoint;
-pub(crate) use serve::{serve, Keys};
+pub(crate) use serve::{box_ca, serve, Keys};
 
 use crate::store::StoreError;
 

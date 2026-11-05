@@ -62,7 +62,9 @@ use std::time::Duration;
 
 use moor_core::config::MachineService;
 use moor_core::seam::clock::Clock;
-use tokio::net::TcpListener;
+use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
+
+use tokio::net::{TcpListener, UnixListener};
 use tokio::sync::Notify;
 use zeroize::Zeroizing;
 
@@ -78,10 +80,65 @@ pub(crate) const TARGET: &str = "x-moor-target";
 /// The header that marks a tunnel carrying one plain `http://` request.
 pub(crate) const PLAIN: &str = "x-moor-plain";
 
+/// Where the Proxy listens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Listen {
+    /// A TCP address.
+    Tcp(SocketAddr),
+    /// A Unix socket only moor's user can open, which each Box's tunnel reaches on a dev host.
+    Unix(PathBuf),
+}
+
+impl std::fmt::Display for Listen {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Tcp(addr) => write!(f, "{addr}"),
+            Self::Unix(path) => write!(f, "{}", path.display()),
+        }
+    }
+}
+
+/// A bound listener.
+enum Listener {
+    /// On TCP.
+    Tcp(TcpListener),
+    /// On a Unix socket.
+    Unix(UnixListener),
+}
+
+impl Listen {
+    /// Binds it, replacing a stale socket file; what it is bound to, with the port a TCP
+    /// address of port 0 got.
+    async fn bind(&self) -> std::io::Result<(Listener, Self)> {
+        match self {
+            Self::Tcp(addr) => {
+                let l = TcpListener::bind(addr).await?;
+                let bound = l.local_addr()?;
+                Ok((Listener::Tcp(l), Self::Tcp(bound)))
+            }
+            Self::Unix(path) => {
+                if let Some(dir) = path.parent() {
+                    std::fs::DirBuilder::new()
+                        .recursive(true)
+                        .mode(0o700)
+                        .create(dir)?;
+                }
+                match std::fs::remove_file(path) {
+                    Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
+                    _ => {}
+                }
+                let l = UnixListener::bind(path)?;
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+                Ok((Listener::Unix(l), self.clone()))
+            }
+        }
+    }
+}
+
 /// How the Proxy runs.
 pub(crate) struct Config {
     /// Where it listens.
-    pub(crate) listen: SocketAddr,
+    pub(crate) listen: Listen,
     /// Where the controller's ledger is.
     pub(crate) ledger: Endpoint,
     /// The key it presents on the ledger.
@@ -123,7 +180,7 @@ pub(crate) struct Server {
     /// Runs the listener and every tunnel.
     runtime: tokio::runtime::Runtime,
     /// Where it listens.
-    addr: SocketAddr,
+    listening: Listen,
     /// Wakes the accept loop to stop listening.
     stop: Arc<Notify>,
     /// The accept loop, which holds the listener until it returns.
@@ -144,12 +201,9 @@ impl Server {
             .thread_name("moor-egress")
             .build()
             .map_err(|e| format!("cannot build the runtime: {e}"))?;
-        let listener = runtime
-            .block_on(TcpListener::bind(cfg.listen))
+        let (listener, listening) = runtime
+            .block_on(cfg.listen.bind())
             .map_err(|e| format!("cannot listen on {}: {e}", cfg.listen))?;
-        let addr = listener
-            .local_addr()
-            .map_err(|e| format!("cannot read the listen address: {e}"))?;
         let (clock, every) = (Arc::clone(&cfg.clock), cfg.tend);
         let machine = cfg.machine.clone();
         let shared = Arc::new(Shared {
@@ -172,7 +226,7 @@ impl Server {
             .map_err(|e| format!("cannot start tending: {e}"))?;
         Ok(Self {
             runtime,
-            addr,
+            listening,
             stop,
             accepting,
             shared,
@@ -182,8 +236,8 @@ impl Server {
     }
 
     /// Where it listens.
-    pub(crate) const fn addr(&self) -> SocketAddr {
-        self.addr
+    pub(crate) const fn listening(&self) -> &Listen {
+        &self.listening
     }
 
     /// How many tokens this replica keeps.
@@ -224,13 +278,28 @@ impl Server {
 }
 
 /// Accepts connections until `stop`, then drops the listener so new ones are refused.
-async fn accept(listener: TcpListener, shared: Arc<Shared>, stop: Arc<Notify>) {
+async fn accept(listener: Listener, shared: Arc<Shared>, stop: Arc<Notify>) {
     loop {
         tokio::select! {
             () = stop.notified() => return,
-            accepted = listener.accept() => {
-                let Ok((stream, _)) = accepted else { continue };
-                let counted = Counted::new(Arc::clone(&shared));
+            () = accept_one(&listener, &shared) => {}
+        }
+    }
+}
+
+/// Accepts one connection and serves it while the loop accepts the next.
+async fn accept_one(listener: &Listener, shared: &Arc<Shared>) {
+    let counted = || Counted::new(Arc::clone(shared));
+    match listener {
+        Listener::Tcp(l) => {
+            if let Ok((stream, _)) = l.accept().await {
+                let counted = counted();
+                tokio::spawn(async move { wire::serve(stream, &counted.0).await });
+            }
+        }
+        Listener::Unix(l) => {
+            if let Ok((stream, _)) = l.accept().await {
+                let counted = counted();
                 tokio::spawn(async move { wire::serve(stream, &counted.0).await });
             }
         }

@@ -24,20 +24,24 @@ use tokio_tungstenite::tungstenite::http::{HeaderValue, StatusCode};
 use tokio_tungstenite::tungstenite::{Error as WsError, Message};
 use tokio_tungstenite::{Connector, MaybeTlsStream, WebSocketStream};
 
+mod target;
+use target::plain_target;
+
 /// The header naming the CONNECT target as `host:port`.
 const TARGET: &str = "x-moor-target";
 /// The header that marks a tunnel carrying one plain `http://` request.
 const PLAIN: &str = "x-moor-plain";
-/// The port of an `http://` target that names none.
-const HTTP_PORT: u16 = 80;
 /// The longest CONNECT head taken.
 const HEAD_MAX: usize = 8 * 1024;
 /// Most bytes read from the client per WebSocket message, well under the Proxy's 1 MiB cap.
 const CHUNK: usize = 64 * 1024;
-/// Dials per CONNECT when the Proxy cannot be reached, as while a replica stops listening.
-const ATTEMPTS: u32 = 3;
-/// Pause between those dials.
+/// How long a CONNECT keeps dialing a Proxy it cannot reach, as while a replica stops listening
+/// or a dev controller restarts and opens the Box's tunnel again.
+const PATIENCE: Duration = Duration::from_secs(20);
+/// The first pause between those dials; it doubles up to [`RETRY_MAX`].
 const RETRY: Duration = Duration::from_millis(200);
+/// The longest pause between those dials.
+const RETRY_MAX: Duration = Duration::from_secs(1);
 /// How long one dial, the upgrade included, may take.
 const DIAL: Duration = Duration::from_secs(10);
 
@@ -85,6 +89,8 @@ pub struct Upstream {
     bearer: HeaderValue,
     /// TLS for a `wss://` address.
     tls: Arc<ClientConfig>,
+    /// How long a CONNECT keeps dialing while the Proxy cannot be reached.
+    patience: Duration,
 }
 
 impl fmt::Debug for Upstream {
@@ -128,7 +134,15 @@ impl Upstream {
             url,
             bearer,
             tls: Arc::new(tls),
+            patience: PATIENCE,
         })
+    }
+
+    /// This upstream, with a CONNECT dialing for at most `patience` while it cannot be reached.
+    #[must_use]
+    pub const fn with_patience(mut self, patience: Duration) -> Self {
+        self.patience = patience;
+        self
     }
 }
 
@@ -250,40 +264,23 @@ async fn read_connect(client: &mut TcpStream) -> Result<Option<Connect>, StatusC
     }))
 }
 
-/// The `host:port` of an absolute `http://` request target, port 80 when it names none.
-fn plain_target(path: &str) -> Result<String, StatusCode> {
-    let rest = path
-        .get(..7)
-        .filter(|s| s.eq_ignore_ascii_case("http://"))
-        .and_then(|_| path.get(7..))
-        .ok_or(StatusCode::METHOD_NOT_ALLOWED)?;
-    let authority = rest.split(['/', '?']).next().unwrap_or_default();
-    let named = authority
-        .rsplit_once(':')
-        .filter(|(_, p)| !p.contains(']'))
-        .map(|(h, p)| (h, p.parse::<u16>().ok()));
-    let (host, port) = named.unwrap_or((authority, Some(HTTP_PORT)));
-    match (host.is_empty(), port) {
-        (false, Some(port)) => Ok(format!("{host}:{port}")),
-        _ => Err(StatusCode::BAD_REQUEST),
-    }
-}
-
 /// Opens a WebSocket to the Proxy for `connect`, dialing again while it cannot be reached.
 async fn dial(upstream: &Upstream, connect: &Connect) -> Result<Tunnel, Refused> {
-    let mut last = String::new();
-    for attempt in 0..ATTEMPTS {
-        if attempt > 0 {
-            tokio::time::sleep(RETRY).await;
-        }
-        match tokio::time::timeout(DIAL, dial_once(upstream, connect)).await {
+    let until = tokio::time::Instant::now() + upstream.patience;
+    let mut pause = RETRY;
+    loop {
+        let last = match tokio::time::timeout(DIAL, dial_once(upstream, connect)).await {
             Ok(Ok(tunnel)) => return Ok(tunnel),
-            Ok(Err(Refused::Unreachable(why))) => last = why,
+            Ok(Err(Refused::Unreachable(why))) => why,
             Ok(Err(refused)) => return Err(refused),
-            Err(_) => last = format!("no answer from {} in {}s", upstream.url, DIAL.as_secs()),
+            Err(_) => format!("no answer from {} in {}s", upstream.url, DIAL.as_secs()),
+        };
+        if tokio::time::Instant::now() + pause > until {
+            return Err(Refused::Unreachable(last));
         }
+        tokio::time::sleep(pause).await;
+        pause = (pause * 2).min(RETRY_MAX);
     }
-    Err(Refused::Unreachable(last))
 }
 
 /// One dial of [`dial`].

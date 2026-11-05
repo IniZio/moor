@@ -117,14 +117,14 @@ pub(crate) fn sleep_parked(
     id: BoxId,
     handle: &BoxHandle,
 ) -> Result<SleepOutcome, CommandError> {
-    park_tunnel(cx, store, id)?;
+    park_tunnel(cx, id)?;
     if let Err(e) = close_agent_pane(cx, store, id) {
-        let _ = restore_tunnel(cx, store, id, true);
+        let _ = restore_tunnel(cx, id);
         return Err(e);
     }
     let slept = cx.driver().sleep(handle);
     if !matches!(slept, Ok(SleepOutcome::Slept | SleepOutcome::Native)) {
-        let _ = restore_tunnel(cx, store, id, true);
+        let _ = restore_tunnel(cx, id);
         if let Err(e) = revive_after_wake(cx, store, id) {
             cx.warn(Warning {
                 code: "agent_relaunch_failed".to_owned(),
