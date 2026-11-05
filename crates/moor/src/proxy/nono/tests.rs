@@ -48,7 +48,8 @@ fn cfg_chained(
     chain: Option<Chain<'_>>,
 ) -> NonoConfig {
     let state = tempfile::tempdir().unwrap();
-    let ca = ca::load_or_create(state.path(), BoxId::new(3)).unwrap();
+    let (key, cert) = ca::generate(BoxId::new(3)).unwrap();
+    let ca = ca::install(state.path(), BoxId::new(3), (key.as_bytes(), &cert)).unwrap();
     let dir = ca::ca_dir(state.path(), BoxId::new(3));
     let token = Secret::new(TOKEN.as_bytes().to_vec());
     build_config(&NonoSpec {
@@ -177,7 +178,8 @@ fn every_host_passes_nono_filter_and_only_rules_get_routes() {
 #[test]
 fn a_front_proxy_filter_passes_only_its_rule_hosts() {
     let state = tempfile::tempdir().unwrap();
-    let ca = ca::load_or_create(state.path(), BoxId::new(3)).unwrap();
+    let (key, cert) = ca::generate(BoxId::new(3)).unwrap();
+    let ca = ca::install(state.path(), BoxId::new(3), (key.as_bytes(), &cert)).unwrap();
     let token = Secret::new(TOKEN.as_bytes().to_vec());
     let cfg = build_config(&NonoSpec {
         rules: &[rule("a", &["a.test"], bearer())],
@@ -215,7 +217,8 @@ fn debug_hides_the_token() {
 #[test]
 fn non_utf8_token_is_refused_without_echoing_it() {
     let state = tempfile::tempdir().unwrap();
-    let ca = ca::load_or_create(state.path(), BoxId::new(3)).unwrap();
+    let (key, cert) = ca::generate(BoxId::new(3)).unwrap();
+    let ca = ca::install(state.path(), BoxId::new(3), (key.as_bytes(), &cert)).unwrap();
     let dir = ca::ca_dir(state.path(), BoxId::new(3));
     let token = Secret::new(vec![0xff, 0xfe, b'k']);
     let cfg = build_config(&NonoSpec {

@@ -21,7 +21,6 @@ use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 use ureq::Agent;
 
 use crate::proxy::ledger::tests::{box_ledger_with, OnLedger};
-use crate::proxy::nono::ca::ca_dir;
 use crate::proxy::nono::capture::UserSecretsFn;
 use crate::proxy::nono::tests::upstream::{self, Upstream};
 use crate::proxy::supervisor::{serve, Deps, Sink, LEASE};
@@ -228,8 +227,9 @@ impl Two {
                 .find(|t| &t.handle == handle)
                 .map(|t| t.socket)
         });
-        let ca = crate::proxy::nono::ca::load_or_create(self.dir.path(), id).unwrap();
-        upstream::box_client(bridge(&socket), ca.cert_pem())
+        let cert = std::fs::read_to_string(crate::proxy::nono::ca::cert_path(self.dir.path(), id))
+            .unwrap();
+        upstream::box_client(bridge(&socket), &cert)
     }
 
     /// The `Authorization` the upstream saw on its last request.
@@ -237,15 +237,11 @@ impl Two {
         self.up.seen().last().and_then(|s| s.authorization.clone())
     }
 
-    /// Every file under the state dir that a secret must never reach: the specs, the
-    /// Proxy logs and the store.
+    /// Every file under the state dir that a secret must never reach: the Proxy logs and the store.
     fn files(&self) -> Vec<PathBuf> {
         let logs = std::fs::read_dir(self.dir.path().join("proxy")).unwrap();
         let mut out: Vec<PathBuf> = logs.map(|e| e.unwrap().path()).collect();
         out.retain(|p| p.is_file());
-        out.extend(
-            [self.ann.1, self.bob.1].map(|id| ca_dir(self.dir.path(), id).join("spec.json")),
-        );
         out.extend(["", "-wal", "-shm"].map(|s| self.dir.path().join(format!("{STORE_FILE}{s}"))));
         out
     }

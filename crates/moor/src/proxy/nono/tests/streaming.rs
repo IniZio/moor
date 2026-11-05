@@ -170,7 +170,8 @@ fn upload(total: u64, gate: u64) -> (u64, Option<u16>, u64) {
         source,
     )])));
     let state = dir.path().join("state");
-    let ca = ca::load_or_create(&state, BoxId::new(7)).unwrap();
+    let (key, cert) = ca::generate(BoxId::new(7)).unwrap();
+    let ca = ca::install(&state, BoxId::new(7), (key.as_bytes(), &cert)).unwrap();
     let token = Secret::new(TOKEN.as_bytes().to_vec());
     let mut cfg = build_config(&NonoSpec {
         rules: &rules,
@@ -183,7 +184,7 @@ fn upload(total: u64, gate: u64) -> (u64, Option<u16>, u64) {
     });
     cfg.0.upstream_extra_ca_pems = vec![up.ca_path.to_string_lossy().into_owned()];
     let proxy = NonoProxy::start(cfg, capture).unwrap();
-    let agent = agent(proxy.port(), ca.cert_pem());
+    let agent = agent(proxy.port(), &cert);
     let url = format!("https://localhost:{}{PATH}", up.port);
     let sent = Arc::new(AtomicU64::new(0));
     let (tx, rx) = mpsc::channel();

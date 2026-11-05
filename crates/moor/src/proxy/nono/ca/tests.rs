@@ -7,6 +7,14 @@ use nono_proxy::tls_intercept::EphemeralCa;
 
 use super::*;
 
+/// Loads or creates the CA the way the Proxy does, with the Box's common name.
+fn load_or_create(state: &Path, box_id: BoxId) -> std::io::Result<BoxCa> {
+    load_or_create_in(
+        &ca_dir(state, box_id),
+        &format!("moor box {}", box_id.get()),
+    )
+}
+
 fn mode(path: &Path) -> u32 {
     std::fs::metadata(path).unwrap().permissions().mode() & 0o777
 }
@@ -16,7 +24,7 @@ fn reload_returns_same_cert() {
     let state = tempfile::tempdir().unwrap();
     let first = load_or_create(state.path(), BoxId::new(7)).unwrap();
     let second = load_or_create(state.path(), BoxId::new(7)).unwrap();
-    assert_eq!(first.cert_pem(), second.cert_pem());
+    assert_eq!(first.cert_pem, second.cert_pem);
     assert_eq!(*first.key_der, *second.key_der);
 }
 
@@ -72,7 +80,7 @@ fn corrupt_key_errors_with_path_but_no_content() {
         std::fs::read_to_string(&key_path).unwrap(),
         "SECRET-GARBAGE-123"
     );
-    assert!(!ca.cert_pem().is_empty());
+    assert!(!ca.cert_pem.is_empty());
 }
 
 #[test]
@@ -104,7 +112,7 @@ fn debug_shows_no_key_or_cert() {
     let text = format!("{ca:?}");
     assert!(!text.contains("PRIVATE KEY"));
     assert!(!text.contains("CERTIFICATE"));
-    assert!(!text.contains(ca.cert_pem().lines().nth(1).unwrap()));
+    assert!(!text.contains(ca.cert_pem.lines().nth(1).unwrap()));
 }
 
 #[test]
@@ -112,11 +120,11 @@ fn preloaded_round_trips_and_names_the_box() {
     let state = tempfile::tempdir().unwrap();
     let ca = load_or_create(state.path(), BoxId::new(7)).unwrap();
     let pre = ca.preloaded();
-    assert_eq!(pre.cert_pem, ca.cert_pem());
+    assert_eq!(pre.cert_pem, ca.cert_pem);
     let rebuilt = EphemeralCa::from_existing(&pre.key_der, &pre.cert_pem).unwrap();
-    assert_eq!(rebuilt.cert_pem(), ca.cert_pem());
+    assert_eq!(rebuilt.cert_pem(), ca.cert_pem);
     let cn = b"moor box 7";
-    let der = rcgen_free_der(ca.cert_pem());
+    let der = rcgen_free_der(&ca.cert_pem);
     assert!(der.windows(cn.len()).any(|w| w == cn));
 }
 

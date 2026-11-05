@@ -97,7 +97,7 @@ fn serve(mut tcp: TcpStream, ca: &ca::BoxCa, seen: &Mutex<Captured>) {
     tcp.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
         .unwrap();
     let key = ca.preloaded().key_der;
-    let box_ca = Arc::new(EphemeralCa::from_existing(&key, ca.cert_pem()).unwrap());
+    let box_ca = Arc::new(EphemeralCa::from_existing(&key, &ca.preloaded().cert_pem).unwrap());
     let config = build_server_config(Arc::new(CertCache::new(box_ca)), false).unwrap();
     let mut tls = StreamOwned::new(ServerConnection::new(config).unwrap(), tcp);
     let head = read_head(&mut tls);
@@ -200,9 +200,10 @@ fn capture() -> Arc<MoorCapture> {
 fn intercepted_route_chains_through_external_filter_with_body_visible() {
     let dir = TempDir::new().unwrap();
     let state = dir.path().join("state");
-    let ca = ca::load_or_create(&state, BOX_ID).unwrap();
+    let (key, cert) = ca::generate(BOX_ID).unwrap();
+    let ca = ca::install(&state, BOX_ID, (key.as_bytes(), &cert)).unwrap();
     let ca_dir = ca::ca_dir(&state, BOX_ID);
-    let filter = start_filter(ca::load_or_create(&state, BOX_ID).unwrap());
+    let filter = start_filter(ca::install(&state, BOX_ID, (key.as_bytes(), &cert)).unwrap());
     let cfg = chained_config(&ca, &ca_dir, filter.port);
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -220,7 +221,7 @@ fn intercepted_route_chains_through_external_filter_with_body_visible() {
         )
         .unwrap();
 
-    let client = upstream::client(handle.port, TOKEN, ca.cert_pem());
+    let client = upstream::client(handle.port, TOKEN, &cert);
     let mut response = client
         .post("https://api.github.com/graphql")
         .header("Authorization", "Bearer placeholder-not-real")
