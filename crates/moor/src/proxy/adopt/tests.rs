@@ -343,3 +343,28 @@ fn a_replaced_supervisor_that_outlasts_the_wait_is_reported_and_not_doubled() {
     );
     assert!(f.proc.daemons().is_empty());
 }
+
+#[test]
+fn a_supervisor_from_before_the_shared_proxy_is_replaced_by_one_that_relays() {
+    let f = fx();
+    let relay: std::net::SocketAddr = "127.0.0.1:18490".parse().unwrap();
+    let f = Fx {
+        host: f.host.relaying(Some(relay)),
+        ..f
+    };
+    record_speaking(&f, Some(LEDGER));
+
+    assert_eq!(f.settle(), Vec::<String>::new());
+
+    assert_eq!(f.proc.signals().first().map(|s| s.0), Some(PID));
+    let daemons = f.proc.daemons();
+    assert_eq!(daemons.len(), 1);
+    assert!(daemons
+        .first()
+        .unwrap()
+        .call
+        .env
+        .contains(&("MOOR_EGRESS_RELAY".to_owned(), "127.0.0.1:18490".to_owned())));
+    assert_eq!(f.row().ledger, Some(f.host.started_as()));
+    assert_ne!(f.host.started_as(), LEDGER);
+}

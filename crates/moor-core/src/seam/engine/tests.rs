@@ -65,6 +65,7 @@ fn proxied(box_port: u16, ca_pem: &str) -> LaunchReq {
             ca_pem: ca_pem.to_owned(),
             box_env: Vec::new(),
             hosts: Vec::new(),
+            forwarder: false,
         })),
         ..req()
     }

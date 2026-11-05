@@ -92,6 +92,7 @@ pub(crate) fn proxy(
         ca_pem: ep.ca_pem,
         box_env: exec_env::merged_env(repo_env, rule_env.clone()),
         hosts,
+        forwarder: route.upstream(ep.box_port).is_some(),
     };
     Ok(BoxProxy { addr, rule_env })
 }

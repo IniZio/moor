@@ -42,8 +42,8 @@ impl EgressRoute {
         Self::parse(url)
     }
 
-    /// The route to the shared Proxy at `url`: over the tunnel when its host is a loopback
-    /// address, since only the controller's host can reach that.
+    /// The route to the shared Proxy at `url`: `wss://` directly, or `ws://` to a loopback
+    /// address over each Box's tunnel, since only the controller's host can reach that.
     ///
     /// # Errors
     /// As for [`Self::from_env`].
@@ -58,14 +58,19 @@ impl EgressRoute {
         if authority.is_empty() {
             return Err(bad());
         }
+        if !plain {
+            return Ok(Self::Direct {
+                url: url.to_owned(),
+            });
+        }
         match authority.parse::<SocketAddr>() {
-            Ok(relay) if plain && relay.ip().is_loopback() => Ok(Self::Tunneled {
+            Ok(relay) if relay.ip().is_loopback() => Ok(Self::Tunneled {
                 relay,
                 path: path.to_owned(),
             }),
-            _ => Ok(Self::Direct {
-                url: url.to_owned(),
-            }),
+            _ => Err(format!(
+                "MOOR_EGRESS_URL {url} would send Box tokens in the clear; use wss://, or ws:// only to a loopback address"
+            )),
         }
     }
 

@@ -40,9 +40,19 @@ fn reset(box_id: BoxId, now: Ts) -> UpdateStatement {
         .value(Proxy::LeaseOwner, Option::<String>::None)
         .value(Proxy::LeaseHeartbeat, Option::<i64>::None)
         .value(Proxy::BootId, Option::<String>::None)
+        .value(Proxy::TokenDelivered, 0)
         .value(Proxy::UpdatedAt, now.as_millis())
         .and_where(Expr::col(Proxy::Box).eq(box_id.get()))
         .take()
+}
+
+/// Tries of a reserve whose forward port another writer took between the draw and the write.
+const RESERVE_TRIES: u32 = 3;
+
+/// Whether `e` is a write that collided on the unique forward port.
+fn forward_port_taken(e: &crate::store::db::Error) -> bool {
+    e.unique_key()
+        .is_some_and(|k| k.is(&Proxy::Table, &[Proxy::ForwardPort]))
 }
 
 /// Lowest box port a proxy may be given.
@@ -132,6 +142,23 @@ impl Store {
     /// forward port is given one. An existing row is reset to unready with no
     /// pid, handle or lease, unless a lease younger than `lease` is live.
     pub(crate) fn reserve(
+        &self,
+        box_id: BoxId,
+        rng: &dyn Rng,
+        lease: Duration,
+    ) -> Result<Reserve, StoreError> {
+        let mut tries = 0;
+        loop {
+            tries += 1;
+            match self.reserve_once(box_id, rng, lease) {
+                Err(StoreError::Db(e)) if tries < RESERVE_TRIES && forward_port_taken(&e) => {}
+                other => return other,
+            }
+        }
+    }
+
+    /// One try of [`Self::reserve`]; a forward port another writer took first fails it.
+    fn reserve_once(
         &self,
         box_id: BoxId,
         rng: &dyn Rng,

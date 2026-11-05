@@ -8,24 +8,22 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use moor_core::seam::clock::Clock;
-use moor_core::seam::proc::{Deadline, Proc, ProcError, ProcSpec, Signal, Tool};
+use moor_core::seam::proc::{Proc, ProcError, Signal};
 use moor_core::seam::proxy_host::{
     ProxyEndpoint, ProxyHost, ProxyHostError, ProxySpec, ProxyStatus,
 };
 use moor_core::seam::rng::Rng;
 use moor_core::BoxId;
 
-use crate::env::{EGRESS_RELAY, PROXY_KEY};
-use crate::proxy::ledger::LEDGER;
 use crate::store::{Database, ProxyRow, Reserve, Store, StoreError};
 
 pub(crate) use super::supervisor::LEASE;
-use key::mint_key;
 use ready::{owner_only_dir, ready_endpoint, record};
 
 mod end;
 mod key;
 mod ready;
+mod spawn;
 
 /// How far ahead of the clock a heartbeat may be and still count as live.
 const SKEW: Duration = Duration::from_secs(5);
@@ -80,14 +78,6 @@ impl DetachedSupervisor {
             store: OnceLock::new(),
             relay: None,
         }
-    }
-
-    /// This host starting supervisors that relay their tunnel to the shared egress Proxy at
-    /// `relay`, when there is one.
-    #[must_use]
-    pub(crate) const fn relaying(mut self, relay: Option<SocketAddr>) -> Self {
-        self.relay = relay;
-        self
     }
 
     /// This host opening the store in the Postgres `database`, when there is one.
@@ -225,8 +215,11 @@ impl ProxyHost for DetachedSupervisor {
         let store = self.store().map_err(|e| store_failed(&e, &log))?;
         let row = store.proxy(box_id).map_err(|e| store_failed(&e, &log))?;
         if let Some(row) = row.filter(|r| r.ready && self.live(r)) {
-            record(store, spec, &log)?;
-            return ready_endpoint(store, &row, &log);
+            if row.ledger == Some(self.started_as()) {
+                record(store, spec, &log)?;
+                return ready_endpoint(store, &row, &log);
+            }
+            self.end(box_id)?;
         }
 
         let reserved = store
@@ -234,24 +227,7 @@ impl ProxyHost for DetachedSupervisor {
             .map_err(|e| store_failed(&e, &log))?;
         record(store, spec, &log)?;
         let pid = match reserved {
-            Reserve::Reserved(_) => {
-                let key = mint_key().map_err(|e| io_failed(&e, &log))?;
-                store
-                    .set_proxy_key(box_id, key.as_bytes(), LEDGER)
-                    .map_err(|e| store_failed(&e, &log))?;
-                let mut spec = ProcSpec::new(Tool::MoorSelf, Deadline(WAIT))
-                    .args(["proxy", "serve", &box_id.get().to_string()])
-                    // The controller may run on a state dir its own config chose.
-                    .env("MOOR_STATE_DIR", state.to_string_lossy())
-                    .env(PROXY_KEY, key.as_str());
-                if let Some(relay) = self.relay {
-                    spec = spec.env(EGRESS_RELAY, relay.to_string());
-                }
-                let pid = self.proc.spawn_daemon(&spec, &log).map_err(|e| {
-                    fail(&format!("the proxy supervisor could not start: {e}"), &log)
-                })?;
-                Some(pid)
-            }
+            Reserve::Reserved(_) => Some(self.spawn(store, (state, &log), box_id)?),
             Reserve::Leased { .. } => None,
         };
 

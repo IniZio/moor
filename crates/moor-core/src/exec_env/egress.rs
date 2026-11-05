@@ -10,7 +10,7 @@ pub const EGRESS_FAILED: &str = "the egress proxy could not start";
 
 /// Shell variables the egress lines set; the prelude unsets them at its end.
 pub(super) const EGRESS_SHELL_VARS: &str =
-    "moor_su moor_apt moor_conf moor_new moor_n moor_pid moor_ours moor_st moor_aa moor_fw";
+    "moor_su moor_apt moor_conf moor_new moor_n moor_pid moor_ours moor_st moor_aa";
 
 /// The egress forwarder, relative to the Box user's home. Its config is this path with `.json`,
 /// a replacement waiting to be swapped in has `.new`, and it writes `.pid` and `.log` beside it.
@@ -121,6 +121,13 @@ pub(super) fn lines(listen: u16, upstream: u16, hosts: &[String]) -> Vec<String>
     lines_with(listen, upstream, hosts, &SYSTEM_APPARMOR)
 }
 
+/// [`lines`] for a Box the shared Proxy serves: tinyproxy sends `hosts` to the egress forwarder
+/// on loopback `forward`. Inside the same `flock`, the forwarder starts before tinyproxy is
+/// pointed at it.
+pub(super) fn forwarded_lines(listen: u16, forward: u16, hosts: &[String]) -> Vec<String> {
+    assemble(listen, (forward, true), hosts, &SYSTEM_APPARMOR)
+}
+
 /// [`lines`] against the `AppArmor` files in `aa`. Before tinyproxy starts, when the `tinyproxy`
 /// on `PATH` is `aa.exec` and `aa.profile` is loaded in enforce mode, the rules from
 /// [`apparmor_rules`] go into `aa.local` and the profile is reloaded, as root or through
@@ -129,6 +136,17 @@ pub(super) fn lines(listen: u16, upstream: u16, hosts: &[String]) -> Vec<String>
 pub(super) fn lines_with(
     listen: u16,
     upstream: u16,
+    hosts: &[String],
+    aa: &AppArmor<'_>,
+) -> Vec<String> {
+    assemble(listen, (upstream, false), hosts, aa)
+}
+
+/// The egress lines, sending `hosts` to loopback `upstream`, which the forwarder serves when
+/// `forwarded`.
+fn assemble(
+    listen: u16,
+    (upstream, forwarded): (u16, bool),
     hosts: &[String],
     aa: &AppArmor<'_>,
 ) -> Vec<String> {
@@ -180,23 +198,26 @@ pub(super) fn lines_with(
             stop(&format!("{DIR} could not be created"))
         ),
         format!(
-            "( flock -w {LOCK_WAIT} 9 || {}; {install}; {config}; {ours}; {start} ) 9>\"{LOCK}\" || exit 1",
+            "( flock -w {LOCK_WAIT} 9 || {}; {}{install}; {config}; {ours}; {start} ) 9>\"{LOCK}\" || exit 1",
             stop(&format!("another command held {LOCK} for {LOCK_WAIT} s")),
+            if forwarded {
+                forwarder(upstream) + "; "
+            } else {
+                String::new()
+            },
         ),
-        forwarder(upstream),
     ]
 }
 
-/// The line that keeps the egress forwarder listening on `port` when its config names that port,
-/// as it does only once the controller delivered it for the shared Proxy. A delivered `.new`
-/// binary replaces the running one. Otherwise the line does nothing.
+/// Shell, run under the egress lock, that keeps the egress forwarder listening on `port` when its
+/// config names that port, as it does once the controller delivered it. A delivered `.new`
+/// binary replaces the running one. Otherwise it does nothing.
 pub(super) fn forwarder(port: u16) -> String {
     let fw = format!("$HOME/{FORWARDER}");
     let up = format!("grep -q ' 0100007F:{port:04X} 00000000:0000 0A' /proc/net/tcp 2>/dev/null");
     let old_runs = "moor_st=$(sed -n 's/.*) \\(.\\) .*/\\1/p' \"/proc/$moor_pid/stat\" 2>/dev/null) && [ -n \"$moor_st\" ] && [ \"$moor_st\" != Z ]";
     format!(
-        "( flock -w {LOCK_WAIT} 9 || {}; moor_fw=\"{fw}\"; if grep -qF '\"listen\":\"127.0.0.1:{port}\"' \"$moor_fw.json\" 2>/dev/null; then moor_pid=$(cat \"$moor_fw.pid\" 2>/dev/null); moor_ours=; [ -n \"$moor_pid\" ] && [ \"$(cat \"/proc/$moor_pid/comm\" 2>/dev/null)\" = egress-forward ] && moor_ours=1; if [ -f \"$moor_fw.new\" ]; then if [ -n \"$moor_ours\" ]; then kill \"$moor_pid\" 2>/dev/null; moor_n=0; while {old_runs}; do moor_n=$((moor_n+1)); [ $moor_n -le {POLLS} ] || {}; sleep 0.1; done; fi; mv -f \"$moor_fw.new\" \"$moor_fw\" || {}; moor_ours=; fi; if [ -z \"$moor_ours\" ]; then if {up}; then {}; fi; ( setsid \"$moor_fw\" --config \"$moor_fw.json\" </dev/null >\"$moor_fw.log\" 2>&1 9>&- & echo $! >\"$moor_fw.pid\" ); moor_n=0; until {up}; do moor_n=$((moor_n+1)); [ $moor_n -le {POLLS} ] || {}; sleep 0.1; done; fi; fi ) 9>\"{LOCK}\" || exit 1",
-        stop(&format!("another command held {LOCK} for {LOCK_WAIT} s")),
+        "moor_fw=\"{fw}\"; if grep -qF '\"listen\":\"127.0.0.1:{port}\"' \"$moor_fw.json\" 2>/dev/null; then moor_pid=$(cat \"$moor_fw.pid\" 2>/dev/null); moor_ours=; [ -n \"$moor_pid\" ] && [ \"$(cat \"/proc/$moor_pid/comm\" 2>/dev/null)\" = egress-forward ] && moor_ours=1; if [ -f \"$moor_fw.new\" ]; then if [ -n \"$moor_ours\" ]; then kill \"$moor_pid\" 2>/dev/null; moor_n=0; while {old_runs}; do moor_n=$((moor_n+1)); [ $moor_n -le {POLLS} ] || {}; sleep 0.1; done; fi; mv -f \"$moor_fw.new\" \"$moor_fw\" || {}; moor_ours=; fi; if [ -z \"$moor_ours\" ]; then if {up}; then {}; fi; ( setsid \"$moor_fw\" --config \"$moor_fw.json\" </dev/null >\"$moor_fw.log\" 2>&1 9>&- & echo $! >\"$moor_fw.pid\" ); moor_n=0; until {up}; do moor_n=$((moor_n+1)); [ $moor_n -le {POLLS} ] || {}; sleep 0.1; done; fi; fi",
         stop("the old egress forwarder $moor_pid did not exit after TERM"),
         stop(&format!("the new egress forwarder could not be moved to {fw}")),
         stop(&format!("port {port} is taken by another process")),
