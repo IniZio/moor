@@ -219,6 +219,13 @@ pub trait Driver: Send + Sync {
         socket: &Path,
     ) -> Result<Box<dyn TunnelHandle>, DriverError>;
 
+    /// Whether an exec in the Box reported, since the last ask, that the egress forwarder has no
+    /// config; asking forgets the report. A driver that never sees the report says no.
+    fn forwarder_lost(&self, handle: &BoxHandle) -> bool {
+        let _ = handle;
+        false
+    }
+
     /// Makes the next call to the Box log in anew when the Box user has joined a group this
     /// login lacks, since a login keeps the groups it connected with. Calls in flight finish on
     /// the old login. A driver whose every call logs in anew has nothing to do.

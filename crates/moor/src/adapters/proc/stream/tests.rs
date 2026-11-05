@@ -397,6 +397,7 @@ fn gate() -> StderrGate {
     StderrGate {
         begin: "moor-b".into(),
         end: "moor-e".into(),
+        hide: None,
     }
 }
 
@@ -412,6 +413,25 @@ fn gate_forwards_only_lines_between_the_markers() {
         .unwrap();
     let shown = String::from_utf8(cap.0.lock().unwrap().clone()).unwrap();
     assert_eq!(shown, "hello\n", "stderr shown to the user");
+}
+
+#[test]
+fn a_hidden_line_is_noted_and_never_shown() {
+    let script = "echo moor-b >&2; echo before >&2; echo moor-hidden >&2; echo after >&2; \
+                  echo moor-e >&2";
+    let cap = Capture::default();
+    let flag = Arc::new(AtomicBool::new(false));
+    let hidden = moor_core::seam::proc::Hidden::new("moor-hidden");
+    let spec = sh(script, 5).stderr_gate(StderrGate {
+        hide: Some(hidden.clone()),
+        ..gate()
+    });
+    sh_proc()
+        .stream_to(&spec, &Output::Inherit, &flag, Box::new(cap.clone()))
+        .unwrap();
+    let shown = String::from_utf8(cap.0.lock().unwrap().clone()).unwrap();
+    assert_eq!(shown, "before\nafter\n");
+    assert!(hidden.seen());
 }
 
 #[test]

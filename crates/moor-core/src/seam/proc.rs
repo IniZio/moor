@@ -10,7 +10,7 @@ mod signal;
 mod tool;
 pub use error::ProcError;
 pub use first_line::FirstLineError;
-pub use gate::StderrGate;
+pub use gate::{Hidden, StderrGate};
 pub use piped::{pump, Piped, Pipes};
 pub use signal::{check_group, Signal};
 pub use tool::Tool;

@@ -2,11 +2,9 @@
 
 use std::path::Path;
 use std::sync::{Mutex, PoisonError};
-use std::time::Duration;
 
 use moor_core::exec_env::FORWARDER;
-use moor_core::seam::driver::{Driver, ExecOutcome, ExecSpec};
-use moor_core::seam::proc::Deadline;
+use moor_core::seam::driver::Driver;
 use moor_core::seam::proxy_host::ProxyEndpoint;
 use moor_core::{BoxHandle, BoxId, BoxPath};
 
@@ -20,9 +18,6 @@ static DELIVERING: Mutex<()> = Mutex::new(());
 
 /// Tries of mint, write and mark before a delivery gives up.
 pub(crate) const MINT_TRIES: u32 = 3;
-
-/// How long the check for the forwarder's config in the Box may take.
-const CHECK_DEADLINE: Duration = Duration::from_secs(30);
 
 /// What a delivery reaches.
 pub(crate) struct Delivery<'a> {
@@ -43,7 +38,7 @@ pub(crate) struct Delivery<'a> {
 }
 
 /// Returns the port tinyproxy sends credential hosts to. On the shared Proxy's routes that is the
-/// forwarder's. Unless the row marks a token delivered and its config is still in the Box, a
+/// forwarder's. Unless the row marks a token delivered and no exec reported its config gone, a
 /// fresh token is minted, the forwarder and then its config with that token are written into
 /// the Box, and the token is marked delivered.
 ///
@@ -93,28 +88,14 @@ pub(crate) fn deliver(to: &Delivery<'_>, ep: &ProxyEndpoint) -> Result<u16, Stri
     Ok(port)
 }
 
-/// Whether the row marks the Box's token delivered and the forwarder's config is in the Box.
+/// Whether the row marks the Box's token delivered and no exec since reported the config gone.
+/// A report clears the mark first, so a delivery that then fails is tried again.
 fn in_place(to: &Delivery<'_>, handle: &BoxHandle) -> Result<bool, String> {
-    let delivered = to
-        .store
-        .egress_token_delivered(to.box_id)
-        .map_err(|e| e.to_string())?;
-    if !delivered {
-        return Ok(false);
+    let failed = |e: crate::store::StoreError| e.to_string();
+    if to.driver.forwarder_lost(handle) {
+        to.store.forget_egress_delivery(to.box_id).map_err(failed)?;
     }
-    let spec = ExecSpec {
-        argv: ["sh", "-c", &format!("test -f \"$HOME/{FORWARDER}.json\"")]
-            .map(str::to_owned)
-            .to_vec(),
-        env: Vec::new(),
-        cwd: None,
-        output: None,
-    };
-    match to.driver.exec(handle, &spec, Deadline(CHECK_DEADLINE)) {
-        Ok(ExecOutcome::Exited { code: 0 }) => Ok(true),
-        Ok(_) => Ok(false),
-        Err(e) => Err(format!("cannot check the egress forwarder in the Box: {e}")),
-    }
+    to.store.egress_token_delivered(to.box_id).map_err(failed)
 }
 
 /// Mints the Box's token, hands it to `write`, then marks it delivered. When another controller

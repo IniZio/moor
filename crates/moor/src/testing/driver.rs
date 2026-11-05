@@ -44,6 +44,7 @@ struct State {
     exec_results: VecDeque<Result<ExecOutcome, DriverError>>,
     /// Outcomes that end any `exec` whose argv mentions the needle.
     exec_ends: Vec<(String, ExecOutcome)>,
+    forwarder_lost: Vec<String>,
     exec_stdout: VecDeque<String>,
     artifact_index: VecDeque<String>,
     execs: Vec<(BoxHandle, ExecSpec, Deadline)>,
@@ -297,10 +298,12 @@ impl Driver for FakeDriver {
         self.piped(h, s, p)
     }
 
+    fn forwarder_lost(&self, handle: &BoxHandle) -> bool {
+        self.take_forwarder_lost(handle)
+    }
+
     fn refresh_login(&self, handle: &BoxHandle) -> Result<(), DriverError> {
-        let mut s = self.st();
-        let execs = s.execs.len();
-        s.refreshed_logins.push((handle.clone(), execs));
+        self.note_refresh(handle);
         Ok(())
     }
 
