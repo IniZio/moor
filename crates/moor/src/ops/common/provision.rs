@@ -69,6 +69,14 @@ impl Entry {
             Self::Stay => None,
         }
     }
+
+    /// The state reason once the Box gets its machine: a queued Box no longer waits for room.
+    const fn reason_once_admitted(self) -> Field<String> {
+        match self {
+            Self::Waiting => Field::Clear,
+            Self::Fresh | Self::Retry | Self::Stay => Field::Keep,
+        }
+    }
 }
 
 /// Gives a Box with no machine, a failed setup in a lost machine or a lost machine a machine again.
@@ -143,6 +151,7 @@ pub(crate) fn provision(
             .set(Fields {
                 box_provider: Field::Set(provider.clone()),
                 box_handle: Field::Clear,
+                state_reason: entry.reason_once_admitted(),
                 ..Fields::default()
             })
             .intent(IntentChange::Set(Intent::Provisioning {
