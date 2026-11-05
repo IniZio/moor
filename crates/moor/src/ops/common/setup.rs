@@ -121,7 +121,8 @@ impl SetupRun {
 /// Runs the setup lines as one script in `workdir`, stopping at the first failure.
 ///
 /// The script's log is copied back from the Box to `setup.log` in `log_dir`; its tail and,
-/// after a failure, the failing line come from there. The script gets the environment the agent gets in
+/// after a failure, the failing line come from there, or from the exec's own output when the
+/// copy fails. The script gets the environment the agent gets in
 /// the Box, including the Proxy variables when `proxy` is set.
 #[allow(
     clippy::too_many_arguments,
@@ -166,7 +167,10 @@ pub(crate) fn run_setup(
             tail: String::new(),
         };
     }
-    let log = fetch_log(cx, handle, workdir, log_dir);
+    let mut log = fetch_log(cx, handle, workdir, log_dir);
+    if log.is_empty() {
+        log = String::from_utf8_lossy(&std::fs::read(&output).unwrap_or_default()).into_owned();
+    }
     let tail = tail_lines(&log).join("\n");
     let (reason, exit) = match result {
         Ok(ExecOutcome::Exited { code: 0 }) => return SetupRun::Ok { ms, tail },
