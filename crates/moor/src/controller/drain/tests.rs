@@ -518,3 +518,42 @@ fn sigterm_lets_a_streamed_run_finish_and_exits_zero() {
     });
     assert_eq!(status.code(), Some(0), "{status:?}");
 }
+
+#[test]
+fn keepers_set_to_end_with_the_drain_end_as_it_begins() {
+    use crate::proxy::keeper::{Deps, KEEPERS};
+    use crate::testing::rng::FakeRng;
+    use moor_core::domain::decision::{Decision, NewBox};
+
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(
+        crate::adapters::clock::SystemClock::from_env(&Env::from_pairs(
+            Vec::<(String, String)>::new(),
+        ))
+        .unwrap(),
+    );
+    let store = crate::store::Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
+    let nt = NewBox {
+        name: moor_core::BoxName::parse_allow_bare("a").unwrap(),
+        repo: None,
+    };
+    let id = store.apply(Decision::insert(nt)).unwrap().box_id;
+    drop(store.reserve(id, &FakeRng::default(), Duration::ZERO));
+    let deps = Arc::new(Deps {
+        store,
+        driver: Arc::new(crate::testing::driver::FakeDriver::new()),
+        clock,
+        egress: None,
+        runner: dir.path().join("runner.sock"),
+        log: Arc::new(Mutex::new(io::sink())),
+    });
+    KEEPERS.start(&deps, id, 41_000);
+    let drain = Drain::default();
+    drain.end_keepers_with_drain();
+    assert!(KEEPERS.get(id).is_some());
+    drain.begin();
+    assert!(
+        KEEPERS.get(id).is_none(),
+        "the keeper ended as the drain began"
+    );
+}

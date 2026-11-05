@@ -39,6 +39,12 @@ pub(crate) fn reconcile_proxies(env: &Env) -> Vec<String> {
     Vec::new()
 }
 
+/// Whether the keepers in `env` tunnel into each Box: only to reach a shared egress Proxy on a
+/// socket of this host.
+pub(crate) fn keepers_tunnel(env: &Env) -> bool {
+    EgressRoute::from_env(env).is_ok_and(|r| r.socket().is_some())
+}
+
 /// Ends every Box's keeper in this process.
 pub(crate) fn end_keepers() {
     KEEPERS.end_all();
@@ -82,4 +88,21 @@ pub(super) fn proxy_host(
         key: Zeroizing::new(route::key(env).to_vec()),
         binary: route::binary(env),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::keepers_tunnel;
+    use crate::env::Env;
+
+    #[test]
+    fn only_keepers_of_a_local_shared_proxy_tunnel() {
+        let local = Env::from_pairs([("MOOR_STATE_DIR", "/s")]);
+        assert!(keepers_tunnel(&local));
+        let direct = Env::from_pairs([
+            ("MOOR_STATE_DIR", "/s"),
+            ("MOOR_EGRESS_URL", "wss://egress.test/egress"),
+        ]);
+        assert!(!keepers_tunnel(&direct));
+    }
 }

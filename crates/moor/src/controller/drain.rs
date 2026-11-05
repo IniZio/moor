@@ -32,6 +32,8 @@ pub(crate) struct Drain {
     ended: Condvar,
     /// Stops the fronts when the drain begins.
     fronts: Mutex<Option<Terminator>>,
+    /// Whether the Boxes' keepers end when the drain begins, rather than as the controller exits.
+    keepers: AtomicBool,
 }
 
 /// The work the drain waits for: each connection with a handle that ends its reads while it
@@ -54,6 +56,11 @@ impl Drain {
     /// Has `fronts` end with the drain; they get SIGTERM the moment it begins.
     pub(crate) fn end_fronts_with_drain(&self, fronts: Terminator) {
         *self.fronts.lock().unwrap_or_else(PoisonError::into_inner) = Some(fronts);
+    }
+
+    /// Has every Box's keeper end the moment the drain begins.
+    pub(crate) fn end_keepers_with_drain(&self) {
+        self.keepers.store(true, Ordering::Release);
     }
 
     /// Admits `stream` for serving, or `None` once the drain has begun.
@@ -94,6 +101,9 @@ impl Drain {
         drop(live);
         if let Some(fronts) = &*self.fronts.lock().unwrap_or_else(PoisonError::into_inner) {
             fronts.terminate();
+        }
+        if self.keepers.load(Ordering::Acquire) {
+            Moor::end_keepers();
         }
     }
 
