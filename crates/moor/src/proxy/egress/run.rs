@@ -1,16 +1,15 @@
 //! `moor proxy serve-egress`: the shared egress Proxy process.
 //!
-//! It takes `--state-dir DIR --listen ADDR` and optionally `--ledger ADDR`, `--ledger-ca PEM`,
-//! `--machine-service HOST=ADDR`, `--grace SECS`, `--rate N`, `--burst N`, `--lookup-rate N` and
-//! `--tunnels N`, and the ledger
-//! key in `MOOR_EGRESS_KEY`. It reaches the controller through the ledger socket in the state
-//! dir, or through `--ledger`: a socket path, or `tls://host:port` checked against the CA bundle
+//! It takes `--state-dir DIR --listen ADDR`, where an absolute path is a Unix socket, and
+//! optionally `--ledger ADDR`, `--ledger-ca PEM`, `--machine-service HOST=ADDR`, `--grace SECS`,
+//! `--rate N`, `--burst N`, `--lookup-rate N` and `--tunnels N`, and the ledger key in
+//! `MOOR_EGRESS_KEY`. It reaches the controller through the ledger socket in the state dir, or
+//! through `--ledger`: a socket path, or `tls://host:port` checked against the CA bundle
 //! `--ledger-ca`. It keeps each Box's CA and request log under `<state-dir>/egress`. On SIGTERM
-//! or SIGINT it drains, then exits.
+//! or SIGINT, or once its Unix socket is removed, it drains, then exits.
 
 use std::ffi::OsString;
 use std::io::Write as _;
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -21,7 +20,7 @@ use moor_core::seam::clock::Clock;
 use signal_hook::consts::{SIGINT, SIGTERM};
 use zeroize::Zeroizing;
 
-use super::{Config, Rate, Server};
+use super::{Config, Listen, Rate, Server};
 use crate::adapters::clock::SystemClock;
 use crate::env::{Env, EGRESS_KEY};
 use crate::ledger_dir;
@@ -40,7 +39,7 @@ pub(crate) struct Args {
     /// The controller's state dir.
     pub(crate) state_dir: Option<PathBuf>,
     /// Where to listen.
-    pub(crate) listen: Option<SocketAddr>,
+    pub(crate) listen: Option<Listen>,
     /// Where the ledger is, when not the socket in the state dir.
     pub(crate) ledger: Option<String>,
     /// The CA bundle that checks a TLS ledger's certificate.
@@ -82,7 +81,10 @@ impl Args {
             let bad = || format!("{flag}: bad value {value}");
             match flag.as_str() {
                 "--state-dir" => args.state_dir = Some(value.into()),
-                "--listen" => args.listen = Some(value.parse().map_err(|_| bad())?),
+                "--listen" if value.starts_with('/') => {
+                    args.listen = Some(Listen::Unix(value.into()));
+                }
+                "--listen" => args.listen = Some(Listen::Tcp(value.parse().map_err(|_| bad())?)),
                 "--ledger" => args.ledger = Some(value),
                 "--ledger-ca" => args.ledger_ca = Some(value.into()),
                 "--machine-service" => {
@@ -151,8 +153,16 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
         machine: args.machine,
         clock: Arc::clone(&clock),
     })?;
-    say(format_args!("listening on {}", server.addr()));
+    say(format_args!("listening on {}", server.listening()));
+    let socket = match server.listening() {
+        Listen::Unix(path) => Some(path.clone()),
+        Listen::Tcp(_) => None,
+    };
     while !stop.load(Ordering::Acquire) {
+        if socket.as_ref().is_some_and(|s| !s.exists()) {
+            say(format_args!("its socket is gone, so its state dir is too"));
+            break;
+        }
         clock.sleep(POLL);
     }
     say(format_args!("draining for up to {}s", args.grace.as_secs()));

@@ -31,6 +31,7 @@ use super::nono::capture::UserSecretsFn;
 use run::{Running, Stop};
 
 pub(crate) use listen::{engine, Engine, Parts};
+pub(crate) use machine::link as machine_link;
 
 /// How long a lease stays valid without a heartbeat.
 pub(crate) const LEASE: Duration = Duration::from_secs(30);

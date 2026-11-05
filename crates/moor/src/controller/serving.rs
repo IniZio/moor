@@ -14,8 +14,8 @@ use moor_core::BoxId;
 /// Serves `running` until `wake` turns readable.
 ///
 /// Interrupted starts are failed first, since requests read what that leaves. `reconcile` then
-/// restarts the Box Proxies on a thread of its own once `after` has passed, so requests are
-/// answered meanwhile and a Proxy that rode out the restart has renewed its lease first.
+/// starts each open Box's keeper on a thread of its own once `after` has passed, so requests are
+/// answered meanwhile.
 pub(super) fn serve_started(
     mut running: Running,
     wake: &UnixStream,
@@ -31,14 +31,6 @@ pub(super) fn serve_started(
     );
     for line in interrupted {
         log(sink, &format!("start: {line}"));
-    }
-    for line in Moor::import_proxy_files(&running.env, &running.vault) {
-        log(
-            sink,
-            &format!(
-                "proxy: import failed, {line}. That Box's CA will be replaced at its next Proxy restart."
-            ),
-        );
     }
     resume_setups_in_background(claimed, &running.env, sink);
     for line in Moor::from_env(&running.env).map_or_else(

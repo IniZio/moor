@@ -265,6 +265,7 @@ impl Store {
 
     /// Reset the row of `box_id` to unready with no pid, handle or lease, keeping its
     /// box port, so the next reservation restarts it on the same port.
+    #[cfg(test)]
     pub(crate) fn expire_proxy(&self, box_id: BoxId) -> Result<bool, StoreError> {
         let now = self.now();
         let conn = self.writer();

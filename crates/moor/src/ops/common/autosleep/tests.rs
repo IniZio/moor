@@ -15,10 +15,10 @@ use super::run;
 use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::view::box_view;
-use crate::store::{Fenced, NewRun, ReadyProc, Reserve, TunnelAck, TunnelRequest, TunnelWant};
+use crate::store::NewRun;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
-use crate::testing::rng::FakeRng;
+use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
 use crate::testing::surface::FakeSurface;
 
 /// Time enough to pass the default `box.sleep_after`.
@@ -129,28 +129,6 @@ fn sleep_calls(f: &Fx) -> usize {
         .iter()
         .filter(|c| c.starts_with("sleep "))
         .count()
-}
-
-/// Make the Box's Proxy supervisor look live: ready, leased and just beating.
-fn live_proxy(f: &Fx) {
-    let store = f.cx.store().unwrap();
-    let lease = Duration::from_secs(30);
-    let got = store.reserve(f.id, &FakeRng::default(), lease).unwrap();
-    assert!(matches!(got, Reserve::Reserved(_)), "{got:?}");
-    store.claim_lease(f.id, "A", lease).unwrap();
-    let box_port = store.proxy(f.id).unwrap().unwrap().box_port;
-    let proc = ReadyProc {
-        pid: 4242,
-        handle: "tunnel-1",
-        boot_id: None,
-    };
-    let ready = store.mark_ready(f.id, "A", box_port, proc).unwrap();
-    assert_eq!(ready, Fenced::Applied);
-}
-
-/// The stored tunnel request for the Box.
-fn tunnel_request(f: &Fx) -> Option<TunnelRequest> {
-    f.cx.store().unwrap().tunnel_request(f.id).unwrap()
 }
 
 #[test]
@@ -362,38 +340,6 @@ fn a_driver_failure_warns_and_changes_nothing() {
 }
 
 #[test]
-fn auto_sleep_parks_a_live_proxy_tunnel_first() {
-    let f = idle();
-    pass(&f, LONG);
-    live_proxy(&f);
-    let store = f.cx.store().unwrap();
-    store
-        .ack_tunnel(f.id, &TunnelAck::Parked { seq: 1 })
-        .unwrap();
-    auto_sleep(&f);
-    let r = tunnel_request(&f).unwrap();
-    assert_eq!((r.want, r.seq), (TunnelWant::Parked, 1));
-    assert_eq!(
-        states(&f),
-        (BoxLifecycle::Asleep, SessionState::Idle, BoxState::Asleep)
-    );
-}
-
-#[test]
-fn auto_sleep_of_a_box_that_cannot_sleep_asks_for_a_clearing_restore() {
-    let f = refusing();
-    pass(&f, LONG);
-    live_proxy(&f);
-    let store = f.cx.store().unwrap();
-    store
-        .ack_tunnel(f.id, &TunnelAck::Parked { seq: 1 })
-        .unwrap();
-    auto_sleep(&f);
-    let r = tunnel_request(&f).unwrap();
-    assert_eq!((r.want, r.seq), (TunnelWant::UpAwake, 2));
-}
-
-#[test]
 fn a_box_waiting_on_a_prompt_sleeps_after_five_minutes() {
     let f = idle();
     pass(&f, Duration::from_mins(4));
@@ -436,4 +382,31 @@ fn a_wake_restarts_the_awake_clock() {
     pass(&f, Duration::from_mins(119));
     auto_sleep(&f);
     assert_eq!(sleep_calls(&f), 0);
+}
+
+#[test]
+fn auto_sleep_parks_the_tunnel_first() {
+    let mut f = idle();
+    let host = FakeProxyHost::new();
+    f.cx = f.cx.with_proxy_host(Arc::new(host.clone()));
+    pass(&f, LONG);
+    auto_sleep(&f);
+    assert_eq!(host.calls(), vec![ProxyHostCall::Park(f.id)]);
+    assert_eq!(
+        states(&f),
+        (BoxLifecycle::Asleep, SessionState::Idle, BoxState::Asleep)
+    );
+}
+
+#[test]
+fn auto_sleep_of_a_box_that_cannot_sleep_restores_its_tunnel() {
+    let mut f = refusing();
+    let host = FakeProxyHost::new();
+    f.cx = f.cx.with_proxy_host(Arc::new(host.clone()));
+    pass(&f, LONG);
+    auto_sleep(&f);
+    assert_eq!(
+        host.calls(),
+        vec![ProxyHostCall::Park(f.id), ProxyHostCall::Restore(f.id)]
+    );
 }

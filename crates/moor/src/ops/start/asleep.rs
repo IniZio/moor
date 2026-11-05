@@ -46,7 +46,7 @@ pub(super) fn wake(
         return Ok(Woken::Queued);
     }
     if machine_asleep {
-        restore_tunnel(cx, store, id, false)?;
+        restore_tunnel(cx, id)?;
     }
     Ok(Woken::Awake)
 }

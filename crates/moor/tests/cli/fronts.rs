@@ -148,6 +148,8 @@ impl Controller {
             .arg(&config)
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
+            .env("MOOR_EGRESS_URL", "wss://egress.test/egress")
+            .env("MOOR_EGRESS_KEY", "test-egress-key")
             .env("HOME", root.join("home"))
             .current_dir(root.join("state"))
             .stdin(Stdio::null())

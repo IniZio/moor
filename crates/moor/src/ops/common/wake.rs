@@ -126,7 +126,7 @@ fn wake_with_tunnel(
     let woke = wake(cx, store, row, turn)?;
     if woke.box_resumed {
         // The Box stays awake when the tunnel cannot return; the op fails instead.
-        restore_tunnel(cx, store, row.id, false)?;
+        restore_tunnel(cx, row.id)?;
     }
     Ok(woke)
 }

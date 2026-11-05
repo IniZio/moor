@@ -75,7 +75,7 @@ impl Users {
     fn start(&self, ns: &str, user: UserId, rules: &[ResolvedRule]) -> Option<Running> {
         let mut bytes = [0_u8; 32];
         getrandom::fill(&mut bytes).ok()?;
-        let internal = Secret::new(crate::proxy::detached::base64url(&bytes).into_bytes());
+        let internal = Secret::new(crate::proxy::token::base64url(&bytes).into_bytes());
         let dir = super::ca_dir(&self.state_dir).join(format!("{ns}-{}", user.get()));
         std::fs::DirBuilder::new()
             .recursive(true)

@@ -94,7 +94,9 @@ async fn refusing_proxy(reply: &'static str) -> SocketAddr {
 async fn forwarder(url: String, roots: RootCertStore) -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    let upstream = Upstream::new(url, "tok", roots).unwrap();
+    let upstream = Upstream::new(url, "tok", roots)
+        .unwrap()
+        .with_patience(Duration::from_millis(500));
     tokio::spawn(serve(listener, Arc::new(upstream)));
     addr
 }
@@ -199,6 +201,28 @@ async fn an_unreachable_proxy_is_502() {
     let fwd = forwarder(format!("ws://{addr}/egress"), RootCertStore::empty()).await;
     let (_c, head) = send(fwd, b"CONNECT h:443 HTTP/1.1\r\n\r\n").await;
     assert!(head.starts_with("HTTP/1.1 502 Bad Gateway\r\n"), "{head}");
+}
+
+#[tokio::test]
+async fn a_proxy_back_after_a_controller_restart_gap_takes_the_connect() {
+    let gone = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = gone.local_addr().unwrap();
+    drop(gone);
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let fwd = listener.local_addr().unwrap();
+    let upstream = Upstream::new(format!("ws://{addr}/egress"), "tok", RootCertStore::empty());
+    tokio::spawn(serve(listener, Arc::new(upstream.unwrap())));
+    let (tx, _seen) = mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        let listener = TcpListener::bind(addr).await.unwrap();
+        let (s, _) = listener.accept().await.unwrap();
+        echo(s, tx).await;
+    });
+    let (mut c, head) = send(fwd, b"CONNECT h:443 HTTP/1.1\r\n\r\n").await;
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+    c.write_all(b"back").await.unwrap();
+    assert_eq!(read_n(&mut c, 4).await, b"back");
 }
 
 #[tokio::test]

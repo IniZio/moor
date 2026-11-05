@@ -11,12 +11,15 @@ fn env(dir: &Path) -> Env {
     env_with(dir, &[])
 }
 
-/// [`env`] plus the variables `extra`.
+/// [`env`] plus the variables `extra`. Boxes dial a shared egress Proxy elsewhere, so the
+/// controller starts none of its own.
 fn env_with(dir: &Path, extra: &[(&str, &str)]) -> Env {
     let state = dir.join("state");
     let base = [
         ("MOOR_STATE_DIR", state.to_str().expect("utf8")),
         ("MOOR_CONFIG", "/nonexistent/moor.yaml"),
+        ("MOOR_EGRESS_URL", "wss://egress.test/egress"),
+        ("MOOR_EGRESS_KEY", "test-egress-key"),
     ];
     Env::from_pairs(base.iter().chain(extra).copied())
 }

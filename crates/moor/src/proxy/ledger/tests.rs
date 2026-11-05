@@ -143,7 +143,7 @@ fn box_ledger_in(
     let socket = dir.path().join("proxy.sock");
     // A Box the store lacks gets no key, so its calls are refused as a missing Box's are.
     if matches!(store.proxy(box_id), Ok(None)) {
-        drop(store.reserve(box_id, &FakeRng::default(), crate::proxy::detached::LEASE));
+        drop(store.reserve(box_id, &FakeRng::default(), crate::proxy::supervisor::LEASE));
     }
     drop(store.set_proxy_key(box_id, b"box-key", LEDGER));
     let on = OnLedger {

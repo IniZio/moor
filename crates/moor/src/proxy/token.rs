@@ -11,7 +11,6 @@ use moor_core::{BoxId, Secret};
 use sha2::Sha256;
 use subtle::ConstantTimeEq as _;
 
-use crate::proxy::detached::base64url;
 use crate::store::{Store, StoreError};
 
 /// Mints a token for `box_id` under `key` and records it, replacing the Box's last one; `None`
@@ -52,6 +51,28 @@ fn mac(key: &[u8], id: &[u8]) -> String {
             let _ = write!(out, "{b:02x}");
             out
         })
+}
+
+/// The base64url alphabet, without padding.
+const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+/// Encode bytes as base64url without padding.
+pub(crate) fn base64url(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let acc = chunk
+            .iter()
+            .chain(std::iter::repeat(&0))
+            .take(3)
+            .fold(0_u32, |a, b| (a << 8) | u32::from(*b));
+        for shift in [18_u32, 12, 6, 0].iter().take(chunk.len() + 1) {
+            let idx = usize::try_from((acc >> shift) & 63).unwrap_or(0);
+            if let Some(c) = ALPHABET.get(idx) {
+                out.push(char::from(*c));
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]

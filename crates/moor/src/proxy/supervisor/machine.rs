@@ -2,7 +2,7 @@
 //! freed while the Box sleeps and granted again when it wakes, let go when the Box closes. A
 //! supervisor that stops on a signal keeps the record, so the next supervisor opens the link again.
 
-mod link;
+pub(crate) mod link;
 
 use moor_core::domain::event::MachineEvent;
 

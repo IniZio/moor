@@ -107,6 +107,18 @@ pub trait ProxyHost: Send + Sync {
     /// # Errors
     /// Returns [`ProxyHostError::Incomplete`] when the stop did not fully succeed.
     fn stop(&self, box_id: BoxId) -> Result<(), ProxyHostError>;
+
+    /// Closes the Box's tunnel and frees its machine's slot while the Box sleeps.
+    ///
+    /// # Errors
+    /// Returns [`ProxyHostError::Failed`] when the Box's state cannot be read.
+    fn park(&self, box_id: BoxId) -> Result<(), ProxyHostError>;
+
+    /// Opens the Box's tunnel again after [`ProxyHost::park`].
+    ///
+    /// # Errors
+    /// Returns [`ProxyHostError::Failed`] when the tunnel does not come back up.
+    fn restore(&self, box_id: BoxId) -> Result<(), ProxyHostError>;
 }
 
 #[cfg(test)]

@@ -84,6 +84,8 @@ fn fixture() -> Fixture {
     let env = Env::from_pairs([
         ("MOOR_STATE_DIR", dir.path().to_str().expect("utf8")),
         ("MOOR_CONFIG", "/nonexistent/moor.yaml"),
+        ("MOOR_EGRESS_URL", "wss://egress.test/egress"),
+        ("MOOR_EGRESS_KEY", "test-egress-key"),
     ]);
     let running = start(&env, &cfg).expect("start");
     let socket = running.socket.clone();

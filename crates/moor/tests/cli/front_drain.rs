@@ -124,6 +124,8 @@ impl Setup {
             .arg(self.root.join("c.yaml"))
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
+            .env("MOOR_EGRESS_URL", "wss://egress.test/egress")
+            .env("MOOR_EGRESS_KEY", "test-egress-key")
             .env("HOME", self.root.join("home"))
             .stdin(Stdio::null())
             .stdout(Stdio::null())

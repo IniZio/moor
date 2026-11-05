@@ -11,7 +11,6 @@ use moor_core::seam::proc::{
 use zeroize::Zeroizing;
 
 mod detached;
-pub(crate) use detached::DaemonCall;
 use detached::{call_of, Daemons};
 mod once;
 mod reply;
@@ -175,12 +174,6 @@ impl ScriptedProc {
             signals: Signals::default(),
             boot_id: Mutex::new(None),
         }
-    }
-
-    /// Report `id` as the host boot id; none by default.
-    pub(crate) fn with_boot_id(&self, id: &str) -> &Self {
-        *self.boot_id.lock().unwrap_or_else(PoisonError::into_inner) = Some(id.to_owned());
-        self
     }
 
     /// Script `pid` as gone; every other pid is alive.

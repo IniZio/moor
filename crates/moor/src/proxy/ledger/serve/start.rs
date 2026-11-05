@@ -10,7 +10,7 @@ use crate::store::{Store, StoredCa};
 use crate::vault::Vault;
 
 /// `box_id`'s CA, opened; made and kept first when the row has none.
-pub(super) fn ca((store, vault): (&Store, &Vault), box_id: BoxId) -> Result<CaPair, Fault> {
+pub(crate) fn ca((store, vault): (&Store, &Vault), box_id: BoxId) -> Result<CaPair, Fault> {
     let stored = if let Some(stored) = store.proxy_ca(box_id)? {
         stored
     } else {

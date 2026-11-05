@@ -13,6 +13,7 @@ use crate::store::{Store, StoreError};
 impl Store {
     /// Records `key` as the one `box_id`'s next supervisor presents, speaking `ledger`; the key
     /// of any earlier supervisor stops working.
+    #[cfg(test)]
     pub(crate) fn set_proxy_key(
         &self,
         box_id: BoxId,

@@ -277,10 +277,10 @@ fn suspend_working(cx: &Cx, store: &Store, id: BoxId, reason: &str) -> Result<bo
     let Ok(handle) = ready_handle(&row) else {
         return Ok(false);
     };
-    park_tunnel(cx, store, id)?;
+    park_tunnel(cx, id)?;
     let slept = cx.driver().sleep(&handle).map_err(|e| e.to_string());
     if let Some(error) = why_not_slept(slept) {
-        restore_tunnel(cx, store, id, true)?;
+        restore_tunnel(cx, id)?;
         tell_suspend_failed(cx, store, id, reason, &error)?;
         return Ok(false);
     }

@@ -11,8 +11,8 @@ use moor_core::seam::proxy_host::ProxyEndpoint;
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
 use super::{deliver, Delivery};
-use crate::cx::egress::EgressRoute;
 use crate::env::Env;
+use crate::proxy::route::EgressRoute;
 use crate::proxy::token;
 use crate::store::{token_hash, Store};
 use crate::testing::clock::FakeClock;
@@ -20,21 +20,17 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::rng::FakeRng;
 
 #[test]
-fn the_shared_proxy_serves_boxes_only_with_its_key_and_address() {
+fn boxes_reach_the_controllers_own_proxy_unless_an_address_names_another() {
     let route = |pairs: &[(&str, &str)]| EgressRoute::from_env(&Env::from_pairs(pairs.to_vec()));
-    assert_eq!(route(&[]), Ok(EgressRoute::PerBox));
     assert_eq!(
-        route(&[("MOOR_EGRESS_URL", "wss://moor.example/egress")]),
-        Ok(EgressRoute::PerBox),
-        "the address alone leaves Boxes on their own Proxy"
-    );
-    assert_eq!(
-        route(&[("MOOR_EGRESS_KEY", "k")]),
-        Err("MOOR_EGRESS_URL is required when MOOR_EGRESS_KEY is set".to_owned())
+        route(&[("MOOR_STATE_DIR", "/s")]),
+        Ok(EgressRoute::Local {
+            socket: "/s/egress/egress.sock".into()
+        })
     );
     assert_eq!(
         route(&[
-            ("MOOR_EGRESS_KEY", "k"),
+            ("MOOR_STATE_DIR", "/s"),
             ("MOOR_EGRESS_URL", "wss://moor.example/egress")
         ]),
         Ok(EgressRoute::Direct {
@@ -44,25 +40,22 @@ fn the_shared_proxy_serves_boxes_only_with_its_key_and_address() {
 }
 
 #[test]
-fn a_loopback_address_is_reached_over_the_tunnel_of_the_box() {
-    let route = EgressRoute::parse("ws://127.0.0.1:8090/egress").unwrap();
-    assert_eq!(route.relay(), Some("127.0.0.1:8090".parse().unwrap()));
-    assert_eq!(
-        route.upstream(20555).as_deref(),
-        Some("ws://127.0.0.1:20555/egress")
-    );
+fn a_box_dials_its_own_tunnel_port_on_the_local_route_and_only_wss_elsewhere() {
+    let local = EgressRoute::Local {
+        socket: "/s/egress/egress.sock".into(),
+    };
+    assert_eq!(local.upstream(20555), "ws://127.0.0.1:20555/egress");
+    assert_eq!(local.socket(), Some(Path::new("/s/egress/egress.sock")));
     let direct = EgressRoute::parse("wss://moor.example/egress").unwrap();
-    assert_eq!(direct.relay(), None);
-    assert_eq!(
-        direct.upstream(20555).as_deref(),
-        Some("wss://moor.example/egress")
-    );
-    for clear in ["ws://10.0.0.5:8090/egress", "ws://moor.example/egress"] {
-        let err = EgressRoute::parse(clear).unwrap_err();
-        assert!(err.contains("in the clear"), "{err}");
-    }
-    assert_eq!(EgressRoute::PerBox.upstream(20555), None);
-    for bad in ["https://moor.example/egress", "ws://", "moor.example"] {
+    assert_eq!(direct.upstream(20555), "wss://moor.example/egress");
+    assert_eq!(direct.socket(), None);
+    for bad in [
+        "ws://127.0.0.1:8090/egress",
+        "ws://moor.example/egress",
+        "https://moor.example/egress",
+        "wss://",
+        "moor.example",
+    ] {
         assert!(EgressRoute::parse(bad).is_err(), "{bad}");
     }
 }
@@ -167,7 +160,9 @@ impl Rig {
 const KEY: &[u8] = b"egress-key";
 
 fn tunneled() -> EgressRoute {
-    EgressRoute::parse("ws://127.0.0.1:8090/egress").unwrap()
+    EgressRoute::Local {
+        socket: "/s/egress/egress.sock".into(),
+    }
 }
 
 #[test]
@@ -238,13 +233,6 @@ fn a_failed_write_leaves_the_token_undelivered_for_the_next_exec() {
 }
 
 #[test]
-fn the_per_box_route_keeps_the_tunnel_port_and_writes_nothing() {
-    let r = rig();
-    assert_eq!(r.deliver(&EgressRoute::PerBox, &Rig::endpoint()), Ok(20555));
-    assert!(r.written().is_empty());
-}
-
-#[test]
 fn a_proxy_from_before_the_forwarder_is_refused_on_the_shared_route() {
     let r = rig();
     let mut ep = Rig::endpoint();
@@ -268,11 +256,11 @@ fn a_missing_binary_is_named_and_nothing_is_minted() {
 fn the_controller_delivers_the_forwarder_installed_beside_moor() {
     let exe = std::env::current_exe().unwrap();
     assert_eq!(
-        crate::cx::egress::binary(&Env::from_pairs(Vec::<(&str, &str)>::new())),
+        crate::proxy::route::binary(&Env::from_pairs(Vec::<(&str, &str)>::new())),
         exe.with_file_name("moor-egress-forward")
     );
     assert_eq!(
-        crate::cx::egress::binary(&Env::from_pairs([("MOOR_EGRESS_FORWARD_BIN", "/opt/fwd")])),
+        crate::proxy::route::binary(&Env::from_pairs([("MOOR_EGRESS_FORWARD_BIN", "/opt/fwd")])),
         Path::new("/opt/fwd")
     );
 }

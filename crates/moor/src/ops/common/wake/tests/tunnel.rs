@@ -1,105 +1,71 @@
-//! Waking a Box brings its Proxy tunnel back before the op proceeds.
+//! Waking a Box brings its tunnel back before the op proceeds.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use moor_core::domain::boxes::BoxState;
-
+use moor_core::seam::proxy_host::ProxyHostError;
 use moor_core::seam::surface::SurfaceError;
 
-use moor_core::seam::proxy_host::ProxyHostError;
-
 use super::{fx, row, sleep, wake_and_revive, wake_box_if_asleep, wake_if_asleep, with_agent, Fx};
-use crate::store::{ReadyProc, TunnelAck, TunnelWant};
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
-use crate::testing::rng::FakeRng;
-
-/// Give the Box a live Proxy: a ready row held by a fresh lease.
-fn live_proxy(f: &Fx) {
-    let store = f.cx.store().unwrap();
-    let lease = Duration::from_secs(30);
-    drop(store.reserve(f.id, &FakeRng::default(), lease).unwrap());
-    store.claim_lease(f.id, "owner", lease).unwrap();
-    let box_port = store.proxy(f.id).unwrap().unwrap().box_port;
-    let proc = ReadyProc {
-        pid: 1,
-        handle: "tunnel-1",
-        boot_id: None,
-    };
-    let _ = store.mark_ready(f.id, "owner", box_port, proc).unwrap();
-}
 
 /// The woken Box is recorded awake.
 fn box_state(f: &Fx) -> BoxState {
     row(f).boxed.unwrap().state
 }
 
+/// `f` with `host` as its Proxy host.
+fn hosted(mut f: Fx, host: &FakeProxyHost) -> Fx {
+    f.cx = f.cx.with_proxy_host(Arc::new(host.clone()));
+    f
+}
+
+/// A host whose restore fails with `tunnel boom`.
+fn failing() -> FakeProxyHost {
+    FakeProxyHost::new().with_ensure_error(ProxyHostError::Failed("tunnel boom".into()))
+}
+
 #[test]
-fn wake_asks_the_supervisor_to_bring_the_tunnel_up() {
-    let f = fx();
+fn wake_restores_the_tunnel() {
+    let host = FakeProxyHost::new();
+    let f = hosted(fx(), &host);
     sleep(&f);
-    live_proxy(&f);
     let store = f.cx.store().unwrap();
-    store.ack_tunnel(f.id, &TunnelAck::Up { seq: 1 }).unwrap();
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
-    let req = store.tunnel_request(f.id).unwrap().unwrap();
-    assert_eq!((req.want, req.seq), (TunnelWant::Up, 1));
+    assert!(host.calls().contains(&ProxyHostCall::Restore(f.id)));
     assert_eq!(box_state(&f), BoxState::Ready);
 }
 
 #[test]
 fn tunnel_failure_fails_the_wake_and_leaves_the_box_awake() {
-    let f = fx();
+    let f = hosted(fx(), &failing());
     sleep(&f);
-    live_proxy(&f);
     let store = f.cx.store().unwrap();
-    let failed = TunnelAck::Failed {
-        seq: 1,
-        error: "tunnel boom".into(),
-    };
-    store.ack_tunnel(f.id, &failed).unwrap();
     let err = wake_if_asleep(&f.cx, store, &row(&f)).unwrap_err();
     assert!(err.error.to_string().contains("tunnel boom"), "{err:?}");
     assert_eq!(box_state(&f), BoxState::Ready);
 }
 
 #[test]
-fn wake_without_a_proxy_makes_no_tunnel_request() {
-    let f = fx();
-    sleep(&f);
-    let store = f.cx.store().unwrap();
-    assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
-    assert!(store.tunnel_request(f.id).unwrap().is_none());
-}
-
-#[test]
 fn the_tunnel_is_up_before_the_agent_relaunches() {
-    let f = fx();
+    let host = FakeProxyHost::new();
+    let f = hosted(fx(), &host);
     with_agent(&f);
     sleep(&f);
-    live_proxy(&f);
     f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
     let store = f.cx.store().unwrap();
-    store.ack_tunnel(f.id, &TunnelAck::Up { seq: 1 }).unwrap();
     assert!(wake_and_revive(&f.cx, store, &row(&f)).unwrap());
-    let req = store.tunnel_request(f.id).unwrap().unwrap();
-    assert_eq!(req.want, TunnelWant::Up);
+    assert!(host.calls().contains(&ProxyHostCall::Restore(f.id)));
     assert_eq!(f.engine.launches().len(), 1);
 }
 
 #[test]
 fn tunnel_failure_attempts_no_relaunch() {
-    let f = fx();
+    let f = hosted(fx(), &failing());
     with_agent(&f);
     sleep(&f);
-    live_proxy(&f);
     f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
     let store = f.cx.store().unwrap();
-    let failed = TunnelAck::Failed {
-        seq: 1,
-        error: "tunnel boom".into(),
-    };
-    store.ack_tunnel(f.id, &failed).unwrap();
     let err = wake_and_revive(&f.cx, store, &row(&f)).unwrap_err();
     assert!(err.error.to_string().contains("tunnel boom"), "{err:?}");
     assert_eq!(box_state(&f), BoxState::Ready);
@@ -108,60 +74,14 @@ fn tunnel_failure_attempts_no_relaunch() {
 
 #[test]
 fn waking_only_the_box_leaves_the_tunnel_and_the_agent_alone() {
-    let f = fx();
+    let host = FakeProxyHost::new();
+    let f = hosted(fx(), &host);
     with_agent(&f);
     sleep(&f);
-    live_proxy(&f);
     f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
     let store = f.cx.store().unwrap();
     assert!(wake_box_if_asleep(&f.cx, store, &row(&f)).unwrap());
-    assert!(store.tunnel_request(f.id).unwrap().is_none());
+    assert!(!host.calls().contains(&ProxyHostCall::Restore(f.id)));
     assert!(f.engine.launches().is_empty());
-    assert_eq!(box_state(&f), BoxState::Ready);
-}
-
-/// A Proxy row whose supervisor died with the controller: no lease, not ready.
-fn orphaned_proxy(f: &Fx) {
-    let store = f.cx.store().unwrap();
-    drop(
-        store
-            .reserve(f.id, &FakeRng::default(), Duration::from_secs(30))
-            .unwrap(),
-    );
-    store.expire_proxy(f.id).unwrap();
-}
-
-#[test]
-fn wake_restarts_a_proxy_that_died_while_the_box_slept() {
-    let mut f = fx();
-    let host = FakeProxyHost::new();
-    f.cx = f.cx.with_proxy_host(Arc::new(host.clone()));
-    sleep(&f);
-    orphaned_proxy(&f);
-    let store = f.cx.store().unwrap();
-    store.ack_tunnel(f.id, &TunnelAck::Up { seq: 1 }).unwrap();
-    assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
-    assert!(
-        host.calls().contains(&ProxyHostCall::Restart(f.id)),
-        "{:?}",
-        host.calls()
-    );
-    let req = store.tunnel_request(f.id).unwrap().unwrap();
-    assert_eq!((req.want, req.seq), (TunnelWant::Up, 1));
-}
-
-#[test]
-fn a_dead_proxy_that_cannot_restart_fails_the_wake() {
-    let mut f = fx();
-    let host = FakeProxyHost::new().with_ensure_error(ProxyHostError::Failed("no spec".into()));
-    f.cx = f.cx.with_proxy_host(Arc::new(host));
-    sleep(&f);
-    orphaned_proxy(&f);
-    let store = f.cx.store().unwrap();
-    let err = wake_if_asleep(&f.cx, store, &row(&f)).unwrap_err();
-    assert!(
-        err.error.to_string().contains("the Proxy is gone"),
-        "{err:?}"
-    );
     assert_eq!(box_state(&f), BoxState::Ready);
 }

@@ -102,11 +102,6 @@ pub(crate) fn install(
     load(&key_path, &cert_path)
 }
 
-/// Path of the CA key in `dir`.
-pub(crate) fn key_in(dir: &Path) -> PathBuf {
-    dir.join(KEY_FILE)
-}
-
 /// Path of the CA certificate in `dir`.
 pub(crate) fn cert_in(dir: &Path) -> PathBuf {
     dir.join(CERT_FILE)
