@@ -222,7 +222,8 @@ The runner stays stateful and keeps its agent links. It moves to its own rarely 
 - The Proxy follows the nightly tag. Drain makes each rollout safe.
 - The Proxy Deployment mounts no volume. The controller pod keeps its own PVC for Box logs and Slack state.
 - moor-gate gets its own `RollingUpdate` Deployment as a follow-up.
-- The shared Proxy supersedes the earlier answers on the crabbox lease dir layout, the tinyproxy SIGHUP repoint and the edge reconcile rules.
+- The shared Proxy supersedes three earlier owner answers. A down edge made the controller SIGTERM a same-host supervisor. The edge PR was verified by a live local run and unit tests, with the harness later. `pid` and `boot_id` stayed in the shared Proxy row until the chart split.
+- Earlier prototype findings no longer needed are the crabbox lease dir path, the tinyproxy SIGHUP repoint and the edge reconcile rules.
 
 ## PRs, in order
 
