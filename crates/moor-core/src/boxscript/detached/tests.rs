@@ -3,6 +3,7 @@
 
 use std::fs;
 use std::io::Read;
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::PathBuf;
 use std::process::{Child, Command, ExitStatus, Output, Stdio};
@@ -536,6 +537,28 @@ fn two_attaches_at_once_run_the_command_once() {
         (a.stdout.as_slice(), b.stdout.as_slice()),
         (&b"done"[..], &b"done"[..])
     );
+    assert_eq!(fs::read_to_string(sb.root.join("ran")).unwrap(), "ran\n");
+}
+
+#[test]
+fn a_mkdir_that_succeeds_on_an_existing_dir_does_not_launch_the_command_again() {
+    let sb = Scratch::new("mkdir-no-refusal");
+    let bin = sb.root.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let mkdir = bin.join("mkdir");
+    fs::write(&mkdir, "#!/bin/sh\n/bin/mkdir \"$@\" 2>/dev/null\nexit 0\n").unwrap();
+    fs::set_permissions(&mkdir, fs::Permissions::from_mode(0o755)).unwrap();
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+    let launch = || {
+        sb.sh(&launch_script(RUN, "echo ran >> ../ran"))
+            .env("PATH", &path)
+            .output()
+            .unwrap()
+    };
+
+    assert_eq!(launch().status.code(), Some(0));
+    assert_eq!(launch().status.code(), Some(REFUSED));
+    sb.wait_exit();
     assert_eq!(fs::read_to_string(sb.root.join("ran")).unwrap(), "ran\n");
 }
 
