@@ -17,7 +17,7 @@ fn drained_events(rig: &Rig) -> Vec<(String, String)> {
 
 /// Drains `rig` until a `kind` event is recorded, then once more for the
 /// audit nono logs after the client already has the answer.
-fn events_after(rig: &Rig, kind: &str) -> Vec<(String, String)> {
+pub(super) fn events_after(rig: &Rig, kind: &str) -> Vec<(String, String)> {
     let mut events = Vec::new();
     for _ in 0..100 {
         events = drained_events(rig);

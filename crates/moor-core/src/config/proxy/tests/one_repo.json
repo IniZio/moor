@@ -32,6 +32,14 @@
     "endpoint_rules": [
       {
         "method": "GET",
+        "path": "/repos/*/*"
+      },
+      {
+        "method": "GET",
+        "path": "/repos/*/*/releases/**"
+      },
+      {
+        "method": "GET",
         "path": "/repos/acme/widgets"
       },
       {

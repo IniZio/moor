@@ -131,3 +131,27 @@ fn any_repo_cannot_push() {
     let e = err("proxy:\n  rules:\n    github-git:\n      allow: ['POST /{any_repo}.git/git-receive-pack']\n");
     assert!(e.reason.contains("may only fetch"), "{e:?}");
 }
+
+#[test]
+fn github_api_reads_any_repo_with_get_alone() {
+    let rules = resolve_rules(&ProxyConfig::default(), &app_and_lib(), false).expect("resolves");
+    let api = rules.iter().find(|r| r.name == "github-api").expect("api");
+    let any_repo: Vec<String> = api
+        .endpoint_rules
+        .iter()
+        .filter(|e| e.path.starts_with("/repos/*/*"))
+        .map(|e| format!("{} {}", e.method, e.path))
+        .collect();
+    assert_eq!(any_repo, ["GET /repos/*/*", "GET /repos/*/*/releases/**"]);
+}
+
+#[test]
+fn a_box_without_a_repo_never_gets_the_github_api_rule() {
+    let doc = "proxy:\n  rules:\n    github-api:\n      allow: ['GET /repos/{any_repo}/tags']\n";
+    let extended = user(doc);
+    for cfg in [&ProxyConfig::default(), &extended.proxy] {
+        let rules = resolve_rules(cfg, &[], true).expect("resolves");
+        let names: Vec<_> = rules.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, ["claude", "github-git"]);
+    }
+}
