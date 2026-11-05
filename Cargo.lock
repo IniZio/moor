@@ -3258,6 +3258,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "moor-egress-forward"
+version = "0.2.0"
+dependencies = [
+ "bytes",
+ "futures-util",
+ "httparse",
+ "rcgen",
+ "rustls",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-rustls",
+ "tokio-tungstenite",
+ "webpki-roots",
+]
+
+[[package]]
 name = "moor-gate"
 version = "0.1.0"
 dependencies = [

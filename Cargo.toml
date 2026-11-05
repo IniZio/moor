@@ -3,6 +3,7 @@ members = [
   "crates/moor",
   "crates/moor-client",
   "crates/moor-core",
+  "crates/moor-egress-forward",
   "crates/moor-gate",
   "crates/moor-herdr",
   "crates/moor-listen",
