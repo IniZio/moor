@@ -169,6 +169,28 @@ impl Store {
         Ok(changed == 1)
     }
 
+    /// Turns the started run of `workflow` and `repo` due at `due_at` into a refusal with
+    /// `detail`, dropping its Box from the run. False, with nothing changed, when it is not
+    /// started.
+    pub(crate) fn refuse_started_run(
+        &self,
+        (workflow, repo, due_at): (WorkflowId, &ForgeRepo, Ts),
+        detail: &str,
+    ) -> Result<bool, StoreError> {
+        let changed = self.writer().run(
+            Query::update()
+                .table(WorkflowRuns::Table)
+                .value(WorkflowRuns::Outcome, REFUSED)
+                .value(WorkflowRuns::Box, Option::<i64>::None)
+                .value(WorkflowRuns::Detail, detail)
+                .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
+                .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
+                .and_where(Expr::col(WorkflowRuns::DueAt).eq(due_at.as_millis()))
+                .and_where(Expr::col(WorkflowRuns::Outcome).eq(STARTED)),
+        )?;
+        Ok(changed == 1)
+    }
+
     /// The runs of `workflow` that are being started or have a Box that has not ended.
     pub(crate) fn open_workflow_runs(
         &self,

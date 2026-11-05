@@ -191,4 +191,4 @@ mod finished;
 #[cfg(test)]
 mod tests;
 
-pub use finished::{run_finished, RunBoxFacts, QUIET_BEFORE_FINISHED};
+pub use finished::{run_verdict, RunBoxFacts, RunVerdict, QUIET_BEFORE_FINISHED};
