@@ -15,7 +15,7 @@ use super::run::say;
 use super::Deps;
 use crate::proxy::chain::Proxy;
 use crate::proxy::detached::base64url;
-use crate::proxy::front::{Front, FrontSocket, Hold, MachineRoute};
+use crate::proxy::front::{hold_or_missing, Front, FrontSocket, MachineRoute};
 use crate::proxy::graphql::upstream::Upstream;
 use crate::proxy::graphql::{FilterSpec, GraphqlFilter};
 use crate::proxy::guard::Guard;
@@ -210,12 +210,7 @@ fn box_ca(parts: &Parts<'_>, box_id: BoxId) -> Result<ca::BoxCa, String> {
 fn machine_route(deps: &Deps<'_>) -> Option<MachineRoute> {
     let service = deps.machine_service.clone()?;
     let ledger = Arc::clone(&deps.ledger);
-    let held = Arc::new(move || {
-        ledger.hold().unwrap_or_else(|e| Hold::Missing {
-            box_id: ledger.box_id(),
-            reason: format!("the Box's machine could not be read: {e}; try again later"),
-        })
-    });
+    let held = Arc::new(move || hold_or_missing(&ledger));
     Some(MachineRoute { service, held })
 }
 

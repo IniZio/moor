@@ -7,6 +7,7 @@
 
 use super::authority_ok;
 use super::header_ok;
+use super::machine::{marked, Hold};
 
 /// Port assumed when the request names none.
 const DEFAULT_PORT: &str = "80";
@@ -118,4 +119,18 @@ pub(crate) fn connect_head(authority: &str, token: &[u8]) -> zeroize::Zeroizing<
     out.extend_from_slice(token);
     out.extend_from_slice(b"\r\n\r\n");
     out
+}
+
+/// The origin-form request a plain `http://` head sends to `authority`, marked with what the Box
+/// holds when it goes to the machine service; `None` when the head is not one plain request
+/// for `authority`.
+pub(crate) fn plain_request(head: &[u8], authority: &str, hold: Option<&Hold>) -> Option<Vec<u8>> {
+    let plain = parse(head)?;
+    if !plain.authority.eq_ignore_ascii_case(authority) {
+        return None;
+    }
+    match hold {
+        Some(hold) => marked(&plain.request, hold),
+        None => Some(plain.request),
+    }
 }

@@ -25,7 +25,7 @@ use zeroize::Zeroizing;
 
 use super::boxes::closed;
 use super::wire::authority_ok;
-use super::{Config, Rate, Server, PATH, TARGET};
+use super::{Config, Rate, Server, PATH, PLAIN, TARGET};
 use crate::proxy::ledger::tests::{serve_on, Served, EGRESS_KEY};
 use crate::proxy::ledger::{BoxView, Endpoint, LedgerError};
 use crate::proxy::nono::ca;
@@ -100,7 +100,12 @@ impl World {
 
     /// [`World::server_with`], letting each token hold `tunnels` tunnels open.
     fn server_full(&self, burst: f64, lookups: f64, tunnels: usize) -> Server {
-        Server::start(Config {
+        Server::start(self.config(burst, lookups, tunnels)).unwrap()
+    }
+
+    /// How [`World::server_full`] runs the shared Proxy.
+    fn config(&self, burst: f64, lookups: f64, tunnels: usize) -> Config {
+        Config {
             listen: SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
             ledger: Endpoint::Unix(self.dir.path().join("proxy.sock")),
             key: Zeroizing::new(EGRESS_KEY.to_owned()),
@@ -118,9 +123,9 @@ impl World {
             log: self.log.clone(),
             upstream_ca: Some(self.up.ca_path.clone()),
             guard_exempt: vec![SocketAddr::from((Ipv4Addr::LOCALHOST, self.up.port))],
+            machine: None,
             clock: Arc::new(FakeClock::new(Ts::from_millis(1_000))),
-        })
-        .unwrap()
+        }
     }
 
     fn target(&self) -> String {
@@ -204,11 +209,24 @@ fn rule(port: u16) -> ResolvedRule {
 
 /// Opens a tunnel to `target` as the forwarder does; the HTTP status of a refusal.
 fn open(server: &Server, token: &str, target: &str) -> Result<WebSocket<TcpStream>, u16> {
+    open_as(server, token, target, false)
+}
+
+/// [`open`], for one plain `http://` request when `plain`.
+fn open_as(
+    server: &Server,
+    token: &str,
+    target: &str,
+    plain: bool,
+) -> Result<WebSocket<TcpStream>, u16> {
     let url = format!("ws://{}{PATH}", server.addr());
     let mut req = url.into_client_request().unwrap();
     let headers = req.headers_mut();
     headers.insert("authorization", format!("Bearer {token}").parse().unwrap());
     headers.insert(TARGET, target.parse().unwrap());
+    if plain {
+        headers.insert(PLAIN, "1".parse().unwrap());
+    }
     let stream = TcpStream::connect(server.addr()).map_err(|_| 0_u16)?;
     stream
         .set_read_timeout(Some(Duration::from_secs(10)))
@@ -540,3 +558,5 @@ fn only_a_plain_host_or_bracketed_v6_with_a_port_is_a_target() {
         assert!(!authority_ok(bad), "{bad}");
     }
 }
+
+mod plain;

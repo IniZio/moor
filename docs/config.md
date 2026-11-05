@@ -310,7 +310,8 @@ name), and `X-Moor-Machine-Id` (its id from enrollment), so the service can
 trust them. The Proxy answers 403 to a CONNECT to `host`, and to any request from a
 Box that holds no machine at that moment. `upstream` must be a loopback address
 and port, or moor refuses the config. Without `machines.service`, `host` is a
-host like any other.
+host like any other. The shared egress Proxy routes the service the same way
+when it is started with `moor proxy serve-egress --machine-service HOST=ADDR`.
 
 Every Box's agent also gets the service as the MCP server `machine`, at
 `http://<host>/mcp`. An entry named `machine` in `mcp_servers` replaces it.

@@ -12,6 +12,8 @@ use std::sync::Arc;
 use moor_core::config::MachineService;
 use moor_core::BoxId;
 
+use crate::proxy::ledger::BoxLedger;
+
 use super::{plain, refuse, splice, Head, TARGET_TIMEOUT};
 
 /// Prefix of the headers the front owns; the Box's own are dropped.
@@ -50,6 +52,14 @@ pub(crate) struct Held {
     pub(crate) slot: u16,
     /// rsync patterns a sync to the machine leaves alone.
     pub(crate) sync_exclude: Vec<String>,
+}
+
+/// What the Box of `ledger` holds, or why it could not be read.
+pub(crate) fn hold_or_missing(ledger: &BoxLedger) -> Hold {
+    ledger.hold().unwrap_or_else(|e| Hold::Missing {
+        box_id: ledger.box_id(),
+        reason: format!("the Box's machine could not be read: {e}; try again later"),
+    })
 }
 
 /// The service one Box's front serves itself.
@@ -104,7 +114,7 @@ fn target_host(head: &[u8]) -> Option<&str> {
 }
 
 /// `request` without any `X-Moor-*` header, with the front's own added.
-fn marked(request: &[u8], slot: &Hold) -> Option<Vec<u8>> {
+pub(super) fn marked(request: &[u8], slot: &Hold) -> Option<Vec<u8>> {
     let text = std::str::from_utf8(request)
         .ok()?
         .strip_suffix("\r\n\r\n")?;

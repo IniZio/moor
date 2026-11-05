@@ -49,8 +49,8 @@ pub(super) fn answer(
     }
 }
 
-/// The reply to `call` from the shared egress Proxy for `box_id`: only the reads a request makes
-/// and its audit, never the lease, tunnel or machine. Only `View` answers for a closed Box, and
+/// The reply to `call` from the shared egress Proxy for `box_id`: only the reads a request makes,
+/// the machine it holds among them, and its audit, never the lease or tunnel. Only `View` answers for a closed Box, and
 /// only the secrets its spec's rules name are read.
 pub(super) fn for_egress(
     (store, vault): (&Store, &Vault),
@@ -67,6 +67,7 @@ pub(super) fn for_egress(
         | Call::Secret { .. }
         | Call::OpenLimit { .. }
         | Call::RecordEvent { .. } => lease_and_tunnel((store, vault), box_id, call),
+        Call::Hold => machine(store, box_id, call),
         _ => encode(&Err::<(), _>(Fault::Refused(
             "the egress Proxy only reads a Box and records its audit".to_owned(),
         ))),

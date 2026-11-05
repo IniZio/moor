@@ -1,0 +1,202 @@
+//! Plain `http://` requests through the shared Proxy: to the machine service with the Box's
+//! identity, and to any other host as a CONNECT through the Box's proxy, never with a credential.
+
+use std::io::{Read, Write};
+use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use moor_core::config::MachineService;
+use tokio_tungstenite::tungstenite::{Message, WebSocket};
+
+use super::{open, open_as, Server, World};
+
+/// The machine service's host name, as Boxes request it.
+const MACHINE: &str = "machine.moor.internal";
+
+/// A plain HTTP server on loopback that answers each request `200 hi` and keeps its head; a
+/// connection that sends nothing is no request.
+struct Plain {
+    addr: SocketAddr,
+    heads: Arc<Mutex<Vec<String>>>,
+}
+
+impl Plain {
+    fn start() -> Self {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let addr = listener.local_addr().unwrap();
+        let heads: Arc<Mutex<Vec<String>>> = Arc::default();
+        let kept = Arc::clone(&heads);
+        std::thread::spawn(move || {
+            for conn in listener.incoming() {
+                let Ok(mut conn) = conn else { return };
+                let mut head = Vec::new();
+                let mut byte = [0_u8; 1];
+                while !head.ends_with(b"\r\n\r\n") && conn.read(&mut byte).unwrap_or(0) == 1 {
+                    head.extend_from_slice(&byte);
+                }
+                if head.is_empty() {
+                    continue;
+                }
+                kept.lock()
+                    .unwrap()
+                    .push(String::from_utf8_lossy(&head).into_owned());
+                drop(conn.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nhi"));
+            }
+        });
+        Self { addr, heads }
+    }
+
+    fn heads(&self) -> Vec<String> {
+        self.heads.lock().unwrap().clone()
+    }
+}
+
+/// A shared Proxy that lets `plain` through its guard and sends `machine` to it when set.
+fn server(w: &World, plain: &Plain, machine: Option<SocketAddr>) -> Server {
+    let mut cfg = w.config(10.0, 10.0, 64);
+    cfg.guard_exempt.push(plain.addr);
+    cfg.machine = machine.map(|upstream| MachineService {
+        host: MACHINE.to_owned(),
+        upstream,
+    });
+    Server::start(cfg).unwrap()
+}
+
+/// Sends `request` into `tunnel` and reads what comes back until the tunnel ends.
+fn exchange(mut tunnel: WebSocket<TcpStream>, request: &str) -> String {
+    tunnel
+        .send(Message::binary(request.as_bytes().to_vec()))
+        .unwrap();
+    let mut got = Vec::new();
+    while let Ok(msg) = tunnel.read() {
+        match msg {
+            Message::Binary(b) => got.extend_from_slice(&b),
+            Message::Close(_) => break,
+            _ => {}
+        }
+    }
+    String::from_utf8_lossy(&got).into_owned()
+}
+
+#[test]
+fn a_plain_request_reaches_its_host_in_origin_form_without_proxy_headers() {
+    let w = World::new();
+    let plain = Plain::start();
+    let server = server(&w, &plain, None);
+    let target = format!("localhost:{}", plain.addr.port());
+    let tunnel = open_as(&server, &w.token, &target, true).unwrap();
+    let reply = exchange(
+        tunnel,
+        &format!(
+            "GET http://{target}/x?a=1 HTTP/1.1\r\nHost: {target}\r\n\
+             Proxy-Authorization: Basic bW9vcjp4\r\nConnection: keep-alive\r\n\r\n"
+        ),
+    );
+    assert!(reply.starts_with("HTTP/1.1 200 OK"), "{reply}");
+    assert!(reply.ends_with("hi"), "{reply}");
+    let heads = plain.heads();
+    let [head] = heads.as_slice() else {
+        unreachable!("{heads:?}")
+    };
+    assert!(head.starts_with("GET /x?a=1 HTTP/1.1\r\n"), "{head}");
+    assert!(
+        !head.to_ascii_lowercase().contains("proxy-authorization"),
+        "{head}"
+    );
+    assert!(head.contains("Connection: close\r\n"), "{head}");
+    server.drain(Duration::from_secs(5));
+}
+
+#[test]
+fn a_plain_request_to_a_credential_host_carries_no_credential() {
+    let w = World::new();
+    let plain = Plain::start();
+    let server = server(&w, &plain, None);
+    let target = w.target();
+    let tunnel = open_as(&server, &w.token, &target, true).unwrap();
+    let reply = exchange(
+        tunnel,
+        &format!("GET http://{target}/ok HTTP/1.1\r\nHost: {target}\r\n\r\n"),
+    );
+    assert!(!reply.starts_with("HTTP/1.1 2"), "{reply}");
+    assert!(!reply.contains(super::SECRET), "{reply}");
+    assert!(w.up.seen().iter().all(|s| s.authorization.is_none()));
+    server.drain(Duration::from_secs(5));
+}
+
+#[test]
+fn a_plain_request_for_another_host_than_its_tunnel_is_refused() {
+    let w = World::new();
+    let plain = Plain::start();
+    let server = server(&w, &plain, None);
+    let target = format!("localhost:{}", plain.addr.port());
+    let tunnel = open_as(&server, &w.token, &target, true).unwrap();
+    let reply = exchange(
+        tunnel,
+        "GET http://elsewhere:80/ HTTP/1.1\r\nHost: elsewhere\r\n\r\n",
+    );
+    assert!(reply.starts_with("HTTP/1.1 403 "), "{reply}");
+    assert!(plain.heads().is_empty());
+    server.drain(Duration::from_secs(5));
+}
+
+#[test]
+fn the_machine_service_gets_the_box_identity_and_never_one_the_box_forged() {
+    let w = World::new();
+    let service = Plain::start();
+    let server = server(&w, &service, Some(service.addr));
+    let tunnel = open_as(&server, &w.token, &format!("{MACHINE}:80"), true).unwrap();
+    let reply = exchange(
+        tunnel,
+        &format!(
+            "POST http://{MACHINE}/mcp HTTP/1.1\r\nHost: {MACHINE}\r\nX-Moor-Box: 999\r\n\
+             x-moor-machine: forged\r\nContent-Length: 0\r\n\r\n"
+        ),
+    );
+    assert!(reply.starts_with("HTTP/1.1 200 OK"), "{reply}");
+    let heads = service.heads();
+    let [head] = heads.as_slice() else {
+        unreachable!("{heads:?}")
+    };
+    assert!(head.starts_with("POST /mcp HTTP/1.1\r\n"), "{head}");
+    assert!(
+        head.contains(&format!("X-Moor-Box: {}\r\n", w.id.get())),
+        "{head}"
+    );
+    assert!(!head.contains("999") && !head.contains("forged"), "{head}");
+    assert!(
+        head.contains("X-Moor-Machine-Missing: this Box has no machine yet"),
+        "{head}"
+    );
+    server.drain(Duration::from_secs(5));
+}
+
+#[test]
+fn a_connect_to_the_machine_service_is_refused() {
+    let w = World::new();
+    let service = Plain::start();
+    let server = server(&w, &service, Some(service.addr));
+    assert_eq!(
+        open(&server, &w.token, &format!("{MACHINE}:443")).err(),
+        Some(403)
+    );
+    assert!(service.heads().is_empty());
+    server.drain(Duration::from_secs(5));
+}
+
+#[test]
+fn a_machine_service_that_is_down_is_502() {
+    let w = World::new();
+    let plain = Plain::start();
+    let down = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .unwrap()
+        .local_addr()
+        .unwrap();
+    let server = server(&w, &plain, Some(down));
+    assert_eq!(
+        open_as(&server, &w.token, &format!("{MACHINE}:80"), true).err(),
+        Some(502)
+    );
+    server.drain(Duration::from_secs(5));
+}

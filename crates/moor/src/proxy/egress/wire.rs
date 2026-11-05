@@ -1,4 +1,5 @@
-//! One connection: the upgrade request, the CONNECT into the Box's proxy, then the tunnel.
+//! One connection: the upgrade request, the CONNECT into the Box's proxy or the connection to
+//! the machine service, then the tunnel.
 //!
 //! Request bytes carry the Box token, so nothing here logs them.
 
@@ -15,8 +16,8 @@ use tokio_tungstenite::WebSocketStream;
 use zeroize::Zeroizing;
 
 use super::boxes::{Refused, Route};
-use super::{Shared, PATH, TARGET};
-use crate::proxy::front::connect_head;
+use super::{Shared, PATH, PLAIN, TARGET};
+use crate::proxy::front::{connect_head, hold_or_missing, plain_request, refusal};
 use crate::store::token_hash;
 
 /// Largest request or answer head read.
@@ -38,21 +39,30 @@ struct Ask {
     token: Option<Zeroizing<Vec<u8>>>,
     /// `X-Moor-Target`, when it is `host:port`.
     target: Option<String>,
+    /// Whether `X-Moor-Plain` marks one plain `http://` request.
+    plain: bool,
 }
 
 /// What a request head asks the connection to do.
 enum Checked {
     /// Answer the readiness probe.
     Ready,
-    /// Open a tunnel to `target` through `route`, upgrading with `key`.
-    Tunnel {
-        /// `Sec-WebSocket-Key`.
-        key: String,
-        /// `host:port`.
-        target: String,
-        /// The Box's proxy.
-        route: Route,
-    },
+    /// Open a tunnel.
+    Tunnel(Open),
+}
+
+/// A tunnel the forwarder may open.
+struct Open {
+    /// `Sec-WebSocket-Key`.
+    key: String,
+    /// `host:port`.
+    target: String,
+    /// The Box's proxy.
+    route: Route,
+    /// Whether the tunnel carries one plain `http://` request.
+    plain: bool,
+    /// Whether the target is the machine service.
+    machine: bool,
 }
 
 /// Serves one connection to its end.
@@ -63,29 +73,93 @@ pub(super) async fn serve(mut stream: TcpStream, shared: &Shared) {
     match check(&head, shared) {
         Err((status, why)) => answer(&mut stream, status, &why).await,
         Ok(Checked::Ready) => answer(&mut stream, 200, "ok").await,
-        Ok(Checked::Tunnel { key, target, route }) => tunnel(stream, &key, &target, &route).await,
+        Ok(Checked::Tunnel(open)) => tunnel(stream, shared, &open).await,
     }
 }
 
-/// Opens the CONNECT, upgrades the connection and relays the tunnel.
-async fn tunnel(mut stream: TcpStream, key: &str, target: &str, route: &Route) {
-    let (upstream, rest) = match open(route, target).await {
-        Ok(opened) => opened,
-        Err(status) => return answer(&mut stream, status, "the Box's proxy refused").await,
+/// Opens the CONNECT into the Box's proxy, or the connection to the machine service, upgrades
+/// the connection and relays the tunnel.
+async fn tunnel(mut stream: TcpStream, shared: &Shared, ask: &Open) {
+    let service = shared.machine.as_ref().filter(|_| ask.machine);
+    let opened = match service {
+        Some(service) => TcpStream::connect(service.upstream)
+            .await
+            .map(|s| (s, Vec::new()))
+            .map_err(|_| (502, "the machine service is not answering")),
+        None => open(&ask.route, &ask.target)
+            .await
+            .map_err(|status| (status, "the Box's proxy refused")),
     };
+    let (mut upstream, rest) = match opened {
+        Ok(opened) => opened,
+        Err((status, why)) => return answer(&mut stream, status, why).await,
+    };
+    let Some(mut ws) = upgrade(stream, &ask.key).await else {
+        return;
+    };
+    let marked = ask.machine.then_some(&ask.route);
+    if ask.plain && !send_plain(&mut ws, &mut upstream, &ask.target, marked).await {
+        return;
+    }
+    relay(ws, upstream, rest).await;
+}
+
+/// Reads the plain request from `ws` and writes it to `upstream` in origin form, marked with what
+/// the Box of `machine` holds; a request that is not one plain request for `target` gets a 403
+/// in the tunnel. Whether the tunnel goes on.
+async fn send_plain(
+    ws: &mut WebSocketStream<TcpStream>,
+    upstream: &mut TcpStream,
+    target: &str,
+    machine: Option<&Route>,
+) -> bool {
+    let Some((head, early)) = ws_head(ws).await else {
+        return false;
+    };
+    let hold = machine.map(|r| tokio::task::block_in_place(|| hold_or_missing(&r.served.ledger)));
+    let Some(mut request) = plain_request(&head, target, hold.as_ref()) else {
+        drop(ws.send(Message::binary(refusal().into_bytes())).await);
+        drop(ws.close(None).await);
+        return false;
+    };
+    request.extend_from_slice(&early);
+    upstream.write_all(&request).await.is_ok()
+}
+
+/// The plain request head the forwarder sends first, and the bytes after it.
+async fn ws_head(ws: &mut WebSocketStream<TcpStream>) -> Option<(Vec<u8>, Vec<u8>)> {
+    let read = async {
+        let mut buf = Vec::new();
+        loop {
+            match ws.next().await? {
+                Ok(Message::Binary(bytes)) => buf.extend_from_slice(&bytes),
+                Ok(Message::Ping(_) | Message::Pong(_) | Message::Frame(_)) => {}
+                _ => return None,
+            }
+            if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                let rest = buf.split_off(pos + 4);
+                return Some((buf, rest));
+            }
+            if buf.len() > MAX_HEAD {
+                return None;
+            }
+        }
+    };
+    timeout(HEAD_TIMEOUT, read).await.ok().flatten()
+}
+
+/// Answers `101` and wraps the connection as the tunnel's WebSocket.
+async fn upgrade(mut stream: TcpStream, key: &str) -> Option<WebSocketStream<TcpStream>> {
     let accept = derive_accept_key(key.as_bytes());
     let switching = format!(
         "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\
          Sec-WebSocket-Accept: {accept}\r\n\r\n"
     );
-    if stream.write_all(switching.as_bytes()).await.is_err() {
-        return;
-    }
+    stream.write_all(switching.as_bytes()).await.ok()?;
     let limits = WebSocketConfig::default()
         .max_message_size(Some(MAX_MESSAGE))
         .max_frame_size(Some(MAX_MESSAGE));
-    let ws = WebSocketStream::from_raw_socket(stream, Role::Server, Some(limits)).await;
-    relay(ws, upstream, rest).await;
+    Some(WebSocketStream::from_raw_socket(stream, Role::Server, Some(limits)).await)
 }
 
 /// What `head` asks for, or the status and reason it is refused with.
@@ -101,6 +175,10 @@ fn check(head: &[u8], shared: &Shared) -> Result<Checked, (u16, String)> {
         return Err(refuse(400, "expected a WebSocket upgrade with a target"));
     };
     let token = ask.token.ok_or_else(|| refuse(401, "no token"))?;
+    let machine = shared
+        .machine
+        .as_ref()
+        .is_some_and(|m| m.serves(target.rsplit_once(':').map_or(target.as_str(), |(h, _)| h)));
     if !shared.boxes.signed(&token) {
         return Err(refuse(401, "unknown token"));
     }
@@ -115,7 +193,16 @@ fn check(head: &[u8], shared: &Shared) -> Result<Checked, (u16, String)> {
             refuse(503, "temporarily unavailable")
         }
     })?;
-    Ok(Checked::Tunnel { key, target, route })
+    if machine && !ask.plain {
+        return Err(refuse(403, "the machine service takes only plain http"));
+    }
+    Ok(Checked::Tunnel(Open {
+        key,
+        target,
+        route,
+        plain: ask.plain,
+        machine,
+    }))
 }
 
 /// Looks the token up off the async workers, since the ledger and a proxy start block.
@@ -254,6 +341,7 @@ fn parse(head: &[u8]) -> Option<Ask> {
             .map(str::to_owned),
         token,
         target: text(TARGET).filter(|t| authority_ok(t)).map(str::to_owned),
+        plain: text(PLAIN) == Some("1"),
     })
 }
 

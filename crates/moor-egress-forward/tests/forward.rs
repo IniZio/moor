@@ -26,6 +26,7 @@ struct Seen {
     path: String,
     auth: Option<String>,
     target: Option<String>,
+    plain: Option<String>,
 }
 
 /// Takes one upgrade on `stream`, reports it, and echoes binary messages until the client closes.
@@ -41,6 +42,7 @@ async fn echo<S: AsyncRead + AsyncWrite + Unpin>(stream: S, seen: mpsc::Unbounde
             path: req.uri().path().to_owned(),
             auth: header(req, "authorization"),
             target: header(req, "x-moor-target"),
+            plain: header(req, "x-moor-plain"),
         }));
         Ok(res)
     };
@@ -219,12 +221,48 @@ async fn a_proxy_back_within_the_retries_takes_the_connect() {
 }
 
 #[tokio::test]
-async fn only_connect_is_taken() {
+async fn a_plain_request_goes_whole_into_a_plain_tunnel_and_its_reply_comes_back_as_sent() {
+    let (proxy, mut seen) = echo_proxy().await;
+    let fwd = forwarder(format!("ws://{proxy}/egress"), RootCertStore::empty()).await;
+    let request =
+        b"GET http://machine.moor.internal/mcp HTTP/1.1\r\nHost: machine.moor.internal\r\n\r\n";
+    let mut c = TcpStream::connect(fwd).await.unwrap();
+    c.write_all(request).await.unwrap();
+    assert_eq!(read_n(&mut c, request.len()).await, request);
+    let seen = seen.recv().await.unwrap();
+    assert_eq!(seen.auth.as_deref(), Some("Bearer tok"));
+    assert_eq!(seen.target.as_deref(), Some("machine.moor.internal:80"));
+    assert_eq!(seen.plain.as_deref(), Some("1"));
+}
+
+#[tokio::test]
+async fn a_plain_request_keeps_its_port_and_a_connect_is_not_plain() {
+    let (proxy, mut seen) = echo_proxy().await;
+    let fwd = forwarder(format!("ws://{proxy}/egress"), RootCertStore::empty()).await;
+    let request = b"POST http://h:8080?q=1 HTTP/1.1\r\nContent-Length: 0\r\n\r\n";
+    let mut c = TcpStream::connect(fwd).await.unwrap();
+    c.write_all(request).await.unwrap();
+    assert_eq!(read_n(&mut c, request.len()).await, request);
+    assert_eq!(seen.recv().await.unwrap().target.as_deref(), Some("h:8080"));
+    let (_c, head) = send(fwd, b"CONNECT h:443 HTTP/1.1\r\n\r\n").await;
+    assert!(head.starts_with("HTTP/1.1 200 "), "{head}");
+    assert_eq!(seen.recv().await.unwrap().plain, None);
+}
+
+#[tokio::test]
+async fn only_connect_and_absolute_http_are_taken() {
     let (proxy, _seen) = echo_proxy().await;
     let fwd = forwarder(format!("ws://{proxy}/egress"), RootCertStore::empty()).await;
-    let (_c, head) = send(fwd, b"GET http://h/ HTTP/1.1\r\nHost: h\r\n\r\n").await;
-    assert!(head.starts_with("HTTP/1.1 405 "), "{head}");
+    for request in [
+        &b"GET / HTTP/1.1\r\nHost: h\r\n\r\n"[..],
+        b"GET https://h/ HTTP/1.1\r\nHost: h\r\n\r\n",
+    ] {
+        let (_c, head) = send(fwd, request).await;
+        assert!(head.starts_with("HTTP/1.1 405 "), "{head}");
+    }
     let (_c, head) = send(fwd, b"CONNECT nohost HTTP/1.1\r\n\r\n").await;
+    assert!(head.starts_with("HTTP/1.1 400 "), "{head}");
+    let (_c, head) = send(fwd, b"GET http:///x HTTP/1.1\r\n\r\n").await;
     assert!(head.starts_with("HTTP/1.1 400 "), "{head}");
 }
 

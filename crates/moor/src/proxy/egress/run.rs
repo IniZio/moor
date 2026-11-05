@@ -1,7 +1,8 @@
 //! `moor proxy serve-egress`: the shared egress Proxy process.
 //!
 //! It takes `--state-dir DIR --listen ADDR` and optionally `--ledger ADDR`, `--ledger-ca PEM`,
-//! `--grace SECS`, `--rate N`, `--burst N`, `--lookup-rate N` and `--tunnels N`, and the ledger
+//! `--machine-service HOST=ADDR`, `--grace SECS`, `--rate N`, `--burst N`, `--lookup-rate N` and
+//! `--tunnels N`, and the ledger
 //! key in `MOOR_EGRESS_KEY`. It reaches the controller through the ledger socket in the state
 //! dir, or through `--ledger`: a socket path, or `tls://host:port` checked against the CA bundle
 //! `--ledger-ca`. It keeps each Box's CA and request log under `<state-dir>/egress`. On SIGTERM
@@ -15,6 +16,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use moor_core::config::MachineService;
 use moor_core::seam::clock::Clock;
 use signal_hook::consts::{SIGINT, SIGTERM};
 use zeroize::Zeroizing;
@@ -43,6 +45,8 @@ pub(crate) struct Args {
     pub(crate) ledger: Option<String>,
     /// The CA bundle that checks a TLS ledger's certificate.
     pub(crate) ledger_ca: Option<PathBuf>,
+    /// The machine service plain requests for its host go to.
+    pub(crate) machine: Option<MachineService>,
     /// How long open tunnels get after SIGTERM.
     pub(crate) grace: Duration,
     /// Tunnels a token may open per second.
@@ -63,6 +67,7 @@ impl Args {
             listen: None,
             ledger: None,
             ledger_ca: None,
+            machine: None,
             grace: GRACE,
             rate: 20.0,
             burst: 100.0,
@@ -80,6 +85,13 @@ impl Args {
                 "--listen" => args.listen = Some(value.parse().map_err(|_| bad())?),
                 "--ledger" => args.ledger = Some(value),
                 "--ledger-ca" => args.ledger_ca = Some(value.into()),
+                "--machine-service" => {
+                    let (host, addr) = value.split_once('=').ok_or_else(bad)?;
+                    args.machine = Some(MachineService {
+                        host: host.to_owned(),
+                        upstream: addr.parse().map_err(|_| bad())?,
+                    });
+                }
                 "--grace" => args.grace = Duration::from_secs(value.parse().map_err(|_| bad())?),
                 "--rate" => args.rate = value.parse().map_err(|_| bad())?,
                 "--burst" => args.burst = value.parse().map_err(|_| bad())?,
@@ -136,6 +148,7 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
         log: Arc::new(Mutex::new(std::io::stderr())),
         upstream_ca: test_upstream::ca(&env),
         guard_exempt: test_upstream::exempt(&env),
+        machine: args.machine,
         clock: Arc::clone(&clock),
     })?;
     say(format_args!("listening on {}", server.addr()));
