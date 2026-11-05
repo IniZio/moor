@@ -255,8 +255,9 @@ fn serve_injects_the_credential_audits_requests_and_stops() {
         let _guard = StopOnDrop(Arc::clone(&stop));
         let socket = tunnel_socket(&store, &driver, id);
         let port = bridge(&socket);
-        let ca = crate::proxy::nono::ca::load_or_create(dir.path(), id).unwrap();
-        let client = upstream::box_client(port, ca.cert_pem());
+        let cert =
+            std::fs::read_to_string(crate::proxy::nono::ca::cert_path(dir.path(), id)).unwrap();
+        let client = upstream::box_client(port, &cert);
         assert_injected(&client, &up);
         assert_refused(&client, &up);
         assert_audited(&store, id, dir.path());

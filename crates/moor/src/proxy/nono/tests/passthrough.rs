@@ -70,7 +70,8 @@ impl Rig {
             source,
         )])));
         let state = dir.path().join("state");
-        let ca = ca::load_or_create(&state, BOX_ID).unwrap();
+        let (key, cert) = ca::generate(BOX_ID).unwrap();
+        let ca = ca::install(&state, BOX_ID, (key.as_bytes(), &cert)).unwrap();
         let token = Secret::new(TOKEN.as_bytes().to_vec());
         let mut cfg = build_config(&NonoSpec {
             rules: &rules,
@@ -84,7 +85,7 @@ impl Rig {
         // Stands in for the chained filter's Box CA, trusted for every upstream.
         cfg.0.upstream_extra_ca_pems = vec![up.ca_path.to_string_lossy().into_owned()];
         let proxy = NonoProxy::start(cfg, capture).unwrap();
-        let agent = upstream::client(proxy.port(), TOKEN, ca.cert_pem());
+        let agent = upstream::client(proxy.port(), TOKEN, &cert);
         Self {
             _dir: dir,
             up,

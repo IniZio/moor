@@ -38,12 +38,6 @@ impl std::fmt::Debug for BoxCa {
 }
 
 impl BoxCa {
-    /// The PEM certificate the Box trusts.
-    #[cfg(test)]
-    pub(crate) fn cert_pem(&self) -> &str {
-        &self.cert_pem
-    }
-
     /// The CA as a signer for the GraphQL filter's TLS listener.
     pub(crate) fn ephemeral(&self) -> std::io::Result<EphemeralCa> {
         EphemeralCa::from_existing(&self.key_der, &self.cert_pem)
@@ -67,18 +61,6 @@ pub(crate) fn ca_dir(state_dir: &Path, box_id: BoxId) -> PathBuf {
 /// Path of the Box's CA certificate, which the machine trusts.
 pub(crate) fn cert_path(state_dir: &Path, box_id: BoxId) -> PathBuf {
     cert_in(&ca_dir(state_dir, box_id))
-}
-
-/// Loads the Box's CA, or generates and persists one when neither file
-/// exists. Directory and files are owner-only; looser existing modes are
-/// tightened.
-///
-/// A half-present or unparsable CA is an error naming the file: the Box
-/// trusts the old certificate, so a silent replacement would break it.
-#[cfg(test)]
-pub(crate) fn load_or_create(state_dir: &Path, box_id: BoxId) -> std::io::Result<BoxCa> {
-    let cn = format!("moor box {}", box_id.get());
-    load_or_create_in(&ca_dir(state_dir, box_id), &cn)
 }
 
 /// Loads the CA in `dir`, or generates and persists one with common name `cn` when neither file
