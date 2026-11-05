@@ -83,12 +83,11 @@ fn size_decision_58() {
             Layer::Repo,
         ),
         ("{}", "box: {size: xlarge}", BoxSize::Xlarge, Layer::Repo),
-        ("{}", "{}", BoxSize::Small, Layer::Default),
     ];
     for (u, r, size, layer) in cases {
         assert_eq!(
             resolve(u, Some(r), &Flags::default()).size,
-            Sourced::new(size, layer),
+            Some(Sourced::new(size, layer)),
             "{u} / {r}"
         );
     }
@@ -97,7 +96,7 @@ fn size_decision_58() {
         Some("box: {size: large}"),
         &Flags::default(),
     );
-    assert_eq!(s.size, Sourced::new(BoxSize::Large, Layer::Repo));
+    assert_eq!(s.size, Some(Sourced::new(BoxSize::Large, Layer::Repo)));
     assert_eq!(s.provider, Some(Sourced::new("p".to_string(), Layer::User)));
 }
 
@@ -165,4 +164,9 @@ fn node_never_from_repo() {
     let s = resolve("nodes: {a: {runtime: x}}", None, &Flags::default());
     assert_eq!(s.node, Some(Sourced::new("a".to_string(), Layer::User)));
     assert!(parse_repo("r.yaml", "box: {node: a}").is_err());
+}
+
+#[test]
+fn no_size_in_either_config_leaves_the_size_unset() {
+    assert_eq!(resolve("{}", Some("{}"), &Flags::default()).size, None);
 }

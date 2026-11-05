@@ -13,7 +13,7 @@ pub struct AcquireReq {
     pub box_id: BoxId,
     /// Box name the adapter embeds in the Box name.
     pub name: BoxName,
-    /// Box size (`small`, `medium`, `large`, `xlarge`); `small` when unset.
+    /// Box size (`small`, `medium`, `large`, `xlarge`); none leaves the class to the provider.
     pub class: Option<String>,
     /// Random suffix that keeps the Box name unique.
     pub nonce: String,

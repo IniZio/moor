@@ -325,7 +325,7 @@ pub(super) fn resume(
         provider: layered.provider.clone(),
         box_id: row.id,
         name: row.name.clone(),
-        class: Some(cfg.size.value.as_str().to_owned()),
+        class: cfg.size.as_ref().map(|s| s.value.as_str().to_owned()),
         nonce: nonce(cx.rng()),
         cache: layered.cache.clone(),
         pool_machine: None,

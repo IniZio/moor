@@ -138,6 +138,14 @@ fn memory_the_kernel_keeps_back_is_not_a_shortfall() {
 }
 
 #[test]
+fn a_box_with_no_size_is_never_warned_about_its_memory() {
+    let driver = FakeDriver::new().exec_stdout([probe(1, 512)]);
+    let (w, v) = start_with("setup: [a]\n", driver);
+    assert_eq!(v.boxed.driver.unwrap().mem_mib, Some(512));
+    assert!(warnings_of(&w, "machine_short").is_empty());
+}
+
+#[test]
 fn a_box_with_no_probe_reading_is_not_warned_about() {
     let (w, _) = start_with("box:\n  size: large\n", FakeDriver::new());
     assert!(warnings_of(&w, "machine_short").is_empty());

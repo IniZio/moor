@@ -31,11 +31,29 @@ fn a_repo_size_beats_the_users() {
 }
 
 #[test]
-fn a_repo_without_a_moor_yaml_gets_the_small_class() {
+fn a_box_with_no_configured_size_asks_for_no_class() {
     let w = world(FakeDriver::new());
     script_base_yaml(&w, None);
     run(&w.cx, &start_req()).unwrap();
-    assert_eq!(classes(&w), ["small"]);
+    assert_eq!(w.driver.asked_classes(), [None]);
+}
+
+#[test]
+fn a_user_size_alone_is_asked_for() {
+    let user: UserConfig =
+        moor_core::config::parse_user("config.yaml", "box:\n  size: medium\n").unwrap();
+    let w = world_with(FakeDriver::new(), user);
+    script_base_yaml(&w, None);
+    run(&w.cx, &start_req()).unwrap();
+    assert_eq!(classes(&w), ["medium"]);
+}
+
+#[test]
+fn a_warm_fork_with_no_size_asks_for_no_class_either() {
+    let (w, _) = after_a_partial_setup_of(FakeDriver::new(), LINES);
+    start(&w, "second", "abc123", LINES);
+    assert!(w.driver.calls().iter().any(|c| c.starts_with("fork")));
+    assert_eq!(w.driver.asked_classes(), [None, None]);
 }
 
 #[test]

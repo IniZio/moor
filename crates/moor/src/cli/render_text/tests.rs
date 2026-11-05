@@ -140,7 +140,7 @@ fn env_view(rows: Vec<EnvRow>, credentials: Vec<EnvCredential>) -> Response {
         provider: EnvProvider {
             name: Some("local".into()),
             source: Layer::Default,
-            size: "small".into(),
+            size: None,
             size_source: Layer::Default,
         },
         credentials,
@@ -153,7 +153,7 @@ fn env_text_starts_with_agent_and_marks_credentials() {
     let rows = vec![
         row(EnvKind::Credential, "GOOD", Layer::User, "env: X"),
         row(EnvKind::Credential, "BAD", Layer::Repo, "file: /x"),
-        row(EnvKind::Box, "size", Layer::Default, "small"),
+        row(EnvKind::Box, "size", Layer::Default, "unset"),
     ];
     let credentials = vec![
         check("GOOD", true, None),
@@ -170,7 +170,7 @@ fn env_text_starts_with_agent_and_marks_credentials() {
     assert!(lines
         .last()
         .unwrap()
-        .starts_with("- box size  [default]  small"));
+        .starts_with("- box size  [default]  unset"));
 }
 
 /// A successful `run` value.

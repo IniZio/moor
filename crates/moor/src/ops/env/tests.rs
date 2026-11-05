@@ -279,15 +279,19 @@ fn a_box_without_a_repo_lists_no_presets() {
 /// The size and the layer it came from, from both the `size` row and the provider summary.
 fn size_row(v: &EnvView) -> (&str, Layer) {
     let row = v.rows.iter().find(|r| r.name == "size").expect("size row");
-    assert_eq!(row.note, v.provider.size);
+    assert_eq!(row.note, v.provider.size.as_deref().unwrap_or("unset"));
     assert_eq!(row.source, v.provider.size_source);
-    (v.provider.size.as_str(), v.provider.size_source)
+    (
+        v.provider.size.as_deref().unwrap_or("unset"),
+        v.provider.size_source,
+    )
 }
 
 #[test]
-fn a_repo_without_a_moor_yaml_is_small_by_default() {
+fn a_repo_without_a_moor_yaml_has_no_size() {
     let (_d, v) = env_of(repo_at("abc123", None));
-    assert_eq!(size_row(&v), ("small", Layer::Default));
+    assert_eq!(v.provider.size, None);
+    assert_eq!(size_row(&v), ("unset", Layer::Default));
 }
 
 #[test]

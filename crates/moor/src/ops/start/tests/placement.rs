@@ -133,7 +133,6 @@ fn a_close_starts_the_oldest_pending_box_of_its_node_only() {
             &moor_core::decide::schedule::BoxSpec {
                 labels: Vec::new(),
                 node: moor_core::name::NodeName::parse("big").ok(),
-                mem_mib: 0,
             },
         )
         .unwrap();

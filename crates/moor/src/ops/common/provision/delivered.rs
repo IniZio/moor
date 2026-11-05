@@ -1,6 +1,6 @@
 //! Recording the CPUs and memory a freshly provisioned Box delivers.
 
-use moor_core::config::BoxSize;
+use moor_core::config::BoxSettings;
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::shape::Shape;
 use moor_core::{BoxId, Warning};
@@ -9,18 +9,24 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::Store;
 
-/// Records the CPUs and memory the Box delivers, and warns when that is less than `size` asks for.
+/// Records the CPUs and memory the Box delivers, and warns when that is less than its size asks for.
+/// A Box with no size asked for nothing, so it is never short.
 pub(super) fn record_delivered(
     cx: &Cx,
     store: &Store,
     id: BoxId,
-    size: BoxSize,
+    cfg: &BoxSettings,
     delivered: Option<Shape>,
 ) -> Result<(), CommandError> {
     let Some(got) = delivered else {
         return Ok(());
     };
-    if got.mem_mib < size.least_mem_mib() {
+    if let Some(size) = cfg
+        .size
+        .as_ref()
+        .map(|s| s.value)
+        .filter(|s| got.mem_mib < s.least_mem_mib())
+    {
         cx.warn(Warning {
             code: "machine_short".to_owned(),
             message: format!(

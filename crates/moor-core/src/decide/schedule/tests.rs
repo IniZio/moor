@@ -46,7 +46,6 @@ fn spec(labels: &[&str], node: Option<&str>) -> BoxSpec {
     BoxSpec {
         labels: labels.iter().map(|l| (*l).to_owned()).collect(),
         node: node.map(name),
-        mem_mib: 4096,
     }
 }
 

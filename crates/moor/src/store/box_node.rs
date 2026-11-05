@@ -65,22 +65,21 @@ impl Store {
     /// What Box `id` asks of a node: the node it named or holds, and its labels.
     pub(crate) fn box_spec(&self, id: BoxId) -> Result<BoxSpec, StoreError> {
         let conn = self.reader()?;
-        let found: Option<(Option<String>, String, Option<i64>)> = conn
+        let found: Option<(Option<String>, String)> = conn
             .row(
                 Query::select()
-                    .columns([Boxes::Node, Boxes::NodeLabels, Boxes::NodeMemMib])
+                    .columns([Boxes::Node, Boxes::NodeLabels])
                     .from(Boxes::Table)
                     .and_where(Expr::col(Boxes::Id).eq(id.get())),
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;
-        let (node, labels, mem) = found.unwrap_or_else(|| (None, "[]".to_owned(), None));
+        let (node, labels) = found.unwrap_or_else(|| (None, "[]".to_owned()));
         let labels = serde_json::from_str(&labels)
             .map_err(|e| StoreError::Corrupt(format!("box {} node labels: {e}", id.get())))?;
         Ok(BoxSpec {
             labels,
             node: node.and_then(|n| NodeName::parse(&n).ok()),
-            mem_mib: mem.and_then(|m| u64::try_from(m).ok()).unwrap_or(0),
         })
     }
 
@@ -93,10 +92,6 @@ impl Store {
                 .table(Boxes::Table)
                 .value(Boxes::Node, spec.node.as_ref().map(NodeName::as_str))
                 .value(Boxes::NodeLabels, labels)
-                .value(
-                    Boxes::NodeMemMib,
-                    i64::try_from(spec.mem_mib).unwrap_or(i64::MAX),
-                )
                 .and_where(Expr::col(Boxes::Id).eq(id.get())),
         )?;
         Ok(())

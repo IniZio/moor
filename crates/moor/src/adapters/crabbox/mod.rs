@@ -47,7 +47,7 @@ use moor_core::seam::driver::{
 use moor_core::seam::proc::{Deadline, Pipes, Proc, ProcOutput, ProcSpec, Tool};
 use moor_core::seam::rng::Rng;
 
-use caps::size_of;
+use caps::{class_args, size_of};
 use deadlines::{ACQUIRE_DEADLINE, LIST_DEADLINE, LOOKUP_DEADLINE, QUICK_DEADLINE};
 use errors::{map_error, Op};
 use handle::{handle_of, slug, split_handle, static_env, target_args};

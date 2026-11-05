@@ -107,8 +107,8 @@ pub struct EnvProvider {
     pub name: Option<String>,
     /// Layer of the provider.
     pub source: Layer,
-    /// Box size.
-    pub size: String,
+    /// Box size; `None` when no config sets one and the provider decides.
+    pub size: Option<String>,
     /// Layer of the size.
     pub size_source: Layer,
 }
@@ -154,8 +154,8 @@ impl EnvView {
                 .provider
                 .as_ref()
                 .map_or(Layer::Default, |p| p.source),
-            size: settings.size.value.as_str().to_owned(),
-            size_source: settings.size.source,
+            size: settings.size.as_ref().map(|s| s.value.as_str().to_owned()),
+            size_source: settings.size.as_ref().map_or(Layer::Default, |s| s.source),
         };
         let credentials = items
             .iter()

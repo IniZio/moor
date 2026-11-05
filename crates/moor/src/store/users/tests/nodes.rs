@@ -24,7 +24,6 @@ fn on_node(store: &Store, id: BoxId, node: &str) {
     let spec = BoxSpec {
         labels: Vec::new(),
         node: NodeName::parse(node).ok(),
-        mem_mib: 0,
     };
     store.set_box_spec(id, &spec).unwrap();
 }

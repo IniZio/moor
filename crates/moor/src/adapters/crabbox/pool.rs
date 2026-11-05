@@ -212,11 +212,7 @@ pub(super) fn acquire(cb: &Crabbox, req: &AcquireReq) -> Result<Acquired, Driver
     cb.forget_targets(&handle);
     // A Box with no size leaves the class to the host's provider, as an older agent knows no
     // class to take.
-    let class = req
-        .class
-        .as_deref()
-        .map(|size| super::size_of(Some(size)))
-        .transpose()?;
+    let class = req.class.as_deref().map(super::size_of).transpose()?;
     placed.warmup(&Boot {
         cache: super::cache::lease(&req.cache),
         class: class.map(str::to_owned),

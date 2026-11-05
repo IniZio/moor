@@ -6,7 +6,7 @@ use moor_core::seam::proc::ProcSpec;
 
 use super::errors::{map_error, unreadable, Op};
 use super::progress::Watch;
-use super::{cache, handle_of, parse, size_of, slug, split_handle, Crabbox, ACQUIRE_DEADLINE};
+use super::{cache, class_args, handle_of, parse, slug, split_handle, Crabbox, ACQUIRE_DEADLINE};
 
 /// Warms up a Box for `req`; a failed warmup of a new Box releases what it made. `note` hears
 /// what crabbox reports while it works.
@@ -21,10 +21,11 @@ pub(super) fn acquire(
     cb.require_version()?;
     let provider = req.provider.as_str();
     let name = slug(req);
-    let class = size_of(req.class.as_deref())?;
+    let class = class_args(req.class.as_deref())?;
     let spec = cache::with_volumes(Crabbox::spec(ACQUIRE_DEADLINE), &req.cache)
         .args(["warmup", "--provider", provider])
-        .args(["--slug", &name, "--class", class]);
+        .args(["--slug", &name])
+        .args(class);
     let handle = handle_of(provider, &name);
     let existed = cb.lease_dir(&handle)?.exists();
     let spec = cb.at_lease(spec, &handle)?;

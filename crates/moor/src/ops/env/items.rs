@@ -39,9 +39,13 @@ pub(crate) fn assemble(
         source,
         ..plain(EnvKind::Box, "provider", provider)
     });
+    let (size, source) = s
+        .size
+        .as_ref()
+        .map_or(("unset", Layer::Default), |z| (z.value.as_str(), z.source));
     items.push(EnvItem {
-        source: s.size.source,
-        ..plain(EnvKind::Box, "size", s.size.value.as_str())
+        source,
+        ..plain(EnvKind::Box, "size", size)
     });
     if let Some(d) = &s.dotfiles {
         items.push(dotfiles_item(cx, d));

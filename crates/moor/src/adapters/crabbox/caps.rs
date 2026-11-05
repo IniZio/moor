@@ -104,8 +104,8 @@ pub(super) fn on_this_host(providers_json: &str, id: &ProviderId) -> bool {
 }
 
 /// Maps a moor size to crabbox's machine class.
-pub(super) fn size_of(size: Option<&str>) -> Result<&'static str, DriverError> {
-    match size.unwrap_or("small") {
+pub(super) fn size_of(size: &str) -> Result<&'static str, DriverError> {
+    match size {
         "small" => Ok("standard"),
         "medium" => Ok("fast"),
         "large" => Ok("large"),
@@ -114,6 +114,14 @@ pub(super) fn size_of(size: Option<&str>) -> Result<&'static str, DriverError> {
             summary: format!("unknown box size {other:?}"),
         }),
     }
+}
+
+/// The `--class` flag for a Box's size; none for a Box with no size, so crabbox picks the class.
+pub(super) fn class_args(size: Option<&str>) -> Result<Vec<&'static str>, DriverError> {
+    Ok(size
+        .map(size_of)
+        .transpose()?
+        .map_or_else(Vec::new, |class| vec!["--class", class]))
 }
 
 #[cfg(test)]
