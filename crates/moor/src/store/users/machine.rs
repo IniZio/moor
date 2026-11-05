@@ -175,7 +175,7 @@ impl Store {
 }
 
 /// Frees the machine `box_id` holds as the Box leaves the live states, recording
-/// `machine_detached`, so a close that no supervisor sees still lets the machine go.
+/// `machine_detached`, so a close that no keeper sees still lets the machine go.
 pub(in crate::store) fn release_in(tx: &Tx<'_>, box_id: BoxId, now: Ts) -> Result<(), StoreError> {
     let name: Option<String> = tx
         .row(
