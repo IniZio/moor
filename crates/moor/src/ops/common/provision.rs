@@ -33,6 +33,7 @@ use self::outcome::dotfiles_warned;
 pub(crate) use self::outcome::Provisioned;
 use self::progress::acquire_timed;
 use self::rerun::start_ready;
+pub(crate) use self::retry::resume_setup;
 use self::retry::{kept_box_retry, retry_in_box};
 use self::target::SetupTarget;
 

@@ -1,11 +1,12 @@
 //! Tests for a start its process stopped running part-way through the acquire.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use moor_core::config::UserConfig;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
-use moor_core::domain::decision::{Decision, Intent, IntentChange};
+use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange};
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::{BoxId, BoxName, CloseReq, ErrorKind};
 
@@ -14,6 +15,7 @@ use super::{script_base_yaml, world, World};
 use crate::cx::Cx;
 use crate::ops::close;
 use crate::ops::common::provision::interrupted::fail_interrupted;
+use crate::ops::common::provision::resume_setup;
 use crate::ops::start::run;
 use crate::store::BoxRow;
 use crate::testing::driver::FakeDriver;
@@ -222,4 +224,84 @@ fn a_forced_close_during_setup_interrupts_the_start_and_closes_the_box() {
     );
     assert!(at("setup_failed") < at("closed"), "{events:?}");
     assert_eq!(box_row(&w).lifecycle, BoxLifecycle::Closed);
+}
+
+/// The argv of every exec that attaches to a detached setup run.
+fn setup_attaches(w: &World) -> Vec<Vec<String>> {
+    w.driver
+        .execs()
+        .into_iter()
+        .map(|(_, spec, _)| spec.argv)
+        .filter(|argv| argv.last().is_some_and(|a| a.contains(".moor/runs/")))
+        .collect()
+}
+
+/// A world whose first start died while it followed its setup run, as a controller restart
+/// leaves it; gives back the argv of that attach.
+fn restarted_mid_setup(yaml: &str) -> (World, Vec<String>) {
+    let w = world(FakeDriver::new());
+    script_base_yaml(&w, Some(yaml));
+    let dying = Arc::new(AtomicBool::new(true));
+    let (driver, still) = (w.driver.clone(), dying.clone());
+    w.driver.after_exec(move || {
+        let attached = driver.execs().last().is_some_and(|(_, spec, _)| {
+            spec.argv.last().is_some_and(|a| a.contains(".moor/runs/"))
+        });
+        if attached && still.load(Ordering::SeqCst) {
+            std::panic::resume_unwind(Box::new("controller restarted mid-setup"));
+        }
+    });
+    let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        drop(run(&w.cx, &start_req()));
+    }));
+    assert!(crashed.is_err());
+    dying.store(false, Ordering::SeqCst);
+    let [attached] = setup_attaches(&w).try_into().unwrap();
+    assert_eq!(box_row(&w).lifecycle, BoxLifecycle::SettingUp);
+    (w, attached)
+}
+
+#[test]
+fn a_restart_mid_setup_follows_the_same_run_again_and_the_box_comes_up() {
+    let (w, attached) = restarted_mid_setup("setup: [a, b]\n");
+    let store = w.cx.store().unwrap();
+    assert_eq!(fail_interrupted(&w.cx, store).unwrap(), [BoxId::new(1)]);
+    assert_eq!(box_row(&w).lifecycle, BoxLifecycle::SettingUp);
+    resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
+    let row = box_row(&w);
+    assert_eq!(row.lifecycle, BoxLifecycle::Ready);
+    assert_eq!(row.intent, None);
+    assert_eq!(setup_attaches(&w), [attached.clone(), attached]);
+}
+
+#[test]
+fn a_setup_followed_again_after_a_restart_records_the_line_that_failed() {
+    let (w, _) = restarted_mid_setup("setup: [a, b, c]\n");
+    let store = w.cx.store().unwrap();
+    fail_interrupted(&w.cx, store).unwrap();
+    w.driver.set_copy_text("moor setup: $ a\nmoor setup: $ b\n");
+    w.driver.push_exec_result(Ok(ExecOutcome::Exited { code: 0 }));
+    w.driver.push_exec_result(Ok(ExecOutcome::Exited { code: 1 }));
+    resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
+    let row = box_row(&w);
+    assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);
+    let events = store.events(row.id, 50).unwrap();
+    let failed = events.iter().rfind(|e| e.kind == "setup_failed").unwrap();
+    assert!(failed.payload.to_string().contains("\"b\""), "{:?}", failed.payload);
+}
+
+#[test]
+fn a_restart_once_the_setup_lines_passed_leaves_only_the_later_steps_pending() {
+    let (w, _) = restarted_mid_setup("setup: [a]\n");
+    let store = w.cx.store().unwrap();
+    store
+        .apply(Decision::new(BoxId::new(1)).set(Fields {
+            steps_pending_at: Field::Set(1),
+            ..Fields::default()
+        }))
+        .unwrap();
+    assert!(fail_interrupted(&w.cx, store).unwrap().is_empty());
+    let row = box_row(&w);
+    assert_eq!(row.lifecycle, BoxLifecycle::Ready);
+    assert!(row.steps_pending_at.is_some());
 }

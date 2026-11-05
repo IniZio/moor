@@ -5,7 +5,7 @@ use std::time::Duration;
 use moor_core::controller::ServerFrame;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::event::close_reason::CLOSE_REASON_SETUP_FAILED_EXPIRED;
-use moor_core::SessionId;
+use moor_core::{BoxId, SessionId};
 
 use super::Moor;
 use crate::ops;
@@ -136,17 +136,36 @@ impl Moor {
         out
     }
 
-    /// Fails each start an earlier process left unfinished; returns what to log.
-    pub(crate) fn fail_interrupted_starts(&self) -> Vec<String> {
+    /// Fails each start an earlier process left unfinished, claiming those whose setup can be
+    /// followed again; returns what to log and the claimed Boxes.
+    pub(crate) fn fail_interrupted_starts(&self) -> (Vec<String>, Vec<BoxId>) {
         let mut out = Vec::new();
+        let mut claimed = Vec::new();
         let failed = self.cx.store().and_then(|store| {
-            let failed = ops::common::provision::interrupted::fail_interrupted(&self.cx, store);
-            failed.and_then(|()| ops::common::node::backfill(&self.cx, store))
+            claimed = ops::common::provision::interrupted::fail_interrupted(&self.cx, store)?;
+            ops::common::node::backfill(&self.cx, store)
         });
         if let Err(e) = failed {
             out.push(e.error.to_string());
         }
         out.extend(self.cx.take_warnings().into_iter().map(|w| w.message));
+        (out, claimed)
+    }
+
+    /// Follows again the setup of each Box in `claimed` until it ends; returns what to log.
+    pub(crate) fn resume_setups(&self, claimed: &[BoxId]) -> Vec<String> {
+        let mut out = Vec::new();
+        for &id in claimed {
+            let resumed = self.cx.store().and_then(|store| {
+                let user = store.box_row(id)?.and_then(|r| r.user);
+                self.cx
+                    .for_box(user, || ops::common::provision::resume_setup(&self.cx, store, id))
+            });
+            if let Err(e) = resumed {
+                out.push(format!("Box {}: {}", id.get(), e.error));
+            }
+            out.extend(self.cx.take_warnings().into_iter().map(|w| w.message));
+        }
         out
     }
 }

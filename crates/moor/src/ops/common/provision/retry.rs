@@ -6,20 +6,28 @@ use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
 use moor_core::{BoxHandle, BoxPath, ErrorKind};
 
-use super::{layers, recorded_workdir, run_and_record, Provisioned, SetupTarget};
+use moor_core::config::Flags;
+use moor_core::BoxId;
+
+use super::rerun::record_interrupted;
+use super::{layers, recorded_workdir, reread, run_and_record, Provisioned, SetupTarget};
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::boxlock::{self, BoxLock};
+use crate::ops::common::facts::settings_of;
 use crate::ops::common::{cache, setup};
 use crate::store::{BoxRow, Store};
 
-/// The kept Box's handle and workdir, when the Box failed setup on a machine that is still ready.
-fn kept_box(row: &BoxRow) -> Option<(&BoxHandle, BoxPath)> {
+/// The handle and workdir of the machine `row` holds, when it is ready.
+fn machine(row: &BoxRow) -> Option<(&BoxHandle, BoxPath)> {
     let boxed = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready)?;
-    if row.lifecycle != BoxLifecycle::SetupFailed {
-        return None;
-    }
     let workdir = boxed.workdir.as_deref().and_then(recorded_workdir)?;
     Some((boxed.handle.as_ref()?, workdir))
+}
+
+/// The kept Box's handle and workdir, when the Box failed setup on a machine that is still ready.
+fn kept_box(row: &BoxRow) -> Option<(&BoxHandle, BoxPath)> {
+    machine(row).filter(|_| row.lifecycle == BoxLifecycle::SetupFailed)
 }
 
 /// Whether the Box failed setup on a machine that is still ready, so its steps run again in it.
@@ -38,20 +46,59 @@ pub(super) fn retry_in_box(
     row: &BoxRow,
     cfg: &BoxSettings,
 ) -> Result<Provisioned, CommandError> {
-    let (Some((handle, workdir)), Some(held)) = (kept_box(row), row.boxed.as_ref()) else {
-        return Err(CommandError::new(ErrorKind::Internal, "kept Box vanished"));
-    };
     let begin = Decision::new(row.id)
         .lifecycle(BoxLifecycleInput::Retry)
         .intent(IntentChange::Set(Intent::Setup {
             pid: std::process::id(),
         }));
     store.apply(begin)?;
+    set_up_in_machine(cx, store, row, cfg, true)
+}
+
+/// Follows again the setup a controller restart cut off in Box `id`, which this process claimed:
+/// each setup script that ran or is running is attached to rather than run again, and the Box
+/// moves on as the start would have. The Box lock is held meanwhile; a Box that is no longer
+/// claimed is left alone.
+pub(crate) fn resume_setup(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
+    let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?;
+    let row = super::reread(store, id)?;
+    let mine = Some(Intent::Setup {
+        pid: std::process::id(),
+    });
+    if row.intent != mine || row.lifecycle != BoxLifecycle::SettingUp {
+        return Ok(());
+    }
+    let cfg = settings_of(cx, &row, &Flags::default())?;
+    match set_up_in_machine(cx, store, &row, &cfg, false) {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            record_interrupted(cx, store, &reread(store, id)?)?;
+            Err(e)
+        }
+    }
+}
+
+/// Runs the clone, setup and dotfiles in the machine `row` holds, then marks it ready; `fork`
+/// first moves a retried Box onto the checkpoint nearest its failed line.
+fn set_up_in_machine(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    cfg: &BoxSettings,
+    fork: bool,
+) -> Result<Provisioned, CommandError> {
+    let (Some((handle, workdir)), Some(held)) = (machine(row), row.boxed.as_ref()) else {
+        return Err(CommandError::new(ErrorKind::Internal, "kept Box vanished"));
+    };
     let provider = held.provider.as_str();
     let plan = cache::derived(cx, store, row, cfg, &held.provider);
     let mut layered = layers::plan(cx, row, provider, cfg, &plan);
     let forked = match layered.as_mut() {
-        Some(layered) => layers::resume(cx, store, row, handle, cfg, layered)?,
+        Some(layered) if fork => layers::resume(cx, store, row, handle, cfg, layered)?,
+        Some(layered) => {
+            layers::stand_on_warm_start(store, row.id, layered)?;
+            None
+        }
         None => None,
     };
     let log_dir = setup::log_dir(cx.state_dir()?, row.id);
