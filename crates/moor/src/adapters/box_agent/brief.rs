@@ -40,9 +40,8 @@ pub(super) fn render(b: &BriefInput) -> String {
          every other host direct; do not unset or bypass it. GitHub access works for this Box's \
          repo through gh and git as configured. Requests outside what the proxy rules allow go \
          out without credentials, so expect 401 or 404; the owner can add a rule. \
-         Write only in the working directory and your own tool state. If a tool the \
-         project needs is missing, do not try to install it: say which tool is missing and that \
-         it belongs in the repo's setup commands, then continue with what is available. \
+         Write only in the working directory, your own tool state and the tools you install. \
+         If a tool the work needs is missing, install it, then say which tool it was. \
          Do not guess paths. Before you tell the person a tool or program is missing, check for \
          it (for example `command -v <name>`, or the desktop's applications) and say what \
          you checked.\n\n\
@@ -221,8 +220,14 @@ mod tests {
         assert!(out.contains("When HTTPS_PROXY is set"));
         assert!(out.contains("Write only in the working directory"));
         assert!(out.contains("expect 401 or 404"));
-        assert!(out.contains("belongs in the repo's setup commands"));
         assert!(out.contains("Do not guess paths."));
+    }
+
+    #[test]
+    fn tells_the_agent_to_install_a_missing_tool() {
+        let out = render(&input(None));
+        assert!(out.contains("If a tool the work needs is missing, install it"));
+        assert!(!out.contains("do not try to install"));
     }
 
     #[test]
