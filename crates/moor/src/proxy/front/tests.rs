@@ -4,20 +4,16 @@ use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::os::unix::net::UnixStream;
-use std::path::Path;
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use moor_core::{BoxId, Secret};
+use moor_core::Secret;
 use tempfile::TempDir;
 
 use super::{Front, FrontSocket};
 use crate::proxy::Sink;
-
-mod machine;
-mod relay;
 
 const INTERNAL: &str = "internal-token-456";
 const FORWARDED_HEAD: &str = "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nProxy-Authorization: Bearer internal-token-456\r\n\r\n";
@@ -106,14 +102,16 @@ pub(super) fn uid() -> u32 {
     rustix::process::getuid().as_raw()
 }
 
-/// The front socket of Box 1 in `dir`'s private socket directory `s`, which `owner` must own.
+/// A front socket in `dir`'s private socket directory `s`, which `owner` must own.
 pub(super) fn socket_in(dir: &TempDir, owner: u32) -> FrontSocket {
-    FrontSocket::new(
-        &dir.path().join("s"),
-        owner,
-        Path::new("/state"),
-        BoxId::new(1),
-    )
+    FrontSocket::at(dir.path().join("s"), owner)
+}
+
+/// A front that sends every request to `target` with the internal token.
+fn front_for(target: SocketAddr, socket: FrontSocket, log: Sink) -> Result<Front, String> {
+    let route: crate::proxy::front::Route =
+        Arc::new(move |_| Some((target, Secret::new(INTERNAL.as_bytes().to_vec()))));
+    Front::routed(socket, route, log)
 }
 
 /// A front for `target`; the temp dir holds its socket and must outlive it.
@@ -124,14 +122,7 @@ fn start(target: SocketAddr) -> (TempDir, Front) {
 /// A front for `target` writing its refusal lines to `log`.
 fn start_logged(target: SocketAddr, log: Sink) -> (TempDir, Front) {
     let dir = tempfile::tempdir().unwrap();
-    let front = Front::start(
-        target,
-        socket_in(&dir, uid()),
-        Secret::new(INTERNAL.as_bytes().to_vec()),
-        None,
-        log,
-    )
-    .unwrap();
+    let front = front_for(target, socket_in(&dir, uid()), log).unwrap();
     (dir, front)
 }
 
@@ -359,11 +350,9 @@ fn a_successor_bound_while_a_front_stops_keeps_its_socket() {
         let stopping = thread::spawn(move || front.stop());
         thread::sleep(Duration::from_millis(20));
 
-        front = Front::start(
+        front = front_for(
             nono.addr,
             socket_in(&dir, uid()),
-            Secret::new(INTERNAL.as_bytes().to_vec()),
-            None,
             Arc::new(Mutex::new(io::sink())),
         )
         .unwrap();
@@ -377,17 +366,6 @@ fn a_successor_bound_while_a_front_stops_keeps_its_socket() {
         );
     }
     front.stop();
-}
-
-#[test]
-fn each_box_and_each_state_dir_gets_its_own_socket() {
-    let at = |state: &str, id: i64| {
-        let socket = FrontSocket::new(Path::new("/s"), 0, Path::new(state), BoxId::new(id));
-        socket.path().to_path_buf()
-    };
-    assert_eq!(at("/a", 1), at("/a", 1));
-    assert_ne!(at("/a", 1), at("/a", 2));
-    assert_ne!(at("/a", 1), at("/b", 1));
 }
 
 /// A hard link reaches a listener whose path is gone, so it shows the listener closed.
@@ -475,14 +453,7 @@ fn a_file_left_at_the_socket_path_is_replaced() {
     std::fs::set_permissions(dir.path().join("s"), std::fs::Permissions::from_mode(0o700)).unwrap();
     std::fs::write(socket.path(), b"stale").unwrap();
 
-    let front = Front::start(
-        nono.addr,
-        socket.clone(),
-        Secret::new(INTERNAL.as_bytes().to_vec()),
-        None,
-        Arc::new(Mutex::new(io::sink())),
-    )
-    .unwrap();
+    let front = front_for(nono.addr, socket.clone(), Arc::new(Mutex::new(io::sink()))).unwrap();
 
     assert!(std::fs::symlink_metadata(socket.path())
         .unwrap()

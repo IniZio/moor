@@ -49,21 +49,8 @@ fn help_exits_zero() {
 }
 
 #[test]
-fn proxy_serve_parses_box_id() {
-    assert!(matches!(
-        parse(argv(&["proxy", "serve", "7"])),
-        Parsed::ProxyServe { box_id, .. } if box_id == moor_core::BoxId::new(7)
-    ));
-}
-
-#[test]
-fn proxy_serve_without_box_id_is_usage() {
-    assert_eq!(done(&["proxy", "serve"]).code, 2);
-}
-
-#[test]
-fn proxy_serve_non_numeric_box_id_is_usage() {
-    assert_eq!(done(&["proxy", "serve", "abc"]).code, 2);
+fn proxy_serve_is_gone() {
+    assert_eq!(done(&["proxy", "serve", "7"]).code, 2);
 }
 
 #[test]

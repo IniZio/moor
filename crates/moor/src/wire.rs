@@ -1,15 +1,11 @@
 //! Composition root: the only module that names concrete adapters.
 
 use std::collections::BTreeMap;
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, LazyLock, Mutex, OnceLock, PoisonError};
+use std::sync::{Arc, LazyLock, OnceLock};
 use std::time::Duration;
 
-use moor_core::BoxId;
 use moor_migrate::Outcome;
-use signal_hook::consts::{SIGINT, SIGTERM};
 
 #[cfg(test)]
 use moor_core::config::SurfaceKind;
@@ -36,11 +32,8 @@ use crate::adapters::rng::SystemRng;
 use crate::adapters::sockets::socket_dir;
 use crate::config_load::load_user;
 use crate::cx::{Cx, CxParts, MachineLinks};
-use crate::env::{Env, PROXY_KEY};
+use crate::env::Env;
 use crate::error::CommandError;
-use crate::proxy::ledger::BoxLedger;
-use crate::proxy::nono::capture::UserSecretsFn;
-use crate::proxy::{serve, Deps, Sink};
 use crate::store::{Database, Store};
 
 /// Host variables herdr needs to find its socket and terminal.
@@ -243,62 +236,6 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
         prompt_window: prompt_window(env),
     };
     Ok((parts, link_warning))
-}
-
-/// Run the credential proxy for `box_id` until a stop signal; returns the exit code.
-///
-/// Setup failures are written to `stderr` as one `moor proxy: <error>` line.
-pub fn serve_proxy(env: &Env, box_id: BoxId, stderr: impl Write + Send + 'static) -> u8 {
-    let sink: Sink = Arc::new(Mutex::new(stderr));
-    match run_proxy(env, box_id, &sink) {
-        Ok(code) => code,
-        Err(e) => {
-            // The sink is the only channel left; a failed write has nowhere to go.
-            let _ = writeln!(
-                sink.lock().unwrap_or_else(PoisonError::into_inner),
-                "moor proxy: {e}"
-            );
-            1
-        }
-    }
-}
-
-/// Builds the proxy's dependencies and serves; `Err` is a setup failure.
-fn run_proxy(env: &Env, box_id: BoxId, sink: &Sink) -> Result<u8, String> {
-    let sockets = socket_dir();
-    let (parts, _) = parts(env, sockets.clone()).map_err(|e| e.error.to_string())?;
-    let clock = Arc::clone(&parts.clock);
-    let proc = Arc::clone(&parts.proc);
-    let cx = Cx::new(parts);
-    let state_dir = cx.state_dir().map_err(|e| e.error.to_string())?;
-    let key = env.get(PROXY_KEY).ok_or("MOOR_PROXY_KEY is required")?;
-    let ledger = Arc::new(BoxLedger::new(state_dir, box_id, key.to_owned()));
-    let stop = Arc::new(AtomicBool::new(false));
-    for sig in [SIGTERM, SIGINT] {
-        signal_hook::flag::register(sig, Arc::clone(&stop)).map_err(|e| e.to_string())?;
-    }
-    let shared = Arc::clone(&ledger);
-    let secrets: UserSecretsFn =
-        Arc::new(move |name| shared.secret(name).map_err(|e| e.to_string()));
-    let deps = Deps {
-        ledger,
-        driver: cx.driver(),
-        clock,
-        rng: cx.rng(),
-        secrets,
-        upstream_ca: None,
-        upstream_dial: None,
-        guard_exempt: Vec::new(),
-        machine_service: cx.config().machines.service.clone(),
-        relay: None,
-        state_dir,
-        sockets: &sockets,
-        owner: rustix::process::getuid().as_raw(),
-        boot_id: proc.boot_id(),
-        stop,
-        stderr: Arc::clone(sink),
-    };
-    Ok(serve(&deps, box_id))
 }
 
 /// The environment variable that sets the first-run prompt watch window, in milliseconds.

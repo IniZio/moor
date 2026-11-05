@@ -85,7 +85,6 @@ fn boxed_proxy() -> BoxProxy {
             box_env: vec![("RULE".to_owned(), "x".to_owned())],
             egress_port: 4001,
             hosts: Vec::new(),
-            forwarder: false,
         },
         rule_env: vec![("RULE".to_owned(), "x".to_owned())],
     }

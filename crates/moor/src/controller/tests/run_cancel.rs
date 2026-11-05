@@ -23,8 +23,7 @@ use super::fronts::{ask, Served};
 use super::host_paths::{ready_box, BOX};
 use crate::adapters::clock::SystemClock;
 use crate::ops::run_fixture::req;
-use crate::proxy::supervisor::LEASE;
-use crate::store::{Fenced, Lease, ReadyProc, Reserve, Store, EGRESS_PORT_MAX, EGRESS_PORT_MIN};
+use crate::store::{Store, EGRESS_PORT_MAX, EGRESS_PORT_MIN};
 use crate::testing::driver::live_in_group;
 
 /// Polls of [`POLL`] a test waits before it gives up, 10 s in all.
@@ -88,21 +87,9 @@ impl Rng for Draw {
     }
 }
 
-/// Records a ready Proxy for Box `id` whose supervisor holds a fresh lease, so a run reuses it.
+/// Records a Proxy row and CA for Box `id`, so a run reuses them.
 fn proxy_ready(store: &Store, id: BoxId, rng: &dyn Rng) {
-    let reserved = store.reserve(id, rng, LEASE).unwrap();
-    assert!(matches!(reserved, Reserve::Reserved(_)), "{reserved:?}");
-    assert_eq!(
-        store.claim_lease(id, "test", LEASE).unwrap(),
-        Lease::Claimed
-    );
-    let proc = ReadyProc {
-        pid: std::process::id(),
-        handle: "h",
-        boot_id: None,
-    };
-    let marked = store.mark_ready(id, "test", 2000, proc).unwrap();
-    assert_eq!(marked, Fenced::Applied);
+    store.reserve(id, rng).unwrap();
     let ca = crate::testing::proxy_host::stored_ca(id);
     store.keep_proxy_ca(id, &ca).unwrap();
 }

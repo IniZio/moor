@@ -3,7 +3,6 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 use moor_core::seam::proxy_host::{
     ProxyEndpoint, ProxyHost, ProxyHostError, ProxySpec, ProxyStatus,
@@ -54,7 +53,7 @@ impl KeptProxy {
             return Ok(row);
         }
         store
-            .reserve(box_id, self.rng.as_ref(), Duration::ZERO)
+            .reserve(box_id, self.rng.as_ref())
             .map(drop)
             .map_err(|e| failed(&e))?;
         store

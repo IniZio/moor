@@ -153,11 +153,7 @@ fn retry_in_the_same_box_delivers_the_egress_forwarder_again() {
     let id = started(&w);
     let store = w.cx.store().unwrap();
     let _ = store
-        .reserve(
-            id,
-            &crate::testing::rng::FakeRng::default(),
-            std::time::Duration::from_secs(30),
-        )
+        .reserve(id, &crate::testing::rng::FakeRng::default())
         .unwrap();
     assert!(store.set_egress_token(id, b"t1").unwrap());
     assert!(store.note_egress_token_delivered(id, b"t1", 1).unwrap());

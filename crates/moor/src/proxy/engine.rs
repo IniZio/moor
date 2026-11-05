@@ -1,5 +1,5 @@
-//! The nono proxy of one Box, with its capture and request log. A supervisor puts its Box's
-//! engine behind a CONNECT front; the shared egress Proxy runs one engine per Box it serves.
+//! The nono proxy of one Box, with its capture and request log. The shared egress Proxy runs
+//! one engine per Box it serves and sends each of the Box's tunnels into it as a CONNECT.
 
 use std::net::SocketAddr;
 use std::path::Path;
@@ -11,10 +11,7 @@ use moor_core::seam::clock::Clock;
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::{BoxId, Secret};
 
-use super::run::say;
-use super::Deps;
 use crate::proxy::chain::Proxy;
-use crate::proxy::front::{hold_or_missing, Front, FrontSocket, MachineRoute};
 use crate::proxy::graphql::upstream::Upstream;
 use crate::proxy::graphql::{FilterSpec, GraphqlFilter};
 use crate::proxy::guard::Guard;
@@ -55,54 +52,6 @@ pub(crate) struct Engine {
     log: ProxyLog,
     /// The token nono checks; the Box never sees it.
     internal: Secret,
-}
-
-/// A started proxy behind the CONNECT front the Box reaches.
-pub(super) struct Live {
-    /// The proxy.
-    engine: Engine,
-    /// The CONNECT-only listener in front of nono; its socket is the only one the Box may reach.
-    front: Front,
-}
-
-/// Starts the Box's engine and its front; the caller still holds the lease on failure.
-pub(super) fn listen(deps: &Deps<'_>, box_id: BoxId, spec: &ProxySpec) -> Result<Live, String> {
-    let engine = engine(&deps.parts(), box_id, spec)?;
-    let socket = FrontSocket::new(deps.sockets, deps.owner, deps.state_dir, box_id);
-    let internal = Secret::new(engine.internal.expose().to_vec());
-    let started = match deps.relay {
-        Some(to) => Front::relay(socket, to),
-        None => Front::start(
-            engine.addr(),
-            socket,
-            internal,
-            machine_route(deps),
-            Arc::clone(&deps.stderr),
-        ),
-    };
-    let front = match started {
-        Ok(front) => front,
-        Err(err) => {
-            engine.stop();
-            return Err(format!("cannot start the proxy front: {err}"));
-        }
-    };
-    Ok(Live { engine, front })
-}
-
-impl Deps<'_> {
-    /// What the Box's engine takes from the supervisor.
-    pub(super) fn parts(&self) -> Parts<'_> {
-        Parts {
-            ledger: &self.ledger,
-            secrets: &self.secrets,
-            clock: &self.clock,
-            state_dir: self.state_dir,
-            upstream_ca: self.upstream_ca.as_deref(),
-            upstream_dial: self.upstream_dial,
-            guard_exempt: &self.guard_exempt,
-        }
-    }
 }
 
 /// Loads the Box CA, opens the log and starts the filter and the proxy.
@@ -206,14 +155,6 @@ fn box_ca(parts: &Parts<'_>, box_id: BoxId) -> Result<ca::BoxCa, String> {
         .map_err(|err| format!("cannot load the proxy CA: {err}"))
 }
 
-/// The machine service, reading what the Box holds through the ledger per request.
-fn machine_route(deps: &Deps<'_>) -> Option<MachineRoute> {
-    let service = deps.machine_service.clone()?;
-    let ledger = Arc::clone(&deps.ledger);
-    let held = Arc::new(move || hold_or_missing(&ledger));
-    Some(MachineRoute { service, held })
-}
-
 /// A fresh token nono authenticates with: 32 random bytes as base64url text.
 /// The Box never sees it, so a request looped back into nono's own port cannot authenticate.
 fn internal_token() -> Result<Secret, String> {
@@ -238,7 +179,7 @@ fn lists_host(rule: &ResolvedRule, host: &str) -> bool {
 /// The `GH_TOKEN` a Box gets from the rules for the GitHub API; a later rule
 /// replaces an earlier one, as in the Box env. A value that cannot be one
 /// header token counts as none, so config can never add a header line.
-pub(super) fn github_placeholder(rules: &[ResolvedRule]) -> Option<String> {
+pub(crate) fn github_placeholder(rules: &[ResolvedRule]) -> Option<String> {
     rules
         .iter()
         .rev()
@@ -297,50 +238,5 @@ fn start_filter(
 fn stop_filter(filter: Option<GraphqlFilter>) {
     if let Some(f) = filter {
         f.stop();
-    }
-}
-
-impl Live {
-    /// The socket of the CONNECT-only front, the only listener the Box may reach.
-    pub(super) fn socket(&self) -> &Path {
-        self.front.path()
-    }
-
-    /// Binds the front socket again when its file is gone.
-    pub(super) fn rebind(&self) -> Result<(), String> {
-        self.front.rebind()
-    }
-
-    /// The port nono itself listens on, for tests that probe it directly.
-    #[cfg(test)]
-    pub(super) const fn nono_port(&self) -> u16 {
-        self.engine.proxy.port()
-    }
-
-    /// Stops the front, then the engine.
-    pub(super) fn stop(self) {
-        self.front.stop();
-        self.engine.stop();
-    }
-
-    /// Address of the running GraphQL filter, when one was started.
-    #[cfg(test)]
-    pub(super) fn graphql_addr(&self) -> Option<std::net::SocketAddr> {
-        self.engine.graphql.as_ref().map(GraphqlFilter::addr)
-    }
-
-    /// Moves the audit events recorded since the last call into the log and the store.
-    pub(super) fn drain(&self, deps: &Deps<'_>) {
-        self.engine.drain(&deps.ledger);
-    }
-
-    /// Removes the Box CA directory.
-    pub(super) fn forget(deps: &Deps<'_>, box_id: BoxId) {
-        if let Err(err) = ca::remove(deps.state_dir, box_id) {
-            say(
-                &deps.stderr,
-                format_args!("cannot remove the proxy CA: {err}"),
-            );
-        }
     }
 }

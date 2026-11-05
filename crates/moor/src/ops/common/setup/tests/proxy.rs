@@ -41,7 +41,6 @@ fn setup_gets_the_proxy_and_ca_variables_the_agent_gets() {
             box_env: vec![("A".to_owned(), "1".to_owned())],
             egress_port: 4001,
             hosts: Vec::new(),
-            forwarder: false,
         },
         rule_env: Vec::new(),
     };
@@ -103,7 +102,6 @@ fn proxy() -> BoxProxy {
             box_env: Vec::new(),
             egress_port: 4001,
             hosts: Vec::new(),
-            forwarder: false,
         },
         rule_env: Vec::new(),
     }

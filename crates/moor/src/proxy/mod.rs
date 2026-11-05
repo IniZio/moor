@@ -5,12 +5,13 @@
 //!
 //! The nono module embeds nono-proxy as each Box's egress proxy.
 //!
-//! The supervisor owns the proxy's lifetime. The fronts module is the front Proxy, which
-//! serves the controller's fronts rather than Boxes. The egress module is the shared Proxy,
-//! which serves many Boxes by token.
+//! The egress module is the shared Proxy, which serves many Boxes by token and runs each Box's
+//! engine. The fronts module is the front Proxy, which serves the controller's fronts rather
+//! than Boxes. Each Box's keeper in the controller holds its tunnel and machine forwards.
 
 pub(crate) mod chain;
 pub(crate) mod egress;
+pub(crate) mod engine;
 pub(crate) mod forwarder;
 pub(crate) mod front;
 pub(crate) mod fronts;
@@ -21,19 +22,19 @@ pub(crate) mod ledger;
 pub(crate) mod links;
 pub(crate) mod nono;
 pub(crate) mod route;
-pub(crate) mod supervisor;
 pub(crate) mod token;
 
-pub(crate) use supervisor::{serve, Deps, Sink};
-
 use std::fs::{DirBuilder, File, OpenOptions, Permissions};
-use std::io::Write as _;
+use std::io::Write;
 use std::os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _, PermissionsExt as _};
 use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use moor_core::seam::clock::Clock;
 use moor_core::BoxId;
+
+/// Shared line sink; the lock keeps each line whole.
+pub(crate) type Sink = Arc<Mutex<dyn Write + Send>>;
 
 /// Append-only per-Box request log at `<state>/proxy/<box_id>.log`.
 pub(crate) struct ProxyLog {

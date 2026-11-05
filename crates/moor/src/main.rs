@@ -75,10 +75,6 @@ fn main() -> ExitCode {
         Parsed::Request(inv) => run(env, inv),
         Parsed::CallStdin(opts) => run_call(env, opts),
         Parsed::Stdin { opts, then } => run_stdin(env, opts, then),
-        Parsed::ProxyServe { opts, box_id } => {
-            let env = scoped(env, &opts);
-            return ExitCode::from(moor::serve_proxy(&env, box_id, std::io::stderr()));
-        }
         Parsed::ControllerServe { opts, config } => {
             let env = scoped(env, &opts);
             return ExitCode::from(moor::controller::serve(&env, &config, std::io::stderr()));

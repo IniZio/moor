@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use moor_core::request::{CloseFailedReq, EndSessionReq, OpenHostSessionReq, OpenSessionReq};
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::{
-    BoxId, BoxName, BoxReq, CloseReq, CpReq, EnvReq, GateReq, Request, RunReq, ShowReq, StartReq,
+    BoxName, BoxReq, CloseReq, CpReq, EnvReq, GateReq, Request, RunReq, ShowReq, StartReq,
     SteerReq, WaitFor, WaitReq,
 };
 
@@ -424,10 +424,6 @@ fn admin_verbs() {
 
 #[test]
 fn special_actions() {
-    assert!(matches!(
-        run(&["proxy", "serve", "7"]),
-        Ok((_, Action::ProxyServe(t))) if t == BoxId::new(7)
-    ));
     assert!(matches!(run(&["call"]), Ok((_, Action::CallStdin))));
 }
 

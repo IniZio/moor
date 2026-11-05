@@ -415,7 +415,6 @@ fn proxy_addr() -> ProxyAddr {
         box_env: Vec::new(),
         egress_port: 4568,
         hosts: Vec::new(),
-        forwarder: false,
     }
 }
 

@@ -22,8 +22,6 @@ const HELLO_MAX: u64 = 64 * 1024;
 /// The keys the controller started its Proxy processes with, and who may say hello.
 #[derive(Debug, Default)]
 pub(crate) struct Keys<'a> {
-    /// Whether Box supervisors may say hello; they reach only the unix socket.
-    pub(crate) supervisors: bool,
     /// The front Proxy's key; none when no front Proxy runs.
     pub(crate) fronts: Option<&'a str>,
     /// The shared egress Proxy's key; none while the shared Proxy is off.
@@ -32,8 +30,6 @@ pub(crate) struct Keys<'a> {
 
 /// Whom a connection's hello proved it speaks for.
 enum Bound {
-    /// The supervisor of a Box, with the key it presented.
-    Box(moor_core::BoxId, Zeroizing<String>),
     /// The front Proxy.
     Fronts,
     /// The shared egress Proxy, for one Box or for token lookups.
@@ -46,7 +42,7 @@ pub(crate) fn serve((store, vault): (&Store, &Vault), keys: &Keys<'_>, stream: i
     let Some(line) = next(&mut (&mut read).take(HELLO_MAX)) else {
         return;
     };
-    let bound = match hello(store, keys, &line) {
+    let bound = match hello(keys, &line) {
         Ok(bound) => bound,
         Err(fault) => {
             send(read.get_mut(), &encode(&Err::<(), _>(fault)));
@@ -90,25 +86,10 @@ fn encode<T: Serialize>(reply: &Result<T, Fault>) -> Zeroizing<String> {
 }
 
 /// Whom `line`, a hello, speaks for.
-fn hello(store: &Store, keys: &Keys<'_>, line: &str) -> Result<Bound, Fault> {
+fn hello(keys: &Keys<'_>, line: &str) -> Result<Bound, Fault> {
     let hello: Hello =
         serde_json::from_str(line).map_err(|e| Fault::Refused(format!("bad hello: {e}")))?;
     match hello {
-        Hello::Box { v, box_id, key } => {
-            speaks(v)?;
-            if !keys.supervisors {
-                return Err(Fault::Refused(
-                    "a Box supervisor reaches the ledger on its unix socket only".to_owned(),
-                ));
-            }
-            if !store.proxy_key_is(box_id, key.as_bytes())? {
-                return Err(Fault::Refused(format!(
-                    "not the key of Box {}'s supervisor",
-                    box_id.get()
-                )));
-            }
-            Ok(Bound::Box(box_id, Zeroizing::new(key)))
-        }
         Hello::Fronts { v, key } => {
             speaks(v)?;
             let want = keys
@@ -163,7 +144,6 @@ fn answer((store, vault): (&Store, &Vault), bound: &Bound, line: &str) -> Zeroiz
         (Bound::Fronts, Call::FrontSecret { front, user, name }) => {
             encode(&front_secret((store, vault), &front, user, &name))
         }
-        (Bound::Box(box_id, key), call) => boxes::answer((store, vault), (*box_id, key), call),
         (Bound::Egress(None), Call::TokenBox { token_hash }) => {
             encode(&boxes::token_box(store, &token_hash).map_err(Fault::from))
         }

@@ -61,7 +61,7 @@ impl World {
         let (user, _) = store.enroll(&Identity::local(1), None).unwrap();
         put_secret(&store, &vault, user, "tool-token", SECRET);
         let id = ready_box(&store, user);
-        drop(store.reserve(id, &FakeRng::default(), crate::proxy::supervisor::LEASE));
+        drop(store.reserve(id, &FakeRng::default()));
         let token = token::mint(&store, EGRESS_KEY.as_bytes(), id)
             .unwrap()
             .unwrap();

@@ -23,7 +23,7 @@ use std::fmt;
 use moor_core::BoxId;
 use serde::{Deserialize, Serialize};
 
-pub(crate) use boxes::{BoxLedger, BoxView, CaPair, MachineWant};
+pub(crate) use boxes::{BoxLedger, BoxView, CaPair};
 use call::Call;
 pub(crate) use client::{EgressLedger, FrontsLedger};
 pub(crate) use endpoint::Endpoint;
@@ -38,15 +38,6 @@ pub(crate) const LEDGER: u32 = 1;
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Hello {
-    /// A Box's supervisor, with the key the controller started it with.
-    Box {
-        /// The protocol it speaks.
-        v: u32,
-        /// The Box it serves.
-        box_id: BoxId,
-        /// Its key.
-        key: String,
-    },
     /// The front Proxy, with the key the controller started it with.
     Fronts {
         /// The protocol it speaks.

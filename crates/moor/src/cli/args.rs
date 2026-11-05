@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand};
 use moor_core::controller::WatchFilter;
 use moor_core::request::{EndSessionReq, ShowSessionReq};
-use moor_core::{BoxId, BoxName, Request, RunReq, SessionId, ShowReq, StartReq, SteerReq};
+use moor_core::{BoxName, Request, RunReq, SessionId, ShowReq, StartReq, SteerReq};
 
 use super::args_admin::{AdminCmd, GateCmd};
 use super::args_probe::Flags;
@@ -44,8 +44,6 @@ pub(super) enum Action {
     Request(Request),
     /// `call`: read a JSON request from stdin.
     CallStdin,
-    /// Hidden `proxy serve <box_id>`: serve the credential proxy for that Box.
-    ProxyServe(BoxId),
     /// `controller serve --config <file>`: run the controller daemon.
     ControllerServe(PathBuf),
     /// `controller attach [--socket <path>]`: bridge stdio to the controller socket.
