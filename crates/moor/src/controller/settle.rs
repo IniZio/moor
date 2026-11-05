@@ -47,6 +47,15 @@ pub(super) fn spawn_oauth(
     );
 }
 
+/// How often the controller looks for workflow runs to start, finish or expire.
+const WORKFLOW_EVERY: Duration = Duration::from_secs(30);
+
+/// Runs the workflow pass each [`WORKFLOW_EVERY`], on its own thread so a slow Box start or
+/// a slow settle pass never delays it.
+pub(super) fn spawn_workflows(env: &Env, drain: &Arc<Drain>, sink: &Sink) {
+    passes(WORKFLOW_EVERY, drain, sink, Moor::workflow_pass(env));
+}
+
 /// Runs `pass` each `every` on a detached thread, logging each message it returns.
 ///
 /// The drain waits for a pass already running. `pass` checks `draining` before each Box and

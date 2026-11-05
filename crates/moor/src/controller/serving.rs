@@ -31,6 +31,12 @@ pub(super) fn serve_started(
         log(sink, &format!("start: {line}"));
     }
     resume_setups_in_background(claimed, &running.env, sink);
+    for line in Moor::from_env(&running.env).map_or_else(
+        |e| vec![e.error.to_string()],
+        |moor| moor.resolve_interrupted_workflow_runs(),
+    ) {
+        log(sink, &format!("workflow: {line}"));
+    }
     let shim = std::env::current_exe().map_or_else(|_| "/proc/self/exe".into(), OsString::from);
     let mut fronts = running.supervise_fronts((shim, vec!["front-shim".into()]), sink);
     let drain = Arc::new(Drain::default());
@@ -43,6 +49,7 @@ pub(super) fn serve_started(
         &drain,
         sink,
     );
+    settle::spawn_workflows(&running.env, &drain, sink);
     reconcile_in_background(reconcile, &running.env, &drain, sink);
     running.serve_until(wake, &drain, sink);
     fronts.wait();

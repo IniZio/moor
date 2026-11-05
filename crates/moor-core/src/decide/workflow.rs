@@ -139,7 +139,9 @@ pub fn workflow_breaker(workflow: &Workflow, runs: &[WorkflowRun]) -> Option<Wor
             match run.outcome {
                 WorkflowOutcome::Refused { .. } | WorkflowOutcome::TimedOut { .. } => streak += 1,
                 WorkflowOutcome::Finished { .. } => break,
-                WorkflowOutcome::Started { .. } | WorkflowOutcome::SkippedOverlap => {}
+                WorkflowOutcome::Starting
+                | WorkflowOutcome::Started { .. }
+                | WorkflowOutcome::SkippedOverlap => {}
             }
         }
         (streak >= BREAKER_STREAK).then(|| WorkflowDisable {
@@ -159,5 +161,8 @@ const fn overlap_policy(previous_open: bool, due_at: Ts) -> WorkflowVerdict {
     }
 }
 
+mod finished;
 #[cfg(test)]
 mod tests;
+
+pub use finished::{run_finished, RunBoxFacts, QUIET_BEFORE_FINISHED};

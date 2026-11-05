@@ -300,6 +300,7 @@ impl Moor {
 }
 
 mod feed;
+mod workflow;
 
 #[cfg(test)]
 mod tests;
