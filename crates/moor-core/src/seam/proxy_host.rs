@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use crate::config::proxy::ResolvedRule;
 use crate::name::{BoxHandle, BoxId};
 use crate::seam::forge::ForgeRepo;
-use crate::secret::Secret;
 use crate::user::UserId;
 
 /// What the Proxy host needs to run a Box's Proxy; it holds no secret values.
@@ -37,8 +36,6 @@ pub struct ProxyEndpoint {
     pub egress_port: u16,
     /// The public Box CA certificate in PEM form; not secret.
     pub ca_pem: String,
-    /// The token the Box presents to the shared egress Proxy, only on the start that minted it.
-    pub egress_token: Option<Secret>,
 }
 
 impl fmt::Debug for ProxyEndpoint {
@@ -47,7 +44,6 @@ impl fmt::Debug for ProxyEndpoint {
             .field("box_port", &self.box_port)
             .field("egress_port", &self.egress_port)
             .field("ca_pem_len", &self.ca_pem.len())
-            .field("egress_token", &self.egress_token.is_some())
             .finish()
     }
 }

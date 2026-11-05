@@ -218,28 +218,6 @@ fn a_second_ensure_reuses_the_running_supervisor() {
 }
 
 #[test]
-fn each_ensure_remints_an_egress_token_until_one_is_delivered() {
-    let f = fx();
-    let store = f.sup.store().unwrap();
-    let box_id = f.spec().box_id;
-    let owner = |t: &moor_core::Secret| {
-        let hash = crate::store::token_hash(t.expose());
-        store.egress_token_box(&hash).unwrap()
-    };
-    let lost = f.sup.ensure(&f.spec()).unwrap().egress_token.unwrap();
-    let again = f.sup.ensure(&f.spec()).unwrap().egress_token;
-    let again = again.expect("a token that never reached the Box is minted again");
-    assert_eq!(owner(&lost), None, "the lost token stops working");
-    assert_eq!(owner(&again), Some(box_id));
-    assert!(store
-        .note_egress_token_delivered(box_id, again.expose())
-        .unwrap());
-    let later = f.sup.ensure(&f.spec()).unwrap().egress_token;
-    assert!(later.is_none(), "a delivered token is kept");
-    assert_eq!(owner(&again), Some(box_id));
-}
-
-#[test]
 fn a_supervisor_that_never_gets_ready_fails_with_the_log_tail() {
     let f = bare();
     hang_after_logging(&f, 25);
