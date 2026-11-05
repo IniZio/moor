@@ -33,8 +33,6 @@ pub(super) enum Stop {
     FrontLost,
     /// A store error made it give up.
     Failed,
-    /// The controller went unanswered for longer than the lease allows.
-    Unreachable,
 }
 
 /// A proxy that is up: lease held, front listening, tunnel open, row ready.
@@ -59,7 +57,7 @@ pub(super) struct Running<'d> {
     pub(super) machine: RefCell<MachineSlot>,
     /// Set while the tunnel stays down past the quick restarts.
     pub(super) outage: OutageSlot,
-    /// When the controller last answered a heartbeat.
+    /// Whether the controller answered the latest heartbeat.
     pub(super) contact: Contact,
 }
 
@@ -236,7 +234,7 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, box_id: BoxId) -> Result<Running<'d>
         box_port,
         machine: RefCell::default(),
         outage: OutageSlot::default(),
-        contact: Contact::new(deps.clock.instant()),
+        contact: Contact::new(),
     };
     if parked {
         // Answers a pending request: Parked is acked, Up reopens the tunnel.

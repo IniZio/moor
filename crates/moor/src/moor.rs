@@ -85,15 +85,18 @@ impl Moor {
     }
 
     /// Serves one connection on the ledger socket, the store calls of the Proxy processes,
-    /// with `fronts_key` as the front Proxy's key; each call runs while `answering` gives a
-    /// guard.
-    pub(crate) fn serve_ledger<G>(
+    /// with `fronts_key` as the front Proxy's key.
+    pub(crate) fn serve_ledger(
         (env, vault): (&Env, &Vault),
         fronts_key: Option<&str>,
         (read, write): (impl std::io::BufRead, impl std::io::Write),
-        answering: impl FnMut() -> Option<G>,
     ) {
-        wire::serve_ledger((env, vault), fronts_key, (read, write), answering);
+        wire::serve_ledger((env, vault), fronts_key, (read, write));
+    }
+
+    /// How long a Box Proxy's lease lasts without a heartbeat.
+    pub(crate) const fn proxy_lease() -> std::time::Duration {
+        wire::PROXY_LEASE
     }
 
     /// Settles the Proxy supervisors recorded in the state store; one line per failure.

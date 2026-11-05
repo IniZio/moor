@@ -374,6 +374,7 @@ mod store_copy;
 pub use store_copy::copy_store;
 mod surface_pick;
 
+pub(crate) use crate::proxy::detached::LEASE as PROXY_LEASE;
 pub(crate) use ledger::serve_ledger;
 
 pub(crate) use surface_pick::surface_kind;

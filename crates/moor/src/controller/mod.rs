@@ -75,7 +75,13 @@ pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u
             return 1;
         }
     };
-    serve_started(running, &wake, &sink, Moor::reconcile_proxies)
+    serve_started(
+        running,
+        &wake,
+        &sink,
+        Moor::proxy_lease(),
+        Moor::reconcile_proxies,
+    )
 }
 
 /// Why the controller did not start.
@@ -323,7 +329,7 @@ impl Running {
         }
         listeners.push((self.runner, serve(peer::On::Runner)));
         let (ledger, key) = self.ledger;
-        listeners.push((ledger, ledger::handler((&self.env, &self.vault), key, sink)));
+        ledger::serve_until_exit(ledger, (&self.env, &self.vault), key, sink);
         match drain::serve_until(&listeners, wake, drain, self.drain_timeout, sink) {
             0 => log(sink, "drained; exiting"),
             left => log(

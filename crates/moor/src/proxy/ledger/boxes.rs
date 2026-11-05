@@ -1,6 +1,6 @@
 //! A Box supervisor's ledger: its store calls, each for the Box its key was minted for.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
@@ -10,6 +10,7 @@ use moor_core::domain::event::{Event, MachineEvent};
 use moor_core::user::SecretName;
 use moor_core::{BoxHandle, BoxId, Secret};
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 
 use super::client::Ledger;
 use super::{Call, Hello, LedgerError, LEDGER};
@@ -42,6 +43,16 @@ pub(crate) struct MachineWant {
     pub(crate) machine_id: i64,
 }
 
+/// The last answers the controller gave to the reads a request makes, served while it is
+/// unavailable. A secret revoked meanwhile stays in use until the controller answers again.
+#[derive(Default)]
+struct LastAnswers {
+    /// Each secret by name, `None` when the user had none.
+    secrets: BTreeMap<SecretName, Option<Zeroizing<Vec<u8>>>>,
+    /// What the Box held.
+    hold: Option<Hold>,
+}
+
 /// The ledger of one Box's supervisor.
 pub(crate) struct BoxLedger {
     /// The Box it calls for.
@@ -52,6 +63,8 @@ pub(crate) struct BoxLedger {
     pending: Mutex<VecDeque<Event>>,
     /// Audit events dropped since last asked.
     dropped: AtomicUsize,
+    /// What the reads a request makes last returned.
+    last: Mutex<LastAnswers>,
 }
 
 impl BoxLedger {
@@ -72,6 +85,7 @@ impl BoxLedger {
             ledger: Ledger::new(socket, &hello),
             pending: Mutex::new(VecDeque::new()),
             dropped: AtomicUsize::new(0),
+            last: Mutex::default(),
         }
     }
 
@@ -185,9 +199,19 @@ impl BoxLedger {
         self.ledger.call(&Call::BoxMachine)
     }
 
-    /// What the Box holds, as the machine service reads it on each request.
+    /// What the Box holds, as the machine service reads it on each request; the last answer
+    /// while the controller is unavailable.
     pub(crate) fn hold(&self) -> Result<Hold, LedgerError> {
-        self.ledger.call(&Call::Hold)
+        let answer = self.ledger.call::<Hold>(&Call::Hold);
+        let mut last = self.last();
+        match answer {
+            Ok(hold) => {
+                last.hold = Some(hold.clone());
+                Ok(hold)
+            }
+            Err(e @ LedgerError::Unavailable(_)) => last.hold.clone().ok_or(e),
+            Err(e) => Err(e),
+        }
     }
 
     /// Frees the Box's slot as it sleeps; the machine's name when it held one.
@@ -254,10 +278,28 @@ impl BoxLedger {
         })
     }
 
-    /// The secret `name` of the Box's user.
+    /// The secret `name` of the Box's user; the last answer while the controller is unavailable.
     pub(crate) fn secret(&self, name: &SecretName) -> Result<Option<Secret>, LedgerError> {
-        let bytes: Option<Vec<u8>> = self.ledger.call(&Call::Secret { name: name.clone() })?;
-        Ok(bytes.map(Secret::new))
+        let answer = self
+            .ledger
+            .call::<Option<Vec<u8>>>(&Call::Secret { name: name.clone() })
+            .map(|bytes| bytes.map(Zeroizing::new));
+        let mut last = self.last();
+        let bytes = match answer {
+            Ok(bytes) => {
+                last.secrets.insert(name.clone(), bytes.clone());
+                bytes
+            }
+            Err(e @ LedgerError::Unavailable(_)) => last.secrets.get(name).cloned().ok_or(e)?,
+            Err(e) => return Err(e),
+        };
+        drop(last);
+        Ok(bytes.map(|b| Secret::new(b.to_vec())))
+    }
+
+    /// The last answers, locked.
+    fn last(&self) -> std::sync::MutexGuard<'_, LastAnswers> {
+        self.last.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Removes the proxy row.
