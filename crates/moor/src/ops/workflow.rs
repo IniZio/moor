@@ -22,7 +22,7 @@ use crate::ops::end_session;
 use crate::ops::start;
 use crate::store::{BoxRow, Store, StoreError};
 
-/// How many of a repo's latest runs the tick reads: enough for the breaker to see past skips.
+/// How many of a repo's latest unskipped runs the breaker reads; it needs only a streak of 3.
 const HISTORY: u64 = 20;
 
 /// One claimed firing, ready to start a Box.
@@ -86,7 +86,7 @@ fn tick_one(
     finish_runs(store, w, now)?;
     expire_runs(cx, store, w, now, out)?;
     let history = history(store, w)?;
-    if let Some(trip) = workflow_breaker(w, &history.runs) {
+    if let Some(trip) = workflow_breaker(w, &history.unskipped) {
         if store.disable_workflow(w.id, &trip.reason)? {
             out.push(format!("workflow {} disabled: {}", w.name, trip.reason));
         }
@@ -114,23 +114,28 @@ fn tick_one(
     Ok(())
 }
 
-/// Each repo's latest runs.
+/// What the tick reads of a workflow's runs.
 struct History {
-    /// The workflow's runs of every repo, newest first within each repo.
-    runs: Vec<WorkflowRun>,
+    /// Each repo's latest run of any kind, which sets its latest due time.
+    latest: Vec<WorkflowRun>,
+    /// Each repo's latest run that was a real attempt, however many skips and refusals followed.
+    real: Vec<WorkflowRun>,
+    /// Each repo's latest runs that were not skipped, for the breaker.
+    unskipped: Vec<WorkflowRun>,
 }
 
 impl History {
     /// The decider's facts: each repo's latest due time and its latest real run. Skipped and
     /// refused runs are looked through, so a skip does not unblock the next firing.
     fn facts(&self, store: &Store) -> Result<Vec<WorkflowRepoFacts>, StoreError> {
-        let mut facts: Vec<WorkflowRepoFacts> = Vec::new();
-        for run in &self.runs {
-            if facts.iter().any(|f| f.repo == run.repo) {
-                continue;
-            }
-            let mine = || self.runs.iter().filter(|r| r.repo == run.repo);
-            let prior = match mine().find_map(|r| real_run(&r.outcome)) {
+        let mut facts = Vec::new();
+        for run in &self.latest {
+            let prior = match self
+                .real
+                .iter()
+                .find(|r| r.repo == run.repo)
+                .and_then(|r| real_run(&r.outcome))
+            {
                 Some(Real::Prior(p)) => Some(p),
                 Some(Real::TimedOut(id)) => Some(PriorRun::TimedOut {
                     box_open: box_is_open(store, id)?,
@@ -139,7 +144,7 @@ impl History {
             };
             facts.push(WorkflowRepoFacts {
                 repo: run.repo.clone(),
-                last_due: mine().map(|r| r.due_at).max(),
+                last_due: Some(run.due_at),
                 prior,
             });
         }
@@ -166,13 +171,20 @@ const fn real_run(outcome: &WorkflowOutcome) -> Option<Real> {
     }
 }
 
-/// Reads each repo's latest runs of `w`.
+/// Reads what the tick needs of `w`'s runs, each query independent of how many skips there are.
 fn history(store: &Store, w: &Workflow) -> Result<History, StoreError> {
-    let mut runs = Vec::new();
+    let mut h = History {
+        latest: Vec::new(),
+        real: Vec::new(),
+        unskipped: Vec::new(),
+    };
     for repo in &w.repos {
-        runs.extend(store.recent_workflow_runs(w.id, repo, HISTORY)?);
+        h.latest.extend(store.recent_workflow_runs(w.id, repo, 1)?);
+        h.real.extend(store.latest_real_run(w.id, repo)?);
+        h.unskipped
+            .extend(store.recent_unskipped_runs(w.id, repo, HISTORY)?);
     }
-    Ok(History { runs })
+    Ok(h)
 }
 
 /// Whether Box `id` exists and is neither closed nor rejected.
