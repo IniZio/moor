@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use super::client::Ledger;
-use super::{Call, Hello, LedgerError, LEDGER};
+use super::{Call, Endpoint, Hello, LedgerError, LEDGER};
 use crate::ledger_dir;
 use crate::proxy::front::Hold;
 use crate::store::{Fenced, Lease, MachineWake, ReadyProc, TunnelAck, TunnelRequest};
@@ -96,25 +96,25 @@ impl BoxLedger {
             box_id,
             key,
         };
-        Self::with_hello(box_id, socket, &hello)
+        Self::with_hello(box_id, Endpoint::Unix(socket), &hello)
     }
 
-    /// The shared egress Proxy's ledger on `socket` for `box_id`, presenting its `key`; the
+    /// The shared egress Proxy's ledger at `endpoint` for `box_id`, presenting its `key`; the
     /// controller answers only the reads a request makes and its audit.
-    pub(crate) fn egress(socket: PathBuf, box_id: BoxId, key: String) -> Self {
+    pub(crate) fn egress(endpoint: Endpoint, box_id: BoxId, key: String) -> Self {
         let hello = Hello::Egress {
             v: LEDGER,
             key,
             box_id: Some(box_id),
         };
-        Self::with_hello(box_id, socket, &hello)
+        Self::with_hello(box_id, endpoint, &hello)
     }
 
-    /// The ledger on `socket` for `box_id`, opening each connection with `hello`.
-    fn with_hello(box_id: BoxId, socket: PathBuf, hello: &Hello) -> Self {
+    /// The ledger at `endpoint` for `box_id`, opening each connection with `hello`.
+    fn with_hello(box_id: BoxId, endpoint: Endpoint, hello: &Hello) -> Self {
         Self {
             box_id,
-            ledger: Ledger::new(socket, hello),
+            ledger: Ledger::new(endpoint, hello),
             pending: Mutex::new(VecDeque::new()),
             dropped: AtomicUsize::new(0),
             last: Mutex::default(),

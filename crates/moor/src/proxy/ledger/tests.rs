@@ -23,6 +23,7 @@ use crate::testing::rng::FakeRng;
 use crate::vault::Vault;
 
 mod egress;
+mod endpoint;
 mod start;
 
 /// The shared egress Proxy's key in every served test ledger.
@@ -68,11 +69,11 @@ pub(crate) fn serve_on(
             let (store, vault, fronts) = (store.clone(), Arc::clone(&vault), fronts.clone());
             std::thread::spawn(move || {
                 let keys = Keys {
+                    supervisors: true,
                     fronts: fronts.as_deref(),
                     egress: Some(EGRESS_KEY),
                 };
-                let read = BufReader::new(stream.try_clone().unwrap());
-                serve((&store, &vault), &keys, read, stream);
+                serve((&store, &vault), &keys, stream);
             });
         }
     });
@@ -256,6 +257,17 @@ fn a_hello_at_another_protocol_is_refused() {
     BufReader::new(stream).read_line(&mut reply).unwrap();
     assert!(reply.contains("refused"), "{reply}");
     assert!(reply.contains("ledger 999"), "{reply}");
+}
+
+#[test]
+fn a_hello_too_long_to_be_one_is_refused_without_reading_it_all() {
+    let w = world();
+    let _served = w.serve();
+    let mut stream = UnixStream::connect(&w.socket).unwrap();
+    stream.write_all(&vec![b'a'; 128 * 1024]).unwrap();
+    let mut reply = String::new();
+    BufReader::new(stream).read_line(&mut reply).unwrap();
+    assert!(reply.contains("bad hello"), "{reply}");
 }
 
 #[test]

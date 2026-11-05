@@ -1,6 +1,7 @@
 //! The controller process config file: strict parse plus validation, no IO.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -51,6 +52,21 @@ pub struct ControllerConfig {
     slack: Option<Option<serde_json::Value>>,
     /// Fronts that each get a socket bound to their namespace, keyed by that namespace.
     pub fronts: BTreeMap<String, FrontEntry>,
+    /// Where the ledger is also served on TCP with TLS, for a shared egress Proxy in another
+    /// pod; none serves it only on its unix socket.
+    pub ledger_tls: Option<LedgerTls>,
+}
+
+/// The `ledger_tls` entry: the ledger on TCP, behind the controller's certificate.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LedgerTls {
+    /// The address to listen on, such as `0.0.0.0:7443`.
+    pub listen: SocketAddr,
+    /// The PEM certificate chain the controller presents; `~` allowed.
+    pub cert: PathBuf,
+    /// The PEM private key of `cert`; `~` allowed.
+    pub key: PathBuf,
 }
 
 /// One front's entry under `fronts:`.
@@ -109,6 +125,16 @@ impl ControllerConfig {
     #[must_use]
     pub fn settle_every(&self) -> Duration {
         Duration::from_secs(self.settle_every_secs.unwrap_or(DEFAULT_SETTLE_SECS))
+    }
+
+    /// The namespaces of the fronts that take webhooks.
+    #[must_use]
+    pub fn webhook_fronts(&self) -> BTreeSet<String> {
+        self.fronts
+            .iter()
+            .filter(|(_, front)| front.webhooks)
+            .map(|(ns, _)| ns.clone())
+            .collect()
     }
 
     /// The shortest gap a workflow's cron may have between two firings.

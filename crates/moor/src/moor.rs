@@ -89,9 +89,18 @@ impl Moor {
     pub(crate) fn serve_ledger(
         (env, vault): (&Env, &Vault),
         fronts_key: Option<&str>,
-        (read, write): (impl std::io::BufRead, impl std::io::Write),
+        stream: impl std::io::Read + std::io::Write,
     ) {
-        wire::serve_ledger((env, vault), fronts_key, (read, write));
+        wire::serve_ledger((env, vault), fronts_key, stream);
+    }
+
+    /// Serves one connection on the ledger's TLS listener, which answers only the shared
+    /// egress Proxy.
+    pub(crate) fn serve_egress_ledger(
+        (env, vault): (&Env, &Vault),
+        stream: impl std::io::Read + std::io::Write,
+    ) {
+        wire::serve_egress_ledger((env, vault), stream);
     }
 
     /// Moves the spec and CA files Proxies were started from into their rows; one line per

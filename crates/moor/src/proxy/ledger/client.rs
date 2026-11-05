@@ -1,7 +1,6 @@
 //! The Proxy's end of the ledger: a small pool of connections to the controller.
 
 use std::io::{self, BufRead as _, BufReader, Write as _};
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
@@ -12,36 +11,32 @@ use moor_core::Secret;
 use serde::de::DeserializeOwned;
 use zeroize::Zeroizing;
 
-use super::{Call, Fault, Hello, LedgerError, LEDGER};
+use super::endpoint::Duplex;
+use super::{Call, Endpoint, Fault, Hello, LedgerError, LEDGER};
 use crate::ledger_dir;
 
 /// How long one call may wait on the controller before it counts as unavailable.
 const TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Connections to the ledger socket, each opened with the same hello.
+/// Connections to the ledger, each opened with the same hello.
 pub(super) struct Ledger {
-    /// The ledger socket.
-    socket: PathBuf,
+    /// Where the ledger is.
+    endpoint: Endpoint,
     /// The hello line, which carries the key.
     hello: Zeroizing<String>,
     /// Connections between calls.
     idle: Mutex<Vec<Conn>>,
 }
 
-/// One connection past its hello.
-struct Conn {
-    /// Reads replies.
-    read: BufReader<UnixStream>,
-    /// Sends calls.
-    write: UnixStream,
-}
+/// One connection past its hello; calls are written through the reader.
+struct Conn(BufReader<Box<dyn Duplex>>);
 
 impl Ledger {
-    /// A pool for `socket` that dials on first use.
-    pub(super) fn new(socket: PathBuf, hello: &Hello) -> Self {
+    /// A pool for `endpoint` that dials on first use.
+    pub(super) fn new(endpoint: Endpoint, hello: &Hello) -> Self {
         let hello = Zeroizing::new(serde_json::to_string(hello).unwrap_or_default());
         Self {
-            socket,
+            endpoint,
             hello,
             idle: Mutex::new(Vec::new()),
         }
@@ -94,16 +89,8 @@ impl Ledger {
 
     /// A new connection past its hello.
     fn dial(&self) -> Result<Conn, LedgerError> {
-        let stream = UnixStream::connect(&self.socket).map_err(|e| unavailable(&e))?;
-        stream
-            .set_read_timeout(Some(TIMEOUT))
-            .and_then(|()| stream.set_write_timeout(Some(TIMEOUT)))
-            .map_err(|e| unavailable(&e))?;
-        let read = BufReader::new(stream.try_clone().map_err(|e| unavailable(&e))?);
-        let mut conn = Conn {
-            read,
-            write: stream,
-        };
+        let stream = self.endpoint.dial(TIMEOUT).map_err(|e| unavailable(&e))?;
+        let mut conn = Conn(BufReader::new(stream));
         conn.round::<()>(&self.hello)
             .map_err(|e| unavailable(&e))?
             .map_err(LedgerError::from)?;
@@ -114,11 +101,12 @@ impl Ledger {
 impl Conn {
     /// Sends `line` and reads its reply; `Err` means the connection is no good.
     fn round<T: DeserializeOwned>(&mut self, line: &str) -> io::Result<Result<T, Fault>> {
-        self.write.write_all(line.as_bytes())?;
-        self.write.write_all(b"\n")?;
-        self.write.flush()?;
+        let write = self.0.get_mut();
+        write.write_all(line.as_bytes())?;
+        write.write_all(b"\n")?;
+        write.flush()?;
         let mut reply = Zeroizing::new(String::new());
-        if self.read.read_line(&mut reply)? == 0 {
+        if self.0.read_line(&mut reply)? == 0 {
             return Err(io::ErrorKind::UnexpectedEof.into());
         }
         serde_json::from_str(&reply).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
@@ -141,7 +129,10 @@ impl FrontsLedger {
 
     /// The ledger on `socket`, presenting `key`.
     pub(crate) fn at(socket: PathBuf, key: String) -> Self {
-        Self(Ledger::new(socket, &Hello::Fronts { v: LEDGER, key }))
+        Self(Ledger::new(
+            Endpoint::Unix(socket),
+            &Hello::Fronts { v: LEDGER, key },
+        ))
     }
 
     /// The user the live lease `token` of `front` acts for.
@@ -176,14 +167,14 @@ impl FrontsLedger {
 pub(crate) struct EgressLedger(Ledger);
 
 impl EgressLedger {
-    /// The ledger on `socket`, presenting `key`.
-    pub(crate) fn at(socket: PathBuf, key: String) -> Self {
+    /// The ledger at `endpoint`, presenting `key`.
+    pub(crate) fn at(endpoint: Endpoint, key: String) -> Self {
         let hello = Hello::Egress {
             v: LEDGER,
             key,
             box_id: None,
         };
-        Self(Ledger::new(socket, &hello))
+        Self(Ledger::new(endpoint, &hello))
     }
 
     /// The open Box whose egress token hashes to `token_hash`.

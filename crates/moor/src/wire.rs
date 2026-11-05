@@ -379,7 +379,7 @@ pub use store_copy::copy_store;
 mod surface_pick;
 
 pub(crate) use crate::proxy::detached::LEASE as PROXY_LEASE;
-pub(crate) use ledger::{import_proxy_files, serve_ledger};
+pub(crate) use ledger::{import_proxy_files, serve_egress_ledger, serve_ledger};
 
 pub(crate) use surface_pick::surface_kind;
 #[cfg(test)]
