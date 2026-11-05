@@ -34,7 +34,7 @@ fn plan(repo_yaml: &str, user_yaml: &str) -> CachePlan {
 #[test]
 fn the_env_value_is_the_wire_contract_exactly() {
     let p = plan(
-        "cache: {presets: [npm, yarn, pnpm, bun, docker, podman, dart, rust, go], work_tree: false, volumes: [{name: android-sdk, path: /opt/android-sdk, size_gb: 12}]}",
+        "cache: {presets: [cache, pnpm, bun, docker, podman, dart, rust, go, maven, cocoapods, bundler, android], work_tree: false, volumes: [{name: android-sdk, path: /opt/android-sdk, size_gb: 12}]}",
         "",
     );
     let (gradle, sdk) = (p.volumes().first().unwrap(), p.volumes().get(1).unwrap());
@@ -68,7 +68,7 @@ fn the_env_value_is_the_wire_contract_exactly() {
 #[test]
 fn a_volume_with_a_seal_is_sent_sealed_in_a_group_of_its_own() {
     let p = plan(
-        "cache: {presets: [yarn, pnpm, bun, podman, gradle, dart, rust, go]}",
+        "cache: {presets: [pnpm, bun, podman, gradle, dart, rust, go, maven, cocoapods, bundler, android, android-sdk]}",
         "",
     );
     let npm = p.volumes().first().unwrap();
@@ -76,8 +76,8 @@ fn a_volume_with_a_seal_is_sent_sealed_in_a_group_of_its_own() {
     let group = format!("{}x", npm.group);
     let tree = format!("{}w", npm.group);
     let want = serde_json::json!([
-        {"group": npm.group, "name": "npm", "key": format!("{}-npm", npm.group),
-         "paths": ["~/.cache/npm"], "sizeGB": 0},
+        {"group": npm.group, "name": "cache", "key": format!("{}-cache", npm.group),
+         "paths": ["~/.cache"], "sizeGB": 0},
         {"group": group, "name": "docker", "key": format!("{group}-docker"),
          "paths": ["~/docker", "/var/lib/containerd"], "sizeGB": 0, "sealed": true},
         {"group": tree, "name": "worktree", "key": format!("{tree}-worktree"),
@@ -185,7 +185,7 @@ fn scope_of(p: &CachePlan) -> Option<String> {
 fn a_repo_box_with_volumes_sends_the_repo_groups_hash_as_its_scope() {
     let p = plan("", "");
     let npm = p.volumes().first().unwrap();
-    assert_eq!(npm.name.as_str(), "npm");
+    assert_eq!(npm.name.as_str(), "cache");
     assert_eq!(scope_of(&p), Some(npm.group.clone()));
 }
 

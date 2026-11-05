@@ -47,9 +47,9 @@ fn a_provider_with_cache_volumes_gets_the_presets_and_the_repo_volumes() {
     let w = world(FakeDriver::new().cache_volumes());
     let plan = started(&w);
     let got = names(&plan);
-    assert_eq!(got.first(), Some(&"npm"));
+    assert_eq!(got.first(), Some(&"cache"));
     assert_eq!(got.last(), Some(&"sdk"));
-    assert_eq!(got.len(), 12);
+    assert_eq!(got.len(), 16);
     assert!(got.contains(&"worktree"), "{got:?}");
     assert!(cache_warnings(&w).is_empty());
 }

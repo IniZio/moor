@@ -9,7 +9,7 @@ const MARKER: &str = ".crabbox-sealed";
 
 /// Every preset but docker, as a drop list.
 const ALL_BUT_DOCKER: &str =
-    "cache: {presets: [npm, yarn, pnpm, bun, podman, gradle, dart, rust, go], work_tree: false}";
+    "cache: {presets: [cache, pnpm, bun, podman, gradle, dart, rust, go, maven, cocoapods, bundler, android, android-sdk], work_tree: false}";
 
 /// A fake `sudo -n` that runs its command with `FAKE_SUDO` set and logs it.
 const FAKE_SUDO: &str = "#!/bin/sh\n[ \"$1\" = -n ] && shift\necho \"sudo $*\" >>\"$HOME/log\"\nFAKE_SUDO=1 exec \"$@\"\n";

@@ -51,7 +51,7 @@ fn no_repo_or_work_tree_false_in_either_layer_means_no_work_tree() {
         let p = plan(&layers(repo_yaml, user_yaml));
         assert_eq!(work_tree(&p), None, "{repo_yaml} {user_yaml}");
         assert_eq!(p.work_tree(), None);
-        assert!(names(&p).contains(&"npm".to_owned()), "the presets stay");
+        assert!(names(&p).contains(&"cache".to_owned()), "the presets stay");
     }
 }
 
