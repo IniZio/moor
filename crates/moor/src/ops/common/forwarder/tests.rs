@@ -214,6 +214,10 @@ fn a_delivered_token_is_not_delivered_again() {
     r.deliver(&tunneled(), &Rig::endpoint()).unwrap();
     assert_eq!(r.deliver(&tunneled(), &Rig::endpoint()), Ok(10556));
     assert_eq!(r.written().len(), 2, "one delivery");
+    assert!(
+        r.driver.execs().is_empty(),
+        "delivery runs no command of its own"
+    );
 }
 
 #[test]
@@ -302,20 +306,4 @@ fn every_mark_lost_fails_the_delivery() {
     assert!(err.contains("another controller replaced"), "{err}");
     assert_eq!(writes.get(), super::MINT_TRIES);
     assert!(!r.store.egress_token_delivered(r.id).unwrap());
-}
-
-#[test]
-fn a_box_that_lost_its_forwarder_config_gets_a_new_delivery() {
-    let r = rig();
-    r.deliver(&tunneled(), &Rig::endpoint()).unwrap();
-    let r = Rig {
-        driver: r.driver.exec_ends_when(
-            "egress-forward.json",
-            moor_core::seam::driver::ExecOutcome::Exited { code: 1 },
-        ),
-        ..r
-    };
-    assert_eq!(r.deliver(&tunneled(), &Rig::endpoint()), Ok(10556));
-    assert_eq!(r.written().len(), 4, "delivered twice");
-    assert!(r.store.egress_token_delivered(r.id).unwrap());
 }

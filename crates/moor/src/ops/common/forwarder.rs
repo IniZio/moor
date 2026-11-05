@@ -2,11 +2,9 @@
 
 use std::path::Path;
 use std::sync::{Mutex, PoisonError};
-use std::time::Duration;
 
 use moor_core::exec_env::FORWARDER;
-use moor_core::seam::driver::{Driver, ExecOutcome, ExecSpec};
-use moor_core::seam::proc::Deadline;
+use moor_core::seam::driver::Driver;
 use moor_core::seam::proxy_host::ProxyEndpoint;
 use moor_core::{BoxHandle, BoxId, BoxPath};
 
@@ -20,9 +18,6 @@ static DELIVERING: Mutex<()> = Mutex::new(());
 
 /// Tries of mint, write and mark before a delivery gives up.
 pub(crate) const MINT_TRIES: u32 = 3;
-
-/// How long the check for the forwarder's config in the Box may take.
-const CHECK_DEADLINE: Duration = Duration::from_secs(30);
 
 /// What a delivery reaches.
 pub(crate) struct Delivery<'a> {
@@ -43,8 +38,7 @@ pub(crate) struct Delivery<'a> {
 }
 
 /// Returns the port tinyproxy sends credential hosts to. On the shared Proxy's routes that is the
-/// forwarder's. Unless the row marks a token delivered and its config is still in the Box, a
-/// fresh token is minted, the forwarder and then its config with that token are written into
+/// forwarder's. Unless the row marks a token delivered, a fresh token is minted, the forwarder and then its config with that token are written into
 /// the Box, and the token is marked delivered.
 ///
 /// # Errors
@@ -60,11 +54,11 @@ pub(crate) fn deliver(to: &Delivery<'_>, ep: &ProxyEndpoint) -> Result<u16, Stri
     let handle = to
         .handle
         .ok_or("the egress forwarder needs a Box to deliver to")?;
-    if in_place(to, handle)? {
+    if in_place(to)? {
         return Ok(port);
     }
     let _one = DELIVERING.lock().unwrap_or_else(PoisonError::into_inner);
-    if in_place(to, handle)? {
+    if in_place(to)? {
         return Ok(port);
     }
     let bin = std::fs::read(to.binary).map_err(|e| {
@@ -93,28 +87,12 @@ pub(crate) fn deliver(to: &Delivery<'_>, ep: &ProxyEndpoint) -> Result<u16, Stri
     Ok(port)
 }
 
-/// Whether the row marks the Box's token delivered and the forwarder's config is in the Box.
-fn in_place(to: &Delivery<'_>, handle: &BoxHandle) -> Result<bool, String> {
-    let delivered = to
-        .store
+/// Whether the row marks the Box's token delivered. moor clears the mark whenever it gives the
+/// Box a fresh disk, so a delivered token is one the Box still holds.
+fn in_place(to: &Delivery<'_>) -> Result<bool, String> {
+    to.store
         .egress_token_delivered(to.box_id)
-        .map_err(|e| e.to_string())?;
-    if !delivered {
-        return Ok(false);
-    }
-    let spec = ExecSpec {
-        argv: ["sh", "-c", &format!("test -f \"$HOME/{FORWARDER}.json\"")]
-            .map(str::to_owned)
-            .to_vec(),
-        env: Vec::new(),
-        cwd: None,
-        output: None,
-    };
-    match to.driver.exec(handle, &spec, Deadline(CHECK_DEADLINE)) {
-        Ok(ExecOutcome::Exited { code: 0 }) => Ok(true),
-        Ok(_) => Ok(false),
-        Err(e) => Err(format!("cannot check the egress forwarder in the Box: {e}")),
-    }
+        .map_err(|e| e.to_string())
 }
 
 /// Mints the Box's token, hands it to `write`, then marks it delivered. When another controller

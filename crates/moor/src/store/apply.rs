@@ -248,7 +248,8 @@ fn idle_since_sets(step: &Step<bool>, now: Ts) -> Sets<Boxes> {
     }
 }
 
-/// Write box state, fields and handles; box fields without a box are invalid.
+/// Write box state, fields and handles; box fields without a box are invalid. A new handle is
+/// a fresh disk, so the egress token delivered to the old one is delivered again.
 ///
 /// A step out of quiet drops the recorded sleep refusal, so the next Idle stretch asks again.
 fn write_box(
@@ -279,6 +280,9 @@ fn write_box(
         sets.extend(input_handle_sets(input, &sets));
     }
     sets.push((Boxes::DriverUpdatedAt, now.as_millis().into()));
+    if sets.iter().any(|(c, _)| *c == Boxes::Handle) {
+        super::proxy::forget_egress_delivery(tx, id)?;
+    }
     update(tx, &mut box_update(id), &sets)
 }
 
