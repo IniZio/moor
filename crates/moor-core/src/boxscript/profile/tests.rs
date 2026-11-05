@@ -1,6 +1,7 @@
 //! The profile setup script, run for real under `sh` in a scratch home.
 
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::process::{Command, Output};
 
 use super::{setup_script, PROFILE_DIR};
@@ -52,4 +53,27 @@ fn a_missing_checkout_fails() {
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(1));
+}
+
+#[test]
+fn setup_sh_finds_a_binary_moor_put_in_the_home_bin() {
+    let home = tempfile::tempdir().unwrap();
+    let checkout = home.path().join(PROFILE_DIR);
+    fs::create_dir_all(&checkout).unwrap();
+    fs::write(checkout.join("setup.sh"), "moor-test-tool hello\n").unwrap();
+    let bin = home.path().join(".local/bin");
+    fs::create_dir_all(&bin).unwrap();
+    let tool = bin.join("moor-test-tool");
+    fs::write(&tool, "#!/bin/sh\necho \"tool $*\"\n").unwrap();
+    fs::set_permissions(&tool, fs::Permissions::from_mode(0o755)).unwrap();
+    let out = Command::new("sh")
+        .arg("-c")
+        .arg(setup_script())
+        .env("HOME", home.path())
+        .env("PATH", "/usr/bin:/bin")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "tool hello\n");
 }

@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+pub(in crate::adapters::box_agent) use moor_core::boxscript::AGENT_PATH_LINE;
 use moor_core::config::AgentHolder;
 use moor_core::exec_env::ExecEnv;
 use moor_core::name::BoxPath;
@@ -15,7 +16,6 @@ use self::environ::{box_user, home_in};
 use self::holder::Holder;
 #[cfg(test)]
 use self::script::script;
-pub(in crate::adapters::box_agent) use self::script::AGENT_PATH_LINE;
 use self::script::{script_path, script_stripping};
 use self::steps::Plan;
 use super::agent_env;
@@ -285,7 +285,7 @@ fn remove_cred(
 
 pub(super) mod detach;
 mod environ;
-mod gh;
+pub(super) mod gh;
 pub(super) mod holder;
 mod install;
 mod script;

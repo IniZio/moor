@@ -215,6 +215,14 @@ pub trait Engine: Send + Sync {
     /// Whether the agent runs no hook while a first-run screen holds its pane.
     fn hooks_quiet_during_first_run(&self) -> bool;
 
+    /// Puts the pinned `gh` in the Box behind `handle` when `forge` says its Proxy routes the
+    /// forge, so a step before the launch can call it. What went wrong comes back as a notice;
+    /// the launch checks for `gh` again.
+    fn deliver_gh(&self, handle: &BoxHandle, forge: bool) -> Option<LaunchNotice> {
+        let _ = (handle, forge);
+        None
+    }
+
     /// How to install the agent on a Box that lacks it; `None` when the engine has no installer.
     fn agent_install(&self) -> Option<AgentInstall> {
         None

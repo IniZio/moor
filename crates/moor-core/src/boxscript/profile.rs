@@ -1,6 +1,6 @@
 //! Script that checks a person's agent profile out at one commit inside the Box.
 
-use super::quote;
+use super::{quote, AGENT_PATH_LINE};
 
 /// Where the profile is checked out, relative to the Box user's home.
 pub const PROFILE_DIR: &str = ".moor-profile/person";
@@ -30,12 +30,12 @@ pub fn fetch_script(url: &str, sha: &str) -> String {
 /// The script at the checkout's root that sets the Box up for the profile's plugins.
 pub const SETUP_FILE: &str = "setup.sh";
 
-/// Shell text that runs the checkout's `setup.sh` from the checkout, and does nothing when the
-/// profile has none.
+/// Shell text that runs the checkout's `setup.sh` from the checkout with the agent's `PATH`, and
+/// does nothing when the profile has none.
 #[must_use]
 pub fn setup_script() -> String {
     format!(
-        "d=\"$HOME/{PROFILE_DIR}\"\ncd \"$d\" || exit 1\n[ -f {SETUP_FILE} ] || exit 0\nsh {SETUP_FILE}\n"
+        "{AGENT_PATH_LINE}\nd=\"$HOME/{PROFILE_DIR}\"\ncd \"$d\" || exit 1\n[ -f {SETUP_FILE} ] || exit 0\nsh {SETUP_FILE}\n"
     )
 }
 

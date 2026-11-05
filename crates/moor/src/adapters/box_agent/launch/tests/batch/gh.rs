@@ -4,8 +4,9 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use moor_core::name::BoxHandle;
 use moor_core::seam::agent_adapter::ProxyAddr;
-use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef};
+use moor_core::seam::engine::{Engine, EngineError, LaunchNotice, LaunchReq, SessionRef};
 
 use super::{agent, driver, exited, req, DriverError};
 use super::{FakeDriver, FakeSurface, GhRelease};
@@ -211,4 +212,64 @@ fn a_proxy_without_a_forge_rule_reads_no_platform() {
         .iter()
         .flat_map(|e| e.1.argv.iter())
         .all(|a| !a.contains("uname")));
+}
+
+fn handle() -> BoxHandle {
+    BoxHandle::new("box-1")
+}
+
+/// A live Box whose `HOME` and platform read as a Linux Box's, whose next checks exit `codes`.
+fn box_with_checks(codes: &[i32]) -> Arc<FakeDriver> {
+    let d = driver(FakeDriver::new().exec_results(exited(codes)));
+    d.set_run_stdout("/home/box\nLinux x86_64\n");
+    d
+}
+
+fn deliver(d: &Arc<FakeDriver>, release: Arc<GhRelease>, forge: bool) -> Option<LaunchNotice> {
+    agent(d, &Arc::new(FakeSurface::new()), release).deliver_gh(&handle(), forge)
+}
+
+#[test]
+fn delivery_puts_a_missing_gh_executable_in_the_home_bin() {
+    let d = box_with_checks(&[0, gh::NOT_INSTALLED]);
+    assert_eq!(deliver(&d, ready_release_with_gh(), true), None);
+    assert_eq!(gh_puts(&d), [(GH_PUT.to_owned(), READY_GH.to_vec(), 0o755)]);
+}
+
+#[test]
+fn delivery_leaves_an_installed_gh_alone() {
+    let d = box_with_checks(&[0, 0]);
+    assert_eq!(deliver(&d, ready_release_with_gh(), true), None);
+    assert!(gh_puts(&d).is_empty());
+}
+
+#[test]
+fn delivery_does_nothing_without_a_forge_proxy() {
+    let d = box_with_checks(&[]);
+    assert_eq!(deliver(&d, ready_release_with_gh(), false), None);
+    assert!(d.execs().is_empty(), "no step ran in the Box");
+}
+
+#[test]
+fn a_gh_the_host_cannot_fetch_is_a_delivery_notice() {
+    let d = box_with_checks(&[0]);
+    let notice = deliver(&d, offline_release(), true).expect("a notice");
+    assert_eq!(notice.code, "gh_not_delivered");
+    assert!(gh_puts(&d).is_empty());
+}
+
+#[test]
+fn a_box_that_hides_its_platform_is_a_delivery_notice() {
+    let d = box_with_checks(&[0]);
+    d.set_run_stdout("/home/box\n");
+    let notice = deliver(&d, ready_release_with_gh(), true).expect("a notice");
+    assert!(notice.message.contains("platform"), "{}", notice.message);
+}
+
+#[test]
+fn a_check_that_exits_oddly_is_a_delivery_notice() {
+    let d = box_with_checks(&[0, 3]);
+    let notice = deliver(&d, ready_release_with_gh(), true).expect("a notice");
+    assert!(notice.message.contains("exited 3"), "{}", notice.message);
+    assert!(gh_puts(&d).is_empty());
 }
