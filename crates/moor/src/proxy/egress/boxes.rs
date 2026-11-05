@@ -1,7 +1,7 @@
 //! Each token's Box, and the proxy this replica runs for each Box it serves.
 //!
 //! A token is looked up on the ledger on every new tunnel, so a Box that closed is refused at
-//! once. While the controller cannot be reached, the last answer for the token is used, as a
+//! once. Only tokens the ledger confirmed are kept, each with its tunnel bucket. While the controller cannot be reached, the last answer for the token is used, as a
 //! Box's own Proxy uses its last answers.
 
 use std::collections::hash_map::Entry;
@@ -14,6 +14,7 @@ use moor_core::seam::clock::Clock;
 use moor_core::{BoxId, Secret};
 use zeroize::Zeroizing;
 
+use super::limit::{Bucket, Rate};
 use super::Config;
 use crate::proxy::ledger::{BoxLedger, EgressLedger, LedgerError};
 use crate::proxy::nono::capture::UserSecretsFn;
@@ -31,6 +32,8 @@ pub(super) struct Route {
 pub(super) enum Refused {
     /// The token is unknown or its Box closed.
     Unknown,
+    /// The token, or the shared lookup budget for unconfirmed tokens, is spent.
+    Limited,
     /// The controller cannot be reached and the token was never seen, or the Box's proxy could
     /// not start.
     Unavailable(String),
@@ -42,6 +45,14 @@ struct Served {
     ledger: Arc<BoxLedger>,
     /// Its proxy.
     engine: Engine,
+}
+
+/// A token the ledger confirmed.
+struct Known {
+    /// Its Box.
+    box_id: BoxId,
+    /// Its tunnel bucket.
+    bucket: Bucket,
 }
 
 /// Every Box this replica serves.
@@ -60,8 +71,14 @@ pub(super) struct Boxes {
     guard_exempt: Vec<SocketAddr>,
     /// Stamps the request logs.
     clock: Arc<dyn Clock>,
-    /// The last Box each token hash was found to belong to.
-    known: Mutex<HashMap<String, BoxId>>,
+    /// Each confirmed token's rate.
+    token_rate: Rate,
+    /// The rate of lookups for tokens not yet confirmed, shared by all of them.
+    lookup_rate: Rate,
+    /// The shared lookup bucket.
+    lookups: Mutex<Bucket>,
+    /// Each confirmed token hash, with the last Box it was found to belong to.
+    known: Mutex<HashMap<String, Known>>,
     /// The proxy of each Box served.
     served: Mutex<HashMap<BoxId, Served>>,
 }
@@ -76,6 +93,9 @@ impl Boxes {
             work_dir: cfg.work_dir,
             upstream_ca: cfg.upstream_ca,
             guard_exempt: cfg.guard_exempt,
+            token_rate: cfg.rate,
+            lookup_rate: cfg.lookups,
+            lookups: Mutex::new(Bucket::new(cfg.lookups.burst, cfg.clock.instant())),
             clock: cfg.clock,
             known: Mutex::default(),
             served: Mutex::default(),
@@ -84,6 +104,7 @@ impl Boxes {
 
     /// The route for the Box whose token hashes to `token_hash`, starting its proxy on first use.
     pub(super) fn admit(&self, token_hash: &str) -> Result<Route, Refused> {
+        self.spend(token_hash)?;
         let box_id = self.owner(token_hash)?;
         let mut served = lock(&self.served);
         let s = match served.entry(box_id) {
@@ -98,13 +119,35 @@ impl Boxes {
         Ok(route)
     }
 
+    /// Takes one tunnel from the bucket of `token_hash`, or from the shared lookup bucket when the
+    /// token is not confirmed yet.
+    fn spend(&self, token_hash: &str) -> Result<(), Refused> {
+        let now = self.clock.instant();
+        let mut known = lock(&self.known);
+        let allowed = match known.get_mut(token_hash) {
+            Some(k) => k.bucket.take(self.token_rate, now),
+            None => lock(&self.lookups).take(self.lookup_rate, now),
+        };
+        drop(known);
+        allowed.then_some(()).ok_or(Refused::Limited)
+    }
+
     /// The open Box of `token_hash`, or the last answer while the controller is away.
     fn owner(&self, token_hash: &str) -> Result<BoxId, Refused> {
         let answer = self.lookup.token_box(token_hash);
         let mut known = lock(&self.known);
         match answer {
             Ok(Some(box_id)) => {
-                known.insert(token_hash.to_owned(), box_id);
+                // The first tunnel counts against the token's own bucket too.
+                let first = (self.token_rate.burst - 1.0).max(0.0);
+                let now = self.clock.instant();
+                known
+                    .entry(token_hash.to_owned())
+                    .or_insert_with(|| Known {
+                        box_id,
+                        bucket: Bucket::new(first, now),
+                    })
+                    .box_id = box_id;
                 Ok(box_id)
             }
             Ok(None) => {
@@ -113,7 +156,7 @@ impl Boxes {
             }
             Err(e @ LedgerError::Unavailable(_)) => known
                 .get(token_hash)
-                .copied()
+                .map(|k| k.box_id)
                 .ok_or_else(|| Refused::Unavailable(e.to_string())),
             Err(e) => Err(Refused::Unavailable(e.to_string())),
         }
@@ -164,7 +207,7 @@ impl Boxes {
             .collect();
         let gone: Vec<Served> = closed.iter().filter_map(|id| served.remove(id)).collect();
         drop(served);
-        lock(&self.known).retain(|_, id| !closed.contains(id));
+        lock(&self.known).retain(|_, k| !closed.contains(&k.box_id));
         for s in gone {
             s.engine.stop();
         }
@@ -178,6 +221,14 @@ impl Boxes {
             s.ledger.flush();
             s.engine.stop();
         }
+    }
+}
+
+#[cfg(test)]
+impl Boxes {
+    /// How many tokens are kept.
+    pub(super) fn tracked(&self) -> usize {
+        lock(&self.known).len()
     }
 }
 

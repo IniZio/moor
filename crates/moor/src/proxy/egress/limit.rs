@@ -1,70 +1,43 @@
-//! Each token's tunnel rate: a bucket of `burst` tunnels that refills at `rate` a second.
+//! Tunnel rates: a bucket of `burst` tunnels that refills at `per_sec` a second.
+//!
+//! Each token whose Box the ledger confirmed gets a bucket of its own. Every other token draws on
+//! one shared lookup bucket before its ledger lookup, so random tokens neither grow a map nor
+//! flood the controller.
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Instant;
 
-use moor_core::seam::clock::Clock;
+/// How fast a bucket refills and how much it holds.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Rate {
+    /// Tunnels a second.
+    pub(crate) per_sec: f64,
+    /// Bucket size.
+    pub(crate) burst: f64,
+}
 
-/// Buckets kept before full ones are forgotten, so unknown tokens cannot grow the map forever.
-const KEPT: usize = 4096;
-
-/// One token's bucket.
-struct Bucket {
+/// One bucket.
+pub(super) struct Bucket {
     /// Tunnels it may still open.
     left: f64,
     /// When `left` was last topped up.
     at: Instant,
 }
 
-/// The rate of every token this replica has seen, keyed by the token's hash.
-pub(super) struct Limit {
-    /// Tunnels a second.
-    rate: f64,
-    /// Bucket size.
-    burst: f64,
-    /// Source of time.
-    clock: Arc<dyn Clock>,
-    /// Each token's bucket.
-    buckets: Mutex<HashMap<String, Bucket>>,
-}
-
-impl Limit {
-    /// Buckets of `burst` that refill at `rate` a second.
-    pub(super) fn new(rate: f64, burst: f64, clock: Arc<dyn Clock>) -> Self {
-        Self {
-            rate,
-            burst,
-            clock,
-            buckets: Mutex::default(),
-        }
+impl Bucket {
+    /// A bucket holding `left` tunnels at `now`.
+    pub(super) const fn new(left: f64, now: Instant) -> Self {
+        Self { left, at: now }
     }
 
-    /// Takes one tunnel from the bucket of `token_hash`; false when it is empty.
-    pub(super) fn allow(&self, token_hash: &str) -> bool {
-        let now = self.clock.instant();
-        let mut buckets = self.buckets.lock().unwrap_or_else(PoisonError::into_inner);
-        if buckets.len() >= KEPT {
-            let (rate, burst) = (self.rate, self.burst);
-            buckets.retain(|_, b| topped(b, now, rate, burst) < burst);
+    /// Takes one tunnel at `now`; false when the bucket is empty.
+    pub(super) fn take(&mut self, rate: Rate, now: Instant) -> bool {
+        let gained = now.saturating_duration_since(self.at).as_secs_f64() * rate.per_sec;
+        self.left = (self.left + gained).min(rate.burst);
+        self.at = now;
+        if self.left < 1.0 {
+            return false;
         }
-        let bucket = buckets.entry(token_hash.to_owned()).or_insert(Bucket {
-            left: self.burst,
-            at: now,
-        });
-        bucket.left = topped(bucket, now, self.rate, self.burst);
-        bucket.at = now;
-        let allowed = bucket.left >= 1.0;
-        if allowed {
-            bucket.left -= 1.0;
-        }
-        drop(buckets);
-        allowed
+        self.left -= 1.0;
+        true
     }
-}
-
-/// What `bucket` holds at `now`.
-fn topped(bucket: &Bucket, now: Instant, rate: f64, burst: f64) -> f64 {
-    let gained = now.saturating_duration_since(bucket.at).as_secs_f64() * rate;
-    (bucket.left + gained).min(burst)
 }

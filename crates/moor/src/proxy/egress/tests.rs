@@ -23,7 +23,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
 use tokio_tungstenite::tungstenite::{self, Message, WebSocket};
 use zeroize::Zeroizing;
 
-use super::{Config, Server, PATH, TARGET};
+use super::{Config, Rate, Server, PATH, TARGET};
 use crate::proxy::ledger::tests::{serve_on, Served, EGRESS_KEY};
 use crate::proxy::nono::tests::upstream::{self, Upstream};
 use crate::store::Store;
@@ -80,13 +80,24 @@ impl World {
 
     /// The shared Proxy, letting each token open `burst` tunnels and no more.
     fn server(&self, burst: f64) -> Server {
+        self.server_with(burst, 10.0)
+    }
+
+    /// [`World::server`], with `lookups` lookups for tokens not yet confirmed.
+    fn server_with(&self, burst: f64, lookups: f64) -> Server {
         Server::start(Config {
             listen: SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
             ledger: self.dir.path().join("proxy.sock"),
             key: Zeroizing::new(EGRESS_KEY.to_owned()),
             work_dir: self.dir.path().join("egress"),
-            rate: 0.0,
-            burst,
+            rate: Rate {
+                per_sec: 0.0,
+                burst,
+            },
+            lookups: Rate {
+                per_sec: 0.0,
+                burst: lookups,
+            },
             upstream_ca: Some(self.up.ca_path.clone()),
             guard_exempt: vec![SocketAddr::from((Ipv4Addr::LOCALHOST, self.up.port))],
             clock: Arc::new(FakeClock::new(Ts::from_millis(1_000))),
@@ -329,4 +340,26 @@ fn a_drain_lets_an_open_tunnel_finish_and_refuses_a_new_one() {
         assert_eq!(drained.join().unwrap(), 0, "it finished within the grace");
     });
     assert_eq!(w.up.seen().len(), 1);
+}
+
+#[test]
+fn random_tokens_are_never_kept_and_spend_only_the_shared_lookup_budget() {
+    let w = World::new();
+    let server = w.server_with(10.0, 4.0);
+    assert!(
+        open(&server, TOKEN, &w.target()).is_ok(),
+        "the first lookup"
+    );
+    let refused: Vec<Option<u16>> = (0..20)
+        .map(|n| open(&server, &format!("random-{n}"), &w.target()).err())
+        .collect();
+    let mut want = vec![Some(401); 3];
+    want.resize(20, Some(429));
+    assert_eq!(refused, want, "the rest of the lookup budget, then 429");
+    assert_eq!(server.tracked(), 1, "only the confirmed token is kept");
+    assert!(
+        open(&server, TOKEN, &w.target()).is_ok(),
+        "a confirmed token draws on its own bucket"
+    );
+    server.drain(Duration::from_secs(5));
 }
