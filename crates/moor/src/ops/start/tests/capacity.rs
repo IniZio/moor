@@ -232,6 +232,18 @@ fn start_again_after_a_box_is_freed_promotes_the_waiting_box() {
 }
 
 #[test]
+fn a_promoted_box_no_longer_says_it_waits_for_capacity() {
+    let (w, holder) = with_live_box(box_limit(1));
+    let queued = run(&w.cx, &req("waiter")).unwrap();
+    let id = BoxId::new(queued.boxed.id);
+    let store = w.cx.store().unwrap();
+    assert!(store.box_row(id).unwrap().unwrap().state_reason.is_some());
+    free_box(&w, holder);
+    run(&w.cx, &req("waiter")).unwrap();
+    assert_eq!(store.box_row(id).unwrap().unwrap().state_reason, None);
+}
+
+#[test]
 fn start_again_after_the_holder_closes_promotes_the_waiting_box() {
     let (w, holder) = with_live_box(box_limit(1));
     let queued = run(&w.cx, &req("waiter")).unwrap();
