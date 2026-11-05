@@ -240,3 +240,6 @@ fn stop_filter(filter: Option<GraphqlFilter>) {
         f.stop();
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -248,12 +248,6 @@ pub(crate) fn client(proxy_port: u16, token: &str, ca_pem: &str) -> Agent {
     )
 }
 
-/// A client that goes through the Box port `port` as a Box does, with no proxy credential, and
-/// trusts only `ca_pem`.
-pub(crate) fn box_client(port: u16, ca_pem: &str) -> Agent {
-    agent(&format!("http://127.0.0.1:{port}"), ca_pem)
-}
-
 /// A client that goes through the proxy at `proxy_url` and trusts only `ca_pem`.
 fn agent(proxy_url: &str, ca_pem: &str) -> Agent {
     let cert = Certificate::from_pem(ca_pem.as_bytes()).unwrap().to_owned();
