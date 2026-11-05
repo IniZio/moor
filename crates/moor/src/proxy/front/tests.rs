@@ -146,6 +146,16 @@ fn read_exact_len(s: &mut UnixStream, len: usize) -> Vec<u8> {
     out
 }
 
+/// The tunnel bytes nono saw, joined across reads until at least `len` arrived; TCP keeps no
+/// write boundaries, so one read may hold the head and the body.
+fn tunneled(seen: &Receiver<Vec<u8>>, len: usize) -> String {
+    let mut out = Vec::new();
+    while out.len() < len {
+        out.extend(seen.recv_timeout(WAIT).unwrap());
+    }
+    String::from_utf8(out).unwrap()
+}
+
 fn read_all(s: &mut UnixStream) -> String {
     let mut out = Vec::new();
     let _ = s.read_to_end(&mut out);
@@ -256,12 +266,9 @@ fn plain_post_body_and_default_host_arrive_intact() {
         connect.starts_with("CONNECT example.com:8080 HTTP/1.1\r\n"),
         "{connect}"
     );
-    let head = String::from_utf8(nono.seen.recv_timeout(WAIT).unwrap()).unwrap();
-    assert_eq!(
-        head,
-        "POST / HTTP/1.1\r\nContent-Length: 4\r\nHost: example.com:8080\r\nConnection: close\r\n\r\n"
-    );
-    assert_eq!(nono.seen.recv_timeout(WAIT).unwrap(), b"body");
+    let want =
+        "POST / HTTP/1.1\r\nContent-Length: 4\r\nHost: example.com:8080\r\nConnection: close\r\n\r\nbody";
+    assert_eq!(tunneled(&nono.seen, want.len()), want);
     front.stop();
 }
 
@@ -273,11 +280,9 @@ fn connection_header_cannot_drop_host_or_content_length() {
     let req = "POST http://example.com/ HTTP/1.1\r\nHost: example.com\r\nConnection: host, content-length\r\nContent-Length: 4\r\n\r\nbody";
     c.write_all(req.as_bytes()).unwrap();
     let _connect = nono.seen.recv_timeout(WAIT).unwrap();
-    let head = String::from_utf8(nono.seen.recv_timeout(WAIT).unwrap()).unwrap();
-    assert_eq!(
-        head,
-        "POST / HTTP/1.1\r\nHost: example.com\r\nContent-Length: 4\r\nConnection: close\r\n\r\n"
-    );
+    let want =
+        "POST / HTTP/1.1\r\nHost: example.com\r\nContent-Length: 4\r\nConnection: close\r\n\r\nbody";
+    assert_eq!(tunneled(&nono.seen, want.len()), want);
     front.stop();
 }
 
