@@ -10,7 +10,10 @@ makes a later Box on that node start from a kept checkpoint, at any commit.
   The machine agent has no checkpoint code.
 - Three Boxes on `external@engine-03` recorded no `checkpoint_taken` and no `warm_started`.
   Their setup took 390 s and 461 s, with a third still running.
-- Their acquire took 42 s, 51 s and 83 s. The documented `bootTemplate` figure is about 4 s.
+- Their acquire took 42 s, 51 s and 83 s. The documented figures are about 4 s with `bootTemplate` and 41 s without.
+- `crabbox providers describe external --configured --json` on engine-03 lists `capabilities.features` as browser, cache-volume, cleanup, code, crabbox-sync, desktop, pause-resume and ssh.
+  `capabilities.workspace` is empty, so `workspace-checkpoint` and `workspace-fork` are off there (measured).
+- That output is `metadataKind: static` and does not show `bootTemplate`. The acquire times suggest it is off (inferred).
 - A layer key holds the base commit, per
   [layers.rs](https://github.com/IniZio/moor/blob/0133f0b3/crates/moor-core/src/domain/layers.rs#L51-L66).
   Each of those Boxes had a different base. Node checkpoints alone would never hit.
@@ -159,6 +162,7 @@ flowchart TD
 ```
 
 A chain's limits are 7 days from its root and a `depth` of 8. A chain past them goes cold once and starts over.
+So a user, repo and node pair pays one cold start every 7 days at most from age. moor runs no background rebuild.
 The depth limit exists because a checkpoint is a delta over its parent, and the adapter refuses to delete a parent first.
 
 ## Machine agent and link
@@ -178,6 +182,18 @@ New lease verbs, sent only when the link says the agent has them:
 - The adapter's `doctor` must fail on stock cloud-hypervisor v52.0. Its guest network is dead after a checkpoint, and `v52.0-moor.1` is needed.
 - `moor node ls` shows warm starts on or off, with the reason. Today nobody can tell from outside.
 - All of this runs as the agent's user. It needs no sudo, no mount and no ssh to the host.
+
+### Settings on the host
+
+Warm starts need `capabilities.checkpoints: true` and `bootTemplate: true` under `external` in the crabbox user config. Both are on by default on a node.
+
+- `moor-machine-agent enroll` writes them, for an agent with `--runtime` naming the `external` provider.
+- Hosts enrolled already never run `enroll` again, so `moor-machine-agent run` applies the same step each time it starts.
+- A released controller lets in only an agent of its own release, per [machines.md](https://github.com/IniZio/moor/blob/0133f0b3/docs/machines.md). So a deploy makes each agent update and restart, and the restart applies the settings. No ssh or manual edit is involved.
+- The step adds only a missing key, and writes the file atomically. A key the owner set stays as set, so `false` is an opt-out, and `moor node ls` shows it as the reason.
+- It changes only the agent's own user config, so it needs no sudo. Nothing else on the host changes.
+- A host with stock cloud-hypervisor still fails `doctor`. Its Boxes start cold, and `moor node ls` names the `v52.0-moor.1` it needs.
+- On a filesystem with no reflink, each VM copies the template disk, which is slower but works, per [providers.md](https://github.com/IniZio/moor/blob/0133f0b3/docs/providers.md).
 - Plain ext4 works. Forks flatten the root and hold delta overlays, so reflink only speeds them up.
 
 ## Sharing across users
@@ -255,13 +271,12 @@ Stacked PRs, each about 1000 lines or less, with tests and docs updates in each:
 2. Link verbs, agent support and `Offer.checkpoints`, tested against a fake crabbox. Nothing sends them yet.
 3. Store columns and machine-scoped lookup and eviction. Keys stay as they are.
 4. Node GC, with the `disk` verb, eviction from memory reports and the sweep.
-5. Pool driver create, fork and delete, plus `moor node ls`. Same-commit warm starts now work on nodes.
-6. Commit-free key, rerun of all lines, tree refresh, cold retry, the brief and start reply warning, and `checkpoint.across_commits`.
-7. Roll-forward, chain limits and `--cold`, on `moor start`, MCP and Slack `start_box`.
-8. The acceptance script, plus its run recorded in that PR.
+5. Host settings written by `enroll` and by every `run`, which reaches enrolled hosts at the next deploy. Fake-crabbox tests cover a missing key and an owner's `false`.
+6. Pool driver create, fork and delete, plus `moor node ls`. Same-commit warm starts now work on nodes.
+7. Commit-free key, rerun of all lines, tree refresh, cold retry, the brief and start reply warning, and `checkpoint.across_commits`.
+8. Roll-forward, chain limits and `--cold`, on `moor start`, MCP and Slack `start_box`.
+9. The acceptance script, plus its run recorded in that PR.
 
-## Questions for the owner
+## Question for the owner
 
-1. Should `moor-machine-agent enroll` turn on `capabilities.checkpoints` and `bootTemplate` in a teammate's crabbox config, or leave them opt-in? Recommendation is on, since only the agent's own user config changes.
-2. Is one cold start per user, repo and node every 7 days acceptable? The other choice is a background rebuild, which holds node memory with nobody waiting.
-3. What does `crabbox providers describe external --configured --json` print on engine-03, as its agent's user? That config is unreadable from here, and it explains the 42-83 s acquire.
+Should warm starts across commits be on by default, with `checkpoint.across_commits: false` as the opt-out? The recommendation is on. The other choice is opt-in per repo. That is safe for existing guards, but a repo gets no hit on a moving main until its author asks.
