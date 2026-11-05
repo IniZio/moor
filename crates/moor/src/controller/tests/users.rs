@@ -129,3 +129,41 @@ fn the_controller_socket_cannot_act_for_a_slack_user() {
     let names = json!({"cmd": "secret-names", "identity": "slack:T1:U1"});
     assert_eq!(ask(&slack, &names)["value"]["names"], json!([]));
 }
+
+#[test]
+fn a_workflow_add_obeys_the_default_floor_and_takes_its_origin_from_the_socket() {
+    let served = Served::start();
+    let slack = served.front("slack");
+    ask(&slack, &json!({"cmd": "enroll", "identity": "slack:U1"}));
+    ask(&served.main, &json!({"cmd": "enroll"}));
+    let add = |cron: &str, key: Option<&str>| {
+        let mut req = json!({"cmd": "workflow-add", "identity": "slack:U1", "name": "daily",
+            "cron": cron, "timezone": "UTC", "repos": ["o/n"], "prompt": "fix"});
+        if let Some(key) = key {
+            req["origin_key"] = json!(key);
+        }
+        req
+    };
+    let fast = ask(&slack, &add("* * * * *", None));
+    assert_eq!(fast["error"]["kind"], "usage", "{fast}");
+    let message = fast["error"]["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("* * * * *") && message.contains("60 minutes"),
+        "{fast}"
+    );
+
+    let added = ask(&slack, &add("0 9 * * *", Some("C1/T1")));
+    assert_eq!(added["class"], "ok", "{added}");
+    let listed = ask(
+        &slack,
+        &json!({"cmd": "workflow-list", "identity": "slack:U1"}),
+    );
+    assert_eq!(listed["value"]["workflows"][0]["name"], "daily", "{listed}");
+
+    let own = json!({"cmd": "workflow-add", "name": "mine", "cron": "0 9 * * *",
+        "timezone": "UTC", "repos": ["o/n"], "prompt": "fix", "origin_key": "k"});
+    refused(
+        &ask(&served.main, &own),
+        "only a front can send an origin_key",
+    );
+}

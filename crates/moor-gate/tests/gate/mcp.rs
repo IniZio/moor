@@ -14,7 +14,9 @@ use std::sync::atomic::Ordering;
 use super::{claims, mpsc, now, sign, world_with, World};
 
 mod inspect;
+mod tool_list;
 mod webhook;
+mod workflow;
 
 fn serve_controller(path: &std::path::Path) -> mpsc::Receiver<String> {
     let listener = UnixListener::bind(path).unwrap();
@@ -319,38 +321,6 @@ fn a_resource_token_without_email_acts_with_the_userinfo_email() {
     );
     m.call(&token, "list_boxes", json!({}));
     assert_eq!(m.world.userinfo_calls.load(Ordering::SeqCst), 1);
-}
-
-#[test]
-fn the_tools_are_listed() {
-    let m = mcp();
-    let token = m.token("alice-sub", &m.url(), "moor:read");
-    let reply = m.rpc(&token, "tools/list", json!({}));
-    let mut names: Vec<&str> = reply["result"]["tools"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|t| t["name"].as_str().unwrap())
-        .collect();
-    names.sort_unstable();
-    assert_eq!(
-        names,
-        [
-            "add_webhook",
-            "box_status",
-            "close_box",
-            "close_failed_boxes",
-            "get_artifact",
-            "inspect_box",
-            "list_boxes",
-            "list_events",
-            "list_webhooks",
-            "remove_webhook",
-            "retry_box",
-            "send_to_box",
-            "start_box"
-        ]
-    );
 }
 
 #[test]
