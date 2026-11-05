@@ -1,10 +1,10 @@
 //! A kept Box's tunnel: opened into the Box's machine on its Box port, reopened with backoff
 //! when it dies, after any session an earlier tunnel left on the port is ended.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use moor_core::domain::event::Event;
-use moor_core::seam::driver::{DriverError, ExecSpec};
+use moor_core::seam::driver::{DriverError, ExecSpec, TunnelHandle};
 use moor_core::seam::proc::Deadline;
 use moor_core::BoxHandle;
 
@@ -59,8 +59,19 @@ impl Kept {
             .deps
             .driver
             .reverse_tunnel(&handle, self.box_port, socket);
+        self.keep_open(&handle, opened, now)
+    }
+
+    /// Keeps the tunnel opened into `handle` at `now`, or schedules the next try when it failed;
+    /// a tunnel for a Box that changed meanwhile is closed.
+    fn keep_open(
+        &self,
+        handle: &BoxHandle,
+        opened: Result<Box<dyn TunnelHandle>, DriverError>,
+        now: Instant,
+    ) -> Result<(), String> {
         let mut inner = self.lock();
-        if !self.current(&inner, &handle) {
+        if !self.current(&inner, handle) {
             drop(inner);
             drop(opened);
             return Err("the Box changed while its tunnel opened".to_owned());
@@ -140,8 +151,9 @@ mod tests {
         };
         let port: u16 = port.to_str().unwrap().parse().unwrap();
         let listener = TcpListener::bind((Ipv6Addr::LOCALHOST, port)).unwrap();
-        print!("listening");
-        std::io::Write::flush(&mut std::io::stdout()).unwrap();
+        let mut out = std::io::stdout();
+        std::io::Write::write_all(&mut out, b"listening").unwrap();
+        std::io::Write::flush(&mut out).unwrap();
         drop(listener.accept());
     }
 
@@ -151,7 +163,6 @@ mod tests {
             return;
         }
         let Ok(free) = TcpListener::bind((Ipv6Addr::LOCALHOST, 0)) else {
-            eprintln!("no IPv6 loopback here; nothing to check");
             return;
         };
         let port = free.local_addr().unwrap().port();

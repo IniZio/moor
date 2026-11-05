@@ -116,9 +116,11 @@ pub(super) fn end_orphans(flag: &str, forward: &OsStr) {
             continue;
         };
         let argv: Vec<&[u8]> = cmdline.split(|b| *b == 0).collect();
-        let named = argv.windows(2).any(|w| w == [flag, forward]);
+        let named = argv
+            .windows(2)
+            .any(|w| matches!(w, [f, v] if *f == flag && *v == forward));
         if named && pid != me && getpgid(Some(pid)).is_ok_and(|g| g == pid) {
-            drop(kill_process_group(pid, Signal::TERM));
+            kill_process_group(pid, Signal::TERM).ok();
         }
     }
 }

@@ -154,24 +154,27 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
         clock: Arc::clone(&clock),
     })?;
     say(format_args!("listening on {}", server.listening()));
-    let socket = match server.listening() {
-        Listen::Unix(path) => Some((path.clone(), inode(path))),
-        Listen::Tcp(_) => None,
-    };
-    while !stop.load(Ordering::Acquire) {
-        if socket
-            .as_ref()
-            .is_some_and(|(path, bound)| inode(path) != *bound)
-        {
-            say(format_args!("its socket is gone or another Proxy's now"));
-            break;
-        }
-        clock.sleep(POLL);
-    }
+    wait_for_stop(server.listening(), &stop, clock.as_ref());
     say(format_args!("draining for up to {}s", args.grace.as_secs()));
     let left = server.drain(args.grace);
     say(format_args!("drained; {left} tunnels were still open"));
     Ok(0)
+}
+
+/// Returns once `stop` is set, or once the Unix socket the Proxy listens on is removed or
+/// another Proxy's.
+fn wait_for_stop(listening: &Listen, stop: &AtomicBool, clock: &dyn Clock) {
+    let socket = match listening {
+        Listen::Unix(path) => Some((path, inode(path))),
+        Listen::Tcp(_) => None,
+    };
+    while !stop.load(Ordering::Acquire) {
+        if socket.is_some_and(|(path, bound)| inode(path) != bound) {
+            say(format_args!("its socket is gone or another Proxy's now"));
+            return;
+        }
+        clock.sleep(POLL);
+    }
 }
 
 /// The device and inode of the file at `path`; `None` when it is gone.
