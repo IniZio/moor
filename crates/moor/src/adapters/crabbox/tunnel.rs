@@ -3,8 +3,9 @@
 //! crabbox keeps running after it reports the tunnel ready, so the call is a
 //! long-lived child; the returned handle owns it and dropping the handle kills it.
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::net::{Ipv4Addr, TcpListener};
+use std::os::unix::ffi::OsStrExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
@@ -77,6 +78,7 @@ pub(super) fn reverse_tunnel(
     }
     let mut forward = OsString::from(format!("{box_port}:"));
     forward.push(socket);
+    end_orphans("--reverse", &forward);
     let spec = cb.at_lease(
         Crabbox::spec(TUNNEL_READY_DEADLINE)
             .arg("tunnel")
@@ -87,6 +89,38 @@ pub(super) fn reverse_tunnel(
         handle,
     )?;
     cb.retry_claim_race(|| open(cb, &spec, box_port, socket))
+}
+
+/// Ends each tunnel on this host whose argv holds `flag` then `forward`, leading a process group
+/// of its own: one a controller killed without draining left behind. Its ssh still holds the
+/// Box port, which a new tunnel there cannot take, and the Box-side clear cannot see it. Nothing
+/// else names this socket, since it lies in this controller's state dir. Without `/proc` it does
+/// nothing.
+pub(super) fn end_orphans(flag: &str, forward: &OsStr) {
+    use rustix::process::{getpgid, getpid, kill_process_group, Pid, Signal};
+    let Ok(procs) = std::fs::read_dir("/proc") else {
+        return;
+    };
+    let me = getpid();
+    let (flag, forward) = (flag.as_bytes(), forward.as_bytes());
+    for entry in procs.flatten() {
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|n| n.parse::<i32>().ok())
+            .and_then(Pid::from_raw)
+        else {
+            continue;
+        };
+        let Ok(cmdline) = std::fs::read(entry.path().join("cmdline")) else {
+            continue;
+        };
+        let argv: Vec<&[u8]> = cmdline.split(|b| *b == 0).collect();
+        let named = argv.windows(2).any(|w| w == [flag, forward]);
+        if named && pid != me && getpgid(Some(pid)).is_ok_and(|g| g == pid) {
+            drop(kill_process_group(pid, Signal::TERM));
+        }
+    }
 }
 
 /// Starts a tunnel that forwards a host loopback port crabbox picks to Box `127.0.0.1:box_port`.
@@ -143,6 +177,7 @@ fn pool_reverse(
 ) -> Result<Box<dyn TunnelHandle>, DriverError> {
     let mut forward = OsString::from(format!("127.0.0.1:{box_port}:"));
     forward.push(socket);
+    end_orphans("-R", &forward);
     let wait =
         format!("until ss -Hltn 'sport = :{box_port}' | grep -q .; do sleep 0.2; done; {HOLD}");
     let spec = ProcSpec::new(Tool::Ssh, Deadline(TUNNEL_READY_DEADLINE))

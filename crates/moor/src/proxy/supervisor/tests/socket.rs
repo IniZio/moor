@@ -260,6 +260,10 @@ fn a_supervisor_whose_row_a_keeper_took_exits_and_closes_its_tunnel() {
     assert!(w.store.fence_supervisor(w.id).unwrap());
 
     assert_eq!(old.tick(), Some(Stop::LostLease));
-    assert_eq!(old.finish(Stop::LostLease), 1, "it exits, nothing restarts it");
+    assert_eq!(
+        old.finish(Stop::LostLease),
+        1,
+        "it exits, nothing restarts it"
+    );
     assert_eq!(w.driver.dropped_tunnels().len(), 1, "its tunnel is closed");
 }
