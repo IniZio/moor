@@ -65,7 +65,6 @@ fn defaults() {
     let c = UserConfig::default();
     assert_eq!(c.herdr_session(), "moor");
     assert!(c.nodes.is_empty());
-    assert_eq!(BoxSize::default(), BoxSize::Small);
     assert_eq!(c.box_.size, None);
 }
 

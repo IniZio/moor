@@ -228,7 +228,7 @@ fn acquire_req(
         provider,
         box_id: started.id,
         name: started.name.clone(),
-        class: Some(cfg.size.value.as_str().to_owned()),
+        class: cfg.size.as_ref().map(|s| s.value.as_str().to_owned()),
         nonce: nonce(cx.rng()),
     }
 }
@@ -257,7 +257,7 @@ fn run_and_record(
     if let Some(ms) = cloned.ms {
         store.apply(Decision::new(id).event(ExtraEvent::Cloned { ms }))?;
     }
-    record_delivered(cx, store, id, cfg.size.value, cloned.delivered)?;
+    record_delivered(cx, store, id, cfg, cloned.delivered)?;
     let run = set_up_all(cx, store, id, target, cfg, &proxy);
     if !run.failed() {
         store.apply(Decision::new(id).set(Fields {

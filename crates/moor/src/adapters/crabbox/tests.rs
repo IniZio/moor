@@ -159,6 +159,15 @@ fn acquire_runs_warmup_and_builds_handle() {
 }
 
 #[test]
+fn a_warmup_of_a_box_with_no_size_passes_no_class() {
+    let (p, c) = fixture();
+    p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
+    c.acquire(&req("sprites", None)).unwrap();
+    let args = p.calls().first().unwrap().args.clone();
+    assert!(!args.iter().any(|a| a == "--class"), "{args:?}");
+}
+
+#[test]
 fn acquire_maps_sizes_and_rejects_unknown() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));

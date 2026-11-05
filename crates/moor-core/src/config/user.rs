@@ -61,11 +61,10 @@ const DEFAULT_SLEEP_AFTER_LABEL: &str = "30m";
 const DEFAULT_LAUNCH_TIMEOUT: Duration = Duration::from_mins(3);
 
 /// Box size class.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum BoxSize {
-    /// Default size.
-    #[default]
+    /// Small.
     Small,
     /// Medium.
     Medium,

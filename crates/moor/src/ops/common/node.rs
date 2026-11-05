@@ -162,7 +162,6 @@ pub(crate) fn admit(
     let on_it = BoxSpec {
         labels: spec.labels,
         node: Some(node.name.clone()),
-        mem_mib: spec.mem_mib,
     };
     let mut bound = false;
     store.apply_admitting(row.id, &node.name, |(used, starting)| {

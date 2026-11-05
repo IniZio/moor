@@ -96,7 +96,7 @@ fn a_delta_checkpoint_reads_its_parent_and_counts_only_its_own_bytes() {
 #[test]
 fn a_fork_starts_the_lease_moor_planned_from_its_own_dir() {
     let (p, c) = driver("fork", Reply::Ok(FORKED.to_owned()));
-    let r = req("local", None);
+    let r = req("local", Some("small"));
     let got = c.fork("cp-9", &r).unwrap();
     assert_eq!(got, c.planned_handle(&r));
     let call = p.calls().pop().unwrap();
@@ -114,6 +114,14 @@ fn a_fork_starts_the_lease_moor_planned_from_its_own_dir() {
         ]
     );
     assert!(call.cwd.unwrap().ends_with("moor-7-ab12cd"));
+}
+
+#[test]
+fn a_fork_of_a_box_with_no_size_passes_no_class() {
+    let (p, c) = driver("fork", Reply::Ok(FORKED.to_owned()));
+    c.fork("cp-9", &req("local", None)).unwrap();
+    let args = p.calls().pop().unwrap().args;
+    assert!(!args.iter().any(|a| a == "--class"), "{args:?}");
 }
 
 #[test]

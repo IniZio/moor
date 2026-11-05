@@ -28,7 +28,6 @@ fn a_node_counts_its_starting_and_ready_boxes_only() {
         let spec = BoxSpec {
             labels: Vec::new(),
             node: NodeName::parse(node).ok(),
-            mem_mib: 0,
         };
         store.set_box_spec(id, &spec).unwrap();
     }

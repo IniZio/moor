@@ -85,8 +85,8 @@ pub struct BoxSettings {
     pub provider: Option<Sourced<String>>,
     /// Shared node: the user config only, never the repo; `box.node`, else the only node.
     pub node: Option<Sourced<String>>,
-    /// Box size: repo > user > default `small`.
-    pub size: Sourced<BoxSize>,
+    /// Box size: repo > user; `None` leaves the machine class to the provider.
+    pub size: Option<Sourced<BoxSize>>,
     /// Sorted union of box credential names and MCP refs.
     pub credentials: Vec<CredPlan>,
     /// Repo box credential names, in repo order.
@@ -157,9 +157,9 @@ impl BoxSettings {
             Some(Sourced::new(runtime.clone(), Layer::User))
         });
         let size = match (r.box_.size, user.box_.size) {
-            (Some(s), _) => Sourced::new(s, Layer::Repo),
-            (None, Some(s)) => Sourced::new(s, Layer::User),
-            (None, None) => Sourced::new(BoxSize::default(), Layer::Default),
+            (Some(s), _) => Some(Sourced::new(s, Layer::Repo)),
+            (None, Some(s)) => Some(Sourced::new(s, Layer::User)),
+            (None, None) => None,
         };
 
         Self {

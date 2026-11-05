@@ -67,8 +67,6 @@ pub struct BoxSpec {
     pub labels: Vec<String>,
     /// The node the user named, if any.
     pub node: Option<NodeName>,
-    /// The guest memory it is given, in MiB.
-    pub mem_mib: u64,
 }
 
 /// The scheduler's answer.

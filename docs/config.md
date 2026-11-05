@@ -16,7 +16,7 @@ fails until one node is configured, or one of your own machines is enrolled.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `box.size` | `small`, `medium`, `large`, or `xlarge` | `small` | The Box size. A `.moor.yaml` value wins over this one. |
+| `box.size` | `small`, `medium`, `large`, or `xlarge` | none | The Box size. A `.moor.yaml` value wins over this one. With no size anywhere, the provider decides the machine. |
 | `box.sleep_after` | duration such as `30s`, `45m`, `2h`, or `1d` | `30m` | How long a Box stays idle before moor puts it to sleep. |
 | `box.sleep_after_blocked` | duration | `5m` | How long a Box stays idle while its agent waits on an unanswered prompt or a first-run screen before moor puts it to sleep. The shorter of this and `box.sleep_after` applies. An answer, a steer, or a message wakes the Box. |
 | `box.max_awake` | duration | `2h` | How long any Box stays awake, counted from its last start or wake, before moor puts it to sleep, even while its agent works. A steer or a message wakes the Box and the agent resumes. A Box slept mid-turn shows "turn unfinished" while asleep and resumes the turn on wake. |
@@ -468,7 +468,7 @@ A repo's `.moor.yaml` configures its Boxes.
 | `teardown` | list of shell commands | Commands that run when the Box closes. |
 | `env` | map | Plain environment variables for the Box. `PATH` is reserved. moor does not pass names that look like credentials, or names that moor sets, to the agent. |
 | `compose.project_prefix` | string | A prefix for compose project names. |
-| `box.size` | `small`, `medium`, `large`, or `xlarge` | The Box size. It wins over the user's `box.size`. A machine with less than 7/8 of the size's memory (4, 8, 16 or 32 GiB) still starts the Box and warns with `machine_short`. |
+| `box.size` | `small`, `medium`, `large`, or `xlarge` | The Box size. It wins over the user's `box.size`. With no size anywhere, the provider decides the machine. A machine with less than 7/8 of the size's memory (4, 8, 16 or 32 GiB) still starts the Box and warns with `machine_short`. |
 | `box_credentials` | list of names | Secrets that the Box's user must hold for a `start`. moor does not put them into the Box. |
 | `machine.labels`, `machine.ports` | lists | Attach one of the requester's own enrolled machines that has every label. The Box gets a slot `k` on that machine. Each listed port `p` is moved to `p + 10·k`, and served at that number on both the Box and the machine's loopback, over the machine's link. Slot 0 keeps the listed numbers. Without a free matching machine, the Box starts without one and the start says why. |
 | `machine.sync.presets`, `machine.sync.exclude` | `true`, `false`, or preset names to drop, and a list of rsync patterns | Paths that the machine runner's `sync` neither copies to the machine nor deletes there. See [Sync excludes](#sync-excludes). |
