@@ -78,7 +78,7 @@ pub(super) async fn serve<S: Peer>(mut stream: S, shared: &Shared) {
     };
     match check(&head, shared) {
         Err((status, why)) => answer(&mut stream, status, &why).await,
-        Ok(Checked::Ready) => answer(&mut stream, 200, "ok").await,
+        Ok(Checked::Ready) => answer(&mut stream, 200, &shared.key_id.to_string()).await,
         Ok(Checked::Tunnel(open)) => tunnel(stream, shared, &open).await,
     }
 }

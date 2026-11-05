@@ -42,7 +42,8 @@
 //! before the upgrade, and a CONNECT to it is `403`. A request that is not one plain request for
 //! the target gets a `403` reply in the tunnel.
 //!
-//! `GET /ready` answers `200` while the Proxy takes new tunnels. On SIGTERM it stops listening,
+//! `GET /ready` answers `200` while the Proxy takes new tunnels, with a body naming its key
+//! (`token::key_id`), so a controller can tell a Proxy under another key apart. On SIGTERM it stops listening,
 //! so the probe fails and new tunnels go to another replica, and open tunnels get up to the
 //! grace to finish.
 
@@ -107,7 +108,7 @@ enum Listener {
 }
 
 impl Listen {
-    /// Binds it, replacing a stale socket file; what it is bound to, with the port a TCP
+    /// Binds it, replacing a stale socket file but never one a live Proxy listens on; what it is bound to, with the port a TCP
     /// address of port 0 got.
     async fn bind(&self) -> std::io::Result<(Listener, Self)> {
         match self {
@@ -122,6 +123,12 @@ impl Listen {
                         .recursive(true)
                         .mode(0o700)
                         .create(dir)?;
+                }
+                if std::os::unix::net::UnixStream::connect(path).is_ok() {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::AddrInUse,
+                        "another Proxy listens on it",
+                    ));
                 }
                 match std::fs::remove_file(path) {
                     Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
@@ -173,6 +180,8 @@ struct Shared {
     open: AtomicUsize,
     /// The machine service, when one is configured.
     machine: Option<MachineService>,
+    /// Names the egress key on `/ready`.
+    key_id: i64,
 }
 
 /// A running Proxy.
@@ -206,10 +215,12 @@ impl Server {
             .map_err(|e| format!("cannot listen on {}: {e}", cfg.listen))?;
         let (clock, every) = (Arc::clone(&cfg.clock), cfg.tend);
         let machine = cfg.machine.clone();
+        let key_id = crate::proxy::token::key_id(cfg.key.as_bytes());
         let shared = Arc::new(Shared {
             boxes: Boxes::new(cfg),
             open: AtomicUsize::new(0),
             machine,
+            key_id,
         });
         let stop = Arc::new(Notify::new());
         let accepting = runtime.spawn(accept(listener, Arc::clone(&shared), Arc::clone(&stop)));

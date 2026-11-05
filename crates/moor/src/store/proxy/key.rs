@@ -63,17 +63,18 @@ impl Store {
         Ok(changed > 0)
     }
 
-    /// Records that `token` reached `box_id`; false when the row holds another token, minted
-    /// after it.
+    /// Records that `token`, minted under the key `key_id` names, reached `box_id`; false when
+    /// the row holds another token, minted after it.
     pub(crate) fn note_egress_token_delivered(
         &self,
         box_id: BoxId,
         token: &[u8],
+        key_id: i64,
     ) -> Result<bool, StoreError> {
         let changed = self.writer().run(
             Query::update()
                 .table(Proxy::Table)
-                .value(Proxy::TokenDelivered, 1)
+                .value(Proxy::TokenDelivered, key_id)
                 .and_where(Expr::col(Proxy::Box).eq(box_id.get()))
                 .and_where(Expr::col(Proxy::TokenHash).eq(hash(token))),
         )?;
@@ -86,8 +87,13 @@ impl Store {
         super::forget_egress_delivery(&*self.writer(), box_id)
     }
 
-    /// Whether the egress token the row of `box_id` holds reached the Box.
-    pub(crate) fn egress_token_delivered(&self, box_id: BoxId) -> Result<bool, StoreError> {
+    /// Whether the egress token the row of `box_id` holds reached the Box and was minted under
+    /// the key `key_id` names; a token under another key no longer verifies.
+    pub(crate) fn egress_token_delivered(
+        &self,
+        box_id: BoxId,
+        key_id: i64,
+    ) -> Result<bool, StoreError> {
         let delivered: Option<Option<i64>> = self
             .reader()?
             .row(
@@ -98,7 +104,7 @@ impl Store {
                 |r| r.get(0),
             )
             .optional()?;
-        Ok(delivered.flatten().is_some_and(|d| d != 0))
+        Ok(delivered.flatten() == Some(key_id))
     }
 
     /// The Box whose egress token hashes to `token_hash`, if a row holds it.
@@ -164,14 +170,14 @@ mod tests {
         assert!(!store.set_egress_token(a, b"t1").unwrap(), "no row yet");
         drop(store.reserve(a, &FakeRng::default(), std::time::Duration::from_secs(30)));
         assert!(store.set_egress_token(a, b"t1").unwrap());
-        assert!(store.note_egress_token_delivered(a, b"t1").unwrap());
+        assert!(store.note_egress_token_delivered(a, b"t1", 1).unwrap());
         assert!(
             store.set_egress_token(a, b"t2").unwrap(),
             "a lost token is replaced"
         );
         assert_eq!(store.egress_token_box(&hash(b"t1")).unwrap(), None);
         assert!(
-            !store.note_egress_token_delivered(a, b"t1").unwrap(),
+            !store.note_egress_token_delivered(a, b"t1", 1).unwrap(),
             "a stale delivery"
         );
         assert_eq!(store.egress_token_box(&hash(b"t2")).unwrap(), Some(a));
