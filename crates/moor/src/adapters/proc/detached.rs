@@ -48,7 +48,7 @@ impl SystemProc {
     /// Like `command`, but moor itself resolves to the running executable
     /// unless an override or config path names another program.
     ///
-    /// The proxy supervisor is moor itself, so it keeps this process's
+    /// A moor process started this way keeps this process's
     /// environment: it must resolve the same state dir, config and credential
     /// sources as the moor that launched it. Other tools get a cleared one.
     fn daemon_command(&self, spec: &ProcSpec) -> Command {

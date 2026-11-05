@@ -9,7 +9,7 @@ use crate::vault::Vault;
 
 /// Serves one connection on the ledger socket, to the front and shared egress Proxies; without a
 /// shared store it closes at once, so the Proxy sees the controller as unavailable. A Box
-/// supervisor an earlier build started is refused, so it gives up its lease and exits.
+/// supervisor an earlier build started is refused, so it gives up and exits.
 pub(crate) fn serve_ledger(
     (env, vault): (&Env, &Vault),
     fronts_key: Option<&str>,

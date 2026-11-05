@@ -134,7 +134,7 @@ impl FrontSocket {
     }
 
     /// Removes the socket file if it is still the one that bind created, then stops
-    /// `listening`, so a supervisor that lost its lease never removes its successor's socket.
+    /// `listening`, so a front that stops never removes its successor's socket.
     /// The file goes before the acceptor is joined, which can take a whole poll, so a successor
     /// that binds meanwhile keeps its socket. The listener still holds its inode during the
     /// compare, so a freed inode number that a new file reuses cannot match.

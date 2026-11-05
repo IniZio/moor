@@ -1,5 +1,5 @@
 //! `moor` binary: the only place that opens stdout and stderr. It writes rendered
-//! output itself and hands stderr to the proxy supervisor and the controller
+//! output itself and hands stderr to the Proxy processes and the controller
 //! daemon, which stream lines live.
 #![forbid(unsafe_code)]
 

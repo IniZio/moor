@@ -1,4 +1,4 @@
-//! What a Box's supervisor starts from: its spec, and its interception CA, which the controller
+//! What a Box's engine starts from: its spec, and its interception CA, which the controller
 //! makes on the first ask and keeps sealed in the Proxy row for the Box's whole life.
 
 use moor_core::BoxId;

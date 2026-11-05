@@ -9,8 +9,8 @@
 //!
 //! It listens on a Unix socket that only moor's user can open (see `socket`).
 //!
-//! It replaces any proxy credential the Box sends with an internal token that only the
-//! supervisor and nono know, so a request the Box loops back into nono's own port cannot
+//! It replaces any proxy credential the client sends with an internal token that only the
+//! front Proxy and nono know, so a request looped back into nono's own port cannot
 //! present anything nono accepts.
 //!
 //! Request bytes carry credentials, so nothing here logs them.

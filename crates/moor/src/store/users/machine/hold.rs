@@ -48,7 +48,7 @@ pub(crate) enum ClaimState {
     },
 }
 
-/// What a supervisor tick's grant did for its Box.
+/// What a keeper tick's grant did for its Box.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum MachineWake {
     /// The Box wants no machine.
@@ -67,7 +67,7 @@ pub(crate) enum MachineWake {
 }
 
 impl Store {
-    /// Each supervisor tick of an awake Box: an asleep claim is wanted again on the same machine,
+    /// Each keeper tick of an awake Box: an asleep claim is wanted again on the same machine,
     /// then the oldest wants that a free slot fits are granted and expired ones dropped. Only a
     /// Box that waits or slept takes the write lock.
     ///

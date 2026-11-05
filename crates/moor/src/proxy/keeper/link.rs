@@ -119,7 +119,7 @@ fn ask_runner(socket: &Path, req: &Forward) -> Result<UnixStream, String> {
     }
 }
 
-/// One supervisor tick: a link with a dead child is dropped and opened again once.
+/// One keeper tick: a link with a dead child is dropped and opened again once.
 ///
 /// # Errors
 /// Why the reopened forwards failed; the link is then gone until the next tick.

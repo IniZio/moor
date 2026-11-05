@@ -41,7 +41,7 @@ const INTERRUPT_WAIT: Duration = Duration::from_secs(30);
 /// The Box lock is held from the gate to the Workspace close and dropped before promotion, which
 /// takes the locks of the waiting Boxes. The machine is released before the Workspace closes.
 /// The agent stops first, so the session stays ended when the release fails and the
-/// Box stays open. The Box's proxy supervisor stops after the lock is dropped: the wait can take
+/// Box stays open. The Box's keeper stops after the lock is dropped: the wait can take
 /// seconds and a closed Box cannot get a new proxy row. Waiting Boxes are then promoted.
 pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     run_with_reason(cx, req, None)
