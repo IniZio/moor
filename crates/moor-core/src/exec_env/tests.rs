@@ -424,3 +424,56 @@ fn a_stripped_token_is_not_reexported() {
     let got = build(&b, Purpose::Run).unwrap();
     assert!(!got.prelude.join("\n").contains("export GH_TOKEN="));
 }
+
+/// The values of `ANDROID_HOME` and `ANDROID_SDK_ROOT` after the Android lines for `root` run
+/// with `env` already set, or `-` for a variable left unset.
+fn android_vars(root: &str, env: &[(&str, &str)]) -> Vec<String> {
+    let script = format!(
+        "{}\nprintf '%s\\n' \"${{ANDROID_HOME-}}\" \"${{ANDROID_SDK_ROOT-}}\"",
+        android_lines(root).join("\n")
+    );
+    let out = std::process::Command::new("sh")
+        .args(["-c", &script])
+        .env_clear()
+        .envs(env.iter().copied())
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| if l.is_empty() { "-" } else { l }.to_owned())
+        .collect()
+}
+
+#[test]
+fn the_android_sdk_is_exported_only_where_the_directory_exists_and_the_repo_did_not_set_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_str().unwrap();
+    assert_eq!(android_vars(root, &[]), [root, root]);
+    assert_eq!(
+        android_vars(root, &[("ANDROID_HOME", "/repo/sdk")]),
+        ["/repo/sdk", root]
+    );
+    assert_eq!(
+        android_vars(root, &[("ANDROID_SDK_ROOT", "/repo/sdk")]),
+        [root, "/repo/sdk"]
+    );
+    assert_eq!(android_vars("/no/such/sdk-dir", &[]), ["-", "-"]);
+}
+
+#[test]
+fn a_proxy_exec_exports_the_sdk_at_its_preset_path_before_the_java_lines() {
+    let e = env();
+    let got = build(&ctx(&e, Some(PEM), None), Purpose::Run)
+        .unwrap()
+        .prelude;
+    let text = got.join("\n");
+    let sdk = text.find("/opt/android-sdk").expect("the preset path");
+    assert!(sdk < text.find("JAVA_TOOL_OPTIONS").unwrap());
+    assert!(!build(&ctx(&e, None, None), Purpose::Run)
+        .unwrap()
+        .prelude
+        .join("\n")
+        .contains("ANDROID"));
+}

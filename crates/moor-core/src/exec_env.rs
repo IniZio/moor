@@ -309,8 +309,20 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Vec<String> {
         ));
     }
     lines.push("export NODE_USE_ENV_PROXY=1".to_owned());
+    lines.extend(android_lines(ANDROID_SDK));
     lines.extend(java::java_lines(p.egress_port, &ca));
     lines
+}
+
+/// Where the `android-sdk` cache preset keeps the Android SDK.
+const ANDROID_SDK: &str = "/opt/android-sdk";
+
+/// Lines that point Android tools at the SDK in `root`, a path with no shell metacharacters, for a variable the repo did not set and
+/// only when `root` exists, so a Box without the volume keeps finding its SDK where it did.
+fn android_lines(root: &str) -> Vec<String> {
+    vec![format!(
+        "if [ -d {root} ]; then export ANDROID_HOME=\"${{ANDROID_HOME:-{root}}}\" ANDROID_SDK_ROOT=\"${{ANDROID_SDK_ROOT:-{root}}}\"; fi"
+    )]
 }
 
 /// The line that appends the `PATH` of [`IMAGE_ENV_FILE`], when it sets one, to the exec's `PATH`.
@@ -354,11 +366,6 @@ pub(crate) fn per_box_paths() -> [String; 3] {
         format!("{}/{}", java::GRADLE_HOME, java::PROPERTIES_FILE),
         format!("{}/{}", java::GRADLE_HOME, java::TRUSTSTORE_FILE),
     ]
-}
-
-/// The npm and Yarn caches every exec points the tools at, in `$HOME/` form.
-pub(crate) const fn tool_caches() -> (&'static str, &'static str) {
-    (NPM_CACHE, YARN_CACHE)
 }
 
 mod egress;
