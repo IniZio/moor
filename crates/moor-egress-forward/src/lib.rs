@@ -7,7 +7,7 @@
 //! `200 Connection established`, and any other status goes to the client as it came.
 
 use std::fmt;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -94,8 +94,16 @@ impl Upstream {
     /// # Errors
     /// As for [`Config::parse`].
     pub fn new(url: String, token: &str, roots: RootCertStore) -> Result<Self, String> {
-        if !(url.starts_with("ws://") || url.starts_with("wss://")) {
-            return Err(format!("upstream {url} is not a ws:// or wss:// address"));
+        match (url.strip_prefix("ws://"), url.starts_with("wss://")) {
+            (Some(rest), _) if !loopback(rest) => {
+                return Err(format!(
+                    "upstream {url} sends the token in the clear; only a loopback ws:// address may"
+                ))
+            }
+            (Some(_), _) | (None, true) => {}
+            (None, false) => {
+                return Err(format!("upstream {url} is not a ws:// or wss:// address"))
+            }
         }
         if token.is_empty() {
             return Err("the token is empty".to_owned());
@@ -117,14 +125,40 @@ impl Upstream {
     }
 }
 
-/// Serves each CONNECT accepted on `listener` until the listener fails.
+/// Whether the host of `rest`, an address after its scheme, is a loopback name or address.
+fn loopback(rest: &str) -> bool {
+    let authority = rest.split('/').next().unwrap_or_default();
+    let host = authority.strip_prefix('[').map_or_else(
+        || authority.split(':').next().unwrap_or_default(),
+        |v6| v6.split(']').next().unwrap_or_default(),
+    );
+    host == "localhost" || host.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
+}
+
+/// The first pause after a failed accept.
+const ACCEPT_PAUSE: Duration = Duration::from_millis(10);
+/// The longest pause after failed accepts in a row.
+const ACCEPT_PAUSE_MAX: Duration = Duration::from_secs(1);
+
+/// The pause after `pause` when the next accept fails too.
+#[must_use]
+pub fn next_accept_pause(pause: Duration) -> Duration {
+    (pause * 2).min(ACCEPT_PAUSE_MAX)
+}
+
+/// Serves each CONNECT accepted on `listener`. A failed accept, such as running out of file
+/// descriptors, pauses from 10 ms, doubling up to 1 s, so the loop never spins.
 pub async fn serve(listener: TcpListener, upstream: Arc<Upstream>) {
+    let mut pause = ACCEPT_PAUSE;
     loop {
-        let Ok((client, _)) = listener.accept().await else {
-            continue;
-        };
-        let upstream = Arc::clone(&upstream);
-        tokio::spawn(async move { forward(client, &upstream).await });
+        if let Ok((client, _)) = listener.accept().await {
+            pause = ACCEPT_PAUSE;
+            let upstream = Arc::clone(&upstream);
+            tokio::spawn(async move { forward(client, &upstream).await });
+        } else {
+            tokio::time::sleep(pause).await;
+            pause = next_accept_pause(pause);
+        }
     }
 }
 
@@ -263,18 +297,15 @@ async fn pump(mut client: TcpStream, tunnel: Tunnel, early: Vec<u8>) {
             return;
         }
         let mut buf = vec![0_u8; CHUNK];
-        loop {
-            match from_client.read(&mut buf).await {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    let chunk = buf.get(..n).unwrap_or_default().to_vec();
-                    if sink.send(Message::binary(chunk)).await.is_err() {
-                        return;
-                    }
-                }
+        while let Ok(n) = from_client.read(&mut buf).await {
+            if n == 0 {
+                break;
+            }
+            let chunk = buf.get(..n).unwrap_or_default().to_vec();
+            if sink.send(Message::binary(chunk)).await.is_err() {
+                break;
             }
         }
-        drop(sink.close().await);
     };
     let down = async move {
         while let Some(Ok(msg)) = stream.next().await {
