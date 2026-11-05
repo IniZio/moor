@@ -39,6 +39,7 @@ pub(super) fn write(s: &mut Script) {
                 text("outcome")
                     .not_null()
                     .check(Expr::col("outcome").is_in([
+                        "starting",
                         "started",
                         "finished",
                         "timed_out",
