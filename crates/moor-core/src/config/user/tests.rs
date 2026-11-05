@@ -335,6 +335,7 @@ fn removed_keys_are_unknown() {
     for (doc, path) in [
         ("box: {enforce_egress: true}", "box.enforce_egress"),
         ("egress: {allow: [x.io]}", "egress"),
+        ("tools: {gh: /usr/bin/gh}", "tools.gh"),
     ] {
         let e = err(doc);
         assert_eq!(e.path, path, "{doc}");

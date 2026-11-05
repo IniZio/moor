@@ -11,8 +11,6 @@ pub enum Tool {
     Agent,
     /// OpenSSH client.
     Ssh,
-    /// GitHub CLI.
-    Gh,
     /// Git.
     Git,
     /// Rsync.
@@ -32,7 +30,6 @@ impl Tool {
             Self::Herdr => "MOOR_HERDR_BIN",
             Self::Agent => "MOOR_CLAUDE_BIN",
             Self::Ssh => "MOOR_SSH_BIN",
-            Self::Gh => "MOOR_GH_BIN",
             Self::Git => "MOOR_GIT_BIN",
             Self::Rsync => "MOOR_RSYNC_BIN",
             Self::MoorSelf => "MOOR_SELF_BIN",
@@ -48,7 +45,6 @@ impl Tool {
             Self::Herdr => "herdr",
             Self::Agent => "claude",
             Self::Ssh => "ssh",
-            Self::Gh => "gh",
             Self::Git => "git",
             Self::Rsync => "rsync",
             Self::MoorSelf => "moor",

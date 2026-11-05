@@ -14,8 +14,6 @@ pub struct ToolsConfig {
     pub herdr: Option<PathBuf>,
     /// `claude` program.
     pub claude: Option<PathBuf>,
-    /// `gh` program.
-    pub gh: Option<PathBuf>,
     /// `ssh` program.
     pub ssh: Option<PathBuf>,
     /// `git` program.

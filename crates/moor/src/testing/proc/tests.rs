@@ -26,9 +26,9 @@ fn first_match_wins_and_rules_reuse() {
 #[test]
 fn unscripted_is_127() {
     let p = ScriptedProc::new();
-    let e = p.run(&spec(Tool::Gh, &["pr"])).unwrap_err();
+    let e = p.run(&spec(Tool::Git, &["pr"])).unwrap_err();
     assert!(
-        matches!(e, ProcError::NonZero { code: 127, ref stderr_tail, .. } if stderr_tail == "unscripted: gh pr")
+        matches!(e, ProcError::NonZero { code: 127, ref stderr_tail, .. } if stderr_tail == "unscripted: git pr")
     );
 }
 
@@ -73,10 +73,10 @@ fn detached_records_and_ok() {
 #[test]
 fn bytes_reply_is_raw_for_secret_and_lossy_for_run() {
     let p = ScriptedProc::new();
-    p.on(Tool::Gh, &["s"], Reply::Bytes(vec![0xff, 0xfe, b'x']));
-    let out = p.run_secret(&spec(Tool::Gh, &["s"])).unwrap();
+    p.on(Tool::Git, &["s"], Reply::Bytes(vec![0xff, 0xfe, b'x']));
+    let out = p.run_secret(&spec(Tool::Git, &["s"])).unwrap();
     assert_eq!(out.as_slice(), [0xff, 0xfe, b'x']);
-    let lossy = p.run(&spec(Tool::Gh, &["s"])).unwrap();
+    let lossy = p.run(&spec(Tool::Git, &["s"])).unwrap();
     assert_eq!(lossy.stdout, "\u{fffd}\u{fffd}x");
     assert_eq!(p.calls().len(), 2);
 }
@@ -85,7 +85,7 @@ fn bytes_reply_is_raw_for_secret_and_lossy_for_run() {
 fn secret_failure_has_empty_stdout() {
     let p = ScriptedProc::new();
     p.on(
-        Tool::Gh,
+        Tool::Git,
         &["f"],
         Reply::Fail {
             code: 4,
@@ -94,7 +94,7 @@ fn secret_failure_has_empty_stdout() {
         },
     );
     assert!(matches!(
-        p.run_secret(&spec(Tool::Gh, &["f"])),
+        p.run_secret(&spec(Tool::Git, &["f"])),
         Err(ProcError::NonZero { code: 4, stdout, .. }) if stdout.is_empty()
     ));
 }
