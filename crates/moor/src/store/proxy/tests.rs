@@ -481,3 +481,85 @@ fn a_reserve_after_the_lease_lapsed_needs_the_token_delivered_again() {
     let _ = store.reserve(id, &FakeRng::default(), LEASE).unwrap();
     assert!(!store.egress_token_delivered(id).unwrap());
 }
+
+/// A Box acquired as `p/first`, with a reserved proxy row whose egress token was delivered.
+fn delivered_on_a_machine(dir: &Path) -> (Store, Arc<FakeClock>, BoxId) {
+    use moor_core::domain::box_state::BoxLifecycleInput;
+    use moor_core::domain::boxes::BoxInput;
+    use moor_core::domain::decision::{Field, Fields};
+    use moor_core::ProviderId;
+    let (store, clock, id) = reserved(dir);
+    store
+        .apply(
+            Decision::new(id)
+                .lifecycle(BoxLifecycleInput::Admitted)
+                .box_input(BoxInput::Requested)
+                .set(Fields {
+                    box_provider: Field::Set(ProviderId::new("p")),
+                    ..Fields::default()
+                }),
+        )
+        .unwrap();
+    acquire(&store, id, "p/first");
+    assert!(store.set_egress_token(id, b"t1").unwrap());
+    assert!(store.note_egress_token_delivered(id, b"t1").unwrap());
+    (store, clock, id)
+}
+
+/// Records Box `id` acquired as `handle`, as a start or a retry onto a fresh machine does.
+fn acquire(store: &Store, id: BoxId, handle: &str) {
+    use moor_core::domain::boxes::BoxInput;
+    store
+        .apply(Decision::new(id).box_input(BoxInput::Acquired {
+            handle: moor_core::BoxHandle::new(handle),
+        }))
+        .unwrap();
+}
+
+#[test]
+fn a_box_acquired_again_on_a_fresh_machine_needs_the_token_delivered_again() {
+    use moor_core::domain::boxes::BoxInput;
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _, id) = delivered_on_a_machine(dir.path());
+    for input in [BoxInput::DriverMissing, BoxInput::Requested] {
+        store.apply(Decision::new(id).box_input(input)).unwrap();
+    }
+    acquire(&store, id, "p/second");
+    assert!(!store.egress_token_delivered(id).unwrap());
+}
+
+#[test]
+fn a_box_moved_onto_a_fork_needs_the_token_delivered_again() {
+    use moor_core::domain::decision::{Field, Fields};
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _, id) = delivered_on_a_machine(dir.path());
+    store
+        .apply(Decision::new(id).set(Fields {
+            box_handle: Field::Set(moor_core::BoxHandle::new("p/fork")),
+            ..Fields::default()
+        }))
+        .unwrap();
+    assert!(!store.egress_token_delivered(id).unwrap());
+}
+
+#[test]
+fn a_restarted_proxy_needs_the_token_delivered_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _, id) = delivered_on_a_machine(dir.path());
+    assert!(store.expire_proxy(id).unwrap());
+    assert!(!store.egress_token_delivered(id).unwrap());
+}
+
+#[test]
+fn a_change_that_keeps_the_machine_keeps_the_delivery() {
+    use moor_core::domain::decision::{Field, Fields};
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _, id) = delivered_on_a_machine(dir.path());
+    store
+        .apply(Decision::new(id).set(Fields {
+            box_workdir: Field::Set("/work".to_owned()),
+            ..Fields::default()
+        }))
+        .unwrap();
+    assert!(store.egress_token_delivered(id).unwrap());
+}

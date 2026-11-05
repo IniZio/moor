@@ -46,6 +46,17 @@ fn reset(box_id: BoxId, now: Ts) -> UpdateStatement {
         .take()
 }
 
+/// Marks the egress token of `box_id` undelivered, as when the Box gets a fresh disk.
+pub(crate) fn forget_egress_delivery(conn: &dyn Db, box_id: BoxId) -> Result<(), StoreError> {
+    conn.run(
+        Query::update()
+            .table(Proxy::Table)
+            .value(Proxy::TokenDelivered, 0)
+            .and_where(Expr::col(Proxy::Box).eq(box_id.get())),
+    )?;
+    Ok(())
+}
+
 /// Tries of a reserve whose forward port another writer took between the draw and the write.
 const RESERVE_TRIES: u32 = 3;
 
