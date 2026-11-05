@@ -16,14 +16,23 @@ use moor::moor_core::{ExecReq, Request, Response};
 use moor::Moor;
 
 /// Runs `moor front-shim`, the controller's wrapper around each front, `moor front-run`, the
-/// wrapper of a front the controller does not start, or `moor proxy serve-fronts`, the front
-/// Proxy the controller runs; none is a user command.
+/// wrapper of a front the controller does not start, `moor proxy serve-fronts`, the front
+/// Proxy the controller runs, or `moor proxy serve-egress`, the shared egress Proxy; none is a
+/// user command.
 fn front_shim(args: &[std::ffi::OsString]) -> Option<ExitCode> {
     if let [_, proxy, serve, args @ ..] = args {
         if proxy == "proxy" && serve == "serve-fronts" {
             return Some(ExitCode::from(
                 moor::serve_front_proxy(args).unwrap_or_else(|e| {
                     let _ = writeln!(std::io::stderr(), "moor front proxy: {e}");
+                    1
+                }),
+            ));
+        }
+        if proxy == "proxy" && serve == "serve-egress" {
+            return Some(ExitCode::from(
+                moor::serve_egress_proxy(args).unwrap_or_else(|e| {
+                    let _ = writeln!(std::io::stderr(), "moor egress proxy: {e}");
                     1
                 }),
             ));

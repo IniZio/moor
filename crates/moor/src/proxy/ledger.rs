@@ -23,10 +23,6 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) use boxes::{BoxLedger, BoxView, CaPair, MachineWant};
 use call::Call;
-#[cfg_attr(
-    not(test),
-    expect(unused_imports, reason = "the shared egress Proxy is not wired yet")
-)]
 pub(crate) use client::{EgressLedger, FrontsLedger};
 pub(crate) use serve::{serve, Keys};
 

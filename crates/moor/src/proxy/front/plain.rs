@@ -109,7 +109,7 @@ fn clean_headers(lines: &[&str], authority: &str) -> Vec<u8> {
 }
 
 /// The CONNECT head sent to nono for `authority`, carrying `token`.
-pub(super) fn connect_head(authority: &str, token: &[u8]) -> zeroize::Zeroizing<Vec<u8>> {
+pub(crate) fn connect_head(authority: &str, token: &[u8]) -> zeroize::Zeroizing<Vec<u8>> {
     let mut out = zeroize::Zeroizing::new(Vec::new());
     out.extend_from_slice(
         format!("CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n").as_bytes(),

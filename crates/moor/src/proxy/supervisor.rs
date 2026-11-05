@@ -30,6 +30,8 @@ use super::ledger::BoxLedger;
 use super::nono::capture::UserSecretsFn;
 use run::{Running, Stop};
 
+pub(crate) use listen::{engine, Engine, Parts};
+
 /// How long a lease stays valid without a heartbeat.
 pub(crate) const LEASE: Duration = Duration::from_secs(30);
 /// Pause between heartbeats.

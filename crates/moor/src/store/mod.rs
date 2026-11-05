@@ -26,10 +26,6 @@ use init::{parsed, parsed_opt};
 use select::{box_select, events_of, limit, newest_event, EVENT_COLUMNS};
 
 pub(crate) use error::StoreError;
-#[cfg_attr(
-    not(test),
-    expect(unused_imports, reason = "the shared egress Proxy is not wired yet")
-)]
 pub(crate) use users::front_leases::hash as token_hash;
 
 /// File name of the state database inside the state directory.

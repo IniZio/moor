@@ -6,11 +6,13 @@
 //! The nono module embeds nono-proxy as each Box's egress proxy.
 //!
 //! The supervisor owns the proxy's lifetime. The fronts module is the front Proxy, which
-//! serves the controller's fronts rather than Boxes.
+//! serves the controller's fronts rather than Boxes. The egress module is the shared Proxy,
+//! which serves many Boxes by token.
 
 pub(crate) mod adopt;
 pub(crate) mod chain;
 pub(crate) mod detached;
+pub(crate) mod egress;
 pub(crate) mod front;
 pub(crate) mod fronts;
 pub(crate) mod graphql;

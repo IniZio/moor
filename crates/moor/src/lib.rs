@@ -47,3 +47,12 @@ pub use moor_core;
 pub fn serve_front_proxy(words: &[std::ffi::OsString]) -> Result<u8, String> {
     proxy::fronts::run::main(words)
 }
+
+/// Runs `moor proxy serve-egress`, the shared egress Proxy, with the words after
+/// `serve-egress`; returns the exit code.
+///
+/// # Errors
+/// Why the Proxy could not start.
+pub fn serve_egress_proxy(words: &[std::ffi::OsString]) -> Result<u8, String> {
+    proxy::egress::run::main(words)
+}

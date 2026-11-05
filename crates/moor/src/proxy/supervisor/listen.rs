@@ -151,6 +151,11 @@ impl Engine {
         SocketAddr::from(([127, 0, 0, 1], self.proxy.port()))
     }
 
+    /// The token a CONNECT to [`Engine::addr`] must present.
+    pub(crate) const fn internal(&self) -> &Secret {
+        &self.internal
+    }
+
     /// Stops the proxy, then the filter it chains through.
     pub(crate) fn stop(self) {
         self.proxy.stop();
