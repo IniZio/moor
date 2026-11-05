@@ -17,6 +17,7 @@ github-api:
     form: "token {secret}"
   allow:
     - "GET /repos/{any_repo}"
+    - "GET /repos/{any_repo}/releases"
     - "GET /repos/{any_repo}/releases/**"
     - "GET /repos/{repo}"
     - "GET|POST /repos/{repo}/pulls"
