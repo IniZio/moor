@@ -6,6 +6,7 @@
 )]
 
 use std::io::{BufRead, BufReader, Write};
+use std::net::Shutdown;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::sync::mpsc;
@@ -93,7 +94,7 @@ fn a_dead_link_is_reopened_and_close_ends_every_tunnel() {
     keep(&mut link, open).expect("alive link kept");
     assert_eq!(driver.tunnels().len(), first, "a live link is left alone");
     let (_, held) = seen.recv().expect("runner asked");
-    drop(held);
+    held.shutdown(Shutdown::Both).expect("runner lets go");
     keep(&mut link, open).expect("reopened");
     assert_eq!(
         driver.tunnels().len(),
