@@ -49,7 +49,10 @@ async fn echo<S: AsyncRead + AsyncWrite + Unpin>(stream: S, seen: mpsc::Unbounde
         .unwrap();
     while let Some(Ok(msg)) = ws.next().await {
         match msg {
-            Message::Binary(b) => ws.send(Message::Binary(b)).await.unwrap(),
+            Message::Binary(b) => {
+                assert!(b.len() <= 64 * 1024, "a {} byte message", b.len());
+                ws.send(Message::Binary(b)).await.unwrap();
+            }
             Message::Close(_) => break,
             _ => {}
         }

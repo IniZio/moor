@@ -3261,7 +3261,6 @@ dependencies = [
 name = "moor-egress-forward"
 version = "0.2.0"
 dependencies = [
- "bytes",
  "futures-util",
  "httparse",
  "rcgen",
