@@ -18,6 +18,11 @@ pub(super) const PROPERTIES_FILE: &str = "gradle.properties";
 /// The trust store moor writes beside [`PROPERTIES_FILE`], holding the per-Box Proxy CA.
 pub(super) const TRUSTSTORE_FILE: &str = "moor-proxy-truststore.p12";
 
+/// Turns Gradle's build cache on unless the user's own lines in the file set it. The user home
+/// file outranks a project's `gradle.properties`, so this also applies to a project that set it
+/// to `false`.
+const CACHING_UNLESS_SET: &str = "[ -n \"$(sed -n '/^# moor proxy: begin$/,/^# moor proxy: end$/d;/^org\\.gradle\\.caching[[:space:]]*[=:]/p' \"$moor_p\" 2>/dev/null)\" ] || printf '%s\\n' 'org.gradle.caching=true'";
+
 /// Lines that give the JVM the egress proxy on `port` and a trust store holding the Proxy CA.
 ///
 /// `gradle.properties` is rewritten under `umask 077`, since it may hold the user's own
@@ -44,6 +49,7 @@ pub(super) fn java_lines(port: u16, ca: &str) -> Vec<String> {
     }
     lines.extend(
         [
+            CACHING_UNLESS_SET.to_owned(),
             format!("printf '%s\\n' 'systemProp.http.nonProxyHosts={non_proxy}' 'systemProp.https.nonProxyHosts={non_proxy}' \"systemProp.javax.net.ssl.trustStore=$moor_ts\" 'systemProp.javax.net.ssl.trustStorePassword=changeit' 'systemProp.javax.net.ssl.trustStoreType=PKCS12' '{END}'"),
             "} >\"$moor_p.$$\" ) &&".to_owned(),
             "mv -f \"$moor_p.$$\" \"$moor_p\"; then".to_owned(),
