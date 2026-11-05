@@ -746,7 +746,7 @@ because moor keeps them in the Proxy, not in the Box.
 | `drain_timeout_secs` | integer | 600 | Seconds a SIGTERM waits for in-flight requests. See [Stopping the controller](#stopping-the-controller). |
 | `runner_state_dir` | path | `<state dir>/machine-runner` | The machine runner's `--state-dir`. The host paths the runner's `box-mirror` and `box-put` name must resolve inside it; the controller refuses any other. `~` is allowed. |
 | `fronts` | map | empty | Fronts that each get their own socket, and that the controller runs when they have a `command`. |
-| `ledger_tls` | map | none | Also serve the ledger on TCP with TLS, for a shared egress Proxy in another pod. `listen` is the address, such as `0.0.0.0:7443`. `cert` and `key` are PEM files; `~` is allowed. The listener answers only the shared egress Proxy's key in `MOOR_EGRESS_KEY`, and the controller refuses to start without it. Box Proxies and the front Proxy stay on the ledger socket. The Proxy names it with `moor proxy serve-egress --ledger tls://HOST:PORT --ledger-ca CA.pem`. |
+| `ledger_tls` | map | none | Also serve the ledger on TCP with TLS, for a shared egress Proxy in another pod. `listen` is the address, such as `0.0.0.0:7443`. `cert` and `key` are PEM files; `~` is allowed. The listener answers only the shared egress Proxy's key in `MOOR_EGRESS_KEY`. The front Proxy stays on the ledger socket. The Proxy names it with `moor proxy serve-egress --ledger tls://HOST:PORT --ledger-ca CA.pem`. |
 
 The controller refuses a config that has a `web`, `slack`, or `repos` key.
 
@@ -769,8 +769,7 @@ during a rollout included, stays under the database role's connection limit.
 
 Every moor that opens the store reads `MOOR_DATABASE_URL`: the controller,
 `moor store migrate`, and the CLI when no controller is set. The controller
-passes the URL and the reader cap to the Proxy processes it starts, and to no
-front. On Postgres the state directory still holds this host's own files, such
+passes the URL to no Proxy and no front. On Postgres the state directory still holds this host's own files, such
 as the sockets and the Proxy logs, so the controller still needs one.
 
 The URL's query takes libpq's TLS fields:

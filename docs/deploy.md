@@ -76,14 +76,25 @@ both. Otherwise the CLI dials a socket path that the units never bound.
    systemctl --user start moor.service
    ```
 
-`KillMode=process` makes systemd signal only the controller on stop. Proxy
-supervisors, tunnels, and other processes that the controller started keep
+`KillMode=process` makes systemd signal only the controller on stop. The
+shared egress Proxy and other processes that the controller started keep
 running. systemd logs them as left-over processes when the service starts
 again. `TimeoutStopSec` must be above the config's `drain_timeout_secs`,
 600 by default, or systemd kills the controller in the middle of its drain.
 
-At start the controller answers requests at once and restarts each Box's Proxy
-in the background, so a slow Proxy never holds up the API.
+Every Box's credential hosts go through one shared egress Proxy. Without
+`MOOR_EGRESS_URL`, the controller runs it itself as `moor proxy serve-egress`
+on `<state dir>/egress/egress.sock`, with the key it keeps in
+`<state dir>/egress.key`. It outlives the controller, and a controller that
+finds it answering keeps it. Stop it by hand to run a new build of it. Each
+Box reaches it over a tunnel the controller holds, so a controller restart cuts
+the transfers open at that moment, and new requests wait for the tunnel to come
+back. With `MOOR_EGRESS_URL` set to a `wss://` address, Boxes dial that Proxy
+themselves, and `MOOR_EGRESS_KEY` must be the key it was given.
+
+At start the controller answers requests at once and opens each open Box's
+tunnel and machine forwards in the background, so a slow Box never holds up
+the API.
 
 ## What the controller checks
 
@@ -111,9 +122,9 @@ The machine runner's socket, `<state dir>/runner/runner.sock`, may be passed
 as `runner`. When it is not passed, the controller binds it itself.
 
 The ledger socket, `<state dir>/ledger/proxy.sock`, may be passed as `ledger`.
-When it is not passed, the controller binds it itself. The Proxy processes the
-controller starts make their store calls on it, so they never hold the database
-URL or the vault key. Each presents the key the controller started it with.
+When it is not passed, the controller binds it itself. The shared egress Proxy
+and the front Proxy make their store calls on it, so they never hold the database
+URL or the vault key. Each presents its key.
 
 The machine runner binds `<state dir>/runner/links.sock` itself, mode 0600, and
 refuses to start when the file is open to the group or to other users. The

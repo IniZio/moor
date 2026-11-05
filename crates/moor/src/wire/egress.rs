@@ -2,8 +2,8 @@
 //!
 //! Its key lives in the state dir, made on the first start. The `moor proxy serve-egress` process
 //! listens on the state dir's egress socket in a process group of its own, so it outlives the
-//! controller: a controller restart leaves the Proxy, and the Box traffic it carries, alone. A
-//! controller that finds it answering keeps it.
+//! controller: a controller restart leaves the Proxy alone. A controller that finds it answering
+//! keeps it. It never gets the database URL. It reads the store through the ledger.
 
 use std::fs::{self, OpenOptions};
 use std::io::{Read as _, Write as _};
@@ -15,7 +15,7 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use crate::config_load::load_user;
-use crate::env::{Env, EGRESS_KEY};
+use crate::env::{Env, DATABASE_READERS, DATABASE_URL, EGRESS_KEY};
 use crate::proxy::route::EgressRoute;
 use crate::proxy::token::base64url;
 
@@ -124,6 +124,8 @@ fn start(env: &Env, state: &Path, socket: &Path) -> Result<(), String> {
             .arg(format!("{}={}", service.host, service.upstream));
     }
     let mut child = cmd
+        .env_remove(DATABASE_URL)
+        .env_remove(DATABASE_READERS)
         .env(EGRESS_KEY, env.get(EGRESS_KEY).unwrap_or_default())
         .stdin(Stdio::null())
         .stdout(log)
