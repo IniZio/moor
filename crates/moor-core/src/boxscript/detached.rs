@@ -2,8 +2,8 @@
 //!
 //! A run keeps its files in `$HOME/.moor/runs/<id>/`, outside the workdir so a `git clean` in
 //! the command cannot delete them: `log`, `start`, `pid` (the run's process group), `exit` and
-//! `cancelled`. `run` is the run's id. Each script is POSIX sh text run with `sh -c` in the Box
-//! workdir.
+//! `cancelled`. The file `<id>.claim` beside that dir marks the run as launched. `run` is the
+//! run's id. Each script is POSIX sh text run with `sh -c` in the Box workdir.
 //!
 //! A pid alone can name an unrelated process after a Box reboot or pid wraparound, so `start`
 //! holds the boot id and the group leader's start time, and a pid counts as the run's only while
@@ -73,10 +73,11 @@ printf '%s\n' "$__moor_rc" > "$__moor_dir/exit.tmp" && mv -f "$__moor_dir/exit.t
     format!(
         r#"{dir}command -v setsid >/dev/null 2>&1 || {{ echo "moor: the Box has no setsid" >&2; exit 1; }}
 mkdir -p "$HOME/.moor/runs" || exit 1
-if ! mkdir "$__moor_dir" 2>/dev/null; then
-  [ -e "$__moor_dir" ] && {{ echo "moor: run {run} was already launched" >&2; exit {REFUSED}; }}
+if [ -e "$__moor_dir" ] || ! ( set -C; : > "$__moor_dir.claim" ) 2>/dev/null; then
+  [ -e "$__moor_dir" ] || [ -e "$__moor_dir.claim" ] && {{ echo "moor: run {run} was already launched" >&2; exit {REFUSED}; }}
   exit 1
 fi
+mkdir "$__moor_dir" || exit 1
 setsid sh -c {inner} sh "$__moor_dir" </dev/null >>"$__moor_dir/log" 2>&1 &
 __moor_n=0
 while [ ! -s "$__moor_dir/pid" ]; do
