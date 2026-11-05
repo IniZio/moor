@@ -218,18 +218,25 @@ fn a_second_ensure_reuses_the_running_supervisor() {
 }
 
 #[test]
-fn only_the_first_ensure_mints_an_egress_token() {
+fn each_ensure_remints_an_egress_token_until_one_is_delivered() {
     let f = fx();
-    let first = f.sup.ensure(&f.spec()).unwrap();
-    let second = f.sup.ensure(&f.spec()).unwrap();
-    let token = first.egress_token.expect("the first start mints a token");
-    assert!(second.egress_token.is_none(), "the Box keeps its token");
-    let hash = crate::store::token_hash(token.expose());
     let store = f.sup.store().unwrap();
-    assert_eq!(
-        store.egress_token_box(&hash).unwrap(),
-        Some(f.spec().box_id)
-    );
+    let box_id = f.spec().box_id;
+    let owner = |t: &moor_core::Secret| {
+        let hash = crate::store::token_hash(t.expose());
+        store.egress_token_box(&hash).unwrap()
+    };
+    let lost = f.sup.ensure(&f.spec()).unwrap().egress_token.unwrap();
+    let again = f.sup.ensure(&f.spec()).unwrap().egress_token;
+    let again = again.expect("a token that never reached the Box is minted again");
+    assert_eq!(owner(&lost), None, "the lost token stops working");
+    assert_eq!(owner(&again), Some(box_id));
+    assert!(store
+        .note_egress_token_delivered(box_id, again.expose())
+        .unwrap());
+    let later = f.sup.ensure(&f.spec()).unwrap().egress_token;
+    assert!(later.is_none(), "a delivered token is kept");
+    assert_eq!(owner(&again), Some(box_id));
 }
 
 #[test]

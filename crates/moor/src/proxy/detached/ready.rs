@@ -21,8 +21,8 @@ pub(super) fn record(store: &Store, spec: &ProxySpec, log: &Path) -> Result<(), 
         .map_err(|e| store_failed(&e, log))
 }
 
-/// The endpoint a ready row describes, with the CA its supervisor serves with and, when the row
-/// had none, a fresh egress token for the Box.
+/// The endpoint a ready row describes, with the CA its supervisor serves with and, until a token
+/// reached the Box, a fresh egress token that replaces the last one.
 pub(super) fn ready_endpoint(
     store: &Store,
     row: &ProxyRow,
