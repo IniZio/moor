@@ -1,17 +1,18 @@
 //! What a Box's Proxy tells the machine service about the Box's slot, read per request.
 
+use moor_core::domain::boxes::BoxState;
 use moor_core::view::MachineHoldState;
 use moor_core::BoxId;
 
 use crate::proxy::front::{Held, Hold};
-use moor_core::domain::boxes::BoxState;
-
+use crate::proxy::keeper::KEEPERS;
 use crate::store::Store;
 
 /// The slot `box_id` holds, or why it holds none.
 ///
-/// A wanted claim waits for a slot. An asleep claim belongs to a Box that sleeps unless the Box
-/// is awake again: then its keeper's next tick wants the slot.
+/// A wanted claim waits for a slot. An asleep claim belongs to a Box that sleeps, or is about to:
+/// its keeper parks before the machine sleeps. Once the Box runs again and its keeper is not
+/// parked, the keeper's next tick wants the slot.
 pub(super) fn hold_of(store: &Store, box_id: BoxId) -> Hold {
     let missing = |reason: String| Hold::Missing { box_id, reason };
     let Ok(claim) = store.claimed_machine(box_id) else {
@@ -38,10 +39,13 @@ pub(super) fn hold_of(store: &Store, box_id: BoxId) -> Hold {
             })
         }
         MachineHoldState::Waiting => true,
-        MachineHoldState::Asleep => store.box_row(box_id).is_ok_and(|row| {
-            row.and_then(|r| r.boxed)
-                .is_some_and(|b| b.state != BoxState::Asleep)
-        }),
+        MachineHoldState::Asleep => {
+            let runs = store.box_row(box_id).is_ok_and(|row| {
+                row.and_then(|r| r.boxed)
+                    .is_some_and(|b| matches!(b.state, BoxState::Ready | BoxState::Starting))
+            });
+            runs && !KEEPERS.get(box_id).is_some_and(|k| k.parked())
+        }
     };
     if awake {
         missing(format!(

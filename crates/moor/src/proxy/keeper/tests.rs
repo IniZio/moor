@@ -129,7 +129,7 @@ fn acquire(driver: &FakeDriver, id: BoxId, name: &str) -> BoxHandle {
 }
 
 /// Inserts a Box and takes it to Ready on a machine from `driver`.
-fn ready_box(store: &Store, driver: &FakeDriver) -> BoxId {
+pub(crate) fn ready_box(store: &Store, driver: &FakeDriver) -> BoxId {
     let new = NewBox {
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: None,

@@ -24,6 +24,7 @@ use crate::vault::Vault;
 
 mod egress;
 mod endpoint;
+mod hold;
 mod start;
 
 /// The shared egress Proxy's key in every served test ledger.
