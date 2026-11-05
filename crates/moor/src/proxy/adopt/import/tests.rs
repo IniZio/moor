@@ -54,3 +54,39 @@ fn a_spec_and_ca_left_in_files_move_into_the_row_and_open_again() {
         "a second run changes nothing"
     );
 }
+
+#[test]
+fn a_spec_already_in_the_row_is_not_replaced_by_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(1000)));
+    let store = Store::open(&dir.path().join(STORE_FILE), clock).unwrap();
+    let vault = Vault::load_or_create(&dir.path().join("vault.key")).unwrap();
+    let nt = NewBox {
+        name: BoxName::parse_allow_bare("old").unwrap(),
+        repo: None,
+    };
+    let id = store.apply(Decision::insert(nt)).unwrap().box_id;
+    drop(store.reserve(id, &FakeRng::default(), std::time::Duration::from_secs(30)));
+    let spec_for = |user| ProxySpec {
+        box_id: id,
+        box_handle: None,
+        other_repos: Vec::new(),
+        box_repo: None,
+        rules: Vec::new(),
+        user: UserId::new(user),
+    };
+    let (row_spec, file_spec) = (spec_for(3), spec_for(4));
+    store.set_proxy_spec(id, &row_spec).unwrap();
+    let (key_pem, cert_pem) = ca::generate(id).unwrap();
+    ca::install(dir.path(), id, (key_pem.as_bytes(), &cert_pem)).unwrap();
+    let files = ca::ca_dir(dir.path(), id);
+    std::fs::write(
+        files.join("spec.json"),
+        serde_json::to_vec(&file_spec).unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(import(&store, &vault, dir.path()), Vec::<String>::new());
+
+    assert_eq!(store.proxy_spec(id).unwrap(), Some(row_spec));
+}
