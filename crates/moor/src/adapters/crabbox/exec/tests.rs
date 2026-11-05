@@ -138,6 +138,31 @@ fn streamed_output_arrives_in_order_without_the_wrapper_lines() {
 }
 
 #[test]
+fn a_lost_forwarder_line_is_stripped_from_the_log_and_reported_once() {
+    let lab = lab();
+    let line = moor_core::exec_env::FORWARDER_LOST;
+    let spec = streamed(&lab, &format!("echo a; echo {line} >&2; echo b >&2"));
+    assert_eq!(lab.exec(&spec), Ok(ExecOutcome::Exited { code: 0 }));
+    assert_eq!(fs::read_to_string(lab.log()).unwrap(), "a\nb\n");
+    assert!(lab.cb.forwarder_lost(&handle()));
+    assert!(
+        !lab.cb.forwarder_lost(&handle()),
+        "asking forgets the report"
+    );
+}
+
+#[test]
+fn a_lost_forwarder_line_in_captured_stderr_is_reported() {
+    let lab = lab();
+    let line = moor_core::exec_env::FORWARDER_LOST;
+    assert_eq!(
+        lab.exec(&sh(&format!("echo {line} >&2; exit 3"))),
+        Ok(ExecOutcome::Exited { code: 3 })
+    );
+    assert!(lab.cb.forwarder_lost(&handle()));
+}
+
+#[test]
 fn the_cwd_is_made_and_entered() {
     let lab = lab();
     let dir = lab.dir.path().join("work/repo");

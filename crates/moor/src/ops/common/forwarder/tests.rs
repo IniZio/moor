@@ -305,17 +305,17 @@ fn every_mark_lost_fails_the_delivery() {
 }
 
 #[test]
-fn a_box_that_lost_its_forwarder_config_gets_a_new_delivery() {
+fn a_box_whose_exec_reported_its_config_lost_gets_a_new_delivery() {
     let r = rig();
     r.deliver(&tunneled(), &Rig::endpoint()).unwrap();
-    let r = Rig {
-        driver: r.driver.exec_ends_when(
-            "egress-forward.json",
-            moor_core::seam::driver::ExecOutcome::Exited { code: 1 },
-        ),
-        ..r
-    };
     assert_eq!(r.deliver(&tunneled(), &Rig::endpoint()), Ok(10556));
-    assert_eq!(r.written().len(), 4, "delivered twice");
+    assert_eq!(r.written().len(), 2, "no report, no delivery");
+    r.driver.report_forwarder_lost(&r.handle);
+    assert_eq!(r.deliver(&tunneled(), &Rig::endpoint()), Ok(10556));
+    assert_eq!(r.written().len(), 4, "delivered again");
     assert!(r.store.egress_token_delivered(r.id).unwrap());
+    assert!(
+        r.driver.execs().is_empty(),
+        "delivery runs no command of its own"
+    );
 }

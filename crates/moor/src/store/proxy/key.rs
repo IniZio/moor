@@ -79,6 +79,18 @@ impl Store {
         Ok(changed > 0)
     }
 
+    /// Records that the Box lost the egress token it was delivered, so the next exec delivers
+    /// another.
+    pub(crate) fn forget_egress_delivery(&self, box_id: BoxId) -> Result<(), StoreError> {
+        self.writer().run(
+            Query::update()
+                .table(Proxy::Table)
+                .value(Proxy::TokenDelivered, 0)
+                .and_where(Expr::col(Proxy::Box).eq(box_id.get())),
+        )?;
+        Ok(())
+    }
+
     /// Whether the egress token the row of `box_id` holds reached the Box.
     pub(crate) fn egress_token_delivered(&self, box_id: BoxId) -> Result<bool, StoreError> {
         let delivered: Option<Option<i64>> = self
