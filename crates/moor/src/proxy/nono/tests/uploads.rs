@@ -49,7 +49,8 @@ fn send(method: &str, path: &str) -> (Vec<Seen>, Vec<String>) {
     };
     let capture = MoorCapture::new(BTreeMap::from([("github-uploads".to_owned(), source)]));
     let state = dir.path().join("state");
-    let ca = ca::load_or_create(&state, BOX_ID).unwrap();
+    let (key, cert) = ca::generate(BOX_ID).unwrap();
+    let ca = ca::install(&state, BOX_ID, (key.as_bytes(), &cert)).unwrap();
     let token = Secret::new(TOKEN.as_bytes().to_vec());
     let mut cfg = build_config(&NonoSpec {
         rules: &rules,
@@ -63,7 +64,7 @@ fn send(method: &str, path: &str) -> (Vec<Seen>, Vec<String>) {
     cfg.0.upstream_extra_ca_pems = vec![up.ca_path.to_string_lossy().into_owned()];
     let capture = Arc::new(capture);
     let proxy = NonoProxy::start(cfg, Arc::clone(&capture)).unwrap();
-    let agent = upstream::client(proxy.port(), TOKEN, ca.cert_pem());
+    let agent = upstream::client(proxy.port(), TOKEN, &cert);
     let url = format!("https://localhost:{}{path}", up.port);
     let status = match method {
         "GET" => agent.get(&url).header("Authorization", PLACEHOLDER).call(),

@@ -58,6 +58,8 @@ pub(super) struct Rig {
     clock: Arc<FakeClock>,
     /// The Box CA.
     ca: ca::BoxCa,
+    /// The Box CA certificate the client trusts.
+    ca_pem: String,
     /// Running proxy.
     proxy: Option<NonoProxy>,
     /// Session token nono checks.
@@ -77,7 +79,7 @@ impl Rig {
 
     /// A client through the running proxy trusting the Box CA.
     pub(super) fn client(&self) -> Agent {
-        client(self.proxy().port(), self.ca.cert_pem())
+        client(self.proxy().port(), &self.ca_pem)
     }
 
     /// `https://localhost:<header upstream port><path>`.
@@ -193,7 +195,8 @@ pub(super) fn rig() -> Rig {
         ),
     ]);
     let capture = Arc::new(MoorCapture::new(sources));
-    let ca = ca::load_or_create(&dir.path().join("state"), BOX_ID).unwrap();
+    let (key, ca_pem) = ca::generate(BOX_ID).unwrap();
+    let ca = ca::install(&dir.path().join("state"), BOX_ID, (key.as_bytes(), &ca_pem)).unwrap();
     let token = Secret::new(TOKEN.as_bytes().to_vec());
     let proxy = start_proxy(dir.path(), &token, &ca, [&up, &up2], &capture);
     Rig {
@@ -204,6 +207,7 @@ pub(super) fn rig() -> Rig {
         capture,
         clock,
         ca,
+        ca_pem,
         proxy: Some(proxy),
         token,
     }
@@ -380,10 +384,10 @@ fn unlisted_host_is_refused_and_reaches_the_sinks() {
 #[test]
 fn box_ca_is_reused_across_restart_and_key_is_private() {
     let mut rig = rig();
-    let old_pem = rig.ca.cert_pem().to_owned();
+    let old_pem = rig.ca_pem.clone();
     rig.proxy.take().unwrap().stop();
-    let again = ca::load_or_create(&rig.state(), BOX_ID).unwrap();
-    assert_eq!(again.cert_pem(), old_pem);
+    let again = ca::load_or_create_in(&ca::ca_dir(&rig.state(), BOX_ID), "moor box").unwrap();
+    assert_eq!(again.preloaded().cert_pem, old_pem);
     let key = ca::ca_dir(&rig.state(), BOX_ID).join("ca-key.pem");
     let mode = std::fs::metadata(&key).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o600);

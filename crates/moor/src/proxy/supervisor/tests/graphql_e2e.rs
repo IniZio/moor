@@ -381,10 +381,8 @@ pub(super) fn rig_spec(
     let live = listen(&rig.deps(), box_id, &spec).unwrap();
     rig.filter_port = live.graphql_addr().unwrap().port();
     rig.box_port = bridge(live.socket());
-    rig.ca_pem = crate::proxy::nono::ca::load_or_create(rig.dir.path(), box_id)
-        .unwrap()
-        .cert_pem()
-        .to_owned();
+    rig.ca_pem =
+        std::fs::read_to_string(crate::proxy::nono::ca::cert_path(rig.dir.path(), box_id)).unwrap();
     rig.live = Some(live);
     rig
 }
