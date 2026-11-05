@@ -597,12 +597,14 @@ the install runs in every Box.
 Every Box with a repo gets these presets unless a layer drops them. A volume
 that a repo or the operator declares on the same name or directory replaces
 the preset. Paths are each tool's default on Linux, except npm and Yarn. moor
-points their caches at `~/.cache` in every command.
+points their caches at `~/.cache` in every command. A preset keeps only what a
+tool downloads or can rebuild, so losing it costs time and never correctness.
+Tool settings and keys beside those directories, such as `~/.m2/settings.xml`
+and `~/.android/adbkey`, are not kept.
 
 | Preset | Paths | Where the tool documents it |
 | --- | --- | --- |
-| `npm` | `~/.cache/npm` | moor sets `npm_config_cache`. [npm `cache`](https://docs.npmjs.com/cli/v10/using-npm/config#cache) |
-| `yarn` | `~/.cache/yarn` | moor sets `YARN_CACHE_FOLDER` and `YARN_GLOBAL_FOLDER` below it. [Yarn `enableGlobalCache`](https://yarnpkg.com/configuration/yarnrc#enableGlobalCache) |
+| `cache` | `~/.cache` | The [XDG cache root](https://specifications.freedesktop.org/basedir-spec/latest/). It holds npm and Yarn (moor sets `npm_config_cache`, `YARN_CACHE_FOLDER` and `YARN_GLOBAL_FOLDER` below it), Go's build cache, pip, and ccache and sccache. |
 | `pnpm` | `~/.local/share/pnpm/store` | [pnpm `storeDir`](https://pnpm.io/settings/store#storedir) |
 | `bun` | `~/.bun/install/cache` | [Bun global cache](https://bun.sh/docs/install/cache) |
 | `docker` | `~/docker`, `/var/lib/containerd` | Docker's data root on every external-provider Box ([`data-root`](https://docs.docker.com/engine/daemon/)) and the containerd image store that Docker 29 uses by default ([containerd image store](https://docs.docker.com/engine/storage/containerd/)). Sealed, see below. |
@@ -610,7 +612,12 @@ points their caches at `~/.cache` in every command.
 | `gradle` | `~/.gradle/caches`, `~/.gradle/wrapper` | [Gradle user home](https://docs.gradle.org/current/userguide/directory_layout.html) |
 | `dart` | `~/.pub-cache` | [`PUB_CACHE`](https://dart.dev/tools/pub/environment-variables) |
 | `rust` | `~/.cargo/registry`, `~/.cargo/git`, `~/.rustup` | [Cargo home](https://doc.rust-lang.org/cargo/guide/cargo-home.html), [`RUSTUP_HOME`](https://rust-lang.github.io/rustup/environment-variables.html) |
-| `go` | `~/go/pkg/mod`, `~/.cache/go-build` | [`GOPATH`/`GOMODCACHE` and `GOCACHE`](https://pkg.go.dev/cmd/go) |
+| `go` | `~/go/pkg/mod` | [`GOPATH`/`GOMODCACHE`](https://pkg.go.dev/cmd/go). The build cache is in `cache`. |
+| `maven` | `~/.m2/repository` | [Local repository](https://maven.apache.org/guides/introduction/introduction-to-repositories.html) |
+| `cocoapods` | `~/.cocoapods/repos` | [Specs repos](https://guides.cocoapods.org/using/the-podfile.html) |
+| `bundler` | `~/.bundle/cache`, `~/.local/share/gem` | [Bundler `cache`](https://bundler.io/man/bundle-config.1.html) and RubyGems' user gem directory |
+| `android` | `~/.android/cache`, `~/.android/build-cache` | The Android Gradle plugin's and `sdkmanager`'s caches |
+| `android-sdk` | `/opt/android-sdk` | moor exports `ANDROID_HOME` and `ANDROID_SDK_ROOT` there when the directory exists and the repo's `env` does not set them. [Android SDK](https://developer.android.com/tools/variables) |
 
 The `docker` preset's seal removes every container, volume, and network, so
 only images and build cache are kept. The seal runs `docker` directly when the

@@ -239,7 +239,7 @@ fn a_config_naming_no_provider_shows_the_provider_as_unset() {
 
 #[test]
 fn cache_rows_show_names_and_paths_and_never_a_key() {
-    let (_d, v) = env_with("cache: {presets: [npm, yarn, pnpm, bun, docker, podman, dart, rust, go], volumes: [{name: sdk, path: /opt/sdk}]}");
+    let (_d, v) = env_with("cache: {presets: [cache, pnpm, bun, docker, podman, dart, rust, go, maven, cocoapods, bundler, android, android-sdk], volumes: [{name: sdk, path: /opt/sdk}]}");
     let rows: Vec<(&str, Layer, &str)> = v
         .rows
         .iter()

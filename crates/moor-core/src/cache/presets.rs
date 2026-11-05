@@ -1,7 +1,6 @@
 //! The built-in presets: tool caches every Box with a repo keeps unless a layer drops them.
 
 use super::{CacheName, CachePath, OnFail, Volume};
-use crate::exec_env::tool_caches;
 
 /// Clears containers, volumes and networks so only images and build cache are kept; without
 /// Docker there is nothing to seal. The login user may lack the socket, so `sudo -n` is tried
@@ -12,7 +11,13 @@ const DOCKER_SEAL: &str = "command -v docker >/dev/null 2>&1 || exit 0; \
     $d ps -aq | xargs -r $d rm -f && $d volume prune -af && $d network prune -f";
 
 /// Presets whose paths are the tools' own defaults, in `~/` form.
-const FIXED: [(&str, &[&str]); 8] = [
+///
+/// `cache` is the XDG cache root, so npm, Yarn, Go's build cache, pip, ccache and every other
+/// tool that follows XDG live in it. Each preset below keeps only what a tool downloads or
+/// rebuilds. The tools' own config and keys sit beside it (`~/.m2/settings.xml`,
+/// `~/.android/adbkey`, `~/.bundle/config`) and stay out.
+const FIXED: [(&str, &[&str]); 14] = [
+    ("cache", &["~/.cache"]),
     ("pnpm", &["~/.local/share/pnpm/store"]),
     ("bun", &["~/.bun/install/cache"]),
     ("docker", &["~/docker", "/var/lib/containerd"]),
@@ -20,30 +25,26 @@ const FIXED: [(&str, &[&str]); 8] = [
     ("gradle", &["~/.gradle/caches", "~/.gradle/wrapper"]),
     ("dart", &["~/.pub-cache"]),
     ("rust", &["~/.cargo/registry", "~/.cargo/git", "~/.rustup"]),
-    ("go", &["~/go/pkg/mod", "~/.cache/go-build"]),
+    ("go", &["~/go/pkg/mod"]),
+    ("maven", &["~/.m2/repository"]),
+    ("cocoapods", &["~/.cocoapods/repos"]),
+    ("bundler", &["~/.bundle/cache", "~/.local/share/gem"]),
+    ("android", &["~/.android/cache", "~/.android/build-cache"]),
+    ("android-sdk", &["/opt/android-sdk"]),
 ];
 
 /// The names of every preset, in table order.
 #[must_use]
 pub fn names() -> Vec<&'static str> {
-    ["npm", "yarn"]
-        .into_iter()
-        .chain(FIXED.iter().map(|(n, _)| *n))
-        .collect()
+    FIXED.iter().map(|(n, _)| *n).collect()
 }
 
-/// Every preset as a volume. npm and Yarn follow the caches every exec points them at.
+/// Every preset as a volume.
 pub(super) fn all() -> Vec<Volume> {
-    let (npm, yarn) = tool_caches();
-    let home = |p: &str| p.replacen("$HOME/", "~/", 1);
-    let (npm, yarn) = (home(npm), home(yarn));
-    let derived = [("npm", vec![npm.as_str()]), ("yarn", vec![yarn.as_str()])];
-    let fixed = FIXED.iter().map(|(n, paths)| (*n, paths.to_vec()));
-    derived
-        .into_iter()
-        .chain(fixed)
+    FIXED
+        .iter()
         .filter_map(|(name, paths)| {
-            let seal = if name == "docker" {
+            let seal = if *name == "docker" {
                 vec![DOCKER_SEAL.to_owned()]
             } else {
                 Vec::new()
@@ -51,8 +52,8 @@ pub(super) fn all() -> Vec<Volume> {
             Some(Volume {
                 name: CacheName::parse(name).ok()?,
                 paths: paths
-                    .into_iter()
-                    .map(CachePath::parse)
+                    .iter()
+                    .map(|p| CachePath::parse(p))
                     .collect::<Result<_, _>>()
                     .ok()?,
                 size_gb: None,

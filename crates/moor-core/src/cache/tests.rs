@@ -145,8 +145,7 @@ fn names_follow_the_pattern() {
 fn presets_expand_to_the_table() {
     let got = shape(&plan(&layers("cache: {work_tree: false}", "")));
     let want: Vec<(&str, Vec<&str>)> = vec![
-        ("npm", vec!["~/.cache/npm"]),
-        ("yarn", vec!["~/.cache/yarn"]),
+        ("cache", vec!["~/.cache"]),
         ("pnpm", vec!["~/.local/share/pnpm/store"]),
         ("bun", vec!["~/.bun/install/cache"]),
         ("docker", vec!["~/docker", "/var/lib/containerd"]),
@@ -157,7 +156,15 @@ fn presets_expand_to_the_table() {
             "rust",
             vec!["~/.cargo/registry", "~/.cargo/git", "~/.rustup"],
         ),
-        ("go", vec!["~/go/pkg/mod", "~/.cache/go-build"]),
+        ("go", vec!["~/go/pkg/mod"]),
+        ("maven", vec!["~/.m2/repository"]),
+        ("cocoapods", vec!["~/.cocoapods/repos"]),
+        ("bundler", vec!["~/.bundle/cache", "~/.local/share/gem"]),
+        (
+            "android",
+            vec!["~/.android/cache", "~/.android/build-cache"],
+        ),
+        ("android-sdk", vec!["/opt/android-sdk"]),
     ];
     let want: Vec<(String, Vec<String>)> = want
         .into_iter()
@@ -168,11 +175,35 @@ fn presets_expand_to_the_table() {
 }
 
 #[test]
-fn presets_follow_the_caches_the_exec_env_points_tools_at() {
-    let (npm, yarn) = crate::exec_env::tool_caches();
-    let got = shape(&plan(&layers("", "")));
-    assert!(got.contains(&("npm".to_owned(), vec![npm.replace("$HOME/", "~/")])));
-    assert!(got.contains(&("yarn".to_owned(), vec![yarn.replace("$HOME/", "~/")])));
+fn the_cache_preset_holds_the_caches_the_exec_env_points_tools_at() {
+    let prelude = crate::exec_env::build(
+        &crate::exec_env::BoxCtx {
+            env: &[],
+            proxy: Some(crate::exec_env::ProxyCtx {
+                box_port: 1,
+                egress_port: 2,
+                ca_pem: "pem",
+                hosts: &[],
+            }),
+            workdir: None,
+            strip: &[],
+        },
+        crate::exec_env::Purpose::Run,
+    )
+    .unwrap()
+    .prelude
+    .join("\n");
+    let whole = CachePath::parse("~/.cache").unwrap();
+    for var in ["npm_config_cache", "YARN_CACHE_FOLDER"] {
+        let line = prelude
+            .lines()
+            .find_map(|l| l.strip_prefix(&format!("export {var}=\"")))
+            .expect("the variable is exported");
+        let dir = line.trim_end_matches('"').replace("$HOME/", "~/");
+        assert!(whole.overlaps(&CachePath::parse(&dir).unwrap()), "{dir}");
+    }
+    let got = names(&plan(&layers("", "")));
+    assert!(!got.iter().any(|n| n == "npm" || n == "yarn"), "{got:?}");
 }
 
 #[test]
@@ -199,9 +230,9 @@ fn a_sealed_volume_gets_a_group_of_its_own() {
         assert_eq!(v.key, format!("{}-{name}", v.group));
         v.group.clone()
     };
-    let (docker, npm) = (group("docker"), group("npm"));
+    let (docker, npm) = (group("docker"), group("cache"));
     assert_eq!(docker, format!("{npm}x"));
-    for other in ["yarn", "gradle", "rust", "podman"] {
+    for other in ["gradle", "rust", "podman", "android-sdk"] {
         assert_eq!(group(other), npm, "{other} shares the repo group");
     }
 }
@@ -222,7 +253,20 @@ fn presets_false_or_a_drop_list_in_either_layer_removes_them() {
     )));
     assert_eq!(
         dropped,
-        ["npm", "yarn", "pnpm", "bun", "gradle", "dart", "rust", "worktree"]
+        [
+            "cache",
+            "pnpm",
+            "bun",
+            "gradle",
+            "dart",
+            "rust",
+            "maven",
+            "cocoapods",
+            "bundler",
+            "android",
+            "android-sdk",
+            "worktree"
+        ]
     );
     let err = parse_repo(".moor.yaml", "cache: {presets: [dockr]}").unwrap_err();
     assert!(err.to_string().contains("cache.presets[0]"), "{err}");
@@ -412,7 +456,7 @@ fn a_declared_volume_on_a_sealed_preset_is_dropped_and_docker_stays_sealed() {
             !names(&p).contains(&"mine".to_owned()),
             "{repo_yaml}{user_yaml}"
         );
-        assert!(names(&p).contains(&"npm".to_owned()));
+        assert!(names(&p).contains(&"cache".to_owned()));
         let want = Dropped {
             origin,
             volume: CacheName::parse("mine").unwrap(),
@@ -442,7 +486,7 @@ fn an_unsealed_preset_still_yields_to_a_declared_volume() {
     ));
     let got = names(&p);
     assert!(got.contains(&"mine".to_owned()), "{got:?}");
-    assert!(!got.contains(&"npm".to_owned()), "{got:?}");
+    assert!(!got.contains(&"cache".to_owned()), "{got:?}");
     assert!(p.dropped().is_empty());
 }
 
@@ -473,7 +517,7 @@ fn docker_paths_stay_reserved_when_a_drop_list_names_docker() {
         "cache: {volumes: [{name: mine, path: /var/lib/containerd}]}",
     ));
     dropped_mine(&p, Origin::Operator);
-    assert!(names(&p).contains(&"npm".to_owned()));
+    assert!(names(&p).contains(&"cache".to_owned()));
 }
 
 #[test]
@@ -512,14 +556,14 @@ fn the_box_scope_is_the_repo_groups_hash_and_only_a_repo_box_with_volumes_has_on
 #[test]
 fn the_identity_names_what_the_provider_keeps_and_is_empty_when_cold() {
     let rust = plan(&layers("cache: {presets: [rust]}", ""));
-    let npm = plan(&layers("cache: {presets: [npm]}", ""));
+    let cache = plan(&layers("cache: {presets: [cache]}", ""));
     assert_eq!(CachePlan::none().identity(), "");
     assert_ne!(rust.identity(), "");
     assert_eq!(
         rust.identity(),
         plan(&layers("cache: {presets: [rust]}", "")).identity()
     );
-    assert_ne!(rust.identity(), npm.identity());
+    assert_ne!(rust.identity(), cache.identity());
     let other_user = CachePlan::build(
         UserId::new(8),
         Some(&repo("o", "r")),
