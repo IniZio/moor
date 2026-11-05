@@ -38,12 +38,11 @@ const TAIL: usize = 2048;
 const DRAIN_GRACE: Duration = Duration::from_millis(500);
 
 /// Every tool, for program resolution at construction.
-const TOOLS: [Tool; 9] = [
+const TOOLS: [Tool; 8] = [
     Tool::Crabbox,
     Tool::Herdr,
     Tool::Agent,
     Tool::Ssh,
-    Tool::Gh,
     Tool::Git,
     Tool::Rsync,
     Tool::MoorSelf,
@@ -59,8 +58,6 @@ pub(crate) struct ToolPaths {
     pub herdr: Option<PathBuf>,
     /// Agent engine program.
     pub claude: Option<PathBuf>,
-    /// GitHub CLI program.
-    pub gh: Option<PathBuf>,
     /// OpenSSH client program.
     pub ssh: Option<PathBuf>,
     /// Git program.
@@ -74,7 +71,6 @@ impl ToolPaths {
             Tool::Crabbox => self.crabbox.as_ref(),
             Tool::Herdr => self.herdr.as_ref(),
             Tool::Agent => self.claude.as_ref(),
-            Tool::Gh => self.gh.as_ref(),
             Tool::Ssh => self.ssh.as_ref(),
             Tool::Git => self.git.as_ref(),
             Tool::Rsync | Tool::MoorSelf | Tool::Sh => None,

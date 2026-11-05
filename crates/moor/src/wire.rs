@@ -368,7 +368,6 @@ pub(crate) fn tool_paths(config: &UserConfig) -> ToolPaths {
         crabbox: t.crabbox.clone(),
         herdr: t.herdr.clone(),
         claude: t.claude.clone(),
-        gh: t.gh.clone(),
         ssh: t.ssh.clone(),
         git: t.git.clone(),
     }
