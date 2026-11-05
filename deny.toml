@@ -59,6 +59,8 @@ wildcards = "deny"
 allow-wildcard-paths = true
 skip = [
   { crate = "signal-hook@0.3.18", reason = "crossterm, which draws moor-herdr's panel, is still on 0.3; moor uses 0.4" },
+  { crate = "strum@0.27.2", reason = "croner, which parses workflow schedules, is still on 0.27; the terminal UI crates use 0.28" },
+  { crate = "strum_macros@0.27.2", reason = "croner, which parses workflow schedules, is still on 0.27; the terminal UI crates use 0.28" },
   { crate = "fallible-iterator@0.2.0", reason = "postgres, the cluster store's driver, is still on 0.2; rusqlite uses 0.3" },
 ]
 skip-tree = [
