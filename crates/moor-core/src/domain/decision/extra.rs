@@ -128,6 +128,13 @@ pub enum ExtraEvent {
         /// What the provider said.
         error: String,
     },
+    /// The Box started without cache volumes although its plan would have kept some.
+    CacheCold {
+        /// Why, as a snake-case name.
+        reason: String,
+        /// The reason in a sentence.
+        detail: String,
+    },
     /// A setup layer's checkpoint was taken while the Box was paused, or the attempt failed.
     CheckpointTaken {
         /// Setup lines the checkpoint holds; 0 is the clone alone.
@@ -313,3 +320,4 @@ pub enum ExtraEvent {
 }
 
 mod convert;
+mod try_from;

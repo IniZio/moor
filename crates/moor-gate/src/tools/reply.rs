@@ -196,6 +196,9 @@ fn detailed(value: &mut Value) {
         .map_or_else(|| line.clone(), |s| format!("{line} · stuck: {}", s.kind));
     reply.insert("status".to_owned(), json!(line));
     reply.insert("stuck".to_owned(), json!(stuck));
+    let cold = progress::cold_cache(&events)
+        .map(|(reason, detail)| json!({"reason": reason, "detail": detail}));
+    reply.insert("cache_cold".to_owned(), json!(cold));
     // The trim below may drop the agent's message, so it gets a key of its own.
     if let Some(said) = reply.get("box").and_then(|b| b.get("said")).cloned() {
         reply.insert("agent_said".to_owned(), said);

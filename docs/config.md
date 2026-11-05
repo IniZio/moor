@@ -65,7 +65,7 @@ were removed. moor rejects them and names the node key that replaces them:
 | --- | --- | --- | --- |
 | `lookup_timeout_secs` | integer, at least 1 | 5, or 20 for `external` | How long moor waits for crabbox to look up a Box's ssh target. |
 | `strip_env` | list of variable names | empty | Variables that the provider puts in the Box. moor removes them from every command it runs there. |
-| `cache_volumes` | boolean | `true` | Whether this provider's Boxes get [cache volumes](#cache-volumes). `false` starts every Box on the provider cold, with no warning. |
+| `cache_volumes` | boolean | `true` | Whether this provider's Boxes get [cache volumes](#cache-volumes). `false` starts every Box on the provider cold. Each such Box records a `cache_cold` event. |
 
 ### `box_credentials`
 
@@ -280,14 +280,16 @@ shows each machine's pool.
 `moor-machine-agent run --runtime RUNTIME` serves the node. `--max-boxes N`
 caps the Boxes the host holds, and `--cache-gb N` says how much disk caches
 may use. On each link the agent reports both, with the features its crabbox
-provider declares, such as `cache-volume`; the server stores them and does not
-act on them yet.
+provider declares, such as `cache-volume`. The server stores them. A Box
+placed on the machine gets cache volumes only while the machine is linked,
+online and reports `cache-volume`.
 
 A start tries your personal nodes before the shared ones, so no config key is
 needed. `moor start` refuses, with the reason, when a node you named is not
 yours, or its agent is not linked. moor reaches the Box's VM through the
-host's agent, and sleeping the Box pauses the VM. Cache volumes do not reach
-Boxes on a personal node yet.
+host's agent, and sleeping the Box pauses the VM. A Box on a personal node
+gets cache volumes when its machine reports `cache-volume`, and starts cold
+otherwise.
 
 ### The machine service
 
@@ -535,9 +537,22 @@ private copy of the newest kept copy when it starts. When the Box closes, its
 copy becomes the newest. Two Boxes never write the same copy, and the newest
 close wins. The provider decides where the copies live and how big they grow.
 See [Cache volumes](providers.md#cache-volumes). A provider without cache
-volumes starts every Box cold. It warns `cache_unavailable` only when the repo
-or the operator declared volumes of their own. Presets alone start cold without
-a warning.
+volumes starts every Box cold.
+
+A Box whose plan would hold volumes but starts without them records one
+`cache_cold` event. Its `reason` is one of `switched_off` (the provider's
+`cache_volumes` is `false`), `provider_unsupported`, `machine_offline` and
+`machine_lacks_feature` (a personal node's machine is not linked and online,
+or does not report `cache-volume`), `no_user` (the Box has no owning user) or
+`refused` (the declarations clash). `detail` says it in a sentence. `box_status`
+returns it as `cache_cold`, and a Box that is still starting lists it in its
+steps. The Box works, so it is neither stuck nor failed. A Box with no volumes
+to keep records nothing.
+
+A start also warns `cache_unavailable` when the provider cannot keep volumes
+that the repo or the operator declared. Presets alone start cold without that
+warning, and the operator's `cache_volumes: false` and a Box with no user
+never warn.
 
 ```yaml
 cache:

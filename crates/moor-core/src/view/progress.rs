@@ -73,6 +73,19 @@ pub fn failure(events: &[Happened]) -> Option<String> {
         .and_then(|e| step(&e.kind, &e.payload))
 }
 
+/// Why the Box started without cache volumes, as the newest `cache_cold` event in `events` says.
+#[must_use]
+pub fn cold_cache(events: &[Happened]) -> Option<(String, String)> {
+    let e = events.iter().rev().find(|e| e.kind == "cache_cold")?;
+    let text = |key: &str| {
+        e.payload
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+    };
+    Some((text("reason").to_owned(), text("detail").to_owned()))
+}
+
 /// The newest step `events` tell, without its time.
 #[must_use]
 pub fn latest(events: &[Happened]) -> Option<String> {
@@ -107,6 +120,7 @@ fn step(kind: &str, payload: &Value) -> Option<String> {
             let place = format!("{}/{}", num(payload, "layer"), num(payload, "layers"));
             format!("started from setup checkpoint {place}, skipping {saved} of setup")
         }
+        "cache_cold" => format!("starting without cache volumes: {}", text("detail")),
         "checkpoint_taken" => checkpoint_taken(payload),
         "checkpoint_evicted" => format!(
             "deleted setup checkpoint {} of {} ({}) for disk",

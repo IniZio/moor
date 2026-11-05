@@ -92,6 +92,13 @@ pub enum TimingEvent {
         /// What the provider said.
         error: String,
     },
+    /// The Box started without cache volumes although its plan would have kept some.
+    CacheCold {
+        /// Why, as a snake-case name such as `switched_off` or `machine_offline`.
+        reason: String,
+        /// The reason in a sentence.
+        detail: String,
+    },
     /// A setup layer's checkpoint was taken while the Box was paused, or the attempt failed.
     CheckpointTaken {
         /// Setup lines the checkpoint holds; 0 is the clone alone.
@@ -135,6 +142,7 @@ impl TimingEvent {
             Self::SetupLineFinished { .. } => "setup_line_finished",
             Self::WarmStarted { .. } => "warm_started",
             Self::WarmStartFailed { .. } => "warm_start_failed",
+            Self::CacheCold { .. } => "cache_cold",
             Self::CheckpointTaken { .. } => "checkpoint_taken",
             Self::CheckpointEvicted { .. } => "checkpoint_evicted",
         }

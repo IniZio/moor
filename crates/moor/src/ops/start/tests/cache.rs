@@ -3,7 +3,7 @@
 use moor_core::cache::CachePlan;
 use moor_core::config::parse_user;
 use moor_core::view::StartView;
-use moor_core::{BoxName, CloseReq, Warning};
+use moor_core::{BoxId, BoxName, CloseReq, Warning};
 use serde_json::json;
 
 use super::*;
@@ -27,6 +27,18 @@ fn cache_warnings(w: &World) -> Vec<String> {
     all.into_iter()
         .filter(|w| w.code.starts_with("cache_"))
         .map(|w| w.code)
+        .collect()
+}
+
+/// The `cache_cold` payloads of the Box a start made.
+fn cold_events(w: &World, v: &StartView) -> Vec<serde_json::Value> {
+    super::warm::events(w, BoxId::new(v.boxed.id), "cache_cold")
+}
+
+fn reasons(w: &World, v: &StartView) -> Vec<String> {
+    cold_events(w, v)
+        .iter()
+        .map(|p| p["reason"].as_str().unwrap().to_owned())
         .collect()
 }
 
@@ -339,4 +351,86 @@ fn the_clone_log_is_still_removed_after_the_outcome_is_read() {
     script_base_yaml(&w, Some(YAML));
     run(&w.cx, &repo_req("demo")).unwrap();
     assert!(!w.dir.path().join("clone").join("1.log").exists());
+}
+
+#[test]
+fn a_preset_only_box_on_a_provider_without_cache_volumes_records_why_it_is_cold() {
+    for yaml in [None, Some("cache: {presets: [go]}\n")] {
+        let w = world(FakeDriver::new());
+        script_base_yaml(&w, yaml);
+        let v = run(&w.cx, &repo_req("demo")).unwrap();
+        assert_eq!(reasons(&w, &v), ["provider_unsupported"], "{yaml:?}");
+        let detail = cold_events(&w, &v).first().unwrap()["detail"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(detail.contains("local-container"), "{detail}");
+        assert!(cache_warnings(&w).is_empty(), "{yaml:?}");
+    }
+}
+
+#[test]
+fn a_box_whose_operator_switched_cache_volumes_off_records_why_it_is_cold() {
+    let config = parse_user(
+        "u.yaml",
+        "drivers: {local-container: {cache_volumes: false}}\n",
+    )
+    .unwrap();
+    let w = world_with(FakeDriver::new().cache_volumes(), config);
+    script_base_yaml(&w, None);
+    let v = run(&w.cx, &repo_req("demo")).unwrap();
+    assert_eq!(reasons(&w, &v), ["switched_off"]);
+    assert!(cache_warnings(&w).is_empty());
+}
+
+#[test]
+fn a_clash_records_why_the_box_is_cold_next_to_its_warning() {
+    let config = parse_user(
+        "u.yaml",
+        "cache: {volumes: [{name: tools, path: /opt/sdk/tools}]}\n",
+    )
+    .unwrap();
+    let w = world_with(FakeDriver::new().cache_volumes(), config);
+    script_base_yaml(&w, Some(YAML));
+    let v = run(&w.cx, &repo_req("demo")).unwrap();
+    assert_eq!(reasons(&w, &v), ["refused"]);
+    assert_eq!(cache_warnings(&w), ["cache_refused"]);
+}
+
+#[test]
+fn a_box_with_no_volumes_to_keep_records_nothing() {
+    let off = "cache: {presets: false, work_tree: false}\n";
+    for driver in [FakeDriver::new(), FakeDriver::new().cache_volumes()] {
+        let w = world(driver);
+        script_base_yaml(&w, Some(off));
+        let v = run(&w.cx, &repo_req("demo")).unwrap();
+        assert!(cold_events(&w, &v).is_empty());
+    }
+}
+
+#[test]
+fn a_box_that_keeps_its_volumes_records_nothing() {
+    let w = world(FakeDriver::new().cache_volumes());
+    script_base_yaml(&w, Some(YAML));
+    let v = run(&w.cx, &repo_req("demo")).unwrap();
+    assert!(cold_events(&w, &v).is_empty());
+}
+
+#[test]
+fn a_box_with_no_owning_user_records_why_it_is_cold() {
+    let w = world(FakeDriver::new().cache_volumes());
+    script_base_yaml(&w, None);
+    let v = run(&w.cx, &repo_req("demo")).unwrap();
+    assert!(cold_events(&w, &v).is_empty());
+    let store = w.cx.store().unwrap();
+    let mut row = store.box_row(BoxId::new(v.boxed.id)).unwrap().unwrap();
+    row.user = None;
+    let cfg =
+        crate::ops::common::facts::settings_of(&w.cx, &row, &moor_core::config::Flags::default())
+            .unwrap();
+    let provider = moor_core::ProviderId::new("local-container");
+    let caps = w.cx.driver().caps(&provider).unwrap();
+    let plan = crate::ops::common::cache::for_start(&w.cx, store, &row, &cfg, &provider, caps);
+    assert!(plan.is_empty());
+    assert_eq!(reasons(&w, &v), ["no_user"]);
 }

@@ -126,3 +126,41 @@ fn a_waiting_agent_names_what_it_waits_on_in_the_list() {
     assert_eq!(value["boxes"][0]["status"], "ready · waiting on CI");
     assert_eq!(value["boxes"][1]["status"], "ready");
 }
+
+fn cold(reason: &str) -> (&'static str, Value) {
+    (
+        "cache_cold",
+        json!({"reason": reason, "detail": "provider x keeps no cache volumes"}),
+    )
+}
+
+#[test]
+fn a_box_that_started_without_cache_volumes_says_why_and_is_not_stuck() {
+    let mut value = with_events(&[cold("provider_unsupported")]);
+    detailed(&mut value);
+    assert_eq!(value["status"], "ready");
+    assert_eq!(value["stuck"], Value::Null);
+    assert!(value.get("failure").is_none());
+    assert_eq!(value["cache_cold"]["reason"], "provider_unsupported");
+    assert_eq!(
+        value["cache_cold"]["detail"],
+        "provider x keeps no cache volumes"
+    );
+}
+
+#[test]
+fn the_cold_cache_is_judged_before_the_events_are_trimmed() {
+    let mut events = vec![cold("switched_off")];
+    events.extend((0..9).map(|n| ("agent_doing", json!({"text": format!("{n}")}))));
+    let mut value = with_events(&events);
+    detailed(&mut value);
+    assert_eq!(value["events"].as_array().unwrap().len(), 5);
+    assert_eq!(value["cache_cold"]["reason"], "switched_off");
+}
+
+#[test]
+fn a_box_that_kept_its_cache_volumes_has_no_cold_cache() {
+    let mut value = with_events(&[("agent_doing", json!({"text": "x"}))]);
+    detailed(&mut value);
+    assert_eq!(value["cache_cold"], Value::Null);
+}
