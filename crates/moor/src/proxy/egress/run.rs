@@ -1,7 +1,7 @@
 //! `moor proxy serve-egress`: the shared egress Proxy process.
 //!
 //! It takes `--state-dir DIR --listen ADDR` and optionally `--grace SECS`, `--rate N`,
-//! `--burst N` and `--lookup-rate N`, and the ledger key in `MOOR_EGRESS_KEY`. It reaches the controller through
+//! `--burst N`, `--lookup-rate N` and `--tunnels N`, and the ledger key in `MOOR_EGRESS_KEY`. It reaches the controller through
 //! the ledger socket in the state dir, and keeps each Box's CA and request log under
 //! `<state-dir>/egress`. On SIGTERM or SIGINT it drains, then exits.
 
@@ -10,7 +10,7 @@ use std::io::Write as _;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use moor_core::seam::clock::Clock;
@@ -44,6 +44,8 @@ pub(crate) struct Args {
     pub(crate) burst: f64,
     /// Lookups a second, and at once, for tokens not yet confirmed, shared by all of them.
     pub(crate) lookup_rate: f64,
+    /// Most tunnels one token may hold open at once.
+    pub(crate) tunnels: usize,
 }
 
 impl Args {
@@ -56,6 +58,7 @@ impl Args {
             rate: 20.0,
             burst: 100.0,
             lookup_rate: 200.0,
+            tunnels: 64,
         };
         let mut words = words.iter().map(|w| w.to_string_lossy().into_owned());
         while let Some(flag) = words.next() {
@@ -70,6 +73,7 @@ impl Args {
                 "--rate" => args.rate = value.parse().map_err(|_| bad())?,
                 "--burst" => args.burst = value.parse().map_err(|_| bad())?,
                 "--lookup-rate" => args.lookup_rate = value.parse().map_err(|_| bad())?,
+                "--tunnels" => args.tunnels = value.parse().map_err(|_| bad())?,
                 other => return Err(format!("unknown argument {other}")),
             }
         }
@@ -109,18 +113,16 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
             per_sec: args.lookup_rate,
             burst: args.lookup_rate,
         },
+        tunnels: args.tunnels,
+        tend: TEND,
+        log: Arc::new(Mutex::new(std::io::stderr())),
         upstream_ca: test_upstream::ca(&env),
         guard_exempt: test_upstream::exempt(&env),
         clock: Arc::clone(&clock),
     })?;
     say(format_args!("listening on {}", server.addr()));
-    let mut since = clock.instant();
     while !stop.load(Ordering::Acquire) {
         clock.sleep(POLL);
-        if clock.instant().saturating_duration_since(since) >= TEND {
-            server.tend();
-            since = clock.instant();
-        }
     }
     say(format_args!("draining for up to {}s", args.grace.as_secs()));
     let left = server.drain(args.grace);

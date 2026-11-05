@@ -9,7 +9,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
-use tokio_tungstenite::tungstenite::protocol::Role;
+use tokio_tungstenite::tungstenite::protocol::{Role, WebSocketConfig};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
 use zeroize::Zeroizing;
@@ -23,6 +23,8 @@ use crate::store::token_hash;
 const MAX_HEAD: usize = 8 * 1024;
 /// How long a peer may take to send its head, and the Box's proxy to answer the CONNECT.
 const HEAD_TIMEOUT: Duration = Duration::from_secs(30);
+/// Largest WebSocket message or frame taken from the forwarder.
+const MAX_MESSAGE: usize = 1 << 20;
 /// Bytes read from the target per message.
 const CHUNK: usize = 16 * 1024;
 
@@ -79,7 +81,10 @@ async fn tunnel(mut stream: TcpStream, key: &str, target: &str, route: &Route) {
     if stream.write_all(switching.as_bytes()).await.is_err() {
         return;
     }
-    let ws = WebSocketStream::from_raw_socket(stream, Role::Server, None).await;
+    let limits = WebSocketConfig::default()
+        .max_message_size(Some(MAX_MESSAGE))
+        .max_frame_size(Some(MAX_MESSAGE));
+    let ws = WebSocketStream::from_raw_socket(stream, Role::Server, Some(limits)).await;
     relay(ws, upstream, rest).await;
 }
 
@@ -96,11 +101,19 @@ fn check(head: &[u8], shared: &Shared) -> Result<Checked, (u16, String)> {
         return Err(refuse(400, "expected a WebSocket upgrade with a target"));
     };
     let token = ask.token.ok_or_else(|| refuse(401, "no token"))?;
+    if !shared.boxes.signed(&token) {
+        return Err(refuse(401, "unknown token"));
+    }
     let hash = token_hash(&token);
     let route = admit(shared, &hash).map_err(|refused| match refused {
         Refused::Unknown => refuse(401, "unknown token"),
         Refused::Limited => refuse(429, "too many tunnels; retry after a second"),
-        Refused::Unavailable(why) => (503, why),
+        Refused::Unavailable(why) => {
+            shared
+                .boxes
+                .say(format_args!("a tunnel was refused: {why}"));
+            refuse(503, "temporarily unavailable")
+        }
     })?;
     Ok(Checked::Tunnel { key, target, route })
 }
@@ -112,8 +125,9 @@ fn admit(shared: &Shared, hash: &str) -> Result<Route, Refused> {
 
 /// Opens the CONNECT to `target` through the Box's proxy; `Err` carries the status to answer.
 async fn open(route: &Route, target: &str) -> Result<(TcpStream, Vec<u8>), u16> {
-    let mut upstream = TcpStream::connect(route.addr).await.map_err(|_| 503_u16)?;
-    let head = connect_head(target, route.internal.expose());
+    let served = &route.served;
+    let mut upstream = TcpStream::connect(served.addr).await.map_err(|_| 503_u16)?;
+    let head = connect_head(target, served.internal.expose());
     upstream.write_all(&head).await.map_err(|_| 503_u16)?;
     let (answer, rest) = read_head(&mut upstream).await.ok_or(502_u16)?;
     let mut headers = [httparse::EMPTY_HEADER; 32];
@@ -243,13 +257,20 @@ fn parse(head: &[u8]) -> Option<Ask> {
     })
 }
 
-/// True for `host:port` with a port that fits and no path, userinfo or spacing.
-fn authority_ok(authority: &str) -> bool {
+/// True for `host:port` or `[v6]:port` with a port that fits and no path, userinfo or spacing.
+pub(super) fn authority_ok(authority: &str) -> bool {
     let plain = authority
         .bytes()
         .all(|b| b.is_ascii_graphic() && !matches!(b, b'/' | b'@' | b'?' | b'#' | b'\\'));
-    plain
-        && authority
-            .rsplit_once(':')
-            .is_some_and(|(host, port)| !host.is_empty() && port.parse::<u16>().is_ok())
+    let Some((host, port)) = authority.rsplit_once(':') else {
+        return false;
+    };
+    let host_ok = host
+        .strip_prefix('[')
+        .and_then(|h| h.strip_suffix(']'))
+        .map_or_else(
+            || !host.is_empty() && !host.contains([':', '[', ']']),
+            |v6| v6.parse::<std::net::Ipv6Addr>().is_ok(),
+        );
+    plain && host_ok && port.parse::<u16>().is_ok()
 }
