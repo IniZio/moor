@@ -619,6 +619,15 @@ and `~/.android/adbkey`, are not kept.
 | `android` | `~/.android/cache`, `~/.android/build-cache` | The Android Gradle plugin's and `sdkmanager`'s caches |
 | `android-sdk` | `/opt/android-sdk` | moor exports `ANDROID_HOME` and `ANDROID_SDK_ROOT` there when the directory exists and the repo's `env` does not set them. [Android SDK](https://developer.android.com/tools/variables) |
 
+moor also turns on [Gradle's build cache](https://docs.gradle.org/current/userguide/build_cache.html)
+in every Box that uses the Proxy, with or without a JDK yet, by keeping
+`org.gradle.caching=true` in a marked block of `~/.gradle/gradle.properties`.
+A line of your own for `org.gradle.caching` in that file removes moor's block,
+and `--no-build-cache` turns the cache off for one build. The user home file
+outranks a project's `gradle.properties`, so a repo that sets
+`org.gradle.caching=false` there still gets the cache. To turn it off for a
+repo, write the line to `~/.gradle/gradle.properties` in its setup.
+
 The `docker` preset's seal removes every container, volume, and network, so
 only images and build cache are kept. The seal runs `docker` directly when the
 login user can reach the Docker socket, else `sudo -n docker`. When neither
