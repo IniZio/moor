@@ -4,7 +4,7 @@ use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
 use moor_core::seam::driver::Released;
-use moor_core::Warning;
+use moor_core::{BoxId, Warning};
 
 use super::lease::planned_root;
 use super::rerun::record_interrupted;
@@ -15,12 +15,15 @@ use crate::store::{BoxRow, Store};
 /// Why a Box whose acquire was cut off failed.
 const CAUSE: &str = "setup interrupted by a controller restart";
 
-/// Fails each open Box whose start no live process still runs, releasing what its acquire planned.
+/// Fails each open Box whose start no live process still runs, releasing what its acquire planned,
+/// and claims for this process each Box being set up whose setup lines can be followed again in
+/// its machine; returns the claimed Boxes, for [`super::resume_setup`].
 ///
 /// Called before the controller serves, so no start of this process is under way yet: an intent
 /// naming this pid is an earlier process's, as a restarted container reuses its pid.
-pub(crate) fn fail_interrupted(cx: &Cx, store: &Store) -> Result<(), CommandError> {
+pub(crate) fn fail_interrupted(cx: &Cx, store: &Store) -> Result<Vec<BoxId>, CommandError> {
     let me = std::process::id();
+    let mut claimed = Vec::new();
     for row in store.open_boxes()? {
         let Some(intent) = row.intent else {
             continue;
@@ -32,11 +35,25 @@ pub(crate) fn fail_interrupted(cx: &Cx, store: &Store) -> Result<(), CommandErro
             Intent::Provisioning { .. } => {
                 cx.for_box(row.user, || fail_acquire(cx, store, &row))?;
             }
+            Intent::Setup { .. } if followable(&row) => {
+                let mine = IntentChange::Set(Intent::Setup { pid: me });
+                store.apply(Decision::new(row.id).intent(mine))?;
+                claimed.push(row.id);
+            }
             Intent::Setup { .. } => record_interrupted(cx, store, &row)?,
             Intent::Running { .. } => {}
         }
     }
-    Ok(())
+    Ok(claimed)
+}
+
+/// Whether the cut-off start of `row` was running its setup lines in a machine it still holds.
+fn followable(row: &BoxRow) -> bool {
+    row.lifecycle == BoxLifecycle::SettingUp
+        && row.steps_pending_at.is_none()
+        && row.boxed.as_ref().is_some_and(|b| {
+            b.state == BoxState::Ready && b.handle.is_some() && b.workdir.is_some()
+        })
 }
 
 /// Records the cut-off acquire as failed and releases the machine it may have created.

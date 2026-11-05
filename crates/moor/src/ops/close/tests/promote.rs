@@ -7,7 +7,6 @@ use std::sync::Arc;
 
 use super::is_working;
 
-use moor_core::boxscript::setup::setup_script;
 use moor_core::config::{NodeConfig, UserConfig};
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};

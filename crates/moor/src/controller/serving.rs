@@ -7,6 +7,7 @@ use std::sync::Arc;
 use super::drain::Drain;
 use super::{log, settle, Running, Sink};
 use crate::env::Env;
+use moor_core::BoxId;
 use crate::Moor;
 
 /// Serves `running` until `wake` turns readable.
@@ -22,13 +23,14 @@ pub(super) fn serve_started(
 ) -> u8 {
     log(sink, &format!("listening on {}", running.socket.display()));
     Moor::surface_override(&running.env).inspect(|line| log(sink, line));
-    let interrupted = Moor::from_env(&running.env).map_or_else(
-        |e| vec![e.error.to_string()],
+    let (interrupted, claimed) = Moor::from_env(&running.env).map_or_else(
+        |e| (vec![e.error.to_string()], Vec::new()),
         |moor| moor.fail_interrupted_starts(),
     );
     for line in interrupted {
         log(sink, &format!("start: {line}"));
     }
+    resume_setups_in_background(claimed, &running.env, sink);
     let shim = std::env::current_exe().map_or_else(|_| "/proc/self/exe".into(), OsString::from);
     let mut fronts = running.supervise_fronts((shim, vec!["front-shim".into()]), sink);
     let drain = Arc::new(Drain::default());
@@ -45,6 +47,24 @@ pub(super) fn serve_started(
     running.serve_until(wake, &drain, sink);
     fronts.wait();
     0
+}
+
+/// Follows again, on a thread of its own, the setups an earlier process left in `claimed`; the
+/// drain does not wait for it, as the setup goes on in the Box and the next process follows it.
+fn resume_setups_in_background(claimed: Vec<BoxId>, env: &Arc<Env>, sink: &Sink) {
+    if claimed.is_empty() {
+        return;
+    }
+    let (env, sink) = (Arc::clone(env), Arc::clone(sink));
+    std::thread::spawn(move || {
+        let lines = Moor::from_env(&env).map_or_else(
+            |e| vec![e.error.to_string()],
+            |moor| moor.resume_setups(&claimed),
+        );
+        for line in lines {
+            log(&sink, &format!("setup: {line}"));
+        }
+    });
 }
 
 /// Runs `reconcile` on its own thread; the drain waits for it, and none starts once it begins.

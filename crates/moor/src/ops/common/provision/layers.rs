@@ -140,6 +140,24 @@ pub(super) fn warm(
     }))
 }
 
+/// Marks the disk of Box `id` as holding the layer its start forked from, so a setup followed
+/// again does not run the lines below it.
+pub(super) fn stand_on_warm_start(
+    store: &Store,
+    id: BoxId,
+    layered: &mut Layered,
+) -> Result<(), CommandError> {
+    let began = store.newest_events_of(id, "setting_up", 1)?.pop().map(|e| e.id);
+    let warm = store.newest_events_of(id, "warm_started", 1)?.pop();
+    let layer = warm
+        .filter(|w| Some(w.id) > began)
+        .and_then(|w| w.payload.get("layer")?.as_u64());
+    if let Some(layer) = layer.and_then(|l| usize::try_from(l).ok()) {
+        layered.stand_on(layer, 0);
+    }
+    Ok(())
+}
+
 /// Checkpoints the fresh clone, which took `ms`, of a Box whose disk holds no layer yet.
 pub(super) fn after_clone(cx: &Cx, store: &Store, target: &SetupTarget<'_>, ms: Option<u64>) {
     let Some(layered) = target.layered else {
