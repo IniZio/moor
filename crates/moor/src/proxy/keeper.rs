@@ -139,6 +139,14 @@ impl Keepers {
         k
     }
 
+    /// Ends every keeper, closing its tunnel and forwards, as the controller exits.
+    pub(crate) fn end_all(&self) {
+        let ids: Vec<BoxId> = lock(&self.kept).keys().copied().collect();
+        for id in ids {
+            self.end(id);
+        }
+    }
+
     /// The Box's keeper, when it runs.
     pub(crate) fn get(&self, box_id: BoxId) -> Option<Arc<Kept>> {
         lock(&self.kept).get(&box_id).cloned()
@@ -275,11 +283,8 @@ impl Kept {
         if inner.handle == handle {
             return;
         }
-        if inner.handle.is_some() {
-            self.say(format_args!(
-                "the Box moved to {}; opening its tunnel there",
-                handle.as_ref().map_or("no machine", BoxHandle::as_str)
-            ));
+        if let (Some(_), Some(to)) = (&inner.handle, &handle) {
+            self.say(format_args!("the Box moved to {}", to.as_str()));
         }
         inner.handle = handle;
         inner.tunnel = None;

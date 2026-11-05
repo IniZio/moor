@@ -112,6 +112,11 @@ impl Moor {
         wire::prepare_egress(env)
     }
 
+    /// Ends every Box's keeper, closing the tunnels and machine forwards this controller holds.
+    pub(crate) fn end_keepers() {
+        wire::end_keepers();
+    }
+
     /// Starts a keeper for each open Box recorded in the state store; one line per failure.
     #[must_use]
     pub fn reconcile_proxies(env: &Env) -> Vec<String> {
