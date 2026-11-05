@@ -17,7 +17,7 @@ mod host;
 mod link;
 mod machine;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 mod tunnel;
 
 use std::collections::HashMap;
@@ -146,6 +146,14 @@ impl Keepers {
         k
     }
 
+    /// Records `k` as the Box's keeper without starting its thread, for tests that tick it.
+    #[cfg(test)]
+    pub(crate) fn hold(&self, deps: &Arc<Deps>, box_id: BoxId, box_port: u16) -> Arc<Kept> {
+        let k = Arc::new(Kept::new(Arc::clone(deps), box_id, box_port));
+        lock(&self.kept).insert(box_id, Arc::clone(&k));
+        k
+    }
+
     /// Ends every keeper, closing its tunnel and forwards, as the controller exits.
     pub(crate) fn end_all(&self) {
         let all: Vec<Arc<Kept>> = lock(&self.kept).values().cloned().collect();
@@ -264,6 +272,11 @@ impl Kept {
         let up = self.tend_tunnel();
         drop(busy);
         up
+    }
+
+    /// Whether the Box sleeps, or is about to, so the keeper holds nothing for it.
+    pub(crate) fn parked(&self) -> bool {
+        self.lock().parked
     }
 
     /// Closes the tunnel and frees the machine's slot until [`Kept::restore`].
