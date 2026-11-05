@@ -137,7 +137,6 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,targe
     if [ -d crates/moor-gate ]; then bins="$bins moor-gate"; fi; \
     cargo build --release --locked $(for b in $bins; do printf -- '-p %s ' "$b"; done) $features \
  && for b in $bins; do install -D "target/release/$b" "/out/$b"; done
-# The egress forwarder runs inside Boxes, whatever their libc, so it links statically.
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/usr/local/cargo/git \
     target="$(uname -m)-unknown-linux-musl"; \
     export "CC_$(echo "$target" | tr - _)=musl-gcc" CARGO_PROFILE_RELEASE_STRIP=symbols; \

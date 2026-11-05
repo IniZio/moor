@@ -14,8 +14,6 @@ path = "src/main.rs"
 
 [features]
 pty-surface = ["dep:ghostty-vt"]
-# Lets the shared egress Proxy trust one local test upstream, for live local runs. Release
-# builds never enable it.
 test-upstream = []
 
 [dependencies]
