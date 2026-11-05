@@ -57,6 +57,7 @@ use tokio::net::TcpListener;
 use tokio::sync::Notify;
 use zeroize::Zeroizing;
 
+use super::ledger::Endpoint;
 use super::Sink;
 use boxes::Boxes;
 pub(crate) use limit::Rate;
@@ -70,8 +71,8 @@ pub(crate) const TARGET: &str = "x-moor-target";
 pub(crate) struct Config {
     /// Where it listens.
     pub(crate) listen: SocketAddr,
-    /// The controller's ledger socket.
-    pub(crate) ledger: PathBuf,
+    /// Where the controller's ledger is.
+    pub(crate) ledger: Endpoint,
     /// The key it presents on the ledger.
     pub(crate) key: Zeroizing<String>,
     /// Where each Box's CA and request log go.

@@ -1,6 +1,6 @@
 //! The controller's end of the ledger: one connection, its hello, then its calls.
 
-use std::io::{BufRead, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 
 use moor_core::user::{SecretName, UserId};
 use serde::Serialize;
@@ -15,9 +15,14 @@ use crate::vault::Vault;
 mod boxes;
 mod start;
 
-/// The keys the controller started its Proxy processes with.
+/// The longest hello read; anyone who can reach the TLS listener can send one.
+const HELLO_MAX: u64 = 64 * 1024;
+
+/// The keys the controller started its Proxy processes with, and who may say hello.
 #[derive(Debug, Default)]
 pub(crate) struct Keys<'a> {
+    /// Whether Box supervisors may say hello; they reach only the unix socket.
+    pub(crate) supervisors: bool,
     /// The front Proxy's key; none when no front Proxy runs.
     pub(crate) fronts: Option<&'a str>,
     /// The shared egress Proxy's key; none while the shared Proxy is off.
@@ -35,25 +40,23 @@ enum Bound {
 }
 
 /// Serves one connection until EOF or a failed write.
-pub(crate) fn serve(
-    (store, vault): (&Store, &Vault),
-    keys: &Keys<'_>,
-    mut read: impl BufRead,
-    mut write: impl Write,
-) {
-    let Some(line) = next(&mut read) else { return };
+pub(crate) fn serve((store, vault): (&Store, &Vault), keys: &Keys<'_>, stream: impl Read + Write) {
+    let mut read = BufReader::new(stream);
+    let Some(line) = next(&mut (&mut read).take(HELLO_MAX)) else {
+        return;
+    };
     let bound = match hello(store, keys, &line) {
         Ok(bound) => bound,
         Err(fault) => {
-            send(&mut write, &encode(&Err::<(), _>(fault)));
+            send(read.get_mut(), &encode(&Err::<(), _>(fault)));
             return;
         }
     };
-    if !send(&mut write, &encode(&Ok::<(), Fault>(()))) {
+    if !send(read.get_mut(), &encode(&Ok::<(), Fault>(()))) {
         return;
     }
     while let Some(line) = next(&mut read) {
-        if !send(&mut write, &answer((store, vault), &bound, &line)) {
+        if !send(read.get_mut(), &answer((store, vault), &bound, &line)) {
             return;
         }
     }
@@ -92,6 +95,11 @@ fn hello(store: &Store, keys: &Keys<'_>, line: &str) -> Result<Bound, Fault> {
     match hello {
         Hello::Box { v, box_id, key } => {
             speaks(v)?;
+            if !keys.supervisors {
+                return Err(Fault::Refused(
+                    "a Box supervisor reaches the ledger on its unix socket only".to_owned(),
+                ));
+            }
             if !store.proxy_key_is(box_id, key.as_bytes())? {
                 return Err(Fault::Refused(format!(
                     "not the key of Box {}'s supervisor",

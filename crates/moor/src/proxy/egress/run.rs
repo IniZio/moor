@@ -1,9 +1,11 @@
 //! `moor proxy serve-egress`: the shared egress Proxy process.
 //!
-//! It takes `--state-dir DIR --listen ADDR` and optionally `--grace SECS`, `--rate N`,
-//! `--burst N`, `--lookup-rate N` and `--tunnels N`, and the ledger key in `MOOR_EGRESS_KEY`. It reaches the controller through
-//! the ledger socket in the state dir, and keeps each Box's CA and request log under
-//! `<state-dir>/egress`. On SIGTERM or SIGINT it drains, then exits.
+//! It takes `--state-dir DIR --listen ADDR` and optionally `--ledger ADDR`, `--ledger-ca PEM`,
+//! `--grace SECS`, `--rate N`, `--burst N`, `--lookup-rate N` and `--tunnels N`, and the ledger
+//! key in `MOOR_EGRESS_KEY`. It reaches the controller through the ledger socket in the state
+//! dir, or through `--ledger`: a socket path, or `tls://host:port` checked against the CA bundle
+//! `--ledger-ca`. It keeps each Box's CA and request log under `<state-dir>/egress`. On SIGTERM
+//! or SIGINT it drains, then exits.
 
 use std::ffi::OsString;
 use std::io::Write as _;
@@ -21,6 +23,7 @@ use super::{Config, Rate, Server};
 use crate::adapters::clock::SystemClock;
 use crate::env::{Env, EGRESS_KEY};
 use crate::ledger_dir;
+use crate::proxy::ledger::Endpoint;
 
 /// How long open tunnels get to finish after SIGTERM, unless `--grace` says otherwise.
 const GRACE: Duration = Duration::from_secs(300);
@@ -36,6 +39,10 @@ pub(crate) struct Args {
     pub(crate) state_dir: Option<PathBuf>,
     /// Where to listen.
     pub(crate) listen: Option<SocketAddr>,
+    /// Where the ledger is, when not the socket in the state dir.
+    pub(crate) ledger: Option<String>,
+    /// The CA bundle that checks a TLS ledger's certificate.
+    pub(crate) ledger_ca: Option<PathBuf>,
     /// How long open tunnels get after SIGTERM.
     pub(crate) grace: Duration,
     /// Tunnels a token may open per second.
@@ -54,6 +61,8 @@ impl Args {
         let mut args = Self {
             state_dir: None,
             listen: None,
+            ledger: None,
+            ledger_ca: None,
             grace: GRACE,
             rate: 20.0,
             burst: 100.0,
@@ -69,6 +78,8 @@ impl Args {
             match flag.as_str() {
                 "--state-dir" => args.state_dir = Some(value.into()),
                 "--listen" => args.listen = Some(value.parse().map_err(|_| bad())?),
+                "--ledger" => args.ledger = Some(value),
+                "--ledger-ca" => args.ledger_ca = Some(value.into()),
                 "--grace" => args.grace = Duration::from_secs(value.parse().map_err(|_| bad())?),
                 "--rate" => args.rate = value.parse().map_err(|_| bad())?,
                 "--burst" => args.burst = value.parse().map_err(|_| bad())?,
@@ -89,6 +100,13 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
     let args = Args::parse(words)?;
     let state_dir = args.state_dir.ok_or("--state-dir is required")?;
     let listen = args.listen.ok_or("--listen is required")?;
+    let ledger = args.ledger.unwrap_or_else(|| {
+        ledger_dir::socket(&state_dir)
+            .to_string_lossy()
+            .into_owned()
+    });
+    let ledger = Endpoint::parse(&ledger, args.ledger_ca.as_deref())
+        .map_err(|e| format!("--ledger: {e}"))?;
     let env = Env::capture();
     let key = env
         .get(EGRESS_KEY)
@@ -102,7 +120,7 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
     }
     let server = Server::start(Config {
         listen,
-        ledger: ledger_dir::socket(&state_dir),
+        ledger,
         key,
         work_dir: state_dir.join("egress"),
         rate: Rate {

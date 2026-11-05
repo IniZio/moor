@@ -10,7 +10,7 @@ use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::user::SecretName;
 use moor_core::{BoxId, BoxName};
 
-use super::super::{BoxLedger, EgressLedger, LedgerError};
+use super::super::{BoxLedger, EgressLedger, Endpoint, LedgerError};
 use super::{world, World, EGRESS_KEY};
 use crate::store::token_hash;
 use crate::testing::rng::FakeRng;
@@ -35,7 +35,7 @@ fn a_token_finds_its_box_until_the_box_closes() {
     let w = world();
     let _served = w.serve();
     let a = box_with_token(&w, "a", b"token-a");
-    let ledger = EgressLedger::at(w.socket.clone(), EGRESS_KEY.to_owned());
+    let ledger = EgressLedger::at(Endpoint::Unix(w.socket.clone()), EGRESS_KEY.to_owned());
     assert_eq!(ledger.token_box(&token_hash(b"token-a")), Ok(Some(a)));
     assert_eq!(ledger.token_box(&token_hash(b"token-b")), Ok(None));
     let close = Decision::new(a).lifecycle(BoxLifecycleInput::Close { reason: None });
@@ -52,7 +52,7 @@ fn a_wrong_egress_key_is_refused() {
     let w = world();
     let _served = w.serve();
     box_with_token(&w, "a", b"token-a");
-    let ledger = EgressLedger::at(w.socket, "not-the-key".to_owned());
+    let ledger = EgressLedger::at(Endpoint::Unix(w.socket), "not-the-key".to_owned());
     assert!(matches!(
         ledger.token_box(&token_hash(b"token-a")),
         Err(LedgerError::Refused(_))
@@ -64,7 +64,7 @@ fn the_egress_proxy_reads_a_box_but_never_takes_its_lease() {
     let w = world();
     let _served = w.serve();
     let a = box_with_token(&w, "a", b"token-a");
-    let ledger = BoxLedger::egress(w.socket, a, EGRESS_KEY.to_owned());
+    let ledger = BoxLedger::egress(Endpoint::Unix(w.socket), a, EGRESS_KEY.to_owned());
     assert!(ledger.view().unwrap().is_some_and(|v| v.open));
     assert!(matches!(
         ledger.claim_lease("owner", std::time::Duration::from_secs(30)),
@@ -110,7 +110,7 @@ fn the_egress_proxy_reads_only_secrets_its_rules_name_and_only_while_the_box_is_
         user: w.ann,
     };
     w.store.set_proxy_spec(a, &spec).unwrap();
-    let ledger = BoxLedger::egress(w.socket.clone(), a, EGRESS_KEY.to_owned());
+    let ledger = BoxLedger::egress(Endpoint::Unix(w.socket.clone()), a, EGRESS_KEY.to_owned());
     let named = ledger
         .secret(&SecretName::parse("claude").unwrap())
         .unwrap();

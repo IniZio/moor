@@ -27,7 +27,7 @@ use super::boxes::closed;
 use super::wire::authority_ok;
 use super::{Config, Rate, Server, PATH, TARGET};
 use crate::proxy::ledger::tests::{serve_on, Served, EGRESS_KEY};
-use crate::proxy::ledger::{BoxView, LedgerError};
+use crate::proxy::ledger::{BoxView, Endpoint, LedgerError};
 use crate::proxy::nono::ca;
 use crate::proxy::nono::tests::upstream::{self, Upstream};
 use crate::proxy::token;
@@ -102,7 +102,7 @@ impl World {
     fn server_full(&self, burst: f64, lookups: f64, tunnels: usize) -> Server {
         Server::start(Config {
             listen: SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
-            ledger: self.dir.path().join("proxy.sock"),
+            ledger: Endpoint::Unix(self.dir.path().join("proxy.sock")),
             key: Zeroizing::new(EGRESS_KEY.to_owned()),
             work_dir: self.dir.path().join("egress"),
             rate: Rate {

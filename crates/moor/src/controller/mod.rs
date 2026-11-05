@@ -107,6 +107,8 @@ struct Running {
     runner: UnixListener,
     /// The Proxy processes' ledger socket, and the front Proxy's key on it.
     ledger: (UnixListener, Option<Arc<str>>),
+    /// The ledger's TLS listener for the shared egress Proxy; none unless the config sets one.
+    ledger_tls: Option<ledger::TlsLedger>,
     /// The fronts that have a command, not yet started.
     commands: Vec<fronts::Front>,
     /// The front Proxy, not yet started; none when no front lists proxy rules.
@@ -159,13 +161,7 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
     let env = check::with_runner_state(env, &cfg);
     let (env, proxy) = front_proxy::plan(env.with_vault_key(key), &cfg.fronts).map_err(refused)?;
     let env = env.with_workflow_min_interval(cfg.workflow_min_interval());
-    let env = env.with_front_webhooks(
-        cfg.fronts
-            .iter()
-            .filter(|(_, front)| front.webhooks)
-            .map(|(ns, _)| ns.clone())
-            .collect(),
-    );
+    let env = env.with_front_webhooks(cfg.webhook_fronts());
     let lock = take_socket_lock(&socket)?;
     Moor::end_front_leases(&env).map_err(|e| refused(e.error.to_string()))?;
     let listener = sockets.listen("controller", &socket).map_err(refused)?;
@@ -180,6 +176,7 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         fronts,
         runner,
         ledger: (ledger, proxy.as_ref().map(|p| Arc::from(p.key()))),
+        ledger_tls: ledger::TlsLedger::bind(&env, cfg.ledger_tls.as_ref()).map_err(refused)?,
         commands,
         proxy,
         vault: Arc::new(vault),
@@ -284,6 +281,9 @@ impl Running {
         listeners.push((self.runner, serve(peer::On::Runner)));
         let (ledger, key) = self.ledger;
         ledger::serve_until_exit(ledger, (&self.env, &self.vault), key, sink);
+        if let Some(tls) = self.ledger_tls {
+            tls.serve_until_exit((&self.env, &self.vault), sink);
+        }
         match drain::serve_until(&listeners, wake, drain, self.drain_timeout, sink) {
             0 => log(sink, "drained; exiting"),
             left => log(

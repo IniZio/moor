@@ -20,7 +20,7 @@ use zeroize::Zeroizing;
 use super::limit::{Bucket, Rate};
 use super::served::{lock, Served, Tunnel};
 use super::Config;
-use crate::proxy::ledger::{BoxLedger, BoxView, EgressLedger, LedgerError};
+use crate::proxy::ledger::{BoxLedger, BoxView, EgressLedger, Endpoint, LedgerError};
 use crate::proxy::nono::ca;
 use crate::proxy::nono::capture::UserSecretsFn;
 use crate::proxy::supervisor::{engine, Parts};
@@ -62,8 +62,8 @@ type Slot = Mutex<Option<Arc<Served>>>;
 pub(super) struct Boxes {
     /// Token lookups.
     lookup: EgressLedger,
-    /// The ledger socket each Box's calls go to.
-    socket: PathBuf,
+    /// Where each Box's ledger calls go.
+    ledger: Endpoint,
     /// The egress key, which also signs tokens.
     key: Zeroizing<String>,
     /// Where each Box's CA and log go.
@@ -95,7 +95,7 @@ impl Boxes {
     pub(super) fn new(cfg: Config) -> Self {
         Self {
             lookup: EgressLedger::at(cfg.ledger.clone(), cfg.key.to_string()),
-            socket: cfg.ledger,
+            ledger: cfg.ledger,
             key: cfg.key,
             work_dir: cfg.work_dir,
             upstream_ca: cfg.upstream_ca,
@@ -188,7 +188,7 @@ impl Boxes {
     /// Starts the proxy of `box_id` from `spec`, or from the spec the controller keeps.
     fn start(&self, box_id: BoxId, spec: Option<ProxySpec>) -> Result<Served, String> {
         let ledger = Arc::new(BoxLedger::egress(
-            self.socket.clone(),
+            self.ledger.clone(),
             box_id,
             self.key.to_string(),
         ));

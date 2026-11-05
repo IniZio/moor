@@ -1,4 +1,5 @@
-//! The ledger: how Proxy processes reach the store, through the controller's ledger socket.
+//! The ledger: how Proxy processes reach the store, through the controller's ledger socket or,
+//! for the shared egress Proxy, its TLS listener.
 //!
 //! A Proxy never opens the store, so one deploy holds one connection pool and no Proxy holds
 //! the database URL or the vault key. Each connection opens with a [`Hello`] naming who calls
@@ -11,6 +12,7 @@
 mod boxes;
 mod call;
 mod client;
+mod endpoint;
 mod hold;
 mod serve;
 #[cfg(test)]
@@ -24,6 +26,7 @@ use serde::{Deserialize, Serialize};
 pub(crate) use boxes::{BoxLedger, BoxView, CaPair, MachineWant};
 use call::Call;
 pub(crate) use client::{EgressLedger, FrontsLedger};
+pub(crate) use endpoint::Endpoint;
 pub(crate) use serve::{serve, Keys};
 
 use crate::store::StoreError;
