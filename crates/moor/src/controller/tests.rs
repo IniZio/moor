@@ -69,13 +69,56 @@ fn second_instance_names_first() {
     let first = start(&env(tmp.path()), &cfg).expect("start");
     let out = Buf::default();
     let code = serve(&env(tmp.path()), &cfg, out.clone());
-    assert_eq!(code, 0);
+    assert_eq!(code, 1);
     let want = format!(
         "already running (pid {}) on {}",
         std::process::id(),
         first.socket.display()
     );
     assert!(out.text().contains(&want), "{}", out.text());
+}
+
+#[test]
+fn a_lock_held_briefly_by_another_fd_is_waited_out() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let path = tmp.path().join("controller.lock");
+    let other = std::fs::File::create(&path).expect("create");
+    other.lock().expect("held");
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        drop(other);
+    });
+    let socket = tmp.path().join("controller.sock");
+    let taken = super::lock::take_lock(&path, &socket, super::lock::LOCK_WAIT);
+    release.join().expect("released");
+    assert!(taken.is_ok(), "{:?}", taken.err());
+    let recorded = std::fs::read_to_string(&path).expect("read");
+    assert_eq!(
+        recorded,
+        format!("{}\n{}\n", std::process::id(), socket.display())
+    );
+}
+
+#[test]
+fn a_lock_held_past_the_wait_is_a_running_controller_and_a_failure() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let path = tmp.path().join("controller.lock");
+    let socket = tmp.path().join("controller.sock");
+    let short = std::time::Duration::from_millis(100);
+    let other = std::fs::File::create(&path).expect("create");
+    other.lock().expect("held");
+    let stop = super::lock::take_lock(&path, &socket, short).expect_err("held");
+    assert_eq!(stop.code, 1);
+    assert_eq!(
+        stop.message,
+        format!("already running: {} is held", path.display())
+    );
+    std::fs::write(&path, "4242\n/elsewhere.sock\n").expect("record");
+    let stop = super::lock::take_lock(&path, &socket, short).expect_err("held");
+    assert_eq!(
+        (stop.code, stop.message.as_str()),
+        (1, "already running (pid 4242) on /elsewhere.sock")
+    );
 }
 
 #[test]

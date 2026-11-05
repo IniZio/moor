@@ -11,6 +11,7 @@ mod hangup;
 mod inherit;
 mod ledger;
 mod local;
+mod lock;
 mod peer;
 mod progress;
 mod relay;
@@ -22,7 +23,7 @@ mod watch;
 pub use local::watch_local;
 
 use std::ffi::OsString;
-use std::fs::{self, File, TryLockError};
+use std::fs::{self, File};
 use std::io::{BufReader, Write};
 use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -34,6 +35,7 @@ use moor_core::config::{parse_controller, ControllerConfig};
 
 use drain::{Admitted, Drain, Handler};
 use inherit::Sockets;
+use lock::{take_lock, take_socket_lock, LOCK_WAIT};
 use serving::serve_started;
 
 use crate::env::{Env, CONTROLLER_LOCK};
@@ -144,7 +146,7 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
     // Held before the store opens, so no other moor migrates the db this controller serves.
     let state_lock = env
         .state_dir()
-        .map(|dir| take_lock(&dir.join(CONTROLLER_LOCK), &socket))
+        .map(|dir| take_lock(&dir.join(CONTROLLER_LOCK), &socket, LOCK_WAIT))
         .transpose()?;
     let env = check::open(env)?;
     let (vault, key) = open_vault(&env, config)?;
@@ -226,55 +228,6 @@ fn open_vault(env: &Env, config: &Path) -> Result<(Vault, PathBuf), Stop> {
 /// The socket path used when no explicit one is configured.
 pub(crate) fn state_socket(env: &Env) -> Option<PathBuf> {
     env.state_dir().map(|dir| dir.join("controller.sock"))
-}
-
-/// Takes the flock beside `socket`, `<socket>.lock`.
-fn take_socket_lock(socket: &Path) -> Result<File, Stop> {
-    let mut path = socket.as_os_str().to_owned();
-    path.push(".lock");
-    take_lock(Path::new(&path), socket)
-}
-
-/// Takes the flock on `path` and records our pid and socket in it.
-///
-/// A holder on our own socket exits 0, since the controller asked for is
-/// already serving; a holder on another socket is a refusal.
-fn take_lock(path: &Path, socket: &Path) -> Result<File, Stop> {
-    let failed = |e: std::io::Error| Stop {
-        code: 1,
-        message: format!("cannot lock {}: {e}", path.display()),
-    };
-    if let Some(dir) = path.parent() {
-        mkdir(dir).map_err(failed)?;
-    }
-    let mut file = File::options()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .read(true)
-        .open(path)
-        .map_err(failed)?;
-    match file.try_lock() {
-        Ok(()) => {
-            file.set_len(0)
-                .and_then(|()| writeln!(file, "{}\n{}", std::process::id(), socket.display()))
-                .map_err(failed)?;
-            Ok(file)
-        }
-        Err(TryLockError::WouldBlock) => {
-            let held = fs::read_to_string(path).unwrap_or_default();
-            let mut lines = held.lines();
-            let pid = lines.next().unwrap_or("?");
-            let on = lines
-                .next()
-                .map_or_else(|| socket.display().to_string(), str::to_owned);
-            Err(Stop {
-                code: u8::from(Path::new(&on) != socket),
-                message: format!("already running (pid {pid}) on {on}"),
-            })
-        }
-        Err(TryLockError::Error(e)) => Err(failed(e)),
-    }
 }
 
 /// Creates `dir` and missing parents, owner-only.
