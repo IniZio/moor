@@ -203,7 +203,7 @@ fn two_starts_racing_for_one_free_slot_bind_one_and_leave_one_pending() {
 
 const VOLUMES: &str = "cache: {volumes: [{name: sdk, path: /opt/sdk}]}\n";
 
-fn planned_volumes(w: &World) -> Option<usize> {
+pub(super) fn planned_volumes(w: &World) -> Option<usize> {
     w.forge.answer(
         super::repo(),
         Ok(super::repo_at(super::BASE, Some(VOLUMES))),
@@ -212,7 +212,7 @@ fn planned_volumes(w: &World) -> Option<usize> {
     w.driver.acquired_plans().first().map(|p| p.volumes().len())
 }
 
-fn cached_world(features: &[&str], online: bool) -> World {
+pub(super) fn cached_world(features: &[&str], online: bool) -> World {
     let yaml = "nodes: {ci: {runtime: local-container}}\nbox: {node: ci}";
     let driver = FakeDriver::new().cache_volumes();
     let w = world_with(driver, parse_user("config.yaml", yaml).unwrap());

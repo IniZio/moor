@@ -224,3 +224,28 @@ fn a_checkpoint_says_how_long_it_paused_the_box_or_why_it_failed() {
         "setup checkpoint 0 failed after 4s: disk full"
     );
 }
+
+#[test]
+fn a_cold_cache_reads_as_a_step_and_is_not_a_failure() {
+    let events = [
+        event("started", json!({}), 0),
+        event(
+            "cache_cold",
+            json!({"reason": "switched_off", "detail": "cache volumes are switched off for p"}),
+            1,
+        ),
+    ];
+    let p = Progress::of(&events, T0 + 2);
+    assert_eq!(
+        p.steps.last().unwrap(),
+        "    +1s  starting without cache volumes: cache volumes are switched off for p"
+    );
+    assert_eq!(failure(&events), None);
+    assert_eq!(
+        super::cold_cache(&events),
+        Some((
+            "switched_off".to_owned(),
+            "cache volumes are switched off for p".to_owned()
+        ))
+    );
+}

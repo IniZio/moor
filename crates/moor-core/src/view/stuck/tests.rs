@@ -217,3 +217,13 @@ fn a_detail_falls_back_to_the_kind_in_words() {
         assert_eq!(view.detail, words, "{kind}");
     }
 }
+
+#[test]
+fn a_cold_cache_is_not_stuck() {
+    let events = [at(
+        "cache_cold",
+        json!({"reason": "provider_unsupported", "detail": "x"}),
+        "2026-01-01T00:00:00Z",
+    )];
+    assert_eq!(stuck_of(&events), None);
+}

@@ -299,6 +299,10 @@ fn all_events() -> Vec<Event> {
             quiet_secs: 700,
         }),
         Event::Stall(StallEvent::AgentResumed { quiet_secs: 900 }),
+        Event::Timing(TimingEvent::CacheCold {
+            reason: s("provider_unsupported"),
+            detail: s("provider p keeps no cache volumes"),
+        }),
     ]
 }
 
@@ -396,6 +400,7 @@ const fn event_index(e: &Event) -> usize {
         Event::Timing(TimingEvent::CheckpointEvicted { .. }) => 73,
         Event::Stall(StallEvent::AgentStalled { .. }) => 74,
         Event::Stall(StallEvent::AgentResumed { .. }) => 75,
+        Event::Timing(TimingEvent::CacheCold { .. }) => 76,
     }
 }
 
@@ -403,7 +408,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 76);
+    assert_eq!(all.len(), 77);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

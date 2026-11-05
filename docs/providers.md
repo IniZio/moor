@@ -190,12 +190,13 @@ When the Box has a repo, moor also sends `CRABBOX_CACHE_SCOPE`. Its value is
 the repo group's 16 hex characters, without the `x` of a sealed group. A Box
 without a repo, or without volumes, gets no scope.
 
-A provider without the feature starts every Box cold. A start warns
-`cache_unavailable` when the repo or the operator declared volumes of their
-own. Presets alone start cold without a warning.
+A provider without the feature starts every Box cold, and the Box records a
+`cache_cold` event with the reason. A start also warns `cache_unavailable` when
+the repo or the operator declared volumes of their own. Presets alone start
+cold without that warning.
 `drivers.<provider>.cache_volumes: false` turns the volumes off for one
-provider without the warning. Docker's data root is `~/docker` on every
-external-provider Box. Docker 29 keeps images in containerd's store at
+provider. Its Boxes record `cache_cold` and never warn. Docker's data root is
+`~/docker` on every external-provider Box. Docker 29 keeps images in containerd's store at
 `/var/lib/containerd`, so the `docker` preset keeps both. An adapter must
 mount the cache before `containerd.service` and `docker.service` start.
 
