@@ -187,7 +187,7 @@ Some calls still wait for the new controller. New Boxes, steers, closes and `mac
 
 ## Edge upgrade
 
-The edge rolls rarely, on its own pinned tag. It still must not drop Boxes. The edge Deployment uses `RollingUpdate` with `maxSurge: 1, maxUnavailable: 0`, so two edges run side by side.
+The edge follows the nightly tag, so it rolls whenever its image changes. It must not drop Boxes. The edge Deployment uses `RollingUpdate` with `maxSurge: 1, maxUnavailable: 0`, so two edges run side by side.
 
 ```mermaid
 sequenceDiagram
@@ -202,7 +202,7 @@ sequenceDiagram
   Note over O: pod exits once it owns no rows
 ```
 
-The handover needs tinyproxy to reload its upstream without dropping open connections. That is a fact to observe, so it is a prototype in the last PR, not a question.
+The handover needs tinyproxy to reload its upstream without dropping open connections. That is a fact to observe, so PR 4 opens with a prototype, not a question.
 
 ## Config and secrets without the controller
 
@@ -217,17 +217,20 @@ Each PR stays under about 1000 lines.
 1. **Proxies ride out a controller gap.** The controller keeps answering the ledger through its drain. A supervisor serves its last secret and hold answers while the ledger is unavailable, and stops only on positive signals. Heartbeats from the same owner extend an expired lease. Reconcile waits one lease after start. Verify with a unit test per rule and a local `moor controller serve` restart while a Box loops `curl https://api.github.com` through its Proxy for 2 minutes. No failed request. This alone makes restarts invisible on a single host.
 2. **Desired-state Proxy rows and `moor edge serve`.** The controller writes `want` and the spec and waits for `ready`. `moor edge serve` reconciles wanted rows, adopting or respawning supervisors with today's fate logic, now local to the edge. Off k8s the controller spawns one local edge daemon unless config marks the edge external. Verify with testkit end to end. Kill the edge, then the controller, then both. A running Box keeps its egress each time.
 3. **Runner rides out a controller gap.** The runner keeps agent links and its broker while `runner.sock` is gone, and retries. Claims answer "try again later". Verify with a test that drops `runner.sock` for 60 s with a live link, then a local restart with a pool Box mid-exec.
-4. **Chart split in moor-gitops.** New `moor-edge` Deployment with the edge and runner containers, its own image tag and init container. The controller pod gets `podAffinity` to the edge. The gitops owner makes this PR. It lands after the Postgres switch has run once, since the `state-aside` init container moves the whole state dir. Verify with the verify-moor-cluster skill on local k3s. Start a Box with a setup line that loops a network fetch for 3 minutes, then `helm upgrade` the controller tag mid-line. Repeat mid agent turn. Pass means the line succeeds, the turn finishes, supervisor pids and agent links are unchanged, and no `tunnel_restarted` event appears.
-5. **Edge make-before-break.** Second tunnel on a fresh `box_port`, tinyproxy repoint, old supervisor drains. First a prototype that reloads tinyproxy mid-transfer and observes whether open connections survive. Verify on local k3s with `helm upgrade` of the edge tag mid-setup and mid agent turn. Same pass criteria.
+4. **Edge make-before-break.** Second tunnel on a fresh `box_port`, tinyproxy repoint, old supervisor drains. First a prototype that reloads tinyproxy mid-transfer and observes whether open connections survive. Verify with testkit. Start a second `moor edge serve` beside the first while a Box loops a network fetch. Every Box moves to the new edge, the old one exits, and no request fails.
+5. **Chart split in moor-gitops.** New `moor-edge` Deployment with the edge and runner containers and its own init container. The edge follows the nightly tag and rolls with `RollingUpdate`. The controller pod gets `podAffinity` to the edge. The gitops owner makes this PR. It lands after the Postgres switch has run once, since the `state-aside` init container moves the whole state dir. Verify with the verify-moor-cluster skill on local k3s. Start a Box with a setup line that loops a network fetch for 3 minutes, then `helm upgrade` the controller tag mid-line. Repeat mid agent turn. Then repeat both with an edge image change, so the edge rolls too. Pass means the line succeeds, the turn finishes, supervisor pids and agent links are unchanged, and no `tunnel_restarted` event appears.
 
 ## Out of scope
 
 - A restart during acquire still fails the Box. That is controller work, tracked from #1058.
 - herdr and CLI attachments reconnect after a controller deploy. They are client-facing.
 
+## Decisions
+
+- The edge follows the nightly tag. Make-before-break therefore lands before the chart split.
+
 ## Open questions for the owner
 
-1. Edge release cadence. Pin its tag and bump it by hand, or follow nightly? Following nightly needs PR 5 before PR 4 ships.
-2. Storage. Is requiring the controller and the edge on one node fine, given the `ReadWriteOnce` PVC? Or does the agentic cluster offer a `ReadWriteMany` class?
-3. Stale secrets. During a controller gap a Proxy injects the last secret it read. A secret revoked inside the gap stays in use until the controller returns. Is that acceptable?
-4. Gate. It is not Box-facing, so it stays in the controller pod. Should it get its own `RollingUpdate` Deployment later, so herdr and MCP clients see no blip either?
+1. Storage. Is requiring the controller and the edge on one node fine, given the `ReadWriteOnce` PVC? Or does the agentic cluster offer a `ReadWriteMany` class?
+2. Stale secrets. During a controller gap a Proxy injects the last secret it read. A secret revoked inside the gap stays in use until the controller returns. Is that acceptable?
+3. Gate. It is not Box-facing, so it stays in the controller pod. Should it get its own `RollingUpdate` Deployment later, so herdr and MCP clients see no blip either?
