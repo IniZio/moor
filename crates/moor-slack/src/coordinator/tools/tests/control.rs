@@ -340,5 +340,5 @@ fn every_control_tool_is_in_the_tool_list() {
     ] {
         assert!(names.contains(&tool), "{tool}");
     }
-    assert_eq!(names.len(), 10);
+    assert_eq!(names.len(), 15);
 }

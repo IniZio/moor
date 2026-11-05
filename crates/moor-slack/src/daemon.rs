@@ -23,6 +23,7 @@ use crate::feed::Feed;
 use crate::github::GitHub;
 use crate::identity::{Link, Team};
 use crate::login::{self, Checks, TokenCheck};
+use crate::reports::Reports;
 use crate::secret_file::read_secret;
 use crate::socket;
 use crate::turns::{FrontProxy, Turns};
@@ -143,6 +144,7 @@ pub fn run(settings: &Settings, log: &Log) -> Result<(), String> {
         clock: settings.clock,
         long_turn_secs: i64::from(cfg.long_turn_minutes) * 60,
     };
+    let reports = Reports::beside(&feed);
     let worker = Worker {
         db_path,
         state_dir: settings.state_dir.clone(),
@@ -157,6 +159,7 @@ pub fn run(settings: &Settings, log: &Log) -> Result<(), String> {
     let worker_thread = thread::spawn(move || worker.run(&jobs_rx, left));
     thread::spawn(move || Arc::new(turns).run());
     thread::spawn(move || feed.run());
+    thread::spawn(move || reports.run());
     thread::spawn(move || post(&wake_rx));
     finish(&settings.stop, socket, worker_thread)
 }

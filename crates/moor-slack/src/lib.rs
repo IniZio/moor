@@ -27,6 +27,7 @@ mod machine;
 mod mcp;
 mod profile;
 mod prompt;
+mod reports;
 mod secret_file;
 mod slash;
 mod socket;

@@ -110,7 +110,12 @@ fn the_tool_server_answers_mcp_over_stdin_and_stdout() {
             "interrupt_box",
             "sleep_box",
             "wake_box",
-            "restart_agent"
+            "restart_agent",
+            "add_workflow",
+            "list_workflows",
+            "remove_workflow",
+            "set_workflow_enabled",
+            "list_workflow_runs"
         ]
     );
     drop(stdin);
