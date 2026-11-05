@@ -255,3 +255,16 @@ fn a_missing_binary_is_named_and_nothing_is_minted() {
     assert!(err.contains("/nonexistent/moor-egress-forward"), "{err}");
     assert!(!r.store.egress_token_delivered(r.id).unwrap());
 }
+
+#[test]
+fn the_controller_delivers_the_forwarder_installed_beside_moor() {
+    let exe = std::env::current_exe().unwrap();
+    assert_eq!(
+        crate::cx::egress::binary(&Env::from_pairs(Vec::<(&str, &str)>::new())),
+        exe.with_file_name("moor-egress-forward")
+    );
+    assert_eq!(
+        crate::cx::egress::binary(&Env::from_pairs([("MOOR_EGRESS_FORWARD_BIN", "/opt/fwd")])),
+        Path::new("/opt/fwd")
+    );
+}
