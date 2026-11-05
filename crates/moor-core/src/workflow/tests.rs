@@ -165,3 +165,41 @@ fn a_daily_time_on_a_clock_change_day_is_one_firing() {
     assert!(WorkflowSchedule::parse("30 2 * * *", "America/New_York").is_ok());
     assert!(WorkflowSchedule::parse("30 1 * * *", "Europe/London").is_ok());
 }
+
+fn named(id: i64, workflow: &str, r: &str, due: i64) -> String {
+    super::box_name(
+        super::WorkflowId::new(id),
+        workflow,
+        &repo(r),
+        Ts::from_millis(due),
+    )
+    .unwrap()
+    .as_str()
+    .to_owned()
+}
+
+#[test]
+fn a_firing_names_its_box_by_repo_workflow_and_due_time() {
+    // 2026-07-01 09:00 UTC.
+    assert_eq!(
+        named(7, "daily-fix", "acme/web", 1_782_896_400_000),
+        "web/w7-daily-fix-202607010900"
+    );
+}
+
+#[test]
+fn box_names_stay_valid_and_apart_for_awkward_input() {
+    let long = "a".repeat(64);
+    let name = named(12, &long, "Acme/My.Repo_Name", 1_782_896_400_000);
+    assert!(crate::BoxName::parse(&name).is_ok(), "{name}");
+    assert!(name.starts_with("my-repo-name/w12-aaaa"), "{name}");
+    assert_ne!(
+        named(1, "x", "a/b", 1_782_896_400_000),
+        named(2, "x", "a/b", 1_782_896_400_000)
+    );
+    assert_ne!(
+        named(1, "x", "a/b", 1_782_896_400_000),
+        named(1, "x", "a/b", 1_782_982_800_000)
+    );
+    assert!(crate::BoxName::parse(&named(1, "__", "a/---", 0)).is_ok());
+}

@@ -208,6 +208,9 @@ pub struct Workflow {
 /// What came of one due time for one repo.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkflowOutcome {
+    /// The firing is claimed and its Box is being started. It is recorded before the start, so
+    /// a crash leaves it behind and the firing is never repeated.
+    Starting,
     /// A Box was started and has not ended.
     Started {
         /// The Box.
@@ -236,6 +239,19 @@ pub enum WorkflowOutcome {
     },
 }
 
+impl WorkflowOutcome {
+    /// The Box this outcome started, if it started one.
+    #[must_use]
+    pub const fn box_id(&self) -> Option<BoxId> {
+        match self {
+            Self::Started { box_id }
+            | Self::Finished { box_id, .. }
+            | Self::TimedOut { box_id, .. } => Some(*box_id),
+            Self::Starting | Self::SkippedOverlap | Self::Refused { .. } => None,
+        }
+    }
+}
+
 /// How a started run ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunEnd {
@@ -260,8 +276,10 @@ pub struct WorkflowRun {
     pub recorded_at: Ts,
 }
 
+mod box_name;
 mod schedule;
 #[cfg(test)]
 mod tests;
 
+pub use box_name::box_name;
 pub use schedule::{TimeoutMinutes, WorkflowSchedule, MIN_FIRING_INTERVAL};

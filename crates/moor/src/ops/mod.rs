@@ -42,6 +42,7 @@ mod wait;
 mod wait_events;
 mod wake;
 pub(crate) mod webhook_outbox;
+pub(crate) mod workflow;
 
 #[cfg(test)]
 pub(crate) use run::tests as run_fixture;

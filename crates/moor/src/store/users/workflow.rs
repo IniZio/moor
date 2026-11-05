@@ -1,10 +1,5 @@
 //! Each user's workflows and the record of their firings.
 
-#![cfg_attr(
-    not(test),
-    expect(dead_code, reason = "read by the firing loop, not yet wired")
-)]
-
 use std::time::Duration;
 
 use moor_core::seam::clock::Ts;
@@ -121,6 +116,10 @@ fn workflow_of(row: WorkflowRow) -> Result<Workflow, StoreError> {
 }
 
 /// Inserts `def` as `owner`'s workflow and returns its id.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the owner-facing commands are not wired yet")
+)]
 fn insert_workflow(
     conn: &dyn Db,
     owner: UserId,
@@ -165,6 +164,10 @@ impl Store {
     /// returns its id. A replaced workflow keeps its id, its runs and its creation time; it
     /// counts as enabled since now unless it was enabled already. Enabling it clears the reason
     /// the controller disabled it for; storing it disabled leaves that reason.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the owner-facing commands are not wired yet")
+    )]
     pub(crate) fn put_workflow(
         &self,
         owner: UserId,
@@ -214,6 +217,10 @@ impl Store {
     }
 
     /// `owner`'s workflow `name`.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the owner-facing commands are not wired yet")
+    )]
     pub(crate) fn workflow(
         &self,
         owner: UserId,
@@ -234,6 +241,10 @@ impl Store {
     }
 
     /// `owner`'s workflows, by name.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the owner-facing commands are not wired yet")
+    )]
     pub(crate) fn workflows(&self, owner: UserId) -> Result<Vec<Workflow>, StoreError> {
         let reader = self.reader()?;
         let rows = reader.rows(
@@ -247,7 +258,40 @@ impl Store {
         rows.map(|row| workflow_of(row?)).collect()
     }
 
+    /// Every enabled workflow of every owner, by id.
+    pub(crate) fn enabled_workflows(&self) -> Result<Vec<Workflow>, StoreError> {
+        let reader = self.reader()?;
+        let rows = reader.rows(
+            Query::select()
+                .columns(WORKFLOW_COLS)
+                .from(Workflows::Table)
+                .and_where(Expr::col(Workflows::EnabledAt).is_not_null())
+                .order_by(Workflows::Id, Order::Asc),
+            read_workflow,
+        )?;
+        rows.map(|row| workflow_of(row?)).collect()
+    }
+
+    /// Workflow `id`, whoever owns it.
+    pub(crate) fn workflow_by_id(&self, id: WorkflowId) -> Result<Option<Workflow>, StoreError> {
+        let row = self
+            .reader()?
+            .row(
+                Query::select()
+                    .columns(WORKFLOW_COLS)
+                    .from(Workflows::Table)
+                    .and_where(Expr::col(Workflows::Id).eq(id.get())),
+                read_workflow,
+            )
+            .optional()?;
+        row.map(workflow_of).transpose()
+    }
+
     /// Deletes `owner`'s workflow `name` with its runs; true when there was one.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the owner-facing commands are not wired yet")
+    )]
     pub(crate) fn delete_workflow(
         &self,
         owner: UserId,
@@ -265,6 +309,10 @@ impl Store {
     /// Enables or disables `owner`'s workflow `name`; true when there is one. Enabling counts
     /// from now unless it was enabled already, and clears the reason the controller disabled it
     /// for. Disabling leaves that reason.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the owner-facing commands are not wired yet")
+    )]
     pub(crate) fn set_workflow_enabled(
         &self,
         owner: UserId,

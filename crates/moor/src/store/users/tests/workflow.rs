@@ -458,3 +458,58 @@ fn an_owner_edit_or_disable_keeps_the_controllers_reason() {
         WorkflowState::Enabled { .. }
     ));
 }
+
+#[test]
+fn a_claimed_run_settles_once_and_counts_as_open_until_then() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let alice = user(&store, "local:1");
+    let id = store
+        .put_workflow(alice, &def("daily", &["a/one"], true))
+        .unwrap();
+    assert!(store
+        .record_workflow_run(&run(id, "a/one", 100, WorkflowOutcome::Starting))
+        .unwrap());
+    assert_eq!(store.open_workflow_runs(id).unwrap().len(), 1);
+    assert_eq!(store.starting_workflow_runs().unwrap().len(), 1);
+
+    let key = (id, &repo("a/one"), Ts::from_millis(100));
+    let started = WorkflowOutcome::Started {
+        box_id: BoxId::new(4),
+    };
+    assert!(store.resolve_workflow_start(key, &started).unwrap());
+    let refused = WorkflowOutcome::Refused {
+        detail: "late".to_owned(),
+    };
+    assert!(
+        !store.resolve_workflow_start(key, &refused).unwrap(),
+        "settled once"
+    );
+    assert!(store.starting_workflow_runs().unwrap().is_empty());
+    let last = store.last_workflow_runs(id).unwrap();
+    assert_eq!(last.first().map(|r| &r.outcome), Some(&started));
+}
+
+#[test]
+fn enabled_workflows_lists_every_owners_enabled_ones() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let (alice, bob) = (user(&store, "local:1"), user(&store, "local:2"));
+    let a = store
+        .put_workflow(alice, &def("daily", &["a/one"], true))
+        .unwrap();
+    store
+        .put_workflow(alice, &def("off", &["a/one"], false))
+        .unwrap();
+    let b = store
+        .put_workflow(bob, &def("daily", &["b/x"], true))
+        .unwrap();
+    let ids: Vec<_> = store
+        .enabled_workflows()
+        .unwrap()
+        .iter()
+        .map(|w| w.id)
+        .collect();
+    assert_eq!(ids, [a, b]);
+    assert_eq!(store.workflow_by_id(b).unwrap().unwrap().owner, bob);
+}

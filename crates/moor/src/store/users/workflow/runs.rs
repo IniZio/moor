@@ -11,6 +11,8 @@ use super::corrupt;
 use crate::store::db::{self, DbExt as _};
 use crate::store::{Store, StoreError};
 
+/// The `outcome` of a run claimed before its Box exists.
+const STARTING: &str = "starting";
 /// The `outcome` of a run that started a Box.
 const STARTED: &str = "started";
 /// The `outcome` of a run whose Box finished in time.
@@ -63,6 +65,7 @@ fn run_of(workflow: WorkflowId, row: RunRow) -> Result<WorkflowRun, StoreError> 
     let box_id = box_id.map(BoxId::new);
     let ended_at = ended_at.map(Ts::from_millis);
     let outcome = match (outcome.as_str(), box_id, detail, ended_at) {
+        (STARTING, None, None, None) => WorkflowOutcome::Starting,
         (STARTED, Some(box_id), None, None) => WorkflowOutcome::Started { box_id },
         (FINISHED, Some(box_id), None, Some(ended_at)) => {
             WorkflowOutcome::Finished { box_id, ended_at }
@@ -88,6 +91,7 @@ const fn outcome_cols(
     o: &WorkflowOutcome,
 ) -> (&'static str, Option<i64>, Option<&str>, Option<i64>) {
     match o {
+        WorkflowOutcome::Starting => (STARTING, None, None, None),
         WorkflowOutcome::Started { box_id } => (STARTED, Some(box_id.get()), None, None),
         WorkflowOutcome::Finished { box_id, ended_at } => (
             FINISHED,
@@ -165,7 +169,7 @@ impl Store {
         Ok(changed == 1)
     }
 
-    /// The runs of `workflow` that started a Box and have not ended.
+    /// The runs of `workflow` that are being started or have a Box that has not ended.
     pub(crate) fn open_workflow_runs(
         &self,
         workflow: WorkflowId,
@@ -176,7 +180,7 @@ impl Store {
                     .columns(RUN_COLS)
                     .from(WorkflowRuns::Table)
                     .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
-                    .and_where(Expr::col(WorkflowRuns::Outcome).eq(STARTED))
+                    .and_where(Expr::col(WorkflowRuns::Outcome).is_in([STARTING, STARTED]))
                     .order_by(WorkflowRuns::DueAt, Order::Asc),
                 read_run,
             )?
@@ -206,7 +210,65 @@ impl Store {
             .collect()
     }
 
+    /// Settles the claimed run of `workflow` and `repo` due at `due_at` as `outcome`, which is
+    /// Started or Refused. False, with nothing changed, unless the run is still claimed.
+    pub(crate) fn resolve_workflow_start(
+        &self,
+        (workflow, repo, due_at): (WorkflowId, &ForgeRepo, Ts),
+        outcome: &WorkflowOutcome,
+    ) -> Result<bool, StoreError> {
+        let (name, box_id, detail, _) = outcome_cols(outcome);
+        let changed = self.writer().run(
+            Query::update()
+                .table(WorkflowRuns::Table)
+                .value(WorkflowRuns::Outcome, name)
+                .value(WorkflowRuns::Box, box_id)
+                .value(WorkflowRuns::Detail, detail)
+                .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
+                .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
+                .and_where(Expr::col(WorkflowRuns::DueAt).eq(due_at.as_millis()))
+                .and_where(Expr::col(WorkflowRuns::Outcome).eq(STARTING)),
+        )?;
+        Ok(changed == 1)
+    }
+
+    /// Every claimed run whose Box was not yet recorded, of any workflow.
+    pub(crate) fn starting_workflow_runs(&self) -> Result<Vec<WorkflowRun>, StoreError> {
+        let reader = self.reader()?;
+        let rows: Vec<(i64, RunRow)> = reader
+            .rows(
+                Query::select()
+                    .column(WorkflowRuns::Workflow)
+                    .columns(RUN_COLS)
+                    .from(WorkflowRuns::Table)
+                    .and_where(Expr::col(WorkflowRuns::Outcome).eq(STARTING))
+                    .order_by(WorkflowRuns::Id, Order::Asc),
+                |r| {
+                    Ok::<_, db::Error>((
+                        r.get(0)?,
+                        (
+                            r.get(1)?,
+                            r.get(2)?,
+                            r.get(3)?,
+                            r.get(4)?,
+                            r.get(5)?,
+                            r.get(6)?,
+                            r.get(7)?,
+                        ),
+                    ))
+                },
+            )?
+            .collect::<Result<_, _>>()?;
+        rows.into_iter()
+            .map(|(workflow, row)| run_of(WorkflowId::new(workflow), row))
+            .collect()
+    }
+
     /// The latest run of each repo of `workflow` that has one, by due time.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the owner-facing commands are not wired yet")
+    )]
     pub(crate) fn last_workflow_runs(
         &self,
         workflow: WorkflowId,
