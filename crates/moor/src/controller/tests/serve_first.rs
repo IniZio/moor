@@ -46,6 +46,11 @@ struct Slow {
 
 /// Starts a controller whose Box 1 had a start cut off by a dead process.
 fn slow() -> Slow {
+    slow_after(Duration::ZERO)
+}
+
+/// [`slow`], with the Proxy restart waiting `after` once the controller starts.
+fn slow_after(after: Duration) -> Slow {
     let dir = tempfile::tempdir().expect("tmp");
     let cfg = config(dir.path(), "");
     let running = start(&env(dir.path()), &cfg).expect("start");
@@ -58,7 +63,7 @@ fn slow() -> Slow {
     let (finished_tx, finished) = mpsc::channel();
     let (wake, signal) = UnixStream::pair().expect("wake pair");
     let serving = thread::spawn(move || {
-        serve_started(running, &signal, &sink, move |_| {
+        serve_started(running, &signal, &sink, after, move |_| {
             entered_tx.send(()).expect("entered");
             gate_rx.recv().expect("gate");
             finished_tx.send(()).expect("finished");
@@ -148,5 +153,17 @@ fn an_interrupted_start_is_failed_before_the_first_request_is_served() {
     assert_eq!(got["class"], "ok", "{got}");
     let shown = got["value"]["box"].to_string();
     assert!(shown.contains("setup_failed"), "{shown}");
+    slow.finish();
+}
+
+#[test]
+fn the_proxies_are_restarted_only_once_the_wait_after_start_is_over() {
+    let after = Duration::from_millis(600);
+    let slow = slow_after(after);
+    assert!(
+        slow.entered.recv_timeout(after / 2).is_err(),
+        "the restart began before the wait was over"
+    );
+    slow.entered.recv_timeout(WAIT).expect("restart began");
     slow.finish();
 }

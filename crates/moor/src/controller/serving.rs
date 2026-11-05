@@ -3,6 +3,7 @@
 use std::ffi::OsString;
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
+use std::time::Duration;
 
 use super::drain::Drain;
 use super::{log, settle, Running, Sink};
@@ -13,12 +14,13 @@ use moor_core::BoxId;
 /// Serves `running` until `wake` turns readable.
 ///
 /// Interrupted starts are failed first, since requests read what that leaves. `reconcile` then
-/// restarts the Box Proxies on a thread of its own, so requests are answered meanwhile; each
-/// Proxy settles through the same lease its Box's start and close use.
+/// restarts the Box Proxies on a thread of its own once `after` has passed, so requests are
+/// answered meanwhile and a Proxy that rode out the restart has renewed its lease first.
 pub(super) fn serve_started(
     mut running: Running,
     wake: &UnixStream,
     sink: &Sink,
+    after: Duration,
     reconcile: impl FnOnce(&Env) -> Vec<String> + Send + 'static,
 ) -> u8 {
     log(sink, &format!("listening on {}", running.socket.display()));
@@ -50,7 +52,7 @@ pub(super) fn serve_started(
         sink,
     );
     settle::spawn_workflows(&running.env, &drain, sink);
-    reconcile_in_background(reconcile, &running.env, &drain, sink);
+    reconcile_in_background((after, reconcile), &running.env, &drain, sink);
     running.serve_until(wake, &drain, sink);
     fronts.wait();
     0
@@ -74,15 +76,17 @@ fn resume_setups_in_background(claimed: Vec<BoxId>, env: &Arc<Env>, sink: &Sink)
     });
 }
 
-/// Runs `reconcile` on its own thread; the drain waits for it, and none starts once it begins.
+/// Runs `reconcile` on its own thread after `after`; the drain waits for it, and none starts
+/// once it begins.
 fn reconcile_in_background(
-    reconcile: impl FnOnce(&Env) -> Vec<String> + Send + 'static,
+    (after, reconcile): (Duration, impl FnOnce(&Env) -> Vec<String> + Send + 'static),
     env: &Arc<Env>,
     drain: &Arc<Drain>,
     sink: &Sink,
 ) {
     let (env, drain, sink) = (Arc::clone(env), Arc::clone(drain), Arc::clone(sink));
     std::thread::spawn(move || {
+        std::thread::sleep(after);
         let Some(_held) = drain.hold() else { return };
         for line in reconcile(&env) {
             log(&sink, &format!("proxy: {line}"));

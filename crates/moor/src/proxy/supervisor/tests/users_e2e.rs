@@ -342,3 +342,27 @@ fn each_users_box_injects_only_that_users_secret_and_a_deleted_one_fails_next() 
     let said = err.lock().unwrap().clone();
     assert_nowhere(&t, said);
 }
+
+#[test]
+fn a_box_keeps_injecting_its_users_last_secret_while_the_controller_is_down() {
+    let t = two();
+    let sockets = t.dir.path().join("s");
+    let stop = Arc::new(AtomicBool::new(false));
+    let err = Arc::new(Mutex::new(Vec::new()));
+    let deps = t.deps(t.ann.1, (&sockets, &stop), Arc::clone(&err) as Sink);
+    std::thread::scope(|s| {
+        let server = s.spawn(|| serve(&deps, t.ann.1));
+        let _guard = StopOnDrop(Arc::clone(&stop));
+        let ann = t.client(t.ann.1, &t.ann.2);
+        assert_eq!(get(&ann, &t.up), Ok(200));
+        t.ledgers[0].down();
+        assert_eq!(
+            get(&ann, &t.up),
+            Ok(200),
+            "the controller gap failed a request"
+        );
+        assert_last(&t, ANN);
+        stop.store(true, Ordering::Release);
+        assert_eq!(server.join().unwrap(), 0);
+    });
+}
