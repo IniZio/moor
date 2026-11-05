@@ -14,6 +14,9 @@ path = "src/main.rs"
 
 [features]
 pty-surface = ["dep:ghostty-vt"]
+# Lets the shared egress Proxy trust one local test upstream, for live local runs. Release
+# builds never enable it.
+test-upstream = []
 
 [dependencies]
 ghostty-vt = { version = "=0.8.0", default-features = false, optional = true }
@@ -80,7 +83,16 @@ nix = { version = "0.31", default-features = false, features = [
 tokio = { version = "1", default-features = false, features = [
   "rt-multi-thread",
   "net",
+  "io-util",
+  "time",
+  "sync",
+  "macros",
 ] }
+tokio-tungstenite = { version = "0.29", default-features = false }
+futures-util = { version = "0.3", default-features = false, features = [
+  "sink",
+] }
+httparse = "1"
 portable-pty = "0.9"
 
 [target.'cfg(target_os = "macos")'.dependencies]

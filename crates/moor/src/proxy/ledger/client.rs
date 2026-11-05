@@ -173,16 +173,8 @@ impl FrontsLedger {
 }
 
 /// The shared egress Proxy's token lookups.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the shared egress Proxy is not wired yet")
-)]
 pub(crate) struct EgressLedger(Ledger);
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the shared egress Proxy is not wired yet")
-)]
 impl EgressLedger {
     /// The ledger on `socket`, presenting `key`.
     pub(crate) fn at(socket: PathBuf, key: String) -> Self {

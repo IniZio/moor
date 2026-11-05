@@ -28,6 +28,7 @@ use moor_core::Secret;
 
 use super::Sink;
 pub(crate) use machine::{Held, Hold, MachineRoute};
+pub(crate) use plain::connect_head;
 use refusal::{target_of, Refusals};
 pub(crate) use socket::FrontSocket;
 use socket::{Handler, Listening};
