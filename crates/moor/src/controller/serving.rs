@@ -32,6 +32,9 @@ pub(super) fn serve_started(
     for line in interrupted {
         log(sink, &format!("start: {line}"));
     }
+    for line in Moor::import_proxy_files(&running.env, &running.vault) {
+        log(sink, &format!("proxy: {line}"));
+    }
     resume_setups_in_background(claimed, &running.env, sink);
     for line in Moor::from_env(&running.env).map_or_else(
         |e| vec![e.error.to_string()],

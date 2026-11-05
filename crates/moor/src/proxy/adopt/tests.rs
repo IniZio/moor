@@ -12,12 +12,13 @@ use moor_schema::tables::Boxes;
 use sea_query::{Expr, ExprTrait as _, Query, UpdateStatement};
 
 use super::reconcile;
-use crate::proxy::detached::{write_spec, DetachedSupervisor, LEASE};
+use crate::proxy::detached::{DetachedSupervisor, LEASE};
 use crate::proxy::ledger::LEDGER;
 use crate::store::db::{Conn, DbExt as _};
 use crate::store::{ReadyProc, Store, STORE_FILE};
 use crate::testing::clock::FakeClock;
 use crate::testing::proc::ScriptedProc;
+use crate::testing::proxy_host::stored_ca;
 use crate::testing::rng::FakeRng;
 
 const PID: u32 = 4242;
@@ -72,13 +73,13 @@ fn fx() -> Fx {
             .and_where(Expr::col(Boxes::Id).eq(id.get()))
             .take(),
     );
-    write_spec(f.dir.path(), &f.spec()).unwrap();
     let state = f.dir.path().to_path_buf();
     let shared = f.clock.clone();
     f.proc.on_daemon(move |d| {
         let store = Store::open(&state.join(STORE_FILE), shared.clone()).unwrap();
         let box_id = BoxId::new(d.call.args.get(2).unwrap().parse().unwrap());
         store.claim_lease(box_id, "new-supervisor", LEASE).unwrap();
+        store.keep_proxy_ca(box_id, &stored_ca(box_id)).unwrap();
         let box_port = store.proxy(box_id).unwrap().unwrap().box_port;
         let proc = ReadyProc {
             pid: d.pid,
@@ -117,6 +118,9 @@ impl Fx {
             .store
             .reserve(self.id, &FakeRng::default(), LEASE)
             .unwrap();
+        if self.store.proxy_spec(self.id).unwrap().is_none() {
+            self.store.set_proxy_spec(self.id, &self.spec()).unwrap();
+        }
         self.store
             .set_proxy_key(self.id, b"old-key", LEDGER)
             .unwrap();
@@ -135,7 +139,7 @@ impl Fx {
     }
 
     fn settle(&self) -> Vec<String> {
-        reconcile(&self.host, self.proc.as_ref(), &self.store, self.dir.path())
+        reconcile(&self.host, self.proc.as_ref(), &self.store)
     }
 
     fn row(&self) -> crate::store::ProxyRow {
@@ -239,7 +243,12 @@ fn a_missing_spec_is_reported_and_leaves_the_row_stale() {
     let f = fx();
     let port = f.record(BOOT);
     f.proc.dead(PID);
-    std::fs::remove_dir_all(f.dir.path().join("proxy")).unwrap();
+    f.exec(
+        Query::update()
+            .table(moor_schema::tables::Proxy::Table)
+            .value(moor_schema::tables::Proxy::Spec, Option::<String>::None)
+            .take(),
+    );
 
     let errors = f.settle();
 
@@ -255,15 +264,14 @@ fn a_restarted_proxy_keeps_acting_as_the_user_its_spec_names() {
     let f = fx();
     let mut spec = f.spec();
     spec.user = moor_core::user::UserId::new(7);
-    write_spec(f.dir.path(), &spec).unwrap();
     f.record(BOOT);
+    f.store.set_proxy_spec(f.id, &spec).unwrap();
     f.proc.dead(PID);
 
     assert_eq!(f.settle(), Vec::<String>::new());
 
     assert_eq!(f.proc.daemons().len(), 1);
-    let again = crate::proxy::detached::read_spec(f.dir.path(), f.id).unwrap();
-    assert_eq!(again, spec);
+    assert_eq!(f.store.proxy_spec(f.id).unwrap(), Some(spec));
 }
 
 /// Records a ready Proxy whose supervisor was started to speak `ledger`, or before the ledger

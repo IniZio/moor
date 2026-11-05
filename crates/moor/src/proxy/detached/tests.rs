@@ -28,6 +28,7 @@ fn ready() -> sea_query::UpdateStatement {
         .take()
 }
 use crate::testing::proc::{DaemonCall, ScriptedProc};
+use crate::testing::proxy_host::stored_ca;
 use crate::testing::rng::FakeRng;
 
 /// An adapter over fakes, with a second store on the same database to seed and inspect rows.
@@ -57,6 +58,7 @@ pub(super) fn supervise(state: PathBuf) -> impl Fn(&DaemonCall) + Send + Sync + 
         let box_id = BoxId::new(d.call.args.get(2).unwrap().parse().unwrap());
         let owner = "fake-supervisor";
         store.claim_lease(box_id, owner, LEASE).unwrap();
+        store.keep_proxy_ca(box_id, &stored_ca(box_id)).unwrap();
         let row = store.proxy(box_id).unwrap().unwrap();
         let box_port = row.box_port;
         let applied = store

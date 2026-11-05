@@ -12,7 +12,6 @@ use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::BoxId;
 
 use super::{start, working_box, Stop, World, LEASE, TICK};
-use crate::proxy::detached::{read_spec, write_spec};
 use crate::proxy::ledger::tests::box_ledger;
 use crate::store::Lease;
 use crate::testing::bridge::bridge;
@@ -211,9 +210,9 @@ fn second_box(w: &World) -> BoxId {
     drop(w.store.reserve(id, &FakeRng::default(), LEASE).unwrap());
     let spec = ProxySpec {
         box_id: id,
-        ..read_spec(w.dir.path(), w.id).unwrap()
+        ..w.store.proxy_spec(w.id).unwrap().unwrap()
     };
-    write_spec(w.dir.path(), &spec).unwrap();
+    w.store.set_proxy_spec(id, &spec).unwrap();
     id
 }
 

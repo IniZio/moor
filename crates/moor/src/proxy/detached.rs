@@ -16,15 +16,15 @@ use moor_core::BoxId;
 
 use crate::env::PROXY_KEY;
 use crate::proxy::ledger::LEDGER;
-use crate::proxy::nono::ca::load_or_create;
 use crate::store::{Database, ProxyRow, Reserve, Store, StoreError};
 
 pub(crate) use super::supervisor::LEASE;
-use spec::mint_key;
-pub(crate) use spec::{read_spec, write_spec};
+use key::mint_key;
+use ready::{owner_only_dir, ready_endpoint, record};
 
 mod end;
-mod spec;
+mod key;
+mod ready;
 
 /// How far ahead of the clock a heartbeat may be and still count as live.
 const SKEW: Duration = Duration::from_secs(5);
@@ -183,18 +183,9 @@ fn store_failed(e: &StoreError, log: &Path) -> ProxyHostError {
     fail(&format!("the proxy state could not be used: {e}"), log)
 }
 
-/// Map a spec or CA file failure to a one-line launch failure.
-fn spec_failed(e: &io::Error, log: &Path) -> ProxyHostError {
-    fail(&format!("the proxy files could not be written: {e}"), log)
-}
-
-/// The endpoint a ready row describes.
-fn endpoint(row: &ProxyRow, ca_pem: &str) -> ProxyEndpoint {
-    ProxyEndpoint {
-        box_port: row.box_port,
-        egress_port: row.egress_port,
-        ca_pem: ca_pem.to_owned(),
-    }
+/// Map a file or key failure to a one-line launch failure.
+fn io_failed(e: &io::Error, log: &Path) -> ProxyHostError {
+    fail(&format!("the proxy could not be prepared: {e}"), log)
 }
 
 impl ProxyHost for DetachedSupervisor {
@@ -218,21 +209,21 @@ impl ProxyHost for DetachedSupervisor {
             ));
         };
         let log = log_path(state, box_id);
-        write_spec(state, spec).map_err(|e| spec_failed(&e, &log))?;
-        let ca = load_or_create(state, box_id).map_err(|e| spec_failed(&e, &log))?;
-        let ca_pem = ca.cert_pem();
+        owner_only_dir(log.parent().unwrap_or(state)).map_err(|e| io_failed(&e, &log))?;
         let store = self.store().map_err(|e| store_failed(&e, &log))?;
         let row = store.proxy(box_id).map_err(|e| store_failed(&e, &log))?;
         if let Some(row) = row.filter(|r| r.ready && self.live(r)) {
-            return Ok(endpoint(&row, ca_pem));
+            record(store, spec, &log)?;
+            return ready_endpoint(store, &row, &log);
         }
 
         let reserved = store
             .reserve(box_id, self.rng.as_ref(), LEASE)
             .map_err(|e| store_failed(&e, &log))?;
+        record(store, spec, &log)?;
         let pid = match reserved {
             Reserve::Reserved(_) => {
-                let key = mint_key().map_err(|e| spec_failed(&e, &log))?;
+                let key = mint_key().map_err(|e| io_failed(&e, &log))?;
                 store
                     .set_proxy_key(box_id, key.as_bytes(), LEDGER)
                     .map_err(|e| store_failed(&e, &log))?;
@@ -255,7 +246,7 @@ impl ProxyHost for DetachedSupervisor {
             if let Some(row) = &row {
                 let lease = self.live(row);
                 if row.ready && lease {
-                    return Ok(endpoint(row, ca_pem));
+                    return ready_endpoint(store, row, &log);
                 }
                 if !lease && pid.is_some_and(|p| !self.proc.alive(p)) {
                     return Err(fail(
@@ -272,12 +263,13 @@ impl ProxyHost for DetachedSupervisor {
     }
 
     fn restart(&self, box_id: BoxId) -> Result<(), ProxyHostError> {
-        let state = self.state_dir.as_deref().ok_or_else(|| {
-            ProxyHostError::Failed("the state directory is not usable".to_owned())
-        })?;
-        let spec = read_spec(state, box_id).map_err(|e| {
-            ProxyHostError::Failed(format!("no spec to restart the proxy from: {e}"))
-        })?;
+        let spec = self
+            .store()
+            .and_then(|s| s.proxy_spec(box_id))
+            .map_err(|e| ProxyHostError::Failed(format!("the proxy state could not be used: {e}")))?
+            .ok_or_else(|| {
+                ProxyHostError::Failed("no spec to restart the proxy from".to_owned())
+            })?;
         self.ensure(&spec).map(drop)
     }
 

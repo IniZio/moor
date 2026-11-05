@@ -39,6 +39,7 @@ impl std::fmt::Debug for BoxCa {
 
 impl BoxCa {
     /// The PEM certificate the Box trusts.
+    #[cfg(test)]
     pub(crate) fn cert_pem(&self) -> &str {
         &self.cert_pem
     }
@@ -74,12 +75,14 @@ pub(crate) fn cert_path(state_dir: &Path, box_id: BoxId) -> PathBuf {
 ///
 /// A half-present or unparsable CA is an error naming the file: the Box
 /// trusts the old certificate, so a silent replacement would break it.
+#[cfg(test)]
 pub(crate) fn load_or_create(state_dir: &Path, box_id: BoxId) -> std::io::Result<BoxCa> {
     let cn = format!("moor box {}", box_id.get());
     load_or_create_in(&ca_dir(state_dir, box_id), &cn)
 }
 
-/// [`load_or_create`] for the CA in `dir`, generated with common name `cn`.
+/// Loads the CA in `dir`, or generates and persists one with common name `cn` when neither file
+/// exists. Directory and files are owner-only.
 pub(crate) fn load_or_create_in(dir: &Path, cn: &str) -> std::io::Result<BoxCa> {
     DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
     std::fs::set_permissions(dir, Permissions::from_mode(0o700))?;
@@ -91,6 +94,35 @@ pub(crate) fn load_or_create_in(dir: &Path, cn: &str) -> std::io::Result<BoxCa> 
         (true, false) => Err(missing(&cert_path)),
         (false, true) => Err(missing(&key_path)),
     }
+}
+
+/// A new CA for `box_id`: its PEM key and PEM certificate.
+pub(crate) fn generate(box_id: BoxId) -> std::io::Result<(Zeroizing<String>, String)> {
+    let cn = format!("moor box {}", box_id.get());
+    let ca = EphemeralCa::generate_with_cn(&cn, VALIDITY)
+        .map_err(|_| Error::other("proxy CA generation failed"))?;
+    Ok((ca.key_pem(), ca.cert_pem().to_owned()))
+}
+
+/// Writes the CA `key_pem` and `cert_pem` into the Box's CA directory, replacing what is there,
+/// and loads it back, checking that the key matches the certificate.
+pub(crate) fn install(
+    state_dir: &Path,
+    box_id: BoxId,
+    (key_pem, cert_pem): (&[u8], &str),
+) -> std::io::Result<BoxCa> {
+    let dir = ca_dir(state_dir, box_id);
+    DirBuilder::new().recursive(true).mode(0o700).create(&dir)?;
+    std::fs::set_permissions(&dir, Permissions::from_mode(0o700))?;
+    let (key_path, cert_path) = (dir.join(KEY_FILE), dir.join(CERT_FILE));
+    write_private(&dir, &key_path, key_pem)?;
+    write_private(&dir, &cert_path, cert_pem.as_bytes())?;
+    load(&key_path, &cert_path)
+}
+
+/// Path of the CA key in `dir`.
+pub(crate) fn key_in(dir: &Path) -> PathBuf {
+    dir.join(KEY_FILE)
 }
 
 /// Path of the CA certificate in `dir`.

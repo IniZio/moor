@@ -1,6 +1,5 @@
 //! Controller start-up: keep live Proxy supervisors, restart dead ones, drop orphans.
 
-use std::path::Path;
 use std::thread;
 
 use moor_core::domain::boxes::BoxState;
@@ -8,7 +7,7 @@ use moor_core::seam::proc::Proc;
 use moor_core::seam::proxy_host::ProxyHost;
 use moor_core::BoxId;
 
-use super::detached::{read_spec, DetachedSupervisor};
+use super::detached::DetachedSupervisor;
 use super::ledger::LEDGER;
 use crate::store::{ProxyRow, Store};
 
@@ -32,12 +31,7 @@ enum Fate {
 /// with a ready machine is restarted from the spec saved at its last `ensure`, keeping its box
 /// port. Rows of Boxes without a usable machine are stopped. A failure for one Box never stops the
 /// rest.
-pub(crate) fn reconcile(
-    host: &DetachedSupervisor,
-    proc: &dyn Proc,
-    store: &Store,
-    state_dir: &Path,
-) -> Vec<String> {
+pub(crate) fn reconcile(host: &DetachedSupervisor, proc: &dyn Proc, store: &Store) -> Vec<String> {
     let (rows, live) = match (store.proxies(), store.open_boxes()) {
         (Ok(rows), Ok(live)) => (rows, live),
         (Err(e), _) | (_, Err(e)) => return vec![format!("cannot read the proxy state: {e}")],
@@ -56,7 +50,7 @@ pub(crate) fn reconcile(
                     .map(|(_, s)| *s);
                 let fate = fate(host, proc, row, state)?;
                 Some(scope.spawn(move || {
-                    settle(host, store, state_dir, row.box_id, &fate)
+                    settle(host, store, row.box_id, &fate)
                         .err()
                         .map(|e| format!("Box {}: {e}", row.box_id.get()))
                 }))
@@ -98,34 +92,33 @@ fn fate(
 fn settle(
     host: &DetachedSupervisor,
     store: &Store,
-    state_dir: &Path,
     box_id: BoxId,
     fate: &Fate,
 ) -> Result<(), String> {
     match fate {
         Fate::Keep => Ok(()),
         Fate::Stop => host.stop(box_id).map_err(|e| e.to_string()),
-        Fate::Restart => restart(host, store, state_dir, box_id),
+        Fate::Restart => restart(host, store, box_id),
         Fate::Replace => {
             host.end(box_id).map_err(|e| e.to_string())?;
-            restart(host, store, state_dir, box_id)
+            restart(host, store, box_id)
         }
     }
 }
 
 /// Starts another supervisor for `box_id` on the same port.
-fn restart(
-    host: &DetachedSupervisor,
-    store: &Store,
-    state_dir: &Path,
-    box_id: BoxId,
-) -> Result<(), String> {
+fn restart(host: &DetachedSupervisor, store: &Store, box_id: BoxId) -> Result<(), String> {
     // Without the saved spec the row stays expired, so the next `ensure` restarts it.
     store.expire_proxy(box_id).map_err(|e| e.to_string())?;
-    let spec = read_spec(state_dir, box_id)
-        .map_err(|e| format!("cannot restart the proxy without its spec: {e}"))?;
+    let spec = store
+        .proxy_spec(box_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("cannot restart the proxy without its spec")?;
     host.ensure(&spec).map(drop).map_err(|e| e.to_string())
 }
 
+mod import;
 #[cfg(test)]
 mod tests;
+
+pub(crate) use import::import;
