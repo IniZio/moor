@@ -353,3 +353,54 @@ fn three_failed_runs_in_a_row_disable_the_workflow_with_a_reason() {
     r.pass();
     assert_eq!(r.runs(id).len(), 3, "a disabled workflow fires nothing");
 }
+
+#[test]
+fn a_skip_does_not_unblock_the_next_firing_while_the_run_is_unfinished() {
+    let r = rig();
+    r.answer_repo();
+    let id = r.put(180);
+    r.advance_to(FIRST_DUE + 1_000);
+    r.pass();
+    for day in 1..=3 {
+        r.advance_to(FIRST_DUE + day * DAY + 1_000);
+        r.pass();
+        assert_eq!(
+            r.latest(id).outcome,
+            WorkflowOutcome::SkippedOverlap,
+            "day {day}"
+        );
+    }
+    assert_eq!(r.open_boxes(), 1);
+}
+
+#[test]
+fn a_finished_run_with_an_open_box_gets_a_new_box_at_the_next_due_time() {
+    let r = rig();
+    r.answer_repo();
+    let id = r.put(180);
+    r.advance_to(FIRST_DUE + 1_000);
+    r.pass();
+    let first = r.latest_box(id);
+    let store = r.cx.store().unwrap();
+    store
+        .apply(Decision::new(first).session(SessionInput::AgentQuiet))
+        .unwrap();
+    r.advance_to(FIRST_DUE + 1_000 + 3 * 60_000);
+    r.pass();
+    assert!(matches!(
+        r.latest(id).outcome,
+        WorkflowOutcome::Finished { .. }
+    ));
+
+    r.advance_to(FIRST_DUE + DAY + 1_000);
+    r.pass();
+    let second = r.latest_box(id);
+    assert_ne!(second, first);
+    assert_eq!(
+        r.open_boxes(),
+        2,
+        "the finished Box stays open beside the new one"
+    );
+    let name = store.box_row(second).unwrap().unwrap().name;
+    assert_eq!(name.as_str(), "n/w1-daily-fix-197001020900");
+}
