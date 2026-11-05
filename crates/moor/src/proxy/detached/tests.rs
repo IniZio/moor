@@ -218,7 +218,7 @@ fn a_second_ensure_reuses_the_running_supervisor() {
 }
 
 #[test]
-fn only_the_first_ensure_mints_the_boxs_egress_token() {
+fn only_the_first_ensure_mints_an_egress_token() {
     let f = fx();
     let first = f.sup.ensure(&f.spec()).unwrap();
     let second = f.sup.ensure(&f.spec()).unwrap();

@@ -47,7 +47,7 @@ fn a_wrong_egress_key_is_refused() {
     let w = world();
     let _served = w.serve();
     box_with_token(&w, "a", b"token-a");
-    let ledger = EgressLedger::at(w.socket.clone(), "not-the-key".to_owned());
+    let ledger = EgressLedger::at(w.socket, "not-the-key".to_owned());
     assert!(matches!(
         ledger.token_box(&token_hash(b"token-a")),
         Err(LedgerError::Refused(_))
@@ -59,7 +59,7 @@ fn the_egress_proxy_reads_a_box_but_never_takes_its_lease() {
     let w = world();
     let _served = w.serve();
     let a = box_with_token(&w, "a", b"token-a");
-    let ledger = BoxLedger::egress(w.socket.clone(), a, EGRESS_KEY.to_owned());
+    let ledger = BoxLedger::egress(w.socket, a, EGRESS_KEY.to_owned());
     assert!(ledger.view().unwrap().is_some_and(|v| v.open));
     assert!(matches!(
         ledger.claim_lease("owner", std::time::Duration::from_secs(30)),
