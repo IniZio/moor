@@ -79,6 +79,12 @@ impl Store {
         Ok(changed > 0)
     }
 
+    /// Marks the egress token of `box_id` undelivered, so the next exec delivers the forwarder
+    /// again.
+    pub(crate) fn forget_egress_delivery(&self, box_id: BoxId) -> Result<(), StoreError> {
+        super::forget_egress_delivery(&*self.writer(), box_id)
+    }
+
     /// Whether the egress token the row of `box_id` holds reached the Box.
     pub(crate) fn egress_token_delivered(&self, box_id: BoxId) -> Result<bool, StoreError> {
         let delivered: Option<Option<i64>> = self

@@ -145,6 +145,27 @@ fn retry_after_a_failed_clone_runs_the_steps_again_and_clears_the_failure() {
 }
 
 #[test]
+fn retry_in_the_same_box_delivers_the_egress_forwarder_again() {
+    let w = world(
+        "setup: [a]\n",
+        FakeDriver::new().exec_results([Ok(exit(1))]),
+    );
+    let id = started(&w);
+    let store = w.cx.store().unwrap();
+    let _ = store
+        .reserve(
+            id,
+            &crate::testing::rng::FakeRng::default(),
+            std::time::Duration::from_secs(30),
+        )
+        .unwrap();
+    assert!(store.set_egress_token(id, b"t1").unwrap());
+    assert!(store.note_egress_token_delivered(id, b"t1").unwrap());
+    run(&w.cx, &req()).unwrap();
+    assert!(!store.egress_token_delivered(id).unwrap());
+}
+
+#[test]
 fn retry_of_a_box_that_did_not_fail_setup_is_refused() {
     let w = world("setup: [a]\n", FakeDriver::new());
     let id = started(&w);
