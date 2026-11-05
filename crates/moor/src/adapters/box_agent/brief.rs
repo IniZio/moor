@@ -33,7 +33,9 @@ pub(super) fn render(b: &BriefInput) -> String {
         "You are running inside the machine, in the project working directory. Run builds, \
          tests and project tooling directly here.\n\n\
          Report the command's real exit code. Do not pipe its output through `tail` or `head`.\n\n\
-         Do not use sudo. The network is open. When HTTPS_PROXY is set, it is a local proxy \
+         `sudo -n` may work here: test it before you say you lack access, and use it when the \
+         project's tools need it. Anything later Boxes also need belongs in the repo's setup \
+         commands. The network is open. When HTTPS_PROXY is set, it is a local proxy \
          that sends only the hosts that need moor's credentials through the moor Proxy and \
          every other host direct; do not unset or bypass it. GitHub access works for this Box's \
          repo through gh and git as configured. Requests outside what the proxy rules allow go \
@@ -208,7 +210,12 @@ mod tests {
     #[test]
     fn states_limits_and_points_missing_tools_at_setup() {
         let out = render(&input(None));
-        assert!(out.contains("Do not use sudo."));
+        assert!(out.contains(
+            "`sudo -n` may work here: test it before you say you lack access, and use it when \
+             the project's tools need it. Anything later Boxes also need belongs in the repo's \
+             setup commands."
+        ));
+        assert!(!out.contains("Do not use sudo"));
         assert!(!out.contains("sandbox"));
         assert!(out.contains("The network is open."));
         assert!(out.contains("When HTTPS_PROXY is set"));
