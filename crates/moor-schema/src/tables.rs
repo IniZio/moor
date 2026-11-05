@@ -79,4 +79,8 @@ tables! {
     SetupCheckpoints { Provider, LayerKey, Checkpoint, Repo, Bytes, CreatedAt, LastUsedAt, Workdir,
         SetupMs, User, Chain, ChainAt, Parent, Evicting }
     SetupCheckpointPins { BoxId, Provider, LayerKey, Layer }
+    Workflows { Id, User, Name, Cron, Timezone, Repos, Prompt, EnabledAt, DisabledReason,
+        TimeoutMinutes, CreatedAt, UpdatedAt }
+    WorkflowRuns { Id, Workflow, Repo, DueAt, Box, Outcome, Detail, EndedAt,
+        RecordedAt }
 }
