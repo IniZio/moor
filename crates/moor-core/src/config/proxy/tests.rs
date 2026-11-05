@@ -444,6 +444,37 @@ fn github_api_matches_pr_and_stack_calls() {
 }
 
 #[test]
+fn github_api_reads_dependabot_alerts_and_branch_protection_of_the_box_repo_only() {
+    let r = "/repos/acme/widgets";
+    for p in [
+        format!("{r}/dependabot/alerts"),
+        format!("{r}/dependabot/alerts/12"),
+        format!("{r}/branches/main/protection/required_status_checks"),
+    ] {
+        assert!(github_api_allows("GET", &p), "GET {p}");
+    }
+    for (m, p) in [
+        ("PATCH", format!("{r}/dependabot/alerts/12")),
+        ("PUT", format!("{r}/dependabot/alerts/12")),
+        ("POST", format!("{r}/dependabot/alerts")),
+        ("GET", format!("{r}/dependabot/alerts/12/extra")),
+        ("GET", format!("{r}/dependabot/secrets")),
+        (
+            "PATCH",
+            format!("{r}/branches/main/protection/required_status_checks"),
+        ),
+        ("GET", format!("{r}/branches/main/protection")),
+        ("GET", "/repos/other/repo/dependabot/alerts".to_owned()),
+        (
+            "GET",
+            "/repos/other/repo/branches/main/protection/required_status_checks".to_owned(),
+        ),
+    ] {
+        assert!(!github_api_allows(m, &p), "{m} {p}");
+    }
+}
+
+#[test]
 fn github_api_allows_run_reads_and_nothing_else_under_actions() {
     let r = "/repos/acme/widgets";
     for p in [

@@ -44,6 +44,10 @@
       },
       {
         "method": "GET",
+        "path": "/repos/*/*/tags"
+      },
+      {
+        "method": "GET",
         "path": "/repos/acme/widgets"
       },
       {
@@ -117,6 +121,18 @@
       {
         "method": "GET",
         "path": "/repos/acme/widgets/check-runs/*/annotations"
+      },
+      {
+        "method": "GET",
+        "path": "/repos/acme/widgets/dependabot/alerts"
+      },
+      {
+        "method": "GET",
+        "path": "/repos/acme/widgets/dependabot/alerts/*"
+      },
+      {
+        "method": "GET",
+        "path": "/repos/acme/widgets/branches/*/protection/required_status_checks"
       },
       {
         "method": "GET",
