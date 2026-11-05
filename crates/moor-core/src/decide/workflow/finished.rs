@@ -19,26 +19,51 @@ pub struct RunBoxFacts {
     pub session: SessionState,
     /// When the Box last became Idle; none while it is not.
     pub idle_since: Option<Ts>,
+    /// Whether the last agent launch failed and no later launch succeeded.
+    pub launch_failed: bool,
 }
 
-/// Whether the run whose Box has `facts`, or none when the Box is gone, is finished at `now`.
+/// Where a started run stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunVerdict {
+    /// The agent works, or the Box is still coming up or waiting for a slot.
+    Running,
+    /// The agent is done, or the Box is closed.
+    Finished,
+    /// No agent can run in the Box until a person acts, so the run will never finish.
+    Broken,
+}
+
+/// Where the run whose Box has `facts`, or none when the Box is gone, stands at `now`.
 ///
-/// It is when the Box is gone or closed, when its agent exited, or when its Session has been
-/// Idle for [`QUIET_BEFORE_FINISHED`]. A Session still Starting or Working is not, which includes
-/// an agent that ended its turn to wait on background work.
+/// It is Finished when the Box is gone or closed, when its agent exited, or when its Session has
+/// been Idle for [`QUIET_BEFORE_FINISHED`]. It is Broken when setup failed or the agent launch
+/// failed, since only a person retrying starts an agent then. Otherwise it is Running, which
+/// includes a Box queued for a slot, one still setting up, and an agent that ended its turn to
+/// wait on background work.
 #[must_use]
-pub fn run_finished(facts: Option<&RunBoxFacts>, now: Ts) -> bool {
-    let Some(f) = facts else { return true };
-    if matches!(f.lifecycle, BoxLifecycle::Closed | BoxLifecycle::Rejected) {
-        return true;
+pub fn run_verdict(facts: Option<&RunBoxFacts>, now: Ts) -> RunVerdict {
+    use RunVerdict::{Broken, Finished, Running};
+    let Some(f) = facts else { return Finished };
+    match f.lifecycle {
+        BoxLifecycle::Closed | BoxLifecycle::Rejected => return Finished,
+        BoxLifecycle::SetupFailed => return Broken,
+        BoxLifecycle::Checking | BoxLifecycle::Pending | BoxLifecycle::SettingUp => {
+            return Running;
+        }
+        BoxLifecycle::Ready | BoxLifecycle::Asleep => {}
     }
+    if f.launch_failed {
+        return Broken;
+    }
+    let quiet_long_enough = |since: Ts| {
+        let quiet = now.as_millis().saturating_sub(since.as_millis());
+        u128::try_from(quiet).is_ok_and(|q| q >= QUIET_BEFORE_FINISHED.as_millis())
+    };
     match f.session {
-        SessionState::Ended => matches!(f.lifecycle, BoxLifecycle::Ready | BoxLifecycle::Asleep),
-        SessionState::Idle => f.idle_since.is_some_and(|since| {
-            let quiet = now.as_millis().saturating_sub(since.as_millis());
-            u128::try_from(quiet).is_ok_and(|q| q >= QUIET_BEFORE_FINISHED.as_millis())
-        }),
-        SessionState::Starting | SessionState::Working => false,
+        SessionState::Ended => Finished,
+        SessionState::Idle if f.idle_since.is_some_and(quiet_long_enough) => Finished,
+        SessionState::Idle | SessionState::Starting | SessionState::Working => Running,
     }
 }
 

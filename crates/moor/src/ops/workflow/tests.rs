@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::config::UserConfig;
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::name::ForgeRepo;
@@ -212,6 +213,49 @@ fn a_claim_whose_box_was_made_becomes_that_run() {
         WorkflowOutcome::Started {
             box_id: BoxId::new(started.boxed.id)
         }
+    );
+}
+
+#[test]
+fn a_claim_whose_box_failed_its_setup_before_the_restart_is_refused() {
+    let r = rig();
+    r.answer_repo();
+    let id = r.put(180);
+    r.advance_to(FIRST_DUE + 1_000);
+    let job = RefCell::new(None);
+    tick(&r.cx, &|j| *job.borrow_mut() = Some(j), &|| false);
+    let job = job.into_inner().unwrap();
+    let started = crate::ops::start::run(
+        &r.cx,
+        &moor_core::StartReq {
+            name: job.name.clone(),
+            prompt: Some(job.prompt.clone()),
+            issue: None,
+            base: None,
+            model: None,
+            node: None,
+            no_agent: false,
+            resume: false,
+            repo: Some(job.repo),
+            also: None,
+            parent: None,
+            identity: None,
+        },
+    )
+    .unwrap();
+    let failed = BoxLifecycleInput::WorkingSetupFailed {
+        cause: "clone failed".to_owned(),
+    };
+    let box_id = BoxId::new(started.boxed.id);
+    let store = r.cx.store().unwrap();
+    store
+        .apply(Decision::new(box_id).lifecycle(failed))
+        .unwrap();
+    resolve_interrupted(&r.cx);
+    let outcome = r.latest(id).outcome;
+    assert!(
+        matches!(&outcome, WorkflowOutcome::Refused { detail } if detail.contains("clone failed")),
+        "{outcome:?}"
     );
 }
 
@@ -453,4 +497,43 @@ fn skips_between_failures_do_not_hide_the_breaker_streak() {
     r.advance_to(FIRST_DUE + 31 * DAY);
     let lines = r.pass();
     assert!(lines.iter().any(|l| l.contains("disabled")), "{lines:?}");
+}
+
+#[test]
+fn a_box_whose_setup_fails_refuses_its_run_and_three_of_them_disable_the_workflow() {
+    let r = rig();
+    r.answer_repo();
+    let id = r.put(180);
+    for day in 0..3_i64 {
+        r.advance_to(FIRST_DUE + day * DAY + 1_000);
+        r.pass();
+        let box_id = r.latest_box(id);
+        let store = r.cx.store().unwrap();
+        let name = store.box_row(box_id).unwrap().unwrap().name;
+        let failed = BoxLifecycleInput::WorkingSetupFailed {
+            cause: "setup line `npm ci` failed".to_owned(),
+        };
+        store
+            .apply(Decision::new(box_id).lifecycle(failed))
+            .unwrap();
+        r.advance_to(FIRST_DUE + day * DAY + 41_000);
+        let lines = r.pass();
+        assert_eq!(
+            lines.iter().any(|l| l.contains("disabled")),
+            day == 2,
+            "{lines:?}"
+        );
+        let outcome = r.latest(id).outcome;
+        let named = |detail: &String| detail.contains(name.as_str()) && detail.contains("npm ci");
+        assert!(
+            matches!(&outcome, WorkflowOutcome::Refused { detail } if named(detail)),
+            "day {day}: {outcome:?}"
+        );
+        assert_eq!(
+            i64::try_from(r.open_boxes()).unwrap(),
+            day + 1,
+            "Boxes are kept"
+        );
+    }
+    assert_eq!(r.runs(id).len(), 3, "each due time started its own Box");
 }

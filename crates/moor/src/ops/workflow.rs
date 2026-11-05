@@ -7,20 +7,19 @@
 //! a missed run costs nothing and a repeated one costs a Box's tokens.
 
 use moor_core::decide::workflow::{
-    run_finished, workflow_breaker, workflow_due, workflow_expired, PriorRun, RunBoxFacts,
-    WorkflowRepoFacts, WorkflowVerdict,
+    run_verdict, workflow_breaker, workflow_due, PriorRun, RunVerdict, WorkflowRepoFacts,
+    WorkflowVerdict,
 };
 use moor_core::name::ForgeRepo;
-use moor_core::request::EndSessionReq;
 use moor_core::seam::clock::Ts;
 use moor_core::user::{Identity, UserId};
-use moor_core::workflow::{box_name, RunEnd, Workflow, WorkflowId, WorkflowOutcome, WorkflowRun};
+use moor_core::workflow::{box_name, Workflow, WorkflowId, WorkflowOutcome, WorkflowRun};
 use moor_core::{BoxId, BoxName, StartReq};
 
 use crate::cx::Cx;
-use crate::ops::end_session;
 use crate::ops::start;
-use crate::store::{BoxRow, Store, StoreError};
+use crate::store::{Store, StoreError};
+use settle::{box_facts, broken_detail, expire_runs, finish_runs};
 
 /// How many of a repo's latest unskipped runs the breaker reads; it needs only a streak of 3.
 const HISTORY: u64 = 20;
@@ -195,54 +194,6 @@ fn box_is_open(store: &Store, id: BoxId) -> Result<bool, StoreError> {
         .is_some_and(|r| !matches!(r.lifecycle, BoxLifecycle::Closed | BoxLifecycle::Rejected)))
 }
 
-/// Records each started run of `w` whose Box is over as finished.
-fn finish_runs(store: &Store, w: &Workflow, now: Ts) -> Result<(), StoreError> {
-    for run in store.open_workflow_runs(w.id)? {
-        let WorkflowOutcome::Started { box_id } = run.outcome else {
-            continue;
-        };
-        let row = store.box_row(box_id)?;
-        let facts = row.as_ref().map(|r| RunBoxFacts {
-            lifecycle: r.lifecycle,
-            session: r.session,
-            idle_since: r.idle_since,
-        });
-        if run_finished(facts.as_ref(), now) {
-            store.end_workflow_run((w.id, &run.repo, run.due_at), RunEnd::Finished, now)?;
-        }
-    }
-    Ok(())
-}
-
-/// Ends the agent session of each started run past its timeout, keeps the Box, and records the
-/// run as timed out whether or not a session was live to end.
-fn expire_runs(
-    cx: &Cx,
-    store: &Store,
-    w: &Workflow,
-    now: Ts,
-    out: &mut Vec<String>,
-) -> Result<(), StoreError> {
-    let open = store.open_workflow_runs(w.id)?;
-    for e in workflow_expired(w, &open, now) {
-        if let Some(row) = store.box_row(e.box_id)? {
-            let req = EndSessionReq {
-                box_name: row.name.as_str().to_owned(),
-            };
-            if let Err(err) = cx.for_box(row.user, || end_session::run(cx, &req)) {
-                out.push(format!(
-                    "workflow {}: {}: {}",
-                    w.name,
-                    row.name.as_str(),
-                    err.error
-                ));
-            }
-        }
-        store.end_workflow_run((w.id, &e.repo, e.due_at), RunEnd::TimedOut, now)?;
-    }
-    Ok(())
-}
-
 /// Records a run that never starts a Box; a repeated record changes nothing.
 fn record(
     store: &Store,
@@ -370,12 +321,18 @@ pub(crate) fn resolve_interrupted(cx: &Cx) -> Vec<String> {
             .flatten()
             .and_then(|w| box_name(w.id, w.name.as_str(), &run.repo, run.due_at).ok())
             .and_then(|name| store.open_box_by_name(&name).ok().flatten());
-        let outcome = found.map_or_else(
-            || WorkflowOutcome::Refused {
+        let now = cx.clock().now();
+        let outcome = match found {
+            None => WorkflowOutcome::Refused {
                 detail: "the controller stopped before the Box started".to_owned(),
             },
-            |row: BoxRow| WorkflowOutcome::Started { box_id: row.id },
-        );
+            Some(row) => match run_verdict(Some(&box_facts(&row)), now) {
+                RunVerdict::Broken => WorkflowOutcome::Refused {
+                    detail: broken_detail(store, &row).unwrap_or_default(),
+                },
+                _ => WorkflowOutcome::Started { box_id: row.id },
+            },
+        };
         let key = (run.workflow, &run.repo, run.due_at);
         if let Err(e) = store.resolve_workflow_start(key, &outcome) {
             out.push(format!(
@@ -387,5 +344,6 @@ pub(crate) fn resolve_interrupted(cx: &Cx) -> Vec<String> {
     out
 }
 
+mod settle;
 #[cfg(test)]
 mod tests;

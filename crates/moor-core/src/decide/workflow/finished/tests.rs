@@ -1,6 +1,6 @@
 //! Tests for when a workflow run is finished.
 
-use super::{run_finished, RunBoxFacts, QUIET_BEFORE_FINISHED};
+use super::{run_verdict, RunBoxFacts, RunVerdict, QUIET_BEFORE_FINISHED};
 use crate::domain::box_state::BoxLifecycle;
 use crate::domain::session_state::SessionState;
 use crate::seam::clock::Ts;
@@ -12,11 +12,12 @@ fn facts(lifecycle: BoxLifecycle, session: SessionState, idle_for_ms: Option<i64
         lifecycle,
         session,
         idle_since: idle_for_ms.map(|ms| Ts::from_millis(NOW - ms)),
+        launch_failed: false,
     }
 }
 
 fn finished(f: Option<RunBoxFacts>) -> bool {
-    run_finished(f.as_ref(), Ts::from_millis(NOW))
+    run_verdict(f.as_ref(), Ts::from_millis(NOW)) == RunVerdict::Finished
 }
 
 fn quiet_ms() -> i64 {
@@ -88,4 +89,64 @@ fn an_exited_agent_ends_the_run_but_a_box_still_setting_up_does_not() {
         SessionState::Ended,
         None
     ))));
+}
+
+fn verdict(lifecycle: BoxLifecycle, session: SessionState, launch_failed: bool) -> RunVerdict {
+    let f = RunBoxFacts {
+        launch_failed,
+        ..facts(lifecycle, session, None)
+    };
+    run_verdict(Some(&f), Ts::from_millis(NOW))
+}
+
+#[test]
+fn every_lifecycle_has_a_verdict_for_a_working_agent() {
+    use BoxLifecycle as L;
+    use RunVerdict::{Broken, Finished, Running};
+    let table = [
+        (L::Checking, Running),
+        (L::Rejected, Finished),
+        (L::Pending, Running),
+        (L::SettingUp, Running),
+        (L::SetupFailed, Broken),
+        (L::Ready, Running),
+        (L::Asleep, Running),
+        (L::Closed, Finished),
+    ];
+    assert_eq!(table.len(), L::ALL.len());
+    for (lifecycle, want) in table {
+        assert_eq!(
+            verdict(lifecycle, SessionState::Working, false),
+            want,
+            "{lifecycle:?}"
+        );
+    }
+}
+
+#[test]
+fn a_failed_setup_is_broken_whatever_the_session_says() {
+    for session in SessionState::ALL {
+        assert_eq!(
+            verdict(BoxLifecycle::SetupFailed, session, false),
+            RunVerdict::Broken,
+            "{session:?}"
+        );
+    }
+}
+
+#[test]
+fn a_failed_launch_is_broken_on_a_box_that_is_up_but_not_when_it_is_closed() {
+    for lifecycle in [BoxLifecycle::Ready, BoxLifecycle::Asleep] {
+        for session in [
+            SessionState::Ended,
+            SessionState::Working,
+            SessionState::Idle,
+        ] {
+            assert_eq!(verdict(lifecycle, session, true), RunVerdict::Broken);
+        }
+    }
+    assert_eq!(
+        verdict(BoxLifecycle::Closed, SessionState::Ended, true),
+        RunVerdict::Finished
+    );
 }
