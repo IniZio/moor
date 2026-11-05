@@ -57,7 +57,8 @@ The key holds no commit. Safety comes from this rule instead.
 
 **A Box whose base differs from the checkpoint's `base` reruns every setup line on the new tree.**
 
-- A line that reads any file sees that commit's file, so no input list can go stale.
+- A line that runs sees that commit's files, so no input list can go stale.
+- A line whose guard skips its work does not, as described below.
 - A Box at the checkpoint's own `base` skips lines, as it does today.
 - A line change gives a new key from that line up. A fork from the shared prefix still reruns all lines.
 - Reruns already happen. A retry with no checkpoint runs every line again in the same machine.
@@ -74,7 +75,8 @@ The other repo with real history here has only the setup line `true`, so it deci
 | Commit in the key, today | 0% | None | None |
 | Declared inputs per line | 92.6% for the top layer, inferred from the row below | Any omitted input gives a stale Box, silently | One list per line |
 | `.moor.yaml` plus tree hashes of named paths | 92.6% measured | Any omitted path gives a stale Box, silently | One list |
-| Commit-free key with all lines rerun, chosen | 99.4% measured | Only lines that skip work on a stale guard | None |
+| Commit-free key with all lines rerun, chosen | 99.4% measured | A content-blind guard on repo-derived output gives a stale Box, silently unless the warning is read | Such a guard must check content, or the repo opts out |
+| The same, plus removing ignored files on each new base | 99.4% measured | Only state outside the work tree | None, but every new commit loses ignored build outputs |
 
 Named paths for the replay were [rust-toolchain.toml](https://github.com/IniZio/moor/blob/0133f0b3/rust-toolchain.toml), [Makefile](https://github.com/IniZio/moor/blob/0133f0b3/Makefile) and [box-nested-kvm.sh](https://github.com/IniZio/moor/blob/0133f0b3/tools/box-nested-kvm.sh).
 
@@ -86,13 +88,42 @@ Named paths for the replay were [rust-toolchain.toml](https://github.com/IniZio/
 
 ### What rerunning does not cover
 
-- A guard that checks existence rather than content, such as `[ -d node_modules ] || npm ci`.
-  I read this repo's 7 lines. Its existence guards cover only `cc` and `rustup`, which it does not pin. The rest converge on a version or a stamp.
-- Ignored files from the older commit stay on disk. That also keeps build caches, so moor runs no `git clean`.
-- A daemon a line started keeps running from the snapshot until its line restarts it.
+**This option is not safe by construction.** A guard can skip the very line that would see the new commit.
 
-Three things bound this. A chain has a maximum age, `moor start --cold` skips checkpoints, and the agent's brief states the
-commit its disk came from.
+```sh
+[ -f plugin/dist/index.mjs ] || (cd plugin && npm install && npm run build)
+[ -f backend/.env ] || make -C backend setup
+```
+
+`dist/` and `.env` are ignored and derive from tracked files. After a commit changes those files, the rerun skips the line, and the Box serves the old output with no error.
+A scratch repo reproduced this. The output kept the old content after a rerun.
+
+The guards in two real repos, counted by setup line:
+
+| Guard shape | This repo, 7 lines | Another repo, 14 lines | Stale after a commit? |
+| --- | --- | --- | --- |
+| No guard | 3 | 3 | No |
+| Version or stamp in the check | 2 | 2 | No |
+| Installed tool or host state, pinned only in the line's text or not at all | 2 | 6 | No, since a text change gives a new key |
+| Output derived from tracked files | 0 | 3 | **Yes** |
+
+In the other repo, tracked inputs of those 3 lines changed in 28 of its last 499 commits. In the most recent 3 months, 22 of 228 commits did.
+
+The choice stands, with a narrower claim, for these reasons:
+
+- A kept work tree already leaves ignored files in place across commits, as [config.md](https://github.com/IniZio/moor/blob/0133f0b3/docs/config.md#work-tree) documents. So a provider that keeps trees already hands such a guard an old `dist/`, inferred from that document. This option extends the risk to warm starts. It adds no new kind of risk there.
+- Removing ignored files on a new base would fix these guards. It would also drop the `target/` and `build/` directories that a kept tree exists to keep, so it is rejected.
+- Declared inputs fail silently too, and they ask every repo for a list. This asks only the repos with this guard shape to change one line.
+
+What moor does about it:
+
+- A warm fork refreshes the tree exactly as a kept tree does. It resets tracked files, removes untracked files and keeps ignored files.
+- The agent's brief and the start reply name the disk's commit, how many tracked paths changed since, and the ignored top-level paths present. The brief warns that a setup line may have skipped rebuilding them.
+- The docs state the rule. A guard on repo-derived output must check content, such as a stored hash of its sources.
+- `.moor.yaml` gains `checkpoint.across_commits: false`. It puts the base commit back in the key, so that repo keeps today's behaviour.
+- A chain has a maximum age, and `moor start --cold` skips checkpoints.
+
+Two smaller gaps remain. State outside the work tree that derives from tracked files has the same risk, and neither repo has any. A daemon a line started keeps running from the snapshot until its line restarts it.
 
 ### Prior art
 
@@ -114,7 +145,7 @@ flowchart TD
     E -- fails --> W1[warm_start_failed, warn] --> C
     E -- ok --> F{Same base?}
     F -- yes --> G[Run lines above the layer]
-    F -- no --> H[Fetch base, new branch, drop the old one]
+    F -- no --> H[Refresh the tree as a kept tree does]
     H --> I[Rerun every line]
     I -- line fails --> W2[warm_rerun_failed, warn, release fork] --> C
     I -- ok --> J{Rerun over 20 s and tree at base?}
@@ -205,13 +236,16 @@ The owner fills the disk by hand, on a throwaway node.
 1. `moor node ls` shows warm starts on.
 2. Box A starts cold at commit X and records `checkpoint_taken` for each kept layer.
 3. Box B starts at commit Y, which changes one unrelated file. It records `warm_started`, reruns all lines, has HEAD at Y with a clean tree, and reaches the agent within 90 s.
-4. A line copies a tracked file to `~/seen`. Commit Z changes that file with no line change. Box C holds Z's content in `~/seen`.
+4. A line with no guard copies a tracked file to `~/seen`. Commit Z changes that file with no line change. Box C holds Z's content in `~/seen`.
 5. Commit V makes a tracked script fail its line. Box D warns `warm_rerun_failed`, tries cold, and ends `setup_failed`, naming the line.
 6. `moor start --cold` at Z records no `warm_started`.
 7. A second user on a shared node with the same repo records no `warm_started`.
-8. With the disk filled past the floor, a start stays Pending, checkpoints get evicted with `checkpoint_evicted`, and the start proceeds.
-9. With a checkpoint directory removed by hand, the next Box warns `checkpoint_failed` and starts cold.
-10. Three Boxes start at once at a new commit, and all three reach the agent with correct trees.
+8. A line runs `[ -f dist/out ] || cp src dist/out`, with `dist/` ignored, and a commit changes `src`. The next Box holds the old `dist/out`, and its brief and start reply name the disk's commit, the changed path count and `dist/`.
+9. The same line with its guard checking a hash of `src` holds the new content on the next commit.
+10. The same line with `checkpoint.across_commits: false` records no `warm_started` on the next commit, and holds the new content.
+11. With the disk filled past the floor, a start stays Pending, checkpoints get evicted with `checkpoint_evicted`, and the start proceeds.
+12. With a checkpoint directory removed by hand, the next Box warns `checkpoint_failed` and starts cold.
+13. Three Boxes start at once at a new commit, and all three reach the agent with correct trees.
 
 ## Plan
 
@@ -222,7 +256,7 @@ Stacked PRs, each about 1000 lines or less, with tests and docs updates in each:
 3. Store columns and machine-scoped lookup and eviction. Keys stay as they are.
 4. Node GC, with the `disk` verb, eviction from memory reports and the sweep.
 5. Pool driver create, fork and delete, plus `moor node ls`. Same-commit warm starts now work on nodes.
-6. Commit-free key, rerun of all lines, new-base checkout, cold retry and the agent's brief.
+6. Commit-free key, rerun of all lines, tree refresh, cold retry, the brief and start reply warning, and `checkpoint.across_commits`.
 7. Roll-forward, chain limits and `--cold`, on `moor start`, MCP and Slack `start_box`.
 8. The acceptance script, plus its run recorded in that PR.
 
