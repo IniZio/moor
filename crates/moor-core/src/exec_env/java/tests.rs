@@ -296,3 +296,41 @@ fn the_jvm_skips_the_proxy_for_loopback_only() {
     let env = s.run(&[]);
     assert_non_proxy(&s, &env, "127.0.0.1|localhost");
 }
+
+fn gradle_props(s: &Scratch, before: Option<&str>) -> String {
+    let gradle = s.home().join(".gradle");
+    fs::create_dir_all(&gradle).unwrap();
+    let file = gradle.join("gradle.properties");
+    if let Some(text) = before {
+        fs::write(&file, text).unwrap();
+    }
+    s.run(&[]);
+    s.run(&[]);
+    fs::read_to_string(file).unwrap()
+}
+
+#[test]
+fn the_block_turns_the_build_cache_on_once() {
+    let s = with_keytool("caching");
+    let text = gradle_props(&s, Some("org.gradle.daemon=false\n"));
+    assert_eq!(text.matches("org.gradle.caching=true").count(), 1, "{text}");
+    let block = text.split("# moor proxy: begin").nth(1).unwrap();
+    assert!(block.contains("org.gradle.caching=true"), "{text}");
+}
+
+#[test]
+fn a_build_cache_setting_the_user_wrote_stays_the_only_one() {
+    for own in [
+        "org.gradle.caching=false",
+        "org.gradle.caching = true",
+        "org.gradle.caching:false",
+    ] {
+        let s = with_keytool("caching-own");
+        let text = gradle_props(&s, Some(&format!("{own}\n")));
+        assert_eq!(
+            text.matches("org.gradle.caching").count(),
+            1,
+            "{own}\n{text}"
+        );
+    }
+}
