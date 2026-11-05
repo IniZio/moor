@@ -188,6 +188,56 @@ impl Store {
             .collect()
     }
 
+    /// The latest run of `workflow` for `repo` that was a real attempt, whatever came since: not
+    /// skipped and not refused. Its place in the table does not depend on how many skips follow.
+    pub(crate) fn latest_real_run(
+        &self,
+        workflow: WorkflowId,
+        repo: &ForgeRepo,
+    ) -> Result<Option<WorkflowRun>, StoreError> {
+        self.reader()?
+            .rows(
+                Query::select()
+                    .columns(RUN_COLS)
+                    .from(WorkflowRuns::Table)
+                    .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
+                    .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
+                    .and_where(
+                        Expr::col(WorkflowRuns::Outcome).is_not_in([SKIPPED_OVERLAP, REFUSED]),
+                    )
+                    .order_by(WorkflowRuns::DueAt, Order::Desc)
+                    .limit(1),
+                read_run,
+            )?
+            .map(|row| run_of(workflow, row?))
+            .next()
+            .transpose()
+    }
+
+    /// The latest `limit` runs of `workflow` for `repo` that were not skipped, newest due time
+    /// first, so skips never push a failure out of the window.
+    pub(crate) fn recent_unskipped_runs(
+        &self,
+        workflow: WorkflowId,
+        repo: &ForgeRepo,
+        limit: u64,
+    ) -> Result<Vec<WorkflowRun>, StoreError> {
+        self.reader()?
+            .rows(
+                Query::select()
+                    .columns(RUN_COLS)
+                    .from(WorkflowRuns::Table)
+                    .and_where(Expr::col(WorkflowRuns::Workflow).eq(workflow.get()))
+                    .and_where(Expr::col(WorkflowRuns::Repo).eq(repo.to_string()))
+                    .and_where(Expr::col(WorkflowRuns::Outcome).ne(SKIPPED_OVERLAP))
+                    .order_by(WorkflowRuns::DueAt, Order::Desc)
+                    .limit(limit),
+                read_run,
+            )?
+            .map(|row| run_of(workflow, row?))
+            .collect()
+    }
+
     /// The latest `limit` runs of `workflow` for `repo`, newest due time first.
     pub(crate) fn recent_workflow_runs(
         &self,

@@ -404,3 +404,53 @@ fn a_finished_run_with_an_open_box_gets_a_new_box_at_the_next_due_time() {
     let name = store.box_row(second).unwrap().unwrap().name;
     assert_eq!(name.as_str(), "n/w1-daily-fix-197001020900");
 }
+
+#[test]
+fn a_timed_out_run_with_an_open_box_blocks_however_many_skips_follow() {
+    let r = rig();
+    r.answer_repo();
+    let id = r.put(30);
+    r.advance_to(FIRST_DUE + 1_000);
+    r.pass();
+    r.advance_to(FIRST_DUE + 1_000 + 31 * 60_000);
+    r.pass();
+    assert!(matches!(
+        r.latest(id).outcome,
+        WorkflowOutcome::TimedOut { .. }
+    ));
+    for day in 1..=30 {
+        r.advance_to(FIRST_DUE + day * DAY + 1_000);
+        r.pass();
+        assert_eq!(r.open_boxes(), 1, "day {day}");
+    }
+    assert_eq!(r.latest(id).outcome, WorkflowOutcome::SkippedOverlap);
+}
+
+#[test]
+fn skips_between_failures_do_not_hide_the_breaker_streak() {
+    let r = rig();
+    let id = r.put(180);
+    let store = r.cx.store().unwrap();
+    let record = |due: i64, outcome: WorkflowOutcome| {
+        let run = WorkflowRun {
+            workflow: id,
+            repo: repo(),
+            due_at: Ts::from_millis(due),
+            outcome,
+            recorded_at: Ts::from_millis(due),
+        };
+        assert!(store.record_workflow_run(&run).unwrap());
+    };
+    let refused = || WorkflowOutcome::Refused {
+        detail: "no".to_owned(),
+    };
+    record(FIRST_DUE, refused());
+    record(FIRST_DUE + DAY, refused());
+    for day in 2..30 {
+        record(FIRST_DUE + day * DAY, WorkflowOutcome::SkippedOverlap);
+    }
+    record(FIRST_DUE + 30 * DAY, refused());
+    r.advance_to(FIRST_DUE + 31 * DAY);
+    let lines = r.pass();
+    assert!(lines.iter().any(|l| l.contains("disabled")), "{lines:?}");
+}
