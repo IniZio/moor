@@ -280,14 +280,20 @@ fn a_setup_followed_again_after_a_restart_records_the_line_that_failed() {
     let store = w.cx.store().unwrap();
     fail_interrupted(&w.cx, store).unwrap();
     w.driver.set_copy_text("moor setup: $ a\nmoor setup: $ b\n");
-    w.driver.push_exec_result(Ok(ExecOutcome::Exited { code: 0 }));
-    w.driver.push_exec_result(Ok(ExecOutcome::Exited { code: 1 }));
+    w.driver
+        .push_exec_result(Ok(ExecOutcome::Exited { code: 0 }));
+    w.driver
+        .push_exec_result(Ok(ExecOutcome::Exited { code: 1 }));
     resume_setup(&w.cx, store, BoxId::new(1)).unwrap();
     let row = box_row(&w);
     assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);
     let events = store.events(row.id, 50).unwrap();
     let failed = events.iter().rfind(|e| e.kind == "setup_failed").unwrap();
-    assert!(failed.payload.to_string().contains("\"b\""), "{:?}", failed.payload);
+    assert!(
+        failed.payload.to_string().contains("\"b\""),
+        "{:?}",
+        failed.payload
+    );
 }
 
 #[test]

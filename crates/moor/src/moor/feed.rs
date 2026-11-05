@@ -158,8 +158,9 @@ impl Moor {
         for &id in claimed {
             let resumed = self.cx.store().and_then(|store| {
                 let user = store.box_row(id)?.and_then(|r| r.user);
-                self.cx
-                    .for_box(user, || ops::common::provision::resume_setup(&self.cx, store, id))
+                self.cx.for_box(user, || {
+                    ops::common::provision::resume_setup(&self.cx, store, id)
+                })
             });
             if let Err(e) = resumed {
                 out.push(format!("Box {}: {}", id.get(), e.error));

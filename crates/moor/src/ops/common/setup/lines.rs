@@ -144,7 +144,7 @@ pub(super) fn follow_lines(
 }
 
 /// Whether `result` is a channel that broke before the script ended and its deadline passed.
-pub(super) fn cut(result: &Result<ExecOutcome, Failure>) -> bool {
+pub(super) const fn cut(result: &Result<ExecOutcome, Failure>) -> bool {
     match result {
         Ok(ExecOutcome::Interrupted) => true,
         Err(Failure::Exec(e)) => !matches!(e, DriverError::Timeout(_)),

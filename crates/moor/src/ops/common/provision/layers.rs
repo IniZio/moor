@@ -147,7 +147,10 @@ pub(super) fn stand_on_warm_start(
     id: BoxId,
     layered: &mut Layered,
 ) -> Result<(), CommandError> {
-    let began = store.newest_events_of(id, "setting_up", 1)?.pop().map(|e| e.id);
+    let began = store
+        .newest_events_of(id, "setting_up", 1)?
+        .pop()
+        .map(|e| e.id);
     let warm = store.newest_events_of(id, "warm_started", 1)?.pop();
     let layer = warm
         .filter(|w| Some(w.id) > began)

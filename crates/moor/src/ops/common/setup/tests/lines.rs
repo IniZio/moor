@@ -155,7 +155,10 @@ fn an_attach_again_after_a_cut_reports_each_line_once() {
     let d = tempfile::tempdir().unwrap();
     let driver = FakeDriver::new()
         .exec_stdout(["moor setup: $ a\n", "moor setup: $ a\n"])
-        .exec_results([Ok(ExecOutcome::Interrupted), Ok(ExecOutcome::Exited { code: 0 })]);
+        .exec_results([
+            Ok(ExecOutcome::Interrupted),
+            Ok(ExecOutcome::Exited { code: 0 }),
+        ]);
     let r = rig(d.path(), driver);
     let seen = Mutex::new(Vec::new());
     run_setup_with(

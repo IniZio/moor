@@ -435,7 +435,10 @@ fn promoted_box_runs_the_repo_setup_commands_in_its_new_box() {
         .collect();
     let ran = argvs
         .iter()
-        .filter(|a| a.last().is_some_and(|l| l.contains("moor setup: $ echo one")))
+        .filter(|a| {
+            a.last()
+                .is_some_and(|l| l.contains("moor setup: $ echo one"))
+        })
         .count();
     assert_eq!(ran, 1, "{argvs:?}");
 }

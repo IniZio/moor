@@ -7,8 +7,8 @@ use std::sync::Arc;
 use super::drain::Drain;
 use super::{log, settle, Running, Sink};
 use crate::env::Env;
-use moor_core::BoxId;
 use crate::Moor;
+use moor_core::BoxId;
 
 /// Serves `running` until `wake` turns readable.
 ///

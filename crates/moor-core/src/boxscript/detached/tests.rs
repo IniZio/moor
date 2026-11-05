@@ -507,7 +507,10 @@ fn attaching_again_after_a_kill_follows_the_same_run_to_its_exit() {
             .spawn()
             .unwrap(),
     );
-    assert!(eventually(|| sb.pid().is_some()), "the first attach launched nothing");
+    assert!(
+        eventually(|| sb.pid().is_some()),
+        "the first attach launched nothing"
+    );
     let group = Pid::from_raw(i32::try_from(first.id()).unwrap()).unwrap();
     kill_process_group(group, Signal::KILL).unwrap();
     first.wait().unwrap();
@@ -522,11 +525,17 @@ fn attaching_again_after_a_kill_follows_the_same_run_to_its_exit() {
 fn two_attaches_at_once_run_the_command_once() {
     let sb = Scratch::new("attach-twice");
     let command = "echo ran >> ../ran; sleep 1; printf done";
-    let a = sb.sh(&attached_script(RUN, command)).stdout(Stdio::piped()).spawn().unwrap();
-    let b = sb.sh(&attached_script(RUN, command)).stdout(Stdio::piped()).spawn().unwrap();
-    let (a, b) = (a.wait_with_output().unwrap(), b.wait_with_output().unwrap());
+    let attach = || {
+        let mut cmd = sb.sh(&attached_script(RUN, command));
+        std::thread::spawn(move || cmd.output().unwrap())
+    };
+    let (a, b) = (attach(), attach());
+    let (a, b) = (a.join().unwrap(), b.join().unwrap());
     assert_eq!((a.status.code(), b.status.code()), (Some(0), Some(0)));
-    assert_eq!((a.stdout.as_slice(), b.stdout.as_slice()), (&b"done"[..], &b"done"[..]));
+    assert_eq!(
+        (a.stdout.as_slice(), b.stdout.as_slice()),
+        (&b"done"[..], &b"done"[..])
+    );
     assert_eq!(fs::read_to_string(sb.root.join("ran")).unwrap(), "ran\n");
 }
 
