@@ -48,16 +48,41 @@ impl Store {
         Ok(found.is_some())
     }
 
-    /// Records `token` as the one `box_id` presents to the shared egress Proxy, unless the row
-    /// already has one; true when it was recorded. A Box keeps its first token for the life of
-    /// its row, and removing the row revokes it.
+    /// Records `token` as the one `box_id` presents to the shared egress Proxy, replacing one
+    /// that never reached the Box; true when it was recorded. A delivered token stays for the
+    /// life of the row, and removing the row revokes it.
     pub(crate) fn set_egress_token(&self, box_id: BoxId, token: &[u8]) -> Result<bool, StoreError> {
+        let undelivered = Expr::col(Proxy::TokenDelivered)
+            .is_null()
+            .or(Expr::col(Proxy::TokenDelivered).eq(0));
         let changed = self.writer().run(
             Query::update()
                 .table(Proxy::Table)
                 .value(Proxy::TokenHash, hash(token))
+                .value(Proxy::TokenDelivered, 0)
                 .and_where(Expr::col(Proxy::Box).eq(box_id.get()))
-                .and_where(Expr::col(Proxy::TokenHash).is_null()),
+                .and_where(undelivered),
+        )?;
+        Ok(changed > 0)
+    }
+
+    /// Records that `token` reached `box_id`, so later ensures keep it; false when the row holds
+    /// another token, which a later ensure minted.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the in-Box forwarder's delivery calls it")
+    )]
+    pub(crate) fn note_egress_token_delivered(
+        &self,
+        box_id: BoxId,
+        token: &[u8],
+    ) -> Result<bool, StoreError> {
+        let changed = self.writer().run(
+            Query::update()
+                .table(Proxy::Table)
+                .value(Proxy::TokenDelivered, 1)
+                .and_where(Expr::col(Proxy::Box).eq(box_id.get()))
+                .and_where(Expr::col(Proxy::TokenHash).eq(hash(token))),
         )?;
         Ok(changed > 0)
     }
@@ -114,7 +139,7 @@ mod tests {
     }
 
     #[test]
-    fn a_box_keeps_its_first_egress_token_until_its_row_goes() {
+    fn an_undelivered_egress_token_is_replaced_and_a_delivered_one_kept() {
         let dir = tempfile::tempdir().unwrap();
         let (store, _) = open(dir.path());
         let nt = NewBox {
@@ -125,12 +150,24 @@ mod tests {
         assert!(!store.set_egress_token(a, b"t1").unwrap(), "no row yet");
         drop(store.reserve(a, &FakeRng::default(), std::time::Duration::from_secs(30)));
         assert!(store.set_egress_token(a, b"t1").unwrap());
-        assert!(!store.set_egress_token(a, b"t2").unwrap(), "already minted");
-        assert_eq!(store.egress_token_box(&hash(b"t1")).unwrap(), Some(a));
-        assert_eq!(store.egress_token_box(&hash(b"t2")).unwrap(), None);
+        assert!(
+            store.set_egress_token(a, b"t2").unwrap(),
+            "t1 never reached the Box"
+        );
+        assert_eq!(store.egress_token_box(&hash(b"t1")).unwrap(), None);
+        assert!(
+            !store.note_egress_token_delivered(a, b"t1").unwrap(),
+            "a stale delivery"
+        );
+        assert!(store.note_egress_token_delivered(a, b"t2").unwrap());
+        assert!(
+            !store.set_egress_token(a, b"t3").unwrap(),
+            "t2 reached the Box"
+        );
+        assert_eq!(store.egress_token_box(&hash(b"t2")).unwrap(), Some(a));
         store.remove_proxy(a).unwrap();
         assert_eq!(
-            store.egress_token_box(&hash(b"t1")).unwrap(),
+            store.egress_token_box(&hash(b"t2")).unwrap(),
             None,
             "revoked"
         );
