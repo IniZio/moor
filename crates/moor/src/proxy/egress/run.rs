@@ -6,7 +6,7 @@
 //! `MOOR_EGRESS_KEY`. It reaches the controller through the ledger socket in the state dir, or
 //! through `--ledger`: a socket path, or `tls://host:port` checked against the CA bundle
 //! `--ledger-ca`. It keeps each Box's CA and request log under `<state-dir>/egress`. On SIGTERM
-//! or SIGINT, or once its Unix socket is removed, it drains, then exits.
+//! or SIGINT, or once its Unix socket is removed or replaced, it drains, then exits.
 
 use std::ffi::OsString;
 use std::io::Write as _;
@@ -155,12 +155,12 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
     })?;
     say(format_args!("listening on {}", server.listening()));
     let socket = match server.listening() {
-        Listen::Unix(path) => Some(path.clone()),
+        Listen::Unix(path) => Some((path.clone(), inode(path))),
         Listen::Tcp(_) => None,
     };
     while !stop.load(Ordering::Acquire) {
-        if socket.as_ref().is_some_and(|s| !s.exists()) {
-            say(format_args!("its socket is gone, so its state dir is too"));
+        if socket.as_ref().is_some_and(|(path, bound)| inode(path) != *bound) {
+            say(format_args!("its socket is gone or another Proxy's now"));
             break;
         }
         clock.sleep(POLL);
@@ -169,6 +169,12 @@ pub(crate) fn main(words: &[OsString]) -> Result<u8, String> {
     let left = server.drain(args.grace);
     say(format_args!("drained; {left} tunnels were still open"));
     Ok(0)
+}
+
+/// The device and inode of the file at `path`; `None` when it is gone.
+fn inode(path: &std::path::Path) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt as _;
+    std::fs::metadata(path).ok().map(|m| (m.dev(), m.ino()))
 }
 
 /// Writes one `moor egress: ` line to stderr.

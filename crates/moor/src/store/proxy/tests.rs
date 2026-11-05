@@ -476,10 +476,10 @@ fn a_reserve_after_the_lease_lapsed_needs_the_token_delivered_again() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock, id) = reserved(dir.path());
     assert!(store.set_egress_token(id, b"t1").unwrap());
-    assert!(store.note_egress_token_delivered(id, b"t1").unwrap());
+    assert!(store.note_egress_token_delivered(id, b"t1", 1).unwrap());
     clock.sleep(LEASE);
     let _ = store.reserve(id, &FakeRng::default(), LEASE).unwrap();
-    assert!(!store.egress_token_delivered(id).unwrap());
+    assert!(!store.egress_token_delivered(id, 1).unwrap());
 }
 
 /// A Box acquired as `p/first`, with a reserved proxy row whose egress token was delivered.
@@ -502,7 +502,7 @@ fn delivered_on_a_machine(dir: &Path) -> (Store, Arc<FakeClock>, BoxId) {
         .unwrap();
     acquire(&store, id, "p/first");
     assert!(store.set_egress_token(id, b"t1").unwrap());
-    assert!(store.note_egress_token_delivered(id, b"t1").unwrap());
+    assert!(store.note_egress_token_delivered(id, b"t1", 1).unwrap());
     (store, clock, id)
 }
 
@@ -525,7 +525,7 @@ fn a_box_acquired_again_on_a_fresh_machine_needs_the_token_delivered_again() {
         store.apply(Decision::new(id).box_input(input)).unwrap();
     }
     acquire(&store, id, "p/second");
-    assert!(!store.egress_token_delivered(id).unwrap());
+    assert!(!store.egress_token_delivered(id, 1).unwrap());
 }
 
 #[test]
@@ -539,7 +539,7 @@ fn a_box_moved_onto_a_fork_needs_the_token_delivered_again() {
             ..Fields::default()
         }))
         .unwrap();
-    assert!(!store.egress_token_delivered(id).unwrap());
+    assert!(!store.egress_token_delivered(id, 1).unwrap());
 }
 
 #[test]
@@ -547,7 +547,7 @@ fn a_restarted_proxy_needs_the_token_delivered_again() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _, id) = delivered_on_a_machine(dir.path());
     assert!(store.expire_proxy(id).unwrap());
-    assert!(!store.egress_token_delivered(id).unwrap());
+    assert!(!store.egress_token_delivered(id, 1).unwrap());
 }
 
 #[test]
@@ -561,5 +561,5 @@ fn a_change_that_keeps_the_machine_keeps_the_delivery() {
             ..Fields::default()
         }))
         .unwrap();
-    assert!(store.egress_token_delivered(id).unwrap());
+    assert!(store.egress_token_delivered(id, 1).unwrap());
 }

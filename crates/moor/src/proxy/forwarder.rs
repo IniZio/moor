@@ -87,11 +87,11 @@ pub(crate) fn deliver(to: &Delivery<'_>, ep: &ProxyEndpoint) -> Result<u16, Stri
     Ok(port)
 }
 
-/// Whether the row marks the Box's token delivered. moor clears the mark whenever it gives the
+/// Whether the row marks the Box's token delivered under this key. moor clears the mark whenever it gives the
 /// Box a fresh disk, so a delivered token is one the Box still holds.
 fn in_place(to: &Delivery<'_>) -> Result<bool, String> {
     to.store
-        .egress_token_delivered(to.box_id)
+        .egress_token_delivered(to.box_id, token::key_id(to.key))
         .map_err(|e| e.to_string())
 }
 
@@ -111,7 +111,7 @@ pub(crate) fn mint_until_marked(
             .ok_or("the Box has no Proxy to mint an egress token for")?;
         write(&String::from_utf8_lossy(token.expose()))?;
         let marked = store
-            .note_egress_token_delivered(box_id, token.expose())
+            .note_egress_token_delivered(box_id, token.expose(), token::key_id(key))
             .map_err(|e| e.to_string())?;
         if marked {
             return Ok(());

@@ -568,3 +568,30 @@ fn only_a_plain_host_or_bracketed_v6_with_a_port_is_a_target() {
 }
 
 mod plain;
+
+#[test]
+fn a_second_proxy_never_takes_the_socket_of_a_live_one() {
+    let w = World::new();
+    let socket = w.dir.path().join("egress.sock");
+    let config = || Config {
+        listen: Listen::Unix(socket.clone()),
+        ..w.config(10.0, 10.0, 64)
+    };
+    let first = Server::start(config()).unwrap();
+    let err = Server::start(config()).err().unwrap();
+    assert!(err.contains("another Proxy listens"), "{err}");
+    let mut probe = std::os::unix::net::UnixStream::connect(&socket).unwrap();
+    probe
+        .write_all(b"GET /ready HTTP/1.1\r\nHost: egress\r\n\r\n")
+        .unwrap();
+    let mut answer = String::new();
+    probe.read_to_string(&mut answer).unwrap();
+    assert!(answer.starts_with("HTTP/1.1 200"), "{answer}");
+    assert!(
+        answer.ends_with(&token::key_id(EGRESS_KEY.as_bytes()).to_string()),
+        "names its key: {answer}"
+    );
+    first.drain(Duration::ZERO);
+    let second = Server::start(config()).unwrap();
+    second.drain(Duration::ZERO);
+}

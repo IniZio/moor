@@ -38,6 +38,14 @@ pub(crate) fn verify(key: &[u8], token: &[u8]) -> bool {
     !id.is_empty() && mac(key, id).as_bytes().ct_eq(sent).into()
 }
 
+/// A tag that names `key` without revealing it, never zero. The shared Proxy answers it on
+/// `/ready`, and a delivery records it, so a controller notices a Proxy or a token under another
+/// key.
+pub(crate) fn key_id(key: &[u8]) -> i64 {
+    let hex = mac(key, b"moor egress key id");
+    i64::from_str_radix(hex.get(..15).unwrap_or_default(), 16).unwrap_or(0) + 1
+}
+
 /// The hex HMAC-SHA256 of `id` under `key`.
 fn mac(key: &[u8], id: &[u8]) -> String {
     let Ok(mut m) = Hmac::<Sha256>::new_from_slice(key) else {

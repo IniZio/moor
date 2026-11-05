@@ -160,9 +160,9 @@ fn retry_in_the_same_box_delivers_the_egress_forwarder_again() {
         )
         .unwrap();
     assert!(store.set_egress_token(id, b"t1").unwrap());
-    assert!(store.note_egress_token_delivered(id, b"t1").unwrap());
+    assert!(store.note_egress_token_delivered(id, b"t1", 1).unwrap());
     run(&w.cx, &req()).unwrap();
-    assert!(!store.egress_token_delivered(id).unwrap());
+    assert!(!store.egress_token_delivered(id, 1).unwrap());
 }
 
 #[test]
