@@ -436,9 +436,17 @@ fn a_cut_channel_attaches_to_the_same_run_again_and_takes_its_exit() {
     let r = rig(d.path(), driver);
     let got = run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["a"], &[]));
     assert!(matches!(got, SetupRun::Ok { .. }), "{got:?}");
-    let argvs: Vec<_> = r.driver.execs().into_iter().map(|(_, s, _)| s.argv).collect();
+    let argvs: Vec<_> = r
+        .driver
+        .execs()
+        .into_iter()
+        .map(|(_, s, _)| s.argv)
+        .collect();
     assert_eq!(argvs.len(), 3);
-    assert!(argvs.iter().all(|a| *a == argvs[0]), "every attach names the same run");
+    assert!(
+        argvs.iter().all(|a| Some(a) == argvs.first()),
+        "every attach names the same run"
+    );
     assert!(!r.driver.calls().iter().any(|c| c.starts_with("cancel_run")));
 }
 
