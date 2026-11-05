@@ -11,7 +11,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use bytes::BytesMut;
 use futures_util::{SinkExt as _, StreamExt as _};
 use rustls::{ClientConfig, RootCertStore};
 use serde::Deserialize;
@@ -26,7 +25,7 @@ use tokio_tungstenite::{Connector, MaybeTlsStream, WebSocketStream};
 const TARGET: &str = "x-moor-target";
 /// The longest CONNECT head taken.
 const HEAD_MAX: usize = 8 * 1024;
-/// Bytes read from the client per WebSocket message.
+/// Most bytes read from the client per WebSocket message, well under the Proxy's 1 MiB cap.
 const CHUNK: usize = 64 * 1024;
 /// Dials per CONNECT when the Proxy cannot be reached, as while a replica stops listening.
 const ATTEMPTS: u32 = 3;
@@ -263,17 +262,13 @@ async fn pump(mut client: TcpStream, tunnel: Tunnel, early: Vec<u8>) {
         if !early.is_empty() && sink.send(Message::binary(early)).await.is_err() {
             return;
         }
-        let mut buf = BytesMut::with_capacity(CHUNK);
+        let mut buf = vec![0_u8; CHUNK];
         loop {
-            buf.reserve(CHUNK);
-            match from_client.read_buf(&mut buf).await {
+            match from_client.read(&mut buf).await {
                 Ok(0) | Err(_) => break,
-                Ok(_) => {
-                    if sink
-                        .send(Message::Binary(buf.split().freeze()))
-                        .await
-                        .is_err()
-                    {
+                Ok(n) => {
+                    let chunk = buf.get(..n).unwrap_or_default().to_vec();
+                    if sink.send(Message::binary(chunk)).await.is_err() {
                         return;
                     }
                 }
