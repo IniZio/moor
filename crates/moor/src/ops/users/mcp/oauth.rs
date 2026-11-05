@@ -32,7 +32,7 @@ const PENDING_TTL: Duration = Duration::from_secs(600);
 
 /// The redirect URI when the operator set no `oauth.callback_url`. The browser may fail to
 /// load it; the user pastes the address it ended on.
-const LOOPBACK_REDIRECT: &str = "http://127.0.0.1:33418/oauth/callback";
+const LOOPBACK_REDIRECT: &str = "http://localhost:33418/oauth/callback";
 
 /// The client the controller signs in as.
 #[derive(Serialize, Deserialize)]

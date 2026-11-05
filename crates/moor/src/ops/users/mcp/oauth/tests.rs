@@ -251,13 +251,22 @@ fn a_401_naming_resource_metadata_leads_to_an_authorize_address_with_resource_an
     assert_eq!(q["code_challenge"].len(), 43, "{q:?}");
     assert_eq!(q["resource"], fake.mcp());
     assert_eq!(q["scope"], "read");
-    assert_eq!(q["redirect_uri"], "http://127.0.0.1:33418/oauth/callback");
+    assert_eq!(q["redirect_uri"], "http://localhost:33418/oauth/callback");
     assert!(!q["state"].is_empty());
     let reg: Value = serde_json::from_str(&fake.hits("POST", "/register")[0]).unwrap();
     assert_eq!(
         reg["redirect_uris"],
-        json!(["http://127.0.0.1:33418/oauth/callback"])
+        json!(["http://localhost:33418/oauth/callback"])
     );
+}
+
+#[test]
+fn the_loopback_registration_asks_for_a_native_client() {
+    let fake = Fake::start(true);
+    let (f, _) = setup(UserConfig::default());
+    signed_in_start(&f, &fake, "local:2000");
+    let reg: Value = serde_json::from_str(&fake.hits("POST", "/register")[0]).unwrap();
+    assert_eq!(reg["application_type"], "native");
 }
 
 #[test]
