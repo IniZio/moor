@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::{SinkExt as _, StreamExt as _};
-use moor_egress_forward::{serve, Config, Upstream};
+use moor_egress_forward::{next_accept_pause, serve, Config, Upstream};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use rustls::RootCertStore;
 use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _};
@@ -310,16 +310,77 @@ fn the_config_names_its_listener_upstream_and_token() {
             "not a ws:// or wss://",
         ),
         (
-            r#"{"listen":"127.0.0.1:1","upstream":"ws://x/egress","token":""}"#,
+            r#"{"listen":"127.0.0.1:1","upstream":"ws://127.0.0.1/egress","token":""}"#,
             "token is empty",
         ),
         (
-            r#"{"listen":"127.0.0.1:1","upstream":"ws://x/egress","token":"a\nb"}"#,
+            r#"{"listen":"127.0.0.1:1","upstream":"ws://[::1]:9/egress","token":"a\nb"}"#,
             "cannot be sent in a header",
         ),
         (r#"{"listen":"127.0.0.1:1"}"#, "bad config"),
+        (
+            r#"{"listen":"127.0.0.1:1","upstream":"ws://moor.example/egress","token":"t"}"#,
+            "only a loopback ws:// address may",
+        ),
+        (
+            r#"{"listen":"127.0.0.1:1","upstream":"ws://127.0.0.1.evil.example/egress","token":"t"}"#,
+            "only a loopback ws:// address may",
+        ),
     ] {
         let err = Config::parse(bad).err().unwrap();
         assert!(err.contains(why), "{bad}: {err}");
     }
+}
+
+#[test]
+fn failed_accepts_back_off_from_10_ms_to_1_s() {
+    let mut pause = Duration::from_millis(10);
+    let mut seen = vec![pause];
+    for _ in 0..8 {
+        pause = next_accept_pause(pause);
+        seen.push(pause);
+    }
+    assert_eq!(
+        seen.iter().map(Duration::as_millis).collect::<Vec<_>>(),
+        [10, 20, 40, 80, 160, 320, 640, 1000, 1000]
+    );
+}
+
+/// A stand-in Proxy whose upstream answers a request only after a pause, and drops the
+/// tunnel unanswered when a close frame comes first, as the shared Proxy does.
+async fn slow_answering_proxy() -> SocketAddr {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let (s, _) = listener.accept().await.unwrap();
+        let mut ws = tokio_tungstenite::accept_async(s).await.unwrap();
+        let Some(Ok(Message::Binary(req))) = ws.next().await else {
+            return;
+        };
+        let next = tokio::time::timeout(Duration::from_millis(300), ws.next()).await;
+        if matches!(next, Ok(Some(Ok(Message::Close(_))) | None)) {
+            return;
+        }
+        let mut reply = b"reply:".to_vec();
+        reply.extend_from_slice(&req);
+        ws.send(Message::binary(reply)).await.unwrap();
+        ws.close(None).await.unwrap();
+    });
+    addr
+}
+
+#[tokio::test]
+async fn a_client_that_stops_sending_still_reads_the_whole_reply() {
+    let proxy = slow_answering_proxy().await;
+    let fwd = forwarder(format!("ws://{proxy}/egress"), RootCertStore::empty()).await;
+    let (mut c, head) = send(fwd, b"CONNECT h:443 HTTP/1.1\r\n\r\n").await;
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+    c.write_all(b"req").await.unwrap();
+    c.shutdown().await.unwrap();
+    let mut rest = Vec::new();
+    tokio::time::timeout(Duration::from_secs(5), c.read_to_end(&mut rest))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(rest, b"reply:req");
 }
