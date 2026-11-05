@@ -203,12 +203,14 @@ fn with_headers(headers: &[&str], body: &str) -> Vec<u8> {
 }
 
 #[test]
-fn every_spelling_and_duplicate_of_the_credential_header_is_stripped() {
+fn every_spelling_and_duplicate_of_the_credential_header_gives_way_to_one_placeholder() {
     let rig = rig(fixed(json_reply("200 OK", OK_BODY)));
     let headers = [
         "AUTHORIZATION: token SECRET_A",
         "authorization: token SECRET_B",
         "Authorization: token SECRET_C",
+        "aUtHoRiZaTiOn:token SECRET_F",
+        "Authorization:\ttoken SECRET_G",
         "X-GH-AUTH: SECRET_D",
         "x-gh-auth: SECRET_E",
         "x-keep: yes",
@@ -220,6 +222,27 @@ fn every_spelling_and_duplicate_of_the_credential_header_is_stripped() {
     assert_anonymous(w);
     assert!(!w.head.contains("SECRET_"), "{}", w.head);
     assert_eq!(w.header("x-keep"), Some("yes"));
+}
+
+#[test]
+fn with_no_placeholder_the_request_leaves_with_no_authorization() {
+    let rig = rig_placeholder(
+        fixed(json_reply("200 OK", OK_BODY)),
+        Guard::default(),
+        vec![box_repo()],
+        None,
+    );
+    let sent = with_headers(
+        &["AUTHORIZATION: token SECRET_A", "x-gh-auth: SECRET_B"],
+        &repo_query("victim", "secrets", "Q"),
+    );
+    assert_eq!(rig.client().call(&sent).status(), 200);
+    let seen = rig.requests();
+    let w = seen.first().unwrap();
+    assert!(authorizations(w).is_empty(), "{}", w.head);
+    assert!(w.header("x-gh-auth").is_none(), "{}", w.head);
+    assert!(!w.head.contains("SECRET_"), "{}", w.head);
+    assert_eq!(rig.filter.drain_withheld(), ["POST"]);
 }
 
 #[test]

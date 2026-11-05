@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use super::{query_answered, rig_with, Rig};
+use super::{query, query_answered, rig_with, Rig, SECRET};
 
 /// Kinds and payloads of the Box events recorded after draining `rig`.
 fn drained_events(rig: &Rig) -> Vec<(String, String)> {
@@ -38,7 +38,25 @@ fn anonymous_403_records_no_rejected_credential() {
     let [only] = seen.as_slice() else {
         unreachable!("{seen:?}")
     };
-    assert!(only.authorization.is_none(), "{only:?}");
+    assert!(!only.head.contains(SECRET), "{only:?}");
+    let events = events_after(&rig, "credential_withheld");
+    let kinds: Vec<&str> = events.iter().map(|(k, _)| k.as_str()).collect();
+    assert!(kinds.contains(&"credential_withheld"), "{events:?}");
+    assert!(!kinds.contains(&"proxy_credential_rejected"), "{events:?}");
+    rig.live.unwrap().stop();
+}
+
+#[test]
+fn placeholder_401_records_no_rejected_credential() {
+    let rig = rig_with(Vec::new());
+    let (status, _) = query(&rig.client(), "victim", "secrets");
+    assert_eq!(status, 401);
+    let seen = rig.seen();
+    let [only] = seen.as_slice() else {
+        unreachable!("{seen:?}")
+    };
+    assert_eq!(only.authorization.as_deref(), Some("bearer gho_moor-proxy"));
+    assert!(!only.head.contains(SECRET), "{only:?}");
     let events = events_after(&rig, "credential_withheld");
     let kinds: Vec<&str> = events.iter().map(|(k, _)| k.as_str()).collect();
     assert!(kinds.contains(&"credential_withheld"), "{events:?}");

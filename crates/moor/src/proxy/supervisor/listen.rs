@@ -136,6 +136,19 @@ fn lists_host(rule: &ResolvedRule, host: &str) -> bool {
     })
 }
 
+/// The `GH_TOKEN` a Box gets from the rules for the GitHub API; a later rule
+/// replaces an earlier one, as in the Box env. A value that cannot be one
+/// header token counts as none, so config can never add a header line.
+pub(super) fn github_placeholder(rules: &[ResolvedRule]) -> Option<String> {
+    rules
+        .iter()
+        .rev()
+        .filter(|r| lists_host(r, GITHUB_API_HOST))
+        .find_map(|r| r.box_env.get("GH_TOKEN"))
+        .filter(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_graphic()))
+        .cloned()
+}
+
 /// Starts the filter nono chains every CONNECT through; it resolves each destination once and refuses non-public ones.
 fn start_filter(
     deps: &Deps<'_>,
@@ -178,6 +191,7 @@ fn start_filter(
                 ResolvedInject::BasicAuth { .. } => None,
             })
             .collect(),
+        placeholder: github_placeholder(&spec.rules),
         upstream,
         guard,
     })

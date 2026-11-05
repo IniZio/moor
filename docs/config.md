@@ -383,6 +383,12 @@ The default rules are `claude` for `api.anthropic.com`, which injects the
 rule that extends a default cannot set `hosts` or `credential`. Its `allow`
 entries come after the default's, and its `box_env` values win.
 
+A GraphQL request outside the Box's repos leaves without the credential. The
+Proxy sends `GH_TOKEN` from the `api.github.com` rule's `box_env` in its place,
+so GitHub answers 401. Keep that value a placeholder. A real token set there
+goes to GitHub on those requests. With no `GH_TOKEN`, or one with a space or
+control character, those requests carry no `Authorization`.
+
 The Box can fetch and clone any GitHub repo the user's `github` token can read.
 It can push only to the Box's own repos. The `github-git` rule allows
 `GET /{any_repo}.git/info/refs` and `POST /{any_repo}.git/git-upload-pack` for

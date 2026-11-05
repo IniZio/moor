@@ -177,9 +177,15 @@ fn serve_one(shared: &Shared, client: &mut Client, up: &mut Up) -> Flow {
         Route::Graphql => match gate(shared, &head, client) {
             Gate::Forward(body) => forward(shared, client, up, &head, &Payload::Raw(&body), false),
             Gate::Anonymous(body) => {
-                // The one place a request leaves without its credential.
+                // The one place a request leaves without its credential. GitHub
+                // answers the placeholder with 401, which clients read as a bad
+                // token. No `Authorization` gets 403, which they read as a rate limit.
                 shared.withhold(&head.method);
-                let bare = without_credential(&head, &shared.credential_headers);
+                let bare = without_credential(
+                    &head,
+                    &shared.credential_headers,
+                    shared.placeholder.as_deref(),
+                );
                 forward(shared, client, up, &bare, &Payload::Raw(&body), true)
             }
             Gate::Refuse(s, m) => refuse(shared, client, &head.method, s, &m),

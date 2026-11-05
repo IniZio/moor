@@ -33,6 +33,8 @@ use super::{FilterSpec, GraphqlFilter, Refusal};
 
 /// The credential nono has already injected; tests never print it.
 const TOKEN: &str = "gho_SECRETTOKEN";
+/// The Box's non-secret token the filter sends in place of the credential.
+const PLACEHOLDER: &str = "gho_moor-proxy";
 /// Rule name the filter reports in refusals.
 const RULE: &str = "github";
 /// Answer of the fake upstream to anything that is not a lookup.
@@ -269,6 +271,16 @@ fn rig_with(f: Responder, guard: Guard) -> Rig {
 
 /// Starts a filter for a Box of `repos`.
 fn rig_for(f: Responder, guard: Guard, repos: Vec<RepoRef>) -> Rig {
+    rig_placeholder(f, guard, repos, Some(PLACEHOLDER))
+}
+
+/// Starts a filter with exactly this `placeholder`.
+fn rig_placeholder(
+    f: Responder,
+    guard: Guard,
+    repos: Vec<RepoRef>,
+    placeholder: Option<&str>,
+) -> Rig {
     let ca = EphemeralCa::generate().unwrap();
     let ca_pem = ca.cert_pem().to_owned();
     let up = Up::start(f);
@@ -280,6 +292,7 @@ fn rig_for(f: Responder, guard: Guard, repos: Vec<RepoRef>) -> Rig {
         port: 443,
         rule: RULE.to_owned(),
         credential_headers: vec!["X-Gh-Auth".to_owned()],
+        placeholder: placeholder.map(str::to_owned),
         upstream,
         guard,
     })
@@ -506,9 +519,21 @@ fn fixed(reply: Vec<u8>) -> Responder {
     Arc::new(move |_| reply.clone())
 }
 
-/// Asserts `w` reached upstream with no credential of any kind.
+/// Every `Authorization` value in `w`, in any spelling of the name.
+fn authorizations(w: &Wire) -> Vec<&str> {
+    w.head
+        .split("\r\n")
+        .skip(1)
+        .filter_map(|l| l.split_once(':'))
+        .filter(|(n, _)| n.eq_ignore_ascii_case("authorization"))
+        .map(|(_, v)| v.trim())
+        .collect()
+}
+
+/// Asserts `w` reached upstream with no credential of any kind and the placeholder once.
 fn assert_anonymous(w: &Wire) {
-    assert!(w.header("authorization").is_none(), "{}", w.head);
+    let want = format!("bearer {PLACEHOLDER}");
+    assert_eq!(authorizations(w), [want.as_str()], "{}", w.head);
     assert!(w.header("x-gh-auth").is_none(), "{}", w.head);
     assert!(!w.head.contains(TOKEN), "{}", w.head);
     assert!(!String::from_utf8_lossy(&w.raw).contains(TOKEN));

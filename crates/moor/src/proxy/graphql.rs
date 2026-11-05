@@ -54,6 +54,9 @@ pub(crate) struct FilterSpec {
     /// Header names the proxy injects the credential into; removed, together
     /// with `Authorization`, from requests forwarded without it.
     pub(crate) credential_headers: Vec<String>,
+    /// The Box's non-secret token, sent as `Authorization` on requests
+    /// forwarded without the credential. With none they carry no `Authorization`.
+    pub(crate) placeholder: Option<String>,
     /// Connections to the real upstream.
     pub(crate) upstream: Upstream,
     /// Vets every other tunnel destination.
@@ -96,6 +99,8 @@ pub(super) struct Shared {
     pub(super) rule: String,
     /// Header names stripped from requests forwarded without credential.
     pub(super) credential_headers: Vec<String>,
+    /// `Authorization` token of requests forwarded without credential.
+    pub(super) placeholder: Option<String>,
     /// Methods of requests forwarded without credential, not yet drained.
     withheld: Mutex<VecDeque<String>>,
     /// 401 and 403 statuses that say nothing about the credential, not yet
@@ -200,6 +205,7 @@ impl GraphqlFilter {
             port: spec.port,
             rule: spec.rule,
             credential_headers: spec.credential_headers,
+            placeholder: spec.placeholder,
             withheld: Mutex::new(VecDeque::new()),
             excused: Mutex::new(VecDeque::new()),
             upstream: spec.upstream,
