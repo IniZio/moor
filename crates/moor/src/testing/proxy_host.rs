@@ -151,3 +151,14 @@ impl ProxyHost for FakeProxyHost {
 
 #[cfg(test)]
 mod tests;
+
+/// A CA as a fake supervisor keeps it in a Proxy row: a real certificate and a stand-in sealed
+/// key.
+#[cfg(test)]
+pub(crate) fn stored_ca(box_id: moor_core::BoxId) -> crate::store::StoredCa {
+    let (_, cert_pem) = crate::proxy::nono::ca::generate(box_id).expect("CA");
+    crate::store::StoredCa {
+        cert_pem,
+        sealed_key: b"sealed".to_vec(),
+    }
+}

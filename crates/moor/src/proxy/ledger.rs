@@ -21,7 +21,7 @@ use std::fmt;
 use moor_core::BoxId;
 use serde::{Deserialize, Serialize};
 
-pub(crate) use boxes::{BoxLedger, BoxView, MachineWant};
+pub(crate) use boxes::{BoxLedger, BoxView, CaPair, MachineWant};
 use call::Call;
 pub(crate) use client::FrontsLedger;
 pub(crate) use serve::{serve, Keys};

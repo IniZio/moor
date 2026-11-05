@@ -144,3 +144,25 @@ fn the_proxy_load_refuses_a_missing_or_open_key_and_creates_none() {
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
     assert!(Vault::load(&path).is_ok());
 }
+
+#[test]
+fn a_box_ca_key_opens_only_for_the_box_it_was_sealed_for() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault = Vault::load_or_create(&dir.path().join("vault.key")).unwrap();
+    let box_id = moor_core::BoxId::new(7);
+    let sealed = vault
+        .seal_box_ca(box_id, &Secret::new(b"ca key".to_vec()))
+        .unwrap();
+    assert_eq!(
+        vault.open_box_ca(box_id, &sealed).unwrap().expose(),
+        b"ca key"
+    );
+    assert!(vault
+        .open_box_ca(moor_core::BoxId::new(8), &sealed)
+        .is_err());
+    let name = SecretName::parse("box-ca").unwrap();
+    assert!(
+        vault.open(USER, &name, &sealed).is_err(),
+        "not a user secret"
+    );
+}

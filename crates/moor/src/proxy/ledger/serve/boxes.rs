@@ -14,6 +14,7 @@ use zeroize::Zeroizing;
 use super::super::hold::hold_of;
 use super::super::{BoxView, Call, Fault, MachineWant};
 use super::encode;
+use super::start;
 use crate::store::{ReadyProc, Store, StoreError};
 use crate::vault::Vault;
 
@@ -91,6 +92,8 @@ fn lease_and_tunnel((s, vault): (&Store, &Vault), box_id: BoxId, call: Call) -> 
         })),
         Call::Secret { name } => encode(&secret((s, vault), box_id, &name)),
         Call::RemoveProxy => reply(s.remove_proxy(box_id)),
+        Call::Spec => reply(s.proxy_spec(box_id)),
+        Call::Ca => encode(&start::ca((s, vault), box_id)),
         _ => encode(&Err::<(), _>(Fault::Refused(
             "a Box's supervisor reads no front lease".to_owned(),
         ))),

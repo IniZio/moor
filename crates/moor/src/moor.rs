@@ -94,6 +94,12 @@ impl Moor {
         wire::serve_ledger((env, vault), fronts_key, (read, write));
     }
 
+    /// Moves the spec and CA files Proxies were started from into their rows; one line per
+    /// failure.
+    pub(crate) fn import_proxy_files(env: &Env, vault: &Vault) -> Vec<String> {
+        wire::import_proxy_files(env, vault)
+    }
+
     /// How long a Box Proxy's lease lasts without a heartbeat.
     pub(crate) const fn proxy_lease() -> std::time::Duration {
         wire::PROXY_LEASE

@@ -392,7 +392,7 @@ mod egress;
 mod key;
 mod lease;
 mod park;
-
+pub(crate) mod state;
 pub(crate) use lease::{Fenced, Lease};
 pub(crate) use park::{TunnelAck, TunnelRequest, TunnelWant};
 

@@ -122,6 +122,10 @@ pub(crate) enum Call {
     },
     /// Removes the proxy row.
     RemoveProxy,
+    /// The spec the Box's Proxy starts from.
+    Spec,
+    /// The Box's interception CA, made on first call.
+    Ca,
 }
 
 impl Call {

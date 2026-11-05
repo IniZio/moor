@@ -7,6 +7,7 @@ use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use moor_core::domain::event::{Event, MachineEvent};
+use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::user::SecretName;
 use moor_core::{BoxHandle, BoxId, Secret};
 use serde::{Deserialize, Serialize};
@@ -30,6 +31,21 @@ pub(crate) struct BoxView {
     pub(crate) handle: Option<BoxHandle>,
     /// It is stored as asleep.
     pub(crate) asleep: bool,
+}
+
+/// A Box's interception CA as the ledger hands it to the Box's supervisor.
+#[derive(Serialize, Deserialize)]
+pub(crate) struct CaPair {
+    /// The PEM private key, zeroized on drop.
+    pub(crate) key_pem: Vec<u8>,
+    /// The PEM certificate the Box trusts.
+    pub(crate) cert_pem: String,
+}
+
+impl Drop for CaPair {
+    fn drop(&mut self) {
+        zeroize::Zeroize::zeroize(&mut self.key_pem);
+    }
 }
 
 /// The machine a Box holds a slot on.
@@ -300,6 +316,16 @@ impl BoxLedger {
     /// The last answers, locked.
     fn last(&self) -> std::sync::MutexGuard<'_, LastAnswers> {
         self.last.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The spec the Box's Proxy starts from; none when the controller recorded none.
+    pub(crate) fn spec(&self) -> Result<Option<ProxySpec>, LedgerError> {
+        self.ledger.call(&Call::Spec)
+    }
+
+    /// The Box's interception CA, which the controller makes on the first call.
+    pub(crate) fn ca(&self) -> Result<CaPair, LedgerError> {
+        self.ledger.call(&Call::Ca)
     }
 
     /// Removes the proxy row.

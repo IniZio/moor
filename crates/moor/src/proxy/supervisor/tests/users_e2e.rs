@@ -20,7 +20,6 @@ use moor_core::user::{Identity, SecretName, UserId};
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 use ureq::Agent;
 
-use crate::proxy::detached::write_spec;
 use crate::proxy::ledger::tests::{box_ledger_with, OnLedger};
 use crate::proxy::nono::ca::ca_dir;
 use crate::proxy::nono::capture::UserSecretsFn;
@@ -162,7 +161,7 @@ fn two() -> Two {
                 rules: vec![claude_rule(up.port)],
                 user,
             };
-            write_spec(dir.path(), &spec).unwrap();
+            store.set_proxy_spec(id, &spec).unwrap();
             (user, id, handle)
         })
         .into_iter();

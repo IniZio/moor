@@ -103,6 +103,8 @@ fn proxy_ready(store: &Store, id: BoxId, rng: &dyn Rng) {
     };
     let marked = store.mark_ready(id, "test", 2000, proc).unwrap();
     assert_eq!(marked, Fenced::Applied);
+    let ca = crate::testing::proxy_host::stored_ca(id);
+    store.keep_proxy_ca(id, &ca).unwrap();
 }
 
 /// Polls `done` until it holds or [`POLLS`] polls pass.
