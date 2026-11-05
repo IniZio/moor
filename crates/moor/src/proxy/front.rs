@@ -19,6 +19,7 @@ use std::fmt;
 use std::io::{self, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpStream};
 use std::os::unix::net::UnixStream;
+#[cfg(test)]
 use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
