@@ -35,9 +35,11 @@ use crate::testing::rng::FakeRng;
 
 /// The credential the fake credential source returns.
 pub(super) const SECRET: &str = "gh-fake-token-77";
+/// The Box's non-secret token, as the default rule sets it.
+const PLACEHOLDER: &str = "gho_moor-proxy";
 /// What the fake upstream answers to a GraphQL request.
 const GRAPHQL_REPLY: &str = r#"{"data":{"repository":{"id":"R_1"}}}"#;
-/// What the fake upstream answers to a request without `Authorization`.
+/// What the fake upstream answers to a request without the credential.
 const UNAUTHORIZED_REPLY: &str = r#"{"message":"Requires authentication"}"#;
 /// What the fake upstream answers to a REST request.
 const PULLS_REPLY: &str = r#"[{"number":1}]"#;
@@ -214,7 +216,7 @@ pub(super) fn github_rule() -> ResolvedRule {
             form: "token {secret}".to_owned(),
         },
         endpoint_rules: vec![allow("POST", "/graphql"), allow("GET", "/repos/o/r/pulls")],
-        box_env: BTreeMap::new(),
+        box_env: BTreeMap::from([("GH_TOKEN".to_owned(), PLACEHOLDER.to_owned())]),
     }
 }
 
@@ -427,16 +429,17 @@ fn box_repo_query_reaches_github_with_the_credential() {
 }
 
 #[test]
-fn other_repo_query_reaches_github_without_any_credential() {
+fn other_repo_query_reaches_github_with_only_the_placeholder() {
     let rig = rig();
     let (status, _) = query(&rig.client(), "victim", "secrets");
-    assert_eq!(status, 401, "the fake upstream refuses anonymous requests");
+    assert_eq!(status, 401, "the fake upstream refuses the placeholder");
     let seen = rig.seen();
     let [only] = seen.as_slice() else {
         unreachable!("{seen:?}")
     };
     assert_eq!(only.line, "POST /graphql HTTP/1.1");
-    assert_eq!(only.authorization, None);
+    let want = format!("bearer {PLACEHOLDER}");
+    assert_eq!(only.authorization.as_deref(), Some(want.as_str()));
     assert!(!only.head.contains(SECRET), "{}", only.head);
     assert!(!only.head.contains("placeholder"), "{}", only.head);
     rig.live.as_ref().unwrap().drain(&rig.deps());
@@ -515,4 +518,5 @@ fn stop_closes_every_listener() {
     }
 }
 
+mod placeholder;
 mod rejected;

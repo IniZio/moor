@@ -169,7 +169,11 @@ fn graphql_scope_covers_each_listed_repo_and_no_other() {
     }
     assert_eq!(query(&client, "o", "other").0, 401);
     let seen = a.rig.seen();
-    let auth: Vec<_> = seen.iter().map(|s| s.authorization.is_some()).collect();
+    let real = format!("token {SECRET}");
+    let auth: Vec<_> = seen
+        .iter()
+        .map(|s| s.authorization.as_deref() == Some(real.as_str()))
+        .collect();
     assert_eq!(auth, [true, true, false]);
     a.stop();
 }

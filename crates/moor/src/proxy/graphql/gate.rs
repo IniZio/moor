@@ -19,8 +19,9 @@ const MAX_LOOKUP: usize = 1024 * 1024;
 pub(super) enum Gate {
     /// Forward the request head and these exact body bytes.
     Forward(Vec<u8>),
-    /// Forward the request without its credential, with these exact body
-    /// bytes. The request is outside the Box repos or could not be judged.
+    /// Forward the request with the placeholder in place of its credential,
+    /// with these exact body bytes. The request is outside the Box repos or
+    /// could not be judged.
     Anonymous(Vec<u8>),
     /// Refuse with this status and message; the reason is recorded.
     Refuse(u16, String),
@@ -60,14 +61,20 @@ pub(super) fn gate(shared: &Shared, head: &Head, r: &mut impl BufRead) -> Gate {
 }
 
 /// `head` without `Authorization` or any of the `injected` header names, in
-/// both `raw` and `headers`.
-pub(super) fn without_credential(head: &Head, injected: &[String]) -> Head {
+/// both `raw` and `headers`. `placeholder`, if any, is then the only
+/// `Authorization`.
+pub(super) fn without_credential(
+    head: &Head,
+    injected: &[String],
+    placeholder: Option<&str>,
+) -> Head {
     let strip = |name: &[u8]| {
         name.eq_ignore_ascii_case(b"authorization")
             || injected
                 .iter()
                 .any(|h| name.eq_ignore_ascii_case(h.as_bytes()))
     };
+    let stand_in = placeholder.map(|p| ("authorization".to_owned(), format!("bearer {p}")));
     let mut raw = Vec::with_capacity(head.raw.len());
     for (i, line) in head.raw.split_inclusive(|&b| b == b'\n').enumerate() {
         let name = line.split(|&b| b == b':').next().unwrap_or_default();
@@ -75,13 +82,15 @@ pub(super) fn without_credential(head: &Head, injected: &[String]) -> Head {
             continue;
         }
         raw.extend_from_slice(line);
+        if let (0, Some((name, value))) = (i, &stand_in) {
+            raw.extend_from_slice(format!("{name}: {value}\r\n").as_bytes());
+        }
     }
     Head {
         raw,
-        headers: head
-            .headers
+        headers: stand_in
             .iter()
-            .filter(|(n, _)| !strip(n.as_bytes()))
+            .chain(head.headers.iter().filter(|(n, _)| !strip(n.as_bytes())))
             .cloned()
             .collect(),
         ..head.clone()
