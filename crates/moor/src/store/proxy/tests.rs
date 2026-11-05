@@ -257,6 +257,19 @@ fn heartbeat_by_owner_extends_the_lease() {
 }
 
 #[test]
+fn heartbeat_by_owner_extends_an_expired_lease() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, clock, id) = reserved(dir.path());
+    store.claim_lease(id, "A", LEASE).unwrap();
+    clock.sleep(LEASE.saturating_mul(10));
+    assert!(store.heartbeat(id, "A").unwrap());
+    assert_eq!(
+        store.claim_lease(id, "B", LEASE).unwrap(),
+        Lease::Held { owner: "A".into() }
+    );
+}
+
+#[test]
 fn heartbeat_by_non_owner_is_false_and_changes_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock, id) = reserved(dir.path());

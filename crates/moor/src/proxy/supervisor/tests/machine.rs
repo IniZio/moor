@@ -361,6 +361,15 @@ fn a_held_claim_reaches_the_machine_service_before_any_tick() {
     assert!(machine_kinds(&w).is_empty(), "no tick has attached it");
 }
 
+#[test]
+fn a_held_claim_stays_held_while_the_controller_is_down() {
+    let (w, _asked) = held_machine();
+    assert!(matches!(w.ledger.hold().unwrap(), Hold::Held(h) if h.name == "mini"));
+
+    w.ledger.down();
+    assert!(matches!(w.ledger.hold().unwrap(), Hold::Held(h) if h.name == "mini"));
+}
+
 /// `held_machine` before any runner listens.
 fn held_without_runner() -> World {
     let w = World::new([]);

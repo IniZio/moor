@@ -65,7 +65,7 @@ pub(crate) fn serve_on(
                     fronts: fronts.as_deref(),
                 };
                 let read = BufReader::new(stream.try_clone().unwrap());
-                serve((&store, &vault), &keys, read, stream, || Some(()));
+                serve((&store, &vault), &keys, read, stream);
             });
         }
     });

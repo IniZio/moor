@@ -1,5 +1,5 @@
-//! A supervisor whose controller goes away keeps serving until the lease would have run out,
-//! and carries on once the controller is back.
+//! A supervisor whose controller goes away keeps serving for as long as it is gone, and carries
+//! on under the same lease once the controller is back.
 
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
@@ -33,21 +33,27 @@ fn a_controller_back_within_the_lease_finds_the_supervisor_still_serving() {
 }
 
 #[test]
-fn a_controller_gone_past_the_cut_off_stops_the_supervisor() {
+fn a_controller_gone_past_the_lease_finds_the_supervisor_still_serving_under_its_lease() {
     let w = World::new([]);
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+    let owner = run.owner().to_owned();
     w.ledger.down();
-    w.clock.sleep(Duration::from_secs(25));
-    assert_eq!(run.tick(), None);
-    w.clock.sleep(Duration::from_secs(2));
-    assert_eq!(run.tick(), Some(Stop::Unreachable));
+    for _ in 0..150 {
+        w.clock.sleep(Duration::from_secs(2));
+        assert_eq!(run.tick(), None, "{}", w.stderr());
+    }
     assert!(
-        w.stderr().contains("has not answered for 27s"),
-        "{}",
-        w.stderr()
+        UnixStream::connect(run.socket()).is_ok(),
+        "the front still listens"
     );
-    assert_eq!(run.finish(Stop::Unreachable), 1);
+
+    w.ledger.up();
+    assert_eq!(run.tick(), None, "{}", w.stderr());
+    let row = w.row();
+    assert_eq!(row.lease_owner.as_deref(), Some(owner.as_str()));
+    assert_eq!(row.lease_heartbeat, Some(w.clock.now()));
+    assert_eq!(run.finish(Stop::Signal), 0);
 }
 
 #[test]

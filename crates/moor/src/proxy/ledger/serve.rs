@@ -29,14 +29,11 @@ enum Bound {
 }
 
 /// Serves one connection until EOF or a failed write.
-///
-/// Each call runs only while `answering` gives a guard, which a draining controller withholds.
-pub(crate) fn serve<G>(
+pub(crate) fn serve(
     (store, vault): (&Store, &Vault),
     keys: &Keys<'_>,
     mut read: impl BufRead,
     mut write: impl Write,
-    mut answering: impl FnMut() -> Option<G>,
 ) {
     let Some(line) = next(&mut read) else { return };
     let bound = match hello(store, keys, &line) {
@@ -50,7 +47,6 @@ pub(crate) fn serve<G>(
         return;
     }
     while let Some(line) = next(&mut read) {
-        let Some(_held) = answering() else { return };
         if !send(&mut write, &answer((store, vault), &bound, &line)) {
             return;
         }
