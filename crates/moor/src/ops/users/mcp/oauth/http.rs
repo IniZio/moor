@@ -153,13 +153,21 @@ impl Http {
     /// # Errors
     /// The registration is refused or its answer cannot be read.
     pub(super) fn register(&self, endpoint: &str, redirect: &str) -> Result<Registered, String> {
-        let body = serde_json::json!({
+        let mut body = serde_json::json!({
             "client_name": "moor",
             "redirect_uris": [redirect],
             "grant_types": ["authorization_code", "refresh_token"],
             "response_types": ["code"],
             "token_endpoint_auth_method": "none",
         });
+        // Authgear takes a plain-http loopback redirect only from a native client.
+        if Url::parse(redirect).is_ok_and(|u| {
+            u.scheme() == "http" && matches!(u.host_str(), Some("localhost" | "127.0.0.1"))
+        }) {
+            if let Some(fields) = body.as_object_mut() {
+                fields.insert("application_type".into(), "native".into());
+            }
+        }
         let mut resp = self
             .0
             .post(endpoint)

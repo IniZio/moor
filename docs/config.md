@@ -146,7 +146,7 @@ Added without a key, a server is probed. When it answers 401 and names its resou
 
 ```sh
 moor user mcp add notion https://mcp.notion.com/mcp   # prints sign_in
-moor user mcp finish 'http://127.0.0.1:33418/oauth/callback?code=...&state=...&iss=...'
+moor user mcp finish 'http://localhost:33418/oauth/callback?code=...&state=...&iss=...'
 ```
 
 The sign-in expires after 10 minutes. The access token becomes the secret `mcp_<name>`, so the Proxy injects it like a key, and `mcp ls` shows `signed_in` with the token's expiry. The refresh token and client registration are sealed apart, and the Proxy never reads them. `mcp rm` deletes both. Shared `mcp_servers:` never sign in.
