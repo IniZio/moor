@@ -396,11 +396,11 @@ A Box with no repo gets git access only when it has a profile, and then it can
 only fetch.
 
 The Box can also read, through the API, any GitHub repo that token can read.
-The `github-api` rule adds the token to `GET /repos/{any_repo}` and
-`GET /repos/{any_repo}/releases/**`. That includes private repos, as git fetch
-does. These reads count against that token's rate limit. Any other request on a
-repo outside the Box leaves without the token, including every write and
-`GET /repos/{any_repo}/releases` itself. A Box with no repo does not get the
+The `github-api` rule adds the token to `GET /repos/{any_repo}`,
+`GET /repos/{any_repo}/releases` and `GET /repos/{any_repo}/releases/**`. That
+includes private repos, as git fetch does. These reads count against that
+token's rate limit. Any other request on a repo outside the Box leaves without
+the token, including every write. A Box with no repo does not get the
 `github-api` rule, so its API requests reach GitHub directly.
 
 Only the hosts of these rules go through the Proxy. The Box reaches every

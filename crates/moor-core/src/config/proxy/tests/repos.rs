@@ -142,7 +142,14 @@ fn github_api_reads_any_repo_with_get_alone() {
         .filter(|e| e.path.starts_with("/repos/*/*"))
         .map(|e| format!("{} {}", e.method, e.path))
         .collect();
-    assert_eq!(any_repo, ["GET /repos/*/*", "GET /repos/*/*/releases/**"]);
+    assert_eq!(
+        any_repo,
+        [
+            "GET /repos/*/*",
+            "GET /repos/*/*/releases",
+            "GET /repos/*/*/releases/**",
+        ]
+    );
 }
 
 #[test]
