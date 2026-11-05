@@ -4,9 +4,11 @@
 
 use moor_core::domain::event::{Event, MachineEvent};
 
-use super::{Inner, Kept};
+use moor_core::BoxHandle;
+
+use super::Kept;
 use crate::proxy::supervisor::machine_link::{keep, ForwardFailed, MachineLink, Via};
-use crate::store::MachineWake;
+use crate::store::{HeldMachine, MachineWake};
 
 /// The forwards to the attached machine and whether their last open failed.
 #[derive(Default)]
@@ -21,23 +23,48 @@ pub(super) struct MachineSlot {
 
 impl Kept {
     /// Grants the Box's want, then opens the held machine's forwards, or opens them again when a
-    /// child died.
-    pub(super) fn tend_machine(&self, inner: &mut Inner) {
+    /// child died. The caller holds the keeper's busy lock; the forwards open outside the state
+    /// lock and are kept only if the Box is still awake on the same machine.
+    pub(super) fn tend_machine(&self) {
         self.grant_machine();
         let store = &self.deps.store;
         let want = match store.box_machine(self.box_id) {
             Ok(Some(want)) => want,
             Ok(None) => {
-                inner.machine = MachineSlot::default();
+                let gone = std::mem::take(&mut self.lock().machine);
+                drop(gone);
                 return;
             }
             Err(e) => return self.say(format_args!("cannot read the machine: {e}")),
         };
-        let Some(handle) = inner.handle.clone() else {
+        let mut inner = self.lock();
+        let Some(handle) = inner.handle.clone().filter(|h| self.current(&inner, h)) else {
             return;
         };
+        let mut slot = std::mem::take(&mut inner.machine);
+        drop(inner);
+        let event = self.open_forwards(&mut slot, &handle, want);
+        let mut inner = self.lock();
+        if !self.current(&inner, &handle) {
+            drop(inner);
+            drop(slot);
+            return;
+        }
+        inner.machine = slot;
+        drop(inner);
+        if let Some(event) = event {
+            self.record(&Event::Machine(event));
+        }
+    }
+
+    /// Opens `slot`'s forwards into `handle` for `want` unless they are live; what to record.
+    fn open_forwards(
+        &self,
+        slot: &mut MachineSlot,
+        handle: &BoxHandle,
+        want: HeldMachine,
+    ) -> Option<MachineEvent> {
         let (name, ports, enrolled) = (want.machine.name, want.ports, want.machine_id);
-        let slot = &mut inner.machine;
         let wanted = Some((name.clone(), ports.clone()));
         if slot.opened != wanted {
             slot.link = None;
@@ -49,27 +76,27 @@ impl Kept {
             machine_id: enrolled,
         };
         let opened = keep(&mut slot.link, || {
-            MachineLink::open(self.deps.driver.as_ref(), &handle, &via, &ports)
+            MachineLink::open(self.deps.driver.as_ref(), handle, &via, &ports)
         });
-        let event = match opened {
+        match opened {
             Ok(()) if fresh => {
                 slot.opened = wanted;
                 slot.failing = false;
-                MachineEvent::MachineAttached { name, ports }
+                Some(MachineEvent::MachineAttached { name, ports })
             }
-            Ok(()) => return,
-            Err(_) if slot.failing => return,
+            Ok(()) => None,
+            Err(_) if slot.failing => None,
             Err(ForwardFailed { port, error }) => {
                 slot.failing = true;
-                MachineEvent::MachineForwardFailed { port, error }
+                Some(MachineEvent::MachineForwardFailed { port, error })
             }
-        };
-        self.record(&Event::Machine(event));
+        }
     }
 
     /// Ends the forwards and frees the slot for another Box, keeping the claim on the machine.
-    pub(super) fn sleep_machine(&self, inner: &mut Inner) {
-        inner.machine = MachineSlot::default();
+    pub(super) fn sleep_machine(&self) {
+        let gone = std::mem::take(&mut self.lock().machine);
+        drop(gone);
         match self.deps.store.sleep_machine(self.box_id) {
             Ok(Some(name)) => self.record(&Event::Machine(MachineEvent::MachineDetached {
                 name,
@@ -105,8 +132,9 @@ impl Kept {
     }
 
     /// Ends the forwards and frees the machine for the next Box.
-    pub(super) fn let_go_machine(&self, inner: &mut Inner) {
-        inner.machine = MachineSlot::default();
+    pub(super) fn let_go_machine(&self) {
+        let gone = std::mem::take(&mut self.lock().machine);
+        drop(gone);
         let store = &self.deps.store;
         let name = store.box_machine(self.box_id).ok().flatten();
         match store.detach_machine(self.box_id) {
