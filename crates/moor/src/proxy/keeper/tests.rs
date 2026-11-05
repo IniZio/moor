@@ -339,8 +339,8 @@ fn gate_clears(driver: &FakeDriver) -> Gate {
     let (release, release_rx) = mpsc::channel::<()>();
     let (began_tx, release_rx) = (Mutex::new(began_tx), Mutex::new(release_rx));
     driver.on_exec_of("sshd", move || {
-        drop(began_tx.lock().unwrap().send(()));
-        drop(release_rx.lock().unwrap().recv());
+        began_tx.lock().unwrap().send(()).ok();
+        release_rx.lock().unwrap().recv().ok();
     });
     Gate { began, release }
 }
@@ -358,7 +358,7 @@ fn up_and_park_answer_while_the_tunnel_opens() {
     std::thread::spawn(move || {
         let up = asking.up();
         asking.park();
-        drop(done_tx.send(up));
+        done_tx.send(up).ok();
     });
     let answered = done.recv_timeout(Duration::from_secs(5));
     gate.release.send(()).unwrap();
@@ -386,7 +386,7 @@ fn an_ended_keeper_finishes_its_open_before_end_returns_and_keeps_nothing() {
     let id = w.id;
     std::thread::spawn(move || {
         drop(keepers.end(id));
-        drop(ended_tx.send(()));
+        ended_tx.send(()).ok();
     });
     assert!(
         ended.recv_timeout(Duration::from_millis(300)).is_err(),

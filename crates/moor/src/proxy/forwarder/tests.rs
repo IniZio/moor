@@ -240,7 +240,7 @@ fn a_new_egress_key_delivers_a_token_under_it() {
     );
     let written = r.written();
     assert_eq!(written.len(), 4, "delivered again");
-    let config: serde_json::Value = serde_json::from_slice(&written[3].1).unwrap();
+    let config: serde_json::Value = serde_json::from_slice(&written.get(3).unwrap().1).unwrap();
     let sent = config.get("token").unwrap().as_str().unwrap();
     assert!(token::verify(other, sent.as_bytes()), "under the new key");
     assert!(!r
