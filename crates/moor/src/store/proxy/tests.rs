@@ -563,3 +563,16 @@ fn a_change_that_keeps_the_machine_keeps_the_delivery() {
         .unwrap();
     assert!(store.egress_token_delivered(id, 1).unwrap());
 }
+
+#[test]
+fn fencing_a_supervisor_ends_its_lease_and_key_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _, id) = reserved(dir.path());
+    store.claim_lease(id, "A", LEASE).unwrap();
+    store.set_proxy_key(id, b"k", 1).unwrap();
+    assert!(store.fence_supervisor(id).unwrap());
+    assert!(!store.heartbeat(id, "A").unwrap(), "its lease is gone");
+    assert!(!store.proxy_key_is(id, b"k").unwrap(), "its key is gone");
+    assert!(!store.fence_supervisor(id).unwrap(), "nothing left to fence");
+    assert!(store.proxy(id).unwrap().is_some(), "the row stays");
+}

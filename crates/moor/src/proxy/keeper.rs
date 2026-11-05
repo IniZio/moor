@@ -8,6 +8,10 @@
 //! Box as it starts.
 //!
 //! A keeper for a Box whose forwarder dials the shared Proxy itself opens no tunnel.
+//!
+//! The state lock is held only to read or swap state, never across a call into the Box, so
+//! [`Kept::up`] and [`Kept::park`] answer at once. Calls into the Box take turns on a second
+//! lock, which [`Keepers::end`] waits for: once it returns, the ended keeper opens nothing.
 
 mod host;
 mod machine;
@@ -94,6 +98,8 @@ pub(crate) struct Kept {
     deps: Arc<Deps>,
     /// Its state; ticks and direct calls take turns.
     inner: Mutex<Inner>,
+    /// Held across each call into the Box.
+    busy: Mutex<()>,
     /// Set to end its thread.
     stop: AtomicBool,
 }
@@ -123,6 +129,11 @@ impl Keepers {
         let k = Arc::new(Kept::new(Arc::clone(deps), box_id, box_port));
         kept.insert(box_id, Arc::clone(&k));
         drop(kept);
+        match deps.store.fence_supervisor(box_id) {
+            Ok(true) => k.say(format_args!("took the Box from its supervisor")),
+            Ok(false) => {}
+            Err(e) => k.say(format_args!("cannot fence the Box's supervisor: {e}")),
+        }
         let ticking = Arc::clone(&k);
         let spawned = std::thread::Builder::new()
             .name(format!("moor-keeper-{}", box_id.get()))
@@ -141,9 +152,12 @@ impl Keepers {
 
     /// Ends every keeper, closing its tunnel and forwards, as the controller exits.
     pub(crate) fn end_all(&self) {
-        let ids: Vec<BoxId> = lock(&self.kept).keys().copied().collect();
-        for id in ids {
-            self.end(id);
+        let all: Vec<Arc<Kept>> = lock(&self.kept).values().cloned().collect();
+        for k in &all {
+            k.stop.store(true, Ordering::Release);
+        }
+        for k in all {
+            self.end(k.box_id);
         }
     }
 
@@ -152,14 +166,17 @@ impl Keepers {
         lock(&self.kept).get(&box_id).cloned()
     }
 
-    /// Ends the Box's keeper, closing its tunnel and forwards.
+    /// Ends the Box's keeper, closing its tunnel and forwards once any call it makes into the
+    /// Box returns, so a keeper started after cannot lose its tunnel to this one.
     pub(crate) fn end(&self, box_id: BoxId) -> Option<Arc<Kept>> {
         let k = lock(&self.kept).remove(&box_id)?;
         k.stop.store(true, Ordering::Release);
+        let busy = lock(&k.busy);
         let mut inner = k.lock();
-        inner.tunnel = None;
-        inner.machine = MachineSlot::default();
+        let held = (inner.tunnel.take(), std::mem::take(&mut inner.machine));
         drop(inner);
+        drop(held);
+        drop(busy);
         Some(k)
     }
 
@@ -189,6 +206,7 @@ impl Kept {
                 was_up: false,
                 machine: MachineSlot::default(),
             }),
+            busy: Mutex::new(()),
             stop: AtomicBool::new(false),
         }
     }
@@ -211,16 +229,24 @@ impl Kept {
                 return true;
             }
         };
-        let mut inner = self.lock();
-        self.follow(&mut inner, view.handle);
-        if inner.parked {
-            self.sleep_machine(&mut inner);
-        } else {
-            drop(self.tend_tunnel(&mut inner));
-            self.tend_machine(&mut inner);
+        let busy = lock(&self.busy);
+        if self.stopped() {
+            return false;
         }
-        drop(inner);
+        let parked = self.follow(view.handle);
+        if parked {
+            self.sleep_machine();
+        } else {
+            drop(self.tend_tunnel());
+            self.tend_machine();
+        }
+        drop(busy);
         true
+    }
+
+    /// Whether the keeper was ended.
+    fn stopped(&self) -> bool {
+        self.stop.load(Ordering::Acquire)
     }
 
     /// Whether the Box's credential traffic can reach the shared Proxy now.
@@ -234,14 +260,13 @@ impl Kept {
         let handle = view(&self.deps.store, self.box_id)
             .map_err(|e| format!("cannot read the Box: {e}"))?
             .and_then(|v| v.handle);
-        let mut inner = self.lock();
-        self.follow(&mut inner, handle);
-        if inner.parked || self.deps.egress.is_none() {
+        let busy = lock(&self.busy);
+        if self.follow(handle) || self.deps.egress.is_none() || self.stopped() {
             return Ok(());
         }
-        inner.next_open = None;
-        let up = self.tend_tunnel(&mut inner);
-        drop(inner);
+        self.lock().next_open = None;
+        let up = self.tend_tunnel();
+        drop(busy);
         up
     }
 
@@ -249,10 +274,11 @@ impl Kept {
     pub(crate) fn park(&self) {
         let mut inner = self.lock();
         inner.parked = true;
-        inner.tunnel = None;
         inner.was_up = false;
-        self.sleep_machine(&mut inner);
+        let tunnel = inner.tunnel.take();
         drop(inner);
+        drop(tunnel);
+        self.sleep_machine();
     }
 
     /// Opens the tunnel again after [`Kept::park`]; the machine's slot is asked for on the next
@@ -265,33 +291,43 @@ impl Kept {
     /// Lets go of the machine when the Box closed, closes the tunnel and removes the proxy row.
     pub(crate) fn close(&self) {
         let mut inner = self.lock();
-        inner.tunnel = None;
+        let held = (inner.tunnel.take(), std::mem::take(&mut inner.machine));
+        drop(inner);
+        drop(held);
         let closed = !matches!(view(&self.deps.store, self.box_id), Ok(Some(v)) if v.open);
         if closed {
-            self.let_go_machine(&mut inner);
+            self.let_go_machine();
         }
-        inner.machine = MachineSlot::default();
-        drop(inner);
         if let Err(e) = self.deps.store.remove_proxy(self.box_id) {
             self.say(format_args!("cannot remove the proxy row: {e}"));
         }
     }
 
     /// Drops the tunnel and forwards when the Box's handle changed: they lead into a machine
-    /// that is gone.
-    fn follow(&self, inner: &mut Inner, handle: Option<BoxHandle>) {
+    /// that is gone. Whether the Box is parked.
+    fn follow(&self, handle: Option<BoxHandle>) -> bool {
+        let mut inner = self.lock();
+        let parked = inner.parked;
         if inner.handle == handle {
-            return;
+            return parked;
         }
         if let (Some(_), Some(to)) = (&inner.handle, &handle) {
             self.say(format_args!("the Box moved to {}", to.as_str()));
         }
         inner.handle = handle;
-        inner.tunnel = None;
-        inner.machine = MachineSlot::default();
         inner.failures = 0;
         inner.next_open = None;
         inner.was_up = false;
+        let held = (inner.tunnel.take(), std::mem::take(&mut inner.machine));
+        drop(inner);
+        drop(held);
+        parked
+    }
+
+    /// Whether what a call into the Box made for `handle` may be kept: the keeper still runs,
+    /// the Box is awake and still on that machine.
+    fn current(&self, inner: &Inner, handle: &BoxHandle) -> bool {
+        !self.stopped() && !inner.parked && inner.handle.as_ref() == Some(handle)
     }
 
     /// Appends `event` to the Box's events, reporting a failure.

@@ -76,7 +76,7 @@ pub(crate) use proxy::{TunnelAck, TunnelRequest, TunnelWant};
 pub(crate) use proxy::{EGRESS_PORT_MAX, EGRESS_PORT_MIN};
 pub(crate) use runs::{NewRun, RunOutcome, RunRow};
 pub(crate) use sessions::SessionRecord;
-pub(crate) use users::machine::MachineWake;
+pub(crate) use users::machine::{HeldMachine, MachineWake};
 pub(crate) use users::mcp_oauth::{GrantRow, SignIn};
 pub(crate) use users::webhook::{header_name as webhook_header_name, key_name as webhook_key_name};
 mod webhook_outbox;

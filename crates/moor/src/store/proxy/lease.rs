@@ -104,6 +104,29 @@ impl Store {
         Ok(changed == 1)
     }
 
+    /// Takes the row from any supervisor an earlier build started: its lease and key stop
+    /// working, so its next heartbeat or hello is refused and it exits. False when the row has
+    /// none.
+    pub(crate) fn fence_supervisor(&self, box_id: BoxId) -> Result<bool, StoreError> {
+        let changed = self.writer().run(
+            Query::update()
+                .table(Proxy::Table)
+                .value(Proxy::LeaseOwner, Option::<String>::None)
+                .value(Proxy::LeaseHeartbeat, Option::<i64>::None)
+                .value(Proxy::KeyHash, Option::<String>::None)
+                .value(Proxy::Ledger, Option::<i64>::None)
+                .value(Proxy::Ready, 0)
+                .value(Proxy::Pid, Option::<i64>::None)
+                .and_where(Expr::col(Proxy::Box).eq(box_id.get()))
+                .and_where(
+                    Expr::col(Proxy::LeaseOwner)
+                        .is_not_null()
+                        .or(Expr::col(Proxy::KeyHash).is_not_null()),
+                ),
+        )?;
+        Ok(changed > 0)
+    }
+
     /// Clear the lease if `owner` holds it; no-op otherwise.
     pub(crate) fn release(&self, box_id: BoxId, owner: &str) -> Result<(), StoreError> {
         let conn = self.writer();
