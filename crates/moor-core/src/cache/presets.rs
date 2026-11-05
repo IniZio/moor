@@ -1,5 +1,7 @@
 //! The built-in presets: tool caches every Box with a repo keeps unless a layer drops them.
 
+use std::num::NonZeroU32;
+
 use super::{CacheName, CachePath, OnFail, Volume};
 
 /// Clears containers, volumes and networks so only images and build cache are kept; without
@@ -33,6 +35,11 @@ const FIXED: [(&str, &[&str]); 14] = [
     ("android-sdk", &["/opt/android-sdk"]),
 ];
 
+/// Size hints of the presets that grow large. Every unsealed preset shares one disk, whose size
+/// is the sum of the hints up to the provider's 40 GB cap, so these two together ask for all of it.
+/// The disk is sparse, so a repo that never fills it pays nothing.
+const SIZE_GB: [(&str, u32); 2] = [("cache", 20), ("android-sdk", 20)];
+
 /// The names of every preset, in table order.
 #[must_use]
 pub fn names() -> Vec<&'static str> {
@@ -56,7 +63,10 @@ pub(super) fn all() -> Vec<Volume> {
                     .map(|p| CachePath::parse(p))
                     .collect::<Result<_, _>>()
                     .ok()?,
-                size_gb: None,
+                size_gb: SIZE_GB
+                    .iter()
+                    .find(|(n, _)| n == name)
+                    .and_then(|(_, gb)| NonZeroU32::new(*gb)),
                 seal,
                 on_fail: OnFail::Clear,
             })

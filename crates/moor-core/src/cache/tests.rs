@@ -207,6 +207,19 @@ fn the_cache_preset_holds_the_caches_the_exec_env_points_tools_at() {
 }
 
 #[test]
+fn the_presets_of_one_group_ask_for_the_largest_group_a_provider_grants() {
+    const PROVIDER_CAP_GB: u32 = 40;
+    let p = plan(&layers("cache: {work_tree: false}", ""));
+    let asked: u32 = p
+        .volumes()
+        .iter()
+        .filter(|v| v.seal().is_empty())
+        .map(|v| v.size_gb.map_or(0, std::num::NonZeroU32::get))
+        .sum();
+    assert_eq!(asked, PROVIDER_CAP_GB);
+}
+
+#[test]
 fn only_docker_and_the_work_tree_have_a_seal() {
     let p = plan(&layers("", ""));
     let sealed: Vec<&str> = p

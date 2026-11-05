@@ -77,7 +77,7 @@ fn a_volume_with_a_seal_is_sent_sealed_in_a_group_of_its_own() {
     let tree = format!("{}w", npm.group);
     let want = serde_json::json!([
         {"group": npm.group, "name": "cache", "key": format!("{}-cache", npm.group),
-         "paths": ["~/.cache"], "sizeGB": 0},
+         "paths": ["~/.cache"], "sizeGB": 20},
         {"group": group, "name": "docker", "key": format!("{group}-docker"),
          "paths": ["~/docker", "/var/lib/containerd"], "sizeGB": 0, "sealed": true},
         {"group": tree, "name": "worktree", "key": format!("{tree}-worktree"),
