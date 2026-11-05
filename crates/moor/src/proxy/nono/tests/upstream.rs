@@ -1,7 +1,8 @@
 //! Fake HTTPS upstream on loopback that records what the proxy sends it.
 
 use std::io::{Read, Write};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener, TcpStream};
+use std::os::fd::OwnedFd;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -38,6 +39,9 @@ pub(crate) struct Upstream {
     stop: Arc<AtomicBool>,
     /// Accept thread.
     thread: Option<JoinHandle<()>>,
+    /// After `close`, a bound socket that never listens: it keeps `port` from being reused by
+    /// another process, so connections there stay refused.
+    hold: Option<OwnedFd>,
     /// TLS server settings shared with twins.
     config: Arc<ServerConfig>,
     /// Test CA certificate PEM file for `RouteConfig.tls_ca`.
@@ -59,6 +63,10 @@ impl Upstream {
 impl Upstream {
     /// Stops listening, so later connections to `port` are refused.
     pub(crate) fn close(&mut self) {
+        if self.thread.is_none() {
+            return;
+        }
+        self.hold = Some(reusable(self.port));
         self.stop.store(true, Ordering::SeqCst);
         let _ = TcpStream::connect(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), self.port));
         if let Some(t) = self.thread.take() {
@@ -177,9 +185,26 @@ impl Upstream {
     }
 }
 
+/// A loopback TCP socket bound to `port` with `SO_REUSEPORT`, so a second one can share the port.
+fn reusable(port: u16) -> OwnedFd {
+    use rustix::net::{AddressFamily, SocketFlags, SocketType};
+    let socket = rustix::net::socket_with(
+        AddressFamily::INET,
+        SocketType::STREAM,
+        SocketFlags::CLOEXEC,
+        None,
+    )
+    .unwrap();
+    rustix::net::sockopt::set_socket_reuseport(&socket, true).unwrap();
+    rustix::net::bind(&socket, &SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)).unwrap();
+    socket
+}
+
 /// Binds a loopback listener and serves it on a thread.
 fn spawn(config: Arc<ServerConfig>, ca_path: PathBuf, ca_pem: String) -> Upstream {
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let socket = reusable(0);
+    rustix::net::listen(&socket, 128).unwrap();
+    let listener = TcpListener::from(socket);
     let port = listener.local_addr().unwrap().port();
     let seen = Arc::new(Mutex::new(Vec::new()));
     let stop = Arc::new(AtomicBool::new(false));
@@ -201,6 +226,7 @@ fn spawn(config: Arc<ServerConfig>, ca_path: PathBuf, ca_pem: String) -> Upstrea
         seen,
         stop,
         thread: Some(thread),
+        hold: None,
         config,
         ca_path,
         ca_pem,
