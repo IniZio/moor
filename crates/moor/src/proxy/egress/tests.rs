@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use moor_core::config::proxy::{EndpointRule, ResolvedInject, ResolvedRule};
@@ -23,17 +23,20 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
 use tokio_tungstenite::tungstenite::{self, Message, WebSocket};
 use zeroize::Zeroizing;
 
+use super::boxes::closed;
+use super::wire::authority_ok;
 use super::{Config, Rate, Server, PATH, TARGET};
 use crate::proxy::ledger::tests::{serve_on, Served, EGRESS_KEY};
+use crate::proxy::ledger::{BoxView, LedgerError};
+use crate::proxy::nono::ca;
 use crate::proxy::nono::tests::upstream::{self, Upstream};
+use crate::proxy::token;
 use crate::store::Store;
 use crate::testing::clock::FakeClock;
 use crate::testing::cx::{put_secret, test_vault_key};
 use crate::testing::rng::FakeRng;
 use crate::vault::Vault;
 
-/// The Box's token.
-const TOKEN: &str = "box-token-1";
 /// The credential the Box user holds, which only the upstream may see.
 const SECRET: &str = "test-token-1";
 
@@ -43,7 +46,9 @@ struct World {
     store: Store,
     up: Upstream,
     id: BoxId,
-    _ledger: Served,
+    token: String,
+    log: Arc<Mutex<Vec<u8>>>,
+    ledger: Option<Served>,
 }
 
 impl World {
@@ -57,7 +62,10 @@ impl World {
         put_secret(&store, &vault, user, "tool-token", SECRET);
         let id = ready_box(&store, user);
         drop(store.reserve(id, &FakeRng::default(), crate::proxy::detached::LEASE));
-        store.set_egress_token(id, TOKEN.as_bytes()).unwrap();
+        let token = token::mint(&store, EGRESS_KEY.as_bytes(), id)
+            .unwrap()
+            .unwrap();
+        let token = String::from_utf8(token.expose().to_vec()).unwrap();
         let spec = ProxySpec {
             box_id: id,
             box_handle: None,
@@ -74,7 +82,9 @@ impl World {
             store,
             up,
             id,
-            _ledger: ledger,
+            token,
+            log: Arc::default(),
+            ledger: Some(ledger),
         }
     }
 
@@ -85,6 +95,11 @@ impl World {
 
     /// [`World::server`], with `lookups` lookups for tokens not yet confirmed.
     fn server_with(&self, burst: f64, lookups: f64) -> Server {
+        self.server_full(burst, lookups, 64)
+    }
+
+    /// [`World::server_with`], letting each token hold `tunnels` tunnels open.
+    fn server_full(&self, burst: f64, lookups: f64, tunnels: usize) -> Server {
         Server::start(Config {
             listen: SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
             ledger: self.dir.path().join("proxy.sock"),
@@ -98,6 +113,9 @@ impl World {
                 per_sec: 0.0,
                 burst: lookups,
             },
+            tunnels,
+            tend: Duration::from_millis(50),
+            log: self.log.clone(),
             upstream_ca: Some(self.up.ca_path.clone()),
             guard_exempt: vec![SocketAddr::from((Ipv4Addr::LOCALHOST, self.up.port))],
             clock: Arc::new(FakeClock::new(Ts::from_millis(1_000))),
@@ -272,7 +290,7 @@ fn rustls_pemfile_der(pem: &str) -> CertificateDer<'static> {
 fn a_valid_token_reaches_the_upstream_with_the_credential_injected() {
     let w = World::new();
     let server = w.server(10.0);
-    let tunnel = open(&server, TOKEN, &w.target()).unwrap();
+    let tunnel = open(&server, &w.token, &w.target()).unwrap();
     assert_eq!(w.get(tunnel), "HTTP/1.1 200 OK");
     let seen = w.up.seen();
     let [only] = seen.as_slice() else {
@@ -288,7 +306,7 @@ fn a_wrong_or_missing_token_is_refused() {
     let server = w.server(10.0);
     assert_eq!(open(&server, "not-the-token", &w.target()).err(), Some(401));
     assert_eq!(open(&server, "", &w.target()).err(), Some(401));
-    assert_eq!(open(&server, TOKEN, "no-port").err(), Some(400));
+    assert_eq!(open(&server, &w.token, "no-port").err(), Some(400));
     assert!(w.up.seen().is_empty());
     server.drain(Duration::from_secs(5));
 }
@@ -297,9 +315,9 @@ fn a_wrong_or_missing_token_is_refused() {
 fn the_token_of_a_closed_box_is_refused() {
     let w = World::new();
     let server = w.server(10.0);
-    assert!(open(&server, TOKEN, &w.target()).is_ok());
+    assert!(open(&server, &w.token, &w.target()).is_ok());
     w.close_box();
-    assert_eq!(open(&server, TOKEN, &w.target()).err(), Some(401));
+    assert_eq!(open(&server, &w.token, &w.target()).err(), Some(401));
     server.drain(Duration::from_secs(5));
 }
 
@@ -307,9 +325,9 @@ fn the_token_of_a_closed_box_is_refused() {
 fn a_token_past_its_rate_is_refused() {
     let w = World::new();
     let server = w.server(2.0);
-    assert!(open(&server, TOKEN, &w.target()).is_ok());
-    assert!(open(&server, TOKEN, &w.target()).is_ok());
-    assert_eq!(open(&server, TOKEN, &w.target()).err(), Some(429));
+    assert!(open(&server, &w.token, &w.target()).is_ok());
+    assert!(open(&server, &w.token, &w.target()).is_ok());
+    assert_eq!(open(&server, &w.token, &w.target()).err(), Some(429));
     assert_eq!(
         open(&server, "another-token", &w.target()).err(),
         Some(401),
@@ -323,7 +341,7 @@ fn a_drain_lets_an_open_tunnel_finish_and_refuses_a_new_one() {
     let w = World::new();
     let server = w.server(10.0);
     let addr = server.addr();
-    let tunnel = open(&server, TOKEN, &w.target()).unwrap();
+    let tunnel = open(&server, &w.token, &w.target()).unwrap();
     std::thread::scope(|s| {
         let drained = s.spawn(|| server.drain(Duration::from_secs(20)));
         let mut tries = 0;
@@ -342,24 +360,183 @@ fn a_drain_lets_an_open_tunnel_finish_and_refuses_a_new_one() {
     assert_eq!(w.up.seen().len(), 1);
 }
 
+/// A token with a valid MAC for an `id` no Box holds.
+fn signed(id: &str) -> String {
+    use hmac::{Hmac, Mac as _};
+    let mut m = Hmac::<sha2::Sha256>::new_from_slice(EGRESS_KEY.as_bytes()).unwrap();
+    m.update(id.as_bytes());
+    let mac: String = m
+        .finalize()
+        .into_bytes()
+        .iter()
+        .fold(String::new(), |mut out, b| {
+            let _ = std::fmt::Write::write_fmt(&mut out, format_args!("{b:02x}"));
+            out
+        });
+    format!("{id}.{mac}")
+}
+
+/// Polls `done` for up to ten seconds.
+fn eventually(what: &str, mut done: impl FnMut() -> bool) {
+    for _ in 0..400 {
+        if done() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    unreachable!("timed out waiting for {what}");
+}
+
 #[test]
-fn random_tokens_are_never_kept_and_spend_only_the_shared_lookup_budget() {
+fn unsigned_tokens_are_refused_before_they_spend_any_budget() {
+    let w = World::new();
+    let server = w.server_with(10.0, 1.0);
+    for n in 0..20 {
+        let forged = format!("random-{n}.{}", "0".repeat(64));
+        assert_eq!(open(&server, &forged, &w.target()).err(), Some(401));
+    }
+    assert!(
+        open(&server, &w.token, &w.target()).is_ok(),
+        "the one lookup is still there for a signed token"
+    );
+    server.drain(Duration::from_secs(5));
+}
+
+#[test]
+fn signed_unknown_tokens_are_never_kept_and_spend_only_the_shared_lookup_budget() {
     let w = World::new();
     let server = w.server_with(10.0, 4.0);
     assert!(
-        open(&server, TOKEN, &w.target()).is_ok(),
+        open(&server, &w.token, &w.target()).is_ok(),
         "the first lookup"
     );
     let refused: Vec<Option<u16>> = (0..20)
-        .map(|n| open(&server, &format!("random-{n}"), &w.target()).err())
+        .map(|n| open(&server, &signed(&format!("id-{n}")), &w.target()).err())
         .collect();
     let mut want = vec![Some(401); 3];
     want.resize(20, Some(429));
     assert_eq!(refused, want, "the rest of the lookup budget, then 429");
     assert_eq!(server.tracked(), 1, "only the confirmed token is kept");
     assert!(
-        open(&server, TOKEN, &w.target()).is_ok(),
+        open(&server, &w.token, &w.target()).is_ok(),
         "a confirmed token draws on its own bucket"
     );
     server.drain(Duration::from_secs(5));
+}
+
+#[test]
+fn a_token_holds_at_most_its_cap_of_open_tunnels() {
+    let w = World::new();
+    let server = w.server_full(10.0, 10.0, 2);
+    let first = open(&server, &w.token, &w.target()).unwrap();
+    let second = open(&server, &w.token, &w.target()).unwrap();
+    assert_eq!(open(&server, &w.token, &w.target()).err(), Some(429));
+    drop((first, second));
+    eventually("a freed tunnel", || {
+        open(&server, &w.token, &w.target()).is_ok()
+    });
+    server.drain(Duration::from_secs(5));
+}
+
+#[test]
+fn tending_stops_the_proxy_of_a_closed_box_and_removes_its_ca() {
+    let w = World::new();
+    let server = w.server(10.0);
+    drop(open(&server, &w.token, &w.target()).unwrap());
+    assert_eq!(server.serving(), 1);
+    let ca_dir = ca::ca_dir(&w.dir.path().join("egress"), w.id);
+    assert!(ca_dir.exists());
+    w.close_box();
+    eventually("the proxy to stop and its CA key to go", || {
+        server.serving() == 0 && !ca_dir.exists()
+    });
+    server.drain(Duration::from_secs(5));
+}
+
+#[test]
+fn only_a_closed_or_missing_box_counts_as_closed() {
+    let view = |open| {
+        Ok(Some(BoxView {
+            open,
+            handle: None,
+            asleep: false,
+        }))
+    };
+    assert!(closed(&Ok(None)));
+    assert!(closed(&view(false)));
+    assert!(!closed(&view(true)));
+    for e in [
+        LedgerError::Store("disk".to_owned()),
+        LedgerError::Refused("no".to_owned()),
+        LedgerError::Unavailable("gone".to_owned()),
+    ] {
+        assert!(!closed(&Err(e)), "a failed read keeps the Box served");
+    }
+}
+
+#[test]
+fn a_changed_spec_rebuilds_the_proxy() {
+    let w = World::new();
+    let server = w.server(10.0);
+    assert_eq!(
+        w.get(open(&server, &w.token, &w.target()).unwrap()),
+        "HTTP/1.1 200 OK"
+    );
+    let mut spec = w.store.proxy_spec(w.id).unwrap().unwrap();
+    for r in &mut spec.rules {
+        r.inject = ResolvedInject::Header {
+            header: "authorization".to_owned(),
+            form: "Token {secret}".to_owned(),
+        };
+    }
+    w.store.set_proxy_spec(w.id, &spec).unwrap();
+    eventually("the new spec's credential form", || {
+        let tunnel = open(&server, &w.token, &w.target()).unwrap();
+        drop(w.get(tunnel));
+        w.up.seen()
+            .last()
+            .and_then(|s| s.authorization.clone())
+            .as_deref()
+            == Some("Token test-token-1")
+    });
+    server.drain(Duration::from_secs(5));
+}
+
+#[test]
+fn a_503_names_no_detail_and_the_log_does() {
+    let mut w = World::new();
+    let server = w.server(10.0);
+    drop(w.ledger.take());
+    let mut raw = TcpStream::connect(server.addr()).unwrap();
+    write!(
+        raw,
+        "GET {PATH} HTTP/1.1\r\nHost: x\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\
+         Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
+         Authorization: Bearer {}\r\n{TARGET}: {}\r\n\r\n",
+        w.token,
+        w.target()
+    )
+    .unwrap();
+    let mut reply = String::new();
+    raw.read_to_string(&mut reply).unwrap();
+    assert!(reply.starts_with("HTTP/1.1 503"), "{reply}");
+    assert!(
+        reply.ends_with("\r\n\r\ntemporarily unavailable"),
+        "{reply}"
+    );
+    let log = String::from_utf8(w.log.lock().unwrap().clone()).unwrap();
+    assert!(log.contains("the controller is unavailable"), "{log}");
+    server.drain(Duration::from_secs(5));
+}
+
+#[test]
+fn only_a_plain_host_or_bracketed_v6_with_a_port_is_a_target() {
+    for ok in ["h:443", "localhost:8443", "[::1]:443", "1.2.3.4:1"] {
+        assert!(authority_ok(ok), "{ok}");
+    }
+    for bad in [
+        "u@h:443", "a:b:443", "h:443/x", "h:99999", "h", ":443", "[::1:443", "[zz]:443",
+    ] {
+        assert!(!authority_ok(bad), "{bad}");
+    }
 }

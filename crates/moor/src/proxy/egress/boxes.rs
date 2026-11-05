@@ -1,50 +1,48 @@
 //! Each token's Box, and the proxy this replica runs for each Box it serves.
 //!
 //! A token is looked up on the ledger on every new tunnel, so a Box that closed is refused at
-//! once. Only tokens the ledger confirmed are kept, each with its tunnel bucket. While the controller cannot be reached, the last answer for the token is used, as a
-//! Box's own Proxy uses its last answers.
+//! once. Only tokens the ledger confirmed are kept, each with its tunnel bucket and count. While
+//! the controller cannot be reached, the last answer for a token is used, as a Box's own Proxy
+//! uses its last answers.
 
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::fmt::Arguments;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use moor_core::seam::clock::Clock;
-use moor_core::{BoxId, Secret};
+use moor_core::seam::proxy_host::ProxySpec;
+use moor_core::BoxId;
 use zeroize::Zeroizing;
 
 use super::limit::{Bucket, Rate};
+use super::served::{lock, Served, Tunnel};
 use super::Config;
-use crate::proxy::ledger::{BoxLedger, EgressLedger, LedgerError};
+use crate::proxy::ledger::{BoxLedger, BoxView, EgressLedger, LedgerError};
+use crate::proxy::nono::ca;
 use crate::proxy::nono::capture::UserSecretsFn;
-use crate::proxy::supervisor::{engine, Engine, Parts};
+use crate::proxy::supervisor::{engine, Parts};
+use crate::proxy::{token, Sink};
 
-/// Where a tunnel for a Box goes.
+/// Where a tunnel for a Box goes; holding it keeps the proxy and counts the tunnel.
 pub(super) struct Route {
-    /// The Box's nono.
-    pub(super) addr: SocketAddr,
-    /// The token that nono checks.
-    pub(super) internal: Secret,
+    /// The Box's proxy.
+    pub(super) served: Arc<Served>,
+    /// The token's count of open tunnels.
+    _tunnel: Tunnel,
 }
 
 /// Why a token gets no route.
 pub(super) enum Refused {
     /// The token is unknown or its Box closed.
     Unknown,
-    /// The token, or the shared lookup budget for unconfirmed tokens, is spent.
+    /// The token's rate or tunnel count, or the shared lookup budget, is spent.
     Limited,
     /// The controller cannot be reached and the token was never seen, or the Box's proxy could
-    /// not start.
+    /// not start; the reason is for the log only.
     Unavailable(String),
-}
-
-/// A Box this replica serves.
-struct Served {
-    /// The Box's store calls, under the egress key.
-    ledger: Arc<BoxLedger>,
-    /// Its proxy.
-    engine: Engine,
 }
 
 /// A token the ledger confirmed.
@@ -53,7 +51,12 @@ struct Known {
     box_id: BoxId,
     /// Its tunnel bucket.
     bucket: Bucket,
+    /// Its open tunnels.
+    open: Arc<AtomicUsize>,
 }
+
+/// The proxy of one Box, replaced when its spec changes.
+type Slot = Mutex<Option<Arc<Served>>>;
 
 /// Every Box this replica serves.
 pub(super) struct Boxes {
@@ -61,7 +64,7 @@ pub(super) struct Boxes {
     lookup: EgressLedger,
     /// The ledger socket each Box's calls go to.
     socket: PathBuf,
-    /// The egress key.
+    /// The egress key, which also signs tokens.
     key: Zeroizing<String>,
     /// Where each Box's CA and log go.
     work_dir: PathBuf,
@@ -69,18 +72,22 @@ pub(super) struct Boxes {
     upstream_ca: Option<PathBuf>,
     /// Loopback addresses the egress guard lets through.
     guard_exempt: Vec<SocketAddr>,
-    /// Stamps the request logs.
+    /// Stamps the request logs and fills the buckets.
     clock: Arc<dyn Clock>,
     /// Each confirmed token's rate.
     token_rate: Rate,
+    /// Most tunnels a token may hold open at once.
+    tunnels: usize,
     /// The rate of lookups for tokens not yet confirmed, shared by all of them.
     lookup_rate: Rate,
     /// The shared lookup bucket.
     lookups: Mutex<Bucket>,
-    /// Each confirmed token hash, with the last Box it was found to belong to.
+    /// Each confirmed token hash.
     known: Mutex<HashMap<String, Known>>,
-    /// The proxy of each Box served.
-    served: Mutex<HashMap<BoxId, Served>>,
+    /// Each Box's slot; the map lock is never held across a ledger call or a proxy start.
+    served: Mutex<HashMap<BoxId, Arc<Slot>>>,
+    /// Where failures are logged.
+    log: Sink,
 }
 
 impl Boxes {
@@ -94,29 +101,44 @@ impl Boxes {
             upstream_ca: cfg.upstream_ca,
             guard_exempt: cfg.guard_exempt,
             token_rate: cfg.rate,
+            tunnels: cfg.tunnels,
             lookup_rate: cfg.lookups,
             lookups: Mutex::new(Bucket::new(cfg.lookups.burst, cfg.clock.instant())),
             clock: cfg.clock,
             known: Mutex::default(),
             served: Mutex::default(),
+            log: cfg.log,
         }
+    }
+
+    /// Whether `token` was signed with this replica's egress key.
+    pub(super) fn signed(&self, token: &[u8]) -> bool {
+        token::verify(self.key.as_bytes(), token)
     }
 
     /// The route for the Box whose token hashes to `token_hash`, starting its proxy on first use.
     pub(super) fn admit(&self, token_hash: &str) -> Result<Route, Refused> {
         self.spend(token_hash)?;
         let box_id = self.owner(token_hash)?;
-        let mut served = lock(&self.served);
-        let s = match served.entry(box_id) {
-            Entry::Occupied(found) => found.into_mut(),
-            Entry::Vacant(free) => free.insert(self.start(box_id).map_err(Refused::Unavailable)?),
+        let open = lock(&self.known)
+            .get(token_hash)
+            .map(|k| Arc::clone(&k.open))
+            .ok_or(Refused::Unknown)?;
+        let tunnel = Tunnel::claim(&open, self.tunnels).ok_or(Refused::Limited)?;
+        let slot = Arc::clone(lock(&self.served).entry(box_id).or_default());
+        let mut current = lock(&slot);
+        let served = if let Some(served) = current.as_ref() {
+            Arc::clone(served)
+        } else {
+            let started = Arc::new(self.start(box_id, None).map_err(Refused::Unavailable)?);
+            *current = Some(Arc::clone(&started));
+            started
         };
-        let route = Route {
-            addr: s.engine.addr(),
-            internal: Secret::new(s.engine.internal().expose().to_vec()),
-        };
-        drop(served);
-        Ok(route)
+        drop(current);
+        Ok(Route {
+            served,
+            _tunnel: tunnel,
+        })
     }
 
     /// Takes one tunnel from the bucket of `token_hash`, or from the shared lookup bucket when the
@@ -146,6 +168,7 @@ impl Boxes {
                     .or_insert_with(|| Known {
                         box_id,
                         bucket: Bucket::new(first, now),
+                        open: Arc::default(),
                     })
                     .box_id = box_id;
                 Ok(box_id)
@@ -162,17 +185,20 @@ impl Boxes {
         }
     }
 
-    /// Starts the proxy of `box_id` from the spec and CA the controller keeps.
-    fn start(&self, box_id: BoxId) -> Result<Served, String> {
+    /// Starts the proxy of `box_id` from `spec`, or from the spec the controller keeps.
+    fn start(&self, box_id: BoxId, spec: Option<ProxySpec>) -> Result<Served, String> {
         let ledger = Arc::new(BoxLedger::egress(
             self.socket.clone(),
             box_id,
             self.key.to_string(),
         ));
-        let spec = ledger
-            .spec()
-            .map_err(|e| format!("cannot read the proxy spec: {e}"))?
-            .ok_or_else(|| format!("no proxy spec for Box {}", box_id.get()))?;
+        let spec = match spec {
+            Some(spec) => spec,
+            None => ledger
+                .spec()
+                .map_err(|e| format!("cannot read the proxy spec: {e}"))?
+                .ok_or_else(|| format!("no proxy spec for Box {}", box_id.get()))?,
+        };
         let reads = Arc::clone(&ledger);
         let secrets: UserSecretsFn =
             Arc::new(move |name| reads.secret(name).map_err(|e| e.to_string()));
@@ -186,42 +212,79 @@ impl Boxes {
             guard_exempt: &self.guard_exempt,
         };
         let engine = engine(&parts, box_id, &spec)?;
-        Ok(Served { ledger, engine })
+        Ok(Served::new(ledger, spec, engine))
     }
 
-    /// Delivers each Box's audit and stops the proxy of each Box that closed.
+    /// Delivers each Box's audit, stops the proxy of each Box that closed and rebuilds the proxy
+    /// of each Box whose spec changed.
     pub(super) fn tend(&self) {
-        let mut served = lock(&self.served);
-        let closed: Vec<BoxId> = served
+        let slots: Vec<(BoxId, Arc<Slot>)> = lock(&self.served)
             .iter()
-            .filter(|(_, s)| {
-                s.engine.drain(&s.ledger);
-                s.ledger.flush();
-                match s.ledger.view() {
-                    Ok(view) => !view.is_some_and(|v| v.open),
-                    Err(LedgerError::Unavailable(_)) => false,
-                    Err(_) => true,
-                }
-            })
-            .map(|(id, _)| *id)
+            .map(|(id, slot)| (*id, Arc::clone(slot)))
             .collect();
-        let gone: Vec<Served> = closed.iter().filter_map(|id| served.remove(id)).collect();
-        drop(served);
-        lock(&self.known).retain(|_, k| !closed.contains(&k.box_id));
-        for s in gone {
-            s.engine.stop();
+        for (box_id, slot) in slots {
+            let Some(served) = lock(&slot).clone() else {
+                continue;
+            };
+            served.drain();
+            let view = served.ledger.view();
+            if let Err(e) = &view {
+                self.say(format_args!("cannot read Box {}: {e}", box_id.get()));
+            }
+            if closed(&view) {
+                self.close(box_id, &slot, &served);
+            } else if view.is_ok() {
+                self.follow_spec(box_id, &slot, &served);
+            }
+        }
+    }
+
+    /// Stops the proxy of a Box that closed, forgets its tokens and removes its CA.
+    fn close(&self, box_id: BoxId, slot: &Arc<Slot>, served: &Served) {
+        lock(&self.served).remove(&box_id);
+        lock(slot).take();
+        served.stop();
+        lock(&self.known).retain(|_, k| k.box_id != box_id);
+        if let Err(e) = ca::remove(&self.work_dir, box_id) {
+            self.say(format_args!("cannot remove Box {}'s CA: {e}", box_id.get()));
+        }
+    }
+
+    /// Rebuilds the proxy of `box_id` when the controller holds another spec for it.
+    fn follow_spec(&self, box_id: BoxId, slot: &Slot, served: &Served) {
+        match served.ledger.spec() {
+            Ok(Some(spec)) if spec != served.spec => match self.start(box_id, Some(spec)) {
+                Ok(fresh) => *lock(slot) = Some(Arc::new(fresh)),
+                Err(e) => self.say(format_args!("cannot rebuild Box {}: {e}", box_id.get())),
+            },
+            Ok(_) => {}
+            Err(e) => self.say(format_args!("cannot read Box {}'s spec: {e}", box_id.get())),
         }
     }
 
     /// Delivers what audit is left and stops every proxy.
     pub(super) fn stop(&self) {
-        let all: Vec<Served> = lock(&self.served).drain().map(|(_, s)| s).collect();
-        for s in all {
-            s.engine.drain(&s.ledger);
-            s.ledger.flush();
-            s.engine.stop();
+        let slots: Vec<Arc<Slot>> = lock(&self.served).drain().map(|(_, s)| s).collect();
+        for slot in slots {
+            let taken = lock(&slot).take();
+            if let Some(served) = taken {
+                served.stop();
+            }
         }
     }
+
+    /// Writes one `moor egress: ` line to the log.
+    pub(super) fn say(&self, args: Arguments<'_>) {
+        drop(writeln!(
+            self.log.lock().unwrap_or_else(PoisonError::into_inner),
+            "moor egress: {args}"
+        ));
+    }
+}
+
+/// Whether `view` says the Box closed; a failed read never does.
+pub(super) const fn closed(view: &Result<Option<BoxView>, LedgerError>) -> bool {
+    matches!(view, Ok(None)) || matches!(view, Ok(Some(v)) if !v.open)
 }
 
 #[cfg(test)]
@@ -230,9 +293,12 @@ impl Boxes {
     pub(super) fn tracked(&self) -> usize {
         lock(&self.known).len()
     }
-}
 
-/// `m`, locked, whatever a panicking holder left.
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(PoisonError::into_inner)
+    /// How many Boxes have a running proxy.
+    pub(super) fn serving(&self) -> usize {
+        lock(&self.served)
+            .values()
+            .filter(|slot| lock(slot).as_ref().is_some_and(|s| s.running()))
+            .count()
+    }
 }

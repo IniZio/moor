@@ -41,13 +41,14 @@
 mod boxes;
 mod limit;
 pub(crate) mod run;
+mod served;
 #[cfg(test)]
 mod tests;
 mod wire;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -56,6 +57,7 @@ use tokio::net::TcpListener;
 use tokio::sync::Notify;
 use zeroize::Zeroizing;
 
+use super::Sink;
 use boxes::Boxes;
 pub(crate) use limit::Rate;
 
@@ -78,6 +80,12 @@ pub(crate) struct Config {
     pub(crate) rate: Rate,
     /// The lookup rate shared by tokens not yet confirmed.
     pub(crate) lookups: Rate,
+    /// Most tunnels one token may hold open at once.
+    pub(crate) tunnels: usize,
+    /// Pause between audit deliveries, closed-Box sweeps and spec checks.
+    pub(crate) tend: Duration,
+    /// Where failures are logged; no failure detail ever reaches a client.
+    pub(crate) log: Sink,
     /// Extra upstream root PEM the Box proxies trust; `None` in production.
     pub(crate) upstream_ca: Option<PathBuf>,
     /// Loopback addresses the egress guard lets through; empty in production.
@@ -104,6 +112,10 @@ pub(crate) struct Server {
     stop: Arc<Notify>,
     /// Shared with connections.
     shared: Arc<Shared>,
+    /// Set to stop the tending thread.
+    tending: Arc<AtomicBool>,
+    /// The tending thread.
+    tender: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Server {
@@ -120,17 +132,31 @@ impl Server {
         let addr = listener
             .local_addr()
             .map_err(|e| format!("cannot read the listen address: {e}"))?;
+        let (clock, every) = (Arc::clone(&cfg.clock), cfg.tend);
         let shared = Arc::new(Shared {
             boxes: Boxes::new(cfg),
             open: AtomicUsize::new(0),
         });
         let stop = Arc::new(Notify::new());
         runtime.spawn(accept(listener, Arc::clone(&shared), Arc::clone(&stop)));
+        let tending = Arc::new(AtomicBool::new(true));
+        let (on, boxes) = (Arc::clone(&tending), Arc::clone(&shared));
+        let thread = std::thread::Builder::new()
+            .name("moor-egress-tend".to_owned())
+            .spawn(move || {
+                while on.load(Ordering::Acquire) {
+                    clock.sleep(every);
+                    boxes.boxes.tend();
+                }
+            })
+            .map_err(|e| format!("cannot start tending: {e}"))?;
         Ok(Self {
             runtime,
             addr,
             stop,
             shared,
+            tending,
+            tender: Some(thread),
         })
     }
 
@@ -145,14 +171,15 @@ impl Server {
         self.shared.boxes.tracked()
     }
 
-    /// Delivers each Box's audit and drops the proxies of Boxes that closed.
-    pub(crate) fn tend(&self) {
-        self.shared.boxes.tend();
+    /// How many Boxes have a running proxy.
+    #[cfg(test)]
+    pub(crate) fn serving(&self) -> usize {
+        self.shared.boxes.serving()
     }
 
-    /// Stops listening, waits up to `grace` for open tunnels to finish, then stops the rest;
-    /// returns how many were still open.
-    pub(crate) fn drain(self, grace: Duration) -> usize {
+    /// Stops listening, waits up to `grace` for open tunnels to finish while tending goes on,
+    /// then stops the rest; returns how many were still open.
+    pub(crate) fn drain(mut self, grace: Duration) -> usize {
         self.stop.notify_one();
         let shared = Arc::clone(&self.shared);
         let left = self.runtime.block_on(async move {
@@ -164,6 +191,10 @@ impl Server {
             drop(waited.await);
             shared.open.load(Ordering::Acquire)
         });
+        self.tending.store(false, Ordering::Release);
+        if let Some(tender) = self.tender.take() {
+            drop(tender.join());
+        }
         self.runtime.shutdown_background();
         self.shared.boxes.stop();
         left

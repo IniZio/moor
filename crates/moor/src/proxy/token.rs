@@ -32,10 +32,6 @@ pub(crate) fn mint(store: &Store, key: &[u8], box_id: BoxId) -> Result<Option<Se
 }
 
 /// Whether `token` carries a MAC that `key` made; compared in constant time.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the shared egress Proxy checks tokens with it")
-)]
 pub(crate) fn verify(key: &[u8], token: &[u8]) -> bool {
     let Some(dot) = token.iter().rposition(|b| *b == b'.') else {
         return false;
