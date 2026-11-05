@@ -30,7 +30,6 @@ pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<StartView, CommandError> {
             ),
         ));
     }
-    // A retry also mends a Box that lost its egress forwarder: the next exec delivers it again.
     store.forget_egress_delivery(row.id)?;
     let Some(provisioned) = reprovision(cx, store, &row, "retry")? else {
         return Err(CommandError::new(
