@@ -197,7 +197,7 @@ fn second_instance_names_the_first() {
     let sandbox = Sandbox::new();
     let first = Controller::start(&sandbox);
     let out = sandbox.serve().output().unwrap();
-    assert_eq!(out.status.code(), Some(0));
+    assert_eq!(out.status.code(), Some(1));
     let stderr = String::from_utf8(out.stderr).unwrap();
     assert!(stderr.contains(&first.child.id().to_string()), "{stderr}");
     assert!(
@@ -206,9 +206,9 @@ fn second_instance_names_the_first() {
     );
 }
 
-/// Exit code of `child`, or `None` after killing it when it runs past five seconds.
-fn exit_within_five_seconds(child: &mut Child) -> Option<i32> {
-    for _ in 0..500 {
+/// Exit code of `child`, or `None` after killing it when it runs past `limit`.
+fn exit_within(child: &mut Child, limit: Duration) -> Option<i32> {
+    for _ in 0..limit.as_millis() / 10 {
         if let Some(status) = child.try_wait().unwrap() {
             return status.code();
         }
@@ -243,7 +243,7 @@ fn second_controller_on_another_socket_refuses_to_start() {
         .spawn()
         .map(ChildGuard::new)
         .unwrap();
-    let code = exit_within_five_seconds(&mut second);
+    let code = exit_within(&mut second, Duration::from_secs(15));
     let mut stderr = String::new();
     std::io::Read::read_to_string(&mut second.stderr.take().unwrap(), &mut stderr).unwrap();
     assert_eq!(
@@ -379,7 +379,10 @@ fn sigterm_ends_a_watch_with_restarting_and_exits_zero() {
         }
     };
     assert_eq!(field(&last, "kind"), "restarting", "{last}");
-    assert_eq!(exit_within_five_seconds(&mut controller.child), Some(0));
+    assert_eq!(
+        exit_within(&mut controller.child, Duration::from_secs(5)),
+        Some(0)
+    );
     let ended = idle.next_frame();
     assert_eq!(field(&ended, "kind"), "restarting", "{ended}");
     let mut rest = String::new();
@@ -429,7 +432,7 @@ fn serve_with_user_config(yaml: &str) -> (ChildGuard, Sandbox) {
 #[test]
 fn serve_with_a_removed_user_config_key_exits_naming_it() {
     let (mut child, sandbox) = serve_with_user_config("box: {provider: external}\n");
-    let code = exit_within_five_seconds(&mut child);
+    let code = exit_within(&mut child, Duration::from_secs(5));
     let stderr = std::io::read_to_string(child.stderr.take().unwrap()).unwrap();
     assert!(code.is_some_and(|c| c != 0), "{code:?} {stderr}");
     assert!(stderr.contains("box.provider"), "{stderr}");

@@ -103,6 +103,10 @@ not match the config:
   socket path is `socket` in the config, else `<state dir>/controller.sock`.
 - A socket file is open to the group or to other users. Set `SocketMode=0600`.
 
+It also exits 1 when another controller holds its lock. A start waits up to 5 s
+for the lock first, since a store migration holds it briefly. The message names
+the holder's pid and socket.
+
 The machine runner's socket, `<state dir>/runner/runner.sock`, may be passed
 as `runner`. When it is not passed, the controller binds it itself.
 
