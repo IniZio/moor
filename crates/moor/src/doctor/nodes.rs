@@ -49,6 +49,7 @@ pub(super) fn read(i: &Inputs<'_>) -> Read {
             max_boxes: n.max_boxes.map(|m| m.get() as usize),
             mem_free_mib: None,
             disk_free_mib: None,
+            disk_low: false,
             mem_psi_centi: None,
             mem_report_age_secs: None,
             pressure_since: None,

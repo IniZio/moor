@@ -1,5 +1,7 @@
 //! The node a Box asked for or holds, and the labels it requires of one.
 
+use std::collections::HashSet;
+
 use moor_core::decide::capacity::counts;
 use moor_core::decide::schedule::BoxSpec;
 use moor_core::domain::box_state::BoxLifecycle;
@@ -60,6 +62,37 @@ impl Store {
             |r| Ok(BoxId::new(r.get(0)?)),
         )?;
         Ok(rows.collect::<Result<_, crate::store::db::Error>>()?)
+    }
+
+    /// One Box per owner among those on `node` whose disk is still there, Ready or asleep. An
+    /// awake Box is preferred, since its owner's thread or agent is the one in use.
+    pub(crate) fn one_live_per_owner_on(&self, node: &NodeName) -> Result<Vec<BoxId>, StoreError> {
+        let conn = self.reader()?;
+        let rows = conn.rows(
+            Query::select()
+                .columns([Boxes::Id, Boxes::User])
+                .from(Boxes::Table)
+                .and_where(Expr::col(Boxes::Node).eq(node.as_str()))
+                .and_where(
+                    Expr::col(Boxes::State)
+                        .is_in([BoxLifecycle::Ready.as_str(), BoxLifecycle::Asleep.as_str()]),
+                )
+                .order_by_expr(
+                    Expr::col(Boxes::State).eq(BoxLifecycle::Ready.as_str()),
+                    Order::Desc,
+                )
+                .order_by(Boxes::Id, Order::Asc),
+            |r| Ok::<_, StoreError>((BoxId::new(r.get(0)?), r.get::<_, Option<i64>>(1)?)),
+        )?;
+        let mut owners = HashSet::new();
+        let mut picked = Vec::new();
+        for row in rows {
+            let (id, owner) = row?;
+            if owners.insert(owner) {
+                picked.push(id);
+            }
+        }
+        Ok(picked)
     }
 
     /// What Box `id` asks of a node: the node it named or holds, and its labels.

@@ -92,6 +92,31 @@ are intact, though its wall clock jumps.
 
 Every Box still finishes. Pressure only decides when it runs.
 
+## Disk
+
+A personal node's agent also reports the free and total space of the disk that
+holds the Boxes' data. The node keeps the larger of 10% of that disk and 20 GiB
+free. Below it, a start waits with `low disk on NODE: X GiB free, needs Y GiB`.
+A node whose agent reports no disk figures admits without a disk check.
+
+Boxes' disks grow as they fill, so a node can run low while Boxes run. When a
+report puts free disk below the floor, the node is low. moor records one
+`node_disk_low` event for each owner with a Box on the node, Ready or asleep,
+because an asleep Box's disk still takes space. An awake Box carries the event
+when the owner has one. The event has the node's name, `free_mib` and
+`total_mib`.
+
+The node is no longer low once free disk is back at the floor plus 5% of the
+disk, and each owner then gets `node_disk_recovered`. Reports in between add
+nothing, so a node near the floor does not repeat the alert. A report older
+than 60 seconds, or one without disk figures, changes nothing.
+
+`moor node ls` marks a low node with `(low)` after its free disk. With no Box on
+the node, that mark is the only signal, because the events belong to Boxes. A
+shared node has no agent report, so moor never judges its disk. moor suspends
+and deletes nothing for a low disk. See [notify](notify.md) and
+[listen](listen.md) for how an owner hears.
+
 ## Which node a start gets
 
 Without `--node`, the scheduler tries your personal nodes first, in the order

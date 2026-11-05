@@ -288,6 +288,19 @@ fn a_stall_prints_how_long_and_what_the_agent_was_doing() {
 }
 
 #[test]
+fn a_low_node_disk_prints_the_node_and_its_free_space() {
+    let world = world(&["repo/a"]);
+    let listen = world.listen();
+    world.wait_live(1);
+    let payload = json!({"node": "hv", "free_mib": 15_360, "total_mib": 102_400});
+    world.happen_with("repo/a", 1, "node_disk_low", payload);
+    assert_eq!(
+        listen.line(),
+        "moor: box repo/a node_disk_low: hv has 15 GiB free of 100 GiB"
+    );
+}
+
+#[test]
 fn a_resume_prints_how_long_the_stall_lasted() {
     let world = world(&["repo/a"]);
     let listen = world.listen();

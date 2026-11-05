@@ -29,12 +29,14 @@ use crate::{rewrite, Person};
 pub(crate) const PREFIX: &str = "moor://box/";
 
 /// Kinds after which a Box's resource reads differently.
-const UPDATED: [&str; 15] = [
+const UPDATED: [&str; 17] = [
     "idled",
     "busy",
     "needs_input",
     "agent_stalled",
     "agent_resumed",
+    "node_disk_low",
+    "node_disk_recovered",
     "setup_failed",
     "session_failed",
     "launch_timed_out",

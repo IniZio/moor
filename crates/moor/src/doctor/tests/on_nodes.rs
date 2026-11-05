@@ -18,6 +18,7 @@ fn node(name: &str) -> NodeView {
         max_boxes: Some(4),
         mem_free_mib: Some(16 * 1024),
         disk_free_mib: None,
+        disk_low: false,
         mem_psi_centi: Some(0),
         mem_report_age_secs: Some(5),
         pressure_since: None,

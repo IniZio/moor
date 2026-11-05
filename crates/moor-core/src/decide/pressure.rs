@@ -29,6 +29,9 @@ pub struct Reading {
     pub psi_some_centi: Option<u32>,
     /// PSI `full avg10`, in hundredths.
     pub psi_full_centi: Option<u32>,
+    /// Whether the node's disk counted as low once this report was judged.
+    #[serde(default)]
+    pub disk_low: bool,
 }
 
 /// A Box on the node with when it started, unix seconds.

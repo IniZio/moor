@@ -230,6 +230,8 @@ fn assert_watch(fake: &Mutex<Fake>) {
         "idled",
         "agent_stalled",
         "agent_resumed",
+        "node_disk_low",
+        "node_disk_recovered",
         "setup_failed",
         "relaunch_capped",
         "started",

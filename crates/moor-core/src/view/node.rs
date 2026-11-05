@@ -55,6 +55,9 @@ pub struct NodeView {
     /// MiB free on its host's disk by its last report, when its host reports disk.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disk_free_mib: Option<u64>,
+    /// Whether its host's free disk is below what it keeps for another Box.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub disk_low: bool,
     /// Its host's memory pressure, PSI `some avg10` in hundredths.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mem_psi_centi: Option<u32>,

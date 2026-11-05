@@ -47,6 +47,7 @@ pub(crate) fn set_links(cx: &Cx, links: &[MachineLink]) -> Result<MachineLinksVa
                 available_mib: m.available_mib,
                 psi_some_centi: m.psi_centi,
                 psi_full_centi: m.psi_full_centi,
+                disk_low: false,
             };
             if let Err(e) = on_report(cx, store, &node, reading) {
                 cx.warn(Warning {
@@ -80,6 +81,7 @@ fn view(
     node: &Node,
     now: i64,
     pressure_since: Option<i64>,
+    disk_low: bool,
     box_memory_mib: Option<u64>,
 ) -> NodeView {
     let (scope, owner) = match &node.scope {
@@ -102,6 +104,7 @@ fn view(
         max_boxes: node.max_boxes,
         mem_free_mib: node.memory.map(|m| m.free_mib()),
         disk_free_mib: node.memory.and_then(|m| m.disk_free_mib),
+        disk_low,
         mem_psi_centi: node.memory.and_then(|m| m.psi_centi),
         mem_report_age_secs: node.memory.map(|m| now.saturating_sub(m.reported_at)),
         pressure_since,
@@ -127,7 +130,11 @@ pub(crate) fn list(cx: &Cx) -> Result<NodeListValue, CommandError> {
                     Scope::Personal { machine_id, .. } => held.get(&machine_id).copied(),
                     Scope::Shared => None,
                 };
-                view(n, now(cx), since.get(n.name.as_str()).copied(), boxes)
+                let low = cx
+                    .store()
+                    .and_then(|s| Ok(s.pressure(&n.name)?))
+                    .is_ok_and(|p| p.readings.last().is_some_and(|r| r.disk_low));
+                view(n, now(cx), since.get(n.name.as_str()).copied(), low, boxes)
             })
             .collect(),
     })

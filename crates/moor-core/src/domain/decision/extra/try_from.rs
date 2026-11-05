@@ -1,7 +1,7 @@
 //! The stored event a caller may pass again, read back as an [`ExtraEvent`].
 
 use super::ExtraEvent;
-use crate::domain::event::{Event, ProfileEvent, StallEvent, TimingEvent};
+use crate::domain::event::{Event, NodeDiskEvent, ProfileEvent, StallEvent, TimingEvent};
 
 impl TryFrom<Event> for ExtraEvent {
     type Error = Event;
@@ -134,6 +134,24 @@ impl TryFrom<Event> for ExtraEvent {
             Event::Stall(StallEvent::AgentResumed { quiet_secs }) => {
                 Ok(Self::AgentResumed { quiet_secs })
             }
+            Event::NodeDisk(NodeDiskEvent::NodeDiskLow {
+                node,
+                free_mib,
+                total_mib,
+            }) => Ok(Self::NodeDiskLow {
+                node,
+                free_mib,
+                total_mib,
+            }),
+            Event::NodeDisk(NodeDiskEvent::NodeDiskRecovered {
+                node,
+                free_mib,
+                total_mib,
+            }) => Ok(Self::NodeDiskRecovered {
+                node,
+                free_mib,
+                total_mib,
+            }),
             Event::AgentPromptCheckFailed { pane, error } => {
                 Ok(Self::AgentPromptCheckFailed { pane, error })
             }

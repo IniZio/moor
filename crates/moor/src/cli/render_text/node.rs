@@ -39,10 +39,15 @@ fn load_text(n: &Value) -> Option<String> {
         }
         _ => String::new(),
     };
+    let low = if n.get("disk_low").and_then(Value::as_bool) == Some(true) {
+        " (low)"
+    } else {
+        ""
+    };
     let disk = n
         .get("disk_free_mib")
         .and_then(Value::as_u64)
-        .map_or_else(String::new, |d| format!("  {} disk free", gib(d)));
+        .map_or_else(String::new, |d| format!("  {} disk free{low}", gib(d)));
     let held = n
         .get("box_memory_mib")
         .and_then(Value::as_u64)

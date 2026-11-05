@@ -545,6 +545,7 @@ fn starting_an_asleep_box_without_room_queues_it_with_the_reason_and_keeps_the_p
     assert_eq!(row.prompt.as_deref(), Some("carry on"));
 }
 
+mod disk_alert;
 mod pressure;
 
 #[test]

@@ -2,7 +2,9 @@
 
 use super::Event;
 
+mod node_disk;
 mod stall;
+pub use node_disk::NodeDiskEvent;
 pub use stall::StallEvent;
 
 /// The event kinds the event tests pin. Frozen.
@@ -30,7 +32,7 @@ pub const ASSERTED_KINDS: [&str; 20] = [
 ];
 
 /// Every event kind name an [`Event`] can carry.
-pub const EVENT_KINDS: [&str; 77] = [
+pub const EVENT_KINDS: [&str; 79] = [
     "started",
     "rejected",
     "pending",
@@ -87,6 +89,8 @@ pub const EVENT_KINDS: [&str; 77] = [
     "agent_unreachable",
     "agent_stalled",
     "agent_resumed",
+    "node_disk_low",
+    "node_disk_recovered",
     "turn_done",
     "artifact_published",
     "machine_attached",
@@ -175,6 +179,7 @@ impl Event {
             Self::Machine(m) => m.kind(),
             Self::Profile(p) => p.kind(),
             Self::Stall(s) => s.kind(),
+            Self::NodeDisk(d) => d.kind(),
             Self::Timing(t) => t.kind(),
         }
     }
