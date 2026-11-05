@@ -397,11 +397,18 @@ only fetch.
 
 The Box can also read, through the API, any GitHub repo that token can read.
 The `github-api` rule adds the token to `GET /repos/{any_repo}`,
-`GET /repos/{any_repo}/releases` and `GET /repos/{any_repo}/releases/**`. That
-includes private repos, as git fetch does. These reads count against that
-token's rate limit. Any other request on a repo outside the Box leaves without
-the token, including every write. A Box with no repo does not get the
-`github-api` rule, so its API requests reach GitHub directly.
+`GET /repos/{any_repo}/releases`, `GET /repos/{any_repo}/releases/**` and
+`GET /repos/{any_repo}/tags`. That includes private repos, as git fetch does.
+These reads count against that token's rate limit. Any other request on a repo
+outside the Box leaves without the token, including every write. A Box with no
+repo does not get the `github-api` rule, so its API requests reach GitHub
+directly.
+
+For the Box's own repos, the rule also adds the token to
+`GET /repos/{repo}/dependabot/alerts`, `GET /repos/{repo}/dependabot/alerts/*`
+and `GET /repos/{repo}/branches/*/protection/required_status_checks`. The Box
+can read Dependabot alerts and the required checks of a branch. It cannot
+dismiss an alert, because the rule has no write method on those paths.
 
 Only the hosts of these rules go through the Proxy. The Box reaches every
 other host directly. See

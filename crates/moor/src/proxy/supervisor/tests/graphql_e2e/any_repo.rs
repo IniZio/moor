@@ -56,6 +56,8 @@ fn a_get_on_any_repo_gets_the_credential_with_or_without_a_token() {
         "/repos/cli/cli/releases/latest",
         "/repos/cli/cli/releases/tags/v1",
         "/repos/cli/cli/releases/assets/5",
+        "/repos/cli/cli/tags",
+        "/repos/cli/cli/tags?per_page=100",
     ] {
         for authorization in [None, Some(token.as_str())] {
             let seen = send(&rig, "GET", path, authorization);
@@ -81,6 +83,7 @@ fn a_write_on_an_any_repo_path_gets_no_credential() {
             "/repos/cli/cli",
             "/repos/cli/cli/releases",
             "/repos/cli/cli/releases/1",
+            "/repos/cli/cli/tags",
         ] {
             assert_uncredentialed(&rig, method, path);
         }
@@ -97,6 +100,11 @@ fn other_endpoints_and_confusing_paths_get_no_credential() {
         "/repos/cli/cli/actions/secrets",
         "/repos/cli/cli/pulls/1/releases/1",
         "/repos/cli/cli/releases-x/1",
+        "/repos/cli/cli/tags/1",
+        "/repos/cli/cli/tags-x",
+        "/repos/cli/cli/tags/../pulls",
+        "/repos/cli/cli/tags%2F..%2Fpulls",
+        "/repos/cli/cli/dependabot/alerts",
         "/repos/cli",
         "/repos/a/b/../../x",
         "/repos/cli/cli/releases/../pulls",

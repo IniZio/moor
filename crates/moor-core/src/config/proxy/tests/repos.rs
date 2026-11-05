@@ -148,6 +148,7 @@ fn github_api_reads_any_repo_with_get_alone() {
             "GET /repos/*/*",
             "GET /repos/*/*/releases",
             "GET /repos/*/*/releases/**",
+            "GET /repos/*/*/tags",
         ]
     );
 }
