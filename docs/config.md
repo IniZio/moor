@@ -732,6 +732,7 @@ because moor keeps them in the Proxy, not in the Box.
 | `state_dir` | path | the same state directory as the CLI | The state directory. `~` is allowed. |
 | `settle_every_secs` | integer, above 0 | 5 | Seconds between passes that update each open Box's agent state. |
 | `close_setup_failed_after_secs` | integer | 86400 | Seconds a Box may stay `setup_failed` before the settle pass closes it. 0 turns the close off. See [Closing failed Boxes](#closing-failed-boxes). |
+| `workflow_min_interval_secs` | integer, above 0 | 3600 | The shortest gap a [workflow](workflows.md) cron may leave between two firings. Lower it only to try a workflow quickly. |
 | `drain_timeout_secs` | integer | 600 | Seconds a SIGTERM waits for in-flight requests. See [Stopping the controller](#stopping-the-controller). |
 | `runner_state_dir` | path | `<state dir>/machine-runner` | The machine runner's `--state-dir`. The host paths the runner's `box-mirror` and `box-put` name must resolve inside it; the controller refuses any other. `~` is allowed. |
 | `fronts` | map | empty | Fronts that each get their own socket, and that the controller runs when they have a `command`. |

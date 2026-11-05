@@ -101,6 +101,8 @@ For people who use moor:
   a Box.
 - [Use your Boxes over MCP](docs/mcp.md): the tools, scopes and Box
   resources.
+- [Workflows](docs/workflows.md): recurring jobs that start a Box in your repos
+  on a cron.
 - [Slack](docs/slack.md): the Slack front, from both sides.
 - [herdr](docs/herdr.md): see your Boxes as herdr workspaces.
 - [Webhooks](docs/notify.md) and [stdout lines](docs/listen.md): get told
