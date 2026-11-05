@@ -112,6 +112,12 @@ impl Moor {
         wire::prepare_egress(env)
     }
 
+    /// Whether the keepers in `env` hold a tunnel into each Box, which only a local shared
+    /// egress Proxy needs.
+    pub(crate) fn keepers_tunnel(env: &Env) -> bool {
+        wire::keepers_tunnel(env)
+    }
+
     /// Ends every Box's keeper, closing the tunnels and machine forwards this controller holds.
     pub(crate) fn end_keepers() {
         wire::end_keepers();

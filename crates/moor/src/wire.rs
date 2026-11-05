@@ -338,7 +338,7 @@ mod surface_pick;
 
 pub(crate) use egress::prepare_egress;
 use keepers::proxy_host;
-pub(crate) use keepers::{end_keepers, reconcile_proxies};
+pub(crate) use keepers::{end_keepers, keepers_tunnel, reconcile_proxies};
 pub(crate) use ledger::{serve_egress_ledger, serve_ledger};
 
 pub(crate) use surface_pick::surface_kind;
