@@ -23,9 +23,10 @@ const BACKOFF: [Duration; 6] = [
 /// Time allowed to free the Box port from a session left behind by an earlier tunnel.
 const CLEAR_DEADLINE: Duration = Duration::from_secs(45);
 
-/// Shell run in the Box with the port as `$1`: ends each `sshd-session` listening on it, which
-/// an earlier tunnel's ssh can leave holding the port after it was killed.
-const CLEAR_SCRIPT: &str = r#"for pid in $(ss -Htlnp "sport = :$1" 2>/dev/null | grep -o '"sshd-session",pid=[0-9]*' | cut -d= -f2); do kill "$pid" 2>/dev/null; done; exit 0"#;
+/// Shell run in the Box with the port as `$1`: ends each `sshd-session` that holds the loopback
+/// listener on it, which an earlier tunnel's ssh can leave behind after it was killed. It reads
+/// `/proc`, since a Box image need not have `ss`.
+const CLEAR_SCRIPT: &str = r#"p=$(printf ':%04X' "$1"); ino=$(awk -v p="$p" 'substr($2, length($2) - 4) == p && $4 == "0A" {print $10}' /proc/net/tcp 2>/dev/null); [ -n "$ino" ] || exit 0; for f in /proc/[0-9]*/fd/*; do [ "$(readlink "$f" 2>/dev/null)" = "socket:[$ino]" ] || continue; pid=${f#/proc/}; pid=${pid%%/*}; [ "$(cat "/proc/$pid/comm" 2>/dev/null)" = sshd-session ] && kill "$pid" 2>/dev/null; done; exit 0"#;
 
 impl Kept {
     /// Opens the tunnel when it is down and its next try is due; why it is down after.
@@ -50,6 +51,7 @@ impl Kept {
             .reverse_tunnel(&handle, self.box_port, socket)
         {
             Ok(tunnel) => {
+                self.say(format_args!("opened the tunnel into {}", handle.as_str()));
                 inner.tunnel = Some(tunnel);
                 inner.failures = 0;
                 inner.next_open = None;

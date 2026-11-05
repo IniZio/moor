@@ -7,7 +7,7 @@
 
 use std::fs::{self, OpenOptions};
 use std::io::{Read as _, Write as _};
-use std::os::unix::fs::OpenOptionsExt as _;
+use std::os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _};
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt as _;
 use std::path::Path;
@@ -97,7 +97,11 @@ fn ready(socket: &Path) -> bool {
 fn start(env: &Env, state: &Path, socket: &Path) -> Result<(), String> {
     let log_path = state.join(LOG_FILE);
     if let Some(dir) = log_path.parent() {
-        fs::create_dir_all(dir).map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(dir)
+            .map_err(|e| format!("cannot make {}: {e}", dir.display()))?;
     }
     let log = OpenOptions::new()
         .create(true)

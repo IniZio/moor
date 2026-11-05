@@ -55,6 +55,7 @@ pub(super) fn serve_started(
     reconcile_in_background((after, reconcile), &running.env, &drain, sink);
     running.serve_until(wake, &drain, sink);
     fronts.wait();
+    Moor::end_keepers();
     0
 }
 

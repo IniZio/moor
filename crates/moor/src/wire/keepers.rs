@@ -39,6 +39,11 @@ pub(crate) fn reconcile_proxies(env: &Env) -> Vec<String> {
     Vec::new()
 }
 
+/// Ends every Box's keeper in this process.
+pub(crate) fn end_keepers() {
+    KEEPERS.end_all();
+}
+
 /// What each Box's keeper uses, in a controller; `None` without a shared store.
 fn keeper_deps(env: &Env, driver: &Arc<dyn Driver>, clock: &Arc<dyn Clock>) -> Option<Arc<Deps>> {
     let store = env.shared::<Store>()?.clone();
