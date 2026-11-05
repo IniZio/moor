@@ -356,7 +356,7 @@ rule adds to that default.
 | `inject.header` | string | The header that carries the credential. The default is `Authorization`. |
 | `inject.form` | string | The header value. `{secret}` stands for the credential. |
 | `inject.basic_user` | string | The HTTP Basic auth user. moor sends the credential as the password. A rule takes `form` or `basic_user`, not both. |
-| `allow` | list | `*` for any request, or `METHODS /path` entries such as `GET\|POST /repos/{repo}/pulls`. In a path, `*` matches one segment and `**` matches any number. `{repo}` names each of the Box's repos, and `{any_repo}` matches any one `owner/name` for fetches only. |
+| `allow` | list | `*` for any request, or `METHODS /path` entries such as `GET\|POST /repos/{repo}/pulls`. In a path, `*` matches one segment and `**` matches any number. A trailing `/**` needs at least one, so `/x/**` does not match `/x`. `{repo}` names each of the Box's repos, and `{any_repo}` matches any one `owner/name`. moor refuses `{any_repo}` on a `git-receive-pack` path. |
 | `box_env` | map | Environment variables for the Box. Values can use `{repo}`. |
 | `requires_repo` | boolean | If true, moor drops the rule for a Box with no repo. |
 
@@ -394,6 +394,14 @@ It can push only to the Box's own repos. The `github-git` rule allows
 every repo and `POST /{repo}.git/git-receive-pack` for the Box's repos alone.
 A Box with no repo gets git access only when it has a profile, and then it can
 only fetch.
+
+The Box can also read, through the API, any GitHub repo that token can read.
+The `github-api` rule adds the token to `GET /repos/{any_repo}` and
+`GET /repos/{any_repo}/releases/**`. That includes private repos, as git fetch
+does. These reads count against that token's rate limit. Any other request on a
+repo outside the Box leaves without the token, including every write and
+`GET /repos/{any_repo}/releases` itself. A Box with no repo does not get the
+`github-api` rule, so its API requests reach GitHub directly.
 
 Only the hosts of these rules go through the Proxy. The Box reaches every
 other host directly. See

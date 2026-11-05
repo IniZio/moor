@@ -10,10 +10,14 @@ claude:
 github-api:
   hosts: [api.github.com]
   credential: github
+  # Its {any_repo} reads would otherwise keep this rule for a no-repo Box with a profile.
+  requires_repo: true
   inject:
     header: Authorization
     form: "token {secret}"
   allow:
+    - "GET /repos/{any_repo}"
+    - "GET /repos/{any_repo}/releases/**"
     - "GET /repos/{repo}"
     - "GET|POST /repos/{repo}/pulls"
     - "GET|PATCH /repos/{repo}/pulls/*"
